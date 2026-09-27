@@ -17,7 +17,7 @@ from kstrl.feedforward import (
     CodebaseScanConfig,
     build_codebase_scan_context,
 )
-from tests.test_context import section
+from tests.helpers.context_sweeps import section
 
 
 def _package(root: Path, name: str, count: int) -> Path:

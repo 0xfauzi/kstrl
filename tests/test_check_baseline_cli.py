@@ -18,8 +18,8 @@ from click.testing import CliRunner, Result
 
 from kstrl import baseline_report
 from kstrl.cli import CHECK_SCHEMA_VERSION, cli
+from tests.helpers.check_baseline import BASELINE_DOC
 from tests.spine_utils import git
-from tests.test_check_baseline import BASELINE_DOC
 from tests.test_check_cli import _LINT_FAIL_COMMAND, _kstrl_toml, _make_repo
 
 DEFAULT_RELATIVE = "scripts/kstrl/baseline.json"

@@ -12,12 +12,17 @@ gate.
 
 The fix is structural rather than a corrected copy. The commands live in
 ``verify`` only; the gate and the engineer prompt both ask that module
-what will run. These tests hold the two sides together.
+what will run. What remains here reads the answer where it lands: the
+resolver over a real project tree, and the prompt ``run_loop``, ``ks
+understand`` and ``ks feature`` actually hand a capturing agent (the
+gate block is injected, a legacy CLAUDE.md cannot contradict it and is
+never rewritten on disk, a no-gate entry point states no commands).
+The worker seam, the ``FactoryConfig`` helpers, the scrub helper's
+table and the operator warning are exercised through ``run_factory``.
 """
 
 from __future__ import annotations
 
-import io
 import json
 from collections.abc import Iterator
 from pathlib import Path
@@ -29,8 +34,7 @@ from click.testing import CliRunner
 
 from kstrl.cli import cli
 from kstrl.config import KstrlConfig
-from kstrl.factory import FactoryConfig, _run_component, _warn_claude_md_divergence
-from kstrl.loop import COMPLETION_MARKER, LoopResult, build_project_context, run_loop
+from kstrl.loop import COMPLETION_MARKER, build_project_context, run_loop
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import (
     DEFAULT_LINT_COMMAND,
@@ -38,13 +42,8 @@ from kstrl.verify import (
     DEFAULT_TYPECHECK_COMMAND,
     SCOPED_TYPECHECK_COMMAND,
     VERIFY_COMMANDS_PROMPT,
-    ResolvedVerifyCommands,
     VerifyConfig,
-    check_linter,
-    check_test_suite,
-    check_typecheck,
     resolve_verify_commands,
-    scrub_stale_verify_commands,
 )
 from tests.test_feature_cmd import _write_fast_verify_toml
 
@@ -287,66 +286,6 @@ class TestResolveVerifyCommands:
         assert commands.typecheck == POLYGLOT_TYPECHECK
 
 
-class TestGateRunsWhatTheResolverReports:
-    """The claim the whole fix rests on: the command the gate shells out
-    to is character-for-character the one the resolver reports, so the
-    prompt cannot name a different one."""
-
-    def _executed(self, run: Any) -> str:
-        assert run.call_count == 1
-        return str(run.call_args.args[0])
-
-    def test_test_gate(self, tmp_path: Path) -> None:
-        expected = resolve_verify_commands(VerifyConfig(), tmp_path).test
-        with patch("kstrl.verify.run_scrubbed") as run:
-            run.return_value.returncode = 0
-            check_test_suite(tmp_path)
-        assert self._executed(run) == expected
-
-    def test_typecheck_gate_with_configured_mypy_scope(self, tmp_path: Path) -> None:
-        (tmp_path / "pyproject.toml").write_text('[tool.mypy]\npackages = ["pkg"]\n')
-        expected = resolve_verify_commands(VerifyConfig(), tmp_path).typecheck
-        with patch("kstrl.verify.run_scrubbed") as run:
-            run.return_value.returncode = 0
-            check_typecheck(tmp_path)
-        assert self._executed(run) == expected
-
-    def test_lint_gate(self, tmp_path: Path) -> None:
-        expected = resolve_verify_commands(VerifyConfig(), tmp_path).lint
-        with patch("kstrl.verify.run_scrubbed") as run:
-            run.return_value.returncode = 0
-            check_linter(tmp_path)
-        assert self._executed(run) == expected
-
-    def test_polyglot_chain_reaches_the_gate_whole(self, tmp_path: Path) -> None:
-        config = VerifyConfig(test_command=POLYGLOT_TEST)
-        expected = resolve_verify_commands(config, tmp_path).test
-        with patch("kstrl.verify.run_scrubbed") as run:
-            run.return_value.returncode = 0
-            check_test_suite(tmp_path, config.test_command)
-        assert self._executed(run) == expected == POLYGLOT_TEST
-
-
-class TestPromptSection:
-    def test_it_names_all_three_commands(self) -> None:
-        section = ResolvedVerifyCommands(
-            test="t-cmd",
-            typecheck="tc-cmd",
-            lint="l-cmd",
-        ).format_for_prompt()
-        assert "`t-cmd`" in section
-        assert "`tc-cmd`" in section
-        assert "`l-cmd`" in section
-
-    def test_it_declares_itself_authoritative(self) -> None:
-        section = ResolvedVerifyCommands(test="a", typecheck="b", lint="c").format_for_prompt()
-        assert "authoritative" in section.lower()
-
-
-# ---------------------------------------------------------------------------
-# Migration: a CLAUDE.md scaffolded before this fix
-# ---------------------------------------------------------------------------
-
 _LEGACY_CLAUDE_MD = """# CLAUDE.md - legacy
 
 ## Project Overview
@@ -362,83 +301,6 @@ Note on scope: this prose explains something a human wrote.
 ## Agent Learnings
 - keep me
 """
-
-
-class TestScrubStaleVerifyCommands:
-    def _commands(self) -> ResolvedVerifyCommands:
-        return ResolvedVerifyCommands(
-            test=DEFAULT_TEST_COMMAND,
-            typecheck=DEFAULT_TYPECHECK_COMMAND,
-            lint=DEFAULT_LINT_COMMAND,
-        )
-
-    def test_every_diverging_bullet_is_dropped(self) -> None:
-        scrubbed = scrub_stale_verify_commands(_LEGACY_CLAUDE_MD, self._commands())
-        assert "uv run pytest tests/ -v --tb=short" not in scrubbed.text
-        assert "uv run mypy src/ --strict" not in scrubbed.text
-        assert "uv run ruff check src/" not in scrubbed.text
-        assert len(scrubbed.divergences) == 3
-
-    def test_the_warning_names_both_sides(self) -> None:
-        scrubbed = scrub_stale_verify_commands(_LEGACY_CLAUDE_MD, self._commands())
-        lint_warning = next(w for w in scrubbed.divergences if "lint" in w)
-        assert "uv run ruff check src/" in lint_warning
-        assert DEFAULT_LINT_COMMAND in lint_warning
-
-    def test_surrounding_prose_and_headings_survive(self) -> None:
-        scrubbed = scrub_stale_verify_commands(_LEGACY_CLAUDE_MD, self._commands())
-        assert "## Verification Commands" in scrubbed.text
-        assert "Note on scope: this prose explains something a human wrote." in scrubbed.text
-        # Agents append their learnings under this heading.
-        assert "## Agent Learnings" in scrubbed.text
-        assert "- keep me" in scrubbed.text
-
-    def test_a_bullet_that_already_agrees_is_kept(self) -> None:
-        text = f"## Verification Commands\n- **Lint**: `{DEFAULT_LINT_COMMAND}`\n"
-        scrubbed = scrub_stale_verify_commands(text, self._commands())
-        assert scrubbed.text == text
-        assert scrubbed.divergences == []
-
-    def test_a_file_with_no_command_bullets_is_returned_byte_identical(self) -> None:
-        text = "# CLAUDE.md\n\nSome prose.\n- **Test**: not in backticks\n"
-        scrubbed = scrub_stale_verify_commands(text, self._commands())
-        assert scrubbed.text == text
-        assert scrubbed.divergences == []
-
-    def test_the_trailing_newline_is_preserved(self) -> None:
-        assert scrub_stale_verify_commands(
-            _LEGACY_CLAUDE_MD,
-            self._commands(),
-        ).text.endswith("\n")
-
-    def test_a_star_bullet_marker_is_matched_too(self) -> None:
-        scrubbed = scrub_stale_verify_commands(
-            "* **Test**: `pytest tests/`\n",
-            self._commands(),
-        )
-        assert scrubbed.divergences
-        assert "pytest tests/" not in scrubbed.text
-
-    def test_crlf_endings_round_trip(self) -> None:
-        """The kept lines are re-joined with their own endings, so a
-        Windows-authored CLAUDE.md is not silently rewritten to LF."""
-        text = "# Title\r\n- **Test**: `pytest tests/`\r\n\r\nprose\r\n"
-        scrubbed = scrub_stale_verify_commands(text, self._commands())
-        assert scrubbed.divergences
-        assert scrubbed.text == "# Title\r\n\r\nprose\r\n"
-
-    def test_a_file_with_no_trailing_newline_gains_none(self) -> None:
-        scrubbed = scrub_stale_verify_commands(
-            "prose\n- **Lint**: `ruff check src/`",
-            self._commands(),
-        )
-        assert scrubbed.text == "prose\n"
-
-
-# ---------------------------------------------------------------------------
-# ---------------------------------------------------------------------------
-# What the engineer is actually handed
-# ---------------------------------------------------------------------------
 
 
 class TestEngineerPromptCarriesTheGateCommands:
@@ -562,86 +424,6 @@ class TestBuildProjectContext:
         assert "uv run ruff check src/" in context
 
 
-class TestFactoryForwardsItsResolvedConfig:
-    """The seam that makes the parent's answer reach the worker.
-
-    Without it the worker falls back to the worktree's own kstrl.toml,
-    which cannot see a CLI override, an uncommitted edit, or the
-    parent's own ``or VerifyConfig()`` fallback - so the agent and the
-    gate could disagree again.
-    """
-
-    def _forwarded(self, root: Path, **kwargs: Any) -> dict[str, Any]:
-        _project(root)
-        (root / "kstrl.toml").write_text("[knowledge]\nenabled = false\n")
-        seen: list[dict[str, Any]] = []
-
-        def fake_run_loop(*args: Any, **kw: Any) -> LoopResult:
-            seen.append(kw)
-            return LoopResult(completed=True, iterations=1, exit_code=0)
-
-        with patch("kstrl.loop.run_loop", side_effect=fake_run_loop):
-            _run_component(
-                component_id="comp-a",
-                prd_path_str="scripts/kstrl/prd.json",
-                worktree_path_str=str(root),
-                root_dir_str=str(root),
-                prompt_file_str="scripts/kstrl/prompt.md",
-                agent_cmd="echo test",
-                model=None,
-                reasoning=None,
-                agent_type=None,
-                sleep_seconds=0.0,
-                redirect_output=False,
-                **kwargs,
-                run_id="test-run",
-            )
-        assert len(seen) == 1
-        return seen[0]
-
-    def test_the_config_reaches_the_loop(self, tmp_path: Path) -> None:
-        passed = VerifyConfig(test_command=POLYGLOT_TEST)
-        assert self._forwarded(tmp_path, verify_config=passed)["verify_config"] is passed
-
-    def test_it_defaults_to_no_gate(self, tmp_path: Path) -> None:
-        """A caller that names no gate gets the fail-safe: silence, not
-        a claim about commands nothing will run."""
-        assert self._forwarded(tmp_path)["verify_config"] is None
-
-
-class TestEngineerVerifyConfigHelper:
-    """One resolver for "what does Phase 1 run with", used by the gate
-    (``pipeline._phase_verify``) and by the engineer submit, so the two
-    cannot answer it differently (#261).
-
-    Methods on FactoryConfig rather than free functions taking the two
-    fields: the coupling is the point, and unpacking them at each call
-    site made ``(cfg.verify_config, False)`` a legal miscall."""
-
-    def test_none_resolves_to_bare_defaults_not_a_disk_reload(self) -> None:
-        """``verify_config=None`` has always meant "use the defaults"
-        on FactoryConfig. Re-reading kstrl.toml here instead would make
-        the prompt state a command the gate will not run."""
-        assert FactoryConfig().resolved_verify_config() == VerifyConfig()
-
-    def test_an_explicit_config_passes_through_untouched(self) -> None:
-        config = VerifyConfig(test_command=POLYGLOT_TEST)
-        assert FactoryConfig(verify_config=config).resolved_verify_config() is config
-
-    def test_the_engineer_is_told_nothing_when_phase_1_is_off(self) -> None:
-        config = FactoryConfig(verify_config=VerifyConfig(), skip_verification=True)
-        assert config.engineer_verify_config() is None
-
-    def test_otherwise_the_engineer_gets_what_the_gate_gets(self) -> None:
-        config = VerifyConfig(lint_command="ruff check kstrl/")
-        assert FactoryConfig(verify_config=config).engineer_verify_config() is config
-
-    def test_the_pipeline_and_the_engineer_agree_on_the_default(self) -> None:
-        """The exact divergence this pairing exists to prevent."""
-        config = FactoryConfig()
-        assert config.engineer_verify_config() == config.resolved_verify_config()
-
-
 class TestNoVerificationEntryPoints:
     """`ks understand` and `ks feature` run no mechanical verification at
     all, so the engineer must not be told a gate will check its work.
@@ -671,40 +453,3 @@ class TestNoVerificationEntryPoints:
         prompt = _prompt_from_cli(_feature_cli_args(tmp_path))
         assert DEFAULT_TEST_COMMAND not in prompt
         assert not _block_is_injected(prompt)
-
-
-class TestParentReportsDivergence:
-    """The migration warning has to reach the terminal the operator is
-    watching. The worker's copy goes to that component's engineer.jsonl,
-    and in pool mode nothing mirrors it to the parent.
-    """
-
-    def _warn(self, root: Path, config: FactoryConfig | None = None) -> str:
-        out = io.StringIO()
-        _warn_claude_md_divergence(
-            root,
-            config or FactoryConfig(),
-            PlainUI(no_color=True, file=out),
-        )
-        return out.getvalue()
-
-    def test_it_names_both_sides_before_any_spend(self, tmp_path: Path) -> None:
-        (tmp_path / "CLAUDE.md").write_text(_LEGACY_CLAUDE_MD)
-        out = self._warn(tmp_path)
-        assert "uv run ruff check src/" in out
-        assert DEFAULT_LINT_COMMAND in out
-
-    def test_it_says_nothing_when_claude_md_agrees(self, tmp_path: Path) -> None:
-        (tmp_path / "CLAUDE.md").write_text(
-            f"- **Lint**: `{DEFAULT_LINT_COMMAND}`\n",
-        )
-        assert self._warn(tmp_path) == ""
-
-    def test_it_says_nothing_without_a_claude_md(self, tmp_path: Path) -> None:
-        assert self._warn(tmp_path) == ""
-
-    def test_it_says_nothing_when_phase_1_is_off(self, tmp_path: Path) -> None:
-        """No gate, so there is no divergence to report."""
-        (tmp_path / "CLAUDE.md").write_text(_LEGACY_CLAUDE_MD)
-        config = FactoryConfig(verify_config=VerifyConfig(), skip_verification=True)
-        assert self._warn(tmp_path, config) == ""

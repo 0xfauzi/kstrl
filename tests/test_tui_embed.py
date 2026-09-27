@@ -1,19 +1,26 @@
-"""Stage 3 PR F (TUI rewrite): embedded mode - bridge, modal answering,
-quit flow, notify capture."""
+"""Stage 3 PR F (TUI rewrite): embedded mode driven through a Textual
+pilot and a real notify hook.
+
+A fake orchestrator thread stands in for ``run_factory`` and asks its
+questions through the real ``QueueInteractionChannel``: the checkpoint
+modal answers the channel, the quit flow requests a graceful stop and a
+declined quit keeps running, a pending checkpoint reopens with ``c``, a
+generic prompt uses the request's labels and only its valid choices, the
+custom screen stack is pushed bottom first, and the options modal
+resolves a CONFIRM through the channel (escape leaves it pending).
+``NotifyHooks`` fires a real hook subprocess: captured output writes
+nothing to the terminal and the default keeps the terminal bell path.
+"""
 
 from __future__ import annotations
 
-import io
-import logging
 import subprocess
 import threading
 import time
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
 
 from kstrl import events as ev
-from kstrl.factory import FactoryResult
 from kstrl.interaction import (
     CheckpointContext,
     PromptKind,
@@ -26,12 +33,6 @@ from kstrl.tui.app import KstrlTuiApp, Mode
 from kstrl.tui.bridge import (
     OrchestratorHandle,
     start_command_thread,
-    start_orchestrator,
-)
-from kstrl.tui.embed import (
-    _install_exclusive_root_handler,
-    _plain_fallback,
-    _restore_root_handlers,
 )
 from kstrl.tui.screens.checkpoint import CheckpointModal
 from kstrl.tui.screens.component import ComponentScreen
@@ -48,62 +49,6 @@ def _write_minimal_run(root: Path, run_id: str) -> Path:
     bus.emit(ev.ComponentStarted(component="comp-a"))
     bus.close()
     return paths.root
-
-
-class TestBridge:
-    def test_start_orchestrator_runs_and_reports(self, tmp_path: Path) -> None:
-        stop = StopController()
-        channel = QueueInteractionChannel()
-        result = FactoryResult()
-        result.exit_code = 0
-
-        with patch(
-            "kstrl.tui.bridge.run_factory",
-            return_value=result,
-        ) as fake:
-            handle = start_orchestrator(
-                object(),
-                object(),
-                object(),
-                object(),  # type: ignore[arg-type]
-                tmp_path,
-                None,
-                run_id="run-x",
-                stop=stop,
-                channel=channel,
-            )
-            handle.join(timeout=5)
-        assert handle.done()
-        assert handle.exit_code == 0
-        kwargs = fake.call_args.kwargs
-        assert kwargs["run_id"] == "run-x"
-        assert kwargs["interaction"] is channel
-        assert kwargs["stop"] is stop
-        assert kwargs["notify_capture_output"] is True
-
-    def test_orchestrator_exception_lands_in_error_box(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        with patch(
-            "kstrl.tui.bridge.run_factory",
-            side_effect=RuntimeError("boom"),
-        ):
-            handle = start_orchestrator(
-                object(),
-                object(),
-                object(),
-                object(),  # type: ignore[arg-type]
-                tmp_path,
-                None,
-                run_id="run-x",
-                stop=StopController(),
-                channel=QueueInteractionChannel(),
-            )
-            handle.join(timeout=5)
-        assert handle.done()
-        assert handle.error_box
-        assert handle.exit_code == 1
 
 
 def _fake_orchestrator(
@@ -389,39 +334,6 @@ class TestEmbeddedApp:
         assert results == [1]
 
 
-class TestFallbackAndLogging:
-    def test_plain_fallback_accepts_tailer_chunks(self, tmp_path: Path) -> None:
-        run_dir = _write_minimal_run(tmp_path, "factory-20260720-fallback")
-        thread = threading.Thread(target=lambda: None)
-        thread.start()
-        thread.join()
-        handle = OrchestratorHandle(
-            thread=thread,
-            stop=StopController(),
-            result_box=[7],
-        )
-
-        assert _plain_fallback(handle, run_dir) == 7
-
-    def test_root_logging_is_exclusive_and_restored(self) -> None:
-        logger = logging.Logger("embed-test")
-        old_stream = io.StringIO()
-        tui_stream = io.StringIO()
-        old_handler = logging.StreamHandler(old_stream)
-        tui_handler = logging.StreamHandler(tui_stream)
-        logger.addHandler(old_handler)
-
-        previous = _install_exclusive_root_handler(logger, tui_handler)
-        logger.warning("during tui")
-        _restore_root_handlers(logger, tui_handler, previous)
-        logger.warning("after tui")
-
-        assert "during tui" not in old_stream.getvalue()
-        assert "after tui" in old_stream.getvalue()
-        assert "during tui" in tui_stream.getvalue()
-        assert "after tui" not in tui_stream.getvalue()
-
-
 class TestNotifyCapture:
     def test_captured_hook_writes_nothing_to_terminal(
         self,
@@ -484,38 +396,6 @@ def _fake_confirm_worker(
         return 0
 
     return start_command_thread(_target, stop=StopController())
-
-
-class TestCommandThread:
-    def test_returned_code_is_boxed(self) -> None:
-        handle = start_command_thread(lambda: 7, stop=StopController())
-        handle.join(timeout=5)
-        assert handle.done()
-        assert handle.exit_code == 7
-        assert not handle.error_box
-
-    def test_system_exit_codes_are_honored_not_crashes(self) -> None:
-        """A missed sys.exit inside a core must keep its exit code."""
-        import sys
-
-        cases: list[tuple[Any, int]] = [(3, 3), (None, 0), ("boom", 1)]
-        for raised, expected in cases:
-            handle = start_command_thread(
-                lambda code=raised: sys.exit(code),  # type: ignore[misc]
-                stop=StopController(),
-            )
-            handle.join(timeout=5)
-            assert not handle.error_box, f"sys.exit({raised!r}) crashed"
-            assert handle.exit_code == expected
-
-    def test_exception_lands_in_error_box(self) -> None:
-        def _boom() -> int:
-            raise RuntimeError("boom")
-
-        handle = start_command_thread(_boom, stop=StopController())
-        handle.join(timeout=5)
-        assert handle.error_box
-        assert handle.exit_code == 1
 
 
 class TestScreenFactory:

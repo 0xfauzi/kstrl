@@ -1,13 +1,14 @@
-"""Stage 3 PR A (TUI rewrite): the interaction seam.
+"""Stage 3 PR A (TUI rewrite): the interaction seam, through run_factory.
 
-Covers the channel primitives (Ui + Queue) and the E6 checkpoint context.
+The E6 checkpoint request the factory hands its interaction channel
+carries the diff excerpt, the usage and the branch, not just the review
+summary string. A recording channel stands in for the UI so the request
+the factory built is asserted as a whole.
 """
 
 from __future__ import annotations
 
 import io
-import threading
-import time
 from pathlib import Path
 
 from kstrl.interaction import (
@@ -15,166 +16,8 @@ from kstrl.interaction import (
     PromptKind,
     PromptRequest,
     PromptResponse,
-    QueueInteractionChannel,
-    UiInteractionChannel,
 )
 from kstrl.ui.plain import PlainUI
-
-
-def _req(default: int = 0) -> PromptRequest:
-    return PromptRequest(
-        kind=PromptKind.CONFIRM,
-        header="Proceed?",
-        options=("Yes", "No"),
-        default=default,
-    )
-
-
-class TestUiInteractionChannel:
-    def test_non_tty_returns_default_unanswered(self) -> None:
-        channel = UiInteractionChannel(PlainUI(no_color=True, file=io.StringIO()))
-        # pytest's stdin is not a tty -> can_prompt False.
-        assert channel.can_prompt() is False
-        response = channel.request(_req(default=1))
-        assert response == PromptResponse(
-            request_id=response.request_id,
-            choice=1,
-            answered=False,
-        )
-
-    def test_delegates_to_ui_choose(self) -> None:
-        class FakeUI(PlainUI):
-            def can_prompt(self) -> bool:
-                return True
-
-            def choose(self, header: str, options: list[str], default: int = 0) -> int:
-                return 1
-
-        channel = UiInteractionChannel(FakeUI(no_color=True, file=io.StringIO()))
-        response = channel.request(_req())
-        assert response.answered is True
-        assert response.choice == 1
-
-    def test_invalid_ui_choice_degrades_to_default(self) -> None:
-        class InvalidUI(PlainUI):
-            def can_prompt(self) -> bool:
-                return True
-
-            def choose(self, header: str, options: list[str], default: int = 0) -> int:
-                return len(options)
-
-        channel = UiInteractionChannel(
-            InvalidUI(no_color=True, file=io.StringIO()),
-        )
-        response = channel.request(_req(default=1))
-        assert response.answered is False
-        assert response.choice == 1
-
-
-class TestQueueInteractionChannel:
-    def test_detached_degrades_to_default(self) -> None:
-        channel = QueueInteractionChannel()
-        assert channel.can_prompt() is False
-        response = channel.request(_req(default=1))
-        assert response.answered is False
-        assert response.choice == 1
-
-    def test_request_resolve_round_trip_across_threads(self) -> None:
-        channel = QueueInteractionChannel()
-        seen: list[PromptRequest] = []
-        channel.attach(seen.append)
-        results: list[PromptResponse] = []
-
-        def requester() -> None:
-            results.append(channel.request(_req()))
-
-        thread = threading.Thread(target=requester)
-        thread.start()
-        deadline = time.monotonic() + 2
-        while not seen and time.monotonic() < deadline:
-            time.sleep(0.005)
-        assert seen, "resolver never notified"
-        assert channel.resolve(seen[0].request_id, 1) is True
-        thread.join(timeout=2)
-        assert not thread.is_alive()
-        assert results[0].answered is True
-        assert results[0].choice == 1
-
-    def test_double_resolve_rejected(self) -> None:
-        channel = QueueInteractionChannel()
-        seen: list[PromptRequest] = []
-        channel.attach(seen.append)
-        thread = threading.Thread(target=lambda: channel.request(_req()))
-        thread.start()
-        while not seen:
-            time.sleep(0.005)
-        assert channel.resolve(seen[0].request_id, 0) is True
-        assert channel.resolve(seen[0].request_id, 1) is False
-        thread.join(timeout=2)
-
-    def test_unknown_request_id_rejected(self) -> None:
-        channel = QueueInteractionChannel()
-        assert channel.resolve("nope", 0) is False
-
-    def test_out_of_range_choice_rejected_without_releasing_waiter(self) -> None:
-        channel = QueueInteractionChannel()
-        seen: list[PromptRequest] = []
-        channel.attach(seen.append)
-        results: list[PromptResponse] = []
-        thread = threading.Thread(
-            target=lambda: results.append(channel.request(_req())),
-        )
-        thread.start()
-        while not seen:
-            time.sleep(0.005)
-        assert channel.resolve(seen[0].request_id, 2) is False
-        assert thread.is_alive()
-        assert channel.resolve(seen[0].request_id, 1) is True
-        thread.join(timeout=2)
-        assert not thread.is_alive()
-        assert results[0].choice == 1
-
-    def test_cancel_all_releases_waiters_with_defaults(self) -> None:
-        channel = QueueInteractionChannel()
-        channel.attach(lambda req: None)  # resolver that never answers
-        results: list[PromptResponse] = []
-        thread = threading.Thread(
-            target=lambda: results.append(channel.request(_req(default=1))),
-        )
-        thread.start()
-        time.sleep(0.02)
-        channel.cancel_all()
-        thread.join(timeout=2)
-        assert not thread.is_alive()
-        assert results[0].answered is False
-        assert results[0].choice == 1
-
-    def test_detach_releases_and_degrades(self) -> None:
-        channel = QueueInteractionChannel()
-        channel.attach(lambda req: None)
-        results: list[PromptResponse] = []
-        thread = threading.Thread(
-            target=lambda: results.append(channel.request(_req())),
-        )
-        thread.start()
-        time.sleep(0.02)
-        channel.detach()
-        thread.join(timeout=2)
-        assert results[0].answered is False
-        # After detach, new requests degrade immediately (no hang).
-        response = channel.request(_req(default=1))
-        assert response.answered is False
-
-    def test_dying_notifier_never_hangs(self) -> None:
-        channel = QueueInteractionChannel()
-
-        def boom(req: PromptRequest) -> None:
-            raise RuntimeError("UI died")
-
-        channel.attach(boom)
-        response = channel.request(_req(default=1))
-        assert response.answered is False
-        assert response.choice == 1
 
 
 class TestCheckpointContext:
