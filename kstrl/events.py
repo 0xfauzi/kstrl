@@ -550,7 +550,8 @@ class CheckpointRequested(Event):
 
 @dataclass(frozen=True, kw_only=True)
 class CheckpointResolved(Event):
-    """``decided_by``: "auto" (non-interactive default) or "operator"."""
+    """``decided_by``: "auto" (non-interactive default), "operator", or
+    "inbox" (parked - an unanswered or out-of-range gate, #594)."""
 
     type: ClassVar[str] = "checkpoint_resolved"
     kind: str = ""

@@ -586,6 +586,56 @@ def _guard_baseline(
     return baseline
 
 
+def _resolve_iteration_pause(
+    ui: UI,
+    channel: InteractionChannel,
+    config: KstrlConfig,
+    iteration: int,
+    agent: Agent,
+) -> LoopResult | None:
+    """The interactive pause between iterations (PR A: through the
+    interaction seam). Returns a :class:`LoopResult` when the run should
+    stop - Quit, or nobody answered - and ``None`` to continue (mutating
+    ``config.interactive`` on 'Skip interactive').
+
+    #594 D1: a channel that COULD prompt (``can_prompt()`` true) but came
+    back with nobody answering is not consent to keep spending on another
+    paid iteration. It stops the run the same way Quit does, with one log
+    line saying so. A channel that cannot prompt never reaches the
+    request below, so the non-interactive path is unchanged.
+    """
+    if not (config.interactive and channel.can_prompt()):
+        return None
+    response = channel.request(
+        PromptRequest(
+            kind=PromptKind.ITERATION,
+            header="Iteration complete. What next?",
+            options=("Continue", "Skip interactive", "Quit"),
+            default=0,
+        )
+    )
+    if response.answered and response.choice == 1:
+        # Disable interactive for remaining iterations
+        config.interactive = False
+        return None
+    if response.answered and response.choice == 2:
+        return LoopResult(
+            completed=False,
+            iterations=iteration,
+            exit_code=0,
+            usage=collect_usage(agent),
+        )
+    if not response.answered:
+        ui.warn("Iteration pause was interrupted; stopping the run")
+        return LoopResult(
+            completed=False,
+            iterations=iteration,
+            exit_code=0,
+            usage=collect_usage(agent),
+        )
+    return None
+
+
 def run_loop(
     config: KstrlConfig,
     ui: UI,
@@ -994,25 +1044,9 @@ def run_loop(
             )
 
         # Interactive pause (PR A: through the interaction seam)
-        if config.interactive and channel.can_prompt():
-            response = channel.request(
-                PromptRequest(
-                    kind=PromptKind.ITERATION,
-                    header="Iteration complete. What next?",
-                    options=("Continue", "Skip interactive", "Quit"),
-                    default=0,
-                )
-            )
-            if response.answered and response.choice == 1:
-                # Disable interactive for remaining iterations
-                config.interactive = False
-            elif response.answered and response.choice == 2:
-                return LoopResult(
-                    completed=False,
-                    iterations=iteration,
-                    exit_code=0,
-                    usage=collect_usage(agent),
-                )
+        pause_result = _resolve_iteration_pause(ui, channel, config, iteration, agent)
+        if pause_result is not None:
+            return pause_result
 
         # Sleep before next iteration (except on last)
         if iteration < config.max_iterations:

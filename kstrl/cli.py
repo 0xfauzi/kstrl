@@ -3086,7 +3086,10 @@ def factory(
                 default=0,
             )
         )
-        if response.answered and response.choice != 0:
+        # #594: only an answered Start starts a paid run. An interrupted
+        # or unanswered confirm quits, exactly as Quit does.
+        if not response.answered or response.choice != 0:
+            ui_impl.info("Factory not started.")
             sys.exit(0)
 
     kstrl_dir = root_dir / "scripts" / "kstrl"
