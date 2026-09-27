@@ -342,6 +342,54 @@ def test_user_text_never_logged(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
         assert not any(secret in line for line in lines), secret
 
 
+def test_model_text_that_starts_with_a_pipe_is_kept(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only the exact prefix marks a tool line: the agent's own markdown
+    table, whose lines start with "|", is still the agent's final message."""
+    table = "| story | status |\n|---|---|\n| s1 | pass |"
+    agent, lines = _run_cli(
+        tmp_path,
+        monkeypatch,
+        [
+            _tool_use("toolu_1", "Bash", {"command": "ls"}),
+            _tool_result("toolu_1", "a.py"),
+            _text(table),
+        ],
+    )
+
+    assert lines == ["[Bash] ls", "  | a.py", table]
+    assert agent.final_message == table
+
+
+def test_every_tool_result_in_one_user_event_is_rendered(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A user event can carry several tool_result blocks; each is rendered."""
+    event = _user(
+        [
+            {"tool_use_id": "toolu_1", "type": "tool_result", "content": "first"},
+            {"tool_use_id": "toolu_2", "type": "tool_result", "content": "second"},
+        ]
+    )
+    _, lines = _run_cli(tmp_path, monkeypatch, [event, _text("done"), _result("done")])
+
+    assert lines == ["  | first", "  | second", "done"]
+
+
+def test_tool_result_of_exactly_200_characters_is_not_cut(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The cap marks a cut with "..." only when text was actually dropped."""
+    _, lines = _run_cli(
+        tmp_path,
+        monkeypatch,
+        [_tool_result("toolu_1", "x" * 200), _text("done"), _result("done")],
+    )
+
+    assert lines == ["  | " + "x" * 200, "done"]
+
+
 def test_top_level_tool_result_event_is_not_rendered(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
