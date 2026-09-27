@@ -219,9 +219,12 @@ def test_a_hook_that_raises_keeps_the_item(
     _hook_into(monkeypatch, tmp_path / "hook.txt")
     _corrupt_ledger(tmp_path)
 
+    class Unforeseen(Exception):
+        """No builtin category: only ``except Exception`` catches it."""
+
     with patch(
         "kstrl.observability.NotifyHooks.fire_inbox_item",
-        side_effect=RuntimeError("unforeseen"),
+        side_effect=Unforeseen("unforeseen"),
     ):
         ids = _poll(tmp_path)
 
@@ -262,6 +265,18 @@ def test_a_hook_run_outside_a_run_writes_nothing_to_the_terminal(
     assert _lines(ran) == ["ran"]
     assert "HOOK-OUTPUT-LEAK" not in captured.out
     assert "HOOK-ERROR-LEAK" not in captured.err
+
+
+def test_a_failing_hook_outside_a_run_is_warned_about(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    """A fallback hook that exits nonzero is reported on stderr, never swallowed."""
+    monkeypatch.setenv("KSTRL_NOTIFY_ON_INBOX_ITEM", "exit 3")
+    _corrupt_ledger(tmp_path)
+
+    assert len(_poll(tmp_path)) == 1
+
+    assert "notify hook 'inbox_budget_overrun' exited 3 (non-fatal)" in capfd.readouterr().err
 
 
 # --- census: every filing path is driven by a test above -----------------
