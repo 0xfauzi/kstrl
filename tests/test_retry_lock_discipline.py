@@ -252,7 +252,7 @@ class TestRunLockRelease:
         ctx = cli_mod.factory.make_context("factory", argv)
         ctx.meta[cli_mod._HANDED_RUN_LOCK] = released
 
-        with pytest.raises(AssertionError):
+        with pytest.raises(RuntimeError, match="a released run lock was handed"):
             with ctx:
                 cli_mod.factory.invoke(ctx)
 
@@ -403,6 +403,32 @@ class TestKsRetryChangesNothingBeforeItsGates:
         cli_comp = Manifest.load(_manifest_file(root)).get_component("cli")
         assert cli_comp is not None
         assert cli_comp.linear_issue_identifier == "EXC-597", result.output
+
+    def test_a_held_lock_with_force_lock_does_not_crash(
+        self, tmp_path: Path, hold_lock: Any
+    ) -> None:
+        """`ks retry --force-lock` under a held lock runs, rather than crashing on a handed lock.
+
+        `_acquire_run_lock(force=True)` on a held lock returns
+        ``_RunLock(fp=None, held=False)``, the same shape the no-fcntl
+        degrade returns: both are legitimate to hand to `ks factory`.
+        Checking ``fp is not None`` in ``_resolve_factory_run_lock``
+        could not tell either of those apart from a lock whose own
+        ``release()`` had already run, so a forced retry against a held
+        lock raised ``AssertionError: a released run lock was handed to
+        `ks factory`: _RunLock(fp=None, held=False)`` after it had
+        already reset the manifest and deleted the failed branch.
+        """
+        root, _before = _failed_storage(tmp_path)
+        hold_lock(root)
+
+        retried = _ks(root, "retry", "storage", "--force-lock")
+        out = retried.stdout + retried.stderr
+
+        # `storage` fails again (its PRD still does not pass), so 1, not 2.
+        assert retried.returncode == 1, out
+        assert "Starting:" in out, out
+        assert "Traceback" not in out, out
 
 
 class TestInboxCommandsChangeNothingUnderALiveRun:

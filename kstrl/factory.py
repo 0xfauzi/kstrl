@@ -1305,15 +1305,20 @@ class _RunLock:
     may safely prune state left by previous runs. ``held=False`` means we
     are running WITHOUT exclusion (Windows/no-fcntl degrade, or
     ``--force-lock``): stale-state cleanup must be skipped because another
-    live invocation may own it.
+    live invocation may own it. ``released`` is separate from ``fp is
+    None``: a forced or no-fcntl lock also has ``fp=None`` while still
+    legitimate to hand to `ks factory`, so ``released`` is the only field
+    that says whether ``release()`` has run on this handle (#597).
     """
 
     fp: IO[str] | None
     held: bool
+    released: bool = False
 
     def release(self) -> None:
         if self.fp is None:
             self.held = False
+            self.released = True
             return
         try:
             import fcntl
@@ -1324,6 +1329,7 @@ class _RunLock:
         self.fp.close()
         self.fp = None
         self.held = False
+        self.released = True
 
 
 def _acquire_run_lock(root_dir: Path, ui: UI, force: bool) -> _RunLock:

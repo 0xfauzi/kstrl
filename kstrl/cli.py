@@ -202,15 +202,18 @@ def _resolve_factory_run_lock(
     `ks retry` and `ks inbox approve` on a parked merge take the lock
     themselves and hand it on through ``ctx.meta``, so this never acquires
     a second time in the same process (flock refuses that even within one
-    process); a handed lock already released (``fp`` is None) is #597's
-    own defect one level up, so that is refused rather than silently
-    re-acquired. Its own function so the boolean checks below cost
-    nothing against `factory`'s own cognitive-complexity ratchet.
+    process); a handed lock whose own ``release()`` has already run is
+    #597's own defect one level up, so that is refused rather than
+    silently re-acquired. This checks ``released``, not ``fp is None``:
+    a ``--force-lock`` lock and the no-fcntl degrade also have
+    ``fp=None`` while still legitimate to hand on, so ``fp`` alone cannot
+    tell a forced or degraded lock from a released one. Its own function
+    so the boolean checks below cost nothing against `factory`'s own
+    cognitive-complexity ratchet.
     """
     handed = ctx.meta.get(_HANDED_RUN_LOCK)
-    assert handed is None or (isinstance(handed, _RunLock) and handed.fp is not None), (
-        f"a released run lock was handed to `ks factory`: {handed!r}"
-    )
+    if handed is not None and (not isinstance(handed, _RunLock) or handed.released):
+        raise RuntimeError(f"a released run lock was handed to `ks factory`: {handed!r}")
     return handed or _acquire_run_lock(root_dir, ui_impl, force=force_lock)
 
 
