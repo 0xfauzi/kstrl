@@ -45,6 +45,15 @@ def gen_docs() -> ModuleType:
 
 
 class TestReadmeCurrent:
+    @pytest.fixture(autouse=True)
+    def _shipped_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The README documents the SHIPPED defaults. The suite-wide
+        short_waits fixture (tests/conftest.py) zeroes the factory retry
+        delay through the env door the generator reads, so it is undone
+        here or the regenerated table would read 0.0 against the
+        committed 5.0."""
+        monkeypatch.delenv("FACTORY_RETRY_DELAY", raising=False)
+
     def test_generated_sections_match_committed_readme(self, gen_docs: ModuleType) -> None:
         """The committed README equals its own regeneration (the drift gate)."""
         current = (REPO_ROOT / "README.md").read_text(encoding="utf-8")

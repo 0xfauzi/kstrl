@@ -8,7 +8,7 @@
 
 ## Verification commands
 
-- **Test**: `uv run pytest tests/ -v`
+- **Test**: `uv run pytest tests/ -q -n 8` (pytest-xdist is a dev dependency; on this 10-core machine -n 8 measured 370s against 761s at -n 3 on the same tree under the same load, and CI runs -n 4)
 - **Calibration (opt-in, real LLMs)**: `KSTRL_RUN_CALIBRATION=1 uv run pytest tests/test_calibration.py -v`
 - **Typecheck**: `uv run mypy kstrl/ --strict`
 - **Lint**: `uv run ruff check kstrl/ tests/`
