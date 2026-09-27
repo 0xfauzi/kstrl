@@ -21,6 +21,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import re
 import shlex
 import sys
 from dataclasses import dataclass
@@ -31,7 +32,8 @@ from click.testing import CliRunner
 
 from kstrl.cli import cli
 from kstrl.init_cmd import run_init
-from kstrl.knowledge import Fact, write_facts
+from kstrl.knowledge import Fact, KnowledgeConfig, retrieve_knowledge_context, write_facts
+from kstrl.manifest import Component, Manifest
 from kstrl.ui.plain import PlainUI
 from tests.helpers import gitrepo
 from tests.spine_utils import git
@@ -426,8 +428,55 @@ class TestFeatureEngineerReadsOperatorContext:
         factory does; this is the audit trail it has instead, and every
         loop that actually retrieves knowledge writes one, the same
         obligation CLAUDE.md states for every adversarial decision:
-        an injection is worth recording, not left silent."""
-        run = _run_feature(tmp_path, monkeypatch, _initialised_project(tmp_path))
+        an injection is worth recording, not left silent.
+
+        "Knowledge recorded for demo" alone is not enough to pin that:
+        it is the prefix of BOTH branches in ``_record_feature_knowledge``,
+        so a plant that swaps which branch a truthy ``injected`` takes
+        (round 2's V1, ``if injected:`` -> ``if not injected:``) leaves
+        its count untouched. What actually distinguishes the branches is
+        the "chars injected" / "no facts to inject" suffix, and the
+        recorded number is checked against the length of the very block
+        ``retrieve_knowledge_context`` hands the implement prompt, built
+        here the same way ``_feature_knowledge_prefix`` builds it, rather
+        than merely echoed back from the message itself."""
+        root = _initialised_project(tmp_path)
+        run = _run_feature(tmp_path, monkeypatch, root)
 
         assert run.exit_code == 0, run.output
         assert run.output.count("Knowledge recorded for demo") == 2, run.output
+        assert run.output.count("chars injected") == 2, run.output
+        assert "no facts to inject" not in run.output, run.output
+
+        component = Component(
+            id="demo",
+            title="demo",
+            description="",
+            dependencies=[],
+            prd_path=str(root / PRD_REL),
+            branch_name="kstrl/demo",
+        )
+        manifest = Manifest(
+            version="1",
+            spec_file="",
+            project_name="demo",
+            base_branch="",
+            single_pr=False,
+            components=[component],
+        )
+
+        def _fail_on_retrieval_error(exc: Exception) -> None:
+            pytest.fail(f"knowledge retrieval failed while building the expected block: {exc}")
+
+        expected = retrieve_knowledge_context(
+            manifest,
+            component,
+            KnowledgeConfig.load(root),
+            allowed_paths=None,
+            worktree=root,
+            on_failure=_fail_on_retrieval_error,
+        )
+        assert expected, "expected a non-empty knowledge block to compare against"
+        assert expected in run.only("implement")
+        counted = re.findall(r"Knowledge recorded for demo: (\d+) chars injected", run.output)
+        assert counted == [str(len(expected))] * 2, run.output

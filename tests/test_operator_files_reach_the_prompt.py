@@ -116,7 +116,7 @@ WORKER_EDITS: tuple[tuple[str, str], ...] = (
     (ORDER_LOCAL, f"the {ORDER_LOCAL} entry that puts the block in the prompt order"),
     ("_run_component", "the _run_component parameter that forwards the path"),
     (
-        "_run_component",
+        "passes into ``engineer_context_prefix``",
         "the keyword argument _run_component passes into engineer_context_prefix",
     ),
     ("_path_relative_to_root", "the _path_relative_to_root hoist in the parent"),
@@ -128,8 +128,8 @@ WORKER_EDITS: tuple[tuple[str, str], ...] = (
 )
 
 #: The count as a WORD, derived, because the two docstrings this guard
-#: checks are prose. A ninth edit fails on the KeyError here rather
-#: than by leaving "eight" in a sentence that now lists nine things.
+#: checks are prose. A tenth edit fails on the KeyError here rather
+#: than by leaving "nine" in a sentence that now lists ten things.
 EDIT_COUNT_WORD: str = {4: "four", 5: "five", 6: "six", 7: "seven", 8: "eight", 9: "nine"}[
     len(WORKER_EDITS)
 ]
@@ -551,12 +551,12 @@ class TestTheRemedyIsWrittenWhereAnAuthorReadsIt:
         """Each anchor in ``WORKER_EDITS`` appears in the row docstring,
         and the count is spelled as the word ``EDIT_COUNT_WORD``
         derives, in the phrase "<word> hand edits" rather than as a bare
-        word. A ninth edit therefore fails here until the sentence is
-        rewritten, rather than leaving "eight" over a list of nine: a
-        bare-word check would still pass, because an earlier sentence in
-        this same docstring names an unrelated numeral for a different
-        reason, and a dropped row that happens to retarget the derived
-        word onto that numeral would read as present."""
+        word. A tenth edit therefore fails here until the sentence is
+        rewritten, rather than leaving "nine" over a list of ten: a
+        bare-word check would still pass. Before #599 added the ninth
+        row, this docstring's own "seven ... and one ..." per-file
+        clause put another numeral beside the count, and a bare-word
+        check let that clause keep a stale count reading as present."""
         doc = OperatorFileKind.__doc__ or ""
 
         missing = [anchor for anchor, _what in WORKER_EDITS if anchor not in doc]
