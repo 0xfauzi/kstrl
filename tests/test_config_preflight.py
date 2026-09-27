@@ -11,12 +11,23 @@ Every test here asserts a property of that entry check: that it fires
 before anything is constructed, that it covers the environment as well
 as the file, that it names what to change, and that the one section
 classified as degrading still degrades.
+
+``TestConfigToml`` and ``TestConfigTomlFull`` (#593 slice 4) fold in the
+integration tests from tests/test_config_toml.py and
+tests/test_config_toml_full.py: real kstrl.toml files on disk driving
+``KstrlConfig.load(root)``, ``config_preflight.collect_config_problems``
+and the per-section ``Config.load(root)`` classmethods - the entry
+points the factory's own phases call. The lower-level ``from_toml`` /
+``from_env`` mapping tests and the direct ``load_toml_document`` parser
+tests from those files were dropped as unit (class/function pins) per
+the owner's end-to-end rule.
 """
 
 from __future__ import annotations
 
 import ast
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -27,9 +38,14 @@ from click.testing import CliRunner, Result
 
 import kstrl.cli as cli_mod
 from kstrl.cli import cli
-from kstrl.config import ConfigError, load_toml_document, toml_parse_scope
-from kstrl.config_preflight import config_sections, preflight_config
-from kstrl.factory import FactoryResult
+from kstrl.config import STRING_KEYS, ConfigError, KstrlConfig, load_toml_document, toml_parse_scope
+from kstrl.config_preflight import collect_config_problems, config_sections, preflight_config
+from kstrl.contract import ContractConfig, ContractMode
+from kstrl.evolution import EvolutionConfig
+from kstrl.factory import FactoryConfig, FactoryResult
+from kstrl.feedforward import CodebaseScanConfig
+from kstrl.security import SecurityConfig, SecurityMode
+from kstrl.verify import VerifyConfig
 from tests.conftest import REPO_ROOT
 from tests.helpers import astwalk
 from tests.helpers.bad_toml import MALFORMED_TOML, TOML_PARSE_FAULTS
@@ -603,6 +619,37 @@ class TestAConfigThatWillNotParseIsReportedNotCrashed:
         assert result.exit_code == 2
         assert fragment in result.output
 
+    @pytest.mark.parametrize(
+        ("args", "exit_code"),
+        SEAM_COMMANDS,
+        ids=[args[0] for args, _ in SEAM_COMMANDS],
+    )
+    def test_a_file_that_cannot_be_opened_is_reported_as_unreadable_not_as_a_parse_fault(
+        self,
+        args: list[str],
+        exit_code: int,
+    ) -> None:
+        """Rule 3 of the tomllib reader, driven through every command: the
+        open happens OUTSIDE the parse guard, so an ``OSError`` (here a
+        kstrl.toml that is a directory) is reported as "could not be read"
+        and never relabelled as a TOML parse failure. This is the
+        end-to-end carrier for the folded loader unit tests
+        ``test_open_failures_are_not_relabelled_as_parse_failures`` and
+        ``test_an_unreadable_file_still_raises_oserror_not_configerror``.
+        """
+        root = Path.cwd()
+        (root / "s.md").write_text("# spec\n")
+        make_manifest([component("comp-a")]).save(root / "m.json")
+        (root / "kstrl.toml").mkdir()
+        result = CliRunner().invoke(cli, args, catch_exceptions=True)
+
+        assert not isinstance(result.exception, (ValueError, OSError)), result.exception
+        assert result.exit_code == exit_code, result.output
+        assert "error:" in result.output
+        assert "kstrl.toml could not be read" in result.output, result.output
+        assert "Is a directory" in result.output, result.output
+        assert "parse" not in result.output.lower(), result.output
+
     def test_the_table_names_every_command_the_seam_guards(self) -> None:
         """The drift guard, in the shape ``TestEverySectionIsEnrolled``
         and ``TestTheSeamCannotBeBypassedByDeclaration`` already use: a
@@ -1060,3 +1107,608 @@ class TestEverySectionIsEnrolled:
         names = {name for section in config_sections() for name in section.sections}
 
         assert {name for name in names if f"[{name}]" not in example} == set()
+
+
+def _write_toml(path: Path, content: str) -> None:
+    path.write_text(content, encoding="utf-8")
+
+
+def _clear_env(monkeypatch: pytest.MonkeyPatch, *names: str) -> None:
+    for name in names:
+        monkeypatch.delenv(name, raising=False)
+
+
+#: #562: a STRING_KEYS row whose field takes a closed vocabulary is refused
+#: at load for any other value, so the precedence test writes real ones.
+_VALID_STRING_VALUES: dict[str, tuple[str, str]] = {"agent_type": ("claude", "codex")}
+
+
+class TestConfigToml:
+    """Folded from tests/test_config_toml.py (#593 slice 4).
+
+    Every test kept here writes a real kstrl.toml on ``tmp_path`` and
+    drives ``KstrlConfig.load(root)`` or
+    ``config_preflight.collect_config_problems`` - the entry points the
+    rest of the factory actually calls. Dropped as unit (a class or
+    function works, not the system end to end): the ``from_toml`` /
+    ``from_env`` section-mapping tests, three pure introspection checks
+    over ``STRING_KEYS`` with no file on disk at all, and six tests that
+    called ``load_toml_document`` (a parser) directly - #318's ordering
+    and message-wording pins, superseded by ``TestAConfigThatWillNotParseIsReportedNotCrashed``
+    above (the same ``TOML_PARSE_FAULTS`` table exercised through every
+    real CLI command) and by the structural handler-shape guard in
+    tests/test_toml_readers.py.
+    """
+
+    def test_from_toml_leaves_unknown_names_to_the_entry_check(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The loader reads the names it knows and passes over the rest;
+        the entry check is what names the rest (#525). Before #525 this
+        test pinned the silence itself."""
+        for name in [k for k in os.environ if k.startswith("KSTRL_")]:
+            monkeypatch.delenv(name)
+        toml_path = tmp_path / "kstrl.toml"
+        _write_toml(
+            toml_path,
+            """
+[agent]
+type = "claude"
+unknown_field = "ignored"
+
+[unknown_section]
+foo = "bar"
+""",
+        )
+        config = KstrlConfig.from_toml(toml_path, tmp_path)
+        assert config.agent_type == "claude"
+        problems = collect_config_problems(tmp_path, lambda _message: None)
+        assert len(problems) == 2, problems
+        assert "names [agent] unknown_field, which no kstrl setting reads" in problems[0]
+        assert "names [unknown_section], which no kstrl setting reads" in problems[1]
+
+    def test_load_env_overrides_toml(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        toml_path = tmp_path / "kstrl.toml"
+        _write_toml(
+            toml_path,
+            """
+[run]
+max_iterations = 25
+
+[agent]
+model = "sonnet"
+""",
+        )
+        monkeypatch.setenv("MAX_ITERATIONS", "99")
+        monkeypatch.setenv("MODEL", "opus")
+        config = KstrlConfig.load(tmp_path)
+        assert config.max_iterations == 99
+        assert config.model == "opus"
+
+    @pytest.mark.parametrize(
+        ("section", "toml_key", "env_var", "field_name", "is_path"),
+        STRING_KEYS,
+        ids=[f"{section}.{key}" for section, key, _e, _f, _p in STRING_KEYS],
+    )
+    def test_every_string_key_follows_the_same_precedence(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        section: str,
+        toml_key: str,
+        env_var: str,
+        field_name: str,
+        is_path: bool,
+    ) -> None:
+        """One rule for every row: env beats kstrl.toml beats the field default,
+        an empty toml value means unset rather than an error, and a path row's
+        default is anchored against the root by all three entry points.
+        Parametrized over the table rather than written against one key
+        (R10.8's), so a row added later is covered the day it is added."""
+        monkeypatch.delenv(env_var, raising=False)
+        default = getattr(KstrlConfig(), field_name)
+        unset = tmp_path / default if is_path and default is not None else default
+        toml_path = tmp_path / "kstrl.toml"
+
+        _write_toml(toml_path, f'\n[{section}]\n{toml_key} = ""\n')
+        assert getattr(KstrlConfig.load(tmp_path), field_name) == unset
+        assert getattr(KstrlConfig.from_env(tmp_path), field_name) == unset
+        assert getattr(KstrlConfig.from_toml(toml_path, tmp_path), field_name) == unset
+
+        toml_value, env_value = _VALID_STRING_VALUES.get(field_name, ("from-toml", "from-env"))
+        _write_toml(toml_path, f'\n[{section}]\n{toml_key} = "{toml_value}"\n')
+        from_toml = tmp_path / toml_value if is_path else toml_value
+        assert getattr(KstrlConfig.load(tmp_path), field_name) == from_toml
+
+        monkeypatch.setenv(env_var, env_value)
+        from_env = tmp_path / env_value if is_path else env_value
+        assert getattr(KstrlConfig.load(tmp_path), field_name) == from_env
+
+    @pytest.mark.parametrize(
+        ("env_var", "field_name"),
+        [(e, f) for _s, _k, e, f, is_path in STRING_KEYS if not is_path],
+        ids=[f"{s}.{k}" for s, k, _e, _f, is_path in STRING_KEYS if not is_path],
+    )
+    def test_an_empty_env_var_is_an_explicit_empty_value(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        env_var: str,
+        field_name: str,
+    ) -> None:
+        """``AGENT_CMD=""`` means "no command", not "unset" (review round 1,
+        nit 11).
+
+        The env overlay tests membership (``os.environ.get(...) is not
+        None``), and the TOML overlay tests truthiness, and the asymmetry is
+        deliberate: an exported empty string is something somebody typed,
+        while ``command = ""`` in the shipped kstrl.toml example is a
+        placeholder nobody filled in. Measured: switching the env overlay to
+        truthiness left the whole of this file green, so the rule the PR body
+        claims to preserve had no test at all. Path rows are excluded because
+        ``_resolve_path("", root)`` is the root directory, which is a
+        different question from this one.
+        """
+        monkeypatch.setenv(env_var, "")
+        assert getattr(KstrlConfig.load(tmp_path), field_name) == ""
+        assert getattr(KstrlConfig.from_env(tmp_path), field_name) == ""
+
+    @pytest.mark.parametrize(
+        ("env_var", "field_name"),
+        [(e, f) for _s, _k, e, f, is_path in STRING_KEYS if is_path],
+        ids=[f"{s}.{k}" for s, k, _e, _f, is_path in STRING_KEYS if is_path],
+    )
+    def test_an_empty_path_env_var_resolves_to_the_repo_root(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        env_var: str,
+        field_name: str,
+    ) -> None:
+        """The half the case above excludes, characterised rather than fixed.
+
+        ``_resolve_path("", root)`` is ``root / Path("")``, which is ``root``,
+        so an exported empty path key names the repository directory. Every
+        reader that then opens it gets EISDIR: measured on the memory row,
+        ``Memory: could not read <root>: [Errno 21] Is a directory`` on every
+        run of the project.
+
+        This is NOT an endorsement. It is #229 round 2's nit 14 and R10.9
+        round 1's nit 4, consciously preserved twice, and it was recorded
+        both times in a review report and held by nothing that runs. Pinned
+        over EVERY path row rather than over the one the review happened to
+        export, so the count is closed by construction and is not written
+        down: the parametrization IS the set, every row in it behaves
+        identically, and that is what makes this inherited behaviour rather
+        than something the memory row introduced. Round 2 (nit 3) found the
+        sentence saying "all four" over six rows, on a set the same PR had
+        grown. Whoever decides to change it changes this case deliberately
+        and sees every other row it holds.
+        """
+        monkeypatch.setenv(env_var, "")
+
+        assert getattr(KstrlConfig.load(tmp_path), field_name) == tmp_path
+        assert getattr(KstrlConfig.from_env(tmp_path), field_name) == tmp_path
+
+    def test_an_empty_toml_value_stays_unset(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The other half of nit 11's asymmetry, so neither side can drift
+        into the other without a named failure."""
+        for _section, _key, env_var, _field, _is_path in STRING_KEYS:
+            monkeypatch.delenv(env_var, raising=False)
+        toml_path = tmp_path / "kstrl.toml"
+        _write_toml(toml_path, '\n[agent]\ncommand = ""\n')
+        assert KstrlConfig.load(tmp_path).agent_cmd is None
+
+    def test_load_toml_wins_over_defaults_when_env_unset(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Clear env vars that might leak from the test environment
+        for var in ("MAX_ITERATIONS", "MODEL", "SLEEP_SECONDS", "INTERACTIVE"):
+            monkeypatch.delenv(var, raising=False)
+        toml_path = tmp_path / "kstrl.toml"
+        _write_toml(
+            toml_path,
+            """
+[run]
+max_iterations = 25
+""",
+        )
+        config = KstrlConfig.load(tmp_path)
+        assert config.max_iterations == 25
+
+    def test_load_defaults_when_no_toml_and_no_env(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        for var in (
+            "MAX_ITERATIONS",
+            "MODEL",
+            "SLEEP_SECONDS",
+            "INTERACTIVE",
+            "ALLOWED_PATHS",
+            "AGENT_CMD",
+            "MODEL_REASONING_EFFORT",
+            "KSTRL_AGENT_TYPE",
+            "KSTRL_BRANCH",
+            "KSTRL_ASCII",
+        ):
+            monkeypatch.delenv(var, raising=False)
+        config = KstrlConfig.load(tmp_path)
+        assert config.max_iterations == 10
+        assert config.sleep_seconds == 2.0
+        assert config.agent_type is None
+        assert config.agent_cmd is None
+        assert config.kstrl_branch is None
+        assert config.kstrl_branch_explicit is False
+
+    def test_load_auto_discovers_kstrl_toml(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        for var in ("MAX_ITERATIONS",):
+            monkeypatch.delenv(var, raising=False)
+        _write_toml(
+            tmp_path / "kstrl.toml",
+            """
+[run]
+max_iterations = 7
+""",
+        )
+        config = KstrlConfig.load(tmp_path)
+        assert config.max_iterations == 7
+
+    def test_load_missing_toml_falls_back_silently(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        for var in ("MAX_ITERATIONS",):
+            monkeypatch.delenv(var, raising=False)
+        config = KstrlConfig.load(tmp_path)
+        assert config.max_iterations == 10
+
+    def test_load_env_branch_marks_explicit(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("KSTRL_BRANCH", "")
+        config = KstrlConfig.load(tmp_path)
+        assert config.kstrl_branch == ""
+        assert config.kstrl_branch_explicit is True
+
+    def test_load_env_paths_resolved_against_root(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("PROMPT_FILE", "custom/prompt.md")
+        config = KstrlConfig.load(tmp_path)
+        assert config.prompt_file == tmp_path / "custom/prompt.md"
+
+    def test_load_toml_empty_branch_does_not_mark_explicit(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """kstrl.toml.example documents `branch = ""` as 'empty = use PRD
+        branchName'. An empty TOML branch must therefore NOT mark explicit,
+        so loop.determine_branch falls through to PRD lookup instead of
+        skipping checkout. Env var KSTRL_BRANCH="" retains its historical
+        explicit-skip meaning - that path is tested elsewhere."""
+        for var in ("KSTRL_BRANCH",):
+            monkeypatch.delenv(var, raising=False)
+        _write_toml(
+            tmp_path / "kstrl.toml",
+            """
+[git]
+branch = ""
+""",
+        )
+        config = KstrlConfig.load(tmp_path)
+        assert config.kstrl_branch is None
+        assert config.kstrl_branch_explicit is False
+
+    def test_load_toml_nonempty_branch_marks_explicit(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        for var in ("KSTRL_BRANCH",):
+            monkeypatch.delenv(var, raising=False)
+        _write_toml(
+            tmp_path / "kstrl.toml",
+            """
+[git]
+branch = "feature/foo"
+""",
+        )
+        config = KstrlConfig.load(tmp_path)
+        assert config.kstrl_branch == "feature/foo"
+        assert config.kstrl_branch_explicit is True
+
+
+class TestConfigTomlFull:
+    """Folded from tests/test_config_toml_full.py (#593 slice 4).
+
+    Every per-section ``Config.load(root)`` classmethod ([factory],
+    [verify], [contract], [codebase_scan], [evolution], [security]),
+    each driven against a real kstrl.toml on disk - the entry point
+    every phase of the factory calls to read its own section. Dropped
+    as unit: ``VerifyConfig.from_env()`` called with no file and no
+    ``.load()`` in the path.
+    """
+
+    class TestFactoryConfigLoad:
+        def test_reads_factory_section(
+            self,
+            tmp_path: Path,
+            monkeypatch: pytest.MonkeyPatch,
+        ) -> None:
+            _clear_env(monkeypatch, "FACTORY_MAX_PARALLEL", "FACTORY_MAX_RETRIES")
+            _write_toml(
+                tmp_path / "kstrl.toml",
+                """
+[factory]
+max_parallel = 8
+max_retries = 5
+review_mode = "advisory"
+""",
+            )
+            config = FactoryConfig.load(tmp_path)
+            assert config.max_parallel == 8
+            assert config.max_retries == 5
+            assert config.review_mode == "advisory"
+
+        def test_env_overrides_toml(
+            self,
+            tmp_path: Path,
+            monkeypatch: pytest.MonkeyPatch,
+        ) -> None:
+            _write_toml(tmp_path / "kstrl.toml", "[factory]\nmax_parallel = 8\n")
+            monkeypatch.setenv("FACTORY_MAX_PARALLEL", "99")
+            config = FactoryConfig.load(tmp_path)
+            assert config.max_parallel == 99
+
+    class TestVerifyConfigLoad:
+        def test_reads_verify_section(
+            self,
+            tmp_path: Path,
+            monkeypatch: pytest.MonkeyPatch,
+        ) -> None:
+            _clear_env(
+                monkeypatch,
+                "KSTRL_VERIFY_TEST_CMD",
+                "KSTRL_VERIFY_TYPECHECK_CMD",
+                "KSTRL_VERIFY_REQUIRE_SELF_CRITIQUE",
+            )
+            _write_toml(
+                tmp_path / "kstrl.toml",
+                """
+[verify]
+test_command = "pytest -x"
+typecheck_command = "mypy ."
+require_self_critique = true
+self_critique_min_bullets = 5
+""",
+            )
+            config = VerifyConfig.load(tmp_path)
+            assert config.test_command == "pytest -x"
+            assert config.typecheck_command == "mypy ."
+            assert config.require_self_critique is True
+            assert config.self_critique_min_bullets == 5
+
+        def test_tool_keys_default_to_auto(
+            self,
+            tmp_path: Path,
+            monkeypatch: pytest.MonkeyPatch,
+        ) -> None:
+            # #258: None is "run every parser for the gate and union the
+            # failures", which is what makes a chained command work.
+            _clear_env(monkeypatch, "KSTRL_VERIFY_TEST_TOOL", "KSTRL_VERIFY_LINT_TOOL")
+            _write_toml(tmp_path / "kstrl.toml", '[verify]\ntest_command = "pytest"\n')
+            config = VerifyConfig.load(tmp_path)
+            assert (config.test_tool, config.typecheck_tool, config.lint_tool) == (
+                None,
+                None,
+                None,
+            )
+
+        def test_reads_the_tool_keys(
+            self,
+            tmp_path: Path,
+            monkeypatch: pytest.MonkeyPatch,
+        ) -> None:
+            _clear_env(
+                monkeypatch,
+                "KSTRL_VERIFY_TEST_TOOL",
+                "KSTRL_VERIFY_TYPECHECK_TOOL",
+                "KSTRL_VERIFY_LINT_TOOL",
+            )
+            _write_toml(
+                tmp_path / "kstrl.toml",
+                """
+[verify]
+test_tool = "vitest"
+typecheck_tool = "tsc"
+lint_tool = "eslint"
+""",
+            )
+            config = VerifyConfig.load(tmp_path)
+            assert (config.test_tool, config.typecheck_tool, config.lint_tool) == (
+                "vitest",
+                "tsc",
+                "eslint",
+            )
+
+        def test_env_overrides_the_toml_tool(
+            self,
+            tmp_path: Path,
+            monkeypatch: pytest.MonkeyPatch,
+        ) -> None:
+            _write_toml(tmp_path / "kstrl.toml", '[verify]\ntest_tool = "vitest"\n')
+            monkeypatch.setenv("KSTRL_VERIFY_TEST_TOOL", "pytest")
+            assert VerifyConfig.load(tmp_path).test_tool == "pytest"
+
+        def test_an_unknown_tool_raises_rather_than_falling_back_to_auto(
+            self,
+            tmp_path: Path,
+            monkeypatch: pytest.MonkeyPatch,
+        ) -> None:
+            # Silently reverting to auto would be the failure the key exists
+            # to prevent: the operator wrote it to stop kstrl guessing.
+            _clear_env(monkeypatch, "KSTRL_VERIFY_TEST_TOOL")
+            _write_toml(tmp_path / "kstrl.toml", '[verify]\ntest_tool = "jest"\n')
+            with pytest.raises(ValueError, match="unknown tool 'jest'"):
+                VerifyConfig.load(tmp_path)
+
+    class TestContractConfigLoad:
+        def test_reads_contract_section(
+            self,
+            tmp_path: Path,
+            monkeypatch: pytest.MonkeyPatch,
+        ) -> None:
+            _clear_env(monkeypatch, "KSTRL_CONTRACT_MODE", "KSTRL_CONTRACT_TEST_CMD")
+            _write_toml(
+                tmp_path / "kstrl.toml",
+                """
+[contract]
+mode = "final"
+test_command = "pytest tests/"
+""",
+            )
+            config = ContractConfig.load(tmp_path)
+            assert config.mode == ContractMode.FINAL.value
+            assert config.test_command == "pytest tests/"
+
+        def test_invalid_mode_raises(self, tmp_path: Path) -> None:
+            _write_toml(tmp_path / "kstrl.toml", '[contract]\nmode = "always"\n')
+            with pytest.raises(ValueError, match="Invalid ContractConfig.mode"):
+                ContractConfig.load(tmp_path)
+
+    class TestCodebaseScanConfigLoad:
+        def test_reads_codebase_scan_section(
+            self,
+            tmp_path: Path,
+            monkeypatch: pytest.MonkeyPatch,
+        ) -> None:
+            _clear_env(
+                monkeypatch,
+                "KSTRL_CODEBASE_SCAN_ENABLED",
+                "KSTRL_CODEBASE_SCAN_MAX_TOKENS",
+            )
+            _write_toml(
+                tmp_path / "kstrl.toml",
+                """
+[codebase_scan]
+enabled = false
+module_map = false
+max_context_tokens = 8000
+""",
+            )
+            config = CodebaseScanConfig.load(tmp_path)
+            assert config.enabled is False
+            assert config.module_map is False
+            assert config.max_context_tokens == 8000
+
+        def test_env_overrides(
+            self,
+            tmp_path: Path,
+            monkeypatch: pytest.MonkeyPatch,
+        ) -> None:
+            _write_toml(tmp_path / "kstrl.toml", "[codebase_scan]\nenabled = false\n")
+            monkeypatch.setenv("KSTRL_CODEBASE_SCAN_ENABLED", "true")
+            config = CodebaseScanConfig.load(tmp_path)
+            assert config.enabled is True
+
+    class TestEvolutionConfigLoad:
+        def test_reads_evolution_section(
+            self,
+            tmp_path: Path,
+            monkeypatch: pytest.MonkeyPatch,
+        ) -> None:
+            _clear_env(
+                monkeypatch,
+                "KSTRL_EVOLUTION_ENABLED",
+                "KSTRL_EVOLUTION_JOURNAL_PATH",
+                "KSTRL_EVOLUTION_LOOKBACK_RUNS",
+            )
+            _write_toml(
+                tmp_path / "kstrl.toml",
+                """
+[evolution]
+enabled = false
+lookback_runs = 25
+""",
+            )
+            config = EvolutionConfig.load(tmp_path)
+            assert config.enabled is False
+            assert config.lookback_runs == 25
+
+        def test_resolves_journal_path(
+            self,
+            tmp_path: Path,
+            monkeypatch: pytest.MonkeyPatch,
+        ) -> None:
+            _clear_env(monkeypatch, "KSTRL_EVOLUTION_JOURNAL_PATH")
+            _write_toml(
+                tmp_path / "kstrl.toml",
+                """
+[evolution]
+journal_path = "custom/evolution.jsonl"
+""",
+            )
+            config = EvolutionConfig.load(tmp_path)
+            assert config.journal_path == tmp_path / "custom/evolution.jsonl"
+
+    class TestSecurityConfigLoad:
+        def test_reads_security_section(
+            self,
+            tmp_path: Path,
+            monkeypatch: pytest.MonkeyPatch,
+        ) -> None:
+            _clear_env(
+                monkeypatch,
+                "KSTRL_SECURITY_MODE",
+                "KSTRL_SECURITY_FAIL_THRESHOLD",
+            )
+            _write_toml(
+                tmp_path / "kstrl.toml",
+                """
+[security]
+mode = "hard"
+fail_threshold = "critical"
+""",
+            )
+            config = SecurityConfig.load(tmp_path)
+            assert config.mode == SecurityMode.HARD.value
+            assert config.fail_threshold == "critical"
+
+        def test_invalid_mode_in_toml_raises(self, tmp_path: Path) -> None:
+            _write_toml(tmp_path / "kstrl.toml", '[security]\nmode = "blocky"\n')
+            with pytest.raises(ValueError, match="Invalid SecurityConfig.mode"):
+                SecurityConfig.load(tmp_path)
+
+        def test_invalid_threshold_in_toml_raises(self, tmp_path: Path) -> None:
+            _write_toml(tmp_path / "kstrl.toml", '[security]\nfail_threshold = "scary"\n')
+            with pytest.raises(ValueError, match="Invalid SecurityConfig.fail_threshold"):
+                SecurityConfig.load(tmp_path)
+
+        def test_invalid_threshold_in_env_raises(
+            self,
+            tmp_path: Path,
+            monkeypatch: pytest.MonkeyPatch,
+        ) -> None:
+            monkeypatch.setenv("KSTRL_SECURITY_FAIL_THRESHOLD", "critcial")
+            with pytest.raises(ValueError):
+                SecurityConfig.load(tmp_path)
+
+    @pytest.mark.parametrize(
+        "loader",
+        [
+            FactoryConfig.load,
+            VerifyConfig.load,
+            ContractConfig.load,
+            CodebaseScanConfig.load,
+            EvolutionConfig.load,
+            SecurityConfig.load,
+        ],
+    )
+    def test_malformed_toml_raises_value_error(
+        self,
+        loader: Any,
+        tmp_path: Path,
+    ) -> None:
+        _write_toml(tmp_path / "kstrl.toml", "this is = not = valid = [ toml\n")
+        with pytest.raises(ValueError, match="Invalid TOML"):
+            loader(tmp_path)

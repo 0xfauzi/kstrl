@@ -518,7 +518,7 @@ QUEUE_INT_CAST_DOCUMENT = CLEAN_TOML + '[queue]\nmax_attempts = "two"\n'
 #: A document that is not TOML at all, imported rather than restated
 #: (#364 simplify pass): the real fixture the loader tests already
 #: enrol, so a fault this module asserts about is the same one measured
-#: at ``tests/test_config_toml.py`` rather than an inline lookalike.
+#: at ``tests/test_config_preflight.py`` rather than an inline lookalike.
 NOT_TOML_AT_ALL = MALFORMED_TOML.decode()
 
 #: Documents that break the cycle's OWN config reads, which happen before

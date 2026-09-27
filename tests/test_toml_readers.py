@@ -529,9 +529,10 @@ class TestTheWalkSeesWhatItClaimsTo:
 
     def test_the_broad_clause_must_be_last_in_any_file_not_just_config(self) -> None:
         """Order is a property of the rule, not of one function.
-        ``test_the_broad_handler_must_come_last`` in
-        ``tests/test_config_toml.py`` pins it behaviourally for
-        ``load_toml_document``; this pins it structurally for a reader
+        ``TestAConfigThatWillNotParseIsReportedNotCrashed`` in
+        ``tests/test_config_preflight.py`` pins it behaviourally for
+        ``load_toml_document`` by driving every ``TOML_PARSE_FAULTS`` row
+        through the real commands; this pins it structurally for a reader
         that does not exist yet."""
         wrong = (
             "import tomllib\ndef f(fh):\n    try:\n        return tomllib.load(fh)\n"

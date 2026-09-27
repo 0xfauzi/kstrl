@@ -28,7 +28,7 @@ from __future__ import annotations
 #: not a hand-copied branch per key in the two overlays, the anchoring
 #: block, ``config_report.show_sections`` and ``scripts/gen_docs.py``: a key
 #: added to some of those differed silently by the door it came in through.
-#: tests/test_config_toml.py checks the field names against the real
+#: tests/test_string_keys_reach_every_surface.py checks the field names against the real
 #: dataclass fields, because ``setattr`` on a typo invents an attribute instead of
 #: raising. Unprefixed env names are compatibility; a new row takes KSTRL_.
 STRING_KEYS: tuple[tuple[str, str, str, str, bool], ...] = (

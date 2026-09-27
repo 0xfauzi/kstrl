@@ -1,9 +1,9 @@
 """#266: the guarantees that replaced what the pasted diff took with it.
 
-Split from ``test_review_payload.py``, which covers the payload change
-itself. Two things had to be re-established when the reviewers stopped
-being handed a diff and started reading the worktree, and both live
-here:
+Absorbed ``test_review_payload.py`` (deleted; test-suite consolidation),
+which covered the payload change itself. Two things had to be
+re-established when the reviewers stopped being handed a diff and
+started reading the worktree, and both live here:
 
 1. **The anti-padding property.** Chunking's real guarantee was that
    every byte of the diff reached SOME prompt. Its replacement is an
@@ -14,12 +14,21 @@ here:
    judging has changed the evidence. The argv and settings assertions
    live in ``test_sandbox.py`` next to the adapter helpers they share;
    what is checked here is that the two reviewer phases ask for it.
+
+Two classes folded in from ``test_review_payload.py`` cover what that
+file called section 1 (the payload) and its budget-accounting
+regression test: the integration tests that run a real ``RecordingAgent``
+against a real worktree through ``run_review``/``run_security_review``/
+``run_factory`` and assert what the reviewer actually received. The pure
+builder-output tests (``build_review_prompt`` called directly, with no
+agent) and the attribute-existence checks for the deleted chunking
+machinery were dropped rather than moved; see the fold's ledger for the
+per-test disposition.
 """
 
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Iterator
 from pathlib import Path
 from unittest.mock import patch
 
@@ -48,6 +57,7 @@ from kstrl.security import (
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import CheckResult, VerificationResult, VerifyConfig
 from tests.conftest import ReviewRepo, git_in, make_review_repo
+from tests.helpers.recording_agent import RecordingAgent
 
 UI = PlainUI(no_color=True)
 
@@ -56,50 +66,12 @@ _VERIFICATION = VerificationResult(
     checks=[CheckResult("test_suite", True, "ok")],
 )
 
-
-class RecordingAgent:
-    """Agent that records prompts and replies with a fixed output."""
-
-    def __init__(
-        self,
-        output: str,
-        name: str = "recording-agent",
-        on_prompt: Callable[[str], None] | None = None,
-    ):
-        self._output = output
-        self._name = name
-        # Fires when the agent is invoked, which is the window between
-        # the harness's own measurement and the reviewer's. A hook
-        # rather than a reply-computing callback: the reply is known
-        # before the call, and assertions inside a callback would be
-        # HIDDEN - run_review catches every exception, so a failed
-        # precondition surfaces as "Reviewer agent failed" and reads as
-        # the feature under test breaking.
-        self._on_prompt = on_prompt
-        self.calls = 0
-        self.prompts: list[str] = []
-        self.cwds: list[Path | None] = []
-
-    @property
-    def name(self) -> str:
-        return self._name
-
-    def run(
-        self,
-        prompt: str,
-        cwd: Path | None = None,
-        timeout: float | None = None,
-    ) -> Iterator[str]:
-        self.calls += 1
-        self.prompts.append(prompt)
-        self.cwds.append(cwd)
-        if self._on_prompt is not None:
-            self._on_prompt(prompt)
-        yield from self._output.splitlines()
-
-    @property
-    def final_message(self) -> str | None:
-        return None
+# The measured shape of the failure #266 removed: a newly added file is
+# always exactly one hunk, so it could never be split, and a 1200-test
+# file is comfortably past the old 50,000-char prompt cap.
+_ONE_HUNK_OVER_THE_OLD_CAP = "".join(
+    f"def test_case_{i}() -> None:\n    assert compute({i}) == {i * 2}\n\n" for i in range(1400)
+)
 
 
 def _repo_with_moving_base(tmp_path: Path) -> Path:
@@ -149,6 +121,88 @@ def _write_prd(path: Path, story_ids: list[str]) -> Path:
         )
     )
     return path
+
+
+# ---------------------------------------------------------------------------
+# 1. The payload: folded in from test_review_payload.py (deleted). Only
+#    the tests that run a real RecordingAgent against a real worktree
+#    and assert what the reviewer received survive; the pure
+#    build_review_prompt output tests that used to sit beside these did
+#    not move.
+# ---------------------------------------------------------------------------
+
+
+class TestReviewerReceivesNoDiffOnARealWorktree:
+    def test_the_previously_unreviewable_change_now_reviews(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """The exact shape that killed a component in #265: one new test
+        file, one hunk, over the old cap. It used to raise
+        ``DiffUnsplittableError`` before any model ran. It now reaches a
+        reviewer and comes back with a verdict."""
+        repo = make_review_repo(
+            tmp_path / "big",
+            {"tests/test_big.py": _ONE_HUNK_OVER_THE_OLD_CAP},
+        )
+        raw = git.get_diff_content(repo.base_branch, repo.path)
+        assert len(raw) > git.DEFAULT_PROMPT_DIFF_CHAR_LIMIT
+        assert raw.count("\n@@ ") + raw.startswith("@@ ") == 1
+
+        agent = RecordingAgent(repo.review_json())
+        result = run_review(
+            agent,
+            repo.prd_path,
+            repo.path,
+            repo.base_branch,
+            _VERIFICATION,
+            ReviewMode.HARD,
+            UI,
+        )
+        assert result.passed is True
+        assert result.infrastructure_error is False
+        assert agent.calls == 1
+        assert len(agent.prompts[0]) < git.DEFAULT_PROMPT_DIFF_CHAR_LIMIT
+
+    def test_the_agent_is_run_inside_the_worktree(
+        self,
+        review_repo: ReviewRepo,
+    ) -> None:
+        """The load-bearing precondition: instructions to run git are
+        worthless unless the process is standing in the repository."""
+        agent = RecordingAgent(review_repo.review_json())
+        run_review(
+            agent,
+            review_repo.prd_path,
+            review_repo.path,
+            review_repo.base_branch,
+            _VERIFICATION,
+            ReviewMode.HARD,
+            UI,
+        )
+        assert agent.cwds == [review_repo.path]
+
+    def test_security_prompt_carries_no_diff_either(
+        self,
+        review_repo: ReviewRepo,
+    ) -> None:
+        agent = RecordingAgent(review_repo.security_json())
+        run_security_review(
+            agent,
+            review_repo.prd_path,
+            review_repo.path,
+            review_repo.base_branch,
+            SecurityConfig(mode=SecurityMode.ADVISORY.value),
+            UI,
+        )
+        assert "BEGIN GIT DIFF" not in agent.prompts[0]
+        # A SHA, not the branch name: Phase 2.5 pins the range the same
+        # way Phase 2 does, so a base ref moving mid-run cannot make the
+        # two measurements disagree.
+        base_sha = git.resolve_base_sha(review_repo.base_branch, review_repo.path)
+        assert f"git diff {base_sha}...HEAD" in agent.prompts[0]
+        assert review_repo.base_branch not in agent.prompts[0].split("OBTAINING")[1][:400]
+        assert agent.cwds == [review_repo.path]
 
 
 # ---------------------------------------------------------------------------
@@ -573,6 +627,55 @@ class TestReviewerPhasesAreReadOnly:
                 root,
             )
         assert seen == [True, True]
+
+
+# ---------------------------------------------------------------------------
+# Budget accounting: folded in from test_review_payload.py (deleted)
+# ---------------------------------------------------------------------------
+
+
+class TestBudgetAccounting:
+    def test_each_phase_consumes_exactly_one_call(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Salvaged from the deleted chunking suite, where the bug it
+        guards (double-consuming the budget on the non-chunked path)
+        first appeared. Two components and a budget of two must both get
+        their security pass."""
+        monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
+        repo = make_review_repo(tmp_path / "repo")
+        root = _scaffold(repo.path, ["comp-a", "comp-b"])
+        manifest = _make_manifest(["comp-a", "comp-b"])
+        agent = RecordingAgent(repo.security_json())
+
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                side_effect=lambda comp_id, *a, **k: ComponentResult(
+                    comp_id, success=True, iterations=1
+                ),
+            ),
+            patch("kstrl.agents.get_agent", return_value=agent),
+        ):
+            result = run_factory(
+                manifest,
+                _factory_config(
+                    review_mode="skip",
+                    max_adversarial_calls=2,
+                    security_config=SecurityConfig(mode=SecurityMode.ADVISORY.value),
+                ),
+                _base_config(root),
+                PlainUI(no_color=True),
+                root,
+            )
+        assert set(result.completed) == {"comp-a", "comp-b"}
+        assert agent.calls == 2
+        for comp_id in ("comp-a", "comp-b"):
+            comp = manifest.get_component(comp_id)
+            assert comp is not None
+            assert not any(f.is_phase_skip and f.phase == "security" for f in comp.findings)
 
 
 # ---------------------------------------------------------------------------
