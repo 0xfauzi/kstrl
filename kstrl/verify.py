@@ -2330,7 +2330,17 @@ def check_bad_patterns(
         records = git.get_diff_name_status(base_branch, cwd)
         changed = list(dict.fromkeys(path for _, path in records if path))
         py_files = [f for f in changed if f.endswith(".py")]
-        added = parse_added_lines(git.get_diff_content(base_branch, cwd))
+        # get_diff_name_status is LENIENT (returns [] on a git failure, not
+        # only on a genuinely empty diff), but get_diff_content is not: it
+        # raises. Reading content only when there is a changed-file list
+        # keeps that same lenient behaviour for "no diff at all" (#619
+        # regression: a worktree with no git repository used to reach the
+        # vacuous pass below via the old `if py_files:` gate; making the
+        # read unconditional on `py_files` alone made it reach the diff
+        # read, and thus the exception clause, even when there was nothing
+        # to scan). A real diff with only non-Python changes still reads,
+        # because `changed` is non-empty.
+        added = parse_added_lines(git.get_diff_content(base_branch, cwd)) if changed else []
         secret_hit_paths = frozenset(_scan_secrets(added, secret_patterns))
         rename_sources = _rename_sources(records)
     except Exception as exc:
