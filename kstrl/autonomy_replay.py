@@ -138,6 +138,17 @@ class RunRecord:
     #: ``record_run`` writes an empty column for an untracked run, and a zero
     #: there would read as "measured, free" (#151).
     total_cost_usd: float | None = None
+    #: Merges GitHub confirmed in this run, or None on a row written before
+    #: #601 added these two columns. None is "unknown", never 0: a row that
+    #: predates this pair says nothing about whether anything merged, so
+    #: the replay must not count it as zero clean merges (that would be the
+    #: same defect this fix removes, one column over). NOT the same as
+    #: ``completed``: a part completed with no PR merged nothing.
+    merged: int | None = None
+    #: The subset of ``merged`` whose PR head GitHub reported equalled the
+    #: commit the diff phase judged. None alongside ``merged is None``;
+    #: never treat one as known while the other is not.
+    clean_merged: int | None = None
 
     @property
     def infra_aborted(self) -> bool:
@@ -161,6 +172,19 @@ def _as_int(value: str) -> int:
         return int(float(value))
     except (TypeError, ValueError):
         return 0
+
+
+def _as_int_or_none(value: str) -> int | None:
+    """A missing/blank/unparseable column means "not recorded", not zero.
+
+    ``row.get(...)`` returns "" for a column absent from an older row's
+    header (#601's ``merged``/``clean_merged`` are new), and "" must read
+    as unknown rather than as zero merges.
+    """
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return None
 
 
 def _as_float_or_none(value: str) -> float | None:
@@ -220,6 +244,8 @@ def load_runs(path: Path) -> list[RunRecord]:
                     retry_rate=_as_float(row.get("retry_rate", "0")),
                     common_failure=(row.get("common_failure") or "").strip(),
                     total_cost_usd=_as_float_or_none(row.get("total_cost_usd", "")),
+                    merged=_as_int_or_none(row.get("merged", "")),
+                    clean_merged=_as_int_or_none(row.get("clean_merged", "")),
                 )
             )
     return runs
@@ -249,6 +275,11 @@ class ReplayReport:
     #: that nothing was excluded, which is the exact under-report this
     #: field exists to stop.
     merged_in_excluded_runs: int
+    #: Decisive runs whose row predates #601's ``merged``/``clean_merged``
+    #: columns. Each contributes zero merges to the replay rather than a
+    #: guess, so a high count here means L2, L3 and L4 are under-predicted
+    #: from this file, not that nothing merged.
+    merged_unknown_runs: int = 0
     would_promote: list[str] = field(default_factory=list)
     would_demote: list[str] = field(default_factory=list)
     final_level: int = int(AutonomyLevel.L1_SUPERVISED)
@@ -287,9 +318,17 @@ class ReplayReport:
                 *(f"  - {entry}" for entry in self.would_demote),
                 "",
                 f"Final level after replay: L{self.final_level}",
-                "",
             ]
         )
+        if self.merged_unknown_runs:
+            lines.extend(
+                [
+                    f"L2, L3 and L4 are not fully predictable from this file: "
+                    f"{self.merged_unknown_runs} recorded run(s) predate merge",
+                    "  evidence (#601) and count as zero merges rather than a guess.",
+                ]
+            )
+        lines.append("")
         if not self.sufficient_data:
             lines.extend(
                 [
@@ -312,6 +351,28 @@ class ReplayReport:
         return "\n".join(lines)
 
 
+def _replay_merges(state: AutonomyState, run: RunRecord) -> None:
+    """Feed one run's confirmed merges to the simulated ladder.
+
+    ``run.merged is None`` (a row written before #601) contributes
+    nothing: the caller's ``merged_unknown_runs`` count is what discloses
+    that, not a guessed zero folded silently into the streak here.
+    """
+    if run.merged is None:
+        return
+    # Clean-first is not observable from an aggregated row, so every edit
+    # in this run is applied before its clean merges: the streak this run
+    # leaves behind is exactly its own clean_merged count, never inflated
+    # by an earlier run's clean streak surviving an edit this run also
+    # recorded.
+    clean = run.clean_merged or 0
+    edited = max(run.merged - clean, 0)
+    for _ in range(edited):
+        state.record_merged_component(human_edited=True)
+    for _ in range(clean):
+        state.record_merged_component(human_edited=False)
+
+
 def replay(runs: list[RunRecord]) -> ReplayReport:
     """Replay the ladder over recorded runs, reporting hypothetical moves.
 
@@ -326,15 +387,19 @@ def replay(runs: list[RunRecord]) -> ReplayReport:
         decisive_runs=sum(1 for r in runs if r.decisive),
         infra_aborted_runs=sum(1 for r in runs if r.infra_aborted),
         projects=sorted({r.project for r in runs if r.project}),
-        components_merged=sum(r.completed for r in runs if r.decisive),
-        merged_in_excluded_runs=sum(r.completed for r in runs if not r.decisive),
+        # #601: a merge, never a completion - a part completed with no PR
+        # merged nothing. A row that predates the merged/clean_merged
+        # columns contributes 0 here (merged_unknown_runs discloses it),
+        # never ``completed``, which would resurrect the same defect.
+        components_merged=sum((r.merged or 0) for r in runs if r.decisive),
+        merged_in_excluded_runs=sum((r.merged or 0) for r in runs if not r.decisive),
+        merged_unknown_runs=sum(1 for r in runs if r.decisive and r.merged is None),
     )
     for run in runs:
         if not run.decisive:
             continue
         state.record_decisive_run()
-        for _ in range(run.completed):
-            state.record_merged_component()
+        _replay_merges(state, run)
         # A run whose components failed review is the closest proxy the
         # recorded history has for a judgement-quality regression. Real
         # demotion triggers (policy violation, calibration regression,

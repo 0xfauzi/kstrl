@@ -64,7 +64,12 @@ from kstrl.parsers import FAILED_COUNT_RE, ParsedFailure, ParsedOutput, exceptio
 # The tail is captured whole rather than alternated over, because the two
 # shapes mean different things: "> ..." is the suite-and-test chain, and
 # "[ ... ]" is a suite that never loaded, which HAS no test name.
-_VITEST_FAIL_RE = re.compile(r"^FAIL\s+(?P<file>\S+)(?P<rest>.*)$")
+#
+# One of the two is REQUIRED (#622). With `(?P<rest>.*)` this matched go
+# test's `FAIL<tab>example.com/app/pricing<tab>0.4s` and jest's `FAIL
+# src/bulk.test.js`, so both became a vitest failure with no line and a
+# message from the wrong line, and the row counted as measured.
+_VITEST_FAIL_RE = re.compile(r"^FAIL\s+(?P<file>\S+)(?P<rest>\s+[>\[].*)$")
 
 # The location line inside a block: "❯ tests/failing.test.ts:5:41", or
 # "❯ loadAndTransform node_modules/vite/dist/...js:51969:17" when the

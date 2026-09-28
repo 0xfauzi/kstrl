@@ -4,9 +4,9 @@ R0.1: every agent subprocess launches with ``start_new_session=True`` so it
 owns its process group, and stdout is consumed on a reader thread so a child
 that hangs WITHOUT emitting output still trips the wall-clock deadline (a
 plain ``for line in proc.stdout`` only notices time passing when a line
-arrives). On breach the whole group receives SIGTERM, then SIGKILL after a
-grace period, so grandchildren (e.g. ``sh -c 'sleep 1000 & wait'``) die with
-the direct child.
+arrives). On breach the whole group receives SIGTERM, then SIGKILL when the
+direct child exits or the grace period ends, whichever comes first, so a
+grandchild dies with the direct child even when it ignores SIGTERM (#641).
 
 POSIX-first like the rest of the codebase: on platforms without
 ``os.killpg`` the kill degrades to signalling the direct child only.
@@ -24,7 +24,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 from kstrl.procdispose import close_quietly, reap_or_abandon
-from kstrl.procgroup import signal_process_tree
+from kstrl.procgroup import safe_pgid, signal_group, signal_process_tree
 
 # Every adapter yields this line when its subprocess is killed on deadline
 # breach. loop.py matches on the prefix to count timed-out iterations; it is
@@ -102,6 +102,12 @@ class DeadlineStreamer:
             cwd=cwd,
             start_new_session=True,
         )
+        # The group is read NOW, while the child is certainly alive. Once
+        # the child has exited, even as an unreaped zombie, getpgid on its
+        # pid fails (ESRCH, measured on macOS), so a group looked up at
+        # kill time is lost in exactly the case where members outlive it
+        # (#641).
+        self._pgid = safe_pgid(self._proc)
         self._writer = threading.Thread(
             target=self._write_stdin,
             args=(stdin_text,),
@@ -230,7 +236,16 @@ class DeadlineStreamer:
             self._settle()
 
     def kill(self) -> None:
-        """SIGTERM the process group, wait a grace period, then SIGKILL.
+        """SIGTERM the process group, wait a grace period, then SIGKILL it.
+
+        The SIGKILL goes to the group whether the direct child left inside
+        the grace or not (#641). A shell that honours SIGTERM exits at
+        once, and a member of its group that ignores SIGTERM - a test
+        server, a watcher, a ``trap '' TERM`` - kept running beside every
+        later iteration when the SIGKILL was sent only on a timed-out
+        wait. The grace is not waited a second time: the group is signalled
+        by the id read at spawn, which stays valid after the direct child
+        is reaped.
 
         The last leg is :func:`kstrl.procdispose.reap_or_abandon` rather
         than a third bare ``wait`` (#326). An unreapable child - stuck in
@@ -251,8 +266,9 @@ class DeadlineStreamer:
         try:
             self._proc.wait(timeout=self._term_grace)
         except subprocess.TimeoutExpired:
-            self._signal_group(signal.SIGKILL)
-            reap_or_abandon(self._proc, self._term_grace)
+            # The direct child outlived the grace; the SIGKILL below takes
+            # it with the rest of the group.
+            pass
         except BaseException:
             # MEASURED, and this is the escape all three disposals
             # shared. A SIGINT delivered 1.0s into a 5s grace on a child
@@ -273,6 +289,8 @@ class DeadlineStreamer:
             self._signal_group(signal.SIGKILL)
             reap_or_abandon(self._proc, self._term_grace)
             raise
+        self._signal_group(signal.SIGKILL)
+        reap_or_abandon(self._proc, self._term_grace)
 
     def _breach(self) -> None:
         """Deadline hit: kill the group and leave the registry clean.
@@ -298,7 +316,10 @@ class DeadlineStreamer:
     def _signal_group(self, sig: signal.Signals) -> None:
         """Signal the group, degrading to the direct child.
 
-        A one-line forward to
+        The group is the one :func:`kstrl.procgroup.safe_pgid` read at
+        spawn, sent through :func:`kstrl.procgroup.signal_group`, which
+        refuses the same pgids ``safe_pgid`` does. When there is no such
+        id, or the group is gone or refused, this forwards to
         :func:`kstrl.procgroup.signal_process_tree`, kept as a method
         because ``tests/test_timeout_enforcement.py`` pins the guard
         through it. #308 lifted the pid/pgid guard into ``procgroup`` and
@@ -306,6 +327,8 @@ class DeadlineStreamer:
         spelled in three modules; #329 is the cost of that, and the whole
         routine now has one home.
         """
+        if self._pgid is not None and signal_group(self._pgid, sig).sent:
+            return
         signal_process_tree(self._proc, sig)
 
     def _write_stdin(self, stdin_text: str | None) -> None:

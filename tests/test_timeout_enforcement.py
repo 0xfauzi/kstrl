@@ -20,7 +20,9 @@ from __future__ import annotations
 import ast
 import json
 import os
+import signal
 import subprocess
+import sys
 import threading
 import time
 from collections.abc import Iterator
@@ -311,6 +313,233 @@ class TestCustomAgentDeadline:
 
         assert any(line.startswith(TIMEOUT_MESSAGE_PREFIX) for line in lines)
         assert _wait_pid_dead(_read_pid(pidfile))
+
+
+#: The agent command for :class:`TestAGroupMemberThatIgnoresSigterm`, one
+#: script for both iterations of one ``ks run 2`` (#641). The first call
+#: starts a ``sleep`` in the agent's process group with SIGTERM ignored
+#: (``trap ''`` sets SIG_IGN, which survives ``exec``), writes its pid,
+#: then runs ``{then}``. With ``exec sleep 300`` the shell hangs past the
+#: deadline and honours SIGTERM. With ``exit 0`` the shell is already gone
+#: when the deadline fires, which it still does because the survivor
+#: holds the agent's stdout (``{survivor_stdout}`` empty); that is the
+#: case where the group can no longer be looked up from the shell's pid.
+#: The second call records the survivor's pid, whether signal 0 still
+#: reaches it, and its ``ps`` state, then exits. ``mkdir`` is the
+#: once-only test, so a third call of the same command writes nothing.
+#: The ``cd /`` keeps the survivor's working directory out of every
+#: project directory, so no sweep of one can be what kills it (#461).
+_SIGTERM_DEAF_GRANDCHILD_AGENT = """\
+if mkdir '{first}' 2>/dev/null; then
+  (cd /; trap '' TERM; exec sleep 300) </dev/null {survivor_stdout} 2>/dev/null &
+  echo $! > '{pidfile}'
+  {then}
+fi
+if mkdir '{second}' 2>/dev/null; then
+  gc=$(cat '{pidfile}')
+  if kill -0 "$gc" 2>/dev/null; then signal0=reached; else signal0=gone; fi
+  echo "$gc $signal0 $(ps -o stat= -p "$gc" 2>/dev/null)" > '{verdict}'
+fi
+"""
+
+#: ``[timeout] agent_iteration`` for that run. It has to cover a shell
+#: starting and forking one child under load, and nothing else: the first
+#: iteration is meant to hit it.
+_DEAF_GRANDCHILD_ITERATION_SECONDS = 5
+
+#: Fuse on the whole ``ks run 2``: interpreter start, two iterations, the
+#: kill's grace. A run still going at this bound is reported as hung.
+_DEAF_GRANDCHILD_RUN_FUSE_SECONDS = 120
+
+
+def _ks_run_project(tmp_path: Path, iteration_seconds: int) -> Path:
+    """A one-story project for the real ``ks run`` CLI, committed.
+
+    review_mode skip: ``--agent-cmd`` configures the engineer only, and
+    the reviewer would otherwise be a real LLM call.
+    """
+    root = tmp_path / "repo"
+    root.mkdir()
+    gitrepo.git_in(root, "init", "-q", "-b", "main")
+    gitrepo.set_identity(root)
+    kstrl_dir = root / "scripts" / "kstrl"
+    kstrl_dir.mkdir(parents=True)
+    (kstrl_dir / "prompt.md").write_text("test prompt\n", encoding="utf-8")
+    story = {
+        "id": "US-001",
+        "title": "t",
+        "acceptanceCriteria": ["AC1"],
+        "priority": 1,
+        "passes": False,
+        "notes": "",
+    }
+    (kstrl_dir / "prd.json").write_text(
+        json.dumps({"branchName": "kstrl/run", "userStories": [story]}), encoding="utf-8"
+    )
+    (root / "kstrl.toml").write_text(
+        f"[timeout]\nagent_iteration = {iteration_seconds}\n\n"
+        '[factory]\nreview_mode = "skip"\nmax_retries = 0\n',
+        encoding="utf-8",
+    )
+    gitrepo.git_in(root, "add", "-A")
+    gitrepo.git_in(root, "commit", "-q", "-m", "init")
+    return root
+
+
+def _start_ks_run(root: Path, script: Path, iterations: str) -> subprocess.Popen[str]:
+    """The real ``ks run`` CLI in its own session, so its pgid is its pid."""
+    env = dict(os.environ)
+    env["KSTRL_KNOWLEDGE_ENABLED"] = "0"
+    return subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "kstrl",
+            "run",
+            iterations,
+            "--root",
+            str(root),
+            "--agent-cmd",
+            f"sh {script}",
+            "--sleep",
+            "0",
+            "--no-verify",
+            "--branch",
+            "",
+            "--ui",
+            "plain",
+            "--no-color",
+        ],
+        cwd=root,
+        env=env,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        start_new_session=True,
+    )
+
+
+#: The agent command for the stopped-run case: a SIGTERM-deaf ``sleep`` in
+#: the agent's group with /dev/null stdio, its pid written, then a shell
+#: that honours SIGTERM. The iteration deadline is far away, so only the
+#: run's own SIGINT handler (``kill_active_process_groups``) can end it.
+_STOPPED_RUN_AGENT = """\
+(cd /; trap '' TERM; exec sleep 300) </dev/null >/dev/null 2>/dev/null &
+echo $! > '{pidfile}'
+exec sleep 300
+"""
+
+
+class TestAGroupMemberThatIgnoresSigterm:
+    """#641: a process in the agent's group that ignores SIGTERM does not
+    outlive the iteration whose deadline killed the agent.
+
+    ``DeadlineStreamer.kill`` sent SIGKILL to the group only when the
+    DIRECT child outlived the SIGTERM grace. A shell that honours SIGTERM
+    exits at once, so a background process in its group that ignores
+    SIGTERM kept running beside every later iteration. The second case
+    is a shell that exited before the deadline and left the survivor
+    holding its stdout: the group then has to be signalled by an id read
+    while the shell was alive. Driven through the real ``ks run`` CLI
+    with a real ``--agent-cmd`` and a real ``[timeout]`` section; ``ks
+    run`` forces ``use_worktrees=False``, so no worktree sweep runs at
+    all."""
+
+    @pytest.mark.parametrize(
+        ("survivor_stdout", "then"),
+        [
+            pytest.param(">/dev/null", "exec sleep 300", id="the_shell_honours_sigterm"),
+            pytest.param("", "exit 0", id="the_shell_has_already_exited"),
+        ],
+    )
+    def test_the_survivor_is_dead_before_the_next_iteration_starts(
+        self, tmp_path: Path, survivor_stdout: str, then: str
+    ) -> None:
+        root = _ks_run_project(tmp_path, _DEAF_GRANDCHILD_ITERATION_SECONDS)
+        pidfile = tmp_path / "survivor.pid"
+        verdict = tmp_path / "verdict.txt"
+        script = tmp_path / "agent.sh"
+        script.write_text(
+            _SIGTERM_DEAF_GRANDCHILD_AGENT.format(
+                first=tmp_path / "iteration-1",
+                second=tmp_path / "iteration-2",
+                pidfile=pidfile,
+                verdict=verdict,
+                survivor_stdout=survivor_stdout,
+                then=then,
+            ),
+            encoding="utf-8",
+        )
+        run = _start_ks_run(root, script, "2")
+        survivor: int | None = None
+        try:
+            try:
+                out, _ = run.communicate(timeout=_DEAF_GRANDCHILD_RUN_FUSE_SECONDS)
+            except subprocess.TimeoutExpired:
+                procs.kill_group(run.pid)
+                run.communicate(timeout=30)
+                pytest.fail(
+                    f"ks run 2 still running after {_DEAF_GRANDCHILD_RUN_FUSE_SECONDS}s (hung)"
+                )
+            survivor = read_pid(pidfile)
+            assert TIMEOUT_MESSAGE_PREFIX in out, f"no iteration hit its deadline:\n{out}"
+            assert verdict.exists(), f"the second iteration never ran:\n{out}"
+            recorded, signal0, *state = verdict.read_text(encoding="utf-8").split()
+            assert int(recorded) == survivor
+            dead = signal0 == "gone" or (bool(state) and state[0].startswith("Z"))
+            assert dead, (
+                f"pid {survivor}, in the agent's process group with SIGTERM ignored, "
+                f"was still running when iteration 2 started (signal 0 {signal0}, "
+                f"ps state {state}): the deadline kill left it behind"
+            )
+        finally:
+            if run.poll() is None:
+                procs.kill_group(run.pid)
+                run.wait(timeout=30)
+            if survivor is not None:
+                try:
+                    os.kill(survivor, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+
+    def test_a_sigint_to_the_run_leaves_no_survivor(self, tmp_path: Path) -> None:
+        """The other caller of ``DeadlineStreamer.kill``: the run's SIGINT
+        handler, through ``kill_active_process_groups``. A fix placed on
+        the deadline path alone would leave this survivor running after
+        the run has exited."""
+        root = _ks_run_project(tmp_path, 300)
+        pidfile = tmp_path / "survivor.pid"
+        script = tmp_path / "agent.sh"
+        script.write_text(_STOPPED_RUN_AGENT.format(pidfile=pidfile), encoding="utf-8")
+        run = _start_ks_run(root, script, "1")
+        survivor: int | None = None
+        try:
+            survivor = read_pid(pidfile, timeout=_DEAF_GRANDCHILD_RUN_FUSE_SECONDS)
+            os.kill(run.pid, signal.SIGINT)
+            try:
+                out, _ = run.communicate(timeout=_DEAF_GRANDCHILD_RUN_FUSE_SECONDS)
+            except subprocess.TimeoutExpired:
+                procs.kill_group(run.pid)
+                run.communicate(timeout=30)
+                pytest.fail(
+                    f"ks run 1 still running {_DEAF_GRANDCHILD_RUN_FUSE_SECONDS}s after "
+                    "SIGINT (hung)"
+                )
+            assert procs.wait_for_pid_to_die(survivor, timeout=10.0), (
+                f"pid {survivor}, in the agent's process group with SIGTERM ignored, "
+                f"was still running 10s after ks run exited {run.returncode} on SIGINT: "
+                f"the shutdown kill left it behind\n{out}"
+            )
+        finally:
+            if run.poll() is None:
+                procs.kill_group(run.pid)
+                run.wait(timeout=30)
+            if survivor is not None:
+                try:
+                    os.kill(survivor, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
 
 
 class TestClaudeCodeAgentDeadline:

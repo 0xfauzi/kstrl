@@ -193,6 +193,7 @@ EXPECTED_WITH_Z: tuple[str, ...] = (
     "git.py git diff --name-status -z -M -C ? --",
     "git.py git diff --name-status -z ? --",
     "git.py git diff --numstat -z ? --",
+    "git.py git ls-files --cached --others --exclude-standard -z",
     "git.py git ls-files --others --exclude-standard -z",
     "git.py git ls-tree -r --name-only -z ?",
 )
@@ -270,6 +271,7 @@ EXPECTED_GIT_ARGVS: dict[str, int] = {
     "git.py git diff ? --": 1,
     "git.py git fetch -- origin ?": 1,
     "git.py git for-each-ref --format=%(refname)%09%(symref) ? ?": 1,
+    "git.py git ls-files --cached --others --exclude-standard -z": 1,
     "git.py git ls-files --error-unmatch -- ?": 1,
     "git.py git ls-files --others --exclude-standard -z": 1,
     "git.py git ls-tree -r --name-only -z ?": 1,
