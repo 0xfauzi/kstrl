@@ -4,8 +4,8 @@ Machine-made merge decisions are only defensible inside an explicit,
 written envelope. Before this module the rules were implicit and
 scattered (diff-scope, allowed paths, bad-pattern secrets). The
 ``[policy]`` section makes them one auditable thing that the Phase 1
-mechanical verifier enforces on ARTIFACTS - the git diff and ``uv.lock`` -
-never on agent self-report.
+mechanical verifier enforces on ARTIFACTS - the git diff and the
+lockfiles :mod:`kstrl.lockfiles` reads - never on agent self-report.
 
 Opt-in by design: ``PolicyConfig.enabled`` defaults False, so existing
 runs are unchanged. When a repo opts in, a violation fails Phase 1 and
@@ -27,11 +27,18 @@ import hashlib
 import json
 import os
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 
 from kstrl.config_numbers import SIGNED, check_numbers
+from kstrl.lockfiles import (
+    LOCKFILE_READERS,
+    LockfileDocument,
+    NewDependency,
+    read_new_dependencies,
+    uv_lock_dependencies,
+)
 
 # Enforcement-machinery paths: every lever an agent could pull to weaken
 # the envelope itself. Issue #148 names three surfaces and all three are
@@ -57,6 +64,7 @@ ENFORCEMENT_MACHINERY_PATHS: tuple[str, ...] = (
     "**/kstrl/verify.py",
     "**/kstrl/policy.py",
     "**/kstrl/licensing.py",
+    "**/kstrl/lockfiles.py",
     "**/kstrl/guards.py",
     "**/kstrl/fixtures.py",
     "**/kstrl/autonomy.py",
@@ -151,12 +159,11 @@ LOCKFILE_MANIFESTS: dict[str, str] = {
 # Basenames of machine-generated lockfiles, excluded from the size caps:
 # a one-line dependency bump can rewrite hundreds of lockfile lines, so
 # counting them would make ``max_lines_changed`` meaningless. Lockfiles
-# remain subject to ``paths_deny`` and ``deps_allow_new``. Derived from
-# ``LOCKFILE_MANIFESTS`` so the two cannot name different lockfiles.
+# remain subject to ``paths_deny``; ``LOCKFILE_READERS`` decides which are
+# read for ``deps_allow_new`` (#630). Derived from ``LOCKFILE_MANIFESTS``.
 LOCKFILE_BASENAMES: frozenset[str] = frozenset(LOCKFILE_MANIFESTS)
-
-_UVLOCK_NAME_RE = re.compile(r'^name = "([^"]+)"')
-_UVLOCK_VERSION_RE = re.compile(r'^version = "([^"]+)"')
+if set(LOCKFILE_READERS) | {"uv.lock"} != LOCKFILE_BASENAMES:
+    raise RuntimeError("kstrl.lockfiles.LOCKFILE_READERS must decide every other lockfile")
 
 # SPDX expression operators dropped when tokenizing into license atoms.
 _SPDX_OPERATORS = frozenset({"or", "and", "with"})
@@ -312,40 +319,19 @@ def parse_added_lines(diff_text: str) -> list[tuple[str, str]]:
     return added
 
 
-def parse_new_dependencies(
-    added_lines: Sequence[tuple[str, str]],
-) -> list[tuple[str, str]]:
-    """``(name, version)`` for packages newly added to ``uv.lock``.
-
-    A new ``[[package]]`` stanza adds a column-0 ``name = "..."`` line
-    immediately followed by ``version = "..."``; a version bump of an
-    existing package adds only the ``version`` line (its name line is
-    unchanged context), so pairing an added name with the next added
-    version isolates genuinely new packages. Inline dependency refs
-    (``{ name = "x" }``) are indented and never match the column-0 anchor.
-    """
-    deps: list[tuple[str, str]] = []
-    pending: str | None = None
-    for path, line in added_lines:
-        if _basename(path) != "uv.lock":
-            continue
-        name_match = _UVLOCK_NAME_RE.match(line)
-        if name_match:
-            pending = name_match.group(1)
-            continue
-        version_match = _UVLOCK_VERSION_RE.match(line)
-        if version_match and pending is not None:
-            deps.append((pending, version_match.group(1)))
-            pending = None
-    return deps
-
-
-def unread_lockfiles(added_lines: Sequence[tuple[str, str]]) -> list[str]:
-    """The lockfiles this diff adds lines to that :func:`parse_new_dependencies`
-    cannot read, sorted: every one in :data:`LOCKFILE_MANIFESTS` but uv.lock (#619)."""
-    return sorted(
-        {path for path, _line in added_lines if _basename(path) in LOCKFILE_BASENAMES - {"uv.lock"}}
-    )
+def _lockfile_violations(read: list[NewDependency], allowed: bool) -> list[PolicyViolation]:
+    """One ``deps_allow_new`` violation per lockfile read (#630), naming its new packages."""
+    paths = [] if allowed else sorted({dep.lockfile for dep in read})
+    return [
+        PolicyViolation(
+            category="deps_allow_new",
+            location=path,
+            explanation=f"New dependencies added to {path} while deps_allow_new=false: "
+            + ", ".join(sorted({dep.name for dep in read if dep.lockfile == path})),
+            suggestion="Drop the dependency, or set [policy] deps_allow_new = true.",
+        )
+        for path in paths
+    ]
 
 
 def _spdx_atoms(expr: str) -> list[str]:
@@ -452,14 +438,14 @@ class PolicyEvaluation:
     summary: str
     details: list[str] = field(default_factory=list)
     machinery_hit: bool = False
-    # (name, version) of packages newly added to uv.lock, so the verifier
+    # Packages newly added to any lockfile read (#630), so the verifier
     # can resolve their licenses without re-parsing the diff.
-    new_dependencies: list[tuple[str, str]] = field(default_factory=list)
+    new_dependencies: list[NewDependency] = field(default_factory=list)
     # Structured form of ``details`` for typed Finding construction.
     violations: list[PolicyViolation] = field(default_factory=list)
-    # #619: lockfiles whose new dependencies were not parsed, so the
-    # verifier reports the dependency rules as unmeasured for them.
-    unread_lockfiles: list[str] = field(default_factory=list)
+    # #619: each lockfile whose new dependencies were not read, and why
+    # (#630), so the verifier reports the dependency rules as unmeasured.
+    unread_lockfiles: dict[str, str] = field(default_factory=dict)
 
 
 def evaluate_policy(
@@ -467,13 +453,17 @@ def evaluate_policy(
     numstat: Sequence[tuple[int | None, int | None, str]],
     diff_text: str,
     config: PolicyConfig,
+    *,
+    lockfile_documents: Mapping[str, LockfileDocument],
 ) -> PolicyEvaluation:
     """Evaluate a change against the policy envelope from artifacts alone.
 
     ``changed_files`` is the rename-aware path list; ``numstat`` is
     ``(added, removed, path)`` per file (None counts = binary); and
     ``diff_text`` is the unified diff used for secret and new-dependency
-    detection. Returns every violation found, both as structured
+    detection. ``lockfile_documents`` holds each changed lockfile at the
+    merge base and at HEAD; one missing from it is unread, never clean.
+    Returns every violation found, both as structured
     :class:`PolicyViolation`s (for typed Findings) and as rendered
     ``details`` strings (for the retry prompt).
     """
@@ -546,14 +536,14 @@ def evaluate_policy(
             )
         )
 
-    # 4. New dependencies (uv.lock). Detected regardless of deps_allow_new
-    # so the verifier can license-check them; only blocked here when
-    # deps_allow_new is false.
+    # 4. New dependencies: uv.lock from its added lines, every other lockfile
+    # in changed_files from its documents (#630). Detected regardless of
+    # deps_allow_new so the verifier can license-check them.
     added_lines = parse_added_lines(diff_text)
-    new_dependencies = parse_new_dependencies(added_lines)
+    new_dependencies = uv_lock_dependencies(added_lines)
     if not config.deps_allow_new and new_dependencies:
         # Untruncated: an approval covers the explanation (#595).
-        names = sorted({name for name, _v in new_dependencies})
+        names = sorted({dep.name for dep in new_dependencies})
         shown = ", ".join(names)
         violations.append(
             PolicyViolation(
@@ -563,6 +553,8 @@ def evaluate_policy(
                 suggestion=("Drop the dependency, or set [policy] deps_allow_new = true."),
             )
         )
+    read, unread = read_new_dependencies(changed_files, lockfile_documents)
+    violations += _lockfile_violations(read, config.deps_allow_new)
 
     # 5. Secret patterns over added lines (raises on a bad regex).
     secret_hits = _scan_secrets(added_lines, config.secret_patterns)
@@ -598,9 +590,9 @@ def evaluate_policy(
         summary=summary,
         details=details,
         machinery_hit=machinery_hit,
-        new_dependencies=new_dependencies,
+        new_dependencies=new_dependencies + read,
         violations=violations,
-        unread_lockfiles=unread_lockfiles(added_lines),
+        unread_lockfiles=unread,
     )
 
 
@@ -610,7 +602,7 @@ class PolicyConfig:
 
     Opt-in: ``enabled`` defaults False so existing runs are unchanged.
     When enabled, a violation fails Phase 1 mechanical verification and
-    blocks the merge. All checks read artifacts (git diff, ``uv.lock``),
+    blocks the merge. All checks read artifacts (git diff, lockfiles),
     never agent self-report. Set a numeric cap negative to disable it.
     """
 
@@ -625,7 +617,7 @@ class PolicyConfig:
     # the non-overridable halt. A repo protects its own verifier/CI code
     # here; nothing in config can shrink the hardcoded set.
     enforcement_paths_extra: list[str] = field(default_factory=list)
-    # License gate: a newly-added uv.lock dependency whose resolved SPDX
+    # License gate: a newly-added dependency whose resolved SPDX
     # license matches a deny_partial substring is blocked; one whose every
     # atom is in license_allow passes; anything else is unknown (blocked,
     # add it to license_allow to permit). Empty license_allow disables the
@@ -640,7 +632,7 @@ class PolicyConfig:
     # "advisory" (record it and pass, for operators who accept the risk of
     # offline/cache-miss resolution).
     license_unresolved: str = "block"
-    # Whether license resolution may fall back to the PyPI JSON API.
+    # Whether a PyPI package's license may fall back to the PyPI JSON API.
     # A real config field, not a bare env read, so it is covered by
     # envelope_hash: a run that silently skipped the network must not
     # claim the same policy hash as one that consulted it.
