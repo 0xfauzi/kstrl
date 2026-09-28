@@ -102,6 +102,9 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # counted at conftest.py's row above, the same shape
     # tests/test_patch_coverage.py's row below argues for.
     "tests/test_cli.py": 2,
+    # #640: `_run_codex_loop`'s one scaffold commit, into a repository it
+    # has just put through `tests.helpers.gitrepo.set_identity`.
+    "tests/test_codex_transcript.py": 1,
     # #562: `_project` commits the E2E fixture repo once, after
     # `tests.helpers.gitrepo.set_identity(root)`.
     "tests/test_config_refused_before_spend.py": 1,
