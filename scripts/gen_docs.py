@@ -279,6 +279,8 @@ def _section_specs() -> list[SectionSpec]:
                     "integration_blocking",
                     "integration_max_rounds",
                     "convergence_attempts",
+                    "worktree_setup_command",
+                    "worktree_setup_timeout",
                 ],
             ),
             lambda root: FactoryConfig.load(root_dir=root),
@@ -584,6 +586,13 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
         "convergence_attempts",
     ): "fail a component whose gate failure count has not fallen for this many "
     "consecutive attempts; 0 = off (#233)",
+    (
+        "factory",
+        "worktree_setup_command",
+    ): "installs a kstrl worktree's own dependencies before the engineer and every gate; "
+    "use a lockfile-respecting command; empty = none (#624)",
+    ("factory", "worktree_setup_timeout"): "seconds before the worktree setup's process group "
+    "is killed; 0 = no limit (#624)",
     (
         "breaker",
         "no_progress_iterations",

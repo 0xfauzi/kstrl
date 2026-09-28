@@ -243,6 +243,37 @@ def test_contract_mode_skip_still_runs_the_review(tmp_path: Path) -> None:
     assert ev["outcome"] == "clean"
 
 
+def test_the_integration_worktree_is_set_up_before_the_reviewer_reads_it(
+    tmp_path: Path,
+) -> None:
+    """#624: the reviewer's worktree gets the worktree setup first, and a
+    setup that fails is the round's infrastructure error: no reviewer runs."""
+    root = tmp_path / "repo"
+    base, _head = h.merged_feature(root)
+    reviewer = h.FakeReviewer(json.dumps(h.review_payload(root, base)))
+    setup_log = tmp_path / "setup-dirs"
+
+    h.run_factory_over(root, reviewer, worktree_setup_command=f"pwd -P >> {setup_log}")
+
+    assert reviewer.calls == 1
+    reviewed = reviewer.cwds[0]
+    assert reviewed is not None
+    set_up = setup_log.read_text(encoding="utf-8").splitlines()
+    assert str(reviewed.resolve()) in set_up
+    # The integrated contract check (create_prs mode) got its own setup too.
+    assert any("/.kstrl/contract/integrated-" in line for line in set_up), set_up
+
+    twin = tmp_path / "twin"
+    twin_base, _twin_head = h.merged_feature(twin)
+    twin_reviewer = h.FakeReviewer(json.dumps(h.review_payload(twin, twin_base)))
+
+    h.run_factory_over(twin, twin_reviewer, worktree_setup_command="echo no-registry >&2; exit 4")
+
+    assert twin_reviewer.calls == 0
+    ev = json.loads(h.evidence_files(twin)[0].read_text(encoding="utf-8"))
+    assert any("worktree setup" in e and "no-registry" in e for e in ev["errors"])
+
+
 def test_unparseable_review_output_is_red_and_opens_nothing(tmp_path: Path) -> None:
     root = tmp_path / "repo"
     h.merged_feature(root)

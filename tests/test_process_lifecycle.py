@@ -233,6 +233,10 @@ EXPECTED_PROCESS_MODULES: dict[str, tuple[str, ...]] = {
     # which is what runs the `lsof` census. The module creates no child
     # itself and signals groups only through `procgroup.signal_group`.
     "worktree_sweep.py": ("subprocess",),
+    # #624: `subprocess.TimeoutExpired`, caught from `verify.run_scrubbed`,
+    # which runs the worktree setup in a process group of its own and kills
+    # the group on timeout. The module creates no child itself.
+    "worktree_setup.py": ("subprocess",),
     # The word, not the call: `actor: str = "system"`.
     "autonomy.py": ("system",),
     "inbox.py": ("system",),

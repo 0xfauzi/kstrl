@@ -1,15 +1,15 @@
-"""#486: a failed scaffold command or codebase scan is recorded, not passed over.
+"""#486: a failed worktree setup or codebase scan is recorded, not passed over.
 
-Both failures stay non-fatal. Each one becomes a note that ``_run_component``
+Neither stops the engineer. Each one becomes a note that ``_run_component``
 warns on the worker's UI once ``ui`` is bound: a ``log`` row with severity
 ``warn`` in the component's engineer.jsonl in event mode, a line on stderr in
 legacy mode. The note is for the operator, never for the engineer, so it must
-not reach the prompt.
+not reach the prompt. The setup that GATES is the one before Phase 1 (#624), which
+``tests/test_worktree_setup.py`` drives end to end.
 """
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -18,67 +18,18 @@ import pytest
 
 from kstrl import events as ev
 from kstrl.feedforward import CodebaseScanConfig, build_codebase_scan_context
+from kstrl.worktree_setup import WorktreeSetup
 from tests.test_event_stream import _setup_project
 
-SCAFFOLD_EXIT_3 = "  Scaffold command failed for comp-a: exit code 3"
+SETUP_EXIT_3 = "  Worktree setup failed for comp-a: worktree setup `exit 3` exited 3"
 SCAN_BOOM = "  Codebase scan failed for comp-a: RuntimeError: boom"
-
-
-def test_scaffold_nonzero_exit_is_a_note(tmp_path: Path) -> None:
-    from kstrl.factory import _prepare_component_tree
-
-    # The stderr line is there so a note that quotes the command's output
-    # fails the exact comparison: the note gives the exit code only.
-    result = _prepare_component_tree(
-        tmp_path, "comp-a", "echo scaffold-stderr >&2; exit 3", None, None
-    )
-    assert result == ("", [SCAFFOLD_EXIT_3])
-
-
-def test_scaffold_that_cannot_start_names_the_exception(tmp_path: Path) -> None:
-    from kstrl.factory import _prepare_component_tree
-
-    prefix, notes = _prepare_component_tree(tmp_path / "missing", "comp-a", "true", None, None)
-    assert prefix == ""
-    assert len(notes) == 1
-    assert notes[0].startswith("  Scaffold command failed for comp-a: FileNotFoundError: ")
-
-
-def test_scaffold_timeout_says_it_timed_out(tmp_path: Path) -> None:
-    from kstrl.factory import _prepare_component_tree
-
-    def _times_out(cmd: str, **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
-        # Raise with the timeout the caller actually passed, so the note's
-        # "120 seconds" comes from the call and not from this test.
-        raise subprocess.TimeoutExpired(cmd, kwargs["timeout"])
-
-    with patch("kstrl.factory.subprocess.run", side_effect=_times_out):
-        _prefix, notes = _prepare_component_tree(tmp_path, "comp-a", "sleep 200", None, None)
-    assert notes == [
-        "  Scaffold command failed for comp-a: TimeoutExpired: "
-        "Command 'sleep 200' timed out after 120 seconds"
-    ]
-
-
-def test_scaffold_killed_by_a_signal_is_a_note(tmp_path: Path) -> None:
-    from kstrl.factory import _prepare_component_tree
-
-    # A shell killed by a signal has a negative returncode (-9 here). "Non-zero"
-    # must include it, not only a positive exit status.
-    result = _prepare_component_tree(tmp_path, "comp-a", "kill -9 $$", None, None)
-    assert result == ("", ["  Scaffold command failed for comp-a: exit code -9"])
 
 
 def test_keyboard_interrupt_is_not_turned_into_a_note(tmp_path: Path) -> None:
     from kstrl.factory import _prepare_component_tree
 
-    # The handlers catch Exception: an operator's Ctrl-C during the scaffold
-    # or the scan must stop the worker, not become a warning.
-    with (
-        patch("kstrl.factory.subprocess.run", side_effect=KeyboardInterrupt),
-        pytest.raises(KeyboardInterrupt),
-    ):
-        _prepare_component_tree(tmp_path, "comp-a", "true", None, None)
+    # The handler catches Exception: an operator's Ctrl-C during the scan
+    # must stop the worker, not become a warning.
     with (
         patch("kstrl.factory.build_codebase_scan_context", side_effect=KeyboardInterrupt),
         pytest.raises(KeyboardInterrupt),
@@ -115,7 +66,7 @@ def test_success_on_both_is_no_note(tmp_path: Path) -> None:
 
     (tmp_path / "mod.py").write_text("def f() -> int:\n    return 1\n", encoding="utf-8")
     prefix, notes = _prepare_component_tree(
-        tmp_path, "comp-a", "touch scaffolded.txt", {"enabled": True}, None
+        tmp_path, "comp-a", WorktreeSetup("touch scaffolded.txt"), {"enabled": True}, None
     )
     assert notes == []
     assert (tmp_path / "scaffolded.txt").is_file()  # ran, and in the worktree
@@ -141,7 +92,7 @@ def _worker_args(root: Path, events_dir: Path | None) -> dict[str, Any]:
         agent_type=None,
         sleep_seconds=0.0,
         max_iterations=1,
-        scaffold_cmd="exit 3",
+        setup=WorktreeSetup("exit 3"),
         codebase_scan_config_dict={"enabled": True},
         events_dir_str=str(events_dir) if events_dir else None,
         run_id="run-w",
@@ -168,10 +119,10 @@ def test_run_component_warns_each_setup_failure_in_engineer_jsonl(tmp_path: Path
         (i, e.text) for i, e in enumerate(rows) if isinstance(e, ev.Log) and e.severity == "warn"
     ]
     texts = [text for _i, text in warns]
-    assert SCAFFOLD_EXIT_3 in texts
+    assert SETUP_EXIT_3 in texts
     assert SCAN_BOOM in texts
     first_iteration = names.index("iteration_started")
-    assert all(i < first_iteration for i, text in warns if text in (SCAFFOLD_EXIT_3, SCAN_BOOM))
+    assert all(i < first_iteration for i, text in warns if text in (SETUP_EXIT_3, SCAN_BOOM))
 
     # The notes are for the operator. The prompt the engineer saw (echoed by
     # `cat` into engineer.log) must not carry them (H3: no unenrolled
@@ -179,7 +130,7 @@ def test_run_component_warns_each_setup_failure_in_engineer_jsonl(tmp_path: Path
     # prompt reached the log at all.
     transcript = (comp_dir / "engineer.log").read_text(encoding="utf-8")
     assert "test prompt" in transcript
-    assert "Scaffold command failed" not in transcript
+    assert "Worktree setup failed" not in transcript
     assert "Codebase scan failed" not in transcript
 
 
@@ -196,7 +147,5 @@ def test_run_component_without_events_dir_warns_on_stderr(tmp_path: Path, capfd:
     assert any("test prompt" in line for line in lines)  # `cat` echoed the prompt here
     # Exactly one line names each failure, and it is the WARN line. A note
     # that also reached the prompt would appear a second time, echoed by `cat`.
-    assert [line for line in lines if "Scaffold command failed" in line] == [
-        "WARN: " + SCAFFOLD_EXIT_3
-    ]
+    assert [line for line in lines if "Worktree setup failed" in line] == ["WARN: " + SETUP_EXIT_3]
     assert [line for line in lines if "Codebase scan failed" in line] == ["WARN: " + SCAN_BOOM]
