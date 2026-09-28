@@ -80,17 +80,20 @@ def _prompt_for(base: Path, write: Callable[[Path], None]) -> str:
 
 
 def _rust(root: Path) -> None:
-    # edition from [package], rust-version from [workspace.package], so
-    # dropping either table from the reader loses a line.
+    # rust-version from [package], edition from [workspace.package], so
+    # dropping either table from the reader loses a line. [package] also
+    # inherits its edition with `edition.workspace = true`, a table and not
+    # a value, so a reader that takes any value there prints the table.
     _write(
         root / "Cargo.toml",
         "[package]\n"
         'name = "rustapp"\n'
         'version = "0.1.0"\n'
-        'edition = "2021"\n'
+        "edition.workspace = true\n"
+        'rust-version = "1.74"\n'
         "\n"
         "[workspace.package]\n"
-        'rust-version = "1.74"\n'
+        'edition = "2021"\n'
         "\n"
         "[lints.clippy]\n"
         'pedantic = "warn"\n',
