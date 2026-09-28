@@ -53,8 +53,8 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     "factory.py": 14,
     "fixtures.py": 3,
     # 64: 58 after #435, +2 for #465's `branch_sha`, +2 for #459's `ignored_paths`,
-    # +2 for #500's `tracked_files_at`.
-    "git.py": 64,
+    # +2 for #500's `tracked_files_at`, +2 for #626's `listed_files`.
+    "git.py": 66,
     "intake_github.py": 3,
     # #508: the import, and `TimeoutExpired` from `run_scrubbed`.
     "learning_fixture.py": 2,
@@ -96,8 +96,8 @@ EXPECTED_TEXT_MODE_SPAWNS: dict[str, int] = {
     # to a text-mode `git worktree add -B`.
     "factory.py": 5,
     # 26: 23 after #435, +1 for #465's `branch_sha`, +1 for #459's `ignored_paths`,
-    # +1 for #500's `tracked_files_at`.
-    "git.py": 26,
+    # +1 for #500's `tracked_files_at`, +1 for #626's `listed_files`.
+    "git.py": 27,
     "intake_github.py": 1,
     "licensing.py": 1,
     "pr.py": 9,
@@ -142,6 +142,7 @@ EXPECTED_CLEARED_SPAWNS: tuple[str, ...] = (
     "git.py subprocess.run(['git', 'diff', f'{base_ref}...HEAD', '--'], cwd=cwd, c",
     "git.py subprocess.run(['git', 'fetch', '--', 'origin', base_branch], cwd=cwd,",
     "git.py subprocess.run(['git', 'for-each-ref', '--format=%(refname)%09%(symref",
+    "git.py subprocess.run(['git', 'ls-files', '--cached', '--others', '--exclude-",
     "git.py subprocess.run(['git', 'ls-files', '--others', '--exclude-standard', '",
     "git.py subprocess.run(['git', 'ls-tree', '-r', '--name-only', '-z', sha], cwd",
     "git.py subprocess.run(['git', 'merge', '--no-edit', '--', branch], cwd=cwd, c",

@@ -1,0 +1,8 @@
+ok  	example.com/goapp/cart	0.228s
+--- FAIL: TestBulkPercent (0.00s)
+    pricing_test.go:7: BulkPercent(20) = 11, want 10
+FAIL
+FAIL	example.com/goapp/pricing	0.415s
+ok  	example.com/goapp/shipping	0.811s
+ok  	example.com/goapp/tax	0.611s
+FAIL

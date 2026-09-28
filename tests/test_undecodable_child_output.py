@@ -352,7 +352,8 @@ def test_the_walk_reports_what_it_could_not_decide() -> None:
             where = row.split(":", 1)[0]
             counts[where] = counts.get(where, 0) + 1
 
-    assert counts == {"verify.py": 10}
+    # #619: 11, the ruff --show-files listing check_dead_code_ruff runs first.
+    assert counts == {"verify.py": 11}
 
 
 def test_the_call_site_census_is_pinned() -> None:
@@ -363,7 +364,8 @@ def test_the_call_site_census_is_pinned() -> None:
         "contract.py": 5,
         "fixtures.py": 2,
         "learning_fixture.py": 1,
-        "verify.py": 10,
+        # #619: +1, the ruff --show-files listing in check_dead_code_ruff.
+        "verify.py": 11,
         "worktree_setup.py": 1,
         "worktree_sweep.py": 1,
     }
@@ -447,7 +449,8 @@ def test_the_disposition_census_is_pinned() -> None:
         "fixtures.py:returns": 2,
         "learning_fixture.py:raises": 1,
         "verify.py:converts": 1,
-        "verify.py:returns": 9,
+        # #619: +1, the listing shares the ruff run's handlers, which return.
+        "verify.py:returns": 10,
         "worktree_setup.py:returns": 1,
         "worktree_sweep.py:returns": 1,
     }
