@@ -498,7 +498,7 @@ def run_feature(
             )
         )
         decided_by = "operator" if response.answered else "auto"
-        if not response.answered or response.choice != 0:
+        if response.choice != 0:  # None when nobody answered (#647)
             ui.info("Amend the understand file and re-run `ks feature`.")
             emit(
                 CheckpointResolved(

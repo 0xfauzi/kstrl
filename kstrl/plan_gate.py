@@ -143,7 +143,9 @@ def run_plan_gate(pipeline: ComponentPipeline, bundle: FlagBundle | None) -> int
         # #594: only an ANSWERED choice decides. Unanswered, out of range
         # and "decide later" all park below.
         decision = (
-            {0: "approved", 1: "rejected"}.get(response.choice) if response.answered else None
+            {0: "approved", 1: "rejected"}.get(response.choice)
+            if response.choice is not None
+            else None
         )
         if decision is not None:
             _record(pipeline, key, digest, approve=decision == "approved")

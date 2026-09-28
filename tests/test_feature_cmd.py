@@ -43,11 +43,7 @@ class ScriptedChannel:
 
     def request(self, req: PromptRequest) -> PromptResponse:
         self.requests.append(req)
-        return PromptResponse(
-            request_id=req.request_id,
-            choice=self.choice,
-            answered=True,
-        )
+        return PromptResponse(request_id=req.request_id, choice=self.choice)
 
 
 #: A ``[verify]`` command that succeeds without executing anything: the

@@ -169,7 +169,7 @@ class _Channel:
         if _Channel.on_ask is not None:
             _Channel.on_ask()
         return PromptResponse(
-            request_id=req.request_id, choice=_Channel.choice, answered=_Channel.answered
+            request_id=req.request_id, choice=_Channel.choice if _Channel.answered else None
         )
 
 

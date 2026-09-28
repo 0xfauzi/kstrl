@@ -38,7 +38,7 @@ class Prompter(Protocol):
         ``KeyboardInterrupt`` when the prompt is interrupted (end of
         input or Ctrl-C) - both ``PlainUI`` and ``RichUI`` do.
         ``UiInteractionChannel.request`` catches either around this call
-        and reports ``answered=False``; ``NullPrompter`` below never
+        and reports ``choice=None``; ``NullPrompter`` below never
         raises, since it never prompts at all."""
         ...
 

@@ -386,21 +386,22 @@ def enforce_allowed_paths(
             default=0,
         )
     )
-    if not response.answered:
-        ui.warn("Prompt unavailable, defaulting to quit")
-        return False, violations
     choice = response.choice
 
-    if choice == 0:
-        # Quit
-        return False, violations
-    elif choice == 1:
+    if choice == 1:
         # Revert. Anything refused (kstrl's own state) is reported back
         # unreverted rather than silently counted as handled.
         ui.info("Reverting disallowed changes...")
         refused = _revert_violations(violations, ui, cwd, baseline)
         return not refused, refused
-    else:
+    elif choice == 2:
         # Continue anyway
         ui.warn("Continuing with disallowed changes")
         return True, violations
+    else:
+        # Quit: choice 0, or no choice at all. An unanswered prompt
+        # carries None, never the default (#647), and it must not reach
+        # "Continue anyway".
+        if choice is None:
+            ui.warn("Prompt unavailable, defaulting to quit")
+        return False, violations

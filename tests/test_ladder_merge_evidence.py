@@ -179,9 +179,7 @@ class _Human:
         assert req.kind is PromptKind.CHECKPOINT, req
         if self.before is not None:
             self.before(req)
-        return PromptResponse(
-            request_id=req.request_id, choice=self.answers[req.component_id], answered=True
-        )
+        return PromptResponse(request_id=req.request_id, choice=self.answers[req.component_id])
 
 
 class _NoOne:
@@ -191,7 +189,7 @@ class _NoOne:
         return False
 
     def request(self, req: PromptRequest) -> PromptResponse:
-        return PromptResponse(request_id=req.request_id, choice=req.default, answered=False)
+        return PromptResponse(request_id=req.request_id, choice=None)
 
 
 def _run(

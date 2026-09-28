@@ -3175,9 +3175,9 @@ def factory(
                     default=0,
                 )
             )
-            # #594: only an answered Start starts a paid run. An interrupted
-            # or unanswered confirm quits, exactly as Quit does.
-            if not response.answered or response.choice != 0:
+            # #594: only an answered Start starts a paid run. An unanswered
+            # confirm carries no choice (#647), so it quits exactly as Quit does.
+            if response.choice != 0:
                 ui_impl.info("Factory not started.")
                 sys.exit(0)
 
@@ -4718,7 +4718,7 @@ def retry(
                 default=0,
             )
         )
-        if not response.answered or response.choice != 0:
+        if response.choice != 0:  # None when nobody answered (#647)
             sys.exit(0)
 
     run_lock = _acquire_run_lock(root_dir, ui_impl, force=force_lock)

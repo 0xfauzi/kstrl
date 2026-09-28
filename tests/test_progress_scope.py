@@ -1330,11 +1330,7 @@ class _ScriptedChannel:
         return True
 
     def request(self, req: PromptRequest) -> PromptResponse:
-        return PromptResponse(
-            request_id=req.request_id,
-            choice=self.choice,
-            answered=True,
-        )
+        return PromptResponse(request_id=req.request_id, choice=self.choice)
 
 
 class _CommittingRogueAgent:

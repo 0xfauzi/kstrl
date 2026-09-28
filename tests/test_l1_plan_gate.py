@@ -307,9 +307,10 @@ class _Channel:
 
     def request(self, req: PromptRequest) -> PromptResponse:
         self.asked.append(req)
-        answered, choice = self._answer if len(self.asked) == 1 else (False, req.default)
-        choice = req.default if choice is None else choice
-        return PromptResponse(request_id=req.request_id, choice=choice, answered=answered)
+        answered, choice = self._answer if len(self.asked) == 1 else (False, None)
+        # Enter takes the default, which is an answer; nobody answering is None (#647).
+        picked = (req.default if choice is None else choice) if answered else None
+        return PromptResponse(request_id=req.request_id, choice=picked)
 
 
 def _in_process(root: Path, channel: _Channel, monkeypatch: pytest.MonkeyPatch) -> tuple[int, str]:
