@@ -74,7 +74,7 @@ class TestCodexLiveContract:
 
         # We don't assert on the content - codex can route through OAuth
         # and may return varied output. The important contract is that
-        # final_message gets populated (either from --output-last-message
-        # or from the last_non_empty_line fallback).
+        # final_message gets populated from --output-last-message, its
+        # only source since #640.
         assert agent.final_message is not None
         assert len(agent.final_message) > 0

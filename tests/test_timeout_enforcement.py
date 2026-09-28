@@ -33,7 +33,7 @@ from unittest.mock import patch
 import pytest
 
 from kstrl import factory as factory_mod
-from kstrl.agents.base import Agent
+from kstrl.agents.base import TOOL_RESULT_PREFIX, Agent
 from kstrl.agents.claude_code import ClaudeCodeAgent
 from kstrl.agents.claude_sdk import ClaudeSdkAgent
 from kstrl.agents.codex import CodexAgent
@@ -389,7 +389,7 @@ class TestCodexAgentDeadline:
         agent = CodexAgent()
         lines = _lines_under_fuse(agent, "prompt", tmp_path, timeout=CLI_DEADLINE_SECONDS)
 
-        assert "starting" in lines
+        assert TOOL_RESULT_PREFIX + "starting" in lines
         assert any(line.startswith(TIMEOUT_MESSAGE_PREFIX) for line in lines)
         assert agent.final_message is None
         assert _wait_pid_dead(_read_pid(pidfile))
