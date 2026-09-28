@@ -686,6 +686,26 @@ def usage_cursor(agent: object) -> int:
         return 0
 
 
+def timed_out_since(agent: object, since: int) -> bool:
+    """True when the adapter recorded a deadline kill at record index ``since`` or later.
+
+    The adapter writes ``source="timeout"`` itself when its
+    ``DeadlineStreamer`` fired, so this is not a self-report parsed from
+    agent output, and it is the only way to ask whether a call was killed.
+    The ``ERROR: agent timed out`` line is not: an agent can print it.
+
+    An object without ``usage_records`` has no deadline to report, so it
+    reads as False. Unlike :func:`usage_cursor` and :func:`collect_usage`
+    this does not swallow an error reading the records: it decides whether
+    a reply may be read as a verdict, and a question it cannot answer must
+    fail the call rather than let the reply through.
+    """
+    records = getattr(agent, "usage_records", None)
+    if records is None:
+        return False
+    return any(record.source == "timeout" for record in list(records)[since:])
+
+
 def collect_usage(agent: object, *, since: int = 0) -> UsageTotals:
     """Aggregate an agent's accumulated ``usage_records`` defensively.
 

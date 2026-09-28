@@ -235,7 +235,12 @@ def test_every_paid_arm_keeps_the_reply_it_scored(
     role, fixture_id = recorded[0]
     kept = _kept(replies_dir(tc.RESULTS_DIR, report.timestamp))
     assert sorted(kept) == [(role, fixture_id, 1), (role, fixture_id, 2)]
-    assert len(stubbed) == 2, stubbed
+    # #480: a stub reply states nothing, so the integration review asks the
+    # reviewer once more (integration_phase.REVIEW_ASKS = 2) and each of its
+    # runs keeps both calls. Every other arm asks once per run.
+    asks = 2 if role in ("integration", "integration_clean") else 1
+    assert [len(kept[key]["calls"]) for key in sorted(kept)] == [asks, asks], kept
+    assert len(stubbed) == 2 * asks, stubbed
     finals = [call["final_message"] for key in sorted(kept) for call in kept[key]["calls"]]
     assert finals == stubbed
 

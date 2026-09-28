@@ -1,0 +1,39 @@
+running 2 tests
+test pricing::bulk_tests::ten_items_is_five_percent ... ok
+test pricing::bulk_tests::twenty_items_is_ten_percent ... FAILED
+
+failures:
+
+---- pricing::bulk_tests::twenty_items_is_ten_percent stdout ----
+
+thread 'pricing::bulk_tests::twenty_items_is_ten_percent' (613721566) panicked at src/pricing.rs:18:9:
+assertion `left == right` failed
+  left: 11
+ right: 10
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+             at /rustc/4a4ef493e3a1488c6e321570238084b38948f6db/library/std/src/panicking.rs:689:5
+   1: core::panicking::panic_fmt
+             at /rustc/4a4ef493e3a1488c6e321570238084b38948f6db/library/core/src/panicking.rs:80:14
+   2: core::panicking::assert_failed_inner
+   3: core::panicking::assert_failed
+             at /home/dev/.rustup/toolchains/stable-aarch64-apple-darwin/lib/rustlib/src/rust/library/core/src/panicking.rs:394:5
+   4: rustapp::pricing::bulk_tests::twenty_items_is_ten_percent
+             at ./src/pricing.rs:18:9
+   5: rustapp::pricing::bulk_tests::twenty_items_is_ten_percent::{{closure}}
+             at ./src/pricing.rs:17:37
+   6: core::ops::function::FnOnce::call_once
+             at /home/dev/.rustup/toolchains/stable-aarch64-apple-darwin/lib/rustlib/src/rust/library/core/src/ops/function.rs:250:5
+   7: core::ops::function::FnOnce::call_once
+             at /rustc/4a4ef493e3a1488c6e321570238084b38948f6db/library/core/src/ops/function.rs:250:5
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+
+failures:
+    pricing::bulk_tests::twenty_items_is_ten_percent
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.00s
+     Running unittests src/lib.rs (target/debug/deps/rustapp-a6e06d185983cb38)
+error: test failed, to rerun pass `--lib`

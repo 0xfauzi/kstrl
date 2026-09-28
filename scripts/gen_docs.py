@@ -265,6 +265,8 @@ def _section_specs() -> list[SectionSpec]:
                     "single_pr",
                     "create_prs",
                     "review_mode",
+                    "review_timeout_seconds",
+                    "architect_timeout_seconds",
                     "claim_agreement",
                     "merge_timeout",
                     "max_adversarial_calls",
@@ -528,6 +530,14 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("factory", "claim_agreement"): (
         "advisory | block: what to do when the reviewer does not confirm a "
         "story the engineer marked passes=true (R10.3)"
+    ),
+    ("factory", "review_timeout_seconds"): (
+        "code and integration reviewer call timeout; 0 = no limit. A call "
+        "killed at it is an infrastructure error, never a verdict"
+    ),
+    ("factory", "architect_timeout_seconds"): (
+        "architect call timeout (ks decompose, ks factory --spec); 0 = no limit. "
+        "A call killed at it is one failed attempt"
     ),
     ("factory", "merge_timeout"): "hang guard: seconds to wait for PR merge confirmation",
     (

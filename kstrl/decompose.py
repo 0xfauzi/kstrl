@@ -22,6 +22,7 @@ from kstrl.agents.base import (
     collect_usage,
     model_output_text,
     print_usage_rollup,
+    timed_out_since,
     usage_cursor,
 )
 from kstrl.agents.prompt_record import AgentCall, recording_prompts
@@ -632,6 +633,21 @@ class AgentOutputTooLarge(RuntimeError):
     modes, advisory in soft modes."""
 
 
+class AgentTimedOut(RuntimeError):
+    """Raised when the adapter killed the agent at its deadline.
+
+    The lines the agent printed before the kill are never returned, so no
+    role can read a killed call's reply as a verdict (#603). Every caller
+    of :func:`collect_agent_output` already turns a ``RuntimeError`` into
+    an infrastructure failure whose text carries this message.
+    """
+
+
+def timed_out_message(timeout: float | None) -> str:
+    """What a killed call's failure says, for every role."""
+    return f"the agent timed out after {timeout}s and was stopped; its reply was not read"
+
+
 def collect_agent_output(
     agent: Any,
     prompt: str,
@@ -649,12 +665,14 @@ def collect_agent_output(
     observer for the rest of the run - a dead transcript file must
     never abort an agent call.
 
-    Raises :class:`AgentOutputTooLarge` when the cap is hit. Callers
-    are expected to catch it and translate to their phase-specific
-    failure mode.
+    Raises :class:`AgentOutputTooLarge` when the cap is hit, and
+    :class:`AgentTimedOut` when the adapter killed the agent at
+    ``timeout``. Callers are expected to catch both and translate them to
+    their phase-specific failure mode.
     """
     output_lines: list[str] = []
     total_bytes = 0
+    cursor = usage_cursor(agent)
     for line in agent.run(prompt, cwd=cwd, timeout=timeout):
         output_lines.append(line)
         if on_line is not None:
@@ -668,6 +686,8 @@ def collect_agent_output(
                 f"Agent output exceeded {max_bytes // 1024 // 1024}MB cap "
                 f"(>{total_bytes} bytes, {len(output_lines)} lines)"
             )
+    if timed_out_since(agent, cursor):
+        raise AgentTimedOut(timed_out_message(timeout))
     return output_lines
 
 
@@ -2358,6 +2378,21 @@ def _for_attempt(call: AgentCall, attempt: int) -> AgentCall:
     return dataclasses.replace(call, attempt=attempt)
 
 
+def _attempt_stopped(
+    agent: Agent, cursor: int, *, too_large: bool, timeout: float | None
+) -> str | None:
+    """Why an architect attempt's reply must not be read, or None.
+
+    A reply over the size cap, or one from a call the adapter killed at
+    ``timeout`` (#603), is one failed attempt, and its lines are not parsed.
+    """
+    if too_large:
+        return "agent output exceeded size cap"
+    if timed_out_since(agent, cursor):
+        return timed_out_message(timeout)
+    return None
+
+
 def _decompose_spec_impl(
     spec_path: Path,
     project_name: str,
@@ -2373,6 +2408,7 @@ def _decompose_spec_impl(
     prompt_call: AgentCall,
     force_lock: bool = False,
     run_lock: _RunLock | None = None,
+    timeout: float | None,
 ) -> Manifest:
     """Decompose a spec into components and generate PRDs.
 
@@ -2499,9 +2535,10 @@ def _decompose_spec_impl(
         output_lines: list[str] = []
         total_bytes = 0
         too_large = False
+        cursor = usage_cursor(agent)
         try:
             with recording_prompts(_for_attempt(prompt_call, attempt)):
-                for line in agent.run(retry_prompt, cwd=root_dir):
+                for line in agent.run(retry_prompt, cwd=root_dir, timeout=timeout):
                     output_lines.append(line)
                     ui.stream_line("AI", line)
                     if transcript is not None:
@@ -2522,8 +2559,9 @@ def _decompose_spec_impl(
             )
             raise
 
-        if too_large:
-            last_error = "agent output exceeded size cap"
+        stopped = _attempt_stopped(agent, cursor, too_large=too_large, timeout=timeout)
+        if stopped is not None:
+            last_error = stopped
             attempt_failed(last_error, started_at=phase_start)
             continue
 
@@ -2991,11 +3029,15 @@ def decompose_spec(
     prompt_call: AgentCall,
     force_lock: bool = False,
     run_lock: _RunLock | None = None,
+    timeout: float | None,
 ) -> Manifest:
     """Run decomposition, guaranteeing a ``RunCompleted`` and a usage
     capture on every exit.
 
     ``run_lock``: see :func:`_decompose_spec_impl` (#597).
+
+    ``timeout``: the architect call's limit in seconds, None for no limit
+    (#603). A call the adapter kills at it is one failed attempt.
 
     #257: the capture sits in a ``finally`` because the blocker halt is
     the COMMON outcome on a first spec, and it is the path where the
@@ -3028,6 +3070,7 @@ def decompose_spec(
             prompt_call=prompt_call,
             force_lock=force_lock,
             run_lock=run_lock,
+            timeout=timeout,
         )
     except SpecBlockerError:
         # Blocker halts are deliberately finalized at the audit site so

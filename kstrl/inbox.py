@@ -54,10 +54,8 @@ INBOX_SCHEMA_VERSION = 1
 
 
 class ItemKind(StrEnum):
-    """What kind of decision an item is asking for.
-
-    The kinds map one-to-one onto the halt paths that existed before this
-    module; adding a kind means adding an emitter, never just a label.
+    """What kind of decision an item is asking for. The kinds map one-to-one onto
+    the halts that wait on a human; adding a kind means adding an emitter, never a label.
     """
 
     POLICY_EXCEPTION = "policy_exception"  # R8.1 envelope violation
@@ -69,6 +67,7 @@ class ItemKind(StrEnum):
     TEST_ADEQUACY = "test_adequacy"  # R8.5 Layer 0 blocked a change
     HEALTH_BREACH = "health_breach"  # R8.4 control-limit breach (#232)
     SPEC_ESCALATION = "spec_escalation"  # decompose halted on the owner (#449)
+    PLAN_GATE = "plan_gate"  # an L1 plan awaiting approval (#602, run_plan_gate)
 
     @property
     def action_required(self) -> bool:
@@ -91,6 +90,7 @@ class ItemKind(StrEnum):
             # The architect refused to choose: nothing moves on this spec
             # until the owner answers (#449).
             ItemKind.SPEC_ESCALATION,
+            ItemKind.PLAN_GATE,
         }
 
 

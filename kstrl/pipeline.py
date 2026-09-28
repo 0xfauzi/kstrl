@@ -113,6 +113,7 @@ from kstrl.runstate import RunState
 from kstrl.scope import RunScope
 from kstrl.security import SecurityConfig, SecurityMode, SecurityResult
 from kstrl.statedir import ControlStateError, pre_run_prd_path
+from kstrl.timeout import limit_seconds
 from kstrl.verify import (
     SCOPE_UNREADABLE_CHECK,
     CheckResult,
@@ -4049,6 +4050,7 @@ class ComponentPipeline:
                     verification,
                     review_mode,
                     self.ui,
+                    timeout=limit_seconds(self.factory_config.review_timeout_seconds),
                     debug_dir=adversarial_debug_dir,
                     on_line=on_line,
                 )
@@ -4412,8 +4414,8 @@ class ComponentPipeline:
                     wt_path / comp.prd_path,
                     wt_path,
                     self.component_base(comp.id),
-                    sec_config,
-                    self.ui,
+                    config=sec_config,
+                    ui=self.ui,
                     debug_dir=adversarial_debug_dir,
                     on_line=on_line,
                 )
@@ -4665,9 +4667,9 @@ class ComponentPipeline:
                     comp_result.iterations,
                     self.run_id,
                     knowledge_config.knowledge_root,
-                    knowledge_config,
-                    wt_path,
-                    comp.review_passed,
+                    config=knowledge_config,
+                    worktree_path=wt_path,
+                    review_passed=comp.review_passed,
                     on_line=on_line,
                 )
             self.bus.emit(

@@ -550,6 +550,8 @@ DEFAULT_KSTRL_TOML = """\
 # single_pr = false                # one PR for the whole factory vs per-component
 # create_prs = true                # call `gh` to push + merge per component
 # review_mode = "hard"             # hard | advisory | skip
+# review_timeout_seconds = 0.0     # code and integration reviewer call; 0 = no limit
+# architect_timeout_seconds = 0.0  # architect call (ks decompose, ks factory --spec); 0 = no limit
 # merge_timeout = 300.0            # hang guard: seconds to wait for PR merge confirmation
 # max_adversarial_calls = 0        # 0 = no limit; caps review+security+distill LLM calls per run
 # At the cap, hard-mode review and security HALT the component.
@@ -1421,7 +1423,7 @@ def kstrl_toml_for(root: Path) -> str:
     detected toolchain in the one place that can act on it.
 
     Seeded COMMENTED, because `ks init` must not change an effective
-    value (tests/test_config_control_plane.py pins that). Uncommenting
+    value (tests/test_init_scaffold.py pins that). Uncommenting
     one line is the operator's explicit opt-in.
     """
     commands = _verify_commands_for(root, _detect_project_context(root)["language"])

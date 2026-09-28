@@ -262,7 +262,8 @@ ALLOWED: dict[tuple[str, str], int] = {
     # Bare references to the ``kstrl.feedforward`` module Decision 1 keeps
     # at its path: attribute access and monkeypatch targets that
     # FEEDFORWARD_ALLOWED's path-shaped substrings do not match.
-    ("tests/helpers/feedforward_prompts.py", "feedforward"): 14,
+    # 16: #626 enrolled a seventh notice, its renderer and its table row.
+    ("tests/helpers/feedforward_prompts.py", "feedforward"): 16,
     ("tests/test_feedforward.py", "feedforward"): 8,
     ("tests/test_feedforward_notices.py", "feedforward"): 3,
     # docs/loop-design.md is a dated design analysis whose SUBJECT is
@@ -377,4 +378,4 @@ def test_no_retired_name_survives_in_the_source() -> None:
         )
     assert sum(counts.get(k, 0) for k in ALLOWED) == sum(ALLOWED.values())
     assert len(SKIP_FILES) == 2
-    assert sum(ALLOWED.values()) == 185
+    assert sum(ALLOWED.values()) == 187
