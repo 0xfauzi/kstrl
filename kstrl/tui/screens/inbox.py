@@ -283,8 +283,8 @@ class InboxScreen(Screen[None]):
                 box.snooze(item.id, actor=self._actor())
         except (InboxError, ControlStateError) as exc:
             # ControlStateError is a RuntimeError, so it escapes an
-            # InboxError clause: every decide reaches Inbox._append,
-            # which takes the control lock, and an uncaught one here
+            # InboxError clause: every decide takes the control lock
+            # in Inbox._decide, and an uncaught one here
             # takes the Textual event loop down rather than telling the
             # operator their keystroke did nothing.
             self.notify(str(exc), severity="error")

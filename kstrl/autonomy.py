@@ -1215,8 +1215,8 @@ def apply_demotion(
         # The callee's surface, not an enumeration of believed causes.
         # ControlStateError is a RuntimeError, so the (OSError,
         # ValueError) pair every inbox site was written with does not
-        # catch it - and Inbox._append takes the control lock on every
-        # write, which is where it comes from. TypeError is
+        # catch it - and every Inbox write takes the control lock, which
+        # is where it comes from. TypeError is
         # InboxConfig.load's: it casts per key, so a TOML date or array
         # in [inbox] raises it. Escaping HERE is the worst of the
         # seven sites, because commit_transition has already saved the

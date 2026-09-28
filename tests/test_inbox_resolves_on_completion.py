@@ -396,8 +396,8 @@ class TestAnOperatorDecisionSurvivesTheCompletionRace:
     is patched so that on the first call for the gate's id (the fresh fold
     ``_decide``'s ``only_from`` branch performs, itself already inside
     ``control_lock``) it starts a thread that opens a fresh ``Inbox`` and
-    calls ``approve()``. That thread's own write goes through ``_append``,
-    which takes the SAME lock file - ``flock`` conflicts between two opens
+    calls ``approve()``. That thread's own ``_decide`` takes the SAME
+    lock file - ``flock`` conflicts between two opens
     even in one process - so with the fix the thread blocks until the
     resolve's write completes and releases the lock, and the operator's
     approve lands last in the log. ``thread.join(timeout=1.0)`` inside the

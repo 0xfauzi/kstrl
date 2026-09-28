@@ -3638,7 +3638,7 @@ def _open_health_breach_items(
             )
         except (OSError, ValueError, ControlStateError) as exc:
             # ControlStateError is a RuntimeError, raised by the control
-            # lock Inbox._append takes on every write.
+            # lock every Inbox write takes.
             ui.warn(f"Inbox write failed for {breach.metric} {breach.rule} (non-fatal): {exc}")
 
 

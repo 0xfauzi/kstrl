@@ -401,7 +401,7 @@ class TestCompareLadder:
     ) -> None:
         """``ControlUnavailableError`` is a RuntimeError, not an OSError.
 
-        ``Inbox._append`` takes the control lock on every write, so this
+        Every ``Inbox`` write takes the control lock, so this
         is the likely inbox failure rather than an exotic one, and it
         escaped the ``(OSError, ValueError)`` pair all four inbox sites
         were written with.

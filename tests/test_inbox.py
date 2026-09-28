@@ -142,7 +142,7 @@ class TestDecisions:
         # Two ids sharing a prefix must not silently resolve to one.
         box = _box(tmp_path)
         for suffix in ("aa", "bb"):
-            box._append(
+            box._append_unlocked(
                 InboxItem(
                     id=f"abcdef{suffix}",
                     kind=ItemKind.HALTED_RUN,
@@ -155,7 +155,7 @@ class TestDecisions:
 
     def test_unambiguous_prefix_still_resolves(self, tmp_path: Path) -> None:
         box = _box(tmp_path)
-        box._append(
+        box._append_unlocked(
             InboxItem(
                 id="abcdefaa",
                 kind=ItemKind.HALTED_RUN,
@@ -183,7 +183,7 @@ class TestSnooze:
         stored = box.get(item.id)
         assert stored is not None
         stored.snooze_until = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
-        box._append(stored)
+        box._append_unlocked(stored)
         assert len(box.open_items()) == 1
 
     def test_non_positive_ttl_refused(self, tmp_path: Path) -> None:

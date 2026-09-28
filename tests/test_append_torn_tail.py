@@ -593,7 +593,7 @@ class TestJsonlSinkSurvivesATornTail:
 
 
 class TestInboxSurvivesATornTail:
-    """``Inbox._append``, under ``control_lock``, repaired with a BARE PAD.
+    """``Inbox._append_unlocked``, under ``control_lock``, repaired with a BARE PAD.
 
     No repair row, and the reason is measured rather than stylistic: a
     valid-JSON row that ``InboxItem.from_dict`` returns None for is
