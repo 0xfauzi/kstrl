@@ -483,14 +483,13 @@ class CheckpointDecision(Enum):
 def _unanswered_choice_note(response: PromptResponse) -> str:
     """``, choice=N``, only when there is a real answer to report.
 
-    ``response.choice`` is always ``req.default`` (index 0, Approve)
-    whenever ``answered`` is False, so a message that logs it
-    unconditionally reads as though the gate had chosen Approve (#594
-    simplify round, A4). A free function rather than an inline
-    conditional in the caller: `_phase_checkpoint` sits at the
-    complexipy ceiling already, and a branch here does not add to it.
+    An unanswered response carries ``choice=None`` (#647), and the
+    ``answered=False`` beside it in the log line already says so. A free
+    function rather than an inline conditional in the caller:
+    `_phase_checkpoint` sits at the complexipy ceiling already, and a
+    branch here does not add to it.
     """
-    return f", choice={response.choice}" if response.answered else ""
+    return f", choice={response.choice}" if response.choice is not None else ""
 
 
 class PrDisposition(Enum):
@@ -5166,7 +5165,7 @@ class ComponentPipeline:
                     1: CheckpointDecision.REJECTED,
                     2: CheckpointDecision.RETRY,
                 }.get(response.choice)
-                if response.answered
+                if response.choice is not None
                 else None
             )
             if decision is not None:

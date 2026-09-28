@@ -11,15 +11,15 @@ gate, factory/retry confirms, evolve apply). Each becomes a
 - :class:`QueueInteractionChannel` is the thread-safe bridge for
   embedded mode (PR F): the orchestrator thread blocks on a
   ``threading.Event`` while the Textual UI answers via
-  ``resolve``; ``detach``/``cancel_all`` degrade pending prompts to
-  their non-interactive defaults so a dead TUI can never hang a run.
+  ``resolve``; ``detach``/``cancel_all`` release pending prompts
+  unanswered so a dead TUI can never hang a run.
 
-``PromptResponse.answered`` is the load-bearing bit: ``False`` means
-nobody answered - no one was there to ask, the resolver detached, the
-prompt was interrupted, or the choice was out of range. It is never
-consent: the merge gate and ``ks factory``'s own confirm treat it as a
-refusal (#594). ``ks retry``'s confirm does not yet - at this head it
-still starts on an unanswered prompt; lane #597 (PR #605) owns that site.
+``PromptResponse.choice`` is ``None`` exactly when nobody answered: no
+one was there to ask, the resolver detached, the prompt was interrupted,
+or the answer was out of range. It never carries the prompt's default,
+which is Start or Approve at most prompts, so a reader that tests the
+choice alone cannot read "nobody answered" as consent (#647).
+``PromptResponse.answered`` is derived from it, never stored beside it.
 """
 
 from __future__ import annotations
@@ -78,8 +78,15 @@ class PromptRequest:
 @dataclass(frozen=True)
 class PromptResponse:
     request_id: str
-    choice: int
-    answered: bool  # False = nobody answered; never consent (#594)
+    #: The option index the operator picked, or None when nobody answered.
+    #: Never the prompt's default (#647).
+    choice: int | None
+
+    @property
+    def answered(self) -> bool:
+        """Whether anyone answered: derived from ``choice``, so the two
+        cannot disagree (#647). False is never consent (#594)."""
+        return self.choice is not None
 
 
 class InteractionChannel(Protocol):
@@ -99,11 +106,7 @@ class UiInteractionChannel:
 
     def request(self, req: PromptRequest) -> PromptResponse:
         if not self._ui.can_prompt():
-            return PromptResponse(
-                request_id=req.request_id,
-                choice=req.default,
-                answered=False,
-            )
+            return PromptResponse(request_id=req.request_id, choice=None)
         try:
             choice = self._ui.choose(req.header, list(req.options), req.default)
         except (EOFError, KeyboardInterrupt):
@@ -112,22 +115,10 @@ class UiInteractionChannel:
             # prompter that lets the interrupt through - ``RichUI`` did,
             # raising it past this channel, past the pipeline, filing no
             # inbox item - degrades the same way ``PlainUI`` does.
-            return PromptResponse(
-                request_id=req.request_id,
-                choice=req.default,
-                answered=False,
-            )
+            return PromptResponse(request_id=req.request_id, choice=None)
         if isinstance(choice, bool) or not 0 <= choice < len(req.options):
-            return PromptResponse(
-                request_id=req.request_id,
-                choice=req.default,
-                answered=False,
-            )
-        return PromptResponse(
-            request_id=req.request_id,
-            choice=choice,
-            answered=True,
-        )
+            return PromptResponse(request_id=req.request_id, choice=None)
+        return PromptResponse(request_id=req.request_id, choice=choice)
 
 
 class _Pending:
@@ -157,8 +148,8 @@ class QueueInteractionChannel:
             self._on_request = on_request
 
     def detach(self) -> None:
-        """Subsequent requests degrade to answered=False; pending ones
-        are released with their defaults."""
+        """Subsequent requests come back unanswered (``choice=None``);
+        pending ones are released unanswered."""
         with self._lock:
             self._on_request = None
         self.cancel_all()
@@ -171,11 +162,7 @@ class QueueInteractionChannel:
         with self._lock:
             notify = self._on_request
             if notify is None:
-                return PromptResponse(
-                    request_id=req.request_id,
-                    choice=req.default,
-                    answered=False,
-                )
+                return PromptResponse(request_id=req.request_id, choice=None)
             pending = _Pending(req)
             self._pending[req.request_id] = pending
         try:
@@ -183,25 +170,12 @@ class QueueInteractionChannel:
         except Exception:  # noqa: BLE001 - a dying UI must not hang the run
             with self._lock:
                 self._pending.pop(req.request_id, None)
-            return PromptResponse(
-                request_id=req.request_id,
-                choice=req.default,
-                answered=False,
-            )
+            return PromptResponse(request_id=req.request_id, choice=None)
         pending.event.wait()
         with self._lock:
             self._pending.pop(req.request_id, None)
-        if pending.choice is None:
-            return PromptResponse(
-                request_id=req.request_id,
-                choice=req.default,
-                answered=False,
-            )
-        return PromptResponse(
-            request_id=req.request_id,
-            choice=pending.choice,
-            answered=True,
-        )
+        # None when cancel_all released the waiter without an answer.
+        return PromptResponse(request_id=req.request_id, choice=pending.choice)
 
     def resolve(self, request_id: str, choice: int) -> bool:
         """Answer one pending request; False when it is unknown (already
@@ -217,7 +191,7 @@ class QueueInteractionChannel:
             return True
 
     def cancel_all(self) -> None:
-        """Release every waiter with its default (answered=False)."""
+        """Release every waiter unanswered (``choice=None``)."""
         with self._lock:
             waiters = list(self._pending.values())
         for pending in waiters:

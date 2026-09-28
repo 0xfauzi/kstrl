@@ -408,7 +408,7 @@ class _RecordingChannel:
 
     def request(self, req: PromptRequest) -> PromptResponse:
         _RecordingChannel.headers.append(req.header)
-        return PromptResponse(request_id=req.request_id, choice=1, answered=True)
+        return PromptResponse(request_id=req.request_id, choice=1)
 
 
 def test_the_confirmation_names_every_component_the_retry_reenters(

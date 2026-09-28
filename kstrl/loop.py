@@ -614,18 +614,18 @@ def _resolve_iteration_pause(
             default=0,
         )
     )
-    if response.answered and response.choice == 1:
+    if response.choice == 1:
         # Disable interactive for remaining iterations
         config.interactive = False
         return None
-    if response.answered and response.choice == 2:
+    if response.choice == 2:
         return LoopResult(
             completed=False,
             iterations=iteration,
             exit_code=0,
             usage=collect_usage(agent),
         )
-    if not response.answered:
+    if response.choice is None:
         ui.warn("Iteration pause was interrupted; stopping the run")
         return LoopResult(
             completed=False,

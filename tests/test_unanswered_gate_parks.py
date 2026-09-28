@@ -124,7 +124,7 @@ class _FakeChannel:
 
     def request(self, req: PromptRequest) -> PromptResponse:
         return PromptResponse(
-            request_id=req.request_id, choice=self._choice, answered=self._answered
+            request_id=req.request_id, choice=self._choice if self._answered else None
         )
 
 
@@ -304,7 +304,7 @@ class TestAnInterruptedPromptIsNotAnAnswer:
                 default=0,
             )
         )
-        assert response.answered is False, response
+        assert (response.choice, response.answered) == (None, False), response
 
 
 def _checkpoint_function() -> ast.FunctionDef:

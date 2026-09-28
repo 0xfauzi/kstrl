@@ -170,7 +170,7 @@ class PlainUI:
 
         Raises ``EOFError`` or ``KeyboardInterrupt`` when the prompt is
         interrupted (end of input or Ctrl-C): ``UiInteractionChannel``
-        catches both around this call and reports ``answered=False``, so
+        catches both around this call and reports ``choice=None``, so
         an interrupted prompt is never read as the default option (#594).
         """
         if not self.can_prompt():
