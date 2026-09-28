@@ -307,3 +307,45 @@ def test_an_unread_lockfile_is_advisory_when_license_unresolved_is_advisory(
     assert row["passed"] is True
     assert row["message"].endswith("; 2 advisory(ies)")
     assert row["details"] == [d + "; recorded as advisory" for d in _unread("Cargo.lock")]
+
+
+@pytest.mark.skipif(shutil.which("ruff") is None, reason="needs ruff on PATH")
+def test_dead_code_ruff_that_cannot_load_its_config_is_a_failure_not_an_empty_tree(
+    tmp_path: Path,
+) -> None:
+    """A ruff that fails before listing any file is reported as a failed
+    command, never as a tree with no Python in it."""
+    root = _repo(
+        tmp_path,
+        {**PY_BASE, "ruff.toml": 'line-length = "x"\n'},
+        {"src/a.py": "A = 2\n"},
+        "dead_code_cleanup = true\n",
+    )
+
+    document = _check_json(root)
+
+    assert [c for c in document["checks"] if c["name"] == "dead_code_ruff"] == []
+    gaps = _gaps(document, "dead_code_ruff")
+    assert [g["reason"] for g in gaps] == ["command_failed"]
+    assert gaps[0]["detail"].startswith("ruff check exited 2")
+
+
+def test_a_python_test_beside_a_typescript_test_names_the_file_it_did_not_read(
+    tmp_path: Path,
+) -> None:
+    """A passing row over Python tests still says which tests it did not open."""
+    branch = {
+        "tests/test_b.py": "def test_b() -> None:\n    assert abs(-2) == 2\n",
+        "src/bulk.test.ts": "expect(true).toBe(true);\n",
+    }
+    root = _repo(tmp_path, TS_BASE, branch, ADEQUACY)
+
+    document = _check_json(root)
+
+    row = _row(document, "test_adequacy")
+    assert row["passed"] is True
+    assert row["message"] == (
+        "test adequacy: 1 changed Python test file(s), no weakening signals; "
+        "not read: src/bulk.test.ts"
+    )
+    assert _gaps(document, "test_adequacy") == []
