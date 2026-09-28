@@ -398,10 +398,10 @@ def parse_pytest_output(raw: str) -> ParsedOutput:
     # only on a nonzero exit, so "no failure in sight" always means the
     # parse missed it.
     #
-    # The tail is still only the last few lines, so a foreign tool's
-    # file, line and assertion detail is dropped either way; recovering
-    # that needs a parser that knows the tool, which is the other half
-    # of #258.
+    # The tail is only the last few lines, so when no parser recognised
+    # the output the gate shows ``failure_excerpt`` instead (#622): the
+    # lines around each location it names inside the worktree. The tail
+    # is what is left when it names none.
     if not result.failures and _pytest_failure_count(result.raw_summary) == 0:
         tail = lines[-5:] if len(lines) > 5 else lines
         result.raw_summary = "\n".join(tail)
