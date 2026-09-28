@@ -52,7 +52,8 @@ from kstrl.init_cmd import (
 )
 from kstrl.policy import ENFORCEMENT_MACHINERY_PATHS, PolicyConfig, _match_glob
 from kstrl.statedir import STATE_DIR_NAME, state_dir
-from kstrl.verify import VerifyConfig, is_python_project, resolve_verify_commands
+from kstrl.toolchains import is_python_project
+from kstrl.verify import VerifyConfig, resolve_verify_commands
 
 #: Version of the `ks doctor --json` document. Its own number, not
 #: `CHECK_SCHEMA_VERSION`: the two documents answer different
@@ -559,7 +560,7 @@ def check_gitignore(root: Path) -> _CheckResult:
     """`.kstrl/` and the detected language's build output are ignored.
 
     The build output comes first and fails the row (#459): every entry of
-    `init_cmd._LANGUAGE_IGNORES` for the language `ks init` detects,
+    the ignores of the `kstrl.toolchains` record `ks init` detects,
     asked of git through `init_cmd.language_ignores_blocker`, the same
     function the `ks decompose` / `ks factory --spec` preflight refuses
     on. A greenfield repository gets its language after `ks init` ran, so

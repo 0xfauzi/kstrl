@@ -25,16 +25,41 @@ WHAT IT CANNOT SEE: a suffix the interpreter assembles at run time, such
 as ``"".join([".", "py"])``, folds to nothing (:func:`folded_str` decides
 literals, ``+`` and plain f-string pieces only). Pinned below as a strict
 expected failure, so a walk that learns to see it fails loudly.
+
+#635 WIDENS IT BY TWO LAYERS, for the language knowledge that is not a
+file selection.
+
+The first counts, per module, every expression whose folded value names a
+Python tool (:data:`PYTHON_TOOL_TOKENS`). A new command line, parser key
+or message that assumes Python moves a count, and its row says whether the
+module is the Python record, a Python-only check, or a leak.
+
+The second counts, per scope, every spelling of a name that hands out a
+toolchain fact (:data:`OBTAIN_POINTS`): the Python default commands, the
+records, the detector and the two lookups built on it.
+``kstrl.toolchains.resolve`` is the one reader of a record's commands for a
+gate and the ``verify.resolve_*_command`` projections are its callers, so
+they are not obtain points. Any other scope that reaches for a default
+directly is a new row: ``cmd = DEFAULT_TEST_COMMAND`` inside a gate is the
+defect this layer exists to make red.
+
+Both FLAG. What they cannot see is pinned as strict expected failures: a
+name or command assembled with ``"".join`` does not fold, and a string that
+is a statement on its own (a docstring) is not counted, because nothing
+reads its value. A count is per row, so a literal deleted and another added
+in the same module moves nothing; the row's reason is what a reader checks.
 """
 
 from __future__ import annotations
 
 import ast
+from collections.abc import Iterable
 from pathlib import Path
 
 import pytest
 
 from tests.helpers.astwalk import (
+    all_nodes,
     assert_census,
     blind_spot,
     folded_str,
@@ -117,7 +142,6 @@ EXPECTED_SELECTOR_SITES: dict[str, tuple[int, str]] = {
         1,
         "Phase 0 context: an empty graph is an empty section, never a check result",
     ),
-    "init_cmd.py: <module>": (1, "_LANGUAGE_LOCKFILES, ks init's language detection"),
     "policy.py: <module>": (1, "LOCKFILE_MANIFESTS' uv.lock key; every lockfile is listed"),
     "policy.py: evaluate_policy": (
         1,
@@ -138,6 +162,10 @@ EXPECTED_SELECTOR_SITES: dict[str, tuple[int, str]] = {
         "TEST_FILE_PATTERNS, the files pytest and vitest collect by default (#620); a "
         "changed test file no pattern claims has no runner, so unrun_test_files lists it "
         "as not_measured and the tests_ran row never counts it as run",
+    ),
+    "toolchains.py: <module>": (
+        1,
+        "the Python record's uv.lock lockfile, which ks init stages; selects nothing",
     ),
     "verify.py: _changed_non_test_python": (
         1,
@@ -188,4 +216,212 @@ def test_a_suffix_assembled_at_run_time_is_not_seen() -> None:
     blind_spot(
         lambda source: any(selects_python(node) for node in ast.walk(parse(source))),
         'SUFFIX = "".join([".", "py"])\nkeep = [f for f in changed if f.endswith(SUFFIX)]\n',
+    )
+
+
+# --- #635: Python tool literals, per module ---------------------------------
+
+#: The Python tools a command line, a parser key or a message can name, and
+#: the prefix every Python default command starts with.
+PYTHON_TOOL_TOKENS = ("pytest", "mypy", "ruff", "vulture", "mutmut", "uv run")
+
+
+def names_a_python_tool(node: ast.AST) -> bool:
+    """Does this expression fold to a string naming a Python tool?"""
+    value = folded_str(node)
+    return value is not None and any(token in value for token in PYTHON_TOOL_TOKENS)
+
+
+def _statement_strings(trees: Iterable[ast.Module]) -> frozenset[int]:
+    """The ids of every expression that is a statement on its own.
+
+    A docstring is one. Nothing reads its value, so it is not counted.
+    """
+    return frozenset(
+        id(node.value) for tree in trees for node in all_nodes(tree) if isinstance(node, ast.Expr)
+    )
+
+
+#: One control per token, spelled out rather than derived from
+#: PYTHON_TOOL_TOKENS, so shrinking the constant cannot shrink its proof.
+_TOOL_CONTROLS = (
+    'cmd = "uv run " + "pytest"\n',
+    'if parser == "mypy":\n    pass\n',
+    'FIX = f"ruff check --fix {path}"\n',
+    'RUNNER = "vulture"\n',
+    'MSG = "mutmut is not on PATH"\n',
+    'LOG = "pytest-junit.xml"\n',
+)
+
+#: Every module in ``kstrl/`` whose code names a Python tool, with how many
+#: expressions do and what they are. DERIVED BY RUNNING THIS FILE: a moved
+#: count is read off the failure's ``Found:`` dict.
+EXPECTED_TOOL_LITERALS: dict[str, tuple[int, str]] = {
+    "adequacy.py": (5, "Python-only check: pytestmark and mutmut's junitxml report messages"),
+    "cli.py": (4, "help text naming the Python defaults and the Python-only checks"),
+    "contract.py": (1, "message: exit 5 is pytest's no-tests-collected code"),
+    "doctor.py": (2, "the verify row's warnings about a `uv run` default"),
+    "evolution.py": (4, "_classify_check's keywords for Phase 1 check names"),
+    "feature_verify.py": (1, "message naming the dead_code_ruff check"),
+    "feedforward.py": (7, "the Phase 0 scan's ruff.toml and [tool.ruff] convention readers"),
+    "gateparse.py": (6, "parser registry keys for pytest, mypy and ruff output"),
+    "init_cmd.py": (
+        4,
+        "DEFAULT_KSTRL_TOML's comments, BUILD_MANIFEST_FIX's uv commands, and the "
+        "enrolled Python standards and CLAUDE.md verification prompts",
+    ),
+    "parsers.py": (3, "parser names for pytest, mypy and ruff output"),
+    "suite_inventory.py": (2, "the pytest junit report the test gate asks for (#620)"),
+    "toolchains.py": (8, "the Python record: its commands, its ignores and its mypy scope reader"),
+    "verify.py": (
+        42,
+        "the Python-only checks (mutation, dead code, patch coverage) and their "
+        "messages; each reports NotMeasured on a tree they cannot read",
+    ),
+}
+
+
+def test_every_python_tool_literal_is_enrolled() -> None:
+    assert all(reason.strip() for _count, reason in EXPECTED_TOOL_LITERALS.values())
+    sources = package_sources()
+    statements = _statement_strings(
+        [*(parsed(source) for source in sources), *(parse(one) for one in _TOOL_CONTROLS)]
+    )
+    assert_census(
+        sources=sources,
+        sees=lambda node: id(node) not in statements and names_a_python_tool(node),
+        expected={row: count for row, (count, _reason) in EXPECTED_TOOL_LITERALS.items()},
+        control=_TOOL_CONTROLS,
+        message=(
+            "A module in kstrl/ that names a Python tool changed (#635). A command belongs "
+            "in a kstrl.toolchains record and reaches a gate through toolchains.resolve; a "
+            "Python-only check must report NotMeasured where it cannot read the tree. Then "
+            "move the module's row in EXPECTED_TOOL_LITERALS and say what the new site is."
+        ),
+    )
+
+
+@pytest.mark.xfail(strict=True, raises=AssertionError)
+def test_a_tool_name_assembled_at_run_time_is_not_seen() -> None:
+    """Disclosed limit: ``"".join`` does not fold, so this command is invisible."""
+    blind_spot(
+        lambda source: any(names_a_python_tool(node) for node in all_nodes(parse(source))),
+        'RUNNER = "".join(["py", "test"])\n',
+    )
+
+
+@pytest.mark.xfail(strict=True, raises=AssertionError)
+def test_a_tool_name_in_a_docstring_is_not_counted() -> None:
+    """Disclosed limit: a string that is a statement on its own is skipped."""
+
+    def counted(source: str) -> bool:
+        tree = parse(source)
+        statements = _statement_strings([tree])
+        return any(
+            id(node) not in statements and names_a_python_tool(node) for node in all_nodes(tree)
+        )
+
+    blind_spot(counted, 'def f() -> None:\n    """Runs uv run pytest."""\n')
+
+
+# --- #635: who reaches for a toolchain fact, per scope -----------------------
+
+#: Every name that hands out a toolchain fact. ``toolchains.resolve`` is the
+#: sanctioned reader of a record's commands, so it is not one.
+OBTAIN_POINTS = (
+    "DEFAULT_TEST_COMMAND",
+    "DEFAULT_LINT_COMMAND",
+    "DEFAULT_TYPECHECK_COMMAND",
+    "SCOPED_TYPECHECK_COMMAND",
+    "TOOLCHAINS",
+    "detect",
+    "toolchain_named",
+    "is_python_project",
+    "python_typecheck_default",
+)
+
+_OBTAIN_NETS = tuple(spells(point) for point in OBTAIN_POINTS)
+
+
+def reaches_an_obtain_point(node: ast.AST) -> bool:
+    """Does this node spell a name that hands out a toolchain fact?"""
+    return any(net(node) for net in _OBTAIN_NETS)
+
+
+#: Every scope in ``kstrl/`` that spells an obtain point, with how many
+#: spellings it holds and why it may. DERIVED BY RUNNING THIS FILE.
+EXPECTED_OBTAIN_SITES: dict[str, tuple[int, str]] = {
+    "cli.py: <module>": (2, "imports the two defaults for the --help text"),
+    "cli.py: factory": (2, "--test-command and --lint-command help text names the default"),
+    "contract.py: <module>": (2, "imports DEFAULT_TEST_COMMAND for ContractConfig's field default"),
+    "contract.py: ContractConfig.from_env": (
+        1,
+        "KSTRL_CONTRACT_TEST_CMD's fallback; ContractConfig.load resolves through "
+        "verify.resolve_test_command instead",
+    ),
+    "decompose.py: <module>": (2, "ROOT_BUILD_MANIFESTS, the union of every record's markers"),
+    "doctor.py: <module>": (1, "imports is_python_project"),
+    "doctor.py: check_verify_commands": (
+        1,
+        "#621's refusal: a Python default on a tree that is not Python",
+    ),
+    "fixtures.py: <module>": (1, "imports is_python_project"),
+    "fixtures.py: fixture_tree_errors": (1, "a function fixture needs a Python tree (#632)"),
+    "init_cmd.py: <module>": (2, "imports detect and toolchain_named"),
+    "init_cmd.py: _detect_project_context": (1, "the detected language ks init reports"),
+    "init_cmd.py: _ensure_lockfiles_tracked": (1, "the record's lockfiles, which ks init stages"),
+    "init_cmd.py: _generate_claude_md": (1, "the record's id keys the enrolled standards bodies"),
+    "init_cmd.py: _language_ignores": (1, "the record's ignores, which ks init writes"),
+    "init_cmd.py: kstrl_toml_for": (1, "the record's commands, seeded commented into kstrl.toml"),
+    "toolchains.py: <module>": (14, "the definitions and the Python record"),
+    "toolchains.py: detect": (2, "first match wins in TOOLCHAINS order"),
+    "toolchains.py: is_python_project": (2, "detect's choice compared with the Python record"),
+    "toolchains.py: python_typecheck_default": (4, "the Python record's mypy scope rule"),
+    "toolchains.py: resolve": (3, "the one reader: an unset key gets the Python command"),
+    "toolchains.py: toolchain_named": (1, "a language string back to its record"),
+    "verify.py: <module>": (
+        9,
+        "imports the defaults and is_python_project; PYTHON_DEFAULT_COMMANDS",
+    ),
+    "verify.py: _command_not_run": (
+        1,
+        "#621's refusal: a Python default on a tree that is not Python",
+    ),
+}
+
+
+def test_every_scope_that_reaches_for_a_toolchain_fact_is_enrolled() -> None:
+    assert all(reason.strip() for _count, reason in EXPECTED_OBTAIN_SITES.values())
+    assert_census(
+        sources=package_sources(),
+        sees=reaches_an_obtain_point,
+        key=_scope_row,
+        expected={row: count for row, (count, _reason) in EXPECTED_OBTAIN_SITES.items()},
+        # One control per obtain point, spelled out for the same reason as above.
+        control=(
+            "cmd = DEFAULT_TEST_COMMAND\n",
+            "cmd = verify.DEFAULT_LINT_COMMAND\n",
+            "from kstrl.toolchains import DEFAULT_TYPECHECK_COMMAND\n",
+            "cmd = SCOPED_TYPECHECK_COMMAND\n",
+            'rust = toolchains.TOOLCHAINS["Rust"]\n',
+            "found = detect(root)\n",
+            "record = toolchain_named(language)\n",
+            "if is_python_project(cwd):\n    pass\n",
+            "cmd = python_typecheck_default(cwd)\n",
+        ),
+        message=(
+            "A scope in kstrl/ that reaches for a default command, a toolchain record or "
+            "the detector changed (#635). A gate's command comes from toolchains.resolve "
+            "(through verify.resolve_*_command), never from a default read directly. If the "
+            "new site is not a gate, add or move its row in EXPECTED_OBTAIN_SITES and say why."
+        ),
+    )
+
+
+@pytest.mark.xfail(strict=True, raises=AssertionError)
+def test_an_obtain_point_named_at_run_time_is_not_seen() -> None:
+    """Disclosed limit: a name assembled with ``"".join`` is not a spelling."""
+    blind_spot(
+        lambda source: any(reaches_an_obtain_point(node) for node in all_nodes(parse(source))),
+        'cmd = getattr(toolchains, "".join(["TOOL", "CHAINS"]))\n',
     )
