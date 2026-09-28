@@ -387,3 +387,21 @@ def test_a_refused_report_still_shows_what_the_command_printed(tmp_path: Path) -
     assert [gap["reason"] for gap in _test_gaps(document)] == ["tool_missing"]
     assert "wrote no report to $KSTRL_REPORT" in details[0].splitlines()[0]
     assert "go: no main module" in details[0]
+
+
+def test_an_unlocated_failure_shows_what_the_test_printed(tmp_path: Path) -> None:
+    # A panic prints no "name.go:N: " line, so the failure is unlocated and its
+    # message is the first line that is not go's own framing (=== RUN, --- FAIL).
+    original = (TOOL_OUTPUT_DIR / FAIL).read_text(encoding="utf-8")
+    panicked = original.replace(
+        '"Output":"    pricing_test.go:7: BulkPercent(20) = 11, want 10\\n"',
+        '"Output":"panic: assignment to entry in nil map [recovered]\\n"',
+    )
+    assert panicked != original
+    report = tmp_path / "panic.jsonl"
+    report.write_text(panicked, encoding="utf-8")
+    root = _repo(tmp_path, f'cp {shlex.quote(str(report))} "$KSTRL_REPORT"; exit 1')
+
+    details = _test_row(_check(root))["details"]
+
+    assert "   [TestBulkPercent] panic: assignment to entry in nil map [recovered]" in details
