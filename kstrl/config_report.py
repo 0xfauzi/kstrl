@@ -82,10 +82,10 @@ def show_sections() -> list[tuple[str, list[tuple[str, str]]]]:
     """(toml section, [(toml key, KstrlConfig field)]) - the documented
     kstrl.toml surface for the base config. The string-key rows come from
     ``STRING_KEYS``; the rest are keys that table does not describe (a
-    list, ints, floats and bools, and the two UI fields with no toml
-    key of their own)."""
+    list, ints, floats, a float-or-None and bools, and the two UI fields
+    with no toml key of their own)."""
     return [
-        ("agent", _string_key_rows("agent")),
+        ("agent", [*_string_key_rows("agent"), ("budget_usd", "agent_budget_usd")]),
         (
             "run",
             [
@@ -193,6 +193,8 @@ def scrubbed_environ() -> Iterator[None]:
 # defect the sentinel removed.
 UNSET_RENDERINGS: dict[tuple[str, str], str] = {
     ("paths", "progress"): "<unset: each component writes beside its own PRD>",
+    # None is no ceiling: `_budget_usd` reads both "" and 0 as None.
+    ("agent", "budget_usd"): NO_LIMIT,
 }
 
 # Every time and spend limit in the report. At 0 or below each one means
@@ -266,138 +268,87 @@ def kstrl_config_defaults(root_dir: Path) -> KstrlConfig:
     return KstrlConfig.anchored(root_dir)
 
 
-def _phase_sections() -> list[tuple[str, Any, list[str]]]:
-    """(section, loader, knob fields) - the documented kstrl.toml
-    surface for the factory-phase configs. Loaders import lazily; the
-    report is not on any hot path.
+#: The sections whose dataclass holds fields that are not kstrl.toml keys
+#: (nested configs, paths and flags ``FactoryConfig.load`` fills from other
+#: sections, ``KnowledgeConfig.knowledge_root``), with the keys they read.
+#: Every other section's keys are its dataclass fields minus the provenance
+#: ones, the rule scripts/gen_docs.py documents them by. The census in
+#: tests/test_config_show.py fails when the report and the documented set
+#: differ, so a key added to either list alone goes red.
+_LISTED_KNOBS: dict[str, tuple[str, ...]] = {
+    "factory": (
+        "max_parallel",
+        "max_retries",
+        "retry_delay",
+        "use_worktrees",
+        "single_pr",
+        "create_prs",
+        "review_mode",
+        "review_timeout_seconds",
+        "architect_timeout_seconds",
+        "claim_agreement",
+        "merge_timeout",
+        "max_adversarial_calls",
+        "max_total_tokens",
+        "max_cost_usd",
+        "pause_before_pr_merge",
+        "progress_log_enabled",
+        "keep_worktrees_on_failure",
+        "integration_review",
+        "integration_blocking",
+        "integration_max_rounds",
+        "convergence_attempts",
+        "worktree_setup_command",
+        "worktree_setup_timeout",
+    ),
+    "knowledge": (
+        "enabled",
+        "max_core_tokens",
+        "max_dependency_tokens",
+        "max_sibling_tokens",
+        "distill_timeout_seconds",
+        "distill_model",
+        "max_facts_per_distill",
+        "dependency_scope",
+    ),
+}
 
-    The LOADER for each section comes from
-    ``config_preflight.config_sections()``, which is the one registry of
-    section to loader and is kept complete by an AST test. Only the knob
-    lists are local, because they are about what this report RENDERS
-    rather than about what a section is loaded by. A second copy of the
-    loader table is what the comment on ``verify`` below is already an
-    account of, one level down.
+
+def _knob_fields(section: str, config: Any) -> list[str]:
+    """The kstrl.toml keys of one resolved phase section, in field order.
+
+    Derived from the dataclass unless the section is in ``_LISTED_KNOBS``.
+    A hand-typed list per section is how this report came to omit twelve
+    sections and 53 documented keys (#649): the ``verify`` list had
+    already gone stale once when #258 added keys. A field declared
+    ``metadata={"provenance": True}`` records where a value came from and
+    has no toml key (``EvolutionConfig.retired_keys``, #217).
+    """
+    listed = _LISTED_KNOBS.get(section)
+    if listed is not None:
+        return list(listed)
+    return [f.name for f in dataclass_fields(config) if not f.metadata.get("provenance")]
+
+
+def _phase_sections() -> list[tuple[str, Any]]:
+    """(section, loader) for every kstrl.toml section outside ``show_sections``.
+
+    Both the sections and their loaders come from
+    ``config_preflight.config_sections()``, the one registry of section
+    to loader, kept complete by an AST test in
+    tests/test_config_preflight.py. A section registered there is
+    rendered here with no edit to this module. Loaders import lazily;
+    the report is not on any hot path.
     """
     from kstrl.config_preflight import config_sections
-    from kstrl.intake_github import GitHubIntakeConfig
-    from kstrl.serve import ServeConfig
-    from kstrl.timeout import TimeoutConfig
-    from kstrl.verify import VerifyConfig
 
-    loaders = {name: entry.loader for entry in config_sections() for name in entry.sections}
-
-    knobs: list[tuple[str, list[str]]] = [
-        (
-            "factory",
-            [
-                "max_parallel",
-                "max_retries",
-                "retry_delay",
-                "use_worktrees",
-                "single_pr",
-                "create_prs",
-                "review_mode",
-                "review_timeout_seconds",
-                "architect_timeout_seconds",
-                "merge_timeout",
-                "max_adversarial_calls",
-                "max_total_tokens",
-                "max_cost_usd",
-                "pause_before_pr_merge",
-                "progress_log_enabled",
-                "keep_worktrees_on_failure",
-                "integration_review",
-                "integration_blocking",
-                "integration_max_rounds",
-                "convergence_attempts",
-                "worktree_setup_command",
-                "worktree_setup_timeout",
-            ],
-        ),
-        # Derived, not hand-listed. The hand-written copy of this list
-        # went stale the moment #258 added the three `*_tool` keys: they
-        # reached VerifyConfig, gen_docs, the README and env-vars.md and
-        # not this list, so `ks config` and the config screen showed no
-        # row for the one setting an operator reaches for when a gate is
-        # parsed by the wrong toolchain. Every scalar field of
-        # VerifyConfig IS a documented kstrl.toml key, which gen_docs
-        # already enforces, so the field list is the key list and a
-        # second copy of it can only ever be wrong.
-        ("verify", [f.name for f in dataclass_fields(VerifyConfig)]),
-        (
-            "security",
-            [
-                "mode",
-                "fail_threshold",
-                "timeout_seconds",
-                "agent_cmd",
-                "agent_type",
-                "model",
-            ],
-        ),
-        ("contract", ["mode", "test_command", "timeout"]),
-        (
-            "codebase_scan",
-            [
-                "enabled",
-                "module_map",
-                "public_interfaces",
-                "dependency_graph",
-                "conventions",
-                "max_context_tokens",
-            ],
-        ),
-        (
-            "knowledge",
-            [
-                "enabled",
-                "max_core_tokens",
-                "max_dependency_tokens",
-                "max_sibling_tokens",
-                "distill_timeout_seconds",
-                "distill_model",
-                "max_facts_per_distill",
-                "dependency_scope",
-            ],
-        ),
-        (
-            "evolution",
-            [
-                "enabled",
-                "journal_path",
-                "experiments_path",
-                "min_pattern_frequency",
-                "lookback_runs",
-            ],
-        ),
-        ("timeout", [f.name for f in dataclass_fields(TimeoutConfig)]),
-        ("intake_github", [f.name for f in dataclass_fields(GitHubIntakeConfig)]),
-        ("serve", [f.name for f in dataclass_fields(ServeConfig)]),
-        (
-            "notify",
-            [
-                "on_complete",
-                "on_first_failure",
-                "on_inbox_item",
-                "hook_timeout",
-            ],
-        ),
-        (
-            "linear",
-            [
-                "enabled",
-                "team_id",
-                "token_env",
-                "auth_mode",
-                "api_url",
-                "dry_run",
-                "timeout_seconds",
-                "min_request_interval",
-            ],
-        ),
+    base = {name for name, _ in show_sections()}
+    return [
+        (name, entry.loader)
+        for entry in config_sections()
+        for name in entry.sections
+        if name not in base
     ]
-    return [(name, loaders[name], fields) for name, fields in knobs]
 
 
 def _base_sources(
@@ -444,14 +395,13 @@ _FOLLOWED_SECTIONS: dict[tuple[str, str], str] = {
 
 def _phase_rows(
     section: str,
-    knob_fields: list[str],
     resolved: Any,
     noenv: Any,
     toml_keys: set[str],
 ) -> list[ConfigRow]:
     """Rows for one phase config, each tagged with where its value came from."""
     rows: list[ConfigRow] = []
-    for field_name in knob_fields:
+    for field_name in _knob_fields(section, resolved):
         value = getattr(resolved, field_name)
         if value != getattr(noenv, field_name):
             source = "env"
@@ -536,23 +486,23 @@ def build_config_report(
     # re-read-on-demand keeps seeing the file as it is now.
     with toml_parse_scope():
         resolved_base = KstrlConfig.load(root_dir)
-        phase_resolved = {name: _resolve(loader) for name, loader, _ in phase_sections}
+        phase_resolved = {name: _resolve(loader) for name, loader in phase_sections}
         with scrubbed_environ():
             noenv_base = KstrlConfig.load(root_dir)
-            phase_noenv = {name: _resolve(loader) for name, loader, _ in phase_sections}
+            phase_noenv = {name: _resolve(loader) for name, loader in phase_sections}
         # Derived rather than accumulated: a loader never returns None, so
         # the two passes ARE the record of which sections failed, and the
         # skip below cannot drift from the reason for it.
         unresolved = tuple(
             name
-            for name, _, _ in phase_sections
+            for name, _ in phase_sections
             if phase_resolved[name] is None or phase_noenv[name] is None
         )
         # Resolved sections only: a rejected one renders no rows, and its
         # table can be the reason it was rejected (#571: a nan in it).
         phase_toml_keys = {
             name: set(load_toml_section(toml_path, name).keys())
-            for name, _, _ in phase_sections
+            for name, _ in phase_sections
             if name not in unresolved
         }
 
@@ -565,13 +515,12 @@ def build_config_report(
     resolved_base.ui_mode = normalize_ui_mode(resolved_base.ui_mode)
 
     rows = _base_rows(resolved_base, base_sources)
-    for section, _, knob_fields in phase_sections:
+    for section, _ in phase_sections:
         if section in unresolved:
             continue
         rows.extend(
             _phase_rows(
                 section,
-                knob_fields,
                 phase_resolved[section],
                 phase_noenv[section],
                 phase_toml_keys[section],
