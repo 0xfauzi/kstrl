@@ -422,10 +422,7 @@ class TestTheGateCensus:
 #: unanswered path nobody decided.
 EXPECTED_PROMPT_SITES = {
     "cli.py::factory": "exits without starting the run (#594)",
-    # At this head cli.py:4632 still starts the retry on an unanswered
-    # confirm - `if response.answered and response.choice != 0`. Lane
-    # #597 (PR #605) owns that site and makes it refuse.
-    "cli.py::retry": "starts on an unanswered confirm at this head; #597 makes it refuse",
+    "cli.py::retry": "exits without starting the retry, same as Quit (#597)",
     "feature_cmd.py::run_feature": "refuses: quit to amend",
     "guards.py::enforce_allowed_paths": "quits",
     "loop.py::_resolve_iteration_pause": "stops the run, same as Quit, when nobody answers",
@@ -446,24 +443,25 @@ PROMPT_REQUEST_TARGET = frozenset({"kstrl.interaction.PromptRequest"})
 #: `initial_screens_for_kind(...)()` calls the RESULT of a call, so its
 #: own callee is an `ast.Call`, not a `Name` or `Attribute`.
 EXPECTED_UNDECIDED_PROMPT_SITES: tuple[str, ...] = (
-    "gateparse.py:112 TOOL_PARSERS[chosen]",
-    "gateparse.py:114 TOOL_PARSERS[name]",
-    "tui/app.py:390 initial_screens_for_kind(kind, observe_only=True)",
-    "tui/app.py:462 initial_screens_for_kind(kind, observe_only=False)",
+    "gateparse.py::parse_gate_output TOOL_PARSERS[chosen]",
+    "gateparse.py::parse_gate_output TOOL_PARSERS[name]",
+    "tui/app.py::KstrlTuiApp.launch initial_screens_for_kind(kind, observe_only=False)",
+    "tui/app.py::KstrlTuiApp.open_run initial_screens_for_kind(kind, observe_only=True)",
 )
 
-#: `Sites.seen` for the walk above, re-derived by RUNNING it rather than
+#: `Sites.seen` for the walk above, keyed by module and enclosing scope
+#: rather than by line (#645) and re-derived by RUNNING it rather than
 #: typed from a design document (reading a pin is not running a guard).
 EXPECTED_SEEN_PROMPT_SITES: tuple[str, ...] = (
-    "cli.py:3166 kstrl.interaction.PromptRequest",
-    "cli.py:4709 kstrl.interaction.PromptRequest",
-    "feature_cmd.py:493 kstrl.interaction.PromptRequest",
-    "guards.py:382 kstrl.interaction.PromptRequest",
-    "loop.py:610 kstrl.interaction.PromptRequest",
-    "pipeline.py:4963 kstrl.interaction.PromptRequest",
-    "plan_gate.py:136 kstrl.interaction.PromptRequest",
-    "tui/screens/inbox.py:333 kstrl.interaction.PromptRequest",
-    "tui/screens/retry.py:395 kstrl.interaction.PromptRequest",
+    "cli.py::factory kstrl.interaction.PromptRequest",
+    "cli.py::retry kstrl.interaction.PromptRequest",
+    "feature_cmd.py::run_feature kstrl.interaction.PromptRequest",
+    "guards.py::enforce_allowed_paths kstrl.interaction.PromptRequest",
+    "loop.py::_resolve_iteration_pause kstrl.interaction.PromptRequest",
+    "pipeline.py::ComponentPipeline._phase_checkpoint kstrl.interaction.PromptRequest",
+    "plan_gate.py::run_plan_gate kstrl.interaction.PromptRequest",
+    "tui/screens/inbox.py::InboxScreen.action_reject kstrl.interaction.PromptRequest",
+    "tui/screens/retry.py::RetryScreen.on_scope_read kstrl.interaction.PromptRequest",
 )
 
 
@@ -496,8 +494,8 @@ def _prompt_request_sites() -> tuple[Counter[str], Sites]:
         tree = parsed(source)
         rel = label(source)
         module = module_name(source)
-        owner = scope_of(tree)
-        combined = combined + calls_to(tree, PROMPT_REQUEST_TARGET, where=rel, module=module)
+        owner = scope_of(tree, lambdas=True)
+        combined += calls_to(tree, PROMPT_REQUEST_TARGET, where=rel, module=module, owner=owner)
         for node, _origin in resolved_calls(tree, PROMPT_REQUEST_TARGET, module=module):
             found[f"{rel}::{owner.get(id(node), '<module>')}"] += 1
     return found, combined.sorted()

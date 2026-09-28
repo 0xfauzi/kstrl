@@ -69,12 +69,25 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from kstrl.config_numbers import check_numbers
-from kstrl.policy import diff_header_path
+from kstrl.policy import diff_header_path, parse_added_lines
 
 #: Test-file path fragments. Deliberately broad: a file that looks like a
 #: test to a human should be judged as one, and a false positive here
 #: costs a note, while a false negative silently exempts a file.
 TEST_PATH_RE = re.compile(r"(^|/)(tests?/|test_[^/]*\.py$|[^/]*_test\.py$)")
+
+#: Test files by the conventions of languages other than Python: a
+#: ``__tests__/`` directory, a ``.test.`` or ``.spec.`` infix
+#: (``bulk.test.ts``, ``a.spec.tsx``), Go's ``_test.go`` and RSpec's
+#: ``_spec.rb``. A Rust or Java test under ``tests/`` or ``test/`` is
+#: already matched by :data:`TEST_PATH_RE`'s directory clause. Layer 0
+#: reads Python only, so a file matching either pattern that is not
+#: ``.py`` is one it cannot judge (#619).
+NON_PYTHON_TEST_PATH_RE = re.compile(r"(^|/)__tests__/|\.(test|spec)\.[^/]+$|_test\.go$|_spec\.rb$")
+
+#: An added line opening a Rust unit-test module. Rust keeps unit tests
+#: inside the source file they test, so no path rule can see them.
+_RUST_TEST_MODULE_RE = re.compile(r"^\s*#\[cfg\(test\)\]")
 
 
 class OracleStrength(StrEnum):
@@ -119,6 +132,26 @@ class AdequacyFinding:
 
 def is_test_path(path: str) -> bool:
     return bool(TEST_PATH_RE.search(path))
+
+
+def unread_test_paths(changed: Iterable[str], diff_text: str) -> list[str]:
+    """The changed files that hold tests Layer 0 cannot read, sorted (#619).
+
+    A file that is not ``.py`` and either sits on a test path by
+    :data:`TEST_PATH_RE` or :data:`NON_PYTHON_TEST_PATH_RE`, or gains a
+    ``#[cfg(test)]`` line in this diff. Broad on purpose: this list only
+    ever turns a pass into a "not read" note, so a false positive costs a
+    note and a false negative is a pass over tests nobody opened.
+    """
+    rust_tests = {
+        path for path, line in parse_added_lines(diff_text) if _RUST_TEST_MODULE_RE.match(line)
+    }
+    return sorted(
+        path
+        for path in changed
+        if not path.endswith(".py")
+        and (path in rust_tests or is_test_path(path) or NON_PYTHON_TEST_PATH_RE.search(path))
+    )
 
 
 # ---------------------------------------------------------------------------

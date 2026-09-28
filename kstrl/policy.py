@@ -88,7 +88,7 @@ DEFAULT_PATHS_DENY: tuple[str, ...] = (
 )
 
 # Default secret regexes, matched against ADDED diff lines across every
-# changed file (broader than the .py-only ``check_bad_patterns`` scan).
+# changed file, here and in ``check_bad_patterns`` (#619).
 DEFAULT_SECRET_PATTERNS: tuple[str, ...] = (
     r"AKIA[0-9A-Z]{16}",
     r"-----BEGIN (?:RSA |EC )?PRIVATE KEY-----",
@@ -339,6 +339,14 @@ def parse_new_dependencies(
     return deps
 
 
+def unread_lockfiles(added_lines: Sequence[tuple[str, str]]) -> list[str]:
+    """The lockfiles this diff adds lines to that :func:`parse_new_dependencies`
+    cannot read, sorted: every one in :data:`LOCKFILE_MANIFESTS` but uv.lock (#619)."""
+    return sorted(
+        {path for path, _line in added_lines if _basename(path) in LOCKFILE_BASENAMES - {"uv.lock"}}
+    )
+
+
 def _spdx_atoms(expr: str) -> list[str]:
     """Split an SPDX expression into license atoms, dropping operators.
 
@@ -440,6 +448,9 @@ class PolicyEvaluation:
     new_dependencies: list[tuple[str, str]] = field(default_factory=list)
     # Structured form of ``details`` for typed Finding construction.
     violations: list[PolicyViolation] = field(default_factory=list)
+    # #619: lockfiles whose new dependencies were not parsed, so the
+    # verifier reports the dependency rules as unmeasured for them.
+    unread_lockfiles: list[str] = field(default_factory=list)
 
 
 def evaluate_policy(
@@ -575,6 +586,7 @@ def evaluate_policy(
         machinery_hit=machinery_hit,
         new_dependencies=new_dependencies,
         violations=violations,
+        unread_lockfiles=unread_lockfiles(added_lines),
     )
 
 

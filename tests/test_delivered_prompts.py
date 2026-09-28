@@ -511,6 +511,7 @@ def _run_decompose_and_capture_prompt(tmp_path: Path, monkeypatch: pytest.Monkey
             root_dir=tmp_path,
             max_retries=1,
             prompt_call=architect_call(tmp_path),
+            timeout=None,
         )
     assert agent.prompts, "decompose_spec never called its agent, so this proves nothing."
     return agent.prompts[0]

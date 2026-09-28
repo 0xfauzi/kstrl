@@ -383,6 +383,7 @@ def calls_to(
     *,
     where: str = "",
     module: str = "",
+    owner: Mapping[int, str] | None = None,
 ) -> Sites:
     """Every call in one module that resolves to a target, and every call
     that could be one and could not be decided.
@@ -409,6 +410,13 @@ def calls_to(
     object, because its leaf is the parameter's name. The caller had to
     obtain it to pass it, so a :func:`census` of the acquisition counts
     the site. Pin it with :func:`blind_spot`.
+
+    ``owner`` keys each row by scope instead of by line (#645): pass
+    ``scope_of(tree, lambdas=True)`` and a row reads ``cli.py::factory
+    <callee>`` rather than ``cli.py:3164 <callee>``, so an edit above the
+    site moves no pin. Rows are not deduplicated, so a pin still counts.
+    The map comes from the caller because ``scope.py`` imports this
+    module, and the scope has to come from the node, not from the line.
     """
     wanted = frozenset(targets)
     leaves = {target.rsplit(".", 1)[-1] for target in wanted}
@@ -418,8 +426,19 @@ def calls_to(
     undecided: list[str] = []
     for node in all_nodes(tree):
         if isinstance(node, ast.Call):
-            _classify_call(node, table, wanted, leaves, where, seen, undecided)
+            site = _site(node, where, owner)
+            _classify_call(node, table, wanted, leaves, site, seen, undecided)
     return Sites(tuple(seen), tuple(undecided))
+
+
+def _site(node: ast.Call, where: str, owner: Mapping[int, str] | None) -> str:
+    """How one call is named in a row: ``where::scope`` when the caller
+    passed a scope map, else ``where:lineno``. Indexed, not ``.get``: a
+    call the map does not name raises rather than landing in a default
+    scope, which is the skip direction."""
+    if owner is not None:
+        return f"{where}::{owner[id(node)]}"
+    return f"{where}:{node.lineno}" if where else str(node.lineno)
 
 
 def resolved_calls(
@@ -473,7 +492,7 @@ def _classify_call(
     table: Bindings,
     wanted: frozenset[str],
     leaves: set[str],
-    where: str,
+    site: str,
     seen: list[str],
     undecided: list[str],
 ) -> None:
@@ -495,7 +514,6 @@ def _classify_call(
     that, so it stays a hit. A guess that lands outside ``wanted`` decides
     nothing, so it falls through to the leaf test and becomes undecided.
     """
-    site = f"{where}:{node.lineno}" if where else str(node.lineno)
     found = table.origin_of(node.func)
     if found is not None and (found.dotted in wanted or not found.guessed):
         if found.dotted in wanted:
