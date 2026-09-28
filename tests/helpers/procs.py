@@ -28,6 +28,7 @@ boundary where the agent is a grandchild.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import select
 import shutil
@@ -35,7 +36,7 @@ import signal
 import subprocess
 import sys
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import NoReturn, cast
@@ -509,35 +510,37 @@ NEEDS_CAFFEINATE = pytest.mark.skipif(
 )
 
 
-def dead_group(timeout: float = 10.0) -> int:
-    """A process group that is spawned, killed and reaped. Returns its pgid.
+@contextlib.contextmanager
+def no_such_group(timeout: float = 10.0) -> Iterator[int]:
+    """A pgid that no process group holds, and none can take, for the block.
 
-    The pgid of a group that provably held a process and provably holds
-    none now, which is what a test needs to assert that absence is still
-    reportable. Lives here rather than being copied into each suite
-    because a copied fixture is one that stops matching the helper it
-    feeds.
+    What a test needs to assert that absence is still reportable: an id
+    for which ``ps`` lists no row and ``killpg(pgid, 0)`` raises ESRCH.
+    It is the pid of a child that is NOT a group leader. The child joins
+    this process's group, so no group carries its pid as an id, and POSIX
+    will not hand that pid to another process while the child lives or
+    lies unreaped. A group can only be created with the id of the process
+    creating it, so none can appear under this id until ``finally``.
+
+    #686 replaced a helper that spawned a group leader, killed the group,
+    reaped the leader and returned the pgid. On macOS 26.6.2 the kernel
+    still answered EPERM for that group after ``wait`` had returned, for
+    up to 10.6 ms measured, in 0.014 to 0.42 percent of calls at load 9
+    to 20. The pid was never handed to another process in any of the
+    measured failures, so the defect was the kernel's teardown, not reuse.
+    Two liveness tests read that EPERM as an occupied group and failed
+    three premerge runs in one day.
     """
-    child = subprocess.Popen(
+    holder = subprocess.Popen(
         ["sleep", "30"],
-        start_new_session=True,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
     try:
-        pgid = os.getpgid(child.pid)
-        kill_group(pgid)
-        child.wait(timeout=timeout)
-        return pgid
+        yield holder.pid
     finally:
-        # kill_group swallows every OSError, so a SIGKILL that did not
-        # land leaves `child.wait` to time out and the Popen dropped
-        # unreaped with a real `sleep 30` still on the machine. That is
-        # the orphan class #292 exists to stop, planted by the helper
-        # written to stop it.
-        if child.poll() is None:
-            child.kill()
-            child.wait(timeout=timeout)
+        holder.kill()
+        holder.wait(timeout=timeout)
 
 
 def wait_for_group_to_die(pgid: int, timeout: float = 10.0) -> bool:

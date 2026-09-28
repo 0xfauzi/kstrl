@@ -367,7 +367,7 @@ def report_verification(
     started = time.monotonic()
     try:
         # INSIDE the try, all of it. Resolution is not free of I/O:
-        # resolve_verify_commands reaches _default_typecheck_command,
+        # resolve_verify_commands reaches python_typecheck_default,
         # which opens and parses pyproject.toml, and a file with one
         # non-utf-8 byte raised UnicodeDecodeError - a ValueError - past
         # a fail-closed `except (TOMLDecodeError, OSError)` and out of an

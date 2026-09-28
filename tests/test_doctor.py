@@ -32,7 +32,8 @@ import kstrl
 from kstrl import doctor
 from kstrl.cli import cli
 from kstrl.feedforward import extract_public_interfaces
-from kstrl.init_cmd import _LANGUAGE_IGNORES, build_manifest_ok_reason, gitignore_block
+from kstrl.init_cmd import build_manifest_ok_reason, gitignore_block
+from kstrl.toolchains import TOOLCHAINS
 from tests.helpers.fakegh import put_gh_on_path
 from tests.helpers.gitrepo import git_in, set_identity
 
@@ -235,7 +236,7 @@ def test_a_repo_that_does_not_ignore_the_state_dir_warns_with_the_line_to_add(
     root = ready_repo(tmp_path)
     # #459: every Python entry stays, so the only thing missing is `.kstrl/`.
     (root / ".gitignore").write_text(
-        "".join(f"{entry}\n" for entry in _LANGUAGE_IGNORES["Python"]), encoding="utf-8"
+        "".join(f"{entry}\n" for entry in TOOLCHAINS["Python"].ignores), encoding="utf-8"
     )
     git_in(root, "add", "-A")
     git_in(root, "commit", "-q", "-m", "drop ignore")

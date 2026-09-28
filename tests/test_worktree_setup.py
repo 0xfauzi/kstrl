@@ -397,8 +397,9 @@ def test_a_hung_setup_is_killed_on_time(tmp_path: Path) -> None:
             proc.communicate()
             pytest.fail("ks factory did not finish within 180s of real time")
         children = [int(line) for line in pids.read_text(encoding="utf-8").split()]
-        # Once before the engineer, once before Phase 1.
-        assert len(children) == 2, out
+        # Once on the base before any engineer (#654), once before the
+        # engineer, once before Phase 1.
+        assert len(children) == 3, out
         for pid in children:
             assert wait_for_pid_to_die(pid, timeout=10.0), f"setup child {pid} outlived its timeout"
         assert proc.returncode == 1, out

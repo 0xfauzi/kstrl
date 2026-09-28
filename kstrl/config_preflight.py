@@ -158,7 +158,7 @@ def raise_if_defect(exc: BaseException) -> None:
     over the PARSES, not over the call graph: not every guarded block
     goes through ``load_toml_document``, and ``init_wizard._detected_text``
     is the one that does not, reaching
-    ``verify._default_typecheck_command`` on the project's
+    ``toolchains.python_typecheck_default`` on the project's
     pyproject.toml instead.
 
     Inspecting the exception could not have settled it anyway. Measured

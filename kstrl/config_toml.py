@@ -106,7 +106,7 @@ def load_toml_document(path: Path) -> dict[str, Any]:
       ``tomllib.load`` decodes the stream ITSELF before it lexes
       anything. A ``ValueError``, NOT a ``TOMLDecodeError``, so it
       walked past that. Same defect
-      ``verify._default_typecheck_command`` fixed for pyproject.toml in
+      ``toolchains.python_typecheck_default`` fixed for pyproject.toml in
       #288, and the encoding rule CLAUDE.md states from #291.
     - A plain ``ValueError``, for input the parser accepts and Python
       then refuses to build: ``max_iterations = <4301 digits>`` raises

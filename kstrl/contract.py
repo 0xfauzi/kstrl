@@ -39,8 +39,8 @@ from kstrl import git
 from kstrl.config_numbers import BudgetConfigError, check_numbers
 from kstrl.manifest import Manifest
 from kstrl.timeout import limit_seconds
+from kstrl.toolchains import DEFAULT_TEST_COMMAND
 from kstrl.verify import (
-    DEFAULT_TEST_COMMAND,
     ChildOutputDecodeError,
     resolve_test_command,
     run_scrubbed,
@@ -146,7 +146,7 @@ class ContractConfig:
                 verify = {}
             configured = os.environ.get("KSTRL_VERIFY_TEST_CMD", verify.get("test_command"))
             config.test_command = resolve_test_command(
-                None if configured is None else str(configured)
+                None if configured is None else str(configured), root_dir
             )
         if "timeout" in section:
             config.timeout = float(section["timeout"])
