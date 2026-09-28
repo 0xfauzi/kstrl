@@ -26,6 +26,7 @@ COMPONENT_OPTIONAL_KEYS = frozenset(
         "prNumber",
         "prUrl",
         "mergeSha",
+        "judgedSha",
         "linearIssueId",
         "linearIssueIdentifier",
         "startedAt",

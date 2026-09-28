@@ -102,6 +102,9 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # counted at conftest.py's row above, the same shape
     # tests/test_patch_coverage.py's row below argues for.
     "tests/test_cli.py": 2,
+    # #640: `_run_codex_loop`'s one scaffold commit, into a repository it
+    # has just put through `tests.helpers.gitrepo.set_identity`.
+    "tests/test_codex_transcript.py": 1,
     # #562: `_project` commits the E2E fixture repo once, after
     # `tests.helpers.gitrepo.set_identity(root)`.
     "tests/test_config_refused_before_spend.py": 1,
@@ -145,6 +148,12 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # this file's `isolated_repo` put through
     # `tests.helpers.gitrepo.set_identity`.
     "tests/test_language_ignores.py": 5,
+    # #601: five `git commit` spellings, all into the repository
+    # `tests.spine_utils.init_kstrl_repo` put through
+    # `tests.helpers.gitrepo.set_identity`: the config commit, the engineer
+    # and stub-gh shell strings, the checkpoint test's worktree commit, and
+    # the module docstring's prose.
+    "tests/test_ladder_merge_evidence.py": 5,
     "tests/test_launch_session.py": 1,
     # #544: three `git commit` sites (`_seed`, `_commit_all` and the
     # deletion test), every one into a repository `_seed` put through

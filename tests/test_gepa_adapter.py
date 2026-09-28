@@ -667,6 +667,7 @@ def test_a_cap_equal_to_the_validation_set_runs_and_is_not_a_refusal(tmp_path: P
     assert len(report["candidates"]) == 1
     assert report["candidates"][0]["prompt"] == REVIEWER_PROMPT
     assert report["candidates"][0]["val_score"] == 0.5
+    assert report["verdict"] == "not improved"
 
 
 class _RaisingRunner(CannedRunner):

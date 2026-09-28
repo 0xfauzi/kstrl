@@ -160,6 +160,17 @@ def _iso_now() -> str:
 #: How a retry this run carried from an interrupted run is marked (#463).
 CARRIED_REASON_PREFIX = "carried from run "
 
+#: The two ``Component.failed_check`` values that say a human turned a
+#: merge candidate down: rejected at the merge gate (interactively or
+#: with ``ks inbox reject``), or its PR closed without merging while
+#: kstrl waited (#601). One owner: ``kstrl.factory``'s
+#: ``HUMAN_REJECTION_CHECKS`` reads these rather than re-spelling them,
+#: so renaming either check here cannot silently switch off the L3
+#: rejection demotion (a second spelling was exactly how that failed
+#: open before).
+HITL_REJECT_CHECK = "hitl_reject"
+PR_CLOSED_CHECK = "pr_closed"
+
 
 def _carried_reason(prior_run_id: str, reason: str) -> str:
     """``reason`` marked as carried from ``prior_run_id``, once (#463)."""
@@ -503,6 +514,9 @@ class PrPhaseResult:
     disposition: PrDisposition
     pr_url: str = ""
     error: str = ""
+    #: The failed_check a FAILED disposition records (#601: a PR closed
+    #: without merging is ``pr_closed``, which the ladder reads).
+    check: str = "pr_flow"
 
 
 @dataclass(frozen=True)
@@ -2509,14 +2523,16 @@ class ComponentPipeline:
             fresh_base=True,
         )
 
-    def _fail_pr_flow(self, comp: Component, error: str) -> Transition:
-        """VERIFYING -> FAILED on a push/create/merge failure (R0.2:
-        COMPLETED requires a CONFIRMED merge)."""
+    def _fail_pr_flow(self, comp: Component, error: str, *, check: str) -> Transition:
+        """VERIFYING -> FAILED on a push/create/merge failure, or a merge-pending
+        PR GitHub reports closed unmerged (R0.2: COMPLETED requires a CONFIRMED
+        merge). ``check`` names which: ``"pr_flow"`` or ``PR_CLOSED_CHECK``
+        (#601) - no default, every caller states which it observed."""
         comp.status = ComponentStatus.FAILED.value
         comp.error = error
         comp.completed_at = _iso_now()
         comp.failed_phase = "pr"
-        comp.failed_check = "pr_flow"
+        comp.failed_check = check
         # Spelled out with keywords, and read that way. #339: this
         # is the third caller of the funnel and the only one that is
         # not `fail` / `retry_or_fail`, so no `signatures=` is ever
@@ -2653,7 +2669,7 @@ class ComponentPipeline:
                         self.manifest.base_branch,
                         self.root_dir,
                     )
-                    self._record_merge(comp, merge_state.merge_sha)
+                    self._record_merge(comp, merge_state.merge_sha, merge_state.head_sha)
                     comp.status = ComponentStatus.COMPLETED.value
                     comp.error = ""
                     self.component_failure_signatures.pop(comp.id, None)
@@ -2690,7 +2706,7 @@ class ComponentPipeline:
                         evidence={"pr_number": pr_number},
                     )
                     comp.failed_phase = "pr"
-                    comp.failed_check = "pr_closed"
+                    comp.failed_check = PR_CLOSED_CHECK
                     self.component_failure_signatures[comp.id] = [
                         "pr:closed-without-merge",
                     ]
@@ -2711,7 +2727,7 @@ class ComponentPipeline:
                     )
         self.manifest.save(self.manifest_path)
 
-    def _record_merge(self, comp: Component, merge_sha: str) -> None:
+    def _record_merge(self, comp: Component, merge_sha: str, head_sha: str) -> None:
         """Record a confirmed merge of ``comp``'s PR: the one place (#584).
 
         Both paths that confirm a merge call this: ``_phase_pr`` when this
@@ -2723,10 +2739,15 @@ class ComponentPipeline:
         GitHub published no commit, and then both records say "": a
         commit an earlier merge of this component recorded is not this
         merge's commit.
+
+        #601: ``head_sha`` is the PR head GitHub merged ("" when it
+        reported none). It goes on ``factory_result.merged``, the one dict
+        (component id -> head sha) the autonomy ladder counts merges from.
         """
         from kstrl.pr import pr_number_from_url
 
         comp.merge_sha = merge_sha
+        self.factory_result.merged[comp.id] = head_sha
         self.manifest.save(self.manifest_path)
         self.bus.emit(
             ev.PrMerged(
@@ -2765,7 +2786,7 @@ class ComponentPipeline:
                     comp,
                     f"Rejected at the merge gate: {decision.decision_comment}",
                     phase="pr",
-                    check="hitl_reject",
+                    check=HITL_REJECT_CHECK,
                     signatures=["review:hitl-rejected"],
                 )
             else:
@@ -2865,7 +2886,7 @@ class ComponentPipeline:
         else:
             # A conflict too: the re-run doctrine re-runs the engineer,
             # and an approval is not a request for that. `ks retry` is.
-            self._fail_pr_flow(comp, pr.error or "PR flow failed")
+            self._fail_pr_flow(comp, pr.error or "PR flow failed", check=pr.check)
 
     # ------------------------------------------------------------------
     # Phase chain
@@ -3232,7 +3253,7 @@ class ComponentPipeline:
                 )
             if pr.disposition == PrDisposition.FAILED:
                 return PipelineOutcome(
-                    transition=self._fail_pr_flow(comp, pr.error),
+                    transition=self._fail_pr_flow(comp, pr.error, check=pr.check),
                     verify=verify,
                     diff=diff,
                     review=review,
@@ -3597,6 +3618,9 @@ class ComponentPipeline:
                 )
             )
 
+        # #601: the commit every later gate judges. The ladder counts a
+        # merge clean only when GitHub merged exactly this commit.
+        comp.judged_sha = git.branch_sha(comp.branch_name, self.root_dir) or ""
         return DiffPhaseResult(diff=shared_diff)
 
     def _divergence_failure(
@@ -4925,7 +4949,7 @@ class ComponentPipeline:
                     comp,
                     "Rejected at HITL checkpoint",
                     phase="pr",
-                    check="hitl_reject",
+                    check=HITL_REJECT_CHECK,
                     # THE RULE FOR ALL THREE CHECKPOINT BRANCHES,
                     # stated here and pointed at from the other two.
                     # Without an explicit `signatures=` the PHASE
@@ -5136,7 +5160,14 @@ class ComponentPipeline:
         )
         evidence: dict[str, Any] = {
             "branch": comp.branch_name,
-            "head_sha": git.branch_sha(comp.branch_name, self.root_dir) or "",
+            # #601: the diff phase already recorded this same commit onto
+            # ``comp.judged_sha`` (``git.branch_sha`` again here would be a
+            # second owner of "what the branch was at" for one park - kstrl
+            # never commits to a component branch after the diff phase, so
+            # the two reads can only differ if something outside it moved
+            # the branch, which is exactly the drift this evidence exists
+            # to catch in ``_merge_approved``).
+            "head_sha": comp.judged_sha,
         }
         # #450: the review_result event's counts, read from the same
         # properties. Absent when the review produced no reading, so a
@@ -5213,8 +5244,9 @@ class ComponentPipeline:
                 disposition=PrDisposition.FAILED,
                 pr_url=outcome.pr_url,
                 error=outcome.error or "PR flow failed",
+                check=PR_CLOSED_CHECK if outcome.closed else "pr_flow",
             )
-        self._record_merge(comp, outcome.merge_sha)
+        self._record_merge(comp, outcome.merge_sha, outcome.head_sha)
         return PrPhaseResult(
             disposition=PrDisposition.MERGED,
             pr_url=outcome.pr_url,

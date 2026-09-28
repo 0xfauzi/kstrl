@@ -6470,7 +6470,7 @@ def learn_playbook(ui: str, no_color: bool) -> None:
     except PlaybookError as exc:
         ui_impl.err(
             f"the global playbook could not be read: {exc}. "
-            "`ks learn repair` voids every line the fold refuses."
+            "`ks learn repair --yes` voids every line the fold refuses."
         )
         sys.exit(2)
     except OSError as exc:
@@ -6490,20 +6490,28 @@ def learn_playbook(ui: str, no_color: bool) -> None:
 
 
 @learn_group.command(name="repair")
+@click.option("--yes", "-y", is_flag=True, help="Write the VOIDs; without it nothing is written")
 @_autonomy_ui_option
 @_autonomy_no_color_option
-def learn_repair(ui: str, no_color: bool) -> None:
-    """Void every global playbook line the fold refuses, recording each in the ledger."""
-    from kstrl.playbook import PlaybookError, repair_ledger
+def learn_repair(yes: bool, ui: str, no_color: bool) -> None:
+    """List every global playbook line the fold refuses; --yes voids each one in the ledger."""
+    from kstrl.playbook import PlaybookError, refused_lines, repair_ledger
 
     ui_impl = _autonomy_ui(ui, no_color)
     try:
-        voids = repair_ledger()
+        voids = repair_ledger() if yes else ()
+        refused = () if yes else refused_lines()
     except (PlaybookError, OSError) as exc:
         ui_impl.err(f"the global playbook could not be repaired: {exc}")
         sys.exit(2)
-    if not voids:
+    if not voids and not refused:
         ui_impl.ok("Nothing to repair: the fold accepts every line.")
+        sys.exit(0)
+    if not yes:
+        ui_impl.section("Refused")
+        for number, reason in refused:
+            ui_impl.info(f"  line {number}  {reason}")
+        ui_impl.info("Nothing was written. `ks learn repair --yes` voids every line above.")
         sys.exit(0)
     ui_impl.section("Voided")
     for void in voids:

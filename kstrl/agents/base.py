@@ -25,9 +25,10 @@ CEILING_AXES: Final[Mapping[str, str]] = {
 }
 
 #: Every line ClaudeCodeAgent or ClaudeSdkAgent yields for a tool's OUTPUT
-#: starts with this (#598) - NOT every adapter: CodexAgent and CustomAgent
-#: yield raw CLI/stdout lines with no such marking, so a line that happens
-#: to start with two spaces there is the agent's own text, not a tool's.
+#: starts with this (#598), and so does every line CodexAgent yields from
+#: codex's printed transcript (#640) - NOT every adapter: CustomAgent
+#: yields its command's raw stdout with no such marking, so a line that
+#: happens to start with two spaces there is the agent's own text.
 #: Only an agent whose ``marks_tool_output`` attribute is true tags its
 #: lines this way; :func:`model_output_text` is how a consumer that does
 #: not know which adapter produced a line of output is meant to read it.
@@ -51,10 +52,10 @@ def model_output_text(agent: object, lines: Iterable[str]) -> str:
     """``lines`` joined as the model's own words, never a tool's output.
 
     Only an agent whose ``marks_tool_output`` attribute is true (currently
-    ClaudeCodeAgent and ClaudeSdkAgent) tags its tool-output lines with
-    :data:`TOOL_RESULT_PREFIX`; every other adapter's lines are joined
-    as-is. Filtering unconditionally is the #598 defect this guards
-    against: a CustomAgent or CodexAgent reply that happens to hold an
+    ClaudeCodeAgent, ClaudeSdkAgent and CodexAgent) tags its tool-output
+    lines with :data:`TOOL_RESULT_PREFIX`; every other adapter's lines are
+    joined as-is. Filtering unconditionally is the #598 defect this guards
+    against: a CustomAgent reply that happens to hold an
     indented markdown table row (one starting with two spaces) had that
     row silently deleted, because nothing marks that line as tool output.
     ``agent`` is read with ``getattr(..., False)``, so a third-party or

@@ -243,7 +243,10 @@ class TestAReaderOfAnUnstampedRecord:
     def test_an_experiments_file_with_the_older_header_reads_the_new_stamp(
         self, tmp_path: Path
     ) -> None:
-        older = EXPERIMENTS_HEADER.rsplit("\t", 1)[0]
+        # The 14-column header from R3.1 to #451: before ``kstrl_version``
+        # existed, and (unrelated to what this test drives) also before
+        # #601's merged/clean_merged pair.
+        older = "\t".join(EXPERIMENTS_HEADER.split("\t")[:14])
         legacy_row = "\t".join(["run-0", "t", "p", *["0"] * 11])
         experiments = tmp_path / ".kstrl" / "experiments.tsv"
         experiments.parent.mkdir(parents=True)
