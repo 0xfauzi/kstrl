@@ -32,10 +32,17 @@ There are three verdicts. `ready` (exit 0): every check passed.
 repository, no build manifest, or a `kstrl.toml` that will not parse. The report is also
 written as JSON under `.kstrl/doctor/report-<UTC stamp>.json`.
 
-`ks doctor --measure` (Tier B: a flakiness smoke and a cost projection)
-is not built and exits 2 naming the command that already runs the
-measurement it would wrap: `ks check`, which runs the mechanical checks
-against a tree with no PRD, branch, worktree or agent spend.
+`ks doctor --measure` adds one row, `base_gates` (#654): it runs your
+test, typecheck and lint commands on the base branch, the reading
+`ks factory` takes before any engineer runs (see "`ks factory` refused:
+the base branch fails a gate" below), and prints it under `base_gates` in
+the JSON report. A gate that fails there fails the row, so the verdict is
+`not-ready` exactly where `ks factory` would refuse. A gate that measured
+nothing (pytest collecting no tests, a timeout) warns. A base branch that
+could not be measured at all fails the row, because a ready verdict must
+rest on a reading. The branch is the one `ks factory --spec` uses when
+`--base-branch` is not given. A flakiness smoke and a cost projection are
+not built.
 
 ## Exit codes
 
@@ -75,17 +82,17 @@ this is a small print an operator should have to find on their own:
 - kstrl is not for spec-free exploration. Every iteration is graded
   against a PRD, so work whose acceptance criteria are not known yet has
   nothing to grade.
-- Tier A reads the repository and runs none of your commands, so it
-  cannot tell you whether your suite is green, fast or flaky. Run
-  `ks check` for that. `ks factory` runs your test, typecheck and lint
-  commands on the base branch before any engineer, and refuses to start
-  when one of them fails there.
+- Tier A reads the repository and runs none of your commands.
+  `ks doctor --measure` runs your test, typecheck and lint commands once
+  on the base branch, as `ks factory` does before any engineer and
+  refuses to start when one of them fails there. One run cannot tell you
+  whether your suite is fast or flaky.
 
 ## `ks factory` refused: the base branch fails a gate
 
 **Symptom**: `Refusing to run: the base branch fails a gate Phase 1 runs, or its reading cannot be recorded`, exit 2, and no engineer was called.
 
-**What it is**: before the first engineer call, `ks factory` runs Phase 1's test, typecheck and lint gates, with Phase 1's commands, parsers and timeout, on the commit the base branch names, in a throwaway worktree under `.kstrl/contract/` (#654). `ks run` and `ks retry` reach the same check. It never measures your checkout: components are cut from the commit, so a fix you have not committed does not count. A gate whose failure its parser recognises refuses the run, and the refusal names the gate and up to five failing tests or rules. Without the refusal every component fails Phase 1 on the same failure after its engineer has been paid. On `ks factory --spec` the architect runs, and is paid, before this check. A gate that ran and measured nothing (pytest collecting no tests, a timeout, a tool that is not installed) is printed as `measured nothing` and does not refuse, because Phase 1 still fails that row on every component. A base branch that does not resolve, a checkout that fails and a `worktree_setup_command` that fails on the base are printed the same way. Every reading is written to `.kstrl/runs/<run_id>/base-gates.json` beside `launch.json`: the base sha, each gate's row with its failing names, the gates that were turned off, and whether and why the run refused. A run that cannot write the file refuses.
+**What it is**: before the first engineer call, `ks factory` runs Phase 1's test, typecheck and lint gates, with Phase 1's commands, parsers and timeout, on the commit the base branch names, in a throwaway worktree under `.kstrl/contract/` (#654). `ks run` and `ks retry` reach the same check. It never measures your checkout: components are cut from the commit, so a fix you have not committed does not count. A gate whose failure its parser recognises refuses the run, and the refusal names the gate and up to five failing tests or rules. Without the refusal every component fails Phase 1 on the same failure after its engineer has been paid. On `ks factory --spec` the architect runs, and is paid, before this check. A gate that ran and measured nothing (pytest collecting no tests, a timeout, a tool that is not installed) is printed as `measured nothing` and does not refuse, because Phase 1 still fails that row on every component. A base branch that does not resolve, a checkout that fails and a `worktree_setup_command` that fails on the base are printed the same way. Every reading is written to `.kstrl/runs/<run_id>/base-gates.json` beside `launch.json`: the base sha, each gate's row with its failing names, the gates that were turned off, and whether and why the run refused. A run that cannot write the file refuses. `ks doctor --measure` takes the same reading without starting a run.
 
 **Resolve**: make the base green in a commit; or commit `pytest.mark.xfail(strict=True)` on the tests you accept as failing; or pass `--no-verify`, which turns off all of Phase 1 and this check with it. Under `--no-verify` the record says `--no-verify: Phase 1 runs no gate`.
 
