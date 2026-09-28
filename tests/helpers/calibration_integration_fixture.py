@@ -45,7 +45,7 @@ from kstrl.integration_phase import review_commit
 from kstrl.review import ReviewResult, normalize_story_id, run_review
 from kstrl.ui.plain import PlainUI
 from tests.helpers.calibration_replies import keep_call
-from tests.helpers.calibration_repo_fixture import FIXTURES_DIR
+from tests.helpers.calibration_repo_fixture import FIXTURES_DIR, fixture_language
 from tests.helpers.gitrepo import GIT_TIMEOUT_SECONDS, git_in, set_identity
 
 INTEGRATION_DIR = FIXTURES_DIR / "integration"
@@ -137,12 +137,34 @@ class FixtureRound:
     tracked: frozenset[str]
 
 
+def repo_language(fixture: IntegrationFixture) -> str:
+    """The code language of the files under ``fixture``'s repository (#633).
+
+    ``__pycache__`` and ``.pyc`` files are left out, as :func:`materialize`
+    leaves them out of the repository the reviewer reads.
+    """
+    files = [
+        path.relative_to(fixture.repo_dir).as_posix()
+        for path in sorted(fixture.repo_dir.rglob("*"))
+        if path.is_file() and "__pycache__" not in path.parts and path.suffix != ".pyc"
+    ]
+    return fixture_language(files, fixture.meta_path.name)
+
+
 def load_integration_fixtures() -> list[IntegrationFixture]:
-    """Every Layer B fixture, in file-name order."""
-    return [
+    """Every Layer B fixture, in file-name order.
+
+    Each one's language is derived here (#633), so a fixture no role id can
+    be derived for is refused while the suite is collected, before any
+    agent is called.
+    """
+    fixtures = [
         IntegrationFixture(path, json.loads(path.read_text(encoding="utf-8")))
         for path in sorted(INTEGRATION_DIR.glob("*.meta.json"))
     ]
+    for fixture in fixtures:
+        repo_language(fixture)
+    return fixtures
 
 
 def integration_positives() -> list[IntegrationFixture]:

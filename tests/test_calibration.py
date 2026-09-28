@@ -51,6 +51,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -106,6 +107,7 @@ from tests.helpers.calibration_integration_fixture import (
     integration_clean_twins,
     integration_positives,
     opened_nothing,
+    repo_language,
     review_fixture,
     run_slot,
 )
@@ -116,8 +118,12 @@ from tests.helpers.calibration_repo_fixture import (
     arm_cwd,
     arm_params,
     arm_prompt,
+    diff_language,
+    language_role,
     load_fixtures,
     reuse_caught,
+    segment_path,
+    split_file_segments,
 )
 
 CALIBRATION_ENABLED = "1" in (
@@ -189,31 +195,6 @@ FP_RATE_MAX = 0.34
 # ---------------------------------------------------------------------------
 
 
-def _split_file_segments(diff_text: str) -> list[str]:
-    """One string per ``diff --git`` segment, in order."""
-    segments: list[str] = []
-    current: list[str] = []
-    for line in diff_text.splitlines(keepends=True):
-        if line.startswith("diff --git "):
-            if current:
-                segments.append("".join(current))
-            current = [line]
-        elif current:
-            current.append(line)
-    if current:
-        segments.append("".join(current))
-    return segments
-
-
-def _segment_path(segment: str) -> str:
-    for line in segment.splitlines():
-        if line.startswith("+++ b/"):
-            return line[len("+++ b/") :].strip()
-        if line.startswith("--- a/") and "/dev/null" not in line:
-            return line[len("--- a/") :].strip()
-    raise ValueError(f"fixture segment names no path: {segment.splitlines()[0][:80]}")
-
-
 def _segment_images(segment: str) -> tuple[str, str]:
     """``(pre_image, post_image)`` reconstructed from a segment's hunks.
 
@@ -223,6 +204,8 @@ def _segment_images(segment: str) -> tuple[str, str]:
     fixture is a single hunk per file, so concatenating hunk bodies
     reproduces each file exactly; a multi-hunk fixture would lose the
     unchanged gaps between hunks, and would need a real patch instead.
+    ``load_fixtures`` refuses such a fixture while the suite is collected
+    (#633), so no segment with a second hunk reaches this function.
     """
     pre: list[str] = []
     post: list[str] = []
@@ -265,9 +248,7 @@ def _materialize_fixture_repo(diff_text: str, repo: Path) -> Path:
         # would re-init over the existing repo and then fail with
         # "nothing to commit" - which is how this was found.
         return repo
-    segments = [
-        (_segment_path(seg), _segment_images(seg)) for seg in _split_file_segments(diff_text)
-    ]
+    segments = [(segment_path(seg), _segment_images(seg)) for seg in split_file_segments(diff_text)]
     if not segments:
         # #266 review finding 5: a fixture with no `diff --git` line
         # yields no segments, and building a repo from nothing would
@@ -331,6 +312,37 @@ _skip_unless_calibrating = pytest.mark.skipif(
 _load_fixtures = load_fixtures
 
 
+def _diff_role(base: str, artifact: Path) -> str:
+    """The role id a diff fixture records under (#633): ``base`` for a Python
+    fixture, ``<base>_<language>`` for another, derived from the paths the
+    diff changes and never declared in its meta."""
+    return language_role(base, diff_language(artifact.read_text(encoding="utf-8"), artifact.name))
+
+
+def _refuse_unlisted(role: str, fixture: str) -> None:
+    """Refuse, while the suite is collected, a fixture whose DETECTION role
+    ``MIN_ROLE_DETECTION_RATE`` does not list (#633).
+
+    A capture recording that role could not be compared (compare refuses an
+    id the table does not list), so the refusal comes before any agent is
+    called: a Rust fixture added before the table lists ``security_rust``
+    costs nothing. Negative roles are not in that table and are not refused.
+    """
+    if role not in calibration.MIN_ROLE_DETECTION_RATE:
+        raise ValueError(
+            f"{fixture} records under {role!r}, which "
+            "kstrl.calibration.MIN_ROLE_DETECTION_RATE does not list; add it there, "
+            "with None to record it without gating it, before the fixture (#633)"
+        )
+
+
+def _detection_fixtures(base: str, fixtures: list[tuple[Path, dict]]) -> list[tuple[Path, dict]]:
+    """``fixtures``, each refused first if its derived role is unlisted."""
+    for artifact, _meta in fixtures:
+        _refuse_unlisted(_diff_role(base, artifact), artifact.name)
+    return fixtures
+
+
 def _security_fixtures() -> list[tuple[Path, dict]]:
     return _load_fixtures("security", ".diff")
 
@@ -338,7 +350,9 @@ def _security_fixtures() -> list[tuple[Path, dict]]:
 def _security_positive_easy_fixtures() -> list[tuple[Path, dict]]:
     """Textbook-trivial planted bugs (catastrophe detectors). A miss here
     is a real regression, so these go through the N-run consistency gate."""
-    return [(a, m) for a, m in _security_fixtures() if m.get("difficulty") != "hard"]
+    return _detection_fixtures(
+        "security", [(a, m) for a, m in _security_fixtures() if m.get("difficulty") != "hard"]
+    )
 
 
 def _security_positive_hard_fixtures() -> list[tuple[Path, dict]]:
@@ -346,7 +360,9 @@ def _security_positive_hard_fixtures() -> list[tuple[Path, dict]]:
     injection, TOCTOU, timing oracle). Designed to be missable, so
     detection is MEASURED (recorded), not gated (see the hard-positive
     test docstring)."""
-    return [(a, m) for a, m in _security_fixtures() if m.get("difficulty") == "hard"]
+    return _detection_fixtures(
+        "security_hard", [(a, m) for a, m in _security_fixtures() if m.get("difficulty") == "hard"]
+    )
 
 
 def _security_negative_fixtures() -> list[tuple[Path, dict]]:
@@ -356,7 +372,7 @@ def _security_negative_fixtures() -> list[tuple[Path, dict]]:
 
 
 def _concern_fixtures() -> list[tuple[Path, dict]]:
-    return _load_fixtures("concerns", ".diff")
+    return _detection_fixtures("reviewer", _load_fixtures("concerns", ".diff"))
 
 
 def _concern_negative_fixtures() -> list[tuple[Path, dict]]:
@@ -992,6 +1008,36 @@ def _measure_detection(
         pytest.skip(f"agent unavailable for all {CALIBRATION_RUNS} runs")
 
 
+def _record_or_gate(
+    role: str,
+    fixture_id: str,
+    report: _DetectionReport,
+    run_once: Callable[[], tuple[bool, str]],
+    *,
+    category: str | None = None,
+    cwe: str | None = None,
+    gate_on_floor: bool = False,
+) -> None:
+    """Gate a detection fixture, unless its role has no floor yet (#633).
+
+    A role ``MIN_ROLE_DETECTION_RATE`` lists with None is recorded through
+    ``_measure_detection`` and gates nothing, so the first capture of a new
+    language is a measurement rather than a pass or a failure. Every other
+    role goes through ``_gate_on_consistency`` at the per-fixture threshold
+    it had before #633: ``FIXTURE_DETECTION_THRESHOLD`` for security and the
+    reviewer, the role's own floor for the integration roles
+    (``gate_on_floor``).
+    """
+    floor = calibration.min_role_rate(role)
+    if floor is None:
+        _measure_detection(role, fixture_id, report, run_once, category=category, cwe=cwe)
+        return
+    threshold = floor if gate_on_floor else calibration_baseline.FIXTURE_DETECTION_THRESHOLD
+    _gate_on_consistency(
+        role, fixture_id, report, run_once, category=category, cwe=cwe, threshold=threshold
+    )
+
+
 def _measure_false_positives(
     role: str,
     fixture_id: str,
@@ -1064,8 +1110,8 @@ def test_security_role_catches_planted_bug(
         result = _security_run_once(meta, diff_content, tmp_path)
         return security_caught(result, meta["must_detect"])
 
-    _gate_on_consistency(
-        "security",
+    _record_or_gate(
+        _diff_role("security", artifact),
         meta["fixture_id"],
         report,
         run_once,
@@ -1103,7 +1149,7 @@ def test_security_role_hard_positive(
         return security_caught(result, meta["must_detect"])
 
     _measure_detection(
-        "security_hard",
+        _diff_role("security_hard", artifact),
         meta["fixture_id"],
         report,
         run_once,
@@ -1135,7 +1181,7 @@ def test_security_role_no_false_positive(
         return security_false_positive(result, meta["must_not_flag"])
 
     _measure_false_positives(
-        "security_negative",
+        _diff_role("security_negative", artifact),
         meta["fixture_id"],
         report,
         run_once,
@@ -1194,8 +1240,8 @@ def test_reviewer_role_catches_planted_concern(
         result = _reviewer_run_once(meta, diff_content, tmp_path)
         return reviewer_caught(result, meta["must_detect"])
 
-    _gate_on_consistency(
-        "reviewer",
+    _record_or_gate(
+        _diff_role("reviewer", artifact),
         meta["fixture_id"],
         report,
         run_once,
@@ -1227,7 +1273,7 @@ def test_reviewer_role_no_false_positive(
         return reviewer_false_positive(result, meta["must_not_flag"])
 
     _measure_false_positives(
-        "reviewer_negative",
+        _diff_role("reviewer_negative", artifact),
         meta["fixture_id"],
         report,
         run_once,
@@ -1368,10 +1414,10 @@ def test_architect_reuses_what_the_repository_already_has(
     repository, and with no repository at all. RECORDED, not gated -
     no baseline has ever carried these ids, so there is no measured rate
     to gate on yet and inventing one would be the number this fixture
-    exists to replace. No entry exists in MIN_ROLE_DETECTION_RATE for
-    this role, so once a baseline does carry it, compare_baselines
-    applies the 0.50 default floor and the role-drop check to it like
-    any other role (#401 addendum A5).
+    exists to replace. MIN_ROLE_DETECTION_RATE lists this role at 0.50,
+    the value the deleted default floor gave it (#633), so
+    compare_baselines applies that floor and the role-drop check to it
+    like any other role (#401 addendum A5).
     """
     prompt = arm_prompt(fixture, arm)
 
@@ -1402,10 +1448,18 @@ def test_architect_reuses_what_the_repository_already_has(
 # Integration review (#482; design #480 section 8, Layer B)
 # ---------------------------------------------------------------------------
 
+
+def _integration_params(base: str, fixtures: list[IntegrationFixture]) -> list[Any]:
+    """One param per fixture, each refused first if its derived role is unlisted (#633)."""
+    for fixture in fixtures:
+        _refuse_unlisted(language_role(base, repo_language(fixture)), fixture.meta_path.name)
+    return [pytest.param(f, id=f.fixture_id) for f in fixtures]
+
+
 #: The pytest ids are the fixture ids a run records under;
 #: tests/test_calibration_integration_fixture.py pins that they are.
-INTEGRATION_POSITIVE_PARAMS = [pytest.param(f, id=f.fixture_id) for f in integration_positives()]
-INTEGRATION_CLEAN_PARAMS = [pytest.param(f, id=f.fixture_id) for f in integration_clean_twins()]
+INTEGRATION_POSITIVE_PARAMS = _integration_params(INTEGRATION_ROLE, integration_positives())
+INTEGRATION_CLEAN_PARAMS = _integration_params(INTEGRATION_CLEAN_ROLE, integration_clean_twins())
 
 
 def _integration_run_once(fixture: IntegrationFixture, tmp_path: Path) -> FixtureRound:
@@ -1435,13 +1489,13 @@ def test_integration_review_detects_planted_defect(
     def run_once() -> tuple[bool, str]:
         return detected(fixture, _integration_run_once(fixture, tmp_path))
 
-    _gate_on_consistency(
-        INTEGRATION_ROLE,
+    _record_or_gate(
+        language_role(INTEGRATION_ROLE, repo_language(fixture)),
         fixture.fixture_id,
         report,
         run_once,
         category=fixture.story,
-        threshold=calibration.min_role_rate(INTEGRATION_ROLE),
+        gate_on_floor=True,
     )
 
 
@@ -1459,13 +1513,13 @@ def test_integration_review_opens_nothing_on_a_clean_twin(
     def run_once() -> tuple[bool, str]:
         return opened_nothing(_integration_run_once(fixture, tmp_path))
 
-    _gate_on_consistency(
-        INTEGRATION_CLEAN_ROLE,
+    _record_or_gate(
+        language_role(INTEGRATION_CLEAN_ROLE, repo_language(fixture)),
         fixture.fixture_id,
         report,
         run_once,
         category=fixture.story,
-        threshold=calibration.min_role_rate(INTEGRATION_CLEAN_ROLE),
+        gate_on_floor=True,
     )
 
 

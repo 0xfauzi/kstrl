@@ -7,6 +7,12 @@ dirs hold only an empty ``licenses/`` folder, and both
 standard "read installed metadata / pip-licenses" approach cannot
 resolve a dependency's license here.
 
+These are PyPI sources, so only a PyPI package is looked up in them: a
+Cargo, npm or Go name read from another lockfile (#630) is resolved
+through :data:`LICENSE_SOURCES` by its own ecosystem, and an ecosystem
+with no source there is unresolved without anything being consulted.
+PyPI projects share names with unrelated crates and npm packages.
+
 License data does live in two places, used in this order:
 
 1. **uv's cache** (``<uv cache>/**/<name>-<version>.dist-info/METADATA``),
@@ -31,8 +37,10 @@ import subprocess
 from collections.abc import Callable
 from email.parser import Parser
 from pathlib import Path
+from typing import Protocol, get_args
 
 from kstrl.jsonread import read_json
+from kstrl.lockfiles import Ecosystem
 
 # The default network fetcher's timeout (seconds). PyPI is a fallback, so
 # keep it short: a slow/unreachable index must not stall the verifier.
@@ -192,22 +200,67 @@ def resolve_from_pypi(
     return None
 
 
+class LicenseSource(Protocol):
+    """One ecosystem's resolver: an SPDX-ish string, or None."""
+
+    def __call__(
+        self,
+        name: str,
+        version: str,
+        *,
+        uv_cache: Path | None,
+        use_network: bool,
+        http_get: HttpGet | None,
+    ) -> str | None: ...
+
+
+def _resolve_pypi(
+    name: str,
+    version: str,
+    *,
+    uv_cache: Path | None,
+    use_network: bool,
+    http_get: HttpGet | None,
+) -> str | None:
+    """uv cache, then PyPI when ``use_network``."""
+    resolved = resolve_from_uv_cache(name, version, uv_cache)
+    if resolved:
+        return resolved
+    if use_network:
+        return resolve_from_pypi(name, version, http_get)
+    return None
+
+
+#: The license source for each ecosystem; None means kstrl has none, and
+#: a package there is unresolved without a lookup. Keyed by every
+#: :data:`~kstrl.lockfiles.Ecosystem`, checked at import.
+LICENSE_SOURCES: dict[Ecosystem, LicenseSource | None] = {
+    "pypi": _resolve_pypi,
+    "cargo": None,
+    "npm": None,
+    "go": None,
+}
+if set(LICENSE_SOURCES) != set(get_args(Ecosystem)):
+    raise RuntimeError("LICENSE_SOURCES must decide every ecosystem in kstrl.lockfiles.Ecosystem")
+
+
 def resolve_license(
     name: str,
     version: str,
     *,
+    ecosystem: Ecosystem,
     uv_cache: Path | None = None,
     use_pypi: bool = True,
     http_get: HttpGet | None = None,
 ) -> str | None:
-    """Best-effort SPDX license for ``name==version``: uv cache, then PyPI.
+    """Best-effort SPDX license for ``name`` at ``version`` in ``ecosystem``.
 
-    Returns None ("unresolved") when neither source yields a license -
-    the caller treats that as advisory, never a hard failure.
+    ``ecosystem`` is required, never defaulted: a crate or npm name looked
+    up on PyPI finds an unrelated project. Returns None ("unresolved")
+    when the ecosystem has no source or its source yields nothing - the
+    caller decides what that means through ``license_unresolved``.
     """
-    resolved = resolve_from_uv_cache(name, version, uv_cache)
-    if resolved:
-        return resolved
-    if use_pypi:
-        return resolve_from_pypi(name, version, http_get)
-    return None
+    source = LICENSE_SOURCES[ecosystem]
+    if source is None:
+        return None
+    return source(name, version, uv_cache=uv_cache, use_network=use_pypi, http_get=http_get)
