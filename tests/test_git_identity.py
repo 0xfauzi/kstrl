@@ -185,6 +185,10 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # set_identity it calls first. #399 blocker 1 adds two more of the same
     # shape, for the quote-and-accent-on-one-path regression test.
     "tests/test_policy_envelope.py": 8,
+    # #630: test_the_base_document_is_the_merge_base_the_diff_measures commits
+    # onto main in a repository test_check_non_python_diff._repo put through
+    # tests.helpers.gitrepo.set_identity.
+    "tests/test_policy_lockfiles_e2e.py": 1,
     "tests/test_pr_outcomes.py": 3,
     # #678: `_repo`'s one base commit, into a repository it has just put
     # through `tests.helpers.gitrepo.set_identity`.
