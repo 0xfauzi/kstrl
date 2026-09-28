@@ -26,7 +26,7 @@ from types import ModuleType
 from typing import Any
 
 from kstrl import calibration
-from kstrl.autonomy import AutonomyConfig
+from kstrl.autonomy import AutonomyConfig, AutonomyLevel
 from kstrl.events import EventBus
 from kstrl.factory import FactoryResult, _record_autonomy_outcome
 from kstrl.inbox import Inbox, InboxConfig, ItemKind
@@ -231,6 +231,9 @@ def run_outcome(tmp_path: Path, *, run_id: str = "run-1") -> str:
         manifest=make_manifest([component("comp-a")]),
         factory_result=FactoryResult(completed=["comp-a"]),
         autonomy_config=AutonomyConfig.load(tmp_path),
+        # Read only to decide whether a human rejection demotes (#601),
+        # and this result holds no failed part.
+        run_level=AutonomyLevel.L1_SUPERVISED,
         bus=EventBus(),
         run_id=run_id,
         ui=plain_ui,

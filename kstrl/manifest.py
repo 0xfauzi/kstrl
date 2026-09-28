@@ -161,6 +161,9 @@ class Component:
     # and for a merge GitHub published no commit for. Never a fallback
     # to a branch tip.
     merge_sha: str = ""
+    # #601: the branch tip the diff phase built the judged diff from.
+    # The ladder counts a merge clean only when GitHub merged this commit.
+    judged_sha: str = ""
     # R7.4: Linear issue mapping stamped by the decompose hook. The
     # UUID is the mutation target for the sink; the human identifier
     # (e.g. EXC-42) rides branch names and the PR "Fixes" trailer so
@@ -325,6 +328,7 @@ class Manifest:
                 pr_number=c.get("prNumber"),
                 pr_url=c.get("prUrl", ""),
                 merge_sha=c.get("mergeSha", ""),
+                judged_sha=c.get("judgedSha", ""),
                 linear_issue_id=c.get("linearIssueId", ""),
                 linear_issue_identifier=c.get("linearIssueIdentifier", ""),
                 started_at=c.get("startedAt", ""),
@@ -397,6 +401,7 @@ class Manifest:
                     "prNumber": c.pr_number,
                     "prUrl": c.pr_url,
                     "mergeSha": c.merge_sha,
+                    "judgedSha": c.judged_sha,
                     "linearIssueId": c.linear_issue_id,
                     "linearIssueIdentifier": c.linear_issue_identifier,
                     "startedAt": c.started_at,
