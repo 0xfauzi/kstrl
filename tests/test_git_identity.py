@@ -216,6 +216,9 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_scope_hardening.py": 4,
     "tests/test_scope_launch_gate.py": 1,
     "tests/test_check_cli.py": 5,
+    # #619: each test commits a base and a branch into a repository its
+    # _repo helper put through tests.helpers.gitrepo.set_identity.
+    "tests/test_check_non_python_diff.py": 2,
     "tests/test_check_baseline_document.py": 1,
     # #400: two diff-driven-check tests, each committing one file onto a
     # branch. The repository comes from test_check_cli._make_repo, which

@@ -36,6 +36,7 @@ from kstrl.adequacy import (
     mutation_patch,
     parse_mutant_report,
     score_mutants,
+    unread_test_paths,
 )
 from kstrl.atomicio import atomic_write_text
 from kstrl.config import component_progress_path, relative_to_root
@@ -2319,30 +2320,35 @@ def check_bad_patterns(
     """
     start = time.monotonic()
 
-    # #399: which changed files add a secret. Read and scan the diff only
-    # when there is a Python file to check, so a diff with nothing to open
-    # keeps the vacuous pass it has today instead of gaining a new way to
-    # fail. One name-status call rather than two (#425 review, findings 1
-    # and 2): `get_diff_names` IS `get_diff_name_status` projected and
-    # deduped through `git._unique_paths`, private to `kstrl/git.py` (the
-    # #423 lane owns that file this cycle) - the comprehension below is
-    # that same dedupe written out, not a second copy of a public name.
-    # `get_diff_name_status` is inside the try as of #414: it is lenient
-    # about a diff git could not produce but raises on one it could not
-    # DECODE, and outside the try that left this blocking gate as a
+    # #399: which changed files add a secret. The secret rule reads the
+    # added lines of EVERY changed file, whatever its language (#619): it
+    # used to run only when the diff held a Python file, so a key added in
+    # a .rs or .ts file passed a scan that never read it. One name-status
+    # call rather than two (#425 review, findings 1 and 2): `get_diff_names`
+    # IS `get_diff_name_status` projected and deduped through
+    # `git._unique_paths`, private to `kstrl/git.py` - the comprehension
+    # below is that same dedupe written out, not a second copy of a public
+    # name. `get_diff_name_status` is inside the try as of #414: it is
+    # lenient about a diff git could not produce but raises on one it could
+    # not DECODE, and outside the try that left this blocking gate as a
     # traceback (PR #419 handoff 1).
-    secret_hit_paths: frozenset[str] = frozenset()
-    rename_sources: dict[str, str] = {}
     try:
         records = git.get_diff_name_status(base_branch, cwd)
         changed = list(dict.fromkeys(path for _, path in records if path))
         py_files = [f for f in changed if f.endswith(".py")]
-        if py_files:
-            diff_text = git.get_diff_content(base_branch, cwd)
-            secret_hit_paths = frozenset(
-                _scan_secrets(parse_added_lines(diff_text), secret_patterns)
-            )
-            rename_sources = _rename_sources(records)
+        # get_diff_name_status is LENIENT (returns [] on a git failure, not
+        # only on a genuinely empty diff), but get_diff_content is not: it
+        # raises. Reading content only when there is a changed-file list
+        # keeps that same lenient behaviour for "no diff at all" (#619
+        # regression: a worktree with no git repository used to reach the
+        # vacuous pass below via the old `if py_files:` gate; making the
+        # read unconditional on `py_files` alone made it reach the diff
+        # read, and thus the exception clause, even when there was nothing
+        # to scan). A real diff with only non-Python changes still reads,
+        # because `changed` is non-empty.
+        added = parse_added_lines(git.get_diff_content(base_branch, cwd)) if changed else []
+        secret_hit_paths = frozenset(_scan_secrets(added, secret_patterns))
+        rename_sources = _rename_sources(records)
     except Exception as exc:
         # Exception exactly, broad clause last (#318). get_diff_name_status
         # is LENIENT, so the file list can arrive when the diff does not; at
@@ -2376,6 +2382,13 @@ def check_bad_patterns(
     issues, preexisting, scanned = _scan_changed_python(
         cwd, py_files, base_branch, rename_sources, secret_hit_paths
     )
+    # The secret rule's hits outside the Python files, which the scan above
+    # never visits (#619).
+    issues += [
+        f"{path}: possible secret/credential detected"
+        for path in changed
+        if path in secret_hit_paths and path not in py_files
+    ]
 
     if issues:
         return CheckResult(
@@ -2392,6 +2405,14 @@ def check_bad_patterns(
     message = NO_FILES_IN_THE_DIFF
     if changed:
         message = f"Scanned {scanned} of {len(py_files)} changed Python files, no issues"
+    if len(py_files) < len(changed):
+        # #619: two scopes, so the message names both. The Python rules
+        # (empty file, syntax) did not read the non-Python files, and a
+        # single "no issues" would claim they did.
+        message = (
+            f"secrets: scanned {len(changed)} changed files, no issues; "
+            f"Python rules: scanned {scanned} of {len(py_files)} changed Python files"
+        )
     if preexisting:
         message = f"{message} ({len(preexisting)} already at the base, not this branch's)"
     return CheckResult(
@@ -2400,9 +2421,10 @@ def check_bad_patterns(
         message=message,
         details=preexisting,
         duration_seconds=time.monotonic() - start,
-        # #227: a scan that opened nothing is a vacuous pass. It cannot prove a
-        # secret or a syntax error went away.
-        measured=bool(scanned),
+        # #227: a scan that read nothing is a vacuous pass. It cannot prove a
+        # secret or a syntax error went away. #619: the secret rule reads
+        # the diff's added lines, so an added line in any file counts.
+        measured=bool(scanned or added),
     )
 
 
@@ -2507,9 +2529,10 @@ def check_policy_envelope(
     # License gate (R8.1): resolve each newly-added uv.lock dependency's
     # license and classify it. Runs only when configured (license_allow
     # non-empty).
-    violations = list(evaluation.violations) + _check_licenses(
-        evaluation.new_dependencies,
-        config,
+    violations = (
+        list(evaluation.violations)
+        + _check_licenses(evaluation.new_dependencies, config)
+        + _unread_lockfile_violations(evaluation.unread_lockfiles, config)
     )
     blocking = [v for v in violations if v.blocking]
     advisories = [v for v in violations if not v.blocking]
@@ -2551,6 +2574,50 @@ def check_policy_envelope(
         findings=findings,
         duration_seconds=time.monotonic() - start,
     )
+
+
+def _unread_lockfile_violations(
+    unread: list[str],
+    config: PolicyConfig,
+) -> list[PolicyViolation]:
+    """The dependency rules a lockfile kstrl cannot parse left unchecked (#619).
+
+    ``policy.parse_new_dependencies`` reads uv.lock only, so a dependency
+    added through ``package-lock.json``, ``Cargo.lock`` or any other
+    lockfile used to be absent rather than unknown: ``deps_allow_new =
+    false`` and the license gate both passed having read nothing. Each
+    rule that is on and could not be checked is one violation: the
+    ``deps_allow_new`` rule when it is false, the license gate when
+    ``license_allow`` is non-empty. Severity follows ``license_unresolved``,
+    the rule for a dependency kstrl could not prove: blocking by default,
+    advisory when the operator set it to ``"advisory"``.
+    """
+    if not unread:
+        return []
+    rules: list[str] = []
+    if not config.deps_allow_new:
+        rules.append("deps_allow_new")
+    if config.license_allow:
+        rules.append("license_unresolved")
+    advisory = config.license_unresolved == "advisory"
+    shown = ", ".join(unread)
+    return [
+        PolicyViolation(
+            category=rule,
+            location=shown,
+            severity="advisory" if advisory else "high",
+            explanation=(
+                f"new dependencies in {shown} were not measured: kstrl reads uv.lock "
+                f"only, so {rule} could not be checked"
+                + ("; recorded as advisory" if advisory else "")
+            ),
+            suggestion=(
+                "Check the new dependencies by hand; set [policy] "
+                'license_unresolved = "advisory" to accept a lockfile kstrl cannot read.'
+            ),
+        )
+        for rule in rules
+    ]
 
 
 def _check_licenses(
@@ -2636,7 +2703,7 @@ def check_test_adequacy(
     base_branch: str,
     config: AdequacyConfig,
     autonomy_level: int = 0,
-) -> CheckResult:
+) -> CheckResult | NotMeasured:
     """R8.5 Layer 0: did this change weaken the suite, and do its new
     tests assert anything falsifiable?
 
@@ -2652,6 +2719,13 @@ def check_test_adequacy(
     is a rule about NEW test files, and applying it to a file someone
     merely edited would fail a one-line change for oracles that predate
     it. Diff discipline applies to every changed file regardless.
+
+    Layer 0 reads PYTHON test files (#619). A diff whose only test files
+    are in another language (``bulk.test.ts``, a ``#[cfg(test)]`` module,
+    see :func:`kstrl.adequacy.unread_test_paths`) and that raises no
+    finding returns :class:`NotMeasured` rather than a pass over files it
+    never opened; a diff that also holds Python tests keeps its row and
+    names the unread files in the message.
     """
     start = time.monotonic()
     try:
@@ -2677,17 +2751,8 @@ def check_test_adequacy(
             measured=False,
         )
 
-    sources: dict[str, str] = {}
-    for rel in changed:
-        if not is_test_path(rel) or not rel.endswith(".py"):
-            continue
-        full = cwd / rel
-        if not full.exists():
-            continue  # deleted; the diff analysis covers it
-        try:
-            sources[rel] = full.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            continue
+    sources = _python_test_sources(cwd, changed)
+    unread = unread_test_paths(changed, diff_text)
 
     # Only status "A" is new content. A rename/copy destination ("R"/"C")
     # carries tests that already existed, so it is not held to the
@@ -2711,11 +2776,22 @@ def check_test_adequacy(
         for f in adequacy_findings
     ]
 
+    if not adequacy_findings and unread and not sources:
+        return NotMeasured(
+            "test_adequacy",
+            NOT_MEASURED_NO_TARGET,
+            "test adequacy reads Python test files only; not read: " + ", ".join(unread),
+        )
+    # #619: every row names the test files Layer 0 did not open.
+    not_read = f"; not read: {', '.join(unread)}" if unread else ""
     if not adequacy_findings:
         return CheckResult(
             name="test_adequacy",
             passed=True,
-            message=(f"test adequacy: {len(sources)} changed test file(s), no weakening signals"),
+            message=(
+                f"test adequacy: {len(sources)} changed Python test file(s), "
+                f"no weakening signals{not_read}"
+            ),
             duration_seconds=time.monotonic() - start,
         )
     details = [f.render() for f in adequacy_findings]
@@ -2723,11 +2799,51 @@ def check_test_adequacy(
     return CheckResult(
         name="test_adequacy",
         passed=not blocking,
-        message=(f"{len(adequacy_findings)} test-adequacy finding(s) [{mode}]"),
+        message=f"{len(adequacy_findings)} test-adequacy finding(s) [{mode}]{not_read}",
         details=details,
         findings=findings,
         duration_seconds=time.monotonic() - start,
     )
+
+
+def _python_test_sources(cwd: Path, changed: Sequence[str]) -> dict[str, str]:
+    """The current text of each changed Python test file, keyed by path.
+
+    A deleted file is skipped (the diff analysis covers it), and so is one
+    that cannot be read.
+    """
+    sources: dict[str, str] = {}
+    for rel in changed:
+        if not is_test_path(rel) or not rel.endswith(".py"):
+            continue
+        full = cwd / rel
+        if not full.exists():
+            continue  # deleted; the diff analysis covers it
+        try:
+            sources[rel] = full.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+    return sources
+
+
+def _adequacy_checks(
+    cwd: Path,
+    base_branch: str,
+    config: AdequacyConfig | None,
+    autonomy_level: int,
+) -> tuple[list[CheckResult], list[NotMeasured]]:
+    """``(rows, gaps)`` for R8.5 Layer 0: at most one of either.
+
+    Nothing when ``[adequacy]`` is off, the same shape as
+    :func:`_dead_code_checks`: a check the operator turned off records
+    nothing, and one that read nothing records why (#619).
+    """
+    if config is None or not config.enabled:
+        return [], []
+    outcome = check_test_adequacy(cwd, base_branch, config, autonomy_level)
+    if isinstance(outcome, NotMeasured):
+        return [], [outcome]
+    return [outcome], []
 
 
 def _changed_non_test_python(
@@ -4225,6 +4341,13 @@ def _ruff_dead_code_command(read_only: bool) -> str:
     return "ruff check --fix --output-format=concise --select F401,F811,F841 ."
 
 
+#: The files the phase's ruff run would read, one path per line on stdout
+#: and nothing at all when it finds no Python file (measured on ruff
+#: 0.16.5: the "No Python files found" warning goes to stderr, exit 0).
+#: The same ``--select`` and path as :func:`_ruff_dead_code_command`, so
+#: the listing and the run resolve the same project config and excludes.
+_RUFF_DEAD_CODE_FILES = "ruff check --show-files --no-cache --select F401,F811,F841 ."
+
 #: ``Found 3 errors (2 fixed, 1 remaining).`` - a fixing run's summary.
 _RUFF_FIXED = re.compile(r"Found \d+ errors? \((\d+) fixed, (\d+) remaining\)")
 #: ``[*] 2 fixable with the `--fix` option.`` - what a --no-fix run WOULD
@@ -4489,6 +4612,18 @@ def check_dead_code_ruff(
         )
 
     try:
+        # #619: ask ruff which files it would read, with the same selection,
+        # before counting. On a tree it finds no Python in, ruff prints no
+        # path and "All checks passed!", which the count below would read
+        # as zero dead code in files it never opened. A listing that fails
+        # falls through to the real run, whose exit code reports it.
+        listed = run_scrubbed(_RUFF_DEAD_CODE_FILES, cwd=cwd, timeout=timeout)
+        if listed.returncode == 0 and not listed.stdout.strip():
+            return NotMeasured(
+                DEAD_CODE_RUFF_CHECK,
+                NOT_MEASURED_NO_TARGET,
+                "no Python file for ruff F401/F811/F841 to read",
+            )
         result = run_scrubbed(_ruff_dead_code_command(read_only), cwd=cwd, timeout=timeout)
     except subprocess.TimeoutExpired:
         return NotMeasured(
@@ -5270,15 +5405,11 @@ def run_mechanical_verification(
     # R8.5 Layer 0: opt-in ([adequacy] enabled), advisory unless the
     # level or config says block. Runs before the expensive layers so a
     # suite-weakening diff is reported even when mutation is off.
-    if adequacy_config is not None and adequacy_config.enabled:
-        checks.append(
-            check_test_adequacy(
-                worktree_path,
-                base_branch,
-                adequacy_config,
-                autonomy_level,
-            )
-        )
+    adequacy_rows, adequacy_gaps = _adequacy_checks(
+        worktree_path, base_branch, adequacy_config, autonomy_level
+    )
+    checks.extend(adequacy_rows)
+    not_measured.extend(adequacy_gaps)
 
     coverage_rows, coverage_gap, coverage = _patch_coverage_checks(
         worktree_path, base_branch, config, adequacy_config
