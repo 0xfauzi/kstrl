@@ -684,6 +684,26 @@ def queue_root(root_dir: Path) -> Path:
     return state_dir(root_dir) / QUEUE_DIR_NAME
 
 
+def relocated_spec(root_dir: Path, recorded: Path) -> Path | None:
+    """Where the queue item spec once at ``recorded`` is now, or None (#639).
+
+    ``ks serve`` plans from ``<queue>/running/<id>/<spec>``, and every later
+    transition renames the item directory into another state directory, so
+    a plan's pinned spec path stops existing while the file moves with its item.
+    None when ``recorded`` is not an item's spec path or no state holds it.
+    """
+    queue = queue_root(root_dir).resolve()
+    try:
+        _state, item_id, name = recorded.resolve().relative_to(queue).parts
+    except ValueError:
+        return None
+    for state in ALL_STATES:
+        candidate = queue / str(state) / item_id / name
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 class Queue:
     """Maildir-style work queue over ``.kstrl/queue/``.
 
@@ -1348,6 +1368,50 @@ class Queue:
             )
         )
         return item
+
+    def set_priority(self, item_id: str, priority: int, *, actor: str) -> tuple[QueueItem, int]:
+        """Change a queued item's priority in place (#650). The caller holds ``queue_lock``.
+
+        Takes an id, never an item: the item is re-read here, under the
+        caller's lock, so a copy read before the lock cannot be written
+        back over a newer ``meta.json``. Only a queued item's priority is
+        ever read (``next_ready`` scans ``queued/`` alone), and a leased
+        item's ``meta.json`` is rewritten by ``start`` from serve's own
+        copy, which would undo the change, so every other state is
+        refused by name.
+
+        Not a transition: the item stays in ``queued/``, ``meta.json`` is
+        rewritten in place and the journal gets a same-state row, as
+        ``relink_run`` does. Returns the item and its old priority. An
+        unchanged value writes nothing.
+        """
+        item = self.get(item_id)
+        if item is None or item.item_id != item_id:
+            raise QueueError(f"{item_id} is no longer in the queue; nothing changed")
+        if item.state is not ItemState.QUEUED:
+            raise QueueError(
+                f"{item_id} is {item.state}; only a queued item's priority can change, "
+                "so nothing changed"
+            )
+        old = item.priority
+        if old == priority:
+            return item, old
+        item.priority = priority
+        item.updated_at = _iso(_utc_now())
+        self._write_meta(item, self.item_dir(item))
+        self._journal(
+            JournalEntry(
+                ts=item.updated_at,
+                item_id=item.item_id,
+                from_state=str(item.state),
+                to_state=str(item.state),
+                reason=f"priority {old} -> {priority}",
+                actor=actor,
+                attempts=item.attempts,
+                detail={"priority_from": old, "priority_to": priority},
+            )
+        )
+        return item, old
 
     def poison(
         self,

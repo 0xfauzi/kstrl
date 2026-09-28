@@ -33,7 +33,7 @@ from kstrl.config_numbers import check_numbers
 from kstrl.fixtures_snapshot import check_snapshot_regression, save_snapshot
 from kstrl.jsonread import read_json, read_json_file
 from kstrl.prd import PRD
-from kstrl.verify import CheckResult, ChildOutputDecodeError, run_scrubbed
+from kstrl.verify import CheckResult, ChildOutputDecodeError, is_python_project, run_scrubbed
 
 
 @dataclass
@@ -141,6 +141,8 @@ def run_cli_fixture(
     """Run a CLI fixture by executing a command and checking output expectations.
 
     Checks exit_code, stdout_contains, and stdout_not_contains from expected.
+    ``input_data.stdin`` is the whole of the command's stdin, empty when
+    absent, and never kstrl's own stdin (#632).
 
     The command string is tokenized with ``shlex.split`` and executed
     with ``shell=False``: shell features (pipes, redirection, ``&&``,
@@ -173,7 +175,9 @@ def run_cli_fixture(
         )
 
     try:
-        result = run_scrubbed(argv, cwd=cwd, timeout=timeout)
+        result = run_scrubbed(
+            argv, cwd=cwd, timeout=timeout, stdin_text=fixture.input_data.get("stdin", "")
+        )
     except subprocess.TimeoutExpired:
         return FixtureResult(
             fixture=fixture,
@@ -409,7 +413,7 @@ def run_function_fixture(
         spec_json,
     ]
     try:
-        result = run_scrubbed(argv, cwd=cwd, timeout=timeout)
+        result = run_scrubbed(argv, cwd=cwd, timeout=timeout, stdin_text="")
     except subprocess.TimeoutExpired:
         return FixtureResult(
             fixture=fixture,
@@ -688,6 +692,23 @@ def check_fixtures(
     )
 
 
+def fixture_tree_errors(prd_data: dict[str, Any], tree: Path) -> list[str]:
+    """One indexed line per ``function`` fixture ``tree`` cannot run (#632).
+
+    The runner imports a Python module with kstrl's own interpreter, so on a
+    tree with no pyproject.toml or setup.py (#621's predicate) every attempt
+    fails with ModuleNotFoundError. Takes a PRD ``validate_schema`` accepted.
+    """
+    if is_python_project(tree):
+        return []
+    return [
+        f"fixtures[{i}]: a function fixture imports a Python module and this tree "
+        "has no pyproject.toml or setup.py; a cli fixture runs any program"
+        for i, entry in enumerate(prd_data.get("fixtures") or [])
+        if entry["fixture_type"] == "function"
+    ]
+
+
 def check_fixtures_from_prd(
     prd_path: Path,
     cwd: Path,
@@ -729,6 +750,17 @@ def check_fixtures_from_prd(
             ),
             details=errors[:10],
             duration_seconds=time.monotonic() - start,
+            measured=False,
+        )
+    refusals = fixture_tree_errors(data, cwd)
+    if refusals:
+        return CheckResult(
+            name="fixtures",
+            passed=False,
+            message="PRD names fixtures this tree cannot run (failing closed)",
+            details=refusals[:10],
+            duration_seconds=time.monotonic() - start,
+            # #632: no fixture ran, the same as the schema-invalid row above.
             measured=False,
         )
     fixtures = load_fixtures_from_prd_data(data)

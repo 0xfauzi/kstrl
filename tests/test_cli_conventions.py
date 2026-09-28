@@ -109,6 +109,7 @@ EMPTY_REPO_EXITS: tuple[tuple[tuple[str, ...], tuple[str, ...], int, str], ...] 
     (("queue", "ls"), (), 0, "an empty queue"),
     (("queue", "pause"), (), 0, "pauses intake"),
     (("queue", "resume"), (), 0, "resumes intake"),
+    (("queue", "priority"), ("x", "--to", "1"), 2, "no such queue item"),
     (("queue", "retry"), ("x",), 2, "no such queue item"),
     (("queue", "rm"), ("x", "--yes"), 2, "no such queue item"),
     (("queue", "show"), ("x",), 2, "no such queue item"),
