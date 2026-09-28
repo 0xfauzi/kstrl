@@ -164,5 +164,5 @@ class TestConftestDeselectCaught:
         # Prove the conftest was the gaming vector: without it the same
         # suite fails on its own.
         (tmp_path / "conftest.py").unlink()
-        honest = check_test_suite(tmp_path, _PYTEST_CMD, timeout=120.0)
+        honest, _ = check_test_suite(tmp_path, _PYTEST_CMD, timeout=120.0)
         assert not honest.passed

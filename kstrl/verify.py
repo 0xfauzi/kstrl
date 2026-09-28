@@ -69,6 +69,7 @@ from kstrl.policy import (
 from kstrl.prd import PRD
 from kstrl.procdispose import drain_or_abandon
 from kstrl.procgroup import signal_process_tree
+from kstrl.report_formats import REPORT_ENV, fresh_report, read_gate_report
 from kstrl.statedir import STATE_DIR_NAME
 from kstrl.suite_inventory import (
     TESTS_RAN_CHECK,
@@ -641,7 +642,8 @@ class VerifyConfig:
     # which is what makes a chained command
     # (`uv run pytest && npm run test`) yield BOTH toolchains' failures.
     # Set one to pin the gate to a single parser. Accepted values are
-    # kstrl.gateparse.GATE_TOOLS[<gate>]; anything else raises on load.
+    # kstrl.gateparse.GATE_TOOLS[<gate>], plus the report formats in
+    # GATE_FORMATS[<gate>] (#629); anything else raises on load.
     test_tool: str | None = None
     typecheck_tool: str | None = None
     lint_tool: str | None = None
@@ -1452,6 +1454,7 @@ def _failed_gate_result(
     start: float,
     *,
     output: str,
+    unread: str | None = None,
 ) -> CheckResult:
     """Enrich a parse and package it as the gate's failing CheckResult.
 
@@ -1486,6 +1489,11 @@ def _failed_gate_result(
         # lines. The excerpt keeps the lines around each location inside
         # the worktree instead, and the tail stays when there is none.
         parsed.raw_summary = failure_excerpt(output, cwd) or parsed.raw_summary
+    if unread:
+        # #629: a declared report kstrl could not read. Its reason comes
+        # first, above whatever the output itself showed; the message is
+        # untouched because it feeds the failure signature.
+        parsed.raw_summary = "\n".join(part for part in (unread, parsed.raw_summary) if part)
     for failure in parsed.failures:
         # eslint's default formatter prints ABSOLUTE paths, so without
         # this the engineer is handed a path rooted in kstrl's throwaway
@@ -1513,6 +1521,35 @@ def _failed_gate_result(
     )
 
 
+def _test_gate_env(report_dir: Path | None, report: Path | None) -> dict[str, str]:
+    """The test command's extra environment: the #620 inventory's, and the
+    declared report's path (#629). Both are values kstrl chose."""
+    env = dict(inventory_env(report_dir) or {})
+    if report is not None:
+        env[REPORT_ENV] = str(report)
+    return env
+
+
+def _test_failure(
+    output: str, tool: str | None, report: Path | None, cwd: Path
+) -> tuple[ParsedOutput, str | None, list[NotMeasured]]:
+    """A failing test gate's parse, the line saying why its report was not
+    read, and the gap that records it (#629).
+
+    With no declared report this is the text parse, as before. A declared
+    report that cannot be read gives an empty parse, so the row shows the
+    #622 excerpt under the refusal and stays unmeasured; text parsers are
+    never run over output the operator said is not theirs.
+    """
+    if report is None or tool is None:
+        return parse_gate_output(output, GATE_TEST, tool), None, []
+    read = read_gate_report(tool, report, cwd)
+    if isinstance(read, ParsedOutput):
+        return read, None, []
+    reason = NOT_MEASURED_TOOL_MISSING if read.missing else NOT_MEASURED_COMMAND_FAILED
+    return ParsedOutput(tool=tool), read.detail, [NotMeasured(GATE_TEST, reason, read.detail)]
+
+
 def check_test_suite(
     cwd: Path,
     command: str | None = None,
@@ -1520,11 +1557,14 @@ def check_test_suite(
     tool: str | None = None,
     *,
     report_dir: Path | None = None,
-) -> CheckResult:
-    """Run the project's test suite independently.
+) -> tuple[CheckResult, list[NotMeasured]]:
+    """Run the project's test suite independently: its row, and a gap when
+    a declared report could not be read (#629).
 
     ``tool`` pins which parser reads the output; None runs every parser
-    registered for the gate and unions what they find (#258).
+    registered for the gate and unions what they find (#258). A report
+    format (``kstrl.gateparse.GATE_FORMATS``) instead has the command write
+    a report to ``$KSTRL_REPORT``, read on a failing exit only.
 
     ``report_dir`` (#620) is a directory kstrl owns: pytest is asked for a
     junit report there and the gate's output is saved there, so
@@ -1534,46 +1574,52 @@ def check_test_suite(
     start = time.monotonic()
     cmd = resolve_test_command(command)
 
-    try:
-        result = run_scrubbed(cmd, cwd=cwd, timeout=timeout, extra_env=inventory_env(report_dir))
-    except subprocess.TimeoutExpired as expired:
-        return CheckResult(
-            name=GATE_TEST,
-            passed=False,
-            message=f"Test suite timed out after {timeout}s",
-            duration_seconds=time.monotonic() - start,
-            measured=False,
-            output=_output_before_stop(expired.stdout, expired.stderr),
-        )
-    except ChildOutputDecodeError as exc:
-        return CheckResult(
-            name=GATE_TEST,
-            passed=False,
-            message=f"Test suite output could not be decoded: {exc}",
-            duration_seconds=time.monotonic() - start,
-            measured=False,
-            output=_output_before_stop(exc.stdout, exc.stderr),
-        )
+    with fresh_report(tool) as report:
+        try:
+            result = run_scrubbed(
+                cmd, cwd=cwd, timeout=timeout, extra_env=_test_gate_env(report_dir, report)
+            )
+        except subprocess.TimeoutExpired as expired:
+            return CheckResult(
+                name=GATE_TEST,
+                passed=False,
+                message=f"Test suite timed out after {timeout}s",
+                duration_seconds=time.monotonic() - start,
+                measured=False,
+                output=_output_before_stop(expired.stdout, expired.stderr),
+            ), []
+        except ChildOutputDecodeError as exc:
+            return CheckResult(
+                name=GATE_TEST,
+                passed=False,
+                message=f"Test suite output could not be decoded: {exc}",
+                duration_seconds=time.monotonic() - start,
+                measured=False,
+                output=_output_before_stop(exc.stdout, exc.stderr),
+            ), []
 
-    save_gate_output(report_dir, result.stdout + result.stderr)
-    if result.returncode != 0:
+        save_gate_output(report_dir, result.stdout + result.stderr)
+        if result.returncode == 0:
+            return CheckResult(
+                name=GATE_TEST,
+                passed=True,
+                message="Tests passed",
+                duration_seconds=time.monotonic() - start,
+            ), []
         output = (result.stdout + result.stderr).strip()
-        return _failed_gate_result(
-            GATE_TEST,
-            f"Tests failed (exit code {result.returncode})",
-            parse_gate_output(output, GATE_TEST, tool),
-            cmd,
-            cwd,
-            start,
-            output=output,
-        )
+        parsed, unread, gaps = _test_failure(output, tool, report, cwd)
 
-    return CheckResult(
-        name=GATE_TEST,
-        passed=True,
-        message="Tests passed",
-        duration_seconds=time.monotonic() - start,
+    row = _failed_gate_result(
+        GATE_TEST,
+        f"Tests failed (exit code {result.returncode})",
+        parsed,
+        cmd,
+        cwd,
+        start,
+        output=output,
+        unread=unread,
     )
+    return row, gaps
 
 
 def check_typecheck(
@@ -1755,7 +1801,9 @@ def _command_gates(
 
     With ``base_branch`` (Phase 1), the test gate also reads which changed
     test files the suite ran (#620, :func:`_test_suite_checks`); the
-    between-iteration checks pass none and run the suite as before.
+    between-iteration checks pass none, which reads as no diff, and run the
+    suite as before. Both reach the test gate through that one function, so
+    its gaps (#629) are merged in one place.
     """
     commands = resolve_verify_commands(config, worktree_path)
     timeout = limit_seconds(config.subprocess_timeout)
@@ -1765,10 +1813,10 @@ def _command_gates(
         outcome = _command_not_run(GATE_TEST, "test_command", commands.test, worktree_path)
         if outcome is not None:
             _record(outcome, checks, gaps)
-        elif base_branch is None:
-            checks.append(check_test_suite(worktree_path, commands.test, timeout, config.test_tool))
         else:
-            row, ran_gaps = _test_suite_checks(worktree_path, base_branch, config, commands.test)
+            row, ran_gaps = _test_suite_checks(
+                worktree_path, base_branch or "", config, commands.test
+            )
             checks.append(row)
             gaps.extend(ran_gaps)
     if GATE_TYPECHECK in selected:
@@ -5178,10 +5226,13 @@ def _test_suite_checks(
     timeout = limit_seconds(config.subprocess_timeout)
     changed, gaps = _changed_test_files(cwd, base_branch)
     if not changed:
-        return check_test_suite(cwd, command, timeout, config.test_tool), gaps
+        row, test_gaps = check_test_suite(cwd, command, timeout, config.test_tool)
+        return row, [*gaps, *test_gaps]
     with tempfile.TemporaryDirectory(prefix="kstrl-tests-ran-") as tmp:
         report_dir = Path(tmp)
-        row = check_test_suite(cwd, command, timeout, config.test_tool, report_dir=report_dir)
+        row, test_gaps = check_test_suite(
+            cwd, command, timeout, config.test_tool, report_dir=report_dir
+        )
         did_not_run, unread = unrun_test_files(changed, report_dir)
     if unread:
         gaps = [
@@ -5192,7 +5243,7 @@ def _test_suite_checks(
                 "vitest's per-file lines, and found neither for: " + ", ".join(unread),
             )
         ]
-    return _with_unrun_test_files(row, did_not_run), gaps
+    return _with_unrun_test_files(row, did_not_run), [*gaps, *test_gaps]
 
 
 def _mutation_checks(

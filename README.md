@@ -387,7 +387,7 @@ allow_network = false  # re-open outbound network inside the sandbox (off = deny
 test_command = ""              # "" = gate off; leave the key out for uv run pytest
 typecheck_command = ""         # "" = gate off; leave the key out for uv run mypy when [tool.mypy] scopes it, else uv run mypy .
 lint_command = ""              # "" = gate off; leave the key out for uv run ruff check .
-test_tool = ""                 # parser for the test gate's output; empty = every parser (pytest, vitest), unioned
+test_tool = ""                 # parser for the test gate's output; empty = every parser (pytest, vitest), unioned; a report format (go-test-json) is read from the file the command writes, > "${KSTRL_REPORT:-/dev/null}"; redirect into the file, never pipe
 typecheck_tool = ""            # parser for the typecheck gate's output; empty = every parser (mypy, tsc), unioned
 lint_tool = ""                 # parser for the lint gate's output; empty = every parser (ruff, eslint), unioned
 check_diff_scope = true        # fail on changes outside allowed paths

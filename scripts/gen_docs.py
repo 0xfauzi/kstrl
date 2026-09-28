@@ -45,7 +45,7 @@ import click
 # them keeps this reference from drifting the way it had: it claimed
 # "uv run ruff check" without the path argument the gate actually
 # passes, and named only the scoped branch of the typecheck default.
-from kstrl.gateparse import GATE_LINT, GATE_TEST, GATE_TOOLS, GATE_TYPECHECK
+from kstrl.gateparse import GATE_FORMATS, GATE_LINT, GATE_TEST, GATE_TOOLS, GATE_TYPECHECK
 from kstrl.verify import (
     DEFAULT_LINT_COMMAND,
     DEFAULT_TEST_COMMAND,
@@ -612,7 +612,9 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ),
     ("verify", "lint_command"): f'"" = gate off; leave the key out for {DEFAULT_LINT_COMMAND}',
     ("verify", "test_tool"): "parser for the test gate's output; empty = every parser "
-    f"({', '.join(GATE_TOOLS[GATE_TEST])}), unioned",
+    f"({', '.join(GATE_TOOLS[GATE_TEST])}), unioned; a report format "
+    f"({', '.join(GATE_FORMATS[GATE_TEST])}) is read from the file the command writes, "
+    '> "${KSTRL_REPORT:-/dev/null}"; redirect into the file, never pipe',
     ("verify", "typecheck_tool"): "parser for the typecheck gate's output; empty = every "
     f"parser ({', '.join(GATE_TOOLS[GATE_TYPECHECK])}), unioned",
     ("verify", "lint_tool"): "parser for the lint gate's output; empty = every parser "

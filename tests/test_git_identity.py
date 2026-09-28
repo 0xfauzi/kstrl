@@ -200,6 +200,9 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_prompt_record.py": 6,
     "tests/test_prompt_upgrade.py": 1,
     "tests/test_provisioning.py": 2,
+    # #629: `_repo` commits into a repository it set identity on, and the
+    # changed-test-file case commits once more into that same repository.
+    "tests/test_report_formats_cli.py": 2,
     "tests/test_resume_ergonomics.py": 2,
     # #465: the parked-merge and resume tests commit through set_identity.
     # The single_pr shared-branch regression test (blocker 1 of the PR
