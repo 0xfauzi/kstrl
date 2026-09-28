@@ -553,6 +553,28 @@ def test_verify_commands_shows_a_contract_command_set_in_kstrl_toml(tmp_path: Pa
     ) in row["detail"]
 
 
+def test_verify_commands_points_at_kstrl_config_when_phase_3_does_not_resolve(
+    tmp_path: Path,
+) -> None:
+    """A `[run]` value kstrl cannot read rejects the base config that
+    `ks config show` resolves `[contract]` from, while `[verify]` still
+    loads. The verify_commands row must point at kstrl_config, not crash
+    doctor and not print a guessed Phase 3 command."""
+    root = rust_repo(tmp_path)
+    (root / "kstrl.toml").write_text(
+        '[run]\nmax_iterations = "many"\n\n' + RUST_VERIFY, encoding="utf-8"
+    )
+    result = run_doctor(root, "--json")
+    assert not isinstance(result.exception, ValueError), result.exception
+    assert result.exit_code == 1, result.output
+    rows = {check["name"]: check for check in json.loads(result.stdout)["checks"]}
+    assert rows["kstrl_config"]["status"] == "fail"
+    assert (
+        "Phase 3's [contract] test_command did not resolve (see kstrl_config)"
+        in rows["verify_commands"]["detail"]
+    )
+
+
 def test_doctor_on_a_python_repo_is_unchanged(tmp_path: Path) -> None:
     """The control: on the Python fixture every row is still ok, and
     source_root and test_root say what they said before #628."""
