@@ -2097,6 +2097,18 @@ GO_STANDARDS_PROMPT = """
 - Use `go vet` and `golangci-lint` in CI
 - Prefer channels for synchronization, mutexes for state protection
 """
+JAVASCRIPT_STANDARDS_PROMPT = """
+- Use `const` by default, `let` only when mutation is needed, never `var`
+- Use `===` and `!==`, never `==` or `!=`
+- Use ES modules (`import` / `export`) unless the whole project is CommonJS
+- Prefer `async` / `await` over raw `.then()` chains
+- Handle every Promise rejection - `await` it inside `try` / `catch` or attach `.catch()`
+- Document exported functions with JSDoc, including `@param` and `@returns` types
+- Validate external input (request bodies, environment variables, file contents) where it enters
+- Throw `Error` objects or subclasses, never strings or plain objects
+- Prefer named exports over default exports
+- Use template literals over string concatenation
+"""
 JAVA_STANDARDS_PROMPT = """
 - Use final for variables that should not be reassigned
 - Prefer composition over inheritance
@@ -2149,11 +2161,41 @@ GO_ANTIPATTERNS_PROMPT = """
 - Do NOT use global mutable state
 - Do NOT use `interface{}` / `any` as an escape hatch from the type system
 """
+JAVASCRIPT_ANTIPATTERNS_PROMPT = """
+- Do NOT use `var` - use `const` or `let`
+- Do NOT use `==` or `!=` - always use `===` and `!==`
+- Do NOT use `eval`, `new Function` or a string argument to `setTimeout`
+- Do NOT leave a Promise without an `await` or a `.catch()` handler
+- Do NOT write an empty `catch {}` block or a `catch` that only logs and carries on
+- Do NOT pass user input to `child_process.exec` - use `execFile` with an argument array
+- Do NOT merge untrusted objects into plain objects without rejecting `__proto__` keys
+- Do NOT mutate function arguments or module-level state
+"""
+JAVA_ANTIPATTERNS_PROMPT = """
+- Do NOT catch `Exception` or `Throwable` unless you rethrow or handle the specific failure
+- Do NOT write an empty `catch` block
+- Do NOT return `null` where the return type could be `Optional<T>`
+- Do NOT use raw generic types (`List` where `List<String>` is meant)
+- Do NOT compare strings with `==` - use `equals`
+- Do NOT build SQL by string concatenation - use `PreparedStatement` parameters
+- Do NOT leave an `AutoCloseable` open outside try-with-resources
+- Do NOT return a mutable internal collection from a getter
+"""
+KOTLIN_ANTIPATTERNS_PROMPT = """
+- Do NOT use the `!!` operator - handle the null case explicitly
+- Do NOT use `var` where `val` would work
+- Do NOT use `lateinit` to avoid deciding the initialization order
+- Do NOT launch coroutines in `GlobalScope` - use a structured scope
+- Do NOT catch `Exception` or `Throwable` in a coroutine without rethrowing `CancellationException`
+- Do NOT call blocking I/O in a coroutine without `withContext(Dispatchers.IO)`
+- Do NOT add an `else` branch to a `when` over a sealed type - list every subtype
+"""
 
 _LANGUAGE_STANDARDS: dict[str, str] = {
     "Python": PYTHON_STANDARDS_PROMPT,
     "Rust": RUST_STANDARDS_PROMPT,
     "TypeScript": TYPESCRIPT_STANDARDS_PROMPT,
+    "JavaScript": JAVASCRIPT_STANDARDS_PROMPT,
     "Go": GO_STANDARDS_PROMPT,
     "Java": JAVA_STANDARDS_PROMPT,
     "Kotlin": KOTLIN_STANDARDS_PROMPT,
@@ -2163,14 +2205,17 @@ _LANGUAGE_ANTIPATTERNS: dict[str, str] = {
     "Python": PYTHON_ANTIPATTERNS_PROMPT,
     "Rust": RUST_ANTIPATTERNS_PROMPT,
     "TypeScript": TYPESCRIPT_ANTIPATTERNS_PROMPT,
+    "JavaScript": JAVASCRIPT_ANTIPATTERNS_PROMPT,
     "Go": GO_ANTIPATTERNS_PROMPT,
+    "Java": JAVA_ANTIPATTERNS_PROMPT,
+    "Kotlin": KOTLIN_ANTIPATTERNS_PROMPT,
 }
 
 
 #: H3 (#303): fragments _generate_claude_md assembles (plus the language
 #: tables it looks values up in); versioned as one body
 #: (docs/adversarial-roadmap.md, H3a sweep row).
-CLAUDE_MD_PROMPT_VERSION = "1.0.0"
+CLAUDE_MD_PROMPT_VERSION = "1.1.0"
 
 CLAUDE_MD_OVERVIEW_PROMPT = (
     "# CLAUDE.md - {name}\n"

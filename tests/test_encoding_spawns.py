@@ -77,7 +77,8 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     "tui/screens/home.py": 3,
     "tui/screens/retry.py": 2,
     # 25: `_base_finding`'s `git show` (#414/#425); `git merge-base` moved to `git.py` in #435.
-    "verify.py": 25,
+    # 26: #632, `run_scrubbed`'s `subprocess.PIPE` for a stdin it was given.
+    "verify.py": 26,
     "worktree_setup.py": 2,  # #624: the import, and `TimeoutExpired` from `run_scrubbed`
     "worktree_sweep.py": 2,  # #461: the import, and `TimeoutExpired` from `run_scrubbed`
 }

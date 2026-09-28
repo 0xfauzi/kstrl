@@ -128,7 +128,7 @@ from kstrl.pipeline import (
     PipelineHooks,
     _iso_now,
 )
-from kstrl.plan_gate import run_plan_gate
+from kstrl.plan_gate import run_plan_gate, spec_pin_errors
 from kstrl.policy import PolicyConfig
 from kstrl.pr import create_prs_in_order, create_single_pr
 from kstrl.release import RELEASE_REF_RULE, ReleaseInputs, release_ref_from, release_withheld
@@ -2310,9 +2310,27 @@ def _preflight_decision_register(
             read_decisions(root_dir),
             manifest.project_name,
             manifest.spec_file,
+            manifest.spec_digest,
         )
     except DecisionRegisterError as exc:
         return [str(exc)], ()
+
+
+def _preflight_spec_pin(manifest: Manifest, root_dir: Path, ui: UI) -> list[str]:
+    """Why this plan must not run on its spec as it reads now, or [] (#639).
+
+    A manifest that names a spec but pins no digest was written before
+    #639: kstrl cannot tell whether that spec changed since, so it says
+    so and runs, the way a missing register is legal.
+    """
+    if manifest.spec_file and not manifest.spec_digest:
+        ui.warn(
+            f"  This plan was made from {manifest.spec_file} before kstrl pinned specs, so "
+            f"kstrl cannot tell whether the spec changed since. To pin it, re-plan: ks "
+            f"factory --spec <path to {manifest.spec_file}> --project-name "
+            f"{manifest.project_name}"
+        )
+    return spec_pin_errors(manifest, root_dir)
 
 
 def _run_preflights(
@@ -2367,6 +2385,12 @@ def _run_preflights(
     _warn_claude_md_divergence(root_dir, factory_config, ui)
     register_errors, run_decisions = _preflight_decision_register(manifest, root_dir)
     if _report_preflight(ui, "the architect decision register cannot bind", register_errors):
+        return None
+    if _report_preflight(
+        ui,
+        "the plan does not match the spec it was made from",
+        _preflight_spec_pin(manifest, root_dir, ui),
+    ):
         return None
     if _report_preflight(
         ui,
