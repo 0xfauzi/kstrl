@@ -147,8 +147,8 @@ from kstrl.security import _SEVERITY_ORDER, SecurityMode
 from kstrl.serve import ARCHITECT_RUN_KIND, LAUNCHD_MODES
 from kstrl.shutdown import StopController, install_signal_handlers
 from kstrl.timeout import TimeoutConfig, limit_seconds
+from kstrl.toolchains import DEFAULT_LINT_COMMAND, DEFAULT_TEST_COMMAND
 from kstrl.ui.base import UI
-from kstrl.verify import DEFAULT_LINT_COMMAND, DEFAULT_TEST_COMMAND
 from kstrl.version import stamp_label
 from kstrl.workqueue import ItemState
 
@@ -6083,6 +6083,81 @@ def queue_show(
     sys.exit(0)
 
 
+def _retry_refusal(item: Any) -> str:
+    """Why `ks queue retry` refuses ``item``, naming the command that does apply."""
+    from kstrl.workqueue import ItemState
+
+    refusal = f"{item.item_id[:12]} is {item.state}; only failed or poisoned items can be retried"
+    if item.state is ItemState.AWAITING_ANSWER:
+        refusal += (
+            "; it waits for the owner's answer: run "
+            f"`ks queue answer {item.item_id} <answered spec file>`"
+        )
+    return refusal
+
+
+@queue_group.command(name="answer")
+@click.argument("item_id")
+@click.argument("spec", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option(
+    "--reset-attempts",
+    is_flag=True,
+    help="Zero the attempt counter (explicit human decision to spend again)",
+)
+@_queue_root_option
+@_queue_ui_option
+@_queue_no_color_option
+def queue_answer(
+    item_id: str,
+    spec: Path,
+    reset_attempts: bool,
+    root: Path | None,
+    ui: str,
+    no_color: bool,
+) -> None:
+    """Answer an escalated item: replace its spec and send it back to queued.
+
+    Only an item awaiting an answer can be answered (#644). SPEC is the
+    answered spec; it replaces the item's queued copy, so the next
+    `ks serve` cycle runs it. An item that has spent its attempts needs
+    `--reset-attempts`, as `ks queue retry` does. Identical bytes are
+    accepted and recorded as unchanged.
+    """
+    from kstrl.workqueue import QueueError, queue_lock
+
+    root_dir, queue = _queue_for(root)
+    ui_impl = _autonomy_ui(ui, no_color)
+    try:
+        raw = spec.read_bytes()
+    except OSError as exc:
+        ui_impl.err(f"Could not read {spec}: {exc}")
+        sys.exit(2)
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        ui_impl.err(f"Could not read {spec}: {exc}")
+        sys.exit(2)
+    try:
+        with queue_lock(root_dir):
+            # Read under the lock, so the state checked is the state answered.
+            item = _resolve_queue_item(queue, item_id, ui_impl)
+            record = queue.answer(item, text, actor=_actor(), reset_attempts=reset_attempts)
+    except (QueueError, OSError) as exc:
+        ui_impl.err(str(exc))
+        sys.exit(2)
+    ui_impl.ok(
+        f"Answered {item.item_id}: queued again ({item.attempts}/{item.max_attempts} attempts used)"
+    )
+    ui_impl.kv("spec before", record["spec_sha256_before"])
+    ui_impl.kv("spec after", record["spec_sha256_after"])
+    if record["unchanged"]:
+        ui_impl.warn(
+            "The answered spec is unchanged, so the architect reads the same text "
+            "and may escalate the same question again."
+        )
+    sys.exit(0)
+
+
 @queue_group.command(name="retry")
 @click.argument("item_id")
 @click.option(
@@ -6113,9 +6188,7 @@ def queue_retry(
     ui_impl = _autonomy_ui(ui, no_color)
     item = _resolve_queue_item(queue, item_id, ui_impl)
     if item.state not in (ItemState.FAILED, ItemState.POISON):
-        ui_impl.err(
-            f"{item.item_id[:12]} is {item.state}; only failed or poisoned items can be retried"
-        )
+        ui_impl.err(_retry_refusal(item))
         sys.exit(2)
     if not reset_attempts and item.attempts_remaining == 0:
         ui_impl.err(
@@ -6867,7 +6940,7 @@ def serve(
     if needs_human:
         ui_impl.warn(
             f"{len(needs_human)} cycle(s) produced work awaiting a human; "
-            "see `ks inbox ls` and `ks queue ls --state poison`"
+            "see `ks inbox ls` and `ks queue ls`"
         )
     sys.exit(1 if needs_human else 0)
 

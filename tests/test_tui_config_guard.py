@@ -78,6 +78,9 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     "decisions.py": 1,  # DecisionRegisterError, added by #332
     # AgentOutputTooLarge, and AgentTimedOut since #603.
     "decompose.py": 2,
+    # #632: each refuses to import a table whose rows disagree, a bare raise.
+    "fixture_expect.py": 1,
+    "fixtures.py": 1,
     # One subclass, four bare raises. #543 added two: a dependency branch
     # that will not merge into a dependent's worktree, and a HEAD that
     # cannot be read when recording what the dependent is judged against.
@@ -118,6 +121,8 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     # raise_if_defect still treats them as operator input, and the walk
     # below follows them by subclass rather than by spelling.
     "statedir.py": 1,
+    # #635: the bare import-time raise when a ToolchainId has no record.
+    "toolchains.py": 1,
     # ChildOutputDecodeError, added by #416.
     "verify.py": 1,
     "workqueue.py": 1,

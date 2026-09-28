@@ -93,6 +93,15 @@ sys.exit(result.exit_code)
 """
 
 
+def _phase_1_hang(marker: Path) -> str:
+    """A verify command that signals and hangs in a component worktree only.
+
+    The factory runs the same command on the base branch before any
+    engineer (#654), in a throwaway worktree outside ``.kstrl/worktrees``,
+    and there it must pass so the run reaches Phase 1."""
+    return f"case \"$(pwd)\" in */.kstrl/worktrees/*) touch '{marker}' && sleep 45;; esac"
+
+
 def _crash_factory(
     root: Path,
     manifest_path: Path,
@@ -186,7 +195,7 @@ class TestCrashRecovery:
             agent_cmd, verify_cmd = hang, "true"
         else:
             # The engineer completes; Phase 1 VERIFY signals and hangs.
-            agent_cmd, verify_cmd = COMPLETE_LINE, hang
+            agent_cmd, verify_cmd = COMPLETE_LINE, _phase_1_hang(marker)
 
         _crash_factory(root, manifest_path, marker, agent_cmd, verify_cmd)
         stale_worktree = _assert_crashed_state(
@@ -253,7 +262,7 @@ class TestCrashRecovery:
             manifest_path,
             marker,
             committing_agent,
-            f"touch '{marker}' && sleep 45",
+            _phase_1_hang(marker),
         )
         stale_worktree = _assert_crashed_state(
             root,

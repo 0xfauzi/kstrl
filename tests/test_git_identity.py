@@ -126,9 +126,11 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_feature_operator_context_e2e.py": 1,
     "tests/test_feature_verification.py": 1,
     "tests/test_feature_verification_attribution.py": 1,
-    # #632: `_repo`'s one seed commit, into a repository it has just put
-    # through `tests.helpers.gitrepo.set_identity`.
-    "tests/test_fixtures_beyond_python.py": 1,
+    # #632: `_repo`'s and `_json_project`'s seed commits, each into a
+    # repository it has just put through `tests.helpers.gitrepo.set_identity`,
+    # and the shell engineer's commit inside the worktree `ks factory` made
+    # from that repository.
+    "tests/test_fixtures_beyond_python.py": 3,
     "tests/test_git_identity_helper.py": 5,
     # #423's `_repo_with_tricky_names` fixture, through
     # `tests.helpers.gitrepo.set_identity`, which this row declares.
@@ -210,6 +212,12 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_prompt_record.py": 6,
     "tests/test_prompt_upgrade.py": 1,
     "tests/test_provisioning.py": 2,
+    # #654: the seed commit and the fix commit of the temp repo `_repo` builds,
+    # which goes through set_identity before its first commit.
+    "tests/test_red_base_preflight.py": 2,
+    # #635: `_commit` is the one commit site, into the fixture repository
+    # `_seed` has just put through `tests.helpers.gitrepo.set_identity`.
+    "tests/test_python_toolchain_identity_e2e.py": 1,
     "tests/test_resume_ergonomics.py": 2,
     # #465: the parked-merge and resume tests commit through set_identity.
     # The single_pr shared-branch regression test (blocker 1 of the PR
