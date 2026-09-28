@@ -213,6 +213,44 @@ class TestExampleProjectContract:
 
         assert tracked.returncode == 0, f"run `uv lock` in examples/uv-python and commit {relative}"
 
+    def test_example_lockfile_is_current(self) -> None:
+        """#636: the example depends on kstrl as an editable path, so its
+        uv.lock pins kstrl's own dependencies. kstrl gained gepa and the
+        example's lock was not regenerated, so every `uv run` in the
+        example rewrote the lock and a `--locked` run failed. This runs
+        the real `uv lock --check` there. Offline, because a current lock
+        needs nothing from the network (measured with an empty cache).
+
+        The variables that point uv at another project or environment are
+        removed, so the check can only judge the example's own lock. UV_FROZEN
+        is removed too: with it set, `uv lock --check` only validates the file
+        and exits 0 on a stale lock."""
+        import os
+        import shutil
+        import subprocess
+
+        uv = shutil.which("uv")
+        assert uv is not None, "uv is not on PATH; the suite runs under `uv run`"
+        env = {
+            k: v
+            for k, v in os.environ.items()
+            if k not in ("VIRTUAL_ENV", "UV_PROJECT", "UV_PROJECT_ENVIRONMENT", "UV_FROZEN")
+        }
+        example = REPO_ROOT / "examples" / "uv-python"
+        result = subprocess.run(
+            [uv, "lock", "--check", "--offline"],
+            cwd=example,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+
+        assert result.returncode == 0, (
+            "examples/uv-python/uv.lock is stale: run `uv lock` in examples/uv-python "
+            f"(never `uv lock --upgrade`) and commit it.\n{result.stderr}"
+        )
+
     def test_example_prd_prompt_allows_allowed_paths(self) -> None:
         text = (
             REPO_ROOT / "examples" / "uv-python" / "scripts" / "kstrl" / "prd_prompt.txt"

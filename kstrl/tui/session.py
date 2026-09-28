@@ -41,6 +41,7 @@ from kstrl.launch import (
 from kstrl.render import UIBackedRenderer
 from kstrl.runid import mint_run_id
 from kstrl.shutdown import StopController
+from kstrl.timeout import limit_seconds
 from kstrl.tui.bridge import CommandHandle, start_command_thread
 from kstrl.tui.embed import (
     _install_exclusive_root_handler,
@@ -270,6 +271,7 @@ def _prepare_decompose(
     root_dir: Path,
 ) -> PreparedLaunch:
     from kstrl.agents import get_agent
+    from kstrl.factory import FactoryConfig
 
     spec_path = spec.spec_path if spec.spec_path.is_absolute() else root_dir / spec.spec_path
     if not spec_path.exists():
@@ -279,6 +281,9 @@ def _prepare_decompose(
 
     try:
         config = KstrlConfig.load(root_dir)
+        # #603: the architect's call limit, read with the rest of the
+        # configuration so a bad value is refused here, not on the thread.
+        architect_timeout = limit_seconds(FactoryConfig.load(root_dir).architect_timeout_seconds)
         blocker = build_manifest_blocker(root_dir)
     except SURFACE_REJECTIONS as exc:
         # The same widening as _prepare_factory, for the same reason,
@@ -327,6 +332,7 @@ def _prepare_decompose(
                         bus=command_run.bus,
                         transcript=command_run.transcript_writer(ARCHITECT_COMPONENT),
                         prompt_call=command_run.agent_call(ARCHITECT_COMPONENT, ARCHITECT_ROLE),
+                        timeout=architect_timeout,
                     )
                     ui.ok(f"Decomposed into {len(manifest.components)} components")
                     return 0

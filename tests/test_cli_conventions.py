@@ -369,6 +369,7 @@ FINDING_EXIT_SITES: dict[tuple[str, str], int] = {
     ("init_cmd.py", "run_init"): 2,  # `ks init`: the PRD it validated is invalid
     ("learning_fixture.py", "main"): 1,  # `python -m kstrl.learning_fixture`: the check failed
     ("loop.py", "run_loop"): 5,  # an iteration ran and the loop ended short
+    ("plan_gate.py", "_park_plan"): 1,  # an L1 plan parked for approval, nothing run (#602)
     ("tui/bridge.py", "CommandHandle"): 2,  # the command raised: the exit a traceback gets
 }
 
@@ -390,6 +391,8 @@ EXIT_CODE_FUNCTIONS: frozenset[str] = frozenset(
     {
         "_decompose_core",
         "_load_and_render",
+        "_park_plan",
+        "_plan_gated",
         "_plain_fallback",
         "_target",
         "_understand_core",
@@ -403,6 +406,7 @@ EXIT_CODE_FUNCTIONS: frozenset[str] = frozenset(
         "run_feature",
         "run_home_shell",
         "run_init",
+        "run_plan_gate",
     }
 )
 
@@ -415,6 +419,9 @@ UNRESOLVED_EXIT_VALUES: dict[tuple[str, str], int] = {
     ("tui/bridge.py", "CommandHandle"): 1,
     # A message carrying the init subprocess's code, whatever it was.
     ("tui/screens/init_wizard.py", "WizardDone"): 1,
+    # #602: the preflights' decisions tuple, returned when the run goes on.
+    # It never becomes an exit code: the caller exits only on an int.
+    ("factory.py", "_plan_gated"): 1,
 }
 
 
