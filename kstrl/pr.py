@@ -41,10 +41,12 @@ class MergeConfirmation:
 
     ``merge_sha`` is non-empty only alongside "merged", and may still
     be "" there when GitHub has not published the commit yet.
+    ``head_sha`` is the PR head GitHub merged, "" when it reported none.
     """
 
     state: MergeState
     merge_sha: str = ""
+    head_sha: str = ""
 
 
 @dataclass(frozen=True)
@@ -71,6 +73,11 @@ class PrOutcome:
     error: str | None = None
     #: The commit the merge produced, "" when GitHub published none.
     merge_sha: str = ""
+    #: #601: the PR head GitHub merged ("" when it reported none), which
+    #: the autonomy ladder compares with the commit kstrl's gates judged.
+    head_sha: str = ""
+    #: #601: the PR was closed without merging.
+    closed: bool = False
 
 
 def pr_number_from_url(pr_url: str) -> int:
@@ -243,7 +250,9 @@ def wait_for_merge(
     while time.monotonic() < deadline:
         view = _pr_state(pr_number, cwd)
         if view is not None and view.state == "MERGED":
-            return MergeConfirmation(state="merged", merge_sha=view.merge_sha)
+            return MergeConfirmation(
+                state="merged", merge_sha=view.merge_sha, head_sha=view.head_sha
+            )
         if view is not None and view.state == "CLOSED":
             return MergeConfirmation(state="closed")
         remaining = deadline - time.monotonic()
@@ -353,6 +362,7 @@ def _merge_and_wait(
             merged=True,
             error=fetch_error,
             merge_sha=confirmation.merge_sha,
+            head_sha=confirmation.head_sha,
         )
 
     if confirmation.state == "closed":
@@ -362,6 +372,7 @@ def _merge_and_wait(
             pr_number=pr_number,
             pr_url=pr_url,
             error=f"PR #{pr_number} closed without merge",
+            closed=True,
         )
 
     # R7.5: an --auto merge queued on a conflicting PR never lands;
@@ -432,6 +443,7 @@ def push_create_and_merge_pr(
                 pr_url=component.pr_url,
                 merged=True,
                 merge_sha=view.merge_sha,
+                head_sha=view.head_sha,
             )
         if view is not None and view.state == "CLOSED":
             return PrOutcome(
@@ -439,6 +451,7 @@ def push_create_and_merge_pr(
                 pr_number=pr_number,
                 pr_url=component.pr_url,
                 error=f"PR #{pr_number} closed without merge",
+                closed=True,
             )
         return _merge_and_wait(
             pr_number,

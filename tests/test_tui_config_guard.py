@@ -82,6 +82,9 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     # that will not merge into a dependent's worktree, and a HEAD that
     # cannot be read when recording what the dependent is judged against.
     # #566 added one: a single_pr retry with no recorded start commit.
+    # #601's own review round found the run_level-is-None raise in
+    # _human_rejections unreachable (the ladder is None only when
+    # autonomy is disabled) and deleted it, so the census stays at 6.
     "factory.py": 6,
     # #530: three bare raises in ReflectionModel, the spent budget, a
     # timed-out reflection call and an empty reply.
