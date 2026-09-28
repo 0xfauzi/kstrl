@@ -363,3 +363,29 @@ class TestContractBreakerRerun:
         assert "broken.txt" not in branch_files
 
         _assert_no_contract_debris(root)
+
+
+class TestAnEmptyContractCommand:
+    def test_an_empty_contract_command_fails_the_tier_instead_of_passing_it(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """#621: the shell runs "" and exits 0, so Phase 3 passed a tier with
+        no test run. Unset, [contract] test_command follows [verify]
+        test_command, where "" turns the Phase 1 gate off, so an empty
+        Phase 3 command is now a configuration kstrl can reach."""
+        monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
+        root = tmp_path / "repo"
+        init_kstrl_repo(root, ("alpha",))
+        manifest = make_manifest([component("alpha")])
+        progress_path = tmp_path / "progress.jsonl"
+
+        result = _run(root, manifest, _FILE_PER_COMPONENT_ENGINEER, "", progress_path)
+
+        assert result.exit_code != 0
+        assert [(tier, passed) for tier, passed, _ in _contract_events(progress_path)][:1] == [
+            (0, False)
+        ]
+        assert any("Phase 3 has no test command" in f for f in result.contract_failures)
+        _assert_no_contract_debris(root)

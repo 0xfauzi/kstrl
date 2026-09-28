@@ -584,12 +584,14 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("sandbox", "enabled"): "OS-sandbox the engineer's agent CLI (writes scoped to its "
     "worktree); ignored for custom agent commands",
     ("sandbox", "allow_network"): "re-open outbound network inside the sandbox (off = deny)",
-    ("verify", "test_command"): f"empty = the harness default ({DEFAULT_TEST_COMMAND})",
+    # #621: "" turns the gate off, so the rendered `= ""` is NOT inert
+    # here the way it is for [paths] progress; the text says so.
+    ("verify", "test_command"): f'"" = gate off; leave the key out for {DEFAULT_TEST_COMMAND}',
     ("verify", "typecheck_command"): (
-        f"empty = {SCOPED_TYPECHECK_COMMAND} when [tool.mypy] scopes it, "
-        f"else {DEFAULT_TYPECHECK_COMMAND}"
+        f'"" = gate off; leave the key out for {SCOPED_TYPECHECK_COMMAND} when '
+        f"[tool.mypy] scopes it, else {DEFAULT_TYPECHECK_COMMAND}"
     ),
-    ("verify", "lint_command"): f"empty = the harness default ({DEFAULT_LINT_COMMAND})",
+    ("verify", "lint_command"): f'"" = gate off; leave the key out for {DEFAULT_LINT_COMMAND}',
     ("verify", "test_tool"): "parser for the test gate's output; empty = every parser "
     f"({', '.join(GATE_TOOLS[GATE_TEST])}), unioned",
     ("verify", "typecheck_tool"): "parser for the typecheck gate's output; empty = every "
@@ -734,7 +736,8 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("security", "timeout_seconds"): "reviewer call timeout; 0 = no limit",
     ("security", "fail_threshold"): "critical | high | medium | low (hard mode)",
     ("contract", "mode"): "tier | final | skip",
-    ("contract", "test_command"): "integration test command on merged tiers",
+    ("contract", "test_command"): "integration test command on merged tiers; "
+    "unset = the command [verify] test_command resolves to",
     ("contract", "timeout"): "seconds per contract test run; 0 = no limit",
     ("release", "enabled"): "record a release ref; still deploys nothing (R8.7 slice 1)",
     ("release", "environment"): "deploy environment name, e.g. staging or prod",

@@ -33,7 +33,7 @@ class ConfigRow:
     section: str
     key: str
     value: str  # pre-formatted via format_config_value
-    source: str  # flag | env | toml | default
+    source: str  # flag | env | toml | default | from [verify]
     #: The value as the config screen shows it (``operator_value``). Not
     #: compared: it is a rendering of ``value``, not a second fact.
     shown: str = field(default="", compare=False)
@@ -427,6 +427,14 @@ def _base_rows(resolved: KstrlConfig, sources: dict[str, str]) -> list[ConfigRow
     ]
 
 
+#: Keys whose unset value is another section's, and the source label that
+#: says so (#621): ``ContractConfig.load`` gives Phase 3 the command
+#: ``[verify] test_command`` resolves to, which ``(default)`` would hide.
+_FOLLOWED_SECTIONS: dict[tuple[str, str], str] = {
+    ("contract", "test_command"): "from [verify]",
+}
+
+
 def _phase_rows(
     section: str,
     knob_fields: list[str],
@@ -443,7 +451,7 @@ def _phase_rows(
         elif field_name in toml_keys:
             source = "toml"
         else:
-            source = "default"
+            source = _FOLLOWED_SECTIONS.get((section, field_name), "default")
         rows.append(
             ConfigRow(
                 section=section,
