@@ -353,3 +353,50 @@ def test_a_snoozed_calibration_item_still_blocks(tmp_path: Path) -> None:
     assert _blockers(_status(root)) == [
         f"calibration compare not green: 1 undecided calibration_drift inbox item(s): {item}"
     ]
+
+
+def test_an_undecided_item_of_another_kind_does_not_block_the_calibration_criterion(
+    tmp_path: Path,
+) -> None:
+    """Only a calibration_drift item speaks for calibration; an open health_breach does not."""
+    root = _project(tmp_path, AutonomyLevel.L1_SUPERVISED)
+    Inbox(root, InboxConfig.load(root)).add(ItemKind.HEALTH_BREACH, "retry_rate beyond 3 sigma")
+
+    status = _status(root)
+    assert _blockers(status) == []
+    assert "Criteria met" in status
+
+
+def test_a_health_metric_other_than_retry_rate_that_is_not_measured_blocks(
+    tmp_path: Path,
+) -> None:
+    """Twelve runs record retry_rate and infra errors but no cost: the cost metric is unmeasured."""
+    root = _project(tmp_path, AutonomyLevel.L2_GATED_MERGE)
+    write_runs(
+        root,
+        [
+            run_record(
+                run_id=f"run-{index:02d}",
+                timestamp=f"2026-09-{index + 1:02d}T00:00:00Z",
+                retry_rate=rate,
+            )
+            for index, rate in enumerate(FLAT12)
+        ],
+    )
+    journal_at(root).append_entries(
+        [
+            component_result(
+                f"run-{index:02d}", "comp-a", findings_summary={"infrastructure_errors": 0}
+            )
+            for index in range(len(FLAT12))
+        ]
+    )
+
+    status = _status(root)
+    assert "Criteria met" not in status
+    assert _blockers(status) == [
+        "health metric cost_per_merged_component not measured: 0 decisive run(s) record it, need 8"
+    ]
+    code, output = _promote(root)
+    assert code == 2, output
+    assert AutonomyState.load(root).level == int(AutonomyLevel.L2_GATED_MERGE)
