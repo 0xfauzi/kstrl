@@ -63,8 +63,8 @@ class TestScaffoldSeedsTheDetectedToolchain:
         (tmp_path / "Cargo.toml").write_text('[package]\nname = "demo"\n')
         assert self._verify_lines(kstrl_toml_for(tmp_path)) == {
             "test_command": "cargo test",
-            "typecheck_command": "cargo check",
-            "lint_command": "cargo clippy -- -D warnings",
+            "typecheck_command": "cargo check --all-targets",
+            "lint_command": "cargo clippy --all-targets -- -D warnings",
         }
 
     def test_gradle_beats_maven_when_the_wrapper_is_present(self, tmp_path: Path) -> None:

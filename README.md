@@ -381,9 +381,9 @@ allow_network = false  # re-open outbound network inside the sandbox (off = deny
 
 # Phase 1 mechanical verification
 [verify]
-test_command = ""              # empty = the harness default (uv run pytest)
-typecheck_command = ""         # empty = uv run mypy when [tool.mypy] scopes it, else uv run mypy .
-lint_command = ""              # empty = the harness default (uv run ruff check .)
+test_command = ""              # "" = gate off; leave the key out for uv run pytest
+typecheck_command = ""         # "" = gate off; leave the key out for uv run mypy when [tool.mypy] scopes it, else uv run mypy .
+lint_command = ""              # "" = gate off; leave the key out for uv run ruff check .
 test_tool = ""                 # parser for the test gate's output; empty = every parser (pytest, vitest), unioned
 typecheck_tool = ""            # parser for the typecheck gate's output; empty = every parser (mypy, tsc), unioned
 lint_tool = ""                 # parser for the lint gate's output; empty = every parser (ruff, eslint), unioned
@@ -491,7 +491,7 @@ fail_threshold = "high"  # critical | high | medium | low (hard mode)
 # Phase 3 cross-component contract testing
 [contract]
 mode = "tier"                   # tier | final | skip
-test_command = "uv run pytest"  # integration test command on merged tiers
+test_command = "uv run pytest"  # integration test command on merged tiers; unset = the command [verify] test_command resolves to
 timeout = 0.0                   # seconds per contract test run; 0 = no limit
 
 # Phase 4 release (R8.7 slice 1: records the release ref; deploys nothing)

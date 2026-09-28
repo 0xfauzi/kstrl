@@ -117,10 +117,9 @@ from tests.helpers.astfold import (
 )
 
 #: Calls whose first argument (or ``name=``) is a check name.
-#: ``CheckResult`` is the type itself; ``_failed_gate_result`` is the
-#: shared builder the three subprocess gates package their failures
-#: through.
-CHECK_NAME_CALLS = frozenset({"CheckResult", "_failed_gate_result"})
+#: ``CheckResult`` is the type itself; ``_failed_gate_result`` and
+#: ``_command_not_run`` (#621) are shared builders callers pass a literal to.
+CHECK_NAME_CALLS = frozenset({"CheckResult", "_failed_gate_result", "_command_not_run"})
 
 #: Calls that put a ``phase`` on the path to the fallback, and where each
 #: one's ``phase`` sits among its positional arguments (the receiver not
@@ -399,6 +398,7 @@ BLIND_SITES: tuple[tuple[str, str, str, str], ...] = (
         "signatures",
         "pass-through of its own parameter, censused at its call sites",
     ),
+    ("kstrl/verify.py", "_command_not_run", "gate", "pass-through; censused at its call sites"),
     (
         "kstrl/verify.py",
         "_failed_gate_result",
