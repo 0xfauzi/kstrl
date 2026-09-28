@@ -12,6 +12,7 @@ import hashlib
 import os
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -309,3 +310,27 @@ def test_a_priority_that_cannot_be_written_is_refused_and_leaves_no_record(
     assert result.exit_code == 2, result.output
     assert "Permission denied" in result.output
     assert _snapshot(tmp_path) == before
+
+
+def test_the_prefix_queue_ls_prints_is_accepted_and_the_change_is_stamped_when_made(
+    tmp_path: Path,
+) -> None:
+    """An operator types the 12-character id `ks queue ls` prints; the row carries its own time."""
+    item = _add(tmp_path, "a", 0)
+    prefix = item.item_id[:12]
+    listing = _invoke(["queue", "ls"], tmp_path)
+    assert prefix in listing.output, listing.output
+
+    result = _invoke(["queue", "priority", prefix, "--to", "7"], tmp_path)
+
+    assert result.exit_code == 0, result.output
+    assert f"{item.item_id} (a) priority 0 -> 7" in result.output
+    changed = _queue(tmp_path).get(item.item_id)
+    assert changed is not None
+    assert changed.priority == 7
+    rows = _queue(tmp_path).journal_entries(item.item_id)
+    added = next(row for row in rows if row["to"] == "queued" and not row.get("from"))
+    moved = [row for row in rows if row["from"] == "queued" and row["to"] == "queued"]
+    assert len(moved) == 1, rows
+    assert datetime.fromisoformat(moved[0]["ts"]) > datetime.fromisoformat(added["ts"]), rows
+    assert changed.updated_at == moved[0]["ts"]
