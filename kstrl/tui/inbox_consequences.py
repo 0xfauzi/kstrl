@@ -20,9 +20,20 @@ the decision, and for most kinds nobody does:
   item was filed for (``evidence.plan_digest``); a changed plan is asked
   about again. Rejected: that run refuses with exit code 2 and runs
   nothing. ``ks serve`` admits no new work while a plan waits.
-- Every other kind is record-only: a grep for the approved and rejected
-  statuses outside ``kstrl/inbox.py`` finds only the two park consumers.
-  Approve and reject close the item and nothing else.
+- A policy exception or test adequacy item is read by
+  ``kstrl/waivers.py`` when the next run starts (#595). Approved: that
+  run records the one finding the item covers as waived instead of
+  failing on it. Rejected: nothing is waived. ``waivers.approval_effect``
+  is the approve sentence, and the shell's ``ks inbox approve`` prints it
+  too; ``waivers.REJECTION_EFFECT`` is this screen's own sentence only -
+  ``ks inbox reject`` does not print it.
+- Every other kind is record-only: a grep for ``ItemStatus.APPROVED`` and
+  ``ItemStatus.REJECTED`` outside ``kstrl/inbox.py`` finds only the park
+  consumers (``kstrl/pipeline.py``, ``kstrl/plan_gate.py``) and the
+  waiver reader (``kstrl/waivers.py``); a plain-text grep for
+  "approved"/"rejected" also matches unrelated enums (``ComponentStatus``,
+  ``CheckpointDecision``) and comments. Approve and reject close the item
+  and nothing else.
 - Snooze hides any item until ``snooze_hours`` pass; it returns by the
   clock (``InboxItem.is_open``), and nothing else changes.
 
@@ -39,6 +50,7 @@ from dataclasses import dataclass
 
 from kstrl.inbox import InboxItem, ItemKind
 from kstrl.manifest import MERGE_GATE_PARK_KEY, ComponentStatus
+from kstrl.waivers import REJECTION_EFFECT, approval_effect
 
 APPROVE = "approve"
 REJECT = "reject"
@@ -156,6 +168,15 @@ def consequences(
         return _park(item, component_status, snooze_hours)
     if item.kind is ItemKind.PLAN_GATE:
         return _plan(item, snooze_hours)
+    effect = approval_effect(item)
+    if effect is not None:
+        return Consequences(
+            offered=(
+                (APPROVE, effect),
+                (REJECT, REJECTION_EFFECT),
+                _snooze(item, snooze_hours, "Nothing else changes."),
+            ),
+        )
     record_only = f"closes this item; no kstrl step reads a {kind_label(item.kind)} decision."
     return Consequences(
         offered=(

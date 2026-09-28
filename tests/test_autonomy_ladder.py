@@ -61,7 +61,7 @@ class TestPersistence:
     def test_round_trip(self, tmp_path: Path) -> None:
         state = _eligible_state()
         state.promote(actor="human", ack="evidence reviewed")
-        state.record_merged_component()
+        state.record_merged_component(human_edited=False)
         state.save(tmp_path)
         loaded = AutonomyState.load(tmp_path)
         assert loaded.level == state.level
@@ -165,10 +165,15 @@ class TestReplay:
         assert len(runs) == 2
         assert runs[0].infra_aborted is True  # pr: prefix
         assert runs[1].decisive is True
+        assert runs[1].merged is None  # #601: this row predates merge evidence
         report = replay(runs)
         assert report.decisive_runs == 1
         assert report.infra_aborted_runs == 1
-        assert report.components_merged == 2
+        # #601: this 14-column row predates merged/clean_merged, so it
+        # contributes 0 KNOWN merges (not its `completed` count of 2) and
+        # is counted as unpredictable rather than silently read as zero.
+        assert report.components_merged == 0
+        assert report.merged_unknown_runs == 1
 
     def test_a_torn_row_is_not_a_run_the_ladder_promotes_on(self, tmp_path: Path) -> None:
         """#331's read half, on the SECOND reader of experiments.tsv.
@@ -528,17 +533,12 @@ class TestBundleClampsPolicy:
 class TestRunOutcomesReachState:
     """A run must actually move the ladder's counters (not just in tests)."""
 
-    def test_successful_run_records_evidence(self, tmp_path: Path) -> None:
-        _run_factory_with_autonomy(
-            tmp_path,
-            AutonomyLevel.L1_SUPERVISED,
-            enabled=True,
-            configured_pause=True,
-        )
-        reloaded = AutonomyState.load(tmp_path)
-        assert reloaded.decisive_runs_at_level == 1
-        assert reloaded.components_merged_at_level == 1
-        assert reloaded.clean_merges_at_level == 1
+    # test_successful_run_records_evidence (a create_prs=False run is
+    # decisive and merges nothing, #601) was deleted here: it asserted
+    # the same predicate as
+    # tests/test_ladder_merge_evidence.py::test_a_part_completed_without_a_pr_is_not_a_merge,
+    # which drives a real run_factory rather than the lighter
+    # _run_factory_with_autonomy helper (#601 simplify pass).
 
     def test_evidence_accumulates_across_runs(self, tmp_path: Path) -> None:
         for _ in range(3):

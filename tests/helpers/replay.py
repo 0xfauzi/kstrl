@@ -28,7 +28,13 @@ UNDECODABLE_TSV = b"run_id\ttimestamp\nrun-1\xff\t2026-01-01\n"
 
 
 def run_record(**overrides: object) -> RunRecord:
-    """A ``RunRecord`` with the given fields, defaults for the rest."""
+    """A ``RunRecord`` with the given fields, defaults for the rest.
+
+    ``merged``/``clean_merged`` default to None (#601: "not recorded",
+    the pre-#601 row shape), not 0 - a caller building a row that DOES
+    carry merge evidence must say so explicitly, the same rule the
+    production writer follows.
+    """
     fields: dict[str, object] = {
         "run_id": "r1",
         "timestamp": "2026-07-20T00:00:00Z",
@@ -54,13 +60,17 @@ def write_runs(root: Path, records: Sequence[RunRecord]) -> None:
     ``RunRecord`` does not track (avg_iterations, avg_duration_s,
     total_tokens, unreported_calls, kstrl_version) get a fixed placeholder: nothing
     reading through ``RunRecord`` sees them, so no test asserts on their
-    value.
+    value. ``merged``/``clean_merged`` (#601) are written as empty columns
+    when the record leaves them None, the same shape a pre-#601 file's
+    row takes once padded to this header's width by ``experiment_rows``.
     """
     path = EvolutionConfig.load(root).experiments_path
     path.parent.mkdir(parents=True, exist_ok=True)
     lines = [EXPERIMENTS_HEADER]
     for r in records:
         cost = "" if r.total_cost_usd is None else str(r.total_cost_usd)
+        merged = "" if r.merged is None else str(r.merged)
+        clean_merged = "" if r.clean_merged is None else str(r.clean_merged)
         lines.append(
             "\t".join(
                 (
@@ -79,6 +89,8 @@ def write_runs(root: Path, records: Sequence[RunRecord]) -> None:
                     cost,
                     "0",
                     "fixture",
+                    merged,
+                    clean_merged,
                 )
             )
         )
@@ -86,7 +98,7 @@ def write_runs(root: Path, records: Sequence[RunRecord]) -> None:
 
 
 def clean_run(index: int) -> RunRecord:
-    """One run that merged a component and failed nothing.
+    """One run that merged a component cleanly and failed nothing.
 
     Distinct timestamps because a replay reports the run a promotion
     would have fired on, and a report that names the same instant twelve
@@ -96,6 +108,8 @@ def clean_run(index: int) -> RunRecord:
         run_id=f"r{index}",
         timestamp=f"2026-07-{(index % 28) + 1:02d}T00:00:00Z",
         project="p",
+        merged=1,
+        clean_merged=1,
     )
 
 
@@ -109,4 +123,6 @@ def failing_run(signature: str) -> RunRecord:
         failed=1,
         retry_rate=1.0,
         common_failure=signature,
+        merged=0,
+        clean_merged=0,
     )

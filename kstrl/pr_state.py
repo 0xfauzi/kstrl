@@ -33,10 +33,13 @@ class PrView:
 
     ``merge_sha`` is "" whenever GitHub has published none, so an
     unrecorded ref reads as unrecorded rather than as a ref.
+    ``head_sha`` is the PR's ``headRefOid``: for a merged PR, the head
+    commit GitHub merged. "" when GitHub reported none (#601).
     """
 
     state: str
     merge_sha: str = ""
+    head_sha: str = ""
 
 
 def _pr_state(pr_number: int, cwd: Path) -> PrView | None:
@@ -50,7 +53,7 @@ def _pr_state(pr_number: int, cwd: Path) -> PrView | None:
     """
     try:
         result = subprocess.run(
-            ["gh", "pr", "view", str(pr_number), "--json", "state,mergeCommit"],
+            ["gh", "pr", "view", str(pr_number), "--json", "state,mergeCommit,headRefOid"],
             cwd=cwd,
             capture_output=True,
             encoding="utf-8",
@@ -69,7 +72,9 @@ def _pr_state(pr_number: int, cwd: Path) -> PrView | None:
     state = str(data.get("state", ""))
     commit = data.get("mergeCommit")
     sha = str(commit.get("oid", "")) if isinstance(commit, dict) else ""
-    return PrView(state=state, merge_sha=sha) if state else None
+    head = data.get("headRefOid")
+    head_sha = head if isinstance(head, str) else ""
+    return PrView(state=state, merge_sha=sha, head_sha=head_sha) if state else None
 
 
 def _pr_mergeable(pr_number: int, cwd: Path) -> str | None:
