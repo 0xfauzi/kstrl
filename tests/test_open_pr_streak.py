@@ -231,7 +231,7 @@ class TestAFailedWriteDoesNotDisarmTheAlarm:
 class TestTheWriteSwallowsTheWholeSurface:
     """#364: the caught set is the callee's whole surface, not an enumeration.
 
-    `Inbox._append` takes the control lock, so a write can raise a
+    Every `Inbox` write takes the control lock, so a write can raise a
     `RuntimeError` that is not a `ControlStateError`. An inbox write must
     not be able to undo a queue transition that already happened, so the
     caller gets an empty id either way.

@@ -12,7 +12,7 @@ about:
   ``['factory_started']``, the next event lost, and ``fold`` reports no
   components at all.
 - ``workqueue.Queue._journal``: ``['a']``, the transition after it lost.
-- ``inbox.Inbox._append``: ``['first']``, the item after it lost, and
+- ``inbox.Inbox._append_unlocked``: ``['first']``, the item after it lost, and
   ``scan()`` reports one unparseable line.
 - ``knowledge.record_dependency_scope_gap``: ``['alpha']``, the row
   after it lost.

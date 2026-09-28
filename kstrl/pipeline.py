@@ -2254,12 +2254,14 @@ class ComponentPipeline:
                     return
                 self._inbox = self._open_inbox()
             existing = self._inbox.find_by_dedupe_key(dedupe_key)
-            if existing is not None and existing.is_open:
-                self._inbox.resolve(existing.id, comment=reason)
+            if existing is not None:
+                # #648: the precondition is the fresh row inside resolve's
+                # lock, so an operator's decision landing after this read wins.
+                self._inbox.resolve(existing.id, comment=reason, only_from=UNDECIDED)
         except (OSError, TypeError, ValueError, InboxError, ControlStateError) as exc:
             # Same tuple as _inbox_add below, and for the same two
-            # reasons: Inbox.resolve reaches _append through _decide, so
-            # it takes the control lock and can raise ControlStateError,
+            # reasons: Inbox.resolve takes the control lock in _decide, so
+            # it can raise ControlStateError,
             # and InboxConfig.load casts per key, so a TOML date raises
             # TypeError. #192 moved that cast to ``__init__``, behind
             # the entry preflight; the tuple keeps TypeError anyway,
@@ -2365,8 +2367,8 @@ class ComponentPipeline:
                 notify=self.notify,
             )
         except (OSError, TypeError, ValueError, ControlStateError) as exc:
-            # ControlStateError is a RuntimeError: Inbox._append takes
-            # the control lock on every write, and the (OSError,
+            # ControlStateError is a RuntimeError: every Inbox write takes
+            # the control lock, and the (OSError,
             # ValueError) pair all seven inbox sites were written with
             # does not catch what that lock raises. TypeError was
             # InboxConfig.load's per-key cast, which #192 moved to
