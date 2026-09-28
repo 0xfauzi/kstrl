@@ -343,6 +343,32 @@ def test_a_failing_hook_outside_a_run_is_warned_about(
     assert "notify hook 'inbox_budget_overrun' exited 3 (non-fatal)" in capfd.readouterr().err
 
 
+def test_a_plan_decided_at_the_prompt_pages_nobody_and_a_parked_one_pages_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#602: the L1 plan gate files an item for an answer given at the prompt
+    (so a resumed run finds it) and pages nobody for it; a plan it parks
+    pages once, through the pipeline."""
+    from tests.test_l1_plan_gate import _answerable_repo, _Channel, _in_process, _manifest_path
+
+    lines = tmp_path / "inbox-hook.txt"
+    _hook_into(monkeypatch, lines)
+    root = _answerable_repo(tmp_path)
+
+    _in_process(root, _Channel(answered=True, choice=0), monkeypatch)
+
+    assert [str(i.status) for i in inbox_items(root, ItemKind.PLAN_GATE)] == ["approved"]
+    assert _lines(lines) == []
+
+    data = json.loads(_manifest_path(root).read_text(encoding="utf-8"))
+    data["components"][0]["title"] = "a changed plan"
+    _manifest_path(root).write_text(json.dumps(data), encoding="utf-8")
+
+    _in_process(root, _Channel(answered=False, choice=0), monkeypatch)
+
+    assert [line.split("|")[0] for line in _lines(lines)] == ["inbox_plan_gate"]
+
+
 # --- census: every filing path is driven by a test above -----------------
 
 #: Every ``Inbox.add`` site in ``kstrl/``, keyed as
@@ -354,6 +380,9 @@ FILING_PATHS = {
     "decisions.py::open_escalation_item::add": "test_architect_escalation_fires_the_inbox_hook",
     "factory.py::_open_health_breach_items::add": (
         "test_health_breach_is_silent_and_its_demotion_is_pushed"
+    ),
+    "plan_gate.py::_record::add": (
+        "test_a_plan_decided_at_the_prompt_pages_nobody_and_a_parked_one_pages_once"
     ),
     "pipeline.py::ComponentPipeline._inbox_add::add": (
         "test_pipeline_fires_once_per_kind_and_not_on_a_repeat"

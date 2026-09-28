@@ -264,3 +264,24 @@ floor of 0.65. `integration_clean` does not meet its floor of 1.0: one
 
 The replies were kept outside the repository: they are model output, and
 the repository's hooks reject some of their characters.
+
+## The 2026-09-26 reviewer and integration captures (#480, REVIEWER_PROMPT 2.1.0)
+
+`baseline-20260926-124722.json` is the reviewer role at REVIEWER_PROMPT 2.1.0
+(haiku, three runs per fixture): `reviewer` 1.00 on the four planted
+concerns, and 0 of 12 runs flagged on the four negatives. `calibration
+compare` against `baseline-20260925-120951.json` passes.
+
+`baseline-20260926-131430.json` is the integration capture at the same
+prompt: `integration` 0.67, `integration_clean` 1.00, 2 of 27 refused.
+Against `baseline-20260926-090303.json` (1.2.0 alone):
+- no run folded IC1 to IC5 into one story (1 before);
+- one `int-d4-decision-criterion` run still judged the prd.json stories
+  US-001 and US-002 instead of IC1 to IC5 (1 before);
+- one `int-d2-docstring-caller` run returned JSON that does not parse
+  (`Expecting ',' delimiter`), a mode the earlier captures did not show;
+- `int-d1-stored-rows` scored 3 of 3 (1 of 3 before);
+- `int-d5-predates-feature` scored 1 of 3 (2 of 3 before): two runs failed
+  the right story but named `parse_bearer` or `test_tokens.py` instead of
+  `src/pastebin/tokens.py`, which the 2.1.0 citation rule forbids.
+`int-d5-predates-feature` is below its floor of 0.65 in this capture.
