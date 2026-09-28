@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from kstrl import adequacy
 from kstrl.decisions import SpecDecision, _render_full
 from kstrl.guards import path_is_allowed
 from kstrl.integration_state import FIX_COMPONENT_PREFIX
@@ -33,7 +34,6 @@ A new regression test fails before this change and passes after it, if the defec
 _FEATURE_DIR = "scripts/kstrl/feature"
 #: kstrl's own files. No fix writes here except its own feature subtree.
 _HARNESS_PREFIXES = ("scripts/kstrl/", ".kstrl/")
-_TEST_SEGMENTS = frozenset({"test", "tests"})
 
 
 @dataclass(frozen=True)
@@ -62,10 +62,13 @@ def fix_branch(component_id: str) -> str:
 
 
 def is_test_path(entry: str) -> bool:
-    """An allowedPaths entry that names tests: a ``test`` or ``tests``
-    segment, or a last segment starting ``test_``."""
-    parts = entry.rstrip("/").split("/")
-    return any(part in _TEST_SEGMENTS for part in parts) or parts[-1].startswith("test_")
+    """An allowedPaths entry that names tests, by Python's convention
+    (``adequacy.is_test_path``) or another ecosystem's
+    (``adequacy.NON_PYTHON_TEST_PATH_RE``), #627. A prefix that names no test
+    convention, such as ``src/`` holding colocated tests, is not one: the
+    fix scope is never a whole component's (design 3.4), so that finding
+    is handed off."""
+    return adequacy.is_test_path(entry) or bool(adequacy.NON_PYTHON_TEST_PATH_RE.search(entry))
 
 
 def finding_scope(
