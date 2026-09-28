@@ -197,6 +197,9 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_prompt_record.py": 6,
     "tests/test_prompt_upgrade.py": 1,
     "tests/test_provisioning.py": 2,
+    # #635: `_commit` is the one commit site, into the fixture repository
+    # `_seed` has just put through `tests.helpers.gitrepo.set_identity`.
+    "tests/test_python_toolchain_identity_e2e.py": 1,
     "tests/test_resume_ergonomics.py": 2,
     # #465: the parked-merge and resume tests commit through set_identity.
     # The single_pr shared-branch regression test (blocker 1 of the PR
