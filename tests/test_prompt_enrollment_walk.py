@@ -294,7 +294,8 @@ EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
     # #428: 0 pre-existing + 6 notice constants x 2 spellings each (the
     # declaration and its one use site) = 12. The version constant adds
     # nothing: the walk keys on names ending in _PROMPT, not _VERSION.
-    "feedforward.py": 12,
+    # #626: +1 notice constant x 2 spellings = 14.
+    "feedforward.py": 14,
     # #530: GEPA_REFLECTION_PROMPT x 2 spellings (the declaration and its
     # one use in reflection_template) = 2.
     "gepa_adapter.py": 2,

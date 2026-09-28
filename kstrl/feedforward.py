@@ -11,8 +11,10 @@ import os
 import tomllib
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+from typing import Any
 
+from kstrl import git
 from kstrl.config_numbers import check_numbers
 from kstrl.jsonread import read_json
 
@@ -75,14 +77,21 @@ _HEADER_FOOTER_OVERHEAD = len("=== CODEBASE CONTEXT (auto-generated) ===\n\n") +
 # dependency graph's notice by hand and left no guard behind; #428 enrols
 # the bodies so a reword has to move a hash and a version with it.
 #
-# One version constant for the six, as the #303 builder fragments do: the
+# One version constant for the seven, as the #303 builder fragments do: the
 # unit is the notice vocabulary one module delivers to one role.
-CODEBASE_SCAN_NOTICE_PROMPT_VERSION = "1.0.0"
+CODEBASE_SCAN_NOTICE_PROMPT_VERSION = "1.1.0"
 
 NO_SOURCE_ROOT_PROMPT = (
-    "(none: no Python source root found under {root}; searched "
-    "{depth} levels for a package or a directory "
-    "of .py files, excluding tests)"
+    "(none: public interfaces are read from Python source only; no "
+    "package or directory of .py files was found within {depth} levels "
+    "of {root}, excluding tests; source in other languages is not "
+    "summarised)"
+)
+
+NO_DEPENDENCY_GRAPH_PROMPT = (
+    "(none: the dependency graph is built only from imports between this "
+    "repository's own Python modules; {files} .py files were parsed and no "
+    "such import was found; imports in other languages are not read)"
 )
 
 NO_PUBLIC_SYMBOLS_PROMPT = (
@@ -194,13 +203,62 @@ def _count_lines(path: Path) -> int:
         return 0
 
 
+@dataclass(frozen=True)
+class _GitListing:
+    """What git lists under a root: its files, and every directory holding one."""
+
+    files: frozenset[Path]
+    dirs: frozenset[Path]
+
+
+def _git_listing(root: Path) -> _GitListing | None:
+    """The files git lists under *root*, or None when git could not answer.
+
+    What git lists is its own view of the tree: tracked files, and
+    untracked files that no ignore rule matches. Build output the
+    repository ignores (`dist/`, `target/`) is absent from it (#626).
+    """
+    listed = git.listed_files(root)
+    if listed is None:
+        return None
+    files: set[Path] = set()
+    dirs: set[Path] = set()
+    for rel in listed:
+        parts = PurePosixPath(rel).parts
+        files.add(root.joinpath(*parts))
+        dirs.update(root.joinpath(*parts[:depth]) for depth in range(1, len(parts)))
+    return _GitListing(frozenset(files), frozenset(dirs))
+
+
+def _enters(subdir: Path, listing: _GitListing | None) -> bool:
+    """Whether the module-map walk descends into *subdir*.
+
+    With an answer from git, only a directory holding a listed file.
+    Without one, every directory ``_should_skip_dir`` does not skip.
+    """
+    if _should_skip_dir(subdir.name):
+        return False
+    return listing is None or subdir in listing.dirs
+
+
+def _counts(path: Path, listing: _GitListing | None) -> bool:
+    """Whether the module-map walk counts the file at *path*."""
+    if path.suffix not in _SOURCE_EXTENSIONS:
+        return False
+    return listing is None or path in listing.files
+
+
 def _walk_source_dirs(root: Path) -> list[tuple[Path, int, int]]:
     """Walk directory tree and collect source directories with file/LOC counts.
 
     Returns list of (dir_path, file_count, line_count) tuples,
     sorted by path depth then alphabetically. Capped at _MAX_MODULE_MAP_DIRS.
+
+    Inside a git repository only what git lists is counted, so an
+    ignored directory is never entered.
     """
     results: list[tuple[Path, int, int]] = []
+    listing = _git_listing(root)
 
     def _walk(directory: Path) -> None:
         if len(results) >= _MAX_MODULE_MAP_DIRS:
@@ -217,9 +275,9 @@ def _walk_source_dirs(root: Path) -> list[tuple[Path, int, int]]:
         subdirs: list[Path] = []
         for entry in entries:
             if entry.is_dir():
-                if not _should_skip_dir(entry.name):
+                if _enters(entry, listing):
                     subdirs.append(entry)
-            elif entry.is_file() and entry.suffix in _SOURCE_EXTENSIONS:
+            elif entry.is_file() and _counts(entry, listing):
                 file_count += 1
                 line_count += _count_lines(entry)
 
@@ -236,8 +294,8 @@ def _walk_source_dirs(root: Path) -> list[tuple[Path, int, int]]:
 def build_module_map(root: Path) -> str:
     """Build an indented tree of source directories with file and LOC counts.
 
-    Skips hidden dirs, __pycache__, node_modules, .git, venv, .venv, .kstrl.
-    Caps at 50 directories.
+    Skips hidden dirs, __pycache__, node_modules, .git, venv, .venv, .kstrl,
+    and whatever git ignores. Caps at 50 directories.
     """
     entries = _walk_source_dirs(root)
     if not entries:
@@ -502,10 +560,12 @@ def build_dependency_graph(root: Path, max_chars: int | None = None) -> str:
     bigger than that, and the return value says so instead of being a
     graph nobody will be shown (#403). ``None`` means no budget: parse
     everything.
+
+    Never returns "". A graph with no edge is one line saying what was
+    read, because an absent section reads exactly like a stage that never
+    ran (#626, the defect #378 fixed for the interfaces section).
     """
     roots = _find_top_source_dirs(root)
-    if not roots:
-        return ""
     packages = {d.name for d in roots}
 
     all_py_files: list[tuple[Path, Path]] = []
@@ -571,7 +631,7 @@ def build_dependency_graph(root: Path, max_chars: int | None = None) -> str:
                     rendered_chars += _record_edge(edges, source_module, target_module, set())
 
     if not edges:
-        return ""
+        return NO_DEPENDENCY_GRAPH_PROMPT.format(files=len(all_py_files))
 
     lines: list[str] = []
     for src_mod in sorted(edges):
@@ -630,7 +690,8 @@ def _simplify_module(module_path: str, packages: set[str]) -> str:
 def extract_conventions(root: Path) -> str:
     """Extract coding conventions from config files.
 
-    Reads pyproject.toml, ruff.toml, .editorconfig, tsconfig.json, package.json.
+    Reads pyproject.toml, ruff.toml, .editorconfig, tsconfig.json,
+    package.json, Cargo.toml, rustfmt.toml, .rustfmt.toml and go.mod.
     Returns a bullet-point list of discovered conventions.
     """
     bullets: list[str] = []
@@ -640,6 +701,9 @@ def extract_conventions(root: Path) -> str:
     _extract_editorconfig_conventions(root, bullets)
     _extract_tsconfig_conventions(root, bullets)
     _extract_package_json_conventions(root, bullets)
+    _extract_cargo_conventions(root, bullets)
+    _extract_rustfmt_conventions(root, bullets)
+    _extract_go_mod_conventions(root, bullets)
 
     if not bullets:
         return ""
@@ -788,6 +852,87 @@ def _extract_package_json_conventions(root: Path, bullets: list[str]) -> None:
             bullets.append(f"Module type: {module_type}")
     except Exception:
         pass
+
+
+def _read_toml(path: Path) -> dict[str, Any] | None:
+    """The TOML document at *path*, or None when it is absent, unreadable
+    or not TOML.
+
+    The read and its utf-8 decode happen before the parse guard, so the
+    guard only ever sees what the parse raises, and it catches
+    ``Exception`` because tomllib's error taxonomy is not enumerable
+    (#318). ``ValueError`` beside ``OSError`` on the read is the
+    ``UnicodeDecodeError`` of a file that is not utf-8. Not
+    ``load_toml_document``: that is the kstrl.toml primitive, and a
+    caller of it is a config surface in ``tests/test_config_guard.py``.
+    """
+    if not path.is_file():
+        return None
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, ValueError):
+        return None
+    try:
+        return tomllib.loads(text)
+    except Exception:
+        return None
+
+
+def _table(value: object) -> dict[str, Any]:
+    """*value* when it is a TOML table, else an empty one."""
+    return value if isinstance(value, dict) else {}
+
+
+def _extract_cargo_conventions(root: Path, bullets: list[str]) -> None:
+    """Rust edition, minimum Rust version and lint tables from Cargo.toml.
+
+    A crate declares them under ``[package]`` and ``[lints]``; a workspace
+    root declares shared ones under ``[workspace.package]`` and
+    ``[workspace.lints]``. A member that inherits writes
+    ``edition.workspace = true``, a table rather than a value, so only a
+    string is read as a value.
+    """
+    data = _read_toml(root / "Cargo.toml")
+    if data is None:
+        return
+    workspace = _table(data.get("workspace"))
+    packages = (_table(data.get("package")), _table(workspace.get("package")))
+    for key, label in (("edition", "Rust edition"), ("rust-version", "Minimum Rust version")):
+        value = next((pkg[key] for pkg in packages if isinstance(pkg.get(key), str)), None)
+        if value is not None:
+            bullets.append(f"{label}: {value}")
+    lint_tables = {**_table(workspace.get("lints")), **_table(data.get("lints"))}
+    tools = sorted(name for name, table in lint_tables.items() if isinstance(table, dict))
+    if tools:
+        bullets.append(f"Cargo lint tables: {', '.join(tools)}")
+
+
+def _extract_rustfmt_conventions(root: Path, bullets: list[str]) -> None:
+    """Line width and edition from rustfmt.toml and .rustfmt.toml."""
+    for name in ("rustfmt.toml", ".rustfmt.toml"):
+        data = _read_toml(root / name)
+        if data is None:
+            continue
+        if "max_width" in data:
+            bullets.append(f"Max width ({name}): {data['max_width']}")
+        if "edition" in data:
+            bullets.append(f"Edition ({name}): {data['edition']}")
+
+
+def _extract_go_mod_conventions(root: Path, bullets: list[str]) -> None:
+    """The Go language version from go.mod's ``go`` directive."""
+    path = root / "go.mod"
+    if not path.is_file():
+        return
+    try:
+        content = path.read_text(encoding="utf-8")
+    except (OSError, ValueError):
+        return
+    for line in content.splitlines():
+        fields = line.split()
+        if len(fields) >= 2 and fields[0] == "go":
+            bullets.append(f"Go version: {fields[1]}")
+            return
 
 
 def _append_section(
