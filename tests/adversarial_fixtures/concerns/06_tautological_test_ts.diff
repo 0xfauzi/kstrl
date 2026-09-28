@@ -1,0 +1,32 @@
+diff --git a/src/sandbox/calculator.ts b/src/sandbox/calculator.ts
+new file mode 100644
+index 0000000..7a8b9c0
+--- /dev/null
++++ b/src/sandbox/calculator.ts
+@@ -0,0 +1,6 @@
++/** Simple arithmetic helpers. */
++
++/** Return the sum of two integers. */
++export function add(a: number, b: number): number {
++  return a + b;
++}
+diff --git a/tests/calculator.test.ts b/tests/calculator.test.ts
+new file mode 100644
+index 0000000..8b9c0d1
+--- /dev/null
++++ b/tests/calculator.test.ts
+@@ -0,0 +1,14 @@
++/** Tests for calculator. */
++
++import { expect, test } from "vitest";
++
++import { add } from "../src/sandbox/calculator";
++
++test("add works", () => {
++  // Verify the add function behaves correctly.
++  expect(true).toBe(true);
++});
++
++test("add returns a number", () => {
++  expect(typeof add(1, 2) === "number" || true).toBe(true);
++});

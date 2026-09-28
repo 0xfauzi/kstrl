@@ -1,0 +1,22 @@
+diff --git a/src/auth.ts b/src/auth.ts
+new file mode 100644
+index 0000000..4d5e6f7
+--- /dev/null
++++ b/src/auth.ts
+@@ -0,0 +1,16 @@
++/** Password-reset token generation. */
++
++const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
++
++/**
++ * Generate a single-use password-reset token.
++ *
++ * Token is sent via email; user clicks the link to reset password.
++ */
++export function generateResetToken(length = 16): string {
++  let token = "";
++  for (let i = 0; i < length; i += 1) {
++    token += ALPHABET[Math.floor(Math.random() * ALPHABET.length)];
++  }
++  return token;
++}

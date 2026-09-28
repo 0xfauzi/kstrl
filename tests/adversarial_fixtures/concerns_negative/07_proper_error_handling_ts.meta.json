@@ -1,0 +1,42 @@
+{
+  "fixture_id": "rev-neg-ts-03-proper-error-handling",
+  "role": "reviewer",
+  "kind": "negative",
+  "prd": "### US-090: Load user record\n- loadUserRecord(path) returns the parsed JSON object at path.\n- A missing file throws RecordNotFound; malformed JSON throws MalformedRecord, preserving the underlying cause.\n- A non-object root throws MalformedRecord.",
+  "verification": [
+    {
+      "name": "test_suite",
+      "passed": true,
+      "message": "Tests passed (7 passed)"
+    },
+    {
+      "name": "typecheck",
+      "passed": true,
+      "message": "Typecheck passed"
+    },
+    {
+      "name": "linter",
+      "passed": true,
+      "message": "Linter passed"
+    },
+    {
+      "name": "diff_scope",
+      "passed": true,
+      "message": "1 files, all within scope"
+    },
+    {
+      "name": "self_critique",
+      "passed": true,
+      "message": "3 failure modes listed"
+    }
+  ],
+  "must_not_flag": {
+    "categories": [
+      "error_handling"
+    ],
+    "severity_at_least": "fail"
+  },
+  "description": "TypeScript twin of rev-neg-03-proper-error-handling. Correct, specific error handling. Each catch narrows to one documented failure (the ENOENT code Node.js documents for a missing file; the SyntaxError MDN documents JSON.parse throwing on invalid JSON), throws a domain error with an informative message, chains the original through the standard Error cause option so no context is lost, and rethrows anything it did not expect. Nothing is swallowed by an empty catch. A reviewer that flags this as poor error handling would false-positive.",
+  "why_clean": "Narrowed catches, message-preserving rethrow with cause chaining, unexpected errors rethrown, no empty catch.",
+  "trap": "Two try/catch blocks and a console.warn can read as 'error-prone' to a reviewer scanning for exception smells, but the handling is exemplary."
+}

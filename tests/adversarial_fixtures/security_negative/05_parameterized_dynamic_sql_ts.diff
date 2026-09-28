@@ -1,0 +1,52 @@
+diff --git a/src/search/query.ts b/src/search/query.ts
+new file mode 100644
+index 0000000..1a2b3c4
+--- /dev/null
++++ b/src/search/query.ts
+@@ -0,0 +1,46 @@
++/** Build a filtered product search query from user-supplied filters. */
++
++import Database from "better-sqlite3";
++
++// Columns a client is allowed to filter on. The column name itself is
++// never taken from user input - only chosen from this allowlist - so
++// the fragment we concatenate is a constant, and every value is bound.
++const FILTERABLE: ReadonlyMap<string, string> = new Map([
++  ["category", "category"],
++  ["brand", "brand"],
++  ["in_stock", "in_stock"],
++]);
++
++export interface Filter {
++  readonly field: string;
++  readonly value: string;
++}
++
++/**
++ * Return [id, name] rows matching all `filters`.
++ *
++ * Unknown filter fields are ignored. Values are always passed as bound
++ * parameters; only allowlisted, constant column names are interpolated.
++ */
++export function searchProducts(
++  db: Database.Database,
++  filters: readonly Filter[],
++  limit: number,
++): Array<[number, string]> {
++  const clauses: string[] = [];
++  const params: unknown[] = [];
++  for (const f of filters) {
++    const column = FILTERABLE.get(f.field);
++    if (column === undefined) {
++      continue;
++    }
++    clauses.push(`${column} = ?`);
++    params.push(f.value);
++  }
++
++  const where = clauses.length > 0 ? clauses.join(" AND ") : "1 = 1";
++  params.push(Math.trunc(limit));
++  const sql = `SELECT id, name FROM products WHERE ${where} LIMIT ?`;
++  const rows = db.prepare(sql).all(...params) as Array<{ id: number; name: string }>;
++  return rows.map((r) => [Number(r.id), String(r.name)]);
++}

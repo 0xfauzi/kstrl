@@ -1,0 +1,55 @@
+diff --git a/src/sandbox/mathops.ts b/src/sandbox/mathops.ts
+new file mode 100644
+index 0000000..1a2b3c4
+--- /dev/null
++++ b/src/sandbox/mathops.ts
+@@ -0,0 +1,14 @@
++/** Small arithmetic helpers. */
++
++/** Return the sum of two numbers. */
++export function add(a: number, b: number): number {
++  return a + b;
++}
++
++/** Return a / b. Throws RangeError when b is 0. */
++export function divide(a: number, b: number): number {
++  if (b === 0) {
++    throw new RangeError("division by zero");
++  }
++  return a / b;
++}
+diff --git a/tests/mathops.test.ts b/tests/mathops.test.ts
+new file mode 100644
+index 0000000..2b3c4d5
+--- /dev/null
++++ b/tests/mathops.test.ts
+@@ -0,0 +1,29 @@
++/** Tests for mathops. */
++
++import { expect, test } from "vitest";
++
++import { add, divide } from "../src/sandbox/mathops";
++
++test("add positive", () => {
++  expect(add(2, 3)).toBe(5);
++});
++
++test("add negative operands", () => {
++  expect(add(-4, 1)).toBe(-3);
++});
++
++test("add identity", () => {
++  expect(add(7, 0)).toBe(7);
++});
++
++test("divide exact", () => {
++  expect(divide(9, 3)).toBe(3);
++});
++
++test("divide fractional", () => {
++  expect(divide(1, 4)).toBe(0.25);
++});
++
++test("divide by zero throws", () => {
++  expect(() => divide(1, 0)).toThrow(RangeError);
++});
