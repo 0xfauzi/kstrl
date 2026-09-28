@@ -44,10 +44,12 @@ def _repo(tmp_path: Path, committed: dict[str, str], staged: dict[str, str]) -> 
     git_in(repo, "init", "-q")
     set_identity(repo)
     for name, text in committed.items():
+        (repo / name).parent.mkdir(parents=True, exist_ok=True)
         (repo / name).write_text(text, encoding="utf-8")
     git_in(repo, "add", "-A")
     git_in(repo, "commit", "-q", "-m", "base")
     for name, text in staged.items():
+        (repo / name).parent.mkdir(parents=True, exist_ok=True)
         (repo / name).write_text(text, encoding="utf-8")
     git_in(repo, "add", "-A")
     return repo
@@ -128,6 +130,20 @@ def test_cyclomatic_ratchet_fails_a_new_file_whose_head_census_is_empty(tmp_path
 
     assert result.returncode == 1, result.stdout + result.stderr
     assert "NEW        new.py::f  cyclomatic 12  (limit 10)" in result.stdout, result.stdout
+
+
+def test_cyclomatic_ratchet_names_a_regression_by_its_path_in_the_repo(tmp_path: Path) -> None:
+    """Two staged files share a basename and a function: each keeps its own path."""
+    repo = _repo(
+        tmp_path,
+        {"a/m.py": _branchy(4), "b/m.py": _branchy(19)},
+        {"a/m.py": _branchy(14)},
+    )
+
+    result = _run_hook("cyclomatic_ratchet.py", repo, ["a/m.py", "b/m.py"])
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "REGRESSED  a/m.py::f  cyclomatic 5 -> 15  (limit 10)" in result.stdout, result.stdout
 
 
 #: Stub ``uvx`` bodies, and the phrase the refusal must name for each.
