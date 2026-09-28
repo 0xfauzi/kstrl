@@ -152,14 +152,17 @@ def unread_test_paths(changed: Iterable[str], diff_text: str) -> list[str]:
     """The changed files that hold tests Layer 0 cannot read, sorted (#619).
 
     A file that is not ``.py`` and either sits on a test path by
-    :data:`TEST_PATH_RE` or :data:`NON_PYTHON_TEST_PATH_RE`, or gains a
-    ``#[cfg(test)]`` line in this diff. Broad on purpose: this list only
+    :data:`TEST_PATH_RE` or :data:`NON_PYTHON_TEST_PATH_RE`, gains a
+    ``#[cfg(test)]`` line in this diff, or is a Rust file whose removed or
+    added lines hold a test attribute, an ``#[ignore]`` or an assertion
+    (#631: an edit inside an existing ``#[cfg(test)]`` module adds no
+    ``#[cfg(test)]`` line). Broad on purpose: this list only
     ever turns a pass into a "not read" note, so a false positive costs a
     note and a false negative is a pass over tests nobody opened.
     """
     rust_tests = {
         path for path, line in parse_added_lines(diff_text) if _RUST_TEST_MODULE_RE.match(line)
-    }
+    } | _rust_test_edits(diff_text)
     return sorted(
         path
         for path in changed
@@ -622,6 +625,93 @@ _SKIP_RE = re.compile(
 )
 
 
+@dataclass(frozen=True)
+class TestSyntax:
+    """How one language other than Python spells a test, for the diff half
+    of Layer 0 (#631).
+
+    Read only for the paths :func:`syntax_for` claims, and it claims no
+    path :func:`is_test_path` matches, so every file Layer 0 read before
+    #631 is read exactly as before. Each pattern is matched against one
+    diff line with its ``+``, ``-`` or space marker removed.
+    """
+
+    #: The paths this syntax reads.
+    path: re.Pattern[str]
+    #: A test declared on one line; group ``name`` is its name. None for
+    #: Rust, whose test is an attribute line followed by an ``fn`` line.
+    declaration: re.Pattern[str] | None
+    #: An attribute line that makes the next ``fn`` line a test (Rust).
+    attribute: re.Pattern[str] | None
+    #: The ``fn`` line an attribute applies to; group ``name`` (Rust).
+    fn: re.Pattern[str] | None
+    #: An added line that skips a test.
+    skip: re.Pattern[str]
+    #: A line that holds an assertion.
+    assertion: re.Pattern[str]
+    #: Whether removed and added assertion lines are counted. False for
+    #: Rust: the table reads only ``.rs`` files outside ``tests/``, where
+    #: an ``assert!`` is as likely production code as a test, and one lost
+    #: from production code is not a weaker suite.
+    counts_assertions: bool
+
+
+#: The table, by language (#631).
+TEST_SYNTAX: dict[str, TestSyntax] = {
+    "rust": TestSyntax(
+        path=re.compile(r"\.rs$"),
+        declaration=None,
+        attribute=re.compile(r"^\s*#\[(?:\w+::)*test(?:\(.*\))?\]\s*$"),
+        fn=re.compile(
+            r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?(?:unsafe\s+)?fn\s+(?P<name>\w+)"
+        ),
+        skip=re.compile(r"^\s*#\[ignore\b"),
+        assertion=re.compile(r"\b(?:debug_)?assert(?:_eq|_ne)?!\s*\("),
+        counts_assertions=False,
+    ),
+    "js": TestSyntax(
+        path=re.compile(r"(?:(?:^|/)__tests__/.*|\.(?:test|spec))\.[cm]?[jt]sx?$"),
+        declaration=re.compile(
+            r"(?<![\w.$])x?(?:it|test)(?:\.(?:only|concurrent|skip|todo|skipIf\([^)]*\)))*"
+            r"\s*\(\s*(?P<quote>['\"`])(?P<name>.*?)(?P=quote)"
+        ),
+        attribute=None,
+        fn=None,
+        skip=re.compile(
+            r"(?<![\w.$])(?:(?:it|test|describe)\.(?:skip|todo|skipIf)\b|x(?:it|test|describe)\s*\()"
+        ),
+        assertion=re.compile(r"(?<![\w.$])(?:expect|assert(?:\.\w+)?)\s*\("),
+        counts_assertions=True,
+    ),
+    "go": TestSyntax(
+        path=re.compile(r"_test\.go$"),
+        declaration=re.compile(r"^\s*func\s+(?:\([^)]*\)\s*)?(?P<name>(?:Test|Fuzz)\w*)\s*\("),
+        attribute=None,
+        fn=None,
+        skip=re.compile(r"\.Skip(?:Now|f)?\s*\("),
+        assertion=re.compile(
+            r"\bt\.(?:Error|Errorf|Fatal|Fatalf|Fail|FailNow)\s*\(|\b(?:assert|require)\.\w+\s*\("
+        ),
+        counts_assertions=True,
+    ),
+}
+
+
+def syntax_for(path: str) -> TestSyntax | None:
+    """The :data:`TEST_SYNTAX` entry that reads ``path``, or None (#631).
+
+    None for every path :func:`is_test_path` matches: those stay with the
+    Python branch of :func:`analyze_test_diff`, a Rust or JS file under
+    ``tests/`` included, until #631's D1 decides otherwise.
+    """
+    if is_test_path(path):
+        return None
+    for syntax in TEST_SYNTAX.values():
+        if syntax.path.search(path):
+            return syntax
+    return None
+
+
 def _added_skip(body: str) -> str:
     """The skip mechanism an added diff line introduces, or "".
 
@@ -721,19 +811,15 @@ def analyze_test_diff(diff_text: str) -> DiffDiscipline:
     """Extract suite-weakening signals from a unified diff."""
     result = DiffDiscipline()
     prev = ""
+    # The sides ("-", "+") holding a Rust test attribute whose fn line has
+    # not come yet (#631). _read_table_line empties it on every hunk header,
+    # so it never outlives the hunk it was set in.
+    pending: set[str] = set()
     for source, target, line in _iter_diff_lines(diff_text):
         if line.startswith("diff --git") or (line.startswith("+++ ") and prev.startswith("--- ")):
             prev = line
             continue
-        # A DELETED file is `--- a/tests/x.py` / `+++ /dev/null`. Keeping
-        # the source path is the whole point: deleting a test file
-        # outright is the most direct way to weaken a suite, and
-        # dropping it here made that the one case that reported nothing
-        # at all. An ADDED file (`--- /dev/null`) keeps the target,
-        # which is already the non-empty side.
-        current = source if target == _DEV_NULL else target
-        if current == _DEV_NULL:
-            current = ""
+        current = _entry_path(source, target)
         if current and is_test_path(current):
             if line.startswith("-") and not line.startswith("---"):
                 body = line[1:]
@@ -753,8 +839,89 @@ def analyze_test_diff(diff_text: str) -> DiffDiscipline:
                     result.added_skips.append((current, body.strip()))
                 if _ASSERT_RE.match(body):
                     result.added_assertions[current] = result.added_assertions.get(current, 0) + 1
+        elif current and (syntax := syntax_for(current)) is not None:
+            _read_table_line(result, syntax, current, line, pending)
         prev = line
     return result
+
+
+def _entry_path(source: str, target: str) -> str:
+    """The path a diff line belongs to, or "" before the file header.
+
+    A DELETED file is `--- a/tests/x.py` / `+++ /dev/null`. Keeping the
+    source path is the whole point: deleting a test file outright is the
+    most direct way to weaken a suite, and dropping it here made that the
+    one case that reported nothing at all. An ADDED file (`--- /dev/null`)
+    keeps the target, which is already the non-empty side.
+    """
+    current = source if target == _DEV_NULL else target
+    return "" if current == _DEV_NULL else current
+
+
+def _read_table_line(
+    result: DiffDiscipline, syntax: TestSyntax, path: str, line: str, pending: set[str]
+) -> None:
+    """Record one diff line of a file :func:`syntax_for` claims (#631).
+
+    A context line is on both sides of the diff, so it names a test on
+    both: git can align a ``#[test]`` two tests share as context between a
+    removed fn and an added one, and reading only the removed and added
+    lines then misses the removed test.
+    """
+    marker, body = line[:1], line[1:]
+    if marker == "@":
+        # A hunk header: the lines between two hunks are not in the diff, so
+        # an attribute pending from the hunk above names nothing here.
+        pending.clear()
+    for side in _SIDES.get(marker, ()):
+        name = _table_test_name(syntax, body, side, pending)
+        if name and side == "-":
+            result.removed_tests.append((path, name))
+        elif name:
+            result.added_tests.add((path, name))
+    counted = syntax.counts_assertions and syntax.assertion.search(body) is not None
+    if marker == "-" and counted:
+        result.removed_assertions[path] = result.removed_assertions.get(path, 0) + 1
+    if marker == "+" and counted:
+        result.added_assertions[path] = result.added_assertions.get(path, 0) + 1
+    if marker == "+" and syntax.skip.search(body):
+        result.added_skips.append((path, body.strip()))
+
+
+#: The sides of the diff a line is on, by its marker.
+_SIDES: dict[str, tuple[str, ...]] = {" ": ("-", "+"), "-": ("-",), "+": ("+",)}
+
+
+def _table_test_name(syntax: TestSyntax, body: str, side: str, pending: set[str]) -> str:
+    """The test ``body`` declares on ``side``, or "". Moves ``pending``."""
+    if syntax.declaration is not None:
+        match = syntax.declaration.search(body)
+        return match.group("name") if match else ""
+    if syntax.attribute is not None and syntax.attribute.match(body):
+        pending.add(side)
+        return ""
+    fn = syntax.fn.match(body) if syntax.fn is not None else None
+    if fn is None or side not in pending:
+        return ""
+    pending.discard(side)
+    return fn.group("name")
+
+
+def _rust_test_edits(diff_text: str) -> set[str]:
+    """Rust files the table reads whose removed or added lines hold a test
+    attribute, an ``#[ignore]`` or an assertion (#631)."""
+    rust = TEST_SYNTAX["rust"]
+    edited: set[str] = set()
+    for source, target, line in _iter_diff_lines(diff_text):
+        path = _entry_path(source, target)
+        if line[:1] not in ("-", "+") or not path or syntax_for(path) is not rust:
+            continue
+        body = line[1:]
+        if rust.skip.search(body) or rust.assertion.search(body):
+            edited.add(path)
+        elif rust.attribute is not None and rust.attribute.match(body):
+            edited.add(path)
+    return edited
 
 
 # ---------------------------------------------------------------------------

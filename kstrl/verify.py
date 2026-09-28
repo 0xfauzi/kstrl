@@ -36,6 +36,7 @@ from kstrl.adequacy import (
     mutation_patch,
     parse_mutant_report,
     score_mutants,
+    syntax_for,
     unread_test_paths,
 )
 from kstrl.atomicio import atomic_write_text
@@ -2945,7 +2946,11 @@ def check_test_adequacy(
     see :func:`kstrl.adequacy.unread_test_paths`) and that raises no
     finding returns :class:`NotMeasured` rather than a pass over files it
     never opened; a diff that also holds Python tests keeps its row and
-    names the unread files in the message.
+    names the unread files in the message. The diff half also reads Rust,
+    JS/TS and Go test syntax through :data:`kstrl.adequacy.TEST_SYNTAX`
+    (#631); a finding in a file that table reads is advisory at every
+    level, and the file is still named as not read, because the oracle
+    half never opens it.
     """
     start = time.monotonic()
     try:
@@ -2986,17 +2991,25 @@ def check_test_adequacy(
     )
     blocking = layer0_blocks(config, autonomy_level)
     severity = "high" if blocking else "advisory"
+    # #631: a finding in a file the Layer 0 table reads (Rust, JS/TS, Go) is
+    # advisory at every level, per the R8.5 rule that a new language's
+    # layer starts advisory until its precision is measured.
     findings = [
         Finding.adequacy_finding(
             category=str(f.kind),
             explanation=f.render(),
             location=f.path,
-            severity=severity,
+            severity="advisory" if syntax_for(f.path) is not None else severity,
         )
         for f in adequacy_findings
     ]
     # #595: the same rule as check_policy_envelope, before `passed`.
     findings, waived, refusals = apply_waivers(findings, waivers)
+    # #631: a file the table found something in is one the oracle half never
+    # opened, whatever lines of it the diff touched.
+    unread = sorted(
+        {*unread, *(f.path for f in adequacy_findings if syntax_for(f.path) is not None)}
+    )
 
     if not adequacy_findings and unread and not sources:
         return NotMeasured(
