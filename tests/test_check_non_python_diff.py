@@ -225,11 +225,11 @@ def test_dead_code_ruff_on_a_tree_with_no_python_is_not_measured(tmp_path: Path)
 # --- policy_envelope: a lockfile kstrl cannot parse is not "no new deps" ---
 
 
-def _unread(lockfile: str) -> list[str]:
-    """The two rules the default ``[policy]`` could not check."""
+def _unread(lockfile: str, reason: str) -> list[str]:
+    """The two rules the default ``[policy]`` could not check, and why (#630)."""
     return [
-        f"new dependencies in {lockfile} were not measured: kstrl reads uv.lock "
-        f"only, so {rule} could not be checked"
+        f"new dependencies in {lockfile} were not measured: {reason}, "
+        f"so {rule} could not be checked"
         for rule in ("deps_allow_new", "license_unresolved")
     ]
 
@@ -251,20 +251,34 @@ def test_a_new_npm_dependency_is_not_reported_as_satisfied_under_deps_allow_new_
 
     assert row["passed"] is False
     assert "satisfied" not in row["message"]
-    assert row["details"] == _unread("package-lock.json")
+    assert row["details"] == _unread(
+        "package-lock.json",
+        "the HEAD copy could not be read (LockfileShapeError: lockfileVersion None is not "
+        "read; kstrl reads 2 and 3)",
+    )
 
 
 def test_a_new_cargo_dependency_is_not_reported_as_satisfied_under_deps_allow_new_false(
     tmp_path: Path,
 ) -> None:
-    branch = {"Cargo.lock": '[[package]]\nname = "serde"\nversion = "1.0.0"\n'}
+    """#630 reads Cargo.lock, so the crate is named rather than unmeasured."""
+    branch = {
+        "Cargo.lock": (
+            '[[package]]\nname = "serde"\nversion = "1.0.0"\n'
+            'source = "registry+https://github.com/rust-lang/crates.io-index"\n'
+        )
+    }
     root = _repo(tmp_path, RUST_BASE, branch, POLICY)
 
     row = _row(_check_json(root), "policy_envelope")
 
     assert row["passed"] is False
     assert "satisfied" not in row["message"]
-    assert row["details"] == _unread("Cargo.lock")
+    assert row["details"] == [
+        "New dependencies added to Cargo.lock while deps_allow_new=false: serde",
+        "license could not be resolved for serde 1.0.0 in Cargo.lock (kstrl has no license "
+        "source for cargo packages; nothing was consulted)",
+    ]
 
 
 def test_a_new_uv_dependency_still_violates_deps_allow_new_false(tmp_path: Path) -> None:
@@ -298,15 +312,18 @@ def test_a_deleted_python_test_is_still_reported_beside_a_new_typescript_test(
 def test_an_unread_lockfile_is_advisory_when_license_unresolved_is_advisory(
     tmp_path: Path,
 ) -> None:
-    branch = {"Cargo.lock": '[[package]]\nname = "serde"\nversion = "1.0.0"\n'}
+    branch = {"pnpm-lock.yaml": "lockfileVersion: '9.0'\n"}
     config = POLICY + 'license_unresolved = "advisory"\n'
-    root = _repo(tmp_path, RUST_BASE, branch, config)
+    root = _repo(tmp_path, TS_BASE, branch, config)
 
     row = _row(_check_json(root), "policy_envelope")
 
     assert row["passed"] is True
     assert row["message"].endswith("; 2 advisory(ies)")
-    assert row["details"] == [d + "; recorded as advisory" for d in _unread("Cargo.lock")]
+    reason = "kstrl has no reader for pnpm-lock.yaml"
+    assert row["details"] == [
+        d + "; recorded as advisory" for d in _unread("pnpm-lock.yaml", reason)
+    ]
 
 
 @pytest.mark.skipif(shutil.which("ruff") is None, reason="needs ruff on PATH")

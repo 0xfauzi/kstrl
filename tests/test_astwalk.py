@@ -384,6 +384,9 @@ class TestTheWalkAgainstTheRealPackage:
         The removed one is the scaffold command's ``subprocess.run`` in
         ``factory._prepare_component_tree``, now a ``run_scrubbed`` call in
         ``kstrl/worktree_setup.py``.
+        #630 adds two, so 78: ``git.read_blob``'s ``git ls-tree`` and
+        ``git cat-file``, reading a lockfile at a revision. Both carry a
+        timeout.
         """
         spawns = frozenset(
             {
@@ -395,7 +398,7 @@ class TestTheWalkAgainstTheRealPackage:
             }
         )
         found = package_calls(spawns)
-        assert len(found.seen) == 76
+        assert len(found.seen) == 78
         assert found.without_line_numbers().undecided == tuple(
             sorted(
                 [
