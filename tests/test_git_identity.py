@@ -108,7 +108,7 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_contract_safety.py": 4,
     # `ready_repo` calls `tests.helpers.gitrepo.set_identity` before it
     # commits (#198), once per scenario that builds its own fixture.
-    "tests/test_doctor.py": 7,
+    "tests/test_doctor.py": 8,
     # #399: the rewritten locale-pinned bad_patterns test commits into a
     # real repository through `tests.helpers.gitrepo.set_identity`.
     "tests/test_encoding_sites.py": 2,

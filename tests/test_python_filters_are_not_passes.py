@@ -97,6 +97,11 @@ EXPECTED_SELECTOR_SITES: dict[str, tuple[int, str]] = {
         1,
         "a count; 0 is reported by check_source_root as a WARN, never OK",
     ),
+    "doctor.py: _source_mix_notes": (
+        1,
+        "a share of tracked source by suffix (#628); a tree with no Python at all "
+        "makes check_source_root a WARN ('no tracked file is Python'), never OK",
+    ),
     "feedforward.py: <module>": (
         1,
         "_SOURCE_EXTENSIONS, one of seven languages; selects nothing alone",
