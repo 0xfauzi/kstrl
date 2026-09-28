@@ -36,6 +36,11 @@ _PYTEST_CMD = f"{sys.executable} -m pytest -q -p no:cacheprovider"
 # A single no-op keeps the non-target checks green without external tools.
 _NOOP = "true"
 
+# The toy project is a Python project: without a manifest the fixtures check
+# refuses the function fixture before running it (#632), and both tests
+# below would stay green while measuring nothing about add().
+_PYPROJECT = '[project]\nname = "app"\nversion = "0.1.0"\n'
+
 
 def _write_prd(root: Path) -> Path:
     """PRD whose fixture is the independent oracle: add(2, 2) must be 4."""
@@ -108,6 +113,7 @@ class TestTautologicalTestCaught:
         """Agent ships a broken add() plus `assert True` tests. Its own
         suite is green; the function fixture calls add(2, 2) in a
         sandboxed subprocess and fails the component."""
+        (tmp_path / "pyproject.toml").write_text(_PYPROJECT)
         (tmp_path / "app.py").write_text("def add(a, b):\n    return 0\n")
         (tmp_path / "test_app.py").write_text(
             "def test_add_exists():\n    import app\n    assert True\n"
@@ -122,6 +128,7 @@ class TestTautologicalTestCaught:
         )
         fixtures_check = _check(result, "fixtures")
         assert not fixtures_check.passed
+        assert any("Expected 4, got 0" in d for d in fixtures_check.details), fixtures_check.details
         assert result.passed is False
 
 
@@ -134,6 +141,7 @@ class TestConftestDeselectCaught:
         conftest collect_ignore plus a dummy green test so pytest exits 0.
         The fixtures oracle never runs under the project's pytest, so the
         conftest cannot deselect it."""
+        (tmp_path / "pyproject.toml").write_text(_PYPROJECT)
         (tmp_path / "app.py").write_text("def add(a, b):\n    return 0\n")
         (tmp_path / "test_real.py").write_text(
             "import app\ndef test_add():\n    assert app.add(2, 2) == 4\n"
@@ -148,7 +156,9 @@ class TestConftestDeselectCaught:
             "precondition broken: the conftest must hide the failing test "
             "for this scenario to prove anything"
         )
-        assert not _check(result, "fixtures").passed
+        fixtures_check = _check(result, "fixtures")
+        assert not fixtures_check.passed
+        assert any("Expected 4, got 0" in d for d in fixtures_check.details), fixtures_check.details
         assert result.passed is False
 
         # Prove the conftest was the gaming vector: without it the same

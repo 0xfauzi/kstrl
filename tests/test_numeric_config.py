@@ -125,6 +125,7 @@ NOT_LIMITS: dict[tuple[str, str], str] = {
     ("dash", "poll"): "a screen refresh interval; the command spends nothing",
     ("inbox snooze", "hours"): "an inbox item's snooze; the command spends nothing",
     ("queue add", "priority"): "an ordering, where a negative value means something",
+    ("queue priority", "priority"): "an ordering, where a negative value means something",
     ("status", "interval"): "a refresh interval; the command spends nothing",
 }
 

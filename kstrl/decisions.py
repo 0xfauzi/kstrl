@@ -168,6 +168,9 @@ class DecisionRegister:
     decisions: tuple[SpecDecision, ...] = ()
     project: str = ""
     spec_file: str = ""
+    # #639: the sha256 of the spec text the decompose read, "" on a
+    # register written before #639.
+    spec_digest: str = ""
     halted: bool = False
     status: str = REGISTER_MISSING
     detail: str = ""
@@ -189,6 +192,7 @@ def bind_register(
     register: DecisionRegister,
     project_name: str,
     spec_file: str,
+    spec_digest: str = "",
 ) -> tuple[SpecDecision, ...]:
     """The decisions that may bind this manifest, or raise.
 
@@ -209,7 +213,9 @@ def bind_register(
     binding, quietly.
 
     Everything else is a refusal - unreadable, halted, or belonging to
-    another project or another spec.
+    another project or another spec. A manifest that names its spec's
+    digest (#639) is matched on the digest alone: two specs can share a
+    basename, and one spec's text can change under the same name.
     """
     if register.status == REGISTER_MISSING or not spec_file:
         return ()
@@ -225,12 +231,16 @@ def bind_register(
             "so no manifest was saved for it. Answer the escalated "
             "question and re-run the decompose."
         )
-    if register.project != project_name or register.spec_file != spec_file:
+    other_spec = (
+        register.spec_digest != spec_digest if spec_digest else register.spec_file != spec_file
+    )
+    if register.project != project_name or other_spec:
         raise DecisionRegisterError(
             f"architect decision register belongs to project "
-            f"{register.project!r} / spec {register.spec_file!r}, but this "
-            f"run is {project_name!r} / {spec_file!r}. Re-run the decompose "
-            f"for this spec."
+            f"{register.project!r} / spec {register.spec_file!r} "
+            f"({register.spec_digest[:12] or 'no digest'}), but this run is "
+            f"{project_name!r} / {spec_file!r} ({spec_digest[:12] or 'no digest'}). "
+            f"Re-run the decompose for this spec."
         )
     return register.decisions
 
@@ -387,6 +397,7 @@ def write_decisions(
     spec_file: str,
     *,
     halted: bool,
+    spec_digest: str = "",
 ) -> Path:
     """Persist the register to ``scripts/kstrl/decisions.json``.
 
@@ -402,6 +413,7 @@ def write_decisions(
     payload: dict[str, Any] = {
         "project": project_name,
         "specFile": spec_file,
+        "specDigest": spec_digest,
         "generatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "halted": halted,
         "counts": _decision_counts(decisions),
@@ -450,6 +462,7 @@ def read_decisions(root_dir: Path) -> DecisionRegister:
         decisions=tuple(parse_decisions(raw)),
         project=_clean(raw.get("project")),
         spec_file=_clean(raw.get("specFile")),
+        spec_digest=_clean(raw.get("specDigest")),
         halted=bool(raw.get("halted", False)),
         status=REGISTER_OK,
     )
@@ -538,17 +551,22 @@ def build_decisions_context(
     )
 
 
-def _escalation_key(project_name: str, spec_file: str) -> str:
-    """The inbox identity of one spec's escalation: project and spec file."""
-    return f"escalation:{project_name}:{spec_file}"
+def _escalation_key(project_name: str, spec_source: str) -> str:
+    """The inbox identity of one spec's escalation: project and spec path.
+
+    The path, not the basename (#639): a/spec.md and b/spec.md are two
+    specs, and one's decompose must not close the other's question.
+    """
+    return f"escalation:{project_name}:{spec_source}"
 
 
 def open_escalation_item(
     escalated: Sequence[SpecDecision],
     root_dir: Path,
     project_name: str,
-    spec_file: str,
+    spec_source: str,
     *,
+    spec_digest: str,
     register_path: str,
     run_id: str,
     warn: Callable[[str], None],
@@ -572,7 +590,8 @@ def open_escalation_item(
     lines.append(f"Register: {register_path or '(not written)'}")
     lines.append(
         "Answer in the spec and re-run the decompose. The next decompose of "
-        "this spec that escalates nothing resolves this item."
+        "this spec that escalates nothing resolves this item, once the spec's "
+        "text has changed."
     )
     try:
         config = InboxConfig.load(root_dir)
@@ -580,26 +599,28 @@ def open_escalation_item(
             return
         Inbox(root_dir, config).add(
             ItemKind.SPEC_ESCALATION,
-            f"Architect escalated {', '.join(ids)} on {spec_file}",
+            f"Architect escalated {', '.join(ids)} on {spec_source}",
             detail="\n".join(lines),
             run_id=run_id,
-            dedupe_key=_escalation_key(project_name, spec_file),
+            dedupe_key=_escalation_key(project_name, spec_source),
             evidence={
                 "project": project_name,
-                "spec_file": spec_file,
+                "spec_source": spec_source,
+                "spec_digest": spec_digest,
                 "questions": ids,
                 "register": register_path,
             },
         )
     except Exception as exc:  # noqa: BLE001 - must not replace the halt
-        warn(f"Inbox write for the escalation on {spec_file} failed (non-fatal): {exc}")
+        warn(f"Inbox write for the escalation on {spec_source} failed (non-fatal): {exc}")
 
 
 def resolve_escalation_items(
     root_dir: Path,
     project_name: str,
-    spec_file: str,
+    spec_source: str,
     *,
+    spec_digest: str,
     run_id: str,
     info: Callable[[str], None],
     warn: Callable[[str], None],
@@ -612,11 +633,17 @@ def resolve_escalation_items(
     applies to components. ``only_from=UNDECIDED`` keeps a decision an
     operator made in the meantime.
 
+    Only an item whose recorded spec digest differs from ``spec_digest``
+    is resolved (#639). The same text escalating nothing answers no
+    question, so that item stays open and the warning says why; an item
+    with no recorded digest (opened before #639) cannot tell, so it stays
+    open for the owner to decide.
+
     Never raises: the manifest is already saved, so a broken inbox must
     not fail the decompose. The items stay open and the warning says so.
     """
-    comment = f"closed by decompose run {run_id or '(no run id)'}: {spec_file} escalated nothing"
-    key = _escalation_key(project_name, spec_file)
+    closer = f"closed by decompose run {run_id or '(no run id)'}"
+    key = _escalation_key(project_name, spec_source)
     try:
         config = InboxConfig.load(root_dir)
         if not config.enabled:
@@ -630,7 +657,27 @@ def resolve_escalation_items(
             and item.status in UNDECIDED
         ]
         for item in undecided:
+            old = item.evidence.get("spec_digest")
+            if not isinstance(old, str) or not old:
+                warn(
+                    f"Inbox: {item.id[:8]} ({item.kind}) stays open: it was opened before "
+                    f"kstrl recorded the spec's digest, so kstrl cannot tell whether "
+                    f"{spec_source} changed since. Decide it: ks inbox approve {item.id[:8]}, "
+                    f"or ks inbox reject {item.id[:8]} --comment ..."
+                )
+                continue
+            if old == spec_digest:
+                warn(
+                    f"Inbox: {item.id[:8]} ({item.kind}) stays open: {spec_source} has not "
+                    f"changed since it was escalated ({old[:12]}), so nothing answered the "
+                    f"question. Answer it in the spec and re-run the decompose."
+                )
+                continue
+            comment = (
+                f"{closer}: {spec_source} changed ({old[:12]} -> {spec_digest[:12]}) "
+                f"and escalated nothing"
+            )
             if box.resolve(item.id, comment=comment, only_from=UNDECIDED) is not None:
                 info(f"Inbox: resolved {item.id[:8]} ({item.kind}): {comment}")
     except Exception as exc:  # noqa: BLE001 - the manifest is already saved
-        warn(f"Inbox resolve for the escalation on {spec_file} failed (items stay open): {exc}")
+        warn(f"Inbox resolve for the escalation on {spec_source} failed (items stay open): {exc}")

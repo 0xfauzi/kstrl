@@ -727,7 +727,13 @@ def create_single_pr(
     lines: list[str] = []
     lines.append("## Summary")
     lines.append("")
-    lines.append(f"Factory run for **{manifest.project_name}** from `{manifest.spec_file}`.")
+    # #639: a pinned plan names the exact spec text it was made from.
+    spec = (
+        f"`{manifest.spec_path}` (sha256 {manifest.spec_digest[:12]})"
+        if manifest.spec_digest
+        else f"`{manifest.spec_file}`"
+    )
+    lines.append(f"Factory run for **{manifest.project_name}** from {spec}.")
     lines.append("")
     lines.append("## Components")
     lines.append("")
