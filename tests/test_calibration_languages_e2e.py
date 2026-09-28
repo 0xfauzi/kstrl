@@ -283,6 +283,11 @@ REFUSED_DIFFS = {
     "mixed": ("01_mixed.diff", _SEC01_DIFF + _moved(_SEC01_DIFF, "src/users.ts"), "src/users.ts"),
     "unknown_suffix": ("01_go.diff", _moved(_SEC01_DIFF, "src/users.go"), "src/users.go"),
     "no_code_file": ("01_manifest.diff", _moved(_SEC01_DIFF, "package.json"), "package.json"),
+    "no_suffix": (
+        "01_no_suffix.diff",
+        _SEC01_DIFF + _moved(_SEC01_DIFF, "src/Makefile"),
+        "src/Makefile",
+    ),
     "two_hunks": (
         "01_two_hunks.diff",
         _SEC01_DIFF + "@@ -40,1 +40,2 @@\n x = 1\n+y = 2\n",
