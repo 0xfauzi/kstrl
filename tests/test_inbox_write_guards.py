@@ -74,7 +74,9 @@ EXPECTED_CONSTRUCTIONS = (
 #: already has one: ``pipeline`` has three and ``serve`` two. A pin whose
 #: subject is "how many" needs its own row.
 EXPECTED_CONSTRUCTION_COUNTS = {
-    "autonomy.py": 1,
+    # #643: was 1 (apply_demotion). +1: _calibration_blockers scans the
+    # inbox for an undecided calibration_drift item. It reads; it mutates nothing.
+    "autonomy.py": 2,
     "calibration_ladder.py": 1,
     "cli.py": 1,
     "decisions.py": 2,
@@ -189,6 +191,8 @@ EXPECTED_MUTATIONS: dict[str, Disposition] = {
 #: calls, so dropping the section fails there instead of quietly
 #: shrinking this table.
 EXPECTED_CONFIG_LOADS: dict[str, Disposition] = {
+    # #643: the L2 entry criterion; a load it cannot make is a blocker.
+    "autonomy.py::_calibration_blockers": _GUARDED,
     "autonomy.py::apply_demotion": _GUARDED,
     "calibration_ladder.py::_open_drift_item": _GUARDED,
     "decisions.py::open_escalation_item": _GUARDED,

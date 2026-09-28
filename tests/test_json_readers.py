@@ -154,6 +154,9 @@ EXPECTED_JSON_PARSES: tuple[str, ...] = ("jsonread.py json.loads",)
 #: being able to decide a call it used to decide. Line numbers dropped,
 #: which is what ``.without_line_numbers()`` does to the found side too.
 EXPECTED_UNDECIDED_CALLS: tuple[str, ...] = (
+    # #643: _calibration_blockers reads [autonomy] enabled to know whether a
+    # calibration regression can have opened an inbox item. A config load, not a parse.
+    "autonomy.py AutonomyConfig.load",
     "autonomy.py AutonomyState.load",
     "config.py cls.load",
     "evolution.py cls.load",

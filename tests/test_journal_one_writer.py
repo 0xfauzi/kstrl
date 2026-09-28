@@ -321,7 +321,7 @@ EXPECTED_JOURNAL_PATH_SITES: dict[str, int] = {
     # the path is read here rather than escaping into ``cli.py``.
     "evolution.py: self.config.journal_path": 5,
     "cli.py: config.journal_path": 2,
-    "health.py: config.journal_path": 2,
+    "health.py: config.journal_path": 1,
     "pipeline.py: self.journal_path": 4,
     "workqueue.py: self.journal_path": 2,
 }
@@ -337,7 +337,10 @@ EXPECTED_JOURNAL_PATH_SITES: dict[str, int] = {
 #: point (one occurrence apiece), and ``ks autonomy replay`` /
 #: ``ks health`` each do the same so they can load the run history ONCE
 #: and hand it, plus the journal path, to that same entry point instead
-#: of re-reading the history a second time.
+#: of re-reading the history a second time. #643 moved ``health.py``
+#: from 2 to 1: ``health_breaches`` and ``health_status`` now both call
+#: ``health_readings``, which obtains ``config.journal_path`` once, and
+#: the ladder's L3 entry criterion reads through the same function.
 
 
 class TestOneWriter:

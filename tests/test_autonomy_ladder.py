@@ -60,7 +60,7 @@ def _eligible_state(level: AutonomyLevel = AutonomyLevel.L1_SUPERVISED) -> Auton
 class TestPersistence:
     def test_round_trip(self, tmp_path: Path) -> None:
         state = _eligible_state()
-        state.promote(actor="human", ack="evidence reviewed")
+        state.promote(actor="human", ack="evidence reviewed", signal_blockers=())
         state.record_merged_component(human_edited=False)
         state.save(tmp_path)
         loaded = AutonomyState.load(tmp_path)
@@ -612,7 +612,7 @@ class TestTransitionAudit:
         from kstrl.autonomy import commit_transition
 
         state = _eligible_state()
-        record = state.promote(actor="human", ack="reviewed")
+        record = state.promote(actor="human", ack="reviewed", signal_blockers=())
         commit_transition(state, record, tmp_path, run_id="run-1")
         journal = (tmp_path / ".kstrl" / "evolution.jsonl").read_text()
         assert '"event_type":"autonomy_transition"' in journal
@@ -661,7 +661,7 @@ class TestTransitionAudit:
         journal_path.mkdir()
 
         state = _eligible_state()
-        record = state.promote(actor="human", ack="ok")
+        record = state.promote(actor="human", ack="ok", signal_blockers=())
         with pytest.warns(RuntimeWarning, match="journal append failed"):
             commit_transition(state, record, tmp_path)
         assert AutonomyState.load(tmp_path).level == int(AutonomyLevel.L2_GATED_MERGE)
@@ -681,7 +681,7 @@ class TestTransitionAudit:
 
         (tmp_path / "kstrl.toml").write_text("[evolution\nenabled = true\n")
         state = _eligible_state()
-        record = state.promote(actor="human", ack="ok")
+        record = state.promote(actor="human", ack="ok", signal_blockers=())
 
         with pytest.warns(RuntimeWarning, match="Evolution config unreadable"):
             commit_transition(state, record, tmp_path)

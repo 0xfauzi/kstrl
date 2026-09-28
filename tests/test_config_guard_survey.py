@@ -295,14 +295,14 @@ def test_a_report_survives_a_section_whose_loader_hits_the_filesystem(
 
     real = kstrl.config_report._phase_sections
 
-    def _one_unreadable_section() -> list[tuple[str, object, list[str]]]:
+    def _one_unreadable_section() -> list[tuple[str, object]]:
         sections = real()
-        name, _loader, knobs = sections[0]
+        name, _loader = sections[0]
 
         def _unreadable(_root: Path) -> object:
             raise PermissionError(13, "Permission denied")
 
-        return [(name, _unreadable, knobs), *sections[1:]]
+        return [(name, _unreadable), *sections[1:]]
 
     monkeypatch.setattr(kstrl.config_report, "_phase_sections", _one_unreadable_section)
     report = build_config_report(tmp_path)
