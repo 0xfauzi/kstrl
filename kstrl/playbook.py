@@ -38,11 +38,13 @@ next append voids it in the same write that appendio's pad turns it into
 a whole line, so the tail does not become a line the fold refuses. The
 residual is a SECOND tear inside that write, before the VOID's newline:
 the fragment is then committed without its VOID, the fold refuses it,
-and ``ks learn repair`` voids it. A tail that happens to hold a whole
-record is voided too: its writer never returned. :func:`repair_ledger`
-(``ks learn repair``) is the way back for a ledger that is already
-refused: it voids every line the fold refuses, each VOID carrying the
-fold's reason, and leaves the voided bytes where they are.
+and ``ks learn repair --yes`` voids it. A tail that happens to hold a
+whole record is voided too: its writer never returned.
+:func:`repair_ledger` (``ks learn repair --yes``) is the way back for a
+ledger that is already refused: it voids every line the fold refuses,
+each VOID carrying the fold's reason, and leaves the voided bytes where
+they are. Without ``--yes`` the command lists :func:`refused_lines` and
+writes nothing.
 
 The record shape is ``ace-framework`` 0.13.0's ``Skill`` field names
 (``id``, ``section``, ``keywords``, ``issue``, ``insight``, ``active``,
@@ -468,6 +470,14 @@ def _fold(path: Path, raw: bytes, *, collect: bool = False) -> _Folded:
     return folded
 
 
+def _read_ledger(path: Path) -> bytes:
+    """The ledger's bytes, read once. A missing ledger is empty."""
+    try:
+        return path.read_bytes()
+    except FileNotFoundError:
+        return b""
+
+
 def load_playbook(path: Path | None = None) -> Playbook:
     """Fold the ledger in order. A missing ledger is an empty playbook.
 
@@ -476,10 +486,7 @@ def load_playbook(path: Path | None = None) -> Playbook:
     read. The digest is over exactly the bytes folded, read once.
     """
     path = ledger_path() if path is None else path
-    try:
-        raw = path.read_bytes()
-    except FileNotFoundError:
-        raw = b""
+    raw = _read_ledger(path)
     folded = _fold(path, raw)
     return Playbook(
         path=path,
@@ -547,6 +554,18 @@ def append_ops(ops: Sequence[Op], path: Path | None = None) -> None:
 
     path.parent.mkdir(parents=True, exist_ok=True)
     _append_after_fold(path, compose, collect=False)
+
+
+def refused_lines(path: Path | None = None) -> tuple[tuple[int, str], ...]:
+    """Every line the fold refuses, as ``(line number, reason)``. Writes nothing.
+
+    The collecting fold :func:`repair_ledger` voids from, read without the
+    lock because nothing is written. A missing ledger refuses nothing.
+    Raises :class:`PlaybookError` for a ledger even the collecting fold
+    refuses (a VOID naming the wrong digest), and lets ``OSError`` out.
+    """
+    path = ledger_path() if path is None else path
+    return tuple(_fold(path, _read_ledger(path), collect=True).refused)
 
 
 def repair_ledger(path: Path | None = None) -> tuple[Void, ...]:
