@@ -317,3 +317,15 @@ def test_narrowing_the_npm_test_script_is_reported(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     assert _suite(document)["passed"] is True
     assert _not_run(document) == ["src/bulk.test.ts"]
+
+    # A failing narrowed run still names the file that did not run: vitest's
+    # per-file lines are read from the gate's output whatever its exit code.
+    _commit(
+        root, {"src/pricing.ts": "export function percent(x: number): number {\n  return x;\n}\n"}
+    )
+
+    result, document = _check_json(root)
+
+    assert result.exit_code == 1, result.output
+    assert _suite(document)["passed"] is False
+    assert _not_run(document) == ["src/bulk.test.ts"]

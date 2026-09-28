@@ -242,6 +242,9 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # set_identity the same way.
     "tests/test_stale_base_ref.py": 10,
     "tests/test_state_dir_scope.py": 2,
+    # #620: two commits (base and change), into the repository `_repo`
+    # builds, which goes through set_identity before its first commit.
+    "tests/test_tests_ran_cli.py": 2,
     "tests/test_timeout_enforcement.py": 3,
     # PR #552 verifier: one base commit, into the repository the branch-probe
     # test builds with `git_in` and `set_identity` before committing.
