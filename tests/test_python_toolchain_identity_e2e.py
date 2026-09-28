@@ -99,6 +99,21 @@ FIXTURES: dict[str, tuple[dict[str, str], tuple[str, str]]] = {
         },
         ("src/b.ts", "export const b = 2;\n"),
     ),
+    "typescript-dep-only": (
+        {
+            "package.json": '{"name": "webapp", "devDependencies": {"typescript": "5"}}\n',
+            "src/a.ts": "export const a = 1;\n",
+        },
+        ("src/b.ts", "export const b = 2;\n"),
+    ),
+    "typescript-tsconfig-only": (
+        {
+            "package.json": '{"name": "webapp"}\n',
+            "tsconfig.json": "{}\n",
+            "src/a.ts": "export const a = 1;\n",
+        },
+        ("src/b.ts", "export const b = 2;\n"),
+    ),
     "javascript": (
         {"package.json": '{"name": "jsapp"}\n', "src/a.js": "export const a = 1;\n"},
         ("src/b.js", "export const b = 2;\n"),
