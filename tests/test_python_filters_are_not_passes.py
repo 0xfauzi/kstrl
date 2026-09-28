@@ -142,20 +142,23 @@ EXPECTED_SELECTOR_SITES: dict[str, tuple[int, str]] = {
         1,
         "Phase 0 context: an empty graph is an empty section, never a check result",
     ),
-    "policy.py: <module>": (1, "LOCKFILE_MANIFESTS' uv.lock key; every lockfile is listed"),
+    "lockfiles.py: parse_new_dependencies": (
+        1,
+        "empty means no new uv.lock package; read_new_dependencies reads every other "
+        "changed lockfile from its blobs or reports it unread with its reason (#630)",
+    ),
+    "lockfiles.py: uv_lock_dependencies": (
+        1,
+        "the lockfile label of each uv.lock NewDependency; selects nothing",
+    ),
+    "policy.py: <module>": (
+        2,
+        "LOCKFILE_MANIFESTS' uv.lock key, and the import check that LOCKFILE_READERS "
+        "plus uv.lock is every lockfile; selects nothing",
+    ),
     "policy.py: evaluate_policy": (
         1,
         "the location label of a deps_allow_new violation; selects nothing",
-    ),
-    "policy.py: parse_new_dependencies": (
-        1,
-        "empty means no new uv.lock package; unread_lockfile_violations reports every "
-        "other lockfile the diff adds lines to",
-    ),
-    "policy.py: unread_lockfiles": (
-        1,
-        "the complement of parse_new_dependencies; the verifier reports each lockfile "
-        "it lists as unmeasured dependency rules",
     ),
     "suite_inventory.py: <module>": (
         1,

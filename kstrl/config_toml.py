@@ -199,22 +199,35 @@ def load_toml_document(path: Path) -> dict[str, Any]:
     # ``loads(s)``; splitting it here changes no exception type (all
     # four faults measured identical both ways) and removes the need for
     # an ``except OSError: raise`` clause that no test could pin.
-    raw = path.read_bytes()
+    data = parse_toml_bytes(path.read_bytes(), str(path))
+    if scope is not None:
+        scope[path] = data
+    return data
+
+
+def parse_toml_bytes(raw: bytes, label: str) -> dict[str, Any]:
+    """Parse TOML bytes already read, naming ``label`` in every refusal.
+
+    The one ``tomllib`` parse in this module, hoisted out of
+    :func:`load_toml_document` so a lockfile read from a git blob
+    (``kstrl.lockfiles``, #630) is parsed under the same ladder rather
+    than a second one. Takes bytes, so the caller has done all the I/O
+    before the guard; see :func:`load_toml_document` for why the clauses
+    are these, in this order.
+    """
     try:
         data: dict[str, Any] = tomllib.loads(raw.decode())
     except tomllib.TOMLDecodeError as exc:
-        raise ConfigError(f"Invalid TOML in {path}: {exc}") from exc
+        raise ConfigError(f"Invalid TOML in {label}: {exc}") from exc
     except UnicodeDecodeError as exc:
         raise ConfigError(
-            f"{path} is not valid UTF-8, which TOML requires; re-save the file as UTF-8: {exc}"
+            f"{label} is not valid UTF-8, which TOML requires; re-save the file as UTF-8: {exc}"
         ) from exc
     except Exception as exc:
-        # LAST, and ``Exception`` rather than ``ValueError``: see the
-        # docstring. Says what the parser said and names the file;
-        # claims no cause beyond that.
-        raise ConfigError(f"{path} {UNPARSEABLE_TOML_MESSAGE}: {exc}") from exc
-    if scope is not None:
-        scope[path] = data
+        # LAST, and ``Exception`` rather than ``ValueError``: see
+        # load_toml_document's docstring. Says what the parser said and
+        # names the file; claims no cause beyond that.
+        raise ConfigError(f"{label} {UNPARSEABLE_TOML_MESSAGE}: {exc}") from exc
     return data
 
 

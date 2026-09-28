@@ -474,7 +474,7 @@ def test_compare_baselines_pairs_the_arms_across_two_runs(
     assert f"{REUSE_ROLE}/{present.fixture_id}" in comparison.newly_missed
     # The CATEGORY drop is the mechanism that fails a comparison, not the
     # role floor: one arm of two that stops being detected leaves the
-    # role rate at 0.50, which is not BELOW the 0.50 default, so a floor
+    # role rate at 0.50, which is not BELOW its 0.50 floor, so a floor
     # failure never fires on this shape. Pin the failure that does.
     assert any(
         failure.startswith(f"category {REUSE_ROLE}/{present.name} ")
