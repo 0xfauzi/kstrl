@@ -66,7 +66,7 @@ CHOICE_VOCABULARIES: dict[str, tuple[str, ...]] = {
 
 #: Re-derived by running ``len(choice_options(cli))`` on this tree, never
 #: edited to match.
-EXPECTED_CHOICE_OPTIONS = 49
+EXPECTED_CHOICE_OPTIONS = 50
 
 #: Re-derived by running the Layer 2 census on this tree.
 EXPECTED_CHOICE_CALLS: dict[str, int] = {"cli.py": 23}

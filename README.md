@@ -276,6 +276,7 @@ ks init [DIRECTORY]             Initialize kstrl in a project directory.
 ks learn playbook               Print the folded global playbook and its ledger's line count and SHA-256.
 ks learn repair                 List every global playbook line the fold refuses; --yes voids each one in the ledger.
 ks queue add SPEC               Enqueue a spec file.
+ks queue answer ITEM_ID SPEC    Answer an escalated item: replace its spec and send it back to queued.
 ks queue ls                     List queue items in run order.
 ks queue pause                  Stop admitting queued work.
 ks queue priority ITEM_ID       Change a queued item's priority, keeping its id and history.
