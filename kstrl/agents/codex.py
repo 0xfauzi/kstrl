@@ -10,7 +10,7 @@ import time
 from collections.abc import Iterator
 from pathlib import Path
 
-from kstrl.agents.base import UsageRecord
+from kstrl.agents.base import TOOL_RESULT_PREFIX, UsageRecord
 from kstrl.agents.proc import DeadlineStreamer, timeout_message
 from kstrl.agents.prompt_record import record_prompt
 from kstrl.sandbox import (
@@ -38,8 +38,59 @@ def _parse_token_count(text: str) -> int | None:
         return None
 
 
+def _read_final_message(last_msg_file: Path | None) -> str | None:
+    """Read codex's ``--output-last-message`` file; None if absent/empty.
+
+    Extracted out of ``CodexAgent.run`` alongside :func:`_track_token_trailer`
+    so the streaming method measures under the complexipy cognitive-
+    complexity gate; behavior is identical to the inline block it replaces.
+    """
+    if last_msg_file is None or not last_msg_file.exists():
+        return None
+    # utf-8 pinned: codex writes this file as utf-8 whatever the locale
+    # is, so leaving the encoding to the locale made an agent message
+    # carrying one non-ASCII character raise under LC_ALL=C. Naming it
+    # strictly narrows the failure to bytes that are genuinely not utf-8.
+    content = last_msg_file.read_text(encoding="utf-8").strip()
+    return content or None
+
+
+def _track_token_trailer(
+    stripped: str, trailer_total: int | None, expect_token_count: bool
+) -> tuple[int | None, bool]:
+    """Update the running token-trailer state for one streamed line.
+
+    Extracted out of ``CodexAgent.run``'s streaming loop so that loop
+    measures under the complexipy cognitive-complexity gate: these two
+    nested checks are unrelated to the transcript-marking logic (#640)
+    around them and do not change behavior by moving.
+    """
+    # Track the "tokens used" trailer (last match wins - the real trailer
+    # is at end-of-stream; an agent echoing the same text earlier is
+    # overwritten). This is a hint for the cost meter, never a gate.
+    if expect_token_count:
+        expect_token_count = False
+        if _TOKENS_COUNT_LINE.match(stripped):
+            trailer_total = _parse_token_count(stripped)
+    match = _TOKENS_USED_LINE.match(stripped)
+    if match:
+        if match.group("total"):
+            trailer_total = _parse_token_count(match.group("total"))
+        else:
+            expect_token_count = True
+    return trailer_total, expect_token_count
+
+
 class CodexAgent:
     """Agent that uses the Codex CLI."""
+
+    #: Every line ``codex exec`` prints is transcript, not the model's
+    #: words (#640): measured on codex-cli 0.156.1, it echoes the whole
+    #: prompt to stderr, which DeadlineStreamer merges into the stream.
+    #: ``run`` yields each of those lines with TOOL_RESULT_PREFIX and then
+    #: the ``--output-last-message`` reply unmarked, so
+    #: kstrl.agents.base.model_output_text keeps only the reply.
+    marks_tool_output = True
 
     _supports_output_last_message: bool | None = None
 
@@ -105,12 +156,16 @@ class CodexAgent:
     ) -> Iterator[str]:
         """Run codex with prompt piped to stdin.
 
-        Yields output lines as they arrive. When ``timeout`` is set and the
-        CLI hangs (with or without output), its process group is killed and
-        a timeout error line is yielded last.
+        Yields each line codex prints as it arrives, marked with
+        ``TOOL_RESULT_PREFIX``: none of them is the model's own words
+        (#640). After the stream ends, the ``--output-last-message`` reply
+        is yielded unmarked, line by line; it is the only text this
+        adapter reports as the model's. When the file is absent or empty
+        no line is unmarked and ``final_message`` stays None. When
+        ``timeout`` is set and the CLI hangs (with or without output), its
+        process group is killed and a timeout error line is yielded last.
         """
         self._final_message = None
-        last_non_empty_line: str | None = None
         started = time.monotonic()
         trailer_total: int | None = None
         expect_token_count = False
@@ -149,23 +204,10 @@ class CodexAgent:
                 # `DeadlineStreamer.close` (#326).
                 for line in streamer.lines():
                     stripped = line.strip()
-                    if stripped:
-                        last_non_empty_line = line
-                    # Track the "tokens used" trailer (last match wins - the
-                    # real trailer is at end-of-stream; an agent echoing the
-                    # same text earlier is overwritten). This is a hint for
-                    # the cost meter, never a gate.
-                    if expect_token_count:
-                        expect_token_count = False
-                        if _TOKENS_COUNT_LINE.match(stripped):
-                            trailer_total = _parse_token_count(stripped)
-                    match = _TOKENS_USED_LINE.match(stripped)
-                    if match:
-                        if match.group("total"):
-                            trailer_total = _parse_token_count(match.group("total"))
-                        else:
-                            expect_token_count = True
-                    yield line
+                    trailer_total, expect_token_count = _track_token_trailer(
+                        stripped, trailer_total, expect_token_count
+                    )
+                    yield TOOL_RESULT_PREFIX + line
 
                 if streamer.timed_out:
                     # Killed mid-run: the last-message file was likely never
@@ -193,18 +235,7 @@ class CodexAgent:
                 )
             )
 
-            # Read final message
-            if last_msg_file and last_msg_file.exists():
-                # utf-8 pinned: codex writes this file as utf-8 whatever
-                # the locale is, so leaving the encoding to the locale
-                # made an agent message carrying one non-ASCII character
-                # raise under LC_ALL=C. Naming it strictly narrows the
-                # failure to bytes that are genuinely not utf-8.
-                content = last_msg_file.read_text(encoding="utf-8").strip()
-                if content:
-                    self._final_message = content
-            if self._final_message is None and last_non_empty_line:
-                self._final_message = last_non_empty_line
+            self._final_message = _read_final_message(last_msg_file)
 
         finally:
             # Cleanup temp file
@@ -213,6 +244,9 @@ class CodexAgent:
                     last_msg_file.unlink()
                 except Exception:
                     pass
+
+        if self._final_message is not None:
+            yield from self._final_message.splitlines()
 
     @property
     def final_message(self) -> str | None:
