@@ -3281,30 +3281,9 @@ class ComponentPipeline:
     ) -> VerifyPhaseResult:
         """Phase 1: mechanical verification (tests / typecheck / lint /
         PRD stories / diff scope / bad patterns / fixtures)."""
-        if self.factory_config.skip_verification:
-            # R2.3: --no-verify. Previously verify_config=None fell
-            # through to VerifyConfig() defaults here and Phase 1 ran
-            # anyway - on a non-Python repo that burned every retry
-            # against checks that could never pass. The empty
-            # VerificationResult below is what downstream reviewers see:
-            # no checks ran, none are claimed.
-            self.ui.info(
-                f"  Phase 1 SKIPPED for {comp.id}: mechanical verification disabled (--no-verify)"
-            )
-            comp.verification_passed = None
-            self._record_phase_skip(
-                comp,
-                "verify",
-                "mechanical verification disabled (--no-verify)",
-            )
-            return VerifyPhaseResult(
-                ran=False,
-                verification=VerificationResult(passed=True, checks=[]),
-            )
-
-        setup_failure = self._set_up_gate_worktree(comp, comp_result, wt_path)
-        if setup_failure is not None:
-            return setup_failure
+        early = self._before_gates(comp, comp_result, wt_path)
+        if early is not None:
+            return early
 
         verify_config = self.factory_config.resolved_verify_config()
         self.ui.info(f"  Phase 1: mechanical verification for {comp.id}...")
@@ -3450,6 +3429,36 @@ class ComponentPipeline:
 
         self.ui.ok(f"  Phase 1 passed for {comp.id}")
         return VerifyPhaseResult(ran=True, verification=verification)
+
+    def _before_gates(
+        self,
+        comp: Component,
+        comp_result: ComponentResult,
+        wt_path: Path,
+    ) -> VerifyPhaseResult | None:
+        """What Phase 1 returns before any gate runs: the --no-verify skip,
+        or a failed worktree setup (#624). None means the gates run."""
+        if self.factory_config.skip_verification:
+            # R2.3: --no-verify. Previously verify_config=None fell
+            # through to VerifyConfig() defaults here and Phase 1 ran
+            # anyway - on a non-Python repo that burned every retry
+            # against checks that could never pass. The empty
+            # VerificationResult below is what downstream reviewers see:
+            # no checks ran, none are claimed.
+            self.ui.info(
+                f"  Phase 1 SKIPPED for {comp.id}: mechanical verification disabled (--no-verify)"
+            )
+            comp.verification_passed = None
+            self._record_phase_skip(
+                comp,
+                "verify",
+                "mechanical verification disabled (--no-verify)",
+            )
+            return VerifyPhaseResult(
+                ran=False,
+                verification=VerificationResult(passed=True, checks=[]),
+            )
+        return self._set_up_gate_worktree(comp, comp_result, wt_path)
 
     def _set_up_gate_worktree(
         self,
