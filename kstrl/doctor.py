@@ -24,24 +24,28 @@ from __future__ import annotations
 
 import dataclasses
 import subprocess
+from collections import Counter
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from kstrl import git, pr
 from kstrl.adequacy import is_test_path
 from kstrl.atomicio import atomic_write_json
 from kstrl.config import resolve_config_file
-from kstrl.config_preflight import config_problem_lines
+from kstrl.config_preflight import SURFACE_REJECTIONS, config_problem_lines, raise_if_defect
+from kstrl.config_report import build_config_report
 from kstrl.feedforward import (
     _MAX_PUBLIC_INTERFACE_FILES,
+    _SOURCE_EXTENSIONS,
     _find_top_source_dirs,
     extract_public_interfaces,
 )
 from kstrl.init_cmd import (
     BUILD_MANIFEST_FIX,
     LANGUAGE_IGNORES_FIX,
+    _verify_command_runs_through_uv,
     build_manifest_blocker,
     build_manifest_ok_reason,
     language_ignores_blocker,
@@ -350,20 +354,52 @@ def check_verify_commands(root: Path) -> _CheckResult:
         )
         if value is None
     ]
-    if unset and not (root / "pyproject.toml").exists():
+    contract, contract_uses_uv = _contract_test_command(root)
+    has_pyproject = (root / "pyproject.toml").exists()
+    if unset and not has_pyproject:
         return (
             STATUS_WARN,
             f"{len(unset)} of 3 commands fall back to a `uv run` default "
             f"({', '.join(unset)}) and there is no pyproject.toml at "
-            f"{root}, so `uv run` has no project to run in: {stated}",
+            f"{root}, so `uv run` has no project to run in: {stated}; {contract}",
             "Set [verify] test_command / typecheck_command / lint_command "
             "to the commands this project actually uses.",
         )
+    if contract_uses_uv and not has_pyproject:
+        return (
+            STATUS_WARN,
+            f"Phase 1 will run {stated}; {contract}, and there is no "
+            f"pyproject.toml at {root}, so `uv run` has no project to run in",
+            "Set [contract] test_command to the command this project's tests "
+            "run with; Phase 3 runs it on every merged tier.",
+        )
     return (
         STATUS_OK,
-        f"Phase 1 will run {stated}; Tier A does not run them, `ks check` does",
+        f"Phase 1 will run {stated}; {contract}; Tier A does not run them, `ks check` does",
         "",
     )
+
+
+def _contract_test_command(root: Path) -> tuple[str, bool]:
+    """What Phase 3 runs on merged tiers, and whether it runs through `uv run`.
+
+    Read from the row `ks config show` prints for `[contract]
+    test_command`, value and source, so the two cannot disagree (#628).
+    A configuration that report rejects is `check_kstrl_config`'s row.
+    """
+    try:
+        rows = build_config_report(root).rows
+    except SURFACE_REJECTIONS as exc:
+        raise_if_defect(exc)
+        rows = ()
+    for row in rows:
+        if (row.section, row.key) == ("contract", "test_command"):
+            return (
+                f"Phase 3 will run `{row.shown}` on merged tiers "
+                f"([contract] test_command, {row.source})",
+                _verify_command_runs_through_uv(row.shown),
+            )
+    return ("Phase 3's [contract] test_command did not resolve (see kstrl_config)", False)
 
 
 def _interface_file_count(text: str) -> int:
@@ -391,11 +427,10 @@ def check_source_root(root: Path) -> _CheckResult:
 
     Consumed by `kstrl.feedforward.extract_public_interfaces`, the Phase 0
     stage that writes the "Public interfaces" section of the
-    engineer's context block. Keyed on the source-root result and
-    the file-budget outcome rather than on language (#198 comment of
-    2026-09-16): on deckgen, a Python repository,
-    `_find_top_source_dirs` returns nothing and the section is
-    empty.
+    engineer's context block. It reads Python only, so a tree whose
+    tracked source is mostly another language warns and names #200
+    (#628); otherwise the row is keyed on the source-root result and
+    the file-budget outcome (#198 comment of 2026-09-16).
     """
     # `is_relative_to` rather than a bare `relative_to`: PR #381
     # rewrites the function this reads, and a path it returned from
@@ -406,21 +441,76 @@ def check_source_root(root: Path) -> _CheckResult:
     )
     listed = ", ".join(roots[:5]) if roots else "none"
     count = _interface_file_count(extract_public_interfaces(root))
+    minority, unsummarised = _source_mix_notes(root)
+    if minority:
+        return (
+            STATUS_WARN,
+            f"the codebase scan summarises {count} Python file(s) for the "
+            f"engineer from source root(s): {listed}; {minority}",
+            PYTHON_ONLY_FIX,
+        )
     if count == 0:
         return (
             STATUS_WARN,
             f"the codebase scan summarises 0 files for the engineer; source roots found: {listed}",
             "Nothing is broken in your repository; kstrl's interface "
-            "extraction does not reach this layout, so the engineer works "
-            "without an interface section. Track issue #378.",
+            "extraction found no public Python class or function in this "
+            "layout, so the engineer works without an interface section.",
         )
     return (
         STATUS_OK,
         f"the codebase scan summarises {count} file(s) "
         f"of a {_MAX_PUBLIC_INTERFACE_FILES}-file budget from source "
-        f"root(s): {listed}",
+        f"root(s): {listed}{unsummarised}",
         "",
     )
+
+
+#: The fix for a tree whose tracked source is mostly not Python. #378
+#: is closed and was about Python layouts; the reader for other
+#: languages is the plug-in #200 deferred.
+PYTHON_ONLY_FIX = (
+    "Nothing is broken in your repository; kstrl's interface extraction "
+    "reads Python only, so the engineer gets no interface lines for the "
+    "rest of this tree. A reader for other languages is deferred on issue #200."
+)
+
+
+def _source_mix_notes(root: Path) -> tuple[str, str]:
+    """Two clauses about the tracked source a Python-only extraction skips.
+
+    The first is set when Python is not the majority of the files at
+    HEAD whose suffix the module map counts (`_SOURCE_EXTENSIONS`), and
+    makes the row a warning; the second notes non-Python source beside
+    a Python majority. Measured for #628: the Python share is 0.687 to
+    1.000 on six Python repositories and 0.000 to 0.444 on the Rust,
+    TypeScript and mixed trees, so one half sits in the gap. The share
+    SUMMARISED cannot be the rule: this repository summarises 30 of 703
+    source files, less than the Rust tree with one Python helper (1 of 4).
+    """
+    try:
+        tracked = git.tracked_files_at("HEAD", root)
+    except git.GitDiffError:
+        return ("", "")
+    suffixes = Counter(PurePosixPath(path).suffix for path in tracked)
+    python_files = suffixes.pop(".py", 0)
+    others = {suffix: n for suffix, n in sorted(suffixes.items()) if suffix in _SOURCE_EXTENSIONS}
+    other_total = sum(others.values())
+    listed = ", ".join(f"{suffix}: {n}" for suffix, n in others.items())
+    if other_total > python_files:
+        return (
+            f"its interface extraction reads Python only, and {other_total} of "
+            f"{python_files + other_total} tracked source files are not Python ({listed})",
+            "",
+        )
+    if python_files == 0:
+        return ("its interface extraction reads Python only, and no tracked file is Python", "")
+    if other_total:
+        return (
+            "",
+            f"; {other_total} tracked non-Python source file(s) are not summarised ({listed})",
+        )
+    return ("", "")
 
 
 def check_test_root(root: Path) -> _CheckResult:
@@ -453,9 +543,9 @@ def check_test_root(root: Path) -> _CheckResult:
         return (
             STATUS_WARN,
             "0 tracked paths read as tests to the [adequacy] gate, which "
-            "classifies a diff by the same rule, so that "
-            "gate sees no test file and the Phase 1 test command has "
-            "nothing to run",
+            "classifies a diff by the same rule, so that gate sees no test "
+            "file; the rule reads file paths only, so this says nothing about "
+            "what the Phase 1 test command runs",
             "Add tests, or expect the adequacy gate to report nothing.",
         )
     return (

@@ -1177,6 +1177,14 @@ def _unfailed_outcome(manifest: Manifest, returncode: int) -> Outcome:
     fail-open shape this module refuses. Split out of ``classify_run``,
     which is past the cyclomatic ratchet.
     """
+    if manifest.plan_awaiting_approval:
+        # #602: the L1 plan gate parked the plan with nothing run.
+        return Outcome(
+            Verdict.AWAITING_APPROVAL,
+            "awaiting plan approval: nothing was run; `ks inbox approve <id>` runs "
+            "the plan, `ks inbox reject <id> --comment ...` refuses it",
+            {"returncode": returncode, "plan_awaiting_approval": manifest.plan_awaiting_approval},
+        )
     parked = [
         comp.id
         for comp in manifest.components
@@ -2446,6 +2454,15 @@ def check_parked_merges(root_dir: Path) -> Admission:
         manifest = Manifest.load(path)
     except Exception as exc:  # noqa: BLE001 - nothing approvable is the same answer
         return Admission(allowed=True, reason=f"no approvable park in {path}: {exc}")
+    if manifest.plan_awaiting_approval:
+        return Admission(
+            allowed=False,
+            reason=(
+                f"a plan waits for approval in {path} (#602): `ks inbox approve <id>` "
+                "runs it, `ks inbox reject <id> --comment ...` refuses it; a new item "
+                "would overwrite that manifest"
+            ),
+        )
     parked = [
         comp.id
         for comp in manifest.components

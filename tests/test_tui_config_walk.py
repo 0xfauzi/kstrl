@@ -408,7 +408,9 @@ EXPECTED_LOADER_SPELLINGS: dict[str, int] = {
     "tui/screens/inbox.py": 2,  # the banner's load, and InboxConfig's
     "tui/screens/init_wizard.py": 1,  # the banner's load
     "tui/screens/retry.py": 1,  # Manifest.load
-    "tui/session.py": 2,  # Manifest.load, and the banner's
+    # #603: FactoryConfig.load in _prepare_decompose, inside its
+    # SURFACE_REJECTIONS guard, for the architect's call limit.
+    "tui/session.py": 3,  # Manifest.load, the banner's, and FactoryConfig's
     "tui/state.py": 1,  # Manifest.load
     "tui/widgets/config_problem.py": 1,  # the banner's own def load
 }
