@@ -278,6 +278,7 @@ ks learn repair                 List every global playbook line the fold refuses
 ks queue add SPEC               Enqueue a spec file.
 ks queue ls                     List queue items in run order.
 ks queue pause                  Stop admitting queued work.
+ks queue priority ITEM_ID       Change a queued item's priority, keeping its id and history.
 ks queue resume                 Start admitting queued work again.
 ks queue retry ITEM_ID          Send a failed or poisoned item back to queued.
 ks queue rm ITEM_ID             Delete an item and its spec.
