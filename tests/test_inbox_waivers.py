@@ -112,6 +112,17 @@ TWO_DENIED = _engineer(
 ONE_TEST_DELETED = _engineer(
     "printf 'def test_one():\\n    assert 1 + 1 == 2\\n' > tests/test_core.py"
 )
+#: Deletes the OTHER base test, in the same file. Combined with
+#: ONE_TEST_DELETED across two retries, the cumulative diff against the
+#: original file nets to "test_one deleted" (test_two's text is back to
+#: its original content, so the diff shows no line for it) - a different
+#: symbol than ONE_TEST_DELETED's own "test_two deleted", hence a
+#: different explanation and waiver_key at the same category and
+#: location. Verified empirically: `git diff` over the two commits shows
+#: only the test_one block as removed.
+ANOTHER_TEST_DELETED = _engineer(
+    "printf 'def test_two():\\n    assert 2 * 2 == 4\\n' > tests/test_core.py"
+)
 KEY_A = "AKIA" + "A" * 16
 KEY_B = "AKIA" + "B" * 16
 ONE_SECRET = _engineer(f"mkdir -p app && printf 'A = \"{KEY_A}\"\\n' > app/cfg.py")
@@ -356,6 +367,32 @@ def test_an_approved_item_waives_its_finding_on_retry(tmp_path: Path, kind: Item
     assert "pr create" in gh_log
     for item in items:
         assert f"waived by inbox approval {item.id[:8]}" in gh_log, gh_log
+    if kind is ItemKind.TEST_ADEQUACY:
+        # #595: verify.check_test_adequacy mirrors check_policy_envelope
+        # and says "satisfied after waivers" once nothing still blocks.
+        # A passing check's own message reaches neither events.jsonl
+        # (VerificationResultEvent.failures only holds a FAILING check's
+        # message) nor the CLI output (Phase 1's line is a generic "Phase
+        # 1 passed"), so this re-runs the exact check Phase 1 ran, against
+        # the merged tree, with the approvals it actually read.
+        from kstrl.adequacy import AdequacyConfig
+        from kstrl.verify import check_test_adequacy
+        from kstrl.waivers import WaiverScope, load_approvals
+
+        base_sha = subprocess.run(
+            ["git", "rev-parse", "main"], cwd=root, capture_output=True, text=True, check=True
+        ).stdout.strip()
+        subprocess.run(["git", "pull", "-q", "origin", "main"], cwd=root, check=True)
+        manifest = Manifest.load(_manifest_path(root))
+        scope = WaiverScope(
+            project=manifest.project_name,
+            spec_file=manifest.spec_file,
+            plan_id=comp.plan_id,
+            component=COMP,
+        )
+        waivers = load_approvals(Inbox(root, InboxConfig.load(root))).for_scope(scope)
+        result = check_test_adequacy(root, base_sha, AdequacyConfig.load(root), waivers=waivers)
+        assert "test adequacy satisfied after waivers" in result.message, result.message
 
 
 # --- everything an approval does not cover still fails --------------------------
@@ -423,6 +460,45 @@ def test_a_repeat_with_different_evidence_opens_a_second_item_not_a_replacement(
     assert code == 1, out
     (finding,) = _gated(root, "policy_")
     assert (finding.location, finding.severity) == ("secrets/other.txt", "high")
+    assert f"waiver_refused:{item_a.id}" in finding.tags
+
+
+def test_an_adequacy_repeat_with_different_evidence_opens_a_second_item_not_a_replacement(
+    tmp_path: Path,
+) -> None:
+    """#595 B2's adequacy twin. Same defect as the policy version above:
+    the dedupe key was category + location only, so a same-category,
+    same-location repeat (a different test deleted from the same file)
+    overwrote the item the operator was about to read. The key now
+    includes the waiver_key, so a repeat with different evidence opens
+    its own item instead.
+    """
+    root, env = _failed_run(tmp_path, ADEQUACY_TOML, ONE_TEST_DELETED)
+    items_a = {i.evidence["category"]: i for i in _open(root, ItemKind.TEST_ADEQUACY)}
+    item_a = items_a["adequacy_test_deleted"]
+    assert item_a.evidence["location"] == "tests/test_core.py"
+
+    # A retry that deletes the OTHER test in the same file, before item_a
+    # is approved: same category, same location, different evidence.
+    code, out = _retry(root, {**env, "AGENT_CMD": ANOTHER_TEST_DELETED})
+    assert code == 1, out
+
+    items = [
+        i
+        for i in _open(root, ItemKind.TEST_ADEQUACY)
+        if i.evidence["category"] == "adequacy_test_deleted"
+    ]
+    assert len(items) == 2, items
+    assert item_a.id in {i.id for i in items}, "item A must survive unreplaced"
+
+    _decide(root, env, "approve", item_a.id)
+
+    # Approving A must not waive B: B is still the last thing on disk.
+    code, out = _retry(root, {**env, "AGENT_CMD": ANOTHER_TEST_DELETED})
+
+    assert code == 1, out
+    (finding,) = [f for f in _gated(root, "adequacy_") if f.category == "adequacy_test_deleted"]
+    assert finding.severity == "high"
     assert f"waiver_refused:{item_a.id}" in finding.tags
 
 
@@ -511,16 +587,24 @@ def test_an_approval_filed_before_waivers_existed_is_refused(tmp_path: Path) -> 
     assert any("no evidence.waiver_key" in f for f in _verification_failures(root))
 
 
+@pytest.mark.parametrize(
+    "waiver_key",
+    ["not-a-hex-digest", "g" * 64],
+    ids=["wrong-length", "64-chars-not-hex"],
+)
 def test_an_approval_with_a_malformed_waiver_key_says_records_approval_only(
-    tmp_path: Path,
+    tmp_path: Path, waiver_key: str
 ) -> None:
     """#595 B3: ``approval_effect`` must refuse exactly what the gate refuses.
 
     A hand-edited (or future-writer) item can carry a present but
-    malformed ``waiver_key`` - not 64 hex characters - that the old
-    ``approval_effect`` never checked, so it printed "waives this one
-    finding" for evidence the gate was always going to refuse. The gate
-    itself stays closed either way; only the shell's sentence is at risk.
+    malformed ``waiver_key`` that the old ``approval_effect`` never
+    checked, so it printed "waives this one finding" for evidence the
+    gate was always going to refuse. The gate itself stays closed either
+    way; only the shell's sentence is at risk. Two shapes of malformed:
+    the wrong length, and exactly 64 characters but not hex - a plant
+    that checks ``len(key) != 64`` instead of the hex pattern passes the
+    first case and misses the second.
     """
     root, env = _failed_run(tmp_path, POLICY_TOML, DENIED)
     (item,) = _open(root, ItemKind.POLICY_EXCEPTION)
@@ -530,7 +614,7 @@ def test_an_approval_with_a_malformed_waiver_key_says_records_approval_only(
         item.title,
         component=COMP,
         dedupe_key=item.dedupe_key,
-        evidence={**item.evidence, "waiver_key": "not-a-hex-digest"},
+        evidence={**item.evidence, "waiver_key": waiver_key},
     )
     out = _decide(root, env, "approve", item.id)
     assert "records approval only" in out, out

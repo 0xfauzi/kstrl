@@ -2219,13 +2219,27 @@ class ComponentPipeline:
         self._inbox_resolve_component(comp.id)
         return Transition.COMPLETED
 
+    def _open_inbox(self) -> Inbox:
+        """The one ``Inbox`` this pipeline lazily builds and reuses.
+
+        Every site below constructs on first use and none reconstructs:
+        each still gates construction on ``self._inbox is None`` itself
+        (some also branch on ``inbox_config.enabled`` before ever
+        reaching here), so this is only the shared "build it once" step,
+        not the disabled check - a caller that must not construct one at
+        all when the inbox is disabled keeps that check ahead of the call.
+        """
+        if self._inbox is None:
+            self._inbox = Inbox(self.root_dir, self.inbox_config)
+        return self._inbox
+
     def _inbox_resolve(self, dedupe_key: str, reason: str) -> None:
         """Close an open item whose question the world has answered."""
         try:
             if self._inbox is None:
                 if not self.inbox_config.enabled:
                     return
-                self._inbox = Inbox(self.root_dir, self.inbox_config)
+                self._inbox = self._open_inbox()
             existing = self._inbox.find_by_dedupe_key(dedupe_key)
             if existing is not None and existing.is_open:
                 self._inbox.resolve(existing.id, comment=reason)
@@ -2275,7 +2289,7 @@ class ComponentPipeline:
             if self._inbox is None:
                 if not self.inbox_config.enabled:
                     return
-                self._inbox = Inbox(self.root_dir, self.inbox_config)
+                self._inbox = self._open_inbox()
             undecided = [
                 item
                 for item in self._inbox.items()
@@ -2324,7 +2338,7 @@ class ComponentPipeline:
                 if not self.inbox_config.enabled:
                     self._inbox_disabled = True
                     return
-                self._inbox = Inbox(self.root_dir, self.inbox_config)
+                self._inbox = self._open_inbox()
             if self._inbox_disabled:
                 return
             self._inbox.add(
@@ -2766,7 +2780,7 @@ class ComponentPipeline:
             if self._inbox is None:
                 if not self.inbox_config.enabled:
                     return None
-                self._inbox = Inbox(self.root_dir, self.inbox_config)
+                self._inbox = self._open_inbox()
             return self._inbox.find_by_dedupe_key(park_dedupe_key(comp_id))
         except (OSError, TypeError, ValueError, InboxError, ControlStateError) as exc:
             # The tuple _inbox_resolve catches. Unreadable is not a
@@ -2793,7 +2807,7 @@ class ComponentPipeline:
                 if not self.inbox_config.enabled:
                     self._approvals = ApprovalSnapshot(unconsulted_reason="the inbox is disabled")
                     return
-                self._inbox = Inbox(self.root_dir, self.inbox_config)
+                self._inbox = self._open_inbox()
             self._approvals = load_approvals(self._inbox)
         except (OSError, TypeError, ValueError, InboxError, ControlStateError) as exc:
             # The tuple _park_decision catches, for the reasons it gives.
