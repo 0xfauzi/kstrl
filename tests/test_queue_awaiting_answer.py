@@ -338,6 +338,18 @@ class TestRefusalsChangeNothing:
             "is empty",
         )
 
+    def test_an_undecodable_spec_is_refused(self, tmp_path: Path) -> None:
+        root = _spec_project(tmp_path)
+        item = _awaiting(root)
+        undecodable = tmp_path / "answered.md"
+        undecodable.write_bytes(b"# Spec\n\xff\xfe not utf-8\n")
+        self._refused(
+            root,
+            item.item_id,
+            ["queue", "answer", item.item_id, str(undecodable)],
+            "Could not read",
+        )
+
     def test_exhausted_attempts_need_reset_attempts(self, tmp_path: Path) -> None:
         root = _spec_project(tmp_path)
         item = _awaiting(root, max_attempts=1)
