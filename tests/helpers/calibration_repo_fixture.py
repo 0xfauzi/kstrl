@@ -23,8 +23,9 @@ from __future__ import annotations
 import copy
 import json
 import shutil
+from collections.abc import Iterable
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from kstrl.calibration_score import (
@@ -50,6 +51,19 @@ REUSE_ROLE = "architect_reuse"
 #: The suffix every fixture repository directory carries, which is what
 #: ``specs/conftest.py`` keeps out of collection.
 REPO_DIR_SUFFIX = "_repo"
+
+#: The code language each source suffix names (#633). A fixture's language
+#: is read off the files it changes or ships, never declared in its meta,
+#: so it cannot disagree with the code the reviewer reads.
+LANGUAGE_BY_SUFFIX: dict[str, str] = {".py": "python", ".ts": "ts", ".tsx": "ts", ".rs": "rust"}
+
+#: Suffixes a fixture may carry that name no code language: manifests,
+#: lock files and prose.
+NEUTRAL_SUFFIXES = frozenset({".json", ".toml", ".md", ".lock", ".yaml", ".yml", ".txt"})
+
+#: The language whose role ids carry no suffix, so every role id a saved
+#: baseline records is still the id a Python fixture records under.
+BASE_LANGUAGE = "python"
 
 
 @dataclass(frozen=True)
@@ -119,6 +133,94 @@ class RepoSpecFixture:
         return arms
 
 
+def fixture_language(paths: Iterable[str], fixture: str) -> str:
+    """The one code language ``paths`` are written in (#633).
+
+    Refuses, naming ``fixture`` and the files: a suffix neither
+    :data:`LANGUAGE_BY_SUFFIX` nor :data:`NEUTRAL_SUFFIXES` lists (``.go``,
+    ``.js``, a file with no suffix), a fixture that names no code file, and
+    a fixture that mixes languages. Each would otherwise record under a
+    role id that says nothing true about what was measured.
+    """
+    listed = sorted(paths)
+    suffixes = {path: PurePosixPath(path).suffix for path in listed}
+    unknown = [
+        path
+        for path, suffix in suffixes.items()
+        if suffix not in LANGUAGE_BY_SUFFIX and suffix not in NEUTRAL_SUFFIXES
+    ]
+    if unknown:
+        raise ValueError(
+            f"{fixture}: no language is known for {', '.join(unknown)}; "
+            f"{', '.join(sorted(LANGUAGE_BY_SUFFIX))} name one and "
+            f"{', '.join(sorted(NEUTRAL_SUFFIXES))} name none (#633)"
+        )
+    languages = sorted(
+        {LANGUAGE_BY_SUFFIX[s] for s in suffixes.values() if s in LANGUAGE_BY_SUFFIX}
+    )
+    if len(languages) != 1:
+        raise ValueError(
+            f"{fixture}: a fixture measures one language, and {', '.join(listed) or 'no file'} "
+            f"hold {', '.join(languages) or 'no code language'} (#633)"
+        )
+    return languages[0]
+
+
+def language_role(base: str, language: str) -> str:
+    """The role id a ``base`` fixture written in ``language`` records under:
+    ``base`` for Python, ``<base>_<language>`` for any other (#633)."""
+    return base if language == BASE_LANGUAGE else f"{base}_{language}"
+
+
+def split_file_segments(diff_text: str) -> list[str]:
+    """One string per ``diff --git`` segment, in order.
+
+    Moved here from tests/test_calibration.py (#633) so the loader and the
+    harness read a fixture's paths one way.
+    """
+    segments: list[str] = []
+    current: list[str] = []
+    for line in diff_text.splitlines(keepends=True):
+        if line.startswith("diff --git "):
+            if current:
+                segments.append("".join(current))
+            current = [line]
+        elif current:
+            current.append(line)
+    if current:
+        segments.append("".join(current))
+    return segments
+
+
+def segment_path(segment: str) -> str:
+    for line in segment.splitlines():
+        if line.startswith("+++ b/"):
+            return line[len("+++ b/") :].strip()
+        if line.startswith("--- a/") and "/dev/null" not in line:
+            return line[len("--- a/") :].strip()
+    raise ValueError(f"fixture segment names no path: {segment.splitlines()[0][:80]}")
+
+
+def diff_language(diff_text: str, fixture: str) -> str:
+    """The code language of a diff fixture, read off the paths it changes (#633).
+
+    Also refuses a segment with other than one hunk. The harness rebuilds
+    each file from its hunk body (``_segment_images`` in
+    tests/test_calibration.py), and a second hunk would lose the unchanged
+    lines between the two.
+    """
+    segments = split_file_segments(diff_text)
+    paths = [segment_path(segment) for segment in segments]
+    for path, segment in zip(paths, segments, strict=True):
+        hunks = sum(1 for line in segment.splitlines() if line.startswith("@@ "))
+        if hunks != 1:
+            raise ValueError(
+                f"{fixture}: {path} has {hunks} hunks; the harness rebuilds a file "
+                "from exactly one (#633)"
+            )
+    return fixture_language(paths, fixture)
+
+
 def load_fixtures(subdir: str, suffix: str) -> list[tuple[Path, dict[str, Any]]]:
     """Return list of (artifact_path, meta_dict) for each fixture.
 
@@ -130,7 +232,8 @@ def load_fixtures(subdir: str, suffix: str) -> list[tuple[Path, dict[str, Any]]]
     Every meta is read by :func:`kstrl.calibration_score.check_fixture_meta`
     as it loads, so one no matcher can read is refused here, naming its
     file and field, before any test is collected or any agent is called
-    (#564).
+    (#564). A diff is read by :func:`diff_language` the same way (#633), so a
+    diff no role id can be derived for is refused at the same point.
     """
     base = FIXTURES_DIR / subdir
     fixtures: list[tuple[Path, dict[str, Any]]] = []
@@ -143,6 +246,11 @@ def load_fixtures(subdir: str, suffix: str) -> list[tuple[Path, dict[str, Any]]]
             continue
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
         check_fixture_meta(meta, meta_path.relative_to(FIXTURES_DIR).as_posix())
+        if suffix == ".diff":
+            diff_language(
+                artifact.read_text(encoding="utf-8"),
+                artifact.relative_to(FIXTURES_DIR).as_posix(),
+            )
         fixtures.append((artifact, meta))
     return fixtures
 
