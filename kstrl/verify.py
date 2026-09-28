@@ -582,9 +582,12 @@ def _fast_iteration_checks_from_env(raw: str) -> list[str]:
 #: more keys to it. Order is the dataclass's, so a reader can diff the
 #: two lists by eye. Anything absent from this table is not a toml key.
 _VERIFY_TOML_FIELDS: tuple[tuple[str, Callable[[Any], object]], ...] = (
-    ("test_command", _optional_str),
-    ("typecheck_command", _optional_str),
-    ("lint_command", _optional_str),
+    # str, not _optional_str (#621): "" is the operator turning the gate
+    # off, and _optional_str would read it as unset, which resolves to a
+    # Python default.
+    ("test_command", str),
+    ("typecheck_command", str),
+    ("lint_command", str),
     # validate_tool already maps the empty string to None (auto) and
     # raises on anything it does not recognise, so it needs no coercion
     # in front of it.
@@ -1181,18 +1184,41 @@ def _default_typecheck_command(cwd: Path) -> str:
 
 
 def resolve_test_command(command: str | None) -> str:
-    """The exact test command Phase 1 will run."""
-    return command or DEFAULT_TEST_COMMAND
+    """The exact test command Phase 1 will run; "" is the gate turned off (#621)."""
+    return DEFAULT_TEST_COMMAND if command is None else command
 
 
 def resolve_typecheck_command(command: str | None, cwd: Path) -> str:
-    """The exact typecheck command Phase 1 will run in ``cwd``."""
-    return command or _default_typecheck_command(cwd)
+    """The exact typecheck command Phase 1 will run in ``cwd``; "" is off (#621)."""
+    return _default_typecheck_command(cwd) if command is None else command
 
 
 def resolve_lint_command(command: str | None) -> str:
-    """The exact lint command Phase 1 will run."""
-    return command or DEFAULT_LINT_COMMAND
+    """The exact lint command Phase 1 will run; "" is the gate turned off (#621)."""
+    return DEFAULT_LINT_COMMAND if command is None else command
+
+
+#: Every command the three resolvers above fall back to. Each runs a
+#: Python tool, so each has something to measure only in a Python
+#: project (#621).
+PYTHON_DEFAULT_COMMANDS: frozenset[str] = frozenset(
+    {
+        DEFAULT_TEST_COMMAND,
+        DEFAULT_TYPECHECK_COMMAND,
+        SCOPED_TYPECHECK_COMMAND,
+        DEFAULT_LINT_COMMAND,
+    }
+)
+
+
+def is_python_project(root: Path) -> bool:
+    """Whether ``root`` holds a pyproject.toml or a setup.py (#621).
+
+    The one copy of this test: ``doctor.check_verify_commands``, the
+    Phase 1 gates (:func:`_command_not_run`) and ``ks init``'s language
+    detection all ask it.
+    """
+    return (root / "pyproject.toml").exists() or (root / "setup.py").exists()
 
 
 @dataclass(frozen=True)
@@ -1638,19 +1664,87 @@ def run_fast_checks(worktree_path: Path, config: VerifyConfig) -> VerificationRe
     selected = validate_fast_iteration_checks(
         config.fast_iteration_checks, "[verify] fast_iteration_checks"
     )
+    checks, gaps = _command_gates(worktree_path, config, selected)
+    return VerificationResult(
+        passed=all(check.passed for check in checks), checks=checks, not_measured=gaps
+    )
+
+
+def _command_not_run(
+    gate: str, key: str, command: str, cwd: Path
+) -> CheckResult | NotMeasured | None:
+    """What the gate reports INSTEAD of running ``command`` in ``cwd``, or None
+    to run it (#621).
+
+    An empty command is the operator turning the gate off (``ks init``
+    seeds "" where a toolchain has no such step): a :class:`NotMeasured`,
+    never a row. A Python default in a directory that is not a Python
+    project has nothing to read, and ``uv run ruff check .`` exits 0 there:
+    a FAILED row with ``measured=False``, the shape a timed-out gate
+    already has (#227), because a gap would let a run with nothing
+    measured pass Phase 1.
+    """
+    if not command.strip():
+        return NotMeasured(gate, NOT_MEASURED_NO_TARGET, f"[verify] {key} is empty")
+    if command in PYTHON_DEFAULT_COMMANDS and not is_python_project(cwd):
+        return CheckResult(
+            name=gate,
+            passed=False,
+            message=(
+                f"Not run: `{command}` is kstrl's Python default and {cwd} has no "
+                f"pyproject.toml or setup.py. Set [verify] {key} to this project's "
+                'command, or to "" to turn the gate off'
+            ),
+            measured=False,
+        )
+    return None
+
+
+def _record(
+    outcome: CheckResult | NotMeasured, checks: list[CheckResult], gaps: list[NotMeasured]
+) -> None:
+    if isinstance(outcome, NotMeasured):
+        gaps.append(outcome)
+    else:
+        checks.append(outcome)
+
+
+def _command_gates(
+    worktree_path: Path, config: VerifyConfig, selected: Sequence[str]
+) -> tuple[list[CheckResult], list[NotMeasured]]:
+    """The test, typecheck and lint gates named in ``selected``, in that order.
+
+    Shared by :func:`run_mechanical_verification` and
+    :func:`run_fast_checks`. Each command is resolved once against
+    ``worktree_path``, and that one string is both what
+    :func:`_command_not_run` judges and what runs. Direct calls rather
+    than a lookup table, because every static guard that resolves a
+    spawn's callee has to be able to read these three.
+    """
+    commands = resolve_verify_commands(config, worktree_path)
     timeout = limit_seconds(config.subprocess_timeout)
     checks: list[CheckResult] = []
+    gaps: list[NotMeasured] = []
     if GATE_TEST in selected:
-        checks.append(
-            check_test_suite(worktree_path, config.test_command, timeout, config.test_tool)
-        )
+        outcome = _command_not_run(GATE_TEST, "test_command", commands.test, worktree_path)
+        if outcome is None:
+            outcome = check_test_suite(worktree_path, commands.test, timeout, config.test_tool)
+        _record(outcome, checks, gaps)
     if GATE_TYPECHECK in selected:
-        checks.append(
-            check_typecheck(worktree_path, config.typecheck_command, timeout, config.typecheck_tool)
+        outcome = _command_not_run(
+            GATE_TYPECHECK, "typecheck_command", commands.typecheck, worktree_path
         )
+        if outcome is None:
+            outcome = check_typecheck(
+                worktree_path, commands.typecheck, timeout, config.typecheck_tool
+            )
+        _record(outcome, checks, gaps)
     if GATE_LINT in selected:
-        checks.append(check_linter(worktree_path, config.lint_command, timeout, config.lint_tool))
-    return VerificationResult(passed=all(check.passed for check in checks), checks=checks)
+        outcome = _command_not_run(GATE_LINT, "lint_command", commands.lint, worktree_path)
+        if outcome is None:
+            outcome = check_linter(worktree_path, commands.lint, timeout, config.lint_tool)
+        _record(outcome, checks, gaps)
+    return checks, gaps
 
 
 #: What the two diff-driven checks report when the diff handed them nothing.
@@ -5409,32 +5503,9 @@ def run_mechanical_verification(
     if prd_path is not None:
         checks.append(check_prd_stories(prd_path, pre_run_prd_path))
 
-    checks.append(
-        check_test_suite(
-            worktree_path,
-            config.test_command,
-            limit_seconds(config.subprocess_timeout),
-            config.test_tool,
-        )
-    )
-
-    checks.append(
-        check_typecheck(
-            worktree_path,
-            config.typecheck_command,
-            limit_seconds(config.subprocess_timeout),
-            config.typecheck_tool,
-        )
-    )
-
-    checks.append(
-        check_linter(
-            worktree_path,
-            config.lint_command,
-            limit_seconds(config.subprocess_timeout),
-            config.lint_tool,
-        )
-    )
+    gate_rows, gate_gaps = _command_gates(worktree_path, config, FAST_ITERATION_GATES)
+    checks.extend(gate_rows)
+    not_measured.extend(gate_gaps)
 
     checks.extend(
         _scope_checks(
@@ -5481,7 +5552,9 @@ def run_mechanical_verification(
     # One [verify] test_suite reading feeds BOTH mutation checks' A2 guard
     # below (#391 simplify pass on PR #392): a single generator read,
     # never re-evaluated between the two calls.
-    test_suite_passed = next(c.passed for c in checks if c.name == GATE_TEST)
+    # False when the test gate produced no row (#621): a suite nobody ran
+    # is not one mutmut may assume passes.
+    test_suite_passed = next((c.passed for c in checks if c.name == GATE_TEST), False)
     coverage_duration = coverage_rows[0].duration_seconds if coverage_rows else 0.0
 
     # ONE phase-level mutation budget (#391 simplify pass on PR #392,

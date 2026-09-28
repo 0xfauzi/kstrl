@@ -171,8 +171,9 @@ worktree_setup_timeout = 0     # seconds; 0 = no limit (#467)
 
 # Phase 1 mechanical verification.
 [verify]
-# test_command, typecheck_command, lint_command default to uv run pytest / mypy / ruff
-# Override to your project's commands if different.
+# test_command, typecheck_command, lint_command default to uv run pytest / mypy / ruff,
+# which are not run in a project with no pyproject.toml or setup.py.
+# Override to your project's commands if different; "" turns a gate off.
 check_diff_scope = true
 check_bad_patterns = true
 dead_code_cleanup = false
@@ -351,7 +352,7 @@ timeout_seconds = 600.0
 # Phase 3 cross-component contract testing.
 [contract]
 mode = "tier"                      # tier | final | skip
-test_command = "uv run pytest"
+# test_command = "uv run pytest"   # unset = the command [verify] test_command resolves to
 timeout = 600.0
 
 # Phase 4 release (R8.7 slice 1: records the release ref; deploys nothing).

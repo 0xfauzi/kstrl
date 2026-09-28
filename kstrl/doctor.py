@@ -52,7 +52,7 @@ from kstrl.init_cmd import (
 )
 from kstrl.policy import ENFORCEMENT_MACHINERY_PATHS, PolicyConfig, _match_glob
 from kstrl.statedir import STATE_DIR_NAME, state_dir
-from kstrl.verify import VerifyConfig, resolve_verify_commands
+from kstrl.verify import VerifyConfig, is_python_project, resolve_verify_commands
 
 #: Version of the `ks doctor --json` document. Its own number, not
 #: `CHECK_SCHEMA_VERSION`: the two documents answer different
@@ -356,14 +356,14 @@ def check_verify_commands(root: Path) -> _CheckResult:
     ]
     contract, contract_uses_uv = _contract_test_command(root)
     has_pyproject = (root / "pyproject.toml").exists()
-    if unset and not has_pyproject:
+    if unset and not is_python_project(root):
         return (
             STATUS_WARN,
             f"{len(unset)} of 3 commands fall back to a `uv run` default "
-            f"({', '.join(unset)}) and there is no pyproject.toml at "
-            f"{root}, so `uv run` has no project to run in: {stated}; {contract}",
+            f"({', '.join(unset)}) and there is no pyproject.toml or setup.py at "
+            f"{root}, so Phase 1 fails them without running them: {stated}; {contract}",
             "Set [verify] test_command / typecheck_command / lint_command "
-            "to the commands this project actually uses.",
+            'to the commands this project actually uses, or to "" to turn a gate off.',
         )
     if contract_uses_uv and not has_pyproject:
         return (

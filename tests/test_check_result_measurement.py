@@ -214,6 +214,9 @@ EXPECTED_RESULT_SITES: dict[str, int] = {
     # existing OSError one.
     "fixtures.py: run_function_fixture: FixtureResult": 10,
     "verify.py: _failed_gate_result: CheckResult": 1,
+    # #621: a gate whose command is kstrl's Python default, in a directory
+    # that is not a Python project, fails without running it.
+    "verify.py: _command_not_run: CheckResult": 1,
     "verify.py: _self_critique_text: CheckResult": 2,
     # #399 simplify pass on #405: the passing row, the issues-found row and
     # the diff-unreadable refusal, all three now built inside
@@ -306,6 +309,8 @@ EXPECTED_MEASURED_ARGUMENTS: dict[str, int] = {
     # tool report a failure; EXPECTED_GATE_HELPER_CALLS below is what stops a
     # caller overriding it.
     "verify.py: _failed_gate_result: CheckResult: measured=parsed.recognised": 1,
+    # #621: the tool was never started, so nothing was measured.
+    "verify.py: _command_not_run: CheckResult: measured=False": 1,
     # The progress file could not be read, or is not UTF-8. No bullets were
     # counted either way.
     "verify.py: _self_critique_text: CheckResult: measured=False": 2,
