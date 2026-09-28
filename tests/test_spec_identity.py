@@ -391,6 +391,31 @@ class TestAnEscalationClosesOnlyOnNewText:
         assert item.status is ItemStatus.OPEN, item
         assert item.evidence["spec_source"] == "a/spec.md", item.evidence
 
+    def test_an_item_from_before_the_pin_is_never_closed_by_a_decompose(
+        self, tmp_path: Path
+    ) -> None:
+        """An item opened before #639 records no digest, so kstrl cannot tell
+        whether the spec changed since: it stays open for the owner, even when
+        the spec's text did change."""
+        root = _project(tmp_path)
+        env = _env(tmp_path)
+        _decompose(root, env, ESCALATED)
+        (item,) = _escalations(root)
+        # The evidence a pre-#639 escalation carried: a basename, no digest.
+        Inbox(root).add(
+            ItemKind.SPEC_ESCALATION,
+            item.title,
+            dedupe_key=item.dedupe_key,
+            evidence={"project": "p", "spec_file": "spec.md", "questions": [], "register": ""},
+        )
+        (root / "spec.md").write_text(EDITED, encoding="utf-8")
+
+        proc = _decompose(root, env, CLOSED)
+
+        (item,) = _escalations(root)
+        assert item.status is ItemStatus.OPEN, item
+        assert "opened before kstrl recorded the spec's digest" in _out(proc), _out(proc)
+
 
 # --- 11 and 12. controls: no spec, and a manifest from before the pin ---------
 
