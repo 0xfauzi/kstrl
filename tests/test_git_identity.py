@@ -130,6 +130,9 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_feature_operator_context_e2e.py": 1,
     "tests/test_feature_verification.py": 1,
     "tests/test_feature_verification_attribution.py": 1,
+    # #632: `_repo`'s one seed commit, into a repository it has just put
+    # through `tests.helpers.gitrepo.set_identity`.
+    "tests/test_fixtures_beyond_python.py": 1,
     "tests/test_git_identity_helper.py": 5,
     # #423's `_repo_with_tricky_names` fixture, through
     # `tests.helpers.gitrepo.set_identity`, which this row declares.
@@ -137,6 +140,12 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_harness_path_scope.py": 3,
     "tests/test_inbox.py": 1,
     "tests/test_inbox_resolves_on_completion.py": 1,
+    # #646: two stub engineers' `git commit` shell strings and the dependency
+    # test's `gitrepo.git_in(root, "commit", ...)`, all into the repository
+    # `tests.test_inbox_waivers._repo` put through
+    # `tests.helpers.gitrepo.set_identity`, plus the module docstring's
+    # prose ("git" and "commit" in one string).
+    "tests/test_inbox_waiver_change.py": 4,
     # #595: the stub engineer's `git commit` in the repository `_repo`
     # puts through `tests.helpers.gitrepo.set_identity`, plus `_repo`'s
     # own seed commit (`gitrepo.git_in(root, "commit", "-q", "-m", "init")`).
@@ -235,6 +244,9 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_scheduler.py": 1,
     "tests/test_scope_hardening.py": 4,
     "tests/test_scope_launch_gate.py": 1,
+    # #639: `_project`'s seed commit, into the repository it has just put
+    # through `tests.helpers.gitrepo.set_identity`.
+    "tests/test_spec_identity.py": 1,
     "tests/test_check_cli.py": 5,
     # #619: each test commits a base and a branch into a repository its
     # _repo helper put through tests.helpers.gitrepo.set_identity.

@@ -129,7 +129,7 @@ from kstrl.observability import (
     read_progress_events,
 )
 from kstrl.output import build_console
-from kstrl.plan_gate import PLAN_GATE_KEY
+from kstrl.plan_gate import PLAN_GATE_KEY, spec_pin_errors
 from kstrl.prd import PRD
 from kstrl.reducer import ComponentState, RunState, fold, load_run_state, upconvert_v1
 from kstrl.retry_plan import (
@@ -5640,6 +5640,17 @@ def _not_parked(item: InboxItem, manifest: Manifest, manifest_file: Path, action
     )
 
 
+def _stale_plan_approval(
+    item: InboxItem, manifest: Manifest, root_dir: Path, action: str
+) -> list[str]:
+    """Why approving this plan park would run a plan on a spec it was not
+    made from, or [] (#639). Only an approval of a plan park: a rejection
+    runs nothing, so it stays allowed."""
+    if action != "approve" or not item.dedupe_key.startswith(PLAN_GATE_KEY):
+        return []
+    return spec_pin_errors(manifest, root_dir)
+
+
 def _decide_parked_merge_if_parked(
     action: str,
     item_id: str,
@@ -5682,6 +5693,13 @@ def _decide_parked_merge_if_parked(
         not_parked = _not_parked(item, manifest, manifest_file, action)
         if not_parked:
             ui_impl.err(not_parked)
+            sys.exit(2)
+        if _report_preflight(
+            ui_impl,
+            f"{item.id[:8]}: nothing was approved: the plan does not match the spec it "
+            "was made from",
+            _stale_plan_approval(item, manifest, root_dir, action),
+        ):
             sys.exit(2)
         plan, problems, _unkept = plan_resume(
             root_dir,
@@ -6056,9 +6074,11 @@ def queue_show(
         for entry in history:
             origin = entry.get("from") or "-"
             reason = entry.get("reason") or ""
+            actor = entry.get("actor") or ""
             ui_impl.info(
                 f"  {entry.get('ts', '')}  {origin} -> {entry.get('to', '')}"
                 + (f"  ({reason})" if reason else "")
+                + (f"  by {actor}" if actor else "")
             )
     sys.exit(0)
 
@@ -6115,6 +6135,48 @@ def queue_retry(
         ui_impl.err(str(exc))
         sys.exit(2)
     ui_impl.ok(f"Requeued {item.item_id[:12]} ({item.attempts}/{item.max_attempts} attempts used)")
+    sys.exit(0)
+
+
+@queue_group.command(name="priority")
+@click.argument("item_id")
+@click.option(
+    "--to",
+    "priority",
+    type=int,
+    required=True,
+    help="The new priority. Higher runs first; negative values are allowed",
+)
+@_queue_root_option
+@_queue_ui_option
+@_queue_no_color_option
+def queue_priority(
+    item_id: str,
+    priority: int,
+    root: Path | None,
+    ui: str,
+    no_color: bool,
+) -> None:
+    """Change a queued item's priority, keeping its id and history.
+
+    Only a queued item can change: every other state is refused by name
+    and nothing is written. The change is a row in `ks queue show`.
+    """
+    from kstrl.workqueue import QueueError, queue_lock
+
+    root_dir, queue = _queue_for(root)
+    ui_impl = _autonomy_ui(ui, no_color)
+    item = _resolve_queue_item(queue, item_id, ui_impl)
+    try:
+        with queue_lock(root_dir):
+            changed, old = queue.set_priority(item.item_id, priority, actor=_actor())
+    except (QueueError, OSError) as exc:
+        ui_impl.err(str(exc))
+        sys.exit(2)
+    if old == priority:
+        ui_impl.info(f"{changed.item_id} is already at priority {priority}; nothing changed")
+    else:
+        ui_impl.ok(f"{changed.item_id} ({changed.title}) priority {old} -> {priority}")
     sys.exit(0)
 
 

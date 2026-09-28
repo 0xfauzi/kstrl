@@ -34,6 +34,7 @@ for the same reason.
 
 from __future__ import annotations
 
+import hashlib
 import time
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
@@ -3363,12 +3364,33 @@ class ComponentPipeline:
             written.append(str(path))
         return tuple(written)
 
-    def _waivable_evidence(self, comp: Component, finding: Finding) -> dict[str, Any]:
+    def _judged_change(self, comp: Component, wt_path: Path) -> tuple[str, str]:
+        """The commit Phase 1 judged and the sha256 of its diff (#646).
+
+        The diff is the one Phase 1 read: ``component_base...HEAD`` in the
+        worktree, not ``manifest.base_branch``, so a dependent's item
+        describes its own change and not its dependencies'. Either half is
+        "" when git cannot answer, and an unreadable diff is said out loud.
+        """
+        head = git.branch_sha(comp.branch_name, self.root_dir) or ""
+        try:
+            diff = git.get_diff_content(self.component_base(comp.id), wt_path)
+        except git.GitDiffError as exc:
+            self.ui.warn(f"  {comp.id}: the inbox item records no diff_sha: {exc}")
+            return head, ""
+        return head, hashlib.sha256(diff.encode("utf-8")).hexdigest()
+
+    def _waivable_evidence(
+        self, comp: Component, finding: Finding, change: tuple[str, str]
+    ) -> dict[str, Any]:
         """The evidence of a policy_exception or test_adequacy item (#595).
 
         ``waiver_key`` is what an approval of the item covers: exactly
-        this finding, in this plan, for this component.
+        this finding, in this plan, for this component. ``head_sha`` and
+        ``diff_sha`` are the change the operator is shown (#646), from
+        :meth:`_judged_change`.
         """
+        head_sha, diff_sha = change
         return {
             "category": finding.category,
             "severity": finding.severity,
@@ -3377,6 +3399,8 @@ class ComponentPipeline:
             "explanation": finding.explanation,
             "plan_id": comp.plan_id,
             "waiver_key": self._waiver_scope(comp).key(finding),
+            "head_sha": head_sha,
+            "diff_sha": diff_sha,
         }
 
     def _phase_verify(
@@ -3442,6 +3466,7 @@ class ComponentPipeline:
         check_findings = [finding for check in verification.checks for finding in check.findings]
         if check_findings:
             self._add_findings(comp, check_findings)
+            change = self._judged_change(comp, wt_path)
             # R8.3: an envelope breach is the archetypal exception - a
             # machine decision a human may want to approve once, or
             # convert into a widened policy. Advisories stay out: they
@@ -3455,14 +3480,17 @@ class ComponentPipeline:
                     # just category, so a same-category repeat with
                     # different evidence opens a second item instead of
                     # overwriting the one the operator is about to read.
-                    evidence = self._waivable_evidence(comp, finding)
+                    # #646: so is the diff_sha, because the same text on a
+                    # different change is a change the operator never saw.
+                    evidence = self._waivable_evidence(comp, finding, change)
                     self._inbox_add(
                         ItemKind.POLICY_EXCEPTION,
                         f"{comp.id}: {finding.category}",
                         detail=finding.explanation,
                         component=comp.id,
                         dedupe_key=(
-                            f"policy:{comp.id}:{finding.category}:{evidence['waiver_key']}"
+                            f"policy:{comp.id}:{finding.category}:{evidence['waiver_key']}:"
+                            f"{evidence['diff_sha']}"
                         ),
                         evidence=evidence,
                     )
@@ -3472,14 +3500,15 @@ class ComponentPipeline:
                 # recorded in the finding stream and stops there, because
                 # the inbox is a queue of decisions, not of notes. The
                 # dedupe key is category + location + waiver_key (#595
-                # B2) so the same file failing the same way across
-                # retries collapses onto one item, and a same-category,
-                # same-location repeat with different evidence does not.
+                # B2) + diff_sha (#646), so the same change failing the
+                # same way across retries collapses onto one item, and a
+                # repeat with different evidence or on a different change
+                # does not.
                 elif (
                     finding.category.startswith(ADEQUACY_CATEGORY_PREFIX)
                     and finding.severity != "advisory"
                 ):
-                    evidence = self._waivable_evidence(comp, finding)
+                    evidence = self._waivable_evidence(comp, finding, change)
                     self._inbox_add(
                         ItemKind.TEST_ADEQUACY,
                         f"{comp.id}: {finding.category}",
@@ -3487,7 +3516,7 @@ class ComponentPipeline:
                         component=comp.id,
                         dedupe_key=(
                             f"adequacy:{comp.id}:{finding.category}:{finding.location}:"
-                            f"{evidence['waiver_key']}"
+                            f"{evidence['waiver_key']}:{evidence['diff_sha']}"
                         ),
                         evidence=evidence,
                     )
