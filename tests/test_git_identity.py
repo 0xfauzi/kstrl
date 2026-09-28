@@ -313,6 +313,11 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # `_git_project` builds through `tests.helpers.gitrepo.git_in` /
     # `set_identity`.
     "tests/test_retry_journal_rows.py": 1,
+    # #624: one base commit into the repository `_repo` builds, which
+    # calls `tests.helpers.gitrepo.set_identity` right after `git init`, and
+    # one `git commit` in the shell engineer `_engineer` returns, which runs
+    # in a kstrl worktree of that same repository.
+    "tests/test_worktree_setup.py": 4,
 }
 
 

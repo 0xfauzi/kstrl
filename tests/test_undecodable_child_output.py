@@ -366,6 +366,7 @@ def test_the_call_site_census_is_pinned() -> None:
         "learning_fixture.py": 1,
         # #619: +1, the ruff --show-files listing in check_dead_code_ruff.
         "verify.py": 11,
+        "worktree_setup.py": 1,
         "worktree_sweep.py": 1,
     }
 
@@ -428,7 +429,7 @@ def test_a_clause_naming_an_unrelated_broad_exception_is_reported() -> None:
 
 
 def test_the_disposition_census_is_pinned() -> None:
-    """What each of the 18 clearing sites' handler DOES, re-derived by
+    """What each of the 19 clearing sites' handler DOES, re-derived by
     running rather than assumed. Two swallows, both in ``contract.py``
     (``_abort_merge`` and the prune call in ``_remove_temp_worktree``,
     whose results are never read); one ``verify.py`` site CONVERTS the
@@ -450,6 +451,7 @@ def test_the_disposition_census_is_pinned() -> None:
         "verify.py:converts": 1,
         # #619: +1, the listing shares the ruff run's handlers, which return.
         "verify.py:returns": 10,
+        "worktree_setup.py:returns": 1,
         "worktree_sweep.py:returns": 1,
     }
 

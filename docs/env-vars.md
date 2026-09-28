@@ -90,6 +90,8 @@ With no work limit, an agent that hangs without output holds its component slot 
 | `KSTRL_FACTORY_INTEGRATION_BLOCKING` | bool | false |
 | `KSTRL_FACTORY_INTEGRATION_MAX_ROUNDS` | int, at least 1 | 1 |
 | `KSTRL_FACTORY_CONVERGENCE_ATTEMPTS` | int, at least 0 | 0 (off) |
+| `KSTRL_FACTORY_WORKTREE_SETUP_COMMAND` | shell command | empty (no setup) |
+| `KSTRL_FACTORY_WORKTREE_SETUP_TIMEOUT` | float, seconds | 0 (no limit) |
 | `KSTRL_FACTORY_CLAIM_AGREEMENT` | `advisory` \| `block` | advisory |
 
 The two safety knobs (E4 `max_adversarial_calls`, E6 `pause_before_pr_merge`) are reachable via all three surfaces since R2.2: the env vars above, `[factory]` keys in kstrl.toml, and the `--max-adversarial-calls` / `--pause-before-pr-merge` CLI flags.

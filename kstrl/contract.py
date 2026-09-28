@@ -45,6 +45,7 @@ from kstrl.verify import (
     resolve_test_command,
     run_scrubbed,
 )
+from kstrl.worktree_setup import NO_SETUP, WorktreeSetup
 from kstrl.worktree_sweep import sweep_worktree, warn_sweep
 
 if TYPE_CHECKING:
@@ -333,6 +334,7 @@ def bisect_breaker(
     test_command: str,
     ui: UI,
     timeout: float | None = None,
+    setup: WorktreeSetup = NO_SETUP,
 ) -> str | None:
     """Linear bisection to identify which component broke integration.
 
@@ -349,6 +351,8 @@ def bisect_breaker(
         test_command: Command to run tests
         ui: Where the removal of the bisection worktree names what it killed
         timeout: Timeout per test run
+        setup: Worktree setup run after each merge, before its test run
+            (#624); a failed setup ends the bisection with no breaker
 
     Returns:
         Component ID of the breaker, or None if unclear.
@@ -372,6 +376,8 @@ def bisect_breaker(
             if not git.merge_branch(branch, worktree_path):
                 return comp_id
 
+            if setup.prepare(worktree_path):
+                return None
             passed, _ = _run_tests(worktree_path, test_command, timeout)
             if not passed:
                 return comp_id
@@ -390,6 +396,7 @@ def run_tier_check(
     config: ContractConfig,
     ui: UI,
     tier_index: int = 0,
+    setup: WorktreeSetup = NO_SETUP,
 ) -> ContractResult:
     """Run contract test for one DAG tier (deferred-merge mode).
 
@@ -397,6 +404,10 @@ def run_tier_check(
     worktree, runs tests there. On failure, bisects to find the breaker.
     The user's checkout is never touched; any merge conflict is aborted
     in the temp worktree before it is removed.
+
+    ``setup`` runs after the merges, so it installs from the merged
+    lockfile (#624). When it fails no test runs and nothing is bisected:
+    the tier fails with the setup's output and no breaker.
     """
     start = time.monotonic()
 
@@ -451,6 +462,17 @@ def run_tier_check(
                     duration_seconds=time.monotonic() - start,
                 )
 
+        setup_error = setup.prepare(worktree_path)
+        if setup_error:
+            ui.err(f"  Tier {tier_index}: worktree setup failed, so no contract test ran")
+            return ContractResult(
+                passed=False,
+                tier=tier_index,
+                components_tested=[c for c, _ in tier_branches],
+                test_output=setup_error[:2000],
+                duration_seconds=time.monotonic() - start,
+            )
+
         # Run tests
         passed, output = _run_tests(
             worktree_path,
@@ -487,6 +509,7 @@ def run_tier_check(
         config.test_command,
         ui,
         limit_seconds(config.timeout),
+        setup,
     )
 
     if breaker:
@@ -511,6 +534,7 @@ def run_integrated_base_check(
     config: ContractConfig,
     ui: UI,
     base_sha: str,
+    setup: WorktreeSetup = NO_SETUP,
 ) -> ContractResult:
     """Contract check for already-merged components (create_prs mode).
 
@@ -562,11 +586,15 @@ def run_integrated_base_check(
         )
 
     try:
-        passed, output = _run_tests(
-            worktree_path,
-            config.test_command,
-            limit_seconds(config.timeout),
-        )
+        # #624: a failed setup is the result, and no test runs.
+        output = setup.prepare(worktree_path)
+        passed = False
+        if not output:
+            passed, output = _run_tests(
+                worktree_path,
+                config.test_command,
+                limit_seconds(config.timeout),
+            )
     finally:
         _remove_temp_worktree(worktree_path, root_dir, ui, "contract")
 
@@ -596,6 +624,7 @@ def run_contract_testing(
     ui: UI,
     components_merged: bool = False,
     base_sha: str = "",
+    setup: WorktreeSetup = NO_SETUP,
 ) -> list[ContractResult]:
     """Run contract testing across DAG tiers.
 
@@ -604,6 +633,9 @@ def run_contract_testing(
     commit the caller resolved for this round, with no blame
     attribution - see :func:`run_integrated_base_check`. The tier and
     final checks below do not read ``base_sha``.
+
+    ``setup`` is the worktree setup every contract worktree gets after
+    its merges and before its tests (#624).
 
     Otherwise (deferred-merge mode):
     In TIER mode: tests each tier incrementally.
@@ -633,6 +665,7 @@ def run_contract_testing(
                 config,
                 ui,
                 base_sha,
+                setup,
             )
         ]
 
@@ -656,6 +689,7 @@ def run_contract_testing(
             config,
             ui,
             tier_index=0,
+            setup=setup,
         )
         results.append(result)
     else:
@@ -674,6 +708,7 @@ def run_contract_testing(
                 config,
                 ui,
                 tier_index=tier_idx,
+                setup=setup,
             )
             results.append(result)
 

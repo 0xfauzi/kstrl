@@ -141,6 +141,7 @@ OPEN: dict[tuple[str, str], str] = {
     ),
     ("FactoryConfig", "review_agent_cmd"): "a shell command",
     ("FactoryConfig", "review_model"): "a model name",
+    ("FactoryConfig", "worktree_setup_command"): "a shell command",
     ("VerifyConfig", "test_command"): "a shell command",
     ("VerifyConfig", "typecheck_command"): "a shell command",
     ("VerifyConfig", "lint_command"): "a shell command",

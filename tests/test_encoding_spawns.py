@@ -49,7 +49,8 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     "breaker.py": 4,
     "contract.py": 5,
     "doctor.py": 5,
-    "factory.py": 15,
+    # 14: #624 moved the scaffold's `subprocess.run` out to `worktree_setup.py`.
+    "factory.py": 14,
     "fixtures.py": 3,
     # 64: 58 after #435, +2 for #465's `branch_sha`, +2 for #459's `ignored_paths`,
     # +2 for #500's `tracked_files_at`, +2 for #626's `listed_files`.
@@ -75,6 +76,7 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     "tui/screens/retry.py": 2,
     # 25: `_base_finding`'s `git show` (#414/#425); `git merge-base` moved to `git.py` in #435.
     "verify.py": 25,
+    "worktree_setup.py": 2,  # #624: the import, and `TimeoutExpired` from `run_scrubbed`
     "worktree_sweep.py": 2,  # #461: the import, and `TimeoutExpired` from `run_scrubbed`
 }
 
@@ -194,9 +196,11 @@ EXPECTED_LENIENT_SPAWNS: tuple[str, ...] = (
 #: ``str``.
 EXPECTED_BYTES_MODE_SPAWNS: dict[str, int] = {
     "doctor.py": 1,
-    # 8: #566 deleted the fresh-retry `git branch -D branch_name`, which
-    # took no encoding; its replacement decodes as utf-8.
-    "factory.py": 8,
+    # 7: #566 deleted the fresh-retry `git branch -D branch_name`, which
+    # took no encoding; its replacement decodes as utf-8. #624 moved the
+    # scaffold's bytes-mode `subprocess.run` to `run_scrubbed`, which
+    # decodes strictly.
+    "factory.py": 7,
     # 7: `merge_base_ref`'s `git merge-base` stdout, hoisted here from
     # `verify.py` by the #435 fix-round, still decoded by hand.
     "git.py": 7,
