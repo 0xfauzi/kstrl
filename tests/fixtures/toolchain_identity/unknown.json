@@ -98,6 +98,7 @@
   "doctor": {
     "exit": 1,
     "report": {
+      "base_gates": null,
       "checks": [
         {
           "detail": "git repository at HEAD <sha>, base branch main (the branch factory cuts component worktrees from)",
@@ -164,7 +165,7 @@
         "A green verdict is repo-readiness, not spec-readiness. Nothing here can tell you whether the work you are about to describe fits the component model.",
         "kstrl is not for cross-cutting refactors. The factory decomposes a spec into components that each merge on their own, and a change that has to land everywhere at once has no such decomposition.",
         "kstrl is not for spec-free exploration. Every iteration is graded against a PRD, so work whose acceptance criteria are not known yet has nothing to grade.",
-        "Tier A reads the repository and runs none of your commands, so it cannot tell you whether your suite is green, fast or flaky. Run `ks check` for that. `ks factory` runs your test, typecheck and lint commands on the base branch before any engineer, and refuses to start when one of them fails there."
+        "Tier A reads the repository and runs none of your commands. `ks doctor --measure` runs your test, typecheck and lint commands once on the base branch, as `ks factory` does before any engineer and refuses to start when one of them fails there. One run cannot tell you whether your suite is fast or flaky."
       ],
       "fix_first": [
         "kstrl will not create the build manifest, so create and commit it before `ks decompose`. For a Python project: `uv init --package .`, then `uv add --dev pytest mypy ruff`, then `ks init` again, which adds the Python ignores to .gitignore now that the language is known, then `git add pyproject.toml uv.lock .python-version README.md src .gitignore` and `git commit -m \"Add the build manifest\"`. For another language, commit the manifest its own toolchain creates. If the project builds with a tool kstrl does not recognise, set [verify] test_command, typecheck_command or lint_command in kstrl.toml instead.",
@@ -176,7 +177,7 @@
       "generated_at": "<generated_at>",
       "report_path": "<report_path>",
       "root": "<root>",
-      "schema_version": 1,
+      "schema_version": 2,
       "verdict": "not-ready"
     }
   },

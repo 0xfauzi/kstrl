@@ -26,7 +26,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from kstrl import git
 from kstrl.atomicio import atomic_write_json
@@ -191,6 +191,39 @@ def base_gates_path(root_dir: Path, run_id: str) -> Path:
     return RunPaths.for_run(root_dir, run_id).root / BASE_GATES_FILE
 
 
+def reading_document(
+    reading: BaseGates, reasons: list[str], skipped_reason: str = ""
+) -> dict[str, Any]:
+    """The reading as JSON: the body of the run's record and of ``ks doctor --measure``."""
+    result = reading.result
+    return {
+        "measured": result is not None,
+        "skippedReason": skipped_reason,
+        "baseBranch": reading.base_branch,
+        "baseSha": reading.base_sha,
+        "verifyDigest": reading.digest,
+        "setupCommand": reading.setup_command,
+        "setupError": reading.setup_error,
+        "error": reading.error,
+        "checks": [
+            {
+                "name": check.name,
+                "passed": check.passed,
+                "measured": check.measured,
+                "message": check.message,
+                "failing": _failing(check),
+            }
+            for check in (result.checks if result is not None else [])
+        ],
+        "notMeasured": [
+            gap.as_token() for gap in (result.not_measured if result is not None else [])
+        ],
+        "refused": bool(reasons),
+        "reasons": reasons,
+        "seconds": round(reading.seconds, 3),
+    }
+
+
 def write_record(
     root_dir: Path,
     run_id: str,
@@ -199,7 +232,6 @@ def write_record(
     skipped_reason: str = "",
 ) -> list[str]:
     """Write the reading's record; return why it could not be written, or []."""
-    result = reading.result
     path = base_gates_path(root_dir, run_id)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -208,30 +240,7 @@ def write_record(
             {
                 "runId": run_id,
                 "kstrlVersion": kstrl_version(),
-                "measured": result is not None,
-                "skippedReason": skipped_reason,
-                "baseBranch": reading.base_branch,
-                "baseSha": reading.base_sha,
-                "verifyDigest": reading.digest,
-                "setupCommand": reading.setup_command,
-                "setupError": reading.setup_error,
-                "error": reading.error,
-                "checks": [
-                    {
-                        "name": check.name,
-                        "passed": check.passed,
-                        "measured": check.measured,
-                        "message": check.message,
-                        "failing": _failing(check),
-                    }
-                    for check in (result.checks if result is not None else [])
-                ],
-                "notMeasured": [
-                    gap.as_token() for gap in (result.not_measured if result is not None else [])
-                ],
-                "refused": bool(reasons),
-                "reasons": reasons,
-                "seconds": round(reading.seconds, 3),
+                **reading_document(reading, reasons, skipped_reason),
             },
         )
     except OSError as exc:

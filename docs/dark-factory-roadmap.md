@@ -1533,7 +1533,8 @@ Depends on: none; BLOCKS enabling `[autonomy]` at L3+ and unattended
 
 ## R8.10 Repo readiness: `ks doctor` (M) - [#198](https://github.com/0xfauzi/kstrl/issues/198)
 
-Status: Tier A shipped (#198); Tier B still open. Added 2026-08-03.
+Status: Tier A shipped (#198); Tier B's baseline suite run shipped as
+`ks doctor --measure` (#654), the rest of Tier B still open. Added 2026-08-03.
 Depends on: none; recommended before the first unattended `ks serve` on
 any new repo
 
