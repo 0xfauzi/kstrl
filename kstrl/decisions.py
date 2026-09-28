@@ -47,6 +47,7 @@ from typing import Any
 from kstrl.atomicio import atomic_write_json
 from kstrl.inbox import UNDECIDED, Inbox, InboxConfig, ItemKind
 from kstrl.jsonread import read_json
+from kstrl.workqueue import queue_item_for_spec
 
 # Relative location of the persisted register. Next to manifest.json and
 # spec-issues.json so one directory holds every decompose output.
@@ -560,6 +561,22 @@ def _escalation_key(project_name: str, spec_source: str) -> str:
     return f"escalation:{project_name}:{spec_source}"
 
 
+def _answer_route(queue_item: str | None) -> str:
+    """The last line of an escalation row: where the answer goes (#644)."""
+    if queue_item is None:
+        return (
+            "Answer in the spec and re-run the decompose. The next decompose of "
+            "this spec that escalates nothing resolves this item, once the spec's "
+            "text has changed."
+        )
+    return (
+        f"This spec is queue item {queue_item}, which waits for your answer. Write the "
+        f"answered spec to a file, then run `ks queue answer {queue_item} <answered spec "
+        "file>`: it replaces the queued copy and requeues the item. Approving or resolving "
+        "this row re-runs nothing. The answered run resolves this row when it escalates nothing."
+    )
+
+
 def open_escalation_item(
     escalated: Sequence[SpecDecision],
     root_dir: Path,
@@ -570,6 +587,7 @@ def open_escalation_item(
     register_path: str,
     run_id: str,
     warn: Callable[[str], None],
+    spec_path: Path | None = None,
 ) -> None:
     """Record a decompose halted on the owner as one inbox item (#449).
 
@@ -584,16 +602,27 @@ def open_escalation_item(
     ``SpecBlockerError`` the caller is about to raise, so the documented
     exit code 2 would become a traceback. A failure warns, naming the
     spec, because a silently empty inbox reads as a clean run.
+
+    ``spec_path`` is the file the architect read. When it is a running
+    queue item's copy (#644), the row names that item and the one command
+    that answers it, because an edit to the operator's own spec file never
+    reaches the queued copy.
     """
     ids = [d.issue for d in escalated]
     lines = [f"- [{d.issue}] {d.question}\n  owner must decide: {d.resolution}" for d in escalated]
     lines.append(f"Register: {register_path or '(not written)'}")
-    lines.append(
-        "Answer in the spec and re-run the decompose. The next decompose of "
-        "this spec that escalates nothing resolves this item, once the spec's "
-        "text has changed."
-    )
+    evidence: dict[str, Any] = {
+        "project": project_name,
+        "spec_source": spec_source,
+        "spec_digest": spec_digest,
+        "questions": ids,
+        "register": register_path,
+    }
     try:
+        queue_item = None if spec_path is None else queue_item_for_spec(root_dir, spec_path)
+        lines.append(_answer_route(queue_item))
+        if queue_item is not None:
+            evidence["queue_item"] = queue_item
         config = InboxConfig.load(root_dir)
         if not config.enabled:
             return
@@ -603,13 +632,7 @@ def open_escalation_item(
             detail="\n".join(lines),
             run_id=run_id,
             dedupe_key=_escalation_key(project_name, spec_source),
-            evidence={
-                "project": project_name,
-                "spec_source": spec_source,
-                "spec_digest": spec_digest,
-                "questions": ids,
-                "register": register_path,
-            },
+            evidence=evidence,
         )
     except Exception as exc:  # noqa: BLE001 - must not replace the halt
         warn(f"Inbox write for the escalation on {spec_source} failed (non-fatal): {exc}")

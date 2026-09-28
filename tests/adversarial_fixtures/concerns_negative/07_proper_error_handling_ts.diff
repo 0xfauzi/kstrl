@@ -1,0 +1,61 @@
+diff --git a/src/sandbox/records.ts b/src/sandbox/records.ts
+new file mode 100644
+index 0000000..1a2b3c4
+--- /dev/null
++++ b/src/sandbox/records.ts
+@@ -0,0 +1,55 @@
++/** Load user records from JSON files. */
++
++import { readFileSync } from "node:fs";
++
++/** Thrown when a record file does not exist. */
++export class RecordNotFound extends Error {
++  constructor(message: string, options?: ErrorOptions) {
++    super(message, options);
++    this.name = "RecordNotFound";
++  }
++}
++
++/** Thrown when a record file is not a valid JSON object. */
++export class MalformedRecord extends Error {
++  constructor(message: string, options?: ErrorOptions) {
++    super(message, options);
++    this.name = "MalformedRecord";
++  }
++}
++
++/**
++ * Load and return the user record stored at `path`.
++ *
++ * Throws RecordNotFound if the file is missing and MalformedRecord if the
++ * contents are not valid JSON, preserving the underlying cause.
++ */
++export function loadUserRecord(path: string): Record<string, unknown> {
++  let text: string;
++  try {
++    text = readFileSync(path, "utf8");
++  } catch (err) {
++    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
++      throw new RecordNotFound(`no record at ${path}`, { cause: err });
++    }
++    throw err;
++  }
++
++  let data: unknown;
++  try {
++    data = JSON.parse(text);
++  } catch (err) {
++    if (err instanceof SyntaxError) {
++      console.warn(`record ${path} failed to parse: ${err.message}`);
++      throw new MalformedRecord(`record ${path} is not valid JSON: ${err.message}`, {
++        cause: err,
++      });
++    }
++    throw err;
++  }
++
++  if (typeof data !== "object" || data === null || Array.isArray(data)) {
++    throw new MalformedRecord(`record ${path} must be a JSON object`);
++  }
++  return data as Record<string, unknown>;
++}

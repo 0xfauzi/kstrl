@@ -81,6 +81,7 @@ from kstrl.names import validate_branch_name, validate_component_id
 from kstrl.prd import PRD
 from kstrl.runid import mint_run_id
 from kstrl.statedir import plan_prd_path
+from kstrl.toolchains import TOOLCHAINS
 
 logger = logging.getLogger(__name__)
 
@@ -784,20 +785,12 @@ def _extract_agent_json(agent: Any, output_lines: list[str]) -> Any:
 #: refuses such a repository before the architect is paid, and
 #: tests/test_build_manifest_preflight.py checks that every name here
 #: is one that refusal recognises. #627 made it every manifest
-#: `init_cmd._detect_project_context` reads a language from. A Gemfile is
-#: not one, so it is not here: the refusal would refuse the repository
-#: that holds it.
+#: `init_cmd._detect_project_context` reads a language from; #635 derives
+#: it from the records' markers, so a record cannot add a marker this set
+#: lacks. A Gemfile is not one, so it is not here: the refusal would
+#: refuse the repository that holds it.
 ROOT_BUILD_MANIFESTS: frozenset[str] = frozenset(
-    {
-        "pyproject.toml",
-        "setup.py",
-        "package.json",
-        "Cargo.toml",
-        "go.mod",
-        "pom.xml",
-        "build.gradle",
-        "build.gradle.kts",
-    }
+    marker for toolchain in TOOLCHAINS.values() for marker in toolchain.markers
 )
 _ALLOWED_PATHS_EXCLUDE: frozenset[str] = (
     frozenset(
@@ -2762,6 +2755,7 @@ def _decompose_spec_impl(
             register_path=rel_display(decisions_path) if decisions_path is not None else "",
             run_id=bus.run_id if bus is not None else "",
             warn=ui.warn,
+            spec_path=spec_path,
         )
         # The run dir must read as FINISHED, not dead: the halt is the
         # architect's judgment, delivered before the error propagates.

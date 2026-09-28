@@ -237,6 +237,9 @@ EXPECTED_BYTES_MODE_SPAWNS: dict[str, int] = {
 #: A1 closes; see the two probes below that cover both.
 EXPECTED_UNDECIDED_SPAWNS: tuple[str, ...] = (
     "cli.py app.run",
+    # #632: `_dispatch_fixture` calls a runner through `_RUNNERS`. Checked by
+    # hand: the cli and function runners spawn through `run_scrubbed`, counted above.
+    "fixtures.py _RUNNERS[fixture.fixture_type]",
     "timeout.py subprocess.run",
 )
 

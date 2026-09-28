@@ -16,7 +16,8 @@ from kstrl.atomicio import atomic_write_text
 from kstrl.jsonread import read_json, read_json_file
 from kstrl.operator_context import GUIDANCE_HEADING
 from kstrl.prd import PRD
-from kstrl.verify import VerifyConfig, is_python_project
+from kstrl.toolchains import ToolchainId, detect, record_test_command, toolchain_named
+from kstrl.verify import VerifyConfig
 
 if TYPE_CHECKING:
     from kstrl.ui.base import UI
@@ -1165,88 +1166,6 @@ _COMMON_IGNORES = (
     ".DS_Store",
 )
 
-_JS_IGNORES = (
-    "node_modules/",
-    "dist/",
-    "build/",
-    "coverage/",
-    ".next/",
-    "*.tsbuildinfo",
-)
-
-# npm, yarn and pnpm each write their own; whichever exists is the one
-# this project uses.
-_JS_LOCKFILES = (
-    "package-lock.json",
-    "yarn.lock",
-    "pnpm-lock.yaml",
-)
-
-_JVM_IGNORES = (
-    "target/",
-    "build/",
-    ".gradle/",
-)
-
-# Build output and caches per detected language, keyed like the other
-# language tables in this module (_LANGUAGE_STANDARDS,
-# _LANGUAGE_ANTIPATTERNS) on the strings _detect_project_context returns.
-# Deliberately no lockfile and no .python-version: both pin a build, so
-# both belong in version control. _LANGUAGE_LOCKFILES below puts the
-# lockfile there instead of hiding it, and measured, none of `uv run`,
-# `uv sync`, `uv lock` or `uv venv` writes a .python-version, so it
-# cannot appear mid-iteration the way a lockfile can.
-_LANGUAGE_IGNORES: dict[str, tuple[str, ...]] = {
-    "Python": (
-        "__pycache__/",
-        "*.py[cod]",
-        ".venv/",
-        "venv/",
-        ".pytest_cache/",
-        ".mypy_cache/",
-        ".ruff_cache/",
-        ".coverage",
-        "htmlcov/",
-        "build/",
-        "dist/",
-        "*.egg-info/",
-    ),
-    "TypeScript": _JS_IGNORES,
-    "JavaScript": _JS_IGNORES,
-    "Rust": ("target/",),
-    "Go": (
-        "bin/",
-        "*.test",
-        "*.out",
-    ),
-    "Java": _JVM_IGNORES,
-    "Kotlin": _JVM_IGNORES,
-}
-
-# Lockfiles per detected language: generated files that pin a build and
-# therefore belong in version control, NOT in the ignore block above.
-# Every key in _LANGUAGE_IGNORES appears here, an empty tuple meaning
-# "this toolchain has no lockfile" as a STATED policy rather than an
-# omission - tests/test_init_cmd.py fails if the two tables disagree, so
-# a language cannot quietly get build-artifact ignores and no lockfile
-# rule again (#201 review). The names are drawn from
-# policy.LOCKFILE_BASENAMES, which the merge-policy size caps already
-# key on, and the same test keeps this table inside that vocabulary.
-#
-# Measured, not assumed: with none present, `uv run pytest` writes
-# uv.lock, `cargo test` writes Cargo.lock and `npm install` writes
-# package-lock.json. Go writes go.sum only once the module requires
-# something, and Gradle/Maven have no lockfile by default.
-_LANGUAGE_LOCKFILES: dict[str, tuple[str, ...]] = {
-    "Python": ("uv.lock", "poetry.lock", "Pipfile.lock"),
-    "TypeScript": _JS_LOCKFILES,
-    "JavaScript": _JS_LOCKFILES,
-    "Rust": ("Cargo.lock",),
-    "Go": ("go.sum",),
-    "Java": (),
-    "Kotlin": (),
-}
-
 # The "Next steps" block. The spec path leads because it is the one the
 # README sells and the one the scaffold cannot suggest on its own: init
 # writes an empty userStories array, which reads as "write these by
@@ -1392,33 +1311,6 @@ def run_init(directory: Path, ui: UI, *, upgrade_prompts: bool = False) -> int:
 
 _VERIFY_KEYS = ("test_command", "typecheck_command", "lint_command")
 
-# (test, typecheck, lint) per detected language, "" where the toolchain
-# has no such step. Python and an unrecognised tree are absent on
-# purpose: the harness defaults are already right for Python, and a
-# suggestion that merely restates them is the duplication #261 removed.
-_LANGUAGE_VERIFY_COMMANDS: dict[str, tuple[str, str, str]] = {
-    # --all-targets (#621): without it neither command reads #[cfg(test)]
-    # code. Measured on cargo 1.94: `cargo check` exits 0 on a test with a
-    # type error and `cargo clippy -- -D warnings` exits 0 on
-    # `assert!(true)`; with the flag both exit 101.
-    "Rust": (
-        "cargo test",
-        "cargo check --all-targets",
-        "cargo clippy --all-targets -- -D warnings",
-    ),
-    "Go": ("go test ./...", "go vet ./...", "golangci-lint run"),
-    "TypeScript": ("npm test", "npx tsc --noEmit", "npx eslint ."),
-    "JavaScript": ("npm test", "", "npx eslint ."),
-}
-
-
-def _verify_commands_for(root: Path, language: str) -> tuple[str, str, str] | None:
-    if language in ("Java", "Kotlin"):
-        # The only pair that needs the tree, not just the language.
-        runner = "./gradlew test" if (root / "gradlew").exists() else "mvn test"
-        return (runner, "", "")
-    return _LANGUAGE_VERIFY_COMMANDS.get(language)
-
 
 def kstrl_toml_for(root: Path) -> str:
     """``DEFAULT_KSTRL_TOML`` with ``[verify]`` seeded for this project.
@@ -1435,9 +1327,17 @@ def kstrl_toml_for(root: Path) -> str:
     value (tests/test_init_scaffold.py pins that). Uncommenting
     one line is the operator's explicit opt-in.
     """
-    commands = _verify_commands_for(root, _detect_project_context(root)["language"])
-    if commands is None:
+    toolchain = detect(root)
+    # Python and an unrecognised tree are not seeded: the harness defaults
+    # are already right for Python, and a suggestion that merely restates
+    # them is the duplication #261 removed.
+    if toolchain is None or toolchain.id == "Python":
         return DEFAULT_KSTRL_TOML
+    commands = (
+        record_test_command(root, toolchain),
+        toolchain.commands.typecheck,
+        toolchain.commands.lint,
+    )
     text = DEFAULT_KSTRL_TOML
     for key, command in zip(_VERIFY_KEYS, commands, strict=True):
         if command:
@@ -1548,6 +1448,12 @@ def _upgrade_scaffolded_templates(root: Path, ui: UI) -> None:
             ui.info(f"  {name} is missing; the scaffold below creates it")
 
 
+def _language_ignores(language: str) -> tuple[str, ...]:
+    """The ignores of the record ``language`` names; none for ``"unknown"``."""
+    toolchain = toolchain_named(language)
+    return () if toolchain is None else toolchain.ignores
+
+
 def gitignore_block(language: str) -> str:
     """The .gitignore block `ks init` writes for a detected language.
 
@@ -1555,7 +1461,7 @@ def gitignore_block(language: str) -> str:
     lockstep by tests/test_gen_docs.py the way the example's prompt.md
     is held against DEFAULT_PROMPT.
     """
-    entries = (*_LANGUAGE_IGNORES.get(language, ()), *_COMMON_IGNORES)
+    entries = (*_language_ignores(language), *_COMMON_IGNORES)
     return _GITIGNORE_BLOCK_HEADER + "\n".join(entries) + "\n"
 
 
@@ -1577,7 +1483,7 @@ def _ignore_probes(entry: str) -> tuple[str, str]:
 
 
 def missing_language_ignores(root: Path, language: str) -> tuple[str, ...] | None:
-    """The ``_LANGUAGE_IGNORES`` entries git does not ignore under ``root``.
+    """The ``language`` record's ignores that git does not ignore under ``root``.
 
     Asked of git, not of the .gitignore text, because the in-loop scope
     guard lists untracked files with ``git ls-files --others
@@ -1585,7 +1491,7 @@ def missing_language_ignores(root: Path, language: str) -> tuple[str, ...] | Non
     entry counts as ignored only when both of its probes are. None when
     git could not answer (not a repository), which is not "none missing".
     """
-    entries = _LANGUAGE_IGNORES.get(language, ())
+    entries = _language_ignores(language)
     if not entries:
         return ()
     probes = {entry: _ignore_probes(entry) for entry in entries}
@@ -1740,7 +1646,8 @@ def _ensure_lockfiles_tracked(root: Path, language: str, is_repo: bool, ui: UI) 
     COMMIT, so an uncommitted lockfile is absent there and the first
     verify run writes a fresh untracked one.
     """
-    candidates = _LANGUAGE_LOCKFILES.get(language, ())
+    toolchain = toolchain_named(language)
+    candidates = () if toolchain is None else toolchain.lockfiles
     if not is_repo or not candidates:
         return
 
@@ -1800,8 +1707,8 @@ def _json_object(value: object) -> dict[str, Any]:
 def _detect_project_context(root: Path) -> dict[str, str]:
     """Detect project name, language and framework from config files.
 
-    Inspects the project root for pyproject.toml, Cargo.toml,
-    package.json, go.mod, etc. First match wins.
+    The language is :func:`kstrl.toolchains.detect`'s record (first match
+    wins); this reads the name and the framework from its manifest.
 
     #261: this deliberately does NOT guess test / typecheck / lint
     commands. ``verify.resolve_verify_commands`` is the only place that
@@ -1813,11 +1720,12 @@ def _detect_project_context(root: Path) -> dict[str, str]:
         "framework": "",
     }
 
-    # Python
-    pyproject = root / "pyproject.toml"
-    if is_python_project(root):
-        ctx["language"] = "Python"
-        pyproject_text = _read_text_or_none(pyproject) or ""
+    toolchain = detect(root)
+    if toolchain is not None:
+        ctx["language"] = toolchain.id
+
+    if ctx["language"] == "Python":
+        pyproject_text = _read_text_or_none(root / "pyproject.toml") or ""
         match = re.search(r'name\s*=\s*"([^"]+)"', pyproject_text)
         if match:
             ctx["name"] = match.group(1)
@@ -1827,13 +1735,8 @@ def _detect_project_context(root: Path) -> dict[str, str]:
             ctx["framework"] = "Django"
         elif "flask" in pyproject_text:
             ctx["framework"] = "Flask"
-        return ctx
-
-    # Rust
-    cargo_toml = root / "Cargo.toml"
-    if cargo_toml.exists():
-        ctx["language"] = "Rust"
-        cargo_text = _read_text_or_none(cargo_toml) or ""
+    elif ctx["language"] == "Rust":
+        cargo_text = _read_text_or_none(root / "Cargo.toml") or ""
         match = re.search(r'name\s*=\s*"([^"]+)"', cargo_text)
         if match:
             ctx["name"] = match.group(1)
@@ -1841,14 +1744,9 @@ def _detect_project_context(root: Path) -> dict[str, str]:
             ctx["framework"] = "Axum/Actix"
         elif "rocket" in cargo_text:
             ctx["framework"] = "Rocket"
-        return ctx
-
-    # TypeScript / JavaScript
-    pkg_json = root / "package.json"
-    if pkg_json.exists():
-        ctx["language"] = "TypeScript"
+    elif ctx["language"] in ("TypeScript", "JavaScript"):
         try:
-            pkg = _json_object(read_json(_read_text_or_none(pkg_json) or "{}"))
+            pkg = _json_object(read_json(_read_text_or_none(root / "package.json") or "{}"))
             ctx["name"] = pkg.get("name", root.name)
             deps = {
                 **_json_object(pkg.get("dependencies")),
@@ -1862,31 +1760,13 @@ def _detect_project_context(root: Path) -> dict[str, str]:
                 ctx["framework"] = "Express"
             elif "vue" in deps:
                 ctx["framework"] = "Vue"
-            if "typescript" not in deps and not (root / "tsconfig.json").exists():
-                ctx["language"] = "JavaScript"
         except (OSError, ValueError):
             pass
-        return ctx
-
-    # Go
-    go_mod = root / "go.mod"
-    if go_mod.exists():
-        ctx["language"] = "Go"
-        go_text = (_read_text_or_none(go_mod) or "").strip()
+    elif ctx["language"] == "Go":
+        go_text = (_read_text_or_none(root / "go.mod") or "").strip()
         first_line = go_text.splitlines()[0] if go_text else ""
         if first_line.startswith("module "):
             ctx["name"] = first_line.split()[-1].split("/")[-1]
-        return ctx
-
-    # Java / Kotlin
-    if (
-        (root / "pom.xml").exists()
-        or (root / "build.gradle").exists()
-        or (root / "build.gradle.kts").exists()
-    ):
-        ctx["language"] = "Kotlin" if (root / "build.gradle.kts").exists() else "Java"
-        return ctx
-
     return ctx
 
 
@@ -2191,7 +2071,7 @@ KOTLIN_ANTIPATTERNS_PROMPT = """
 - Do NOT add an `else` branch to a `when` over a sealed type - list every subtype
 """
 
-_LANGUAGE_STANDARDS: dict[str, str] = {
+_LANGUAGE_STANDARDS: dict[ToolchainId, str] = {
     "Python": PYTHON_STANDARDS_PROMPT,
     "Rust": RUST_STANDARDS_PROMPT,
     "TypeScript": TYPESCRIPT_STANDARDS_PROMPT,
@@ -2201,7 +2081,7 @@ _LANGUAGE_STANDARDS: dict[str, str] = {
     "Kotlin": KOTLIN_STANDARDS_PROMPT,
 }
 
-_LANGUAGE_ANTIPATTERNS: dict[str, str] = {
+_LANGUAGE_ANTIPATTERNS: dict[ToolchainId, str] = {
     "Python": PYTHON_ANTIPATTERNS_PROMPT,
     "Rust": RUST_ANTIPATTERNS_PROMPT,
     "TypeScript": TYPESCRIPT_ANTIPATTERNS_PROMPT,
@@ -2317,6 +2197,7 @@ CLAUDE_MD_LEARNINGS_PROMPT = """## Agent Learnings
 def _generate_claude_md(ctx: dict[str, str]) -> str:
     """Generate CLAUDE.md content from detected project context."""
     lang = ctx["language"]
+    toolchain = toolchain_named(lang)
     framework_line = f" ({ctx['framework']})" if ctx["framework"] else ""
 
     sections = [
@@ -2329,7 +2210,7 @@ def _generate_claude_md(ctx: dict[str, str]) -> str:
     sections.append("")
 
     # Coding standards
-    standards = _LANGUAGE_STANDARDS.get(lang, "")
+    standards = "" if toolchain is None else _LANGUAGE_STANDARDS.get(toolchain.id, "")
     if standards:
         sections.append(CLAUDE_MD_STANDARDS_HEADING_PROMPT)
         sections.append(standards.strip())
@@ -2340,7 +2221,7 @@ def _generate_claude_md(ctx: dict[str, str]) -> str:
     sections.append("")
 
     # Anti-patterns
-    antipatterns = _LANGUAGE_ANTIPATTERNS.get(lang, "")
+    antipatterns = "" if toolchain is None else _LANGUAGE_ANTIPATTERNS.get(toolchain.id, "")
     if antipatterns:
         sections.append(CLAUDE_MD_ANTIPATTERNS_HEADING_PROMPT)
         sections.append(antipatterns.strip())

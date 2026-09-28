@@ -58,9 +58,9 @@ class TestAnEmptyAnswerIsOnlyGivenForAGroupTheKernelAgreesIsEmpty:
         group the kernel confirms holds nothing, IS the measurement, and
         a caller waiting for a group to empty needs to be able to tell
         that apart from "could not see"."""
-        pgid = procs.dead_group()
-        procs.fake_ps(monkeypatch, stdout="1 1 Ss\n")
-        assert read_group_members(pgid) == GroupMembers(())
+        with procs.no_such_group() as pgid:
+            procs.fake_ps(monkeypatch, stdout="1 1 Ss\n")
+            assert read_group_members(pgid) == GroupMembers(())
 
     def test_a_group_the_kernel_calls_occupied_is_refused(
         self,

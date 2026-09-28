@@ -25,13 +25,13 @@ from kstrl.config import KstrlConfig
 from kstrl.feature_cmd import FeatureParams, run_feature
 from kstrl.feature_verify import resolve_feature_verify_config
 from kstrl.loop import STOP_EXIT_CODE, LoopResult
+from kstrl.toolchains import python_typecheck_default
 from kstrl.verify import (
     DEFAULT_TYPECHECK_COMMAND,
     DIFF_DEPENDENT_CHECKS,
     CheckResult,
     VerificationResult,
     VerifyConfig,
-    _default_typecheck_command,
     run_mechanical_verification,
     run_undiffed_verification,
 )
@@ -618,7 +618,7 @@ class TestTheReportCannotKillTheRun:
 
         ``resolve_verify_commands``, ``self_critique_progress_path`` and
         the announcement all ran OUTSIDE the try, and the first of those
-        does file I/O: it reaches ``_default_typecheck_command``, which
+        does file I/O: it reaches ``toolchains.python_typecheck_default``, which
         opens and parses pyproject.toml. Anything it raises escaped an
         ADVISORY report and took the command down at the BASELINE, before
         the agent had run.
@@ -649,7 +649,7 @@ class TestTheReportCannotKillTheRun:
         """
         (tmp_path / "pyproject.toml").write_bytes(b'[project]\nname = "d\x80emo"\nversion = "0"\n')
         # Would have raised UnicodeDecodeError before the widening.
-        assert _default_typecheck_command(tmp_path) == DEFAULT_TYPECHECK_COMMAND
+        assert python_typecheck_default(tmp_path) == DEFAULT_TYPECHECK_COMMAND
 
     def test_the_run_record_is_still_complete(self, tmp_path: Path) -> None:
         """The failure mode: events.jsonl ending at phase_started with no

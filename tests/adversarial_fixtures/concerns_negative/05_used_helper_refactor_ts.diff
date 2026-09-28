@@ -1,0 +1,59 @@
+diff --git a/src/sandbox/config.ts b/src/sandbox/config.ts
+new file mode 100644
+index 0000000..1a2b3c4
+--- /dev/null
++++ b/src/sandbox/config.ts
+@@ -0,0 +1,53 @@
++/** Configuration loading. */
++
++import { readFileSync } from "node:fs";
++
++/** Thrown when a config file cannot be loaded. */
++export class ConfigError extends Error {
++  constructor(message: string, options?: ErrorOptions) {
++    super(message, options);
++    this.name = "ConfigError";
++  }
++}
++
++const KNOWN_KEYS = ["name", "retries", "timeout"] as const;
++
++export type Config = Partial<Record<(typeof KNOWN_KEYS)[number], unknown>>;
++
++/** Read and parse a JSON document from `path`. */
++function readJson(path: string): unknown {
++  let text: string;
++  try {
++    text = readFileSync(path, "utf8");
++  } catch (err) {
++    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
++      throw new ConfigError(`config file not found: ${path}`, { cause: err });
++    }
++    throw err;
++  }
++  return JSON.parse(text);
++}
++
++/** Drop keys that are not part of the supported schema. */
++function selectKnownKeys(raw: Record<string, unknown>): Config {
++  const selected: Config = {};
++  for (const key of KNOWN_KEYS) {
++    if (Object.hasOwn(raw, key)) {
++      selected[key] = raw[key];
++    }
++  }
++  return selected;
++}
++
++/**
++ * Read a JSON config file and return its supported contents.
++ *
++ * Unknown top-level keys are dropped. A missing file throws ConfigError.
++ */
++export function parseConfig(path: string): Config {
++  const raw = readJson(path);
++  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
++    throw new ConfigError("config root must be a JSON object");
++  }
++  return selectKnownKeys(raw as Record<string, unknown>);
++}

@@ -39,6 +39,8 @@ from kstrl.autonomy import (
     save_ladder_state,
     strict_bool,
 )
+from kstrl.base_gates import BaseGates, measure_base_gates, refusal_lines, warning_lines
+from kstrl.base_gates import write_record as write_base_gates_record
 from kstrl.breaker import BreakerConfig
 from kstrl.commandrun import start_heartbeat as _start_heartbeat
 from kstrl.config import (
@@ -2317,6 +2319,41 @@ def _preflight_decision_register(
         return [str(exc)], ()
 
 
+#: Why ``base-gates.json`` holds no reading under ``--no-verify`` (#654).
+BASE_GATES_SKIPPED_NO_VERIFY = "--no-verify: Phase 1 runs no gate"
+
+
+def _preflight_base_gates(
+    manifest: Manifest,
+    root_dir: Path,
+    factory_config: FactoryConfig,
+    run_id: str,
+    ui: UI,
+) -> list[str]:
+    """Why the base branch must not be built on, or [] (#654).
+
+    Measures Phase 1's gates on the base commit and records the reading in
+    the run directory. Refuses when a gate measurably fails there or the
+    record cannot be written, and warns about what it could not measure.
+    Under ``--no-verify`` Phase 1 runs no gate, so nothing is measured and
+    the record says why.
+    """
+    verify_config = factory_config.engineer_verify_config()
+    if verify_config is None:
+        skipped = BaseGates(manifest.base_branch)
+        return write_base_gates_record(
+            root_dir, run_id, skipped, [], skipped_reason=BASE_GATES_SKIPPED_NO_VERIFY
+        )
+    ui.info(f"  Measuring the gates on the base branch {manifest.base_branch}...")
+    reading = measure_base_gates(
+        root_dir, manifest.base_branch, verify_config, factory_config.worktree_setup(), ui
+    )
+    for line in warning_lines(reading):
+        ui.warn(f"  {line}")
+    reasons = refusal_lines(reading)
+    return write_base_gates_record(root_dir, run_id, reading, reasons) + reasons
+
+
 def _preflight_spec_pin(manifest: Manifest, root_dir: Path, ui: UI) -> list[str]:
     """Why this plan must not run on its spec as it reads now, or [] (#639).
 
@@ -2366,6 +2403,10 @@ def _run_preflights(
     worktrees, unlike the R0.5 branch policy below, which only applies
     to worktree mode: without worktrees the factory neither creates
     branches nor worktree dirs.
+
+    The base gates go after scope (#654): they run the project's own
+    suite, the dearest check here, in a throwaway worktree of the base
+    commit, so they also run without worktrees, where Phase 1 still runs.
     """
     # #436 first: `ks retry` reads this record to replay the run's flags,
     # so a run that cannot leave one must not start (CLAUDE.md, artifact
@@ -2397,6 +2438,12 @@ def _run_preflights(
         ui,
         "components cannot pass the scope check",
         _preflight_component_scope(manifest, run_scope),
+    ):
+        return None
+    if _report_preflight(
+        ui,
+        "the base branch fails a gate Phase 1 runs, or its reading cannot be recorded",
+        _preflight_base_gates(manifest, root_dir, factory_config, run_id, ui),
     ):
         return None
     if not factory_config.use_worktrees:

@@ -35,8 +35,8 @@ history, and appears in `ks queue show` with the old and new values and who
 made it.
 
 Items live under `.kstrl/queue/` as one directory each (spec + `meta.json`),
-moved between `queued/ leased/ running/ done/ failed/ poison/ awaiting_approval/`
-by a single
+moved between `queued/ leased/ running/ done/ failed/ poison/ awaiting_approval/
+awaiting_answer/` by a single
 `os.replace`. The spec is **copied** at enqueue, so editing or deleting the
 original afterwards cannot change what runs. Locks (`queue.lock`,
 `serve.lock`) stay beside the queue. The pause marker and spend ledger do
@@ -92,7 +92,7 @@ infrastructural**:
 | launch failed before any spend | retry (free) |
 | killed by signal, or our timeout with the process group confirmed dead | retry |
 | exit 2 with a lock-contention marker in the output | retry |
-| exit 2 with a spec-blocker marker | **poison** |
+| exit 2 with a spec-blocker marker (the architect escalated) | **awaiting an answer** (never retried, never poison) |
 | the run halted on a configured ceiling (`max_total_tokens` / `max_cost_usd`) | **poison** |
 | every failed component carries `infrastructure_error` | retry |
 | any failed component failed on its merits (with findings) | **poison** |
@@ -109,6 +109,27 @@ context. Raising the ceiling or narrowing the spec is a human decision.
 
 Poisoned items wait for a human. `ks queue ls --state poison` lists them;
 `ks inbox ls` carries the decision.
+
+### An escalated spec waits for your answer
+
+When the architect escalates a question only you can answer, the item moves
+to `awaiting_answer/`. It is not poisoned and does not count toward
+`max_consecutive_poison`, so a batch of new specs that each need an answer
+does not pause the queue. The inbox holds one `spec_escalation` row for it,
+naming the item's full id. The queue runs its own copy of the spec, so
+editing your original file changes nothing. Write the answered spec to a
+file and run:
+
+```bash
+ks queue answer <id> answered.md
+```
+
+It replaces the queued copy, sends the item back to `queued/`, and prints the
+SHA-256 of the spec before and after; the queue journal records both. The
+answered run resolves the inbox row when it escalates nothing. The escalated
+run used one of the item's attempts, so an item that has used them all needs
+`--reset-attempts`, as `ks queue retry` does. A GitHub-sourced item keeps its
+`kstrl:running` label while it waits; the answer is given locally.
 
 ### A parked merge waits for approval, and is not a failure
 

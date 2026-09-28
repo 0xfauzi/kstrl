@@ -106,6 +106,7 @@ EMPTY_REPO_EXITS: tuple[tuple[tuple[str, ...], tuple[str, ...], int, str], ...] 
     (("learn", "playbook"), (), 0, "an empty playbook is an answer"),
     (("learn", "repair"), (), 0, "a missing ledger has nothing to repair"),
     (("queue", "add"), ("spec.md",), 0, "queues the spec"),
+    (("queue", "answer"), ("x", "spec.md"), 2, "no such queue item"),
     (("queue", "ls"), (), 0, "an empty queue"),
     (("queue", "pause"), (), 0, "pauses intake"),
     (("queue", "resume"), (), 0, "resumes intake"),
