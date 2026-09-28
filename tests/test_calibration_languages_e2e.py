@@ -24,7 +24,7 @@ import shutil
 import subprocess
 import sys
 from collections.abc import Callable, Iterator
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 import pytest
@@ -484,6 +484,19 @@ def _block(stdout: str, header: str) -> list[str]:
     return names
 
 
+def _evidence_stem(graded: dict[str, Any]) -> tuple[str, str] | None:
+    """The directory and the language-neutral stem of the file a finding must
+    name (``src/jwt_verify.py`` and ``src/jwtVerify.ts`` both give
+    ``("src", "jwtverify")``; ``tests/test_calculator.py`` and
+    ``tests/calculator.test.ts`` both give ``("tests", "calculator")``), or
+    None when the block names no file."""
+    path = graded.get("evidence_path_contains")
+    if path is None:
+        return None
+    pure = PurePosixPath(path)
+    return str(pure.parent), pure.name.split(".")[0].lower().replace("_", "").removeprefix("test")
+
+
 def _run_arm(
     name: str,
     build_args: Callable[[], list[tuple[Path, dict[str, Any]]]],
@@ -516,6 +529,7 @@ def _run_arm(
             k: v for k, v in original[block].items() if k != "evidence_path_contains"
         }, twin_id
         assert meta.get("planted_injection") == original.get("planted_injection"), twin_id
+        assert _evidence_stem(meta[block]) == _evidence_stem(original[block]), twin_id
         diff = artifact.read_text(encoding="utf-8")
         replies[twin_id] = (
             _flagging_reply(meta, diff)
