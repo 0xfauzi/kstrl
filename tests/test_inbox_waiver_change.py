@@ -68,7 +68,7 @@ def test_an_item_records_the_commit_and_diff_it_was_found_on(tmp_path: Path) -> 
     assert item.evidence["head_sha"] == head
     assert item.evidence["diff_sha"] == _diff_sha(root, "main", BRANCH)
     out = _decide(root, env, "approve", item.id)
-    assert f"found on commit {head[:12]}" in out, out
+    assert f"(found on commit {head[:12]})." in out, out
 
 
 #: Per waivable kind: its config, a change whose finding text is the same on
