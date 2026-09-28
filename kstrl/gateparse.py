@@ -71,6 +71,16 @@ GATE_TOOLS: dict[str, tuple[str, ...]] = {
 }
 
 
+#: Report formats a gate can declare instead of a parser (#629). Never
+#: entries of GATE_TOOLS: the auto path runs every GATE_TOOLS parser over
+#: output nobody declared, and a report reader must only ever read a report
+#: the operator said the command writes. ``kstrl.report_formats`` holds the
+#: reader for each, and refuses a report whose format has none.
+GATE_FORMATS: dict[str, tuple[str, ...]] = {
+    GATE_TEST: ("go-test-json",),
+}
+
+
 def validate_tool(gate: str, tool: str | None) -> str | None:
     """``tool`` if the gate can dispatch to it, None when unset (auto).
 
@@ -81,8 +91,9 @@ def validate_tool(gate: str, tool: str | None) -> str | None:
     """
     if not tool:
         return None
-    if tool not in GATE_TOOLS[gate]:
-        accepted = ", ".join(GATE_TOOLS[gate])
+    known = (*GATE_TOOLS[gate], *GATE_FORMATS.get(gate, ()))
+    if tool not in known:
+        accepted = ", ".join(known)
         raise ValueError(f"unknown tool {tool!r} for the {gate} gate; expected one of: {accepted}")
     return tool
 
