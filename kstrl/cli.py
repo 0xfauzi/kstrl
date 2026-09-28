@@ -6128,8 +6128,13 @@ def queue_answer(
     root_dir, queue = _queue_for(root)
     ui_impl = _autonomy_ui(ui, no_color)
     try:
-        text = spec.read_bytes().decode("utf-8")
-    except (OSError, ValueError) as exc:
+        raw = spec.read_bytes()
+    except OSError as exc:
+        ui_impl.err(f"Could not read {spec}: {exc}")
+        sys.exit(2)
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
         ui_impl.err(f"Could not read {spec}: {exc}")
         sys.exit(2)
     try:

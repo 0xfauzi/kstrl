@@ -477,6 +477,7 @@ class TestTheReadBytesExclusion:
         # #553 the ledger, #570 each run's events.jsonl: the signals.py
         # shape, read and decode outside any try.
         "ci_state.py": 2,
+        "cli.py": 1,  # #644: queue_answer, read and decode guarded separately
         "config_toml.py": 1,
         "baseline.py": 1,
         "inbox.py": 1,
@@ -487,6 +488,7 @@ class TestTheReadBytesExclusion:
         "signals.py": 2,
         "suite_inventory.py": 1,  # #620: I/O outside the parse guard
         "verify.py": 2,
+        "workqueue.py": 1,  # #644: Queue.answer hashes the spec, never decodes it
     }
 
     def test_the_read_bytes_sites_are_the_ten_measured(self) -> None:
