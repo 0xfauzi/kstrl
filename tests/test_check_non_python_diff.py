@@ -648,3 +648,19 @@ def test_a_rust_deletion_with_no_assertion_still_names_its_file_as_not_read(
 
     assert row["message"] == "1 test-adequacy finding(s) [advisory]; not read: src/lib.rs"
     assert row["details"] == [f"src/lib.rs::gone: {DELETED}"]
+
+
+def test_a_non_test_fn_removed_below_a_rust_test_is_not_a_deleted_test(tmp_path: Path) -> None:
+    """``#[test]`` names only the ``fn`` right below it: a helper removed a
+    few lines further down the same hunk is not a deleted test."""
+    one_line = "    #[test]\n    fn keeps() { assert_eq!(a(3), 3); }\n"
+    helper = "    fn helper() -> i32 {\n        2\n    }\n"
+    base = {**RUST_BASE, "src/lib.rs": _rust_lib(one_line + helper)}
+    root = _repo(tmp_path, base, {"src/lib.rs": _rust_lib(one_line)}, ADEQUACY)
+
+    document = _check_json(root)
+
+    findings = [
+        f for c in document["checks"] if c["name"] == "test_adequacy" for f in c["findings"]
+    ]
+    assert findings == []
