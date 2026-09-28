@@ -17,6 +17,10 @@ refusal comes from ``_run_preflights``, which runs before the #602 plan
 gate: ``_plan_gated`` returns 2 without asking when a preflight refused.
 The runs that proceed reach the plan gate with ``[autonomy]`` off, which
 ``ks init`` seeds commented out, so it asks nothing.
+
+Slice 2 drives the real ``ks doctor --measure`` on the same repositories:
+it takes the same reading without starting a run, and its verdict is
+not-ready exactly where the factory refuses.
 """
 
 from __future__ import annotations
@@ -57,12 +61,32 @@ GATES = {
 
 HEADLINE = "Refusing to run: the base branch fails a gate Phase 1 runs"
 
+#: The same three gates as environment variables, for `ks doctor`, which
+#: takes no gate flags and reads them through the same loader.
+GATE_ENV = {
+    "KSTRL_VERIFY_TEST_CMD": GATES["--test-command"],
+    "KSTRL_VERIFY_TYPECHECK_CMD": GATES["--typecheck-command"],
+    "KSTRL_VERIFY_LINT_CMD": GATES["--lint-command"],
+}
+
 
 @dataclass(frozen=True)
 class Run:
     out: str
     code: int
     calls: int
+
+
+def _child_env(env: dict[str, str] | None) -> dict[str, str]:
+    """This process's environment without kstrl's own settings, plus ``env``."""
+    child_env = {
+        k: v
+        for k, v in os.environ.items()
+        if not k.startswith(("KSTRL_", "FACTORY_")) and k not in ("AGENT_CMD", "MODEL")
+    }
+    child_env.update(KSTRL_AGENT_PROBE="0", KSTRL_NO_TUI="1", KSTRL_KNOWLEDGE_ENABLED="0")
+    child_env.update(env or {})
+    return child_env
 
 
 def _git(root: Path, *args: str) -> str:
@@ -144,13 +168,7 @@ def _factory(
         tmp_path / "engineer.sh",
         f"#!/bin/sh\necho call >> '{calls}'\ncat >/dev/null\necho '<promise>COMPLETE</promise>'\n",
     )
-    child_env = {
-        k: v
-        for k, v in os.environ.items()
-        if not k.startswith(("KSTRL_", "FACTORY_")) and k not in ("AGENT_CMD", "MODEL")
-    }
-    child_env.update(KSTRL_AGENT_PROBE="0", KSTRL_NO_TUI="1", KSTRL_KNOWLEDGE_ENABLED="0")
-    child_env.update(env or {})
+    child_env = _child_env(env)
     flags = [item for pair in (GATES if gates is None else gates).items() for item in pair]
     args = [
         *(PY, "-m", "kstrl", "factory"),
@@ -389,3 +407,167 @@ def test_a_reading_that_cannot_be_recorded_refuses_the_run(tmp_path: Path) -> No
     assert run.code == 2, run.out
     assert "the base reading cannot be recorded" in run.out
     assert run.calls == 0, run.out
+
+
+# --- slice 2: `ks doctor --measure` takes the same reading ----------------
+
+
+def _doctor(root: Path, *args: str, env: dict[str, str]) -> tuple[int, str]:
+    """The real `ks doctor --root <root> <args>` in its own process group,
+    killed on the fuse. Returns the exit code and stdout."""
+    child = subprocess.Popen(
+        [PY, "-m", "kstrl", "doctor", "--root", str(root), *args],
+        cwd=root,
+        env=_child_env(env),
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        encoding="utf-8",
+        start_new_session=True,
+    )
+    try:
+        out, _err = child.communicate(timeout=FUSE_SECONDS)
+    except subprocess.TimeoutExpired:
+        kill_group(child.pid)
+        child.communicate()
+        pytest.fail(f"`ks doctor` outlived its {FUSE_SECONDS}s fuse (hung, not failed)")
+    return child.returncode, out
+
+
+def _doctor_json(root: Path, env: dict[str, str]) -> tuple[int, dict[str, Any]]:
+    code, out = _doctor(root, "--measure", "--json", env=env)
+    document: dict[str, Any] = json.loads(out)
+    return code, document
+
+
+def _doctor_row(document: dict[str, Any]) -> dict[str, Any]:
+    (row,) = [row for row in document["checks"] if row["name"] == "base_gates"]
+    return row
+
+
+def test_doctor_measure_reports_a_red_base_not_ready(tmp_path: Path) -> None:
+    """D1, the T1 repository: the reading `ks factory` refuses on is a
+    failed row, and the failing test is named on stdout."""
+    root = _repo(tmp_path, {"tests/test_base.py": RED})
+
+    text_code, text = _doctor(root, "--measure", env=GATE_ENV)
+    code, document = _doctor_json(root, GATE_ENV)
+
+    assert text_code == 1, text
+    assert "[fail] base_gates" in text
+    assert "test_broken" in text
+    assert code == 1, document
+    assert document["verdict"] == "not-ready"
+    reading = document["base_gates"]
+    assert reading["refused"] is True
+    assert reading["baseSha"] == _git(root, "rev-parse", "main").strip()
+    assert any("test_broken" in name for name in _row(reading, "test_suite")["failing"])
+
+
+def test_doctor_measure_reports_a_green_base_with_three_measured_rows(tmp_path: Path) -> None:
+    """D2, the T2 repository and the control for D1: the fix committed."""
+    root = _repo(tmp_path, {"tests/test_base.py": GREEN})
+
+    code, document = _doctor_json(root, GATE_ENV)
+
+    assert code == 0, document
+    assert _doctor_row(document)["status"] == "ok"
+    reading = document["base_gates"]
+    assert reading["refused"] is False
+    assert {(r["name"], r["passed"], r["measured"]) for r in reading["checks"]} == {
+        ("test_suite", True, True),
+        ("typecheck", True, True),
+        ("linter", True, True),
+    }
+    assert _git(root, "worktree", "list", "--porcelain").count("worktree ") == 1
+
+
+def test_doctor_measure_warns_on_a_base_with_no_tests(tmp_path: Path) -> None:
+    """D9, the T9 repository: pytest exits 5 having collected nothing. That
+    measured nothing, which `ks factory` warns about and does not refuse."""
+    root = _repo(tmp_path, {})
+
+    code, document = _doctor_json(root, GATE_ENV)
+
+    assert code == 0, document
+    row = _doctor_row(document)
+    assert row["status"] == "warn"
+    assert "measured nothing" in row["detail"]
+    reading = document["base_gates"]
+    assert reading["refused"] is False
+    test_row = _row(reading, "test_suite")
+    assert (test_row["passed"], test_row["measured"]) == (False, False)
+    assert "exit code 5" in test_row["message"]
+
+
+def test_doctor_measure_fails_a_base_it_cannot_resolve(tmp_path: Path) -> None:
+    """D10: no branch git would name as the base, so nothing was measured,
+    and an agent-ready verdict must rest on a reading."""
+    root = _repo(tmp_path, {"tests/test_base.py": GREEN})
+    git_in(root, "branch", "-m", "main", "work")
+
+    code, document = _doctor_json(root, GATE_ENV)
+
+    assert code == 1, document
+    row = _doctor_row(document)
+    assert row["status"] == "fail"
+    assert "the base branch main was not measured" in row["detail"]
+    assert document["base_gates"]["checks"] == []
+
+
+def test_doctor_runs_a_repo_command_only_under_measure(tmp_path: Path) -> None:
+    """The control: without --measure, `ks doctor` runs none of the
+    repository's commands. The default gates run through `uv`, and a stub
+    `uv` first on PATH logs every call; the --measure run shows the stub is
+    on the path the gates take."""
+    root = _repo(tmp_path, {"tests/test_base.py": GREEN})
+    stubs = tmp_path / "stubs"
+    stubs.mkdir()
+    log = tmp_path / "uv-argv.log"
+    write_executable(stubs / "uv", f"#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{log}'\nexit 0\n")
+    env = {"PATH": f"{stubs}{os.pathsep}{os.environ['PATH']}"}
+
+    plain_code, plain = _doctor(root, "--json", env=env)
+    after_plain = log.read_text(encoding="utf-8") if log.exists() else ""
+    _doctor(root, "--measure", "--json", env=env)
+
+    assert plain_code == 0, plain
+    assert json.loads(plain)["base_gates"] is None
+    assert after_plain == ""
+    assert "run pytest" in log.read_text(encoding="utf-8")
+
+
+def test_doctor_measure_reads_the_base_branch_not_the_checkout(tmp_path: Path) -> None:
+    """D3, the doctor's T3b: a fix committed on the branch the checkout is
+    on does not make a red base green, because components are cut from the
+    base branch."""
+    root = _repo(tmp_path, {"tests/test_base.py": RED})
+    git_in(root, "checkout", "-q", "-b", "work")
+    _commit(root, "tests/test_base.py", GREEN)
+
+    code, document = _doctor_json(root, GATE_ENV)
+
+    assert code == 1, document
+    assert document["base_gates"]["baseBranch"] == "main"
+    assert document["base_gates"]["baseSha"] == _git(root, "rev-parse", "main").strip()
+
+
+def test_doctor_measure_takes_the_reading_ks_factory_takes(tmp_path: Path) -> None:
+    """D11, addendum item 9: agent-ready is keyed on (baseSha, verifyDigest,
+    setupCommand). The doctor's reading and the one `ks factory` records on
+    the same repository agree on all three, and on the refusal."""
+    root = _repo(tmp_path, {"tests/test_base.py": RED})
+    setup = {"KSTRL_FACTORY_WORKTREE_SETUP_COMMAND": "true"}
+
+    _code, document = _doctor_json(root, {**GATE_ENV, **setup})
+    run = _factory(tmp_path, root, env=setup)
+
+    assert run.code == 2, run.out
+    record = _record(root)
+    keys = ("baseSha", "verifyDigest", "setupCommand", "refused")
+    assert {k: document["base_gates"][k] for k in keys} == {k: record[k] for k in keys}
+    assert document["base_gates"]["setupCommand"] == "true"
+    assert (
+        _row(document["base_gates"], "test_suite")["failing"]
+        == _row(record, "test_suite")["failing"]
+    )

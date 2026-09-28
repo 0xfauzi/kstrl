@@ -98,6 +98,7 @@
   "doctor": {
     "exit": 0,
     "report": {
+      "base_gates": null,
       "checks": [
         {
           "detail": "git repository at HEAD <sha>, base branch main (the branch factory cuts component worktrees from)",
@@ -164,7 +165,7 @@
         "A green verdict is repo-readiness, not spec-readiness. Nothing here can tell you whether the work you are about to describe fits the component model.",
         "kstrl is not for cross-cutting refactors. The factory decomposes a spec into components that each merge on their own, and a change that has to land everywhere at once has no such decomposition.",
         "kstrl is not for spec-free exploration. Every iteration is graded against a PRD, so work whose acceptance criteria are not known yet has nothing to grade.",
-        "Tier A reads the repository and runs none of your commands, so it cannot tell you whether your suite is green, fast or flaky. Run `ks check` for that. `ks factory` runs your test, typecheck and lint commands on the base branch before any engineer, and refuses to start when one of them fails there."
+        "Tier A reads the repository and runs none of your commands. `ks doctor --measure` runs your test, typecheck and lint commands once on the base branch, as `ks factory` does before any engineer and refuses to start when one of them fails there. One run cannot tell you whether your suite is fast or flaky."
       ],
       "fix_first": [
         "Run `gh auth login` and add an origin remote, or set [factory] create_prs = false and merge by hand.",
@@ -175,7 +176,7 @@
       "generated_at": "<generated_at>",
       "report_path": "<report_path>",
       "root": "<root>",
-      "schema_version": 1,
+      "schema_version": 2,
       "verdict": "ready-with-warnings"
     }
   },

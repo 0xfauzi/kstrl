@@ -348,13 +348,15 @@ def test_verify_commands_warn_when_there_is_no_project_for_uv_run(tmp_path: Path
     assert "uv run pytest" in result.output
 
 
-def test_measure_points_at_ks_check_and_refuses(tmp_path: Path) -> None:
+def test_measure_on_a_broken_kstrl_toml_is_a_failed_row_not_a_crash(tmp_path: Path) -> None:
+    """#654: `--measure` loads the verify and factory sections, which raise
+    on this file. It does not measure, and points at kstrl_config."""
     root = ready_repo(tmp_path)
+    (root / "kstrl.toml").write_bytes(b"[verify\n")
     result = run_doctor(root, "--measure")
-    assert result.exit_code == 2, result.output
-    assert "ks check" in result.output
-    assert "not built" in result.output
-    assert not (root / ".kstrl").exists()  # it refused before measuring anything
+    assert result.exit_code == 1, result.output
+    assert "[fail] base_gates: not evaluated: kstrl.toml did not load" in result.output
+    assert not (root / ".kstrl" / "contract").exists()
 
 
 def test_every_report_carries_the_fit_boundaries(tmp_path: Path) -> None:
@@ -386,10 +388,10 @@ def test_a_root_that_is_not_a_directory_is_refused_before_anything_is_written(
 
 
 def test_the_refusals_carry_the_same_json_envelope_as_check(tmp_path: Path) -> None:
-    """`ks doctor`'s two refusals (a bad `--root` and `--measure`) route
-    through the same `_check_error` helper `ks check` uses, so `--json`
-    prints the same one-key document on both commands, naming the
-    doctor's own schema version rather than check's.
+    """`ks doctor`'s refusal of a bad `--root` routes through the same
+    `_check_error` helper `ks check` uses, so `--json` prints the same
+    one-key document on both commands, naming the doctor's own schema
+    version rather than check's.
     """
     missing = tmp_path / "nope"
     bad_root = run_doctor(missing, "--json")
@@ -398,15 +400,6 @@ def test_the_refusals_carry_the_same_json_envelope_as_check(tmp_path: Path) -> N
     document = json.loads(bad_root.stdout)
     assert document["schema_version"] == doctor.DOCTOR_SCHEMA_VERSION
     assert "root is not a directory" in document["error"]
-
-    root = ready_repo(tmp_path)
-    measured = run_doctor(root, "--measure", "--json")
-    assert measured.exit_code == 2, measured.output
-    assert "error:" in measured.output
-    measured_document = json.loads(measured.stdout)
-    assert measured_document["schema_version"] == doctor.DOCTOR_SCHEMA_VERSION
-    assert "ks check" in measured_document["error"]
-    assert not (root / ".kstrl").exists()  # it refused before measuring anything
 
 
 # --- #628: what doctor says about a repository that is not Python ---------

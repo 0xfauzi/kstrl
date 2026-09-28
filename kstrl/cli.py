@@ -4179,8 +4179,8 @@ def _check_error(
     One ``error:`` line on stderr always; with ``--json`` a one-key
     document on stdout so a pipe reading stdout sees the failure too.
 
-    Shared with ``ks doctor``'s two refusals (``--measure`` and a
-    ``--root`` that is not a directory), which named this exact
+    Shared with ``ks doctor``'s refusal of a ``--root`` that is not a
+    directory, which named this exact
     contract in the PR body without going through it: printing the
     JSON error document is what ``--json`` on a refusal means, and a
     caller with its own schema names it with ``schema_version`` rather
@@ -4507,20 +4507,18 @@ def check(
 @click.option(
     "--measure",
     is_flag=True,
-    help="Tier B (not built): prints the command that already measures this tree",
+    help="Tier B: also run the test, typecheck and lint commands on the base "
+    "branch, as ks factory does before any engineer runs",
 )
 def doctor(root: Path | None, as_json: bool, measure: bool) -> None:
     """Assess whether this repository is ready to point kstrl at.
 
     Exit 0 for ready and ready-with-warnings, 1 for not-ready (a
-    finding), 2 when it cannot run (an unusable --root, or --measure).
+    finding; with --measure, a gate that fails on the base branch is
+    one), 2 when it cannot run (an unusable --root).
     """
     from kstrl import doctor as doctor_mod
-
-    if measure:
-        _check_error(
-            doctor_mod.MEASURE_NOT_BUILT, as_json, schema_version=doctor_mod.DOCTOR_SCHEMA_VERSION
-        )
+    from kstrl.ui.plain import PlainUI
 
     root_dir = (root or Path.cwd()).resolve()
     if not root_dir.is_dir():
@@ -4530,7 +4528,8 @@ def doctor(root: Path | None, as_json: bool, measure: bool) -> None:
             schema_version=doctor_mod.DOCTOR_SCHEMA_VERSION,
         )
 
-    document = doctor_mod.diagnose(root_dir)
+    # PlainUI writes to stderr, so --json stays one document on stdout.
+    document = doctor_mod.diagnose(root_dir, PlainUI() if measure else None)
     failure = doctor_mod.write_report(document)
     if failure is not None:
         click.echo(f"warning: {failure}", err=True)
