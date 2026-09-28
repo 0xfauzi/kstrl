@@ -274,6 +274,12 @@ def _expecting(command: str, expected: dict[str, Any]) -> dict[str, Any]:
             "stdout is not the expected JSON: expected [1,2]",
         ),
         (
+            "printf '[1, 2, 3]'",
+            {"stdout_json": [1, 2]},
+            False,
+            "stdout is not the expected JSON: expected [1,2]",
+        ),
+        (
             "printf hello",
             {"stdout_json": {"a": 1}},
             False,
@@ -304,6 +310,7 @@ def _expecting(command: str, expected: dict[str, Any]) -> dict[str, Any]:
         "true-is-not-one",
         "an-extra-key-is-a-difference",
         "array-order-is-a-difference",
+        "a-longer-array-is-a-difference",
         "not-json",
         "stderr-contains",
         "stdout-is-not-stderr",
