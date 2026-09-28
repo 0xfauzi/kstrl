@@ -160,7 +160,7 @@ def scrubbed_subprocess_env(passthrough: Collection[str] = ()) -> dict[str, str]
         chosen = name in exact or name.startswith(prefixes)
         if not chosen and not _scrub_admits(name, value):
             continue
-        if any(frag in name for frag in _SCRUB_ENV_SENSITIVE_FRAGMENTS):
+        if any(frag in name.upper() for frag in _SCRUB_ENV_SENSITIVE_FRAGMENTS):
             continue
         env[name] = value
     return env

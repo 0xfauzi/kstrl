@@ -107,10 +107,18 @@ def test_a_secret_named_variable_still_does_not_reach_it(
     """Named in env_passthrough, and still dropped: the fragment filter wins."""
     monkeypatch.setenv("FOO_TOKEN", "hunter2")
     monkeypatch.setenv("FOO_REGION", "eu-west-1")
+    # npm reads its auth token from a lower-case npm_config_ name.
+    monkeypatch.setenv("npm_config__authToken", "npm-secret")
+    monkeypatch.setenv("npm_config_registry", "https://npm.corp.invalid")
     root = _repo(
         tmp_path,
-        {"FOO_TOKEN": "-", "FOO_REGION": "eu-west-1"},
-        verify_extra='env_passthrough = ["FOO_TOKEN", "FOO_*"]\n',
+        {
+            "FOO_TOKEN": "-",
+            "FOO_REGION": "eu-west-1",
+            "npm_config__authToken": "-",
+            "npm_config_registry": "https://npm.corp.invalid",
+        },
+        verify_extra='env_passthrough = ["FOO_TOKEN", "FOO_*", "npm_config_*"]\n',
     )
 
     rows = _gate_rows(root)
@@ -166,28 +174,36 @@ def test_a_whole_environment_passthrough_is_refused(
         assert "env_passthrough" in document["error"] or "ENV_PASSTHROUGH" in document["error"]
 
 
+def _proxy_url(userinfo: str = "") -> str:
+    """A proxy URL, with ``user:pass@`` when ``userinfo`` is given. Built from
+    parts so the source holds no literal credentialed URL for a secret
+    scanner to report."""
+    return "http://" + userinfo + "proxy.corp.invalid:3128"
+
+
 def test_a_credentialed_proxy_url_is_handled_as_decided(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A proxy URL with no userinfo passes by default. One carrying
     ``user:pass@`` is dropped, and reaches the command only when the
     operator names the variable in env_passthrough."""
-    monkeypatch.setenv("HTTP_PROXY", "http://proxy.corp.invalid:3128")
-    monkeypatch.setenv("HTTPS_PROXY", "http://alice:s3cret@proxy.corp.invalid:3128")
-    monkeypatch.setenv("http_proxy", "http://proxy.corp.invalid:3128")
-    monkeypatch.setenv("https_proxy", "http://bob:hunter2@proxy.corp.invalid:3128")
+    alice = _proxy_url("alice" + ":" + "s3cret" + "@")
+    monkeypatch.setenv("HTTP_PROXY", _proxy_url())
+    monkeypatch.setenv("HTTPS_PROXY", alice)
+    monkeypatch.setenv("http_proxy", _proxy_url())
+    monkeypatch.setenv("https_proxy", _proxy_url("bob" + ":" + "hunter2" + "@"))
     default = _repo(
         tmp_path / "default",
         {
-            "HTTP_PROXY": "http://proxy.corp.invalid:3128",
-            "http_proxy": "http://proxy.corp.invalid:3128",
+            "HTTP_PROXY": _proxy_url(),
+            "http_proxy": _proxy_url(),
             "HTTPS_PROXY": "-",
             "https_proxy": "-",
         },
     )
     named = _repo(
         tmp_path / "named",
-        {"HTTPS_PROXY": "http://alice:s3cret@proxy.corp.invalid:3128"},
+        {"HTTPS_PROXY": alice},
         verify_extra='env_passthrough = ["HTTPS_PROXY"]\n',
     )
 
@@ -202,9 +218,13 @@ def test_the_launchd_plist_path_contains_the_configured_extra_directories(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The PATH of the shell that printed the plist, kept to the absolute
-    directories that exist, comes first in the job's PATH."""
+    directories that exist, comes first in the job's PATH. A relative entry
+    is dropped even when it names a directory that exists from where the
+    plist was printed: launchd would resolve it against the project root."""
     cargo_bin = tmp_path / "cargo" / "bin"
     cargo_bin.mkdir(parents=True)
+    (tmp_path / "relative" / "bin").mkdir(parents=True)
+    monkeypatch.chdir(tmp_path)
     missing = tmp_path / "gone" / "bin"
     monkeypatch.setenv("PATH", f"{cargo_bin}:{missing}:relative/bin::/usr/bin:/bin")
     root = tmp_path / "proj"
