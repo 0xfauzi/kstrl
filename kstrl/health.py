@@ -221,15 +221,27 @@ def _breaches(readings: Sequence[MetricReading]) -> list[HealthBreach]:
     return [r.breach for r in readings if r.breach is not None]
 
 
+def health_readings(root_dir: Path, experiments: Path | None = None) -> list[MetricReading]:
+    """Load this project's recorded history once and score it.
+
+    The one read every caller that starts from a root goes through:
+    ``health_breaches``, ``health_status`` and the ladder's L3 entry
+    criterion (``autonomy.entry_signal_blockers``, #643). Raises what
+    ``EvolutionConfig.load`` and ``load_runs`` raise; an unreadable
+    history is the caller's refusal, never an empty read.
+    """
+    config = EvolutionConfig.load(root_dir)
+    runs = load_runs(experiments or config.experiments_path)
+    return readings_from(runs, config.journal_path)
+
+
 def health_breaches(root_dir: Path, experiments: Path | None = None) -> list[HealthBreach]:
     """The contract #232 reads (``kstrl/factory.py:2888``).
 
     The seam calls this POSITIONALLY with one argument; ``experiments``
     exists only for ``ks autonomy replay --experiments``.
     """
-    config = EvolutionConfig.load(root_dir)
-    runs = load_runs(experiments or config.experiments_path)
-    return _breaches(readings_from(runs, config.journal_path))
+    return _breaches(health_readings(root_dir, experiments))
 
 
 def breach_lines(breaches: Sequence[HealthBreach]) -> list[str]:
@@ -289,7 +301,4 @@ def health_report(readings: Sequence[MetricReading]) -> tuple[str, list[HealthBr
 
 def health_status(root_dir: Path) -> tuple[str, list[HealthBreach]]:
     """The plain-text ``ks health`` report and its breach list, from ONE read."""
-    config = EvolutionConfig.load(root_dir)
-    runs = load_runs(config.experiments_path)
-    readings = readings_from(runs, config.journal_path)
-    return health_report(readings)
+    return health_report(health_readings(root_dir))

@@ -412,6 +412,17 @@ calibration regression beyond baseline tolerance, health-metric breach
 re-promotion locked for 10 decisive runs after a demotion. Every demotion
 emits an inbox item carrying the triggering evidence.
 
+**Entry signals (#643).** Three criteria in the table are not ladder counters, and
+`kstrl/autonomy.py::entry_signal_blockers` reads each one for `ks autonomy status` and
+`ks autonomy promote`. L2 "calibration compare green" means no undecided (open or snoozed)
+`calibration_drift` inbox item. That item is the only record a
+`python -m kstrl.calibration compare --root` regression leaves in a project, so the criterion is
+refused while `[autonomy]` or `[inbox]` is disabled or the inbox cannot be read or parsed. L3 "health
+metrics inside limits" is computed from the recorded run history the way `ks health` computes it: a
+breach blocks, and so does a metric that fewer than 8 decisive runs record. L4 "deploy target exists"
+is not checked, because the release stage (#154) is not built, so it blocks. `--force` overrides all
+three and records them in the transition's `forced_over_blockers`.
+
 **L1 plan approval (#602).** Enforced in `kstrl/plan_gate.py::run_plan_gate`, called from
 `run_factory` after every pre-spend refusal and before anything is pushed, merged or scheduled. At L1
 it asks through the interaction channel; only an answered approval runs the plan. Anything else parks

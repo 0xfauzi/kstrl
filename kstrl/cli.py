@@ -5052,6 +5052,7 @@ def autonomy_status(root: Path | None, ui: str, no_color: bool) -> None:
     from kstrl.autonomy import (
         AutonomyConfig,
         AutonomyState,
+        entry_signal_blockers,
         flag_bundle_for,
         resolve_runtime_level,
     )
@@ -5107,7 +5108,10 @@ def autonomy_status(root: Path | None, ui: str, no_color: bool) -> None:
             f"{state.cooldown_runs_remaining} run(s) remaining",
         )
 
-    blockers = state.promotion_blockers()
+    blockers = [
+        *state.promotion_blockers(),
+        *entry_signal_blockers(root_dir, state.autonomy_level),
+    ]
     ui_impl.subsection("Promotion")
     if blockers:
         ui_impl.warn("  Not eligible:")
@@ -5145,6 +5149,7 @@ def autonomy_promote(
         AutonomyState,
         commit_transition,
         control_relocation_error,
+        entry_signal_blockers,
         promotion_authority_error,
     )
 
@@ -5165,7 +5170,12 @@ def autonomy_promote(
         ui_impl.err(f"Promotion refused: {relocation_error}")
         sys.exit(2)
     try:
-        record = state.promote(actor=actor, ack=ack, force=force)
+        record = state.promote(
+            actor=actor,
+            ack=ack,
+            force=force,
+            signal_blockers=entry_signal_blockers(root_dir, state.autonomy_level),
+        )
     except AutonomyError as exc:
         ui_impl.err(f"Promotion refused: {exc}")
         sys.exit(2)

@@ -425,9 +425,13 @@ def replay(runs: list[RunRecord]) -> ReplayReport:
             # real-world requirement, not a replay one - here we ask "what
             # would the criteria have allowed?", so the simulation grants
             # it and says so.
+            # No calibration or health reading: the recorded history
+            # carries neither, so the replay bounds eligibility by the
+            # ladder counters alone and states it here.
             record = state.promote(
                 actor="replay",
                 ack=f"simulated: criteria met at {run.run_id}",
+                signal_blockers=(),
             )
             report.would_promote.append(
                 f"{run.timestamp} {run.run_id}: L{record.from_level} -> "
