@@ -18,6 +18,9 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
+
+from kstrl import gepa_adapter
 from kstrl.gepa_adapter import ReflectionModel, RoleFixture, run_optimization
 from kstrl.review import REVIEWER_PROMPT
 from tests.test_gepa_adapter import (
@@ -216,3 +219,38 @@ def test_an_outage_outside_the_validation_pass_is_not_a_refusal(tmp_path: Path) 
     }
     assert report["verdict"] == "improved"
     assert report["verdict_reasons"] == []
+
+
+def test_a_validation_pass_with_no_recorded_outcome_refuses_the_verdict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """gepa logs and swallows an exception raised in a callback, which
+    leaves every candidate without validation outcomes. Every reply parsed
+    and the candidate beats the seed on score, but nothing recorded what the
+    validation pass measured, so the verdict is refused, not improved."""
+
+    def broken(self: object, event: object) -> None:
+        raise RuntimeError("the callback broke")
+
+    monkeypatch.setattr(gepa_adapter._StateKeeper, "on_valset_evaluated", broken)
+    path = run_optimization(
+        "reviewer",
+        REVIEWER_PROMPT,
+        _fixture_set(),
+        runner=MarkerReviewer(),
+        reflection_lm=ScriptedReflection(REVIEWER_PROMPT),
+        max_metric_calls=10,
+        run_dir=tmp_path / "run",
+    )
+
+    report = json.loads(path.read_text(encoding="utf-8"))
+    assert report["best_idx"] == 1
+    assert report["candidates"][1]["val_score"] > report["candidates"][0]["val_score"]
+    assert [c["val_outcomes"] for c in report["candidates"]] == [{}, {}]
+    assert report["verdict"] == "refused"
+    assert report["verdict_reasons"] == [
+        "candidate 0: concern-03-scope-creep: no outcome was recorded",
+        "candidate 0: rev-neg-01-used-helper-refactor: no outcome was recorded",
+        "candidate 1: concern-03-scope-creep: no outcome was recorded",
+        "candidate 1: rev-neg-01-used-helper-refactor: no outcome was recorded",
+    ]

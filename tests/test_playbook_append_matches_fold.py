@@ -454,6 +454,19 @@ def test_repair_lists_and_writes_only_with_yes(xdg: Path, tmp_path: Path) -> Non
     assert [lesson.id for lesson in load_playbook().lessons] == ["L1"]
 
 
+def test_learn_repair_refuses_an_unreadable_ledger_with_exit_2(xdg: Path, tmp_path: Path) -> None:
+    """A ledger that exists and cannot be read is a refusal on both paths,
+    never "Nothing to repair": only a MISSING ledger refuses nothing."""
+    ledger_path().mkdir(parents=True)
+
+    for args in ((), ("--yes",)):
+        proc = _ks(tmp_path, xdg, "learn", "repair", *args, "--ui", "plain")
+        output = proc.stdout + proc.stderr
+        assert proc.returncode == 2, output
+        assert "could not be repaired" in output
+        assert "Nothing to repair" not in output
+
+
 def test_repair_leaves_a_missing_ledger_missing(xdg: Path) -> None:
     assert repair_ledger() == ()
     assert not playbook_dir().exists()
