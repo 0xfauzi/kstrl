@@ -73,7 +73,7 @@ from kstrl.statedir import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Mapping, Sequence
 
     from kstrl.events import EventBus
     from kstrl.ui.base import UI
@@ -568,6 +568,7 @@ class AutonomyState:
         actor: str,
         ack: str,
         *,
+        signal_blockers: Sequence[str],
         force: bool = False,
         evidence: dict[str, Any] | None = None,
     ) -> Transition:
@@ -578,6 +579,12 @@ class AutonomyState:
         criteria - it still demands the ack, and the override is written
         into the transition's evidence so the audit trail shows the
         criteria were bypassed rather than met.
+
+        ``signal_blockers`` are the unmet criteria no ladder counter holds,
+        from :func:`entry_signal_blockers`. It has no default (#643): the
+        calibration and health criteria had no reader because nothing
+        asked for one, so every caller now states what it read, and
+        ``autonomy_replay`` states that it read nothing.
         """
         if not actor.strip():
             raise AutonomyError("promotion requires an actor: agents cannot promote themselves")
@@ -587,7 +594,7 @@ class AutonomyState:
         if current is AutonomyLevel.L4_DEPLOY:
             raise AutonomyError("already at the highest level (L4 Deploy)")
         target = AutonomyLevel(int(current) + 1)
-        blockers = self.promotion_blockers(target)
+        blockers = [*self.promotion_blockers(target), *signal_blockers]
         if blockers and not force:
             raise AutonomyError(
                 f"cannot promote {current.label} -> {target.label}: " + "; ".join(blockers)
@@ -910,6 +917,110 @@ def control_relocation_error(
         "(R8.9). Finish migrating leftover `.kstrl/` control files, or "
         "point XDG_STATE_HOME outside the repo, then retry."
     )
+
+
+#: The L4 entry criterion nothing can read yet (#643). A deploy target
+#: belongs to the release stage, #154, which is deferred, so the criterion
+#: is reported as unchecked rather than printed as met.
+DEPLOY_TARGET_UNCHECKED = (
+    "deploy target exists: not checked, because the release stage (#154) is not built"
+)
+
+
+def entry_signal_blockers(root_dir: Path, current: AutonomyLevel) -> list[str]:
+    """Unmet entry criteria for the level above ``current`` that no ladder counter holds.
+
+    ``AutonomyState.promotion_blockers`` reads the ladder's own counters.
+    Three criteria in ``docs/dark-factory-roadmap.md`` R8.2 are not
+    counters, and before #643 nothing read them, so `ks autonomy status`
+    printed "Criteria met" with a calibration regression and a health
+    breach open. Each is read here. A signal that cannot be read is a
+    blocker, never a pass: this check CLEARS a promotion, so it is narrow.
+    Empty at L4, which has no level above it.
+    """
+    if current is AutonomyLevel.L1_SUPERVISED:
+        return _calibration_blockers(root_dir)
+    if current is AutonomyLevel.L2_GATED_MERGE:
+        return _health_blockers(root_dir)
+    if current is AutonomyLevel.L3_ENVELOPED_AUTO:
+        return [DEPLOY_TARGET_UNCHECKED]
+    return []
+
+
+def _calibration_blockers(root_dir: Path) -> list[str]:
+    """L2's "calibration compare green": no undecided ``calibration_drift`` item.
+
+    The measurement is ``python -m kstrl.calibration compare --root``, run
+    by hand against kstrl's own baselines, and its one record in a project
+    is the ``calibration_drift`` item ``kstrl.calibration_ladder`` opens on
+    a regression. The absence of that item means something only while its
+    writer is armed, which needs ``[autonomy]`` and ``[inbox]`` both
+    enabled. A snoozed item is deferred, not decided, so it still blocks,
+    and an unparseable inbox line could be one, so it blocks too.
+    """
+    from kstrl.inbox import UNDECIDED, Inbox, InboxConfig, ItemKind
+
+    try:
+        ladder_enabled = AutonomyConfig.load(root_dir).enabled
+        inbox_config = InboxConfig.load(root_dir)
+    except Exception as exc:  # noqa: BLE001 - every unreadable config is the same refusal
+        return [f"calibration compare: [autonomy] or [inbox] config could not be read ({exc})"]
+    if not (ladder_enabled and inbox_config.enabled):
+        return [
+            "calibration compare: not recorded, because a regression opens a "
+            "calibration_drift item only while [autonomy] and [inbox] are both enabled"
+        ]
+    inbox = Inbox(root_dir, inbox_config)
+    scan = inbox.scan()
+    if scan.unreadable:
+        return [f"calibration compare: the inbox at {inbox.path} could not be read"]
+    unparseable = scan.unparseable_count()
+    if unparseable:
+        return [
+            f"calibration compare: {unparseable} line(s) of the inbox at {inbox.path} "
+            "could not be parsed, and any of them could be a calibration_drift item"
+        ]
+    undecided = [
+        item.id[:8]
+        for item in scan.folded_items()
+        if item.kind == ItemKind.CALIBRATION_DRIFT and item.status in UNDECIDED
+    ]
+    if undecided:
+        return [
+            f"calibration compare not green: {len(undecided)} undecided "
+            f"calibration_drift inbox item(s): {', '.join(undecided)}"
+        ]
+    return []
+
+
+def _health_blockers(root_dir: Path) -> list[str]:
+    """L3's "health metrics inside limits", computed the way `ks health` computes it.
+
+    From the recorded run history on every call, not from
+    ``health_breach`` inbox items: an item records what one run saw, and
+    says nothing about the history since. A metric with fewer than
+    ``MIN_DECISIVE_RUNS`` decisive runs has no limits, so it blocks as
+    unmeasured. A metric whose baseline never varied has no breach under
+    the R8.4 rules, and `ks health` reports it the same way.
+    """
+    from kstrl.health import breach_lines, health_readings
+
+    try:
+        readings = health_readings(root_dir)
+    except Exception as exc:  # noqa: BLE001 - every unreadable history is the same refusal
+        return [f"health metrics: the recorded run history could not be read ({exc})"]
+    unmeasured = [
+        f"health metric {reading.metric} not measured: {len(reading.values)} "
+        f"decisive run(s) record it, need {MIN_DECISIVE_RUNS}"
+        for reading in readings
+        if reading.mean is None
+    ]
+    breaches = [reading.breach for reading in readings if reading.breach is not None]
+    outside = [
+        f"health metric outside limits: {line.strip().removeprefix('- ')}"
+        for line in breach_lines(breaches)
+    ]
+    return unmeasured + outside
 
 
 def promotion_authority_error(*, force: bool) -> str | None:
