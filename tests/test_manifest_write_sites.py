@@ -101,6 +101,7 @@ EXPECTED_MANIFEST_WRITE_SITES: dict[str, tuple[int, str]] = {
     "kstrl/factory.py::_stamp_feature_base save": (1, IN_RUN),
     "kstrl/integration_fix.py::append_fix_component save": (1, IN_RUN),
     "kstrl/pipeline.py::ComponentPipeline._fail_pr_flow save": (1, IN_RUN),
+    "kstrl/plan_gate.py::_settle save": (1, IN_RUN),
     "kstrl/pipeline.py::ComponentPipeline._park_awaiting_approval save": (1, IN_RUN),
     "kstrl/pipeline.py::ComponentPipeline._park_merge_pending save": (1, IN_RUN),
     "kstrl/pipeline.py::ComponentPipeline._phase_pr save": (1, IN_RUN),

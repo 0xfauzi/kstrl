@@ -14,15 +14,21 @@ the decision, and for most kinds nobody does:
   a park exists. The decision acts only while the component is still
   AWAITING_APPROVAL; for any other status neither approve nor reject has
   an effect, so neither is offered.
+- A plan park (kind ``plan_gate``, #602) is read by
+  ``plan_gate.run_plan_gate`` at the start of the next ``ks factory`` run
+  on the manifest. Approved: the plan runs if it is still the plan the
+  item was filed for (``evidence.plan_digest``); a changed plan is asked
+  about again. Rejected: that run refuses with exit code 2 and runs
+  nothing. ``ks serve`` admits no new work while a plan waits.
 - Every other kind is record-only: a grep for the approved and rejected
-  statuses outside ``kstrl/inbox.py`` finds only the park consumer.
+  statuses outside ``kstrl/inbox.py`` finds only the two park consumers.
   Approve and reject close the item and nothing else.
 - Snooze hides any item until ``snooze_hours`` pass; it returns by the
   clock (``InboxItem.is_open``), and nothing else changes.
 
 The TUI records the decision only. ``ks inbox approve`` and
-``ks inbox reject`` on a park also start ``ks factory``; this screen does
-not. The item's own text (``pipeline.PARK_DETAIL``) says what the shell
+``ks inbox reject`` on either park also start ``ks factory``; this screen
+does not. The item's own text (``pipeline.PARK_DETAIL``) says what the shell
 commands do, labelled as the shell's, so the sentences here say only what
 this screen does (#433 K1).
 """
@@ -113,6 +119,29 @@ def _park(item: InboxItem, component_status: str | None, snooze_hours: float) ->
     )
 
 
+def _plan(item: InboxItem, snooze_hours: float) -> Consequences:
+    return Consequences(
+        offered=(
+            (
+                APPROVE,
+                "records approval only; nothing runs until the next ks factory run on this "
+                "manifest. That run runs the plan if it is still the plan this item was filed "
+                "for; a changed plan is asked about again.",
+            ),
+            (
+                REJECT,
+                "records rejection with your reason only. The next ks factory run on this "
+                "manifest refuses the plan and runs nothing.",
+            ),
+            _snooze(
+                item,
+                snooze_hours,
+                "The plan stays parked and ks serve admits no new work meanwhile.",
+            ),
+        ),
+    )
+
+
 def consequences(
     item: InboxItem,
     component_status: str | None,
@@ -125,6 +154,8 @@ def consequences(
     """
     if _is_park(item):
         return _park(item, component_status, snooze_hours)
+    if item.kind is ItemKind.PLAN_GATE:
+        return _plan(item, snooze_hours)
     record_only = f"closes this item; no kstrl step reads a {kind_label(item.kind)} decision."
     return Consequences(
         offered=(

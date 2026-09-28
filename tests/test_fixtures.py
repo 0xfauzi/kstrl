@@ -536,6 +536,27 @@ class TestFunctionFixtureSubprocess:
         assert result.passed is False
         assert "not found" in result.message
 
+    def test_function_fixture_with_kwargs(self, tmp_path: Path) -> None:
+        """Folded in from test_harness_integration.py (deleted; test-suite
+        consolidation): the one case there not already covered above -
+        that ``input_data["kwargs"]`` reaches the called function."""
+        (tmp_path / "greeter.py").write_text(
+            "def greet(name, greeting='hello'): return f'{greeting} {name}'\n"
+        )
+        fixture = Fixture(
+            description="greet with kwargs",
+            fixture_type="function",
+            input_data={
+                "module": "greeter",
+                "function": "greet",
+                "args": ["alice"],
+                "kwargs": {"greeting": "hi"},
+            },
+            expected={"returns": "hi alice"},
+        )
+        result = run_function_fixture(fixture, tmp_path, timeout=60.0)
+        assert result.passed is True, result.message
+
 
 # ---------------------------------------------------------------------------
 # R7.2: file fixtures stay inside the worktree

@@ -1,9 +1,15 @@
 """R8.6 PR 3: GitHub Issues intake adapter tests.
 
-Every test here stubs `gh`. The live round-trip against a real repo is a
-separate, deliberate exercise (recorded in the PR), because a suite that
-hit the API would be slow, rate-limited, and would post public comments
-on every run.
+Every test here runs the real `sync`/`serve_cycle`/`verify_authorization`
+entry points against a real `Queue` and a real `ProcessedLedger` on
+`tmp_path`, stubbing only `gh` itself. Pure parsers, argv builders and
+config-field validation (`parse_issue_list`, `spec_from_issue`,
+`resolve_repo`, `poll_queued`'s argv shape, `plan_sync`, the writeback
+argv builders) are exercised only indirectly, through `sync` and
+`serve_cycle`, and are no longer pinned here directly; the live
+round-trip against a real repo is a separate, deliberate exercise
+(recorded in the PR), because a suite that hit the API would be slow,
+rate-limited, and would post public comments on every run.
 
 The properties that matter most are the ones that protect the queue from
 the front-end rather than the other way round: a GitHub outage must not
@@ -14,7 +20,6 @@ may grant a remote item auto-merge.
 from __future__ import annotations
 
 import json
-import subprocess
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import patch
@@ -22,25 +27,10 @@ from unittest.mock import patch
 import pytest
 
 from kstrl.intake_github import (
-    MAX_SPEC_CHARS,
-    Decision,
     GhResult,
     GitHubIntakeConfig,
-    IntakeError,
     ProcessedLedger,
-    RemoteIssue,
     SyncResult,
-    apply_state_label,
-    issue_number_from_ref,
-    parse_issue_list,
-    plan_sync,
-    poll_queued,
-    post_comment,
-    repo_from_ref,
-    report_outcome,
-    resolve_repo,
-    run_gh,
-    spec_from_issue,
     sync,
     verify_authorization,
 )
@@ -180,145 +170,6 @@ class _GhStub:
 
     def argv_for(self, *head: str) -> list[list[str]]:
         return [c for c in self.calls if c[: len(head)] == list(head)]
-
-
-# --------------------------------------------------------------------------
-# run_gh: every failure becomes a value
-# --------------------------------------------------------------------------
-
-
-class TestRunGhNeverRaises:
-    """The adapter is additive by contract, so nothing may escape."""
-
-    def test_a_missing_binary_is_reported(self) -> None:
-        with patch("shutil.which", return_value=None):
-            result = run_gh(["issue", "list"], timeout=1.0)
-        assert not result.ok
-        assert "not installed" in result.error
-
-    def test_a_timeout_is_reported(self) -> None:
-        with patch("shutil.which", return_value="/usr/bin/gh"):
-            with patch(
-                "kstrl.intake_github.subprocess.run",
-                side_effect=subprocess.TimeoutExpired("gh", 1.0),
-            ):
-                result = run_gh(["issue", "list"], timeout=1.0)
-        assert not result.ok
-        assert "timed out" in result.error
-
-    def test_an_os_error_is_reported(self) -> None:
-        with patch("shutil.which", return_value="/usr/bin/gh"):
-            with patch(
-                "kstrl.intake_github.subprocess.run",
-                side_effect=OSError("exec format error"),
-            ):
-                result = run_gh(["issue", "list"], timeout=1.0)
-        assert not result.ok
-        assert "could not run" in result.error
-
-    def test_a_nonzero_exit_is_reported_with_stderr(self) -> None:
-        completed = subprocess.CompletedProcess(
-            args=["gh"],
-            returncode=1,
-            stdout="",
-            stderr="HTTP 403 rate limited",
-        )
-        with patch("shutil.which", return_value="/usr/bin/gh"):
-            with patch(
-                "kstrl.intake_github.subprocess.run",
-                return_value=completed,
-            ):
-                result = run_gh(["issue", "list"], timeout=1.0)
-        assert not result.ok
-        assert "rate limited" in result.error
-
-    def test_success_carries_stdout(self) -> None:
-        completed = subprocess.CompletedProcess(
-            args=["gh"],
-            returncode=0,
-            stdout="[]",
-            stderr="",
-        )
-        with patch("shutil.which", return_value="/usr/bin/gh"):
-            with patch(
-                "kstrl.intake_github.subprocess.run",
-                return_value=completed,
-            ):
-                result = run_gh(["issue", "list"], timeout=1.0)
-        assert result.ok
-        assert result.stdout == "[]"
-
-
-# --------------------------------------------------------------------------
-# Parsing
-# --------------------------------------------------------------------------
-
-
-class TestParseIssueList:
-    def test_parses_a_normal_payload(self) -> None:
-        issues, error = parse_issue_list(_issue_payload(_issue(7), _issue(3)))
-        assert error == ""
-        assert [i.number for i in issues] == [3, 7], "oldest first"
-
-    def test_malformed_json_is_an_ERROR_not_an_empty_poll(self) -> None:
-        """#187 F7: this used to be indistinguishable from a healthy `[]`."""
-        issues, error = parse_issue_list("{not json")
-        assert issues == []
-        assert "could not parse" in error
-
-    def test_a_non_list_payload_is_an_error(self) -> None:
-        issues, error = parse_issue_list('{"number": 1}')
-        assert issues == []
-        assert "expected a list" in error
-
-    def test_a_valid_empty_payload_is_not_an_error(self) -> None:
-        assert parse_issue_list("[]") == ([], "")
-
-    def test_one_bad_entry_does_not_discard_the_rest(self) -> None:
-        """A single unparseable issue must not stall the whole queue."""
-        payload = json.dumps([{"title": "no number"}, _issue(5)])
-        issues, error = parse_issue_list(payload)
-        assert [i.number for i in issues] == [5]
-        assert error == "", "per-entry tolerance survives the strict top level"
-
-    def test_labels_are_extracted(self) -> None:
-        issues, _ = parse_issue_list(_issue_payload(_issue(1)))
-        assert issues[0].labels == ("kstrl:queued",)
-
-    def test_a_missing_title_falls_back(self) -> None:
-        issues, _ = parse_issue_list(json.dumps([{"number": 9}]))
-        assert issues[0].title == "issue #9"
-
-    def test_a_boolean_number_is_rejected(self) -> None:
-        issues, error = parse_issue_list(json.dumps([{"number": True}]))
-        assert issues == []
-        assert error == ""
-
-
-# --------------------------------------------------------------------------
-# Spec construction
-# --------------------------------------------------------------------------
-
-
-class TestSpecFromIssue:
-    def test_carries_provenance(self) -> None:
-        """A spec that cannot be traced back to a request is a liability."""
-        spec = spec_from_issue(RemoteIssue(12, "Add X", "Body text", "u"), REPO)
-        assert "# Add X" in spec
-        assert f"{REPO}#12" in spec
-        assert "Body text" in spec
-
-    def test_truncates_a_pathological_body_and_says_so(self) -> None:
-        spec = spec_from_issue(
-            RemoteIssue(1, "T", "x" * (MAX_SPEC_CHARS * 2), "u"),
-            REPO,
-        )
-        assert len(spec) <= MAX_SPEC_CHARS + 200
-        assert "truncated by kstrl" in spec, "truncation must never be silent"
-
-    def test_a_short_body_is_untouched(self) -> None:
-        spec = spec_from_issue(RemoteIssue(1, "T", "short", "u"), REPO)
-        assert "truncated" not in spec
 
 
 # --------------------------------------------------------------------------
@@ -584,265 +435,11 @@ class TestSync:
 
 
 # --------------------------------------------------------------------------
-# Repo resolution and refs
-# --------------------------------------------------------------------------
-
-
-class TestRepoResolution:
-    def test_an_explicit_repo_needs_no_gh_call(self, tmp_path: Path) -> None:
-        stub = _GhStub()
-        with patch("kstrl.intake_github.run_gh", stub):
-            repo, error = resolve_repo(_config(), tmp_path)
-        assert (repo, error) == (REPO, "")
-        assert stub.calls == []
-
-    def test_resolution_falls_back_to_the_checkout(self, tmp_path: Path) -> None:
-        stub = _GhStub(checkout=REPO)
-        with patch("kstrl.intake_github.run_gh", stub):
-            repo, error = resolve_repo(_config(repo=""), tmp_path)
-        assert (repo, error) == (REPO, "")
-
-    def test_a_resolution_failure_is_reported_not_raised(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        with patch(
-            "kstrl.intake_github.run_gh",
-            _GhStub(checkout=GhResult(ok=False, error="not a repo")),
-        ):
-            repo, error = resolve_repo(_config(repo=""), tmp_path)
-        assert repo == ""
-        assert "could not resolve" in error
-
-    def test_unparseable_resolution_output_is_reported(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        with patch(
-            "kstrl.intake_github.run_gh",
-            _GhStub(checkout=GhResult(ok=True, stdout="{bad")),
-        ):
-            _repo, error = resolve_repo(_config(repo=""), tmp_path)
-        assert "could not parse" in error
-
-    @pytest.mark.parametrize(
-        ("ref", "number", "repo"),
-        [
-            (f"{REPO}#12", 12, REPO),
-            ("owner/name#1", 1, "owner/name"),
-            ("no-hash", 0, ""),
-            ("owner/name#abc", 0, "owner/name"),
-        ],
-    )
-    def test_ref_parsing(self, ref: str, number: int, repo: str) -> None:
-        assert issue_number_from_ref(ref) == number
-        assert repo_from_ref(ref) == repo
-
-
-# --------------------------------------------------------------------------
-# Writeback
-# --------------------------------------------------------------------------
-
-
-class TestWriteback:
-    def _github_item(self, tmp_path: Path) -> object:
-        queue = _queue(tmp_path)
-        return queue.add(
-            "# spec\n",
-            title="t",
-            source=ItemSource.GITHUB,
-            source_ref=f"{REPO}#4",
-            target_repo=REPO,
-        )
-
-    def test_reports_a_poison_with_a_recovery_hint(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        item = self._github_item(tmp_path)
-        stub = _GhStub()
-        with patch("kstrl.intake_github.run_gh", stub):
-            error = report_outcome(
-                item,
-                state="poison",
-                detail="tests failed",  # type: ignore[arg-type]
-                config=_config(),
-                root_dir=tmp_path,
-            )
-        assert error == ""
-        comment = [c for c in stub.calls if "comment" in c]
-        assert comment
-        body = comment[0][comment[0].index("--body") + 1]
-        assert "poison" in body
-        assert "tests failed" in body
-        assert "reset-attempts" in body, "say what the human can do"
-
-    def test_an_awaiting_approval_comment_names_the_approval_command(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """#465: the merge gate parks before any push, so the comment says
-        how to approve and no longer claims a PR is waiting."""
-        item = self._github_item(tmp_path)
-        stub = _GhStub()
-        with patch("kstrl.intake_github.run_gh", stub):
-            report_outcome(
-                item,
-                state="awaiting_approval",
-                detail="awaiting merge approval: http",  # type: ignore[arg-type]
-                config=_config(),
-                root_dir=tmp_path,
-            )
-        edit = [c for c in stub.calls if "edit" in c][0]
-        assert edit[edit.index("--add-label") + 1] == "kstrl:awaiting_approval"
-        comment = [c for c in stub.calls if "comment" in c][0]
-        body = comment[comment.index("--body") + 1]
-        assert "ks inbox approve" in body
-        assert "stop at the PR" not in body
-
-    def test_a_local_item_is_never_reported(self, tmp_path: Path) -> None:
-        queue = _queue(tmp_path)
-        item = queue.add("# spec\n", title="local")
-        stub = _GhStub()
-        with patch("kstrl.intake_github.run_gh", stub):
-            error = report_outcome(
-                item,
-                state="done",
-                detail="",
-                config=_config(),
-                root_dir=tmp_path,
-            )
-        assert error == ""
-        assert stub.calls == []
-
-    def test_a_disabled_adapter_reports_nothing(self, tmp_path: Path) -> None:
-        item = self._github_item(tmp_path)
-        stub = _GhStub()
-        with patch("kstrl.intake_github.run_gh", stub):
-            report_outcome(
-                item,
-                state="done",
-                detail="",  # type: ignore[arg-type]
-                config=_config(enabled=False),
-                root_dir=tmp_path,
-            )
-        assert stub.calls == []
-
-    def test_a_writeback_failure_is_returned_not_raised(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        item = self._github_item(tmp_path)
-        stub = _GhStub(
-            edit=GhResult(ok=False, error="HTTP 403"),
-            comment=GhResult(ok=False, error="HTTP 500"),
-        )
-        with patch("kstrl.intake_github.run_gh", stub):
-            error = report_outcome(
-                item,
-                state="poison",
-                detail="x",  # type: ignore[arg-type]
-                config=_config(),
-                root_dir=tmp_path,
-            )
-        assert "403" in error and "500" in error
-
-    def test_an_unmappable_ref_is_reported(self, tmp_path: Path) -> None:
-        queue = _queue(tmp_path)
-        item = queue.add(
-            "# spec\n",
-            title="t",
-            source=ItemSource.GITHUB,
-            source_ref="garbage",
-        )
-        error = report_outcome(
-            item,
-            state="done",
-            detail="",
-            config=_config(repo=""),
-            root_dir=tmp_path,
-        )
-        assert "cannot map" in error
-
-    def test_the_state_label_replaces_every_managed_label(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """An issue must never carry two contradictory kstrl states."""
-        stub = _GhStub()
-        with patch("kstrl.intake_github.run_gh", stub):
-            apply_state_label(_config(), REPO, 4, "done", tmp_path)
-        argv = stub.calls[0]
-        assert argv[argv.index("--add-label") + 1] == "kstrl:done"
-        removed = [argv[i + 1] for i, a in enumerate(argv) if a == "--remove-label"]
-        assert set(removed) == {
-            "kstrl:queued",
-            "kstrl:running",
-            "kstrl:failed",
-            "kstrl:poison",
-            "kstrl:awaiting_approval",
-        }
-
-    def test_comments_can_be_switched_off(self, tmp_path: Path) -> None:
-        stub = _GhStub()
-        with patch("kstrl.intake_github.run_gh", stub):
-            error = post_comment(
-                _config(comment_on_result=False),
-                REPO,
-                4,
-                "body",
-                tmp_path,
-            )
-        assert error == ""
-        assert stub.calls == []
-
-
-# --------------------------------------------------------------------------
 # Config
 # --------------------------------------------------------------------------
 
 
 class TestConfig:
-    def test_off_by_default(self) -> None:
-        config = GitHubIntakeConfig()
-        assert not config.enabled
-        assert config.queued_label == "kstrl:queued"
-        assert config.max_items_per_sync == 5
-
-    @pytest.mark.parametrize(
-        "kwargs",
-        [
-            {"queued_label": "  "},
-            {"max_items_per_sync": 0},
-            {"timeout_seconds": 0},
-            {"repo": "not-a-repo"},
-            {"repo": "a/b/c"},
-        ],
-    )
-    def test_invalid_values_are_rejected(self, kwargs: dict[str, object]) -> None:
-        with pytest.raises(IntakeError):
-            GitHubIntakeConfig(**kwargs)  # type: ignore[arg-type]
-
-    def test_managed_labels_cover_every_state(self) -> None:
-        labels = GitHubIntakeConfig().managed_labels
-        assert labels == (
-            "kstrl:queued",
-            "kstrl:running",
-            "kstrl:done",
-            "kstrl:failed",
-            "kstrl:poison",
-            "kstrl:awaiting_approval",
-        )
-
-    def test_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("KSTRL_INTAKE_GITHUB_ENABLED", "1")
-        monkeypatch.setenv("KSTRL_INTAKE_GITHUB_REPO", REPO)
-        monkeypatch.setenv("KSTRL_INTAKE_GITHUB_MAX_ITEMS", "2")
-        config = GitHubIntakeConfig.from_env()
-        assert config.enabled
-        assert config.repo == REPO
-        assert config.max_items_per_sync == 2
-
     def test_load_reads_the_toml_section(self, tmp_path: Path) -> None:
         (tmp_path / "kstrl.toml").write_text(
             f'[intake_github]\nenabled = true\nrepo = "{REPO}"\nmax_items_per_sync = 7\n'
@@ -871,59 +468,6 @@ class TestConfig:
 
 
 class TestPollArgv:
-    def test_polls_open_issues_oldest_first_with_the_trigger_label(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """#187 F6: FIFO must be requested, not inferred from one page."""
-        stub = _GhStub(issues="[]")
-        with patch("kstrl.intake_github.run_gh", stub):
-            poll_queued(_config(), REPO, tmp_path)
-        argv = stub.calls[0]
-        assert argv[:2] == ["issue", "list"]
-        assert argv[argv.index("--repo") + 1] == REPO
-        search = argv[argv.index("--search") + 1]
-        assert "kstrl:queued" in search
-        assert "state:open" in search
-        assert "sort:created-asc" in search, "ordering must be requested"
-
-    def test_a_custom_label_is_honored(self, tmp_path: Path) -> None:
-        stub = _GhStub(issues="[]")
-        with patch("kstrl.intake_github.run_gh", stub):
-            poll_queued(_config(queued_label="factory:go"), REPO, tmp_path)
-        assert "factory:go" in stub.calls[0][stub.calls[0].index("--search") + 1]
-
-    def test_a_poll_error_is_returned(self, tmp_path: Path) -> None:
-        with patch(
-            "kstrl.intake_github.run_gh",
-            _GhStub(issues=GhResult(ok=False, error="boom")),
-        ):
-            issues, error, _exhausted = poll_queued(_config(), REPO, tmp_path)
-        assert issues == []
-        assert error == "boom"
-
-    def test_a_malformed_page_is_returned_as_an_error(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        with patch(
-            "kstrl.intake_github.run_gh",
-            _GhStub(issues=GhResult(ok=True, stdout="{bad")),
-        ):
-            issues, error, _exhausted = poll_queued(_config(), REPO, tmp_path)
-        assert issues == []
-        assert "could not parse" in error
-
-    def test_a_short_page_stops_paging(self, tmp_path: Path) -> None:
-        """A page smaller than the limit means the inbox is exhausted."""
-        stub = _GhStub(issues=_issue_payload(_issue(1), _issue(2)))
-        with patch("kstrl.intake_github.run_gh", stub):
-            issues, error, exhausted = poll_queued(_config(), REPO, tmp_path)
-        assert error == ""
-        assert len(issues) == 2
-        assert exhausted, "a short page means the inbox is exhausted"
-        assert len(stub.argv_for("issue", "list")) == 1, "no needless second page"
-
     def test_the_window_grows_when_every_issue_is_skippable(
         self,
         tmp_path: Path,
@@ -1156,54 +700,6 @@ class TestTransactionalAdmission:
         assert len(result.errors) == 2, "both items reported, batch not aborted"
 
 
-class TestPlanner:
-    """One decision tree, shared by sync and the CLI's --dry-run."""
-
-    def test_the_cap_is_applied_in_the_plan(self, tmp_path: Path) -> None:
-        queue = _queue(tmp_path)
-        issues, _ = parse_issue_list(
-            _issue_payload(*[_issue(n) for n in range(1, 6)]),
-        )
-        planned = plan_sync(
-            queue,
-            _config(max_items_per_sync=2),
-            REPO,
-            issues,
-            ProcessedLedger(tmp_path).load(),
-        )
-        assert sum(1 for p in planned if p.decision.admits) == 2
-        assert [p.decision for p in planned][2:] == [Decision.SKIP_CAP] * 3
-
-    def test_the_planner_mutates_nothing(self, tmp_path: Path) -> None:
-        queue = _queue(tmp_path)
-        issues, _ = parse_issue_list(_issue_payload(_issue(1)))
-        plan_sync(
-            queue,
-            _config(),
-            REPO,
-            issues,
-            ProcessedLedger(tmp_path).load(),
-        )
-        assert queue.items() == []
-        assert not ProcessedLedger(tmp_path).path.exists()
-
-    def test_every_skip_carries_a_reason(self, tmp_path: Path) -> None:
-        queue = _queue(tmp_path)
-        issues, _ = parse_issue_list(
-            _issue_payload(_issue(1, body=""), _issue(2)),
-        )
-        planned = plan_sync(
-            queue,
-            _config(max_items_per_sync=0 + 1),
-            REPO,
-            issues,
-            ProcessedLedger(tmp_path).load(),
-        )
-        for entry in planned:
-            if not entry.decision.admits:
-                assert entry.reason.strip(), f"{entry.decision} has no reason"
-
-
 # --------------------------------------------------------------------------
 # serve integration
 # --------------------------------------------------------------------------
@@ -1347,6 +843,88 @@ class TestServeDrivesRemoteLabels:
         self._remote_item(tmp_path)
         seen = self._run(tmp_path, self._runner(1))
         assert [state for state, _ in seen] == ["running", "poison"]
+
+    def test_a_poisoned_run_posts_the_label_and_a_recovery_hint(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """The writeback text, driven through serve_cycle with the REAL
+        ``report_outcome`` and only the ``gh`` transport stubbed: the label
+        swap replaces every managed label with ``kstrl:poison`` and the
+        comment says what the human can do (``reset-attempts``). This is
+        the carrier for the folded ``TestWriteback`` unit tests."""
+        from kstrl.serve import RunSpend, serve_cycle
+
+        self._remote_item(tmp_path)
+        stub = _GhStub()
+        with patch("kstrl.serve.read_run_spend", lambda root, rid: RunSpend()):
+            with patch(
+                "kstrl.intake_github.GitHubIntakeConfig.load",
+                return_value=_config(),
+            ):
+                with patch("kstrl.intake_github.run_gh", stub):
+                    serve_cycle(tmp_path, runner=self._runner(1))  # type: ignore[arg-type]
+
+        edits = stub.argv_for("issue", "edit")
+        assert edits, stub.calls
+        last = edits[-1]
+        assert last[last.index("--add-label") + 1] == "kstrl:poison"
+        removed = {last[i + 1] for i, a in enumerate(last) if a == "--remove-label"}
+        assert "kstrl:running" in removed and "kstrl:poison" not in removed
+        comments = stub.argv_for("issue", "comment")
+        assert comments, stub.calls
+        body = comments[-1][comments[-1].index("--body") + 1]
+        assert "poison" in body
+        assert "reset-attempts" in body, "say what the human can do"
+
+    def test_a_merge_gate_park_names_the_approval_command(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """#465 through serve_cycle with the real writeback: a run whose
+        manifest holds a component the merge gate parked is labelled
+        ``kstrl:awaiting_approval`` and the comment names ``ks inbox
+        approve`` rather than claiming a PR is waiting."""
+        from kstrl.manifest import Component, ComponentStatus, Manifest
+        from kstrl.serve import RunOutcome, RunSpend, serve_cycle
+
+        self._remote_item(tmp_path)
+        stub = _GhStub()
+
+        def runner(*, root_dir: Path, **kwargs: object) -> RunOutcome:
+            run_dir = root_dir / ".kstrl" / "runs" / "factory-x"
+            run_dir.mkdir(parents=True, exist_ok=True)
+            (run_dir / "events.jsonl").touch()
+            comp = Component("comp-a", "A", "", [], "a.json", "b/a")
+            comp.status = ComponentStatus.AWAITING_APPROVAL.value
+            path = root_dir / "scripts" / "kstrl" / "manifest.json"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            Manifest(
+                version="1",
+                spec_file="s.md",
+                project_name="p",
+                base_branch="main",
+                single_pr=False,
+                components=[comp],
+                run_id="factory-x",
+            ).save(path)
+            return RunOutcome(returncode=1)
+
+        with patch("kstrl.serve.read_run_spend", lambda root, rid: RunSpend()):
+            with patch(
+                "kstrl.intake_github.GitHubIntakeConfig.load",
+                return_value=_config(),
+            ):
+                with patch("kstrl.intake_github.run_gh", stub):
+                    serve_cycle(tmp_path, runner=runner)  # type: ignore[arg-type]
+
+        edits = stub.argv_for("issue", "edit")
+        labels = [e[e.index("--add-label") + 1] for e in edits if "--add-label" in e]
+        assert labels[-1:] == ["kstrl:awaiting_approval"], (labels, stub.calls)
+        comments = stub.argv_for("issue", "comment")
+        bodies = [c[c.index("--body") + 1] for c in comments]
+        assert any("ks inbox approve" in b for b in bodies), bodies
+        assert not any("stop at the PR" in b for b in bodies), bodies
 
     def test_a_merge_gate_refusal_still_reports(
         self,

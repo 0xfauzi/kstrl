@@ -41,7 +41,9 @@ repos:
         # uv.lock is a required commit artifact over 500 KB; uv-lock owns its
         # integrity. The rest are irreplaceable measurement inputs: reference decks,
         # source filings, and round-trip evidence that cost manual work to produce.
-        exclude: '^(uv\.lock$|experiments/walking-skeleton/out/(screenshots/|inserted-saved\.pptx$)|fixtures/corpus/|fixtures/sources/|experiments/E16/out/(probe\.pdf|probe-bold-powerpoint\.pdf|E17-results\.json)$)'
+        # tests/.test_durations is the recorded per-test seconds pytest-split
+        # shards CI by (8070 rows); regenerated from a junit run, not hand-edited.
+        exclude: '^(uv\.lock$|tests/\.test_durations$|experiments/walking-skeleton/out/(screenshots/|inserted-saved\.pptx$)|fixtures/corpus/|fixtures/sources/|experiments/E16/out/(probe\.pdf|probe-bold-powerpoint\.pdf|E17-results\.json)$)'
       - id: check-merge-conflict
       - id: check-case-conflict
       - id: mixed-line-ending

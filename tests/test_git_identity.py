@@ -51,11 +51,8 @@ IDENTITY_KEYS: tuple[str, str] = ("user.name", "user.email")
 EXPECTED_IDENTITY_SPELLINGS: dict[str, int] = {
     # The one home. Two literals, the two key names.
     "tests/helpers/gitrepo.py": 2,
-    # Prose, not configuration: a Python fixture body asserting on a
-    # model's `user.name` / `user.email` attributes, in two string
-    # literals.
-    "tests/test_harness_integration.py": 2,
-    # Prose: one docstring, on the commit `run_scrubbed` makes.
+    # (tests/test_harness_integration.py's two prose spellings left with
+    # the file in the test-suite consolidation.)
 }
 
 #: Layer 2's inventory: every module in ``tests/`` that names a
@@ -136,6 +133,10 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_init_cmd.py": 3,
     "tests/test_input_hygiene.py": 4,
     "tests/test_instance_safety.py": 2,
+    # #602: `_answerable_repo`'s one commit, into a repository
+    # `tests.test_merge_gate_park._repo` already put through
+    # `tests.helpers.gitrepo.set_identity`.
+    "tests/test_l1_plan_gate.py": 1,
     # #459: five `git commit` spellings, every one into a repository
     # this file's `isolated_repo` put through
     # `tests.helpers.gitrepo.set_identity`.
@@ -202,7 +203,6 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_review_agent_fallback.py": 2,
     "tests/test_review_coverage.py": 2,
     "tests/test_review_gates.py": 1,
-    "tests/test_review_payload.py": 2,
     "tests/test_root_checkout_merge.py": 4,
     "tests/test_run_honesty.py": 1,
     # #571: `_repo` commits the E2E fixture repo once, after
