@@ -406,7 +406,7 @@ class TestGitDiffErrorHasOneHome:
                 if isinstance(node, ast.Raise) and _names_git_diff_error(node):
                     census[where] = census.get(where, 0) + 1
 
-        assert census == {"git.py": 20}
+        assert census == {"git.py": 25}
 
     def test_no_importfrom_outside_git_py_binds_the_name(self) -> None:
         offenders = [

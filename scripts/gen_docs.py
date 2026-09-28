@@ -653,7 +653,7 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
         "policy",
         "max_lines_changed",
     ): "max added+removed lines (lockfiles excluded); negative disables",
-    ("policy", "deps_allow_new"): "allow new uv.lock packages (L3+ may enable)",
+    ("policy", "deps_allow_new"): "allow new packages in any lockfile kstrl reads (L3+ may enable)",
     ("policy", "secret_patterns"): "regexes flagged in added diff lines",
     (
         "policy",
@@ -662,7 +662,7 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("policy", "license_allow"): "allowed SPDX ids for new deps (empty disables)",
     ("policy", "license_deny_partial"): "substrings that deny a dep license (copyleft)",
     ("policy", "license_unresolved"): "block | advisory when no source resolves a license",
-    ("policy", "license_use_network"): "allow PyPI fallback; false = uv cache only",
+    ("policy", "license_use_network"): "PyPI fallback for PyPI packages; false = uv cache only",
     ("policy", "deploy"): "reserved for the R8.7 release gate; stored + hashed",
     ("autonomy", "enabled"): "derive run permissions from the ladder level (opt-in)",
     ("autonomy", "max_level"): "hard ceiling: never run above this level (1-4)",
