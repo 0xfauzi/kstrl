@@ -367,6 +367,7 @@ class TestThePinnedCommit:
             ui: object,
             components_merged: bool = False,
             base_sha: str = "",
+            setup: object = None,
         ) -> list[ContractResult]:
             pinned.append(base_sha)
             if len(pinned) == 1:
@@ -419,6 +420,7 @@ class TestThePinnedCommit:
             ui: object,
             components_merged: bool = False,
             base_sha: str = "",
+            setup: object = None,
         ) -> list[ContractResult]:
             pinned.append(base_sha)
             return [ContractResult(True, 0, ["comp-a"])]

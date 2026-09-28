@@ -95,8 +95,28 @@ EXPECTED_SURFACE_CLASSES: dict[str, frozenset[str]] = {
 EXPECTED_SURFACE_CLASSES |= {
     "EnvelopeResolution": frozenset(),
     "FeatureParams": frozenset(),
+    # #624: worktree_setup builds a WorktreeSetup from two of the config's
+    # own fields and reads nothing from disk or the environment.
+    # worktree_setup_for_component and worktree_setup_summary are the same
+    # shape: each derives its value from fields FactoryConfig already
+    # holds. _apply_worktree_setup_overlay is the one place load() applies
+    # the toml section and the env vars for those two fields; it was split
+    # out of load() to keep load()'s own complexity from growing with
+    # every new [factory] key load() gains (a pre-commit ratchet, not a
+    # new config source: it reads the same section and os.environ load()
+    # already reads, precedence env > toml > default).
     "FactoryConfig": frozenset(
-        {"__post_init__", "engineer_verify_config", "from_env", "load", "resolved_verify_config"}
+        {
+            "__post_init__",
+            "_apply_worktree_setup_overlay",
+            "engineer_verify_config",
+            "from_env",
+            "load",
+            "resolved_verify_config",
+            "worktree_setup",
+            "worktree_setup_for_component",
+            "worktree_setup_summary",
+        }
     ),
     "RunEnvelope": frozenset({"load", "policy_hash", "resolve"}),
     # #231 B4: `SteerContext` holds the `GitHubIntakeConfig` a steering

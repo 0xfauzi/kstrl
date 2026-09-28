@@ -365,6 +365,8 @@ integration_review = true          # record-only review of the merged feature af
 integration_blocking = false       # open integration findings become a fix component; a non-clean stop fails the run (#483)
 integration_max_rounds = 1         # most fix components one feature may get, counted from the manifest; at least 1 (#483)
 convergence_attempts = 0           # fail a component whose gate failure count has not fallen for this many consecutive attempts; 0 = off (#233)
+worktree_setup_command = ""        # installs a kstrl worktree's own dependencies before the engineer and every gate; use a lockfile-respecting command; empty = none (#624)
+worktree_setup_timeout = 0.0       # seconds before the worktree setup's process group is killed; 0 = no limit (#624)
 
 # No-progress circuit breaker (R7.5; 0 iterations disables)
 [breaker]

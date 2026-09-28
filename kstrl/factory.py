@@ -152,6 +152,7 @@ from kstrl.verify import (
     scrub_project_claude_md,
 )
 from kstrl.version import kstrl_version
+from kstrl.worktree_setup import WorktreeSetup
 from kstrl.worktree_sweep import WorktreeSweep, sweep_worktree
 
 if TYPE_CHECKING:
@@ -362,6 +363,13 @@ class FactoryConfig:
     # operator sets it after reading the per-attempt `failure_count` the
     # journal records on every superseded attempt.
     convergence_attempts: int = 0
+    # #624: the command that gives a kstrl worktree its own dependencies,
+    # run before the engineer and before every gate (see
+    # kstrl/worktree_setup.py). "" means none; a component's scaffold
+    # replaces it for that component. The timeout is in seconds, 0 = no
+    # limit (#467).
+    worktree_setup_command: str = ""
+    worktree_setup_timeout: float = 0.0
     # R7.2: approved-fixtures oracle for Phase 1. None means run_factory
     # loads FixturesConfig.load(root_dir) - toml [fixtures] section +
     # env - so `ks factory` honors the config with no CLI wiring.
@@ -415,6 +423,34 @@ class FactoryConfig:
         call site made ``(cfg.verify_config, False)`` a legal miscall.
         """
         return None if self.skip_verification else self.resolved_verify_config()
+
+    def worktree_setup(self, scaffold: str = "") -> WorktreeSetup:
+        """The setup a worktree gets (#624): ``scaffold`` when a component
+        names one, else ``worktree_setup_command``."""
+        return WorktreeSetup(scaffold or self.worktree_setup_command, self.worktree_setup_timeout)
+
+    def worktree_setup_for_component(self, comp: Component) -> WorktreeSetup | None:
+        """The setup for a component's own worktree: ``None`` under
+        ``use_worktrees=False``, where the engineer runs in the operator's
+        own checkout and kstrl installs nothing (#624)."""
+        return self.worktree_setup(comp.scaffold) if self.use_worktrees else None
+
+    def worktree_setup_summary(self) -> str:
+        """The run-header value for the configured setup command (#624)."""
+        return self.worktree_setup_command or "none"
+
+    def _apply_worktree_setup_overlay(self, section: dict[str, Any]) -> None:
+        """Overlay ``[factory] worktree_setup_command``/``_timeout`` from the
+        toml ``section``, then any matching env var, precedence env > toml >
+        default (#624)."""
+        if "worktree_setup_command" in section:
+            self.worktree_setup_command = str(section["worktree_setup_command"])
+        if "worktree_setup_timeout" in section:
+            self.worktree_setup_timeout = float(section["worktree_setup_timeout"])
+        if "KSTRL_FACTORY_WORKTREE_SETUP_COMMAND" in os.environ:
+            self.worktree_setup_command = os.environ["KSTRL_FACTORY_WORKTREE_SETUP_COMMAND"]
+        if "KSTRL_FACTORY_WORKTREE_SETUP_TIMEOUT" in os.environ:
+            self.worktree_setup_timeout = float(os.environ["KSTRL_FACTORY_WORKTREE_SETUP_TIMEOUT"])
 
     def __post_init__(self) -> None:
         # R10.3: catch a bad claim mode wherever the config is
@@ -470,6 +506,11 @@ class FactoryConfig:
             convergence_attempts=_validate_convergence_attempts(
                 _env_int(os.environ.get("KSTRL_FACTORY_CONVERGENCE_ATTEMPTS", "0")),
                 "KSTRL_FACTORY_CONVERGENCE_ATTEMPTS",
+            ),
+            worktree_setup_command=os.environ.get("KSTRL_FACTORY_WORKTREE_SETUP_COMMAND", ""),
+            worktree_setup_timeout=check_number(
+                float(os.environ.get("KSTRL_FACTORY_WORKTREE_SETUP_TIMEOUT", "0")),
+                "KSTRL_FACTORY_WORKTREE_SETUP_TIMEOUT",
             ),
             # R10.3: unlike review_mode next door, this key HAS an env
             # var, so from_env must read it. `ks factory` uses from_env
@@ -553,6 +594,7 @@ class FactoryConfig:
             config.progress_log_enabled = bool(section["progress_log_enabled"])
         if "keep_worktrees_on_failure" in section:
             config.keep_worktrees_on_failure = bool(section["keep_worktrees_on_failure"])
+        config._apply_worktree_setup_overlay(section)
         config.integration_review = strict_bool(
             section, "integration_review", config.integration_review
         )
@@ -2582,7 +2624,7 @@ def _run_component(
     sleep_seconds: float,
     previous_context_json: str | None = None,
     codebase_scan_config_dict: dict[str, Any] | None = None,
-    scaffold_cmd: str | None = None,
+    setup: WorktreeSetup | None = None,
     component_deps: list[str] | None = None,
     knowledge_prefix: str = "",
     decisions_prefix: str = "",
@@ -2749,12 +2791,13 @@ def _run_component(
     # worktree it is missing whenever the base branch does not track it.
     codebase_map_file = root_dir / codebase_map_file_str
 
-    # The scaffold command and the Phase 0 scan. Both stay non-fatal; a
-    # failure comes back as a note that is warned once `ui` is bound (#486).
+    # The worktree setup and the Phase 0 scan. Neither stops the engineer;
+    # a failure comes back as a note that is warned once `ui` is bound
+    # (#486). The setup runs again before Phase 1, where it gates (#624).
     codebase_scan_prefix, setup_notes = _prepare_component_tree(
         worktree_path,
         component_id,
-        scaffold_cmd,
+        setup,
         codebase_scan_config_dict,
         component_deps,
     )
@@ -3000,37 +3043,27 @@ def _run_component(
 def _prepare_component_tree(
     worktree_path: Path,
     component_id: str,
-    scaffold_cmd: str | None,
+    setup: WorktreeSetup | None,
     codebase_scan_config_dict: dict[str, Any] | None,
     component_deps: list[str] | None,
 ) -> tuple[str, list[str]]:
-    """Run the scaffold command and build the Phase 0 scan context.
+    """Run the worktree setup and build the Phase 0 scan context.
 
     Returns ``(codebase_scan_prefix, notes)``. Neither failure stops the
-    component, and neither is passed over: each one is a note the caller
+    engineer, and neither is passed over: each one is a note the caller
     warns on the worker's UI. The engineer runs without its Phase 0
     context when the scan note is present (#486).
+
+    A failed setup does not stop the ENGINEER because the engineer may be
+    the one who can repair it (a lockfile its previous attempt broke).
+    It cannot pass a gate: the setup runs again before Phase 1, and there
+    a failure is an infrastructure failure and no gate runs (#624).
     """
     notes: list[str] = []
-    if scaffold_cmd:
-        try:
-            completed = subprocess.run(
-                scaffold_cmd,
-                shell=True,
-                cwd=worktree_path,
-                capture_output=True,
-                timeout=120,
-            )
-        except Exception as exc:  # noqa: BLE001 - non-fatal, never silent
-            notes.append(
-                f"  Scaffold command failed for {component_id}: {type(exc).__name__}: {exc}"
-            )
-        else:
-            if completed.returncode != 0:
-                notes.append(
-                    f"  Scaffold command failed for {component_id}: "
-                    f"exit code {completed.returncode}"
-                )
+    if setup is not None:
+        setup_error = setup.prepare(worktree_path)
+        if setup_error:
+            notes.append(f"  Worktree setup failed for {component_id}: {setup_error}")
     codebase_scan_prefix = ""
     if codebase_scan_config_dict:
         try:
@@ -4627,6 +4660,7 @@ def _run_factory_locked(
         factory_config.contract_config.mode if factory_config.contract_config else "skip"
     )
     ui.kv("Contract check", contract_mode)
+    ui.kv("Worktree setup", factory_config.worktree_setup_summary())
     for label, value in _execution_limit_rows(timeout_cfg, factory_config):
         ui.kv(label, value)
 
@@ -4741,7 +4775,7 @@ def _run_factory_locked(
             base_config.sleep_seconds,
             ctx_json,
             ff_config_dict,
-            comp.scaffold or None,
+            factory_config.worktree_setup_for_component(comp),
             comp.dependencies or None,
             knowledge_prefix,
             # #260: rides the same context-prefix path the distilled
@@ -5198,6 +5232,7 @@ def _run_factory_locked(
                 ui,
                 components_merged=components_merged,
                 base_sha=round_base_sha,
+                setup=factory_config.worktree_setup(),
             )
         except ContractCleanupError as exc:
             # A contract temp worktree survived removal. The user's

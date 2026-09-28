@@ -204,6 +204,7 @@ NO_LIMIT_KEYS: frozenset[tuple[str, str]] = frozenset(
         ("factory", "max_adversarial_calls"),
         ("factory", "max_total_tokens"),
         ("factory", "max_cost_usd"),
+        ("factory", "worktree_setup_timeout"),
         ("serve", "daily_budget_usd"),
         ("serve", "factory_timeout_seconds"),
         ("serve", "max_open_prs"),
@@ -306,6 +307,8 @@ def _phase_sections() -> list[tuple[str, Any, list[str]]]:
                 "integration_blocking",
                 "integration_max_rounds",
                 "convergence_attempts",
+                "worktree_setup_command",
+                "worktree_setup_timeout",
             ],
         ),
         # Derived, not hand-listed. The hand-written copy of this list

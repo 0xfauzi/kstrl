@@ -184,7 +184,8 @@ class Component:
     # consumers (PR body, manifest.json readers).
     findings: list[Finding] = field(default_factory=list)
     review_findings: str = ""
-    # Optional scaffold script to run before the agent
+    # Optional setup command for this component's worktree. It replaces
+    # [factory] worktree_setup_command there (#624).
     scaffold: str = ""
     # R3.3 post-mortem fields. failed_phase/failed_check name where the
     # last failure happened (phase = engineer/verify/review/security/pr/

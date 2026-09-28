@@ -3301,6 +3301,10 @@ class ComponentPipeline:
                 verification=VerificationResult(passed=True, checks=[]),
             )
 
+        setup_failure = self._set_up_gate_worktree(comp, comp_result, wt_path)
+        if setup_failure is not None:
+            return setup_failure
+
         verify_config = self.factory_config.resolved_verify_config()
         self.ui.info(f"  Phase 1: mechanical verification for {comp.id}...")
         verify_start = time.monotonic()
@@ -3445,6 +3449,46 @@ class ComponentPipeline:
 
         self.ui.ok(f"  Phase 1 passed for {comp.id}")
         return VerifyPhaseResult(ran=True, verification=verification)
+
+    def _set_up_gate_worktree(
+        self,
+        comp: Component,
+        comp_result: ComponentResult,
+        wt_path: Path,
+    ) -> VerifyPhaseResult | None:
+        """Run the worktree setup before Phase 1 reads the tree (#624).
+
+        Again, after the engineer: its commits may have changed the lockfile
+        the setup installs from, and a gate must measure the branch's
+        dependencies, never the root checkout's. A failure is an
+        infrastructure failure and no gate runs; the retry context carries
+        the setup's output, because a lockfile the engineer broke is the
+        engineer's to repair. Nothing runs under ``use_worktrees=False``,
+        where the tree is the operator's own checkout.
+        """
+        if not self.factory_config.use_worktrees:
+            return None
+        error = self.factory_config.worktree_setup(comp.scaffold).prepare(wt_path)
+        if not error:
+            return None
+        headline = error.splitlines()[0]
+        self.ui.err(f"  Worktree setup FAILED for {comp.id}, so no Phase 1 gate ran: {headline}")
+        self._add_findings(
+            comp, [Finding.infrastructure_error(phase="provisioning", explanation=error)]
+        )
+        ctx = IterationContext.from_json(comp_result.context_json or "{}")
+        ctx.add_verification_failure(error, attempt=comp.retries + 1, infrastructure=True)
+        return VerifyPhaseResult(
+            ran=False,
+            verification=VerificationResult(passed=False, checks=[]),
+            failure=PhaseFailure(
+                action=FailureAction.RETRY_OR_FAIL,
+                error=f"Worktree setup failed (infrastructure): {headline}",
+                phase="provisioning",
+                check="worktree_setup",
+                context_json=ctx.to_json(),
+            ),
+        )
 
     def _phase_diff(
         self,

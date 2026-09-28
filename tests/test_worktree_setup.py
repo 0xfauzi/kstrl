@@ -1,0 +1,332 @@
+"""#624: every worktree kstrl creates gets its own dependencies before a gate reads it.
+
+kstrl nests its worktrees under the project root, and Node resolves a module
+by walking up the directory tree, so a worktree with no ``node_modules`` of its
+own silently used the ROOT checkout's. Measured on the unfixed tree with the
+fixture below: a branch that adds a dependency failed Phase 1 with ``Cannot find
+module 'greet'``, and a branch whose code only works on the root's older copy
+passed Phase 1 and Phase 3.
+
+The fixture is a Node project with no registry: the branch vendors its
+dependency under ``deps/`` and the setup command installs it into the
+worktree's own ``node_modules``, wiping what was there first, the way
+``npm ci`` does. The gates run ``node check.js``, which prints the version it
+resolved. Each test drives the real factory with a shell-command engineer.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import signal
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+from kstrl.config import KstrlConfig
+from kstrl.contract import ContractConfig, ContractMode
+from kstrl.factory import FactoryConfig, FactoryResult, run_factory
+from kstrl.manifest import Component, ComponentStatus, Manifest
+from kstrl.timeout import TimeoutConfig
+from kstrl.ui.plain import PlainUI
+from kstrl.verify import VerifyConfig
+from tests.helpers import gitrepo
+from tests.helpers.procs import wait_for_pid_to_die
+
+CHECK = "node check.js"
+#: What ``npm ci`` does, without a registry: wipe node_modules, install the lock.
+INSTALL = (
+    "rm -rf node_modules && mkdir node_modules && "
+    "if [ -d deps ]; then cp -R deps/. node_modules/; fi"
+)
+PRD = "scripts/kstrl/feature/a/prd.json"
+
+
+def _git(root: Path, *args: str) -> None:
+    subprocess.run(["git", *args], cwd=root, check=True, capture_output=True, timeout=30)
+
+
+def _repo(root: Path, root_greet: str | None = None) -> Path:
+    """A repo on main with the kstrl scaffolding committed. ``root_greet``
+    installs ``greet`` at that version in the ROOT checkout only, untracked,
+    the way an operator's own ``npm install`` leaves it."""
+    assert _node_is_installed(), "these tests need node on PATH"
+    root.mkdir(parents=True)
+    _git(root, "init", "-q", "-b", "main")
+    gitrepo.set_identity(root)
+    (root / ".gitignore").write_text("node_modules/\n", encoding="utf-8")
+    (root / "scripts" / "kstrl").mkdir(parents=True)
+    (root / "scripts" / "kstrl" / "prompt.md").write_text("test prompt\n", encoding="utf-8")
+    (root / PRD).parent.mkdir(parents=True)
+    story = {
+        "id": "US-001",
+        "title": "T",
+        "acceptanceCriteria": ["AC1"],
+        "priority": 1,
+        "passes": True,
+        "notes": "",
+    }
+    (root / PRD).write_text(
+        json.dumps({"branchName": "kstrl/factory/a", "userStories": [story]}), encoding="utf-8"
+    )
+    _git(root, "add", "-A")
+    _git(root, "commit", "-q", "-m", "init")
+    if root_greet is not None:
+        installed = root / "node_modules" / "greet"
+        installed.mkdir(parents=True)
+        (installed / "index.js").write_text(f'module.exports = "{root_greet}";\n', encoding="utf-8")
+    return root
+
+
+def _node_is_installed() -> bool:
+    return subprocess.run(["node", "--version"], capture_output=True, timeout=30).returncode == 0
+
+
+def _engineer(branch_greet: str, expect: str) -> str:
+    """A shell engineer: the branch pins ``greet`` at ``branch_greet`` and
+    adds ``check.js``, which exits 1 unless it resolved ``expect``."""
+    return (
+        "mkdir -p deps/greet && "
+        f"printf 'module.exports = \"{branch_greet}\";\\n' > deps/greet/index.js && "
+        'printf \'const v = require("greet"); console.log("greet " + v); '
+        f'if (v !== "{expect}") process.exit(1);\\n\' > check.js && '
+        "git add deps check.js && git commit -qm dep && "
+        "echo '<promise>COMPLETE</promise>'"
+    )
+
+
+def _manifest(scaffold: str = "") -> Manifest:
+    return Manifest(
+        version="1",
+        spec_file="spec.md",
+        project_name="t",
+        base_branch="main",
+        single_pr=False,
+        components=[
+            Component(
+                id="a",
+                title="A",
+                description="",
+                dependencies=[],
+                prd_path=PRD,
+                branch_name="kstrl/factory/a",
+                status=ComponentStatus.PENDING.value,
+                scaffold=scaffold,
+            )
+        ],
+    )
+
+
+def _run(
+    root: Path,
+    agent_cmd: str,
+    gate: str,
+    setup: str,
+    monkeypatch: pytest.MonkeyPatch,
+    typecheck_and_lint: str = "true",
+    scaffold: str = "",
+    contract_gate: str = "",
+) -> tuple[FactoryResult, Component]:
+    """One factory run: ``gate`` is the test command of Phase 1, and of
+    Phase 3 unless ``contract_gate`` names another."""
+    monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
+    manifest = _manifest(scaffold)
+    factory_config = FactoryConfig(
+        use_worktrees=True,
+        create_prs=False,
+        max_parallel=1,
+        max_retries=0,
+        retry_delay=0,
+        review_mode="skip",
+        integration_review=False,
+        progress_log_path=root / ".kstrl" / "progress.jsonl",
+        verify_config=VerifyConfig(
+            test_command=gate,
+            typecheck_command=typecheck_and_lint,
+            lint_command=typecheck_and_lint,
+            check_diff_scope=False,
+            check_bad_patterns=False,
+        ),
+        contract_config=ContractConfig(
+            mode=ContractMode.TIER.value, test_command=contract_gate or gate, timeout=60
+        ),
+        timeout_config=TimeoutConfig(agent_iteration=60, component_total=120),
+        worktree_setup_command=setup,
+    )
+    base = KstrlConfig(
+        prompt_file=root / "scripts" / "kstrl" / "prompt.md",
+        prd_file=root / "scripts" / "kstrl" / "prd.json",
+        sleep_seconds=0,
+        agent_cmd=agent_cmd,
+        kstrl_branch="",
+        kstrl_branch_explicit=True,
+        ui_mode="plain",
+        no_color=True,
+    )
+    result = run_factory(manifest, factory_config, base, PlainUI(no_color=True), root)
+    comp = manifest.get_component("a")
+    assert comp is not None
+    return result, comp
+
+
+def _events(root: Path, name: str) -> list[dict[str, object]]:
+    rows = (root / ".kstrl" / "progress.jsonl").read_text(encoding="utf-8").splitlines()
+    return [e["data"] for e in map(json.loads, rows) if e["event"] == name]
+
+
+def test_a_branch_dependency_is_installed_in_the_component_worktree(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _repo(tmp_path / "repo")  # nothing installed in the root checkout
+
+    result, comp = _run(root, _engineer("2.0.0", "2.0.0"), CHECK, INSTALL, monkeypatch)
+
+    assert result.exit_code == 0, (comp.failed_phase, comp.failed_check, comp.error)
+    assert result.completed == ["a"]
+    assert [e["passed"] for e in _events(root, "verification_result")] == [True]
+    # Phase 3 merged the branch into a fresh contract worktree, which has no
+    # node_modules until its own setup runs.
+    assert [e["passed"] for e in _events(root, "contract_result")] == [True]
+    assert result.contract_failures == []
+
+
+def test_a_failed_worktree_setup_stops_the_gates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _repo(tmp_path / "repo")
+    gate_ran = tmp_path / "gate-ran"
+
+    result, comp = _run(
+        root,
+        _engineer("2.0.0", "2.0.0"),
+        f"touch {gate_ran}",
+        "echo setup-broke >&2; exit 7",
+        monkeypatch,
+        typecheck_and_lint=f"touch {gate_ran}",
+    )
+
+    assert result.exit_code == 1
+    assert result.failed == ["a"]
+    assert (comp.failed_phase, comp.failed_check) == ("provisioning", "worktree_setup")
+    infra = [f for f in comp.findings if f.is_infrastructure_error]
+    assert len(infra) == 1
+    assert "exited 7" in infra[0].explanation
+    assert "setup-broke" in infra[0].explanation
+    assert not gate_ran.exists(), "a gate ran on a worktree whose setup failed"
+    assert _events(root, "verification_result") == []
+    assert _events(root, "contract_result") == []
+    # The run before the engineer is a warning to the operator, not a stop:
+    # the engineer still ran and committed.
+    log = next((root / ".kstrl" / "runs").glob("*/components/a/engineer.jsonl"))
+    assert "Worktree setup failed for a: " in log.read_text(encoding="utf-8")
+
+
+def test_the_gate_does_not_use_the_root_checkouts_node_modules(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The branch pins greet 2.0.0 while its code only works on 1.0.0, the
+    # version the operator has installed in the root checkout. A gate that
+    # resolved the root's copy passes; one that measures the branch fails.
+    root = _repo(tmp_path / "repo", root_greet="1.0.0")
+
+    result, comp = _run(root, _engineer("2.0.0", "1.0.0"), CHECK, INSTALL, monkeypatch)
+
+    assert result.failed == ["a"]
+    assert (comp.failed_phase, comp.failed_check) == ("verify", "test_suite")
+    log = next((root / ".kstrl" / "debug").glob("*/a/attempt-1/test_suite.log"))
+    assert "greet 2.0.0" in log.read_text(encoding="utf-8")
+
+
+def test_a_failed_contract_worktree_setup_runs_no_contract_test(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The component's scaffold replaces the setup in its own worktree, so
+    # Phase 1 passes. The contract worktree gets [factory]
+    # worktree_setup_command, which fails: the tier fails with the setup's
+    # output and its test never runs.
+    root = _repo(tmp_path / "repo")
+    contract_ran = tmp_path / "contract-ran"
+
+    result, _comp = _run(
+        root,
+        _engineer("2.0.0", "2.0.0"),
+        CHECK,
+        "echo contract-setup-broke >&2; exit 5",
+        monkeypatch,
+        scaffold=INSTALL,
+        contract_gate=f"touch {contract_ran}",
+    )
+
+    assert [e["passed"] for e in _events(root, "verification_result")] == [True]
+    assert [e["passed"] for e in _events(root, "contract_result")] == [False]
+    assert not contract_ran.exists(), "a contract test ran on a worktree whose setup failed"
+    assert result.exit_code == 1
+    assert len(result.contract_failures) == 1
+    assert "contract-setup-broke" in result.contract_failures[0]
+
+
+def test_a_hung_setup_is_killed_on_time(tmp_path: Path) -> None:
+    """The real ``ks factory`` in a subprocess of its own, bounded in real
+    time: a setup that backgrounds a child and waits on it is killed with
+    its whole process group when ``worktree_setup_timeout`` expires."""
+    root = _repo(tmp_path / "repo")
+    manifest_path = tmp_path / "manifest.json"
+    _manifest().save(manifest_path)
+    pids = tmp_path / "setup-children"
+    gate_ran = tmp_path / "gate-ran"
+    (root / "kstrl.toml").write_text(
+        "[factory]\n"
+        f"worktree_setup_command = 'sleep 300 >/dev/null 2>&1 & echo $! >> {pids}; wait'\n"
+        "worktree_setup_timeout = 2\n"
+        "integration_review = false\n"
+        "[verify]\n"
+        "check_diff_scope = false\n"
+        "check_bad_patterns = false\n",
+        encoding="utf-8",
+    )
+    env = {
+        **os.environ,
+        "AGENT_CMD": "echo '<promise>COMPLETE</promise>'",
+        "KSTRL_BRANCH": "",
+        "KSTRL_KNOWLEDGE_ENABLED": "0",
+    }
+    argv = [
+        *("factory", "--manifest", str(manifest_path), "--root", str(root), "--yes"),
+        *("--no-prs", "--max-parallel", "1", "--max-retries", "0"),
+        *("--review-mode", "skip", "--contract-check", "skip"),
+        *("--test-command", f"touch {gate_ran}"),
+        *("--typecheck-command", "true", "--lint-command", "true"),
+        *("--ui", "plain", "--no-color"),
+    ]
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "kstrl", *argv],
+        cwd=root,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        start_new_session=True,
+    )
+    try:
+        try:
+            out, _ = proc.communicate(timeout=180)
+        except subprocess.TimeoutExpired:
+            os.killpg(proc.pid, signal.SIGKILL)
+            proc.communicate()
+            pytest.fail("ks factory did not finish within 180s of real time")
+        children = [int(line) for line in pids.read_text(encoding="utf-8").split()]
+        # Once before the engineer, once before Phase 1.
+        assert len(children) == 2, out
+        for pid in children:
+            assert wait_for_pid_to_die(pid, timeout=10.0), f"setup child {pid} outlived its timeout"
+        assert proc.returncode == 1, out
+        assert "did not finish within 2.0s; its process group was killed" in out
+        assert not gate_ran.exists()
+    finally:
+        for line in pids.read_text(encoding="utf-8").split() if pids.exists() else []:
+            try:
+                os.kill(int(line), signal.SIGKILL)
+            except ProcessLookupError:
+                pass

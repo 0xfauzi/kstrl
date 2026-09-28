@@ -267,16 +267,22 @@ def _review_round(run: IntegrationRun, state: dict[str, Any], pin: _Pin) -> Inte
         outcome = integration_outcome(pin.test_result, result, stories, tracked=tracked)
         return _record_round(run, state, pin, number, stories, result, outcome, "")
     try:
-        with recording_prompts(
-            AgentCall(
-                run_root=run.pipeline.usage_paths.root,
-                run_id=run.run_id,
-                component=INTEGRATION_COMPONENT,
-                role=INTEGRATION_ROLE,
-                attempt=number,
-            )
-        ):
-            result = _run_reviewer(run, worktree, stories, directory / f"prd-{number}.json")
+        # #624: the reviewer may run the tests, so the tree gets its own
+        # dependencies first, and a failed setup is the round's result.
+        setup_error = run.pipeline.factory_config.worktree_setup().prepare(worktree)
+        if setup_error:
+            result = _infra(f"the integration worktree setup failed: {setup_error}")
+        else:
+            with recording_prompts(
+                AgentCall(
+                    run_root=run.pipeline.usage_paths.root,
+                    run_id=run.run_id,
+                    component=INTEGRATION_COMPONENT,
+                    role=INTEGRATION_ROLE,
+                    attempt=number,
+                )
+            ):
+                result = _run_reviewer(run, worktree, stories, directory / f"prd-{number}.json")
         outcome = integration_outcome(pin.test_result, result, stories, tracked=tracked)
     finally:
         cleanup_error = _remove(worktree, run.root_dir, run.ui)

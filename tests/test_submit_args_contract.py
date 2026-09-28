@@ -48,6 +48,7 @@ from kstrl.runstate import RunState
 from kstrl.statedir import plan_prd_path
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
+from kstrl.worktree_setup import WorktreeSetup
 
 COMP = "comp-a"
 PRD_REL = f"scripts/kstrl/feature/{COMP}/prd.json"
@@ -253,7 +254,9 @@ class TestTheWholeSubmitTupleIsBound:
             "sleep_seconds": 0,
             "previous_context_json": None,
             "codebase_scan_config_dict": None,
-            "scaffold_cmd": None,
+            # #624: the pool branch runs with worktrees, where the engineer's
+            # tree gets the (empty) setup; inline runs in the root checkout.
+            "setup": WorktreeSetup() if max_parallel > 1 else None,
             "component_deps": None,
             "knowledge_prefix": "",
             "decisions_prefix": "",
