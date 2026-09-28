@@ -337,6 +337,10 @@ EXPECTED_UNDECIDED: tuple[str, ...] = (
     "factory.py fp (the read is deferred to wherever this value is drained, "
     "which this walk cannot locate, so no handler can be credited with "
     "covering it)",
+    # #632: `_dispatch_fixture` calls a runner through `_RUNNERS`, a callee
+    # with no name. Checked by hand: the one runner that reads a file is
+    # `run_file_fixture`, through `_fixture_file_text`, which names utf-8.
+    "fixtures.py _RUNNERS[fixture.fixture_type]",
     "fixtures.py f (the read is deferred to wherever this value is drained, "
     "which this walk cannot locate, so no handler can be credited with "
     "covering it)",

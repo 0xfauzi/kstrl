@@ -159,6 +159,7 @@ EXPECTED_RUN_RECORD_SITES: dict[str, int] = {
     "pipeline.py: ComponentPipeline.journal_integration_result": 1,
     "pipeline.py: ComponentPipeline.journal_superseded_findings": 1,
     "reducer.py: upconvert_v1": 1,
+    "workqueue.py: Queue.await_answer": 1,
     "workqueue.py: Queue.await_approval": 1,
     "workqueue.py: Queue.relink_run": 1,
 }
@@ -179,6 +180,11 @@ _V1 = (
 _QUEUE_LINK = (
     "a queue item's last_run_id points at the run that parked it (#464); the "
     "item is a work item with its own id, not a record of the run"
+)
+
+_QUEUE_ESCALATION = (
+    "a queue item's last_run_id points at the decompose run whose architect "
+    "escalated (#644); the item is a work item with its own id, not a record of the run"
 )
 
 #: Layer 2. Each row is a run-record site that is not stamped at the
@@ -202,6 +208,7 @@ NOT_STAMPED_HERE: dict[str, str] = {
     ),
     "observability.py: ProgressLog.emit": _V1,
     "observability.py: ProgressLog._repair_event": _V1,
+    "workqueue.py: Queue.await_answer": _QUEUE_ESCALATION,
     "workqueue.py: Queue.await_approval": _QUEUE_LINK,
     "workqueue.py: Queue.relink_run": _QUEUE_LINK,
 }

@@ -157,6 +157,11 @@ class Verdict(StrEnum):
     #: failed (#465). Not a verdict on the spec and not retryable: the
     #: item waits for `ks inbox approve` or `ks inbox reject`.
     AWAITING_APPROVAL = "awaiting_approval"
+    #: The architect escalated a question only the owner can answer (#644).
+    #: Not a verdict on the spec and not retryable: the item waits for
+    #: `ks queue answer`, and it is neither poisoned nor counted toward
+    #: the consecutive-poison breaker.
+    AWAITING_ANSWER = "awaiting_answer"
 
     @property
     def may_retry(self) -> bool:
@@ -1117,9 +1122,8 @@ def classify_run(
             )
         if _SPEC_BLOCKER_MARKER in tail:
             return Outcome(
-                Verdict.SPEC_FAILURE,
-                "factory exited 2: the architect halted on a blocker-severity "
-                "spec issue; the spec needs a human",
+                Verdict.AWAITING_ANSWER,
+                "factory exited 2: the architect escalated a question only the owner can answer",
                 {"returncode": 2, "cause": "spec_blocker"},
             )
         return Outcome(
@@ -4013,10 +4017,22 @@ def serve_cycle(
         }
     )
 
-    # The run id reaches the queue item only on AWAITING_APPROVAL, which
-    # classify_run returns only from a manifest this invocation owns (#463).
+    # A run id reaches the queue item on two verdicts. AWAITING_APPROVAL
+    # takes the manifest's, which classify_run reads only from a manifest
+    # this invocation owns (#463). AWAITING_ANSWER takes the launch's one
+    # architect run (#644): a halt writes no manifest, and the last owned
+    # run can be a foreign factory run that landed in the window.
     if _settle_unfailed(
-        root_dir, queue, ledger, running, verdict, pr_urls, manifest_run_after, obs, result
+        root_dir,
+        queue,
+        ledger,
+        running,
+        verdict,
+        pr_urls,
+        manifest_run_after,
+        _architect_run_id(owned_runs),
+        obs,
+        result,
     ):
         return result
 
@@ -4114,6 +4130,17 @@ def serve_cycle(
     return result
 
 
+def _architect_run_id(owned_runs: Sequence[str]) -> str:
+    """The launch's architect run among its owned runs, or "" (#644).
+
+    ``owned_run_spend`` keeps a decompose run only when the launch's own
+    process opened it, so a launch that halted on an escalation owns
+    exactly one. Any other count names no run rather than picking one.
+    """
+    architect = [rid for rid in owned_runs if run_kind(rid) == ARCHITECT_RUN_KIND]
+    return architect[0] if len(architect) == 1 else ""
+
+
 def _settle_unfailed(
     root_dir: Path,
     queue: Queue,
@@ -4122,17 +4149,23 @@ def _settle_unfailed(
     verdict: Outcome,
     pr_urls: tuple[str, ...],
     run_id: str,
+    architect_run_id: str,
     obs: ServeObserver,
     result: CycleResult,
 ) -> bool:
-    """Finish an item whose run did not fail: done, or awaiting approval.
+    """Finish an item whose run did not fail: done, awaiting approval, or
+    awaiting an answer.
 
     True when the cycle is over for this item (including the item having
     vanished from the queue mid-run); False sends the caller down the
     failure branch. #465 added the second state: a park is neither a
     finish nor a failure, so it is not poisoned, it does not touch the
-    poison streak, and it is not retried. The remote writeback runs after
-    the mutex is released (#187 F10).
+    poison streak, and it is not retried. #644 added the third on the same
+    terms, for an architect escalation: the child already filed the one
+    inbox row that names `ks queue answer`, so nothing is filed here. The
+    remote writeback runs after the mutex is released (#187 F10); an item
+    awaiting an answer has none yet, so a GitHub-sourced one keeps its
+    running label until it is answered.
     """
     with queue_lock(root_dir, blocking=True):
         current = queue.get(running.item_id)
@@ -4149,11 +4182,22 @@ def _settle_unfailed(
             )
             result.needs_human = True
             state, said, detail = "awaiting_approval", "awaiting approval", verdict.reason
+        elif verdict.verdict is Verdict.AWAITING_ANSWER:
+            queue.await_answer(
+                current, reason=verdict.reason, run_id=architect_run_id, actor="serve"
+            )
+            result.needs_human = True
+            state, detail = "", verdict.reason
+            said = (
+                "awaiting an answer: see `ks inbox ls`, then "
+                f"`ks queue answer {running.item_id} <answered spec file>`"
+            )
         else:
             return False
         finished = queue.get(running.item_id)
     obs.info(f"  {running.item_id[:12]} {said}")
-    _report_remote_outcome(root_dir, finished, state=state, detail=detail, observer=obs)
+    if state:
+        _report_remote_outcome(root_dir, finished, state=state, detail=detail, observer=obs)
     return True
 
 

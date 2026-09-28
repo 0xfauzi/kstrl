@@ -984,6 +984,9 @@ class TestEveryCallerDeclaresTheStateRoot:
                 if any(kw.arg == "guard_state_root" for kw in node.keywords):
                     declared[source_file.name] = declared.get(source_file.name, 0) + 1
         assert Counter(site.split(":", 1)[0] for site in undecided) == {
+            # #632: the fixture comparison tables and the fixture runner table.
+            "fixture_expect.py": 2,
+            "fixtures.py": 1,
             "gateparse.py": 2,
             "tui/app.py": 2,
         }, f"the walk could not decide these calls: {list(undecided)}"
