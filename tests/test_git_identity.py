@@ -126,9 +126,11 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_feature_operator_context_e2e.py": 1,
     "tests/test_feature_verification.py": 1,
     "tests/test_feature_verification_attribution.py": 1,
-    # #632: `_repo`'s one seed commit, into a repository it has just put
-    # through `tests.helpers.gitrepo.set_identity`.
-    "tests/test_fixtures_beyond_python.py": 1,
+    # #632: `_repo`'s and `_json_project`'s seed commits, each into a
+    # repository it has just put through `tests.helpers.gitrepo.set_identity`,
+    # and the shell engineer's commit inside the worktree `ks factory` made
+    # from that repository.
+    "tests/test_fixtures_beyond_python.py": 3,
     "tests/test_git_identity_helper.py": 5,
     # #423's `_repo_with_tricky_names` fixture, through
     # `tests.helpers.gitrepo.set_identity`, which this row declares.
