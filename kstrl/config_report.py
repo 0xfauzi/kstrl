@@ -33,7 +33,7 @@ class ConfigRow:
     section: str
     key: str
     value: str  # pre-formatted via format_config_value
-    source: str  # flag | env | toml | default | from [verify]
+    source: str  # flag | env | toml | default | [verify]
     #: The value as the config screen shows it (``operator_value``). Not
     #: compared: it is a rendering of ``value``, not a second fact.
     shown: str = field(default="", compare=False)
@@ -431,7 +431,7 @@ def _base_rows(resolved: KstrlConfig, sources: dict[str, str]) -> list[ConfigRow
 #: says so (#621): ``ContractConfig.load`` gives Phase 3 the command
 #: ``[verify] test_command`` resolves to, which ``(default)`` would hide.
 _FOLLOWED_SECTIONS: dict[tuple[str, str], str] = {
-    ("contract", "test_command"): "from [verify]",
+    ("contract", "test_command"): "[verify]",
 }
 
 

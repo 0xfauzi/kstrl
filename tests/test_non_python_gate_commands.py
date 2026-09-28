@@ -95,7 +95,24 @@ def test_contract_test_command_follows_verify_when_unset(tmp_path: Path) -> None
     result = _config_show(root)
 
     assert result.exit_code == 0, result.output
-    assert _contract_line(result.output) == "test_command = 'cargo test'  (from [verify])"
+    assert _contract_line(result.output) == "test_command = 'cargo test'  ([verify])"
+
+
+def test_contract_test_command_follows_the_verify_env_var_over_verify_toml(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Phase 3 follows the command Phase 1 runs, and KSTRL_VERIFY_TEST_CMD beats [verify]."""
+    root = _repo(tmp_path, {"Cargo.toml": _CARGO_TOML}, init=True)
+    _uncomment_verify(root)
+    monkeypatch.delenv("KSTRL_CONTRACT_TEST_CMD", raising=False)
+    monkeypatch.setenv("KSTRL_VERIFY_TEST_CMD", "cargo nextest run")
+
+    result = _config_show(root)
+
+    assert result.exit_code == 0, result.output
+    assert _contract_line(result.output).startswith("test_command = 'cargo nextest run'  ("), (
+        result.output
+    )
 
 
 def test_contract_test_command_set_explicitly_still_wins(tmp_path: Path) -> None:
