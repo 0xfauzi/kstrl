@@ -162,7 +162,7 @@ from kstrl.verify import (
 )
 from kstrl.version import kstrl_version
 from kstrl.worktree_setup import WorktreeSetup
-from kstrl.worktree_sweep import WorktreeSweep, sweep_worktree
+from kstrl.worktree_sweep import WorktreeSweep, sweep_worktree, warn_sweep
 
 if TYPE_CHECKING:
     from kstrl.agents.liveness import ProbeResult
@@ -1544,6 +1544,8 @@ def _setup_worktree(
     run_id: str,
     fresh_from_base: bool = False,
     recut_at: str | None = None,
+    *,
+    ui: UI,
 ) -> Path:
     """Create a git worktree for a component.
 
@@ -1566,6 +1568,11 @@ def _setup_worktree(
     reuse possibly-dirty state from the killed attempt (R0.1). single_pr
     passes ``recut_at``: its branch is shared, and the commit the
     component started at holds every earlier component's commits (#566).
+
+    A process an earlier attempt's phases left running in the worktree
+    is killed before the worktree is recreated, and each kill is written
+    to ``ui`` as a warning, which a factory run records in its
+    events.jsonl (#642).
 
     POSIX only. On Windows the fcntl import fails; we degrade to the
     pre-lock behavior and document the limitation in the runbook.
@@ -1604,8 +1611,8 @@ def _setup_worktree(
         # registration in that state too (measured on git 2.47); when
         # nothing is registered it fails harmlessly, like `branch -D`.
         # #461: kill what an earlier attempt's phases left running there
-        # first; the sweep logs each process it kills.
-        sweep_worktree(worktree_path)
+        # first, and record each kill (#642).
+        warn_sweep(sweep_worktree(worktree_path), ui, "worktree setup")
         subprocess.run(
             ["git", "worktree", "remove", "--force", str(worktree_path)],
             cwd=root_dir,
@@ -1843,6 +1850,10 @@ def _prune_stale_worktrees(
     ``keep`` (R3.3) lists evidence worktrees of still-FAILED components
     (kept via keep_worktrees_on_failure); those are preserved so a
     resume does not destroy the post-mortem state it exists to protect.
+
+    A process still running in a stale worktree is killed before the
+    worktree is removed, and each kill is written to ``ui`` as a
+    warning, which a factory run records in its events.jsonl (#642).
     """
     keep = keep or set()
 
@@ -1867,7 +1878,7 @@ def _prune_stale_worktrees(
             if _kept(entry):
                 kept += 1
                 continue
-            sweep_worktree(entry)
+            warn_sweep(sweep_worktree(entry), ui, "stale worktree")
             subprocess.run(
                 ["git", "worktree", "remove", "--force", str(entry)],
                 cwd=root_dir,
@@ -1884,7 +1895,7 @@ def _prune_stale_worktrees(
                     if _kept(wt):
                         entry_kept += 1
                         continue
-                    sweep_worktree(wt)
+                    warn_sweep(sweep_worktree(wt), ui, "stale worktree")
                     subprocess.run(
                         ["git", "worktree", "remove", "--force", str(wt)],
                         cwd=root_dir,
@@ -4987,6 +4998,7 @@ def _run_factory_locked(
                         if fresh_from_base
                         else None
                     ),
+                    ui=ui,
                 )
                 # #543: registered before the merge below, so a merge that
                 # fails leaves a worktree the pass-end cleanup removes.

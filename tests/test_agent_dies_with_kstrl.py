@@ -38,7 +38,8 @@ from kstrl.timeout import TimeoutConfig
 from kstrl.ui.plain import PlainUI
 from tests import spine_utils
 from tests.helpers import gitrepo, procs
-from tests.test_agent_processes_outlive_run import COMPLETE, FLAGS, _env, _repo
+from tests.test_agent_processes_outlive_run import COMPLETE, FLAGS, _detach, _env, _kill_pid, _repo
+from tests.test_worktree_removal_sweeps import _names, _run_warnings
 
 #: Seconds from the kill to the agent's death. Measured on macOS, n=20 at
 #: load average 10.9 to 26.0 on 10 cores: at most 0.033 s. Re-measured for
@@ -264,6 +265,55 @@ def test_a_pool_worker_ends_with_its_parent_and_takes_its_agents(tmp_path: Path)
             pytest.fail("a pool worker still holds the run's stdout after its parent died")
     finally:
         _dispose(proc, pairs)
+
+
+@pytest.mark.parametrize("left", [True, False], ids=["tool-process-left", "nothing-left"])
+def test_the_next_run_names_what_it_kills_in_a_killed_runs_worktree(
+    tmp_path: Path, left: bool
+) -> None:
+    """A pool run is SIGKILLed while its agent is alive in its worktree. The
+    leash ends the agent's group, but a process the agent's tool started in
+    a session of its own is outside that group and keeps running in the
+    worktree. The next run's prune kills it, and a warning in that run's
+    events.jsonl names its pid. The control leaves nothing running: the
+    next run prunes the worktree and names no process."""
+    root = _repo(tmp_path)
+    agent_pidfile = tmp_path / "agent.pid"
+    left_pidfile = tmp_path / "left.pid"
+    detach = f"{_detach(left_pidfile)} && " if left else ""
+    agent = f"{detach}echo $$ > '{agent_pidfile}' && exec sleep 600"
+    first = _ks(root, _env(agent), *_factory_args(root, "2"))
+    second: subprocess.Popen[str] | None = None
+    try:
+        agent_group = os.getpgid(procs.read_pid(agent_pidfile, timeout=START_FUSE_SECONDS))
+        os.killpg(first.pid, signal.SIGKILL)
+        first.communicate(timeout=30)
+        # The leash leads the agent's group, runs in the worktree and waits
+        # out its grace after the kill, so a run started sooner kills it too.
+        assert procs.wait_for_group_to_die(agent_group, timeout=GRANDCHILD_BOUND_SECONDS), (
+            f"the agent's group {agent_group} outlived the killed run"
+        )
+        second = _ks(root, _env(COMPLETE), *_factory_args(root, "2"))
+        out, _ = second.communicate(timeout=240)
+        assert second.returncode == 0, out
+        assert "Pruned 1 stale worktree(s) from previous runs" in out, out
+        warnings = _run_warnings(root)
+        if not left:
+            assert "orphan_process (stale worktree)" not in warnings, warnings
+            return
+        pid = procs.read_pid(left_pidfile)
+        assert procs.wait_for_pid_to_die(pid, timeout=10), f"pid {pid} outlived the next run"
+        assert _names(warnings, pid, "stale worktree"), (
+            f"no stale worktree warning in events.jsonl names pid {pid}:\n{warnings}"
+        )
+    finally:
+        for pidfile in (agent_pidfile, left_pidfile):
+            text = pidfile.read_text(encoding="utf-8").strip() if pidfile.exists() else ""
+            if text:
+                _kill_pid(int(text))
+        procs.kill_group(first.pid)
+        if second is not None:
+            procs.kill_group(second.pid)
 
 
 def test_the_leash_passes_the_agent_its_stdin_and_stdout(tmp_path: Path) -> None:

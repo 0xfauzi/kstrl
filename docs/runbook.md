@@ -353,7 +353,9 @@ recreated, kstrl kills the process group of every process whose working
 directory is inside that worktree. One found at the end of an attempt or
 at the run's cleanup is recorded on the component as an `orphan_process`
 finding naming its pid and command; one found when a stale worktree is
-pruned or a worktree is recreated for a retry is logged as a warning.
+pruned or a worktree is recreated for a retry is named in a warning line,
+`orphan_process (stale worktree)` or `(worktree setup)`, which a factory
+run also writes to its events.jsonl (#642).
 The same kill runs before kstrl removes any other worktree it created
 (#528): a Phase 3 contract worktree, the integration review's worktree,
 and the failed attempt's evidence worktree that `ks retry` removes. No
@@ -374,9 +376,10 @@ worker whose parent dies ends too, and takes its agents with it. Measured
 on macOS: the agent was gone within 0.04 s, and a process in its group
 that ignores SIGTERM within 5.04 s. Three things this does not cover. A
 process an agent's tool started in a group or session of its own is not
-in the agent's group: in a worktree the next run's prune kills it, as
-above, and in the project root nothing does. If the leash is killed
-together with kstrl, its agent survives, and nothing reports it yet. And
+in the agent's group: in a worktree the next run's prune kills it and
+names it, as above, and in the project root nothing does. If the leash
+is killed together with kstrl, its agent survives, and nothing reports
+it yet. And
 nothing is written when a leash fires: the run looks like any
 interrupted run, with the manifest still `running`, an `events.jsonl`
 that ends without `run_completed`, and the next run's recovery lines

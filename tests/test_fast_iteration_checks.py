@@ -269,7 +269,9 @@ def test_the_factory_worker_hands_the_reading_to_the_next_iteration(tmp_path: Pa
     prompt the agent process actually read on its stdin."""
     root = tmp_path / "repo"
     init_kstrl_repo(root, ("comp-a",))
-    worktree = _setup_worktree("comp-a", "kstrl/factory/comp-a", "main", root, "run-233")
+    worktree = _setup_worktree(
+        "comp-a", "kstrl/factory/comp-a", "main", root, "run-233", ui=PlainUI(no_color=True)
+    )
     capture = tmp_path / "capture"
     capture.mkdir()
     agent_bin = tmp_path / "bin" / "fake-agent"

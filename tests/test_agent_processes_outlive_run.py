@@ -34,7 +34,6 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.factory import _setup_worktree
 from kstrl.findings import Finding
 from kstrl.loop import STOP_EXIT_CODE
 from kstrl.manifest import Manifest
@@ -441,52 +440,6 @@ def _dispose(*children: subprocess.Popen[bytes]) -> None:
         if child.poll() is None:
             child.kill()
         child.wait(timeout=10)
-
-
-@pytest.mark.parametrize("layout", ["run-dir", "flat"])
-def test_a_stale_worktree_is_swept_before_the_next_run_prunes_it(
-    tmp_path: Path, layout: str
-) -> None:
-    """A previous run that was killed leaves its worktrees, and whatever its
-    agents' tools left running in them. The next run's prune removes the
-    directories; the processes have to go first. ``flat`` is the pre-R0.5
-    layout, a worktree directly under ``.kstrl/worktrees/``, which the
-    prune recognises by the ``.git`` file inside it."""
-    root = _repo(tmp_path)
-    worktrees = root / ".kstrl" / "worktrees"
-    stale = worktrees / "factory-old" / COMP if layout == "run-dir" else worktrees / "comp-old"
-    stale.mkdir(parents=True)
-    if layout == "flat":
-        (stale / ".git").write_text("gitdir: /nonexistent\n", encoding="utf-8")
-    child = _deaf_sleep_in(stale)
-    proc = _factory(root, COMPLETE, "1")
-    try:
-        _run_to_end(proc)
-        assert child.wait(timeout=10) == -signal.SIGKILL
-        assert not stale.exists()
-    finally:
-        _stop_factory(proc)
-        _dispose(child)
-
-
-def test_a_worktree_recreated_for_a_retry_is_swept_first(tmp_path: Path) -> None:
-    """A retry recreates the component's worktree at the same path. What an
-    earlier phase left running there (a reviewer's shell, say) goes first.
-
-    Called directly: in a run, the attempt-end sweep has already emptied the
-    worktree of the engineer's processes, and reaching this site with one
-    still there needs a reviewer agent that leaves a process and a hard-mode
-    review that sends the component back."""
-    root = _repo(tmp_path)
-    branch = f"kstrl/factory/{COMP}"
-    worktree = _setup_worktree(COMP, branch, "main", root, "factory-run")
-    child = _deaf_sleep_in(worktree / "sub")
-    try:
-        again = _setup_worktree(COMP, branch, "main", root, "factory-run", fresh_from_base=True)
-        assert again == worktree
-        assert child.wait(timeout=10) == -signal.SIGKILL
-    finally:
-        _dispose(child)
 
 
 #: Leaves ``sleep 600`` running with SIGTERM ignored in a process group whose
