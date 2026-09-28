@@ -6056,9 +6056,11 @@ def queue_show(
         for entry in history:
             origin = entry.get("from") or "-"
             reason = entry.get("reason") or ""
+            actor = entry.get("actor") or ""
             ui_impl.info(
                 f"  {entry.get('ts', '')}  {origin} -> {entry.get('to', '')}"
                 + (f"  ({reason})" if reason else "")
+                + (f"  by {actor}" if actor else "")
             )
     sys.exit(0)
 
@@ -6115,6 +6117,48 @@ def queue_retry(
         ui_impl.err(str(exc))
         sys.exit(2)
     ui_impl.ok(f"Requeued {item.item_id[:12]} ({item.attempts}/{item.max_attempts} attempts used)")
+    sys.exit(0)
+
+
+@queue_group.command(name="priority")
+@click.argument("item_id")
+@click.option(
+    "--to",
+    "priority",
+    type=int,
+    required=True,
+    help="The new priority. Higher runs first; negative values are allowed",
+)
+@_queue_root_option
+@_queue_ui_option
+@_queue_no_color_option
+def queue_priority(
+    item_id: str,
+    priority: int,
+    root: Path | None,
+    ui: str,
+    no_color: bool,
+) -> None:
+    """Change a queued item's priority, keeping its id and history.
+
+    Only a queued item can change: every other state is refused by name
+    and nothing is written. The change is a row in `ks queue show`.
+    """
+    from kstrl.workqueue import QueueError, queue_lock
+
+    root_dir, queue = _queue_for(root)
+    ui_impl = _autonomy_ui(ui, no_color)
+    item = _resolve_queue_item(queue, item_id, ui_impl)
+    try:
+        with queue_lock(root_dir):
+            changed, old = queue.set_priority(item.item_id, priority, actor=_actor())
+    except (QueueError, OSError) as exc:
+        ui_impl.err(str(exc))
+        sys.exit(2)
+    if old == priority:
+        ui_impl.info(f"{changed.item_id} is already at priority {priority}; nothing changed")
+    else:
+        ui_impl.ok(f"{changed.item_id} ({changed.title}) priority {old} -> {priority}")
     sys.exit(0)
 
 
