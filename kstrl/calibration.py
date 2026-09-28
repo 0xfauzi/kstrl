@@ -12,7 +12,8 @@ that loop:
   ``kstrl.calibration_baseline.load_baseline``.
 - **Comparison**: ``python -m kstrl.calibration compare <old.json> <new.json>``
   diffs two baseline files (v1 or v2) and applies the codified thresholds
-  below. Exit code 0 = no regression, 1 = regression, 2 = usage/load error.
+  below. Exit code 0 = no regression, 1 = regression, 2 = usage/load error
+  or a role id ``MIN_ROLE_DETECTION_RATE`` does not list.
   This is what H2's "compare against the baseline" concretely means.
   ``--root`` points it at a project so a regression also reaches the
   autonomy ladder; the consequences live in ``kstrl.calibration_ladder``
@@ -75,20 +76,31 @@ from kstrl.calibration_baseline import (
 #   section 8's acceptance, adopted by its decision 6: each positive at or
 #   above the reviewer floor, and no clean twin opening a finding in any
 #   run. The paid tests gate each fixture on the same two numbers.
+# - security_hard and architect_reuse 0.50 are the value the deleted
+#   DEFAULT_MIN_ROLE_DETECTION_RATE gave them, written out (#633) so no
+#   role is gated against a number nobody chose for it.
+# - None (#633) means the role is recorded and not gated: compare applies
+#   no floor to it, still applies MAX_ROLE_DETECTION_DROP against its
+#   previous capture, and names it under "not gated" in its report. It is
+#   for a role whose first capture has not been taken yet, so its floor
+#   can be set from that capture. A role id this table does not list is
+#   refused by compare (exit 2), so a new id has to be written here, with
+#   a floor or with None, before any capture of it can be compared.
 # ---------------------------------------------------------------------------
 
 DEFAULT_CALIBRATION_RUNS = 3
 MAX_ROLE_DETECTION_DROP = 0.15
 MAX_CATEGORY_DETECTION_DROP = 0.40
-MIN_ROLE_DETECTION_RATE: dict[str, float] = {
+MIN_ROLE_DETECTION_RATE: dict[str, float | None] = {
     "security": 0.80,
+    "security_hard": 0.50,
     "reviewer": 0.65,
     "architect": 0.65,
     "architect_allowed_paths": 0.50,
+    "architect_reuse": 0.50,
     "integration": 0.65,
     "integration_clean": 1.0,
 }
-DEFAULT_MIN_ROLE_DETECTION_RATE = 0.50
 
 # REPORT_FORMAT_VERSION lives in kstrl.calibration_baseline (#421 Group B3):
 # it is both what this module writes and the threshold
@@ -310,8 +322,30 @@ class Comparison:
         return not self.failures
 
 
-def min_role_rate(role: str) -> float:
-    return MIN_ROLE_DETECTION_RATE.get(role, DEFAULT_MIN_ROLE_DETECTION_RATE)
+def min_role_rate(role: str) -> float | None:
+    """``role``'s floor, or None when the role is recorded and not gated.
+
+    Indexes the table with no default (#633): a role id it does not list
+    is refused by :func:`main` before any comparison, so a ``KeyError``
+    here is a caller that skipped that refusal.
+    """
+    return MIN_ROLE_DETECTION_RATE[role]
+
+
+def unlisted_roles(*baselines: Baseline) -> list[str]:
+    """Every role id the baselines carry that ``MIN_ROLE_DETECTION_RATE``
+    does not list, sorted (#633)."""
+    carried = {role for baseline in baselines for role in baseline.roles()}
+    return sorted(carried - MIN_ROLE_DETECTION_RATE.keys())
+
+
+def _floor_failure(role: str, new_rate: float) -> str | None:
+    """The failure line when ``new_rate`` is under ``role``'s floor, else
+    None. A role with no floor (None) has no floor failure."""
+    floor = min_role_rate(role)
+    if floor is None or new_rate >= floor:
+        return None
+    return f"role {role!r} detection rate {new_rate:.2f} is below its floor {floor:.2f}"
 
 
 def compare_baselines(old: Baseline, new: Baseline) -> Comparison:
@@ -319,7 +353,8 @@ def compare_baselines(old: Baseline, new: Baseline) -> Comparison:
 
     Failures (regression, exit 1): a role's rate dropping more than
     ``MAX_ROLE_DETECTION_DROP``; a role's new rate below its
-    ``MIN_ROLE_DETECTION_RATE`` floor; a category's rate dropping more
+    ``MIN_ROLE_DETECTION_RATE`` floor (a role whose floor is None has
+    none, and is still held to the drop); a category's rate dropping more
     than ``MAX_CATEGORY_DETECTION_DROP``.
 
     Warnings (reported, exit stays 0): roles/categories present in the
@@ -350,11 +385,9 @@ def compare_baselines(old: Baseline, new: Baseline) -> Comparison:
         if new_rate is None:
             warnings.append(f"role {role!r} present in old baseline but not exercised in new")
             continue
-        if new_rate < min_role_rate(role):
-            failures.append(
-                f"role {role!r} detection rate {new_rate:.2f} is below its "
-                f"floor {min_role_rate(role):.2f}"
-            )
+        floor_failure = _floor_failure(role, new_rate)
+        if floor_failure is not None:
+            failures.append(floor_failure)
         if old_rate is not None and delta.drop > MAX_ROLE_DETECTION_DROP:
             failures.append(
                 f"role {role!r} detection rate dropped "
@@ -417,6 +450,30 @@ def _format_rate(rate: float | None) -> str:
     return "-" if rate is None else f"{rate:.2f}"
 
 
+def _floor_text(role: str) -> str:
+    floor = min_role_rate(role)
+    return "no floor set" if floor is None else f"floor {floor:.2f}"
+
+
+def _unjudged_blocks(comparison: Comparison) -> list[str]:
+    """The report lines naming the roles the new baseline measures that
+    nothing judged (#633): a first measurement has no old rate for the drop
+    check, and a role whose floor is None has no floor check."""
+    measured = [delta for delta in comparison.role_deltas if delta.new_rate is not None]
+    first = [delta.role for delta in measured if delta.old_rate is None]
+    ungated = [delta.role for delta in measured if min_role_rate(delta.role) is None]
+    lines: list[str] = []
+    if first:
+        lines.append("")
+        lines.append("first measurements (the old baseline has no rate for these roles):")
+        lines.extend(f"  {role}" for role in first)
+    if ungated:
+        lines.append("")
+        lines.append("not gated (MIN_ROLE_DETECTION_RATE sets no floor for these roles):")
+        lines.extend(f"  {role}" for role in ungated)
+    return lines
+
+
 def format_comparison(comparison: Comparison) -> str:
     """Human-readable comparison report."""
     old, new = comparison.old, comparison.new
@@ -428,11 +485,11 @@ def format_comparison(comparison: Comparison) -> str:
         "per-role detection rate (mean per-fixture consistency):",
     ]
     for delta in comparison.role_deltas:
-        floor = min_role_rate(delta.role)
         lines.append(
             f"  {delta.role:<26} {_format_rate(delta.old_rate)} -> "
-            f"{_format_rate(delta.new_rate)}  (floor {floor:.2f})"
+            f"{_format_rate(delta.new_rate)}  ({_floor_text(delta.role)})"
         )
+    lines.extend(_unjudged_blocks(comparison))
     if comparison.category_deltas:
         lines.append("")
         lines.append("per-category detection rate:")
@@ -560,6 +617,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                     f"old baseline {old.path} has no detected fixture, so it bounds "
                     "nothing: a comparison against it reports newly_missed for no "
                     "fixture and a drop for no role. Re-capture the old baseline (#421)"
+                )
+            unlisted = unlisted_roles(old, new)
+            if unlisted:
+                # #633: before compare_baselines and report_to_ladder, so an
+                # id nobody has decided a floor for, a misspelt one included,
+                # reaches neither a verdict nor the inbox.
+                raise ValueError(
+                    f"role ids {unlisted} are not in kstrl.calibration.MIN_ROLE_DETECTION_RATE; "
+                    "add each with its floor, or with None to record it without gating it (#633)"
                 )
         except ValueError as exc:
             print(f"error: {exc}", file=sys.stderr)
