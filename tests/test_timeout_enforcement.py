@@ -25,6 +25,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections import Counter
 from collections.abc import Iterator
 from concurrent.futures import Future
 from concurrent.futures import wait as wait_for_futures
@@ -1906,6 +1907,7 @@ class TestSubprocessTimeoutAudit:
     #: sites at all", so a stale entry cannot be carried quietly.
     POPEN_ALLOWLIST = frozenset(
         {
+            "kstrl/agents/leash.py",
             "kstrl/agents/proc.py",
             "kstrl/procgroup_listing.py",
             "kstrl/serve.py",
@@ -1930,6 +1932,15 @@ class TestSubprocessTimeoutAudit:
     #: passed the entire suite - 4977 passed, zero failures - on the line
     #: whose own docstring says it is why the function exists.
     CHILD_WAIT_SCOPE = POPEN_ALLOWLIST | {"kstrl/procdispose.py"}
+
+    #: Waits in :data:`CHILD_WAIT_SCOPE` that have no deadline and are argued
+    #: rather than bounded, as ``module finding`` with the line number taken
+    #: off, one row per wait. ONE row (#642): the leash waits on the agent it
+    #: started. The agent's life is bounded by kstrl's own deadline while
+    #: kstrl lives, and by the leash's SIGKILL of its own group, which ends
+    #: the waiting thread with it, once kstrl is gone. A second unbounded
+    #: wait in the leash, or one anywhere else, is a count this does not pin.
+    ARGUED_UNBOUNDED_WAITS: tuple[str, ...] = ("kstrl/agents/leash.py .wait() names no timeout=",)
 
     @classmethod
     def _spawn_sites(cls, tree: ast.Module, module: str = "") -> list[tuple[ast.Call, str]]:
@@ -2203,9 +2214,13 @@ class TestSubprocessTimeoutAudit:
             "these deadline-managed modules show no wait sites at all, so "
             "the scan is broken rather than the code clean:\n  " + "\n  ".join(blind)
         )
-        assert not violations, (
+        unlined = Counter(
+            f"{rel} {finding.split(' ', 1)[1]}"
+            for rel, finding in (v.split(":", 1) for v in violations)
+        )
+        assert unlined == Counter(self.ARGUED_UNBOUNDED_WAITS), (
             "a deadline-managed module waits on a child without a "
-            "deadline, which is #309:\n  " + "\n  ".join(violations)
+            "deadline, which is #309, or an argued wait went away:\n  " + "\n  ".join(violations)
         )
 
     @pytest.mark.parametrize(

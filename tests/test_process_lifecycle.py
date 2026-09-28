@@ -184,6 +184,12 @@ EXPECTED_PROCESS_MODULES: dict[str, tuple[str, ...]] = {
     # gone from all three non-home ones as of this PR; a token coming
     # back is a hand-rolled copy of a `procgroup` routine.
     "agents/proc.py": ("DeadlineStreamer", "Popen", "kill", "subprocess"),
+    # #642: the leash every agent runs under. It runs by path as
+    # `python -I -S`, so it cannot import `kstrl.procgroup`, and its one
+    # signal is `killpg(0, ...)`: pgid 0 is its own group, which it refuses
+    # to start unless it leads. The rows in EXPECTED_BARE_SYSCALLS say the
+    # same for the syscalls.
+    "agents/leash.py": ("Popen", "getpgrp", "killpg", "subprocess"),
     "serve.py": ("Popen", "communicate", "subprocess"),
     "verify.py": ("Popen", "communicate", "subprocess"),
     # The five that own a child through `DeadlineStreamer` rather than a
@@ -200,7 +206,9 @@ EXPECTED_PROCESS_MODULES: dict[str, tuple[str, ...]] = {
     # owns, not a Popen this module spawned. Left alone by this PR
     # because `kstrl/factory.py` is held by another open PR; the site
     # inventory in that PR body records the verdict.
-    "factory.py": ("ProcessPoolExecutor", "kill", "subprocess", "terminate"),
+    # `multiprocessing` (#642) is `multiprocessing.parent_process()`, the
+    # sentinel a pool worker waits on so it ends with its parent.
+    "factory.py": ("ProcessPoolExecutor", "kill", "multiprocessing", "subprocess", "terminate"),
     # `subprocess.run` behind a timeout, and nothing else.
     "agents/codex.py": ("DeadlineStreamer", "subprocess"),
     "breaker.py": ("subprocess",),
@@ -240,6 +248,20 @@ EXPECTED_PROCESS_MODULES: dict[str, tuple[str, ...]] = {
     # The word, not the call: `actor: str = "system"`.
     "autonomy.py": ("system",),
     "inbox.py": ("system",),
+}
+
+
+#: Bare process syscalls outside :data:`PROCESS_HOME`, each argued, with
+#: the line numbers taken off. ONE module. ``agents/leash.py`` runs by path
+#: as ``python -I -S`` (#642), so it cannot import ``kstrl.procgroup``: its
+#: ``getpgrp`` is the check that it leads its own group, and its two
+#: ``killpg`` calls take pgid 0, which is that group and never kstrl's.
+EXPECTED_BARE_SYSCALLS: dict[str, tuple[str, ...]] = {
+    "agents/leash.py": (
+        "getpgrp(os.getpgrp ...)",
+        "killpg(os.killpg ...)",
+        "killpg(os.killpg ...)",
+    ),
 }
 
 
@@ -310,7 +332,12 @@ EXPECTED_SPAWNERS: dict[str, SpawnerRules] = {
     # this census run against the split tree.
     "procgroup_listing.py": SpawnerRules(1, 1, 1, 1),
     "procdispose.py": SpawnerRules(0, 1, 0, 0),
-    "agents/proc.py": SpawnerRules(1, 0, 1, 2),
+    # 3 disposals (#642): the third lets go of a leash that reported it
+    # could not start the agent.
+    "agents/proc.py": SpawnerRules(1, 0, 1, 3),
+    # #642: the leash starts the agent and waits on it. No disposal: the
+    # agent is ended by its group's signals, never by the leash letting go.
+    "agents/leash.py": SpawnerRules(1, 0, 0, 0),
     "serve.py": SpawnerRules(1, 1, 1, 2),
     "verify.py": SpawnerRules(1, 1, 1, 2),
 }
@@ -401,12 +428,12 @@ class TestProcessLifecycleHasOneHome:
     def test_only_procgroup_makes_a_bare_process_syscall(self) -> None:
         """Layer 2: ``killpg``, ``getpgid``, ``system``, ``fork`` and friends."""
         found = {
-            name: hits
+            name: tuple(sorted(hit.split(": ", 1)[1] for hit in hits))
             for name, tree in _module_trees()
             if name not in PROCESS_HOME
             if (hits := bare_syscall_calls(tree) + os_syscall_calls(tree, os_module_names(tree)))
         }
-        assert found == {}, (
+        assert found == EXPECTED_BARE_SYSCALLS, (
             "A process syscall is issued outside kstrl/procgroup.py. That module is "
             "where the pid and pgid guards live, and #329 is what a copy outside "
             "them costs: killpg(0, sig) broadcasts to the caller's whole group and "

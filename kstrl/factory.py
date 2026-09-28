@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import functools
 import importlib
+import multiprocessing
 import os
 import shutil
 import signal
@@ -3145,6 +3146,11 @@ def _install_worker_signal_forwarding() -> None:
     worktree cleaned up and every component left RUNNING. The parent owns
     the stop.
 
+    The worker also ends when its parent ends (#642). A worker whose
+    parent alone was SIGKILLed kept running and kept starting agents. A
+    daemon thread waits on the parent's sentinel and then does what
+    SIGTERM does.
+
     An initializer rather than a call inside ``_run_component``, which
     installed it only when progress logging was on. Installed only on a
     worker's main thread."""
@@ -3153,16 +3159,40 @@ def _install_worker_signal_forwarding() -> None:
 
     def _on_term(signum: int, frame: object) -> None:
         del signum, frame
-        try:
-            kill_active_process_groups()
-        finally:
-            os._exit(130)
+        _end_worker()
 
     try:
         signal.signal(signal.SIGTERM, _on_term)
         signal.signal(signal.SIGINT, _ignore_interrupt)
     except (ValueError, OSError):
         pass
+    parent = multiprocessing.parent_process()
+    if parent is not None:
+        threading.Thread(
+            target=_follow_parent, args=(parent,), daemon=True, name="kstrl-follow-parent"
+        ).start()
+
+
+def _end_worker() -> None:
+    """Kill this worker's agent groups, then exit 130: SIGTERM's path."""
+    try:
+        kill_active_process_groups()
+    finally:
+        os._exit(130)
+
+
+def _follow_parent(parent: multiprocessing.process.BaseProcess) -> None:
+    """End the worker once its parent has gone (#642).
+
+    ``join`` returns when the parent's sentinel closes, which the kernel
+    does however the parent ended. Anything the wait raises is read as
+    the parent being gone: a worker that cannot tell must not keep
+    starting agents.
+    """
+    try:
+        parent.join()
+    finally:
+        _end_worker()
 
 
 def _ignore_interrupt(signum: int, frame: object) -> None:
