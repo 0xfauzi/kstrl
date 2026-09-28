@@ -126,9 +126,11 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_feature_operator_context_e2e.py": 1,
     "tests/test_feature_verification.py": 1,
     "tests/test_feature_verification_attribution.py": 1,
-    # #632: `_repo`'s one seed commit, into a repository it has just put
-    # through `tests.helpers.gitrepo.set_identity`.
-    "tests/test_fixtures_beyond_python.py": 1,
+    # #632: `_repo`'s and `_json_project`'s seed commits, each into a
+    # repository it has just put through `tests.helpers.gitrepo.set_identity`,
+    # and the shell engineer's commit inside the worktree `ks factory` made
+    # from that repository.
+    "tests/test_fixtures_beyond_python.py": 3,
     "tests/test_git_identity_helper.py": 5,
     # #423's `_repo_with_tricky_names` fixture, through
     # `tests.helpers.gitrepo.set_identity`, which this row declares.
@@ -136,6 +138,12 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_harness_path_scope.py": 3,
     "tests/test_inbox.py": 1,
     "tests/test_inbox_resolves_on_completion.py": 1,
+    # #646: two stub engineers' `git commit` shell strings and the dependency
+    # test's `gitrepo.git_in(root, "commit", ...)`, all into the repository
+    # `tests.test_inbox_waivers._repo` put through
+    # `tests.helpers.gitrepo.set_identity`, plus the module docstring's
+    # prose ("git" and "commit" in one string).
+    "tests/test_inbox_waiver_change.py": 4,
     # #595: the stub engineer's `git commit` in the repository `_repo`
     # puts through `tests.helpers.gitrepo.set_identity`, plus `_repo`'s
     # own seed commit (`gitrepo.git_in(root, "commit", "-q", "-m", "init")`).
@@ -179,6 +187,10 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # set_identity it calls first. #399 blocker 1 adds two more of the same
     # shape, for the quote-and-accent-on-one-path regression test.
     "tests/test_policy_envelope.py": 8,
+    # #630: test_the_base_document_is_the_merge_base_the_diff_measures commits
+    # onto main in a repository test_check_non_python_diff._repo put through
+    # tests.helpers.gitrepo.set_identity.
+    "tests/test_policy_lockfiles_e2e.py": 1,
     "tests/test_pr_outcomes.py": 3,
     # #531: one commit per fixture repo, after set_identity.
     "tests/test_prelaunch_refusal_exit.py": 1,
@@ -203,6 +215,9 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # #629: `_repo` commits into a repository it set identity on, and the
     # changed-test-file case commits once more into that same repository.
     "tests/test_report_formats_cli.py": 2,
+    # #635: `_commit` is the one commit site, into the fixture repository
+    # `_seed` has just put through `tests.helpers.gitrepo.set_identity`.
+    "tests/test_python_toolchain_identity_e2e.py": 1,
     "tests/test_resume_ergonomics.py": 2,
     # #465: the parked-merge and resume tests commit through set_identity.
     # The single_pr shared-branch regression test (blocker 1 of the PR

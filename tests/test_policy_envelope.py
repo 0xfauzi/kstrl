@@ -258,6 +258,7 @@ class TestLicenseResolution:
         got = licensing.resolve_license(
             "foo",
             "1.0",
+            ecosystem="pypi",
             uv_cache=tmp_path / "cache",
             http_get=unexpected,
         )
@@ -267,6 +268,7 @@ class TestLicenseResolution:
         got = licensing.resolve_license(
             "foo",
             "1.0",
+            ecosystem="pypi",
             uv_cache=tmp_path,
             use_pypi=False,
         )

@@ -323,11 +323,11 @@ Phase 1 approved-fixtures oracle (R7.2). Off by default: fixtures execute PRD-su
 
 ## PolicyConfig (`[policy]`)
 
-Phase 1 policy envelope (R8.1): declarative merge guardrails enforced on artifacts (git diff, `uv.lock`), never agent self-report. Opt-in; when enabled a violation blocks the merge. List fields (`paths_deny`, `secret_patterns`, `enforcement_paths_extra`, `license_allow`, `license_deny_partial`) are toml-only. Set a numeric cap negative to disable it.
+Phase 1 policy envelope (R8.1): declarative merge guardrails enforced on artifacts (git diff, lockfiles), never agent self-report. Opt-in; when enabled a violation blocks the merge. List fields (`paths_deny`, `secret_patterns`, `enforcement_paths_extra`, `license_allow`, `license_deny_partial`) are toml-only. Set a numeric cap negative to disable it.
 
 Two invariants worth knowing: modifying **enforcement machinery** (the policy file, CI workflows, or the kstrl verifier code) is a non-overridable halt that no config can disable - `enforcement_paths_extra` only ADDS to that set. And every knob that can change a verdict is a `PolicyConfig` field, so it is covered by the `policy_hash` recorded in the run manifest; the env vars below resolve into those fields before the hash is computed.
 
-The license gate resolves a new dependency's SPDX license from uv's cache, then PyPI. When no source resolves it, `license_unresolved` decides: `block` (default, fail-closed) or `advisory`.
+`deps_allow_new` and the license gate read `uv.lock`, `poetry.lock`, `Cargo.lock`, `package-lock.json` (lockfileVersion 2 and 3), `yarn.lock` (v1) and `go.sum`; a change to any other lockfile, or to one of these that does not parse, is reported as not measured. The license gate resolves a PyPI package's SPDX license from uv's cache, then PyPI. A Cargo, npm or Go package has no license source yet and is never looked up on PyPI. When no source resolves a license, `license_unresolved` decides: `block` (default, fail-closed) or `advisory`.
 
 | Env var | Type | Default |
 |---|---|---|
@@ -335,7 +335,7 @@ The license gate resolves a new dependency's SPDX license from uv's cache, then 
 | `KSTRL_POLICY_MAX_FILES` | int | 40 |
 | `KSTRL_POLICY_MAX_LINES` | int | 1500 |
 | `KSTRL_POLICY_DEPS_ALLOW_NEW` | bool (`1`) | false |
-| `KSTRL_POLICY_LICENSE_NET` | bool (`0` = uv cache only) | true (uv cache + PyPI) |
+| `KSTRL_POLICY_LICENSE_NET` | bool (`0` = uv cache only) | true (uv cache + PyPI, for PyPI packages) |
 | `KSTRL_POLICY_LICENSE_UNRESOLVED` | `block` \| `advisory` | `block` |
 | `KSTRL_POLICY_DEPLOY` | bool (`1`) | false (reserved for R8.7) |
 
