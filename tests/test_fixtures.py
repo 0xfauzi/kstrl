@@ -847,6 +847,8 @@ class TestPhase1Integration:
         return prd_path
 
     def test_fixtures_check_runs_when_enabled(self, tmp_path: Path) -> None:
+        # A Python project, or the function fixture is refused unrun (#632).
+        (tmp_path / "pyproject.toml").write_text('[project]\nname = "adder"\n')
         (tmp_path / "adder.py").write_text("def add(a, b):\n    return a + b\n")
         prd_path = self._write_prd(
             tmp_path,
