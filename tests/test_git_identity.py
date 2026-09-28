@@ -197,6 +197,9 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_prompt_record.py": 6,
     "tests/test_prompt_upgrade.py": 1,
     "tests/test_provisioning.py": 2,
+    # #654: the seed commit and the fix commit of the temp repo `_repo` builds,
+    # which goes through set_identity before its first commit.
+    "tests/test_red_base_preflight.py": 2,
     "tests/test_resume_ergonomics.py": 2,
     # #465: the parked-merge and resume tests commit through set_identity.
     # The single_pr shared-branch regression test (blocker 1 of the PR

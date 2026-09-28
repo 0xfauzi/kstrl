@@ -207,6 +207,10 @@ def test_a_red_base_is_refused_before_any_engineer_call(tmp_path: Path) -> None:
     record = _record(root)
     assert record["refused"] is True
     assert record["baseSha"] == _git(root, "rev-parse", "main").strip()
+    # `ks retry` replays a refused run from its launch record (#436), so the
+    # base gates must refuse after that record is written, never before it.
+    (run_dir,) = [p.parent for p in (root / ".kstrl" / "runs").glob("*/base-gates.json")]
+    assert (run_dir / "launch.json").is_file(), sorted(p.name for p in run_dir.iterdir())
     row = _row(record, "test_suite")
     assert (row["passed"], row["measured"]) == (False, True)
     assert any("test_broken" in name for name in row["failing"]), row
