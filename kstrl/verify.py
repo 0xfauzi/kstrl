@@ -1537,9 +1537,10 @@ def _test_failure(
     read, and the gap that records it (#629).
 
     With no declared report this is the text parse, as before. A declared
-    report that cannot be read gives an empty parse, so the row shows the
-    #622 excerpt under the refusal and stays unmeasured; text parsers are
-    never run over output the operator said is not theirs.
+    report that cannot be read gives a parse holding only the output's last
+    five lines, so the row shows the #622 excerpt, or that tail when the
+    excerpt is empty, under the refusal; text parsers are never run over
+    output the operator said is not theirs.
     """
     if report is None or tool is None:
         return parse_gate_output(output, GATE_TEST, tool), None, []
@@ -1547,7 +1548,11 @@ def _test_failure(
     if isinstance(read, ParsedOutput):
         return read, None, []
     reason = NOT_MEASURED_TOOL_MISSING if read.missing else NOT_MEASURED_COMMAND_FAILED
-    return ParsedOutput(tool=tool), read.detail, [NotMeasured(GATE_TEST, reason, read.detail)]
+    # The output's tail, as a text parse keeps it, for when the #622 excerpt
+    # finds no location to show; no parser reads it.
+    tail = "\n".join(output.splitlines()[-5:])
+    refused = ParsedOutput(tool=tool, raw_summary=tail)
+    return refused, read.detail, [NotMeasured(GATE_TEST, reason, read.detail)]
 
 
 def check_test_suite(

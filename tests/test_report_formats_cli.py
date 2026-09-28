@@ -374,3 +374,16 @@ def test_python_signatures_are_unchanged_by_default(
     assert row["details"] == PYTEST_DETAILS_AT_F16CE0CA
     assert baseline["signatures"] == PYTEST_SIGNATURES_AT_F16CE0CA
     assert baseline["verify_digest"] == PYTEST_DIGEST_AT_F16CE0CA
+
+
+def test_a_refused_report_still_shows_what_the_command_printed(tmp_path: Path) -> None:
+    # go's own error names no location, so the #622 excerpt is empty and the
+    # output's tail is what the engineer is shown, under the refusal line.
+    root = _repo(tmp_path, "printf 'go: no main %s\\n' module; exit 1")
+
+    document = _check(root)
+    details = _test_row(document)["details"]
+
+    assert [gap["reason"] for gap in _test_gaps(document)] == ["tool_missing"]
+    assert "wrote no report to $KSTRL_REPORT" in details[0].splitlines()[0]
+    assert "go: no main module" in details[0]
