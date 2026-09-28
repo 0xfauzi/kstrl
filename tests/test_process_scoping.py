@@ -75,13 +75,19 @@ an over-report, the direction a guard may be wrong in, and the pinned
 census is where a new one appears rather than a suppression list.
 ``test_layer_one_reads_prose_and_the_census_is_the_bound`` is that
 measurement rather than this sentence.
+
+LAYER 3 (#686), :func:`_hands_out_a_killed_group`, is the same rule one
+step on: a test may not assert on a group it has already killed and
+reaped as if the kernel had finished with it. ``procs.dead_group`` did,
+and on macOS the kernel went on answering EPERM for the group after
+``wait`` returned. The layer flags any function in ``tests/`` that kills
+a group and then returns or yields the expression it killed.
 """
 
 from __future__ import annotations
 
 import ast
 import os
-import subprocess
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -195,6 +201,67 @@ def _machine_wide_hits(source: Path) -> list[str]:
         f"{rel}:{lineno} {value!r}"
         for value, lineno in _command_literals(source)
         if _names_a_tool(value)
+    ]
+
+
+#: What sends a whole group a signal, by the callee's last identifier.
+GROUP_KILLS = frozenset({"kill_group", "killpg"})
+
+#: ``Popen`` methods that signal the child. On a child spawned as a group
+#: leader and alone in its group, that empties the group, so the killed
+#: id is the receiver's ``.pid``.
+CHILD_KILLS = frozenset({"kill", "terminate", "send_signal"})
+
+#: Layer 3's pinned inventory. Empty since #686 removed ``dead_group``.
+EXPECTED_KILLED_GROUP_HANDOUTS: dict[str, int] = {}
+
+
+def _killed_id(call: ast.Call) -> str | None:
+    """The AST dump of the id this call signals, or None if it signals none."""
+    leaf = astwalk.leaf_name(call.func)
+    if leaf in GROUP_KILLS and call.args:
+        return ast.dump(call.args[0])
+    if leaf in CHILD_KILLS and isinstance(call.func, ast.Attribute):
+        return ast.dump(ast.Attribute(value=call.func.value, attr="pid", ctx=ast.Load()))
+    return None
+
+
+def _hands_out_a_killed_group(node: ast.AST) -> bool:
+    """Does this function kill a group and then return or yield its id?
+
+    Matched on the killed expression's AST dump, so ``kill_group(pgid)``
+    then ``return pgid``, ``kill_group(child.pid)`` then ``yield
+    child.pid`` and ``child.kill()`` then ``return child.pid`` all count,
+    and so does a tuple that carries the id. The kill must come first in
+    the source: a fixture that yields a pgid and kills it in its teardown
+    is the correct shape and is not a hit.
+    """
+    if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+        return False
+    own = astwalk.own_nodes(node)
+    killed = _kills(own)
+    return any(
+        line < out_line and arg in handed
+        for out_line, handed in _handouts(own)
+        for line, arg in killed
+    )
+
+
+def _kills(own: list[ast.AST]) -> list[tuple[int, str]]:
+    """Each signalling call's line and the dump of the id it signals."""
+    return [
+        (call.lineno, dumped)
+        for call in own
+        if isinstance(call, ast.Call) and (dumped := _killed_id(call)) is not None
+    ]
+
+
+def _handouts(own: list[ast.AST]) -> list[tuple[int, set[str]]]:
+    """Each return or yield's line and the dumps of every node it hands out."""
+    return [
+        (out.lineno, {ast.dump(part) for part in ast.walk(out.value)})
+        for out in own
+        if isinstance(out, ast.Return | ast.Yield | ast.YieldFrom) and out.value is not None
     ]
 
 
@@ -481,13 +548,67 @@ class TestTheLivenessHelperCannotPassByMeasuringNothing:
     def test_a_dead_group_is_still_reported_dead(self) -> None:
         """The guard must not make absence unreportable, which would be
         the opposite failure."""
-        child = subprocess.Popen(
-            ["sleep", "30"],
-            start_new_session=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+        with procs.no_such_group() as pgid:
+            assert procs.wait_for_group_to_die(pgid, timeout=10.0) is True
+
+
+class TestNoHelperHandsOutAGroupItHasAlreadyKilled:
+    """Layer 3 (#686): the reaped-pgid helper cannot come back."""
+
+    def test_no_function_in_the_suite_returns_a_group_it_killed(self) -> None:
+        astwalk.assert_census(
+            sources=_scannable_sources(),
+            sees=_hands_out_a_killed_group,
+            expected=EXPECTED_KILLED_GROUP_HANDOUTS,
+            # One control per way out of a function and per kind of kill.
+            # The first is the helper #686 deleted, verbatim in shape. The
+            # ordering clause needs no control of its own: procs.no_such_group
+            # kills its holder AFTER the yield, so dropping the clause puts
+            # tests/helpers/procs.py in the census.
+            control=(
+                "def dead_group():\n"
+                "    child = subprocess.Popen(['sleep', '30'], start_new_session=True)\n"
+                "    pgid = os.getpgid(child.pid)\n"
+                "    kill_group(pgid)\n"
+                "    child.wait(timeout=10)\n"
+                "    return pgid\n",
+                "def reaped():\n"
+                "    child = subprocess.Popen(['sleep', '30'], start_new_session=True)\n"
+                "    os.killpg(child.pid, 9)\n"
+                "    child.wait(timeout=10)\n"
+                "    yield child.pid\n",
+                "def dead_leader():\n"
+                "    child = subprocess.Popen(['sleep', '30'], start_new_session=True)\n"
+                "    child.kill()\n"
+                "    child.wait(timeout=10)\n"
+                "    return child.pid\n",
+            ),
+            message=(
+                "A function in tests/ kills a process group and then hands out "
+                "its id. On macOS the kernel still answers EPERM for a group "
+                "after its last member was reaped, so a test asserting that "
+                "group is empty fails at random under load (#686). Use "
+                "procs.no_such_group(), which holds an id no group can take."
+            ),
         )
-        pgid = os.getpgid(child.pid)
-        procs.kill_group(pgid)
-        child.wait(timeout=10)
-        assert procs.wait_for_group_to_die(pgid, timeout=10.0) is True
+
+    @pytest.mark.xfail(strict=True, raises=AssertionError)
+    def test_a_test_that_reaps_and_asserts_inline_is_a_known_miss(self) -> None:
+        """The same race without a helper: kill, reap and assert in one
+        test body. Nothing is handed out, so this layer does not see it.
+        ``tests/test_shutdown.py`` kills a group and probes it inline on
+        purpose, asserting a zombie is still PRESENT, which a predicate
+        for this shape would also flag."""
+        body = (
+            "def test_x():\n"
+            "    child = subprocess.Popen(['sleep', '30'], start_new_session=True)\n"
+            "    kill_group(child.pid)\n"
+            "    child.wait(timeout=10)\n"
+            "    assert signal_probe_alive(child.pid) is False\n"
+        )
+        astwalk.blind_spot(
+            lambda source: any(
+                _hands_out_a_killed_group(node) for node in astwalk.all_nodes(astwalk.parse(source))
+            ),
+            body,
+        )
