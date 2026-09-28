@@ -13,7 +13,13 @@ from typing import Any
 from kstrl.atomicio import atomic_write_json
 from kstrl.findings import Finding
 from kstrl.jsonread import read_json_file
-from kstrl.manifest_keys import COMPONENT_OPTIONAL_KEYS, COMPONENT_REQUIRED_KEYS, plan_id_errors
+from kstrl.manifest_keys import (
+    COMPONENT_OPTIONAL_KEYS,
+    COMPONENT_REQUIRED_KEYS,
+    MANIFEST_REQUIRED_KEYS,
+    manifest_top_level_errors,
+    plan_id_errors,
+)
 from kstrl.names import validate_branch_name, validate_component_id
 
 #: ``Component.failed_check`` for a component a hard-mode adversarial
@@ -243,6 +249,12 @@ class Manifest:
     # #602: the digest of the plan an L1 run parked for approval, "" when
     # none waits. Only the digest: the approval lives in the inbox.
     plan_awaiting_approval: str = ""
+    # #639: the spec this plan was made from, as a root-relative POSIX
+    # path (absolute outside the root), and the sha256 of the text the
+    # architect read. Both "" on a manifest from before #639 or one no
+    # decompose wrote; ``save`` writes them only when the digest is set.
+    spec_path: str = ""
+    spec_digest: str = ""
 
     @classmethod
     def from_prd(
@@ -367,6 +379,8 @@ class Manifest:
             kstrl_version=data.get("kstrlVersion", ""),
             feature_base_sha=data.get("featureBaseSha", ""),
             plan_awaiting_approval=data.get("planAwaitingApproval", ""),
+            spec_path=data.get("specPath", ""),
+            spec_digest=data.get("specDigest", ""),
         )
 
     def save(self, path: Path) -> None:
@@ -424,6 +438,9 @@ class Manifest:
             ],
         }
 
+        if self.spec_digest:
+            data["specPath"] = self.spec_path
+            data["specDigest"] = self.spec_digest
         path.parent.mkdir(parents=True, exist_ok=True)
         # Atomic, and keeps the mode the operator gave this git-tracked
         # file; see kstrl.atomicio (#291).
@@ -432,53 +449,9 @@ class Manifest:
     @classmethod
     def validate_schema(cls, data: Any) -> list[str]:
         """Validate manifest JSON schema, returning list of errors."""
-        errors: list[str] = []
-
-        if not isinstance(data, dict):
-            errors.append("Manifest must be a JSON object")
+        errors = manifest_top_level_errors(data)
+        if not isinstance(data, dict) or MANIFEST_REQUIRED_KEYS - set(data.keys()):
             return errors
-
-        required_keys = {
-            "version",
-            "specFile",
-            "projectName",
-            "baseBranch",
-            "singlePr",
-            "components",
-        }
-        actual_keys = set(data.keys())
-
-        missing = required_keys - actual_keys
-        if missing:
-            errors.append(f"Missing required keys: {', '.join(sorted(missing))}")
-            return errors
-
-        if not isinstance(data.get("version"), str):
-            errors.append("version must be a string")
-        if not isinstance(data.get("specFile"), str):
-            errors.append("specFile must be a string")
-        if not isinstance(data.get("projectName"), str):
-            errors.append("projectName must be a string")
-        elif not data["projectName"]:
-            errors.append("projectName must be non-empty")
-        if not isinstance(data.get("baseBranch"), str):
-            errors.append("baseBranch must be a string")
-        else:
-            base_error = validate_branch_name(data["baseBranch"])
-            if base_error:
-                errors.append(f"baseBranch: {base_error}")
-        if not isinstance(data.get("singlePr"), bool):
-            errors.append("singlePr must be a boolean")
-        for key in (
-            "runId",
-            "completedAt",
-            "policyHash",
-            "kstrlVersion",
-            "featureBaseSha",
-            "planAwaitingApproval",
-        ):
-            if key in data and not isinstance(data[key], str):
-                errors.append(f"{key} must be a string")
 
         components = data.get("components")
         if not isinstance(components, list):

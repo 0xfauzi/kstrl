@@ -684,6 +684,26 @@ def queue_root(root_dir: Path) -> Path:
     return state_dir(root_dir) / QUEUE_DIR_NAME
 
 
+def relocated_spec(root_dir: Path, recorded: Path) -> Path | None:
+    """Where the queue item spec once at ``recorded`` is now, or None (#639).
+
+    ``ks serve`` plans from ``<queue>/running/<id>/<spec>``, and every later
+    transition renames the item directory into another state directory, so
+    a plan's pinned spec path stops existing while the file moves with its item.
+    None when ``recorded`` is not an item's spec path or no state holds it.
+    """
+    queue = queue_root(root_dir).resolve()
+    try:
+        _state, item_id, name = recorded.resolve().relative_to(queue).parts
+    except ValueError:
+        return None
+    for state in ALL_STATES:
+        candidate = queue / str(state) / item_id / name
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 class Queue:
     """Maildir-style work queue over ``.kstrl/queue/``.
 
