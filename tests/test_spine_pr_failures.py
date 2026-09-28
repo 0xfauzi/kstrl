@@ -22,12 +22,15 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from kstrl.factory import FactoryResult, run_factory
+from kstrl.inbox import Inbox, InboxConfig, InboxItem, ItemStatus
 from kstrl.manifest import ComponentStatus, Manifest
 from kstrl.ui.plain import PlainUI
 from tests.spine_utils import (
@@ -313,6 +316,75 @@ class TestSpinePrFailurePaths:
         assert "alpha" in result.completed
         assert result.merge_pending == []
         assert result.exit_code == 0
+
+
+def _merge_gate_item(root: Path, comp_id: str) -> InboxItem:
+    item = Inbox(root, InboxConfig()).find_by_dedupe_key(f"merge:{comp_id}")
+    assert item is not None, f"no merge:{comp_id} item was filed"
+    return item
+
+
+def _ks_inbox(root: Path, *args: str) -> None:
+    """The real ``ks inbox`` command, as the operator types it."""
+    result = subprocess.run(
+        [sys.executable, "-m", "kstrl", "inbox", *args, "--root", str(root)],
+        cwd=root,
+        env=dict(os.environ),
+        capture_output=True,
+        encoding="utf-8",
+        stdin=subprocess.DEVNULL,
+        timeout=120,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+class TestAClosedPrKeepsTheOperatorsDecision:
+    """#648: the re-poll that finds the PR closed resolves the merge item
+    only while nobody has decided it, checked on the fresh row inside
+    ``Inbox.resolve``'s lock. Run 1 parks alpha MERGE_PENDING (the PR
+    stays OPEN past the merge timeout) and files ``merge:alpha``; the
+    operator acts on it with the real ``ks inbox`` command; run 2's
+    re-poll finds the PR CLOSED."""
+
+    @pytest.mark.parametrize(
+        ("action", "expected"),
+        [
+            ("approve", ItemStatus.APPROVED),
+            ("snooze", ItemStatus.RESOLVED),
+            ("", ItemStatus.RESOLVED),
+        ],
+    )
+    def test_the_merge_item_after_the_pr_closes(
+        self,
+        tmp_path: Path,
+        stub_gh: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        action: str,
+        expected: ItemStatus,
+    ) -> None:
+        monkeypatch.setenv("GH_SPINE_VIEW_STATE", "OPEN")
+        root = tmp_path / "repo"
+        init_kstrl_repo(root, ("alpha", "beta"), with_origin=True)
+        manifest = _alpha_beta_manifest()
+        _run_real(root, tmp_path, monkeypatch, manifest)
+        gate = _merge_gate_item(root, "alpha")
+        assert gate.status is ItemStatus.OPEN
+        if action:
+            _ks_inbox(root, action, gate.id)
+
+        monkeypatch.setenv("GH_SPINE_VIEW_STATE", "CLOSED")
+        _run_real(root, tmp_path, monkeypatch, manifest)
+
+        alpha = manifest.get_component("alpha")
+        assert alpha is not None
+        assert alpha.status == ComponentStatus.FAILED.value
+        final = Inbox(root, InboxConfig()).get(gate.id)
+        assert final is not None
+        assert final.status is expected, (final.status, final.decided_by)
+        if expected is ItemStatus.APPROVED:
+            assert final.decided_by and final.decided_by != "system", final.decided_by
+        halted = Inbox(root, InboxConfig()).find_by_dedupe_key("halted:alpha:pr-closed")
+        assert halted is not None and halted.status is ItemStatus.OPEN
 
 
 class TestSpineReleaseRef:

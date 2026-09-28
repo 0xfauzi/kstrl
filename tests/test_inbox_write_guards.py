@@ -1,7 +1,7 @@
 """Every write into the inbox from ``kstrl/``, and what it catches (#232).
 
 The defect this exists to catch is one the review found twice in one PR.
-``Inbox._append`` takes the control lock on every write, so a write can
+Every ``Inbox`` write takes the control lock, so a write can
 raise ``ControlStateError``, a ``RuntimeError`` that the
 ``(OSError, ValueError)`` pair every inbox site was hand-written with
 does not catch. Round 1 fixed the four sites it had a finding for; two
@@ -43,8 +43,8 @@ INBOX = "kstrl.inbox.Inbox"
 INBOX_CONFIG_LOAD = "kstrl.inbox.InboxConfig.load"
 CONTROL_ERROR = "kstrl.statedir.ControlStateError"
 
-#: Every method of ``Inbox`` that reaches ``_append`` and therefore takes
-#: the control lock. ``_decide`` is the shared body behind four of them,
+#: Every method of ``Inbox`` that appends and therefore takes the control
+#: lock. ``_decide`` is the shared body behind four of them,
 #: so they are enumerated by their public spellings.
 MUTATORS = frozenset({"add", "approve", "compact", "reject", "resolve", "snooze"})
 
@@ -298,12 +298,16 @@ def _target_names(node: ast.Assign | ast.AnnAssign | ast.NamedExpr) -> set[str]:
     return names
 
 
-def _mutation_rows(source: Path) -> dict[str, tuple[ast.Call, ast.AST]]:
-    """Every inbox mutation in one module, keyed ``module::scope::method``."""
+def _mutation_calls(source: Path) -> list[tuple[str, ast.Call, ast.AST]]:
+    """Every inbox mutation call in one module, keyed ``module::scope::method``.
+
+    A LIST, one entry per call: two calls of one method in one scope share
+    a key, and a dict keeps only the last of them.
+    """
     tree = astwalk.parsed(source)
     table = astwalk.bindings(tree, module=astwalk.module_name(source))
     holders = _inbox_holders(tree, table)
-    rows: dict[str, tuple[ast.Call, ast.AST]] = {}
+    calls: list[tuple[str, ast.Call, ast.AST]] = []
     for scope, qualified in astwalk.scopes(tree):
         for node in astwalk.own_nodes(scope):
             if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
@@ -315,8 +319,14 @@ def _mutation_rows(source: Path) -> dict[str, tuple[ast.Call, ast.AST]]:
                 isinstance(receiver, ast.Call) and table.resolve(receiver.func) == INBOX
             ) or astwalk.dotted(receiver) in holders
             if on_an_inbox:
-                rows[f"{astwalk.label(source)}::{qualified}::{node.func.attr}"] = (node, scope)
-    return rows
+                key = f"{astwalk.label(source)}::{qualified}::{node.func.attr}"
+                calls.append((key, node, scope))
+    return calls
+
+
+def _mutation_rows(source: Path) -> dict[str, tuple[ast.Call, ast.AST]]:
+    """Every inbox mutation in one module, keyed ``module::scope::method``."""
+    return {key: (call, scope) for key, call, scope in _mutation_calls(source)}
 
 
 def _config_load_rows(source: Path) -> dict[str, tuple[ast.Call, ast.AST]]:
@@ -456,8 +466,8 @@ class TestMutationInventory:
             assert CONTROL_ERROR in caught or broad, (
                 f"{key} writes to the inbox without an enclosing handler "
                 f"naming {CONTROL_ERROR} by origin, and without one that "
-                "catches everything. Inbox._append takes the control lock "
-                f"on every write, so this site can raise a RuntimeError a "
+                "catches everything. Every Inbox write takes the control "
+                f"lock, so this site can raise a RuntimeError a "
                 f"narrow clause does not catch. Caught: {sorted(caught)}"
             )
         else:
@@ -563,3 +573,191 @@ class TestTheTwoWaysASiteClears:
         caught = {origin for clause in _catching(scope, call, table) for origin in clause.origins}
         assert CONTROL_ERROR not in caught
         assert not _broadly_caught(scope, call, table)
+
+
+# --- #648: every writer decides on the row it reads inside the lock --------
+
+#: The ``Inbox`` methods that decide an item: ``_decide`` behind each one.
+DECIDERS = frozenset({"approve", "reject", "resolve", "snooze"})
+
+#: Decisions that overwrite whatever the FRESH row says, because a person
+#: typed them and their answer is the decision. Every other decision
+#: passes ``only_from``, so an operator's answer that lands after the
+#: caller read the item survives (#648). A new unconditional decision
+#: fails until someone adds its row here with the reason.
+UNCONDITIONAL_DECISIONS: dict[str, str] = {
+    "cli.py::_decide_and_report::approve": "the operator typed ks inbox approve",
+    "cli.py::_decide_and_report::reject": "the operator typed ks inbox reject",
+    "cli.py::_decide_and_report::snooze": "the operator typed ks inbox snooze",
+    "cli.py::_decide_and_report::resolve": "the operator typed the command",
+    "cli.py::_decide_parked_merge_if_parked::approve": "the operator typed ks inbox approve",
+    "cli.py::_decide_parked_merge_if_parked::reject": "the operator typed ks inbox reject",
+    "cli.py::inbox_retry::resolve": "the operator typed ks inbox retry",
+    "plan_gate.py::_record::approve": "the operator answered the plan checkpoint prompt",
+    "plan_gate.py::_record::reject": "the operator answered the plan checkpoint prompt",
+    "tui/screens/inbox.py::InboxScreen._decide::approve": "the operator pressed approve",
+    "tui/screens/inbox.py::InboxScreen._decide::reject": "the operator chose a reason",
+    "tui/screens/inbox.py::InboxScreen._decide::snooze": "the operator pressed snooze",
+}
+
+CONTROL_DECISION = """
+from kstrl.inbox import UNDECIDED, Inbox
+
+def emit(root, item):
+    box = Inbox(root)
+    box.resolve(item.id)
+    box.resolve(item.id, only_from=UNDECIDED)
+"""
+
+
+def _unconditional(calls: list[tuple[str, ast.Call, ast.AST]]) -> set[str]:
+    """Keys with at least one decision that names no ``only_from``.
+
+    Flags when unsure: ``**kwargs`` or ``only_from=None`` clears nothing.
+    """
+    return {
+        key
+        for key, call, _scope in calls
+        if key.rsplit("::", 1)[1] in DECIDERS
+        and not any(
+            kw.arg == "only_from"
+            and not (isinstance(kw.value, ast.Constant) and kw.value.value is None)
+            for kw in call.keywords
+        )
+    }
+
+
+class TestAnAutomatedDecisionKeepsTheOperatorsAnswer:
+    def test_every_unconditional_decision_is_enrolled(self) -> None:
+        calls = [c for source in astwalk.package_sources() for c in _mutation_calls(source)]
+        found = _unconditional(calls)
+        assert found == set(UNCONDITIONAL_DECISIONS), (
+            "an inbox decision without only_from overwrites an operator's answer "
+            "that landed after its read (#648). Pass only_from=UNDECIDED, or, "
+            "if a person typed it, enrol it with the reason. "
+            f"New: {sorted(found - set(UNCONDITIONAL_DECISIONS))}; "
+            f"stale: {sorted(set(UNCONDITIONAL_DECISIONS) - found)}"
+        )
+        assert all(UNCONDITIONAL_DECISIONS.values())
+
+    def test_the_net_fires_on_a_bare_resolve_beside_a_guarded_one(self, tmp_path: Path) -> None:
+        scratch = tmp_path / "scratch.py"
+        scratch.write_text(CONTROL_DECISION, encoding="utf-8")
+        assert _unconditional(_mutation_calls(scratch)) == {"scratch.py::emit::resolve"}
+
+
+#: Calls in ``kstrl/inbox.py`` that write the log, per scope and callee.
+#: Not seen: a write through a callee not named here (``path.write_text``,
+#: ``open(..., "w")``); every append open in the package is pinned by
+#: ``tests/test_append_opens_have_one_home.py``.
+LOG_WRITES = frozenset(
+    {"_append_unlocked", "append_records", "atomic_write_json", "atomic_write_text"}
+)
+#: The one scope that writes with no lock: its caller holds it.
+APPEND_PRIMITIVE = "Inbox._append_unlocked"
+EXPECTED_LOG_WRITES = {
+    "Inbox._append_unlocked::append_records": 1,
+    "Inbox._decide::_append_unlocked": 1,
+    "Inbox.add::_append_unlocked": 2,
+    "Inbox.compact::atomic_write_text": 1,
+}
+
+CONTROL_STALE_WRITER = """
+class Inbox:
+    def add(self, key):
+        existing = self.find_by_dedupe_key(key)
+        with control_lock(self.root_dir):
+            self._append_unlocked(existing)
+"""
+
+
+def _log_writes(scope: ast.AST) -> list[ast.Call]:
+    """Calls in ``scope`` whose callee's last name is in ``LOG_WRITES``, on any
+    receiver: ``append_records`` and ``atomic_write_text`` are module functions."""
+    return [
+        node
+        for node in astwalk.own_nodes(scope)
+        if isinstance(node, ast.Call) and astwalk.leaf_name(node.func) in LOG_WRITES
+    ]
+
+
+def _self_calls(scope: ast.AST) -> list[ast.Call]:
+    """Every ``self.<method>(...)`` call in ``scope``.
+
+    Closed by construction rather than a list of the methods that fold the
+    log: a writer's every call on its own inbox counts, so a read added
+    through a method nobody enumerated is still inside or outside the hold.
+    """
+    return [
+        node
+        for node in astwalk.own_nodes(scope)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and astwalk.dotted(node.func.value) == "self"
+    ]
+
+
+def _is_control_lock_with(node: ast.AST) -> bool:
+    """Whether ``node`` is a ``with control_lock(...):`` block."""
+    return isinstance(node, ast.With) and any(
+        isinstance(item.context_expr, ast.Call)
+        and astwalk.leaf_name(item.context_expr.func) == "control_lock"
+        for item in node.items
+    )
+
+
+def _held_node_ids(with_node: ast.With) -> set[int]:
+    """``id()`` of every node inside ``with_node``'s body."""
+    return {id(n) for stmt in with_node.body for n in ast.walk(stmt)}
+
+
+def _outside_one_hold(scope: ast.AST) -> list[str]:
+    """Calls on ``self`` and log writes in ``scope`` not all inside ONE ``with control_lock``."""
+    touched = _self_calls(scope)
+    touched += [call for call in _log_writes(scope) if call not in touched]
+    for node in astwalk.own_nodes(scope):
+        if not _is_control_lock_with(node):
+            continue
+        held = _held_node_ids(node)
+        if all(id(call) in held for call in touched):
+            return []
+    return [ast.unparse(call.func) for call in touched]
+
+
+def _log_writers(tree: ast.Module) -> dict[str, tuple[ast.AST, int]]:
+    """``scope::callee`` -> (scope, count) for every log write in one tree."""
+    found: dict[str, tuple[ast.AST, int]] = {}
+    for scope, qualified in astwalk.scopes(tree):
+        for call in _log_writes(scope):
+            key = f"{qualified}::{astwalk.leaf_name(call.func)}"
+            found[key] = (scope, found.get(key, (scope, 0))[1] + 1)
+    return found
+
+
+class TestTheInboxFoldsAndWritesInOneHold:
+    def test_the_log_writes_are_pinned(self) -> None:
+        tree = astwalk.parsed(astwalk.KSTRL_PACKAGE / "inbox.py")
+        counts = {key: count for key, (_scope, count) in _log_writers(tree).items()}
+        assert counts == EXPECTED_LOG_WRITES, counts
+
+    def test_every_writer_reads_and_writes_inside_one_lock_hold(self) -> None:
+        tree = astwalk.parsed(astwalk.KSTRL_PACKAGE / "inbox.py")
+        loose = {
+            key: _outside_one_hold(scope)
+            for key, (scope, _count) in _log_writers(tree).items()
+            if not key.startswith(f"{APPEND_PRIMITIVE}::")
+        }
+        assert all(not calls for calls in loose.values()), (
+            "an inbox writer folds or writes outside the control_lock hold it "
+            f"decides in, so a concurrent writer's row is lost (#648): {loose}"
+        )
+
+    def test_the_net_fires_on_a_read_taken_before_the_lock(self) -> None:
+        tree = astwalk.parse(CONTROL_STALE_WRITER)
+        ((scope, _count),) = _log_writers(tree).values()
+        assert _outside_one_hold(scope) == ["self.find_by_dedupe_key", "self._append_unlocked"]
+
+    def test_the_net_fires_on_a_read_through_a_method_no_list_names(self) -> None:
+        tree = astwalk.parse(CONTROL_STALE_WRITER.replace("find_by_dedupe_key", "newest"))
+        ((scope, _count),) = _log_writers(tree).values()
+        assert _outside_one_hold(scope) == ["self.newest", "self._append_unlocked"]
