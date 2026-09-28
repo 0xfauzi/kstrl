@@ -77,7 +77,17 @@ this is a small print an operator should have to find on their own:
   nothing to grade.
 - Tier A reads the repository and runs none of your commands, so it
   cannot tell you whether your suite is green, fast or flaky. Run
-  `ks check` for that.
+  `ks check` for that. `ks factory` runs your test, typecheck and lint
+  commands on the base branch before any engineer, and refuses to start
+  when one of them fails there.
+
+## `ks factory` refused: the base branch fails a gate
+
+**Symptom**: `Refusing to run: the base branch fails a gate Phase 1 runs, or its reading cannot be recorded`, exit 2, and no engineer was called.
+
+**What it is**: before the first engineer call, `ks factory` runs Phase 1's test, typecheck and lint gates, with Phase 1's commands, parsers and timeout, on the commit the base branch names, in a throwaway worktree under `.kstrl/contract/` (#654). `ks run` and `ks retry` reach the same check. It never measures your checkout: components are cut from the commit, so a fix you have not committed does not count. A gate whose failure its parser recognises refuses the run, and the refusal names the gate and up to five failing tests or rules. Without the refusal every component fails Phase 1 on the same failure after its engineer has been paid. On `ks factory --spec` the architect runs, and is paid, before this check. A gate that ran and measured nothing (pytest collecting no tests, a timeout, a tool that is not installed) is printed as `measured nothing` and does not refuse, because Phase 1 still fails that row on every component. A base branch that does not resolve, a checkout that fails and a `worktree_setup_command` that fails on the base are printed the same way. Every reading is written to `.kstrl/runs/<run_id>/base-gates.json` beside `launch.json`: the base sha, each gate's row with its failing names, the gates that were turned off, and whether and why the run refused. A run that cannot write the file refuses.
+
+**Resolve**: make the base green in a commit; or commit `pytest.mark.xfail(strict=True)` on the tests you accept as failing; or pass `--no-verify`, which turns off all of Phase 1 and this check with it. Under `--no-verify` the record says `--no-verify: Phase 1 runs no gate`.
 
 ## Phase 1: mechanical verification failed
 

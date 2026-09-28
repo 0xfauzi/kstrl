@@ -549,7 +549,8 @@ class TestEveryResultRowIsAccountedFor:
 #:
 #: The other direction of the same field. The three censuses above pin where
 #: the value is WRITTEN; this one pins who is allowed to act on it, and the
-#: answer is the baseline and nobody else. ``measured`` says whether a row is
+#: answer is the baseline, and the #654 base-gates refusal, which only adds
+#: a refusal and never a pass. ``measured`` says whether a row is
 #: evidence about the ARTIFACT, which is a question about comparing two runs.
 #: It is not a question about whether this run passed, and the moment the
 #: mechanical verdict starts consulting it, a gate whose tool is missing stops
@@ -565,6 +566,14 @@ class TestEveryResultRowIsAccountedFor:
 #: somebody enumerated is how a guard goes blind on the module nobody thought
 #: of.
 EXPECTED_MEASUREMENT_READS: dict[str, int] = {
+    # #654: which of the BASE branch's failing gates refuse a run before
+    # any engineer call. Not the #227 fail-open: this adds a refusal and
+    # decides no pass, and a row it lets through (measured=False) still
+    # meets Phase 1 unchanged on every component, which fails it. The other
+    # two reads print and record the row.
+    "base_gates.py: refusal_lines: check.measured": 1,
+    "base_gates.py: warning_lines: check.measured": 1,
+    "base_gates.py: write_record: check.measured": 1,
     # The baseline: which checks may have a missing signature read as fixed.
     "baseline.py: _measured_and_unmeasured: check.measured": 2,
     # Not CheckResult.measured. IterationReading's own field, #233: whether
