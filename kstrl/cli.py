@@ -129,7 +129,7 @@ from kstrl.observability import (
     read_progress_events,
 )
 from kstrl.output import build_console
-from kstrl.plan_gate import PLAN_GATE_KEY
+from kstrl.plan_gate import PLAN_GATE_KEY, spec_pin_errors
 from kstrl.prd import PRD
 from kstrl.reducer import ComponentState, RunState, fold, load_run_state, upconvert_v1
 from kstrl.retry_plan import (
@@ -5640,6 +5640,17 @@ def _not_parked(item: InboxItem, manifest: Manifest, manifest_file: Path, action
     )
 
 
+def _stale_plan_approval(
+    item: InboxItem, manifest: Manifest, root_dir: Path, action: str
+) -> list[str]:
+    """Why approving this plan park would run a plan on a spec it was not
+    made from, or [] (#639). Only an approval of a plan park: a rejection
+    runs nothing, so it stays allowed."""
+    if action != "approve" or not item.dedupe_key.startswith(PLAN_GATE_KEY):
+        return []
+    return spec_pin_errors(manifest, root_dir)
+
+
 def _decide_parked_merge_if_parked(
     action: str,
     item_id: str,
@@ -5682,6 +5693,13 @@ def _decide_parked_merge_if_parked(
         not_parked = _not_parked(item, manifest, manifest_file, action)
         if not_parked:
             ui_impl.err(not_parked)
+            sys.exit(2)
+        if _report_preflight(
+            ui_impl,
+            f"{item.id[:8]}: nothing was approved: the plan does not match the spec it "
+            "was made from",
+            _stale_plan_approval(item, manifest, root_dir, action),
+        ):
             sys.exit(2)
         plan, problems, _unkept = plan_resume(
             root_dir,
