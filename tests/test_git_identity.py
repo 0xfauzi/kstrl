@@ -108,7 +108,7 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_contract_safety.py": 4,
     # `ready_repo` calls `tests.helpers.gitrepo.set_identity` before it
     # commits (#198), once per scenario that builds its own fixture.
-    "tests/test_doctor.py": 7,
+    "tests/test_doctor.py": 8,
     # #399: the rewritten locale-pinned bad_patterns test commits into a
     # real repository through `tests.helpers.gitrepo.set_identity`.
     "tests/test_encoding_sites.py": 2,
@@ -167,6 +167,11 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # #531: one commit per fixture repo, after set_identity.
     "tests/test_prelaunch_refusal_exit.py": 1,
     "tests/test_progress_scope.py": 9,
+    # #603: `gitrepo.git_in(root, "commit", ...)` seeds each repository right
+    # after `gitrepo.set_identity(root)`, and the STUB string's
+    # `subprocess.run(["git", "commit", ...])` commits a.txt in a worktree
+    # of that same repository.
+    "tests/test_parent_agent_timeouts.py": 2,
     # #532: two real `git("commit", ...)` calls (_initialised_project's seed
     # commit and the architect test's seed commit), each into a repository
     # already through tests.helpers.gitrepo.set_identity, plus two "git
@@ -211,6 +216,9 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_scope_hardening.py": 4,
     "tests/test_scope_launch_gate.py": 1,
     "tests/test_check_cli.py": 5,
+    # #619: each test commits a base and a branch into a repository its
+    # _repo helper put through tests.helpers.gitrepo.set_identity.
+    "tests/test_check_non_python_diff.py": 2,
     "tests/test_check_baseline_document.py": 1,
     # #400: two diff-driven-check tests, each committing one file onto a
     # branch. The repository comes from test_check_cli._make_repo, which
@@ -249,6 +257,10 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # PR #552 verifier: one base commit, into the repository the branch-probe
     # test builds with `git_in` and `set_identity` before committing.
     "tests/test_tui_433_verify552.py": 1,
+    # #622: one base commit, into the repository this file's own `_repo`
+    # builds, which calls `tests.helpers.gitrepo.set_identity` right after
+    # `git init`.
+    "tests/test_unparsed_gate_output.py": 1,
     # Prose, not commits: assertion strings checking what
     # `run_scrubbed`'s rendered command STARTS WITH or what a mocked
     # call log CONTAINS, plus a docstring paragraph. Nothing here spawns

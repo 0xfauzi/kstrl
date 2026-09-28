@@ -27,6 +27,16 @@ which the signature test below pins. Anything else (``None``, a bare name, an
 ``if``-expression, a producer that may return ``None``) is a scope that
 records nothing while looking recorded: it is flagged, and it clears no site.
 
+LAYER 3, THE BOUND (#603). The same agent-call census, so a new call site
+is counted by the one predicate that counts it for layer 2. Every site is
+enrolled with the keyword that carries its time bound there and the setting
+the bound comes from, and every call at that site must pass the keyword,
+never positionally and never as the literal ``None``. A site with no
+enrolment is an offender, so a new agent call is an unexplained delta. The
+layer proves a bound is passed, not that it is set: ``limit_seconds(0.0)``
+is ``None`` by design (#467). tests/test_parent_agent_timeouts.py proves
+that each setting reaches its call and stops it.
+
 Every pin is DERIVED BY RUNNING: empty the dict, run the test, and read
 the ``Found:`` dict out of the failure. Never edit a count by hand.
 """
@@ -83,6 +93,8 @@ class Site:
     lineno: int
     scoped: bool
     identity: bool = False  # kind "scope" only: the scope carries an AgentCall
+    keywords: frozenset[str] = frozenset()  # names passed as keyword arguments
+    none_keywords: frozenset[str] = frozenset()  # of those, the ones passed the literal None
 
 
 def _dotted(node: ast.expr) -> str:
@@ -175,7 +187,16 @@ def _call_sites(
     that function's own branching does not nest another level deeper for
     the scope case; this list is only ever ``extend``-ed, never branched on.
     """
-    found = [Site(key, k, call.lineno, scoped) for k in _kinds(call, in_agents)]
+    keywords = frozenset(kw.arg for kw in call.keywords if kw.arg is not None)
+    none_keywords = frozenset(
+        kw.arg
+        for kw in call.keywords
+        if kw.arg is not None and isinstance(kw.value, ast.Constant) and kw.value.value is None
+    )
+    found = [
+        Site(key, k, call.lineno, scoped, keywords=keywords, none_keywords=none_keywords)
+        for k in _kinds(call, in_agents)
+    ]
     if _callee(call) == SCOPE:
         found.append(Site(key, "scope", call.lineno, scoped, _carries_identity(call, producers)))
     return found
@@ -397,6 +418,98 @@ def test_a_site_cleared_by_its_caller_has_its_callers_counted() -> None:
     assert NO_RUN_CALLERS <= set(CALLER_SCOPED)
 
 
+# --- layer 3: the bound (#603) ----------------------------------------------
+
+#: Every agent-call site: the keyword that carries its time bound, and where
+#: the bound comes from. Derived by running, like every other pin here.
+EXPECTED_BOUNDS: dict[str, tuple[str, str]] = {
+    "agents/logging.py:LoggingAgent.run": ("timeout", "its caller's timeout"),
+    "cli.py:_understand_core": ("timeouts", "[timeout] agent_iteration and component_total"),
+    "decompose.py:_decompose_spec_impl": ("timeout", "[factory] architect_timeout_seconds"),
+    "decompose.py:collect_agent_output": ("timeout", "its caller's timeout"),
+    "factory.py:_run_component": ("timeouts", "[timeout] agent_iteration and component_total"),
+    "feature_cmd.py:run_feature": ("timeouts", "[timeout] agent_iteration and component_total"),
+    "gepa_adapter.py:ReflectionModel.__call__": ("timeout", "ReflectionModel.timeout, required"),
+    "integration_phase.py:_review_round": ("timeout", "[factory] review_timeout_seconds"),
+    "integration_phase.py:_run_reviewer": ("timeout", "its caller's timeout"),
+    "integration_phase.py:review_commit": ("timeout", "its caller's timeout"),
+    "knowledge.py:distill_facts": ("timeout", "[knowledge] distill_timeout_seconds"),
+    "loop.py:run_loop": ("timeout", "[timeout] agent_iteration, capped by component_total"),
+    "pipeline.py:ComponentPipeline._phase_distill": (
+        "config",
+        "[knowledge] distill_timeout_seconds, read inside distill_facts",
+    ),
+    "pipeline.py:ComponentPipeline._phase_review": ("timeout", "[factory] review_timeout_seconds"),
+    "pipeline.py:ComponentPipeline._phase_security": (
+        "config",
+        "[security] timeout_seconds, read inside run_security_review",
+    ),
+    "review.py:run_review": ("timeout", "its caller's timeout"),
+    "security.py:run_security_review": ("timeout", "[security] timeout_seconds"),
+}
+
+
+def bound_offenders(census: list[Site], expected: dict[str, tuple[str, str]]) -> list[str]:
+    """Every agent call that does not pass its enrolled bound by keyword.
+
+    A site with no enrolment has no carrier, so it is an offender: this
+    FLAGS, and a site it cannot place must not clear."""
+    offenders: list[str] = []
+    for site in census:
+        if site.kind != "agent-call":
+            continue
+        carrier = expected.get(site.key, ("", ""))[0]
+        if not carrier or carrier not in site.keywords:
+            offenders.append(f"{site.key} line {site.lineno}: no {carrier or 'enrolled'} keyword")
+        elif carrier in site.none_keywords:
+            offenders.append(f"{site.key} line {site.lineno}: {carrier}=None")
+    return sorted(offenders)
+
+
+def test_every_agent_call_site_states_its_bound() -> None:
+    found = set(_counts("agent-call"))
+    assert found - set(EXPECTED_BOUNDS) == set(), "agent calls with no enrolled bound"
+    assert set(EXPECTED_BOUNDS) - found == set(), "enrolled sites that no longer exist"
+
+
+def test_every_agent_call_passes_its_enrolled_bound() -> None:
+    census = _census()
+    assert bound_offenders(census, EXPECTED_BOUNDS) == []
+    # Control: the rule above passes vacuously on an empty census.
+    assert sum(EXPECTED_AGENT_CALLS.values()) == len([s for s in census if s.kind == "agent-call"])
+    assert len([s for s in census if s.kind == "agent-call"]) >= 19
+
+
+def _bound(source: str) -> list[str]:
+    return bound_offenders(sites(source, "x.py"), {"x.py:f": ("timeout", "a setting")})
+
+
+def test_an_agent_run_without_a_timeout_is_flagged() -> None:
+    assert _bound("def f(agent, p, c):\n    agent.run(p, cwd=c)\n") == [
+        "x.py:f line 2: no timeout keyword"
+    ]
+
+
+def test_a_positional_timeout_is_flagged() -> None:
+    assert _bound("def f(agent, p, c, t):\n    agent.run(p, c, t)\n") == [
+        "x.py:f line 2: no timeout keyword"
+    ]
+
+
+def test_a_literal_none_timeout_is_flagged() -> None:
+    assert _bound("def f(agent, p):\n    agent.run(p, timeout=None)\n") == [
+        "x.py:f line 2: timeout=None"
+    ]
+
+
+def test_an_unenrolled_agent_call_is_flagged_and_an_enrolled_one_is_not() -> None:
+    source = (
+        "def f(agent, p, t):\n    agent.run(p, timeout=t)\n"
+        "def g(agent, p, t):\n    agent.run(p, timeout=t)\n"
+    )
+    assert _bound(source) == ["x.py:g line 4: no enrolled keyword"]
+
+
 # --- controls on synthetic source -------------------------------------------
 
 
@@ -531,6 +644,11 @@ def test_blind_spot_an_identity_with_an_empty_run_id() -> None:
         "        agent.run(p)\n"
     )
     assert _scopes(source) == [False]
+
+
+@pytest.mark.xfail(strict=True, reason="a bound's value is not traced: a name bound to None passes")
+def test_blind_spot_a_timeout_name_bound_to_none() -> None:
+    assert _bound("def f(agent, p):\n    t = None\n    agent.run(p, timeout=t)\n") != []
 
 
 @pytest.mark.xfail(strict=True, reason="raw spawns are counted inside kstrl/agents/ only")

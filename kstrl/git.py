@@ -898,6 +898,31 @@ def ignored_paths(
     return frozenset(path for path in result.stdout.split("\0") if path)
 
 
+def listed_files(cwd: Path, timeout: float = DEFAULT_TIMEOUT) -> frozenset[str] | None:
+    """The files git lists under ``cwd``, or None when git could not answer.
+
+    One ``git ls-files --cached --others --exclude-standard -z`` call:
+    every tracked file, and every untracked file no ignore rule matches,
+    spelled relative to ``cwd``. A directory that is not in a repository
+    (exit 128), a missing git, a timeout and a name this process cannot
+    decode as utf-8 are all None rather than an empty set, because an
+    empty set reads as "the repository holds no files".
+    """
+    try:
+        result = subprocess.run(
+            ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+            cwd=cwd,
+            capture_output=True,
+            encoding="utf-8",
+            timeout=timeout,
+        )
+    except (subprocess.TimeoutExpired, OSError, ValueError):
+        return None
+    if result.returncode != 0:
+        return None
+    return frozenset(_nul_paths(result.stdout))
+
+
 def remove_from_index(
     file: str,
     cwd: Path | None = None,
