@@ -1,0 +1,39 @@
+{
+  "fixture_id": "concern-ts-01-dead-code",
+  "role": "reviewer",
+  "prd": "Implement parseConfig(path) that reads a JSON config file and returns its contents.",
+  "verification": [
+    {
+      "name": "test_suite",
+      "passed": true,
+      "message": "Tests passed (5 passed)"
+    },
+    {
+      "name": "typecheck",
+      "passed": true,
+      "message": "Typecheck passed"
+    },
+    {
+      "name": "linter",
+      "passed": true,
+      "message": "Linter passed"
+    },
+    {
+      "name": "diff_scope",
+      "passed": true,
+      "message": "1 files, all within scope"
+    },
+    {
+      "name": "self_critique",
+      "passed": true,
+      "message": "2 failure modes listed"
+    }
+  ],
+  "must_detect": {
+    "category": "dead_code",
+    "severity_at_least": "advisory",
+    "evidence_path_contains": "src/sandbox/parser.ts"
+  },
+  "description": "TypeScript twin of concern-01-dead-code. The diff adds normalizeKeys, validateSchema and computeChecksum, module-private functions (not exported) that neither parseConfig nor anything else calls, and an unused CACHE_SUFFIX constant. They satisfy no PRD criterion and are pure dead code; the TypeScript compiler's noUnusedLocals option, when enabled, reports each as declared but never read.",
+  "expected_fix": "Remove the unused helpers, or give them a caller or an export the PRD asks for."
+}

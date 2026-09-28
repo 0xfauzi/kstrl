@@ -1555,6 +1555,15 @@ class TestMaterialization:
         assert stat.deletions == 0
 
 
+def _languages(subdir: str) -> dict[str, int]:
+    """How many ``subdir`` diff fixtures each code language has (#633)."""
+    counts: dict[str, int] = {}
+    for artifact in sorted((FIXTURES_DIR / subdir).glob("*.diff")):
+        language = diff_language(artifact.read_text(encoding="utf-8"), artifact.name)
+        counts[language] = counts.get(language, 0) + 1
+    return counts
+
+
 class TestFixtureStructure:
     """These run unconditionally - cheap structural checks on the fixture
     library itself. If a fixture file lacks its metadata partner, this
@@ -1583,9 +1592,10 @@ class TestFixtureStructure:
             assert meta_path.exists(), f"Fixture {artifact} has no .meta.json partner"
 
     def test_security_fixtures_count(self) -> None:
-        # 5 planted-vuln + 1 R5.3 injection-efficacy + 4 R5.2 hard positives
-        fixtures = list((FIXTURES_DIR / "security").glob("*.diff"))
-        assert len(fixtures) == 10, "Expected 10 security fixtures"
+        # Python: 5 planted-vuln + 1 R5.3 injection-efficacy + 4 R5.2 hard
+        # positives. TypeScript (#633): a twin of each of the 6 Python easy
+        # positives. Counted per language, read off each diff's paths.
+        assert _languages("security") == {"python": 10, "ts": 6}
 
     def test_security_hard_positive_count(self) -> None:
         assert len(_security_positive_hard_fixtures()) == 4, (
@@ -1614,9 +1624,9 @@ class TestFixtureStructure:
         )
 
     def test_concern_fixtures_count(self) -> None:
-        # 3 planted-concern fixtures + 1 R5.3 injection-efficacy fixture
-        fixtures = list((FIXTURES_DIR / "concerns").glob("*.diff"))
-        assert len(fixtures) == 4, "Expected 4 concern fixtures"
+        # Python: 3 planted-concern fixtures + 1 R5.3 injection-efficacy
+        # fixture. TypeScript (#633): a twin of each.
+        assert _languages("concerns") == {"python": 4, "ts": 4}
 
     def test_spec_fixtures_count(self) -> None:
         fixtures = list((FIXTURES_DIR / "specs").glob("*.md"))

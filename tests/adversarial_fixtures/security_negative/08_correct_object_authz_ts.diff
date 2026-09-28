@@ -1,0 +1,74 @@
+diff --git a/src/docs/sharing.ts b/src/docs/sharing.ts
+new file mode 100644
+index 0000000..1a2b3c4
+--- /dev/null
++++ b/src/docs/sharing.ts
+@@ -0,0 +1,68 @@
++/** Revoke a share grant on a document. */
++
++import Database from "better-sqlite3";
++
++/** Thrown when a document or share grant does not exist. */
++export class NotFound extends Error {
++  constructor(message: string) {
++    super(message);
++    this.name = "NotFound";
++  }
++}
++
++/** Thrown when the caller may not perform the action. */
++export class Forbidden extends Error {
++  constructor(message: string) {
++    super(message);
++    this.name = "Forbidden";
++  }
++}
++
++interface DocumentRow {
++  id: number;
++  owner_id: number;
++}
++
++interface ShareRow {
++  id: number;
++  document_id: number;
++  grantee_id: number;
++}
++
++/**
++ * Revoke `shareId` on `documentId` on behalf of `actorId`.
++ *
++ * Only the document owner may revoke shares on it.
++ */
++export function revokeShare(
++  db: Database.Database,
++  actorId: number,
++  documentId: number,
++  shareId: number,
++): void {
++  const document = db
++    .prepare("SELECT id, owner_id FROM documents WHERE id = ?")
++    .get(documentId) as DocumentRow | undefined;
++  if (document === undefined) {
++    throw new NotFound(`document ${documentId} does not exist`);
++  }
++
++  const share = db
++    .prepare("SELECT id, document_id, grantee_id FROM shares WHERE id = ?")
++    .get(shareId) as ShareRow | undefined;
++  if (share === undefined) {
++    throw new NotFound(`share ${shareId} does not exist`);
++  }
++
++  // Re-bind the acted-on object to the authorized object: the share
++  // must belong to the document named in the path.
++  if (share.document_id !== document.id) {
++    throw new NotFound("share does not belong to this document");
++  }
++
++  if (document.owner_id !== actorId) {
++    throw new Forbidden("only the document owner may revoke shares");
++  }
++
++  db.prepare("DELETE FROM shares WHERE id = ?").run(shareId);
++}

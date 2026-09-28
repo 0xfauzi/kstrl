@@ -1,0 +1,48 @@
+diff --git a/src/media/thumbnail.ts b/src/media/thumbnail.ts
+new file mode 100644
+index 0000000..1a2b3c4
+--- /dev/null
++++ b/src/media/thumbnail.ts
+@@ -0,0 +1,42 @@
++/** Generate image thumbnails by running ImageMagick's convert. */
++
++import { spawnSync } from "node:child_process";
++
++/** Thrown when thumbnail generation fails. */
++export class ThumbnailError extends Error {
++  constructor(message: string) {
++    super(message);
++    this.name = "ThumbnailError";
++  }
++}
++
++function validateDimensions(width: number, height: number): void {
++  if (!Number.isInteger(width) || !Number.isInteger(height)) {
++    throw new ThumbnailError("dimensions must be integers");
++  }
++  if (!(width >= 1 && width <= 4096 && height >= 1 && height <= 4096)) {
++    throw new ThumbnailError("dimensions out of range");
++  }
++}
++
++/**
++ * Resize `source` into `dest` at `width` x `height`.
++ *
++ * The process is started with an explicit argument vector and no
++ * shell, so user-influenced values cannot break out into shell syntax.
++ */
++export function makeThumbnail(source: string, dest: string, width: number, height: number): void {
++  validateDimensions(width, height);
++  const argv = [source, "-resize", `${width}x${height}`, dest];
++  const result = spawnSync("convert", argv, {
++    shell: false,
++    timeout: 30_000,
++  });
++  if (result.error !== undefined) {
++    throw new ThumbnailError(result.error.message);
++  }
++  if (result.status !== 0) {
++    const stderr = result.stderr.toString("utf8").trim();
++    throw new ThumbnailError(stderr || "convert failed");
++  }
++}
