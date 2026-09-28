@@ -677,6 +677,10 @@ def test_check_runs_without_git_when_no_check_reads_the_diff(
     assert document["passed"] is True
     names = {c["name"] for c in document["checks"]}
     assert names == {"test_suite", "typecheck", "linter"}
+    # #620: with no git there is no diff, so which changed test files ran
+    # is not measured, and the sidecar says so rather than staying silent.
+    gaps = [(g["check"], g["reason"]) for g in document["not_measured"]]
+    assert gaps == [("tests_ran", "command_failed")]
 
 
 def test_check_reports_mutation_as_not_measured_not_as_a_pass(tmp_path: Path) -> None:

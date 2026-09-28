@@ -160,6 +160,7 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     # deduplicated spelling list below loses a row.
     "serve.py": 5,
     "statedir.py": 1,
+    "suite_inventory.py": 1,
     "tui/embed.py": 1,
     # #433 F9: the bounded "rb" read of a review file, and the
     # disposition word OPEN = "open", which is not a read.
@@ -275,6 +276,7 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "serve.py path.read_text(encoding='utf-8')",
     "serve.py self.path.read_text(encoding='utf-8')",
     "statedir.py open(lock_path, 'a+', encoding='utf-8')",
+    "suite_inventory.py (report_dir / GATE_OUTPUT).read_text(encoding='utf-8')",
     "tui/embed.py open(run_paths.root / 'orchestrator.log', 'a', buffering=1, encoding='",
     "tui/runs.py open(lock_path, 'a+', encoding='utf-8')",
     "tui/serve_view.py path.read_text(encoding='utf-8', errors='replace')",
