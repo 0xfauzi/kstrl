@@ -287,9 +287,9 @@ agent's worktree by construction on both CLIs.
 
 | Env var | Type | Default |
 |---|---|---|
-| `KSTRL_VERIFY_TEST_CMD` | str | unset (uses `uv run pytest`) |
-| `KSTRL_VERIFY_TYPECHECK_CMD` | str | unset (uses `uv run mypy .`) |
-| `KSTRL_VERIFY_LINT_CMD` | str | unset (uses `uv run ruff check .`) |
+| `KSTRL_VERIFY_TEST_CMD` | str | unset (uses `uv run pytest`); empty turns the gate off |
+| `KSTRL_VERIFY_TYPECHECK_CMD` | str | unset (uses `uv run mypy .`); empty turns the gate off |
+| `KSTRL_VERIFY_LINT_CMD` | str | unset (uses `uv run ruff check .`); empty turns the gate off |
 | `KSTRL_VERIFY_TEST_TOOL` | `pytest` \| `vitest` | unset = run both parsers and union the failures |
 | `KSTRL_VERIFY_TYPECHECK_TOOL` | `mypy` \| `tsc` | unset = run both parsers and union the failures |
 | `KSTRL_VERIFY_LINT_TOOL` | `ruff` \| `eslint` | unset = run both parsers and union the failures |
@@ -442,7 +442,7 @@ In `single_pr` mode every component shares one branch, so the reported numbers i
 | Env var | Type | Default |
 |---|---|---|
 | `KSTRL_CONTRACT_MODE` | str | `tier` (`tier\|final\|skip`) |
-| `KSTRL_CONTRACT_TEST_CMD` | str | `uv run pytest` |
+| `KSTRL_CONTRACT_TEST_CMD` | str | unset (uses the command `[verify] test_command` resolves to) |
 | `KSTRL_TIMEOUT_CONTRACT` | float | 0 (no limit) |
 
 Invalid mode raises ValueError (Phase B8).
