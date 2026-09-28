@@ -198,3 +198,19 @@ def test_a_cli_fixture_with_stdin_passes_and_fails_on_the_right_output(
     assert len(row["details"]) == 1, row["details"]
     assert detail in row["details"][0], row["details"]
     assert "timed out" not in row["details"][0]
+
+
+def test_a_cli_fixture_stdin_reaches_the_program_as_utf8(tmp_path: Path) -> None:
+    """A non-ASCII ``stdin`` reaches the program byte for byte, whatever the locale."""
+    text = "café → naïve"
+    fixture = {
+        "description": "echo stdin",
+        "fixture_type": "cli",
+        "input_data": {"command": "cat", "stdin": text + "\n"},
+        "expected": {"stdout_contains": [text]},
+    }
+
+    row = _fixtures_row(_repo(tmp_path, CARGO_TREE), [fixture])
+
+    assert row["passed"] is True, row
+    assert row["details"] == ["[PASS] echo stdin: CLI fixture passed"], row
