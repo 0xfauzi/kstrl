@@ -111,6 +111,9 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     "events.py": 2,
     "evolution.py": 2,
     "feature_cmd.py": 3,
+    # #632: the import, json.dumps for the canonical form, and the
+    # json.JSONDecodeError it catches from read_json. No parse.
+    "fixture_expect.py": 7,
     "fixtures.py": 4,
     "fixtures_snapshot.py": 2,
     "inbox.py": 4,
@@ -160,6 +163,10 @@ EXPECTED_UNDECIDED_CALLS: tuple[str, ...] = (
     "autonomy.py AutonomyState.load",
     "config.py cls.load",
     "evolution.py cls.load",
+    # #632: the fixture comparison tables and the fixture runner table.
+    "fixture_expect.py COMPARATORS[kind]",
+    "fixture_expect.py VALIDATORS[kind]",
+    "fixtures.py _RUNNERS[fixture.fixture_type]",
     "gateparse.py TOOL_PARSERS[chosen]",
     "gateparse.py TOOL_PARSERS[name]",
     "intake_github.py ProcessedLedger(root_dir).load",
