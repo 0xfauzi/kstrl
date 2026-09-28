@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from kstrl.atomicio import atomic_write_json
+from kstrl.fixture_expect import JUDGED_KEYS, string_list_error, value_errors
 from kstrl.jsonread import read_json, read_json_file
 
 
@@ -39,8 +40,10 @@ _FIXTURE_INPUT_KEYS: dict[str, dict[str, bool]] = {
     "file": {"path": True},
 }
 
+# The types in ``fixture_expect.JUDGED_KEYS`` take their keys from it, so a
+# key accepted here always has an evaluator (#632).
 _FIXTURE_EXPECTED_KEYS: dict[str, set[str]] = {
-    "cli": {"exit_code", "stdout_contains", "stdout_not_contains"},
+    **{fixture_type: set(keys) for fixture_type, keys in JUDGED_KEYS.items()},
     "function": {"returns", "raises"},
     "file": {"exists", "contains", "not_contains"},
 }
@@ -144,9 +147,8 @@ def _key_set_errors(prefix: str, actual: set[str], expected: set[str]) -> list[s
 
 
 def _validate_string_list(prefix: str, value: Any) -> list[str]:
-    if not isinstance(value, list) or not all(isinstance(s, str) for s in value):
-        return [f"{prefix}: must be an array of strings"]
-    return []
+    error = string_list_error(value)
+    return [] if error is None else [f"{prefix}: {error}"]
 
 
 def _cli_entry_errors(
@@ -165,13 +167,7 @@ def _cli_entry_errors(
         errors.append(f"{prefix}.input_data.command: must be a non-empty string")
     if "stdin" in input_data and not isinstance(input_data["stdin"], str):
         errors.append(f"{prefix}.input_data.stdin: must be a string")
-    if "exit_code" in expected and (
-        isinstance(expected["exit_code"], bool) or not isinstance(expected["exit_code"], int)
-    ):
-        errors.append(f"{prefix}.expected.exit_code: must be an integer")
-    for key in ("stdout_contains", "stdout_not_contains"):
-        if key in expected:
-            errors.extend(_validate_string_list(f"{prefix}.expected.{key}", expected[key]))
+    errors.extend(value_errors("cli", prefix, expected))
     return errors
 
 
