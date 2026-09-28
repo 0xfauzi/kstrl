@@ -378,6 +378,9 @@ class TestTheWalkAgainstTheRealPackage:
         a branch to the run a resume is recovering. Both carry a timeout.
         #500 adds one more, so 76: ``git.tracked_files_at`` lists the files
         tracked at the reviewed commit, and carries a timeout.
+        #624 removes one, so 75: the scaffold command's ``subprocess.run``
+        in ``factory._prepare_component_tree`` became a ``run_scrubbed``
+        call in ``kstrl/worktree_setup.py``.
         """
         spawns = frozenset(
             {
@@ -389,7 +392,7 @@ class TestTheWalkAgainstTheRealPackage:
             }
         )
         found = package_calls(spawns)
-        assert len(found.seen) == 76
+        assert len(found.seen) == 75
         assert found.without_line_numbers().undecided == tuple(
             sorted(
                 [

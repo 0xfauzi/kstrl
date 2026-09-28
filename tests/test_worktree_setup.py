@@ -128,16 +128,18 @@ def _run(
     typecheck_and_lint: str = "true",
     scaffold: str = "",
     contract_gate: str = "",
+    max_retries: int = 0,
+    manifest: Manifest | None = None,
 ) -> tuple[FactoryResult, Component]:
     """One factory run: ``gate`` is the test command of Phase 1, and of
     Phase 3 unless ``contract_gate`` names another."""
     monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
-    manifest = _manifest(scaffold)
+    manifest = manifest or _manifest(scaffold)
     factory_config = FactoryConfig(
         use_worktrees=True,
         create_prs=False,
         max_parallel=1,
-        max_retries=0,
+        max_retries=max_retries,
         retry_delay=0,
         review_mode="skip",
         integration_review=False,
@@ -221,6 +223,84 @@ def test_a_failed_worktree_setup_stops_the_gates(
     # the engineer still ran and committed.
     log = next((root / ".kstrl" / "runs").glob("*/components/a/engineer.jsonl"))
     assert "Worktree setup failed for a: " in log.read_text(encoding="utf-8")
+
+
+def test_the_retry_engineer_is_told_why_the_worktree_setup_failed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A failed setup before Phase 1 is the engineer's to repair (a lockfile
+    # its attempt broke), so the retry's prompt carries the setup's output.
+    root = _repo(tmp_path / "repo")
+    prompts = tmp_path / "prompts"
+
+    result, _comp = _run(
+        root,
+        f"cat >> {prompts}; echo ===END-OF-PROMPT=== >> {prompts}; " + _engineer("2.0.0", "2.0.0"),
+        CHECK,
+        "echo lockfile-out-of-sync >&2; exit 9",
+        monkeypatch,
+        max_retries=1,
+    )
+
+    # The retry's engineer commits nothing new, so the no-progress
+    # breaker ends the run after it; what matters is what it was told.
+    assert result.failed == ["a"]
+    attempts = prompts.read_text(encoding="utf-8").split("===END-OF-PROMPT===")[:-1]
+    assert len(attempts) >= 2, attempts
+    assert "lockfile-out-of-sync" not in attempts[0]
+    assert any("lockfile-out-of-sync" in a for a in attempts[1:]), attempts[1][-3000:]
+
+
+def test_the_bisection_worktree_is_set_up_before_it_names_a_breaker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Two components in one tier. a adds the dependency and check.js; b adds
+    # a file the contract gate refuses. The merged tier fails, so Phase 3
+    # bisects: it merges a, tests, merges b, tests. A bisection worktree
+    # with no setup of its own cannot resolve greet after merging a, and
+    # blames a; with its setup it passes a and names b.
+    root = _repo(tmp_path / "repo")
+    prd_b = PRD.replace("/a/", "/b/")
+    (root / prd_b).parent.mkdir(parents=True)
+    (root / prd_b).write_text(
+        (root / PRD).read_text(encoding="utf-8").replace("kstrl/factory/a", "kstrl/factory/b"),
+        encoding="utf-8",
+    )
+    _git(root, "add", "-A")
+    _git(root, "commit", "-q", "-m", "prd b")
+    manifest = _manifest()
+    manifest.components.append(
+        Component(
+            id="b",
+            title="B",
+            description="",
+            dependencies=[],
+            prd_path=prd_b,
+            branch_name="kstrl/factory/b",
+            status=ComponentStatus.PENDING.value,
+        )
+    )
+    engineer = (
+        'if [ "$(basename "$PWD")" = a ]; then '
+        + _engineer("2.0.0", "2.0.0")
+        + "; else touch broken && git add broken && git commit -qm b && "
+        "echo '<promise>COMPLETE</promise>'; fi"
+    )
+
+    result, _comp = _run(
+        root,
+        engineer,
+        "true",
+        INSTALL,
+        monkeypatch,
+        contract_gate=f"{CHECK} && test ! -f broken",
+        manifest=manifest,
+    )
+
+    assert [e["passed"] for e in _events(root, "verification_result")] == [True, True]
+    assert [e["passed"] for e in _events(root, "contract_result")] == [False]
+    assert result.failed == ["b"], result.contract_failures
+    assert result.completed == ["a"]
 
 
 def test_the_gate_does_not_use_the_root_checkouts_node_modules(
