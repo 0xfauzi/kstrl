@@ -91,11 +91,17 @@ EXPECTED_CONTEXT_SOURCES: dict[str, tuple[str | None, ...]] = {
     "feature_cmd.py::run_feature": (FEATURE_SOURCE,) * 3,
 }
 
-#: Calls the walk could not decide, per file. All four have a callee with
+#: Calls the walk could not decide, per file. All seven have a callee with
 #: no identifier (``TABLE[key](...)``, ``helper(...)(...)``), which
 #: ``calls_to`` reports as a candidate for every target; none of them is
 #: a ``run_loop`` call.
-EXPECTED_UNDECIDED: dict[str, int] = {"gateparse.py": 2, "tui/app.py": 2}
+# #632 adds fixture_expect.py (two comparison tables) and fixtures.py (the runner table).
+EXPECTED_UNDECIDED: dict[str, int] = {
+    "fixture_expect.py": 2,
+    "fixtures.py": 1,
+    "gateparse.py": 2,
+    "tui/app.py": 2,
+}
 
 #: The call sites that pass no prefix, and why. Exactly the ``None`` rows.
 NO_CONTEXT_REASONS: dict[str, str] = {
