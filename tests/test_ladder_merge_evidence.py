@@ -31,6 +31,8 @@ from pathlib import Path
 import pytest
 
 from kstrl.autonomy import AutonomyLevel, AutonomyState
+from kstrl.autonomy_replay import load_runs
+from kstrl.evolution import EvolutionConfig
 from kstrl.factory import run_factory
 from kstrl.inbox import Inbox, InboxConfig
 from kstrl.interaction import PromptKind, PromptRequest, PromptResponse
@@ -253,6 +255,8 @@ class TestTheCleanStreak:
         assert (state.clean_merges_at_level, state.components_merged_at_level) == (15, 1)
         assert state.promotion_blockers() == []
         assert "clean: http" in _evidence_line(out)
+        row = load_runs(EvolutionConfig.load(root).experiments_path)[-1]
+        assert (row.merged, row.clean_merged) == (1, 1)
 
     def test_a_merge_whose_pr_head_moved_after_kstrl_pushed_breaks_the_clean_streak(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -264,6 +268,8 @@ class TestTheCleanStreak:
         assert (state.clean_merges_at_level, state.components_merged_at_level) == (0, 1)
         assert "0/15 consecutive merges approved without edits" in state.promotion_blockers()
         assert "edited: http" in _evidence_line(out)
+        row = load_runs(EvolutionConfig.load(root).experiments_path)[-1]
+        assert (row.merged, row.clean_merged) == (1, 0)
 
     def test_a_commit_made_while_the_checkpoint_was_open_breaks_the_clean_streak(
         self, tmp_path: Path
@@ -512,3 +518,31 @@ def test_the_replay_does_not_predict_merges_from_a_row_that_predates_the_evidenc
     assert result.returncode == 0, out
     assert "Final level after replay: L1" in out, out
     assert "not fully predictable from this file: 25 recorded run(s)" in out, out
+
+
+def test_the_replay_does_not_count_an_edited_merge_toward_the_clean_streak(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    write_runs(
+        root,
+        [
+            run_record(
+                run_id=f"r{i}",
+                timestamp=f"2026-09-{i:02d}T00:00:00Z",
+                merged=1,
+                clean_merged=0,
+            )
+            for i in range(1, 26)
+        ],
+    )
+    result = subprocess.run(
+        [sys.executable, "-m", "kstrl", "autonomy", "replay", "--root", str(root)],
+        cwd=root,
+        capture_output=True,
+        encoding="utf-8",
+        timeout=120,
+    )
+    out = result.stdout + result.stderr
+    assert result.returncode == 0, out
+    assert "Final level after replay: L2" in out, out
+    assert "L2 -> L3" not in out, out
