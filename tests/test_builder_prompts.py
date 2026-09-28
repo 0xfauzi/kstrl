@@ -1,5 +1,5 @@
-"""H3a (#303): enrolment guards for the 54 harness-authored fragments (53
-from #303, one from #233) that eight multi-branch builders assemble into a
+"""H3a (#303): enrolment guards for the 58 harness-authored fragments (53
+from #303, one from #233, four from #633) that eight multi-branch builders assemble into a
 role's prompt. Why these fragments cannot be enrolled the way one plain
 prompt is is explained once, in ``tests/helpers/builder_prompts.py``'s
 module docstring. Four
@@ -453,7 +453,8 @@ def test_builder_text_is_under_an_enrolled_prompt(site: str) -> None:
 _EMPTY_DIGEST = _sha256("")
 
 DIGESTS: dict[str, str] = {
-    "claude_md_java": "0d0a0210263c62aa6dceb6aad160d0599f4df4fe9f9267a3f258f684034ce05d",
+    # Moved in #633, deliberately: Java gained JAVA_ANTIPATTERNS_PROMPT.
+    "claude_md_java": "f65aadc276fef75a197f9fa0fe4803ee04f0d29a034891dfd95e1fb4e11cd62f",
     "claude_md_python": "cae9b9f398dbda6199f504e3812b09c3b01ee2af0b1331063adaa6183350736a",
     "claude_md_unknown": "7ee33da5f7c68e05691019bdda3dead61136190bd0f8158c34cef78dd7a167ad",
     "ctx_all": "2659f4ff4e999f3ecb9b335e3bc25894ef92f52059f7f86203bf1b5f3a45cad5",
@@ -587,21 +588,24 @@ _STANDARDS: dict[str, str] = {
     "Python": "PYTHON_STANDARDS_PROMPT",
     "Rust": "RUST_STANDARDS_PROMPT",
     "TypeScript": "TYPESCRIPT_STANDARDS_PROMPT",
+    "JavaScript": "JAVASCRIPT_STANDARDS_PROMPT",
     "Go": "GO_STANDARDS_PROMPT",
     "Java": "JAVA_STANDARDS_PROMPT",
     "Kotlin": "KOTLIN_STANDARDS_PROMPT",
 }
 
-#: language -> the constant holding its antipatterns body (only 4
-#: languages have one).
+#: language -> the constant holding its antipatterns body.
 _ANTIPATTERNS: dict[str, str] = {
     "Python": "PYTHON_ANTIPATTERNS_PROMPT",
     "Rust": "RUST_ANTIPATTERNS_PROMPT",
     "TypeScript": "TYPESCRIPT_ANTIPATTERNS_PROMPT",
+    "JavaScript": "JAVASCRIPT_ANTIPATTERNS_PROMPT",
     "Go": "GO_ANTIPATTERNS_PROMPT",
+    "Java": "JAVA_ANTIPATTERNS_PROMPT",
+    "Kotlin": "KOTLIN_ANTIPATTERNS_PROMPT",
 }
 
-#: The 22 constants captured BY VALUE into a container at import
+#: The 26 constants captured BY VALUE into a container at import
 #: (patching the module attribute is a no-op for these; see Test 4).
 #: Derived from the three tables above: a name enters this census only
 #: by appearing in one of the container-equality assertions below.
@@ -611,7 +615,7 @@ CONTAINER_CAPTURED_NAMES: frozenset[str] = (
 
 
 def test_every_call_time_fragment_has_a_guard() -> None:
-    """Closed by construction: a 55th constant with no entry in either
+    """Closed by construction: a 59th constant with no entry in either
     set fails here rather than being silently unguarded."""
     covered = set(CALL_TIME_GUARDS) | CONTAINER_CAPTURED_NAMES
     assert covered == set(BUILDER_PROMPTS), (
@@ -621,7 +625,7 @@ def test_every_call_time_fragment_has_a_guard() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 4: orphan guard for the 22 constants captured BY VALUE at import.
+# Test 4: orphan guard for the 26 constants captured BY VALUE at import.
 # ---------------------------------------------------------------------------
 
 
@@ -639,7 +643,7 @@ def test_hint_table_is_the_enrolled_bodies() -> None:
 
 def test_language_tables_are_the_enrolled_bodies() -> None:
     """The only guard that sees a language body go orphan by CONTAINER
-    capture: a seventh language, or a value hand-edited or pointed at
+    capture: an eighth language, or a value hand-edited or pointed at
     the wrong constant, fails here -- patching the module attribute
     (Test 3's guard) does not reach a value already copied into the
     dict at import time."""

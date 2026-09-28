@@ -7,7 +7,7 @@ Three layers, each usable without the ones above it:
 
 | Layer | Command | Needs |
 |---|---|---|
-| Local queue | `ks queue add/ls/show/retry/rm/pause/resume` | nothing |
+| Local queue | `ks queue add/ls/show/retry/priority/rm/pause/resume` | nothing |
 | Daemon | `ks serve [--once]` | the queue |
 | GitHub inbox | `ks queue sync` | `gh`, an opt-in config |
 | Scheduling | launchd | `ks serve` |
@@ -26,7 +26,13 @@ code lives. That is a convenience, not the capability.
 ks queue add specs/add-widget.md --priority 3
 ks queue ls
 ks queue show <id>
+ks queue priority <id> --to 10
 ```
+
+`ks queue priority` changes only a queued item; every other state is refused
+by name and nothing is written. The change keeps the item's id, attempts and
+history, and appears in `ks queue show` with the old and new values and who
+made it.
 
 Items live under `.kstrl/queue/` as one directory each (spec + `meta.json`),
 moved between `queued/ leased/ running/ done/ failed/ poison/ awaiting_approval/`

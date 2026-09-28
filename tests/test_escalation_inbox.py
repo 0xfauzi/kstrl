@@ -145,6 +145,14 @@ def _decompose(root: Path, payload: dict[str, Any], *, spec: str = "spec.md") ->
     return made.pop()
 
 
+def _answer(root: Path, spec: str = "spec.md") -> None:
+    """The owner answers in the spec: its text changes, so its digest moves (#639)."""
+    path = root / spec
+    path.write_text(
+        path.read_text(encoding="utf-8") + "\nUsers sign in with passwords.\n", encoding="utf-8"
+    )
+
+
 def _inbox_ls(root: Path, *extra: str) -> str:
     proc = run_ks(root, "inbox", "ls", "--root", str(root), "--ui", "plain", "--no-color", *extra)
     assert proc.returncode == 0, proc.stdout
@@ -198,6 +206,7 @@ class TestALaterDecomposeClosesIt:
     def test_the_item_is_resolved_with_the_closing_run_id(self, tmp_path: Path) -> None:
         root = _project(tmp_path)
         _decompose(root, ESCALATED)
+        _answer(root)
         closing_run = _decompose(root, CLOSED)
 
         assert "Inbox clear" in _inbox_ls(root)
@@ -250,6 +259,7 @@ class TestALaterDecomposeClosesIt:
             root, "inbox", "snooze", item.id, "--hours", "24", "--root", str(root), "--ui", "plain"
         )
         assert snoozed.returncode == 0, snoozed.stdout
+        _answer(root)
 
         closing_run = _decompose(root, CLOSED)
 
@@ -262,6 +272,7 @@ class TestALaterDecomposeClosesIt:
         question for the owner, not a repeat of the closed one."""
         root = _project(tmp_path)
         _decompose(root, ESCALATED)
+        _answer(root)
         _decompose(root, CLOSED)
         _decompose(root, ESCALATED)
 
@@ -284,6 +295,7 @@ class TestALaterDecomposeClosesIt:
         assert snoozed.returncode == 0, snoozed.stdout
         _decompose(root, ESCALATED)
         assert len(_escalations(root)) == 2, _escalations(root)
+        _answer(root)
         closing_run = _decompose(root, CLOSED)
         after = _escalations(root)
         assert [str(i.status) for i in after] == [str(ItemStatus.RESOLVED)] * 2, after
@@ -346,6 +358,7 @@ class TestInProcessFailures:
             raise error("control lock held elsewhere")
 
         monkeypatch.setattr(Inbox, "resolve", refuse)
+        _answer(tmp_path)
         out = io.StringIO()
         _decompose_in_process(tmp_path, CLOSED, out)
 
@@ -366,6 +379,7 @@ class TestInProcessFailures:
             raise OSError("No space left on device")
 
         monkeypatch.setattr(Manifest, "save", full_disk)
+        _answer(tmp_path)
         with pytest.raises(OSError, match="No space left"):
             _decompose_in_process(tmp_path, CLOSED, io.StringIO())
 
