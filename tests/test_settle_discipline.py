@@ -194,9 +194,8 @@ def await_sites(tree: ast.Module) -> int:
 EXPECTED_AWAIT_SITES: dict[str, int] = {
     "tests/helpers/settle.py": 3,
     "tests/helpers/tui_screens.py": 5,
-    # One ``async with app.run_test`` and three settle-helper awaits
-    # (mounted, settled, drained), added by #448. Every read after them
-    # is a table cell the drained wait has already painted.
+    # One ``async with app.run_test`` and three settle-helper awaits (mounted, settled, drained),
+    # added by #448. Every read after them is a table cell the drained wait has already painted.
     "tests/test_carried_component_state.py": 4,
     "tests/test_config_guard_survey.py": 4,
     "tests/test_config_screen.py": 37,
@@ -215,6 +214,7 @@ EXPECTED_AWAIT_SITES: dict[str, int] = {
     "tests/test_home_data.py": 4,
     "tests/test_home_shell.py": 52,
     "tests/test_inbox.py": 4,
+    "tests/test_inbox_waivers.py": 5,  # #595: the TUI test; run_test, mounted and settled only
     "tests/test_init_wizard.py": 47,
     "tests/test_launch_session.py": 39,
     # TestRetryScreen split out of test_launch_session.py (#436 B1). Every await is

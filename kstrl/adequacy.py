@@ -1375,7 +1375,7 @@ def evaluate_layer0(
                     AdequacyFinding(
                         kind=FindingKind.NO_ORACLE,
                         path=path,
-                        symbol=", ".join(silent[:5]),
+                        symbol=", ".join(silent),
                         detail=(
                             f"{len(silent)} test(s) assert nothing; they pass "
                             "unless the code raises"
@@ -1411,7 +1411,7 @@ def evaluate_layer0(
                 AdequacyFinding(
                     kind=FindingKind.TEST_SKIPPED,
                     path=path,
-                    symbol=", ".join(names[:5]),
+                    symbol=", ".join(names),
                     detail=(f"{what}; a skipped test is a guarantee the suite no longer makes"),
                 )
             )
