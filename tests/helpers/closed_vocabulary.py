@@ -146,6 +146,7 @@ OPEN: dict[tuple[str, str], str] = {
     ("VerifyConfig", "lint_command"): "a shell command",
     ("VerifyConfig", "dead_code_command"): "a shell command",
     ("VerifyConfig", "progress_file_path"): "a path",
+    ("VerifyConfig", "env_passthrough"): "environment variable names or NAME* prefixes",
     ("SecurityConfig", "agent_cmd"): "a shell command",
     ("SecurityConfig", "model"): "a model name",
     ("ContractConfig", "test_command"): "a shell command",

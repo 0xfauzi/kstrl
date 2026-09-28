@@ -399,6 +399,7 @@ require_self_critique = false  # fail Phase 1 if the ## Self-Critique block is m
 self_critique_min_bullets = 3  # minimum substantive bullets in the block
 progress_file_path = ""        # progress file the self-critique check reads; empty = the log beside the component's PRD
 fast_iteration_checks = []     # gates run after each unfinished engineer iteration, failures shown in the next prompt: any of "test_suite", "typecheck", "linter"; empty = off (#233)
+env_passthrough = []           # extra environment variables the verification commands receive: names, or prefixes ending in "*"; names holding API_KEY, SECRET, TOKEN, PASSWORD or CREDENTIAL are still dropped (#623)
 
 # Phase 1 approved-fixtures oracle (R7.2; default off)
 [fixtures]

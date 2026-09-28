@@ -631,6 +631,9 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("verify", "fast_iteration_checks"): "gates run after each unfinished engineer iteration, "
     'failures shown in the next prompt: any of "test_suite", "typecheck", "linter"; '
     "empty = off (#233)",
+    ("verify", "env_passthrough"): "extra environment variables the verification commands "
+    'receive: names, or prefixes ending in "*"; names holding API_KEY, SECRET, TOKEN, '
+    "PASSWORD or CREDENTIAL are still dropped (#623)",
     ("fixtures", "enabled"): "run PRD-defined fixtures during Phase 1 (sandboxed; opt-in)",
     ("fixtures", "snapshot_on_success"): "save passing outputs for cross-run regression comparison",
     ("fixtures", "snapshot_dir"): "relative paths resolve against the repo root",
@@ -824,6 +827,9 @@ ENUM_SENTINELS: dict[tuple[str, str], str | float | list[str]] = {
     # Validated against the three gate names, so the generic list
     # sentinel ["sentinel/path/"] is refused by the loader.
     ("verify", "fast_iteration_checks"): [GATE_LINT],
+    # Validated as environment variable names, so the generic list
+    # sentinel ["sentinel/path/"] is refused by the loader.
+    ("verify", "env_passthrough"): ["SENTINEL_NAME"],
 }
 
 

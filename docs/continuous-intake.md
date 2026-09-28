@@ -579,7 +579,11 @@ A LaunchAgent inherits none of your shell environment. Both `gh` and `git`
 must be findable, so the plist sets `PATH` to the interpreter's directory
 plus the usual system and Homebrew locations. Getting this wrong produces
 a daemon that runs and silently fails every poll - the hardest setup bug
-to see. If your tools live elsewhere, edit the `PATH` entry.
+to see. `ks serve --print-plist` also puts the `PATH` of the shell you run
+it in at the front (#623), keeping only absolute directories that exist,
+so a queued run finds the toolchains that shell finds (`~/.cargo/bin`,
+`~/go/bin`, an nvm directory). Print the plist again after installing a
+toolchain somewhere new.
 
 ### The restart throttle is a spend control
 

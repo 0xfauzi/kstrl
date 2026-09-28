@@ -294,6 +294,10 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # `_git_project` builds through `tests.helpers.gitrepo.git_in` /
     # `set_identity`.
     "tests/test_retry_journal_rows.py": 1,
+    # #623: one base commit per `ks check` probe repository, into the
+    # repository `_repo` builds and puts through
+    # `tests.helpers.gitrepo.set_identity` right after `git init`.
+    "tests/test_verify_env_passthrough_e2e.py": 1,
 }
 
 
