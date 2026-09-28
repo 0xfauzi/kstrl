@@ -41,7 +41,7 @@ from kstrl.adequacy import (
 from kstrl.atomicio import atomic_write_text
 from kstrl.config import component_progress_path, relative_to_root
 from kstrl.failure_excerpt import failure_excerpt
-from kstrl.findings import Finding
+from kstrl.findings import Finding, finding_waiver
 from kstrl.gateparse import (
     GATE_LINT,
     GATE_TEST,
@@ -71,6 +71,7 @@ from kstrl.procdispose import drain_or_abandon
 from kstrl.procgroup import signal_process_tree
 from kstrl.statedir import STATE_DIR_NAME
 from kstrl.timeout import limit_seconds
+from kstrl.waivers import Waivers, apply_waivers, waiver_note
 
 # R2.6 env scrub: verification subprocesses execute agent-authored code
 # (the project's tests, linters run over agent files, CLI fixtures), so
@@ -2441,6 +2442,8 @@ def check_policy_envelope(
     cwd: Path,
     base_branch: str,
     config: PolicyConfig,
+    *,
+    waivers: Waivers | None = None,
 ) -> CheckResult:
     """R8.1: enforce the declarative ``[policy]`` envelope from artifacts.
 
@@ -2534,9 +2537,6 @@ def check_policy_envelope(
         + _check_licenses(evaluation.new_dependencies, config)
         + _unread_lockfile_violations(evaluation.unread_lockfiles, config)
     )
-    blocking = [v for v in violations if v.blocking]
-    advisories = [v for v in violations if not v.blocking]
-
     findings = [
         Finding.policy_violation(
             category=v.category,
@@ -2547,14 +2547,18 @@ def check_policy_envelope(
         )
         for v in violations
     ]
-    # Blocking violations first: as_context() slices details[:10] into the
-    # retry prompt, and advisories must never crowd out a real failure.
-    details = [v.explanation for v in blocking] + [v.explanation for v in advisories]
+    # #595: an approved inbox item waives the one finding it covers, and
+    # it does so HERE, before `blocking` is computed, so this check stays
+    # the only place a policy finding becomes blocking.
+    findings, waived, refusals = apply_waivers(findings, waivers)
+    blocking, advisories, details = _after_waivers(findings, refusals)
+    note = waiver_note(waived, refusals)
 
     if not blocking:
-        message = evaluation.summary
+        message = evaluation.summary if evaluation.ok else "policy envelope satisfied after waivers"
         if advisories:
             message += f"; {len(advisories)} advisory(ies)"
+        message += note
         return CheckResult(
             name="policy_envelope",
             passed=True,
@@ -2566,6 +2570,7 @@ def check_policy_envelope(
     message = f"{len(blocking)} policy violation(s)"
     if evaluation.machinery_hit:
         message += " including enforcement-machinery halt"
+    message += note
     return CheckResult(
         name="policy_envelope",
         passed=False,
@@ -2618,6 +2623,50 @@ def _unread_lockfile_violations(
         )
         for rule in rules
     ]
+
+
+def _after_waivers(
+    findings: list[Finding], refusals: list[str]
+) -> tuple[list[Finding], list[Finding], list[str]]:
+    """``(blocking, advisories, details)`` once waivers are applied (#595).
+
+    ``advisories`` leaves out waived findings, so a waiver is not counted
+    as an advisory. ``details`` puts blocking findings first, because
+    ``as_context()`` slices ``details[:10]`` into the retry prompt and
+    nothing may crowd out a real failure, then the refusal reasons, the
+    waived findings and the advisories.
+    """
+    blocking = [f for f in findings if f.severity != "advisory"]
+    waived = [f for f in findings if f.severity == "advisory" and finding_waiver(f) is not None]
+    advisories = [f for f in findings if f.severity == "advisory" and finding_waiver(f) is None]
+    details = [f.explanation for f in blocking] + refusals
+    details += [f.explanation for f in waived] + [f.explanation for f in advisories]
+    return blocking, advisories, details
+
+
+def _test_adequacy_message(
+    finding_count: int,
+    blocking_mode: bool,
+    still_blocking: list[Finding],
+    advisories: list[Finding],
+    waived: list[str],
+    refusals: list[str],
+) -> str:
+    """#595: mirror ``check_policy_envelope`` - say "satisfied after
+    waivers" rather than "[blocking]" once nothing is still blocking, and
+    count a remaining advisory rather than discard it.
+    """
+    mode = "blocking" if blocking_mode else "advisory"
+    if not still_blocking and waived:
+        message = "test adequacy satisfied after waivers"
+    else:
+        message = f"{finding_count} test-adequacy finding(s) [{mode}]"
+    # In advisory mode with nothing waived every finding is an advisory and
+    # "[advisory]" already says so (#619 pins that message); the count adds
+    # information only once a waiver or the blocking mode has split them.
+    if advisories and (blocking_mode or waived):
+        message += f"; {len(advisories)} advisory(ies)"
+    return message + waiver_note(waived, refusals)
 
 
 def _check_licenses(
@@ -2703,6 +2752,8 @@ def check_test_adequacy(
     base_branch: str,
     config: AdequacyConfig,
     autonomy_level: int = 0,
+    *,
+    waivers: Waivers | None = None,
 ) -> CheckResult | NotMeasured:
     """R8.5 Layer 0: did this change weaken the suite, and do its new
     tests assert anything falsifiable?
@@ -2775,6 +2826,8 @@ def check_test_adequacy(
         )
         for f in adequacy_findings
     ]
+    # #595: the same rule as check_policy_envelope, before `passed`.
+    findings, waived, refusals = apply_waivers(findings, waivers)
 
     if not adequacy_findings and unread and not sources:
         return NotMeasured(
@@ -2794,12 +2847,14 @@ def check_test_adequacy(
             ),
             duration_seconds=time.monotonic() - start,
         )
-    details = [f.render() for f in adequacy_findings]
-    mode = "blocking" if blocking else "advisory"
+    still_blocking, advisories, details = _after_waivers(findings, refusals)
     return CheckResult(
         name="test_adequacy",
-        passed=not blocking,
-        message=f"{len(adequacy_findings)} test-adequacy finding(s) [{mode}]{not_read}",
+        passed=not still_blocking,
+        message=_test_adequacy_message(
+            len(adequacy_findings), blocking, still_blocking, advisories, waived, refusals
+        )
+        + not_read,
         details=details,
         findings=findings,
         duration_seconds=time.monotonic() - start,
@@ -2831,6 +2886,8 @@ def _adequacy_checks(
     base_branch: str,
     config: AdequacyConfig | None,
     autonomy_level: int,
+    *,
+    waivers: Waivers | None = None,
 ) -> tuple[list[CheckResult], list[NotMeasured]]:
     """``(rows, gaps)`` for R8.5 Layer 0: at most one of either.
 
@@ -2840,7 +2897,7 @@ def _adequacy_checks(
     """
     if config is None or not config.enabled:
         return [], []
-    outcome = check_test_adequacy(cwd, base_branch, config, autonomy_level)
+    outcome = check_test_adequacy(cwd, base_branch, config, autonomy_level, waivers=waivers)
     if isinstance(outcome, NotMeasured):
         return [], [outcome]
     return [outcome], []
@@ -5242,6 +5299,7 @@ class MechanicalVerification(Protocol):
         autonomy_level: int = 0,
         component_id: str | None = None,
         read_only: bool = False,
+        waivers: Waivers | None = None,
     ) -> VerificationResult: ...
 
 
@@ -5261,6 +5319,7 @@ def run_mechanical_verification(
     autonomy_level: int = 0,
     component_id: str | None = None,
     read_only: bool = False,
+    waivers: Waivers | None = None,
 ) -> VerificationResult:
     """Run all mechanical checks. All checks run even if earlier ones fail.
 
@@ -5399,6 +5458,7 @@ def run_mechanical_verification(
                 worktree_path,
                 base_branch,
                 policy_config,
+                waivers=waivers,
             )
         )
 
@@ -5406,7 +5466,7 @@ def run_mechanical_verification(
     # level or config says block. Runs before the expensive layers so a
     # suite-weakening diff is reported even when mutation is off.
     adequacy_rows, adequacy_gaps = _adequacy_checks(
-        worktree_path, base_branch, adequacy_config, autonomy_level
+        worktree_path, base_branch, adequacy_config, autonomy_level, waivers=waivers
     )
     checks.extend(adequacy_rows)
     not_measured.extend(adequacy_gaps)

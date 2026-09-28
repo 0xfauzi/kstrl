@@ -259,7 +259,7 @@ def test_learn_repair_heals_a_ledger_whose_own_void_was_torn(
     ledger_path().write_bytes(ledger())
 
     assert _ks(tmp_path, xdg, "learn", "playbook", "--ui", "plain").returncode == 2
-    repaired = _ks(tmp_path, xdg, "learn", "repair", "--ui", "plain")
+    repaired = _ks(tmp_path, xdg, "learn", "repair", "--yes", "--ui", "plain")
     assert repaired.returncode == 0, repaired.stdout + repaired.stderr
 
     shown = _ks(tmp_path, xdg, "learn", "playbook", "--ui", "plain")
@@ -390,9 +390,9 @@ def test_learn_repair_voids_every_refused_line_and_the_playbook_reads_again(
 
     refused = _ks(tmp_path, xdg, "learn", "playbook", "--ui", "plain")
     assert refused.returncode == 2, refused.stdout + refused.stderr
-    assert "ks learn repair" in refused.stdout + refused.stderr
+    assert "ks learn repair --yes" in refused.stdout + refused.stderr
 
-    repaired = _ks(tmp_path, xdg, "learn", "repair", "--ui", "plain")
+    repaired = _ks(tmp_path, xdg, "learn", "repair", "--yes", "--ui", "plain")
 
     output = repaired.stdout + repaired.stderr
     assert repaired.returncode == 0, output
@@ -420,6 +420,51 @@ def test_learn_repair_voids_every_refused_line_and_the_playbook_reads_again(
     assert again.returncode == 0, again.stdout + again.stderr
     assert "Nothing to repair" in again.stdout + again.stderr
     assert ledger_path().read_bytes() == after
+
+
+def test_repair_lists_and_writes_only_with_yes(xdg: Path, tmp_path: Path) -> None:
+    """#217: ``ks learn repair`` voids lines in a ledger every project on
+    this machine reads, and a VOID is permanent. Without ``--yes`` it lists
+    each refused line with the fold's reason and leaves every byte where it
+    was; with ``--yes`` it appends one VOID per listed line."""
+    playbook_dir().mkdir(parents=True)
+    lines = [
+        _line(Op(OpKind.ADD, "L1", AT, lesson=_lesson("L1"))),
+        _line(Op(OpKind.ADD, "L1", LATER, lesson=_lesson("L1"))),
+        "not json",
+    ]
+    before = _ledger_lines(*lines)
+    ledger_path().write_bytes(before)
+
+    listed = _ks(tmp_path, xdg, "learn", "repair", "--ui", "plain")
+
+    output = listed.stdout + listed.stderr
+    assert ledger_path().read_bytes() == before, "a repair without --yes wrote to the ledger"
+    assert listed.returncode == 0, output
+    for expected in ("line 2", "already exists", "line 3", "not a JSON record", "--yes"):
+        assert expected in output, output
+
+    written = _ks(tmp_path, xdg, "learn", "repair", "--yes", "--ui", "plain")
+
+    assert written.returncode == 0, written.stdout + written.stderr
+    after = ledger_path().read_bytes()
+    assert after.startswith(before)
+    voids = [read_json(line.decode("utf-8")) for line in after[len(before) :].split(b"\n") if line]
+    assert [(v["op"], v["line"]) for v in voids] == [("VOID", 2), ("VOID", 3)]
+    assert [lesson.id for lesson in load_playbook().lessons] == ["L1"]
+
+
+def test_learn_repair_refuses_an_unreadable_ledger_with_exit_2(xdg: Path, tmp_path: Path) -> None:
+    """A ledger that exists and cannot be read is a refusal on both paths,
+    never "Nothing to repair": only a MISSING ledger refuses nothing."""
+    ledger_path().mkdir(parents=True)
+
+    for args in ((), ("--yes",)):
+        proc = _ks(tmp_path, xdg, "learn", "repair", *args, "--ui", "plain")
+        output = proc.stdout + proc.stderr
+        assert proc.returncode == 2, output
+        assert "could not be repaired" in output
+        assert "Nothing to repair" not in output
 
 
 def test_repair_leaves_a_missing_ledger_missing(xdg: Path) -> None:

@@ -126,6 +126,12 @@ class ExperimentsDialect(csv.Dialect):
 # avg_duration_s, retry_rate, common_failure) is computed over the
 # components the run touched, the same set its journal rows describe;
 # before #447 it was every manifest component, carried ones included.
+# #601: ``merged`` and ``clean_merged`` count only merges
+# ``ComponentPipeline._record_merge`` confirmed in this run (never a bare
+# completion) and only those whose PR head GitHub reported equals the
+# commit the diff phase judged. A row written before this pair existed
+# carries neither, and ``autonomy_replay`` treats that as "unknown", not
+# zero merges predicted clean - see ``RunRecord.merged``.
 EXPERIMENTS_HEADER = ExperimentsDialect.delimiter.join(
     (
         "run_id",
@@ -143,16 +149,18 @@ EXPERIMENTS_HEADER = ExperimentsDialect.delimiter.join(
         "total_cost_usd",
         "unreported_calls",
         "kstrl_version",
+        "merged",
+        "clean_merged",
     )
 )
 
 
 #: The width of every EXPERIMENTS_HEADER before the current one: before
-#: R3.1 (11) and from R3.1 to #451 (14). A file keeps the header it was
-#: started with, and each later kstrl appends its own full-width row, so
-#: a row is legal at its file header's width and at every later width.
-#: Adding a column appends the width it replaces here.
-OLDER_EXPERIMENTS_WIDTHS: tuple[int, ...] = (11, 14)
+#: R3.1 (11), from R3.1 to #451 (14), and from #451 to #601 (15). A file
+#: keeps the header it was started with, and each later kstrl appends its
+#: own full-width row, so a row is legal at its file header's width and at
+#: every later width. Adding a column appends the width it replaces here.
+OLDER_EXPERIMENTS_WIDTHS: tuple[int, ...] = (11, 14, 15)
 
 
 def experiment_rows(text: str) -> list[dict[str, Any]]:
@@ -1552,6 +1560,24 @@ def _role_usage_entries(
     ]
 
 
+def _merge_columns(manifest: Manifest, factory_result: FactoryResult) -> tuple[str, str]:
+    """The experiments.tsv ``merged``/``clean_merged`` columns for one run (#601).
+
+    ``merged`` counts only merges this run confirmed (``factory_result.merged``),
+    never ``completed`` - a part completed with no PR merged nothing.
+    ``clean_merged`` is the subset whose PR head GitHub reported equals the
+    commit the diff phase judged. Deferred import: ``kstrl.factory`` imports
+    this module lazily for the same reason (avoids a module-load cycle), and
+    ``_classify_merges`` is the one place this comparison is made, so the TSV
+    agrees with what the live ladder counted.
+    """
+    from kstrl.factory import _classify_merges
+
+    verdicts = _classify_merges(manifest, factory_result.merged)
+    clean = sum(1 for v in verdicts.values() if v == "clean")
+    return str(len(verdicts)), str(clean)
+
+
 class EvolutionJournal:
     def __init__(self, config: EvolutionConfig) -> None:
         self.config = config
@@ -1773,6 +1799,8 @@ class EvolutionJournal:
         else:
             total_tokens_col = total_cost_col = unreported_col = ""
 
+        merged_col, clean_merged_col = _merge_columns(manifest, factory_result)
+
         # Joined on ExperimentsDialect's delimiter rather than on a
         # literal tab, so the one constant the reader parses with is the
         # one this row is built with. Identical bytes: the delimiter IS
@@ -1798,6 +1826,8 @@ class EvolutionJournal:
                 total_cost_col,
                 unreported_col,
                 kstrl_version(),
+                merged_col,
+                clean_merged_col,
             )
         )
 

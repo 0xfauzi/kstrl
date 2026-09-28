@@ -665,8 +665,13 @@ class AutonomyState:
                 self.cooldown_runs_remaining - count,
             )
 
-    def record_merged_component(self, *, human_edited: bool = False) -> None:
-        """Count a merged component; edits break the clean-merge streak."""
+    def record_merged_component(self, *, human_edited: bool) -> None:
+        """Count a merged component; edits break the clean-merge streak.
+
+        ``human_edited`` has no default (#601): True when the commit
+        GitHub merged is not the commit kstrl's gates judged, or either
+        is unknown. Every caller states what it observed.
+        """
         self.components_merged_at_level += 1
         if human_edited:
             self.clean_merges_at_level = 0

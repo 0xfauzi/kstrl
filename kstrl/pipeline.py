@@ -121,6 +121,7 @@ from kstrl.verify import (
     VerificationResult,
     scope_unreadable_error,
 )
+from kstrl.waivers import ApprovalSnapshot, Waivers, WaiverScope, load_approvals
 from kstrl.worktree_sweep import WorktreeSweep, sweep_findings
 
 if TYPE_CHECKING:
@@ -158,6 +159,17 @@ def _iso_now() -> str:
 
 #: How a retry this run carried from an interrupted run is marked (#463).
 CARRIED_REASON_PREFIX = "carried from run "
+
+#: The two ``Component.failed_check`` values that say a human turned a
+#: merge candidate down: rejected at the merge gate (interactively or
+#: with ``ks inbox reject``), or its PR closed without merging while
+#: kstrl waited (#601). One owner: ``kstrl.factory``'s
+#: ``HUMAN_REJECTION_CHECKS`` reads these rather than re-spelling them,
+#: so renaming either check here cannot silently switch off the L3
+#: rejection demotion (a second spelling was exactly how that failed
+#: open before).
+HITL_REJECT_CHECK = "hitl_reject"
+PR_CLOSED_CHECK = "pr_closed"
 
 
 def _carried_reason(prior_run_id: str, reason: str) -> str:
@@ -502,6 +514,9 @@ class PrPhaseResult:
     disposition: PrDisposition
     pr_url: str = ""
     error: str = ""
+    #: The failed_check a FAILED disposition records (#601: a PR closed
+    #: without merging is ``pr_closed``, which the ladder reads).
+    check: str = "pr_flow"
 
 
 @dataclass(frozen=True)
@@ -696,6 +711,9 @@ class ComponentPipeline:
         self._inbox: Inbox | None = None
         self._inbox_disabled = False
         self._inbox_typed: set[str] = set()
+        # #595: the approvals this run's checks may apply, read once by
+        # snapshot_waivers. None until then, which applies none.
+        self._approvals: ApprovalSnapshot | None = None
         self.review_selection = review_selection
         self.security_selection = security_selection
         self.knowledge_config = knowledge_config
@@ -2215,13 +2233,27 @@ class ComponentPipeline:
         self._inbox_resolve_component(comp.id)
         return Transition.COMPLETED
 
+    def _open_inbox(self) -> Inbox:
+        """The one ``Inbox`` this pipeline lazily builds and reuses.
+
+        Every site below constructs on first use and none reconstructs:
+        each still gates construction on ``self._inbox is None`` itself
+        (some also branch on ``inbox_config.enabled`` before ever
+        reaching here), so this is only the shared "build it once" step,
+        not the disabled check - a caller that must not construct one at
+        all when the inbox is disabled keeps that check ahead of the call.
+        """
+        if self._inbox is None:
+            self._inbox = Inbox(self.root_dir, self.inbox_config)
+        return self._inbox
+
     def _inbox_resolve(self, dedupe_key: str, reason: str) -> None:
         """Close an open item whose question the world has answered."""
         try:
             if self._inbox is None:
                 if not self.inbox_config.enabled:
                     return
-                self._inbox = Inbox(self.root_dir, self.inbox_config)
+                self._inbox = self._open_inbox()
             existing = self._inbox.find_by_dedupe_key(dedupe_key)
             if existing is not None and existing.is_open:
                 self._inbox.resolve(existing.id, comment=reason)
@@ -2271,7 +2303,7 @@ class ComponentPipeline:
             if self._inbox is None:
                 if not self.inbox_config.enabled:
                     return
-                self._inbox = Inbox(self.root_dir, self.inbox_config)
+                self._inbox = self._open_inbox()
             undecided = [
                 item
                 for item in self._inbox.items()
@@ -2320,7 +2352,7 @@ class ComponentPipeline:
                 if not self.inbox_config.enabled:
                     self._inbox_disabled = True
                     return
-                self._inbox = Inbox(self.root_dir, self.inbox_config)
+                self._inbox = self._open_inbox()
             if self._inbox_disabled:
                 return
             self._inbox.add(
@@ -2491,14 +2523,16 @@ class ComponentPipeline:
             fresh_base=True,
         )
 
-    def _fail_pr_flow(self, comp: Component, error: str) -> Transition:
-        """VERIFYING -> FAILED on a push/create/merge failure (R0.2:
-        COMPLETED requires a CONFIRMED merge)."""
+    def _fail_pr_flow(self, comp: Component, error: str, *, check: str) -> Transition:
+        """VERIFYING -> FAILED on a push/create/merge failure, or a merge-pending
+        PR GitHub reports closed unmerged (R0.2: COMPLETED requires a CONFIRMED
+        merge). ``check`` names which: ``"pr_flow"`` or ``PR_CLOSED_CHECK``
+        (#601) - no default, every caller states which it observed."""
         comp.status = ComponentStatus.FAILED.value
         comp.error = error
         comp.completed_at = _iso_now()
         comp.failed_phase = "pr"
-        comp.failed_check = "pr_flow"
+        comp.failed_check = check
         # Spelled out with keywords, and read that way. #339: this
         # is the third caller of the funnel and the only one that is
         # not `fail` / `retry_or_fail`, so no `signatures=` is ever
@@ -2635,7 +2669,7 @@ class ComponentPipeline:
                         self.manifest.base_branch,
                         self.root_dir,
                     )
-                    self._record_merge(comp, merge_state.merge_sha)
+                    self._record_merge(comp, merge_state.merge_sha, merge_state.head_sha)
                     comp.status = ComponentStatus.COMPLETED.value
                     comp.error = ""
                     self.component_failure_signatures.pop(comp.id, None)
@@ -2672,7 +2706,7 @@ class ComponentPipeline:
                         evidence={"pr_number": pr_number},
                     )
                     comp.failed_phase = "pr"
-                    comp.failed_check = "pr_closed"
+                    comp.failed_check = PR_CLOSED_CHECK
                     self.component_failure_signatures[comp.id] = [
                         "pr:closed-without-merge",
                     ]
@@ -2693,7 +2727,7 @@ class ComponentPipeline:
                     )
         self.manifest.save(self.manifest_path)
 
-    def _record_merge(self, comp: Component, merge_sha: str) -> None:
+    def _record_merge(self, comp: Component, merge_sha: str, head_sha: str) -> None:
         """Record a confirmed merge of ``comp``'s PR: the one place (#584).
 
         Both paths that confirm a merge call this: ``_phase_pr`` when this
@@ -2705,10 +2739,15 @@ class ComponentPipeline:
         GitHub published no commit, and then both records say "": a
         commit an earlier merge of this component recorded is not this
         merge's commit.
+
+        #601: ``head_sha`` is the PR head GitHub merged ("" when it
+        reported none). It goes on ``factory_result.merged``, the one dict
+        (component id -> head sha) the autonomy ladder counts merges from.
         """
         from kstrl.pr import pr_number_from_url
 
         comp.merge_sha = merge_sha
+        self.factory_result.merged[comp.id] = head_sha
         self.manifest.save(self.manifest_path)
         self.bus.emit(
             ev.PrMerged(
@@ -2747,7 +2786,7 @@ class ComponentPipeline:
                     comp,
                     f"Rejected at the merge gate: {decision.decision_comment}",
                     phase="pr",
-                    check="hitl_reject",
+                    check=HITL_REJECT_CHECK,
                     signatures=["review:hitl-rejected"],
                 )
             else:
@@ -2762,13 +2801,63 @@ class ComponentPipeline:
             if self._inbox is None:
                 if not self.inbox_config.enabled:
                     return None
-                self._inbox = Inbox(self.root_dir, self.inbox_config)
+                self._inbox = self._open_inbox()
             return self._inbox.find_by_dedupe_key(park_dedupe_key(comp_id))
         except (OSError, TypeError, ValueError, InboxError, ControlStateError) as exc:
             # The tuple _inbox_resolve catches. Unreadable is not a
             # decision: the component stays parked, and says why.
             self.ui.warn(f"  Inbox read failed; '{comp_id}' stays parked: {exc}")
             return None
+
+    def snapshot_waivers(self) -> None:
+        """#595: read the approved policy_exception and test_adequacy items once.
+
+        Called by the factory right after ``apply_merge_decisions``: after
+        every pre-spend refusal and before any engineer is scheduled. The
+        #192 rule quoted in ``_phase_verify`` applies: an approval made
+        mid-run, by an operator or by an engineer running ``ks inbox
+        approve`` in its own worktree, does not change what a later
+        attempt in this run is held to. It takes effect from the next run.
+
+        Every failure here waives nothing: the checks block exactly as
+        they did before approvals were read, and say that the approvals
+        were not consulted.
+        """
+        try:
+            if self._inbox is None:
+                if not self.inbox_config.enabled:
+                    self._approvals = ApprovalSnapshot(unconsulted_reason="the inbox is disabled")
+                    return
+                self._inbox = self._open_inbox()
+            self._approvals = load_approvals(self._inbox)
+        except (OSError, TypeError, ValueError, InboxError, ControlStateError) as exc:
+            # The tuple _park_decision catches, for the reasons it gives.
+            self.ui.warn(f"  Inbox read failed; no approval waives a finding in this run: {exc}")
+            self._approvals = ApprovalSnapshot(unconsulted_reason=f"the inbox read failed: {exc}")
+
+    def _waiver_scope(self, comp: Component) -> WaiverScope:
+        """What a waiver key binds a finding to: the run's plan and the component."""
+        return WaiverScope(
+            project=self.manifest.project_name,
+            spec_file=self.manifest.spec_file,
+            plan_id=comp.plan_id,
+            component=comp.id,
+        )
+
+    def _waivers_for(self, comp: Component) -> Waivers:
+        """This run's approvals for ``comp``, or an unconsulted snapshot.
+
+        ``self._approvals`` is None only when ``snapshot_waivers`` was
+        never called for this pipeline - a bug here, not ``ks check``'s
+        legitimate ``waivers=None`` (it calls the checks directly and
+        never reaches this method). Defaulting to unconsulted keeps that
+        bug from reading as "nothing waived silently": the check still
+        says why.
+        """
+        approvals = self._approvals or ApprovalSnapshot(
+            unconsulted_reason="snapshot_waivers was not called before this check"
+        )
+        return approvals.for_scope(self._waiver_scope(comp))
 
     def _merge_approved(self, comp: Component, decision: InboxItem) -> None:
         """Push, open and merge the branch exactly as the gate parked it.
@@ -2797,7 +2886,7 @@ class ComponentPipeline:
         else:
             # A conflict too: the re-run doctrine re-runs the engineer,
             # and an approval is not a request for that. `ks retry` is.
-            self._fail_pr_flow(comp, pr.error or "PR flow failed")
+            self._fail_pr_flow(comp, pr.error or "PR flow failed", check=pr.check)
 
     # ------------------------------------------------------------------
     # Phase chain
@@ -3164,7 +3253,7 @@ class ComponentPipeline:
                 )
             if pr.disposition == PrDisposition.FAILED:
                 return PipelineOutcome(
-                    transition=self._fail_pr_flow(comp, pr.error),
+                    transition=self._fail_pr_flow(comp, pr.error, check=pr.check),
                     verify=verify,
                     diff=diff,
                     review=review,
@@ -3273,6 +3362,22 @@ class ComponentPipeline:
             written.append(str(path))
         return tuple(written)
 
+    def _waivable_evidence(self, comp: Component, finding: Finding) -> dict[str, Any]:
+        """The evidence of a policy_exception or test_adequacy item (#595).
+
+        ``waiver_key`` is what an approval of the item covers: exactly
+        this finding, in this plan, for this component.
+        """
+        return {
+            "category": finding.category,
+            "severity": finding.severity,
+            "location": finding.location,
+            "suggestion": finding.suggestion,
+            "explanation": finding.explanation,
+            "plan_id": comp.plan_id,
+            "waiver_key": self._waiver_scope(comp).key(finding),
+        }
+
     def _phase_verify(
         self,
         comp: Component,
@@ -3340,6 +3445,8 @@ class ComponentPipeline:
             adequacy_config=self.run_envelope.adequacy,
             autonomy_level=self.run_envelope.autonomy_level,
             component_id=comp.id,
+            # #595: the approvals snapshotted when the run started.
+            waivers=self._waivers_for(comp),
         )
         verify_duration = time.monotonic() - verify_start
         comp.verification_passed = verification.passed
@@ -3360,43 +3467,45 @@ class ComponentPipeline:
                     finding.category.startswith(POLICY_CATEGORY_PREFIX)
                     and finding.severity != "advisory"
                 ):
+                    # #595 B2: the waiver_key is part of the dedupe key, not
+                    # just category, so a same-category repeat with
+                    # different evidence opens a second item instead of
+                    # overwriting the one the operator is about to read.
+                    evidence = self._waivable_evidence(comp, finding)
                     self._inbox_add(
                         ItemKind.POLICY_EXCEPTION,
                         f"{comp.id}: {finding.category}",
                         detail=finding.explanation,
                         component=comp.id,
-                        dedupe_key=f"policy:{comp.id}:{finding.category}",
-                        evidence={
-                            "category": finding.category,
-                            "severity": finding.severity,
-                            "location": finding.location,
-                            "suggestion": finding.suggestion,
-                        },
+                        dedupe_key=(
+                            f"policy:{comp.id}:{finding.category}:{evidence['waiver_key']}"
+                        ),
+                        evidence=evidence,
                     )
                 # R8.5: same rule, same reason. A BLOCKING adequacy
                 # finding stopped the change and needs a human to decide
                 # whether the suite may weaken here; an ADVISORY one is
                 # recorded in the finding stream and stops there, because
                 # the inbox is a queue of decisions, not of notes. The
-                # dedupe key is category + location so the same file
-                # failing the same way across retries collapses onto one
-                # item instead of fanning out.
+                # dedupe key is category + location + waiver_key (#595
+                # B2) so the same file failing the same way across
+                # retries collapses onto one item, and a same-category,
+                # same-location repeat with different evidence does not.
                 elif (
                     finding.category.startswith(ADEQUACY_CATEGORY_PREFIX)
                     and finding.severity != "advisory"
                 ):
+                    evidence = self._waivable_evidence(comp, finding)
                     self._inbox_add(
                         ItemKind.TEST_ADEQUACY,
                         f"{comp.id}: {finding.category}",
                         detail=finding.explanation,
                         component=comp.id,
-                        dedupe_key=(f"adequacy:{comp.id}:{finding.category}:{finding.location}"),
-                        evidence={
-                            "category": finding.category,
-                            "severity": finding.severity,
-                            "location": finding.location,
-                            "suggestion": finding.suggestion,
-                        },
+                        dedupe_key=(
+                            f"adequacy:{comp.id}:{finding.category}:{finding.location}:"
+                            f"{evidence['waiver_key']}"
+                        ),
+                        evidence=evidence,
                     )
         self.bus.emit(
             ev.VerificationResultEvent(
@@ -3509,6 +3618,9 @@ class ComponentPipeline:
                 )
             )
 
+        # #601: the commit every later gate judges. The ladder counts a
+        # merge clean only when GitHub merged exactly this commit.
+        comp.judged_sha = git.branch_sha(comp.branch_name, self.root_dir) or ""
         return DiffPhaseResult(diff=shared_diff)
 
     def _divergence_failure(
@@ -4837,7 +4949,7 @@ class ComponentPipeline:
                     comp,
                     "Rejected at HITL checkpoint",
                     phase="pr",
-                    check="hitl_reject",
+                    check=HITL_REJECT_CHECK,
                     # THE RULE FOR ALL THREE CHECKPOINT BRANCHES,
                     # stated here and pointed at from the other two.
                     # Without an explicit `signatures=` the PHASE
@@ -5048,7 +5160,14 @@ class ComponentPipeline:
         )
         evidence: dict[str, Any] = {
             "branch": comp.branch_name,
-            "head_sha": git.branch_sha(comp.branch_name, self.root_dir) or "",
+            # #601: the diff phase already recorded this same commit onto
+            # ``comp.judged_sha`` (``git.branch_sha`` again here would be a
+            # second owner of "what the branch was at" for one park - kstrl
+            # never commits to a component branch after the diff phase, so
+            # the two reads can only differ if something outside it moved
+            # the branch, which is exactly the drift this evidence exists
+            # to catch in ``_merge_approved``).
+            "head_sha": comp.judged_sha,
         }
         # #450: the review_result event's counts, read from the same
         # properties. Absent when the review produced no reading, so a
@@ -5125,8 +5244,9 @@ class ComponentPipeline:
                 disposition=PrDisposition.FAILED,
                 pr_url=outcome.pr_url,
                 error=outcome.error or "PR flow failed",
+                check=PR_CLOSED_CHECK if outcome.closed else "pr_flow",
             )
-        self._record_merge(comp, outcome.merge_sha)
+        self._record_merge(comp, outcome.merge_sha, outcome.head_sha)
         return PrPhaseResult(
             disposition=PrDisposition.MERGED,
             pr_url=outcome.pr_url,
