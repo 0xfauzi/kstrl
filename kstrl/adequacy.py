@@ -76,14 +76,28 @@ from kstrl.policy import diff_header_path, parse_added_lines
 #: costs a note, while a false negative silently exempts a file.
 TEST_PATH_RE = re.compile(r"(^|/)(tests?/|test_[^/]*\.py$|[^/]*_test\.py$)")
 
-#: Test files by the conventions of languages other than Python: a
-#: ``__tests__/`` directory, a ``.test.`` or ``.spec.`` infix
-#: (``bulk.test.ts``, ``a.spec.tsx``), Go's ``_test.go`` and RSpec's
-#: ``_spec.rb``. A Rust or Java test under ``tests/`` or ``test/`` is
-#: already matched by :data:`TEST_PATH_RE`'s directory clause. Layer 0
-#: reads Python only, so a file matching either pattern that is not
-#: ``.py`` is one it cannot judge (#619).
-NON_PYTHON_TEST_PATH_RE = re.compile(r"(^|/)__tests__/|\.(test|spec)\.[^/]+$|_test\.go$|_spec\.rb$")
+#: Test paths by the conventions of languages other than Python (#627):
+#: Jest and Vitest ``__tests__/`` and a ``.test.`` or ``.spec.`` infix
+#: (``bulk.test.ts``, ``a.spec.tsx``); Go ``a_test.go`` and any other
+#: ``_test`` stem (``a_test.cc``); RSpec ``spec/`` and ``a_spec.rb``; a
+#: ``test_`` stem as a file or a directory (``test_io.c``, ``test_data/``);
+#: and a bare ``test`` or ``tests`` entry. A Rust or Java test under
+#: ``tests/`` or ``test/`` is already matched by :data:`TEST_PATH_RE`.
+#: Layer 0 reads Python only, so a file matching either pattern that is
+#: not ``.py`` is one it cannot judge (#619).
+#: Kept apart from :data:`TEST_PATH_RE` so the ``.py`` files
+#: ``test_adequacy`` reads are unchanged; it overlaps it on some ``.py``
+#: names, so a reader either unions the two or filters ``.py`` first. It
+#: is matched against allowedPaths entries too, which are directory
+#: prefixes (ending ``/``) as well as files.
+NON_PYTHON_TEST_PATH_RE = re.compile(
+    r"(^|/)(__tests__|spec)/"
+    r"|(^|/)tests?/*$"
+    r"|(^|/)test_[^/]*/*$"
+    r"|\.(test|spec)\.[^/]+$"
+    r"|_test\.[A-Za-z0-9]+$"
+    r"|_spec\.rb$"
+)
 
 #: An added line opening a Rust unit-test module. Rust keeps unit tests
 #: inside the source file they test, so no path rule can see them.

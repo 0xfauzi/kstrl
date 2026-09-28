@@ -762,8 +762,22 @@ def _extract_agent_json(agent: Any, output_lines: list[str]) -> Any:
 #: cannot get one from the factory. `init_cmd.build_manifest_blocker`
 #: refuses such a repository before the architect is paid, and
 #: tests/test_build_manifest_preflight.py checks that every name here
-#: is one that refusal recognises.
-ROOT_BUILD_MANIFESTS: frozenset[str] = frozenset({"pyproject.toml", "package.json", "Cargo.toml"})
+#: is one that refusal recognises. #627 made it every manifest
+#: `init_cmd._detect_project_context` reads a language from. A Gemfile is
+#: not one, so it is not here: the refusal would refuse the repository
+#: that holds it.
+ROOT_BUILD_MANIFESTS: frozenset[str] = frozenset(
+    {
+        "pyproject.toml",
+        "setup.py",
+        "package.json",
+        "Cargo.toml",
+        "go.mod",
+        "pom.xml",
+        "build.gradle",
+        "build.gradle.kts",
+    }
+)
 _ALLOWED_PATHS_EXCLUDE: frozenset[str] = (
     frozenset(
         {

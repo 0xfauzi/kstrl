@@ -265,9 +265,12 @@ def test_a_register_finding_stops_the_loop_red(tmp_path: Path) -> None:
     assert halts[0].evidence["open_findings"] == ["IF-1"]
 
 
-def test_a_finding_with_no_test_path_is_handed_off(tmp_path: Path) -> None:
+@pytest.mark.parametrize("owned", [["src/api.py"], ["src/"]], ids=["file", "bare-prefix"])
+def test_a_finding_with_no_test_path_is_handed_off(tmp_path: Path, owned: list[str]) -> None:
+    """``src/`` may hold colocated tests, but it names no test convention,
+    and a fix is never scoped to a whole component (design 3.4), #627."""
     root = tmp_path / "repo"
-    base, _head = lp.loop_feature(root, {**lp.SCOPES, "comp-b": ["src/api.py"]})
+    base, _head = lp.loop_feature(root, {**lp.SCOPES, "comp-b": owned})
     rig = lp.Rig(root, lp.ScriptedReviewer(base, [lp.IC1_FAIL]))
 
     result, _out = lp.run_loop(root, rig)
@@ -278,6 +281,75 @@ def test_a_finding_with_no_test_path_is_handed_off(tmp_path: Path) -> None:
     assert finding["handoffReason"].startswith("no test path could be determined")
     assert lp.manifest_ids(root) == ["comp-a", "comp-b"]
     assert result.exit_code == 1
+
+
+def _fix_for_one_finding(
+    tmp_path: Path, owned: list[str], cited: str, files: dict[str, str]
+) -> tuple[Path, lp.Rig, int]:
+    """One IC1 finding citing ``cited``, owned by comp-b with allowedPaths
+    ``owned``, over the feature plus ``files`` committed on main. Returns
+    the root, the rig and the run's exit code (#627)."""
+    root = tmp_path / "repo"
+    base, _head = lp.loop_feature(root, {**lp.SCOPES, "comp-b": owned})
+    for rel, text in files.items():
+        h.commit_file(root, rel, text)
+    reviewer = lp.ScriptedReviewer(base, [{"IC1": ("fail", f"{cited}:1 sends a string")}, {}])
+    rig = lp.Rig(root, reviewer, fix_file=cited, fix_text=files.get(cited, "x = 1\n"))
+    result, _out = lp.run_loop(root, rig)
+    return root, rig, result.exit_code
+
+
+def _assert_fixed(root: Path, rig: lp.Rig, exit_code: int, owned: list[str]) -> None:
+    handoff = lp.state(root)["findings"][0].get("handoffReason")
+    assert rig.launched == [lp.FIX_1], handoff
+    assert PRD.load(lp.planned_prd(root, lp.FIX_1)).allowed_paths == [
+        *owned,
+        f"scripts/kstrl/feature/{lp.FIX_1}/",
+    ]
+    assert lp.state(root)["findings"][0]["status"] == "closed"
+    assert exit_code == 0
+
+
+@pytest.mark.parametrize("test_entry", ["src/bulk.test.ts", "src/__tests__/"])
+def test_an_integration_finding_owned_by_a_component_with_colocated_ts_tests_becomes_a_fix_not_a_handoff(  # noqa: E501
+    tmp_path: Path, test_entry: str
+) -> None:
+    owned = ["src/bulk.ts", test_entry]
+    files = {
+        "src/bulk.ts": "export const bulk = (n: number): number => n;\n",
+        "src/bulk.test.ts": "test('bulk', () => expect(bulk(1)).toBe(1));\n",
+    }
+    root, rig, exit_code = _fix_for_one_finding(tmp_path, owned, "src/bulk.ts", files)
+    _assert_fixed(root, rig, exit_code, owned)
+
+
+def test_an_integration_finding_owned_by_a_go_component_becomes_a_fix(tmp_path: Path) -> None:
+    owned = ["pkg/pricing/pricing.go", "pkg/pricing/pricing_test.go"]
+    files = {
+        "pkg/pricing/pricing.go": "package pricing\n",
+        "pkg/pricing/pricing_test.go": "package pricing\n",
+    }
+    root, rig, exit_code = _fix_for_one_finding(tmp_path, owned, "pkg/pricing/pricing.go", files)
+    _assert_fixed(root, rig, exit_code, owned)
+
+
+def test_an_integration_finding_owned_by_an_rspec_component_becomes_a_fix(tmp_path: Path) -> None:
+    owned = ["lib/pricing.rb", "spec/"]
+    files = {"lib/pricing.rb": "module Pricing; end\n", "spec/pricing_spec.rb": "describe 1\n"}
+    root, rig, exit_code = _fix_for_one_finding(tmp_path, owned, "lib/pricing.rb", files)
+    _assert_fixed(root, rig, exit_code, owned)
+
+
+@pytest.mark.parametrize(
+    "test_entry",
+    ["tests/", "tests/unit/", "src/test_api.py", "test_fixtures/"],
+    ids=["tests-dir", "tests-subdir", "test-stem-file", "test-stem-dir"],
+)
+def test_python_test_path_classification_is_unchanged(tmp_path: Path, test_entry: str) -> None:
+    """The control: every shape the rule before #627 named still builds a fix."""
+    owned = ["src/api.py", test_entry]
+    root, rig, exit_code = _fix_for_one_finding(tmp_path, owned, h.API, {})
+    _assert_fixed(root, rig, exit_code, owned)
 
 
 def test_a_clean_review_with_blocking_on_is_clean(tmp_path: Path) -> None:

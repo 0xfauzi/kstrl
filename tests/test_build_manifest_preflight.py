@@ -12,6 +12,7 @@ than trusting an exit code.
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -320,6 +321,47 @@ def test_every_manifest_kstrl_will_not_write_is_one_the_refusal_recognises(
         repo.mkdir()
         (repo / name).write_text(MANIFESTS.get(name, ""), encoding="utf-8")
         assert build_manifest_blocker(repo) is None, name
+
+
+@pytest.mark.parametrize(
+    "manifest", ["go.mod", "setup.py", "pom.xml", "build.gradle", "build.gradle.kts"]
+)
+def test_decompose_rejects_a_component_scoped_to_a_root_build_manifest(
+    tmp_path: Path, manifest: str
+) -> None:
+    """#627: every manifest the refusal reads a language from is one no
+    component may be scoped to. The architect scopes a component to it on
+    every attempt, so `ks decompose` names the entry and writes no manifest."""
+    root = greenfield(tmp_path, extra={manifest: MANIFESTS.get(manifest, "")})
+    payload = tmp_path / "architect.json"
+    component = {
+        "id": "comp-a",
+        "title": "Pricing",
+        "description": "Pricing rules",
+        "dependencies": [],
+        "allowedPaths": [manifest, "src/"],
+        "userStories": [
+            {
+                "id": "US-001",
+                "title": "Price a basket",
+                "acceptanceCriteria": ["Works", "Tests pass"],
+                "priority": 1,
+                "passes": False,
+                "notes": "",
+            }
+        ],
+    }
+    payload.write_text(
+        json.dumps({"spec_issues": [], "decisions": [], "components": [component]}),
+        encoding="utf-8",
+    )
+
+    proc = spec_command(root, "decompose", f"cat > /dev/null; cat '{payload}'")
+
+    assert f"entry '{manifest}' is on the DECOMPOSE_PROMPT EXCLUDE list" in proc.stdout
+    assert "Failed to decompose spec after 3 attempts" in proc.stdout
+    assert proc.returncode == 1, proc.stdout
+    assert not (root / "scripts" / "kstrl" / "manifest.json").exists()
 
 
 @pytest.mark.parametrize("key", ["test_command", "typecheck_command", "lint_command"])
