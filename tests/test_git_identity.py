@@ -238,7 +238,10 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # set_identity the same way.
     "tests/test_stale_base_ref.py": 10,
     "tests/test_state_dir_scope.py": 2,
-    "tests/test_timeout_enforcement.py": 3,
+    # #641 adds one more: TestAGroupMemberThatIgnoresSigterm's fixture
+    # commits its throwaway repo through `tests.helpers.gitrepo.git_in` /
+    # `set_identity` before running the real `ks run` CLI against it.
+    "tests/test_timeout_enforcement.py": 4,
     # PR #552 verifier: one base commit, into the repository the branch-probe
     # test builds with `git_in` and `set_identity` before committing.
     "tests/test_tui_433_verify552.py": 1,
