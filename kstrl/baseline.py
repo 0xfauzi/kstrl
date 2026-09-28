@@ -189,7 +189,12 @@ def _signatures_field(document: Mapping[str, Any], key: str) -> dict[str, int]:
     return counts
 
 
-def verify_digest(commands: ResolvedVerifyCommands, timeout: float) -> str:
+def verify_digest(
+    commands: ResolvedVerifyCommands,
+    timeout: float,
+    *,
+    formats: Mapping[str, str] | None = None,
+) -> str:
     """A digest of HOW a tree was measured: the three gate commands and the timeout.
 
     ``docs/baseline.md`` states that a baseline and a comparison measured at
@@ -206,16 +211,22 @@ def verify_digest(commands: ResolvedVerifyCommands, timeout: float) -> str:
     Sixteen hex characters of SHA-256. The digest is an equality check on a
     short JSON payload, not a security boundary; the full 64 would make the
     baseline diff noisier for nothing.
+
+    ``formats`` is gate -> declared report format (#629). A report and the
+    text parsers produce different signatures for the same failure, so a
+    baseline written under one is refused under the other. Added to the
+    payload only when non-empty, so every digest written before it is
+    unchanged.
     """
-    payload = json.dumps(
-        {
-            "test": commands.test,
-            "typecheck": commands.typecheck,
-            "lint": commands.lint,
-            "timeout": timeout,
-        },
-        sort_keys=True,
-    )
+    fields: dict[str, object] = {
+        "test": commands.test,
+        "typecheck": commands.typecheck,
+        "lint": commands.lint,
+        "timeout": timeout,
+    }
+    if formats:
+        fields["formats"] = dict(formats)
+    payload = json.dumps(fields, sort_keys=True)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
@@ -451,10 +462,10 @@ def refuse_foreign_baseline(baseline: Baseline, digest: str) -> None:
         raise BaselineError(
             f"this baseline was measured with a different verify configuration: "
             f"baseline digest {baseline.verify_digest}, this run {digest}. "
-            "The digest covers the test, typecheck and lint commands and the "
-            "subprocess timeout; a comparison across two of those is not a "
-            "comparison. Restore the configuration it was written under, or "
-            "regenerate it with ks check --write-baseline --force"
+            "The digest covers the test, typecheck and lint commands, any declared "
+            "report format and the subprocess timeout; a comparison across two of "
+            "those is not a comparison. Restore the configuration it was written "
+            "under, or regenerate it with ks check --write-baseline --force"
         )
 
 

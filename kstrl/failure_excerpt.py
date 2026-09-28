@@ -69,6 +69,15 @@ def _inside(path: str, root: str) -> bool:
     return joined == root or joined.startswith(root + os.sep)
 
 
+def inside_worktree(path: str, worktree: Path) -> bool:
+    """Is ``path``, as a tool printed it, inside ``worktree``? The rule above.
+
+    Public for the report readers (#629), so a location in a declared report
+    and a location in raw output are judged by one rule.
+    """
+    return _inside(path, os.path.normpath(os.path.abspath(worktree)))
+
+
 def _locations(line: str, root: str) -> list[bool]:
     """For each `<path>:<line>` on ``line``, whether it is inside ``root``."""
     return [_inside(m.group("path"), root) for m in _LOCATION_RE.finditer(line)]

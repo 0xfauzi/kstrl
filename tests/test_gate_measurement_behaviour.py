@@ -40,6 +40,17 @@ from kstrl.verify import (
 )
 from tests.helpers.measurement import assert_measured, assert_unmeasured
 
+
+def check_test_suite_row(
+    cwd: Path, command: str | None = None, timeout: float | None = None
+) -> CheckResult:
+    """``check_test_suite``'s row, for the tests that treat the three gates
+    alike. Its gaps are empty for a gate that declared no report (#629)."""
+    row, gaps = check_test_suite(cwd, command, timeout)
+    assert gaps == []
+    return row
+
+
 #: Long enough that a sub-second timeout always fires first.
 SLOW_COMMAND = f"{sys.executable} -c 'import time; time.sleep(30)'"
 
@@ -103,7 +114,7 @@ UNPARSEABLE_FAILURE_COMMAND = (
 
 
 GATES: list[tuple[object, str]] = [
-    (check_test_suite, "test_suite"),
+    (check_test_suite_row, "test_suite"),
     (check_typecheck, "typecheck"),
     (check_linter, "linter"),
 ]
@@ -212,7 +223,7 @@ def test_a_failing_gate_that_printed_only_a_passing_footer_measured_nothing(
     """
     command, footer = PASSING_FOOTER_COMMANDS[parser]
 
-    row = check_test_suite(tmp_path, command=command, timeout=30)
+    row, _ = check_test_suite(tmp_path, command=command, timeout=30)
 
     assert row.passed is False
     assert row.parsed is not None
@@ -225,7 +236,7 @@ def test_a_failing_gate_that_printed_only_a_passing_footer_measured_nothing(
 
 @pytest.mark.parametrize(
     "check",
-    [check_test_suite, check_typecheck, check_linter],
+    [check_test_suite_row, check_typecheck, check_linter],
 )
 def test_a_gate_that_timed_out_measured_nothing(check: object, tmp_path: Path) -> None:
     row = check(tmp_path, command=SLOW_COMMAND, timeout=TINY_TIMEOUT)  # type: ignore[operator]

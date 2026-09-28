@@ -365,7 +365,7 @@ class TestProcessGroupKill:
         """Same guarantee through a real verification entry point."""
         pid_file = tmp_path / "server.pid"
         cmd = f"sleep 300 & echo $! > {pid_file}; wait"
-        result = check_test_suite(tmp_path, command=cmd, timeout=1.0)
+        result, _ = check_test_suite(tmp_path, command=cmd, timeout=1.0)
         assert result.passed is False
         assert "timed out" in result.message
         pid = int(pid_file.read_text().strip())

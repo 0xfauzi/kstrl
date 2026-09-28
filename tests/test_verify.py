@@ -97,15 +97,15 @@ class TestCheckPrdStories:
 
 class TestCheckTestSuite:
     def test_passing_command(self, tmp_path: Path) -> None:
-        result = check_test_suite(tmp_path, command="true", timeout=5.0)
+        result, _ = check_test_suite(tmp_path, command="true", timeout=5.0)
         assert result.passed is True
 
     def test_failing_command(self, tmp_path: Path) -> None:
-        result = check_test_suite(tmp_path, command="false", timeout=5.0)
+        result, _ = check_test_suite(tmp_path, command="false", timeout=5.0)
         assert result.passed is False
 
     def test_timeout(self, tmp_path: Path) -> None:
-        result = check_test_suite(tmp_path, command="sleep 10", timeout=0.1)
+        result, _ = check_test_suite(tmp_path, command="sleep 10", timeout=0.1)
         assert result.passed is False
         assert "timed out" in result.message
 
@@ -122,7 +122,7 @@ class TestCheckTestSuite:
         script.write_text(f"import sys\nsys.stdout.write({VITEST_FAILURE_OUTPUT!r})\nsys.exit(1)\n")
         command = f"{sys.executable} {script}"
 
-        result = check_test_suite(tmp_path, command=command, timeout=30.0)
+        result, _ = check_test_suite(tmp_path, command=command, timeout=30.0)
 
         assert result.passed is False
         assert result.parsed is not None
@@ -142,7 +142,7 @@ class TestCheckTestSuite:
         script.write_text("import sys\nprint('error: could not compile `draft`')\nsys.exit(101)\n")
         command = f"{sys.executable} {script}"
 
-        result = check_test_suite(tmp_path, command=command, timeout=30.0)
+        result, _ = check_test_suite(tmp_path, command=command, timeout=30.0)
 
         assert result.passed is False
         assert result.details[0].startswith(f"[{command}]")
@@ -158,7 +158,7 @@ class TestCheckTestSuite:
             "sys.exit(1)\n"
         )
 
-        result = check_test_suite(tmp_path, command=f"{sys.executable} {script}", timeout=30.0)
+        result, _ = check_test_suite(tmp_path, command=f"{sys.executable} {script}", timeout=30.0)
 
         assert result.passed is False
         assert result.details[0].startswith("[pytest]")

@@ -74,12 +74,22 @@ def test_stderr_is_the_same_failure(tmp_path: Path) -> None:
     assert "position" in str(excinfo.value)
 
 
+def check_test_suite_row(
+    cwd: Path, command: str | None = None, timeout: float | None = None
+) -> CheckResult:
+    """``check_test_suite``'s row, for the tests that treat the three gates
+    alike. Its gaps are empty for a gate that declared no report (#629)."""
+    row, gaps = check_test_suite(cwd, command, timeout)
+    assert gaps == []
+    return row
+
+
 _Gate = Callable[[Path, str, float], CheckResult]
 
 
 @pytest.mark.parametrize(
     "fn",
-    [check_test_suite, check_typecheck, check_linter],
+    [check_test_suite_row, check_typecheck, check_linter],
     ids=["test_suite", "typecheck", "linter"],
 )
 def test_the_three_gates_fail_closed_on_undecodable_output(fn: _Gate, tmp_path: Path) -> None:
