@@ -1,0 +1,27 @@
+FAIL src/bulk.test.js
+  ● twenty items is ten percent
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 10
+    Received: 11
+
+    [0m [90m 2 |[39m
+     [90m 3 |[39m test([32m"twenty items is ten percent"[39m[33m,[39m () [33m=>[39m {
+    [31m[1m>[22m[39m[90m 4 |[39m   expect(bulkPercent([35m20[39m))[33m.[39mtoBe([35m10[39m)[33m;[39m
+     [90m   |[39m                           [31m[1m^[22m[39m
+     [90m 5 |[39m })[33m;[39m
+     [90m 6 |[39m
+     [90m 7 |[39m test([32m"ten items is five percent"[39m[33m,[39m () [33m=>[39m {[0m
+
+      at Object.toBe (src/bulk.test.js:4:27)
+
+PASS src/shipping.test.js
+PASS src/tax.test.js
+PASS src/cart.test.js
+
+Test Suites: 1 failed, 3 passed, 4 total
+Tests:       1 failed, 4 passed, 5 total
+Snapshots:   0 total
+Time:        0.265 s, estimated 1 s
+Ran all test suites.

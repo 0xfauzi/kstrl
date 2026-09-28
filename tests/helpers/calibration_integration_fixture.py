@@ -250,6 +250,11 @@ def agent_failure(agent: BoundedAgent, result: ReviewResult) -> str:
     return agent.failure
 
 
+def _no_budget() -> str:
+    """A calibration run has no adversarial call budget, so a re-ask is never refused."""
+    return ""
+
+
 def review_fixture(fixture: IntegrationFixture, agent: Any, slot: Path) -> FixtureRound:
     """One integration review of ``fixture`` in a fresh repository under ``slot``.
 
@@ -265,6 +270,7 @@ def review_fixture(fixture: IntegrationFixture, agent: Any, slot: Path) -> Fixtu
         stories,
         slot / "evidence" / "prd-1.json",
         PlainUI(no_color=True, file=io.StringIO()),
+        reask_refusal=_no_budget,
     )
     tracked = git.tracked_files_at(repo.head_sha, repo.path)
     outcome = integration_outcome(None, result, stories, tracked=tracked)

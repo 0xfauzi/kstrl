@@ -54,6 +54,44 @@ posix_only = pytest.mark.skipif(
 )
 
 
+#: How long ``_spawn_group`` waits for the child's pidfile. ``procs.read_pid``
+#: defaults to 5.0s, which is generous for an idle machine but not for a
+#: loaded one: the shell that runs ``echo $$ > pidfile`` has to be forked
+#: and scheduled before it can write anything, and under real CI load
+#: (load average around 30 on the runner) that scheduling alone has taken
+#: longer than 5s, failing with "pid file never appeared" though the
+#: child was never stuck, only slow to start. 30s bounded rather than
+#: unbounded, polled at the same cadence ``read_pid`` already uses.
+_PIDFILE_TIMEOUT = 30.0
+
+
+def _read_pid_or_explain(process: subprocess.Popen[str], pidfile: Path) -> int:
+    """``procs.read_pid``, generous under load and explicit on failure.
+
+    On a timeout, ``procs.read_pid`` alone says only the path that never
+    appeared. That is enough to tell "never wrote it" from "wrote it
+    late" but not "still starting" from "died before it could write
+    anything", so this adds how long the wait actually ran and, when the
+    child has already exited, its return code and whatever it put on
+    stderr - the two things that distinguish a slow child from a broken
+    one.
+    """
+    start = time.monotonic()
+    try:
+        return procs.read_pid(pidfile, timeout=_PIDFILE_TIMEOUT)
+    except AssertionError:
+        elapsed = time.monotonic() - start
+        returncode = process.poll()
+        if returncode is None:
+            detail = "still running"
+        else:
+            stderr = process.stderr.read() if process.stderr is not None else ""
+            detail = f"returncode={returncode!r} stderr={stderr!r}"
+        raise AssertionError(
+            f"pid file never appeared: {pidfile} (waited {elapsed:.1f}s, {detail})"
+        ) from None
+
+
 def _spawn_group(tmp_path: Path, name: str = "child") -> tuple[subprocess.Popen[str], int, int]:
     """A sleeper in its own session. Returns (process, pid, pgid)."""
     pidfile = tmp_path / f"{name}.pid"
@@ -65,7 +103,7 @@ def _spawn_group(tmp_path: Path, name: str = "child") -> tuple[subprocess.Popen[
         text=True,
         start_new_session=True,
     )
-    pid = procs.read_pid(pidfile)
+    pid = _read_pid_or_explain(process, pidfile)
     return process, pid, os.getpgid(process.pid)
 
 

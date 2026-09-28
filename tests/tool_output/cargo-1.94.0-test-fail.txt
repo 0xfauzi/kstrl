@@ -1,0 +1,23 @@
+running 2 tests
+test pricing::bulk_tests::ten_items_is_five_percent ... ok
+test pricing::bulk_tests::twenty_items_is_ten_percent ... FAILED
+
+failures:
+
+---- pricing::bulk_tests::twenty_items_is_ten_percent stdout ----
+
+thread 'pricing::bulk_tests::twenty_items_is_ten_percent' (613721220) panicked at src/pricing.rs:18:9:
+assertion `left == right` failed
+  left: 11
+ right: 10
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    pricing::bulk_tests::twenty_items_is_ten_percent
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.00s
+     Running unittests src/lib.rs (target/debug/deps/rustapp-a6e06d185983cb38)
+error: test failed, to rerun pass `--lib`

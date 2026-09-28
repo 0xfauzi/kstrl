@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from kstrl.autonomy import AutonomyState
     from kstrl.autonomy_replay import RunRecord
     from kstrl.evolution import EvolutionConfig, EvolutionJournal, FailurePattern, PatternRouting
+    from kstrl.inbox import InboxItem
     from kstrl.interaction import InteractionChannel
     from kstrl.policy import PolicyConfig
 
@@ -128,6 +129,7 @@ from kstrl.observability import (
     read_progress_events,
 )
 from kstrl.output import build_console
+from kstrl.plan_gate import PLAN_GATE_KEY
 from kstrl.prd import PRD
 from kstrl.reducer import ComponentState, RunState, fold, load_run_state, upconvert_v1
 from kstrl.retry_plan import (
@@ -144,7 +146,7 @@ from kstrl.sandbox import SandboxConfig
 from kstrl.security import _SEVERITY_ORDER, SecurityMode
 from kstrl.serve import ARCHITECT_RUN_KIND, LAUNCHD_MODES
 from kstrl.shutdown import StopController, install_signal_handlers
-from kstrl.timeout import TimeoutConfig
+from kstrl.timeout import TimeoutConfig, limit_seconds
 from kstrl.ui.base import UI
 from kstrl.verify import DEFAULT_LINT_COMMAND, DEFAULT_TEST_COMMAND
 from kstrl.version import stamp_label
@@ -2385,6 +2387,9 @@ def decompose(
     # validate_branch_name, so the flag's None is resolved here rather
     # than deeper, the way `ks check` already resolves --base (#259).
     effective_base = resolve_base_branch(base_branch, root_dir)
+    # #603: the architect runs in this process, so an unset limit lets a
+    # hung call hold the command; kstrl.toml was checked at entry.
+    architect_timeout = limit_seconds(FactoryConfig.load(root_dir).architect_timeout_seconds)
 
     def _decompose_core(core_ui: UI, command_run: CommandRun) -> int:
         try:
@@ -2400,6 +2405,7 @@ def decompose(
                 transcript=command_run.transcript_writer(ARCHITECT_COMPONENT),
                 prompt_call=command_run.agent_call(ARCHITECT_COMPONENT, ARCHITECT_ROLE),
                 force_lock=force_lock,
+                timeout=architect_timeout,
             )
             core_ui.ok(f"Decomposed into {len(manifest.components)} components")
             return 0
@@ -2912,6 +2918,7 @@ def factory(
                     prompt_call=architect_run.agent_call(ARCHITECT_COMPONENT, ARCHITECT_ROLE),
                     force_lock=force_lock,
                     run_lock=run_lock,
+                    timeout=limit_seconds(factory_config.architect_timeout_seconds),
                 )
             except SpecBlockerError as exc:
                 # Architect halted: it escalated a question only the owner
@@ -5591,6 +5598,31 @@ def _charge_serve_for_approval_run(
     )
 
 
+def _not_parked(item: InboxItem, manifest: Manifest, manifest_file: Path, action: str) -> str:
+    """Why ``item``'s park is not the one ``manifest_file`` holds, or "".
+
+    A plan park (#602) is current while the manifest waits on the digest
+    the item was filed for; a merge-gate park while its component is
+    AWAITING_APPROVAL (#465). Anything else would re-enter the factory on
+    work the decision was never about.
+    """
+    if item.dedupe_key.startswith(PLAN_GATE_KEY):
+        if manifest.plan_awaiting_approval == item.evidence.get("plan_digest"):
+            return ""
+        return (
+            f"{item.id[:8]}: {manifest_file} is not waiting on the plan this item was "
+            f"filed for; there is no parked plan to {action}"
+        )
+    comp = manifest.get_component(item.component)
+    if comp is not None and comp.status == ComponentStatus.AWAITING_APPROVAL.value:
+        return ""
+    where = comp.status if comp is not None else "not in the manifest"
+    return (
+        f"{item.id[:8]}: component '{item.component}' is {where}, not awaiting "
+        f"approval in {manifest_file}; there is no parked merge to {action}"
+    )
+
+
 def _decide_parked_merge_if_parked(
     action: str,
     item_id: str,
@@ -5599,7 +5631,7 @@ def _decide_parked_merge_if_parked(
     no_color: bool,
     comment: str,
 ) -> None:
-    """Decide a merge-gate park and re-enter the factory, or return (#465).
+    """Decide a merge-gate or plan park and re-enter the factory, or return (#465, #602).
 
     Returns only when ``item_id`` is not a park, and the caller then
     records the decision as it always has. For a park it never returns:
@@ -5613,7 +5645,7 @@ def _decide_parked_merge_if_parked(
 
     root_dir, box = _inbox_for(root)
     item = box.get(item_id)
-    if item is None or not item.dedupe_key.startswith(MERGE_GATE_PARK_KEY):
+    if item is None or not item.dedupe_key.startswith((MERGE_GATE_PARK_KEY, PLAN_GATE_KEY)):
         return
     ui_impl = _autonomy_ui(ui, no_color)
     said = {"approve": "approved", "reject": "rejected"}[action]
@@ -5630,13 +5662,9 @@ def _decide_parked_merge_if_parked(
     )
     try:
         manifest = _load_manifest_or_exit(manifest_file, ui_impl)
-        comp = manifest.get_component(item.component)
-        if comp is None or comp.status != ComponentStatus.AWAITING_APPROVAL.value:
-            where = comp.status if comp is not None else "not in the manifest"
-            ui_impl.err(
-                f"{item.id[:8]}: component '{item.component}' is {where}, not awaiting "
-                f"approval in {manifest_file}; there is no parked merge to {action}"
-            )
+        not_parked = _not_parked(item, manifest, manifest_file, action)
+        if not_parked:
+            ui_impl.err(not_parked)
             sys.exit(2)
         plan, problems, _unkept = plan_resume(
             root_dir,

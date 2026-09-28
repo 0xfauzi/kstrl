@@ -104,7 +104,8 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     "evolution.py": 2,
     "factory.py": 6,
     "feature_cmd.py": 2,
-    "feedforward.py": 8,
+    # 10: #626 added the go.mod read and the `_read_toml` read.
+    "feedforward.py": 10,
     # 3 until the snapshot half of fixtures.py moved to
     # fixtures_snapshot.py under the 800-line ratchet. The read that
     # went with it is the row below; the count is re-derived by
