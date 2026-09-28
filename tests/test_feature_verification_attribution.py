@@ -180,7 +180,7 @@ class TestTheTwoSidesAreTheSameMeasurement:
         self,
         tmp_path: Path,
     ) -> None:
-        """Finding 9. ``_default_typecheck_command`` re-reads
+        """Finding 9. ``toolchains.python_typecheck_default`` re-reads
         pyproject.toml and answers ``uv run mypy`` when ``[tool.mypy]
         files`` is present and ``uv run mypy .`` when it is not. Adding a
         mypy scope is an ordinary engineer story, so an unpinned config

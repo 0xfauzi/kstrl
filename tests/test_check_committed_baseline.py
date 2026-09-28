@@ -10,7 +10,7 @@ What that costs. The baseline records a digest of the three verify commands and
 the timeout, and ``ks check --compare-baseline`` refuses a mismatch with exit 2.
 So a `[verify]` command change in ``kstrl.toml``, a bump to
 ``BASELINE_SCHEMA_VERSION``, or moving ``[tool.mypy] files`` out of
-``pyproject.toml`` (which flips ``_default_typecheck_command``) invalidates the
+``pyproject.toml`` (which flips ``toolchains.python_typecheck_default``) invalidates the
 committed file with a green local suite, and the first signal is
 `ks check --compare-baseline` exiting 2 for anyone who runs it next. Here it
 is a red test on the commit that did it.

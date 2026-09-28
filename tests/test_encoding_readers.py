@@ -175,6 +175,9 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     "tui/tail.py": 2,
     # #433 F7: the failed gate's stored output, read as bytes and decoded
     # with errors="replace", so no locale codec is involved.
+    # #635: detect's package.json read, moved out of init_cmd's
+    # _read_text_or_none so kstrl.toolchains imports nothing from init_cmd.
+    "toolchains.py": 1,
     "tui/widgets/component_detail.py": 1,
     # 4 since #414: the bad-patterns scan's read_text is gone (it reads
     # bytes now, so py_compile does its own PEP 263 decoding). The four
@@ -283,6 +286,7 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "serve.py self.path.read_text(encoding='utf-8')",
     "statedir.py open(lock_path, 'a+', encoding='utf-8')",
     "suite_inventory.py (report_dir / GATE_OUTPUT).read_text(encoding='utf-8')",
+    "toolchains.py (root / 'package.json').read_text(encoding='utf-8')",
     "tui/embed.py open(run_paths.root / 'orchestrator.log', 'a', buffering=1, encoding='",
     "tui/runs.py open(lock_path, 'a+', encoding='utf-8')",
     "tui/serve_view.py path.read_text(encoding='utf-8', errors='replace')",

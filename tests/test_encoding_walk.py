@@ -455,7 +455,8 @@ class TestTheReadBytesExclusion:
     scan's ``_content_finding`` reads a file's bytes to check emptiness by
     truthiness - no ``bytes.decode`` follows it anywhere, so ``py_compile``
     is the only decoder that ever runs on this content - alongside the
-    pre-existing ``pyproject.read_bytes()`` in ``check_verify_commands``.
+    pre-existing ``pyproject.read_bytes()``, which #635 moved to
+    ``toolchains.python_typecheck_default``.
     That is the seventh (opposite-reason) site: on the base-probe path it
     runs through ``_base_finding``, whose own ``except Exception`` wraps
     it deliberately, because every failure there means "cannot clear",
@@ -477,6 +478,7 @@ class TestTheReadBytesExclusion:
         # #553 the ledger, #570 each run's events.jsonl: the signals.py
         # shape, read and decode outside any try.
         "ci_state.py": 2,
+        "cli.py": 1,  # #644: queue_answer, read and decode guarded separately
         "config_toml.py": 1,
         "baseline.py": 1,
         "inbox.py": 1,
@@ -487,7 +489,9 @@ class TestTheReadBytesExclusion:
         "safemode.py": 1,
         "signals.py": 2,
         "suite_inventory.py": 1,  # #620: I/O outside the parse guard
-        "verify.py": 2,
+        "toolchains.py": 1,  # #635: pyproject.read_bytes() moved here from verify.py
+        "verify.py": 1,
+        "workqueue.py": 1,  # #644: Queue.answer hashes the spec, never decodes it
     }
 
     def test_the_read_bytes_sites_are_the_ten_measured(self) -> None:

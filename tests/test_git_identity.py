@@ -215,6 +215,9 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # #629: `_repo` commits into a repository it set identity on, and the
     # changed-test-file case commits once more into that same repository.
     "tests/test_report_formats_cli.py": 2,
+    # #654: the seed commit and the fix commit of the temp repo `_repo` builds,
+    # which goes through set_identity before its first commit.
+    "tests/test_red_base_preflight.py": 2,
     # #635: `_commit` is the one commit site, into the fixture repository
     # `_seed` has just put through `tests.helpers.gitrepo.set_identity`.
     "tests/test_python_toolchain_identity_e2e.py": 1,

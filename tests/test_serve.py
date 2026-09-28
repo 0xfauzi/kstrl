@@ -2044,9 +2044,9 @@ class TestGroupLivenessDegradesRatherThanGuessing:
     ) -> None:
         """The guard must not make absence unreportable, which would
         poison every timed-out run on a machine with no `ps`."""
-        pgid = procs.dead_group()
-        procs.fake_ps(monkeypatch, returncode=127, stderr="boom")
-        assert process_group_alive(pgid) is False
+        with procs.no_such_group() as pgid:
+            procs.fake_ps(monkeypatch, returncode=127, stderr="boom")
+            assert process_group_alive(pgid) is False
 
     def test_a_blind_ps_and_an_unexplained_signal_error_is_not_reaped(
         self,
