@@ -68,7 +68,7 @@ All values are seconds; 0 disables that limit, and a negative or non-finite valu
 | `KSTRL_TIMEOUT_COMPONENT` | float | 0 (no limit) | Wall clock per component across iterations |
 | `KSTRL_TIMEOUT_BACKSTOP_MARGIN` | float | 60 | Extra slack before the scheduler declares a worker dead. Applies only when `component_total` is set |
 
-With no work limit, an agent that hangs without output holds its component slot until Ctrl-C or `[serve] factory_timeout_seconds`. It spends nothing while idle.
+With no work limit, an agent that hangs without output holds its component slot until Ctrl-C or `[serve] factory_timeout_seconds`. It spends nothing while idle. An agent in a phase the factory's parent process runs (the code reviewer, the security reviewer, the distiller, the integration reviewer and the architect) holds the whole run instead, because the scheduling loop waits on it; `[factory] review_timeout_seconds`, `[security] timeout_seconds`, `[knowledge] distill_timeout_seconds` and `[factory] architect_timeout_seconds` bound those calls. A call killed at its limit is recorded as an infrastructure error and its reply is never read as a verdict (#603).
 
 ## FactoryConfig (`[factory]`)
 
@@ -81,6 +81,8 @@ With no work limit, an agent that hangs without output holds its component slot 
 | `KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS` | int | 0 (no limit) |
 | `KSTRL_FACTORY_MAX_TOTAL_TOKENS` | int | 0 (no limit) |
 | `KSTRL_FACTORY_MAX_COST_USD` | float | 0 (no limit) |
+| `KSTRL_FACTORY_REVIEW_TIMEOUT_SECONDS` | float | 0 (no limit) |
+| `KSTRL_FACTORY_ARCHITECT_TIMEOUT_SECONDS` | float | 0 (no limit) |
 | `KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE` | bool (`1`/`true`/`yes`) | false |
 | `KSTRL_FACTORY_PROGRESS_LOG_ENABLED` | bool | true |
 | `KSTRL_FACTORY_KEEP_WORKTREES_ON_FAILURE` | bool | false |

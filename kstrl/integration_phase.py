@@ -51,6 +51,7 @@ from kstrl.integration_state import (
 )
 from kstrl.manifest import ComponentStatus
 from kstrl.review import ReviewMode, ReviewResult
+from kstrl.timeout import limit_seconds
 from kstrl.verify import VerificationResult
 from kstrl.version import kstrl_version
 
@@ -282,7 +283,13 @@ def _review_round(run: IntegrationRun, state: dict[str, Any], pin: _Pin) -> Inte
                     attempt=number,
                 )
             ):
-                result = _run_reviewer(run, worktree, stories, directory / f"prd-{number}.json")
+                result = _run_reviewer(
+                    run,
+                    worktree,
+                    stories,
+                    directory / f"prd-{number}.json",
+                    timeout=limit_seconds(run.pipeline.factory_config.review_timeout_seconds),
+                )
         outcome = integration_outcome(pin.test_result, result, stories, tracked=tracked)
     finally:
         cleanup_error = _remove(worktree, run.root_dir, run.ui)
@@ -294,6 +301,8 @@ def _run_reviewer(
     worktree: Path,
     stories: Sequence[ExpectedStory],
     prd_path: Path,
+    *,
+    timeout: float | None,
 ) -> ReviewResult:
     from kstrl.agents import get_agent
 
@@ -316,6 +325,7 @@ def _run_reviewer(
             stories,
             prd_path,
             run.ui,
+            timeout=timeout,
             reask_refusal=lambda: _reask_refusal(run.pipeline),
         )
     except Exception as exc:  # noqa: BLE001 - as Phase 2
@@ -335,9 +345,13 @@ def review_commit(
     ui: UI,
     *,
     reask_refusal: Callable[[], str],
+    timeout: float | None = None,
 ) -> ReviewResult:
     """The integration review call: write the PRD at ``prd_path``, then run
     ``run_review`` in HARD mode over ``feature_base_sha...HEAD`` in ``worktree``.
+
+    ``timeout`` is ``[factory] review_timeout_seconds`` as a wait deadline
+    (#603); the calibration role passes none.
 
     The factory and the ``integration`` calibration role both call this, so
     the call a calibration run measures is the call the factory makes (#482).
@@ -361,6 +375,7 @@ def review_commit(
             VerificationResult(passed=True, checks=[]),
             ReviewMode.HARD,
             ui,
+            timeout=timeout,
             debug_dir=prd_path.parent,
         )
         if replaced is not None or not result.reply_unread:

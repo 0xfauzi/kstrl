@@ -44,7 +44,7 @@ class LoggingAgent:
         # caught the first version of this comment naming the env that
         # does not reproduce. tests/test_encoding_sites.py drives it.
         with self._log_path.open("a", encoding="utf-8") as handle:
-            for line in self._agent.run(prompt, cwd, timeout):
+            for line in self._agent.run(prompt, cwd=cwd, timeout=timeout):
                 handle.write(f"{line}\n")
                 handle.flush()
                 yield line

@@ -121,6 +121,7 @@ class TestDecomposeSpecIntegration:
             ui=PlainUI(no_color=True),
             root_dir=root,
             prompt_call=architect_call(root),
+            timeout=None,
         )
 
         assert len(manifest.components) == 1

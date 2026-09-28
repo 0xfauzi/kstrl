@@ -242,6 +242,13 @@ class FactoryConfig:
     review_agent_cmd: str | None = None
     review_agent_type: str | None = None
     review_model: str | None = None
+    # #603: the code and integration reviewer's call limit, and the
+    # architect's (`ks decompose`, `ks factory --spec`). Both run in the
+    # parent process, so with no limit a hung call holds the whole run.
+    # 0 means no limit (#467); a call killed at its limit is an
+    # infrastructure error, never a verdict.
+    review_timeout_seconds: float = 0.0
+    architect_timeout_seconds: float = 0.0
     # Phase 2.5: security review (separate LLM call after Phase 2 review)
     security_config: SecurityConfig | None = None
     # Phase 3: contract testing
@@ -475,6 +482,14 @@ class FactoryConfig:
             retry_delay=float(os.environ.get("FACTORY_RETRY_DELAY", "5.0")),
             merge_timeout=float(os.environ.get("FACTORY_MERGE_TIMEOUT", "300.0")),
             max_adversarial_calls=int(os.environ.get("KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS", "0")),
+            review_timeout_seconds=check_number(
+                float(os.environ.get("KSTRL_FACTORY_REVIEW_TIMEOUT_SECONDS", "0")),
+                "KSTRL_FACTORY_REVIEW_TIMEOUT_SECONDS",
+            ),
+            architect_timeout_seconds=check_number(
+                float(os.environ.get("KSTRL_FACTORY_ARCHITECT_TIMEOUT_SECONDS", "0")),
+                "KSTRL_FACTORY_ARCHITECT_TIMEOUT_SECONDS",
+            ),
             max_total_tokens=check_number(
                 int(os.environ.get("KSTRL_FACTORY_MAX_TOTAL_TOKENS", "0")),
                 "KSTRL_FACTORY_MAX_TOTAL_TOKENS",
@@ -565,6 +580,14 @@ class FactoryConfig:
             )
         if "merge_timeout" in section:
             config.merge_timeout = float(section["merge_timeout"])
+        # #603: read without a branch, as integration_max_rounds is below,
+        # so this loader's cyclomatic complexity does not grow.
+        config.review_timeout_seconds = float(
+            section.get("review_timeout_seconds", config.review_timeout_seconds)
+        )
+        config.architect_timeout_seconds = float(
+            section.get("architect_timeout_seconds", config.architect_timeout_seconds)
+        )
         # R2.2: the two safety knobs are reachable via toml (here), env
         # (below) and CLI flags (cli.py factory command).
         if "max_adversarial_calls" in section:
@@ -620,6 +643,14 @@ class FactoryConfig:
             config.merge_timeout = float(os.environ["FACTORY_MERGE_TIMEOUT"])
         if "KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS" in os.environ:
             config.max_adversarial_calls = int(os.environ["KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS"])
+        config.review_timeout_seconds = float(
+            os.environ.get("KSTRL_FACTORY_REVIEW_TIMEOUT_SECONDS", config.review_timeout_seconds)
+        )
+        config.architect_timeout_seconds = float(
+            os.environ.get(
+                "KSTRL_FACTORY_ARCHITECT_TIMEOUT_SECONDS", config.architect_timeout_seconds
+            )
+        )
         if "KSTRL_FACTORY_MAX_TOTAL_TOKENS" in os.environ:
             config.max_total_tokens = check_number(
                 int(os.environ["KSTRL_FACTORY_MAX_TOTAL_TOKENS"]), "KSTRL_FACTORY_MAX_TOTAL_TOKENS"
