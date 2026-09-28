@@ -384,8 +384,10 @@ class TestTheWalkAgainstTheRealPackage:
         The removed one is the scaffold command's ``subprocess.run`` in
         ``factory._prepare_component_tree``, now a ``run_scrubbed`` call in
         ``kstrl/worktree_setup.py``.
-        #642 adds one, so 77: the ``subprocess.Popen`` in
-        ``kstrl/agents/leash.py`` that starts the agent under its leash.
+        #642 adds one: the ``subprocess.Popen`` in ``kstrl/agents/leash.py``
+        that starts the agent under its leash. #630 adds two: ``git.read_blob``'s
+        ``git ls-tree`` and ``git cat-file``, reading a lockfile at a revision.
+        Both carry a timeout. So 79.
         """
         spawns = frozenset(
             {
@@ -397,7 +399,7 @@ class TestTheWalkAgainstTheRealPackage:
             }
         )
         found = package_calls(spawns)
-        assert len(found.seen) == 77
+        assert len(found.seen) == 79
         assert found.without_line_numbers().undecided == tuple(
             sorted(
                 [

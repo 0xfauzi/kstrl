@@ -18,9 +18,10 @@ notice vocabulary one module delivers to one role, so a reword of any of them
 bumps ``CODEBASE_SCAN_NOTICE_PROMPT_VERSION``.
 
 H2/H3 SCOPE. These are engineer-facing CONTEXT, like ``DECISIONS_CONTEXT_PROMPT``
-and the 53 #303 builder fragments: the calibration suite scores the architect,
-reviewer, security and distiller roles against planted-bug fixtures and has no
-fixture that scores a codebase scan notice. They carry the H3 obligation (body,
+and the 53 #303 builder fragments: the calibration suite scores only the role
+ids in ``kstrl.calibration.MIN_ROLE_DETECTION_RATE`` against planted-bug
+fixtures, which name no distiller role, and has no fixture that scores a
+codebase scan notice. They carry the H3 obligation (body,
 version and snapshot move together) and no H2 obligation the suite can
 discharge.
 
