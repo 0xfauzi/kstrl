@@ -261,12 +261,15 @@ def test_diff_header_path_matches_a_real_diff_for_every_header_shape(
 #: policy.py's two are parse_added_lines' `+++ `/`--- ` gating pair, the
 #: one reader that calls diff_header_path. pr.py's two are both bare
 #: `---` written as a markdown horizontal rule in a PR body, not read
-#: from a diff at all; lane #409's this round, unedited here.
+#: from a diff at all; lane #409's this round, unedited here. report_formats
+#: .py's one is `_GO_FRAMING`'s bare `--- `, a `go test -json` output-line
+#: prefix (issue #629), not a diff header; it never calls diff_header_path.
 EXPECTED_DIFF_HEADER_LITERALS = {
     "adequacy.py": 9,
     "knowledge.py": 2,
     "policy.py": 2,
     "pr.py": 2,
+    "report_formats.py": 1,
 }
 
 

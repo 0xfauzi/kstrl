@@ -145,6 +145,8 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     "pipeline.py": 5,  # 3 until #463 added carry_interrupted_run's journal
     # open; 5 since #482 added journal_integration_result's journal open
     "prd.py": 1,
+    # #629's go.mod read.
+    "report_formats.py": 1,
     "security.py": 1,
     # Five reads, and five reads only. Round 1 of #228 spelled the gh
     # flag as two argv tokens, so the bare literal "open" landed here and
@@ -272,6 +274,9 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "pipeline.py open(path, 'a', buffering=1, encoding='utf-8')",
     "pipeline.py progress_path.read_text(encoding='utf-8')",
     "prd.py open(path, encoding='utf-8')",
+    # #629's go.mod read, to derive the package directory a go test
+    # failure's relative path resolves against.
+    "report_formats.py (root / 'go.mod').read_text(encoding='utf-8')",
     "security.py prd_path.read_text(encoding='utf-8')",
     "serve.py open(lock_path, 'a+', encoding='utf-8')",
     "serve.py path.read_text(encoding='utf-8')",
