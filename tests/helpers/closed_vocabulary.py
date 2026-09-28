@@ -35,7 +35,7 @@ from kstrl.config_preflight import config_sections
 from kstrl.contract import ContractMode
 from kstrl.divergence import DivergenceMode
 from kstrl.factory import VALID_CLAIM_AGREEMENT
-from kstrl.gateparse import GATE_LINT, GATE_TEST, GATE_TOOLS, GATE_TYPECHECK
+from kstrl.gateparse import GATE_FORMATS, GATE_LINT, GATE_TEST, GATE_TOOLS, GATE_TYPECHECK
 from kstrl.knowledge import _VALID_DEPENDENCY_SCOPES
 from kstrl.linear import _VALID_AUTH_MODES
 from kstrl.review import ReviewMode
@@ -73,7 +73,10 @@ CLOSED: dict[tuple[str, str], ClosedField] = {
         "factory", "claim_agreement", "KSTRL_FACTORY_CLAIM_AGREEMENT", VALID_CLAIM_AGREEMENT
     ),
     ("VerifyConfig", "test_tool"): ClosedField(
-        "verify", "test_tool", "KSTRL_VERIFY_TEST_TOOL", GATE_TOOLS[GATE_TEST]
+        "verify",
+        "test_tool",
+        "KSTRL_VERIFY_TEST_TOOL",
+        (*GATE_TOOLS[GATE_TEST], *GATE_FORMATS[GATE_TEST]),
     ),
     ("VerifyConfig", "typecheck_tool"): ClosedField(
         "verify", "typecheck_tool", "KSTRL_VERIFY_TYPECHECK_TOOL", GATE_TOOLS[GATE_TYPECHECK]

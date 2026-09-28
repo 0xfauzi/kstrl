@@ -38,15 +38,34 @@ forgives, many branches with little nesting, e.g. cyclomatic 20 / cognitive 13.
 That is a long if/elif chain or a flat dispatch table. It reads easily and still
 needs 20 tests for branch coverage, which is what cyclomatic complexity is
 actually good for. 10 is also McCabe's own 1976 recommendation.
+
+WHY JSON AND A CANARY
+---------------------
+This hook used to read ruff's `concise` text with a regex. With FORCE_COLOR set
+in the committing shell, ruff colours that text even into a pipe, the regex
+matched nothing, the census came back empty and the hook passed a real
+regression (#678). Measured on ruff 0.16.4: NO_COLOR=1 does not undo
+FORCE_COLOR, FORCE_COLOR=0 still colours, and CLICOLOR_FORCE=1 colours too,
+while `--output-format json` carried no escape code under any of them. So the
+census reads JSON, and no list of colour variables has to be kept.
+
+Every tree it measures also gets one canary function, and a census without the
+canary's entry is a refusal (exit 2), never a pass. An empty census cannot be
+refused on its own terms, because a commit that only adds new files measures an
+empty HEAD. The canary is what makes "ruff's output was not read" visible
+whatever the next ruff version does to its output. A missing tool is a refusal
+for the same reason.
 """
 
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import NoReturn
 
 # Pinned so the number this gate produces is reproducible. Ruff's mccabe is not
 # interchangeable with other tools': measured on this tree, ruff and lizard agree
@@ -72,14 +91,18 @@ CENSUS = [
     "--config",
     "lint.mccabe.max-complexity = 0",
     "--output-format",
-    "concise",
+    "json",
     "--no-cache",
 ]
 
-REPORT = re.compile(
-    r"^(?P<path>.*?):\d+:\d+: C901 `(?P<name>.+?)` "
-    r"is too complex \((?P<value>\d+) > 0\)$"
-)
+# The `message` of one C901 entry in ruff's JSON report.
+REPORT = re.compile(r"^`(?P<name>.+?)` is too complex \((?P<value>\d+) > 0\)$")
+
+# Planted at the root of every tree the census measures. Its entry must come
+# back, or the output was not read.
+CANARY_NAME = "__cyclomatic_ratchet_canary__"
+CANARY_KEY = (f"{CANARY_NAME}.py", CANARY_NAME)
+CANARY_SOURCE = f"def {CANARY_NAME}():\n    return None\n"
 
 
 def emit(text: str = "") -> None:
@@ -93,22 +116,66 @@ def emit(text: str = "") -> None:
     sys.stdout.write(text + "\n")
 
 
+def refuse(reason: str) -> NoReturn:
+    """Stop with exit 2: a census this hook cannot read is never a pass."""
+    emit(f"Cyclomatic complexity ratchet refused: {reason}")
+    emit("A census this hook cannot read is a refusal, never a pass.")
+    sys.exit(2)
+
+
+def run_ruff(root: Path) -> list[object]:
+    """Ruff's JSON report on a tree; a refusal when it cannot be run or read."""
+    try:
+        proc = subprocess.run(
+            [*RUFF, "check", ".", *CENSUS],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError as err:
+        refuse(f"could not run {' '.join(RUFF)}: {err}")
+    try:
+        entries = json.loads(proc.stdout)
+    except (ValueError, RecursionError):
+        entries = None
+    if not isinstance(entries, list):
+        refuse(
+            f"ruff's output is not the JSON list this hook parses (exit"
+            f" {proc.returncode}): stdout {proc.stdout[:200]!r},"
+            f" stderr {proc.stderr[-300:]!r}"
+        )
+    return entries
+
+
+def read_entry(index: int, entry: object, root: Path) -> tuple[str, str, int] | None:
+    """(path, name, value) for one C901 entry; None for another rule's entry."""
+    if not isinstance(entry, dict):
+        refuse(f"ruff entry {index} is not an object: {entry!r}")
+    if entry.get("code") != "C901":
+        return None
+    match = REPORT.match(str(entry.get("message")))
+    filename = Path(str(entry.get("filename")))
+    if match is None or not filename.is_relative_to(root.resolve()):
+        refuse(f"ruff entry {index} is a C901 report this hook cannot read: {entry!r}")
+    path = filename.relative_to(root.resolve()).as_posix()
+    return path, match.group("name"), int(match.group("value"))
+
+
 def census(root: Path) -> dict[tuple[str, str], int]:
     """Map (relative path, function name) -> cyclomatic complexity for a tree."""
-    proc = subprocess.run(
-        [*RUFF, "check", ".", *CENSUS],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    (root / CANARY_KEY[0]).write_text(CANARY_SOURCE, encoding="utf-8")
     found: dict[tuple[str, str], list[int]] = {}
-    for raw in proc.stdout.splitlines():
-        match = REPORT.match(raw.strip())
-        if match is None:
-            continue
-        key = (match.group("path").lstrip("./"), match.group("name"))
-        found.setdefault(key, []).append(int(match.group("value")))
+    for index, entry in enumerate(run_ruff(root)):
+        row = read_entry(index, entry, root)
+        if row is not None:
+            found.setdefault(row[:2], []).append(row[2])
+    if found.pop(CANARY_KEY, None) is None:
+        refuse(
+            "the census is empty: ruff's report held no entry for the canary"
+            f" function {CANARY_NAME}, which every measured tree contains, so"
+            " the output was not read"
+        )
     # One file can define two functions with the same name: a method on two
     # classes, or a redefinition under `if TYPE_CHECKING`. Taking the worst value
     # per name is the conservative read - it never lets a regression hide behind

@@ -1,0 +1,18 @@
+{"Time":"2026-09-28T10:42:01.845303+01:00","Action":"start","Package":"example.com/tracer/pricing"}
+{"Time":"2026-09-28T10:42:01.950966+01:00","Action":"run","Package":"example.com/tracer/pricing","Test":"TestBulkPercent"}
+{"Time":"2026-09-28T10:42:01.951069+01:00","Action":"output","Package":"example.com/tracer/pricing","Test":"TestBulkPercent","Output":"=== RUN   TestBulkPercent\n"}
+{"Time":"2026-09-28T10:42:01.95109+01:00","Action":"output","Package":"example.com/tracer/pricing","Test":"TestBulkPercent","Output":"    /repo/pricing/pricing_test.go:7: BulkPercent(20) = 11, want 10\n"}
+{"Time":"2026-09-28T10:42:01.951104+01:00","Action":"output","Package":"example.com/tracer/pricing","Test":"TestBulkPercent","Output":"--- FAIL: TestBulkPercent (0.00s)\n"}
+{"Time":"2026-09-28T10:42:01.95111+01:00","Action":"fail","Package":"example.com/tracer/pricing","Test":"TestBulkPercent","Elapsed":0}
+{"Time":"2026-09-28T10:42:01.951114+01:00","Action":"run","Package":"example.com/tracer/pricing","Test":"TestZero"}
+{"Time":"2026-09-28T10:42:01.951117+01:00","Action":"output","Package":"example.com/tracer/pricing","Test":"TestZero","Output":"=== RUN   TestZero\n"}
+{"Time":"2026-09-28T10:42:01.951127+01:00","Action":"output","Package":"example.com/tracer/pricing","Test":"TestZero","Output":"--- PASS: TestZero (0.00s)\n"}
+{"Time":"2026-09-28T10:42:01.95113+01:00","Action":"pass","Package":"example.com/tracer/pricing","Test":"TestZero","Elapsed":0}
+{"Time":"2026-09-28T10:42:01.951133+01:00","Action":"run","Package":"example.com/tracer/pricing","Test":"TestSkipped"}
+{"Time":"2026-09-28T10:42:01.951135+01:00","Action":"output","Package":"example.com/tracer/pricing","Test":"TestSkipped","Output":"=== RUN   TestSkipped\n"}
+{"Time":"2026-09-28T10:42:01.95114+01:00","Action":"output","Package":"example.com/tracer/pricing","Test":"TestSkipped","Output":"    /repo/pricing/pricing_test.go:17: not today\n"}
+{"Time":"2026-09-28T10:42:01.951145+01:00","Action":"output","Package":"example.com/tracer/pricing","Test":"TestSkipped","Output":"--- SKIP: TestSkipped (0.00s)\n"}
+{"Time":"2026-09-28T10:42:01.951148+01:00","Action":"skip","Package":"example.com/tracer/pricing","Test":"TestSkipped","Elapsed":0}
+{"Time":"2026-09-28T10:42:01.95115+01:00","Action":"output","Package":"example.com/tracer/pricing","Output":"FAIL\n"}
+{"Time":"2026-09-28T10:42:01.951321+01:00","Action":"output","Package":"example.com/tracer/pricing","Output":"FAIL\texample.com/tracer/pricing\t0.106s\n"}
+{"Time":"2026-09-28T10:42:01.951339+01:00","Action":"fail","Package":"example.com/tracer/pricing","Elapsed":0.106}

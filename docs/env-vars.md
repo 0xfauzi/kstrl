@@ -292,7 +292,7 @@ agent's worktree by construction on both CLIs.
 | `KSTRL_VERIFY_TEST_CMD` | str | unset (uses `uv run pytest`); empty turns the gate off |
 | `KSTRL_VERIFY_TYPECHECK_CMD` | str | unset (uses `uv run mypy .`); empty turns the gate off |
 | `KSTRL_VERIFY_LINT_CMD` | str | unset (uses `uv run ruff check .`); empty turns the gate off |
-| `KSTRL_VERIFY_TEST_TOOL` | `pytest` \| `vitest` | unset = run both parsers and union the failures |
+| `KSTRL_VERIFY_TEST_TOOL` | `pytest` \| `vitest` \| `go-test-json` | unset = run both parsers and union the failures; `go-test-json` reads the report the command writes to `$KSTRL_REPORT` |
 | `KSTRL_VERIFY_TYPECHECK_TOOL` | `mypy` \| `tsc` | unset = run both parsers and union the failures |
 | `KSTRL_VERIFY_LINT_TOOL` | `ruff` \| `eslint` | unset = run both parsers and union the failures |
 | `KSTRL_DEAD_CODE_CLEANUP` | bool (`1`) | false |
@@ -305,6 +305,8 @@ agent's worktree by construction on both CLIs.
 | `KSTRL_VERIFY_SELF_CRITIQUE_MIN_BULLETS` | int | 3 |
 | `KSTRL_VERIFY_PROGRESS_FILE` | path | unset = the progress log beside the component's PRD |
 | `KSTRL_VERIFY_FAST_ITERATION_CHECKS` | comma-separated gate names (`test_suite`, `typecheck`, `linter`) | unset or empty = off |
+
+`KSTRL_REPORT` is set BY kstrl, never read from your shell: the scrubbed gate environment does not admit it. When `[verify] test_tool` names a report format (`go-test-json`), kstrl sets it for the test command alone, to a fresh path outside the worktree that is deleted after the gate, and reads the report there on a failing exit (#629). Write the report with a redirect, `go test -json ./... > "${KSTRL_REPORT:-/dev/null}"`, never through a pipe such as `| tee`, because the shell then reports the pipe's last exit status and a failing suite reads as a pass. The `:-/dev/null` default keeps the command runnable where the variable is unset, such as the engineer's own shell. A missing report is `not_measured` with reason `tool_missing`; a report that does not parse, or that names no failed test on a failing exit, is `command_failed`.
 
 `[verify] mutation_testing` (#391) scores every non-test Python file the diff changed through `mutmut junitxml`, never the text `mutmut results` prints (which carries no killed count under any flag). It now requires `[verify] test_command` to be a single pytest invocation mutmut's `--runner` can wrap - a behaviour change from before #391, when this check ignored `test_command` entirely - and reports `tool_missing` for any command it cannot wrap, the same refusal `[adequacy] diff_mutation` already made. Since the #391 simplify pass on PR #392 (A1/A2) it also shares its mutation cap and its two pre-spend refusals with `[adequacy] diff_mutation`, which runs first and takes what it needs of `[verify] mutation_timeout` before this check gets what is left - see that key's own paragraph for the full arithmetic.
 

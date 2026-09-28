@@ -485,6 +485,7 @@ class TestTheReadBytesExclusion:
         "integration_state.py": 1,  # #482: the launch_record.py shape
         "launch_record.py": 1,  # #436: the baseline.py shape, I/O outside the guard
         "playbook.py": 1,  # #509: the first shape, read once so the digest is of what it folds
+        "report_formats.py": 1,  # #629: the baseline.py shape, I/O outside the guard
         "safemode.py": 1,
         "signals.py": 2,
         "suite_inventory.py": 1,  # #620: I/O outside the parse guard

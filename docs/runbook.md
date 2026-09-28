@@ -364,6 +364,24 @@ any of these worktrees counts as one of those processes. If the census
 cannot run (`lsof` missing, or listing nothing), the finding or the
 warning says so instead of reporting a clean worktree.
 
+When the kstrl process itself dies (#642). Every agent runs under a small
+leash process, `kstrl/agents/leash.py`, which leads the agent's process
+group and holds one end of a pipe to the kstrl process that started it.
+However that process ends (SIGKILL, an OOM kill, a crash, a closed
+terminal), the kernel closes its end of the pipe, and the leash sends
+SIGTERM to the agent's group, waits 5 seconds, and sends SIGKILL. A pool
+worker whose parent dies ends too, and takes its agents with it. Measured
+on macOS: the agent was gone within 0.04 s, and a process in its group
+that ignores SIGTERM within 5.04 s. Three things this does not cover. A
+process an agent's tool started in a group or session of its own is not
+in the agent's group: in a worktree the next run's prune kills it, as
+above, and in the project root nothing does. If the leash is killed
+together with kstrl, its agent survives, and nothing reports it yet. And
+nothing is written when a leash fires: the run looks like any
+interrupted run, with the manifest still `running`, an `events.jsonl`
+that ends without `run_completed`, and the next run's recovery lines
+naming what it reset and carried.
+
 What a resume counts (#463). A retry count carries across runs on the
 manifest, and a Ctrl-C does not reset it. A run that reached its summary
 keeps the attempts and the spend it recorded, and the next run answers

@@ -4047,11 +4047,19 @@ def _check_verify_digest(
     comparison that cannot be trusted is refused in a tenth of a second rather
     than after five minutes of measurement.
     """
+    from kstrl.gateparse import GATE_LINT, GATE_TEST, GATE_TYPECHECK
+    from kstrl.report_formats import declared_formats
     from kstrl.verify import resolve_verify_commands
 
+    tools = {
+        GATE_TEST: verify_cfg.test_tool,
+        GATE_TYPECHECK: verify_cfg.typecheck_tool,
+        GATE_LINT: verify_cfg.lint_tool,
+    }
     digest = baseline.verify_digest(
         resolve_verify_commands(verify_cfg, path),
         verify_cfg.subprocess_timeout,
+        formats=declared_formats(tools),
     )
     if isinstance(mode, baseline.CompareMode):
         try:
