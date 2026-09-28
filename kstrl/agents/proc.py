@@ -10,13 +10,25 @@ grandchild dies with the direct child even when it ignores SIGTERM (#641).
 
 POSIX-first like the rest of the codebase: on platforms without
 ``os.killpg`` the kill degrades to signalling the direct child only.
+
+#642: every one of those cleanups runs inside the kstrl process that owns
+the agent, so a SIGKILL, an OOM kill or a closed terminal ran none of them
+and a silent agent kept running. The child this class starts is therefore
+not the agent but ``kstrl/agents/leash.py``, which leads the group, starts
+the agent inside it, and holds the read end of a pipe whose one write end
+stays here. However this process ends, the kernel closes that write end,
+the leash reads EOF, and it ends the group: SIGTERM, the grace, SIGKILL.
+``_settle`` closes the write end on every orderly disposal. The leash needs
+``pass_fds``, so an agent can no longer be started where there is none.
 """
 
 from __future__ import annotations
 
+import os
 import queue
 import signal
 import subprocess
+import sys
 import threading
 import time
 import weakref
@@ -34,6 +46,10 @@ TIMEOUT_MESSAGE_PREFIX = "ERROR: agent timed out"
 
 DEFAULT_TERM_GRACE_SECONDS = 5.0
 DEFAULT_FINISH_WAIT_SECONDS = 10.0
+
+#: The program every agent is started under (#642). Run by path with
+#: ``-I -S``, so it needs nothing but the standard library.
+LEASH_PATH = str(Path(__file__).with_name("leash.py"))
 
 
 def timeout_message(timeout: float | None) -> str:
@@ -64,6 +80,37 @@ def kill_active_process_groups() -> int:
     return count
 
 
+def _read_until_closed(fd: int) -> bytes:
+    """Everything the leash writes on its status pipe, then close it.
+
+    Returns at EOF, which comes when the leash closes its end after a clean
+    start or exits. No deadline, for the reason CPython's own ``Popen``
+    reads its exec-failure pipe without one: the other end is a process
+    this call just started, and it either writes or exits.
+    """
+    chunks: list[bytes] = []
+    try:
+        while chunk := os.read(fd, 256):
+            chunks.append(chunk)
+    finally:
+        os.close(fd)
+    return b"".join(chunks)
+
+
+def _spawn_error(failure: bytes, program: str) -> OSError:
+    """The ``OSError`` a direct ``Popen`` of the agent would have raised.
+
+    ``errno <n>`` is rebuilt with ``OSError``'s own errno mapping, so an
+    ENOENT is a ``FileNotFoundError``, which ``claude_code`` reports as a
+    missing CLI. Anything else is the leash refusing to start.
+    """
+    text = failure.decode("ascii", "replace")
+    number = text.removeprefix("errno ")
+    if number != text and number.isdigit():
+        return OSError(int(number), os.strerror(int(number)), program)
+    return OSError(f"the agent leash did not start {program!r}: {text}")
+
+
 class DeadlineStreamer:
     """Stream stdout lines from a subprocess under a wall-clock deadline.
 
@@ -92,16 +139,46 @@ class DeadlineStreamer:
             time.monotonic() + timeout if timeout and timeout > 0 else None
         )
         self._queue: queue.Queue[str | None] = queue.Queue()
-        self._proc = subprocess.Popen(
-            cmd,
-            shell=shell,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            encoding="utf-8",
-            cwd=cwd,
-            start_new_session=True,
-        )
+        argv = [cmd] if isinstance(cmd, str) else list(cmd)
+        if shell:
+            argv = ["/bin/sh", "-c", *argv]
+        lifeline_read, self._lifeline = os.pipe()
+        status_read, status_write = os.pipe()
+        try:
+            self._proc = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-I",
+                    "-S",
+                    LEASH_PATH,
+                    str(lifeline_read),
+                    str(status_write),
+                    str(term_grace),
+                    "--",
+                    *argv,
+                ],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                encoding="utf-8",
+                cwd=cwd,
+                start_new_session=True,
+                pass_fds=(lifeline_read, status_write),
+            )
+        except BaseException:
+            os.close(self._lifeline)
+            os.close(status_read)
+            raise
+        finally:
+            os.close(lifeline_read)
+            os.close(status_write)
+        failure = _read_until_closed(status_read)
+        if failure:
+            os.close(self._lifeline)
+            reap_or_abandon(self._proc, term_grace)
+            close_quietly(self._proc.stdin)
+            close_quietly(self._proc.stdout)
+            raise _spawn_error(failure, argv[0])
         # The group is read NOW, while the child is certainly alive. Once
         # the child has exited, even as an unreaped zombie, getpgid on its
         # pid fails (ESRCH, measured on macOS), so a group looked up at
@@ -160,6 +237,12 @@ class DeadlineStreamer:
         self._reader.join(timeout=1.0)
         self._writer.join(timeout=1.0)
         _ACTIVE.discard(self)
+        # The leash's lifeline. Closed on every disposal, so a leash whose
+        # agent outlived the kill still ends its group.
+        try:
+            os.close(self._lifeline)
+        except OSError:
+            pass
 
     def finish(self, timeout: float = DEFAULT_FINISH_WAIT_SECONDS) -> None:
         """Bounded wait for exit; escalate to a group kill on expiry.

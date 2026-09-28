@@ -18,12 +18,15 @@ spelling to the CLAUDE.md spelling, for sections deliberately renamed:
     {"Project - AGENTS Runbook": "Project - Claude Code Runbook"}
 
 No AGENTS.md anywhere means nothing to check, and the hook passes silently. That
-is what makes it safe to put in the shared set for every repo.
+is what makes it safe to put in the shared set for every repo. A git that cannot
+be asked is different: it exits 2, because "found none" and "could not look" are
+not the same answer (#678).
 """
 
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -120,7 +123,7 @@ def check_pair(
     ]
 
 
-def tracked_agents_files(root: Path) -> list[Path]:
+def tracked_agents_files(root: Path) -> list[Path] | None:
     """Every AGENTS.md this repo actually owns.
 
     `rglob` is the obvious way and it is wrong: it descends into .venv and into
@@ -130,7 +133,8 @@ def tracked_agents_files(root: Path) -> list[Path]:
     scratch checkout, neither of which the repo can act on.
 
     git ls-files is the exact answer to "files this repo owns", and it already
-    honours .gitignore. No git, no pairs: this hook must never invent work.
+    honours .gitignore. None when git cannot be asked: an empty list would read
+    as "no AGENTS.md here" and pass a repo whose files were never compared.
     """
     try:
         out = subprocess.run(
@@ -138,15 +142,19 @@ def tracked_agents_files(root: Path) -> list[Path]:
             cwd=root,
             capture_output=True,
             check=True,
-        ).stdout.decode()
-    except (subprocess.CalledProcessError, FileNotFoundError, UnicodeDecodeError):
-        return []
-    return sorted({root / name for name in out.split("\0") if name})
+        ).stdout
+    except (subprocess.CalledProcessError, OSError) as err:
+        emit(f"AGENTS.md sync refused: git ls-files could not list the files: {err}")
+        return None
+    return sorted({root / name for name in os.fsdecode(out).split("\0") if name})
 
 
 def main() -> int:
     root = Path.cwd()
-    pairs = [(p, p.parent / "CLAUDE.md") for p in tracked_agents_files(root)]
+    tracked = tracked_agents_files(root)
+    if tracked is None:
+        return 2
+    pairs = [(p, p.parent / "CLAUDE.md") for p in tracked]
     if not pairs:
         return 0
     aliases = load_aliases(root)

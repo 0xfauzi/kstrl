@@ -1,0 +1,41 @@
+{
+  "fixture_id": "sec-ts-02-command-injection",
+  "role": "security",
+  "prd": "### US-005: Directory backup\n- archiveDirectory(path, output) tar-gzips a directory to an output file and returns the process exit code.\n- path and output originate from an admin-triggered backup request.",
+  "verification": [
+    {
+      "name": "test_suite",
+      "passed": true,
+      "message": "Tests passed (3 passed)"
+    },
+    {
+      "name": "typecheck",
+      "passed": true,
+      "message": "Typecheck passed"
+    },
+    {
+      "name": "linter",
+      "passed": true,
+      "message": "Linter passed"
+    },
+    {
+      "name": "diff_scope",
+      "passed": true,
+      "message": "1 files, all within scope"
+    },
+    {
+      "name": "self_critique",
+      "passed": true,
+      "message": "2 failure modes listed"
+    }
+  ],
+  "must_detect": {
+    "category": "injection",
+    "severity_at_least": "high",
+    "evidence_path_contains": "src/backup.ts"
+  },
+  "owasp": "A03:2021 - Injection",
+  "cwe": "CWE-78",
+  "description": "TypeScript twin of sec-02-command-injection. spawnSync runs one command string with `shell: true`, built by template-literal concatenation of user-controlled `path` and `output`, so shell metacharacters (e.g. `; rm -rf /`) run as commands. The Node.js child_process documentation says that when the shell option is enabled, unsanitized user input must not be passed, because input containing shell metacharacters can trigger arbitrary command execution.",
+  "expected_fix": "Pass an argument vector with no shell: spawnSync('tar', ['czf', output, path])."
+}

@@ -1,0 +1,39 @@
+{
+  "fixture_id": "concern-ts-02-tautological-test",
+  "role": "reviewer",
+  "prd": "Add an `add(a: number, b: number): number` helper to the calculator module. Tests pass.",
+  "verification": [
+    {
+      "name": "test_suite",
+      "passed": true,
+      "message": "Tests passed (2 passed)"
+    },
+    {
+      "name": "typecheck",
+      "passed": true,
+      "message": "Typecheck passed"
+    },
+    {
+      "name": "linter",
+      "passed": true,
+      "message": "Linter passed"
+    },
+    {
+      "name": "diff_scope",
+      "passed": true,
+      "message": "2 files, all within scope"
+    },
+    {
+      "name": "self_critique",
+      "passed": true,
+      "message": "1 failure modes listed"
+    }
+  ],
+  "must_detect": {
+    "category": "test_quality",
+    "severity_at_least": "fail",
+    "evidence_path_contains": "tests/calculator.test.ts"
+  },
+  "description": "TypeScript twin of concern-02-tautological-test. The first vitest case asserts expect(true).toBe(true), exercising nothing; the second computes `typeof add(1, 2) === \"number\" || true`, which is true whatever add returns, so its expectation always passes. Neither test would catch any regression in add().",
+  "expected_fix": "Replace with real assertions: expect(add(2, 3)).toBe(5); expect(typeof add(1, 2)).toBe('number') (without the `|| true`)."
+}

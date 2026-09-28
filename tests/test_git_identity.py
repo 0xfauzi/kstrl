@@ -78,6 +78,10 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/helpers/run_config.py": 1,
     "tests/spine_utils.py": 1,
     "tests/test_adequacy.py": 7,
+    # #642: `_loop_files` and `_second_component` commit into the repository
+    # `tests.test_agent_processes_outlive_run._repo` put through
+    # `tests.helpers.gitrepo.set_identity`.
+    "tests/test_agent_dies_with_kstrl.py": 2,
     "tests/test_agent_processes_outlive_run.py": 1,
     "tests/test_autonomy_ladder.py": 1,
     # #414/#425: three `git commit` spellings - `_commit_rename`, the
@@ -192,6 +196,9 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # tests.helpers.gitrepo.set_identity.
     "tests/test_policy_lockfiles_e2e.py": 1,
     "tests/test_pr_outcomes.py": 3,
+    # #678: `_repo`'s one base commit, into a repository it has just put
+    # through `tests.helpers.gitrepo.set_identity`.
+    "tests/test_precommit_hooks_e2e.py": 1,
     # #531: one commit per fixture repo, after set_identity.
     "tests/test_prelaunch_refusal_exit.py": 1,
     "tests/test_progress_scope.py": 9,

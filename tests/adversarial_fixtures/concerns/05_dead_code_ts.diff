@@ -1,0 +1,33 @@
+diff --git a/src/sandbox/parser.ts b/src/sandbox/parser.ts
+new file mode 100644
+index 0000000..6f7a8b9
+--- /dev/null
++++ b/src/sandbox/parser.ts
+@@ -0,0 +1,27 @@
++/** Config parsing helpers. */
++
++import { createHash } from "node:crypto";
++import { readFileSync } from "node:fs";
++
++/** Read a JSON config file and return its contents. */
++export function parseConfig(path: string): Record<string, unknown> {
++  return JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
++}
++
++/** Lowercase all top-level keys. */
++function normalizeKeys(data: Record<string, unknown>): Record<string, unknown> {
++  return Object.fromEntries(Object.entries(data).map(([k, v]) => [k.toLowerCase(), v]));
++}
++
++/** Check that every top-level value is a string or a number. */
++function validateSchema(data: Record<string, unknown>): boolean {
++  return Object.values(data).every((v) => typeof v === "string" || typeof v === "number");
++}
++
++/** Return a hex SHA-256 of the canonical JSON of `data`. */
++function computeChecksum(data: Record<string, unknown>): string {
++  const canonical = JSON.stringify(data, Object.keys(data).sort());
++  return createHash("sha256").update(canonical, "utf8").digest("hex");
++}
++
++const CACHE_SUFFIX = ".cfgcache";

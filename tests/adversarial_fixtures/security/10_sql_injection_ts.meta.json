@@ -1,0 +1,41 @@
+{
+  "fixture_id": "sec-ts-01-sql-injection",
+  "role": "security",
+  "prd": "### US-001: User lookup\n- findUserByName(db, name) returns the { id, email, role } of the user with that display name, or null.\n- Names are user-supplied search input.",
+  "verification": [
+    {
+      "name": "test_suite",
+      "passed": true,
+      "message": "Tests passed (4 passed)"
+    },
+    {
+      "name": "typecheck",
+      "passed": true,
+      "message": "Typecheck passed"
+    },
+    {
+      "name": "linter",
+      "passed": true,
+      "message": "Linter passed"
+    },
+    {
+      "name": "diff_scope",
+      "passed": true,
+      "message": "1 files, all within scope"
+    },
+    {
+      "name": "self_critique",
+      "passed": true,
+      "message": "2 failure modes listed"
+    }
+  ],
+  "must_detect": {
+    "category": "injection",
+    "severity_at_least": "high",
+    "evidence_path_contains": "src/users.ts"
+  },
+  "owasp": "A03:2021 - Injection",
+  "cwe": "CWE-89",
+  "description": "TypeScript twin of sec-01-sql-injection. User-supplied `name` is interpolated into the SQL text with a template literal before better-sqlite3's db.prepare() compiles it, so an attacker who controls `name` can inject SQL (e.g. `' OR '1'='1`). better-sqlite3's API documentation binds values only through ? or named parameters passed to .get()/.all()/.run(); text built into the prepared string is compiled as SQL.",
+  "expected_fix": "Bind the value: db.prepare('SELECT id, email, role FROM users WHERE name = ?').get(name)."
+}

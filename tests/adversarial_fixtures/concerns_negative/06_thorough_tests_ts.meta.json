@@ -1,0 +1,42 @@
+{
+  "fixture_id": "rev-neg-ts-02-thorough-tests",
+  "role": "reviewer",
+  "kind": "negative",
+  "prd": "### US-085: Arithmetic helpers\n- add(a, b) returns the sum.\n- divide(a, b) returns a / b and throws a RangeError when b is 0.\n- Behaviors are covered by tests including the error path.",
+  "verification": [
+    {
+      "name": "test_suite",
+      "passed": true,
+      "message": "Tests passed (6 passed)"
+    },
+    {
+      "name": "typecheck",
+      "passed": true,
+      "message": "Typecheck passed"
+    },
+    {
+      "name": "linter",
+      "passed": true,
+      "message": "Linter passed"
+    },
+    {
+      "name": "diff_scope",
+      "passed": true,
+      "message": "2 files, all within scope"
+    },
+    {
+      "name": "self_critique",
+      "passed": true,
+      "message": "2 failure modes listed"
+    }
+  ],
+  "must_not_flag": {
+    "categories": [
+      "test_quality"
+    ],
+    "severity_at_least": "fail"
+  },
+  "description": "TypeScript twin of rev-neg-02-thorough-tests, the correct counterpart to concern-02 (tautological test). The vitest cases assert concrete values (add(2, 3) is 5, divide(1, 4) is 0.25), cover negative operands and an identity case, and exercise the RangeError path with expect(() => ...).toThrow(RangeError), which the vitest documentation defines as passing only when the call throws that error class. Each test would fail if the implementation were wrong. A reviewer that flags these as tautological or as missing edge-case coverage would false-positive.",
+  "why_clean": "No expect(true).toBe(true) and no always-true expression; the error path is exercised; the assertions pin exact outputs.",
+  "trap": "Same calculator surface as the tautological-test positive, but with assertions that actually constrain behavior."
+}

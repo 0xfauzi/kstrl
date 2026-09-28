@@ -1,0 +1,15 @@
+diff --git a/src/backup.ts b/src/backup.ts
+new file mode 100644
+index 0000000..2b3c4d5
+--- /dev/null
++++ b/src/backup.ts
+@@ -0,0 +1,9 @@
++/** Backup utilities. */
++
++import { spawnSync } from "node:child_process";
++
++/** Tar-gzip a directory to an output file. Returns the process exit code. */
++export function archiveDirectory(path: string, output: string): number {
++  const result = spawnSync(`tar czf ${output} ${path}`, { shell: true });
++  return result.status ?? 1;
++}

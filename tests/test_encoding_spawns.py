@@ -45,6 +45,8 @@ from tests.helpers.encodingspawn import (
 #: Unchanged by this fix: adding ``encoding="utf-8"`` spells no ``subprocess``.
 EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     "agents/codex.py": 4,
+    # #642: the leash's import, its `Popen` and the `Popen[bytes]` annotation.
+    "agents/leash.py": 3,
     "agents/proc.py": 7,
     "breaker.py": 4,
     "contract.py": 5,
@@ -119,7 +121,7 @@ EXPECTED_TEXT_MODE_SPAWNS: dict[str, int] = {
 #: spawn being deleted.
 EXPECTED_CLEARED_SPAWNS: tuple[str, ...] = (
     "agents/codex.py subprocess.run(['codex', 'exec', '--help'], check=False, stdout=subpro",
-    "agents/proc.py subprocess.Popen(cmd, shell=shell, stdin=subprocess.PIPE, stdout=subpr",
+    "agents/proc.py subprocess.Popen([sys.executable, '-I', '-S', LEASH_PATH, str(lifeline",
     "breaker.py subprocess.run(['git', *args], cwd=cwd, capture_output=True, encoding=",
     # codespell:ignore-next-line
     "doctor.py subprocess.run(['git', 'ls-files', '-z'], cwd=root, capture_output=Tru",
@@ -198,6 +200,9 @@ EXPECTED_LENIENT_SPAWNS: tuple[str, ...] = (
 #: would flip it to text mode and change its ``.stdout`` from ``bytes`` to
 #: ``str``.
 EXPECTED_BYTES_MODE_SPAWNS: dict[str, int] = {
+    # #642: the leash starts the agent on the pipes it inherited and reads
+    # none of them, so there is nothing for it to decode.
+    "agents/leash.py": 1,
     "doctor.py": 1,
     # 7: #566 deleted the fresh-retry `git branch -D branch_name`, which
     # took no encoding; its replacement decodes as utf-8. #624 moved the

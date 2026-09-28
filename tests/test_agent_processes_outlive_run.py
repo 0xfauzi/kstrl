@@ -291,7 +291,7 @@ def test_one_sigint_stops_the_run_mid_iteration_and_leaves_no_agent_process(
         f"touch '{marker}' && sleep 120 && {COMPLETE}"
     )
     proc = _factory(root, agent, max_parallel, *extra)
-    agent_pid: int | None = None
+    agent_pgid: int | None = None
     detached_pid: int | None = None
     try:
         deadline = time.monotonic() + 120
@@ -299,7 +299,13 @@ def test_one_sigint_stops_the_run_mid_iteration_and_leaves_no_agent_process(
             assert time.monotonic() < deadline, "the engineer never started"
             assert proc.poll() is None, proc.communicate()[0]
             time.sleep(0.05)
-        agent_pid = procs.read_pid(agent_pidfile)
+        # The agent's group, read while the agent is certainly alive. The
+        # leash kstrl starts every agent under (#642) leads that group, so
+        # its id is not the agent's pid, and a group named by the agent's
+        # pid is one with no members, which reads as dead having checked
+        # nothing.
+        agent_pgid = os.getpgid(procs.read_pid(agent_pidfile))
+        assert agent_pgid != os.getpgrp()
         detached_pid = procs.read_pid(detached_pidfile)
         started = time.monotonic()
         os.killpg(proc.pid, signal.SIGINT)
@@ -312,16 +318,15 @@ def test_one_sigint_stops_the_run_mid_iteration_and_leaves_no_agent_process(
         assert proc.returncode == STOP_EXIT_CODE, (
             f"rc={proc.returncode} after {elapsed:.2f}s\n{out}"
         )
-        # The shell the agent ran in leads the agent's own group.
-        assert procs.wait_for_group_to_die(agent_pid, timeout=10), "the agent's group survived"
+        assert procs.wait_for_group_to_die(agent_pgid, timeout=10), "the agent's group survived"
         assert procs.wait_for_pid_to_die(detached_pid, timeout=10), (
             f"pid {detached_pid}, detached by the agent's tool, survived the stop"
         )
         assert _naming(root, detached_pid), f"no {ORPHAN_CATEGORY} finding names pid {detached_pid}"
     finally:
         _stop_factory(proc)
-        if agent_pid is not None:
-            procs.kill_group(agent_pid)
+        if agent_pgid is not None:
+            procs.kill_group(agent_pgid)
         if detached_pid is not None:
             _kill_pid(detached_pid)
 
