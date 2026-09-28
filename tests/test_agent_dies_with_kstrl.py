@@ -34,6 +34,7 @@ from kstrl.agents.leash import NOT_A_GROUP_LEADER
 from kstrl.agents.proc import DEFAULT_TERM_GRACE_SECONDS, LEASH_PATH
 from kstrl.factory import run_factory
 from kstrl.procgroup import pid_is_alive
+from kstrl.timeout import TimeoutConfig
 from kstrl.ui.plain import PlainUI
 from tests import spine_utils
 from tests.helpers import gitrepo, procs
@@ -383,4 +384,27 @@ def test_an_orderly_run_leaves_no_lifeline_open(tmp_path: Path) -> None:
         root,
     )
     assert result.exit_code == 0
+    assert _open_pipes() - before == set()
+
+
+def test_a_timed_out_run_leaves_no_lifeline_open(tmp_path: Path) -> None:
+    """The deadline path is a disposal too: an agent that outlives its
+    1 s iteration limit is killed by ``_breach``, which must close the
+    lifeline's write end like ``finish`` does. A breach that kept it leaked
+    one pipe per timed-out call (measured: 3 more after this run)."""
+    root = tmp_path / "repo"
+    spine_utils.init_kstrl_repo(root, ("comp-a",))
+    manifest = spine_utils.make_manifest([spine_utils.component("comp-a")])
+    config = spine_utils.factory_config(
+        use_worktrees=False, timeout_config=TimeoutConfig(agent_iteration=1.0)
+    )
+    before = _open_pipes()
+    result = run_factory(
+        manifest,
+        config,
+        spine_utils.base_config(root, agent_cmd="exec sleep 30"),
+        PlainUI(no_color=True, file=io.StringIO()),
+        root,
+    )
+    assert result.exit_code != 0
     assert _open_pipes() - before == set()
