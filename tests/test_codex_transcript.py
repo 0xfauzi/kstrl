@@ -38,6 +38,8 @@ from tests.spine_utils import git
 
 MAX_ITERATIONS = 3
 ENGINEER_REPLY = "I looked around and changed nothing."
+#: The second line of the ``multiline`` mode's reply.
+SECOND_REPLY_LINE = "SECOND-REPLY-LINE of the same reply."
 DISTILLER_REPLY = "DISTILLER-REPLY nothing durable"
 #: Only the stand-in's header prints this, so it can reach a reader only
 #: through the echoed transcript.
@@ -67,6 +69,8 @@ err.write("Reading prompt from stdin...\\n@HEADER@\\n--------\\nworkdir: x\\n---
 err.write(prompt if prompt.endswith("\\n") else prompt + "\\n")
 err.write("\\n")
 reply = "@ENGINEER_REPLY@"
+if mode == "multiline":
+    reply = "@ENGINEER_REPLY@\\n@SECOND_REPLY_LINE@"
 if mode in ("transcript_marker", "empty_last"):
     err.write("exec\\n/bin/zsh -lc 'cat notes.txt' in x\\n succeeded in 5ms:\\n" + marker + "\\n")
 if mode == "complete":
@@ -119,6 +123,7 @@ def _stand_in(path: Path, source: str) -> None:
         .replace("@HEADER@", CODEX_HEADER)
         .replace("@ENGINEER_REPLY@", ENGINEER_REPLY)
         .replace("@DISTILLER_REPLY@", DISTILLER_REPLY)
+        .replace("@SECOND_REPLY_LINE@", SECOND_REPLY_LINE)
     )
     path.write_text(text, encoding="utf-8")
     path.chmod(0o755)
@@ -257,6 +262,20 @@ def test_engineer_log_holds_the_echoed_prompt_only_as_tool_output(tmp_path: Path
     assert CODEX_HEADER not in lines
     # The last-message reply is the one line the model said, unmarked.
     assert lines.count(ENGINEER_REPLY) == MAX_ITERATIONS
+
+
+def test_every_line_of_a_multi_line_reply_reaches_engineer_log_unmarked(
+    tmp_path: Path,
+) -> None:
+    run = _run_codex_loop(tmp_path, "multiline")
+    lines = run.engineer_log()
+
+    assert run.engineer_calls == MAX_ITERATIONS, run.stdout
+    # The last-message file holds two lines; each is the model's words.
+    assert lines.count(ENGINEER_REPLY) == MAX_ITERATIONS
+    assert lines.count(SECOND_REPLY_LINE) == MAX_ITERATIONS
+    # The stand-in also prints the reply to stdout, which is transcript.
+    assert lines.count(TOOL_RESULT_PREFIX + SECOND_REPLY_LINE) == MAX_ITERATIONS
 
 
 def test_the_distiller_reads_the_reply_not_the_echoed_prompt(tmp_path: Path) -> None:
