@@ -34,7 +34,7 @@ _FIXTURE_ENTRY_KEYS = {"description", "fixture_type", "input_data", "expected"}
 
 # fixture_type -> {input_data key -> required}
 _FIXTURE_INPUT_KEYS: dict[str, dict[str, bool]] = {
-    "cli": {"command": True},
+    "cli": {"command": True, "stdin": False},
     "function": {"module": True, "function": True, "args": False, "kwargs": False},
     "file": {"path": True},
 }
@@ -149,6 +149,32 @@ def _validate_string_list(prefix: str, value: Any) -> list[str]:
     return []
 
 
+def _cli_entry_errors(
+    prefix: str,
+    input_data: dict[str, Any],
+    expected: dict[str, Any],
+) -> list[str]:
+    """The value checks of one ``cli`` fixture entry.
+
+    Its own function so a new ``cli`` key does not grow
+    ``_validate_fixture_entry``, which the cyclomatic ratchet holds (#632).
+    """
+    errors: list[str] = []
+    command = input_data.get("command")
+    if not isinstance(command, str) or not command.strip():
+        errors.append(f"{prefix}.input_data.command: must be a non-empty string")
+    if "stdin" in input_data and not isinstance(input_data["stdin"], str):
+        errors.append(f"{prefix}.input_data.stdin: must be a string")
+    if "exit_code" in expected and (
+        isinstance(expected["exit_code"], bool) or not isinstance(expected["exit_code"], int)
+    ):
+        errors.append(f"{prefix}.expected.exit_code: must be an integer")
+    for key in ("stdout_contains", "stdout_not_contains"):
+        if key in expected:
+            errors.extend(_validate_string_list(f"{prefix}.expected.{key}", expected[key]))
+    return errors
+
+
 def _validate_fixture_entry(prefix: str, entry: Any) -> list[str]:
     errors: list[str] = []
     if not isinstance(entry, dict):
@@ -205,21 +231,7 @@ def _validate_fixture_entry(prefix: str, entry: Any) -> list[str]:
         return errors
 
     if fixture_type == "cli":
-        command = input_data.get("command")
-        if not isinstance(command, str) or not command.strip():
-            errors.append(f"{prefix}.input_data.command: must be a non-empty string")
-        if "exit_code" in expected and (
-            isinstance(expected["exit_code"], bool) or not isinstance(expected["exit_code"], int)
-        ):
-            errors.append(f"{prefix}.expected.exit_code: must be an integer")
-        for key in ("stdout_contains", "stdout_not_contains"):
-            if key in expected:
-                errors.extend(
-                    _validate_string_list(
-                        f"{prefix}.expected.{key}",
-                        expected[key],
-                    )
-                )
+        errors.extend(_cli_entry_errors(prefix, input_data, expected))
     elif fixture_type == "function":
         for key in ("module", "function"):
             value = input_data.get(key)
