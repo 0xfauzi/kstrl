@@ -97,6 +97,7 @@
       "== Spec Decomposition ==",
       "  Spec:         <tmp>/spec.md",
       "  Project:      demo",
+      "  Spec digest:  b75f836c7b6c",
       "Decomposition attempt 1/3",
       "WARN: JSON extraction failed: No agent output to parse",
       "Decomposition attempt 2/3",
