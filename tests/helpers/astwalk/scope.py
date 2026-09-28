@@ -116,7 +116,7 @@ def scopes(tree: ast.Module) -> list[tuple[ast.AST, str]]:
     return found
 
 
-def scope_of(tree: ast.Module) -> dict[int, str]:
+def scope_of(tree: ast.Module, *, lambdas: bool = False) -> dict[int, str]:
     """Every node in a module mapped to the qualified name of its scope.
 
     :func:`own_nodes` stops at a nested function, so a helper defined
@@ -125,12 +125,27 @@ def scope_of(tree: ast.Module) -> dict[int, str]:
     :func:`scopes`, which credits such a helper to whichever ``def``
     encloses it on the page.
 
+    ``lambdas=True`` also names every lambda as a scope of its own,
+    ``f.<lambda>``: :func:`own_nodes` stops at a lambda and :func:`scopes`
+    does not list one, so without it a node inside a lambda has no entry.
+    Off by default, so the guards that read this map today are unchanged.
+
     Keyed by ``id``, so the tree must be the one the caller is walking.
     :func:`~..corpus.parsed` caches on the source text and hands every
     caller the same object, which is what makes that safe across guards.
     """
+    found = scopes(tree)
+    index = 0
+    while lambdas and index < len(found):
+        node, qualified = found[index]
+        index += 1
+        found.extend(
+            (child, f"{qualified}.<lambda>")
+            for child in own_nodes(node)
+            if isinstance(child, ast.Lambda)
+        )
     owner: dict[int, str] = {}
-    for node, qualified in scopes(tree):
+    for node, qualified in found:
         for child in own_nodes(node):
             owner[id(child)] = qualified
     return owner
