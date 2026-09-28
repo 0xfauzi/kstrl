@@ -32,20 +32,20 @@ import pytest
 
 from kstrl import git
 from kstrl.init_cmd import (
-    _LANGUAGE_IGNORES,
     BUILD_MANIFEST_FIX,
     _detect_project_context,
     gitignore_block,
 )
 from kstrl.init_wizard import plan_scaffold
 from kstrl.launch import DecomposeLaunch
+from kstrl.toolchains import TOOLCHAINS
 from kstrl.tui.session import LaunchError, start_run_session
 from tests.helpers.gitrepo import git_in, set_identity
 
 #: The refusal headline the decompose and factory preflight print.
 REFUSAL = "Refusing to run: git does not ignore what this project's verify commands write"
 
-#: One manifest per key of _LANGUAGE_IGNORES, with contents
+#: One manifest per record in TOOLCHAINS, with contents
 #: `_detect_project_context` reads as that language. The census test
 #: below fails when a key is added without a row here.
 MANIFEST_FOR: dict[str, tuple[str, str]] = {
@@ -218,7 +218,7 @@ def test_rerunning_init_appends_the_missing_ignores_once_and_clears_every_refusa
     assert "Appended the Python ignores" in first.stdout
     text = (root / ".gitignore").read_text(encoding="utf-8")
     lines = text.splitlines()
-    for entry in _LANGUAGE_IGNORES["Python"]:
+    for entry in TOOLCHAINS["Python"].ignores:
         assert entry in lines, entry
     # Only the missing entries are appended, not a second kstrl block.
     assert lines.count(".kstrl/") == 1, text
@@ -269,7 +269,7 @@ def test_the_printed_bootstrap_sequence_commits_the_python_ignores(tmp_path: Pat
         timeout=30,
     )
     assert committed.returncode == 0, committed.stderr
-    for entry in _LANGUAGE_IGNORES["Python"]:
+    for entry in TOOLCHAINS["Python"].ignores:
         assert entry in committed.stdout.splitlines(), entry
 
 
@@ -295,12 +295,12 @@ def test_the_home_shell_decompose_launch_refuses_over_missing_ignores(tmp_path: 
 
 
 def test_the_census_covers_every_language_the_ignore_table_names() -> None:
-    """A language added to _LANGUAGE_IGNORES without a manifest here is
+    """A record added to TOOLCHAINS without a manifest here is
     a language the check below never runs against."""
-    assert set(MANIFEST_FOR) == set(_LANGUAGE_IGNORES)
+    assert set(MANIFEST_FOR) == set(TOOLCHAINS)
 
 
-@pytest.mark.parametrize("language", sorted(_LANGUAGE_IGNORES))
+@pytest.mark.parametrize("language", sorted(TOOLCHAINS))
 def test_the_doctor_check_names_every_entry_of_every_language(
     tmp_path: Path, language: str
 ) -> None:
@@ -313,7 +313,7 @@ def test_the_doctor_check_names_every_entry_of_every_language(
     gitignore.write_text(".kstrl/\n", encoding="utf-8")
     row, report = gitignore_row(root)
     assert row.startswith("  [fail] gitignore: "), report
-    for entry in _LANGUAGE_IGNORES[language]:
+    for entry in TOOLCHAINS[language].ignores:
         assert entry in row, entry
     assert "Run `ks init` again" in report
 
@@ -324,7 +324,7 @@ def test_the_doctor_check_names_every_entry_of_every_language(
     from kstrl.init_cmd import missing_language_ignores
 
     block = gitignore_block(language).splitlines()
-    for entry in _LANGUAGE_IGNORES[language]:
+    for entry in TOOLCHAINS[language].ignores:
         gitignore.write_text(
             "".join(f"{line}\n" for line in block if line != entry), encoding="utf-8"
         )
@@ -339,7 +339,7 @@ def test_git_decides_what_is_ignored_and_a_rerun_of_init_clears_a_negation(
     one. A check that read the .gitignore text would get both wrong."""
     root = bootstrapped_without_reinit(tmp_path)
     exclude = root / ".git" / "info" / "exclude"
-    python_lines = "".join(f"{entry}\n" for entry in _LANGUAGE_IGNORES["Python"])
+    python_lines = "".join(f"{entry}\n" for entry in TOOLCHAINS["Python"].ignores)
 
     exclude.write_text(python_lines, encoding="utf-8")
     row, report = gitignore_row(root)

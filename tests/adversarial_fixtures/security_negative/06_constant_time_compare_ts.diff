@@ -1,0 +1,44 @@
+diff --git a/src/auth/resetToken.ts b/src/auth/resetToken.ts
+new file mode 100644
+index 0000000..1a2b3c4
+--- /dev/null
++++ b/src/auth/resetToken.ts
+@@ -0,0 +1,38 @@
++/** Password-reset token generation and verification. */
++
++import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
++
++const TOKEN_BYTES = 32;
++
++/** Return a fresh, unguessable reset token (URL-safe). */
++export function issueToken(): string {
++  return randomBytes(TOKEN_BYTES).toString("base64url");
++}
++
++/** Hash a token for at-rest storage so a DB leak is not usable. */
++function digest(token: string): Buffer {
++  return createHash("sha256").update(token, "utf8").digest();
++}
++
++/** Return the value to persist for `token`. */
++export function storeDigest(token: string): string {
++  return digest(token).toString("hex");
++}
++
++/**
++ * Return true when `presented` hashes to `storedDigest`.
++ *
++ * The comparison is constant-time so verification latency cannot leak
++ * how many leading bytes of the digest matched. timingSafeEqual throws
++ * on inputs of different lengths, so a stored value that is not a
++ * SHA-256 digest is rejected first; every digest is 32 bytes, so the
++ * length says nothing about the token.
++ */
++export function tokenIsValid(presented: string, storedDigest: string): boolean {
++  const candidate = digest(presented);
++  const stored = Buffer.from(storedDigest, "hex");
++  if (stored.length !== candidate.length) {
++    return false;
++  }
++  return timingSafeEqual(candidate, stored);
++}

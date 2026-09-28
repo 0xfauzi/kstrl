@@ -1,0 +1,42 @@
+{
+  "fixture_id": "sec-neg-ts-03-subprocess-list-argv",
+  "role": "security",
+  "kind": "negative",
+  "prd": "### US-061: Thumbnails\n- Generate a resized thumbnail for an uploaded image using ImageMagick's convert.\n- Requested dimensions are bounded to a sane range.\n- A failed conversion surfaces the tool's stderr.",
+  "verification": [
+    {
+      "name": "test_suite",
+      "passed": true,
+      "message": "Tests passed (10 passed)"
+    },
+    {
+      "name": "typecheck",
+      "passed": true,
+      "message": "Typecheck passed"
+    },
+    {
+      "name": "linter",
+      "passed": true,
+      "message": "Linter passed"
+    },
+    {
+      "name": "diff_scope",
+      "passed": true,
+      "message": "1 files, all within scope"
+    },
+    {
+      "name": "self_critique",
+      "passed": true,
+      "message": "2 failure modes listed"
+    }
+  ],
+  "must_not_flag": {
+    "categories": [
+      "injection"
+    ],
+    "severity_at_least": "medium"
+  },
+  "description": "TypeScript twin of sec-neg-03-subprocess-list-argv, the correct counterpart to sec-02 (shell command injection). spawnSync is called with the executable and an explicit argument array and `shell: false`; the Node.js child_process documentation states that without the shell option the command is spawned directly with the arguments as a list, so path and dimension values are distinct argv entries and are never parsed as shell syntax. Dimensions are integer- and range-checked and a timeout is set. A reviewer that flags any child_process call over user-influenced paths as command injection would false-positive.",
+  "why_clean": "shell: false + argument array means no shell parsing; there is no string concatenation into a command line. Arguments are data, not shell script.",
+  "trap": "Uses child_process on user-supplied file paths - the same API family as the real shell-injection fixture - but in the safe mode."
+}

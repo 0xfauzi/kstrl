@@ -164,7 +164,7 @@
         "A green verdict is repo-readiness, not spec-readiness. Nothing here can tell you whether the work you are about to describe fits the component model.",
         "kstrl is not for cross-cutting refactors. The factory decomposes a spec into components that each merge on their own, and a change that has to land everywhere at once has no such decomposition.",
         "kstrl is not for spec-free exploration. Every iteration is graded against a PRD, so work whose acceptance criteria are not known yet has nothing to grade.",
-        "Tier A reads the repository and runs none of your commands, so it cannot tell you whether your suite is green, fast or flaky. Run `ks check` for that."
+        "Tier A reads the repository and runs none of your commands, so it cannot tell you whether your suite is green, fast or flaky. Run `ks check` for that. `ks factory` runs your test, typecheck and lint commands on the base branch before any engineer, and refuses to start when one of them fails there."
       ],
       "fix_first": [
         "Run `gh auth login` and add an origin remote, or set [factory] create_prs = false and merge by hand.",

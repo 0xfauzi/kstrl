@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import io
 import json
+import multiprocessing
 import os
 import signal
 import subprocess
@@ -336,23 +337,21 @@ class TestWorkerSigterm:
         spine_utils.init_kstrl_repo(root, ("comp-a",))
         manifest = spine_utils.make_manifest([spine_utils.component("comp-a")])
 
-        # The agent reports two pids and then becomes the sleep. `$$` is
-        # its own, kept across `exec`, and DeadlineStreamer starts it with
-        # start_new_session=True so that pid also leads its own group.
-        # `$PPID` is the process that spawned it, which is the evidence
-        # that a separate worker ran it.
+        # The agent reports its pid and then becomes the sleep. `$$` is
+        # its own, kept across `exec`. Its parent is the leash that
+        # `DeadlineStreamer` starts (#642), which leads the group, so the
+        # group is read with getpgid and the evidence that a pool worker
+        # ran it is this process's live multiprocessing children.
         agent_pidfile = tmp_path / "agent.pid"
-        worker_pidfile = tmp_path / "worker.pid"
         base = spine_utils.base_config(
             root,
-            agent_cmd=(
-                f"echo $PPID > {worker_pidfile}; "
-                f"echo $$ > {agent_pidfile}; "
-                f"exec sleep {AGENT_SLEEP_SECONDS}"
-            ),
+            agent_cmd=f"echo $$ > {agent_pidfile}; exec sleep {AGENT_SLEEP_SECONDS}",
         )
         config = spine_utils.factory_config(max_parallel=2)
         stop = StopController()
+        # Children this process already had, so a leftover from an earlier
+        # test cannot stand in for a pool worker below.
+        earlier = {child.pid for child in multiprocessing.active_children()}
 
         # `start_command_thread` is how the TUI runs a command core off
         # the main thread, and it boxes an exception instead of losing it
@@ -374,13 +373,17 @@ class TestWorkerSigterm:
         )
 
         agent_pgid: int | None = None
-        worker_pid: int | None = None
+        workers: list[int] = []
         try:
             try:
                 # Read on THIS thread while the agent is alive: after the
                 # shutdown there is no process left to ask.
                 agent_pgid = os.getpgid(read_pid(agent_pidfile, timeout=60.0))
-                worker_pid = read_pid(worker_pidfile, timeout=10.0)
+                workers = [
+                    child.pid
+                    for child in multiprocessing.active_children()
+                    if child.pid not in earlier
+                ]
             finally:
                 # Requested even when the agent never appeared, so a miss
                 # surfaces as the explicit assertion below rather than as
@@ -403,8 +406,9 @@ class TestWorkerSigterm:
             # The precondition the old version silently lost. If the agent
             # was spawned by THIS process there was no worker to SIGTERM,
             # and everything below would be measuring the inline path.
-            assert worker_pid != os.getpid(), (
-                "the agent was spawned by the test process itself, so no "
+            assert workers, (
+                "no pool worker was alive while the agent ran, so the agent was "
+                "spawned by the test process itself, so no "
                 "pool worker exists and this test is not exercising the "
                 "SIGTERM forwarding it claims to; check that use_worktrees "
                 "is on and max_parallel survived to the executor choice"

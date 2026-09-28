@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import functools
 import importlib
+import multiprocessing
 import os
 import shutil
 import signal
@@ -38,6 +39,8 @@ from kstrl.autonomy import (
     save_ladder_state,
     strict_bool,
 )
+from kstrl.base_gates import BaseGates, measure_base_gates, refusal_lines, warning_lines
+from kstrl.base_gates import write_record as write_base_gates_record
 from kstrl.breaker import BreakerConfig
 from kstrl.commandrun import start_heartbeat as _start_heartbeat
 from kstrl.config import (
@@ -2316,6 +2319,41 @@ def _preflight_decision_register(
         return [str(exc)], ()
 
 
+#: Why ``base-gates.json`` holds no reading under ``--no-verify`` (#654).
+BASE_GATES_SKIPPED_NO_VERIFY = "--no-verify: Phase 1 runs no gate"
+
+
+def _preflight_base_gates(
+    manifest: Manifest,
+    root_dir: Path,
+    factory_config: FactoryConfig,
+    run_id: str,
+    ui: UI,
+) -> list[str]:
+    """Why the base branch must not be built on, or [] (#654).
+
+    Measures Phase 1's gates on the base commit and records the reading in
+    the run directory. Refuses when a gate measurably fails there or the
+    record cannot be written, and warns about what it could not measure.
+    Under ``--no-verify`` Phase 1 runs no gate, so nothing is measured and
+    the record says why.
+    """
+    verify_config = factory_config.engineer_verify_config()
+    if verify_config is None:
+        skipped = BaseGates(manifest.base_branch)
+        return write_base_gates_record(
+            root_dir, run_id, skipped, [], skipped_reason=BASE_GATES_SKIPPED_NO_VERIFY
+        )
+    ui.info(f"  Measuring the gates on the base branch {manifest.base_branch}...")
+    reading = measure_base_gates(
+        root_dir, manifest.base_branch, verify_config, factory_config.worktree_setup(), ui
+    )
+    for line in warning_lines(reading):
+        ui.warn(f"  {line}")
+    reasons = refusal_lines(reading)
+    return write_base_gates_record(root_dir, run_id, reading, reasons) + reasons
+
+
 def _preflight_spec_pin(manifest: Manifest, root_dir: Path, ui: UI) -> list[str]:
     """Why this plan must not run on its spec as it reads now, or [] (#639).
 
@@ -2365,6 +2403,10 @@ def _run_preflights(
     worktrees, unlike the R0.5 branch policy below, which only applies
     to worktree mode: without worktrees the factory neither creates
     branches nor worktree dirs.
+
+    The base gates go after scope (#654): they run the project's own
+    suite, the dearest check here, in a throwaway worktree of the base
+    commit, so they also run without worktrees, where Phase 1 still runs.
     """
     # #436 first: `ks retry` reads this record to replay the run's flags,
     # so a run that cannot leave one must not start (CLAUDE.md, artifact
@@ -2396,6 +2438,12 @@ def _run_preflights(
         ui,
         "components cannot pass the scope check",
         _preflight_component_scope(manifest, run_scope),
+    ):
+        return None
+    if _report_preflight(
+        ui,
+        "the base branch fails a gate Phase 1 runs, or its reading cannot be recorded",
+        _preflight_base_gates(manifest, root_dir, factory_config, run_id, ui),
     ):
         return None
     if not factory_config.use_worktrees:
@@ -3169,6 +3217,11 @@ def _install_worker_signal_forwarding() -> None:
     worktree cleaned up and every component left RUNNING. The parent owns
     the stop.
 
+    The worker also ends when its parent ends (#642). A worker whose
+    parent alone was SIGKILLed kept running and kept starting agents. A
+    daemon thread waits on the parent's sentinel and then does what
+    SIGTERM does.
+
     An initializer rather than a call inside ``_run_component``, which
     installed it only when progress logging was on. Installed only on a
     worker's main thread."""
@@ -3177,16 +3230,40 @@ def _install_worker_signal_forwarding() -> None:
 
     def _on_term(signum: int, frame: object) -> None:
         del signum, frame
-        try:
-            kill_active_process_groups()
-        finally:
-            os._exit(130)
+        _end_worker()
 
     try:
         signal.signal(signal.SIGTERM, _on_term)
         signal.signal(signal.SIGINT, _ignore_interrupt)
     except (ValueError, OSError):
         pass
+    parent = multiprocessing.parent_process()
+    if parent is not None:
+        threading.Thread(
+            target=_follow_parent, args=(parent,), daemon=True, name="kstrl-follow-parent"
+        ).start()
+
+
+def _end_worker() -> None:
+    """Kill this worker's agent groups, then exit 130: SIGTERM's path."""
+    try:
+        kill_active_process_groups()
+    finally:
+        os._exit(130)
+
+
+def _follow_parent(parent: multiprocessing.process.BaseProcess) -> None:
+    """End the worker once its parent has gone (#642).
+
+    ``join`` returns when the parent's sentinel closes, which the kernel
+    does however the parent ended. Anything the wait raises is read as
+    the parent being gone: a worker that cannot tell must not keep
+    starting agents.
+    """
+    try:
+        parent.join()
+    finally:
+        _end_worker()
 
 
 def _ignore_interrupt(signum: int, frame: object) -> None:

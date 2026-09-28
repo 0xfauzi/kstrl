@@ -77,7 +77,17 @@ this is a small print an operator should have to find on their own:
   nothing to grade.
 - Tier A reads the repository and runs none of your commands, so it
   cannot tell you whether your suite is green, fast or flaky. Run
-  `ks check` for that.
+  `ks check` for that. `ks factory` runs your test, typecheck and lint
+  commands on the base branch before any engineer, and refuses to start
+  when one of them fails there.
+
+## `ks factory` refused: the base branch fails a gate
+
+**Symptom**: `Refusing to run: the base branch fails a gate Phase 1 runs, or its reading cannot be recorded`, exit 2, and no engineer was called.
+
+**What it is**: before the first engineer call, `ks factory` runs Phase 1's test, typecheck and lint gates, with Phase 1's commands, parsers and timeout, on the commit the base branch names, in a throwaway worktree under `.kstrl/contract/` (#654). `ks run` and `ks retry` reach the same check. It never measures your checkout: components are cut from the commit, so a fix you have not committed does not count. A gate whose failure its parser recognises refuses the run, and the refusal names the gate and up to five failing tests or rules. Without the refusal every component fails Phase 1 on the same failure after its engineer has been paid. On `ks factory --spec` the architect runs, and is paid, before this check. A gate that ran and measured nothing (pytest collecting no tests, a timeout, a tool that is not installed) is printed as `measured nothing` and does not refuse, because Phase 1 still fails that row on every component. A base branch that does not resolve, a checkout that fails and a `worktree_setup_command` that fails on the base are printed the same way. Every reading is written to `.kstrl/runs/<run_id>/base-gates.json` beside `launch.json`: the base sha, each gate's row with its failing names, the gates that were turned off, and whether and why the run refused. A run that cannot write the file refuses.
+
+**Resolve**: make the base green in a commit; or commit `pytest.mark.xfail(strict=True)` on the tests you accept as failing; or pass `--no-verify`, which turns off all of Phase 1 and this check with it. Under `--no-verify` the record says `--no-verify: Phase 1 runs no gate`.
 
 ## Phase 1: mechanical verification failed
 
@@ -346,6 +356,24 @@ factory run also writes to its events.jsonl. A shell you opened inside
 any of these worktrees counts as one of those processes. If the census
 cannot run (`lsof` missing, or listing nothing), the finding or the
 warning says so instead of reporting a clean worktree.
+
+When the kstrl process itself dies (#642). Every agent runs under a small
+leash process, `kstrl/agents/leash.py`, which leads the agent's process
+group and holds one end of a pipe to the kstrl process that started it.
+However that process ends (SIGKILL, an OOM kill, a crash, a closed
+terminal), the kernel closes its end of the pipe, and the leash sends
+SIGTERM to the agent's group, waits 5 seconds, and sends SIGKILL. A pool
+worker whose parent dies ends too, and takes its agents with it. Measured
+on macOS: the agent was gone within 0.04 s, and a process in its group
+that ignores SIGTERM within 5.04 s. Three things this does not cover. A
+process an agent's tool started in a group or session of its own is not
+in the agent's group: in a worktree the next run's prune kills it, as
+above, and in the project root nothing does. If the leash is killed
+together with kstrl, its agent survives, and nothing reports it yet. And
+nothing is written when a leash fires: the run looks like any
+interrupted run, with the manifest still `running`, an `events.jsonl`
+that ends without `run_completed`, and the next run's recovery lines
+naming what it reset and carried.
 
 What a resume counts (#463). A retry count carries across runs on the
 manifest, and a Ctrl-C does not reset it. A run that reached its summary

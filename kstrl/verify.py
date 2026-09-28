@@ -18,7 +18,7 @@ from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
-from kstrl import git, licensing
+from kstrl import git, licensing, toolchains
 from kstrl.config_numbers import check_numbers
 
 if TYPE_CHECKING:
@@ -79,6 +79,13 @@ from kstrl.suite_inventory import (
     unrun_test_files,
 )
 from kstrl.timeout import limit_seconds
+from kstrl.toolchains import (
+    DEFAULT_LINT_COMMAND,
+    DEFAULT_TEST_COMMAND,
+    DEFAULT_TYPECHECK_COMMAND,
+    SCOPED_TYPECHECK_COMMAND,
+    is_python_project,
+)
 from kstrl.waivers import Waivers, apply_waivers, waiver_note
 
 # R2.6 env scrub: verification subprocesses execute agent-authored code
@@ -1106,22 +1113,8 @@ def check_prd_stories(prd_path: Path, pre_run_prd_path: Path | None = None) -> C
 # into the generated CLAUDE.md. Every copy disagreed with the gate from
 # the moment init finished, and loop.run_loop prepends CLAUDE.md into the
 # engineer prompt, so the harness mechanically fed the agent the wrong
-# commands. The copy is gone; this module is the only source.
-
-#: Gate default when ``[verify] test_command`` is unset.
-DEFAULT_TEST_COMMAND = "uv run pytest"
-
-#: Gate default when ``[verify] lint_command`` is unset.
-DEFAULT_LINT_COMMAND = "uv run ruff check ."
-
-#: Gate fallback when ``[verify] typecheck_command`` is unset AND the
-#: project does not scope mypy itself. ``_default_typecheck_command``
-#: prefers ``uv run mypy`` (no path) whenever pyproject.toml does.
-DEFAULT_TYPECHECK_COMMAND = "uv run mypy ."
-
-#: What ``_default_typecheck_command`` uses instead when the project has
-#: scoped mypy via ``[tool.mypy] files`` or ``packages``.
-SCOPED_TYPECHECK_COMMAND = "uv run mypy"
+# commands. The copy is gone. ``kstrl.toolchains.resolve`` is the only
+# source, and the three resolvers below are its projections (#635).
 
 # Harness-authored instruction text injected into the engineer prompt on
 # every iteration, so it is enrolled in the H3 version/hash snapshot
@@ -1146,77 +1139,19 @@ above.
 A command may chain several toolchains. Run all of it."""
 
 
-def _default_typecheck_command(cwd: Path) -> str:
-    """Choose a sensible default mypy invocation for ``cwd``.
-
-    Generic ``uv run mypy .`` is hostile to projects whose pyproject.toml
-    deliberately scopes mypy via ``[tool.mypy] files`` or ``packages``:
-    the ``.`` argument overrides those settings and pulls in test files
-    or vendored code that the project never intended to typecheck. When
-    the project has configured its own mypy scope, defer to it by
-    invoking ``uv run mypy`` with no path argument (mypy then reads the
-    config). When no such config is present, fall back to the broad
-    ``uv run mypy .`` so a green-field project still gets coverage.
-
-    This is the Gap 2 fix from the end-to-end factory validation run:
-    the factory's verify command was overriding the project's own
-    typecheck scope, leading to Phase 1 failures on diffs that were
-    actually fine. Gap 2 landed on the gate and not on ``ks init``, which
-    kept scaffolding ``mypy src/ --strict`` into CLAUDE.md - the very
-    shape it identified as wrong. #261 closed that half.
-    """
-    import tomllib
-
-    pyproject = cwd / "pyproject.toml"
-    if pyproject.is_file():
-        # The read is outside the guard for the same reason it is in
-        # ``config.load_toml_document``: an I/O fault is not a parse
-        # fault. Here it makes no difference to the caller, since both
-        # end at the same default, but a rule applied at one of two
-        # sites and not the other is a rule the next author has to guess
-        # at.
-        try:
-            raw = pyproject.read_bytes()
-        except OSError:
-            return DEFAULT_TYPECHECK_COMMAND
-        try:
-            data = tomllib.loads(raw.decode())
-        except Exception:
-            # ``Exception``, not an enumeration of what tomllib is
-            # believed to raise: see ``kstrl.config.load_toml_document``
-            # for the argument and ``tests/test_toml_readers.py`` for
-            # the guard. The one fact local to THIS site is that a
-            # pyproject.toml is not the operator's kstrl.toml, so it
-            # fails to a documented default rather than to an error,
-            # which is why catching the whole class costs nothing here.
-            return DEFAULT_TYPECHECK_COMMAND
-        mypy_section = data.get("tool", {}).get("mypy", {})
-        if isinstance(mypy_section, dict):
-            # Acknowledged edge case: this heuristic does not consult
-            # ``[[tool.mypy.overrides]]`` (per-module relaxation) or
-            # modules-only configs. If a project relaxes via overrides
-            # but doesn't set ``files``/``packages``, the broad
-            # ``uv run mypy .`` default would override the relaxation.
-            # Real-world rare. Users can always override explicitly via
-            # ``--typecheck-command`` or env var.
-            if mypy_section.get("files") or mypy_section.get("packages"):
-                return SCOPED_TYPECHECK_COMMAND
-    return DEFAULT_TYPECHECK_COMMAND
-
-
-def resolve_test_command(command: str | None) -> str:
-    """The exact test command Phase 1 will run; "" is the gate turned off (#621)."""
-    return DEFAULT_TEST_COMMAND if command is None else command
+def resolve_test_command(command: str | None, cwd: Path) -> str:
+    """The exact test command Phase 1 will run in ``cwd``; "" is off (#621)."""
+    return toolchains.resolve(cwd, "test", command)
 
 
 def resolve_typecheck_command(command: str | None, cwd: Path) -> str:
     """The exact typecheck command Phase 1 will run in ``cwd``; "" is off (#621)."""
-    return _default_typecheck_command(cwd) if command is None else command
+    return toolchains.resolve(cwd, "typecheck", command)
 
 
-def resolve_lint_command(command: str | None) -> str:
-    """The exact lint command Phase 1 will run; "" is the gate turned off (#621)."""
-    return DEFAULT_LINT_COMMAND if command is None else command
+def resolve_lint_command(command: str | None, cwd: Path) -> str:
+    """The exact lint command Phase 1 will run in ``cwd``; "" is off (#621)."""
+    return toolchains.resolve(cwd, "lint", command)
 
 
 #: Every command the three resolvers above fall back to. Each runs a
@@ -1230,16 +1165,6 @@ PYTHON_DEFAULT_COMMANDS: frozenset[str] = frozenset(
         DEFAULT_LINT_COMMAND,
     }
 )
-
-
-def is_python_project(root: Path) -> bool:
-    """Whether ``root`` holds a pyproject.toml or a setup.py (#621).
-
-    The one copy of this test: ``doctor.check_verify_commands``, the
-    Phase 1 gates (:func:`_command_not_run`) and ``ks init``'s language
-    detection all ask it.
-    """
-    return (root / "pyproject.toml").exists() or (root / "setup.py").exists()
 
 
 @dataclass(frozen=True)
@@ -1273,7 +1198,7 @@ def pin_verify_commands(config: VerifyConfig, cwd: Path) -> VerifyConfig:
     """A copy of ``config`` whose three command fields are already resolved.
 
     Resolution is not a pure function of the config: ``resolve_typecheck_command``
-    falls back to ``_default_typecheck_command(cwd)``, which re-reads
+    falls back to ``toolchains.python_typecheck_default(cwd)``, which re-reads
     ``cwd/pyproject.toml`` and answers ``uv run mypy`` when
     ``[tool.mypy] files`` or ``packages`` is present and ``uv run mypy .``
     when it is not. Adding a mypy scope is an ordinary engineer story, so
@@ -1308,9 +1233,9 @@ def resolve_verify_commands(config: VerifyConfig, cwd: Path) -> ResolvedVerifyCo
     function of that directory's pyproject.toml.
     """
     return ResolvedVerifyCommands(
-        test=resolve_test_command(config.test_command),
+        test=resolve_test_command(config.test_command, cwd),
         typecheck=resolve_typecheck_command(config.typecheck_command, cwd),
-        lint=resolve_lint_command(config.lint_command),
+        lint=resolve_lint_command(config.lint_command, cwd),
     )
 
 
@@ -1533,7 +1458,7 @@ def check_test_suite(
     files this run executed. None changes nothing about the run.
     """
     start = time.monotonic()
-    cmd = resolve_test_command(command)
+    cmd = resolve_test_command(command, cwd)
 
     try:
         result = run_scrubbed(cmd, cwd=cwd, timeout=timeout, extra_env=inventory_env(report_dir))
@@ -1636,7 +1561,7 @@ def check_linter(
 ) -> CheckResult:
     """Run linter independently. See ``check_test_suite`` for ``tool``."""
     start = time.monotonic()
-    cmd = resolve_lint_command(command)
+    cmd = resolve_lint_command(command, cwd)
 
     try:
         result = run_scrubbed(cmd, cwd=cwd, timeout=timeout)
@@ -3167,14 +3092,14 @@ def _mutmut_missing(check: str, config_key: str) -> NotMeasured:
 
 
 def _mutmut_tool_preflight(
-    check: str, config_key: str, test_command: str | None
+    check: str, config_key: str, test_command: str | None, cwd: Path
 ) -> list[str] | NotMeasured:
     """The refusals both mutmut-backed checks make before they look at
     the tree: the operator's test command must be a single pytest
     invocation mutmut's ``--runner`` can wrap, and mutmut must be on
     PATH. One copy, because two copies 300 lines apart disagreed on five
     learned facts about the same tool (#391)."""
-    tokens = _pytest_tokens_or_gap(check, test_command, "mutmut's runner can wrap")
+    tokens = _pytest_tokens_or_gap(check, test_command, "mutmut's runner can wrap", cwd)
     if isinstance(tokens, NotMeasured):
         return tokens
     if not shutil.which("mutmut"):
@@ -3296,7 +3221,7 @@ def check_mutation_score(
     """
     start = time.monotonic()
     tokens = _mutmut_tool_preflight(
-        MUTATION_TESTING_CHECK, "[verify] mutation_testing", test_command
+        MUTATION_TESTING_CHECK, "[verify] mutation_testing", test_command, cwd
     )
     if isinstance(tokens, NotMeasured):
         return tokens
@@ -3460,7 +3385,7 @@ def _validated_pytest_tokens(test_command: str) -> list[str] | None:
 
 
 def _pytest_tokens_or_gap(
-    check: str, test_command: str | None, clause: str
+    check: str, test_command: str | None, clause: str, cwd: Path
 ) -> list[str] | NotMeasured:
     """``test_command``, resolved and tokenised as a single pytest
     invocation the caller can extend - or the ``tool_missing`` sidecar
@@ -3473,7 +3398,7 @@ def _pytest_tokens_or_gap(
     hand it to mutmut's own ``--runner`` (``"mutmut's runner can
     wrap"``, D6).
     """
-    tokens = _validated_pytest_tokens(resolve_test_command(test_command))
+    tokens = _validated_pytest_tokens(resolve_test_command(test_command, cwd))
     if tokens is None:
         return NotMeasured(
             check,
@@ -3763,7 +3688,7 @@ def check_patch_coverage(
     (SIGTERM, grace, SIGKILL) before raising
     :class:`subprocess.TimeoutExpired`.
     """
-    tokens = _pytest_tokens_or_gap(PATCH_COVERAGE_CHECK, test_command, "this can extend")
+    tokens = _pytest_tokens_or_gap(PATCH_COVERAGE_CHECK, test_command, "this can extend", cwd)
     if isinstance(tokens, NotMeasured):
         return tokens
     try:
@@ -4300,7 +4225,9 @@ def _diff_mutation_preflight(
     already on disk from one mutmut is about to write, and refuses
     rather than risk overwriting the project's file.
     """
-    tokens = _mutmut_tool_preflight(DIFF_MUTATION_CHECK, "[adequacy] diff_mutation", test_command)
+    tokens = _mutmut_tool_preflight(
+        DIFF_MUTATION_CHECK, "[adequacy] diff_mutation", test_command, cwd
+    )
     if isinstance(tokens, NotMeasured):
         return tokens
     targets: dict[str, set[int]] = {

@@ -1,0 +1,21 @@
+diff --git a/src/jwtVerify.ts b/src/jwtVerify.ts
+new file mode 100644
+index 0000000..5e6f7a8
+--- /dev/null
++++ b/src/jwtVerify.ts
+@@ -0,0 +1,15 @@
++/** JWT verification helper. */
++
++export type Claims = Record<string, unknown>;
++
++/** Decode a JWT and return its claims. */
++export function decodeJwt(token: string): Claims {
++  const [_header, payloadB64, _signature] = token.split(".");
++  const payload = Buffer.from(payloadB64, "base64url").toString("utf8");
++  return JSON.parse(payload) as Claims;
++}
++
++/** Return the subject claim from a JWT. */
++export function getUserId(token: string): string {
++  return String(decodeJwt(token).sub);
++}

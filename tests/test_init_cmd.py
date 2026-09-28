@@ -9,7 +9,6 @@ are tested against the real function with a real UI.
 
 from __future__ import annotations
 
-import inspect
 import io
 import re
 from pathlib import Path
@@ -21,16 +20,14 @@ from kstrl import init_cmd
 from kstrl.appendio import append_records
 from kstrl.cli import cli
 from kstrl.init_cmd import (
-    _LANGUAGE_IGNORES,
-    _LANGUAGE_LOCKFILES,
     DEFAULT_MEMORY,
     GITIGNORE_BLOCK_MARKER,
     NEXT_STEPS,
-    _detect_project_context,
     run_init,
 )
 from kstrl.init_wizard import plan_scaffold
 from kstrl.policy import LOCKFILE_BASENAMES
+from kstrl.toolchains import TOOLCHAINS
 from kstrl.ui.plain import PlainUI
 from kstrl.ui.rich_ui import RichUI
 from tests.helpers import gitrepo
@@ -414,28 +411,12 @@ class TestScaffoldContract:
         planned = {e.path.name: e for e in plan_scaffold(tmp_path)}
         assert planned[".gitignore"].action == "keep"
 
-    def test_every_detected_language_has_an_ignore_block(self) -> None:
-        """A language the detector can return but the ignore table cannot
-        is #201 recurring in the way that is hardest to see: the scaffold
-        writes a block with no build artifacts in it."""
-        source = inspect.getsource(_detect_project_context)
-        assigned = set(re.findall(r'ctx\["language"\] = "([^"]+)"', source))
-
-        assert assigned, "the language-assignment shape changed; fix this test"
-        assert assigned - {"unknown"} <= set(_LANGUAGE_IGNORES)
-
-    def test_every_detected_language_has_a_lockfile_policy(self) -> None:
-        """Ignoring a language's build output while saying nothing about
-        its lockfile is #201 half-fixed, which is how it survived the
-        first pass. An empty tuple is a policy; a missing key is not."""
-        assert set(_LANGUAGE_LOCKFILES) == set(_LANGUAGE_IGNORES)
-
     def test_lockfile_names_come_from_the_policy_vocabulary(self) -> None:
         """policy.LOCKFILE_BASENAMES already decides what counts as a
         lockfile, for the merge-policy size caps. Two lists would drift:
         a name init stages but policy does not know still counts against
         max_lines_changed."""
-        named = {name for names in _LANGUAGE_LOCKFILES.values() for name in names}
+        named = {name for toolchain in TOOLCHAINS.values() for name in toolchain.lockfiles}
 
         assert named <= LOCKFILE_BASENAMES
 
@@ -589,3 +570,43 @@ class TestGreenfieldInitSaysWhatComesFirst:
         steps = output.split("== Next steps ==", 1)[1]
         assert "build manifest" not in steps
         assert steps.lstrip().startswith("You have a spec")
+
+
+class TestInitNamesTheLanguageDetectionChose:
+    """#635 moved detection into ``kstrl.toolchains.detect``: first match
+    wins in record order, and package.json alone is read to tell
+    TypeScript from JavaScript. These are the trees where the order or
+    that read decides the answer and no other test holds one, driven
+    through ``ks init`` and read off what it prints and writes."""
+
+    @pytest.mark.parametrize(
+        ("files", "language"),
+        [
+            ({"pom.xml": "<project/>\n", "build.gradle.kts": "\n"}, "Kotlin"),
+            ({"build.gradle": "\n", "build.gradle.kts": "\n"}, "Kotlin"),
+            ({"go.mod": "module example.com/demo\n", "pom.xml": "<project/>\n"}, "Go"),
+            ({"package.json": ""}, "JavaScript"),
+            ({"package.json": "{not json\n"}, "TypeScript"),
+            ({"package.json": '{"name": "demo"}\n', "tsconfig.json": "{}\n"}, "TypeScript"),
+        ],
+        ids=[
+            "pom-and-kts",
+            "gradle-and-kts",
+            "go-before-jvm",
+            "empty-package-json",
+            "invalid-package-json",
+            "tsconfig",
+        ],
+    )
+    def test_ks_init_reports_and_writes_the_detected_language(
+        self, tmp_path: Path, files: dict[str, str], language: str
+    ) -> None:
+        for name, text in files.items():
+            (tmp_path / name).write_text(text, encoding="utf-8")
+
+        result = CliRunner().invoke(cli, ["init", str(tmp_path), "--ui", "plain"])
+
+        assert result.exit_code == 0, result.output
+        assert f"Detected language: {language}\n" in result.output
+        claude_md = (tmp_path / "CLAUDE.md").read_text(encoding="utf-8")
+        assert f"- **Language**: {language}\n" in claude_md

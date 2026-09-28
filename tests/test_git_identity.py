@@ -78,6 +78,10 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/helpers/run_config.py": 1,
     "tests/spine_utils.py": 1,
     "tests/test_adequacy.py": 7,
+    # #642: `_loop_files` and `_second_component` commit into the repository
+    # `tests.test_agent_processes_outlive_run._repo` put through
+    # `tests.helpers.gitrepo.set_identity`.
+    "tests/test_agent_dies_with_kstrl.py": 2,
     "tests/test_agent_processes_outlive_run.py": 1,
     "tests/test_autonomy_ladder.py": 1,
     # #414/#425: three `git commit` spellings - `_commit_rename`, the
@@ -215,6 +219,9 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_prompt_record.py": 6,
     "tests/test_prompt_upgrade.py": 1,
     "tests/test_provisioning.py": 2,
+    # #654: the seed commit and the fix commit of the temp repo `_repo` builds,
+    # which goes through set_identity before its first commit.
+    "tests/test_red_base_preflight.py": 2,
     # #635: `_commit` is the one commit site, into the fixture repository
     # `_seed` has just put through `tests.helpers.gitrepo.set_identity`.
     "tests/test_python_toolchain_identity_e2e.py": 1,

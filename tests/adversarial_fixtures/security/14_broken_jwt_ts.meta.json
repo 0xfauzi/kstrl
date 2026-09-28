@@ -1,0 +1,41 @@
+{
+  "fixture_id": "sec-ts-05-broken-jwt-verify",
+  "role": "security",
+  "prd": "### US-020: Session identity from JWT\n- decodeJwt(token) returns the token's claims; getUserId(token) returns the subject.\n- The token authenticates the caller for subsequent authorization decisions.",
+  "verification": [
+    {
+      "name": "test_suite",
+      "passed": true,
+      "message": "Tests passed (5 passed)"
+    },
+    {
+      "name": "typecheck",
+      "passed": true,
+      "message": "Typecheck passed"
+    },
+    {
+      "name": "linter",
+      "passed": true,
+      "message": "Linter passed"
+    },
+    {
+      "name": "diff_scope",
+      "passed": true,
+      "message": "1 files, all within scope"
+    },
+    {
+      "name": "self_critique",
+      "passed": true,
+      "message": "2 failure modes listed"
+    }
+  ],
+  "must_detect": {
+    "category": "auth_bypass",
+    "severity_at_least": "critical",
+    "evidence_path_contains": "src/jwtVerify.ts"
+  },
+  "owasp": "A07:2021 - Identification and Authentication Failures",
+  "cwe": "CWE-347",
+  "description": "TypeScript twin of sec-05-broken-jwt-verify. decodeJwt splits the token and base64url-decodes the payload with Buffer.from(payload, 'base64url') but never verifies the signature. An attacker can forge any payload, set sub to an admin's user id, and bypass authentication entirely. RFC 7519 section 7.2 requires the JWS signature to be validated before the claims are trusted.",
+  "expected_fix": "Verify with a JWT library so signature verification is mandatory, e.g. jsonwebtoken's jwt.verify(token, publicKey, { algorithms: ['RS256'] }) or jose's jwtVerify."
+}

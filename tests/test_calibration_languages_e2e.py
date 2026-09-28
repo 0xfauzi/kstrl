@@ -21,8 +21,10 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
+import sys
 from collections.abc import Callable, Iterator
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 import pytest
@@ -35,6 +37,7 @@ from tests.helpers import calibration_repo_fixture as crf
 
 SAVED_FIXTURES = crf.FIXTURES_DIR
 RESULTS = SAVED_FIXTURES / "_results"
+REPO_ROOT = Path(__file__).resolve().parent.parent
 
 #: The Python fixtures the mixed tree copies, each beside a TypeScript twin.
 DIFF_FIXTURES = {
@@ -372,3 +375,266 @@ def test_an_integration_role_the_floor_table_does_not_list_is_refused_at_collect
     assert "01_d1_stored_rows_ts.meta.json" in str(refused.value)
     assert "'integration_ts'" in str(refused.value)
     assert stubbed == []
+
+
+# ---------------------------------------------------------------------------
+# Slice 4: the TypeScript twins in the real fixture tree
+# ---------------------------------------------------------------------------
+
+#: Each paid diff arm, the loader it is parametrized from, the role its Python
+#: fixtures record under, and the block its fixtures are graded on.
+DIFF_ARMS: dict[str, tuple[Callable[[], list[tuple[Path, dict[str, Any]]]], str, str]] = {
+    "test_security_role_catches_planted_bug": (
+        tc._security_positive_easy_fixtures,
+        "security",
+        "must_detect",
+    ),
+    "test_security_role_hard_positive": (
+        tc._security_positive_hard_fixtures,
+        "security_hard",
+        "must_detect",
+    ),
+    "test_security_role_no_false_positive": (
+        tc._security_negative_fixtures,
+        "security_negative",
+        "must_not_flag",
+    ),
+    "test_reviewer_role_catches_planted_concern": (tc._concern_fixtures, "reviewer", "must_detect"),
+    "test_reviewer_role_no_false_positive": (
+        tc._concern_negative_fixtures,
+        "reviewer_negative",
+        "must_not_flag",
+    ),
+}
+
+#: The saved capture the twins' first capture is compared against: the one
+#: that carries both the Python security and reviewer roles.
+PYTHON_BASELINE = RESULTS / "baseline-20260925-120951.json"
+
+FIRST_MEASUREMENTS = "first measurements (the old baseline has no rate for these roles):"
+NOT_GATED = "not gated (MIN_ROLE_DETECTION_RATE sets no floor for these roles):"
+
+
+def _changed_paths(diff: str) -> list[str]:
+    return [crf.segment_path(segment) for segment in crf.split_file_segments(diff)]
+
+
+def _flagging_reply(meta: dict[str, Any], diff: str) -> str:
+    """A reply that raises the fixture's graded category at every file the diff
+    changes: a catch for a positive, a false positive for a negative."""
+    block = meta.get("must_detect") or meta["must_not_flag"]
+    category = (block.get("categories") or block.get("category_any_of") or [block.get("category")])[
+        0
+    ]
+    entries = [
+        {"category": category, "location": f"{path}:1", "explanation": "stub"}
+        for path in _changed_paths(diff)
+    ]
+    if meta["role"] == "security":
+        severity = block["severity_at_least"]
+        findings = [{**entry, "severity": severity} for entry in entries]
+        return json.dumps({"findings": findings, "exhaustively_searched": True})
+    concerns = [{**entry, "severity": "fail"} for entry in entries]
+    return json.dumps({"stories": [], "concerns": concerns})
+
+
+def _silent_reply(meta: dict[str, Any]) -> str:
+    if meta["role"] == "security":
+        return json.dumps({"findings": [], "exhaustively_searched": True})
+    return json.dumps({"stories": [], "concerns": []})
+
+
+class _ReplyPerFixture:
+    """Answers every call with the reply ``replies`` holds for the fixture named
+    in ``running[0]``, and appends that fixture id to ``made``."""
+
+    def __init__(self, replies: dict[str, str], running: list[str], made: list[str]) -> None:
+        self.name = "stub"
+        self.final_message: str | None = None
+        self._replies = replies
+        self._running = running
+        self._made = made
+
+    def run(
+        self, prompt: str, cwd: Path | None = None, timeout: float | None = None
+    ) -> Iterator[str]:
+        self.final_message = self._replies[self._running[0]]
+        self._made.append(self._running[0])
+        yield self.final_message
+
+
+def _row(stdout: str, role: str) -> list[str]:
+    """The words of the one per-role rate line compare printed for ``role``."""
+    words = [line.split() for line in stdout.splitlines()]
+    rows = [row for row in words if row[:1] == [role] and "->" in row]
+    assert len(rows) == 1, stdout
+    return rows[0]
+
+
+def _block(stdout: str, header: str) -> list[str]:
+    """The indented names under ``header``, or [] when compare printed none."""
+    lines = stdout.splitlines()
+    if header not in lines:
+        return []
+    names: list[str] = []
+    for line in lines[lines.index(header) + 1 :]:
+        if not line.startswith("  "):
+            break
+        names.append(line.strip())
+    return names
+
+
+def _evidence_stem(graded: dict[str, Any]) -> tuple[str, str] | None:
+    """The directory and the language-neutral stem of the file a finding must
+    name (``src/jwt_verify.py`` and ``src/jwtVerify.ts`` both give
+    ``("src", "jwtverify")``; ``tests/test_calculator.py`` and
+    ``tests/calculator.test.ts`` both give ``("tests", "calculator")``), or
+    None when the block names no file."""
+    path = graded.get("evidence_path_contains")
+    if path is None:
+        return None
+    pure = PurePosixPath(path)
+    return str(pure.parent), pure.name.split(".")[0].lower().replace("_", "").removeprefix("test")
+
+
+def _run_arm(
+    name: str,
+    build_args: Callable[[], list[tuple[Path, dict[str, Any]]]],
+    base: str,
+    block: str,
+    reply: str,
+    tmp_path: Path,
+    replies: dict[str, str],
+    running: list[str],
+    made: list[str],
+    report: tc._DetectionReport,
+    twins: dict[str, str],
+) -> list[str]:
+    """Twins every TypeScript fixture of one paid diff arm against its Python
+    original, checks the pairing, runs it through the real paid test with the
+    reply stored for its id, and returns the ids of Python fixtures with no
+    TypeScript twin (always empty for ``security_hard``, which this slice
+    does not twin)."""
+    fixtures = build_args()
+    originals = {m["fixture_id"]: m for a, m in fixtures if tc._diff_role(base, a) == base}
+    twinned: set[str] = set()
+    for artifact, meta in fixtures:
+        if tc._diff_role(base, artifact) == base:
+            continue
+        twin_id = meta["fixture_id"]
+        original = originals.get(twin_id.replace("-ts-", "-", 1))
+        assert "-ts-" in twin_id and original is not None, (artifact.name, twin_id)
+        assert original["fixture_id"] in meta["description"], twin_id
+        assert {k: v for k, v in meta[block].items() if k != "evidence_path_contains"} == {
+            k: v for k, v in original[block].items() if k != "evidence_path_contains"
+        }, twin_id
+        assert meta.get("planted_injection") == original.get("planted_injection"), twin_id
+        assert _evidence_stem(meta[block]) == _evidence_stem(original[block]), twin_id
+        diff = artifact.read_text(encoding="utf-8")
+        replies[twin_id] = (
+            _flagging_reply(meta, diff)
+            if reply == "flags_the_planted_file"
+            else _silent_reply(meta)
+        )
+        running[:] = [twin_id]
+        work = tmp_path / "work" / twin_id
+        work.mkdir(parents=True)
+        getattr(tc, name)(artifact, meta, work, report)
+        twins[twin_id] = block
+        twinned.add(original["fixture_id"])
+    if base == "security_hard":
+        return []
+    return sorted(set(originals) - twinned)
+
+
+def _recorded_fixtures(saved: dict[str, Any], flagged: bool) -> dict[str, str]:
+    """The fixture id -> role every real writer (the detection loop and the
+    false-positive loop) put into the saved capture, checking each fixture's
+    run count against whether the stub flagged its changed files."""
+    recorded: dict[str, str] = {}
+    for fixture in saved["fixtures"]:
+        recorded[fixture["fixture_id"]] = fixture["role"]
+        assert fixture["runs_detected"] == (2 if flagged else 0), fixture
+    for role, fp_block in saved["false_positive_analysis"]["roles"].items():
+        for fixture in fp_block["fixtures"]:
+            recorded[fixture["fixture_id"]] = role
+            assert fixture["runs_flagged"] == (2 if flagged else 0), (role, fixture)
+    return recorded
+
+
+@pytest.mark.parametrize("reply", ["flags_the_planted_file", "flags_nothing"])
+def test_the_typescript_twins_record_under_their_own_roles_gated_by_no_floor(
+    reply: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Slice 4. Every TypeScript fixture in the real tree, found by the role
+    the loader derives from its files, is run through its real paid test with
+    a stub reply per fixture id and PATH holding only git.
+
+    Each twin is named for its Python original (the id with ``-ts-`` in it,
+    and the original's id in its description) and is graded on the same
+    block, apart from the file the finding must name. The saved capture
+    records the twins under ``security_ts``, ``reviewer_ts`` and their
+    negative ids only. A reply that flags every changed file catches every
+    positive and is a false positive on every negative; a reply that flags
+    nothing misses every positive, and no gate fails, because
+    ``MIN_ROLE_DETECTION_RATE`` sets no floor for either id. The real
+    ``compare`` CLI, against the saved Python capture, exits 0 and names both
+    ids as first measurements with no floor set."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    git = shutil.which("git")
+    assert git is not None
+    os.symlink(git, bin_dir / "git")
+    monkeypatch.setenv("PATH", str(bin_dir))
+    replies: dict[str, str] = {}
+    running: list[str] = []
+    made: list[str] = []
+    monkeypatch.setattr(
+        kstrl.agents, "get_agent", lambda **_kwargs: _ReplyPerFixture(replies, running, made)
+    )
+    monkeypatch.setattr(tc, "RESULTS_DIR", tmp_path / "results")
+    monkeypatch.setattr(tc, "CALIBRATION_RUNS", 2)
+    report = tc._DetectionReport()
+
+    twins: dict[str, str] = {}
+    untwinned: list[str] = []
+    for name, (build_args, base, block) in DIFF_ARMS.items():
+        untwinned += _run_arm(
+            name, build_args, base, block, reply, tmp_path, replies, running, made, report, twins
+        )
+    assert twins, "the real fixture tree holds no TypeScript fixture"
+    # Slice 4 twins every Python fixture of the four arms it covers (the hard
+    # positives would record under security_hard_ts, which it does not add).
+    assert not untwinned, f"Python fixtures with no TypeScript twin: {untwinned}"
+
+    saved_path = report.save()
+    saved = json.loads(saved_path.read_text(encoding="utf-8"))
+    flagged = reply == "flags_the_planted_file"
+    recorded = _recorded_fixtures(saved, flagged)
+    assert sorted(recorded) == sorted(twins) == sorted(set(made))
+    assert sorted(set(recorded.values())) == [
+        "reviewer_negative_ts",
+        "reviewer_ts",
+        "security_negative_ts",
+        "security_ts",
+    ]
+    for twin_id, role in recorded.items():
+        assert role.endswith("_ts") and "-ts-" in twin_id, (role, twin_id)
+        assert role.endswith("negative_ts") == (twins[twin_id] == "must_not_flag"), (role, twin_id)
+
+    env = {**os.environ, "XDG_STATE_HOME": str(tmp_path / "state")}
+    compared = subprocess.run(
+        [sys.executable, "-m", "kstrl.calibration", "compare", str(PYTHON_BASELINE)]
+        + [str(saved_path), "--root", str(tmp_path)],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        encoding="utf-8",
+        timeout=120,
+    )
+    assert compared.returncode == 0, compared.stdout + compared.stderr
+    rate = "1.00" if flagged else "0.00"
+    for role in ("security_ts", "reviewer_ts"):
+        assert _row(compared.stdout, role)[1:] == ["-", "->", rate, "(no", "floor", "set)"]
+    assert _block(compared.stdout, FIRST_MEASUREMENTS) == ["reviewer_ts", "security_ts"]
+    assert _block(compared.stdout, NOT_GATED) == ["reviewer_ts", "security_ts"]

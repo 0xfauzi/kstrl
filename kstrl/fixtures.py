@@ -35,7 +35,8 @@ from kstrl.fixture_expect import canonical_text, judge
 from kstrl.fixtures_snapshot import check_snapshot_regression, save_snapshot
 from kstrl.jsonread import read_json, read_json_file
 from kstrl.prd import _FIXTURE_INPUT_KEYS, PRD
-from kstrl.verify import CheckResult, ChildOutputDecodeError, is_python_project, run_scrubbed
+from kstrl.toolchains import is_python_project
+from kstrl.verify import CheckResult, ChildOutputDecodeError, run_scrubbed
 
 
 @dataclass

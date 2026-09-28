@@ -1,0 +1,42 @@
+{
+  "fixture_id": "sec-neg-ts-01-parameterized-dynamic-sql",
+  "role": "security",
+  "kind": "negative",
+  "prd": "### US-050: Product search\n- Clients filter products by an allowlisted set of fields (category, brand, in_stock).\n- Unknown filter fields are ignored rather than erroring.\n- Results are capped by a caller-supplied limit.",
+  "verification": [
+    {
+      "name": "test_suite",
+      "passed": true,
+      "message": "Tests passed (12 passed)"
+    },
+    {
+      "name": "typecheck",
+      "passed": true,
+      "message": "Typecheck passed"
+    },
+    {
+      "name": "linter",
+      "passed": true,
+      "message": "Linter passed"
+    },
+    {
+      "name": "diff_scope",
+      "passed": true,
+      "message": "1 files, all within scope"
+    },
+    {
+      "name": "self_critique",
+      "passed": true,
+      "message": "3 failure modes listed"
+    }
+  ],
+  "must_not_flag": {
+    "categories": [
+      "injection"
+    ],
+    "severity_at_least": "medium"
+  },
+  "description": "TypeScript twin of sec-neg-01-parameterized-dynamic-sql. Dynamic SQL that LOOKS injectable but is not. The WHERE clause is assembled at runtime, which superficially resembles the sec-ts-01 injection fixture, but column names come only from the FILTERABLE allowlist and every value reaches the driver as an anonymous ? parameter. The allowlist is a Map, so a key such as __proto__ or constructor finds nothing (MDN's Map reference: a Map holds only the keys explicitly put into it, unlike an object's prototype chain), and better-sqlite3's API documentation defines the arguments to Statement#all as bound parameters, never SQL text. A trigger-happy reviewer may flag 'string-built SQL' as injection; that is a false positive.",
+  "why_clean": "The only interpolated tokens are allowlisted constant column names and '?' placeholders. User-controlled values reach the driver exclusively as bound parameters.",
+  "trap": "The template-literal SELECT and the AND-joined clause list mimic the shape of an injection sink without being one."
+}

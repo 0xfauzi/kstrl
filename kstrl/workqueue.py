@@ -61,6 +61,7 @@ R8.6.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import secrets
@@ -163,6 +164,10 @@ class ItemState(StrEnum):
     #: #465: the run parked work at the merge gate. Not a failure and not
     #: a finish; nothing moves the item on automatically.
     AWAITING_APPROVAL = "awaiting_approval"
+    #: #644: the architect escalated a question only the owner can answer.
+    #: Not a failure and not a poison; `ks queue answer` replaces the spec
+    #: and sends the item back to queued.
+    AWAITING_ANSWER = "awaiting_answer"
 
 
 #: Every state directory, created eagerly so a scan never has to
@@ -190,6 +195,7 @@ _LEGAL_TRANSITIONS: dict[ItemState, frozenset[ItemState]] = {
             ItemState.FAILED,
             ItemState.POISON,
             ItemState.AWAITING_APPROVAL,
+            ItemState.AWAITING_ANSWER,
         }
     ),
     # Terminal-ish: a human (or the retry policy) can requeue, and a
@@ -201,6 +207,8 @@ _LEGAL_TRANSITIONS: dict[ItemState, frozenset[ItemState]] = {
     # the item: done when it exits 0, poison otherwise. A run that parks
     # the next component leaves it here (``Queue.relink_run``).
     ItemState.AWAITING_APPROVAL: frozenset({ItemState.DONE, ItemState.POISON}),
+    # #644: only `ks queue answer` moves an item on, and only back to queued.
+    ItemState.AWAITING_ANSWER: frozenset({ItemState.QUEUED}),
 }
 
 
@@ -702,6 +710,22 @@ def relocated_spec(root_dir: Path, recorded: Path) -> Path | None:
         if candidate.is_file():
             return candidate
     return None
+
+
+def queue_item_for_spec(root_dir: Path, spec_path: Path) -> str | None:
+    """The id of the running queue item whose spec ``spec_path`` is, or None (#644).
+
+    ``ks serve`` runs ``<queue>/running/<id>/<spec>``, so the id is the name
+    of the spec's directory when that directory sits in ``running/``. Path
+    arithmetic only: no config read and no scan of the queue, so the
+    architect's halt path gains no new way to fail. None for every other
+    spec, which keeps a `ks factory --spec` outside the queue as it was.
+    """
+    running = queue_root(root_dir).resolve() / str(ItemState.RUNNING)
+    directory = spec_path.resolve().parent
+    if directory.parent != running or not is_safe_component(directory.name):
+        return None
+    return directory.name
 
 
 class Queue:
@@ -1335,6 +1359,82 @@ class Queue:
             last_run_id=run_id,
             detail={"reason": reason, "run_id": run_id},
         )
+
+    def await_answer(
+        self,
+        item: QueueItem,
+        *,
+        reason: str,
+        run_id: str,
+        actor: str = "",
+    ) -> QueueItem:
+        """A run whose architect escalated a question to the owner (#644).
+
+        Not a failure: the halt is the architect's judgement, and the item
+        waits for `ks queue answer`. ``run_id`` is the decompose run that
+        escalated, where the question and the prompt the architect read are
+        recorded; "" when the launch window did not hold exactly one.
+        """
+        return self.transition(
+            item,
+            ItemState.AWAITING_ANSWER,
+            reason="awaiting an answer",
+            actor=actor,
+            last_run_id=run_id,
+            detail={"reason": reason, "run_id": run_id},
+        )
+
+    def answer(
+        self,
+        item: QueueItem,
+        text: str,
+        *,
+        actor: str = "",
+        reset_attempts: bool = False,
+    ) -> dict[str, Any]:
+        """Replace an awaiting item's spec with ``text`` and requeue it (#644).
+
+        Call under ``queue_lock`` with an item read under it. Every check
+        runs before anything is written, so a refusal leaves ``meta.json``
+        and the spec as they were. The spec is written BEFORE the rename:
+        a crash between the two leaves the item waiting with the new text,
+        and answering again with the same file finishes the move, which is
+        why identical bytes are journalled as ``unchanged`` rather than
+        refused. Returns the journalled detail.
+        """
+        if item.state is not ItemState.AWAITING_ANSWER:
+            raise QueueError(
+                f"{item.item_id} is {item.state}; only an item awaiting an answer can be answered"
+            )
+        if not text.strip():
+            raise QueueError(f"the answered spec is empty; {item.item_id} keeps its spec")
+        if not reset_attempts and item.attempts_remaining <= 0:
+            raise QueueError(
+                f"{item.item_id} has used all {item.max_attempts} attempts; "
+                "pass --reset-attempts to authorize spending again"
+            )
+        spec = self.spec_path(item)
+        before = hashlib.sha256(spec.read_bytes()).hexdigest()
+        after = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        atomic_write_text(spec, text)
+        detail: dict[str, Any] = {
+            "spec_sha256_before": before,
+            "spec_sha256_after": after,
+            "unchanged": before == after,
+            "escalated_run": item.last_run_id,
+        }
+        updates: dict[str, Any] = {
+            "lease_pid": 0,
+            "lease_host": "",
+            "lease_expires_at": "",
+            "not_before": "",
+        }
+        if reset_attempts:
+            updates["attempts"] = 0
+        self.transition(
+            item, ItemState.QUEUED, reason="answered", actor=actor, detail=detail, **updates
+        )
+        return detail
 
     def relink_run(
         self, item: QueueItem, *, run_id: str, reason: str, actor: str = ""
