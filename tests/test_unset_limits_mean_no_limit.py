@@ -360,6 +360,8 @@ UNSET_LIMITS = (
     ("factory", "max_adversarial_calls"),
     ("factory", "max_total_tokens"),
     ("factory", "max_cost_usd"),
+    ("factory", "review_timeout_seconds"),
+    ("factory", "architect_timeout_seconds"),
     ("verify", "mutation_timeout"),
     ("verify", "subprocess_timeout"),
     ("security", "timeout_seconds"),

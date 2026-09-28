@@ -353,6 +353,8 @@ use_worktrees = true               # isolate each component in .kstrl/worktrees/
 single_pr = false                  # one PR for the whole run instead of per-component
 create_prs = true                  # push + merge PRs via gh
 review_mode = "hard"               # hard | advisory | skip (Phase 2)
+review_timeout_seconds = 0.0       # code and integration reviewer call timeout; 0 = no limit. A call killed at it is an infrastructure error, never a verdict
+architect_timeout_seconds = 0.0    # architect call timeout (ks decompose, ks factory --spec); 0 = no limit. A call killed at it is one failed attempt
 claim_agreement = "advisory"       # advisory | block: what to do when the reviewer does not confirm a story the engineer marked passes=true (R10.3)
 merge_timeout = 300.0              # hang guard: seconds to wait for PR merge confirmation
 max_adversarial_calls = 0          # cap on review+security+distill LLM calls; 0 = no limit. At the cap a hard-mode review or security phase HALTS the component rather than merging it unreviewed; an advisory one skips. Budget 3 calls per component for hard review + hard security + knowledge (R10.5, docs/runbook.md)

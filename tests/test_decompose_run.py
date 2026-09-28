@@ -79,7 +79,9 @@ class TwoShotAgent:
     def name(self) -> str:
         return "two-shot"
 
-    def run(self, prompt: str, cwd: Path | None = None) -> Iterator[str]:
+    def run(
+        self, prompt: str, cwd: Path | None = None, timeout: float | None = None
+    ) -> Iterator[str]:
         self._calls += 1
         if self._calls == 1:
             yield "this is not json at all"
@@ -93,7 +95,9 @@ class ExplodingAgent:
     name = "exploding"
     final_message: str | None = None
 
-    def run(self, prompt: str, cwd: Path | None = None) -> Iterator[str]:
+    def run(
+        self, prompt: str, cwd: Path | None = None, timeout: float | None = None
+    ) -> Iterator[str]:
         raise RuntimeError("architect exploded")
         yield  # pragma: no cover - makes this an iterator
 
@@ -133,6 +137,7 @@ def _decompose(
             bus=run.bus,
             transcript=run.transcript_writer(ARCHITECT_COMPONENT),
             prompt_call=run.agent_call(ARCHITECT_COMPONENT, ARCHITECT_ROLE),
+            timeout=None,
         )
     finally:
         run.close()
@@ -288,6 +293,7 @@ class TestDecomposeRun:
             ui=PlainUI(no_color=True, file=io.StringIO()),
             root_dir=tmp_path,
             prompt_call=architect_call(tmp_path),
+            timeout=None,
         )
         assert len(manifest.components) == 2
         assert not (tmp_path / ".kstrl" / "runs").exists()
@@ -337,7 +343,9 @@ class MeteringAgent:
             )
         )
 
-    def run(self, prompt: str, cwd: Path | None = None) -> Iterator[str]:
+    def run(
+        self, prompt: str, cwd: Path | None = None, timeout: float | None = None
+    ) -> Iterator[str]:
         # Attempt N reads output N, and the last one repeats if the
         # architect retries more times than the test scripted.
         output = self._outputs[min(len(self.usage_records), len(self._outputs) - 1)]
@@ -529,6 +537,7 @@ class TestReportingNeverReplacesTheHalt:
                 ui=BrokenPipeUI(no_color=True, file=io.StringIO()),
                 root_dir=tmp_path,
                 prompt_call=architect_call(tmp_path),
+                timeout=None,
             )
 
     def test_a_broken_pipe_does_not_swallow_a_success(
@@ -547,6 +556,7 @@ class TestReportingNeverReplacesTheHalt:
             ui=BrokenPipeUI(no_color=True, file=io.StringIO()),
             root_dir=tmp_path,
             prompt_call=architect_call(tmp_path),
+            timeout=None,
         )
         assert len(manifest.components) == 2
 

@@ -1,0 +1,30 @@
+Checking rustapp v0.1.0 (/repo)
+error: unneeded `return` statement
+ --> src/pricing.rs:9:5
+  |
+9 |     return 0;
+  |     ^^^^^^^^
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#needless_return
+  = note: `-D clippy::needless-return` implied by `-D warnings`
+  = help: to override `-D warnings` add `#[allow(clippy::needless_return)]`
+help: remove `return`
+  |
+9 -     return 0;
+9 +     0
+  |
+
+error: unneeded `return` statement
+  --> src/pricing.rs:15:5
+   |
+15 |     return price;
+   |     ^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#needless_return
+help: remove `return`
+   |
+15 -     return price;
+15 +     price
+   |
+
+error: could not compile `rustapp` (lib) due to 2 previous errors

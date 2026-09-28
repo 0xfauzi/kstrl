@@ -41,7 +41,9 @@ class RecordingAgent:
     def name(self) -> str:
         return "recording"
 
-    def run(self, prompt: str, cwd: Path | None = None) -> Iterator[str]:
+    def run(
+        self, prompt: str, cwd: Path | None = None, timeout: float | None = None
+    ) -> Iterator[str]:
         self.prompts.append(prompt)
         self.cwds.append(cwd)
         yield from VALID_DECOMPOSE_OUTPUT.splitlines()
@@ -80,6 +82,7 @@ def _decompose_and_capture(root: Path, spec: Path) -> tuple[str, Path | None]:
         ui=PlainUI(no_color=True, file=io.StringIO()),
         root_dir=root,
         prompt_call=architect_call(root),
+        timeout=None,
     )
     assert agent.prompts, "decompose_spec never called its agent"
     return agent.prompts[0], agent.cwds[0]
@@ -98,7 +101,9 @@ class _HaltingRecordingAgent:
     def name(self) -> str:
         return "recording-halt"
 
-    def run(self, prompt: str, cwd: Path | None = None) -> Iterator[str]:
+    def run(
+        self, prompt: str, cwd: Path | None = None, timeout: float | None = None
+    ) -> Iterator[str]:
         self.prompts.append(prompt)
         self.cwds.append(cwd)
         yield from self._lines
@@ -140,6 +145,7 @@ def _decompose_halting_and_capture(root: Path, spec: Path) -> tuple[str, str]:
             ui=PlainUI(no_color=True, file=buffer),
             root_dir=root,
             prompt_call=architect_call(root),
+            timeout=None,
         )
     assert agent.prompts, "decompose_spec never called its agent"
     return agent.prompts[0], buffer.getvalue()

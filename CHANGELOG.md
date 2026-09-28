@@ -13,6 +13,15 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Added
 
+- `[factory] review_timeout_seconds` (`KSTRL_FACTORY_REVIEW_TIMEOUT_SECONDS`)
+  bounds the code and integration reviewer call, and `[factory]
+  architect_timeout_seconds` (`KSTRL_FACTORY_ARCHITECT_TIMEOUT_SECONDS`) the
+  architect call, both 0 (no limit) by default (#603). A reviewer, security
+  reviewer, distiller or architect call the adapter kills at its limit is
+  now recorded as a timeout: an infrastructure error, a failed attempt for
+  the architect, and no fact for the distiller. Before, the reply streamed
+  before the kill was parsed as if the call had finished, so a hard-mode
+  security review killed after printing a clean reply passed.
 - Checks between engineer iterations and a convergence check across
   attempts (#233), both off by default. `[verify] fast_iteration_checks`
   (`KSTRL_VERIFY_FAST_ITERATION_CHECKS`, comma-separated) names gates out
