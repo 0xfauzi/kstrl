@@ -2755,6 +2755,7 @@ def _decompose_spec_impl(
             register_path=rel_display(decisions_path) if decisions_path is not None else "",
             run_id=bus.run_id if bus is not None else "",
             warn=ui.warn,
+            spec_path=spec_path,
         )
         # The run dir must read as FINISHED, not dead: the halt is the
         # architect's judgment, delivered before the error propagates.

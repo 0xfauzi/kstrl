@@ -299,7 +299,9 @@ component id; later runs fail Phase 1 if a previously-passing fixture
 fails or its output changes. If a change is intentional, delete
 `.kstrl/snapshots/<component>.json` to reset the baseline. Snapshots
 resolve against the repo root, not the worktree, so they survive
-worktree recreation between runs.
+worktree recreation between runs. A `cli` fixture with `stdout_json`
+records its stdout as canonical JSON (sorted keys, no whitespace), so
+output that differs only in key order or spacing is not a change.
 
 ## Glossary
 

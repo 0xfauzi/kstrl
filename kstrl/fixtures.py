@@ -25,14 +25,16 @@ import shlex
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from kstrl.config_numbers import check_numbers
+from kstrl.fixture_expect import canonical_text, judge
 from kstrl.fixtures_snapshot import check_snapshot_regression, save_snapshot
 from kstrl.jsonread import read_json, read_json_file
-from kstrl.prd import PRD
+from kstrl.prd import _FIXTURE_INPUT_KEYS, PRD
 from kstrl.toolchains import is_python_project
 from kstrl.verify import CheckResult, ChildOutputDecodeError, run_scrubbed
 
@@ -141,7 +143,8 @@ def run_cli_fixture(
 ) -> FixtureResult:
     """Run a CLI fixture by executing a command and checking output expectations.
 
-    Checks exit_code, stdout_contains, and stdout_not_contains from expected.
+    Judges ``expected`` through ``fixture_expect.judge``; ``actual`` is the
+    stdout, as canonical JSON when ``stdout_json`` is expected (#632).
     ``input_data.stdin`` is the whole of the command's stdin, empty when
     absent, and never kstrl's own stdin (#632).
 
@@ -199,24 +202,11 @@ def run_cli_fixture(
             measured=False,
         )
 
-    stdout = result.stdout
-    failures: list[str] = []
-
-    # Check exit code
-    if "exit_code" in fixture.expected:
-        expected_code = fixture.expected["exit_code"]
-        if result.returncode != expected_code:
-            failures.append(f"exit code: expected {expected_code}, got {result.returncode}")
-
-    # Check stdout_contains
-    for substring in fixture.expected.get("stdout_contains", []):
-        if substring not in stdout:
-            failures.append(f"stdout missing expected string: {substring!r}")
-
-    # Check stdout_not_contains
-    for substring in fixture.expected.get("stdout_not_contains", []):
-        if substring in stdout:
-            failures.append(f"stdout contains forbidden string: {substring!r}")
+    observed = {"exit code": result.returncode, "stdout": result.stdout, "stderr": result.stderr}
+    failures = judge("cli", fixture.expected, observed)
+    # A snapshot compares `actual` byte for byte, so JSON output is recorded
+    # canonical: key order and whitespace are not a change in behaviour.
+    stdout = canonical_text(result.stdout) if "stdout_json" in fixture.expected else result.stdout
 
     if failures:
         return FixtureResult(
@@ -585,18 +575,27 @@ def run_file_fixture(fixture: Fixture, cwd: Path) -> FixtureResult:
     )
 
 
+#: fixture_type -> its runner. The check below refuses to import a type the
+#: PRD validator accepts with no runner here, or a runner for a type it refuses.
+_RUNNERS: dict[str, Callable[[Fixture, Path, float], FixtureResult]] = {
+    "cli": run_cli_fixture,
+    "function": run_function_fixture,
+    "file": lambda fixture, cwd, _timeout: run_file_fixture(fixture, cwd),
+}
+if set(_RUNNERS) != set(_FIXTURE_INPUT_KEYS):
+    raise RuntimeError(
+        f"fixture types {sorted(_FIXTURE_INPUT_KEYS)} and runners {sorted(_RUNNERS)} differ"
+    )
+
+
 def _dispatch_fixture(
     fixture: Fixture,
     cwd: Path,
     timeout: float,
 ) -> FixtureResult:
     """Dispatch a fixture to the appropriate runner."""
-    if fixture.fixture_type == "cli":
-        return run_cli_fixture(fixture, cwd, timeout)
-    if fixture.fixture_type == "function":
-        return run_function_fixture(fixture, cwd, timeout)
-    if fixture.fixture_type == "file":
-        return run_file_fixture(fixture, cwd)
+    if fixture.fixture_type in _RUNNERS:
+        return _RUNNERS[fixture.fixture_type](fixture, cwd, timeout)
     return FixtureResult(
         fixture=fixture,
         passed=False,

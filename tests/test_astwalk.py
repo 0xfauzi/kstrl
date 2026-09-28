@@ -296,6 +296,10 @@ class TestAssertSitesWillNotTakeHalfAnAnswer:
 #: a moved main failed this pin four times on line numbers alone, and none
 #: of those diffs was about a dispatch table.
 OPAQUE_CALLEES = (
+    # #632: the fixture comparison tables and the fixture runner table.
+    "fixture_expect.py COMPARATORS[kind]",
+    "fixture_expect.py VALIDATORS[kind]",
+    "fixtures.py _RUNNERS[fixture.fixture_type]",
     "gateparse.py TOOL_PARSERS[chosen]",
     "gateparse.py TOOL_PARSERS[name]",
     "tui/app.py initial_screens_for_kind(kind, observe_only=False)",
@@ -320,8 +324,9 @@ class TestTheWalkAgainstTheRealPackage:
     """A resolver whose only tests are snippets is a resolver nobody has
     run. These three are against ``kstrl/`` itself."""
 
-    def test_the_only_undecidable_callees_are_the_four_dispatch_tables(self) -> None:
-        """Measured over 13,145 calls in ``kstrl/``: four.
+    def test_the_only_undecidable_callees_are_the_pinned_dispatch_tables(self) -> None:
+        """Measured over 13,145 calls in ``kstrl/``: four. #632 adds three,
+        the two fixture comparison tables and the fixture runner table.
 
         That number is what makes the undecided half something a guard can
         pin rather than a list it would be silenced for printing.

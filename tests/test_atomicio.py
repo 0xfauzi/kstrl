@@ -37,6 +37,7 @@ from kstrl.atomicio import atomic_write_json, atomic_write_text
 from kstrl.init_cmd import _atomic_replace
 from kstrl.workqueue import atomic_write
 from tests.helpers import astwalk
+from tests.test_astwalk import OPAQUE_CALLEES
 
 #: A string whose utf-8 and latin-1 encodings differ, so a test that
 #: round-trips it through an unpinned encoding fails rather than passing
@@ -399,14 +400,10 @@ EXPECTED_MKSTEMP_SPELLINGS: dict[str, int] = {}
 #: function. Pinned rather than dropped, because "could not decide" and
 #: "decided it is fine" are the two answers #324 exists to keep apart.
 #: Layer 1 is what covers them: a table of writers still spells the name.
-#: Keyed by module and expression, not by line: none of the four is in a
-#: file this guard is about, so a line here fails on a stranger's edit.
-EXPECTED_UNDECIDED_CALLS: tuple[str, ...] = (
-    "gateparse.py TOOL_PARSERS[chosen]",
-    "gateparse.py TOOL_PARSERS[name]",
-    "tui/app.py initial_screens_for_kind(kind, observe_only=False)",
-    "tui/app.py initial_screens_for_kind(kind, observe_only=True)",
-)
+#: Keyed by module and expression, not by line. They are exactly the
+#: package's calls with no named callee, which ``tests/test_astwalk.py``
+#: pins once for every guard (#632 moved this file to it at 800 lines).
+EXPECTED_UNDECIDED_CALLS: tuple[str, ...] = OPAQUE_CALLEES
 
 
 def _mkstemp_calls(sources: list[Path]) -> astwalk.Sites:
