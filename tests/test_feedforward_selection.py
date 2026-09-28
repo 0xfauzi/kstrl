@@ -131,7 +131,7 @@ def test_an_empty_section_records_why_it_is_empty(tmp_path: Path) -> None:
     body = section(context, "## Public interfaces")
 
     assert "## Public interfaces" in context
-    assert "no Python source root found" in body
+    assert "read from Python source only" in body
     assert str(tmp_path) in body
 
 
@@ -201,7 +201,7 @@ def test_a_package_past_the_depth_bound_is_invisible(tmp_path: Path) -> None:
         build_codebase_scan_context(tmp_path, CodebaseScanConfig()), "## Public interfaces"
     )
 
-    assert "no Python source root found" in body
+    assert "read from Python source only" in body
 
 
 def test_a_crash_in_extraction_is_recorded_and_does_not_take_the_context_down(
