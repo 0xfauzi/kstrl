@@ -186,14 +186,18 @@ class TestConfig:
                 # The value column takes the room 80 columns leave, not a fixed short cut.
                 assert table.virtual_size.width >= table.size.width - 6, table.virtual_size
             # Narrower: the value column is re-cut and the selected row stays selected.
+            # By 3 columns, not 10: since #649 the table holds [autonomy]
+            # demote_on_calibration_regression (32 cells), so 77 columns is the
+            # narrowest at which section, key and source stay whole beside the
+            # 12-cell minimum value column. At 70 the table has to scroll.
             table.focus()
             await pilot.press("down", "down", "down")
             await settled(pilot, lambda: table.cursor_row == 3, what="the cursor on row 4")
             section, key = str(list(table.rows)[3].value).split(".", 1)
-            await pilot.resize_terminal(size[0] - 10, size[1])
+            await pilot.resize_terminal(size[0] - 3, size[1])
             await settled(
                 pilot,
-                lambda: table.size.width == size[0] - 10 and table.max_scroll_x == 0,
+                lambda: table.size.width == size[0] - 3 and table.max_scroll_x == 0,
                 what="the table re-cut to the narrower screen",
             )
             hint = flat(app.screen.query_one("#config-hint", Static))

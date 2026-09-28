@@ -3410,8 +3410,7 @@ def config_show(
     # Every command refuses on an unusable section, so ONE command has to
     # always run and always explain: this one. The rows above cover what
     # resolved (a rejected section costs its rows, not the report); the
-    # problems below cover every section, the eleven this report does not
-    # render included, in the words the rest of the CLI uses.
+    # problems below say why, in the words the rest of the CLI uses.
     problems = config_problem_lines(root_dir, warn=_preflight_warn)
     if problems:
         _echo_config_problems(problems)
