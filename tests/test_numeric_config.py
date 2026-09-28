@@ -71,7 +71,7 @@ from tests.test_env_vars_documented import NOT_KSTRL_SETTINGS, names_read_by_kst
 
 #: Re-derived by running ``numeric_field_census()`` on this tree, never
 #: edited to match.
-EXPECTED_NUMERIC_FIELDS = 54
+EXPECTED_NUMERIC_FIELDS = 56
 
 #: The fields whose negative values mean something. Adding one is a
 #: decision, so it is written here as well as on the field.
@@ -129,7 +129,7 @@ NOT_LIMITS: dict[tuple[str, str], str] = {
 
 #: Re-derived by running ``_env_doors()`` on this tree: one per variable
 #: that sets a numeric field.
-EXPECTED_ENV_DOORS = 53
+EXPECTED_ENV_DOORS = 55
 
 #: The numeric fields no environment variable sets, re-derived by running.
 EXPECTED_NO_ENV_DOOR = {("EvolutionConfig", "min_pattern_frequency")}

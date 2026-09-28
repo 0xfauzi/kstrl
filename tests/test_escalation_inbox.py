@@ -304,6 +304,7 @@ def _decompose_in_process(root: Path, payload: dict[str, Any], out: io.StringIO)
         ui=PlainUI(no_color=True, file=out),
         root_dir=root,
         prompt_call=architect_call(root),
+        timeout=None,
     )
 
 
