@@ -1,13 +1,14 @@
 """`ks doctor`: is this repository ready to point kstrl at? (#198)
 
-Tier A only. Every check is static and mechanical: nothing here runs
+Tier A here. Every check is static and mechanical: nothing here runs
 the repository's own test, typecheck or lint commands, spawns an
 agent, or spends anything. Measured cost: about 0.3 to 0.5 s per run
 on this repository (three runs: 387, 403 and 493 ms), of which one
 gh auth status network round trip is about 250 ms (bounded by
 pr.GH_TIMEOUT when offline); the local checks together are
-the rest. `ks doctor --measure` (Tier B) is not
-built; `ks check` already runs the measurement it would wrap.
+the rest. `ks doctor --measure` (#654) then runs Phase 1's test,
+typecheck and lint commands on the base branch, the reading `ks factory`
+takes before any engineer runs, and fails the verdict where it would refuse.
 
 The anti-chimera rule from the issue: doctor checks ONLY what kstrl
 consumes, and every check's ``detail`` names the kstrl component
@@ -28,7 +29,7 @@ from collections import Counter
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from kstrl import git, pr
 from kstrl.adequacy import is_test_path
@@ -55,10 +56,14 @@ from kstrl.statedir import STATE_DIR_NAME, state_dir
 from kstrl.toolchains import is_python_project
 from kstrl.verify import VerifyConfig, resolve_verify_commands
 
+if TYPE_CHECKING:
+    from kstrl.ui.base import UI
+
 #: Version of the `ks doctor --json` document. Its own number, not
 #: `CHECK_SCHEMA_VERSION`: the two documents answer different
 #: questions and a reader of one must not infer the other's shape.
-DOCTOR_SCHEMA_VERSION = 1
+#: 2 (#654): the `base_gates` key joined, null without `--measure`.
+DOCTOR_SCHEMA_VERSION = 2
 
 STATUS_OK = "ok"
 STATUS_WARN = "warn"
@@ -79,16 +84,6 @@ DOCTOR_DIR_NAME = "doctor"
 
 _STAMP_FORMAT = "%Y%m%d-%H%M%S"
 
-#: What `--measure` says instead of measuring. Tier B is not built;
-#: the measurement it would wrap already ships as `ks check` (#222).
-MEASURE_NOT_BUILT = (
-    "ks doctor --measure (Tier B) is not built. The measurement it would "
-    "run already ships as `ks check`, which runs the mechanical checks "
-    "against a tree with no PRD, branch, worktree or agent spend: try "
-    "`ks check --root <path> --json`. Tier B adds a flakiness smoke and a "
-    "cost projection on top of that and is tracked on issue #198."
-)
-
 #: What a green verdict does NOT mean. Printed in every report and
 #: mirrored in docs/runbook.md; the issue makes both a condition of
 #: being done.
@@ -102,11 +97,11 @@ FIT_BOUNDARIES: tuple[str, ...] = (
     "kstrl is not for spec-free exploration. Every iteration is graded "
     "against a PRD, so work whose acceptance criteria are not known yet "
     "has nothing to grade.",
-    "Tier A reads the repository and runs none of your commands, so it "
-    "cannot tell you whether your suite is green, fast or flaky. Run "
-    "`ks check` for that. `ks factory` runs your test, typecheck and lint "
-    "commands on the base branch before any engineer, and refuses to start "
-    "when one of them fails there.",
+    "Tier A reads the repository and runs none of your commands. `ks doctor "
+    "--measure` runs your test, typecheck and lint commands once on the base "
+    "branch, as `ks factory` does before any engineer and refuses to start "
+    "when one of them fails there. One run cannot tell you whether your "
+    "suite is fast or flaky.",
 )
 
 #: Paths worth protecting that kstrl does not protect by default.
@@ -742,9 +737,17 @@ def report_path(root: Path, stamp: str) -> Path:
     return directory / f"report-{stamp}.json"
 
 
-def diagnose(root: Path) -> dict[str, Any]:
-    """Run Tier A and build the report document. Writes nothing."""
+def diagnose(root: Path, measure_ui: UI | None = None) -> dict[str, Any]:
+    """Run Tier A, then Tier B when given a UI to report its progress on,
+    and build the report document. Only Tier B runs a repository command."""
     checks = run_checks(root)
+    reading: dict[str, Any] | None = None
+    if measure_ui is not None:
+        # Here, not at the top: doctor_measure imports this module.
+        from kstrl.doctor_measure import measure
+
+        row, reading = measure(root, checks, measure_ui)
+        checks.append(row)
     now = datetime.now(UTC)
     return {
         "schema_version": DOCTOR_SCHEMA_VERSION,
@@ -752,6 +755,7 @@ def diagnose(root: Path) -> dict[str, Any]:
         "generated_at": now.isoformat().replace("+00:00", "Z"),
         "verdict": verdict(checks),
         "checks": [dataclasses.asdict(check) for check in checks],
+        "base_gates": reading,
         "fix_first": fix_first(checks),
         "fit_boundaries": list(FIT_BOUNDARIES),
         "report_path": str(report_path(root, now.strftime(_STAMP_FORMAT))),

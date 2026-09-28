@@ -572,10 +572,11 @@ EXPECTED_MEASUREMENT_READS: dict[str, int] = {
     # any engineer call. Not the #227 fail-open: this adds a refusal and
     # decides no pass, and a row it lets through (measured=False) still
     # meets Phase 1 unchanged on every component, which fails it. The other
-    # two reads print and record the row.
+    # two reads print and record the row; `ks doctor --measure` reports
+    # the same record.
     "base_gates.py: refusal_lines: check.measured": 1,
     "base_gates.py: warning_lines: check.measured": 1,
-    "base_gates.py: write_record: check.measured": 1,
+    "base_gates.py: reading_document: check.measured": 1,
     # The baseline: which checks may have a missing signature read as fixed.
     "baseline.py: _measured_and_unmeasured: check.measured": 2,
     # Not CheckResult.measured. IterationReading's own field, #233: whether
