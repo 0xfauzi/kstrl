@@ -167,6 +167,22 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Changed
 
+- `ks learn repair` lists every global playbook line the fold refuses
+  and writes nothing; `ks learn repair --yes` appends the VOIDs, as it
+  did before (#217). A VOID is permanent and the ledger is shared by
+  every project on the machine, so the write now needs the flag.
+
+- The GEPA report (`report.json` from `run_optimization`) carries a
+  `verdict` of `improved`, `not improved` or `refused`, with
+  `verdict_reasons`, and each candidate's `val_outcomes` by validation
+  fixture (#217). A reply the role's parser rejects scores 0.0, as a
+  miss does, so a seed whose validation pass met an outage read as
+  beaten; the verdict is `refused` whenever the seed or the best
+  candidate has a validation reply that did not parse, or no recorded
+  outcome. The report also records the reflection model's usage as
+  `reflection_usage` (null when the reflection model is not a
+  `ReflectionModel`).
+
 - A kstrl.toml name that no setting reads is refused before anything
   starts (#525). A misspelled key or section, and a section written as a
   value (`learning = false` for `[learning]`), used to load in silence and
