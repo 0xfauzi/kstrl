@@ -21,6 +21,7 @@ import pytest
 
 from kstrl import factory
 from kstrl.timeout import TimeoutConfig
+from kstrl.ui.plain import PlainUI
 from tests.spine_utils import component, git, init_kstrl_repo, make_manifest
 from tests.test_spine_dependency_base import (
     SHARED_BRANCH,
@@ -115,12 +116,16 @@ def test_a_failed_fresh_setup_leaves_the_shared_branch_where_it_was(tmp_path: Pa
     root = tmp_path / "repo"
     init_kstrl_repo(root, ("a", "c"))
     run_id = "run-566"
-    wt_a = factory._setup_worktree("a", SHARED_BRANCH, "main", root, run_id)
+    wt_a = factory._setup_worktree(
+        "a", SHARED_BRANCH, "main", root, run_id, ui=PlainUI(no_color=True)
+    )
     (wt_a / "a.txt").write_text("a\n")
     git("add", "a.txt", cwd=wt_a)
     git("commit", "-q", "-m", "a", cwd=wt_a)
     factory._cleanup_worktree("a", root, run_id)
-    wt_c = factory._setup_worktree("c", SHARED_BRANCH, "main", root, run_id)
+    wt_c = factory._setup_worktree(
+        "c", SHARED_BRANCH, "main", root, run_id, ui=PlainUI(no_color=True)
+    )
     (wt_c / "c.txt").write_text("killed\n")
     git("add", "c.txt", cwd=wt_c)
     git("commit", "-q", "-m", "c-killed", cwd=wt_c)
@@ -136,6 +141,7 @@ def test_a_failed_fresh_setup_leaves_the_shared_branch_where_it_was(tmp_path: Pa
             run_id,
             fresh_from_base=True,
             recut_at="0" * 40,
+            ui=PlainUI(no_color=True),
         )
 
     assert git("rev-parse", SHARED_BRANCH, cwd=root) == killed_tip

@@ -1,5 +1,7 @@
 """A process left in a contract, integration or retry-evidence worktree dies
-before that worktree is removed, and a warning names it (#528).
+before that worktree is removed, and a warning names it (#528). So does one
+left in a stale worktree the next run prunes, or in a component worktree a
+retry recreates (#642).
 
 #461 swept the component worktrees. Three other worktrees kstrl creates were
 removed with nothing killed: the Phase 3 contract worktrees, where the
@@ -9,9 +11,11 @@ with a shell tool runs; and the failed attempt's evidence worktree that
 ``ks retry`` removes. A process started in a session of its own in any of
 them outlived the worktree, the phase and the run.
 
-None of these worktrees belongs to one component, so there is no component
-finding to hold the record. The record is a warning line, which a factory
-run also writes to its events.jsonl.
+The record is a warning line, which a factory run also writes to its
+events.jsonl. None of the first three worktrees belongs to one component,
+and a stale worktree belongs to no component of the run that prunes it, so
+no component finding can hold the record. The retry's setup warns the same
+way, because ``_setup_worktree`` is handed a UI and not the run's pipeline.
 
 Every process here is one a command the test supplied started, and whose pid
 it wrote to a file outside the worktree (#292). Each ignores SIGTERM, as the
@@ -41,7 +45,10 @@ from tests.helpers import integration_harness as harness
 from tests.helpers import procs
 from tests.helpers.run_limits import every_limit_argv
 from tests.test_agent_processes_outlive_run import (
+    COMP,
     COMPLETE,
+    _deaf_sleep_in,
+    _dispose,
     _factory,
     _repo,
     _stop_factory,
@@ -147,6 +154,68 @@ def test_the_contract_check_kills_and_names_what_its_test_command_left(
             assert _names(events, pid, "contract"), (
                 f"no contract warning in events.jsonl names pid {pid}"
             )
+    finally:
+        _stop_factory(proc)
+        _kill(pidfile)
+
+
+@pytest.mark.parametrize("layout", ["run-dir", "flat"])
+def test_the_next_run_kills_and_names_what_a_stale_worktree_held(
+    tmp_path: Path, layout: str
+) -> None:
+    """A previous run that was killed leaves its worktrees, and whatever its
+    agents' tools left running in them. The next run's prune removes the
+    directories; the processes go first (#461) and a warning names each
+    (#642). ``flat`` is the pre-R0.5 layout, a worktree directly under
+    ``.kstrl/worktrees/``, which the prune recognises by the ``.git`` file
+    inside it. The two layouts are the prune's two sweeps."""
+    root = _repo(tmp_path)
+    worktrees = root / ".kstrl" / "worktrees"
+    stale = worktrees / "factory-old" / COMP if layout == "run-dir" else worktrees / "comp-old"
+    stale.mkdir(parents=True)
+    if layout == "flat":
+        (stale / ".git").write_text("gitdir: /nonexistent\n", encoding="utf-8")
+    child = _deaf_sleep_in(stale)
+    proc = _factory(root, COMPLETE, "1")
+    try:
+        out, _ = proc.communicate(timeout=240)
+        assert proc.returncode == 0, out
+        assert child.wait(timeout=10) == -signal.SIGKILL
+        assert not stale.exists()
+        assert _names(_run_warnings(root), child.pid, "stale worktree"), (
+            f"no stale worktree warning in events.jsonl names pid {child.pid}"
+        )
+    finally:
+        _stop_factory(proc)
+        _dispose(child)
+
+
+def test_a_retry_kills_and_names_what_phase_1_left_in_the_worktree(tmp_path: Path) -> None:
+    """A retry recreates the component's worktree at the same path. Phase 1's
+    test command leaves a process there and fails; with one retry allowed,
+    the retry's worktree setup is the first sweep of that worktree after
+    Phase 1, and it kills the process and names it (#642). The command also
+    runs in the base-gate worktree and in the second attempt's Phase 1, so
+    the first row recorded in the component worktree is the one the retry
+    kills."""
+    root = _repo(tmp_path)
+    pidfile = tmp_path / "phase1.pids"
+    command = f"{shlex.join(_leaves_a_process(tmp_path, pidfile))} && exit 1"
+    proc = _factory(root, COMPLETE, "1", "--max-retries", "1", "--test-command", command)
+    try:
+        out, _ = proc.communicate(timeout=240)
+        in_worktree = [row for row in _left(pidfile) if "/.kstrl/worktrees/" in row[1]]
+        assert len(in_worktree) == 2, (
+            f"precondition: Phase 1 ran once per attempt in the component worktree: "
+            f"{_left(pidfile)}\n{out}"
+        )
+        pid, cwd = in_worktree[0]
+        assert procs.wait_for_pid_to_die(pid, timeout=10), (
+            f"pid {pid}, left in the component worktree {cwd}, outlived the retry's setup"
+        )
+        assert _names(_run_warnings(root), pid, "worktree setup"), (
+            f"no worktree setup warning in events.jsonl names pid {pid}"
+        )
     finally:
         _stop_factory(proc)
         _kill(pidfile)

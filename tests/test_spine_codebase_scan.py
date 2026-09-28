@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 
 from kstrl.factory import _run_component, _setup_worktree
+from kstrl.ui.plain import PlainUI
 from tests.helpers.context_sweeps import section
 from tests.spine_utils import COMPLETE_LINE, init_kstrl_repo
 
@@ -52,7 +53,9 @@ def _prompt_for(base: Path, write: Callable[[Path], None]) -> str:
     """
     root = base / "repo"
     init_kstrl_repo(root, (COMP,))
-    worktree = _setup_worktree(COMP, BRANCH, "main", root, "spine-run-scan")
+    worktree = _setup_worktree(
+        COMP, BRANCH, "main", root, "spine-run-scan", ui=PlainUI(no_color=True)
+    )
     write(worktree)
 
     capture = base / "capture"

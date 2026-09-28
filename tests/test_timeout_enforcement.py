@@ -1336,7 +1336,7 @@ class TestWorktreeTimeoutHygiene:
 
     def test_fresh_from_base_resets_branch(self, tmp_path: Path) -> None:
         _init_repo(tmp_path)
-        wt = _setup_worktree("a", "b/a", "main", tmp_path, "run1")
+        wt = _setup_worktree("a", "b/a", "main", tmp_path, "run1", ui=PlainUI(no_color=True))
 
         # Simulate a killed attempt that left a commit on the branch.
         (wt / "leftover.txt").write_text("dirty state from killed attempt")
@@ -1370,6 +1370,7 @@ class TestWorktreeTimeoutHygiene:
             tmp_path,
             "run1",
             fresh_from_base=True,
+            ui=PlainUI(no_color=True),
         )
 
         new_tip = subprocess.run(
@@ -1387,7 +1388,7 @@ class TestWorktreeTimeoutHygiene:
         """Without fresh_from_base the existing branch is reused (the
         pre-R0.1 retry behavior for non-timeout failures is preserved)."""
         _init_repo(tmp_path)
-        wt = _setup_worktree("a", "b/a", "main", tmp_path, "run1")
+        wt = _setup_worktree("a", "b/a", "main", tmp_path, "run1", ui=PlainUI(no_color=True))
         (wt / "progress.txt").write_text("legit progress")
         _git("add", "-A", cwd=wt)
         _git("commit", "-q", "-m", "progress", cwd=wt)
@@ -1399,7 +1400,7 @@ class TestWorktreeTimeoutHygiene:
             timeout=30,
         ).stdout.strip()
 
-        _setup_worktree("a", "b/a", "main", tmp_path, "run1")
+        _setup_worktree("a", "b/a", "main", tmp_path, "run1", ui=PlainUI(no_color=True))
 
         new_tip = subprocess.run(
             ["git", "rev-parse", "b/a"],

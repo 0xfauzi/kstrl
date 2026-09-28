@@ -64,9 +64,12 @@ _SETUP_CHILD_SCRIPT = """
 import sys
 from pathlib import Path
 from kstrl.factory import _setup_worktree
+from kstrl.ui.plain import PlainUI
 root = Path(sys.argv[1])
 Path(sys.argv[2]).write_text("ready")
-wt = _setup_worktree("comp-a", "kstrl/factory/comp-a", "main", root, sys.argv[3])
+wt = _setup_worktree(
+    "comp-a", "kstrl/factory/comp-a", "main", root, sys.argv[3], ui=PlainUI(no_color=True)
+)
 print(wt, flush=True)
 """
 
@@ -107,7 +110,7 @@ class TestWorktreeLifecycle:
         root = tmp_path / "repo"
         main_sha, develop_sha = _init_plain_repo(root)
 
-        wt = _setup_worktree(COMP, BRANCH, "develop", root, RUN_ID)
+        wt = _setup_worktree(COMP, BRANCH, "develop", root, RUN_ID, ui=PlainUI(no_color=True))
 
         assert wt == root / ".kstrl" / "worktrees" / RUN_ID / COMP
         assert wt.is_dir()
@@ -143,7 +146,7 @@ class TestWorktreeLifecycle:
         git("push", "-q", "origin", "develop", cwd=clone)
         remote_develop_sha = git("rev-parse", "HEAD", cwd=clone)
 
-        wt = _setup_worktree(COMP, BRANCH, "develop", root, RUN_ID)
+        wt = _setup_worktree(COMP, BRANCH, "develop", root, RUN_ID, ui=PlainUI(no_color=True))
 
         head = git("rev-parse", "HEAD", cwd=wt)
         assert head == remote_develop_sha
@@ -158,7 +161,7 @@ class TestWorktreeLifecycle:
         component branch survives (it is only deleted at merge time)."""
         root = tmp_path / "repo"
         _init_plain_repo(root)
-        wt = _setup_worktree(COMP, BRANCH, "develop", root, RUN_ID)
+        wt = _setup_worktree(COMP, BRANCH, "develop", root, RUN_ID, ui=PlainUI(no_color=True))
 
         _cleanup_worktree(COMP, root, RUN_ID)
 
@@ -176,7 +179,7 @@ class TestWorktreeLifecycle:
         (non-timeout retry semantics), dropping uncommitted dirt."""
         root = tmp_path / "repo"
         _init_plain_repo(root)
-        wt = _setup_worktree(COMP, BRANCH, "develop", root, RUN_ID)
+        wt = _setup_worktree(COMP, BRANCH, "develop", root, RUN_ID, ui=PlainUI(no_color=True))
 
         # Simulate the crashed attempt: one committed step of progress,
         # one uncommitted file, and git killed mid-operation.
@@ -189,7 +192,7 @@ class TestWorktreeLifecycle:
         stale_lock.parent.mkdir(parents=True, exist_ok=True)
         stale_lock.write_text("")
 
-        wt2 = _setup_worktree(COMP, BRANCH, "develop", root, RUN_ID)
+        wt2 = _setup_worktree(COMP, BRANCH, "develop", root, RUN_ID, ui=PlainUI(no_color=True))
 
         assert wt2 == wt
         assert not stale_lock.exists()
@@ -207,7 +210,7 @@ class TestWorktreeLifecycle:
         attempt's possibly-poisoned commits."""
         root = tmp_path / "repo"
         _, develop_sha = _init_plain_repo(root)
-        wt = _setup_worktree(COMP, BRANCH, "develop", root, RUN_ID)
+        wt = _setup_worktree(COMP, BRANCH, "develop", root, RUN_ID, ui=PlainUI(no_color=True))
         (wt / "poisoned.txt").write_text("from the killed attempt\n")
         git("add", "poisoned.txt", cwd=wt)
         git("commit", "-q", "-m", "poisoned progress", cwd=wt)
@@ -220,6 +223,7 @@ class TestWorktreeLifecycle:
             root,
             RUN_ID,
             fresh_from_base=True,
+            ui=PlainUI(no_color=True),
         )
 
         head = git("rev-parse", "HEAD", cwd=wt2)
@@ -238,10 +242,10 @@ class TestWorktreeLifecycle:
         any other same-run retry)."""
         root = tmp_path / "repo"
         _init_plain_repo(root)
-        wt = _setup_worktree(COMP, BRANCH, "develop", root, RUN_ID)
+        wt = _setup_worktree(COMP, BRANCH, "develop", root, RUN_ID, ui=PlainUI(no_color=True))
         shutil.rmtree(wt)  # dir gone, .git/worktrees/comp-a/ remains
 
-        wt2 = _setup_worktree(COMP, BRANCH, "develop", root, RUN_ID)
+        wt2 = _setup_worktree(COMP, BRANCH, "develop", root, RUN_ID, ui=PlainUI(no_color=True))
 
         assert wt2.is_dir()
         assert git("branch", "--show-current", cwd=wt2) == BRANCH

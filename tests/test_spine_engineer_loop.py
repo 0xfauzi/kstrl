@@ -54,7 +54,7 @@ class TestEngineerLoopPlumbing:
     ) -> None:
         root = tmp_path / "repo"
         init_kstrl_repo(root, (COMP,))
-        worktree = _setup_worktree(COMP, BRANCH, "main", root, RUN_ID)
+        worktree = _setup_worktree(COMP, BRANCH, "main", root, RUN_ID, ui=PlainUI(no_color=True))
         # The gitignored inputs are NOT in the fresh worktree via git;
         # only _run_component's provisioning can put them there.
         assert not (worktree / PRD_REL).exists()
@@ -137,7 +137,7 @@ class TestEngineerLoopPlumbing:
         """
         root = tmp_path / "repo"
         init_kstrl_repo(root, (COMP,))
-        worktree = _setup_worktree(COMP, BRANCH, "main", root, RUN_ID)
+        worktree = _setup_worktree(COMP, BRANCH, "main", root, RUN_ID, ui=PlainUI(no_color=True))
 
         # The state a second iteration starts from: a copy already in
         # place, differing from the root's.
@@ -212,7 +212,7 @@ def _repo_with_source(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
     (root / "src" / "mod.py").write_text("def f() -> int:\n    return 1\n")
     git("add", "src/mod.py", cwd=root)
     git("commit", "-q", "-m", "src", cwd=root)
-    worktree = _setup_worktree(COMP, BRANCH, "main", root, RUN_ID)
+    worktree = _setup_worktree(COMP, BRANCH, "main", root, RUN_ID, ui=PlainUI(no_color=True))
 
     cap = tmp_path / "capture"
     cap.mkdir()
