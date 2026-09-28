@@ -332,9 +332,15 @@ def approval_effect(item: InboxItem) -> str | None:
     if reason:
         return f"records approval only: {reason}"
     explanation = item.evidence["explanation"]
+    head = item.evidence.get("head_sha")
+    seen = (
+        f"found on commit {head[:12]}"
+        if isinstance(head, str) and head
+        else "the item records no commit"
+    )
     return (
-        f"waives this one finding for {item.component}: {explanation!r}. It applies when "
-        "the next run reproduces it exactly (same category, location and explanation); a "
-        "regenerated change that reads differently is a new finding. Any other finding "
+        f"waives this one finding for {item.component}: {explanation!r} ({seen}). It applies "
+        "when the next run reproduces it exactly (same category, location and explanation); "
+        "a regenerated change that reads differently is a new finding. Any other finding "
         f"still fails, and ks inbox reject {item.id[:8]} withdraws the waiver."
     )
