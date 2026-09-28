@@ -456,6 +456,7 @@ def test_doctor_measure_reports_a_red_base_not_ready(tmp_path: Path) -> None:
     assert text_code == 1, text
     assert "[fail] base_gates" in text
     assert "test_broken" in text
+    assert "xfail(strict=True)" in text
     assert code == 1, document
     assert document["verdict"] == "not-ready"
     reading = document["base_gates"]
@@ -571,3 +572,19 @@ def test_doctor_measure_takes_the_reading_ks_factory_takes(tmp_path: Path) -> No
         _row(document["base_gates"], "test_suite")["failing"]
         == _row(record, "test_suite")["failing"]
     )
+
+
+def test_doctor_measure_still_measures_under_a_config_that_only_warns(tmp_path: Path) -> None:
+    """A kstrl.toml whose only problem is a section kstrl continues without
+    ([evolution]) is a warning on kstrl_config, not a failure: every
+    command still starts on it, so `ks doctor --measure` still measures."""
+    root = _repo(tmp_path, {"tests/test_base.py": GREEN})
+    _commit(root, "kstrl.toml", '[evolution]\nlookback_runs = "many"\n')
+
+    code, document = _doctor_json(root, GATE_ENV)
+
+    (config_row,) = [row for row in document["checks"] if row["name"] == "kstrl_config"]
+    assert config_row["status"] == "warn", config_row
+    assert code == 0, document
+    assert _doctor_row(document)["status"] == "ok"
+    assert document["base_gates"]["refused"] is False
