@@ -76,7 +76,7 @@ in the package - three sites, all compliant as of this change:
 
     kstrl/config_toml.py  except Exception  (#318 round 3)
     kstrl/verify.py       except Exception  (#318 round 3, was ValueError)
-    kstrl/feedforward.py  except Exception  (x2, pre-existing)
+    kstrl/feedforward.py  except Exception  (x2, pre-existing; x1, #626)
 
 WHAT THIS GUARD SEES, STATED HONESTLY
 -------------------------------------
@@ -353,8 +353,8 @@ def _scan_file(source: Path) -> Scan:
 EXPECTED_TOMLLIB_SPELLINGS: dict[str, int] = {
     # the import, the parse, and the TOMLDecodeError clause above it
     "config_toml.py": 3,
-    # the import and two parses
-    "feedforward.py": 3,
+    # the import and three parses (#626 added `_read_toml`)
+    "feedforward.py": 4,
     # a function-local import and one parse
     "verify.py": 2,
 }
@@ -363,6 +363,7 @@ EXPECTED_TOMLLIB_SPELLINGS: dict[str, int] = {
 #: in three modules, and the same three the docstring names.
 EXPECTED_TOML_PARSES: tuple[str, ...] = (
     "config_toml.py: tomllib.loads",
+    "feedforward.py: tomllib.loads",
     "feedforward.py: tomllib.loads",
     "feedforward.py: tomllib.loads",
     "verify.py: tomllib.loads",
@@ -529,9 +530,10 @@ class TestTheWalkSeesWhatItClaimsTo:
 
     def test_the_broad_clause_must_be_last_in_any_file_not_just_config(self) -> None:
         """Order is a property of the rule, not of one function.
-        ``test_the_broad_handler_must_come_last`` in
-        ``tests/test_config_toml.py`` pins it behaviourally for
-        ``load_toml_document``; this pins it structurally for a reader
+        ``TestAConfigThatWillNotParseIsReportedNotCrashed`` in
+        ``tests/test_config_preflight.py`` pins it behaviourally for
+        ``load_toml_document`` by driving every ``TOML_PARSE_FAULTS`` row
+        through the real commands; this pins it structurally for a reader
         that does not exist yet."""
         wrong = (
             "import tomllib\ndef f(fh):\n    try:\n        return tomllib.load(fh)\n"

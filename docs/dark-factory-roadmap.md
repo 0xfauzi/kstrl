@@ -412,6 +412,13 @@ calibration regression beyond baseline tolerance, health-metric breach
 re-promotion locked for 10 decisive runs after a demotion. Every demotion
 emits an inbox item carrying the triggering evidence.
 
+**L1 plan approval (#602).** Enforced in `kstrl/plan_gate.py::run_plan_gate`, called from
+`run_factory` after every pre-spend refusal and before anything is pushed, merged or scheduled. At L1
+it asks through the interaction channel; only an answered approval runs the plan. Anything else parks
+it as a `plan_gate` inbox item bound to a SHA-256 of the plan, and `ks inbox approve` or
+`ks inbox reject` decides it. `--yes` does not approve a plan. L2 and above, and a disabled ladder,
+ask nothing.
+
 **Failure modes.** Demotion flapping on 3-run noise (minimum n >= 8 decisive
 runs, EWMA not raw points, cool-down); Goodhart pressure lowering retry rate
 by weakening verification (calibration detection rate stays in the demotion

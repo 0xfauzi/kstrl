@@ -128,6 +128,7 @@ from kstrl.pipeline import (
     PipelineHooks,
     _iso_now,
 )
+from kstrl.plan_gate import run_plan_gate
 from kstrl.policy import PolicyConfig
 from kstrl.pr import create_prs_in_order, create_single_pr
 from kstrl.release import RELEASE_REF_RULE, ReleaseInputs, release_ref_from, release_withheld
@@ -246,6 +247,13 @@ class FactoryConfig:
     review_agent_cmd: str | None = None
     review_agent_type: str | None = None
     review_model: str | None = None
+    # #603: the code and integration reviewer's call limit, and the
+    # architect's (`ks decompose`, `ks factory --spec`). Both run in the
+    # parent process, so with no limit a hung call holds the whole run.
+    # 0 means no limit (#467); a call killed at its limit is an
+    # infrastructure error, never a verdict.
+    review_timeout_seconds: float = 0.0
+    architect_timeout_seconds: float = 0.0
     # Phase 2.5: security review (separate LLM call after Phase 2 review)
     security_config: SecurityConfig | None = None
     # Phase 3: contract testing
@@ -444,6 +452,14 @@ class FactoryConfig:
             retry_delay=float(os.environ.get("FACTORY_RETRY_DELAY", "5.0")),
             merge_timeout=float(os.environ.get("FACTORY_MERGE_TIMEOUT", "300.0")),
             max_adversarial_calls=int(os.environ.get("KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS", "0")),
+            review_timeout_seconds=check_number(
+                float(os.environ.get("KSTRL_FACTORY_REVIEW_TIMEOUT_SECONDS", "0")),
+                "KSTRL_FACTORY_REVIEW_TIMEOUT_SECONDS",
+            ),
+            architect_timeout_seconds=check_number(
+                float(os.environ.get("KSTRL_FACTORY_ARCHITECT_TIMEOUT_SECONDS", "0")),
+                "KSTRL_FACTORY_ARCHITECT_TIMEOUT_SECONDS",
+            ),
             max_total_tokens=check_number(
                 int(os.environ.get("KSTRL_FACTORY_MAX_TOTAL_TOKENS", "0")),
                 "KSTRL_FACTORY_MAX_TOTAL_TOKENS",
@@ -529,6 +545,14 @@ class FactoryConfig:
             )
         if "merge_timeout" in section:
             config.merge_timeout = float(section["merge_timeout"])
+        # #603: read without a branch, as integration_max_rounds is below,
+        # so this loader's cyclomatic complexity does not grow.
+        config.review_timeout_seconds = float(
+            section.get("review_timeout_seconds", config.review_timeout_seconds)
+        )
+        config.architect_timeout_seconds = float(
+            section.get("architect_timeout_seconds", config.architect_timeout_seconds)
+        )
         # R2.2: the two safety knobs are reachable via toml (here), env
         # (below) and CLI flags (cli.py factory command).
         if "max_adversarial_calls" in section:
@@ -583,6 +607,14 @@ class FactoryConfig:
             config.merge_timeout = float(os.environ["FACTORY_MERGE_TIMEOUT"])
         if "KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS" in os.environ:
             config.max_adversarial_calls = int(os.environ["KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS"])
+        config.review_timeout_seconds = float(
+            os.environ.get("KSTRL_FACTORY_REVIEW_TIMEOUT_SECONDS", config.review_timeout_seconds)
+        )
+        config.architect_timeout_seconds = float(
+            os.environ.get(
+                "KSTRL_FACTORY_ARCHITECT_TIMEOUT_SECONDS", config.architect_timeout_seconds
+            )
+        )
         if "KSTRL_FACTORY_MAX_TOTAL_TOKENS" in os.environ:
             config.max_total_tokens = check_number(
                 int(os.environ["KSTRL_FACTORY_MAX_TOTAL_TOKENS"]), "KSTRL_FACTORY_MAX_TOTAL_TOKENS"
@@ -3898,6 +3930,25 @@ def _has_merged(comp: Component) -> bool:
     return comp.status == ComponentStatus.COMPLETED.value and bool(comp.pr_url)
 
 
+def _plan_gated(
+    decisions: tuple[SpecDecision, ...] | None,
+    pipeline: ComponentPipeline,
+    ladder: _LadderOutcome | None,
+) -> tuple[SpecDecision, ...] | int:
+    """The preflights' decisions, or the exit code that ends the run.
+
+    2 when a preflight refused (``decisions is None``), and then the plan
+    gate asks nothing. Otherwise the #602 plan gate runs on the CLAMPED
+    bundle, after every pre-spend refusal and before the feature base is
+    stamped and parked merges are applied, so a plan nobody approved
+    pushes, merges and runs nothing: its park is 1 and a rejection 2.
+    """
+    if decisions is None:
+        return 2
+    stop = run_plan_gate(pipeline, ladder.bundle if ladder is not None else None)
+    return decisions if stop is None else stop
+
+
 def _stamp_feature_base(manifest: Manifest, manifest_path: Path, root_dir: Path, ui: UI) -> None:
     """Record the commit this feature starts from, once (#481).
 
@@ -4721,24 +4772,27 @@ def _run_factory_locked(
         )
     _warn_unsandboxable_reviewers(ui, review_selection, security_selection)
 
-    run_decisions = _run_preflights(
-        manifest,
-        run_scope,
-        root_dir,
-        factory_config,
-        run_id,
-        ui,
-        lock_held=lock_held,
-        manifest_path=manifest_path,
-        interrupted_branches=interrupted_branches,
-        timeout_cfg=timeout_cfg,
+    run_decisions = _plan_gated(
+        _run_preflights(
+            manifest,
+            run_scope,
+            root_dir,
+            factory_config,
+            run_id,
+            ui,
+            lock_held=lock_held,
+            manifest_path=manifest_path,
+            interrupted_branches=interrupted_branches,
+            timeout_cfg=timeout_cfg,
+        ),
+        pipeline,
+        ladder,
     )
-    # ``is None`` and not falsiness: a clean run with no decisions binds
-    # the empty tuple, which is the normal state for every project that
-    # predates #260, and treating that as a refusal would stop the
-    # factory on every one of them.
-    if run_decisions is None:
-        factory_result.exit_code = 2
+    # An int is the exit code of a refusal or of the #602 plan gate. Not
+    # falsiness: a clean run with no decisions binds the empty tuple, which
+    # is the normal state for every project that predates #260.
+    if isinstance(run_decisions, int):
+        factory_result.exit_code = run_decisions
         return factory_result
     # #481: after the refusals (a refused run stamps nothing) and the
     # worktree preflight's fetch, and before the merge decisions below,

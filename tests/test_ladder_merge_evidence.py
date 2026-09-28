@@ -40,6 +40,7 @@ from kstrl.manifest import Manifest
 from kstrl.review import CriterionReview, ReviewResult
 from kstrl.ui.plain import PlainUI
 from tests.helpers.executables import write_executable
+from tests.helpers.plan_approval import approve_plan
 from tests.helpers.replay import clean_run, run_record, write_runs
 from tests.spine_utils import (
     base_config,
@@ -213,6 +214,9 @@ def _run(
     manifest = (
         Manifest.load(path) if path.exists() else make_manifest([component(c) for c in comps])
     )
+    # #602: an L1 run parks an unapproved plan before it becomes decisive;
+    # these tests measure merge evidence, so the plan is approved first.
+    approve_plan(root, manifest)
     config = factory_config(create_prs=create_prs, merge_timeout=merge_timeout)
     if explicit_pause:
         config.pause_before_pr_merge = True

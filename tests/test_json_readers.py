@@ -126,6 +126,9 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     # #509: the import, one json.dumps for the ledger line, and the
     # json.JSONDecodeError it catches from read_json. No parse.
     "playbook.py": 3,
+    # #602: the import and one json.dumps, the plan digest's canonical
+    # form. No parse: the PRDs are read through PRD.load.
+    "plan_gate.py": 2,
     "policy.py": 2,
     "prd.py": 2,
     "sandbox.py": 3,

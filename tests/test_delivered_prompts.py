@@ -98,6 +98,7 @@ from tests.helpers.builder_prompts import BUILDER_RENDER_EXEMPT
 from tests.helpers.component_prd import write_component_prd
 from tests.helpers.feedforward_prompts import NOTICE_PROMPTS
 from tests.helpers.prompt_calls import architect_call
+from tests.helpers.recording_agent import RecordingAgent
 from tests.test_prompt_versions import (
     _MARKER_HEAD,
     _MARKER_TAIL,
@@ -107,7 +108,6 @@ from tests.test_prompt_versions import (
     _run_and_capture_prompt,
     _sha256,
 )
-from tests.test_review_payload import RecordingAgent
 from tests.test_verify_command_contract import _engineer_prompt
 
 # ---------------------------------------------------------------------------
@@ -318,8 +318,8 @@ _ROLES: dict[str, _Role] = {
     "integration-reviewer": _Role(
         _integration_reviewer,
         frozenset({"REVIEWER_PROMPT", "REPO_CHANGE_SOURCE_PROMPT"}),
-        "cc7c47df2fcc495a022465a0c5d7b9fa75d602360f3fd3e5dddb58aeb1eb8619",
-        9974,
+        "42ec51c25b5e1bdf1c5c81b8637eeaaba3acdcd7a595229a767e04e4e54fabcc",
+        10910,
     ),
     "pasted-change-source": _Role(
         lambda _p: git.pasted_change_source(_DIFF_TEXT)[0],
@@ -330,8 +330,8 @@ _ROLES: dict[str, _Role] = {
     "reviewer": _Role(
         _reviewer,
         frozenset({"REVIEWER_PROMPT", "REPO_CHANGE_SOURCE_PROMPT"}),
-        "d6b1300640142c90826bab67073af0e0182cc06235e6cd26f77a3d5265b80e11",
-        7601,
+        "9a3e07ce60cf63e71e9e0f8f403bfe7880f3c381e539816a2b4f1c07ee75f24b",
+        8537,
     ),
     "security": _Role(
         # Two arguments, exactly as ``run_security_review`` calls it
@@ -511,6 +511,7 @@ def _run_decompose_and_capture_prompt(tmp_path: Path, monkeypatch: pytest.Monkey
             root_dir=tmp_path,
             max_retries=1,
             prompt_call=architect_call(tmp_path),
+            timeout=None,
         )
     assert agent.prompts, "decompose_spec never called its agent, so this proves nothing."
     return agent.prompts[0]

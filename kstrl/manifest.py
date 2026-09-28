@@ -239,6 +239,9 @@ class Manifest:
     # manifest from before #481, one a component had merged into before
     # any run stamped it, or a base that did not resolve.
     feature_base_sha: str = ""
+    # #602: the digest of the plan an L1 run parked for approval, "" when
+    # none waits. Only the digest: the approval lives in the inbox.
+    plan_awaiting_approval: str = ""
 
     @classmethod
     def from_prd(
@@ -362,6 +365,7 @@ class Manifest:
             policy_hash=data.get("policyHash", ""),
             kstrl_version=data.get("kstrlVersion", ""),
             feature_base_sha=data.get("featureBaseSha", ""),
+            plan_awaiting_approval=data.get("planAwaitingApproval", ""),
         )
 
     def save(self, path: Path) -> None:
@@ -379,6 +383,7 @@ class Manifest:
             "policyHash": self.policy_hash,
             "kstrlVersion": self.kstrl_version,
             "featureBaseSha": self.feature_base_sha,
+            "planAwaitingApproval": self.plan_awaiting_approval,
             "components": [
                 {
                     "id": c.id,
@@ -463,7 +468,14 @@ class Manifest:
                 errors.append(f"baseBranch: {base_error}")
         if not isinstance(data.get("singlePr"), bool):
             errors.append("singlePr must be a boolean")
-        for key in ("runId", "completedAt", "policyHash", "kstrlVersion", "featureBaseSha"):
+        for key in (
+            "runId",
+            "completedAt",
+            "policyHash",
+            "kstrlVersion",
+            "featureBaseSha",
+            "planAwaitingApproval",
+        ):
             if key in data and not isinstance(data[key], str):
                 errors.append(f"{key} must be a string")
 

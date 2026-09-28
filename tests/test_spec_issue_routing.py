@@ -39,13 +39,13 @@ from tests.conftest import make_review_repo
 from tests.helpers.component_prd import write_component_prd
 from tests.helpers.prd_payload import _make_prd_payload
 from tests.helpers.prompt_calls import architect_call
+from tests.helpers.recording_agent import RecordingAgent
 from tests.test_decompose import (
     MockDecomposeAgent,
     _closures_for,
     _run_decompose,
     _with_ids,
 )
-from tests.test_review_payload import RecordingAgent
 
 # Component names in the shape the architect really produces. The first
 # is verbatim from the one decomposed component on disk in the
@@ -334,6 +334,7 @@ class TestHaltingIsUnchanged:
                 ui=PlainUI(no_color=True, file=io.StringIO()),
                 root_dir=tmp_path,
                 prompt_call=architect_call(tmp_path),
+                timeout=None,
             )
         assert list(tmp_path.rglob("prd.json")) == []
 

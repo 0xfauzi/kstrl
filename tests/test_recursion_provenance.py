@@ -50,9 +50,10 @@ monkeypatches ``EvolutionConfig.load`` to raise ``NotImplementedError``
 ``raise_if_defect``'s docstring names beside ``RecursionError`` - and
 asserts it propagates through BOTH ``collect_config_problems`` and
 :func:`config_problem_lines`.
-Direction (a) lives at the loader in ``test_config_toml.py``
-(``test_a_recursion_error_is_reported_not_raised``), one call below
-:func:`preflight_config`, and at the seam as the ``deep_nest`` row of
+Direction (a) is driven through the CLI in ``test_config_preflight.py``
+(``TestAConfigThatWillNotParseIsReportedNotCrashed``, the ``deep_nest``
+row of ``TOML_PARSE_FAULTS`` across every command), and at the seam as the
+``deep_nest`` row of
 ``TOML_PARSE_FAULTS`` crossed with ``["status"]`` in
 ``test_config_preflight.py`` - which is why the seam test below covers
 only direction (b) rather than restating that cell. Direction (b)

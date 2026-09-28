@@ -76,7 +76,8 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     "config_preflight.py": 2,  # the rule itself, and its docstring
     "contract.py": 1,
     "decisions.py": 1,  # DecisionRegisterError, added by #332
-    "decompose.py": 1,
+    # AgentOutputTooLarge, and AgentTimedOut since #603.
+    "decompose.py": 2,
     # One subclass, four bare raises. #543 added two: a dependency branch
     # that will not merge into a dependent's worktree, and a HEAD that
     # cannot be read when recording what the dependent is judged against.
