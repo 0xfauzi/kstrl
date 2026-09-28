@@ -104,7 +104,9 @@ FIT_BOUNDARIES: tuple[str, ...] = (
     "has nothing to grade.",
     "Tier A reads the repository and runs none of your commands, so it "
     "cannot tell you whether your suite is green, fast or flaky. Run "
-    "`ks check` for that.",
+    "`ks check` for that. `ks factory` runs your test, typecheck and lint "
+    "commands on the base branch before any engineer, and refuses to start "
+    "when one of them fails there.",
 )
 
 #: Paths worth protecting that kstrl does not protect by default.
