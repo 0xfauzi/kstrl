@@ -582,6 +582,11 @@ class TestNoHelperHandsOutAGroupItHasAlreadyKilled:
                 "    child.kill()\n"
                 "    child.wait(timeout=10)\n"
                 "    return child.pid\n",
+                "def reaped_from():\n"
+                "    child = subprocess.Popen(['sleep', '30'], start_new_session=True)\n"
+                "    kill_group(child.pid)\n"
+                "    child.wait(timeout=10)\n"
+                "    yield from [child.pid]\n",
             ),
             message=(
                 "A function in tests/ kills a process group and then hands out "
