@@ -263,6 +263,9 @@ EXPECTED_RECORDERS: dict[str, int] = {
 
 EXPECTED_RAW_SPAWNS: dict[str, int] = {
     "agents/codex.py:CodexAgent._codex_supports_output_last_message": 1,
+    # #642: the leash starts the agent `DeadlineStreamer` was handed, whose
+    # prompt the adapter recorded before it built the streamer.
+    "agents/leash.py:main": 1,
     "agents/proc.py:DeadlineStreamer.__init__": 1,
 }
 
