@@ -79,7 +79,11 @@ EXPECTED_CONSTRUCTION_COUNTS = {
     "cli.py": 1,
     "decisions.py": 2,
     "factory.py": 1,
-    "pipeline.py": 4,
+    # #595 (addendum): was 5, one construction per lazy-open site
+    # (ComponentPipeline.snapshot_waivers's own +1 among them). All five
+    # sites now build through ComponentPipeline._open_inbox, so there is
+    # exactly one Inbox(...) call left in the file.
+    "pipeline.py": 1,
     "plan_gate.py": 2,
     "serve.py": 2,
     "tui/operator_queue.py": 1,

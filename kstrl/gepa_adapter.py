@@ -42,7 +42,7 @@ source (the #217 plan, section 3.2):
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from importlib.metadata import version
 from pathlib import Path
@@ -50,7 +50,7 @@ from typing import Any, Protocol, cast
 
 from gepa.api import optimize
 from gepa.core.adapter import EvaluationBatch, ProposalFn
-from gepa.core.callbacks import GEPACallback, IterationStartEvent
+from gepa.core.callbacks import GEPACallback, IterationStartEvent, ValsetEvaluatedEvent
 from gepa.core.result import GEPAResult
 from gepa.core.state import GEPAState
 from gepa.proposer.reflective_mutation.base import LanguageModel
@@ -137,6 +137,11 @@ ROLES: tuple[str, ...] = ("reviewer", "security")
 #: (``tests.conftest.make_review_repo``), which the change-source block
 #: tells the reviewer to diff against, as the calibration suite does.
 FIXTURE_BASE_REF = "main"
+
+#: The outcome of a reply the role's parser rejected. It scores 0.0, as a
+#: miss does, so a score cannot tell the two apart; :func:`_verdict` reads
+#: this outcome instead.
+UNPARSEABLE_REPLY = "unparseable reply"
 
 
 def reflection_template() -> str:
@@ -271,7 +276,7 @@ def _match_security(reply: str, fixture: RoleFixture) -> _Match:
 def _trace(fixture: RoleFixture, match: _Match) -> FixtureTrace:
     """Score one matched reply. Higher is better for every gepa score."""
     if match.flagged is None:
-        score, outcome = 0.0, "unparseable reply"
+        score, outcome = 0.0, UNPARSEABLE_REPLY
         reason = f"the reply did not parse, so it measured nothing: {match.detail}"
     elif fixture.negative and match.flagged:
         score, outcome = 0.0, "false positive"
@@ -314,6 +319,10 @@ class KstrlGepaAdapter:
     #: Calls made to :attr:`runner`, counted before each call, so a call
     #: that raises still counts.
     role_calls: int = field(default=0, init=False)
+    #: The outcome of the latest evaluation of each ``(template,
+    #: fixture_id)`` pair. :class:`_StateKeeper` reads it when gepa
+    #: reports a candidate's validation pass, which is that pass's outcome.
+    outcomes: dict[tuple[str, str], str] = field(default_factory=dict, init=False)
     #: Part of gepa's adapter protocol. None tells gepa to propose with its
     #: own reflective proposer, which is the one that sends
     #: :data:`GEPA_REFLECTION_PROMPT`; an adapter that set this would
@@ -390,6 +399,7 @@ class KstrlGepaAdapter:
         traces: list[FixtureTrace] = []
         for fixture in batch:
             reply, trace = self._evaluate_one(template, fixture)
+            self.outcomes[(template, fixture.fixture_id)] = trace.outcome
             outputs.append(reply)
             traces.append(trace)
         return EvaluationBatch(
@@ -486,13 +496,62 @@ class _StateKeeper:
     ``gepa.optimize``, so this is where its report reads the candidates it
     scored. gepa adds a candidate to the state only after its whole
     validation pass, so a candidate cut off mid-pass is not in it.
+
+    It also keeps each candidate's validation outcomes, by candidate index
+    and fixture id. gepa reports a candidate's validation pass right after
+    the pass, so the adapter's latest outcome for each pair is the pass's.
+    gepa logs and swallows an exception raised here, which leaves the
+    candidate without outcomes, and :func:`_verdict` refuses that.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, adapter: KstrlGepaAdapter, validation: Sequence[RoleFixture]) -> None:
+        self.adapter = adapter
+        self.validation = validation
         self.state: GEPAState[str, int] | None = None
+        self.val_outcomes: dict[int, dict[str, str]] = {}
 
     def on_iteration_start(self, event: IterationStartEvent) -> None:
         self.state = event["state"]
+
+    def on_valset_evaluated(self, event: ValsetEvaluatedEvent) -> None:
+        prompt = event["candidate"][self.adapter.role]
+        ids = [self.validation[val_id].fixture_id for val_id in event["scores_by_val_id"]]
+        self.val_outcomes[event["candidate_idx"]] = {
+            fixture_id: self.adapter.outcomes[(prompt, fixture_id)]
+            for fixture_id in ids
+            if (prompt, fixture_id) in self.adapter.outcomes
+        }
+
+
+def _verdict(
+    best_idx: int,
+    scores: Sequence[float],
+    validation: Sequence[RoleFixture],
+    val_outcomes: Mapping[int, Mapping[str, str]],
+) -> tuple[str, list[str]]:
+    """``improved``, ``not improved`` or ``refused``, and why it was refused.
+
+    A reply the parser rejected scores 0.0, as a miss does, so a seed
+    whose validation pass met an outage reads as a worse prompt and any
+    candidate beats it. The comparison is refused when the seed or the
+    best candidate has a validation fixture whose reply did not parse, or
+    no recorded outcome at all: a gate rejects what it cannot parse and
+    never counts it as a score.
+    """
+    reasons = []
+    for idx in sorted({0, best_idx}):
+        outcomes = val_outcomes.get(idx, {})
+        for fixture in validation:
+            outcome = outcomes.get(fixture.fixture_id)
+            if outcome is None:
+                reasons.append(f"candidate {idx}: {fixture.fixture_id}: no outcome was recorded")
+            elif outcome == UNPARSEABLE_REPLY:
+                reasons.append(f"candidate {idx}: {fixture.fixture_id}: {outcome}")
+    if reasons:
+        return "refused", reasons
+    if best_idx != 0 and scores[best_idx] > scores[0]:
+        return "improved", []
+    return "not improved", []
 
 
 def run_optimization(
@@ -513,6 +572,11 @@ def run_optimization(
     The run makes at most ``max_metric_calls`` role calls. One stopped at
     that cap still writes the report, with ``stopped_at_cap`` true and
     every candidate that finished its validation pass.
+
+    The report's ``verdict`` is what a reader acts on, never ``val_score``
+    alone: ``refused`` (with ``verdict_reasons``) when the seed or the best
+    candidate met a reply that did not parse on a validation fixture, see
+    :func:`_verdict`. Each candidate carries its ``val_outcomes``.
     """
     train, validation = split_fixtures(role, fixtures)
     if max_metric_calls < len(validation):
@@ -528,7 +592,7 @@ def run_optimization(
             "unpickling its gepa_state.bin, so a run needs a directory that does not exist."
         ) from exc
     adapter = KstrlGepaAdapter(role, runner, max_role_calls=max_metric_calls)
-    keeper = _StateKeeper()
+    keeper = _StateKeeper(adapter, validation)
     stopped_at_cap = False
     try:
         result: GEPAResult[str, int] = optimize(
@@ -559,6 +623,9 @@ def run_optimization(
         result = GEPAResult.from_state(keeper.state, run_dir=str(run_dir), seed=0)
         stopped_at_cap = True
     objectives = result.val_aggregate_subscores or [{} for _ in result.candidates]
+    verdict, verdict_reasons = _verdict(
+        result.best_idx, result.val_aggregate_scores, validation, keeper.val_outcomes
+    )
     report = {
         "role": role,
         "gepa_version": version("gepa"),
@@ -572,12 +639,18 @@ def run_optimization(
             "validation": [f.fixture_id for f in validation],
         },
         "best_idx": result.best_idx,
+        "verdict": verdict,
+        "verdict_reasons": verdict_reasons,
+        "reflection_usage": (
+            reflection_lm.usage.to_dict() if isinstance(reflection_lm, ReflectionModel) else None
+        ),
         "candidates": [
             {
                 "prompt": candidate[role],
                 "parents": list(result.parents[idx]),
                 "val_score": result.val_aggregate_scores[idx],
                 "val_objectives": objectives[idx],
+                "val_outcomes": keeper.val_outcomes.get(idx, {}),
             }
             for idx, candidate in enumerate(result.candidates)
         ],

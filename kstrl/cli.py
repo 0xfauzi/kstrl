@@ -5485,6 +5485,7 @@ def _decide_and_report(
     hours: float | None = None,
 ) -> None:
     from kstrl.inbox import InboxError
+    from kstrl.waivers import approval_effect
 
     _root_dir, box = _inbox_for(root)
     ui_impl = _autonomy_ui(ui, no_color)
@@ -5500,7 +5501,14 @@ def _decide_and_report(
     except InboxError as exc:
         ui_impl.err(str(exc))
         sys.exit(2)
-    ui_impl.ok(f"{action}d {item.id[:8]}: {item.title}")
+    # item.status is the past-tense ItemStatus itself (a StrEnum), so this
+    # prints "approved"/"rejected"/"snoozed"/"resolved" without a second
+    # table that has to be kept in step with the first.
+    ui_impl.ok(f"{item.status} {item.id[:8]}: {item.title}")
+    # #595: say what the approval does, quoting the finding it covers.
+    effect = approval_effect(item) if action == "approve" else None
+    if effect:
+        ui_impl.info(f"  {effect}")
     sys.exit(0)
 
 
@@ -5681,13 +5689,13 @@ def _decide_parked_merge_if_parked(
         serve_parked = _serve_parked(root_dir, manifest.run_id, ui_impl)
         try:
             if action == "approve":
-                box.approve(item.id, actor=_actor(), comment=comment)
+                decided = box.approve(item.id, actor=_actor(), comment=comment)
             else:
-                box.reject(item.id, actor=_actor(), comment=comment)
+                decided = box.reject(item.id, actor=_actor(), comment=comment)
         except InboxError as exc:
             ui_impl.err(str(exc))
             sys.exit(2)
-        ui_impl.ok(f"{said} {item.id[:8]}: {item.title}")
+        ui_impl.ok(f"{decided.status} {item.id[:8]}: {item.title}")
         print_resume_plan(ui_impl, plan)
         argv = option_argv(
             factory,
@@ -6462,7 +6470,7 @@ def learn_playbook(ui: str, no_color: bool) -> None:
     except PlaybookError as exc:
         ui_impl.err(
             f"the global playbook could not be read: {exc}. "
-            "`ks learn repair` voids every line the fold refuses."
+            "`ks learn repair --yes` voids every line the fold refuses."
         )
         sys.exit(2)
     except OSError as exc:
@@ -6482,20 +6490,28 @@ def learn_playbook(ui: str, no_color: bool) -> None:
 
 
 @learn_group.command(name="repair")
+@click.option("--yes", "-y", is_flag=True, help="Write the VOIDs; without it nothing is written")
 @_autonomy_ui_option
 @_autonomy_no_color_option
-def learn_repair(ui: str, no_color: bool) -> None:
-    """Void every global playbook line the fold refuses, recording each in the ledger."""
-    from kstrl.playbook import PlaybookError, repair_ledger
+def learn_repair(yes: bool, ui: str, no_color: bool) -> None:
+    """List every global playbook line the fold refuses; --yes voids each one in the ledger."""
+    from kstrl.playbook import PlaybookError, refused_lines, repair_ledger
 
     ui_impl = _autonomy_ui(ui, no_color)
     try:
-        voids = repair_ledger()
+        voids = repair_ledger() if yes else ()
+        refused = () if yes else refused_lines()
     except (PlaybookError, OSError) as exc:
         ui_impl.err(f"the global playbook could not be repaired: {exc}")
         sys.exit(2)
-    if not voids:
+    if not voids and not refused:
         ui_impl.ok("Nothing to repair: the fold accepts every line.")
+        sys.exit(0)
+    if not yes:
+        ui_impl.section("Refused")
+        for number, reason in refused:
+            ui_impl.info(f"  line {number}  {reason}")
+        ui_impl.info("Nothing was written. `ks learn repair --yes` voids every line above.")
         sys.exit(0)
     ui_impl.section("Voided")
     for void in voids:

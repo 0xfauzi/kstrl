@@ -170,6 +170,11 @@ def write_stub_gh(bin_dir: Path) -> Path:
     GH_SPINE_MERGE_SHA: the commit ``mergeCommit.oid`` publishes; unset
     (the default) publishes ``null``, the same as GitHub does for a
     merge whose commit has not been published yet.
+    GH_SPINE_HEAD (#601): the commit ``headRefOid`` publishes; unset (the
+    default) omits the field entirely, the same as a caller that never
+    asked for it. Every ``pr view`` in kstrl now asks, so a suite that
+    cares whether the autonomy ladder counts its merges as clean sets
+    this; one that does not is unaffected.
     """
     gh = bin_dir / "gh"
     gh.write_text(
@@ -196,8 +201,13 @@ def write_stub_gh(bin_dir: Path) -> Path:
                   else
                     commit=null
                   fi
-                  printf '{{"state": "%s", "mergeCommit": %s}}\\n' \\
-                    "${{GH_SPINE_VIEW_STATE:-MERGED}}" "$commit" ;;
+                  if [ -n "${{GH_SPINE_HEAD:-}}" ]; then
+                    printf '{{"state": "%s", "mergeCommit": %s, "headRefOid": "%s"}}\\n' \\
+                      "${{GH_SPINE_VIEW_STATE:-MERGED}}" "$commit" "$GH_SPINE_HEAD"
+                  else
+                    printf '{{"state": "%s", "mergeCommit": %s}}\\n' \\
+                      "${{GH_SPINE_VIEW_STATE:-MERGED}}" "$commit"
+                  fi ;;
                 *)
                   printf '{{"state": "%s"}}\\n' "${{GH_SPINE_VIEW_STATE:-MERGED}}" ;;
               esac
