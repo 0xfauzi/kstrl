@@ -136,6 +136,8 @@ def test_an_outside_path_the_location_pattern_cannot_read_is_not_shown(tmp_path:
         "print('    at run (/opt/homebrew/Cellar/node@20/20.1.0/lib/jest/x.js:10:5)')\n"
         "print('    at file:///opt/tools/runner.mjs:11:5')\n"
         "print('    at run (/Users/Jane Doe/.nvm/versions/node/v20/lib/y.js:11:5)')\n"
+        # A directory whose name starts with the worktree's name is not inside it.
+        f"print('    at run ({tmp_path / 'proj'}-sibling/src/other.rs:12:5)')\n"
         "sys.exit(1)\n",
         encoding="utf-8",
     )
@@ -147,6 +149,7 @@ def test_an_outside_path_the_location_pattern_cannot_read_is_not_shown(tmp_path:
     assert "node@20" not in shown
     assert "runner.mjs" not in shown
     assert "Jane Doe" not in shown
+    assert "proj-sibling" not in shown
 
 
 @pytest.mark.parametrize("width", [40, 400], ids=["short-lines", "long-lines"])
