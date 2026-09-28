@@ -49,7 +49,7 @@ class TestQueueHelp:
     def test_group_help_lists_the_verbs(self) -> None:
         result = CliRunner().invoke(cli, ["queue", "--help"])
         assert result.exit_code == 0
-        for verb in ("add", "ls", "show", "retry", "rm", "pause", "resume"):
+        for verb in ("add", "ls", "show", "retry", "priority", "rm", "pause", "resume"):
             assert verb in result.output
 
 

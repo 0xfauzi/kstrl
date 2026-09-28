@@ -207,7 +207,8 @@ EXPECTED_RESULT_SITES: dict[str, int] = {
     "fixtures.py: _dispatch_fixture: FixtureResult": 1,
     "fixtures.py: _fixture_file_text: FixtureResult": 2,
     "fixtures.py: check_fixtures: CheckResult": 2,
-    "fixtures.py: check_fixtures_from_prd: CheckResult": 2,
+    # #632: one new row, a function fixture on a tree that is not Python.
+    "fixtures.py: check_fixtures_from_prd: CheckResult": 3,
     "fixtures.py: run_cli_fixture: FixtureResult": 7,
     "fixtures.py: run_file_fixture: FixtureResult": 8,
     # #416: one new row, the ChildOutputDecodeError clause added after the
@@ -292,8 +293,9 @@ EXPECTED_MEASURED_ARGUMENTS: dict[str, int] = {
     "fixtures.py: check_fixtures: CheckResult: measured=False": 1,
     "fixtures.py: check_fixtures: CheckResult: measured=all((r.measured for r in results))": 1,
     # Unreadable PRD and schema-invalid PRD: the check could not learn WHICH
-    # fixtures to run, so it ran none.
-    "fixtures.py: check_fixtures_from_prd: CheckResult: measured=False": 2,
+    # fixtures to run, so it ran none. #632 adds the third: a PRD naming a
+    # function fixture on a tree that is not Python, refused before any ran.
+    "fixtures.py: check_fixtures_from_prd: CheckResult: measured=False": 3,
     # The file existed when the caller looked and could not be read, or could
     # not be decoded. Either way the `contains` expectations never ran.
     "fixtures.py: _fixture_file_text: FixtureResult: measured=False": 2,

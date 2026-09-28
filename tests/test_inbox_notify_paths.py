@@ -193,7 +193,7 @@ def test_a_lapsed_snoozed_items_repeat_pages_again(
     stored = box.get(first[0])
     assert stored is not None
     stored.snooze_until = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
-    box._append(stored)
+    box._append_unlocked(stored)
     second = _poll(tmp_path)
 
     assert len(first) == 1 and first[0]
@@ -216,6 +216,35 @@ def test_an_approved_items_repeat_pages_again(
     assert len(first) == 1 and first[0]
     assert len(second) == 1 and second[0] and second[0] != first[0]
     assert _lines(lines) == ["inbox_budget_overrun|", "inbox_budget_overrun|"]
+
+
+def test_a_hook_that_files_an_item_runs_after_the_add_releases_the_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#648: the hook runs after ``add`` leaves the control lock.
+
+    ``add`` folds and appends inside one lock hold, and the hook is a
+    subprocess of the operator's choosing. Here it files an inbox item
+    itself, a second writer that needs the same lock. ``exec`` makes the
+    hook's timeout kill that writer rather than only its shell, so a hook
+    run inside the hold is killed at the timeout and files nothing.
+    """
+    script = (
+        "import sys; from pathlib import Path; from kstrl.inbox import Inbox, ItemKind; "
+        "Inbox(Path(sys.argv[1])).add(ItemKind.HEALTH_BREACH, 'filed by the hook', "
+        "dedupe_key='hook')"
+    )
+    monkeypatch.setenv(
+        "KSTRL_NOTIFY_ON_INBOX_ITEM", f"exec '{sys.executable}' -c \"{script}\" '{tmp_path}'"
+    )
+    monkeypatch.setenv("KSTRL_NOTIFY_HOOK_TIMEOUT", "10")
+    _corrupt_ledger(tmp_path)
+
+    first = _poll(tmp_path)
+
+    assert len(first) == 1 and first[0]
+    filed = inbox_items(tmp_path, ItemKind.HEALTH_BREACH)
+    assert [i.title for i in filed] == ["filed by the hook"]
 
 
 def test_pipeline_fires_once_per_kind_and_not_on_a_repeat(tmp_path: Path) -> None:

@@ -202,8 +202,8 @@ def _open_drift_item(root_dir: Path, evidence: dict[str, Any]) -> None:
     except (OSError, TypeError, ValueError, ControlStateError) as exc:
         # The callee's surface. ControlStateError is a RuntimeError, so
         # it escapes the (OSError, ValueError) pair the inbox sites were
-        # written with, and Inbox._append takes the control lock on every
-        # write. TypeError is InboxConfig.load's per-key cast, the same
+        # written with, and every Inbox write takes the control lock.
+        # TypeError is InboxConfig.load's per-key cast, the same
         # one report_to_ladder catches on the ladder's config twenty-five
         # lines above; without it a valid document with one wrong VALUE
         # left a measurement command as a traceback.
@@ -265,7 +265,7 @@ def report_to_ladder(comparison: Comparison, root_dir: Path) -> int | None:
     # and the save is lost. NOT closed here: ``control_lock`` is the
     # obvious wrapper and it self-deadlocks, measured - it is a
     # ``flock`` on a fresh file description, and ``AutonomyState.save``
-    # and ``Inbox._append`` each take it themselves, so an outer hold
+    # and every ``Inbox`` write each take it themselves, so an outer hold
     # blocks the inner one in the same process. Closing it means a
     # lock-holding variant of both callees and changing every caller
     # including the factory, which is a different change from this one.

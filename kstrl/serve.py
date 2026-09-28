@@ -3101,8 +3101,8 @@ def _file_inbox_item(
     either way.
 
     The caught set is the callee's WHOLE SURFACE, not the types somebody
-    expected: ``Inbox.add`` reaches ``_append``, which takes the control
-    lock, and ``InboxConfig.load`` casts per key. Both guards that read
+    expected: ``Inbox.add`` takes the control lock, and
+    ``InboxConfig.load`` casts per key. Both guards that read
     this site clear on ``tests.helpers.astwalk.catches_everything``, the
     one rule #364 reconciled them onto.
     """

@@ -519,14 +519,13 @@ class Inbox:
     def _append_unlocked(self, item: InboxItem) -> None:
         """Append one line. Caller already holds ``control_lock``.
 
-        Split out of :meth:`_append` so a caller that must fold (``get``)
-        and append under the SAME lock hold - the ``only_from`` precondition
-        in :meth:`_decide` - can call this instead of re-entering the lock.
-        ``fcntl.flock`` is not reentrant across two separate opens of the
-        lock file in one process: a second ``with control_lock(...):``
-        nested inside the first would deadlock a blocking acquire (or,
-        non-blocking, raise as if a different process held it), so the
-        locked body calls this bare method rather than :meth:`_append`.
+        The only append, and it takes no lock of its own (#648). Every
+        writer folds the log (``get``, ``find_by_dedupe_key``) and appends
+        inside ONE ``control_lock`` hold, so the row it writes was decided
+        on the fresh state, never on a snapshot another process has since
+        superseded. ``fcntl.flock`` is not reentrant across two opens of
+        the lock file in one process, so a lock taken here would deadlock
+        the hold its caller is already in.
 
         #331: through ``appendio``, which repairs an unterminated tail
         before appending onto it. Without that, a crash mid-write cost
@@ -559,16 +558,6 @@ class Inbox:
         payload = {"schema_version": INBOX_SCHEMA_VERSION, **item.to_dict()}
         line = json.dumps(payload, separators=(",", ":"), default=str) + "\n"
         append_records(path, line, repair="")
-
-    def _append(self, item: InboxItem) -> None:
-        """Append one line, creating the file atomically on first write.
-
-        The ``control_lock`` wraps the whole probe and append (via
-        :meth:`_append_unlocked`), so #330's lock argument does not apply
-        here: this file already has the exclusion.
-        """
-        with control_lock(self.root_dir):
-            self._append_unlocked(item)
 
     def add(
         self,
@@ -603,30 +592,31 @@ class Inbox:
         what says the condition is still current.
         """
         now = _utc_now()
-        existing = self.find_by_dedupe_key(dedupe_key)
-        if existing is not None and existing.status is ItemStatus.OPEN:
-            existing.occurrences += 1
-            existing.last_seen_at = _iso(now)
-            if detail:
-                existing.detail = detail
-            if evidence:
-                existing.evidence = evidence
-            self._append(existing)
-            return existing
-        item = InboxItem(
-            id=uuid.uuid4().hex,
-            kind=kind,
-            title=title,
-            created_at=_iso(now),
-            detail=detail,
-            priority=priority or DEFAULT_PRIORITY.get(kind, Priority.NORMAL),
-            component=component,
-            run_id=run_id,
-            dedupe_key=dedupe_key,
-            evidence=evidence or {},
-            last_seen_at=_iso(now),
-        )
-        self._append(item)
+        with control_lock(self.root_dir):
+            existing = self.find_by_dedupe_key(dedupe_key)
+            if existing is not None and existing.status is ItemStatus.OPEN:
+                existing.occurrences += 1
+                existing.last_seen_at = _iso(now)
+                if detail:
+                    existing.detail = detail
+                if evidence:
+                    existing.evidence = evidence
+                self._append_unlocked(existing)
+                return existing
+            item = InboxItem(
+                id=uuid.uuid4().hex,
+                kind=kind,
+                title=title,
+                created_at=_iso(now),
+                detail=detail,
+                priority=priority or DEFAULT_PRIORITY.get(kind, Priority.NORMAL),
+                component=component,
+                run_id=run_id,
+                dedupe_key=dedupe_key,
+                evidence=evidence or {},
+                last_seen_at=_iso(now),
+            )
+            self._append_unlocked(item)
         from kstrl.inbox_notify import push_opened_item
 
         push_opened_item(self, item, notify, existing)
@@ -644,40 +634,31 @@ class Inbox:
     ) -> InboxItem | None:
         """Fold ``item_id`` to ``status`` and append the decision.
 
-        With ``only_from`` given, the precondition lives at the WRITER,
-        not the caller's snapshot: the fold (``get``) and the append run
-        inside one ``control_lock`` hold, so nothing can land between
-        "read the current status" and "write the decision". If the
-        FRESH status (read inside that lock, not whatever the caller
-        filtered on) is not in ``only_from``, nothing is appended and
-        this returns ``None`` - the row an operator already decided
-        keeps that decision. Without ``only_from`` (the default), this
-        is the plain fold-and-append every hand-typed ``ks inbox``
-        command uses, where the caller IS the only writer that matters.
+        The fold (``get``) and the append run inside one ``control_lock``
+        hold, so nothing can land between "read the current row" and
+        "write the decision", and the decision carries every occurrence
+        another writer bumped onto the row before it (#648). With
+        ``only_from`` given, the precondition lives at the WRITER, not
+        the caller's snapshot: if the FRESH status is not in
+        ``only_from``, nothing is appended and this returns ``None`` -
+        the row an operator already decided keeps that decision. Without
+        ``only_from``, the decision overwrites whatever the fresh status
+        is: every hand-typed ``ks inbox`` command, where the person who
+        typed it IS the decision. ``tests/test_inbox_write_guards.py``
+        fails an automated caller that passes no ``only_from``.
         """
-
-        def _mutate(item: InboxItem) -> None:
-            item.status = status
-            item.decided_at = _iso(_utc_now())
-            item.decided_by = actor
-            item.decision_comment = comment
-            item.snooze_until = _iso(snooze_until) if snooze_until else ""
-
-        if only_from is None:
-            item = self.get(item_id)
-            if item is None:
-                raise InboxError(f"no inbox item matching {item_id!r}")
-            _mutate(item)
-            self._append(item)
-            return item
 
         with control_lock(self.root_dir):
             item = self.get(item_id)
             if item is None:
                 raise InboxError(f"no inbox item matching {item_id!r}")
-            if item.status not in only_from:
+            if only_from is not None and item.status not in only_from:
                 return None
-            _mutate(item)
+            item.status = status
+            item.decided_at = _iso(_utc_now())
+            item.decided_by = actor
+            item.decision_comment = comment
+            item.snooze_until = _iso(snooze_until) if snooze_until else ""
             self._append_unlocked(item)
         return item
 
@@ -754,11 +735,11 @@ class Inbox:
         number of items retained. Atomic, through the one helper that
         owns that pattern (#291).
         """
-        items = self.items()
         ensure_control_state(self.root_dir)
         path = self.path
         path.parent.mkdir(parents=True, exist_ok=True)
         with control_lock(self.root_dir):
+            items = self.items()
             atomic_write_text(
                 path,
                 "".join(
