@@ -70,6 +70,13 @@ from kstrl.prd import PRD
 from kstrl.procdispose import drain_or_abandon
 from kstrl.procgroup import signal_process_tree
 from kstrl.statedir import STATE_DIR_NAME
+from kstrl.suite_inventory import (
+    TESTS_RAN_CHECK,
+    inventory_env,
+    runner_for,
+    save_gate_output,
+    unrun_test_files,
+)
 from kstrl.timeout import limit_seconds
 from kstrl.waivers import Waivers, apply_waivers, waiver_note
 
@@ -1498,17 +1505,24 @@ def check_test_suite(
     command: str | None = None,
     timeout: float | None = None,
     tool: str | None = None,
+    *,
+    report_dir: Path | None = None,
 ) -> CheckResult:
     """Run the project's test suite independently.
 
     ``tool`` pins which parser reads the output; None runs every parser
     registered for the gate and unions what they find (#258).
+
+    ``report_dir`` (#620) is a directory kstrl owns: pytest is asked for a
+    junit report there and the gate's output is saved there, so
+    :func:`kstrl.suite_inventory.unrun_test_files` can read which test
+    files this run executed. None changes nothing about the run.
     """
     start = time.monotonic()
     cmd = resolve_test_command(command)
 
     try:
-        result = run_scrubbed(cmd, cwd=cwd, timeout=timeout)
+        result = run_scrubbed(cmd, cwd=cwd, timeout=timeout, extra_env=inventory_env(report_dir))
     except subprocess.TimeoutExpired as expired:
         return CheckResult(
             name=GATE_TEST,
@@ -1528,6 +1542,7 @@ def check_test_suite(
             output=_output_before_stop(exc.stdout, exc.stderr),
         )
 
+    save_gate_output(report_dir, result.stdout + result.stderr)
     if result.returncode != 0:
         output = (result.stdout + result.stderr).strip()
         return _failed_gate_result(
@@ -1710,7 +1725,11 @@ def _record(
 
 
 def _command_gates(
-    worktree_path: Path, config: VerifyConfig, selected: Sequence[str]
+    worktree_path: Path,
+    config: VerifyConfig,
+    selected: Sequence[str],
+    *,
+    base_branch: str | None = None,
 ) -> tuple[list[CheckResult], list[NotMeasured]]:
     """The test, typecheck and lint gates named in ``selected``, in that order.
 
@@ -1720,6 +1739,10 @@ def _command_gates(
     :func:`_command_not_run` judges and what runs. Direct calls rather
     than a lookup table, because every static guard that resolves a
     spawn's callee has to be able to read these three.
+
+    With ``base_branch`` (Phase 1), the test gate also reads which changed
+    test files the suite ran (#620, :func:`_test_suite_checks`); the
+    between-iteration checks pass none and run the suite as before.
     """
     commands = resolve_verify_commands(config, worktree_path)
     timeout = limit_seconds(config.subprocess_timeout)
@@ -1727,9 +1750,14 @@ def _command_gates(
     gaps: list[NotMeasured] = []
     if GATE_TEST in selected:
         outcome = _command_not_run(GATE_TEST, "test_command", commands.test, worktree_path)
-        if outcome is None:
-            outcome = check_test_suite(worktree_path, commands.test, timeout, config.test_tool)
-        _record(outcome, checks, gaps)
+        if outcome is not None:
+            _record(outcome, checks, gaps)
+        elif base_branch is None:
+            checks.append(check_test_suite(worktree_path, commands.test, timeout, config.test_tool))
+        else:
+            row, ran_gaps = _test_suite_checks(worktree_path, base_branch, config, commands.test)
+            checks.append(row)
+            gaps.extend(ran_gaps)
     if GATE_TYPECHECK in selected:
         outcome = _command_not_run(
             GATE_TYPECHECK, "typecheck_command", commands.typecheck, worktree_path
@@ -5070,6 +5098,90 @@ def _scope_checks(
     return []
 
 
+def _changed_test_files(cwd: Path, base_branch: str) -> tuple[list[str], list[NotMeasured]]:
+    """The test files this diff added or changed that still exist (#620).
+
+    ``base_branch=""`` is :func:`run_undiffed_verification`'s "there is no
+    base here", which nothing may read, so it answers no files and no gap.
+    A diff git cannot produce is a gap naming why, never an empty list.
+    """
+    if not base_branch:
+        return [], []
+    try:
+        records = git.get_diff_name_status(base_branch, cwd, strict=True)
+    except git.GitDiffError as exc:
+        return [], [
+            NotMeasured(
+                TESTS_RAN_CHECK,
+                NOT_MEASURED_COMMAND_FAILED,
+                f"git could not produce the diff, so no test file it changed was checked: {exc}",
+            )
+        ]
+    changed = {
+        path
+        for status, path in records
+        if not status.startswith("D") and runner_for(path) and (cwd / path).is_file()
+    }
+    return sorted(changed), []
+
+
+def _with_unrun_test_files(row: CheckResult, did_not_run: Sequence[str]) -> CheckResult:
+    """``row`` carrying one advisory finding per changed test file that
+    did not run (#620). Advisory: the repo's rule for a new gate, until a
+    measured false-positive rate says it may block.
+
+    The message changes on a PASSING row only. A failing row's message
+    feeds the failure signature a baseline compares, and its failure is
+    already reported.
+    """
+    if not did_not_run:
+        return row
+    findings = [
+        Finding.adequacy_finding(
+            category="test_not_run",
+            explanation=f"{path} was changed by this diff and the test command ran no test in it",
+            location=path,
+        )
+        for path in did_not_run
+    ]
+    note = (
+        f"{len(did_not_run)} test file(s) this diff changed did not run [advisory]: "
+        + ", ".join(did_not_run)
+    )
+    message = f"{row.message}; {note}" if row.passed else row.message
+    return replace(row, message=message, findings=[*row.findings, *findings])
+
+
+def _test_suite_checks(
+    cwd: Path, base_branch: str, config: VerifyConfig, command: str
+) -> tuple[CheckResult, list[NotMeasured]]:
+    """The ``test_suite`` row, and a ``tests_ran`` gap when it could not
+    read which changed test files ran (#620).
+
+    ``command`` is the test command :func:`_command_gates` resolved and
+    judged runnable. A diff that changed no test file runs the gate
+    exactly as before: no report is asked for and nothing is read.
+    """
+    timeout = limit_seconds(config.subprocess_timeout)
+    changed, gaps = _changed_test_files(cwd, base_branch)
+    if not changed:
+        return check_test_suite(cwd, command, timeout, config.test_tool), gaps
+    with tempfile.TemporaryDirectory(prefix="kstrl-tests-ran-") as tmp:
+        report_dir = Path(tmp)
+        row = check_test_suite(cwd, command, timeout, config.test_tool, report_dir=report_dir)
+        did_not_run, unread = unrun_test_files(changed, report_dir)
+    if unread:
+        gaps = [
+            NotMeasured(
+                TESTS_RAN_CHECK,
+                NOT_MEASURED_TOOL_MISSING,
+                "kstrl reads which test files ran from a pytest junit report and from "
+                "vitest's per-file lines, and found neither for: " + ", ".join(unread),
+            )
+        ]
+    return _with_unrun_test_files(row, did_not_run), gaps
+
+
 def _mutation_checks(
     cwd: Path,
     base_branch: str,
@@ -5503,7 +5615,9 @@ def run_mechanical_verification(
     if prd_path is not None:
         checks.append(check_prd_stories(prd_path, pre_run_prd_path))
 
-    gate_rows, gate_gaps = _command_gates(worktree_path, config, FAST_ITERATION_GATES)
+    gate_rows, gate_gaps = _command_gates(
+        worktree_path, config, FAST_ITERATION_GATES, base_branch=base_branch
+    )
     checks.extend(gate_rows)
     not_measured.extend(gate_gaps)
 

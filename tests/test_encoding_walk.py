@@ -485,6 +485,7 @@ class TestTheReadBytesExclusion:
         "playbook.py": 1,  # #509: the first shape, read once so the digest is of what it folds
         "safemode.py": 1,
         "signals.py": 2,
+        "suite_inventory.py": 1,  # #620: I/O outside the parse guard
         "verify.py": 2,
     }
 

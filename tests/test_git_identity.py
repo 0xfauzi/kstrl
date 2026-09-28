@@ -266,6 +266,9 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # set_identity the same way.
     "tests/test_stale_base_ref.py": 10,
     "tests/test_state_dir_scope.py": 2,
+    # #620: two commits (base and change), into the repository `_repo`
+    # builds, which goes through set_identity before its first commit.
+    "tests/test_tests_ran_cli.py": 2,
     # #641 adds one more: TestAGroupMemberThatIgnoresSigterm's fixture
     # commits its throwaway repo through `tests.helpers.gitrepo.git_in` /
     # `set_identity` before running the real `ks run` CLI against it.

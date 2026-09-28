@@ -133,6 +133,12 @@ EXPECTED_SELECTOR_SITES: dict[str, tuple[int, str]] = {
         "the complement of parse_new_dependencies; the verifier reports each lockfile "
         "it lists as unmeasured dependency rules",
     ),
+    "suite_inventory.py: <module>": (
+        1,
+        "TEST_FILE_PATTERNS, the files pytest and vitest collect by default (#620); a "
+        "changed test file no pattern claims has no runner, so unrun_test_files lists it "
+        "as not_measured and the tests_ran row never counts it as run",
+    ),
     "verify.py: _changed_non_test_python": (
         1,
         "empty makes both callers (mutation and dead-code scan) return NotMeasured no_target",
