@@ -121,6 +121,7 @@ from kstrl.verify import (
     VerificationResult,
     scope_unreadable_error,
 )
+from kstrl.waivers import ApprovalSnapshot, Waivers, WaiverScope, load_approvals
 from kstrl.worktree_sweep import WorktreeSweep, sweep_findings
 
 if TYPE_CHECKING:
@@ -696,6 +697,9 @@ class ComponentPipeline:
         self._inbox: Inbox | None = None
         self._inbox_disabled = False
         self._inbox_typed: set[str] = set()
+        # #595: the approvals this run's checks may apply, read once by
+        # snapshot_waivers. None until then, which applies none.
+        self._approvals: ApprovalSnapshot | None = None
         self.review_selection = review_selection
         self.security_selection = security_selection
         self.knowledge_config = knowledge_config
@@ -2770,6 +2774,56 @@ class ComponentPipeline:
             self.ui.warn(f"  Inbox read failed; '{comp_id}' stays parked: {exc}")
             return None
 
+    def snapshot_waivers(self) -> None:
+        """#595: read the approved policy_exception and test_adequacy items once.
+
+        Called by the factory right after ``apply_merge_decisions``: after
+        every pre-spend refusal and before any engineer is scheduled. The
+        #192 rule quoted in ``_phase_verify`` applies: an approval made
+        mid-run, by an operator or by an engineer running ``ks inbox
+        approve`` in its own worktree, does not change what a later
+        attempt in this run is held to. It takes effect from the next run.
+
+        Every failure here waives nothing: the checks block exactly as
+        they did before approvals were read, and say that the approvals
+        were not consulted.
+        """
+        try:
+            if self._inbox is None:
+                if not self.inbox_config.enabled:
+                    self._approvals = ApprovalSnapshot(unconsulted_reason="the inbox is disabled")
+                    return
+                self._inbox = Inbox(self.root_dir, self.inbox_config)
+            self._approvals = load_approvals(self._inbox)
+        except (OSError, TypeError, ValueError, InboxError, ControlStateError) as exc:
+            # The tuple _park_decision catches, for the reasons it gives.
+            self.ui.warn(f"  Inbox read failed; no approval waives a finding in this run: {exc}")
+            self._approvals = ApprovalSnapshot(unconsulted_reason=f"the inbox read failed: {exc}")
+
+    def _waiver_scope(self, comp: Component) -> WaiverScope:
+        """What a waiver key binds a finding to: the run's plan and the component."""
+        return WaiverScope(
+            project=self.manifest.project_name,
+            spec_file=self.manifest.spec_file,
+            plan_id=comp.plan_id,
+            component=comp.id,
+        )
+
+    def _waivers_for(self, comp: Component) -> Waivers:
+        """This run's approvals for ``comp``, or an unconsulted snapshot.
+
+        ``self._approvals`` is None only when ``snapshot_waivers`` was
+        never called for this pipeline - a bug here, not ``ks check``'s
+        legitimate ``waivers=None`` (it calls the checks directly and
+        never reaches this method). Defaulting to unconsulted keeps that
+        bug from reading as "nothing waived silently": the check still
+        says why.
+        """
+        approvals = self._approvals or ApprovalSnapshot(
+            unconsulted_reason="snapshot_waivers was not called before this check"
+        )
+        return approvals.for_scope(self._waiver_scope(comp))
+
     def _merge_approved(self, comp: Component, decision: InboxItem) -> None:
         """Push, open and merge the branch exactly as the gate parked it.
 
@@ -3273,6 +3327,22 @@ class ComponentPipeline:
             written.append(str(path))
         return tuple(written)
 
+    def _waivable_evidence(self, comp: Component, finding: Finding) -> dict[str, Any]:
+        """The evidence of a policy_exception or test_adequacy item (#595).
+
+        ``waiver_key`` is what an approval of the item covers: exactly
+        this finding, in this plan, for this component.
+        """
+        return {
+            "category": finding.category,
+            "severity": finding.severity,
+            "location": finding.location,
+            "suggestion": finding.suggestion,
+            "explanation": finding.explanation,
+            "plan_id": comp.plan_id,
+            "waiver_key": self._waiver_scope(comp).key(finding),
+        }
+
     def _phase_verify(
         self,
         comp: Component,
@@ -3340,6 +3410,8 @@ class ComponentPipeline:
             adequacy_config=self.run_envelope.adequacy,
             autonomy_level=self.run_envelope.autonomy_level,
             component_id=comp.id,
+            # #595: the approvals snapshotted when the run started.
+            waivers=self._waivers_for(comp),
         )
         verify_duration = time.monotonic() - verify_start
         comp.verification_passed = verification.passed
@@ -3360,43 +3432,45 @@ class ComponentPipeline:
                     finding.category.startswith(POLICY_CATEGORY_PREFIX)
                     and finding.severity != "advisory"
                 ):
+                    # #595 B2: the waiver_key is part of the dedupe key, not
+                    # just category, so a same-category repeat with
+                    # different evidence opens a second item instead of
+                    # overwriting the one the operator is about to read.
+                    evidence = self._waivable_evidence(comp, finding)
                     self._inbox_add(
                         ItemKind.POLICY_EXCEPTION,
                         f"{comp.id}: {finding.category}",
                         detail=finding.explanation,
                         component=comp.id,
-                        dedupe_key=f"policy:{comp.id}:{finding.category}",
-                        evidence={
-                            "category": finding.category,
-                            "severity": finding.severity,
-                            "location": finding.location,
-                            "suggestion": finding.suggestion,
-                        },
+                        dedupe_key=(
+                            f"policy:{comp.id}:{finding.category}:{evidence['waiver_key']}"
+                        ),
+                        evidence=evidence,
                     )
                 # R8.5: same rule, same reason. A BLOCKING adequacy
                 # finding stopped the change and needs a human to decide
                 # whether the suite may weaken here; an ADVISORY one is
                 # recorded in the finding stream and stops there, because
                 # the inbox is a queue of decisions, not of notes. The
-                # dedupe key is category + location so the same file
-                # failing the same way across retries collapses onto one
-                # item instead of fanning out.
+                # dedupe key is category + location + waiver_key (#595
+                # B2) so the same file failing the same way across
+                # retries collapses onto one item, and a same-category,
+                # same-location repeat with different evidence does not.
                 elif (
                     finding.category.startswith(ADEQUACY_CATEGORY_PREFIX)
                     and finding.severity != "advisory"
                 ):
+                    evidence = self._waivable_evidence(comp, finding)
                     self._inbox_add(
                         ItemKind.TEST_ADEQUACY,
                         f"{comp.id}: {finding.category}",
                         detail=finding.explanation,
                         component=comp.id,
-                        dedupe_key=(f"adequacy:{comp.id}:{finding.category}:{finding.location}"),
-                        evidence={
-                            "category": finding.category,
-                            "severity": finding.severity,
-                            "location": finding.location,
-                            "suggestion": finding.suggestion,
-                        },
+                        dedupe_key=(
+                            f"adequacy:{comp.id}:{finding.category}:{finding.location}:"
+                            f"{evidence['waiver_key']}"
+                        ),
+                        evidence=evidence,
                     )
         self.bus.emit(
             ev.VerificationResultEvent(
