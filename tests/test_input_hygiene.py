@@ -84,7 +84,9 @@ class SequenceAgent:
     def name(self) -> str:
         return "sequence-agent"
 
-    def run(self, prompt: str, cwd: Path | None = None) -> Iterator[str]:
+    def run(
+        self, prompt: str, cwd: Path | None = None, timeout: float | None = None
+    ) -> Iterator[str]:
         self.prompts.append(prompt)
         output = self._outputs[min(self._calls, len(self._outputs) - 1)]
         self._calls += 1
@@ -119,6 +121,7 @@ class TestDecomposeValidationHygiene:
             ui=PlainUI(no_color=True),
             root_dir=tmp_path,
             prompt_call=architect_call(tmp_path),
+            timeout=None,
         )
 
         assert len(agent.prompts) == 2
@@ -148,6 +151,7 @@ class TestDecomposeValidationHygiene:
                 ui=PlainUI(no_color=True),
                 root_dir=tmp_path,
                 prompt_call=architect_call(tmp_path),
+                timeout=None,
             )
 
 

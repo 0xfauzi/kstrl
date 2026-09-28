@@ -334,6 +334,7 @@ class TestHaltingIsUnchanged:
                 ui=PlainUI(no_color=True, file=io.StringIO()),
                 root_dir=tmp_path,
                 prompt_call=architect_call(tmp_path),
+                timeout=None,
             )
         assert list(tmp_path.rglob("prd.json")) == []
 

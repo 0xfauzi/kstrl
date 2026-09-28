@@ -52,7 +52,9 @@ class MockDecomposeAgent:
     def name(self) -> str:
         return "mock-decompose"
 
-    def run(self, prompt: str, cwd: Path | None = None) -> Iterator[str]:
+    def run(
+        self, prompt: str, cwd: Path | None = None, timeout: float | None = None
+    ) -> Iterator[str]:
         yield from self._output.splitlines()
         if self._output.strip():
             self._final_message = self._output.splitlines()[-1]
@@ -160,6 +162,7 @@ class TestSpecIssues:
                 ui=ui,
                 root_dir=tmp_path,
                 prompt_call=architect_call(tmp_path),
+                timeout=None,
             )
         assert len(exc_info.value.escalations) == 1
         assert exc_info.value.escalations[0].question == "what is this product for"
@@ -229,6 +232,7 @@ class TestSpecIssues:
             ui=ui,
             root_dir=tmp_path,
             prompt_call=architect_call(tmp_path),
+            timeout=None,
         )
         assert len(manifest.components) == 1
         assert manifest.components[0].id == "comp-a"
@@ -256,6 +260,7 @@ class TestDecomposeSpec:
             ui=ui,
             root_dir=tmp_path,
             prompt_call=architect_call(tmp_path),
+            timeout=None,
         )
 
         assert len(manifest.components) == 2
@@ -302,6 +307,7 @@ class TestDecomposeSpec:
             ui=ui,
             root_dir=tmp_path,
             prompt_call=architect_call(tmp_path),
+            timeout=None,
         )
 
         # All components should share the same branch
@@ -328,6 +334,7 @@ class TestDecomposeSpec:
             ui=ui,
             root_dir=tmp_path,
             prompt_call=architect_call(tmp_path),
+            timeout=None,
         )
 
         branches = {c.branch_name for c in manifest.components}
@@ -350,7 +357,9 @@ class TestDecomposeSpec:
             def name(self) -> str:
                 return "retry-mock"
 
-            def run(self, prompt: str, cwd: Path | None = None) -> Iterator[str]:
+            def run(
+                self, prompt: str, cwd: Path | None = None, timeout: float | None = None
+            ) -> Iterator[str]:
                 nonlocal call_count
                 call_count += 1
                 if call_count == 1:
@@ -372,6 +381,7 @@ class TestDecomposeSpec:
             ui=ui,
             root_dir=tmp_path,
             prompt_call=architect_call(tmp_path),
+            timeout=None,
         )
 
         assert call_count == 2
@@ -398,6 +408,7 @@ class TestDecomposeSpec:
                 root_dir=tmp_path,
                 max_retries=2,
                 prompt_call=architect_call(tmp_path),
+                timeout=None,
             )
 
 
@@ -413,7 +424,9 @@ class SequenceAgent:
     def name(self) -> str:
         return "sequence-agent"
 
-    def run(self, prompt: str, cwd: Path | None = None) -> Iterator[str]:
+    def run(
+        self, prompt: str, cwd: Path | None = None, timeout: float | None = None
+    ) -> Iterator[str]:
         self.prompts.append(prompt)
         output = self._outputs[min(len(self.prompts) - 1, len(self._outputs) - 1)]
         self._final_message = output
@@ -542,6 +555,7 @@ class TestARegisterThatDidNotLandFailsTheDecompose:
                 ui=PlainUI(no_color=True),
                 root_dir=tmp_path,
                 prompt_call=architect_call(tmp_path),
+                timeout=None,
             )
 
     def test_the_halt_path_still_halts_when_its_register_cannot_land(self, tmp_path: Path) -> None:
@@ -591,6 +605,7 @@ class TestARegisterThatDidNotLandFailsTheDecompose:
                 ui=PlainUI(no_color=True),
                 root_dir=tmp_path,
                 prompt_call=architect_call(tmp_path),
+                timeout=None,
             )
         assert len(exc_info.value.escalations) == 1
         # The halt still names what it can: the audit landed, the
@@ -625,6 +640,7 @@ class TestVacuousPrdRejection:
             ui=PlainUI(no_color=True),
             root_dir=tmp_path,
             prompt_call=architect_call(tmp_path),
+            timeout=None,
         )
 
         assert len(agent.prompts) == 2
@@ -692,6 +708,7 @@ def _run_decompose(
             ui=PlainUI(no_color=True, file=buffer),
             root_dir=tmp_path,
             prompt_call=architect_call(tmp_path),
+            timeout=None,
         )
     except SpecBlockerError:
         pass
@@ -753,6 +770,7 @@ class TestSpecIssuesPersistence:
                 ui=PlainUI(no_color=True),
                 root_dir=tmp_path,
                 prompt_call=architect_call(tmp_path),
+                timeout=None,
             )
 
         artifact = tmp_path / "scripts" / "kstrl" / "spec-issues.json"
@@ -821,6 +839,7 @@ class TestSpecIssuesPersistence:
                 ui=PlainUI(no_color=True),
                 root_dir=tmp_path,
                 prompt_call=architect_call(tmp_path),
+                timeout=None,
             )
 
         assert len(_journal_rows(tmp_path)) == 1, "the writer put more than the audit on disk"
@@ -901,6 +920,7 @@ class TestPrdValidationInsideRetryLoop:
             ui=PlainUI(no_color=True),
             root_dir=tmp_path,
             prompt_call=architect_call(tmp_path),
+            timeout=None,
         )
 
         assert len(agent.prompts) == 2
@@ -932,6 +952,7 @@ class TestPrdValidationInsideRetryLoop:
                 root_dir=tmp_path,
                 max_retries=2,
                 prompt_call=architect_call(tmp_path),
+                timeout=None,
             )
 
         assert not (tmp_path / "scripts" / "kstrl" / "feature").exists()
@@ -985,6 +1006,7 @@ class TestPrdValidationInsideRetryLoop:
                 ui=PlainUI(no_color=True),
                 root_dir=tmp_path,
                 prompt_call=architect_call(tmp_path),
+                timeout=None,
             )
 
         assert calls == ["database", "api"]
@@ -1552,6 +1574,7 @@ class TestSpecConvergenceThroughDecompose:
                 ui=PlainUI(no_color=True, file=io.StringIO()),
                 root_dir=tmp_path,
                 prompt_call=architect_call(tmp_path),
+                timeout=None,
             )
 
         assert (tmp_path / "scripts" / "kstrl" / "spec-issues.json").exists()

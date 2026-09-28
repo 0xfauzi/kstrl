@@ -430,6 +430,7 @@ EXPECTED_PROMPT_SITES = {
     "guards.py::enforce_allowed_paths": "quits",
     "loop.py::_resolve_iteration_pause": "stops the run, same as Quit, when nobody answers",
     "pipeline.py::ComponentPipeline._phase_checkpoint": "parks for the inbox (#594)",
+    "plan_gate.py::run_plan_gate": "parks the plan for the inbox (#602)",
     "tui/screens/inbox.py::InboxScreen.action_reject": "a dismissed modal decides nothing",
     "tui/screens/retry.py::RetryScreen.on_scope_read": "a dismissed modal starts nothing",
 }
@@ -454,12 +455,13 @@ EXPECTED_UNDECIDED_PROMPT_SITES: tuple[str, ...] = (
 #: `Sites.seen` for the walk above, re-derived by RUNNING it rather than
 #: typed from a design document (reading a pin is not running a guard).
 EXPECTED_SEEN_PROMPT_SITES: tuple[str, ...] = (
-    "cli.py:3164 kstrl.interaction.PromptRequest",
-    "cli.py:4707 kstrl.interaction.PromptRequest",
+    "cli.py:3171 kstrl.interaction.PromptRequest",
+    "cli.py:4714 kstrl.interaction.PromptRequest",
     "feature_cmd.py:493 kstrl.interaction.PromptRequest",
     "guards.py:382 kstrl.interaction.PromptRequest",
     "loop.py:610 kstrl.interaction.PromptRequest",
-    "pipeline.py:4963 kstrl.interaction.PromptRequest",
+    "pipeline.py:4965 kstrl.interaction.PromptRequest",
+    "plan_gate.py:136 kstrl.interaction.PromptRequest",
     "tui/screens/inbox.py:333 kstrl.interaction.PromptRequest",
     "tui/screens/retry.py:395 kstrl.interaction.PromptRequest",
 )

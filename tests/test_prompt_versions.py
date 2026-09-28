@@ -277,9 +277,14 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     # engineer's own "## Self-Critique" block is a claim and not
     # evidence, which used to be enforced by deleting it from the
     # pasted diff (E2) and cannot be, now that nothing is pasted.
+    # 2.1.0 (#480): MINOR. The schema is unchanged. "stories" now holds one
+    # entry per story of the PRD section, by the id its "### " heading gives,
+    # passes included, and nothing else; the 1.2.0 integration capture folded
+    # IC1 to IC5 into one entry once and added a repository prd.json's stories
+    # once. A citation is a path with lines, one per file the evidence spans.
     "REVIEWER_PROMPT": (
-        "d3ecc207c3628737bb2ca8f1452a4920de9da5073d1dd03d532b89dae50a47fa",
-        "2.0.0",
+        "f6d5a5787e122487aa2fe942eb096d958d46bdb90195ad77df082f94beedeb0f",
+        "2.1.0",
     ),
     "SECURITY_PROMPT": (
         "f2f6b87779fc3e203de9689f4c74cb5b17ba361be7195223c10c1376eb2b6a84",
