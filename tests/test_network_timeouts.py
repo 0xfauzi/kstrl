@@ -25,6 +25,8 @@ from __future__ import annotations
 
 import ast
 
+import pytest
+
 from tests.helpers import astwalk
 from tests.helpers.astwalk import (
     calls_to,
@@ -33,22 +35,26 @@ from tests.helpers.astwalk import (
     package_sources,
     parse,
     resolved_calls,
+    scope_of,
 )
 
-#: Every ``urllib.request.urlopen`` call site in kstrl/, re-derived by
-#: running the walk below. The undecided half is the four shared sites
-#: every other guard built on ``tests.helpers.astwalk`` already pins.
+#: Every ``urllib.request.urlopen`` call site in kstrl/, keyed by module and
+#: enclosing qualified scope rather than by line (#645), so an edit above a
+#: site moves nothing while a site that moves function, appears or goes does.
+#: Not deduplicated: two calls in one scope are two rows. Re-derived by
+#: running the walk below. The undecided half is the four shared sites every
+#: other guard built on ``tests.helpers.astwalk`` already pins.
 EXPECTED_SEEN: tuple[str, ...] = (
-    "licensing.py:162 urllib.request.urlopen",
-    "linear.py:320 urllib.request.urlopen",
-    "signals.py:556 urllib.request.urlopen",
+    "licensing.py::_default_http_get urllib.request.urlopen",
+    "linear.py::LinearClient._post urllib.request.urlopen",
+    "signals.py::_fetch_bugsink_text urllib.request.urlopen",
 )
 
 EXPECTED_UNDECIDED: tuple[str, ...] = (
-    "gateparse.py:112 TOOL_PARSERS[chosen]",
-    "gateparse.py:114 TOOL_PARSERS[name]",
-    "tui/app.py:390 initial_screens_for_kind(kind, observe_only=True)",
-    "tui/app.py:462 initial_screens_for_kind(kind, observe_only=False)",
+    "gateparse.py::parse_gate_output TOOL_PARSERS[chosen]",
+    "gateparse.py::parse_gate_output TOOL_PARSERS[name]",
+    "tui/app.py::KstrlTuiApp.launch initial_screens_for_kind(kind, observe_only=False)",
+    "tui/app.py::KstrlTuiApp.open_run initial_screens_for_kind(kind, observe_only=True)",
 )
 
 
@@ -108,6 +114,7 @@ class TestEveryUrlopenCarriesATimeout:
                 {"urllib.request.urlopen"},
                 where=label(source),
                 module=module_name(source),
+                owner=scope_of(tree, lambdas=True),
             )
 
         astwalk.assert_sites(
@@ -116,6 +123,41 @@ class TestEveryUrlopenCarriesATimeout:
             undecided=EXPECTED_UNDECIDED,
             message="the set of urlopen call sites in kstrl/ moved.",
         )
+
+    def test_the_scope_key_counts_and_names_the_innermost_scope(self) -> None:
+        """The control for the census key (#645). Two calls in one scope stay
+        two rows, a nested def is its own scope, and a lambda is a scope of
+        its own rather than a row with no scope."""
+        source = (
+            "import urllib.request\n"
+            "def fetch():\n"
+            "    urllib.request.urlopen(a, timeout=1)\n"
+            "    urllib.request.urlopen(b, timeout=1)\n"
+            "    def inner():\n"
+            "        return urllib.request.urlopen(c, timeout=1)\n"
+            "    return lambda: urllib.request.urlopen(d, timeout=1)\n"
+            "class Client:\n"
+            "    def post(self):\n"
+            "        return urllib.request.urlopen(e, timeout=1)\n"
+        )
+        tree = parse(source)
+        found = calls_to(
+            tree,
+            {"urllib.request.urlopen"},
+            where="probe.py",
+            module="probe",
+            owner=scope_of(tree, lambdas=True),
+        ).sorted()
+        assert found.seen == (
+            "probe.py::Client.post urllib.request.urlopen",
+            "probe.py::fetch urllib.request.urlopen",
+            "probe.py::fetch urllib.request.urlopen",
+            "probe.py::fetch.<lambda> urllib.request.urlopen",
+            "probe.py::fetch.inner urllib.request.urlopen",
+        )
+        assert found.undecided == ()
+        with pytest.raises(KeyError):
+            calls_to(tree, {"urllib.request.urlopen"}, where="probe.py", owner=scope_of(tree))
 
     def test_the_walk_flags_a_missing_timeout_and_clears_a_present_one(self) -> None:
         no_timeout = "import urllib.request\nurllib.request.urlopen(req)\n"
