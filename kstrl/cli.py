@@ -147,8 +147,8 @@ from kstrl.security import _SEVERITY_ORDER, SecurityMode
 from kstrl.serve import ARCHITECT_RUN_KIND, LAUNCHD_MODES
 from kstrl.shutdown import StopController, install_signal_handlers
 from kstrl.timeout import TimeoutConfig, limit_seconds
+from kstrl.toolchains import DEFAULT_LINT_COMMAND, DEFAULT_TEST_COMMAND
 from kstrl.ui.base import UI
-from kstrl.verify import DEFAULT_LINT_COMMAND, DEFAULT_TEST_COMMAND
 from kstrl.version import stamp_label
 from kstrl.workqueue import ItemState
 

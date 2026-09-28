@@ -75,7 +75,7 @@ CALL rather than on the handler, so its population is every tomllib parse
 in the package - three sites, all compliant as of this change:
 
     kstrl/config_toml.py  except Exception  (#318 round 3)
-    kstrl/verify.py       except Exception  (#318 round 3, was ValueError)
+    kstrl/toolchains.py   except Exception  (#318 round 3, was ValueError; verify.py until #635)
     kstrl/feedforward.py  except Exception  (x2, pre-existing; x1, #626)
 
 WHAT THIS GUARD SEES, STATED HONESTLY
@@ -355,8 +355,9 @@ EXPECTED_TOMLLIB_SPELLINGS: dict[str, int] = {
     "config_toml.py": 3,
     # the import and three parses (#626 added `_read_toml`)
     "feedforward.py": 4,
-    # a function-local import and one parse
-    "verify.py": 2,
+    # a function-local import and one parse (python_typecheck_default,
+    # moved from verify.py by #635)
+    "toolchains.py": 2,
 }
 
 #: Every parse layer 2 resolves, keyed by module and origin. Four calls
@@ -366,7 +367,7 @@ EXPECTED_TOML_PARSES: tuple[str, ...] = (
     "feedforward.py: tomllib.loads",
     "feedforward.py: tomllib.loads",
     "feedforward.py: tomllib.loads",
-    "verify.py: tomllib.loads",
+    "toolchains.py: tomllib.loads",
 )
 
 
@@ -621,7 +622,7 @@ class TestTheWalkSeesWhatItClaimsTo:
         and should be deleted rather than left as decoration."""
         modules = {source.name for source in package_sources() if _scan_file(source).parses}
 
-        assert {"config_toml.py", "verify.py", "feedforward.py"} <= modules, modules
+        assert {"config_toml.py", "toolchains.py", "feedforward.py"} <= modules, modules
 
 
 class TestNoTomlReaderEnumeratesItsExceptions:

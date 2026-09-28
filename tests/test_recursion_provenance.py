@@ -15,7 +15,7 @@ series rather than in competition:
   ``ConfigError``, and the pyproject.toml and ruff.toml readers in
   ``verify`` and ``kstrl.feedforward`` swallow it. Not every guarded block
   goes through ``load_toml_document`` - ``init_wizard._detected_text``
-  reaches ``verify._default_typecheck_command`` - which is why the
+  reaches ``toolchains.python_typecheck_default`` - which is why the
   closure is over the PARSES and not over the call graph.
 
 These tests pin both directions in-process through
