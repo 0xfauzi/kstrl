@@ -153,7 +153,8 @@ EXPECTED_RUN_RECORD_SITES: dict[str, int] = {
     "manifest.py: Manifest.save": 1,
     # The tuple of string-typed top-level keys the schema check walks. A
     # vocabulary rather than a record, and it names kstrlVersion too.
-    "manifest.py: Manifest.validate_schema": 1,
+    # Moved out of Manifest.validate_schema by #639.
+    "manifest_keys.py: <module>": 1,
     "observability.py: ProgressLog.emit": 1,
     "observability.py: ProgressLog._repair_event": 1,
     "pipeline.py: ComponentPipeline.journal_integration_result": 1,

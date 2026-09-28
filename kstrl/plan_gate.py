@@ -26,12 +26,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from kstrl import events as ev
+from kstrl.decompose import load_spec_input, spec_digest
 from kstrl.inbox import UNDECIDED, Inbox, InboxError, InboxItem, ItemKind, ItemStatus
 from kstrl.interaction import PromptKind, PromptRequest
 from kstrl.observability import NotifyConfig, NotifyHooks
 from kstrl.pipeline import _iso_now
 from kstrl.prd import PRD
 from kstrl.statedir import ControlStateError, pre_run_prd_path
+from kstrl.workqueue import relocated_spec
 
 if TYPE_CHECKING:
     from kstrl.autonomy import FlagBundle
@@ -103,6 +105,43 @@ def plan_digest(manifest: Manifest, root_dir: Path) -> str:
     return hashlib.sha256(body.encode("utf-8")).hexdigest()
 
 
+def spec_pin_errors(manifest: Manifest, root_dir: Path) -> list[str]:
+    """Why this plan must not run on the spec as it reads now, or [] (#639).
+
+    A plan with no pinned digest has nothing to compare: a ``ks run`` or
+    ``ks feature`` manifest (no spec), or one written before #639, which
+    the caller warns about. Otherwise the spec is read again through
+    ``load_spec_input``, the reader decompose pinned, and a changed,
+    missing or unreadable spec is a refusal with the ways out named.
+    """
+    if not manifest.spec_digest:
+        return []
+    replan = f"ks factory --spec {manifest.spec_path} --project-name {manifest.project_name}"
+    path = Path(manifest.spec_path)
+    if not path.is_absolute():
+        path = root_dir / path
+    if not path.exists():
+        path = relocated_spec(root_dir, path) or path
+    try:
+        text = load_spec_input(path)
+    except (OSError, ValueError) as exc:
+        return [
+            f"the spec this plan was made from cannot be read: {manifest.spec_path}: {exc}. "
+            f"Nothing was run.",
+            f"Restore it, or re-plan from the spec you have now: {replan}",
+        ]
+    now = spec_digest(text)
+    if now == manifest.spec_digest:
+        return []
+    return [
+        f"{manifest.spec_path} has changed since this plan was made (planned from "
+        f"{manifest.spec_digest[:12]}, it now reads {now[:12]}). Nothing was run.",
+        f"Build the spec as it is now: {replan} (one architect run).",
+        f"Build the plan as it was: put {manifest.spec_path} back as it was (for a tracked "
+        f"file, git diff -- {manifest.spec_path} shows what changed) and run this again.",
+    ]
+
+
 def run_plan_gate(pipeline: ComponentPipeline, bundle: FlagBundle | None) -> int | None:
     """Ask a person to approve this run's plan, or park it. None runs the plan.
 
@@ -160,8 +199,13 @@ def run_plan_gate(pipeline: ComponentPipeline, bundle: FlagBundle | None) -> int
 
 def _question(manifest: Manifest) -> str:
     order = manifest.topological_order()
+    made_from = (
+        f", made from {manifest.spec_path} ({manifest.spec_digest[:12]})"
+        if manifest.spec_digest
+        else ""
+    )
     return (
-        f"Approve the plan for {manifest.project_name}: {len(order)} component(s) "
+        f"Approve the plan for {manifest.project_name}{made_from}: {len(order)} component(s) "
         f"({', '.join(order)})?"
     )
 
@@ -284,4 +328,6 @@ def _evidence(pipeline: ComponentPipeline, digest: str) -> dict[str, Any]:
         "plan_digest": digest,
         "components": pipeline.manifest.topological_order(),
         "manifest": str(pipeline.manifest_path),
+        "spec_path": pipeline.manifest.spec_path,
+        "spec_digest": pipeline.manifest.spec_digest,
     }

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import functools
+import hashlib
 import json
 import logging
 import os
@@ -459,6 +460,26 @@ def load_spec_input(spec_path: Path) -> str:
         ]
         return "\n\n".join(parts) + "\n"
     raise ValueError(f"Spec path does not exist: {spec_path}")
+
+
+def spec_digest(text: str) -> str:
+    """The sha256 of the spec input ``load_spec_input`` returned (#639).
+
+    The digest of the exact text the architect read, so a SpecKit edit to
+    ``plan.md`` alone moves it too. The plan pins it, and ``ks factory``
+    compares it with a fresh read before any spend.
+    """
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def spec_ref(spec_path: Path, root_dir: Path) -> str:
+    """The spec's path as a plan records it: POSIX and relative to the root,
+    or absolute when the spec is outside the root (#639)."""
+    resolved = spec_path.resolve()
+    try:
+        return resolved.relative_to(root_dir.resolve()).as_posix()
+    except ValueError:
+        return resolved.as_posix()
 
 
 # ---------------------------------------------------------------------------
@@ -2474,6 +2495,12 @@ def _decompose_spec_impl(
     ui.kv("Project", project_name)
 
     spec_content = load_spec_input(spec_path)
+    # #639: the pin is the text the architect is about to read, never a
+    # second read of the file, and spec_source is the path a later run
+    # re-reads it from.
+    pin = spec_digest(spec_content)
+    spec_source = spec_ref(spec_path, root_dir)
+    ui.kv("Spec digest", pin[:12])
     # #199: the architect runs with cwd=root_dir (see `agent.run` below),
     # so it is told to read the repository rather than handed a paste.
     # The map path is the operator's: `[paths] codebase_map` can move it,
@@ -2723,13 +2750,15 @@ def _decompose_spec_impl(
                 project_name=project_name,
                 spec_file=spec_path.name,
                 halted=True,
+                spec_digest=pin,
             ),
         )
         open_escalation_item(
             escalated,
             root_dir,
             project_name,
-            spec_path.name,
+            spec_source,
+            spec_digest=pin,
             register_path=rel_display(decisions_path) if decisions_path is not None else "",
             run_id=bus.run_id if bus is not None else "",
             warn=ui.warn,
@@ -2909,6 +2938,8 @@ def _decompose_spec_impl(
             components=manifest_components,
             linear_project_id=(linear_sync.project_id if linear_sync is not None else ""),
             linear_sync_key=(linear_sync.sync_key if linear_sync is not None else ""),
+            spec_path=spec_source,
+            spec_digest=pin,
         )
 
         # Validate DAG
@@ -2943,6 +2974,7 @@ def _decompose_spec_impl(
                     project_name=project_name,
                     spec_file=spec_path.name,
                     halted=False,
+                    spec_digest=pin,
                 ),
                 required=True,
             )
@@ -2966,7 +2998,8 @@ def _decompose_spec_impl(
     resolve_escalation_items(
         root_dir,
         project_name,
-        spec_path.name,
+        spec_source,
+        spec_digest=pin,
         run_id=bus.run_id if bus is not None else "",
         info=ui.info,
         warn=ui.warn,

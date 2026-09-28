@@ -209,6 +209,7 @@ def run_scrubbed(
     timeout: float | None,
     term_grace: float = _SCRUB_TERM_GRACE_SECONDS,
     extra_env: Mapping[str, str] | None = None,
+    stdin_text: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run a verification subprocess: scrubbed env, own process group.
 
@@ -230,6 +231,14 @@ def run_scrubbed(
     points ``COVERAGE_FILE`` at a throwaway directory so pytest-cov's
     data file cannot land in the tree being measured; see that function
     for the alternative (``--cov-config``) this rejects and why.
+
+    ``stdin_text`` given as a string is the child's whole stdin, sent as
+    utf-8 through a pipe that is then closed, so the child reads it and
+    then EOF. ``None`` leaves stdin inherited from this process, which is
+    what every gate caller does today (#632 decision 7). The fixture
+    runners always pass a string, because an inherited stdin made a
+    fixture's verdict depend on how kstrl itself was launched: an open
+    pipe nobody writes timed the fixture out, ``/dev/null`` passed it.
 
     ``timeout=None`` waits with no deadline: that is what a work limit the
     operator did not set means (#467). Callers turn a configured value into
@@ -267,13 +276,17 @@ def run_scrubbed(
         cmd,
         shell=isinstance(cmd, str),
         cwd=cwd,
+        stdin=None if stdin_text is None else subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         env=env,
         start_new_session=True,
     )
     try:
-        raw_stdout, raw_stderr = proc.communicate(timeout=timeout)
+        raw_stdout, raw_stderr = proc.communicate(
+            input=None if stdin_text is None else stdin_text.encode("utf-8"),
+            timeout=timeout,
+        )
     except subprocess.TimeoutExpired as expired:
         _signal_process_group(proc, signal.SIGTERM)
         try:
