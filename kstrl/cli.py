@@ -5485,6 +5485,7 @@ def _decide_and_report(
     hours: float | None = None,
 ) -> None:
     from kstrl.inbox import InboxError
+    from kstrl.waivers import approval_effect
 
     _root_dir, box = _inbox_for(root)
     ui_impl = _autonomy_ui(ui, no_color)
@@ -5500,7 +5501,14 @@ def _decide_and_report(
     except InboxError as exc:
         ui_impl.err(str(exc))
         sys.exit(2)
-    ui_impl.ok(f"{action}d {item.id[:8]}: {item.title}")
+    # item.status is the past-tense ItemStatus itself (a StrEnum), so this
+    # prints "approved"/"rejected"/"snoozed"/"resolved" without a second
+    # table that has to be kept in step with the first.
+    ui_impl.ok(f"{item.status} {item.id[:8]}: {item.title}")
+    # #595: say what the approval does, quoting the finding it covers.
+    effect = approval_effect(item) if action == "approve" else None
+    if effect:
+        ui_impl.info(f"  {effect}")
     sys.exit(0)
 
 
@@ -5681,13 +5689,13 @@ def _decide_parked_merge_if_parked(
         serve_parked = _serve_parked(root_dir, manifest.run_id, ui_impl)
         try:
             if action == "approve":
-                box.approve(item.id, actor=_actor(), comment=comment)
+                decided = box.approve(item.id, actor=_actor(), comment=comment)
             else:
-                box.reject(item.id, actor=_actor(), comment=comment)
+                decided = box.reject(item.id, actor=_actor(), comment=comment)
         except InboxError as exc:
             ui_impl.err(str(exc))
             sys.exit(2)
-        ui_impl.ok(f"{said} {item.id[:8]}: {item.title}")
+        ui_impl.ok(f"{decided.status} {item.id[:8]}: {item.title}")
         print_resume_plan(ui_impl, plan)
         argv = option_argv(
             factory,

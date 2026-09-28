@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Literal
 from kstrl.findings import (
     ADEQUACY_CATEGORY_PREFIX,
     CLAIM_DISAGREEMENT_CATEGORY,
+    finding_waiver,
     render_findings_markdown,
 )
 from kstrl.git import fetch_base_branch
@@ -566,6 +567,8 @@ def _generate_pr_body(
         or f.is_phase_skip
         or f.category == CLAIM_DISAGREEMENT_CATEGORY
         or f.category.startswith(ADEQUACY_CATEGORY_PREFIX)
+        # #595: a finding an inbox approval waived is on the PR, naming it.
+        or finding_waiver(f) is not None
     ]
     if callouts:
         lines.append(render_findings_markdown(callouts).rstrip())

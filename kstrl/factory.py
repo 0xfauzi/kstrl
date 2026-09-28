@@ -4802,6 +4802,9 @@ def _run_factory_locked(
     # pushed or merged anything) and before anything is scheduled, so the
     # dependents of an approved component are cut from a base that holds it.
     pipeline.apply_merge_decisions()
+    # #595: after the merge decisions and before any engineer is
+    # scheduled, so an approval made mid-run changes nothing in it.
+    pipeline.snapshot_waivers()
 
     ui.section("Factory: Execution")
     ui.kv("Max parallel", str(max_parallel))
