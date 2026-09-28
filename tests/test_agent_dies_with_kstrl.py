@@ -41,9 +41,11 @@ from tests.helpers import gitrepo, procs
 from tests.test_agent_processes_outlive_run import COMPLETE, FLAGS, _env, _repo
 
 #: Seconds from the kill to the agent's death. Measured on macOS, n=20 at
-#: load average 10.9 to 26.0 on 10 cores: at most 0.033 s. The margin is for
-#: CI runners, which were not measured. It must stay below the 5 s grace, or
-#: an agent that ignores SIGTERM would pass by dying of the SIGKILL.
+#: load average 10.9 to 26.0 on 10 cores: at most 0.033 s. Re-measured for
+#: the four kill cases and the pool, n=20 each at load 20.5 to 46.8: at most
+#: 0.130 s. The margin is for CI runners, which were not measured. It must
+#: stay below the 5 s grace, or an agent that ignores SIGTERM would pass by
+#: dying of the SIGKILL.
 AGENT_BOUND_SECONDS = 2.0
 
 #: Seconds from the kill to the death of a grandchild that ignores SIGTERM:
@@ -63,9 +65,16 @@ START_FUSE_SECONDS = 120.0
 
 def _silent_agent(pairs: Path) -> str:
     """Starts a grandchild that ignores SIGTERM in the agent's own group,
-    appends ``<agent pid> <grandchild pid>`` to ``pairs``, then waits
-    without writing a byte."""
-    return f"(trap '' TERM; exec sleep 600) & echo $$ $! >> '{pairs}'; exec sleep 600"
+    then waits without writing a byte. The grandchild appends
+    ``<agent pid> <grandchild pid>`` to ``pairs`` once its SIGTERM is
+    ignored, because the test kills kstrl the moment the line appears: a
+    line the agent wrote straight after the fork could land before the
+    subshell ran its ``trap``, and the leash's SIGTERM killed it before
+    the grace (measured: 2 of 10 runs of this file at load 53 to 62)."""
+    return (
+        "(trap '' TERM; exec sh -c 'echo \"$1 $$\" >> \"$2\"; exec sleep 600' "
+        f"sh $$ '{pairs}') & exec sleep 600"
+    )
 
 
 def _pairs(path: Path) -> list[tuple[int, int]]:
@@ -76,10 +85,22 @@ def _pairs(path: Path) -> list[tuple[int, int]]:
     return [(int(a), int(g)) for a, g in (line.split() for line in text.splitlines()) if g]
 
 
+#: Starts the CLI with SIGHUP at its default disposition, by ``exec``, so
+#: the pid is the CLI's. An ignored disposition survives ``exec``, and a
+#: suite started under ``nohup`` hands SIG_IGN to everything it spawns: the
+#: merge gate is started that way, ``ks`` outlived the SIGHUP, and the
+#: sighup case failed there 2 of 2. Measured: 3 of 3 failed under
+#: ``nohup`` and 20 of 20 passed without it, both at load 38 to 45.
+_DEFAULT_HUP_EXEC = (
+    "import os, signal, sys; signal.signal(signal.SIGHUP, signal.SIG_DFL); "
+    "os.execv(sys.executable, [sys.executable, '-m', 'kstrl', *sys.argv[1:]])"
+)
+
+
 def _ks(root: Path, env: dict[str, str], *args: str) -> subprocess.Popen[str]:
     """The real CLI in its own session, so its pgid is its pid."""
     return subprocess.Popen(
-        [sys.executable, "-m", "kstrl", *args],
+        [sys.executable, "-c", _DEFAULT_HUP_EXEC, *args],
         cwd=root,
         env=env,
         stdout=subprocess.PIPE,
@@ -202,7 +223,8 @@ def test_a_silent_agent_and_its_grandchild_die_with_kstrl(tmp_path: Path, case: 
         killed = time.monotonic()
         kill(proc.pid)
         assert procs.wait_for_pid_to_die(agent, timeout=AGENT_BOUND_SECONDS), (
-            f"agent pid {agent} alive {AGENT_BOUND_SECONDS}s after kstrl died ({case})"
+            f"agent pid {agent} alive {AGENT_BOUND_SECONDS}s after the kill ({case}); "
+            f"ks returncode {proc.poll()}"
         )
         time.sleep(max(0.0, killed + STILL_ALIVE_AT_SECONDS - time.monotonic()))
         assert pid_is_alive(grandchild), (
