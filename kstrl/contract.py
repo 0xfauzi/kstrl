@@ -36,10 +36,15 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from kstrl import git
-from kstrl.config_numbers import check_numbers
+from kstrl.config_numbers import BudgetConfigError, check_numbers
 from kstrl.manifest import Manifest
 from kstrl.timeout import limit_seconds
-from kstrl.verify import DEFAULT_TEST_COMMAND, ChildOutputDecodeError, run_scrubbed
+from kstrl.verify import (
+    DEFAULT_TEST_COMMAND,
+    ChildOutputDecodeError,
+    resolve_test_command,
+    run_scrubbed,
+)
 from kstrl.worktree_sweep import sweep_worktree, warn_sweep
 
 if TYPE_CHECKING:
@@ -83,11 +88,13 @@ class ContractConfig:
 
     mode: str = ContractMode.TIER.value
     #: #276: Phase 3 runs the merged tiers through the same suite Phase 1
-    #: ran per component, so the default is the Phase 1 constant rather
-    #: than a second literal that happens to agree with it today. Note
-    #: this only shares the DEFAULT: a project that sets
-    #: ``[verify] test_command`` does not move Phase 3 with it, because
-    #: ``load`` reads only ``[contract]``.
+    #: ran per component. #621: ``load`` makes that true of the value and
+    #: not only the default: with neither ``[contract] test_command`` nor
+    #: ``KSTRL_CONTRACT_TEST_CMD`` set, it is the command
+    #: ``[verify] test_command`` resolves to, so a Rust project that sets
+    #: ``cargo test`` there does not get ``uv run pytest`` in Phase 3.
+    #: ``from_env`` and the bare dataclass cannot read ``[verify]`` and
+    #: keep the Phase 1 constant.
     test_command: str = DEFAULT_TEST_COMMAND
     timeout: float = 0.0
 
@@ -122,6 +129,24 @@ class ContractConfig:
             config.mode = str(section["mode"])
         if "test_command" in section:
             config.test_command = str(section["test_command"])
+        else:
+            # #621: unset follows Phase 1 (see the field's comment), read with
+            # VerifyConfig.load's precedence and coercion for this one key. Not
+            # a VerifyConfig.load: that re-reported every bad [verify] value as
+            # a [contract] problem naming no key. load_toml_section itself
+            # still refuses nan/inf ANYWHERE in the [verify] table (#571,
+            # section_table), which is a defect in a field [contract] never
+            # reads; [verify]'s own load already reports that once, so a
+            # second [contract] report of the same defect under a key it does
+            # not own is suppressed here, not surfaced twice.
+            try:
+                verify = load_toml_section(resolve_config_file(root_dir), "verify")
+            except BudgetConfigError:
+                verify = {}
+            configured = os.environ.get("KSTRL_VERIFY_TEST_CMD", verify.get("test_command"))
+            config.test_command = resolve_test_command(
+                None if configured is None else str(configured)
+            )
         if "timeout" in section:
             config.timeout = float(section["timeout"])
         if "KSTRL_CONTRACT_MODE" in os.environ:
@@ -271,6 +296,15 @@ def _run_tests(
     timeout: float | None,
 ) -> tuple[bool, str]:
     """Run test suite and return (passed, output)."""
+    if not test_command.strip():
+        # #621: the shell runs "" and exits 0, which passed every tier with
+        # no test run. Unset, [contract] test_command follows [verify]
+        # test_command, and "" there turns the Phase 1 gate off.
+        return False, (
+            "Phase 3 has no test command: [contract] test_command is empty (unset, "
+            "it is the command [verify] test_command resolves to). Nothing ran. "
+            'Set [contract] test_command, or [contract] mode = "skip".'
+        )
     try:
         result = run_scrubbed(test_command, cwd=cwd, timeout=timeout)
         output = (result.stdout + result.stderr).strip()

@@ -29,6 +29,7 @@ from kstrl.loop import COMPLETION_MARKER, run_loop
 from kstrl.timeout import TimeoutConfig
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
+from tests.helpers.executables import put_on_path
 from tests.spine_utils import init_kstrl_repo
 
 #: Appends one line to lint_runs.txt every time the gate runs, then
@@ -239,6 +240,25 @@ def test_a_gate_that_overruns_the_verify_limit_is_cut_off_and_reported(
     assert elapsed < 20, f"the loop took {elapsed:.1f}s; the 1 s gate limit was not applied"
     assert f"{_HEADER}\n- linter: FAIL - Linter timed out after 1.0s\n{_FOOTER}" in agent.prompts[1]
     assert readings == [["linter"], ["linter"]]
+
+
+def test_a_python_default_between_iterations_on_a_tree_with_no_python_is_not_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#621: with ``lint_command`` unset and no pyproject.toml or setup.py,
+    the fast linter gate fails without starting ``uv`` and the next prompt
+    says why. A ``uv`` that records its arguments and exits 0 is first on
+    PATH, so running the default would have passed the gate."""
+    log = tmp_path / "uv.log"
+    put_on_path(tmp_path, monkeypatch, "uv", f'#!/bin/sh\necho "$*" >> "{log}"\nexit 0\n')
+    config, verify = _project(tmp_path, 'fast_iteration_checks = ["linter"]\n', iterations=2)
+    agent = _ScriptedAgent()
+
+    readings = _run(tmp_path, config, verify, agent)
+
+    assert not log.exists(), log.read_text(encoding="utf-8")
+    assert readings == [["linter"], ["linter"]]
+    assert "- linter: FAIL - Not run: `uv run ruff check .`" in agent.prompts[1]
 
 
 def test_the_factory_worker_hands_the_reading_to_the_next_iteration(tmp_path: Path) -> None:

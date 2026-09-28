@@ -16,7 +16,7 @@ from kstrl.atomicio import atomic_write_text
 from kstrl.jsonread import read_json, read_json_file
 from kstrl.operator_context import GUIDANCE_HEADING
 from kstrl.prd import PRD
-from kstrl.verify import VerifyConfig
+from kstrl.verify import VerifyConfig, is_python_project
 
 if TYPE_CHECKING:
     from kstrl.ui.base import UI
@@ -571,6 +571,7 @@ DEFAULT_KSTRL_TOML = """\
 # Chain toolchains to gate a polyglot repo, for example
 # "uv run pytest -q && cd web && npm run test".
 [verify]
+# Unset, a command is kstrl's Python default; "" turns that gate off.
 # test_command = ""
 # typecheck_command = ""
 # lint_command = ""
@@ -649,7 +650,7 @@ DEFAULT_KSTRL_TOML = """\
 # Phase 3 cross-component contract testing.
 [contract]
 # mode = "tier"                    # tier | final | skip
-# test_command = "uv run pytest"
+# test_command = "uv run pytest"  # unset = the command [verify] test_command resolves to
 # timeout = 0.0                   # 0 = no limit
 
 # Phase 0 codebase scan (computational structural scan; no LLM).
@@ -1396,7 +1397,15 @@ _VERIFY_KEYS = ("test_command", "typecheck_command", "lint_command")
 # purpose: the harness defaults are already right for Python, and a
 # suggestion that merely restates them is the duplication #261 removed.
 _LANGUAGE_VERIFY_COMMANDS: dict[str, tuple[str, str, str]] = {
-    "Rust": ("cargo test", "cargo check", "cargo clippy -- -D warnings"),
+    # --all-targets (#621): without it neither command reads #[cfg(test)]
+    # code. Measured on cargo 1.94: `cargo check` exits 0 on a test with a
+    # type error and `cargo clippy -- -D warnings` exits 0 on
+    # `assert!(true)`; with the flag both exit 101.
+    "Rust": (
+        "cargo test",
+        "cargo check --all-targets",
+        "cargo clippy --all-targets -- -D warnings",
+    ),
     "Go": ("go test ./...", "go vet ./...", "golangci-lint run"),
     "TypeScript": ("npm test", "npx tsc --noEmit", "npx eslint ."),
     "JavaScript": ("npm test", "", "npx eslint ."),
@@ -1806,8 +1815,7 @@ def _detect_project_context(root: Path) -> dict[str, str]:
 
     # Python
     pyproject = root / "pyproject.toml"
-    setup_py = root / "setup.py"
-    if pyproject.exists() or setup_py.exists():
+    if is_python_project(root):
         ctx["language"] = "Python"
         pyproject_text = _read_text_or_none(pyproject) or ""
         match = re.search(r'name\s*=\s*"([^"]+)"', pyproject_text)
