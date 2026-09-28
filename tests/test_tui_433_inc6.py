@@ -303,9 +303,11 @@ class TestServeRow:
                     await settled(
                         pilot,
                         lambda: (
-                            active.row_count == 2 and "folding" not in str(active.get_row_at(0)[3])
+                            active.row_count == 2
+                            and "folding" not in str(active.get_row_at(0)[3])
+                            and active.size.width
                         ),
-                        what="the factory row and the serve row",
+                        what="the factory row and the serve row, laid out",
                     )
                     serve = str(active.get_row_at(1)[3])
                     assert serve.startswith(title), serve

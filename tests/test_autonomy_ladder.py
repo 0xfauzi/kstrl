@@ -41,6 +41,7 @@ from kstrl.autonomy import (
 from kstrl.autonomy_replay import load_runs, replay, replay_file
 from tests.helpers import gitrepo
 from tests.helpers.component_prd import write_component_prd
+from tests.helpers.plan_approval import approve_plan
 from tests.helpers.replay import UNDECODABLE_TSV
 
 
@@ -278,6 +279,9 @@ def _run_factory_with_autonomy(
             )
         ],
     )
+    # #602: these tests measure the ladder's evidence, not the plan gate,
+    # so the plan is approved first; L1 would otherwise park it.
+    approve_plan(tmp_path, manifest)
     config = FactoryConfig(
         use_worktrees=False,
         create_prs=False,

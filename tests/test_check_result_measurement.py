@@ -309,9 +309,11 @@ EXPECTED_MEASURED_ARGUMENTS: dict[str, int] = {
     # The progress file could not be read, or is not UTF-8. No bullets were
     # counted either way.
     "verify.py: _self_critique_text: CheckResult: measured=False": 2,
-    # Nothing was opened: an empty diff, or changed Python files that are all
-    # gone from the worktree.
-    "verify.py: check_bad_patterns: CheckResult: measured=bool(scanned)": 1,
+    # Nothing was read: no Python file opened and no added line for the
+    # secret rule, which reads every changed file since #619. An empty diff,
+    # a diff that only deletes, or changed Python files all gone from the
+    # worktree with no line added anywhere.
+    "verify.py: check_bad_patterns: CheckResult: measured=bool(scanned or added)": 1,
     # No allowed paths configured, an empty diff, or (#416) a diff it could
     # not decode: the check applies no rule, applies it to nothing, or could
     # not read what to apply it to.
