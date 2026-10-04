@@ -34,6 +34,12 @@ by name and nothing is written. The change keeps the item's id, attempts and
 history, and appears in `ks queue show` with the old and new values and who
 made it.
 
+`<id>` is the full id `ks queue ls` prints, any unique prefix of it, or the
+short form `q-<nonce>` (`q-` followed by the id's last six characters) that
+the TUI and the titles of the inbox items `ks serve` files show. Text that
+matches more than one item, as a prefix or as a short form, is refused and
+the matching ids are listed.
+
 Items live under `.kstrl/queue/` as one directory each (spec + `meta.json`),
 moved between `queued/ leased/ running/ done/ failed/ poison/ awaiting_approval/
 awaiting_answer/` by a single

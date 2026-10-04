@@ -545,8 +545,7 @@ class TestOperatorQueue:
         self, tmp_path: Path
     ) -> None:
         from kstrl.serve import serve_lock
-        from kstrl.tui.serve_view import short_item_id
-        from kstrl.workqueue import Queue
+        from kstrl.workqueue import Queue, short_item_id
 
         run_dir = write_fake_run(tmp_path, FakeRunSpec(components=2, complete=False))
         queue = Queue(tmp_path)

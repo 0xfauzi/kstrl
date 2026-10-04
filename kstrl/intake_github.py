@@ -1365,7 +1365,7 @@ def _outcome_comment(item: QueueItem, state: str, detail: str) -> str:
             [
                 "",
                 "This will NOT be retried automatically. Inspect it with "
-                f"`ks queue show {item.item_id[:12]}` and, if it should run "
+                f"`ks queue show {item.item_id}` and, if it should run "
                 "again, `ks queue retry --reset-attempts`.",
             ]
         )
