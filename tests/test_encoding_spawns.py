@@ -58,7 +58,7 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     # +2 for #500's `tracked_files_at`, +2 for #626's `listed_files`.
     # 70: #630's git.read_blob adds two subprocess.run and two
     # subprocess.TimeoutExpired.
-    "git.py": 70,
+    "git.py": 72,
     "intake_github.py": 3,
     # #508: the import, and `TimeoutExpired` from `run_scrubbed`.
     "learning_fixture.py": 2,
@@ -213,7 +213,9 @@ EXPECTED_BYTES_MODE_SPAWNS: dict[str, int] = {
     # `verify.py` by the #435 fix-round, still decoded by hand. 9 since
     # #630: `read_blob`'s `git ls-tree` and `git cat-file` read bytes on
     # purpose, because a lockfile blob is returned as bytes, never decoded.
-    "git.py": 9,
+    # 10 since #695: `_get_stored_diff` reads bytes and decodes them itself
+    # with surrogateescape, so a binary file's bytes reach the secret rules.
+    "git.py": 10,
     "observability.py": 1,
     "retry_plan.py": 3,
     # 2: `_base_finding`'s `git show` (#414/#425), and #527's

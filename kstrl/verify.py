@@ -2461,8 +2461,13 @@ def check_bad_patterns(
         # read unconditional on `py_files` alone made it reach the diff
         # read, and thus the exception clause, even when there was nothing
         # to scan). A real diff with only non-Python changes still reads,
-        # because `changed` is non-empty.
-        added = parse_added_lines(git.get_diff_content(base_branch, cwd)) if changed else []
+        # because `changed` is non-empty. `as_stored` (#695): every changed
+        # byte, so a file git treats as binary is read too.
+        added = (
+            parse_added_lines(git.get_diff_content(base_branch, cwd, as_stored=True))
+            if changed
+            else []
+        )
         secret_hit_paths = frozenset(_scan_secrets(added, secret_patterns))
         rename_sources = _rename_sources(records)
     except Exception as exc:
@@ -2575,9 +2580,10 @@ def check_policy_envelope(
     # successful content read proves nothing about the two that follow.
     # A lenient read returns [] on timeout/nonzero exit, which the
     # evaluator cannot distinguish from "nothing changed" - the change
-    # would then satisfy every path and size rule vacuously.
+    # would then satisfy every path and size rule vacuously. `as_stored`
+    # (#695): every changed byte, so a file git treats as binary is read too.
     try:
-        diff_text = git.get_diff_content(base_branch, cwd)
+        diff_text = git.get_diff_content(base_branch, cwd, as_stored=True)
         changed = git.get_diff_names(base_branch, cwd, strict=True)
         numstat = git.get_diff_numstat(base_branch, cwd, strict=True)
     except git.GitDiffError as exc:
