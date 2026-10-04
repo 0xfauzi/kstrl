@@ -7,6 +7,21 @@
 - **Layout**: `kstrl/` is the canonical factory implementation and the only Python package.
 - **Design**: `design/` is the design system for the proposed graphical app (tokens, components, the frames of every screen) and the tools that build and check it. Start at `design/README.md`. It does not govern the Textual TUI, whose rules are `DESIGN.md` and `kstrl/tui/theme.py`.
 
+## Charter
+
+The owner set this rule for the whole factory on 2026-10-04, and it governs every change. kstrl leaves room for the models to excel, because the models keep getting better and anything kstrl hard-codes caps what a better model can do. So every change serves one of three things:
+
+- **Instructions to the model, and capturing the operator's intent.** The model gets clear instructions and the intent behind them, not a kstrl-maintained table of how to do the work.
+- **An environment with everything the model needs and nothing else.** The model can reach the tools, files and access its task requires, and nothing beyond them.
+- **Thorough verification of what the model has done.** Verification does not relax because the model is trusted more.
+
+Two rules follow from it, and #696 tracks the work to meet them.
+
+- **kstrl holds no language-specific code or config.** Nothing in kstrl assumes the target project's language, toolchain, package manager, test runner or file layout, and Python is no exception. kstrl being written in Python is not an assumption about the target. Code merged before this rule that assumes a language is being removed.
+- **Picking a stack is an explicit decision that a human confirms.** The model may propose a stack, or the operator may configure one. An operator's verification commands exist only as part of a configured stack, and a configured stack is instruction to the models to use that stack.
+
+When a change adds a per-language table, a default command for one ecosystem, or a parser for one tool's output, it violates the charter. Prefer an instruction to the model, a confirmed decision, or a verification step the model's output must pass.
+
 ## Verification commands
 
 - **Test**: `uv run pytest tests/ -q -n 8` (pytest-xdist is a dev dependency; on this 10-core machine -n 8 measured 370s against 761s at -n 3 on the same tree under the same load, and CI runs -n 4)
