@@ -1243,10 +1243,60 @@ class GitDiffError(RuntimeError):
     "reviewed" a diff of nothing and passed."""
 
 
+def _get_stored_diff(base_ref: str, cwd: Path | None, timeout: float) -> str:
+    """The diff of the bytes git stores for every changed file (#695).
+
+    Five flags, each measured hiding a key from the secret rules on git
+    2.47.1 when it is absent. ``--text``: a path git treats as binary (a
+    NUL byte near its start, or ``-diff`` or ``binary`` in
+    ``.gitattributes``) is otherwise one ``Binary files ... differ`` line.
+    ``--no-textconv`` and ``--no-ext-diff``: a ``diff=<driver>`` attribute
+    or ``diff.external`` otherwise prints a program's output in place of
+    the file. ``--no-color``: ``color.ui = always`` otherwise puts an
+    escape sequence before every ``+``, so no line reads as added.
+    ``--dst-prefix=b/``: ``diff.dstPrefix`` or ``diff.noprefix`` otherwise
+    changes the ``+++`` header, so a key is filed under a path that is not
+    in the change and ``bad_patterns`` drops it.
+
+    The child runs in bytes mode and the output is decoded here with
+    ``surrogateescape``: the one stdout decode in this module that keeps a
+    byte that is not utf-8 rather than refusing it. That is deliberate: a binary file is not
+    utf-8, and a strict decode would turn every change that adds an image
+    into a refused diff. ``surrogateescape`` neither guesses an encoding
+    nor replaces a byte; ``line.encode("utf-8", "surrogateescape")`` gives
+    back exactly what git printed.
+    """
+    try:
+        result = subprocess.run(
+            [
+                "git",
+                "diff",
+                "--text",
+                "--no-textconv",
+                "--no-ext-diff",
+                "--no-color",
+                "--dst-prefix=b/",
+                f"{base_ref}...HEAD",
+                "--",
+            ],
+            cwd=cwd,
+            capture_output=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise GitDiffError(f"git diff against {base_ref} timed out after {timeout}s") from exc
+    if result.returncode != 0:
+        stderr = result.stderr.decode("utf-8", errors="replace").strip()[:500]
+        raise GitDiffError(f"git diff against {base_ref} exited {result.returncode}: {stderr}")
+    return result.stdout.decode("utf-8", errors="surrogateescape")
+
+
 def get_diff_content(
     base_branch: str,
     cwd: Path | None = None,
     timeout: float = DEFAULT_TIMEOUT,
+    *,
+    as_stored: bool = False,
 ) -> str:
     """Get full diff content compared to a base branch.
 
@@ -1259,8 +1309,13 @@ def get_diff_content(
 
     The decode is pinned to utf-8, not left to the process locale, so the
     answer does not depend on the caller's environment.
+
+    ``as_stored=True`` is for a reader that must see every changed byte,
+    which the secret rules are (#695): see :func:`_get_stored_diff`.
     """
     base_ref = resolve_base_ref(base_branch, cwd, timeout)
+    if as_stored:
+        return _get_stored_diff(base_ref, cwd, timeout)
     try:
         result = subprocess.run(
             ["git", "diff", f"{base_ref}...HEAD", "--"],

@@ -392,7 +392,9 @@ class TestTheWalkAgainstTheRealPackage:
         #642 adds one: the ``subprocess.Popen`` in ``kstrl/agents/leash.py``
         that starts the agent under its leash. #630 adds two: ``git.read_blob``'s
         ``git ls-tree`` and ``git cat-file``, reading a lockfile at a revision.
-        Both carry a timeout. So 79.
+        Both carry a timeout. So 79. #695 adds one more: ``git._get_stored_diff``'s
+        ``subprocess.run``, the stored-bytes diff the secret rules read; it also
+        carries a timeout. So 80.
         """
         spawns = frozenset(
             {
@@ -404,7 +406,7 @@ class TestTheWalkAgainstTheRealPackage:
             }
         )
         found = package_calls(spawns)
-        assert len(found.seen) == 79
+        assert len(found.seen) == 80
         assert found.without_line_numbers().undecided == tuple(
             sorted(
                 [

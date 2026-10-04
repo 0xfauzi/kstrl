@@ -247,17 +247,18 @@ def test_check_test_adequacy_fails_closed_on_a_diff_it_cannot_decode(tmp_path: P
     assert "not valid utf-8" in result.findings[0].explanation
 
 
-def test_check_policy_envelope_fails_closed_on_a_diff_it_cannot_decode(tmp_path: Path) -> None:
+def test_check_policy_envelope_reads_content_that_is_not_utf_8(tmp_path: Path) -> None:
+    """Since #695 the envelope reads the diff with ``as_stored=True``, which
+    keeps a byte that is not utf-8 rather than refusing it, so a latin-1 file
+    gets a verdict instead of an infrastructure failure. A path git cannot
+    decode is still refused: ``get_diff_names`` reads it strictly."""
     repo = _repo(tmp_path)
     _commit_undecodable_content(repo)
 
     result = verify.check_policy_envelope(repo, "main", PolicyConfig())
 
-    assert result.passed is False
-    assert result.measured is False
-    assert "policy envelope could not read the diff" in result.message
-    assert len(result.findings) == 1
-    assert "not valid utf-8" in result.findings[0].explanation
+    assert result.passed is True
+    assert result.findings == []
 
 
 # --- 8/9: check_diff_scope -------------------------------------------------
