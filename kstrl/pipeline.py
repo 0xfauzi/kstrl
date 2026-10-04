@@ -90,6 +90,7 @@ from kstrl.interaction import (
     PromptResponse,
     UiInteractionChannel,
 )
+from kstrl.isolation import HOST_LABEL
 from kstrl.loop import UNENFORCEABLE_CALLS
 from kstrl.manifest import (
     ADVERSARIAL_BUDGET_CHECK,
@@ -3544,6 +3545,7 @@ class ComponentPipeline:
                 duration_seconds=round(verify_duration, 2),
                 not_measured=tuple(g.as_token() for g in verification.not_measured),
                 gate_logs=self._write_gate_logs(comp, verification),
+                isolation=HOST_LABEL,
             )
         )
 

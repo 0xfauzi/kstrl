@@ -44,6 +44,26 @@ rest on a reading. The branch is the one `ks factory --spec` uses when
 `--base-branch` is not given. A flakiness smoke and a cost projection are
 not built.
 
+It also adds the `isolation` row (#700). For each of two zones, setup
+(writes confined, egress open) and test (writes confined, egress
+blocked, localhost allowed), it runs canaries through `nono wrap` and
+the same canaries with no sandbox as their control, and lists every
+verdict under `isolation` in the JSON report with nono's version and
+the SHA-256 of the policy file it wrote under the control directory. A
+canary counts as contained only when its operation failed with an
+errno, and the egress canary only with EPERM. A canary whose control
+also failed is uninformative, and a timeout is never contained. The row
+is a record: a refused zone warns and never fails the verdict, because
+no command runs inside a rung yet, and every verification record says
+`none: ran on the host`. One refusal is expected today: on every system
+but macOS both zones are refused, because nono cannot express a
+localhost-only test zone on Linux. On macOS with nono 0.79, DNS resolves
+inside the test zone whatever the policy says; the owner decided
+(2026-10-04, #700) to accept that gap rather than refuse the zone on
+it, so the `dns` canary is recorded but never gates, and the test
+zone's label says "DNS open" whenever it escaped. nono comes from
+`KSTRL_NONO`, else from PATH.
+
 ## Exit codes
 
 Every `ks` command uses the same three codes, so a script or a scheduler
@@ -525,7 +545,9 @@ either deliberate (`ks queue pause`) or self-inflicted by the daemon:
 the daily budget stop sets tomorrow's local midnight as `resume_after`
 and clears itself, and the poison breaker pauses after consecutive
 poisoned items. Run `ks queue` to see the marker, and `ks queue resume`
-to lift a pause that no longer applies.
+to lift a pause that no longer applies. The resume also restarts the
+poison streak at 0; without that the next cycle would pause the queue
+again on the same streak.
 
 An unreadable pause marker also reads as paused, and the detail line
 says so. That is deliberate: resuming unattended spending on the

@@ -34,6 +34,12 @@ by name and nothing is written. The change keeps the item's id, attempts and
 history, and appears in `ks queue show` with the old and new values and who
 made it.
 
+`<id>` is the full id `ks queue ls` prints, any unique prefix of it, or the
+short form `q-<nonce>` (`q-` followed by the id's last six characters) that
+the TUI and the titles of the inbox items `ks serve` files show. Text that
+matches more than one item, as a prefix or as a short form, is refused and
+the matching ids are listed.
+
 Items live under `.kstrl/queue/` as one directory each (spec + `meta.json`),
 moved between `queued/ leased/ running/ done/ failed/ poison/ awaiting_approval/
 awaiting_answer/` by a single
@@ -52,7 +58,12 @@ item, and `ks queue show <id>` lists them; a manifest the run does not own, or
 one that cannot be read, records nothing.
 
 `ks queue pause` stops new work being claimed; it does not touch a run
-already in flight. `ks queue resume` re-opens intake.
+already in flight. `ks queue resume` re-opens intake and restarts the
+poison streak at 0, so the next cycle does not pause the queue again on
+the poisons the operator has just looked at. The journal row for the
+resume records the actor and `consecutive_poison_cleared`. If the spend
+ledger cannot be read or written, the resume is refused with exit 2 and
+the queue stays paused.
 
 ### Attempts are money
 

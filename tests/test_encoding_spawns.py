@@ -57,9 +57,12 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     # 64: 58 after #435, +2 for #465's `branch_sha`, +2 for #459's `ignored_paths`,
     # +2 for #500's `tracked_files_at`, +2 for #626's `listed_files`.
     # 70: #630's git.read_blob adds two subprocess.run and two
-    # subprocess.TimeoutExpired.
-    "git.py": 72,
+    # subprocess.TimeoutExpired. 72: #695's git._get_stored_diff adds one of
+    # each. 74: #696's git.status_entries adds one of each.
+    "git.py": 74,
     "intake_github.py": 3,
+    # #700: the import, and `TimeoutExpired` from `run_scrubbed`.
+    "isolation.py": 2,
     # #508: the import, and `TimeoutExpired` from `run_scrubbed`.
     "learning_fixture.py": 2,
     "licensing.py": 3,
@@ -80,7 +83,8 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     "tui/screens/retry.py": 2,
     # 25: `_base_finding`'s `git show` (#414/#425); `git merge-base` moved to `git.py` in #435.
     # 26: #632, `run_scrubbed`'s `subprocess.PIPE` for a stdin it was given.
-    "verify.py": 26,
+    # 27: #696, `check_stack_command`'s `subprocess.TimeoutExpired`.
+    "verify.py": 27,
     "worktree_setup.py": 2,  # #624: the import, and `TimeoutExpired` from `run_scrubbed`
     "worktree_sweep.py": 2,  # #461: the import, and `TimeoutExpired` from `run_scrubbed`
 }
@@ -102,7 +106,8 @@ EXPECTED_TEXT_MODE_SPAWNS: dict[str, int] = {
     "factory.py": 5,
     # 26: 23 after #435, +1 for #465's `branch_sha`, +1 for #459's `ignored_paths`,
     # +1 for #500's `tracked_files_at`, +1 for #626's `listed_files`.
-    "git.py": 27,
+    # 28: +1 for #696's `status_entries`.
+    "git.py": 28,
     "intake_github.py": 1,
     "licensing.py": 1,
     "pr.py": 9,
@@ -158,6 +163,7 @@ EXPECTED_CLEARED_SPAWNS: tuple[str, ...] = (
     "git.py subprocess.run(['git', 'rev-parse', '--verify', '--quiet', f'refs/head",
     # codespell:ignore-next-line
     "git.py subprocess.run(['git', 'rev-parse', '--verify', '--quiet', f'{candidat",
+    "git.py subprocess.run(['git', 'status', '--porcelain', '--untracked-files=all",
     "intake_github.py subprocess.run(['gh', *args], cwd=str(cwd) if cwd else None, capture_o",
     "licensing.py subprocess.run(['uv', 'cache', 'dir'], capture_output=True, encoding='",
     "pr.py subprocess.run(['gh', 'auth', 'status'], capture_output=True, encoding",

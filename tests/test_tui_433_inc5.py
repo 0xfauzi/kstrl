@@ -532,6 +532,52 @@ class TestServeRow:
         finally:
             lock.close()
 
+    @pytest.mark.parametrize("size", SIZES)
+    async def test_each_serve_rows_id_is_one_ks_queue_accepts(
+        self, tmp_path: Path, size: tuple[int, int], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """#706: two items minted in the same microsecond each show an id `ks queue show` takes."""
+        from datetime import UTC, datetime
+
+        from click.testing import CliRunner
+
+        from kstrl.cli import cli
+        from kstrl.serve import serve_lock
+        from kstrl.workqueue import Queue
+
+        moment = datetime.now(UTC)
+        with monkeypatch.context() as clock:
+            clock.setattr("kstrl.workqueue._utc_now", lambda: moment)
+            _run_dir, lock = _live_run_with_serve_item(tmp_path, True)
+            Queue(tmp_path).add("spec", title="slice four")
+        try:
+            with serve_lock(tmp_path):
+                app = _home(tmp_path)
+                async with app.run_test(size=size) as pilot:
+                    active = cast(
+                        DataTable[Any], await mounted(pilot, lambda: app.screen, "#home-active")
+                    )
+                    await settled(
+                        pilot,
+                        lambda: active.row_count == 3,
+                        what="the factory row and both serve rows",
+                    )
+                    who = [str(active.get_row_at(index)[1]) for index in range(3)]
+        finally:
+            lock.close()
+        shown = [cell.removeprefix("ks serve ") for cell in who if cell.startswith("ks serve ")]
+        assert len(shown) == 2, who
+        named = set()
+        for item_id in shown:
+            result = CliRunner().invoke(
+                cli, ["queue", "show", item_id, "--root", str(tmp_path), "--no-color"]
+            )
+            assert result.exit_code == 0, result.output
+            named |= {
+                item.item_id for item in Queue(tmp_path).items() if item.item_id in result.output
+            }
+        assert named == {item.item_id for item in Queue(tmp_path).items()}, (shown, named)
+
 
 class TestConfig:
     @pytest.mark.parametrize("size", SIZES)

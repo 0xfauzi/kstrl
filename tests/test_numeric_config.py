@@ -83,8 +83,8 @@ EXPECTED_SIGNED = {
 }
 
 #: Re-derived by running ``_load_returns()`` on this tree: one per loaded
-#: class, and two in ``LearningConfig.load``.
-EXPECTED_LOAD_RETURNS = 26
+#: class, and two in ``LearningConfig.load``. 27: #696's ``StackConfig``.
+EXPECTED_LOAD_RETURNS = 27
 
 #: Re-derived by running ``_numeric_parameters(_commands())`` on this tree:
 #: every numeric option and argument, of every command, whose type refuses
