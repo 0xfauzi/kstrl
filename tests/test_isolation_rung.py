@@ -325,6 +325,28 @@ def test_a_nono_that_rejects_the_policy_is_refused_and_never_phones_home(tmp_pat
 
 
 @on_macos
+def test_a_backend_that_reports_success_for_a_killed_process_is_refused(
+    tmp_path: Path,
+) -> None:
+    """A process killed by SIGTERM inside the rung must not read as a
+    success. The fake runs every other invocation as given, but reports
+    exit 0 for the SIGTERM positive control, as a backend that swallowed
+    the signal would. Each zone must then refuse, naming the control."""
+    env = _fake_nono(
+        tmp_path,
+        'for arg; do [ "$arg" = \'kill -TERM $$\' ] && exit 0; done\nshift 5\nexec "$@"\n',
+    )
+
+    code, row, reading = _isolation(tmp_path, env)
+
+    assert code == 0, row
+    assert row["status"] == "warn", row
+    for zone in ("setup", "test"):
+        assert reading[zone]["canaries"]["sigterm"] == "exit 0", reading[zone]["canaries"]
+        assert "sigterm (exit 0)" in reading[zone]["refusal"], reading[zone]["refusal"]
+
+
+@on_macos
 def test_without_nono_the_row_refuses_and_runs_nothing(tmp_path: Path) -> None:
     path = os.pathsep.join(
         entry
