@@ -256,6 +256,9 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # `tests.helpers.gitrepo.set_identity(root)`.
     "tests/test_non_python_gate_commands.py": 1,
     "tests/test_run_record_version.py": 1,
+    # #701: `_repo`'s one init commit, into a repository it has just put
+    # through `tests.helpers.gitrepo.set_identity`.
+    "tests/test_sandbox_refused_before_spend.py": 1,
     # Prose, not a commit: a tuple of literal argv-prefix strings an
     # allowlist test checks a Claude reviewer's permission RULES against
     # ("git commit" among them), never spawned.
