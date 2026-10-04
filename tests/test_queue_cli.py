@@ -506,6 +506,7 @@ class TestResumeClearsThePoisonStreak:
         row = _resume_rows(tmp_path)[-1]
         assert row["actor"] == "op-alice"
         assert row["detail"] == {"consecutive_poison_cleared": 3}
+        assert after.consecutive_poison == 0, "the resume must restart the streak at 0"
 
     @pytest.mark.parametrize(
         "breakage", ["malformed ledger", "lock is a directory", "read-only control dir"]
