@@ -61,6 +61,8 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     # each. 74: #696's git.status_entries adds one of each.
     "git.py": 74,
     "intake_github.py": 3,
+    # #700: the import, and `TimeoutExpired` from `run_scrubbed`.
+    "isolation.py": 2,
     # #508: the import, and `TimeoutExpired` from `run_scrubbed`.
     "learning_fixture.py": 2,
     "licensing.py": 3,

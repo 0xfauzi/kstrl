@@ -44,6 +44,26 @@ rest on a reading. The branch is the one `ks factory --spec` uses when
 `--base-branch` is not given. A flakiness smoke and a cost projection are
 not built.
 
+It also adds the `isolation` row (#700). For each of two zones, setup
+(writes confined, egress open) and test (writes confined, egress
+blocked, localhost allowed), it runs canaries through `nono wrap` and
+the same canaries with no sandbox as their control, and lists every
+verdict under `isolation` in the JSON report with nono's version and
+the SHA-256 of the policy file it wrote under the control directory. A
+canary counts as contained only when its operation failed with an
+errno, and the egress canary only with EPERM. A canary whose control
+also failed is uninformative, and a timeout is never contained. The row
+is a record: a refused zone warns and never fails the verdict, because
+no command runs inside a rung yet, and every verification record says
+`none: ran on the host`. One refusal is expected today: on every system
+but macOS both zones are refused, because nono cannot express a
+localhost-only test zone on Linux. On macOS with nono 0.79, DNS resolves
+inside the test zone whatever the policy says; the owner decided
+(2026-10-04, #700) to accept that gap rather than refuse the zone on
+it, so the `dns` canary is recorded but never gates, and the test
+zone's label says "DNS open" whenever it escaped. nono comes from
+`KSTRL_NONO`, else from PATH.
+
 ## Exit codes
 
 Every `ks` command uses the same three codes, so a script or a scheduler
@@ -381,10 +401,12 @@ leash process, `kstrl/agents/leash.py`, which leads the agent's process
 group and holds one end of a pipe to the kstrl process that started it.
 However that process ends (SIGKILL, an OOM kill, a crash, a closed
 terminal), the kernel closes its end of the pipe, and the leash sends
-SIGTERM to the agent's group, waits 5 seconds, and sends SIGKILL. A pool
+SIGTERM to the agent's group, waits until nothing else is left in the
+group or 5 seconds have passed, and sends SIGKILL (#708). A pool
 worker whose parent dies ends too, and takes its agents with it. Measured
-on macOS: the agent was gone within 0.04 s, and a process in its group
-that ignores SIGTERM within 5.04 s. Three things this does not cover. A
+on macOS: the agent was gone within 0.04 s, a process in its group
+that ignores SIGTERM within 5.04 s, and the leash itself within 0.10 s
+when nothing in the group outlived the SIGTERM. Three things this does not cover. A
 process an agent's tool started in a group or session of its own is not
 in the agent's group: in a worktree the next run's prune kills it and
 names it, as above, and in the project root nothing does. If the leash
@@ -527,7 +549,9 @@ either deliberate (`ks queue pause`) or self-inflicted by the daemon:
 the daily budget stop sets tomorrow's local midnight as `resume_after`
 and clears itself, and the poison breaker pauses after consecutive
 poisoned items. Run `ks queue` to see the marker, and `ks queue resume`
-to lift a pause that no longer applies.
+to lift a pause that no longer applies. The resume also restarts the
+poison streak at 0; without that the next cycle would pause the queue
+again on the same streak.
 
 An unreadable pause marker also reads as paused, and the detail line
 says so. That is deliberate: resuming unattended spending on the

@@ -31,7 +31,7 @@ from kstrl.tui.delivery import (
 )
 from kstrl.tui.integration_view import IntegrationReview, read_integration_review
 from kstrl.tui.messages import DeliveryRead, StateChanged
-from kstrl.tui.serve_view import ServeState, read_serve_state, short_item_id
+from kstrl.tui.serve_view import ServeState, read_serve_state
 from kstrl.tui.widgets.activity import ActivityFeed
 from kstrl.tui.widgets.component_table import ComponentTable
 from kstrl.tui.widgets.cost_meter import CostMeter
@@ -70,6 +70,8 @@ DELIVERY_INTERVAL_SECONDS = 2.0
 
 def serve_note(serve: ServeState | None, run_id: str) -> str:
     """The header's word on ``ks serve`` for this run (#433 M1)."""
+    from kstrl.workqueue import short_item_id
+
     if serve is None:
         return ""
     parts = []
