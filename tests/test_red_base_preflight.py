@@ -249,6 +249,15 @@ def test_a_green_base_proceeds_to_the_engineer(tmp_path: Path) -> None:
         "typecheck": True,
         "linter": True,
     }
+    # #700: every command ran on the host, and both records say so.
+    assert record["isolation"] == "none: ran on the host"
+    (events,) = sorted((root / ".kstrl" / "runs").glob("*/events.jsonl"))
+    verdicts = [
+        line["data"]
+        for line in map(json.loads, events.read_text(encoding="utf-8").splitlines())
+        if line["event"] == "verification_result"
+    ]
+    assert [v["isolation"] for v in verdicts] == ["none: ran on the host"], verdicts
 
 
 @pytest.mark.parametrize(
