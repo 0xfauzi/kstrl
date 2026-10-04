@@ -390,7 +390,8 @@ def test_an_approved_item_waives_its_finding_on_retry(tmp_path: Path, kind: Item
             plan_id=comp.plan_id,
             component=COMP,
         )
-        waivers = load_approvals(Inbox(root, InboxConfig.load(root))).for_scope(scope)
+        (diff_sha,) = {item.evidence["diff_sha"] for item in items}
+        waivers = load_approvals(Inbox(root, InboxConfig.load(root))).for_scope(scope, diff_sha)
         result = check_test_adequacy(root, base_sha, AdequacyConfig.load(root), waivers=waivers)
         assert "test adequacy satisfied after waivers" in result.message, result.message
 
@@ -425,9 +426,9 @@ def test_an_approval_does_not_cover_a_different_denied_path(tmp_path: Path) -> N
     (finding,) = _gated(root, "policy_")
     assert finding.severity == "high"
     assert f"waiver_refused:{item.id}" in finding.tags
-    assert any(
-        "covers a different policy_paths_deny finding" in f for f in _verification_failures(root)
-    )
+    # #646: the retry wrote a different change, so the approval is refused
+    # on its diff before its finding text is compared.
+    assert any("a regenerated change is asked again" in f for f in _verification_failures(root))
 
 
 def test_a_repeat_with_different_evidence_opens_a_second_item_not_a_replacement(
