@@ -4227,9 +4227,9 @@ class ComponentPipeline:
                 # One carve-out, and it is not silent: a custom
                 # ``agent_cmd`` resolves to CustomAgent, which has no
                 # generic sandbox surface and drops BOTH settings.
-                # run_factory warns per reviewer role at startup rather
-                # than letting an operator believe in a boundary that is
-                # not there.
+                # run_factory refuses to start under [sandbox] (#701) and
+                # warns per reviewer role otherwise, rather than letting an
+                # operator believe in a boundary that is not there.
                 sandbox=self.sandbox_config,
                 read_only=True,
             )

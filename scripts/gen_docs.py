@@ -297,7 +297,7 @@ def _section_specs() -> list[SectionSpec]:
         ),
         SectionSpec(
             "sandbox",
-            "OS-level agent sandboxing (R7.5; claude-code/codex only)",
+            "OS-level agent sandboxing (R7.5; claude-code, claude-sdk and codex only)",
             identity_keys(SandboxConfig, _all_field_names(SandboxConfig)),
             lambda root: SandboxConfig.load(root_dir=root),
             SandboxConfig(),
@@ -600,8 +600,9 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("breaker", "test_command"): "stall-probe command; empty = the explicit [verify] test_command, "
     "else diff-hash only",
     ("breaker", "test_timeout"): "seconds before the stall probe is killed",
-    ("sandbox", "enabled"): "OS-sandbox the engineer's agent CLI (writes scoped to its "
-    "worktree); ignored for custom agent commands",
+    ("sandbox", "enabled"): "OS-sandbox the engineer, reviewer, understand and repair agent CLIs "
+    "(writes scoped to the worktree); a custom agent command in one of those roles is refused "
+    "(exit 2)",
     ("sandbox", "allow_network"): "re-open outbound network inside the sandbox (off = deny)",
     # #621: "" turns the gate off, so the rendered `= ""` is NOT inert
     # here the way it is for [paths] progress; the text says so.

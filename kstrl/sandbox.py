@@ -38,8 +38,9 @@ seatbelt; probe transcript in the R7.5 PR). Measured findings:
   reruns a failed command unsandboxed); it is always set to false here.
 
 - CustomAgent: an arbitrary operator-supplied shell command has no
-  generic sandbox surface; the config is IGNORED for custom agents and
-  the factory says so loudly at startup.
+  generic sandbox surface, so a run that would start one as the engineer,
+  a reviewer, the understand agent or the repair agent while the sandbox
+  is enabled is refused before any spend (#701).
 
 Default off: sandboxing changes agent behavior (blocked network calls,
 denied writes), so the operator opts in per project.
@@ -49,6 +50,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -120,6 +122,31 @@ class SandboxConfig:
         if "KSTRL_SANDBOX_ALLOW_NETWORK" in os.environ:
             allow_network = _parse_bool(os.environ.get("KSTRL_SANDBOX_ALLOW_NETWORK"))
         return check_numbers(cls(enabled=enabled, allow_network=allow_network))
+
+
+#: The headline of the refusal :func:`unsandboxable_roles` feeds (#701).
+SANDBOX_REFUSAL = "[sandbox] is enabled and kstrl cannot apply it to a role this run would start"
+
+
+def unsandboxable_roles(config: SandboxConfig, commands: Mapping[str, str | None]) -> list[str]:
+    """One refusal line per role the sandbox cannot reach, or [] (#701).
+
+    ``commands`` maps each role a run would start to its custom agent
+    command, or to None when the role runs on a CLI adapter. A custom
+    command is an arbitrary shell command with no sandbox surface, so an
+    operator who enabled the sandbox would otherwise believe in a
+    boundary the role does not have. The command itself is not printed:
+    it can carry a credential.
+    """
+    if not config.enabled:
+        return []
+    return [
+        f"the {role} is a custom agent command, which kstrl cannot sandbox. Run the "
+        f"{role} on the claude-code, claude-sdk or codex adapter, or turn the sandbox "
+        "off ([sandbox] enabled = false, KSTRL_SANDBOX_ENABLED)."
+        for role, command in commands.items()
+        if command
+    ]
 
 
 def codex_sandbox_args(config: SandboxConfig | None) -> list[str]:

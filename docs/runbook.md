@@ -96,6 +96,14 @@ this is a small print an operator should have to find on their own:
 
 **Resolve**: make the base green in a commit; or commit `pytest.mark.xfail(strict=True)` on the tests you accept as failing; or pass `--no-verify`, which turns off all of Phase 1 and this check with it. Under `--no-verify` the record says `--no-verify: Phase 1 runs no gate`.
 
+## Refused: `[sandbox]` cannot reach a role
+
+**Symptom**: `Refusing to run: [sandbox] is enabled and kstrl cannot apply it to a role this run would start`, exit 2, and no agent was called. Each line under it names one role: `the engineer`, `the code reviewer`, `the security reviewer` (`ks factory`, `ks run`), `the understand agent` (`ks understand`), `the engineer` or `the repair agent` (`ks feature`).
+
+**What it is**: the sandbox is applied by the claude-code, claude-sdk and codex adapters. A custom agent command (`--agent-cmd`, `[agent] command`, `AGENT_CMD`, `--review-agent-cmd`, `--security-agent-cmd`, `--repair-agent-cmd`) is an arbitrary shell command with no sandbox surface, so kstrl refuses to start it rather than run it outside the boundary you asked for (#701). A reviewer whose phase is off (`review_mode = skip`, security `skip`) is not named. The integration reviewer uses the code reviewer's command, so `the code reviewer` covers it. The code and security reviewers fall back to the engineer's command when none of their own is set, so a custom engineer usually names them too. On `ks factory` and `ks run` the refusal comes after the run's launch record, `.kstrl/runs/<run_id>/launch.json`, is written.
+
+**Resolve**: run the named role on an adapter (unset its custom command and set `[agent] type`, or the reviewer's agent type), or turn the sandbox off with `[sandbox] enabled = false` or `KSTRL_SANDBOX_ENABLED=0`.
+
 ## Phase 1: mechanical verification failed
 
 **Symptom**: `Phase 1 FAILED for <comp_id>: <check_names>`
