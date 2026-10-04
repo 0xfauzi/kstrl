@@ -30,7 +30,7 @@ import os
 import secrets
 import subprocess
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -38,10 +38,12 @@ from typing import TYPE_CHECKING
 from kstrl import git
 from kstrl.config_numbers import BudgetConfigError, check_numbers
 from kstrl.manifest import Manifest
+from kstrl.stack import Stack, load_stack
 from kstrl.timeout import limit_seconds
 from kstrl.toolchains import DEFAULT_TEST_COMMAND
 from kstrl.verify import (
     ChildOutputDecodeError,
+    check_stack_command,
     resolve_test_command,
     run_scrubbed,
 )
@@ -98,6 +100,11 @@ class ContractConfig:
     #: keep the Phase 1 constant.
     test_command: str = DEFAULT_TEST_COMMAND
     timeout: float = 0.0
+    #: #696: the project's [stack], read by ``load``. Under a stack Phase 3
+    #: runs every one of its checks (decision 10) and ``test_command`` is
+    #: "" (``[contract] test_command`` is refused at load). Provenance: no
+    #: [contract] key of its own.
+    project_stack: Stack | None = field(default=None, metadata={"provenance": True})
 
     def __post_init__(self) -> None:
         # B8: reject typo'd modes loudly instead of letting them silently
@@ -158,6 +165,9 @@ class ContractConfig:
             config.timeout = float(os.environ["KSTRL_TIMEOUT_CONTRACT"])
         # Re-validate after assignment (env / toml may have introduced typos)
         config.__post_init__()
+        config.project_stack = load_stack(root_dir)
+        if config.project_stack is not None:
+            config.test_command = ""
         return check_numbers(config)
 
 
@@ -326,6 +336,26 @@ def _run_tests(
         return False, f"Test suite output could not be decoded: {exc}"
 
 
+def _run_checks(
+    cwd: Path, test_command: str, timeout: float | None, stack: Stack | None
+) -> tuple[bool, str]:
+    """Phase 3's verdict on ``cwd`` and its evidence.
+
+    Under a ``[stack]`` every one of its checks runs, in order, each judged
+    by its exit status (#696 decisions 4 and 10); the evidence is each
+    failing check's message and output. Without one, the test command.
+    """
+    if stack is None:
+        return _run_tests(cwd, test_command, timeout)
+    rows = [
+        check_stack_command(cwd, name, command, timeout, stack.env)
+        for name, command in stack.checks
+    ]
+    failed = [row for row in rows if not row.passed]
+    evidence = "\n".join(f"{row.name}: {row.message}\n{row.output or ''}".strip() for row in failed)
+    return not failed, evidence
+
+
 def bisect_breaker(
     base_branch: str,
     prior_branches: list[str],
@@ -335,6 +365,7 @@ def bisect_breaker(
     ui: UI,
     timeout: float | None = None,
     setup: WorktreeSetup = NO_SETUP,
+    stack: Stack | None = None,
 ) -> str | None:
     """Linear bisection to identify which component broke integration.
 
@@ -353,6 +384,8 @@ def bisect_breaker(
         timeout: Timeout per test run
         setup: Worktree setup run after each merge, before its test run
             (#624); a failed setup ends the bisection with no breaker
+        stack: The project's ``[stack]``, whose checks run instead of
+            ``test_command`` (#696)
 
     Returns:
         Component ID of the breaker, or None if unclear.
@@ -378,7 +411,7 @@ def bisect_breaker(
 
             if setup.prepare(worktree_path):
                 return None
-            passed, _ = _run_tests(worktree_path, test_command, timeout)
+            passed, _ = _run_checks(worktree_path, test_command, timeout, stack)
             if not passed:
                 return comp_id
 
@@ -474,10 +507,11 @@ def run_tier_check(
             )
 
         # Run tests
-        passed, output = _run_tests(
+        passed, output = _run_checks(
             worktree_path,
             config.test_command,
             limit_seconds(config.timeout),
+            config.project_stack,
         )
 
         if passed:
@@ -510,6 +544,7 @@ def run_tier_check(
         ui,
         limit_seconds(config.timeout),
         setup,
+        config.project_stack,
     )
 
     if breaker:
@@ -590,10 +625,11 @@ def run_integrated_base_check(
         output = setup.prepare(worktree_path)
         passed = False
         if not output:
-            passed, output = _run_tests(
+            passed, output = _run_checks(
                 worktree_path,
                 config.test_command,
                 limit_seconds(config.timeout),
+                config.project_stack,
             )
     finally:
         _remove_temp_worktree(worktree_path, root_dir, ui, "contract")

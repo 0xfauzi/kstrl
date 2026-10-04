@@ -23,6 +23,7 @@ from kstrl.interaction import (
 from kstrl.prd import PRD
 from kstrl.timeout import TimeoutConfig, describe_limit_seconds
 from kstrl.verify import (
+    ResolvedVerifyCommands,
     VerificationResult,
     VerifyConfig,
     resolve_verify_commands,
@@ -542,7 +543,7 @@ def build_project_context(
     each. That is the intended #261 behaviour, and it never writes to the
     file on disk.
     """
-    commands = resolve_verify_commands(verify_config, cwd) if verify_config is not None else None
+    commands, block = _verification_block(verify_config, cwd)
 
     sections: list[str] = []
     claude_root = cwd if context_root is None else context_root
@@ -560,9 +561,26 @@ def build_project_context(
                 claude_md = scrubbed.text
         sections.append("# Project Context (from CLAUDE.md)\n\n" + claude_md)
 
-    if commands is not None:
-        sections.append(commands.format_for_prompt())
+    if block:
+        sections.append(block)
     return "\n\n".join(sections)
+
+
+def _verification_block(
+    verify_config: VerifyConfig | None, cwd: Path
+) -> tuple[ResolvedVerifyCommands | None, str]:
+    """The gate commands CLAUDE.md is scrubbed against, and the block that
+    tells the engineer what runs: "" when nothing does.
+
+    Under a ``[stack]`` (#696) the block is the stack's, and no gate
+    command is resolved, so nothing scrubs CLAUDE.md against one.
+    """
+    if verify_config is None:
+        return None, ""
+    if verify_config.project_stack is not None:
+        return None, verify_config.project_stack.format_for_prompt()
+    commands = resolve_verify_commands(verify_config, cwd)
+    return commands, commands.format_for_prompt()
 
 
 def _guard_baseline(

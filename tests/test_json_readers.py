@@ -140,6 +140,9 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     "sandbox.py": 3,
     "serve.py": 5,
     "signals.py": 3,
+    # #696: the import and one json.dumps, the stack digest's canonical
+    # form. No parse: the table is read through load_toml_document.
+    "stack.py": 2,
     "statedir.py": 2,
     "verify.py": 1,
     # #595: the import and one json.dumps, the canonical JSON the waiver

@@ -16,6 +16,13 @@ pytest collecting no tests) is warned about and recorded, never refused:
 Phase 1 still fails such a row on every component, and refusing it would
 refuse every run on a repository that has no tests yet.
 
+Under a ``[stack]`` (#696) the gates are the stack's checks and the base is
+held to more: any check that did not pass refuses, measured or not, a failed
+setup refuses, and so does anything ``git status`` shows in the base's
+worktree after the checks ran (:data:`BaseGates.left_behind`). A check whose
+output is not ignored by the project's own .gitignore would otherwise read as
+an out-of-scope edit of every engineer's.
+
 :func:`write_record` writes ``.kstrl/runs/<run_id>/base-gates.json`` for
 every reading, a skipped one included. The verdict is taken from the reading
 in memory, never from the file read back.
@@ -35,10 +42,10 @@ from kstrl.contract import ContractCleanupError, _create_temp_worktree, _remove_
 from kstrl.events import RunPaths
 from kstrl.isolation import HOST_LABEL
 from kstrl.verify import (
-    FAST_ITERATION_GATES,
     CheckResult,
     VerificationResult,
     VerifyConfig,
+    gate_names,
     resolve_verify_commands,
     run_fast_checks,
 )
@@ -76,6 +83,12 @@ class BaseGates:
     error: str = ""
     result: VerificationResult | None = None
     seconds: float = 0.0
+    #: #696: the ``[stack]`` digest the base was measured under; "" with no stack.
+    stack_digest: str = ""
+    #: #696: what ``git status`` showed in the base worktree after the checks
+    #: ran, under a stack only: each entry, or one line saying why it could
+    #: not be read.
+    left_behind: tuple[str, ...] = ()
 
 
 def measure_base_gates(
@@ -108,16 +121,22 @@ def measure_base_gates(
             error=f"the base {sha[:12]} was not measured: its checkout failed: {checkout_error}",
             seconds=time.monotonic() - start,
         )
+    left_behind: tuple[str, ...] = ()
     try:
         setup_error = setup.prepare(worktree)
-        digest = verify_digest(resolve_verify_commands(config, worktree), config.subprocess_timeout)
+        digest = verify_digest(
+            config.project_stack or resolve_verify_commands(config, worktree),
+            config.subprocess_timeout,
+        )
         result = (
             None
             if setup_error
             else run_fast_checks(
-                worktree, replace(config, fast_iteration_checks=list(FAST_ITERATION_GATES))
+                worktree, replace(config, fast_iteration_checks=list(gate_names(config)))
             )
         )
+        if config.project_stack is not None and result is not None:
+            left_behind = _left_behind(worktree)
     finally:
         cleanup_error = _discard(worktree, root_dir, ui)
     return BaseGates(
@@ -129,7 +148,17 @@ def measure_base_gates(
         cleanup_error,
         result,
         time.monotonic() - start,
+        config.project_stack.digest if config.project_stack is not None else "",
+        left_behind,
     )
+
+
+def _left_behind(worktree: Path) -> tuple[str, ...]:
+    """What ``git status`` shows in ``worktree``, or why it could not say."""
+    try:
+        return tuple(git.status_entries(worktree))
+    except git.GitDiffError as exc:
+        return (f"(git status could not be read: {exc})",)
 
 
 def _discard(worktree: Path, root_dir: Path, ui: UI) -> str:
@@ -155,7 +184,10 @@ def refusal_lines(reading: BaseGates) -> list[str]:
     read, a failed setup and a gate that measured nothing are warnings
     (:func:`warning_lines`): Phase 1 still runs every gate on every
     component, so letting them through passes nothing it did not pass.
+    Under a ``[stack]`` the rules are :func:`_stack_refusal_lines`.
     """
+    if reading.stack_digest:
+        return _stack_refusal_lines(reading)
     if reading.result is None:
         return []
     at = f"{reading.base_branch} at {reading.base_sha[:12]}"
@@ -173,9 +205,38 @@ def refusal_lines(reading: BaseGates) -> list[str]:
     return lines
 
 
+def _stack_refusal_lines(reading: BaseGates) -> list[str]:
+    """The base refusal under a ``[stack]`` (#696): a failed setup, every
+    check that did not pass whether or not it measured anything, and every
+    entry ``git status`` showed after the checks ran."""
+    at = f"{reading.base_branch} at {reading.base_sha[:12]}"
+    if reading.setup_error:
+        return [f"the setup fails on {at}: {reading.setup_error}"]
+    if reading.result is None:
+        return []
+    lines = [
+        f"{check.name} fails on {at}: {check.message}"
+        for check in reading.result.checks
+        if not check.passed
+    ]
+    if reading.left_behind:
+        lines.append(
+            f"git status after the checks on {at}: "
+            + ", ".join(reading.left_behind)
+            + "; what a check writes must be committed or ignored in .gitignore"
+        )
+    return lines
+
+
 def warning_lines(reading: BaseGates) -> list[str]:
-    """What this reading could not measure, one line each."""
+    """What this reading could not measure, one line each.
+
+    Under a ``[stack]`` a failed setup and an unmeasured check are
+    refusals (:func:`_stack_refusal_lines`), not warnings.
+    """
     lines = [reading.error] if reading.error else []
+    if reading.stack_digest:
+        return lines
     if reading.setup_error:
         at = reading.base_sha[:12]
         lines.append(f"the base {at} was not measured: its setup failed: {reading.setup_error}")
@@ -203,6 +264,8 @@ def reading_document(
         "baseBranch": reading.base_branch,
         "baseSha": reading.base_sha,
         "verifyDigest": reading.digest,
+        "stackDigest": reading.stack_digest,
+        "leftBehind": list(reading.left_behind),
         "setupCommand": reading.setup_command,
         "setupError": reading.setup_error,
         "error": reading.error,

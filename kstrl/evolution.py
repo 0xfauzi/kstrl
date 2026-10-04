@@ -1032,6 +1032,9 @@ _CATEGORY_BY_CHECK = {
     "fixtures": "verification",
     "policy_envelope": "verification",
     "test_adequacy": "verification",
+    # #696: a [stack] check's row is "stack:<name>", so its signature's
+    # check part is "stack". A Phase 1 gate like the three above.
+    "stack": "verification",
     # #315 round 2: a failure recorded with no signatures= is filed
     # under its PHASE (pipeline._record_failure_signatures), so these
     # two are check names as much as any gate is. "verify" is the phase

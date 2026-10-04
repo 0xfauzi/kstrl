@@ -62,6 +62,10 @@ EXPECTED_GATE_FAILURE_ROWS: dict[str, int] = {
     "verify.py: check_linter: output=_output_before_stop(expired.stdout, expired.stderr)": 1,
     "verify.py: check_test_suite: output=_output_before_stop(exc.stdout, exc.stderr)": 1,
     "verify.py: check_test_suite: output=_output_before_stop(expired.stdout, expired.stderr)": 1,
+    # #696: a [stack] check's three failing exits, each with what it printed.
+    "verify.py: check_stack_command: output=_output_before_stop(exc.stdout, exc.stderr)": 1,
+    "verify.py: check_stack_command: output=_output_before_stop(expired.stdout, expired.stderr)": 1,  # noqa: E501
+    "verify.py: check_stack_command: output=bounded_gate_output(output)": 1,
     "verify.py: check_typecheck: output=_output_before_stop(exc.stdout, exc.stderr)": 1,
     "verify.py: check_typecheck: output=_output_before_stop(expired.stdout, expired.stderr)": 1,
 }

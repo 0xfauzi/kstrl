@@ -341,6 +341,9 @@ def check_verify_commands(root: Path) -> _CheckResult:
         config = VerifyConfig.load(root)
     except (OSError, ValueError):
         return _not_evaluated("verify_commands")
+    if config.project_stack is not None:  # #696: Phase 1's and Phase 3's commands
+        listed = ", ".join(f"{name} `{cmd}`" for name, cmd in config.project_stack.checks)
+        return (STATUS_OK, f"Phase 1 and Phase 3 will run the [stack] checks: {listed}", "")
     commands = resolve_verify_commands(config, root)
     stated = f"test `{commands.test}`, typecheck `{commands.typecheck}`, lint `{commands.lint}`"
     unset = [
