@@ -298,6 +298,8 @@ def test_only_the_new_baseline_is_held_to_the_ceiling(ladder_on: Path) -> None:
         pytest.param(True, "True", id="a-bool"),
         pytest.param(1.5, "1.5", id="above-one"),
         pytest.param(None, "None", id="absent"),
+        pytest.param(float("nan"), "nan", id="not-a-number"),
+        pytest.param(-0.5, "-0.5", id="below-zero"),
     ],
 )
 def test_a_malformed_false_positive_block_is_refused_with_its_index(
@@ -331,6 +333,34 @@ def test_a_malformed_false_positive_block_is_refused_with_its_index(
         f"false_positive_analysis.roles[1] 'security_negative_ts' has no usable 'fp_rate': {shown}"
         in done.stderr
     )
+    assert "Traceback" not in done.stderr
+    assert done.stdout == ""
+    assert inbox_items(ladder_on, ItemKind.CALIBRATION_DRIFT) == []
+
+
+@pytest.mark.parametrize(
+    "block",
+    [
+        pytest.param({"fp_rate_max": 0.34, "roles": {}}, id="no-roles"),
+        pytest.param({"fp_rate_max": 0.34, "roles": []}, id="roles-a-list"),
+        pytest.param("none ran", id="a-string"),
+    ],
+)
+def test_a_false_positive_block_without_roles_is_refused(ladder_on: Path, block: object) -> None:
+    """Slice 3: a false-positive block that is present but names no role
+    refuses the comparison (exit 2). The harness writes the block only when a
+    negative ran, so an empty one is a writer that lost its roles; read as
+    nothing to gate, it would print an empty block and pass."""
+    old = _baseline(ladder_on, OLD_TS, ("security", "sec-01", 3))
+    new = _baseline(ladder_on, NEW_TS, ("security", "sec-01", 3))
+    document = json.loads(new.read_text(encoding="utf-8"))
+    document["false_positive_analysis"] = block
+    new.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+
+    done = _cli(old, new, ladder_on)
+
+    assert done.returncode == 2, done.stdout + done.stderr
+    assert "'false_positive_analysis' has no non-empty 'roles' object" in done.stderr
     assert "Traceback" not in done.stderr
     assert done.stdout == ""
     assert inbox_items(ladder_on, ItemKind.CALIBRATION_DRIFT) == []
