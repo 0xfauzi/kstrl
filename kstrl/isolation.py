@@ -23,6 +23,17 @@ uninformative, because a sandbox cannot be credited with stopping an
 operation that fails anyway. Any canary that is not contained, and any
 positive control that does not pass, refuses the zone and is named.
 
+A write canary's own report is not trusted alone: a backend that
+redirects a write instead of failing it, or that misreports its errno,
+must not read as contained. For the three write canaries kstrl also
+checks the host filesystem itself, right after the sandboxed run and
+before the control run writes the same path: if the target already
+exists on the host at that moment, the write reached the host, and the
+verdict is forced to "escaped" no matter what the sandboxed process
+claimed. A SIGTERM delivered to a canary process inside the rung is a
+positive control of its own: the rung must still report the ordinary
+signal-death exit, never a plain success.
+
 Two measured limits, both recorded rather than probed:
 
 - DNS resolves inside the test zone whatever the policy says (G1), so
@@ -109,9 +120,16 @@ DNS_ZONE = "10.9.8.7.nip.io"
 ENV_CANARY_NAME = "CDPATH"
 #: The exit a missing command must give inside the rung.
 MISSING_COMMAND_EXIT = 127
+#: Argv for the SIGTERM positive control: a process that kills itself
+#: must report an ordinary signal death (143, or -15 from kstrl's own
+#: subprocess wrapper), never a plain success. Run through a shell
+#: because sending a signal to the current process needs one.
+SIGTERM_PROBE = ("/bin/sh", "-c", "kill -TERM $$")
+#: The exit statuses a SIGTERM death may report.
+SIGTERM_CODES = (143, -15)
 
 #: What the rung must still allow: a check that cannot do these cannot run.
-POSITIVE_CONTROLS = ("scratch_write", "loopback", "env_reaches", "exit_127")
+POSITIVE_CONTROLS = ("scratch_write", "loopback", "env_reaches", "exit_127", "sigterm")
 
 #: The canary program. It takes ``name kind target`` triples on argv,
 #: attempts each operation once, and prints one JSON object mapping each
@@ -362,9 +380,47 @@ def _plan(zone: str, layout: _Layout) -> list[tuple[str, str, str]]:
     ]
 
 
+#: Write canaries whose target the host filesystem is checked for,
+#: between the sandboxed run and the control run. ``scratch_write`` is
+#: excluded: it targets the granted zone, where a write is expected to
+#: land.
+_HOST_CHECKED_WRITES = ("write_outside", "write_tmp", "write_state_parent")
+
+
+def _canary_verdicts(
+    names: Sequence[str],
+    sandboxed: Mapping[str, str],
+    control: Mapping[str, str],
+    host_escaped: Mapping[str, bool],
+) -> dict[str, str]:
+    """Each canary's verdict, a "contained" write downgraded to
+    "escaped" when the host check caught it reaching the host anyway."""
+    verdicts: dict[str, str] = {}
+    for name in names:
+        if name in POSITIVE_CONTROLS:
+            verdicts[name] = sandboxed[name]
+            continue
+        verdict = _verdict(name, sandboxed[name], control[name])
+        if host_escaped.get(name) and verdict.startswith("contained"):
+            verdict = "escaped"
+        verdicts[name] = verdict
+    return verdicts
+
+
+def _probe(nono: str, policy_path: Path, layout: _Layout, argv: Sequence[str]) -> _Ran:
+    """One extra nono spawn outside the canary process: the missing-
+    command and SIGTERM positive controls, each its own invocation."""
+    return _run_bounded(_nono_argv(nono, policy_path, layout.zone, list(argv), []), layout.zone)
+
+
 def _run_canaries(nono: str, policy_path: Path, layout: _Layout, zone: str) -> dict[str, str]:
     plan = _plan(zone, layout)
     names = [name for name, _kind, _target in plan]
+    write_targets = {
+        name: target
+        for name, kind, target in plan
+        if name in _HOST_CHECKED_WRITES and kind == "write"
+    }
     canary = [_INTERPRETER, "-I", "-S", "-c", CANARY_SOURCE, str(CONNECT_SECONDS)]
     canary += [part for triple in plan for part in triple]
     assignments = [f"{ENV_CANARY_NAME}={layout.token}"]
@@ -375,23 +431,25 @@ def _run_canaries(nono: str, policy_path: Path, layout: _Layout, zone: str) -> d
             ),
             names,
         )
+        # Checked now, before the control run writes the same paths: a
+        # write that reached the host during the sandboxed run must not
+        # be credited to the control run instead.
+        host_escaped = {name: Path(target).exists() for name, target in write_targets.items()}
+        for target in write_targets.values():
+            Path(target).unlink(missing_ok=True)
         control = _outcomes(_run_bounded([ENV_PROGRAM, *assignments, *canary], layout.zone), names)
     finally:
         for _name, kind, target in plan:
             if kind == "write":
                 Path(target).unlink(missing_ok=True)
-    verdicts = {
-        name: sandboxed[name]
-        if name in POSITIVE_CONTROLS
-        else _verdict(name, sandboxed[name], control[name])
-        for name in names
-    }
-    missing = _run_bounded(
-        _nono_argv(nono, policy_path, layout.zone, [f"kstrl-canary-missing-{layout.token}"], []),
-        layout.zone,
-    )
+    verdicts = _canary_verdicts(names, sandboxed, control, host_escaped)
+    missing = _probe(nono, policy_path, layout, [f"kstrl-canary-missing-{layout.token}"])
     verdicts["exit_127"] = (
         "ok" if missing.code == MISSING_COMMAND_EXIT else (missing.why or f"exit {missing.code}")
+    )
+    killed = _probe(nono, policy_path, layout, SIGTERM_PROBE)
+    verdicts["sigterm"] = (
+        "ok" if killed.code in SIGTERM_CODES else (killed.why or f"exit {killed.code}")
     )
     return verdicts
 

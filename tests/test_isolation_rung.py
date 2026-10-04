@@ -84,7 +84,7 @@ needs_nono = pytest.mark.skipif(
 
 #: Every canary each zone must contain, and every positive control.
 CONTAINED = ("write_outside", "write_tmp", "write_state_parent", "read_planted", "list_ssh")
-POSITIVE = ("scratch_write", "loopback", "env_reaches", "exit_127")
+POSITIVE = ("scratch_write", "loopback", "env_reaches", "exit_127", "sigterm")
 
 
 def _isolation(tmp_path: Path, env: dict[str, str]) -> tuple[int, dict[str, Any], dict[str, Any]]:
@@ -213,14 +213,69 @@ def test_a_nono_that_ignores_the_policy_is_refused(tmp_path: Path) -> None:
 
 
 @on_macos
+def test_a_write_canary_that_reaches_the_host_is_escaped_even_if_reported_contained(
+    tmp_path: Path,
+) -> None:
+    """A backend that redirects a write instead of failing it, or lies
+    about the errno, must not read as contained. This fake exits 0 and
+    reports "errno 1" (EPERM, the real containment errno) for every
+    canary, but, for the canary invocation only, actually performs each
+    write first. The host-side check must catch the three write
+    canaries reaching the host and force their verdict to "escaped"."""
+    bin_dir = tmp_path / "fake-bin"
+    bin_dir.mkdir()
+    write_executable(
+        bin_dir / "nono",
+        f"#!{sys.executable}\n"
+        "import json, os, sys\n"
+        'if sys.argv[1] == "--version":\n'
+        '    print("nono 0.0.0-fake")\n'
+        "    sys.exit(0)\n"
+        "rest = sys.argv[6:]\n"
+        'if "-I" in rest:\n'
+        '    i = rest.index("-c")\n'
+        "    triples = rest[i + 3 :]\n"
+        "    report = {}\n"
+        "    for j in range(0, len(triples), 3):\n"
+        "        name, kind, target = triples[j], triples[j + 1], triples[j + 2]\n"
+        '        if kind == "write":\n'
+        '            with open(target, "w", encoding="utf-8") as handle:\n'
+        '                handle.write("escaped")\n'
+        '        report[name] = "errno 1"\n'
+        "    print(json.dumps(report))\n"
+        "    sys.exit(0)\n"
+        "os.execvp(rest[0], rest)\n",
+    )
+    env = {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
+
+    code, row, reading = _isolation(tmp_path, env)
+
+    assert code == 0, row
+    assert row["status"] == "warn", row
+    for zone in ("setup", "test"):
+        canaries = reading[zone]["canaries"]
+        for name in ("write_outside", "write_tmp", "write_state_parent"):
+            assert canaries[name] == "escaped", (name, canaries)
+        refusal = reading[zone]["refusal"]
+        assert "write_outside (escaped)" in refusal, refusal
+        assert "write_tmp (escaped)" in refusal, refusal
+        assert "write_state_parent (escaped)" in refusal, refusal
+    # The host check unlinks what it found before the control run, and the
+    # usual cleanup removes what the control run itself wrote.
+    assert sorted(Path(os.environ["XDG_STATE_HOME"]).glob("kstrl-canary-*")) == []
+
+
+@on_macos
 def test_a_canary_that_hangs_is_a_timeout_and_never_contained(tmp_path: Path) -> None:
     """The fake hangs whenever it is handed the canary program and writes
     its pid first, so the test can name the process the bound must kill.
-    Each zone waits out the 10 s bound once."""
+    Each zone waits out the 10 s bound once. Matches on `-I`, not `-c`:
+    the SIGTERM positive control also runs a `-c` shell command, and
+    must not be caught by this fake too."""
     pids = tmp_path / "hung.pids"
     env = _fake_nono(
         tmp_path,
-        f'for arg; do [ "$arg" = "-c" ] && echo $$ >> "{pids}" && exec sleep 60; done\n'
+        f'for arg; do [ "$arg" = "-I" ] && echo $$ >> "{pids}" && exec sleep 60; done\n'
         'shift 5\nexec "$@"\n',
     )
 
@@ -254,14 +309,15 @@ def test_a_nono_that_rejects_the_policy_is_refused_and_never_phones_home(tmp_pat
         canaries = reading[zone]["canaries"]
         assert canaries["write_outside"] == "no report (exit 1)", canaries
         assert canaries["exit_127"] == "exit 1", canaries
+        assert canaries["sigterm"] == "exit 1", canaries
         assert "write_outside (no report (exit 1))" in reading[zone]["refusal"]
         assert reading[zone]["label"] == "none: ran on the host"
     calls = [
         line.split(" ")
         for line in (tmp_path / "nono-calls.log").read_text(encoding="utf-8").splitlines()
     ]
-    # Per zone: --version, the canary, the missing command.
-    assert [call[0] for call in calls] == ["--version", "wrap", "wrap"] * 2, calls
+    # Per zone: --version, the canary, the missing command, the SIGTERM probe.
+    assert [call[0] for call in calls] == ["--version", "wrap", "wrap", "wrap"] * 2, calls
     for first, no_update_check, tmpdir, config_home in calls:
         assert no_update_check == "1", calls
         assert "/kstrl-rung-" in tmpdir, calls
