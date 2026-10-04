@@ -54,10 +54,13 @@ no_progress_iterations = 3         # consecutive no-progress iterations before t
 test_command = ""                  # stall-probe command; empty = the explicit [verify] test_command
 test_timeout = 300.0               # seconds before the stall probe is killed
 
-# OS-level agent sandboxing (R7.5). Applies to the claude-code and codex
-# adapters (a custom agent command has no generic sandbox surface and is
-# refused loudly). Write scope is the agent's worktree by construction;
-# allow_network re-opens outbound network inside the sandbox.
+# OS-level agent sandboxing (R7.5). Applies to the claude-code, claude-sdk
+# and codex adapters, for the engineer, the code and security reviewers, the
+# understand agent and the repair agent. A custom agent command has no generic
+# sandbox surface, so a run that would start one in any of those roles is
+# refused with exit 2 before any agent call (#701). The architect and the
+# knowledge distiller are not sandboxed. Write scope is the agent's worktree
+# by construction; allow_network re-opens outbound network inside the sandbox.
 # Measured mappings (see kstrl/sandbox.py): codex gets
 # --sandbox workspace-write + an explicit network_access override;
 # claude gets --settings '{"sandbox": ...}' and, when network is denied,
