@@ -582,3 +582,69 @@ def test_a_leash_that_cannot_read_its_group_waits_out_the_grace(tmp_path: Path) 
             proc.communicate(timeout=30)
         except subprocess.TimeoutExpired:
             pass
+
+
+def test_a_leash_that_cannot_import_its_reading_still_waits_and_kills(tmp_path: Path) -> None:
+    """The leash run by path, as ``DeadlineStreamer`` runs it, but from a
+    copy with no ``kstrl`` two directories above it, so its one kstrl
+    import fails. A reading it cannot make must keep it waiting the whole
+    grace, and the failure must not end it before the SIGKILL: the
+    grandchild, which ignores SIGTERM, is alive at every look inside the
+    grace and gone within ``GRANDCHILD_BOUND_SECONDS`` (#708)."""
+    copy = tmp_path / "elsewhere" / "agents" / "leash.py"
+    copy.parent.mkdir(parents=True)
+    shutil.copyfile(LEASH_PATH, copy)
+    pairs = tmp_path / "pairs"
+    lifeline_read, lifeline_write = os.pipe()
+    status_read, status_write = os.pipe()
+    child = subprocess.Popen(
+        [
+            sys.executable,
+            "-I",
+            "-S",
+            str(copy),
+            str(lifeline_read),
+            str(status_write),
+            str(DEFAULT_TERM_GRACE_SECONDS),
+            "--",
+            "/bin/sh",
+            "-c",
+            _silent_agent(pairs),
+        ],
+        pass_fds=(lifeline_read, status_write),
+        cwd=tmp_path,
+        start_new_session=True,
+    )
+    os.close(lifeline_read)
+    os.close(status_write)
+    try:
+        deadline = time.monotonic() + START_FUSE_SECONDS
+        while not _pairs(pairs):
+            assert time.monotonic() < deadline, "the agent never started"
+            assert child.poll() is None, f"the leash exited {child.returncode} before its owner"
+            time.sleep(0.05)
+        [(agent, grandchild)] = _pairs(pairs)
+        killed = time.monotonic()
+        os.close(lifeline_write)
+        lifeline_write = -1
+        assert procs.wait_for_pid_to_die(agent, timeout=AGENT_BOUND_SECONDS), (
+            f"agent pid {agent} alive {AGENT_BOUND_SECONDS}s after its owner went"
+        )
+        _assert_alive_through_the_grace(grandchild, killed, "the grandchild (no kstrl to import)")
+        remaining = killed + GRANDCHILD_BOUND_SECONDS - time.monotonic()
+        assert procs.wait_for_pid_to_die(grandchild, timeout=remaining), (
+            f"grandchild pid {grandchild}, which ignores SIGTERM, alive "
+            f"{GRANDCHILD_BOUND_SECONDS}s after its owner went: the leash sent no SIGKILL"
+        )
+    finally:
+        if lifeline_write != -1:
+            os.close(lifeline_write)
+        for pair in _pairs(pairs):
+            for pid in pair:
+                _kill_pid(pid)
+        procs.kill_group(child.pid)
+        try:
+            child.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            pass
+        os.close(status_read)
