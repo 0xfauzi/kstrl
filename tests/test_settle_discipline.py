@@ -227,7 +227,7 @@ EXPECTED_AWAIT_SITES: dict[str, int] = {
     "tests/test_tui_433_inc3.py": 62,  # #433 inc3 and inc4: settle helpers, or a push then one
     "tests/test_tui_433_inc3_board.py": 22,
     "tests/test_tui_433_inc4.py": 47,
-    "tests/test_tui_433_inc5.py": 59,
+    "tests/test_tui_433_inc5.py": 62,  # #706: mounted + settled in the new ks-queue-accepts test
     "tests/test_tui_433_inc6.py": 33,
     # +6: the overview pilot reads the painted header and cost meter
     # through settled() and mounted() (the render-helper units folded in).

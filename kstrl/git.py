@@ -459,6 +459,31 @@ def get_untracked_files(
     return _nul_paths(result.stdout)
 
 
+def status_entries(cwd: Path, timeout: float = DEFAULT_TIMEOUT) -> list[str]:
+    """Every entry ``git status --porcelain --untracked-files=all`` prints in ``cwd``.
+
+    Untracked files one by one, modified and deleted files too, ignored
+    files never. ``-z``, so a path arrives as its own spelling (#423). Raises
+    ``GitDiffError`` when git cannot answer: a caller that refuses on what it
+    finds must not read a failed read as a clean tree (#696).
+    """
+    try:
+        result = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=all", "-z"],
+            cwd=cwd,
+            capture_output=True,
+            encoding="utf-8",
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise GitDiffError(f"git status did not finish within {timeout}s") from exc
+    except UnicodeDecodeError as exc:
+        raise GitDiffError(_undecodable_message("git status", exc)) from exc
+    if result.returncode != 0:
+        raise GitDiffError(f"git status exited {result.returncode}: {result.stderr.strip()}")
+    return [entry for entry in result.stdout.split("\0") if entry]
+
+
 def tracked_files_at(
     sha: str, cwd: Path | None, timeout: float = DEFAULT_TIMEOUT
 ) -> frozenset[str]:

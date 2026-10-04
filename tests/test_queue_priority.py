@@ -211,7 +211,7 @@ def test_an_item_serve_leases_after_the_lookup_is_refused_and_not_copied(
     assert _snapshot(tmp_path) == after_lease
     listing = _invoke(["queue", "ls"], tmp_path)
     assert listing.exit_code == 0, listing.output
-    assert listing.output.count(item.item_id[:12]) == 1, listing.output
+    assert listing.output.count(item.item_id) == 1, listing.output
 
 
 def _child_env() -> dict[str, str]:
@@ -315,7 +315,7 @@ def test_a_priority_that_cannot_be_written_is_refused_and_leaves_no_record(
 def test_the_prefix_queue_ls_prints_is_accepted_and_the_change_is_stamped_when_made(
     tmp_path: Path,
 ) -> None:
-    """An operator types the 12-character id `ks queue ls` prints; the row carries its own time."""
+    """An operator types a prefix of the id `ks queue ls` prints; the row carries its own time."""
     item = _add(tmp_path, "a", 0)
     prefix = item.item_id[:12]
     listing = _invoke(["queue", "ls"], tmp_path)

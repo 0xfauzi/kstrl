@@ -78,6 +78,7 @@ from kstrl.config import (
 from kstrl.config_keys import RETIRED_ENV_VARS, RETIRED_KEYS, RETIRED_SECTIONS
 from kstrl.config_report import environ_lock, scrubbed_environ
 from kstrl.config_toml import RecordedTable, record_reads
+from kstrl.stack import StackError
 
 #: Exceptions a loader raises for input the operator has to fix, and the
 #: complete set of them: these loaders read a file and coerce values, so
@@ -234,12 +235,16 @@ def config_sections() -> list[ConfigSection]:
     from kstrl.security import SecurityConfig
     from kstrl.serve import ServeConfig
     from kstrl.signals import SignalsConfig
+    from kstrl.stack import StackConfig
     from kstrl.timeout import TimeoutConfig
     from kstrl.verify import VerifyConfig
     from kstrl.workqueue import QueueConfig
 
     return [
         ConfigSection(("agent", "run", "paths", "git", "ui"), KstrlConfig.load),
+        # Before the three loaders that also read [stack] (factory, verify,
+        # contract), so a bad stack is reported here, under its own name.
+        ConfigSection(("stack",), StackConfig.load),
         ConfigSection(("factory",), FactoryConfig.load),
         ConfigSection(("verify",), VerifyConfig.load),
         ConfigSection(("security",), SecurityConfig.load),
@@ -346,6 +351,7 @@ def collect_config_problems(
             try:
                 section.loader(root_dir)
             except REJECTIONS as exc:
+                repeat = _repeats_the_stack_line(exc, reported)
                 reported.update(section.sections)
                 # Same rule as every other catcher of this tuple: a
                 # RuntimeError kstrl did not define is our defect, and
@@ -354,6 +360,8 @@ def collect_config_problems(
                 # reporting surfaces route through, so the hole would
                 # have been one call deep from each of them.
                 raise_if_defect(exc)
+                if repeat:
+                    continue
                 detail = _detail(section, toml_path, root_dir, exc, blame_env=True)
                 if section.fatal or not required.isdisjoint(section.sections):
                     problems.append(detail)
@@ -361,6 +369,16 @@ def collect_config_problems(
                     warn(f"{detail} - continuing without it")
         problems.extend(unread_name_problems(document, toml_path, reported))
     return problems
+
+
+def _repeats_the_stack_line(exc: Exception, reported: set[str]) -> bool:
+    """Whether ``exc`` is a ``[stack]`` fault the entry check already reported.
+
+    #696: three loaders read the stack for their own sections (factory,
+    verify, contract) and each raises the same :class:`StackError`. The
+    ``[stack]`` section runs before them, so its line is the one kept.
+    """
+    return isinstance(exc, StackError) and "stack" in reported
 
 
 def unread_name_problems(

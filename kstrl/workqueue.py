@@ -265,6 +265,19 @@ def mint_item_id() -> str:
     return f"q-{stamp}-{secrets.token_hex(3)}"
 
 
+def short_item_id(item_id: str) -> str:
+    """``q-20260923-205005.895694-793181`` -> ``q-793181``.
+
+    The form a one-line surface shows where the full id does not fit:
+    the TUI's active row and run header, and the titles of the inbox
+    items serve files. :meth:`Queue.get` accepts it, so every
+    ``ks queue`` command takes what those surfaces show (#706). Every
+    other surface prints the full id.
+    """
+    tail = item_id.rsplit("-", 1)[-1]
+    return f"q-{tail}" if tail and tail != item_id else item_id
+
+
 def _warn_rejected(path: Path, reason: str) -> None:
     """Announce a skipped item rather than swallowing it.
 
@@ -879,11 +892,15 @@ class Queue:
         return found
 
     def get(self, item_id: str) -> QueueItem | None:
-        """Find one item by full id or unique prefix.
+        """Find one item by full id, unique prefix, or its short form.
 
-        A prefix matching more than one item raises rather than picking
-        one: silently operating on the wrong unit of work is worse than
-        making the operator type more characters.
+        The short form is what :func:`short_item_id` prints (#706). An
+        item matches if the text is a prefix of its id OR its short form,
+        and the two are pooled before the count: a text that is one
+        item's prefix and another item's short form is ambiguous, never a
+        silent pick of either. More than one match raises rather than
+        picking one: silently operating on the wrong unit of work is
+        worse than making the operator type more characters.
         """
         exact: QueueItem | None = None
         prefixed: list[QueueItem] = []
@@ -891,7 +908,7 @@ class Queue:
             if item.item_id == item_id:
                 exact = item
                 break
-            if item.item_id.startswith(item_id):
+            if item.item_id.startswith(item_id) or short_item_id(item.item_id) == item_id:
                 prefixed.append(item)
         if exact is not None:
             return exact

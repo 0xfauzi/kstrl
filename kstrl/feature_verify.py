@@ -18,7 +18,7 @@ must decide about.
 from __future__ import annotations
 
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -27,7 +27,6 @@ from kstrl.events import Event, VerificationResultEvent
 from kstrl.loop import STOP_EXIT_CODE, LoopResult, determine_branch
 from kstrl.verify import (
     DIFF_DEPENDENT_CHECKS,
-    ResolvedVerifyCommands,
     VerificationResult,
     VerifyConfig,
     narrow_to_undiffed,
@@ -158,7 +157,7 @@ _MAX_DETAIL_LINES = 12
 
 def _announce_verification(
     ui: UI,
-    commands: ResolvedVerifyCommands,
+    running: Sequence[str],
     progress_path: Path | None,
     config: VerifyConfig,
     phase: str,
@@ -212,9 +211,8 @@ def _announce_verification(
         "([verify] dead_code_cleanup) owns both dead-code phases and this flow "
         "turns it off. Use `ks check` for it."
     )
-    ui.info(f"  running: {commands.test}")
-    ui.info(f"  running: {commands.typecheck}")
-    ui.info(f"  running: {commands.lint}")
+    for command in running:
+        ui.info(f"  running: {command}")
     if progress_path is not None:
         ui.info(f"  reading: {progress_path} (self_critique)")
     elif config.require_self_critique:
@@ -224,6 +222,15 @@ def _announce_verification(
             "progress log from. Set [verify] progress_file_path to the same file as "
             "[paths] progress."
         )
+
+
+def _running_commands(config: VerifyConfig, root_dir: Path) -> list[str]:
+    """The commands a report runs, in order: a ``[stack]``'s checks (#696),
+    else the three gates' resolved commands."""
+    if config.project_stack is not None:
+        return [command for _name, command in config.project_stack.checks]
+    commands = resolve_verify_commands(config, root_dir)
+    return [commands.test, commands.typecheck, commands.lint]
 
 
 def _narrate_verification(
@@ -376,9 +383,10 @@ def report_verification(
         # widened too, but the boundary is what makes the guarantee
         # structural: nothing this function does to produce a report may
         # escape it, not just the measurement.
-        commands = resolve_verify_commands(verify_config, root_dir)
         progress_path = self_critique_progress_path(verify_config, root_dir, None)
-        _announce_verification(ui, commands, progress_path, verify_config, phase)
+        _announce_verification(
+            ui, _running_commands(verify_config, root_dir), progress_path, verify_config, phase
+        )
         # Every argument that decides whether a check can honestly run is
         # owned by this callee, so no diff-consuming check is reachable
         # from here by construction rather than by convention.

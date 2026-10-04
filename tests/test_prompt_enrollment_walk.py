@@ -330,6 +330,9 @@ EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
     # nothing: the walk keys on names ending in _PROMPT, not _VERSION.
     "review.py": 12,
     "security.py": 2,
+    # #696: STACK_PROMPT's declaration and its one use in
+    # Stack.format_for_prompt. Enrolled in tests/test_prompt_versions.py.
+    "stack.py": 2,
     # #303: 2 pre-existing + 10 new fragments x 2 spellings each (the
     # declaration and its one use site) = 22. The four *_PROMPT_VERSION
     # constants add nothing: the walk keys on names ending in _PROMPT.

@@ -106,6 +106,7 @@ from kstrl.workqueue import (
     QueueItem,
     queue_lock,
     queue_root,
+    short_item_id,
 )
 
 if TYPE_CHECKING:
@@ -3195,13 +3196,13 @@ def _report_merge_gate_refusal(
     """
     if refused_item is None:
         return
-    observer.err(f"{candidate.item_id[:12]}: {gate.refusal}")
+    observer.err(f"{candidate.item_id}: {gate.refusal}")
     result.needs_human = True
     result.inbox_items += (
         _file_inbox_item(
             root_dir,
             kind_name="merge_gate",
-            title=(f"Queue item {candidate.item_id[:12]} needs a merge decision"),
+            title=f"Queue item {short_item_id(candidate.item_id)} needs a merge decision",
             detail=gate.refusal,
             dedupe_key=f"queue-merge-gate:{candidate.item_id}",
             evidence={"item_id": candidate.item_id},
@@ -3607,9 +3608,9 @@ def _report_reaped(
     if result.swept_staging:
         obs.info(f"Swept {result.swept_staging} abandoned staging item(s)")
     for item_id in result.reaped.requeued + result.reaped.failed_for_retry:
-        obs.warn(f"Reaped {item_id[:12]}: owner gone, requeued")
+        obs.warn(f"Reaped {item_id}: owner gone, requeued")
     for item_id in result.reaped.poisoned:
-        obs.err(f"Reaped {item_id[:12]}: no attempts left, poisoned")
+        obs.err(f"Reaped {item_id}: no attempts left, poisoned")
         result.needs_human = True
         _report_remote_outcome(
             root_dir,
@@ -3622,7 +3623,7 @@ def _report_reaped(
             _file_inbox_item(
                 root_dir,
                 kind_name="halted_run",
-                title=f"Queue item {item_id[:12]} poisoned after an interrupted run",
+                title=f"Queue item {short_item_id(item_id)} poisoned after an interrupted run",
                 detail=(
                     "The run was interrupted and the item had no attempts left. "
                     "Inspect with `ks queue show` and requeue with "
@@ -3897,7 +3898,7 @@ def serve_cycle(
         observer=obs,
     )
     obs.info(
-        f"Running {running.item_id[:12]} ({running.title}) "
+        f"Running {running.item_id} ({running.title}) "
         f"attempt {running.attempts}/{running.max_attempts}, "
         f"merge gate {'on' if gate.pause_before_pr_merge else 'off'}"
     )
@@ -3947,7 +3948,7 @@ def serve_cycle(
                 queue.poison(current, reason=detail, actor="serve")
                 ledger.record_terminal(poisoned=True)
                 current = queue.get(running.item_id)
-        obs.err(f"  {running.item_id[:12]}: {detail}")
+        obs.err(f"  {running.item_id}: {detail}")
         _report_remote_outcome(
             root_dir,
             current,
@@ -3962,7 +3963,7 @@ def serve_cycle(
             _file_inbox_item(
                 root_dir,
                 kind_name="halted_run",
-                title=f"Queue item {running.item_id[:12]}: orphaned factory process",
+                title=f"Queue item {short_item_id(running.item_id)}: orphaned factory process",
                 detail=detail,
                 dedupe_key=f"queue-orphan:{running.item_id}",
                 evidence={"item_id": running.item_id},
@@ -4056,7 +4057,7 @@ def serve_cycle(
     with queue_lock(root_dir, blocking=True):
         current = queue.get(running.item_id)
         if current is None:
-            obs.err(f"{running.item_id[:12]} vanished mid-run")
+            obs.err(f"{running.item_id} vanished mid-run")
             return result
 
         queue.finish_failed(
@@ -4094,7 +4095,7 @@ def serve_cycle(
 
     if retried:
         obs.warn(
-            f"  {running.item_id[:12]} retrying in {int(retry_delay)}s "
+            f"  {running.item_id} retrying in {int(retry_delay)}s "
             f"({running.attempts}/{running.max_attempts} attempts used): "
             f"{verdict.reason}"
         )
@@ -4113,7 +4114,7 @@ def serve_cycle(
         return result
 
     result.needs_human = True
-    obs.err(f"  {running.item_id[:12]} poisoned: {verdict.reason}")
+    obs.err(f"  {running.item_id} poisoned: {verdict.reason}")
     _report_remote_outcome(
         root_dir,
         poisoned_item,
@@ -4125,12 +4126,12 @@ def serve_cycle(
         _file_inbox_item(
             root_dir,
             kind_name="halted_run",
-            title=f"Queue item {running.item_id[:12]} poisoned",
+            title=f"Queue item {short_item_id(running.item_id)} poisoned",
             detail=(
                 f"{verdict.reason}\n\n"
                 f"Verdict: {verdict.verdict}. This item will NOT be retried "
                 "automatically. Inspect with `ks queue show "
-                f"{running.item_id[:12]}`."
+                f"{running.item_id}`."
             ),
             dedupe_key=f"queue-poison:{running.item_id}",
             evidence=evidence,
@@ -4180,7 +4181,7 @@ def _settle_unfailed(
     with queue_lock(root_dir, blocking=True):
         current = queue.get(running.item_id)
         if current is None:
-            obs.err(f"{running.item_id[:12]} vanished mid-run")
+            obs.err(f"{running.item_id} vanished mid-run")
             return True
         if verdict.verdict is Verdict.SUCCESS:
             queue.finish_ok(current, actor="serve", pr_urls=pr_urls)
@@ -4205,7 +4206,7 @@ def _settle_unfailed(
         else:
             return False
         finished = queue.get(running.item_id)
-    obs.info(f"  {running.item_id[:12]} {said}")
+    obs.info(f"  {running.item_id} {said}")
     if state:
         _report_remote_outcome(root_dir, finished, state=state, detail=detail, observer=obs)
     return True
@@ -4275,7 +4276,7 @@ def settle_approval_run(
             queue.poison(current, reason=verdict.reason, actor=actor)
             state, detail = "poison", verdict.reason
         settled = queue.get(current.item_id)
-    observer.info(f"  queue item {current.item_id[:12]} {state}")
+    observer.info(f"  queue item {current.item_id} {state}")
     _report_remote_outcome(root_dir, settled, state=state, detail=detail, observer=observer)
     return settled
 
