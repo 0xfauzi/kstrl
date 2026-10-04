@@ -545,7 +545,9 @@ either deliberate (`ks queue pause`) or self-inflicted by the daemon:
 the daily budget stop sets tomorrow's local midnight as `resume_after`
 and clears itself, and the poison breaker pauses after consecutive
 poisoned items. Run `ks queue` to see the marker, and `ks queue resume`
-to lift a pause that no longer applies.
+to lift a pause that no longer applies. The resume also restarts the
+poison streak at 0; without that the next cycle would pause the queue
+again on the same streak.
 
 An unreadable pause marker also reads as paused, and the detail line
 says so. That is deliberate: resuming unattended spending on the
