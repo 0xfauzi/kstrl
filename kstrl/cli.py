@@ -3122,7 +3122,11 @@ def factory(
                 name
                 for name, passed in (
                     ("mode", contract_check is not None),
-                    ("test_command", cli_contract_cmd is not None),
+                    # #696: under a [stack] load blanks test_command; no toml set it.
+                    (
+                        "test_command",
+                        cli_contract_cmd is not None or contract_resolved.project_stack is not None,
+                    ),
                 )
                 if passed
             },

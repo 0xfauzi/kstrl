@@ -484,6 +484,8 @@ def test_the_engineer_is_told_the_stack_and_every_check(tmp_path: Path) -> None:
     for name, command in checks.items():
         assert f"- {name}: `{command}`" in run.prompts, run.prompts[-2000:]
     assert "# Verification Commands (resolved by kstrl)" not in run.prompts
+    # kstrl.toml sets no [contract] test_command; the stack blanks it.
+    assert "[contract] test_command" not in run.out, run.out
 
 
 def test_phase_1_runs_every_check_on_each_component(tmp_path: Path) -> None:

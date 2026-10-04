@@ -802,6 +802,14 @@ class VerifyConfig:
         # Last, so every [verify] key above has been read when a bad
         # [stack] raises (the entry check's unread-name report).
         config.project_stack = load_stack(root_dir)
+        if "fast_iteration_checks" in section:
+            # The toml value is refused on its own names even when the
+            # environment overrides it, as before #696.
+            validate_fast_iteration_checks(
+                section["fast_iteration_checks"],
+                "[verify] fast_iteration_checks",
+                gate_names(config),
+            )
         source = (
             "KSTRL_VERIFY_FAST_ITERATION_CHECKS"
             if "KSTRL_VERIFY_FAST_ITERATION_CHECKS" in os.environ
