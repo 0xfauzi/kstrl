@@ -399,10 +399,12 @@ leash process, `kstrl/agents/leash.py`, which leads the agent's process
 group and holds one end of a pipe to the kstrl process that started it.
 However that process ends (SIGKILL, an OOM kill, a crash, a closed
 terminal), the kernel closes its end of the pipe, and the leash sends
-SIGTERM to the agent's group, waits 5 seconds, and sends SIGKILL. A pool
+SIGTERM to the agent's group, waits until nothing else is left in the
+group or 5 seconds have passed, and sends SIGKILL (#708). A pool
 worker whose parent dies ends too, and takes its agents with it. Measured
-on macOS: the agent was gone within 0.04 s, and a process in its group
-that ignores SIGTERM within 5.04 s. Three things this does not cover. A
+on macOS: the agent was gone within 0.04 s, a process in its group
+that ignores SIGTERM within 5.04 s, and the leash itself within 0.10 s
+when nothing in the group outlived the SIGTERM. Three things this does not cover. A
 process an agent's tool started in a group or session of its own is not
 in the agent's group: in a worktree the next run's prune kills it and
 names it, as above, and in the project root nothing does. If the leash
