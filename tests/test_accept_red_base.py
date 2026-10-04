@@ -106,10 +106,16 @@ def _not_a_prefix(sha: str) -> str:
     return ("1" if sha[0] == "0" else "0") + sha[1:12]
 
 
+def _wrong_tail(sha: str) -> str:
+    """Thirteen characters whose first 12 are the start of ``sha`` and whose
+    13th is not: a prefix of the 12 the refusal prints, not of the sha."""
+    return sha[:12] + ("1" if sha[12] == "0" else "0")
+
+
 @pytest.mark.parametrize(
     "spell",
-    [lambda sha: sha[:11], _not_a_prefix],
-    ids=["eleven-characters", "not-a-prefix"],
+    [lambda sha: sha[:11], _not_a_prefix, _wrong_tail],
+    ids=["eleven-characters", "not-a-prefix", "right-start-wrong-tail"],
 )
 def test_an_acceptance_that_does_not_name_the_measured_base_is_refused(
     tmp_path: Path, spell: Any
