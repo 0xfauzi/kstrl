@@ -8,13 +8,18 @@ after a SIGKILL of ``ks factory``). The leash is the one process in the
 agent's group that is not the agent: it starts the agent, then blocks on
 the read end of a pipe whose only write end kstrl holds. The kernel
 closes that write end however kstrl ends, so the read returns EOF, and
-the leash sends SIGTERM to its own group, waits the grace, and sends
-SIGKILL, which is the order ``DeadlineStreamer.kill`` uses (#641).
+the leash sends SIGTERM to its own group, waits until nothing but itself
+is left in the group or the grace runs out, and sends SIGKILL, which is
+the order ``DeadlineStreamer.kill`` uses (#641). The wait ends early only
+on a reading that shows the group empty (#708); a member that is alive,
+or a reading that cannot be made, keeps it waiting the whole grace.
 
 Run by path and never imported:
 ``python -I -S leash.py <lifeline fd> <status fd> <grace> -- <argv...>``.
 ``-I -S`` means nothing outside the standard library is on the path, so
 a broken site or a missing kstrl dependency cannot stop it starting.
+The one kstrl import, the group reading, is taken only once the owner
+has gone, and an import that fails is a reading that cannot be made.
 
 ``killpg(0, ...)`` signals the caller's own group, so the leash refuses
 to start (exit 70) unless it leads its own group. That is the one check
@@ -36,12 +41,16 @@ import subprocess
 import sys
 import threading
 import time
+from pathlib import Path
 
 #: Exit status when the leash does not lead its own process group.
 NOT_A_GROUP_LEADER = 70
 
 #: Exit status when the agent could not be started.
 SPAWN_FAILED = 71
+
+#: Seconds between two readings of the group while the grace runs (#708).
+POLL_SECONDS = 0.1
 
 
 def _ignore(signum: int, frame: object) -> None:
@@ -83,6 +92,40 @@ def _wait_for_owner(lifeline: int) -> None:
             return
 
 
+def _others_in_group() -> bool:
+    """Whether a process other than the leash may still be in its group.
+
+    False only when one ``ps`` reading lists no running member but the
+    leash and pids that are gone by the time it is checked. The ``ps``
+    that made the reading is in the group while it runs, so it is listed,
+    and it is gone once the reading returns. The reading is kstrl's own,
+    ``read_group_members``, so the tree keeps one ``ps`` parse. Anything
+    that stops the reading, an import that fails included, is True: the
+    leash then waits the whole grace, as it did before #708.
+    """
+    try:
+        root = str(Path(__file__).resolve().parents[2])
+        if root not in sys.path:
+            sys.path.append(root)
+        from kstrl.procgroup import pid_is_alive, read_group_members
+
+        pids = read_group_members(os.getpid()).pids
+        return pids is None or any(pid != os.getpid() and pid_is_alive(pid) for pid in pids)
+    except Exception:  # noqa: BLE001 - a reading not made may hide a member
+        return True
+
+
+def _wait_out(grace: float) -> None:
+    """Return once the group holds nothing but the leash, or after ``grace``.
+
+    The SIGKILL after this is sent either way: a member that started after
+    the last reading is still killed.
+    """
+    deadline = time.monotonic() + grace
+    while time.monotonic() < deadline and _others_in_group():
+        time.sleep(min(POLL_SECONDS, max(0.0, deadline - time.monotonic())))
+
+
 def main(argv: list[str]) -> int:
     if len(argv) < 6 or argv[4] != "--":
         raise ValueError(f"usage: leash.py <lifeline fd> <status fd> <grace> -- <argv...>: {argv}")
@@ -104,7 +147,7 @@ def main(argv: list[str]) -> int:
     _wait_for_owner(lifeline)
     firing.set()
     os.killpg(0, signal.SIGTERM)
-    time.sleep(grace)
+    _wait_out(grace)
     os.killpg(0, signal.SIGKILL)
     return 0
 

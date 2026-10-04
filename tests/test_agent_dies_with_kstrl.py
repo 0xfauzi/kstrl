@@ -56,10 +56,6 @@ AGENT_BOUND_SECONDS = 2.0
 #: as soon as the agent has gone.
 GRANDCHILD_BOUND_SECONDS = DEFAULT_TERM_GRACE_SECONDS + 2.0
 
-#: When the grandchild must still be alive: after the agent has died of
-#: the SIGTERM and well inside the grace, so a SIGKILL sent first fails it.
-STILL_ALIVE_AT_SECONDS = 1.0
-
 #: How long the stand-in agents may take to start. A fuse, not a measurement.
 START_FUSE_SECONDS = 120.0
 
@@ -192,6 +188,24 @@ def _dispose(proc: subprocess.Popen[str], pairs: Path) -> None:
         pass
 
 
+def _assert_alive_through_the_grace(pid: int, killed: float, what: str) -> None:
+    """Every look at ``pid`` taken before the grace has run out from the
+    kill finds it alive. The time is read after the look, so a look that
+    finds ``pid`` dead while that time is still inside the grace proves it
+    died early. A look that load delays past the grace proves nothing and
+    ends the loop, so load can make this weaker but never red."""
+    while True:
+        alive = pid_is_alive(pid)
+        since = time.monotonic() - killed
+        if since >= DEFAULT_TERM_GRACE_SECONDS:
+            return
+        assert alive, (
+            f"{what} pid {pid} died {since:.2f}s after the kill, inside the "
+            f"{DEFAULT_TERM_GRACE_SECONDS}s grace"
+        )
+        time.sleep(0.05)
+
+
 _KILLS = {
     "factory-sigkill-group": ("factory", lambda pid: os.killpg(pid, signal.SIGKILL)),
     "factory-sigkill-parent": ("factory", lambda pid: os.kill(pid, signal.SIGKILL)),
@@ -205,9 +219,10 @@ def test_a_silent_agent_and_its_grandchild_die_with_kstrl(tmp_path: Path, case: 
     """The issue's acceptance, without worktrees: the owning kstrl process
     dies while its agent is silent. The agent is gone within
     ``AGENT_BOUND_SECONDS``. Its grandchild, which ignores SIGTERM, is
-    still alive at ``STILL_ALIVE_AT_SECONDS``, so the leash sent SIGTERM
-    first, and gone within ``GRANDCHILD_BOUND_SECONDS``, so the SIGKILL
-    after the grace came."""
+    alive at every look taken inside the grace, so the leash sent SIGTERM
+    first and did not cut the grace short while a member lived (#708), and
+    gone within ``GRANDCHILD_BOUND_SECONDS``, so the SIGKILL after the
+    grace came."""
     command, kill = _KILLS[case]
     root = _repo(tmp_path)
     pairs = tmp_path / "pairs"
@@ -227,10 +242,7 @@ def test_a_silent_agent_and_its_grandchild_die_with_kstrl(tmp_path: Path, case: 
             f"agent pid {agent} alive {AGENT_BOUND_SECONDS}s after the kill ({case}); "
             f"ks returncode {proc.poll()}"
         )
-        time.sleep(max(0.0, killed + STILL_ALIVE_AT_SECONDS - time.monotonic()))
-        assert pid_is_alive(grandchild), (
-            f"grandchild pid {grandchild} died before the grace: it was not sent SIGTERM first"
-        )
+        _assert_alive_through_the_grace(grandchild, killed, f"{case}: the grandchild")
         remaining = killed + GRANDCHILD_BOUND_SECONDS - time.monotonic()
         assert procs.wait_for_pid_to_die(grandchild, timeout=remaining), (
             f"grandchild pid {grandchild}, which ignores SIGTERM, alive "
@@ -480,3 +492,93 @@ def test_a_timed_out_run_leaves_no_lifeline_open(tmp_path: Path) -> None:
     )
     assert result.exit_code != 0
     assert _open_pipes() - before == set()
+
+
+def _quiet_agent(pids: Path) -> str:
+    """Writes its pid to ``pids`` and waits without a byte. It dies of
+    the SIGTERM, and it starts nothing, so once it is gone the leash is
+    the only process left in the group."""
+    return f"echo $$ > '{pids}' && exec sleep 600"
+
+
+def test_the_leash_ends_as_soon_as_its_group_is_empty(tmp_path: Path) -> None:
+    """#708: the owning ``ks`` dies while its agent is silent, and the
+    agent dies of the leash's SIGTERM. Nothing is left in the group but
+    the leash, so the group must be empty before the grace has run out
+    from the kill. Before the fix the leash slept the whole grace first.
+
+    A leash that sleeps the grace cannot pass at any load: it starts that
+    sleep after ``killed``, and ``seen`` is read after the reading that
+    found the group empty, so ``seen`` is never earlier than the group's
+    end. The fixed leash fails this only if load makes it spend the whole
+    grace before one reading of its group shows it empty (one reading
+    measured at most 0.125 s at load 25)."""
+    root = _repo(tmp_path)
+    pids = tmp_path / "pids"
+    proc = _ks(root, _env(_quiet_agent(pids)), *_factory_args(root, "1", "--no-worktrees"))
+    try:
+        agent = procs.read_pid(pids, timeout=START_FUSE_SECONDS)
+        leash = os.getpgid(agent)
+        assert leash != agent, f"agent pid {agent} leads its own group: no leash above it"
+        killed = time.monotonic()
+        os.killpg(proc.pid, signal.SIGKILL)
+        assert procs.wait_for_pid_to_die(agent, timeout=AGENT_BOUND_SECONDS), (
+            f"agent pid {agent} alive {AGENT_BOUND_SECONDS}s after the kill"
+        )
+        empty = procs.wait_for_group_to_die(
+            leash, timeout=max(0.0, killed + DEFAULT_TERM_GRACE_SECONDS - time.monotonic())
+        )
+        seen = time.monotonic() - killed
+        assert empty and seen < DEFAULT_TERM_GRACE_SECONDS, (
+            f"the leash's group {leash} held only the leash after its agent died and "
+            f"still lived {seen:.2f}s after the kill: it waited out its "
+            f"{DEFAULT_TERM_GRACE_SECONDS}s grace with nothing left to signal"
+        )
+    finally:
+        text = pids.read_text(encoding="utf-8").strip() if pids.exists() else ""
+        if text:
+            _kill_pid(int(text))
+        procs.kill_group(proc.pid)
+        try:
+            proc.communicate(timeout=30)
+        except subprocess.TimeoutExpired:
+            pass
+
+
+def test_a_leash_that_cannot_read_its_group_waits_out_the_grace(tmp_path: Path) -> None:
+    """The fail-closed half of #708. PATH holds no ``ps``, so the leash
+    cannot read who is left in its group. It must not end early on a
+    reading it could not make: it is alive at every look inside the grace,
+    though its agent died of the SIGTERM, and gone within
+    ``GRANDCHILD_BOUND_SECONDS``, so the SIGKILL after the grace came."""
+    root = _repo(tmp_path)
+    pids = tmp_path / "pids"
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    for name in ("git", "sh", "bash", "sleep"):
+        found = shutil.which(name)
+        assert found is not None, f"{name} is not on PATH"
+        (tools / name).symlink_to(found)
+    env = _env(_quiet_agent(pids))
+    env["PATH"] = str(tools)
+    proc = _ks(root, env, *_factory_args(root, "1", "--no-worktrees"))
+    try:
+        agent = procs.read_pid(pids, timeout=START_FUSE_SECONDS)
+        leash = os.getpgid(agent)
+        assert leash != agent, f"agent pid {agent} leads its own group: no leash above it"
+        killed = time.monotonic()
+        os.killpg(proc.pid, signal.SIGKILL)
+        _assert_alive_through_the_grace(leash, killed, "the leash (no ps on PATH)")
+        remaining = killed + GRANDCHILD_BOUND_SECONDS - time.monotonic()
+        assert procs.wait_for_pid_to_die(leash, timeout=remaining), (
+            f"leash pid {leash} alive {GRANDCHILD_BOUND_SECONDS}s after kstrl died"
+        )
+    finally:
+        text = pids.read_text(encoding="utf-8").strip() if pids.exists() else ""
+        if text:
+            _kill_pid(int(text))
+        procs.kill_group(proc.pid)
+        try:
+            proc.communicate(timeout=30)
+        except subprocess.TimeoutExpired:
+            pass
