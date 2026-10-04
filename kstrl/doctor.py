@@ -744,15 +744,12 @@ def diagnose(root: Path, measure_ui: UI | None = None) -> dict[str, Any]:
     """Run Tier A, then Tier B when given a UI to report its progress on,
     and build the report document. Only Tier B runs a repository command."""
     checks = run_checks(root)
-    reading: dict[str, Any] | None = None
-    isolation: dict[str, Any] | None = None
+    reading = isolation = None
     if measure_ui is not None:
         # Here, not at the top: doctor_measure imports this module.
-        from kstrl.doctor_measure import measure, measure_isolation
+        from kstrl.doctor_measure import measure_tier_b
 
-        row, reading = measure(root, checks, measure_ui)
-        isolation_row, isolation = measure_isolation(root, measure_ui)
-        checks.extend((row, isolation_row))
+        reading, isolation = measure_tier_b(root, checks, measure_ui)
     now = datetime.now(UTC)
     return {
         "schema_version": DOCTOR_SCHEMA_VERSION,

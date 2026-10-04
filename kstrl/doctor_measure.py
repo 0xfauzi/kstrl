@@ -100,3 +100,15 @@ def measure_isolation(root: Path, ui: UI) -> tuple[DoctorCheck, dict[str, Any]]:
         DoctorCheck(ISOLATION_CHECK_NAME, status, detail),
         {rung.zone: dataclasses.asdict(rung) for rung in rungs},
     )
+
+
+def measure_tier_b(
+    root: Path, checks: list[DoctorCheck], ui: UI
+) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+    """Run both Tier B readings, the base gates and the isolation rung,
+    append their rows to ``checks`` in that order, and return the two
+    readings for the report document."""
+    row, reading = measure(root, checks, ui)
+    isolation_row, isolation = measure_isolation(root, ui)
+    checks.extend((row, isolation_row))
+    return reading, isolation
