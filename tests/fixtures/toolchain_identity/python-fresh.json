@@ -176,6 +176,7 @@
         "Nothing is broken in your repository; kstrl's interface extraction found no public Python class or function in this layout, so the engineer works without an interface section."
       ],
       "generated_at": "<generated_at>",
+      "isolation": null,
       "report_path": "<report_path>",
       "root": "<root>",
       "schema_version": 2,
