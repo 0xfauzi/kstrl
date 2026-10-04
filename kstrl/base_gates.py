@@ -40,6 +40,7 @@ from kstrl.atomicio import atomic_write_json
 from kstrl.baseline import verify_digest
 from kstrl.contract import ContractCleanupError, _create_temp_worktree, _remove_temp_worktree
 from kstrl.events import RunPaths
+from kstrl.isolation import HOST_LABEL
 from kstrl.verify import (
     CheckResult,
     VerificationResult,
@@ -284,6 +285,7 @@ def reading_document(
         "refused": bool(reasons),
         "reasons": reasons,
         "seconds": round(reading.seconds, 3),
+        "isolation": HOST_LABEL,
     }
 
 
