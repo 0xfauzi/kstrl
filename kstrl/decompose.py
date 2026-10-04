@@ -2496,7 +2496,7 @@ def _decompose_spec_impl(
     spec_source = spec_ref(spec_path, root_dir)
     # #696: the [stack] this plan is made under, pinned as text; the run
     # that builds the plan refuses under any other (plan_gate.stack_pin_errors).
-    stack_pin = stack_text_digest(root_dir)
+    stack_pin = stack_text_digest(root_dir, warn=ui.warn)
     ui.kv("Spec digest", pin[:12])
     # #199: the architect runs with cwd=root_dir (see `agent.run` below),
     # so it is told to read the repository rather than handed a paste.

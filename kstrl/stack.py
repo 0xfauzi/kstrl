@@ -36,7 +36,7 @@ import hashlib
 import json
 import os
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
@@ -421,13 +421,24 @@ def _refusal(root_dir: Path, stack: Stack) -> tuple[str, str]:
     )
 
 
-def stack_text_digest(root_dir: Path) -> str:
+def stack_text_digest(root_dir: Path, *, warn: Callable[[str], None]) -> str:
     """The digest of kstrl.toml's ``[stack]`` as written, "" when it has none.
 
     What a plan pins (``Manifest.stack_digest``): the text it was made
     under, whether or not anyone has confirmed it yet. Never a usable stack.
+
+    A kstrl.toml that cannot be read pins nothing, said through ``warn``:
+    decompose calls this ahead of its halt path, so raising here would
+    cost the spec-issues artifact (``KstrlConfig.load_or_anchored`` is the
+    precedent, and states the taxonomy). ``ks decompose`` and ``ks
+    factory`` have already refused such a file at entry
+    (``config_preflight``); only the in-process call reaches this.
     """
-    stack = load_stack(root_dir)
+    try:
+        stack = load_stack(root_dir)
+    except (ConfigError, OSError) as exc:
+        warn(f"the [stack] in kstrl.toml cannot be read, so this plan pins none: {exc}")
+        return ""
     return stack.digest if stack is not None else ""
 
 
