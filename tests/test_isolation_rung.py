@@ -14,10 +14,10 @@ measure it escaping. The tests built on a fake ``nono`` need only
 macOS, and the Linux test runs only off macOS: until measurement M2,
 Linux CI runs that one test and nothing else here.
 
-DNS. nono 0.79 cannot deny DNS in the test zone (gap G1), so the test
-zone is refused naming ``dns``. ``test_the_test_zone_is_proven`` pins
-that as a strict xfail: a nono release that fixes G1 XPASSes it and the
-run fails until somebody reads it.
+DNS. nono 0.79 cannot deny DNS in the test zone (gap G1); the owner
+decided (2026-10-04, #700) to accept the gap rather than refuse the
+zone on it, so the ``dns`` canary is recorded but never gates, and the
+test-zone label says "DNS open" whenever it escaped.
 """
 
 from __future__ import annotations
@@ -29,6 +29,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -53,20 +54,32 @@ def _nono_version(path: str) -> tuple[int, ...]:
     if not path:
         return ()
     try:
-        out = subprocess.run(
-            [path, "--version"], capture_output=True, text=True, timeout=10, check=False
-        ).stdout
+        with tempfile.TemporaryDirectory(prefix="kstrl-nono-version-") as scratch:
+            env = {**os.environ, "NONO_NO_UPDATE_CHECK": "1", "TMPDIR": f"{scratch}/"}
+            out = subprocess.run(
+                [path, "--version"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+                cwd=scratch,
+                env=env,
+            ).stdout
     except (OSError, subprocess.TimeoutExpired):
         return ()
     found = re.search(r"(\d+)\.(\d+)\.(\d+)", out)
     return tuple(int(part) for part in found.groups()) if found else ()
 
 
+#: Computed once at import: `_nono_version` spawns a subprocess, so `needs_nono`
+#: must not call it twice (once for the skip condition, once for the reason).
+NONO_VERSION = _nono_version(NONO)
+
 on_macos = pytest.mark.skipif(sys.platform != "darwin", reason="the rung is macOS-only until M2")
 needs_nono = pytest.mark.skipif(
-    sys.platform != "darwin" or _nono_version(NONO) < (0, 79, 0),
+    sys.platform != "darwin" or NONO_VERSION < (0, 79, 0),
     reason=f"needs macOS and nono 0.79 or later; found {NONO or 'none'} "
-    f"{'.'.join(map(str, _nono_version(NONO))) or ''}; set KSTRL_NONO",
+    f"{'.'.join(map(str, NONO_VERSION)) or ''}; set KSTRL_NONO",
 )
 
 #: Every canary each zone must contain, and every positive control.
@@ -102,13 +115,13 @@ def _fake_nono(tmp_path: Path, body: str) -> dict[str, str]:
 
 
 @needs_nono
-def test_doctor_measure_proves_the_setup_zone_and_names_dns_in_the_test_zone(
+def test_doctor_measure_proves_both_zones_with_dns_recorded_in_the_test_zone(
     tmp_path: Path,
 ) -> None:
     code, row, reading = _isolation(tmp_path, {"KSTRL_NONO": NONO})
 
     assert code == 0, row
-    assert row["status"] == "warn", row
+    assert row["status"] == "ok", row
     setup, test = reading["setup"], reading["test"]
     assert setup["refusal"] == "", setup
     assert setup["label"].endswith("setup zone: writes confined, egress open"), setup
@@ -118,10 +131,12 @@ def test_doctor_measure_proves_the_setup_zone_and_names_dns_in_the_test_zone(
     assert test["canaries"]["egress"] == "contained: errno 1", test
     for name in POSITIVE:
         assert (setup["canaries"][name], test["canaries"][name]) == ("ok", "ok"), name
-    # G1: DNS is not contained, and it is the only thing that refuses the zone.
+    # G1: DNS is not contained, is recorded, and never gates the zone.
     assert not test["canaries"]["dns"].startswith("contained"), test
-    assert test["refusal"].startswith("refused: dns ("), test
-    assert test["label"] == "none: ran on the host"
+    assert test["refusal"] == "", test
+    assert test["label"].endswith(
+        "test zone: writes confined, egress blocked, this host only, not loopback only, DNS open"
+    ), test
     # The policy is outside the repository and is the file the digest names.
     for zone in (setup, test):
         policy = Path(zone["policy_path"])
@@ -137,13 +152,45 @@ def test_doctor_measure_proves_the_setup_zone_and_names_dns_in_the_test_zone(
 
 
 @needs_nono
-@pytest.mark.xfail(
-    strict=True, raises=AssertionError, reason="G1: nono 0.79 cannot deny DNS in the test zone"
-)
 def test_the_test_zone_is_proven(tmp_path: Path) -> None:
+    """G1: DNS is recorded, not gated, so the test zone is proven and its
+    label says "DNS open" whenever the DNS probe escaped."""
     _code, _row, reading = _isolation(tmp_path, {"KSTRL_NONO": NONO})
+    test = reading["test"]
 
-    assert reading["test"]["refusal"] == "", reading["test"]
+    assert test["refusal"] == "", test
+    assert "dns" in test["canaries"], test
+    assert "DNS open" in test["label"], test
+
+
+@on_macos
+def test_an_egress_canary_blocked_by_the_wrong_errno_is_not_contained(tmp_path: Path) -> None:
+    """Containment is read off the backend's declared errno (EPERM on
+    macOS), never off "any errno". A fake nono that retargets the
+    egress canary at a closed local port, with no sandbox around it,
+    produces a real but different errno (ECONNREFUSED); that must not
+    read as contained, and must refuse the zone."""
+    bin_dir = tmp_path / "fake-bin"
+    bin_dir.mkdir()
+    write_executable(
+        bin_dir / "nono",
+        f"#!{sys.executable}\n"
+        "import os, sys\n"
+        'if sys.argv[1] == "--version":\n'
+        '    print("nono 0.0.0-fake")\n'
+        "    sys.exit(0)\n"
+        "argv = sys.argv[6:]\n"
+        'argv = ["127.0.0.1:1" if a == "192.0.2.1:80" else a for a in argv]\n'
+        "os.execv(argv[0], argv)\n",
+    )
+    env = {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
+
+    code, row, reading = _isolation(tmp_path, env)
+
+    assert code == 0, row
+    test = reading["test"]
+    assert not test["canaries"]["egress"].startswith("contained"), test
+    assert "egress (" in test["refusal"], test
 
 
 @on_macos
@@ -161,6 +208,8 @@ def test_a_nono_that_ignores_the_policy_is_refused(tmp_path: Path) -> None:
         assert "write_outside (escaped)" in refusal, refusal
         assert "read_planted (escaped)" in refusal, refusal
         assert reading[zone]["label"] == "none: ran on the host"
+    # Every file a canary or its control wrote outside the scratch directory is removed.
+    assert sorted(Path(os.environ["XDG_STATE_HOME"]).glob("kstrl-canary-*")) == []
 
 
 @on_macos

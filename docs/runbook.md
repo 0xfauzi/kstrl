@@ -55,10 +55,13 @@ errno, and the egress canary only with EPERM. A canary whose control
 also failed is uninformative, and a timeout is never contained. The row
 is a record: a refused zone warns and never fails the verdict, because
 no command runs inside a rung yet, and every verification record says
-`none: ran on the host`. Two refusals are expected today. On macOS with
-nono 0.79 the test zone is refused naming `dns`, because nono cannot
-deny DNS there. On every other system both zones are refused, because
-nono cannot express a localhost-only test zone on Linux. nono comes from
+`none: ran on the host`. One refusal is expected today: on every system
+but macOS both zones are refused, because nono cannot express a
+localhost-only test zone on Linux. On macOS with nono 0.79, DNS resolves
+inside the test zone whatever the policy says; the owner decided
+(2026-10-04, #700) to accept that gap rather than refuse the zone on
+it, so the `dns` canary is recorded but never gates, and the test
+zone's label says "DNS open" whenever it escaped. nono comes from
 `KSTRL_NONO`, else from PATH.
 
 ## Exit codes

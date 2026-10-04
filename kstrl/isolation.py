@@ -26,7 +26,10 @@ positive control that does not pass, refuses the zone and is named.
 Two measured limits, both recorded rather than probed:
 
 - DNS resolves inside the test zone whatever the policy says (G1), so
-  the ``dns`` canary escapes and the test zone is refused naming it.
+  the ``dns`` canary is recorded, never gated: the owner decided
+  (2026-10-04, #700) to accept the gap rather than refuse the zone on
+  it. Its verdict is still reported, and the test-zone label says
+  "DNS open" whenever it escaped.
 - The test zone reaches this host's own non-loopback addresses (G5), a
   Seatbelt property, so the test-zone label says "this host only, not
   loopback only". A probe would need a listener on a non-loopback
@@ -393,11 +396,19 @@ def _run_canaries(nono: str, policy_path: Path, layout: _Layout, zone: str) -> d
     return verdicts
 
 
+#: Canaries that are recorded but never gate a zone. DNS is the one
+#: entry (G1): nono 0.79 cannot deny it in the test zone, and the owner
+#: decided (2026-10-04, #700) to accept the gap rather than refuse on
+#: it. Its verdict is still reported and still drives the zone's label.
+NON_GATING_CANARIES = ("dns",)
+
+
 def _refusal(canaries: Mapping[str, str]) -> str:
     failed = [
         f"{name} ({verdict})"
         for name, verdict in canaries.items()
-        if (verdict != "ok" if name in POSITIVE_CONTROLS else not verdict.startswith("contained"))
+        if name not in NON_GATING_CANARIES
+        and (verdict != "ok" if name in POSITIVE_CONTROLS else not verdict.startswith("contained"))
     ]
     return f"refused: {', '.join(failed)}" if failed else ""
 
@@ -425,11 +436,12 @@ def _locate_nono(scratch: Path) -> tuple[str, str, str]:
     return found, lines[0] if lines and reported.code == 0 else "unknown", ""
 
 
-def _label(zone: str, version: str) -> str:
+def _label(zone: str, version: str, canaries: Mapping[str, str]) -> str:
     if zone == TEST_ZONE:
+        dns_suffix = ", DNS open" if canaries.get("dns", "") == "escaped" else ""
         return (
             f"{version}, test zone: writes confined, egress blocked, "
-            "this host only, not loopback only"
+            f"this host only, not loopback only{dns_suffix}"
         )
     return f"{version}, setup zone: writes confined, egress open"
 
@@ -458,5 +470,5 @@ def prove_rung(root: Path, scratch: Path, deny_read: Sequence[Path], zone: str) 
         canaries=canaries,
         seconds=round(time.monotonic() - started, 3),
         refusal=refusal,
-        label=HOST_LABEL if refusal else _label(zone, version),
+        label=HOST_LABEL if refusal else _label(zone, version, canaries),
     )
