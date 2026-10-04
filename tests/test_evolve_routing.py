@@ -118,7 +118,7 @@ class TestRoutingIsClosedOverTheTable:
         assert unrouted_names == {
             name for name, category in _CATEGORY_BY_CHECK.items() if category == "iteration"
         }
-        assert (len(mechanical_names), len(lessons_names), len(unrouted_names)) == (6, 21, 2)
+        assert (len(mechanical_names), len(lessons_names), len(unrouted_names)) == (6, 22, 2)
 
     def test_the_router_recomputes_the_category_and_ignores_a_stamped_one(self) -> None:
         mismatched_infra = FailurePattern(

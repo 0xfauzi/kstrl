@@ -395,6 +395,9 @@ class TestTheWalkAgainstTheRealPackage:
         Both carry a timeout. So 79. #695 adds one more: ``git._get_stored_diff``'s
         ``subprocess.run``, the stored-bytes diff the secret rules read; it also
         carries a timeout. So 80.
+        #696 adds one: ``git.status_entries``'s ``git status --porcelain
+        --untracked-files=all -z``, what a ``[stack]``'s checks left in the
+        base worktree. It carries a timeout. So 81.
         """
         spawns = frozenset(
             {
@@ -406,7 +409,7 @@ class TestTheWalkAgainstTheRealPackage:
             }
         )
         found = package_calls(spawns)
-        assert len(found.seen) == 80
+        assert len(found.seen) == 81
         assert found.without_line_numbers().undecided == tuple(
             sorted(
                 [

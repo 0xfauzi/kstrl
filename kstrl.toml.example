@@ -172,6 +172,19 @@ convergence_attempts = 0       # fail a component whose gate failure count stops
 # worktree_setup_command = "npm ci"
 worktree_setup_timeout = 0     # seconds; 0 = no limit (#467)
 
+# A project's stack (#696): instructions the models read, and the commands
+# kstrl runs and judges by exit status alone (0 passes). With [stack] present
+# it is the only source of verification commands: the [verify] *_command and
+# *_tool keys, [factory] worktree_setup_command, [contract] test_command,
+# [breaker] test_command, their environment variables and the ks factory
+# command flags are refused beside it. All four keys are required.
+# [stack]
+# instructions = "What the project is built with, and how to work in it."
+# setup = ""                  # worktree setup command; "" = none
+# env = []                    # variables the commands see beyond PATH, HOME, TMPDIR and the locale
+# [stack.checks]              # run in this order; each must exit 0
+# tests = "make test"
+
 # Phase 1 mechanical verification.
 [verify]
 # test_command, typecheck_command, lint_command default to uv run pytest / mypy / ruff,

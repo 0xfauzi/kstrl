@@ -363,7 +363,8 @@ def test_the_walk_reports_what_it_could_not_decide() -> None:
             counts[where] = counts.get(where, 0) + 1
 
     # #619: 11, the ruff --show-files listing check_dead_code_ruff runs first.
-    assert counts == {"verify.py": 11}
+    # #696: 12, check_stack_command's run of one [stack] check.
+    assert counts == {"verify.py": 12}
 
 
 def test_the_call_site_census_is_pinned() -> None:
@@ -373,9 +374,12 @@ def test_the_call_site_census_is_pinned() -> None:
         "breaker.py": 1,
         "contract.py": 5,
         "fixtures.py": 2,
+        # #700: the canary and --version runs, through one helper.
+        "isolation.py": 1,
         "learning_fixture.py": 1,
         # #619: +1, the ruff --show-files listing in check_dead_code_ruff.
-        "verify.py": 11,
+        # #696: +1, check_stack_command.
+        "verify.py": 12,
         "worktree_setup.py": 1,
         "worktree_sweep.py": 1,
     }
@@ -457,10 +461,12 @@ def test_the_disposition_census_is_pinned() -> None:
         "contract.py:returns": 2,
         "contract.py:swallows": 2,
         "fixtures.py:returns": 2,
+        "isolation.py:returns": 1,
         "learning_fixture.py:raises": 1,
         "verify.py:converts": 1,
         # #619: +1, the listing shares the ruff run's handlers, which return.
-        "verify.py:returns": 10,
+        # #696: +1, check_stack_command returns an unmeasured failing row.
+        "verify.py:returns": 11,
         "worktree_setup.py:returns": 1,
         "worktree_sweep.py:returns": 1,
     }

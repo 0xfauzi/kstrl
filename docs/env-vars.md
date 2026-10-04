@@ -289,6 +289,12 @@ The architect and the knowledge distiller are not sandboxed.
 | `KSTRL_SANDBOX_ENABLED` | bool | false | Opt-in OS sandbox for agent subprocesses |
 | `KSTRL_SANDBOX_ALLOW_NETWORK` | bool | false | Re-open outbound network inside the sandbox |
 
+## Isolation rung (#700)
+
+| Env var | Type | Default | Notes |
+|---|---|---|---|
+| `KSTRL_NONO` | path | `nono` on PATH | The nono binary `ks doctor --measure` proves the isolation rung with. **Env only.** The rung is decided by canaries run through it, never by its presence or version |
+
 ## VerifyConfig (`[verify]`)
 
 | Env var | Type | Default |

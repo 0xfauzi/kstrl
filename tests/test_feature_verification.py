@@ -293,6 +293,8 @@ class TestTheCheckActuallyRuns:
         assert "verification: PASS (3 checks)" in text
         report = _report(captured, "implement")
         assert report.passed is True
+        # #700: the commands ran with no rung around them, and the report says so.
+        assert report.isolation == "none: ran on the host"
         assert report.checks == HONEST_CHECKS
         assert report.failures == ()
         assert code == 0

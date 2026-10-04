@@ -189,6 +189,7 @@
         "Run `gh auth login` and add an origin remote, or set [factory] create_prs = false and merge by hand."
       ],
       "generated_at": "<generated_at>",
+      "isolation": null,
       "report_path": "<report_path>",
       "root": "<root>",
       "schema_version": 2,

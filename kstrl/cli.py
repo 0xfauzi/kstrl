@@ -870,6 +870,26 @@ def _refuse_without_build_manifest(root_dir: Path, ui_impl: UI) -> None:
         sys.exit(2)
 
 
+def _refuse_command_flags_beside_a_stack(
+    factory_config: FactoryConfig, flags: dict[str, str | None], ui_impl: UI
+) -> None:
+    """Exit 2 when a command flag is passed and kstrl.toml has a ``[stack]``.
+
+    With a stack its checks are the only verification commands (#696), the
+    rule ``stack.load_stack`` applies to every kstrl.toml key and environment
+    variable that names one. A flag cannot reach that loader, so it is
+    refused here, before the architect or any engineer is paid.
+    """
+    passed = [flag for flag, value in flags.items() if value is not None]
+    if factory_config.project_stack is None or not passed:
+        return
+    ui_impl.err(
+        f"{', '.join(passed)} cannot be used with [stack] in kstrl.toml: the stack's "
+        "checks are the only verification commands. Drop the flag, or change [stack]."
+    )
+    sys.exit(2)
+
+
 def _preflight_warn(message: str) -> None:
     """A degrading section's warning, on STDERR.
 
@@ -2842,6 +2862,16 @@ def factory(
     # applying them early would change what _collect_toml_notes reports
     # as overridden further down.
     factory_config = FactoryConfig.load(root_dir)
+    _refuse_command_flags_beside_a_stack(
+        factory_config,
+        {
+            "--test-command": test_command,
+            "--typecheck-command": typecheck_command,
+            "--lint-command": lint_command,
+            "--contract-test-cmd": contract_test_cmd,
+        },
+        ui_impl,
+    )
 
     # Get or create manifest.
     #
@@ -3090,7 +3120,11 @@ def factory(
                 name
                 for name, passed in (
                     ("mode", contract_check is not None),
-                    ("test_command", cli_contract_cmd is not None),
+                    # #696: under a [stack] load blanks test_command; no toml set it.
+                    (
+                        "test_command",
+                        cli_contract_cmd is not None or contract_resolved.project_stack is not None,
+                    ),
                 )
                 if passed
             },
@@ -4055,7 +4089,7 @@ def _check_verify_digest(
         GATE_LINT: verify_cfg.lint_tool,
     }
     digest = baseline.verify_digest(
-        resolve_verify_commands(verify_cfg, path),
+        verify_cfg.project_stack or resolve_verify_commands(verify_cfg, path),
         verify_cfg.subprocess_timeout,
         formats=declared_formats(tools),
     )
@@ -6022,8 +6056,7 @@ def queue_ls(
     for item in items:
         attempts = f"{item.attempts}/{item.max_attempts}"
         ui_impl.info(
-            f"  {item.item_id[:12]}  {str(item.state):<8} "
-            f"p{item.priority:<3} {attempts:<6} {item.title}"
+            f"  {item.item_id}  {str(item.state):<8} p{item.priority:<3} {attempts:<6} {item.title}"
         )
     ui_impl.info("")
     ui_impl.kv("summary", summarize(queue.counts()))
@@ -6092,7 +6125,7 @@ def _retry_refusal(item: Any) -> str:
     """Why `ks queue retry` refuses ``item``, naming the command that does apply."""
     from kstrl.workqueue import ItemState
 
-    refusal = f"{item.item_id[:12]} is {item.state}; only failed or poisoned items can be retried"
+    refusal = f"{item.item_id} is {item.state}; only failed or poisoned items can be retried"
     if item.state is ItemState.AWAITING_ANSWER:
         refusal += (
             "; it waits for the owner's answer: run "
@@ -6197,7 +6230,7 @@ def queue_retry(
         sys.exit(2)
     if not reset_attempts and item.attempts_remaining == 0:
         ui_impl.err(
-            f"{item.item_id[:12]} has used all {item.max_attempts} attempts; "
+            f"{item.item_id} has used all {item.max_attempts} attempts; "
             "pass --reset-attempts to authorize spending again"
         )
         sys.exit(2)
@@ -6212,7 +6245,7 @@ def queue_retry(
     except (QueueError, OSError) as exc:
         ui_impl.err(str(exc))
         sys.exit(2)
-    ui_impl.ok(f"Requeued {item.item_id[:12]} ({item.attempts}/{item.max_attempts} attempts used)")
+    ui_impl.ok(f"Requeued {item.item_id} ({item.attempts}/{item.max_attempts} attempts used)")
     sys.exit(0)
 
 
@@ -6278,7 +6311,7 @@ def queue_rm(
     ui_impl = _autonomy_ui(ui, no_color)
     item = _resolve_queue_item(queue, item_id, ui_impl)
     if not yes and not click.confirm(
-        f"Delete {item.item_id[:12]} ({item.title})?",
+        f"Delete {item.item_id} ({item.title})?",
         default=False,
     ):
         ui_impl.info("Left alone.")
@@ -6289,9 +6322,9 @@ def queue_rm(
     except (QueueError, OSError) as exc:
         # A deletion that failed must not print success: the operator
         # would believe the item is gone when it is still queued (#185 F6).
-        ui_impl.err(f"Could not remove {item.item_id[:12]}: {exc}")
+        ui_impl.err(f"Could not remove {item.item_id}: {exc}")
         sys.exit(2)
-    ui_impl.ok(f"Removed {item.item_id[:12]}")
+    ui_impl.ok(f"Removed {item.item_id}")
     sys.exit(0)
 
 
@@ -6900,7 +6933,7 @@ def serve(
             ui_impl.kv("intake", "disabled")
 
         candidate = queue.next_ready()
-        pending = f"{candidate.item_id[:12]} - {candidate.title}" if candidate else "nothing ready"
+        pending = f"{candidate.item_id} - {candidate.title}" if candidate else "nothing ready"
         if candidate is None and intake_config is not None and (intake_config.enabled):
             # Say so explicitly: "nothing ready" alone would be misleading
             # when intake is about to admit work.

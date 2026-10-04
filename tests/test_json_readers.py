@@ -120,6 +120,9 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     "init_cmd.py": 3,
     "init_wizard.py": 2,
     "intake_github.py": 7,
+    # #700: the import and one json.dumps of the nono policy; the canary's
+    # report is read through read_json. No parse.
+    "isolation.py": 2,
     "jsonread.py": 4,
     "knowledge.py": 6,
     # #508: the import and one json.dumps of the scorer's report; no parse.
@@ -137,6 +140,9 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     "sandbox.py": 3,
     "serve.py": 5,
     "signals.py": 3,
+    # #696: the import and one json.dumps, the stack digest's canonical
+    # form. No parse: the table is read through load_toml_document.
+    "stack.py": 2,
     "statedir.py": 2,
     "verify.py": 1,
     # #595: the import and one json.dumps, the canonical JSON the waiver

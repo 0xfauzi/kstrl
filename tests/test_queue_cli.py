@@ -10,6 +10,7 @@ auto-merge opt-in has to be typed.
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -277,6 +278,75 @@ class TestShow:
         assert result.exit_code == 0
         assert "https://x/pull/1" in result.output
         assert "https://x/pull/2" in result.output
+
+
+class TestShownIds:
+    """#706: every id `ks queue` prints is one every `ks queue` command accepts."""
+
+    def test_items_queued_in_the_same_hour_print_ids_that_retry_accepts(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Both items are minted in the same microsecond, so only the nonce tells them apart."""
+        moment = datetime(2026, 10, 4, 18, 0, 0, tzinfo=UTC)
+        monkeypatch.setattr("kstrl.workqueue._utc_now", lambda: moment)
+        for name in ("a", "b"):
+            spec = tmp_path / f"{name}.md"
+            spec.write_text(f"# {name}\n\nDo {name}.\n", encoding="utf-8")
+            assert _invoke(["queue", "add", str(spec)], tmp_path).exit_code == 0
+        queue = _queue(tmp_path)
+        for item in queue.items():
+            queue.finish_failed(queue.start(queue.lease(item)), error="infra")
+        by_id = {item.item_id: item.title for item in queue.items()}
+
+        listing = _invoke(["queue", "ls"], tmp_path)
+        printed = [
+            line.split()[0] for line in listing.output.splitlines() if line.startswith("  q-")
+        ]
+
+        assert len(printed) == 2 and len(set(printed)) == 2, listing.output
+        for shown in printed:
+            result = _invoke(["queue", "retry", shown], tmp_path)
+            assert result.exit_code == 0, result.output
+            assert shown in by_id, (shown, sorted(by_id))
+            assert f"Requeued {shown} " in result.output, result.output
+        assert [item.state for item in _queue(tmp_path).items()] == [ItemState.QUEUED] * 2
+
+    def test_a_short_form_that_is_also_another_items_prefix_is_refused(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`q-202610` is item b's prefix and item a's short form; neither is picked."""
+        minted = iter(["q-20261101-120000.000000-202610", "q-20261004-120000.000000-abcdef"])
+        monkeypatch.setattr("kstrl.workqueue.mint_item_id", lambda: next(minted))
+        for name in ("a", "b"):
+            spec = tmp_path / f"{name}.md"
+            spec.write_text(f"# {name}\n\nDo {name}.\n", encoding="utf-8")
+            assert _invoke(["queue", "add", str(spec)], tmp_path).exit_code == 0
+
+        result = _invoke(["queue", "show", "q-202610"], tmp_path)
+
+        assert result.exit_code == 2, result.output
+        assert "matches multiple items" in result.output, result.output
+        assert "q-20261101-120000.000000-202610" in result.output, result.output
+        assert "q-20261004-120000.000000-abcdef" in result.output, result.output
+
+    def test_a_shorter_tail_than_the_short_form_is_not_accepted(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`q-` and the id's last six characters name the item; `q-` and fewer name nothing."""
+        monkeypatch.setattr(
+            "kstrl.workqueue.mint_item_id", lambda: "q-20261101-120000.000000-a1b2c3"
+        )
+        spec = tmp_path / "a.md"
+        spec.write_text("# a\n\nDo a.\n", encoding="utf-8")
+        assert _invoke(["queue", "add", str(spec)], tmp_path).exit_code == 0
+
+        shown = _invoke(["queue", "show", "q-a1b2c3"], tmp_path)
+        tail = _invoke(["queue", "show", "q-b2c3"], tmp_path)
+
+        assert shown.exit_code == 0, shown.output
+        assert "q-20261101-120000.000000-a1b2c3" in shown.output, shown.output
+        assert tail.exit_code == 2, tail.output
+        assert "No queue item matching 'q-b2c3'" in tail.output, tail.output
 
 
 class TestRetry:
