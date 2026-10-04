@@ -345,9 +345,10 @@ def test_a_check_sees_the_declared_names_and_a_secret_name_is_refused(tmp_path: 
     declares: an undeclared name and Python's VIRTUAL_ENV are gone. A
     declared name shaped like a secret is refused when kstrl.toml loads."""
     seen = tmp_path / "env.seen"
+    setup_seen = tmp_path / "setup.seen"
     root = _repo(
         tmp_path / "declared",
-        _stack({"env": f"env > '{seen}'"}, env=["DEMO_DECLARED"]),
+        _stack({"env": f"env > '{seen}'"}, setup=f"env > '{setup_seen}'", env=["DEMO_DECLARED"]),
     )
     secret = _repo(tmp_path / "secret", _stack({"tests": "true"}, env=["DEMO_API_TOKEN"]))
     process_env = {
@@ -364,6 +365,11 @@ def test_a_check_sees_the_declared_names_and_a_secret_name_is_refused(tmp_path: 
     assert "DEMO_DECLARED" in names
     assert "DEMO_UNDECLARED" not in names
     assert "VIRTUAL_ENV" not in names
+    setup_names = {
+        line.split("=", 1)[0] for line in setup_seen.read_text(encoding="utf-8").splitlines()
+    }
+    assert "DEMO_DECLARED" in setup_names
+    assert "VIRTUAL_ENV" not in setup_names
     assert refused.code == 2, refused.out
     assert "DEMO_API_TOKEN" in refused.out
     assert refused.calls == 0
@@ -454,19 +460,25 @@ def test_phase_3_runs_every_check_on_the_merged_tree(tmp_path: Path) -> None:
     both checks, and the LAST check fails only where both markers meet: on
     the tree Phase 3 merges. Phase 3 runs every check, so it fails there."""
     checks = {
-        "tests": "true",
+        "tests": 'test "$DEMO_DECLARED" = yes',
         "merged": "test ! -f comp-a.marker || test ! -f comp-b.marker",
     }
-    root = _repo(tmp_path, _stack(checks), comps=("comp-a", "comp-b"))
+    root = _repo(tmp_path, _stack(checks, env=["DEMO_DECLARED"]), comps=("comp-a", "comp-b"))
     engineer = (
         'touch "$(basename "$PWD").marker" && git add -A && git commit -q -m marker >/dev/null 2>&1'
     )
 
-    run = _factory(tmp_path, root, contract="final", engineer=engineer)
+    run = _factory(
+        tmp_path, root, contract="final", engineer=engineer, env={"DEMO_DECLARED": "yes"}
+    )
 
     assert run.calls == 2, run.out
     assert "Phase 1 FAILED" not in run.out, run.out
     assert "contract tests FAILED" in run.out, run.out
+    # The bisection runs the same checks with the same env: merging comp-a
+    # alone passes, so the breaker is comp-b, on the check that failed.
+    assert "breaker 'comp-b'" in run.out, run.out
+    assert "stack:merged: `" in run.out, run.out
     assert run.code != 0, run.out
 
 
