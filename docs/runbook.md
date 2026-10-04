@@ -44,6 +44,23 @@ rest on a reading. The branch is the one `ks factory --spec` uses when
 `--base-branch` is not given. A flakiness smoke and a cost projection are
 not built.
 
+It also adds the `isolation` row (#700). For each of two zones, setup
+(writes confined, egress open) and test (writes confined, egress
+blocked, localhost allowed), it runs canaries through `nono wrap` and
+the same canaries with no sandbox as their control, and lists every
+verdict under `isolation` in the JSON report with nono's version and
+the SHA-256 of the policy file it wrote under the control directory. A
+canary counts as contained only when its operation failed with an
+errno, and the egress canary only with EPERM. A canary whose control
+also failed is uninformative, and a timeout is never contained. The row
+is a record: a refused zone warns and never fails the verdict, because
+no command runs inside a rung yet, and every verification record says
+`none: ran on the host`. Two refusals are expected today. On macOS with
+nono 0.79 the test zone is refused naming `dns`, because nono cannot
+deny DNS there. On every other system both zones are refused, because
+nono cannot express a localhost-only test zone on Linux. nono comes from
+`KSTRL_NONO`, else from PATH.
+
 ## Exit codes
 
 Every `ks` command uses the same three codes, so a script or a scheduler

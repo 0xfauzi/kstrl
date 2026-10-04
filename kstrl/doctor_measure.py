@@ -17,6 +17,8 @@ this measures is the one the next plan is cut from.
 
 from __future__ import annotations
 
+import dataclasses
+import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -24,6 +26,8 @@ from kstrl import git
 from kstrl.base_gates import measure_base_gates, reading_document, refusal_lines, warning_lines
 from kstrl.doctor import STATUS_FAIL, STATUS_OK, STATUS_WARN, DoctorCheck, _not_evaluated
 from kstrl.factory import FactoryConfig
+from kstrl.isolation import SETUP_ZONE, TEST_ZONE, prove_rung
+from kstrl.statedir import control_dir
 from kstrl.verify import VerifyConfig
 
 if TYPE_CHECKING:
@@ -31,6 +35,9 @@ if TYPE_CHECKING:
 
 #: The row's name in the report.
 CHECK_NAME = "base_gates"
+
+#: The isolation row's name in the report (#700).
+ISOLATION_CHECK_NAME = "isolation"
 
 #: What to do about a base branch whose gates fail: the escapes the
 #: `ks factory` refusal leaves (docs/runbook.md).
@@ -65,3 +72,31 @@ def measure(
         names = ", ".join(check.name for check in reading.result.checks)
         row = (STATUS_OK, f"{names} pass on {base} at {reading.base_sha[:12]}", "")
     return DoctorCheck(CHECK_NAME, *row), reading_document(reading, reasons)
+
+
+def measure_isolation(root: Path, ui: UI) -> tuple[DoctorCheck, dict[str, Any]]:
+    """The isolation row and the reading behind it: the setup zone and
+    the test zone, each proven by canaries through nono, every canary's
+    verdict, nono's version and each policy's digest (#700).
+
+    Record only. A refused zone warns and never fails the verdict,
+    because nothing runs inside a rung yet; every command still runs on
+    the host and its result says so. The canaries point into a scratch
+    directory that is removed afterwards, and the control directory is
+    denied to both zones.
+    """
+    ui.info("Proving the isolation rung with canaries through nono...")
+    with tempfile.TemporaryDirectory(prefix="kstrl-rung-") as scratch:
+        rungs = []
+        for zone in (SETUP_ZONE, TEST_ZONE):
+            directory = Path(scratch) / zone
+            directory.mkdir()
+            rungs.append(prove_rung(root, directory, [control_dir(root)], zone))
+    detail = "; ".join(
+        f"{rung.zone} zone: {rung.refusal or 'proven: ' + rung.label}" for rung in rungs
+    )
+    status = STATUS_WARN if any(rung.refusal for rung in rungs) else STATUS_OK
+    return (
+        DoctorCheck(ISOLATION_CHECK_NAME, status, detail),
+        {rung.zone: dataclasses.asdict(rung) for rung in rungs},
+    )

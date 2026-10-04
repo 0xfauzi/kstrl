@@ -60,6 +60,8 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     # subprocess.TimeoutExpired.
     "git.py": 72,
     "intake_github.py": 3,
+    # #700: the import, and `TimeoutExpired` from `run_scrubbed`.
+    "isolation.py": 2,
     # #508: the import, and `TimeoutExpired` from `run_scrubbed`.
     "learning_fixture.py": 2,
     "licensing.py": 3,

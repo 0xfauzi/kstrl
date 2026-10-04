@@ -742,12 +742,14 @@ def diagnose(root: Path, measure_ui: UI | None = None) -> dict[str, Any]:
     and build the report document. Only Tier B runs a repository command."""
     checks = run_checks(root)
     reading: dict[str, Any] | None = None
+    isolation: dict[str, Any] | None = None
     if measure_ui is not None:
         # Here, not at the top: doctor_measure imports this module.
-        from kstrl.doctor_measure import measure
+        from kstrl.doctor_measure import measure, measure_isolation
 
         row, reading = measure(root, checks, measure_ui)
-        checks.append(row)
+        isolation_row, isolation = measure_isolation(root, measure_ui)
+        checks.extend((row, isolation_row))
     now = datetime.now(UTC)
     return {
         "schema_version": DOCTOR_SCHEMA_VERSION,
@@ -756,6 +758,7 @@ def diagnose(root: Path, measure_ui: UI | None = None) -> dict[str, Any]:
         "verdict": verdict(checks),
         "checks": [dataclasses.asdict(check) for check in checks],
         "base_gates": reading,
+        "isolation": isolation,
         "fix_first": fix_first(checks),
         "fit_boundaries": list(FIT_BOUNDARIES),
         "report_path": str(report_path(root, now.strftime(_STAMP_FORMAT))),
