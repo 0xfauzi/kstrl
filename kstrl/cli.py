@@ -2569,6 +2569,14 @@ def decompose(
     help="Skip Phase 1 mechanical verification",
 )
 @click.option(
+    "--accept-red-base",
+    metavar="SHA",
+    default="",
+    help="Run on a base branch whose gates fail, for this run only: at least 12 "
+    "characters of the base commit's sha. A base that moved since refuses again; "
+    "`ks retry` replays it",
+)
+@click.option(
     "--dead-code-cleanup",
     is_flag=True,
     default=None,
@@ -2786,6 +2794,7 @@ def factory(
     typecheck_command: str | None,
     lint_command: str | None,
     no_verify: bool,
+    accept_red_base: str,
     dead_code_cleanup: bool | None,
     dead_code_command: str | None,
     mutation_testing: bool | None,
@@ -3037,6 +3046,7 @@ def factory(
             # over a toml/env progress_log_enabled = false.
             factory_config.progress_log_enabled = True
         factory_config.force_lock = force_lock
+        factory_config.accept_red_base = accept_red_base
         # #436: what `ks retry` replays; see kstrl/launch_record.py.
         factory_config.launch_flags = replayable_flags(ctx)
         # R2.3: --no-verify is an explicit skip sentinel that run_factory
