@@ -82,7 +82,7 @@ def get_agent(
             claude-code, claude-sdk, and codex adapters; a CustomAgent
             command has no generic sandbox surface, so the setting is
             ignored there and callers that enable it with a custom
-            command must warn.
+            command must refuse to start the role (#701).
         max_budget_usd: Per-turn USD budget ceiling (R7.6). Only the
             claude-sdk adapter has an enforcement surface for it; the
             subprocess adapters ignore it. Their ceiling is the
