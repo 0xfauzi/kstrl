@@ -2846,8 +2846,12 @@ class ComponentPipeline:
             component=comp.id,
         )
 
-    def _waivers_for(self, comp: Component) -> Waivers:
-        """This run's approvals for ``comp``, or an unconsulted snapshot.
+    def _waivers_for(self, comp: Component, diff_sha: str) -> Waivers:
+        """This run's approvals for ``comp`` that cover ``diff_sha``, or an unconsulted snapshot.
+
+        ``diff_sha`` is the change this attempt is judged on, from
+        :meth:`_judged_change`: an approval covers only the change it was
+        taken on (#646), so every other diff is asked again.
 
         ``self._approvals`` is None only when ``snapshot_waivers`` was
         never called for this pipeline - a bug here, not ``ks check``'s
@@ -2859,7 +2863,7 @@ class ComponentPipeline:
         approvals = self._approvals or ApprovalSnapshot(
             unconsulted_reason="snapshot_waivers was not called before this check"
         )
-        return approvals.for_scope(self._waiver_scope(comp))
+        return approvals.for_scope(self._waiver_scope(comp), diff_sha)
 
     def _merge_approved(self, comp: Component, decision: InboxItem) -> None:
         """Push, open and merge the branch exactly as the gate parked it.
@@ -3371,14 +3375,22 @@ class ComponentPipeline:
         worktree, not ``manifest.base_branch``, so a dependent's item
         describes its own change and not its dependencies'. Either half is
         "" when git cannot answer, and an unreadable diff is said out loud.
+
+        It reads the stored diff (``as_stored=True``, #695): every changed
+        byte, with no git setting able to rewrite or empty it, so two
+        different changes cannot share a diff_sha because a setting
+        printed them alike (``diff.external`` empties every diff).
         """
         head = git.branch_sha(comp.branch_name, self.root_dir) or ""
         try:
-            diff = git.get_diff_content(self.component_base(comp.id), wt_path)
+            diff = git.get_diff_content(self.component_base(comp.id), wt_path, as_stored=True)
         except git.GitDiffError as exc:
-            self.ui.warn(f"  {comp.id}: the inbox item records no diff_sha: {exc}")
+            self.ui.warn(
+                f"  {comp.id}: the judged diff could not be read, so no approval applies "
+                f"and an item filed now records no diff_sha: {exc}"
+            )
             return head, ""
-        return head, hashlib.sha256(diff.encode("utf-8")).hexdigest()
+        return head, hashlib.sha256(diff.encode("utf-8", "surrogateescape")).hexdigest()
 
     def _waivable_evidence(
         self, comp: Component, finding: Finding, change: tuple[str, str]
@@ -3426,6 +3438,10 @@ class ComponentPipeline:
         # and Phase 1's was the one the agent could edit. Both now read
         # RunScope, resolved once before the first engineer call.
         scope = self.run_scope.for_component(comp.id)
+        # #646: the change this attempt is judged on, read once. An
+        # approval covers only the diff it was taken on, and an item filed
+        # below records the same pair.
+        change = self._judged_change(comp, wt_path)
         # #192: the same rule as ``run_scope`` one line up, for the four
         # config values below. They came off disk per component until
         # the run's envelope was resolved once and injected, so a
@@ -3454,7 +3470,7 @@ class ComponentPipeline:
             autonomy_level=self.run_envelope.autonomy_level,
             component_id=comp.id,
             # #595: the approvals snapshotted when the run started.
-            waivers=self._waivers_for(comp),
+            waivers=self._waivers_for(comp, change[1]),
         )
         verify_duration = time.monotonic() - verify_start
         comp.verification_passed = verification.passed
@@ -3466,7 +3482,6 @@ class ComponentPipeline:
         check_findings = [finding for check in verification.checks for finding in check.findings]
         if check_findings:
             self._add_findings(comp, check_findings)
-            change = self._judged_change(comp, wt_path)
             # R8.3: an envelope breach is the archetypal exception - a
             # machine decision a human may want to approve once, or
             # convert into a widened policy. Advisories stay out: they
