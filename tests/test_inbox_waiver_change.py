@@ -30,14 +30,18 @@ from tests.test_inbox_waivers import (
     ADEQUACY_TOML,
     BRANCH,
     COMP,
+    POLICY_TOML,
     _decide,
     _engineer,
     _env,
     _factory,
     _failed_run,
+    _gated,
     _manifest_path,
     _open,
     _repo,
+    _retry,
+    _verification_failures,
 )
 
 #: Ten added lines against a cap of five, with no other policy rule in play.
@@ -205,3 +209,101 @@ def test_approving_an_item_with_no_commit_says_so(tmp_path: Path, head: str | No
     assert "waives this one finding" in out, out
     assert "the item records no commit" in out, out
     assert "found on commit" not in out, out
+
+
+# --- slice 2: an approval covers only the change it was taken on -------------------
+
+#: Two lines at a denied path: the change the operator approves.
+TWO_LINES = _engineer("mkdir -p secrets && printf 'a\\nb\\n' > secrets/key.txt")
+#: The regenerated change, per case. other_content: the same path with other
+#: content. cr_joined_line and ff_joined_line: the two approved lines joined
+#: into ONE line by a carriage return or a form feed (#698: a line with a
+#: mid-line CR or FF is one line, so an approval for its fragments does not
+#: cover it). external_diff_driver: other content while `diff.external` makes
+#: `git diff` print nothing for every change. byte_not_utf_8: other content
+#: holding a byte that is not utf-8.
+REGENERATED = {
+    "other_content": _engineer("mkdir -p secrets && printf 'z\\n' > secrets/key.txt"),
+    "cr_joined_line": _engineer("mkdir -p secrets && printf 'a\\r+b\\n' > secrets/key.txt"),
+    "ff_joined_line": _engineer("mkdir -p secrets && printf 'a\\f+b\\n' > secrets/key.txt"),
+    "external_diff_driver": _engineer("mkdir -p secrets && printf 'z\\n' > secrets/key.txt"),
+    "byte_not_utf_8": _engineer("mkdir -p secrets && printf 'z\\351\\n' > secrets/key.txt"),
+}
+
+
+@pytest.mark.parametrize("case", list(REGENERATED))
+def test_an_approval_does_not_cover_a_regenerated_change(tmp_path: Path, case: str) -> None:
+    """The finding names only the path, so its text is the same for any content
+    there. Before slice 2 the approval matched on that text and the retry
+    passed with content the operator never saw."""
+    root = _repo(tmp_path, POLICY_TOML)
+    if case == "external_diff_driver":
+        gitrepo.git_in(root, "config", "diff.external", "true")
+    env = _env(tmp_path, TWO_LINES)
+    code, out = _factory(root, env)
+    assert code == 1, out
+    (item,) = _open(root, ItemKind.POLICY_EXCEPTION)
+    _decide(root, env, "approve", item.id)
+
+    code, out = _retry(root, {**env, "AGENT_CMD": REGENERATED[case]})
+
+    assert code == 1, out
+    (finding,) = _gated(root, "policy_")
+    assert (finding.category, finding.severity) == ("policy_paths_deny", "high")
+    assert f"waiver_refused:{item.id}" in finding.tags
+    assert any("a regenerated change is asked again" in f for f in _verification_failures(root))
+
+
+def test_an_approval_filed_before_it_was_bound_to_its_change_is_refused(tmp_path: Path) -> None:
+    """An item approved under #613 carries no diff_sha (owner decision 3a)."""
+    root, env = _failed_run(tmp_path, POLICY_TOML, TWO_LINES)
+    (item,) = _open(root, ItemKind.POLICY_EXCEPTION)
+    # A repeat refreshes an open item's evidence (tests/test_inbox_waivers.py does the same).
+    Inbox(root, InboxConfig.load(root)).add(
+        ItemKind.POLICY_EXCEPTION,
+        item.title,
+        component=COMP,
+        dedupe_key=item.dedupe_key,
+        evidence={k: v for k, v in item.evidence.items() if k != "diff_sha"},
+    )
+    out = _decide(root, env, "approve", item.id)
+    assert "records approval only" in out, out
+
+    code, out = _retry(root, env)
+
+    assert code == 1, out
+    (finding,) = _gated(root, "policy_")
+    assert (finding.severity, f"waiver_refused:{item.id}" in finding.tags) == ("high", True)
+    assert any(
+        "filed before an approval was bound to its change" in f
+        for f in _verification_failures(root)
+    )
+
+
+def test_an_approval_does_not_cover_a_different_finding_on_the_same_change(
+    tmp_path: Path,
+) -> None:
+    """The same diff can raise a finding that reads differently: the operator
+    narrows ``paths_deny`` after approving, so the retry's finding names
+    another pattern. The approval covers the finding it was shown, not every
+    finding of its category on that change."""
+    root, env = _failed_run(tmp_path, POLICY_TOML, TWO_LINES)
+    (item,) = _open(root, ItemKind.POLICY_EXCEPTION)
+    _decide(root, env, "approve", item.id)
+    toml = root / "kstrl.toml"
+    toml.write_text(
+        toml.read_text(encoding="utf-8").replace('"secrets/**"', '"secrets/*"'), encoding="utf-8"
+    )
+
+    code, out = _retry(root, env)
+
+    assert code == 1, out
+    (finding,) = _gated(root, "policy_")
+    assert (finding.severity, f"waiver_refused:{item.id}" in finding.tags) == ("high", True)
+    assert "(deny 'secrets/*')" in finding.explanation, finding.explanation
+    # The same change: the refusal below is the finding's, not the diff's.
+    (refiled,) = _open(root, ItemKind.POLICY_EXCEPTION)
+    assert refiled.evidence["diff_sha"] == item.evidence["diff_sha"], refiled.evidence
+    assert any(
+        "covers a different policy_paths_deny finding" in f for f in _verification_failures(root)
+    )

@@ -39,7 +39,13 @@ from kstrl.autonomy import (
     save_ladder_state,
     strict_bool,
 )
-from kstrl.base_gates import BaseGates, measure_base_gates, refusal_lines, warning_lines
+from kstrl.base_gates import (
+    BaseGates,
+    apply_acceptance,
+    measure_base_gates,
+    refusal_lines,
+    warning_lines,
+)
 from kstrl.base_gates import write_record as write_base_gates_record
 from kstrl.breaker import BreakerConfig
 from kstrl.commandrun import start_heartbeat as _start_heartbeat
@@ -422,6 +428,12 @@ class FactoryConfig:
     launch_flags: tuple[tuple[str, FlagValue], ...] = field(
         default=(), metadata={"provenance": True}
     )
+    # #654 slice 4: `ks factory --accept-red-base <sha12>`. A run on a base
+    # whose gates fail proceeds when this is at least 12 characters of the
+    # sha the run measures (kstrl/base_gates.py::apply_acceptance). Per run:
+    # no toml key and no env var, and `ks retry` replays it from the launch
+    # record, so a retry on a base that moved refuses again. "" is none.
+    accept_red_base: str = ""
 
     def resolved_verify_config(self) -> VerifyConfig:
         """The VerifyConfig Phase 1 runs with (#261).
@@ -2368,11 +2380,21 @@ def _preflight_base_gates(
     Under ``--no-verify`` Phase 1 runs no gate, so nothing is measured and
     the record says why.
     """
+    accept = factory_config.accept_red_base
     verify_config = factory_config.engineer_verify_config()
     if verify_config is None:
         skipped = BaseGates(manifest.base_branch)
-        return write_base_gates_record(
-            root_dir, run_id, skipped, [], skipped_reason=BASE_GATES_SKIPPED_NO_VERIFY
+        reasons, _ = apply_acceptance(skipped, [], accept)
+        return (
+            write_base_gates_record(
+                root_dir,
+                run_id,
+                skipped,
+                reasons,
+                skipped_reason=BASE_GATES_SKIPPED_NO_VERIFY,
+                accept=accept,
+            )
+            + reasons
         )
     ui.info(f"  Measuring the gates on the base branch {manifest.base_branch}...")
     reading = measure_base_gates(
@@ -2380,8 +2402,15 @@ def _preflight_base_gates(
     )
     for line in warning_lines(reading):
         ui.warn(f"  {line}")
-    reasons = refusal_lines(reading)
-    return write_base_gates_record(root_dir, run_id, reading, reasons) + reasons
+    reasons, accepted = apply_acceptance(reading, refusal_lines(reading), accept)
+    for line in accepted:
+        ui.warn(f"  Accepted by --accept-red-base {accept}: {line}")
+    return (
+        write_base_gates_record(
+            root_dir, run_id, reading, reasons, accept=accept, accepted=tuple(accepted)
+        )
+        + reasons
+    )
 
 
 def _preflight_spec_pin(manifest: Manifest, root_dir: Path, ui: UI) -> list[str]:

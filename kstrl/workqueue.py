@@ -1701,7 +1701,7 @@ class Queue:
         )
         return state
 
-    def resume(self, *, actor: str = "") -> PauseState:
+    def resume(self, *, actor: str = "", detail: dict[str, Any] | None = None) -> PauseState:
         state = PauseState()
         ensure_control_state(self.root_dir)
         path = self.pause_path
@@ -1719,6 +1719,7 @@ class Queue:
                 to_state="running",
                 reason="resumed",
                 actor=actor,
+                detail=dict(detail or {}),
             )
         )
         return state
