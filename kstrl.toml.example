@@ -178,6 +178,9 @@ worktree_setup_timeout = 0     # seconds; 0 = no limit (#467)
 # *_tool keys, [factory] worktree_setup_command, [contract] test_command,
 # [breaker] test_command, their environment variables and the ks factory
 # command flags are refused beside it. All four keys are required.
+# kstrl runs nothing from a [stack] until a person confirms its exact text:
+# ks factory asks in a terminal, or files an inbox item that ks inbox approve
+# confirms. Any edit to the table needs a new confirmation.
 # [stack]
 # instructions = "What the project is built with, and how to work in it."
 # setup = ""                  # worktree setup command; "" = none

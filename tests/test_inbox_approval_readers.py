@@ -43,6 +43,8 @@ APPROVAL_READERS: dict[ItemKind, str] = {
     ItemKind.TEST_ADEQUACY: "waivers.py::load_approvals",
     # #602: the L1 plan gate reads its item at the start of the next run.
     ItemKind.PLAN_GATE: "plan_gate.py::run_plan_gate",
+    # #696: the newest approved stack item is what confirms a [stack].
+    ItemKind.STACK_CONFIRMATION: "stack.py::_latest_approval",
 }
 
 #: Action-required kinds whose approval no kstrl step reads, and why.
@@ -62,18 +64,24 @@ RECORD_ONLY: dict[ItemKind, str] = {
 #: or NOT_AN_INBOX_READER before adding it here.
 EXPECTED_APPROVED_READS: dict[str, int] = {
     "cli.py::_decide_parked_merge_if_parked": 1,
+    "factory.py::_emit_stack_confirmation": 1,
     "pipeline.py::<module>": 1,
     "pipeline.py::ComponentPipeline._checkpoint_refusal": 1,
     "pipeline.py::ComponentPipeline._phase_checkpoint": 1,
     "pipeline.py::ComponentPipeline.apply_merge_decisions": 1,
     "plan_gate.py::_settle": 2,
     "plan_gate.py::run_plan_gate": 5,
+    "stack.py::_latest_approval": 1,
     "waivers.py::load_approvals": 1,
 }
 
 #: Rows of the census that read (or, for the module row, define) some
 #: other vocabulary's APPROVED.
 NOT_AN_INBOX_READER: dict[str, str] = {
+    "factory.py::_emit_stack_confirmation": (
+        'CheckpointResolved(decision="approved"): the event a run records for a stack '
+        "confirmed_stack already confirmed, not a read of item.status"
+    ),
     "cli.py::_decide_parked_merge_if_parked": (
         '{"approve": "approved", "reject": "rejected"}[action]: the past-tense verb '
         "for the log line, not a read of item.status"

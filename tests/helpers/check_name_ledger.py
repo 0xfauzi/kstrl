@@ -168,8 +168,9 @@ BLIND_SITES: tuple[tuple[str, str, str, str], ...] = (
         "kstrl/verify.py",
         "check_stack_command",
         "row",
-        "#696: row = f'stack:{name}', one of the function's four CheckResult "
-        "calls (timeout, undecodable, pass, fail); the name after 'stack:' is "
+        "#696: row = f'stack:{name}', one of the function's five CheckResult "
+        "calls (unconfirmed, timeout, undecodable, pass, fail); the name after "
+        "'stack:' is "
         "the operator's [stack] check name, decided in kstrl.toml. The "
         "signature head is the literal 'stack', enrolled in "
         "_CATEGORY_BY_CHECK and pinned in test_signature_spellings.py",
@@ -178,8 +179,9 @@ BLIND_SITES: tuple[tuple[str, str, str, str], ...] = (
         "kstrl/verify.py",
         "check_stack_command",
         "row",
-        "#696: row = f'stack:{name}', one of the function's four CheckResult "
-        "calls (timeout, undecodable, pass, fail); the name after 'stack:' is "
+        "#696: row = f'stack:{name}', one of the function's five CheckResult "
+        "calls (unconfirmed, timeout, undecodable, pass, fail); the name after "
+        "'stack:' is "
         "the operator's [stack] check name, decided in kstrl.toml. The "
         "signature head is the literal 'stack', enrolled in "
         "_CATEGORY_BY_CHECK and pinned in test_signature_spellings.py",
@@ -188,8 +190,9 @@ BLIND_SITES: tuple[tuple[str, str, str, str], ...] = (
         "kstrl/verify.py",
         "check_stack_command",
         "row",
-        "#696: row = f'stack:{name}', one of the function's four CheckResult "
-        "calls (timeout, undecodable, pass, fail); the name after 'stack:' is "
+        "#696: row = f'stack:{name}', one of the function's five CheckResult "
+        "calls (unconfirmed, timeout, undecodable, pass, fail); the name after "
+        "'stack:' is "
         "the operator's [stack] check name, decided in kstrl.toml. The "
         "signature head is the literal 'stack', enrolled in "
         "_CATEGORY_BY_CHECK and pinned in test_signature_spellings.py",
@@ -198,8 +201,20 @@ BLIND_SITES: tuple[tuple[str, str, str, str], ...] = (
         "kstrl/verify.py",
         "check_stack_command",
         "row",
-        "#696: row = f'stack:{name}', one of the function's four CheckResult "
-        "calls (timeout, undecodable, pass, fail); the name after 'stack:' is "
+        "#696: row = f'stack:{name}', one of the function's five CheckResult "
+        "calls (unconfirmed, timeout, undecodable, pass, fail); the name after "
+        "'stack:' is "
+        "the operator's [stack] check name, decided in kstrl.toml. The "
+        "signature head is the literal 'stack', enrolled in "
+        "_CATEGORY_BY_CHECK and pinned in test_signature_spellings.py",
+    ),
+    (
+        "kstrl/verify.py",
+        "check_stack_command",
+        "row",
+        "#696: row = f'stack:{name}', one of the function's five CheckResult "
+        "calls (unconfirmed, timeout, undecodable, pass, fail); the name after "
+        "'stack:' is "
         "the operator's [stack] check name, decided in kstrl.toml. The "
         "signature head is the literal 'stack', enrolled in "
         "_CATEGORY_BY_CHECK and pinned in test_signature_spellings.py",

@@ -3515,6 +3515,25 @@ def _pause_queue(
     return admission.pause_reason or admission.reason
 
 
+def _stack_wait(root_dir: Path) -> str | None:
+    """Why this cycle claims nothing until a person confirms the ``[stack]``, or None (#696).
+
+    A wait, before the claim: no attempt is charged and nothing is
+    poisoned, so the queued item runs on the first poll after
+    ``ks inbox approve``. The one stack_confirmation item is filed on the
+    first poll; a later poll bumps it rather than filing a second.
+    """
+    from kstrl.stack import StackRefused, confirmed_stack, unconfirmed_lines
+
+    try:
+        confirmed_stack(root_dir)
+    except StackRefused as refused:
+        return "waiting, nothing claimed: " + " ".join(unconfirmed_lines(root_dir, refused.stack))
+    except Exception as exc:  # noqa: BLE001 - a [stack] serve cannot read is the same wait (#364)
+        return f"waiting, nothing claimed: the [stack] in kstrl.toml cannot be read: {exc}"
+    return None
+
+
 def _wait_gate_refusal(
     root_dir: Path,
     config: ServeConfig,
@@ -3556,6 +3575,11 @@ def _wait_gate_refusal(
     if not inbox_gate.allowed:
         obs.warn(inbox_gate.reason)
         return inbox_gate.reason
+
+    stack_wait = _stack_wait(root_dir)
+    if stack_wait is not None:
+        obs.warn(stack_wait)
+        return stack_wait
 
     if factory_lock_held(root_dir):
         # Not a failure and not the item's fault: something else owns the
