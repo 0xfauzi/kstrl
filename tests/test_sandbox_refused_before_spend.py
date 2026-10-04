@@ -237,6 +237,15 @@ _REFUSED = [
         {"KSTRL_SANDBOX_ENABLED": "1"},
         "repair agent",
     ),
+    (
+        # The operator typed the repair agent; it is refused even when no
+        # repair run is allowed (#701 plan decision 3).
+        "feature-repair-agent-no-repair-runs",
+        CODEX_TOML,
+        (*_FEATURE, "--repair-max-runs", "0", "--repair-agent-cmd", "{custom}"),
+        {"KSTRL_SANDBOX_ENABLED": "1"},
+        "repair agent",
+    ),
 ]
 
 
@@ -279,6 +288,23 @@ def test_a_custom_reviewer_for_a_phase_that_never_runs_is_not_refused(tmp_path: 
         tmp_path,
         SANDBOX_TOML + CODEX_TOML,
         (*_FACTORY, "--review-mode", "skip", "--review-agent-cmd", "{custom}"),
+        {},
+    )
+
+    assert REFUSAL not in out, out
+    assert _calls(tmp_path, "custom") == 0, out
+    assert _calls(tmp_path, "bin/codex") >= 1, out
+
+
+def test_a_custom_security_reviewer_for_a_phase_that_never_runs_is_not_refused(
+    tmp_path: Path,
+) -> None:
+    """Control: security is off, so its custom command starts no role, and the
+    sandboxable engineer runs."""
+    out = _ks(
+        tmp_path,
+        SANDBOX_TOML + CODEX_TOML,
+        (*_FACTORY, "--security-mode", "skip", "--security-agent-cmd", "{custom}"),
         {},
     )
 
