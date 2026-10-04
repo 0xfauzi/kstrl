@@ -72,6 +72,7 @@ from kstrl.prd import PRD
 from kstrl.procdispose import drain_or_abandon
 from kstrl.procgroup import signal_process_tree
 from kstrl.report_formats import REPORT_ENV, fresh_report, read_gate_report
+from kstrl.rung import ProvenRung
 from kstrl.stack import SECRET_NAME_FRAGMENTS, Stack, load_stack
 from kstrl.statedir import STATE_DIR_NAME
 from kstrl.suite_inventory import (
@@ -242,11 +243,19 @@ def run_scrubbed(
     extra_env: Mapping[str, str] | None = None,
     stdin_text: str | None = None,
     declared_env: tuple[str, ...] | None = None,
+    rung: ProvenRung | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run a verification subprocess: scrubbed env, own process group.
 
     ``declared_env`` is a ``[stack]``'s ``env``, handed to
     :func:`scrubbed_subprocess_env` (#696); None keeps the allowlist.
+
+    ``rung`` runs the command inside that proven isolation rung (#700
+    slice 2), through :meth:`ProvenRung.command`: a string ``cmd`` as
+    ``/bin/sh -c cmd``, the shell ``shell=True`` would have used, and every
+    declared name and ``extra_env`` value set again inside the rung,
+    because nono strips some variables from the environment it passes on.
+    None, the default, runs on the host exactly as before.
 
     Drop-in for the ``subprocess.run(..., capture_output=True, text=True,
     timeout=...)`` calls verification used to make, with two differences
@@ -304,12 +313,13 @@ def run_scrubbed(
     env = scrubbed_subprocess_env(declared_env)
     if extra_env:
         env.update(extra_env)
+    spawned = _in_rung(cmd, rung, env, [*(declared_env or ()), *(extra_env or {})])
     # BYTES mode, decoded below (#527). In text mode CPython decodes inside
     # `communicate`, and a byte that is not utf-8 raised there with both
     # streams discarded, so a gate that failed that way could leave no log.
     proc = subprocess.Popen(
-        cmd,
-        shell=isinstance(cmd, str),
+        spawned,
+        shell=isinstance(spawned, str),
         cwd=cwd,
         stdin=None if stdin_text is None else subprocess.PIPE,
         stdout=subprocess.PIPE,
@@ -367,6 +377,19 @@ def run_scrubbed(
             stderr=_readable(raw_stderr),
         ) from exc
     return subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
+
+
+def _in_rung(
+    cmd: str | list[str], rung: ProvenRung | None, env: Mapping[str, str], names: Sequence[str]
+) -> str | list[str]:
+    """``cmd`` as :func:`run_scrubbed` spawns it: unchanged with no rung,
+    else inside ``rung`` with each of ``names`` that ``env`` holds set
+    again after nono (#700 slice 2)."""
+    if rung is None:
+        return cmd
+    argv = ["/bin/sh", "-c", cmd] if isinstance(cmd, str) else cmd
+    assignments = [f"{name}={env[name]}" for name in dict.fromkeys(names) if name in env]
+    return rung.command(argv, assignments)
 
 
 def _budget_left(limit: float | None, spent: float) -> float | None:
@@ -730,6 +753,11 @@ class VerifyConfig:
     # With a stack, those command fields are refused at load and the
     # stack's checks are the gates. Provenance: no [verify] key of its own.
     project_stack: Stack | None = field(default=None, metadata={"provenance": True})
+    # #700 slice 2: the TEST-zone rung a ``ks factory`` run under a [stack]
+    # proved before its base gates; every [stack] check runs inside it.
+    # None runs on the host. Set only through ``FactoryConfig``, never from
+    # kstrl.toml. Provenance: no [verify] key.
+    rung: ProvenRung | None = field(default=None, metadata={"provenance": True})
 
     @classmethod
     def from_env(cls) -> VerifyConfig:
@@ -1752,9 +1780,16 @@ SHELL_COULD_NOT_RUN: frozenset[int] = frozenset({126, 127})
 
 
 def check_stack_command(
-    cwd: Path, name: str, command: str, timeout: float | None, env: tuple[str, ...]
+    cwd: Path,
+    name: str,
+    command: str,
+    timeout: float | None,
+    env: tuple[str, ...],
+    rung: ProvenRung | None = None,
 ) -> CheckResult:
     """Run one ``[stack]`` check in ``cwd``: the row ``stack:<name>`` (#696).
+
+    ``rung`` is the run's TEST-zone rung, or None on the host (#700 slice 2).
 
     The verdict is the exit status (decision 4): 0 passes, and any other
     completed exit is a MEASURED failure. 126, 127, a timeout and output that
@@ -1765,7 +1800,7 @@ def check_stack_command(
     row = f"stack:{name}"
     start = time.monotonic()
     try:
-        result = run_scrubbed(command, cwd=cwd, timeout=timeout, declared_env=env)
+        result = run_scrubbed(command, cwd=cwd, timeout=timeout, declared_env=env, rung=rung)
     except subprocess.TimeoutExpired as expired:
         return CheckResult(
             name=row,
@@ -1810,7 +1845,7 @@ def _stack_gates(
     """The ``[stack]`` checks named in ``selected``, in the stack's order (#696)."""
     timeout = limit_seconds(config.subprocess_timeout)
     return [
-        check_stack_command(worktree_path, name, command, timeout, stack.env)
+        check_stack_command(worktree_path, name, command, timeout, stack.env, config.rung)
         for name, command in stack.checks
         if name in selected
     ]
