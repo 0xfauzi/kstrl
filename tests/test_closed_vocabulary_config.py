@@ -49,9 +49,10 @@ from tests.helpers.closed_vocabulary import (
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 #: Re-derived by running ``string_field_census()`` on this tree, never
-#: edited to match: 16 closed, 39 open, 1 not read. 56: #624 added
-#: ``FactoryConfig.worktree_setup_command``, a shell command (open).
-EXPECTED_STRING_FIELDS = 56
+#: edited to match: 16 closed, 40 open, 1 not read. 57: #654 added
+#: ``FactoryConfig.accept_red_base``, a sha prefix matched against the
+#: measured base, not a fixed vocabulary (open).
+EXPECTED_STRING_FIELDS = 57
 
 #: Re-derived by running ``use_site_parses()`` on this tree.
 EXPECTED_USE_SITE_PARSES = {("kstrl/pipeline.py", "ReviewMode", "review_mode")}
