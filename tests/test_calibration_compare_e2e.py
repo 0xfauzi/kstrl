@@ -9,6 +9,13 @@ an id it does not list is refused (exit 2) before any verdict, and an id it
 lists with ``None`` is recorded, reported as not gated, and still held to
 the drop check against its previous capture.
 
+#633 slice 3 adds the false-positive ceiling: compare reads the new
+baseline's ``false_positive_analysis`` block and fails a negative role above
+``FP_RATE_MAX``, refuses a malformed block (exit 2), names a role measured
+over fewer than three negatives as not gated, and says when no negative ran.
+Those baselines carry the block the capture harness's own
+``build_fp_summary`` writes.
+
 End to end: baselines are written by the real ``build_report`` and
 ``save_report``, compare runs as the real CLI (in a child for the refusal and
 the saved pairs, through ``main`` in process where the table has to hold a
@@ -21,6 +28,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +36,7 @@ import pytest
 
 from kstrl import calibration
 from kstrl.inbox import ItemKind
+from tests import test_calibration as tc
 from tests.helpers.demotion import NEW_TS, OLD_TS, inbox_items, write_config
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -41,6 +50,14 @@ SAVED_PAIRS = REPO_ROOT / "tests" / "fixtures" / "calibration_compare_saved_pair
 
 FIRST_MEASUREMENTS = "first measurements (the old baseline has no rate for these roles):"
 NOT_GATED = "not gated (MIN_ROLE_DETECTION_RATE sets no floor for these roles):"
+#: The two forms of the #633 slice 3 false-positive block.
+FP_HEADER = (
+    "false-positive rate per negative role (new baseline; ceiling 0.34, gated from 3 negatives):"
+)
+NO_NEGATIVES = (
+    "false-positive rate: not measured (the new baseline has no false-positive block, "
+    "so no negative fixture ran)"
+)
 
 
 def _runs(role: str, fixture_id: str, caught: int) -> list[dict[str, Any]]:
@@ -59,12 +76,47 @@ def _runs(role: str, fixture_id: str, caught: int) -> list[dict[str, Any]]:
     ]
 
 
-def _baseline(tmp_path: Path, timestamp: str, *fixtures: tuple[str, str, int]) -> Path:
+def _negative_runs(role: str, fixture_id: str, flagged: int) -> list[dict[str, Any]]:
+    """Three runs of one negative fixture, the first ``flagged`` of them a false positive."""
+    return [
+        {
+            "role": role,
+            "fixture_id": fixture_id,
+            "false_positive": run < flagged,
+            "error": False,
+            "detail": "synthetic",
+        }
+        for run in range(3)
+    ]
+
+
+def _baseline(
+    tmp_path: Path,
+    timestamp: str,
+    *fixtures: tuple[str, str, int],
+    negatives: Sequence[tuple[str, str, int]] = (),
+) -> Path:
+    """A baseline written the way the capture harness writes one: the real
+    ``build_report``, the harness's own ``build_fp_summary`` layered on only
+    when a negative ran (``_DetectionReport._build``), the real ``save_report``."""
     records = [run for fixture in fixtures for run in _runs(*fixture)]
     report = calibration.build_report(
         records, model="haiku", timestamp=timestamp, runs_per_fixture=3
     )
+    if negatives:
+        fp_records = [run for negative in negatives for run in _negative_runs(*negative)]
+        report["false_positive_analysis"] = tc.build_fp_summary(fp_records)
     return calibration.save_report(report, tmp_path / "baselines" / timestamp)
+
+
+def _clean(role: str, count: int) -> list[tuple[str, str, int]]:
+    """``count`` negative fixtures of ``role`` that no run flagged."""
+    return [(role, f"{role}-{index:02d}", 0) for index in range(count)]
+
+
+def _flagged(role: str, count: int) -> list[tuple[str, str, int]]:
+    """``count`` negative fixtures of ``role`` that every run flagged."""
+    return [(role, f"{role}-{index:02d}", 3) for index in range(count)]
 
 
 def _cli(old: Path | str, new: Path | str, root: Path) -> subprocess.CompletedProcess[str]:
@@ -91,11 +143,11 @@ def _block(lines: list[str], header: str) -> list[str]:
 
 
 def _without_new_blocks(lines: list[str]) -> list[str]:
-    """``lines`` with the two #633 blocks, and the blank line before each, removed."""
+    """``lines`` with the #633 blocks, and the blank line before each, removed."""
     kept: list[str] = []
     skipping = False
     for line in lines:
-        if line in (FIRST_MEASUREMENTS, NOT_GATED):
+        if line in (FIRST_MEASUREMENTS, NOT_GATED, FP_HEADER, NO_NEGATIVES):
             assert kept and kept[-1] == "", lines
             kept.pop()
             skipping = True
@@ -173,6 +225,156 @@ def test_an_ungated_role_is_still_held_to_the_drop_check(
     drift = inbox_items(ladder_on, ItemKind.CALIBRATION_DRIFT)
     assert len(drift) == 1
     assert drift[0].evidence["failures"] == [drop]
+
+
+def test_a_negative_role_above_the_ceiling_fails_compare(ladder_on: Path) -> None:
+    """Slice 3: a capture whose ``security_negative_ts`` flagged all three of
+    its clean fixtures (fp_rate 1.0) exits 1 naming the role, beside a
+    ``security_negative`` that flagged none, and the regression reaches the
+    inbox. Three is the fewest negatives that are gated, so a minimum read as
+    "more than three" leaves this role ungated and fails here. Before #633
+    compare never read the block and this exited 0."""
+    old = _baseline(
+        ladder_on,
+        OLD_TS,
+        ("security", "sec-01", 3),
+        negatives=_clean("security_negative", 4) + _clean("security_negative_ts", 3),
+    )
+    new = _baseline(
+        ladder_on,
+        NEW_TS,
+        ("security", "sec-01", 3),
+        negatives=_clean("security_negative", 4) + _flagged("security_negative_ts", 3),
+    )
+
+    done = _cli(old, new, ladder_on)
+
+    lines = done.stdout.splitlines()
+    failure = (
+        "negative role 'security_negative_ts' false-positive rate 1.00 is above the ceiling 0.34"
+    )
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert _block(lines, FP_HEADER) == [
+        "security_negative          0.00  (4 negatives)",
+        "security_negative_ts       1.00  (3 negatives)",
+    ]
+    assert f"  FAIL: {failure}" in lines
+    drift = inbox_items(ladder_on, ItemKind.CALIBRATION_DRIFT)
+    assert len(drift) == 1
+    assert drift[0].evidence["failures"] == [failure]
+
+
+def test_only_the_new_baseline_is_held_to_the_ceiling(ladder_on: Path) -> None:
+    """Slice 3: the ceiling is absolute on the NEW capture, like a detection
+    floor. An old capture whose ``security_negative_ts`` flagged everything,
+    followed by a clean one, passes: gating the old side too would fail every
+    later compare against a capture that was already bad."""
+    old = _baseline(
+        ladder_on,
+        OLD_TS,
+        ("security", "sec-01", 3),
+        negatives=_flagged("security_negative_ts", 3),
+    )
+    new = _baseline(
+        ladder_on,
+        NEW_TS,
+        ("security", "sec-01", 3),
+        negatives=_clean("security_negative_ts", 3),
+    )
+
+    done = _cli(old, new, ladder_on)
+
+    lines = done.stdout.splitlines()
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert _block(lines, FP_HEADER) == ["security_negative_ts       0.00  (3 negatives)"]
+    assert "PASS: no calibration regression under the codified thresholds" in lines
+    assert inbox_items(ladder_on, ItemKind.CALIBRATION_DRIFT) == []
+
+
+@pytest.mark.parametrize(
+    ("value", "shown"),
+    [
+        pytest.param("high", "'high'", id="a-string"),
+        pytest.param(True, "True", id="a-bool"),
+        pytest.param(1.5, "1.5", id="above-one"),
+        pytest.param(None, "None", id="absent"),
+    ],
+)
+def test_a_malformed_false_positive_block_is_refused_with_its_index(
+    ladder_on: Path, value: object, shown: str
+) -> None:
+    """Slice 3: a recorded rate that is not a number from 0 to 1 (a string, a
+    JSON boolean, a rate above one, or no ``fp_rate`` key at all, which is
+    what ``None`` writes here) refuses the comparison (exit 2) and names the
+    entry by index and role, before any verdict and before the inbox. Read as
+    zero it would have passed. ``True`` is refused although Python counts it
+    as the integer 1."""
+    old = _baseline(ladder_on, OLD_TS, ("security", "sec-01", 3))
+    new = _baseline(
+        ladder_on,
+        NEW_TS,
+        ("security", "sec-01", 3),
+        negatives=_clean("security_negative", 4) + _clean("security_negative_ts", 4),
+    )
+    document = json.loads(new.read_text(encoding="utf-8"))
+    entry = document["false_positive_analysis"]["roles"]["security_negative_ts"]
+    if value is None:
+        del entry["fp_rate"]
+    else:
+        entry["fp_rate"] = value
+    new.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+
+    done = _cli(old, new, ladder_on)
+
+    assert done.returncode == 2, done.stdout + done.stderr
+    assert (
+        f"false_positive_analysis.roles[1] 'security_negative_ts' has no usable 'fp_rate': {shown}"
+        in done.stderr
+    )
+    assert "Traceback" not in done.stderr
+    assert done.stdout == ""
+    assert inbox_items(ladder_on, ItemKind.CALIBRATION_DRIFT) == []
+
+
+def test_a_capture_with_no_negatives_is_reported_as_not_measured(ladder_on: Path) -> None:
+    """Slice 3: a new baseline with no false-positive block (no negative ran)
+    is said to be unmeasured, and no negative role is printed with a rate,
+    so an absent block never reads as a clean 0.00."""
+    old = _baseline(
+        ladder_on, OLD_TS, ("security", "sec-01", 3), negatives=_clean("security_negative", 4)
+    )
+    new = _baseline(ladder_on, NEW_TS, ("security", "sec-01", 3))
+
+    done = _cli(old, new, ladder_on)
+
+    lines = done.stdout.splitlines()
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert NO_NEGATIVES in lines
+    assert FP_HEADER not in lines
+    assert not [line for line in lines if line.startswith("  security_negative")]
+
+
+def test_a_negative_role_under_three_negatives_is_named_and_not_gated(ladder_on: Path) -> None:
+    """Owner decision 6: a role measured over fewer than three negatives can
+    only read 0, 0.5 or 1, so it is printed with its count and the reason,
+    and is not gated: two flagged negatives exit 0 with no inbox item."""
+    old = _baseline(ladder_on, OLD_TS, ("security", "sec-01", 3))
+    new = _baseline(
+        ladder_on,
+        NEW_TS,
+        ("security", "sec-01", 3),
+        negatives=_flagged("security_negative_ts", 2),
+    )
+
+    done = _cli(old, new, ladder_on)
+
+    lines = done.stdout.splitlines()
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert _block(lines, FP_HEADER) == [
+        "security_negative_ts       1.00  (2 negatives: fewer than 3, not gated)"
+    ]
+    assert "PASS: no calibration regression under the codified thresholds" in lines
+    assert inbox_items(ladder_on, ItemKind.CALIBRATION_DRIFT) == []
 
 
 def _saved_pairs() -> list[dict[str, Any]]:
