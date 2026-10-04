@@ -283,6 +283,8 @@ class TestEveryStrictReaderConvertsADecodeFailure:
             "get_diff_numstat": 1,
             "get_untracked_files": 1,
             "resolve_base_sha": 1,
+            # #696: what a [stack]'s checks left in the base worktree.
+            "status_entries": 1,
             "tracked_files_at": 1,
         }
 
@@ -406,7 +408,9 @@ class TestGitDiffErrorHasOneHome:
                 if isinstance(node, ast.Raise) and _names_git_diff_error(node):
                     census[where] = census.get(where, 0) + 1
 
-        assert census == {"git.py": 27}
+        # 30: #696's status_entries raises it three more times, for a
+        # timeout, an undecodable path and a non-zero exit.
+        assert census == {"git.py": 30}
 
     def test_no_importfrom_outside_git_py_binds_the_name(self) -> None:
         offenders = [

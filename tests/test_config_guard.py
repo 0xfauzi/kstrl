@@ -158,6 +158,11 @@ EXPECTED_FREE_READERS = frozenset(
         # message asks.
         "check_kstrl_config",
         "collect_config_problems",
+        # stack.load_stack (#696) reads [stack] for the four loaders that
+        # hold it: StackConfig, FactoryConfig, VerifyConfig and
+        # ContractConfig, each of them surface already. It resolves nothing
+        # those loaders do not.
+        "load_stack",
         "load_toml_section",
         # config_toml.record_reads (#525) parses kstrl.toml so the entry
         # check can record which names the loaders ask for. It reports on

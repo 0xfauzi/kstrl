@@ -41,6 +41,9 @@ class WorktreeSetup:
 
     command: str = ""
     timeout: float = 0.0
+    #: A ``[stack]``'s ``env`` (#696): the setup sees the stack's scrub,
+    #: as its checks do. None is the allowlist every gate gets without one.
+    env: tuple[str, ...] | None = None
 
     def prepare(self, worktree: Path) -> str:
         """Run the setup in ``worktree``; "" on success or when there is none.
@@ -52,7 +55,12 @@ class WorktreeSetup:
             return ""
         head = f"worktree setup `{self.command}`"
         try:
-            result = run_scrubbed(self.command, cwd=worktree, timeout=limit_seconds(self.timeout))
+            result = run_scrubbed(
+                self.command,
+                cwd=worktree,
+                timeout=limit_seconds(self.timeout),
+                declared_env=self.env,
+            )
         except subprocess.TimeoutExpired:
             return f"{head} did not finish within {self.timeout}s; its process group was killed"
         except ChildOutputDecodeError as exc:
