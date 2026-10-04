@@ -6328,15 +6328,30 @@ def queue_pause(
 @_queue_ui_option
 @_queue_no_color_option
 def queue_resume(root: Path | None, ui: str, no_color: bool) -> None:
-    """Start admitting queued work again."""
+    """Start admitting queued work again.
+
+    Also restarts the poison streak at 0, so the next serve cycle does not
+    pause the queue again on the poisons the operator has looked at.
+    """
+    from kstrl.serve import ServeStateError, SpendLedger
+    from kstrl.statedir import ControlStateError
     from kstrl.workqueue import ItemState, queue_lock
 
     root_dir, queue = _queue_for(root)
     ui_impl = _autonomy_ui(ui, no_color)
     with queue_lock(root_dir):
-        queue.resume(actor=_actor())
+        # The streak first: the poison breaker reads it on every cycle, so
+        # a resume that leaves it standing is undone by the next one (#707).
+        try:
+            cleared = SpendLedger(root_dir).reset_poison_streak()
+        except (ServeStateError, ControlStateError, OSError) as exc:
+            ui_impl.err(f"Queue NOT resumed: could not clear the poison streak: {exc}")
+            sys.exit(2)
+        queue.resume(actor=_actor(), detail={"consecutive_poison_cleared": cleared})
     waiting = len(queue.items((ItemState.QUEUED,)))
     ui_impl.ok(f"Queue resumed; {waiting} item(s) waiting.")
+    if cleared:
+        ui_impl.kv("poison streak", f"{cleared} cleared")
     sys.exit(0)
 
 

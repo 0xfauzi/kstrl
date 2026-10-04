@@ -10,6 +10,8 @@ auto-merge opt-in has to be typed.
 from __future__ import annotations
 
 import json
+import os
+import stat
 from pathlib import Path
 from unittest.mock import patch
 
@@ -17,6 +19,7 @@ import pytest
 from click.testing import CliRunner, Result
 
 from kstrl.cli import cli
+from kstrl.serve import RunOutcome, RunSpend, SpendLedger
 from kstrl.workqueue import (
     ItemState,
     MergeDisposition,
@@ -444,6 +447,108 @@ class TestPauseResume:
     def test_pause_records_the_reason(self, tmp_path: Path) -> None:
         _invoke(["queue", "pause", "--reason", "daily budget"], tmp_path)
         assert _queue(tmp_path).pause_state().reason == "daily budget"
+
+
+def _serve_once(root: Path, returncode: int) -> tuple[Result, int]:
+    """One real `ks serve --once`; the factory child is the only stand-in."""
+    calls: list[object] = []
+
+    def runner(**kwargs: object) -> RunOutcome:
+        calls.append(kwargs)
+        return RunOutcome(returncode=returncode)
+
+    with patch("kstrl.serve.subprocess_factory_runner", runner):
+        result = _invoke(["serve", "--once"], root)
+    return result, len(calls)
+
+
+def _resume_rows(root: Path) -> list[dict[str, object]]:
+    return [row for row in _queue(root).journal_entries() if row.get("from") == "paused"]
+
+
+@pytest.mark.usefixtures("no_open_prs")
+class TestResumeClearsThePoisonStreak:
+    """#707: the poison breaker re-read a streak the operator's resume left standing."""
+
+    @pytest.fixture(autouse=True)
+    def _no_spend(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("kstrl.serve.read_run_spend", lambda root, run_id: RunSpend())
+        monkeypatch.setenv("USER", "op-alice")
+
+    def _trip_the_breaker(self, root: Path) -> None:
+        for name in ("a", "b", "c", "d"):
+            spec = root / f"{name}.md"
+            spec.write_text(f"# {name}\n\nDo {name}.\n")
+            args = ["queue", "add", str(spec), "--max-attempts", "1"]
+            assert _invoke(args, root).exit_code == 0
+        for _ in range(3):
+            assert _serve_once(root, returncode=1)[0].exit_code == 1
+        result, runs = _serve_once(root, returncode=0)
+        assert (runs, _queue(root).is_paused()) == (0, True), result.output
+        assert "3 consecutive items poisoned" in _queue(root).pause_state().reason
+
+    def test_a_resume_holds_through_the_next_serve_cycle(self, tmp_path: Path) -> None:
+        self._trip_the_breaker(tmp_path)
+        SpendLedger(tmp_path).charge(2.5, covered_calls=1, total_calls=1)
+        before = SpendLedger(tmp_path).read_state()
+
+        resumed = _invoke(["queue", "resume"], tmp_path)
+        assert resumed.exit_code == 0, resumed.output
+        after = SpendLedger(tmp_path).read_state()
+        assert (after.spend, after.cost_coverage_seen) == (before.spend, True)
+
+        result, runs = _serve_once(tmp_path, returncode=0)
+        assert not _queue(tmp_path).is_paused(), result.output
+        assert runs == 1, "the queue must admit the waiting item"
+        assert result.exit_code == 0, result.output
+        assert [i.state for i in _queue(tmp_path).items()].count(ItemState.DONE) == 1
+        assert "3 cleared" in resumed.output
+        row = _resume_rows(tmp_path)[-1]
+        assert row["actor"] == "op-alice"
+        assert row["detail"] == {"consecutive_poison_cleared": 3}
+
+    @pytest.mark.parametrize(
+        "breakage", ["malformed ledger", "lock is a directory", "read-only control dir"]
+    )
+    def test_a_streak_it_cannot_clear_refuses_the_resume(
+        self, tmp_path: Path, breakage: str
+    ) -> None:
+        self._trip_the_breaker(tmp_path)
+        ledger = SpendLedger(tmp_path).path
+        control = ledger.parent
+        mode = stat.S_IMODE(control.stat().st_mode)
+        if breakage == "malformed ledger":
+            ledger.write_text("not json\n", encoding="utf-8")
+        elif breakage == "lock is a directory":
+            (control / "control.lock").unlink()
+            (control / "control.lock").mkdir()
+        else:
+            os.chmod(control, 0o500)
+        try:
+            resumed = _invoke(["queue", "resume"], tmp_path)
+        finally:
+            os.chmod(control, mode)
+
+        assert resumed.exit_code == 2, resumed.output
+        assert "NOT resumed" in resumed.output
+        assert _queue(tmp_path).is_paused()
+        assert _resume_rows(tmp_path) == []
+
+    def test_an_elapsed_budget_pause_keeps_the_streak(self, tmp_path: Path) -> None:
+        """Serve's own clear lifts a pause the breaker never sets, so it clears no streak."""
+        spec = tmp_path / "a.md"
+        spec.write_text("# a\n\nDo a.\n")
+        _invoke(["queue", "add", str(spec), "--max-attempts", "1"], tmp_path)
+        assert _serve_once(tmp_path, returncode=1)[0].exit_code == 1
+        _queue(tmp_path).pause(
+            reason="daily budget", actor="serve", resume_after="2000-01-01T00:00:00+00:00"
+        )
+
+        result, _runs = _serve_once(tmp_path, returncode=0)
+        assert "Pause window elapsed" in result.output
+        assert not _queue(tmp_path).is_paused()
+        assert SpendLedger(tmp_path).read_state().consecutive_poison == 1
+        assert _resume_rows(tmp_path)[-1]["actor"] == "serve"
 
 
 class TestQueueSync:

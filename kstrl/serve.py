@@ -696,11 +696,21 @@ class SpendLedger:
             self._write_unlocked(replace(state, consecutive_poison=streak))
             return streak
 
-    def reset_poison_streak(self, today: str | None = None) -> None:
+    def reset_poison_streak(self, today: str | None = None) -> int:
+        """Restart the poison streak at 0; returns the streak it cleared.
+
+        The operator's half of the breaker (#707). ``check_poison_breaker``
+        reads this streak on every cycle, so lifting the pause without
+        clearing it lets the next cycle pause the queue again. A streak
+        already at 0 writes nothing. Raises :class:`ServeStateError` like
+        ``read_state``.
+        """
         ensure_control_state(self.root_dir)
         with control_lock(self.root_dir):
             state = self.read_state(today)
-            self._write_unlocked(replace(state, consecutive_poison=0))
+            if state.consecutive_poison:
+                self._write_unlocked(replace(state, consecutive_poison=0))
+            return state.consecutive_poison
 
 
 @dataclass(frozen=True)
