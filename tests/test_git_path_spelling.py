@@ -212,6 +212,9 @@ EXPECTED_WITHOUT_Z: tuple[str, ...] = (
     # also refused here: measured, `git check-ignore -z -v -- foo.py`
     # exits 128 with "fatal: -z only makes sense with --stdin".
     "git.py git check-ignore -v -- ?",
+    # get_diff_content(as_stored=True) (#695): a unified diff, like the row
+    # below, with every changed byte in it; the same reason holds.
+    "git.py git diff --text --no-textconv --no-ext-diff --no-color --dst-prefix=b/ ? --",
     # get_diff_content: a unified diff cannot be NUL-separated. Measured,
     # `git diff -z HEAD` still C-quotes a non-ASCII header path (café.py
     # renders as a quoted octal escape); the headers are unquoted
@@ -270,6 +273,7 @@ EXPECTED_GIT_ARGVS: dict[str, int] = {
     "git.py git diff --name-status -z ? --": 1,
     "git.py git diff --numstat -z ? --": 1,
     "git.py git diff ? --": 1,
+    "git.py git diff --text --no-textconv --no-ext-diff --no-color --dst-prefix=b/ ? --": 1,
     "git.py git fetch -- origin ?": 1,
     "git.py git for-each-ref --format=%(refname)%09%(symref) ? ?": 1,
     "git.py git ls-files --cached --others --exclude-standard -z": 1,

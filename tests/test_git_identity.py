@@ -262,6 +262,9 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_scheduler.py": 1,
     "tests/test_scope_hardening.py": 4,
     "tests/test_scope_launch_gate.py": 1,
+    # #695: `_repo`'s base and branch commits, into a repository it has
+    # just put through `tests.helpers.gitrepo.set_identity`.
+    "tests/test_secret_rules_read_every_byte.py": 1,
     # #639: `_project`'s seed commit, into the repository it has just put
     # through `tests.helpers.gitrepo.set_identity`.
     "tests/test_spec_identity.py": 1,

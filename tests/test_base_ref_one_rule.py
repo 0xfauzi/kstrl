@@ -163,6 +163,8 @@ EXPECTED_REF_OPERAND_ARGVS: dict[str, int] = {
     "git.py git ls-files --error-unmatch -- file": 1,
     "git.py git diff --name-status -z -M -C f'{base_ref}...HEAD' --": 1,
     "git.py git diff f'{base_ref}...HEAD' --": 1,
+    "git.py git diff --text --no-textconv --no-ext-diff --no-color --dst-prefix=b/ "
+    "f'{base_ref}...HEAD' --": 1,
     "git.py git diff --numstat -z f'{base_ref}...HEAD' --": 1,
     "git.py git merge --no-edit -- branch": 1,
     "git.py git merge-base base_label HEAD": 1,

@@ -261,25 +261,23 @@ def test_bad_patterns_that_could_not_read_the_diff_measured_nothing(
     assert_unmeasured(row)
 
 
-def test_bad_patterns_that_could_not_decode_the_diff_measured_nothing(tmp_path: Path) -> None:
-    """A diff this process cannot decode raises ``UnicodeDecodeError``, which
-    is a ``ValueError`` and not a ``git.GitDiffError``. This is the test that
-    stops the refusal's ``except Exception`` being narrowed to the one
-    exception family the stub above can raise."""
+def test_bad_patterns_that_could_not_scan_the_diff_measured_nothing(tmp_path: Path) -> None:
+    """A secret pattern that will not compile raises ``PolicyConfigError``,
+    which is a ``ValueError`` and not a ``git.GitDiffError``. This is the test
+    that stops the refusal's ``except Exception`` being narrowed to the one
+    exception family the stub above can raise. It used a latin-1 byte until
+    #695, when the secret rules began reading the diff with ``as_stored=True``,
+    which keeps such a byte rather than refusing it."""
     repo = _repo(tmp_path)
     (repo / "seed.py").write_text("x = 1\n", encoding="utf-8")
     _git("add", "-A", cwd=repo)
     _git("commit", "-q", "-m", "seed", cwd=repo)
     _git("checkout", "-q", "-b", "work", cwd=repo)
-    # A latin-1 encode of a real word, not a hand-split ASCII+escape
-    # literal: byte-identical to the quoted-octal spelling git itself would
-    # write for this character, and codespell reads a whole word rather than
-    # a fragment that happens to look like a typo for "calf" (#399).
-    (repo / "latin.py").write_bytes('VALUE = "café"\n'.encode("latin-1"))
+    (repo / "seed.py").write_text("x = 2\n", encoding="utf-8")
     _git("add", "-A", cwd=repo)
-    _git("commit", "-q", "-m", "add latin-1 bytes", cwd=repo)
+    _git("commit", "-q", "-m", "change seed", cwd=repo)
 
-    row = check_bad_patterns(repo, "main")
+    row = check_bad_patterns(repo, "main", ["("])
 
     assert row.passed is False
     assert "could not read the diff" in row.message

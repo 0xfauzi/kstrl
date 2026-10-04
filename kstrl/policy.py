@@ -302,7 +302,11 @@ def parse_added_lines(diff_text: str) -> list[tuple[str, str]]:
     added: list[tuple[str, str]] = []
     current: str | None = None
     prev = ""
-    for line in diff_text.splitlines():
+    # git ends a line at "\n" only (#695). str.splitlines() also splits at
+    # "\r", "\x0c", "\x1c" and more, so a key after one of those on an added
+    # line lost its "+" and was not scanned. A CRLF line keeps its old hash.
+    for raw in diff_text.split("\n"):
+        line = raw.removesuffix("\r")
         if line.startswith("diff --git"):
             current = None
         elif line.startswith("+++ ") and prev.startswith("--- "):
@@ -397,7 +401,9 @@ def _scan_secrets(
                 matched = True
                 break
         if matched:
-            digest = hashlib.sha256(line.encode("utf-8")).hexdigest()[:12]
+            # surrogateescape gives back the bytes git printed (#695): a line
+            # from a binary file is not utf-8, and a utf-8 line hashes as before.
+            digest = hashlib.sha256(line.encode("utf-8", "surrogateescape")).hexdigest()[:12]
             hits.setdefault(path, set()).add(digest)
     return hits
 
