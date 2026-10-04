@@ -87,7 +87,7 @@ class TestDryRun:
         _invoke(["queue", "add", str(spec_file)], tmp_path)
         result = _invoke(["serve", "--dry-run"], tmp_path)
         item = _queue(tmp_path).items()[0]
-        assert item.item_id[:12] in result.output
+        assert item.item_id in result.output
 
     def test_dry_run_on_an_empty_queue(self, tmp_path: Path) -> None:
         result = _invoke(["serve", "--dry-run"], tmp_path)

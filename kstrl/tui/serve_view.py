@@ -152,9 +152,3 @@ def read_serve_state(
             )
         )
     return ServeState(daemon=daemon, daemon_pid=daemon_pid, items=tuple(items))
-
-
-def short_item_id(item_id: str) -> str:
-    """``q-20260923-205005.895694-793181`` -> ``q-793181``."""
-    tail = item_id.rsplit("-", 1)[-1]
-    return f"q-{tail}" if tail and tail != item_id else item_id
