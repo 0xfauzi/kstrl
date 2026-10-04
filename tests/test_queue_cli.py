@@ -329,6 +329,25 @@ class TestShownIds:
         assert "q-20261101-120000.000000-202610" in result.output, result.output
         assert "q-20261004-120000.000000-abcdef" in result.output, result.output
 
+    def test_a_shorter_tail_than_the_short_form_is_not_accepted(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`q-` and the id's last six characters name the item; `q-` and fewer name nothing."""
+        monkeypatch.setattr(
+            "kstrl.workqueue.mint_item_id", lambda: "q-20261101-120000.000000-a1b2c3"
+        )
+        spec = tmp_path / "a.md"
+        spec.write_text("# a\n\nDo a.\n", encoding="utf-8")
+        assert _invoke(["queue", "add", str(spec)], tmp_path).exit_code == 0
+
+        shown = _invoke(["queue", "show", "q-a1b2c3"], tmp_path)
+        tail = _invoke(["queue", "show", "q-b2c3"], tmp_path)
+
+        assert shown.exit_code == 0, shown.output
+        assert "q-20261101-120000.000000-a1b2c3" in shown.output, shown.output
+        assert tail.exit_code == 2, tail.output
+        assert "No queue item matching 'q-b2c3'" in tail.output, tail.output
+
 
 class TestRetry:
     def test_retry_requeues_a_failed_item(
