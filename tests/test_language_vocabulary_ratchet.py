@@ -50,12 +50,13 @@ WHAT IS NOT COUNTED. ``ALLOWLIST`` names the lines that are kstrl
 running or installing itself, each with the inventory row that put it
 out of scope. The needle's own text is cut out before counting and the
 rest of its line is still counted, so a word added beside a needle is
-red; the row also pins how many lines hold the needle, so a new line
-reusing it is red. Two limits are disclosed and pinned as strict xfails
-at the bottom: a toolchain outside the vocabulary is not seen, and
-neither is a name the interpreter builds at run time. The guard FLAGS,
-so a word it over-matches costs a false positive somebody reads, never a
-site cleared.
+red; the row also pins how many times the needle occurs, so a new use
+of it, on a new line or on its own line, is red. Two limits are
+disclosed and pinned as strict xfails at the bottom: a toolchain
+outside the vocabulary is not seen, and neither is a name the
+interpreter builds at run time. The guard FLAGS, so a word it
+over-matches costs a false positive somebody reads, never a site
+cleared.
 
 WHEN IT IS RED. Re-derive the count by running this file and read the
 message; do not type a number in. A rise is a new language-specific
@@ -182,7 +183,7 @@ class AllowedSite:
 
     path: str
     needle: str
-    lines: int
+    occurrences: int
     reason: str
 
 
@@ -543,14 +544,25 @@ PINNED_HITS: dict[str, dict[str, int]] = {
 #: A probe the counter must read exactly this way. It exercises every
 #: tokenizer rule: a snake_case identifier, a CamelCase name, a quoted
 #: suffix, a dotted manifest name, a two-token entry, a dotted name whose
-#: dot is dropped and an ``__init__.py``.
+#: dot is dropped and an ``__init__.py``. It ends on a one-token entry,
+#: so a matcher that stops before the last token reads it short.
 CONTROL = (
     'subprocess.run(["cargo", "test"])  # then uv run pytest\n'
     'parse_pytest_output(); PytestReport; PyPI; open("package.json"); glob("*.py"); go.mod\n'
-    'Path(".venv") / "__init__.py"\n'
+    'Path(".venv") / "__init__.py"  # mypy\n'
 )
 CONTROL_HITS = Counter(
-    {"cargo": 1, "uv": 1, "pytest": 3, "pypi": 1, "package.json": 1, "python": 2, "go": 1, "pip": 1}
+    {
+        "cargo": 1,
+        "uv": 1,
+        "pytest": 3,
+        "pypi": 1,
+        "package.json": 1,
+        "python": 2,
+        "go": 1,
+        "pip": 1,
+        "mypy": 1,
+    }
 )
 
 
@@ -558,19 +570,16 @@ def test_the_counter_reads_the_control() -> None:
     assert count_hits(CONTROL) == CONTROL_HITS
 
 
-def test_every_allowlisted_needle_is_on_its_pinned_lines() -> None:
+def test_every_allowlisted_needle_occurs_as_pinned() -> None:
     wrong = []
     for site in ALLOWLIST:
         path = KSTRL_PACKAGE / site.path
-        seen = (
-            sum(site.needle in line for line in _text(path).splitlines()) if path.is_file() else 0
-        )
-        if seen != site.lines:
-            wrong.append(f"{site.path} {site.needle!r}: pinned {site.lines} lines, found {seen}")
+        seen = _text(path).count(site.needle) if path.is_file() else 0
+        if seen != site.occurrences:
+            wrong.append(f"{site.path} {site.needle!r}: pinned {site.occurrences}, found {seen}")
     assert not wrong, (
-        "An ALLOWLIST needle is on a different number of lines than its row says. "
-        "More lines is a new site hiding under an old reason; fewer is a stale row.\n"
-        + "\n".join(wrong)
+        "An ALLOWLIST needle occurs a different number of times than its row says. "
+        "More is a new site hiding under an old reason; fewer is a stale row.\n" + "\n".join(wrong)
     )
 
 
