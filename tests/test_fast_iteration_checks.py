@@ -380,3 +380,11 @@ def test_ks_check_refuses_a_bad_value_before_measuring(tmp_path: Path) -> None:
     result = CliRunner().invoke(cli, ["check", "--root", str(tmp_path), "--json"])
     assert result.exit_code == 2, result.output
     assert "fast_iteration_checks" in result.output
+    # A valid environment value does not hide the bad kstrl.toml one.
+    overridden = CliRunner().invoke(
+        cli,
+        ["check", "--root", str(tmp_path), "--json"],
+        env={"KSTRL_VERIFY_FAST_ITERATION_CHECKS": "linter"},
+    )
+    assert overridden.exit_code == 2, overridden.output
+    assert "mypy" in overridden.output, overridden.output

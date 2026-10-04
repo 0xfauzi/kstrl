@@ -53,6 +53,7 @@ from typing import Any, NoReturn
 from kstrl.atomicio import atomic_write_json
 from kstrl.evolution import signature_counts_from_verification, split_signature
 from kstrl.jsonread import read_json
+from kstrl.stack import Stack
 from kstrl.verify import CheckResult, ResolvedVerifyCommands, VerificationResult
 
 #: Version of the BASELINE document, which is not the version of the
@@ -190,7 +191,7 @@ def _signatures_field(document: Mapping[str, Any], key: str) -> dict[str, int]:
 
 
 def verify_digest(
-    commands: ResolvedVerifyCommands,
+    commands: ResolvedVerifyCommands | Stack,
     timeout: float,
     *,
     formats: Mapping[str, str] | None = None,
@@ -217,13 +218,21 @@ def verify_digest(
     baseline written under one is refused under the other. Added to the
     payload only when non-empty, so every digest written before it is
     unchanged.
+
+    Under a ``[stack]`` (#696) ``commands`` is the :class:`~kstrl.stack.Stack`,
+    and its digest stands for the three commands: a stack names no gate
+    command, so none is resolved.
     """
-    fields: dict[str, object] = {
-        "test": commands.test,
-        "typecheck": commands.typecheck,
-        "lint": commands.lint,
-        "timeout": timeout,
-    }
+    fields: dict[str, object] = (
+        {"stack": commands.digest, "timeout": timeout}
+        if isinstance(commands, Stack)
+        else {
+            "test": commands.test,
+            "typecheck": commands.typecheck,
+            "lint": commands.lint,
+            "timeout": timeout,
+        }
+    )
     if formats:
         fields["formats"] = dict(formats)
     payload = json.dumps(fields, sort_keys=True)
