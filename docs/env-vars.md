@@ -276,9 +276,13 @@ test-failure signature.
 
 ## SandboxConfig (`[sandbox]`)
 
-OS-level agent sandboxing (R7.5), applied by the claude-code and codex
-adapters (ignored, loudly, for custom agent commands). Write scope is the
-agent's worktree by construction on both CLIs.
+OS-level agent sandboxing (R7.5), applied by the claude-code, claude-sdk
+and codex adapters to the engineer, the code and security reviewers, the
+understand agent and the repair agent. Write scope is the agent's worktree
+by construction on both CLIs. A custom agent command cannot be sandboxed,
+so with the sandbox enabled a run that would start one in any of those
+roles is refused with exit 2 before any agent call (#701); see the runbook.
+The architect and the knowledge distiller are not sandboxed.
 
 | Env var | Type | Default | Notes |
 |---|---|---|---|

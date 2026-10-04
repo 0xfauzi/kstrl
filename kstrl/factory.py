@@ -141,7 +141,7 @@ from kstrl.review import (
 )
 from kstrl.runenvelope import RunEnvelope
 from kstrl.runstate import RunState
-from kstrl.sandbox import SandboxConfig
+from kstrl.sandbox import SANDBOX_REFUSAL, SandboxConfig, unsandboxable_roles
 from kstrl.scope import ComponentScope, RunScope
 from kstrl.security import (
     SecurityConfig,
@@ -2394,6 +2394,7 @@ def _run_preflights(
     manifest_path: Path,
     interrupted_branches: Mapping[str, str],
     timeout_cfg: TimeoutConfig,
+    sandbox_refusals: list[str],
 ) -> tuple[SpecDecision, ...] | None:
     """Every pre-spend refusal, cheapest first, and what survives them.
 
@@ -2434,6 +2435,9 @@ def _run_preflights(
             run_limits(factory_config, timeout_cfg),
         ),
     ):
+        return None
+    # #701: after the launch record `ks retry` reads, like every refusal below.
+    if _report_preflight(ui, SANDBOX_REFUSAL, sandbox_refusals):
         return None
     _warn_claude_md_divergence(root_dir, factory_config, ui)
     register_errors, run_decisions = _preflight_decision_register(manifest, root_dir)
@@ -4258,6 +4262,32 @@ def _warn_unsandboxable_reviewers(
             )
 
 
+def _unsandboxable_run_roles(
+    sandbox: SandboxConfig,
+    factory_config: FactoryConfig,
+    base_config: KstrlConfig,
+    review_selection: AdversarialAgentSelection,
+    security_selection: AdversarialAgentSelection | None,
+) -> list[str]:
+    """Why this run must not start under ``sandbox``, or [] (#701).
+
+    Names only the roles the run will start. Called after the autonomy
+    ladder has set ``review_mode``, which can turn review back on. A
+    reviewer selection exists on every run, including one whose phase is
+    off, so a custom reviewer command for a phase that never runs is not
+    a role outside the boundary.
+    """
+    security = security_selection if security_enabled(factory_config) else None
+    return unsandboxable_roles(
+        sandbox,
+        {
+            "engineer": base_config.agent_cmd,
+            "code reviewer": review_selection.agent_cmd if review_enabled(factory_config) else None,
+            "security reviewer": security.agent_cmd if security is not None else None,
+        },
+    )
+
+
 @dataclass(frozen=True)
 class _LadderOutcome:
     """What the R8.2 ladder decided, split from what it PRINTS (#192).
@@ -4898,23 +4928,20 @@ def _run_factory_locked(
             test_command=factory_config.verify_config.test_command,
         )
 
-    # R7.5: OS-level sandbox intent for engineer agent subprocesses.
-    # A custom agent command has no generic sandbox surface, so intent
-    # that cannot be honored is refused loudly instead of silently
-    # dropped (an operator who opted in must not believe the boundary
-    # exists when it does not).
+    # R7.5: OS-level sandbox intent for the agent subprocesses. A custom
+    # agent command has no generic sandbox surface, so intent that cannot
+    # be honored is refused before any spend (#701): an operator who opted
+    # in must not believe the boundary exists when it does not. Here, after
+    # the autonomy ladder set review_mode; reported in _run_preflights.
     #
     # #192: off the envelope. This was the last section with two
     # resolutions inside one run - here, and once more in
     # ComponentPipeline.__init__ for the reviewer payload - so the
-    # warning an operator saw and the boundary the roles got could come
+    # refusal an operator saw and the boundary the roles got could come
     # from two different reads of the file.
-    if run_envelope.sandbox.enabled and base_config.agent_cmd:
-        ui.warn(
-            "  [sandbox] enabled but the agent is a custom command; "
-            "sandbox settings CANNOT be applied to it and are ignored "
-            "(worktree isolation remains the only boundary)"
-        )
+    sandbox_refusals = _unsandboxable_run_roles(
+        run_envelope.sandbox, factory_config, base_config, review_selection, security_selection
+    )
     _warn_unsandboxable_reviewers(ui, review_selection, security_selection)
 
     run_decisions = _plan_gated(
@@ -4929,6 +4956,7 @@ def _run_factory_locked(
             manifest_path=manifest_path,
             interrupted_branches=interrupted_branches,
             timeout_cfg=timeout_cfg,
+            sandbox_refusals=sandbox_refusals,
         ),
         pipeline,
         ladder,

@@ -142,7 +142,7 @@ from kstrl.retry_plan import (
     print_retry_plan,
     retry_confirm_header,
 )
-from kstrl.sandbox import SandboxConfig
+from kstrl.sandbox import SANDBOX_REFUSAL, SandboxConfig, unsandboxable_roles
 from kstrl.security import _SEVERITY_ORDER, SecurityMode
 from kstrl.serve import ARCHITECT_RUN_KIND, LAUNCHD_MODES
 from kstrl.shutdown import StopController, install_signal_handlers
@@ -1648,11 +1648,9 @@ def understand(
     _check_prompt_preflight(config.prompt_file, ui_impl)
 
     sandbox_cfg = SandboxConfig.load(root_dir)
-    if sandbox_cfg.enabled and config.agent_cmd:
-        ui_impl.warn(
-            "[sandbox] enabled but the agent is a custom command; sandbox "
-            "settings cannot be applied to it and are ignored"
-        )
+    refusals = unsandboxable_roles(sandbox_cfg, {"understand agent": config.agent_cmd})
+    if _report_preflight(ui_impl, SANDBOX_REFUSAL, refusals):
+        sys.exit(2)
     agent = get_agent(
         config.agent_cmd,
         config.model,
@@ -2114,11 +2112,11 @@ def feature(
     _check_agent_preflight(base_config, ui_impl)
 
     sandbox_cfg = SandboxConfig.load(root_dir)
-    if sandbox_cfg.enabled and base_config.agent_cmd:
-        ui_impl.warn(
-            "[sandbox] enabled but the agent is a custom command; sandbox "
-            "settings cannot be applied to it and are ignored"
-        )
+    # #701: the repair agent falls back to the engineer's command, which
+    # the first entry already names.
+    roles = {"engineer": base_config.agent_cmd, "repair agent": repair_agent_cmd}
+    if _report_preflight(ui_impl, SANDBOX_REFUSAL, unsandboxable_roles(sandbox_cfg, roles)):
+        sys.exit(2)
     agent = get_agent(
         base_config.agent_cmd,
         base_config.model,
