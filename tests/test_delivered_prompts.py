@@ -92,6 +92,7 @@ from kstrl import (
 from kstrl.decisions import SpecDecision, build_decisions_context
 from kstrl.loop import COMPLETION_MARKER
 from kstrl.manifest import Component
+from kstrl.stack import Stack
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import CheckResult, VerificationResult, VerifyConfig
 from tests.helpers.builder_prompts import BUILDER_RENDER_EXEMPT
@@ -238,6 +239,23 @@ def _engineer(tmp_path: Path) -> str:
     return prompt.replace(str(root), "<ROOT>")
 
 
+def _engineer_under_a_stack(tmp_path: Path) -> str:
+    """The engineer of a project with a ``[stack]`` (#696): ``run_loop``
+    again, where the stack's block takes the place of the resolved gate
+    commands, so STACK_PROMPT is delivered here and nowhere else."""
+    root = tmp_path / "proj"
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "CLAUDE.md").write_text(_CLAUDE_MD, encoding="utf-8")
+    stack = Stack(
+        instructions="Build with the project's own tools.",
+        setup="",
+        checks=(("tests", "T"), ("lint", "L")),
+        env=(),
+    )
+    prompt = _engineer_prompt(root, VerifyConfig(project_stack=stack), scaffold_prompt=False)
+    return prompt.replace(str(root), "<ROOT>")
+
+
 @dataclass(frozen=True)
 class _Role:
     render: Callable[[Path], str]
@@ -286,6 +304,14 @@ _ROLES: dict[str, _Role] = {
         frozenset({"DEFAULT_PROMPT", "VERIFY_COMMANDS_PROMPT"}),
         "893a388672aa4fcc4e5b7855258e7c7746aa0ebb02c3ede44c417c70c53760c7",
         5346,
+    ),
+    # #696: the engineer under a [stack]; the stack block replaces the
+    # VERIFY_COMMANDS_PROMPT block. Pinned by running this test.
+    "engineer-stack": _Role(
+        _engineer_under_a_stack,
+        frozenset({"DEFAULT_PROMPT", "STACK_PROMPT"}),
+        "eca71d39c4c06784fbf50b06630a10f9737ade6877d1e7de4bb06369822530bb",
+        5380,
     ),
     "gepa-reflection": _Role(
         # The template as run_optimization hands it to gepa. The library

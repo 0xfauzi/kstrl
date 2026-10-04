@@ -301,6 +301,10 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # fixture (A0): three more, into the fixture's own repo/sibling-clone
     # repositories and the fx.worktree it builds, all through
     # set_identity the same way.
+    # #696: `_repo` puts its repository through set_identity before the seed
+    # commit; `_commit` commits into it again; and the Phase 3 and Phase 1
+    # tests' stub engineers commit in a worktree of that same repository.
+    "tests/test_stack_e2e.py": 4,
     "tests/test_stale_base_ref.py": 10,
     "tests/test_state_dir_scope.py": 2,
     # #620: two commits (base and change), into the repository `_repo`

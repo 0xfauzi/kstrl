@@ -103,6 +103,7 @@ from kstrl import (
     knowledge,
     review,
     security,
+    stack,
     verify,
 )
 from kstrl.decisions import (
@@ -143,6 +144,7 @@ from kstrl.knowledge import DISTILL_PROMPT, DISTILL_PROMPT_VERSION
 from kstrl.manifest import Component
 from kstrl.review import REVIEWER_PROMPT, REVIEWER_PROMPT_VERSION, ReviewMode
 from kstrl.security import SECURITY_PROMPT, SECURITY_PROMPT_VERSION, SecurityConfig, SecurityMode
+from kstrl.stack import STACK_PROMPT, STACK_PROMPT_VERSION, Stack
 from kstrl.ui import PlainUI
 from kstrl.verify import (
     VERIFY_COMMANDS_PROMPT,
@@ -188,6 +190,7 @@ _PROMPTS: dict[str, str] = {
     "INTEGRATION_CARRIED_PROMPT": INTEGRATION_CARRIED_PROMPT,
     "INTEGRATION_FIX_PROMPT": INTEGRATION_FIX_PROMPT,
     "GEPA_REFLECTION_PROMPT": GEPA_REFLECTION_PROMPT,
+    "STACK_PROMPT": STACK_PROMPT,
     **BUILDER_PROMPTS,
     **NOTICE_PROMPTS,
 }
@@ -208,6 +211,7 @@ _VERSIONS: dict[str, str] = {
     "INTEGRATION_CARRIED_PROMPT": INTEGRATION_CARRIED_PROMPT_VERSION,
     "INTEGRATION_FIX_PROMPT": INTEGRATION_FIX_PROMPT_VERSION,
     "GEPA_REFLECTION_PROMPT": GEPA_REFLECTION_PROMPT_VERSION,
+    "STACK_PROMPT": STACK_PROMPT_VERSION,
     **BUILDER_VERSIONS,
     **NOTICE_VERSIONS,
 }
@@ -334,6 +338,14 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     # Back-dating to 1.1.0 would imply a 1.0.0 that never existed.
     "REPO_CHANGE_SOURCE_PROMPT": (
         "a631e04c744b55157f9e023d352b572eb8f5e6a5148c9f9114eaf26f6a359cb5",
+        "1.0.0",
+    ),
+    # 1.0.0 (#696 slice 2): engineer-facing context naming a project's
+    # [stack]: its instructions and every check kstrl runs. The TEMPLATE is
+    # hashed; the instructions and checks are the operator's. H3 only: the
+    # calibration suite scores no engineer-context fixture.
+    "STACK_PROMPT": (
+        "571e7d0f85ff031ea25ac7eb7d3aa600c8be74296417340dc4051b3fd14c022e",
         "1.0.0",
     ),
     "PASTED_CHANGE_SOURCE_PROMPT": (
@@ -535,6 +547,10 @@ def _verify_render(_tmp_path: Path) -> str:
     return commands.format_for_prompt()
 
 
+def _stack_render(_tmp_path: Path) -> str:
+    return Stack(instructions="I", setup="", checks=(("tests", "T"),), env=()).format_for_prompt()
+
+
 #: ``{enrolled prompt: (module holding the constant, production renderer)}``.
 #: The module is the patch target; the renderer is the path the role's
 #: text actually travels.
@@ -558,6 +574,7 @@ _RENDERERS: dict[str, tuple[ModuleType, Callable[[Path], str]]] = {
     ),
     "DISTILL_PROMPT": (knowledge, _distill_render),
     "VERIFY_COMMANDS_PROMPT": (verify, _verify_render),
+    "STACK_PROMPT": (stack, _stack_render),
     "REPO_CHANGE_SOURCE_PROMPT": (git, lambda _p: repo_change_source("BASE_SHA")),
     "PASTED_CHANGE_SOURCE_PROMPT": (git, lambda _p: pasted_change_source("DIFF")[0]),
     "DECISIONS_CONTEXT_PROMPT": (decisions, _decisions_context_render),

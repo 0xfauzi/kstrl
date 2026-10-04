@@ -870,6 +870,26 @@ def _refuse_without_build_manifest(root_dir: Path, ui_impl: UI) -> None:
         sys.exit(2)
 
 
+def _refuse_command_flags_beside_a_stack(
+    factory_config: FactoryConfig, flags: dict[str, str | None], ui_impl: UI
+) -> None:
+    """Exit 2 when a command flag is passed and kstrl.toml has a ``[stack]``.
+
+    With a stack its checks are the only verification commands (#696), the
+    rule ``stack.load_stack`` applies to every kstrl.toml key and environment
+    variable that names one. A flag cannot reach that loader, so it is
+    refused here, before the architect or any engineer is paid.
+    """
+    passed = [flag for flag, value in flags.items() if value is not None]
+    if factory_config.project_stack is None or not passed:
+        return
+    ui_impl.err(
+        f"{', '.join(passed)} cannot be used with [stack] in kstrl.toml: the stack's "
+        "checks are the only verification commands. Drop the flag, or change [stack]."
+    )
+    sys.exit(2)
+
+
 def _preflight_warn(message: str) -> None:
     """A degrading section's warning, on STDERR.
 
@@ -2844,6 +2864,16 @@ def factory(
     # applying them early would change what _collect_toml_notes reports
     # as overridden further down.
     factory_config = FactoryConfig.load(root_dir)
+    _refuse_command_flags_beside_a_stack(
+        factory_config,
+        {
+            "--test-command": test_command,
+            "--typecheck-command": typecheck_command,
+            "--lint-command": lint_command,
+            "--contract-test-cmd": contract_test_cmd,
+        },
+        ui_impl,
+    )
 
     # Get or create manifest.
     #
@@ -4057,7 +4087,7 @@ def _check_verify_digest(
         GATE_LINT: verify_cfg.lint_tool,
     }
     digest = baseline.verify_digest(
-        resolve_verify_commands(verify_cfg, path),
+        verify_cfg.project_stack or resolve_verify_commands(verify_cfg, path),
         verify_cfg.subprocess_timeout,
         formats=declared_formats(tools),
     )

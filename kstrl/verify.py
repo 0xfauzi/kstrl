@@ -72,6 +72,7 @@ from kstrl.prd import PRD
 from kstrl.procdispose import drain_or_abandon
 from kstrl.procgroup import signal_process_tree
 from kstrl.report_formats import REPORT_ENV, fresh_report, read_gate_report
+from kstrl.stack import SECRET_NAME_FRAGMENTS, Stack, load_stack
 from kstrl.statedir import STATE_DIR_NAME
 from kstrl.suite_inventory import (
     TESTS_RAN_CHECK,
@@ -117,21 +118,41 @@ SCRUB_ENV_ALLOWED_PREFIXES: tuple[str, ...] = ("LC_", "UV_", "PYTHON")
 
 # Belt over the allowlist's braces: an allowed prefix must never smuggle a
 # secret through (UV_PUBLISH_TOKEN matches UV_*). Any name containing one
-# of these fragments is dropped even when the allowlist admits it.
-_SCRUB_ENV_SENSITIVE_FRAGMENTS: tuple[str, ...] = (
-    "API_KEY",
-    "SECRET",
-    "TOKEN",
-    "PASSWORD",
-    "CREDENTIAL",
+# of these fragments is dropped even when the allowlist admits it. The
+# same tuple ``[stack] env`` is refused against at load (#696 decision 11).
+_SCRUB_ENV_SENSITIVE_FRAGMENTS: tuple[str, ...] = SECRET_NAME_FRAGMENTS
+
+#: Under a ``[stack]`` (#696): what every command sees whatever the stack,
+#: names no toolchain owns. A stack adds its own in ``[stack] env``; the
+#: toolchain names in the allowlist above are not given to it.
+STACK_ENV_BASE_NAMES: frozenset[str] = frozenset(
+    {
+        "PATH",
+        "HOME",
+        "LANG",
+        "TMPDIR",
+        "TERM",
+        "CI",
+        "XDG_CACHE_HOME",
+        "XDG_DATA_HOME",
+    }
 )
 
 
-def scrubbed_subprocess_env() -> dict[str, str]:
-    """Allowlist-filtered copy of ``os.environ`` for verification subprocesses."""
+def scrubbed_subprocess_env(declared: tuple[str, ...] | None = None) -> dict[str, str]:
+    """Allowlist-filtered copy of ``os.environ`` for verification subprocesses.
+
+    ``declared`` is a ``[stack]``'s ``env`` (#696). None, the default, is the
+    allowlist above, unchanged. A tuple, empty included, replaces it with
+    :data:`STACK_ENV_BASE_NAMES`, ``LC_*`` and the declared names. The
+    sensitive-fragment filter runs last either way.
+    """
+    names, prefixes = SCRUB_ENV_ALLOWED_NAMES, SCRUB_ENV_ALLOWED_PREFIXES
+    if declared is not None:
+        names, prefixes = STACK_ENV_BASE_NAMES | frozenset(declared), ("LC_",)
     env: dict[str, str] = {}
     for name, value in os.environ.items():
-        if name not in SCRUB_ENV_ALLOWED_NAMES and not name.startswith(SCRUB_ENV_ALLOWED_PREFIXES):
+        if name not in names and not name.startswith(prefixes):
             continue
         if any(frag in name for frag in _SCRUB_ENV_SENSITIVE_FRAGMENTS):
             continue
@@ -220,8 +241,12 @@ def run_scrubbed(
     term_grace: float = _SCRUB_TERM_GRACE_SECONDS,
     extra_env: Mapping[str, str] | None = None,
     stdin_text: str | None = None,
+    declared_env: tuple[str, ...] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run a verification subprocess: scrubbed env, own process group.
+
+    ``declared_env`` is a ``[stack]``'s ``env``, handed to
+    :func:`scrubbed_subprocess_env` (#696); None keeps the allowlist.
 
     Drop-in for the ``subprocess.run(..., capture_output=True, text=True,
     timeout=...)`` calls verification used to make, with two differences
@@ -276,7 +301,7 @@ def run_scrubbed(
     grandchild does routinely, and it runs once per verification command
     per iteration rather than once per timed-out run.
     """
-    env = scrubbed_subprocess_env()
+    env = scrubbed_subprocess_env(declared_env)
     if extra_env:
         env.update(extra_env)
     # BYTES mode, decoded below (#527). In text mode CPython decodes inside
@@ -578,31 +603,48 @@ def _optional_str(value: object) -> str | None:
 FAST_ITERATION_GATES: tuple[str, ...] = (GATE_TEST, GATE_TYPECHECK, GATE_LINT)
 
 
-def validate_fast_iteration_checks(value: object, source: str) -> list[str]:
-    """``value`` as a list of gate names, or ValueError naming ``source``.
+def gate_names(config: VerifyConfig) -> tuple[str, ...]:
+    """The names Phase 1's command gates go by: a ``[stack]``'s check names
+    under a stack (#696), else :data:`FAST_ITERATION_GATES`."""
+    return (
+        config.project_stack.check_names
+        if config.project_stack is not None
+        else FAST_ITERATION_GATES
+    )
 
-    A list of strings, each one of :data:`FAST_ITERATION_GATES`. Empty is
-    valid and turns the between-iteration checks off.
-    """
+
+def _gate_name_list(value: object, source: str) -> list[str]:
+    """``value`` as a list of strings, or ValueError naming ``source``."""
     if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
         raise ValueError(f"{source} must be a list of gate names, got {value!r}")
-    unknown = [item for item in value if item not in FAST_ITERATION_GATES]
-    if unknown:
-        raise ValueError(
-            f"{source} names unknown gate(s) {unknown}; "
-            f"expected any of {list(FAST_ITERATION_GATES)}"
-        )
     return list(value)
 
 
+def validate_fast_iteration_checks(
+    value: object, source: str, names: Sequence[str] = FAST_ITERATION_GATES
+) -> list[str]:
+    """``value`` as a list of gate names, or ValueError naming ``source``.
+
+    A list of strings, each one of ``names``: :func:`gate_names`, which is
+    :data:`FAST_ITERATION_GATES` unless a ``[stack]`` names its own checks.
+    Empty is valid and turns the between-iteration checks off.
+    """
+    gates = _gate_name_list(value, source)
+    unknown = [item for item in gates if item not in names]
+    if unknown:
+        raise ValueError(f"{source} names unknown gate(s) {unknown}; expected any of {list(names)}")
+    return gates
+
+
 def _fast_iteration_checks_from_toml(value: object) -> list[str]:
-    return validate_fast_iteration_checks(value, "[verify] fast_iteration_checks")
+    """The shape only: the names are checked at the end of
+    :meth:`VerifyConfig.load`, once it knows whether a ``[stack]`` names them."""
+    return _gate_name_list(value, "[verify] fast_iteration_checks")
 
 
 def _fast_iteration_checks_from_env(raw: str) -> list[str]:
     """Comma-separated. Blank parts are dropped, so "" is the empty list."""
-    names = [part.strip() for part in raw.split(",") if part.strip()]
-    return validate_fast_iteration_checks(names, "KSTRL_VERIFY_FAST_ITERATION_CHECKS")
+    return [part.strip() for part in raw.split(",") if part.strip()]
 
 
 #: Every live ``[verify]`` toml key and how its value is coerced onto the
@@ -683,6 +725,11 @@ class VerifyConfig:
     # handed to the next iteration's prompt. Empty (the default) is off.
     # A list, never a tuple: scripts/gen_docs.py probes list defaults.
     fast_iteration_checks: list[str] = field(default_factory=list)
+    # #696: the project's [stack], read by ``load`` from its own table. None
+    # is no stack, and every command field above means what it always has.
+    # With a stack, those command fields are refused at load and the
+    # stack's checks are the gates. Provenance: no [verify] key of its own.
+    project_stack: Stack | None = field(default=None, metadata={"provenance": True})
 
     @classmethod
     def from_env(cls) -> VerifyConfig:
@@ -752,6 +799,17 @@ class VerifyConfig:
         for env_var, field_name in env_var_to_field.items():
             if env_var in os.environ:
                 setattr(config, field_name, getattr(env, field_name))
+        # Last, so every [verify] key above has been read when a bad
+        # [stack] raises (the entry check's unread-name report).
+        config.project_stack = load_stack(root_dir)
+        source = (
+            "KSTRL_VERIFY_FAST_ITERATION_CHECKS"
+            if "KSTRL_VERIFY_FAST_ITERATION_CHECKS" in os.environ
+            else "[verify] fast_iteration_checks"
+        )
+        config.fast_iteration_checks = validate_fast_iteration_checks(
+            config.fast_iteration_checks, source, gate_names(config)
+        )
         return check_numbers(config)
 
 
@@ -1219,6 +1277,9 @@ def pin_verify_commands(config: VerifyConfig, cwd: Path) -> VerifyConfig:
     there each component has its own worktree, and the right pyproject to
     resolve against is that worktree's, not the caller's ``cwd``.
     """
+    if config.project_stack is not None:
+        # #696: a [stack] names no gate command, so there is nothing to pin.
+        return config
     resolved = resolve_verify_commands(config, cwd)
     return replace(
         config,
@@ -1668,12 +1729,83 @@ def run_fast_checks(worktree_path: Path, config: VerifyConfig) -> VerificationRe
     callee has to be able to read these three.
     """
     selected = validate_fast_iteration_checks(
-        config.fast_iteration_checks, "[verify] fast_iteration_checks"
+        config.fast_iteration_checks, "[verify] fast_iteration_checks", gate_names(config)
     )
     checks, gaps = _command_gates(worktree_path, config, selected)
     return VerificationResult(
         passed=all(check.passed for check in checks), checks=checks, not_measured=gaps
     )
+
+
+#: The statuses a shell returns when it could not run the command at all:
+#: 126 found but not executable, 127 not found. A ``[stack]`` check that
+#: ends with one failed and measured nothing (#696 decision 4).
+SHELL_COULD_NOT_RUN: frozenset[int] = frozenset({126, 127})
+
+
+def check_stack_command(
+    cwd: Path, name: str, command: str, timeout: float | None, env: tuple[str, ...]
+) -> CheckResult:
+    """Run one ``[stack]`` check in ``cwd``: the row ``stack:<name>`` (#696).
+
+    The verdict is the exit status (decision 4): 0 passes, and any other
+    completed exit is a MEASURED failure. 126, 127, a timeout and output that
+    is not utf-8 fail UNMEASURED. kstrl parses none of the output to decide;
+    the details are the lines around each location inside ``cwd``, or the
+    last five lines when the output names none.
+    """
+    row = f"stack:{name}"
+    start = time.monotonic()
+    try:
+        result = run_scrubbed(command, cwd=cwd, timeout=timeout, declared_env=env)
+    except subprocess.TimeoutExpired as expired:
+        return CheckResult(
+            name=row,
+            passed=False,
+            message=f"`{command}` timed out after {timeout}s",
+            duration_seconds=time.monotonic() - start,
+            measured=False,
+            output=_output_before_stop(expired.stdout, expired.stderr),
+        )
+    except ChildOutputDecodeError as exc:
+        return CheckResult(
+            name=row,
+            passed=False,
+            message=f"`{command}` output could not be decoded: {exc}",
+            duration_seconds=time.monotonic() - start,
+            measured=False,
+            output=_output_before_stop(exc.stdout, exc.stderr),
+        )
+    if result.returncode == 0:
+        return CheckResult(
+            name=row,
+            passed=True,
+            message=f"`{command}` exited 0",
+            duration_seconds=time.monotonic() - start,
+        )
+    output = (result.stdout + result.stderr).strip()
+    excerpt = failure_excerpt(output, cwd) or "\n".join(output.splitlines()[-5:])
+    return CheckResult(
+        name=row,
+        passed=False,
+        message=f"`{command}` exited {result.returncode}",
+        details=excerpt.splitlines(),
+        duration_seconds=time.monotonic() - start,
+        measured=result.returncode not in SHELL_COULD_NOT_RUN,
+        output=bounded_gate_output(output),
+    )
+
+
+def _stack_gates(
+    worktree_path: Path, config: VerifyConfig, stack: Stack, selected: Sequence[str]
+) -> list[CheckResult]:
+    """The ``[stack]`` checks named in ``selected``, in the stack's order (#696)."""
+    timeout = limit_seconds(config.subprocess_timeout)
+    return [
+        check_stack_command(worktree_path, name, command, timeout, stack.env)
+        for name, command in stack.checks
+        if name in selected
+    ]
 
 
 def _command_not_run(
@@ -1736,7 +1868,13 @@ def _command_gates(
     between-iteration checks pass none, which reads as no diff, and run the
     suite as before. Both reach the test gate through that one function, so
     its gaps (#629) are merged in one place.
+
+    Under a ``[stack]`` (#696) the gates are the stack's checks instead, by
+    :func:`_stack_gates`, and nothing below runs: no command is resolved,
+    so no default command can stand in for one.
     """
+    if config.project_stack is not None:
+        return _stack_gates(worktree_path, config, config.project_stack, selected), []
     commands = resolve_verify_commands(config, worktree_path)
     timeout = limit_seconds(config.subprocess_timeout)
     checks: list[CheckResult] = []
@@ -5687,7 +5825,7 @@ def run_mechanical_verification(
         checks.append(check_prd_stories(prd_path, pre_run_prd_path))
 
     gate_rows, gate_gaps = _command_gates(
-        worktree_path, config, FAST_ITERATION_GATES, base_branch=base_branch
+        worktree_path, config, gate_names(config), base_branch=base_branch
     )
     checks.extend(gate_rows)
     not_measured.extend(gate_gaps)

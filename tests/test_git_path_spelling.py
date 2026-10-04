@@ -197,6 +197,7 @@ EXPECTED_WITH_Z: tuple[str, ...] = (
     "git.py git ls-files --others --exclude-standard -z",
     "git.py git ls-tree --full-tree -z ? -- ?",
     "git.py git ls-tree -r --name-only -z ?",
+    "git.py git status --porcelain --untracked-files=all -z",
 )
 
 EXPECTED_WITHOUT_Z: tuple[str, ...] = (
@@ -280,6 +281,8 @@ EXPECTED_GIT_ARGVS: dict[str, int] = {
     "git.py git ls-files --error-unmatch -- ?": 1,
     "git.py git ls-files --others --exclude-standard -z": 1,
     "git.py git ls-tree -r --name-only -z ?": 1,
+    # #696: git.status_entries, what a [stack]'s checks left in a worktree.
+    "git.py git status --porcelain --untracked-files=all -z": 1,
     # #630: git.read_blob, a lockfile's blob at a revision.
     "git.py git ls-tree --full-tree -z ? -- ?": 1,
     "git.py git cat-file blob ?": 1,

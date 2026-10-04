@@ -149,6 +149,7 @@ from kstrl.security import (
     run_security_review,
 )
 from kstrl.shutdown import StopController
+from kstrl.stack import Stack, load_stack
 from kstrl.statedir import ControlStateError, pre_run_prd_path
 from kstrl.timeout import NO_LIMIT, TimeoutConfig, describe_limit_seconds
 from kstrl.ui.bridge import EventBridgeUI
@@ -386,6 +387,12 @@ class FactoryConfig:
     # limit (#467).
     worktree_setup_command: str = ""
     worktree_setup_timeout: float = 0.0
+    # #696: the project's [stack], read by ``load``. Under a stack its
+    # ``setup`` is the worktree setup (``worktree_setup_command`` is then
+    # refused at load) and its ``env`` is what setup sees. Read here as
+    # well as in VerifyConfig because --no-verify drops the VerifyConfig
+    # and a worktree still needs its setup. Provenance: no [factory] key.
+    project_stack: Stack | None = field(default=None, metadata={"provenance": True})
     # R7.2: approved-fixtures oracle for Phase 1. None means run_factory
     # loads FixturesConfig.load(root_dir) - toml [fixtures] section +
     # env - so `ks factory` honors the config with no CLI wiring.
@@ -442,7 +449,14 @@ class FactoryConfig:
 
     def worktree_setup(self, scaffold: str = "") -> WorktreeSetup:
         """The setup a worktree gets (#624): ``scaffold`` when a component
-        names one, else ``worktree_setup_command``."""
+        names one, else ``worktree_setup_command``, or under a ``[stack]``
+        the stack's ``setup`` with the stack's ``env`` (#696)."""
+        if self.project_stack is not None:
+            return WorktreeSetup(
+                scaffold or self.project_stack.setup,
+                self.worktree_setup_timeout,
+                self.project_stack.env,
+            )
         return WorktreeSetup(scaffold or self.worktree_setup_command, self.worktree_setup_timeout)
 
     def worktree_setup_for_component(self, comp: Component) -> WorktreeSetup | None:
@@ -453,7 +467,7 @@ class FactoryConfig:
 
     def worktree_setup_summary(self) -> str:
         """The run-header value for the configured setup command (#624)."""
-        return self.worktree_setup_command or "none"
+        return self.worktree_setup().command or "none"
 
     def _apply_worktree_setup_overlay(self, section: dict[str, Any]) -> None:
         """Overlay ``[factory] worktree_setup_command``/``_timeout`` from the
@@ -709,6 +723,9 @@ class FactoryConfig:
                 "KSTRL_FACTORY_CLAIM_AGREEMENT",
                 VALID_CLAIM_AGREEMENT,
             )
+        # Last, so every [factory] key above has been read when a bad
+        # [stack] raises (the entry check's unread-name report).
+        config.project_stack = load_stack(root_dir)
         return check_numbers(config)
 
 
@@ -2281,7 +2298,9 @@ def _warn_claude_md_divergence(
     is already handled correctly for the agent.
     """
     verify_config = factory_config.engineer_verify_config()
-    if verify_config is None:
+    if verify_config is None or verify_config.project_stack is not None:
+        # #696: under a [stack] no gate command is resolved, so there is
+        # nothing for a CLAUDE.md bullet to disagree with.
         return
     scrubbed = scrub_project_claude_md(
         root_dir,
