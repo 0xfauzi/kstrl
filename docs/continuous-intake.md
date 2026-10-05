@@ -102,6 +102,7 @@ infrastructural**:
 | no component failed, and at least one waits at the merge gate | **awaiting approval** (never retried, never poison) |
 | launch failed before any spend | retry (free) |
 | killed by signal, or our timeout with the process group confirmed dead | retry |
+| exit 2, and a run this launch owns wrote `base-gates.json` with `refused: true` (the base branch fails its own gates) | **requeued**, and claims pause until `ks queue resume` (never poison, outside the poison streak) |
 | exit 2 with a lock-contention marker in the output | retry |
 | exit 2 with a spec-blocker marker (the architect escalated) | **awaiting an answer** (never retried, never poison) |
 | the run halted on a configured ceiling (`max_total_tokens` / `max_cost_usd`) | **poison** |
@@ -120,6 +121,20 @@ context. Raising the ceiling or narrowing the spec is a human decision.
 
 Poisoned items wait for a human. `ks queue ls --state poison` lists them;
 `ks inbox ls` carries the decision.
+
+### A red base pauses the queue
+
+A base branch whose own gates fail is not the item's fault: every item
+would fail the same way, and three poisons in a row would trip the
+breaker (#654). So when the factory refuses a red base, `ks serve` reads
+the refusal from the run's `base-gates.json`, never from its output,
+sends the item back to the queue with the attempt it was charged (its
+architect was paid), pauses claims with no expiry, and files one
+`halted_run` inbox item per base commit; a later refusal on the same
+commit bumps it. The poison streak does not move. Make the base pass its
+gates, then `ks queue resume`; the journal records who resumed, and the
+item runs on the next cycle. A resume on a base that is still red pays
+one more architect, refuses again and pauses again.
 
 ### An escalated spec waits for your answer
 
