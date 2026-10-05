@@ -140,7 +140,7 @@ def test_a_check_runs_in_the_test_zone_with_only_the_declared_paths(tmp_path: Pa
     stack = _stack(
         checks,
         env=["CDPATH"],
-        rung={"writable": [str(declared)], "readable": [str(readable)]},
+        rung={"writable": [str(declared)], "readable": [f"~/{home_reads.name}/declared"]},
     )
     root = _repo(tmp_path, stack)
     _commit(root, "net_probe.py", NET_PROBE)
