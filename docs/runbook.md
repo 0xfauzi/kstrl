@@ -446,6 +446,22 @@ interrupted run, with the manifest still `running`, an `events.jsonl`
 that ends without `run_completed`, and the next run's recovery lines
 naming what it reset and carried.
 
+The same leash holds every verification command (#642 slice 5): each
+check, setup and `[stack]` command that `verify.run_scrubbed` starts.
+When the kstrl process that started a command dies, the leash ends the
+command's group in the same order: SIGTERM, the 5 second grace, SIGKILL.
+Under a `[stack]` the leash starts `nono wrap`, which replaces itself
+with the command, so the command and everything it starts stay in the
+leash's group. Measured on macOS, n=20 each at load average 21 to 25:
+after a SIGKILL of `ks factory`, a base-gate check and a process it
+started were gone within 0.021 s on the host and within 0.018 s inside
+the nono rung. Two things an operator can see change. A command killed
+by signal N reports exit 128 + N (137 for SIGKILL) where it reported
+-N. And each command starts one more Python process, which measured
+45 ms more per command at load average 24 (66.7 ms median against
+21.7 ms for `true`). A stop does not end a running command: the run
+waits for it to finish or reach its timeout, as it did before.
+
 What a resume counts (#463). A retry count carries across runs on the
 manifest, and a Ctrl-C does not reset it. A run that reached its summary
 keeps the attempts and the spend it recorded, and the next run answers

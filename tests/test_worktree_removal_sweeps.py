@@ -334,7 +334,9 @@ def test_ks_retry_says_when_the_census_could_not_run(
 ) -> None:
     """A census that could not run is reported, never read as a clean
     worktree (#461). ``lsof`` sits in a system directory on PATH, so it is
-    made to miss by pointing the census at a command that does not exist."""
+    made to miss by pointing the census at a command that does not exist.
+    The warning names the failed start: a census command started under the
+    leash (#642 slice 5) still raises what a direct start would have."""
     root = tmp_path
     evidence = _failed_attempt_with_evidence(root)
     monkeypatch.setattr("kstrl.worktree_sweep.LSOF_ARGV", ["kstrl-no-such-command-528"])
@@ -345,5 +347,6 @@ def test_ks_retry_says_when_the_census_could_not_run(
         line.startswith("WARN: ")
         and "orphan_process (retry)" in line
         and "census could not run" in line
+        and "lsof failed to run (FileNotFoundError" in line
         for line in result.output.splitlines()
     ), f"no retry warning says the census could not run:\n{result.output}"

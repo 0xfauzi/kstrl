@@ -126,6 +126,39 @@ def _spawn_error(failure: bytes, program: str) -> OSError:
     return OSError(f"the agent leash did not start {program!r}: {text}")
 
 
+def leash_command(
+    argv: list[str], *, lifeline: int, status: int, term_grace: float, nonce: str
+) -> list[str]:
+    """``argv`` as the command line that runs it under the leash (#642).
+
+    The one place the leash's argv is spelled. Both children kstrl starts
+    in a session of their own start this way: the agent here, and every
+    verification command in ``verify.run_scrubbed`` (slice 5). ``lifeline``
+    and ``status`` are the read end and the write end the spawn must name
+    in ``pass_fds``.
+    """
+    return [
+        sys.executable,
+        "-I",
+        "-S",
+        LEASH_PATH,
+        str(lifeline),
+        str(status),
+        str(term_grace),
+        nonce,
+        "--",
+        *argv,
+    ]
+
+
+def leash_start_error(status: int, program: str) -> OSError | None:
+    """What the leash said about starting ``program``, read to EOF from
+    ``status``, which is then closed: None for a clean start, else the
+    ``OSError`` a direct ``Popen`` of ``program`` would have raised."""
+    failure = _read_until_closed(status)
+    return _spawn_error(failure, program) if failure else None
+
+
 class DeadlineStreamer:
     """Stream stdout lines from a subprocess under a wall-clock deadline.
 
@@ -172,18 +205,13 @@ class DeadlineStreamer:
         status_read, status_write = os.pipe()
         try:
             self._proc = subprocess.Popen(
-                [
-                    sys.executable,
-                    "-I",
-                    "-S",
-                    LEASH_PATH,
-                    str(lifeline_read),
-                    str(status_write),
-                    str(term_grace),
-                    nonce,
-                    "--",
-                    *argv,
-                ],
+                leash_command(
+                    argv,
+                    lifeline=lifeline_read,
+                    status=status_write,
+                    term_grace=term_grace,
+                    nonce=nonce,
+                ),
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=stderr,
@@ -199,13 +227,13 @@ class DeadlineStreamer:
         finally:
             os.close(lifeline_read)
             os.close(status_write)
-        failure = _read_until_closed(status_read)
-        if failure:
+        error = leash_start_error(status_read, argv[0])
+        if error is not None:
             os.close(self._lifeline)
             reap_or_abandon(self._proc, term_grace)
             close_quietly(self._proc.stdin)
             close_quietly(self._proc.stdout)
-            raise _spawn_error(failure, argv[0])
+            raise error
         # The group is read NOW, while the child is certainly alive. Once
         # the child has exited, even as an unreaped zombie, getpgid on its
         # pid fails (ESRCH, measured on macOS), so a group looked up at
