@@ -123,7 +123,7 @@ from kstrl.verify import (
     VerificationResult,
     scope_unreadable_error,
 )
-from kstrl.waivers import ApprovalSnapshot, Waivers, WaiverScope, load_approvals
+from kstrl.waivers import ApprovalSnapshot, Waivers, WaiverScope, approvals_on, load_approvals
 from kstrl.worktree_sweep import WorktreeSweep, sweep_findings
 
 if TYPE_CHECKING:
@@ -3081,6 +3081,63 @@ class ComponentPipeline:
                 ),
             )
 
+        return self._judge_attempt(comp, comp_result)
+
+    def engineer_worktree(self, comp: Component, wt_path: Path | None) -> Path | None:
+        """The worktree an engineer runs in, or None when no engineer runs.
+
+        None when provisioning failed (``wt_path`` is None), and when ``ks
+        retry`` kept the approved head (#646): that commit is judged here by
+        :meth:`rejudge_kept_head`, and the component has already transitioned.
+        """
+        if wt_path is None or not comp.rejudge_sha:
+            return wt_path
+        self.rejudge_kept_head(comp, wt_path)
+        return None
+
+    def rejudge_kept_head(self, comp: Component, wt_path: Path) -> PipelineOutcome:
+        """Judge the head ``ks retry`` kept, with no engineer attempt (#646).
+
+        ``ks retry`` keeps a failed branch when an approved policy_exception
+        or test_adequacy item was taken on its tip, and records that commit
+        in ``comp.rejudge_sha``. It is read once and cleared here, so only
+        this attempt skips the engineer: a retry this attempt buys runs the
+        engineer on the kept commits, and its edit is a new diff, asked
+        again. ``process_result`` is not called, because it closes an
+        engineer phase that never started; the gates get a result that
+        carries only the context they read.
+        """
+        from kstrl.factory import ComponentResult
+
+        kept, comp.rejudge_sha = comp.rejudge_sha, ""
+        head = git.get_head_sha(wt_path) or ""
+        if head != kept:
+            return PipelineOutcome(
+                transition=self.fail(
+                    comp,
+                    f"ks retry kept commit {kept[:12]} for a re-judge, and the worktree "
+                    f"{wt_path} is at {head[:12] or 'no commit'}; nothing was judged. Run "
+                    f"ks retry {comp.id} again",
+                    phase="provisioning",
+                    check="worktree_setup",
+                )
+            )
+        approvals = self._approvals or ApprovalSnapshot()
+        named = ", ".join(i[:8] for i in approvals_on(approvals, comp.id, kept)) or "none"
+        reason = (
+            f"ks retry kept commit {kept[:12]}, which inbox approval {named} was taken on; "
+            "Phase 1 judges it again"
+        )
+        self.ui.info(f"  Engineer SKIPPED for {comp.id}: {reason}")
+        self._record_phase_skip(comp, "engineer", reason)
+        context = self.component_contexts.get(comp.id)
+        return self._judge_attempt(
+            comp, ComponentResult(component_id=comp.id, success=True, context_json=context)
+        )
+
+    def _judge_attempt(self, comp: Component, comp_result: ComponentResult) -> PipelineOutcome:
+        """Every gate after the engineer, on the commits in the component's worktree."""
+        comp_id = comp.id
         wt_path = self.worktree_paths.get(comp_id, self.root_dir)
 
         # PHASE 1: Mechanical verification
@@ -3196,6 +3253,29 @@ class ComponentPipeline:
             distill.skip_reason or "",
         )
 
+        return self._deliver(
+            comp,
+            comp_result,
+            verify=verify,
+            diff=diff,
+            review=review,
+            security=security,
+            distill=distill,
+        )
+
+    def _deliver(
+        self,
+        comp: Component,
+        comp_result: ComponentResult,
+        *,
+        verify: VerifyPhaseResult,
+        diff: DiffPhaseResult,
+        review: ReviewPhaseResult,
+        security: SecurityPhaseResult,
+        distill: DistillPhaseResult,
+    ) -> PipelineOutcome:
+        """After every gate passed: the checkpoint, the PR, and completion."""
+        comp_id = comp.id
         # HITL checkpoint + PR create/merge (per-component PR mode only).
         checkpoint = CheckpointDecision.NOT_PROMPTED
         pr = PrPhaseResult(disposition=PrDisposition.SKIPPED)

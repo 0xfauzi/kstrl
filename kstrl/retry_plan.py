@@ -22,7 +22,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl.factory import FactoryConfig
+from kstrl import git
+from kstrl.factory import FactoryConfig, _dependency_branches
 from kstrl.launch_record import (
     REMOVED_OPTIONS,
     FlagValue,
@@ -35,12 +36,13 @@ from kstrl.launch_record import (
 )
 from kstrl.manifest import ComponentStatus
 from kstrl.timeout import NO_LIMIT, TimeoutConfig
+from kstrl.waivers import approvals_at, approved_head
 from kstrl.worktree_sweep import sweep_worktree, warn_sweep
 
 if TYPE_CHECKING:
     import click
 
-    from kstrl.manifest import Manifest
+    from kstrl.manifest import Component, Manifest
     from kstrl.ui.base import UI
 
 
@@ -57,6 +59,11 @@ class RetryPreview:
     single_pr: bool
     #: What stays FAILED or SKIPPED after the reset, one line each (#485).
     not_in_retry: list[str]
+    #: The commit the retry keeps and judges again with no engineer, "" when
+    #: the branch is regenerated (#646).
+    kept_head: str
+    #: Why it is kept or regenerated; "" when the caller read no project.
+    kept_reason: str
 
 
 def _failed_dependencies(manifest: Manifest, component_id: str) -> list[str]:
@@ -101,15 +108,37 @@ def _print_not_in_retry(ui: UI, not_in_retry: list[str]) -> None:
         ui.kv("Not in this retry", line)
 
 
-def preview_retry(manifest: Manifest, component_id: str) -> RetryPreview:
+def kept_head(manifest: Manifest, comp: Component | None, root_dir: Path) -> tuple[str, str]:
+    """Whether the retry keeps ``comp``'s failed head, from the project's git and inbox (#646).
+
+    Must be read BEFORE ``reset_for_retry``, which clears the failure
+    fields :func:`kstrl.waivers.approved_head` reads. A component judged
+    against code that is not in the base branch is never kept (owner
+    decision 4a): its kept head would be judged against a different base.
+    """
+    if comp is None or comp.status != ComponentStatus.FAILED.value:
+        return "", ""
+    if manifest.single_pr:
+        return "", "single_pr: the shared branch carries other components' commits"
+    dependencies = _dependency_branches(manifest, comp)
+    if dependencies:
+        return "", f"it was judged with unmerged dependency code from {', '.join(dependencies)}"
+    tip = git.branch_sha(comp.branch_name, root_dir) or ""
+    return approved_head(approvals_at(root_dir), comp, tip)
+
+
+def preview_retry(manifest: Manifest, component_id: str, *, root_dir: Path | None) -> RetryPreview:
     """Non-mutating preview: runs reset_for_retry on a deep copy.
 
     Raises ValueError exactly as reset_for_retry does (unknown
-    component, component not failed).
+    component, component not failed). ``root_dir`` is the project whose
+    branch and inbox decide whether the failed head is kept; None reads
+    neither, for a caller that only asks whether the retry is refused.
     """
     comp = manifest.get_component(component_id)
     scratch = copy.deepcopy(manifest)
     reset_dependents = scratch.reset_for_retry(component_id)
+    kept, reason = kept_head(manifest, comp, root_dir) if root_dir is not None else ("", "")
     return RetryPreview(
         component_id=component_id,
         reset_dependents=reset_dependents,
@@ -117,6 +146,8 @@ def preview_retry(manifest: Manifest, component_id: str) -> RetryPreview:
         failed_branch=comp.branch_name if comp else "",
         single_pr=manifest.single_pr,
         not_in_retry=_not_in_retry(scratch),
+        kept_head=kept,
+        kept_reason=reason,
     )
 
 
@@ -135,6 +166,12 @@ def print_retry_plan(ui: UI, preview: RetryPreview, manifest_file: Path) -> None
     )
     _print_not_in_retry(ui, preview.not_in_retry)
     ui.kv("Manifest", str(manifest_file))
+    if preview.kept_head:
+        ui.kv(
+            "Branch", f"kept at {preview.kept_head[:12]}; no engineer runs: {preview.kept_reason}"
+        )
+    elif preview.kept_reason:
+        ui.kv("Branch", f"regenerated: {preview.kept_reason}")
 
 
 def failed_branch_probe(root_dir: Path, branch: str) -> int:
@@ -180,6 +217,8 @@ def prepare_retry(
     comp = manifest.get_component(component_id)
     evidence_worktree = comp.evidence_worktree if comp else ""
     failed_branch = comp.branch_name if comp else ""
+    # #646: before the reset, which clears the failure this decides on.
+    kept, kept_reason = kept_head(manifest, comp, root_dir)
 
     reset_dependents = manifest.reset_for_retry(component_id)
     not_in_retry = _not_in_retry(manifest)
@@ -206,7 +245,15 @@ def prepare_retry(
             timeout=30,
         )
         ui.info(f"Removed the failed attempt's evidence worktree: {evidence_worktree}")
-    if failed_branch and not manifest.single_pr:
+    if kept and comp is not None:
+        # The factory's branch preflight lets this one branch through, and
+        # its scheduler judges this commit with no engineer, once.
+        comp.rejudge_sha = kept
+        ui.info(
+            f"Kept branch '{failed_branch}' at {kept[:12]}: {kept_reason}. The retry "
+            "judges this commit again with no engineer; any change it makes is asked again."
+        )
+    elif failed_branch and not manifest.single_pr:
         if failed_branch_probe(root_dir, failed_branch) == 0:
             deleted = subprocess.run(
                 ["git", "branch", "-D", failed_branch],
@@ -243,6 +290,8 @@ def prepare_retry(
         failed_branch=failed_branch,
         single_pr=manifest.single_pr,
         not_in_retry=not_in_retry,
+        kept_head=kept,
+        kept_reason=kept_reason,
     )
 
 

@@ -49,6 +49,7 @@ COMPONENT_OPTIONAL_KEYS = frozenset(
         "prUrl",
         "mergeSha",
         "judgedSha",
+        "rejudgeSha",
         "linearIssueId",
         "linearIssueIdentifier",
         "startedAt",
@@ -82,6 +83,23 @@ def plan_id_errors(comp: dict[str, Any], prefix: str) -> list[str]:
             f"{prefix}.planId: {plan_id!r} is invalid: a plan id must match "
             f"{COMPONENT_ID_PATTERN} and contain no '..'"
         ]
+    return []
+
+
+#: ``rejudgeSha``: "" or a full commit id, sha1 or sha256 (#646).
+REJUDGE_SHA_PATTERN = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})?")
+
+
+def rejudge_sha_errors(comp: dict[str, Any], prefix: str) -> list[str]:
+    """``rejudgeSha`` is the commit ``ks retry`` kept for a re-judge (#646).
+
+    Anything but "" or a full lowercase commit id is refused: a value the
+    factory cannot compare to a branch tip must not reach the preflight
+    that lets a kept branch through.
+    """
+    value = comp.get("rejudgeSha", "")
+    if not isinstance(value, str) or REJUDGE_SHA_PATTERN.fullmatch(value) is None:
+        return [f'{prefix}.rejudgeSha: must be "" or a full commit id, got {value!r}']
     return []
 
 
