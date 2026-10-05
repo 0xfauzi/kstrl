@@ -489,6 +489,7 @@ class TestRemoteWriteback:
         assert "kstrl:running" in edits[1][1], edits
         body = comments.read_text(encoding="utf-8")
         assert "**kstrl: awaiting_answer**" in body, body
+        assert "the architect escalated a question only the owner can answer" in body, body
         assert f"ks queue answer {item.item_id} <answered spec file>" in body, body
 
         answered = tmp_path / "answered.md"
