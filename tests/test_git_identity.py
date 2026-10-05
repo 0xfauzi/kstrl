@@ -271,6 +271,10 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # #695: `_repo`'s base and branch commits, into a repository it has
     # just put through `tests.helpers.gitrepo.set_identity`.
     "tests/test_secret_rules_read_every_byte.py": 1,
+    # #654 slice 3b: `_commit`'s one `git commit` spelling, into the
+    # repository `tests.test_prompt_record._spec_project` has just put
+    # through `tests.helpers.gitrepo.set_identity`.
+    "tests/test_serve_red_base.py": 1,
     # #639: `_project`'s seed commit, into the repository it has just put
     # through `tests.helpers.gitrepo.set_identity`.
     "tests/test_spec_identity.py": 1,
@@ -363,6 +367,12 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # `_git_project` builds through `tests.helpers.gitrepo.git_in` /
     # `set_identity`.
     "tests/test_retry_journal_rows.py": 1,
+    # #646: the counting stub engineer's `git commit` shell string (`_counted`),
+    # the dependency component's engineer string, the hand-moved branch's
+    # `gitrepo.git_in(root, "commit", ...)` and the dependency PRD commit,
+    # all into the repository `tests.test_inbox_waivers._repo` put through
+    # `tests.helpers.gitrepo.set_identity`.
+    "tests/test_retry_keeps_approved_head.py": 4,
     # #624: one base commit into the repository `_repo` builds, which
     # calls `tests.helpers.gitrepo.set_identity` right after `git init`, and
     # one `git commit` in the shell engineer `_engineer` returns, which runs

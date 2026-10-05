@@ -75,7 +75,8 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     "cli.py": 1,
     "config_preflight.py": 2,  # the rule itself, and its docstring
     "contract.py": 1,
-    "decisions.py": 1,  # DecisionRegisterError, added by #332
+    # DecisionRegisterError, added by #332.
+    "decisions.py": 1,
     # AgentOutputTooLarge, and AgentTimedOut since #603.
     "decompose.py": 2,
     # #632: each refuses to import a table whose rows disagree, a bare raise.
@@ -102,6 +103,8 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     # One bare raise at import (#630): LICENSE_SOURCES must name every
     # ecosystem kstrl.lockfiles reads.
     "licensing.py": 1,
+    # OwnerAnswerError (#639 slice 4).
+    "owner_answers.py": 1,
     # One bare raise at import (#630): LOCKFILE_READERS and uv.lock must be
     # every lockfile LOCKFILE_MANIFESTS names.
     "policy.py": 1,

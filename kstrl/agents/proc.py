@@ -41,6 +41,7 @@ import time
 import weakref
 from collections.abc import Iterator
 from pathlib import Path
+from typing import IO
 
 from kstrl.agents.spawn_record import (
     SpawnRecord,
@@ -167,6 +168,11 @@ class DeadlineStreamer:
 
     The deadline is absolute: a child that keeps emitting output past it is
     still killed. ``timed_out`` records whether the deadline fired.
+
+    ``stderr`` is where the child's stderr goes. The default merges it into
+    the lines this class yields. An adapter whose child frames every agent
+    line passes a file instead, so a diagnostic cannot land in, or between
+    the bytes of, an agent line (#727).
     """
 
     def __init__(
@@ -179,6 +185,7 @@ class DeadlineStreamer:
         timeout: float | None = None,
         term_grace: float = DEFAULT_TERM_GRACE_SECONDS,
         root_dir: Path | None = None,
+        stderr: int | IO[bytes] = subprocess.STDOUT,
     ) -> None:
         self.timed_out = False
         self._disposed = False
@@ -207,7 +214,7 @@ class DeadlineStreamer:
                 ),
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
+                stderr=stderr,
                 encoding="utf-8",
                 cwd=cwd,
                 start_new_session=True,

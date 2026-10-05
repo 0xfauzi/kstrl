@@ -179,6 +179,7 @@
       ],
       "generated_at": "<generated_at>",
       "isolation": null,
+      "replay": null,
       "report_path": "<report_path>",
       "root": "<root>",
       "schema_version": 2,

@@ -161,6 +161,7 @@ EXPECTED_RUN_RECORD_SITES: dict[str, int] = {
     "pipeline.py: ComponentPipeline.journal_integration_result": 1,
     "pipeline.py: ComponentPipeline.journal_superseded_findings": 1,
     "reducer.py: upconvert_v1": 1,
+    "serve.py: _red_base_outcome": 1,  # #654 slice 3b: the red base's evidence
     "workqueue.py: Queue.await_answer": 1,
     "workqueue.py: Queue.await_approval": 1,
     "workqueue.py: Queue.relink_run": 1,
@@ -207,6 +208,11 @@ NOT_STAMPED_HERE: dict[str, str] = {
     ),
     "reducer.py: upconvert_v1": (
         "read side: lifts a v1 line that was already written into an event for the fold"
+    ),
+    "serve.py: _red_base_outcome": (
+        "names the run that recorded the red base (#654), carried into the "
+        "halted_run inbox item (InboxItem.to_dict, exempt above); a pointer "
+        "to that run, not a record of it"
     ),
     "observability.py: ProgressLog.emit": _V1,
     "observability.py: ProgressLog._repair_event": _V1,

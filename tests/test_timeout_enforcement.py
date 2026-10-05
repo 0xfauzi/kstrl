@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import ast
 import json
+import logging
 import os
 import signal
 import subprocess
@@ -625,6 +626,24 @@ class TestCodexAgentDeadline:
         assert _wait_pid_dead(_read_pid(pidfile))
 
 
+#: A fake claude CLI for the SDK battery (#727): it answers the SDK's
+#: control requests, sends one assistant message when the prompt arrives,
+#: then hangs in the same pid, so the pidfile its wrapper wrote names it.
+_SPEAK_THEN_HANG = """\
+import json, os, sys
+for raw in sys.stdin:
+    message = json.loads(raw)
+    if message.get("type") == "control_request":
+        reply = {"subtype": "success", "request_id": message["request_id"], "response": {}}
+        print(json.dumps({"type": "control_response", "response": reply}), flush=True)
+    elif message.get("type") == "user":
+        text = {"type": "text", "text": "fake-cli-started"}
+        body = {"role": "assistant", "model": "fake", "content": [text]}
+        print(json.dumps({"type": "assistant", "message": body, "session_id": "s"}), flush=True)
+        os.execv("/bin/sleep", ["sleep", "300"])
+"""
+
+
 class TestClaudeSdkAgentDeadline:
     """R0.1 battery against the SDK transport (R7.6 gate).
 
@@ -670,21 +689,34 @@ class TestClaudeSdkAgentDeadline:
         assert agent.usage_records[-1].source == "timeout"
         assert _wait_pid_dead(_read_pid(pidfile))
 
-    def test_hang_after_output_is_killed(self, tmp_path: Path) -> None:
+    def test_hang_after_output_is_killed(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
         """Output before the hang must not reset the absolute deadline.
 
-        The marker goes to the CLI's stderr, which is inherited from
-        the runner and merged into the adapter stream - visible without
-        having to speak the SDK's stdout JSON protocol."""
+        The CLI answers the SDK's handshake and sends one assistant
+        message, which the runner frames as an agent line, then hangs in
+        the same pid. The marker cannot ride the CLI's stderr any more:
+        since #727 the runner's stderr, which the CLI inherits, goes to
+        the kstrl log and never into the adapter stream. The stderr line
+        the CLI writes before it hangs must still reach that log when the
+        run ends on the deadline rather than at EOF."""
         pidfile = tmp_path / "cli.pid"
+        script = tmp_path / "speak-then-hang.py"
+        script.write_text(_SPEAK_THEN_HANG, encoding="utf-8")
         cli = self._fake_cli(
             tmp_path,
-            f"echo fake-cli-started 1>&2\necho $$ > {pidfile}\nexec sleep 300\n",
+            'case "$1" in -v) echo "2.1.283 (Claude Code)"; exit 0 ;; esac\n'
+            "echo fake-cli-stderr-before-hang 1>&2\n"
+            f"echo $$ > '{pidfile}'\nexec '{sys.executable}' '{script}'\n",
         )
         agent = self._agent(cli)
-        lines = _lines_under_fuse(agent, "prompt", tmp_path, timeout=SDK_DEADLINE_SECONDS)
+        with caplog.at_level(logging.WARNING, logger="kstrl.agents.claude_sdk"):
+            lines = _lines_under_fuse(agent, "prompt", tmp_path, timeout=SDK_DEADLINE_SECONDS)
 
         assert "fake-cli-started" in lines
+        assert "fake-cli-stderr-before-hang" not in lines
+        assert "fake-cli-stderr-before-hang" in caplog.text
         assert any(line.startswith(TIMEOUT_MESSAGE_PREFIX) for line in lines)
         assert _wait_pid_dead(_read_pid(pidfile))
 
@@ -1932,7 +1964,9 @@ class TestSubprocessTimeoutAudit:
     #: ``process.wait(timeout=grace)`` with the deadline deleted, which
     #: passed the entire suite - 4977 passed, zero failures - on the line
     #: whose own docstring says it is why the function exists.
-    CHILD_WAIT_SCOPE = POPEN_ALLOWLIST | {"kstrl/procdispose.py"}
+    #: ``kstrl/replay.py`` (#700 slice 3) waits on the ``up`` that
+    #: ``verify.start_scrubbed`` started and lets it go.
+    CHILD_WAIT_SCOPE = POPEN_ALLOWLIST | {"kstrl/procdispose.py", "kstrl/replay.py"}
 
     #: Waits in :data:`CHILD_WAIT_SCOPE` that have no deadline and are argued
     #: rather than bounded, as ``module finding`` with the line number taken

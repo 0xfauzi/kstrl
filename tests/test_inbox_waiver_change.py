@@ -41,6 +41,7 @@ from tests.test_inbox_waivers import (
     _open,
     _repo,
     _retry,
+    _retry_regenerated,
     _verification_failures,
 )
 
@@ -245,7 +246,7 @@ def test_an_approval_does_not_cover_a_regenerated_change(tmp_path: Path, case: s
     (item,) = _open(root, ItemKind.POLICY_EXCEPTION)
     _decide(root, env, "approve", item.id)
 
-    code, out = _retry(root, {**env, "AGENT_CMD": REGENERATED[case]})
+    code, out = _retry_regenerated(root, {**env, "AGENT_CMD": REGENERATED[case]})
 
     assert code == 1, out
     (finding,) = _gated(root, "policy_")

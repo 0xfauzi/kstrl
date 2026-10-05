@@ -32,10 +32,11 @@ import importlib.util
 import json
 import logging
 import sys
+import tempfile
 import time
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
+from typing import IO, Any
 
 from kstrl.agents.base import UsageRecord
 from kstrl.agents.proc import DeadlineStreamer, timeout_message
@@ -179,42 +180,52 @@ class ClaudeSdkAgent:
 
         cmd = [sys.executable, "-u", "-m", "kstrl.agents.sdk_runner"]
         record_prompt(prompt, agent_cli="claude-sdk")
-        streamer = DeadlineStreamer(
-            cmd,
-            cwd=cwd,
-            stdin_text=json.dumps(config),
-            timeout=timeout,
-            root_dir=self._root_dir,
-        )
+        # #727: the runner's stdout carries the framed contract and nothing
+        # else. Its stderr, which the claude CLI under it inherits, goes to
+        # this file and then to the kstrl log, so a diagnostic (asyncio's
+        # "Unknown child process" warning, a traceback, the CLI's own
+        # stderr) can neither be yielded nor split an agent line.
+        with tempfile.TemporaryFile() as diagnostics:
+            streamer = DeadlineStreamer(
+                cmd,
+                cwd=cwd,
+                stdin_text=json.dumps(config),
+                timeout=timeout,
+                root_dir=self._root_dir,
+                stderr=diagnostics,
+            )
 
-        try:
-            # The consumer can walk away mid-yield; the argument is on
-            # `DeadlineStreamer.close` (#326).
-            for line in streamer.lines():
-                if line.startswith(USAGE_PREFIX):
-                    usage_payload = _parse_contract_line(line, USAGE_PREFIX)
-                    continue
-                if line.startswith(RESULT_PREFIX):
-                    result_payload = _parse_contract_line(line, RESULT_PREFIX)
-                    continue
-                if line.startswith(DISPLAY_PREFIX):
-                    yield _parse_display_line(line)
-                    continue
-                yield line
+            try:
+                # The consumer can walk away mid-yield; the argument is on
+                # `DeadlineStreamer.close` (#326).
+                for line in streamer.lines():
+                    if line.startswith(USAGE_PREFIX):
+                        usage_payload = _parse_contract_line(line, USAGE_PREFIX)
+                        continue
+                    if line.startswith(RESULT_PREFIX):
+                        result_payload = _parse_contract_line(line, RESULT_PREFIX)
+                        continue
+                    if line.startswith(DISPLAY_PREFIX):
+                        yield _parse_display_line(line)
+                        continue
+                    # The runner frames every agent line (#598), so an
+                    # unframed one is something else writing to its stdout.
+                    logger.warning("sdk-runner stdout, unframed: %s", line)
 
-            if streamer.timed_out:
-                self._usage_records.append(
-                    UsageRecord(
-                        duration_seconds=time.monotonic() - started,
-                        source="timeout",
+                if streamer.timed_out:
+                    self._usage_records.append(
+                        UsageRecord(
+                            duration_seconds=time.monotonic() - started,
+                            source="timeout",
+                        )
                     )
-                )
-                yield timeout_message(timeout)
-                return
+                    yield timeout_message(timeout)
+                    return
 
-            streamer.finish()
-        finally:
-            streamer.close()
+                streamer.finish()
+            finally:
+                streamer.close()
+                _log_runner_stderr(diagnostics)
 
         self._usage_records.append(
             _usage_record_from_payload(
@@ -236,6 +247,20 @@ class ClaudeSdkAgent:
     def usage_records(self) -> list[UsageRecord]:
         """One usage record per ``run`` call, accumulated (R3.1)."""
         return list(self._usage_records)
+
+
+def _log_runner_stderr(diagnostics: IO[bytes]) -> None:
+    """Log each line the runner's process tree wrote to its stderr (#727).
+
+    Read after the streamer is disposed of, so the runner has exited.
+    Decoded with ``replace`` because these bytes come from any process
+    under the runner, in any encoding.
+    """
+    diagnostics.seek(0)
+    for raw in diagnostics:
+        text = raw.decode("utf-8", "replace").rstrip("\r\n")
+        if text:
+            logger.warning("sdk-runner stderr: %s", text)
 
 
 def _parse_contract_line(

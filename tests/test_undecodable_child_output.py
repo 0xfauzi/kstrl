@@ -377,6 +377,8 @@ def test_the_call_site_census_is_pinned() -> None:
         # #700: the canary and --version runs, through one helper.
         "isolation.py": 1,
         "learning_fixture.py": 1,
+        # #700 slice 3: each setup and check of the replay, through one helper.
+        "replay.py": 1,
         # #619: +1, the ruff --show-files listing in check_dead_code_ruff.
         # #696: +1, check_stack_command.
         "verify.py": 12,
@@ -463,6 +465,8 @@ def test_the_disposition_census_is_pinned() -> None:
         "fixtures.py:returns": 2,
         "isolation.py:returns": 1,
         "learning_fixture.py:raises": 1,
+        # #700 slice 3: the replay names the stage `undecodable` and reads on.
+        "replay.py:converts": 1,
         "verify.py:converts": 1,
         # #619: +1, the listing shares the ruff run's handlers, which return.
         # #696: +1, check_stack_command returns an unmeasured failing row.

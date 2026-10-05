@@ -192,6 +192,10 @@ EXPECTED_PROCESS_MODULES: dict[str, tuple[str, ...]] = {
     "agents/leash.py": ("Popen", "getpgrp", "killpg", "subprocess"),
     "serve.py": ("Popen", "communicate", "subprocess"),
     "verify.py": ("Popen", "communicate", "subprocess"),
+    # #700 slice 3: waits on the `up` that `verify.start_scrubbed` started,
+    # stops its group through `procgroup.signal_group` and lets it go through
+    # `procdispose.reap_or_abandon`; `Popen` is the type of what it holds.
+    "replay.py": ("Popen", "subprocess"),
     # The five that own a child through `DeadlineStreamer` rather than a
     # raw `Popen`. Four of them are GENERATORS, which is the shape #326's
     # sweep found still open: a consumer walks away mid-yield and nothing
@@ -341,7 +345,10 @@ EXPECTED_SPAWNERS: dict[str, SpawnerRules] = {
     # agent is ended by its group's signals, never by the leash letting go.
     "agents/leash.py": SpawnerRules(1, 0, 0, 0),
     "serve.py": SpawnerRules(1, 1, 1, 2),
-    "verify.py": SpawnerRules(1, 1, 1, 2),
+    # #700 slice 3: the second Popen is `start_scrubbed`, which returns the
+    # running child; `replay.py` is the one that lets it go.
+    "verify.py": SpawnerRules(2, 1, 1, 2),
+    "replay.py": SpawnerRules(0, 0, 0, 1),
 }
 
 

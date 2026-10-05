@@ -57,6 +57,8 @@ EXPECTED_CONSTRUCTIONS = (
     "cli.py kstrl.inbox.Inbox",
     "decisions.py kstrl.inbox.Inbox",
     "factory.py kstrl.inbox.Inbox",
+    # #639 slice 4: read_owner_answers scans for the owner's answers; reads only.
+    "owner_answers.py kstrl.inbox.Inbox",
     "pipeline.py kstrl.inbox.Inbox",
     # #602: the L1 plan gate reads its item (_find) and records a decision
     # given at the prompt (_record).
@@ -71,6 +73,9 @@ EXPECTED_CONSTRUCTIONS = (
     # replaced.
     "tui/operator_queue.py kstrl.inbox.Inbox",
     "tui/screens/inbox.py kstrl.inbox.Inbox",
+    # #646: ks retry reads the approvals (approvals_at) to decide whether
+    # it keeps the failed head. It scans and reads; it mutates nothing.
+    "waivers.py kstrl.inbox.Inbox",
 )
 
 #: The same census BY COUNT. ``without_line_numbers`` deduplicates, so
@@ -88,6 +93,7 @@ EXPECTED_CONSTRUCTION_COUNTS = {
     # it mutates nothing.
     "decisions.py": 3,
     "factory.py": 1,
+    "owner_answers.py": 1,
     # #595 (addendum): was 5, one construction per lazy-open site
     # (ComponentPipeline.snapshot_waivers's own +1 among them). All five
     # sites now build through ComponentPipeline._open_inbox, so there is
@@ -98,6 +104,7 @@ EXPECTED_CONSTRUCTION_COUNTS = {
     "stack.py": 3,
     "tui/operator_queue.py": 1,
     "tui/screens/inbox.py": 1,
+    "waivers.py": 1,
 }
 
 #: Calls whose callee has no identifier at all, which ``calls_to`` treats
@@ -232,6 +239,8 @@ EXPECTED_CONFIG_LOADS: dict[str, Disposition] = {
     ),
     # #433: home's needs-you rows; a load it cannot make renders no count.
     "tui/operator_queue.py::_open_inbox_items": _GUARDED,
+    # #646: ks retry's read of the approvals; a load it cannot make keeps nothing.
+    "waivers.py::approvals_at": _GUARDED,
     "serve.py::check_inbox_cap": Disposition(
         guarded=False,
         reason=(
