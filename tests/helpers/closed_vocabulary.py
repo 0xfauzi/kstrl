@@ -146,6 +146,10 @@ OPEN: dict[tuple[str, str], str] = {
         "a prefix of the base commit's sha; refused by length and prefix "
         "match against the measured sha, not against a fixed vocabulary (#654)"
     ),
+    ("FactoryConfig", "acceptance_dir"): (
+        "a directory outside the repository holding an acceptance plan; refused "
+        "when unreadable, inside the repository or without a [stack] (#700 slice 4)"
+    ),
     ("FactoryConfig", "review_agent_cmd"): "a shell command",
     ("FactoryConfig", "review_model"): "a model name",
     ("FactoryConfig", "worktree_setup_command"): "a shell command",

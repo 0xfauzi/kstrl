@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, Protocol, TextIO
 
 from kstrl import git
+from kstrl.acceptance import BaseReading, PinnedPlan, pin_plan, replay_base
 from kstrl.agents.base import UsageTotals, collect_usage, print_usage_rollup
 from kstrl.agents.proc import kill_active_process_groups
 from kstrl.agents.prompt_record import AgentCall, recording_prompts
@@ -450,6 +451,14 @@ class FactoryConfig:
     # no toml key and no env var, and `ks retry` replays it from the launch
     # record, so a retry on a base that moved refuses again. "" is none.
     accept_red_base: str = ""
+    # #700 slice 4: `ks factory --acceptance <dir>`, the operator's plan of
+    # acceptance checks, outside the repository. Per run: no toml key and no
+    # env var, and `ks retry` replays it. "" is none. The plan pinned from it
+    # (``acceptance.pin_plan``) and what the base replay read
+    # (``acceptance.replay_base``) are set by the preflights.
+    acceptance_dir: str = ""
+    acceptance_plan: PinnedPlan | None = field(default=None, metadata={"provenance": True})
+    acceptance_base: BaseReading | None = field(default=None, metadata={"provenance": True})
 
     def resolved_verify_config(self) -> VerifyConfig:
         """The VerifyConfig Phase 1 runs with (#261).
@@ -2586,16 +2595,24 @@ def _preflight_stack(
 def _preflight_pins(
     manifest: Manifest, root_dir: Path, factory_config: FactoryConfig, run_id: str, ui: UI
 ) -> tuple[str, list[str]]:
-    """The spec pin (#639), then the stack (#696): the headline and reasons
-    of the first that refuses, or an empty list. One call, so
-    ``_run_preflights`` gains no branch (its cyclomatic ratchet is at 10)."""
+    """The spec pin (#639), then the stack (#696), then the acceptance plan
+    (#700 slice 4): the headline and reasons of the first that refuses, or
+    an empty list. One call, so ``_run_preflights`` gains no branch (its
+    cyclomatic ratchet is at 10)."""
     spec_errors = _preflight_spec_pin(manifest, root_dir, ui)
     if spec_errors:
         return "the plan does not match the spec it was made from", spec_errors
-    return (
-        "the [stack] in kstrl.toml is not confirmed, or is not the one this plan was made under",
-        _preflight_stack(manifest, root_dir, factory_config, run_id),
+    stack_errors = _preflight_stack(manifest, root_dir, factory_config, run_id)
+    if stack_errors:
+        return (
+            "the [stack] in kstrl.toml is not confirmed, or is not the one this plan was made "
+            "under",
+            stack_errors,
+        )
+    factory_config.acceptance_plan, acceptance_errors = pin_plan(
+        root_dir, manifest, factory_config.acceptance_dir, factory_config.project_stack
     )
+    return "the acceptance plan cannot be used", acceptance_errors
 
 
 def _emit_stack_confirmation(bus: EventBus, stack: Stack | None) -> None:
@@ -4318,7 +4335,27 @@ def _plan_gated(
     if decisions is None:
         return 2
     stop = run_plan_gate(pipeline, ladder.bundle if ladder is not None else None)
-    return decisions if stop is None else stop
+    if stop is not None:
+        return stop
+    return 2 if _refused_acceptance_base(pipeline) else decisions
+
+
+def _refused_acceptance_base(pipeline: ComponentPipeline) -> bool:
+    """Replay the acceptance checks on the base, after the plan gate and
+    before the first engineer (#700 slice 4, decision 2(a)); True when the
+    base refuses the plan. A plan the base accepted is pinned on the
+    manifest, which the run's next save writes."""
+    config, manifest = pipeline.factory_config, pipeline.manifest
+    plan, stack = config.acceptance_plan, config.project_stack
+    if plan is None or stack is None:
+        return False
+    config.acceptance_base, errors = replay_base(
+        pipeline.root_dir, stack, plan, manifest.base_branch, pipeline.run_id, config, pipeline.ui
+    )
+    if _report_preflight(pipeline.ui, "the acceptance checks do not hold on the base", errors):
+        return True
+    manifest.acceptance_digest = plan.digest
+    return False
 
 
 def _stamp_feature_base(manifest: Manifest, manifest_path: Path, root_dir: Path, ui: UI) -> None:

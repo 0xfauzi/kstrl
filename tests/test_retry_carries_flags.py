@@ -450,6 +450,8 @@ def test_retry_flags_are_pinned_against_factory() -> None:
         "lint_command",
         "no_verify",
         "accept_red_base",
+        # #700 slice 4: the plan directory; a retry pins and checks it again.
+        "acceptance",
         "dead_code_cleanup",
         "dead_code_command",
         "mutation_testing",

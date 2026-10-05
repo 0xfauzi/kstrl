@@ -78,6 +78,9 @@ OWNER = "jsonread.py"
 #: failure. It must be smaller than the pre-change anchor of 38 modules
 #: and 164 nodes, and it must contain a row for ``jsonread.py``.
 EXPECTED_JSON_SPELLINGS: dict[str, int] = {
+    # #700 slice 4: the import and two json.dumps (the plan digest rows and a
+    # check entry's digest). Its reads go through read_json.
+    "acceptance.py": 3,
     # #598: was 4 (import, one json.dumps in _format_tool_use, two
     # json.JSONDecodeError catches - _extract_result_text and
     # _parse_stream_event). +1: a third json.JSONDecodeError catch, in

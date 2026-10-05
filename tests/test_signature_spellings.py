@@ -141,6 +141,10 @@ EXPECTED_SPELLINGS: frozenset[tuple[str, str]] = frozenset(
         ("kstrl/replay.py", "check"),
         ("kstrl/replay.py", "setup_failed"),
         ("kstrl/replay.py", "up_failed"),
+        # #700 slice 4: an acceptance check's replay stage name
+        # (f"acceptance:{check.id}"), the replay's own record and never a
+        # component failure signature.
+        ("kstrl/acceptance.py", "acceptance"),
     }
 )
 

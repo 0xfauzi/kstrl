@@ -2673,6 +2673,14 @@ def decompose(
     "`ks retry` replays it",
 )
 @click.option(
+    "--acceptance",
+    metavar="DIR",
+    default="",
+    help="A directory outside the repository holding plan.json: acceptance checks run "
+    "on the base and on each component's head inside the isolation rung, and recorded "
+    "(record-only). Needs a [stack]; `ks retry` replays it",
+)
+@click.option(
     "--dead-code-cleanup",
     is_flag=True,
     default=None,
@@ -2891,6 +2899,7 @@ def factory(
     lint_command: str | None,
     no_verify: bool,
     accept_red_base: str,
+    acceptance: str,
     dead_code_cleanup: bool | None,
     dead_code_command: str | None,
     mutation_testing: bool | None,
@@ -3149,6 +3158,7 @@ def factory(
             factory_config.progress_log_enabled = True
         factory_config.force_lock = force_lock
         factory_config.accept_red_base = accept_red_base
+        factory_config.acceptance_dir = acceptance
         # #436: what `ks retry` replays; see kstrl/launch_record.py.
         factory_config.launch_flags = replayable_flags(ctx)
         # R2.3: --no-verify is an explicit skip sentinel that run_factory

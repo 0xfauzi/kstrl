@@ -263,6 +263,10 @@ class Manifest:
     # project had none or the manifest is from before #696.
     # ``plan_gate.stack_pin_errors`` refuses to run it under another stack.
     stack_digest: str = ""
+    # #700 slice 4: the digest of the acceptance plan the base replay
+    # accepted for this plan, "" when none; ``acceptance.pin_plan`` refuses
+    # another one.
+    acceptance_digest: str = ""
 
     @classmethod
     def from_prd(
@@ -391,6 +395,7 @@ class Manifest:
             spec_path=data.get("specPath", ""),
             spec_digest=data.get("specDigest", ""),
             stack_digest=data.get("stackDigest", ""),
+            acceptance_digest=data.get("acceptanceDigest", ""),
         )
 
     def save(self, path: Path) -> None:
@@ -454,6 +459,8 @@ class Manifest:
             data["specDigest"] = self.spec_digest
         if self.stack_digest:
             data["stackDigest"] = self.stack_digest
+        if self.acceptance_digest:
+            data["acceptanceDigest"] = self.acceptance_digest
         path.parent.mkdir(parents=True, exist_ok=True)
         # Atomic, and keeps the mode the operator gave this git-tracked
         # file; see kstrl.atomicio (#291).

@@ -26,18 +26,20 @@ applications started at once would contend for the same ports.
 from __future__ import annotations
 
 import fcntl
+import shlex
 import shutil
 import signal
 import subprocess
 import tempfile
 import time
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from kstrl import git
+from kstrl.atomicio import atomic_write_text
 from kstrl.contract import ContractCleanupError, _create_temp_worktree, _remove_temp_worktree
 from kstrl.isolation import SETUP_ZONE, TEST_ZONE, prove_zones
 from kstrl.procdispose import reap_or_abandon
@@ -82,6 +84,11 @@ STOP_GRACE_SECONDS = 5.0
 
 #: Seconds between two reads of whether the ``up`` group is gone.
 POLL_SECONDS = 0.1
+
+#: What runs in place of the stack's checks once ``up`` is ready (#700
+#: slice 4): the acceptance runner's checks, handed the checked-out tree
+#: and the test-zone rung. The ``up`` group is stopped after it returns.
+Probe = Callable[[Path, ProvenRung], None]
 
 
 @dataclass(frozen=True)
@@ -149,16 +156,22 @@ def replay_stack(
     setup_limit: float | None,
     check_limit: float | None,
     ui: UI,
+    at: str = "",
+    probe: Probe | None = None,
 ) -> Replay:
     """Replay ``stack``'s recipe on the base branch; never raises for a
     stage that failed. ``setup_limit`` bounds the setup, ``check_limit``
-    bounds ``up`` and each check (None waits with no limit, #467)."""
+    bounds ``up`` and each check (None waits with no limit, #467).
+
+    ``at`` replays that commit instead of the base branch's, and ``probe``
+    runs in place of the stack's checks (#700 slice 4: the acceptance
+    checks, on the base and on each head)."""
     started = time.monotonic()
-    record = Replay(stack.digest, git.detect_base_branch(root))
+    record = Replay(stack.digest, git.detect_base_branch(root), base_sha=at)
     try:
         with replay_lock(ui) as waited:
             record.lock_wait_seconds = waited
-            _replay_in_worktree(root, stack, record, (setup_limit, check_limit), ui)
+            _replay_in_worktree(root, stack, record, (setup_limit, check_limit), ui, probe)
     finally:
         record.seconds = round(time.monotonic() - started, 3)
     return record
@@ -170,11 +183,13 @@ def _replay_in_worktree(
     record: Replay,
     limits: tuple[float | None, float | None],
     ui: UI,
+    probe: Probe | None,
 ) -> None:
-    """Check the base out into a throwaway worktree, replay inside it, and
-    remove it whatever happened."""
+    """Check the base (or ``record.base_sha`` when the caller set it) out
+    into a throwaway worktree, replay inside it, and remove it whatever
+    happened."""
     try:
-        record.base_sha = git.resolve_base_sha(record.base_branch, root)
+        record.base_sha = record.base_sha or git.resolve_base_sha(record.base_branch, root)
     except git.GitDiffError as exc:
         record.error = f"the base branch {record.base_branch} did not resolve: {exc}"
         return
@@ -184,7 +199,7 @@ def _replay_in_worktree(
         return
     scratch = Path(tempfile.mkdtemp(prefix="kstrl-replay-"))
     try:
-        _replay_in_rungs(root, stack, worktree, scratch, record, limits)
+        _replay_in_rungs(root, stack, worktree, scratch, record, limits, probe)
     finally:
         try:
             _remove_temp_worktree(worktree, root, ui, WORKTREE_LABEL)
@@ -200,6 +215,7 @@ def _replay_in_rungs(
     scratch: Path,
     record: Replay,
     limits: tuple[float | None, float | None],
+    probe: Probe | None,
 ) -> None:
     """Prove both zones with the worktree and the stack's own paths granted,
     and run the stages only when both hold."""
@@ -217,7 +233,7 @@ def _replay_in_rungs(
         if refused:
             record.failed, record.detail = REPLAY_BOUNDARY_REFUSED, "; ".join(refused)
             return
-        _run_stages(stack, worktree, scratch, rungs, record, limits)
+        _run_stages(stack, worktree, scratch, rungs, record, limits, probe)
     finally:
         release(rungs.values())
 
@@ -229,9 +245,10 @@ def _run_stages(
     rungs: Mapping[str, ProvenRung],
     record: Replay,
     limits: tuple[float | None, float | None],
+    probe: Probe | None,
 ) -> None:
-    """setup, up, every check, in that order, until one fails; then stop
-    the ``up`` group by the id recorded when it started."""
+    """setup, up, every check (or ``probe``), in that order, until one
+    fails; then stop the ``up`` group by the id recorded when it started."""
     setup_limit, check_limit = limits
     app: subprocess.Popen[bytes] | None = None
     try:
@@ -253,6 +270,9 @@ def _run_stages(
             record.pgid = app.pid
             if not _passed(record, _ready(app, stack.up, check_limit, log, began)):
                 return
+        if probe is not None:
+            probe(worktree, rungs[TEST_ZONE])
+            return
         for name, command in stack.checks:
             check = _ran(f"check:{name}", command, worktree, rungs[TEST_ZONE], check_limit, stack)
             if not _passed(record, check):
@@ -278,12 +298,30 @@ def _tail(text: str) -> tuple[str, ...]:
 
 
 def _ran(
-    name: str, command: str, cwd: Path, rung: ProvenRung, limit: float | None, stack: Stack
+    name: str,
+    command: str | list[str],
+    cwd: Path,
+    rung: ProvenRung,
+    limit: float | None,
+    stack: Stack,
+    *,
+    extra_env: Mapping[str, str] | None = None,
+    log: Path | None = None,
 ) -> Stage:
-    """Run one setup or check command to its end, named by what it gave."""
+    """Run one setup or check command to its end, named by what it gave.
+
+    An acceptance check (#700 slice 4) is an argv, gets ``extra_env`` set
+    for it, and has its whole output written to ``log``."""
     began = time.monotonic()
     try:
-        done = run_scrubbed(command, cwd=cwd, timeout=limit, declared_env=stack.env, rung=rung)
+        done = run_scrubbed(
+            command,
+            cwd=cwd,
+            timeout=limit,
+            declared_env=stack.env,
+            rung=rung,
+            extra_env=extra_env,
+        )
     except subprocess.TimeoutExpired as expired:
         output = _readable(expired.stdout) + _readable(expired.stderr)
         code, stopped, given = None, f"timed out after {limit}s", "timeout"
@@ -296,6 +334,8 @@ def _ran(
         )
     else:
         output, code, stopped, given = done.stdout + done.stderr, done.returncode, "", ""
+    if log is not None:
+        atomic_write_text(log, output)
     if name == "setup":
         failed = "" if code == 0 else f"{REPLAY_SETUP_FAILED}:{given or code}"
     elif code == 0:
@@ -304,8 +344,9 @@ def _ran(
         failed = REPLAY_CHECK_NOT_RUNNABLE
     else:
         failed = REPLAY_BASE_CONTRADICTION
+    shown = command if isinstance(command, str) else shlex.join(command)
     return Stage(
-        name, command, code, stopped, round(time.monotonic() - began, 3), _tail(output), failed
+        name, shown, code, stopped, round(time.monotonic() - began, 3), _tail(output), failed
     )
 
 
