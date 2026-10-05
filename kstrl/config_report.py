@@ -298,7 +298,6 @@ _LISTED_KNOBS: dict[str, tuple[str, ...]] = {
         "integration_blocking",
         "integration_max_rounds",
         "convergence_attempts",
-        "worktree_setup_command",
         "worktree_setup_timeout",
     ),
     "knowledge": (
@@ -385,14 +384,6 @@ def _base_rows(resolved: KstrlConfig, sources: dict[str, str]) -> list[ConfigRow
     ]
 
 
-#: Keys whose unset value is another section's, and the source label that
-#: says so (#621): ``ContractConfig.load`` gives Phase 3 the command
-#: ``[verify] test_command`` resolves to, which ``(default)`` would hide.
-_FOLLOWED_SECTIONS: dict[tuple[str, str], str] = {
-    ("contract", "test_command"): "[verify]",
-}
-
-
 def _phase_rows(
     section: str,
     resolved: Any,
@@ -408,7 +399,7 @@ def _phase_rows(
         elif field_name in toml_keys:
             source = "toml"
         else:
-            source = _FOLLOWED_SECTIONS.get((section, field_name), "default")
+            source = "default"
         rows.append(
             ConfigRow(
                 section=section,

@@ -31,6 +31,7 @@ from kstrl.security import SecurityConfig
 from kstrl.timeout import TimeoutConfig
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
+from tests.helpers.stack_confirmation import in_process_stack
 from tests.spine_utils import (
     base_config,
     component,
@@ -157,9 +158,9 @@ def _run(
             single_pr=manifest.single_pr,
             progress_log_path=tmp_path / "progress.jsonl",
             verify_config=VerifyConfig(
-                test_command="true",
-                typecheck_command="true",
-                lint_command="true",
+                project_stack=in_process_stack(
+                    {"tests": "true", "typecheck": "true", "lint": "true"}
+                ),
                 check_diff_scope=True,
                 check_bad_patterns=False,
                 subprocess_timeout=10.0,

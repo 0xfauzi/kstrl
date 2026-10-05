@@ -1,30 +1,25 @@
 """No-progress circuit breaker for the engineer loop (R7.5).
 
 The most-repeated community fix for kstrl-loop stalls: an agent that
-keeps burning iterations without changing the tree (or its test
-outcome) must be halted loudly instead of spending the whole iteration
-budget re-reading the same prompt.
+keeps burning iterations without changing the tree must be halted loudly
+instead of spending the whole iteration budget re-reading the same prompt.
 
 The breaker fingerprints the worktree after every non-completing
 iteration. When ``no_progress_iterations`` consecutive iterations end
-with an UNCHANGED diff hash AND an UNCHANGED test-failure signature,
-the loop halts with a distinct error that the factory records in the
-progress log and the evolution journal.
+with an UNCHANGED diff hash, the loop halts with a distinct error that
+the factory records in the progress log and the evolution journal.
 
-First-principles note on the AND: an identical tree implies identical
-test results for a deterministic suite, so the test probe only runs
-when the diff hash already matched (cheap short-circuit). Its job is
-to protect against the one false-trip mode diff hashing cannot see -
-tests whose outcome depends on external state the agent is legitimately
-working on. A flaky suite changes the signature between probes, which
-RESETS the stall streak: the breaker fails open, never spuriously.
+It reads the diff only (#696 decision 10). The test probe it also ran,
+``[breaker] test_command``, is retired with every other command source
+kstrl did not take from a confirmed ``[stack]`` (#696 slice 4). What that
+loses, stated: a suite whose outcome depends on external state the agent
+is changing no longer resets the streak on an unchanged tree.
 """
 
 from __future__ import annotations
 
 import hashlib
 import os
-import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -51,17 +46,10 @@ class BreakerConfig:
 
     ``no_progress_iterations`` is the N of "halt after N consecutive
     no-progress iterations" (default 3, the community norm); 0 disables
-    the breaker. ``test_command`` is the optional stall probe run ONLY
-    when the diff hash already matched the previous iteration; when
-    unset the signature is a constant, which makes the breaker
-    effectively diff-hash-only (an identical tree implies identical
-    deterministic test results, so this loses nothing for hermetic
-    suites - stated here rather than assumed silently, H4).
+    the breaker.
     """
 
     no_progress_iterations: int = 3
-    test_command: str | None = None
-    test_timeout: float = 300.0
 
     @classmethod
     def from_env(cls) -> BreakerConfig:
@@ -70,10 +58,6 @@ class BreakerConfig:
         return cls(
             no_progress_iterations=int(
                 os.environ.get("KSTRL_BREAKER_ITERATIONS", str(config.no_progress_iterations))
-            ),
-            test_command=os.environ.get("KSTRL_BREAKER_TEST_CMD") or None,
-            test_timeout=float(
-                os.environ.get("KSTRL_BREAKER_TEST_TIMEOUT", str(config.test_timeout))
             ),
         )
 
@@ -89,27 +73,11 @@ class BreakerConfig:
             root_dir = Path.cwd()
         section = load_toml_section(resolve_config_file(root_dir), "breaker")
         no_progress_iterations = cls.no_progress_iterations
-        test_command = cls.test_command
-        test_timeout = cls.test_timeout
         if "no_progress_iterations" in section:
             no_progress_iterations = int(section["no_progress_iterations"])
-        if isinstance(section.get("test_command"), str) and section["test_command"]:
-            test_command = str(section["test_command"])
-        if "test_timeout" in section:
-            test_timeout = float(section["test_timeout"])
         if "KSTRL_BREAKER_ITERATIONS" in os.environ:
             no_progress_iterations = int(os.environ["KSTRL_BREAKER_ITERATIONS"])
-        if os.environ.get("KSTRL_BREAKER_TEST_CMD"):
-            test_command = os.environ["KSTRL_BREAKER_TEST_CMD"]
-        if "KSTRL_BREAKER_TEST_TIMEOUT" in os.environ:
-            test_timeout = float(os.environ["KSTRL_BREAKER_TEST_TIMEOUT"])
-        return check_numbers(
-            cls(
-                no_progress_iterations=no_progress_iterations,
-                test_command=test_command,
-                test_timeout=test_timeout,
-            )
-        )
+        return check_numbers(cls(no_progress_iterations=no_progress_iterations))
 
 
 def _git(args: list[str], cwd: Path) -> str | None:
@@ -225,62 +193,6 @@ def compute_diff_hash(cwd: Path) -> str | None:
     return hasher.hexdigest()
 
 
-_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
-# Volatile tokens that differ between two runs of the SAME failing
-# suite on the SAME tree: wall-clock durations, memory addresses,
-# tmp-path suffixes pytest generates per run.
-_DURATION_RE = re.compile(r"\b\d+(?:\.\d+)?s\b")
-_HEX_ADDR_RE = re.compile(r"0x[0-9a-fA-F]+")
-_TMP_PATH_RE = re.compile(r"/(?:tmp|var/folders)/[^\s'\"]+")
-
-NO_TEST_COMMAND_SIGNATURE = "no-test-command"
-
-
-def _normalize_test_line(line: str) -> str:
-    line = _ANSI_RE.sub("", line)
-    line = _DURATION_RE.sub("<T>", line)
-    line = _HEX_ADDR_RE.sub("<ADDR>", line)
-    line = _TMP_PATH_RE.sub("<TMP>", line)
-    return line.rstrip()
-
-
-def compute_test_signature(cwd: Path, config: BreakerConfig) -> str:
-    """Hash of the configured test command's failure shape.
-
-    The signature is the return code plus the normalized failure lines
-    (lines mentioning fail/error), with volatile tokens (durations,
-    addresses, tmp paths) masked so two runs on an identical tree hash
-    identically. A passing suite signs as its return code alone - an
-    agent stuck with green tests but no completion marker is still a
-    stall worth halting.
-    """
-    if not config.test_command:
-        return NO_TEST_COMMAND_SIGNATURE
-    from kstrl.verify import ChildOutputDecodeError, run_scrubbed
-
-    try:
-        result = run_scrubbed(
-            config.test_command,
-            cwd=cwd,
-            timeout=config.test_timeout,
-        )
-    except subprocess.TimeoutExpired:
-        return "timeout"
-    except (OSError, ChildOutputDecodeError) as exc:
-        return f"probe-error:{type(exc).__name__}"
-    failure_lines = [
-        _normalize_test_line(line)
-        for line in (result.stdout + "\n" + result.stderr).splitlines()
-        if re.search(r"fail|error", line, re.IGNORECASE)
-    ]
-    hasher = hashlib.sha256()
-    hasher.update(str(result.returncode).encode())
-    for line in failure_lines:
-        hasher.update(b"\x00")
-        hasher.update(line.encode())
-    return f"rc{result.returncode}:{hasher.hexdigest()}"
-
-
 class NoProgressBreaker:
     """Tracks the stall streak across one engineer loop's iterations.
 
@@ -296,7 +208,6 @@ class NoProgressBreaker:
         self._enabled = config.no_progress_iterations > 0
         self._stall_count = 0
         self._prev_fingerprint: str | None = compute_diff_hash(cwd) if self._enabled else None
-        self._prev_signature: str | None = None
 
     @property
     def enabled(self) -> bool:
@@ -320,33 +231,17 @@ class NoProgressBreaker:
         if fingerprint is None:
             # Cannot measure this iteration: reset rather than guess.
             self._stall_count = 0
-            self._prev_signature = None
             return False
         if fingerprint != self._prev_fingerprint:
             self._prev_fingerprint = fingerprint
             self._stall_count = 0
-            self._prev_signature = None
             return False
-        # Tree unchanged by this iteration: consult the test probe.
-        signature = compute_test_signature(self._cwd, self._config)
-        if self._prev_signature is not None and signature != self._prev_signature:
-            # Same tree but a different test outcome: external state
-            # moved (or the suite is flaky). Restart the streak at this
-            # iteration instead of tripping on it.
-            self._stall_count = 1
-        else:
-            self._stall_count += 1
-        self._prev_signature = signature
+        self._stall_count += 1
         return self._stall_count >= self._config.no_progress_iterations
 
     def halt_message(self) -> str:
-        probe = (
-            "unchanged test-failure signature"
-            if self._config.test_command
-            else "no test probe configured (diff hash only)"
-        )
         return (
             f"{NO_PROGRESS_MESSAGE_PREFIX}: {self._stall_count} consecutive "
-            f"iteration(s) produced an unchanged diff hash and {probe}; "
+            f"iteration(s) produced an unchanged diff hash; "
             f"halting component instead of burning further iterations"
         )

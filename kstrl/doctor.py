@@ -1,13 +1,13 @@
 """`ks doctor`: is this repository ready to point kstrl at? (#198)
 
 Tier A here. Every check is static and mechanical: nothing here runs
-the repository's own test, typecheck or lint commands, spawns an
+the repository's own [stack] checks, spawns an
 agent, or spends anything. Measured cost: about 0.3 to 0.5 s per run
 on this repository (three runs: 387, 403 and 493 ms), of which one
 gh auth status network round trip is about 250 ms (bounded by
 pr.GH_TIMEOUT when offline); the local checks together are
-the rest. `ks doctor --measure` (#654) then runs Phase 1's test,
-typecheck and lint commands on the base branch, the reading `ks factory`
+the rest. `ks doctor --measure` (#654) then runs Phase 1's [stack]
+checks on the base branch, the reading `ks factory`
 takes before any engineer runs, and fails the verdict where it would refuse.
 
 The anti-chimera rule from the issue: doctor checks ONLY what kstrl
@@ -36,7 +36,6 @@ from kstrl.adequacy import is_test_path
 from kstrl.atomicio import atomic_write_json
 from kstrl.config import resolve_config_file
 from kstrl.config_preflight import SURFACE_REJECTIONS, config_problem_lines, raise_if_defect
-from kstrl.config_report import build_config_report
 from kstrl.feedforward import (
     _MAX_PUBLIC_INTERFACE_FILES,
     _SOURCE_EXTENSIONS,
@@ -46,15 +45,13 @@ from kstrl.feedforward import (
 from kstrl.init_cmd import (
     BUILD_MANIFEST_FIX,
     LANGUAGE_IGNORES_FIX,
-    _verify_command_runs_through_uv,
     build_manifest_blocker,
     build_manifest_ok_reason,
     language_ignores_blocker,
 )
 from kstrl.policy import ENFORCEMENT_MACHINERY_PATHS, PolicyConfig, _match_glob
+from kstrl.stack import NO_STACK, file_stack_item, legacy_proposal, stack_in_force
 from kstrl.statedir import STATE_DIR_NAME, state_dir
-from kstrl.toolchains import is_python_project
-from kstrl.verify import VerifyConfig, resolve_verify_commands
 
 if TYPE_CHECKING:
     from kstrl.ui.base import UI
@@ -68,6 +65,9 @@ DOCTOR_SCHEMA_VERSION = 2
 STATUS_OK = "ok"
 STATUS_WARN = "warn"
 STATUS_FAIL = "fail"
+
+#: What to do about a ``[stack]`` nobody confirmed (#696 slice 3).
+STACK_CONFIRM_FIX = "Run ks factory and confirm it, or ks inbox approve its item."
 
 VERDICT_READY = "ready"
 VERDICT_READY_WITH_WARNINGS = "ready-with-warnings"
@@ -98,7 +98,7 @@ FIT_BOUNDARIES: tuple[str, ...] = (
     "against a PRD, so work whose acceptance criteria are not known yet "
     "has nothing to grade.",
     "Tier A reads the repository and runs none of your commands. `ks doctor "
-    "--measure` runs your test, typecheck and lint commands once on the base "
+    "--measure` runs your [stack] checks once on the base "
     "branch, as `ks factory` does before any engineer and refuses to start "
     "when one of them fails there. One run cannot tell you whether your "
     "suite is fast or flaky.",
@@ -315,7 +315,7 @@ def check_build_manifest(root: Path) -> _CheckResult:
     a root build manifest in its allowedPaths, so without one the
     architect can only halt and ask who writes it, after a paid call.
     A kstrl.toml that does not load routes through `_not_evaluated`,
-    because whether ``[verify]`` names a command is then unknown.
+    because whether it holds a ``[stack]`` is then unknown.
     """
     try:
         blocker = build_manifest_blocker(root)
@@ -327,80 +327,39 @@ def check_build_manifest(root: Path) -> _CheckResult:
 
 
 def check_verify_commands(root: Path) -> _CheckResult:
-    """The three commands Phase 1 will run.
+    """The ``[stack]`` checks Phase 1 and Phase 3 will run (#696).
 
-    Consumed by `verify.resolve_verify_commands`. Tier A resolves
-    them and prints them; it does not run them, so it cannot say
-    whether they pass. A failed load routes through `_not_evaluated`
-    rather than restating the exception: `check_kstrl_config` already
-    reports the same failed load, once, with the fragment naming what
-    is wrong; this check's own catch stays, because a bug inside it
-    must still traceback rather than get swallowed by a catch-all.
+    Tier A reads them and prints them; it does not run them. With no
+    ``[stack]`` every run refuses, and when kstrl.toml still holds retired
+    ``[verify]`` commands they are filed as a proposed stack in the inbox
+    (#696 decision 12): one open stack_confirmation item, which nothing
+    approves but a person, and only once kstrl.toml holds its text. A failed
+    load routes through `_not_evaluated`, as before.
     """
     try:
-        config = VerifyConfig.load(root)
+        stack = stack_in_force(root)
+        proposal = legacy_proposal(root) if stack is None else None
     except (OSError, ValueError):
         return _not_evaluated("verify_commands")
-    if config.project_stack is not None:  # #696: Phase 1's and Phase 3's commands
-        listed = ", ".join(f"{name} `{cmd}`" for name, cmd in config.project_stack.checks)
+    if stack is not None and stack.unconfirmed:
+        return (STATUS_FAIL, f"the [stack] in kstrl.toml {stack.unconfirmed}", STACK_CONFIRM_FIX)
+    if stack is not None:
+        listed = ", ".join(f"{name} `{cmd}`" for name, cmd in stack.checks)
         return (STATUS_OK, f"Phase 1 and Phase 3 will run the [stack] checks: {listed}", "")
-    commands = resolve_verify_commands(config, root)
-    stated = f"test `{commands.test}`, typecheck `{commands.typecheck}`, lint `{commands.lint}`"
-    unset = [
-        key
-        for key, value in (
-            ("test_command", config.test_command),
-            ("typecheck_command", config.typecheck_command),
-            ("lint_command", config.lint_command),
-        )
-        if value is None
-    ]
-    contract, contract_uses_uv = _contract_test_command(root)
-    has_pyproject = (root / "pyproject.toml").exists()
-    if unset and not is_python_project(root):
-        return (
-            STATUS_WARN,
-            f"{len(unset)} of 3 commands fall back to a `uv run` default "
-            f"({', '.join(unset)}) and there is no pyproject.toml or setup.py at "
-            f"{root}, so Phase 1 fails them without running them: {stated}; {contract}",
-            "Set [verify] test_command / typecheck_command / lint_command "
-            'to the commands this project actually uses, or to "" to turn a gate off.',
-        )
-    if contract_uses_uv and not has_pyproject:
-        return (
-            STATUS_WARN,
-            f"Phase 1 will run {stated}; {contract}, and there is no "
-            f"pyproject.toml at {root}, so `uv run` has no project to run in",
-            "Set [contract] test_command to the command this project's tests "
-            "run with; Phase 3 runs it on every merged tier.",
-        )
-    return (
-        STATUS_OK,
-        f"Phase 1 will run {stated}; {contract}; Tier A does not run them, `ks check` does",
-        "",
-    )
-
-
-def _contract_test_command(root: Path) -> tuple[str, bool]:
-    """What Phase 3 runs on merged tiers, and whether it runs through `uv run`.
-
-    Read from the row `ks config show` prints for `[contract]
-    test_command`, value and source, so the two cannot disagree (#628).
-    A configuration that report rejects is `check_kstrl_config`'s row.
-    """
+    if proposal is None:
+        return (STATUS_FAIL, NO_STACK, "Write a [stack] in kstrl.toml, then confirm it.")
     try:
-        rows = build_config_report(root).rows
+        item = file_stack_item(root, proposal, proposal=True)
     except SURFACE_REJECTIONS as exc:
         raise_if_defect(exc)
-        rows = ()
-    for row in rows:
-        if (row.section, row.key) == ("contract", "test_command"):
-            return (
-                f"Phase 3 will run `{row.shown}` on merged tiers "
-                f"([contract] test_command, {row.source})",
-                _verify_command_runs_through_uv(row.shown),
-            )
-    return ("Phase 3's [contract] test_command did not resolve (see kstrl_config)", False)
+        return (STATUS_FAIL, f"{NO_STACK} No proposal was filed: {exc}", "")
+    return (
+        STATUS_FAIL,
+        f"{NO_STACK} Filed the retired [verify] commands as proposed [stack] "
+        f"{proposal.digest[:12]} (inbox item {item.id[:8]}); nothing approved it.",
+        f"ks inbox show {item.id[:8]} prints the table: replace the [verify] command keys "
+        f"in kstrl.toml with it, then ks inbox approve {item.id[:8]}.",
+    )
 
 
 def _interface_file_count(text: str) -> int:

@@ -30,6 +30,7 @@ from kstrl.timeout import TimeoutConfig
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
 from tests.helpers.executables import put_on_path
+from tests.helpers.stack_confirmation import in_process_stack
 from tests.spine_utils import init_kstrl_repo
 
 #: Appends one line to lint_runs.txt every time the gate runs, then
@@ -301,7 +302,8 @@ def test_the_factory_worker_hands_the_reading_to_the_next_iteration(tmp_path: Pa
         0.0,  # sleep_seconds
         max_iterations=2,
         verify_config=VerifyConfig(
-            lint_command="test -f fixed.txt", fast_iteration_checks=["linter"]
+            project_stack=in_process_stack({"lint": "test -f fixed.txt"}),
+            fast_iteration_checks=["linter"],
         ),
         run_id="test-run",
     )

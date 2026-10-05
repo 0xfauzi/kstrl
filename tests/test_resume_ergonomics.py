@@ -36,6 +36,7 @@ from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
 from tests.helpers import gitrepo
 from tests.helpers.run_limits import every_limit_argv
+from tests.helpers.stack_confirmation import in_process_stack
 
 # ---------------------------------------------------------------------------
 # Shared builders (pattern follows tests/test_review_gates.py)
@@ -118,10 +119,9 @@ def _factory_config(**overrides: object) -> FactoryConfig:
         max_retries=0,
         retry_delay=0,
         review_mode="skip",
+        project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
         verify_config=VerifyConfig(
-            test_command="true",
-            typecheck_command="true",
-            lint_command="true",
+            project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
             check_diff_scope=False,
             check_bad_patterns=False,
             subprocess_timeout=5.0,

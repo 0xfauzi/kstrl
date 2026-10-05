@@ -33,6 +33,7 @@ from kstrl.config import KstrlConfig
 from kstrl.policy import PolicyConfig
 from kstrl.ui import PlainUI
 from tests.helpers import gitrepo
+from tests.helpers.stack_confirmation import in_process_stack
 
 #: The one bad byte, as a whole word rather than a split-off fragment, so
 #: codespell reads a French noun instead of a typo for a young cow. See
@@ -374,9 +375,7 @@ def test_the_mechanical_verifier_returns_a_verdict_on_a_diff_it_cannot_decode(
         base_branch="main",
         allowed_paths=None,
         config=verify.VerifyConfig(
-            test_command="true",
-            typecheck_command="true",
-            lint_command="true",
+            project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
             subprocess_timeout=30.0,
         ),
         adequacy_config=AdequacyConfig(enabled=True),

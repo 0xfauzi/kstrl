@@ -57,6 +57,7 @@ from tests.helpers.adequacy_fixture import (
     run_adequacy,
 )
 from tests.helpers.fakemutmut import junit, put_mutmut_on_path
+from tests.helpers.stack_confirmation import in_process_stack
 
 #: Real seconds the loop test may take before the fuse fails it. The loop
 #: runs on a mocked clock; this bound is on the REAL one, in the test
@@ -292,7 +293,9 @@ class TestZeroMeansNoLimitAtEveryWait:
             manifest,
             root,
             ContractConfig(
-                test_command=f"{sys.executable} -c 'import time; time.sleep(0.2)'",
+                project_stack=in_process_stack(
+                    {"tests": f"{sys.executable} -c 'import time; time.sleep(0.2)'"}
+                ),
                 timeout=0.0,
             ),
             PlainUI(no_color=True, file=io.StringIO()),
@@ -317,7 +320,9 @@ class TestZeroMeansNoLimitAtEveryWait:
             manifest,
             root,
             ContractConfig(
-                test_command=f"{sys.executable} -c 'import time; time.sleep(0.2)'",
+                project_stack=in_process_stack(
+                    {"tests": f"{sys.executable} -c 'import time; time.sleep(0.2)'"}
+                ),
                 timeout=0.0,
             ),
             PlainUI(no_color=True, file=io.StringIO()),
@@ -472,9 +477,7 @@ def _factory_run(root: Path, config: FactoryConfig, usage: UsageTotals | None) -
     config.retry_delay = 0
     config.review_mode = "skip"
     config.verify_config = VerifyConfig(
-        test_command="true",
-        typecheck_command="true",
-        lint_command="true",
+        project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
         check_diff_scope=False,
         check_bad_patterns=False,
     )

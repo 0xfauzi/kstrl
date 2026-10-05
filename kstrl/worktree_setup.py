@@ -9,11 +9,12 @@ added or upgraded a dependency was measured against whatever the operator
 had installed, a false fail or a false pass, with nothing in the output
 saying so.
 
-``[factory] worktree_setup_command`` names the command that gives a
-worktree its own dependency tree. It runs where the branch's lockfile is
-what the tree holds: in a component worktree before the engineer starts
-and again before Phase 1, and in a contract or integration worktree after
-its merges and before its tests or reviewer. A component's ``scaffold``
+``[stack] setup`` (#696; ``[factory] worktree_setup_command`` until the
+flag day) names the command that gives a worktree its own dependency
+tree. It runs where the branch's lockfile is what the tree holds: in a
+component worktree before the engineer starts and again before Phase 1,
+and in a contract or integration worktree after its merges and before its
+tests or reviewer. A component's ``scaffold``
 replaces it for that component's worktree. Empty means no setup.
 
 It runs through :func:`kstrl.verify.run_scrubbed`, so it gets exactly the
@@ -43,8 +44,8 @@ class WorktreeSetup:
     command: str = ""
     timeout: float = 0.0
     #: A ``[stack]``'s ``env`` (#696): the setup sees the stack's scrub,
-    #: as its checks do. None is the allowlist every gate gets without one.
-    env: tuple[str, ...] | None = None
+    #: as its checks do.
+    env: tuple[str, ...] = ()
     #: #700 slice 2: the SETUP-zone rung of a run under a ``[stack]``; the
     #: setup runs inside it. None runs on the host.
     rung: ProvenRung | None = None

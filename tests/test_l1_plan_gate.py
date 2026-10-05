@@ -45,6 +45,7 @@ from kstrl.review import ReviewResult
 from kstrl.serve import RunOutcome, check_parked_merges, classify_run
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
+from tests.helpers.stack_confirmation import in_process_stack
 from tests.test_merge_gate_park import (
     CMDS,
     ENGINEER,
@@ -328,10 +329,9 @@ def _in_process(root: Path, channel: _Channel, monkeypatch: pytest.MonkeyPatch) 
         retry_delay=0,
         create_prs=False,
         review_mode="skip",
+        project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
         verify_config=VerifyConfig(
-            test_command="true",
-            typecheck_command="true",
-            lint_command="true",
+            project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
             check_bad_patterns=False,
             subprocess_timeout=30.0,
         ),

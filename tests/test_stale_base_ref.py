@@ -25,6 +25,7 @@ from kstrl.scope import ComponentScope
 from kstrl.ui.plain import PlainUI
 from tests.helpers.component_prd import write_component_prd
 from tests.helpers.gitrepo import git_in, set_identity
+from tests.helpers.stack_confirmation import in_process_stack
 
 
 def _sha(repo: Path, rev: str) -> str:
@@ -196,7 +197,7 @@ def test_the_contract_checkout_carries_the_merged_tier(fx: StaleBase) -> None:
     )
     config = ContractConfig(
         mode=ContractMode.TIER.value,
-        test_command="test -f src/rules.py",
+        project_stack=in_process_stack({"tests": "test -f src/rules.py"}),
         timeout=120.0,
     )
     result = contract.run_integrated_base_check(
@@ -221,7 +222,7 @@ def test_a_contract_run_that_collected_nothing_says_so(fx: StaleBase) -> None:
     )
     config = ContractConfig(
         mode=ContractMode.TIER.value,
-        test_command="exit 5",
+        project_stack=in_process_stack({"tests": "exit 5"}),
         timeout=120.0,
     )
     result = contract.run_integrated_base_check(

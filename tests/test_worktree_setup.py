@@ -34,6 +34,7 @@ from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
 from tests.helpers import gitrepo
 from tests.helpers.procs import wait_for_pid_to_die
+from tests.helpers.stack_confirmation import confirm_stack, in_process_stack, write_stack
 
 CHECK = "node check.js"
 #: What ``npm ci`` does, without a registry: wipe node_modules, install the lock.
@@ -144,18 +145,24 @@ def _run(
         review_mode="skip",
         integration_review=False,
         progress_log_path=root / ".kstrl" / "progress.jsonl",
+        project_stack=in_process_stack(
+            {"tests": gate, "typecheck": typecheck_and_lint, "lint": typecheck_and_lint},
+            setup=setup,
+        ),
         verify_config=VerifyConfig(
-            test_command=gate,
-            typecheck_command=typecheck_and_lint,
-            lint_command=typecheck_and_lint,
+            project_stack=in_process_stack(
+                {"tests": gate, "typecheck": typecheck_and_lint, "lint": typecheck_and_lint},
+                setup=setup,
+            ),
             check_diff_scope=False,
             check_bad_patterns=False,
         ),
         contract_config=ContractConfig(
-            mode=ContractMode.TIER.value, test_command=contract_gate or gate, timeout=60
+            mode=ContractMode.TIER.value,
+            project_stack=in_process_stack({"tests": contract_gate or gate}, setup=setup),
+            timeout=60,
         ),
         timeout_config=TimeoutConfig(agent_iteration=60, component_total=120),
-        worktree_setup_command=setup,
     )
     base = KstrlConfig(
         prompt_file=root / "scripts" / "kstrl" / "prompt.md",
@@ -314,7 +321,7 @@ def test_the_gate_does_not_use_the_root_checkouts_node_modules(
     result, comp = _run(root, _engineer("2.0.0", "1.0.0"), CHECK, INSTALL, monkeypatch)
 
     assert result.failed == ["a"]
-    assert (comp.failed_phase, comp.failed_check) == ("verify", "test_suite")
+    assert (comp.failed_phase, comp.failed_check) == ("verify", "stack:tests")
     log = next((root / ".kstrl" / "debug").glob("*/a/attempt-1/test_suite.log"))
     assert "greet 2.0.0" in log.read_text(encoding="utf-8")
 
@@ -358,7 +365,6 @@ def test_a_hung_setup_is_killed_on_time(tmp_path: Path) -> None:
     gate_ran = tmp_path / "gate-ran"
     (root / "kstrl.toml").write_text(
         "[factory]\n"
-        f"worktree_setup_command = 'sleep 300 >/dev/null 2>&1 & echo $! >> {pids}; wait'\n"
         "worktree_setup_timeout = 2\n"
         "integration_review = false\n"
         "[verify]\n"
@@ -366,6 +372,12 @@ def test_a_hung_setup_is_killed_on_time(tmp_path: Path) -> None:
         "check_bad_patterns = false\n",
         encoding="utf-8",
     )
+    write_stack(
+        root,
+        {"tests": f"touch {gate_ran}"},
+        setup=f"sleep 300 >/dev/null 2>&1 & echo $! >> {pids}; wait",
+    )
+    confirm_stack(root)
     env = {
         **os.environ,
         "AGENT_CMD": "echo '<promise>COMPLETE</promise>'",
@@ -376,8 +388,6 @@ def test_a_hung_setup_is_killed_on_time(tmp_path: Path) -> None:
         *("factory", "--manifest", str(manifest_path), "--root", str(root), "--yes"),
         *("--no-prs", "--max-parallel", "1", "--max-retries", "0"),
         *("--review-mode", "skip", "--contract-check", "skip"),
-        *("--test-command", f"touch {gate_ran}"),
-        *("--typecheck-command", "true", "--lint-command", "true"),
         *("--ui", "plain", "--no-color"),
     ]
     proc = subprocess.Popen(
@@ -397,12 +407,12 @@ def test_a_hung_setup_is_killed_on_time(tmp_path: Path) -> None:
             proc.communicate()
             pytest.fail("ks factory did not finish within 180s of real time")
         children = [int(line) for line in pids.read_text(encoding="utf-8").split()]
-        # Once on the base before any engineer (#654), once before the
-        # engineer, once before Phase 1.
-        assert len(children) == 3, out
+        # Once, on the base before any engineer (#654): under a [stack] a
+        # failed setup refuses the base (#696), so nothing runs after it.
+        assert len(children) == 1, out
         for pid in children:
             assert wait_for_pid_to_die(pid, timeout=10.0), f"setup child {pid} outlived its timeout"
-        assert proc.returncode == 1, out
+        assert proc.returncode == 2, out
         assert "did not finish within 2.0s; its process group was killed" in out
         assert not gate_ran.exists()
     finally:

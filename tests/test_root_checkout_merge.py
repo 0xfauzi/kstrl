@@ -41,6 +41,7 @@ import pytest
 from kstrl.manifest import Manifest
 from tests.helpers.gitrepo import git_in, set_identity
 from tests.helpers.procs import kill_group
+from tests.helpers.stack_confirmation import confirm_stack, write_stack
 
 COMP = "greeter"
 BRANCH = f"kstrl/factory/{COMP}"
@@ -211,7 +212,10 @@ def _initialised_project(tmp_path: Path, *, commit_init: bool = True) -> Path:
     assert init.returncode == 0, init.stdout
     (root / "spec.md").write_text("# Spec\nBuild a greeter.\n", encoding="utf-8")
     git_in(root, "add", *(["-A"] if commit_init else ["spec.md"]))
+    write_stack(root)
+    git_in(root, "add", "-A")
     git_in(root, "commit", "-q", "-m", "ks init")
+    confirm_stack(root)
     return root
 
 
@@ -295,12 +299,6 @@ def test_uncommitted_ks_init_output_does_not_fail_phase_1(tmp_path: Path) -> Non
     run = _factory(
         root,
         _stub_agent(tmp_path),
-        "--test-command",
-        "true",
-        "--typecheck-command",
-        "true",
-        "--lint-command",
-        "true",
     )
 
     (comp,) = Manifest.load(root / "scripts" / "kstrl" / "manifest.json").components
@@ -329,12 +327,6 @@ def test_the_engineer_reads_prompt_and_claude_md_from_the_root_checkout(tmp_path
     run = _factory(
         root,
         _stub_agent(tmp_path, prompt_dump=dump),
-        "--test-command",
-        "true",
-        "--typecheck-command",
-        "true",
-        "--lint-command",
-        "true",
     )
 
     assert dump.is_file(), run.stdout
@@ -411,12 +403,6 @@ def test_phase_1_compares_the_engineers_prd_with_the_planned_copy(
     run = _factory(
         root,
         _stub_agent(tmp_path, rewrite_criteria=rewrite),
-        "--test-command",
-        "true",
-        "--typecheck-command",
-        "true",
-        "--lint-command",
-        "true",
     )
 
     (comp,) = Manifest.load(root / "scripts" / "kstrl" / "manifest.json").components
@@ -466,12 +452,6 @@ def test_without_worktrees_phase_1_still_compares_with_the_planned_copy(
     run = _factory(
         root,
         _stub_agent_in_root(tmp_path, rewrite_criteria=rewrite),
-        "--test-command",
-        "true",
-        "--typecheck-command",
-        "true",
-        "--lint-command",
-        "true",
         "--no-worktrees",
     )
 

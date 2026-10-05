@@ -56,6 +56,7 @@ from kstrl.ui.plain import PlainUI
 from kstrl.verify import CheckResult, VerificationResult, VerifyConfig
 from tests.helpers import astwalk, gitrepo
 from tests.helpers.component_prd import write_component_prd
+from tests.helpers.stack_confirmation import in_process_stack
 from tests.test_pipeline import _factory_config, _make_pipeline
 
 COMP = "comp-a"
@@ -115,10 +116,9 @@ def _run(
         max_retries=0,
         retry_delay=0,
         review_mode="skip",
+        project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
         verify_config=VerifyConfig(
-            test_command="true",
-            typecheck_command="true",
-            lint_command="true",
+            project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
             check_bad_patterns=False,
             subprocess_timeout=5.0,
         ),

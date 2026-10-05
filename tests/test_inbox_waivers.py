@@ -40,6 +40,7 @@ from tests.helpers import gitrepo
 from tests.helpers.executables import write_executable
 from tests.helpers.rendered import flat
 from tests.helpers.settle import mounted, settled
+from tests.helpers.stack_confirmation import confirm_stack, write_stack
 from tests.helpers.tui_screens import home_app
 
 COMP = "comp"
@@ -81,12 +82,6 @@ FACTORY_FLAGS = (
     "skip",
     "--contract-check",
     "skip",
-    "--test-command",
-    "true",
-    "--typecheck-command",
-    "true",
-    "--lint-command",
-    "true",
 )
 
 BASE_TESTS = "def test_one():\n    assert 1 + 1 == 2\n\n\ndef test_two():\n    assert 2 * 2 == 4\n"
@@ -192,6 +187,8 @@ def _repo(tmp_path: Path, toml: str) -> Path:
     prd.write_text(json.dumps({"branchName": BRANCH, "userStories": [story]}), encoding="utf-8")
     (root / "kstrl.toml").write_text("[inbox]\nenabled = true\n" + toml, encoding="utf-8")
     gitrepo.git_in(root, "add", "-A")
+    write_stack(root)
+    gitrepo.git_in(root, "add", "-A")
     gitrepo.git_in(root, "commit", "-q", "-m", "init")
     origin = tmp_path / "origin.git"
     gitrepo.git_in(tmp_path, "init", "-q", "--bare", str(origin))
@@ -215,6 +212,7 @@ def _repo(tmp_path: Path, toml: str) -> Path:
         ],
     }
     _manifest_path(root).write_text(json.dumps(manifest), encoding="utf-8")
+    confirm_stack(root)
     return root
 
 

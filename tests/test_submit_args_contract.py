@@ -49,6 +49,7 @@ from kstrl.statedir import plan_prd_path
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
 from kstrl.worktree_setup import WorktreeSetup
+from tests.helpers.stack_confirmation import in_process_stack
 
 COMP = "comp-a"
 PRD_REL = f"scripts/kstrl/feature/{COMP}/prd.json"
@@ -173,10 +174,9 @@ def _submitted(
         max_retries=0,
         retry_delay=0,
         review_mode="skip",
+        project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
         verify_config=VerifyConfig(
-            test_command="true",
-            typecheck_command="true",
-            lint_command="true",
+            project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
             check_diff_scope=False,
             check_bad_patterns=False,
             subprocess_timeout=5.0,

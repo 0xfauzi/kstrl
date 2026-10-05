@@ -14,13 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.breaker import (
-    NO_TEST_COMMAND_SIGNATURE,
-    BreakerConfig,
-    NoProgressBreaker,
-    compute_diff_hash,
-    compute_test_signature,
-)
+from kstrl.breaker import BreakerConfig, NoProgressBreaker, compute_diff_hash
 from kstrl.config import KstrlConfig
 from kstrl.factory import ComponentResult
 from kstrl.loop import run_loop
@@ -53,34 +47,23 @@ class TestBreakerConfig:
     def test_defaults(self) -> None:
         config = BreakerConfig()
         assert config.no_progress_iterations == 3
-        assert config.test_command is None
-        assert config.test_timeout == 300.0
 
     def test_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("KSTRL_BREAKER_ITERATIONS", "5")
-        monkeypatch.setenv("KSTRL_BREAKER_TEST_CMD", "pytest -q")
-        monkeypatch.setenv("KSTRL_BREAKER_TEST_TIMEOUT", "60")
         config = BreakerConfig.from_env()
         assert config.no_progress_iterations == 5
-        assert config.test_command == "pytest -q"
-        assert config.test_timeout == 60.0
 
     def test_load_toml_and_env_precedence(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        (tmp_path / "kstrl.toml").write_text(
-            '[breaker]\nno_progress_iterations = 7\ntest_command = "toml-cmd"\ntest_timeout = 120\n'
-        )
+        (tmp_path / "kstrl.toml").write_text("[breaker]\nno_progress_iterations = 7\n")
         config = BreakerConfig.load(tmp_path)
         assert config.no_progress_iterations == 7
-        assert config.test_command == "toml-cmd"
-        assert config.test_timeout == 120.0
         monkeypatch.setenv("KSTRL_BREAKER_ITERATIONS", "2")
         config = BreakerConfig.load(tmp_path)
         assert config.no_progress_iterations == 2
-        assert config.test_command == "toml-cmd"
 
     def test_zero_disables(self, tmp_path: Path) -> None:
         _init_repo(tmp_path)
@@ -167,45 +150,6 @@ class TestComputeDiffHash:
         after = compute_diff_hash(tmp_path)
 
         assert before == after
-
-
-class TestComputeTestSignature:
-    def test_no_command_is_constant(self, tmp_path: Path) -> None:
-        config = BreakerConfig(test_command=None)
-        assert compute_test_signature(tmp_path, config) == (NO_TEST_COMMAND_SIGNATURE)
-
-    def test_masks_durations(self, tmp_path: Path) -> None:
-        """Two runs of the same failing suite differ only in timings;
-        the signature must not."""
-        fast = BreakerConfig(
-            test_command='echo "FAILED test_x in 0.12s"; exit 1',
-        )
-        slow = BreakerConfig(
-            test_command='echo "FAILED test_x in 4.56s"; exit 1',
-        )
-        assert compute_test_signature(tmp_path, fast) == (compute_test_signature(tmp_path, slow))
-
-    def test_distinguishes_failures(self, tmp_path: Path) -> None:
-        sig_x = compute_test_signature(
-            tmp_path,
-            BreakerConfig(test_command='echo "FAILED test_x"; exit 1'),
-        )
-        sig_y = compute_test_signature(
-            tmp_path,
-            BreakerConfig(test_command='echo "FAILED test_y"; exit 1'),
-        )
-        assert sig_x != sig_y
-
-    def test_distinguishes_return_codes(self, tmp_path: Path) -> None:
-        sig_pass = compute_test_signature(
-            tmp_path,
-            BreakerConfig(test_command="exit 0"),
-        )
-        sig_fail = compute_test_signature(
-            tmp_path,
-            BreakerConfig(test_command="exit 1"),
-        )
-        assert sig_pass != sig_fail
 
 
 class _ScriptedAgent:
@@ -309,54 +253,6 @@ class TestRunLoopBreakerIntegration:
         assert result.no_progress is False
         assert result.iterations == 5  # ordinary max-iterations exit
         assert result.exit_code == 1
-
-    def test_changing_test_signature_resets_streak(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """Same tree but a different test outcome each probe (flaky or
-        externally-progressing suite): the streak restarts, so the
-        breaker never trips (fails open)."""
-        _init_repo(tmp_path)
-        config = _loop_config(tmp_path, max_iterations=4)
-        counter = tmp_path.parent / "probe-counter"
-        counter.write_text("0")
-        # Outside the repo tree on purpose: the probe's own state must
-        # not change the diff hash.
-        probe = (
-            f'n=$(cat "{counter}"); n=$((n+1)); echo "$n" > "{counter}"; '
-            'echo "ERROR flaky-$n"; exit 1'
-        )
-        agent = _ScriptedAgent()
-        result = run_loop(
-            config,
-            PlainUI(no_color=True),
-            agent,
-            tmp_path,
-            breaker_config=BreakerConfig(
-                no_progress_iterations=2,
-                test_command=probe,
-            ),
-        )
-        assert result.no_progress is False
-        assert result.iterations == 4
-
-    def test_stable_test_signature_trips(self, tmp_path: Path) -> None:
-        _init_repo(tmp_path)
-        config = _loop_config(tmp_path, max_iterations=10)
-        agent = _ScriptedAgent()
-        result = run_loop(
-            config,
-            PlainUI(no_color=True),
-            agent,
-            tmp_path,
-            breaker_config=BreakerConfig(
-                no_progress_iterations=2,
-                test_command='echo "FAILED test_stall"; exit 1',
-            ),
-        )
-        assert result.no_progress is True
-        assert result.iterations == 2
 
     def test_inert_outside_git_repo(self, tmp_path: Path) -> None:
         """No repo, nothing to fingerprint: the loop runs to its

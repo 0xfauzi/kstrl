@@ -31,6 +31,7 @@ import pytest
 
 from kstrl.init_cmd import _detect_project_context, gitignore_block
 from tests.helpers import gitrepo, procs
+from tests.helpers.stack_confirmation import confirm_stack, write_stack
 
 REPO = Path(__file__).resolve().parent.parent
 COMP = "comp-a"
@@ -186,7 +187,10 @@ def _repo(tmp_path: Path, toml: str) -> Path:
         json.dumps(manifest), encoding="utf-8"
     )
     gitrepo.git_in(root, "add", "-A")
+    write_stack(root)
+    gitrepo.git_in(root, "add", "-A")
     gitrepo.git_in(root, "commit", "-q", "-m", "init")
+    confirm_stack(root)
     return root
 
 
@@ -262,12 +266,6 @@ def _factory(
         "1",
         "--contract-check",
         "skip",
-        "--test-command",
-        "true",
-        "--typecheck-command",
-        "true",
-        "--lint-command",
-        "true",
         *flags,
     ]
     return _run(argv, root, {**_env(knowledge), **(extra_env or {})})
@@ -426,7 +424,10 @@ def _architect_repo(tmp_path: Path, script: str) -> Path:
         encoding="utf-8",
     )
     gitrepo.git_in(root, "add", "-A")
+    write_stack(root)
+    gitrepo.git_in(root, "add", "-A")
     gitrepo.git_in(root, "commit", "-q", "-m", "init")
+    confirm_stack(root)
     return root
 
 

@@ -35,12 +35,10 @@ from kstrl.config_preflight import config_sections
 from kstrl.contract import ContractMode
 from kstrl.divergence import DivergenceMode
 from kstrl.factory import VALID_CLAIM_AGREEMENT
-from kstrl.gateparse import GATE_FORMATS, GATE_LINT, GATE_TEST, GATE_TOOLS, GATE_TYPECHECK
 from kstrl.knowledge import _VALID_DEPENDENCY_SCOPES
 from kstrl.linear import _VALID_AUTH_MODES
 from kstrl.review import ReviewMode
 from kstrl.security import VALID_SEVERITIES, SecurityMode
-from kstrl.verify import FAST_ITERATION_GATES
 
 #: A value no closed field accepts. Distinct enough to find in output.
 BAD_VALUE = "bogus-562"
@@ -72,23 +70,13 @@ CLOSED: dict[tuple[str, str], ClosedField] = {
     ("FactoryConfig", "claim_agreement"): ClosedField(
         "factory", "claim_agreement", "KSTRL_FACTORY_CLAIM_AGREEMENT", VALID_CLAIM_AGREEMENT
     ),
-    ("VerifyConfig", "test_tool"): ClosedField(
-        "verify",
-        "test_tool",
-        "KSTRL_VERIFY_TEST_TOOL",
-        (*GATE_TOOLS[GATE_TEST], *GATE_FORMATS[GATE_TEST]),
-    ),
-    ("VerifyConfig", "typecheck_tool"): ClosedField(
-        "verify", "typecheck_tool", "KSTRL_VERIFY_TYPECHECK_TOOL", GATE_TOOLS[GATE_TYPECHECK]
-    ),
-    ("VerifyConfig", "lint_tool"): ClosedField(
-        "verify", "lint_tool", "KSTRL_VERIFY_LINT_TOOL", GATE_TOOLS[GATE_LINT]
-    ),
     ("VerifyConfig", "fast_iteration_checks"): ClosedField(
         "verify",
         "fast_iteration_checks",
         "KSTRL_VERIFY_FAST_ITERATION_CHECKS",
-        FAST_ITERATION_GATES,
+        # The [stack]'s check names (#696): with no stack, which is how
+        # these tests load, no name is accepted.
+        (),
         is_list=True,
     ),
     ("SecurityConfig", "mode"): ClosedField(
@@ -148,21 +136,15 @@ OPEN: dict[tuple[str, str], str] = {
     ),
     ("FactoryConfig", "review_agent_cmd"): "a shell command",
     ("FactoryConfig", "review_model"): "a model name",
-    ("FactoryConfig", "worktree_setup_command"): "a shell command",
-    ("VerifyConfig", "test_command"): "a shell command",
-    ("VerifyConfig", "typecheck_command"): "a shell command",
-    ("VerifyConfig", "lint_command"): "a shell command",
     ("VerifyConfig", "dead_code_command"): "a shell command",
     ("VerifyConfig", "progress_file_path"): "a path",
     ("SecurityConfig", "agent_cmd"): "a shell command",
     ("SecurityConfig", "model"): "a model name",
-    ("ContractConfig", "test_command"): "a shell command",
     ("PolicyConfig", "paths_deny"): "path globs",
     ("PolicyConfig", "secret_patterns"): "regular expressions",
     ("PolicyConfig", "enforcement_paths_extra"): "paths",
     ("PolicyConfig", "license_allow"): "SPDX identifiers, an open set",
     ("PolicyConfig", "license_deny_partial"): "SPDX identifier fragments, an open set",
-    ("BreakerConfig", "test_command"): "a shell command",
     ("KnowledgeConfig", "distill_model"): "a model name",
     ("GitHubIntakeConfig", "repo"): "owner/name of a repository",
     ("GitHubIntakeConfig", "queued_label"): "a label name",

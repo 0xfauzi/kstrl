@@ -38,6 +38,7 @@ from kstrl.timeout import TimeoutConfig
 from kstrl.ui.plain import PlainUI
 from tests.helpers import gitrepo
 from tests.helpers.run_limits import every_limit_argv, limit_option
+from tests.helpers.stack_confirmation import confirm_stack, write_stack
 
 #: The flags the original run is launched with in the end-to-end tests.
 #: Every verify command is `true` so Phase 1 fails on the PRD alone.
@@ -51,12 +52,6 @@ RUN_FLAGS = (
     "skip",
     "--contract-check",
     "skip",
-    "--test-command",
-    "true",
-    "--typecheck-command",
-    "true",
-    "--lint-command",
-    "true",
 )
 
 REFUSAL = "Refusing to run: the retry cannot carry over the configuration of the run it resumes"
@@ -97,7 +92,10 @@ def _repo(tmp_path: Path) -> Path:
             }
         )
     gitrepo.git_in(root, "add", "-A")
+    write_stack(root)
+    gitrepo.git_in(root, "add", "-A")
     gitrepo.git_in(root, "commit", "-q", "-m", "init")
+    confirm_stack(root)
     manifest = {
         "version": "1",
         "specFile": "spec.md",

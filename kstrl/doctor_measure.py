@@ -1,8 +1,8 @@
 """`ks doctor --measure`: Tier B, the base branch's own gates (#654).
 
 Runs the reading `ks factory` takes before any engineer is called
-(:func:`kstrl.base_gates.measure_base_gates`: Phase 1's test, typecheck and
-lint commands in a throwaway worktree of the base commit) and turns it into
+(:func:`kstrl.base_gates.measure_base_gates`: Phase 1's [stack] checks in a
+throwaway worktree of the base commit) and turns it into
 one more doctor row. A gate that measurably fails there is a failed row, so
 the verdict is not-ready exactly where `ks factory` would refuse. A gate that
 ran and measured nothing (pytest collecting no tests, a timeout) is a

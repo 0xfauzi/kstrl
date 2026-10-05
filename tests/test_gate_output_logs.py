@@ -35,6 +35,7 @@ from kstrl.verify import (
     VerifyConfig,
     run_mechanical_verification,
 )
+from tests.helpers.stack_confirmation import in_process_stack
 from tests.helpers.verify_phase import _pipeline, component
 
 FAILING_TEST_NAME = "test_kstrl462_token_roundtrip_is_broken"
@@ -49,9 +50,13 @@ def _python(code: str) -> str:
 def _config(**commands: str) -> VerifyConfig:
     """Only the three gates, each ``true`` unless overridden."""
     return VerifyConfig(
-        test_command=commands.get("test", "true"),
-        typecheck_command=commands.get("typecheck", "true"),
-        lint_command=commands.get("lint", "true"),
+        project_stack=in_process_stack(
+            {
+                "tests": commands.get("test", "true"),
+                "typecheck": commands.get("typecheck", "true"),
+                "lint": commands.get("lint", "true"),
+            }
+        ),
         check_bad_patterns=False,
         subprocess_timeout=120.0,
     )

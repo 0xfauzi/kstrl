@@ -20,16 +20,17 @@ silently stop matching the other.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
 from kstrl import events as ev
-from kstrl.feature_verify import baseline_skip_reason, resolve_feature_verify_config
+from kstrl.feature_verify import baseline_skip_reason
 from kstrl.loop import LoopResult
-from kstrl.verify import VerifyConfig, resolve_verify_commands
+from kstrl.verify import VerifyConfig
+from tests.helpers.stack_confirmation import confirm_stack, write_stack
 from tests.test_feature_cmd import NOOP_VERIFY_COMMAND
 from tests.test_feature_verification import (
+    FAILED_ONCE,
     SABOTAGE_LINE,
     _drive,
     _feature_params,
@@ -69,8 +70,8 @@ class TestBaselineAttribution:
         _write_kstrl_toml(tmp_path, failing="lint")
         _, captured, text = _drive(tmp_path)
 
-        assert _report(captured, "baseline").failures == ("Linter failed (exit code 1)",)
-        assert "already failing before the implement loop: linter" in text
+        assert _report(captured, "baseline").failures == (FAILED_ONCE,)
+        assert "already failing before the implement loop: stack:lint" in text
 
     def test_a_failure_the_baseline_did_not_have_is_not_excused(
         self,
@@ -88,13 +89,10 @@ class TestBaselineAttribution:
         root.mkdir(parents=True, exist_ok=True)
         broken = "the-agent-broke-lint"
         lint = f"if [ -f {broken} ]; then echo '{SABOTAGE_LINE}'; exit 1; fi"
-        (root / "kstrl.toml").write_text(
-            "[verify]\n"
-            f"test_command = {json.dumps(NOOP_VERIFY_COMMAND)}\n"
-            f"typecheck_command = {json.dumps(NOOP_VERIFY_COMMAND)}\n"
-            f"lint_command = {json.dumps(lint)}\n",
-            encoding="utf-8",
+        write_stack(
+            root, {"tests": NOOP_VERIFY_COMMAND, "typecheck": NOOP_VERIFY_COMMAND, "lint": lint}
         )
+        confirm_stack(root)
         calls: list[int] = []
 
         def fake(config: Any, ui: Any, agent: Any, *args: Any, **kwargs: Any) -> LoopResult:
@@ -106,7 +104,7 @@ class TestBaselineAttribution:
         _, captured, text = _drive(tmp_path, loop=fake)
 
         assert _report(captured, "baseline").passed is True
-        assert _report(captured, "implement").failures == ("Linter failed (exit code 1)",)
+        assert _report(captured, "implement").failures == (f"`{lint}` exited 1",)
         assert "already failing before the implement loop" not in text
 
     def test_a_repair_report_does_not_excuse_what_the_implement_loop_broke(
@@ -127,13 +125,10 @@ class TestBaselineAttribution:
         root.mkdir(parents=True, exist_ok=True)
         broken = "the-agent-broke-lint"
         lint = f"if [ -f {broken} ]; then echo '{SABOTAGE_LINE}'; exit 1; fi"
-        (root / "kstrl.toml").write_text(
-            "[verify]\n"
-            f"test_command = {json.dumps(NOOP_VERIFY_COMMAND)}\n"
-            f"typecheck_command = {json.dumps(NOOP_VERIFY_COMMAND)}\n"
-            f"lint_command = {json.dumps(lint)}\n",
-            encoding="utf-8",
+        write_stack(
+            root, {"tests": NOOP_VERIFY_COMMAND, "typecheck": NOOP_VERIFY_COMMAND, "lint": lint}
         )
+        confirm_stack(root)
         calls: list[int] = []
 
         def fake(config: Any, ui: Any, agent: Any, *args: Any, **kwargs: Any) -> LoopResult:
@@ -152,7 +147,7 @@ class TestBaselineAttribution:
 
         assert _phases(captured) == ["baseline", "implement", "repair-1"]
         assert _report(captured, "baseline").passed is True
-        assert _report(captured, "repair-1").failures == ("Linter failed (exit code 1)",)
+        assert _report(captured, "repair-1").failures == (f"`{lint}` exited 1",)
         # The claim is about the tree BEFORE the implement loop, and that
         # tree was green. Nothing may be excused, in either report.
         assert "already failing before the implement loop" not in text
@@ -169,71 +164,15 @@ class TestBaselineAttribution:
         pre_existing = set(_report(captured, "baseline").failures) & set(
             _report(captured, "implement").failures
         )
-        assert pre_existing == {"Linter failed (exit code 1)"}
+        assert pre_existing == {FAILED_ONCE}
 
 
 class TestTheTwoSidesAreTheSameMeasurement:
-    """#288 review round 2: three separate ways the baseline and the
-    later reports could stop measuring comparable things."""
-
-    def test_the_typecheck_command_cannot_move_under_the_agent(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """Finding 9. ``toolchains.python_typecheck_default`` re-reads
-        pyproject.toml and answers ``uv run mypy`` when ``[tool.mypy]
-        files`` is present and ``uv run mypy .`` when it is not. Adding a
-        mypy scope is an ordinary engineer story, so an unpinned config
-        would have the baseline measure the whole tree and the implement
-        report measure the configured subset.
-        """
-        (tmp_path / "kstrl.toml").write_text(
-            "[verify]\n"
-            f"test_command = {json.dumps(NOOP_VERIFY_COMMAND)}\n"
-            f"lint_command = {json.dumps(NOOP_VERIFY_COMMAND)}\n",
-            encoding="utf-8",
-        )
-        (tmp_path / "pyproject.toml").write_text(
-            '[project]\nname = "demo"\nversion = "0"\n', encoding="utf-8"
-        )
-        before = resolve_feature_verify_config(tmp_path).typecheck_command
-
-        # The agent's story: give mypy a scope.
-        (tmp_path / "pyproject.toml").write_text(
-            '[project]\nname = "demo"\nversion = "0"\n\n[tool.mypy]\nfiles = ["src"]\n',
-            encoding="utf-8",
-        )
-        # Resolving again from the SAME config object is the identity,
-        # which is what pinning bought. Re-loading from disk would not
-        # be, and that is the defect: the run resolves once.
-        after = resolve_verify_commands(resolve_feature_verify_config(tmp_path), tmp_path).typecheck
-        assert before is not None
-        assert "mypy" in before
-        # Proof the input really moved, so the pin is doing work.
-        assert after != before, (before, after)
-
-    def test_the_report_and_the_engineer_prompt_name_one_command(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """The other half of finding 9. The engineer's
-        VERIFY_COMMANDS_PROMPT block is rendered by
-        ``build_project_context`` from the same config, and before the
-        pin both sides resolved independently against pyproject.toml.
-        """
-        (tmp_path / "kstrl.toml").write_text("[verify]\n", encoding="utf-8")
-        config = resolve_feature_verify_config(tmp_path)
-        # Pinned means every field is already a concrete command, so
-        # there is nothing left for a second resolution to decide.
-        assert config.test_command
-        assert config.typecheck_command
-        assert config.lint_command
-        commands = resolve_verify_commands(config, tmp_path)
-        assert (commands.test, commands.typecheck, commands.lint) == (
-            config.test_command,
-            config.typecheck_command,
-            config.lint_command,
-        )
+    """#288 review round 2: ways the baseline and the later reports could
+    stop measuring comparable things. Two of the three (a typecheck default
+    resolved from pyproject.toml, and a second resolution for the engineer
+    prompt) went with the Python defaults in #696 slice 4: a [stack]'s
+    checks are literal commands."""
 
     def test_no_baseline_when_the_loop_will_check_out_a_different_tree(
         self,
@@ -303,8 +242,11 @@ class TestTheOperatorCanDecline:
         unconditional 2 + repair_max_runs full test-suite runs with no way
         to decline. The only workaround, a no-op [verify] test_command,
         also corrupts the block the SAME config feeds the engineer.
+
+        #696 slice 4: --no-verify is the one way to run with no checks, so
+        this project has no [stack] at all and still runs.
         """
-        _write_kstrl_toml(tmp_path)
+        (tmp_path / "kstrl.toml").write_text("[verify]\n", encoding="utf-8")
         params = _feature_params(tmp_path, no_verify=True)
         seen: list[Any] = []
 
@@ -318,7 +260,7 @@ class TestTheOperatorCanDecline:
         assert _verifications(captured) == []
         assert "--no-verify" in text
         # And the loops are told nothing, so the engineer prompt carries
-        # no VERIFY_COMMANDS_PROMPT block either: declining the report
+        # no [stack] block either: declining the report
         # must not leave the agent being told a gate will run.
         assert seen == [None, None]
 
@@ -375,7 +317,8 @@ class TestVerifyConfigThreading:
         assert len(seen) == 3  # understand, implement, repair-1
         assert seen[0] is None
         assert seen[1] is not None
-        assert seen[1].lint_command == commands["lint"]
+        assert seen[1].project_stack is not None
+        assert seen[1].project_stack.checks == tuple(commands.items())
         # ONE object, so the commands the engineer is told about cannot
         # drift from the commands the report runs.
         assert seen[2] is seen[1]

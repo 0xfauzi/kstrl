@@ -52,6 +52,7 @@ from tests.helpers.astwalk import (
     package_sources,
     parsed,
 )
+from tests.helpers.stack_confirmation import in_process_stack
 from tests.test_event_stream import (
     _component,
     _make_base_config,
@@ -100,10 +101,9 @@ def two_attempt_run(tmp_path_factory: pytest.TempPathFactory) -> Path:
         max_retries=1,
         retry_delay=0,
         review_mode="skip",
+        project_stack=in_process_stack({"tests": "false", "typecheck": "true", "lint": "true"}),
         verify_config=VerifyConfig(
-            test_command="false",
-            typecheck_command="true",
-            lint_command="true",
+            project_stack=in_process_stack({"tests": "false", "typecheck": "true", "lint": "true"}),
             check_diff_scope=False,
             check_bad_patterns=False,
             subprocess_timeout=5.0,

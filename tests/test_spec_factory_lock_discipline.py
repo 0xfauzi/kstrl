@@ -26,6 +26,8 @@ import shlex
 import sys
 from pathlib import Path
 
+from tests.helpers.gitrepo import git_in
+from tests.helpers.stack_confirmation import confirm_stack, write_stack
 from tests.test_build_manifest_preflight import MANIFESTS, greenfield, run_ks
 from tests.test_decompose import _single_component_output, _story
 
@@ -81,6 +83,10 @@ class TestSpecFactoryHoldsTheLockThroughDecomposeIntoTheRun:
         so the run that follows executes with no lock held at all.
         """
         root = greenfield(tmp_path, extra={"pyproject.toml": MANIFESTS["pyproject.toml"]})
+        write_stack(root)
+        git_in(root, "add", "kstrl.toml")
+        git_in(root, "commit", "-q", "-m", "stack")
+        confirm_stack(root)
         reply = tmp_path / "architect.json"
         reply.write_text(_single_component_output([_story()]), encoding="utf-8")
         calls = tmp_path / "calls.txt"
@@ -121,12 +127,6 @@ class TestSpecFactoryHoldsTheLockThroughDecomposeIntoTheRun:
             "skip",
             "--contract-check",
             "skip",
-            "--test-command",
-            "true",
-            "--typecheck-command",
-            "true",
-            "--lint-command",
-            "true",
             "--ui",
             "plain",
             "--no-color",

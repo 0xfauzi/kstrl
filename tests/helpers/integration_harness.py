@@ -30,6 +30,7 @@ from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
 from tests.helpers.component_prd import PASSING_STORY, write_component_prd
 from tests.helpers.gitrepo import git_in, set_identity
+from tests.helpers.stack_confirmation import in_process_stack
 
 COMPONENTS = ("comp-a", "comp-b")
 STORE = "src/store.py"
@@ -218,16 +219,17 @@ def factory_config(root: Path, **overrides: Any) -> FactoryConfig:
         max_retries=0,
         retry_delay=0,
         review_mode="hard",
+        project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
         verify_config=VerifyConfig(
-            test_command="true",
-            typecheck_command="true",
-            lint_command="true",
+            project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
             check_diff_scope=False,
             check_bad_patterns=False,
             subprocess_timeout=5.0,
         ),
         contract_config=ContractConfig(
-            mode=ContractMode.TIER.value, test_command="true", timeout=60.0
+            mode=ContractMode.TIER.value,
+            project_stack=in_process_stack({"tests": "true"}),
+            timeout=60.0,
         ),
         progress_log_path=root / "progress.jsonl",
     )

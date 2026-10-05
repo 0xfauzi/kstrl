@@ -16,8 +16,8 @@ from kstrl.atomicio import atomic_write_text
 from kstrl.jsonread import read_json, read_json_file
 from kstrl.operator_context import GUIDANCE_HEADING
 from kstrl.prd import PRD
-from kstrl.toolchains import ToolchainId, detect, record_test_command, toolchain_named
-from kstrl.verify import VerifyConfig
+from kstrl.stack import load_stack
+from kstrl.toolchains import ToolchainId, detect, toolchain_named
 
 if TYPE_CHECKING:
     from kstrl.ui.base import UI
@@ -28,7 +28,12 @@ DEFAULT_PRD = {
     "userStories": [],
 }
 
-DEFAULT_PROMPT_VERSION = "1.4.0"
+DEFAULT_PROMPT_VERSION = "1.5.0"
+
+# v1.5.0 (#696 slice 4): step 9 names the `Stack` block's checks. The
+# `Verification Commands (resolved by kstrl)` block it named is gone with
+# the commands kstrl used to choose: a confirmed [stack] is the only source
+# of the commands kstrl runs, and `loop.build_project_context` renders it.
 
 # v1.4.0 (#585): the engineer no longer writes the codebase map. Step 10
 # sent its facts to `$codebase_map_path`, a file every component shares
@@ -47,8 +52,9 @@ DEFAULT_PROMPT_VERSION = "1.4.0"
 # diff_scope whether or not `ks init` output is committed, and when it is
 # committed the write lands on CLAUDE.md through the AGENTS.md symlink.
 #
-# v1.3.0 (#276): step 9 defers to the verification block the harness
-# injects (verify.VERIFY_COMMANDS_PROMPT) instead of telling the agent to
+# v1.3.0 (#276): step 9 deferred to the verification block the harness
+# injected (verify.VERIFY_COMMANDS_PROMPT, retired at the #696 flag day;
+# step 9 is now neutral) instead of telling the agent to
 # find its own typecheck and test commands. #261 made
 # verify.resolve_verify_commands the only answer to "what does Phase 1
 # run" and injected it above this body every iteration, but step 9 still
@@ -71,8 +77,8 @@ DEFAULT_PROMPT_VERSION = "1.4.0"
 # that path samples whether the agent ran anything, and it asks the agent
 # to find commands that resolve_verify_commands could have named, which
 # is the derive-your-own shape #261 exists to remove. The harness stays
-# silent there because VERIFY_COMMANDS_PROMPT claims the gate runs the
-# commands, which would be false, and because #261 decided that
+# silent there because VERIFY_COMMANDS_PROMPT (retired at the #696 flag
+# day) claimed the gate ran the commands, which would be false, and because #261 decided that
 # verify_config=None states nothing. Revisiting that is #288's job.
 #
 # The $prd_path / $progress_path / $codebase_map_path placeholders are
@@ -106,19 +112,19 @@ reviewer as already reading your diff while you write it.
    (verify only; do not switch)
 7. Pick the highest priority story where `passes` is `false` (lowest `priority` wins)
 8. Implement that ONE story (keep the change small and focused)
-9. Run the verification commands:
-   - Run every command in the `Verification Commands (resolved by kstrl)` block
-     above, lint included, exactly as written. Do NOT derive your own or substitute
-     a narrower or broader variant (an added path, a `-k` filter, a dropped flag):
-     a command the gate will not run proves nothing.
-   - If a command fails for a reason other than your work, fix the cause and never
-     substitute a different command. Missing tooling is yours to configure. A
-     command that is wrong for this project's language is not: name the `[verify]`
-     section of `kstrl.toml` in your progress entry rather than editing it, because
-     kstrl's policy envelope can treat that edit as tampering.
-   - Do NOT mark the story as done until every command passes. If that block is
+9. Run the checks:
+   - Run every command under `Checks` in the `Stack` block above, in order,
+     exactly as written. Do NOT derive your own or substitute a narrower or
+     broader variant (an added path, a filter, a dropped flag): a command kstrl
+     will not run proves nothing.
+   - If a check fails for a reason other than your work, fix the cause and never
+     substitute a different command. Missing tooling is yours to install. A
+     check that is wrong for this project is not: name the `[stack]` section of
+     `kstrl.toml` in your progress entry rather than editing it, because kstrl's
+     policy envelope can treat that edit as tampering.
+   - Do NOT mark the story as done until every check passes. If that block is
      absent, nothing will check this work mechanically: run the project's own
-     typecheck and tests yourself first.
+     checks yourself first.
 10. If you discover durable, reusable codebase facts, add a brief, evidence-based note
    under `## Codebase Patterns` at the top of `$progress_path` (skip if nothing new).
    Do not edit `$codebase_map_path`.
@@ -563,19 +569,19 @@ DEFAULT_KSTRL_TOML = """\
 # max_cost_usd = 0.0               # 0 = no limit; run-level USD ceiling, checked between iterations
 # pause_before_pr_merge = false    # opt-in HITL checkpoint before each PR push+merge
 
-# Phase 1 mechanical verification. These three are the one source of truth for
-# how this project is checked: the gate runs them, and kstrl injects them into
-# the engineer prompt, so the agent is never told a different command (#261).
-# Leave a key empty for the harness default. Do NOT pin typecheck_command to a
-# path such as "mypy ." if pyproject.toml scopes mypy itself; the empty default
-# already defers to your [tool.mypy] files/packages.
-# Chain toolchains to gate a polyglot repo, for example
-# "uv run pytest -q && cd web && npm run test".
+# The project's stack: what it is built with, and the commands kstrl runs on
+# every change. kstrl runs nothing until this table exists and a person
+# confirms its exact text (`ks factory` asks; `ks inbox approve` records it).
+# A check passes when it exits 0. Every key is required.
+# [stack]
+# instructions = ""                # what the project is built with, for the models
+# setup = ""                       # installs a worktree's dependencies; "" = none
+# env = []                         # variables the commands may see
+# [stack.checks]                   # run in this order
+# tests = ""
+
+# Phase 1 mechanical verification beyond the [stack] checks.
 [verify]
-# Unset, a command is kstrl's Python default; "" turns that gate off.
-# test_command = ""
-# typecheck_command = ""
-# lint_command = ""
 # check_diff_scope = true
 # check_bad_patterns = true
 # dead_code_cleanup = false
@@ -651,7 +657,6 @@ DEFAULT_KSTRL_TOML = """\
 # Phase 3 cross-component contract testing.
 [contract]
 # mode = "tier"                    # tier | final | skip
-# test_command = "uv run pytest"  # unset = the command [verify] test_command resolves to
 # timeout = 0.0                   # 0 = no limit
 
 # Phase 0 codebase scan (computational structural scan; no LLM).
@@ -806,6 +811,7 @@ SCAFFOLDED_TEMPLATES: tuple[ScaffoldedTemplate, ...] = (
             ("9bde9b20785f3740396906d1d199c2228c553c11ae956dc2f85d8aa2439fb49b", "1.2.0"),
             ("392eb698daf71d486a9d4573698df3bb2b3ca4be87c178657accc8a66c54f384", "1.3.0"),
             ("f5349c9c2fb1ac1b9bfba54c2fde3cbc266f6a8a59deaf355707504273ddc124", "1.4.0"),
+            ("a11b4209e38feac0361176f4897b357ed675cb0b2fd4545f648d83560ae81dd6", "1.5.0"),
         ),
     ),
     # The understand templates are H3-exempt (they produce documentation,
@@ -1243,7 +1249,7 @@ def run_init(directory: Path, ui: UI, *, upgrade_prompts: bool = False) -> int:
         _upgrade_scaffolded_templates(root, ui)
 
     ui.section("Create defaults")
-    _create_if_missing(root / "kstrl.toml", kstrl_toml_for(root), ui)
+    _create_if_missing(root / "kstrl.toml", DEFAULT_KSTRL_TOML, ui)
     _create_if_missing(kstrl_dir / "prompt.md", DEFAULT_PROMPT, ui)
     _create_if_missing(kstrl_dir / "prd.json", json.dumps(DEFAULT_PRD, indent=2) + "\n", ui)
     _create_if_missing(kstrl_dir / "progress.txt", DEFAULT_PROGRESS, ui)
@@ -1307,42 +1313,6 @@ def run_init(directory: Path, ui: UI, *, upgrade_prompts: bool = False) -> int:
         ui.info(line)
 
     return 0
-
-
-_VERIFY_KEYS = ("test_command", "typecheck_command", "lint_command")
-
-
-def kstrl_toml_for(root: Path) -> str:
-    """``DEFAULT_KSTRL_TOML`` with ``[verify]`` seeded for this project.
-
-    The harness gate defaults are Python-shaped, so on a Rust or Go
-    project Phase 1 resolves to `uv run pytest` and fails every
-    iteration. #261 removed the per-language guesses from the generated
-    CLAUDE.md, where they were a second copy of a fact the gate owned.
-    They belong here instead: kstrl.toml [verify] IS the source the gate
-    and the engineer prompt both read, so seeding it records the
-    detected toolchain in the one place that can act on it.
-
-    Seeded COMMENTED, because `ks init` must not change an effective
-    value (tests/test_init_scaffold.py pins that). Uncommenting
-    one line is the operator's explicit opt-in.
-    """
-    toolchain = detect(root)
-    # Python and an unrecognised tree are not seeded: the harness defaults
-    # are already right for Python, and a suggestion that merely restates
-    # them is the duplication #261 removed.
-    if toolchain is None or toolchain.id == "Python":
-        return DEFAULT_KSTRL_TOML
-    commands = (
-        record_test_command(root, toolchain),
-        toolchain.commands.typecheck,
-        toolchain.commands.lint,
-    )
-    text = DEFAULT_KSTRL_TOML
-    for key, command in zip(_VERIFY_KEYS, commands, strict=True):
-        if command:
-            text = text.replace(f'# {key} = ""\n', f'# {key} = "{command}"\n', 1)
-    return text
 
 
 def _create_if_missing(path: Path, content: str, ui: UI) -> None:
@@ -1710,9 +1680,8 @@ def _detect_project_context(root: Path) -> dict[str, str]:
     The language is :func:`kstrl.toolchains.detect`'s record (first match
     wins); this reads the name and the framework from its manifest.
 
-    #261: this deliberately does NOT guess test / typecheck / lint
-    commands. ``verify.resolve_verify_commands`` is the only place that
-    answers that question.
+    #261: this deliberately does NOT guess any command. A confirmed
+    ``[stack]`` is the only source of them (#696).
     """
     ctx: dict[str, str] = {
         "name": root.name,
@@ -1792,8 +1761,7 @@ BUILD_MANIFEST_FIX = (
     "`git add pyproject.toml uv.lock .python-version README.md src .gitignore` and "
     '`git commit -m "Add the build manifest"`. For another language, commit the '
     "manifest its own toolchain creates. If the project builds with a tool kstrl "
-    "does not recognise, set [verify] test_command, typecheck_command or "
-    "lint_command in kstrl.toml instead."
+    "does not recognise, write a [stack] in kstrl.toml instead."
 )
 
 
@@ -1820,39 +1788,6 @@ def language_ignores_blocker(root: Path) -> str | None:
     )
 
 
-def _verify_command_runs_through_uv(command: str) -> bool:
-    """Whether ``command`` resolves through ``uv run``, which needs a
-    pyproject.toml to find a project to run in (#434 B1).
-
-    This is the same fact `doctor.check_verify_commands` already warns
-    on when a command is left UNSET and falls back to one of the ``uv
-    run`` defaults with no pyproject.toml at the root. A command the
-    operator set EXPLICITLY to that same shape has the identical
-    problem, so it must not count as the operator having told kstrl
-    how the project builds: it still depends on the manifest kstrl
-    refuses the repository over.
-    """
-    return command.split()[:2] == ["uv", "run"]
-
-
-def _verify_escape_satisfied(config: VerifyConfig, root: Path) -> bool:
-    """Whether ``config``'s ``[verify]`` commands describe a toolchain
-    that does not depend on the build manifest this repository lacks.
-
-    A set command counts unless it runs through ``uv run`` with no
-    pyproject.toml at ``root`` - the same condition
-    `doctor.check_verify_commands` uses for the identical fact, reused
-    here rather than a second rule.
-    """
-    has_pyproject = (root / "pyproject.toml").exists()
-    return any(
-        command is not None
-        and command.strip() != ""
-        and (has_pyproject or not _verify_command_runs_through_uv(command))
-        for command in (config.test_command, config.typecheck_command, config.lint_command)
-    )
-
-
 def build_manifest_blocker(root: Path, *, read_verify: bool = True) -> str | None:
     """Why kstrl cannot plan work in ``root`` yet, or None when it can (#434).
 
@@ -1863,25 +1798,20 @@ def build_manifest_blocker(root: Path, *, read_verify: bool = True) -> str | Non
     reads a language from, so a repository holding it is not refused.
 
     A repository kstrl reads no language from is still let through when
-    ``[verify]`` names a command that does not itself depend on that
-    manifest (:func:`_verify_escape_satisfied`): the operator has told
+    kstrl.toml holds a ``[stack]`` (#696 slice 4): the operator has told
     kstrl how the project builds, which is the answer for a toolchain
-    kstrl does not recognise (a Gemfile, a Makefile). A ``uv run``
-    command with no pyproject.toml is not such an answer: it is the
-    same missing manifest, restated.
+    kstrl does not recognise (a Gemfile, a Makefile).
 
     ``read_verify=False`` is for `ks init`, which must not read
     kstrl.toml at all: it runs beside a file that does not load
     (tests/test_config_preflight.py). Otherwise a kstrl.toml that does
     not load raises the ``OSError`` or ``ValueError`` of
-    ``VerifyConfig.load``, and the caller decides what that means.
+    ``stack.load_stack``, and the caller decides what that means.
     """
     if _detect_project_context(root)["language"] != "unknown":
         return None
-    if read_verify:
-        config = VerifyConfig.load(root)
-        if _verify_escape_satisfied(config, root):
-            return None
+    if read_verify and load_stack(root) is not None:
+        return None
     return BUILD_MANIFEST_MISSING
 
 
@@ -1895,9 +1825,8 @@ def build_manifest_ok_reason(root: Path) -> str:
     return, which every other caller only tests for truthiness. The
     two reasons were folded into one sentence before #434 B1
     ("a build manifest ... is at the root, or [verify] names ..."),
-    which is how a `[verify] test_command = "uv run pytest"` escape
-    that itself needed the missing manifest read as `[ok]` without
-    saying which half applied.
+    which is how an escape that itself needed the missing manifest read
+    as `[ok]` without saying which half applied.
     """
     if _detect_project_context(root)["language"] != "unknown":
         return (
@@ -1905,9 +1834,9 @@ def build_manifest_ok_reason(root: Path) -> str:
             "`ks decompose` preflight lets the architect run"
         )
     return (
-        "no build manifest kstrl recognises is at the repository root, but [verify] "
-        "names a command that does not depend on one, so the `ks decompose` "
-        "preflight lets the architect run"
+        "no build manifest kstrl recognises is at the repository root, but kstrl.toml "
+        "has a [stack] saying how the project builds, so the `ks decompose` preflight "
+        "lets the architect run"
     )
 
 
@@ -2095,7 +2024,7 @@ _LANGUAGE_ANTIPATTERNS: dict[ToolchainId, str] = {
 #: H3 (#303): fragments _generate_claude_md assembles (plus the language
 #: tables it looks values up in); versioned as one body
 #: (docs/adversarial-roadmap.md, H3a sweep row).
-CLAUDE_MD_PROMPT_VERSION = "1.1.0"
+CLAUDE_MD_PROMPT_VERSION = "1.2.0"
 
 CLAUDE_MD_OVERVIEW_PROMPT = (
     "# CLAUDE.md - {name}\n"
@@ -2113,20 +2042,10 @@ CLAUDE_MD_OVERVIEW_PROMPT = (
 CLAUDE_MD_VERIFICATION_PROMPT = """
 ## Verification
 
-kstrl resolves this project's test, typecheck and lint commands at run
-time and injects them into the engineer prompt, so they are deliberately
-not restated here and cannot drift out of step with the gate that
-enforces them.
-
-Set them in `kstrl.toml` under `[verify]` (`test_command`,
-`typecheck_command`, `lint_command`). An unset key falls back to the
-harness default for the project. One command may chain several
-toolchains, which is how a polyglot repo is gated:
-
-```toml
-[verify]
-test_command = "uv run pytest -q && cd web && npm run test"
-```
+kstrl runs the checks of this project's `[stack]` in `kstrl.toml` on
+every change and injects them into the engineer prompt, so they are
+deliberately not restated here and cannot drift out of step with the
+gate that runs them. A `[stack]` runs nothing until a person confirms it.
 """
 
 CLAUDE_MD_STANDARDS_HEADING_PROMPT = "## Coding Standards"

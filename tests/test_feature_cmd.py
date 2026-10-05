@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import io
-import json
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -19,6 +18,7 @@ from kstrl.prd import PRD, UserStory
 from kstrl.sandbox import SandboxConfig
 from kstrl.ui.plain import PlainUI
 from tests.helpers.prompt_calls import offline_run
+from tests.helpers.stack_confirmation import confirm_stack, write_stack
 
 
 class StubAgent:
@@ -54,29 +54,27 @@ NOOP_VERIFY_COMMAND = "exit 0"
 
 
 def _write_fast_verify_toml(root: Path) -> None:
-    """Point ``[verify]`` at three no-op commands, unless the test wrote its own.
+    """Write a confirmed ``[stack]`` of three no-op checks, unless the test
+    wrote its own kstrl.toml.
 
     #288 made ``run_feature`` run the mechanical checks after every
-    engineer loop, so a project with no ``kstrl.toml`` here would resolve
-    the DEFAULTS and really shell out to ``uv run pytest`` / ``mypy`` /
-    ``ruff`` inside a tmp directory. Measured across this file and
-    test_feature_run.py: 0.90s before #288, 5.75s on the defaults, 1.1s
-    on these.
+    engineer loop, and since #696 it refuses with no confirmed ``[stack]``.
 
     Fixed strings, so the narration is the same bytes on every run, which
     ``test_narration_identical_with_and_without_recording`` asserts.
     """
-    config = root / "kstrl.toml"
-    if config.exists():
+    if (root / "kstrl.toml").exists():
         return
-    config.parent.mkdir(parents=True, exist_ok=True)
-    config.write_text(
-        "[verify]\n"
-        f"test_command = {json.dumps(NOOP_VERIFY_COMMAND)}\n"
-        f"typecheck_command = {json.dumps(NOOP_VERIFY_COMMAND)}\n"
-        f"lint_command = {json.dumps(NOOP_VERIFY_COMMAND)}\n",
-        encoding="utf-8",
+    root.mkdir(parents=True, exist_ok=True)
+    write_stack(
+        root,
+        {
+            "tests": NOOP_VERIFY_COMMAND,
+            "typecheck": NOOP_VERIFY_COMMAND,
+            "lint": NOOP_VERIFY_COMMAND,
+        },
     )
+    confirm_stack(root)
 
 
 def _params(

@@ -52,6 +52,7 @@ from kstrl.verify import (
     VerifyConfig,
     run_mechanical_verification,
 )
+from tests.helpers.stack_confirmation import in_process_stack
 from tests.test_harness_path_scope import (
     AUTHORED,
     COMPONENT_ID,
@@ -372,9 +373,9 @@ class TestAnUnresolvedScopeCannotBeSwitchedOff:
             allowed_paths,
             VerifyConfig(
                 check_diff_scope=check_diff_scope,
-                test_command="true",
-                typecheck_command="true",
-                lint_command="true",
+                project_stack=in_process_stack(
+                    {"tests": "true", "typecheck": "true", "lint": "true"}
+                ),
                 check_bad_patterns=False,
                 subprocess_timeout=30.0,
             ),

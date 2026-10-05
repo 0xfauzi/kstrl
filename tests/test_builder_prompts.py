@@ -429,7 +429,7 @@ NEEDLES: dict[str, str] = {
     "knowledge.build_knowledge_context": "Treat as ground truth unless contradicted",
     "init_cmd principles": "## Implementation Principles",
     "init_cmd language standards": "- Use `T | None` not `Optional[T]`",
-    "init_cmd verification section": "kstrl resolves this project's test, typecheck and lint",
+    "init_cmd verification section": "kstrl runs the checks of this project's `[stack]`",
 }
 
 
@@ -454,9 +454,9 @@ _EMPTY_DIGEST = _sha256("")
 
 DIGESTS: dict[str, str] = {
     # Moved in #633, deliberately: Java gained JAVA_ANTIPATTERNS_PROMPT.
-    "claude_md_java": "f65aadc276fef75a197f9fa0fe4803ee04f0d29a034891dfd95e1fb4e11cd62f",
-    "claude_md_python": "cae9b9f398dbda6199f504e3812b09c3b01ee2af0b1331063adaa6183350736a",
-    "claude_md_unknown": "7ee33da5f7c68e05691019bdda3dead61136190bd0f8158c34cef78dd7a167ad",
+    "claude_md_java": "a89defe1bf5264873a55fb1f8779fae7a40b33db5d0c372f7e9ad28f02baa5ad",
+    "claude_md_python": "bfb96ad59654fa50e2b3ade2b272c9f45ba4ef1dd39e615fa1562ecfac09e80d",
+    "claude_md_unknown": "5780595ba23d94e34c4ac83a0d187cb111d318eaec9888cb67ac685c7c6fd483",
     "ctx_all": "2659f4ff4e999f3ecb9b335e3bc25894ef92f52059f7f86203bf1b5f3a45cad5",
     "ctx_current_only": "4845a0234067507977e978189765994b040230787d3c98889ee7f11e5f2c199f",
     "ctx_empty": "85610680224f004a17afd838c2fc1d0fc601c7886da03fac757bf8b9e202cec6",

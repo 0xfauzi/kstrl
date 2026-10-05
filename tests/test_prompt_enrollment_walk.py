@@ -334,9 +334,10 @@ EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
     # Stack.format_for_prompt. Enrolled in tests/test_prompt_versions.py.
     "stack.py": 2,
     # #303: 2 pre-existing + 10 new fragments x 2 spellings each (the
-    # declaration and its one use site) = 22. The four *_PROMPT_VERSION
-    # constants add nothing: the walk keys on names ending in _PROMPT.
-    "verify.py": 22,
+    # declaration and its one use site) = 22, less VERIFY_COMMANDS_PROMPT's
+    # two (#696 slice 4 retired it) = 20. The *_PROMPT_VERSION constants
+    # add nothing: the walk keys on names ending in _PROMPT.
+    "verify.py": 20,
 }
 
 

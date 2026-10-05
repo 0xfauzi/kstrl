@@ -13,6 +13,7 @@ from kstrl.evolution import INTEGRATION_RESULT_EVENT
 from kstrl.integration import integration_stories
 from kstrl.pipeline import ComponentPipeline
 from tests.helpers import integration_harness as h
+from tests.helpers.stack_confirmation import in_process_stack
 
 
 def test_a_clean_review_is_recorded_and_does_not_gate(tmp_path: Path) -> None:
@@ -145,7 +146,9 @@ def test_an_integrated_test_failure_opens_a_finding(tmp_path: Path) -> None:
         reviewer,
         contract_config=ContractConfig(
             mode="tier",
-            test_command="echo 'FAILED tests/test_api.py::test_x - src/api.py:3 broke'; exit 1",
+            project_stack=in_process_stack(
+                {"tests": "echo 'FAILED tests/test_api.py::test_x - src/api.py:3 broke'; exit 1"}
+            ),
             timeout=60.0,
         ),
     )
@@ -170,7 +173,9 @@ def test_an_integrated_test_failure_opens_a_finding(tmp_path: Path) -> None:
     twin_reviewer = h.FakeReviewer(json.dumps(h.review_payload(twin, twin_base)))
     contract_config = ContractConfig(
         mode="tier",
-        test_command="echo 'FAILED tests/test_api.py::test_x - src/api.py:3 broke'; exit 1",
+        project_stack=in_process_stack(
+            {"tests": "echo 'FAILED tests/test_api.py::test_x - src/api.py:3 broke'; exit 1"}
+        ),
         timeout=60.0,
     )
     twin_result, _twin_out = h.run_factory_over(

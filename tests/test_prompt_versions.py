@@ -104,7 +104,6 @@ from kstrl import (
     review,
     security,
     stack,
-    verify,
 )
 from kstrl.decisions import (
     DECISIONS_CONTEXT_PROMPT,
@@ -146,12 +145,7 @@ from kstrl.review import REVIEWER_PROMPT, REVIEWER_PROMPT_VERSION, ReviewMode
 from kstrl.security import SECURITY_PROMPT, SECURITY_PROMPT_VERSION, SecurityConfig, SecurityMode
 from kstrl.stack import STACK_PROMPT, STACK_PROMPT_VERSION, Stack
 from kstrl.ui import PlainUI
-from kstrl.verify import (
-    VERIFY_COMMANDS_PROMPT,
-    VERIFY_COMMANDS_PROMPT_VERSION,
-    ResolvedVerifyCommands,
-    VerificationResult,
-)
+from kstrl.verify import VerificationResult
 from tests.conftest import make_review_repo
 from tests.helpers.builder_prompts import (
     _BUILDERS,
@@ -182,7 +176,6 @@ _PROMPTS: dict[str, str] = {
     "SECURITY_PROMPT": SECURITY_PROMPT,
     "DISTILL_PROMPT": DISTILL_PROMPT,
     "DEFAULT_PROMPT": DEFAULT_PROMPT,
-    "VERIFY_COMMANDS_PROMPT": VERIFY_COMMANDS_PROMPT,
     "REPO_CHANGE_SOURCE_PROMPT": REPO_CHANGE_SOURCE_PROMPT,
     "PASTED_CHANGE_SOURCE_PROMPT": PASTED_CHANGE_SOURCE_PROMPT,
     "DECISIONS_CONTEXT_PROMPT": DECISIONS_CONTEXT_PROMPT,
@@ -203,7 +196,6 @@ _VERSIONS: dict[str, str] = {
     "SECURITY_PROMPT": SECURITY_PROMPT_VERSION,
     "DISTILL_PROMPT": DISTILL_PROMPT_VERSION,
     "DEFAULT_PROMPT": DEFAULT_PROMPT_VERSION,
-    "VERIFY_COMMANDS_PROMPT": VERIFY_COMMANDS_PROMPT_VERSION,
     "REPO_CHANGE_SOURCE_PROMPT": REPO_CHANGE_SOURCE_PROMPT_VERSION,
     "PASTED_CHANGE_SOURCE_PROMPT": PASTED_CHANGE_SOURCE_PROMPT_VERSION,
     "DECISIONS_CONTEXT_PROMPT": DECISIONS_CONTEXT_PROMPT_VERSION,
@@ -298,6 +290,12 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
         "8040021a09d97598434d08c766495a4185df70b632e3ff4e5e1086b2e56ab30c",
         "1.1.0",
     ),
+    # 1.5.0 (#696 slice 4): step 9 names no language's tools. It tells the
+    # engineer to run every check the Stack block names, and that kstrl
+    # runs nothing when the project has no confirmed [stack]. The
+    # VERIFY_COMMANDS_PROMPT block it deferred to is retired with the
+    # Python defaults. H3 only, as for 1.4.0.
+    #
     # 1.4.0 (#585): step 10 sends durable codebase facts to the component's
     # own progress log instead of the shared codebase map, step 4 makes the
     # map read-only, and step 11 excludes the repository root's AGENTS.md
@@ -318,17 +316,8 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     # adversarial-role definition for the engineer phase and is
     # snapshot-protected on the same terms as the role prompts.
     "DEFAULT_PROMPT": (
-        "f5349c9c2fb1ac1b9bfba54c2fde3cbc266f6a8a59deaf355707504273ddc124",
-        "1.4.0",
-    ),
-    # 1.0.0 (#261): harness-authored instruction text prepended to the
-    # engineer prompt every iteration, naming the commands Phase 1 will
-    # run. Enrolled because it steers the engineer exactly as
-    # DEFAULT_PROMPT does. The TEMPLATE is what is hashed; the three
-    # command values are the operator's and are interpolated at run time.
-    "VERIFY_COMMANDS_PROMPT": (
-        "2b78ef192783332e3693d197fc135460a46275df30411a500d55902d0a9c5e4b",
-        "1.0.0",
+        "a11b4209e38feac0361176f4897b357ed675cb0b2fd4545f648d83560ae81dd6",
+        "1.5.0",
     ),
     # 1.0.0 (#299): both bodies already reached a reviewer's prompt on
     # every run; #299 only hoisted them out of the functions that built
@@ -542,11 +531,6 @@ def _distill_render(_tmp_path: Path) -> str:
     return knowledge.build_distill_prompt(component, 5, "PRD", "FACTS", "DIFF")
 
 
-def _verify_render(_tmp_path: Path) -> str:
-    commands = ResolvedVerifyCommands(test="T", typecheck="TC", lint="L")
-    return commands.format_for_prompt()
-
-
 def _stack_render(_tmp_path: Path) -> str:
     return Stack(instructions="I", setup="", checks=(("tests", "T"),), env=()).format_for_prompt()
 
@@ -573,7 +557,6 @@ _RENDERERS: dict[str, tuple[ModuleType, Callable[[Path], str]]] = {
         lambda _p: security._build_security_prompt("PRD", "CHANGE SOURCE", "TOKEN"),
     ),
     "DISTILL_PROMPT": (knowledge, _distill_render),
-    "VERIFY_COMMANDS_PROMPT": (verify, _verify_render),
     "STACK_PROMPT": (stack, _stack_render),
     "REPO_CHANGE_SOURCE_PROMPT": (git, lambda _p: repo_change_source("BASE_SHA")),
     "PASTED_CHANGE_SOURCE_PROMPT": (git, lambda _p: pasted_change_source("DIFF")[0]),

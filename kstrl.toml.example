@@ -45,14 +45,9 @@ component_total = 7200.0           # wall clock per component across iterations
 scheduler_backstop_margin = 60.0   # extra slack before the scheduler declares a worker dead
 
 # No-progress circuit breaker (R7.5): halt the engineer loop loudly when N
-# consecutive iterations produce an unchanged diff hash AND an unchanged
-# test-failure signature (the community's most-repeated kstrl-loop fix).
-# The stall probe only runs on iterations whose diff hash already matched;
-# with no test_command the breaker is diff-hash only.
+# consecutive iterations produce an unchanged diff hash.
 [breaker]
 no_progress_iterations = 3         # consecutive no-progress iterations before the halt; 0 disables
-test_command = ""                  # stall-probe command; empty = the explicit [verify] test_command
-test_timeout = 300.0               # seconds before the stall probe is killed
 
 # OS-level agent sandboxing (R7.5). Applies to the claude-code, claude-sdk
 # and codex adapters, for the engineer, the code and security reviewers, the
@@ -166,18 +161,15 @@ integration_review = true      # record-only review of the merged feature after 
 integration_blocking = false   # open findings become a fix component; a non-clean stop fails the run (#483)
 integration_max_rounds = 1     # most fix components one feature may get; at least 1 (#483)
 convergence_attempts = 0       # fail a component whose gate failure count stops falling for N attempts; 0 = off (#233)
-# The command that installs a kstrl worktree's own dependencies, run in every
-# worktree kstrl creates before the engineer and before every gate (#624).
-# Use a command that respects the lockfile. Empty = no setup.
-# worktree_setup_command = "npm ci"
+# The worktree setup command is the [stack]'s setup (#696).
 worktree_setup_timeout = 0     # seconds; 0 = no limit (#467)
 
 # A project's stack (#696): instructions the models read, and the commands
-# kstrl runs and judges by exit status alone (0 passes). With [stack] present
-# it is the only source of verification commands: the [verify] *_command and
-# *_tool keys, [factory] worktree_setup_command, [contract] test_command,
-# [breaker] test_command, their environment variables and the ks factory
-# command flags are refused beside it. All four keys are required.
+# kstrl runs and judges by exit status alone (0 passes). It is the only
+# source of verification commands. With no confirmed [stack], every paid
+# command refuses before it spends (exit 2); --no-verify runs with no
+# checks at all. ks doctor files a proposed [stack] from the commands an
+# old [verify] still holds. All four keys are required.
 # kstrl runs nothing from a [stack] until a person confirms its exact text:
 # ks factory asks in a terminal, or files an inbox item that ks inbox approve
 # confirms. Any edit to the table needs a new confirmation.
@@ -190,9 +182,7 @@ worktree_setup_timeout = 0     # seconds; 0 = no limit (#467)
 
 # Phase 1 mechanical verification.
 [verify]
-# test_command, typecheck_command, lint_command default to uv run pytest / mypy / ruff,
-# which are not run in a project with no pyproject.toml or setup.py.
-# Override to your project's commands if different; "" turns a gate off.
+# The command gates are the [stack]'s checks; this table configures the rest.
 check_diff_scope = true
 check_bad_patterns = true
 dead_code_cleanup = false
@@ -204,7 +194,7 @@ subprocess_timeout = 300.0
 require_self_critique = false      # opt-in: fail Phase 1 if engineer's ## Self-Critique block missing/sparse
 self_critique_min_bullets = 3
 progress_file_path = ""            # empty = the progress log beside the component's PRD
-fast_iteration_checks = []         # gates run between engineer iterations, e.g. ["typecheck", "linter"]; empty = off (#233)
+fast_iteration_checks = []         # [stack] checks run between engineer iterations, by name; empty = off (#233)
 
 # Phase 1 policy envelope (R8.1): declarative merge guardrails enforced on
 # ARTIFACTS (git diff, lockfiles), never on agent self-report. Opt-in: when
@@ -376,7 +366,7 @@ timeout_seconds = 600.0
 # Phase 3 cross-component contract testing.
 [contract]
 mode = "tier"                      # tier | final | skip
-# test_command = "uv run pytest"   # unset = the command [verify] test_command resolves to
+# Phase 3 runs the [stack]'s checks on each merged tier.
 timeout = 600.0
 
 # Phase 4 release (R8.7 slice 1: records the release ref; deploys nothing).

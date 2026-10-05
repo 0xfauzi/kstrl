@@ -1,53 +1,8 @@
 {
   "check": {
-    "exit": 1,
+    "exit": 2,
     "report": {
-      "base_branch": "main",
-      "checks": [
-        {
-          "details": [],
-          "duration_seconds": 0,
-          "findings": [],
-          "message": "Not run: `uv run pytest` is kstrl's Python default and <root> has no pyproject.toml or setup.py. Set [verify] test_command to this project's command, or to \"\" to turn the gate off",
-          "name": "test_suite",
-          "passed": false
-        },
-        {
-          "details": [],
-          "duration_seconds": 0,
-          "findings": [],
-          "message": "Not run: `uv run mypy .` is kstrl's Python default and <root> has no pyproject.toml or setup.py. Set [verify] typecheck_command to this project's command, or to \"\" to turn the gate off",
-          "name": "typecheck",
-          "passed": false
-        },
-        {
-          "details": [],
-          "duration_seconds": 0,
-          "findings": [],
-          "message": "Not run: `uv run ruff check .` is kstrl's Python default and <root> has no pyproject.toml or setup.py. Set [verify] lint_command to this project's command, or to \"\" to turn the gate off",
-          "name": "linter",
-          "passed": false
-        },
-        {
-          "details": [],
-          "duration_seconds": 0,
-          "findings": [],
-          "message": "No scope constraints (allowed_paths not set)",
-          "name": "diff_scope",
-          "passed": true
-        },
-        {
-          "details": [],
-          "duration_seconds": 0,
-          "findings": [],
-          "message": "secrets: scanned 1 changed files, no issues; Python rules: scanned 0 of 0 changed Python files",
-          "name": "bad_patterns",
-          "passed": true
-        }
-      ],
-      "not_measured": [],
-      "passed": false,
-      "path": "<root>",
+      "error": "kstrl.toml has no [stack], so kstrl has no check to run and runs nothing. Write a [stack] table (instructions, setup, env and [stack.checks]) and confirm it; ks doctor files a proposed [stack] from the commands an old [verify] still holds. --no-verify runs with no checks at all.",
       "schema_version": 4
     }
   },
@@ -56,13 +11,6 @@
     "exit": 0,
     "rows": [
       "[agent] command = None  (default)",
-      "[factory] worktree_setup_command = ''  (default)",
-      "[verify] test_command = None  (default)",
-      "[verify] typecheck_command = None  (default)",
-      "[verify] lint_command = None  (default)",
-      "[verify] test_tool = None  (default)",
-      "[verify] typecheck_tool = None  (default)",
-      "[verify] lint_tool = None  (default)",
       "[verify] check_diff_scope = True  (default)",
       "[verify] check_bad_patterns = True  (default)",
       "[verify] dead_code_cleanup = False  (default)",
@@ -76,11 +24,8 @@
       "[verify] progress_file_path = None  (default)",
       "[verify] fast_iteration_checks = []  (default)",
       "[contract] mode = 'tier'  (default)",
-      "[contract] test_command = 'uv run pytest'  ([verify])",
       "[contract] timeout = no limit  (default)",
       "[breaker] no_progress_iterations = 3  (default)",
-      "[breaker] test_command = None  (default)",
-      "[breaker] test_timeout = 300.0  (default)",
       "[sandbox] enabled = False  (default)",
       "[sandbox] allow_network = False  (default)"
     ]
@@ -96,7 +41,7 @@
     "stdout": []
   },
   "doctor": {
-    "exit": 0,
+    "exit": 1,
     "report": {
       "base_gates": null,
       "checks": [
@@ -131,10 +76,10 @@
           "status": "ok"
         },
         {
-          "detail": "3 of 3 commands fall back to a `uv run` default (test_command, typecheck_command, lint_command) and there is no pyproject.toml or setup.py at <root>, so Phase 1 fails them without running them: test `uv run pytest`, typecheck `uv run mypy .`, lint `uv run ruff check .`; Phase 3 will run `uv run pytest` on merged tiers ([contract] test_command, [verify])",
-          "fix": "Set [verify] test_command / typecheck_command / lint_command to the commands this project actually uses, or to \"\" to turn a gate off.",
+          "detail": "kstrl.toml has no [stack], so kstrl has no check to run and runs nothing. Write a [stack] table (instructions, setup, env and [stack.checks]) and confirm it; ks doctor files a proposed [stack] from the commands an old [verify] still holds. --no-verify runs with no checks at all.",
+          "fix": "Write a [stack] in kstrl.toml, then confirm it.",
           "name": "verify_commands",
-          "status": "warn"
+          "status": "fail"
         },
         {
           "detail": "the codebase scan summarises 0 Python file(s) for the engineer from source root(s): none; its interface extraction reads Python only, and 1 of 1 tracked source files are not Python (.rs: 1)",
@@ -165,11 +110,11 @@
         "A green verdict is repo-readiness, not spec-readiness. Nothing here can tell you whether the work you are about to describe fits the component model.",
         "kstrl is not for cross-cutting refactors. The factory decomposes a spec into components that each merge on their own, and a change that has to land everywhere at once has no such decomposition.",
         "kstrl is not for spec-free exploration. Every iteration is graded against a PRD, so work whose acceptance criteria are not known yet has nothing to grade.",
-        "Tier A reads the repository and runs none of your commands. `ks doctor --measure` runs your test, typecheck and lint commands once on the base branch, as `ks factory` does before any engineer and refuses to start when one of them fails there. One run cannot tell you whether your suite is fast or flaky."
+        "Tier A reads the repository and runs none of your commands. `ks doctor --measure` runs your [stack] checks once on the base branch, as `ks factory` does before any engineer and refuses to start when one of them fails there. One run cannot tell you whether your suite is fast or flaky."
       ],
       "fix_first": [
+        "Write a [stack] in kstrl.toml, then confirm it.",
         "Run `gh auth login` and add an origin remote, or set [factory] create_prs = false and merge by hand.",
-        "Set [verify] test_command / typecheck_command / lint_command to the commands this project actually uses, or to \"\" to turn a gate off.",
         "Nothing is broken in your repository; kstrl's interface extraction reads Python only, so the engineer gets no interface lines for the rest of this tree. A reader for other languages is deferred on issue #200.",
         "Add tests, or expect the adequacy gate to report nothing."
       ],
@@ -178,7 +123,7 @@
       "report_path": "<report_path>",
       "root": "<root>",
       "schema_version": 2,
-      "verdict": "ready-with-warnings"
+      "verdict": "not-ready"
     }
   },
   "files": {
@@ -201,20 +146,10 @@
       "",
       "## Verification",
       "",
-      "kstrl resolves this project's test, typecheck and lint commands at run",
-      "time and injects them into the engineer prompt, so they are deliberately",
-      "not restated here and cannot drift out of step with the gate that",
-      "enforces them.",
-      "",
-      "Set them in `kstrl.toml` under `[verify]` (`test_command`,",
-      "`typecheck_command`, `lint_command`). An unset key falls back to the",
-      "harness default for the project. One command may chain several",
-      "toolchains, which is how a polyglot repo is gated:",
-      "",
-      "```toml",
-      "[verify]",
-      "test_command = \"uv run pytest -q && cd web && npm run test\"",
-      "```",
+      "kstrl runs the checks of this project's `[stack]` in `kstrl.toml` on",
+      "every change and injects them into the engineer prompt, so they are",
+      "deliberately not restated here and cannot drift out of step with the",
+      "gate that runs them. A `[stack]` runs nothing until a person confirms it.",
       "",
       "## Coding Standards",
       "- Use `Result<T, E>` for fallible operations, not panics",
@@ -356,19 +291,19 @@
       "# max_cost_usd = 0.0               # 0 = no limit; run-level USD ceiling, checked between iterations",
       "# pause_before_pr_merge = false    # opt-in HITL checkpoint before each PR push+merge",
       "",
-      "# Phase 1 mechanical verification. These three are the one source of truth for",
-      "# how this project is checked: the gate runs them, and kstrl injects them into",
-      "# the engineer prompt, so the agent is never told a different command (#261).",
-      "# Leave a key empty for the harness default. Do NOT pin typecheck_command to a",
-      "# path such as \"mypy .\" if pyproject.toml scopes mypy itself; the empty default",
-      "# already defers to your [tool.mypy] files/packages.",
-      "# Chain toolchains to gate a polyglot repo, for example",
-      "# \"uv run pytest -q && cd web && npm run test\".",
+      "# The project's stack: what it is built with, and the commands kstrl runs on",
+      "# every change. kstrl runs nothing until this table exists and a person",
+      "# confirms its exact text (`ks factory` asks; `ks inbox approve` records it).",
+      "# A check passes when it exits 0. Every key is required.",
+      "# [stack]",
+      "# instructions = \"\"                # what the project is built with, for the models",
+      "# setup = \"\"                       # installs a worktree's dependencies; \"\" = none",
+      "# env = []                         # variables the commands may see",
+      "# [stack.checks]                   # run in this order",
+      "# tests = \"\"",
+      "",
+      "# Phase 1 mechanical verification beyond the [stack] checks.",
       "[verify]",
-      "# Unset, a command is kstrl's Python default; \"\" turns that gate off.",
-      "# test_command = \"cargo test\"",
-      "# typecheck_command = \"cargo check --all-targets\"",
-      "# lint_command = \"cargo clippy --all-targets -- -D warnings\"",
       "# check_diff_scope = true",
       "# check_bad_patterns = true",
       "# dead_code_cleanup = false",
@@ -444,7 +379,6 @@
       "# Phase 3 cross-component contract testing.",
       "[contract]",
       "# mode = \"tier\"                    # tier | final | skip",
-      "# test_command = \"uv run pytest\"  # unset = the command [verify] test_command resolves to",
       "# timeout = 0.0                   # 0 = no limit",
       "",
       "# Phase 0 codebase scan (computational structural scan; no LLM).",

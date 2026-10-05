@@ -154,9 +154,9 @@ ignore = []
 [tool.mypy]
 python_version = "3.11"
 strict = true
-# `files` is consulted by `uv run mypy` (no args) and by the kstrl
-# factory's new smart-default typecheck command (verify._default_typecheck_command).
-# Listing kstrl here keeps CLAUDE.md's stated typecheck contract
+# `files` is consulted by `uv run mypy` (no args); the factory's old
+# smart-default typecheck command (verify._default_typecheck_command) was
+# removed at the #696 flag day. Listing kstrl here keeps CLAUDE.md's stated typecheck contract
 # (`uv run mypy kstrl/ --strict`) and `uv run mypy` invoked from the
 # factory's verify phase in lockstep -- no command-line override needed.
 # kstrl is the only Python package.

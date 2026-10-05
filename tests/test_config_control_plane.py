@@ -324,26 +324,6 @@ class TestPrecedence:
         assert result.exit_code == 0, result.output
         assert captured["factory_config"].max_parallel == 5
 
-    def test_verify_flag_beats_env_beats_toml(
-        self,
-        tmp_path: Path,
-        captured: dict[str, Any],
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        (tmp_path / "kstrl.toml").write_text('[verify]\ntest_command = "echo from-toml"\n')
-        monkeypatch.setenv("KSTRL_VERIFY_TEST_CMD", "echo from-env")
-        result = _invoke_factory(tmp_path, "--test-command", "echo from-flag")
-        assert result.exit_code == 0, result.output
-        assert captured["factory_config"].verify_config.test_command == "echo from-flag"
-
-        result = _invoke_factory(tmp_path)
-        assert captured["factory_config"].verify_config.test_command == "echo from-env"
-
-        monkeypatch.delenv("KSTRL_VERIFY_TEST_CMD")
-        result = _invoke_factory(tmp_path)
-        assert result.exit_code == 0, result.output
-        assert captured["factory_config"].verify_config.test_command == "echo from-toml"
-
     def test_security_flag_beats_env_beats_toml(
         self,
         tmp_path: Path,

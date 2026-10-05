@@ -4,28 +4,21 @@ from __future__ import annotations
 
 import inspect
 import json
-import sys
 from pathlib import Path
 
 import pytest
 
 from kstrl.fixtures import FixturesConfig
 from kstrl.verify import (
-    CheckResult,
     MechanicalVerification,
     VerifyConfig,
     check_bad_patterns,
-    check_linter,
     check_prd_stories,
     check_self_critique,
-    check_test_suite,
-    check_typecheck,
     run_mechanical_verification,
 )
 from tests.conftest import make_review_repo
-from tests.helpers.tool_output import tool_output
-
-VITEST_FAILURE_OUTPUT = tool_output("vitest-2.1.9-writers-room.txt")
+from tests.helpers.stack_confirmation import in_process_stack
 
 
 class TestCheckPrdStories:
@@ -95,151 +88,6 @@ class TestCheckPrdStories:
         assert result.passed is True
 
 
-class TestCheckTestSuite:
-    def test_passing_command(self, tmp_path: Path) -> None:
-        result, _ = check_test_suite(tmp_path, command="true", timeout=5.0)
-        assert result.passed is True
-
-    def test_failing_command(self, tmp_path: Path) -> None:
-        result, _ = check_test_suite(tmp_path, command="false", timeout=5.0)
-        assert result.passed is False
-
-    def test_timeout(self, tmp_path: Path) -> None:
-        result, _ = check_test_suite(tmp_path, command="sleep 10", timeout=0.1)
-        assert result.passed is False
-        assert "timed out" in result.message
-
-    def test_vitest_output_reaches_the_gate_parsed(self, tmp_path: Path) -> None:
-        """#258: a vitest failure reached the engineer tagged [pytest]
-        with every actionable line stripped out.
-
-        The label was the first half of the fix and this is the second:
-        the gate dispatches, so the retry detail now carries the failing
-        file, its line, the test name and the assertion message that were
-        all in the raw output and all dropped.
-        """
-        script = tmp_path / "fake_vitest.py"
-        script.write_text(f"import sys\nsys.stdout.write({VITEST_FAILURE_OUTPUT!r})\nsys.exit(1)\n")
-        command = f"{sys.executable} {script}"
-
-        result, _ = check_test_suite(tmp_path, command=command, timeout=30.0)
-
-        assert result.passed is False
-        assert result.parsed is not None
-        assert result.parsed.tool == "vitest"
-        assert "[pytest]" not in "".join(result.details)
-        detail = "".join(result.details)
-        assert "tests/failing.test.ts:5" in detail
-        assert "shows what a real vitest failure looks like" in detail
-        assert "expected false to be true" in detail
-
-    def test_output_no_parser_reads_is_still_labelled_with_the_command(
-        self, tmp_path: Path
-    ) -> None:
-        """The #258 labelling floor, kept for a toolchain kstrl has no
-        parser for. The command is the one name that cannot be wrong."""
-        script = tmp_path / "fake_cargo.py"
-        script.write_text("import sys\nprint('error: could not compile `draft`')\nsys.exit(101)\n")
-        command = f"{sys.executable} {script}"
-
-        result, _ = check_test_suite(tmp_path, command=command, timeout=30.0)
-
-        assert result.passed is False
-        assert result.details[0].startswith(f"[{command}]")
-        assert "[pytest]" not in "".join(result.details)
-
-    def test_parsed_pytest_output_keeps_the_tool_label(self, tmp_path: Path) -> None:
-        script = tmp_path / "fake_pytest.py"
-        script.write_text(
-            "import sys\n"
-            "print('=========== short test summary info ===========')\n"
-            "print('FAILED tests/test_a.py::test_x - AssertionError: nope')\n"
-            "print('=========== 1 failed in 0.10s ===========')\n"
-            "sys.exit(1)\n"
-        )
-
-        result, _ = check_test_suite(tmp_path, command=f"{sys.executable} {script}", timeout=30.0)
-
-        assert result.passed is False
-        assert result.details[0].startswith("[pytest]")
-
-
-class TestLinterGateReadsRuffDefaults:
-    """#258 review: the lint gate could not read its own default command.
-
-    `DEFAULT_LINT_COMMAND` is `uv run ruff check .`, and ruff's default
-    output format has been `full` since 0.9. The parser read only
-    `--output-format=concise`, so the gate's primary parser returned
-    zero failures on the harness's own default invocation and the whole
-    retry detail was the `Found N errors.` footer.
-    """
-
-    def _run(self, tmp_path: Path, fixture: str) -> CheckResult:
-        raw = tool_output(fixture)
-        script = tmp_path / "fake_ruff.py"
-        script.write_text(f"import sys\nsys.stdout.write({raw!r})\nsys.exit(1)\n")
-        return check_linter(tmp_path, command=f"{sys.executable} {script}", timeout=30.0)
-
-    @pytest.mark.parametrize(
-        "fixture",
-        ["ruff-0.16.1-full.txt", "ruff-0.16.1-concise.txt"],
-        ids=["default-full", "concise"],
-    )
-    def test_the_gate_carries_file_line_and_rule(self, tmp_path: Path, fixture: str) -> None:
-        result = self._run(tmp_path, fixture)
-
-        assert result.passed is False
-        assert result.parsed is not None
-        assert result.parsed.tool == "ruff"
-        detail = "".join(result.details)
-        assert "draft.py:1 [F401]" in detail
-        assert "loader.py:1 [invalid-syntax]" in detail
-
-
-class TestCheckTypecheck:
-    def test_passing(self, tmp_path: Path) -> None:
-        result = check_typecheck(tmp_path, command="true", timeout=5.0)
-        assert result.passed is True
-
-    def test_failing(self, tmp_path: Path) -> None:
-        result = check_typecheck(tmp_path, command="false", timeout=5.0)
-        assert result.passed is False
-
-    def test_tsc_output_reaches_the_gate_parsed(self, tmp_path: Path) -> None:
-        """#258: the typecheck gate parsed everything as mypy, so a real
-        `tsc` failure arrived with 0 findings under a `[mypy]` label. The
-        gate dispatches now, and the assertion is on the DETAIL rather
-        than the label: file, line, error code and message all present."""
-        raw = tool_output("tsc-5.6.3-plain.txt")
-        script = tmp_path / "fake_tsc.py"
-        script.write_text(f"import sys\nsys.stdout.write({raw!r})\nsys.exit(2)\n")
-        command = f"{sys.executable} {script}"
-
-        result = check_typecheck(tmp_path, command=command, timeout=30.0)
-
-        assert result.passed is False
-        assert result.parsed is not None
-        assert result.parsed.tool == "tsc"
-        assert "  src/broken.ts:7 [TS2322] Type 'string' is not assignable" in result.details[0]
-        assert "[mypy]" not in "".join(result.details)
-
-    def test_output_no_parser_reads_is_still_labelled_with_the_command(
-        self, tmp_path: Path
-    ) -> None:
-        """The #258 labelling floor, kept: an unrecognised toolchain
-        falls back to the raw tail named by the command that ran, never
-        by a parser that did not read it."""
-        script = tmp_path / "fake_checker.py"
-        script.write_text("import sys\nprint('go: cannot find package')\nsys.exit(2)\n")
-        command = f"{sys.executable} {script}"
-
-        result = check_typecheck(tmp_path, command=command, timeout=30.0)
-
-        assert result.passed is False
-        assert result.details[0].startswith(f"[{command}]")
-        assert "[mypy]" not in "".join(result.details)
-
-
 class TestCheckBadPatterns:
     """Built on ``make_review_repo`` (#399 simplify pass on #405, C1) rather
     than a local ``_repo``/``_commit`` pair: that helper already builds a
@@ -303,9 +151,7 @@ class TestRunMechanicalVerification:
             )
         )
         config = VerifyConfig(
-            test_command="true",
-            typecheck_command="true",
-            lint_command="true",
+            project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
             check_diff_scope=False,
             check_bad_patterns=False,
             subprocess_timeout=5.0,
@@ -340,9 +186,9 @@ class TestRunMechanicalVerification:
             )
         )
         config = VerifyConfig(
-            test_command="false",  # Tests fail
-            typecheck_command="true",
-            lint_command="true",
+            project_stack=in_process_stack(
+                {"tests": "false", "typecheck": "true", "lint": "true"}
+            ),  # Tests fail
             check_diff_scope=False,
             check_bad_patterns=False,
             subprocess_timeout=5.0,
@@ -723,9 +569,7 @@ class TestRunMechanicalVerificationWithoutPrd:
     @staticmethod
     def _config() -> VerifyConfig:
         return VerifyConfig(
-            test_command="true",
-            typecheck_command="true",
-            lint_command="true",
+            project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
             check_diff_scope=False,
             check_bad_patterns=False,
             subprocess_timeout=5.0,
@@ -772,16 +616,16 @@ class TestRunMechanicalVerificationWithoutPrd:
         # The Path call keeps its full list, PRD-dependent checks included.
         assert [c.name for c in with_prd.checks] == [
             "prd_stories",
-            "test_suite",
-            "typecheck",
-            "linter",
+            "stack:tests",
+            "stack:typecheck",
+            "stack:lint",
             "fixtures",
         ]
         # None drops exactly prd_stories and fixtures; nothing else moves.
         assert [c.name for c in without_prd.checks] == [
-            "test_suite",
-            "typecheck",
-            "linter",
+            "stack:tests",
+            "stack:typecheck",
+            "stack:lint",
         ]
         assert without_prd.passed is True
 

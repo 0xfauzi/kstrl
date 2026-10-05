@@ -58,6 +58,7 @@ from kstrl.ui.plain import PlainUI
 from kstrl.verify import CheckResult, VerificationResult, VerifyConfig
 from tests.conftest import ReviewRepo, git_in, make_review_repo
 from tests.helpers.recording_agent import RecordingAgent
+from tests.helpers.stack_confirmation import in_process_stack
 
 UI = PlainUI(no_color=True)
 
@@ -738,10 +739,9 @@ def _factory_config(**overrides: object) -> FactoryConfig:
         max_retries=0,
         retry_delay=0,
         review_mode="skip",
+        project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
         verify_config=VerifyConfig(
-            test_command="true",
-            typecheck_command="true",
-            lint_command="true",
+            project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
             check_diff_scope=False,
             check_bad_patterns=False,
             subprocess_timeout=5.0,

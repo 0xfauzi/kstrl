@@ -194,7 +194,7 @@ class Component:
     findings: list[Finding] = field(default_factory=list)
     review_findings: str = ""
     # Optional setup command for this component's worktree. It replaces
-    # [factory] worktree_setup_command there (#624).
+    # the [stack]'s setup there (#624, #696).
     scaffold: str = ""
     # R3.3 post-mortem fields. failed_phase/failed_check name where the
     # last failure happened (phase = engineer/verify/review/security/pr/

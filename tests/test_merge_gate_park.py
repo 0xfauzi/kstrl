@@ -50,6 +50,7 @@ from kstrl.serve import (
 from kstrl.workqueue import ItemSource, Queue, QueueConfig
 from tests.helpers import gitrepo
 from tests.helpers.executables import write_executable
+from tests.helpers.stack_confirmation import confirm_stack, write_stack
 
 pytestmark = pytest.mark.usefixtures("no_open_prs")
 
@@ -111,12 +112,6 @@ FACTORY_FLAGS = (
     "skip",
     "--contract-check",
     "skip",
-    "--test-command",
-    "true",
-    "--typecheck-command",
-    "true",
-    "--lint-command",
-    "true",
 )
 
 #: The engineer: records the worktree it ran in, commits one file named
@@ -170,6 +165,8 @@ def _repo(tmp_path: Path, toml: str = "") -> Path:
         )
     (root / "kstrl.toml").write_text("[inbox]\nenabled = true\n" + toml, encoding="utf-8")
     gitrepo.git_in(root, "add", "-A")
+    write_stack(root)
+    gitrepo.git_in(root, "add", "-A")
     gitrepo.git_in(root, "commit", "-q", "-m", "init")
     origin = tmp_path / "origin.git"
     gitrepo.git_in(tmp_path, "init", "-q", "--bare", str(origin))
@@ -186,6 +183,7 @@ def _repo(tmp_path: Path, toml: str = "") -> Path:
     template = tmp_path / "manifest.template.json"
     template.write_text(json.dumps(manifest), encoding="utf-8")
     shutil.copyfile(template, _manifest_path(root))
+    confirm_stack(root)
     return root
 
 

@@ -34,6 +34,7 @@ import pytest
 from tests.helpers import gitrepo
 from tests.helpers.executables import write_executable
 from tests.helpers.procs import kill_group
+from tests.helpers.stack_confirmation import confirm_stack, write_stack
 
 #: The whole run takes about a second; a hang fails loudly instead.
 FUSE_SECONDS = 120.0
@@ -112,7 +113,10 @@ def _repo(tmp_path: Path, files: dict[str, str]) -> Path:
         (root / rel).write_text(text, encoding="utf-8")
     write_executable(root / "sum", SUM)
     gitrepo.git_in(root, "add", "-A")
+    write_stack(root)
+    gitrepo.git_in(root, "add", "-A")
     gitrepo.git_in(root, "commit", "-q", "-m", "init")
+    confirm_stack(root)
     return root
 
 
@@ -383,12 +387,6 @@ QUIET_FACTORY = (
     "--contract-check",
     "skip",
     "--no-prs",
-    "--test-command",
-    "true",
-    "--typecheck-command",
-    "true",
-    "--lint-command",
-    "true",
 )
 
 COMPONENT = "api"
@@ -440,7 +438,10 @@ def _json_project(tmp_path: Path) -> tuple[Path, str]:
         ],
     }
     gitrepo.git_in(root, "add", "-A")
+    write_stack(root)
+    gitrepo.git_in(root, "add", "-A")
     gitrepo.git_in(root, "commit", "-q", "-m", "init")
+    confirm_stack(root)
     return root, json.dumps(manifest)
 
 

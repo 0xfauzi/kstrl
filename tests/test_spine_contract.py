@@ -33,6 +33,7 @@ from kstrl.contract import ContractConfig
 from kstrl.factory import FactoryResult, run_factory
 from kstrl.manifest import ComponentStatus, Manifest
 from kstrl.ui.plain import PlainUI
+from tests.helpers.stack_confirmation import in_process_stack
 from tests.spine_utils import (
     base_config,
     component,
@@ -103,7 +104,7 @@ def _run(
             max_retries=max_retries,
             contract_config=ContractConfig(
                 mode="tier",
-                test_command=contract_test_cmd,
+                project_stack=in_process_stack({"tests": contract_test_cmd}),
                 timeout=30.0,
             ),
             progress_log_path=progress_path,

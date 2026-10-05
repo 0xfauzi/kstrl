@@ -54,7 +54,7 @@ from kstrl.atomicio import atomic_write_json
 from kstrl.evolution import signature_counts_from_verification, split_signature
 from kstrl.jsonread import read_json
 from kstrl.stack import Stack
-from kstrl.verify import CheckResult, ResolvedVerifyCommands, VerificationResult
+from kstrl.verify import CheckResult, VerificationResult
 
 #: Version of the BASELINE document, which is not the version of the
 #: ``ks check --json`` document. They move independently: the baseline records
@@ -190,13 +190,8 @@ def _signatures_field(document: Mapping[str, Any], key: str) -> dict[str, int]:
     return counts
 
 
-def verify_digest(
-    commands: ResolvedVerifyCommands | Stack,
-    timeout: float,
-    *,
-    formats: Mapping[str, str] | None = None,
-) -> str:
-    """A digest of HOW a tree was measured: the three gate commands and the timeout.
+def verify_digest(stack: Stack, timeout: float) -> str:
+    """A digest of HOW a tree was measured: the ``[stack]`` and the timeout.
 
     ``docs/baseline.md`` states that a baseline and a comparison measured at
     different timeouts are not a comparison, and before this the only mechanism
@@ -213,28 +208,11 @@ def verify_digest(
     short JSON payload, not a security boundary; the full 64 would make the
     baseline diff noisier for nothing.
 
-    ``formats`` is gate -> declared report format (#629). A report and the
-    text parsers produce different signatures for the same failure, so a
-    baseline written under one is refused under the other. Added to the
-    payload only when non-empty, so every digest written before it is
-    unchanged.
-
-    Under a ``[stack]`` (#696) ``commands`` is the :class:`~kstrl.stack.Stack`,
-    and its digest stands for the three commands: a stack names no gate
-    command, so none is resolved.
+    The stack's own digest stands for its commands (#696): since the flag day
+    a ``[stack]`` is the only source of them, so a baseline written before it
+    (three gate commands in the payload) never matches and is refused.
     """
-    fields: dict[str, object] = (
-        {"stack": commands.digest, "timeout": timeout}
-        if isinstance(commands, Stack)
-        else {
-            "test": commands.test,
-            "typecheck": commands.typecheck,
-            "lint": commands.lint,
-            "timeout": timeout,
-        }
-    )
-    if formats:
-        fields["formats"] = dict(formats)
+    fields: dict[str, object] = {"stack": stack.digest, "timeout": timeout}
     payload = json.dumps(fields, sort_keys=True)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
