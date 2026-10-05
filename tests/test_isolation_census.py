@@ -46,6 +46,7 @@ from tests.helpers.astwalk import (
     parse,
     parsed,
     scope_of,
+    spells,
 )
 
 
@@ -112,3 +113,77 @@ def test_disclosed_a_command_line_grown_by_append_is_not_seen() -> None:
         lambda source: _sees(_builds_a_nono_argv, source),
         "argv = [nono]\nargv.append('wrap')\n",
     )
+
+
+# --- #700 slice 3: `up` starts only through start_scrubbed, inside the rung ---
+
+
+def _starts_a_lasting_command(node: ast.AST) -> bool:
+    return isinstance(node, ast.Call) and leaf_name(node.func) == "start_scrubbed"
+
+
+def test_only_the_replay_starts_a_command_that_keeps_running() -> None:
+    """``verify.start_scrubbed`` is the one spawn that returns while its
+    command runs on, which is what ``[stack] up`` needs. Every call is
+    pinned by module and scope, so a second place that starts ``up`` (or
+    anything else that outlives the call) is a census delta."""
+    assert_census(
+        sources=package_sources(),
+        sees=_starts_a_lasting_command,
+        expected={"replay.py:_run_stages": 1},
+        control="proc = verify.start_scrubbed(up, cwd=w, rung=r, log=f)\n",
+        message=(
+            "start_scrubbed is called somewhere new. It starts a command that "
+            "outlives the call; the replay is the one caller, and stops its group."
+        ),
+        key=_where,
+    )
+
+
+def test_up_is_named_only_where_it_is_read_validated_or_started() -> None:
+    """Every spelling of ``up`` in ``kstrl/``: the key, its validation, the
+    digest, the evidence and the one read that starts it. A new read of
+    ``stack.up`` is a new place that could run it, so it is a delta here."""
+    assert_census(
+        sources=package_sources(),
+        sees=spells("up"),
+        expected={
+            # The key, the field, its validation, load, digest and evidence.
+            "stack.py:<module>": 2,
+            "stack.py:stack_errors": 2,
+            "stack.py:load_stack": 2,
+            "stack.py:Stack.digest": 2,
+            "stack.py:stack_evidence": 2,
+            "stack.py:file_stack_item": 2,
+            # The one place it runs: started inside the test zone, then waited on.
+            "replay.py:_run_stages": 3,
+            "replay.py:_ready": 1,
+        },
+        control=["start_scrubbed(stack.up, cwd=w, rung=r, log=f)\n", 'raw.get("up", "")\n'],
+        message="`up` is spelled somewhere new, or a count moved: read the new site.",
+        key=_where,
+    )
+
+
+def test_start_scrubbed_runs_its_command_only_inside_a_proven_rung() -> None:
+    """``start_scrubbed`` takes a rung with no default and no None, and its
+    one ``Popen`` spawns what ``_in_rung`` built from that rung: a command
+    that outlives the call never runs on the host."""
+    (verify_source,) = [path for path in package_sources() if label(path) == "verify.py"]
+    (function,) = [
+        node
+        for node in all_nodes(parsed(verify_source))
+        if isinstance(node, ast.FunctionDef) and node.name == "start_scrubbed"
+    ]
+    names = [arg.arg for arg in function.args.kwonlyargs]
+    rung = function.args.kwonlyargs[names.index("rung")]
+    assert rung.annotation is not None and ast.unparse(rung.annotation) == "ProvenRung"
+    assert function.args.kw_defaults[names.index("rung")] is None, "rung has a default"
+    (spawn,) = [
+        node
+        for node in all_nodes(function)
+        if isinstance(node, ast.Call) and leaf_name(node.func) == "Popen"
+    ]
+    built = spawn.args[0]
+    assert isinstance(built, ast.Call) and leaf_name(built.func) == "_in_rung", ast.unparse(spawn)
+    assert ast.unparse(built.args[1]) == "rung", ast.unparse(built)
