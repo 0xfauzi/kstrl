@@ -145,6 +145,11 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     "pipeline.py": 5,  # 3 until #463 added carry_interrupted_run's journal
     # open; 5 since #482 added journal_integration_result's journal open
     "prd.py": 1,
+    # #700 slice 3: layer 1 counts every `open(...)`/`read_text(...)` call
+    # shape, mode or not: `replay_lock`'s `path.open('a+', encoding='utf-8')`
+    # and the `up` log's `log.open('wb')` (bytes mode, so it is not itself
+    # a text read; layer 2 below excludes it for exactly that reason).
+    "replay.py": 2,
     # #629's go.mod read.
     "report_formats.py": 1,
     "security.py": 1,
@@ -277,6 +282,8 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "pipeline.py open(path, 'a', buffering=1, encoding='utf-8')",
     "pipeline.py progress_path.read_text(encoding='utf-8')",
     "prd.py open(path, encoding='utf-8')",
+    # #700 slice 3: the per-machine replay lock.
+    "replay.py path.open('a+', encoding='utf-8')",
     # #629's go.mod read, to derive the package directory a go test
     # failure's relative path resolves against.
     "report_formats.py (root / 'go.mod').read_text(encoding='utf-8')",
@@ -373,6 +380,10 @@ EXPECTED_DECIDED_OUT: tuple[str, ...] = (
     "atomicio.py os.open",
     "factory.py EvolutionJournal.open",
     "pipeline.py EvolutionJournal.open",
+    # #700 slice 3: the `up` log is opened "wb" and read back through
+    # `_readable`, which decodes with errors="replace". Binary, so no
+    # codec applies at the open.
+    "replay.py log.open",
     # #433 F9: a review file is read "rb" under a size bound and parsed
     # by jsonread, which decodes. Binary, so no codec applies.
     "tui/integration_view.py open",

@@ -398,6 +398,9 @@ class TestTheWalkAgainstTheRealPackage:
         #696 adds one: ``git.status_entries``'s ``git status --porcelain
         --untracked-files=all -z``, what a ``[stack]``'s checks left in the
         base worktree. It carries a timeout. So 81.
+        #700 slice 3 adds one more: ``verify.start_scrubbed``'s own
+        ``subprocess.Popen``, the ``[stack] up`` the replay starts and
+        leaves running. So 82.
         """
         spawns = frozenset(
             {
@@ -409,7 +412,7 @@ class TestTheWalkAgainstTheRealPackage:
             }
         )
         found = package_calls(spawns)
-        assert len(found.seen) == 81
+        assert len(found.seen) == 82
         assert found.without_line_numbers().undecided == tuple(
             sorted(
                 [

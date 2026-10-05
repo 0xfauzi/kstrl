@@ -134,6 +134,13 @@ EXPECTED_SPELLINGS: frozenset[tuple[str, str]] = frozenset(
         # adequacy finding. A tag is not a failure signature.
         ("kstrl/waivers.py", "waiver"),
         ("kstrl/waivers.py", "waiver_refused"),
+        # #700 slice 3: a replay stage's name ("check:<name>", written as
+        # f"check:{name}") and the two cannot-run stages that carry an exit
+        # ("setup_failed:<exit>", "up_failed:<exit>"). These are the doctor
+        # replay's own record, never a component failure signature.
+        ("kstrl/replay.py", "check"),
+        ("kstrl/replay.py", "setup_failed"),
+        ("kstrl/replay.py", "up_failed"),
     }
 )
 
