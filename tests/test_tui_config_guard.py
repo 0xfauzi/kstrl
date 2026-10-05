@@ -112,6 +112,9 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     # catches `Exception`, not `RuntimeError`, so it contributes none.
     # The transport failures belong to run_gh, counted against
     # intake_github.py rather than here.
+    # #700 slice 2: ProvenRung.command raises a bare RuntimeError when a
+    # refused rung, or one with no policy, reaches a command.
+    "rung.py": 1,
     "serve.py": 5,
     # SignalsError, R8.8 slice 1 / #155.
     "signals.py": 1,

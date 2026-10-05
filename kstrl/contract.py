@@ -38,6 +38,7 @@ from typing import TYPE_CHECKING
 from kstrl import git
 from kstrl.config_numbers import BudgetConfigError, check_numbers
 from kstrl.manifest import Manifest
+from kstrl.rung import ProvenRung
 from kstrl.stack import Stack, stack_in_force
 from kstrl.timeout import limit_seconds
 from kstrl.toolchains import DEFAULT_TEST_COMMAND
@@ -105,6 +106,10 @@ class ContractConfig:
     #: "" (``[contract] test_command`` is refused at load). Provenance: no
     #: [contract] key of its own.
     project_stack: Stack | None = field(default=None, metadata={"provenance": True})
+    #: #700 slice 2: the TEST-zone rung of a ``ks factory`` run under a
+    #: [stack]; Phase 3 runs every check inside it. Set by the factory, never
+    #: from kstrl.toml. Provenance: no [contract] key.
+    rung: ProvenRung | None = field(default=None, metadata={"provenance": True})
 
     def __post_init__(self) -> None:
         # B8: reject typo'd modes loudly instead of letting them silently
@@ -337,7 +342,11 @@ def _run_tests(
 
 
 def _run_checks(
-    cwd: Path, test_command: str, timeout: float | None, stack: Stack | None
+    cwd: Path,
+    test_command: str,
+    timeout: float | None,
+    stack: Stack | None,
+    rung: ProvenRung | None,
 ) -> tuple[bool, str]:
     """Phase 3's verdict on ``cwd`` and its evidence.
 
@@ -348,7 +357,8 @@ def _run_checks(
     if stack is None:
         return _run_tests(cwd, test_command, timeout)
     rows = [
-        check_stack_command(cwd, stack, name, command, timeout) for name, command in stack.checks
+        check_stack_command(cwd, stack, name, command, timeout, rung)
+        for name, command in stack.checks
     ]
     failed = [row for row in rows if not row.passed]
     evidence = "\n".join(f"{row.name}: {row.message}\n{row.output or ''}".strip() for row in failed)
@@ -365,6 +375,7 @@ def bisect_breaker(
     timeout: float | None = None,
     setup: WorktreeSetup = NO_SETUP,
     stack: Stack | None = None,
+    rung: ProvenRung | None = None,
 ) -> str | None:
     """Linear bisection to identify which component broke integration.
 
@@ -410,7 +421,7 @@ def bisect_breaker(
 
             if setup.prepare(worktree_path):
                 return None
-            passed, _ = _run_checks(worktree_path, test_command, timeout, stack)
+            passed, _ = _run_checks(worktree_path, test_command, timeout, stack, rung)
             if not passed:
                 return comp_id
 
@@ -511,6 +522,7 @@ def run_tier_check(
             config.test_command,
             limit_seconds(config.timeout),
             config.project_stack,
+            config.rung,
         )
 
         if passed:
@@ -544,6 +556,7 @@ def run_tier_check(
         limit_seconds(config.timeout),
         setup,
         config.project_stack,
+        config.rung,
     )
 
     if breaker:
@@ -629,6 +642,7 @@ def run_integrated_base_check(
                 config.test_command,
                 limit_seconds(config.timeout),
                 config.project_stack,
+                config.rung,
             )
     finally:
         _remove_temp_worktree(worktree_path, root_dir, ui, "contract")

@@ -6295,13 +6295,17 @@ def queue_answer(
 ) -> None:
     """Answer an escalated item: replace its spec and send it back to queued.
 
-    Only an item awaiting an answer can be answered (#644). SPEC is the
-    answered spec; it replaces the item's queued copy, so the next
-    `ks serve` cycle runs it. An item that has spent its attempts needs
-    `--reset-attempts`, as `ks queue retry` does. Identical bytes are
-    accepted and recorded as unchanged.
+    Only an item awaiting an answer can be answered (#644), or a poisoned
+    item that an undecided spec_escalation row in the inbox names: the
+    architect escalated, but the spec-issues write failed, so serve could
+    not tell. SPEC is the answered spec; it replaces the item's queued
+    copy, so the next `ks serve` cycle runs it. An item that has spent its
+    attempts needs `--reset-attempts`, as `ks queue retry` does. Identical
+    bytes are accepted and recorded as unchanged. The poison streak is
+    not changed, as `ks queue retry` does not change it.
     """
-    from kstrl.workqueue import QueueError, queue_lock
+    from kstrl.decisions import escalation_naming
+    from kstrl.workqueue import ItemState, QueueError, queue_lock
 
     root_dir, queue = _queue_for(root)
     ui_impl = _autonomy_ui(ui, no_color)
@@ -6319,7 +6323,18 @@ def queue_answer(
         with queue_lock(root_dir):
             # Read under the lock, so the state checked is the state answered.
             item = _resolve_queue_item(queue, item_id, ui_impl)
-            record = queue.answer(item, text, actor=_actor(), reset_attempts=reset_attempts)
+            row_id = row_run = ""
+            if item.state is ItemState.POISON:
+                row = escalation_naming(root_dir, item.item_id)
+                row_id, row_run = row.id, row.run_id
+            record = queue.answer(
+                item,
+                text,
+                actor=_actor(),
+                reset_attempts=reset_attempts,
+                escalation_row=row_id,
+                escalated_run=row_run,
+            )
     except (QueueError, OSError) as exc:
         ui_impl.err(str(exc))
         sys.exit(2)
