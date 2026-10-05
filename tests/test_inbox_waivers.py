@@ -522,7 +522,7 @@ def test_an_approval_does_not_cover_a_second_secret_in_the_same_file(tmp_path: P
     assert item.evidence["category"] == "policy_secret_pattern"
     _decide(root, env, "approve", item.id)
 
-    code, out = _retry(root, {**env, "AGENT_CMD": TWO_SECRETS})
+    code, out = _retry_regenerated(root, {**env, "AGENT_CMD": TWO_SECRETS})
 
     assert code == 1, out
     (finding,) = _gated(root, "policy_")
