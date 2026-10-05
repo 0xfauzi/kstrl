@@ -315,7 +315,7 @@ class TestRefusalsChangeNothing:
             root,
             item.item_id,
             ["queue", "answer", item.item_id, self._answer_file(tmp_path)],
-            "only an item awaiting an answer can be answered",
+            "no undecided spec_escalation row in the inbox names it",
         )
 
     def test_a_queued_item_is_refused(self, tmp_path: Path) -> None:

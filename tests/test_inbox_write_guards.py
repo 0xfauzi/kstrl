@@ -79,7 +79,10 @@ EXPECTED_CONSTRUCTION_COUNTS = {
     "autonomy.py": 2,
     "calibration_ladder.py": 1,
     "cli.py": 1,
-    "decisions.py": 2,
+    # #644 slice 2: was 2. +1: escalation_naming scans the inbox for the
+    # undecided spec_escalation row that names a poisoned item. It reads;
+    # it mutates nothing.
+    "decisions.py": 3,
     "factory.py": 1,
     # #595 (addendum): was 5, one construction per lazy-open site
     # (ComponentPipeline.snapshot_waivers's own +1 among them). All five
