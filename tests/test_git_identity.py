@@ -271,6 +271,10 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # #695: `_repo`'s base and branch commits, into a repository it has
     # just put through `tests.helpers.gitrepo.set_identity`.
     "tests/test_secret_rules_read_every_byte.py": 1,
+    # #654 slice 3b: `_commit`'s one `git commit` spelling, into the
+    # repository `tests.test_prompt_record._spec_project` has just put
+    # through `tests.helpers.gitrepo.set_identity`.
+    "tests/test_serve_red_base.py": 1,
     # #639: `_project`'s seed commit, into the repository it has just put
     # through `tests.helpers.gitrepo.set_identity`.
     "tests/test_spec_identity.py": 1,
