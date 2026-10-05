@@ -331,7 +331,12 @@ class HomeScreen(Screen[None]):
         """Once, on the first queue read: the needs-you rows when there
         are any, otherwise history. Active rows are a tab away; later
         reads never move the operator's focus, and neither does this one
-        once the operator has moved it off the history table."""
+        once the operator has moved it off the history table.
+
+        ``set_focus`` and not ``focus()``: ``focus()`` defers through
+        ``call_later``, so when a ``focus()`` was already queued, this one
+        queued behind it, landed second and took the focus back (#712).
+        Placing focus now lets a request already in flight land after it."""
         if self._focus_placed:
             return
         self._focus_placed = True
@@ -339,7 +344,7 @@ class HomeScreen(Screen[None]):
         if self.focused not in (None, history):
             return
         needs = self.query_one("#home-needs", DataTable)
-        (needs if needs.row_count else history).focus()
+        self.set_focus(needs if needs.row_count else history)
 
     def _history_notes(self) -> dict[str, str]:
         return {

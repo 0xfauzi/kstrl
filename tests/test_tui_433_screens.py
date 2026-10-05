@@ -431,7 +431,7 @@ class TestOperatorQueue:
             runs = cast(DataTable[Any], app.screen.query_one("#home-runs"))
             old_note = str(runs.get_cell(OLD, "note"))
             assert old_note == "superseded by new002", old_note
-            # _place_focus's focus() is deferred: it lands after the rows do.
+            # The handler that drew these rows placed focus too, once.
             await settled(pilot, lambda: app.screen.focused is needs, what="focus on needs-you")
             await pilot.press("enter")
             await settled(

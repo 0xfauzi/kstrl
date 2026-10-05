@@ -114,7 +114,9 @@ this is a small print an operator should have to find on their own:
 
 **What it is**: before the first engineer call, `ks factory` runs Phase 1's test, typecheck and lint gates, with Phase 1's commands, parsers and timeout, on the commit the base branch names, in a throwaway worktree under `.kstrl/contract/` (#654). `ks run` and `ks retry` reach the same check. It never measures your checkout: components are cut from the commit, so a fix you have not committed does not count. A gate whose failure its parser recognises refuses the run, and the refusal names the gate and up to five failing tests or rules. Without the refusal every component fails Phase 1 on the same failure after its engineer has been paid. On `ks factory --spec` the architect runs, and is paid, before this check. A gate that ran and measured nothing (pytest collecting no tests, a timeout, a tool that is not installed) is printed as `measured nothing` and does not refuse, because Phase 1 still fails that row on every component. A base branch that does not resolve, a checkout that fails and a `worktree_setup_command` that fails on the base are printed the same way. Every reading is written to `.kstrl/runs/<run_id>/base-gates.json` beside `launch.json`: the base sha, each gate's row with its failing names, the gates that were turned off, and whether and why the run refused. A run that cannot write the file refuses. `ks doctor --measure` takes the same reading without starting a run.
 
-**Resolve**: make the base green in a commit; or commit `pytest.mark.xfail(strict=True)` on the tests you accept as failing; or pass `--no-verify`, which turns off all of Phase 1 and this check with it. Under `--no-verify` the record says `--no-verify: Phase 1 runs no gate`.
+**Resolve**: make the base green in a commit; or commit `pytest.mark.xfail(strict=True)` on the tests you accept as failing; or pass `--accept-red-base <sha>`, at least 12 characters of the base commit's sha (the refusal prints the first 12), to run on that commit as it is; or pass `--no-verify`, which turns off all of Phase 1 and this check with it. Under `--no-verify` the record says `--no-verify: Phase 1 runs no gate`.
+
+`--accept-red-base` is for one commit and one run (#654). A base that moved since refuses again, and so does a value shorter than 12 characters or one that is not the start of the measured sha; the refusal names the value and the sha. `ks retry` replays it from the launch record. With `--no-verify` it refuses, because no base is measured. It waives only a gate that ran and measurably failed. Under a `[stack]` that is a check that exited with a status other than 0, 126 or 127; it never waives a failed setup (no check ran), a check that timed out or whose command was not found (it measured nothing, and no engineer's commit fixes it), or what a check leaves in `git status` (every engineer's diff would carry it). The run's `base-gates.json` records the value as `acceptRedBase` and the refusals it waived as `accepted`. Phase 1 still runs every gate on every component, so a component passes only once the base's failures are fixed on its branch.
 
 ## Refused: `[sandbox]` cannot reach a role
 
@@ -399,10 +401,12 @@ leash process, `kstrl/agents/leash.py`, which leads the agent's process
 group and holds one end of a pipe to the kstrl process that started it.
 However that process ends (SIGKILL, an OOM kill, a crash, a closed
 terminal), the kernel closes its end of the pipe, and the leash sends
-SIGTERM to the agent's group, waits 5 seconds, and sends SIGKILL. A pool
+SIGTERM to the agent's group, waits until nothing else is left in the
+group or 5 seconds have passed, and sends SIGKILL (#708). A pool
 worker whose parent dies ends too, and takes its agents with it. Measured
-on macOS: the agent was gone within 0.04 s, and a process in its group
-that ignores SIGTERM within 5.04 s. Three things this does not cover. A
+on macOS: the agent was gone within 0.04 s, a process in its group
+that ignores SIGTERM within 5.04 s, and the leash itself within 0.10 s
+when nothing in the group outlived the SIGTERM. Three things this does not cover. A
 process an agent's tool started in a group or session of its own is not
 in the agent's group: in a worktree the next run's prune kills it and
 names it, as above, and in the project root nothing does. If the leash
@@ -545,7 +549,9 @@ either deliberate (`ks queue pause`) or self-inflicted by the daemon:
 the daily budget stop sets tomorrow's local midnight as `resume_after`
 and clears itself, and the poison breaker pauses after consecutive
 poisoned items. Run `ks queue` to see the marker, and `ks queue resume`
-to lift a pause that no longer applies.
+to lift a pause that no longer applies. The resume also restarts the
+poison streak at 0; without that the next cycle would pause the queue
+again on the same streak.
 
 An unreadable pause marker also reads as paused, and the detail line
 says so. That is deliberate: resuming unattended spending on the

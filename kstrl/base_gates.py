@@ -23,6 +23,14 @@ worktree after the checks ran (:data:`BaseGates.left_behind`). A check whose
 output is not ignored by the project's own .gitignore would otherwise read as
 an out-of-scope edit of every engineer's.
 
+``ks factory --accept-red-base <sha>`` (slice 4) runs on a base that
+refuses, for one run and one commit: :func:`apply_acceptance` waives a
+refusal only when the value is at least :data:`ACCEPT_MIN_DIGITS`
+characters of the measured sha, refuses anything else, and waives only the
+lines :func:`_acceptable_lines` names: a gate that ran and measurably
+failed. A failed setup, a check that measured nothing and what a check
+left behind still refuse.
+
 :func:`write_record` writes ``.kstrl/runs/<run_id>/base-gates.json`` for
 every reading, a skipped one included. The verdict is taken from the reading
 in memory, never from the file read back.
@@ -63,6 +71,10 @@ WORKTREE_LABEL = "base-gates"
 
 #: How many failing test or rule names one refusal line carries.
 NAMED_FAILURES = 5
+
+#: The fewest leading characters of the measured base sha that
+#: ``--accept-red-base`` takes (#654 slice 4).
+ACCEPT_MIN_DIGITS = 12
 
 
 @dataclass(frozen=True)
@@ -218,11 +230,7 @@ def _stack_refusal_lines(reading: BaseGates) -> list[str]:
         return [f"the setup fails on {at}: {reading.setup_error}"]
     if reading.result is None:
         return []
-    lines = [
-        f"{check.name} fails on {at}: {check.message}"
-        for check in reading.result.checks
-        if not check.passed
-    ]
+    lines = [_stack_check_line(check, at) for check in reading.result.checks if not check.passed]
     if reading.left_behind:
         lines.append(
             f"git status after the checks on {at}: "
@@ -230,6 +238,64 @@ def _stack_refusal_lines(reading: BaseGates) -> list[str]:
             + "; what a check writes must be committed or ignored in .gitignore"
         )
     return lines
+
+
+def _stack_check_line(check: CheckResult, at: str) -> str:
+    return f"{check.name} fails on {at}: {check.message}"
+
+
+def _acceptable_lines(reading: BaseGates) -> list[str]:
+    """The refusal lines ``--accept-red-base`` may waive (#654 slice 4).
+
+    Only a gate that ran on the base and measurably failed: that is the red
+    reading the operator accepts. With no stack that is every line
+    :func:`refusal_lines` returns. Under a ``[stack]`` it is each check that
+    exited with a status other than 0, 126 or 127. Never a failed setup (no
+    check ran), a check that measured nothing (a missing tool or a timeout
+    that no commit of the engineer's fixes), or what a check left in ``git
+    status`` (every engineer's diff would carry it). A refusal this list does
+    not name is never waived, so a kind of refusal added later refuses under
+    an acceptance until it is named here.
+    """
+    if not reading.stack_digest:
+        return refusal_lines(reading)
+    if reading.setup_error or reading.result is None:
+        return []
+    at = f"{reading.base_branch} at {reading.base_sha[:12]}"
+    return [
+        _stack_check_line(check, at)
+        for check in reading.result.checks
+        if not check.passed and check.measured
+    ]
+
+
+def apply_acceptance(
+    reading: BaseGates, reasons: list[str], accept: str
+) -> tuple[list[str], list[str]]:
+    """What still refuses under ``--accept-red-base accept``, and what it waived.
+
+    The acceptance binds to the measured commit, not to a set of failures:
+    ``accept`` must be at least :data:`ACCEPT_MIN_DIGITS` characters and a
+    prefix of the sha this run measured, so a base that moved since the
+    operator looked refuses again. Anything else refuses, naming both. A
+    match waives the lines :func:`_acceptable_lines` names and nothing else.
+    With no ``accept`` the reasons stand as they are.
+    """
+    if not accept:
+        return reasons, []
+    if len(accept) < ACCEPT_MIN_DIGITS or not reading.base_sha.startswith(accept):
+        measured = reading.base_sha or "nothing, because no base was measured"
+        return [
+            *reasons,
+            f"--accept-red-base {accept} does not name the measured base: it must be "
+            f"at least {ACCEPT_MIN_DIGITS} characters of the sha of {reading.base_branch}, "
+            f"which measured {measured}",
+        ], []
+    acceptable = _acceptable_lines(reading)
+    return (
+        [line for line in reasons if line not in acceptable],
+        [line for line in reasons if line in acceptable],
+    )
 
 
 def warning_lines(reading: BaseGates) -> list[str]:
@@ -299,8 +365,15 @@ def write_record(
     reading: BaseGates,
     reasons: list[str],
     skipped_reason: str = "",
+    *,
+    accept: str = "",
+    accepted: tuple[str, ...] = (),
 ) -> list[str]:
-    """Write the reading's record; return why it could not be written, or []."""
+    """Write the reading's record; return why it could not be written, or [].
+
+    ``accept`` is the run's ``--accept-red-base`` value, "" without one, and
+    ``accepted`` the refusals it waived (#654 slice 4).
+    """
     path = base_gates_path(root_dir, run_id)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -310,6 +383,8 @@ def write_record(
                 "runId": run_id,
                 "kstrlVersion": kstrl_version(),
                 **reading_document(reading, reasons, skipped_reason),
+                "acceptRedBase": accept,
+                "accepted": list(accepted),
             },
         )
     except OSError as exc:
