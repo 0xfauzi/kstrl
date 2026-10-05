@@ -1,5 +1,7 @@
 """Agent implementations for kstrl."""
 
+from pathlib import Path
+
 from kstrl.agents.base import Agent
 from kstrl.agents.claude_code import ClaudeCodeAgent
 from kstrl.agents.claude_sdk import ClaudeSdkAgent
@@ -67,6 +69,8 @@ def get_agent(
     sandbox: SandboxConfig | None = None,
     max_budget_usd: float | None = None,
     read_only: bool = False,
+    *,
+    root_dir: Path | None,
 ) -> Agent:
     """Get appropriate agent based on configuration.
 
@@ -97,9 +101,14 @@ def get_agent(
             generic sandbox surface, so - exactly as with ``sandbox`` -
             the setting is ignored and callers that need the guarantee
             must not use one.
+        root_dir: The project root. Every agent process the adapter
+            starts is recorded under this project's control directory
+            until it is disposed of, so the next command can name one a
+            killed kstrl left running (#642). Required, so no caller can
+            leave it out by accident; None records nothing.
     """
     if agent_cmd:
-        return CustomAgent(agent_cmd)
+        return CustomAgent(agent_cmd, root_dir=root_dir)
     if agent_type is not None:
         canonical = canonical_agent_type(agent_type)
         if canonical is None:
@@ -125,6 +134,7 @@ def get_agent(
             effort=model_reasoning_effort,
             sandbox=sandbox,
             read_only=read_only,
+            root_dir=root_dir,
         )
     if agent_type == "claude-sdk":
         return ClaudeSdkAgent(
@@ -133,6 +143,7 @@ def get_agent(
             sandbox=sandbox,
             max_budget_usd=max_budget_usd,
             read_only=read_only,
+            root_dir=root_dir,
         )
     if agent_type == "codex":
         return CodexAgent(
@@ -140,6 +151,7 @@ def get_agent(
             reasoning_effort=model_reasoning_effort,
             sandbox=sandbox,
             read_only=read_only,
+            root_dir=root_dir,
         )
     # Auto-detect: prefer claude-code, fall back to codex
     if agent_type is None or agent_type == "auto":
@@ -149,10 +161,12 @@ def get_agent(
                 effort=model_reasoning_effort,
                 sandbox=sandbox,
                 read_only=read_only,
+                root_dir=root_dir,
             )
     return CodexAgent(
         model=model,
         reasoning_effort=model_reasoning_effort,
         sandbox=sandbox,
         read_only=read_only,
+        root_dir=root_dir,
     )

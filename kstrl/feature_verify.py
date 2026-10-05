@@ -25,8 +25,8 @@ from typing import TYPE_CHECKING
 from kstrl import git
 from kstrl.config_toml import ConfigError
 from kstrl.events import Event, VerificationResultEvent
-from kstrl.isolation import HOST_LABEL
 from kstrl.loop import STOP_EXIT_CODE, LoopResult, determine_branch
+from kstrl.rung import HOST_LABEL
 from kstrl.stack import StackRefused, confirmed_stack, unconfirmed_lines
 from kstrl.verify import (
     DIFF_DEPENDENT_CHECKS,

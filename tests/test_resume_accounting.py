@@ -41,6 +41,7 @@ from kstrl.shutdown import StopController
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
 from kstrl.workqueue import ItemSource, Queue, QueueConfig
+from tests.helpers import procs
 from tests.spine_utils import (
     base_config,
     component,
@@ -210,6 +211,7 @@ def _killed_run(tmp_path: Path) -> tuple[Path, Path, Path, str, str]:
         if proc.poll() is None:
             os.killpg(proc.pid, signal.SIGKILL)
             proc.wait(timeout=10)
+    procs.wait_for_recorded_agents_to_end(root)
     killed = Manifest.load(manifest_path)
     assert [(c.id, c.status, c.retries) for c in killed.components] == [
         ("comp-z", ComponentStatus.COMPLETED.value, 0),
@@ -624,6 +626,7 @@ def test_a_chain_of_killed_runs_carries_through_to_the_run_that_finishes(
     finally:
         os.killpg(proc.pid, signal.SIGKILL)
         proc.wait(timeout=10)
+    procs.wait_for_recorded_agents_to_end(root)
     second_run = Manifest.load(manifest_path).run_id
     assert second_run != first_run
     (state / "resume").touch()

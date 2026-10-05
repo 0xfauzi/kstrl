@@ -37,7 +37,7 @@ import time
 from pathlib import Path
 
 from kstrl.manifest import Manifest
-from tests.helpers import gitrepo
+from tests.helpers import gitrepo, procs
 
 A = "comp-a"
 B = "comp-b"
@@ -243,6 +243,7 @@ def _interrupt_after_commit(tmp_path: Path, root: Path) -> str:
         if proc.poll() is None:
             os.killpg(proc.pid, signal.SIGKILL)
             proc.wait(timeout=30)
+    procs.wait_for_recorded_agents_to_end(root)
     manifest = Manifest.load(root / "scripts" / "kstrl" / "manifest.json")
     comp = manifest.get_component(A)
     assert comp is not None and comp.status == "running", "precondition: comp-a left RUNNING"
@@ -289,6 +290,7 @@ def _interrupt_comp_b_after_commit(tmp_path: Path, root: Path) -> str:
         if proc.poll() is None:
             os.killpg(proc.pid, signal.SIGKILL)
             proc.wait(timeout=30)
+    procs.wait_for_recorded_agents_to_end(root)
     manifest = Manifest.load(root / "scripts" / "kstrl" / "manifest.json")
     comp_a = manifest.get_component(A)
     comp_b = manifest.get_component(B)
