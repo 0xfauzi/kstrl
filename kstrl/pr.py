@@ -408,6 +408,8 @@ def push_create_and_merge_pr(
     ui: UI,
     merge_method: str = "squash",
     merge_timeout: float = 300,
+    *,
+    isolation: str,
 ) -> PrOutcome:
     """Push branch, create PR, merge it, and fetch the base branch.
 
@@ -476,7 +478,7 @@ def push_create_and_merge_pr(
 
     # Create PR
     try:
-        pr_number, pr_url = create_component_pr(component, manifest, cwd)
+        pr_number, pr_url = create_component_pr(component, manifest, cwd, isolation=isolation)
     except RuntimeError as exc:
         ui.warn(f"  {exc}")
         return PrOutcome(pushed=True, error=str(exc))
@@ -498,9 +500,7 @@ def push_create_and_merge_pr(
 
 
 def _generate_pr_body(
-    component: Component,
-    manifest: Manifest,
-    root: Path | None = None,
+    component: Component, manifest: Manifest, root: Path | None = None, *, isolation: str
 ) -> str:
     """Generate a PR description for a component. ``root`` reads the run's
     acceptance record into a ``## Acceptance`` section (#700 slice 4)."""
@@ -578,6 +578,7 @@ def _generate_pr_body(
         lines.append(render_findings_markdown(callouts).rstrip())
         lines.append("")
 
+    lines.extend(["## Isolation", "", isolation, ""])  # #700: the label the checks ran under
     lines.extend(pr_section(root, manifest.run_id, component.id))
 
     # PRD reference
@@ -604,13 +605,15 @@ def create_component_pr(
     component: Component,
     manifest: Manifest,
     cwd: Path,
+    *,
+    isolation: str,
 ) -> tuple[int, str]:
     """Create a PR for one component.
 
     Returns (pr_number, pr_url).
     Raises RuntimeError on failure.
     """
-    body = _generate_pr_body(component, manifest, cwd)
+    body = _generate_pr_body(component, manifest, cwd, isolation=isolation)
     title = f"[{manifest.project_name}] {component.title}"
 
     # --base=/--head= bind the branch values to their flags even if a
@@ -650,6 +653,8 @@ def create_prs_in_order(
     manifest: Manifest,
     cwd: Path,
     ui: UI,
+    *,
+    isolation: str,
 ) -> list[tuple[int, str]]:
     """Create PRs in topological order.
 
@@ -689,7 +694,7 @@ def create_prs_in_order(
             continue
 
         try:
-            pr_number, pr_url = create_component_pr(component, manifest, cwd)
+            pr_number, pr_url = create_component_pr(component, manifest, cwd, isolation=isolation)
             component.pr_number = pr_number
             component.pr_url = pr_url
             results.append((pr_number, pr_url))
@@ -704,6 +709,8 @@ def create_single_pr(
     manifest: Manifest,
     cwd: Path,
     ui: UI,
+    *,
+    isolation: str,
 ) -> tuple[int, str] | None:
     """Create a single PR for all completed components.
 
@@ -751,6 +758,7 @@ def create_single_pr(
             lines.append(f"  {comp.description}")
 
     lines.append("")
+    lines.extend(["## Isolation", "", isolation, ""])  # #700: the label the checks ran under
     lines.append("---")
     lines.append(PR_FOOTER_MARKER)
 

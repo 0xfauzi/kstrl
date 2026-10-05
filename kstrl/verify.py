@@ -74,7 +74,7 @@ from kstrl.prd import PRD
 from kstrl.procdispose import drain_or_abandon
 from kstrl.procgroup import signal_process_tree
 from kstrl.report_formats import REPORT_ENV, fresh_report, read_gate_report
-from kstrl.rung import ProvenRung
+from kstrl.rung import Rung
 from kstrl.stack import SECRET_NAME_FRAGMENTS, Stack, stack_in_force
 from kstrl.statedir import STATE_DIR_NAME
 from kstrl.suite_inventory import (
@@ -245,7 +245,7 @@ def run_scrubbed(
     extra_env: Mapping[str, str] | None = None,
     stdin_text: str | None = None,
     declared_env: tuple[str, ...] | None = None,
-    rung: ProvenRung | None = None,
+    rung: Rung | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run a verification subprocess: scrubbed env, own process group, leashed.
 
@@ -264,11 +264,13 @@ def run_scrubbed(
     :func:`scrubbed_subprocess_env` (#696); None keeps the allowlist.
 
     ``rung`` runs the command inside that proven isolation rung (#700
-    slice 2), through :meth:`ProvenRung.command`: a string ``cmd`` as
+    slice 2), through its ``command``: a string ``cmd`` as
     ``/bin/sh -c cmd``, the shell ``shell=True`` would have used, and every
     declared name and ``extra_env`` value set again inside the rung,
     because nono strips some variables from the environment it passes on.
-    None, the default, runs on the host exactly as before.
+    A :class:`~kstrl.rung.HostFallback` runs that same ``/bin/sh -c cmd``
+    on the host (a platform with no prover). None, the default, runs on
+    the host exactly as before.
 
     Drop-in for the ``subprocess.run(..., capture_output=True, text=True,
     timeout=...)`` calls verification used to make, with two differences
@@ -425,7 +427,7 @@ def start_scrubbed(
     cmd: str,
     *,
     cwd: Path,
-    rung: ProvenRung,
+    rung: Rung,
     log: IO[bytes],
     declared_env: tuple[str, ...] | None = None,
 ) -> subprocess.Popen[bytes]:
@@ -441,8 +443,9 @@ def start_scrubbed(
 
     Shared with :func:`run_scrubbed`: :func:`scrubbed_subprocess_env`, a
     process group of the child's own, and :func:`_in_rung`. ``rung`` has
-    no default and is never None: a command that outlives this call never
-    runs on the host. The child leads a new session, so its pid is the
+    no default and is never None: a command that outlives this call runs
+    on the host only under the explicit host fallback of a platform with
+    no prover. The child leads a new session, so its pid is the
     group id; the caller waits on it, records that id, and stops the group
     through :mod:`kstrl.procgroup` (``kstrl.replay``).
     """
@@ -459,7 +462,7 @@ def start_scrubbed(
 
 
 def _in_rung(
-    cmd: str | list[str], rung: ProvenRung | None, env: Mapping[str, str], names: Sequence[str]
+    cmd: str | list[str], rung: Rung | None, env: Mapping[str, str], names: Sequence[str]
 ) -> str | list[str]:
     """``cmd`` as :func:`run_scrubbed` spawns it: unchanged with no rung,
     else inside ``rung`` with each of ``names`` that ``env`` holds set
@@ -836,7 +839,7 @@ class VerifyConfig:
     # proved before its base gates; every [stack] check runs inside it.
     # None runs on the host. Set only through ``FactoryConfig``, never from
     # kstrl.toml. Provenance: no [verify] key.
-    rung: ProvenRung | None = field(default=None, metadata={"provenance": True})
+    rung: Rung | None = field(default=None, metadata={"provenance": True})
 
     @classmethod
     def from_env(cls) -> VerifyConfig:
@@ -1864,7 +1867,7 @@ def check_stack_command(
     name: str,
     command: str,
     timeout: float | None,
-    rung: ProvenRung | None = None,
+    rung: Rung | None = None,
 ) -> CheckResult:
     """Run one ``[stack]`` check in ``cwd``: the row ``stack:<name>`` (#696).
 

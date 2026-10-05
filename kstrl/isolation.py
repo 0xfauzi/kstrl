@@ -51,9 +51,13 @@ Two measured limits, both recorded rather than probed:
   interface, which the operating system's firewall can stop to ask the
   operator about.
 
-Every system but macOS is refused: on Linux nono's Landlock rules filter
-TCP by port and not by host, so it cannot express a localhost-only test
-zone (G7, measurement M2).
+No prover exists off macOS: on Linux nono's Landlock rules filter TCP
+by port and not by host, so it cannot express a localhost-only test zone
+(G7, measurement M2). There :func:`prove_zones` proves nothing and hands
+back the host fallback (:func:`kstrl.rung.host_fallback`) for both zones,
+whose one label every record carries (owner decision 2026-10-05, #700).
+:func:`prove_rung` itself still refuses off macOS, read off the real
+platform, so nono never runs unmeasured there.
 """
 
 from __future__ import annotations
@@ -76,7 +80,16 @@ from typing import Any
 from kstrl.atomicio import atomic_write_json, atomic_write_text
 from kstrl.events import RunPaths
 from kstrl.jsonread import read_json
-from kstrl.rung import ENV_PROGRAM, HOST_LABEL, ProvenRung, _nono_argv, zone_dir
+from kstrl.rung import (
+    ENV_PROGRAM,
+    HOST_LABEL,
+    PROVER_PLATFORMS,
+    ProvenRung,
+    Rung,
+    _nono_argv,
+    host_fallback,
+    zone_dir,
+)
 from kstrl.statedir import control_dir, xdg_state_home
 from kstrl.verify import ChildOutputDecodeError, run_scrubbed
 from kstrl.version import kstrl_version
@@ -450,7 +463,7 @@ def _locate_nono(scratch: Path) -> tuple[str, str, str]:
     """``(binary, version, refusal)``. The version is recorded, never
     consulted: the canaries decide. ``--version`` runs in ``scratch``
     with no update check, like every other nono spawn."""
-    if sys.platform != "darwin":
+    if sys.platform not in PROVER_PLATFORMS:
         return (
             "",
             "",
@@ -531,10 +544,15 @@ def prove_rung(
 
 def prove_zones(
     root: Path, writable: Sequence[Path], readable: Sequence[Path], browser: bool
-) -> dict[str, ProvenRung]:
+) -> dict[str, Rung]:
     """Both zones for one run, each proven in a scratch directory of its
     own that the caller removes through :func:`kstrl.rung.release`, and
-    with the control directory denied to both (#700 slice 2)."""
+    with the control directory denied to both (#700 slice 2). On a
+    platform with no prover, the host fallback for both and nothing
+    proven (owner decision 2026-10-05)."""
+    fallback = host_fallback()
+    if fallback is not None:
+        return {SETUP_ZONE: fallback, TEST_ZONE: fallback}
     return {
         zone: prove_rung(
             root,
@@ -550,10 +568,10 @@ def prove_zones(
 
 
 def write_record(
-    root: Path, run_id: str, stack_digest: str, rungs: Mapping[str, ProvenRung]
+    root: Path, run_id: str, stack_digest: str, rungs: Mapping[str, Rung]
 ) -> list[str]:
-    """Write the run's :data:`ISOLATION_FILE`, proven or refused; return
-    why it could not be written, or []."""
+    """Write the run's :data:`ISOLATION_FILE`, proven, refused or the host
+    fallback; return why it could not be written, or []."""
     path = RunPaths.for_run(root, run_id).root / ISOLATION_FILE
     try:
         path.parent.mkdir(parents=True, exist_ok=True)

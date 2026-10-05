@@ -34,13 +34,13 @@ from kstrl.serve import SpendLedger
 from kstrl.workqueue import ItemState, Queue, QueueConfig, QueueItem
 from tests.helpers.gitrepo import git_in
 from tests.helpers.stack_confirmation import confirm_stack
-from tests.test_isolation_rung import needs_nono
+from tests.test_isolation_rung import runs_a_stack
 from tests.test_prompt_record import ONE_COMPONENT, _spec_project
 from tests.test_queue_awaiting_answer import _scripted_claude
 from tests.test_stack_e2e import _stack
 
-#: A [stack] run refuses off macOS until the Linux rung lands (#700 M2).
-pytestmark = [pytest.mark.usefixtures("no_open_prs"), needs_nono]
+#: A [stack] run needs nono on macOS; on Linux it runs on the host (#700).
+pytestmark = [pytest.mark.usefixtures("no_open_prs"), runs_a_stack]
 
 #: The base's one check: red prints a failure and exits 1, green exits 0.
 RED = "echo 'check: FAILED'\nexit 1\n"

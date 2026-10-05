@@ -962,7 +962,7 @@ class TestFactoryReviewerCrash:
         # and the PR body renders the did-not-run callout from it
         from kstrl.pr import _generate_pr_body
 
-        body = _generate_pr_body(comp, manifest)
+        body = _generate_pr_body(comp, manifest, isolation="none: ran on the host")
         assert "INFRASTRUCTURE ERROR" in body
 
 

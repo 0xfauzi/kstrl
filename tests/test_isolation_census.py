@@ -31,6 +31,7 @@ message; never type a count in.
 from __future__ import annotations
 
 import ast
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -166,9 +167,10 @@ def test_up_is_named_only_where_it_is_read_validated_or_started() -> None:
 
 
 def test_start_scrubbed_runs_its_command_only_inside_a_proven_rung() -> None:
-    """``start_scrubbed`` takes a rung with no default and no None, and its
-    one ``Popen`` spawns what ``_in_rung`` built from that rung: a command
-    that outlives the call never runs on the host."""
+    """``start_scrubbed`` takes a ``Rung`` (a proven rung or the host
+    fallback) with no default and no None, and its one ``Popen`` spawns what
+    ``_in_rung`` built from it: a command that outlives the call runs on the
+    host only under the explicit fallback of a platform with no prover."""
     (verify_source,) = [path for path in package_sources() if label(path) == "verify.py"]
     (function,) = [
         node
@@ -177,7 +179,7 @@ def test_start_scrubbed_runs_its_command_only_inside_a_proven_rung() -> None:
     ]
     names = [arg.arg for arg in function.args.kwonlyargs]
     rung = function.args.kwonlyargs[names.index("rung")]
-    assert rung.annotation is not None and ast.unparse(rung.annotation) == "ProvenRung"
+    assert rung.annotation is not None and ast.unparse(rung.annotation) == "Rung"
     assert function.args.kw_defaults[names.index("rung")] is None, "rung has a default"
     (spawn,) = [
         node
@@ -217,7 +219,8 @@ def test_an_acceptance_check_runs_only_through_the_replay_inside_its_rung() -> N
     """``kstrl/acceptance.py`` starts no process of its own. Its one call
     that runs a command is the replay's ``_ran``, made inside the probe the
     replay hands its test-zone rung, and it passes that rung on, so a check
-    never runs on the host."""
+    runs on the host only under the host fallback of a platform with no
+    prover (#700, owner decision 2026-10-05)."""
     (source,) = [path for path in package_sources() if label(path) == "acceptance.py"]
     assert_census(
         sources=[source],
@@ -233,3 +236,69 @@ def test_an_acceptance_check_runs_only_through_the_replay_inside_its_rung() -> N
     (call,) = [node for node in all_nodes(parsed(source)) if _runs_a_command(node)]
     assert leaf_name(call.func) == "_ran", ast.unparse(call)
     assert ast.unparse(call.args[3]) == "rung", ast.unparse(call)
+
+
+# --- #700, owner decision 2026-10-05: the host fallback, decided in one place ---
+
+
+def _calls(name: str) -> Callable[[ast.AST], bool]:
+    def sees(node: ast.AST) -> bool:
+        return isinstance(node, ast.Call) and leaf_name(node.func) == name
+
+    return sees
+
+
+def test_only_host_fallback_constructs_a_fallback() -> None:
+    """A ``HostFallback`` built anywhere else could carry a label other than
+    the one ``HOST_FALLBACK_LABEL`` renders, or exist on a platform with a
+    prover, so its one constructor is pinned."""
+    assert_census(
+        sources=package_sources(),
+        sees=_calls("HostFallback"),
+        expected={"rung.py:host_fallback": 1},
+        control="fallback = rung.HostFallback('linux', 'label')\n",
+        message=(
+            "A HostFallback is built outside rung.host_fallback. Build it there: "
+            "it is where the platform decides and the one label is rendered."
+        ),
+        key=_where,
+    )
+
+
+def test_the_fallback_label_and_the_platform_seam_have_one_reader() -> None:
+    """The label template and the seam's variable name are each defined once
+    and read once, by ``host_fallback``: a second reader is a second place a
+    label or a platform could be made. The seam's value is pinned too, so a
+    reader that spells the variable as a literal (``os.environ.get(
+    "KSTRL_ISOLATION_PLATFORM")``) is seen as well as one that names
+    ``PLATFORM_ENV``."""
+    pins = {
+        "HOST_FALLBACK_LABEL": {"rung.py:<module>": 1, "rung.py:host_fallback": 1},
+        "PLATFORM_ENV": {"rung.py:<module>": 1, "rung.py:host_fallback": 1},
+        "KSTRL_ISOLATION_PLATFORM": {"rung.py:<module>": 1},
+    }
+    for name, expected in pins.items():
+        assert_census(
+            sources=package_sources(),
+            sees=spells(name),
+            expected=expected,
+            control=f"text = rung.{name}\n",
+            message=f"{name} is spelled somewhere new: read it only in rung.host_fallback.",
+            key=_where,
+        )
+
+
+def test_the_fallback_and_the_prover_are_reached_only_through_prove_zones() -> None:
+    """``prove_zones`` decides between the fallback and a proof for the
+    factory, the replay and ``ks doctor --measure`` alike. A caller of
+    ``host_fallback`` or ``prove_rung`` elsewhere could skip the decision:
+    prove a zone on a platform with no prover, or fall back where one exists."""
+    for name in ("host_fallback", "prove_rung"):
+        assert_census(
+            sources=package_sources(),
+            sees=_calls(name),
+            expected={"isolation.py:prove_zones": 1},
+            control=f"rung = isolation.{name}()\n",
+            message=f"{name} is called outside isolation.prove_zones: go through prove_zones.",
+            key=_where,
+        )

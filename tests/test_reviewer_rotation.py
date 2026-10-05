@@ -289,7 +289,7 @@ class TestModelTagEndToEnd:
             single_pr=False,
             components=[comp],
         )
-        body = _generate_pr_body(comp, manifest)
+        body = _generate_pr_body(comp, manifest, isolation="none: ran on the host")
         assert "**Reviewer model**: codex (gpt-5)" in body
 
 

@@ -295,6 +295,7 @@ The architect and the knowledge distiller are not sandboxed.
 |---|---|---|---|
 | `KSTRL_NONO` | path | `nono` on PATH | The nono binary `ks doctor --measure` proves the isolation rung with. **Env only.** The rung is decided by canaries run through it, never by its presence or version |
 | `KSTRL_TREE` | path | set by kstrl | **Set by kstrl, never read.** An acceptance check (`ks factory --acceptance`, #700 slice 4) runs in a copy of its plan, and this names the checkout it checks: the base or a component's head |
+| `KSTRL_ISOLATION_PLATFORM` | string | `sys.platform` | **Test seam, not an operator setting.** The platform the prover decision is made for. A platform with no prover (every one but `darwin` today) runs a confirmed `[stack]`'s commands on the host, and every record names that platform in its one label. It never lets nono run off macOS: the prover still reads the real platform |
 
 ## VerifyConfig (`[verify]`)
 

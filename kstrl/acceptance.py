@@ -16,9 +16,10 @@ person approves (``plan_gate.plan_digest``), and once the base replay has
 accepted the plan the manifest pins it, so a later run of the same plan
 with the directory edited refuses, naming both digests.
 
-Every check runs inside the test zone of the proven rung, in a fresh copy
-of the plan as its working directory, with :data:`TREE_ENV` naming the
-checkout under test. The checkout is a throwaway worktree of one commit,
+Every check runs inside the test zone of the proven rung (on a platform
+with no prover, on the host under the fallback label, #700 owner decision
+2026-10-05), in a fresh copy of the plan as its working directory, with
+:data:`TREE_ENV` naming the checkout under test. The checkout is a throwaway worktree of one commit,
 made by the slice 3 replay (:func:`kstrl.replay.replay_stack`): setup,
 ``up``, then the checks in place of the stack's own.
 
@@ -62,7 +63,7 @@ from kstrl.events import RunPaths
 from kstrl.jsonread import read_json
 from kstrl.names import validate_component_id
 from kstrl.replay import Replay, Stage, _ran, replay_stack
-from kstrl.rung import HOST_LABEL, ProvenRung, zone_dir
+from kstrl.rung import HOST_LABEL, ProvenRung, Rung, zone_dir
 from kstrl.stack import REPLAY_BOUNDARY_REFUSED
 from kstrl.statedir import control_dir
 from kstrl.timeout import limit_seconds
@@ -409,15 +410,20 @@ def _run_check(
     plan: PinnedPlan,
     check: Check,
     tree: Path,
-    rung: ProvenRung,
+    rung: Rung,
     limit: float | None,
     stack: Stack,
     log: Path | None,
 ) -> Stage:
-    """One run of ``check`` against ``tree``, in a fresh copy of the plan."""
+    """One run of ``check`` against ``tree``, in a fresh copy of the plan:
+    inside a proven rung's zone, the one directory it grants, and removed
+    with the rung; with the host fallback, which has no zone, in a
+    temporary directory removed after the run."""
     name = f"acceptance:{check.id}"
+    base = zone_dir(Path(rung.scratch)) if isinstance(rung, ProvenRung) else None
+    cwd: Path | None = None
     try:
-        cwd = Path(tempfile.mkdtemp(prefix=f"{check.id}-", dir=zone_dir(Path(rung.scratch))))
+        cwd = Path(tempfile.mkdtemp(prefix=f"{check.id}-", dir=base))
         _write_files(cwd, _verified(plan.directory, plan.digest))
         return _ran(
             name,
@@ -431,6 +437,9 @@ def _run_check(
         )
     except OSError as exc:
         return Stage(name, " ".join(check.argv), None, f"did not run: {exc}", 0.0, ())
+    finally:
+        if base is None and cwd is not None:
+            shutil.rmtree(cwd, ignore_errors=True)
 
 
 def _probe(
@@ -441,11 +450,11 @@ def _probe(
     runs: dict[tuple[str, str], list[Stage]],
     times: int,
     logs: Callable[[str, str, int], Path | None],
-) -> Callable[[Path, ProvenRung], None]:
+) -> Callable[[Path, Rung], None]:
     """Run each wanted check ``times`` times against the tree, into ``runs``.
     Every run is kept: a failed run is never run again."""
 
-    def probe(tree: Path, rung: ProvenRung) -> None:
+    def probe(tree: Path, rung: Rung) -> None:
         for comp, check in wanted:
             runs[(comp, check.id)] = [
                 _run_check(plan, check, tree, rung, limit, stack, logs(comp, check.id, run))

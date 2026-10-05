@@ -10,8 +10,14 @@ End to end: the real ``ks factory`` and ``ks doctor --measure`` as
 subprocesses on a real git repository after the real ``ks init``, with a
 stub engineer that logs each call (``tests/test_stack_e2e.py``). The
 tests that need the real sandbox skip unless nono 0.79 or later runs on
-macOS; the ones built on a fake ``nono`` need only macOS; one runs only
-off macOS, where the run refuses with its reason (gap G7).
+macOS; the ones built on a fake ``nono`` need only macOS.
+
+Where no prover exists for the platform (today Linux, gap G7) a run under
+a stack runs its commands on the host, and every record of it carries one
+label naming the platform (owner decision 2026-10-05). Those tests name
+the platform through ``KSTRL_ISOLATION_PLATFORM``, the seam the platform
+decision reads (:func:`kstrl.rung.host_fallback`), so they run on macOS
+and on Linux alike; on Linux the seam names the real platform.
 
 What a check does is observed on the host: a file it wrote or did not
 write, and the row the base-gates record keeps for it.
@@ -30,8 +36,21 @@ from typing import Any
 import pytest
 
 from tests.helpers.executables import write_executable
-from tests.test_isolation_rung import needs_nono, on_macos
-from tests.test_stack_e2e import PY, _commit, _factory, _measure, _record, _repo, _stack
+from tests.helpers.gitrepo import git_in
+from tests.helpers.stack_confirmation import confirm_stack
+from tests.test_inbox_waivers import FAKE_GH
+from tests.test_isolation_rung import _fake_nono, needs_nono, on_macos
+from tests.test_stack_e2e import (
+    PY,
+    _commit,
+    _factory,
+    _measure,
+    _record,
+    _repo,
+    _row,
+    _spawn,
+    _stack,
+)
 
 #: Exits 0 only when a connect to TEST-NET-1 by IP is refused with EPERM,
 #: the rung's answer (DNS is open in the test zone, gap G1, so the probe
@@ -70,6 +89,17 @@ except OSError as exc:
 """
 
 REFUSAL = "Refusing to run: the isolation rung is not proven"
+
+#: The platform the no-prover tests name, and the one label every record
+#: of such a run must carry, written out so a change to it is seen here.
+NO_PROVER = {"KSTRL_ISOLATION_PLATFORM": "linux"}
+FALLBACK_LABEL = (
+    "none: no isolation rung exists on linux, so every command ran on the host "
+    "and nothing was isolated"
+)
+#: What the host fallback records for each stage: the platform and the
+#: label, and nothing a rung proves (no zone, canaries, policy or refusal).
+FALLBACK_RECORD = {"platform": "linux", "label": FALLBACK_LABEL}
 
 
 def _isolation_record(root: Path) -> dict[str, Any]:
@@ -267,13 +297,102 @@ def test_browser_rules_reach_the_test_zone_only_when_the_stack_declares_a_browse
     ]
 
 
-@pytest.mark.skipif(sys.platform == "darwin", reason="the refusal off macOS")
-def test_off_macos_a_stack_run_refuses_with_its_reason(tmp_path: Path) -> None:
-    """No rung is implemented off macOS until measurement M2 (gap G7), so a
-    run under a stack refuses there: its commands never run on the host."""
+def test_with_no_prover_a_stack_run_runs_on_the_host_and_every_record_says_so(
+    tmp_path: Path,
+) -> None:
+    """On a platform with no prover a run under a confirmed stack does not
+    refuse: the base gates, Phase 1 and the PR all happen, and the check ran
+    on the host, because it wrote a path no grant covers. The terminal, the
+    isolation record, the base-gates record, the verification event and the
+    PR body each carry the one fallback label, and the isolation record
+    claims nothing a rung proves."""
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    marker = outside / "ran-on-the-host"
+    # The origin first: it names the control directory the confirmation goes in.
+    root = _repo(tmp_path, _stack({"tests": f'echo x >> "{marker}"'}), confirm=False)
+    origin = tmp_path / "origin.git"
+    git_in(tmp_path, "init", "-q", "--bare", str(origin))
+    git_in(root, "remote", "add", "origin", str(origin))
+    confirm_stack(root)
+    git_in(root, "push", "-q", "-u", "origin", "main")
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    write_executable(bindir / "gh", FAKE_GH)
+    gh_log = tmp_path / "gh.log"
+    engineer = write_executable(
+        tmp_path / "engineer.sh",
+        "#!/bin/sh\ncat > /dev/null\necho hello > hello.txt\n"
+        "git add -A && git commit -q -m hello >/dev/null 2>&1\n"
+        "echo '<promise>COMPLETE</promise>'\n",
+    )
+
+    code, out = _spawn(
+        [
+            "factory",
+            *("--manifest", str(root / "scripts" / "kstrl" / "manifest.json")),
+            *("--root", str(root), "--agent-cmd", str(engineer)),
+            *("--no-tui", "--yes", "--ui", "plain", "--no-color"),
+            *("--max-retries", "0", "--max-parallel", "1"),
+            *("--review-mode", "skip", "--contract-check", "skip"),
+        ],
+        root,
+        {
+            **NO_PROVER,
+            "PATH": f"{bindir}{os.pathsep}{os.environ['PATH']}",
+            "GH_LOG": str(gh_log),
+            "GH_HEAD": str(tmp_path / "gh.head"),
+        },
+    )
+
+    assert code == 0, out
+    assert REFUSAL not in out, out
+    # The base gates and Phase 1 each ran the check, on the host.
+    assert marker.read_text(encoding="utf-8").splitlines() == ["x", "x"], out
+    assert out.count(f"Isolation: {FALLBACK_LABEL}") == 1, out
+    rungs = _isolation_record(root)
+    assert (rungs["setup"], rungs["test"]) == (FALLBACK_RECORD, FALLBACK_RECORD), rungs
+    record = _record(root)
+    assert (record["refused"], record["isolation"]) == (False, FALLBACK_LABEL), record
+    assert _verification_isolation(root) == [FALLBACK_LABEL], out
+    assert f"## Isolation\n\n{FALLBACK_LABEL}\n" in gh_log.read_text(encoding="utf-8"), out
+
+
+def test_with_no_prover_doctor_shows_the_label_runs_no_canary_and_replays_on_the_host(
+    tmp_path: Path,
+) -> None:
+    """`ks doctor --measure` on a platform with no prover: the isolation row
+    is the fallback label alone, a warning, with no canary run (the nono on
+    PATH is never called), and the replay of the stack runs its check on
+    the host under the same label."""
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    marker = outside / "ran-on-the-host"
+    root = _repo(tmp_path, _stack({"tests": f'echo x >> "{marker}"'}))
+    env = {**_fake_nono(tmp_path, "exit 1\n"), "KSTRL_NONO": "", **NO_PROVER}
+
+    code, document = _measure(root, env)
+
+    assert code == 0, document
+    row = _row(document, "isolation")
+    assert (row["status"], row["detail"]) == ("warn", FALLBACK_LABEL), row
+    assert document["isolation"] == {"setup": FALLBACK_RECORD, "test": FALLBACK_RECORD}
+    assert not (tmp_path / "nono-calls.log").exists(), "a canary ran through nono"
+    replay = document["replay"]
+    assert _row(document, "replay")["status"] == "ok", document["checks"]
+    assert replay["isolation"] == {"setup": FALLBACK_LABEL, "test": FALLBACK_LABEL}, replay
+    # The base gates and the replay each ran the check, on the host.
+    assert marker.read_text(encoding="utf-8").splitlines() == ["x", "x"], document
+
+
+@pytest.mark.skipif(sys.platform == "darwin", reason="nono may run only on macOS")
+def test_off_macos_naming_a_prover_platform_still_runs_no_nono(tmp_path: Path) -> None:
+    """The seam decides only whether a run falls back. Naming macOS on
+    another system reaches the prover, which reads the real platform and
+    refuses: nono never runs unmeasured there (gap G7)."""
     root = _repo(tmp_path, _stack({"tests": "true"}))
 
-    run = _factory(tmp_path, root)
+    run = _factory(tmp_path, root, env={"KSTRL_ISOLATION_PLATFORM": "darwin"})
 
     assert run.code == 2, run.out
     assert REFUSAL in run.out, run.out

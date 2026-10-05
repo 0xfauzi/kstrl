@@ -12,7 +12,10 @@ End to end: the real ``ks doctor --measure``, ``ks inbox approve`` and
 ``ks factory`` as subprocesses on a real git repository after the real
 ``ks init`` (the harness of ``tests/test_stack_e2e.py``), with nono 0.79
 or later on macOS (``needs_nono``); the boundary test uses a fake nono
-and needs only macOS; the digest test needs neither.
+and needs only macOS; the digest test needs neither. Most replays here
+are of an unconfirmed stack, which runs only inside a proven rung, so
+they stay macOS-only; the one of a confirmed stack also runs on a
+platform with no prover, on the host (``runs_a_stack``).
 """
 
 from __future__ import annotations
@@ -28,7 +31,7 @@ from typing import Any
 from kstrl.procgroup import read_group_liveness
 from kstrl.stack import load_stack
 from tests.helpers.procs import kill_group
-from tests.test_isolation_rung import needs_nono, on_macos
+from tests.test_isolation_rung import needs_nono, on_macos, runs_a_stack
 from tests.test_isolation_stack import _ignoring_nono
 from tests.test_stack_confirmation_e2e import NOT_CONFIRMED, _restack, _stack_items
 from tests.test_stack_e2e import (
@@ -112,7 +115,7 @@ def test_an_up_that_exits_1_fails_the_replay_with_its_log_tail_and_is_never_conf
     assert run.calls == 0, run.out
 
 
-@needs_nono
+@runs_a_stack
 def test_a_recipe_that_needs_an_untracked_file_fails_the_clean_replay(tmp_path: Path) -> None:
     """The setup reads a file the operator's checkout holds and the base
     does not. The replay runs in a throwaway worktree of the base, so the

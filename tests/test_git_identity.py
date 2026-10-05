@@ -162,6 +162,10 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_init_cmd.py": 3,
     "tests/test_input_hygiene.py": 4,
     "tests/test_instance_safety.py": 2,
+    # #700 host fallback: the stub engineer's `git commit` shell string, in a
+    # worktree of the repository `tests.test_stack_e2e._repo` put through
+    # `tests.helpers.gitrepo.set_identity`.
+    "tests/test_isolation_stack.py": 1,
     # #602: `_answerable_repo`'s one commit, into a repository
     # `tests.test_merge_gate_park._repo` already put through
     # `tests.helpers.gitrepo.set_identity`.
