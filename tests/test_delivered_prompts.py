@@ -90,8 +90,10 @@ from kstrl import (
     security,
 )
 from kstrl.decisions import SpecDecision, build_decisions_context
+from kstrl.inbox import Inbox, InboxItem, ItemKind, ItemStatus
 from kstrl.loop import COMPLETION_MARKER
 from kstrl.manifest import Component
+from kstrl.owner_answers import read_owner_answers
 from kstrl.stack import Stack
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import CheckResult, VerificationResult, VerifyConfig
@@ -256,6 +258,27 @@ def _engineer_under_a_stack(tmp_path: Path) -> str:
     return prompt.replace(str(root), "<ROOT>")
 
 
+def _architect_with_owner_answer(tmp_path: Path) -> str:
+    """The architect's prompt for a spec the owner answered in the inbox (#639):
+    ``read_owner_answers`` over one approved escalation, appended after the spec
+    as ``_decompose_spec_impl`` appends it. A fixed id, so the digest is stable."""
+    item = InboxItem(
+        "0" * 32,
+        ItemKind.SPEC_ESCALATION,
+        "TITLE",
+        "",
+        dedupe_key="escalation:PROJECT:spec.md",
+        evidence={"asked": "- [q-1] Which auth?"},
+        status=ItemStatus.APPROVED,
+        decision_comment="Passwords.",
+    )
+    inbox = Inbox(tmp_path).path
+    inbox.parent.mkdir(parents=True, exist_ok=True)
+    inbox.write_text(json.dumps(item.to_dict()) + "\n", encoding="utf-8")
+    answers = read_owner_answers(tmp_path, "PROJECT", "spec.md")
+    return decompose.build_decompose_prompt("PROJECT", _SPEC_TEXT + answers.text)
+
+
 @dataclass(frozen=True)
 class _Role:
     render: Callable[[Path], str]
@@ -274,6 +297,14 @@ _ROLES: dict[str, _Role] = {
         frozenset({"DECOMPOSE_PROMPT", "ARCHITECT_NO_REPO_SOURCE_PROMPT"}),
         "91a61a3dd236dbfd52bd8aeedf8180325bc46674b864c5e8bd3978f9ee34b45c",
         12803,
+    ),
+    # #639 slice 4: the architect when the owner answered an escalation in the
+    # inbox. Pinned by running this test.
+    "architect-owner-answer": _Role(
+        _architect_with_owner_answer,
+        frozenset({"DECOMPOSE_PROMPT", "ARCHITECT_NO_REPO_SOURCE_PROMPT", "OWNER_ANSWER_PROMPT"}),
+        "918b20a68d4da44197eaf570fbd310a73c6ed144463bcc1bd4ade8c13fc1eb24",
+        13042,
     ),
     "architect-with-repo": _Role(
         lambda _p: decompose.build_decompose_prompt(
