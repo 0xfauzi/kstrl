@@ -45,6 +45,9 @@ APPROVAL_READERS: dict[ItemKind, str] = {
     ItemKind.PLAN_GATE: "plan_gate.py::run_plan_gate",
     # #696: the newest approved stack item is what confirms a [stack].
     ItemKind.STACK_CONFIRMATION: "stack.py::_latest_approval",
+    # #639 slice 4: an approval's comment is the owner's answer, which the
+    # next decompose of that spec appends to the architect's input.
+    ItemKind.SPEC_ESCALATION: "decisions.py::read_owner_answers",
 }
 
 #: Action-required kinds whose approval no kstrl step reads, and why.
@@ -54,9 +57,6 @@ RECORD_ONLY: dict[ItemKind, str] = {
         "the cap is config; an approval must not raise a spend cap (no budget "
         "bypass without explicit opt-in)"
     ),
-    ItemKind.SPEC_ESCALATION: (
-        "resolved by a later clean decompose (decisions.py), which does not read the approval"
-    ),
 }
 
 #: Every scope outside inbox.py that can test for an approved status, and
@@ -64,6 +64,7 @@ RECORD_ONLY: dict[ItemKind, str] = {
 #: or NOT_AN_INBOX_READER before adding it here.
 EXPECTED_APPROVED_READS: dict[str, int] = {
     "cli.py::_decide_parked_merge_if_parked": 1,
+    "decisions.py::read_owner_answers": 1,
     "factory.py::_emit_stack_confirmation": 1,
     "pipeline.py::<module>": 1,
     "pipeline.py::ComponentPipeline._checkpoint_refusal": 1,

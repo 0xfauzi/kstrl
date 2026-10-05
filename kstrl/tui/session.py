@@ -310,6 +310,7 @@ def _prepare_decompose(
         del channel, stop  # decompose has no prompts; stop is v2 work
 
         def target() -> int:
+            from kstrl.decisions import OwnerAnswerError
             from kstrl.decompose import SpecBlockerError, decompose_spec
 
             command_run = open_command_run(
@@ -336,7 +337,7 @@ def _prepare_decompose(
                     )
                     ui.ok(f"Decomposed into {len(manifest.components)} components")
                     return 0
-                except SpecBlockerError as exc:
+                except (SpecBlockerError, OwnerAnswerError) as exc:
                     ui.err(str(exc))
                     for line in exc.artifact_lines():
                         ui.info(line)

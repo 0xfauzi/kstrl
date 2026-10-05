@@ -279,7 +279,9 @@ EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
     "cli.py": 2,  # _ROOT_FROM_PROMPT, which is a set of command names
     # #332 landed while this migration was in flight: the version
     # constant and the body of DECISIONS_CONTEXT_PROMPT, both enrolled.
-    "decisions.py": 2,
+    # #639 slice 4: +2, OWNER_ANSWER_PROMPT's declaration and its one use
+    # in render_owner_answer.
+    "decisions.py": 4,
     # #199: +2 constants x 2 spellings each (ARCHITECT_REPO_SOURCE_PROMPT,
     # ARCHITECT_NO_REPO_SOURCE_PROMPT: each declared once and used once).
     "decompose.py": 6,

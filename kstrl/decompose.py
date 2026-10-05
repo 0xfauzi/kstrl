@@ -32,12 +32,14 @@ from kstrl.config import KstrlConfig, relative_to_root
 from kstrl.decisions import (
     DISPOSITION_ESCALATED,
     DISPOSITION_ORDER,
+    OwnerAnswers,
     SpecDecision,
     decisions_payload_errors,
     enum_field_error,
     escalations,
     open_escalation_item,
     parse_decisions,
+    read_owner_answers,
     required_field_error,
     resolve_escalation_items,
     write_decisions,
@@ -2388,6 +2390,12 @@ def _report_architect_usage(
     )
 
 
+def _say_owner_answers(answers: OwnerAnswers, ui: UI) -> None:
+    """Name the owner answers appended to the architect's input, if any (#639)."""
+    if answers.item_ids:
+        ui.kv("Owner answers", ", ".join(item_id[:8] for item_id in answers.item_ids))
+
+
 def _for_attempt(call: AgentCall, attempt: int) -> AgentCall:
     """The architect's record identity for one decompose attempt (#532)."""
     return dataclasses.replace(call, attempt=attempt)
@@ -2498,6 +2506,12 @@ def _decompose_spec_impl(
     # that builds the plan refuses under any other (plan_gate.stack_pin_errors).
     stack_pin = stack_text_digest(root_dir, warn=ui.warn)
     ui.kv("Spec digest", pin[:12])
+    # #639 slice 4: the owner's inbox answers to this spec's escalations,
+    # appended to the architect's input AFTER the pin, so specDigest stays
+    # the digest of the spec alone and the run-time re-read reproduces it.
+    # An unreadable inbox raises OwnerAnswerError here, before any spend.
+    answers = read_owner_answers(root_dir, project_name, spec_source)
+    _say_owner_answers(answers, ui)
     # #199: the architect runs with cwd=root_dir (see `agent.run` below),
     # so it is told to read the repository rather than handed a paste.
     # The map path is the operator's: `[paths] codebase_map` can move it,
@@ -2516,7 +2530,7 @@ def _decompose_spec_impl(
     config = KstrlConfig.load_or_anchored(root_dir, warn=ui.warn)
     prompt = build_decompose_prompt(
         project_name,
-        spec_content,
+        spec_content + answers.text,
         codebase_map_path=relative_to_root(config.codebase_map_file, root_dir),
     )
 
@@ -2748,6 +2762,8 @@ def _decompose_spec_impl(
                 spec_file=spec_path.name,
                 halted=True,
                 spec_digest=pin,
+                answered_items=answers.item_ids,
+                answers_digest=answers.digest,
             ),
         )
         open_escalation_item(
@@ -2974,6 +2990,8 @@ def _decompose_spec_impl(
                     spec_file=spec_path.name,
                     halted=False,
                     spec_digest=pin,
+                    answered_items=answers.item_ids,
+                    answers_digest=answers.digest,
                 ),
                 required=True,
             )

@@ -25,6 +25,13 @@ payload, and the inbox under the per-test ``XDG_STATE_HOME``.
 Disclosed blind spot: computing the pin from a second read of the spec
 file instead of the ``spec_content`` the architect was given survives
 every test here, because nothing changes the file between the two reads.
+
+Slice 4 (owner answers, decision 8a): an answer given with ``ks inbox
+approve <id> --comment ANSWER`` on a spec's escalation reaches the next
+decompose of that spec, appended after the spec under
+``OWNER_ANSWER_PROMPT`` and after the pin, so the plan still runs on the
+spec as written. Another project's or spec's answer is never read, and an
+inbox that cannot be read refuses the decompose before the architect runs.
 """
 
 from __future__ import annotations
@@ -37,6 +44,7 @@ from typing import Any
 
 import pytest
 
+from kstrl.decisions import render_owner_answer
 from kstrl.decompose import load_spec_input
 from kstrl.inbox import Inbox, InboxItem, ItemKind, ItemStatus
 from kstrl.init_cmd import gitignore_block
@@ -94,11 +102,23 @@ def _project(tmp_path: Path, *, toml: str = "", files: dict[str, str] | None = N
 
 
 def _decompose(
-    root: Path, env: dict[str, str], payload: dict[str, Any], *, spec: str = "spec.md"
+    root: Path,
+    env: dict[str, str],
+    payload: dict[str, Any],
+    *,
+    spec: str = "spec.md",
+    project: str = "p",
+    tee: Path | None = None,
+    expect: int | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    """``ks decompose`` with a stub architect that prints ``payload``."""
+    """``ks decompose`` with a stub architect that prints ``payload``.
+
+    ``tee`` is where the stub writes the prompt it was sent; the file does
+    not exist when the architect never ran.
+    """
     architect = root.parent / "architect.json"
     architect.write_text(json.dumps(payload), encoding="utf-8")
+    sink = "/dev/null" if tee is None else f"'{tee}'"
     proc = _ks(
         root,
         env,
@@ -106,14 +126,14 @@ def _decompose(
         "--spec",
         str(root / spec),
         "--project-name",
-        "p",
+        project,
         "--agent-cmd",
-        f"cat > /dev/null; cat '{architect}'",
+        f"cat > {sink}; cat '{architect}'",
         "--ui",
         "plain",
         "--no-color",
     )
-    expected = 2 if payload is ESCALATED else 0
+    expected = (2 if payload is ESCALATED else 0) if expect is None else expect
     assert proc.returncode == expected, proc.stdout + proc.stderr
     return proc
 
@@ -442,3 +462,166 @@ class TestManifestsWithoutAPin:
 
         assert _engineer_ran(tmp_path)[:1] == ["http"], out
         assert UNPINNED in out, out
+
+
+# --- slice 4: the owner's inbox answer reaches the next decompose ------------
+
+ANSWER = "Users sign in with passwords; SSO is out of scope for this release."
+
+
+def _answer_in_inbox(root: Path, env: dict[str, str]) -> InboxItem:
+    """``ks inbox approve <id> --comment ANSWER`` on the one open escalation."""
+    (item,) = [i for i in _escalations(root) if i.status is ItemStatus.OPEN]
+    proc = _ks(root, env, "inbox", "approve", item.id, "--comment", ANSWER, "--ui", "plain")
+    assert proc.returncode == 0, _out(proc)
+    (approved,) = [i for i in _escalations(root) if i.id == item.id]
+    return approved
+
+
+def test_an_inbox_answer_reaches_the_next_decompose_after_the_pin(tmp_path: Path) -> None:
+    root = _project(tmp_path, toml=AUTONOMY)
+    env = _env(tmp_path)
+    _decompose(root, env, ESCALATED)
+    (asked,) = _escalations(root)
+    assert "ks inbox approve" in asked.detail and "--comment" in asked.detail, asked.detail
+    item = _answer_in_inbox(root, env)
+    tee = tmp_path / "prompt.txt"
+
+    proc = _decompose(root, env, CLOSED, tee=tee)
+
+    assert f"Owner answers: {item.id[:8]}" in _out(proc), _out(proc)
+    prompt = tee.read_text(encoding="utf-8")
+    block = render_owner_answer(item)
+    assert block in prompt, prompt
+    assert ANSWER in block and "auth-model" in block, block
+    end = prompt.index(":END SPECIFICATION>>>")
+    assert prompt.index(SPEC.strip()) < prompt.index(block) < end, prompt
+    register = _register(root)
+    assert register["answeredItems"] == [item.id], register
+    assert register["answersDigest"] == _sha("\n\n" + block), register
+    assert _raw_manifest(root)["specDigest"] == _sha(SPEC), _out(proc)
+    parked = _factory(root, env)
+    assert STALE not in _out(parked), _out(parked)
+    assert len(_plan_items(root)) == 1, _out(parked)
+
+
+def test_an_answer_for_another_project_or_spec_is_never_read(tmp_path: Path) -> None:
+    files = {"a/spec.md": "# A\n\nPayments.\n", "b/spec.md": "# B\n\nA report.\n"}
+    root = _project(tmp_path, files=files)
+    env = _env(tmp_path)
+    _decompose(root, env, ESCALATED, spec="a/spec.md")
+    item = _answer_in_inbox(root, env)
+    tee = tmp_path / "prompt.txt"
+
+    for spec, project in (("b/spec.md", "p"), ("a/spec.md", "q")):
+        _decompose(root, env, CLOSED, spec=spec, project=project, tee=tee)
+        assert ANSWER not in tee.read_text(encoding="utf-8"), (spec, project)
+        assert _register(root)["answeredItems"] == [], (spec, project)
+
+    _decompose(root, env, CLOSED, spec="a/spec.md", tee=tee)
+    assert ANSWER in tee.read_text(encoding="utf-8")
+    assert _register(root)["answeredItems"] == [item.id]
+
+
+def test_every_answer_to_a_spec_is_read_after_it_escalates_again(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    env = _env(tmp_path)
+    _decompose(root, env, ESCALATED)
+    first = _answer_in_inbox(root, env)
+
+    _decompose(root, env, ESCALATED)
+
+    assert _register(root)["answeredItems"] == [first.id], _register(root)
+    second = _answer_in_inbox(root, env)
+    assert second.id != first.id
+    tee = tmp_path / "prompt.txt"
+    _decompose(root, env, CLOSED, tee=tee)
+    prompt = tee.read_text(encoding="utf-8")
+    assert render_owner_answer(first) in prompt and render_owner_answer(second) in prompt
+    assert _register(root)["answeredItems"] == [first.id, second.id], _register(root)
+
+
+@pytest.mark.parametrize(
+    "decision",
+    [("reject", "--comment", ANSWER), ("approve",)],
+    ids=["rejected-with-a-comment", "approved-with-no-comment"],
+)
+def test_a_rejection_or_a_bare_approval_is_not_an_answer(
+    tmp_path: Path, decision: tuple[str, ...]
+) -> None:
+    root = _project(tmp_path)
+    env = _env(tmp_path)
+    _decompose(root, env, ESCALATED)
+    (item,) = _escalations(root)
+    decided = _ks(root, env, "inbox", decision[0], item.id, *decision[1:], "--ui", "plain")
+    assert decided.returncode == 0, _out(decided)
+    tee = tmp_path / "prompt.txt"
+
+    proc = _decompose(root, env, CLOSED, tee=tee)
+
+    prompt = tee.read_text(encoding="utf-8")
+    assert item.id not in prompt and ANSWER not in prompt, prompt
+    assert "Owner answers" not in _out(proc), _out(proc)
+    register = _register(root)
+    assert register["answeredItems"] == [] and register["answersDigest"] == "", register
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        b"\xff\xfe not utf-8\n",
+        b"{torn\n",
+        json.dumps(
+            {"id": "f" * 32, "kind": "spec_escalation", "status": "Approved", "evidence": {}}
+        ).encode()
+        + b"\n",
+    ],
+    ids=["not-utf-8", "not-json", "unreadable-escalation"],
+)
+def test_an_inbox_that_cannot_be_read_refuses_before_the_architect(
+    tmp_path: Path, line: bytes
+) -> None:
+    root = _project(tmp_path)
+    env = _env(tmp_path)
+    inbox = Inbox(root).path
+    inbox.parent.mkdir(parents=True, exist_ok=True)
+    inbox.write_bytes(line)
+    tee = tmp_path / "prompt.txt"
+
+    proc = _decompose(root, env, CLOSED, tee=tee, expect=2)
+
+    assert not tee.exists(), _out(proc)
+    assert str(inbox) in _out(proc) and "Nothing was run" in _out(proc), _out(proc)
+    assert not _manifest_path(root).exists(), _out(proc)
+
+
+def test_ks_factory_spec_refuses_an_unreadable_inbox_before_the_architect(
+    tmp_path: Path,
+) -> None:
+    root = _project(tmp_path)
+    env = _env(tmp_path)
+    inbox = Inbox(root).path
+    inbox.parent.mkdir(parents=True, exist_ok=True)
+    inbox.write_bytes(b"{torn\n")
+    architect = root.parent / "architect.json"
+    architect.write_text(json.dumps(CLOSED), encoding="utf-8")
+    tee = tmp_path / "prompt.txt"
+    agent = f"cat > '{tee}'; cat '{architect}'"
+
+    proc = _ks(
+        root,
+        env,
+        "factory",
+        "--spec",
+        str(root / "spec.md"),
+        "--project-name",
+        "p",
+        "--agent-cmd",
+        agent,
+        *FACTORY_FLAGS,
+    )
+
+    assert proc.returncode == 2, _out(proc)
+    assert not tee.exists(), _out(proc)
+    assert str(inbox) in _out(proc) and "Nothing was run" in _out(proc), _out(proc)
+    assert not _manifest_path(root).exists(), _out(proc)

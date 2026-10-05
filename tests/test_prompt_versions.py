@@ -109,8 +109,11 @@ from kstrl import (
 from kstrl.decisions import (
     DECISIONS_CONTEXT_PROMPT,
     DECISIONS_CONTEXT_PROMPT_VERSION,
+    OWNER_ANSWER_PROMPT,
+    OWNER_ANSWER_PROMPT_VERSION,
     SpecDecision,
     build_decisions_context,
+    render_owner_answer,
 )
 from kstrl.decompose import (
     ARCHITECT_NO_REPO_SOURCE_PROMPT,
@@ -129,6 +132,7 @@ from kstrl.git import (
     pasted_change_source,
     repo_change_source,
 )
+from kstrl.inbox import InboxItem, ItemKind
 from kstrl.init_cmd import (
     DEFAULT_PROMPT,
     DEFAULT_PROMPT_VERSION,
@@ -186,6 +190,7 @@ _PROMPTS: dict[str, str] = {
     "REPO_CHANGE_SOURCE_PROMPT": REPO_CHANGE_SOURCE_PROMPT,
     "PASTED_CHANGE_SOURCE_PROMPT": PASTED_CHANGE_SOURCE_PROMPT,
     "DECISIONS_CONTEXT_PROMPT": DECISIONS_CONTEXT_PROMPT,
+    "OWNER_ANSWER_PROMPT": OWNER_ANSWER_PROMPT,
     "INTEGRATION_CRITERIA_PROMPT": INTEGRATION_CRITERIA_PROMPT,
     "INTEGRATION_CARRIED_PROMPT": INTEGRATION_CARRIED_PROMPT,
     "INTEGRATION_FIX_PROMPT": INTEGRATION_FIX_PROMPT,
@@ -207,6 +212,7 @@ _VERSIONS: dict[str, str] = {
     "REPO_CHANGE_SOURCE_PROMPT": REPO_CHANGE_SOURCE_PROMPT_VERSION,
     "PASTED_CHANGE_SOURCE_PROMPT": PASTED_CHANGE_SOURCE_PROMPT_VERSION,
     "DECISIONS_CONTEXT_PROMPT": DECISIONS_CONTEXT_PROMPT_VERSION,
+    "OWNER_ANSWER_PROMPT": OWNER_ANSWER_PROMPT_VERSION,
     "INTEGRATION_CRITERIA_PROMPT": INTEGRATION_CRITERIA_PROMPT_VERSION,
     "INTEGRATION_CARRIED_PROMPT": INTEGRATION_CARRIED_PROMPT_VERSION,
     "INTEGRATION_FIX_PROMPT": INTEGRATION_FIX_PROMPT_VERSION,
@@ -360,6 +366,13 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     # nobody named is text nobody has to justify.
     "DECISIONS_CONTEXT_PROMPT": (
         "1630b9ee2c33c3513965f03e28a4f2e4d76c4cbf434b031fdb789819f23fae23",
+        "1.0.0",
+    ),
+    # 1.0.0 (#639 slice 4): new. The header of each `ks inbox approve <id> --comment`
+    # answer appended after the spec in the architect's SPECIFICATION block. H3 only:
+    # no calibration fixture carries an owner answer, so H2 cannot be discharged.
+    "OWNER_ANSWER_PROMPT": (
+        "319f4f9af3a71e92a76483798d55aca5f945a6388e36e6dfa899f6e7a58de120",
         "1.0.0",
     ),
     # 1.0.0 (#482): new. H3 discharged here. Its H2 roles, "integration"
@@ -523,6 +536,12 @@ def _decisions_context_render(_tmp_path: Path) -> str:
     )
 
 
+#: An approved escalation with an answer, as ``read_owner_answers`` selects one.
+_OWNER_ANSWER_ITEM = InboxItem(
+    "ITEM", ItemKind.SPEC_ESCALATION, "TITLE", "", evidence={"asked": "ASKED"}, decision_comment="A"
+)
+
+
 def _reviewer_render(tmp_path: Path) -> str:
     prd_path = write_component_prd(tmp_path, "prd.json")
     return review.build_review_prompt(
@@ -578,6 +597,7 @@ _RENDERERS: dict[str, tuple[ModuleType, Callable[[Path], str]]] = {
     "REPO_CHANGE_SOURCE_PROMPT": (git, lambda _p: repo_change_source("BASE_SHA")),
     "PASTED_CHANGE_SOURCE_PROMPT": (git, lambda _p: pasted_change_source("DIFF")[0]),
     "DECISIONS_CONTEXT_PROMPT": (decisions, _decisions_context_render),
+    "OWNER_ANSWER_PROMPT": (decisions, lambda _p: render_owner_answer(_OWNER_ANSWER_ITEM)),
     "INTEGRATION_CRITERIA_PROMPT": (
         integration,
         lambda _p: integration.render_integration_criteria("BASE_SHA"),

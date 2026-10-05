@@ -69,6 +69,7 @@ from kstrl.config_numbers import LIMIT_FLOAT, LIMIT_INT
 from kstrl.config_report import UI_MODES, build_config_report
 from kstrl.config_report import normalize_ui_mode as _normalize_ui_mode
 from kstrl.contract import ContractMode
+from kstrl.decisions import OwnerAnswerError
 from kstrl.decompose import SpecBlockerError, decompose_spec
 from kstrl.events import (
     ArtifactWritten,
@@ -2513,7 +2514,7 @@ def decompose(
             )
             core_ui.ok(f"Decomposed into {len(manifest.components)} components")
             return 0
-        except SpecBlockerError as exc:
+        except (SpecBlockerError, OwnerAnswerError) as exc:
             core_ui.err(str(exc))
             # R1.7: point at the durable artifacts so the user iterates
             # against files, not scrollback. Plural, because after #260
@@ -3046,9 +3047,10 @@ def factory(
                     run_lock=run_lock,
                     timeout=limit_seconds(factory_config.architect_timeout_seconds),
                 )
-            except SpecBlockerError as exc:
+            except (SpecBlockerError, OwnerAnswerError) as exc:
                 # Architect halted: it escalated a question only the owner
-                # can answer (#260). Surface it and exit cleanly. The user
+                # can answer (#260), or the owner's inbox answers cannot be
+                # read (#639). Surface it and exit cleanly. The user
                 # answers, edits the spec and re-runs, iterating against the
                 # persisted artifacts (R1.7).
                 ui_impl.err(str(exc))

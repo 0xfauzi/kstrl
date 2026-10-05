@@ -83,7 +83,9 @@ EXPECTED_CONSTRUCTION_COUNTS = {
     "autonomy.py": 2,
     "calibration_ladder.py": 1,
     "cli.py": 1,
-    "decisions.py": 2,
+    # #639 slice 4: was 2. +1: read_owner_answers scans the inbox for the
+    # owner's answers to a spec's escalations. It reads; it mutates nothing.
+    "decisions.py": 3,
     "factory.py": 1,
     # #595 (addendum): was 5, one construction per lazy-open site
     # (ComponentPipeline.snapshot_waivers's own +1 among them). All five

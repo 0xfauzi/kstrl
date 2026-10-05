@@ -422,7 +422,7 @@ class TestControls:
         (row,) = _open_rows(root)
         assert "queue_item" not in row.evidence, row.evidence
         assert "ks queue answer" not in row.detail, row.detail
-        assert "Answer in the spec and re-run the decompose" in row.detail, row.detail
+        assert "ks inbox approve <id> --comment ANSWER" in row.detail, row.detail
 
 
 #: Records every call in $GH_LOG and answers an empty list.

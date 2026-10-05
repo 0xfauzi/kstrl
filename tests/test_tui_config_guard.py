@@ -75,7 +75,8 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     "cli.py": 1,
     "config_preflight.py": 2,  # the rule itself, and its docstring
     "contract.py": 1,
-    "decisions.py": 1,  # DecisionRegisterError, added by #332
+    # DecisionRegisterError, added by #332, and OwnerAnswerError (#639 slice 4).
+    "decisions.py": 2,
     # AgentOutputTooLarge, and AgentTimedOut since #603.
     "decompose.py": 2,
     # #632: each refuses to import a table whose rows disagree, a bare raise.
