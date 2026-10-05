@@ -578,6 +578,9 @@ def test_no_entry_runs_a_command_of_an_unconfirmed_stack(
 #: row is a new place that touches it: read it before re-pinning.
 EXPECTED_UNCONFIRMED_SITES: dict[str, int] = {
     "cli.py": 1,
+    # #700 slice 3: the replay is filed on the confirmation item when the
+    # stack is not confirmed; read only, never cleared.
+    "doctor_measure.py": 1,
     "factory.py": 6,
     "stack.py": 5,
     "verify.py": 2,

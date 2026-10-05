@@ -169,7 +169,7 @@ def drain_or_abandon(
 
 
 def reap_or_abandon(
-    process: subprocess.Popen[str],
+    process: subprocess.Popen[Any],
     grace: float,
 ) -> None:
     """Kill the child, wait under a deadline, then LET GO. CLOSES NO PIPE.

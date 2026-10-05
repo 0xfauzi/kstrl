@@ -27,7 +27,16 @@ from kstrl.base_gates import measure_base_gates, reading_document, refusal_lines
 from kstrl.doctor import STATUS_FAIL, STATUS_OK, STATUS_WARN, DoctorCheck, _not_evaluated
 from kstrl.factory import FactoryConfig
 from kstrl.isolation import SETUP_ZONE, TEST_ZONE, prove_rung
+from kstrl.replay import Replay, replay_stack
+from kstrl.stack import (
+    REPLAY_BOUNDARY_REFUSED,
+    Stack,
+    file_stack_item,
+    replay_refuses,
+    stack_in_force,
+)
 from kstrl.statedir import control_dir
+from kstrl.timeout import limit_seconds
 from kstrl.verify import VerifyConfig
 
 if TYPE_CHECKING:
@@ -38,6 +47,9 @@ CHECK_NAME = "base_gates"
 
 #: The isolation row's name in the report (#700).
 ISOLATION_CHECK_NAME = "isolation"
+
+#: The replay row's name in the report (#700 slice 3).
+REPLAY_CHECK_NAME = "replay"
 
 #: What to do about a base branch whose gates fail: the escapes the
 #: `ks factory` refusal leaves (docs/runbook.md).
@@ -103,13 +115,69 @@ def measure_isolation(root: Path, ui: UI) -> tuple[DoctorCheck, dict[str, Any]]:
     )
 
 
-def measure_tier_b(
+def measure_replay(
     root: Path, checks: list[DoctorCheck], ui: UI
-) -> tuple[dict[str, Any] | None, dict[str, Any]]:
-    """Run both Tier B readings, the base gates and the isolation rung,
-    append their rows to ``checks`` in that order, and return the two
-    readings for the report document."""
+) -> tuple[DoctorCheck | None, dict[str, Any] | None]:
+    """The replay row and its record, or ``(None, None)`` with no ``[stack]``
+    or a kstrl.toml that does not load (#700 slice 3).
+
+    The replay runs whether or not the stack is confirmed: it runs only
+    inside the proven rung, in a throwaway worktree, and its record is the
+    evidence a person confirms the stack on. It is filed on the stack's
+    confirmation item when the stack is not confirmed, and when it failed
+    (:func:`kstrl.stack.replay_refuses`), so a stack whose replay failed
+    is never confirmed. A refused boundary warns, as the isolation row
+    does; any other failure fails the row."""
+    if any(check.name == "kstrl_config" and check.status == STATUS_FAIL for check in checks):
+        return None, None
+    stack = stack_in_force(root)
+    if stack is None:
+        return None, None
+    ui.info("Replaying the [stack] recipe in a throwaway worktree of the base...")
+    record = replay_stack(
+        root,
+        stack,
+        setup_limit=limit_seconds(FactoryConfig.load(root).worktree_setup_timeout),
+        check_limit=limit_seconds(VerifyConfig.load(root).subprocess_timeout),
+        ui=ui,
+    )
+    document = dataclasses.asdict(record)
+    filed = _file_replay(root, stack, record, document)
+    if record.failed == REPLAY_BOUNDARY_REFUSED:
+        row = (STATUS_WARN, f"{record.failed}: {record.detail}{filed}")
+    elif record.failed or record.error:
+        said = f"{record.failed}: {record.detail}" if record.failed else record.error
+        row = (STATUS_FAIL, f"{said}{filed}")
+    else:
+        stages = ", ".join(stage.name for stage in record.stages)
+        row = (
+            STATUS_OK,
+            f"the recipe replays on {record.base_branch} at {record.base_sha[:12]} "
+            f"({stages}){filed}",
+        )
+    return DoctorCheck(REPLAY_CHECK_NAME, *row), document
+
+
+def _file_replay(root: Path, stack: Stack, record: Replay, document: dict[str, Any]) -> str:
+    """File ``document`` on the stack's confirmation item when the stack is
+    not confirmed or the replay failed; what the row says about it."""
+    if not stack.unconfirmed and not replay_refuses(record.failed):
+        return ""
+    try:
+        item = file_stack_item(root, stack, replay=document)
+    except Exception as exc:  # noqa: BLE001 - a filing that failed is said, never raised
+        return f"; no confirmation item was filed: {exc}"
+    return f"; filed on inbox item {item.id[:8]}"
+
+
+def measure_tier_b(root: Path, checks: list[DoctorCheck], ui: UI) -> dict[str, Any]:
+    """Run every Tier B reading, the base gates, the isolation rung and the
+    replay of a ``[stack]``, append their rows to ``checks`` in that order,
+    and return the readings for the report document by their keys."""
     row, reading = measure(root, checks, ui)
     isolation_row, isolation = measure_isolation(root, ui)
     checks.extend((row, isolation_row))
-    return reading, isolation
+    replay_row, replay = measure_replay(root, checks, ui)
+    if replay_row is not None:
+        checks.append(replay_row)
+    return {"base_gates": reading, "isolation": isolation, "replay": replay}

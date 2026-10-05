@@ -64,6 +64,28 @@ it, so the `dns` canary is recorded but never gates, and the test
 zone's label says "DNS open" whenever it escaped. nono comes from
 `KSTRL_NONO`, else from PATH.
 
+Under a `[stack]` it also adds the `replay` row (#700 slice 3). The
+stack may declare `up`, one command that starts the application and
+exits 0 once it is ready; kstrl never reads what it does. The replay
+checks the base commit out into a throwaway worktree, proves both zones
+with only that worktree and the stack's `writable` and `readable`
+granted, and runs `setup` in the setup zone, then `up`, then every check
+in the test zone, stopping at the first that fails. Then it stops the
+`up` process group by the id it recorded when `up` started and removes
+the worktree. `up` and each check get `[verify] subprocess_timeout`,
+the setup `[factory] worktree_setup_timeout`; a timeout is never ready.
+The row names the stage that failed: `boundary_refused` (no proven
+rung, so nothing ran; it warns), `setup_failed:<exit>`,
+`up_failed:<exit>`, `up_timeout`, `check_not_runnable` (126, 127, a
+timeout or output that is not utf-8) or `base_contradiction` (a check
+that ran and failed on the base), with the last lines the command
+printed. The replay runs whether or not the stack is confirmed, because
+it is the evidence a person confirms it on. Its record is filed on the
+stack's confirmation item when the stack is not confirmed or the replay
+failed, and a stack whose newest replay failed is not confirmed until a
+replay of the same text passes. Replays on one machine take turns on a
+lock under the XDG state home; a second one prints that it is waiting.
+
 ## Exit codes
 
 Every `ks` command uses the same three codes, so a script or a scheduler

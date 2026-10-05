@@ -16,7 +16,7 @@ from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import IO, TYPE_CHECKING, Any, Protocol
 
 from kstrl import git, licensing, toolchains
 from kstrl.config_numbers import check_numbers
@@ -377,6 +377,43 @@ def run_scrubbed(
             stderr=_readable(raw_stderr),
         ) from exc
     return subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
+
+
+def start_scrubbed(
+    cmd: str,
+    *,
+    cwd: Path,
+    rung: ProvenRung,
+    log: IO[bytes],
+    declared_env: tuple[str, ...] | None = None,
+) -> subprocess.Popen[bytes]:
+    """Start ``cmd`` inside ``rung`` and return at once, leaving it running (#700 slice 3).
+
+    The sibling of :func:`run_scrubbed` for a command that starts servers
+    and exits while they keep running: a ``[stack]``'s ``up``.
+    ``run_scrubbed`` cannot run one, because ``communicate`` reads both
+    pipes to their end and a server the command started holds them open,
+    so the read would wait on the servers rather than on the command.
+    Here stdout and stderr go to ``log``, a file the caller opened, so
+    nothing waits on a pipe.
+
+    Shared with :func:`run_scrubbed`: :func:`scrubbed_subprocess_env`, a
+    process group of the child's own, and :func:`_in_rung`. ``rung`` has
+    no default and is never None: a command that outlives this call never
+    runs on the host. The child leads a new session, so its pid is the
+    group id; the caller waits on it, records that id, and stops the group
+    through :mod:`kstrl.procgroup` (``kstrl.replay``).
+    """
+    env = scrubbed_subprocess_env(declared_env)
+    return subprocess.Popen(
+        _in_rung(cmd, rung, env, declared_env or ()),
+        cwd=cwd,
+        stdin=subprocess.DEVNULL,
+        stdout=log,
+        stderr=subprocess.STDOUT,
+        env=env,
+        start_new_session=True,
+    )
 
 
 def _in_rung(

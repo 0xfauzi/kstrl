@@ -360,11 +360,20 @@ def test_a_check_sees_the_declared_names_and_a_secret_name_is_refused(tmp_path: 
     """6. The checks get the neutral environment plus the names the stack
     declares: an undeclared name and Python's VIRTUAL_ENV are gone. A
     declared name shaped like a secret is refused when kstrl.toml loads."""
-    seen = tmp_path / "env.seen"
-    setup_seen = tmp_path / "setup.seen"
+    # Declared writable: `ks doctor --measure` also replays the recipe inside
+    # the rung (#700 slice 3), where an undeclared path refuses the write.
+    written = tmp_path / "seen"
+    written.mkdir()
+    seen = written / "env.seen"
+    setup_seen = written / "setup.seen"
     root = _repo(
         tmp_path / "declared",
-        _stack({"env": f"env > '{seen}'"}, setup=f"env > '{setup_seen}'", env=["DEMO_DECLARED"]),
+        _stack(
+            {"env": f"env > '{seen}'"},
+            setup=f"env > '{setup_seen}'",
+            env=["DEMO_DECLARED"],
+            rung={"writable": [str(written)]},
+        ),
     )
     secret = _repo(
         tmp_path / "secret", _stack({"tests": "true"}, env=["DEMO_API_TOKEN"]), confirm=False

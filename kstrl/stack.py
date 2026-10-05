@@ -18,7 +18,11 @@ The table in kstrl.toml has four keys, and all four are required::
 
 Three more keys are optional (#700 slice 2, :data:`STACK_RUNG_KEYS`): the
 paths the isolation rung lets the commands write and read beyond their
-worktree, and whether the stack drives a browser.
+worktree, and whether the stack drives a browser. One more is optional
+(#700 slice 3): ``up``, the command that starts the application and exits 0
+once it is ready. kstrl never reads what it does; ``ks doctor --measure``
+replays the recipe (``kstrl.replay``) and a stack whose replay failed is not
+confirmed (:data:`REPLAY_STAGES`).
 
 With no ``[stack]`` table nothing changes: kstrl reads ``[verify]`` as before.
 With one, it is the only source of verification commands, and every other
@@ -58,6 +62,53 @@ STACK_KEYS: tuple[str, ...] = ("instructions", "setup", "checks", "env")
 #: a relative path is under the project root); ``browser = true`` adds
 #: the raw Seatbelt rules headless Chromium needs to the test zone.
 STACK_RUNG_KEYS: tuple[str, ...] = ("writable", "readable", "browser")
+
+#: #700 slice 3: the stage a clean replay of the recipe (``kstrl.replay``)
+#: failed at, as the replay record's ``failed`` names it; "" is a replay
+#: that passed. The two in :data:`REPLAY_STAGES_WITH_EXIT` carry what the
+#: command gave after a colon: its exit status, ``timeout`` or
+#: ``undecodable`` (``up_failed:1``). One vocabulary for the replay that
+#: writes it and the confirmation that reads it.
+REPLAY_BOUNDARY_REFUSED = "boundary_refused"
+REPLAY_SETUP_FAILED = "setup_failed"
+REPLAY_UP_FAILED = "up_failed"
+REPLAY_UP_TIMEOUT = "up_timeout"
+REPLAY_CHECK_NOT_RUNNABLE = "check_not_runnable"
+REPLAY_BASE_CONTRADICTION = "base_contradiction"
+REPLAY_STAGES: tuple[str, ...] = (
+    REPLAY_BOUNDARY_REFUSED,
+    REPLAY_UP_TIMEOUT,
+    REPLAY_CHECK_NOT_RUNNABLE,
+    REPLAY_BASE_CONTRADICTION,
+)
+REPLAY_STAGES_WITH_EXIT: tuple[str, ...] = (REPLAY_SETUP_FAILED, REPLAY_UP_FAILED)
+
+
+def replay_failure_known(failed: object) -> bool:
+    """Whether ``failed`` is a replay record's ``failed`` kstrl can read."""
+    if not isinstance(failed, str):
+        return False
+    stage, colon, given = failed.partition(":")
+    if colon:
+        return stage in REPLAY_STAGES_WITH_EXIT and bool(given)
+    return failed == "" or failed in REPLAY_STAGES
+
+
+def replay_refuses(failed: str) -> bool:
+    """Whether a replay that failed at ``failed`` keeps its stack from being
+    confirmed: every failure but the boundary's, which says nothing about
+    the recipe (the replay ran nothing)."""
+    return failed not in ("", REPLAY_BOUNDARY_REFUSED)
+
+
+def replay_decides(replay: dict[str, Any]) -> bool:
+    """Whether a replay record says anything about the recipe, so that it
+    replaces an earlier one: a failure at a stage that ran, or a pass kstrl
+    set up and cleaned up without an error. A refused boundary ran nothing
+    and an errored replay proved nothing, so neither lifts a failure."""
+    failed = str(replay.get("failed", ""))
+    return replay_refuses(failed) or not (failed or replay.get("error"))
+
 
 #: A name that holds any of these is never passed to a command, whoever
 #: declared it (#696 decision 11). ``verify.scrubbed_subprocess_env`` drops
@@ -183,6 +234,9 @@ class Stack:
     writable: tuple[str, ...] = ()
     readable: tuple[str, ...] = ()
     browser: bool = False
+    #: #700 slice 3: the command that starts the application and exits 0 once
+    #: it is ready; "" (or absent) when the stack starts nothing.
+    up: str = ""
     #: Why no command of this stack may run, or "" when it may. Set to ""
     #: only by :func:`confirmed_stack`; not part of the digest.
     unconfirmed: str = field(default=NOT_CHECKED, compare=False)
@@ -210,6 +264,7 @@ class Stack:
                 "writable": list(self.writable),
                 "readable": list(self.readable),
                 "browser": self.browser,
+                "up": self.up,
             },
             sort_keys=True,
             separators=(",", ":"),
@@ -272,6 +327,9 @@ def _checks_errors(value: object) -> list[str]:
     ]
 
 
+_ALL_KEYS = (*STACK_KEYS, *STACK_RUNG_KEYS, "up")
+
+
 def stack_errors(raw: dict[str, Any]) -> list[str]:
     """Every reason ``raw`` is not a usable ``[stack]``, indexed; [] when it is.
 
@@ -279,9 +337,9 @@ def stack_errors(raw: dict[str, Any]) -> list[str]:
     dropped: a dropped check is a check that silently stopped running.
     """
     errors = [
-        f"{key} is not a [stack] key; the keys are {', '.join(STACK_KEYS + STACK_RUNG_KEYS)}"
+        f"{key} is not a [stack] key; the keys are {', '.join(_ALL_KEYS)}"
         for key in raw
-        if key not in STACK_KEYS + STACK_RUNG_KEYS
+        if key not in _ALL_KEYS
     ]
     errors += [f"{key} is required" for key in STACK_KEYS if key not in raw]
     if "instructions" in raw and not _nonempty_text(raw["instructions"]):
@@ -294,6 +352,8 @@ def stack_errors(raw: dict[str, Any]) -> list[str]:
         errors += _env_errors(raw["env"])
     for key in ("writable", "readable"):
         errors += _paths_errors(key, raw.get(key, []))
+    if not isinstance(raw.get("up", ""), str):
+        errors.append(f'up must be a command string, or "" for none, got {raw["up"]!r}')
     if not isinstance(raw.get("browser", False), bool):
         errors.append(f"browser must be true or false, got {raw['browser']!r}")
     return errors
@@ -345,6 +405,7 @@ def load_stack(root_dir: Path) -> Stack | None:
         writable=tuple(str(path) for path in raw.get("writable", [])),
         readable=tuple(str(path) for path in raw.get("readable", [])),
         browser=bool(raw.get("browser", False)),
+        up=str(raw.get("up", "")),
     )
 
 
@@ -379,6 +440,12 @@ def _record_errors(record: dict[str, Any]) -> list[str]:
         errors.append(f"its evidence.stack_digest {digest!r} is not a sha256")
     elif item.dedupe_key != stack_dedupe_key(digest):
         errors.append(f"its dedupe_key {item.dedupe_key!r} does not name its digest")
+    replay = item.evidence.get("replay")
+    if replay is not None and not (
+        isinstance(replay, dict) and replay_failure_known(replay.get("failed"))
+    ):
+        shown = replay.get("failed") if isinstance(replay, dict) else type(replay).__name__
+        errors.append(f"its evidence.replay names no replay outcome kstrl can read ({shown!r})")
     return errors
 
 
@@ -388,9 +455,16 @@ def _is_stack_record(record: dict[str, Any]) -> bool:
     ).startswith(STACK_KEY)
 
 
-def _latest_approval(root_dir: Path, inbox_config: InboxConfig) -> tuple[InboxItem, bool] | None:
+def _latest_approval(
+    root_dir: Path, inbox_config: InboxConfig
+) -> tuple[tuple[InboxItem, bool] | None, dict[str, str]]:
     """The stack item the newest APPROVED line of the inbox names, and whether it is still
-    approved, or None.
+    approved, or None; and, per stack digest, what the newest line carrying a
+    replay record says it failed at (#700 slice 3).
+
+    The replay is read off the newest LINE that carries one, not off the
+    item: a later filing without a replay (``ks factory`` refusing) replaces
+    the item's evidence, and must not erase a failure.
 
     The newest approval line decides, not the newest item that is still
     approved: when a person withdraws that approval later (``ks inbox
@@ -411,6 +485,7 @@ def _latest_approval(root_dir: Path, inbox_config: InboxConfig) -> tuple[InboxIt
             "them could be a newer stack decision"
         )
     folded: dict[str, InboxItem] = {}
+    replays: dict[str, str] = {}
     newest = ""
     for position, record in enumerate(scan.records):
         if not _is_stack_record(record):
@@ -424,11 +499,14 @@ def _latest_approval(root_dir: Path, inbox_config: InboxConfig) -> tuple[InboxIt
         item = InboxItem.from_dict(record)
         assert item is not None  # _record_errors refused every None
         folded[item.id] = item
+        replay = item.evidence.get("replay")
+        if isinstance(replay, dict) and replay_decides(replay):
+            replays[str(item.evidence["stack_digest"])] = str(replay["failed"])
         if item.status is ItemStatus.APPROVED:
             newest = item.id
     if not newest:
-        return None
-    return folded[newest], folded[newest].status is ItemStatus.APPROVED
+        return None, replays
+    return (folded[newest], folded[newest].status is ItemStatus.APPROVED), replays
 
 
 def _refusal(root_dir: Path, stack: Stack) -> tuple[str, str]:
@@ -455,7 +533,7 @@ def _refusal(root_dir: Path, stack: Stack) -> tuple[str, str]:
             "",
         )
     try:
-        found = _latest_approval(root_dir, inbox_config)
+        found, replays = _latest_approval(root_dir, inbox_config)
     except Exception as exc:  # noqa: BLE001 - see the docstring
         return f"cannot be checked: the inbox is unreadable: {exc}", ""
     if found is None:
@@ -469,6 +547,14 @@ def _refusal(root_dir: Path, stack: Stack) -> tuple[str, str]:
             "",
         )
     if approved == stack.digest:
+        failed = replays.get(stack.digest, "")
+        if replay_refuses(failed):
+            return (
+                f"failed its clean replay at {failed} (ks doctor --measure), so its "
+                f"confirmation of {approved[:12]} does not hold: fix the recipe and run "
+                "ks doctor --measure again",
+                "",
+            )
         return "", CONFIRMED_IN_INBOX
     return (
         f"has changed since {approved[:12]}, confirmed by {latest.decided_by} at "
@@ -538,13 +624,19 @@ def stack_evidence(root_dir: Path, stack: Stack) -> dict[str, Any]:
             "setup": stack.setup,
             "checks": [list(check) for check in stack.checks],
             "env": list(stack.env),
+            "up": stack.up,
         },
         "source": str(resolve_config_file(root_dir)),
     }
 
 
 def file_stack_item(
-    root_dir: Path, stack: Stack, *, run_id: str = "", quiet: bool = False
+    root_dir: Path,
+    stack: Stack,
+    *,
+    run_id: str = "",
+    quiet: bool = False,
+    replay: dict[str, Any] | None = None,
 ) -> InboxItem:
     """File (or bump) the open stack_confirmation item for ``stack``.
 
@@ -553,6 +645,9 @@ def file_stack_item(
     inbox cannot be read, so no line is ever appended to an inbox kstrl
     could not read back; otherwise raises what ``Inbox.add`` raises.
     ``quiet`` pages nobody: the person who answered the prompt is there.
+    ``replay`` is the record of a clean replay of this text (#700 slice 3),
+    carried in the evidence; one that failed keeps the stack from being
+    confirmed (:func:`replay_refuses`).
     """
     from kstrl.observability import NotifyConfig, NotifyHooks
 
@@ -560,6 +655,12 @@ def file_stack_item(
     if not config.enabled:
         raise ValueError("[inbox] is disabled")
     _latest_approval(root_dir, config)
+    evidence = stack_evidence(root_dir, stack)
+    replayed = ""
+    if replay is not None:
+        evidence["replay"] = replay
+        failed = str(replay.get("failed", ""))
+        replayed = f" Its clean replay {'failed at ' + failed if failed else 'passed'}."
     box = Inbox(root_dir, config)
     return box.add(
         ItemKind.STACK_CONFIRMATION,
@@ -568,12 +669,15 @@ def file_stack_item(
             "kstrl runs no command of a [stack] a person has not confirmed. Checks, in order: "
             + ", ".join(f"{name} `{command}`" for name, command in stack.checks)
             + (f"; setup `{stack.setup}`" if stack.setup else "; no setup")
-            + ". ks inbox approve <id> confirms this text; ks inbox reject <id> --comment ... "
+            + (f"; up `{stack.up}`" if stack.up else "")
+            + "."
+            + replayed
+            + " ks inbox approve <id> confirms this text; ks inbox reject <id> --comment ... "
             "refuses it."
         ),
         run_id=run_id,
         dedupe_key=stack_dedupe_key(stack.digest),
-        evidence=stack_evidence(root_dir, stack),
+        evidence=evidence,
         notify=NotifyHooks(NotifyConfig(), run_id=run_id) if quiet else None,
     )
 
