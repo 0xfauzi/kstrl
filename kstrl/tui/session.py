@@ -299,6 +299,7 @@ def _prepare_decompose(
         config.model,
         config.model_reasoning_effort,
         config.agent_type,
+        root_dir=root_dir,
     )
 
     def build(
@@ -310,8 +311,8 @@ def _prepare_decompose(
         del channel, stop  # decompose has no prompts; stop is v2 work
 
         def target() -> int:
-            from kstrl.decisions import OwnerAnswerError
             from kstrl.decompose import SpecBlockerError, decompose_spec
+            from kstrl.owner_answers import OwnerAnswerError
 
             command_run = open_command_run(
                 ui,

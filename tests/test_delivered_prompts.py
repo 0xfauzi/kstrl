@@ -89,10 +89,11 @@ from kstrl import (
     review,
     security,
 )
-from kstrl.decisions import SpecDecision, build_decisions_context, read_owner_answers
+from kstrl.decisions import SpecDecision, build_decisions_context
 from kstrl.inbox import Inbox, InboxItem, ItemKind, ItemStatus
 from kstrl.loop import COMPLETION_MARKER
 from kstrl.manifest import Component
+from kstrl.owner_answers import read_owner_answers
 from kstrl.stack import Stack
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import CheckResult, VerificationResult, VerifyConfig

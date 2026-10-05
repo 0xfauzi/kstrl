@@ -101,6 +101,7 @@ from kstrl import (
     integration,
     integration_fix,
     knowledge,
+    owner_answers,
     review,
     security,
     stack,
@@ -109,11 +110,8 @@ from kstrl import (
 from kstrl.decisions import (
     DECISIONS_CONTEXT_PROMPT,
     DECISIONS_CONTEXT_PROMPT_VERSION,
-    OWNER_ANSWER_PROMPT,
-    OWNER_ANSWER_PROMPT_VERSION,
     SpecDecision,
     build_decisions_context,
-    render_owner_answer,
 )
 from kstrl.decompose import (
     ARCHITECT_NO_REPO_SOURCE_PROMPT,
@@ -146,6 +144,11 @@ from kstrl.integration import (
 from kstrl.integration_fix import INTEGRATION_FIX_PROMPT, INTEGRATION_FIX_PROMPT_VERSION
 from kstrl.knowledge import DISTILL_PROMPT, DISTILL_PROMPT_VERSION
 from kstrl.manifest import Component
+from kstrl.owner_answers import (
+    OWNER_ANSWER_PROMPT,
+    OWNER_ANSWER_PROMPT_VERSION,
+    render_owner_answer,
+)
 from kstrl.review import REVIEWER_PROMPT, REVIEWER_PROMPT_VERSION, ReviewMode
 from kstrl.security import SECURITY_PROMPT, SECURITY_PROMPT_VERSION, SecurityConfig, SecurityMode
 from kstrl.stack import STACK_PROMPT, STACK_PROMPT_VERSION, Stack
@@ -597,7 +600,7 @@ _RENDERERS: dict[str, tuple[ModuleType, Callable[[Path], str]]] = {
     "REPO_CHANGE_SOURCE_PROMPT": (git, lambda _p: repo_change_source("BASE_SHA")),
     "PASTED_CHANGE_SOURCE_PROMPT": (git, lambda _p: pasted_change_source("DIFF")[0]),
     "DECISIONS_CONTEXT_PROMPT": (decisions, _decisions_context_render),
-    "OWNER_ANSWER_PROMPT": (decisions, lambda _p: render_owner_answer(_OWNER_ANSWER_ITEM)),
+    "OWNER_ANSWER_PROMPT": (owner_answers, lambda _p: render_owner_answer(_OWNER_ANSWER_ITEM)),
     "INTEGRATION_CRITERIA_PROMPT": (
         integration,
         lambda _p: integration.render_integration_criteria("BASE_SHA"),

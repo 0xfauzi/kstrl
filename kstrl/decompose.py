@@ -32,14 +32,12 @@ from kstrl.config import KstrlConfig, relative_to_root
 from kstrl.decisions import (
     DISPOSITION_ESCALATED,
     DISPOSITION_ORDER,
-    OwnerAnswers,
     SpecDecision,
     decisions_payload_errors,
     enum_field_error,
     escalations,
     open_escalation_item,
     parse_decisions,
-    read_owner_answers,
     required_field_error,
     resolve_escalation_items,
     write_decisions,
@@ -80,6 +78,7 @@ from kstrl.manifest import (
     Manifest,
 )
 from kstrl.names import validate_branch_name, validate_component_id
+from kstrl.owner_answers import OwnerAnswers, read_owner_answers
 from kstrl.prd import PRD
 from kstrl.runid import mint_run_id
 from kstrl.stack import stack_text_digest

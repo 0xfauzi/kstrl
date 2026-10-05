@@ -75,8 +75,8 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     "cli.py": 1,
     "config_preflight.py": 2,  # the rule itself, and its docstring
     "contract.py": 1,
-    # DecisionRegisterError, added by #332, and OwnerAnswerError (#639 slice 4).
-    "decisions.py": 2,
+    # DecisionRegisterError, added by #332.
+    "decisions.py": 1,
     # AgentOutputTooLarge, and AgentTimedOut since #603.
     "decompose.py": 2,
     # #632: each refuses to import a table whose rows disagree, a bare raise.
@@ -103,6 +103,8 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     # One bare raise at import (#630): LICENSE_SOURCES must name every
     # ecosystem kstrl.lockfiles reads.
     "licensing.py": 1,
+    # OwnerAnswerError (#639 slice 4).
+    "owner_answers.py": 1,
     # One bare raise at import (#630): LOCKFILE_READERS and uv.lock must be
     # every lockfile LOCKFILE_MANIFESTS names.
     "policy.py": 1,
@@ -113,6 +115,9 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     # catches `Exception`, not `RuntimeError`, so it contributes none.
     # The transport failures belong to run_gh, counted against
     # intake_github.py rather than here.
+    # #700 slice 2: ProvenRung.command raises a bare RuntimeError when a
+    # refused rung, or one with no policy, reaches a command.
+    "rung.py": 1,
     "serve.py": 5,
     # SignalsError, R8.8 slice 1 / #155.
     "signals.py": 1,

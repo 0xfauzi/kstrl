@@ -47,7 +47,7 @@ APPROVAL_READERS: dict[ItemKind, str] = {
     ItemKind.STACK_CONFIRMATION: "stack.py::_latest_approval",
     # #639 slice 4: an approval's comment is the owner's answer, which the
     # next decompose of that spec appends to the architect's input.
-    ItemKind.SPEC_ESCALATION: "decisions.py::read_owner_answers",
+    ItemKind.SPEC_ESCALATION: "owner_answers.py::read_owner_answers",
 }
 
 #: Action-required kinds whose approval no kstrl step reads, and why.
@@ -64,8 +64,8 @@ RECORD_ONLY: dict[ItemKind, str] = {
 #: or NOT_AN_INBOX_READER before adding it here.
 EXPECTED_APPROVED_READS: dict[str, int] = {
     "cli.py::_decide_parked_merge_if_parked": 1,
-    "decisions.py::read_owner_answers": 1,
     "factory.py::_emit_stack_confirmation": 1,
+    "owner_answers.py::read_owner_answers": 1,
     "pipeline.py::<module>": 1,
     "pipeline.py::ComponentPipeline._checkpoint_refusal": 1,
     "pipeline.py::ComponentPipeline._phase_checkpoint": 1,

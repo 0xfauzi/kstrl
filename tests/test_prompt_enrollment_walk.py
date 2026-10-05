@@ -279,9 +279,7 @@ EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
     "cli.py": 2,  # _ROOT_FROM_PROMPT, which is a set of command names
     # #332 landed while this migration was in flight: the version
     # constant and the body of DECISIONS_CONTEXT_PROMPT, both enrolled.
-    # #639 slice 4: +2, OWNER_ANSWER_PROMPT's declaration and its one use
-    # in render_owner_answer.
-    "decisions.py": 4,
+    "decisions.py": 2,
     # #199: +2 constants x 2 spellings each (ARCHITECT_REPO_SOURCE_PROMPT,
     # ARCHITECT_NO_REPO_SOURCE_PROMPT: each declared once and used once).
     "decompose.py": 6,
@@ -323,6 +321,9 @@ EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
     # + #233: LAST_ITERATION_MEASUREMENT_PROMPT x 2 spellings (the
     # declaration and its one use in measurement_block) = 4.
     "loop.py": 4,
+    # #639 slice 4: OWNER_ANSWER_PROMPT's declaration and its one use in
+    # render_owner_answer.
+    "owner_answers.py": 2,
     # #303: 0 pre-existing + 12 new fragments x 2 spellings each (the
     # declaration and its one use site) = 24. The version constant adds
     # nothing: the walk keys on names ending in _PROMPT, not _VERSION.

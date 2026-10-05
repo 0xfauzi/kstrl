@@ -48,7 +48,7 @@ from kstrl.atomicio import atomic_write_json
 from kstrl.baseline import verify_digest
 from kstrl.contract import ContractCleanupError, _create_temp_worktree, _remove_temp_worktree
 from kstrl.events import RunPaths
-from kstrl.isolation import HOST_LABEL
+from kstrl.rung import HOST_LABEL, label_of
 from kstrl.verify import (
     CheckResult,
     VerificationResult,
@@ -101,6 +101,9 @@ class BaseGates:
     #: ran, under a stack only: each entry, or one line saying why it could
     #: not be read.
     left_behind: tuple[str, ...] = ()
+    #: #700 slice 2: the isolation the checks ran under, the TEST-zone
+    #: rung's label or :data:`HOST_LABEL`.
+    isolation: str = HOST_LABEL
 
 
 def measure_base_gates(
@@ -162,6 +165,7 @@ def measure_base_gates(
         time.monotonic() - start,
         config.project_stack.digest if config.project_stack is not None else "",
         left_behind,
+        label_of(config.rung),
     )
 
 
@@ -351,7 +355,7 @@ def reading_document(
         "refused": bool(reasons),
         "reasons": reasons,
         "seconds": round(reading.seconds, 3),
-        "isolation": HOST_LABEL,
+        "isolation": reading.isolation,
     }
 
 

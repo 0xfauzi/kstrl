@@ -16,6 +16,10 @@ The table in kstrl.toml has four keys, and all four are required::
     tests = "make test"
     lint = "make lint"
 
+Three more keys are optional (#700 slice 2, :data:`STACK_RUNG_KEYS`): the
+paths the isolation rung lets the commands write and read beyond their
+worktree, and whether the stack drives a browser.
+
 With no ``[stack]`` table nothing changes: kstrl reads ``[verify]`` as before.
 With one, it is the only source of verification commands, and every other
 source is refused by name (:data:`OTHER_COMMAND_SOURCES`).
@@ -47,6 +51,13 @@ from kstrl.inbox import Inbox, InboxConfig, InboxItem, ItemKind, ItemStatus
 
 #: The four keys of ``[stack]``. Every one is required.
 STACK_KEYS: tuple[str, ...] = ("instructions", "setup", "checks", "env")
+
+#: #700 slice 2: what the isolation rung grants a stack's commands beyond
+#: their worktree. Optional; absent is the same stack as empty or false.
+#: ``writable`` and ``readable`` are paths (``~`` is the home directory,
+#: a relative path is under the project root); ``browser = true`` adds
+#: the raw Seatbelt rules headless Chromium needs to the test zone.
+STACK_RUNG_KEYS: tuple[str, ...] = ("writable", "readable", "browser")
 
 #: A name that holds any of these is never passed to a command, whoever
 #: declared it (#696 decision 11). ``verify.scrubbed_subprocess_env`` drops
@@ -168,6 +179,10 @@ class Stack:
     #: ``(name, command)`` in the order kstrl.toml lists them.
     checks: tuple[tuple[str, str], ...]
     env: tuple[str, ...]
+    #: #700 slice 2, :data:`STACK_RUNG_KEYS`, as kstrl.toml spells them.
+    writable: tuple[str, ...] = ()
+    readable: tuple[str, ...] = ()
+    browser: bool = False
     #: Why no command of this stack may run, or "" when it may. Set to ""
     #: only by :func:`confirmed_stack`; not part of the digest.
     unconfirmed: str = field(default=NOT_CHECKED, compare=False)
@@ -192,6 +207,9 @@ class Stack:
                 "setup": self.setup,
                 "checks": [list(check) for check in self.checks],
                 "env": list(self.env),
+                "writable": list(self.writable),
+                "readable": list(self.readable),
+                "browser": self.browser,
             },
             sort_keys=True,
             separators=(",", ":"),
@@ -226,6 +244,22 @@ def _env_errors(value: object) -> list[str]:
     return errors
 
 
+def _paths_errors(key: str, value: object) -> list[str]:
+    if not isinstance(value, list):
+        return [f"{key} must be a list of paths, got {value!r}"]
+    return [
+        f"{key}[{index}] must be a non-empty path, got {path!r}"
+        for index, path in enumerate(value)
+        if not _nonempty_text(path)
+    ]
+
+
+def stack_paths(root_dir: Path, entries: tuple[str, ...]) -> list[Path]:
+    """``writable`` or ``readable`` as paths: ``~`` expanded, a relative
+    entry under ``root_dir``, an absolute one as written."""
+    return [root_dir / Path(entry).expanduser() for entry in entries]
+
+
 def _checks_errors(value: object) -> list[str]:
     if not isinstance(value, dict):
         return [f"checks must be a table of name = command, got {value!r}"]
@@ -245,9 +279,9 @@ def stack_errors(raw: dict[str, Any]) -> list[str]:
     dropped: a dropped check is a check that silently stopped running.
     """
     errors = [
-        f"{key} is not a [stack] key; the keys are {', '.join(STACK_KEYS)}"
+        f"{key} is not a [stack] key; the keys are {', '.join(STACK_KEYS + STACK_RUNG_KEYS)}"
         for key in raw
-        if key not in STACK_KEYS
+        if key not in STACK_KEYS + STACK_RUNG_KEYS
     ]
     errors += [f"{key} is required" for key in STACK_KEYS if key not in raw]
     if "instructions" in raw and not _nonempty_text(raw["instructions"]):
@@ -258,6 +292,10 @@ def stack_errors(raw: dict[str, Any]) -> list[str]:
         errors += _checks_errors(raw["checks"])
     if "env" in raw:
         errors += _env_errors(raw["env"])
+    for key in ("writable", "readable"):
+        errors += _paths_errors(key, raw.get(key, []))
+    if not isinstance(raw.get("browser", False), bool):
+        errors.append(f"browser must be true or false, got {raw['browser']!r}")
     return errors
 
 
@@ -304,6 +342,9 @@ def load_stack(root_dir: Path) -> Stack | None:
         setup=str(raw["setup"]),
         checks=tuple((str(name), str(command)) for name, command in raw["checks"].items()),
         env=tuple(str(name) for name in raw["env"]),
+        writable=tuple(str(path) for path in raw.get("writable", [])),
+        readable=tuple(str(path) for path in raw.get("readable", [])),
+        browser=bool(raw.get("browser", False)),
     )
 
 

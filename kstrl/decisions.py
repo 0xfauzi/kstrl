@@ -38,7 +38,6 @@ template.
 
 from __future__ import annotations
 
-import hashlib
 import time
 from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass
@@ -46,9 +45,9 @@ from pathlib import Path
 from typing import Any
 
 from kstrl.atomicio import atomic_write_json
-from kstrl.inbox import UNDECIDED, Inbox, InboxConfig, InboxItem, ItemKind, ItemStatus
+from kstrl.inbox import UNDECIDED, Inbox, InboxConfig, InboxItem, ItemKind
 from kstrl.jsonread import read_json
-from kstrl.workqueue import queue_item_for_spec
+from kstrl.workqueue import QueueError, queue_item_for_spec
 
 # Relative location of the persisted register. Next to manifest.json and
 # spec-issues.json so one directory holds every decompose output.
@@ -647,6 +646,49 @@ def open_escalation_item(
         warn(f"Inbox write for the escalation on {spec_source} failed (non-fatal): {exc}")
 
 
+def escalation_naming(root_dir: Path, queue_item: str) -> InboxItem:
+    """The undecided escalation row that names ``queue_item`` (#644, owner decision 2(c)).
+
+    `ks queue answer` accepts a poisoned item only through this row. When
+    the spec-issues write fails, the factory never prints the marker serve
+    reads, so serve poisons an item whose architect did escalate; the row
+    ``open_escalation_item`` filed before the halt still names the item in
+    ``evidence["queue_item"]``, and that id is the join. Any other poisoned
+    item, an engineer failure for one, has no such row and is refused.
+
+    Raises :class:`QueueError` saying why. An inbox that cannot be read, or
+    that holds a line the fold cannot parse, is a refusal, never an empty
+    read: the line kstrl cannot parse could be the decision that closed the
+    row, the rule ``waivers.load_approvals`` applies to approvals.
+    """
+    inbox = Inbox(root_dir)
+    scan = inbox.scan()
+    if scan.unreadable:
+        raise QueueError(
+            f"the inbox at {inbox.path} could not be read, so kstrl cannot tell whether "
+            f"the architect escalated {queue_item}; {queue_item} keeps its spec"
+        )
+    unparseable = scan.unparseable_count()
+    if unparseable:
+        raise QueueError(
+            f"{unparseable} line(s) of the inbox at {inbox.path} could not be parsed, so "
+            f"kstrl cannot tell whether the architect escalated {queue_item}; "
+            f"{queue_item} keeps its spec"
+        )
+    for row in scan.folded_items():
+        if (
+            row.kind is ItemKind.SPEC_ESCALATION
+            and row.status in UNDECIDED
+            and row.evidence.get("queue_item") == queue_item
+        ):
+            return row
+    raise QueueError(
+        f"{queue_item} is poison and no undecided spec_escalation row in the inbox names it; "
+        "only a poisoned item the architect escalated can be answered. "
+        f"`ks queue retry {queue_item}` re-runs its spec unchanged"
+    )
+
+
 def resolve_escalation_items(
     root_dir: Path,
     project_name: str,
@@ -714,84 +756,3 @@ def resolve_escalation_items(
                 info(f"Inbox: resolved {item.id[:8]} ({item.kind}): {comment}")
     except Exception as exc:  # noqa: BLE001 - the manifest is already saved
         warn(f"Inbox resolve for the escalation on {spec_source} failed (items stay open): {exc}")
-
-
-class OwnerAnswerError(RuntimeError):
-    """The inbox cannot say which owner answers bind this spec (#639); exit 2, before spend."""
-
-    def artifact_lines(self) -> list[str]:
-        """Nothing was written. Lets callers share SpecBlockerError's handler."""
-        return []
-
-
-OWNER_ANSWER_PROMPT_VERSION = "1.0.0"
-#: H3 (#639): appended after the spec, inside the architect's SPECIFICATION block.
-OWNER_ANSWER_PROMPT = """\
-===== Owner answer: inbox item {item_id} =====
-
-An earlier decompose of this specification escalated:
-
-{asked}
-
-The owner answered in the inbox, and the answer is part of this specification:
-
-{answer}"""
-
-
-def render_owner_answer(item: InboxItem) -> str:
-    """One answer. ``asked`` is absent on an item opened before #639: its title stands in."""
-    asked = str(item.evidence.get("asked") or item.title)
-    return OWNER_ANSWER_PROMPT.format(item_id=item.id, asked=asked, answer=item.decision_comment)
-
-
-@dataclass(frozen=True)
-class OwnerAnswers:
-    #: Answered item ids, the text appended after the spec, and its sha256 ("" when none).
-    item_ids: tuple[str, ...]
-    text: str
-    digest: str
-
-
-def read_owner_answers(root_dir: Path, project_name: str, spec_source: str) -> OwnerAnswers:
-    """The owner's answers to this spec's escalations (#639, decision 8a): APPROVED
-    spec_escalation items, with a comment, under the key ``resolve_escalation_items``
-    selects by (``ks inbox approve <id> --comment ANSWER``). Never another project's
-    or spec's. Raises :class:`OwnerAnswerError` when the inbox cannot say."""
-    key = _escalation_key(project_name, spec_source)
-    answered = [
-        i
-        for i in _escalation_items(root_dir, key, spec_source)
-        if i.status is ItemStatus.APPROVED and i.decision_comment.strip()
-    ]
-    text = "".join("\n\n" + render_owner_answer(i) for i in answered)
-    digest = hashlib.sha256(text.encode("utf-8")).hexdigest() if text else ""
-    return OwnerAnswers(tuple(i.id for i in answered), text, digest)
-
-
-def _escalation_items(root_dir: Path, key: str, spec_source: str) -> list[InboxItem]:
-    """The items under ``key``, each in its latest state. An unreadable inbox, a line
-    that is not a JSON object, or an escalation record the fold's own parser
-    (``InboxItem.from_dict``) refuses is a refusal, never an empty read."""
-    box = Inbox(root_dir)
-    try:
-        scan = box.scan()
-    except Exception as exc:  # noqa: BLE001 - any fault is the refusal, as stack._refusal
-        raise OwnerAnswerError(f"the inbox cannot be read for owner answers: {exc}") from exc
-    if scan.unreadable or scan.skipped_lines:
-        raise OwnerAnswerError(
-            f"the inbox at {box.path} cannot be read, or holds a line that is not a JSON "
-            f"object, and any line could be an owner answer to {spec_source}. Nothing was run."
-        )
-    folded: dict[str, InboxItem] = {}
-    for number, record in enumerate(scan.records, start=1):
-        if record.get("kind") != ItemKind.SPEC_ESCALATION and record.get("dedupe_key") != key:
-            continue
-        item = InboxItem.from_dict(record)
-        if item is None or item.kind is not ItemKind.SPEC_ESCALATION:
-            raise OwnerAnswerError(
-                f"record {number} of {box.path} is a spec escalation kstrl cannot read, "
-                f"so an owner answer to {spec_source} could be lost. Nothing was run."
-            )
-        if item.dedupe_key == key:
-            folded[item.id] = item
-    return list(folded.values())

@@ -79,9 +79,10 @@ def measure_isolation(root: Path, ui: UI) -> tuple[DoctorCheck, dict[str, Any]]:
     the test zone, each proven by canaries through nono, every canary's
     verdict, nono's version and each policy's digest (#700).
 
-    Record only. A refused zone warns and never fails the verdict,
-    because nothing runs inside a rung yet; every command still runs on
-    the host and its result says so. The canaries point into a scratch
+    Record only. A refused zone warns and never fails the verdict: this
+    reading proves the zones with no ``[stack]`` paths, and the base gates
+    above run on the host. ``ks factory`` under a ``[stack]`` proves its
+    own rungs and refuses below them (#700 slice 2). The canaries point into a scratch
     directory that is removed afterwards, and the control directory is
     denied to both zones.
     """

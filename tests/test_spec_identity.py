@@ -44,11 +44,11 @@ from typing import Any
 
 import pytest
 
-from kstrl.decisions import render_owner_answer
 from kstrl.decompose import load_spec_input
 from kstrl.inbox import Inbox, InboxItem, ItemKind, ItemStatus
 from kstrl.init_cmd import gitignore_block
 from kstrl.manifest import Manifest
+from kstrl.owner_answers import render_owner_answer
 from tests.helpers import gitrepo
 from tests.helpers.plan_approval import approve_plan
 from tests.test_build_manifest_preflight import MANIFESTS

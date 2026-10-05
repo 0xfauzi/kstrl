@@ -149,6 +149,7 @@ EXPECTED_RUN_RECORD_SITES: dict[str, int] = {
     "integration_state.py: _history": 1,
     "integration_state.py: add_fix": 1,
     "integration_state.py: add_stop": 1,
+    "isolation.py: write_record": 1,  # #700 slice 2: the rungs a run's commands ran in
     "launch_record.py: write_launch_record": 1,
     "manifest.py: Manifest.save": 1,
     # The tuple of string-typed top-level keys the schema check walks. A
