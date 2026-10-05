@@ -725,12 +725,17 @@ def _write_evidence(evidence: Path, plan: PinnedPlan, document: Mapping[str, Any
     every file's sha256, written last."""
     _write_files(evidence / "checks", _verified(plan.directory, plan.digest))
     atomic_write_json(evidence / RECORD_FILE, document)
-    index = {
+    atomic_write_json(evidence / INDEX_FILE, evidence_index(evidence))
+
+
+def evidence_index(evidence: Path) -> dict[str, str]:
+    """Each file under ``evidence`` but the index itself, by its sha256: what
+    ``index.json`` holds, and what ``ks recheck`` compares it with."""
+    return {
         path.relative_to(evidence).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
         for path in sorted(evidence.rglob("*"))
         if path.is_file() and path.name != INDEX_FILE
     }
-    atomic_write_json(evidence / INDEX_FILE, index)
 
 
 def render_lines(record: Mapping[str, Any]) -> list[str]:

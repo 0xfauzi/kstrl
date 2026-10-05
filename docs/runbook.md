@@ -130,6 +130,17 @@ printed, written under `.kstrl/runs/<run_id>/acceptance/<component>/`
 and repeated in the PR body's `## Acceptance` section. It never fails
 the component.
 
+`ks recheck <record.json>` runs a head record's saved checks again
+(#700 slice 5). It refuses (exit 2), naming the file, when a file beside
+the record does not match its `index.json`, when the saved checks are
+not the record's plan, or when the `[stack]` in kstrl.toml is not the
+one the record ran under. Otherwise the checks run again at the
+recorded head commit, in the replay of that `[stack]`, and each check
+gets one line: the verdict the record states, the verdict of its
+recorded exits and the new verdict. Exit 0 means the three agree for
+every check, and 1 that one does not. Both isolation labels are
+printed, and nothing is written under the record's directory.
+
 ## Exit codes
 
 Every `ks` command uses the same three codes, so a script or a scheduler
