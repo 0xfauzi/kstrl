@@ -295,3 +295,23 @@ def test_a_run_refuses_a_kept_branch_that_is_not_at_the_kept_commit(
         assert f"and ks retry kept it at {value[:12]}" in out, out
     else:
         assert "rejudgeSha: must be" in out, out
+
+
+def test_a_single_pr_component_is_regenerated_not_kept(tmp_path: Path) -> None:
+    """Owner decision 4a: a single_pr component is never kept, and the plan says
+    why. The shared branch carries other components' commits, so its tip is not
+    one component's judged change."""
+    counter = tmp_path / "counter"
+    root = _repo(tmp_path, SIZE_TOML)
+    manifest = json.loads(_manifest_path(root).read_text(encoding="utf-8"))
+    _manifest_path(root).write_text(json.dumps({**manifest, "singlePr": True}), encoding="utf-8")
+    env = _env(tmp_path, _counted(counter, GROWING))
+    code, out = _factory(root, env)
+    assert code == 1, out
+    _decide(root, env, "approve", _size_item(root, 10))
+
+    code, out = _retry(root, env)
+
+    assert "single_pr: the shared branch carries other components' commits" in out, out
+    assert "Kept branch" not in out, out
+    assert _component(root).rejudge_sha == "", out
