@@ -20,6 +20,13 @@ stays here. However this process ends, the kernel closes that write end,
 the leash reads EOF, and it ends the group: SIGTERM, the grace, SIGKILL.
 ``_settle`` closes the write end on every orderly disposal. The leash needs
 ``pass_fds``, so an agent can no longer be started where there is none.
+
+If the leash is killed with kstrl, nothing ends the group. So a streamer
+given the project's ``root_dir`` records the group, with a nonce the leash
+carries in its argv, in ``kstrl/agents/spawn_record.py``'s directory once
+the agent has started, and ``_settle`` removes the record. The next
+lock-taking command, and ``ks status``, read what is left
+(``worktree_sweep.leftover_agents``).
 """
 
 from __future__ import annotations
@@ -35,6 +42,13 @@ import weakref
 from collections.abc import Iterator
 from pathlib import Path
 
+from kstrl.agents.spawn_record import (
+    SpawnRecord,
+    forget_spawn_record,
+    new_nonce,
+    spawn_record_path,
+    write_spawn_record,
+)
 from kstrl.procdispose import close_quietly, reap_or_abandon
 from kstrl.procgroup import safe_pgid, signal_group, signal_process_tree
 
@@ -131,6 +145,7 @@ class DeadlineStreamer:
         stdin_text: str | None = None,
         timeout: float | None = None,
         term_grace: float = DEFAULT_TERM_GRACE_SECONDS,
+        root_dir: Path | None = None,
     ) -> None:
         self.timed_out = False
         self._disposed = False
@@ -142,6 +157,10 @@ class DeadlineStreamer:
         argv = [cmd] if isinstance(cmd, str) else list(cmd)
         if shell:
             argv = ["/bin/sh", "-c", *argv]
+        nonce = new_nonce()
+        # Before the spawn, so a record that has nowhere to go stops the
+        # agent starting rather than leaving it running unrecorded.
+        self._record = spawn_record_path(root_dir, nonce)
         lifeline_read, self._lifeline = os.pipe()
         status_read, status_write = os.pipe()
         try:
@@ -154,6 +173,7 @@ class DeadlineStreamer:
                     str(lifeline_read),
                     str(status_write),
                     str(term_grace),
+                    nonce,
                     "--",
                     *argv,
                 ],
@@ -185,6 +205,7 @@ class DeadlineStreamer:
         # kill time is lost in exactly the case where members outlive it
         # (#641).
         self._pgid = safe_pgid(self._proc)
+        self._record_group(nonce, argv, cwd)
         self._writer = threading.Thread(
             target=self._write_stdin,
             args=(stdin_text,),
@@ -194,6 +215,33 @@ class DeadlineStreamer:
         self._reader = threading.Thread(target=self._read_stdout, daemon=True)
         self._reader.start()
         _ACTIVE.add(self)
+
+    def _record_group(self, nonce: str, argv: list[str], cwd: Path | None) -> None:
+        """Write this spawn's record, or end the agent and raise.
+
+        An agent running with no record is the case the record exists to
+        rule out, so a write that fails ends the group the way a deadline
+        does and raises the write's ``OSError``. The leash leads the group,
+        so its pid is the group's id.
+        """
+        if self._record is None:
+            return
+        record = SpawnRecord(
+            pgid=self._proc.pid,
+            nonce=nonce,
+            owner_pid=os.getpid(),
+            cwd=str(cwd) if cwd is not None else os.getcwd(),
+            command=tuple(argv),
+        )
+        try:
+            write_spawn_record(self._record, record)
+        except BaseException:
+            self._record = None
+            self.kill()
+            os.close(self._lifeline)
+            close_quietly(self._proc.stdin)
+            close_quietly(self._proc.stdout)
+            raise
 
     def lines(self) -> Iterator[str]:
         """Yield stdout lines (newline-stripped) until EOF or breach.
@@ -243,6 +291,7 @@ class DeadlineStreamer:
             os.close(self._lifeline)
         except OSError:
             pass
+        forget_spawn_record(self._record)
 
     def finish(self, timeout: float = DEFAULT_FINISH_WAIT_SECONDS) -> None:
         """Bounded wait for exit; escalate to a group kill on expiry.

@@ -7,7 +7,9 @@ rather than a measurement. So the census pins every ``ProvenRung(...)``
 call in ``kstrl/`` by module and scope, and the only row is
 ``prove_rung``.
 
-The nono command line is the other half. ``_nono_argv`` is where the
+The nono command line is the other half. ``rung._nono_argv`` (moved out
+of ``isolation`` in slice 2, so ``verify`` can hold a rung without an
+import cycle) is where the
 policy, the ``env`` in front of the command and nono's own state
 directories are put together, and the canaries prove that command line
 and no other. A second builder would run commands in a rung the
@@ -85,10 +87,10 @@ def test_only_one_place_builds_a_nono_command_line() -> None:
     assert_census(
         sources=package_sources(),
         sees=_builds_a_nono_argv,
-        expected={"isolation.py:_nono_argv": 1},
+        expected={"rung.py:_nono_argv": 1},
         control="argv = [nono, 'wrap', '-s', '-p', str(policy), '--', *argv]\n",
         message=(
-            "A second nono command line is built outside isolation._nono_argv. The "
+            "A second nono command line is built outside rung._nono_argv. The "
             "canaries prove that one; a second would run commands in a rung they "
             "never measured. Build it through _nono_argv."
         ),

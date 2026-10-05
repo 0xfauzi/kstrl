@@ -316,6 +316,7 @@ def _run_reviewer(
             selection.agent_type,
             sandbox=run.pipeline.sandbox_config,
             read_only=True,
+            root_dir=run.root_dir,
         )
         return review_commit(
             agent,
