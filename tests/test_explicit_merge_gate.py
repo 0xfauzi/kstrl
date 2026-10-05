@@ -58,6 +58,7 @@ from tests.helpers import gitrepo
 from tests.helpers.component_prd import write_component_prd
 from tests.helpers.demotion import make_ui
 from tests.helpers.factorycli import capture_run_factory, invoke_factory
+from tests.helpers.stack_confirmation import in_process_stack
 from tests.spine_utils import base_config, component, make_manifest
 
 # ---------------------------------------------------------------------------
@@ -239,9 +240,7 @@ def _for_the_run(config: FactoryConfig) -> FactoryConfig:
     config.max_retries = 0
     config.retry_delay = 0
     config.verify_config = VerifyConfig(
-        test_command="true",
-        typecheck_command="true",
-        lint_command="true",
+        project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
         check_bad_patterns=False,
         subprocess_timeout=5.0,
     )

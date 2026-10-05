@@ -352,6 +352,10 @@ def _check_report(out: str, root: Path, tmp_path: Path) -> dict[str, Any]:
     """The addendum's normaliser: ``path`` and every
     ``checks[].duration_seconds``, each asserted present first."""
     report: dict[str, Any] = json.loads(out)
+    if sorted(report) == ["error", "schema_version"]:
+        # #696 slice 4: a refusal (no confirmed [stack]) measures nothing.
+        refused: dict[str, Any] = json.loads(_scrub(json.dumps(report), root, tmp_path))
+        return refused
     assert "path" in report, sorted(report)
     report["path"] = "<root>"
     for check in report["checks"]:
@@ -394,7 +398,11 @@ def _factory(root: Path, tmp_path: Path, log: Path) -> dict[str, Any]:
         "--no-tui",
         "-y",
     )
-    assert dump.is_file(), out + err
+    if not dump.is_file():
+        # #696 slice 4: no confirmed [stack] refuses before the engineer.
+        assert rc == 2, out + err
+        refusal = [line for line in (out + err).splitlines() if line.startswith("ERROR")]
+        return {"exit": rc, "refusal": _lines("\n".join(refusal), root, tmp_path)}
     return {
         "exit": rc,
         "engineer_prompt": _lines(dump.read_text(encoding="utf-8"), root, tmp_path),

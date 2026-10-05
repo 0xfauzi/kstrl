@@ -163,6 +163,11 @@ EXPECTED_FREE_READERS = frozenset(
         # ContractConfig, each of them surface already. It resolves nothing
         # those loaders do not.
         "load_stack",
+        # stack.legacy_proposal (#696 decision 12) reads the RETIRED
+        # [verify]/[factory] command keys only to propose a [stack] for
+        # `ks doctor` to write; the proposal runs nothing until an
+        # operator confirms it, so this reads no run either.
+        "legacy_proposal",
         "load_toml_section",
         # stack.stack_evidence (#696 slice 3) resolves the kstrl.toml path
         # only to record, on a stack_confirmation inbox item, where the

@@ -22,14 +22,7 @@ from kstrl.interaction import (
 )
 from kstrl.prd import PRD
 from kstrl.timeout import TimeoutConfig, describe_limit_seconds
-from kstrl.verify import (
-    ResolvedVerifyCommands,
-    VerificationResult,
-    VerifyConfig,
-    resolve_verify_commands,
-    run_fast_checks,
-    scrub_project_claude_md,
-)
+from kstrl.verify import VerificationResult, VerifyConfig, run_fast_checks
 
 if TYPE_CHECKING:
     from kstrl.agents.base import Agent
@@ -502,23 +495,16 @@ def build_project_context(
     """Assemble the project-context prefix of the engineer prompt.
 
     Two sections: the project's CLAUDE.md, if it has one, and the
-    verification commands the mechanical gate will run.
+    ``[stack]`` block naming the checks kstrl will run (#696).
 
-    ``context_root`` is where CLAUDE.md is read, ``cwd`` when None. The
-    verification commands are still resolved against ``cwd``, where the
-    gate runs; only the factory passes a different root (#569).
+    ``context_root`` is where CLAUDE.md is read, ``cwd`` when None. Only the
+    factory passes a different root (#569).
 
-    #261: the commands come from ``verify.resolve_verify_commands``, the
-    same resolver the gate itself calls, against the same directory the
-    gate will run in. There is no second copy for the agent to read, so
-    it cannot be told a command the gate will not run.
-
-    ``verify_config`` is the config the checks will run with, and
-    ``None`` means NOTHING runs them for this invocation, so no commands
-    are stated. None is the default on purpose: a default that assumed a
-    gate told a read-only mapping run to execute the whole test suite on
-    every pass. Only a caller that can name what it will run gets to make
-    the claim.
+    ``verify_config`` is the config the checks will run with, and ``None``
+    means NOTHING runs them for this invocation, so no checks are stated.
+    None is the default on purpose: a default that assumed a gate told a
+    read-only mapping run to execute the whole test suite on every pass.
+    Only a caller that can name what it will run gets to make the claim.
 
     Who names one, as of #288:
 
@@ -526,61 +512,23 @@ def build_project_context(
       its gate reads. It HALTS on a failure.
     - ``feature_cmd`` passes the object its report reads, to the
       implement and repair loops only. It does NOT halt: a failing check
-      is reported and the flow proceeds. So the commands the block names
-      are exactly the commands that run, which is #261's whole claim, but
-      ``verify.VERIFY_COMMANDS_PROMPT``'s word "gate" overstates the
-      consequence on that path. Correcting the wording is an H3 prompt
-      change (version bump, snapshot move, calibration re-run) and is
-      tracked rather than done here.
+      is reported and the flow proceeds.
     - ``ks understand``, and ``ks feature``'s understand loop, still pass
       None. Nothing checks an understand file, so None is still true
       there.
 
-    Note the second effect of passing one: ``scrub_project_claude_md``
-    below only runs when there ARE resolved commands, so a caller that
-    starts naming its checks also starts having pre-#261 CLAUDE.md
-    verification bullets dropped from the prompt copy, with a ui.warn
-    each. That is the intended #261 behaviour, and it never writes to the
-    file on disk.
+    A config with no ``[stack]`` states nothing either: there is no check
+    to name, and Phase 1 fails closed on it.
     """
-    commands, block = _verification_block(verify_config, cwd)
-
     sections: list[str] = []
     claude_root = cwd if context_root is None else context_root
     claude_md_path = claude_root / "CLAUDE.md"
     if claude_md_path.exists():
         claude_md = claude_md_path.read_text(encoding="utf-8")
-        if commands is not None:
-            # A CLAUDE.md scaffolded before #261 still carries verification
-            # bullets that disagree with the gate. Drop the divergent ones
-            # from the prompt copy (never from disk) and say so.
-            scrubbed = scrub_project_claude_md(claude_root, commands)
-            if scrubbed is not None:
-                for divergence in scrubbed.divergences:
-                    ui.warn(divergence)
-                claude_md = scrubbed.text
         sections.append("# Project Context (from CLAUDE.md)\n\n" + claude_md)
-
-    if block:
-        sections.append(block)
+    if verify_config is not None and verify_config.project_stack is not None:
+        sections.append(verify_config.project_stack.format_for_prompt())
     return "\n\n".join(sections)
-
-
-def _verification_block(
-    verify_config: VerifyConfig | None, cwd: Path
-) -> tuple[ResolvedVerifyCommands | None, str]:
-    """The gate commands CLAUDE.md is scrubbed against, and the block that
-    tells the engineer what runs: "" when nothing does.
-
-    Under a ``[stack]`` (#696) the block is the stack's, and no gate
-    command is resolved, so nothing scrubs CLAUDE.md against one.
-    """
-    if verify_config is None:
-        return None, ""
-    if verify_config.project_stack is not None:
-        return None, verify_config.project_stack.format_for_prompt()
-    commands = resolve_verify_commands(verify_config, cwd)
-    return commands, commands.format_for_prompt()
 
 
 def _guard_baseline(

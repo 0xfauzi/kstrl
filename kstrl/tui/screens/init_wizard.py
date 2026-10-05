@@ -35,7 +35,7 @@ from kstrl.tui import theme
 from kstrl.tui.widgets.context_bar import ContextBar
 from kstrl.tui.widgets.form import FormErrors, FormField
 from kstrl.ui.plain import PlainUI
-from kstrl.verify import VerifyConfig, resolve_verify_commands
+from kstrl.verify import VerifyConfig
 
 if TYPE_CHECKING:
     pass
@@ -60,14 +60,13 @@ _LABEL_WIDTH = 9
 
 
 def _detected_text(root: Path) -> Text:
-    """The project's language and the commands Phase 1 will run (#261).
+    """The project's language and the ``[stack]`` checks Phase 1 will run (#696).
 
-    The commands come from the gate's own resolver, so the wizard shows
-    what will actually run; it used to show init's guesses. One labelled
-    line each - see the `#wizard-detected` rule in styles.tcss for why
-    they cannot share a line.
+    The checks come from the stack the gate itself reads, so the wizard
+    shows what will actually run. One labelled line each - see the
+    `#wizard-detected` rule in styles.tcss for why they cannot share a line.
 
-    VerifyConfig.load raises ValueError on malformed TOML by design
+    Loading the stack raises ValueError on malformed TOML by design
     (config.load_toml_document), and this is the screen an operator
     opens to repair a broken scaffold, so it reports one rather than
     taking the app down on mount.
@@ -84,16 +83,16 @@ def _detected_text(root: Path) -> Text:
         ("detected", detect_context(root).get("language", "unknown")),
     ]
     try:
-        commands = resolve_verify_commands(VerifyConfig.load(root), root)
+        stack = VerifyConfig.load(root).project_stack
     except SURFACE_REJECTIONS as exc:
         raise_if_defect(exc)
-        rows.append(("verify", "kstrl.toml is unreadable; cannot show gate commands"))
+        rows.append(("stack", "kstrl.toml is unreadable; cannot show the checks"))
     else:
-        rows += [
-            ("test", commands.test),
-            ("typecheck", commands.typecheck),
-            ("lint", commands.lint),
-        ]
+        rows += (
+            list(stack.checks)
+            if stack is not None
+            else [("stack", "none: kstrl runs nothing until a [stack] is confirmed")]
+        )
     text = Text()
     for index, (label, value) in enumerate(rows):
         if index:

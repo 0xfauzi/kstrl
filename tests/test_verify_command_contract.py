@@ -10,15 +10,13 @@ told to lint ``src/`` while the gate linted everything, so a lint error
 introduced under ``tests/`` passed the agent's own check and failed the
 gate.
 
-The fix is structural rather than a corrected copy. The commands live in
-``verify`` only; the gate and the engineer prompt both ask that module
-what will run. What remains here reads the answer where it lands: the
-resolver over a real project tree, and the prompt ``run_loop``, ``ks
-understand`` and ``ks feature`` actually hand a capturing agent (the
-gate block is injected, a legacy CLAUDE.md cannot contradict it and is
-never rewritten on disk, a no-gate entry point states no commands).
-The worker seam, the ``FactoryConfig`` helpers, the scrub helper's
-table and the operator warning are exercised through ``run_factory``.
+The fix is structural rather than a corrected copy, and since the #696
+flag day the one source is the confirmed ``[stack]``: the gate runs its
+checks and the engineer prompt states them (``stack.STACK_PROMPT``). What
+remains here reads the answer where it lands: the prompt ``run_loop``,
+``ks understand`` and ``ks feature`` actually hand a capturing agent (the
+stack block is injected after the project's CLAUDE.md, and a no-gate entry
+point states no checks).
 """
 
 from __future__ import annotations
@@ -29,22 +27,15 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
-import pytest
 from click.testing import CliRunner
 
 from kstrl.cli import cli
 from kstrl.config import KstrlConfig
 from kstrl.loop import COMPLETION_MARKER, build_project_context, run_loop
+from kstrl.stack import STACK_PROMPT
 from kstrl.ui.plain import PlainUI
-from kstrl.verify import (
-    DEFAULT_LINT_COMMAND,
-    DEFAULT_TEST_COMMAND,
-    DEFAULT_TYPECHECK_COMMAND,
-    SCOPED_TYPECHECK_COMMAND,
-    VERIFY_COMMANDS_PROMPT,
-    VerifyConfig,
-    resolve_verify_commands,
-)
+from kstrl.verify import VerifyConfig
+from tests.helpers.stack_confirmation import in_process_stack, write_stack
 from tests.test_feature_cmd import _write_fast_verify_toml
 
 # The chained command from the repo that found this bug: a Python
@@ -54,8 +45,9 @@ from tests.test_feature_cmd import _write_fast_verify_toml
 POLYGLOT_TEST = "uv run pytest -q && cd web && npm run test"
 POLYGLOT_TYPECHECK = "uv run mypy && cd web && npm run check"
 
-# KSTRL_VERIFY_* env overrides are cleared for every test by the
-# autouse ``isolate_kstrl_state`` fixture in tests/conftest.py.
+#: A check command no harness default could produce, so finding it in a
+#: prompt proves the stack put it there.
+MARKED_TEST = "make test-marked-261"
 
 
 class _PromptCapturingAgent:
@@ -160,14 +152,9 @@ def _feature_cli_args(root: Path, *, auto_run: bool = False) -> list[str]:
 def _write_feature_prd(root: Path) -> None:
     feature_dir = root / "scripts" / "kstrl" / "feature" / "demo"
     feature_dir.mkdir(parents=True, exist_ok=True)
-    # #288 review: `ks feature` now RUNS the [verify] commands after each
-    # engineer loop, so a project with no kstrl.toml resolves the
-    # DEFAULTS and these tests really spawn `uv run pytest` /
-    # `uv run mypy .` / `uv run ruff check .` from inside pytest, in a
-    # temp dir with no pyproject for uv to resolve against. Measured:
-    # 0.32s for a CLI feature test against 0.01s for its siblings, with
-    # "collected 0 items" in the captured output. On a cold runner each
-    # command can block up to [verify] subprocess_timeout (300s).
+    # #288 review: `ks feature` RUNS the checks after each engineer loop,
+    # and since #696 it refuses with no confirmed [stack]: this writes a
+    # confirmed one of no-op checks.
     _write_fast_verify_toml(root)
     # ks feature refuses to start without one.
     (root / "scripts" / "kstrl" / "codebase_map.md").write_text("# map\n")
@@ -222,68 +209,9 @@ def _engineer_prompt(
 
 
 def _block_is_injected(prompt: str) -> bool:
-    """Whether the resolved verification block itself reached the agent.
-
-    Searching for the bare heading text no longer answers that: since
-    #276 DEFAULT_PROMPT names the same string to point the engineer at
-    the block. As a markdown heading - line-initial, with its ``# `` -
-    it is only ever the block.
-    """
-    return f"\n{VERIFY_COMMANDS_PROMPT.splitlines()[0]}\n" in f"\n{prompt}"
-
-
-# ---------------------------------------------------------------------------
-# The resolver
-# ---------------------------------------------------------------------------
-
-
-class TestResolveVerifyCommands:
-    def test_unset_config_reports_the_gate_defaults(self, tmp_path: Path) -> None:
-        commands = resolve_verify_commands(VerifyConfig(), tmp_path)
-        assert commands.test == DEFAULT_TEST_COMMAND
-        assert commands.typecheck == DEFAULT_TYPECHECK_COMMAND
-        assert commands.lint == DEFAULT_LINT_COMMAND
-
-    def test_typecheck_default_defers_to_configured_mypy_scope(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """The Gap 2 rule, now reported to the agent as well as obeyed
-        by the gate."""
-        (tmp_path / "pyproject.toml").write_text('[tool.mypy]\nfiles = ["pkg"]\n')
-        resolved = resolve_verify_commands(VerifyConfig(), tmp_path).typecheck
-        assert resolved == SCOPED_TYPECHECK_COMMAND
-
-    def test_configured_commands_win_verbatim(self, tmp_path: Path) -> None:
-        commands = resolve_verify_commands(
-            VerifyConfig(
-                test_command="pytest -x",
-                typecheck_command="pyright",
-                lint_command="flake8 .",
-            ),
-            tmp_path,
-        )
-        assert (commands.test, commands.typecheck, commands.lint) == (
-            "pytest -x",
-            "pyright",
-            "flake8 .",
-        )
-
-    def test_a_chained_polyglot_command_survives_unsplit(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """The resolver never parses or rewrites the operator's command,
-        so a two-toolchain chain reaches the agent whole."""
-        commands = resolve_verify_commands(
-            VerifyConfig(
-                test_command=POLYGLOT_TEST,
-                typecheck_command=POLYGLOT_TYPECHECK,
-            ),
-            tmp_path,
-        )
-        assert commands.test == POLYGLOT_TEST
-        assert commands.typecheck == POLYGLOT_TYPECHECK
+    """Whether the ``[stack]`` block itself reached the agent: its heading,
+    line-initial with its ``# ``, which DEFAULT_PROMPT never writes."""
+    return f"\n{STACK_PROMPT.splitlines()[0]}\n" in f"\n{prompt}"
 
 
 _LEGACY_CLAUDE_MD = """# CLAUDE.md - legacy
@@ -293,10 +221,7 @@ _LEGACY_CLAUDE_MD = """# CLAUDE.md - legacy
 
 ## Verification Commands
 - **Test**: `uv run pytest tests/ -v --tb=short`
-- **Typecheck**: `uv run mypy src/ --strict`
 - **Lint**: `uv run ruff check src/`
-
-Note on scope: this prose explains something a human wrote.
 
 ## Agent Learnings
 - keep me
@@ -304,19 +229,17 @@ Note on scope: this prose explains something a human wrote.
 
 
 class TestEngineerPromptCarriesTheGateCommands:
-    def test_the_block_is_injected_without_a_claude_md(self, tmp_path: Path) -> None:
-        prompt = _engineer_prompt(tmp_path, VerifyConfig())
-        assert DEFAULT_TEST_COMMAND in prompt
-        assert DEFAULT_LINT_COMMAND in prompt
-        assert "STORY-PROMPT-BODY" in prompt
-
     def test_configured_commands_reach_the_agent(self, tmp_path: Path) -> None:
         prompt = _engineer_prompt(
             tmp_path,
-            VerifyConfig(test_command="pytest -q", lint_command="ruff check kstrl/"),
+            VerifyConfig(
+                project_stack=in_process_stack({"tests": MARKED_TEST, "lint": "ruff check kstrl/"})
+            ),
         )
-        assert "pytest -q" in prompt
+        assert _block_is_injected(prompt)
+        assert MARKED_TEST in prompt
         assert "ruff check kstrl/" in prompt
+        assert "STORY-PROMPT-BODY" in prompt
 
     def test_the_polyglot_chain_reaches_the_agent_in_full(self, tmp_path: Path) -> None:
         """The bug was found on a repo whose frontend gates the agent
@@ -324,56 +247,24 @@ class TestEngineerPromptCarriesTheGateCommands:
         prompt = _engineer_prompt(
             tmp_path,
             VerifyConfig(
-                test_command=POLYGLOT_TEST,
-                typecheck_command=POLYGLOT_TYPECHECK,
+                project_stack=in_process_stack(
+                    {"tests": POLYGLOT_TEST, "typecheck": POLYGLOT_TYPECHECK}
+                )
             ),
         )
         assert POLYGLOT_TEST in prompt
         assert POLYGLOT_TYPECHECK in prompt
-        assert "npm run test" in prompt
-        assert "npm run check" in prompt
 
-    def test_a_legacy_claude_md_cannot_contradict_the_gate(self, tmp_path: Path) -> None:
+    def test_the_stack_block_follows_the_project_claude_md_unchanged(self, tmp_path: Path) -> None:
+        """CLAUDE.md is the operator's and reaches the agent as written; the
+        stack block comes after it and says it binds over any list above."""
         (tmp_path / "CLAUDE.md").write_text(_LEGACY_CLAUDE_MD)
-        prompt = _engineer_prompt(tmp_path, VerifyConfig())
-        # The stale instructions are gone from what the agent reads...
-        assert "ruff check src/" not in prompt
-        assert "mypy src/ --strict" not in prompt
-        # ...the rest of the project context is not,...
-        assert "## Agent Learnings" in prompt
-        assert "- keep me" in prompt
-        # ...and the truth is there instead.
-        assert DEFAULT_LINT_COMMAND in prompt
-
-    def test_the_file_on_disk_is_never_rewritten(self, tmp_path: Path) -> None:
-        claude_md = tmp_path / "CLAUDE.md"
-        claude_md.write_text(_LEGACY_CLAUDE_MD)
-        _engineer_prompt(tmp_path, VerifyConfig())
-        assert claude_md.read_text() == _LEGACY_CLAUDE_MD
-
-    def test_each_divergence_is_reported_to_the_operator(
-        self,
-        tmp_path: Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        (tmp_path / "CLAUDE.md").write_text(_LEGACY_CLAUDE_MD)
-        _engineer_prompt(tmp_path, VerifyConfig())
-        # PlainUI writes to stderr.
-        warnings = capsys.readouterr().err
-        assert "uv run ruff check src/" in warnings
-        assert "kstrl.toml" in warnings
-
-    def test_a_correct_claude_md_is_left_alone(
-        self,
-        tmp_path: Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        (tmp_path / "CLAUDE.md").write_text(
-            f"## Verification Commands\n- **Lint**: `{DEFAULT_LINT_COMMAND}`\n",
+        prompt = _engineer_prompt(
+            tmp_path, VerifyConfig(project_stack=in_process_stack({"tests": MARKED_TEST}))
         )
-        prompt = _engineer_prompt(tmp_path, VerifyConfig())
-        assert f"- **Lint**: `{DEFAULT_LINT_COMMAND}`" in prompt
-        assert "Dropping the stale line" not in capsys.readouterr().err
+        assert _LEGACY_CLAUDE_MD in prompt
+        assert prompt.index(_LEGACY_CLAUDE_MD) < prompt.index(STACK_PROMPT.splitlines()[0])
+        assert (tmp_path / "CLAUDE.md").read_text() == _LEGACY_CLAUDE_MD
 
 
 class TestBuildProjectContext:
@@ -381,15 +272,13 @@ class TestBuildProjectContext:
         self,
         tmp_path: Path,
     ) -> None:
-        """It never re-reads kstrl.toml. A CLI --lint-command or an
-        uncommitted edit lives only in the parent, and the parent's
-        fallback is VerifyConfig() rather than a reload, so re-reading
-        here would state a command the gate will not run."""
-        (tmp_path / "kstrl.toml").write_text('[verify]\nlint_command = "eslint ."\n')
+        """It never re-reads kstrl.toml: the stack the caller's gate runs
+        is the one stated, whatever the file now holds."""
+        write_stack(tmp_path, {"lint": "eslint ."})
         context = build_project_context(
             tmp_path,
             PlainUI(no_color=True),
-            VerifyConfig(lint_command="ruff check --preview ."),
+            VerifyConfig(project_stack=in_process_stack({"lint": "ruff check --preview ."})),
         )
         assert "ruff check --preview ." in context
         assert "eslint ." not in context
@@ -401,8 +290,7 @@ class TestBuildProjectContext:
         (tmp_path / "CLAUDE.md").write_text("# CLAUDE.md\n\nprose\n")
         context = build_project_context(tmp_path, PlainUI(no_color=True))
         assert "prose" in context
-        assert DEFAULT_TEST_COMMAND not in context
-        assert "Verification Commands (resolved by kstrl)" not in context
+        assert not _block_is_injected(context)
 
     def test_no_gate_and_no_claude_md_yields_no_context(self, tmp_path: Path) -> None:
         assert build_project_context(tmp_path, PlainUI(no_color=True)) == ""
@@ -412,16 +300,6 @@ class TestBuildProjectContext:
         tmp_path: Path,
     ) -> None:
         assert _engineer_prompt(tmp_path) == "STORY-PROMPT-BODY"
-
-    def test_a_stale_claude_md_is_not_scrubbed_when_no_gate_runs(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """Nothing to reconcile against: with no gate there is no
-        resolved command that the file could contradict."""
-        (tmp_path / "CLAUDE.md").write_text(_LEGACY_CLAUDE_MD)
-        context = build_project_context(tmp_path, PlainUI(no_color=True))
-        assert "uv run ruff check src/" in context
 
 
 class TestNoVerificationEntryPoints:
@@ -435,21 +313,16 @@ class TestNoVerificationEntryPoints:
 
     def test_run_loops_default_states_no_commands(self, tmp_path: Path) -> None:
         """Every call site that does not name a gate inherits this."""
-        prompt = _engineer_prompt(tmp_path)
-        assert DEFAULT_TEST_COMMAND not in prompt
-        assert DEFAULT_LINT_COMMAND not in prompt
+        assert not _block_is_injected(_engineer_prompt(tmp_path))
 
     def test_ks_understand_states_no_commands(self, tmp_path: Path) -> None:
         """Driven through the real CLI. Its allowed paths permit only
         the codebase map, so instructing it to run the suite is minutes
         and tokens spent on a claim that is false for that command."""
         prompt = _prompt_from_cli(["understand", "--root", str(tmp_path)])
-        assert DEFAULT_TEST_COMMAND not in prompt
-        assert DEFAULT_LINT_COMMAND not in prompt
         assert not _block_is_injected(prompt)
 
     def test_ks_feature_states_no_commands(self, tmp_path: Path) -> None:
         _write_feature_prd(tmp_path)
         prompt = _prompt_from_cli(_feature_cli_args(tmp_path))
-        assert DEFAULT_TEST_COMMAND not in prompt
         assert not _block_is_injected(prompt)

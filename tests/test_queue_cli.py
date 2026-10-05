@@ -27,6 +27,7 @@ from kstrl.workqueue import (
     Queue,
     QueueConfig,
 )
+from tests.helpers.stack_confirmation import confirm_stack, write_stack
 
 
 @pytest.fixture
@@ -546,6 +547,8 @@ class TestResumeClearsThePoisonStreak:
         monkeypatch.setenv("USER", "op-alice")
 
     def _trip_the_breaker(self, root: Path) -> None:
+        write_stack(root)
+        confirm_stack(root)
         for name in ("a", "b", "c", "d"):
             spec = root / f"{name}.md"
             spec.write_text(f"# {name}\n\nDo {name}.\n")
@@ -607,6 +610,8 @@ class TestResumeClearsThePoisonStreak:
 
     def test_an_elapsed_budget_pause_keeps_the_streak(self, tmp_path: Path) -> None:
         """Serve's own clear lifts a pause the breaker never sets, so it clears no streak."""
+        write_stack(tmp_path)
+        confirm_stack(tmp_path)
         spec = tmp_path / "a.md"
         spec.write_text("# a\n\nDo a.\n")
         _invoke(["queue", "add", str(spec), "--max-attempts", "1"], tmp_path)

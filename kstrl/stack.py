@@ -24,9 +24,15 @@ once it is ready. kstrl never reads what it does; ``ks doctor --measure``
 replays the recipe (``kstrl.replay``) and a stack whose replay failed is not
 confirmed (:data:`REPLAY_STAGES`).
 
-With no ``[stack]`` table nothing changes: kstrl reads ``[verify]`` as before.
-With one, it is the only source of verification commands, and every other
-source is refused by name (:data:`OTHER_COMMAND_SOURCES`).
+
+A stack is the only source of verification commands (#696 slice 4, the flag
+day). With no ``[stack]`` kstrl has no check to run, so every command that
+would run one refuses before anything is spent (:data:`NO_STACK`), and
+``--no-verify`` is the one way to run with no checks. The keys, flags and
+environment variables that used to name a command are retired
+(``config_keys.RETIRED_KEYS``): ``ks doctor`` files the commands an old
+``[verify]`` still holds as a proposed stack (:func:`legacy_proposal`), which
+nothing approves but a person.
 
 A stack runs nothing until a person confirms it (#696 slice 3). The
 confirmation is an APPROVED ``stack_confirmation`` inbox item bound to the
@@ -42,7 +48,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
@@ -128,30 +133,33 @@ KSTRL_ENV_PREFIX = "KSTRL_"
 #: A POSIX environment variable name.
 _ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
-#: Every other place a verification command can come from. With ``[stack]``
-#: present each one is refused by name: the stack is the one source.
-#: ``(section, key)`` rows are kstrl.toml keys; ``(None, name)`` rows are
-#: environment variables. The ``ks factory`` flags are refused in
-#: ``cli.factory``, which is the only command that has them.
-OTHER_COMMAND_SOURCES: tuple[tuple[str | None, str], ...] = (
-    ("verify", "test_command"),
-    ("verify", "typecheck_command"),
-    ("verify", "lint_command"),
-    ("verify", "test_tool"),
-    ("verify", "typecheck_tool"),
-    ("verify", "lint_tool"),
-    ("factory", "worktree_setup_command"),
-    ("contract", "test_command"),
-    ("breaker", "test_command"),
-    (None, "KSTRL_VERIFY_TEST_CMD"),
-    (None, "KSTRL_VERIFY_TYPECHECK_CMD"),
-    (None, "KSTRL_VERIFY_LINT_CMD"),
-    (None, "KSTRL_VERIFY_TEST_TOOL"),
-    (None, "KSTRL_VERIFY_TYPECHECK_TOOL"),
-    (None, "KSTRL_VERIFY_LINT_TOOL"),
-    (None, "KSTRL_FACTORY_WORKTREE_SETUP_COMMAND"),
-    (None, "KSTRL_CONTRACT_TEST_CMD"),
-    (None, "KSTRL_BREAKER_TEST_CMD"),
+#: What every command that would run a check says when kstrl.toml has no
+#: ``[stack]`` (#696 slice 4): ``ks factory``, ``ks run``, ``ks feature``, ``ks
+#: check``, ``ks retry``, the ``ks serve`` claim and ``ks doctor``.
+NO_STACK = (
+    "kstrl.toml has no [stack], so kstrl has no check to run and runs nothing. Write a "
+    "[stack] table (instructions, setup, env and [stack.checks]) and confirm it; ks doctor "
+    "files a proposed [stack] from the commands an old [verify] still holds. --no-verify "
+    "runs with no checks at all."
+)
+
+#: The ``[stack.checks]`` name each retired ``[verify]`` command becomes in
+#: the stack :func:`legacy_proposal` proposes (#696 decision 12).
+#: The check a retired ``[verify] test_command`` becomes, and the one the
+#: three verify checks that extend a test run read until #696 slice 8.
+TESTS_CHECK = "tests"
+
+LEGACY_CHECK_NAMES: tuple[tuple[str, str], ...] = (
+    ("test_command", TESTS_CHECK),
+    ("typecheck_command", "typecheck"),
+    ("lint_command", "lint"),
+)
+
+#: The ``instructions`` of a proposed stack. It is the operator's to replace:
+#: kstrl does not know what the project is built with.
+PROPOSAL_INSTRUCTIONS = (
+    "Proposed by ks doctor from the retired [verify] commands in kstrl.toml. Replace this "
+    "with what the project is built with and how to work in it."
 )
 
 #: H3: engineer-facing CONTEXT, rendered into every engineer prompt of a run
@@ -359,31 +367,13 @@ def stack_errors(raw: dict[str, Any]) -> list[str]:
     return errors
 
 
-def _second_sources(document: Mapping[str, Any]) -> list[str]:
-    """Every other command source in play beside ``[stack]``."""
-    found: list[str] = []
-    for section, key in OTHER_COMMAND_SOURCES:
-        if section is None:
-            if key in os.environ:
-                found.append(f"the environment sets {key}")
-            continue
-        table = document.get(section)
-        if isinstance(table, Mapping) and key in table:
-            found.append(f"[{section}] {key} is set")
-    return [
-        f"{source}; with [stack] present the stack is the only source of "
-        "verification commands, so remove it"
-        for source in found
-    ]
-
-
 def load_stack(root_dir: Path) -> Stack | None:
     """The project's ``[stack]``, or None when kstrl.toml has none.
 
     Raises :class:`StackError` (exit 2 at every surface) for a table with any
-    error, and for any other command source set beside it. Never returns a
-    partial stack. Read through ``config_toml.load_toml_document``, so a parse
-    fault is the same ``ConfigError`` every loader raises.
+    error. Never returns a partial stack. Read through
+    ``config_toml.load_toml_document``, so a parse fault is the same
+    ``ConfigError`` every loader raises.
     """
     from kstrl.config import resolve_config_file
 
@@ -394,7 +384,7 @@ def load_stack(root_dir: Path) -> Stack | None:
     if "stack" not in document:
         return None
     raw = section_table(document, "stack", path)
-    errors = stack_errors(raw) + _second_sources(document)
+    errors = stack_errors(raw)
     if errors:
         raise StackError(f"[stack] in {path} is refused:\n    " + "\n    ".join(errors))
     return Stack(
@@ -630,6 +620,57 @@ def stack_evidence(root_dir: Path, stack: Stack) -> dict[str, Any]:
     }
 
 
+def stack_toml(stack: Stack) -> str:
+    """``stack`` as the ``[stack]`` table kstrl.toml holds: what an operator
+    pastes to adopt a proposal. A JSON string is a TOML basic string, and a
+    JSON list of strings or a JSON boolean is the same TOML value, so every
+    field of the stack, its digest included, survives the round trip."""
+    lines = [
+        "[stack]",
+        f"instructions = {json.dumps(stack.instructions)}",
+        f"setup = {json.dumps(stack.setup)}",
+        f"env = {json.dumps(list(stack.env))}",
+        f"writable = {json.dumps(list(stack.writable))}",
+        f"readable = {json.dumps(list(stack.readable))}",
+        f"browser = {json.dumps(stack.browser)}",
+        "[stack.checks]",
+        *(f"{json.dumps(name)} = {json.dumps(command)}" for name, command in stack.checks),
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def legacy_proposal(root_dir: Path) -> Stack | None:
+    """The stack the retired command keys in kstrl.toml describe, or None (#696 decision 12).
+
+    ``[verify] test_command``, ``typecheck_command`` and ``lint_command`` become
+    the checks ``tests``, ``typecheck`` and ``lint``; ``[factory]
+    worktree_setup_command`` becomes ``setup``. An empty or absent key adds no
+    check. None when no key names a command, and when kstrl.toml already has a
+    ``[stack]``. Raises what ``config_toml.load_toml_document`` raises.
+    """
+    from kstrl.config import resolve_config_file
+
+    path = resolve_config_file(root_dir)
+    if not path.exists():
+        return None
+    document = load_toml_document(path)
+    verify, factory = document.get("verify"), document.get("factory")
+    if "stack" in document or not isinstance(verify, Mapping):
+        return None
+    checks = tuple(
+        (name, verify[key]) for key, name in LEGACY_CHECK_NAMES if _nonempty_text(verify.get(key))
+    )
+    if not checks:
+        return None
+    setup = factory.get("worktree_setup_command") if isinstance(factory, Mapping) else None
+    return Stack(
+        instructions=PROPOSAL_INSTRUCTIONS,
+        setup=setup if isinstance(setup, str) else "",
+        checks=checks,
+        env=(),
+    )
+
+
 def file_stack_item(
     root_dir: Path,
     stack: Stack,
@@ -637,6 +678,7 @@ def file_stack_item(
     run_id: str = "",
     quiet: bool = False,
     replay: dict[str, Any] | None = None,
+    proposal: bool = False,
 ) -> InboxItem:
     """File (or bump) the open stack_confirmation item for ``stack``.
 
@@ -647,7 +689,10 @@ def file_stack_item(
     ``quiet`` pages nobody: the person who answered the prompt is there.
     ``replay`` is the record of a clean replay of this text (#700 slice 3),
     carried in the evidence; one that failed keeps the stack from being
-    confirmed (:func:`replay_refuses`).
+    confirmed (:func:`replay_refuses`). ``proposal`` is ``ks doctor``'s stack
+    from the retired ``[verify]`` keys (:func:`legacy_proposal`): kstrl.toml
+    does not hold it yet, so the item carries the table to paste, and
+    ``ks inbox approve`` refuses it until kstrl.toml holds that exact text.
     """
     from kstrl.observability import NotifyConfig, NotifyHooks
 
@@ -662,19 +707,29 @@ def file_stack_item(
         failed = str(replay.get("failed", ""))
         replayed = f" Its clean replay {'failed at ' + failed if failed else 'passed'}."
     box = Inbox(root_dir, config)
+    checks = ", ".join(f"{name} `{command}`" for name, command in stack.checks)
+    checks += f"; setup `{stack.setup}`" if stack.setup else "; no setup"
+    checks += (f"; up `{stack.up}`" if stack.up else "") + "." + replayed
+    if proposal:
+        title = f"Proposed [stack] {stack.digest[:12]} from the retired [verify] commands"
+        detail = (
+            f"ks doctor read these from kstrl.toml: {checks} Nothing runs them until a person "
+            "adopts them: replace the [verify] command keys in kstrl.toml with the table below, "
+            "edit it if it is wrong, then confirm it (ks inbox approve <id> confirms this text "
+            "unchanged).\n\n" + stack_toml(stack)
+        )
+        evidence["toml"] = stack_toml(stack)
+    else:
+        title = f"Confirm the [stack] {stack.digest[:12]} in kstrl.toml"
+        detail = (
+            "kstrl runs no command of a [stack] a person has not confirmed. Checks, in order: "
+            f"{checks} ks inbox approve <id> confirms this text; ks inbox reject <id> "
+            "--comment ... refuses it."
+        )
     return box.add(
         ItemKind.STACK_CONFIRMATION,
-        f"Confirm the [stack] {stack.digest[:12]} in kstrl.toml",
-        detail=(
-            "kstrl runs no command of a [stack] a person has not confirmed. Checks, in order: "
-            + ", ".join(f"{name} `{command}`" for name, command in stack.checks)
-            + (f"; setup `{stack.setup}`" if stack.setup else "; no setup")
-            + (f"; up `{stack.up}`" if stack.up else "")
-            + "."
-            + replayed
-            + " ks inbox approve <id> confirms this text; ks inbox reject <id> --comment ... "
-            "refuses it."
-        ),
+        title,
+        detail=detail,
         run_id=run_id,
         dedupe_key=stack_dedupe_key(stack.digest),
         evidence=evidence,

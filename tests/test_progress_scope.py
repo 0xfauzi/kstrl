@@ -63,6 +63,7 @@ from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerificationResult, VerifyConfig, run_mechanical_verification
 from kstrl.worktree_sweep import WorktreeSweep
 from tests.helpers import gitrepo
+from tests.helpers.stack_confirmation import in_process_stack
 
 COMPONENT_ID = "hmac-sign-verify"
 FEATURE_DIR = f"scripts/kstrl/feature/{COMPONENT_ID}"
@@ -526,6 +527,9 @@ class TestProgrammaticallySetProgressFileIsHonored:
                     review_mode="skip",
                     verify_config=None,
                     progress_log_path=tmp_path / "progress.jsonl",
+                    project_stack=in_process_stack(
+                        {"tests": "true", "typecheck": "true", "lint": "true"}
+                    ),
                 ),
                 base,
                 PlainUI(no_color=True, file=io.StringIO()),
@@ -599,6 +603,9 @@ class TestFactoryWiring:
                     review_mode="skip",
                     verify_config=None,
                     progress_log_path=tmp_path / "progress.jsonl",
+                    project_stack=in_process_stack(
+                        {"tests": "true", "typecheck": "true", "lint": "true"}
+                    ),
                 ),
                 _base_config(tmp_path),
                 PlainUI(no_color=True, file=io.StringIO()),
@@ -673,9 +680,7 @@ _SELF_CRITIQUE_ENTRY = """## [2026-07-27] - US-001
 
 def _verify_config(**overrides: Any) -> VerifyConfig:
     defaults: dict[str, Any] = dict(
-        test_command="true",
-        typecheck_command="true",
-        lint_command="true",
+        project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
         check_diff_scope=False,
         check_bad_patterns=False,
         subprocess_timeout=10.0,

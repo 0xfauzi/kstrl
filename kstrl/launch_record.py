@@ -71,7 +71,13 @@ NOT_REPLAYED: dict[str, str] = {
 #: carries must still be an option of `ks factory`.
 REMOVED_OPTIONS: dict[str, str] = {
     "verify_command": "The command it named never ran. Verification runs "
-    "--test-command, --typecheck-command and --lint-command.",
+    "the checks of the confirmed [stack] in kstrl.toml.",
+    # #696 slice 4, the flag day: a confirmed [stack] is the only source of
+    # the commands kstrl runs.
+    "test_command": "Verification runs the checks of the confirmed [stack] in kstrl.toml.",
+    "typecheck_command": "Verification runs the checks of the confirmed [stack] in kstrl.toml.",
+    "lint_command": "Verification runs the checks of the confirmed [stack] in kstrl.toml.",
+    "contract_test_cmd": "Phase 3 runs every check of the confirmed [stack] in kstrl.toml.",
 }
 
 #: Why a record cannot be used, in one line with no path (#433 H4).

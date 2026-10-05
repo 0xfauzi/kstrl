@@ -52,11 +52,10 @@ from tests.helpers.astwalk import (
 )
 from tests.helpers.astwalk.scope import own_nodes
 
-#: The constructors this file is about, and the helper that builds one on
-#: behalf of the three gates. Named as constants because every net keys on them
-#: and a rename that reached one and not the other would be a silent hole.
+#: The constructors this file is about. Named as a constant because every
+#: net keys on it and a rename that reached one and not the other would be
+#: a silent hole.
 CONSTRUCTORS = ("CheckResult", "FixtureResult")
-GATE_HELPER = "_failed_gate_result"
 
 #: The field itself, named once because two nets key on it: the constructions
 #: that set it, and the reads that act on it.
@@ -101,18 +100,6 @@ def constructor_of(node: ast.AST) -> str | None:
 def constructs_a_result(node: ast.AST) -> bool:
     """Is this node a construction of either result type?"""
     return constructor_of(node) is not None
-
-
-def calls_the_gate_helper(node: ast.AST) -> bool:
-    """Is this node a call to :func:`kstrl.verify._failed_gate_result`?
-
-    The three gates do not build their failing row themselves; they hand a
-    parse to one helper. So the helper's own construction carries
-    ``measured=measured`` and says nothing about whether a CALLER still passes
-    the argument. Dropping it at one call site would leave every dict above
-    untouched, which is the hole this second net closes.
-    """
-    return isinstance(node, ast.Call) and leaf_name(node.func) == GATE_HELPER
 
 
 #: Each result type's field order, for the arguments passed POSITIONALLY.
@@ -189,13 +176,6 @@ def measurement_row(source_file: Path, node: ast.AST) -> str:
     return f"{site_row(source_file, node)}: measured={rendered}"
 
 
-def helper_call_row(source_file: Path, node: ast.AST) -> str:
-    """The gate-helper call site plus its ``measured`` argument VERBATIM."""
-    argument = _argument(node, MEASUREMENT)  # type: ignore[arg-type]
-    rendered = ast.unparse(argument) if argument is not None else "MISSING"
-    return f"{_site(source_file, node)}: measured={rendered}"
-
-
 #: Every result construction in ``kstrl/``, counted per function and per type.
 #:
 #: The net. A check cannot report anything without building one of these, so a
@@ -214,10 +194,6 @@ EXPECTED_RESULT_SITES: dict[str, int] = {
     # #416: one new row, the ChildOutputDecodeError clause added after the
     # existing OSError one.
     "fixtures.py: run_function_fixture: FixtureResult": 10,
-    "verify.py: _failed_gate_result: CheckResult": 1,
-    # #621: a gate whose command is kstrl's Python default, in a directory
-    # that is not a Python project, fails without running it.
-    "verify.py: _command_not_run: CheckResult": 1,
     "verify.py: _self_critique_text: CheckResult": 2,
     # #399 simplify pass on #405: the passing row, the issues-found row and
     # the diff-unreadable refusal, all three now built inside
@@ -241,9 +217,6 @@ EXPECTED_RESULT_SITES: dict[str, int] = {
     # returns NotMeasured instead (#306), same convention as
     # check_patch_coverage.
     "verify.py: _diff_mutation_score_result: CheckResult": 1,
-    # #416: one new row, the ChildOutputDecodeError clause after run_scrubbed's
-    # existing timeout clause.
-    "verify.py: check_linter: CheckResult": 3,
     "verify.py: _mutation_score_result: CheckResult": 2,
     # R8.5 Layer 1 (#152): ran the project's own test command a second
     # time under coverage and read back a percentage over the diff's
@@ -266,13 +239,14 @@ EXPECTED_RESULT_SITES: dict[str, int] = {
     "verify.py: check_scope_unreadable: CheckResult": 1,
     "verify.py: check_self_critique: CheckResult": 3,
     "verify.py: check_test_adequacy: CheckResult": 3,
-    # #416: one new row each, the ChildOutputDecodeError clause after
-    # run_scrubbed's existing timeout clause.
-    "verify.py: check_test_suite: CheckResult": 3,
-    "verify.py: check_typecheck: CheckResult": 3,
     # #696: one [stack] check's row: not run because the stack is not
     # confirmed (slice 3), timed out, undecodable, passed, failed.
     "verify.py: check_stack_command: CheckResult": 5,
+    # #696: the one row _command_gates builds when there is no [stack] at
+    # all - the retired check_linter/check_test_suite/check_typecheck's
+    # replacement, now a single always-unmeasured row rather than three
+    # per-tool gates.
+    "verify.py: _command_gates: CheckResult": 1,
 }
 
 #: Every construction that states its measurement, with the argument verbatim.
@@ -309,13 +283,6 @@ EXPECTED_MEASURED_ARGUMENTS: dict[str, int] = {
     # branches from the command fixture's. #416 adds the third: the child's
     # output could not be decoded as utf-8.
     "fixtures.py: run_function_fixture: FixtureResult: measured=False": 3,
-    # The three gates' shared failing row, and the only place a gate's
-    # measurement is decided. `recognised` is the parser saying it saw its own
-    # tool report a failure; EXPECTED_GATE_HELPER_CALLS below is what stops a
-    # caller overriding it.
-    "verify.py: _failed_gate_result: CheckResult: measured=parsed.recognised": 1,
-    # #621: the tool was never started, so nothing was measured.
-    "verify.py: _command_not_run: CheckResult: measured=False": 1,
     # The progress file could not be read, or is not UTF-8. No bullets were
     # counted either way.
     "verify.py: _self_critique_text: CheckResult: measured=False": 2,
@@ -328,12 +295,6 @@ EXPECTED_MEASURED_ARGUMENTS: dict[str, int] = {
     # not decode: the check applies no rule, applies it to nothing, or could
     # not read what to apply it to.
     "verify.py: check_diff_scope: CheckResult: measured=False": 3,
-    # The three gates' two failure modes each: a timeout (the tool started and
-    # was killed, so its findings are unknown rather than zero) and (#416) the
-    # tool's output could not be decoded as utf-8.
-    "verify.py: check_linter: CheckResult: measured=False": 2,
-    "verify.py: check_test_suite: CheckResult: measured=False": 2,
-    "verify.py: check_typecheck: CheckResult: measured=False": 2,
     # #696 decision 4: a timeout and undecodable output measured nothing,
     # and so did an exit the shell returns when it could not run the
     # command (126, 127). Every other non-zero exit is a measured failure.
@@ -357,6 +318,8 @@ EXPECTED_MEASURED_ARGUMENTS: dict[str, int] = {
     "verify.py: check_scope_unreadable: CheckResult: measured=False": 1,
     # The diff could not be read.
     "verify.py: check_test_adequacy: CheckResult: measured=False": 1,
+    # #696: there is no [stack] at all, so nothing was run.
+    "verify.py: _command_gates: CheckResult: measured=False": 1,
 }
 
 #: Every construction with a literal ``passed=False`` and no ``measured``.
@@ -402,25 +365,19 @@ EXPECTED_FAILING_WITH_DEFAULT: dict[str, int] = {
     "verify.py: check_self_critique: CheckResult": 2,
 }
 
-#: Every call to the three gates' shared failing-row helper, with its
-#: ``measured`` argument verbatim.
-#:
-#: ``MISSING`` at all three is the CORRECT state and the point of the net. The
-#: helper decides the measurement from the parse it is handed, so a gate that
-#: passes ``measured=`` at all is overriding the parser's evidence with the
-#: caller's opinion, and that is round 1's defect: the argument it passed was
-#: ``result.returncode not in {126, 127}``, which is the SHELL's vocabulary for
-#: a command it could not start, and the gate commands this repository ships go
-#: through ``uv run``, which reports its own exit 2 instead.
-EXPECTED_GATE_HELPER_CALLS: dict[str, int] = {
-    "verify.py: check_linter: measured=MISSING": 1,
-    "verify.py: check_test_suite: measured=MISSING": 1,
-    "verify.py: check_typecheck: measured=MISSING": 1,
-}
-
 
 class TestEveryResultRowIsAccountedFor:
-    """Four partitions of one inventory, each with its own failure message."""
+    """Three partitions of one inventory, each with its own failure message.
+
+    A fourth partition - the three gates' shared failing-row helper,
+    ``_failed_gate_result``, and its callers ``check_linter``,
+    ``check_test_suite`` and ``check_typecheck`` - was retired by #696: a
+    confirmed ``[stack]`` is now the only source of verification commands,
+    so there is no per-tool gate left to share a helper, and no
+    ``EXPECTED_GATE_HELPER_CALLS`` census left to protect. Its test is
+    deleted rather than kept vacuous, per the PRD's rule 3: a guard whose
+    subject is categorically gone is a guard that passes forever and
+    teaches nothing."""
 
     def test_the_positional_field_order_is_the_dataclasses_own(self) -> None:
         """The control for :data:`POSITIONAL_FIELDS`.
@@ -528,33 +485,6 @@ class TestEveryResultRowIsAccountedFor:
             ),
         )
 
-    def test_no_gate_overrides_the_shared_helper_s_measurement(self) -> None:
-        """The hole the first three cannot see.
-
-        ``_failed_gate_result`` builds the row for all three gates and decides
-        ``measured`` from the parse, so its own construction is one census row
-        whatever the callers do. A gate that started passing ``measured=``
-        again would replace the parser's evidence with the caller's opinion and
-        no dict above would move. ``MISSING`` at all three is the state this
-        pins; the argument's text renders in the key when one appears.
-        """
-        assert_census(
-            sources=package_sources(),
-            sees=calls_the_gate_helper,
-            key=helper_call_row,
-            expected=EXPECTED_GATE_HELPER_CALLS,
-            control=(
-                "row = _failed_gate_result(name, msg, parsed, cmd, cwd, start, measured=False)\n",
-                "row = _failed_gate_result(name, msg, parsed, cmd, cwd, start)\n",
-            ),
-            message=(
-                "A gate started deciding for itself whether its tool ran. That "
-                "decision belongs to the parser: round 1 of #357 made it from the "
-                "exit code, which is uv's status and not the tool's, so a missing "
-                "linter cleared every one of its baseline findings (#227)."
-            ),
-        )
-
 
 #: Every READ of a ``.measured`` attribute in ``kstrl/``, counted per function.
 #:
@@ -577,14 +507,15 @@ class TestEveryResultRowIsAccountedFor:
 #: somebody enumerated is how a guard goes blind on the module nobody thought
 #: of.
 EXPECTED_MEASUREMENT_READS: dict[str, int] = {
-    # #654: which of the BASE branch's failing gates refuse a run before
-    # any engineer call. Not the #227 fail-open: this adds a refusal and
-    # decides no pass, and a row it lets through (measured=False) still
-    # meets Phase 1 unchanged on every component, which fails it. The other
-    # two reads print and record the row; `ks doctor --measure` reports
-    # the same record.
-    "base_gates.py: refusal_lines: check.measured": 1,
-    "base_gates.py: warning_lines: check.measured": 1,
+    # #654: this used to be where the BASE branch's failing gates decided
+    # which refuse a run before any engineer call. #696 decision 6 ended
+    # that: refusal_lines (by way of _stack_refusal_lines) now refuses
+    # every check that did not pass whether or not it measured anything,
+    # so the read moved out of the refusing path entirely. The one
+    # survivor here just records the row; `ks doctor --measure` reports
+    # the same record. #696 decision 4 also removed warning_lines'
+    # read: the warn-not-refuse carve-out for an unmeasured check is
+    # gone, so warning_lines now reads only reading.error.
     "base_gates.py: reading_document: check.measured": 1,
     # #654 slice 4: which refusals `--accept-red-base` may waive. Only a
     # row that measured a failure; an unmeasured row keeps refusing, so this

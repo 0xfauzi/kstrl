@@ -32,6 +32,7 @@ import pytest
 
 from kstrl.prd import UserStory
 from kstrl.verify import VerifyConfig, check_prd_stories, run_mechanical_verification
+from tests.helpers.stack_confirmation import in_process_stack
 from tests.test_harness_path_scope import (
     AUTHORED,
     PRD_REL,
@@ -282,9 +283,9 @@ class TestPrdTamper:
             None,
             VerifyConfig(
                 check_diff_scope=False,
-                test_command="true",
-                typecheck_command="true",
-                lint_command="true",
+                project_stack=in_process_stack(
+                    {"tests": "true", "typecheck": "true", "lint": "true"}
+                ),
                 subprocess_timeout=30.0,
             ),
             pre_run_prd_path=tmp_path / PRD_REL,

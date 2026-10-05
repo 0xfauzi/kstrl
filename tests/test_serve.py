@@ -94,10 +94,22 @@ from kstrl.workqueue import (
     QueueItem,
 )
 from tests.helpers import procs
+from tests.helpers.stack_confirmation import confirm_stack, write_stack
 
 # --------------------------------------------------------------------------
 # helpers
 # --------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _confirmed_stack(tmp_path: Path) -> None:
+    """Every ``serve_cycle`` call here reads ``tmp_path``'s ``[stack]`` before
+    it claims anything (#696 flag day): with none it refuses before the gate
+    this file exists to test is ever reached. The stub ``FactoryRunner``
+    stands in for whatever the stack would have run, so the checks
+    themselves never execute; only their confirmation is read."""
+    write_stack(tmp_path)
+    confirm_stack(tmp_path)
 
 
 def _queue(root: Path, **kwargs: object) -> Queue:

@@ -71,7 +71,17 @@ def write_manifest(tmp_path: Path) -> Path:
     return path
 
 
-def invoke_factory(tmp_path: Path, *extra_args: str) -> Any:
+def invoke_factory(tmp_path: Path, *extra_args: str, no_verify: bool = True) -> Any:
+    # #696 flag day: this harness is about config RESOLUTION (which
+    # section wins, flag > env > toml > default), never about
+    # verification, and almost no caller writes a [stack]. --no-verify is
+    # the real, documented way to run with no checks, so the stack
+    # checkpoint - which would otherwise refuse before run_factory is
+    # ever reached, stack or no - is skipped the same way an operator
+    # doing config work would skip it. The one exception is a caller
+    # whose SUBJECT is VerifyConfig itself: --no-verify also sets
+    # ``factory_config.verify_config`` to None, so it passes
+    # ``no_verify=False`` and confirms its own [stack] first.
     manifest_path = write_manifest(tmp_path)
     runner = CliRunner()
     return runner.invoke(
@@ -87,6 +97,7 @@ def invoke_factory(tmp_path: Path, *extra_args: str) -> Any:
             "true",
             "--ui",
             "plain",
+            *(("--no-verify",) if no_verify else ()),
             *extra_args,
         ],
     )

@@ -40,12 +40,12 @@ from tests.helpers.executables import write_executable
 from tests.helpers.procs import wait_for_pid_to_die
 from tests.test_red_base_preflight import _doctor_json, _repo
 
-#: The base gates, all `true`: these tests read the isolation row.
-GATES = {
-    "KSTRL_VERIFY_TEST_CMD": "true",
-    "KSTRL_VERIFY_TYPECHECK_CMD": "true",
-    "KSTRL_VERIFY_LINT_CMD": "true",
-}
+#: The confirmed [stack]'s three checks, all `true` (#696 flag day, rule
+#: 11 of the #696-s4 plan): these tests read the isolation row, not the
+#: gate outcome, so the checks themselves must not be able to fail on an
+#: empty greenfield repository (a real `pytest` there exits 5, which is
+#: now a measured failure, #696 decision 6).
+CHECKS = {"tests": "true", "typecheck": "true", "lint": "true"}
 
 #: Read at import, before the autouse fixtures run.
 NONO = os.environ.get("KSTRL_NONO", "").strip() or shutil.which("nono") or ""
@@ -100,8 +100,8 @@ POSITIVE = ("scratch_write", "loopback", "env_reaches", "exit_127", "sigterm")
 def _isolation(tmp_path: Path, env: dict[str, str]) -> tuple[int, dict[str, Any], dict[str, Any]]:
     """Run `ks doctor --measure --json`; return the exit code, the
     isolation row and the isolation reading."""
-    root = _repo(tmp_path, {})
-    code, document = _doctor_json(root, {**GATES, **env})
+    root = _repo(tmp_path, {}, checks=CHECKS)
+    code, document = _doctor_json(root, env)
     (row,) = [row for row in document["checks"] if row["name"] == "isolation"]
     return code, row, document["isolation"]
 

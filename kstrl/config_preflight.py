@@ -109,10 +109,9 @@ REJECTIONS = (ValueError, TypeError, RuntimeError)
 #: unreadable kstrl.toml into a ``ConfigError`` before any loader runs;
 #: a screen re-reading the file minutes later has no such pass in front
 #: of it, and a ``chmod`` between two refreshes raises ``OSError``
-#: straight out of ``load_toml_section``. Second, a loader may read a
-#: file that is not kstrl.toml at all: ``resolve_verify_commands``
-#: reads the project's pyproject.toml, so ``init_wizard._detected_text``
-#: needs ``OSError`` for a document this module never opens.
+#: straight out of ``load_toml_section``. Second, a reader may open a
+#: file that is not kstrl.toml at all: the stack's inbox is one, read by
+#: ``init_wizard._detected_text`` through ``stack.stack_in_force``.
 SURFACE_REJECTIONS = (*REJECTIONS, OSError)
 
 
@@ -157,10 +156,7 @@ def raise_if_defect(exc: BaseException) -> None:
     does reach this function is a cycle in kstrl's own code, and the
     traceback this re-raise keeps is what locates it. The closure is
     over the PARSES, not over the call graph: not every guarded block
-    goes through ``load_toml_document``, and ``init_wizard._detected_text``
-    is the one that does not, reaching
-    ``toolchains.python_typecheck_default`` on the project's
-    pyproject.toml instead.
+    goes through ``load_toml_document``.
 
     Inspecting the exception could not have settled it anyway. Measured
     on 3.12.8 and 3.13.2, both directions give
@@ -433,19 +429,15 @@ def retired_name_problems(document: Mapping[str, Any], toml_path: Path) -> list[
                 f"{toml_path} names [{old}], which was renamed to [{new}]. "
                 "Rename the section; kstrl will not guess."
             )
-    for (section, key), new in RETIRED_KEYS.items():
+    for (section, key), why in RETIRED_KEYS.items():
         table = document.get(section)
         if isinstance(table, Mapping) and key in table:
             problems.append(
-                f"{toml_path} names [{section}] {key}, which was renamed to {new}. "
-                "Rename the key; kstrl will not guess."
+                f"{toml_path} names [{section}] {key}, which was {why}. kstrl will not guess."
             )
-    for old, new in sorted(RETIRED_ENV_VARS.items()):
+    for old, why in sorted(RETIRED_ENV_VARS.items()):
         if old in os.environ:
-            problems.append(
-                f"the environment sets {old}, which was renamed to {new}. "
-                "Rename the variable; kstrl will not guess."
-            )
+            problems.append(f"the environment sets {old}, which was {why}. kstrl will not guess.")
     return problems
 
 

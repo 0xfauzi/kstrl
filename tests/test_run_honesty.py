@@ -39,6 +39,7 @@ from kstrl.manifest import Component, Manifest
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
 from tests.helpers import gitrepo
+from tests.helpers.stack_confirmation import in_process_stack
 
 COMPLETE_LINE = "echo '<promise>COMPLETE</promise>'"
 COMP_PRD_PATH = "scripts/kstrl/feature/comp-a/prd.json"
@@ -235,9 +236,13 @@ class TestNoVerifySkipSentinel:
         # Even with a verify_config PRESENT, the sentinel wins: none of
         # these commands may execute.
         verify_config = VerifyConfig(
-            test_command=f"touch {marker}",
-            typecheck_command=f"touch {marker}",
-            lint_command=f"touch {marker}",
+            project_stack=in_process_stack(
+                {
+                    "tests": f"touch {marker}",
+                    "typecheck": f"touch {marker}",
+                    "lint": f"touch {marker}",
+                }
+            ),
         )
         manifest = _manifest()
 
@@ -273,9 +278,9 @@ class TestNoVerifySkipSentinel:
 
         marker = tmp_path / "check-ran.marker"
         verify_config = VerifyConfig(
-            test_command=f"touch {marker}",
-            typecheck_command="true",
-            lint_command="true",
+            project_stack=in_process_stack(
+                {"tests": f"touch {marker}", "typecheck": "true", "lint": "true"}
+            ),
             check_diff_scope=False,
             check_bad_patterns=False,
         )
@@ -521,9 +526,9 @@ class TestCodebaseScanAndPrdPathEndToEnd:
             _factory_config(
                 skip_verification=False,
                 verify_config=VerifyConfig(
-                    test_command="true",
-                    typecheck_command="true",
-                    lint_command="true",
+                    project_stack=in_process_stack(
+                        {"tests": "true", "typecheck": "true", "lint": "true"}
+                    ),
                     check_diff_scope=False,
                     check_bad_patterns=False,
                 ),

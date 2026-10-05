@@ -65,6 +65,7 @@ from kstrl.observability import ProgressLog
 from kstrl.shutdown import StopController
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
+from tests.helpers.stack_confirmation import confirm_stack, in_process_stack, write_stack
 
 # Verbatim (trimmed to relevant fields) from the measurement probe:
 # `claude --print --output-format stream-json --verbose` on CLI 2.1.214.
@@ -760,10 +761,9 @@ def _factory_config(tmp_path: Path, **overrides: Any) -> FactoryConfig:
         max_retries=0,
         retry_delay=0,
         review_mode="skip",
+        project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
         verify_config=VerifyConfig(
-            test_command="true",
-            typecheck_command="true",
-            lint_command="true",
+            project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
             check_diff_scope=False,
             check_bad_patterns=False,
             subprocess_timeout=5.0,
@@ -4109,6 +4109,10 @@ class TestCeilingsAreCheckedBeforeAnythingSpends:
         (tmp_path / "s.md").write_text("# spec\nbuild a thing\n")
         # #434: a repository with no build manifest is refused before the architect.
         (tmp_path / "pyproject.toml").write_text('[project]\nname = "p"\n')
+        # #696 flag day: the real stack checkpoint runs ahead of the
+        # ceiling preflight this test is for.
+        write_stack(tmp_path)
+        confirm_stack(tmp_path)
         result = CliRunner().invoke(
             cli,
             ["factory", "--spec", "s.md", "--project-name", "p", "--agent-cmd", str(script)],
@@ -5461,6 +5465,13 @@ def _invoke_factory_cli(
     _make_manifest([_component("comp-a")]).save(root / "m.json")
     if setup is not None:
         setup(root)
+    # #696 flag day: this file is about spend/usage accounting, never
+    # verification, and `run_factory`/`decompose_spec` are mocked by every
+    # caller, but the real stack checkpoint still runs ahead of them. A
+    # confirmed TRUE_CHECKS stack, appended after `setup` (never replacing
+    # whatever it wrote), gets every caller past it.
+    write_stack(root)
+    confirm_stack(root)
     return CliRunner().invoke(cli, args, catch_exceptions=catch_exceptions)
 
 

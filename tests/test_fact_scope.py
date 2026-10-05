@@ -36,6 +36,7 @@ from kstrl.manifest import Component, Manifest
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
 from tests.helpers.component_prd import write_component_prd
+from tests.helpers.stack_confirmation import in_process_stack
 
 #: Read before any test patches ``_run_component``: a patched name has
 #: the mock's ``(*args, **kwargs)`` signature, which binds nothing.
@@ -332,10 +333,9 @@ def _run_factory_capturing(
         max_retries=0,
         retry_delay=0,
         review_mode="skip",
+        project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
         verify_config=VerifyConfig(
-            test_command="true",
-            typecheck_command="true",
-            lint_command="true",
+            project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
             check_diff_scope=False,
             check_bad_patterns=False,
             subprocess_timeout=5.0,

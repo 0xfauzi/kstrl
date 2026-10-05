@@ -219,12 +219,4 @@ BLIND_SITES: tuple[tuple[str, str, str, str], ...] = (
         "signature head is the literal 'stack', enrolled in "
         "_CATEGORY_BY_CHECK and pinned in test_signature_spellings.py",
     ),
-    ("kstrl/verify.py", "_command_not_run", "gate", "pass-through; censused at its call sites"),
-    (
-        "kstrl/verify.py",
-        "_failed_gate_result",
-        "name",
-        "pass-through of its own parameter; _failed_gate_result is itself a "
-        "CHECK_NAME_CALL, so every caller is censused",
-    ),
 )

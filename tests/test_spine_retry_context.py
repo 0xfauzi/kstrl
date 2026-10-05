@@ -27,6 +27,7 @@ from kstrl.factory import run_factory
 from kstrl.manifest import ComponentStatus
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
+from tests.helpers.stack_confirmation import in_process_stack
 from tests.spine_utils import (
     base_config,
     component,
@@ -102,9 +103,9 @@ class TestRetryContextPropagation:
                 max_retries=1,
                 progress_log_path=progress_path,
                 verify_config=VerifyConfig(
-                    test_command="true",
-                    typecheck_command="true",
-                    lint_command="true",
+                    project_stack=in_process_stack(
+                        {"tests": "true", "typecheck": "true", "lint": "true"}
+                    ),
                     check_diff_scope=True,
                     check_bad_patterns=False,
                     subprocess_timeout=10.0,
@@ -230,9 +231,9 @@ class TestRetryContextPropagation:
             factory_config(
                 max_retries=2,
                 verify_config=VerifyConfig(
-                    test_command="true",
-                    typecheck_command="true",
-                    lint_command=lint,
+                    project_stack=in_process_stack(
+                        {"tests": "true", "typecheck": "true", "lint": lint}
+                    ),
                     check_diff_scope=True,
                     check_bad_patterns=False,
                     subprocess_timeout=10.0,

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -31,6 +32,8 @@ import pytest
 
 from kstrl.init_cmd import _detect_project_context, gitignore_block
 from tests.helpers import gitrepo, procs
+from tests.helpers.stack_confirmation import confirm_stack, write_stack
+from tests.test_isolation_rung import needs_nono
 
 REPO = Path(__file__).resolve().parent.parent
 COMP = "comp-a"
@@ -117,6 +120,13 @@ def _path_without_agent_clis() -> str:
 
 
 def _env(knowledge: bool = False) -> dict[str, str]:
+    # #696: a confirmed [stack] means these runs now prove the isolation
+    # rung, which shells out to nono. Resolved from the UNSTRIPPED PATH,
+    # same lookup kstrl.isolation.py uses, because on this machine nono
+    # and codex are symlinked from the same bin directory, so stripping
+    # every directory that holds an agent CLI (below) would take nono
+    # out too. Pinning it through KSTRL_NONO survives that strip.
+    nono = os.environ.get("KSTRL_NONO", "").strip() or shutil.which("nono") or ""
     env = {
         k: v
         for k, v in os.environ.items()
@@ -126,6 +136,8 @@ def _env(knowledge: bool = False) -> dict[str, str]:
     env["KSTRL_AGENT_PROBE"] = "0"
     env["KSTRL_NO_TUI"] = "1"
     env["KSTRL_KNOWLEDGE_ENABLED"] = "1" if knowledge else "0"
+    if nono:
+        env["KSTRL_NONO"] = nono
     env["PYTHONPATH"] = str(REPO)
     return env
 
@@ -186,7 +198,10 @@ def _repo(tmp_path: Path, toml: str) -> Path:
         json.dumps(manifest), encoding="utf-8"
     )
     gitrepo.git_in(root, "add", "-A")
+    write_stack(root)
+    gitrepo.git_in(root, "add", "-A")
     gitrepo.git_in(root, "commit", "-q", "-m", "init")
+    confirm_stack(root)
     return root
 
 
@@ -262,12 +277,6 @@ def _factory(
         "1",
         "--contract-check",
         "skip",
-        "--test-command",
-        "true",
-        "--typecheck-command",
-        "true",
-        "--lint-command",
-        "true",
         *flags,
     ]
     return _run(argv, root, {**_env(knowledge), **(extra_env or {})})
@@ -311,6 +320,7 @@ def _facts(root: Path) -> list[Path]:
     [("hard", "failed", "toml"), ("advisory", "completed", "env")],
     ids=["hard-failed-toml", "advisory-completed-env"],
 )
+@needs_nono
 def test_a_reviewer_killed_after_printing_a_passing_verdict_is_not_a_pass(
     tmp_path: Path, mode: str, status: str, setting: str
 ) -> None:
@@ -336,6 +346,7 @@ def test_a_reviewer_killed_after_printing_a_passing_verdict_is_not_a_pass(
     _stubs_died(tmp_path, "review")
 
 
+@needs_nono
 def test_a_security_reviewer_killed_after_printing_a_clean_verdict_is_not_a_pass(
     tmp_path: Path,
 ) -> None:
@@ -357,6 +368,7 @@ def test_a_security_reviewer_killed_after_printing_a_clean_verdict_is_not_a_pass
     _stubs_died(tmp_path, "security")
 
 
+@needs_nono
 def test_a_distiller_killed_after_printing_a_fact_writes_no_fact(tmp_path: Path) -> None:
     root = _repo(tmp_path, f"[knowledge]\ndistill_timeout_seconds = {LIMIT}\n")
 
@@ -375,6 +387,7 @@ def test_a_distiller_killed_after_printing_a_fact_writes_no_fact(tmp_path: Path)
     _stubs_died(tmp_path, "engineer")
 
 
+@needs_nono
 def test_the_same_replies_without_the_hang_pass_and_write_a_fact(tmp_path: Path) -> None:
     """The control for the three tests above: the same stubs, the same
     limits, no hang. Without it a reply that failed on its own (a diffstat
@@ -426,7 +439,10 @@ def _architect_repo(tmp_path: Path, script: str) -> Path:
         encoding="utf-8",
     )
     gitrepo.git_in(root, "add", "-A")
+    write_stack(root)
+    gitrepo.git_in(root, "add", "-A")
     gitrepo.git_in(root, "commit", "-q", "-m", "init")
+    confirm_stack(root)
     return root
 
 
@@ -534,6 +550,7 @@ sys.exit(result.exit_code)
 """
 
 
+@needs_nono
 def test_a_hung_integration_reviewer_is_recorded_as_a_timeout(tmp_path: Path) -> None:
     from tests.helpers import integration_harness as h
 

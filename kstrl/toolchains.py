@@ -1,17 +1,11 @@
-"""One record per ecosystem kstrl knows, and the one resolver of Phase 1's commands (#635).
+"""One record per ecosystem kstrl knows: its markers, ignores and lockfiles (#635).
 
-Before #635 the same facts lived in five tables in ``kstrl/init_cmd.py``
-keyed on the string ``_detect_project_context`` returned, and the gate
-defaults lived in ``kstrl/verify.py``, which never asked what the tree
-was. This module holds both: :data:`TOOLCHAINS` is the record per
-ecosystem, :func:`detect` chooses one for a tree, and :func:`resolve` is
-the only reader of a record's commands for a gate.
-
-It changes no behaviour. :func:`resolve` still gives an unset key the
-Python command in every tree, as the gates did before #635; whether a
-detected non-Python record supplies its own commands is a later slice's
-decision. ``tests/test_python_toolchain_identity_e2e.py`` holds every
-toolchain surface byte-identical across the move.
+What is left of it after the #696 flag day (slice 4). The command half is
+gone: kstrl no longer chooses a command for any tree, Python included, and
+a confirmed ``[stack]`` is the only source of the commands it runs. What
+remains is detection, read by ``ks init`` (slice 6), the decompose
+build-manifest refusal (slice 7) and the fixture runner (slice 8), each of
+which #696 removes in its own slice.
 
 Prompt text is not here. The standards and antipatterns bodies stay
 enrolled ``*_PROMPT`` constants in ``kstrl/init_cmd.py`` (H3), keyed by
@@ -27,35 +21,6 @@ from typing import Literal, get_args
 from kstrl.jsonread import read_json
 
 ToolchainId = Literal["Python", "Rust", "TypeScript", "JavaScript", "Go", "Java", "Kotlin"]
-
-#: The three Phase 1 gates a record can name a command for.
-Capability = Literal["test", "typecheck", "lint"]
-
-#: Gate default when ``[verify] test_command`` is unset.
-DEFAULT_TEST_COMMAND = "uv run pytest"
-
-#: Gate default when ``[verify] lint_command`` is unset.
-DEFAULT_LINT_COMMAND = "uv run ruff check ."
-
-#: Gate fallback when ``[verify] typecheck_command`` is unset AND the
-#: project does not scope mypy itself. :func:`python_typecheck_default`
-#: prefers ``uv run mypy`` (no path) whenever pyproject.toml does.
-DEFAULT_TYPECHECK_COMMAND = "uv run mypy ."
-
-#: What :func:`python_typecheck_default` uses instead when the project has
-#: scoped mypy via ``[tool.mypy] files`` or ``packages``.
-SCOPED_TYPECHECK_COMMAND = "uv run mypy"
-
-
-@dataclass(frozen=True)
-class Commands:
-    """A record's command per capability. None means the ecosystem has no
-    such step. "" is never stored here: "" in ``[verify]`` is the operator
-    turning a gate off (#621), and a record cannot say that for them."""
-
-    test: str | None
-    typecheck: str | None
-    lint: str | None
 
 
 @dataclass(frozen=True)
@@ -82,9 +47,6 @@ class Toolchain:
     #: package-lock.json. Go writes go.sum only once the module requires
     #: something, and Gradle/Maven have no lockfile by default.
     lockfiles: tuple[str, ...]
-    #: What `ks init` seeds, commented, into kstrl.toml ``[verify]`` on a
-    #: non-Python tree. The Python record's are the gate defaults.
-    commands: Commands
 
 
 _JS_IGNORES = (
@@ -131,61 +93,42 @@ TOOLCHAINS: dict[ToolchainId, Toolchain] = {
             "*.egg-info/",
         ),
         lockfiles=("uv.lock", "poetry.lock", "Pipfile.lock"),
-        commands=Commands(
-            test=DEFAULT_TEST_COMMAND,
-            typecheck=DEFAULT_TYPECHECK_COMMAND,
-            lint=DEFAULT_LINT_COMMAND,
-        ),
     ),
     "Rust": Toolchain(
         id="Rust",
         markers=("Cargo.toml",),
         ignores=("target/",),
         lockfiles=("Cargo.lock",),
-        # --all-targets (#621): without it neither command reads #[cfg(test)]
-        # code. Measured on cargo 1.94: `cargo check` exits 0 on a test with a
-        # type error and `cargo clippy -- -D warnings` exits 0 on
-        # `assert!(true)`; with the flag both exit 101.
-        commands=Commands(
-            test="cargo test",
-            typecheck="cargo check --all-targets",
-            lint="cargo clippy --all-targets -- -D warnings",
-        ),
     ),
     "TypeScript": Toolchain(
         id="TypeScript",
         markers=("package.json",),
         ignores=_JS_IGNORES,
         lockfiles=_JS_LOCKFILES,
-        commands=Commands(test="npm test", typecheck="npx tsc --noEmit", lint="npx eslint ."),
     ),
     "JavaScript": Toolchain(
         id="JavaScript",
         markers=("package.json",),
         ignores=_JS_IGNORES,
         lockfiles=_JS_LOCKFILES,
-        commands=Commands(test="npm test", typecheck=None, lint="npx eslint ."),
     ),
     "Go": Toolchain(
         id="Go",
         markers=("go.mod",),
         ignores=("bin/", "*.test", "*.out"),
         lockfiles=("go.sum",),
-        commands=Commands(test="go test ./...", typecheck="go vet ./...", lint="golangci-lint run"),
     ),
     "Kotlin": Toolchain(
         id="Kotlin",
         markers=("build.gradle.kts",),
         ignores=_JVM_IGNORES,
         lockfiles=(),
-        commands=Commands(test="mvn test", typecheck=None, lint=None),
     ),
     "Java": Toolchain(
         id="Java",
         markers=("pom.xml", "build.gradle"),
         ignores=_JVM_IGNORES,
         lockfiles=(),
-        commands=Commands(test="mvn test", typecheck=None, lint=None),
     ),
 }
 
@@ -250,94 +193,6 @@ def detect(root: Path) -> Toolchain | None:
 def is_python_project(root: Path) -> bool:
     """Whether :func:`detect` chooses the Python record for ``root`` (#621).
 
-    The one copy of this test: ``doctor.check_verify_commands``, the
-    Phase 1 gates (``verify._command_not_run``) and the fixture runner
-    all ask it.
+    The one copy of this test, which the fixture runner asks.
     """
     return detect(root) is TOOLCHAINS["Python"]
-
-
-def record_test_command(root: Path, toolchain: Toolchain) -> str | None:
-    """``toolchain``'s test command in ``root``.
-
-    The only command that needs the tree, not just the ecosystem: a JVM
-    tree that ships the Gradle wrapper runs its tests through it.
-    """
-    if toolchain.id in ("Java", "Kotlin") and (root / "gradlew").exists():
-        return "./gradlew test"
-    return toolchain.commands.test
-
-
-def python_typecheck_default(cwd: Path) -> str:
-    """Choose a sensible default mypy invocation for ``cwd``.
-
-    Generic ``uv run mypy .`` is hostile to projects whose pyproject.toml
-    deliberately scopes mypy via ``[tool.mypy] files`` or ``packages``:
-    the ``.`` argument overrides those settings and pulls in test files
-    or vendored code that the project never intended to typecheck. When
-    the project has configured its own mypy scope, defer to it by
-    invoking ``uv run mypy`` with no path argument (mypy then reads the
-    config). When no such config is present, fall back to the broad
-    ``uv run mypy .`` so a green-field project still gets coverage.
-
-    This is the Gap 2 fix from the end-to-end factory validation run:
-    the factory's verify command was overriding the project's own
-    typecheck scope, leading to Phase 1 failures on diffs that were
-    actually fine. Gap 2 landed on the gate and not on ``ks init``, which
-    kept scaffolding ``mypy src/ --strict`` into CLAUDE.md - the very
-    shape it identified as wrong. #261 closed that half.
-    """
-    import tomllib
-
-    pyproject = cwd / "pyproject.toml"
-    if pyproject.is_file():
-        # The read is outside the guard for the same reason it is in
-        # ``config.load_toml_document``: an I/O fault is not a parse
-        # fault. Here it makes no difference to the caller, since both
-        # end at the same default, but a rule applied at one of two
-        # sites and not the other is a rule the next author has to guess
-        # at.
-        try:
-            raw = pyproject.read_bytes()
-        except OSError:
-            return DEFAULT_TYPECHECK_COMMAND
-        try:
-            data = tomllib.loads(raw.decode())
-        except Exception:
-            # ``Exception``, not an enumeration of what tomllib is
-            # believed to raise: see ``kstrl.config.load_toml_document``
-            # for the argument and ``tests/test_toml_readers.py`` for
-            # the guard. The one fact local to THIS site is that a
-            # pyproject.toml is not the operator's kstrl.toml, so it
-            # fails to a documented default rather than to an error,
-            # which is why catching the whole class costs nothing here.
-            return DEFAULT_TYPECHECK_COMMAND
-        mypy_section = data.get("tool", {}).get("mypy", {})
-        if isinstance(mypy_section, dict):
-            # Acknowledged edge case: this heuristic does not consult
-            # ``[[tool.mypy.overrides]]`` (per-module relaxation) or
-            # modules-only configs. If a project relaxes via overrides
-            # but doesn't set ``files``/``packages``, the broad
-            # ``uv run mypy .`` default would override the relaxation.
-            # Real-world rare. Users can always override explicitly via
-            # ``--typecheck-command`` or env var.
-            if mypy_section.get("files") or mypy_section.get("packages"):
-                return SCOPED_TYPECHECK_COMMAND
-    return DEFAULT_TYPECHECK_COMMAND
-
-
-def resolve(cwd: Path, capability: Capability, configured: str | None) -> str:
-    """The exact command Phase 1 runs for ``capability`` in ``cwd``.
-
-    The only reader of a record's commands for a gate. The operator's
-    ``[verify]`` value wins, and "" is the gate turned off (#621). An
-    unset key gets the Python record's command in every tree, as it did
-    before #635.
-    """
-    if configured is not None:
-        return configured
-    if capability == "test":
-        return DEFAULT_TEST_COMMAND
-    if capability == "lint":
-        return DEFAULT_LINT_COMMAND
-    return python_typecheck_default(cwd)

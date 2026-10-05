@@ -4017,7 +4017,7 @@ class ComponentPipeline:
 
         THE SIGNATURE LEADS WITH THE CHECK, not with the phase, and that
         is what makes the journal and the replay agree about this run.
-        ``evolution.split_signature`` takes everything before the first
+        ``evolution.split_signature`` takes everything before the last
         colon as the check name and ``_CATEGORY_BY_CHECK`` categorises
         it, which ``autonomy_replay.INFRA_FAILURE_PREFIXES`` is derived
         from. A ``review:`` prefix would file a reviewer that never ran

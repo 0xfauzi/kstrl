@@ -27,6 +27,7 @@ from kstrl.init_cmd import _detect_project_context, gitignore_block
 from kstrl.launch import DecomposeLaunch
 from kstrl.tui.session import LaunchError, start_run_session
 from tests.helpers.gitrepo import git_in, set_identity
+from tests.helpers.stack_confirmation import write_stack
 
 #: The refusal headline the decompose and factory preflight print.
 REFUSAL = "Refusing to run: this repository has no build manifest kstrl can use"
@@ -109,7 +110,9 @@ def recording_agent(root: Path) -> tuple[str, Path]:
     return f"echo called >> '{calls}'; cat > /dev/null; echo not-json", calls
 
 
-def spec_command(root: Path, command: str, agent: str) -> subprocess.CompletedProcess[str]:
+def spec_command(
+    root: Path, command: str, agent: str, *extra: str
+) -> subprocess.CompletedProcess[str]:
     return run_ks(
         root,
         command,
@@ -124,6 +127,7 @@ def spec_command(root: Path, command: str, agent: str) -> subprocess.CompletedPr
         "--ui",
         "plain",
         "--no-color",
+        *extra,
     )
 
 
@@ -131,10 +135,17 @@ def spec_command(root: Path, command: str, agent: str) -> subprocess.CompletedPr
 def test_a_repository_with_no_build_manifest_is_refused_before_any_agent_call(
     tmp_path: Path, command: str
 ) -> None:
+    """`ks decompose` runs no stack check at all (#696), so a greenfield
+    repository with no kstrl.toml reaches this refusal unmodified. `ks
+    factory --spec` also runs `cli._stack_checkpoint`, and that checkpoint
+    refuses first, with its own message, when a run with no [stack] is not
+    told `--no-verify`; passing it here is what lets THIS refusal (and not
+    the stack one) be the one that fires, same as before #696."""
     root = greenfield(tmp_path)
     agent, calls = recording_agent(root)
 
-    proc = spec_command(root, command, agent)
+    extra = ("--no-verify",) if command == "factory" else ()
+    proc = spec_command(root, command, agent, *extra)
 
     assert proc.returncode == 2, proc.stdout
     assert REFUSAL in proc.stdout
@@ -160,12 +171,14 @@ def test_a_repository_with_its_own_manifest_reaches_the_architect(
     assert calls.read_text(encoding="utf-8").count("called") >= 1
 
 
-def test_an_unrecognised_toolchain_reaches_the_architect_once_verify_names_it(
+def test_an_unrecognised_toolchain_reaches_the_architect_once_the_stack_names_it(
     tmp_path: Path,
 ) -> None:
     """A Gemfile is a build manifest kstrl does not recognise. With no
-    [verify] command it is refused like an empty repository; with one it
-    proceeds, because the operator has told kstrl how the project builds."""
+    [stack] it is refused like an empty repository; with one it proceeds,
+    because the operator has told kstrl how the project builds (#696:
+    presence alone satisfies the escape, confirmation is not required for
+    `ks decompose`, which runs no stack check of its own)."""
     root = greenfield(tmp_path, extra={"Gemfile": 'source "https://rubygems.org"\n'})
     agent, calls = recording_agent(root)
 
@@ -174,27 +187,10 @@ def test_an_unrecognised_toolchain_reaches_the_architect_once_verify_names_it(
     assert REFUSAL in refused.stdout
     assert not calls.exists()
 
-    (root / "kstrl.toml").write_text(
-        '[verify]\ntest_command = "bundle exec rspec"\n', encoding="utf-8"
-    )
+    write_stack(root)
     proceeded = spec_command(root, "decompose", agent)
     assert REFUSAL not in proceeded.stdout
     assert calls.exists(), proceeded.stdout
-
-
-@pytest.mark.parametrize("value", ["", "   "], ids=["empty", "blank"])
-def test_an_empty_verify_command_does_not_satisfy_the_escape(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, value: str
-) -> None:
-    """Phase 1 resolves an empty command to the uv default, which needs the
-    pyproject.toml this repository lacks, so it names no toolchain."""
-    root = greenfield(tmp_path)
-    monkeypatch.setenv("KSTRL_VERIFY_TEST_CMD", value)
-    agent, calls = recording_agent(root)
-    proc = spec_command(root, "decompose", agent)
-    assert proc.returncode == 2, proc.stdout
-    assert REFUSAL in proc.stdout
-    assert not calls.exists()
 
 
 @pytest.mark.parametrize(
@@ -364,48 +360,24 @@ def test_decompose_rejects_a_component_scoped_to_a_root_build_manifest(
     assert not (root / "scripts" / "kstrl" / "manifest.json").exists()
 
 
-@pytest.mark.parametrize("key", ["test_command", "typecheck_command", "lint_command"])
-def test_each_verify_command_lets_an_unrecognised_toolchain_reach_the_architect(
-    tmp_path: Path, key: str
-) -> None:
-    root = greenfield(tmp_path, extra={"Gemfile": 'source "https://rubygems.org"\n'})
-    (root / "kstrl.toml").write_text(f'[verify]\n{key} = "bundle exec x"\n', encoding="utf-8")
-    agent, calls = recording_agent(root)
-    proc = spec_command(root, "decompose", agent)
-    assert REFUSAL not in proc.stdout
-    assert calls.exists(), proc.stdout
-
-
-@pytest.mark.parametrize(
-    ("key", "command"),
-    [
-        ("test_command", "uv run pytest -q tests"),
-        ("lint_command", "uv run ruff check src"),
-    ],
-)
-def test_a_verify_command_that_runs_through_uv_does_not_satisfy_the_escape(
-    tmp_path: Path, key: str, command: str
-) -> None:
-    """A greenfield Python repository (#434 B1). Setting a [verify]
-    command to a `uv run ...` invocation, even one that is not any of
-    the three literal defaults, does not describe a toolchain kstrl
-    does not recognise: `uv run` itself needs the pyproject.toml this
-    repository does not have, so the command cannot run any more than
-    the refusal it is supposed to avoid. It must not satisfy the
-    escape. Parametrized over more than one [verify] key and over
-    commands distinct from `verify.DEFAULT_TEST_COMMAND` /
-    `DEFAULT_TYPECHECK_COMMAND` / `DEFAULT_LINT_COMMAND`, so a check
-    that compares against those three literal strings instead of the
-    `uv run` prefix cannot pass this test."""
-    root = greenfield(tmp_path)
-    (root / "kstrl.toml").write_text(f'[verify]\n{key} = "{command}"\n', encoding="utf-8")
-    agent, calls = recording_agent(root)
-
-    proc = spec_command(root, "decompose", agent)
-
-    assert proc.returncode == 2, proc.stdout
-    assert REFUSAL in proc.stdout
-    assert not calls.exists(), proc.stdout
+# #696 flag day: `test_each_verify_command_lets_an_unrecognised_toolchain_
+# reach_the_architect` (parametrized over the three retired [verify] *_command
+# keys) and `test_a_verify_command_that_runs_through_uv_does_not_satisfy_the_
+# escape` (parametrized over [verify] commands that merely resolve to `uv
+# run`) are deleted. Both probed how `build_manifest_blocker` evaluated a
+# [verify] command's CONTENT: whether naming a command at all was enough,
+# and whether a `uv run`-prefixed one that still needs the missing
+# pyproject.toml was not enough. The new escape in kstrl/init_cmd.py reads
+# only `load_stack(root) is not None` - presence of a [stack] table, never
+# the text of any check inside it - so neither question has a subject left
+# to probe: there is no longer a "which key" axis (one [stack], not three
+# retired keys) and no longer a "does this command describe a real
+# toolchain" evaluation (presence alone satisfies the escape, confirmed
+# by reading kstrl/init_cmd.py::build_manifest_blocker). The single
+# remaining case (a [stack] table lets an unrecognised toolchain through)
+# is covered by
+# test_an_unrecognised_toolchain_reaches_the_architect_once_the_stack_names_it
+# above.
 
 
 def test_doctor_ok_detail_names_which_of_the_two_conditions_applied(tmp_path: Path) -> None:
@@ -422,22 +394,19 @@ def test_doctor_ok_detail_names_which_of_the_two_conditions_applied(tmp_path: Pa
     second_tmp = tmp_path / "b"
     second_tmp.mkdir()
     root = greenfield(second_tmp, extra={"Gemfile": 'source "https://rubygems.org"\n'})
-    (root / "kstrl.toml").write_text(
-        '[verify]\ntest_command = "bundle exec rspec"\n', encoding="utf-8"
-    )
+    write_stack(root)
     proc = run_ks(root, "doctor", "--root", str(root))
     assert (
         "[ok] build_manifest: no build manifest kstrl recognises is at the "
-        "repository root, but [verify] names a command" in proc.stdout
+        "repository root, but kstrl.toml has a [stack] saying how the "
+        "project builds" in proc.stdout
     ), proc.stdout
 
 
-def test_the_home_shell_decompose_launch_honours_the_verify_escape(tmp_path: Path) -> None:
+def test_the_home_shell_decompose_launch_honours_the_stack_escape(tmp_path: Path) -> None:
     root = greenfield(tmp_path, extra={"Gemfile": 'source "https://rubygems.org"\n'})
-    (root / "kstrl.toml").write_text(
-        '[agent]\ncommand = "fake-agent"\n[verify]\ntest_command = "bundle exec rspec"\n',
-        encoding="utf-8",
-    )
+    (root / "kstrl.toml").write_text('[agent]\ncommand = "fake-agent"\n', encoding="utf-8")
+    write_stack(root)
     with patch(
         "kstrl.agents.get_agent", side_effect=RuntimeError("reached get_agent")
     ) as get_agent:

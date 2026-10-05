@@ -90,7 +90,6 @@ With no work limit, an agent that hangs without output holds its component slot 
 | `KSTRL_FACTORY_INTEGRATION_BLOCKING` | bool | false |
 | `KSTRL_FACTORY_INTEGRATION_MAX_ROUNDS` | int, at least 1 | 1 |
 | `KSTRL_FACTORY_CONVERGENCE_ATTEMPTS` | int, at least 0 | 0 (off) |
-| `KSTRL_FACTORY_WORKTREE_SETUP_COMMAND` | shell command | empty (no setup) |
 | `KSTRL_FACTORY_WORKTREE_SETUP_TIMEOUT` | float, seconds | 0 (no limit) |
 | `KSTRL_FACTORY_CLAIM_AGREEMENT` | `advisory` \| `block` | advisory |
 
@@ -271,8 +270,6 @@ test-failure signature.
 | Env var | Type | Default | Notes |
 |---|---|---|---|
 | `KSTRL_BREAKER_ITERATIONS` | int | 3 | Consecutive no-progress iterations before the halt; 0 disables |
-| `KSTRL_BREAKER_TEST_CMD` | str | unset | Stall-probe command; unset falls back to the explicit `[verify]` test_command, else diff-hash only |
-| `KSTRL_BREAKER_TEST_TIMEOUT` | float | 300 | Seconds before the stall probe is killed |
 
 ## SandboxConfig (`[sandbox]`)
 
@@ -299,14 +296,14 @@ The architect and the knowledge distiller are not sandboxed.
 
 ## VerifyConfig (`[verify]`)
 
+The command gates are the checks of the confirmed `[stack]` (#696). The
+variables that once named them (`KSTRL_VERIFY_{TEST,TYPECHECK,LINT}_CMD`, the
+matching `_TOOL` variables, `KSTRL_CONTRACT_TEST_CMD`, `KSTRL_BREAKER_TEST_CMD`,
+`KSTRL_BREAKER_TEST_TIMEOUT` and `KSTRL_FACTORY_WORKTREE_SETUP_COMMAND`) are
+retired: setting one is refused at command entry, naming `[stack]`.
+
 | Env var | Type | Default |
 |---|---|---|
-| `KSTRL_VERIFY_TEST_CMD` | str | unset (uses `uv run pytest`); empty turns the gate off |
-| `KSTRL_VERIFY_TYPECHECK_CMD` | str | unset (uses `uv run mypy .`); empty turns the gate off |
-| `KSTRL_VERIFY_LINT_CMD` | str | unset (uses `uv run ruff check .`); empty turns the gate off |
-| `KSTRL_VERIFY_TEST_TOOL` | `pytest` \| `vitest` \| `go-test-json` | unset = run both parsers and union the failures; `go-test-json` reads the report the command writes to `$KSTRL_REPORT` |
-| `KSTRL_VERIFY_TYPECHECK_TOOL` | `mypy` \| `tsc` | unset = run both parsers and union the failures |
-| `KSTRL_VERIFY_LINT_TOOL` | `ruff` \| `eslint` | unset = run both parsers and union the failures |
 | `KSTRL_DEAD_CODE_CLEANUP` | bool (`1`) | false |
 | `KSTRL_DEAD_CODE_CMD` | str | unset |
 | `KSTRL_MUTATION_TESTING` | bool (`1`) | false |
@@ -458,7 +455,6 @@ In `single_pr` mode every component shares one branch, so the reported numbers i
 | Env var | Type | Default |
 |---|---|---|
 | `KSTRL_CONTRACT_MODE` | str | `tier` (`tier\|final\|skip`) |
-| `KSTRL_CONTRACT_TEST_CMD` | str | unset (uses the command `[verify] test_command` resolves to) |
 | `KSTRL_TIMEOUT_CONTRACT` | float | 0 (no limit) |
 
 Invalid mode raises ValueError (Phase B8).

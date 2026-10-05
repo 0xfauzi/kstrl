@@ -34,6 +34,7 @@ from tests.helpers import gitrepo
 from tests.helpers.executables import write_executable
 from tests.helpers.procs import kill_group
 from tests.helpers.run_limits import limit_names, limit_option
+from tests.helpers.stack_confirmation import confirm_stack, write_stack
 
 #: Generous for a refusal measured at 0.2 to 0.4 s; a hang fails loudly.
 FUSE_SECONDS = 120.0
@@ -70,12 +71,6 @@ RUN_FLAGS = (
     "skip",
     "--contract-check",
     "skip",
-    "--test-command",
-    "true",
-    "--typecheck-command",
-    "true",
-    "--lint-command",
-    "true",
 )
 
 
@@ -110,7 +105,10 @@ def _repo(tmp_path: Path, toml: str = "") -> Path:
     )
     (root / "kstrl.toml").write_text(toml, encoding="utf-8")
     gitrepo.git_in(root, "add", "-A")
+    write_stack(root)
+    gitrepo.git_in(root, "add", "-A")
     gitrepo.git_in(root, "commit", "-q", "-m", "init")
+    confirm_stack(root)
     manifest = {
         "version": "1",
         "specFile": "spec.md",

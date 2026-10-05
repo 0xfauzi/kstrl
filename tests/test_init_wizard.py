@@ -18,12 +18,12 @@ from kstrl.init_wizard import (
 from kstrl.tui.app import KstrlTuiApp, Mode
 from kstrl.tui.screens.home import HomeScreen
 from kstrl.tui.screens.init_wizard import InitWizardScreen
-from kstrl.verify import (
-    DEFAULT_LINT_COMMAND,
-    DEFAULT_TEST_COMMAND,
-    DEFAULT_TYPECHECK_COMMAND,
-)
 from tests.helpers.settle import drained, mounted, settled
+from tests.helpers.stack_confirmation import write_stack
+
+#: Distinct from every default kstrl ever shipped, so a painted command can
+#: only have come from the [stack] (#696 slice 4).
+_CHECKS = {"tests": "make test-all", "typecheck": "make types", "lint": "npx eslint ."}
 
 
 class TestPlanScaffold:
@@ -196,12 +196,12 @@ class TestWizardScreen:
         """
         return app.export_screenshot().replace("&#160;", " ")
 
-    async def test_detected_line_renders_the_resolved_gate_commands(
+    async def test_detected_line_renders_the_stack_checks(
         self,
         tmp_path: Path,
     ) -> None:
-        """#261: the wizard shows what Phase 1 will actually run, and it
-        has to be visible, not merely constructed.
+        """#261, #696: the wizard shows what Phase 1 will actually run, the
+        [stack]'s checks, and it has to be visible, not merely constructed.
 
         The screenshot comes off the compositor, so the form has to have
         been laid out before it is read. Waiting on the FORM's region is
@@ -210,6 +210,7 @@ class TestWizardScreen:
         names, still lays the form out and so still reaches the
         assertions and fails there.
         """
+        write_stack(tmp_path, _CHECKS)
         app, screen = await self._run_wizard(tmp_path)
         try:
             form = await mounted(self._pilot, lambda: app.screen, "#wizard-form")
@@ -220,23 +221,18 @@ class TestWizardScreen:
             )
             rendered = self._rendered(app)
             assert "detected" in rendered
-            for command in (
-                DEFAULT_TEST_COMMAND,
-                DEFAULT_TYPECHECK_COMMAND,
-                DEFAULT_LINT_COMMAND,
-            ):
+            for command in _CHECKS.values():
                 assert command in rendered, f"{command!r} not painted"
             assert screen.query_one("#wizard-detected").size.height >= 4
         finally:
             await self._pilot_ctx.__aexit__(None, None, None)
 
-    async def test_configured_commands_are_the_ones_shown(
+    async def test_no_stack_shows_that_nothing_runs(
         self,
         tmp_path: Path,
     ) -> None:
-        (tmp_path / "kstrl.toml").write_text(
-            '[verify]\nlint_command = "npx eslint ."\n',
-        )
+        """#696 slice 4: with no [stack] kstrl has no command to show, and
+        says that it runs nothing rather than naming a language default."""
         app, _ = await self._run_wizard(tmp_path)
         try:
             # The form's layout, not the text: the assertions own the text.
@@ -247,8 +243,8 @@ class TestWizardScreen:
                 what="the wizard form to be laid out",
             )
             rendered = self._rendered(app)
-            assert "npx eslint ." in rendered
-            assert DEFAULT_LINT_COMMAND not in rendered
+            assert "runs nothing" in rendered
+            assert "pytest" not in rendered
         finally:
             await self._pilot_ctx.__aexit__(None, None, None)
 
@@ -271,7 +267,7 @@ class TestWizardScreen:
             )
             rendered = self._rendered(app)
             assert "unreadable" in rendered
-            assert DEFAULT_TEST_COMMAND not in rendered
+            assert "runs nothing" not in rendered
         finally:
             await self._pilot_ctx.__aexit__(None, None, None)
 

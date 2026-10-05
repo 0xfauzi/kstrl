@@ -39,6 +39,7 @@ from kstrl.loop import STOP_EXIT_CODE
 from kstrl.manifest import Manifest
 from kstrl.worktree_sweep import ORPHAN_CATEGORY, sweep_worktree
 from tests.helpers import gitrepo, procs
+from tests.helpers.stack_confirmation import confirm_stack, write_stack
 
 COMP = "comp-a"
 COMPLETE = "echo '<promise>COMPLETE</promise>'"
@@ -60,12 +61,6 @@ FLAGS = (
     "skip",
     "--contract-check",
     "skip",
-    "--test-command",
-    "true",
-    "--typecheck-command",
-    "true",
-    "--lint-command",
-    "true",
 )
 
 #: Seconds a stopped run may take to exit after one SIGINT. Measured on
@@ -96,7 +91,10 @@ def _repo(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     gitrepo.git_in(root, "add", "-A")
+    write_stack(root)
+    gitrepo.git_in(root, "add", "-A")
     gitrepo.git_in(root, "commit", "-q", "-m", "init")
+    confirm_stack(root)
     manifest = {
         "version": "1",
         "specFile": "spec.md",

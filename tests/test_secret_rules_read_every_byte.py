@@ -35,6 +35,7 @@ from click.testing import CliRunner
 
 from kstrl.cli import cli
 from tests.helpers import gitrepo
+from tests.helpers.stack_confirmation import confirm_stack, write_stack
 from tests.spine_utils import git
 
 _OK_COMMAND = f"{sys.executable} -c 'print(1)'"
@@ -68,11 +69,9 @@ def _repo(
     gitrepo.set_identity(root)
     for key, value in git_config:
         git("config", key, value, cwd=root)
+    write_stack(root, {"tests": _OK_COMMAND, "typecheck": _OK_COMMAND, "lint": _OK_COMMAND})
     (root / "kstrl.toml").write_text(
-        "[verify]\n"
-        f"test_command = {json.dumps(_OK_COMMAND)}\n"
-        f"typecheck_command = {json.dumps(_OK_COMMAND)}\n"
-        f"lint_command = {json.dumps(_OK_COMMAND)}\n" + (POLICY if envelope else NO_POLICY),
+        (root / "kstrl.toml").read_text(encoding="utf-8") + (POLICY if envelope else NO_POLICY),
         encoding="utf-8",
     )
     for files, message in ((base, "init"), (branch, "change")):
@@ -84,6 +83,7 @@ def _repo(
         git("commit", "-q", "-m", message, cwd=root)
         if message == "init":
             git("checkout", "-q", "-b", "feature", cwd=root)
+            confirm_stack(root)
     return root
 
 
