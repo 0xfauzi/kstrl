@@ -695,6 +695,7 @@ def run_feature(
             base_config.model_reasoning_effort,
             base_config.agent_type,
             sandbox=params.sandbox,
+            root_dir=root_dir,
         )
         repair_agent = wrap(LoggingAgent(repair_agent_base, repair_log))
         try:

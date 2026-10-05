@@ -15,7 +15,12 @@ on a reading that shows the group empty (#708); a member that is alive,
 or a reading that cannot be made, keeps it waiting the whole grace.
 
 Run by path and never imported:
-``python -I -S leash.py <lifeline fd> <status fd> <grace> -- <argv...>``.
+``python -I -S leash.py <lifeline fd> <status fd> <grace> <nonce> -- <argv...>``.
+The leash does nothing with the nonce. It is there to be READ: kstrl
+records it beside the group id at spawn, and a later command names a
+group as kstrl's only while that group's leader, this process, shows the
+nonce in its command line, so a group id the kernel has since given to
+another process is never named (#642).
 ``-I -S`` means nothing outside the standard library is on the path, so
 a broken site or a missing kstrl dependency cannot stop it starting.
 The one kstrl import, the group reading, is taken only once the owner
@@ -127,10 +132,12 @@ def _wait_out(grace: float) -> None:
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) < 6 or argv[4] != "--":
-        raise ValueError(f"usage: leash.py <lifeline fd> <status fd> <grace> -- <argv...>: {argv}")
+    if len(argv) < 7 or argv[5] != "--":
+        raise ValueError(
+            f"usage: leash.py <lifeline fd> <status fd> <grace> <nonce> -- <argv...>: {argv}"
+        )
     lifeline, status, grace = int(argv[1]), int(argv[2]), float(argv[3])
-    command = argv[5:]
+    command = argv[6:]
     if os.getpgrp() != os.getpid():
         os.write(status, b"refused")
         return NOT_A_GROUP_LEADER

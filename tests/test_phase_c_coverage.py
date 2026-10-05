@@ -565,13 +565,13 @@ class TestC9AgentFactoryMatrix:
     def test_get_agent_returns_custom_when_cmd_set(self) -> None:
         from kstrl.agents import CustomAgent, get_agent
 
-        agent = get_agent(agent_cmd="my-cli --opt")
+        agent = get_agent(agent_cmd="my-cli --opt", root_dir=None)
         assert isinstance(agent, CustomAgent)
 
     def test_get_agent_returns_codex_when_typed(self) -> None:
         from kstrl.agents import CodexAgent, get_agent
 
-        agent = get_agent(agent_type="codex")
+        agent = get_agent(agent_type="codex", root_dir=None)
         assert isinstance(agent, CodexAgent)
 
     def test_get_agent_returns_claude_when_typed(self) -> None:
@@ -581,7 +581,7 @@ class TestC9AgentFactoryMatrix:
 
         if shutil.which("claude") is None:
             pytest.skip("claude CLI not present; auto-detect would skip claude")
-        agent = get_agent(agent_type="claude-code")
+        agent = get_agent(agent_type="claude-code", root_dir=None)
         assert isinstance(agent, ClaudeCodeAgent)
 
     def test_get_agent_auto_prefers_claude_when_available(self) -> None:
@@ -589,7 +589,7 @@ class TestC9AgentFactoryMatrix:
 
         from kstrl.agents import ClaudeCodeAgent, CodexAgent, get_agent
 
-        agent = get_agent(agent_type="auto")
+        agent = get_agent(agent_type="auto", root_dir=None)
         if shutil.which("claude") is not None:
             assert isinstance(agent, ClaudeCodeAgent)
         else:
