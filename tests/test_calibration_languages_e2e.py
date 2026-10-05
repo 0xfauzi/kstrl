@@ -413,6 +413,9 @@ PYTHON_BASELINE = RESULTS / "baseline-20260925-120951.json"
 
 FIRST_MEASUREMENTS = "first measurements (the old baseline has no rate for these roles):"
 NOT_GATED = "not gated (MIN_ROLE_DETECTION_RATE sets no floor for these roles):"
+FP_HEADER = (
+    "false-positive rate per negative role (new baseline; ceiling 0.34, gated from 3 negatives):"
+)
 
 
 def _changed_paths(diff: str) -> list[str]:
@@ -576,10 +579,13 @@ def test_the_typescript_twins_record_under_their_own_roles_gated_by_no_floor(
     records the twins under ``security_ts``, ``reviewer_ts`` and their
     negative ids only. A reply that flags every changed file catches every
     positive and is a false positive on every negative; a reply that flags
-    nothing misses every positive, and no gate fails, because
+    nothing misses every positive, and no detection gate fails, because
     ``MIN_ROLE_DETECTION_RATE`` sets no floor for either id. The real
-    ``compare`` CLI, against the saved Python capture, exits 0 and names both
-    ids as first measurements with no floor set."""
+    ``compare`` CLI, against the saved Python capture, names both ids as
+    first measurements with no floor set, prints each negative id's
+    false-positive rate over its four negatives, and since #633 slice 3
+    exits 1 naming both negative ids when every negative was flagged, and 0
+    when none was."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     git = shutil.which("git")
@@ -632,9 +638,19 @@ def test_the_typescript_twins_record_under_their_own_roles_gated_by_no_floor(
         encoding="utf-8",
         timeout=120,
     )
-    assert compared.returncode == 0, compared.stdout + compared.stderr
+    assert compared.returncode == (1 if flagged else 0), compared.stdout + compared.stderr
     rate = "1.00" if flagged else "0.00"
     for role in ("security_ts", "reviewer_ts"):
         assert _row(compared.stdout, role)[1:] == ["-", "->", rate, "(no", "floor", "set)"]
     assert _block(compared.stdout, FIRST_MEASUREMENTS) == ["reviewer_ts", "security_ts"]
     assert _block(compared.stdout, NOT_GATED) == ["reviewer_ts", "security_ts"]
+    negative_roles = ("reviewer_negative_ts", "security_negative_ts")
+    assert _block(compared.stdout, FP_HEADER) == [
+        f"{role:<26} {rate}  (4 negatives)" for role in negative_roles
+    ]
+    above = [line for line in compared.stdout.splitlines() if "above the ceiling" in line]
+    assert above == [
+        f"  FAIL: negative role {role!r} false-positive rate 1.00 is above the ceiling 0.34"
+        for role in negative_roles
+        if flagged
+    ]

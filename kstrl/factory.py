@@ -39,7 +39,13 @@ from kstrl.autonomy import (
     save_ladder_state,
     strict_bool,
 )
-from kstrl.base_gates import BaseGates, measure_base_gates, refusal_lines, warning_lines
+from kstrl.base_gates import (
+    BaseGates,
+    apply_acceptance,
+    measure_base_gates,
+    refusal_lines,
+    warning_lines,
+)
 from kstrl.base_gates import write_record as write_base_gates_record
 from kstrl.breaker import BreakerConfig
 from kstrl.commandrun import start_heartbeat as _start_heartbeat
@@ -68,6 +74,7 @@ from kstrl.decisions import (
 from kstrl.events import (
     AdversarialAgentSelected,
     AutonomyLevelApplied,
+    CheckpointResolved,
     ComponentFailed,
     ComponentScopeResolved,
     ComponentStarted,
@@ -131,7 +138,7 @@ from kstrl.pipeline import (
     PipelineHooks,
     _iso_now,
 )
-from kstrl.plan_gate import run_plan_gate, spec_pin_errors
+from kstrl.plan_gate import run_plan_gate, spec_pin_errors, stack_pin_errors
 from kstrl.policy import PolicyConfig
 from kstrl.pr import create_prs_in_order, create_single_pr
 from kstrl.release import RELEASE_REF_RULE, ReleaseInputs, release_ref_from, release_withheld
@@ -149,7 +156,7 @@ from kstrl.security import (
     run_security_review,
 )
 from kstrl.shutdown import StopController
-from kstrl.stack import Stack, load_stack
+from kstrl.stack import STACK_KIND, Stack, stack_in_force, unconfirmed_lines
 from kstrl.statedir import ControlStateError, pre_run_prd_path
 from kstrl.timeout import NO_LIMIT, TimeoutConfig, describe_limit_seconds
 from kstrl.ui.bridge import EventBridgeUI
@@ -428,6 +435,12 @@ class FactoryConfig:
     launch_flags: tuple[tuple[str, FlagValue], ...] = field(
         default=(), metadata={"provenance": True}
     )
+    # #654 slice 4: `ks factory --accept-red-base <sha12>`. A run on a base
+    # whose gates fail proceeds when this is at least 12 characters of the
+    # sha the run measures (kstrl/base_gates.py::apply_acceptance). Per run:
+    # no toml key and no env var, and `ks retry` replays it from the launch
+    # record, so a retry on a base that moved refuses again. "" is none.
+    accept_red_base: str = ""
 
     def resolved_verify_config(self) -> VerifyConfig:
         """The VerifyConfig Phase 1 runs with (#261).
@@ -458,10 +471,12 @@ class FactoryConfig:
         names one, else ``worktree_setup_command``, or under a ``[stack]``
         the stack's ``setup`` with the stack's ``env`` (#696)."""
         if self.project_stack is not None:
+            unconfirmed = self.project_stack.unconfirmed
             return WorktreeSetup(
                 scaffold or self.project_stack.setup,
                 self.worktree_setup_timeout,
                 self.project_stack.env,
+                f"the [stack] in kstrl.toml {unconfirmed}" if unconfirmed else "",
             )
         return WorktreeSetup(scaffold or self.worktree_setup_command, self.worktree_setup_timeout)
 
@@ -731,7 +746,7 @@ class FactoryConfig:
             )
         # Last, so every [factory] key above has been read when a bad
         # [stack] raises (the entry check's unread-name report).
-        config.project_stack = load_stack(root_dir)
+        config.project_stack = stack_in_force(root_dir)
         return check_numbers(config)
 
 
@@ -2409,11 +2424,21 @@ def _preflight_base_gates(
     Under ``--no-verify`` Phase 1 runs no gate, so nothing is measured and
     the record says why.
     """
+    accept = factory_config.accept_red_base
     verify_config = factory_config.engineer_verify_config()
     if verify_config is None:
         skipped = BaseGates(manifest.base_branch)
-        return write_base_gates_record(
-            root_dir, run_id, skipped, [], skipped_reason=BASE_GATES_SKIPPED_NO_VERIFY
+        reasons, _ = apply_acceptance(skipped, [], accept)
+        return (
+            write_base_gates_record(
+                root_dir,
+                run_id,
+                skipped,
+                reasons,
+                skipped_reason=BASE_GATES_SKIPPED_NO_VERIFY,
+                accept=accept,
+            )
+            + reasons
         )
     ui.info(f"  Measuring the gates on the base branch {manifest.base_branch}...")
     reading = measure_base_gates(
@@ -2421,8 +2446,15 @@ def _preflight_base_gates(
     )
     for line in warning_lines(reading):
         ui.warn(f"  {line}")
-    reasons = refusal_lines(reading)
-    return write_base_gates_record(root_dir, run_id, reading, reasons) + reasons
+    reasons, accepted = apply_acceptance(reading, refusal_lines(reading), accept)
+    for line in accepted:
+        ui.warn(f"  Accepted by --accept-red-base {accept}: {line}")
+    return (
+        write_base_gates_record(
+            root_dir, run_id, reading, reasons, accept=accept, accepted=tuple(accepted)
+        )
+        + reasons
+    )
 
 
 def _preflight_spec_pin(manifest: Manifest, root_dir: Path, ui: UI) -> list[str]:
@@ -2440,6 +2472,48 @@ def _preflight_spec_pin(manifest: Manifest, root_dir: Path, ui: UI) -> list[str]
             f"{manifest.project_name}"
         )
     return spec_pin_errors(manifest, root_dir)
+
+
+def _preflight_stack(
+    manifest: Manifest, root_dir: Path, factory_config: FactoryConfig, run_id: str
+) -> list[str]:
+    """Why this run must not use the ``[stack]`` in force, or [] (#696 slice 3).
+
+    A stack no person confirmed refuses, and its one inbox item is filed.
+    A confirmed stack still refuses a plan made under another one.
+    """
+    stack = factory_config.project_stack
+    if stack is not None and stack.unconfirmed:
+        return unconfirmed_lines(root_dir, stack, run_id=run_id)
+    return stack_pin_errors(manifest, stack)
+
+
+def _preflight_pins(
+    manifest: Manifest, root_dir: Path, factory_config: FactoryConfig, run_id: str, ui: UI
+) -> tuple[str, list[str]]:
+    """The spec pin (#639), then the stack (#696): the headline and reasons
+    of the first that refuses, or an empty list. One call, so
+    ``_run_preflights`` gains no branch (its cyclomatic ratchet is at 10)."""
+    spec_errors = _preflight_spec_pin(manifest, root_dir, ui)
+    if spec_errors:
+        return "the plan does not match the spec it was made from", spec_errors
+    return (
+        "the [stack] in kstrl.toml is not confirmed, or is not the one this plan was made under",
+        _preflight_stack(manifest, root_dir, factory_config, run_id),
+    )
+
+
+def _emit_stack_confirmation(bus: EventBus, stack: Stack | None) -> None:
+    """Record how this run's ``[stack]`` was confirmed (#696 slice 3).
+
+    ``decided_by`` is "inbox" for an APPROVED item and "operator" for an
+    answer at the prompt with ``[inbox]`` disabled, which nothing else
+    records: it held for this run only.
+    """
+    if stack is not None and not stack.unconfirmed:
+        bus.emit(
+            CheckpointResolved(kind=STACK_KIND, decision="approved", decided_by=stack.confirmed_by)
+        )
 
 
 def _run_preflights(
@@ -2503,11 +2577,8 @@ def _run_preflights(
     register_errors, run_decisions = _preflight_decision_register(manifest, root_dir)
     if _report_preflight(ui, "the architect decision register cannot bind", register_errors):
         return None
-    if _report_preflight(
-        ui,
-        "the plan does not match the spec it was made from",
-        _preflight_spec_pin(manifest, root_dir, ui),
-    ):
+    headline, pin_errors = _preflight_pins(manifest, root_dir, factory_config, run_id, ui)
+    if _report_preflight(ui, headline, pin_errors):
         return None
     if _report_preflight(
         ui,
@@ -4675,6 +4746,7 @@ def _run_factory_locked(
     # Chunk 4: the component DAG + budget caps as one event, so a
     # dashboard can draw the board without reading the manifest.
     bus.emit(_run_plan_event(manifest, factory_config))
+    _emit_stack_confirmation(bus, factory_config.project_stack)
 
     # R7.1: resolve which model family reviews this run's diffs ONCE so
     # the choice is stable across components and the homogeneity warning

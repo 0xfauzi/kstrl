@@ -72,7 +72,7 @@ from kstrl.prd import PRD
 from kstrl.procdispose import drain_or_abandon
 from kstrl.procgroup import signal_process_tree
 from kstrl.report_formats import REPORT_ENV, fresh_report, read_gate_report
-from kstrl.stack import SECRET_NAME_FRAGMENTS, Stack, load_stack
+from kstrl.stack import SECRET_NAME_FRAGMENTS, Stack, stack_in_force
 from kstrl.statedir import STATE_DIR_NAME
 from kstrl.suite_inventory import (
     TESTS_RAN_CHECK,
@@ -801,7 +801,7 @@ class VerifyConfig:
                 setattr(config, field_name, getattr(env, field_name))
         # Last, so every [verify] key above has been read when a bad
         # [stack] raises (the entry check's unread-name report).
-        config.project_stack = load_stack(root_dir)
+        config.project_stack = stack_in_force(root_dir)
         if "fast_iteration_checks" in section:
             # The toml value is refused on its own names even when the
             # environment overrides it, as before #696.
@@ -1752,7 +1752,7 @@ SHELL_COULD_NOT_RUN: frozenset[int] = frozenset({126, 127})
 
 
 def check_stack_command(
-    cwd: Path, name: str, command: str, timeout: float | None, env: tuple[str, ...]
+    cwd: Path, stack: Stack, name: str, command: str, timeout: float | None
 ) -> CheckResult:
     """Run one ``[stack]`` check in ``cwd``: the row ``stack:<name>`` (#696).
 
@@ -1761,11 +1761,17 @@ def check_stack_command(
     is not utf-8 fail UNMEASURED. kstrl parses none of the output to decide;
     the details are the lines around each location inside ``cwd``, or the
     last five lines when the output names none.
+
+    A stack no person confirmed runs nothing (slice 3): the row fails
+    UNMEASURED with the reason, so every phase that reads it refuses.
     """
     row = f"stack:{name}"
+    if stack.unconfirmed:
+        refused = f"`{command}` not run: the [stack] in kstrl.toml {stack.unconfirmed}"
+        return CheckResult(name=row, passed=False, message=refused, measured=False, output=refused)
     start = time.monotonic()
     try:
-        result = run_scrubbed(command, cwd=cwd, timeout=timeout, declared_env=env)
+        result = run_scrubbed(command, cwd=cwd, timeout=timeout, declared_env=stack.env)
     except subprocess.TimeoutExpired as expired:
         return CheckResult(
             name=row,
@@ -1810,7 +1816,7 @@ def _stack_gates(
     """The ``[stack]`` checks named in ``selected``, in the stack's order (#696)."""
     timeout = limit_seconds(config.subprocess_timeout)
     return [
-        check_stack_command(worktree_path, name, command, timeout, stack.env)
+        check_stack_command(worktree_path, stack, name, command, timeout)
         for name, command in stack.checks
         if name in selected
     ]

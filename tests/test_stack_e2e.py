@@ -35,6 +35,7 @@ from kstrl.cli import cli
 from tests.helpers.executables import write_executable
 from tests.helpers.gitrepo import git_in, set_identity
 from tests.helpers.procs import kill_group
+from tests.helpers.stack_confirmation import confirm_stack
 
 #: Real time for one CLI run; a hang fails loudly instead of waiting.
 FUSE_SECONDS = 180.0
@@ -102,11 +103,13 @@ def _commit(root: Path, name: str, text: str) -> None:
     git_in(root, "commit", "-q", "-m", f"change {name}")
 
 
-def _repo(tmp_path: Path, stack: str, *, comps: tuple[str, ...] = ("greeter",)) -> Path:
+def _repo(
+    tmp_path: Path, stack: str, *, comps: tuple[str, ...] = ("greeter",), confirm: bool = True
+) -> Path:
     """A repository on ``main`` after the real ``ks init``, with ``stack``
-    appended to its kstrl.toml and one planned component per ``comps``,
-    everything committed. Cargo.toml is there because `ks doctor` wants a
-    build manifest; nothing here builds it."""
+    appended to its kstrl.toml (and confirmed, unless ``confirm`` is False)
+    and one planned component per ``comps``, everything committed. Cargo.toml
+    is there because `ks doctor` wants a build manifest; nothing here builds it."""
     root = tmp_path / "proj"
     root.mkdir(parents=True)
     git_in(root, "init", "-q", "-b", "main")
@@ -132,6 +135,8 @@ def _repo(tmp_path: Path, stack: str, *, comps: tuple[str, ...] = ("greeter",)) 
     assert result.exit_code == 0, result.output
     with (root / "kstrl.toml").open("a", encoding="utf-8") as fh:
         fh.write("\n" + stack)
+    if confirm:
+        confirm_stack(root)
     manifest = {
         "version": "1",
         "specFile": "spec.md",
@@ -350,7 +355,9 @@ def test_a_check_sees_the_declared_names_and_a_secret_name_is_refused(tmp_path: 
         tmp_path / "declared",
         _stack({"env": f"env > '{seen}'"}, setup=f"env > '{setup_seen}'", env=["DEMO_DECLARED"]),
     )
-    secret = _repo(tmp_path / "secret", _stack({"tests": "true"}, env=["DEMO_API_TOKEN"]))
+    secret = _repo(
+        tmp_path / "secret", _stack({"tests": "true"}, env=["DEMO_API_TOKEN"]), confirm=False
+    )
     process_env = {
         "DEMO_DECLARED": "declared-value",
         "DEMO_UNDECLARED": "undeclared-value",
@@ -444,7 +451,7 @@ def test_a_malformed_stack_is_refused_once_with_an_indexed_reason(
 ) -> None:
     """8. A stack kstrl would have to guess about is refused before anything
     runs, with the reason indexed, said once, and no traceback."""
-    root = _repo(tmp_path, table)
+    root = _repo(tmp_path, table, confirm=False)
 
     run = _factory(tmp_path, root)
 

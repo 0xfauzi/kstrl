@@ -38,7 +38,7 @@ from typing import TYPE_CHECKING
 from kstrl import git
 from kstrl.config_numbers import BudgetConfigError, check_numbers
 from kstrl.manifest import Manifest
-from kstrl.stack import Stack, load_stack
+from kstrl.stack import Stack, stack_in_force
 from kstrl.timeout import limit_seconds
 from kstrl.toolchains import DEFAULT_TEST_COMMAND
 from kstrl.verify import (
@@ -165,7 +165,7 @@ class ContractConfig:
             config.timeout = float(os.environ["KSTRL_TIMEOUT_CONTRACT"])
         # Re-validate after assignment (env / toml may have introduced typos)
         config.__post_init__()
-        config.project_stack = load_stack(root_dir)
+        config.project_stack = stack_in_force(root_dir)
         if config.project_stack is not None:
             config.test_command = ""
         return check_numbers(config)
@@ -348,8 +348,7 @@ def _run_checks(
     if stack is None:
         return _run_tests(cwd, test_command, timeout)
     rows = [
-        check_stack_command(cwd, name, command, timeout, stack.env)
-        for name, command in stack.checks
+        check_stack_command(cwd, stack, name, command, timeout) for name, command in stack.checks
     ]
     failed = [row for row in rows if not row.passed]
     evidence = "\n".join(f"{row.name}: {row.message}\n{row.output or ''}".strip() for row in failed)

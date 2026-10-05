@@ -39,6 +39,7 @@ if TYPE_CHECKING:
     from kstrl.autonomy import FlagBundle
     from kstrl.manifest import Manifest
     from kstrl.pipeline import ComponentPipeline
+    from kstrl.stack import Stack
 
 #: The inbox dedupe-key prefix of a plan_gate item. ``kstrl/cli.py``
 #: recognises a plan park by it when `ks inbox approve` or `ks inbox
@@ -101,7 +102,14 @@ def plan_digest(manifest: Manifest, root_dir: Path) -> str:
                 ],
             }
         )
-    body = json.dumps(plan, sort_keys=True, separators=(",", ":"))
+    # #696: a plan made under a [stack] is approved together with it. Only
+    # then, so the digest of every plan made without one is unchanged.
+    approved: Any = (
+        {"components": plan, "stackDigest": manifest.stack_digest}
+        if manifest.stack_digest
+        else plan
+    )
+    body = json.dumps(approved, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(body.encode("utf-8")).hexdigest()
 
 
@@ -139,6 +147,29 @@ def spec_pin_errors(manifest: Manifest, root_dir: Path) -> list[str]:
         f"Build the spec as it is now: {replan} (one architect run).",
         f"Build the plan as it was: put {manifest.spec_path} back as it was (for a tracked "
         f"file, git diff -- {manifest.spec_path} shows what changed) and run this again.",
+    ]
+
+
+def stack_pin_errors(manifest: Manifest, stack: Stack | None) -> list[str]:
+    """Why this plan must not run under the ``[stack]`` in force, or [] (#696).
+
+    The sibling of :func:`spec_pin_errors`. A plan that pins no stack digest
+    has nothing to compare (no ``[stack]`` when it was made, or a manifest
+    from before #696). Otherwise the stack in kstrl.toml now, or its
+    absence, must be the one the plan was made under.
+    """
+    if not manifest.stack_digest:
+        return []
+    now = stack.digest if stack is not None else ""
+    if now == manifest.stack_digest:
+        return []
+    reads = f"it now reads {now[:12]}" if now else "kstrl.toml now has no [stack]"
+    return [
+        f"this plan was made under the [stack] {manifest.stack_digest[:12]}, and {reads}. "
+        "Nothing was run.",
+        f"Plan under the stack you have now: ks factory --spec {manifest.spec_path or '<spec>'} "
+        f"--project-name {manifest.project_name} (one architect run), or put [stack] back as "
+        "it was.",
     ]
 
 
