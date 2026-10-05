@@ -16,9 +16,9 @@ reviews its own work.
 
 | Stage | Model | Job |
 |---|---|---|
-| Plan | Opus | Reproduce the defect, decide the simplest fix, write an airtight plan |
-| Critique | Opus | Attack the plan, fix it in place, find what a weaker model would get wrong |
-| Implement | Sonnet | Follow the plan exactly, tests red first, open the pull request |
+| Plan | Opus | Reproduce the defect, decide the simplest fix, write an airtight plan, prototype it; on the small route, build it and open the pull request |
+| Critique | Opus | Full route only: attack the plan, fix it in place, find what a weaker model would get wrong |
+| Implement | Sonnet | Full route only: follow the plan exactly, tests red first, open the pull request |
 | Verify | Opus | Assume it is wrong, run every plant, design its own, commit the tests that close a surviving plant |
 | Fix | Sonnet | Address blockers, nothing else |
 | Publish | Sonnet, low effort | Set the pull request body the lane script built from the verifier's result |
@@ -26,7 +26,8 @@ reviews its own work.
 
 The implementer is deliberately the weaker model. That is the whole reason the
 plan and its acceptance checks have to be exact: every judgement left to the
-implementer is a judgement made by the weakest link in the chain.
+implementer is a judgement made by the weakest link in the chain. On the small
+route (below) there is no hand-off: the planner builds the change itself.
 
 ## Triage
 
@@ -78,11 +79,51 @@ The critic earns its stage on the plan. Over 136 issue-lane runs (2026-09-24 to
 by keyword, the largest groups were guards, census pins or ratchets the plan
 missed (322) and plants that would not have gone red (248).
 
+## Small and full routes
+
+The issue lane takes one of two routes, chosen after the plan, because the
+critic and the separate implementer are worth their cost on large changes and
+much less on small ones. The planner always prototypes the fix and measures it
+with `git diff --numstat -- kstrl/`, counting product code only.
+
+- **Small route**: fewer than 100 product-code lines, and the coordinator has not
+  set `fullLane`. The planner builds the change itself: it sets the prototype
+  aside, writes the end-to-end tests and shows them red, puts the change back,
+  commits, opens the pull request and runs the full suite once. No critic and no
+  Sonnet implementer run. An independent Opus verifier attacks the result next,
+  as on the full route.
+- **Full route**: everything else, as described above.
+
+The cut is on product code because about 70% of the lines in a lane's pull
+request are tests. Over 127 issue-lane runs with a pull request, measured by
+product-code lines changed:
+
+| Product-code lines | Lanes | First verify found a production-code problem | Median cost | Median time |
+|---|---|---|---|---|
+| under 100 | 42 | 2 (5%) | $9.2 | 83 min |
+| 100 to 200 | 36 | 3 (8%) | $11.7 | 84 min |
+| 200 to 400 | 25 | 3 (12%) | $12.4 | 97 min |
+| 400 or more | 24 | 4 (17%) | $15.3 | 115 min |
+
+In small lanes, the critic and the implementer together took 49% of the cost
+and a median of 32 of 81 minutes. Where the planner prototyped, the prototype
+was 95% of the final pull request's size at the median.
+
+The coordinator sets `fullLane` for work in a new design area, whatever its
+size. Five of the 12 lanes with a production-code problem were language-neutral
+charter work (#696, #621, #623, #624, #629), at 161 to 787 product-code lines.
+
+The limit: no run skipped the critic, so whether the critic is what keeps small
+changes at 5% is unknown. `coord-ralph/tools/lane_stats.py` reports the
+first-verify problem rate per route; if the small route's rate rises above the
+full route's, set `fullLane` by default again.
+
 ## Lane shapes
 
 Four scripts, chosen by what the work is.
 
-- **issue lane**: plan, critique, implement, verify, fix, publish. The default.
+- **issue lane**: plan, then critique and implement on the full route only,
+  then verify, fix, publish. The default.
 - **feature lane**: three independent designs with tracer bullets, a judge
   panel, then the issue lane. For work where the solution space is wide and the
   wrong shape is expensive to unwind.
