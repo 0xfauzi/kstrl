@@ -87,7 +87,9 @@ def _pairs(path: Path) -> list[tuple[int, int]]:
 #: suite started under ``nohup`` hands SIG_IGN to everything it spawns: the
 #: merge gate is started that way, ``ks`` outlived the SIGHUP, and the
 #: sighup case failed there 2 of 2. Measured: 3 of 3 failed under
-#: ``nohup`` and 20 of 20 passed without it, both at load 38 to 45.
+#: ``nohup`` and 20 of 20 passed without it, both at load 38 to 45. A
+#: hangup is a stop since #642 slice 4, so that case now lives in
+#: ``tests/test_stop_kills_whoever_asks.py``.
 _DEFAULT_HUP_EXEC = (
     "import os, signal, sys; signal.signal(signal.SIGHUP, signal.SIG_DFL); "
     "os.execv(sys.executable, [sys.executable, '-m', 'kstrl', *sys.argv[1:]])"
@@ -209,7 +211,6 @@ def _assert_alive_through_the_grace(pid: int, killed: float, what: str) -> None:
 _KILLS = {
     "factory-sigkill-group": ("factory", lambda pid: os.killpg(pid, signal.SIGKILL)),
     "factory-sigkill-parent": ("factory", lambda pid: os.kill(pid, signal.SIGKILL)),
-    "factory-sighup-group": ("factory", lambda pid: os.killpg(pid, signal.SIGHUP)),
     "run-sigkill-group": ("run", lambda pid: os.killpg(pid, signal.SIGKILL)),
 }
 

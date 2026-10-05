@@ -374,7 +374,12 @@ confirming group-kills in-flight agents, runs the worktree cleanup
 pass, flushes the manifest, and exits 130; a second `q` (or second
 Ctrl-C) force-kills. This is also what Ctrl-C now does in plain mode -
 the pre-TUI behavior (skipped cleanup, orphaned agents) was a bug,
-fixed in the same rewrite.
+fixed in the same rewrite. Until #642 the confirm only set a flag, and
+without worktrees the agent ran on until its iteration ended; every stop
+request now ends the agents itself. A closed terminal (SIGHUP) is a stop
+too: the run records the abort, flushes the manifest and exits (with
+130, or 120 when the closed terminal makes the last write fail). A run
+started under `nohup` ignores the hangup and keeps running.
 
 Commands an agent's shell tool starts run in process groups of their
 own, so ending the agent's group does not end them (#461). At the end of
@@ -399,8 +404,8 @@ warning says so instead of reporting a clean worktree.
 When the kstrl process itself dies (#642). Every agent runs under a small
 leash process, `kstrl/agents/leash.py`, which leads the agent's process
 group and holds one end of a pipe to the kstrl process that started it.
-However that process ends (SIGKILL, an OOM kill, a crash, a closed
-terminal), the kernel closes its end of the pipe, and the leash sends
+However that process ends (SIGKILL, an OOM kill, a crash), the kernel
+closes its end of the pipe, and the leash sends
 SIGTERM to the agent's group, waits until nothing else is left in the
 group or 5 seconds have passed, and sends SIGKILL (#708). A pool
 worker whose parent dies ends too, and takes its agents with it. Measured
