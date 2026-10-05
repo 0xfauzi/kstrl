@@ -48,16 +48,22 @@ class WorktreeSetup:
     #: #700 slice 2: the SETUP-zone rung of a run under a ``[stack]``; the
     #: setup runs inside it. None runs on the host.
     rung: ProvenRung | None = None
+    #: Why this setup must not run, or "": a ``[stack]`` no person
+    #: confirmed (#696 slice 3, ``Stack.unconfirmed``) runs nothing.
+    refusal: str = ""
 
     def prepare(self, worktree: Path) -> str:
         """Run the setup in ``worktree``; "" on success or when there is none.
 
         A failure comes back as one sentence naming the command and what
-        went wrong, followed by the last lines of its output.
+        went wrong, followed by the last lines of its output. A refused
+        setup is a failure, whatever its command, so nothing proceeds on it.
         """
+        head = f"worktree setup `{self.command}`"
+        if self.refusal:
+            return f"{head} not run: {self.refusal}"
         if not self.command:
             return ""
-        head = f"worktree setup `{self.command}`"
         try:
             result = run_scrubbed(
                 self.command,

@@ -164,6 +164,10 @@ EXPECTED_FREE_READERS = frozenset(
         # those loaders do not.
         "load_stack",
         "load_toml_section",
+        # stack.stack_evidence (#696 slice 3) resolves the kstrl.toml path
+        # only to record, on a stack_confirmation inbox item, where the
+        # table it confirms came from. It resolves no run.
+        "stack_evidence",
         # config_toml.record_reads (#525) parses kstrl.toml so the entry
         # check can record which names the loaders ask for. It reports on
         # the file and never resolves a run, so it is not RunEnvelope's.

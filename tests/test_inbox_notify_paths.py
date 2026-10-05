@@ -398,6 +398,29 @@ def test_a_plan_decided_at_the_prompt_pages_nobody_and_a_parked_one_pages_once(
     assert [line.split("|")[0] for line in _lines(lines)] == ["inbox_plan_gate"]
 
 
+def test_an_unconfirmed_stack_pages_once_however_often_it_is_refused(tmp_path: Path) -> None:
+    """#696 slice 3: `ks factory` refusing an unconfirmed [stack] opens its
+    stack_confirmation item and pages once; the second refusal bumps the
+    same open item and pages nobody."""
+    from tests.test_stack_e2e import _factory, _repo, _stack
+
+    lines = tmp_path / "inbox-hook.txt"
+    hook = {
+        "KSTRL_NOTIFY_ON_INBOX_ITEM": (
+            f"echo \"$KSTRL_NOTIFY_EVENT|$KSTRL_NOTIFY_RUN_ID\" >> '{lines}'"
+        )
+    }
+    root = _repo(tmp_path, _stack({"tests": "true"}), confirm=False)
+
+    first = _factory(tmp_path, root, env=hook)
+    second = _factory(tmp_path, root, env=hook)
+
+    assert (first.code, second.code) == (2, 2), first.out + second.out
+    assert [line.split("|")[0] for line in _lines(lines)] == ["inbox_stack_confirmation"]
+    (item,) = inbox_items(root, ItemKind.STACK_CONFIRMATION)
+    assert item.occurrences == 2
+
+
 # --- census: every filing path is driven by a test above -----------------
 
 #: Every ``Inbox.add`` site in ``kstrl/``, keyed as
@@ -418,6 +441,9 @@ FILING_PATHS = {
     ),
     "serve.py::_file_inbox_item::add": (
         "test_serve_filing_fires_the_inbox_hook_once_per_opened_item"
+    ),
+    "stack.py::file_stack_item::add": (
+        "test_an_unconfirmed_stack_pages_once_however_often_it_is_refused"
     ),
 }
 

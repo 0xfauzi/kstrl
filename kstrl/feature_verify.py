@@ -23,9 +23,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from kstrl import git
+from kstrl.config_toml import ConfigError
 from kstrl.events import Event, VerificationResultEvent
 from kstrl.loop import STOP_EXIT_CODE, LoopResult, determine_branch
 from kstrl.rung import HOST_LABEL
+from kstrl.stack import StackRefused, confirmed_stack, unconfirmed_lines
 from kstrl.verify import (
     DIFF_DEPENDENT_CHECKS,
     VerificationResult,
@@ -91,6 +93,11 @@ def resolve_feature_verify_config(
     """
     if no_verify:
         return None
+    try:
+        # #696 slice 3: before the understand loop is paid for.
+        confirmed_stack(root_dir)
+    except StackRefused as refused:
+        raise ConfigError("\n  ".join(unconfirmed_lines(root_dir, refused.stack))) from refused
     return narrow_to_undiffed(pin_verify_commands(VerifyConfig.load(root_dir), root_dir))
 
 
