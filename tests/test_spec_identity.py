@@ -384,6 +384,7 @@ class TestAnEscalationClosesOnlyOnNewText:
         (item,) = _escalations(root)
         assert item.status is ItemStatus.OPEN, item
         assert "has not changed since it was escalated" in _out(proc), _out(proc)
+        assert f"ks inbox approve {item.id[:8]} --comment ANSWER" in _out(proc), _out(proc)
 
     def test_an_edited_spec_resolves_it_naming_both_digests(self, tmp_path: Path) -> None:
         root = _project(tmp_path)
