@@ -186,9 +186,35 @@ def test_start_scrubbed_runs_its_command_only_inside_a_proven_rung() -> None:
         for node in all_nodes(function)
         if isinstance(node, ast.Call) and leaf_name(node.func) == "Popen"
     ]
+    # #642 slice 6: the Popen starts the leash, the leash starts `argv`, and
+    # `argv` is `spawned` as an argv, which is what `_in_rung` built from `rung`.
     built = spawn.args[0]
-    assert isinstance(built, ast.Call) and leaf_name(built.func) == "_in_rung", ast.unparse(spawn)
-    assert ast.unparse(built.args[1]) == "rung", ast.unparse(built)
+    assert isinstance(built, ast.Call), ast.unparse(spawn)
+    assert leaf_name(built.func) == "leash_command", ast.unparse(spawn)
+    assert ast.unparse(built.args[0]) == "argv", ast.unparse(built)
+    assigned = _values_assigned_in(function)
+    argv = assigned["argv"]
+    assert _names_in(argv) == {"spawned", "isinstance", "str", "list"}, ast.unparse(argv)
+    in_rung = assigned["spawned"]
+    assert isinstance(in_rung, ast.Call), ast.unparse(in_rung)
+    assert leaf_name(in_rung.func) == "_in_rung", ast.unparse(in_rung)
+    assert ast.unparse(in_rung.args[1]) == "rung", ast.unparse(in_rung)
+
+
+def _values_assigned_in(function: ast.FunctionDef) -> dict[str, ast.expr]:
+    """Each assignment target in ``function``, as source, mapped to the last
+    value assigned to it."""
+    return {
+        ast.unparse(target): node.value
+        for node in all_nodes(function)
+        if isinstance(node, ast.Assign)
+        for target in node.targets
+    }
+
+
+def _names_in(node: ast.AST) -> set[str]:
+    """Every name ``node`` reads."""
+    return {name.id for name in ast.walk(node) if isinstance(name, ast.Name)}
 
 
 # --- #700 slice 4: an acceptance check runs only through the replay, in its rung ---

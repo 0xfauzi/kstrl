@@ -21,16 +21,20 @@ platform with no prover, on the host (``runs_a_stack``).
 from __future__ import annotations
 
 import json
+import os
 import secrets
+import signal
 import subprocess
 import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from kstrl.procgroup import read_group_liveness
+from kstrl.procgroup import pid_is_alive, read_group_liveness
+from kstrl.replay import STOP_GRACE_SECONDS
 from kstrl.stack import load_stack
-from tests.helpers.procs import kill_group
+from kstrl.verify import _SCRUB_TERM_GRACE_SECONDS
+from tests.helpers.procs import kill_group, read_pid, wait_for_pid_to_die
 from tests.test_isolation_rung import needs_nono, on_macos, runs_a_stack
 from tests.test_isolation_stack import _ignoring_nono
 from tests.test_stack_confirmation_e2e import NOT_CONFIRMED, _restack, _stack_items
@@ -44,6 +48,13 @@ from tests.test_stack_e2e import (
     _spawn,
     _stack,
 )
+
+#: Seconds past the leash's SIGTERM grace by which a server ``up`` started
+#: must be gone once ``ks doctor --measure`` is SIGKILLed (#642 slice 6).
+#: Measured on macOS inside the nono rung, n=5 at load 14 to 18 on 10 cores:
+#: a server that ignores SIGTERM was gone 5.01 to 5.06 s after the kill.
+#: Before the fix it was alive 3.0 s after the kill and had no end.
+UP_BOUND_SECONDS = 2.0
 
 
 def _replay(document: dict[str, Any]) -> dict[str, Any]:
@@ -210,6 +221,15 @@ def test_an_up_that_never_becomes_ready_is_up_timeout_and_its_group_is_gone(
     assert isinstance(pgid, int) and pgid > 1, reading
     assert live is False, f"the up group {pgid} is still running"
     assert reading["group_gone"] is True, reading
+    # #642 slice 6: the stop closes the leash's lifeline before it signals,
+    # so the leash holding the group ends it once it is empty instead of
+    # outliving the SIGTERM for the whole grace. Measured from the end of
+    # `up` to the end of the replay, less the wait for the machine's replay
+    # lock, which another replay may hold: 3.2 to 3.8 s with the close, 8.2 s
+    # without it, at load 13 to 32 on 10 cores.
+    up_seconds = _stage(reading, "up")["seconds"]
+    after_up = reading["seconds"] - reading["lock_wait_seconds"] - up_seconds
+    assert after_up < STOP_GRACE_SECONDS + 1.0, reading
     assert _no_replay_worktree(root)
 
 
@@ -251,6 +271,48 @@ def test_a_ready_up_stays_up_through_the_checks_and_its_group_is_stopped_after(
     assert reading["group_gone"] is True, reading
     assert _replay_row(document)["status"] == "ok", document
     assert _no_replay_worktree(root)
+
+
+@runs_a_stack
+def test_a_ready_up_ends_with_a_killed_ks_doctor(tmp_path: Path) -> None:
+    """#642 slice 6. ``up`` starts a server that ignores SIGTERM, out of the
+    worktree, and exits 0: ready. While the check waits, silent, ``ks doctor
+    --measure`` is SIGKILLed, so no stop of kstrl's own runs. The server is
+    still alive 1 s later, inside the leash's SIGTERM grace, and gone within
+    that grace plus ``UP_BOUND_SECONDS``. The check waits only once the server
+    is up, so any run of it outside the replay passes at once."""
+    pid_dir = tmp_path / "pids"
+    pid_dir.mkdir()
+    server_pid, check_pid = pid_dir / "server.pid", pid_dir / "check.pid"
+    up = (
+        "trap '' TERM; cd / && "
+        f"{{ sh -c 'echo $$ > \"$1\"; exec sleep 600' sh '{server_pid}' & }}; exit 0"
+    )
+    check = f"test -f '{server_pid}' || exit 0; echo $$ > '{check_pid}'; exec sleep 600"
+    root = _repo(tmp_path, _stack({"hang": check}, rung={"up": up, "writable": [str(pid_dir)]}))
+    doctor = _doctor_in_background(root, tmp_path / "doctor.out")
+    try:
+        server = read_pid(server_pid, timeout=FUSE_SECONDS)
+        read_pid(check_pid, timeout=FUSE_SECONDS)
+        assert pid_is_alive(server), f"precondition: the server {server} runs until ks is killed"
+        killed = time.monotonic()
+        os.kill(doctor.pid, signal.SIGKILL)
+        time.sleep(max(0.0, killed + 1.0 - time.monotonic()))
+        assert pid_is_alive(server), f"the server {server} was gone 1 s after the kill: no grace"
+        bound = _SCRUB_TERM_GRACE_SECONDS + UP_BOUND_SECONDS
+        assert wait_for_pid_to_die(server, timeout=max(0.0, killed + bound - time.monotonic())), (
+            f"the up server {server} alive {bound}s after a SIGKILL of ks doctor --measure"
+        )
+    finally:
+        for pidfile in (server_pid, check_pid):
+            text = pidfile.read_text(encoding="utf-8").strip() if pidfile.exists() else ""
+            if text:
+                try:
+                    os.kill(int(text), signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+        kill_group(doctor.pid)
+        doctor.wait(timeout=30)
 
 
 @needs_nono

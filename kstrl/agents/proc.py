@@ -127,15 +127,23 @@ def _spawn_error(failure: bytes, program: str) -> OSError:
 
 
 def leash_command(
-    argv: list[str], *, lifeline: int, status: int, term_grace: float, nonce: str
+    argv: list[str],
+    *,
+    lifeline: int,
+    status: int,
+    term_grace: float,
+    nonce: str,
+    hold: bool = False,
 ) -> list[str]:
     """``argv`` as the command line that runs it under the leash (#642).
 
-    The one place the leash's argv is spelled. Both children kstrl starts
-    in a session of their own start this way: the agent here, and every
-    verification command in ``verify.run_scrubbed`` (slice 5). ``lifeline``
-    and ``status`` are the read end and the write end the spawn must name
-    in ``pass_fds``.
+    The one place the leash's argv is spelled. Every child kstrl starts
+    in a session of its own starts this way: the agent here, every
+    verification command in ``verify.run_scrubbed`` (slice 5), and a
+    ``[stack]``'s ``up`` in ``verify.start_scrubbed`` with ``hold``, so the
+    group is held after ``up`` exits (slice 6). ``lifeline`` and
+    ``status`` are the read end and the write end the spawn must name in
+    ``pass_fds``.
     """
     return [
         sys.executable,
@@ -146,7 +154,7 @@ def leash_command(
         str(status),
         str(term_grace),
         nonce,
-        "--",
+        "--hold" if hold else "--",
         *argv,
     ]
 
