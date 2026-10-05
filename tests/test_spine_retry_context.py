@@ -35,8 +35,9 @@ from tests.spine_utils import (
     init_kstrl_repo,
     make_manifest,
 )
+from tests.test_isolation_rung import runs_a_stack
 
-pytestmark = pytest.mark.spine
+pytestmark = [pytest.mark.spine, runs_a_stack]
 
 COMP = "comp-a"
 
@@ -259,7 +260,7 @@ class TestRetryContextPropagation:
         # the fixed scope violation is counted, not re-rendered.
         attempt3 = (cap_dir / "attempt3.prompt").read_text()
         assert "## Current failures (measured in attempt 2, verification)" in attempt3
-        assert "linter: FAIL" in attempt3
+        assert "stack:lint: FAIL" in attempt3
         assert "diff_scope" not in attempt3
         assert "evil.txt" not in attempt3
         assert "## Not re-measured" not in attempt3

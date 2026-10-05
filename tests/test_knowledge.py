@@ -1607,6 +1607,7 @@ class TestFactoryDistillIntegration:
             max_retries=0,
             retry_delay=0,
             review_mode="skip",
+            project_stack=in_process_stack(),
         )
         base = _factory_base_config(root)
         ui = PlainUI(no_color=True)

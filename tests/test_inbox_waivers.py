@@ -165,8 +165,10 @@ SCENARIOS: dict[ItemKind, Scenario] = {
 # --- harness ------------------------------------------------------------------
 
 
-def _repo(tmp_path: Path, toml: str) -> Path:
-    """One component, a PRD whose story passes, a bare origin and a saved manifest."""
+def _repo(tmp_path: Path, toml: str, checks: dict[str, str] | None = None) -> Path:
+    """One component, a PRD whose story passes, a bare origin and a saved manifest.
+
+    ``checks`` are the confirmed ``[stack]``'s checks (three that pass by default)."""
     root = tmp_path / "repo"
     root.mkdir()
     gitrepo.git_in(root, "init", "-q", "-b", "main")
@@ -186,8 +188,7 @@ def _repo(tmp_path: Path, toml: str) -> Path:
     }
     prd.write_text(json.dumps({"branchName": BRANCH, "userStories": [story]}), encoding="utf-8")
     (root / "kstrl.toml").write_text("[inbox]\nenabled = true\n" + toml, encoding="utf-8")
-    gitrepo.git_in(root, "add", "-A")
-    write_stack(root)
+    write_stack(root, checks)
     gitrepo.git_in(root, "add", "-A")
     gitrepo.git_in(root, "commit", "-q", "-m", "init")
     origin = tmp_path / "origin.git"
@@ -694,11 +695,12 @@ def test_an_approval_from_another_plan_is_refused(tmp_path: Path, field: str, va
     )
 
 
-def test_a_torn_inbox_line_means_no_approval_is_applied(tmp_path: Path) -> None:
+def test_a_torn_inbox_line_means_nothing_runs_and_no_approval_is_applied(tmp_path: Path) -> None:
     """A line the fold cannot parse could be the rejection of the approval.
 
-    So one unparseable line means no approval is consulted and the finding
-    still blocks, and the failure says why.
+    Since the #696 flag day the confirmed-stack check reads the same inbox
+    before any gate does, so one unparseable line refuses the retry with exit
+    2 and says why, and no check runs that an approval could have waived.
     """
     root, env = _failed_run(tmp_path, POLICY_TOML, DENIED)
     (item,) = _open(root, ItemKind.POLICY_EXCEPTION)
@@ -709,10 +711,10 @@ def test_a_torn_inbox_line_means_no_approval_is_applied(tmp_path: Path) -> None:
 
     code, out = _retry(root, env)
 
-    assert code == 1, out
-    (finding,) = _gated(root, "policy_")
-    assert finding.severity == "high"
-    assert any("approvals were not consulted" in f for f in _verification_failures(root))
+    assert code == 2, out
+    assert "Refusing to run: the [stack] in kstrl.toml is not confirmed" in out, out
+    assert "the inbox is unreadable" in out, out
+    assert _gated(root, "policy_") == [], "the refused retry ran no gate"
 
 
 async def test_the_inbox_screen_says_what_approve_and_reject_do(tmp_path: Path) -> None:

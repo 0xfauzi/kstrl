@@ -39,7 +39,7 @@ from kstrl.manifest import Component, Manifest
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
 from tests.helpers import gitrepo
-from tests.helpers.stack_confirmation import in_process_stack
+from tests.helpers.stack_confirmation import confirm_stack, in_process_stack, write_stack
 
 COMPLETE_LINE = "echo '<promise>COMPLETE</promise>'"
 COMP_PRD_PATH = "scripts/kstrl/feature/comp-a/prd.json"
@@ -67,8 +67,10 @@ def _init_repo(root: Path) -> None:
     src = root / "src"
     src.mkdir()
     (src / "app.py").write_text("def greet(name: str) -> str:\n    return f'hello {name}'\n")
-    _git("add", "src/app.py", cwd=root)
+    write_stack(root)
+    _git("add", "src/app.py", "kstrl.toml", cwd=root)
     _git("commit", "-q", "-m", "init", cwd=root)
+    confirm_stack(root)
 
     feature_dir = root / "scripts" / "kstrl" / "feature" / "comp-a"
     feature_dir.mkdir(parents=True)
@@ -277,10 +279,12 @@ class TestNoVerifySkipSentinel:
         monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
 
         marker = tmp_path / "check-ran.marker"
+        stack = in_process_stack(
+            {"tests": f"touch {marker}", "typecheck": "true", "lint": "true"},
+            writable=(str(tmp_path),),
+        )
         verify_config = VerifyConfig(
-            project_stack=in_process_stack(
-                {"tests": f"touch {marker}", "typecheck": "true", "lint": "true"}
-            ),
+            project_stack=stack,
             check_diff_scope=False,
             check_bad_patterns=False,
         )
@@ -288,7 +292,9 @@ class TestNoVerifySkipSentinel:
 
         result = run_factory(
             manifest,
-            _factory_config(skip_verification=False, verify_config=verify_config),
+            _factory_config(
+                skip_verification=False, verify_config=verify_config, project_stack=stack
+            ),
             _base_config(root, COMPLETE_LINE),
             PlainUI(no_color=True),
             root,
@@ -390,6 +396,8 @@ class TestCliWiring:
         captured = self._capture_run_factory(monkeypatch)
         monkeypatch.setenv("AGENT_CMD", "echo hi")
         manifest_path = self._write_manifest(tmp_path)
+        write_stack(tmp_path)
+        confirm_stack(tmp_path)
         args = [
             "factory",
             "--manifest",
@@ -406,7 +414,8 @@ class TestCliWiring:
         assert ff is not None and ff.enabled is True
 
         # toml disables it.
-        (tmp_path / "kstrl.toml").write_text("[codebase_scan]\nenabled = false\n")
+        with (tmp_path / "kstrl.toml").open("a", encoding="utf-8") as handle:
+            handle.write("\n[codebase_scan]\nenabled = false\n")
         result = CliRunner().invoke(cli_mod.cli, args)
         assert result.exit_code == 0, result.output
         ff = captured["factory_config"].codebase_scan_config
@@ -520,15 +529,15 @@ class TestCodebaseScanAndPrdPathEndToEnd:
 
         dump = tmp_path / "prompt-received.txt"
         manifest = _manifest()
+        stack = in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"})
 
         result = run_factory(
             manifest,
             _factory_config(
                 skip_verification=False,
+                project_stack=stack,
                 verify_config=VerifyConfig(
-                    project_stack=in_process_stack(
-                        {"tests": "true", "typecheck": "true", "lint": "true"}
-                    ),
+                    project_stack=stack,
                     check_diff_scope=False,
                     check_bad_patterns=False,
                 ),

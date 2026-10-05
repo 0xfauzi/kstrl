@@ -25,6 +25,7 @@ from kstrl.config import KstrlConfig
 from kstrl.factory import FactoryResult
 from kstrl.ui.plain import PlainUI
 from tests.helpers.agent_probe import set_cli_availability
+from tests.helpers.stack_confirmation import confirm_stack, write_stack
 
 _availability = set_cli_availability
 
@@ -417,6 +418,8 @@ class TestFactoryPreflightWiring:
         root.mkdir()
         _scaffold(root)
         (root / "kstrl.toml").write_text('[agent]\ntype = "claude"\n')
+        write_stack(root)
+        confirm_stack(root)
 
         manifest = Manifest(
             version="1",

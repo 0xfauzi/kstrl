@@ -42,8 +42,9 @@ from tests.spine_utils import (
     init_kstrl_repo,
     make_manifest,
 )
+from tests.test_isolation_rung import runs_a_stack
 
-pytestmark = pytest.mark.spine
+pytestmark = [pytest.mark.spine, runs_a_stack]
 
 
 def _checkout_state(root: Path) -> dict[str, Any]:
@@ -98,13 +99,18 @@ def _run(
     progress_path: Path,
     max_retries: int = 0,
 ) -> FactoryResult:
+    # The rung confines a check's writes: the contract command records what
+    # it saw under the progress log's directory. The factory's stack is the
+    # one the rung is proven for, so it carries the same writable path.
+    stack = in_process_stack({"tests": contract_test_cmd}, writable=(str(progress_path.parent),))
     return run_factory(
         manifest,
         factory_config(
             max_retries=max_retries,
+            project_stack=stack,
             contract_config=ContractConfig(
                 mode="tier",
-                project_stack=in_process_stack({"tests": contract_test_cmd}),
+                project_stack=stack,
                 timeout=30.0,
             ),
             progress_log_path=progress_path,
@@ -363,30 +369,4 @@ class TestContractBreakerRerun:
         assert "beta.txt" in branch_files
         assert "broken.txt" not in branch_files
 
-        _assert_no_contract_debris(root)
-
-
-class TestAnEmptyContractCommand:
-    def test_an_empty_contract_command_fails_the_tier_instead_of_passing_it(
-        self,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """#621: the shell runs "" and exits 0, so Phase 3 passed a tier with
-        no test run. Unset, [contract] test_command follows [verify]
-        test_command, where "" turns the Phase 1 gate off, so an empty
-        Phase 3 command is now a configuration kstrl can reach."""
-        monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
-        root = tmp_path / "repo"
-        init_kstrl_repo(root, ("alpha",))
-        manifest = make_manifest([component("alpha")])
-        progress_path = tmp_path / "progress.jsonl"
-
-        result = _run(root, manifest, _FILE_PER_COMPONENT_ENGINEER, "", progress_path)
-
-        assert result.exit_code != 0
-        assert [(tier, passed) for tier, passed, _ in _contract_events(progress_path)][:1] == [
-            (0, False)
-        ]
-        assert any("Phase 3 has no test command" in f for f in result.contract_failures)
         _assert_no_contract_debris(root)

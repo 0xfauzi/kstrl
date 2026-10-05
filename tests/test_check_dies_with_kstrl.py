@@ -31,8 +31,7 @@ from kstrl.procgroup import pid_is_alive
 from tests import test_stack_e2e as stack_e2e
 from tests.helpers import procs
 from tests.helpers.executables import write_executable
-from tests.test_agent_dies_with_kstrl import START_FUSE_SECONDS, _factory_args, _ks
-from tests.test_agent_processes_outlive_run import COMPLETE, _env, _repo
+from tests.test_agent_dies_with_kstrl import START_FUSE_SECONDS, _ks
 from tests.test_isolation_rung import needs_nono
 
 #: Seconds from the kill to the death of the check and of the process it
@@ -93,15 +92,37 @@ def _dispose(proc: subprocess.Popen[str], *pidfiles: Path) -> None:
         pass
 
 
+#: A platform with no prover: the confirmed `[stack]` runs on the host (#700).
+NO_PROVER = {"KSTRL_ISOLATION_PLATFORM": "linux"}
+
+
+def _hanging_stack_repo(tmp_path: Path, check_pid: Path, started_pid: Path, **rung: object) -> Path:
+    """A repository whose confirmed `[stack]` has one check that hangs."""
+    stack = stack_e2e._stack({"hang": _check(check_pid, started_pid)}, rung=rung or None)
+    return stack_e2e._repo(tmp_path, stack)
+
+
+def _factory_argv(tmp_path: Path, root: Path) -> list[str]:
+    engineer = write_executable(
+        tmp_path / "engineer.sh", "#!/bin/sh\necho '<promise>COMPLETE</promise>'\n"
+    )
+    return [
+        "factory",
+        *("--manifest", str(root / "scripts" / "kstrl" / "manifest.json")),
+        *("--root", str(root), "--agent-cmd", str(engineer)),
+        *("--no-tui", "--yes", "--ui", "plain", "--no-color", "--no-prs"),
+        *("--max-retries", "0", "--max-parallel", "1"),
+        *("--review-mode", "skip", "--contract-check", "skip"),
+    ]
+
+
 def test_a_check_and_the_process_it_started_die_with_kstrl(tmp_path: Path) -> None:
-    """No ``[stack]``: the base gate's test command runs on the host. The
+    """A platform with no prover: the `[stack]` check runs on the host. The
     ``ks factory`` process is SIGKILLed while the check is silent; the check
     and the process it started are gone within ``CHECK_BOUND_SECONDS``."""
-    root = _repo(tmp_path)
     check_pid, started_pid = tmp_path / "check.pid", tmp_path / "started.pid"
-    args = _factory_args(root, "1", "--no-worktrees")
-    args[args.index("--test-command") + 1] = _check(check_pid, started_pid)
-    proc = _ks(root, _env(COMPLETE), *args)
+    root = _hanging_stack_repo(tmp_path, check_pid, started_pid)
+    proc = _ks(root, stack_e2e._child_env(NO_PROVER), *_factory_argv(tmp_path, root))
     try:
         check = procs.read_pid(check_pid, timeout=START_FUSE_SECONDS)
         started = procs.read_pid(started_pid, timeout=START_FUSE_SECONDS)
@@ -126,18 +147,7 @@ def test_a_check_inside_the_rung_and_the_process_it_started_die_with_kstrl(
     command = f'echo x > "$HOME/{escape.name}"; {_check(check_pid, started_pid)}'
     stack = stack_e2e._stack({"hang": command}, rung={"writable": [str(pid_dir)]})
     root = stack_e2e._repo(tmp_path, stack)
-    engineer = write_executable(
-        tmp_path / "engineer.sh", "#!/bin/sh\necho '<promise>COMPLETE</promise>'\n"
-    )
-    args = [
-        "factory",
-        *("--manifest", str(root / "scripts" / "kstrl" / "manifest.json")),
-        *("--root", str(root), "--agent-cmd", str(engineer)),
-        *("--no-tui", "--yes", "--ui", "plain", "--no-color", "--no-prs"),
-        *("--max-retries", "0", "--max-parallel", "1"),
-        *("--review-mode", "skip", "--contract-check", "skip"),
-    ]
-    proc = _ks(root, stack_e2e._child_env(), *args)
+    proc = _ks(root, stack_e2e._child_env(), *_factory_argv(tmp_path, root))
     try:
         check = procs.read_pid(check_pid, timeout=START_FUSE_SECONDS)
         started = procs.read_pid(started_pid, timeout=START_FUSE_SECONDS)
@@ -156,15 +166,13 @@ def test_an_interrupted_ks_check_takes_its_check_and_the_process_it_started(
     ``KeyboardInterrupt`` inside ``run_scrubbed``'s read. Its broad clause
     SIGKILLs the command's group before it lets the leash go: the check and
     the process it started are gone within ``CHECK_BOUND_SECONDS``."""
-    root = _repo(tmp_path)
     check_pid, started_pid = tmp_path / "check.pid", tmp_path / "started.pid"
-    env = {
-        **_env(COMPLETE),
-        "KSTRL_VERIFY_TEST_CMD": _check(check_pid, started_pid),
-        "KSTRL_VERIFY_TYPECHECK_CMD": "true",
-        "KSTRL_VERIFY_LINT_CMD": "true",
-    }
-    proc = _ks(root, env, "check", "--root", str(root), "--ui", "plain", "--no-color")
+    root = _hanging_stack_repo(tmp_path, check_pid, started_pid)
+    proc = _ks(
+        root,
+        stack_e2e._child_env(NO_PROVER),
+        *("check", "--root", str(root), "--ui", "plain", "--no-color"),
+    )
     try:
         check = procs.read_pid(check_pid, timeout=START_FUSE_SECONDS)
         started = procs.read_pid(started_pid, timeout=START_FUSE_SECONDS)

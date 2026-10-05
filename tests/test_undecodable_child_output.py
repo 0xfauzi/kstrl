@@ -107,7 +107,7 @@ def test_a_cli_fixture_reports_undecodable_output(tmp_path: Path) -> None:
 
 def test_contract_run_checks_reports_undecodable_output(tmp_path: Path) -> None:
     stack = in_process_stack({"tests": UNDECODABLE_STDOUT})
-    passed, message = contract._run_checks(tmp_path, 60.0, stack)
+    passed, message = contract._run_checks(tmp_path, 60.0, stack, None)
 
     assert passed is False
     assert "could not be decoded" in message

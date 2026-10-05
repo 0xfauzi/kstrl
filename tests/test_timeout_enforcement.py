@@ -1513,7 +1513,7 @@ class TestSchedulerBackstop:
                     [],
                     "scripts/kstrl/feature/a/prd.json",
                     "kstrl/factory/a",
-                    scaffold="sleep 5",
+                    scaffold="sleep 20",
                 )
             ],
         )
@@ -1552,8 +1552,11 @@ class TestSchedulerBackstop:
         )
         elapsed = time.monotonic() - start
 
-        # Returned without waiting out the 5s scaffold hang.
-        assert elapsed < 5.0, f"run waited for the hung worker ({elapsed:.1f}s)"
+        # Returned without waiting out the 20s scaffold hang. The bound is
+        # the hang itself: the run also proves a rung and measures the base
+        # under its [stack] first (about 3s measured), so a tighter bound
+        # would be tripped by that cost and not by a wait on the worker.
+        assert elapsed < 20.0, f"run waited for the hung worker ({elapsed:.1f}s)"
         assert "a" in result.failed
         assert result.exit_code == 1
         comp = manifest.get_component("a")

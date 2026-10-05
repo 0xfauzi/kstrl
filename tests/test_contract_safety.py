@@ -185,6 +185,7 @@ def _marker_run_configs(root: Path) -> tuple[FactoryConfig, KstrlConfig]:
             max_retries=0,
             retry_delay=0,
             review_mode="skip",
+            project_stack=in_process_stack({"tests": MARKER_TEST_CMD}),
             contract_config=ContractConfig(
                 mode=ContractMode.TIER.value,
                 project_stack=in_process_stack({"tests": MARKER_TEST_CMD}),
@@ -620,6 +621,7 @@ class TestCleanupFailsLoudly:
             max_retries=0,
             retry_delay=0,
             review_mode="skip",
+            project_stack=in_process_stack({"tests": "true"}),
             contract_config=ContractConfig(
                 mode=ContractMode.TIER.value,
                 project_stack=in_process_stack({"tests": "true"}),

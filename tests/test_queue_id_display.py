@@ -45,6 +45,7 @@ from tests.helpers.astwalk import (
     package_sources,
     parse,
 )
+from tests.helpers.stack_confirmation import confirm_stack, write_stack
 
 #: The ``str`` methods that cut a string into pieces.
 _SPLITTERS = frozenset({"split", "rsplit", "partition", "rpartition"})
@@ -132,6 +133,8 @@ def test_a_poisoned_item_is_named_by_ids_queue_show_accepts(
     in a form `ks queue show` resolves to it, with a second item minted in the same
     microsecond beside it."""
     monkeypatch.setattr("kstrl.serve.read_run_spend", lambda root, run_id: RunSpend())
+    write_stack(tmp_path)
+    confirm_stack(tmp_path)
     spec = tmp_path / "feature.md"
     spec.write_text("# Feature\n\nDo the thing.\n", encoding="utf-8")
     moment = datetime.now(UTC)

@@ -123,9 +123,12 @@ def _base_config(root: Path) -> KstrlConfig:
     )
 
 
+_PASSING_STACK = in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"})
+
+
 def _verify_passing() -> VerifyConfig:
     return VerifyConfig(
-        project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
+        project_stack=_PASSING_STACK,
         check_diff_scope=False,
         check_bad_patterns=False,
         subprocess_timeout=5.0,
@@ -220,6 +223,7 @@ class TestC2ReviewRetry:
             max_retries=2,
             retry_delay=0,
             review_mode="hard",
+            project_stack=_PASSING_STACK,
             verify_config=_verify_passing(),
         )
         success = ComponentResult("comp-a", success=True, iterations=1)
@@ -275,6 +279,7 @@ class TestC3SecurityRetry:
                 mode=SecurityMode.HARD.value,
                 fail_threshold="high",
             ),
+            project_stack=_PASSING_STACK,
             verify_config=_verify_passing(),
         )
         success = ComponentResult("comp-a", success=True, iterations=1)
@@ -332,6 +337,7 @@ class TestC4ContractBreaker:
             retry_delay=0,
             review_mode="skip",
             contract_config=ContractConfig(mode=ContractMode.TIER.value),
+            project_stack=_PASSING_STACK,
             verify_config=_verify_passing(),
         )
         success_a = ComponentResult("comp-a", success=True, iterations=1)
@@ -411,6 +417,7 @@ class TestC5SinglePrMode:
             create_prs=False,
             max_parallel=1,
             review_mode="skip",
+            project_stack=_PASSING_STACK,
             verify_config=_verify_passing(),
         )
         success = ComponentResult("comp-a", success=True, iterations=1)

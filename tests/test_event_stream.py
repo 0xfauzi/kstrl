@@ -299,6 +299,7 @@ class TestDualWrite:
         runs = root / ".kstrl" / "runs"
         assert sorted(p.name for p in runs.rglob("*") if p.is_file()) == [
             "base-gates.json",
+            "isolation.json",
             "launch.json",
         ]
 
@@ -431,7 +432,11 @@ class TestSemanticEvents:
             )
         events = ev.read_events(_events_file(root))
         requested = [e for e in events if isinstance(e, ev.CheckpointRequested)]
-        resolved = [e for e in events if isinstance(e, ev.CheckpointResolved)]
+        # The confirmed [stack] resolves its own "stack" checkpoint first
+        # (#696); this test is about the merge checkpoint.
+        resolved = [
+            e for e in events if isinstance(e, ev.CheckpointResolved) and e.kind == "pr_merge"
+        ]
         assert len(requested) == 1
         assert requested[0].kind == "pr_merge"
         assert len(resolved) == 1

@@ -17,6 +17,7 @@ from click.testing import CliRunner, Result
 from kstrl.cli import cli
 from kstrl.serve import RunOutcome, RunSpend, SpendLedger
 from kstrl.workqueue import ItemState, Queue, QueueConfig
+from tests.helpers.stack_confirmation import confirm_stack, write_stack
 
 
 def _queue(root: Path) -> Queue:
@@ -170,6 +171,12 @@ class TestDryRun:
 
 
 class TestServeOnce:
+    @pytest.fixture(autouse=True)
+    def _confirmed_stack(self, tmp_path: Path) -> None:
+        """`ks serve` claims nothing until a [stack] is confirmed (#696 flag day)."""
+        write_stack(tmp_path)
+        confirm_stack(tmp_path)
+
     def test_once_drains_a_single_item(
         self,
         tmp_path: Path,

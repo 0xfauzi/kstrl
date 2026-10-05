@@ -271,6 +271,31 @@ class TestWizardScreen:
         finally:
             await self._pilot_ctx.__aexit__(None, None, None)
 
+    async def test_a_malformed_verify_section_still_shows_the_unreadable_row(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """#696 slice 4: kstrl.toml parses and holds a good [stack], but its
+        [verify] does not load (a list where a number belongs). Every other
+        command refuses such a file, so the repair screen must say it is
+        unreadable rather than paint the stack as if nothing were wrong."""
+        write_stack(tmp_path, _CHECKS)
+        with (tmp_path / "kstrl.toml").open("a", encoding="utf-8") as handle:
+            handle.write('\n[verify]\nself_critique_min_bullets = ["3"]\n')
+        app, _ = await self._run_wizard(tmp_path)
+        try:
+            form = await mounted(self._pilot, lambda: app.screen, "#wizard-form")
+            await settled(
+                self._pilot,
+                lambda: form.region.height,
+                what="the wizard form to be laid out",
+            )
+            rendered = self._rendered(app)
+            assert "kstrl.toml is unreadable" in rendered
+            assert "make test-all" not in rendered
+        finally:
+            await self._pilot_ctx.__aexit__(None, None, None)
+
     async def test_happy_path_scaffolds_and_writes_agent(
         self,
         tmp_path: Path,

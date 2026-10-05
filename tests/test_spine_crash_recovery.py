@@ -49,8 +49,9 @@ from tests.spine_utils import (
     init_kstrl_repo,
     make_manifest,
 )
+from tests.test_isolation_rung import runs_a_stack
 
-pytestmark = pytest.mark.spine
+pytestmark = [pytest.mark.spine, runs_a_stack]
 
 COMP = "comp-a"
 BRANCH = f"kstrl/factory/{COMP}"
@@ -67,13 +68,14 @@ from kstrl.ui.plain import PlainUI
 from kstrl.stack import CONFIRMED_IN_INBOX, Stack
 from kstrl.verify import VerifyConfig
 
+root = Path(sys.argv[1])
+manifest_path = Path(sys.argv[2])
 _stack = Stack(
     instructions="t", setup="", env=(),
     checks=(("tests", sys.argv[3]), ("typecheck", "true"), ("lint", "true")),
+    writable=(str(manifest_path.parent),),
     unconfirmed="", confirmed_by=CONFIRMED_IN_INBOX,
 )
-root = Path(sys.argv[1])
-manifest_path = Path(sys.argv[2])
 result = run_factory(
     Manifest.load(manifest_path),
     FactoryConfig(

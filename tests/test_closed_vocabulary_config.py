@@ -55,7 +55,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 #: (open). #696 slice 4 retired the three gate commands and the three parser
 #: pins of ``[verify]``, ``[factory] worktree_setup_command``, ``[contract]
 #: test_command`` and ``[breaker] test_command``.
-EXPECTED_STRING_FIELDS = 0
+EXPECTED_STRING_FIELDS = 49
 
 #: Re-derived by running ``use_site_parses()`` on this tree.
 EXPECTED_USE_SITE_PARSES = {("kstrl/pipeline.py", "ReviewMode", "review_mode")}

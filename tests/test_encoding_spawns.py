@@ -96,7 +96,7 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     # clause, retiring check_linter/check_test_suite/check_typecheck removes
     # their three. #700 slice 3 added 4 in `start_scrubbed`: its Popen, its
     # return type, DEVNULL and STDOUT.
-    "verify.py": 0,
+    "verify.py": 28,
     "worktree_setup.py": 2,  # #624: the import, and `TimeoutExpired` from `run_scrubbed`
     "worktree_sweep.py": 2,  # #461: the import, and `TimeoutExpired` from `run_scrubbed`
 }

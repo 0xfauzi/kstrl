@@ -36,7 +36,7 @@ from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
 from tests.helpers import gitrepo
 from tests.helpers.run_limits import every_limit_argv
-from tests.helpers.stack_confirmation import in_process_stack
+from tests.helpers.stack_confirmation import confirm_stack, in_process_stack, write_stack
 
 # ---------------------------------------------------------------------------
 # Shared builders (pattern follows tests/test_review_gates.py)
@@ -621,6 +621,8 @@ class TestRetryCli:
         and a cascade-skipped comp-b, persisted to manifest.json."""
         _init_git_repo(root)
         _scaffold(root, ["comp-a", "comp-b"])
+        write_stack(root)
+        confirm_stack(root)
         # Branch from the failed attempt, with a commit not on main.
         _git(root, "checkout", "-q", "-b", "kstrl/comp-a")
         (root / "half-done.txt").write_text("partial\n")

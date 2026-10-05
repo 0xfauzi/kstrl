@@ -38,7 +38,11 @@ NO_STACK = "kstrl.toml has no [stack]"
 #: The legacy [verify] keys an operator upgrading from before the flag day
 #: still has, with commands no kstrl default ever spelled, and that pass on
 #: the base branch so the approved proposal can run.
-LEGACY_VERIFY = 'test_command = "test -d ."\nlint_command = "echo lint-clean"\n'
+LEGACY_VERIFY = (
+    'test_command = "test -d ."\n'
+    'typecheck_command = "echo typecheck-clean"\n'
+    'lint_command = "echo lint-clean"\n'
+)
 
 
 def _engineer(tmp_path: Path) -> tuple[Path, Path]:
@@ -203,7 +207,12 @@ def test_doctor_files_the_legacy_verify_commands_as_a_proposal_it_never_approves
     assert item.status is ItemStatus.OPEN
     assert item.occurrences == 2
     proposed = str(item.evidence["toml"])
-    assert '"test -d ."' in proposed and '"echo lint-clean"' in proposed, proposed
+    for line in (
+        '"tests" = "test -d ."',
+        '"typecheck" = "echo typecheck-clean"',
+        '"lint" = "echo lint-clean"',
+    ):
+        assert line in proposed.splitlines(), proposed
     assert refused_code == 2, refused
     assert "test_command" in refused and "[stack]" in refused, refused
     assert not calls.exists(), refused
@@ -255,3 +264,20 @@ def test_no_verify_is_the_one_way_to_run_with_no_stack(tmp_path: Path) -> None:
     assert run.code == 0, run.out
     assert run.calls >= 1, run.out
     assert NO_STACK not in run.out, run.out
+
+
+def test_doctor_measure_reads_no_stack_as_a_failed_base(tmp_path: Path) -> None:
+    """`ks doctor --measure` with no [stack] reaches Phase 1's own no-stack
+    row (``verify.NO_STACK_CHECK``) on the base branch: it is a failed
+    reading that names [stack], never a pass and never a command kstrl chose."""
+    root = _repo(tmp_path, "", confirm=False)
+
+    code, out = _spawn(["doctor", "--measure", "--json", "--root", str(root)], root, None)
+    document = json.loads(out[out.index("{") :])
+    (row,) = [c for c in document["checks"] if c["name"] == "base_gates"]
+
+    assert code != 0, out
+    assert document["verdict"] == "not-ready", out
+    assert row["status"] == "fail", row
+    assert NO_STACK in row["detail"], row
+    assert "uv run pytest" not in out, out

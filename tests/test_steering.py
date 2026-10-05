@@ -26,6 +26,7 @@ from kstrl.serve import _NullObserver, serve_cycle
 from kstrl.workqueue import ItemSource, MergeDisposition, Queue, QueueConfig
 from tests.helpers.fakegh import GhRouter, marked, unmarked
 from tests.helpers.runners import recording_runner
+from tests.helpers.stack_confirmation import confirm_stack, write_stack
 from tests.test_init_cmd import section_of
 from tests.test_intake_actor_allowlist import BOT
 from tests.test_intake_github import REPO
@@ -161,6 +162,10 @@ def _setup(
     instead - one accessor, not two spellings of the same path.
     """
     _enable_github_intake(root, extra=f"steer_enabled = {steer}\n" + extra, enabled=False)
+    # `serve_cycle` waits, claiming and polling nothing, until a [stack] is
+    # confirmed (#696 flag day).
+    write_stack(root)
+    confirm_stack(root)
     path = root / "scripts" / "kstrl" / "memory.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(memory, encoding="utf-8")

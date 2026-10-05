@@ -258,7 +258,12 @@ def test_the_integration_worktree_is_set_up_before_the_reviewer_reads_it(
     reviewer = h.FakeReviewer(json.dumps(h.review_payload(root, base)))
     setup_log = tmp_path / "setup-dirs"
 
-    h.run_factory_over(root, reviewer, worktree_setup_command=f"pwd -P >> {setup_log}")
+    setup = f"pwd -P >> {setup_log}"
+    h.run_factory_over(
+        root,
+        reviewer,
+        project_stack=in_process_stack(setup=setup, writable=(str(tmp_path),)),
+    )
 
     assert reviewer.calls == 1
     reviewed = reviewer.cwds[0]
@@ -272,7 +277,12 @@ def test_the_integration_worktree_is_set_up_before_the_reviewer_reads_it(
     twin_base, _twin_head = h.merged_feature(twin)
     twin_reviewer = h.FakeReviewer(json.dumps(h.review_payload(twin, twin_base)))
 
-    h.run_factory_over(twin, twin_reviewer, worktree_setup_command="echo no-registry >&2; exit 4")
+    # The setup fails in the reviewer's worktree only: one that fails on the
+    # base commit refuses the whole run before any reviewer is reached.
+    fails = (
+        'case "$(pwd -P)" in */.kstrl/contract/integration-*) echo no-registry >&2; exit 4;; esac'
+    )
+    h.run_factory_over(twin, twin_reviewer, project_stack=in_process_stack(setup=fails))
 
     assert twin_reviewer.calls == 0
     ev = json.loads(h.evidence_files(twin)[0].read_text(encoding="utf-8"))

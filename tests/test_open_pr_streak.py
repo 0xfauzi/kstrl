@@ -40,6 +40,7 @@ from kstrl.serve import (
 )
 from kstrl.statedir import CONTROL_PR_COUNT_STREAK, control_file
 from tests.helpers.fakegh import install_marker_gh as _install_marker_gh
+from tests.helpers.stack_confirmation import confirm_stack, write_stack
 from tests.test_serve import _add, _queue, _stub_runner
 
 _REASON = "cannot count open kstrl PRs: gh pr failed (99): "
@@ -74,6 +75,9 @@ def _serve_loop(root: Path, cycles: int) -> list[CycleResult]:
 
 def _failing_daemon(root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _install_marker_gh(root, monkeypatch)
+    # serve polls nothing until a [stack] is confirmed (#696 flag day).
+    write_stack(root)
+    confirm_stack(root)
     _add(_queue(root))
 
 
@@ -151,6 +155,8 @@ class TestTheStreakSurvivesAProcessBoundary:
         payload.write_text("[]", encoding="utf-8")
         monkeypatch.setenv("FAKE_GH_JSON", str(payload))
         put_gh_on_path(tmp_path, monkeypatch, FAKE_GH_THIRD_CALL_WORKS)
+        write_stack(tmp_path)
+        confirm_stack(tmp_path)
         _add(_queue(tmp_path))
 
         results = [_serve_once(tmp_path) for _ in range(5)]

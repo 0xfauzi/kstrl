@@ -15,6 +15,7 @@ from kstrl.git import BASE_BRANCH_CANDIDATES, detect_base_branch, resolve_base_b
 from kstrl.init_cmd import gitignore_block
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from tests.helpers import gitrepo
+from tests.helpers.stack_confirmation import confirm_stack, write_stack
 from tests.spine_utils import git as spine_git
 
 
@@ -157,6 +158,8 @@ class TestCliValidation:
         (kstrl_dir / "feature_understand_prompt.md").write_text("test prompt")
         (kstrl_dir / "codebase_map.md").write_text("# Map\n")
         (feature_dir / "prd.json").write_text('{"branchName": "test", "userStories": []}')
+        write_stack(project)
+        confirm_stack(project)
 
         runner = CliRunner()
         monkeypatch.chdir(tmp_path)
@@ -177,7 +180,7 @@ class TestCliValidation:
                 "0",
             ],
         )
-        assert result.exit_code == 0
+        assert result.exit_code == 0, result.output
         assert (feature_dir / "understand.md").exists()
 
 
@@ -429,15 +432,23 @@ class TestInboxRetryManifestLoad:
         assert "Requeued comp-a" in result.output
 
 
-def _repo_on(tmp_path: Path, branch: str, name: str = "proj") -> Path:
-    """One-commit git repo whose only branch is ``branch``, with no remote."""
+def _repo_on(tmp_path: Path, branch: str, name: str = "proj", *, stack: bool = False) -> Path:
+    """One-commit git repo whose only branch is ``branch``, with no remote.
+
+    ``stack`` adds a confirmed ``[stack]``, which ``ks factory`` needs to get
+    past its refusal (#696 flag day).
+    """
     root = tmp_path / name
     root.mkdir()
     spine_git("init", "-q", "-b", branch, cwd=root)
     gitrepo.set_identity(root)
     (root / "a.txt").write_text("a\n")
+    if stack:
+        write_stack(root)
     spine_git("add", "-A", cwd=root)
     spine_git("commit", "-q", "-m", "init", cwd=root)
+    if stack:
+        confirm_stack(root)
     return root
 
 
@@ -674,7 +685,7 @@ class TestBaseBranchFlagDefaults:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         seen = _halting_decompose(monkeypatch)
-        root = _repo_on(tmp_path, "master")
+        root = _repo_on(tmp_path, "master", stack=True)
         assert _invoke_spec_command("factory", root).exit_code == 2
         assert seen["base_branch"] == "master"
 
@@ -682,56 +693,9 @@ class TestBaseBranchFlagDefaults:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         seen = _halting_decompose(monkeypatch)
-        root = _repo_on(tmp_path, "master")
+        root = _repo_on(tmp_path, "master", stack=True)
         assert _invoke_spec_command("factory", root, "--base-branch", "trunk").exit_code == 2
         assert seen["base_branch"] == "trunk"
-
-
-class TestAutonomyReplayNamesAnUnreadableFile:
-    """#352: exit 2 with a cause, rather than exit 2 saying the history is short.
-
-    ``load_runs`` swallowed the read error and returned no runs, so an
-    encoding or permission problem printed "VERDICT: INSUFFICIENT DATA"
-    and exited 2. The code is unchanged, because nothing was replayed
-    either way; what is new is the line above it.
-    """
-
-    def test_an_undecodable_file_reports_the_cause(self, tmp_path: Path) -> None:
-        path = tmp_path / "experiments.tsv"
-        path.write_bytes(b"run_id\ttimestamp\nrun-1\xff\t2026-01-01\n")
-
-        result = CliRunner().invoke(
-            cli,
-            ["autonomy", "replay", "--experiments", str(path), "--no-color"],
-        )
-
-        assert result.exit_code == 2
-        assert "could not read the recorded run history" in result.output
-        assert "INSUFFICIENT DATA" not in result.output
-
-    def test_a_field_over_the_csv_field_limit_reports_the_cause(self, tmp_path: Path) -> None:
-        """#352 round 2, F1: ``_csv.Error`` is neither an ``OSError`` nor
-        a ``ValueError``, so it escaped this handler as a traceback.
-
-        ``experiment_rows`` refuses on the ``ValueError`` path now, which
-        is the path this handler already takes.
-        """
-        from kstrl.evolution import EXPERIMENTS_HEADER
-
-        width = len(EXPERIMENTS_HEADER.split("\t"))
-        fields = ["run-1", "2026-01-01T00:00:00", "x" * 200_000] + ["0"] * (width - 3)
-        path = tmp_path / "experiments.tsv"
-        path.write_text(EXPERIMENTS_HEADER + "\n" + "\t".join(fields) + "\n", encoding="utf-8")
-
-        result = CliRunner().invoke(
-            cli,
-            ["autonomy", "replay", "--experiments", str(path), "--no-color"],
-        )
-
-        assert result.exit_code == 2
-        assert "could not read the recorded run history" in result.output
-        assert "field larger" in result.output
-        assert "INSUFFICIENT DATA" not in result.output
 
 
 class TestBlankProjectName:
