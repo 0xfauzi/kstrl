@@ -45,11 +45,16 @@ from dataclasses import dataclass
 
 from kstrl.procdispose import drain_or_abandon, reap_abandoned
 
-#: The three columns the question needs and no more. ``pid`` is there for
-#: the completeness control, not for identifying anything. Why each is
-#: load-bearing and what it costs is argued in ``kstrl.procgroup``'s
-#: module docstring, which is where this file's own docstring sends you.
-PS_ARGV = ("ps", "-A", "-o", "pid=,pgid=,stat=")
+#: The four columns the questions need and no more. ``pid`` is there for
+#: the completeness control, not for identifying anything. ``command``
+#: is there for #642: a leftover agent group is named only when its
+#: leader's command line carries the nonce kstrl started it with, and
+#: that is read here so the tree keeps one ``ps`` call. It is the LAST
+#: column because it holds spaces, and ``-ww`` keeps a long one whole
+#: (``ps`` honours ``COLUMNS`` even when piped). Why each is load-bearing
+#: and what it costs is argued in ``kstrl.procgroup``'s module docstring,
+#: which is where this file's own docstring sends you.
+PS_ARGV = ("ps", "-A", "-ww", "-o", "pid=,pgid=,stat=,command=")
 
 #: How long the ``ps`` read itself may take. 440x the 11.29ms measured
 #: for the call, so it cannot fire on a slow machine. Re-measured for
@@ -133,6 +138,8 @@ class _Listing:
     #: than a count because :func:`read_group_members` needs them; the
     #: counts below are derived from them.
     running_pids: tuple[int, ...]
+    #: The command line of each of ``running_pids``, in the same order.
+    running_commands: tuple[str, ...]
 
     @property
     def rows(self) -> int:
@@ -144,7 +151,7 @@ class _Listing:
 
 
 def _read_listing(stdout: str, pgid: int) -> _Listing:
-    """Parse ``pid pgid stat`` rows into the four facts that decide it.
+    """Parse ``pid pgid stat command`` rows into the facts that decide it.
 
     Fields are named on ``_Listing`` rather than returned positionally
     because all four would type-check in any order.
@@ -227,8 +234,10 @@ def _read_listing(stdout: str, pgid: int) -> _Listing:
     readable = True
     listed: list[int] = []
     running: list[int] = []
+    commands: list[str] = []
     for line in stdout.splitlines():
-        parts = line.split()
+        # At most four parts: the command is the rest of the row.
+        parts = line.split(None, 3)
         if not parts:
             continue
         if len(parts) < 3:
@@ -250,8 +259,13 @@ def _read_listing(stdout: str, pgid: int) -> _Listing:
         # follow it ("Z+", "Zl"), so match the prefix rather than the cell.
         if not state.startswith("Z"):
             running.append(member)
+            commands.append("".join(parts[3:]))
     return _Listing(
-        complete=complete, readable=readable, listed=tuple(listed), running_pids=tuple(running)
+        complete=complete,
+        readable=readable,
+        listed=tuple(listed),
+        running_pids=tuple(running),
+        running_commands=tuple(commands),
     )
 
 

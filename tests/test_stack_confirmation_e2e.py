@@ -40,6 +40,7 @@ from kstrl.workqueue import ItemState, Queue, QueueConfig
 from tests.helpers import astwalk
 from tests.helpers.plan_approval import approve_plan
 from tests.helpers.stack_confirmation import confirm_stack
+from tests.test_isolation_rung import needs_nono
 from tests.test_prompt_record import ONE_COMPONENT, _spec_project
 from tests.test_queue_awaiting_answer import _scripted_claude
 from tests.test_serve_architect_spend import BLOCKER
@@ -206,6 +207,7 @@ def test_an_unconfirmed_stack_refuses_before_the_architect_and_files_one_item(
     assert (bumped.id, bumped.occurrences) == (item.id, 2)
 
 
+@needs_nono
 def test_ks_inbox_approve_confirms_the_stack_and_the_run_proceeds(tmp_path: Path) -> None:
     """2. Approving the filed item is the confirmation: the next run pays the
     engineer and records in events.jsonl that the inbox confirmed its stack."""
@@ -223,6 +225,7 @@ def test_ks_inbox_approve_confirms_the_stack_and_the_run_proceeds(tmp_path: Path
     assert _stack_resolutions(root) == ["inbox"]
 
 
+@needs_nono
 def test_approving_an_item_for_a_stack_kstrl_toml_no_longer_holds_is_refused(
     tmp_path: Path,
 ) -> None:
@@ -346,6 +349,7 @@ def test_a_plan_made_under_another_stack_refuses(
     assert f"it now reads {now[:12]}" in run.out, run.out
 
 
+@needs_nono
 def test_an_approved_plan_does_not_carry_over_to_another_stack(tmp_path: Path) -> None:
     """The plan digest includes the stack digest: an L1 plan approved under
     one stack is not approved under another, even when the manifest's pin
@@ -454,6 +458,7 @@ def test_an_unreadable_inbox_refuses_the_stack(tmp_path: Path, damage: Any, said
 # --- 8: with the inbox disabled, a confirmation holds for that run only -----
 
 
+@needs_nono
 @pytest.mark.skipif(not hasattr(os, "openpty"), reason="needs a pseudo-terminal")
 def test_with_the_inbox_disabled_a_confirmation_at_the_prompt_holds_for_that_run_only(
     tmp_path: Path,
@@ -483,6 +488,7 @@ def test_with_the_inbox_disabled_a_confirmation_at_the_prompt_holds_for_that_run
     assert _stack_items(root) == []
 
 
+@needs_nono
 @pytest.mark.skipif(not hasattr(os, "openpty"), reason="needs a pseudo-terminal")
 def test_at_the_prompt_reject_is_recorded_and_confirm_holds_in_the_inbox(
     tmp_path: Path,

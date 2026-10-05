@@ -299,6 +299,7 @@ def _prepare_decompose(
         config.model,
         config.model_reasoning_effort,
         config.agent_type,
+        root_dir=root_dir,
     )
 
     def build(

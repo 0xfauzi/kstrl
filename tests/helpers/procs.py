@@ -45,6 +45,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from kstrl import procgroup
+from kstrl.agents.spawn_record import read_spawn_records
 from kstrl.procgroup import pid_is_alive, read_group_liveness, read_group_members
 
 
@@ -551,6 +552,22 @@ def wait_for_group_to_die(pgid: int, timeout: float = 10.0) -> bool:
         time.sleep(0.1)
         live = group_has_live_member(pgid)
     return not live
+
+
+def wait_for_recorded_agents_to_end(root: Path, timeout: float = 15.0) -> None:
+    """Wait until every agent group recorded for ``root`` is empty (#642).
+
+    A run killed with SIGKILL leaves its spawn records behind, and its
+    leash ends each recorded group within its grace. Until it has, the
+    next lock-taking command refuses with exit 2, because an agent of a
+    dead kstrl process is still running in the project. A test that
+    restarts a killed run calls this first. A group that outlives
+    ``timeout`` fails the test: the leash did not end it.
+    """
+    for path, record in read_spawn_records(root):
+        assert wait_for_group_to_die(record.pgid, timeout=timeout), (
+            f"agent group {record.pgid} recorded in {path} outlived {timeout}s"
+        )
 
 
 def kill_group(pgid: int) -> None:

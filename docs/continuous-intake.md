@@ -157,6 +157,16 @@ run used one of the item's attempts, so an item that has used them all needs
 `--reset-attempts`, as `ks queue retry` does. A GitHub-sourced item keeps its
 `kstrl:running` label while it waits; the answer is given locally.
 
+If the factory could not write `scripts/kstrl/spec-issues.json`, it does not
+print the line `ks serve` reads to recognise an escalation, so serve poisons
+the item. `ks queue answer` accepts that poisoned item too, but only while an
+undecided `spec_escalation` row in the inbox names it. Every other poisoned
+item, an engineer failure for example, is refused with exit 2 and the reason,
+and so is every poisoned item while the inbox cannot be read in full. The
+queue journal records the row that allowed the answer and who gave it.
+Answering does not change the poison streak, as `ks queue retry` does not: a
+queue the breaker paused still needs `ks queue resume`.
+
 ### A parked merge waits for approval, and is not a failure
 
 With `pause_before_pr_merge` on and nobody at an interactive checkpoint

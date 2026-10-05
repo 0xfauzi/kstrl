@@ -87,6 +87,7 @@ class ClaudeSdkAgent:
         max_budget_usd: float | None = None,
         workspace_guard: bool = True,
         read_only: bool = False,
+        root_dir: Path | None = None,
     ):
         """Initialize the SDK adapter.
 
@@ -114,6 +115,7 @@ class ClaudeSdkAgent:
         self._max_budget_usd = max_budget_usd
         self._workspace_guard = workspace_guard
         self._read_only = read_only
+        self._root_dir = root_dir
         self._final_message: str | None = None
         self._usage_records: list[UsageRecord] = []
         # Test hook: the R0.1 battery points the SDK at fake CLIs.
@@ -182,6 +184,7 @@ class ClaudeSdkAgent:
             cwd=cwd,
             stdin_text=json.dumps(config),
             timeout=timeout,
+            root_dir=self._root_dir,
         )
 
         try:

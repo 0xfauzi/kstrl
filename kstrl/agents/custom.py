@@ -15,13 +15,15 @@ from kstrl.agents.prompt_record import record_prompt
 class CustomAgent:
     """Agent that runs a custom shell command."""
 
-    def __init__(self, command: str):
+    def __init__(self, command: str, root_dir: Path | None = None):
         """Initialize with command string.
 
         Args:
             command: Shell command to run. Prompt is piped to stdin.
+            root_dir: The project root, where each spawn is recorded (#642).
         """
         self._command = command
+        self._root_dir = root_dir
         self._final_message: str | None = None
         self._usage_records: list[UsageRecord] = []
 
@@ -59,6 +61,7 @@ class CustomAgent:
             cwd=cwd,
             stdin_text=prompt,
             timeout=timeout,
+            root_dir=self._root_dir,
         )
 
         output_lines: list[str] = []
