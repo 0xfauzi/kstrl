@@ -40,16 +40,23 @@ import kstrl.cli as cli_mod
 from kstrl.cli import cli
 from kstrl.config import STRING_KEYS, ConfigError, KstrlConfig, load_toml_document, toml_parse_scope
 from kstrl.config_preflight import collect_config_problems, config_sections, preflight_config
-from kstrl.contract import ContractConfig, ContractMode
+from kstrl.contract import ContractConfig
 from kstrl.evolution import EvolutionConfig
 from kstrl.factory import FactoryConfig, FactoryResult
 from kstrl.feedforward import CodebaseScanConfig
 from kstrl.security import SecurityConfig, SecurityMode
+from kstrl.stack import stack_toml
 from kstrl.verify import VerifyConfig
 from tests.conftest import REPO_ROOT
 from tests.helpers import astwalk
 from tests.helpers.bad_toml import MALFORMED_TOML, TOML_PARSE_FAULTS
+from tests.helpers.stack_confirmation import confirm_stack, in_process_stack, write_stack
 from tests.spine_utils import component, make_manifest
+
+#: A confirmed [stack]'s TOML text (#696), prefixed onto a kstrl.toml this
+#: module writes by hand for a command (`ks factory`) that refuses with no
+#: [stack] at all, before whatever else the test is actually about.
+_STACK_TOML = stack_toml(in_process_stack())
 
 DECOMPOSE_ARGS = [
     "decompose",
@@ -67,14 +74,18 @@ DECOMPOSE_ARGS = [
 FACTORY_ARGS = ["factory", "--manifest", "m.json", "--agent-cmd", "true", "--yes"]
 
 
-def _invoke(args: list[str], *, toml: str | bytes | None = None) -> Result:
+def _invoke(
+    args: list[str], *, toml: str | bytes | None = None, confirm_stack_in: bool = False
+) -> Result:
     """Run a command in an isolated checkout holding a spec and manifest.
 
     ``toml`` takes ``bytes`` as well as ``str`` so a case can put a
     kstrl.toml on disk that no encoding of a ``str`` would produce; see
     :data:`~tests.helpers.bad_toml.TOML_PARSE_FAULTS`. One write for
     both, so the ``str`` cases are utf-8 on a machine whose locale is
-    not.
+    not. ``confirm_stack_in=True`` confirms whatever ``[stack]`` ``toml``
+    holds (#696), for a case that is not itself about the stack and
+    would otherwise be refused before reaching its own subject.
 
     The cwd IS the checkout. ``conftest.isolate_kstrl_state`` is autouse
     and chdirs every test into its own empty ``tmp_path``, so the
@@ -87,6 +98,8 @@ def _invoke(args: list[str], *, toml: str | bytes | None = None) -> Result:
     make_manifest([component("comp-a")]).save(root / "m.json")
     if toml is not None:
         (root / "kstrl.toml").write_bytes(toml.encode() if isinstance(toml, str) else toml)
+    if confirm_stack_in:
+        confirm_stack(root)
     return CliRunner().invoke(cli, args, catch_exceptions=True)
 
 
@@ -241,7 +254,11 @@ class TestFatalVersusDegrading:
     ) -> None:
         ran = _stub_run_factory(monkeypatch)
 
-        result = _invoke(FACTORY_ARGS, toml='[evolution]\nlookback_runs = "many"\n')
+        result = _invoke(
+            FACTORY_ARGS,
+            toml=_STACK_TOML + '\n[evolution]\nlookback_runs = "many"\n',
+            confirm_stack_in=True,
+        )
 
         assert result.exit_code == 0, result.output
         assert ran == ["run_factory"]
@@ -502,6 +519,8 @@ class TestTheRootIsTheOneTheCommandWillUse:
         clean = tmp_path / "project"
         clean.mkdir()
         _stub_run_factory(monkeypatch)
+        write_stack(clean)
+        confirm_stack(clean)
 
         # The cwd is the SUBJECT here, so this test sets its own rather
         # than reusing the autouse one: the broken file has to sit in a
@@ -1461,115 +1480,34 @@ review_mode = "advisory"
             assert config.max_parallel == 99
 
     class TestVerifyConfigLoad:
-        def test_reads_verify_section(
-            self,
-            tmp_path: Path,
-            monkeypatch: pytest.MonkeyPatch,
-        ) -> None:
-            _clear_env(
-                monkeypatch,
-                "KSTRL_VERIFY_TEST_CMD",
-                "KSTRL_VERIFY_TYPECHECK_CMD",
-                "KSTRL_VERIFY_REQUIRE_SELF_CRITIQUE",
-            )
-            _write_toml(
-                tmp_path / "kstrl.toml",
-                """
-[verify]
-test_command = "pytest -x"
-typecheck_command = "mypy ."
-require_self_critique = true
-self_critique_min_bullets = 5
-""",
-            )
-            config = VerifyConfig.load(tmp_path)
-            assert config.test_command == "pytest -x"
-            assert config.typecheck_command == "mypy ."
-            assert config.require_self_critique is True
-            assert config.self_critique_min_bullets == 5
+        # #696 flag day: test_reads_verify_section, test_tool_keys_default_
+        # to_auto, test_reads_the_tool_keys, test_env_overrides_the_toml_
+        # tool and test_an_unknown_tool_raises_rather_than_falling_back_to_
+        # auto are deleted. Their subject was [verify] test_command/
+        # typecheck_command and the *_tool parser-selection keys
+        # (test_tool/typecheck_tool/lint_tool); none of the five is a
+        # field on VerifyConfig any more (verification commands come only
+        # from a confirmed [stack], and the per-tool parser union they
+        # configured is retired with them), so there is nothing left for
+        # these tests to read.
 
-        def test_tool_keys_default_to_auto(
+        def test_an_unknown_toml_key_in_verify_is_refused(
             self,
             tmp_path: Path,
-            monkeypatch: pytest.MonkeyPatch,
         ) -> None:
-            # #258: None is "run every parser for the gate and union the
-            # failures", which is what makes a chained command work.
-            _clear_env(monkeypatch, "KSTRL_VERIFY_TEST_TOOL", "KSTRL_VERIFY_LINT_TOOL")
-            _write_toml(tmp_path / "kstrl.toml", '[verify]\ntest_command = "pytest"\n')
-            config = VerifyConfig.load(tmp_path)
-            assert (config.test_tool, config.typecheck_tool, config.lint_tool) == (
-                None,
-                None,
-                None,
-            )
-
-        def test_reads_the_tool_keys(
-            self,
-            tmp_path: Path,
-            monkeypatch: pytest.MonkeyPatch,
-        ) -> None:
-            _clear_env(
-                monkeypatch,
-                "KSTRL_VERIFY_TEST_TOOL",
-                "KSTRL_VERIFY_TYPECHECK_TOOL",
-                "KSTRL_VERIFY_LINT_TOOL",
-            )
-            _write_toml(
-                tmp_path / "kstrl.toml",
-                """
-[verify]
-test_tool = "vitest"
-typecheck_tool = "tsc"
-lint_tool = "eslint"
-""",
-            )
-            config = VerifyConfig.load(tmp_path)
-            assert (config.test_tool, config.typecheck_tool, config.lint_tool) == (
-                "vitest",
-                "tsc",
-                "eslint",
-            )
-
-        def test_env_overrides_the_toml_tool(
-            self,
-            tmp_path: Path,
-            monkeypatch: pytest.MonkeyPatch,
-        ) -> None:
-            _write_toml(tmp_path / "kstrl.toml", '[verify]\ntest_tool = "vitest"\n')
-            monkeypatch.setenv("KSTRL_VERIFY_TEST_TOOL", "pytest")
-            assert VerifyConfig.load(tmp_path).test_tool == "pytest"
-
-        def test_an_unknown_tool_raises_rather_than_falling_back_to_auto(
-            self,
-            tmp_path: Path,
-            monkeypatch: pytest.MonkeyPatch,
-        ) -> None:
-            # Silently reverting to auto would be the failure the key exists
-            # to prevent: the operator wrote it to stop kstrl guessing.
-            _clear_env(monkeypatch, "KSTRL_VERIFY_TEST_TOOL")
-            _write_toml(tmp_path / "kstrl.toml", '[verify]\ntest_tool = "jest"\n')
-            with pytest.raises(ValueError, match="unknown tool 'jest'"):
-                VerifyConfig.load(tmp_path)
+            """The command-entry preflight reads [verify] through the same
+            loader every other fatal-knob test here exercises; a key this
+            [verify] no longer has must stop the run named, not silently
+            do nothing (the shape of the five deleted tests' mistake)."""
+            _write_toml(tmp_path / "kstrl.toml", '[verify]\ntest_command = "pytest -x"\n')
+            with pytest.raises(ConfigError, match="test_command"):
+                preflight_config(tmp_path, warn=lambda _message: None)
 
     class TestContractConfigLoad:
-        def test_reads_contract_section(
-            self,
-            tmp_path: Path,
-            monkeypatch: pytest.MonkeyPatch,
-        ) -> None:
-            _clear_env(monkeypatch, "KSTRL_CONTRACT_MODE", "KSTRL_CONTRACT_TEST_CMD")
-            _write_toml(
-                tmp_path / "kstrl.toml",
-                """
-[contract]
-mode = "final"
-test_command = "pytest tests/"
-""",
-            )
-            config = ContractConfig.load(tmp_path)
-            assert config.mode == ContractMode.FINAL.value
-            assert config.test_command == "pytest tests/"
+        # #696 flag day: test_reads_contract_section is deleted.
+        # ContractConfig has no test_command field any more: Phase 3 runs
+        # every check of the confirmed [stack], so there is no command
+        # left for [contract] to carry.
 
         def test_invalid_mode_raises(self, tmp_path: Path) -> None:
             _write_toml(tmp_path / "kstrl.toml", '[contract]\nmode = "always"\n')

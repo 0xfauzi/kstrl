@@ -292,11 +292,26 @@ class TestTheParkIsItsOwnOutcome:
     def test_a_park_nothing_can_approve_fails_at_the_gate_and_ks_retry_rebuilds_it(
         self, tmp_path: Path
     ) -> None:
+        """Unwritable, not disabled (#696 flag day): disabling ``[inbox]``
+        outright would ALSO make the stack confirmation ``_repo`` already
+        recorded unreadable (``stack.confirmed_stack`` reads the same
+        inbox), refusing before the engineer ever reaches the merge gate
+        this test is for. Making the inbox file read-only reaches the
+        SAME ``_park_decision`` branch the pipeline names for it
+        ([inbox] disabled OR UNWRITABLE) while the stack's earlier,
+        already-approved item stays readable.
+        """
+        from kstrl.statedir import CONTROL_INBOX, control_file
+
         root = _repo(tmp_path)
         env = _env(tmp_path)
-        # No inbox: no merge_gate item, so `ks inbox approve` has nothing to act on.
-        env["KSTRL_INBOX_ENABLED"] = "0"
-        first = _factory(root, env)
+        inbox_path = control_file(root, CONTROL_INBOX)
+        inbox_path.touch(exist_ok=True)
+        inbox_path.chmod(0o444)
+        try:
+            first = _factory(root, env)
+        finally:
+            inbox_path.chmod(0o644)
         out = first.stdout + first.stderr
 
         assert first.returncode == 1, out
@@ -315,6 +330,9 @@ class TestTheParkIsItsOwnOutcome:
         )
         assert str(verdict.verdict) != "spec_failure", verdict.reason
 
+        # The inbox is readable again (restored in the `finally` above), so
+        # `ks retry` (which has no --no-verify and always needs a confirmed
+        # [stack]) can read the approval `_repo` already recorded.
         _ks(root, env, "retry", HTTP, "--yes", "--ui", "plain", "--no-color")
         assert _engineer_ran(tmp_path) == [HTTP, HTTP]
 

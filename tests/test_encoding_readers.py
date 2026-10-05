@@ -180,10 +180,13 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     "toolchains.py": 1,
     "tui/widgets/component_detail.py": 1,
     # 4 since #414: the bad-patterns scan's read_text is gone (it reads
-    # bytes now, so py_compile does its own PEP 263 decoding). The four
-    # left: CLAUDE.md, the self-critique progress log, check_test_adequacy's
-    # read of a changed test's source, and check_patch_coverage's report.
-    "verify.py": 4,
+    # bytes now, so py_compile does its own PEP 263 decoding). 3 since
+    # #696: scrub_stale_verify_commands's CLAUDE.md read is gone with the
+    # whole mechanism it served (reconciling CLAUDE.md's verification
+    # bullets against [verify], which the flag day retired). The three
+    # left: the self-critique progress log, check_test_adequacy's read
+    # of a changed test's source, and check_patch_coverage's report.
+    "verify.py": 3,
     "workqueue.py": 6,
 }
 
@@ -291,7 +294,6 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "tui/runs.py open(lock_path, 'a+', encoding='utf-8')",
     "tui/serve_view.py path.read_text(encoding='utf-8', errors='replace')",
     "tui/session.py open(run_paths.root / 'orchestrator.log', 'a', buffering=1, encoding='",
-    "verify.py (root / 'CLAUDE.md').read_text(encoding='utf-8')",
     "verify.py full.read_text(encoding='utf-8', errors='replace')",
     "verify.py json_path.read_text(encoding='utf-8')",
     "verify.py progress_path.read_text(encoding='utf-8')",

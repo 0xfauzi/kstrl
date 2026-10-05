@@ -32,10 +32,24 @@ from kstrl.runid import mint_run_id, run_kind
 from kstrl.serve import SPAWNED_RUN_KIND, RunOutcome, ServeConfig, SpendLedger, Verdict, serve_cycle
 from kstrl.workqueue import ItemSource, ItemState, Queue, QueueConfig, QueueItem
 from tests.helpers.executables import write_executable
-from tests.test_prompt_record import ONE_COMPONENT, _spec_project
+from tests.helpers.stack_confirmation import confirm_stack, write_stack
+from tests.test_isolation_rung import needs_nono
+from tests.test_prompt_record import ONE_COMPONENT
+from tests.test_prompt_record import _spec_project as _bare_spec_project
 from tests.test_serve_architect_spend import BLOCKER
 
 pytestmark = pytest.mark.usefixtures("no_open_prs")
+
+
+def _spec_project(tmp_path: Path, *, initialised: bool = False) -> Path:
+    """#696: every entry point here checks for a confirmed [stack] before
+    it will claim or run anything, even the refusal path that supplies
+    its own runner, so every project this file builds needs one."""
+    root = _bare_spec_project(tmp_path, initialised=initialised)
+    write_stack(root)
+    confirm_stack(root)
+    return root
+
 
 #: The line the owner adds to the queued spec. The second architect call
 #: must read it.
@@ -237,6 +251,7 @@ class TestAnEscalationWaitsForTheOwner:
 
 
 class TestTheAnswerReachesTheArchitect:
+    @needs_nono
     def test_the_answered_spec_is_what_the_next_cycle_runs(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -444,6 +459,8 @@ class TestNoRemoteWriteback:
         (root / "kstrl.toml").write_text(
             '[intake_github]\nenabled = true\nrepo = "o/r"\n', encoding="utf-8"
         )
+        write_stack(root)
+        confirm_stack(root)
         _scripted_claude(tmp_path, monkeypatch, [BLOCKER])
         write_executable(tmp_path / "fakebin" / "gh", FAKE_GH)
         gh_log = tmp_path / "gh.log"

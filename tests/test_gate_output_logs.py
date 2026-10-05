@@ -41,6 +41,12 @@ from tests.helpers.verify_phase import _pipeline, component
 FAILING_TEST_NAME = "test_kstrl462_token_roundtrip_is_broken"
 PYTHON = shlex.quote(sys.executable)
 
+#: #696 flag day, rule 5: the row (and so the log file and the narration
+#: that names it) is ``stack:<name>``, not the bare gateparse constant
+#: ``GATE_TEST``/``GATE_TYPECHECK``/``GATE_LINT`` (those remain the parser's
+#: own names - kstrl.gateparse is untouched by the flag day).
+_ROW = {GATE_TEST: "stack:tests", GATE_TYPECHECK: "stack:typecheck", GATE_LINT: "stack:lint"}
+
 
 def _python(code: str) -> str:
     """A shell command running ``code`` under this interpreter."""
@@ -133,7 +139,7 @@ def test_a_failing_test_gate_leaves_a_log_naming_the_failing_test(tmp_path: Path
     assert comp.evidence_debug_dir == str(_debug_dir(project, comp))
 
     (data,) = run.verification_events()
-    expected = _debug_dir(project, comp) / "attempt-1" / f"{GATE_TEST}.log"
+    expected = _debug_dir(project, comp) / "attempt-1" / f"{_ROW[GATE_TEST]}.log"
     assert data["gate_logs"] == [str(expected)]
     log = expected.read_text(encoding="utf-8")
     assert FAILING_TEST_NAME in log
@@ -158,7 +164,7 @@ def test_a_failing_typecheck_or_lint_gate_leaves_a_log(tmp_path: Path, gate: str
     run.phase_1()
 
     (data,) = run.verification_events()
-    expected = _debug_dir(project, comp) / "attempt-1" / f"{gate}.log"
+    expected = _debug_dir(project, comp) / "attempt-1" / f"{_ROW[gate]}.log"
     assert data["gate_logs"] == [str(expected)]
     log = expected.read_text(encoding="utf-8")
     assert log.index("kstrl462 stdout from the gate") < log.index("kstrl462 stderr from the gate")
@@ -180,8 +186,8 @@ def test_a_retry_does_not_overwrite_the_earlier_attempt_s_log(tmp_path: Path) ->
     run.phase_1()
 
     first, second = run.verification_events()
-    attempt_1 = _debug_dir(project, comp) / "attempt-1" / f"{GATE_TEST}.log"
-    attempt_2 = _debug_dir(project, comp) / "attempt-2" / f"{GATE_TEST}.log"
+    attempt_1 = _debug_dir(project, comp) / "attempt-1" / f"{_ROW[GATE_TEST]}.log"
+    attempt_2 = _debug_dir(project, comp) / "attempt-2" / f"{_ROW[GATE_TEST]}.log"
     assert first["gate_logs"] == [str(attempt_1)]
     assert second["gate_logs"] == [str(attempt_2)]
     assert FAILING_TEST_NAME in attempt_1.read_text(encoding="utf-8")
@@ -260,7 +266,7 @@ def test_a_failed_write_is_said_and_the_event_names_no_file(tmp_path: Path) -> N
     assert data["gate_logs"] == []
     assert data["passed"] is False
     assert result.failure is not None
-    assert f"could not write the {GATE_TEST} output" in run.narration.getvalue()
+    assert f"could not write the {_ROW[GATE_TEST]} output" in run.narration.getvalue()
 
 
 def test_every_failing_gate_in_one_attempt_leaves_its_own_log(tmp_path: Path) -> None:
@@ -283,11 +289,13 @@ def test_every_failing_gate_in_one_attempt_leaves_its_own_log(tmp_path: Path) ->
 
     (data,) = run.verification_events()
     attempt = _debug_dir(project, comp) / "attempt-1"
-    expected = [str(attempt / f"{gate}.log") for gate in (GATE_TEST, GATE_TYPECHECK, GATE_LINT)]
+    expected = [
+        str(attempt / f"{_ROW[gate]}.log") for gate in (GATE_TEST, GATE_TYPECHECK, GATE_LINT)
+    ]
     assert sorted(data["gate_logs"]) == sorted(expected)
-    assert FAILING_TEST_NAME in (attempt / f"{GATE_TEST}.log").read_text(encoding="utf-8")
+    assert FAILING_TEST_NAME in (attempt / f"{_ROW[GATE_TEST]}.log").read_text(encoding="utf-8")
     for gate in (GATE_TYPECHECK, GATE_LINT):
-        assert "kstrl462 every gate" in (attempt / f"{gate}.log").read_text(encoding="utf-8")
+        assert "kstrl462 every gate" in (attempt / f"{_ROW[gate]}.log").read_text(encoding="utf-8")
 
 
 def test_an_error_that_is_not_an_os_error_is_not_swallowed(
@@ -348,7 +356,7 @@ def test_a_gate_that_times_out_leaves_the_lines_it_printed(tmp_path: Path, gate:
     run.phase_1()
 
     (data,) = run.verification_events()
-    expected = _debug_dir(project, comp) / "attempt-1" / f"{gate}.log"
+    expected = _debug_dir(project, comp) / "attempt-1" / f"{_ROW[gate]}.log"
     assert data["gate_logs"] == [str(expected)]
     assert any("timed out after 1.0s" in failure for failure in data["failures"])
     log = expected.read_text(encoding="utf-8")
@@ -370,7 +378,7 @@ def test_a_gate_whose_output_is_not_utf8_leaves_it_with_the_byte_escaped(
     run.phase_1()
 
     (data,) = run.verification_events()
-    expected = _debug_dir(project, comp) / "attempt-1" / f"{gate}.log"
+    expected = _debug_dir(project, comp) / "attempt-1" / f"{_ROW[gate]}.log"
     assert data["gate_logs"] == [str(expected)]
     assert any("could not be decoded" in failure for failure in data["failures"])
     log = expected.read_text(encoding="utf-8")

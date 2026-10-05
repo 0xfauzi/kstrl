@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import textwrap
 import time
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -26,11 +26,11 @@ from kstrl.config import KstrlConfig
 from kstrl.events import EventBus, IterationCompleted, JsonlSink, read_events
 from kstrl.factory import _run_component, _setup_worktree
 from kstrl.loop import COMPLETION_MARKER, run_loop
+from kstrl.stack import stack_toml
 from kstrl.timeout import TimeoutConfig
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
-from tests.helpers.executables import put_on_path
-from tests.helpers.stack_confirmation import in_process_stack
+from tests.helpers.stack_confirmation import confirm_stack, in_process_stack, write_stack
 from tests.spine_utils import init_kstrl_repo
 
 #: Appends one line to lint_runs.txt every time the gate runs, then
@@ -39,7 +39,9 @@ _LINT = "echo ran >> lint_runs.txt; test -f fixed.txt"
 
 _HEADER = "=== LAST ITERATION MEASUREMENT ==="
 _FOOTER = "=== END LAST ITERATION MEASUREMENT ==="
-_LINT_FAILURE = "- linter: FAIL - Linter failed (exit code 1)"
+#: #696: the row is "stack:<name>", and the message is the exit status
+#: only (decision 6) - no more per-check-type text ("Linter failed").
+_LINT_FAILURE = f"- stack:linter: FAIL - `{_LINT}` exited 1"
 
 _ENV = (
     "KSTRL_VERIFY_FAST_ITERATION_CHECKS",
@@ -95,12 +97,26 @@ class _ScriptedAgent:
         yield "working"
 
 
-def _project(root: Path, verify_toml: str, *, iterations: int) -> tuple[KstrlConfig, VerifyConfig]:
+def _project(
+    root: Path,
+    verify_toml: str,
+    *,
+    checks: Mapping[str, str] | None = None,
+    iterations: int,
+) -> tuple[KstrlConfig, VerifyConfig]:
+    """``checks`` is written as the (confirmed) ``[stack]``, never a
+    retired ``[verify]`` command key (#696); ``verify_toml`` is the rest
+    of ``[verify]`` (``fast_iteration_checks``, ``subprocess_timeout``)."""
     kstrl_dir = root / "scripts" / "kstrl"
     kstrl_dir.mkdir(parents=True)
     (kstrl_dir / "prompt.md").write_text("STORY-PROMPT-BODY", encoding="utf-8")
     (kstrl_dir / "prd.json").write_text('{"branchName": "t", "userStories": []}', encoding="utf-8")
-    (root / "kstrl.toml").write_text(f"[verify]\n{verify_toml}", encoding="utf-8")
+    if checks is not None:
+        write_stack(root, checks)
+        confirm_stack(root)
+    toml_path = root / "kstrl.toml"
+    existing = toml_path.read_text(encoding="utf-8") if toml_path.exists() else ""
+    toml_path.write_text(f"{existing}\n[verify]\n{verify_toml}", encoding="utf-8")
     config = KstrlConfig(
         max_iterations=iterations,
         prompt_file=kstrl_dir / "prompt.md",
@@ -150,13 +166,15 @@ def _lint_runs(root: Path) -> int:
     return len(path.read_text(encoding="utf-8").splitlines()) if path.exists() else 0
 
 
-_ON = f'lint_command = "{_LINT}"\nfast_iteration_checks = ["linter"]\n'
+#: #696: the check moves to [stack]; [verify] now carries only the gate list.
+_LINTER = {"linter": _LINT}
+_ON = 'fast_iteration_checks = ["linter"]\n'
 
 
 def test_the_next_prompt_carries_the_failing_gate_and_is_replaced_not_accumulated(
     tmp_path: Path,
 ) -> None:
-    config, verify = _project(tmp_path, _ON, iterations=3)
+    config, verify = _project(tmp_path, _ON, checks=_LINTER, iterations=3)
     agent = _ScriptedAgent(fix_on=frozenset({2}))
 
     readings = _run(tmp_path, config, verify, agent)
@@ -170,11 +188,11 @@ def test_the_next_prompt_carries_the_failing_gate_and_is_replaced_not_accumulate
     # entirely: replaced, never accumulated.
     assert third == first
     assert _lint_runs(tmp_path) == 3
-    assert readings == [["linter"], [], []]
+    assert readings == [["stack:linter"], [], []]
 
 
 def test_the_block_sits_between_the_retry_context_and_the_body(tmp_path: Path) -> None:
-    config, verify = _project(tmp_path, _ON, iterations=2)
+    config, verify = _project(tmp_path, _ON, checks=_LINTER, iterations=2)
     agent = _ScriptedAgent()
 
     _run(tmp_path, config, verify, agent, context_prefix="RETRY-CONTEXT")
@@ -186,7 +204,7 @@ def test_the_block_sits_between_the_retry_context_and_the_body(tmp_path: Path) -
 
 
 def test_off_by_default_runs_nothing_and_changes_no_prompt(tmp_path: Path) -> None:
-    config, verify = _project(tmp_path, f'lint_command = "{_LINT}"\n', iterations=3)
+    config, verify = _project(tmp_path, "", checks=_LINTER, iterations=3)
     agent = _ScriptedAgent()
 
     readings = _run(tmp_path, config, verify, agent)
@@ -198,7 +216,7 @@ def test_off_by_default_runs_nothing_and_changes_no_prompt(tmp_path: Path) -> No
 
 
 def test_a_completed_iteration_is_not_measured(tmp_path: Path) -> None:
-    config, verify = _project(tmp_path, _ON, iterations=3)
+    config, verify = _project(tmp_path, _ON, checks=_LINTER, iterations=3)
     agent = _ScriptedAgent(complete_on=frozenset({1}))
 
     readings = _run(tmp_path, config, verify, agent)
@@ -209,7 +227,7 @@ def test_a_completed_iteration_is_not_measured(tmp_path: Path) -> None:
 
 
 def test_a_killed_iteration_is_not_measured(tmp_path: Path) -> None:
-    config, verify = _project(tmp_path, _ON, iterations=2)
+    config, verify = _project(tmp_path, _ON, checks=_LINTER, iterations=2)
     agent = _ScriptedAgent(time_out_on=frozenset({1}))
 
     readings = _run(tmp_path, config, verify, agent)
@@ -217,7 +235,7 @@ def test_a_killed_iteration_is_not_measured(tmp_path: Path) -> None:
     first, second = agent.prompts
     assert second == first
     assert _lint_runs(tmp_path) == 1
-    assert readings == [[], ["linter"]]
+    assert readings == [[], ["stack:linter"]]
 
 
 def test_a_gate_that_overruns_the_verify_limit_is_cut_off_and_reported(
@@ -229,7 +247,8 @@ def test_a_gate_that_overruns_the_verify_limit_is_cut_off_and_reported(
     the gate function makes this take 30 s per iteration and fail."""
     config, verify = _project(
         tmp_path,
-        'lint_command = "sleep 30"\nsubprocess_timeout = 1.0\nfast_iteration_checks = ["linter"]\n',
+        'subprocess_timeout = 1.0\nfast_iteration_checks = ["linter"]\n',
+        checks={"linter": "sleep 30"},
         iterations=2,
     )
     agent = _ScriptedAgent()
@@ -239,27 +258,20 @@ def test_a_gate_that_overruns_the_verify_limit_is_cut_off_and_reported(
     elapsed = time.monotonic() - started
 
     assert elapsed < 20, f"the loop took {elapsed:.1f}s; the 1 s gate limit was not applied"
-    assert f"{_HEADER}\n- linter: FAIL - Linter timed out after 1.0s\n{_FOOTER}" in agent.prompts[1]
-    assert readings == [["linter"], ["linter"]]
+    assert (
+        f"{_HEADER}\n- stack:linter: FAIL - `sleep 30` timed out after 1.0s\n{_FOOTER}"
+        in agent.prompts[1]
+    )
+    assert readings == [["stack:linter"], ["stack:linter"]]
 
 
-def test_a_python_default_between_iterations_on_a_tree_with_no_python_is_not_run(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """#621: with ``lint_command`` unset and no pyproject.toml or setup.py,
-    the fast linter gate fails without starting ``uv`` and the next prompt
-    says why. A ``uv`` that records its arguments and exits 0 is first on
-    PATH, so running the default would have passed the gate."""
-    log = tmp_path / "uv.log"
-    put_on_path(tmp_path, monkeypatch, "uv", f'#!/bin/sh\necho "$*" >> "{log}"\nexit 0\n')
-    config, verify = _project(tmp_path, 'fast_iteration_checks = ["linter"]\n', iterations=2)
-    agent = _ScriptedAgent()
-
-    readings = _run(tmp_path, config, verify, agent)
-
-    assert not log.exists(), log.read_text(encoding="utf-8")
-    assert readings == [["linter"], ["linter"]]
-    assert "- linter: FAIL - Not run: `uv run ruff check .`" in agent.prompts[1]
+# #696 flag day: test_a_python_default_between_iterations_on_a_tree_with_no_
+# python_is_not_run is deleted. Its subject was the Python-default command
+# resolution ("Not run: `uv run ruff check .`" when no lint_command was set
+# and no pyproject.toml existed) - every default command and the toolchain
+# detection that chose one are retired (kstrl/toolchains.py deviation 1); a
+# check now runs only the exact command an operator's [stack] names, never
+# a command kstrl invented, so there is no default left to not-run.
 
 
 def test_the_factory_worker_hands_the_reading_to_the_next_iteration(tmp_path: Path) -> None:
@@ -302,7 +314,7 @@ def test_the_factory_worker_hands_the_reading_to_the_next_iteration(tmp_path: Pa
         0.0,  # sleep_seconds
         max_iterations=2,
         verify_config=VerifyConfig(
-            project_stack=in_process_stack({"lint": "test -f fixed.txt"}),
+            project_stack=in_process_stack({"linter": "test -f fixed.txt"}),
             fast_iteration_checks=["linter"],
         ),
         run_id="test-run",
@@ -311,7 +323,9 @@ def test_the_factory_worker_hands_the_reading_to_the_next_iteration(tmp_path: Pa
     assert result.success is False
     first = (capture / "prompt-1.txt").read_text(encoding="utf-8")
     second = (capture / "prompt-2.txt").read_text(encoding="utf-8")
-    block = f"{_HEADER}\n{_LINT_FAILURE}\n{_FOOTER}\n\n"
+    # This component's check command differs from the module-level _LINT, so
+    # its own failure line, not the shared _LINT_FAILURE constant.
+    block = f"{_HEADER}\n- stack:linter: FAIL - `test -f fixed.txt` exited 1\n{_FOOTER}\n\n"
     assert _HEADER not in first
     assert block in second
     assert second.replace(block, "", 1) == first
@@ -322,13 +336,20 @@ def test_the_factory_worker_hands_the_reading_to_the_next_iteration(tmp_path: Pa
 # ---------------------------------------------------------------------------
 
 
-def _load(root: Path, verify_toml: str) -> VerifyConfig:
-    (root / "kstrl.toml").write_text(f"[verify]\n{verify_toml}", encoding="utf-8")
+def _load(root: Path, verify_toml: str, *, checks: Mapping[str, str] | None = None) -> VerifyConfig:
+    """``checks`` is an (unconfirmed) ``[stack]``: presence is enough here,
+    since ``fast_iteration_checks`` validates against its check NAMES
+    (#696), never against whether anyone confirmed it."""
+    stack_text = stack_toml(in_process_stack(checks)) if checks is not None else ""
+    (root / "kstrl.toml").write_text(f"{stack_text}\n[verify]\n{verify_toml}", encoding="utf-8")
     return VerifyConfig.load(root)
 
 
+_BOTH = {"typecheck": "true", "linter": "true"}
+
+
 def test_the_toml_list_is_loaded_in_order(tmp_path: Path) -> None:
-    loaded = _load(tmp_path, 'fast_iteration_checks = ["typecheck", "linter"]\n')
+    loaded = _load(tmp_path, 'fast_iteration_checks = ["typecheck", "linter"]\n', checks=_BOTH)
     assert loaded.fast_iteration_checks == ["typecheck", "linter"]
 
 
@@ -354,12 +375,20 @@ def test_env_overrides_toml_and_empty_env_turns_it_off(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("KSTRL_VERIFY_FAST_ITERATION_CHECKS", "typecheck, linter")
-    assert _load(tmp_path, 'fast_iteration_checks = ["linter"]\n').fast_iteration_checks == [
+    assert _load(
+        tmp_path, 'fast_iteration_checks = ["linter"]\n', checks=_BOTH
+    ).fast_iteration_checks == [
         "typecheck",
         "linter",
     ]
     monkeypatch.setenv("KSTRL_VERIFY_FAST_ITERATION_CHECKS", "")
-    assert _load(tmp_path, 'fast_iteration_checks = ["linter"]\n').fast_iteration_checks == []
+    # The toml value is still validated on its own names even though the
+    # env overrides it to [] (kstrl/verify.py::VerifyConfig.load, unchanged
+    # by #696), so the [stack] naming "linter" is still needed here.
+    assert (
+        _load(tmp_path, 'fast_iteration_checks = ["linter"]\n', checks=_BOTH).fast_iteration_checks
+        == []
+    )
 
 
 def test_an_unknown_env_gate_is_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -371,12 +400,11 @@ def test_an_unknown_env_gate_is_refused(tmp_path: Path, monkeypatch: pytest.Monk
 def test_ks_check_refuses_a_bad_value_before_measuring(tmp_path: Path) -> None:
     """The command-entry preflight reads [verify] through the same loader,
     so a typo in the new key stops the command with exit 2 and names it."""
-    (tmp_path / "kstrl.toml").write_text(
-        "[verify]\n"
-        'test_command = "true"\n'
-        'typecheck_command = "true"\n'
-        'lint_command = "true"\n'
-        'fast_iteration_checks = ["mypy"]\n',
+    write_stack(tmp_path, {"tests": "true", "typecheck": "true", "linter": "true"})
+    confirm_stack(tmp_path)
+    toml_path = tmp_path / "kstrl.toml"
+    toml_path.write_text(
+        toml_path.read_text(encoding="utf-8") + '\n[verify]\nfast_iteration_checks = ["mypy"]\n',
         encoding="utf-8",
     )
     result = CliRunner().invoke(cli, ["check", "--root", str(tmp_path), "--json"])

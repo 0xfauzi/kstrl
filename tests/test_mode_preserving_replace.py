@@ -144,7 +144,8 @@ EXPECTED_UNDECIDED_REPLACE_CALLS: tuple[str, ...] = (
     "gateparse.py TOOL_PARSERS[name]",
     "inbox.py datetime.now(UTC).replace",
     "inbox.py parsed.replace",
-    "init_cmd.py text.replace",
+    # #696: init_cmd.kstrl_toml_for, which seeded a detected toolchain's
+    # commands into the scaffolded [verify], is gone with [verify] itself.
     "knowledge.py raw_output[:200].replace",
     "licensing.py low.replace",
     "observability.py datetime.strptime(ts, '%Y-%m-%dT%H:%M:%SZ').replace",

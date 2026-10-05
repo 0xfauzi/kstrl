@@ -93,13 +93,17 @@ def test_a_red_base_whose_sha_is_accepted_proceeds_and_records_it(
 
     assert HEADLINE not in run.out, run.out
     assert run.calls == 1, run.out
-    assert ACCEPTED in run.out and "test_broken" in run.out, run.out
+    # #696 decision 6: Phase 1 reads exit status only, so the accepted
+    # line names the check and its exit code, never a failing test.
+    assert ACCEPTED in run.out and "stack:tests fails on main" in run.out, run.out
     (record,) = _records(root)
     assert record["refused"] is False, record
     assert record["reasons"] == [], record
     assert record["baseSha"] == sha
     assert record["acceptRedBase"] == value
-    assert len(record["accepted"]) == 1 and "test_broken" in record["accepted"][0], record
+    assert len(record["accepted"]) == 1 and "stack:tests fails on main" in record["accepted"][0], (
+        record
+    )
 
 
 def _not_a_prefix(sha: str) -> str:
@@ -163,7 +167,7 @@ def test_an_acceptance_with_no_verify_is_refused(tmp_path: Path) -> None:
     root = _repo(tmp_path, {"tests/test_base.py": GREEN})
     sha = _git(root, "rev-parse", "main").strip()
 
-    run = _factory(tmp_path, root, "--no-verify", FLAG, sha[:12], gates={})
+    run = _factory(tmp_path, root, "--no-verify", FLAG, sha[:12])
 
     assert run.code == 2, run.out
     assert f"{FLAG} {sha[:12]} does not name the measured base" in run.out, run.out

@@ -43,6 +43,7 @@ from kstrl.verify import VerifyConfig
 # import. write_manifest is not imported: invoke_factory writes its own.
 from tests.helpers.factorycli import capture_run_factory
 from tests.helpers.factorycli import invoke_factory as _invoke_factory
+from tests.helpers.stack_confirmation import confirm_stack, write_stack
 
 # ---------------------------------------------------------------------------
 # Harness
@@ -55,9 +56,16 @@ def captured(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     return capture_run_factory(monkeypatch)
 
 
-def _invoke_run(tmp_path: Path, *extra_args: str) -> Any:
+def _invoke_run(tmp_path: Path, *extra_args: str, no_verify: bool = True) -> Any:
     # R2.4: `ks run` preflights prd.json before run_factory, so the
     # round-trip needs a schema-valid PRD in place.
+    # #696 flag day: almost no caller writes a [stack], and this harness
+    # is about config resolution, never verification, so --no-verify
+    # skips the stack checkpoint that would otherwise refuse before
+    # run_factory (mocked by `captured`) is ever reached. The exception
+    # is a caller whose SUBJECT is VerifyConfig: --no-verify also sets
+    # ``factory_config.verify_config`` to None, so it passes
+    # ``no_verify=False`` and confirms its own [stack] first.
     prd_path = tmp_path / "scripts" / "kstrl" / "prd.json"
     prd_path.parent.mkdir(parents=True, exist_ok=True)
     if not prd_path.exists():
@@ -74,6 +82,7 @@ def _invoke_run(tmp_path: Path, *extra_args: str) -> Any:
             "true",
             "--ui",
             "plain",
+            *(("--no-verify",) if no_verify else ()),
             *extra_args,
         ],
     )
@@ -104,17 +113,20 @@ class TestFactoryCommandTomlRoundTrip:
         assert fc.pause_before_pr_merge is True
 
     def test_verify_section(self, tmp_path: Path, captured: dict[str, Any]) -> None:
+        # #696 flag day: [verify] test_command is retired (verification
+        # commands come only from a confirmed [stack]); mutation_threshold
+        # and require_self_critique are ordinary [verify] keys, unaffected.
+        # A confirmed [stack] (not --no-verify) gets this one past the
+        # checkpoint, since --no-verify also nulls verify_config.
         (tmp_path / "kstrl.toml").write_text(
-            "[verify]\n"
-            'test_command = "echo verify-toml"\n'
-            "mutation_threshold = 75.0\n"
-            "require_self_critique = true\n"
+            "[verify]\nmutation_threshold = 75.0\nrequire_self_critique = true\n"
         )
-        result = _invoke_factory(tmp_path)
+        write_stack(tmp_path)
+        confirm_stack(tmp_path)
+        result = _invoke_factory(tmp_path, no_verify=False)
         assert result.exit_code == 0, result.output
         vc = captured["factory_config"].verify_config
         assert vc is not None
-        assert vc.test_command == "echo verify-toml"
         assert vc.mutation_threshold == 75.0
         assert vc.require_self_critique is True
 
@@ -131,15 +143,15 @@ class TestFactoryCommandTomlRoundTrip:
         assert sc.timeout_seconds == 123.0
 
     def test_contract_section(self, tmp_path: Path, captured: dict[str, Any]) -> None:
-        (tmp_path / "kstrl.toml").write_text(
-            '[contract]\nmode = "final"\ntest_command = "echo contract-toml"\ntimeout = 44.0\n'
-        )
+        # #696 flag day: [contract] test_command is retired (Phase 3 runs
+        # every check of the confirmed [stack]); mode and timeout are
+        # ordinary [contract] keys, unaffected.
+        (tmp_path / "kstrl.toml").write_text('[contract]\nmode = "final"\ntimeout = 44.0\n')
         result = _invoke_factory(tmp_path)
         assert result.exit_code == 0, result.output
         cc = captured["factory_config"].contract_config
         assert cc is not None
         assert cc.mode == "final"
-        assert cc.test_command == "echo contract-toml"
         assert cc.timeout == 44.0
 
     def test_contract_toml_skip_disables_phase(
@@ -191,12 +203,19 @@ class TestFactoryCommandTomlRoundTrip:
 
 class TestRunCommandTomlRoundTrip:
     def test_verify_section(self, tmp_path: Path, captured: dict[str, Any]) -> None:
-        (tmp_path / "kstrl.toml").write_text('[verify]\ntest_command = "echo run-verify"\n')
-        result = _invoke_run(tmp_path)
+        # #696 flag day: [verify] test_command is retired (verification
+        # commands come only from a confirmed [stack]); mutation_threshold
+        # is an ordinary [verify] key, unaffected. A confirmed [stack]
+        # (not --no-verify) gets this one past the checkpoint, since
+        # --no-verify also nulls verify_config.
+        (tmp_path / "kstrl.toml").write_text("[verify]\nmutation_threshold = 61.0\n")
+        write_stack(tmp_path)
+        confirm_stack(tmp_path)
+        result = _invoke_run(tmp_path, no_verify=False)
         assert result.exit_code == 0, result.output
         vc = captured["factory_config"].verify_config
         assert vc is not None
-        assert vc.test_command == "echo run-verify"
+        assert vc.mutation_threshold == 61.0
 
     def test_security_section(self, tmp_path: Path, captured: dict[str, Any]) -> None:
         (tmp_path / "kstrl.toml").write_text('[security]\nmode = "advisory"\n')

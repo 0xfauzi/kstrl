@@ -183,9 +183,14 @@ ENROLLED_BUT_INVISIBLE = {
     # They are never arguments, so no call site carries them.
     "verification": "returned by _classify_check, never passed to a call",
     "unknown": "returned by _classify_check, never passed to a call",
-    # #696: the head of f"stack:{name}" in verify.check_stack_command,
-    # whose full name the walk cannot read (four BLIND_SITES rows).
-    "stack": "the head of a runtime-composed [stack] row name",
+    # #696 flag day: the three fixed per-tool check names retired with
+    # the [verify]/[contract] command keys. Nothing in kstrl/ spells them
+    # any more - a [stack] check's row name is composed at runtime from
+    # the operator's own name - so they stay enrolled (pre-#696 journal
+    # history still carries them) but invisible to this walk.
+    "linter": "a retired pre-#696 fixed check name; no call site spells it",
+    "typecheck": "a retired pre-#696 fixed check name; no call site spells it",
+    "test_suite": "a retired pre-#696 fixed check name; no call site spells it",
 }
 
 #: The whole of ``_CATEGORY_BY_CHECK``, pinned row by row rather than in
@@ -499,7 +504,11 @@ class TestEveryCheckNameIsEnrolled:
         group below is one resolution path, and each was broken at some
         point in this file's short history."""
         names = set(check_names())
-        assert {"test_suite", "typecheck", "linter"} <= names, "module-constant resolution"
+        # #696: test_suite/typecheck/linter were the fixed check names
+        # this path used to exercise; NO_STACK_CHECK ("stack", the row
+        # Phase 1 files when no [stack] names its checks) is the module
+        # constant that demonstrates the same resolution path today.
+        assert {"stack"} <= names, "module-constant resolution"
         assert {"diff_scope", "scope_unreadable", "prd_stories"} <= names, "literal names"
         assert {"pr", "engineer", "token_budget"} <= names, "signature prefixes"
         # #315 round 2: failures recorded with no signatures= are filed

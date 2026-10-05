@@ -48,7 +48,6 @@ from kstrl.runstate import RunState
 from kstrl.statedir import plan_prd_path
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
-from kstrl.worktree_setup import WorktreeSetup
 from tests.helpers.stack_confirmation import in_process_stack
 
 COMP = "comp-a"
@@ -256,7 +255,11 @@ class TestTheWholeSubmitTupleIsBound:
             "codebase_scan_config_dict": None,
             # #624: the pool branch runs with worktrees, where the engineer's
             # tree gets the (empty) setup; inline runs in the root checkout.
-            "setup": WorktreeSetup() if max_parallel > 1 else None,
+            # #700: a confirmed [stack] means the pool branch's setup now
+            # carries a real proven rung, whose scratch path is a fresh
+            # tmp directory every run - echoed back like the other
+            # run-scoped values below and checked structurally instead.
+            "setup": bound["setup"] if max_parallel > 1 else None,
             "component_deps": None,
             "knowledge_prefix": "",
             "decisions_prefix": "",
@@ -270,8 +273,6 @@ class TestTheWholeSubmitTupleIsBound:
             "interactive": False,
             "scope": bound["scope"],
             "breaker_iterations": 3,
-            "breaker_test_command": "true",
-            "breaker_test_timeout": 300.0,
             "sandbox_enabled": False,
             "sandbox_allow_network": False,
             "agent_budget_usd": None,
@@ -281,6 +282,11 @@ class TestTheWholeSubmitTupleIsBound:
             "token_budget": bound["token_budget"],
         }
         assert bound == expected
+
+        if max_parallel > 1:
+            setup = bound["setup"]
+            assert (setup.command, setup.timeout, setup.env, setup.refusal) == ("", 0.0, (), "")
+            assert setup.rung is not None and setup.rung.zone == "setup"
 
         assert bound["scope"].__class__.__name__ == "ComponentScope"
         assert bound["token_budget"].__class__.__name__ == "LoopBudget"
@@ -435,5 +441,5 @@ class TestTheWholeSubmitTupleIsBound:
         assert kwargs["base_branch"] == "main"
         assert kwargs["redirect_output"] is False
         assert kwargs["stop_check"] is None
-        assert kwargs["verify_config"].test_command == "true"
+        assert dict(kwargs["verify_config"].project_stack.checks)["tests"] == "true"
         assert callable(kwargs["live_line"])

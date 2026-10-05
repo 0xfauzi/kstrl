@@ -98,6 +98,19 @@ def _engineer(branch_greet: str, expect: str) -> str:
     )
 
 
+def _skip_on_base_gates(command: str) -> str:
+    """``command``, except trivially true on the one throwaway worktree
+    Phase 1's base-gates preflight runs it on (``.kstrl/contract/base-
+    gates-*``, #654+#696): that worktree is cut from the base commit, so
+    it never has the branch's own commits a check or setup written for
+    the component worktree expects, and would otherwise refuse the whole
+    run before any engineer call. Same pattern as
+    tests/test_spine_crash_recovery.py's worktree-path case."""
+    if not command:
+        return command
+    return f'case "$(pwd)" in */.kstrl/contract/base-gates-*) true;; *) {command};; esac'
+
+
 def _manifest(scaffold: str = "") -> Manifest:
     return Manifest(
         version="1",
@@ -136,6 +149,13 @@ def _run(
     Phase 3 unless ``contract_gate`` names another."""
     monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
     manifest = manifest or _manifest(scaffold)
+    # Phase 1's base-gates preflight (#654) now runs under the confirmed
+    # [stack] (#696), on the base commit, before any engineer call: these
+    # fixtures' check and setup commands are written for the component
+    # worktree, so the base-gates worktree needs its own pass-through.
+    base_gate = _skip_on_base_gates(gate)
+    base_tc = _skip_on_base_gates(typecheck_and_lint)
+    base_setup = _skip_on_base_gates(setup)
     factory_config = FactoryConfig(
         use_worktrees=True,
         create_prs=False,
@@ -146,13 +166,13 @@ def _run(
         integration_review=False,
         progress_log_path=root / ".kstrl" / "progress.jsonl",
         project_stack=in_process_stack(
-            {"tests": gate, "typecheck": typecheck_and_lint, "lint": typecheck_and_lint},
-            setup=setup,
+            {"tests": base_gate, "typecheck": base_tc, "lint": base_tc},
+            setup=base_setup,
         ),
         verify_config=VerifyConfig(
             project_stack=in_process_stack(
-                {"tests": gate, "typecheck": typecheck_and_lint, "lint": typecheck_and_lint},
-                setup=setup,
+                {"tests": base_gate, "typecheck": base_tc, "lint": base_tc},
+                setup=base_setup,
             ),
             check_diff_scope=False,
             check_bad_patterns=False,
@@ -322,7 +342,7 @@ def test_the_gate_does_not_use_the_root_checkouts_node_modules(
 
     assert result.failed == ["a"]
     assert (comp.failed_phase, comp.failed_check) == ("verify", "stack:tests")
-    log = next((root / ".kstrl" / "debug").glob("*/a/attempt-1/test_suite.log"))
+    log = next((root / ".kstrl" / "debug").glob("*/a/attempt-1/stack:tests.log"))
     assert "greet 2.0.0" in log.read_text(encoding="utf-8")
 
 
@@ -376,6 +396,10 @@ def test_a_hung_setup_is_killed_on_time(tmp_path: Path) -> None:
         root,
         {"tests": f"touch {gate_ran}"},
         setup=f"sleep 300 >/dev/null 2>&1 & echo $! >> {pids}; wait",
+        # #700: the setup runs confined to the rung; it writes the pid
+        # file under tmp_path, outside the worktree, so that needs to be
+        # named writable (rule 12).
+        writable=(str(tmp_path),),
     )
     confirm_stack(root)
     env = {

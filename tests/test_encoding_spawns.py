@@ -48,8 +48,13 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     # #642: the leash's import, its `Popen` and the `Popen[bytes]` annotation.
     "agents/leash.py": 3,
     "agents/proc.py": 7,
-    "breaker.py": 4,
-    "contract.py": 5,
+    # #696: 3, the import, one subprocess.run and one TimeoutExpired clause;
+    # down from 4 when the retired [factory] worktree_setup_command path
+    # held a second TimeoutExpired clause of its own.
+    "breaker.py": 3,
+    # #696: 4, the import and three TimeoutExpired clauses; down from 5
+    # when a fourth clause served the retired [contract] test_command.
+    "contract.py": 4,
     "doctor.py": 5,
     # 14: #624 moved the scaffold's `subprocess.run` out to `worktree_setup.py`.
     "factory.py": 14,
@@ -83,8 +88,11 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     "tui/screens/retry.py": 2,
     # 25: `_base_finding`'s `git show` (#414/#425); `git merge-base` moved to `git.py` in #435.
     # 26: #632, `run_scrubbed`'s `subprocess.PIPE` for a stdin it was given.
-    # 27: #696, `check_stack_command`'s `subprocess.TimeoutExpired`.
-    "verify.py": 27,
+    # 24: #696 flag day, measured rather than the +1 this row previously
+    # assumed: check_stack_command adds one TimeoutExpired clause, but
+    # retiring check_linter/check_test_suite/check_typecheck removes
+    # their three (one each), net -2 from 26.
+    "verify.py": 24,
     "worktree_setup.py": 2,  # #624: the import, and `TimeoutExpired` from `run_scrubbed`
     "worktree_sweep.py": 2,  # #461: the import, and `TimeoutExpired` from `run_scrubbed`
 }

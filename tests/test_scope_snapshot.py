@@ -120,6 +120,9 @@ def _run(
                 retry_delay=0,
                 review_mode="skip",
                 progress_log_path=root / "progress.jsonl",
+                project_stack=in_process_stack(
+                    {"tests": "true", "typecheck": "true", "lint": "true"}
+                ),
             ),
             base or _base_config(root),
             PlainUI(no_color=True, file=io.StringIO()),

@@ -31,11 +31,11 @@ from kstrl.init_wizard import (
     detect_context,
     plan_scaffold,
 )
-from kstrl.stack import stack_in_force
 from kstrl.tui import theme
 from kstrl.tui.widgets.context_bar import ContextBar
 from kstrl.tui.widgets.form import FormErrors, FormField
 from kstrl.ui.plain import PlainUI
+from kstrl.verify import VerifyConfig
 
 if TYPE_CHECKING:
     pass
@@ -83,7 +83,7 @@ def _detected_text(root: Path) -> Text:
         ("detected", detect_context(root).get("language", "unknown")),
     ]
     try:
-        stack = stack_in_force(root)
+        stack = VerifyConfig.load(root).project_stack
     except SURFACE_REJECTIONS as exc:
         raise_if_defect(exc)
         rows.append(("stack", "kstrl.toml is unreadable; cannot show the checks"))

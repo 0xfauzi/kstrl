@@ -102,13 +102,6 @@ def _repo(tmp_path: Path, files: dict[str, str]) -> Path:
     root.mkdir(parents=True)
     gitrepo.git_in(root, "init", "-q", "-b", "main")
     gitrepo.set_identity(root)
-    (root / "kstrl.toml").write_text(
-        "[verify]\n"
-        f"test_command = {json.dumps(_OK_COMMAND)}\n"
-        f"typecheck_command = {json.dumps(_OK_COMMAND)}\n"
-        f"lint_command = {json.dumps(_OK_COMMAND)}\n",
-        encoding="utf-8",
-    )
     for rel, text in files.items():
         (root / rel).write_text(text, encoding="utf-8")
     write_executable(root / "sum", SUM)

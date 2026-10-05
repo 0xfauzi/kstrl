@@ -120,6 +120,7 @@ class TestRunFactoryDAGValidation:
             use_worktrees=False,
             create_prs=False,
             review_mode="skip",
+            project_stack=in_process_stack(),
         )
         base = _make_base_config(root)
         ui = PlainUI(no_color=True)
@@ -213,6 +214,7 @@ class TestRunFactoryExecution:
             max_retries=0,
             retry_delay=0,
             review_mode="skip",
+            project_stack=in_process_stack(),
         )
         base = _make_base_config(root)
         ui = PlainUI(no_color=True)
@@ -577,12 +579,16 @@ class TestEvolutionRecording:
         # R6.4: journal format is versioned.
         assert entry["schema_version"] == 3
         # R6.1: the structured signature from the failing check, not a
-        # slug of "Mechanical verification failed".
+        # slug of "Mechanical verification failed". #696: the row is
+        # "stack:tests" (the stack's "tests" check, whose command is
+        # "false" here), and the signature is a slug of its generic
+        # exit-status message (decision 6: no parsed failure detail),
+        # not the old per-language "tests failed" phrasing.
         assert entry["failure_signatures"] == [
-            "test_suite:tests-failed-exit-code",
+            "stack:tests:false-exited",
         ]
-        assert entry["check_name"] == "test_suite"
-        assert entry["error_signature"] == "tests-failed-exit-code"
+        assert entry["check_name"] == "stack:tests"
+        assert entry["error_signature"] == "false-exited"
         # R6.4: duration is the attempt wall clock, not 0.0. The mocked
         # engineer returns instantly, so any nonzero value proves the
         # stamp comes from the factory's own attempt clock.
@@ -782,6 +788,7 @@ class TestRunFactorySchedulesNothing:
             create_prs=False,
             max_parallel=1,
             review_mode="skip",
+            project_stack=in_process_stack(),
         )
 
     def _run(self, root: Path, manifest: Manifest) -> tuple[Any, str]:
@@ -901,6 +908,7 @@ class TestRunFactorySchedulesNothing:
             max_retries=2,
             retry_delay=0,
             review_mode="skip",
+            project_stack=in_process_stack(),
         )
 
         buf = io.StringIO()

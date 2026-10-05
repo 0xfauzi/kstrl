@@ -72,11 +72,13 @@ WHY THE POPULATION IS ZERO, AND WHY THAT MATTERS
 their AST walks at offender count zero, and both say why: a guard that
 ships with a suppression list is a guard that rots. This one keys on the
 CALL rather than on the handler, so its population is every tomllib parse
-in the package - three sites, all compliant as of this change:
+in the package - two sites as of #696, both compliant:
 
     kstrl/config_toml.py  except Exception  (#318 round 3)
-    kstrl/toolchains.py   except Exception  (#318 round 3, was ValueError; verify.py until #635)
     kstrl/feedforward.py  except Exception  (x2, pre-existing; x1, #626)
+
+`kstrl/toolchains.py`'s one parse, python_typecheck_default (moved from
+verify.py by #635), went with the command half #696 retired.
 
 WHAT THIS GUARD SEES, STATED HONESTLY
 -------------------------------------
@@ -355,19 +357,19 @@ EXPECTED_TOMLLIB_SPELLINGS: dict[str, int] = {
     "config_toml.py": 3,
     # the import and three parses (#626 added `_read_toml`)
     "feedforward.py": 4,
-    # a function-local import and one parse (python_typecheck_default,
-    # moved from verify.py by #635)
-    "toolchains.py": 2,
+    # #696: python_typecheck_default (moved from verify.py by #635) is
+    # gone with the rest of toolchains.py's command half; kstrl chooses
+    # no per-tool command for any tree now, so nothing there parses TOML.
 }
 
 #: Every parse layer 2 resolves, keyed by module and origin. Four calls
-#: in three modules, and the same three the docstring names.
+#: in two modules now (#696 retired toolchains.py's), down from the
+#: three the docstring used to name.
 EXPECTED_TOML_PARSES: tuple[str, ...] = (
     "config_toml.py: tomllib.loads",
     "feedforward.py: tomllib.loads",
     "feedforward.py: tomllib.loads",
     "feedforward.py: tomllib.loads",
-    "toolchains.py: tomllib.loads",
 )
 
 
@@ -619,10 +621,15 @@ class TestTheWalkSeesWhatItClaimsTo:
     def test_the_package_scan_still_reaches_real_modules(self) -> None:
         """And the walk is pointed at code that exists. If kstrl stops
         parsing TOML in these modules the rule below has become a no-op
-        and should be deleted rather than left as decoration."""
+        and should be deleted rather than left as decoration.
+
+        toolchains.py dropped out of this set under #696: its one parse,
+        python_typecheck_default, went with the command half the flag
+        day retired.
+        """
         modules = {source.name for source in package_sources() if _scan_file(source).parses}
 
-        assert {"config_toml.py", "toolchains.py", "feedforward.py"} <= modules, modules
+        assert {"config_toml.py", "feedforward.py"} <= modules, modules
 
 
 class TestNoTomlReaderEnumeratesItsExceptions:

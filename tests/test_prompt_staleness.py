@@ -422,6 +422,16 @@ _UNLEDGERED_SCAFFOLDS: dict[tuple[str, str], str] = {
     # #199 ledgered codebase_map.md (see SCAFFOLDED_TEMPLATES and
     # _RECORDED_HISTORY above); this exemption is removed, reversing the
     # #303 deferral the reason above used to cite.
+    ("kstrl.toml", "DEFAULT_KSTRL_TOML"): (
+        "Newly visible to this walk under #696: run_init used to scaffold "
+        "it through kstrl_toml_for(root), a wrapper the walk could not "
+        "resolve, and that wrapper is retired along with [verify]. Not "
+        "ledgered with its history: #286's failure mode - a stale "
+        "unenrolled body diverging silently - does not apply here, "
+        "because a copy with the retired [verify]/[factory]/[breaker] "
+        "keys this flag day removed is caught loudly and specifically by "
+        "config_preflight's RETIRED_KEYS refusal, not silently."
+    ),
 }
 
 

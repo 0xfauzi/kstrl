@@ -41,6 +41,7 @@ from kstrl.workqueue import (
     Queue,
     QueueConfig,
 )
+from tests.helpers.stack_confirmation import confirm_stack, write_stack
 
 REPO = "0xfauzi/claude-skills"
 
@@ -708,6 +709,13 @@ class TestTransactionalAdmission:
 class TestServeWriteback:
     """serve must report outcomes without letting the front-end break it."""
 
+    @pytest.fixture(autouse=True)
+    def _confirmed_stack(self, tmp_path: Path) -> None:
+        # #696 flag day: serve_cycle refuses before it claims anything with
+        # no confirmed [stack], unrelated to what this class is for.
+        write_stack(tmp_path)
+        confirm_stack(tmp_path)
+
     def test_a_writeback_exception_cannot_break_the_cycle(
         self,
         tmp_path: Path,
@@ -747,6 +755,13 @@ class TestServeWriteback:
 
 class TestServeDrivesRemoteLabels:
     """#187 F8/F9/F10: labels follow real transitions, on every path."""
+
+    @pytest.fixture(autouse=True)
+    def _confirmed_stack(self, tmp_path: Path) -> None:
+        # #696 flag day: serve_cycle refuses before it claims anything with
+        # no confirmed [stack], unrelated to what this class is for.
+        write_stack(tmp_path)
+        confirm_stack(tmp_path)
 
     @staticmethod
     def _remote_item(root: Path, **kwargs: object) -> object:
@@ -1029,6 +1044,11 @@ class TestServePollsIntake:
     @staticmethod
     def _enable(root: Path) -> None:
         (root / "kstrl.toml").write_text(f'[intake_github]\nenabled = true\nrepo = "{REPO}"\n')
+        # #696 flag day: serve_cycle refuses before it claims anything with
+        # no confirmed [stack], which is unrelated to what this class is
+        # for (intake labels, writeback, the synced-then-run property).
+        write_stack(root)
+        confirm_stack(root)
 
     def _cycle(self, root: Path, **kwargs: object):  # type: ignore[no-untyped-def]
         from kstrl.serve import RunSpend, serve_cycle

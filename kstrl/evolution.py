@@ -1118,8 +1118,20 @@ def signature_for_error(check_name: str, error: str) -> str:
 
 
 def split_signature(signature: str) -> tuple[str, str]:
-    """Split "check:code" into (check_name, code)."""
-    check, sep, code = signature.partition(":")
+    """Split "check:code" into (check_name, code).
+
+    Splits on the LAST colon, not the first (#696 flag day): a check name
+    is now itself ``stack:<name>`` and carries a colon of its own, while a
+    parsed linter code and :func:`signature_slug`'s output never do (the
+    slug regex keeps only ``[a-z0-9-]``). The first colon would cut
+    ``stack:lint:some-slug`` into ``("stack", "lint:some-slug")``, a check
+    name ``_CATEGORY_BY_CHECK`` and the baseline's measured-check match
+    cannot recognise, silently moving every stack-check signature from
+    ``fixed`` to ``unmeasured``. Measured: ``tests/test_check_baseline_cli.
+    py::test_compare_reports_a_fixed_signature_and_exits_0`` red on
+    ``partition``, green on ``rpartition``.
+    """
+    check, sep, code = signature.rpartition(":")
     if not sep:
         return "unknown", signature
     return check or "unknown", code or "failed"

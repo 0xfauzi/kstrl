@@ -3,12 +3,10 @@
 Phase 1 fails a component on any non-zero exit of the whole suite, so on a
 base whose suite is already red every component failed Phase 1 after its
 engineer was paid, on a test the engineer never touched. The factory now
-runs Phase 1's three command gates on the base commit, in a throwaway
-worktree, before the first engineer call, and refuses the run with exit 2
-when a gate measurably fails there. A gate that ran and measured nothing
-(pytest collecting no tests, a timeout) is warned about and recorded, never
-refused, because Phase 1 still fails such a row on every component. Every
-reading is written to ``.kstrl/runs/<run_id>/base-gates.json``.
+runs Phase 1's command gates on the base commit, in a throwaway worktree,
+before the first engineer call, and refuses the run with exit 2 when a
+gate measurably fails there. Every reading is written to
+``.kstrl/runs/<run_id>/base-gates.json``.
 
 End to end: a real git repository under ``tmp_path``, the real ``ks init``,
 and the real ``ks factory --manifest`` in its own process group under a
@@ -21,14 +19,43 @@ The runs that proceed reach the plan gate with ``[autonomy]`` off, which
 Slice 2 drives the real ``ks doctor --measure`` on the same repositories:
 it takes the same reading without starting a run, and its verdict is
 not-ready exactly where the factory refuses.
+
+#696 flag day: Phase 1's gates are the ``[stack]``'s checks, confirmed by
+``write_stack``/``confirm_stack``, not CLI flags or env-var overrides (both
+are gone: the four ``--*-command`` flags are deleted from ``ks factory``,
+and ``KSTRL_VERIFY_*_CMD``/``KSTRL_FACTORY_WORKTREE_SETUP_COMMAND`` are
+refused as retired). Row names move from ``test_suite``/``typecheck``/
+``linter`` to ``stack:tests``/``stack:typecheck``/``stack:lint``. #696
+decision 4 also removes the old carve-out for a check that "measured
+nothing": every check that did not pass now refuses the base whether or
+not it measured anything, so pytest's exit 5 (no tests collected) and a
+timeout are both refusals now, not warnings (decision 6: Phase 1 reads
+exit status only, no per-tool parsing of what a check's output means).
+
+#700 slice 2: under a confirmed ``[stack]``, ``ks factory`` proves the
+isolation rung before it measures the base, so every test here that calls
+``_factory()`` on a repository with a ``[stack]`` needs ``@needs_nono``
+(macOS + nono 0.79, see the local marker below) and skips elsewhere.
+``ks doctor --measure`` proves no rung (``VerifyConfig.load`` leaves
+``rung`` at its default None), so the doctor-only tests do not need it.
+
+The local ``needs_nono`` here is not imported from
+``tests.test_isolation_rung``: that module imports ``_repo``/
+``_doctor_json`` FROM this one, so importing back would be a cycle Python
+cannot resolve (the mark is defined after the import line on the far
+side). It is the same check, kept in sync by hand.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
+import shutil
 import subprocess
 import sys
+import tempfile
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -40,6 +67,7 @@ from kstrl.cli import cli
 from tests.helpers.executables import write_executable
 from tests.helpers.gitrepo import git_in, set_identity
 from tests.helpers.procs import kill_group
+from tests.helpers.stack_confirmation import confirm_stack, write_stack
 
 #: Real time for one `ks factory` run; a hang fails loudly instead of waiting.
 FUSE_SECONDS = 120.0
@@ -52,22 +80,49 @@ RED = "def test_ok():\n    assert True\n\n\ndef test_broken():\n    assert 1 == 
 #: The same file with the failure fixed.
 GREEN = "def test_ok():\n    assert True\n\n\ndef test_broken():\n    assert 1 == 1\n"
 
-#: The three gates, each a command that runs here without network or uv.
-GATES = {
-    "--test-command": f"{PY} -m pytest -q -p no:cacheprovider",
-    "--typecheck-command": "true",
-    "--lint-command": "true",
+#: The default [stack]: three checks named "tests"/"typecheck"/"lint", rows
+#: "stack:tests"/"stack:typecheck"/"stack:lint" (#696).
+CHECKS = {
+    "tests": f"{PY} -m pytest -q -p no:cacheprovider",
+    "typecheck": "true",
+    "lint": "true",
 }
 
 HEADLINE = "Refusing to run: the base branch fails a gate Phase 1 runs"
 
-#: The same three gates as environment variables, for `ks doctor`, which
-#: takes no gate flags and reads them through the same loader.
-GATE_ENV = {
-    "KSTRL_VERIFY_TEST_CMD": GATES["--test-command"],
-    "KSTRL_VERIFY_TYPECHECK_CMD": GATES["--typecheck-command"],
-    "KSTRL_VERIFY_LINT_CMD": GATES["--lint-command"],
-}
+#: Duplicated from tests/test_isolation_rung.py rather than imported: see
+#: the module docstring for why the import would cycle.
+_NONO = os.environ.get("KSTRL_NONO", "").strip() or shutil.which("nono") or ""
+
+
+def _nono_version(path: str) -> tuple[int, ...]:
+    if not path:
+        return ()
+    try:
+        with tempfile.TemporaryDirectory(prefix="kstrl-nono-version-") as scratch:
+            env = {**os.environ, "NONO_NO_UPDATE_CHECK": "1", "TMPDIR": f"{scratch}/"}
+            out = subprocess.run(
+                [path, "--version"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+                cwd=scratch,
+                env=env,
+            ).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return ()
+    found = re.search(r"(\d+)\.(\d+)\.(\d+)", out)
+    return tuple(int(part) for part in found.groups()) if found else ()
+
+
+_NONO_VERSION = _nono_version(_NONO)
+
+needs_nono = pytest.mark.skipif(
+    sys.platform != "darwin" or _NONO_VERSION < (0, 79, 0),
+    reason=f"needs macOS and nono 0.79 or later; found {_NONO or 'none'} "
+    f"{'.'.join(map(str, _NONO_VERSION)) or ''}; set KSTRL_NONO",
+)
 
 
 @dataclass(frozen=True)
@@ -95,9 +150,23 @@ def _git(root: Path, *args: str) -> str:
     ).stdout
 
 
-def _repo(tmp_path: Path, files: dict[str, str]) -> Path:
+def _repo(
+    tmp_path: Path,
+    files: dict[str, str],
+    *,
+    checks: Mapping[str, str] | None = CHECKS,
+    setup: str = "",
+    writable: tuple[str, ...] = (),
+) -> Path:
     """A repository on ``main`` holding ``files`` and one planned component,
-    after the real ``ks init``, everything committed."""
+    after the real ``ks init``, everything committed.
+
+    ``checks`` is written as the ``[stack]`` and confirmed (#696);
+    ``checks=None`` writes no ``[stack]`` at all, the ``--no-verify``
+    control. Always named ``tmp_path / "proj"``: a caller that must know
+    the path before this returns (to bake it into a shell command passed
+    as ``setup``) may rely on that.
+    """
     root = tmp_path / "proj"
     root.mkdir()
     git_in(root, "init", "-q", "-b", "main")
@@ -143,8 +212,12 @@ def _repo(tmp_path: Path, files: dict[str, str]) -> Path:
     (root / "scripts" / "kstrl" / "manifest.json").write_text(
         json.dumps(manifest), encoding="utf-8"
     )
+    if checks is not None:
+        write_stack(root, checks, setup=setup, writable=writable)
     git_in(root, "add", "-A")
     git_in(root, "commit", "-q", "-m", "seed")
+    if checks is not None:
+        confirm_stack(root)
     return root
 
 
@@ -158,7 +231,6 @@ def _factory(
     tmp_path: Path,
     root: Path,
     *extra: str,
-    gates: dict[str, str] | None = None,
     env: dict[str, str] | None = None,
 ) -> Run:
     """The real `ks factory --manifest` in its own process group, killed on
@@ -169,7 +241,6 @@ def _factory(
         f"#!/bin/sh\necho call >> '{calls}'\ncat >/dev/null\necho '<promise>COMPLETE</promise>'\n",
     )
     child_env = _child_env(env)
-    flags = [item for pair in (GATES if gates is None else gates).items() for item in pair]
     args = [
         *(PY, "-m", "kstrl", "factory"),
         *("--manifest", str(root / "scripts" / "kstrl" / "manifest.json")),
@@ -177,7 +248,6 @@ def _factory(
         *("--no-tui", "--yes", "--ui", "plain", "--no-color", "--no-prs"),
         *("--max-retries", "0", "--max-parallel", "1"),
         *("--review-mode", "skip", "--contract-check", "skip"),
-        *flags,
         *extra,
     ]
     child = subprocess.Popen(
@@ -212,6 +282,7 @@ def _row(record: dict[str, Any], name: str) -> dict[str, Any]:
     return row
 
 
+@needs_nono
 def test_a_red_base_is_refused_before_any_engineer_call(tmp_path: Path) -> None:
     """T1."""
     root = _repo(tmp_path, {"tests/test_base.py": RED})
@@ -220,7 +291,6 @@ def test_a_red_base_is_refused_before_any_engineer_call(tmp_path: Path) -> None:
 
     assert run.code == 2, run.out
     assert HEADLINE in run.out
-    assert "test_broken" in run.out
     assert run.calls == 0, run.out
     record = _record(root)
     assert record["refused"] is True
@@ -229,11 +299,14 @@ def test_a_red_base_is_refused_before_any_engineer_call(tmp_path: Path) -> None:
     # base gates must refuse after that record is written, never before it.
     (run_dir,) = [p.parent for p in (root / ".kstrl" / "runs").glob("*/base-gates.json")]
     assert (run_dir / "launch.json").is_file(), sorted(p.name for p in run_dir.iterdir())
-    row = _row(record, "test_suite")
+    row = _row(record, "stack:tests")
+    # #696 decision 6: Phase 1 reads exit status only, never output, so the
+    # record names no failing test any more; the message is the exit code.
     assert (row["passed"], row["measured"]) == (False, True)
-    assert any("test_broken" in name for name in row["failing"]), row
+    assert "exited 1" in row["message"], row
 
 
+@needs_nono
 def test_a_green_base_proceeds_to_the_engineer(tmp_path: Path) -> None:
     """T2, the control for T1: the same repository with the fix committed."""
     root = _repo(tmp_path, {"tests/test_base.py": GREEN})
@@ -245,21 +318,23 @@ def test_a_green_base_proceeds_to_the_engineer(tmp_path: Path) -> None:
     record = _record(root)
     assert record["refused"] is False
     assert {row["name"]: row["passed"] for row in record["checks"]} == {
-        "test_suite": True,
-        "typecheck": True,
-        "linter": True,
+        "stack:tests": True,
+        "stack:typecheck": True,
+        "stack:lint": True,
     }
-    # #700: every command ran on the host, and both records say so.
-    assert record["isolation"] == "none: ran on the host"
+    # #700: under a confirmed [stack] every check runs inside the proven
+    # TEST-zone rung, never on the bare host.
+    assert record["isolation"] != "none: ran on the host", record
     (events,) = sorted((root / ".kstrl" / "runs").glob("*/events.jsonl"))
     verdicts = [
         line["data"]
         for line in map(json.loads, events.read_text(encoding="utf-8").splitlines())
         if line["event"] == "verification_result"
     ]
-    assert [v["isolation"] for v in verdicts] == ["none: ran on the host"], verdicts
+    assert verdicts and all(v["isolation"] != "none: ran on the host" for v in verdicts), verdicts
 
 
+@needs_nono
 @pytest.mark.parametrize(
     ("committed", "uncommitted", "refused"),
     [(RED, GREEN, True), (GREEN, RED, False)],
@@ -281,6 +356,7 @@ def test_the_commit_is_measured_not_the_root_checkout(
     assert _record(root)["refused"] is refused
 
 
+@needs_nono
 def test_the_base_branch_is_measured_not_the_checked_out_branch(tmp_path: Path) -> None:
     """T3b. Components are cut from the base branch, so a fix committed on the
     branch the root checkout is on does not make a red base green."""
@@ -296,6 +372,7 @@ def test_the_base_branch_is_measured_not_the_checked_out_branch(tmp_path: Path) 
     assert _record(root)["baseSha"] == _git(root, "rev-parse", "main").strip()
 
 
+@needs_nono
 def test_a_red_base_is_refused_without_worktrees(tmp_path: Path) -> None:
     """T4. Phase 1 still runs under --no-worktrees, in the root checkout."""
     root = _repo(tmp_path, {"tests/test_base.py": RED})
@@ -308,41 +385,54 @@ def test_a_red_base_is_refused_without_worktrees(tmp_path: Path) -> None:
     assert _record(root)["refused"] is True
 
 
+@needs_nono
 def test_a_lint_failure_on_the_base_is_refused_and_named(tmp_path: Path) -> None:
-    """T5. Every gate Phase 1 runs is measured, not only the tests."""
+    """T5. Every check the [stack] names is measured, not only the tests."""
     root = _repo(
         tmp_path,
         {"tests/test_base.py": GREEN, "greeter.py": "import os\n"},
+        checks={**CHECKS, "lint": f"{PY} -m ruff check ."},
     )
 
-    run = _factory(tmp_path, root, gates={**GATES, "--lint-command": f"{PY} -m ruff check ."})
+    run = _factory(tmp_path, root)
 
     assert run.code == 2, run.out
     assert HEADLINE in run.out
-    assert "F401" in run.out
     assert run.calls == 0, run.out
-    assert "F401" in _row(_record(root), "linter")["failing"]
+    # #696 decision 6: no parsed failure detail any more; the row's message
+    # is the exit code (ruff exits 1 on a finding).
+    assert "exited 1" in _row(_record(root), "stack:lint")["message"]
 
 
-def test_an_empty_gate_command_is_recorded_and_not_refused(tmp_path: Path) -> None:
-    """T6. An empty command is the operator turning the gate off."""
-    root = _repo(tmp_path, {"tests/test_base.py": GREEN})
-    gates = {k: v for k, v in GATES.items() if k != "--typecheck-command"}
+@needs_nono
+def test_a_stack_with_no_typecheck_check_measures_only_what_it_lists(tmp_path: Path) -> None:
+    """T6 (#696): [stack] has no three fixed gate slots to turn one off in;
+    the operator just omits the check. Measuring two instead of three must
+    not refuse and must not invent a row for the one left out."""
+    root = _repo(
+        tmp_path,
+        {"tests/test_base.py": GREEN},
+        checks={"tests": CHECKS["tests"], "lint": CHECKS["lint"]},
+    )
 
-    run = _factory(tmp_path, root, gates=gates, env={"KSTRL_VERIFY_TYPECHECK_CMD": ""})
+    run = _factory(tmp_path, root)
 
     assert HEADLINE not in run.out
     assert run.calls == 1, run.out
     record = _record(root)
     assert record["refused"] is False
-    assert record["notMeasured"] == ["typecheck:no_target"]
+    assert {row["name"] for row in record["checks"]} == {"stack:tests", "stack:lint"}
+    assert record["notMeasured"] == []
 
 
 def test_no_verify_skips_the_measurement_and_records_why(tmp_path: Path) -> None:
-    """T7. Under --no-verify Phase 1 runs no gate, so nothing is measured."""
-    root = _repo(tmp_path, {"tests/test_base.py": RED})
+    """T7. With no [stack] at all, --no-verify runs no gate, so nothing is
+    measured and no isolation rung is needed (#696, #700): this is the one
+    test in the file with no [stack], so it is the one that needs no
+    @needs_nono."""
+    root = _repo(tmp_path, {"tests/test_base.py": RED}, checks=None)
 
-    run = _factory(tmp_path, root, "--no-verify", gates={})
+    run = _factory(tmp_path, root, "--no-verify")
 
     assert HEADLINE not in run.out
     assert run.calls == 1, run.out
@@ -353,6 +443,7 @@ def test_no_verify_skips_the_measurement_and_records_why(tmp_path: Path) -> None
     assert record["refused"] is False
 
 
+@needs_nono
 def test_no_worktree_outlives_the_measurement(tmp_path: Path) -> None:
     """T8. After a refused run and a proceeding one, git registers only the
     main checkout."""
@@ -369,49 +460,63 @@ def test_no_worktree_outlives_the_measurement(tmp_path: Path) -> None:
     assert after_run.count("worktree ") == 1, after_run
 
 
-def test_a_base_with_no_tests_proceeds_with_a_warning(tmp_path: Path) -> None:
-    """T9. pytest exits 5 when it collects nothing: the gate measured
-    nothing, which a greenfield repository always does."""
+@needs_nono
+def test_a_base_with_no_tests_now_refuses_as_a_measured_failure(tmp_path: Path) -> None:
+    """T9 (#696 decision 6): Phase 1 no longer parses what a check's output
+    means, only its exit status; pytest's exit 5 ("no tests collected") is
+    not 126 or 127, so it is a measured failure like any other, and the
+    greenfield base that always produces it now refuses rather than warns."""
     root = _repo(tmp_path, {})
 
     run = _factory(tmp_path, root)
 
-    assert HEADLINE not in run.out
-    assert "measured nothing" in run.out
-    assert run.calls == 1, run.out
+    assert run.code == 2, run.out
+    assert HEADLINE in run.out
+    assert run.calls == 0, run.out
     record = _record(root)
-    assert record["refused"] is False
-    row = _row(record, "test_suite")
-    assert (row["passed"], row["measured"]) == (False, False)
-    assert "exit code 5" in row["message"]
+    assert record["refused"] is True
+    row = _row(record, "stack:tests")
+    assert (row["passed"], row["measured"]) == (False, True)
+    assert "exited 5" in row["message"]
 
 
-def test_a_gate_that_times_out_on_the_base_proceeds_and_phase_1_still_fails(
-    tmp_path: Path,
-) -> None:
-    """T10. A timeout measured nothing: warned, recorded, not refused, and
-    Phase 1 fails the component on the same timeout, as before."""
+@needs_nono
+def test_a_gate_that_times_out_on_the_base_now_refuses_the_run(tmp_path: Path) -> None:
+    """T10 (#696 decision 4): refusal no longer carves out a check that
+    "measured nothing"; every check that did not pass refuses, a timeout
+    included, so this now refuses where it used to warn and proceed."""
     slow = "import time\n\n\ndef test_slow():\n    time.sleep(60)\n"
     root = _repo(tmp_path, {"tests/test_base.py": slow})
 
     run = _factory(tmp_path, root, env={"KSTRL_TIMEOUT_VERIFY": "2"})
 
-    assert HEADLINE not in run.out
-    assert "measured nothing" in run.out
-    assert run.calls == 1, run.out
-    assert _row(_record(root), "test_suite")["measured"] is False
-    (failed,) = [line for line in run.out.splitlines() if "Phase 1 FAILED for" in line]
-    assert "test_suite" in failed, run.out
+    assert run.code == 2, run.out
+    assert HEADLINE in run.out
+    assert run.calls == 0, run.out
+    row = _row(_record(root), "stack:tests")
+    assert (row["passed"], row["measured"]) == (False, False)
+    assert "timed out" in row["message"]
 
 
+@needs_nono
 def test_a_reading_that_cannot_be_recorded_refuses_the_run(tmp_path: Path) -> None:
     """T11. A later phase reads the record, so a run that cannot write it
-    must not start (the #436 rule). The worktree setup, which runs on the
-    base before the record is written, puts a directory where it goes."""
-    root = _repo(tmp_path, {"tests/test_base.py": GREEN})
-    block = f"for d in '{root}'/.kstrl/runs/*/; do mkdir -p \"$d/base-gates.json\"; done"
+    must not start (the #436 rule). The [stack]'s setup, which runs on the
+    base before the record is written, puts a directory where it goes
+    (#696: setup now comes from the confirmed [stack], never a retired
+    env var). ``_repo`` always names its repository ``tmp_path / "proj"``,
+    so that path is known before the setup command is written into it.
+    The run directory is outside the rung's default trees (#700), so this
+    names it in ``writable``: without that the setup's write is denied by
+    nono itself, a different (and also real) refusal from the one this
+    test is about."""
+    root_path = tmp_path / "proj"
+    runs_dir = root_path / ".kstrl" / "runs"
+    block = f"for d in '{runs_dir}'/*/; do mkdir -p \"$d/base-gates.json\"; done"
+    root = _repo(tmp_path, {"tests/test_base.py": GREEN}, setup=block, writable=(str(runs_dir),))
+    assert root == root_path
 
-    run = _factory(tmp_path, root, env={"KSTRL_FACTORY_WORKTREE_SETUP_COMMAND": block})
+    run = _factory(tmp_path, root)
 
     assert run.code == 2, run.out
     assert "the base reading cannot be recorded" in run.out
@@ -421,7 +526,7 @@ def test_a_reading_that_cannot_be_recorded_refuses_the_run(tmp_path: Path) -> No
 # --- slice 2: `ks doctor --measure` takes the same reading ----------------
 
 
-def _doctor(root: Path, *args: str, env: dict[str, str]) -> tuple[int, str]:
+def _doctor(root: Path, *args: str, env: dict[str, str] | None = None) -> tuple[int, str]:
     """The real `ks doctor --root <root> <args>` in its own process group,
     killed on the fuse. Returns the exit code and stdout."""
     child = subprocess.Popen(
@@ -443,7 +548,7 @@ def _doctor(root: Path, *args: str, env: dict[str, str]) -> tuple[int, str]:
     return child.returncode, out
 
 
-def _doctor_json(root: Path, env: dict[str, str]) -> tuple[int, dict[str, Any]]:
+def _doctor_json(root: Path, env: dict[str, str] | None = None) -> tuple[int, dict[str, Any]]:
     code, out = _doctor(root, "--measure", "--json", env=env)
     document: dict[str, Any] = json.loads(out)
     return code, document
@@ -456,58 +561,62 @@ def _doctor_row(document: dict[str, Any]) -> dict[str, Any]:
 
 def test_doctor_measure_reports_a_red_base_not_ready(tmp_path: Path) -> None:
     """D1, the T1 repository: the reading `ks factory` refuses on is a
-    failed row, and the failing test is named on stdout."""
+    failed row, named on stdout by its check and exit code (#696 decision
+    6: no parsed failure detail, exit status only). `ks doctor --measure`
+    proves no isolation rung (its VerifyConfig carries no rung), so this
+    needs no @needs_nono even though T1 does."""
     root = _repo(tmp_path, {"tests/test_base.py": RED})
 
-    text_code, text = _doctor(root, "--measure", env=GATE_ENV)
-    code, document = _doctor_json(root, GATE_ENV)
+    text_code, text = _doctor(root, "--measure")
+    code, document = _doctor_json(root)
 
     assert text_code == 1, text
     assert "[fail] base_gates" in text
-    assert "test_broken" in text
+    assert "stack:tests fails on main" in text
+    assert "exited 1" in text
     assert "xfail(strict=True)" in text
     assert code == 1, document
     assert document["verdict"] == "not-ready"
     reading = document["base_gates"]
     assert reading["refused"] is True
     assert reading["baseSha"] == _git(root, "rev-parse", "main").strip()
-    assert any("test_broken" in name for name in _row(reading, "test_suite")["failing"])
+    assert "exited 1" in _row(reading, "stack:tests")["message"]
 
 
 def test_doctor_measure_reports_a_green_base_with_three_measured_rows(tmp_path: Path) -> None:
     """D2, the T2 repository and the control for D1: the fix committed."""
     root = _repo(tmp_path, {"tests/test_base.py": GREEN})
 
-    code, document = _doctor_json(root, GATE_ENV)
+    code, document = _doctor_json(root)
 
     assert code == 0, document
     assert _doctor_row(document)["status"] == "ok"
     reading = document["base_gates"]
     assert reading["refused"] is False
     assert {(r["name"], r["passed"], r["measured"]) for r in reading["checks"]} == {
-        ("test_suite", True, True),
-        ("typecheck", True, True),
-        ("linter", True, True),
+        ("stack:tests", True, True),
+        ("stack:typecheck", True, True),
+        ("stack:lint", True, True),
     }
     assert _git(root, "worktree", "list", "--porcelain").count("worktree ") == 1
 
 
-def test_doctor_measure_warns_on_a_base_with_no_tests(tmp_path: Path) -> None:
-    """D9, the T9 repository: pytest exits 5 having collected nothing. That
-    measured nothing, which `ks factory` warns about and does not refuse."""
+def test_doctor_measure_reports_a_base_with_no_tests_as_not_ready(tmp_path: Path) -> None:
+    """D9 (#696 decision 6), the T9 repository: the same exit-status-only
+    measurement that makes `ks factory` refuse a base with no tests makes
+    `ks doctor --measure` read it not-ready instead of warning."""
     root = _repo(tmp_path, {})
 
-    code, document = _doctor_json(root, GATE_ENV)
+    code, document = _doctor_json(root)
 
-    assert code == 0, document
+    assert code == 1, document
     row = _doctor_row(document)
-    assert row["status"] == "warn"
-    assert "measured nothing" in row["detail"]
+    assert row["status"] == "fail"
     reading = document["base_gates"]
-    assert reading["refused"] is False
-    test_row = _row(reading, "test_suite")
-    assert (test_row["passed"], test_row["measured"]) == (False, False)
-    assert "exit code 5" in test_row["message"]
+    assert reading["refused"] is True
+    test_row = _row(reading, "stack:tests")
+    assert (test_row["passed"], test_row["measured"]) == (False, True)
+    assert "exited 5" in test_row["message"]
 
 
 def test_doctor_measure_fails_a_base_it_cannot_resolve(tmp_path: Path) -> None:
@@ -516,7 +625,7 @@ def test_doctor_measure_fails_a_base_it_cannot_resolve(tmp_path: Path) -> None:
     root = _repo(tmp_path, {"tests/test_base.py": GREEN})
     git_in(root, "branch", "-m", "main", "work")
 
-    code, document = _doctor_json(root, GATE_ENV)
+    code, document = _doctor_json(root)
 
     assert code == 1, document
     row = _doctor_row(document)
@@ -527,24 +636,23 @@ def test_doctor_measure_fails_a_base_it_cannot_resolve(tmp_path: Path) -> None:
 
 def test_doctor_runs_a_repo_command_only_under_measure(tmp_path: Path) -> None:
     """The control: without --measure, `ks doctor` runs none of the
-    repository's commands. The default gates run through `uv`, and a stub
-    `uv` first on PATH logs every call; the --measure run shows the stub is
-    on the path the gates take."""
-    root = _repo(tmp_path, {"tests/test_base.py": GREEN})
-    stubs = tmp_path / "stubs"
-    stubs.mkdir()
-    log = tmp_path / "uv-argv.log"
-    write_executable(stubs / "uv", f"#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{log}'\nexit 0\n")
-    env = {"PATH": f"{stubs}{os.pathsep}{os.environ['PATH']}"}
+    [stack]'s checks. The "tests" check appends to a log, so --measure is
+    the only invocation that leaves a trace of having run it."""
+    log = tmp_path / "ran.log"
+    root = _repo(
+        tmp_path,
+        {"tests/test_base.py": GREEN},
+        checks={"tests": f"echo ran >> '{log}'", "typecheck": "true", "lint": "true"},
+    )
 
-    plain_code, plain = _doctor(root, "--json", env=env)
+    plain_code, plain = _doctor(root, "--json")
     after_plain = log.read_text(encoding="utf-8") if log.exists() else ""
-    _doctor(root, "--measure", "--json", env=env)
+    _doctor(root, "--measure", "--json")
 
     assert plain_code == 0, plain
     assert json.loads(plain)["base_gates"] is None
     assert after_plain == ""
-    assert "run pytest" in log.read_text(encoding="utf-8")
+    assert log.read_text(encoding="utf-8") == "ran\n"
 
 
 def test_doctor_measure_reads_the_base_branch_not_the_checkout(tmp_path: Path) -> None:
@@ -555,22 +663,25 @@ def test_doctor_measure_reads_the_base_branch_not_the_checkout(tmp_path: Path) -
     git_in(root, "checkout", "-q", "-b", "work")
     _commit(root, "tests/test_base.py", GREEN)
 
-    code, document = _doctor_json(root, GATE_ENV)
+    code, document = _doctor_json(root)
 
     assert code == 1, document
     assert document["base_gates"]["baseBranch"] == "main"
     assert document["base_gates"]["baseSha"] == _git(root, "rev-parse", "main").strip()
 
 
+@needs_nono
 def test_doctor_measure_takes_the_reading_ks_factory_takes(tmp_path: Path) -> None:
     """D11, addendum item 9: agent-ready is keyed on (baseSha, verifyDigest,
     setupCommand). The doctor's reading and the one `ks factory` records on
-    the same repository agree on all three, and on the refusal."""
-    root = _repo(tmp_path, {"tests/test_base.py": RED})
-    setup = {"KSTRL_FACTORY_WORKTREE_SETUP_COMMAND": "true"}
+    the same repository agree on all three, and on the refusal. The
+    [stack]'s setup is baked in once, read by both; this test needs
+    @needs_nono because the `ks factory` half proves the rung, even though
+    the doctor half (run first) does not."""
+    root = _repo(tmp_path, {"tests/test_base.py": RED}, setup="true")
 
-    _code, document = _doctor_json(root, {**GATE_ENV, **setup})
-    run = _factory(tmp_path, root, env=setup)
+    _code, document = _doctor_json(root)
+    run = _factory(tmp_path, root)
 
     assert run.code == 2, run.out
     record = _record(root)
@@ -578,8 +689,8 @@ def test_doctor_measure_takes_the_reading_ks_factory_takes(tmp_path: Path) -> No
     assert {k: document["base_gates"][k] for k in keys} == {k: record[k] for k in keys}
     assert document["base_gates"]["setupCommand"] == "true"
     assert (
-        _row(document["base_gates"], "test_suite")["failing"]
-        == _row(record, "test_suite")["failing"]
+        _row(document["base_gates"], "stack:tests")["message"]
+        == _row(record, "stack:tests")["message"]
     )
 
 
@@ -588,9 +699,19 @@ def test_doctor_measure_still_measures_under_a_config_that_only_warns(tmp_path: 
     ([evolution]) is a warning on kstrl_config, not a failure: every
     command still starts on it, so `ks doctor --measure` still measures."""
     root = _repo(tmp_path, {"tests/test_base.py": GREEN})
-    _commit(root, "kstrl.toml", '[evolution]\nlookback_runs = "many"\n')
+    # `ks init`'s scaffold already declares [evolution] (commented out, so
+    # it is a real but empty table): uncomment its one key with a bad
+    # value, rather than appending a second [evolution] header, which TOML
+    # refuses as the same table declared twice.
+    toml_text = (root / "kstrl.toml").read_text(encoding="utf-8")
+    assert "# lookback_runs = 10" in toml_text, toml_text
+    (root / "kstrl.toml").write_text(
+        toml_text.replace("# lookback_runs = 10", 'lookback_runs = "many"'), encoding="utf-8"
+    )
+    git_in(root, "add", "kstrl.toml")
+    git_in(root, "commit", "-q", "-m", "evolution section")
 
-    code, document = _doctor_json(root, GATE_ENV)
+    code, document = _doctor_json(root)
 
     (config_row,) = [row for row in document["checks"] if row["name"] == "kstrl_config"]
     assert config_row["status"] == "warn", config_row

@@ -169,7 +169,13 @@ class TestNobodyToAsk:
         out = result.stdout + result.stderr
 
         assert result.returncode == 2, out
-        assert "Enable [inbox]" in out, out
+        # #696 flag day: the [stack] checkpoint is ahead of the L1 plan gate's
+        # own escalation now, and it hits the identical "nobody to ask"
+        # condition first - the stack this suite's _repo confirms lives in
+        # the inbox, which [inbox]=0 makes unreadable, and nothing answered
+        # the prompt either. The behaviour under test here (refuses, no
+        # engineer paid, nothing parked) is unchanged; only which gate says so.
+        assert "is not confirmed, and [inbox] is disabled" in out, out
         assert _engineer_ran(tmp_path) == []
         assert _awaiting(root) == ""
 

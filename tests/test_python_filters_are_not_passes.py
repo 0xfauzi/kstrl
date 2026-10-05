@@ -261,25 +261,37 @@ _TOOL_CONTROLS = (
 #: count is read off the failure's ``Found:`` dict.
 EXPECTED_TOOL_LITERALS: dict[str, tuple[int, str]] = {
     "adequacy.py": (5, "Python-only check: pytestmark and mutmut's junitxml report messages"),
-    "cli.py": (4, "help text naming the Python defaults and the Python-only checks"),
-    "contract.py": (1, "message: exit 5 is pytest's no-tests-collected code"),
-    "doctor.py": (2, "the verify row's warnings about a `uv run` default"),
+    # #696: down from 4. The --test-command/--lint-command help text that
+    # named the uv run pytest/ruff defaults is gone with the flags.
+    "cli.py": (3, "help text naming the Python-only checks"),
+    # #696: contract.py's and doctor.py's rows are gone outright. Both
+    # named a retired per-tool command default (contract.py's exit-5
+    # message was about [verify] test_suite; doctor.py's was the
+    # `uv run` default warning for an unset [verify] key).
     "evolution.py": (4, "_classify_check's keywords for Phase 1 check names"),
     "feature_verify.py": (1, "message naming the dead_code_ruff check"),
     "feedforward.py": (7, "the Phase 0 scan's ruff.toml and [tool.ruff] convention readers"),
     "gateparse.py": (6, "parser registry keys for pytest, mypy and ruff output"),
+    # #696: down from 4. kstrl_toml_for, which seeded DEFAULT_KSTRL_TOML's
+    # commented-out [verify] command lines from the detected toolchain, is
+    # gone with [verify] itself.
     "init_cmd.py": (
-        4,
-        "DEFAULT_KSTRL_TOML's comments, BUILD_MANIFEST_FIX's uv commands, and the "
-        "enrolled Python standards and CLAUDE.md verification prompts",
+        3,
+        "BUILD_MANIFEST_FIX's uv commands, and the enrolled Python "
+        "standards and CLAUDE.md verification prompts",
     ),
     "parsers.py": (3, "parser names for pytest, mypy and ruff output"),
     "suite_inventory.py": (2, "the pytest junit report the test gate asks for (#620)"),
-    "toolchains.py": (8, "the Python record: its commands, its ignores and its mypy scope reader"),
+    # #696: down from 8. The Python record's test/typecheck/lint commands
+    # and python_typecheck_default's mypy-scope literals are gone with the
+    # command half; what is left is the three Python-tool cache ignores
+    # (.pytest_cache/, .mypy_cache/, .ruff_cache/).
+    "toolchains.py": (3, "the Python record's cache ignores"),
     "verify.py": (
-        42,
+        41,
         "the Python-only checks (mutation, dead code, patch coverage) and their "
-        "messages; each reports NotMeasured on a tree they cannot read",
+        "messages; each reports NotMeasured on a tree they cannot read. #696 "
+        "retired one more: a message of the per-tool gates this flag day removed",
     ),
 }
 
@@ -329,18 +341,17 @@ def test_a_tool_name_in_a_docstring_is_not_counted() -> None:
 
 # --- #635: who reaches for a toolchain fact, per scope -----------------------
 
-#: Every name that hands out a toolchain fact. ``toolchains.resolve`` is the
-#: sanctioned reader of a record's commands, so it is not one.
+#: Every name that hands out a toolchain fact. #696 retired the command
+#: half (``DEFAULT_TEST_COMMAND``, ``DEFAULT_LINT_COMMAND``,
+#: ``DEFAULT_TYPECHECK_COMMAND``, ``SCOPED_TYPECHECK_COMMAND``,
+#: ``toolchains.resolve`` and ``python_typecheck_default``) along with
+#: every command kstrl chose for a tree: a confirmed ``[stack]`` is the
+#: only source now. What is left is detection.
 OBTAIN_POINTS = (
-    "DEFAULT_TEST_COMMAND",
-    "DEFAULT_LINT_COMMAND",
-    "DEFAULT_TYPECHECK_COMMAND",
-    "SCOPED_TYPECHECK_COMMAND",
     "TOOLCHAINS",
     "detect",
     "toolchain_named",
     "is_python_project",
-    "python_typecheck_default",
 )
 
 _OBTAIN_NETS = tuple(spells(point) for point in OBTAIN_POINTS)
@@ -353,21 +364,16 @@ def reaches_an_obtain_point(node: ast.AST) -> bool:
 
 #: Every scope in ``kstrl/`` that spells an obtain point, with how many
 #: spellings it holds and why it may. DERIVED BY RUNNING THIS FILE.
+#:
+#: #696 flag day: cli.py, contract.py, doctor.py and verify.py dropped
+#: out of this census entirely - each only reached for a command default
+#: (the --test-command/--lint-command help text, ContractConfig's
+#: KSTRL_CONTRACT_TEST_CMD fallback, the "Python default on a
+#: not-Python tree" refusal), and kstrl chooses no command for any tree
+#: now. init_cmd.py's kstrl_toml_for row is gone the same way: it seeded
+#: a detected toolchain's commands into the retired [verify].
 EXPECTED_OBTAIN_SITES: dict[str, tuple[int, str]] = {
-    "cli.py: <module>": (2, "imports the two defaults for the --help text"),
-    "cli.py: factory": (2, "--test-command and --lint-command help text names the default"),
-    "contract.py: <module>": (2, "imports DEFAULT_TEST_COMMAND for ContractConfig's field default"),
-    "contract.py: ContractConfig.from_env": (
-        1,
-        "KSTRL_CONTRACT_TEST_CMD's fallback; ContractConfig.load resolves through "
-        "verify.resolve_test_command instead",
-    ),
     "decompose.py: <module>": (2, "ROOT_BUILD_MANIFESTS, the union of every record's markers"),
-    "doctor.py: <module>": (1, "imports is_python_project"),
-    "doctor.py: check_verify_commands": (
-        1,
-        "#621's refusal: a Python default on a tree that is not Python",
-    ),
     "fixtures.py: <module>": (1, "imports is_python_project"),
     "fixtures.py: fixture_tree_errors": (1, "a function fixture needs a Python tree (#632)"),
     "init_cmd.py: <module>": (2, "imports detect and toolchain_named"),
@@ -375,21 +381,10 @@ EXPECTED_OBTAIN_SITES: dict[str, tuple[int, str]] = {
     "init_cmd.py: _ensure_lockfiles_tracked": (1, "the record's lockfiles, which ks init stages"),
     "init_cmd.py: _generate_claude_md": (1, "the record's id keys the enrolled standards bodies"),
     "init_cmd.py: _language_ignores": (1, "the record's ignores, which ks init writes"),
-    "init_cmd.py: kstrl_toml_for": (1, "the record's commands, seeded commented into kstrl.toml"),
-    "toolchains.py: <module>": (14, "the definitions and the Python record"),
+    "toolchains.py: <module>": (6, "the definitions and the Python record"),
     "toolchains.py: detect": (2, "first match wins in TOOLCHAINS order"),
     "toolchains.py: is_python_project": (2, "detect's choice compared with the Python record"),
-    "toolchains.py: python_typecheck_default": (4, "the Python record's mypy scope rule"),
-    "toolchains.py: resolve": (3, "the one reader: an unset key gets the Python command"),
     "toolchains.py: toolchain_named": (1, "a language string back to its record"),
-    "verify.py: <module>": (
-        9,
-        "imports the defaults and is_python_project; PYTHON_DEFAULT_COMMANDS",
-    ),
-    "verify.py: _command_not_run": (
-        1,
-        "#621's refusal: a Python default on a tree that is not Python",
-    ),
 }
 
 
@@ -402,21 +397,16 @@ def test_every_scope_that_reaches_for_a_toolchain_fact_is_enrolled() -> None:
         expected={row: count for row, (count, _reason) in EXPECTED_OBTAIN_SITES.items()},
         # One control per obtain point, spelled out for the same reason as above.
         control=(
-            "cmd = DEFAULT_TEST_COMMAND\n",
-            "cmd = verify.DEFAULT_LINT_COMMAND\n",
-            "from kstrl.toolchains import DEFAULT_TYPECHECK_COMMAND\n",
-            "cmd = SCOPED_TYPECHECK_COMMAND\n",
             'rust = toolchains.TOOLCHAINS["Rust"]\n',
             "found = detect(root)\n",
             "record = toolchain_named(language)\n",
             "if is_python_project(cwd):\n    pass\n",
-            "cmd = python_typecheck_default(cwd)\n",
         ),
         message=(
-            "A scope in kstrl/ that reaches for a default command, a toolchain record or "
-            "the detector changed (#635). A gate's command comes from toolchains.resolve "
-            "(through verify.resolve_*_command), never from a default read directly. If the "
-            "new site is not a gate, add or move its row in EXPECTED_OBTAIN_SITES and say why."
+            "A scope in kstrl/ that reaches for a toolchain record or the detector "
+            "changed (#696: kstrl chooses no command for any tree, so this is detection "
+            "only now). If the new site is not detection, add or move its row in "
+            "EXPECTED_OBTAIN_SITES and say why."
         ),
     )
 

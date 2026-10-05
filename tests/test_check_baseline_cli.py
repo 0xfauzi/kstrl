@@ -18,7 +18,9 @@ from click.testing import CliRunner, Result
 
 from kstrl import baseline_report
 from kstrl.cli import CHECK_SCHEMA_VERSION, cli
+from kstrl.evolution import signature_for_error
 from tests.helpers.check_baseline import BASELINE_DOC
+from tests.helpers.stack_confirmation import confirm_stack
 from tests.spine_utils import git
 from tests.test_check_cli import _LINT_FAIL_COMMAND, _kstrl_toml, _make_repo
 
@@ -40,6 +42,16 @@ _LINT_FROM_FILE_COMMAND = (
 
 _E501_FINDING = "x.py:1:1: E501 line too long\n"
 
+#: Since the flag day (#696 decision 6) a stack check is an opaque command:
+#: kstrl no longer parses its output for a linter code, so every signature
+#: falls back to a slug of the whole "`<command>` exited <n>" message
+#: (``kstrl.evolution.signature_for_error``), derived here rather than
+#: typed by hand so it tracks the real algorithm, not a guess at its output.
+_LINT_FAIL_SIGNATURE = signature_for_error("stack:lint", f"`{_LINT_FAIL_COMMAND}` exited 1")
+_LINT_FROM_FILE_SIGNATURE = signature_for_error(
+    "stack:lint", f"`{_LINT_FROM_FILE_COMMAND}` exited 1"
+)
+
 
 def _set_lint_findings(root: Path, text: str) -> None:
     (root / "lint-findings.txt").write_text(text, encoding="utf-8")
@@ -52,6 +64,7 @@ def _invoke(root: Path, *args: str) -> Result:
 def _make_lint_fail(root: Path) -> None:
     """Point the repo's lint command at one that emits an E501."""
     (root / "kstrl.toml").write_text(_kstrl_toml(_LINT_FAIL_COMMAND), encoding="utf-8")
+    confirm_stack(root)
 
 
 def _write(root: Path, *args: str) -> Result:
@@ -129,6 +142,7 @@ def test_the_baseline_records_the_project_and_not_the_directory(tmp_path: Path) 
     """
     root = _make_repo(tmp_path)
     git("remote", "add", "origin", "https://github.com/owner/repo.git", cwd=root)
+    confirm_stack(root)
 
     assert _write(root).exit_code == 0
 
@@ -142,8 +156,10 @@ def test_a_baseline_from_another_project_is_a_note_on_the_report(tmp_path: Path)
     copied between two different ones."""
     root = _make_repo(tmp_path)
     git("remote", "add", "origin", "https://github.com/owner/repo.git", cwd=root)
+    confirm_stack(root)
     assert _write(root).exit_code == 0
     git("remote", "set-url", "origin", "https://github.com/owner/other.git", cwd=root)
+    confirm_stack(root)
 
     result = _invoke(root, "--compare-baseline")
 
@@ -167,7 +183,7 @@ def test_write_baseline_refuses_overwrite_without_force(tmp_path: Path) -> None:
     _make_lint_fail(root)
     forced = _write(root, "--force")
     assert forced.exit_code == 1, forced.output
-    assert _baseline_document(root)["signatures"] == {"linter:E501": 1}
+    assert _baseline_document(root)["signatures"] == {_LINT_FAIL_SIGNATURE: 1}
 
 
 def test_write_baseline_accepts_an_explicit_path(tmp_path: Path) -> None:
@@ -297,10 +313,10 @@ def test_compare_detects_a_new_signature_and_stays_advisory(tmp_path: Path) -> N
     blocking = _invoke(root, "--compare-baseline", "--fail-on-regression")
 
     assert advisory.exit_code == 0, advisory.output
-    assert "linter:E501" in advisory.output
+    assert _LINT_FROM_FILE_SIGNATURE in advisory.output
     assert "regression: 1 new, 0 increased, 0 stopped measuring" in advisory.output
     assert blocking.exit_code == 1
-    assert "linter:E501" in blocking.output
+    assert _LINT_FROM_FILE_SIGNATURE in blocking.output
 
 
 def test_compare_reports_a_fixed_signature_and_exits_0(tmp_path: Path) -> None:
@@ -314,7 +330,7 @@ def test_compare_reports_a_fixed_signature_and_exits_0(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     assert "no regression" in result.output
     fixed = result.output.split("fixed:", 1)[1]
-    assert "linter:E501" in fixed.split("unmeasured", 1)[0]
+    assert _LINT_FROM_FILE_SIGNATURE in fixed.split("unmeasured", 1)[0]
 
 
 def test_markdown_format_starts_with_the_marker(tmp_path: Path) -> None:
@@ -536,9 +552,10 @@ def test_base_ref_is_null_outside_a_repository(tmp_path: Path) -> None:
     root = tmp_path / "loose"
     root.mkdir()
     (root / "kstrl.toml").write_text(
-        _kstrl_toml() + "check_diff_scope = false\ncheck_bad_patterns = false\n",
+        _kstrl_toml() + "[verify]\ncheck_diff_scope = false\ncheck_bad_patterns = false\n",
         encoding="utf-8",
     )
+    confirm_stack(root)
 
     assert _write(root).exit_code == 0
     assert _baseline_document(root)["base_ref"] is None

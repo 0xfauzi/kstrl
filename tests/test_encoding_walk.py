@@ -490,7 +490,10 @@ class TestTheReadBytesExclusion:
         "safemode.py": 1,
         "signals.py": 2,
         "suite_inventory.py": 1,  # #620: I/O outside the parse guard
-        "toolchains.py": 1,  # #635: pyproject.read_bytes() moved here from verify.py
+        # toolchains.py's pyproject.read_bytes() (#635) is gone: #696
+        # flag day slice 4 removed the command half of toolchain
+        # detection, kstrl.toolchains's own docstring says so, and that
+        # read fed choosing a per-tool command, not detection.
         "verify.py": 1,
         "workqueue.py": 1,  # #644: Queue.answer hashes the spec, never decodes it
     }
