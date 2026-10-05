@@ -39,7 +39,13 @@ from kstrl.autonomy import (
     save_ladder_state,
     strict_bool,
 )
-from kstrl.base_gates import BaseGates, measure_base_gates, refusal_lines, warning_lines
+from kstrl.base_gates import (
+    BaseGates,
+    apply_acceptance,
+    measure_base_gates,
+    refusal_lines,
+    warning_lines,
+)
 from kstrl.base_gates import write_record as write_base_gates_record
 from kstrl.breaker import BreakerConfig
 from kstrl.commandrun import start_heartbeat as _start_heartbeat
@@ -68,6 +74,7 @@ from kstrl.decisions import (
 from kstrl.events import (
     AdversarialAgentSelected,
     AutonomyLevelApplied,
+    CheckpointResolved,
     ComponentFailed,
     ComponentScopeResolved,
     ComponentStarted,
@@ -94,6 +101,8 @@ from kstrl.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.integration_loop import IntegrationLoop
 from kstrl.integration_phase import IntegrationRun, report_integration
 from kstrl.interaction import InteractionChannel
+from kstrl.isolation import SETUP_ZONE, TEST_ZONE, prove_zones
+from kstrl.isolation import write_record as write_isolation_record
 from kstrl.jsonread import read_json
 from kstrl.knowledge import (
     KnowledgeConfig,
@@ -131,7 +140,7 @@ from kstrl.pipeline import (
     PipelineHooks,
     _iso_now,
 )
-from kstrl.plan_gate import run_plan_gate, spec_pin_errors
+from kstrl.plan_gate import run_plan_gate, spec_pin_errors, stack_pin_errors
 from kstrl.policy import PolicyConfig
 from kstrl.pr import create_prs_in_order, create_single_pr
 from kstrl.release import RELEASE_REF_RULE, ReleaseInputs, release_ref_from, release_withheld
@@ -140,6 +149,7 @@ from kstrl.review import (
     run_review,
 )
 from kstrl.runenvelope import RunEnvelope
+from kstrl.rung import ProvenRung, release
 from kstrl.runstate import RunState
 from kstrl.sandbox import SANDBOX_REFUSAL, SandboxConfig, unsandboxable_roles
 from kstrl.scope import ComponentScope, RunScope
@@ -149,7 +159,7 @@ from kstrl.security import (
     run_security_review,
 )
 from kstrl.shutdown import StopController
-from kstrl.stack import Stack, load_stack
+from kstrl.stack import STACK_KIND, Stack, stack_in_force, stack_paths, unconfirmed_lines
 from kstrl.statedir import ControlStateError, pre_run_prd_path
 from kstrl.timeout import NO_LIMIT, TimeoutConfig, describe_limit_seconds
 from kstrl.ui.bridge import EventBridgeUI
@@ -163,7 +173,13 @@ from kstrl.verify import (
 )
 from kstrl.version import kstrl_version
 from kstrl.worktree_setup import WorktreeSetup
-from kstrl.worktree_sweep import WorktreeSweep, sweep_worktree, warn_sweep
+from kstrl.worktree_sweep import (
+    WorktreeSweep,
+    leftover_agents,
+    leftover_lines,
+    sweep_worktree,
+    warn_sweep,
+)
 
 if TYPE_CHECKING:
     from kstrl.agents.liveness import ProbeResult
@@ -393,6 +409,12 @@ class FactoryConfig:
     # well as in VerifyConfig because --no-verify drops the VerifyConfig
     # and a worktree still needs its setup. Provenance: no [factory] key.
     project_stack: Stack | None = field(default=None, metadata={"provenance": True})
+    # #700 slice 2: the two rungs a run under a [stack] proved before its
+    # base gates (``_preflight_rungs``), cleared and their scratch removed
+    # when the run ends (``run_factory``). The setup runs in the first and
+    # every check in the second. Never read from kstrl.toml, env or a flag.
+    setup_rung: ProvenRung | None = field(default=None, metadata={"provenance": True})
+    test_rung: ProvenRung | None = field(default=None, metadata={"provenance": True})
     # R7.2: approved-fixtures oracle for Phase 1. None means run_factory
     # loads FixturesConfig.load(root_dir) - toml [fixtures] section +
     # env - so `ks factory` honors the config with no CLI wiring.
@@ -422,6 +444,12 @@ class FactoryConfig:
     launch_flags: tuple[tuple[str, FlagValue], ...] = field(
         default=(), metadata={"provenance": True}
     )
+    # #654 slice 4: `ks factory --accept-red-base <sha12>`. A run on a base
+    # whose gates fail proceeds when this is at least 12 characters of the
+    # sha the run measures (kstrl/base_gates.py::apply_acceptance). Per run:
+    # no toml key and no env var, and `ks retry` replays it from the launch
+    # record, so a retry on a base that moved refuses again. "" is none.
+    accept_red_base: str = ""
 
     def resolved_verify_config(self) -> VerifyConfig:
         """The VerifyConfig Phase 1 runs with (#261).
@@ -433,7 +461,8 @@ class FactoryConfig:
         ``engineer_verify_config`` below, which is what stops the gate
         and the engineer prompt answering the question two ways.
         """
-        return self.verify_config or VerifyConfig()
+        config = self.verify_config or VerifyConfig()
+        return config if self.test_rung is None else replace(config, rung=self.test_rung)
 
     def engineer_verify_config(self) -> VerifyConfig | None:
         """What the engineer may be told Phase 1 will run, or None.
@@ -452,10 +481,13 @@ class FactoryConfig:
         names one, else ``worktree_setup_command``, or under a ``[stack]``
         the stack's ``setup`` with the stack's ``env`` (#696)."""
         if self.project_stack is not None:
+            unconfirmed = self.project_stack.unconfirmed
             return WorktreeSetup(
                 scaffold or self.project_stack.setup,
                 self.worktree_setup_timeout,
                 self.project_stack.env,
+                rung=self.setup_rung,
+                refusal=f"the [stack] in kstrl.toml {unconfirmed}" if unconfirmed else "",
             )
         return WorktreeSetup(scaffold or self.worktree_setup_command, self.worktree_setup_timeout)
 
@@ -725,7 +757,7 @@ class FactoryConfig:
             )
         # Last, so every [factory] key above has been read when a bad
         # [stack] raises (the entry check's unread-name report).
-        config.project_stack = load_stack(root_dir)
+        config.project_stack = stack_in_force(root_dir)
         return check_numbers(config)
 
 
@@ -1403,6 +1435,40 @@ class FactoryLockHeldError(RuntimeError):
     """Another factory invocation holds the run-level lock on this root."""
 
 
+class LeftoverAgentsError(FactoryLockHeldError):
+    """Agent processes a kstrl process that is gone started are still running (#642).
+
+    A subclass so every caller's exit-2 path for a held lock refuses this
+    too. Its message does not name ``--force-lock``, which `ks serve`
+    reads as lock contention and retries: this needs an operator.
+    """
+
+
+def _refuse_leftover_agents(root_dir: Path, fp: IO[str]) -> None:
+    """Release the run lock and raise when :func:`leftover_agents` finds
+    anything, or cannot look (#642, owner decision 4 (b)).
+
+    Taken after the flock, so no run of ours starts an agent between the
+    reading and the refusal. Nothing is signalled: the message names each
+    process and the command that stops its group.
+    """
+    sweep = leftover_agents(root_dir)
+    if not (sweep.survivors or sweep.error):
+        return
+    fp.close()
+    raise LeftoverAgentsError(
+        "\n  ".join(
+            [
+                "Refusing to start: agent processes started by a kstrl process that "
+                "is no longer running are still running in this project, or could "
+                "not be checked, and a new run would share the tree with them. "
+                "Nothing was changed.",
+                *leftover_lines(sweep),
+            ]
+        )
+    )
+
+
 @dataclass
 class _RunLock:
     """Handle for the run-level factory lock.
@@ -1503,6 +1569,7 @@ def _acquire_run_lock(root_dir: Path, ui: UI, force: bool) -> _RunLock:
             f"override."
         ) from None
 
+    _refuse_leftover_agents(root_dir, fp)
     # Holder pid is diagnostic only (shown in the refusal message of a
     # contending invocation); the flock itself is the exclusion.
     try:
@@ -2397,11 +2464,21 @@ def _preflight_base_gates(
     Under ``--no-verify`` Phase 1 runs no gate, so nothing is measured and
     the record says why.
     """
+    accept = factory_config.accept_red_base
     verify_config = factory_config.engineer_verify_config()
     if verify_config is None:
         skipped = BaseGates(manifest.base_branch)
-        return write_base_gates_record(
-            root_dir, run_id, skipped, [], skipped_reason=BASE_GATES_SKIPPED_NO_VERIFY
+        reasons, _ = apply_acceptance(skipped, [], accept)
+        return (
+            write_base_gates_record(
+                root_dir,
+                run_id,
+                skipped,
+                reasons,
+                skipped_reason=BASE_GATES_SKIPPED_NO_VERIFY,
+                accept=accept,
+            )
+            + reasons
         )
     ui.info(f"  Measuring the gates on the base branch {manifest.base_branch}...")
     reading = measure_base_gates(
@@ -2409,8 +2486,70 @@ def _preflight_base_gates(
     )
     for line in warning_lines(reading):
         ui.warn(f"  {line}")
-    reasons = refusal_lines(reading)
-    return write_base_gates_record(root_dir, run_id, reading, reasons) + reasons
+    reasons, accepted = apply_acceptance(reading, refusal_lines(reading), accept)
+    for line in accepted:
+        ui.warn(f"  Accepted by --accept-red-base {accept}: {line}")
+    return (
+        write_base_gates_record(
+            root_dir, run_id, reading, reasons, accept=accept, accepted=tuple(accepted)
+        )
+        + reasons
+    )
+
+
+def _preflight_rungs(
+    root_dir: Path, factory_config: FactoryConfig, run_id: str, ui: UI
+) -> list[str]:
+    """Why this run's commands have no proven rung to run in, or [] (#700).
+
+    Under a ``[stack]`` both zones are proven once per run, before the base
+    gates, in the policy every command then runs in: the trees kstrl makes
+    worktrees in (the checkout itself without worktrees), plus the stack's
+    ``writable`` and ``readable``. Below a proven rung the run refuses;
+    there is no opt-in to run a stack's commands on the host (decision
+    5(a)). The record is written either way. Without a stack nothing is
+    proven and every command runs on the host, as before.
+    """
+    stack = factory_config.project_stack
+    if stack is None:
+        return []
+    trees = (
+        [root_dir / ".kstrl" / "contract", root_dir / ".kstrl" / "worktrees"]
+        if factory_config.use_worktrees
+        else [root_dir]
+    )
+    rungs = prove_zones(
+        root_dir,
+        [*trees, *stack_paths(root_dir, stack.writable)],
+        stack_paths(root_dir, stack.readable),
+        stack.browser,
+    )
+    errors = write_isolation_record(root_dir, run_id, stack.digest, rungs)
+    errors += [f"the {zone} zone is {rung.refusal}" for zone, rung in rungs.items() if rung.refusal]
+    if errors:
+        release(rungs.values())
+        return errors
+    factory_config.setup_rung, factory_config.test_rung = rungs[SETUP_ZONE], rungs[TEST_ZONE]
+    for rung in rungs.values():
+        ui.info(f"  Isolation: {rung.label}")
+    return []
+
+
+def _refused_rung_or_base(
+    manifest: Manifest, root_dir: Path, factory_config: FactoryConfig, run_id: str, ui: UI
+) -> bool:
+    """Prove the rung, then measure the base gates inside it (#700 slice 2,
+    #654); True when either refused. The base gates never run below a
+    proven rung under a [stack]."""
+    return _report_preflight(
+        ui,
+        "the isolation rung is not proven",
+        _preflight_rungs(root_dir, factory_config, run_id, ui),
+    ) or _report_preflight(
+        ui,
+        "the base branch fails a gate Phase 1 runs, or its reading cannot be recorded",
+        _preflight_base_gates(manifest, root_dir, factory_config, run_id, ui),
+    )
 
 
 def _preflight_spec_pin(manifest: Manifest, root_dir: Path, ui: UI) -> list[str]:
@@ -2428,6 +2567,48 @@ def _preflight_spec_pin(manifest: Manifest, root_dir: Path, ui: UI) -> list[str]
             f"{manifest.project_name}"
         )
     return spec_pin_errors(manifest, root_dir)
+
+
+def _preflight_stack(
+    manifest: Manifest, root_dir: Path, factory_config: FactoryConfig, run_id: str
+) -> list[str]:
+    """Why this run must not use the ``[stack]`` in force, or [] (#696 slice 3).
+
+    A stack no person confirmed refuses, and its one inbox item is filed.
+    A confirmed stack still refuses a plan made under another one.
+    """
+    stack = factory_config.project_stack
+    if stack is not None and stack.unconfirmed:
+        return unconfirmed_lines(root_dir, stack, run_id=run_id)
+    return stack_pin_errors(manifest, stack)
+
+
+def _preflight_pins(
+    manifest: Manifest, root_dir: Path, factory_config: FactoryConfig, run_id: str, ui: UI
+) -> tuple[str, list[str]]:
+    """The spec pin (#639), then the stack (#696): the headline and reasons
+    of the first that refuses, or an empty list. One call, so
+    ``_run_preflights`` gains no branch (its cyclomatic ratchet is at 10)."""
+    spec_errors = _preflight_spec_pin(manifest, root_dir, ui)
+    if spec_errors:
+        return "the plan does not match the spec it was made from", spec_errors
+    return (
+        "the [stack] in kstrl.toml is not confirmed, or is not the one this plan was made under",
+        _preflight_stack(manifest, root_dir, factory_config, run_id),
+    )
+
+
+def _emit_stack_confirmation(bus: EventBus, stack: Stack | None) -> None:
+    """Record how this run's ``[stack]`` was confirmed (#696 slice 3).
+
+    ``decided_by`` is "inbox" for an APPROVED item and "operator" for an
+    answer at the prompt with ``[inbox]`` disabled, which nothing else
+    records: it held for this run only.
+    """
+    if stack is not None and not stack.unconfirmed:
+        bus.emit(
+            CheckpointResolved(kind=STACK_KIND, decision="approved", decided_by=stack.confirmed_by)
+        )
 
 
 def _run_preflights(
@@ -2491,11 +2672,8 @@ def _run_preflights(
     register_errors, run_decisions = _preflight_decision_register(manifest, root_dir)
     if _report_preflight(ui, "the architect decision register cannot bind", register_errors):
         return None
-    if _report_preflight(
-        ui,
-        "the plan does not match the spec it was made from",
-        _preflight_spec_pin(manifest, root_dir, ui),
-    ):
+    headline, pin_errors = _preflight_pins(manifest, root_dir, factory_config, run_id, ui)
+    if _report_preflight(ui, headline, pin_errors):
         return None
     if _report_preflight(
         ui,
@@ -2503,11 +2681,7 @@ def _run_preflights(
         _preflight_component_scope(manifest, run_scope),
     ):
         return None
-    if _report_preflight(
-        ui,
-        "the base branch fails a gate Phase 1 runs, or its reading cannot be recorded",
-        _preflight_base_gates(manifest, root_dir, factory_config, run_id, ui),
-    ):
+    if _refused_rung_or_base(manifest, root_dir, factory_config, run_id, ui):
         return None
     if not factory_config.use_worktrees:
         return run_decisions
@@ -2932,6 +3106,7 @@ def _run_component(
             allow_network=sandbox_allow_network,
         ),
         max_budget_usd=agent_budget_usd,
+        root_dir=root_dir,
     )
 
     # Copy PRD into worktree if needed.
@@ -4279,6 +4454,8 @@ def run_factory(
             architect_run_id=architect_run_id,
         )
     finally:
+        release((factory_config.setup_rung, factory_config.test_rung))
+        factory_config.setup_rung = factory_config.test_rung = None
         run_lock.release()
 
 
@@ -4662,6 +4839,7 @@ def _run_factory_locked(
     # Chunk 4: the component DAG + budget caps as one event, so a
     # dashboard can draw the board without reading the manifest.
     bus.emit(_run_plan_event(manifest, factory_config))
+    _emit_stack_confirmation(bus, factory_config.project_stack)
 
     # R7.1: resolve which model family reviews this run's diffs ONCE so
     # the choice is stable across components and the homogeneity warning
@@ -5606,7 +5784,7 @@ def _run_factory_locked(
             contract_results = run_contract_testing(
                 manifest,
                 root_dir,
-                contract_config,
+                replace(contract_config, rung=factory_config.test_rung),
                 ui,
                 components_merged=components_merged,
                 base_sha=round_base_sha,

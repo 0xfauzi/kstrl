@@ -16,11 +16,22 @@ The table in kstrl.toml has four keys, and all four are required::
     tests = "make test"
     lint = "make lint"
 
+Three more keys are optional (#700 slice 2, :data:`STACK_RUNG_KEYS`): the
+paths the isolation rung lets the commands write and read beyond their
+worktree, and whether the stack drives a browser.
+
 With no ``[stack]`` table nothing changes: kstrl reads ``[verify]`` as before.
 With one, it is the only source of verification commands, and every other
-source is refused by name (:data:`OTHER_COMMAND_SOURCES`). Slice 3 of #696
-adds the human confirmation of a stack; until then a ``[stack]`` is used as
-it is loaded.
+source is refused by name (:data:`OTHER_COMMAND_SOURCES`).
+
+A stack runs nothing until a person confirms it (#696 slice 3). The
+confirmation is an APPROVED ``stack_confirmation`` inbox item bound to the
+stack's digest, in the control directory outside every worktree, and only
+the most recent approval counts: reverting to an older confirmed text needs
+a new confirmation. :func:`confirmed_stack` is the one reader of a usable
+stack. A :class:`Stack` that did not come from it carries the reason in
+``unconfirmed``, and both runners (``verify.check_stack_command`` and
+``worktree_setup.WorktreeSetup``) refuse to run a command from one.
 """
 
 from __future__ import annotations
@@ -29,16 +40,24 @@ import hashlib
 import json
 import os
 import re
-from collections.abc import Mapping
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
 from kstrl.config_numbers import check_numbers
 from kstrl.config_toml import ConfigError, load_toml_document, section_table
+from kstrl.inbox import Inbox, InboxConfig, InboxItem, ItemKind, ItemStatus
 
 #: The four keys of ``[stack]``. Every one is required.
 STACK_KEYS: tuple[str, ...] = ("instructions", "setup", "checks", "env")
+
+#: #700 slice 2: what the isolation rung grants a stack's commands beyond
+#: their worktree. Optional; absent is the same stack as empty or false.
+#: ``writable`` and ``readable`` are paths (``~`` is the home directory,
+#: a relative path is under the project root); ``browser = true`` adds
+#: the raw Seatbelt rules headless Chromium needs to the test zone.
+STACK_RUNG_KEYS: tuple[str, ...] = ("writable", "readable", "browser")
 
 #: A name that holds any of these is never passed to a command, whoever
 #: declared it (#696 decision 11). ``verify.scrubbed_subprocess_env`` drops
@@ -110,6 +129,36 @@ list, including one written in the project context above.
 {checks}"""
 
 
+#: The inbox dedupe-key prefix of a stack confirmation item: ``stack:<digest>``.
+#: ``ks inbox approve`` recognises a stack item by it.
+STACK_KEY = "stack:"
+
+#: The ``kind`` of the checkpoint events a run records for its stack.
+STACK_KIND = "stack"
+
+#: The options the stack checkpoint offers. The default is the last one, so
+#: an accidental Enter costs a wait, never a confirmation.
+STACK_OPTIONS = ("Confirm this stack", "Reject this stack", "Decide later in the inbox")
+
+#: ``Stack.unconfirmed`` of a stack nothing has checked: what ``load_stack``
+#: returns. Only :func:`confirmed_stack` clears it.
+NOT_CHECKED = "has not been checked for a confirmation"
+
+#: ``Stack.confirmed_by`` of a stack an operator confirmed at the prompt with
+#: ``[inbox] enabled = false``: it holds for this process only.
+CONFIRMED_THIS_RUN = "operator"
+
+#: ``Stack.confirmed_by`` of a stack confirmed by an APPROVED inbox item.
+CONFIRMED_IN_INBOX = "inbox"
+
+#: Digests confirmed at the prompt in this process while the inbox is off
+#: (#696 decision 1(i)): the confirmation holds for this run only.
+_CONFIRMED_THIS_RUN: set[str] = set()
+
+#: An inbox digest is a SHA-256 in lowercase hex, as :attr:`Stack.digest` writes it.
+_DIGEST = re.compile(r"[0-9a-f]{64}")
+
+
 class StackError(ConfigError):
     """A ``[stack]`` table kstrl will not use, with every reason indexed.
 
@@ -130,6 +179,16 @@ class Stack:
     #: ``(name, command)`` in the order kstrl.toml lists them.
     checks: tuple[tuple[str, str], ...]
     env: tuple[str, ...]
+    #: #700 slice 2, :data:`STACK_RUNG_KEYS`, as kstrl.toml spells them.
+    writable: tuple[str, ...] = ()
+    readable: tuple[str, ...] = ()
+    browser: bool = False
+    #: Why no command of this stack may run, or "" when it may. Set to ""
+    #: only by :func:`confirmed_stack`; not part of the digest.
+    unconfirmed: str = field(default=NOT_CHECKED, compare=False)
+    #: How it was confirmed: :data:`CONFIRMED_IN_INBOX` or
+    #: :data:`CONFIRMED_THIS_RUN`; "" while ``unconfirmed`` is set.
+    confirmed_by: str = field(default="", compare=False)
 
     @property
     def check_names(self) -> tuple[str, ...]:
@@ -148,6 +207,9 @@ class Stack:
                 "setup": self.setup,
                 "checks": [list(check) for check in self.checks],
                 "env": list(self.env),
+                "writable": list(self.writable),
+                "readable": list(self.readable),
+                "browser": self.browser,
             },
             sort_keys=True,
             separators=(",", ":"),
@@ -182,6 +244,22 @@ def _env_errors(value: object) -> list[str]:
     return errors
 
 
+def _paths_errors(key: str, value: object) -> list[str]:
+    if not isinstance(value, list):
+        return [f"{key} must be a list of paths, got {value!r}"]
+    return [
+        f"{key}[{index}] must be a non-empty path, got {path!r}"
+        for index, path in enumerate(value)
+        if not _nonempty_text(path)
+    ]
+
+
+def stack_paths(root_dir: Path, entries: tuple[str, ...]) -> list[Path]:
+    """``writable`` or ``readable`` as paths: ``~`` expanded, a relative
+    entry under ``root_dir``, an absolute one as written."""
+    return [root_dir / Path(entry).expanduser() for entry in entries]
+
+
 def _checks_errors(value: object) -> list[str]:
     if not isinstance(value, dict):
         return [f"checks must be a table of name = command, got {value!r}"]
@@ -201,9 +279,9 @@ def stack_errors(raw: dict[str, Any]) -> list[str]:
     dropped: a dropped check is a check that silently stopped running.
     """
     errors = [
-        f"{key} is not a [stack] key; the keys are {', '.join(STACK_KEYS)}"
+        f"{key} is not a [stack] key; the keys are {', '.join(STACK_KEYS + STACK_RUNG_KEYS)}"
         for key in raw
-        if key not in STACK_KEYS
+        if key not in STACK_KEYS + STACK_RUNG_KEYS
     ]
     errors += [f"{key} is required" for key in STACK_KEYS if key not in raw]
     if "instructions" in raw and not _nonempty_text(raw["instructions"]):
@@ -214,6 +292,10 @@ def stack_errors(raw: dict[str, Any]) -> list[str]:
         errors += _checks_errors(raw["checks"])
     if "env" in raw:
         errors += _env_errors(raw["env"])
+    for key in ("writable", "readable"):
+        errors += _paths_errors(key, raw.get(key, []))
+    if not isinstance(raw.get("browser", False), bool):
+        errors.append(f"browser must be true or false, got {raw['browser']!r}")
     return errors
 
 
@@ -260,7 +342,285 @@ def load_stack(root_dir: Path) -> Stack | None:
         setup=str(raw["setup"]),
         checks=tuple((str(name), str(command)) for name, command in raw["checks"].items()),
         env=tuple(str(name) for name in raw["env"]),
+        writable=tuple(str(path) for path in raw.get("writable", [])),
+        readable=tuple(str(path) for path in raw.get("readable", [])),
+        browser=bool(raw.get("browser", False)),
     )
+
+
+class StackRefused(StackError):
+    """:func:`confirmed_stack`'s refusal: ``stack.unconfirmed`` says why."""
+
+    def __init__(self, stack: Stack) -> None:
+        super().__init__(f"the [stack] in kstrl.toml {stack.unconfirmed}")
+        self.stack = stack
+
+
+def stack_dedupe_key(digest: str) -> str:
+    """The dedupe key of the stack_confirmation item for the stack ``digest``."""
+    return f"{STACK_KEY}{digest}"
+
+
+def _record_errors(record: dict[str, Any]) -> list[str]:
+    """Why an inbox line that claims to be a stack decision cannot be read.
+
+    The same vocabulary the fold uses (``InboxItem.from_dict``), plus the
+    two fields a stack decision binds by: the digest and the key built
+    from it.
+    """
+    item = InboxItem.from_dict(record)
+    if item is None:
+        return ["it is not an inbox item kstrl can read"]
+    errors: list[str] = []
+    if item.kind is not ItemKind.STACK_CONFIRMATION:
+        errors.append(f"its kind is {str(item.kind)!r}, not {str(ItemKind.STACK_CONFIRMATION)!r}")
+    digest = item.evidence.get("stack_digest")
+    if not isinstance(digest, str) or not _DIGEST.fullmatch(digest):
+        errors.append(f"its evidence.stack_digest {digest!r} is not a sha256")
+    elif item.dedupe_key != stack_dedupe_key(digest):
+        errors.append(f"its dedupe_key {item.dedupe_key!r} does not name its digest")
+    return errors
+
+
+def _is_stack_record(record: dict[str, Any]) -> bool:
+    return record.get("kind") == str(ItemKind.STACK_CONFIRMATION) or str(
+        record.get("dedupe_key", "")
+    ).startswith(STACK_KEY)
+
+
+def _latest_approval(root_dir: Path, inbox_config: InboxConfig) -> tuple[InboxItem, bool] | None:
+    """The stack item the newest APPROVED line of the inbox names, and whether it is still
+    approved, or None.
+
+    The newest approval line decides, not the newest item that is still
+    approved: when a person withdraws that approval later (``ks inbox
+    reject`` or ``snooze``), no older approval comes back into force, so
+    the caller refuses until a stack is confirmed again (#696 decision 1(b)).
+
+    Raises :class:`ValueError` naming the fault when the inbox cannot be
+    read, or any line of it could be a stack decision kstrl cannot read:
+    an unreadable inbox is a refusal, never an empty read.
+    """
+    box = Inbox(root_dir, inbox_config)
+    scan = box.scan()
+    if scan.unreadable:
+        raise ValueError(f"{box.path} cannot be read")
+    if scan.skipped_lines:
+        raise ValueError(
+            f"{scan.skipped_lines} line(s) of {box.path} are not JSON objects, and any of "
+            "them could be a newer stack decision"
+        )
+    folded: dict[str, InboxItem] = {}
+    newest = ""
+    for position, record in enumerate(scan.records):
+        if not _is_stack_record(record):
+            continue
+        errors = _record_errors(record)
+        if errors:
+            raise ValueError(
+                f"record {position + 1} of {box.path} is a stack decision kstrl cannot read: "
+                + "; ".join(errors)
+            )
+        item = InboxItem.from_dict(record)
+        assert item is not None  # _record_errors refused every None
+        folded[item.id] = item
+        if item.status is ItemStatus.APPROVED:
+            newest = item.id
+    if not newest:
+        return None
+    return folded[newest], folded[newest].status is ItemStatus.APPROVED
+
+
+def _refusal(root_dir: Path, stack: Stack) -> tuple[str, str]:
+    """``(reason, confirmed_by)``: why ``stack`` may not run, or ``("", how)``.
+
+    ``except Exception`` on both reads: whatever reading ``[inbox]`` or the
+    inbox log raises (a TOML date cast to int is a TypeError, a control
+    directory under the repository a ControlStateError) means the
+    confirmation cannot be checked, which is a refusal, never a traceback
+    and never an empty read. Not ``config_preflight.SURFACE_REJECTIONS``:
+    importing that module from here makes every importer of kstrl.stack
+    reach the queue (tests/test_state_dir_scope.py).
+    """
+    try:
+        inbox_config = InboxConfig.load(root_dir)
+    except Exception as exc:  # noqa: BLE001 - see the docstring
+        return f"cannot be checked: [inbox] cannot be read: {exc}", ""
+    if not inbox_config.enabled:
+        if stack.digest in _CONFIRMED_THIS_RUN:
+            return "", CONFIRMED_THIS_RUN
+        return (
+            "is not confirmed, and [inbox] is disabled, so only an answer at the prompt of "
+            "ks factory in a terminal can confirm it, for that run only",
+            "",
+        )
+    try:
+        found = _latest_approval(root_dir, inbox_config)
+    except Exception as exc:  # noqa: BLE001 - see the docstring
+        return f"cannot be checked: the inbox is unreadable: {exc}", ""
+    if found is None:
+        return f"is not confirmed: no inbox approval names {stack.digest[:12]}", ""
+    latest, still_approved = found
+    approved = str(latest.evidence["stack_digest"])
+    if not still_approved:
+        return (
+            f"is not confirmed: the newest confirmation, of {approved[:12]}, was "
+            f"{latest.status} by {latest.decided_by} at {latest.decided_at}",
+            "",
+        )
+    if approved == stack.digest:
+        return "", CONFIRMED_IN_INBOX
+    return (
+        f"has changed since {approved[:12]}, confirmed by {latest.decided_by} at "
+        f"{latest.decided_at}: it now reads {stack.digest[:12]}, which is not confirmed",
+        "",
+    )
+
+
+def stack_text_digest(root_dir: Path, *, warn: Callable[[str], None]) -> str:
+    """The digest of kstrl.toml's ``[stack]`` as written, "" when it has none.
+
+    What a plan pins (``Manifest.stack_digest``): the text it was made
+    under, whether or not anyone has confirmed it yet. Never a usable stack.
+
+    A kstrl.toml that cannot be read pins nothing, said through ``warn``:
+    decompose calls this ahead of its halt path, so raising here would
+    cost the spec-issues artifact (``KstrlConfig.load_or_anchored`` is the
+    precedent, and states the taxonomy). ``ks decompose`` and ``ks
+    factory`` have already refused such a file at entry
+    (``config_preflight``); only the in-process call reaches this.
+    """
+    try:
+        stack = load_stack(root_dir)
+    except (ConfigError, OSError) as exc:
+        warn(f"the [stack] in kstrl.toml cannot be read, so this plan pins none: {exc}")
+        return ""
+    return stack.digest if stack is not None else ""
+
+
+def confirmed_stack(root_dir: Path) -> Stack | None:
+    """The project's ``[stack]`` when a person confirmed this exact text, else a refusal.
+
+    The one reader of a usable stack. None when kstrl.toml has no
+    ``[stack]``. Raises :class:`StackRefused` naming the reason when the
+    most recent APPROVED ``stack_confirmation`` item does not carry the
+    current digest, when there is none, or when the inbox cannot be read;
+    and :class:`StackError` for a malformed table, as :func:`load_stack`.
+    """
+    stack = load_stack(root_dir)
+    if stack is None:
+        return None
+    reason, confirmed_by = _refusal(root_dir, stack)
+    if reason:
+        raise StackRefused(replace(stack, unconfirmed=reason))
+    return replace(stack, unconfirmed="", confirmed_by=confirmed_by)
+
+
+def stack_in_force(root_dir: Path) -> Stack | None:
+    """What a config loader holds: the confirmed stack, or the stack with
+    ``unconfirmed`` set to why it may not run. Never raises a refusal, so a
+    command that runs no check (``ks status``, ``ks inbox approve``) still
+    loads; the runners refuse an unconfirmed stack's commands."""
+    try:
+        return confirmed_stack(root_dir)
+    except StackRefused as refused:
+        return refused.stack
+
+
+def stack_evidence(root_dir: Path, stack: Stack) -> dict[str, Any]:
+    """What a stack item carries: the digest, the table and where it came from."""
+    from kstrl.config import resolve_config_file
+
+    return {
+        "stack_digest": stack.digest,
+        "stack": {
+            "instructions": stack.instructions,
+            "setup": stack.setup,
+            "checks": [list(check) for check in stack.checks],
+            "env": list(stack.env),
+        },
+        "source": str(resolve_config_file(root_dir)),
+    }
+
+
+def file_stack_item(
+    root_dir: Path, stack: Stack, *, run_id: str = "", quiet: bool = False
+) -> InboxItem:
+    """File (or bump) the open stack_confirmation item for ``stack``.
+
+    One item per digest while it is open: ``Inbox.add`` collapses a repeat
+    onto it. Raises :class:`ValueError` when ``[inbox]`` is disabled or the
+    inbox cannot be read, so no line is ever appended to an inbox kstrl
+    could not read back; otherwise raises what ``Inbox.add`` raises.
+    ``quiet`` pages nobody: the person who answered the prompt is there.
+    """
+    from kstrl.observability import NotifyConfig, NotifyHooks
+
+    config = InboxConfig.load(root_dir)
+    if not config.enabled:
+        raise ValueError("[inbox] is disabled")
+    _latest_approval(root_dir, config)
+    box = Inbox(root_dir, config)
+    return box.add(
+        ItemKind.STACK_CONFIRMATION,
+        f"Confirm the [stack] {stack.digest[:12]} in kstrl.toml",
+        detail=(
+            "kstrl runs no command of a [stack] a person has not confirmed. Checks, in order: "
+            + ", ".join(f"{name} `{command}`" for name, command in stack.checks)
+            + (f"; setup `{stack.setup}`" if stack.setup else "; no setup")
+            + ". ks inbox approve <id> confirms this text; ks inbox reject <id> --comment ... "
+            "refuses it."
+        ),
+        run_id=run_id,
+        dedupe_key=stack_dedupe_key(stack.digest),
+        evidence=stack_evidence(root_dir, stack),
+        notify=NotifyHooks(NotifyConfig(), run_id=run_id) if quiet else None,
+    )
+
+
+def unconfirmed_lines(root_dir: Path, stack: Stack, *, run_id: str = "") -> list[str]:
+    """What a refusal of the unconfirmed ``stack`` says, after filing its item.
+
+    Every surface that refuses one (``ks factory``, the run's pre-spend
+    checks, ``ks serve``) says it the same way and files the same one item.
+    """
+    lines = [f"the [stack] in kstrl.toml {stack.unconfirmed}. Nothing was run."]
+    try:
+        item = file_stack_item(root_dir, stack, run_id=run_id)
+    except Exception as exc:  # noqa: BLE001 - a filing that failed is said, never raised
+        lines.append(
+            f"No confirmation item was filed ({exc}). Run ks factory in a terminal and "
+            "answer the stack checkpoint, or fix the inbox and run this again."
+        )
+        return lines
+    lines.append(
+        f"ks inbox approve {item.id[:8]} confirms {stack.digest[:12]}; ks inbox reject "
+        f"{item.id[:8]} --comment ... refuses it; ks inbox show {item.id[:8]} shows the table."
+    )
+    return lines
+
+
+def decide_at_prompt(root_dir: Path, stack: Stack, *, confirm: bool, actor: str) -> str:
+    """Record an answer given at the stack checkpoint; returns what to tell the operator.
+
+    With the inbox on, the answer is an inbox decision, so the next run finds
+    it. With it off (#696 decision 1(i)), a confirmation holds for this run
+    only and a rejection is not recorded anywhere.
+    """
+    config = InboxConfig.load(root_dir)
+    if not config.enabled:
+        if confirm:
+            _CONFIRMED_THIS_RUN.add(stack.digest)
+            return "[inbox] is disabled: this confirmation holds for this run only"
+        return "[inbox] is disabled: this rejection holds for this run only"
+    item = file_stack_item(root_dir, stack, quiet=True)
+    box = Inbox(root_dir, config)
+    comment = "decided at the ks factory stack checkpoint"
+    if confirm:
+        box.approve(item.id, actor=actor, comment=comment)
+        return f"confirmed {stack.digest[:12]} in the inbox ({item.id[:8]})"
+    box.reject(item.id, actor=actor, comment=comment)
+    return f"rejected {stack.digest[:12]} in the inbox ({item.id[:8]})"
 
 
 @dataclass

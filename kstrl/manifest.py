@@ -259,6 +259,10 @@ class Manifest:
     # decompose wrote; ``save`` writes them only when the digest is set.
     spec_path: str = ""
     spec_digest: str = ""
+    # #696: the digest of the [stack] this plan was made under, "" when the
+    # project had none or the manifest is from before #696.
+    # ``plan_gate.stack_pin_errors`` refuses to run it under another stack.
+    stack_digest: str = ""
 
     @classmethod
     def from_prd(
@@ -386,6 +390,7 @@ class Manifest:
             plan_awaiting_approval=data.get("planAwaitingApproval", ""),
             spec_path=data.get("specPath", ""),
             spec_digest=data.get("specDigest", ""),
+            stack_digest=data.get("stackDigest", ""),
         )
 
     def save(self, path: Path) -> None:
@@ -447,6 +452,8 @@ class Manifest:
         if self.spec_digest:
             data["specPath"] = self.spec_path
             data["specDigest"] = self.spec_digest
+        if self.stack_digest:
+            data["stackDigest"] = self.stack_digest
         path.parent.mkdir(parents=True, exist_ok=True)
         # Atomic, and keeps the mode the operator gave this git-tracked
         # file; see kstrl.atomicio (#291).

@@ -77,6 +77,9 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/helpers/integration_harness.py": 2,
     "tests/helpers/run_config.py": 1,
     "tests/spine_utils.py": 1,
+    # #654: the moved-base test commits NOTES.md into the repository
+    # tests.test_red_base_preflight._repo built and put through set_identity.
+    "tests/test_accept_red_base.py": 1,
     "tests/test_adequacy.py": 7,
     # #642: `_loop_files` and `_second_component` commit into the repository
     # `tests.test_agent_processes_outlive_run._repo` put through

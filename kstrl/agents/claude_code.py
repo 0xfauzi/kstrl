@@ -45,6 +45,7 @@ class ClaudeCodeAgent:
         effort: str | None = None,
         sandbox: SandboxConfig | None = None,
         read_only: bool = False,
+        root_dir: Path | None = None,
     ):
         """Initialize Claude Code agent.
 
@@ -65,6 +66,7 @@ class ClaudeCodeAgent:
         self._effort = effort
         self._sandbox = sandbox
         self._read_only = read_only
+        self._root_dir = root_dir
         self._final_message: str | None = None
         self._saw_result: bool = False
         self._usage_records: list[UsageRecord] = []
@@ -147,6 +149,7 @@ class ClaudeCodeAgent:
                 cwd=cwd,
                 stdin_text=prompt,
                 timeout=timeout,
+                root_dir=self._root_dir,
             )
         except FileNotFoundError:
             self._usage_records.append(UsageRecord(source="unavailable"))

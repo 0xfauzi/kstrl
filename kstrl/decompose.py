@@ -80,6 +80,7 @@ from kstrl.manifest import (
 from kstrl.names import validate_branch_name, validate_component_id
 from kstrl.prd import PRD
 from kstrl.runid import mint_run_id
+from kstrl.stack import stack_text_digest
 from kstrl.statedir import plan_prd_path
 from kstrl.toolchains import TOOLCHAINS
 
@@ -2493,6 +2494,9 @@ def _decompose_spec_impl(
     # re-reads it from.
     pin = spec_digest(spec_content)
     spec_source = spec_ref(spec_path, root_dir)
+    # #696: the [stack] this plan is made under, pinned as text; the run
+    # that builds the plan refuses under any other (plan_gate.stack_pin_errors).
+    stack_pin = stack_text_digest(root_dir, warn=ui.warn)
     ui.kv("Spec digest", pin[:12])
     # #199: the architect runs with cwd=root_dir (see `agent.run` below),
     # so it is told to read the repository rather than handed a paste.
@@ -2934,6 +2938,7 @@ def _decompose_spec_impl(
             linear_sync_key=(linear_sync.sync_key if linear_sync is not None else ""),
             spec_path=spec_source,
             spec_digest=pin,
+            stack_digest=stack_pin,
         )
 
         # Validate DAG

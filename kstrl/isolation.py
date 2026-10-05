@@ -10,10 +10,14 @@ nono's manifest interface silently ignoring two documented fields (gap
 G2), so what nono says it enforces is a hint, and only a canary is
 evidence.
 
-Record only. Nothing runs inside a rung yet and nothing is refused
-because of one: ``ks doctor --measure`` reports the reading, and the
-verification records carry :data:`HOST_LABEL`, which stays the truth
-until a later slice runs commands inside a proven rung.
+Where a rung is used (slice 2). ``ks factory`` under a ``[stack]``
+proves both zones once per run with :func:`prove_zones`, in the policy
+its commands then run in, and refuses below a proven rung: the setup
+runs in the setup zone and every check in the test zone, through
+:meth:`kstrl.rung.ProvenRung.command`, and the records carry the test
+zone's label. Without a ``[stack]`` nothing is proven and every command
+runs on the host under :data:`~kstrl.rung.HOST_LABEL`. ``ks doctor
+--measure`` proves the two zones with no stack paths and only reports.
 
 The verdict rules. A canary is contained only when its operation failed
 with an errno; the egress canary only with EPERM, because a timeout or
@@ -62,19 +66,20 @@ import secrets
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from kstrl.atomicio import atomic_write_text
+from kstrl.atomicio import atomic_write_json, atomic_write_text
+from kstrl.events import RunPaths
 from kstrl.jsonread import read_json
+from kstrl.rung import ENV_PROGRAM, HOST_LABEL, ProvenRung, _nono_argv, zone_dir
 from kstrl.statedir import control_dir, xdg_state_home
 from kstrl.verify import ChildOutputDecodeError, run_scrubbed
-
-#: What a result records when its command ran with no rung around it.
-HOST_LABEL = "none: ran on the host"
+from kstrl.version import kstrl_version
 
 #: The environment variable naming the nono binary; PATH is searched
 #: when it is unset.
@@ -83,15 +88,13 @@ NONO_ENV = "KSTRL_NONO"
 SETUP_ZONE = "setup"
 TEST_ZONE = "test"
 
+#: A run's record of the rungs its commands ran in, beside
+#: ``base-gates.json`` in the run directory (#700 slice 2).
+ISOLATION_FILE = "isolation.json"
+
 #: kstrl's own interpreter runs the canary. This is kstrl's runtime, not
 #: an assumption about the target project.
 _INTERPRETER = sys.executable
-
-#: The program in front of every command inside the rung. nono turns a
-#: missing command into exit 1 and strips the variables a shell or an
-#: interpreter reads at startup; ``env`` in front restores exit 127 and
-#: 126 and sets those variables after nono has run (evaluation 4.9).
-ENV_PROGRAM = "/usr/bin/env"
 
 #: nono's default groups minus the write grant to the system temporary
 #: directories, the user tool directories, and the startup-command block
@@ -127,6 +130,12 @@ MISSING_COMMAND_EXIT = 127
 SIGTERM_PROBE = ("/bin/sh", "-c", "kill -TERM $$")
 #: The exit statuses a SIGTERM death may report.
 SIGTERM_CODES = (143, -15)
+
+#: nono's raw Seatbelt rules that headless Chromium needs (evaluation
+#: 4.5, gap G3). The owner decided (2026-10-04, #700) they go into the
+#: TEST-zone policy only, and only for a ``[stack]`` that declares
+#: ``browser = true``: both widen the boundary.
+BROWSER_SEATBELT_RULES = ("(allow mach-register)", "(allow iokit-open)")
 
 #: What the rung must still allow: a check that cannot do these cannot run.
 POSITIVE_CONTROLS = ("scratch_write", "loopback", "env_reaches", "exit_127", "sigterm")
@@ -189,22 +198,6 @@ print(json.dumps({args[i]: outcome(args[i + 1], args[i + 2]) for i in range(0, l
 
 
 @dataclass(frozen=True)
-class ProvenRung:
-    """One zone's reading. ``refusal`` is empty only when every canary
-    was contained and every positive control passed."""
-
-    zone: str
-    backend: str
-    backend_version: str
-    policy_path: str
-    policy_sha256: str
-    canaries: Mapping[str, str]
-    seconds: float
-    refusal: str
-    label: str
-
-
-@dataclass(frozen=True)
 class _Ran:
     """One bounded child: its exit status (None when it gave none) and
     stdout, or why there is no status."""
@@ -223,14 +216,18 @@ def nono_policy(
     writable: Sequence[Path | str],
     readable: Sequence[Path | str],
     deny_read: Sequence[Path | str],
+    browser: bool = False,
 ) -> dict[str, Any]:
     """The nono profile for ``zone``: the setup zone leaves egress open,
     the test zone blocks it and allows localhost on any port. No DNS deny
     is ever written: denying the resolver socket blocks DNS in the setup
-    zone and does not block it in the test zone (evaluation 4.3)."""
+    zone and does not block it in the test zone (evaluation 4.3).
+    ``browser`` adds :data:`BROWSER_SEATBELT_RULES` to the test zone and
+    to nothing else."""
     network: dict[str, Any] = {"block": False}
     if zone == TEST_ZONE:
         network = {"block": True, "open_port": [0]}
+    rules = list(BROWSER_SEATBELT_RULES) if browser and zone == TEST_ZONE else []
     return {
         "meta": {"name": f"kstrl-{zone}-zone"},
         "groups": {"exclude": list(EXCLUDED_GROUPS)},
@@ -242,6 +239,7 @@ def nono_policy(
         },
         "network": network,
         "workdir": {"access": "none"},
+        **({"unsafe_macos_seatbelt_rules": rules} if rules else {}),
     }
 
 
@@ -254,29 +252,6 @@ def write_policy(root: Path, policy: Mapping[str, Any]) -> tuple[Path, str]:
     path.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_text(path, text)
     return path, digest
-
-
-def _nono_argv(
-    nono: str, policy_path: Path, scratch: Path, argv: Sequence[str], assignments: Sequence[str]
-) -> list[str]:
-    """The one place a nono command line is built. nono's own state goes
-    to ``scratch`` (a missing ``XDG_CONFIG_HOME`` makes it fall back to
-    the operator's ``~/.config``, measured), and no update check runs."""
-    return [
-        ENV_PROGRAM,
-        "NONO_NO_UPDATE_CHECK=1",
-        f"TMPDIR={scratch / 'nono-tmp'}/",
-        f"XDG_CONFIG_HOME={scratch / 'nono-config'}",
-        nono,
-        "wrap",
-        "-s",
-        "-p",
-        str(policy_path),
-        "--",
-        ENV_PROGRAM,
-        *assignments,
-        *argv,
-    ]
 
 
 def _run_bounded(argv: Sequence[str], cwd: Path) -> _Ran:
@@ -342,9 +317,9 @@ class _Layout:
     @classmethod
     def under(cls, scratch: Path) -> _Layout:
         layout = cls(
-            scratch / "zone",
+            zone_dir(scratch),
             scratch / "outside",
-            scratch / "zone" / "planted",
+            zone_dir(scratch) / "planted",
             secrets.token_hex(6),
         )
         for directory in (
@@ -504,17 +479,38 @@ def _label(zone: str, version: str, canaries: Mapping[str, str]) -> str:
     return f"{version}, setup zone: writes confined, egress open"
 
 
-def prove_rung(root: Path, scratch: Path, deny_read: Sequence[Path], zone: str) -> ProvenRung:
+def prove_rung(
+    root: Path,
+    scratch: Path,
+    deny_read: Sequence[Path],
+    zone: str,
+    *,
+    writable: Sequence[Path] = (),
+    readable: Sequence[Path] = (),
+    browser: bool = False,
+) -> ProvenRung:
     """Prove ``zone`` in ``scratch`` (a directory the caller owns and
     removes), denying reads of ``deny_read``. The only constructor of
-    :class:`ProvenRung`."""
+    :class:`ProvenRung`.
+
+    ``writable`` and ``readable`` are granted on top of the scratch zone
+    and kstrl's own runtime, and ``browser`` adds the browser rules
+    (#700 slice 2): the canaries run in the very policy every command of
+    the rung then runs in, so a grant that lets a canary out refuses the
+    rung."""
     started = time.monotonic()
     nono, version, refusal = _locate_nono(scratch)
     policy_path, digest, canaries = "", "", {}
     if not refusal:
         layout = _Layout.under(scratch)
         runtime = [Path(_INTERPRETER).parent, Path(sys.prefix), Path(sys.base_prefix)]
-        policy = nono_policy(zone, [layout.zone], runtime, [*deny_read, layout.planted])
+        policy = nono_policy(
+            zone,
+            [layout.zone, *writable],
+            [*runtime, *readable],
+            [*deny_read, layout.planted],
+            browser,
+        )
         path, digest = write_policy(root, policy)
         policy_path = str(path)
         canaries = _run_canaries(nono, path, layout, zone)
@@ -529,4 +525,47 @@ def prove_rung(root: Path, scratch: Path, deny_read: Sequence[Path], zone: str) 
         seconds=round(time.monotonic() - started, 3),
         refusal=refusal,
         label=HOST_LABEL if refusal else _label(zone, version, canaries),
+        scratch=str(scratch),
     )
+
+
+def prove_zones(
+    root: Path, writable: Sequence[Path], readable: Sequence[Path], browser: bool
+) -> dict[str, ProvenRung]:
+    """Both zones for one run, each proven in a scratch directory of its
+    own that the caller removes through :func:`kstrl.rung.release`, and
+    with the control directory denied to both (#700 slice 2)."""
+    return {
+        zone: prove_rung(
+            root,
+            Path(tempfile.mkdtemp(prefix=f"kstrl-rung-{zone}-")),
+            [control_dir(root)],
+            zone,
+            writable=writable,
+            readable=readable,
+            browser=browser,
+        )
+        for zone in (SETUP_ZONE, TEST_ZONE)
+    }
+
+
+def write_record(
+    root: Path, run_id: str, stack_digest: str, rungs: Mapping[str, ProvenRung]
+) -> list[str]:
+    """Write the run's :data:`ISOLATION_FILE`, proven or refused; return
+    why it could not be written, or []."""
+    path = RunPaths.for_run(root, run_id).root / ISOLATION_FILE
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_json(
+            path,
+            {
+                "runId": run_id,
+                "kstrlVersion": kstrl_version(),
+                "stackDigest": stack_digest,
+                **{zone: asdict(rung) for zone, rung in rungs.items()},
+            },
+        )
+    except OSError as exc:
+        return [f"the isolation record cannot be written at {path}: {exc}"]
+    return []

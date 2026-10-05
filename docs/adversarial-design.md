@@ -113,13 +113,15 @@ uv run python -m kstrl.calibration compare \
   tests/adversarial_fixtures/_results/baseline-<new>.json
 ```
 
-Exit code 0 = no regression, 1 = regression, 2 = usage/load error, or a role id `MIN_ROLE_DETECTION_RATE` does not list (#633). Both v1 (pre-R5.1 single-run) and v2 files load. The codified thresholds live in one constants block at the top of `kstrl/calibration.py` with sizing rationale inline, except `FIXTURE_DETECTION_THRESHOLD`, which moved to `kstrl/calibration_baseline.py` (#406) beside the `FixtureStats.detected` property that reads it:
+Exit code 0 = no regression, 1 = regression, 2 = usage/load error (a malformed `false_positive_analysis` block included), or a role id `MIN_ROLE_DETECTION_RATE` does not list (#633). Both v1 (pre-R5.1 single-run) and v2 files load. The codified thresholds live in one constants block at the top of `kstrl/calibration.py` with sizing rationale inline, except `FIXTURE_DETECTION_THRESHOLD`, which moved to `kstrl/calibration_baseline.py` (#406) beside the `FixtureStats.detected` property that reads it:
 
 | Constant | Value | Meaning |
 |---|---|---|
 | `MAX_ROLE_DETECTION_DROP` | 0.15 | A role's mean detection rate may not drop more than this between baselines. Sized so one run flipping on a 3-fixture role (drop ~0.11) is variance, an entire fixture going dark (~0.33) is a regression. |
 | `MAX_CATEGORY_DETECTION_DROP` | 0.40 | Same per category (per-CWE categories usually hold one fixture: one run flip ~0.33 tolerated, two flips fail). Only meaningful at 3+ runs. |
 | `MIN_ROLE_DETECTION_RATE` | security 0.80, reviewer/architect 0.65, allowed_paths 0.50, security_hard 0.50, architect_reuse 0.50, integration 0.65, integration_clean 1.00 (#482), security_ts and reviewer_ts None (#633: the TypeScript twins, until their first capture) | Absolute floors on the new baseline so successive comparisons cannot ratchet a role downward. The table is closed (#633): `compare` refuses a role id it does not list (exit 2), and there is no default floor. A role listed with `None` is recorded and not gated: it has no floor, it is still held to `MAX_ROLE_DETECTION_DROP` against its previous capture, and the report names it under "not gated". `None` is for a role whose first capture has not been taken, so its floor can be set from that capture. |
+| `FP_RATE_MAX` | 0.34 | Ceiling on each negative role's false-positive rate in the new baseline, every role included (#633; the capture harness imports it). Above it is a regression (exit 1). A new baseline with no `false_positive_analysis` block ran no negatives, and the report says so rather than reading it as 0.00. |
+| `MIN_FP_NEGATIVES` | 3 | A negative role measured over fewer negatives is printed with its count and not gated: with one or two negatives a rate can only be 0, 0.5 or 1 (#633, owner decision 6). |
 | `FIXTURE_DETECTION_THRESHOLD` | 0.5 | Majority-of-completed-runs gate used by the suite and by per-fixture `detected`. |
 | `DEFAULT_CALIBRATION_RUNS` | 3 | Default runs per fixture for baseline capture. |
 

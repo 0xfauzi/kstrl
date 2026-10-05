@@ -68,6 +68,7 @@ class ItemKind(StrEnum):
     HEALTH_BREACH = "health_breach"  # R8.4 control-limit breach (#232)
     SPEC_ESCALATION = "spec_escalation"  # decompose halted on the owner (#449)
     PLAN_GATE = "plan_gate"  # an L1 plan awaiting approval (#602, run_plan_gate)
+    STACK_CONFIRMATION = "stack_confirmation"  # a [stack] awaiting confirmation (#696)
 
     @property
     def action_required(self) -> bool:
@@ -91,6 +92,8 @@ class ItemKind(StrEnum):
             # until the owner answers (#449).
             ItemKind.SPEC_ESCALATION,
             ItemKind.PLAN_GATE,
+            # Nothing runs a [stack]'s commands until a person confirms it.
+            ItemKind.STACK_CONFIRMATION,
         }
 
 

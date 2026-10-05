@@ -86,6 +86,7 @@ from kstrl.factory import (
     BudgetConfigError,
     FactoryConfig,
     FactoryLockHeldError,
+    LeftoverAgentsError,
     _acquire_run_lock,
     _cli_family,
     _report_preflight,
@@ -131,6 +132,7 @@ from kstrl.observability import (
 from kstrl.output import build_console
 from kstrl.plan_gate import PLAN_GATE_KEY, spec_pin_errors
 from kstrl.prd import PRD
+from kstrl.procgroup import pid_is_alive
 from kstrl.reducer import ComponentState, RunState, fold, load_run_state, upconvert_v1
 from kstrl.retry_plan import (
     RESUME_REFUSAL,
@@ -146,6 +148,16 @@ from kstrl.sandbox import SANDBOX_REFUSAL, SandboxConfig, unsandboxable_roles
 from kstrl.security import _SEVERITY_ORDER, SecurityMode
 from kstrl.serve import ARCHITECT_RUN_KIND, LAUNCHD_MODES
 from kstrl.shutdown import StopController, install_signal_handlers
+from kstrl.stack import (
+    STACK_KEY,
+    STACK_OPTIONS,
+    Stack,
+    StackRefused,
+    confirmed_stack,
+    decide_at_prompt,
+    load_stack,
+    unconfirmed_lines,
+)
 from kstrl.timeout import TimeoutConfig, limit_seconds
 from kstrl.toolchains import DEFAULT_LINT_COMMAND, DEFAULT_TEST_COMMAND
 from kstrl.ui.base import UI
@@ -188,6 +200,9 @@ def _inbox_run_lock(root_dir: Path, ui_impl: UI, *, not_done: str, then: str) ->
     """
     try:
         return _acquire_run_lock(root_dir, ui_impl, force=False)
+    except LeftoverAgentsError as exc:
+        ui_impl.err(f"{not_done}: {exc}")
+        sys.exit(2)
     except FactoryLockHeldError:
         ui_impl.err(
             f"{not_done}: a factory run holds the run lock on this root. Nothing was changed."
@@ -886,6 +901,82 @@ def _refuse_command_flags_beside_a_stack(
     ui_impl.err(
         f"{', '.join(passed)} cannot be used with [stack] in kstrl.toml: the stack's "
         "checks are the only verification commands. Drop the flag, or change [stack]."
+    )
+    sys.exit(2)
+
+
+def _stack_checkpoint(root_dir: Path, ui_impl: UI) -> None:
+    """Exit 2 before anything is spent unless a person confirmed the ``[stack]`` (#696).
+
+    Returns when kstrl.toml has no ``[stack]`` or its exact text is
+    confirmed. Otherwise asks when someone can answer: Confirm, Reject, or
+    Decide later, which is the default, so an accidental Enter confirms
+    nothing. Anything but an answered Confirm refuses, after filing the one
+    stack_confirmation item ``ks inbox approve`` decides.
+    """
+    from kstrl.config_preflight import SURFACE_REJECTIONS
+
+    try:
+        confirmed_stack(root_dir)
+        return
+    except StackRefused as refused:
+        stack = refused.stack
+    channel = UiInteractionChannel(ui_impl)
+    response = channel.request(
+        PromptRequest(
+            kind=PromptKind.CHECKPOINT,
+            header=_stack_question(stack),
+            options=STACK_OPTIONS,
+            default=len(STACK_OPTIONS) - 1,
+        )
+    )
+    if response.choice in (0, 1):
+        try:
+            said = decide_at_prompt(root_dir, stack, confirm=response.choice == 0, actor=_actor())
+        except SURFACE_REJECTIONS as exc:
+            _report_preflight(ui_impl, "the stack decision could not be recorded", [str(exc)])
+            sys.exit(2)
+        if response.choice == 0:
+            ui_impl.ok(f"  Stack confirmed: {said}")
+            return
+        _report_preflight(ui_impl, "the [stack] in kstrl.toml was rejected", [said])
+        sys.exit(2)
+    _report_preflight(
+        ui_impl, "the [stack] in kstrl.toml is not confirmed", unconfirmed_lines(root_dir, stack)
+    )
+    sys.exit(2)
+
+
+def _stack_question(stack: Stack) -> str:
+    checks = ", ".join(f"{name} `{command}`" for name, command in stack.checks)
+    setup = f"setup `{stack.setup}`" if stack.setup else "no setup"
+    return (
+        f"The [stack] in kstrl.toml {stack.unconfirmed}. kstrl will run {checks} ({setup}) "
+        f"on every change. Confirm {stack.digest[:12]}?"
+    )
+
+
+def _refuse_stale_stack_approval(action: str, item_id: str, root: Path | None, ui_impl: UI) -> None:
+    """Exit 2 when ``ks inbox approve`` names a stack item for text kstrl.toml no longer holds.
+
+    Dispatched on the ``stack:`` key prefix, as a plan park is on its own
+    (#696). Approving an old digest would make the newest approval one of
+    a stack nobody runs, which un-confirms the one that is there.
+    """
+    if action != "approve":
+        return
+    root_dir, box = _inbox_for(root)
+    item = box.get(item_id)
+    if item is None or not item.dedupe_key.startswith(STACK_KEY):
+        return
+    stack = load_stack(root_dir)
+    now = stack.digest if stack is not None else ""
+    if now == item.evidence.get("stack_digest"):
+        return
+    reads = f"it now reads {now[:12]}" if now else "it has no [stack] now"
+    ui_impl.err(
+        f"{item.id[:8]} confirms the [stack] {str(item.evidence.get('stack_digest'))[:12]}, "
+        f"and {reads}: nothing was approved. Run ks factory to file the stack kstrl.toml holds."
     )
     sys.exit(2)
 
@@ -1678,6 +1769,7 @@ def understand(
         config.agent_type,
         sandbox=sandbox_cfg,
         max_budget_usd=config.agent_budget_usd,
+        root_dir=root_dir,
     )
 
     use_tui = (
@@ -2144,6 +2236,7 @@ def feature(
         base_config.agent_type,
         sandbox=sandbox_cfg,
         max_budget_usd=base_config.agent_budget_usd,
+        root_dir=root_dir,
     )
 
     # ``understand_prompt_file`` is the OVERRIDE feature_cmd applies, so
@@ -2399,7 +2492,9 @@ def decompose(
     effective_type = canonical_type or effective_type
     _refuse_without_build_manifest(root_dir, ui_impl)
 
-    agent = get_agent(effective_cmd, effective_model, effective_reasoning, effective_type)
+    agent = get_agent(
+        effective_cmd, effective_model, effective_reasoning, effective_type, root_dir=root_dir
+    )
 
     # decompose_spec takes a `str` base and runs it through
     # validate_branch_name, so the flag's None is resolved here rather
@@ -2567,6 +2662,14 @@ def decompose(
     "--no-verify",
     is_flag=True,
     help="Skip Phase 1 mechanical verification",
+)
+@click.option(
+    "--accept-red-base",
+    metavar="SHA",
+    default="",
+    help="Run on a base branch whose gates fail, for this run only: at least 12 "
+    "characters of the base commit's sha. A base that moved since refuses again; "
+    "`ks retry` replays it",
 )
 @click.option(
     "--dead-code-cleanup",
@@ -2786,6 +2889,7 @@ def factory(
     typecheck_command: str | None,
     lint_command: str | None,
     no_verify: bool,
+    accept_red_base: str,
     dead_code_cleanup: bool | None,
     dead_code_command: str | None,
     mutation_testing: bool | None,
@@ -2852,7 +2956,9 @@ def factory(
         sys.exit(2)
     effective_type = canonical_type or effective_type
 
-    agent = get_agent(effective_cmd, effective_model, effective_reasoning, effective_type)
+    agent = get_agent(
+        effective_cmd, effective_model, effective_reasoning, effective_type, root_dir=root_dir
+    )
 
     # R8 review (#180): the budget ceilings are checked before the
     # decompose call below, so the architect never spends under a ceiling
@@ -2861,6 +2967,9 @@ def factory(
     # file and env values inside load. The flags are NOT applied here:
     # applying them early would change what _collect_toml_notes reports
     # as overridden further down.
+    # #696 slice 3: before the configs that hold the stack are loaded, so an
+    # answer given here is the one they read, and before any spend.
+    _stack_checkpoint(root_dir, ui_impl)
     factory_config = FactoryConfig.load(root_dir)
     _refuse_command_flags_beside_a_stack(
         factory_config,
@@ -3037,6 +3146,7 @@ def factory(
             # over a toml/env progress_log_enabled = false.
             factory_config.progress_log_enabled = True
         factory_config.force_lock = force_lock
+        factory_config.accept_red_base = accept_red_base
         # #436: what `ks retry` replays; see kstrl/launch_record.py.
         factory_config.launch_flags = replayable_flags(ctx)
         # R2.3: --no-verify is an explicit skip sentinel that run_factory
@@ -3519,6 +3629,34 @@ def _render_architect_run(ui_impl: UI, state: RunState) -> None:
         ui_impl.kv("Architect run", state.architect_run_id)
 
 
+def _run_state_label(state: RunState) -> str:
+    """``finished``, ``in flight``, or stopped when the run's kstrl process
+    is gone without a finish record (#642). A run that recorded no pid
+    stays ``in flight``: there is nothing to check."""
+    if state.finished:
+        return "finished"
+    if state.pid and not pid_is_alive(state.pid):
+        return f"stopped without a finish record (kstrl process {state.pid} is not running)"
+    return "in flight"
+
+
+def _render_leftover_agents(ui_impl: UI, root_dir: Path) -> None:
+    """Agent processes a kstrl process that is gone left running (#642).
+
+    Report only: `ks status` takes no lock and refuses nothing. The
+    lock-taking commands refuse on the same reading.
+    """
+    from kstrl.worktree_sweep import leftover_agents, leftover_lines
+
+    sweep = leftover_agents(root_dir)
+    if not (sweep.survivors or sweep.error):
+        return
+    count = "unknown" if sweep.error else f"{len(sweep.survivors)} still running"
+    ui_impl.kv("leftover agents", count)
+    for line in leftover_lines(sweep):
+        ui_impl.info(f"  - {line}")
+
+
 def _render_status(
     manifest: Manifest,
     manifest_file: Path,
@@ -3547,7 +3685,7 @@ def _render_status(
         _render_architect_run(ui_impl, state)
         if state.last_event_ts:
             age = _age_label_epoch(state.last_event_ts)
-            run_state = "finished" if state.finished else "in flight"
+            run_state = _run_state_label(state)
             ui_impl.kv(
                 "Run state",
                 f"{run_state} (last event {age})" if age else run_state,
@@ -3576,6 +3714,7 @@ def _render_status(
 
     if root_dir is not None:
         _render_safe_mode(ui_impl, root_dir)
+        _render_leftover_agents(ui_impl, root_dir)
 
     counts: dict[str, int] = {}
     for comp in manifest.components:
@@ -5585,6 +5724,7 @@ def inbox_approve(
     parked it: that run pushes the reviewed branch, opens the PR, merges
     it and continues with the dependents (#465).
     """
+    _refuse_stale_stack_approval("approve", item_id, root, _autonomy_ui(ui, no_color))
     _decide_parked_merge_if_parked("approve", item_id, root, ui, no_color, comment)
     _decide_and_report("approve", item_id, root, ui, no_color, comment=comment)
 
@@ -6160,13 +6300,17 @@ def queue_answer(
 ) -> None:
     """Answer an escalated item: replace its spec and send it back to queued.
 
-    Only an item awaiting an answer can be answered (#644). SPEC is the
-    answered spec; it replaces the item's queued copy, so the next
-    `ks serve` cycle runs it. An item that has spent its attempts needs
-    `--reset-attempts`, as `ks queue retry` does. Identical bytes are
-    accepted and recorded as unchanged.
+    Only an item awaiting an answer can be answered (#644), or a poisoned
+    item that an undecided spec_escalation row in the inbox names: the
+    architect escalated, but the spec-issues write failed, so serve could
+    not tell. SPEC is the answered spec; it replaces the item's queued
+    copy, so the next `ks serve` cycle runs it. An item that has spent its
+    attempts needs `--reset-attempts`, as `ks queue retry` does. Identical
+    bytes are accepted and recorded as unchanged. The poison streak is
+    not changed, as `ks queue retry` does not change it.
     """
-    from kstrl.workqueue import QueueError, queue_lock
+    from kstrl.decisions import escalation_naming
+    from kstrl.workqueue import ItemState, QueueError, queue_lock
 
     root_dir, queue = _queue_for(root)
     ui_impl = _autonomy_ui(ui, no_color)
@@ -6184,7 +6328,18 @@ def queue_answer(
         with queue_lock(root_dir):
             # Read under the lock, so the state checked is the state answered.
             item = _resolve_queue_item(queue, item_id, ui_impl)
-            record = queue.answer(item, text, actor=_actor(), reset_attempts=reset_attempts)
+            row_id = row_run = ""
+            if item.state is ItemState.POISON:
+                row = escalation_naming(root_dir, item.item_id)
+                row_id, row_run = row.id, row.run_id
+            record = queue.answer(
+                item,
+                text,
+                actor=_actor(),
+                reset_attempts=reset_attempts,
+                escalation_row=row_id,
+                escalated_run=row_run,
+            )
     except (QueueError, OSError) as exc:
         ui_impl.err(str(exc))
         sys.exit(2)

@@ -62,6 +62,10 @@ EXPECTED_CONSTRUCTIONS = (
     # given at the prompt (_record).
     "plan_gate.py kstrl.inbox.Inbox",
     "serve.py kstrl.inbox.Inbox",
+    # #696 slice 3: a [stack]'s confirmation is read (_latest_approval),
+    # filed (file_stack_item) and decided at the ks factory prompt
+    # (decide_at_prompt).
+    "stack.py kstrl.inbox.Inbox",
     # #433: home's needs-you rows list open items. It scans and reads;
     # it mutates nothing. Moved from tui/home_data.py, whose counter it
     # replaced.
@@ -82,7 +86,10 @@ EXPECTED_CONSTRUCTION_COUNTS = {
     "autonomy.py": 2,
     "calibration_ladder.py": 1,
     "cli.py": 1,
-    "decisions.py": 2,
+    # #644 slice 2: was 2. +1: escalation_naming scans the inbox for the
+    # undecided spec_escalation row that names a poisoned item. It reads;
+    # it mutates nothing.
+    "decisions.py": 3,
     "factory.py": 1,
     # #595 (addendum): was 5, one construction per lazy-open site
     # (ComponentPipeline.snapshot_waivers's own +1 among them). All five
@@ -91,6 +98,7 @@ EXPECTED_CONSTRUCTION_COUNTS = {
     "pipeline.py": 1,
     "plan_gate.py": 2,
     "serve.py": 2,
+    "stack.py": 3,
     "tui/operator_queue.py": 1,
     "tui/screens/inbox.py": 1,
     "waivers.py": 1,
@@ -145,6 +153,12 @@ EXPECTED_MUTATIONS: dict[str, Disposition] = {
     "plan_gate.py::_record::approve": _GUARDED,
     "plan_gate.py::_record::reject": _GUARDED,
     "serve.py::_file_inbox_item::add": _GUARDED,
+    # #696: each propagates to a caller that refuses on it. unconfirmed_lines
+    # catches everything file_stack_item raises; cli._stack_checkpoint
+    # catches SURFACE_REJECTIONS (ControlStateError is a RuntimeError).
+    "stack.py::file_stack_item::add": Disposition(guarded=False, reason="the caller refuses"),
+    "stack.py::decide_at_prompt::approve": Disposition(guarded=False, reason="as ::add"),
+    "stack.py::decide_at_prompt::reject": Disposition(guarded=False, reason="as ::add"),
     "tui/screens/inbox.py::InboxScreen._decide::approve": _GUARDED,
     "tui/screens/inbox.py::InboxScreen._decide::reject": _GUARDED,
     "tui/screens/inbox.py::InboxScreen._decide::snooze": _GUARDED,
@@ -207,6 +221,19 @@ EXPECTED_CONFIG_LOADS: dict[str, Disposition] = {
     "decisions.py::resolve_escalation_items": _GUARDED,
     "factory.py::_open_health_breach_items": _GUARDED,
     "serve.py::_file_inbox_item": _GUARDED,
+    # #696 slice 3: a load the stack check cannot make is a refusal.
+    "stack.py::_refusal": _GUARDED,
+    "stack.py::file_stack_item": Disposition(
+        guarded=False,
+        reason=(
+            "every caller refuses on what it raises: unconfirmed_lines catches "
+            "everything, and decide_at_prompt's caller catches TypeError"
+        ),
+    ),
+    "stack.py::decide_at_prompt": Disposition(
+        guarded=False,
+        reason="cli._stack_checkpoint catches SURFACE_REJECTIONS, TypeError among them",
+    ),
     # #433: home's needs-you rows; a load it cannot make renders no count.
     "tui/operator_queue.py::_open_inbox_items": _GUARDED,
     # #646: ks retry's read of the approvals; a load it cannot make keeps nothing.
@@ -605,6 +632,8 @@ UNCONDITIONAL_DECISIONS: dict[str, str] = {
     "cli.py::inbox_retry::resolve": "the operator typed ks inbox retry",
     "plan_gate.py::_record::approve": "the operator answered the plan checkpoint prompt",
     "plan_gate.py::_record::reject": "the operator answered the plan checkpoint prompt",
+    "stack.py::decide_at_prompt::approve": "the operator answered the stack checkpoint prompt",
+    "stack.py::decide_at_prompt::reject": "the operator answered the stack checkpoint prompt",
     "tui/screens/inbox.py::InboxScreen._decide::approve": "the operator pressed approve",
     "tui/screens/inbox.py::InboxScreen._decide::reject": "the operator chose a reason",
     "tui/screens/inbox.py::InboxScreen._decide::snooze": "the operator pressed snooze",

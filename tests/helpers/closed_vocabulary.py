@@ -142,6 +142,10 @@ OPEN: dict[tuple[str, str], str] = {
         "display only: config_report.normalize_ui_mode maps an unknown value "
         "to auto, and nothing refuses it"
     ),
+    ("FactoryConfig", "accept_red_base"): (
+        "a prefix of the base commit's sha; refused by length and prefix "
+        "match against the measured sha, not against a fixed vocabulary (#654)"
+    ),
     ("FactoryConfig", "review_agent_cmd"): "a shell command",
     ("FactoryConfig", "review_model"): "a model name",
     ("FactoryConfig", "worktree_setup_command"): "a shell command",

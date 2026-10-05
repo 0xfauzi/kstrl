@@ -90,7 +90,6 @@ from kstrl.interaction import (
     PromptResponse,
     UiInteractionChannel,
 )
-from kstrl.isolation import HOST_LABEL
 from kstrl.loop import UNENFORCEABLE_CALLS
 from kstrl.manifest import (
     ADVERSARIAL_BUDGET_CHECK,
@@ -111,6 +110,7 @@ from kstrl.review import (
     revert_unconfirmed_stories,
 )
 from kstrl.runenvelope import RunEnvelope
+from kstrl.rung import label_of
 from kstrl.runstate import RunState
 from kstrl.scope import RunScope
 from kstrl.security import SecurityConfig, SecurityMode, SecurityResult
@@ -3625,7 +3625,7 @@ class ComponentPipeline:
                 duration_seconds=round(verify_duration, 2),
                 not_measured=tuple(g.as_token() for g in verification.not_measured),
                 gate_logs=self._write_gate_logs(comp, verification),
-                isolation=HOST_LABEL,
+                isolation=label_of(verify_config.rung),
             )
         )
 
@@ -4329,6 +4329,7 @@ class ComponentPipeline:
                 # operator believe in a boundary that is not there.
                 sandbox=self.sandbox_config,
                 read_only=True,
+                root_dir=self.root_dir,
             )
             with (
                 self._phase_transcript(comp.id, "review") as on_line,
@@ -4696,6 +4697,7 @@ class ComponentPipeline:
                 # operator's sandbox intent rides alongside.
                 sandbox=self.sandbox_config,
                 read_only=True,
+                root_dir=self.root_dir,
             )
             with (
                 self._phase_transcript(comp.id, "security") as on_line,
@@ -4945,6 +4947,7 @@ class ComponentPipeline:
                 distill_model,
                 self.base_config.model_reasoning_effort,
                 self.base_config.agent_type,
+                root_dir=self.root_dir,
             )
             distill_start = time.monotonic()
             with (

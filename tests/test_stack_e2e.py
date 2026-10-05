@@ -35,6 +35,8 @@ from kstrl.cli import cli
 from tests.helpers.executables import write_executable
 from tests.helpers.gitrepo import git_in, set_identity
 from tests.helpers.procs import kill_group
+from tests.helpers.stack_confirmation import confirm_stack
+from tests.test_isolation_rung import NONO, needs_nono
 
 #: Real time for one CLI run; a hang fails loudly instead of waiting.
 FUSE_SECONDS = 180.0
@@ -69,13 +71,17 @@ def _stack(
     setup: str = "",
     env: list[str] | None = None,
     instructions: str = INSTRUCTIONS,
+    rung: dict[str, Any] | None = None,
 ) -> str:
-    """A ``[stack]`` table. JSON strings are TOML basic strings."""
+    """A ``[stack]`` table. JSON strings are TOML basic strings, and a JSON
+    list of strings or a JSON boolean is the same TOML value. ``rung`` holds
+    the #700 keys (writable, readable, browser)."""
     lines = [
         "[stack]",
         f"instructions = {json.dumps(instructions)}",
         f"setup = {json.dumps(setup)}",
         f"env = {json.dumps(env or [])}",
+        *(f"{key} = {json.dumps(value)}" for key, value in (rung or {}).items()),
         "[stack.checks]",
         *(f"{json.dumps(name)} = {json.dumps(command)}" for name, command in checks.items()),
     ]
@@ -90,6 +96,10 @@ def _child_env(env: dict[str, str] | None = None) -> dict[str, str]:
         if not k.startswith(("KSTRL_", "FACTORY_")) and k not in ("AGENT_CMD", "MODEL")
     }
     child_env.update(KSTRL_AGENT_PROBE="0", KSTRL_NO_TUI="1", KSTRL_KNOWLEDGE_ENABLED="0")
+    if NONO:
+        # #700 slice 2: `ks factory` under a [stack] runs every command in a
+        # rung proven through this nono, and refuses without one.
+        child_env["KSTRL_NONO"] = NONO
     child_env.update(env or {})
     return child_env
 
@@ -102,11 +112,13 @@ def _commit(root: Path, name: str, text: str) -> None:
     git_in(root, "commit", "-q", "-m", f"change {name}")
 
 
-def _repo(tmp_path: Path, stack: str, *, comps: tuple[str, ...] = ("greeter",)) -> Path:
+def _repo(
+    tmp_path: Path, stack: str, *, comps: tuple[str, ...] = ("greeter",), confirm: bool = True
+) -> Path:
     """A repository on ``main`` after the real ``ks init``, with ``stack``
-    appended to its kstrl.toml and one planned component per ``comps``,
-    everything committed. Cargo.toml is there because `ks doctor` wants a
-    build manifest; nothing here builds it."""
+    appended to its kstrl.toml (and confirmed, unless ``confirm`` is False)
+    and one planned component per ``comps``, everything committed. Cargo.toml
+    is there because `ks doctor` wants a build manifest; nothing here builds it."""
     root = tmp_path / "proj"
     root.mkdir(parents=True)
     git_in(root, "init", "-q", "-b", "main")
@@ -132,6 +144,8 @@ def _repo(tmp_path: Path, stack: str, *, comps: tuple[str, ...] = ("greeter",)) 
     assert result.exit_code == 0, result.output
     with (root / "kstrl.toml").open("a", encoding="utf-8") as fh:
         fh.write("\n" + stack)
+    if confirm:
+        confirm_stack(root)
     manifest = {
         "version": "1",
         "specFile": "spec.md",
@@ -256,6 +270,7 @@ def test_a_red_base_the_stack_checks_is_not_ready_and_a_green_one_is(tmp_path: P
     assert [r["name"] for r in green_doc["base_gates"]["checks"]] == ["stack:tests", "stack:lint"]
 
 
+@needs_nono
 def test_ks_factory_refuses_a_red_base_before_the_engineer_and_records_the_stack(
     tmp_path: Path,
 ) -> None:
@@ -304,6 +319,7 @@ def test_a_check_that_measured_nothing_still_refuses_the_base(
     assert any("stack:tests fails on main" in reason for reason in reading["reasons"]), reading
 
 
+@needs_nono
 def test_a_failing_setup_refuses_the_base_before_the_engineer(tmp_path: Path) -> None:
     """4. Without a stack a failed worktree setup is a warning and the run
     goes on; under a stack the base refuses on it."""
@@ -350,7 +366,9 @@ def test_a_check_sees_the_declared_names_and_a_secret_name_is_refused(tmp_path: 
         tmp_path / "declared",
         _stack({"env": f"env > '{seen}'"}, setup=f"env > '{setup_seen}'", env=["DEMO_DECLARED"]),
     )
-    secret = _repo(tmp_path / "secret", _stack({"tests": "true"}, env=["DEMO_API_TOKEN"]))
+    secret = _repo(
+        tmp_path / "secret", _stack({"tests": "true"}, env=["DEMO_API_TOKEN"]), confirm=False
+    )
     process_env = {
         "DEMO_DECLARED": "declared-value",
         "DEMO_UNDECLARED": "undeclared-value",
@@ -436,15 +454,28 @@ def test_a_second_command_source_beside_a_stack_is_refused(tmp_path: Path, sourc
         (_stack({"tests": "true"}).replace('setup = ""\n', ""), "setup is required"),
         (_stack({"tests": "true"}).replace("env = []", 'env = "PATH"'), "env must be a list"),
         (_stack({"tests": "true"}).replace("env = []", "env = []\nname = 'x'"), "name is not"),
+        (_stack({"tests": "true"}, rung={"writable": "~/.cache"}), "writable must be a list"),
+        (_stack({"tests": "true"}, rung={"readable": [""]}), "readable[0] must be a non-empty"),
+        (_stack({"tests": "true"}, rung={"browser": "yes"}), "browser must be true or false"),
     ],
-    ids=["empty-checks", "non-string-command", "blank-instructions", "no-setup", "env", "key"],
+    ids=[
+        "empty-checks",
+        "non-string-command",
+        "blank-instructions",
+        "no-setup",
+        "env",
+        "key",
+        "writable",
+        "readable",
+        "browser",
+    ],
 )
 def test_a_malformed_stack_is_refused_once_with_an_indexed_reason(
     tmp_path: Path, table: str, message: str
 ) -> None:
     """8. A stack kstrl would have to guess about is refused before anything
     runs, with the reason indexed, said once, and no traceback."""
-    root = _repo(tmp_path, table)
+    root = _repo(tmp_path, table, confirm=False)
 
     run = _factory(tmp_path, root)
 
@@ -455,6 +486,7 @@ def test_a_malformed_stack_is_refused_once_with_an_indexed_reason(
     assert run.calls == 0, run.out
 
 
+@needs_nono
 def test_phase_3_runs_every_check_on_the_merged_tree(tmp_path: Path) -> None:
     """9. Each engineer adds one marker file. Each component alone passes
     both checks, and the LAST check fails only where both markers meet: on
@@ -482,6 +514,7 @@ def test_phase_3_runs_every_check_on_the_merged_tree(tmp_path: Path) -> None:
     assert run.code != 0, run.out
 
 
+@needs_nono
 def test_the_engineer_is_told_the_stack_and_every_check(tmp_path: Path) -> None:
     """10. The instructions and each check, name and command, reach the
     engineer's prompt, and the block naming the three resolved gate
@@ -500,6 +533,7 @@ def test_the_engineer_is_told_the_stack_and_every_check(tmp_path: Path) -> None:
     assert "[contract] test_command" not in run.out, run.out
 
 
+@needs_nono
 def test_phase_1_runs_every_check_on_each_component(tmp_path: Path) -> None:
     """11. Phase 1 runs the stack's checks on the component's own tree. The
     base passes both checks; the engineer's commit makes the LAST one fail,
