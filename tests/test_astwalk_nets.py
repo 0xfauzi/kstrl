@@ -316,7 +316,11 @@ class TestAssertCensusWillNotPinAnEmptyNet:
         astwalk.assert_census(
             sources=astwalk.package_sources(),
             sees=half_dead,
-            expected={"feedforward.py": 2},
+            # #700 slice 4: acceptance.py:_write_evidence lists its own
+            # just-written evidence directory with rglob, to index every
+            # file's sha256; it is kstrl's own output, not operator input,
+            # so the plan-directory refusal rule does not apply here.
+            expected={"feedforward.py": 2, "acceptance.py": 1},
             control=both,
             message="unused",
         )
@@ -345,7 +349,9 @@ class TestAssertCensusWillNotPinAnEmptyNet:
         astwalk.assert_census(
             sources=astwalk.package_sources(),
             sees=lambda node: astwalk.spells("getpgid")(node) or astwalk.spells("rglob")(node),
-            expected={"procgroup.py": 2, "feedforward.py": 2},
+            # #700 slice 4: acceptance.py's evidence-index rglob, same site
+            # as the control above.
+            expected={"procgroup.py": 2, "feedforward.py": 2, "acceptance.py": 1},
             control=(
                 "import os\nos.getpgid(1)\n",
                 'import kstrl.feedforward\nroot.rglob("*.py")\n',
