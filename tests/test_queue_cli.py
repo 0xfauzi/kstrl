@@ -10,6 +10,9 @@ auto-merge opt-in has to be typed.
 from __future__ import annotations
 
 import json
+import os
+import stat
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -17,6 +20,7 @@ import pytest
 from click.testing import CliRunner, Result
 
 from kstrl.cli import cli
+from kstrl.serve import RunOutcome, RunSpend, SpendLedger
 from kstrl.workqueue import (
     ItemState,
     MergeDisposition,
@@ -279,6 +283,75 @@ class TestShow:
         assert "https://x/pull/2" in result.output
 
 
+class TestShownIds:
+    """#706: every id `ks queue` prints is one every `ks queue` command accepts."""
+
+    def test_items_queued_in_the_same_hour_print_ids_that_retry_accepts(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Both items are minted in the same microsecond, so only the nonce tells them apart."""
+        moment = datetime(2026, 10, 4, 18, 0, 0, tzinfo=UTC)
+        monkeypatch.setattr("kstrl.workqueue._utc_now", lambda: moment)
+        for name in ("a", "b"):
+            spec = tmp_path / f"{name}.md"
+            spec.write_text(f"# {name}\n\nDo {name}.\n", encoding="utf-8")
+            assert _invoke(["queue", "add", str(spec)], tmp_path).exit_code == 0
+        queue = _queue(tmp_path)
+        for item in queue.items():
+            queue.finish_failed(queue.start(queue.lease(item)), error="infra")
+        by_id = {item.item_id: item.title for item in queue.items()}
+
+        listing = _invoke(["queue", "ls"], tmp_path)
+        printed = [
+            line.split()[0] for line in listing.output.splitlines() if line.startswith("  q-")
+        ]
+
+        assert len(printed) == 2 and len(set(printed)) == 2, listing.output
+        for shown in printed:
+            result = _invoke(["queue", "retry", shown], tmp_path)
+            assert result.exit_code == 0, result.output
+            assert shown in by_id, (shown, sorted(by_id))
+            assert f"Requeued {shown} " in result.output, result.output
+        assert [item.state for item in _queue(tmp_path).items()] == [ItemState.QUEUED] * 2
+
+    def test_a_short_form_that_is_also_another_items_prefix_is_refused(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`q-202610` is item b's prefix and item a's short form; neither is picked."""
+        minted = iter(["q-20261101-120000.000000-202610", "q-20261004-120000.000000-abcdef"])
+        monkeypatch.setattr("kstrl.workqueue.mint_item_id", lambda: next(minted))
+        for name in ("a", "b"):
+            spec = tmp_path / f"{name}.md"
+            spec.write_text(f"# {name}\n\nDo {name}.\n", encoding="utf-8")
+            assert _invoke(["queue", "add", str(spec)], tmp_path).exit_code == 0
+
+        result = _invoke(["queue", "show", "q-202610"], tmp_path)
+
+        assert result.exit_code == 2, result.output
+        assert "matches multiple items" in result.output, result.output
+        assert "q-20261101-120000.000000-202610" in result.output, result.output
+        assert "q-20261004-120000.000000-abcdef" in result.output, result.output
+
+    def test_a_shorter_tail_than_the_short_form_is_not_accepted(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`q-` and the id's last six characters name the item; `q-` and fewer name nothing."""
+        monkeypatch.setattr(
+            "kstrl.workqueue.mint_item_id", lambda: "q-20261101-120000.000000-a1b2c3"
+        )
+        spec = tmp_path / "a.md"
+        spec.write_text("# a\n\nDo a.\n", encoding="utf-8")
+        assert _invoke(["queue", "add", str(spec)], tmp_path).exit_code == 0
+
+        shown = _invoke(["queue", "show", "q-a1b2c3"], tmp_path)
+        tail = _invoke(["queue", "show", "q-b2c3"], tmp_path)
+
+        assert shown.exit_code == 0, shown.output
+        assert "q-20261101-120000.000000-a1b2c3" in shown.output, shown.output
+        assert tail.exit_code == 2, tail.output
+        assert "No queue item matching 'q-b2c3'" in tail.output, tail.output
+
+
 class TestRetry:
     def test_retry_requeues_a_failed_item(
         self,
@@ -444,6 +517,109 @@ class TestPauseResume:
     def test_pause_records_the_reason(self, tmp_path: Path) -> None:
         _invoke(["queue", "pause", "--reason", "daily budget"], tmp_path)
         assert _queue(tmp_path).pause_state().reason == "daily budget"
+
+
+def _serve_once(root: Path, returncode: int) -> tuple[Result, int]:
+    """One real `ks serve --once`; the factory child is the only stand-in."""
+    calls: list[object] = []
+
+    def runner(**kwargs: object) -> RunOutcome:
+        calls.append(kwargs)
+        return RunOutcome(returncode=returncode)
+
+    with patch("kstrl.serve.subprocess_factory_runner", runner):
+        result = _invoke(["serve", "--once"], root)
+    return result, len(calls)
+
+
+def _resume_rows(root: Path) -> list[dict[str, object]]:
+    return [row for row in _queue(root).journal_entries() if row.get("from") == "paused"]
+
+
+@pytest.mark.usefixtures("no_open_prs")
+class TestResumeClearsThePoisonStreak:
+    """#707: the poison breaker re-read a streak the operator's resume left standing."""
+
+    @pytest.fixture(autouse=True)
+    def _no_spend(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("kstrl.serve.read_run_spend", lambda root, run_id: RunSpend())
+        monkeypatch.setenv("USER", "op-alice")
+
+    def _trip_the_breaker(self, root: Path) -> None:
+        for name in ("a", "b", "c", "d"):
+            spec = root / f"{name}.md"
+            spec.write_text(f"# {name}\n\nDo {name}.\n")
+            args = ["queue", "add", str(spec), "--max-attempts", "1"]
+            assert _invoke(args, root).exit_code == 0
+        for _ in range(3):
+            assert _serve_once(root, returncode=1)[0].exit_code == 1
+        result, runs = _serve_once(root, returncode=0)
+        assert (runs, _queue(root).is_paused()) == (0, True), result.output
+        assert "3 consecutive items poisoned" in _queue(root).pause_state().reason
+
+    def test_a_resume_holds_through_the_next_serve_cycle(self, tmp_path: Path) -> None:
+        self._trip_the_breaker(tmp_path)
+        SpendLedger(tmp_path).charge(2.5, covered_calls=1, total_calls=1)
+        before = SpendLedger(tmp_path).read_state()
+
+        resumed = _invoke(["queue", "resume"], tmp_path)
+        assert resumed.exit_code == 0, resumed.output
+        after = SpendLedger(tmp_path).read_state()
+        assert (after.spend, after.cost_coverage_seen) == (before.spend, True)
+
+        result, runs = _serve_once(tmp_path, returncode=0)
+        assert not _queue(tmp_path).is_paused(), result.output
+        assert runs == 1, "the queue must admit the waiting item"
+        assert result.exit_code == 0, result.output
+        assert [i.state for i in _queue(tmp_path).items()].count(ItemState.DONE) == 1
+        assert "3 cleared" in resumed.output
+        row = _resume_rows(tmp_path)[-1]
+        assert row["actor"] == "op-alice"
+        assert row["detail"] == {"consecutive_poison_cleared": 3}
+        assert after.consecutive_poison == 0, "the resume must restart the streak at 0"
+
+    @pytest.mark.parametrize(
+        "breakage", ["malformed ledger", "lock is a directory", "read-only control dir"]
+    )
+    def test_a_streak_it_cannot_clear_refuses_the_resume(
+        self, tmp_path: Path, breakage: str
+    ) -> None:
+        self._trip_the_breaker(tmp_path)
+        ledger = SpendLedger(tmp_path).path
+        control = ledger.parent
+        mode = stat.S_IMODE(control.stat().st_mode)
+        if breakage == "malformed ledger":
+            ledger.write_text("not json\n", encoding="utf-8")
+        elif breakage == "lock is a directory":
+            (control / "control.lock").unlink()
+            (control / "control.lock").mkdir()
+        else:
+            os.chmod(control, 0o500)
+        try:
+            resumed = _invoke(["queue", "resume"], tmp_path)
+        finally:
+            os.chmod(control, mode)
+
+        assert resumed.exit_code == 2, resumed.output
+        assert "NOT resumed" in resumed.output
+        assert _queue(tmp_path).is_paused()
+        assert _resume_rows(tmp_path) == []
+
+    def test_an_elapsed_budget_pause_keeps_the_streak(self, tmp_path: Path) -> None:
+        """Serve's own clear lifts a pause the breaker never sets, so it clears no streak."""
+        spec = tmp_path / "a.md"
+        spec.write_text("# a\n\nDo a.\n")
+        _invoke(["queue", "add", str(spec), "--max-attempts", "1"], tmp_path)
+        assert _serve_once(tmp_path, returncode=1)[0].exit_code == 1
+        _queue(tmp_path).pause(
+            reason="daily budget", actor="serve", resume_after="2000-01-01T00:00:00+00:00"
+        )
+
+        result, _runs = _serve_once(tmp_path, returncode=0)
+        assert "Pause window elapsed" in result.output
+        assert not _queue(tmp_path).is_paused()
+        assert SpendLedger(tmp_path).read_state().consecutive_poison == 1
+        assert _resume_rows(tmp_path)[-1]["actor"] == "serve"
 
 
 class TestQueueSync:

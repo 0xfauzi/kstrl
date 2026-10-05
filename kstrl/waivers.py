@@ -13,6 +13,12 @@ allowed". This module is how a later run reads that decision.
   about and embeds the configured limit, so an approval covers what the
   operator read and nothing else, and editing ``[policy]`` makes an old
   approval stop matching.
+- **The change.** An approval also covers only the change it was taken
+  on (#646). The item records ``diff_sha``, the sha256 of the diff Phase
+  1 judged, and :meth:`ApprovalSnapshot.for_scope` refuses the approval
+  for any other diff, so a regenerated change is asked again even when
+  its finding reads the same. An item with no ``diff_sha`` was filed
+  before this binding and is refused.
 - **The read.** :func:`load_approvals` reads the inbox ONCE, when the run
   starts (``ComponentPipeline.snapshot_waivers``). A decision made
   mid-run does not change what a later attempt in that run is held to
@@ -147,7 +153,12 @@ class ApprovalSnapshot:
     approved: tuple[InboxItem, ...] = ()
     unconsulted_reason: str = ""
 
-    def for_scope(self, scope: WaiverScope) -> Waivers:
+    def for_scope(self, scope: WaiverScope, diff_sha: str) -> Waivers:
+        """The approvals for ``scope`` that cover the change ``diff_sha`` (#646).
+
+        ``diff_sha`` is the sha256 of the diff this attempt is judged on,
+        "" when it could not be read, which no approval matches.
+        """
         if self.unconsulted_reason:
             return Waivers(scope, unconsulted_reason=self.unconsulted_reason)
         by_key: dict[str, Waiver] = {}
@@ -156,7 +167,7 @@ class ApprovalSnapshot:
             if item.component != scope.component:
                 continue
             category = item.evidence.get("category")
-            reason = _refusal(item, scope)
+            reason = _refusal(item, scope, diff_sha)
             if reason:
                 refused.append(
                     Refusal(item.id, category if isinstance(category, str) else "", reason)
@@ -216,11 +227,16 @@ def _evidence_refusal(item: InboxItem) -> str:
     for name in ("location", "explanation"):
         if not isinstance(evidence.get(name), str):
             return f"{tag}: evidence.{name} is not a string"
+    diff_sha = evidence.get("diff_sha")
+    if diff_sha is None:
+        return f"{tag}: filed before an approval was bound to its change (no evidence.diff_sha)"
+    if not isinstance(diff_sha, str) or not _HEX64.fullmatch(diff_sha):
+        return f"{tag}: evidence.diff_sha is not a 64-character hex digest, so it names no change"
     return ""
 
 
-def _refusal(item: InboxItem, scope: WaiverScope) -> str:
-    """Why an approved item is not applied, or "" when it is valid for ``scope``."""
+def _refusal(item: InboxItem, scope: WaiverScope, diff_sha: str) -> str:
+    """Why an approved item is not applied, or "" when it covers ``scope`` and ``diff_sha``."""
     reason = _evidence_refusal(item)
     if reason:
         return reason
@@ -237,6 +253,12 @@ def _refusal(item: InboxItem, scope: WaiverScope) -> str:
             f"{tag}: evidence.waiver_key does not match this run's project "
             f"{scope.project!r}, spec {scope.spec_file!r}, plan {scope.plan_id!r} and "
             f"component {scope.component!r}"
+        )
+    if evidence["diff_sha"] != diff_sha:
+        judged = f"diff {diff_sha[:12]}" if diff_sha else "a diff that could not be read"
+        return (
+            f"{tag}: taken on diff {evidence['diff_sha'][:12]}, this attempt judges "
+            f"{judged}; a regenerated change is asked again"
         )
     return ""
 
@@ -340,7 +362,7 @@ def approval_effect(item: InboxItem) -> str | None:
     )
     return (
         f"waives this one finding for {item.component}: {explanation!r} ({seen}). It applies "
-        "when the next run reproduces it exactly (same category, location and explanation); "
-        "a regenerated change that reads differently is a new finding. Any other finding "
+        "when the next run judges this same change and reproduces it exactly (same category, "
+        "location and explanation); a regenerated change is asked again. Any other finding "
         f"still fails, and ks inbox reject {item.id[:8]} withdraws the waiver."
     )

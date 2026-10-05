@@ -2655,6 +2655,14 @@ def decompose(
     help="Skip Phase 1 mechanical verification",
 )
 @click.option(
+    "--accept-red-base",
+    metavar="SHA",
+    default="",
+    help="Run on a base branch whose gates fail, for this run only: at least 12 "
+    "characters of the base commit's sha. A base that moved since refuses again; "
+    "`ks retry` replays it",
+)
+@click.option(
     "--dead-code-cleanup",
     is_flag=True,
     default=None,
@@ -2872,6 +2880,7 @@ def factory(
     typecheck_command: str | None,
     lint_command: str | None,
     no_verify: bool,
+    accept_red_base: str,
     dead_code_cleanup: bool | None,
     dead_code_command: str | None,
     mutation_testing: bool | None,
@@ -3126,6 +3135,7 @@ def factory(
             # over a toml/env progress_log_enabled = false.
             factory_config.progress_log_enabled = True
         factory_config.force_lock = force_lock
+        factory_config.accept_red_base = accept_red_base
         # #436: what `ks retry` replays; see kstrl/launch_record.py.
         factory_config.launch_flags = replayable_flags(ctx)
         # R2.3: --no-verify is an explicit skip sentinel that run_factory
@@ -6146,8 +6156,7 @@ def queue_ls(
     for item in items:
         attempts = f"{item.attempts}/{item.max_attempts}"
         ui_impl.info(
-            f"  {item.item_id[:12]}  {str(item.state):<8} "
-            f"p{item.priority:<3} {attempts:<6} {item.title}"
+            f"  {item.item_id}  {str(item.state):<8} p{item.priority:<3} {attempts:<6} {item.title}"
         )
     ui_impl.info("")
     ui_impl.kv("summary", summarize(queue.counts()))
@@ -6216,7 +6225,7 @@ def _retry_refusal(item: Any) -> str:
     """Why `ks queue retry` refuses ``item``, naming the command that does apply."""
     from kstrl.workqueue import ItemState
 
-    refusal = f"{item.item_id[:12]} is {item.state}; only failed or poisoned items can be retried"
+    refusal = f"{item.item_id} is {item.state}; only failed or poisoned items can be retried"
     if item.state is ItemState.AWAITING_ANSWER:
         refusal += (
             "; it waits for the owner's answer: run "
@@ -6321,7 +6330,7 @@ def queue_retry(
         sys.exit(2)
     if not reset_attempts and item.attempts_remaining == 0:
         ui_impl.err(
-            f"{item.item_id[:12]} has used all {item.max_attempts} attempts; "
+            f"{item.item_id} has used all {item.max_attempts} attempts; "
             "pass --reset-attempts to authorize spending again"
         )
         sys.exit(2)
@@ -6336,7 +6345,7 @@ def queue_retry(
     except (QueueError, OSError) as exc:
         ui_impl.err(str(exc))
         sys.exit(2)
-    ui_impl.ok(f"Requeued {item.item_id[:12]} ({item.attempts}/{item.max_attempts} attempts used)")
+    ui_impl.ok(f"Requeued {item.item_id} ({item.attempts}/{item.max_attempts} attempts used)")
     sys.exit(0)
 
 
@@ -6402,7 +6411,7 @@ def queue_rm(
     ui_impl = _autonomy_ui(ui, no_color)
     item = _resolve_queue_item(queue, item_id, ui_impl)
     if not yes and not click.confirm(
-        f"Delete {item.item_id[:12]} ({item.title})?",
+        f"Delete {item.item_id} ({item.title})?",
         default=False,
     ):
         ui_impl.info("Left alone.")
@@ -6413,9 +6422,9 @@ def queue_rm(
     except (QueueError, OSError) as exc:
         # A deletion that failed must not print success: the operator
         # would believe the item is gone when it is still queued (#185 F6).
-        ui_impl.err(f"Could not remove {item.item_id[:12]}: {exc}")
+        ui_impl.err(f"Could not remove {item.item_id}: {exc}")
         sys.exit(2)
-    ui_impl.ok(f"Removed {item.item_id[:12]}")
+    ui_impl.ok(f"Removed {item.item_id}")
     sys.exit(0)
 
 
@@ -6452,15 +6461,30 @@ def queue_pause(
 @_queue_ui_option
 @_queue_no_color_option
 def queue_resume(root: Path | None, ui: str, no_color: bool) -> None:
-    """Start admitting queued work again."""
+    """Start admitting queued work again.
+
+    Also restarts the poison streak at 0, so the next serve cycle does not
+    pause the queue again on the poisons the operator has looked at.
+    """
+    from kstrl.serve import ServeStateError, SpendLedger
+    from kstrl.statedir import ControlStateError
     from kstrl.workqueue import ItemState, queue_lock
 
     root_dir, queue = _queue_for(root)
     ui_impl = _autonomy_ui(ui, no_color)
     with queue_lock(root_dir):
-        queue.resume(actor=_actor())
+        # The streak first: the poison breaker reads it on every cycle, so
+        # a resume that leaves it standing is undone by the next one (#707).
+        try:
+            cleared = SpendLedger(root_dir).reset_poison_streak()
+        except (ServeStateError, ControlStateError, OSError) as exc:
+            ui_impl.err(f"Queue NOT resumed: could not clear the poison streak: {exc}")
+            sys.exit(2)
+        queue.resume(actor=_actor(), detail={"consecutive_poison_cleared": cleared})
     waiting = len(queue.items((ItemState.QUEUED,)))
     ui_impl.ok(f"Queue resumed; {waiting} item(s) waiting.")
+    if cleared:
+        ui_impl.kv("poison streak", f"{cleared} cleared")
     sys.exit(0)
 
 
@@ -7024,7 +7048,7 @@ def serve(
             ui_impl.kv("intake", "disabled")
 
         candidate = queue.next_ready()
-        pending = f"{candidate.item_id[:12]} - {candidate.title}" if candidate else "nothing ready"
+        pending = f"{candidate.item_id} - {candidate.title}" if candidate else "nothing ready"
         if candidate is None and intake_config is not None and (intake_config.enabled):
             # Say so explicitly: "nothing ready" alone would be misleading
             # when intake is about to admit work.

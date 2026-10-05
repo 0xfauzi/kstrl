@@ -431,7 +431,7 @@ class TestOperatorQueue:
             runs = cast(DataTable[Any], app.screen.query_one("#home-runs"))
             old_note = str(runs.get_cell(OLD, "note"))
             assert old_note == "superseded by new002", old_note
-            # _place_focus's focus() is deferred: it lands after the rows do.
+            # The handler that drew these rows placed focus too, once.
             await settled(pilot, lambda: app.screen.focused is needs, what="focus on needs-you")
             await pilot.press("enter")
             await settled(
@@ -545,8 +545,7 @@ class TestOperatorQueue:
         self, tmp_path: Path
     ) -> None:
         from kstrl.serve import serve_lock
-        from kstrl.tui.serve_view import short_item_id
-        from kstrl.workqueue import Queue
+        from kstrl.workqueue import Queue, short_item_id
 
         run_dir = write_fake_run(tmp_path, FakeRunSpec(components=2, complete=False))
         queue = Queue(tmp_path)

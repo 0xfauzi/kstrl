@@ -198,7 +198,7 @@ EXPECTED_AWAIT_SITES: dict[str, int] = {
     # added by #448. Every read after them is a table cell the drained wait has already painted.
     "tests/test_carried_component_state.py": 4,
     "tests/test_config_guard_survey.py": 4,
-    "tests/test_config_screen.py": 37,
+    "tests/test_config_screen.py": 36,  # -1 #712: the first-placement wait went with its race
     "tests/test_decompose_screens.py": 32,
     # 12 since #507 deleted the proposals tab and its three modal tests.
     "tests/test_evolve_screen.py": 12,
@@ -212,7 +212,7 @@ EXPECTED_AWAIT_SITES: dict[str, int] = {
     "tests/test_evolve_screen_repairs.py": 4,
     "tests/test_feature_run.py": 5,
     "tests/test_home_data.py": 4,
-    "tests/test_home_shell.py": 52,
+    "tests/test_home_shell.py": 56,  # +4 #712: run_test, mounted, settled, then drained
     "tests/test_inbox.py": 4,
     "tests/test_inbox_waivers.py": 5,  # #595: the TUI test; run_test, mounted and settled only
     "tests/test_init_wizard.py": 47,
@@ -227,7 +227,7 @@ EXPECTED_AWAIT_SITES: dict[str, int] = {
     "tests/test_tui_433_inc3.py": 62,  # #433 inc3 and inc4: settle helpers, or a push then one
     "tests/test_tui_433_inc3_board.py": 22,
     "tests/test_tui_433_inc4.py": 47,
-    "tests/test_tui_433_inc5.py": 59,
+    "tests/test_tui_433_inc5.py": 62,  # #706: mounted + settled in the new ks-queue-accepts test
     "tests/test_tui_433_inc6.py": 33,
     # +6: the overview pilot reads the painted header and cost meter
     # through settled() and mounted() (the render-helper units folded in).

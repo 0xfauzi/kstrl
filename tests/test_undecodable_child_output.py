@@ -374,6 +374,8 @@ def test_the_call_site_census_is_pinned() -> None:
         "breaker.py": 1,
         "contract.py": 5,
         "fixtures.py": 2,
+        # #700: the canary and --version runs, through one helper.
+        "isolation.py": 1,
         "learning_fixture.py": 1,
         # #619: +1, the ruff --show-files listing in check_dead_code_ruff.
         # #696: +1, check_stack_command.
@@ -459,6 +461,7 @@ def test_the_disposition_census_is_pinned() -> None:
         "contract.py:returns": 2,
         "contract.py:swallows": 2,
         "fixtures.py:returns": 2,
+        "isolation.py:returns": 1,
         "learning_fixture.py:raises": 1,
         "verify.py:converts": 1,
         # #619: +1, the listing shares the ruff run's handlers, which return.

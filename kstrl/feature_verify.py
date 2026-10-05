@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING
 from kstrl import git
 from kstrl.config_toml import ConfigError
 from kstrl.events import Event, VerificationResultEvent
+from kstrl.isolation import HOST_LABEL
 from kstrl.loop import STOP_EXIT_CODE, LoopResult, determine_branch
 from kstrl.stack import StackRefused, confirmed_stack, unconfirmed_lines
 from kstrl.verify import (
@@ -462,6 +463,7 @@ def report_verification(
             phase=phase,
             advisory=True,
             not_measured=tuple(gap.as_token() for gap in result.not_measured),
+            isolation=HOST_LABEL,
         )
     )
     return frozenset(check.name for check in result.checks if not check.passed)

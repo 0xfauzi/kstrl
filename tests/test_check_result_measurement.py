@@ -586,6 +586,10 @@ EXPECTED_MEASUREMENT_READS: dict[str, int] = {
     "base_gates.py: refusal_lines: check.measured": 1,
     "base_gates.py: warning_lines: check.measured": 1,
     "base_gates.py: reading_document: check.measured": 1,
+    # #654 slice 4: which refusals `--accept-red-base` may waive. Only a
+    # row that measured a failure; an unmeasured row keeps refusing, so this
+    # read also only keeps a refusal and never turns measured=False into a pass.
+    "base_gates.py: _acceptable_lines: check.measured": 1,
     # The baseline: which checks may have a missing signature read as fixed.
     "baseline.py: _measured_and_unmeasured: check.measured": 2,
     # Not CheckResult.measured. IterationReading's own field, #233: whether
