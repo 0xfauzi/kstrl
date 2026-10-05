@@ -179,17 +179,6 @@ if CHANGE_SOURCE_MODE not in {"repo", "paste"}:
 
 RESULTS_DIR = FIXTURES_DIR / "_results"
 
-# False-positive ceiling (R5.2). A negative role's fp_rate must be at or
-# below this to keep hard-mode halts credible. FP is measured per-fixture
-# by majority vote over the N runs, mirroring the detection gate: a
-# fixture counts as a false positive when a majority of its completed
-# runs flag a forbidden (must_not_flag) category. The rate joins the v2
-# detection report as a ``false_positive_analysis`` block (see
-# _DetectionReport.save). Detection thresholds live in kstrl.calibration
-# (R5.1); this is the FP counterpart, kept test-side since the negative
-# fixtures are an R5.2 addition.
-FP_RATE_MAX = 0.34
-
 # ---------------------------------------------------------------------------
 # #266: turning a fixture diff back into a repository
 # ---------------------------------------------------------------------------
@@ -697,9 +686,9 @@ def build_fp_summary(
         total = block["fixtures_total"]
         rate = block["fixtures_false_positive"] / total if total else 0.0
         block["fp_rate"] = rate
-        block["meets_threshold"] = rate <= FP_RATE_MAX
+        block["meets_threshold"] = rate <= calibration.FP_RATE_MAX
 
-    return {"fp_rate_max": FP_RATE_MAX, "roles": roles}
+    return {"fp_rate_max": calibration.FP_RATE_MAX, "roles": roles}
 
 
 class _DetectionReport:
