@@ -14,7 +14,9 @@ End to end: the real ``ks factory`` as a subprocess on a real git
 repository after the real ``ks init``, with a confirmed ``[stack]`` and a
 stub engineer that records each call and its prompt (the harness of
 ``tests/test_stack_e2e.py``). The checks run inside the rung, so every
-test that reaches a check needs nono 0.79 or later on macOS.
+test that reaches a check needs nono 0.79 or later on macOS; on a
+platform with no prover they run on the host under the fallback label
+(#700, owner decision 2026-10-05), so Linux CI runs them (``runs_a_stack``).
 """
 
 from __future__ import annotations
@@ -33,7 +35,8 @@ from kstrl.acceptance import BASE_NOT_RUNNABLE, HEAD_RUNS
 from tests.helpers.executables import write_executable
 from tests.helpers.gitrepo import git_in
 from tests.helpers.stack_confirmation import confirm_stack
-from tests.test_isolation_rung import needs_nono
+from tests.test_isolation_rung import runs_a_stack
+from tests.test_isolation_stack import FALLBACK_LABEL, NO_PROVER
 from tests.test_stack_e2e import Run, _factory, _repo, _spawn, _stack
 
 COMP = "greeter"
@@ -124,7 +127,7 @@ def _manifest(root: Path) -> dict[str, Any]:
     return document
 
 
-@needs_nono
+@runs_a_stack
 def test_a_check_that_passes_on_the_base_it_should_fail_refuses_before_the_engineer(
     tmp_path: Path,
 ) -> None:
@@ -143,7 +146,7 @@ def test_a_check_that_passes_on_the_base_it_should_fail_refuses_before_the_engin
     assert "acceptanceDigest" not in _manifest(root)
 
 
-@needs_nono
+@runs_a_stack
 def test_a_check_that_fails_on_the_base_it_should_pass_refuses_before_the_engineer(
     tmp_path: Path,
 ) -> None:
@@ -163,7 +166,7 @@ def test_a_check_that_fails_on_the_base_it_should_pass_refuses_before_the_engine
     assert "acceptanceDigest" not in _manifest(root)
 
 
-@needs_nono
+@runs_a_stack
 def test_a_check_that_cannot_run_on_the_base_is_refused_as_not_runnable(tmp_path: Path) -> None:
     """A check whose command is not found exits 127 on the base: it measured
     nothing, which is never a failure, and the component does not create the
@@ -179,7 +182,7 @@ def test_a_check_that_cannot_run_on_the_base_is_refused_as_not_runnable(tmp_path
     assert run.calls == 0, run.out
 
 
-@needs_nono
+@runs_a_stack
 def test_a_component_that_creates_the_app_runs_on_a_base_that_cannot_run(tmp_path: Path) -> None:
     """Decision 11: the base has no greet, so the check exits 127 there. The
     plan marks the component as creating the app, so the base is recorded as
@@ -201,7 +204,29 @@ def test_a_component_that_creates_the_app_runs_on_a_base_that_cannot_run(tmp_pat
     assert f"passed {HEAD_RUNS} of {HEAD_RUNS} runs; base exit 127" in run.out, run.out
 
 
-@needs_nono
+def test_with_no_prover_the_checks_run_on_the_host_and_every_record_says_so(
+    tmp_path: Path,
+) -> None:
+    """On a platform with no prover (#700, owner decision 2026-10-05) the
+    checks run on the host, and the base reading, the head record and the
+    line the terminal prints each carry the one fallback label."""
+    root = _greeting_repo(tmp_path)
+    plan = _plan(tmp_path, [_check("greets-ada", ["/bin/sh", "check.sh", "Ada"])])
+
+    run = _factory(tmp_path, root, "--acceptance", str(plan), engineer=CORRECT, env=NO_PROVER)
+
+    assert run.code == 0, run.out
+    (base_path,) = sorted((root / ".kstrl" / "runs").glob("*/acceptance/base.json"))
+    base = json.loads(base_path.read_text(encoding="utf-8"))
+    labels = {"setup": FALLBACK_LABEL, "test": FALLBACK_LABEL}
+    assert base["isolation"] == labels, base
+    record = _head_record(root)
+    assert record["isolation"] == labels, record
+    assert _row(record, "greets-ada")["verdict"] == "pass", record
+    assert f"head {record['headSha'][:12]}; {FALLBACK_LABEL}" in run.out, run.out
+
+
+@runs_a_stack
 def test_a_special_cased_head_fails_the_held_out_check_that_no_engineer_saw(
     tmp_path: Path,
 ) -> None:
@@ -253,7 +278,7 @@ def test_a_special_cased_head_fails_the_held_out_check_that_no_engineer_saw(
     assert run.prompts, "the stub engineer recorded no prompt"
 
 
-@needs_nono
+@runs_a_stack
 def test_a_check_that_fails_one_of_its_head_runs_fails(tmp_path: Path) -> None:
     """The check fails its first head run and passes every later one, so it
     passed K-1 of K runs, which fails: nothing passes on a retry. The counter
@@ -307,7 +332,7 @@ exit 0
 """
 
 
-@needs_nono
+@runs_a_stack
 def test_the_terminal_and_the_pr_body_show_the_same_lines(tmp_path: Path) -> None:
     """The run prints the head record's lines and opens the component's PR;
     the PR body's ## Acceptance section is exactly those lines, in order."""
@@ -395,7 +420,7 @@ def test_a_plan_that_cannot_be_taken_whole_is_a_refusal_never_an_empty_plan(
     assert run.calls == 0, run.out
 
 
-@needs_nono
+@runs_a_stack
 def test_an_edited_plan_is_refused_naming_both_digests(tmp_path: Path) -> None:
     """The first run's base accepts the plan, which the manifest then pins.
     The operator edits check.sh, a file the check runs; the next run of the
@@ -432,7 +457,7 @@ def test_an_edited_plan_is_refused_naming_both_digests(tmp_path: Path) -> None:
     assert dropped.calls == 1, dropped.out
 
 
-@needs_nono
+@runs_a_stack
 def test_the_plan_a_person_approves_includes_the_acceptance_checks(tmp_path: Path) -> None:
     """At L1 the run parks the plan for a person, bound to its digest. The
     same manifest parked with and without --acceptance is two different

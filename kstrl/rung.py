@@ -10,17 +10,45 @@ Only :func:`kstrl.isolation.prove_rung` constructs a :class:`ProvenRung`
 (``tests/test_isolation_census.py``), and :func:`_nono_argv` is the only
 place a nono command line is built, so a command runs in exactly the
 policy and the nono invocation the canaries ran in.
+
+The host fallback (#700, owner decision 2026-10-05). Where no prover
+exists for the platform (today every platform but macOS), a ``[stack]``
+run's commands run on the host under a :class:`HostFallback` instead of
+refusing. Only :func:`host_fallback` constructs one, the platform alone
+decides it (never a failed proof: on macOS a rung whose canaries fail
+still refuses), and its one label, :data:`HOST_FALLBACK_LABEL`, is what
+every record of the run carries.
 """
 
 from __future__ import annotations
 
+import os
 import shutil
+import sys
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 #: What a result records when its command ran with no rung around it.
 HOST_LABEL = "none: ran on the host"
+
+#: The platforms a prover exists for. A ``[stack]`` run anywhere else runs
+#: its commands on the host under :data:`HOST_FALLBACK_LABEL` (#700 M2
+#: gives Linux a proven rung).
+PROVER_PLATFORMS = ("darwin",)
+
+#: The one label of a run on a platform with no prover: it names the
+#: platform and says that nothing was isolated.
+HOST_FALLBACK_LABEL = (
+    "none: no isolation rung exists on {platform}, so every command ran on the host "
+    "and nothing was isolated"
+)
+
+#: Test seam, read only by :func:`host_fallback`: the platform the prover
+#: decision is made for, in place of ``sys.platform``. It only decides
+#: whether a run falls back; whether nono may run at all is still read
+#: off the real ``sys.platform`` (:func:`kstrl.isolation.prove_rung`).
+PLATFORM_ENV = "KSTRL_ISOLATION_PLATFORM"
 
 #: The program in front of every command inside the rung. nono turns a
 #: missing command into exit 1 and strips the variables a shell or an
@@ -66,18 +94,57 @@ class ProvenRung:
         )
 
 
-def label_of(rung: ProvenRung | None) -> str:
-    """The isolation a result records: the rung's label, or
-    :data:`HOST_LABEL` when the command ran with no rung."""
+@dataclass(frozen=True)
+class HostFallback:
+    """A ``[stack]`` run on a platform with no prover: its commands run on
+    the host. It claims nothing a rung proves (no zone, no canaries, no
+    policy, no refusal): it carries the platform and the one label."""
+
+    platform: str
+    label: str
+
+    def command(self, argv: Sequence[str], assignments: Sequence[str]) -> list[str]:
+        """``argv`` on the host, with :data:`ENV_PROGRAM` in front as inside
+        a rung, so a missing command exits 127 here too and ``assignments``
+        are set the same way."""
+        return [ENV_PROGRAM, *assignments, *argv]
+
+
+#: What a ``[stack]`` run's commands run in: a proven rung, or the host
+#: fallback on a platform with no prover. Never None: None is a run with
+#: no ``[stack]``.
+Rung = ProvenRung | HostFallback
+
+
+def host_fallback() -> HostFallback | None:
+    """The host fallback when no prover exists for this platform, else None.
+    The only constructor of :class:`HostFallback`, and the only reader of
+    :data:`PLATFORM_ENV`."""
+    platform = os.environ.get(PLATFORM_ENV, "").strip() or sys.platform
+    if platform in PROVER_PLATFORMS:
+        return None
+    return HostFallback(platform, HOST_FALLBACK_LABEL.format(platform=platform))
+
+
+def refusal_of(rung: Rung) -> str:
+    """Why ``rung`` must not be run in, or "". A host fallback is never
+    refused: no proof ran, so none failed."""
+    return rung.refusal if isinstance(rung, ProvenRung) else ""
+
+
+def label_of(rung: Rung | None) -> str:
+    """The isolation a result records: the rung's or the fallback's label,
+    or :data:`HOST_LABEL` when the command ran with no ``[stack]``."""
     return HOST_LABEL if rung is None else rung.label
 
 
-def release(rungs: Iterable[ProvenRung | None]) -> None:
-    """Remove each rung's scratch directory: its TMPDIR and nono's state
-    files go with it. A scratch directory is kstrl's own temporary
-    directory, so a failure to remove it changes no verdict."""
+def release(rungs: Iterable[Rung | None]) -> None:
+    """Remove each proven rung's scratch directory: its TMPDIR and nono's
+    state files go with it. A scratch directory is kstrl's own temporary
+    directory, so a failure to remove it changes no verdict. A host
+    fallback has none."""
     for rung in rungs:
-        if rung is not None and rung.scratch:
+        if isinstance(rung, ProvenRung) and rung.scratch:
             shutil.rmtree(rung.scratch, ignore_errors=True)
 
 

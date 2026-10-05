@@ -36,7 +36,7 @@ from tests.helpers.executables import write_executable
 from tests.helpers.gitrepo import git_in, set_identity
 from tests.helpers.procs import kill_group
 from tests.helpers.stack_confirmation import confirm_stack
-from tests.test_isolation_rung import NONO, needs_nono
+from tests.test_isolation_rung import NONO, runs_a_stack
 
 #: Real time for one CLI run; a hang fails loudly instead of waiting.
 FUSE_SECONDS = 180.0
@@ -270,7 +270,7 @@ def test_a_red_base_the_stack_checks_is_not_ready_and_a_green_one_is(tmp_path: P
     assert [r["name"] for r in green_doc["base_gates"]["checks"]] == ["stack:tests", "stack:lint"]
 
 
-@needs_nono
+@runs_a_stack
 def test_ks_factory_refuses_a_red_base_before_the_engineer_and_records_the_stack(
     tmp_path: Path,
 ) -> None:
@@ -319,7 +319,7 @@ def test_a_check_that_measured_nothing_still_refuses_the_base(
     assert any("stack:tests fails on main" in reason for reason in reading["reasons"]), reading
 
 
-@needs_nono
+@runs_a_stack
 def test_a_failing_setup_refuses_the_base_before_the_engineer(tmp_path: Path) -> None:
     """4. Without a stack a failed worktree setup is a warning and the run
     goes on; under a stack the base refuses on it."""
@@ -495,7 +495,7 @@ def test_a_malformed_stack_is_refused_once_with_an_indexed_reason(
     assert run.calls == 0, run.out
 
 
-@needs_nono
+@runs_a_stack
 def test_phase_3_runs_every_check_on_the_merged_tree(tmp_path: Path) -> None:
     """9. Each engineer adds one marker file. Each component alone passes
     both checks, and the LAST check fails only where both markers meet: on
@@ -523,7 +523,7 @@ def test_phase_3_runs_every_check_on_the_merged_tree(tmp_path: Path) -> None:
     assert run.code != 0, run.out
 
 
-@needs_nono
+@runs_a_stack
 def test_the_engineer_is_told_the_stack_and_every_check(tmp_path: Path) -> None:
     """10. The instructions and each check, name and command, reach the
     engineer's prompt, and the block naming the three resolved gate
@@ -542,7 +542,7 @@ def test_the_engineer_is_told_the_stack_and_every_check(tmp_path: Path) -> None:
     assert "[contract] test_command" not in run.out, run.out
 
 
-@needs_nono
+@runs_a_stack
 def test_phase_1_runs_every_check_on_each_component(tmp_path: Path) -> None:
     """11. Phase 1 runs the stack's checks on the component's own tree. The
     base passes both checks; the engineer's commit makes the LAST one fail,

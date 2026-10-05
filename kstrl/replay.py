@@ -17,7 +17,9 @@ kstrl never reads what ``up`` does: only its exit status and whether its
 group is gone afterwards. The stage a replay failed at is named in the
 vocabulary :mod:`kstrl.stack` owns (``REPLAY_*``), because a failure
 keeps the stack from being confirmed. Below a proven rung nothing runs and
-the replay is ``boundary_refused``.
+the replay is ``boundary_refused``. On a platform with no prover every
+stage runs on the host and the record names the host fallback's label
+(owner decision 2026-10-05).
 
 Replays on one machine are serialised by :func:`replay_lock`: two
 applications started at once would contend for the same ports.
@@ -44,7 +46,7 @@ from kstrl.contract import ContractCleanupError, _create_temp_worktree, _remove_
 from kstrl.isolation import SETUP_ZONE, TEST_ZONE, prove_zones
 from kstrl.procdispose import reap_or_abandon
 from kstrl.procgroup import read_group_liveness, signal_group
-from kstrl.rung import ProvenRung, release
+from kstrl.rung import HostFallback, Rung, refusal_of, release
 from kstrl.stack import (
     REPLAY_BASE_CONTRADICTION,
     REPLAY_BOUNDARY_REFUSED,
@@ -88,7 +90,7 @@ POLL_SECONDS = 0.1
 #: What runs in place of the stack's checks once ``up`` is ready (#700
 #: slice 4): the acceptance runner's checks, handed the checked-out tree
 #: and the test-zone rung. The ``up`` group is stopped after it returns.
-Probe = Callable[[Path, ProvenRung], None]
+Probe = Callable[[Path, Rung], None]
 
 
 @dataclass(frozen=True)
@@ -218,7 +220,9 @@ def _replay_in_rungs(
     probe: Probe | None,
 ) -> None:
     """Prove both zones with the worktree and the stack's own paths granted,
-    and run the stages only when both hold."""
+    and run the stages only when both hold. On a platform with no prover
+    the stages run on the host, and only for a stack a person confirmed:
+    an unconfirmed stack's commands run nowhere but inside a proven rung."""
     rungs = prove_zones(
         root,
         [worktree, *stack_paths(root, stack.writable)],
@@ -226,10 +230,18 @@ def _replay_in_rungs(
         stack.browser,
     )
     try:
-        record.isolation = {zone: rung.refusal or rung.label for zone, rung in rungs.items()}
+        record.isolation = {zone: refusal_of(rung) or rung.label for zone, rung in rungs.items()}
         refused = [
-            f"the {zone} zone is {rung.refusal}" for zone, rung in rungs.items() if rung.refusal
+            f"the {zone} zone is {refusal_of(rung)}"
+            for zone, rung in rungs.items()
+            if refusal_of(rung)
         ]
+        fallback = rungs[SETUP_ZONE]
+        if stack.unconfirmed and isinstance(fallback, HostFallback):
+            refused.append(
+                f"the [stack] in kstrl.toml {stack.unconfirmed}, and with no isolation rung "
+                f"on {fallback.platform} its commands would run on the host"
+            )
         if refused:
             record.failed, record.detail = REPLAY_BOUNDARY_REFUSED, "; ".join(refused)
             return
@@ -242,7 +254,7 @@ def _run_stages(
     stack: Stack,
     worktree: Path,
     scratch: Path,
-    rungs: Mapping[str, ProvenRung],
+    rungs: Mapping[str, Rung],
     record: Replay,
     limits: tuple[float | None, float | None],
     probe: Probe | None,
@@ -301,7 +313,7 @@ def _ran(
     name: str,
     command: str | list[str],
     cwd: Path,
-    rung: ProvenRung,
+    rung: Rung,
     limit: float | None,
     stack: Stack,
     *,

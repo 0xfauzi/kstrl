@@ -34,6 +34,7 @@ from kstrl.factory import (
 )
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.pr import PrOutcome, push_create_and_merge_pr, wait_for_merge
+from kstrl.rung import HOST_LABEL
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
 from tests.helpers import gitrepo
@@ -572,6 +573,7 @@ class TestPrOutcomeDataclass:
             root,
             PlainUI(no_color=True),
             merge_timeout=2.0,
+            isolation=HOST_LABEL,
         )
 
         assert outcome == PrOutcome(
@@ -606,6 +608,7 @@ class TestPrOutcomeDataclass:
             root,
             PlainUI(no_color=True),
             merge_timeout=2.0,
+            isolation=HOST_LABEL,
         )
 
         assert outcome.merged is True
@@ -631,6 +634,7 @@ class TestPrOutcomeDataclass:
             root,
             PlainUI(no_color=True),
             merge_timeout=2.0,
+            isolation=HOST_LABEL,
         )
 
         assert outcome.merged is False
@@ -684,6 +688,7 @@ class TestPrOutcomeDataclass:
             root,
             PlainUI(no_color=True),
             merge_timeout=2.0,
+            isolation=HOST_LABEL,
         )
         assert outcome.merged is True
 
@@ -712,6 +717,7 @@ class TestPrOutcomeDataclass:
             root,
             PlainUI(no_color=True),
             merge_timeout=1.0,
+            isolation=HOST_LABEL,
         )
 
         assert outcome.pushed is True
@@ -736,6 +742,7 @@ class TestPrOutcomeDataclass:
             root,
             PlainUI(no_color=True),
             merge_timeout=1.0,
+            isolation=HOST_LABEL,
         )
 
         assert outcome.pushed is False
@@ -761,6 +768,7 @@ class TestPrOutcomeDataclass:
             root,
             PlainUI(no_color=True),
             merge_timeout=1.0,
+            isolation=HOST_LABEL,
         )
 
         assert outcome.merged is True

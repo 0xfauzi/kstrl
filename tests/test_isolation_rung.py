@@ -11,8 +11,9 @@ the tests that need the real sandbox skip unless that binary reports
 0.79 or later, because 0.16 (the Homebrew build on the machine this was
 written on) grants the user temporary directory and the canaries
 measure it escaping. The tests built on a fake ``nono`` need only
-macOS, and the Linux test runs only off macOS: until measurement M2,
-Linux CI runs that one test and nothing else here.
+macOS. Off macOS no prover exists until measurement M2, so Linux CI runs
+nothing here; what `ks doctor --measure` says there is the host fallback
+(``tests/test_isolation_stack.py``).
 
 DNS. nono 0.79 cannot deny DNS in the test zone (gap G1); the owner
 decided (2026-10-04, #700) to accept the gap rather than refuse the
@@ -76,10 +77,19 @@ def _nono_version(path: str) -> tuple[int, ...]:
 NONO_VERSION = _nono_version(NONO)
 
 on_macos = pytest.mark.skipif(sys.platform != "darwin", reason="the rung is macOS-only until M2")
+_NONO_FOUND = f"found {NONO or 'none'} {'.'.join(map(str, NONO_VERSION)) or ''}; set KSTRL_NONO"
+#: For a test that asserts what the rung contains: macOS with nono 0.79+.
 needs_nono = pytest.mark.skipif(
     sys.platform != "darwin" or NONO_VERSION < (0, 79, 0),
-    reason=f"needs macOS and nono 0.79 or later; found {NONO or 'none'} "
-    f"{'.'.join(map(str, NONO_VERSION)) or ''}; set KSTRL_NONO",
+    reason=f"needs macOS and nono 0.79 or later; {_NONO_FOUND}",
+)
+#: For a test that needs only a run under a [stack] to proceed: on macOS
+#: that takes a proven rung, so nono 0.79+; on a platform with no prover
+#: the run proceeds on the host under the fallback label (#700, owner
+#: decision 2026-10-05), so Linux CI runs it.
+runs_a_stack = pytest.mark.skipif(
+    sys.platform == "darwin" and NONO_VERSION < (0, 79, 0),
+    reason=f"a [stack] run on macOS needs nono 0.79 or later; {_NONO_FOUND}",
 )
 
 #: Every canary each zone must contain, and every positive control.
@@ -363,17 +373,3 @@ def test_without_nono_the_row_refuses_and_runs_nothing(tmp_path: Path) -> None:
             "refused: nono not found (set KSTRL_NONO or put nono on PATH)"
         ), reading[zone]
         assert (reading[zone]["canaries"], reading[zone]["policy_path"]) == ({}, "")
-
-
-@pytest.mark.skipif(sys.platform == "darwin", reason="the refusal off macOS")
-def test_off_macos_the_row_refuses_with_its_reason(tmp_path: Path) -> None:
-    code, row, reading = _isolation(tmp_path, {})
-
-    assert code == 0, row
-    assert row["status"] == "warn", row
-    for zone in ("setup", "test"):
-        assert reading[zone]["refusal"] == (
-            f"refused: no process rung implemented on {sys.platform} "
-            "(nono cannot express a localhost-only test zone; M2)"
-        ), reading[zone]
-        assert reading[zone]["canaries"] == {}

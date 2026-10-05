@@ -30,7 +30,7 @@ import pytest
 
 from tests import test_stack_e2e as stack_e2e
 from tests.helpers.procs import kill_group
-from tests.test_isolation_rung import needs_nono
+from tests.test_isolation_rung import runs_a_stack
 from tests.test_red_base_preflight import (
     FUSE_SECONDS,
     GREEN,
@@ -192,7 +192,7 @@ def test_ks_retry_replays_the_acceptance(tmp_path: Path) -> None:
     assert [r["refused"] for r in records] == [False, False], records
 
 
-@needs_nono
+@runs_a_stack
 def test_under_a_stack_an_acceptance_waives_a_failing_check(tmp_path: Path) -> None:
     """The #696 red base: a check exiting 101 that no kstrl parser reads."""
     root = stack_e2e._repo(tmp_path, stack_e2e._stack({"tests": stack_e2e.CARGO_RED}))
@@ -207,7 +207,7 @@ def test_under_a_stack_an_acceptance_waives_a_failing_check(tmp_path: Path) -> N
     assert any("stack:tests fails on main" in line for line in record["accepted"]), record
 
 
-@needs_nono
+@runs_a_stack
 @pytest.mark.parametrize(
     ("checks", "setup", "reason"),
     [

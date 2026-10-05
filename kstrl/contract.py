@@ -38,7 +38,7 @@ from typing import TYPE_CHECKING
 from kstrl import git
 from kstrl.config_numbers import BudgetConfigError, check_numbers
 from kstrl.manifest import Manifest
-from kstrl.rung import ProvenRung
+from kstrl.rung import Rung
 from kstrl.stack import Stack, stack_in_force
 from kstrl.timeout import limit_seconds
 from kstrl.toolchains import DEFAULT_TEST_COMMAND
@@ -109,7 +109,7 @@ class ContractConfig:
     #: #700 slice 2: the TEST-zone rung of a ``ks factory`` run under a
     #: [stack]; Phase 3 runs every check inside it. Set by the factory, never
     #: from kstrl.toml. Provenance: no [contract] key.
-    rung: ProvenRung | None = field(default=None, metadata={"provenance": True})
+    rung: Rung | None = field(default=None, metadata={"provenance": True})
 
     def __post_init__(self) -> None:
         # B8: reject typo'd modes loudly instead of letting them silently
@@ -346,7 +346,7 @@ def _run_checks(
     test_command: str,
     timeout: float | None,
     stack: Stack | None,
-    rung: ProvenRung | None,
+    rung: Rung | None,
 ) -> tuple[bool, str]:
     """Phase 3's verdict on ``cwd`` and its evidence.
 
@@ -375,7 +375,7 @@ def bisect_breaker(
     timeout: float | None = None,
     setup: WorktreeSetup = NO_SETUP,
     stack: Stack | None = None,
-    rung: ProvenRung | None = None,
+    rung: Rung | None = None,
 ) -> str | None:
     """Linear bisection to identify which component broke integration.
 

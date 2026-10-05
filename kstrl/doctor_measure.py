@@ -18,7 +18,6 @@ this measures is the one the next plan is cut from.
 from __future__ import annotations
 
 import dataclasses
-import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -26,8 +25,9 @@ from kstrl import git
 from kstrl.base_gates import measure_base_gates, reading_document, refusal_lines, warning_lines
 from kstrl.doctor import STATUS_FAIL, STATUS_OK, STATUS_WARN, DoctorCheck, _not_evaluated
 from kstrl.factory import FactoryConfig
-from kstrl.isolation import SETUP_ZONE, TEST_ZONE, prove_rung
+from kstrl.isolation import prove_zones
 from kstrl.replay import Replay, replay_stack
+from kstrl.rung import HostFallback, ProvenRung, Rung, release
 from kstrl.stack import (
     REPLAY_BOUNDARY_REFUSED,
     Stack,
@@ -35,7 +35,6 @@ from kstrl.stack import (
     replay_refuses,
     stack_in_force,
 )
-from kstrl.statedir import control_dir
 from kstrl.timeout import limit_seconds
 from kstrl.verify import VerifyConfig
 
@@ -94,25 +93,29 @@ def measure_isolation(root: Path, ui: UI) -> tuple[DoctorCheck, dict[str, Any]]:
     Record only. A refused zone warns and never fails the verdict: this
     reading proves the zones with no ``[stack]`` paths, and the base gates
     above run on the host. ``ks factory`` under a ``[stack]`` proves its
-    own rungs and refuses below them (#700 slice 2). The canaries point into a scratch
-    directory that is removed afterwards, and the control directory is
-    denied to both zones.
+    own rungs and refuses below them (#700 slice 2). The canaries point
+    into scratch directories removed afterwards, and the control
+    directory is denied to both zones. On a platform with no prover the
+    row is the host fallback's label alone, a warning, with no canary
+    run (owner decision 2026-10-05).
     """
-    ui.info("Proving the isolation rung with canaries through nono...")
-    with tempfile.TemporaryDirectory(prefix="kstrl-rung-") as scratch:
-        rungs = []
-        for zone in (SETUP_ZONE, TEST_ZONE):
-            directory = Path(scratch) / zone
-            directory.mkdir()
-            rungs.append(prove_rung(root, directory, [control_dir(root)], zone))
-    detail = "; ".join(
-        f"{rung.zone} zone: {rung.refusal or 'proven: ' + rung.label}" for rung in rungs
-    )
-    status = STATUS_WARN if any(rung.refusal for rung in rungs) else STATUS_OK
+    ui.info("Reading the isolation rung: canaries through nono where a prover exists...")
+    rungs = prove_zones(root, [], [], browser=False)
+    release(rungs.values())
+    detail = "; ".join(dict.fromkeys(_reading(zone, rung) for zone, rung in rungs.items()))
+    proven = all(isinstance(rung, ProvenRung) and not rung.refusal for rung in rungs.values())
     return (
-        DoctorCheck(ISOLATION_CHECK_NAME, status, detail),
-        {rung.zone: dataclasses.asdict(rung) for rung in rungs},
+        DoctorCheck(ISOLATION_CHECK_NAME, STATUS_OK if proven else STATUS_WARN, detail),
+        {zone: dataclasses.asdict(rung) for zone, rung in rungs.items()},
     )
+
+
+def _reading(zone: str, rung: Rung) -> str:
+    """What the isolation row says about one zone. The host fallback is its
+    label alone: it names no zone and claims no proof."""
+    if isinstance(rung, HostFallback):
+        return rung.label
+    return f"{zone} zone: {rung.refusal or 'proven: ' + rung.label}"
 
 
 def measure_replay(

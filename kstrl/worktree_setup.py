@@ -28,7 +28,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from kstrl.rung import ProvenRung
+from kstrl.rung import Rung
 from kstrl.timeout import limit_seconds
 from kstrl.verify import ChildOutputDecodeError, run_scrubbed
 
@@ -47,7 +47,7 @@ class WorktreeSetup:
     env: tuple[str, ...] | None = None
     #: #700 slice 2: the SETUP-zone rung of a run under a ``[stack]``; the
     #: setup runs inside it. None runs on the host.
-    rung: ProvenRung | None = None
+    rung: Rung | None = None
     #: Why this setup must not run, or "": a ``[stack]`` no person
     #: confirmed (#696 slice 3, ``Stack.unconfirmed``) runs nothing.
     refusal: str = ""

@@ -40,7 +40,7 @@ from kstrl.workqueue import ItemState, Queue, QueueConfig
 from tests.helpers import astwalk
 from tests.helpers.plan_approval import approve_plan
 from tests.helpers.stack_confirmation import confirm_stack
-from tests.test_isolation_rung import needs_nono
+from tests.test_isolation_rung import runs_a_stack
 from tests.test_prompt_record import ONE_COMPONENT, _spec_project
 from tests.test_queue_awaiting_answer import _scripted_claude
 from tests.test_serve_architect_spend import BLOCKER
@@ -207,7 +207,7 @@ def test_an_unconfirmed_stack_refuses_before_the_architect_and_files_one_item(
     assert (bumped.id, bumped.occurrences) == (item.id, 2)
 
 
-@needs_nono
+@runs_a_stack
 def test_ks_inbox_approve_confirms_the_stack_and_the_run_proceeds(tmp_path: Path) -> None:
     """2. Approving the filed item is the confirmation: the next run pays the
     engineer and records in events.jsonl that the inbox confirmed its stack."""
@@ -225,7 +225,7 @@ def test_ks_inbox_approve_confirms_the_stack_and_the_run_proceeds(tmp_path: Path
     assert _stack_resolutions(root) == ["inbox"]
 
 
-@needs_nono
+@runs_a_stack
 def test_approving_an_item_for_a_stack_kstrl_toml_no_longer_holds_is_refused(
     tmp_path: Path,
 ) -> None:
@@ -349,7 +349,7 @@ def test_a_plan_made_under_another_stack_refuses(
     assert f"it now reads {now[:12]}" in run.out, run.out
 
 
-@needs_nono
+@runs_a_stack
 def test_an_approved_plan_does_not_carry_over_to_another_stack(tmp_path: Path) -> None:
     """The plan digest includes the stack digest: an L1 plan approved under
     one stack is not approved under another, even when the manifest's pin
@@ -458,7 +458,7 @@ def test_an_unreadable_inbox_refuses_the_stack(tmp_path: Path, damage: Any, said
 # --- 8: with the inbox disabled, a confirmation holds for that run only -----
 
 
-@needs_nono
+@runs_a_stack
 @pytest.mark.skipif(not hasattr(os, "openpty"), reason="needs a pseudo-terminal")
 def test_with_the_inbox_disabled_a_confirmation_at_the_prompt_holds_for_that_run_only(
     tmp_path: Path,
@@ -488,7 +488,7 @@ def test_with_the_inbox_disabled_a_confirmation_at_the_prompt_holds_for_that_run
     assert _stack_items(root) == []
 
 
-@needs_nono
+@runs_a_stack
 @pytest.mark.skipif(not hasattr(os, "openpty"), reason="needs a pseudo-terminal")
 def test_at_the_prompt_reject_is_recorded_and_confirm_holds_in_the_inbox(
     tmp_path: Path,
@@ -517,23 +517,27 @@ def test_at_the_prompt_reject_is_recorded_and_confirm_holds_in_the_inbox(
 
 
 @pytest.mark.parametrize(
-    "command",
+    ("command", "env"),
     [
-        ("factory",),
-        ("run",),
-        ("check",),
-        ("doctor", "--measure"),
-        ("feature",),
+        (("factory",), None),
+        (("run",), None),
+        (("check",), None),
+        (("doctor", "--measure"), None),
+        (("doctor", "--measure"), {"KSTRL_ISOLATION_PLATFORM": "linux"}),
+        (("feature",), None),
     ],
-    ids=["factory", "run", "check", "doctor-measure", "feature"],
+    ids=["factory", "run", "check", "doctor-measure", "doctor-measure-no-prover", "feature"],
 )
 def test_no_entry_runs_a_command_of_an_unconfirmed_stack(
-    tmp_path: Path, command: tuple[str, ...]
+    tmp_path: Path, command: tuple[str, ...], env: dict[str, str] | None
 ) -> None:
     """Every command that runs a stack's commands refuses an unconfirmed
     one, and neither its check nor its setup runs. The runners refuse an
     unconfirmed stack themselves, so a path that reached one without
-    asking ``confirmed_stack`` still runs nothing."""
+    asking ``confirmed_stack`` still runs nothing. The replay in `ks doctor
+    --measure` runs an unconfirmed stack only inside a proven rung: on a
+    platform with no prover (#700, owner decision 2026-10-05) it runs
+    nothing, because its commands would run on the host."""
     check_ran = tmp_path / "check.ran"
     setup_ran = tmp_path / "setup.ran"
     table = _stack({"tests": f"touch '{check_ran}'"}, setup=f"touch '{setup_ran}'")
@@ -560,7 +564,7 @@ def test_no_entry_runs_a_command_of_an_unconfirmed_stack(
         ],
     }
 
-    code, out = _spawn([*command, *args[command[0]], "--root", str(root)], root, None)
+    code, out = _spawn([*command, *args[command[0]], "--root", str(root)], root, env)
 
     assert code != 0, out
     assert "is not confirmed" in out, out
@@ -582,6 +586,10 @@ EXPECTED_UNCONFIRMED_SITES: dict[str, int] = {
     # stack is not confirmed; read only, never cleared.
     "doctor_measure.py": 1,
     "factory.py": 6,
+    # #700 host fallback: with no prover the replay runs nothing for a stack
+    # no person confirmed, because its commands would run on the host; read
+    # only, never cleared.
+    "replay.py": 2,
     "stack.py": 5,
     "verify.py": 2,
 }

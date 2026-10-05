@@ -55,9 +55,18 @@ errno, and the egress canary only with EPERM. A canary whose control
 also failed is uninformative, and a timeout is never contained. The row
 is a record: a refused zone warns and never fails the verdict, because
 no command runs inside a rung yet, and every verification record says
-`none: ran on the host`. One refusal is expected today: on every system
-but macOS both zones are refused, because nono cannot express a
-localhost-only test zone on Linux. On macOS with nono 0.79, DNS resolves
+`none: ran on the host`. No prover exists today on any system but
+macOS, because nono cannot express a localhost-only test zone on Linux.
+There the row is one label, a warning, and no canary runs: `none: no
+isolation rung exists on linux, so every command ran on the host and
+nothing was isolated`. A run under a confirmed `[stack]` there runs its
+setup, `up` and checks on the host instead of refusing, and every record
+of it (the terminal, `isolation.json`, `base-gates.json`, the
+`verification_result` event and the PR body) carries that label (owner
+decision 2026-10-05, #700). The replay below runs nothing there for a
+stack no person confirmed. On macOS a zone whose canaries fail is still
+refused: the host fallback is decided by the platform, never by a failed
+proof. On macOS with nono 0.79, DNS resolves
 inside the test zone whatever the policy says; the owner decided
 (2026-10-04, #700) to accept that gap rather than refuse the zone on
 it, so the `dns` canary is recorded but never gates, and the test

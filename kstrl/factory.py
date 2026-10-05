@@ -150,7 +150,7 @@ from kstrl.review import (
     run_review,
 )
 from kstrl.runenvelope import RunEnvelope
-from kstrl.rung import ProvenRung, release
+from kstrl.rung import Rung, label_of, refusal_of, release
 from kstrl.runstate import RunState
 from kstrl.sandbox import SANDBOX_REFUSAL, SandboxConfig, unsandboxable_roles
 from kstrl.scope import ComponentScope, RunScope
@@ -414,8 +414,8 @@ class FactoryConfig:
     # base gates (``_preflight_rungs``), cleared and their scratch removed
     # when the run ends (``run_factory``). The setup runs in the first and
     # every check in the second. Never read from kstrl.toml, env or a flag.
-    setup_rung: ProvenRung | None = field(default=None, metadata={"provenance": True})
-    test_rung: ProvenRung | None = field(default=None, metadata={"provenance": True})
+    setup_rung: Rung | None = field(default=None, metadata={"provenance": True})
+    test_rung: Rung | None = field(default=None, metadata={"provenance": True})
     # R7.2: approved-fixtures oracle for Phase 1. None means run_factory
     # loads FixturesConfig.load(root_dir) - toml [fixtures] section +
     # env - so `ks factory` honors the config with no CLI wiring.
@@ -2516,8 +2516,11 @@ def _preflight_rungs(
     worktrees in (the checkout itself without worktrees), plus the stack's
     ``writable`` and ``readable``. Below a proven rung the run refuses;
     there is no opt-in to run a stack's commands on the host (decision
-    5(a)). The record is written either way. Without a stack nothing is
-    proven and every command runs on the host, as before.
+    5(a)). On a platform with no prover both "rungs" are the host
+    fallback, which never refuses and whose label says nothing was
+    isolated (owner decision 2026-10-05). The record is written either
+    way. Without a stack nothing is proven and every command runs on the
+    host, as before.
     """
     stack = factory_config.project_stack
     if stack is None:
@@ -2534,13 +2537,15 @@ def _preflight_rungs(
         stack.browser,
     )
     errors = write_isolation_record(root_dir, run_id, stack.digest, rungs)
-    errors += [f"the {zone} zone is {rung.refusal}" for zone, rung in rungs.items() if rung.refusal]
+    errors += [
+        f"the {zone} zone is {refusal_of(rung)}" for zone, rung in rungs.items() if refusal_of(rung)
+    ]
     if errors:
         release(rungs.values())
         return errors
     factory_config.setup_rung, factory_config.test_rung = rungs[SETUP_ZONE], rungs[TEST_ZONE]
-    for rung in rungs.values():
-        ui.info(f"  Isolation: {rung.label}")
+    for label in dict.fromkeys(rung.label for rung in rungs.values()):
+        ui.info(f"  Isolation: {label}")
     return []
 
 
@@ -5943,7 +5948,9 @@ def _run_factory_locked(
     # (e.g. single-pr mode, or stragglers from parallel execution)
     if factory_config.create_prs:
         if factory_config.single_pr:
-            result = create_single_pr(manifest, root_dir, ui)
+            result = create_single_pr(
+                manifest, root_dir, ui, isolation=label_of(factory_config.test_rung)
+            )
             if result:
                 factory_result.pr_urls.append(result[1])
             manifest.save(manifest_path)
@@ -5951,7 +5958,9 @@ def _run_factory_locked(
             # Per-component PRs are created in _handle_result; only handle stragglers
             remaining = [c for c in manifest.components if c.status == "completed" and not c.pr_url]
             if remaining:
-                pr_results = create_prs_in_order(manifest, root_dir, ui)
+                pr_results = create_prs_in_order(
+                    manifest, root_dir, ui, isolation=label_of(factory_config.test_rung)
+                )
                 factory_result.pr_urls.extend(url for _, url in pr_results)
                 manifest.save(manifest_path)
 
