@@ -45,9 +45,9 @@ from pathlib import Path
 from typing import Any
 
 from kstrl.atomicio import atomic_write_json
-from kstrl.inbox import UNDECIDED, Inbox, InboxConfig, ItemKind
+from kstrl.inbox import UNDECIDED, Inbox, InboxConfig, InboxItem, ItemKind
 from kstrl.jsonread import read_json
-from kstrl.workqueue import queue_item_for_spec
+from kstrl.workqueue import QueueError, queue_item_for_spec
 
 # Relative location of the persisted register. Next to manifest.json and
 # spec-issues.json so one directory holds every decompose output.
@@ -636,6 +636,49 @@ def open_escalation_item(
         )
     except Exception as exc:  # noqa: BLE001 - must not replace the halt
         warn(f"Inbox write for the escalation on {spec_source} failed (non-fatal): {exc}")
+
+
+def escalation_naming(root_dir: Path, queue_item: str) -> InboxItem:
+    """The undecided escalation row that names ``queue_item`` (#644, owner decision 2(c)).
+
+    `ks queue answer` accepts a poisoned item only through this row. When
+    the spec-issues write fails, the factory never prints the marker serve
+    reads, so serve poisons an item whose architect did escalate; the row
+    ``open_escalation_item`` filed before the halt still names the item in
+    ``evidence["queue_item"]``, and that id is the join. Any other poisoned
+    item, an engineer failure for one, has no such row and is refused.
+
+    Raises :class:`QueueError` saying why. An inbox that cannot be read, or
+    that holds a line the fold cannot parse, is a refusal, never an empty
+    read: the line kstrl cannot parse could be the decision that closed the
+    row, the rule ``waivers.load_approvals`` applies to approvals.
+    """
+    inbox = Inbox(root_dir)
+    scan = inbox.scan()
+    if scan.unreadable:
+        raise QueueError(
+            f"the inbox at {inbox.path} could not be read, so kstrl cannot tell whether "
+            f"the architect escalated {queue_item}; {queue_item} keeps its spec"
+        )
+    unparseable = scan.unparseable_count()
+    if unparseable:
+        raise QueueError(
+            f"{unparseable} line(s) of the inbox at {inbox.path} could not be parsed, so "
+            f"kstrl cannot tell whether the architect escalated {queue_item}; "
+            f"{queue_item} keeps its spec"
+        )
+    for row in scan.folded_items():
+        if (
+            row.kind is ItemKind.SPEC_ESCALATION
+            and row.status in UNDECIDED
+            and row.evidence.get("queue_item") == queue_item
+        ):
+            return row
+    raise QueueError(
+        f"{queue_item} is poison and no undecided spec_escalation row in the inbox names it; "
+        "only a poisoned item the architect escalated can be answered. "
+        f"`ks queue retry {queue_item}` re-runs its spec unchanged"
+    )
 
 
 def resolve_escalation_items(

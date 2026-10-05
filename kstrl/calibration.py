@@ -86,11 +86,24 @@ from kstrl.calibration_baseline import (
 #   can be set from that capture. A role id this table does not list is
 #   refused by compare (exit 2), so a new id has to be written here, with
 #   a floor or with None, before any capture of it can be compared.
+# - FP_RATE_MAX = 0.34 (R5.2, owned here since #633): a negative role's
+#   false-positive rate in the NEW baseline must be at or below it, every
+#   role included, so a reviewer that flags clean code fails compare the
+#   way one that misses planted bugs does. The rate is the fraction of the
+#   role's negative fixtures a majority of runs flagged: with four
+#   negatives one false positive is 0.25 (allowed) and two are 0.50
+#   (fails). The capture harness writes the block and reads this constant.
+# - MIN_FP_NEGATIVES = 3 (#633, owner decision 6): with one or two
+#   negatives a rate can only be 0, 0.5 or 1, so the ceiling would mean
+#   "no false positive at all". A role measured over fewer negatives is
+#   reported with its count and not gated, and the report says why.
 # ---------------------------------------------------------------------------
 
 DEFAULT_CALIBRATION_RUNS = 3
 MAX_ROLE_DETECTION_DROP = 0.15
 MAX_CATEGORY_DETECTION_DROP = 0.40
+FP_RATE_MAX = 0.34
+MIN_FP_NEGATIVES = 3
 MIN_ROLE_DETECTION_RATE: dict[str, float | None] = {
     "security": 0.80,
     "security_hard": 0.50,
@@ -352,6 +365,21 @@ def _floor_failure(role: str, new_rate: float) -> str | None:
     return f"role {role!r} detection rate {new_rate:.2f} is below its floor {floor:.2f}"
 
 
+def _false_positive_failures(new: Baseline) -> list[str]:
+    """One failure per negative role in ``new`` above ``FP_RATE_MAX``
+    (#633). A role measured over fewer than ``MIN_FP_NEGATIVES`` negatives
+    is not gated; :func:`_false_positive_lines` names it and says why. No
+    block means no negative ran, which has nothing to gate."""
+    if new.fp_rates is None:
+        return []
+    return [
+        f"negative role {role!r} false-positive rate {negative.fp_rate:.2f} "
+        f"is above the ceiling {FP_RATE_MAX:.2f}"
+        for role, negative in sorted(new.fp_rates.items())
+        if negative.negatives >= MIN_FP_NEGATIVES and negative.fp_rate > FP_RATE_MAX
+    ]
+
+
 def compare_baselines(old: Baseline, new: Baseline) -> Comparison:
     """Diff two baselines and apply the threshold block.
 
@@ -359,7 +387,9 @@ def compare_baselines(old: Baseline, new: Baseline) -> Comparison:
     ``MAX_ROLE_DETECTION_DROP``; a role's new rate below its
     ``MIN_ROLE_DETECTION_RATE`` floor (a role whose floor is None has
     none, and is still held to the drop); a category's rate dropping more
-    than ``MAX_CATEGORY_DETECTION_DROP``.
+    than ``MAX_CATEGORY_DETECTION_DROP``; a negative role in the new
+    baseline, measured over at least ``MIN_FP_NEGATIVES`` negatives, whose
+    false-positive rate is above ``FP_RATE_MAX``.
 
     Warnings (reported, exit stays 0): roles/categories present in the
     old baseline but absent from the new one (partial runs are
@@ -429,6 +459,8 @@ def compare_baselines(old: Baseline, new: Baseline) -> Comparison:
                     f"(drop {delta.drop:.2f} > {MAX_CATEGORY_DETECTION_DROP:.2f})"
                 )
 
+    failures.extend(_false_positive_failures(new))
+
     old_fixtures = {(f.role, f.fixture_id): f for f in old.fixtures}
     new_fixtures = {(f.role, f.fixture_id): f for f in new.fixtures}
     newly_missed = tuple(
@@ -478,6 +510,29 @@ def _unjudged_blocks(comparison: Comparison) -> list[str]:
     return lines
 
 
+def _false_positive_lines(new: Baseline) -> list[str]:
+    """The report lines for the new baseline's negative roles (#633): each
+    role's false-positive rate and the count of negatives it was measured
+    over, or one line saying no negative ran when the block is absent."""
+    if new.fp_rates is None:
+        return [
+            "",
+            "false-positive rate: not measured (the new baseline has no "
+            "false-positive block, so no negative fixture ran)",
+        ]
+    lines = [
+        "",
+        f"false-positive rate per negative role (new baseline; ceiling {FP_RATE_MAX:.2f}, "
+        f"gated from {MIN_FP_NEGATIVES} negatives):",
+    ]
+    for role, negative in sorted(new.fp_rates.items()):
+        count = f"{negative.negatives} negatives"
+        if negative.negatives < MIN_FP_NEGATIVES:
+            count += f": fewer than {MIN_FP_NEGATIVES}, not gated"
+        lines.append(f"  {role:<26} {negative.fp_rate:.2f}  ({count})")
+    return lines
+
+
 def format_comparison(comparison: Comparison) -> str:
     """Human-readable comparison report."""
     old, new = comparison.old, comparison.new
@@ -494,6 +549,7 @@ def format_comparison(comparison: Comparison) -> str:
             f"{_format_rate(delta.new_rate)}  ({_floor_text(delta.role)})"
         )
     lines.extend(_unjudged_blocks(comparison))
+    lines.extend(_false_positive_lines(new))
     if comparison.category_deltas:
         lines.append("")
         lines.append("per-category detection rate:")

@@ -8,6 +8,7 @@ from click.testing import CliRunner
 
 from kstrl.cli import cli
 from kstrl.tui.app import KstrlTuiApp, Mode
+from kstrl.tui.messages import SummariesReady
 from kstrl.tui.screens.decompose import DecomposeScreen
 from kstrl.tui.screens.home import HomeScreen
 from kstrl.tui.screens.launch import FactoryLaunchForm
@@ -228,6 +229,33 @@ class TestHomeScreen:
                 what="the dash command to open the newest run",
             )
             assert isinstance(app.screen, OverviewScreen)
+
+    async def test_a_focus_in_flight_when_the_first_queue_read_lands_keeps_it(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """#712. `focus()` defers through call_later, so until the app runs
+        it the screen still reports history as focused. A first queue read
+        landing in that window queued history's own focus() behind it and
+        took the focus back for good, and the dash test above waited 5 s
+        for a focus that was never coming. A pause cannot aim at that
+        window, so this replays the read inside it."""
+        write_fake_run(tmp_path, FakeRunSpec(components=1))
+        app = _home_app(tmp_path)
+        async with app.run_test(size=(120, 40)) as pilot:
+            commands = await mounted(pilot, lambda: app.screen, "#home-commands")
+            screen = app.screen
+            assert isinstance(screen, HomeScreen)
+            await settled(pilot, lambda: screen._stats is not None, what="the first queue read")
+            stats = screen._stats
+            assert stats is not None
+            screen._focus_placed = False
+            commands.focus()
+            screen.on_summaries_ready(SummariesReady(screen._summaries, stats))
+            # call_later is FIFO on the app's queue, so once this lands every
+            # focus request queued above it has run.
+            await drained(pilot, app, what="the queued focus requests to run")
+            assert screen.focused is commands
 
     async def test_digit_hotkey_opens_matching_command(
         self,

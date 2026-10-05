@@ -270,8 +270,9 @@ EXPECTED_RESULT_SITES: dict[str, int] = {
     # run_scrubbed's existing timeout clause.
     "verify.py: check_test_suite: CheckResult": 3,
     "verify.py: check_typecheck: CheckResult": 3,
-    # #696: one [stack] check's row: timed out, undecodable, passed, failed.
-    "verify.py: check_stack_command: CheckResult": 4,
+    # #696: one [stack] check's row: not run because the stack is not
+    # confirmed (slice 3), timed out, undecodable, passed, failed.
+    "verify.py: check_stack_command: CheckResult": 5,
 }
 
 #: Every construction that states its measurement, with the argument verbatim.
@@ -336,7 +337,8 @@ EXPECTED_MEASURED_ARGUMENTS: dict[str, int] = {
     # #696 decision 4: a timeout and undecodable output measured nothing,
     # and so did an exit the shell returns when it could not run the
     # command (126, 127). Every other non-zero exit is a measured failure.
-    "verify.py: check_stack_command: CheckResult: measured=False": 2,
+    # Slice 3: a check of a stack nobody confirmed is not run at all.
+    "verify.py: check_stack_command: CheckResult: measured=False": 3,
     "verify.py: check_stack_command: CheckResult: measured=result.returncode not in SHELL_COULD_NOT_RUN": 1,  # noqa: E501
     # The diff could not be read, the policy could not be parsed, or
     # evaluate_policy raised something that is neither of those two (#399

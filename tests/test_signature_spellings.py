@@ -108,6 +108,9 @@ EXPECTED_SPELLINGS: frozenset[tuple[str, str]] = frozenset(
         # #449: the inbox dedupe key for one spec's architect escalation,
         # "escalation:<project>:<spec file>". Same family as the two above.
         ("kstrl/decisions.py", "escalation"),
+        # #696 slice 3: the stack_confirmation inbox dedupe key,
+        # "stack:<digest>" (stack.STACK_KEY). Same family as the three above.
+        ("kstrl/stack.py", "stack"),
         # Finding metadata: CWE and OWASP ids, and the keys a finding
         # serialises its own fields under.
         ("kstrl/findings.py", "adequacy"),
