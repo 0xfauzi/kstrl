@@ -413,7 +413,7 @@ class RetryScreen(Screen[None]):
             self.reload()
             return
         try:
-            latest_preview = preview_retry(latest, component_id)
+            latest_preview = preview_retry(latest, component_id, root_dir=self._root_dir())
         except ValueError as exc:
             self.app.notify(f"retry plan changed: {exc}", severity="warning")
             self.reload()

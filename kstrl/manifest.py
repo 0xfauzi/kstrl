@@ -19,6 +19,7 @@ from kstrl.manifest_keys import (
     MANIFEST_REQUIRED_KEYS,
     manifest_top_level_errors,
     plan_id_errors,
+    rejudge_sha_errors,
 )
 from kstrl.names import validate_branch_name, validate_component_id
 
@@ -127,6 +128,7 @@ def _validate_component_fields(comp: dict[str, Any], prefix: str) -> list[str]:
             )
 
     errors.extend(plan_id_errors(comp, prefix))
+    errors.extend(rejudge_sha_errors(comp, prefix))
 
     first = comp.get("firstAttempt", 1)
     if isinstance(first, bool) or not isinstance(first, int) or first < 1:
@@ -170,6 +172,8 @@ class Component:
     # #601: the branch tip the diff phase built the judged diff from.
     # The ladder counts a merge clean only when GitHub merged this commit.
     judged_sha: str = ""
+    # #646: the approved head ``ks retry`` kept, judged once with no engineer.
+    rejudge_sha: str = ""
     # R7.4: Linear issue mapping stamped by the decompose hook. The
     # UUID is the mutation target for the sink; the human identifier
     # (e.g. EXC-42) rides branch names and the PR "Fixes" trailer so
@@ -345,6 +349,7 @@ class Manifest:
                 pr_url=c.get("prUrl", ""),
                 merge_sha=c.get("mergeSha", ""),
                 judged_sha=c.get("judgedSha", ""),
+                rejudge_sha=c.get("rejudgeSha", ""),
                 linear_issue_id=c.get("linearIssueId", ""),
                 linear_issue_identifier=c.get("linearIssueIdentifier", ""),
                 started_at=c.get("startedAt", ""),
@@ -421,6 +426,7 @@ class Manifest:
                     "prUrl": c.pr_url,
                     "mergeSha": c.merge_sha,
                     "judgedSha": c.judged_sha,
+                    "rejudgeSha": c.rejudge_sha,
                     "linearIssueId": c.linear_issue_id,
                     "linearIssueIdentifier": c.linear_issue_identifier,
                     "startedAt": c.started_at,
@@ -735,6 +741,7 @@ class Manifest:
             target.review_findings = ""
             target.failed_phase = ""
             target.failed_check = ""
+            target.rejudge_sha = ""
             target.evidence_worktree = ""
             target.evidence_debug_dir = ""
             target.journal_offset_start = -1

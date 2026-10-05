@@ -194,7 +194,7 @@ def _retry_problem(manifest: Manifest, component_id: str) -> str:
     from kstrl.retry_plan import preview_retry
 
     try:
-        preview_retry(manifest, component_id)
+        preview_retry(manifest, component_id, root_dir=None)
     except ValueError as exc:
         return str(exc)
     return ""
