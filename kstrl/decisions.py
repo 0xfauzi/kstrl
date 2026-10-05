@@ -399,6 +399,8 @@ def write_decisions(
     *,
     halted: bool,
     spec_digest: str = "",
+    answered_items: Sequence[str] = (),
+    answers_digest: str = "",
 ) -> Path:
     """Persist the register to ``scripts/kstrl/decisions.json``.
 
@@ -408,13 +410,16 @@ def write_decisions(
     from "no record". ``halted`` is stamped in because a halted run
     saves no manifest, so its register would otherwise sit beside an
     OLDER manifest and read as that run's decisions. Raises ``OSError``
-    on write failure so the caller can surface it loudly.
+    on write failure so the caller can surface it loudly. #639: the owner
+    answers the architect read, as ``read_owner_answers`` returned them.
     """
     path = root_dir / SPEC_DECISIONS_REL_PATH
     payload: dict[str, Any] = {
         "project": project_name,
         "specFile": spec_file,
         "specDigest": spec_digest,
+        "answeredItems": list(answered_items),
+        "answersDigest": answers_digest,
         "generatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "halted": halted,
         "counts": _decision_counts(decisions),
@@ -565,9 +570,9 @@ def _answer_route(queue_item: str | None) -> str:
     """The last line of an escalation row: where the answer goes (#644)."""
     if queue_item is None:
         return (
-            "Answer in the spec and re-run the decompose. The next decompose of "
-            "this spec that escalates nothing resolves this item, once the spec's "
-            "text has changed."
+            "Answer with `ks inbox approve <id> --comment ANSWER`, which the next decompose "
+            "of this spec reads, or in the spec, which resolves this item once its text has "
+            "changed and a decompose escalates nothing. Either way, re-run the decompose."
         )
     return (
         f"This spec is queue item {queue_item}, which waits for your answer. Write the "
@@ -610,12 +615,15 @@ def open_escalation_item(
     """
     ids = [d.issue for d in escalated]
     lines = [f"- [{d.issue}] {d.question}\n  owner must decide: {d.resolution}" for d in escalated]
+    # #639: what an owner's inbox answer answers, read back to the architect.
+    asked = "\n".join(lines)
     lines.append(f"Register: {register_path or '(not written)'}")
     evidence: dict[str, Any] = {
         "project": project_name,
         "spec_source": spec_source,
         "spec_digest": spec_digest,
         "questions": ids,
+        "asked": asked,
         "register": register_path,
     }
     try:
@@ -736,7 +744,8 @@ def resolve_escalation_items(
                 warn(
                     f"Inbox: {item.id[:8]} ({item.kind}) stays open: {spec_source} has not "
                     f"changed since it was escalated ({old[:12]}), so nothing answered the "
-                    f"question. Answer it in the spec and re-run the decompose."
+                    f"question. Answer it: ks inbox approve {item.id[:8]} --comment ANSWER, "
+                    f"or in the spec. Then re-run the decompose."
                 )
                 continue
             comment = (

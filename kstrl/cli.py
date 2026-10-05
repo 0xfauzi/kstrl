@@ -86,6 +86,7 @@ from kstrl.factory import (
     BudgetConfigError,
     FactoryConfig,
     FactoryLockHeldError,
+    LeftoverAgentsError,
     _acquire_run_lock,
     _cli_family,
     _report_preflight,
@@ -129,8 +130,10 @@ from kstrl.observability import (
     read_progress_events,
 )
 from kstrl.output import build_console
+from kstrl.owner_answers import OwnerAnswerError
 from kstrl.plan_gate import PLAN_GATE_KEY, spec_pin_errors
 from kstrl.prd import PRD
+from kstrl.procgroup import pid_is_alive
 from kstrl.reducer import ComponentState, RunState, fold, load_run_state, upconvert_v1
 from kstrl.retry_plan import (
     RESUME_REFUSAL,
@@ -198,6 +201,9 @@ def _inbox_run_lock(root_dir: Path, ui_impl: UI, *, not_done: str, then: str) ->
     """
     try:
         return _acquire_run_lock(root_dir, ui_impl, force=False)
+    except LeftoverAgentsError as exc:
+        ui_impl.err(f"{not_done}: {exc}")
+        sys.exit(2)
     except FactoryLockHeldError:
         ui_impl.err(
             f"{not_done}: a factory run holds the run lock on this root. Nothing was changed."
@@ -1764,6 +1770,7 @@ def understand(
         config.agent_type,
         sandbox=sandbox_cfg,
         max_budget_usd=config.agent_budget_usd,
+        root_dir=root_dir,
     )
 
     use_tui = (
@@ -2230,6 +2237,7 @@ def feature(
         base_config.agent_type,
         sandbox=sandbox_cfg,
         max_budget_usd=base_config.agent_budget_usd,
+        root_dir=root_dir,
     )
 
     # ``understand_prompt_file`` is the OVERRIDE feature_cmd applies, so
@@ -2485,7 +2493,9 @@ def decompose(
     effective_type = canonical_type or effective_type
     _refuse_without_build_manifest(root_dir, ui_impl)
 
-    agent = get_agent(effective_cmd, effective_model, effective_reasoning, effective_type)
+    agent = get_agent(
+        effective_cmd, effective_model, effective_reasoning, effective_type, root_dir=root_dir
+    )
 
     # decompose_spec takes a `str` base and runs it through
     # validate_branch_name, so the flag's None is resolved here rather
@@ -2513,7 +2523,7 @@ def decompose(
             )
             core_ui.ok(f"Decomposed into {len(manifest.components)} components")
             return 0
-        except SpecBlockerError as exc:
+        except (SpecBlockerError, OwnerAnswerError) as exc:
             core_ui.err(str(exc))
             # R1.7: point at the durable artifacts so the user iterates
             # against files, not scrollback. Plural, because after #260
@@ -2947,7 +2957,9 @@ def factory(
         sys.exit(2)
     effective_type = canonical_type or effective_type
 
-    agent = get_agent(effective_cmd, effective_model, effective_reasoning, effective_type)
+    agent = get_agent(
+        effective_cmd, effective_model, effective_reasoning, effective_type, root_dir=root_dir
+    )
 
     # R8 review (#180): the budget ceilings are checked before the
     # decompose call below, so the architect never spends under a ceiling
@@ -3046,9 +3058,10 @@ def factory(
                     run_lock=run_lock,
                     timeout=limit_seconds(factory_config.architect_timeout_seconds),
                 )
-            except SpecBlockerError as exc:
+            except (SpecBlockerError, OwnerAnswerError) as exc:
                 # Architect halted: it escalated a question only the owner
-                # can answer (#260). Surface it and exit cleanly. The user
+                # can answer (#260), or the owner's inbox answers cannot be
+                # read (#639). Surface it and exit cleanly. The user
                 # answers, edits the spec and re-runs, iterating against the
                 # persisted artifacts (R1.7).
                 ui_impl.err(str(exc))
@@ -3618,6 +3631,34 @@ def _render_architect_run(ui_impl: UI, state: RunState) -> None:
         ui_impl.kv("Architect run", state.architect_run_id)
 
 
+def _run_state_label(state: RunState) -> str:
+    """``finished``, ``in flight``, or stopped when the run's kstrl process
+    is gone without a finish record (#642). A run that recorded no pid
+    stays ``in flight``: there is nothing to check."""
+    if state.finished:
+        return "finished"
+    if state.pid and not pid_is_alive(state.pid):
+        return f"stopped without a finish record (kstrl process {state.pid} is not running)"
+    return "in flight"
+
+
+def _render_leftover_agents(ui_impl: UI, root_dir: Path) -> None:
+    """Agent processes a kstrl process that is gone left running (#642).
+
+    Report only: `ks status` takes no lock and refuses nothing. The
+    lock-taking commands refuse on the same reading.
+    """
+    from kstrl.worktree_sweep import leftover_agents, leftover_lines
+
+    sweep = leftover_agents(root_dir)
+    if not (sweep.survivors or sweep.error):
+        return
+    count = "unknown" if sweep.error else f"{len(sweep.survivors)} still running"
+    ui_impl.kv("leftover agents", count)
+    for line in leftover_lines(sweep):
+        ui_impl.info(f"  - {line}")
+
+
 def _render_status(
     manifest: Manifest,
     manifest_file: Path,
@@ -3646,7 +3687,7 @@ def _render_status(
         _render_architect_run(ui_impl, state)
         if state.last_event_ts:
             age = _age_label_epoch(state.last_event_ts)
-            run_state = "finished" if state.finished else "in flight"
+            run_state = _run_state_label(state)
             ui_impl.kv(
                 "Run state",
                 f"{run_state} (last event {age})" if age else run_state,
@@ -3675,6 +3716,7 @@ def _render_status(
 
     if root_dir is not None:
         _render_safe_mode(ui_impl, root_dir)
+        _render_leftover_agents(ui_impl, root_dir)
 
     counts: dict[str, int] = {}
     for comp in manifest.components:

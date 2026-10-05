@@ -57,6 +57,8 @@ EXPECTED_CONSTRUCTIONS = (
     "cli.py kstrl.inbox.Inbox",
     "decisions.py kstrl.inbox.Inbox",
     "factory.py kstrl.inbox.Inbox",
+    # #639 slice 4: read_owner_answers scans for the owner's answers; reads only.
+    "owner_answers.py kstrl.inbox.Inbox",
     "pipeline.py kstrl.inbox.Inbox",
     # #602: the L1 plan gate reads its item (_find) and records a decision
     # given at the prompt (_record).
@@ -88,6 +90,7 @@ EXPECTED_CONSTRUCTION_COUNTS = {
     # it mutates nothing.
     "decisions.py": 3,
     "factory.py": 1,
+    "owner_answers.py": 1,
     # #595 (addendum): was 5, one construction per lazy-open site
     # (ComponentPipeline.snapshot_waivers's own +1 among them). All five
     # sites now build through ComponentPipeline._open_inbox, so there is

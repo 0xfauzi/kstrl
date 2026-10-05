@@ -39,6 +39,7 @@ import pytest
 from kstrl.factory import run_factory
 from kstrl.manifest import ComponentStatus, Manifest
 from kstrl.ui.plain import PlainUI
+from tests.helpers import procs
 from tests.spine_utils import (
     COMPLETE_LINE,
     base_config,
@@ -141,6 +142,7 @@ def _crash_factory(
         if proc.poll() is None:
             os.killpg(proc.pid, signal.SIGKILL)
             proc.wait(timeout=10)
+    procs.wait_for_recorded_agents_to_end(root)
 
 
 def _assert_crashed_state(
