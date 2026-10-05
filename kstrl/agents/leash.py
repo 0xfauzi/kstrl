@@ -30,6 +30,9 @@ has gone, and an import that fails is a reading that cannot be made.
 to start (exit 70) unless it leads its own group. That is the one check
 that stops it signalling kstrl's group or the operator's shell.
 
+The leash leaves with the agent's exit status, so a caller that reads
+the returncode (``verify.run_scrubbed``, #642 slice 5) reads the agent's.
+
 The status fd carries one message back to the spawner, and only on
 failure: ``errno <n>`` when the agent could not be started, ``refused``
 when the leash does not lead its group. A clean start closes it with
@@ -69,17 +72,23 @@ def _ignore(signum: int, frame: object) -> None:
 
 
 def _follow(agent: subprocess.Popen[bytes], firing: threading.Event) -> None:
-    """Leave when the agent leaves, unless the leash is already firing.
+    """Leave when the agent leaves, with its exit status, unless the leash
+    is already firing.
 
     The wait has no deadline, and the timeout gate enrols it with this
     argument: the agent's life is bounded by kstrl's own deadline while
     kstrl is alive, and by this leash's SIGKILL of its own group, which
-    ends this thread too, once kstrl is gone. The exit status is not
-    copied: nothing reads the direct child's returncode.
+    ends this thread too, once kstrl is gone.
+
+    The status is copied because ``verify.run_scrubbed`` reads it: a
+    check passes on exit 0 and fails on anything else (#642 slice 5). A
+    death by signal N leaves as 128 + N, the status a shell reports for
+    it, because a thread other than the main one cannot reset the
+    SIGTERM and SIGINT handlers it would need to die of the same signal.
     """
-    agent.wait()
+    status = agent.wait()
     if not firing.is_set():
-        os._exit(0)
+        os._exit(status if status >= 0 else 128 - status)
 
 
 def _wait_for_owner(lifeline: int) -> None:

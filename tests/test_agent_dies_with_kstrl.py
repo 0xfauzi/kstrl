@@ -454,7 +454,9 @@ def test_an_orderly_run_leaves_no_lifeline_open(tmp_path: Path) -> None:
     every disposal must close it. A run in this process with two
     components whose agents finish: the process has no pipe open afterwards
     that it did not have before. A disposal that kept the write end leaked
-    one per call (measured: 4 more after this run)."""
+    one per call (measured: 4 more after this run). Every gate the run's
+    Phase 1 starts holds a lifeline too (#642 slice 5), so a
+    ``run_scrubbed`` that kept its write end fails this as well."""
     root = tmp_path / "repo"
     spine_utils.init_kstrl_repo(root, ("comp-a", "comp-b"))
     manifest = spine_utils.make_manifest(

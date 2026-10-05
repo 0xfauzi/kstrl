@@ -126,7 +126,7 @@ EXPECTED_TEXT_MODE_SPAWNS: dict[str, int] = {
 #: spawn being deleted.
 EXPECTED_CLEARED_SPAWNS: tuple[str, ...] = (
     "agents/codex.py subprocess.run(['codex', 'exec', '--help'], check=False, stdout=subpro",
-    "agents/proc.py subprocess.Popen([sys.executable, '-I', '-S', LEASH_PATH, str(lifeline",
+    "agents/proc.py subprocess.Popen(leash_command(argv, lifeline=lifeline_read, status=st",
     "breaker.py subprocess.run(['git', *args], cwd=cwd, capture_output=True, encoding=",
     # codespell:ignore-next-line
     "doctor.py subprocess.run(['git', 'ls-files', '-z'], cwd=root, capture_output=Tru",
