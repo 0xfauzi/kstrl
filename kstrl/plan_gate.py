@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from kstrl import events as ev
+from kstrl.acceptance import pinned_digest
 from kstrl.decompose import load_spec_input, spec_digest
 from kstrl.inbox import UNDECIDED, Inbox, InboxError, InboxItem, ItemKind, ItemStatus
 from kstrl.interaction import PromptKind, PromptRequest
@@ -65,7 +66,7 @@ def plan_dedupe_key(digest: str) -> str:
     return f"{PLAN_GATE_KEY}{digest}"
 
 
-def plan_digest(manifest: Manifest, root_dir: Path) -> str:
+def plan_digest(manifest: Manifest, root_dir: Path, acceptance_digest: str = "") -> str:
     """SHA-256 of the plan a person approves.
 
     Canonical JSON of the components in manifest order (id, title,
@@ -78,6 +79,8 @@ def plan_digest(manifest: Manifest, root_dir: Path) -> str:
     while an approved plan runs, and a resumed run of the same plan must
     not be asked again. A PRD that cannot be read raises
     :class:`PlanUnreadableError`; it is never a digest of fewer files.
+    ``acceptance_digest`` is the run's pinned acceptance plan (#700 slice
+    4), folded in only when there is one.
     """
     plan: list[dict[str, Any]] = []
     for comp in manifest.components:
@@ -109,6 +112,8 @@ def plan_digest(manifest: Manifest, root_dir: Path) -> str:
         if manifest.stack_digest
         else plan
     )
+    if acceptance_digest:
+        approved = {"withoutAcceptance": approved, "acceptanceDigest": acceptance_digest}
     body = json.dumps(approved, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(body.encode("utf-8")).hexdigest()
 
@@ -187,7 +192,11 @@ def run_plan_gate(pipeline: ComponentPipeline, bundle: FlagBundle | None) -> int
     if bundle is None or bundle.auto_accept_plan or not pipeline.manifest.components:
         return None
     try:
-        digest = plan_digest(pipeline.manifest, pipeline.root_dir)
+        digest = plan_digest(
+            pipeline.manifest,
+            pipeline.root_dir,
+            pinned_digest(pipeline.factory_config.acceptance_plan),
+        )
     except PlanUnreadableError as exc:
         pipeline.ui.err(f"  The plan cannot be approved because it cannot be read: {exc}")
         return 2

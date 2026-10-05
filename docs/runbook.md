@@ -86,6 +86,41 @@ failed, and a stack whose newest replay failed is not confirmed until a
 replay of the same text passes. Replays on one machine take turns on a
 lock under the XDG state home; a second one prints that it is waiting.
 
+## Acceptance checks (`ks factory --acceptance <dir>`)
+
+Record-only (#700 slice 4). `<dir>` must be outside the repository and
+hold `plan.json`, plus any files its checks use:
+
+```json
+{"components": {"greeter": {"createsApp": false, "checks": [
+  {"id": "greets-ada", "criterion": "greets by name",
+   "argv": ["/bin/sh", "check.sh", "Ada"], "onBase": "fails", "heldOut": false}]}}}
+```
+
+Every key of a check is required; `onBase` is `fails` or `passes`. The
+run needs a confirmed `[stack]`, because every check runs in the rung's
+test zone, in a fresh copy of the plan as its working directory, with
+`KSTRL_TREE` naming the checkout it checks. Exit 0 passes, any other
+exit fails, and 126, 127, a timeout or output that is not utf-8 did not
+run. kstrl copies the plan under the control directory by its digest,
+and an L1 plan approval covers that digest.
+
+After the plan gate and before the first engineer, every check runs once
+on the base. `Refusing to run: the acceptance checks do not hold on the
+base` (exit 2) names each check that passed where the plan says it
+fails, failed where it says it passes, or could not run. A check that
+could not run is allowed only in a component the plan marks
+`"createsApp": true`, and that component is recorded as `base not
+runnable`. Once the base accepts the plan, the manifest pins its
+digest. A later run of the same plan refuses when the directory was
+edited, naming both digests, and when it names no `--acceptance`.
+
+After Phase 1 passes, each component's checks run on its head (once
+each for now; a run that failed is never run again) and the verdict is
+printed, written under `.kstrl/runs/<run_id>/acceptance/<component>/`
+and repeated in the PR body's `## Acceptance` section. It never fails
+the component.
+
 ## Exit codes
 
 Every `ks` command uses the same three codes, so a script or a scheduler

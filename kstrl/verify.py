@@ -270,11 +270,12 @@ def run_scrubbed(
     operator's environment - so the scrub's guarantee (no secret reaches
     a verification subprocess) is unchanged.
     ``tests/test_patch_coverage.py::test_extra_env_does_not_reopen_the_scrub``
-    is what holds that. Its only caller today is the patch-coverage check
+    is what holds that. It has two callers: the patch-coverage check
     (:func:`_coverage_report`, via :func:`check_patch_coverage`), which
     points ``COVERAGE_FILE`` at a throwaway directory so pytest-cov's
-    data file cannot land in the tree being measured; see that function
-    for the alternative (``--cov-config``) this rejects and why.
+    data file cannot land in the tree being measured (see that function
+    for the alternative, ``--cov-config``, this rejects and why), and an
+    acceptance check (#700 slice 4, ``replay._ran``), given ``KSTRL_TREE``.
 
     ``stdin_text`` given as a string is the child's whole stdin, sent as
     utf-8 through a pipe that is then closed, so the child reads it and

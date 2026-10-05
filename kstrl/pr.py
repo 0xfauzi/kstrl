@@ -500,8 +500,12 @@ def push_create_and_merge_pr(
 def _generate_pr_body(
     component: Component,
     manifest: Manifest,
+    root: Path | None = None,
 ) -> str:
-    """Generate a PR description for a component."""
+    """Generate a PR description for a component. ``root`` reads the run's
+    acceptance record into a ``## Acceptance`` section (#700 slice 4)."""
+    from kstrl.acceptance import pr_section
+
     lines: list[str] = []
 
     lines.append("## Summary")
@@ -574,6 +578,8 @@ def _generate_pr_body(
         lines.append(render_findings_markdown(callouts).rstrip())
         lines.append("")
 
+    lines.extend(pr_section(root, manifest.run_id, component.id))
+
     # PRD reference
     lines.append("## PRD")
     lines.append("")
@@ -604,7 +610,7 @@ def create_component_pr(
     Returns (pr_number, pr_url).
     Raises RuntimeError on failure.
     """
-    body = _generate_pr_body(component, manifest)
+    body = _generate_pr_body(component, manifest, cwd)
     title = f"[{manifest.project_name}] {component.title}"
 
     # --base=/--head= bind the branch values to their flags even if a

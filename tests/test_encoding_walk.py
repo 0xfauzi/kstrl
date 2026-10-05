@@ -473,6 +473,9 @@ class TestTheReadBytesExclusion:
     """
 
     EXPECTED_READ_BYTES: dict[str, int] = {
+        # #700 slice 4: the plan's files, an acceptance log and each
+        # evidence file are read as bytes to be hashed or copied, never decoded.
+        "acceptance.py": 3,
         "agents/prompt_record.py": 1,  # #532: the baseline.py shape, I/O outside the guard
         "agents/spawn_record.py": 1,  # #642: the baseline.py shape, I/O outside the guard
         "breaker.py": 1,

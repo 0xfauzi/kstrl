@@ -187,3 +187,49 @@ def test_start_scrubbed_runs_its_command_only_inside_a_proven_rung() -> None:
     built = spawn.args[0]
     assert isinstance(built, ast.Call) and leaf_name(built.func) == "_in_rung", ast.unparse(spawn)
     assert ast.unparse(built.args[1]) == "rung", ast.unparse(built)
+
+
+# --- #700 slice 4: an acceptance check runs only through the replay, in its rung ---
+
+#: The names a call starts a process by, and the replay's stage runner.
+_RUNS_A_COMMAND = frozenset(
+    {
+        "_ran",
+        "run_scrubbed",
+        "start_scrubbed",
+        "Popen",
+        "run",
+        "call",
+        "check_call",
+        "check_output",
+        "system",
+        "execv",
+        "execvp",
+    }
+)
+
+
+def _runs_a_command(node: ast.AST) -> bool:
+    return isinstance(node, ast.Call) and leaf_name(node.func) in _RUNS_A_COMMAND
+
+
+def test_an_acceptance_check_runs_only_through_the_replay_inside_its_rung() -> None:
+    """``kstrl/acceptance.py`` starts no process of its own. Its one call
+    that runs a command is the replay's ``_ran``, made inside the probe the
+    replay hands its test-zone rung, and it passes that rung on, so a check
+    never runs on the host."""
+    (source,) = [path for path in package_sources() if label(path) == "acceptance.py"]
+    assert_census(
+        sources=[source],
+        sees=_runs_a_command,
+        expected={"acceptance.py:_run_check": 1},
+        control="done = subprocess.run(argv, cwd=here)\n",
+        message=(
+            "kstrl/acceptance.py runs a command somewhere new. A check runs only "
+            "through replay._ran inside the rung the replay proved."
+        ),
+        key=_where,
+    )
+    (call,) = [node for node in all_nodes(parsed(source)) if _runs_a_command(node)]
+    assert leaf_name(call.func) == "_ran", ast.unparse(call)
+    assert ast.unparse(call.args[3]) == "rung", ast.unparse(call)

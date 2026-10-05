@@ -3165,6 +3165,9 @@ class ComponentPipeline:
                 verify=verify,
             )
 
+        # #700 slice 4: record-only, so it decides nothing about the component.
+        self._phase_acceptance(comp, wt_path)
+
         t0 = self._phase_started(comp, "diff")
         diff = self._phase_diff(comp, comp_result, wt_path)
         self._phase_completed(
@@ -3665,6 +3668,39 @@ class ComponentPipeline:
 
         self.ui.ok(f"  Phase 1 passed for {comp.id}")
         return VerifyPhaseResult(ran=True, verification=verification)
+
+    def _phase_acceptance(self, comp: Component, wt_path: Path) -> None:
+        """The operator's acceptance checks on this head (#700 slice 4).
+
+        Record-only: the verdict is written, printed and emitted with
+        ``advisory=True``, and no failure is routed from it.
+        """
+        from kstrl.acceptance import judge_head
+
+        outcome = judge_head(
+            self.root_dir,
+            self.factory_config,
+            comp.id,
+            git.get_head_sha(wt_path) or "",
+            run_id=self.run_id,
+            attempt=comp.retries + 1,
+            ui=self.ui,
+        )
+        if outcome is None:
+            return
+        for line in outcome.lines:
+            self.ui.info(line)
+        self.bus.emit(
+            ev.VerificationResultEvent(
+                component=comp.id,
+                passed=outcome.passed,
+                checks=outcome.checks,
+                failures=outcome.failures,
+                phase="acceptance",
+                advisory=True,
+                isolation=outcome.isolation,
+            )
+        )
 
     def _before_gates(
         self,

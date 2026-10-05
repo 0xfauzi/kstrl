@@ -294,6 +294,7 @@ The architect and the knowledge distiller are not sandboxed.
 | Env var | Type | Default | Notes |
 |---|---|---|---|
 | `KSTRL_NONO` | path | `nono` on PATH | The nono binary `ks doctor --measure` proves the isolation rung with. **Env only.** The rung is decided by canaries run through it, never by its presence or version |
+| `KSTRL_TREE` | path | set by kstrl | **Set by kstrl, never read.** An acceptance check (`ks factory --acceptance`, #700 slice 4) runs in a copy of its plan, and this names the checkout it checks: the base or a component's head |
 
 ## VerifyConfig (`[verify]`)
 
