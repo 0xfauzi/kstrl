@@ -101,6 +101,8 @@ from kstrl.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.integration_loop import IntegrationLoop
 from kstrl.integration_phase import IntegrationRun, report_integration
 from kstrl.interaction import InteractionChannel
+from kstrl.isolation import SETUP_ZONE, TEST_ZONE, prove_zones
+from kstrl.isolation import write_record as write_isolation_record
 from kstrl.jsonread import read_json
 from kstrl.knowledge import (
     KnowledgeConfig,
@@ -147,6 +149,7 @@ from kstrl.review import (
     run_review,
 )
 from kstrl.runenvelope import RunEnvelope
+from kstrl.rung import ProvenRung, release
 from kstrl.runstate import RunState
 from kstrl.sandbox import SANDBOX_REFUSAL, SandboxConfig, unsandboxable_roles
 from kstrl.scope import ComponentScope, RunScope
@@ -156,7 +159,7 @@ from kstrl.security import (
     run_security_review,
 )
 from kstrl.shutdown import StopController
-from kstrl.stack import STACK_KIND, Stack, stack_in_force, unconfirmed_lines
+from kstrl.stack import STACK_KIND, Stack, stack_in_force, stack_paths, unconfirmed_lines
 from kstrl.statedir import ControlStateError, pre_run_prd_path
 from kstrl.timeout import NO_LIMIT, TimeoutConfig, describe_limit_seconds
 from kstrl.ui.bridge import EventBridgeUI
@@ -400,6 +403,12 @@ class FactoryConfig:
     # well as in VerifyConfig because --no-verify drops the VerifyConfig
     # and a worktree still needs its setup. Provenance: no [factory] key.
     project_stack: Stack | None = field(default=None, metadata={"provenance": True})
+    # #700 slice 2: the two rungs a run under a [stack] proved before its
+    # base gates (``_preflight_rungs``), cleared and their scratch removed
+    # when the run ends (``run_factory``). The setup runs in the first and
+    # every check in the second. Never read from kstrl.toml, env or a flag.
+    setup_rung: ProvenRung | None = field(default=None, metadata={"provenance": True})
+    test_rung: ProvenRung | None = field(default=None, metadata={"provenance": True})
     # R7.2: approved-fixtures oracle for Phase 1. None means run_factory
     # loads FixturesConfig.load(root_dir) - toml [fixtures] section +
     # env - so `ks factory` honors the config with no CLI wiring.
@@ -446,7 +455,8 @@ class FactoryConfig:
         ``engineer_verify_config`` below, which is what stops the gate
         and the engineer prompt answering the question two ways.
         """
-        return self.verify_config or VerifyConfig()
+        config = self.verify_config or VerifyConfig()
+        return config if self.test_rung is None else replace(config, rung=self.test_rung)
 
     def engineer_verify_config(self) -> VerifyConfig | None:
         """What the engineer may be told Phase 1 will run, or None.
@@ -470,7 +480,8 @@ class FactoryConfig:
                 scaffold or self.project_stack.setup,
                 self.worktree_setup_timeout,
                 self.project_stack.env,
-                f"the [stack] in kstrl.toml {unconfirmed}" if unconfirmed else "",
+                rung=self.setup_rung,
+                refusal=f"the [stack] in kstrl.toml {unconfirmed}" if unconfirmed else "",
             )
         return WorktreeSetup(scaffold or self.worktree_setup_command, self.worktree_setup_timeout)
 
@@ -2416,6 +2427,61 @@ def _preflight_base_gates(
     )
 
 
+def _preflight_rungs(
+    root_dir: Path, factory_config: FactoryConfig, run_id: str, ui: UI
+) -> list[str]:
+    """Why this run's commands have no proven rung to run in, or [] (#700).
+
+    Under a ``[stack]`` both zones are proven once per run, before the base
+    gates, in the policy every command then runs in: the trees kstrl makes
+    worktrees in (the checkout itself without worktrees), plus the stack's
+    ``writable`` and ``readable``. Below a proven rung the run refuses;
+    there is no opt-in to run a stack's commands on the host (decision
+    5(a)). The record is written either way. Without a stack nothing is
+    proven and every command runs on the host, as before.
+    """
+    stack = factory_config.project_stack
+    if stack is None:
+        return []
+    trees = (
+        [root_dir / ".kstrl" / "contract", root_dir / ".kstrl" / "worktrees"]
+        if factory_config.use_worktrees
+        else [root_dir]
+    )
+    rungs = prove_zones(
+        root_dir,
+        [*trees, *stack_paths(root_dir, stack.writable)],
+        stack_paths(root_dir, stack.readable),
+        stack.browser,
+    )
+    errors = write_isolation_record(root_dir, run_id, stack.digest, rungs)
+    errors += [f"the {zone} zone is {rung.refusal}" for zone, rung in rungs.items() if rung.refusal]
+    if errors:
+        release(rungs.values())
+        return errors
+    factory_config.setup_rung, factory_config.test_rung = rungs[SETUP_ZONE], rungs[TEST_ZONE]
+    for rung in rungs.values():
+        ui.info(f"  Isolation: {rung.label}")
+    return []
+
+
+def _refused_rung_or_base(
+    manifest: Manifest, root_dir: Path, factory_config: FactoryConfig, run_id: str, ui: UI
+) -> bool:
+    """Prove the rung, then measure the base gates inside it (#700 slice 2,
+    #654); True when either refused. The base gates never run below a
+    proven rung under a [stack]."""
+    return _report_preflight(
+        ui,
+        "the isolation rung is not proven",
+        _preflight_rungs(root_dir, factory_config, run_id, ui),
+    ) or _report_preflight(
+        ui,
+        "the base branch fails a gate Phase 1 runs, or its reading cannot be recorded",
+        _preflight_base_gates(manifest, root_dir, factory_config, run_id, ui),
+    )
+
+
 def _preflight_spec_pin(manifest: Manifest, root_dir: Path, ui: UI) -> list[str]:
     """Why this plan must not run on its spec as it reads now, or [] (#639).
 
@@ -2545,11 +2611,7 @@ def _run_preflights(
         _preflight_component_scope(manifest, run_scope),
     ):
         return None
-    if _report_preflight(
-        ui,
-        "the base branch fails a gate Phase 1 runs, or its reading cannot be recorded",
-        _preflight_base_gates(manifest, root_dir, factory_config, run_id, ui),
-    ):
+    if _refused_rung_or_base(manifest, root_dir, factory_config, run_id, ui):
         return None
     if not factory_config.use_worktrees:
         return run_decisions
@@ -4321,6 +4383,8 @@ def run_factory(
             architect_run_id=architect_run_id,
         )
     finally:
+        release((factory_config.setup_rung, factory_config.test_rung))
+        factory_config.setup_rung = factory_config.test_rung = None
         run_lock.release()
 
 
@@ -5647,7 +5711,7 @@ def _run_factory_locked(
             contract_results = run_contract_testing(
                 manifest,
                 root_dir,
-                contract_config,
+                replace(contract_config, rung=factory_config.test_rung),
                 ui,
                 components_merged=components_merged,
                 base_sha=round_base_sha,
