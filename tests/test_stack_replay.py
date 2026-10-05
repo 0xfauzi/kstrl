@@ -131,6 +131,33 @@ def test_a_recipe_that_needs_an_untracked_file_fails_the_clean_replay(tmp_path: 
     assert _no_replay_worktree(root)
 
 
+@needs_nono
+def test_a_check_that_cannot_run_and_a_check_that_fails_on_the_base_are_named_apart(
+    tmp_path: Path,
+) -> None:
+    """A check whose command is not found (127) could not run: the replay
+    fails at ``check_not_runnable``. A check that ran and exited 3 on the
+    base contradicts the stack's claim that its checks pass there:
+    ``base_contradiction``. Both stop at that check and fail the row."""
+    missing = _repo(
+        tmp_path / "missing", _stack({"tests": "kstrl-no-such-command-7f3a"}), confirm=False
+    )
+    red = _repo(tmp_path / "red", _stack({"tests": "echo red-on-base; exit 3"}), confirm=False)
+
+    _code, not_runnable = _measure(missing)
+    _code, contradiction = _measure(red)
+
+    reading = _replay(not_runnable)
+    assert reading["failed"] == "check_not_runnable", reading
+    assert _stage(reading, "check:tests")["exit"] == 127, reading
+    assert _replay_row(not_runnable)["status"] == "fail", not_runnable
+    reading = _replay(contradiction)
+    assert reading["failed"] == "base_contradiction", reading
+    assert _stage(reading, "check:tests")["exit"] == 3, reading
+    assert "red-on-base" in _stage(reading, "check:tests")["tail"], reading
+    assert _replay_row(contradiction)["status"] == "fail", contradiction
+
+
 def test_editing_up_changes_the_digest_and_needs_confirmation_again(tmp_path: Path) -> None:
     """``up`` is part of what the stack is: a confirmed stack whose ``up``
     is edited refuses until the new text is confirmed, and an empty ``up``
