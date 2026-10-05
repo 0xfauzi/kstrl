@@ -213,9 +213,15 @@ def test_with_no_prover_the_checks_run_on_the_host_and_every_record_says_so(
     root = _greeting_repo(tmp_path)
     plan = _plan(tmp_path, [_check("greets-ada", ["/bin/sh", "check.sh", "Ada"])])
 
-    run = _factory(tmp_path, root, "--acceptance", str(plan), engineer=CORRECT, env=NO_PROVER)
+    tmpdir = tmp_path / "tmpdir"
+    tmpdir.mkdir()
+    env = {**NO_PROVER, "TMPDIR": str(tmpdir)}
+
+    run = _factory(tmp_path, root, "--acceptance", str(plan), engineer=CORRECT, env=env)
 
     assert run.code == 0, run.out
+    # The fallback has no zone, so each run's copy of the plan is removed after it.
+    assert sorted(path.name for path in tmpdir.glob("greets-ada-*")) == [], run.out
     (base_path,) = sorted((root / ".kstrl" / "runs").glob("*/acceptance/base.json"))
     base = json.loads(base_path.read_text(encoding="utf-8"))
     labels = {"setup": FALLBACK_LABEL, "test": FALLBACK_LABEL}
