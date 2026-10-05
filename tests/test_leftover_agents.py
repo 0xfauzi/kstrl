@@ -90,6 +90,17 @@ def _plant(root: Path, *, pgid: int, nonce: str, owner_pid: int) -> Path:
     return path
 
 
+def _end_on_failure(first: subprocess.Popen[str], group: int) -> None:
+    """End the ``ks factory`` and the agent group a failed start left alive.
+
+    Kept apart from the helper that returns ``group``: a function that kills
+    a group must not also hand its id out (#686)."""
+    if group > 1:
+        procs.kill_group(group)
+    procs.kill_group(first.pid)
+    first.communicate(timeout=30)
+
+
 def _start_agent_and_kill_kstrl(
     root: Path, pidfile: Path, *, leash_sig: signal.Signals
 ) -> tuple[subprocess.Popen[str], int, int]:
@@ -120,10 +131,7 @@ def _start_agent_and_kill_kstrl(
         # The caller never sees ``first`` or ``group`` when this raises, so
         # its ``finally`` cannot end them: a live ``ks factory`` left here
         # keeps starting agents long after the test has failed.
-        if group > 1:
-            procs.kill_group(group)
-        procs.kill_group(first.pid)
-        first.communicate(timeout=30)
+        _end_on_failure(first, group)
         raise
     return first, agent, group
 
