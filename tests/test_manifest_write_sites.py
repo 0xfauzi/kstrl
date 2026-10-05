@@ -109,7 +109,9 @@ EXPECTED_MANIFEST_WRITE_SITES: dict[str, tuple[int, str]] = {
     "kstrl/pipeline.py::ComponentPipeline.complete save": (1, IN_RUN),
     "kstrl/pipeline.py::ComponentPipeline.fail save": (1, IN_RUN),
     "kstrl/pipeline.py::ComponentPipeline.fail_scheduler_backstop save": (1, IN_RUN),
-    "kstrl/pipeline.py::ComponentPipeline.process_result save": (1, IN_RUN),
+    # #646: the gates after the engineer moved out of process_result, so
+    # ks retry's kept head is judged by the same code with no engineer.
+    "kstrl/pipeline.py::ComponentPipeline._judge_attempt save": (1, IN_RUN),
     "kstrl/pipeline.py::ComponentPipeline.repoll_merge_pending save": (1, IN_RUN),
     "kstrl/pipeline.py::ComponentPipeline.retry_or_fail save": (1, IN_RUN),
     # --- a ``save`` that is not a manifest's ---

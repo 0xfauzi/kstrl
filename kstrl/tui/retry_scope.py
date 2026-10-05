@@ -96,6 +96,10 @@ def _branch_line(preview: RetryPreview, base: str, code: int | None) -> ScopeLin
     that could not run leaves the effect unknown.
     """
     branch = preview.failed_branch
+    if preview.kept_head:
+        return ScopeLine(
+            "branch", f"keeps {branch} at {preview.kept_head[:12]}: {preview.kept_reason}"
+        )
     if preview.single_pr:
         shared = branch or "the shared branch"
         return ScopeLine("branch", f"keeps {shared} (single_pr: it carries completed work)")
@@ -125,14 +129,19 @@ def retry_scope(
     from kstrl.retry_plan import preview_retry
 
     try:
-        preview = preview_retry(manifest, component_id)
+        preview = preview_retry(manifest, component_id, root_dir=root_dir)
     except ValueError as exc:
         return RetryScope(component_id, (), None, refusal=str(exc))
     carried = carry()
     probe = probe_branch or branch_probe
     resets = ", ".join([component_id, *preview.reset_dependents])
     lines = [
-        ScopeLine("starts at", "the beginning: the engineer runs again, then every gate after it"),
+        ScopeLine(
+            "starts at",
+            "Phase 1 on the kept commit: no engineer runs, then every gate after it"
+            if preview.kept_head
+            else "the beginning: the engineer runs again, then every gate after it",
+        ),
         ScopeLine("resets", f"{resets} to pending"),
         *(
             ScopeLine("stays out", line)

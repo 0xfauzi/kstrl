@@ -84,7 +84,12 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     # 25: `_base_finding`'s `git show` (#414/#425); `git merge-base` moved to `git.py` in #435.
     # 26: #632, `run_scrubbed`'s `subprocess.PIPE` for a stdin it was given.
     # 27: #696, `check_stack_command`'s `subprocess.TimeoutExpired`.
-    "verify.py": 27,
+    # #700 slice 3: +6, the import, `subprocess.Popen[bytes]` twice and
+    # `TimeoutExpired` twice around `run_scrubbed` and `start_scrubbed`.
+    "replay.py": 6,
+    # #700 slice 3: +4, `start_scrubbed`: its Popen, its return type,
+    # DEVNULL and STDOUT.
+    "verify.py": 31,
     "worktree_setup.py": 2,  # #624: the import, and `TimeoutExpired` from `run_scrubbed`
     "worktree_sweep.py": 2,  # #461: the import, and `TimeoutExpired` from `run_scrubbed`
 }
@@ -228,7 +233,9 @@ EXPECTED_BYTES_MODE_SPAWNS: dict[str, int] = {
     # `run_scrubbed`, which reads bytes and decodes them itself, strictly,
     # so a gate whose output is not utf-8 can still write its log.
     # `tests/test_undecodable_child_output.py` pins the strictness.
-    "verify.py": 2,
+    # #700 slice 3: +1, `start_scrubbed`, whose output goes to a log file and
+    # is read back through `_readable` as evidence only.
+    "verify.py": 3,
 }
 
 

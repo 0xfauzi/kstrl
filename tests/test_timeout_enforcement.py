@@ -1964,7 +1964,9 @@ class TestSubprocessTimeoutAudit:
     #: ``process.wait(timeout=grace)`` with the deadline deleted, which
     #: passed the entire suite - 4977 passed, zero failures - on the line
     #: whose own docstring says it is why the function exists.
-    CHILD_WAIT_SCOPE = POPEN_ALLOWLIST | {"kstrl/procdispose.py"}
+    #: ``kstrl/replay.py`` (#700 slice 3) waits on the ``up`` that
+    #: ``verify.start_scrubbed`` started and lets it go.
+    CHILD_WAIT_SCOPE = POPEN_ALLOWLIST | {"kstrl/procdispose.py", "kstrl/replay.py"}
 
     #: Waits in :data:`CHILD_WAIT_SCOPE` that have no deadline and are argued
     #: rather than bounded, as ``module finding`` with the line number taken

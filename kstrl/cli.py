@@ -4844,6 +4844,11 @@ def retry(
     anything is changed (#526). Nothing is changed until the confirmation
     is answered Start and the run lock is taken; a live run's lock is a
     refusal (exit 2), and the lock is held into the run (#597).
+
+    One branch is kept instead (#646): when Phase 1 failed only on
+    policy_envelope and test_adequacy, and an approved inbox item was
+    taken on the branch's tip, the retry keeps that commit and judges it
+    again with no engineer. The plan says which, and why.
     """
     root_dir = root.resolve() if root else Path.cwd()
     force_rich = os.environ.get("GUM_FORCE") == "1"
@@ -4861,7 +4866,7 @@ def retry(
     manifest = _load_manifest_or_exit(manifest_file, ui_impl)
 
     try:
-        preview = preview_retry(manifest, component_id)
+        preview = preview_retry(manifest, component_id, root_dir=root_dir)
     except ValueError as exc:
         ui_impl.err(str(exc))
         sys.exit(2)
@@ -4905,7 +4910,7 @@ def retry(
         # Re-read under the lock: a run may have saved while the question was open.
         manifest = _load_manifest_or_exit(manifest_file, ui_impl)
         try:
-            if preview_retry(manifest, component_id) != preview:
+            if preview_retry(manifest, component_id, root_dir=root_dir) != preview:
                 ui_impl.err(
                     f"{manifest_file} changed while the confirmation was open, so "
                     f"nothing was changed; run `ks retry {component_id}` again to see "

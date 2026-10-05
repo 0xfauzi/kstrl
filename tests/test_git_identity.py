@@ -367,6 +367,12 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # `_git_project` builds through `tests.helpers.gitrepo.git_in` /
     # `set_identity`.
     "tests/test_retry_journal_rows.py": 1,
+    # #646: the counting stub engineer's `git commit` shell string (`_counted`),
+    # the dependency component's engineer string, the hand-moved branch's
+    # `gitrepo.git_in(root, "commit", ...)` and the dependency PRD commit,
+    # all into the repository `tests.test_inbox_waivers._repo` put through
+    # `tests.helpers.gitrepo.set_identity`.
+    "tests/test_retry_keeps_approved_head.py": 4,
     # #624: one base commit into the repository `_repo` builds, which
     # calls `tests.helpers.gitrepo.set_identity` right after `git init`, and
     # one `git commit` in the shell engineer `_engineer` returns, which runs
