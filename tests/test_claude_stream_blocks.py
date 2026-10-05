@@ -23,6 +23,7 @@ protocol. No LLM is called.
 from __future__ import annotations
 
 import json
+import logging
 import sys
 from pathlib import Path
 from typing import Any
@@ -641,3 +642,56 @@ def test_sdk_multiline_text_block_cannot_signal_completion(tmp_path: Path) -> No
     result = run_loop(config, PlainUI(no_color=True), agent, tmp_path, timeouts=BOUNDED)
 
     assert result.completed is False
+
+
+# --- the SDK runner's diagnostics are not agent lines (#727) ----------------
+
+#: The warning asyncio logs when its child watcher's ``waitpid`` finds a
+#: pid something else already reaped (#727). The runner below logs it, and
+#: the agent below says it, word for word.
+UNKNOWN_CHILD = "Unknown child process pid 4242, will report returncode 255"
+
+#: Imported by every Python process the test starts with ``PYTHONPATH``
+#: pointing at it (the leash runs ``-I -S`` and imports no site). The
+#: runner logs the asyncio warning through ``logging``, prints an unframed
+#: line on its stdout and writes to its stderr at exit. Any other process,
+#: which here is the fake CLI, writes to the stderr it inherits from the
+#: runner, with NO newline: on a pipe shared with stdout those bytes join
+#: the runner's next agent line, the way a diagnostic written between the
+#: two writes of one ``print`` does.
+_DIAGNOSTIC_SITECUSTOMIZE = f"""\
+import atexit, logging, sys
+if "kstrl.agents.sdk_runner" in sys.orig_argv:
+    logging.getLogger("asyncio").warning({UNKNOWN_CHILD!r})
+    print("RUNNER-UNFRAMED-STDOUT", flush=True)
+    atexit.register(lambda: sys.stderr.buffer.write(b"RUNNER-STDERR-AT-EXIT \\xff\\n"))
+else:
+    sys.stderr.write("CLI-STDERR-DIAGNOSTIC")
+"""
+
+
+def test_sdk_runner_diagnostics_never_become_agent_lines(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Everything the runner's process tree writes outside the framed
+    contract is a diagnostic: it reaches the kstrl log and never the
+    lines ``run`` yields (#727). The agent's own line reads exactly like
+    the asyncio warning, so a fix that filters by text drops it."""
+    site = tmp_path / "site"
+    site.mkdir()
+    (site / "sitecustomize.py").write_text(_DIAGNOSTIC_SITECUSTOMIZE, encoding="utf-8")
+    monkeypatch.setenv("PYTHONPATH", str(site))
+    agent = _sdk_agent(tmp_path, [_text(UNKNOWN_CHILD), _text("done"), _result("done")])
+
+    with caplog.at_level(logging.WARNING, logger="kstrl.agents.claude_sdk"):
+        lines = list(agent.run("prompt", cwd=tmp_path, timeout=60))
+
+    assert lines == [UNKNOWN_CHILD, "done"]
+    logged = "\n".join(record.getMessage() for record in caplog.records)
+    for diagnostic in (
+        UNKNOWN_CHILD,
+        "RUNNER-UNFRAMED-STDOUT",
+        "RUNNER-STDERR-AT-EXIT \ufffd",
+        "CLI-STDERR-DIAGNOSTIC",
+    ):
+        assert diagnostic in logged

@@ -20,6 +20,11 @@ every line flushed as it is produced. Typed SDK failures surface as
 ``ERROR: ...`` display lines plus an is_error RESULT record - the
 adapter never sees an unexplained silent exit.
 
+Contract (stderr): diagnostics only - asyncio's warnings, a traceback,
+and the stderr of the claude CLI, which inherits it. The adapter sends
+it to a file it reads into the kstrl log after the run, so none of it
+is ever an agent line (#727).
+
 Module import is stdlib-only on purpose: the SDK is an optional
 dependency, and a missing package must produce a clear error line, not
 an ImportError traceback.
