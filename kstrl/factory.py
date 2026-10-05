@@ -163,7 +163,13 @@ from kstrl.verify import (
 )
 from kstrl.version import kstrl_version
 from kstrl.worktree_setup import WorktreeSetup
-from kstrl.worktree_sweep import WorktreeSweep, sweep_worktree, warn_sweep
+from kstrl.worktree_sweep import (
+    WorktreeSweep,
+    leftover_agents,
+    leftover_lines,
+    sweep_worktree,
+    warn_sweep,
+)
 
 if TYPE_CHECKING:
     from kstrl.agents.liveness import ProbeResult
@@ -1403,6 +1409,40 @@ class FactoryLockHeldError(RuntimeError):
     """Another factory invocation holds the run-level lock on this root."""
 
 
+class LeftoverAgentsError(FactoryLockHeldError):
+    """Agent processes a kstrl process that is gone started are still running (#642).
+
+    A subclass so every caller's exit-2 path for a held lock refuses this
+    too. Its message does not name ``--force-lock``, which `ks serve`
+    reads as lock contention and retries: this needs an operator.
+    """
+
+
+def _refuse_leftover_agents(root_dir: Path, fp: IO[str]) -> None:
+    """Release the run lock and raise when :func:`leftover_agents` finds
+    anything, or cannot look (#642, owner decision 4 (b)).
+
+    Taken after the flock, so no run of ours starts an agent between the
+    reading and the refusal. Nothing is signalled: the message names each
+    process and the command that stops its group.
+    """
+    sweep = leftover_agents(root_dir)
+    if not (sweep.survivors or sweep.error):
+        return
+    fp.close()
+    raise LeftoverAgentsError(
+        "\n  ".join(
+            [
+                "Refusing to start: agent processes started by a kstrl process that "
+                "is no longer running are still running in this project, or could "
+                "not be checked, and a new run would share the tree with them. "
+                "Nothing was changed.",
+                *leftover_lines(sweep),
+            ]
+        )
+    )
+
+
 @dataclass
 class _RunLock:
     """Handle for the run-level factory lock.
@@ -1503,6 +1543,7 @@ def _acquire_run_lock(root_dir: Path, ui: UI, force: bool) -> _RunLock:
             f"override."
         ) from None
 
+    _refuse_leftover_agents(root_dir, fp)
     # Holder pid is diagnostic only (shown in the refusal message of a
     # contending invocation); the flock itself is the exclusion.
     try:
@@ -2903,6 +2944,7 @@ def _run_component(
             allow_network=sandbox_allow_network,
         ),
         max_budget_usd=agent_budget_usd,
+        root_dir=root_dir,
     )
 
     # Copy PRD into worktree if needed.

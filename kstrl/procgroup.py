@@ -57,17 +57,21 @@ could never fire. The second was "every listed row is a zombie, so the
 listing can see this group": true, but seeing SOME of a group is not
 seeing ALL of it, which is exactly the ``hidepid`` case above.
 
-COST, and the row trim that was measured and REJECTED. Only the three
-columns the question needs are requested: asking for command lines as
-well measured 23.5ms per call against 11.6ms for two columns on a
-895-process machine (#292). The kernel control costs 0.00054ms and is
-paid only on the "no rows" path. Trimming ROWS is the larger factor and
-is deliberately not done: ``ps -g <pgid>,<ours>`` measured 2.07ms against
-14.52ms on a 1011-process machine, a 7x cut, but ``-g`` selects by
-SESSION, and Linux procps documents it as session or effective group
-NAME. A process-group id is not generally a session id, so on Linux that
-listing would come back without the target, which is the filtered case
-above and would now cost a spurious "cannot see" on every call.
+COST, and the row trim that was measured and REJECTED. Only the
+columns the questions need are requested. Command lines were left out
+for cost until #642 needed them: asking for them measured 23.5ms per
+call against 11.6ms for two columns on a 895-process machine (#292), and
+89.4ms against 50.4ms median at load 31 on 852 processes (#642, n=40
+each). #642 reads a leftover agent group's leader command for the nonce
+kstrl started it with, and one argv keeps one ``ps`` call in the tree.
+The kernel control costs 0.00054ms and is paid only on the "no rows"
+path. Trimming ROWS is the larger factor and is deliberately not done:
+``ps -g <pgid>,<ours>`` measured 2.07ms against 14.52ms on a
+1011-process machine, a 7x cut, but ``-g`` selects by SESSION, and
+Linux procps documents it as session or effective group NAME. A
+process-group id is not generally a session id, so on Linux that listing
+would come back without the target, which is the filtered case above
+and would now cost a spurious "cannot see" on every call.
 
 That cost is affordable because the production path is not hot:
 ``serve.terminate_process_group`` asks once per timed-out run, on the way
@@ -263,6 +267,10 @@ class GroupMembers:
     #: Non-zombie members, in listing order. None means unmeasured.
     pids: tuple[int, ...] | None
     reason: str = ""
+    #: The command line of each of ``pids``, in the same order (#642).
+    #: Empty when nothing was measured. A reader that needs a command
+    #: refuses a reading whose two tuples differ in length.
+    commands: tuple[str, ...] = ()
 
 
 def _may_signal_group(pgid: int) -> bool:
@@ -510,7 +518,7 @@ def read_group_members(pgid: int) -> GroupMembers:
     refusal = _listing_refusal(listing, pgid)
     if refusal:
         return GroupMembers(None, f"{refusal} {_UNCOUNTABLE}")
-    return GroupMembers(listing.running_pids)
+    return GroupMembers(listing.running_pids, commands=listing.running_commands)
 
 
 def _listing_for(pgid: int) -> tuple[_Listing | None, str]:

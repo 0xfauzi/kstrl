@@ -407,6 +407,7 @@ def _get_calibration_agent():
         model=CALIBRATION_MODEL,
         model_reasoning_effort=None,
         agent_type="claude-code",
+        root_dir=None,
     )
 
 
@@ -429,6 +430,7 @@ def _get_reviewer_calibration_agent():
         model_reasoning_effort=None,
         agent_type=REVIEWER_AGENT_TYPE or "claude-code",
         read_only=True,
+        root_dir=None,
     )
 
 

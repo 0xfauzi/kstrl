@@ -474,6 +474,7 @@ class TestTheReadBytesExclusion:
 
     EXPECTED_READ_BYTES: dict[str, int] = {
         "agents/prompt_record.py": 1,  # #532: the baseline.py shape, I/O outside the guard
+        "agents/spawn_record.py": 1,  # #642: the baseline.py shape, I/O outside the guard
         "breaker.py": 1,
         # #553 the ledger, #570 each run's events.jsonl: the signals.py
         # shape, read and decode outside any try.

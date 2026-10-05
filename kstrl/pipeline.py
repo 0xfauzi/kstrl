@@ -4249,6 +4249,7 @@ class ComponentPipeline:
                 # operator believe in a boundary that is not there.
                 sandbox=self.sandbox_config,
                 read_only=True,
+                root_dir=self.root_dir,
             )
             with (
                 self._phase_transcript(comp.id, "review") as on_line,
@@ -4616,6 +4617,7 @@ class ComponentPipeline:
                 # operator's sandbox intent rides alongside.
                 sandbox=self.sandbox_config,
                 read_only=True,
+                root_dir=self.root_dir,
             )
             with (
                 self._phase_transcript(comp.id, "security") as on_line,
@@ -4865,6 +4867,7 @@ class ComponentPipeline:
                 distill_model,
                 self.base_config.model_reasoning_effort,
                 self.base_config.agent_type,
+                root_dir=self.root_dir,
             )
             distill_start = time.monotonic()
             with (
