@@ -114,9 +114,11 @@ if TYPE_CHECKING:
 
 SERVE_LOCK_FILENAME = "serve.lock"
 
-#: Substrings the factory prints on each of its two exit-2 refusals.
+#: Substrings the factory prints on two of its exit-2 refusals.
 #: Matching output is EVIDENCE; a pre-launch lock probe is inference and
-#: races (#186 F6). Both come from kstrl/factory.py and kstrl/cli.py.
+#: races (#186 F6). Both come from kstrl/factory.py and kstrl/cli.py. A
+#: third refusal, a red base (#654), is read from the record the run
+#: wrote, never from output: see ``_red_base_outcome``.
 _LOCK_REFUSAL_MARKER = "--force-lock"
 _SPEC_BLOCKER_MARKER = "Spec issues written to:"
 
@@ -163,6 +165,12 @@ class Verdict(StrEnum):
     #: `ks queue answer`, and it is neither poisoned nor counted toward
     #: the consecutive-poison breaker.
     AWAITING_ANSWER = "awaiting_answer"
+    #: The run refused because the base branch already fails its own gates
+    #: (#654): a run this launch owns wrote ``base-gates.json`` with
+    #: ``refused: true``. Repo-wide, so not a verdict on the spec: the item
+    #: is requeued, claims pause until `ks queue resume`, and the
+    #: consecutive-poison breaker does not count it.
+    RED_BASE = "red_base"
 
     @property
     def may_retry(self) -> bool:
@@ -1112,37 +1120,7 @@ def classify_run(
         )
 
     if run.returncode == 2:
-        # The factory's own "refused to proceed" code, which covers BOTH
-        # an architect halt on a blocker-severity spec issue and refusal
-        # because another run holds .kstrl/factory.lock. Those need
-        # opposite treatment, and a pre-launch lock probe cannot tell
-        # them apart: the probe releases the lock, so a manual factory
-        # can take it in the gap before our child does (#186 F6, a real
-        # TOCTOU on exactly the distinction this branch relies on).
-        #
-        # So decide from the child's own output, which is evidence, not
-        # inference - and stay UNCLASSIFIABLE when neither marker is
-        # present rather than guessing.
-        tail = run.output_tail
-        if _LOCK_REFUSAL_MARKER in tail:
-            return Outcome(
-                Verdict.RETRY_INFRA,
-                "factory exited 2 because another run held the run lock; "
-                "contention is infrastructural",
-                {"returncode": 2, "cause": "lock_contention"},
-            )
-        if _SPEC_BLOCKER_MARKER in tail:
-            return Outcome(
-                Verdict.AWAITING_ANSWER,
-                "factory exited 2: the architect escalated a question only the owner can answer",
-                {"returncode": 2, "cause": "spec_blocker"},
-            )
-        return Outcome(
-            Verdict.UNCLASSIFIABLE,
-            "factory exited 2 but its output named neither a spec blocker "
-            "nor lock contention; refusing to guess which refusal it was",
-            {"returncode": 2, "output_tail": tail[-500:]},
-        )
+        return _refusal_outcome(root_dir, run.output_tail, owned_run_ids)
 
     # Everything else needs the manifest to say something specific - and
     # it must be a manifest THIS invocation wrote. ``None`` means the run
@@ -1179,6 +1157,84 @@ def classify_run(
     if budget is not None:
         return budget
     return _merits_outcome(failed, run.returncode)
+
+
+def _refusal_outcome(root_dir: Path, tail: str, owned_run_ids: Sequence[str]) -> Outcome:
+    """What the factory's exit 2, its own "refused to proceed" code, means.
+
+    It covers an architect halt on a blocker-severity spec issue, refusal
+    because another run holds .kstrl/factory.lock, and a base branch that
+    already fails its gates (#654). The first two need opposite treatment,
+    and a pre-launch lock probe cannot tell them apart: the probe releases
+    the lock, so a manual factory can take it in the gap before our child
+    does (#186 F6, a real TOCTOU on exactly the distinction this relies on).
+
+    So decide from evidence the child left, not inference: the red base
+    from the record it wrote, the other two from its own output, and stay
+    UNCLASSIFIABLE when none is present rather than guessing. The red base
+    is read first and never from output: its refusal prints the base's
+    failing test names, which are the repository's own text. Split out of
+    ``classify_run``, which is past the cyclomatic ratchet.
+    """
+    red_base = _red_base_outcome(root_dir, owned_run_ids)
+    if red_base is not None:
+        return red_base
+    if _LOCK_REFUSAL_MARKER in tail:
+        return Outcome(
+            Verdict.RETRY_INFRA,
+            "factory exited 2 because another run held the run lock; contention is infrastructural",
+            {"returncode": 2, "cause": "lock_contention"},
+        )
+    if _SPEC_BLOCKER_MARKER in tail:
+        return Outcome(
+            Verdict.AWAITING_ANSWER,
+            "factory exited 2: the architect escalated a question only the owner can answer",
+            {"returncode": 2, "cause": "spec_blocker"},
+        )
+    return Outcome(
+        Verdict.UNCLASSIFIABLE,
+        "factory exited 2 but its output named neither a spec blocker "
+        "nor lock contention; refusing to guess which refusal it was",
+        {"returncode": 2, "output_tail": tail[-500:]},
+    )
+
+
+def _red_base_outcome(root_dir: Path, owned_run_ids: Sequence[str]) -> Outcome | None:
+    """RED_BASE when a run this launch owns recorded a refused base, else None (#654).
+
+    ``factory._preflight_base_gates`` writes ``base-gates.json`` before it
+    acts on the reading, and a reading it could not write refuses with no
+    record. So a missing, unreadable or malformed record is no evidence, and
+    ``refused`` must be the JSON ``true``, not merely truthy.
+    """
+    from kstrl.base_gates import base_gates_path
+
+    for run_id in owned_run_ids:
+        if not run_id:
+            continue
+        path = base_gates_path(root_dir, run_id)
+        record = _read_manifest_json(path)
+        if record is None or record.get("refused") is not True:
+            continue
+        raw = record.get("reasons")
+        reasons = [line for line in raw if isinstance(line, str)] if isinstance(raw, list) else []
+        branch = str(record.get("baseBranch", ""))
+        sha = str(record.get("baseSha", ""))
+        return Outcome(
+            Verdict.RED_BASE,
+            f"factory exited 2: the base branch {branch} at {sha[:12]} fails its own "
+            f"gates ({'; '.join(reasons) or 'no reason recorded'}), recorded in {path}",
+            {
+                "returncode": 2,
+                "cause": "red_base",
+                "run_id": run_id,
+                "record": str(path),
+                "base_branch": branch,
+                "base_sha": sha,
+                "reasons": reasons,
+            },
+        )
+    return None
 
 
 def _unfailed_outcome(manifest: Manifest, returncode: int) -> Outcome:
@@ -3660,13 +3716,13 @@ def _report_reaped(
 
 
 def _read_manifest_json(path: Path) -> dict[str, Any] | None:
-    """The manifest's raw JSON object, or ``None`` if it cannot be read.
+    """A run artifact's raw JSON object, or ``None`` if it cannot be read.
 
     The parser's error taxonomy belongs to the parser: this does the
     file read and the ``json.loads`` for every post-run manifest reader
-    in this module, and catches ``Exception`` exactly because both
-    callers read this file after the spend is charged and after the
-    verdict is decided, so nothing either one hits may end the cycle.
+    in this module, and for the base-gates record (#654), and catches
+    ``Exception`` exactly because every caller reads after the spend is
+    charged, so nothing one of them hits may end the cycle.
     Measured: a 20000-deep nested JSON array makes ``json.loads`` raise
     ``RecursionError``, which is a ``RuntimeError`` and escapes the
     narrower tuple ``classify_run`` uses on the pre-verdict path.
@@ -4200,8 +4256,12 @@ def _settle_unfailed(
     inbox row that names `ks queue answer`, so nothing is filed here. The
     remote writeback runs after the mutex is released (#187 F10); an item
     awaiting an answer has none yet, so a GitHub-sourced one keeps its
-    running label until it is answered.
+    running label until it is answered. #654 added a red base, which is
+    not the item's failure either: see ``_requeue_on_red_base``.
     """
+    if verdict.verdict is Verdict.RED_BASE:
+        _requeue_on_red_base(root_dir, queue, running, verdict, obs, result)
+        return True
     with queue_lock(root_dir, blocking=True):
         current = queue.get(running.item_id)
         if current is None:
@@ -4234,6 +4294,61 @@ def _settle_unfailed(
     if state:
         _report_remote_outcome(root_dir, finished, state=state, detail=detail, observer=obs)
     return True
+
+
+def _requeue_on_red_base(
+    root_dir: Path,
+    queue: Queue,
+    running: QueueItem,
+    verdict: Outcome,
+    obs: ServeObserver,
+    result: CycleResult,
+) -> None:
+    """Pause claims and requeue an item whose run refused on a red base (#654).
+
+    Owner decision 6: a red base is repo-wide, so poisoning would burn one
+    item per poll and trip the breaker. The item goes back to queued through
+    failed, the only legal way out of running, and keeps the attempt it was
+    charged, because its architect was paid. Claims pause on the queue's own
+    marker with no ``resume_after``, so only `ks queue resume` lifts it and
+    the journal records who; the pause is written first, so it holds even if
+    the item moved. The poison streak is not touched. One inbox item per
+    measured base commit is filed, and a later refusal on the same commit
+    bumps it.
+    """
+    evidence = verdict.evidence
+    sha = str(evidence.get("base_sha", ""))
+    paused = (
+        f"the base branch {evidence.get('base_branch', '')} at {sha[:12]} fails its own "
+        "gates; nothing is claimed until `ks queue resume`"
+    )
+    with queue_lock(root_dir, blocking=True):
+        queue.pause(reason=paused, actor="serve")
+        current = queue.get(running.item_id)
+        if current is not None:
+            failed = queue.finish_failed(current, error=verdict.reason, actor="serve")
+            queue.requeue(failed, reason=f"red base: {verdict.reason}", actor="serve")
+        requeued = queue.get(running.item_id)
+    result.paused = paused
+    result.needs_human = True
+    obs.warn(f"Queue paused: {paused}")
+    obs.warn(f"  {running.item_id} requeued, not judged: {verdict.reason}")
+    detail = (
+        f"{verdict.reason}\n\nQueue item {running.item_id} is queued again. Make the "
+        "base branch pass its gates, then run `ks queue resume`."
+    )
+    result.inbox_items += (
+        _file_inbox_item(
+            root_dir,
+            kind_name="halted_run",
+            title="Continuous intake paused: the base branch fails its own gates",
+            detail=detail,
+            dedupe_key=f"serve-red-base:{sha}",
+            evidence={**evidence, "item_id": running.item_id},
+            run_id=str(evidence.get("run_id", "")),
+        ),
+    )
+    _report_remote_outcome(root_dir, requeued, state="failed", detail=detail, observer=obs)
 
 
 def settle_approval_run(
