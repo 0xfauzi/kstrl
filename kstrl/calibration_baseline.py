@@ -141,8 +141,22 @@ def role_detection_rate(fixtures: Sequence[FixtureStats]) -> float:
 
 
 @dataclass(frozen=True)
+class NegativeRole:
+    """One negative role's false-positive rate as its capture recorded it,
+    and how many negative fixtures that rate was measured over (#633)."""
+
+    fp_rate: float
+    negatives: int
+
+
+@dataclass(frozen=True)
 class Baseline:
-    """A parsed baseline file, normalized across format versions."""
+    """A parsed baseline file, normalized across format versions.
+
+    ``fp_rates`` is None when the document has no false-positive block,
+    which means no negative fixture ran in that capture. That is a
+    different statement from a rate of 0.0, so it is never read as one.
+    """
 
     path: Path | None
     model: str
@@ -150,6 +164,7 @@ class Baseline:
     format_version: int
     runs_per_fixture: int
     fixtures: tuple[FixtureStats, ...]
+    fp_rates: dict[str, NegativeRole] | None
 
     def roles(self) -> dict[str, list[FixtureStats]]:
         grouped: dict[str, list[FixtureStats]] = {}
@@ -295,6 +310,48 @@ def _required_bool(path: Path, fixture_id: str, entry: Mapping[str, Any], key: s
     return value
 
 
+def _required_rate(path: Path, where: str, entry: Mapping[str, Any], key: str) -> float:
+    """One recorded rate: a genuine number from 0 to 1 (#633). Absent,
+    ``bool``, a string, NaN and anything outside the range are refused,
+    so a malformed rate stops the comparison instead of reading as zero."""
+    value = entry.get(key)
+    if isinstance(value, bool) or not isinstance(value, int | float) or not 0 <= value <= 1:
+        raise ValueError(f"baseline {path}: {where} has no usable {key!r}: {value!r}")
+    return float(value)
+
+
+def _fp_rates(path: Path, data: Mapping[str, Any]) -> dict[str, NegativeRole] | None:
+    """The document's false-positive block, read role by role (#633).
+
+    Absent means no negative fixture ran, so the result is None, never an
+    empty or zero reading. A block that is present is validated entry by
+    entry before any rate is used, and every refusal names the entry by
+    its index and its role. The negative count is the length of the
+    role's ``fixtures`` list, the one record per negative fixture the
+    capture wrote.
+    """
+    if "false_positive_analysis" not in data:
+        return None
+    block = data["false_positive_analysis"]
+    roles = block.get("roles") if isinstance(block, dict) else None
+    if not isinstance(roles, dict) or not roles:
+        raise ValueError(
+            f"baseline {path}: 'false_positive_analysis' has no non-empty 'roles' object: {block!r}"
+        )
+    rates: dict[str, NegativeRole] = {}
+    for index, (role, entry) in enumerate(roles.items()):
+        where = f"false_positive_analysis.roles[{index}] {role!r}"
+        if not isinstance(entry, dict):
+            raise ValueError(f"baseline {path}: {where} is not an object: {entry!r}")
+        negatives = entry.get("fixtures")
+        if not isinstance(negatives, list):
+            raise ValueError(f"baseline {path}: {where} has no 'fixtures' list: {negatives!r}")
+        rates[role] = NegativeRole(
+            fp_rate=_required_rate(path, where, entry, "fp_rate"), negatives=len(negatives)
+        )
+    return rates
+
+
 def fixture_entry(fixture: FixtureStats, runs: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     """The on-disk v2 form of one fixture, including its ``runs[]``
     sub-entries. One of the two places document keys are written (#421
@@ -426,6 +483,7 @@ def load_baseline(path: Path) -> Baseline:
         format_version=format_version,
         runs_per_fixture=_required_int(path, "document", data, "runs_per_fixture", default=1),
         fixtures=tuple(fixtures),
+        fp_rates=_fp_rates(path, data),
     )
 
 
