@@ -279,6 +279,19 @@ def _retry(root: Path, env: dict[str, str]) -> tuple[int, str]:
     return _ks(root, env, "retry", COMP, "--yes", "--ui", "plain", "--no-color")
 
 
+def _retry_regenerated(root: Path, env: dict[str, str]) -> tuple[int, str]:
+    """``ks retry`` after deleting the failed branch, so the engineer writes the change again.
+
+    #646: ``ks retry`` keeps a head an approval was taken on and judges it
+    with no engineer. A test of a regenerated change deletes the branch
+    first, as an operator discarding it would.
+    """
+    gitrepo.git_in(root, "branch", "-D", BRANCH)
+    code, out = _retry(root, env)
+    assert "Kept branch" not in out, out
+    return code, out
+
+
 def _decide(root: Path, env: dict[str, str], action: str, item_id: str) -> str:
     extra = ("--comment", "not this one") if action == "reject" else ()
     code, out = _ks(root, env, "inbox", action, item_id, *extra, "--ui", "plain", "--no-color")
@@ -420,7 +433,7 @@ def test_an_approval_does_not_cover_a_different_denied_path(tmp_path: Path) -> N
     (item,) = _open(root, ItemKind.POLICY_EXCEPTION)
     _decide(root, env, "approve", item.id)
 
-    code, out = _retry(root, {**env, "AGENT_CMD": TWO_DENIED})
+    code, out = _retry_regenerated(root, {**env, "AGENT_CMD": TWO_DENIED})
 
     assert code == 1, out
     (finding,) = _gated(root, "policy_")
@@ -524,7 +537,9 @@ def test_an_approval_does_not_cover_a_dependency_it_did_not_list(tmp_path: Path)
     assert "pkg21" in item.detail, item.detail
     _decide(root, env, "approve", item.id)
 
-    code, out = _retry(root, {**env, "AGENT_CMD": _lockfile([*TWENTY_ONE[:20], "pkgzz"])})
+    code, out = _retry_regenerated(
+        root, {**env, "AGENT_CMD": _lockfile([*TWENTY_ONE[:20], "pkgzz"])}
+    )
 
     assert code == 1, out
     (finding,) = _gated(root, "policy_")
@@ -539,7 +554,9 @@ def test_an_approval_does_not_cover_a_test_it_did_not_list(tmp_path: Path) -> No
     assert "test_silent_6" in item.detail, item.detail
     _decide(root, env, "approve", item.id)
 
-    code, out = _retry(root, {**env, "AGENT_CMD": _silent_tests([*SIX[:5], "test_silent_7"])})
+    code, out = _retry_regenerated(
+        root, {**env, "AGENT_CMD": _silent_tests([*SIX[:5], "test_silent_7"])}
+    )
 
     assert code == 1, out
     (finding,) = _gated(root, "adequacy_")

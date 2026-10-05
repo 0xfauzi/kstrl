@@ -1683,6 +1683,8 @@ def _setup_worktree(
                 # stacking on the shared branch. Stale branches from previous
                 # runs were deleted (fully merged) or refused at preflight,
                 # never silently reused here (R0.5).
+                # #646: or a branch ks retry kept for a re-judge, which
+                # _kept_for_rejudge let through the preflight at the kept commit.
                 result = subprocess.run(
                     ["git", "worktree", "add", str(worktree_path), branch_name],
                     cwd=root_dir,
@@ -2018,6 +2020,33 @@ def _interrupted_run_branches(manifest: Manifest, root_dir: Path) -> dict[str, s
     return found
 
 
+def _kept_for_rejudge(manifest: Manifest, root_dir: Path, ui: UI) -> tuple[set[str], list[str]]:
+    """The branches ``ks retry`` kept for a re-judge (#646), and a refusal for each that moved.
+
+    A PENDING component with ``rejudge_sha`` keeps its branch when the
+    branch is still at that commit, and the stale-branch checks skip it.
+    A branch anywhere else, or gone, is refused: the re-judge would judge a
+    commit no approval was taken on.
+    """
+    kept: set[str] = set()
+    errors: list[str] = []
+    for comp in manifest.components:
+        if comp.status != ComponentStatus.PENDING.value or not comp.rejudge_sha:
+            continue
+        kept.add(comp.branch_name)
+        tip = git.branch_sha(comp.branch_name, root_dir) or ""
+        if tip == comp.rejudge_sha:
+            ui.info(f"  Keeping branch '{comp.branch_name}' at {tip[:12]}: ks retry kept it")
+            continue
+        errors.append(
+            f"branch '{comp.branch_name}' (component '{comp.id}') is at "
+            f"{tip[:12] or 'no commit'}, and ks retry kept it at {comp.rejudge_sha[:12]}; "
+            f"refusing to judge a commit no approval was taken on. Run ks retry {comp.id} "
+            "again."
+        )
+    return kept, errors
+
+
 def _preflight_component_branches(
     manifest: Manifest,
     root_dir: Path,
@@ -2043,10 +2072,10 @@ def _preflight_component_branches(
     rewrites history), so leftovers from squash-merge flows are refused
     rather than auto-deleted. Loud beats lossy.
     """
-    errors: list[str] = []
     fetch_base_branch(manifest.base_branch, root_dir, timeout=60.0)
     base_ref = resolve_base_ref(manifest.base_branch, root_dir)
-    seen: set[str] = set()
+    # #646: a branch ks retry kept is neither deleted nor refused below.
+    seen, errors = _kept_for_rejudge(manifest, root_dir, ui)
     for comp in manifest.components:
         if comp.status != ComponentStatus.PENDING.value:
             continue
@@ -5279,7 +5308,9 @@ def _run_factory_locked(
                     bus.emit(ComponentStarted(component=comp.id))
                     ui.info(f"  Starting: {comp.id}")
 
-                    wt_path = _launch_component(comp)
+                    # #646: None too when ks retry kept the approved head,
+                    # which engineer_worktree has just judged with no engineer.
+                    wt_path = pipeline.engineer_worktree(comp, _launch_component(comp))
                     if wt_path is None:
                         transitioned_without_launch += 1
                         continue

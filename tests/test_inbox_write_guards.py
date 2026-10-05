@@ -67,6 +67,9 @@ EXPECTED_CONSTRUCTIONS = (
     # replaced.
     "tui/operator_queue.py kstrl.inbox.Inbox",
     "tui/screens/inbox.py kstrl.inbox.Inbox",
+    # #646: ks retry reads the approvals (approvals_at) to decide whether
+    # it keeps the failed head. It scans and reads; it mutates nothing.
+    "waivers.py kstrl.inbox.Inbox",
 )
 
 #: The same census BY COUNT. ``without_line_numbers`` deduplicates, so
@@ -90,6 +93,7 @@ EXPECTED_CONSTRUCTION_COUNTS = {
     "serve.py": 2,
     "tui/operator_queue.py": 1,
     "tui/screens/inbox.py": 1,
+    "waivers.py": 1,
 }
 
 #: Calls whose callee has no identifier at all, which ``calls_to`` treats
@@ -205,6 +209,8 @@ EXPECTED_CONFIG_LOADS: dict[str, Disposition] = {
     "serve.py::_file_inbox_item": _GUARDED,
     # #433: home's needs-you rows; a load it cannot make renders no count.
     "tui/operator_queue.py::_open_inbox_items": _GUARDED,
+    # #646: ks retry's read of the approvals; a load it cannot make keeps nothing.
+    "waivers.py::approvals_at": _GUARDED,
     "serve.py::check_inbox_cap": Disposition(
         guarded=False,
         reason=(
