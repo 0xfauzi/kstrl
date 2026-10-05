@@ -5,11 +5,12 @@ This is a record of what has actually been run, not a proposal. Every rule below
 exists because something went wrong without it, and where a number appears it
 was measured rather than estimated.
 
-The shape is always the same: an issue is made airtight, a stronger model plans
-it, a second stronger model attacks the plan, a weaker model implements it, an
-independent stronger model tries to break the result with planted mutations, a
-simplify pass reads the finished diff from four angles, and only then does it
-merge. The coordinator never implements and never reviews its own work.
+The shape is always the same: a stronger model turns the issue into an airtight
+plan, a second stronger model attacks the plan, a weaker model implements it, an
+independent stronger model tries to break the result with planted mutations and
+closes the test gaps it finds, a simplify pass reads the finished diff from four
+angles, and only then does it merge. The coordinator never implements and never
+reviews its own work.
 
 ## Roles and models
 
@@ -18,8 +19,9 @@ merge. The coordinator never implements and never reviews its own work.
 | Plan | Opus | Reproduce the defect, decide the simplest fix, write an airtight plan |
 | Critique | Opus | Attack the plan, fix it in place, find what a weaker model would get wrong |
 | Implement | Sonnet | Follow the plan exactly, tests red first, open the pull request |
-| Verify | Opus | Assume it is wrong, run every plant, design its own |
+| Verify | Opus | Assume it is wrong, run every plant, design its own, commit the tests that close a surviving plant |
 | Fix | Sonnet | Address blockers, nothing else |
+| Publish | Sonnet, low effort | Set the pull request body the lane script built from the verifier's result |
 | Simplify | Opus x4 | Reuse, simplification, efficiency, altitude, on the finished diff |
 
 The implementer is deliberately the weaker model. That is the whole reason the
@@ -48,14 +50,20 @@ Two things the coordinator checks before starting anything:
    same documentation page or the same test module get serialised instead, and
    the second one is told what the first owns.
 
-## Writing an issue a weaker model can build
+## What an issue holds, and what the plan adds
 
-An issue is the specification the implementer works from, so it carries these
-sections. Vagueness here becomes a defect later.
+An issue states the goal and the evidence for it:
 
 - **What** the change is, in one paragraph.
 - **Why, measured.** The command that produced each number and its output. Never
   a number that was not run.
+
+The planner turns the issue into the specification the implementer works from,
+because the planner reproduces the defect on current main and the issue writer
+usually has not. Of the last 40 issues an issue lane ran (#621 to #727), none carried
+acceptance or plant sections, and every plan did. The plan carries these
+sections, and vagueness in any of them becomes a defect later:
+
 - **Change**, file by file, with the current code quoted and the new shape
   described.
 - **Do not**, listing the specific mistakes a weaker model would make here.
@@ -65,11 +73,16 @@ sections. Vagueness here becomes a defect later.
   target: only end-to-end tests are committed, so a plant a unit test catches
   is a plant nothing on main catches.
 
+The critic earns its stage on the plan. Over 136 issue-lane runs (2026-09-24 to
+2026-10-05) it revised every plan and listed 1135 gaps, 4 to 12 per plan. Sorted
+by keyword, the largest groups were guards, census pins or ratchets the plan
+missed (322) and plants that would not have gone red (248).
+
 ## Lane shapes
 
 Four scripts, chosen by what the work is.
 
-- **issue lane**: plan, critique, implement, verify, fix. The default.
+- **issue lane**: plan, critique, implement, verify, fix, publish. The default.
 - **feature lane**: three independent designs with tracer bullets, a judge
   panel, then the issue lane. For work where the solution space is wide and the
   wrong shape is expensive to unwind.
@@ -104,6 +117,13 @@ Rules that came from getting these wrong:
   point does not make an assertion fail, it makes it never run.
 - The verifier designs at least one mutation of its own that a plausible wrong
   implementation would survive. Several real defects were found only this way.
+- The verifier closes a test gap itself when the production code is correct: a
+  surviving plant, a census pin to re-derive, a test file over the length
+  ratchet. It changes files under `tests/` only, shows the plant go red against
+  the new test, and commits the test to the pull request. A change anywhere else
+  is a blocker for the fixer. Before this rule, 110 of 136 first verifies ended
+  on a test gap that the verifier had already written out in full, and the
+  coordinator applied it by hand.
 - A plant names an end-to-end test. The implementer may write unit tests to
   verify its own work, but they are scratch: run, then deleted before the
   commit. If no end-to-end test would go red under the plant, the lane builds
@@ -129,8 +149,8 @@ as much as the first (49 to 155 minutes, measured over one batch), so:
   behaviour: a wrong result, a fail-open, a guard that clears what it should
   flag, or a control switched off. Everything else is written into the pull
   request's handoff list as a one-line follow-up.
-- Corrections to the pull request body are made by the coordinator by hand. They
-  never go through a fix lane.
+- The pull request fix lane rebuilds the body from its own verifier's result,
+  as the issue lane does, so a fix never leaves the body stale.
 
 The altitude reviewer has repeatedly been the most valuable, because it is the
 only one asked whether the change is at the right depth at all. It has caused a
@@ -138,25 +158,51 @@ pull request to be closed and redesigned.
 
 ## Pull request bodies
 
-Short and to the point: about 40 lines. One paragraph on what was wrong and what
-changed, `Closes #N`, the tests added by name, the plants as one line each with
-the outcome and the failing count on the final tree, the full-suite summary
-line, at most five one-line handoffs, and the H1 line. Measurement tables,
-reproduction transcripts, design rationale, commands that name scratch scripts
-and the history of fix rounds stay in the lane directory. One batch measured
-bodies of 300 to 540 lines, and a large share of every review addendum was
-corrections to claims inside them, each paid for with a fix and a verify.
+No agent writes the pull request body. The lane script builds it from the
+verifier's structured result at the end of the lane, and a low-effort agent sets
+it and reads it back. The reason is timing: the implementer used to write the
+body before the plants and the suite had run, so it carried "Full suite:
+pending" and plants marked not yet run. 117 of 136 first verifies carried a
+correction to the body, and the coordinator made each one by hand.
 
-Verifiers run the full suite in parallel only. The merge gate runs it again on
-the merged tree, so a serial run inside the lane buys nothing.
+The built body holds the implementer's one paragraph on what was wrong and what
+changed, the closing line (`Closes #N`, or `Part of #N` for a slice), the tests
+on the final head by name, the plants as one line each with the outcome and the
+failing count on the final head, the verifier's full-suite line, at most five
+one-line handoffs, and the H1 line. A lane that ends unverified lists its open
+blockers as handoffs marked `UNRESOLVED`. Measurement tables, reproduction
+transcripts, design rationale and the history of fix rounds stay in the lane
+directory. One batch measured hand-written bodies of 300 to 540 lines, and a
+large share of every review addendum was corrections to claims inside them.
+
+Verifiers run the full suite in parallel only. The merge gate and CI test the
+merged tree, so a serial run inside the lane buys nothing.
 
 ## Merging
 
 Two scripts, in order, and both must pass.
 
-`premerge.sh` merges current `origin/main` into the branch, then runs the full
-suite, the type checker, the linter, every commit hook, and the documentation
-freshness check on the merged tree, and checks the pull request's shape.
+`premerge.sh` merges current `origin/main` into the branch, then runs the Mac
+tests the change can affect, the type checker, the linter, every commit hook,
+and the documentation freshness check on the merged tree, and checks the pull
+request's shape. `land.sh` records the Mac scope and result in the body as a
+"Merge gate" line.
+
+The Mac run is scaled to the change because CI already runs the full suite on
+Linux, on the merged ref, before `merge-chain.sh` merges, and again on the push
+to main. The Mac run is there for what CI cannot see. #730's own new test failed at the
+merge gate because the land chain runs under `nohup`, which leaves SIGINT
+ignored in every child; CI does not run that way, and the launcher now resets
+SIGINT.
+`bin/affected_tests.py` selects the changed test files, the test files that name
+a changed `kstrl` module, and every static guard, because a guard walks all of
+`kstrl/` without importing the module it pins. It selects the full suite when
+the change touches a `conftest.py`, `tests/helpers/`, `pyproject.toml` or
+`uv.lock`, and `FULL=1` forces it. On five merges of 2026-10-04 and 2026-10-05,
+the recorded test durations put the selected set at 23% to 69% of the suite
+(median 49%), and a sixth merge touched `tests/helpers/` and ran in full. The
+limit: a Mac-only failure in a test outside the selection reaches main, and
+the next lane's own Mac suite is where it shows up.
 
 `merge-chain.sh` pushes, waits for remote checks, squash merges with the pull
 request body as the squash message, deletes the branch and reports the issue
@@ -176,8 +222,9 @@ commit. The resulting tree is byte-identical to the other direction.
 
 Merging into a moving main is where defects hide. Two have been caught only by
 running the full suite on the merged tree, neither present in either branch and
-neither attached to any conflict. So the merge and the re-run are not optional,
-and every static guard's census is re-derived before and after.
+neither attached to any conflict. So the merge and the CI run on the merged ref
+are not optional, and every static guard's census is re-derived before and
+after.
 
 ## Rules that cost something to learn
 
@@ -230,7 +277,7 @@ Report both; do not pick one.
 Running many lanes at once overheated the machine on 2026-09-25. Measured at the time: a load average of 22.5 on 10 cores, the macOS file-event daemon at 95% of a core and 6.9 GB of memory, 58 throwaway virtualenvs, and 23 GB of lane scratch. The agents themselves used little CPU. The load came from repeated full-suite runs and from copies of the repository. Three rules follow.
 
 - **No repository copies and no new virtualenvs.** A lane runs code only in its own worktree, with that worktree's environment. Before the implementer starts, the planner and critic may prototype in the worktree. They save the change as a diff in the lane directory and leave the tree clean.
-- **The full suite runs at most once per role, and only in three roles:** the implementer (on the final change), the verifier, and a fixer (after its fix). The planner, the critic and a finisher run only the test files the change touches, plus the guard and census files that pin that code. The merge gate runs the full suite again on the merged tree, so nothing is lost. The full suite uses three workers.
+- **The full suite runs at most once per role, and only in three roles:** the implementer (on the final change), the verifier, and a fixer (after its fix). The planner, the critic and a finisher run only the test files the change touches, plus the guard and census files that pin that code. CI runs the full suite again on the merged tree, so nothing is lost. The full suite uses eight workers through `coord/bin/suite.py`, which holds a machine-wide lock so one runs at a time.
 - **Clean up when a lane merges.** Delete its worktree, and delete any clone or virtualenv in its lane directory. Keep the lane's text records (plan, measurements, PR body).
 
 **Option: background priority for long runs.** On Apple Silicon, `taskpolicy -b -p <pid>` moves a running process onto the efficiency cores. This cuts heat and fan noise, and the process runs slower. Processes it starts afterwards inherit the policy; this was measured on 2026-09-25 (priority 4, against 31 for a normal child). It suits long runs that nobody is waiting on, such as a paid calibration or a replay. Apply it to the whole process tree, including the wrapper shell, so later steps inherit it too. Do not use it on a lane whose result the next merge waits for: it trades wall-clock time for temperature. To start a run in the background from the beginning, use `taskpolicy -b <command>`.
