@@ -1408,6 +1408,8 @@ class Queue:
         *,
         actor: str = "",
         reset_attempts: bool = False,
+        escalation_row: str = "",
+        escalated_run: str = "",
     ) -> dict[str, Any]:
         """Replace an awaiting item's spec with ``text`` and requeue it (#644).
 
@@ -1418,10 +1420,18 @@ class Queue:
         and answering again with the same file finishes the move, which is
         why identical bytes are journalled as ``unchanged`` rather than
         refused. Returns the journalled detail.
+
+        A POISON item is answered only with ``escalation_row``, the id of the
+        undecided spec_escalation inbox row that names it, which the caller
+        read with ``decisions.escalation_naming`` (#644, owner decision 2(c)).
+        ``escalated_run`` is that row's run; an awaiting item's own
+        ``last_run_id`` names it otherwise.
         """
-        if item.state is not ItemState.AWAITING_ANSWER:
+        escalated = item.state is ItemState.POISON and bool(escalation_row)
+        if item.state is not ItemState.AWAITING_ANSWER and not escalated:
             raise QueueError(
-                f"{item.item_id} is {item.state}; only an item awaiting an answer can be answered"
+                f"{item.item_id} is {item.state}; only an item awaiting an answer can be "
+                "answered, or a poisoned item an undecided spec_escalation row names"
             )
         if not text.strip():
             raise QueueError(f"the answered spec is empty; {item.item_id} keeps its spec")
@@ -1438,13 +1448,15 @@ class Queue:
             "spec_sha256_before": before,
             "spec_sha256_after": after,
             "unchanged": before == after,
-            "escalated_run": item.last_run_id,
+            "escalated_run": escalated_run or item.last_run_id,
+            "escalation_row": escalation_row,
         }
         updates: dict[str, Any] = {
             "lease_pid": 0,
             "lease_host": "",
             "lease_expires_at": "",
             "not_before": "",
+            "poison_reason": "",
         }
         if reset_attempts:
             updates["attempts"] = 0
