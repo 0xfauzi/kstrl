@@ -14,6 +14,7 @@ stand-in agent wrote to a file (#292).
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import signal
@@ -104,15 +105,26 @@ def _start_agent_and_kill_kstrl(
         _env(f"echo $$ > '{pidfile}' && exec sleep 600"),
         *_factory_args(root, "1", "--no-worktrees"),
     )
-    agent = procs.read_pid(pidfile, timeout=START_FUSE_SECONDS)
-    group = os.getpgid(agent)
-    assert group != agent, f"agent pid {agent} leads its own group: no leash above it"
-    live = _status(root)
-    assert "Run state:    in flight" in live.stdout, live.stdout
-    assert "leftover agents" not in live.stdout, live.stdout
-    os.kill(group, leash_sig)
-    os.killpg(first.pid, signal.SIGKILL)
-    first.communicate(timeout=30)
+    group = 0
+    try:
+        agent = procs.read_pid(pidfile, timeout=START_FUSE_SECONDS)
+        group = os.getpgid(agent)
+        assert group != agent, f"agent pid {agent} leads its own group: no leash above it"
+        live = _status(root)
+        assert "Run state:    in flight" in live.stdout, live.stdout
+        assert "leftover agents" not in live.stdout, live.stdout
+        os.kill(group, leash_sig)
+        os.killpg(first.pid, signal.SIGKILL)
+        first.communicate(timeout=30)
+    except BaseException:
+        # The caller never sees ``first`` or ``group`` when this raises, so
+        # its ``finally`` cannot end them: a live ``ks factory`` left here
+        # keeps starting agents long after the test has failed.
+        if group > 1:
+            procs.kill_group(group)
+        procs.kill_group(first.pid)
+        first.communicate(timeout=30)
+        raise
     return first, agent, group
 
 
@@ -251,6 +263,40 @@ def test_a_group_that_cannot_be_listed_refuses_the_next_run(tmp_path: Path) -> N
         assert str(record) in out, out
         assert not marker.exists(), "the refused run started an agent"
         assert record.exists()
+    finally:
+        procs.kill_group(sleeper.pid)
+        sleeper.wait(timeout=30)
+
+
+def test_a_record_whose_nonce_is_not_a_nonce_is_refused_not_matched(tmp_path: Path) -> None:
+    """An empty nonce is a substring of every command line, so a record
+    carrying one would prove that any process is kstrl's. Such a record
+    does not parse: ``ks status`` reports the agents as unknown and names
+    no process, the next run exits 2 naming the record, and the process the
+    record points at is left alive."""
+    root = _repo(tmp_path)
+    sleeper = subprocess.Popen(["sleep", "600"], start_new_session=True)
+    try:
+        directory = control_dir(root) / SPAWN_RECORD_DIRNAME
+        directory.mkdir(parents=True)
+        record = directory / f"{new_nonce()}.json"
+        payload = {
+            "pgid": sleeper.pid,
+            "nonce": "",
+            "owner_pid": _dead_pid(),
+            "cwd": str(root),
+            "command": ["x"],
+        }
+        record.write_text(json.dumps(payload), encoding="utf-8")
+        status = _status(root)
+        assert "leftover agents: unknown" in status.stdout, status.stdout
+        assert f"pid {sleeper.pid} " not in status.stdout, status.stdout
+        marker = tmp_path / "started"
+        code, out = _next_run(root, marker)
+        assert code == 2, out
+        assert str(record) in out, out
+        assert not marker.exists(), "the refused run started an agent"
+        assert pid_is_alive(sleeper.pid), "the sleep was signalled: report only"
     finally:
         procs.kill_group(sleeper.pid)
         sleeper.wait(timeout=30)
