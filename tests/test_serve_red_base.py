@@ -34,11 +34,13 @@ from kstrl.serve import SpendLedger
 from kstrl.workqueue import ItemState, Queue, QueueConfig, QueueItem
 from tests.helpers.gitrepo import git_in
 from tests.helpers.stack_confirmation import confirm_stack
+from tests.test_isolation_rung import needs_nono
 from tests.test_prompt_record import ONE_COMPONENT, _spec_project
 from tests.test_queue_awaiting_answer import _scripted_claude
 from tests.test_stack_e2e import _stack
 
-pytestmark = pytest.mark.usefixtures("no_open_prs")
+#: A [stack] run refuses off macOS until the Linux rung lands (#700 M2).
+pytestmark = [pytest.mark.usefixtures("no_open_prs"), needs_nono]
 
 #: The base's one check: red prints a failure and exits 1, green exits 0.
 RED = "echo 'check: FAILED'\nexit 1\n"
@@ -48,12 +50,12 @@ GREEN = "exit 0\n"
 OPERATOR = "owner-654"
 
 
-def _project(tmp_path: Path, check: str) -> Path:
+def _project(tmp_path: Path, check: str, rung: dict[str, Any] | None = None) -> Path:
     """A repository `ks factory --spec` accepts, after the real ``ks init``,
     with a confirmed ``[stack]`` whose one check runs check.sh, committed."""
     root = _spec_project(tmp_path, initialised=True)
     with (root / "kstrl.toml").open("a", encoding="utf-8") as fh:
-        fh.write("\n" + _stack({"tests": "sh check.sh"}))
+        fh.write("\n" + _stack({"tests": "sh check.sh"}, rung=rung))
     _commit(root, check)
     confirm_stack(root)
     return root
@@ -126,6 +128,7 @@ def test_a_red_base_requeues_the_item_and_pauses_claims_until_resumed(
     # Requeued, not poisoned, and the streak did not move.
     assert after_refusal.state is ItemState.QUEUED, refused.output
     assert after_refusal.attempts == 1, refused.output
+    assert refused.exit_code == 1, refused.output
     assert streak_after_refusal == 1, refused.output
     assert "Queue paused: the base branch main at" in refused.output, refused.output
     # Claims paused: the second cycle claimed nothing and paid no architect.
@@ -172,7 +175,9 @@ def test_a_refusal_that_is_not_a_red_base_is_still_poisoned(
     classifies it as before: unclassifiable, poisoned, counted."""
     runs = tmp_path / "project" / ".kstrl" / "runs"
     blocker = f"for d in '{runs}'/*/; do mkdir -p \"$d\"base-gates.json; done\nexit 0\n"
-    root = _project(tmp_path, blocker)
+    # The check runs inside the rung (#700), so it may write the run
+    # directories only because the stack declares them writable.
+    root = _project(tmp_path, blocker, rung={"writable": [".kstrl/runs"]})
     # An earlier launch's red-base record, left on disk. This launch does
     # not own it, so it is no evidence about this refusal.
     stale = runs / "factory-20260101-000000.000000-000000"
