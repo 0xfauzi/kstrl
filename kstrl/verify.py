@@ -2535,10 +2535,51 @@ def _scan_changed_python(
     return issues, preexisting, scanned
 
 
+#: The ``bad_patterns`` row's words when the ``[policy]`` envelope runs and
+#: owns the secret rule (#646 slice 4).
+SECRETS_CHECKED_BY_ENVELOPE = "secrets: checked by policy_envelope"
+
+
+def _bad_patterns_message(
+    issues: Sequence[str],
+    changed: Sequence[str],
+    py_files: Sequence[str],
+    scanned: int,
+    preexisting: Sequence[str],
+    *,
+    secrets_owned_by_envelope: bool,
+) -> str:
+    """The ``bad_patterns`` row's message: what each rule read, and what it found."""
+    file_rules = f"Python rules: scanned {scanned} of {len(py_files)} changed Python files"
+    if issues:
+        message = f"{len(issues)} issues found in changed files"
+    elif not changed:
+        # The same sentence as check_diff_scope when the cause is the same,
+        # so an operator reading two unmeasured rows in one report does not
+        # have to work out whether two spellings mean one fact.
+        message = NO_FILES_IN_THE_DIFF
+    elif secrets_owned_by_envelope:
+        message = f"{SECRETS_CHECKED_BY_ENVELOPE}; {file_rules}"
+    elif len(py_files) < len(changed):
+        # #619: two scopes, so the message names both. The Python rules
+        # (empty file, syntax) did not read the non-Python files, and a
+        # single "no issues" would claim they did.
+        message = f"secrets: scanned {len(changed)} changed files, no issues; {file_rules}"
+    else:
+        message = f"Scanned {scanned} of {len(py_files)} changed Python files, no issues"
+    if issues and secrets_owned_by_envelope:
+        message = f"{message}; {SECRETS_CHECKED_BY_ENVELOPE}"
+    if preexisting and not issues:
+        message = f"{message} ({len(preexisting)} already at the base, not this branch's)"
+    return message
+
+
 def check_bad_patterns(
     cwd: Path,
     base_branch: str,
     secret_patterns: Sequence[str] = DEFAULT_SECRET_PATTERNS,
+    *,
+    secrets_owned_by_envelope: bool = False,
 ) -> CheckResult:
     """Scan changed files for obvious problems.
 
@@ -2563,6 +2604,15 @@ def check_bad_patterns(
     reads that field unconditionally, whether or not ``[policy] enabled``
     is true, so a stock install (no config at all) keeps this default,
     which is that same list.
+
+    ``secrets_owned_by_envelope`` (#646 slice 4) is true when the
+    ``[policy]`` envelope runs in the same verification. This check then
+    neither reads the diff's added lines nor scans them for secrets:
+    ``check_policy_envelope`` reports a secret once, as a finding an inbox
+    approval can waive, and this row's message says
+    ``secrets: checked by policy_envelope``. Its ``measured`` then counts
+    only the files its other rules opened. False, the default, keeps the secret
+    rule here, with no approval path, as before.
 
     The empty-file and syntax-error rules judge the file as it sits in the
     worktree AND as it sat at the MERGE BASE of the base branch and ``HEAD``
@@ -2610,11 +2660,15 @@ def check_bad_patterns(
         # because `changed` is non-empty. `as_stored` (#695): every changed
         # byte, so a file git treats as binary is read too.
         added = (
-            parse_added_lines(git.get_diff_content(base_branch, cwd, as_stored=True))
-            if changed
-            else []
+            []
+            if secrets_owned_by_envelope or not changed
+            else parse_added_lines(git.get_diff_content(base_branch, cwd, as_stored=True))
         )
-        secret_hit_paths = frozenset(_scan_secrets(added, secret_patterns))
+        secret_hit_paths = (
+            frozenset()
+            if secrets_owned_by_envelope
+            else frozenset(_scan_secrets(added, secret_patterns))
+        )
         rename_sources = _rename_sources(records)
     except Exception as exc:
         # Exception exactly, broad clause last (#318). get_diff_name_status
@@ -2657,31 +2711,22 @@ def check_bad_patterns(
         if path in secret_hit_paths and path not in py_files
     ]
 
+    message = _bad_patterns_message(
+        issues,
+        changed,
+        py_files,
+        scanned,
+        preexisting,
+        secrets_owned_by_envelope=secrets_owned_by_envelope,
+    )
     if issues:
         return CheckResult(
             name="bad_patterns",
             passed=False,
-            message=f"{len(issues)} issues found in changed files",
+            message=message,
             details=[*issues, *preexisting],
             duration_seconds=time.monotonic() - start,
         )
-
-    # The same sentence as check_diff_scope when the cause is the same, so an
-    # operator reading two unmeasured rows in one report does not have to
-    # work out whether two spellings mean one fact.
-    message = NO_FILES_IN_THE_DIFF
-    if changed:
-        message = f"Scanned {scanned} of {len(py_files)} changed Python files, no issues"
-    if len(py_files) < len(changed):
-        # #619: two scopes, so the message names both. The Python rules
-        # (empty file, syntax) did not read the non-Python files, and a
-        # single "no issues" would claim they did.
-        message = (
-            f"secrets: scanned {len(changed)} changed files, no issues; "
-            f"Python rules: scanned {scanned} of {len(py_files)} changed Python files"
-        )
-    if preexisting:
-        message = f"{message} ({len(preexisting)} already at the base, not this branch's)"
     return CheckResult(
         name="bad_patterns",
         passed=True,
@@ -5828,6 +5873,10 @@ def run_mechanical_verification(
     bad_patterns_secret_patterns = (
         policy_config.secret_patterns if policy_config is not None else DEFAULT_SECRET_PATTERNS
     )
+    # #646 slice 4: one owner for the secret rule. When the envelope runs it
+    # reports a secret, waivably; check_bad_patterns then does not scan for
+    # one, so a secret is one finding and an approval of it can pass.
+    envelope = policy_config if policy_config is not None and policy_config.enabled else None
 
     if prd_path is not None:
         checks.append(check_prd_stories(prd_path, pre_run_prd_path))
@@ -5850,16 +5899,23 @@ def run_mechanical_verification(
     )
 
     if config.check_bad_patterns:
-        checks.append(check_bad_patterns(worktree_path, base_branch, bad_patterns_secret_patterns))
+        checks.append(
+            check_bad_patterns(
+                worktree_path,
+                base_branch,
+                bad_patterns_secret_patterns,
+                secrets_owned_by_envelope=envelope is not None,
+            )
+        )
 
     # R8.1 policy envelope: opt-in ([policy] enabled). When disabled the
     # check is not appended, so existing runs are unchanged.
-    if policy_config is not None and policy_config.enabled:
+    if envelope is not None:
         checks.append(
             check_policy_envelope(
                 worktree_path,
                 base_branch,
-                policy_config,
+                envelope,
                 waivers=waivers,
             )
         )
