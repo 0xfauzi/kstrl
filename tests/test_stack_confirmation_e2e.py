@@ -288,6 +288,34 @@ def test_reverting_to_an_older_confirmed_stack_refuses(tmp_path: Path) -> None:
     assert f"it now reads {first[:12]}" in run.out, run.out
 
 
+@pytest.mark.parametrize(
+    "withdraw", [("reject", "--comment", "wrong"), ("snooze",)], ids=["reject", "snooze"]
+)
+def test_withdrawing_the_newest_confirmation_brings_back_no_older_one(
+    tmp_path: Path, withdraw: tuple[str, ...]
+) -> None:
+    """Only the most recent approval counts: A then B were confirmed, and B's
+    approval is then withdrawn in the inbox. B no longer runs, and neither
+    does A once kstrl.toml goes back to it: A's approval is older than B's,
+    so A needs a new confirmation."""
+    root = _repo(tmp_path, GREEN)
+    first = _digest(root)
+    _restack(root, _stack({"tests": "true", "lint": "true"}))
+    second = confirm_stack(root)
+    (newest,) = [i for i in _stack_items(root) if i.evidence["stack_digest"] == second]
+    code, out = _ks(root, "inbox", withdraw[0], newest.id[:8], *withdraw[1:])
+    under_b = _factory(tmp_path, root)
+    _restack(root, GREEN)
+
+    run = _factory(tmp_path, root)
+
+    assert code == 0, out
+    assert (under_b.code, under_b.calls) == (2, 0), under_b.out
+    assert _digest(root) == first
+    assert (run.code, run.calls) == (2, 0), run.out
+    assert f"the newest confirmation, of {second[:12]}, was" in run.out, run.out
+
+
 # --- 5: the plan carries the stack it was made under ------------------------
 
 

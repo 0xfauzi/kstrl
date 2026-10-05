@@ -71,7 +71,7 @@ EXPECTED_APPROVED_READS: dict[str, int] = {
     "pipeline.py::ComponentPipeline.apply_merge_decisions": 1,
     "plan_gate.py::_settle": 2,
     "plan_gate.py::run_plan_gate": 5,
-    "stack.py::_latest_approval": 1,
+    "stack.py::_latest_approval": 2,
     "waivers.py::load_approvals": 1,
 }
 

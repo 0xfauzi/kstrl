@@ -347,8 +347,14 @@ def _is_stack_record(record: dict[str, Any]) -> bool:
     ).startswith(STACK_KEY)
 
 
-def _latest_approval(root_dir: Path, inbox_config: InboxConfig) -> InboxItem | None:
-    """The stack item whose approval is the newest line of the inbox, or None.
+def _latest_approval(root_dir: Path, inbox_config: InboxConfig) -> tuple[InboxItem, bool] | None:
+    """The stack item the newest APPROVED line of the inbox names, and whether it is still
+    approved, or None.
+
+    The newest approval line decides, not the newest item that is still
+    approved: when a person withdraws that approval later (``ks inbox
+    reject`` or ``snooze``), no older approval comes back into force, so
+    the caller refuses until a stack is confirmed again (#696 decision 1(b)).
 
     Raises :class:`ValueError` naming the fault when the inbox cannot be
     read, or any line of it could be a stack decision kstrl cannot read:
@@ -363,7 +369,8 @@ def _latest_approval(root_dir: Path, inbox_config: InboxConfig) -> InboxItem | N
             f"{scan.skipped_lines} line(s) of {box.path} are not JSON objects, and any of "
             "them could be a newer stack decision"
         )
-    last: dict[str, tuple[int, InboxItem]] = {}
+    folded: dict[str, InboxItem] = {}
+    newest = ""
     for position, record in enumerate(scan.records):
         if not _is_stack_record(record):
             continue
@@ -375,11 +382,12 @@ def _latest_approval(root_dir: Path, inbox_config: InboxConfig) -> InboxItem | N
             )
         item = InboxItem.from_dict(record)
         assert item is not None  # _record_errors refused every None
-        last[item.id] = (position, item)
-    approved = [
-        (position, item) for position, item in last.values() if item.status is ItemStatus.APPROVED
-    ]
-    return max(approved, key=lambda pair: pair[0])[1] if approved else None
+        folded[item.id] = item
+        if item.status is ItemStatus.APPROVED:
+            newest = item.id
+    if not newest:
+        return None
+    return folded[newest], folded[newest].status is ItemStatus.APPROVED
 
 
 def _refusal(root_dir: Path, stack: Stack) -> tuple[str, str]:
@@ -406,12 +414,19 @@ def _refusal(root_dir: Path, stack: Stack) -> tuple[str, str]:
             "",
         )
     try:
-        latest = _latest_approval(root_dir, inbox_config)
+        found = _latest_approval(root_dir, inbox_config)
     except Exception as exc:  # noqa: BLE001 - see the docstring
         return f"cannot be checked: the inbox is unreadable: {exc}", ""
-    if latest is None:
+    if found is None:
         return f"is not confirmed: no inbox approval names {stack.digest[:12]}", ""
+    latest, still_approved = found
     approved = str(latest.evidence["stack_digest"])
+    if not still_approved:
+        return (
+            f"is not confirmed: the newest confirmation, of {approved[:12]}, was "
+            f"{latest.status} by {latest.decided_by} at {latest.decided_at}",
+            "",
+        )
     if approved == stack.digest:
         return "", CONFIRMED_IN_INBOX
     return (
