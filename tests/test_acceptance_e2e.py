@@ -144,6 +144,26 @@ def test_a_check_that_passes_on_the_base_it_should_fail_refuses_before_the_engin
 
 
 @needs_nono
+def test_a_check_that_fails_on_the_base_it_should_pass_refuses_before_the_engineer(
+    tmp_path: Path,
+) -> None:
+    """The other contradiction: a check the plan says passes on the base (a
+    behaviour the change must keep) fails there, so the plan is wrong about
+    the base and the run exits 2 before any engineer call, pinning nothing."""
+    root = _greeting_repo(tmp_path)
+    plan = _plan(tmp_path, [_check("keeps-ada", ["/bin/sh", "check.sh", "Ada"], on_base="passes")])
+
+    run = _accept(tmp_path, root, plan)
+
+    assert run.code == 2, run.out
+    assert REFUSED_BASE in run.out, run.out
+    expected = f"{COMP}: the check keeps-ada fails on the base (exit 1); onBase: passes"
+    assert expected in run.out, run.out
+    assert run.calls == 0, run.out
+    assert "acceptanceDigest" not in _manifest(root)
+
+
+@needs_nono
 def test_a_check_that_cannot_run_on_the_base_is_refused_as_not_runnable(tmp_path: Path) -> None:
     """A check whose command is not found exits 127 on the base: it measured
     nothing, which is never a failure, and the component does not create the
@@ -378,8 +398,9 @@ def test_a_plan_that_cannot_be_taken_whole_is_a_refusal_never_an_empty_plan(
 @needs_nono
 def test_an_edited_plan_is_refused_naming_both_digests(tmp_path: Path) -> None:
     """The first run's base accepts the plan, which the manifest then pins.
-    The operator edits a criterion; the next run of the same plan exits 2
-    before any engineer call, naming the pinned digest and the new one."""
+    The operator edits check.sh, a file the check runs; the next run of the
+    same plan exits 2 before any engineer call, naming the pinned digest and
+    the new one. A run that names no plan at all is refused as well."""
     root = _greeting_repo(tmp_path)
     plan = _plan(tmp_path, [_check("greets-ada", ["/bin/sh", "check.sh", "Ada"])])
     first = _accept(tmp_path, root, plan, CORRECT)
@@ -401,6 +422,14 @@ def test_an_edited_plan_is_refused_naming_both_digests(tmp_path: Path) -> None:
     assert found is not None, second.out
     assert found.group(1) == pinned[:12] and found.group(2) != pinned[:12], second.out
     assert second.calls == first.calls == 1, second.out
+    # A run that names no plan on a manifest that pinned one is refused too:
+    # dropping --acceptance must not drop the checks.
+    dropped = _factory(tmp_path, root, engineer=CORRECT)
+    assert dropped.code == 2, dropped.out
+    assert REFUSED_PLAN in dropped.out, dropped.out
+    named = f"this plan pinned the acceptance plan {pinned[:12]}, and this run names none"
+    assert named in dropped.out, dropped.out
+    assert dropped.calls == 1, dropped.out
 
 
 @needs_nono
