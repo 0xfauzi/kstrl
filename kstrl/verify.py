@@ -39,6 +39,8 @@ from kstrl.adequacy import (
     syntax_for,
     unread_test_paths,
 )
+from kstrl.agents.proc import leash_command, leash_start_error
+from kstrl.agents.spawn_record import new_nonce
 from kstrl.atomicio import atomic_write_text
 from kstrl.config import component_progress_path, relative_to_root
 from kstrl.failure_excerpt import failure_excerpt
@@ -245,7 +247,18 @@ def run_scrubbed(
     declared_env: tuple[str, ...] | None = None,
     rung: ProvenRung | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    """Run a verification subprocess: scrubbed env, own process group.
+    """Run a verification subprocess: scrubbed env, own process group, leashed.
+
+    The command runs under ``kstrl/agents/leash.py``, as every agent does
+    (#642 slice 5): the leash leads the command's process group and ends
+    it, SIGTERM, the grace, SIGKILL, once this process has gone however
+    it went, SIGKILL included, because the one write end of its lifeline
+    is held here and closed in this function's ``finally``. Under a rung
+    the leash starts nono, never the reverse: nono replaces itself with
+    the command (``nono wrap``), so the command and everything it starts
+    stay in the leash's group, and nono refuses to run inside nono. The
+    returncode is the command's, through the leash; a death by signal N
+    reads as 128 + N.
 
     ``declared_env`` is a ``[stack]``'s ``env``, handed to
     :func:`scrubbed_subprocess_env` (#696); None keeps the allowlist.
@@ -315,20 +328,43 @@ def run_scrubbed(
     if extra_env:
         env.update(extra_env)
     spawned = _in_rung(cmd, rung, env, [*(declared_env or ()), *(extra_env or {})])
+    # `/bin/sh -c`, the shell `shell=True` used, so a string runs as before.
+    argv = ["/bin/sh", "-c", spawned] if isinstance(spawned, str) else list(spawned)
+    lifeline_read, lifeline = os.pipe()
+    status_read, status_write = os.pipe()
     # BYTES mode, decoded below (#527). In text mode CPython decodes inside
     # `communicate`, and a byte that is not utf-8 raised there with both
     # streams discarded, so a gate that failed that way could leave no log.
-    proc = subprocess.Popen(
-        spawned,
-        shell=isinstance(spawned, str),
-        cwd=cwd,
-        stdin=None if stdin_text is None else subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        env=env,
-        start_new_session=True,
-    )
     try:
+        proc = subprocess.Popen(
+            leash_command(
+                argv,
+                lifeline=lifeline_read,
+                status=status_write,
+                term_grace=term_grace,
+                nonce=new_nonce(),
+            ),
+            cwd=cwd,
+            stdin=None if stdin_text is None else subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=env,
+            start_new_session=True,
+            pass_fds=(lifeline_read, status_write),
+        )
+    except BaseException:
+        os.close(lifeline)
+        os.close(status_read)
+        raise
+    finally:
+        os.close(lifeline_read)
+        os.close(status_write)
+    try:
+        # A command the leash could not start raises what a direct Popen
+        # would have, after the broad clause below lets the leash go.
+        start_error = leash_start_error(status_read, argv[0])
+        if start_error is not None:
+            raise start_error
         raw_stdout, raw_stderr = proc.communicate(
             input=None if stdin_text is None else stdin_text.encode("utf-8"),
             timeout=timeout,
@@ -361,9 +397,14 @@ def run_scrubbed(
         # KeyboardInterrupt out of `ks verify`, or a MemoryError on a
         # capture big enough to matter, left the child unsignalled,
         # unreaped, unregistered and holding both pipe ends, on the
-        # highest-frequency spawn in the factory.
+        # highest-frequency spawn in the factory. The group first: the
+        # direct child is the leash, and a SIGKILL of the leash alone
+        # would leave the command running with nothing to end it (#642).
+        _signal_process_group(proc, signal.SIGKILL)
         drain_or_abandon(proc, term_grace)
         raise
+    finally:
+        os.close(lifeline)
     # The read completed, so the child is reaped and both pipes are closed:
     # a decode failure here leaves nothing to dispose of (#326). Strict
     # utf-8, stdout first, as text mode decoded them (#409, #416).

@@ -82,16 +82,21 @@ def _pairs(path: Path) -> list[tuple[int, int]]:
     return [(int(a), int(g)) for a, g in (line.split() for line in text.splitlines()) if g]
 
 
-#: Starts the CLI with SIGHUP at its default disposition, by ``exec``, so
-#: the pid is the CLI's. An ignored disposition survives ``exec``, and a
-#: suite started under ``nohup`` hands SIG_IGN to everything it spawns: the
-#: merge gate is started that way, ``ks`` outlived the SIGHUP, and the
-#: sighup case failed there 2 of 2. Measured: 3 of 3 failed under
-#: ``nohup`` and 20 of 20 passed without it, both at load 38 to 45. A
+#: Starts the CLI with SIGHUP and SIGINT at their default dispositions, by
+#: ``exec``, so the pid is the CLI's. An ignored disposition survives
+#: ``exec``, and a suite started under ``nohup`` hands SIG_IGN to everything
+#: it spawns: the merge gate is started that way, ``ks`` outlived the
+#: SIGHUP, and the sighup case failed there 2 of 2. Measured: 3 of 3 failed
+#: under ``nohup`` and 20 of 20 passed without it, both at load 38 to 45. A
 #: hangup is a stop since #642 slice 4, so that case now lives in
-#: ``tests/test_stop_kills_whoever_asks.py``.
+#: ``tests/test_stop_kills_whoever_asks.py``. SIGINT is the same: a job a
+#: non-interactive shell puts in the background starts with SIGINT ignored,
+#: and Python installs its KeyboardInterrupt handler only over the default,
+#: so ``ks check`` ignored the SIGINT of #642 slice 5's test (failed 2 of 2
+#: in the merge gate, and 1 of 1 under a backgrounded ``nohup`` at -n 2).
 _DEFAULT_HUP_EXEC = (
     "import os, signal, sys; signal.signal(signal.SIGHUP, signal.SIG_DFL); "
+    "signal.signal(signal.SIGINT, signal.SIG_DFL); "
     "os.execv(sys.executable, [sys.executable, '-m', 'kstrl', *sys.argv[1:]])"
 )
 
@@ -454,7 +459,9 @@ def test_an_orderly_run_leaves_no_lifeline_open(tmp_path: Path) -> None:
     every disposal must close it. A run in this process with two
     components whose agents finish: the process has no pipe open afterwards
     that it did not have before. A disposal that kept the write end leaked
-    one per call (measured: 4 more after this run)."""
+    one per call (measured: 4 more after this run). Every gate the run's
+    Phase 1 starts holds a lifeline too (#642 slice 5), so a
+    ``run_scrubbed`` that kept its write end fails this as well."""
     root = tmp_path / "repo"
     spine_utils.init_kstrl_repo(root, ("comp-a", "comp-b"))
     manifest = spine_utils.make_manifest(

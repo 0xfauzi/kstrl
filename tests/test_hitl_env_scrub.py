@@ -334,11 +334,15 @@ class TestProcessGroupKill:
         self,
         tmp_path: Path,
     ) -> None:
+        """The command runs in a session and a group that are not the
+        harness's. The group's leader is the leash (#642 slice 5), so the
+        command is a member of the group rather than its leader."""
         result = run_scrubbed(
             [
                 sys.executable,
                 "-c",
-                "import os; print(os.getpgrp() == os.getpid())",
+                f"import os; print(os.getpgrp() != {os.getpgrp()} "
+                "and os.getsid(0) == os.getpgrp())",
             ],
             cwd=tmp_path,
             timeout=30,

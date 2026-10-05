@@ -409,6 +409,7 @@ EXIT_CODE_FUNCTIONS: frozenset[str] = frozenset(
         "run_home_shell",
         "run_init",
         "run_plan_gate",
+        "wait",
     }
 )
 
@@ -424,6 +425,9 @@ UNRESOLVED_EXIT_VALUES: dict[tuple[str, str], int] = {
     # #602: the preflights' decisions tuple, returned when the run goes on.
     # It never becomes an exit code: the caller exits only on an int.
     ("factory.py", "_plan_gated"): 1,
+    # #642 slice 5: the leash's own status, read from `agent.wait()`, a
+    # real subprocess exit status the walk cannot resolve to a literal.
+    ("agents/leash.py", "_follow"): 1,
 }
 
 
