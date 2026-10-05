@@ -664,7 +664,7 @@ import atexit, logging, sys
 if "kstrl.agents.sdk_runner" in sys.orig_argv:
     logging.getLogger("asyncio").warning({UNKNOWN_CHILD!r})
     print("RUNNER-UNFRAMED-STDOUT", flush=True)
-    atexit.register(lambda: sys.stderr.write("RUNNER-STDERR-AT-EXIT\\n"))
+    atexit.register(lambda: sys.stderr.buffer.write(b"RUNNER-STDERR-AT-EXIT \\xff\\n"))
 else:
     sys.stderr.write("CLI-STDERR-DIAGNOSTIC")
 """
@@ -691,7 +691,7 @@ def test_sdk_runner_diagnostics_never_become_agent_lines(
     for diagnostic in (
         UNKNOWN_CHILD,
         "RUNNER-UNFRAMED-STDOUT",
-        "RUNNER-STDERR-AT-EXIT",
+        "RUNNER-STDERR-AT-EXIT \ufffd",
         "CLI-STDERR-DIAGNOSTIC",
     ):
         assert diagnostic in logged
