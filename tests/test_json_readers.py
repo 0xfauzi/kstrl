@@ -147,11 +147,11 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     "serve.py": 5,
     "signals.py": 3,
     # #696: the import, one json.dumps for the stack digest's canonical
-    # form, and eight more inside stack_toml - a TOML-safe literal per
+    # form, and nine more inside stack_toml - a TOML-safe literal per
     # field it writes (instructions, setup, env, writable, readable,
-    # browser, and one name/command pair per check). No parse: the
+    # browser, up, and one name/command pair per check). No parse: the
     # table is read through load_toml_document.
-    "stack.py": 10,
+    "stack.py": 11,
     "statedir.py": 2,
     "verify.py": 1,
     # #595: the import and one json.dumps, the canonical JSON the waiver

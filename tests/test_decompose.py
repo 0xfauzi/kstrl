@@ -37,8 +37,10 @@ from kstrl.evolution import SPEC_ISSUES_EVENT, EvolutionConfig, EvolutionJournal
 from kstrl.prd import PRD
 from kstrl.statedir import plan_prd_path
 from kstrl.ui.plain import PlainUI
+from tests.helpers.before_spend import no_base_check
 from tests.helpers.journal import journal_at
 from tests.helpers.prompt_calls import architect_call
+from tests.helpers.stack_confirmation import PROPOSED_STACK
 
 
 class MockDecomposeAgent:
@@ -113,6 +115,7 @@ VALID_DECOMPOSE_OUTPUT = json.dumps(
         # v3.0.0 requires the array, even empty: a payload that omitted
         # it used to pass with zero decisions and zero escalations, and
         # zero agrees with any count.
+        "stack": PROPOSED_STACK,
         "spec_issues": [],
         "decisions": [],
     }
@@ -129,6 +132,7 @@ class TestSpecIssues:
 
         output = json.dumps(
             {
+                "stack": PROPOSED_STACK,
                 "spec_issues": [
                     {
                         "id": "spec-empty",
@@ -163,6 +167,7 @@ class TestSpecIssues:
                 root_dir=tmp_path,
                 prompt_call=architect_call(tmp_path),
                 timeout=None,
+                before_spend=no_base_check,
             )
         assert len(exc_info.value.escalations) == 1
         assert exc_info.value.escalations[0].question == "what is this product for"
@@ -180,6 +185,7 @@ class TestSpecIssues:
 
         output = json.dumps(
             {
+                "stack": PROPOSED_STACK,
                 "spec_issues": [
                     {
                         "id": "edge-case",
@@ -233,6 +239,7 @@ class TestSpecIssues:
             root_dir=tmp_path,
             prompt_call=architect_call(tmp_path),
             timeout=None,
+            before_spend=no_base_check,
         )
         assert len(manifest.components) == 1
         assert manifest.components[0].id == "comp-a"
@@ -261,6 +268,7 @@ class TestDecomposeSpec:
             root_dir=tmp_path,
             prompt_call=architect_call(tmp_path),
             timeout=None,
+            before_spend=no_base_check,
         )
 
         assert len(manifest.components) == 2
@@ -308,6 +316,7 @@ class TestDecomposeSpec:
             root_dir=tmp_path,
             prompt_call=architect_call(tmp_path),
             timeout=None,
+            before_spend=no_base_check,
         )
 
         # All components should share the same branch
@@ -335,6 +344,7 @@ class TestDecomposeSpec:
             root_dir=tmp_path,
             prompt_call=architect_call(tmp_path),
             timeout=None,
+            before_spend=no_base_check,
         )
 
         branches = {c.branch_name for c in manifest.components}
@@ -382,6 +392,7 @@ class TestDecomposeSpec:
             root_dir=tmp_path,
             prompt_call=architect_call(tmp_path),
             timeout=None,
+            before_spend=no_base_check,
         )
 
         assert call_count == 2
@@ -409,6 +420,7 @@ class TestDecomposeSpec:
                 max_retries=2,
                 prompt_call=architect_call(tmp_path),
                 timeout=None,
+                before_spend=no_base_check,
             )
 
 
@@ -484,6 +496,7 @@ def _single_component_output(
     decisions: list[dict[str, object]] | None = None,
 ) -> str:
     payload: dict[str, object] = {
+        "stack": PROPOSED_STACK,
         "components": [
             {
                 "id": "comp-a",
@@ -556,6 +569,7 @@ class TestARegisterThatDidNotLandFailsTheDecompose:
                 root_dir=tmp_path,
                 prompt_call=architect_call(tmp_path),
                 timeout=None,
+                before_spend=no_base_check,
             )
 
     def test_the_halt_path_still_halts_when_its_register_cannot_land(self, tmp_path: Path) -> None:
@@ -568,6 +582,7 @@ class TestARegisterThatDidNotLandFailsTheDecompose:
         (tmp_path / "scripts" / "kstrl").mkdir(parents=True)
         output = json.dumps(
             {
+                "stack": PROPOSED_STACK,
                 "spec_issues": [
                     {
                         "id": "spec-empty",
@@ -606,6 +621,7 @@ class TestARegisterThatDidNotLandFailsTheDecompose:
                 root_dir=tmp_path,
                 prompt_call=architect_call(tmp_path),
                 timeout=None,
+                before_spend=no_base_check,
             )
         assert len(exc_info.value.escalations) == 1
         # The halt still names what it can: the audit landed, the
@@ -641,6 +657,7 @@ class TestVacuousPrdRejection:
             root_dir=tmp_path,
             prompt_call=architect_call(tmp_path),
             timeout=None,
+            before_spend=no_base_check,
         )
 
         assert len(agent.prompts) == 2
@@ -709,6 +726,7 @@ def _run_decompose(
             root_dir=tmp_path,
             prompt_call=architect_call(tmp_path),
             timeout=None,
+            before_spend=no_base_check,
         )
     except SpecBlockerError:
         pass
@@ -756,6 +774,7 @@ class TestSpecIssuesPersistence:
         output = json.dumps(
             {
                 "components": [],
+                "stack": PROPOSED_STACK,
                 "spec_issues": [BLOCKER_ISSUE],
                 "decisions": _closures_for([BLOCKER_ISSUE]),
             }
@@ -771,6 +790,7 @@ class TestSpecIssuesPersistence:
                 root_dir=tmp_path,
                 prompt_call=architect_call(tmp_path),
                 timeout=None,
+                before_spend=no_base_check,
             )
 
         artifact = tmp_path / "scripts" / "kstrl" / "spec-issues.json"
@@ -825,6 +845,7 @@ class TestSpecIssuesPersistence:
         output = json.dumps(
             {
                 "components": [],
+                "stack": PROPOSED_STACK,
                 "spec_issues": [BLOCKER_ISSUE],
                 "decisions": _closures_for([BLOCKER_ISSUE]),
             }
@@ -840,6 +861,7 @@ class TestSpecIssuesPersistence:
                 root_dir=tmp_path,
                 prompt_call=architect_call(tmp_path),
                 timeout=None,
+                before_spend=no_base_check,
             )
 
         assert len(_journal_rows(tmp_path)) == 1, "the writer put more than the audit on disk"
@@ -921,6 +943,7 @@ class TestPrdValidationInsideRetryLoop:
             root_dir=tmp_path,
             prompt_call=architect_call(tmp_path),
             timeout=None,
+            before_spend=no_base_check,
         )
 
         assert len(agent.prompts) == 2
@@ -953,6 +976,7 @@ class TestPrdValidationInsideRetryLoop:
                 max_retries=2,
                 prompt_call=architect_call(tmp_path),
                 timeout=None,
+                before_spend=no_base_check,
             )
 
         assert not (tmp_path / "scripts" / "kstrl" / "feature").exists()
@@ -1007,6 +1031,7 @@ class TestPrdValidationInsideRetryLoop:
                 root_dir=tmp_path,
                 prompt_call=architect_call(tmp_path),
                 timeout=None,
+                before_spend=no_base_check,
             )
 
         assert calls == ["database", "api"]
@@ -1575,6 +1600,7 @@ class TestSpecConvergenceThroughDecompose:
                 root_dir=tmp_path,
                 prompt_call=architect_call(tmp_path),
                 timeout=None,
+                before_spend=no_base_check,
             )
 
         assert (tmp_path / "scripts" / "kstrl" / "spec-issues.json").exists()

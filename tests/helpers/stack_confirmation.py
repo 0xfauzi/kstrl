@@ -31,6 +31,15 @@ TRUE_CHECKS: dict[str, str] = {"tests": "true", "typecheck": "true", "lint": "tr
 #: The instructions every stack built here carries.
 TEST_INSTRUCTIONS = "Built by a kstrl test. Run the checks below."
 
+#: The ``stack`` a stub architect answers with where kstrl.toml has no
+#: ``[stack]``: ``DECOMPOSE_PROMPT`` 4.0.0 requires one there (#696 slice 7).
+PROPOSED_STACK: dict[str, object] = {
+    "instructions": TEST_INSTRUCTIONS,
+    "setup": "",
+    "env": [],
+    "checks": {"tests": "true"},
+}
+
 
 def in_process_stack(
     checks: Mapping[str, str] | None = None,
