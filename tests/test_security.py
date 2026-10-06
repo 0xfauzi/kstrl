@@ -269,7 +269,9 @@ class TestRunSecurityReview:
         assert result.passed is True
         assert result.infrastructure_error is False
         assert [(f.category, f.severity) for f in result.findings] == [("new_dependency", "low")]
-        assert "- [low] **new_dependency** at `package.json:6`" in result.as_pr_body_section()
+        body = result.as_pr_body_section()
+        assert "- [low] **new_dependency** at `package.json:6`" in body
+        assert "  - adds left-pad 1.3.0, license WTFPL" in body
 
     def _boom_agent(self) -> object:
         class _Boom:

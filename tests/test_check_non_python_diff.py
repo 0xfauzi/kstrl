@@ -273,6 +273,21 @@ def test_a_lockfile_written_beside_an_unchanged_manifest_is_outside_the_allowed_
     assert not any("src/lib.rs" in detail for detail in row["details"]), row
 
 
+def test_a_lockfile_is_still_held_to_paths_deny_and_the_secret_patterns(tmp_path: Path) -> None:
+    """Slice 9 removed only the dependency and license rules. A lockfile is
+    still a changed file for ``paths_deny`` and the secret patterns, so a
+    rule that skips lockfiles there loosens the envelope."""
+    lock = CARGO_LOCK + 'checksum = "' + "AKIA" + "Q" * 16 + '"\n'
+    config = POLICY + 'paths_deny = ["Cargo.lock"]\n'
+    root = _repo(tmp_path, RUST_BASE, {"Cargo.lock": lock}, config)
+
+    row = _row(_check_json(root), "policy_envelope")
+
+    assert row["passed"] is False, row
+    assert "Denied paths modified: Cargo.lock (deny 'Cargo.lock')" in row["details"], row
+    assert any(d.startswith("Possible secrets in added lines: Cargo.lock#") for d in row["details"])
+
+
 def test_a_deleted_python_test_is_still_reported_beside_a_new_typescript_test(
     tmp_path: Path,
 ) -> None:
