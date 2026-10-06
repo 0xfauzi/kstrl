@@ -33,20 +33,17 @@ from pathlib import Path
 import pytest
 
 from kstrl import baseline
-from kstrl.adequacy import AdequacyConfig
 from kstrl.fixtures import Fixture, FixturesConfig, check_fixtures, check_fixtures_from_prd
 from kstrl.policy import PolicyConfig
 from kstrl.verify import (
-    NotMeasured,
+    LAYER0_NOT_MEASURED,
     VerificationResult,
     check_bad_patterns,
-    check_dead_code_ruff,
     check_diff_scope,
     check_policy_envelope,
     check_prd_stories,
     check_scope_unreadable,
     check_self_critique,
-    check_test_adequacy,
 )
 from tests.helpers import gitrepo
 from tests.helpers.measurement import assert_measured, assert_unmeasured
@@ -66,18 +63,14 @@ def _stub(directory: Path, name: str, body: str) -> None:
 
 @pytest.fixture
 def only_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """PATH containing exactly one directory, which starts empty.
+    """PATH containing exactly one directory, holding a stub git.
 
-    Environment, not a patched ``shutil.which``: the thing under test is what
-    ``check_dead_code`` does when a tool is or is not installed, and an
-    operator's machine says that through PATH.
+    Environment, not a patched function: the thing under test is what a
+    check does with what git says, and an operator's machine says that
+    through PATH. Each test replaces the stub with the git answer it needs.
     """
     tools = tmp_path / "tools"
     tools.mkdir()
-    # git is stubbed rather than left off PATH: check_dead_code asks git for the
-    # changed files before it looks for a detector, and a FileNotFoundError
-    # there would end the test before the branch under test is reached. Exit 0
-    # with no output is an empty diff, which is what these cases want.
     _stub(tools, "git", "exit 0")
     monkeypatch.setenv("PATH", str(tools))
     return tools
@@ -146,8 +139,8 @@ def test_a_deletion_only_commit_measures_scope_and_not_content(tmp_path: Path) -
     them, so it measured. ``bad_patterns`` has to OPEN each file, and every one
     is gone from the worktree, so it measured nothing: round 2 of review
     measured "Scanned 3 Python files, no issues" with ``measured=True`` from a
-    check that opened none of them, and a deleted file cannot be shown to be
-    free of secrets.
+    check that opened none of them. Since #696 slice 8 the check reads only
+    added lines, and a deletion adds none.
     """
     repo = _repo(tmp_path)
     for name in ("a.py", "b.py", "c.py"):
@@ -163,7 +156,7 @@ def test_a_deletion_only_commit_measures_scope_and_not_content(tmp_path: Path) -
     patterns = check_bad_patterns(repo, "main")
 
     assert_measured(scope)
-    assert patterns.message == "Scanned 0 of 3 changed Python files, no issues"
+    assert patterns.message == "secrets: the 3 changed files add no lines, nothing scanned"
     assert_unmeasured(patterns)
 
 
@@ -177,7 +170,7 @@ def test_bad_patterns_that_opened_a_file_did_measure(tmp_path: Path) -> None:
 
     row = check_bad_patterns(repo, "main")
 
-    assert row.message == "Scanned 1 of 1 changed Python files, no issues"
+    assert row.message == "secrets: scanned the lines added to 1 changed files, no issues"
     assert_measured(row)
 
 
@@ -282,14 +275,6 @@ def test_bad_patterns_that_could_not_scan_the_diff_measured_nothing(tmp_path: Pa
     assert row.passed is False
     assert "could not read the diff" in row.message
     assert [f.is_infrastructure_error for f in row.findings] == [True]
-    assert_unmeasured(row)
-
-
-def test_test_adequacy_that_could_not_read_the_diff_measured_nothing(tmp_path: Path) -> None:
-    row = check_test_adequacy(tmp_path, "no-such-base-227", AdequacyConfig(enabled=True))
-
-    assert row.passed is False
-    assert "could not read the diff" in row.message
     assert_unmeasured(row)
 
 
@@ -436,66 +421,6 @@ def test_a_fixture_whose_process_could_not_be_launched_measured_nothing(
     assert_unmeasured(row)
 
 
-def test_a_function_fixture_that_timed_out_measured_nothing(tmp_path: Path) -> None:
-    """The function fixture runs its own subprocess and has its own two sites.
-
-    Both were unpinned: the command fixture's timeout was driven and stood in
-    for all four. ``time.sleep`` is the module and function, so the fixture
-    needs no file on disk to import.
-    """
-    fixtures = [
-        Fixture(
-            description="a function that sleeps",
-            fixture_type="function",
-            input_data={"module": "time", "function": "sleep", "args": [30]},
-            expected={"returns": None},
-        ),
-    ]
-
-    row = check_fixtures(fixtures, tmp_path, FixturesConfig(timeout=TINY_TIMEOUT))
-
-    assert row.passed is False
-    assert "Function fixture timed out" in "".join(row.details)
-    assert_unmeasured(row)
-
-
-def test_a_function_fixture_that_could_not_be_launched_measured_nothing(
-    tmp_path: Path,
-) -> None:
-    fixtures = [
-        Fixture(
-            description="a function fixture with nowhere to run",
-            fixture_type="function",
-            input_data={"module": "time", "function": "time", "args": []},
-            expected={},
-        ),
-    ]
-
-    row = check_fixtures(fixtures, tmp_path / "gone", FixturesConfig())
-
-    assert row.passed is False
-    assert "Failed to launch fixture subprocess" in "".join(row.details)
-    assert_unmeasured(row)
-
-
-def test_a_function_fixture_that_ran_and_failed_did_measure(tmp_path: Path) -> None:
-    """The control for the three above, on the function path specifically.
-
-    Without it, marking every function-fixture row unmeasured would pass them,
-    and that mistake empties a baseline instead of filling it.
-    """
-    fixtures = [
-        Fixture(
-            description="a function whose answer is wrong",
-            fixture_type="function",
-            input_data={"module": "time", "function": "time", "args": []},
-            expected={"returns": "not a timestamp"},
-        ),
-    ]
-
-    assert_measured(check_fixtures(fixtures, tmp_path, FixturesConfig()))
-
-
 def test_a_malformed_fixture_definition_still_counts_as_measured(tmp_path: Path) -> None:
     """The line the sweep draws, pinned from the other side.
 
@@ -537,24 +462,16 @@ def test_a_schema_invalid_prd_measured_no_fixtures(tmp_path: Path) -> None:
 # --- the other spelling of the same rule ---------------------------------
 
 
-def test_a_not_measured_gap_lands_where_an_unmeasured_row_does(
-    tmp_path: Path, only_path: Path
-) -> None:
+def test_a_not_measured_gap_lands_where_an_unmeasured_row_does() -> None:
     """A gap and a ``measured=False`` row are the same fact in two shapes.
 
-    #335 split the dead-code check so that every way it can measure nothing
-    returns a :class:`NotMeasured` gap rather than a passing row, which is why
-    nothing in that function carries ``measured=`` at all. The baseline has to
-    read both through one path, or half the mechanism is missing depending on
-    which check produced it.
-
-    Driven from the real function with ruff off PATH, so the gap is the
-    tool-missing one rather than a constructed object.
+    The baseline has to read both through one path, or half the mechanism is
+    missing depending on which check produced it. The gap is the one Phase 1
+    ships (``LAYER0_NOT_MEASURED``, #696 decision 7), not a constructed one.
+    Its check is one kstrl retired, so the comparison names it in ``retired``
+    and never in ``stopped_measuring``: an operator cannot bring it back.
     """
-    outcome = check_dead_code_ruff(tmp_path, 30.0, read_only=True)
-
-    assert isinstance(outcome, NotMeasured)
-    assert outcome.reason == "tool_missing"
+    outcome = LAYER0_NOT_MEASURED
 
     signature = f"{outcome.check}:an-earlier-finding"
     current = baseline.baseline_from_result(
@@ -582,21 +499,21 @@ def test_a_not_measured_gap_lands_where_an_unmeasured_row_does(
 
     assert comparison.fixed == {}
     assert comparison.unmeasured == {signature: 2}
-    assert outcome.check in comparison.stopped_measuring
-    assert comparison.regressed is True
+    assert comparison.stopped_measuring == {}
+    assert comparison.retired == (outcome.check,)
 
 
 def test_the_stubs_are_real_executables(only_path: Path) -> None:
-    """The control for the PATH-driven test above.
+    """The control for the PATH-driven tests above.
 
     A stub that is not executable makes ``shutil.which`` return None, which is
     the same answer as "not installed" - so the test would pass for the wrong
     reason and assert nothing at all.
     """
-    _stub(only_path, "ruff", 'echo "Found 3 errors."')
+    _stub(only_path, "probe", 'echo "Found 3 errors."')
 
     completed = subprocess.run(
-        ["ruff"],
+        ["probe"],
         capture_output=True,
         text=True,
         env={**os.environ, "PATH": str(only_path)},

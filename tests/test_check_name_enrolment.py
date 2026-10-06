@@ -191,6 +191,14 @@ ENROLLED_BUT_INVISIBLE = {
     "linter": "a retired pre-#696 fixed check name; no call site spells it",
     "typecheck": "a retired pre-#696 fixed check name; no call site spells it",
     "test_suite": "a retired pre-#696 fixed check name; no call site spells it",
+    # #696 slice 8: the checks that read one language's files or ran one
+    # language's tools. Enrolled for the journal history that carries them.
+    "dead_code": "a check #696 slice 8 retired; no call site spells it",
+    "dead_code_ruff": "a check #696 slice 8 retired; no call site spells it",
+    "mutation_testing": "a check #696 slice 8 retired; no call site spells it",
+    "patch_coverage": "a check #696 slice 8 retired; no call site spells it",
+    "diff_mutation": "a check #696 slice 8 retired; no call site spells it",
+    "test_adequacy": "a check #696 slice 8 retired; no call site spells it",
 }
 
 #: The whole of ``_CATEGORY_BY_CHECK``, pinned row by row rather than in
@@ -531,19 +539,14 @@ class TestEveryCheckNameIsEnrolled:
             "ComponentPipeline._coverage_failure",
             "f'{phase}:coverage-unverified:{reason}'",
         ) not in blind_sites(), "a check name resolved from the call sites"
-        # #306: this one was not pinned, and so was not protected.
-        # Rewriting `CheckResult(name="mutation_testing", ...)` as
-        # `name=name` off a function-local took the walk from 19 names
-        # to 18 with nothing failing: the walk fails on an unenrolled
-        # name and cannot fail on one it cannot see. Measured on that
-        # branch before the fix.
-        assert "mutation_testing" in names, "check-name constant in the defining module"
-        # #335 split one dead-code row in two, and both names are now
-        # module constants in verify.py rather than repeated literals.
-        # Pinned beside mutation_testing for the same reason: the walk
-        # resolves module constants, so a rewrite to a function-local
-        # would take both names out of the census silently.
-        assert {"dead_code", "dead_code_ruff"} <= names, "both dead-code phases"
+        # #306: a check name spelled only by a module constant in its
+        # defining module. Rewriting `CheckResult(name="mutation_testing",
+        # ...)` as `name=name` off a function-local once took the walk from
+        # 19 names to 18 with nothing failing. #696 slice 8 removed
+        # mutation_testing and the dead-code names that also pinned it;
+        # "stack" (asserted above) is the same shape, `NO_STACK_CHECK` in
+        # verify.py, and measured: replacing that one argument with a
+        # function-local takes "stack" out of the census.
 
     def test_every_emitted_name_is_enrolled(self) -> None:
         """#315 emptied the grandfathered set, so this has no exceptions

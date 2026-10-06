@@ -451,16 +451,10 @@ class TestTheReadBytesExclusion:
     the parse guard to ``Exception``, which is only safe once no
     ``OSError`` can reach it.
 
-    ``verify.py`` moved from one site to two under #414: the bad-patterns
-    scan's ``_content_finding`` reads a file's bytes to check emptiness by
-    truthiness - no ``bytes.decode`` follows it anywhere, so ``py_compile``
-    is the only decoder that ever runs on this content - alongside the
-    pre-existing ``pyproject.read_bytes()``, which #635 moved to
-    ``toolchains.python_typecheck_default``.
-    That is the seventh (opposite-reason) site: on the base-probe path it
-    runs through ``_base_finding``, whose own ``except Exception`` wraps
-    it deliberately, because every failure there means "cannot clear",
-    which is the blocking direction (#425 review, finding S4).
+    ``verify.py`` held the seventh (opposite-reason) site: the bad-patterns
+    scan's ``_content_finding`` read a file's bytes to check emptiness by
+    truthiness, with no ``bytes.decode`` after it. #696 slice 8 removed it
+    with the empty-file and syntax-error rules, which read one language.
 
     ``signals.py`` (R8.8 slice 1 / #155) adds a THIRD reason, neither of
     the two above: ``read_ledger`` and ``read_page_text`` both put
@@ -498,7 +492,8 @@ class TestTheReadBytesExclusion:
         # flag day slice 4 removed the command half of toolchain
         # detection, kstrl.toolchains's own docstring says so, and that
         # read fed choosing a per-tool command, not detection.
-        "verify.py": 1,
+        # verify.py's `_content_finding` read (#414) is gone too: #696
+        # slice 8 removed the empty-file and syntax-error rules it served.
         "workqueue.py": 1,  # #644: Queue.answer hashes the spec, never decodes it
     }
 

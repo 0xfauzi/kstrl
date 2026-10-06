@@ -27,7 +27,6 @@ from pathlib import Path
 import pytest
 
 from kstrl import doctor, git, guards, loop, verify
-from kstrl.adequacy import AdequacyConfig
 from kstrl.breaker import compute_diff_hash
 from kstrl.config import KstrlConfig
 from kstrl.policy import PolicyConfig
@@ -235,19 +234,6 @@ def test_quotepath_off_does_not_change_the_numstat_reader(tmp_path: Path) -> Non
 # --- 6/7: the two gates that read the diff directly -----------------------
 
 
-def test_check_test_adequacy_fails_closed_on_a_diff_it_cannot_decode(tmp_path: Path) -> None:
-    repo = _repo(tmp_path)
-    _commit_undecodable_content(repo)
-
-    result = verify.check_test_adequacy(repo, "main", AdequacyConfig())
-
-    assert result.passed is False
-    assert result.measured is False
-    assert "could not read the diff" in result.message
-    assert len(result.findings) == 1
-    assert "not valid utf-8" in result.findings[0].explanation
-
-
 def test_check_policy_envelope_reads_content_that_is_not_utf_8(tmp_path: Path) -> None:
     """Since #695 the envelope reads the diff with ``as_stored=True``, which
     keeps a byte that is not utf-8 rather than refusing it, so a latin-1 file
@@ -324,40 +310,6 @@ def test_check_bad_patterns_still_passes_vacuously_on_an_empty_diff(tmp_path: Pa
     assert result.measured is False
 
 
-#: A legal Python file whose bytes are not utf-8: `BAD_CONTENT` above with a
-#: PEP 263 declaration in front of it. py_compile honours the declaration,
-#: so only a SECOND decode outside py_compile can fail on this, which is
-#: what the scan used to do (#414). Built from the existing constant rather
-#: than written out again (#425 simplify pass F2), so the file's three
-#: latin-1 fixtures stay one spelling and no codespell suppression is
-#: needed ([tool.codespell] in pyproject.toml).
-LATIN1_SOURCE: bytes = b"# -*- coding: latin-1 -*-\n" + BAD_CONTENT
-
-
-def test_check_bad_patterns_does_not_crash_on_a_renamed_latin_1_source_file(
-    tmp_path: Path,
-) -> None:
-    """A rename-only diff decodes fine, so the scan reaches the file itself, and
-    the old ``read_text(encoding='utf-8')`` raised ``UnicodeDecodeError`` out of a
-    blocking Phase 1 gate. Measured on main at 6a354cc."""
-    repo = _repo(tmp_path)
-    gitrepo.git_in(repo, "checkout", "-q", "main")
-    (repo / "legacy.py").write_bytes(LATIN1_SOURCE)
-    gitrepo.git_in(repo, "add", "-A")
-    gitrepo.git_in(repo, "commit", "-qm", "a latin-1 source file on main")
-    gitrepo.git_in(repo, "checkout", "-qB", "work")
-    (repo / "base.py").write_text("x = 2\n", encoding="utf-8")
-    gitrepo.git_in(repo, "add", "-A")
-    gitrepo.git_in(repo, "mv", "legacy.py", "moved.py")
-    gitrepo.git_in(repo, "commit", "-qm", "rename the latin-1 file")
-
-    result = verify.check_bad_patterns(repo, "main")
-
-    assert result.passed is True
-    assert result.measured is True
-    assert result.details == []
-
-
 # --- 9b: the altitude the issue actually complains about -------------------
 
 
@@ -367,7 +319,7 @@ def test_the_mechanical_verifier_returns_a_verdict_on_a_diff_it_cannot_decode(
     """ "A run that has already spent money dies with a traceback instead
     of a verdict" - the issue's own words. Drives the real entry point."""
     repo = _repo(tmp_path)
-    _commit_undecodable_content(repo)
+    _commit_undecodable_path(repo)
 
     result = verify.run_mechanical_verification(
         repo,
@@ -378,13 +330,13 @@ def test_the_mechanical_verifier_returns_a_verdict_on_a_diff_it_cannot_decode(
             project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
             subprocess_timeout=30.0,
         ),
-        adequacy_config=AdequacyConfig(enabled=True),
     )
 
-    adequacy_rows = [c for c in result.checks if c.name == "test_adequacy"]
-    assert len(adequacy_rows) == 1
-    assert adequacy_rows[0].passed is False
-    assert adequacy_rows[0].measured is False
+    rows = [c for c in result.checks if c.name == "bad_patterns"]
+    assert len(rows) == 1
+    assert rows[0].passed is False
+    assert rows[0].measured is False
+    assert result.passed is False
 
 
 # --- 11: the readers -z reaches (#423) ------------------------------------

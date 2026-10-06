@@ -102,21 +102,12 @@ def _scope_row(source_file: Path, node: ast.AST) -> str:
 EXPECTED_SELECTOR_SITES: dict[str, tuple[int, str]] = {
     "adequacy.py: <module>": (
         2,
-        "TEST_PATH_RE's own definition, its pattern and its name; the readers are "
-        "is_test_path's callers",
-    ),
-    "adequacy.py: coverage_targets": (
-        1,
-        "empty targets make check_patch_coverage return NotMeasured no_target",
+        "TEST_PATH_RE's own definition, its pattern and its name; the one reader is "
+        "is_test_path's caller, integration_fix (#696 decision 6 removes it)",
     ),
     "adequacy.py: is_test_path": (
         1,
         "a predicate over one path; each caller reports its own empty",
-    ),
-    "adequacy.py: unread_test_paths": (
-        1,
-        "the complement: non-Python test files, which check_test_adequacy reports as "
-        "NotMeasured no_target or names in its row message",
     ),
     "lockfiles.py: parse_new_dependencies": (
         1,
@@ -135,19 +126,6 @@ EXPECTED_SELECTOR_SITES: dict[str, tuple[int, str]] = {
     "policy.py: evaluate_policy": (
         1,
         "the location label of a deps_allow_new violation; selects nothing",
-    ),
-    "verify.py: _changed_non_test_python": (
-        1,
-        "empty makes both callers (mutation and dead-code scan) return NotMeasured no_target",
-    ),
-    "verify.py: _python_test_sources": (
-        1,
-        "the Python half of test_adequacy; unread_test_paths covers the rest",
-    ),
-    "verify.py: check_bad_patterns": (
-        1,
-        "the Python rules only; the secret rule reads every changed file and the "
-        "message names both scopes",
     ),
 }
 
@@ -226,30 +204,16 @@ _TOOL_CONTROLS = (
 #: expressions do and what they are. DERIVED BY RUNNING THIS FILE: a moved
 #: count is read off the failure's ``Found:`` dict.
 EXPECTED_TOOL_LITERALS: dict[str, tuple[int, str]] = {
-    "adequacy.py": (5, "Python-only check: pytestmark and mutmut's junitxml report messages"),
-    # #696: down from 4. The --test-command/--lint-command help text that
-    # named the uv run pytest/ruff defaults is gone with the flags.
-    "cli.py": (3, "help text naming the Python-only checks"),
+    # #696 slice 8: the retired check name dead_code_ruff, which a baseline
+    # written before the retirement carries (baseline.RETIRED_CHECKS).
+    "baseline.py": (1, "a retired check's name the comparison must recognise"),
     # #696: contract.py's and doctor.py's rows are gone outright. Both
     # named a retired per-tool command default (contract.py's exit-5
     # message was about [verify] test_suite; doctor.py's was the
-    # `uv run` default warning for an unset [verify] key).
+    # `uv run` default warning for an unset [verify] key). #696 slice 8
+    # removed adequacy.py's, cli.py's, feature_verify.py's, init_cmd.py's
+    # and verify.py's rows with the checks that ran a Python tool.
     "evolution.py": (4, "_classify_check's keywords for Phase 1 check names"),
-    "feature_verify.py": (1, "message naming the dead_code_ruff check"),
-    # #696: down from 4. kstrl_toml_for, which seeded DEFAULT_KSTRL_TOML's
-    # commented-out [verify] command lines from the detected toolchain, is
-    # gone with [verify] itself. #696 slice 6: down from 3, with
-    # BUILD_MANIFEST_FIX's uv commands and the Python standards prompt.
-    "init_cmd.py": (
-        1,
-        "DEFAULT_KSTRL_TOML's commented dead_code_command default, which slice 8 removes",
-    ),
-    "verify.py": (
-        41,
-        "the Python-only checks (mutation, dead code, patch coverage) and their "
-        "messages; each reports NotMeasured on a tree they cannot read. #696 "
-        "retired one more: a message of the per-tool gates this flag day removed",
-    ),
 }
 
 
@@ -305,8 +269,9 @@ def test_a_tool_name_in_a_docstring_is_not_counted() -> None:
 #: every command kstrl chose for a tree: a confirmed ``[stack]`` is the
 #: only source now. #696 slice 6 retired detection (``TOOLCHAINS``,
 #: ``detect``, ``toolchain_named``): ``ks init`` reads no language. What is
-#: left is the build-manifest names the decompose refusal reads (slice 7)
-#: and the fixture runner's Python test (slice 8).
+#: left is the build-manifest names the decompose refusal reads (slice 7).
+#: #696 slice 8 removed the fixture runner's Python test and the two names
+#: it read; they stay here so a reintroduction is a census delta.
 OBTAIN_POINTS = (
     "BUILD_MANIFESTS",
     "PYTHON_MANIFESTS",
@@ -334,14 +299,11 @@ def reaches_an_obtain_point(node: ast.AST) -> bool:
 #: a detected toolchain's commands into the retired [verify].
 EXPECTED_OBTAIN_SITES: dict[str, tuple[int, str]] = {
     "decompose.py: <module>": (2, "imports BUILD_MANIFESTS for ROOT_BUILD_MANIFESTS (slice 7)"),
-    "fixtures.py: <module>": (1, "imports is_python_project"),
-    "fixtures.py: fixture_tree_errors": (1, "a function fixture needs a Python tree (#632)"),
     "init_cmd.py: <module>": (1, "imports has_build_manifest"),
     "init_cmd.py: build_manifest_blocker": (1, "the #434 refusal, which slice 7 removes"),
     "init_cmd.py: build_manifest_ok_reason": (1, "the doctor row's ok detail for the same refusal"),
-    "toolchains.py: <module>": (5, "the two tuples, one built from the other"),
+    "toolchains.py: <module>": (2, "BUILD_MANIFESTS' definition; 2 is the walk's own count"),
     "toolchains.py: has_build_manifest": (1, "reads BUILD_MANIFESTS"),
-    "toolchains.py: is_python_project": (1, "reads PYTHON_MANIFESTS"),
 }
 
 

@@ -38,10 +38,10 @@ Exception: raise`` and clear the check on the outer clause alone (#427
 simplify pass, group A).
 
 Disclosed blind spot, not covered by either layer: a ``json.loads`` call
-that lives inside a Python source string built for a subprocess, such as
-``kstrl/fixtures.py``'s embedded function-fixture runner, is invisible
-to a walk of ``kstrl/``'s own AST, because the walk sees a string
-constant there, not a call.
+that lives inside a Python source string built for a subprocess (the
+function-fixture runner held one until #696 slice 8 deleted it) is
+invisible to a walk of ``kstrl/``'s own AST, because the walk sees a
+string constant there, not a call.
 """
 
 from __future__ import annotations
@@ -117,7 +117,8 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     # #632: the import, json.dumps for the canonical form, and the
     # json.JSONDecodeError it catches from read_json. No parse.
     "fixture_expect.py": 7,
-    "fixtures.py": 4,
+    # 2: #696 slice 8 deleted the function-fixture runner's result parse.
+    "fixtures.py": 2,
     "fixtures_snapshot.py": 2,
     "inbox.py": 4,
     "init_cmd.py": 3,
@@ -150,7 +151,6 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     # table is read through load_toml_document.
     "stack.py": 10,
     "statedir.py": 2,
-    "verify.py": 1,
     # #595: the import and one json.dumps, the canonical JSON the waiver
     # key hashes. No parse.
     "waivers.py": 2,

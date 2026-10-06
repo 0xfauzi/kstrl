@@ -56,26 +56,6 @@ class TestAMidRunEditDoesNotChangeWhatIsEnforced:
         assert {r.policy.max_files_changed for r in readings} == {5}
         assert {r.policy.deps_allow_new for r in readings} == {False}
 
-    @pytest.mark.parametrize("autonomy", ["false", "true"])
-    def test_the_adequacy_posture_is_the_one_the_run_started_with(
-        self, tmp_path: Path, autonomy: str
-    ) -> None:
-        """AdequacyConfig has no envelope hash and is in no artifact, so
-        at 414d662 the posture a component was judged under flipped with
-        nothing anywhere recording that it had."""
-        (tmp_path / "kstrl.toml").write_text(BEFORE.format(autonomy=autonomy))
-        envelope = RunEnvelope.load(tmp_path)
-        comps = [component("comp-a"), component("comp-b")]
-
-        readings = phase_verify_envelopes(
-            tmp_path,
-            comps,
-            between=edit(tmp_path, AFTER.format(autonomy=autonomy)),
-            run_envelope=envelope,
-        )
-
-        assert {r.adequacy.enabled for r in readings} == {True}
-
     def test_phase_one_is_handed_the_envelope_level_not_the_stored_one(
         self, tmp_path: Path
     ) -> None:
@@ -160,13 +140,13 @@ class TestTheParseCountDoesNotGrowWithComponents:
             f"1 component cost {one} (calls, parses) and 8 cost {eight}, "
             "so the config cost still grows with the component count."
         )
-        # Stated rather than left as "equal". 8 calls, all eight inside
-        # ``RunEnvelope.load`` (the eighth is ``[release]``, #154); 1
-        # parse, because they share one ``toml_parse_scope``, which is
-        # the whole point of the block. It was (7, 2) while
-        # ``ComponentPipeline.__init__`` still resolved four of them in
-        # a scope of its own.
-        assert one == (8, 1)
+        # Stated rather than left as "equal". 7 calls, all seven inside
+        # ``RunEnvelope.load`` (one per section; #696 slice 8 removed
+        # ``[adequacy]``, which was the eighth); 1 parse, because they
+        # share one ``toml_parse_scope``, which is the whole point of the
+        # block. It was (7, 2) while ``ComponentPipeline.__init__`` still
+        # resolved four of them in a scope of its own.
+        assert one == (7, 1)
 
 
 class TestRunEnvelope:
@@ -176,7 +156,6 @@ class TestRunEnvelope:
         (tmp_path / "kstrl.toml").write_text(BEFORE.format(autonomy="false"))
         envelope = RunEnvelope.load(tmp_path)
         assert envelope.policy.max_files_changed == 5
-        assert envelope.adequacy.enabled is True
         assert envelope.autonomy.enabled is False
         assert envelope.autonomy_level == 0
         assert envelope.policy_hash() == envelope.policy.envelope_hash()
@@ -208,7 +187,6 @@ class TestRunEnvelope:
         injected = PolicyConfig(enabled=True, max_files_changed=42)
         envelope = RunEnvelope.load(tmp_path, policy_override=injected)
         assert envelope.policy is injected
-        assert envelope.adequacy.enabled is True
 
     def test_it_is_frozen(self, tmp_path: Path) -> None:
         """The factory clamps it with ``replace``; nothing edits one in

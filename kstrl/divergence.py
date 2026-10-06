@@ -139,8 +139,7 @@ class DivergenceMode(StrEnum):
     """What a trip does.
 
     ``advisory``/``block`` is the vocabulary of the other advisory-first
-    gates, ``[adequacy] layer0`` and ``[factory] claim_agreement``,
-    plus a skip. Deliberately NOT ``[security] mode``'s
+    gate, ``[factory] claim_agreement``, plus a skip. Deliberately NOT ``[security] mode``'s
     ``hard|advisory|skip``: "hard" describes how a reviewer reads, and
     this is not a reviewer.
     """
@@ -182,11 +181,11 @@ class DivergenceConfig:
     name what it caught and what it flagged wrongly. Advisory mode is
     what produces that evidence.
 
-    Unlike ``adequacy.layer0_blocks`` and ``review.claim_blocks``, the
-    autonomy ladder deliberately does NOT harden this gate at L1+, and
-    that asymmetry is a decision rather than an oversight. Those two
-    gates ask "did an independent check confirm the claim", and a run
-    spending less human attention should insist on that harder. This one
+    Unlike ``review.claim_blocks``, the autonomy ladder deliberately does
+    NOT harden this gate at L1+, and that asymmetry is a decision rather
+    than an oversight. That gate asks "did an independent check confirm
+    the claim", and a run spending less human attention should insist on
+    that harder. This one
     forecasts, from a heuristic with no measured false-positive rate,
     that further retries are not worth buying. Auto-hardening it at the
     exact levels where nobody is watching is how an unattended run gets

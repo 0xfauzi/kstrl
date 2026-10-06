@@ -67,7 +67,6 @@ from kstrl.divergence import (
     review_finding_keys,
 )
 from kstrl.findings import (
-    ADEQUACY_CATEGORY_PREFIX,
     CLAIM_DISAGREEMENT_CATEGORY,
     POLICY_CATEGORY_PREFIX,
     Finding,
@@ -117,6 +116,7 @@ from kstrl.security import SecurityConfig, SecurityMode, SecurityResult
 from kstrl.statedir import ControlStateError, pre_run_prd_path
 from kstrl.timeout import limit_seconds
 from kstrl.verify import (
+    LAYER0_NOT_MEASURED,
     SCOPE_UNREADABLE_CHECK,
     CheckResult,
     MechanicalVerification,
@@ -687,10 +687,9 @@ class ComponentPipeline:
         # this change made rather than a shape it inherited: one
         # spelling per section at the point of use, against reading
         # ``self.run_envelope.<section>`` at nine sites. The envelope
-        # also carries what the autonomy ladder can clamp - [policy],
-        # [adequacy] and the level - so the clamped values are the ones
-        # enforced and recorded. (Only PolicyConfig is hashed:
-        # ``policy.envelope_hash`` covers no adequacy field.)
+        # also carries what the autonomy ladder can clamp - [policy]
+        # and the level - so the clamped values are the ones enforced
+        # and recorded.
         #
         # #266 review finding 3 for [sandbox]: the reviewer roles were
         # built with read_only=True and NO sandbox, so `[sandbox]
@@ -2825,7 +2824,7 @@ class ComponentPipeline:
             return None
 
     def snapshot_waivers(self) -> None:
-        """#595: read the approved policy_exception and test_adequacy items once.
+        """#595: read the approved policy_exception items once.
 
         Called by the factory right after ``apply_merge_decisions``: after
         every pre-spend refusal and before any engineer is scheduled. The
@@ -3111,7 +3110,7 @@ class ComponentPipeline:
         """Judge the head ``ks retry`` kept, with no engineer attempt (#646).
 
         ``ks retry`` keeps a failed branch when an approved policy_exception
-        or test_adequacy item was taken on its tip, and records that commit
+        item was taken on its tip, and records that commit
         in ``comp.rejudge_sha``. It is read once and cleared here, so only
         this attempt skips the engineer: a retry this attempt buys runs the
         engineer on the kept commits, and its edit is a new diff, asked
@@ -3498,7 +3497,7 @@ class ComponentPipeline:
     def _waivable_evidence(
         self, comp: Component, finding: Finding, change: tuple[str, str]
     ) -> dict[str, Any]:
-        """The evidence of a policy_exception or test_adequacy item (#595).
+        """The evidence of a policy_exception item (#595).
 
         ``waiver_key`` is what an approval of the item covers: exactly
         this finding, in this plan, for this component. ``head_sha`` and
@@ -3569,7 +3568,6 @@ class ComponentPipeline:
             ),
             fixtures_config=self.fixtures_config,
             policy_config=self.run_envelope.policy,
-            adequacy_config=self.run_envelope.adequacy,
             autonomy_level=self.run_envelope.autonomy_level,
             component_id=comp.id,
             # #595: the approvals snapshotted when the run started.
@@ -3612,32 +3610,14 @@ class ComponentPipeline:
                         ),
                         evidence=evidence,
                     )
-                # R8.5: same rule, same reason. A BLOCKING adequacy
-                # finding stopped the change and needs a human to decide
-                # whether the suite may weaken here; an ADVISORY one is
-                # recorded in the finding stream and stops there, because
-                # the inbox is a queue of decisions, not of notes. The
-                # dedupe key is category + location + waiver_key (#595
-                # B2) + diff_sha (#646), so the same change failing the
-                # same way across retries collapses onto one item, and a
-                # repeat with different evidence or on a different change
-                # does not.
-                elif (
-                    finding.category.startswith(ADEQUACY_CATEGORY_PREFIX)
-                    and finding.severity != "advisory"
-                ):
-                    evidence = self._waivable_evidence(comp, finding, change)
-                    self._inbox_add(
-                        ItemKind.TEST_ADEQUACY,
-                        f"{comp.id}: {finding.category}",
-                        detail=finding.explanation,
-                        component=comp.id,
-                        dedupe_key=(
-                            f"adequacy:{comp.id}:{finding.category}:{finding.location}:"
-                            f"{evidence['waiver_key']}:{evidence['diff_sha']}"
-                        ),
-                        evidence=evidence,
-                    )
+        # #696 decision 7: where Layer 0 ran, the pull request says nothing
+        # measured it, through R1.2's phase-skip callout (pr.py). Only on a
+        # pass, which is the only verification a pull request is built
+        # from: on a failure the event's not_measured carries the gap, and a
+        # finding would turn a failure with no evidence into one serve
+        # reports as judged on its merits (serve._merits_outcome).
+        if verification.passed and LAYER0_NOT_MEASURED in verification.not_measured:
+            self._record_phase_skip(comp, "adequacy", LAYER0_NOT_MEASURED.detail)
         self.bus.emit(
             ev.VerificationResultEvent(
                 component=comp.id,
@@ -4655,8 +4635,8 @@ class ComponentPipeline:
         """R10.3: whether a claim disagreement fails the component,
         and the severity its findings carry.
 
-        The autonomy level is the one ``_phase_verify`` uses for the
-        adequacy gate, and since #192 that is true by construction
+        The autonomy level is the one ``_phase_verify`` hands Phase 1,
+        and since #192 that is true by construction
         rather than by two copies of the same expression: both read the
         run's envelope, resolved once at run start.
         """

@@ -50,6 +50,7 @@ VALID_CONCERN_CATEGORIES = frozenset(
         "scope_creep",
         "security_concern",
         "test_quality",
+        "test_weakening",
         "unrelated_change",
         "dead_code",
         "error_handling",
@@ -675,10 +676,9 @@ def revert_unconfirmed_stories(
 def claim_blocks(config: FactoryConfig, autonomy_level: int) -> bool:
     """Whether a claim disagreement should FAIL the component.
 
-    Mirrors ``adequacy.layer0_blocks``. The config can opt in early
-    (``[factory] claim_agreement = "block"`` with the ladder off), and
-    the autonomy ladder can force it on from L1 upward, but neither can
-    turn it off once the other wants it. Autonomy is allowed to tighten a
+    The config can opt in early (``[factory] claim_agreement = "block"``
+    with the ladder off), and the autonomy ladder can force it on from L1
+    upward, but neither can turn it off once the other wants it. Autonomy is allowed to tighten a
     gate and never to loosen one.
 
     The gate ships advisory so that its first output is a measurement
@@ -697,7 +697,7 @@ def claim_blocks(config: FactoryConfig, autonomy_level: int) -> bool:
     return autonomy_level >= 1
 
 
-REVIEWER_PROMPT_VERSION = "2.1.0"
+REVIEWER_PROMPT_VERSION = "3.0.0"
 
 REVIEWER_PROMPT = """\
 You are a hostile senior reviewer. Your default stance is that the change is
@@ -707,7 +707,8 @@ review that surfaces nothing is suspicious - look harder.
 You verify two distinct things:
   1. PRD acceptance criteria - does the change implement them correctly?
   2. Cross-cutting concerns the PRD did not enumerate - scope creep, dead
-     code, sloppy tests, security smells, error-handling gaps, copy-paste.
+     code, sloppy tests, weakened tests, security smells, error-handling
+     gaps, copy-paste.
 
 OBTAINING THE CHANGE:
 {change_source}
@@ -758,9 +759,9 @@ Output schema:
   ],
   "concerns": [
     {{
-      "category": "scope_creep|security_concern|test_quality|unrelated_change|dead_code|error_handling|copy_paste|other",
+      "category": "scope_creep|security_concern|test_quality|test_weakening|unrelated_change|dead_code|error_handling|copy_paste|other",
       "severity": "fail|advisory",
-      "location": "path/to/file.py:42-58",
+      "location": "path/to/file:42-58",
       "explanation": "evidence-based description of the concern",
       "suggestion": "what to fix"
     }}
@@ -795,16 +796,27 @@ Concern categories - look for ALL of these, not just the ones the PRD asked abou
 - "security_concern": hardcoded secrets, shell/SQL/command injection paths,
   missing input validation on a trust boundary, auth/authz bypass, unsafe
   deserialization, broken crypto, predictable randomness for security uses
-- "test_quality": tautological assertions (`assert True`, `assert x == x`),
-  tests that pass without exercising the change, missing edge-case coverage
-  (empty inputs, None, boundary values, error paths), missing negative tests
+- "test_quality": a new or edited test that would still pass if the
+  implementation were wrong: an assertion that always holds, a test that
+  never exercises the change, a check only that a result exists or has a
+  type where an exact value is known, missing edge cases (empty input, a
+  missing value, boundary values, error paths), missing negative tests
+- "test_weakening": the change makes the existing tests guarantee less: a
+  test deleted, disabled, skipped or marked as an expected failure; an
+  assertion removed, or replaced by a weaker one (an exact expected value
+  replaced by a check that a result exists); an expected value edited to
+  match what the new code returns; a test input narrowed so it no longer
+  reaches the behaviour it names; test or check configuration edited so
+  fewer tests run. Use severity "fail" unless an acceptance criterion in
+  the PRD section asks for that exact removal, and cite the removed lines.
+  No other check looks for this: kstrl does not read test files itself.
 - "unrelated_change": touches files or symbols outside the component's
   natural scope
 - "dead_code": new code with no caller, parameters never used, imports
   unused, conditional branches that cannot fire
-- "error_handling": bare excepts, errors silenced with `pass`/empty handlers,
-  missing error paths for foreseeable failures, error messages that lose
-  information
+- "error_handling": a catch-all handler that hides the cause, an error
+  caught and discarded by an empty handler, missing error paths for
+  foreseeable failures, error messages that lose information
 - "copy_paste": near-duplicate of an existing helper that should be reused
 - "other": catch-all for anything that doesn't fit but matters
 
@@ -815,7 +827,7 @@ Severity:
 Evidence rules:
 - Every verdict AND every concern must cite specific file:line ranges,
   each written as the file's path from the repository root and its lines
-  (path/to/file.py:42-58). A module, class or function name alone is not a
+  (path/to/file:42-58). A module, class or function name alone is not a
   citation. When the evidence is in more than one file, such as a call in
   one file into a function defined in another, cite each of those files.
 - Do not guess - if you cannot verify it from what you read, do not assert it
@@ -831,7 +843,9 @@ Evidence rules:
 Process: read every hunk of the change. For each new function, ask: what
 inputs make this misbehave? what callers does it have? what error paths
 does it leave un-handled? For each test, ask: would this test fail if the
-implementation were wrong? Then assemble your output.
+implementation were wrong? For each removed or edited line in a test or in
+test configuration, ask: does the suite still guarantee what it did before
+this change? Then assemble your output.
 
 <<<{data_delimiter}:BEGIN PRD (acceptance criteria to verify)>>>
 {prd_content}

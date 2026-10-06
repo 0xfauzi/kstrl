@@ -402,6 +402,9 @@ class TestTheWalkAgainstTheRealPackage:
         #696 slice 6 deletes three: ``git.stage_file``, ``git.ignore_source``
         and ``git.ignored_paths``, whose only callers were ``ks init``'s
         lockfile staging and language ignores. So 79.
+        #696 slice 8 deletes two: ``doctor.check_test_root``'s ``git ls-files
+        -z`` and ``verify._base_finding``'s ``git show <base>:<path>``, both
+        readers of one language's files. So 77.
         """
         spawns = frozenset(
             {
@@ -413,7 +416,7 @@ class TestTheWalkAgainstTheRealPackage:
             }
         )
         found = package_calls(spawns)
-        assert len(found.seen) == 79
+        assert len(found.seen) == 77
         assert found.without_line_numbers().undecided == tuple(
             sorted(
                 [

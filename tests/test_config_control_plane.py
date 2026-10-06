@@ -114,12 +114,13 @@ class TestFactoryCommandTomlRoundTrip:
 
     def test_verify_section(self, tmp_path: Path, captured: dict[str, Any]) -> None:
         # #696 flag day: [verify] test_command is retired (verification
-        # commands come only from a confirmed [stack]); mutation_threshold
-        # and require_self_critique are ordinary [verify] keys, unaffected.
+        # commands come only from a confirmed [stack]);
+        # self_critique_min_bullets and require_self_critique are ordinary
+        # [verify] keys, unaffected.
         # A confirmed [stack] (not --no-verify) gets this one past the
         # checkpoint, since --no-verify also nulls verify_config.
         (tmp_path / "kstrl.toml").write_text(
-            "[verify]\nmutation_threshold = 75.0\nrequire_self_critique = true\n"
+            "[verify]\nself_critique_min_bullets = 5\nrequire_self_critique = true\n"
         )
         write_stack(tmp_path)
         confirm_stack(tmp_path)
@@ -127,7 +128,7 @@ class TestFactoryCommandTomlRoundTrip:
         assert result.exit_code == 0, result.output
         vc = captured["factory_config"].verify_config
         assert vc is not None
-        assert vc.mutation_threshold == 75.0
+        assert vc.self_critique_min_bullets == 5
         assert vc.require_self_critique is True
 
     def test_security_section(self, tmp_path: Path, captured: dict[str, Any]) -> None:
@@ -204,18 +205,18 @@ class TestFactoryCommandTomlRoundTrip:
 class TestRunCommandTomlRoundTrip:
     def test_verify_section(self, tmp_path: Path, captured: dict[str, Any]) -> None:
         # #696 flag day: [verify] test_command is retired (verification
-        # commands come only from a confirmed [stack]); mutation_threshold
-        # is an ordinary [verify] key, unaffected. A confirmed [stack]
+        # commands come only from a confirmed [stack]);
+        # self_critique_min_bullets is an ordinary [verify] key, unaffected. A confirmed [stack]
         # (not --no-verify) gets this one past the checkpoint, since
         # --no-verify also nulls verify_config.
-        (tmp_path / "kstrl.toml").write_text("[verify]\nmutation_threshold = 61.0\n")
+        (tmp_path / "kstrl.toml").write_text("[verify]\nself_critique_min_bullets = 6\n")
         write_stack(tmp_path)
         confirm_stack(tmp_path)
         result = _invoke_run(tmp_path, no_verify=False)
         assert result.exit_code == 0, result.output
         vc = captured["factory_config"].verify_config
         assert vc is not None
-        assert vc.mutation_threshold == 61.0
+        assert vc.self_critique_min_bullets == 6
 
     def test_security_section(self, tmp_path: Path, captured: dict[str, Any]) -> None:
         (tmp_path / "kstrl.toml").write_text('[security]\nmode = "advisory"\n')
@@ -370,10 +371,10 @@ class TestPrecedence:
         # the dataclass default and skipped it on equality, so an env
         # var explicitly set to the default value could not override a
         # toml value.
-        (tmp_path / "kstrl.toml").write_text("[verify]\nmutation_threshold = 75.0\n")
-        monkeypatch.setenv("KSTRL_MUTATION_THRESHOLD", "50")
+        (tmp_path / "kstrl.toml").write_text("[verify]\nself_critique_min_bullets = 7\n")
+        monkeypatch.setenv("KSTRL_VERIFY_SELF_CRITIQUE_MIN_BULLETS", "3")
         config = VerifyConfig.load(tmp_path)
-        assert config.mutation_threshold == 50.0
+        assert config.self_critique_min_bullets == 3
 
 
 # ---------------------------------------------------------------------------

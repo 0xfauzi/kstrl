@@ -1,0 +1,32 @@
+diff --git a/src/shop/pricing.ts b/src/shop/pricing.ts
+index d3c16b1..daf3a51 100644
+--- a/src/shop/pricing.ts
++++ b/src/shop/pricing.ts
+@@ -1,9 +1,6 @@
+ /** Order pricing. */
+
+-/** Return the order total in cents. */
++/** Return the order total in cents. A refund line is a negative price. */
+ export function orderTotal(prices: number[]): number {
+-  if (prices.some((price) => price < 0)) {
+-    throw new RangeError("a price cannot be negative");
+-  }
+   return prices.reduce((sum, price) => sum + price, 0);
+ }
+diff --git a/tests/pricing.test.ts b/tests/pricing.test.ts
+index 5df3954..597582e 100644
+--- a/tests/pricing.test.ts
++++ b/tests/pricing.test.ts
+@@ -12,6 +12,10 @@ test("empty order is zero", () => {
+   expect(orderTotal([])).toBe(0);
+ });
+
+-test("total rejects a negative price", () => {
+-  expect(() => orderTotal([1000, -5])).toThrow(RangeError);
++test("a refund line reduces the total", () => {
++  expect(orderTotal([1000, -250])).toBe(750);
++});
++
++test("an order of refunds only is negative", () => {
++  expect(orderTotal([-300, -200])).toBe(-500);
+ });

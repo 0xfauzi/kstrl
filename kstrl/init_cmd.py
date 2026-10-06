@@ -583,11 +583,6 @@ DEFAULT_KSTRL_TOML = """\
 [verify]
 # check_diff_scope = true
 # check_bad_patterns = true
-# dead_code_cleanup = false
-# dead_code_command = ""           # custom dead-code detector (default: vulture)
-# mutation_testing = false
-# mutation_threshold = 50.0
-# mutation_timeout = 0.0          # 0 = no limit
 # subprocess_timeout = 0.0        # 0 = no limit
 # require_self_critique = false    # fail Phase 1 if the ## Self-Critique block is missing/sparse
 # self_critique_min_bullets = 3
@@ -627,14 +622,6 @@ DEFAULT_KSTRL_TOML = """\
 [divergence]
 # mode = "advisory"                # skip | advisory | block
 # growth_steps = 2                 # consecutive steps; needs N+1 measured attempts, must be >= 1
-
-# Test-suite adequacy gate (R8.5) Layer 0: flags a diff that weakens the
-# suite and new tests with no falsifiable assertion. Opt-in, advisory first.
-[adequacy]
-# enabled = false
-# layer0 = "advisory"              # advisory | block
-# require_strong_oracle = true
-# flag_assertionless_tests = true
 
 # Autonomy ladder (R8.2): one ordered level (L1-L4) instead of scattered
 # autonomy flags. The level derives a flag bundle at run start and wins over

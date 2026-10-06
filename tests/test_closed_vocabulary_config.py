@@ -54,8 +54,10 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 #: 58: #700 slice 4 added ``FactoryConfig.acceptance_dir``, a directory path
 #: (open). #696 slice 4 retired the three gate commands and the three parser
 #: pins of ``[verify]``, ``[factory] worktree_setup_command``, ``[contract]
-#: test_command`` and ``[breaker] test_command``.
-EXPECTED_STRING_FIELDS = 49
+#: test_command`` and ``[breaker] test_command``. 47: #696 slice 8 removed
+#: ``AdequacyConfig.layer0`` (closed) and ``VerifyConfig.dead_code_command``
+#: (open) with the checks that read them.
+EXPECTED_STRING_FIELDS = 47
 
 #: Re-derived by running ``use_site_parses()`` on this tree.
 EXPECTED_USE_SITE_PARSES = {("kstrl/pipeline.py", "ReviewMode", "review_mode")}

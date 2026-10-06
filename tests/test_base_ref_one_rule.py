@@ -121,7 +121,6 @@ EXPECTED_REF_OPERAND_ARGVS: dict[str, int] = {
     "contract.py git merge --abort": 1,
     "contract.py git worktree remove --force str(worktree_path)": 1,
     "contract.py git worktree prune": 1,
-    "doctor.py git ls-files -z": 1,
     "doctor.py git check-ignore -q -- probe": 1,
     "factory.py git worktree remove --force str(worktree_path)": 2,
     "factory.py git worktree add str(worktree_path) -b branch_name base_ref": 1,
@@ -183,8 +182,6 @@ EXPECTED_REF_OPERAND_ARGVS: dict[str, int] = {
     "retry_plan.py git branch -D failed_branch": 1,
     "statedir.py git -C str(root_dir) remote get-url origin": 1,
     "tui/screens/home.py git rev-parse --abbrev-ref HEAD": 1,
-    "verify.py git show f'{base_commit}:{path}'": 1,
-    "verify.py git add -A -- . f':(exclude){STATE_DIR_NAME}'": 1,
 }
 
 #: DERIVED BY RUNNING, same procedure as above. After #435's fix:

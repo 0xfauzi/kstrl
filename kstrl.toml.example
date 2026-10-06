@@ -185,11 +185,6 @@ worktree_setup_timeout = 0     # seconds; 0 = no limit (#467)
 # The command gates are the [stack]'s checks; this table configures the rest.
 check_diff_scope = true
 check_bad_patterns = true
-dead_code_cleanup = false
-dead_code_command = ""             # empty = smart default when dead_code_cleanup is on
-mutation_testing = false
-mutation_threshold = 50.0
-mutation_timeout = 600.0
 subprocess_timeout = 300.0
 require_self_critique = false      # opt-in: fail Phase 1 if engineer's ## Self-Critique block missing/sparse
 self_critique_min_bullets = 3
@@ -308,23 +303,9 @@ steer_enabled = false              # true = act on /memory and /iterate comments
 mode = "advisory"                  # skip | advisory | block
 growth_steps = 2                   # consecutive steps; needs N+1 measured attempts, must be >= 1
 
-# Test-suite adequacy gate (R8.5), Layer 0: reads the diff and changed test
-# files - no test execution, no coverage, no mutation tooling. Catches the
-# suite getting WEAKER (deleted tests, added skip/xfail, assertions removed)
-# and new tests that assert nothing falsifiable. Opt-in and ADVISORY first:
-# findings are recorded without failing, so switching it to blocking later
-# starts from evidence instead of a guess. With [autonomy] on, Layer 0 blocks
-# from L1 up per the roadmap's level table.
-[adequacy]
-enabled = false
-layer0 = "advisory"                # advisory | block
-require_strong_oracle = true       # each new test file needs one falsifiable assertion
-flag_assertionless_tests = true    # report tests that assert nothing
-# patch_coverage = false           # Layer 1 (#152): a second full test run under
-                                    # coverage; advisory, no floor - see docs/env-vars.md
-# diff_mutation = false            # Layer 2 (#152): mutate the changed+covered lines
-                                    # patch_coverage measured; needs patch_coverage = true;
-                                    # advisory, no floor - see docs/env-vars.md
+# kstrl reads no test file itself (#696 slice 8): the code reviewer judges
+# whether a change weakened the tests (the "test_weakening" concern), and a
+# dead-code, mutation or coverage tool is a check you add to [stack.checks].
 
 # Autonomy ladder (R8.2): one ordered level (L1-L4) replaces the scatter of
 # independent autonomy flags. The level derives a flag bundle at run start and

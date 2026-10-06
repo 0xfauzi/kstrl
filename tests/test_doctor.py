@@ -42,7 +42,7 @@ from tests.helpers.stack_confirmation import confirm_stack, write_stack
 GH_OK = "#!/bin/sh\nexit 0\n"
 GH_UNAUTHENTICATED = "#!/bin/sh\nexit 1\n"
 
-#: The nine rows the report carries, in order. The test's own
+#: The eight rows the report carries, in order. The test's own
 #: literal, not a constant imported from `kstrl.doctor`: each name is
 #: written once in production, inside its own check function, and a
 #: comparison against a second copy the module also owns would pass
@@ -54,7 +54,6 @@ EXPECTED_CHECK_NAMES = (
     "kstrl_config",
     "build_manifest",
     "verify_commands",
-    "test_root",
     "gitignore",
     "protected_paths",
 )
@@ -69,9 +68,8 @@ def ready_repo(tmp_path: Path, name: str = "demo") -> Path:
     """A repository every Tier A check passes on.
 
     Committed, so the tree is clean; `pyproject.toml` so a build
-    manifest is at the root; a test file so `adequacy.is_test_path`
-    matches; `.kstrl/` ignored; an origin remote so `git.get_origin_slug`
-    answers.
+    manifest is at the root; a test file; `.kstrl/` ignored; an origin
+    remote so `git.get_origin_slug` answers.
     """
     root = tmp_path / name
     root.mkdir()
@@ -250,18 +248,6 @@ def test_a_dirty_tree_warns(tmp_path: Path) -> None:
     assert "scratch.py" in result.output
 
 
-def test_a_repo_with_no_tests_warns_and_names_the_adequacy_gate(tmp_path: Path) -> None:
-    root = ready_repo(tmp_path)
-    (root / "tests" / "test_core.py").unlink()
-    (root / "tests").rmdir()
-    git_in(root, "add", "-A")
-    git_in(root, "commit", "-q", "-m", "drop tests")
-    result = run_doctor(root)
-    assert result.exit_code == 0, result.output
-    assert "[warn] test_root" in result.output
-    assert "adequacy" in result.output
-
-
 # #696 flag day: test_verify_commands_warn_when_there_is_no_project_for_uv_run
 # was deleted. Its subject was the "uv run" Python-default command the
 # verify_commands row used to guess with no pyproject.toml - that guessing
@@ -320,72 +306,9 @@ def test_the_refusals_carry_the_same_json_envelope_as_check(tmp_path: Path) -> N
 
 
 # --- #628: what doctor says about a repository that is not Python ---------
-
-#: The confirmed `[stack]` checks the #618 reproducer's Rust fixture carries
-#: (#696 flag day: a confirmed stack, not `[verify]` command keys, is the
-#: only source doctor's verify_commands row reads).
-RUST_CHECKS = {
-    "tests": "cargo test",
-    "typecheck": "cargo check",
-    "lint": "cargo clippy -- -D warnings",
-}
-
-#: The unit test sits inline in `#[cfg(test)]`, where `cargo new` code
-#: keeps it, so no tracked PATH reads as a test while `cargo test` runs one.
-PRICING_RS = (
-    "pub fn apply_discount(cents: u64, percent: u64) -> u64 {\n"
-    "    cents - cents * percent / 100\n"
-    "}\n"
-    "#[cfg(test)]\n"
-    "mod tests {\n"
-    "    use super::*;\n"
-    "    #[test]\n"
-    "    fn ten_percent() { assert_eq!(apply_discount(1000, 10), 900); }\n"
-    "}\n"
-)
-
-
-def rust_repo(tmp_path: Path) -> Path:
-    """The #618 Rust fixture, built without cargo: doctor runs no command."""
-    root = tmp_path / "rustapp"
-    root.mkdir()
-    git_in(root, "init", "-q", "-b", "main")
-    set_identity(root)
-    git_in(root, "remote", "add", "origin", "https://github.com/acme/rustapp.git")
-    (root / "Cargo.toml").write_text(
-        '[package]\nname = "rustapp"\nversion = "0.1.0"\nedition = "2021"\n', encoding="utf-8"
-    )
-    (root / ".gitignore").write_text(gitignore_block(), encoding="utf-8")
-    write_stack(root, RUST_CHECKS)
-    src = root / "src"
-    src.mkdir()
-    (src / "main.rs").write_text('fn main() {\n    println!("hi");\n}\n', encoding="utf-8")
-    (src / "lib.rs").write_text("pub mod pricing;\n", encoding="utf-8")
-    (src / "pricing.rs").write_text(PRICING_RS, encoding="utf-8")
-    git_in(root, "add", "-A")
-    git_in(root, "commit", "-q", "-m", "initial")
-    confirm_stack(root)
-    return root
-
-
-def doctor_rows(root: Path) -> dict[str, dict[str, str]]:
-    """Every row of `ks doctor --json`, by name."""
-    result = run_doctor(root, "--json")
-    assert result.exit_code == 0, result.output
-    return {check["name"]: check for check in json.loads(result.stdout)["checks"]}
-
-
-def test_test_root_on_a_rust_repo_does_not_claim_the_test_command_has_nothing_to_run(
-    tmp_path: Path,
-) -> None:
-    """The row counts tracked PATHS by the adequacy rule; `cargo test` runs
-    the inline module anyway. The warning stays, because the adequacy gate
-    really does see no test file: only the claim about the command goes."""
-    test_root = doctor_rows(rust_repo(tmp_path))["test_root"]
-    assert test_root["status"] == "warn"
-    assert "adequacy" in test_root["detail"]
-    assert "nothing to run" not in test_root["detail"]
-
+#
+# #696 slice 8 deleted the test_root row and, with it, the Rust fixture
+# whose inline tests no tracked path named.
 
 # #696 flag day: test_verify_commands_shows_the_resolved_contract_command,
 # test_verify_commands_shows_a_contract_command_set_in_kstrl_toml,
@@ -398,15 +321,13 @@ def test_test_root_on_a_rust_repo_does_not_claim_the_test_command_has_nothing_to
 
 
 def test_doctor_on_a_python_repo_is_unchanged(tmp_path: Path) -> None:
-    """The control: on the Python fixture every row is still ok, and
-    test_root says what it said before #628."""
+    """The control: on the Python fixture every row is still ok."""
     document = json.loads(run_doctor(ready_repo(tmp_path), "--json").stdout)
     rows = {check["name"]: check for check in document["checks"]}
     assert document["verdict"] == "ready"
     assert {name: row["status"] for name, row in rows.items()} == dict.fromkeys(
         EXPECTED_CHECK_NAMES, "ok"
     )
-    assert rows["test_root"]["detail"] == "1 tracked test path(s), e.g. tests/test_core.py"
     # #696 flag day: a confirmed [stack] is the only source of verification
     # commands now, so the row reads the stack `ready_repo` wrote and
     # confirmed rather than guessing a Python default.
@@ -491,7 +412,7 @@ def test_the_report_names_no_python_module(tmp_path: Path, state: str) -> None:
         root.mkdir()
         git_in(root, "init", "-q")
     result = run_doctor(root)
-    assert "test_root" in result.output
+    assert "protected_paths" in result.output
     assert module_paths(result.output) == []
 
 

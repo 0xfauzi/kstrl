@@ -94,12 +94,9 @@ CLOSED: dict[tuple[str, str], ClosedField] = {
     ("ContractConfig", "mode"): ClosedField(
         "contract", "mode", "KSTRL_CONTRACT_MODE", tuple(m.value for m in ContractMode)
     ),
-    # kstrl/adequacy.py and kstrl/policy.py write these two vocabularies
-    # inline in their validators and name no constant, so they are
-    # restated here. Both were already refused at load before #562.
-    ("AdequacyConfig", "layer0"): ClosedField(
-        "adequacy", "layer0", "KSTRL_ADEQUACY_LAYER0", ("advisory", "block")
-    ),
+    # kstrl/policy.py writes this vocabulary inline in its validator and
+    # names no constant, so it is restated here. It was already refused at
+    # load before #562.
     ("PolicyConfig", "license_unresolved"): ClosedField(
         "policy", "license_unresolved", "KSTRL_POLICY_LICENSE_UNRESOLVED", ("block", "advisory")
     ),
@@ -140,7 +137,6 @@ OPEN: dict[tuple[str, str], str] = {
     ),
     ("FactoryConfig", "review_agent_cmd"): "a shell command",
     ("FactoryConfig", "review_model"): "a model name",
-    ("VerifyConfig", "dead_code_command"): "a shell command",
     ("VerifyConfig", "progress_file_path"): "a path",
     ("SecurityConfig", "agent_cmd"): "a shell command",
     ("SecurityConfig", "model"): "a model name",

@@ -356,8 +356,8 @@ _ROLES: dict[str, _Role] = {
     "integration-reviewer": _Role(
         _integration_reviewer,
         frozenset({"REVIEWER_PROMPT", "REPO_CHANGE_SOURCE_PROMPT"}),
-        "42ec51c25b5e1bdf1c5c81b8637eeaaba3acdcd7a595229a767e04e4e54fabcc",
-        10910,
+        "2a5dd4260ff2046f0020bc65e23369f8e94c1bcdf8501a6c5db28874a1be6860",
+        11897,
     ),
     "pasted-change-source": _Role(
         lambda _p: git.pasted_change_source(_DIFF_TEXT)[0],
@@ -368,8 +368,8 @@ _ROLES: dict[str, _Role] = {
     "reviewer": _Role(
         _reviewer,
         frozenset({"REVIEWER_PROMPT", "REPO_CHANGE_SOURCE_PROMPT"}),
-        "9a3e07ce60cf63e71e9e0f8f403bfe7880f3c381e539816a2b4f1c07ee75f24b",
-        8537,
+        "7af16f559590270dec7132e8a2d2c6e298c68156eb07a53fc91b8e2a584856fd",
+        9524,
     ),
     "security": _Role(
         # Two arguments, exactly as ``run_security_review`` calls it

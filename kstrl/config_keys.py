@@ -61,6 +61,20 @@ _RETIRED_FOR_STACK = (
 #: source language's files or config.
 _RETIRED_SCAN_SECTION = "retired: the codebase scan reads no source language; remove it"
 
+#: Why a test-adequacy key no longer exists (#696 slice 8): Layer 0 read one
+#: language's test files. The code reviewer judges whether a change weakened
+#: the tests, and Phase 1 says Layer 0 was not measured from autonomy level 1.
+_RETIRED_ADEQUACY = (
+    "retired: kstrl reads no test file mechanically; the code reviewer judges whether "
+    "a change weakened the tests. Remove the [adequacy] section"
+)
+
+#: Why a dead-code, mutation or coverage key no longer exists (#696 slice 8).
+_RETIRED_TOOL_CHECK = (
+    "retired: kstrl runs no dead-code, mutation or coverage tool. Remove it, and add "
+    "the check you want to [stack.checks]"
+)
+
 #: (section, key) retired by #395 and #696, mapped to what replaced it: the
 #: refusal reads "names [section] key, which was <this>".
 RETIRED_KEYS: dict[tuple[str, str], str] = {
@@ -82,6 +96,17 @@ RETIRED_KEYS: dict[tuple[str, str], str] = {
     ("codebase_scan", "public_interfaces"): _RETIRED_SCAN_SECTION,
     ("codebase_scan", "dependency_graph"): _RETIRED_SCAN_SECTION,
     ("codebase_scan", "conventions"): _RETIRED_SCAN_SECTION,
+    ("verify", "dead_code_cleanup"): _RETIRED_TOOL_CHECK,
+    ("verify", "dead_code_command"): _RETIRED_TOOL_CHECK,
+    ("verify", "mutation_testing"): _RETIRED_TOOL_CHECK,
+    ("verify", "mutation_threshold"): _RETIRED_TOOL_CHECK,
+    ("verify", "mutation_timeout"): _RETIRED_TOOL_CHECK,
+    ("adequacy", "enabled"): _RETIRED_ADEQUACY,
+    ("adequacy", "layer0"): _RETIRED_ADEQUACY,
+    ("adequacy", "require_strong_oracle"): _RETIRED_ADEQUACY,
+    ("adequacy", "flag_assertionless_tests"): _RETIRED_ADEQUACY,
+    ("adequacy", "patch_coverage"): _RETIRED_TOOL_CHECK,
+    ("adequacy", "diff_mutation"): _RETIRED_TOOL_CHECK,
 }
 
 #: Environment variables retired by #395 and #696, mapped to what replaced
@@ -109,4 +134,11 @@ RETIRED_ENV_VARS: dict[str, str] = {
     "KSTRL_CODEBASE_SCAN_PUBLIC_INTERFACES": _RETIRED_SCAN_SECTION,
     "KSTRL_CODEBASE_SCAN_DEPENDENCY_GRAPH": _RETIRED_SCAN_SECTION,
     "KSTRL_CODEBASE_SCAN_CONVENTIONS": _RETIRED_SCAN_SECTION,
+    "KSTRL_DEAD_CODE_CLEANUP": _RETIRED_TOOL_CHECK,
+    "KSTRL_DEAD_CODE_CMD": _RETIRED_TOOL_CHECK,
+    "KSTRL_MUTATION_TESTING": _RETIRED_TOOL_CHECK,
+    "KSTRL_MUTATION_THRESHOLD": _RETIRED_TOOL_CHECK,
+    "KSTRL_MUTATION_TIMEOUT": _RETIRED_TOOL_CHECK,
+    "KSTRL_ADEQUACY_ENABLED": _RETIRED_ADEQUACY,
+    "KSTRL_ADEQUACY_LAYER0": _RETIRED_ADEQUACY,
 }

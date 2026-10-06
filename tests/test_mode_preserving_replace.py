@@ -1,12 +1,12 @@
 """A closed-by-construction census of ``os.replace`` and ``shutil.move``
 call sites outside ``kstrl/atomicio.py`` (#152 simplify pass, Group C1).
 
-The mode-restore this round adds to ``_restore_mutated_sources``
-(``kstrl/verify.py``) fixes mutmut and nothing else. ``tests/test_atomicio.py``
-keys its own guard on ``tempfile.mkstemp``, so a hand-rolled
-``os.replace``/``shutil.move`` over an existing FILE is invisible to it,
-and this round's own ``os.replace(bak, target)`` is the first such site
-outside ``kstrl/atomicio.py``. CLAUDE.md's rule (the most-repeated defect
+The guard was added beside a mode-restore for the mutation driver's
+``os.replace(bak, target)``, the first such site outside
+``kstrl/atomicio.py``; #696 slice 8 deleted that driver and its site.
+``tests/test_atomicio.py`` keys its own guard on ``tempfile.mkstemp``, so a
+hand-rolled ``os.replace``/``shutil.move`` over an existing FILE is
+invisible to it. CLAUDE.md's rule (the most-repeated defect
 in this repo, "a static guard fails in the skip direction") applies here
 in full: prefer CLOSED BY CONSTRUCTION over a ledger of give-ups, so this
 walks EVERY ``os.replace``/``shutil.move`` call in ``kstrl/`` rather than
@@ -25,20 +25,13 @@ shows up as an unexplained census delta rather than silence, and the
 per-site reason a human already read into :data:`REPLACE_SITES` is
 re-justified in this docstring rather than merely asserted.
 
-Five sites exist today (measured: ``uv run python3`` AST-walking
+Four sites exist today (measured: ``uv run python3`` AST-walking
 ``kstrl/`` for ``os.replace``/``shutil.move`` calls, resolving import
 aliases the way ``tests/helpers/astwalk`` does): one inside
 ``kstrl/atomicio.py`` itself (the canonical mode-preserving helper, exempt
 by construction - it is the thing every OTHER writer in the package is
-supposed to route through), and four outside it:
+supposed to route through), and three outside it:
 
-- ``kstrl/verify.py::_restore_mutated_sources`` - ``os.replace(bak, target)``.
-  Accompanied by a mode capture and restore: :func:`kstrl.verify._target_modes`
-  reads every target's permission bits BEFORE any spawn, in
-  ``_mutmut_run_spawn``, and :func:`kstrl.verify._restore_mutated_sources`
-  reapplies them UNCONDITIONALLY in the same ``finally`` that performs this
-  replace (#152's own defect C). This is the one PROVEN compliant by
-  reading the surrounding function, not merely declared so.
 - ``kstrl/workqueue.py::WorkQueue.enqueue`` - ``os.replace(str(staging),
   str(directory))``. The destination NEVER pre-exists: `directory.exists()`
   is checked and refused (``raise QueueError``) immediately above, before
@@ -56,16 +49,9 @@ supposed to route through), and four outside it:
 SYMLINK IDENTITY is the other half of the property this file's subject
 shares with ``kstrl/atomicio.py`` (`os.replace` swaps the directory entry,
 so replacing over a symlinked destination turns it into a regular file),
-and is handled, or explicitly declined, at each of the four non-atomicio
-sites: the three "destination never pre-exists" sites have no destination
-to convert (there is nothing at the target path for `os.replace` to swap
-out from under); `kstrl/verify.py::_restore_mutated_sources`'s own
-docstring carries an explicit DECLINE paragraph (#152 simplify pass, C1)
-rather than silence, arguing the same two reasons rehearsed there:
-mutmut itself would mutate through a symlinked target the same way this
-function's restore would, and `_preexisting_backups` already refuses the
-one shape (a `.bak` already on disk) that would make restoring through a
-symlink actively destructive.
+and does not arise at the three non-atomicio sites: each is a
+"destination never pre-exists" site, with nothing at the target path for
+`os.replace` to swap out from under.
 """
 
 from __future__ import annotations
@@ -76,8 +62,8 @@ from tests.helpers import astwalk
 
 #: ``os.replace`` and ``shutil.move`` - the two stdlib calls that swap a
 #: directory entry and so can silently carry a source file's permission
-#: bits onto an existing destination (measured: mutmut 2.5.1's own
-#: ``mutate_file``/``run_mutation`` do exactly this, #152's own defect C).
+#: bits onto an existing destination (measured under #152: mutmut 2.5.1's
+#: own ``mutate_file``/``run_mutation`` did exactly this, its defect C).
 REPLACE_TARGETS = ("os.replace", "shutil.move")
 
 #: Every site outside ``kstrl/atomicio.py`` today, keyed by module and
@@ -88,11 +74,6 @@ REPLACE_TARGETS = ("os.replace", "shutil.move")
 #: FLAGS it rather than silently passing - the direction a clearing guard
 #: must fail in.
 REPLACE_SITES: dict[str, str] = {
-    "verify.py os.replace(bak, target)": (
-        "accompanied by _target_modes (capture, before any spawn) and "
-        "_restore_mutated_sources (unconditional restore, same finally) - "
-        "#152's own defect C fix"
-    ),
     "workqueue.py os.replace(str(staging), str(directory))": (
         "destination never pre-exists: `if directory.exists(): raise "
         "QueueError(...)` guards immediately above"

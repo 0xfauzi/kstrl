@@ -185,7 +185,6 @@ def package_argvs() -> list[Argv]:
 
 EXPECTED_WITH_Z: tuple[str, ...] = (
     "breaker.py git status --porcelain -uall -z",
-    "doctor.py git ls-files -z",
     "factory.py git worktree list --porcelain -z",
     "git.py git diff --name-only --cached -z",
     "git.py git diff --name-only -z",
@@ -242,7 +241,6 @@ EXPECTED_GIT_ARGVS: dict[str, int] = {
     "contract.py git worktree prune": 1,
     "contract.py git worktree remove --force ?": 1,
     "doctor.py git check-ignore -q -- ?": 1,
-    "doctor.py git ls-files -z": 1,
     "factory.py git branch -D ?": 1,
     "factory.py git merge-base --is-ancestor ? ?": 1,
     "factory.py git rev-parse --verify --quiet ?": 1,
@@ -295,18 +293,14 @@ EXPECTED_GIT_ARGVS: dict[str, int] = {
     "retry_plan.py git worktree remove --force ?": 1,
     "statedir.py git -C ? remote get-url origin": 1,
     "tui/screens/home.py git rev-parse --abbrev-ref HEAD": 1,
-    "verify.py git add -A -- . ?": 1,
-    # #425 (PR #425, merged into this branch as 982f726). Neither is
-    # path-printing, so layer 2 correctly leaves both out of
+    # #425 (PR #425, merged into this branch as 982f726). Not
+    # path-printing, so layer 2 correctly leaves it out of
     # EXPECTED_WITH_Z / EXPECTED_WITHOUT_Z / EXPECTED_UNDECIDED: `git
-    # merge-base <ref> HEAD` prints a commit sha, not a path, and `git
-    # show <rev>:<path>` prints the blob's CONTENT, with the path an
-    # argument to the command, never something git prints back.
+    # merge-base <ref> HEAD` prints a commit sha, not a path.
     # #435 fix-round (A0) hoisted the merge-base spawn from `verify.py`
     # into `kstrl/git.py` as the one owner of the merge-base anchor: the
     # row moves module, count unchanged.
     "git.py git merge-base ? HEAD": 1,
-    "verify.py git show ?": 1,
 }
 
 

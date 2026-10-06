@@ -302,20 +302,19 @@ matching `_TOOL` variables, `KSTRL_CONTRACT_TEST_CMD`, `KSTRL_BREAKER_TEST_CMD`,
 `KSTRL_BREAKER_TEST_TIMEOUT` and `KSTRL_FACTORY_WORKTREE_SETUP_COMMAND`) are
 retired: setting one is refused at command entry, naming `[stack]`.
 
+kstrl runs no dead-code, mutation or coverage tool (#696 slice 8). The
+variables that turned those checks on (`KSTRL_DEAD_CODE_CLEANUP`,
+`KSTRL_DEAD_CODE_CMD`, `KSTRL_MUTATION_TESTING`, `KSTRL_MUTATION_THRESHOLD`,
+`KSTRL_MUTATION_TIMEOUT`) and the `[verify]` keys of the same names are
+retired the same way: a check you want is a `[stack.checks]` entry.
+
 | Env var | Type | Default |
 |---|---|---|
-| `KSTRL_DEAD_CODE_CLEANUP` | bool (`1`) | false |
-| `KSTRL_DEAD_CODE_CMD` | str | unset |
-| `KSTRL_MUTATION_TESTING` | bool (`1`) | false |
-| `KSTRL_MUTATION_THRESHOLD` | float | 50 |
-| `KSTRL_MUTATION_TIMEOUT` | float | 0 (no limit) |
 | `KSTRL_TIMEOUT_VERIFY` | float | 0 (no limit) |
 | `KSTRL_VERIFY_REQUIRE_SELF_CRITIQUE` | bool (`1`) | false |
 | `KSTRL_VERIFY_SELF_CRITIQUE_MIN_BULLETS` | int | 3 |
 | `KSTRL_VERIFY_PROGRESS_FILE` | path | unset = the progress log beside the component's PRD |
 | `KSTRL_VERIFY_FAST_ITERATION_CHECKS` | comma-separated gate names (`test_suite`, `typecheck`, `linter`) | unset or empty = off |
-
-`[verify] mutation_testing` (#391) scores every non-test Python file the diff changed through `mutmut junitxml`, never the text `mutmut results` prints (which carries no killed count under any flag). It now requires `[verify] test_command` to be a single pytest invocation mutmut's `--runner` can wrap - a behaviour change from before #391, when this check ignored `test_command` entirely - and reports `tool_missing` for any command it cannot wrap, the same refusal `[adequacy] diff_mutation` already made. Since the #391 simplify pass on PR #392 (A1/A2) it also shares its mutation cap and its two pre-spend refusals with `[adequacy] diff_mutation`, which runs first and takes what it needs of `[verify] mutation_timeout` before this check gets what is left - see that key's own paragraph for the full arithmetic.
 
 ## FixturesConfig (`[fixtures]`)
 
@@ -390,28 +389,15 @@ on_inbox_item = "curl -fsS -H 'Priority: high' -d \"$KSTRL_NOTIFY_EVENT $KSTRL_N
 
 Then triage with `ks inbox ls`. Notifications never carry an action link: decisions happen locally, which is what keeps kstrl free of an inbound HTTP endpoint.
 
-## AdequacyConfig (`[adequacy]`)
+## Retired: `[adequacy]`
 
-Test-suite adequacy gate (R8.5), **Layer 0 and Layer 1 so far**. Layer 0 reads the diff and the changed test files - no test execution, no coverage run, no mutation tooling, no historical data. It catches two things: a diff that WEAKENS the suite (deleted tests, up to and including a deleted test FILE; added `skip`/`xfail`, whether as a decorator, a `pytest.skip()` in a body, a module-level `pytestmark`, or `marks=` inside `pytest.param`; more assertion lines removed than added) and new tests that assert nothing falsifiable.
-
-"Falsifiable" is a deliberately low bar: a comparison against an expected value, or an asserted exception. Shape-only checks like `assert result is not None` are counted as weak because they pass for a plausible-looking wrong answer, which is the agent-written-test failure mode the layer exists for. So is truthiness however it is spelled - `assert bool(x)`, `assert compute()` and `assert a is not None or a == 3` are all weak - while a call whose arguments state an expectation (`assert all(x > 0 for x in xs)`) is strong. `unittest` and `mock` assertion methods count as assertions: `assertEqual` / `assert_called_once_with` strong, `assertTrue` / `assert_called` weak, so a `TestCase` file is not misread as asserting nothing. It does **not** judge whether an expected value is correct - nothing static can; that is the fixtures oracle's job.
-
-`require_strong_oracle` is a rule about **new** test files (git status `A`). Editing a file whose tests predate the gate never trips it; what the diff adds to that file still does, and every diff-discipline check applies to every changed test file.
-
-**Measured false-positive profile** (kstrl's own suite, ~60 test files, at the head of PR #178): **one** file is flagged - `tests/test_tui_snapshots.py`, whose only oracle is `assert snap_compare(...)`. A custom assertion helper that returns a bool is indistinguishable, statically, from `assert flag_set(0)`, so it reads as weak. The same applies to value-constraining predicates like `assert s.startswith("x")` and `assert re.match(...)`, though neither occurs as a file's sole oracle in this repo. Since one strong test carries the whole file and the floor applies only to NEWLY ADDED files, the rate is low - but it is a real class, and a repo whose tests lean on custom assertion helpers should expect it before switching `layer0` to `block`.
-
-Opt-in and **advisory first**: findings are recorded without failing, so turning it up later starts from evidence rather than a guess. With `[autonomy]` enabled, Layer 0 blocks from L1 up - autonomy may tighten this gate, never loosen it. Findings reach the component's finding stream (PR body, journal, evolution) either way. A **blocking** finding additionally opens an R8.3 inbox item (kind `test_adequacy`, deduped by category and location so a repeat collapses onto one item); an advisory finding does not, because the inbox is a queue of decisions and an advisory asks for none.
-
-| Env var | Type | Default |
-|---|---|---|
-| `KSTRL_ADEQUACY_ENABLED` | bool (`1`) | false |
-| `KSTRL_ADEQUACY_LAYER0` | `advisory` \| `block` | `advisory` |
-
-`[adequacy] patch_coverage` (#152) is Layer 1: an opt-in, toml-only key (no env var, matching `require_strong_oracle` and `flag_assertionless_tests`), off by default. On, and only when `enabled` is also true, it runs the project's own test command a SECOND time under `--cov=. --cov-report=` (data only, no report), then a third spawn (`coverage json --include=<changed files>`) turns that data into a report narrowed to the diff, and reports what fraction of the lines this diff ADDED to non-test Python files the suite executed - patch coverage, restricted to changed non-test lines rather than the whole file or run. Advisory always: there is no floor key, nothing blocks, and the finding is emitted at every percentage including 100%, because the distribution a floor will later be set from is the point of shipping this now. It costs a second full test run either way: measured on kstrl's own suite (6844 tests) against the single-spawn `--cov-report=json:<tmp>` design this replaced, the baseline run was 457.04s and the same run under coverage was 536.79s (993.83s total, 2.17x); the two-spawn split measured here costs no more per file (`tests/test_atomicio.py` alone: 8.17s / 448MB for the old single JSON-report spawn vs 2.31s / 157MB + 0.10s / 34MB for the two new ones), so the full-suite total is expected at or below the figure above, not re-measured end to end.
-
-`[adequacy] diff_mutation` (#152) is Layer 2: an opt-in, toml-only key, off by default, and REFUSED at config load unless `patch_coverage` is also `true` - Layer 2 mutates only the lines Layer 1 measured as changed AND covered, and runs no coverage pass of its own. On, it hands mutmut a synthetic patch naming exactly that line set (`--use-patch-file`, since `--use-coverage` and `--use-patch-file` cannot be combined and `--use-coverage` would need a `.coverage` file Layer 1's own D3 refuses to write into the project tree), then filters the reported mutants back to the same set before scoring, so mutmut's own selection is never trusted for the number. At most one mutant counts per line - the lowest-id mutant with a killed-or-survived status. The mutation SPAWN itself draws from `[verify] mutation_timeout` (default: no limit; the arithmetic below applies when it is set) as ONE PHASE-LEVEL BUDGET shared with `[verify] mutation_testing`, not two independent copies of that number (#391 simplify pass on PR #392, A2): Layer 2 runs FIRST (`run_mechanical_verification` calls `_diff_mutation_checks` before `_mutation_checks`) and is bounded by the FULL configured value; Layer 1 then gets whatever that call's own wall clock actually left of it. Both checks now reach mutmut through the same driver (#391), differing only in the target selector they pass it (Layer 1: every changed non-test file; Layer 2: the synthetic patch above) and, since A2, in how much of the shared cap each gets. On a run that FINISHES, the check's own real wall-clock ceiling is higher than its share of that number: `run_scrubbed`'s timeout path costs the cap plus up to two `_SCRUB_TERM_GRACE_SECONDS` (5s each, SIGTERM then SIGKILL) on the mutation spawn, plus the fixed `_MUTATION_REPORT_TIMEOUT` (30s) and its own grace for the report spawn afterward - about 650s total for Layer 2 at a 600s cap, an 8% overrun (#152 simplify pass, A4; `check_diff_mutation`'s own docstring already stated this, this file previously did not). Both checks also refuse before spending anything, symmetrically since A2 (Layer 1's guard is the byte-for-byte twin of Layer 2's, `_mutation_checks` docstring): when the Phase 1 `test_suite` check already failed (mutmut's own baseline run would only run the suite a third time to abort), and when Layer 1's own coverage-run duration already meets or exceeds what remains of the shared cap (mutmut always pays that same suite's baseline in full before mutating a single line). Measured on kstrl's own suite (533.15s, re-measured against the repo's own recorded 457.04s) at a 600s cap: the baseline alone is already 89% of the budget, so the FIRST surviving mutant - which runs the suite to completion rather than exiting early - guarantees the cap fires, and this gate can only ever produce a SAMPLED score here, never a complete one; the pre-spend refusal above does not fire only because 533s is still (barely) under 600s. A cap that FIRES is now, always, a `timed_out` sidecar with no row (#391, D4): measured, mutmut 2.5.1's junitxml cannot read a truncated cache - it raises `ValueError: Obtained null mutant` under `--untested-policy=error` (the policy this driver always passes), and under any other policy an un-run mutant renders exactly like a killed one, so no safe read of a truncated run exists. `sampled` therefore now has ONE cause, not two: fewer target lines reached a definite status than mutmut reported a mutant for, on a run that otherwise completed. Surviving lines are recorded as `path:line` in the finding and the check's details, as concrete test targets - feeding them into an automatic remediation iteration is not built. Advisory always: no floor key, nothing blocks, no autonomy level reads it. It rewrites the source files it mutates (restored from the `.bak` mutmut itself writes, after every run including a timed-out one) and so, unlike Layer 1, does NOT run under `ks check` or any other `read_only` verification.
-
-Layer 3 (fixtures required at L3+) is not built; see `docs/dark-factory-roadmap.md` for why it waits on measured thresholds.
+The test-suite adequacy gate (R8.5) is gone (#696 slice 8). Layer 0 read
+one language's test files, and Layers 1 and 2 ran one language's coverage
+and mutation tools. The code reviewer's `test_weakening` concern now judges
+whether a change weakened the tests, and where Layer 0 ran (autonomy level 1
+and up) Phase 1 records `test_adequacy` as not measured and the pull request
+says so. Every `[adequacy]` key and `KSTRL_ADEQUACY_ENABLED` /
+`KSTRL_ADEQUACY_LAYER0` are refused at command entry.
 
 ## DivergenceConfig (`[divergence]`)
 
@@ -433,7 +419,7 @@ Size is lines changed against the base (`git diff --numstat`), deliberately not 
 
 Where to read that evidence: the `review_divergence` event in `.kstrl/runs/<run_id>/events.jsonl` carries the per-attempt series and a `blocked` flag; the finding reaches `.kstrl/evolution.jsonl` as `findings_superseded` when the attempt is retried, so it survives a component that later passes; and the message is printed as a warning line. It never reaches the PR body, and cannot: it is only ever recorded on a failing attempt, and `begin_attempt` clears the finding stream before the passing attempt that builds the PR.
 
-Unlike `[adequacy] layer0` and `[factory] claim_agreement`, the autonomy ladder deliberately does not harden this gate at L1 and above. Those gates ask whether an independent check confirmed a claim, and a run spending less human attention should insist on that harder. This one forecasts, from a heuristic with no measured false-positive rate, that further retries are not worth buying, and auto-hardening it at exactly the levels where nobody is watching is how an unattended run loses components to a gate whose output no operator has read.
+Unlike `[factory] claim_agreement` (and the retired `[adequacy] layer0`), the autonomy ladder deliberately does not harden this gate at L1 and above. Those gates ask whether an independent check confirmed a claim, and a run spending less human attention should insist on that harder. This one forecasts, from a heuristic with no measured false-positive rate, that further retries are not worth buying, and auto-hardening it at exactly the levels where nobody is watching is how an unattended run loses components to a gate whose output no operator has read.
 
 Under `mode = "block"` a trip routes through `FailureAction.FAIL` and opens an R8.3 inbox item through the generic halted-run path. Unlike the other FAIL sites, which are proofs (an adversarial budget only shrinks, so retrying provably cannot recover it), this one is a forecast. With the default `[factory] max_retries = 3` it forecloses exactly one remaining attempt, and `ks retry` starts a fresh run with an empty reading history, so an operator who disagrees pays one command. `docs/runbook.md` carries the triage entry.
 

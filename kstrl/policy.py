@@ -265,7 +265,7 @@ def unquote_diff_path(path: str) -> str:
     characters. Only a path git actually quoted (wrapped in ``"..."``)
     goes through this; an unquoted path is returned unchanged.
 
-    Public because :mod:`kstrl.adequacy` is the second caller (#408).
+    Public so another reader of a diff header can share it (#408).
     """
     if not (path.startswith('"') and path.endswith('"') and len(path) >= 2):
         return path
@@ -281,8 +281,7 @@ def diff_header_path(header: str) -> str:
     be a no-op, leaving the quotes, the octal escapes and the prefix all
     in place. ``/dev/null`` is never quoted and never carries a prefix,
     so it passes through unchanged either way. This is the one place
-    both :func:`parse_added_lines` and :func:`kstrl.adequacy._iter_diff_lines`
-    read a header path, so a header shape fixed here is fixed for both.
+    :func:`parse_added_lines` reads a header path.
     """
     path = unquote_diff_path(header[4:].strip())
     if path.startswith(("a/", "b/")):

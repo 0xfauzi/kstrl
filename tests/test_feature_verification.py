@@ -91,15 +91,8 @@ def _write_kstrl_toml(root: Path, *, failing: str = "", extra: str = "") -> dict
 
 
 #: Every opt-in check turned on, to prove the narrowing wins regardless.
-ALL_CHECKS_ON = (
-    "check_diff_scope = true\n"
-    "check_bad_patterns = true\n"
-    "dead_code_cleanup = true\n"
-    "mutation_testing = true\n"
-)
-ALL_CHECKS_ON_WITH_PHASES = (
-    ALL_CHECKS_ON + "\n[policy]\nenabled = true\n\n[adequacy]\nenabled = true\n"
-)
+ALL_CHECKS_ON = "check_diff_scope = true\ncheck_bad_patterns = true\n"
+ALL_CHECKS_ON_WITH_PHASES = ALL_CHECKS_ON + "\n[policy]\nenabled = true\n"
 
 
 def _feature_params(tmp_path: Path, **kwargs: Any) -> FeatureParams:
@@ -362,7 +355,7 @@ class TestOnlyHonestChecksRun:
 
         _write_kstrl_toml(
             tmp_path,
-            extra="".join(settings) + "\n[policy]\nenabled = true\n\n[adequacy]\nenabled = true\n",
+            extra="".join(settings) + "\n[policy]\nenabled = true\n",
         )
         _, captured, text = _drive(tmp_path)
 
@@ -412,7 +405,6 @@ class TestOnlyHonestChecksRun:
             allowed_paths_error="",  # empty is still non-None, and still refuses
             allowed_paths=None,
             config=config,
-            read_only=True,
         )
         produced = {check.name: check.passed for check in with_error.checks}
         assert produced.get("scope_unreadable") is False, produced
@@ -449,21 +441,6 @@ class TestOnlyHonestChecksRun:
         for name in DIFF_DEPENDENT_CHECKS:
             assert name in text
 
-    def test_the_narration_names_the_dead_code_phase_that_reads_no_diff(
-        self, tmp_path: Path
-    ) -> None:
-        """#335: `dead_code_ruff` is correctly absent from
-        DIFF_DEPENDENT_CHECKS, since ruff scans `.` and needs no base, so
-        the loop above cannot cover it. Without a line of its own the
-        split left it suppressed here with no row, no gap and nothing in
-        the report. The toggle is named as the reason because appending
-        the name to the diff sentence would state a false one."""
-        _write_kstrl_toml(tmp_path)
-        _, _, text = _drive(tmp_path)
-
-        assert "dead_code_ruff" in text
-        assert "dead_code_cleanup" in text
-
     def test_resolve_keeps_the_commands_and_drops_the_diff_checks(
         self,
         tmp_path: Path,
@@ -473,8 +450,6 @@ class TestOnlyHonestChecksRun:
 
         assert config.check_diff_scope is False
         assert config.check_bad_patterns is False
-        assert config.dead_code_cleanup is False
-        assert config.mutation_testing is False
         # Untouched: the [stack]'s checks are what the engineer prompt
         # states and what the report runs, and they must agree.
         assert config.project_stack is not None

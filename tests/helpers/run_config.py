@@ -74,10 +74,6 @@ max_files_changed = 5
 max_lines_changed = 100
 deps_allow_new = false
 
-[adequacy]
-enabled = true
-min_coverage_pct = 90
-
 [autonomy]
 enabled = {autonomy}
 """
@@ -88,10 +84,6 @@ enabled = true
 max_files_changed = 500
 max_lines_changed = 100000
 deps_allow_new = true
-
-[adequacy]
-enabled = false
-min_coverage_pct = 0
 
 [autonomy]
 enabled = {autonomy}

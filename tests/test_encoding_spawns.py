@@ -56,10 +56,12 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     # #696: 4, the import and three TimeoutExpired clauses; down from 5
     # when a fourth clause served the retired [contract] test_command.
     "contract.py": 4,
-    "doctor.py": 5,
+    # 3: #696 slice 8 deleted check_test_root's `git ls-files -z` spawn.
+    "doctor.py": 3,
     # 14: #624 moved the scaffold's `subprocess.run` out to `worktree_setup.py`.
     "factory.py": 14,
-    "fixtures.py": 3,
+    # 2: #696 slice 8 deleted the function-fixture runner.
+    "fixtures.py": 2,
     # 64: 58 after #435, +2 for #465's `branch_sha`, +2 for #459's `ignored_paths`,
     # +2 for #500's `tracked_files_at`, +2 for #626's `listed_files`.
     # 70: #630's git.read_blob adds two subprocess.run and two
@@ -97,8 +99,10 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     # #696 flag day, measured: check_stack_command adds one TimeoutExpired
     # clause, retiring check_linter/check_test_suite/check_typecheck removes
     # their three. #700 slice 3 added 4 in `start_scrubbed`: its Popen, its
-    # return type, DEVNULL and STDOUT.
-    "verify.py": 28,
+    # return type, DEVNULL and STDOUT. 16: #696 slice 8 deleted the
+    # empty-file and syntax-error rules' `_base_finding`, the dead-code,
+    # mutation and patch-coverage drivers, and their spawns.
+    "verify.py": 16,
     "worktree_setup.py": 2,  # #624: the import, and `TimeoutExpired` from `run_scrubbed`
     "worktree_sweep.py": 2,  # #461: the import, and `TimeoutExpired` from `run_scrubbed`
 }
@@ -114,7 +118,6 @@ EXPECTED_TEXT_MODE_SPAWNS: dict[str, int] = {
     "agents/codex.py": 1,
     "agents/proc.py": 1,
     "breaker.py": 1,
-    "doctor.py": 1,
     # 5: #566 moved the fresh-retry reset from a bytes-mode `git branch -D`
     # to a text-mode `git worktree add -B`.
     "factory.py": 5,
@@ -144,7 +147,6 @@ EXPECTED_CLEARED_SPAWNS: tuple[str, ...] = (
     "agents/proc.py subprocess.Popen(leash_command(argv, lifeline=lifeline_read, status=st",
     "breaker.py subprocess.run(['git', *args], cwd=cwd, capture_output=True, encoding=",
     # codespell:ignore-next-line
-    "doctor.py subprocess.run(['git', 'ls-files', '-z'], cwd=root, capture_output=Tru",
     "factory.py subprocess.run(['git', 'branch', '-D', branch], cwd=root_dir, capture_",
     "factory.py subprocess.run(['git', 'worktree', 'add', '-B', branch_name, str(workt",
     "factory.py subprocess.run(['git', 'worktree', 'add', str(worktree_path), '-b', br",
@@ -241,8 +243,9 @@ EXPECTED_BYTES_MODE_SPAWNS: dict[str, int] = {
     # so a gate whose output is not utf-8 can still write its log.
     # `tests/test_undecodable_child_output.py` pins the strictness.
     # #700 slice 3: +1, `start_scrubbed`, whose output goes to a log file and
-    # is read back through `_readable` as evidence only.
-    "verify.py": 3,
+    # is read back through `_readable` as evidence only. #696 slice 8: -1,
+    # `_base_finding` went with the rules that read one language's files.
+    "verify.py": 2,
 }
 
 
@@ -260,7 +263,8 @@ EXPECTED_BYTES_MODE_SPAWNS: dict[str, int] = {
 EXPECTED_UNDECIDED_SPAWNS: tuple[str, ...] = (
     "cli.py app.run",
     # #632: `_dispatch_fixture` calls a runner through `_RUNNERS`. Checked by
-    # hand: the cli and function runners spawn through `run_scrubbed`, counted above.
+    # hand: the cli runner spawns through `run_scrubbed`, counted above, and
+    # the file runner spawns nothing (#696 slice 8 deleted the function runner).
     "fixtures.py _RUNNERS[fixture.fixture_type]",
     "timeout.py subprocess.run",
 )

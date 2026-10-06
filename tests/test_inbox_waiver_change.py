@@ -1,4 +1,4 @@
-"""A policy_exception or test_adequacy item records the change the operator is shown (#646).
+"""A policy_exception item records the change the operator is shown (#646).
 
 An item used to record the finding's text and nothing about the change it
 was found on. Two attempts that wrote different code with the same finding
@@ -27,7 +27,6 @@ import pytest
 from kstrl.inbox import Inbox, InboxConfig, ItemKind
 from tests.helpers import gitrepo
 from tests.test_inbox_waivers import (
-    ADEQUACY_TOML,
     BRANCH,
     COMP,
     POLICY_TOML,
@@ -84,12 +83,6 @@ REPEATS = {
         SIZE_TOML,
         'mkdir -p app && seq 1 10 | sed "s/^/$n-/" > app/big.txt',
         {"policy_max_lines_changed"},
-    ),
-    ItemKind.TEST_ADEQUACY: (
-        ADEQUACY_TOML,
-        "printf 'def test_one():\\n    assert 1 + 1 == 2\\n' > tests/test_core.py && "
-        'echo "$n" > note.txt',
-        {"adequacy_test_deleted", "adequacy_assertion_removed"},
     ),
 }
 

@@ -45,8 +45,7 @@ CONTRACT_SENTENCES = (
     "including a criterion that passes.",
     "Never merge stories into one entry, and never leave out a story because it passed.",
     'is evidence for your verdicts and never an entry of its own in "stories".',
-    "each written as the file's path from the repository root and its lines "
-    "(path/to/file.py:42-58).",
+    "each written as the file's path from the repository root and its lines (path/to/file:42-58).",
     "A module, class or function name alone is not a citation.",
     "When the evidence is in more than one file, such as a call in one file into a "
     "function defined in another, cite each of those files.",

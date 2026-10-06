@@ -1,6 +1,7 @@
 """Every action-required inbox kind either has a reader of its approval or says why not (#595).
 
-Before #595 two kinds, policy_exception and test_adequacy, filed an item
+Before #595 two kinds, policy_exception and test_adequacy (which #696
+slice 8 removed), filed an item
 whose approval nothing read: ``ks inbox approve`` recorded it and the
 next run failed on the same finding. The fix reads them in
 ``kstrl/waivers.py``, the same shape ``kstrl/plan_gate.py`` already used
@@ -40,7 +41,6 @@ from tests.helpers import astwalk
 APPROVAL_READERS: dict[ItemKind, str] = {
     ItemKind.MERGE_GATE: "pipeline.py::ComponentPipeline.apply_merge_decisions",
     ItemKind.POLICY_EXCEPTION: "waivers.py::load_approvals",
-    ItemKind.TEST_ADEQUACY: "waivers.py::load_approvals",
     # #602: the L1 plan gate reads its item at the start of the next run.
     ItemKind.PLAN_GATE: "plan_gate.py::run_plan_gate",
     # #696: the newest approved stack item is what confirms a [stack].

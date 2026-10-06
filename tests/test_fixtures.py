@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -19,7 +17,6 @@ from kstrl.fixtures import (
     load_fixtures_from_prd_data,
     run_cli_fixture,
     run_file_fixture,
-    run_function_fixture,
 )
 from kstrl.fixtures_snapshot import check_snapshot_regression, save_snapshot
 from kstrl.prd import PRD
@@ -406,162 +403,6 @@ class TestCliFixtureNoShell:
 
 
 # ---------------------------------------------------------------------------
-# R7.2: function fixtures run in a subprocess
-# ---------------------------------------------------------------------------
-
-
-class TestFunctionFixtureSubprocess:
-    def test_round_trip_pass(self, tmp_path: Path) -> None:
-        (tmp_path / "adder.py").write_text("def add(a, b):\n    return a + b\n")
-        fixture = Fixture(
-            description="add works",
-            fixture_type="function",
-            input_data={"module": "adder", "function": "add", "args": [2, 3]},
-            expected={"returns": 5},
-        )
-        result = run_function_fixture(fixture, tmp_path, timeout=60.0)
-        assert result.passed is True, result.message
-        assert result.actual == "5"
-
-    def test_round_trip_fail(self, tmp_path: Path) -> None:
-        (tmp_path / "adder.py").write_text("def add(a, b):\n    return a + b\n")
-        fixture = Fixture(
-            description="add wrong expectation",
-            fixture_type="function",
-            input_data={"module": "adder", "function": "add", "args": [2, 3]},
-            expected={"returns": 6},
-        )
-        result = run_function_fixture(fixture, tmp_path, timeout=60.0)
-        assert result.passed is False
-        assert "Expected 6, got 5" in result.message
-
-    def test_expected_exception(self, tmp_path: Path) -> None:
-        (tmp_path / "boom.py").write_text("def explode():\n    raise ValueError('no')\n")
-        fixture = Fixture(
-            description="explode raises",
-            fixture_type="function",
-            input_data={"module": "boom", "function": "explode"},
-            expected={"raises": "ValueError"},
-        )
-        result = run_function_fixture(fixture, tmp_path, timeout=60.0)
-        assert result.passed is True, result.message
-
-    def test_import_crash_reports_failure(self, tmp_path: Path) -> None:
-        (tmp_path / "crasher.py").write_text("raise RuntimeError('boom')\n")
-        fixture = Fixture(
-            description="crashing module",
-            fixture_type="function",
-            input_data={"module": "crasher", "function": "anything"},
-            expected={"returns": 1},
-        )
-        result = run_function_fixture(fixture, tmp_path, timeout=60.0)
-        assert result.passed is False
-        assert "Failed to import module" in result.message
-
-    def test_env_scrubbed_inside_subprocess(
-        self,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        # Plant a would-leak secret in the harness env; the fixture
-        # subprocess must not see any *_API_KEY / *SECRET* name.
-        monkeypatch.setenv("FAKE_API_KEY", "sk-super-secret")
-        monkeypatch.setenv("MY_DEPLOY_SECRET", "hunter2")
-        (tmp_path / "envprobe.py").write_text(
-            "import os\n"
-            "def leaked():\n"
-            "    return sorted(\n"
-            "        k for k in os.environ\n"
-            "        if 'API_KEY' in k or 'SECRET' in k\n"
-            "    )\n"
-        )
-        fixture = Fixture(
-            description="no secrets visible",
-            fixture_type="function",
-            input_data={"module": "envprobe", "function": "leaked"},
-            expected={"returns": []},
-        )
-        result = run_function_fixture(fixture, tmp_path, timeout=60.0)
-        assert result.passed is True, f"secrets leaked into fixture subprocess: {result.actual}"
-
-    def test_module_side_effects_cannot_touch_harness(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        # The module runs arbitrary code at import time. It must run in
-        # the SUBPROCESS: the sentinel file proves the code executed,
-        # while the harness process's environ and sys.modules stay clean.
-        (tmp_path / "evil_side_effect.py").write_text(
-            "import os\n"
-            "os.environ['KSTRL_FIXTURE_PWNED'] = '1'\n"
-            "with open('sentinel.txt', 'w') as f:\n"
-            "    f.write('imported')\n"
-            "def probe():\n"
-            "    return 'ok'\n"
-        )
-        fixture = Fixture(
-            description="side-effecting module",
-            fixture_type="function",
-            input_data={"module": "evil_side_effect", "function": "probe"},
-            expected={"returns": "ok"},
-        )
-        result = run_function_fixture(fixture, tmp_path, timeout=60.0)
-        assert result.passed is True, result.message
-        # The agent code DID run (in the subprocess, cwd=worktree)...
-        assert (tmp_path / "sentinel.txt").read_text() == "imported"
-        # ...but never inside the harness process.
-        assert "KSTRL_FIXTURE_PWNED" not in os.environ
-        assert "evil_side_effect" not in sys.modules
-
-    def test_timeout_kills_subprocess(self, tmp_path: Path) -> None:
-        (tmp_path / "sleeper.py").write_text("import time\ndef nap():\n    time.sleep(60)\n")
-        fixture = Fixture(
-            description="sleeping function",
-            fixture_type="function",
-            input_data={"module": "sleeper", "function": "nap"},
-            expected={"returns": None},
-        )
-        result = run_function_fixture(fixture, tmp_path, timeout=1.0)
-        assert result.passed is False
-        assert "timed out" in result.message
-
-    def test_missing_function_reports_failure(self, tmp_path: Path) -> None:
-        (tmp_path / "adder.py").write_text("def add(a, b):\n    return a + b\n")
-        fixture = Fixture(
-            description="missing function",
-            fixture_type="function",
-            input_data={"module": "adder", "function": "subtract"},
-            expected={"returns": 1},
-        )
-        result = run_function_fixture(fixture, tmp_path, timeout=60.0)
-        assert result.passed is False
-        assert "not found" in result.message
-
-    def test_function_fixture_with_kwargs(self, tmp_path: Path) -> None:
-        """Folded in from test_harness_integration.py (deleted; test-suite
-        consolidation): the one case there not already covered above -
-        that ``input_data["kwargs"]`` reaches the called function."""
-        (tmp_path / "greeter.py").write_text(
-            "def greet(name, greeting='hello'): return f'{greeting} {name}'\n"
-        )
-        fixture = Fixture(
-            description="greet with kwargs",
-            fixture_type="function",
-            input_data={
-                "module": "greeter",
-                "function": "greet",
-                "args": ["alice"],
-                "kwargs": {"greeting": "hi"},
-            },
-            expected={"returns": "hi alice"},
-        )
-        result = run_function_fixture(fixture, tmp_path, timeout=60.0)
-        assert result.passed is True, result.message
-
-
-# ---------------------------------------------------------------------------
-# R7.2: file fixtures stay inside the worktree
-# ---------------------------------------------------------------------------
 
 
 class TestFileFixtureContainment:
@@ -612,16 +453,6 @@ class TestPrdFixturesSchema:
                     "fixture_type": "cli",
                     "input_data": {"command": "curl -s localhost:8000/api/login"},
                     "expected": {"exit_code": 0, "stdout_contains": ["token"]},
-                },
-                {
-                    "description": "Config is importable",
-                    "fixture_type": "function",
-                    "input_data": {
-                        "module": "src.config",
-                        "function": "get_settings",
-                        "args": [],
-                    },
-                    "expected": {"returns": {"debug": False}},
                 },
                 {
                     "description": "Migration file exists",
@@ -675,16 +506,6 @@ class TestPrdFixturesSchema:
         }
         errors = PRD.validate_schema(_prd_data(fixtures=[entry]))
         assert any("relative to the" in e for e in errors), errors
-
-    def test_function_returns_and_raises_mutually_exclusive(self) -> None:
-        entry = {
-            "description": "conflicting expectations",
-            "fixture_type": "function",
-            "input_data": {"module": "m", "function": "f"},
-            "expected": {"returns": 1, "raises": "ValueError"},
-        }
-        errors = PRD.validate_schema(_prd_data(fixtures=[entry]))
-        assert any("mutually exclusive" in e for e in errors), errors
 
     def test_empty_fixtures_array_rejected(self) -> None:
         errors = PRD.validate_schema(_prd_data(fixtures=[]))
@@ -848,22 +669,16 @@ class TestPhase1Integration:
         return prd_path
 
     def test_fixtures_check_runs_when_enabled(self, tmp_path: Path) -> None:
-        # A Python project, or the function fixture is refused unrun (#632).
-        (tmp_path / "pyproject.toml").write_text('[project]\nname = "adder"\n')
-        (tmp_path / "adder.py").write_text("def add(a, b):\n    return a + b\n")
+        (tmp_path / "notes.txt").write_text("adder works\n")
         prd_path = self._write_prd(
             tmp_path,
             [
                 _cli_fixture_entry(),
                 {
-                    "description": "adder works",
-                    "fixture_type": "function",
-                    "input_data": {
-                        "module": "adder",
-                        "function": "add",
-                        "args": [2, 3],
-                    },
-                    "expected": {"returns": 5},
+                    "description": "notes are there",
+                    "fixture_type": "file",
+                    "input_data": {"path": "notes.txt"},
+                    "expected": {"exists": True, "contains": ["adder works"]},
                 },
             ],
         )

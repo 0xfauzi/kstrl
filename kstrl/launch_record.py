@@ -78,6 +78,12 @@ REMOVED_OPTIONS: dict[str, str] = {
     "typecheck_command": "Verification runs the checks of the confirmed [stack] in kstrl.toml.",
     "lint_command": "Verification runs the checks of the confirmed [stack] in kstrl.toml.",
     "contract_test_cmd": "Phase 3 runs every check of the confirmed [stack] in kstrl.toml.",
+    # #696 slice 8: kstrl runs no dead-code, mutation or coverage tool. A check
+    # the operator wants is a [stack] check.
+    "dead_code_cleanup": "kstrl runs no dead-code tool; add the check you want to [stack.checks].",
+    "dead_code_command": "kstrl runs no dead-code tool; add the check you want to [stack.checks].",
+    "mutation_testing": "kstrl runs no mutation tool; add the check you want to [stack.checks].",
+    "mutation_threshold": "kstrl runs no mutation tool; add the check you want to [stack.checks].",
 }
 
 #: Why a record cannot be used, in one line with no path (#433 H4).
