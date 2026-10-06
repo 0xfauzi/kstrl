@@ -25,7 +25,6 @@ from kstrl.config import KstrlConfig
 from kstrl.config_preflight import SURFACE_REJECTIONS, raise_if_defect
 from kstrl.events import CallbackSink, EventBus, RunPaths
 from kstrl.git import resolve_base_branch
-from kstrl.init_cmd import BUILD_MANIFEST_FIX, build_manifest_blocker
 from kstrl.interaction import QueueInteractionChannel
 from kstrl.launch import (
     DecomposeLaunch,
@@ -248,6 +247,7 @@ def _prepare_decompose(
 ) -> PreparedLaunch:
     from kstrl.agents import get_agent
     from kstrl.factory import FactoryConfig
+    from kstrl.verify import VerifyConfig
 
     spec_path = spec.spec_path if spec.spec_path.is_absolute() else root_dir / spec.spec_path
     if not spec_path.exists():
@@ -259,18 +259,15 @@ def _prepare_decompose(
         config = KstrlConfig.load(root_dir)
         # #603: the architect's call limit, read with the rest of the
         # configuration so a bad value is refused here, not on the thread.
-        architect_timeout = limit_seconds(FactoryConfig.load(root_dir).architect_timeout_seconds)
-        blocker = build_manifest_blocker(root_dir)
+        factory_config = FactoryConfig.load(root_dir)
+        architect_timeout = limit_seconds(factory_config.architect_timeout_seconds)
+        verify_config = VerifyConfig.load(root_dir)
     except SURFACE_REJECTIONS as exc:
         # The same widening as _prepare_factory, for the same reason,
         # and the same guard against it hiding one of our own defects.
         raise_if_defect(exc)
         raise LaunchError(f"failed to load configuration: {exc}") from exc
     _preflight_agent(config)
-    if blocker is not None:
-        # The pre-spend refusal `ks decompose` makes in
-        # ``cli._refuse_without_build_manifest`` (#434).
-        raise LaunchError(f"{blocker}. {BUILD_MANIFEST_FIX}")
     agent = get_agent(
         config.agent_cmd,
         config.model,
@@ -289,6 +286,7 @@ def _prepare_decompose(
 
         def target() -> int:
             from kstrl.decompose import SpecBlockerError, decompose_spec
+            from kstrl.factory import BaseRefusedError, base_check_before_architect
             from kstrl.owner_answers import OwnerAnswerError
 
             command_run = open_command_run(
@@ -312,10 +310,18 @@ def _prepare_decompose(
                         transcript=command_run.transcript_writer(ARCHITECT_COMPONENT),
                         prompt_call=command_run.agent_call(ARCHITECT_COMPONENT, ARCHITECT_ROLE),
                         timeout=architect_timeout,
+                        before_spend=base_check_before_architect(
+                            root_dir,
+                            resolve_base_branch(spec.base_branch, root_dir),
+                            factory_config,
+                            verify_config,
+                            run_id,
+                            ui,
+                        ),
                     )
                     ui.ok(f"Decomposed into {len(manifest.components)} components")
                     return 0
-                except (SpecBlockerError, OwnerAnswerError) as exc:
+                except (SpecBlockerError, OwnerAnswerError, BaseRefusedError) as exc:
                     ui.err(str(exc))
                     for line in exc.artifact_lines():
                         ui.info(line)

@@ -36,12 +36,15 @@ from kstrl.git import (
 from kstrl.pr import push_branch
 from kstrl.ui.plain import PlainUI
 from tests.helpers import gitrepo
+from tests.helpers.before_spend import no_base_check
 from tests.helpers.prompt_calls import architect_call
+from tests.helpers.stack_confirmation import PROPOSED_STACK
 
 
 def _decompose_output(comp_id: str) -> str:
     return json.dumps(
         {
+            "stack": PROPOSED_STACK,
             "spec_issues": [],
             "decisions": [],
             "components": [
@@ -122,6 +125,7 @@ class TestDecomposeValidationHygiene:
             root_dir=tmp_path,
             prompt_call=architect_call(tmp_path),
             timeout=None,
+            before_spend=no_base_check,
         )
 
         assert len(agent.prompts) == 2
@@ -152,6 +156,7 @@ class TestDecomposeValidationHygiene:
                 root_dir=tmp_path,
                 prompt_call=architect_call(tmp_path),
                 timeout=None,
+                before_spend=no_base_check,
             )
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -29,8 +30,10 @@ from kstrl.tui.screens.overview import OverviewScreen
 from kstrl.tui.session import LaunchError, start_run_session
 from tests.helpers import gitrepo
 from tests.helpers.settle import drained, mounted, settled
+from tests.helpers.stack_confirmation import confirm_stack, write_stack
 from tests.spine_utils import git as spine_git
 from tests.test_decompose import VALID_DECOMPOSE_OUTPUT, MockDecomposeAgent
+from tests.test_isolation_rung import runs_a_stack
 
 
 class FakeSession:
@@ -423,6 +426,49 @@ class TestStartRunSession:
             session.close()
         written = Manifest.load(tmp_path / "scripts" / "kstrl" / "manifest.json")
         assert written.base_branch == "trunk"
+
+    @runs_a_stack
+    def test_decompose_session_measures_the_base_before_the_architect(self, tmp_path: Path) -> None:
+        """#696 slice 7: the home-shell decompose launch measures the base
+        under a confirmed [stack] before the architect is paid, as `ks
+        decompose` does. A red base ends the session with exit 2, records the
+        refused reading in the session's run, and the architect is never called."""
+        root = tmp_path / "project"
+        root.mkdir()
+        _git_repo_on(root, "main")
+        (root / "spec.md").write_text("# Spec\nBuild it.\n", encoding="utf-8")
+        (root / ".gitignore").write_text(gitignore_block(), encoding="utf-8")
+        (root / "kstrl.toml").write_text('[agent]\ncommand = "fake-agent"\n', encoding="utf-8")
+        write_stack(root, {"tests": "false"})
+        spine_git("add", "-A", cwd=root)
+        spine_git("commit", "-q", "-m", "stack", cwd=root)
+        confirm_stack(root)
+        prompts: list[str] = []
+
+        class CountingAgent(MockDecomposeAgent):
+            def run(
+                self, prompt: str, cwd: Path | None = None, timeout: float | None = None
+            ) -> Iterator[str]:
+                prompts.append(prompt)
+                yield from super().run(prompt, cwd, timeout)
+
+        with patch(
+            "kstrl.agents.get_agent",
+            return_value=CountingAgent(VALID_DECOMPOSE_OUTPUT),
+        ):
+            session = start_run_session(
+                DecomposeLaunch(spec_path=root / "spec.md", project_name="demo"),
+                root,
+            )
+        try:
+            session.handle.join(timeout=120)
+            assert session.handle.exit_code == 2
+        finally:
+            session.close()
+        assert prompts == []
+        reading = json.loads((session.run_dir / "base-gates.json").read_text(encoding="utf-8"))
+        assert reading["refused"] is True, reading
+        assert not (root / "scripts" / "kstrl" / "manifest.json").exists()
 
 
 class TestLaunchForms:

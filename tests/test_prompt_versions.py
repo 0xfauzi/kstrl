@@ -250,9 +250,15 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     # is generalised to DATA / INSTRUCTION SEPARATION, covering
     # repository content on the same terms as the delimited spec,
     # without a second injection-refusal paragraph.
+    # 4.0.0 (#696 slice 7): MAJOR. The output gains a required `stack`
+    # key, an object validated by stack.stack_errors or null when
+    # kstrl.toml already holds a [stack], with rules S1-S4 for it. Rule
+    # 12's EXCLUDE list drops the root build manifests and names
+    # kstrl.toml; INCLUDE names a root build file a component must
+    # create or change.
     "DECOMPOSE_PROMPT": (
-        "0e535ef0ff369641cbb4c1fafbe98148293eac8a8c9bb09a60a43373a6002e37",
-        "3.1.0",
+        "232f6e178f9ff25b1016d4b324f7155c52989e3fb4fc14b19d3d24b24590e0f1",
+        "4.0.0",
     ),
     # 1.0.0 (#199): opens the series. Never shipped before this PR. Same
     # split, and the same reason, as REPO_CHANGE_SOURCE_PROMPT /

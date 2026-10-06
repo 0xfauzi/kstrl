@@ -149,13 +149,15 @@ def test_up_is_named_only_where_it_is_read_validated_or_started() -> None:
         sources=package_sources(),
         sees=spells("up"),
         expected={
-            # The key, the field, its validation, load, digest and evidence.
+            # The key, the field, its validation, load, digest and evidence,
+            # and the table an operator pastes to adopt a proposal (#696 s7).
             "stack.py:<module>": 2,
             "stack.py:stack_errors": 2,
-            "stack.py:load_stack": 2,
+            "stack.py:stack_from_table": 2,
             "stack.py:Stack.digest": 2,
             "stack.py:stack_evidence": 2,
             "stack.py:file_stack_item": 2,
+            "stack.py:stack_toml": 1,
             # The one place it runs: started inside the test zone, then waited on.
             "replay.py:_run_stages": 3,
             "replay.py:_ready": 1,
