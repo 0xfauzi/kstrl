@@ -284,7 +284,7 @@ class TestModelTagEndToEnd:
         comp.findings = result.as_findings()
         manifest = Manifest(
             version="1",
-            spec_file="spec.md",
+            spec_file="",
             project_name="p",
             base_branch="main",
             single_pr=False,
@@ -321,7 +321,7 @@ def _run_empty_factory(
     return run_factory(
         Manifest(
             version="1",
-            spec_file="spec.md",
+            spec_file="",
             project_name="p",
             base_branch="main",
             single_pr=False,

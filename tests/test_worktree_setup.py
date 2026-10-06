@@ -114,7 +114,7 @@ def _skip_on_base_gates(command: str) -> str:
 def _manifest(scaffold: str = "") -> Manifest:
     return Manifest(
         version="1",
-        spec_file="spec.md",
+        spec_file="",
         project_name="t",
         base_branch="main",
         single_pr=False,

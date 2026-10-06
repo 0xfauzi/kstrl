@@ -32,6 +32,7 @@ from kstrl.contract import (
     run_contract_testing,
     run_integrated_base_check,
 )
+from kstrl.decompose import spec_digest
 from kstrl.factory import ComponentResult, FactoryResult, run_factory
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.pipeline import ComponentPipeline
@@ -232,15 +233,20 @@ class TestTheStamp:
         in worktree mode the base fetch runs inside those checks, so the
         stamp comes after them."""
         _git_project(tmp_path, ["comp-a"])
-        # An unreadable decision register is a pre-spend refusal (#260).
+        # An unreadable decision register is a pre-spend refusal (#260). Only
+        # a manifest made from a spec binds one, and such a manifest pins it (#639).
         (tmp_path / "scripts" / "kstrl" / "decisions.json").write_text(
             "{not json", encoding="utf-8"
         )
+        (tmp_path / "spec.md").write_text("# Spec\n", encoding="utf-8")
+        manifest = _make_manifest([_component("comp-a")])
+        manifest.spec_file = manifest.spec_path = "spec.md"
+        manifest.spec_digest = spec_digest("# Spec\n")
 
-        result, output = _run(tmp_path, _make_manifest([_component("comp-a")]))
+        result, output = _run(tmp_path, manifest)
 
         assert result.exit_code == 2
-        assert "Refusing to run" in output
+        assert "Refusing to run: the architect decision register cannot bind" in output
         assert _on_disk(tmp_path).get("featureBaseSha", "") == ""
 
     def test_the_stamp_is_on_disk_before_any_merge_decision_runs(self, tmp_path: Path) -> None:

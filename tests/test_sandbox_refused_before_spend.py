@@ -105,7 +105,7 @@ def _project(tmp_path: Path, toml: str) -> Path:
     )
     manifest = {
         "version": "1",
-        "specFile": "spec.md",
+        "specFile": "",
         "projectName": "t",
         "baseBranch": "main",
         "singlePr": False,

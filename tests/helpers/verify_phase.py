@@ -115,7 +115,7 @@ def _pipeline(
     comps = list(components) if components is not None else [comp]
     manifest = Manifest(
         version="1",
-        spec_file="spec.md",
+        spec_file="",
         project_name="t",
         base_branch="main",
         single_pr=False,

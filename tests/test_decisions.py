@@ -328,9 +328,14 @@ class TestTheSchedulerActuallyInjectsIt:
 
     def test_the_block_reaches_the_worker_at_the_right_position(self, tmp_path: Path) -> None:
         import kstrl.factory as factory_mod
+        from kstrl.decompose import spec_digest
         from kstrl.factory import ComponentResult, run_factory
 
         root = _factory_project(tmp_path, "comp-a")
+        # A decompose pins the spec on the manifest and the register (#639),
+        # and a factory run refuses a manifest that names a spec but pins none.
+        (root / "spec.md").write_text("# Spec\n", encoding="utf-8")
+        pin = spec_digest("# Spec\n")
         write_decisions(
             [
                 _spec_decision(
@@ -343,6 +348,7 @@ class TestTheSchedulerActuallyInjectsIt:
             root_dir=root,
             project_name="proj",
             spec_file="spec.md",
+            spec_digest=pin,
             halted=False,
         )
         signature = inspect.signature(factory_mod._run_component)
@@ -353,6 +359,7 @@ class TestTheSchedulerActuallyInjectsIt:
             return ComponentResult("comp-a", success=True, iterations=1)
 
         manifest = _one_component_manifest("proj", "spec.md")
+        manifest.spec_path, manifest.spec_digest = "spec.md", pin
         config, base, ui = _factory_inputs(root)
         with (
             patch("kstrl.factory._run_component", side_effect=capture),

@@ -85,7 +85,7 @@ def _project(tmp_path: Path, component_ids: tuple[str, ...]) -> Path:
 def _manifest(component_ids: tuple[str, ...]) -> Manifest:
     return Manifest(
         version="1",
-        spec_file="spec.md",
+        spec_file="",
         project_name="proj",
         base_branch="main",
         single_pr=False,

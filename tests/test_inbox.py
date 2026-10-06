@@ -439,7 +439,7 @@ def _run_factory(
     AutonomyState(level=int(level)).save(tmp_path)
     manifest = Manifest(
         version="1",
-        spec_file="s",
+        spec_file="",
         project_name="t",
         base_branch="main",
         single_pr=False,
@@ -689,7 +689,7 @@ class TestInboxRetryRoundTrip:
         manifest_path.parent.mkdir(parents=True)
         manifest = Manifest(
             version="1",
-            spec_file="s",
+            spec_file="",
             project_name="t",
             base_branch="main",
             single_pr=False,

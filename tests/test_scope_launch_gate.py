@@ -85,7 +85,7 @@ def _component(comp_id: str) -> Component:
 def _manifest() -> Manifest:
     return Manifest(
         version="1",
-        spec_file="spec.md",
+        spec_file="",
         project_name="test",
         base_branch="main",
         single_pr=False,

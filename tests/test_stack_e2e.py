@@ -148,7 +148,7 @@ def _repo(
         confirm_stack(root)
     manifest = {
         "version": "1",
-        "specFile": "spec.md",
+        "specFile": "",
         "projectName": "demo",
         "baseBranch": "main",
         "singlePr": False,

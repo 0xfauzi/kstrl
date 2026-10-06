@@ -121,14 +121,23 @@ def plan_digest(manifest: Manifest, root_dir: Path, acceptance_digest: str = "")
 def spec_pin_errors(manifest: Manifest, root_dir: Path) -> list[str]:
     """Why this plan must not run on the spec as it reads now, or [] (#639).
 
-    A plan with no pinned digest has nothing to compare: a ``ks run`` or
-    ``ks feature`` manifest (no spec), or one written before #639, which
-    the caller warns about. Otherwise the spec is read again through
-    ``load_spec_input``, the reader decompose pinned, and a changed,
-    missing or unreadable spec is a refusal with the ways out named.
+    A ``ks run`` or ``ks feature`` manifest names no spec, so it has
+    nothing to compare. A manifest that names a spec but pins no digest
+    was written before #639: kstrl cannot tell whether that spec changed
+    since, so it is a refusal with the re-plan command (owner decision
+    1(a)). Otherwise the spec is read again through ``load_spec_input``,
+    the reader decompose pinned, and a changed, missing or unreadable
+    spec is a refusal with the ways out named.
     """
     if not manifest.spec_digest:
-        return []
+        if not manifest.spec_file:
+            return []
+        return [
+            f"this plan was made from {manifest.spec_file} before kstrl pinned specs, so "
+            "kstrl cannot tell whether the spec changed since. Nothing was run.",
+            f"Re-plan from the spec: ks factory --spec <path to {manifest.spec_file}> "
+            f"--project-name {manifest.project_name} (one architect run).",
+        ]
     replan = f"ks factory --spec {manifest.spec_path} --project-name {manifest.project_name}"
     path = Path(manifest.spec_path)
     if not path.is_absolute():

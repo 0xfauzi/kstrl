@@ -22,6 +22,7 @@ from kstrl import git
 from kstrl.agents.base import UsageRecord
 from kstrl.config import KstrlConfig
 from kstrl.contract import ContractConfig, ContractMode
+from kstrl.decompose import spec_digest
 from kstrl.factory import FactoryConfig, FactoryResult, run_factory
 from kstrl.integration import integration_stories
 from kstrl.manifest import Component, ComponentStatus, Manifest
@@ -57,6 +58,10 @@ def commit_file(root: Path, rel: str, text: str) -> str:
     git_in(root, "add", rel)
     git_in(root, "commit", "-q", "-m", f"add {rel}")
     return rev(root)
+
+
+#: The text of the spec ``merged_feature`` pins on its manifest.
+SPEC_TEXT = "# Spec\n\nTwo components, one feature.\n"
 
 
 def manifest_file(root: Path) -> Path:
@@ -95,6 +100,9 @@ def merged_feature(
         '{"branchName": "test", "userStories": []}', encoding="utf-8"
     )
     (root / "kstrl.toml").write_text("[knowledge]\nenabled = false\n", encoding="utf-8")
+    # The spec a decompose pinned (#639): a run refuses a manifest that names
+    # a spec and pins no digest.
+    (root / "spec.md").write_text(SPEC_TEXT, encoding="utf-8")
     for cid in ids:
         write_component_prd(root, f"scripts/kstrl/feature/{cid}/prd.json", stories=[PASSING_STORY])
     commit_file(root, STORE, "def save(x: int) -> int:\n    return x\n")
@@ -124,6 +132,8 @@ def merged_feature(
         base_branch="main",
         single_pr=False,
         components=components,
+        spec_path="spec.md",
+        spec_digest=spec_digest(SPEC_TEXT),
     )
     manifest.feature_base_sha = base if feature_base is None else feature_base
     manifest.save(manifest_file(root))
