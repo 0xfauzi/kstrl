@@ -79,6 +79,10 @@ def _issue(
     }
 
 
+def _labels_payload(*names: str) -> str:
+    return json.dumps({"labels": [{"name": name} for name in names]})
+
+
 def _auth_payload(
     *,
     labeled_at: str = "2026-07-30T10:00:00Z",
@@ -126,8 +130,12 @@ class _GhStub:
         auth: str | GhResult | None = None,
         edit: GhResult | None = None,
         comment: GhResult | None = None,
+        view: str | GhResult | None = None,
     ) -> None:
         self.issues = issues
+        #: What `gh issue view --json labels` answers: by default an issue
+        #: carrying the trigger and the running label.
+        self.view = view if view is not None else _labels_payload("kstrl:queued", "kstrl:running")
         self.checkout = checkout
         self.auth = auth if auth is not None else _auth_payload()
         self.edit = edit or GhResult(ok=True)
@@ -163,6 +171,8 @@ class _GhStub:
             return self._as_result(self.issues)
         if head == ["api", "graphql"]:
             return self._as_result(self.auth)
+        if head == ["issue", "view"]:
+            return self._as_result(self.view)
         if head == ["issue", "edit"]:
             return self.edit
         if head == ["issue", "comment"]:
@@ -865,13 +875,15 @@ class TestServeDrivesRemoteLabels:
     ) -> None:
         """The writeback text, driven through serve_cycle with the REAL
         ``report_outcome`` and only the ``gh`` transport stubbed: the label
-        swap replaces every managed label with ``kstrl:poison`` and the
+        swap adds ``kstrl:poison`` and removes the kstrl labels the issue
+        carries, matched without regard to case, and nothing else (#738:
+        naming a label the repository lacks fails the whole removal). The
         comment says what the human can do (``reset-attempts``). This is
         the carrier for the folded ``TestWriteback`` unit tests."""
         from kstrl.serve import RunSpend, serve_cycle
 
         self._remote_item(tmp_path)
-        stub = _GhStub()
+        stub = _GhStub(view=_labels_payload("kstrl:queued", "Kstrl:Running", "bug"))
         with patch("kstrl.serve.read_run_spend", lambda root, rid: RunSpend()):
             with patch(
                 "kstrl.intake_github.GitHubIntakeConfig.load",
@@ -881,16 +893,63 @@ class TestServeDrivesRemoteLabels:
                     serve_cycle(tmp_path, runner=self._runner(1))  # type: ignore[arg-type]
 
         edits = stub.argv_for("issue", "edit")
-        assert edits, stub.calls
-        last = edits[-1]
+        assert len(edits) == 2, stub.calls
+        claim, last = edits
+        # The stub answers the same labels for every view, so the claim
+        # finds the issue already carrying its target, as a re-claim after a
+        # crash does: the target is added and never also removed.
+        assert claim[claim.index("--add-label") + 1] == "kstrl:running"
+        claimed = {claim[i + 1] for i, a in enumerate(claim) if a == "--remove-label"}
+        assert claimed == {"kstrl:queued"}, claim
         assert last[last.index("--add-label") + 1] == "kstrl:poison"
         removed = {last[i + 1] for i, a in enumerate(last) if a == "--remove-label"}
-        assert "kstrl:running" in removed and "kstrl:poison" not in removed
+        assert removed == {"kstrl:queued", "kstrl:running"}, last
         comments = stub.argv_for("issue", "comment")
         assert comments, stub.calls
         body = comments[-1][comments[-1].index("--body") + 1]
         assert "poison" in body
         assert "reset-attempts" in body, "say what the human can do"
+
+    @pytest.mark.parametrize(
+        ("view", "needle"),
+        [
+            (json.dumps({"labels": "kstrl:running"}), "could not read the labels of issue #4"),
+            ("<html>rate limited</html>", "could not read the labels of issue #4"),
+            (
+                json.dumps({"labels": [{"name": "kstrl:queued"}, {"name": None}]}),
+                "could not read the labels of issue #4",
+            ),
+            (GhResult(ok=False, error="gh issue failed (1): HTTP 502"), "HTTP 502"),
+        ],
+        ids=["unreadable-answer", "not-json", "unnamed-label", "failed-view"],
+    )
+    def test_an_unreadable_label_list_fails_the_writeback(
+        self,
+        tmp_path: Path,
+        view: str | GhResult,
+        needle: str,
+    ) -> None:
+        """#738. The edit names only the labels ``gh issue view`` reports,
+        so an answer kstrl cannot read, or a view that failed, is a failed
+        writeback, reported as a warning, and no edit runs. Reading either
+        as an issue with no labels, or falling back to removing every
+        managed label, would leave the old state label on the issue."""
+        from kstrl.serve import RunSpend, _NullObserver, serve_cycle
+
+        self._remote_item(tmp_path)
+        stub = _GhStub(view=view)
+        observer = _NullObserver()
+        with patch("kstrl.serve.read_run_spend", lambda root, rid: RunSpend()):
+            with patch(
+                "kstrl.intake_github.GitHubIntakeConfig.load",
+                return_value=_config(),
+            ):
+                with patch("kstrl.intake_github.run_gh", stub):
+                    serve_cycle(tmp_path, runner=self._runner(0), observer=observer)  # type: ignore[arg-type]
+
+        assert stub.argv_for("issue", "edit") == [], stub.calls
+        warnings = [line for line in observer.lines if line.startswith("warn:") and needle in line]
+        assert len(warnings) == 2, observer.lines
 
     def test_a_merge_gate_park_names_the_approval_command(
         self,
