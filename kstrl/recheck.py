@@ -27,6 +27,7 @@ new run, not by the index.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -75,8 +76,8 @@ def recheck(root: Path, record_path: Path, config: FactoryConfig, ui: UI) -> Sai
         stated = {
             row["id"]: (row["verdict"], head_verdict(row["headExits"])) for row in record["checks"]
         }
-        if not isinstance(head, str) or not head:
-            raise ValueError("headSha names no commit")
+        if not isinstance(head, str) or not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", head):
+            raise ValueError(f"headSha {head!r} is not a full commit id")
     except (KeyError, TypeError, ValueError, AttributeError) as exc:
         return [f"{record_path} is not an acceptance record: {exc!r}"], [], False
     plan, errors = _saved_plan(evidence, plan_id, comp)

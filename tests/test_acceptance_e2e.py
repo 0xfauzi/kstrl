@@ -561,6 +561,17 @@ def test_a_recheck_runs_the_saved_checks_again_and_takes_no_file_on_trust(
     code, out = _recheck(root, path)
     assert code == 2, out
     assert f"{path} cannot be read" in out, out
+    # A headSha that is not a full commit id refuses before git sees it.
+    injected = tmp_path / "injected"
+    forged = json.loads(kept["record.json"])
+    forged["headSha"] = f"--upload-pack=touch {injected}"
+    path.write_text(json.dumps(forged), encoding="utf-8")
+    _reindex(evidence, "record.json")
+    code, out = _recheck(root, path)
+    assert code == 2, out
+    assert "headSha" in out, out
+    assert "did not run at" not in out, out
+    assert not injected.exists()
     for name, data in kept.items():
         (evidence / name).write_bytes(data)
 
