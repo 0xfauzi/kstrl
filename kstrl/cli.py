@@ -2674,6 +2674,14 @@ def decompose(
     "[stack]; `ks retry` replays it",
 )
 @click.option(
+    "--design-acceptance",
+    is_flag=True,
+    default=False,
+    help="Ask the verification designer (the [review] agent) for each component's "
+    "acceptance checks before the plan gate, then run them as --acceptance does, record "
+    "only. Needs a [stack]; `ks retry` replays it",
+)
+@click.option(
     "--dead-code-cleanup",
     is_flag=True,
     default=None,
@@ -2886,6 +2894,7 @@ def factory(
     no_verify: bool,
     accept_red_base: str,
     acceptance: str,
+    design_acceptance: bool,
     dead_code_cleanup: bool | None,
     dead_code_command: str | None,
     mutation_testing: bool | None,
@@ -3144,6 +3153,7 @@ def factory(
         factory_config.force_lock = force_lock
         factory_config.accept_red_base = accept_red_base
         factory_config.acceptance_dir = acceptance
+        factory_config.design_acceptance = design_acceptance
         # #436: what `ks retry` replays; see kstrl/launch_record.py.
         factory_config.launch_flags = replayable_flags(ctx)
         # R2.3: --no-verify is an explicit skip sentinel that run_factory

@@ -28,6 +28,7 @@ import pytest
 
 import kstrl.agents
 from kstrl import calibration_baseline
+from kstrl.acceptance_design import DESIGN_ASKS
 from tests import test_calibration as tc
 from tests.helpers import calibration_capture as harness
 from tests.helpers.calibration_capture import FX_D
@@ -169,6 +170,15 @@ PAID_ARMS: dict[str, tuple[Callable[[], tuple[Any, ...]], bool]] = {
         lambda: _first(tc.INTEGRATION_CLEAN_PARAMS),
         True,
     ),
+    # #700 slice 7: the verification designer. Both roles have no floor yet.
+    "test_acceptance_designer_catches_a_planted_head": (
+        lambda: _first(tc.ACCEPTANCE_POSITIVE_PARAMS),
+        False,
+    ),
+    "test_acceptance_designer_passes_the_correct_head": (
+        lambda: _first(tc.ACCEPTANCE_CLEAN_PARAMS),
+        False,
+    ),
 }
 
 
@@ -237,12 +247,19 @@ def test_every_paid_arm_keeps_the_reply_it_scored(
     assert sorted(kept) == [(role, fixture_id, 1), (role, fixture_id, 2)]
     # #480: a stub reply states nothing, so the integration review asks the
     # reviewer once more (integration_phase.REVIEW_ASKS = 2) and each of its
-    # runs keeps both calls. Every other arm asks once per run.
-    asks = 2 if role in ("integration", "integration_clean") else 1
+    # runs keeps both calls. Every other arm asks once per run, but the
+    # verification designer (#700, see _designer_asks).
+    asks = 2 if role in ("integration", "integration_clean") else _designer_asks(role)
     assert [len(kept[key]["calls"]) for key in sorted(kept)] == [asks, asks], kept
     assert len(stubbed) == 2 * asks, stubbed
     finals = [call["final_message"] for key in sorted(kept) for call in kept[key]["calls"]]
     assert finals == stubbed
+
+
+def _designer_asks(role: str) -> int:
+    """The verification designer asks again after any reply it cannot use,
+    a crash included (DESIGN_ASKS); no other arm does."""
+    return DESIGN_ASKS if role in ("acceptance", "acceptance_clean") else 1
 
 
 class _CrashingAgent:
@@ -283,6 +300,7 @@ def test_a_run_whose_agent_crashed_keeps_its_partial_reply(
     role, fixture_id = records[0]["role"], records[0]["fixture_id"]
     kept = _kept(replies_dir(tc.RESULTS_DIR, report.timestamp))
     assert sorted(kept) == [(role, fixture_id, 1), (role, fixture_id, 2)]
-    assert len(stubbed) == 2, stubbed
+    asks = _designer_asks(role)
+    assert len(stubbed) == 2 * asks, stubbed
     for reply in kept.values():
-        assert reply["calls"] == [{"streamed": ["partial line"], "final_message": None}]
+        assert reply["calls"] == [{"streamed": ["partial line"], "final_message": None}] * asks

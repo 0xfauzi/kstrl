@@ -23,6 +23,12 @@ from kstrl.acceptance import FAIL, PASS, RECORD_FILE, Check, evidence_dir
 from kstrl.jsonread import read_json
 from kstrl.rung import HOST_LABEL
 
+#: Under the header of a record whose checks a model wrote (#700 slice 7).
+DESIGNED_LINE = (
+    "- the verification designer wrote these checks: record only, they gate nothing "
+    "until the acceptance floors are set (owner decision 10)"
+)
+
 
 def render_lines(record: Mapping[str, Any]) -> list[str]:
     """The lines a head record is shown as, on the terminal and in the PR
@@ -33,6 +39,8 @@ def render_lines(record: Mapping[str, Any]) -> list[str]:
         f"Acceptance for {record['component']}, attempt {record['attempt']}: "
         f"plan {record['planId'][:12]}, head {record['headSha'][:12]}{base}; {isolation}"
     ]
+    if record.get("writtenBy") == "designer":
+        lines.append(DESIGNED_LINE)
     replay = record["replay"]
     if replay["error"] or replay["failed"]:
         lines.append(f"- the head replay stopped: {replay['error'] or replay['detail']}")

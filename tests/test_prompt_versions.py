@@ -94,6 +94,7 @@ from types import ModuleType
 import pytest
 
 from kstrl import (
+    acceptance_design,
     decisions,
     decompose,
     gepa_adapter,
@@ -106,6 +107,7 @@ from kstrl import (
     security,
     stack,
 )
+from kstrl.acceptance_design import ACCEPTANCE_PROMPT, ACCEPTANCE_PROMPT_VERSION
 from kstrl.decisions import (
     DECISIONS_CONTEXT_PROMPT,
     DECISIONS_CONTEXT_PROMPT_VERSION,
@@ -192,6 +194,7 @@ _PROMPTS: dict[str, str] = {
     "INTEGRATION_FIX_PROMPT": INTEGRATION_FIX_PROMPT,
     "GEPA_REFLECTION_PROMPT": GEPA_REFLECTION_PROMPT,
     "STACK_PROMPT": STACK_PROMPT,
+    "ACCEPTANCE_PROMPT": ACCEPTANCE_PROMPT,
     **BUILDER_PROMPTS,
     **NOTICE_PROMPTS,
 }
@@ -213,6 +216,7 @@ _VERSIONS: dict[str, str] = {
     "INTEGRATION_FIX_PROMPT": INTEGRATION_FIX_PROMPT_VERSION,
     "GEPA_REFLECTION_PROMPT": GEPA_REFLECTION_PROMPT_VERSION,
     "STACK_PROMPT": STACK_PROMPT_VERSION,
+    "ACCEPTANCE_PROMPT": ACCEPTANCE_PROMPT_VERSION,
     **BUILDER_VERSIONS,
     **NOTICE_VERSIONS,
 }
@@ -350,6 +354,12 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     # calibration suite scores no engineer-context fixture.
     "STACK_PROMPT": (
         "571e7d0f85ff031ea25ac7eb7d3aa600c8be74296417340dc4051b3fd14c022e",
+        "1.0.0",
+    ),
+    # 1.0.0 (#700 slice 7): new, the verification designer. H2: roles "acceptance" and
+    # "acceptance_clean", first captured with #696 slice 7; no baseline carries them yet.
+    "ACCEPTANCE_PROMPT": (
+        "880418ce7ee0cd9765105ab3a08f2ea40106115c090abfe2c1aed60757283cfa",
         "1.0.0",
     ),
     "PASTED_CHANGE_SOURCE_PROMPT": (
@@ -559,6 +569,14 @@ def _distill_render(_tmp_path: Path) -> str:
     return knowledge.build_distill_prompt(component, 5, "PRD", "FACTS", "DIFF")
 
 
+def _acceptance_render(_tmp_path: Path) -> str:
+    component = Component(
+        id="C1", title="T", description="D", dependencies=[], prd_path="", branch_name=""
+    )
+    stack_ = Stack(instructions="I", setup="", checks=(("tests", "T"),), env=())
+    return acceptance_design.build_design_prompt(component, ["US-001 T: C"], "SPEC", stack_)
+
+
 def _stack_render(_tmp_path: Path) -> str:
     return Stack(instructions="I", setup="", checks=(("tests", "T"),), env=()).format_for_prompt()
 
@@ -586,6 +604,7 @@ _RENDERERS: dict[str, tuple[ModuleType, Callable[[Path], str]]] = {
     ),
     "DISTILL_PROMPT": (knowledge, _distill_render),
     "STACK_PROMPT": (stack, _stack_render),
+    "ACCEPTANCE_PROMPT": (acceptance_design, _acceptance_render),
     "REPO_CHANGE_SOURCE_PROMPT": (git, lambda _p: repo_change_source("BASE_SHA")),
     "PASTED_CHANGE_SOURCE_PROMPT": (git, lambda _p: pasted_change_source("DIFF")[0]),
     "DECISIONS_CONTEXT_PROMPT": (decisions, _decisions_context_render),

@@ -69,6 +69,10 @@ _DOMAIN_BASE = "RuntimeError"
 #: a class base are bare raises and one ``isinstance``, pinned anyway
 #: because separating them by shape is the guessing #324 costs.
 EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
+    # #700 slice 7: two `except (OSError, RuntimeError, ValueError)` clauses,
+    # one around the designer's reply (a timeout or output cap is a
+    # RuntimeError) and one around starting it. Caught, never subclassed.
+    "acceptance_design.py": 2,
     "autonomy.py": 1,
     # One bare raise: `_resolve_factory_run_lock` refuses a handed
     # `_RunLock` whose own `release()` has already run (#597 fix round).

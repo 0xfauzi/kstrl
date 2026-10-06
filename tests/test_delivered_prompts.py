@@ -79,6 +79,7 @@ from types import ModuleType
 import pytest
 
 from kstrl import (
+    acceptance_design,
     decompose,
     gepa_adapter,
     git,
@@ -189,6 +190,7 @@ _DECISIONS = [
 #: time. Each imported the NAME, so the binding to replace is the one in
 #: the consuming module, not the one in ``kstrl.delimiters``.
 _DELIMITER_CONSUMERS: tuple[ModuleType, ...] = (
+    acceptance_design,
     decompose,
     review,
     security,
@@ -279,6 +281,24 @@ class _Role:
 
 
 _ROLES: dict[str, _Role] = {
+    # #700 slice 7: the verification designer, one prompt per component. Pinned
+    # by running this test.
+    "acceptance-designer": _Role(
+        lambda _p: acceptance_design.build_design_prompt(
+            _COMPONENT,
+            ["it parses a valid file", "it errors on a bad one"],
+            _SPEC_TEXT,
+            Stack(
+                instructions="Build with the project's own tools.",
+                setup="",
+                checks=(("tests", "T"), ("lint", "L")),
+                env=(),
+            ),
+        ),
+        frozenset({"ACCEPTANCE_PROMPT"}),
+        "1da1b80ab50403c523435efa6e4f272a58b1f73525396532c1d8b3e1252b06e8",
+        3481,
+    ),
     "architect": _Role(
         lambda _p: decompose.build_decompose_prompt("PROJECT", _SPEC_TEXT),
         frozenset({"DECOMPOSE_PROMPT", "ARCHITECT_NO_REPO_SOURCE_PROMPT"}),

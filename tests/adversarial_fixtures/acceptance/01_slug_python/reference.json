@@ -1,0 +1,19 @@
+{
+  "createsApp": false,
+  "checks": [
+    {
+      "id": "example",
+      "criterion": "the example in the specification",
+      "argv": ["/bin/sh", "-c", "[ \"$(python3 \"$KSTRL_TREE/slug.py\" 'Hello, World!')\" = hello-world ]"],
+      "onBase": "fails",
+      "heldOut": false
+    },
+    {
+      "id": "other-punctuation",
+      "criterion": "punctuation the example does not show separates words and is dropped",
+      "argv": ["/bin/sh", "-c", "[ \"$(python3 \"$KSTRL_TREE/slug.py\" 'Fish & Chips: 2 Plates')\" = fish-chips-2-plates ]"],
+      "onBase": "fails",
+      "heldOut": true
+    }
+  ]
+}

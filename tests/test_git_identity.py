@@ -65,6 +65,9 @@ EXPECTED_IDENTITY_SPELLINGS: dict[str, int] = {
 #: the repository was through ``tests.helpers.gitrepo.set_identity``.
 EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/conftest.py": 2,
+    # #700 slice 7: base_checkout and materialize commit the fixture's trees
+    # into repositories they have just put through set_identity.
+    "tests/helpers/calibration_acceptance_fixture.py": 3,
     # #482: materialize commits the fixture's base and feature trees into a
     # repository it has just put through tests.helpers.gitrepo.set_identity.
     "tests/helpers/calibration_integration_fixture.py": 2,
@@ -80,6 +83,9 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # #654: the moved-base test commits NOTES.md into the repository
     # tests.test_red_base_preflight._repo built and put through set_identity.
     "tests/test_accept_red_base.py": 1,
+    # #700 slice 7: `_with_greet` commits into the repository
+    # `tests.test_stack_e2e._repo` put through set_identity.
+    "tests/test_acceptance_design_e2e.py": 1,
     # #700 slice 4: `_with_greet` and the three stub engineers commit into
     # the repository `tests.test_stack_e2e._repo` put through set_identity
     # (the engineers commit in its worktrees, which share its config).

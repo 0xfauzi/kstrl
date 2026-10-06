@@ -314,3 +314,32 @@ not an effect of the 4.0.0 text. The 2.0.0 note above records the same
 failure on the same fixture. A lenient parser cannot repair the 4.0.0 output,
 because the string ends at an incorrect quotation mark. The probe script and the raw
 output are not in the repository.
+
+## The 2026-10-06 verification designer capture (#700 slice 7, ACCEPTANCE_PROMPT 1.0.0)
+
+`baseline-20261006-165608.json` is the first capture of the roles
+`acceptance` and `acceptance_clean` (haiku, three runs for each fixture,
+head `65902ae6`). The ACCEPTANCE_PROMPT body is 3259 bytes, sha256
+`880418ce7ee0cd9765105ab3a08f2ea40106115c090abfe2c1aed60757283cfa`.
+The two roles are record-only (floor `None`). The owner sets their floors
+from this capture.
+
+Results: `acceptance` 0.39 (6 fixtures, 18 runs) and `acceptance_clean`
+0.33 (2 fixtures, 6 runs). The primary cause is the base refusal, not
+the checks of the designer:
+
+| result of the run | `acceptance` | `acceptance_clean` |
+|---|---|---|
+| the base refused the plan | 11 of 18 | 3 of 6 |
+| the plan held, and a check failed on the planted head | 7 of 7 | not applicable |
+| the plan held, and all checks passed on the correct head | not applicable | 2 of 3 |
+
+In each refused run, a minimum of one check of the designer passed on the base, and
+the plan said that the check fails there (`onBase: fails`). Examples are
+`exit-zero`, `empty-input` and `single-word`. One such check refuses the
+full plan, also when the other checks are correct. In one
+`acc-initials-sh-wrong` run, the checks could not start on the base (exit
+127). In the one `acc-slug-python` run that was not clean, all checks
+failed on the correct head.
+
+The replies are not in the repository.

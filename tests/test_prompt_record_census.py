@@ -73,6 +73,7 @@ AGENT_ENTRIES = frozenset(
         "distill_facts",
         "_run_reviewer",
         "review_commit",
+        "design_component",
     }
 )
 
@@ -313,6 +314,8 @@ def test_every_streamer_that_pipes_a_prompt_records_it_first() -> None:
 # --- layer 2: the identity --------------------------------------------------
 
 EXPECTED_AGENT_CALLS: dict[str, int] = {
+    "acceptance_design.py:_design_one": 1,
+    "acceptance_design.py:design_component": 1,
     "agents/logging.py:LoggingAgent.run": 1,
     "cli.py:_understand_core": 1,
     "decompose.py:_decompose_spec_impl": 1,
@@ -336,6 +339,7 @@ EXPECTED_AGENT_CALLS: dict[str, int] = {
 #: e2e test that proves it can be found. Everything else must be scoped
 #: lexically.
 CALLER_SCOPED: dict[str, str] = {
+    "acceptance_design.py:design_component": "acceptance_design._design_one",
     "agents/logging.py:LoggingAgent.run": "a tee around the adapter it wraps; its caller's scope",
     "decompose.py:collect_agent_output": "the drain helper; review, security and distill call it",
     "gepa_adapter.py:ReflectionModel.__call__": "offline prompt search outside any run (#530)",
@@ -352,6 +356,7 @@ CALLER_SCOPED: dict[str, str] = {
 NO_RUN_CALLERS = frozenset({"gepa_adapter.py:ReflectionModel.__call__"})
 
 EXPECTED_SCOPES: dict[str, int] = {
+    "acceptance_design.py:_design_one": 1,
     "cli.py:_understand_core": 1,
     "decompose.py:_decompose_spec_impl": 1,
     "factory.py:_run_component": 1,
@@ -426,6 +431,8 @@ def test_a_site_cleared_by_its_caller_has_its_callers_counted() -> None:
 #: Every agent-call site: the keyword that carries its time bound, and where
 #: the bound comes from. Derived by running, like every other pin here.
 EXPECTED_BOUNDS: dict[str, tuple[str, str]] = {
+    "acceptance_design.py:_design_one": ("timeout", "[factory] review_timeout_seconds"),
+    "acceptance_design.py:design_component": ("timeout", "its caller's timeout"),
     "agents/logging.py:LoggingAgent.run": ("timeout", "its caller's timeout"),
     "cli.py:_understand_core": ("timeouts", "[timeout] agent_iteration and component_total"),
     "decompose.py:_decompose_spec_impl": ("timeout", "[factory] architect_timeout_seconds"),
