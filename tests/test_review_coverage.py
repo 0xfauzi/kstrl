@@ -700,7 +700,7 @@ def _scaffold(root: Path, comp_ids: list[str]) -> Path:
 def _make_manifest(ids: list[str]) -> Manifest:
     return Manifest(
         version="1",
-        spec_file="s",
+        spec_file="",
         project_name="t",
         base_branch="main",
         single_pr=False,

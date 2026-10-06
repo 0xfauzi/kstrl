@@ -198,7 +198,7 @@ class TestReplay:
         journal = journal_at(tmp_path)
         manifest = Manifest(
             version="1",
-            spec_file="s.md",
+            spec_file="",
             project_name="p",
             base_branch="main",
             single_pr=False,
@@ -270,7 +270,7 @@ def _run_factory_with_autonomy(
 
     manifest = Manifest(
         version="1",
-        spec_file="spec.md",
+        spec_file="",
         project_name="test",
         base_branch="main",
         single_pr=False,

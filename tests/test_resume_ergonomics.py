@@ -80,7 +80,7 @@ def _scaffold(tmp_path: Path, comp_ids: list[str]) -> Path:
 def _make_manifest(ids: list[str]) -> Manifest:
     return Manifest(
         version="1",
-        spec_file="s",
+        spec_file="",
         project_name="t",
         base_branch="main",
         single_pr=False,
@@ -226,7 +226,7 @@ class TestManifestRunMetadata:
             json.dumps(
                 {
                     "version": "1",
-                    "specFile": "s",
+                    "specFile": "",
                     "projectName": "t",
                     "baseBranch": "main",
                     "singlePr": False,

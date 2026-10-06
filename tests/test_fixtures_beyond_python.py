@@ -415,7 +415,7 @@ def _json_project(tmp_path: Path) -> tuple[Path, str]:
     )
     manifest = {
         "version": "1",
-        "specFile": "spec.md",
+        "specFile": "",
         "projectName": "p",
         "baseBranch": "main",
         "singlePr": False,

@@ -1232,7 +1232,7 @@ class TestFactoryComponentTimeout:
 
         manifest = Manifest(
             version="1",
-            spec_file="spec.md",
+            spec_file="",
             project_name="t",
             base_branch="main",
             single_pr=False,
@@ -1303,7 +1303,7 @@ class TestFactoryComponentTimeout:
 
         manifest = Manifest(
             version="1",
-            spec_file="spec.md",
+            spec_file="",
             project_name="t",
             base_branch="main",
             single_pr=False,
@@ -1501,7 +1501,7 @@ class TestSchedulerBackstop:
 
         manifest = Manifest(
             version="1",
-            spec_file="spec.md",
+            spec_file="",
             project_name="t",
             base_branch="main",
             single_pr=False,
@@ -1638,7 +1638,7 @@ class TestCliTimeoutFlags:
             json.dumps(
                 {
                     "version": "1",
-                    "specFile": "spec.md",
+                    "specFile": "",
                     "projectName": "t",
                     "baseBranch": "main",
                     "singlePr": False,
@@ -2379,7 +2379,7 @@ class TestFreshBaseRetryReachesTheScheduler:
 
         manifest = Manifest(
             version="1",
-            spec_file="spec.md",
+            spec_file="",
             project_name="t",
             base_branch="main",
             single_pr=False,

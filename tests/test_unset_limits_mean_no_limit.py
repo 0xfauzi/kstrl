@@ -283,7 +283,7 @@ class TestZeroMeansNoLimitAtEveryWait:
         component.status = "completed"
         manifest = Manifest(
             version="1",
-            spec_file="spec.md",
+            spec_file="",
             project_name="p",
             base_branch="main",
             single_pr=False,
@@ -310,7 +310,7 @@ class TestZeroMeansNoLimitAtEveryWait:
         component.status = "completed"
         manifest = Manifest(
             version="1",
-            spec_file="spec.md",
+            spec_file="",
             project_name="p",
             base_branch="main",
             single_pr=False,
@@ -483,7 +483,7 @@ def _factory_run(root: Path, config: FactoryConfig, usage: UsageTotals | None) -
     (root / "kstrl.toml").write_text("[knowledge]\nenabled = false\n", encoding="utf-8")
     manifest = Manifest(
         version="1",
-        spec_file="spec.md",
+        spec_file="",
         project_name="p",
         base_branch="main",
         single_pr=False,

@@ -448,8 +448,7 @@ class TestManifestsWithoutAPin:
     def test_a_manifest_with_no_spec_is_not_checked(self, tmp_path: Path) -> None:
         root = _handmade_repo(tmp_path)
         data = _raw_manifest(root)
-        data["specFile"] = ""
-        _manifest_path(root).write_text(json.dumps(data), encoding="utf-8")
+        assert data["specFile"] == "" and "specDigest" not in data, data
 
         proc = _factory(root, _env(tmp_path))
         out = _out(proc)
@@ -457,15 +456,42 @@ class TestManifestsWithoutAPin:
         assert _engineer_ran(tmp_path)[:1] == ["http"], out
         assert UNPINNED not in out and STALE not in out, out
 
-    def test_a_manifest_from_before_the_pin_warns_and_runs(self, tmp_path: Path) -> None:
+    def test_a_manifest_from_before_the_pin_is_refused_with_the_replan_command(
+        self, tmp_path: Path
+    ) -> None:
+        """Owner decision 1(a): a manifest that names a spec and pins no
+        digest cannot show which text it was made from, so it runs nothing."""
         root = _handmade_repo(tmp_path)
-        assert "specDigest" not in _raw_manifest(root)
+        data = _raw_manifest(root)
+        data["specFile"] = "spec.md"
+        assert "specDigest" not in data
+        _manifest_path(root).write_text(json.dumps(data), encoding="utf-8")
 
         proc = _factory(root, _env(tmp_path))
         out = _out(proc)
 
-        assert _engineer_ran(tmp_path)[:1] == ["http"], out
-        assert UNPINNED in out, out
+        assert proc.returncode == 2, out
+        assert _engineer_ran(tmp_path) == [], out
+        assert STALE in out and UNPINNED in out, out
+        assert "ks factory --spec <path to spec.md> --project-name p" in out, out
+
+    def test_approving_a_plan_park_from_before_the_pin_records_nothing(
+        self, tmp_path: Path
+    ) -> None:
+        """The same refusal on the ``ks inbox approve`` path, before the decision is recorded."""
+        root, env = _planned(tmp_path)
+        assert _factory(root, env).returncode == 1
+        (item,) = _plan_items(root)
+        data = _raw_manifest(root)
+        del data["specDigest"], data["specPath"]
+        _manifest_path(root).write_text(json.dumps(data), encoding="utf-8")
+
+        approved = _ks(root, env, "inbox", "approve", item.id, "--ui", "plain", "--no-color")
+
+        assert approved.returncode == 2, _out(approved)
+        assert "nothing was approved" in _out(approved) and UNPINNED in _out(approved)
+        assert [str(i.status) for i in _plan_items(root)] == ["open"]
+        assert _engineer_ran(tmp_path) == []
 
 
 # --- slice 4: the owner's inbox answer reaches the next decompose ------------

@@ -101,7 +101,7 @@ def _scaffold(
         )
     manifest = Manifest(
         version="1",
-        spec_file="s",
+        spec_file="",
         project_name="t",
         base_branch="main",
         single_pr=False,

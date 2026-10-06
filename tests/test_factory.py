@@ -50,7 +50,7 @@ def _make_manifest(
     """Build a test manifest."""
     return Manifest(
         version="1",
-        spec_file="spec.md",
+        spec_file="",
         project_name="test",
         base_branch="main",
         single_pr=False,

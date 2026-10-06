@@ -61,7 +61,7 @@ from tests.helpers.stack_confirmation import in_process_stack
 def _make_manifest(components: list[Component]) -> Manifest:
     return Manifest(
         version="1",
-        spec_file="spec.md",
+        spec_file="",
         project_name="test",
         base_branch="main",
         single_pr=False,

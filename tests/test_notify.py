@@ -253,7 +253,7 @@ def _plain_base_config(root: Path) -> KstrlConfig:
 def _two_component_manifest() -> Manifest:
     return Manifest(
         version="1",
-        spec_file="spec.md",
+        spec_file="",
         project_name="demo",
         base_branch="main",
         single_pr=False,

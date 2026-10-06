@@ -119,7 +119,7 @@ def _repo(tmp_path: Path, components: list[dict[str, object]]) -> Path:
     confirm_stack(root)
     manifest = {
         "version": "1",
-        "specFile": "spec.md",
+        "specFile": "",
         "projectName": "p",
         "baseBranch": "main",
         "singlePr": False,

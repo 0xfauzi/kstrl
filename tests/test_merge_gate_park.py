@@ -174,7 +174,7 @@ def _repo(tmp_path: Path, toml: str = "") -> Path:
     gitrepo.git_in(root, "push", "-q", "-u", "origin", "main")
     manifest = {
         "version": "1",
-        "specFile": "spec.md",
+        "specFile": "",
         "projectName": "p",
         "baseBranch": "main",
         "singlePr": False,
@@ -567,7 +567,7 @@ class TestTheClassifierNeverBlamesAPark:
         path = tmp_path / "manifest.json"
         Manifest(
             version="1",
-            spec_file="s.md",
+            spec_file="",
             project_name="p",
             base_branch="main",
             single_pr=False,

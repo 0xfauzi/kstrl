@@ -690,7 +690,7 @@ class TestLoopUsageAggregation:
 def _make_manifest(components: list[Component]) -> Manifest:
     return Manifest(
         version="1",
-        spec_file="spec.md",
+        spec_file="",
         project_name="test",
         base_branch="main",
         single_pr=False,
@@ -3522,7 +3522,7 @@ class TestCostCeilingConfigValidation:
         config = FactoryConfig(max_cost_usd=float("nan"))
         manifest = Manifest(
             version="1",
-            spec_file="s",
+            spec_file="",
             project_name="t",
             base_branch="main",
             single_pr=False,
@@ -3942,7 +3942,7 @@ class TestBudgetConfigErrorReachesTheOperator:
     def _manifest() -> dict[str, Any]:
         return {
             "version": "1",
-            "specFile": "s.md",
+            "specFile": "",
             "projectName": "p",
             "baseBranch": "main",
             "singlePr": False,
@@ -4179,7 +4179,7 @@ class TestTokenCeilingRejectsUnboundingValues:
         config = FactoryConfig(max_total_tokens=-5)
         manifest = Manifest(
             version="1",
-            spec_file="s",
+            spec_file="",
             project_name="t",
             base_branch="main",
             single_pr=False,
