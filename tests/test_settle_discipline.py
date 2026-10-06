@@ -215,7 +215,7 @@ EXPECTED_AWAIT_SITES: dict[str, int] = {
     "tests/test_home_shell.py": 56,  # +4 #712: run_test, mounted, settled, then drained
     "tests/test_inbox.py": 4,
     "tests/test_inbox_waivers.py": 5,  # #595: the TUI test; run_test, mounted and settled only
-    "tests/test_init_wizard.py": 51,  # +4 #696: one pilot test, the same four awaits
+    "tests/test_init_wizard.py": 55,  # +8 #696: two pilot tests, the same four awaits each
     "tests/test_launch_session.py": 39,
     # TestRetryScreen split out of test_launch_session.py (#436 B1). Every await is
     # mounted/drained/settled/pilot.press; #485's one read after them is `request.header`, which
