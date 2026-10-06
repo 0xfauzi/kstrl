@@ -2,15 +2,13 @@
 
 git C-quotes a diff header path holding a non-ASCII byte, a double quote,
 a backslash or a tab. `git diff --name-status -z`, which every consumer
-compares against, never quotes the same path. `adequacy._diff_path` used
-to skip the undo, so `coverage_targets` dropped the file for not ending
-in `.py` and the adequacy layers measured nothing for it and reported
-clean. Every repository below is real git, because what a quoted path
-decodes to is not worth guessing at.
+compares against, never quotes the same path. A reader that skipped the
+undo once dropped a file for not ending in `.py` and reported clean.
+Every repository below is real git, because what a quoted path decodes
+to is not worth guessing at.
 
 Coordinator addendum on PR #412 (simplify pass, Groups A to D) folded the
-unquote-then-strip logic that used to live twice (`adequacy._diff_path`
-and, inline, `policy.parse_added_lines`) into one function,
+unquote-then-strip logic that used to live twice into one function,
 `policy.diff_header_path`, and replaced the four hand-rolled repository
 builders this file used to carry with `tests.conftest.make_review_repo`,
 so this file itself now runs no `git commit` and adds no row to
@@ -20,14 +18,11 @@ so this file itself now runs no `git commit` and adds no row to
 from __future__ import annotations
 
 import ast
-import shlex
-import sys
 from pathlib import Path
 
 import pytest
 
 from kstrl import git, verify
-from kstrl.adequacy import AdequacyConfig, coverage_targets, is_test_path
 from kstrl.policy import PolicyConfig, diff_header_path
 from tests.conftest import make_review_repo
 from tests.helpers import gitrepo
@@ -40,128 +35,6 @@ from tests.helpers.astwalk import (
     parse,
     spells,
 )
-
-#: The one test command every check in this file spawns. `"pytest -q"`
-#: resolves through the shell's PATH, which is not necessarily this
-#: venv's interpreter; `sys.executable -m pytest` is the exact
-#: interpreter running the suite, so a coverage run inside the temp
-#: repository finds the same `pytest-cov` this venv has (#408 addendum
-#: Group C3). Spelling matches `tests/helpers/adequacy_fixture.py`'s
-#: `run_adequacy` default.
-_TEST_COMMAND = f"{shlex.quote(sys.executable)} -m pytest"
-
-
-def test_coverage_targets_selects_every_non_test_python_file(tmp_path: Path) -> None:
-    """T1. Also T2's one surviving assertion, folded in here (#408 addendum
-    Group C1): the per-path loop T2 used to run afterward could not fail
-    under any plant, because it ran only once `selected == expected` had
-    already passed and `expected` is derived from `get_diff_names`, so a
-    plant that broke the loop's own conditions would already have failed
-    the equality above it. What is left is the set-equality check against
-    `git.get_diff_names`, which pins the same claim without dead code.
-    """
-    repo = make_review_repo(
-        tmp_path,
-        base_files={"seed.txt": "x\n"},
-        files={
-            "café.py": "def f():\n    return 1\n",
-            'we"ird.py': "def h():\n    return 3\n",
-            "ascii_sib.py": "def g():\n    return 2\n",
-            "tests/test_café.py": "def test_one():\n    assert 1 + 1 == 2\n",
-        },
-    )
-    gitrepo.git_in(repo.path, "config", "core.quotepath", "true")
-    diff = git.get_diff_content(repo.base_branch, repo.path)
-    result = coverage_targets(diff)
-    assert result == {
-        "ascii_sib.py": {1, 2},
-        "café.py": {1, 2},
-        'we"ird.py': {1, 2},
-    }
-    names = git.get_diff_names(repo.base_branch, repo.path)
-    expected = {n for n in names if n.endswith(".py") and not is_test_path(n)}
-    assert set(result) == expected
-
-
-def _outcome(result: object) -> tuple[str, str | None]:
-    """The part of a check_patch_coverage result that must not depend on
-    the filename: its type, and its reason when it declined to measure."""
-    return type(result).__name__, getattr(result, "reason", None)
-
-
-def test_check_patch_coverage_treats_an_awkward_name_like_its_ascii_twin(
-    tmp_path: Path,
-) -> None:
-    """T3. Drives the real entry point. Measured on this machine after the
-    fix, with `_TEST_COMMAND` (#408 addendum Group C3): both twins now
-    reach a genuine `PatchCoverage(covered=3, total=4, ...)`, not the
-    `NotMeasured(tool_missing)` the plan's original "pytest -q" spelling
-    produced for both. That exact value is not asserted here as a third
-    named outcome, because it is a property of what this venv's spawned
-    coverage run finds, not of the fix: the claim this test enforces is
-    that the two repositories, differing only in a filename, land on the
-    SAME (type, reason), not which one."""
-    accent = make_review_repo(
-        tmp_path / "accent",
-        base_files={"seed.txt": "x\n"},
-        files={
-            "café.py": "def f(n):\n    if n > 0:\n        return 1\n    return 0\n",
-            "tests/test_it.py": (
-                "import importlib\n"
-                "m = importlib.import_module('café')\n\n\n"
-                "def test_f():\n    assert m.f(1) == 1\n"
-            ),
-        },
-    )
-    plain = make_review_repo(
-        tmp_path / "ascii",
-        base_files={"seed.txt": "x\n"},
-        files={
-            "asciimod.py": "def f(n):\n    if n > 0:\n        return 1\n    return 0\n",
-            "tests/test_it.py": (
-                "import importlib\n"
-                "m = importlib.import_module('asciimod')\n\n\n"
-                "def test_f():\n    assert m.f(1) == 1\n"
-            ),
-        },
-    )
-    gitrepo.git_in(accent.path, "config", "core.quotepath", "true")
-    gitrepo.git_in(plain.path, "config", "core.quotepath", "true")
-
-    accent_result = verify.check_patch_coverage(
-        accent.path, accent.base_branch, _TEST_COMMAND, 120.0
-    )
-    plain_result = verify.check_patch_coverage(plain.path, plain.base_branch, _TEST_COMMAND, 120.0)
-
-    # The vacuous outcome, named so the failure says what went wrong
-    # (#408 addendum Group C5: the bare reason, not the full outcome
-    # tuple, is all this negation needs).
-    assert getattr(accent_result, "reason", None) != verify.NOT_MEASURED_NO_TARGET, accent_result
-    # The stronger claim: the two repositories differ only in a filename,
-    # so the check must reach the same place in both.
-    assert _outcome(accent_result) == _outcome(plain_result), (accent_result, plain_result)
-
-
-@pytest.mark.parametrize("name", ["test_café.py", "test_ascii.py"])
-def test_check_test_adequacy_flags_a_silent_test_in_an_awkward_name(
-    tmp_path: Path, name: str
-) -> None:
-    """T4. The ASCII case is in the test on purpose, as the twin that
-    shows what the non-ASCII case should have done."""
-    repo = make_review_repo(
-        tmp_path,
-        base_files={f"tests/{name}": "def test_real():\n    assert 1 + 1 == 2\n"},
-        files={
-            f"tests/{name}": (
-                "def test_real():\n    assert 1 + 1 == 2\n\n\ndef test_silent():\n    helper()\n"
-            )
-        },
-    )
-    gitrepo.git_in(repo.path, "config", "core.quotepath", "true")
-    result = verify.check_test_adequacy(repo.path, repo.base_branch, AdequacyConfig(enabled=True))
-    assert [(f.category, f.location) for f in result.findings] == [
-        ("adequacy_no_oracle", f"tests/{name}")
-    ]
 
 
 def test_the_policy_envelope_reports_the_real_path_as_the_secret_location(
@@ -249,12 +122,8 @@ def test_diff_header_path_matches_a_real_diff_for_every_header_shape(
 #: two spellings with a trailing space to the full set a hand-rolled
 #: reader plausibly writes: with and without the trailing space, and
 #: with the `a/`/`b/` prefix baked into the same literal. Re-derived by
-#: RUNNING the walk after Group A's edit (never typed): adequacy.py's
-#: nine are the `+++ `/`--- ` gating pair in each of _iter_diff_lines,
-#: analyze_test_diff and added_line_numbers (six), the `--- ` fragment
-#: of mutation_patch's f-string, which WRITES a header (one), and the
-#: bare `---`/`+++` content-line guards inside analyze_test_diff that
-#: tell a removed/added assertion line from the header itself (two).
+#: RUNNING the walk (never typed); #696 slice 8 removed adequacy.py's
+#: nine with the diff readers that held them.
 #: knowledge.py's two are diff_added_content's own `+++ ` exclusion (it
 #: still never reads a path out of a header) and an unrelated bare
 #: `---` used as a markdown frontmatter delimiter, not a diff reader.
@@ -263,7 +132,6 @@ def test_diff_header_path_matches_a_real_diff_for_every_header_shape(
 #: `---` written as a markdown horizontal rule in a PR body, not read
 #: from a diff at all; lane #409's this round, unedited here.
 EXPECTED_DIFF_HEADER_LITERALS = {
-    "adequacy.py": 9,
     "knowledge.py": 2,
     "policy.py": 2,
     "pr.py": 2,
@@ -306,10 +174,10 @@ def test_the_diff_header_literals_in_the_package_are_pinned() -> None:
 #: (#408). Counts the definition and every call, so a caller that stops
 #: delegating and inlines the unquote-then-strip logic again shows up
 #: here as a census delta even though it adds no new header literal.
-#: Re-derived by running the walk: adequacy.py's three are the import
-#: and the two calls in _iter_diff_lines; policy.py's two are the def
-#: and the one call in parse_added_lines.
-EXPECTED_DIFF_HEADER_PATH_CALLERS = {"adequacy.py": 3, "policy.py": 2}
+#: Re-derived by running the walk: policy.py's two are the def and the
+#: one call in parse_added_lines (#696 slice 8 removed adequacy.py's
+#: three with its diff reader).
+EXPECTED_DIFF_HEADER_PATH_CALLERS = {"policy.py": 2}
 
 
 def test_every_header_path_reader_still_delegates() -> None:

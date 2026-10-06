@@ -144,8 +144,8 @@ never started cannot exit 0, so a passing check is measured on its status.
 A vacuous pass counts as measuring nothing for the same reason. `diff_scope`
 with no `--allowed-path` applies no rule; over an empty diff both `diff_scope`
 and `bad_patterns` apply their rule to nothing and report the same reason, `no
-files in the diff`; and `bad_patterns` counts the files it OPENED, so a
-deletion-only commit measures nothing however many files it names.
+files in the diff`; and `bad_patterns` reads only the lines the diff ADDS, so
+a deletion-only commit measures nothing however many files it names.
 
 A signature from a check the BASELINE never measured is reported as `new`.
 There are two ways to arrive there and they are not the same case.
@@ -153,20 +153,20 @@ There are two ways to arrive there and they are not the same case.
 Both `bad_patterns` and `diff_scope` only look at paths the branch put in the
 diff, so a finding from either concerns a file the branch touched. A baseline
 written on the base ref has an empty diff, so neither check has any paths to
-compare with. `diff_scope` is exact: every path it can flag came from the
-diff. `bad_patterns` is exact for its secret rule, which reads added lines.
-Its empty-file and syntax-error rules read the whole file and then read the
-same file at the MERGE BASE of the base branch and HEAD (#414), not the base
-branch's current tip (#425), following a rename to the path the content came
-from, so a finding either rule reports is one the base was not SHOWN to
-already carry. A base read that cannot be done keeps the finding, which is
-the blocking direction, so the two rules can still over-report when git
-could not be asked. A finding the base did carry is counted in the row's
-message and listed in its details for `ks check --json`.
+compare with. Both are exact: every path `diff_scope` can flag came from the
+diff, and `bad_patterns` reads only the lines the branch added (#696 slice 8
+removed its empty-file and syntax-error rules, which read whole files of one
+language).
 
-For a TOOL-DRIVEN check the same rule does over-report: a baseline written
-before `vulture` was installed leaves `dead_code` unmeasured, and the first
-comparison after it is installed reports the tree's existing dead code as new.
+For a `[stack]` check the same rule does over-report: a baseline written
+before a check's tool was installed leaves that check unmeasured, and the first
+comparison after it is installed reports the tree's existing findings as new.
+
+A baseline written before #696 slice 8 can name a check kstrl has since
+removed (`test_adequacy`, `dead_code`, `dead_code_ruff`, `mutation_testing`,
+`patch_coverage`, `diff_mutation`). The comparison reports it under `retired`,
+with a note, and never under `stopped_measuring`: nothing the branch did made
+it go dark. Refresh the baseline with `ks check --write-baseline --force`.
 Over-reporting costs a comment somebody reads; under-reporting costs the
 mechanism.
 
@@ -249,11 +249,11 @@ for brownfield repositories, which is what the rest of this page is about.
      regenerates its baseline and commits it is then compared against its own
      signatures, and reports no regression. The step names the file after the
      base commit, so the report says which ref supplied the yardstick.
-   - `timeout-minutes` above the WORST case, which is not one timeout. Six
-     subprocesses in a check run are each handed `KSTRL_TIMEOUT_VERIFY` in
-     full - the three gates, the two halves of the dead-code phase, and R8.5
-     Layer 1's patch coverage run - so at 1800 seconds the job needs 180
-     minutes plus install. This number has been wrong before; re-derive it
+   - `timeout-minutes` above the WORST case, which is not one timeout. Each
+     check of the confirmed `[stack]` is handed `KSTRL_TIMEOUT_VERIFY` in
+     full, so at 1800 seconds a stack of three checks needs 90 minutes plus
+     install. The example keeps 190, sized for the six spenders kstrl had
+     before #696 slice 8 removed the dead-code and patch coverage runs. This number has been wrong before; re-derive it
      rather than trust it, by walking `kstrl/verify.py` for every call that
      hands it `config.subprocess_timeout`:
 
@@ -268,7 +268,8 @@ for brownfield repositories, which is what the rest of this page is about.
      "
      ```
 
-     prints 6 on this checkout. A cap below the worst case is a cancelled
+     prints 1 on this checkout: the one call that runs each `[stack]`
+     check, so multiply by the number of checks. A cap below the worst case is a cancelled
      job, and a cancelled job produces no report at all - which is the one
      state this feature cannot report on.
    - `--base "$BASE_REF"` passed explicitly, from the event payload through an

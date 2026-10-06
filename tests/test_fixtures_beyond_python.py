@@ -4,10 +4,10 @@ End to end: the real ``ks check --prd P --json`` in its own process,
 against a committed git repository, with fixtures enabled through the
 environment. No LLM is called and no toolchain beyond ``sh`` is needed.
 
-Two things were wrong. A ``function`` fixture imports a Python module with
-kstrl's own interpreter, so on a tree with no pyproject.toml or setup.py it
-failed every attempt with ``ModuleNotFoundError`` and nothing refused it
-first. And a ``cli`` fixture could not be given input: its child inherited
+Two things were wrong. A ``function`` fixture imported a Python module with
+kstrl's own interpreter (#696 slice 8 removed the type; a PRD naming it now
+fails the schema on every tree). And a ``cli`` fixture could not be given
+input: its child inherited
 kstrl's own stdin, so the same PRD passed under ``/dev/null`` and timed out
 under an open pipe. Every run here gives ``ks check`` a pipe whose write end
 stays open for the whole run, which is the case that used to time out.
@@ -42,25 +42,16 @@ FUSE_SECONDS = 120.0
 #: Short, so the case that used to hang on the inherited pipe costs 3s, not 30s.
 FIXTURE_TIMEOUT_SECONDS = "3"
 
-REFUSAL = "PRD names fixtures this tree cannot run (failing closed)"
-
 _OK_COMMAND = f"{sys.executable} -c 'print(1)'"
 
 #: A program in no particular language: it sums the integers on stdin.
 SUM = '#!/bin/sh\nn=0\nwhile read x; do n=$((n + x)); done\necho "sum=$n"\n'
 
 CARGO_TREE = {"Cargo.toml": '[package]\nname = "pricing"\nversion = "0.1.0"\n'}
-#: Reads its stdin to EOF: the function runner must hand it an empty one.
-PRICING = (
-    "import sys\n\n\ndef total(quantity):\n    return quantity * 300 + len(sys.stdin.read())\n"
-)
 PYTHON_TREE = {
     "pyproject.toml": '[project]\nname = "pricing"\nversion = "0.1.0"\n',
-    "pricing.py": PRICING,
+    "pricing.py": "def total(quantity):\n    return quantity * 300\n",
 }
-#: #621's predicate also accepts a setup.py alone; a check for pyproject.toml
-#: only would refuse this tree.
-SETUP_PY_TREE = {"setup.py": "from setuptools import setup\n\nsetup()\n", "pricing.py": PRICING}
 
 FILE_FIXTURE = {
     "description": "the program is there",
@@ -164,31 +155,24 @@ def _fixtures_row(root: Path, fixtures: list[dict[str, Any]]) -> dict[str, Any]:
     return row
 
 
-def test_a_function_fixture_on_a_tree_with_no_python_is_refused_at_validation(
-    tmp_path: Path,
-) -> None:
-    """Refused by index before anything runs; the same PRD runs on both Python trees.
+def test_a_function_fixture_is_refused_by_the_schema_on_every_tree(tmp_path: Path) -> None:
+    """#696 slice 8: the ``function`` type is gone, so a PRD naming it fails
+    the schema and the fixtures row fails closed, Python tree included.
 
     The ``function`` fixture is second, so the line must carry ITS index. On
-    the Python tree the function reads its stdin to EOF, so it passes only if
-    the runner gave it an empty stdin rather than ``ks check``'s open pipe.
+    main before slice 8 the Python tree ran it (``2/2 fixtures passed``) and
+    the Cargo tree refused it with a different message.
     """
     fixtures = [FILE_FIXTURE, FUNCTION_FIXTURE]
 
-    refused = _fixtures_row(_repo(tmp_path / "cargo", CARGO_TREE), fixtures)
+    for name, tree in (("cargo", CARGO_TREE), ("pyproject", PYTHON_TREE)):
+        refused = _fixtures_row(_repo(tmp_path / name, tree), fixtures)
 
-    assert refused["passed"] is False
-    assert refused["message"] == REFUSAL
-    assert len(refused["details"]) == 1, refused["details"]
-    assert refused["details"][0].startswith("fixtures[1]: "), refused["details"]
-    assert "a cli fixture runs any program" in refused["details"][0]
-    assert not any("ModuleNotFoundError" in d for d in refused["details"])
-
-    for name, tree in (("pyproject", PYTHON_TREE), ("setup-py", SETUP_PY_TREE)):
-        ran = _fixtures_row(_repo(tmp_path / name, tree), fixtures)
-
-        assert ran["passed"] is True, (name, ran)
-        assert ran["message"] == "2/2 fixtures passed", (name, ran)
+        assert refused["passed"] is False, (name, refused)
+        assert refused["message"] == SCHEMA_REFUSAL, (name, refused)
+        assert refused["details"] == [
+            "fixtures[1].fixture_type: must be one of ['cli', 'file'] (got: 'function')"
+        ], (name, refused)
 
 
 @pytest.mark.parametrize(

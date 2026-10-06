@@ -341,7 +341,9 @@ def test_the_walk_reports_what_it_could_not_decide() -> None:
     # #696: 12, check_stack_command's run of one [stack] check.
     # #696 slice 4: 9, the three per-gate runners (test suite, typecheck,
     # lint) deleted with the Python defaults.
-    assert counts == {"verify.py": 9}
+    # #696 slice 8: 1, the dead-code, mutation, coverage and adequacy
+    # drivers deleted; check_stack_command's run is the one left.
+    assert counts == {"verify.py": 1}
 
 
 def test_the_call_site_census_is_pinned() -> None:
@@ -351,7 +353,8 @@ def test_the_call_site_census_is_pinned() -> None:
     # are gone, and so are verify.py's three per-gate runners.
     assert census == {
         "contract.py": 4,
-        "fixtures.py": 2,
+        # #696 slice 8: -1, the function-fixture runner.
+        "fixtures.py": 1,
         # #700: the canary and --version runs, through one helper.
         "isolation.py": 1,
         "learning_fixture.py": 1,
@@ -360,7 +363,8 @@ def test_the_call_site_census_is_pinned() -> None:
         # #619: +1, the ruff --show-files listing in check_dead_code_ruff.
         # #696: +1, check_stack_command.
         # #696 slice 4: -3, the per-gate runners.
-        "verify.py": 9,
+        # #696 slice 8: -8, the dead-code, mutation and coverage drivers.
+        "verify.py": 1,
         "worktree_setup.py": 1,
         "worktree_sweep.py": 1,
     }
@@ -424,15 +428,12 @@ def test_a_clause_naming_an_unrelated_broad_exception_is_reported() -> None:
 
 
 def test_the_disposition_census_is_pinned() -> None:
-    """What each of the 19 clearing sites' handler DOES, re-derived by
-    running rather than assumed. Two swallows, both in ``contract.py``
+    """What each clearing site's handler DOES, re-derived by running
+    rather than assumed. Two swallows, both in ``contract.py``
     (``_abort_merge`` and the prune call in ``_remove_temp_worktree``,
-    whose results are never read); one ``verify.py`` site CONVERTS the
-    decode into a variable a later statement reads (the mutation-report
-    reader sets ``report_error`` and returns nothing itself - the ``if
-    report is None`` branch after the ``try`` is what reads it) rather
-    than returning or raising from inside the handler; the rest return a
-    result or raise. #416's simplify review measured two swallows and
+    whose results are never read); one ``replay.py`` site CONVERTS the
+    decode into a value a later statement reads; the rest return a result
+    or raise. #416's simplify review measured two swallows and
     stopped there; this census's own walk found the third shape and
     reports it honestly as ``converts`` rather than folding it into
     "swallows", which would have hidden it from a future comparison."""
@@ -443,15 +444,15 @@ def test_the_disposition_census_is_pinned() -> None:
         "contract.py:raises": 1,
         "contract.py:returns": 1,
         "contract.py:swallows": 2,
-        "fixtures.py:returns": 2,
+        "fixtures.py:returns": 1,
         "isolation.py:returns": 1,
         "learning_fixture.py:raises": 1,
         # #700 slice 3: the replay names the stage `undecodable` and reads on.
         "replay.py:converts": 1,
-        "verify.py:converts": 1,
-        # #619: +1, the listing shares the ruff run's handlers, which return.
-        # #696: +1, check_stack_command returns an unmeasured failing row.
-        "verify.py:returns": 8,
+        # #696: check_stack_command returns an unmeasured failing row. #696
+        # slice 8 removed the other seven returns and the mutation-report
+        # reader's convert with the drivers that held them.
+        "verify.py:returns": 1,
         "worktree_setup.py:returns": 1,
         "worktree_sweep.py:returns": 1,
     }

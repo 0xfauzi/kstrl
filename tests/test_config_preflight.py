@@ -214,7 +214,7 @@ class TestTheEnvironmentIsCheckedInTheSamePass:
     @pytest.mark.parametrize(
         ("var", "section"),
         [
-            ("KSTRL_MUTATION_THRESHOLD", "[verify]"),
+            ("KSTRL_TIMEOUT_VERIFY", "[verify]"),
             ("KSTRL_SECURITY_TIMEOUT", "[security]"),
         ],
     )
@@ -288,12 +288,12 @@ class TestFatalVersusDegrading:
     ) -> None:
         ran = _stub_run_factory(monkeypatch)
 
-        result = _invoke(FACTORY_ARGS, toml='[verify]\nmutation_threshold = "many"\n')
+        result = _invoke(FACTORY_ARGS, toml='[verify]\nsubprocess_timeout = "many"\n')
 
         assert result.exit_code == 2
         assert ran == []
         assert "[verify]" in result.output
-        assert "mutation_threshold" in result.output
+        assert "subprocess_timeout" in result.output
 
 
 class TestWhatItNames:
@@ -372,7 +372,7 @@ class TestWhatItNames:
         fixed the ceiling, re-ran, and met `[verify]` for the first
         time."""
         (tmp_path / "kstrl.toml").write_text(
-            "[factory]\nmax_cost_usd = nan\n\n[verify]\nmutation_threshold = 'many'\n"
+            "[factory]\nmax_cost_usd = nan\n\n[verify]\nsubprocess_timeout = 'many'\n"
         )
 
         with pytest.raises(ConfigError) as caught:
@@ -443,7 +443,7 @@ class TestTheRootIsTheOneTheCommandWillUse:
         other = self._other_checkout(tmp_path, "[factory]\nmax_parallel = 2\n")
         monkeypatch.setenv("PROMPT_FILE", str(other / "scripts" / "kstrl" / "prompt.md"))
 
-        result = _invoke(["status"], toml='[verify]\nmutation_threshold = "many"\n')
+        result = _invoke(["status"], toml='[verify]\nsubprocess_timeout = "many"\n')
 
         assert result.exit_code == 2
         assert "[verify] could not convert string to float: 'many'" in result.output
@@ -805,7 +805,7 @@ class TestTheCommandsThatMustSurviveABrokenConfig:
         poison for the same reason."""
         result = _invoke(
             ["serve", "--once", "--no-color"],
-            toml='[verify]\nmutation_threshold = "many"\n',
+            toml='[verify]\nsubprocess_timeout = "many"\n',
         )
 
         assert result.exit_code == 2
@@ -901,7 +901,7 @@ class TestConfigShowIsTheSurfaceThatAlwaysWorks:
         """`[verify]` is one of the 15 sections this report RENDERS, so
         it is the case the earlier covering test missed by using
         `[queue]`, which is one of the 11 it does not."""
-        result = _invoke(["config", "show"], toml='[verify]\nmutation_threshold = "many"\n')
+        result = _invoke(["config", "show"], toml='[verify]\nsubprocess_timeout = "many"\n')
 
         assert result.exit_code == 1
         # Rows first, for everything that resolved.
@@ -909,7 +909,7 @@ class TestConfigShowIsTheSurfaceThatAlwaysWorks:
         assert "  type = " in result.output
         # Then the verdict, in the words every other command uses.
         assert "[verify] could not convert string to float: 'many'" in result.output
-        assert "mutation_threshold = 'many'" in result.output
+        assert "subprocess_timeout = 'many'" in result.output
 
     def test_it_still_explains_when_every_other_command_refuses(self) -> None:
         """The escape hatch is a command, not a flag: universal fatality

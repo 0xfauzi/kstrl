@@ -27,14 +27,11 @@ _PHASE_SKIPPED_CATEGORY = "phase_skipped"
 # R8.1: policy-envelope violations. Mechanical (no LLM), so these carry
 # no model tag - the "reviewer" is the envelope itself.
 POLICY_CATEGORY_PREFIX = "policy_"
-# R8.5: test-suite adequacy findings. Mechanical like the policy family,
-# so no model tag - the gate, not an LLM, decided.
-ADEQUACY_CATEGORY_PREFIX = "adequacy_"
 
 # #265: the across-attempt divergence detector tripped - the change kept
 # growing while the reviewer's blocking findings never became a proper
-# subset of the previous attempt's. Mechanical like the policy and
-# adequacy families, so no model tag: the predicate decided, not an LLM.
+# subset of the previous attempt's. Mechanical like the policy family,
+# so no model tag: the predicate decided, not an LLM.
 DIVERGENCE_CATEGORY = "review_divergence"
 
 # #233: the across-attempt convergence check tripped - the gate's failure
@@ -46,9 +43,9 @@ ENGINEER_DIVERGENCE_CATEGORY = "divergence"
 
 # R10.3: one story the engineer marked passes=true that the reviewer did
 # not independently mark pass. The comparison is mechanical, but the
-# evidence is an LLM's verdict, so unlike the policy and adequacy
-# families these findings DO carry a model tag: which reviewer
-# disagreed is the fact worth attributing.
+# evidence is an LLM's verdict, so unlike the policy family these
+# findings DO carry a model tag: which reviewer disagreed is the fact
+# worth attributing.
 CLAIM_DISAGREEMENT_CATEGORY = "claim_disagreement"
 
 #: The name this category shipped under before #395. Records already on
@@ -73,7 +70,7 @@ ATTEMPT_TAG_PREFIX = "attempt:"
 # is no reviewing model to attribute them to.
 MODEL_TAG_PREFIX = "model:"
 
-# #595: a blocking policy or adequacy finding an approved inbox item
+# #595: a blocking policy finding an approved inbox item
 # covers exactly is kept, re-emitted as advisory and tagged with the
 # approving item's id. kstrl/waivers.py writes it; kstrl/verify.py's
 # _after_waivers (through finding_waiver below) and the PR body read it.
@@ -196,40 +193,6 @@ class Finding:
             explanation=explanation,
             suggestion=suggestion,
             tags=("policy", f"policy:{category}"),
-        )
-
-    @classmethod
-    def adequacy_finding(
-        cls,
-        category: str,
-        explanation: str,
-        location: str = "",
-        severity: str = "advisory",
-        suggestion: str = "",
-        extra_tags: tuple[str, ...] = (),
-    ) -> Finding:
-        """Build a Finding for an R8.5 test-adequacy concern.
-
-        Severity defaults to ``advisory`` because the gate lands
-        advisory-first: these layers are judged against thresholds that
-        have not been measured yet, and a gate that blocks on an invented
-        number teaches people to switch gates off.
-
-        ``extra_tags`` (#152 simplify pass, A3) appends beyond the base
-        two: a caller that needs a state carried as DATA rather than only
-        as a substring of ``explanation`` - R8.5 Layer 2's ``sampled``
-        flag, for instance - adds a tag here instead of inventing a new
-        field, so a reader of ``Finding.tags`` (not only the prose) can
-        tell a sampled score from a complete one.
-        """
-        return cls(
-            phase="adequacy",
-            category=f"{ADEQUACY_CATEGORY_PREFIX}{category}",
-            severity=severity,
-            location=location,
-            explanation=explanation,
-            suggestion=suggestion,
-            tags=("adequacy", f"adequacy:{category}") + extra_tags,
         )
 
     @classmethod

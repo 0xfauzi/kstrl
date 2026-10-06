@@ -193,17 +193,7 @@ def _announce_verification(
     over three checks. A skip an operator explicitly asked against has to
     be named, or the report is answering a question it never asked.
 
-    ``dead_code_ruff`` is the third instance of that same rule (#335).
-    It is deliberately NOT in :data:`DIFF_DEPENDENT_CHECKS`, because ruff
-    scans ``.`` and needs no base to diff against, but ``[verify]
-    dead_code_cleanup`` is one toggle owning both dead-code phases and
-    ``narrow_to_undiffed`` turns it off, so the phase is suppressed for a
-    reason the diff sentence above does not cover. Naming it in the same
-    list would have printed a false reason; leaving it out printed no
-    reason at all, which was a silent non-measurement the split had just
-    introduced.
-
-    Unconditional, like the list above it and NOT keyed on the toggle:
+    The diff sentence is unconditional and NOT keyed on the toggles:
     ``config`` here has already been through
     :func:`resolve_feature_verify_config`, so every one of these toggles
     reads False by the time this function sees it and a condition on one
@@ -214,11 +204,6 @@ def _announce_verification(
     ui.info(
         "Report only, not a gate: the exit code is unchanged. Not measured "
         "here (no diff to read, see docs/runbook.md): " + ", ".join(DIFF_DEPENDENT_CHECKS)
-    )
-    ui.info(
-        "  also not measured: dead_code_ruff. It reads no diff, but one toggle "
-        "([verify] dead_code_cleanup) owns both dead-code phases and this flow "
-        "turns it off. Use `ks check` for it."
     )
     for command in running:
         ui.info(f"  running: {command}")
@@ -437,10 +422,10 @@ def report_verification(
     # - "was this asked for" - so no gap can be produced on this path
     # even though ``_announce_verification`` prints the suppressed names
     # in prose two lines earlier - ``len(DIFF_DEPENDENT_CHECKS)`` of
-    # them, plus ``dead_code_ruff``, which the same toggle suppresses for
-    # a different reason (#335). Counted rather than written out because
-    # the number here was already one stale when the split added a name.
-    # Making those names say so in the field is a change to the
+    # them. Counted rather than written out because a count written out
+    # goes stale when a name is added. And the run carries no autonomy
+    # level, so the Layer 0 gap (#696 decision 7) is not produced here
+    # either. Making those names say so in the field is a change to the
     # suppression layer, not to this emitter,
     # and it is the same "one owner for every argument that decides
     # whether a check can honestly run" that #305 tracks. Wired anyway,

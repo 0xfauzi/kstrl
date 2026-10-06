@@ -212,7 +212,6 @@ NO_LIMIT_KEYS: frozenset[tuple[str, str]] = frozenset(
         ("serve", "daily_budget_usd"),
         ("serve", "factory_timeout_seconds"),
         ("serve", "max_open_prs"),
-        ("verify", "mutation_timeout"),
         ("verify", "subprocess_timeout"),
         ("security", "timeout_seconds"),
         ("contract", "timeout"),

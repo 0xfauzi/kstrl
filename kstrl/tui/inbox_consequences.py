@@ -20,7 +20,7 @@ the decision, and for most kinds nobody does:
   item was filed for (``evidence.plan_digest``); a changed plan is asked
   about again. Rejected: that run refuses with exit code 2 and runs
   nothing. ``ks serve`` admits no new work while a plan waits.
-- A policy exception or test adequacy item is read by
+- A policy exception item is read by
   ``kstrl/waivers.py`` when the next run starts (#595). Approved: that
   run records the one finding the item covers as waived instead of
   failing on it. Rejected: nothing is waived. ``waivers.approval_effect``

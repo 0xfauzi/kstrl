@@ -3,7 +3,7 @@
     "exit": 2,
     "report": {
       "error": "kstrl.toml has no [stack], so kstrl has no check to run and runs nothing. Write a [stack] table (instructions, setup, env and [stack.checks]) and confirm it; ks decompose proposes one for a spec, and ks doctor one from the commands an old [verify] still holds. --no-verify runs with no checks at all.",
-      "schema_version": 4
+      "schema_version": 5
     }
   },
   "check_uv_argv": [],
@@ -13,11 +13,6 @@
       "[agent] command = None  (default)",
       "[verify] check_diff_scope = True  (default)",
       "[verify] check_bad_patterns = True  (default)",
-      "[verify] dead_code_cleanup = False  (default)",
-      "[verify] dead_code_command = None  (default)",
-      "[verify] mutation_testing = False  (default)",
-      "[verify] mutation_threshold = 50.0  (default)",
-      "[verify] mutation_timeout = no limit  (default)",
       "[verify] subprocess_timeout = no limit  (default)",
       "[verify] require_self_critique = False  (default)",
       "[verify] self_critique_min_bullets = 3  (default)",
@@ -91,12 +86,6 @@
           "status": "fail"
         },
         {
-          "detail": "0 tracked paths read as tests to the [adequacy] gate, which classifies a diff by the same rule, so that gate sees no test file; the rule reads file paths only, so this says nothing about what the Phase 1 test command runs",
-          "fix": "Add tests, or expect the adequacy gate to report nothing.",
-          "name": "test_root",
-          "status": "warn"
-        },
-        {
           "detail": "git ignores .kstrl/runs/probe.json, so the in-loop scope guard does not count kstrl's own run journals against a component",
           "fix": "",
           "name": "gitignore",
@@ -117,8 +106,7 @@
       ],
       "fix_first": [
         "Write a [stack] in kstrl.toml, then confirm it.",
-        "Run `gh auth login` and add an origin remote, or set [factory] create_prs = false and merge by hand.",
-        "Add tests, or expect the adequacy gate to report nothing."
+        "Run `gh auth login` and add an origin remote, or set [factory] create_prs = false and merge by hand."
       ],
       "generated_at": "<generated_at>",
       "isolation": null,
@@ -242,11 +230,6 @@
       "[verify]",
       "# check_diff_scope = true",
       "# check_bad_patterns = true",
-      "# dead_code_cleanup = false",
-      "# dead_code_command = \"\"           # custom dead-code detector (default: vulture)",
-      "# mutation_testing = false",
-      "# mutation_threshold = 50.0",
-      "# mutation_timeout = 0.0          # 0 = no limit",
       "# subprocess_timeout = 0.0        # 0 = no limit",
       "# require_self_critique = false    # fail Phase 1 if the ## Self-Critique block is missing/sparse",
       "# self_critique_min_bullets = 3",
@@ -281,14 +264,6 @@
       "[divergence]",
       "# mode = \"advisory\"                # skip | advisory | block",
       "# growth_steps = 2                 # consecutive steps; needs N+1 measured attempts, must be >= 1",
-      "",
-      "# Test-suite adequacy gate (R8.5) Layer 0: flags a diff that weakens the",
-      "# suite and new tests with no falsifiable assertion. Opt-in, advisory first.",
-      "[adequacy]",
-      "# enabled = false",
-      "# layer0 = \"advisory\"              # advisory | block",
-      "# require_strong_oracle = true",
-      "# flag_assertionless_tests = true",
       "",
       "# Autonomy ladder (R8.2): one ordered level (L1-L4) instead of scattered",
       "# autonomy flags. The level derives a flag bundle at run start and wins over",

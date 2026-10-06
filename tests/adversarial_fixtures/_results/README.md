@@ -365,3 +365,36 @@ that add no dependency. One run of 78 has one: `sec-ts-06-injection-empty-output
 run 2 lists `node-serialize` at "high". The fixture imports that
 third-party package. Thus, the finding is correct. The replies are not in
 the repository.
+
+## The 2026-10-06 reviewer capture (#696 slice 8, REVIEWER_PROMPT 3.0.0)
+
+`baseline-20261006-190951.json` is the reviewer roles at REVIEWER_PROMPT
+3.0.0 (haiku, three runs for each fixture, head `7017e1c2`). The body is 7954
+bytes, sha256 `c16b775b42dcab5b132937bf991fae647a9898217b42bae0f4e516e4feed4678`.
+Version 3.0.0 adds the concern category `test_weakening`. It replaces
+Layer 0, which read only Python test files.
+
+`calibration compare` against `baseline-20260926-124722.json` (2.1.0) gives
+FAIL: `reviewer` dropped 1.00 to 0.83, which is more than the 0.15
+threshold. The rate is above the 0.65 floor. This capture is the first
+measurement of `reviewer_ts` (1.00), `reviewer_test_weakening` (1.00) and
+`reviewer_test_weakening_ts` (0.67). The false positive rate is 0.00 on
+all four negative roles.
+
+The `reviewer` drop is two runs: `concern-01-dead-code` and
+`concern-04-injection-empty-output` got 2 of 3 each. In the two misses, the
+reviewer found the unused code and labelled it `scope_creep`, not
+`dead_code`. The one `reviewer_test_weakening_ts` miss found the weakened
+test at "advisory", not "fail".
+
+A probe sent the two fixtures six more times at each version:
+
+| fixture | 2.1.0 (baseline plus probe) | 3.0.0 (capture plus probe) |
+|---|---|---|
+| `concern-01-dead-code` | 8 of 9 | 6 of 9 |
+| `concern-04-injection-empty-output` | 9 of 9 | 8 of 9 |
+
+The 2.1.0 miss has the same `scope_creep` label. Thus the label miss is not
+new in 3.0.0. A sample of 18 runs cannot show if 3.0.0 makes it more
+frequent. The owner accepted the drop as noise on 2026-10-06. The probe
+output and the replies are not in the repository.

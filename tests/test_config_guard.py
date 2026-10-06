@@ -46,7 +46,6 @@ from tests.helpers.astwalk import KSTRL_PACKAGE, package_sources
 EXPECTED_SURFACE_CLASSES: dict[str, frozenset[str]] = {
     name: frozenset({"load"})
     for name in (
-        "AdequacyConfig",
         "AutonomyConfig",
         "BreakerConfig",
         "ContractConfig",
@@ -205,7 +204,6 @@ EXPECTED_FACTORY_SITES = 8
 #: defect, so it fails here.
 EXPECTED_ENVELOPE_SECTIONS = frozenset(
     {
-        "AdequacyConfig.load",
         "AutonomyConfig.load",
         "DivergenceConfig.load",
         "FixturesConfig.load",

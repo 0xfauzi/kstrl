@@ -187,13 +187,10 @@ EXPECTED_RESULT_SITES: dict[str, int] = {
     "fixtures.py: _dispatch_fixture: FixtureResult": 1,
     "fixtures.py: _fixture_file_text: FixtureResult": 2,
     "fixtures.py: check_fixtures: CheckResult": 2,
-    # #632: one new row, a function fixture on a tree that is not Python.
-    "fixtures.py: check_fixtures_from_prd: CheckResult": 3,
+    # #696 slice 8 removed #632's third row with the function fixture.
+    "fixtures.py: check_fixtures_from_prd: CheckResult": 2,
     "fixtures.py: run_cli_fixture: FixtureResult": 7,
     "fixtures.py: run_file_fixture: FixtureResult": 8,
-    # #416: one new row, the ChildOutputDecodeError clause added after the
-    # existing OSError one.
-    "fixtures.py: run_function_fixture: FixtureResult": 10,
     "verify.py: _self_critique_text: CheckResult": 2,
     # #399 simplify pass on #405: the passing row, the issues-found row and
     # the diff-unreadable refusal, all three now built inside
@@ -203,29 +200,12 @@ EXPECTED_RESULT_SITES: dict[str, int] = {
     # measured directly, every variant (as shipped, and the try/except fully
     # inlined) came out at cognitive 15 / cyclomatic 8-9, so the split
     # bought nothing and was undone. This row absorbs the one
-    # _added_lines_or_refusal used to hold.
-    "verify.py: check_bad_patterns: CheckResult": 3,
-    "verify.py: check_dead_code: CheckResult": 2,
-    "verify.py: check_dead_code_ruff: CheckResult": 1,
+    # _added_lines_or_refusal used to hold. #696 slice 8: the passing and
+    # issues-found rows are one construction, ``passed=not issues``.
+    "verify.py: check_bad_patterns: CheckResult": 2,
     # #416: one new row, the diff-scope try/except around the lenient
     # git.get_diff_names call, failing closed on a diff it cannot decode.
     "verify.py: check_diff_scope: CheckResult": 5,
-    # R8.5 Layer 2 (#152): the one PASSING row, built by
-    # _diff_mutation_score_result on behalf of check_diff_mutation (the
-    # complexity ratchet forced a three-way split - see
-    # check_diff_mutation's own docstring). Every not-measured path
-    # returns NotMeasured instead (#306), same convention as
-    # check_patch_coverage.
-    "verify.py: _diff_mutation_score_result: CheckResult": 1,
-    "verify.py: _mutation_score_result: CheckResult": 2,
-    # R8.5 Layer 1 (#152): ran the project's own test command a second
-    # time under coverage and read back a percentage over the diff's
-    # changed lines. One construction site, the passing row - every
-    # not-measured path returns NotMeasured instead (#306). #152 simplify
-    # pass, B2 moved this row's construction out of check_patch_coverage
-    # (which now returns the measurement alone) into _patch_coverage_row,
-    # called by _patch_coverage_checks.
-    "verify.py: _patch_coverage_row: CheckResult": 1,
     # #399 blocker 1b: a fifth site, the fail-closed row for the broad
     # "Exception" clause that now sits after "except PolicyConfigError" -
     # evaluate_policy calls policy.parse_added_lines, which can raise
@@ -238,7 +218,6 @@ EXPECTED_RESULT_SITES: dict[str, int] = {
     "verify.py: check_prd_stories: CheckResult": 5,
     "verify.py: check_scope_unreadable: CheckResult": 1,
     "verify.py: check_self_critique: CheckResult": 3,
-    "verify.py: check_test_adequacy: CheckResult": 3,
     # #696: one [stack] check's row: not run because the stack is not
     # confirmed (slice 3), timed out, undecodable, passed, failed.
     "verify.py: check_stack_command: CheckResult": 5,
@@ -270,27 +249,22 @@ EXPECTED_MEASURED_ARGUMENTS: dict[str, int] = {
     "fixtures.py: check_fixtures: CheckResult: measured=False": 1,
     "fixtures.py: check_fixtures: CheckResult: measured=all((r.measured for r in results))": 1,
     # Unreadable PRD and schema-invalid PRD: the check could not learn WHICH
-    # fixtures to run, so it ran none. #632 adds the third: a PRD naming a
-    # function fixture on a tree that is not Python, refused before any ran.
-    "fixtures.py: check_fixtures_from_prd: CheckResult: measured=False": 3,
+    # fixtures to run, so it ran none.
+    "fixtures.py: check_fixtures_from_prd: CheckResult: measured=False": 2,
     # The file existed when the caller looked and could not be read, or could
     # not be decoded. Either way the `contains` expectations never ran.
     "fixtures.py: _fixture_file_text: FixtureResult: measured=False": 2,
     # The command fixture's two environment failures: the process was killed on
     # the timeout, or could not be launched at all.
     "fixtures.py: run_cli_fixture: FixtureResult: measured=False": 2,
-    # The function fixture's own three, which are separate sites and separate
-    # branches from the command fixture's. #416 adds the third: the child's
-    # output could not be decoded as utf-8.
-    "fixtures.py: run_function_fixture: FixtureResult: measured=False": 3,
     # The progress file could not be read, or is not UTF-8. No bullets were
     # counted either way.
     "verify.py: _self_critique_text: CheckResult: measured=False": 2,
-    # Nothing was read: no Python file opened and no added line for the
-    # secret rule, which reads every changed file since #619. An empty diff,
-    # a diff that only deletes, or changed Python files all gone from the
-    # worktree with no line added anywhere.
-    "verify.py: check_bad_patterns: CheckResult: measured=bool(scanned or added)": 1,
+    # Nothing was read: no added line for the secret rule, which reads every
+    # changed file since #619 and nothing else since #696 slice 8. An empty
+    # diff, a diff that only deletes, or a [policy] envelope that owns the
+    # secret rule.
+    "verify.py: check_bad_patterns: CheckResult: measured=bool(added)": 1,
     # No allowed paths configured, an empty diff, or (#416) a diff it could
     # not decode: the check applies no rule, applies it to nothing, or could
     # not read what to apply it to.
@@ -316,8 +290,6 @@ EXPECTED_MEASURED_ARGUMENTS: dict[str, int] = {
     # name in `measured_checks` on the one run that produces it, and its
     # absence from the next would then read as a check that stopped.
     "verify.py: check_scope_unreadable: CheckResult: measured=False": 1,
-    # The diff could not be read.
-    "verify.py: check_test_adequacy: CheckResult: measured=False": 1,
     # #696: there is no [stack] at all, so nothing was run.
     "verify.py: _command_gates: CheckResult: measured=False": 1,
 }
@@ -335,27 +307,13 @@ EXPECTED_FAILING_WITH_DEFAULT: dict[str, int] = {
     # shell lexer refused) and the comparison of a real exit code, stdout and
     # stderr against the expectation.
     "fixtures.py: run_cli_fixture: FixtureResult": 4,
-    # Four malformed definitions, a spec that would not serialise, and a child
-    # that exited without a result - which is the function under test taking
-    # the process down, a property of the artifact.
-    "fixtures.py: run_function_fixture: FixtureResult": 6,
     # Three malformed definitions (no path, an absolute or `..` path, a path
     # escaping the worktree) and three real comparisons against the file: it
     # was expected and absent, unexpected and present, or its content did not
     # match.
     "fixtures.py: run_file_fixture: FixtureResult": 6,
-    # Scanned the changed Python files and found empty files, syntax errors or
-    # secret patterns in them.
-    "verify.py: check_bad_patterns: CheckResult": 1,
-    # vulture ran over the changed files and reported dead code. Every way that
-    # phase can measure NOTHING returns a NotMeasured gap instead of a row
-    # (#335), so it needs no measured argument at all: the baseline reads a gap
-    # and a measured=False row through the same code path.
-    "verify.py: check_dead_code: CheckResult": 1,
     # Read the diff and applied the configured allowlist to it.
     "verify.py: check_diff_scope: CheckResult": 1,
-    # mutmut ran and produced killed/survived counts.
-    "verify.py: _mutation_score_result: CheckResult": 1,
     # Evaluated the policy envelope against a diff it read successfully.
     "verify.py: check_policy_envelope: CheckResult": 1,
     # Compared the PRD against the pre-run snapshot, and counted stories that

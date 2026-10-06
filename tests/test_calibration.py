@@ -404,6 +404,19 @@ def _concern_negative_fixtures() -> list[tuple[Path, dict]]:
     return _load_fixtures("concerns_negative", ".diff")
 
 
+def _weakened_test_fixtures() -> list[tuple[Path, dict]]:
+    """The reviewer's test-weakening criterion (#696 slice 8), the only check
+    left once kstrl stopped reading test files itself. Its own role, so the
+    saved ``reviewer`` baselines keep comparing over the fixtures they
+    measured, and so the owner can set a floor for this criterion alone."""
+    return _detection_fixtures("reviewer_test_weakening", _load_fixtures("weakened_tests", ".diff"))
+
+
+def _weakened_test_negative_fixtures() -> list[tuple[Path, dict]]:
+    """A test removal the PRD asks for by name: not test weakening."""
+    return _load_fixtures("weakened_tests_negative", ".diff")
+
+
 def _spec_fixtures() -> list[tuple[Path, dict]]:
     return _load_fixtures("specs", ".md")
 
@@ -1298,6 +1311,41 @@ def _reviewer_run_once(
     return parse_review_output(raw)
 
 
+def _reviewer_detects(
+    base: str, artifact: Path, meta: dict, tmp_path: Path, report: _DetectionReport
+) -> None:
+    diff_content = artifact.read_text(encoding="utf-8")
+
+    def run_once() -> tuple[bool, str]:
+        result = _reviewer_run_once(meta, diff_content, tmp_path)
+        return reviewer_caught(result, meta["must_detect"])
+
+    _record_or_gate(
+        _diff_role(base, artifact),
+        meta["fixture_id"],
+        report,
+        run_once,
+        category=meta["must_detect"].get("category"),
+    )
+
+
+def _reviewer_flags_nothing(
+    base: str, artifact: Path, meta: dict, tmp_path: Path, report: _DetectionReport
+) -> None:
+    diff_content = artifact.read_text(encoding="utf-8")
+
+    def run_once() -> tuple[bool, str]:
+        result = _reviewer_run_once(meta, diff_content, tmp_path)
+        return reviewer_false_positive(result, meta["must_not_flag"])
+
+    _measure_false_positives(
+        _diff_role(base, artifact),
+        meta["fixture_id"],
+        report,
+        run_once,
+    )
+
+
 @_skip_unless_calibrating
 @pytest.mark.parametrize(
     "artifact,meta",
@@ -1310,19 +1358,7 @@ def test_reviewer_role_catches_planted_concern(
     tmp_path: Path,
     report: _DetectionReport,
 ) -> None:
-    diff_content = artifact.read_text(encoding="utf-8")
-
-    def run_once() -> tuple[bool, str]:
-        result = _reviewer_run_once(meta, diff_content, tmp_path)
-        return reviewer_caught(result, meta["must_detect"])
-
-    _record_or_gate(
-        _diff_role("reviewer", artifact),
-        meta["fixture_id"],
-        report,
-        run_once,
-        category=meta["must_detect"].get("category"),
-    )
+    _reviewer_detects("reviewer", artifact, meta, tmp_path, report)
 
 
 @_skip_unless_calibrating
@@ -1342,18 +1378,40 @@ def test_reviewer_role_no_false_positive(
     handling, intentional public API. Records whether a forbidden
     category is raised as a blocking concern; the aggregate ``fp_rate``
     in the report is the signal, not this test."""
-    diff_content = artifact.read_text(encoding="utf-8")
+    _reviewer_flags_nothing("reviewer_negative", artifact, meta, tmp_path, report)
 
-    def run_once() -> tuple[bool, str]:
-        result = _reviewer_run_once(meta, diff_content, tmp_path)
-        return reviewer_false_positive(result, meta["must_not_flag"])
 
-    _measure_false_positives(
-        _diff_role("reviewer_negative", artifact),
-        meta["fixture_id"],
-        report,
-        run_once,
-    )
+@_skip_unless_calibrating
+@pytest.mark.parametrize(
+    "artifact,meta",
+    _weakened_test_fixtures(),
+    ids=lambda x: x.get("fixture_id", "unknown") if isinstance(x, dict) else x.stem,
+)
+def test_reviewer_role_catches_weakened_tests(
+    artifact: Path,
+    meta: dict,
+    tmp_path: Path,
+    report: _DetectionReport,
+) -> None:
+    """#696 slice 8: the test-weakening criterion, recorded under its own
+    role (``_weakened_test_fixtures``)."""
+    _reviewer_detects("reviewer_test_weakening", artifact, meta, tmp_path, report)
+
+
+@_skip_unless_calibrating
+@pytest.mark.parametrize(
+    "artifact,meta",
+    _weakened_test_negative_fixtures(),
+    ids=lambda x: x.get("fixture_id", "unknown") if isinstance(x, dict) else x.stem,
+)
+def test_reviewer_role_allows_a_requested_test_removal(
+    artifact: Path,
+    meta: dict,
+    tmp_path: Path,
+    report: _DetectionReport,
+) -> None:
+    """The negative twin: a removal the PRD names is not test weakening."""
+    _reviewer_flags_nothing("reviewer_test_weakening_negative", artifact, meta, tmp_path, report)
 
 
 # ---------------------------------------------------------------------------
@@ -1733,6 +1791,8 @@ class TestFixtureStructure:
             ("security_negative", ".diff"),
             ("concerns", ".diff"),
             ("concerns_negative", ".diff"),
+            ("weakened_tests", ".diff"),
+            ("weakened_tests_negative", ".diff"),
             ("specs", ".md"),
         ],
     )
@@ -1789,6 +1849,12 @@ class TestFixtureStructure:
         # fixture. TypeScript (#633): a twin of each.
         assert _languages("concerns") == {"python": 4, "ts": 4}
 
+    def test_weakened_test_fixtures_count(self) -> None:
+        # #696 slice 8: one positive and one negative, each with a
+        # TypeScript twin (#633).
+        assert _languages("weakened_tests") == {"python": 1, "ts": 1}
+        assert _languages("weakened_tests_negative") == {"python": 1, "ts": 1}
+
     def test_spec_fixtures_count(self) -> None:
         fixtures = list((FIXTURES_DIR / "specs").glob("*.md"))
         # 3 original halting fixtures + 1 non-halting allowedPaths fixture
@@ -1808,7 +1874,7 @@ class TestFixtureStructure:
                 )
 
     def test_concern_meta_has_required_keys(self) -> None:
-        for _artifact, meta in _concern_fixtures():
+        for _artifact, meta in _concern_fixtures() + _weakened_test_fixtures():
             assert "fixture_id" in meta
             assert "must_detect" in meta
             assert "prd" in meta, "Reviewer fixtures need a PRD context"
@@ -1821,6 +1887,7 @@ class TestFixtureStructure:
         cases = [
             (_security_negative_fixtures(), VALID_CATEGORIES),
             (_concern_negative_fixtures(), VALID_CONCERN_CATEGORIES),
+            (_weakened_test_negative_fixtures(), VALID_CONCERN_CATEGORIES),
         ]
         for fixtures, taxonomy in cases:
             for _artifact, meta in fixtures:
@@ -1846,6 +1913,8 @@ class TestFixtureStructure:
             + _security_negative_fixtures()
             + _concern_fixtures()
             + _concern_negative_fixtures()
+            + _weakened_test_fixtures()
+            + _weakened_test_negative_fixtures()
         )
         for _artifact, meta in all_fixtures:
             rendered = render_verification(meta)
@@ -1988,7 +2057,7 @@ class TestMatchersResolveOnFixtures:
 
     @pytest.mark.parametrize(
         "artifact,meta",
-        _concern_fixtures(),
+        _concern_fixtures() + _weakened_test_fixtures(),
         ids=lambda x: x.get("fixture_id", "?") if isinstance(x, dict) else x.stem,
     )
     def test_reviewer_positive_matcher_resolves(
@@ -2011,7 +2080,7 @@ class TestMatchersResolveOnFixtures:
 
     @pytest.mark.parametrize(
         "artifact,meta",
-        _concern_negative_fixtures(),
+        _concern_negative_fixtures() + _weakened_test_negative_fixtures(),
         ids=lambda x: x.get("fixture_id", "?") if isinstance(x, dict) else x.stem,
     )
     def test_reviewer_negative_matcher_resolves(

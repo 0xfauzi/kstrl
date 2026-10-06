@@ -17,6 +17,7 @@ import pytest
 from click.testing import CliRunner, Result
 
 from kstrl import baseline_report
+from kstrl.baseline import RETIRED_CHECKS
 from kstrl.cli import CHECK_SCHEMA_VERSION, cli
 from kstrl.evolution import signature_for_error
 from tests.helpers.check_baseline import BASELINE_DOC
@@ -406,6 +407,58 @@ def test_the_posted_comment_says_which_mode_failed_the_job(tmp_path: Path) -> No
     assert baseline_report.ADVISORY_FOOTER not in blocking.output
 
 
+@pytest.mark.parametrize("retired", sorted(RETIRED_CHECKS))
+def test_a_check_kstrl_retired_is_a_note_and_never_a_stopped_check(
+    tmp_path: Path, retired: str
+) -> None:
+    """#696 slice 8 removed six checks that read one language's files or ran
+    one language's tools. A baseline written before that can list any of
+    them in ``measured_checks``; the comparison names it in ``retired`` and
+    a note, never in ``stopped_measuring``, so it is not a regression."""
+    root = _make_repo(tmp_path)
+    assert _write(root).exit_code == 0
+    path = root / DEFAULT_RELATIVE
+    document = json.loads(path.read_text(encoding="utf-8"))
+    document["measured_checks"] = sorted([*document["measured_checks"], retired])
+    path.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+
+    human = _invoke(root, "--compare-baseline")
+    as_json = _invoke(root, "--compare-baseline", "--json")
+
+    assert (human.exit_code, as_json.exit_code) == (0, 0), human.output
+    block = json.loads(as_json.stdout)["baseline"]
+    assert block["retired"] == [retired]
+    assert block["stopped_measuring"] == {}
+    assert block["regressed"] is False
+    assert f"note: kstrl retired {retired}, which this baseline measured" in human.output
+
+
+def test_a_check_that_stopped_beside_a_retired_one_is_still_a_regression(
+    tmp_path: Path,
+) -> None:
+    """The ``retired`` bucket holds only what kstrl removed (#696 slice 8). A
+    baseline that measured a retired check AND a check this run no longer
+    produces names the first in ``retired`` and the second in
+    ``stopped_measuring``, and the comparison is still a regression."""
+    stopped = "stack:removed-by-the-operator"
+    root = _make_repo(tmp_path)
+    assert _write(root).exit_code == 0
+    path = root / DEFAULT_RELATIVE
+    document = json.loads(path.read_text(encoding="utf-8"))
+    document["measured_checks"] = sorted([*document["measured_checks"], "test_adequacy", stopped])
+    path.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+
+    human = _invoke(root, "--compare-baseline")
+    as_json = _invoke(root, "--compare-baseline", "--json")
+
+    assert as_json.exit_code == 0, as_json.output
+    block = json.loads(as_json.stdout)["baseline"]
+    assert block["retired"] == ["test_adequacy"]
+    assert list(block["stopped_measuring"]) == [stopped]
+    assert block["regressed"] is True
+    assert "note: kstrl retired test_adequacy, which this baseline measured" in human.output
+
+
 def test_a_check_schema_change_is_reported_not_refused(tmp_path: Path) -> None:
     root = _make_repo(tmp_path)
     assert _write(root).exit_code == 0
@@ -450,6 +503,7 @@ def test_the_json_document_carries_the_baseline_block(tmp_path: Path) -> None:
         "fixed",
         "unmeasured",
         "stopped_measuring",
+        "retired",
         "regressed",
         "check_schema_changed",
         "project_changed",
@@ -627,9 +681,11 @@ def test_a_bad_patterns_finding_is_new_and_never_a_stopped_check(tmp_path: Path)
     assert "bad_patterns" not in document["measured_checks"]
 
     git("checkout", "-q", "-b", "feature", cwd=root)
-    (root / "src" / "empty.py").write_text("", encoding="utf-8")
+    (root / "src" / "keys.py").write_text(
+        'API_KEY = "sk-abcdefghijklmnopqrstuvwxyz"\n', encoding="utf-8"
+    )
     git("add", "-A", cwd=root)
-    git("commit", "-q", "-m", "add an empty module", cwd=root)
+    git("commit", "-q", "-m", "add a key", cwd=root)
 
     result = _invoke(root, "--compare-baseline", "--base", "main", "--json")
 

@@ -154,7 +154,6 @@ SET_IN_TOML: dict[tuple[str, str], tuple[str, str]] = {
     ("factory", "claim_agreement"): ('"block"', "'block'"),
     ("inbox", "enabled"): ("true", "True"),
     ("autonomy", "enabled"): ("true", "True"),
-    ("adequacy", "patch_coverage"): ("true", "True"),
     ("policy", "max_files_changed"): ("7", "7"),
     ("divergence", "growth_steps"): ("5", "5"),
     ("breaker", "no_progress_iterations"): ("6", "6"),

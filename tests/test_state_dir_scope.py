@@ -39,7 +39,6 @@ from __future__ import annotations
 
 import ast
 import re
-import shutil
 import subprocess
 from collections import Counter
 from pathlib import Path
@@ -59,7 +58,7 @@ from kstrl.statedir import (
     state_dir_carve_out,
 )
 from kstrl.ui.plain import PlainUI
-from kstrl.verify import _diff_scope_details, check_dead_code_ruff, check_diff_scope
+from kstrl.verify import _diff_scope_details, check_diff_scope
 from tests.helpers import astwalk, gitrepo
 from tests.test_loop import MockAgent
 
@@ -790,40 +789,6 @@ class TestPhase1KeepsSeeingTheStateDir:
         result = check_diff_scope(repo, "main", AUTHORED)
         assert result.passed is False
         assert ".kstrl/runs/run-1/events.jsonl" in "\n".join(result.details)
-
-    @pytest.mark.skipif(shutil.which("ruff") is None, reason="needs ruff on PATH")
-    def test_dead_code_cleanup_does_not_commit_the_state_dir(
-        self,
-        repo: Path,
-    ) -> None:
-        """The one path that could have committed it for the agent.
-
-        ``check_dead_code_ruff`` auto-commits ruff's fixes so the tree stays
-        clean for later checks. Under ``use_worktrees=False`` it runs
-        with ``cwd`` at the PROJECT ROOT, so the ``git add -A`` it used
-        to issue swept kstrl's own live journals onto the component
-        branch the moment ruff fixed one finding - and since
-        ``check_diff_scope`` is deliberately un-carved, the next pass
-        then failed on them and they rode into the PR. That is precisely
-        the configuration the in-loop carve-out targets, so the backstop
-        had a hole in exactly the case it was meant to cover
-        (#274 review).
-
-        The fix excludes the state directory from that one commit. The
-        agent's own work must still be staged, or the auto-commit stops
-        doing its job, so both halves are asserted.
-        """
-        _git(repo, "checkout", "-q", "-b", "work")
-        (repo / "src" / "app.py").write_text("import os\nVALUE = 1\n")
-        (repo / "src" / "new.py").write_text("VALUE = 2\n")
-
-        check_dead_code_ruff(repo, timeout=60)
-
-        committed = _git(repo, "show", "--name-only", "--format=", "HEAD").split()
-        assert not any(f.startswith(".kstrl/") for f in committed), committed
-        assert "src/app.py" in committed
-        assert "src/new.py" in committed
-        assert check_diff_scope(repo, "main", AUTHORED).passed is True
 
 
 # ---------------------------------------------------------------------------
