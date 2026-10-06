@@ -298,6 +298,56 @@ def test_every_paid_arm_keeps_the_reply_it_scored(
     assert sorted(finals) == sorted(stubbed)
 
 
+#: The paid arms that give each run a directory of its own (``arm_cwd`` and
+#: ``run_slot``), and how many runs of them to start at one time (#750).
+SLOT_ARMS = (
+    "test_architect_reuses_what_the_repository_already_has",
+    "test_integration_review_detects_planted_defect",
+)
+SLOT_RUNS = 8
+
+
+class _CwdStub(_StubAgent):
+    """A ``_StubAgent`` that also appends the directory of each call to ``cwds``."""
+
+    def __init__(self, made: list[str], cwds: list[Path | None]) -> None:
+        super().__init__(made)
+        self._cwds = cwds
+
+    def run(
+        self, prompt: str, cwd: Path | None = None, timeout: float | None = None
+    ) -> Iterator[str]:
+        with _STUB_LOCK:
+            self._cwds.append(cwd)
+        yield from super().run(prompt, cwd=cwd, timeout=timeout)
+
+
+@pytest.mark.parametrize("name", SLOT_ARMS)
+def test_runs_that_start_at_one_time_each_get_their_own_directory(
+    name: str, stubbed: list[str], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """#750. Eight runs of the arm start at the same time. Each run gets a
+    directory that no other run uses, so no run reads what another run left,
+    and no run stops because a directory another run made is already there."""
+    cwds: list[Path | None] = []
+    monkeypatch.setattr(kstrl.agents, "get_agent", lambda **_kwargs: _CwdStub(stubbed, cwds))
+    monkeypatch.setattr(tc, "CALIBRATION_RUNS", SLOT_RUNS)
+    build_args, gated = PAID_ARMS[name]
+    report = tc._DetectionReport()
+    work = tmp_path / "work"
+    work.mkdir()
+    try:
+        getattr(tc, name)(*build_args(), work, report)
+    except AssertionError as exc:
+        if not gated or "missed planted issue" not in str(exc):
+            raise
+
+    records = report.records + report.fp_records
+    assert [r["error"] for r in records] == [False] * SLOT_RUNS, records
+    assert len(cwds) == len(stubbed), cwds
+    assert len(set(cwds)) == SLOT_RUNS, sorted(map(str, cwds))
+
+
 class _CrashingAgent:
     """Streams one line, then raises, the way a CLI that dies mid-reply does.
     Appends to ``made`` so a test can count the calls."""
