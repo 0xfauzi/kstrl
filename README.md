@@ -26,7 +26,7 @@ kstrl is designed as a loop that closes on evidence instead. The parts are delib
 
 - **What should the agent know before it starts?** Computed context: the module map, public interfaces, dependency graph and conventions, extracted from the tree without a model call. The agent learns the codebase's rules up front rather than from a linter on iteration three.
 - **How do we know what it actually did?** Independent measurement: mechanical checks, then a reviewer from a different model family judging every acceptance criterion, then a security reviewer. None of these read the agent's description of its work; they read the diff.
-- **What happens when the measurement disagrees?** The gap becomes the next instruction: parsed failures with file, line, source context and a fix hint, not raw tool output. The agent tries again against a smaller, sharper target.
+- **What happens when the measurement disagrees?** The gap becomes the next instruction: each failing check's exit status and the lines of its own output around every file location it names in the tree. The agent tries again against a smaller, sharper target.
 - **What stops it running away?** Bounds on everything: iterations, time, tokens, cost, work in flight, and a written envelope of what a merge may touch. When a bound trips, the run stops loudly and tells you why.
 - **Where do you stand?** On the loop, not in it. Boundary conditions route to you: a spec the architect cannot decompose, a merge you asked to approve, a budget that ran out. Everything else flows, and everything is recorded.
 
@@ -92,17 +92,7 @@ When the agent signals completion, kstrl treats that as a claim and measures the
 - **Adversarial review** (LLM): an independent reviewer checks the diff against the acceptance criteria, then a security reviewer hunts vulnerabilities - in `hard` mode their failures block.
 - **Contract testing** (multi-component runs): component branches merge tier-by-tier with integration tests at each tier.
 
-When verification fails, kstrl doesn't dump raw stderr into the retry prompt. It parses tool output into structured failures with file paths, source context, and fix hints. A sample of the retry context the agent gets back after a failed typecheck:
-
-```text
-[mypy] Found 1 error in 1 file (checked 14 source files)
-  src/api/auth.py:23 [arg-type] Argument 1 to "verify_password" has incompatible type "str | None"; expected "str"
-    |     21 |     password = request.form.get("password")
-    |     22 |     user = get_user(username)
-    | >   23 |     if verify_password(password, user.password_hash):
-    |     24 |         return create_token(user)
-    hint: Type mismatch in argument - convert or check the value before passing it.
-```
+A check passes when its command exits 0, and kstrl parses none of its output. When a check fails, the retry prompt carries its exit status and the lines of its output around every file location inside the worktree, or its last five lines when it names none. The model reads the tool's own message.
 
 ### Learning across runs: what closes today, and what is planned
 
@@ -240,7 +230,7 @@ You can, and for small tasks you should. kstrl is for when you want to:
 - **Walk away** - kstrl runs unattended with structured verification, not just a completion marker
 - **Watch it without babysitting it** - a live dashboard over a replayable event log; attach, detach, or inspect after the fact
 - **Give the agent context** - codebase scan injection means fewer wasted iterations discovering the codebase
-- **Get structured retries** - parsed failures with source context and fix hints, not raw stderr
+- **Get focused retries** - each failing check's own output around the locations it names
 - **Build multiple components in parallel** - factory mode with worktree isolation and contract testing
 - **Carry knowledge forward** - facts distilled from each component reach the next one, and the journal records every failure signature for the learning work that follows
 - **Red-team the spec before building** - the architect pass halts on blocker-severity spec ambiguities instead of guessing

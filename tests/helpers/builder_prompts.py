@@ -1,5 +1,6 @@
-"""Tables for the 58 instruction-text fragments enrolled under H3: 53 from
-#303, one from #233 and four from #633.
+"""Tables for the 46 instruction-text fragments enrolled under H3: 41 from
+#303, one from #233 and four from #633. #696 slice 5 removed #303's twelve
+fix-hint fragments with the parsers that delivered them.
 
 These builders assemble optional, branching text (a fragment may or may
 not appear in a given render), so a single per-module `*_PROMPT` body
@@ -9,9 +10,9 @@ tables below are what `tests/test_prompt_versions.py` merges in.
 
 They live here rather than in `tests/test_prompt_versions.py` because
 that file is close to the repo's 800-line file-length ratchet and these
-58 snapshot rows do not fit inside the remaining headroom.
+46 snapshot rows do not fit inside the remaining headroom.
 
-`_BUILDERS` is the single source: eleven rows of (module, the name of that
+`_BUILDERS` is the single source: ten rows of (module, the name of that
 module's shared `*_PROMPT_VERSION` constant, the fragment names that
 module's builder assembles). `BUILDER_PROMPTS`, `BUILDER_VERSIONS` and
 `BUILDER_RENDER_EXEMPT` are all derived from it, so a fragment enters the
@@ -19,7 +20,7 @@ census by appearing in exactly one row here.
 
 BUILDER_PROMPTS: name -> the enrolled body.
 BUILDER_VERSIONS: name -> the *_PROMPT_VERSION of the BUILDER that
-    delivers it (11 distinct values for 58 names). The version's unit is
+    delivers it (10 distinct values for 46 names). The version's unit is
     the text one builder delivers to a role, which is what a role
     receives; `test_prompt_versions._drift_message` names
     `<NAME>_VERSION` in its instructions, and for these fragments the
@@ -36,8 +37,8 @@ BUILDER_RENDER_EXEMPT: every name, because each fragment is one branch
     `test_prompt_versions.py::test_renderer_renders_the_enrolled_body`
     cannot hold it. Their orphan guards are
     `tests/test_builder_prompts.py::test_enrolled_fragment_reaches_its_builder`
-    (the 32 call-time constants), the two container-equality tests (the
-    26 constants captured by value at import), and the delivered-output
+    (the 32 call-time constants), the container-equality test (the
+    14 constants captured by value at import), and the delivered-output
     digests in the same file.
 """
 
@@ -45,9 +46,9 @@ from __future__ import annotations
 
 from types import ModuleType
 
-from kstrl import context, factory, init_cmd, knowledge, loop, parsers, review, verify
+from kstrl import context, factory, init_cmd, knowledge, loop, review, verify
 
-#: Eleven rows: (module, the name of that module's shared version constant,
+#: Ten rows: (module, the name of that module's shared version constant,
 #: the fragment names it assembles). This is the one place a fragment is
 #: declared enrolled; BUILDER_PROMPTS, BUILDER_VERSIONS and
 #: BUILDER_RENDER_EXEMPT are all read off it below.
@@ -100,24 +101,6 @@ _BUILDERS: tuple[tuple[ModuleType, str, tuple[str, ...]], ...] = (
         knowledge,
         "KNOWLEDGE_CONTEXT_PROMPT_VERSION",
         ("KNOWLEDGE_CONTEXT_PROMPT", "KNOWLEDGE_OVERFLOW_PROMPT"),
-    ),
-    (
-        parsers,
-        "FIX_HINT_PROMPT_VERSION",
-        (
-            "MISSING_ARGUMENT_HINT_PROMPT",
-            "TOO_MANY_ARGUMENTS_HINT_PROMPT",
-            "OPTIONAL_TYPE_HINT_PROMPT",
-            "NO_ATTRIBUTE_HINT_PROMPT",
-            "IMPORT_FAILED_HINT_PROMPT",
-            "UNDEFINED_NAME_HINT_PROMPT",
-            "ARGUMENT_TYPE_HINT_PROMPT",
-            "RETURN_TYPE_HINT_PROMPT",
-            "ASSERTION_HINT_PROMPT",
-            "UNUSED_IMPORT_HINT_PROMPT",
-            "RUFF_UNDEFINED_NAME_HINT_PROMPT",
-            "LINE_TOO_LONG_HINT_PROMPT",
-        ),
     ),
     (
         review,
@@ -180,14 +163,6 @@ BUILDER_VERSIONS: dict[str, str] = {
 BUILDER_RENDER_EXEMPT: frozenset[str] = frozenset(BUILDER_PROMPTS)
 
 BUILDER_SNAPSHOTS: dict[str, tuple[str, str]] = {
-    "ARGUMENT_TYPE_HINT_PROMPT": (
-        "69e9948a8290e85aa0a5424fe81f2a6718e6c3d68390ee2c8f5d3a9f72fcb71a",
-        "1.0.0",
-    ),
-    "ASSERTION_HINT_PROMPT": (
-        "af4d89529f0d80814e3e842f1acc6d4d80fb8638c2a06e7deb7871ba322a8a7a",
-        "1.0.0",
-    ),
     "CLAUDE_MD_ANTIPATTERNS_HEADING_PROMPT": (
         "dfcf304a60ec7d96b49ad026e9426a1cb8f3cf86935af6f264aa0ef88c3eb696",
         "1.2.0",
@@ -239,10 +214,6 @@ BUILDER_SNAPSHOTS: dict[str, tuple[str, str]] = {
     "GO_STANDARDS_PROMPT": (
         "9267e7a35c00d030265f7bb7a98656275eb9fba71ab14a9ac2413c50ac708b79",
         "1.2.0",
-    ),
-    "IMPORT_FAILED_HINT_PROMPT": (
-        "2cbeb381bc4e8bb186b9a0c5dbf93e1e8142d2b808494c1c01fbaab1367c4378",
-        "1.0.0",
     ),
     "IN_LOOP_SCOPE_VIOLATION_PROMPT": (
         "080ba85407fd75c4cc5ea9cfa885290f2cf989c0715c1cf5b7f23555fd311d14",
@@ -312,22 +283,6 @@ BUILDER_SNAPSHOTS: dict[str, tuple[str, str]] = {
         "f6f5329dbe821f18fce2ae140c0c798e48fe35f0e34275517e67e995017b337b",
         "1.0.0",
     ),
-    "LINE_TOO_LONG_HINT_PROMPT": (
-        "bf88f1d0ba62922386cc9b9ec29796a0b7f708972abddbfee9de99f4a9829fad",
-        "1.0.0",
-    ),
-    "MISSING_ARGUMENT_HINT_PROMPT": (
-        "ea60b982ca8be700e75ff9215e228be605a85997690aae57e29ee5157e9b6db8",
-        "1.0.0",
-    ),
-    "NO_ATTRIBUTE_HINT_PROMPT": (
-        "dead66db49b07e77ea2fc73ddfb3410c04743be63d4f6638aa0e48ec3e8387e8",
-        "1.0.0",
-    ),
-    "OPTIONAL_TYPE_HINT_PROMPT": (
-        "bccdfd1d26e9e77a717d172d2bc9bb4131a5b2436eebe65f17c4d47313dad74a",
-        "1.0.0",
-    ),
     "POLICY_DIFF_UNREADABLE_PROMPT": (
         "f628c8378f20bb097023e0a39dc113f268f8e75d7b06755b58f8d9cc97a82677",
         "1.0.0",
@@ -347,14 +302,6 @@ BUILDER_SNAPSHOTS: dict[str, tuple[str, str]] = {
     "PYTHON_STANDARDS_PROMPT": (
         "67fd8a8aee2adc5dca2357f8c0f2c999b2962e31e2ccd5ebae3bb0a100ac7142",
         "1.2.0",
-    ),
-    "RETURN_TYPE_HINT_PROMPT": (
-        "c150120da7ecae7e90bdf193a3398d16dfcc1a68fd166bfd969f84f020b446e4",
-        "1.0.0",
-    ),
-    "RUFF_UNDEFINED_NAME_HINT_PROMPT": (
-        "11ffa9b6c490e54bc5e5b24577dc43a0c9ac1e3d149c3170f5ad5d6f90edc378",
-        "1.0.0",
     ),
     "RUST_ANTIPATTERNS_PROMPT": (
         "6d11d7a83ee03b65564ead5261cd945ab4ffdf3974896ef1815d48f9941cb842",
@@ -392,10 +339,6 @@ BUILDER_SNAPSHOTS: dict[str, tuple[str, str]] = {
         "e8950e5273a446cc2c6fc3445300c620e97e81410ef4dd7cc9fae8fdf3e0be40",
         "1.0.0",
     ),
-    "TOO_MANY_ARGUMENTS_HINT_PROMPT": (
-        "9b9adf45ea4a21579c5e1b058c3d3d4c8d1fd2dd9420d624743be04cee464b26",
-        "1.0.0",
-    ),
     "TYPESCRIPT_ANTIPATTERNS_PROMPT": (
         "daff966ca48068ff75b563e8af08e1a271d0c48d22663a1e40a6ef3731e3e7b4",
         "1.2.0",
@@ -403,14 +346,6 @@ BUILDER_SNAPSHOTS: dict[str, tuple[str, str]] = {
     "TYPESCRIPT_STANDARDS_PROMPT": (
         "8a4ab770c39bc8ab8158e930440f7e4ae6e2875a8451e0745b1c06a9cf724008",
         "1.2.0",
-    ),
-    "UNDEFINED_NAME_HINT_PROMPT": (
-        "d8d7a74a81cea158c61290d19970546759bc6dac2256301f80b6c591a36cd3d9",
-        "1.0.0",
-    ),
-    "UNUSED_IMPORT_HINT_PROMPT": (
-        "a87c684a0de34bcc8f356b067b10a1497c02710167b120917624feb90eac4871",
-        "1.0.0",
     ),
 }
 

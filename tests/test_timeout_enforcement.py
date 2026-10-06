@@ -2189,8 +2189,6 @@ class TestSubprocessTimeoutAudit:
             "fixture_expect.py COMPARATORS[kind]",
             "fixture_expect.py VALIDATORS[kind]",
             "fixtures.py _RUNNERS[fixture.fixture_type]",
-            "gateparse.py TOOL_PARSERS[chosen]",
-            "gateparse.py TOOL_PARSERS[name]",
             "gepa_adapter.py self.agent.run",
             "loop.py agent.run",
             "tui/app.py initial_screens_for_kind(kind, observe_only=False)",

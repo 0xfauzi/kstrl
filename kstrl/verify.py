@@ -47,9 +47,6 @@ from kstrl.findings import Finding, finding_waiver
 from kstrl.guards import path_is_allowed, without_entitled_lockfiles
 from kstrl.jsonread import read_json
 from kstrl.lockfiles import LOCKFILE_READERS, LockfileDocument, NewDependency
-from kstrl.parsers import (
-    ParsedOutput,
-)
 from kstrl.policy import (
     DEFAULT_SECRET_PATTERNS,
     PolicyConfig,
@@ -475,7 +472,6 @@ class CheckResult:
     message: str = ""
     details: list[str] = field(default_factory=list)
     duration_seconds: float = 0.0
-    parsed: ParsedOutput | None = None
     # R8.1: typed findings this mechanical check produced, lifted into the
     # component's finding stream by the pipeline so a machine-made gate
     # decision lands in the audit trail (PR body, journal) and not only in
@@ -502,7 +498,7 @@ class CheckResult:
     # Bounded by :func:`bounded_gate_output`. The pipeline writes it to
     # disk as the operator's evidence for the failure. It is never put in
     # the retry prompt, the report table or ``ks check --json``: those
-    # read ``details``, which is the parse of this text.
+    # read ``details``, which is the excerpt of this text.
     output: str | None = None
 
 
@@ -615,19 +611,16 @@ class VerificationResult:
 
     @property
     def failure_count(self) -> int:
-        """How many failures the failing checks reported (#233).
+        """How many checks failed (#233).
 
-        Each parsed failure counts one, and a failing check with none
-        parsed counts one, because it still failed. This is the number
-        ``[factory] convergence_attempts`` watches across attempts; the
-        retry context cannot supply it, because Phase 1 files one entry
-        per attempt however many checks failed.
+        One per failing check: kstrl parses no check's output, so a check
+        that reported forty failures counts the same as one that reported
+        one (#696 decision 5). This is the number ``[factory]
+        convergence_attempts`` watches across attempts; the retry context
+        cannot supply it, because Phase 1 files one entry per attempt
+        however many checks failed.
         """
-        return sum(
-            len(check.parsed.failures) if check.parsed is not None and check.parsed.failures else 1
-            for check in self.checks
-            if not check.passed
-        )
+        return sum(1 for check in self.checks if not check.passed)
 
     def report_lines(
         self,
@@ -653,9 +646,9 @@ class VerificationResult:
         line saying how many were dropped, so a truncation is never
         silent. `ks feature` needs that too, and for a different reason:
         under the embedded TUI every one of these lines becomes a
-        ``Log`` event on the run bus, and a failing gate's details are
-        ``ParsedOutput.format_for_prompt`` - every parsed failure with a
-        source-context snippet. A 40-failure suite is hundreds of events
+        ``Log`` event on the run bus, and a failing check's details are
+        the excerpt :func:`kstrl.failure_excerpt.failure_excerpt` keeps,
+        up to 80 lines. A run of failing checks is hundreds of events
         per report, up to ``2 + repair_max_runs`` times a run, which is
         the event-stream flood ``commandrun._StreamFilterSink`` exists to
         prevent. ``as_context`` already truncates at 10 for the same
@@ -1265,8 +1258,8 @@ def run_fast_checks(worktree_path: Path, config: VerifyConfig) -> VerificationRe
     engineer iterations (#233), in Phase 1's order.
 
     Each gate is the same per-gate function
-    :func:`run_mechanical_verification` calls, with the same command,
-    parser and timeout, so the reading handed to the next iteration is the
+    :func:`run_mechanical_verification` calls, with the same command
+    and timeout, so the reading handed to the next iteration is the
     reading Phase 1 would take of the same tree. Direct calls rather than
     a lookup table, because every static guard that resolves a spawn's
     callee has to be able to read these three.

@@ -115,8 +115,6 @@ EXPECTED_UNDECIDED = (
     "fixture_expect.py COMPARATORS[kind]",
     "fixture_expect.py VALIDATORS[kind]",
     "fixtures.py _RUNNERS[fixture.fixture_type]",
-    "gateparse.py TOOL_PARSERS[chosen]",
-    "gateparse.py TOOL_PARSERS[name]",
     "tui/app.py initial_screens_for_kind(kind, observe_only=False)",
     "tui/app.py initial_screens_for_kind(kind, observe_only=True)",
 )

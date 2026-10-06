@@ -17,15 +17,18 @@ request until somebody chooses that.
 
 ## The signature vocabulary
 
-A signature is `"<check>:<code>"`: `linter:E501`, `typecheck:arg-type`,
-`test_suite:assertion-error`. It comes from
+A signature is `"<check>:<code>"`, one per failed check: `stack:lint:<slug>`,
+where the slug is made from kstrl's own message for the check ("`<command>`
+exited <n>", digits stripped). It comes from
 `kstrl.evolution.signature_counts_from_verification`, the same function the
 evolution journal records failures with, so the baseline and the journal cannot
 disagree about what a failure is called.
 
-The baseline counts OCCURRENCES, not distinct signatures. Twelve `E501`s are
-twelve, so a branch that adds a thirteenth is a regression rather than a
-no-change.
+kstrl reads no check's output to name a failure (#696 decision 5). So an exit 1
+and a launcher's exit 2 from the same check are the same signature, and the
+second can never read as the first one fixed. The loss is accepted by name: a
+new failure inside a check that already fails changes no signature, so the
+baseline cannot see it.
 
 ## Writing a baseline
 

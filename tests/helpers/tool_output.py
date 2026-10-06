@@ -20,22 +20,20 @@ claims to be verbatim has to say where it is not:
 1. The capture machine's absolute paths are replaced with ``/repo``.
    Nothing in the suite may depend on one developer's directory layout.
 2. Trailing whitespace is stripped and the file ends in exactly one
-   newline, so four of these lost the blank line their tool printed
+   newline, so a capture may have lost the blank line its tool printed
    last. The repo's ``trailing-whitespace`` and ``end-of-file-fixer``
    hooks impose both on the first commit, so the alternative was not
    verbatim files, it was files whose checked-in bytes differ from what
-   the tests were written against. What was removed is a blank line and
-   some padding inside vitest's code frames; no parser reads either.
+   the tests were written against. What was removed is blank lines and
+   trailing padding; nothing reads either.
 3. In the Rust captures (#622), paths under the capture machine's home
    directory that are not the project, rustup's toolchain frames in a
    backtrace, are replaced with ``/home/dev``. They stay absolute paths
    outside any worktree, which is what the test that reads them needs.
 
-The escape characters in ``tsc-5.6.3-pretty.txt`` are deliberate: that
-file is real ``--pretty`` output with its ANSI sequences intact, and it
-is what proves ``parsers.strip_ansi`` earns its place.
-``jest-29.7.0-fail.txt`` keeps its escape characters for the same reason:
-jest colours its code frame even through a pipe (#622).
+The escape characters in ``jest-29.7.0-fail.txt`` are deliberate: jest
+colours its code frame even through a pipe (#622), and the file is what
+proves ``failure_excerpt.strip_ansi`` earns its place.
 """
 
 from __future__ import annotations

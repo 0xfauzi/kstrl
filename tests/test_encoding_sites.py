@@ -307,25 +307,16 @@ class TestTheLocalePinnedReads:
         assert not found.passed
         assert found.details == ["m.py: possible secret/credential detected"]
 
-    def test_the_failure_context_reader_names_utf8(self, tmp_path: Path) -> None:
-        from kstrl.parsers import ParsedFailure, add_source_context
-
-        source = tmp_path / "m.py"
-        source.write_text("a = 1\nb = 'é'\nc = 3\n", encoding="utf-8")
-        failure = ParsedFailure(file="m.py", line=2, rule_or_test="t", message="boom")
-        add_source_context(failure, tmp_path, context_lines=1)
-        assert "é" in failure.source_context
-
-    def test_the_same_four_pass_where_the_default_encoding_is_not_utf8(self) -> None:
-        """The discriminating half, and the reason the four above are not
+    def test_the_same_three_pass_where_the_default_encoding_is_not_utf8(self) -> None:
+        """The discriminating half, and the reason the three above are not
         enough on their own.
 
         This test file runs in a UTF-8 locale, where a read that names no
         encoding still decodes utf-8 and every assertion above passes
-        against the UNFIXED code. Re-running the four in a child whose
+        against the UNFIXED code. Re-running the three in a child whose
         default encoding is ASCII is what makes them measure something:
         measured, they pass as shipped and the child fails with any one
-        of the four ``encoding="utf-8"`` arguments removed.
+        of the three ``encoding="utf-8"`` arguments removed.
 
         The child is given this class and told to deselect this wrapper,
         so it cannot re-collect itself.

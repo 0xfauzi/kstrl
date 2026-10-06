@@ -414,6 +414,8 @@ def test_lessons_bucket_is_every_learnable_category(tmp_path: Path) -> None:
         "review:prd_criterion",
         "security:injection",
         "contract:api-mismatch",
+        "stack:tests:sh-check-sh-exited",
+        "review:coverage-unverified:no-diffstat",
         "pr:push-failed",
         "engineer:no-progress",
         "zzz-never-enrolled:boom",
@@ -430,6 +432,8 @@ def test_lessons_bucket_is_every_learnable_category(tmp_path: Path) -> None:
         "[review] prd_criterion (category review)",
         "[security] injection (category security)",
         "[contract] api-mismatch (category contract)",
+        "[stack:tests] sh-check-sh-exited (category verification)",
+        "[review:coverage-unverified] no-diffstat (category review)",
     ):
         assert line in lessons, (line, result.output)
     for name in ("[pr]", "[engineer]", "[zzz-never-enrolled]"):

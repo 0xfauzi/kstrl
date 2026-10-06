@@ -119,7 +119,7 @@ REPLACE_SITES: dict[str, str] = {
 #: anywhere near a filesystem path), and a callee with NO identifier at
 #: all (`TABLE[key](...)`, `initial_screens_for_kind(...)`), which is a
 #: candidate for EVERY target set because there is nothing in the AST to
-#: compare - the same seven `fixture_expect.py`/`fixtures.py`/`gateparse.py`/`tui/app.py` sites
+#: compare - the same five `fixture_expect.py`/`fixtures.py`/`tui/app.py` sites
 #: `tests/test_atomicio.py::EXPECTED_UNDECIDED_CALLS` already discloses
 #: for `tempfile.mkstemp`. A NEW entry here is either a call this walk
 #: needs help resolving (make it resolvable, or add a reason and enrol
@@ -140,8 +140,6 @@ EXPECTED_UNDECIDED_REPLACE_CALLS: tuple[str, ...] = (
     "fixture_expect.py COMPARATORS[kind]",
     "fixture_expect.py VALIDATORS[kind]",
     "fixtures.py _RUNNERS[fixture.fixture_type]",
-    "gateparse.py TOOL_PARSERS[chosen]",
-    "gateparse.py TOOL_PARSERS[name]",
     "inbox.py datetime.now(UTC).replace",
     "inbox.py parsed.replace",
     # #696: init_cmd.kstrl_toml_for, which seeded a detected toolchain's
@@ -149,7 +147,6 @@ EXPECTED_UNDECIDED_REPLACE_CALLS: tuple[str, ...] = (
     "knowledge.py raw_output[:200].replace",
     "licensing.py low.replace",
     "observability.py datetime.strptime(ts, '%Y-%m-%dT%H:%M:%SZ').replace",
-    "parsers.py failure.rule_or_test.replace",
     "playbook.py datetime.now(UTC).replace",
     "playbook.py datetime.now(UTC).replace(microsecond=0).isoformat().replace",
     # #526: `retry_plan._opt` spells a run limit as an option name, a str.replace.

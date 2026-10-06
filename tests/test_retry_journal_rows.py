@@ -595,3 +595,34 @@ def test_a_repoll_that_finds_the_pr_closed_journals_no_carried_numbers(
         "iterations_all_attempts=0.00 (0 component(s) ran, 0 iteration(s) across 2 attempt(s))"
         in out
     )
+
+
+def test_a_recurring_stack_check_failure_is_a_verification_lesson(tmp_path: Path) -> None:
+    """#696 slice 5: a [stack] check's signature is "stack:<name>:<slug>", and
+    the check part ``split_signature`` returns is "stack:<name>". ``ks evolve``
+    files it under the "stack" row of the category table, a verification
+    lesson, never as an unenrolled name. Two real factory runs: the check
+    passes on the base gate and fails once the engineer writes the marker."""
+    root = _git_project(tmp_path, ["comp-a"])
+    base = _make_base_config(root)
+    broken = root / "broken"
+    base.agent_cmd = f"touch '{broken}'; echo '{COMPLETE}'"
+    base.max_iterations = 1
+    for _ in range(2):
+        broken.unlink(missing_ok=True)
+        manifest: Manifest = _make_manifest([_component("comp-a")])
+        config = _config(root, test_command=f"test ! -e '{broken}'", max_retries=0)
+        run_factory(manifest, config, base, PlainUI(no_color=True), root)
+        assert [c.status for c in manifest.components] == ["failed"]
+
+    out = _evolve(root)
+
+    heading = "== Candidate lessons (no writer until the playbook ships) =="
+    _, found, lessons = out.partition(heading)
+    assert found, out
+    lines = lessons.split("\n==", 1)[0].splitlines()
+    assert any(
+        line.startswith("  [stack:tests] ") and line.endswith("(category verification)")
+        for line in lines
+    ), out
+    assert "category unenrolled" not in out, out

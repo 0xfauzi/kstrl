@@ -935,12 +935,12 @@ def _classify_check(error: str) -> str:
 # ---------------------------------------------------------------------------
 # Structured failure signatures (R6.1)
 #
-# A failure signature is "<check_name>:<code>", e.g. "linter:E501",
-# "typecheck:arg-type", "review:scope_creep", "diff_scope:files-outside-
-# allowed-scope". The check prefix comes from the gate that fired; the
-# code comes from the tool's parser (ruff rule, mypy error code, finding
-# category) rather than from re-parsing a flattened error string, so
-# cross-run grouping is on real, stable identifiers.
+# A failure signature is "<check_name>:<code>", e.g. "stack:tests:<slug>",
+# "review:scope_creep", "diff_scope:files-outside-allowed-scope". The check
+# prefix comes from the gate that fired. A failed mechanical check has ONE
+# signature, a slug of kstrl's own message for it (#696 decision 5): kstrl
+# parses no check's output, so the code never comes from what the tool
+# printed. A reviewer's code is its finding category.
 # ---------------------------------------------------------------------------
 
 # Digit runs are counts/limits ("3 files outside scope", "600s wall
@@ -1088,8 +1088,8 @@ INFRASTRUCTURE_CHECKS: frozenset[str] = frozenset(
 #: does not carry must never become a lesson.
 LESSON_CATEGORIES: frozenset[str] = frozenset({"verification", "review", "security", "contract"})
 
-# Cap on distinct per-check signatures so one catastrophic run (e.g. 40
-# distinct ruff rules) cannot flood the journal entry.
+# Cap on distinct signatures one reviewer phase contributes, so one
+# catastrophic review cannot flood the journal entry.
 _MAX_SIGNATURES_PER_CHECK = 5
 
 
@@ -1098,8 +1098,7 @@ def signature_slug(text: str) -> str:
 
     Strips file paths, line/column numbers, quoted names, and standalone
     counts, then slugifies the first line. Unlike ``_normalize_error``
-    this never extracts linter codes (callers get those from the parser
-    directly) and never keeps varying counts."""
+    this never extracts linter codes and never keeps varying counts."""
     if not text:
         return ""
     normalized = _PATH_RE.sub("", text)
@@ -1112,7 +1111,7 @@ def signature_slug(text: str) -> str:
 
 
 def signature_for_error(check_name: str, error: str) -> str:
-    """Fallback signature when no parser-level codes are available."""
+    """The signature of a failure: its check name and a slug of its message."""
     slug = signature_slug(error) or "failed"
     return f"{check_name or 'unknown'}:{slug}"
 
@@ -1129,7 +1128,8 @@ def split_signature(signature: str) -> tuple[str, str]:
     cannot recognise, silently moving every stack-check signature from
     ``fixed`` to ``unmeasured``. Measured: ``tests/test_check_baseline_cli.
     py::test_compare_reports_a_fixed_signature_and_exits_0`` red on
-    ``partition``, green on ``rpartition``.
+    ``partition``, green on ``rpartition``. :func:`category_for_check`
+    files such a check name under the part before its FIRST colon.
     """
     check, sep, code = signature.rpartition(":")
     if not sep:
@@ -1190,8 +1190,16 @@ def category_for_check(check_name: str) -> str:
     the table also corrects what is reported about runs that already
     happened. The one surface that displays it is the evolve screen's
     patterns table; the ``ks evolve`` CLI prints the check name.
+
+    The table is keyed on the check's FAMILY, the part of the name before
+    its first colon. :func:`split_signature` splits on the last colon, so
+    a ``[stack]`` check comes back as ``stack:<name>`` and a coverage
+    failure as ``<phase>:coverage-unverified``; looked up whole, both
+    missed their row and were filed ``unenrolled`` (#696 slice 5). A name
+    with no colon is its own family.
     """
-    return _CATEGORY_BY_CHECK.get(check_name, UNENROLLED_CATEGORY)
+    family = check_name.partition(":")[0]
+    return _CATEGORY_BY_CHECK.get(family, UNENROLLED_CATEGORY)
 
 
 @dataclass(frozen=True)
@@ -1249,92 +1257,38 @@ def route_patterns(patterns: list[FailurePattern]) -> PatternRouting:
     )
 
 
-def _check_signatures(check: CheckResult, limit: int | None) -> Counter[str]:
-    """One FAILED check's signatures, counted by OCCURRENCE, in first-seen order.
+def signature_counts_from_verification(checks: Iterable[CheckResult]) -> dict[str, int]:
+    """Each failed check's one signature, with its count.
 
-    ``limit`` caps the DISTINCT codes, not the occurrences: a check that hit
-    E501 twelve times and F401 once contributes both under ``limit=2``, twelve
-    times and once.
+    ONE signature per failed check, ``"<check>:<slug of its message>"`` from
+    :func:`signature_for_error` (#696 decision 5). kstrl parses no check's
+    output, so the signature names the check and never what the tool
+    printed: a ``[stack]`` check's message is "`<command>` exited <n>" with
+    the digits stripped, so an exit 1 and a launcher's exit 2 are the same
+    signature and the second can never read as the first one fixed. The
+    accepted loss: a new failure inside an already-failing check changes
+    no signature.
 
-    ``Counter`` over a list because a ``Counter`` built from an iterable is a
-    dict subclass that keeps first-seen order, so ``list(tally)`` is the same
-    sequence ``dict.fromkeys`` gave, and the count is read rather than
-    accumulated one occurrence at a time.
-    """
-    parsed = check.parsed
-    tally = Counter(f.code for f in parsed.failures if f.code) if parsed is not None else Counter()
-    if not tally:
-        return Counter({signature_for_error(check.name, check.message): 1})
-    kept = list(tally) if limit is None else list(tally)[:limit]
-    return Counter({f"{check.name}:{code}": tally[code] for code in kept})
+    Counted rather than listed because :mod:`kstrl.baseline` records a
+    count per signature.
 
-
-def signature_counts_from_verification(
-    checks: Iterable[CheckResult],
-    *,
-    limit: int | None = _MAX_SIGNATURES_PER_CHECK,
-) -> dict[str, int]:
-    """How many times each structured signature occurred in failed checks.
-
-    OCCURRENCES, not presence: twelve E501 failures count twelve. That is
-    what :mod:`kstrl.baseline`'s baseline needs and what
-    :func:`signatures_from_verification` cannot give, because it ends in a
-    dedupe - every count built from its return value would be 1 and a
-    baseline's "this got worse" bucket could never fire (#227).
-
-    ``limit`` caps the DISTINCT codes one check contributes, in first-seen
-    order, before anything is counted. ``None`` means no cap. The default is
-    the journal's own constant, so a defaulted call is byte-identical to what
-    the journal recorded before this parameter existed.
-
-    The ``"<check>:<code>"`` spelling lives in this ONE MODULE, in three
+    The ``"<check>:<code>"`` spelling lives in this ONE MODULE, in the
     functions that have to agree: this one composes it through
-    :func:`_check_signatures`, :func:`signature_for_error` writes the
-    ``"<check>:<slug>"`` fallback for a check with no parsed codes - which is
-    most real signatures, including every one the baseline falls back to - and
-    :func:`split_signature` takes it apart again, which is how
-    :func:`kstrl.baseline.compare` recovers a check name before deciding
-    ``fixed``. "One place" was the earlier claim and it was wrong; one module
-    is what the guard against a format changed in one place only actually is.
+    :func:`signature_for_error`, and :func:`split_signature` takes it apart
+    again, which is how :func:`kstrl.baseline.compare` recovers a check
+    name before deciding ``fixed``.
     """
-    counts: Counter[str] = Counter()
-    for check in checks:
-        if not check.passed:
-            counts.update(_check_signatures(check, limit))
-    return dict(counts)
+    failed = (check for check in checks if not check.passed)
+    return dict(Counter(signature_for_error(check.name, check.message) for check in failed))
 
 
-def signatures_from_verification(
-    checks: Iterable[CheckResult],
-    *,
-    limit: int | None = _MAX_SIGNATURES_PER_CHECK,
-) -> list[str]:
-    """Derive structured signatures from failed mechanical checks.
+def signatures_from_verification(checks: Iterable[CheckResult]) -> list[str]:
+    """The signatures of the failed checks, one each, in check order.
 
-    Prefers the parser's structured codes (linter rule, checker error
-    code, the exception a test died on); falls back to a slug of the
-    check message when no parse is available.
-
-    #258: this used to ask ``ParsedOutput.tool`` which of those it was,
-    against the exact strings "ruff", "mypy" and "pytest". That is a name
-    check standing in for a capability check, and it broke twice over as
-    soon as a gate could dispatch: a newly supported tool fell silently
-    through to the prose slug, and the unioned label a chained command
-    produces ("pytest+vitest") matched nothing at all. The parser now
-    names its own signature in ``ParsedFailure.code``, so this reads a
-    capability instead of guessing from a label.
-
-    #227: the answer is now the KEYS of
-    :func:`signature_counts_from_verification`, which returns each signature
-    once in the same first-seen order the old ``dict.fromkeys`` produced.
-    ``limit`` is keyword-only with the journal's cap as its default: the one
-    production caller passes neither, so its expression text does not move,
-    and a defaulted call still records exactly what it recorded before.
-    ``limit=None`` is the uncapped read the baseline asks for -
-    a baseline that dropped a check's sixth signature would report it as new
-    on the very next run.
+    The KEYS of :func:`signature_counts_from_verification`, so the journal
+    and the baseline cannot disagree about what a failure is called.
     """
-    return list(signature_counts_from_verification(checks, limit=limit))
+    return list(signature_counts_from_verification(checks))
 
 
 def signatures_from_findings(

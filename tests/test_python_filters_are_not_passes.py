@@ -160,12 +160,6 @@ EXPECTED_SELECTOR_SITES: dict[str, tuple[int, str]] = {
         1,
         "the location label of a deps_allow_new violation; selects nothing",
     ),
-    "suite_inventory.py: <module>": (
-        1,
-        "TEST_FILE_PATTERNS, the files pytest and vitest collect by default (#620); a "
-        "changed test file no pattern claims has no runner, so unrun_test_files lists it "
-        "as not_measured and the tests_ran row never counts it as run",
-    ),
     "toolchains.py: <module>": (
         1,
         "the Python record's uv.lock lockfile, which ks init stages; selects nothing",
@@ -271,7 +265,6 @@ EXPECTED_TOOL_LITERALS: dict[str, tuple[int, str]] = {
     "evolution.py": (4, "_classify_check's keywords for Phase 1 check names"),
     "feature_verify.py": (1, "message naming the dead_code_ruff check"),
     "feedforward.py": (7, "the Phase 0 scan's ruff.toml and [tool.ruff] convention readers"),
-    "gateparse.py": (6, "parser registry keys for pytest, mypy and ruff output"),
     # #696: down from 4. kstrl_toml_for, which seeded DEFAULT_KSTRL_TOML's
     # commented-out [verify] command lines from the detected toolchain, is
     # gone with [verify] itself.
@@ -280,8 +273,6 @@ EXPECTED_TOOL_LITERALS: dict[str, tuple[int, str]] = {
         "BUILD_MANIFEST_FIX's uv commands, and the enrolled Python "
         "standards and CLAUDE.md verification prompts",
     ),
-    "parsers.py": (3, "parser names for pytest, mypy and ruff output"),
-    "suite_inventory.py": (2, "the pytest junit report the test gate asks for (#620)"),
     # #696: down from 8. The Python record's test/typecheck/lint commands
     # and python_typecheck_default's mypy-scope literals are gone with the
     # command half; what is left is the three Python-tool cache ignores
