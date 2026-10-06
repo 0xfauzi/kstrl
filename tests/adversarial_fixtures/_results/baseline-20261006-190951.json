@@ -1,0 +1,512 @@
+{
+  "format_version": 2,
+  "model": "haiku",
+  "timestamp": "20261006-190951",
+  "runs_per_fixture": 3,
+  "run_complete": true,
+  "fixtures_attempted": [
+    "reviewer/concern-01-dead-code",
+    "reviewer/concern-02-tautological-test",
+    "reviewer/concern-03-scope-creep",
+    "reviewer/concern-04-injection-empty-output",
+    "reviewer_ts/concern-ts-01-dead-code",
+    "reviewer_ts/concern-ts-02-tautological-test",
+    "reviewer_ts/concern-ts-03-scope-creep",
+    "reviewer_ts/concern-ts-04-injection-empty-output",
+    "reviewer_negative/rev-neg-01-used-helper-refactor",
+    "reviewer_negative/rev-neg-02-thorough-tests",
+    "reviewer_negative/rev-neg-03-proper-error-handling",
+    "reviewer_negative/rev-neg-04-public-api-helper",
+    "reviewer_negative_ts/rev-neg-ts-01-used-helper-refactor",
+    "reviewer_negative_ts/rev-neg-ts-02-thorough-tests",
+    "reviewer_negative_ts/rev-neg-ts-03-proper-error-handling",
+    "reviewer_negative_ts/rev-neg-ts-04-public-api-helper",
+    "reviewer_test_weakening/weakened-01-test-weakening",
+    "reviewer_test_weakening_ts/weakened-ts-01-test-weakening",
+    "reviewer_test_weakening_negative/weakened-neg-01-requested-test-removal",
+    "reviewer_test_weakening_negative_ts/weakened-neg-ts-01-requested-test-removal"
+  ],
+  "fixtures_completed": [
+    "reviewer/concern-01-dead-code",
+    "reviewer/concern-02-tautological-test",
+    "reviewer/concern-03-scope-creep",
+    "reviewer/concern-04-injection-empty-output",
+    "reviewer_ts/concern-ts-01-dead-code",
+    "reviewer_ts/concern-ts-02-tautological-test",
+    "reviewer_ts/concern-ts-03-scope-creep",
+    "reviewer_ts/concern-ts-04-injection-empty-output",
+    "reviewer_negative/rev-neg-01-used-helper-refactor",
+    "reviewer_negative/rev-neg-02-thorough-tests",
+    "reviewer_negative/rev-neg-03-proper-error-handling",
+    "reviewer_negative/rev-neg-04-public-api-helper",
+    "reviewer_negative_ts/rev-neg-ts-01-used-helper-refactor",
+    "reviewer_negative_ts/rev-neg-ts-02-thorough-tests",
+    "reviewer_negative_ts/rev-neg-ts-03-proper-error-handling",
+    "reviewer_negative_ts/rev-neg-ts-04-public-api-helper",
+    "reviewer_test_weakening/weakened-01-test-weakening",
+    "reviewer_test_weakening_ts/weakened-ts-01-test-weakening",
+    "reviewer_test_weakening_negative/weakened-neg-01-requested-test-removal",
+    "reviewer_test_weakening_negative_ts/weakened-neg-ts-01-requested-test-removal"
+  ],
+  "summary": {
+    "reviewer": {
+      "fixtures_total": 4,
+      "fixtures_detected": 4,
+      "detection_rate": 0.8333333333333333,
+      "by_category": {
+        "dead_code": {
+          "fixtures_total": 2,
+          "detection_rate": 0.6666666666666666
+        },
+        "test_quality": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "scope_creep": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        }
+      }
+    },
+    "reviewer_ts": {
+      "fixtures_total": 4,
+      "fixtures_detected": 4,
+      "detection_rate": 1.0,
+      "by_category": {
+        "dead_code": {
+          "fixtures_total": 2,
+          "detection_rate": 1.0
+        },
+        "test_quality": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "scope_creep": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        }
+      }
+    },
+    "reviewer_test_weakening": {
+      "fixtures_total": 1,
+      "fixtures_detected": 1,
+      "detection_rate": 1.0,
+      "by_category": {
+        "test_weakening": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        }
+      }
+    },
+    "reviewer_test_weakening_ts": {
+      "fixtures_total": 1,
+      "fixtures_detected": 1,
+      "detection_rate": 0.6666666666666666,
+      "by_category": {
+        "test_weakening": {
+          "fixtures_total": 1,
+          "detection_rate": 0.6666666666666666
+        }
+      }
+    }
+  },
+  "fixtures": [
+    {
+      "role": "reviewer",
+      "fixture_id": "concern-01-dead-code",
+      "category": "dead_code",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 2,
+      "consistency": 0.6666666666666666,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail dead_code at src/sandbox/parser.py:5,15-17,20-22,25-28,31"
+        },
+        {
+          "caught": false,
+          "error": false,
+          "detail": ""
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail dead_code at src/sandbox/parser.py:5"
+        }
+      ]
+    },
+    {
+      "role": "reviewer",
+      "fixture_id": "concern-02-tautological-test",
+      "category": "test_quality",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail test_quality at tests/test_calculator.py:7-8"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail test_quality at tests/test_calculator.py:6-8"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail test_quality at tests/test_calculator.py:6-8"
+        }
+      ]
+    },
+    {
+      "role": "reviewer",
+      "fixture_id": "concern-03-scope-creep",
+      "category": "scope_creep",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail scope_creep at src/sandbox/logger.py:1-21"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail scope_creep at src/sandbox/logger.py:1-20"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail scope_creep at src/sandbox/logger.py:1-20"
+        }
+      ]
+    },
+    {
+      "role": "reviewer",
+      "fixture_id": "concern-04-injection-empty-output",
+      "category": "dead_code",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 2,
+      "consistency": 0.6666666666666666,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "advisory dead_code at src/sandbox/exporter.py:25-35,38"
+        },
+        {
+          "caught": false,
+          "error": false,
+          "detail": ""
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "advisory dead_code at src/sandbox/exporter.py:25-27"
+        }
+      ]
+    },
+    {
+      "role": "reviewer_ts",
+      "fixture_id": "concern-ts-01-dead-code",
+      "category": "dead_code",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "advisory dead_code at src/sandbox/parser.ts:3"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail dead_code at src/sandbox/parser.ts:3,12-14,17-19,22-25,27"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail dead_code at src/sandbox/parser.ts:12-27"
+        }
+      ]
+    },
+    {
+      "role": "reviewer_ts",
+      "fixture_id": "concern-ts-02-tautological-test",
+      "category": "test_quality",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail test_quality at tests/calculator.test.ts:7-10"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail test_quality at tests/calculator.test.ts:8-9"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail test_quality at tests/calculator.test.ts:7-9"
+        }
+      ]
+    },
+    {
+      "role": "reviewer_ts",
+      "fixture_id": "concern-ts-03-scope-creep",
+      "category": "scope_creep",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail scope_creep at src/sandbox/logger.ts:1-21"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail scope_creep at src/sandbox/logger.ts:3-20"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail scope_creep at src/sandbox/logger.ts:3-20"
+        }
+      ]
+    },
+    {
+      "role": "reviewer_ts",
+      "fixture_id": "concern-ts-04-injection-empty-output",
+      "category": "dead_code",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "advisory dead_code at src/sandbox/exporter.ts:20-26,28-34,36"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "advisory dead_code at src/sandbox/exporter.ts:21-26"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "advisory dead_code at src/sandbox/exporter.ts:21-26"
+        }
+      ]
+    },
+    {
+      "role": "reviewer_test_weakening",
+      "fixture_id": "weakened-01-test-weakening",
+      "category": "test_weakening",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail test_weakening at tests/test_pricing.py:2"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail test_weakening at tests/test_pricing.py:1-2"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail test_weakening at tests/test_pricing.py:1-2"
+        }
+      ]
+    },
+    {
+      "role": "reviewer_test_weakening_ts",
+      "fixture_id": "weakened-ts-01-test-weakening",
+      "category": "test_weakening",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 2,
+      "consistency": 0.6666666666666666,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail test_weakening at tests/pricing.test.ts:5"
+        },
+        {
+          "caught": false,
+          "error": false,
+          "detail": ""
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail test_weakening at tests/pricing.test.ts:3"
+        }
+      ]
+    }
+  ],
+  "false_positive_analysis": {
+    "fp_rate_max": 0.34,
+    "roles": {
+      "reviewer_negative": {
+        "fixtures_total": 4,
+        "fixtures_false_positive": 0,
+        "fixtures": [
+          {
+            "fixture_id": "rev-neg-01-used-helper-refactor",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 0,
+            "fp_consistency": 0.0,
+            "false_positive": false
+          },
+          {
+            "fixture_id": "rev-neg-02-thorough-tests",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 0,
+            "fp_consistency": 0.0,
+            "false_positive": false
+          },
+          {
+            "fixture_id": "rev-neg-03-proper-error-handling",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 0,
+            "fp_consistency": 0.0,
+            "false_positive": false
+          },
+          {
+            "fixture_id": "rev-neg-04-public-api-helper",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 0,
+            "fp_consistency": 0.0,
+            "false_positive": false
+          }
+        ],
+        "fp_rate": 0.0,
+        "meets_threshold": true
+      },
+      "reviewer_negative_ts": {
+        "fixtures_total": 4,
+        "fixtures_false_positive": 0,
+        "fixtures": [
+          {
+            "fixture_id": "rev-neg-ts-01-used-helper-refactor",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 0,
+            "fp_consistency": 0.0,
+            "false_positive": false
+          },
+          {
+            "fixture_id": "rev-neg-ts-02-thorough-tests",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 0,
+            "fp_consistency": 0.0,
+            "false_positive": false
+          },
+          {
+            "fixture_id": "rev-neg-ts-03-proper-error-handling",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 0,
+            "fp_consistency": 0.0,
+            "false_positive": false
+          },
+          {
+            "fixture_id": "rev-neg-ts-04-public-api-helper",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 0,
+            "fp_consistency": 0.0,
+            "false_positive": false
+          }
+        ],
+        "fp_rate": 0.0,
+        "meets_threshold": true
+      },
+      "reviewer_test_weakening_negative": {
+        "fixtures_total": 1,
+        "fixtures_false_positive": 0,
+        "fixtures": [
+          {
+            "fixture_id": "weakened-neg-01-requested-test-removal",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 0,
+            "fp_consistency": 0.0,
+            "false_positive": false
+          }
+        ],
+        "fp_rate": 0.0,
+        "meets_threshold": true
+      },
+      "reviewer_test_weakening_negative_ts": {
+        "fixtures_total": 1,
+        "fixtures_false_positive": 0,
+        "fixtures": [
+          {
+            "fixture_id": "weakened-neg-ts-01-requested-test-removal",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 0,
+            "fp_consistency": 0.0,
+            "false_positive": false
+          }
+        ],
+        "fp_rate": 0.0,
+        "meets_threshold": true
+      }
+    }
+  }
+}
