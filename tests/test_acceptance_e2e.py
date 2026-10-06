@@ -572,6 +572,24 @@ def test_a_recheck_runs_the_saved_checks_again_and_takes_no_file_on_trust(
     assert "headSha" in out, out
     assert "did not run at" not in out, out
     assert not injected.exists()
+    # A row for a check the plan does not have: the recheck cannot run it,
+    # so it refuses rather than agreeing with the rows it did run.
+    forged = json.loads(kept["record.json"])
+    forged["checks"].append({**_row(forged, "greets-ada"), "id": "greets-cyd"})
+    path.write_text(json.dumps(forged), encoding="utf-8")
+    _reindex(evidence, "record.json")
+    code, out = _recheck(root, path)
+    assert code == 2, out
+    assert f"{path} does not name the checks of its plan's {COMP}" in out, out
+    # The recheck's own isolation label comes from its run, never the record.
+    forged = json.loads(kept["record.json"])
+    forged["isolation"]["test"] = "a label the record states"
+    path.write_text(json.dumps(forged), encoding="utf-8")
+    _reindex(evidence, "record.json")
+    code, out = _recheck(root, path)
+    assert code == 0, out
+    assert "- the record ran under: a label the record states" in out, out
+    assert "- this recheck ran under: a label the record states" not in out, out
     for name, data in kept.items():
         (evidence / name).write_bytes(data)
 
