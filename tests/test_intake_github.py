@@ -899,9 +899,14 @@ class TestServeDrivesRemoteLabels:
         ("view", "needle"),
         [
             (json.dumps({"labels": "kstrl:running"}), "could not read the labels of issue #4"),
+            ("<html>rate limited</html>", "could not read the labels of issue #4"),
+            (
+                json.dumps({"labels": [{"name": "kstrl:queued"}, {"name": None}]}),
+                "could not read the labels of issue #4",
+            ),
             (GhResult(ok=False, error="gh issue failed (1): HTTP 502"), "HTTP 502"),
         ],
-        ids=["unreadable-answer", "failed-view"],
+        ids=["unreadable-answer", "not-json", "unnamed-label", "failed-view"],
     )
     def test_an_unreadable_label_list_fails_the_writeback(
         self,

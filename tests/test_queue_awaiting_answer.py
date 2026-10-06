@@ -431,7 +431,9 @@ class TestControls:
 #: $GH_STATE. It models gh 2.73.0 as read in `editable_http.go` `UpdateIssue`
 #: and `queries_repo.go` `LabelsToIDs`: `issue edit` adds and removes in two
 #: separate steps, and a step fails whole with `'<name>' not found` when one
-#: of its names is not a label of the repository. Every call is logged in
+#: of its names is not a label of the repository. `issue view` and `issue
+#: edit` must name issue 7 of `o/r` with `--repo`, or they fail as gh does for
+#: an issue it cannot resolve. Every call is logged in
 #: $GH_LOG and each comment body in $GH_COMMENTS; any other call answers `[]`.
 FAKE_GH = r"""
 import json
@@ -448,6 +450,11 @@ if args[:2] == ["issue", "comment"]:
     with open(os.environ["GH_COMMENTS"], "a", encoding="utf-8") as out:
         out.write(args[args.index("--body") + 1] + "\n")
     sys.exit(0)
+if args[:2] in (["issue", "view"], ["issue", "edit"]) and (
+    args[2:5] != [state["issue"], "--repo", state["repo"]]
+):
+    print(f"could not resolve to an Issue with the number of {args[2]}", file=sys.stderr)
+    sys.exit(1)
 if args[:2] == ["issue", "view"]:
     print(json.dumps({"labels": [{"name": n} for n in state["issue_labels"]]}))
     sys.exit(0)
@@ -491,7 +498,14 @@ def _fake_gh(
     write_executable(tmp_path / "fakebin" / "gh", f"#!{sys.executable}\n{FAKE_GH}")
     state = tmp_path / "gh.state.json"
     state.write_text(
-        json.dumps({"repo_labels": list(repo_labels), "issue_labels": ["kstrl:queued"]}),
+        json.dumps(
+            {
+                "repo": "o/r",
+                "issue": "7",
+                "repo_labels": list(repo_labels),
+                "issue_labels": ["kstrl:queued"],
+            }
+        ),
         encoding="utf-8",
     )
     gh_log, comments = tmp_path / "gh.log", tmp_path / "gh.comments"
