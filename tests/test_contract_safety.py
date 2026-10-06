@@ -38,6 +38,7 @@ from kstrl.contract import (
 )
 from kstrl.factory import FactoryConfig, run_factory
 from kstrl.manifest import Component, ComponentStatus, Manifest
+from kstrl.security import SecurityConfig
 from kstrl.timeout import TimeoutConfig
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
@@ -185,6 +186,7 @@ def _marker_run_configs(root: Path) -> tuple[FactoryConfig, KstrlConfig]:
             max_retries=0,
             retry_delay=0,
             review_mode="skip",
+            security_config=SecurityConfig(mode="skip"),
             project_stack=in_process_stack({"tests": MARKER_TEST_CMD}),
             contract_config=ContractConfig(
                 mode=ContractMode.TIER.value,
@@ -427,6 +429,7 @@ class TestBreakerRetryReentersScheduling:
             max_retries=1,
             retry_delay=0,
             review_mode="skip",
+            security_config=SecurityConfig(mode="skip"),
             progress_log_path=log_path,
             project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
             verify_config=VerifyConfig(
@@ -621,6 +624,7 @@ class TestCleanupFailsLoudly:
             max_retries=0,
             retry_delay=0,
             review_mode="skip",
+            security_config=SecurityConfig(mode="skip"),
             project_stack=in_process_stack({"tests": "true"}),
             contract_config=ContractConfig(
                 mode=ContractMode.TIER.value,

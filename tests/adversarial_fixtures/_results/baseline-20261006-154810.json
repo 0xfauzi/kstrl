@@ -1,0 +1,232 @@
+{
+  "format_version": 2,
+  "model": "haiku",
+  "timestamp": "20261006-154810",
+  "runs_per_fixture": 3,
+  "run_complete": true,
+  "fixtures_attempted": [
+    "architect/spec-01-no-error-handling",
+    "architect/spec-02-unspecified-auth",
+    "architect/spec-03-ambiguous-perf",
+    "architect_allowed_paths/spec-04-clear-layout",
+    "architect_reuse/spec-05-reuse-existing-with-repo",
+    "architect_reuse/spec-05-reuse-existing-without-repo"
+  ],
+  "fixtures_completed": [
+    "architect/spec-01-no-error-handling",
+    "architect/spec-02-unspecified-auth",
+    "architect/spec-03-ambiguous-perf",
+    "architect_allowed_paths/spec-04-clear-layout",
+    "architect_reuse/spec-05-reuse-existing-with-repo",
+    "architect_reuse/spec-05-reuse-existing-without-repo"
+  ],
+  "summary": {
+    "architect": {
+      "fixtures_total": 3,
+      "fixtures_detected": 2,
+      "detection_rate": 0.7777777777777778,
+      "by_category": {
+        "spec_issues": {
+          "fixtures_total": 3,
+          "detection_rate": 0.7777777777777778
+        }
+      }
+    },
+    "architect_allowed_paths": {
+      "fixtures_total": 1,
+      "fixtures_detected": 1,
+      "detection_rate": 1.0,
+      "by_category": {
+        "allowed_paths": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        }
+      }
+    },
+    "architect_reuse": {
+      "fixtures_total": 2,
+      "fixtures_detected": 2,
+      "detection_rate": 0.8333333333333333,
+      "by_category": {
+        "repo_present": {
+          "fixtures_total": 1,
+          "detection_rate": 0.6666666666666666
+        },
+        "repo_absent": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        }
+      }
+    }
+  },
+  "fixtures": [
+    {
+      "role": "architect",
+      "fixture_id": "spec-01-no-error-handling",
+      "category": "spec_issues",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "got 12 issues (exact_kind_match=False): [('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('minor', 'missing_detail'), ('minor', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail')]"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "got 10 issues (exact_kind_match=False): [('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'ambiguity'), ('major', 'missing_detail'), ('major', 'ambiguity'), ('major', 'missing_detail'), ('minor', 'missing_detail'), ('minor', 'missing_detail'), ('minor', 'missing_detail'), ('major', 'missing_detail')]"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "got 8 issues (exact_kind_match=False): [('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('minor', 'missing_detail'), ('minor', 'missing_detail'), ('major', 'ambiguity'), ('minor', 'missing_detail'), ('minor', 'missing_detail')]"
+        }
+      ]
+    },
+    {
+      "role": "architect",
+      "fixture_id": "spec-02-unspecified-auth",
+      "category": "spec_issues",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 1,
+      "consistency": 0.3333333333333333,
+      "detected": false,
+      "runs": [
+        {
+          "caught": false,
+          "error": false,
+          "detail": "json parse: No valid JSON found in output"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "got 16 issues (exact_kind_match=False): [('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'ambiguity'), ('major', 'ambiguity'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'ambiguity'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('minor', 'missing_detail'), ('minor', 'missing_detail')]"
+        },
+        {
+          "caught": false,
+          "error": false,
+          "detail": "json parse: No valid JSON found in output"
+        }
+      ]
+    },
+    {
+      "role": "architect",
+      "fixture_id": "spec-03-ambiguous-perf",
+      "category": "spec_issues",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "got 14 issues (exact_kind_match=True): [('blocker', 'missing_detail'), ('blocker', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'ambiguity'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'undefined_failure_mode'), ('major', 'missing_detail'), ('minor', 'missing_detail'), ('minor', 'missing_detail')]"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "got 15 issues (exact_kind_match=True): [('major', 'ambiguity'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'ambiguity'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'undefined_failure_mode'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('minor', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail')]"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "got 15 issues (exact_kind_match=True): [('major', 'ambiguity'), ('major', 'ambiguity'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'undefined_failure_mode'), ('major', 'missing_detail'), ('major', 'ambiguity'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'ambiguity'), ('major', 'missing_detail'), ('minor', 'missing_detail'), ('minor', 'unstated_assumption'), ('minor', 'missing_detail')]"
+        }
+      ]
+    },
+    {
+      "role": "architect_allowed_paths",
+      "fixture_id": "spec-04-clear-layout",
+      "category": "allowed_paths",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "1 components, all gate-clean: url-slugifier=['src/slugify/', 'tests/test_slugify.py', 'pyproject.toml', 'scripts/kstrl/feature/url-slugifier/']"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "1 components, all gate-clean: slugify=['src/', 'tests/', 'scripts/kstrl/feature/slugify/', 'pyproject.toml']"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "1 components, all gate-clean: url-slugifier=['src/', 'tests/', 'pyproject.toml', 'scripts/kstrl/feature/url-slugifier/']"
+        }
+      ]
+    },
+    {
+      "role": "architect_reuse",
+      "fixture_id": "spec-05-reuse-existing-with-repo",
+      "category": "repo_present",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 2,
+      "consistency": 0.6666666666666666,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "repo_present: names 'pulsekit/throttle/token_bucket.py'"
+        },
+        {
+          "caught": false,
+          "error": false,
+          "detail": "repo_present: names none of ['pulsekit/throttle/token_bucket.py', 'pulsekit.throttle.token_bucket']"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "repo_present: names 'pulsekit/throttle/token_bucket.py'"
+        }
+      ]
+    },
+    {
+      "role": "architect_reuse",
+      "fixture_id": "spec-05-reuse-existing-without-repo",
+      "category": "repo_absent",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "repo_absent: names none of ['pulsekit/throttle/token_bucket.py', 'pulsekit.throttle.token_bucket']"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "repo_absent: names none of ['pulsekit/throttle/token_bucket.py', 'pulsekit.throttle.token_bucket']"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "repo_absent: names none of ['pulsekit/throttle/token_bucket.py', 'pulsekit.throttle.token_bucket']"
+        }
+      ]
+    }
+  ]
+}

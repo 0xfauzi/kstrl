@@ -62,6 +62,7 @@ from kstrl.inbox import Inbox, InboxConfig
 from kstrl.loop import COMPLETION_MARKER, LoopBudget, run_loop
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.observability import ProgressLog
+from kstrl.security import SecurityConfig
 from kstrl.shutdown import StopController
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
@@ -761,6 +762,7 @@ def _factory_config(tmp_path: Path, **overrides: Any) -> FactoryConfig:
         max_retries=0,
         retry_delay=0,
         review_mode="skip",
+        security_config=SecurityConfig(mode="skip"),
         project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
         verify_config=VerifyConfig(
             project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),

@@ -326,6 +326,7 @@ def _factory_config(**overrides: object) -> FactoryConfig:
         max_retries=0,
         retry_delay=0,
         review_mode="skip",
+        security_config=SecurityConfig(mode="skip"),
         project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
         verify_config=VerifyConfig(
             project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),

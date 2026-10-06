@@ -4,21 +4,19 @@ Machine-made merge decisions are only defensible inside an explicit,
 written envelope. Before this module the rules were implicit and
 scattered (diff-scope, allowed paths, bad-pattern secrets). The
 ``[policy]`` section makes them one auditable thing that the Phase 1
-mechanical verifier enforces on ARTIFACTS - the git diff and the
-lockfiles :mod:`kstrl.lockfiles` reads - never on agent self-report.
+mechanical verifier enforces on the git diff, never on agent
+self-report. It reads no lockfile and no license registry (#696): the
+security reviewer lists every dependency a change adds.
 
 Opt-in by design: ``PolicyConfig.enabled`` defaults False, so existing
 runs are unchanged. When a repo opts in, a violation fails Phase 1 and
 blocks the merge. The autonomy ladder (R8.2) will later modulate
 severity per level; today "enabled" means "blocking".
 
-This module is pure logic. All git and license-resolution I/O lives in
-``kstrl.verify`` / ``kstrl.licensing`` (which wrap :func:`evaluate_policy`
-and :func:`classify_license` into a ``CheckResult``); keeping the
-detection functions free of subprocesses and network makes every
-category unit testable without a repository. License resolution itself
-(uv cache, then PyPI) lives in :mod:`kstrl.licensing`; this module only
-classifies an already-resolved SPDX string against the allow/deny lists.
+This module is pure logic. All git I/O lives in ``kstrl.verify``, which
+wraps :func:`evaluate_policy` into a ``CheckResult``; keeping the
+detection functions free of subprocesses makes every category testable
+without a repository.
 """
 
 from __future__ import annotations
@@ -27,18 +25,11 @@ import hashlib
 import json
 import os
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 
 from kstrl.config_numbers import SIGNED, check_numbers
-from kstrl.lockfiles import (
-    LOCKFILE_READERS,
-    LockfileDocument,
-    NewDependency,
-    read_new_dependencies,
-    uv_lock_dependencies,
-)
 
 # Enforcement-machinery paths: every lever an agent could pull to weaken
 # the envelope itself. Issue #148 names three surfaces and all three are
@@ -63,8 +54,6 @@ ENFORCEMENT_MACHINERY_PATHS: tuple[str, ...] = (
     # `kstrl/verify.py` at the repo root and a nested/vendored checkout.
     "**/kstrl/verify.py",
     "**/kstrl/policy.py",
-    "**/kstrl/licensing.py",
-    "**/kstrl/lockfiles.py",
     "**/kstrl/guards.py",
     "**/kstrl/fixtures.py",
     "**/kstrl/autonomy.py",
@@ -106,68 +95,6 @@ DEFAULT_SECRET_PATTERNS: tuple[str, ...] = (
     r"xox[bpoas]-[a-zA-Z0-9-]+",
 )
 
-# Conservative permissive-license allowlist (exact SPDX ids). A new
-# dependency whose license is not covered here (and not caught by the
-# deny-list) blocks until the operator explicitly adds it - the
-# "explicit allowlist" posture the roadmap specifies.
-DEFAULT_LICENSE_ALLOW: tuple[str, ...] = (
-    "MIT",
-    "MIT-0",
-    "BSD-2-Clause",
-    "BSD-3-Clause",
-    "Apache-2.0",
-    "ISC",
-    "PSF-2.0",
-    "Python-2.0",
-    "Unlicense",
-    "0BSD",
-)
-
-# Substrings that deny a license outright (copyleft / source-available).
-# "GPL" also matches "LGPL"/"AGPL" by design: deny wins, and the operator
-# narrows it if a weak-copyleft dep is acceptable.
-DEFAULT_LICENSE_DENY_PARTIAL: tuple[str, ...] = (
-    "GPL",
-    "AGPL",
-    "SSPL",
-    "Commons-Clause",
-    "BUSL",
-    "EUPL",
-)
-
-# The manifest each machine-generated lockfile pins, keyed by the
-# lockfile's basename. The toolchain writes the lockfile in the manifest's
-# own directory, which is how both scope guards find the manifest a
-# changed lockfile belongs to (``guards.without_entitled_lockfiles``, #544).
-# Measured for uv, poetry, pipenv, npm, yarn, pnpm, cargo and bundler: each
-# wrote its lockfile beside its manifest in an empty project. go.sum needs a
-# downloaded dependency and composer is not installed where this was
-# measured, so those two rows are the toolchains' documented layout.
-LOCKFILE_MANIFESTS: dict[str, str] = {
-    "uv.lock": "pyproject.toml",
-    "poetry.lock": "pyproject.toml",
-    "Pipfile.lock": "Pipfile",
-    "package-lock.json": "package.json",
-    "yarn.lock": "package.json",
-    "pnpm-lock.yaml": "package.json",
-    "Cargo.lock": "Cargo.toml",
-    "go.sum": "go.mod",
-    "composer.lock": "composer.json",
-    "Gemfile.lock": "Gemfile",
-}
-
-# Basenames of machine-generated lockfiles, excluded from the size caps:
-# a one-line dependency bump can rewrite hundreds of lockfile lines, so
-# counting them would make ``max_lines_changed`` meaningless. Lockfiles
-# remain subject to ``paths_deny``; ``LOCKFILE_READERS`` decides which are
-# read for ``deps_allow_new`` (#630). Derived from ``LOCKFILE_MANIFESTS``.
-LOCKFILE_BASENAMES: frozenset[str] = frozenset(LOCKFILE_MANIFESTS)
-if set(LOCKFILE_READERS) | {"uv.lock"} != LOCKFILE_BASENAMES:
-    raise RuntimeError("kstrl.lockfiles.LOCKFILE_READERS must decide every other lockfile")
-
-# SPDX expression operators dropped when tokenizing into license atoms.
-_SPDX_OPERATORS = frozenset({"or", "and", "with"})
-
 
 class PolicyConfigError(ValueError):
     """A policy value is itself malformed (e.g. an uncompilable secret
@@ -175,15 +102,13 @@ class PolicyConfigError(ValueError):
     envelope must never silently pass a diff."""
 
 
-def _basename(path: str) -> str:
-    return path.rsplit("/", 1)[-1]
-
-
 def count_diff_size(
     numstat: Sequence[tuple[int | None, int | None, str]],
 ) -> tuple[int, int]:
-    """``(files, lines)`` for a ``git diff --numstat`` result, lockfiles
-    excluded.
+    """``(files, lines)`` for a ``git diff --numstat`` result.
+
+    Every file counts, a lockfile or other generated file included: kstrl
+    holds no list of which files a toolchain generates (#696).
 
     ``lines`` is lines ADDED PLUS REMOVED, git's own sense of "lines
     changed", so deleting pre-existing code raises it. It measures churn,
@@ -194,8 +119,7 @@ def count_diff_size(
     must agree about how large a change is. Binary files report ``-`` for
     both counts (``None`` here) and so contribute their file but no lines.
     """
-    counted = [row for row in numstat if _basename(row[2]) not in LOCKFILE_BASENAMES]
-    return len(counted), sum((added or 0) + (removed or 0) for added, removed, _ in counted)
+    return len(numstat), sum((added or 0) + (removed or 0) for added, removed, _ in numstat)
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -323,56 +247,6 @@ def parse_added_lines(diff_text: str) -> list[tuple[str, str]]:
     return added
 
 
-def _lockfile_violations(read: list[NewDependency], allowed: bool) -> list[PolicyViolation]:
-    """One ``deps_allow_new`` violation per lockfile read (#630), naming its new packages."""
-    paths = [] if allowed else sorted({dep.lockfile for dep in read})
-    return [
-        PolicyViolation(
-            category="deps_allow_new",
-            location=path,
-            explanation=f"New dependencies added to {path} while deps_allow_new=false: "
-            + ", ".join(sorted({dep.name for dep in read if dep.lockfile == path})),
-            suggestion="Drop the dependency, or set [policy] deps_allow_new = true.",
-        )
-        for path in paths
-    ]
-
-
-def _spdx_atoms(expr: str) -> list[str]:
-    """Split an SPDX expression into license atoms, dropping operators.
-
-    ``"Apache-2.0 OR BSD-3-Clause"`` -> ``["Apache-2.0", "BSD-3-Clause"]``.
-    """
-    tokens = re.split(r"[()\s]+", expr.strip())
-    return [t for t in tokens if t and t.lower() not in _SPDX_OPERATORS]
-
-
-def classify_license(
-    license_str: str | None,
-    allow: Sequence[str],
-    deny_partial: Sequence[str],
-) -> str:
-    """Classify a resolved license as ``allowed`` / ``denied`` / ``unknown``.
-
-    Deny wins: a ``deny_partial`` substring anywhere in the string (case-
-    insensitive) denies it - this is what catches copyleft even inside a
-    compound or ``WITH``-exception expression. Otherwise every atom of the
-    (possibly compound) expression must be in ``allow`` to be allowed;
-    anything else - including an unresolved (None) license - is unknown.
-    """
-    if not license_str:
-        return "unknown"
-    low = license_str.lower()
-    for deny in deny_partial:
-        if deny.lower() in low:
-            return "denied"
-    atoms = _spdx_atoms(license_str)
-    allow_low = {a.lower() for a in allow}
-    if atoms and all(a.lower() in allow_low for a in atoms):
-        return "allowed"
-    return "unknown"
-
-
 def _scan_secrets(
     added_lines: Sequence[tuple[str, str]],
     patterns: Sequence[str],
@@ -414,7 +288,7 @@ class PolicyViolation:
 
     Kept separate from the rendered ``details`` string so the verifier can
     build typed ``Finding``s (issue #148) without re-parsing prose.
-    ``category`` is the rule name (``paths_deny``, ``license_denied``);
+    ``category`` is the rule name (``paths_deny``, ``secret_pattern``);
     ``severity`` is ``critical`` for the enforcement-machinery halt,
     ``high`` for other blocking violations, ``advisory`` for notices that
     do not block.
@@ -444,14 +318,8 @@ class PolicyEvaluation:
     summary: str
     details: list[str] = field(default_factory=list)
     machinery_hit: bool = False
-    # Packages newly added to any lockfile read (#630), so the verifier
-    # can resolve their licenses without re-parsing the diff.
-    new_dependencies: list[NewDependency] = field(default_factory=list)
     # Structured form of ``details`` for typed Finding construction.
     violations: list[PolicyViolation] = field(default_factory=list)
-    # #619: each lockfile whose new dependencies were not read, and why
-    # (#630), so the verifier reports the dependency rules as unmeasured.
-    unread_lockfiles: dict[str, str] = field(default_factory=dict)
 
 
 def evaluate_policy(
@@ -459,16 +327,12 @@ def evaluate_policy(
     numstat: Sequence[tuple[int | None, int | None, str]],
     diff_text: str,
     config: PolicyConfig,
-    *,
-    lockfile_documents: Mapping[str, LockfileDocument],
 ) -> PolicyEvaluation:
-    """Evaluate a change against the policy envelope from artifacts alone.
+    """Evaluate a change against the policy envelope from the diff alone.
 
     ``changed_files`` is the rename-aware path list; ``numstat`` is
     ``(added, removed, path)`` per file (None counts = binary); and
-    ``diff_text`` is the unified diff used for secret and new-dependency
-    detection. ``lockfile_documents`` holds each changed lockfile at the
-    merge base and at HEAD; one missing from it is unread, never clean.
+    ``diff_text`` is the unified diff the secret patterns read.
     Returns every violation found, both as structured
     :class:`PolicyViolation`s (for typed Findings) and as rendered
     ``details`` strings (for the retry prompt).
@@ -517,7 +381,7 @@ def evaluate_policy(
             )
         )
 
-    # 3. Size caps (lockfiles excluded from the count).
+    # 3. Size caps.
     n_files, n_lines = count_diff_size(numstat)
     if config.max_files_changed >= 0 and n_files > config.max_files_changed:
         violations.append(
@@ -525,7 +389,7 @@ def evaluate_policy(
                 category="max_files_changed",
                 explanation=(
                     f"Too many files changed: {n_files} > max_files_changed "
-                    f"{config.max_files_changed} (lockfiles excluded)"
+                    f"{config.max_files_changed}"
                 ),
                 suggestion="Split the change into smaller components.",
             )
@@ -536,34 +400,14 @@ def evaluate_policy(
                 category="max_lines_changed",
                 explanation=(
                     f"Too many lines changed: {n_lines} > max_lines_changed "
-                    f"{config.max_lines_changed} (lockfiles excluded)"
+                    f"{config.max_lines_changed}"
                 ),
                 suggestion="Split the change into smaller components.",
             )
         )
 
-    # 4. New dependencies: uv.lock from its added lines, every other lockfile
-    # in changed_files from its documents (#630). Detected regardless of
-    # deps_allow_new so the verifier can license-check them.
-    added_lines = parse_added_lines(diff_text)
-    new_dependencies = uv_lock_dependencies(added_lines)
-    if not config.deps_allow_new and new_dependencies:
-        # Untruncated: an approval covers the explanation (#595).
-        names = sorted({dep.name for dep in new_dependencies})
-        shown = ", ".join(names)
-        violations.append(
-            PolicyViolation(
-                category="deps_allow_new",
-                location="uv.lock",
-                explanation=(f"New dependencies added while deps_allow_new=false: {shown}"),
-                suggestion=("Drop the dependency, or set [policy] deps_allow_new = true."),
-            )
-        )
-    read, unread = read_new_dependencies(changed_files, lockfile_documents)
-    violations += _lockfile_violations(read, config.deps_allow_new)
-
-    # 5. Secret patterns over added lines (raises on a bad regex).
-    secret_hits = _scan_secrets(added_lines, config.secret_patterns)
+    # 4. Secret patterns over added lines (raises on a bad regex).
+    secret_hits = _scan_secrets(parse_added_lines(diff_text), config.secret_patterns)
     if secret_hits:
         violations.append(
             PolicyViolation(
@@ -596,9 +440,7 @@ def evaluate_policy(
         summary=summary,
         details=details,
         machinery_hit=machinery_hit,
-        new_dependencies=new_dependencies + read,
         violations=violations,
-        unread_lockfiles=unread,
     )
 
 
@@ -608,8 +450,8 @@ class PolicyConfig:
 
     Opt-in: ``enabled`` defaults False so existing runs are unchanged.
     When enabled, a violation fails Phase 1 mechanical verification and
-    blocks the merge. All checks read artifacts (git diff, lockfiles),
-    never agent self-report. Set a numeric cap negative to disable it.
+    blocks the merge. All checks read the git diff, never agent
+    self-report. Set a numeric cap negative to disable it.
     """
 
     enabled: bool = False
@@ -617,50 +459,22 @@ class PolicyConfig:
     # A negative cap disables the cap and 0 allows nothing (#571: SIGNED).
     max_files_changed: int = field(default=40, metadata=SIGNED)
     max_lines_changed: int = field(default=1500, metadata=SIGNED)
-    deps_allow_new: bool = False
     secret_patterns: list[str] = field(default_factory=lambda: list(DEFAULT_SECRET_PATTERNS))
     # ADDITIVE ONLY: extra paths joined to ENFORCEMENT_MACHINERY_PATHS for
     # the non-overridable halt. A repo protects its own verifier/CI code
     # here; nothing in config can shrink the hardcoded set.
     enforcement_paths_extra: list[str] = field(default_factory=list)
-    # License gate: a newly-added dependency whose resolved SPDX
-    # license matches a deny_partial substring is blocked; one whose every
-    # atom is in license_allow passes; anything else is unknown (blocked,
-    # add it to license_allow to permit). Empty license_allow disables the
-    # gate entirely.
-    license_allow: list[str] = field(default_factory=lambda: list(DEFAULT_LICENSE_ALLOW))
-    license_deny_partial: list[str] = field(
-        default_factory=lambda: list(DEFAULT_LICENSE_DENY_PARTIAL)
-    )
-    # What to do when a license cannot be resolved from any source:
-    # "block" (default, fail-closed - an unprovable dependency is not
-    # inside the envelope, consistent with the rest of this check) or
-    # "advisory" (record it and pass, for operators who accept the risk of
-    # offline/cache-miss resolution).
-    license_unresolved: str = "block"
-    # Whether a PyPI package's license may fall back to the PyPI JSON API.
-    # A real config field, not a bare env read, so it is covered by
-    # envelope_hash: a run that silently skipped the network must not
-    # claim the same policy hash as one that consulted it.
-    license_use_network: bool = True
     # Reserved for the R8.7 release gate: stored and hashed into the run
     # manifest's policy envelope, not yet enforced (Phase 1 has no deploy
     # step). L3+ may set true.
     deploy: bool = False
 
-    def __post_init__(self) -> None:
-        if self.license_unresolved not in ("block", "advisory"):
-            raise PolicyConfigError(
-                f"invalid license_unresolved {self.license_unresolved!r}; "
-                "expected 'block' or 'advisory'"
-            )
-
     @classmethod
     def from_env(cls) -> PolicyConfig:
         """Load from environment only (defaults + env overlay).
 
-        List fields (``paths_deny``, ``secret_patterns``, the license
-        lists, ``enforcement_paths_extra``) are toml-only and keep their
+        List fields (``paths_deny``, ``secret_patterns``,
+        ``enforcement_paths_extra``) are toml-only and keep their
         defaults here.
         """
         defaults = cls()
@@ -669,16 +483,8 @@ class PolicyConfig:
             paths_deny=list(defaults.paths_deny),
             max_files_changed=_env_int("KSTRL_POLICY_MAX_FILES", defaults.max_files_changed),
             max_lines_changed=_env_int("KSTRL_POLICY_MAX_LINES", defaults.max_lines_changed),
-            deps_allow_new=_env_bool("KSTRL_POLICY_DEPS_ALLOW_NEW", defaults.deps_allow_new),
             secret_patterns=list(defaults.secret_patterns),
             enforcement_paths_extra=list(defaults.enforcement_paths_extra),
-            license_allow=list(defaults.license_allow),
-            license_deny_partial=list(defaults.license_deny_partial),
-            license_unresolved=os.environ.get(
-                "KSTRL_POLICY_LICENSE_UNRESOLVED",
-                defaults.license_unresolved,
-            ),
-            license_use_network=_env_bool("KSTRL_POLICY_LICENSE_NET", defaults.license_use_network),
             deploy=_env_bool("KSTRL_POLICY_DEPLOY", defaults.deploy),
         )
 
@@ -712,40 +518,15 @@ class PolicyConfig:
             if "max_lines_changed" in section
             else defaults.max_lines_changed
         )
-        deps_allow_new = (
-            bool(section["deps_allow_new"])
-            if "deps_allow_new" in section
-            else defaults.deps_allow_new
-        )
         secret_patterns = (
             [str(s) for s in section["secret_patterns"]]
             if isinstance(section.get("secret_patterns"), list)
             else list(defaults.secret_patterns)
         )
-        license_allow = (
-            [str(s) for s in section["license_allow"]]
-            if isinstance(section.get("license_allow"), list)
-            else list(defaults.license_allow)
-        )
-        license_deny_partial = (
-            [str(s) for s in section["license_deny_partial"]]
-            if isinstance(section.get("license_deny_partial"), list)
-            else list(defaults.license_deny_partial)
-        )
         enforcement_paths_extra = (
             [str(s) for s in section["enforcement_paths_extra"]]
             if isinstance(section.get("enforcement_paths_extra"), list)
             else list(defaults.enforcement_paths_extra)
-        )
-        license_unresolved = (
-            str(section["license_unresolved"])
-            if "license_unresolved" in section
-            else defaults.license_unresolved
-        )
-        license_use_network = (
-            bool(section["license_use_network"])
-            if "license_use_network" in section
-            else defaults.license_use_network
         )
         deploy = bool(section["deploy"]) if "deploy" in section else defaults.deploy
 
@@ -756,12 +537,6 @@ class PolicyConfig:
             max_files_changed = int(os.environ["KSTRL_POLICY_MAX_FILES"])
         if "KSTRL_POLICY_MAX_LINES" in os.environ:
             max_lines_changed = int(os.environ["KSTRL_POLICY_MAX_LINES"])
-        if "KSTRL_POLICY_DEPS_ALLOW_NEW" in os.environ:
-            deps_allow_new = os.environ["KSTRL_POLICY_DEPS_ALLOW_NEW"] == "1"
-        if "KSTRL_POLICY_LICENSE_UNRESOLVED" in os.environ:
-            license_unresolved = os.environ["KSTRL_POLICY_LICENSE_UNRESOLVED"]
-        if "KSTRL_POLICY_LICENSE_NET" in os.environ:
-            license_use_network = os.environ["KSTRL_POLICY_LICENSE_NET"] == "1"
         if "KSTRL_POLICY_DEPLOY" in os.environ:
             deploy = os.environ["KSTRL_POLICY_DEPLOY"] == "1"
 
@@ -771,13 +546,8 @@ class PolicyConfig:
                 paths_deny=paths_deny,
                 max_files_changed=max_files_changed,
                 max_lines_changed=max_lines_changed,
-                deps_allow_new=deps_allow_new,
                 secret_patterns=secret_patterns,
                 enforcement_paths_extra=enforcement_paths_extra,
-                license_allow=license_allow,
-                license_deny_partial=license_deny_partial,
-                license_unresolved=license_unresolved,
-                license_use_network=license_use_network,
                 deploy=deploy,
             )
         )
@@ -788,10 +558,9 @@ class PolicyConfig:
         Hashes the effective config (post env/toml resolution), so the
         audit record captures what was ENFORCED, not merely what the file
         on disk said. Every knob that can change a verdict is a field on
-        this dataclass - including ``license_use_network`` and
-        ``license_unresolved`` - so two runs with the same hash enforced
-        the same rules (an env-only toggle would otherwise let a weaker
-        run claim an unchanged envelope).
+        this dataclass, so two runs with the same hash enforced the same
+        rules (an env-only toggle would otherwise let a weaker run claim
+        an unchanged envelope).
         """
         payload = {f.name: getattr(self, f.name) for f in fields(self)}
         blob = json.dumps(payload, sort_keys=True, separators=(",", ":"))

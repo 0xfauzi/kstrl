@@ -54,7 +54,6 @@ class TestAMidRunEditDoesNotChangeWhatIsEnforced:
         assert [r.component for r in readings] == ["comp-a", "comp-b"]
         assert {r.policy.envelope_hash() for r in readings} == {envelope.policy_hash()}
         assert {r.policy.max_files_changed for r in readings} == {5}
-        assert {r.policy.deps_allow_new for r in readings} == {False}
 
     @pytest.mark.parametrize("autonomy", ["false", "true"])
     def test_the_adequacy_posture_is_the_one_the_run_started_with(

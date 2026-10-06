@@ -150,9 +150,6 @@ EXPECTED_REF_OPERAND_ARGVS: dict[str, int] = {
     "git.py git ls-tree -r --name-only -z sha": 1,
     # #696: git.status_entries, what a [stack]'s checks left in a worktree.
     "git.py git status --porcelain --untracked-files=all -z": 1,
-    # #630: git.read_blob reads a lockfile at the merge base and at HEAD.
-    "git.py git ls-tree --full-tree -z rev -- path": 1,
-    "git.py git cat-file blob mode_type_object[2].decode('ascii')": 1,
     "git.py git rev-parse --verify --quiet HEAD": 1,
     "git.py git rev-parse --verify --quiet f'refs/heads/{branch}'": 1,
     "git.py git config --get remote.origin.url": 1,

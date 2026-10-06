@@ -30,6 +30,7 @@ from kstrl.observability import (
     latest_run_id,
     read_progress_events,
 )
+from kstrl.security import SecurityConfig
 from kstrl.ui.plain import PlainUI
 from tests.helpers import gitrepo
 from tests.helpers.component_prd import write_component_prd
@@ -216,6 +217,7 @@ def _plain_factory_config(**overrides: object) -> FactoryConfig:
         max_retries=0,
         retry_delay=0,
         review_mode="skip",
+        security_config=SecurityConfig(mode="skip"),
         skip_verification=True,
     )
     for key, value in overrides.items():

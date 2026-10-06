@@ -398,14 +398,9 @@ timeout = 30.0                     # seconds per fixture subprocess
 enabled = false                                                                                                                                               # enforce the [policy] envelope in Phase 1 (opt-in)
 paths_deny = [".github/workflows/**", "kstrl.toml", "ralph.toml", ".kstrl/**", "**/*.pem", "**/.env*"]                                                        # globs no change may touch (gitignore-style **)
 max_files_changed = 40                                                                                                                                        # max files in a change; negative disables
-max_lines_changed = 1500                                                                                                                                      # max added+removed lines (lockfiles excluded); negative disables
-deps_allow_new = false                                                                                                                                        # allow new packages in any lockfile kstrl reads (L3+ may enable)
+max_lines_changed = 1500                                                                                                                                      # max added+removed lines; negative disables
 secret_patterns = ["AKIA[0-9A-Z]{16}", "-----BEGIN (?:RSA |EC )?PRIVATE KEY-----", "sk-[a-zA-Z0-9]{20,}", "ghp_[a-zA-Z0-9]{36}", "xox[bpoas]-[a-zA-Z0-9-]+"]  # regexes flagged in added diff lines
 enforcement_paths_extra = []                                                                                                                                  # extra halt paths; additive - cannot shrink the built-in set
-license_allow = ["MIT", "MIT-0", "BSD-2-Clause", "BSD-3-Clause", "Apache-2.0", "ISC", "PSF-2.0", "Python-2.0", "Unlicense", "0BSD"]                           # allowed SPDX ids for new deps (empty disables)
-license_deny_partial = ["GPL", "AGPL", "SSPL", "Commons-Clause", "BUSL", "EUPL"]                                                                              # substrings that deny a dep license (copyleft)
-license_unresolved = "block"                                                                                                                                  # block | advisory when no source resolves a license
-license_use_network = true                                                                                                                                    # PyPI fallback for PyPI packages; false = uv cache only
 deploy = false                                                                                                                                                # reserved for the R8.7 release gate; stored + hashed
 
 # Autonomy ladder (R8.2; opt-in)
@@ -467,7 +462,7 @@ diff_mutation = false            # mutate the changed AND covered lines and repo
 
 # Phase 2.5 security review
 [security]
-mode = "skip"            # skip | advisory | hard
+mode = "advisory"        # skip | advisory | hard
 agent_cmd = ""           # empty = inherit [agent]
 agent_type = ""          # empty = inherit [agent]
 model = ""               # empty = inherit [agent]

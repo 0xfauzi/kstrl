@@ -325,7 +325,7 @@ class TestTheCleanStreak:
         assert not (tmp_path / "gh.head").exists()
 
 
-POLICY = "[policy]\nenabled = true\nlicense_use_network = false\n"
+POLICY = "[policy]\nenabled = true\n"
 
 
 class TestAHumanRejectionAtL3Demotes:

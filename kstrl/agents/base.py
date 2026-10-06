@@ -504,6 +504,10 @@ INTEGRATION_ROLE: Final = "integration"
 #: ComponentUsage events, namespaced out of reach of any component id (#281).
 INTEGRATION_COMPONENT: Final = role_component_key(INTEGRATION_ROLE)
 
+#: The verification designer's role name (#700 slice 7): its PHASE key in the
+#: meter, under the component it designed checks for, and its prompt records.
+DESIGNER_ROLE: Final = "designer"
+
 # Rollup row order for the R3.1 usage table, in the order the roles run:
 # the architect decomposes the spec before any component's engineer loop
 # starts (#257). Phases outside this list (future additions) sort after,

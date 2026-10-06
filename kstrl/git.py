@@ -667,58 +667,6 @@ def merge_base_ref(
         return ""
 
 
-def read_blob(
-    rev: str,
-    path: str,
-    cwd: Path | None = None,
-    timeout: float = DEFAULT_TIMEOUT,
-) -> bytes | None:
-    """The bytes git stores for ``path`` at ``rev``, or None when ``rev``
-    has no such path (#630).
-
-    ``cat-file`` applies no textconv and ignores a ``-diff`` attribute, so
-    a lockfile ``git diff`` shows as binary is still read here. None ONLY
-    when ``ls-tree`` ran and listed nothing; every other failure (a bad
-    rev, a timeout, a nonzero exit, a path that is not a file) raises
-    :class:`GitDiffError`, so an unreadable lockfile is never read as an
-    absent one.
-    """
-    try:
-        listed = subprocess.run(
-            ["git", "ls-tree", "--full-tree", "-z", rev, "--", path],
-            cwd=cwd,
-            capture_output=True,
-            timeout=timeout,
-        )
-    except (subprocess.TimeoutExpired, OSError) as exc:
-        raise GitDiffError(f"git ls-tree {rev} -- {path} did not run: {exc}") from exc
-    if listed.returncode != 0:
-        raise GitDiffError(
-            f"git ls-tree {rev} -- {path} exited {listed.returncode}: "
-            + listed.stderr.decode("utf-8", errors="replace").strip()[:300]
-        )
-    if not listed.stdout:
-        return None
-    mode_type_object = listed.stdout.split(b"\t", 1)[0].split()
-    if len(mode_type_object) != 3 or mode_type_object[1] != b"blob":
-        raise GitDiffError(f"{path} at {rev} is not a file: {listed.stdout[:120]!r}")
-    try:
-        shown = subprocess.run(
-            ["git", "cat-file", "blob", mode_type_object[2].decode("ascii")],
-            cwd=cwd,
-            capture_output=True,
-            timeout=timeout,
-        )
-    except (subprocess.TimeoutExpired, OSError) as exc:
-        raise GitDiffError(f"git cat-file {path} at {rev} did not run: {exc}") from exc
-    if shown.returncode != 0:
-        raise GitDiffError(
-            f"git cat-file {path} at {rev} exited {shown.returncode}: "
-            + shown.stderr.decode("utf-8", errors="replace").strip()[:300]
-        )
-    return shown.stdout
-
-
 def capture_workspace_baseline(
     cwd: Path | None = None,
     timeout: float = DEFAULT_TIMEOUT,
@@ -1401,10 +1349,8 @@ class DiffStat:
     ``files`` counts every row ``git diff --numstat <base>...HEAD``
     prints, including binary rows. ``insertions`` and ``deletions`` sum
     columns one and two, and binary rows (which git prints as ``-``)
-    contribute their file and no lines. Lockfiles are NOT excluded here,
-    unlike ``policy.count_diff_size``: this figure is compared against
-    what a reviewer typing the plain command sees, and that command has
-    no idea what a lockfile is.
+    contribute their file and no lines. This figure is compared against
+    what a reviewer typing the plain command sees.
     """
 
     files: int

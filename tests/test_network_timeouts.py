@@ -45,7 +45,6 @@ from tests.helpers.astwalk import (
 #: running the walk below. The undecided half is the five shared sites every
 #: other guard built on ``tests.helpers.astwalk`` already pins.
 EXPECTED_SEEN: tuple[str, ...] = (
-    "licensing.py::_default_http_get urllib.request.urlopen",
     "linear.py::LinearClient._post urllib.request.urlopen",
     "signals.py::_fetch_bugsink_text urllib.request.urlopen",
 )
@@ -98,7 +97,7 @@ class TestEveryUrlopenCarriesATimeout:
         # If the walk ever finds nothing, the audit itself broke (import
         # style changed, package moved, the resolver stopped seeing the
         # target) - fail loudly, never read a missing scan as a clean one.
-        assert sites_seen >= 3, (
+        assert sites_seen >= 2, (
             f"resolved_calls only found {sites_seen} urlopen call sites; "
             "the walk is broken, not the code clean"
         )

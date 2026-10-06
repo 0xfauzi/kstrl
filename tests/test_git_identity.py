@@ -65,6 +65,9 @@ EXPECTED_IDENTITY_SPELLINGS: dict[str, int] = {
 #: the repository was through ``tests.helpers.gitrepo.set_identity``.
 EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/conftest.py": 2,
+    # #700 slice 7: base_checkout and materialize commit the fixture's trees
+    # into repositories they have just put through set_identity.
+    "tests/helpers/calibration_acceptance_fixture.py": 3,
     # #482: materialize commits the fixture's base and feature trees into a
     # repository it has just put through tests.helpers.gitrepo.set_identity.
     "tests/helpers/calibration_integration_fixture.py": 2,
@@ -80,6 +83,9 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # #654: the moved-base test commits NOTES.md into the repository
     # tests.test_red_base_preflight._repo built and put through set_identity.
     "tests/test_accept_red_base.py": 1,
+    # #700 slice 7: `_with_greet` commits into the repository
+    # `tests.test_stack_e2e._repo` put through set_identity.
+    "tests/test_acceptance_design_e2e.py": 1,
     # #700 slice 4: `_with_greet` and the three stub engineers commit into
     # the repository `tests.test_stack_e2e._repo` put through set_identity
     # (the engineers commit in its worktrees, which share its config).
@@ -100,7 +106,6 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # `tests.helpers.gitrepo.set_identity`.
     "tests/test_bad_patterns_diff_scope.py": 3,
     "tests/test_breaker.py": 3,
-    "tests/test_build_manifest_preflight.py": 1,
     # #399 added two real-repository tests (a stubbed-git refusal, which
     # makes no commit, and a latin-1-bytes commit through `_git`/`_repo`,
     # both already declared here, plus a second real commit in the
@@ -151,7 +156,7 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_git_identity_helper.py": 5,
     # #423's `_repo_with_tricky_names` fixture, through
     # `tests.helpers.gitrepo.set_identity`, which this row declares.
-    "tests/test_git_path_spelling.py": 6,
+    "tests/test_git_path_spelling.py": 5,
     "tests/test_harness_path_scope.py": 3,
     "tests/test_inbox.py": 1,
     "tests/test_inbox_resolves_on_completion.py": 1,
@@ -184,11 +189,12 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # and stub-gh shell strings, the checkpoint test's worktree commit, and
     # the module docstring's prose.
     "tests/test_ladder_merge_evidence.py": 5,
-    "tests/test_launch_session.py": 1,
+    # #696 slice 7: the home-shell red-base test commits its [stack] into a
+    # repository `_git_repo_on` put through set_identity.
+    "tests/test_launch_session.py": 2,
     # #544: three `git commit` sites (`_seed`, `_commit_all` and the
     # deletion test), every one into a repository `_seed` put through
     # `tests.helpers.gitrepo.set_identity`.
-    "tests/test_lockfile_scope.py": 3,
     "tests/test_loop.py": 2,
     "tests/test_notify.py": 1,
     # #152 simplify pass: the five real commits this file used to make
@@ -209,7 +215,6 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # #630: test_the_base_document_is_the_merge_base_the_diff_measures commits
     # onto main in a repository test_check_non_python_diff._repo put through
     # tests.helpers.gitrepo.set_identity.
-    "tests/test_policy_lockfiles_e2e.py": 1,
     "tests/test_pr_outcomes.py": 3,
     # #678: `_repo`'s one base commit, into a repository it has just put
     # through `tests.helpers.gitrepo.set_identity`.
@@ -286,6 +291,9 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # #695: `_repo`'s base and branch commits, into a repository it has
     # just put through `tests.helpers.gitrepo.set_identity`.
     "tests/test_secret_rules_read_every_byte.py": 1,
+    # #696 slice 9: the stub agent's one commit, into the repository
+    # `tests.test_stack_e2e._repo` has put through `set_identity`.
+    "tests/test_security.py": 1,
     # #654 slice 3b: `_commit`'s one `git commit` spelling, into the
     # repository `tests.test_prompt_record._spec_project` has just put
     # through `tests.helpers.gitrepo.set_identity`.
@@ -294,9 +302,15 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # through `tests.helpers.gitrepo.set_identity`.
     "tests/test_spec_identity.py": 1,
     # #696: the one [stack]-table commit, into `greenfield`'s repository
-    # (tests.test_build_manifest_preflight.greenfield), which already
+    # (tests.test_stack_proposal_e2e.greenfield), which already
     # went through set_identity.
     "tests/test_spec_factory_lock_discipline.py": 1,
+    # #696 slice 7: `greenfield`'s seed commit, the factory test's [stack]
+    # commit, the factory and decompose tests' [stack] commits, and the stub
+    # architect's empty commit that moves main, each into a repository
+    # already through set_identity (`greenfield` itself, and
+    # tests.test_prompt_record._spec_project).
+    "tests/test_stack_proposal_e2e.py": 4,
     "tests/test_check_cli.py": 5,
     # #619: each test commits a base and a branch into a repository its
     # _repo helper put through tests.helpers.gitrepo.set_identity.
