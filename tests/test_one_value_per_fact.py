@@ -101,7 +101,7 @@ def _run(
         max_retries=0,
         retry_delay=0,
         review_mode=review.mode,
-        security_config=SecurityConfig(mode=security.mode) if security is not None else None,
+        security_config=SecurityConfig(mode=security.mode if security is not None else "skip"),
         project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
         verify_config=VerifyConfig(
             project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),

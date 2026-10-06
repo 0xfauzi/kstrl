@@ -129,7 +129,7 @@ echo '<promise>COMPLETE</promise>'
             *("--root", str(root), "--agent-cmd", str(stub)),
             *("--no-tui", "--yes", "--ui", "plain", "--no-color", "--no-prs"),
             *("--max-retries", "0", "--max-parallel", "1"),
-            *("--review-mode", "skip", "--contract-check", "skip"),
+            *("--review-mode", "skip", "--security-mode", "skip", "--contract-check", "skip"),
             "--design-acceptance",
             *extra,
         ],

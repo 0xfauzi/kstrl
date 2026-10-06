@@ -679,6 +679,39 @@ class TestBudgetAccounting:
             assert not any(f.is_phase_skip and f.phase == "security" for f in comp.findings)
 
 
+class TestAFactoryConfigThatNamesNoSecurityConfig:
+    def test_it_gets_the_default_security_review_not_a_silent_skip(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """#696 slice 9: a FactoryConfig built with no ``security_config``
+        runs the security reviewer in the default mode (advisory). It used
+        to read as "not configured" and skip with no reviewer call."""
+        monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
+        repo = make_review_repo(tmp_path / "repo")
+        root = _scaffold(repo.path, ["comp-a"])
+        manifest = _make_manifest(["comp-a"])
+        agent = RecordingAgent(repo.security_json())
+
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                return_value=ComponentResult("comp-a", success=True, iterations=1),
+            ),
+            patch("kstrl.agents.get_agent", return_value=agent),
+        ):
+            result = run_factory(
+                manifest,
+                _factory_config(review_mode="skip"),
+                _base_config(root),
+                PlainUI(no_color=True),
+                root,
+            )
+        assert set(result.completed) == {"comp-a"}
+        assert agent.calls == 1
+
+
 # ---------------------------------------------------------------------------
 # factory scaffolding
 # ---------------------------------------------------------------------------

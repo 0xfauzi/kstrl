@@ -400,8 +400,8 @@ _ROLES: dict[str, _Role] = {
         # because ``security.generate_data_delimiter`` is pinned above.
         lambda _p: security._build_security_prompt(_PRD_JSON, git.repo_change_source("BASE_SHA")),
         frozenset({"SECURITY_PROMPT", "REPO_CHANGE_SOURCE_PROMPT"}),
-        "46ff0b2f459392307b0af7af7b85c61b34b46e6bb553c5a979873cee0a48842b",
-        8540,
+        "058b03cbbca4bfdd23c988b81094918be6581b4929bdfd789df3d2c5eaefc418",
+        9360,
     ),
 }
 

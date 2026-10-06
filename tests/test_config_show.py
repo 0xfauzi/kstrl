@@ -101,7 +101,7 @@ class TestConfigShowSources:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("KSTRL_TIMEOUT_AGENT_ITERATION", "123")
-        monkeypatch.setenv("KSTRL_SECURITY_MODE", "advisory")
+        monkeypatch.setenv("KSTRL_SECURITY_MODE", "hard")
 
         output = self._invoke(tmp_path)
 
@@ -111,7 +111,7 @@ class TestConfigShowSources:
         # security section slice.
         security_slice = output.split("[security]")[1].split("[contract]")[0]
         line = _line_for(security_slice, "mode")
-        assert "'advisory'" in line and "(env)" in line
+        assert "'hard'" in line and "(env)" in line
 
     def test_env_does_not_leak_into_process(
         self,

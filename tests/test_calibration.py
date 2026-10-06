@@ -368,6 +368,16 @@ def _security_positive_hard_fixtures() -> list[tuple[Path, dict]]:
     )
 
 
+def _security_dependency_fixtures() -> list[tuple[Path, dict]]:
+    """#696 slice 9: a change that adds one third-party package. The planted
+    fact is the dependency itself, which the security reviewer must list as a
+    ``new_dependency`` finding now that kstrl reads no lockfile. Its own role
+    id, so the saved ``security`` captures stay comparable."""
+    return _detection_fixtures(
+        "security_dependency", _load_fixtures("security_dependency", ".diff")
+    )
+
+
 def _security_negative_fixtures() -> list[tuple[Path, dict]]:
     """Clean-but-nontrivial security diffs (R5.2) for measuring the
     security reviewer's false-positive rate."""
@@ -1166,6 +1176,38 @@ def test_security_role_hard_positive(
 @_skip_unless_calibrating
 @pytest.mark.parametrize(
     "artifact,meta",
+    _security_dependency_fixtures(),
+    ids=lambda x: x.get("fixture_id", "unknown") if isinstance(x, dict) else x.stem,
+)
+def test_security_role_lists_a_new_dependency(
+    artifact: Path,
+    meta: dict,
+    tmp_path: Path,
+    report: _DetectionReport,
+) -> None:
+    """#696 slice 9: the reviewer names the package a change adds, as a
+    ``new_dependency`` finding at the manifest that declares it. Recorded
+    under ``security_dependency`` and its language ids, gated by no floor
+    until the first capture sets one."""
+    diff_content = artifact.read_text(encoding="utf-8")
+
+    def run_once() -> tuple[bool, str]:
+        result = _security_run_once(meta, diff_content, tmp_path)
+        return security_caught(result, meta["must_detect"])
+
+    _record_or_gate(
+        _diff_role("security_dependency", artifact),
+        meta["fixture_id"],
+        report,
+        run_once,
+        category=meta["must_detect"].get("category"),
+        cwe=meta.get("cwe"),
+    )
+
+
+@_skip_unless_calibrating
+@pytest.mark.parametrize(
+    "artifact,meta",
     _security_negative_fixtures(),
     ids=lambda x: x.get("fixture_id", "unknown") if isinstance(x, dict) else x.stem,
 )
@@ -1658,6 +1700,7 @@ class TestFixtureStructure:
         "subdir,suffix",
         [
             ("security", ".diff"),
+            ("security_dependency", ".diff"),
             ("security_negative", ".diff"),
             ("concerns", ".diff"),
             ("concerns_negative", ".diff"),
@@ -1681,6 +1724,10 @@ class TestFixtureStructure:
         # positives. TypeScript (#633): a twin of each of the 6 Python easy
         # positives. Counted per language, read off each diff's paths.
         assert _languages("security") == {"python": 10, "ts": 6}
+
+    def test_security_dependency_fixtures_count(self) -> None:
+        # #696 slice 9: one Python fixture and its TypeScript twin.
+        assert _languages("security_dependency") == {"python": 1, "ts": 1}
 
     def test_security_hard_positive_count(self) -> None:
         assert len(_security_positive_hard_fixtures()) == 4, (
@@ -1720,7 +1767,7 @@ class TestFixtureStructure:
         assert len(fixtures) == 5, "Expected 5 spec fixtures"
 
     def test_security_meta_has_required_keys(self) -> None:
-        for artifact, meta in _security_fixtures():
+        for artifact, meta in _security_fixtures() + _security_dependency_fixtures():
             assert "fixture_id" in meta
             assert "prd" in meta, f"{artifact} security fixture needs a PRD"
             assert "must_detect" in meta

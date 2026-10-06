@@ -230,7 +230,6 @@ EXPECTED_PROCESS_MODULES: dict[str, tuple[str, ...]] = {
     "isolation.py": ("subprocess",),
     # #508: `TimeoutExpired` from `run_scrubbed`, which owns the process group.
     "learning_fixture.py": ("subprocess",),
-    "licensing.py": ("subprocess",),
     "observability.py": ("subprocess",),
     "pr.py": ("subprocess",),
     # The `gh pr view` reads moved here from `pr.py` for the 800-line

@@ -664,3 +664,24 @@ class TestTheScaffoldWalkCatchesWhatItClaims:
             self._found,
             '_cim = _create_if_missing\n_cim(kstrl_dir / "".join(parts), DEFAULT_X_PROMPT, ui)\n',
         )
+
+
+def test_engineer_prompt_bump_reaches_existing_projects() -> None:
+    """H3's reach (#286): a version bump that is not also recorded in the
+    scaffold ledger is invisible to every already-initialised project.
+
+    ``ks init`` never overwrites ``scripts/kstrl/prompt.md``, so the only
+    thing that can tell an operator their copy is behind is the ledger of
+    bodies the harness has shipped. This test fails the moment
+    DEFAULT_PROMPT moves without a matching row, in the same file the
+    person doing the bump is already editing. The deeper invariants live
+    in this file."""
+    from kstrl.init_cmd import SCAFFOLDED_TEMPLATES
+
+    template = next(t for t in SCAFFOLDED_TEMPLATES if t.filename == "prompt.md")
+    assert template.history[-1] == (_sha256(DEFAULT_PROMPT), DEFAULT_PROMPT_VERSION), (
+        "SCAFFOLDED_TEMPLATES in kstrl/init_cmd.py does not end with the "
+        "engineer prompt this harness ships. APPEND "
+        f"({_sha256(DEFAULT_PROMPT)!r}, {DEFAULT_PROMPT_VERSION!r}) to its "
+        "history and keep every older row."
+    )

@@ -409,8 +409,9 @@ class TestGitDiffErrorHasOneHome:
                     census[where] = census.get(where, 0) + 1
 
         # 30: #696's status_entries raises it three more times, for a
-        # timeout, an undecodable path and a non-zero exit.
-        assert census == {"git.py": 30}
+        # timeout, an undecodable path and a non-zero exit. 25: #696 slice 9
+        # deletes read_blob, which raised it five times.
+        assert census == {"git.py": 25}
 
     def test_no_importfrom_outside_git_py_binds_the_name(self) -> None:
         offenders = [

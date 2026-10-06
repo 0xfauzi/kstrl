@@ -65,14 +65,14 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     # 70: #630's git.read_blob adds two subprocess.run and two
     # subprocess.TimeoutExpired. 72: #695's git._get_stored_diff adds one of
     # each. 74: #696's git.status_entries adds one of each. 68: #696 slice 6
-    # deletes stage_file, ignore_source and ignored_paths, two each.
-    "git.py": 68,
+    # deletes stage_file, ignore_source and ignored_paths, two each. 64: #696
+    # slice 9 deletes read_blob, two each.
+    "git.py": 64,
     "intake_github.py": 3,
     # #700: the import, and `TimeoutExpired` from `run_scrubbed`.
     "isolation.py": 2,
     # #508: the import, and `TimeoutExpired` from `run_scrubbed`.
     "learning_fixture.py": 2,
-    "licensing.py": 3,
     "observability.py": 5,
     "pr.py": 18,
     "pr_state.py": 5,
@@ -124,7 +124,6 @@ EXPECTED_TEXT_MODE_SPAWNS: dict[str, int] = {
     # `stage_file`, `ignore_source` and `ignored_paths`.
     "git.py": 25,
     "intake_github.py": 1,
-    "licensing.py": 1,
     "pr.py": 9,
     "pr_state.py": 2,
     "procgroup_listing.py": 1,
@@ -177,7 +176,6 @@ EXPECTED_CLEARED_SPAWNS: tuple[str, ...] = (
     "git.py subprocess.run(['git', 'rev-parse', '--verify', '--quiet', f'{candidat",
     "git.py subprocess.run(['git', 'status', '--porcelain', '--untracked-files=all",
     "intake_github.py subprocess.run(['gh', *args], cwd=str(cwd) if cwd else None, capture_o",
-    "licensing.py subprocess.run(['uv', 'cache', 'dir'], capture_output=True, encoding='",
     "pr.py subprocess.run(['gh', 'auth', 'status'], capture_output=True, encoding",
     "pr.py subprocess.run(['gh', 'pr', 'close', str(pr_number), '--comment', 'Sup",
     "pr.py subprocess.run(['gh', 'pr', 'create', '--title', title, '--body', body",
@@ -233,7 +231,8 @@ EXPECTED_BYTES_MODE_SPAWNS: dict[str, int] = {
     # purpose, because a lockfile blob is returned as bytes, never decoded.
     # 10 since #695: `_get_stored_diff` reads bytes and decodes them itself
     # with surrogateescape, so a binary file's bytes reach the secret rules.
-    "git.py": 10,
+    # 8 since #696 slice 9 deleted `read_blob`.
+    "git.py": 8,
     "observability.py": 1,
     "retry_plan.py": 3,
     # 2: `_base_finding`'s `git show` (#414/#425), and #527's

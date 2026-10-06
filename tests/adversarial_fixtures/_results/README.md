@@ -343,3 +343,25 @@ full plan, also when the other checks are correct. In one
 failed on the correct head.
 
 The replies are not in the repository.
+
+## The 2026-10-06 security capture (#696 slice 9, SECURITY_PROMPT 2.1.0)
+
+`baseline-20261006-195010.json` is the security roles at SECURITY_PROMPT
+2.1.0 (haiku, three runs for each fixture, head `43792182`). The body is 7644
+bytes, sha256 `02511bcc6d3d8542ab2543362836b1decf639295861b84aa4be06d573151fc2b`. Version 2.1.0
+adds the category `new_dependency`: the reviewer lists each third-party
+package that a change adds.
+
+`calibration compare` against `baseline-20260925-120951.json` (2.0.0) gives
+PASS. `security` stays at 1.00, and `security_hard` goes from 0.92 to 1.00.
+This capture is the first measurement of `security_ts` (1.00),
+`security_dependency` (1.00) and `security_dependency_ts` (1.00). The false
+positive rate is 0.00 on the four `security_negative` fixtures and on the
+four `security_negative_ts` fixtures.
+
+A "low" `new_dependency` finding does not change the false positive rate.
+Thus the kept replies were examined by hand for such findings on fixtures
+that add no dependency. One run of 78 has one: `sec-ts-06-injection-empty-output`
+run 2 lists `node-serialize` at "high". The fixture imports that
+third-party package. Thus, the finding is correct. The replies are not in
+the repository.

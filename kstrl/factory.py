@@ -284,8 +284,10 @@ class FactoryConfig:
     # infrastructure error, never a verdict.
     review_timeout_seconds: float = 0.0
     architect_timeout_seconds: float = 0.0
-    # Phase 2.5: security review (separate LLM call after Phase 2 review)
-    security_config: SecurityConfig | None = None
+    # Phase 2.5: security review (separate LLM call after Phase 2 review).
+    # A config that names none gets SecurityConfig's own default (advisory,
+    # #696 slice 9), never a silent skip.
+    security_config: SecurityConfig = field(default_factory=SecurityConfig)
     # Phase 3: contract testing
     contract_config: ContractConfig | None = None
     # Phase 0: codebase scan
@@ -863,10 +865,7 @@ def review_enabled(config: FactoryConfig) -> bool:
 
 def security_enabled(config: FactoryConfig) -> bool:
     """Will Phase 2.5 run a security reviewer at all?"""
-    return (
-        config.security_config is not None
-        and config.security_config.mode != SecurityMode.SKIP.value
-    )
+    return config.security_config.mode != SecurityMode.SKIP.value
 
 
 def claim_gate_unreachable_warning(config: FactoryConfig) -> str | None:
@@ -4633,8 +4632,7 @@ class _LadderOutcome:
     #: not keep: ``hash()`` raised ``TypeError`` and ``.append()``
     #: succeeded straight through the frozen dataclass.
     clamps: tuple[str, ...]
-    #: Configured flags the bundle overruled, plus the withheld
-    #: ``deps_allow_new``.
+    #: Configured flags the bundle overruled.
     overrides: tuple[str, ...]
 
 
@@ -4694,23 +4692,12 @@ def _resolve_ladder(
     # ONE field would leave "auto-merge when green: yes" beside "merge
     # gate: ON". `resolved_flag_bundle` moves every dependent flag
     # together. Ordered after `manual_override_notes`, which compares the
-    # CONFIGURED value against what the LEVEL awarded, and before the
-    # `deps_allow_new` clamp, which reads a field `resolved_flag_bundle`
-    # does not touch.
+    # CONFIGURED value against what the LEVEL awarded.
     bundle = resolved_flag_bundle(
         bundle,
         configured=factory_config.pause_before_pr_merge,
         explicit=pause_explicit,
     )
-    # The ladder can only ever WITHHOLD a permission the envelope
-    # grants, never add one: below L3, new dependencies are refused even
-    # if [policy] deps_allow_new is true.
-    if not bundle.deps_allow_new_permitted and clamped.policy.deps_allow_new:
-        clamped = replace(clamped, policy=replace(clamped.policy, deps_allow_new=False))
-        overrides.append(
-            f"[policy] deps_allow_new=true withheld at "
-            f"{bundle.level.label} (ladder clamps to false)"
-        )
     return clamped, _LadderOutcome(
         level=level, bundle=bundle, clamps=tuple(clamps), overrides=tuple(overrides)
     )
@@ -4963,22 +4950,20 @@ def _run_factory_locked(
         engineer_cmd=base_config.agent_cmd,
         engineer_type=base_config.agent_type,
     )
-    security_selection: AdversarialAgentSelection | None = None
-    if factory_config.security_config is not None:
-        sec_cfg = factory_config.security_config
-        security_selection = resolve_adversarial_selection(
-            "security",
-            may_dispatch_adversarial=gates.may_dispatch,
-            explicit_cmd=sec_cfg.agent_cmd,
-            explicit_type=sec_cfg.agent_type,
-            explicit_model=sec_cfg.model,
-            fallback_cmd=base_config.agent_cmd,
-            fallback_type=base_config.agent_type,
-            fallback_model=base_config.model,
-            fallback_reasoning=base_config.model_reasoning_effort,
-            engineer_cmd=base_config.agent_cmd,
-            engineer_type=base_config.agent_type,
-        )
+    sec_cfg = factory_config.security_config
+    security_selection: AdversarialAgentSelection | None = resolve_adversarial_selection(
+        "security",
+        may_dispatch_adversarial=gates.may_dispatch,
+        explicit_cmd=sec_cfg.agent_cmd,
+        explicit_type=sec_cfg.agent_type,
+        explicit_model=sec_cfg.model,
+        fallback_cmd=base_config.agent_cmd,
+        fallback_type=base_config.agent_type,
+        fallback_model=base_config.model,
+        fallback_reasoning=base_config.model_reasoning_effort,
+        engineer_cmd=base_config.agent_cmd,
+        engineer_type=base_config.agent_type,
+    )
     for _sel, _enabled in (
         (review_selection, gates.review),
         (security_selection, gates.security),
@@ -5171,7 +5156,7 @@ def _run_factory_locked(
     # Opt-in: when [autonomy] is disabled the config's own flags stand.
     #
     # RESOLVED far above, before the pipeline was constructed, because
-    # the bundle can clamp the envelope (deps_allow_new) and the pipeline
+    # the level clamps the envelope (autonomy_level) and the pipeline
     # must hold the clamped one. What is left here is the reporting and
     # the FactoryConfig overrides, which stay in this position for two
     # orderings that are load-bearing: the bus and its sinks exist by

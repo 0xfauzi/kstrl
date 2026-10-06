@@ -50,6 +50,8 @@ RUN_FLAGS = (
     "--no-prs",
     "--review-mode",
     "skip",
+    "--security-mode",
+    "skip",
     "--contract-check",
     "skip",
 )

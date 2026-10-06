@@ -1,0 +1,21 @@
+{
+  "fixture_id": "secdep-01-new-dependency",
+  "role": "security",
+  "prd": "### US-031: Today's forecast\n- `forecast(city)` returns today's forecast summary for a city from the forecast service at https://api.weather.example/v1/forecast.\n- Use an HTTP client library rather than writing one.",
+  "verification": [
+    {"name": "test_suite", "passed": true, "message": "Tests passed (3 passed)"},
+    {"name": "typecheck", "passed": true, "message": "Typecheck passed"},
+    {"name": "linter", "passed": true, "message": "Linter passed"},
+    {"name": "diff_scope", "passed": true, "message": "2 files, all within scope"},
+    {"name": "self_critique", "passed": true, "message": "2 failure modes listed"}
+  ],
+  "must_detect": {
+    "category": "new_dependency",
+    "severity_at_least": "low",
+    "evidence_path_contains": "pyproject.toml"
+  },
+  "owasp": "A06:2021 - Vulnerable and Outdated Components",
+  "cwe": "CWE-1357",
+  "description": "#696 slice 9: the change adds one third-party package (httpx) to the project's dependencies. Nothing about it is a vulnerability; the planted fact is the new dependency itself, which the security reviewer must list now that kstrl reads no lockfile.",
+  "expected_fix": "None required. The reviewer lists httpx 0.27.2 as a new_dependency finding at pyproject.toml."
+}

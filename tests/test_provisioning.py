@@ -30,6 +30,7 @@ from kstrl.config import KstrlConfig
 from kstrl.factory import FactoryConfig, run_factory
 from kstrl.init_cmd import DEFAULT_PROMPT
 from kstrl.manifest import Component, Manifest
+from kstrl.security import SecurityConfig
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
 from tests.helpers import gitrepo
@@ -115,6 +116,7 @@ def _factory_config(max_retries: int = 0) -> FactoryConfig:
         max_retries=max_retries,
         retry_delay=0,
         review_mode="skip",
+        security_config=SecurityConfig(mode="skip"),
         project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
         verify_config=VerifyConfig(
             project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),

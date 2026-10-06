@@ -138,6 +138,10 @@ PAID_ARMS: dict[str, tuple[Callable[[], tuple[Any, ...]], bool]] = {
         lambda: _first(tc._security_positive_hard_fixtures()),
         False,
     ),
+    "test_security_role_lists_a_new_dependency": (
+        lambda: _first(tc._security_dependency_fixtures()),
+        False,
+    ),
     "test_security_role_no_false_positive": (
         lambda: _first(tc._security_negative_fixtures()),
         False,
