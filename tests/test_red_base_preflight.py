@@ -565,9 +565,15 @@ def test_doctor_measure_reports_a_red_base_not_ready(tmp_path: Path) -> None:
     6: no parsed failure detail, exit status only). `ks doctor --measure`
     proves no isolation rung (its VerifyConfig carries no rung), so this
     needs no @needs_nono even though T1 does."""
-    root = _repo(tmp_path, {"tests/test_base.py": RED})
+    # A red base fails the stack's clean replay, which the first
+    # `ks doctor --measure` records (#700 slice 3): a second reading of the
+    # same repository would be refused for that, so each form gets its own.
+    for name in ("text", "json"):
+        (tmp_path / name).mkdir()
+    text_root = _repo(tmp_path / "text", {"tests/test_base.py": RED})
+    root = _repo(tmp_path / "json", {"tests/test_base.py": RED})
 
-    text_code, text = _doctor(root, "--measure")
+    text_code, text = _doctor(text_root, "--measure")
     code, document = _doctor_json(root)
 
     assert text_code == 1, text
@@ -677,11 +683,13 @@ def test_doctor_measure_takes_the_reading_ks_factory_takes(tmp_path: Path) -> No
     the same repository agree on all three, and on the refusal. The
     [stack]'s setup is baked in once, read by both; this test needs
     @needs_nono because the `ks factory` half proves the rung, even though
-    the doctor half (run first) does not."""
+    the doctor half does not."""
     root = _repo(tmp_path, {"tests/test_base.py": RED}, setup="true")
 
-    _code, document = _doctor_json(root)
+    # `ks factory` first: the doctor's clean replay of a red base fails and is
+    # recorded, after which the factory would refuse on the stack (#700 slice 3).
     run = _factory(tmp_path, root)
+    _code, document = _doctor_json(root)
 
     assert run.code == 2, run.out
     record = _record(root)
