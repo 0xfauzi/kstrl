@@ -451,6 +451,8 @@ def test_a_default_run_asks_the_security_reviewer_and_lists_the_new_dependency(
     assert "[security] mode" not in out, out
     assert calls.read_text(encoding="utf-8").splitlines().count("security") == 1, out
     text = body.read_text(encoding="utf-8")
+    # The default is advisory, not hard: hard stays an explicit choice.
+    assert "0 critical, 0 high, 0 medium, 1 low (advisory mode)" in text, text
     assert "- [low] **new_dependency** at `package.json:4`" in text, text
     assert "adds left-pad 1.3.0" in text, text
     assert "UNVERIFIED COVERAGE" not in text, text
