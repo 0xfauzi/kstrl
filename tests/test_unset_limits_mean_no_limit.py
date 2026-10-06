@@ -4,7 +4,8 @@ Owner decision, 2026-09-24: when a limit on how long or how expensive
 kstrl's work may be is not set, there is no limit. Before this, the
 engineer's component had a 2 h wall clock and each iteration 30 min, the
 reviewers 600 s and 300 s, and the verify, contract and mutation runs
-300 s and 600 s, all by default. And 0, the value every one of those keys
+300 s and 600 s, all by default (#696 slice 8 later removed the mutation
+run). And 0, the value every one of those keys
 documents as "disabled", reached ``subprocess`` as ``timeout=0``, which
 means "already expired": a gate configured with no limit failed at once.
 
@@ -47,16 +48,13 @@ from kstrl.security import SecurityConfig, SecurityMode, run_security_review
 from kstrl.serve import ServeConfig, SpendLedger, check_budget
 from kstrl.timeout import TimeoutConfig
 from kstrl.ui.plain import PlainUI
-from kstrl.verify import CheckResult, VerificationResult, VerifyConfig
-from tests.conftest import make_review_repo
-from tests.helpers.adequacy_fixture import (
-    EMPTY_CONFTEST_BASE_FILES,
-    FEAT_FILES,
-    only_row,
-    repo_builder,
-    run_adequacy,
+from kstrl.verify import (
+    CheckResult,
+    VerificationResult,
+    VerifyConfig,
+    run_mechanical_verification,
 )
-from tests.helpers.fakemutmut import junit, put_mutmut_on_path
+from tests.conftest import make_review_repo
 from tests.helpers.stack_confirmation import confirm_stack, in_process_stack
 
 #: Real seconds the loop test may take before the fuse fails it. The loop
@@ -241,41 +239,29 @@ class TestReviewerCallsHaveNoLimitUnlessOneIsSet:
         )
 
 
-_mutation_repo = repo_builder(EMPTY_CONFTEST_BASE_FILES, FEAT_FILES)
-
-
 class TestZeroMeansNoLimitAtEveryWait:
     """0 is the documented "no limit"; it must never reach a wait as 0."""
 
     @pytest.mark.parametrize("unset", [0.0, -1.0])
     def test_a_zero_verify_timeout_lets_every_gate_run(self, tmp_path: Path, unset: float) -> None:
-        _mutation_repo(tmp_path)
-        result = run_adequacy(tmp_path, subprocess_timeout=unset)
-        for check in ("stack:tests", "stack:typecheck", "stack:lint", "patch_coverage"):
-            row = only_row(result, check)
-            assert row.passed is True, (check, row.message)
-
-    def test_a_zero_mutation_timeout_lets_both_mutation_checks_run(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        _mutation_repo(tmp_path)
-        recdir = put_mutmut_on_path(
+        make_review_repo(tmp_path, base_files={"a.txt": "a\n"}, files={"a.txt": "b\n"})
+        ok = f"{sys.executable} -c pass"
+        result = run_mechanical_verification(
             tmp_path,
-            monkeypatch,
-            junit=junit(
-                (1, "mod.py", 2, "killed"), (2, "mod.py", 6, "killed"), (3, "mod.py", 9, "killed")
+            None,
+            "main",
+            None,
+            VerifyConfig(
+                project_stack=in_process_stack({"tests": ok, "typecheck": ok, "lint": ok}),
+                check_diff_scope=False,
+                check_bad_patterns=False,
+                subprocess_timeout=unset,
             ),
         )
-        result = run_adequacy(
-            tmp_path,
-            mutation_testing=True,
-            diff_mutation=True,
-            mutation_timeout=0.0,
-        )
-        only_row(result, "diff_mutation")
-        only_row(result, "mutation_testing")
-        argv = (recdir / "argv-run.txt").read_text(encoding="utf-8")
-        assert argv.count("--paths-to-mutate=") == 2
+        for check in ("stack:tests", "stack:typecheck", "stack:lint"):
+            rows = [c for c in result.checks if c.name == check]
+            assert len(rows) == 1, rows
+            assert rows[0].passed is True, (check, rows[0].message)
 
     def test_a_zero_contract_timeout_lets_the_contract_suite_run(self, tmp_path: Path) -> None:
         root = make_review_repo(tmp_path / "repo").path
@@ -367,7 +353,6 @@ UNSET_LIMITS = (
     ("factory", "max_cost_usd"),
     ("factory", "review_timeout_seconds"),
     ("factory", "architect_timeout_seconds"),
-    ("verify", "mutation_timeout"),
     ("verify", "subprocess_timeout"),
     ("security", "timeout_seconds"),
     ("contract", "timeout"),

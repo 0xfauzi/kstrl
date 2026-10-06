@@ -274,7 +274,7 @@ class TestTheFactorySideParseCountIsPinned:
             ),
         )
 
-        assert (counts.calls, counts.parses) == (14, 7), (
+        assert (counts.calls, counts.parses) == (13, 7), (
             "the cost of a run's config resolution moved. This is a "
             "census pin, not a performance budget: a number that grew "
             "means a section is being resolved twice, and the fix is to "
@@ -289,7 +289,8 @@ class TestTheFactorySideParseCountIsPinned:
             "CALLS rise, 13 to 14, because eight sections are now "
             "resolved at run start whatever the component count; the "
             "PARSES stay at 7 because all eight still share one "
-            "document (#192)."
+            "document (#192); (13, 7) once [adequacy] left the envelope "
+            "(#696 slice 8)."
         )
 
 

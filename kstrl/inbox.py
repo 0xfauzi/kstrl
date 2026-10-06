@@ -64,7 +64,10 @@ class ItemKind(StrEnum):
     BUDGET_OVERRUN = "budget_overrun"  # a cap was hit
     DEMOTION_NOTICE = "demotion_notice"  # R8.2 autonomy revoked
     CALIBRATION_DRIFT = "calibration_drift"  # detection rate moved
-    TEST_ADEQUACY = "test_adequacy"  # R8.5 Layer 0 blocked a change
+    # Nothing files this kind since #696 slice 8 removed Layer 0. It stays so
+    # an item already on disk still parses: an unparseable line stops every
+    # waiver, counts against the admission cap and fails calibration compare.
+    TEST_ADEQUACY = "test_adequacy"
     HEALTH_BREACH = "health_breach"  # R8.4 control-limit breach (#232)
     SPEC_ESCALATION = "spec_escalation"  # decompose halted on the owner (#449)
     PLAN_GATE = "plan_gate"  # an L1 plan awaiting approval (#602, run_plan_gate)
@@ -84,10 +87,6 @@ class ItemKind(StrEnum):
             ItemKind.MERGE_GATE,
             ItemKind.HALTED_RUN,
             ItemKind.BUDGET_OVERRUN,
-            # A BLOCKING adequacy finding stopped a change: someone has to
-            # decide whether the suite really may get weaker here. The
-            # advisory ones never reach the inbox at all (see pipeline).
-            ItemKind.TEST_ADEQUACY,
             # The architect refused to choose: nothing moves on this spec
             # until the owner answers (#449).
             ItemKind.SPEC_ESCALATION,

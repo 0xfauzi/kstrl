@@ -18,7 +18,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl.adequacy import AdequacyConfig
 from kstrl.config import KstrlConfig
 from kstrl.events import CallbackSink, Event, EventBus, V1CompatSink
 from kstrl.factory import (
@@ -234,7 +233,6 @@ class EnvelopeReading:
 
     component: str
     policy: PolicyConfig
-    adequacy: AdequacyConfig
     autonomy_level: int
 
 
@@ -260,7 +258,6 @@ def phase_verify_envelopes(
             EnvelopeReading(
                 component=str(kwargs["component_id"]),
                 policy=kwargs["policy_config"],
-                adequacy=kwargs["adequacy_config"],
                 autonomy_level=int(kwargs["autonomy_level"]),
             )
         )

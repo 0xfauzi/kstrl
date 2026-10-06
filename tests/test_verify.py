@@ -101,23 +101,7 @@ class TestCheckBadPatterns:
 
         result = check_bad_patterns(repo.path, repo.base_branch)
         assert result.passed is True
-        assert result.message == "Scanned 1 of 1 changed Python files, no issues"
-
-    def test_empty_py_file(self, tmp_path: Path) -> None:
-        repo = make_review_repo(tmp_path, files={"empty.py": ""})
-
-        # An empty file has no added lines and the empty check does not
-        # consult them, which is the point.
-        result = check_bad_patterns(repo.path, repo.base_branch)
-        assert result.passed is False
-        assert any("empty" in d for d in result.details)
-
-    def test_syntax_error(self, tmp_path: Path) -> None:
-        repo = make_review_repo(tmp_path, files={"bad.py": "def f(\n"})
-
-        result = check_bad_patterns(repo.path, repo.base_branch)
-        assert result.passed is False
-        assert any("syntax" in d.lower() for d in result.details)
+        assert result.message == "secrets: scanned the lines added to 1 changed files, no issues"
 
     def test_secret_detected(self, tmp_path: Path) -> None:
         repo = make_review_repo(
@@ -649,42 +633,3 @@ class TestRunMechanicalVerificationWithoutPrd:
         # against tmp_path/progress.txt rather than being skipped.
         assert critique[0].passed is False
         assert "Could not read progress file" in critique[0].message
-
-
-class TestReadOnlyVerification:
-    """R10.1 review (P1): ``read_only=True`` measures without changing.
-
-    The factory owns the worktree it verifies, so editing and committing
-    there is free. ``ks check`` runs against the operator's live
-    checkout, where ``ruff --fix`` rewrites their files, ``git add -A``
-    sweeps in every unrelated untracked file, and the commit moves their
-    HEAD.
-    """
-
-    # test_read_only_is_the_only_reason_the_mutation_row_is_missing was
-    # here (#391): replaced by
-    # tests/test_mutation_score.py::test_read_only_records_a_gap_and_writable_records_a_row,
-    # written against the fake mutmut binary instead of a stubbed
-    # run_scrubbed - the row being absent for the wrong reason is
-    # exactly what this test's docstring said it was written to
-    # prevent.
-
-    def test_bad_patterns_writes_no_bytecode_beside_the_source(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """``py_compile`` defaults its output to ``__pycache__`` NEXT TO
-        the file it compiles; scanning must not leave that behind."""
-        repo = make_review_repo(
-            tmp_path,
-            files={"src/ok.py": "x = 1\n", "src/broken.py": "def f(\n"},
-        )
-
-        result = check_bad_patterns(repo.path, repo.base_branch)
-
-        # The syntax error is still reported: only the destination moved.
-        assert result.passed is False
-        assert any("syntax error" in d for d in result.details)
-        # A .git directory under tmp_path does not disturb either rglob.
-        assert list(tmp_path.rglob("__pycache__")) == []
-        assert list(tmp_path.rglob("*.pyc")) == []

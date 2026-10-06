@@ -58,6 +58,11 @@ def _notes(comparison: Comparison, baseline: Baseline) -> list[str]:
             f"note: this baseline was written for {was_name!r} and this run measured "
             f"{now_name!r}; check it is the same project"
         )
+    if comparison.retired:
+        notes.append(
+            f"note: kstrl retired {', '.join(comparison.retired)}, which this baseline "
+            "measured; refresh it with ks check --write-baseline --force"
+        )
     if baseline.base_ref is None:
         notes.append("note: the baseline records no commit; it was written outside a repository")
     return notes
@@ -246,6 +251,7 @@ def comparison_document(
         "fixed": dict(comparison.fixed),
         "unmeasured": dict(comparison.unmeasured),
         "stopped_measuring": dict(comparison.stopped_measuring),
+        "retired": list(comparison.retired),
         "regressed": comparison.regressed,
         "check_schema_changed": schema_changed,
         "project_changed": project_changed,

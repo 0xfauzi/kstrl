@@ -31,7 +31,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from kstrl import git, pr
-from kstrl.adequacy import is_test_path
 from kstrl.atomicio import atomic_write_json
 from kstrl.config import resolve_config_file
 from kstrl.config_preflight import SURFACE_REJECTIONS, config_problem_lines, raise_if_defect
@@ -156,7 +155,7 @@ def check_git_repo(root: Path) -> _CheckResult:
             STATUS_WARN,
             f"the detected base branch {base!r} cannot be diffed against "
             f"({exc}); the diff-scope, "
-            f"bad-patterns, policy and adequacy checks all read that diff",
+            f"bad-patterns and policy checks all read that diff",
             f"Create or fetch {base}, or name the long-lived branch with "
             f"`ks check --base` and `ks run --base-branch`.",
         )
@@ -329,48 +328,6 @@ def check_verify_commands(root: Path) -> _CheckResult:
     )
 
 
-def check_test_root(root: Path) -> _CheckResult:
-    """Tracked files that read as tests.
-
-    Counted with `adequacy.is_test_path`, the same predicate the
-    `[adequacy]` gate uses to classify a diff's files, so the answer
-    here and the gate's answer cannot disagree. A root `tests/`
-    probe would find nothing on deckgen, whose tests live under
-    `packages/*/tests`.
-    """
-    try:
-        result = subprocess.run(
-            ["git", "ls-files", "-z"],
-            cwd=root,
-            capture_output=True,
-            encoding="utf-8",
-            timeout=git.DEFAULT_TIMEOUT,
-        )
-    except (subprocess.TimeoutExpired, OSError, UnicodeDecodeError) as exc:
-        return (STATUS_WARN, f"git could not list tracked files: {exc}", "")
-    if result.returncode != 0:
-        return (
-            STATUS_WARN,
-            f"git ls-files exited {result.returncode}, so no tracked file could be classified",
-            "Fix git_repo first.",
-        )
-    tests = sorted(path for path in result.stdout.split("\0") if path and is_test_path(path))
-    if not tests:
-        return (
-            STATUS_WARN,
-            "0 tracked paths read as tests to the [adequacy] gate, which "
-            "classifies a diff by the same rule, so that gate sees no test "
-            "file; the rule reads file paths only, so this says nothing about "
-            "what the Phase 1 test command runs",
-            "Add tests, or expect the adequacy gate to report nothing.",
-        )
-    return (
-        STATUS_OK,
-        f"{len(tests)} tracked test path(s), e.g. {', '.join(tests[:3])}",
-        "",
-    )
-
-
 def check_gitignore(root: Path) -> _CheckResult:
     """`.kstrl/` is ignored.
 
@@ -503,7 +460,6 @@ CHECKS: tuple[tuple[str, Callable[[Path], _CheckResult]], ...] = (
     ("github_cli", check_github_cli),
     ("kstrl_config", check_kstrl_config),
     ("verify_commands", check_verify_commands),
-    ("test_root", check_test_root),
     ("gitignore", check_gitignore),
     ("protected_paths", check_protected_paths),
 )

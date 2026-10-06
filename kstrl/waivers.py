@@ -1,8 +1,8 @@
-"""An approved policy_exception or test_adequacy item waives exactly that finding (#595).
+"""An approved policy_exception item waives exactly that finding (#595).
 
-A blocking ``policy_*`` or ``adequacy_*`` finding fails Phase 1 and files
-an inbox item. Approving the item tells the factory "this one is
-allowed". This module is how a later run reads that decision.
+A blocking ``policy_*`` finding fails Phase 1 and files an inbox item.
+Approving the item tells the factory "this one is allowed". This module
+is how a later run reads that decision.
 
 - **The key.** :func:`waiver_key` is the one definition of "the same
   finding". The pipeline stores it in the item's evidence when it files
@@ -66,7 +66,6 @@ from typing import TYPE_CHECKING
 
 from kstrl.context import ACCEPTANCE_PHASE
 from kstrl.findings import (
-    ADEQUACY_CATEGORY_PREFIX,
     POLICY_CATEGORY_PREFIX,
     WAIVER_TAG_PREFIX,
     Finding,
@@ -86,13 +85,12 @@ WAIVER_KEY_VERSION = 1
 #: finding-category prefix it may cover.
 WAIVABLE: dict[ItemKind, str] = {
     ItemKind.POLICY_EXCEPTION: POLICY_CATEGORY_PREFIX,
-    ItemKind.TEST_ADEQUACY: ADEQUACY_CATEGORY_PREFIX,
 }
 
 #: The Phase 1 checks whose blocking findings are the waivable categories
 #: above. ``ks retry`` keeps a failed head only when Phase 1 failed on
 #: these checks and nothing else (#646).
-WAIVABLE_CHECKS = frozenset({"policy_envelope", "test_adequacy"})
+WAIVABLE_CHECKS = frozenset({"policy_envelope"})
 
 #: policy.py calls the enforcement-machinery halt non-overridable. An
 #: approval of one is refused, never applied.

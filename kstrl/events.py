@@ -217,7 +217,7 @@ class VerificationResultEvent(Event):
     #: True when nothing gated on this verdict.
     advisory: bool = False
     #: ``"check:reason"`` per check that was asked for and measured
-    #: nothing (#306), e.g. ``"mutation_testing:tool_missing"``.
+    #: nothing (#306), e.g. ``"test_adequacy:retired"``.
     #: Deliberately NOT folded into ``checks``, which names what ran:
     #: a consumer counting green checks must not count these. Defaults
     #: empty, so payloads already on disk decode unchanged.

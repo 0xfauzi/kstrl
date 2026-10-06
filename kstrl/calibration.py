@@ -117,6 +117,11 @@ MIN_ROLE_DETECTION_RATE: dict[str, float | None] = {
     # positives. Recorded, not gated, until their first capture sets a floor.
     "security_ts": None,
     "reviewer_ts": None,
+    # #696 slice 8: the reviewer's test-weakening criterion, which replaced
+    # the mechanical Layer 0 check, and its #633 twin. Recorded, not gated,
+    # until the first capture lets the owner set a floor.
+    "reviewer_test_weakening": None,
+    "reviewer_test_weakening_ts": None,
     # #696 slice 9: the security reviewer lists every dependency a change
     # adds, which replaced the [policy] dependency and license gates.
     # Recorded, not gated, until their first capture sets a floor.

@@ -7,15 +7,10 @@ command through ``CliRunner`` and reads the ``--json`` document back.
 
 from __future__ import annotations
 
-import ast
 import json
-import shutil
-import subprocess
 import sys
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
 
 import pytest
 from click.testing import CliRunner, Result
@@ -92,8 +87,9 @@ def test_check_passes_on_clean_tree(tmp_path: Path) -> None:
     # longer means "turned off in kstrl.toml" - it can now also mean
     # "asked for, measured nothing", which `not_measured` below
     # disambiguates. #335 extended that to the dead-code gate and added
-    # a new row name, `dead_code_ruff`, to `checks`.
-    assert document["schema_version"] == 4
+    # a new row name, `dead_code_ruff`, to `checks`. 5 is #696 slice 8,
+    # which retired six check names and added `retired` to the baseline.
+    assert document["schema_version"] == 5
     assert document["path"] == str(root)
     assert document["passed"] is True
     # Present and empty on a tree where every enabled check measured
@@ -211,7 +207,7 @@ def test_check_exit_2_on_missing_path(tmp_path: Path) -> None:
     assert result.exit_code == 2
     assert result.stderr.startswith("error:")
     document = json.loads(result.stdout)
-    assert document["schema_version"] == 4
+    assert document["schema_version"] == 5
     assert "error" in document
     assert missing in document["error"]
 
@@ -277,18 +273,15 @@ def test_check_help_lists_every_option() -> None:
 # owns. Before the fix, `[verify] dead_code_cleanup = true` made it run
 # `ruff --fix`, `git add -A` and `git commit`: HEAD moved and an
 # unrelated untracked file was swept into a commit nobody asked for.
+# #696 slice 8 removed that phase; the contract is still asserted.
 
 
-def _dead_code_repo(tmp_path: Path) -> Path:
-    """Repo on a feature branch whose diff carries an unused import.
+def _feature_repo(tmp_path: Path) -> Path:
+    """Repo on a feature branch, with an untracked bystander.
 
-    The unused import is ruff F401 - exactly what the factory's
-    dead-code phase auto-removes and commits. `unrelated.txt` is the
-    bystander a `git add -A` would have swept in.
+    `unrelated.txt` is what a `git add -A` would sweep in.
     """
     root = _make_repo(tmp_path)
-    (root / "kstrl.toml").write_text(_kstrl_toml() + "[verify]\ndead_code_cleanup = true\n")
-    git("commit", "-q", "-am", "enable dead code cleanup", cwd=root)
     git("checkout", "-q", "-b", "feature", cwd=root)
     (root / "src" / "b.py").write_text("import os\n\n\ndef b() -> int:\n    return 2\n")
     git("add", "-A", cwd=root)
@@ -297,155 +290,8 @@ def _dead_code_repo(tmp_path: Path) -> Path:
     return root
 
 
-def _without_vulture() -> Callable[..., str | None]:
-    """``shutil.which`` with vulture hidden and everything else real.
-
-    Patched for that ONE name and delegating the rest: `ks check` runs
-    in-process under ``CliRunner``, so a blanket patch would take ruff
-    and the operator's own commands down with it.
-    """
-    real_which = shutil.which
-
-    def which(name: str, *args: Any, **kwargs: Any) -> str | None:
-        return None if name == "vulture" else real_which(name, *args, **kwargs)
-
-    return which
-
-
-def _ruff_can_do_concise() -> bool:
-    """Whether the ruff on PATH can run what this phase asks of it.
-
-    A CAPABILITY, not a binary. ``--output-format=concise`` needs ruff
-    >= 0.2.0, and `shutil.which("ruff") is not None` was the skip guard
-    while the tests below needed the version: measured by putting ruff
-    0.1.15 in a scratch checkout's venv, the separated-phases test FAILS
-    with ``expected one 'dead_code_ruff' check, got []``, a message that
-    names nothing about ruff's version. That turns an environment
-    difference into a red suite with a misleading cause, which is the
-    class of misreport #335 exists to remove.
-
-    ``--help`` rather than a real scan, so this costs one process and
-    touches no tree: the flag and its value are parsed before ruff looks
-    at anything (measured: 0.0.272 and 0.1.15 both exit 2 here).
-
-    No `shutil.which` guard in front of it: a missing binary raises
-    `FileNotFoundError`, which is an `OSError`, so the absent case and
-    the too-old case leave here by the same door. The guard was there
-    and is gone because nothing could go red without it, which makes it
-    a branch no test can reach rather than a second opinion.
-    """
-    try:
-        probe = subprocess.run(
-            ["ruff", "check", "--output-format=concise", "--help"],
-            capture_output=True,
-            timeout=30,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return False
-    return probe.returncode == 0
-
-
-#: One home for the reason string, because the census below reads it
-#: back off the mark to tell a capability gate from a presence gate.
-_CONCISE_REASON = "needs ruff >= 0.2.0 on PATH (--output-format=concise)"
-
-_NEEDS_CONCISE_RUFF = pytest.mark.skipif(
-    not _ruff_can_do_concise(),
-    reason=_CONCISE_REASON,
-)
-
-
-def test_the_capability_probe_answers_from_the_binary_on_path(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """`_ruff_can_do_concise` runs a real process and reads its status.
-
-    Three shims on a PATH holding nothing else, so this exercises the
-    two branches and the absent binary rather than a stub of any of
-    them. Exit 2 is what ruff 0.0.272, 0.1.0 and 0.1.15 were measured to
-    return for this exact argv, and exit 0 is what 0.2.0 and later
-    return.
-    """
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    monkeypatch.setenv("PATH", str(bin_dir))
-    shim = bin_dir / "ruff"
-
-    assert _ruff_can_do_concise() is False, "no ruff at all"
-
-    shim.write_text(
-        "#!/bin/sh\necho \"error: invalid value 'concise'\" >&2\nexit 2\n",
-        encoding="utf-8",
-    )
-    shim.chmod(0o755)
-    assert _ruff_can_do_concise() is False, "a ruff that rejects the flag value"
-
-    shim.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-    shim.chmod(0o755)
-    assert _ruff_can_do_concise() is True, "a ruff that accepts it"
-
-
-def test_every_ruff_gated_test_here_is_gated_on_the_capability() -> None:
-    """A census over this module's own skip marks, not a spot check.
-
-    The two tests below run real ruff and need >= 0.2.0 for
-    `--output-format=concise`. Gated on `shutil.which("ruff") is None`
-    they turn an old ruff on PATH into `expected one 'dead_code_ruff'
-    check, got []`, a red suite whose message names nothing about a
-    version. Reverting either decorator to a presence check is invisible
-    to the suite on a machine whose ruff is current, which is every
-    machine that runs it here, so the mark itself is what gets asserted:
-    the walk enumerates every skipif this module carries and fails on
-    one that mentions ruff and is not the capability gate, and on a new
-    ruff-gated test that is not in the list.
-    """
-    gated: dict[str, str] = {}
-    for name, obj in sorted(globals().items()):
-        if not name.startswith("test_"):
-            continue
-        for mark in getattr(obj, "pytestmark", []):
-            reason = str(mark.kwargs.get("reason", ""))
-            if mark.name == "skipif" and "ruff" in reason.lower():
-                gated[name] = reason
-
-    assert sorted(gated) == [
-        "test_check_reports_the_dead_code_phases_separately",
-        "test_check_table_names_the_dead_code_scan_it_did_not_run",
-    ]
-    assert set(gated.values()) == {_CONCISE_REASON}
-
-
-def test_the_capability_gate_reads_the_probe_and_not_the_binary() -> None:
-    """The reason census above cannot see a condition-only swap.
-
-    `pytest.mark.skipif` stores the EVALUATED bool, and
-    `not _ruff_can_do_concise()` and `shutil.which("ruff") is None` are
-    the same bool on every machine whose ruff is current, which is every
-    machine that runs this suite. So the mark's source is what
-    distinguishes them: this parses the module and asserts the one
-    `_NEEDS_CONCISE_RUFF` assignment calls the probe. Measured: without
-    it, swapping the condition and leaving the reason alone is STILL
-    GREEN.
-    """
-    tree = ast.parse(Path(__file__).read_text(encoding="utf-8"))
-    assigns = [
-        node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Assign)
-        and any(isinstance(t, ast.Name) and t.id == "_NEEDS_CONCISE_RUFF" for t in node.targets)
-    ]
-    assert len(assigns) == 1, "one home for the mark"
-    called = {
-        node.func.id
-        for node in ast.walk(assigns[0])
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-    }
-    assert "_ruff_can_do_concise" in called
-
-
 def test_check_never_edits_stages_or_commits(tmp_path: Path) -> None:
-    root = _dead_code_repo(tmp_path)
+    root = _feature_repo(tmp_path)
     head_before = git("rev-parse", "HEAD", cwd=root)
     log_before = git("log", "--oneline", cwd=root)
     status_before = git("status", "--porcelain", cwd=root)
@@ -454,91 +300,17 @@ def test_check_never_edits_stages_or_commits(tmp_path: Path) -> None:
     result, document = _check_json(root)
 
     assert result.exit_code in (0, 1), result.output
+    assert document["checks"]
     assert git("rev-parse", "HEAD", cwd=root) == head_before
     assert git("log", "--oneline", cwd=root) == log_before
     # The bystander is still untracked, and still the only change.
     assert git("status", "--porcelain", cwd=root) == status_before
     assert "unrelated.txt" in status_before
     assert (root / "src" / "b.py").read_text() == b_before
-    # The full account of what the two phases REPORTED is asserted in
-    # test_check_reports_the_dead_code_phases_separately below, which
-    # needs ruff on PATH to have a measurement to read. What this test
-    # keeps unconditionally is the read-only contract itself, stated
-    # about the document rather than only about the tree: `assert
-    # document["checks"]` alone is true of any run that produced one row
-    # at all, and would still pass with both dead-code phases deleted -
-    # on a machine without ruff, that left nothing in this file
-    # asserting anything about either of them.
-    dead_code_rows = [c for c in document["checks"] if c["name"].startswith("dead_code")]
-    gaps = [g for g in document["not_measured"] if g["check"].startswith("dead_code")]
-    assert dead_code_rows or gaps
-    # Over every row, not only the dead-code ones. Scoped to
-    # `dead_code_rows` the negative was vacuous exactly where it was
-    # needed: on a machine without ruff that list is empty and `not
-    # any(...)` over it is trivially true, so the half of this test that
-    # discriminates evaporated on the environment the comment above
-    # names. `document["checks"]` is never empty - the three cheap gates
-    # are always in it - so the assertion has something to be false
-    # about in both environments.
-    assert not any("auto-fixed" in row["message"] for row in document["checks"])
-
-
-@_NEEDS_CONCISE_RUFF
-def test_check_reports_the_dead_code_phases_separately(tmp_path: Path) -> None:
-    """#335 end to end, on a command where one phase can measure and the
-    other cannot.
-
-    ``check_dead_code`` fused the ruff auto-fix and the vulture scan
-    into one row, so with vulture absent ``ks check`` printed
-    ``dead_code  pass  ruff reports 1 auto-removable, not removed;
-    vulture not installed`` - and ``build_review_prompt`` handed the
-    same row to an adversarial reviewer as ``dead_code: PASS``. Omitting
-    the fused row would have thrown away the ruff measurement with it,
-    which is why the fix is a split and not an omission. Both halves are
-    asserted: the ruff row with its real message, and a reason for the
-    scan that did not happen.
-    """
-    root = _dead_code_repo(tmp_path)
-
-    with patch("shutil.which", side_effect=_without_vulture()):
-        result, document = _check_json(root)
-
-    assert result.exit_code == 0, result.output
-    ruff_phase = _check(document, "dead_code_ruff")
-    assert ruff_phase["passed"] is True
-    assert "auto-removable, not removed" in ruff_phase["message"]
-    assert [c for c in document["checks"] if c["name"] == "dead_code"] == []
-    assert document["not_measured"] == [
-        {
-            "check": "dead_code",
-            "reason": "tool_missing",
-            "detail": (
-                "vulture is not on PATH and no [verify] dead_code_command is set, "
-                "so nothing scanned for dead code"
-            ),
-        }
-    ]
-    # Still a pass: a check that measured nothing neither passes nor
-    # fails, so the sidecar cannot become a gate by the back door.
-    assert document["passed"] is True
-
-
-@_NEEDS_CONCISE_RUFF
-def test_check_table_names_the_dead_code_scan_it_did_not_run(tmp_path: Path) -> None:
-    """The terminal half. Most operators read the table, not the JSON."""
-    root = _dead_code_repo(tmp_path)
-
-    with patch("shutil.which", side_effect=_without_vulture()):
-        result = _invoke("--root", str(root), "--ui", "plain", "--no-color")
-
-    assert result.exit_code == 0, result.output
-    assert "dead_code  not measured" in result.output
-    assert "vulture is not on PATH" in result.output
-    assert "check: PASS" in result.output
 
 
 def test_check_leaves_no_bytecode_or_lint_cache(tmp_path: Path) -> None:
-    root = _dead_code_repo(tmp_path)
+    root = _feature_repo(tmp_path)
 
     result, _document = _check_json(root)
 
@@ -579,34 +351,6 @@ def test_check_exit_2_when_explicit_base_is_unreachable(tmp_path: Path) -> None:
     # No verdict was invented for a diff git could not produce.
     assert "passed" not in document
     assert "checks" not in document
-
-
-def test_check_does_not_demand_a_diff_no_dead_code_phase_reads(tmp_path: Path) -> None:
-    """The preflight asks for a base on behalf of the checks that read
-    one, and `[verify] dead_code_cleanup` stopped being that question.
-
-    It is one toggle over two phases (#335): `dead_code_ruff` scans `.`,
-    and with `[verify] dead_code_command` set the detector is the
-    operator's own program, run without the diff read that only ever
-    existed to build vulture's argument list. With both diff-reading
-    gates off and the toggle on, demanding a base is the same false
-    exit 2 mutation_testing is already excluded for - the run that could
-    have measured two phases measures none.
-    """
-    root = _diverged_repo(tmp_path)
-    (root / "kstrl.toml").write_text(
-        _kstrl_toml()
-        + "[verify]\n"
-        + "check_diff_scope = false\n"
-        + "check_bad_patterns = false\n"
-        + "dead_code_cleanup = true\n"
-        + 'dead_code_command = "true"\n'
-    )
-
-    result, document = _check_json(root, "--base", "no-such-branch")
-
-    assert result.exit_code != 2, result.output
-    assert [c["name"] for c in document["checks"] if c["name"].startswith("dead_code")]
 
 
 def test_check_detects_the_base_branch_that_exists(tmp_path: Path) -> None:
@@ -686,51 +430,29 @@ def test_check_runs_without_git_when_no_check_reads_the_diff(
     assert document["not_measured"] == []
 
 
-def test_check_reports_mutation_as_not_measured_not_as_a_pass(tmp_path: Path) -> None:
-    """#306 end to end, on a command that can NEVER measure this check.
+#: The keys and sections #696 slice 8 retired, each with a value that
+#: used to be valid: a check that read one language's files or ran one
+#: language's tools.
+RETIRED_SETTINGS = {
+    "mutation_testing": "[verify]\nmutation_testing = true\n",
+    "dead_code_cleanup": "[verify]\ndead_code_cleanup = true\n",
+    "[adequacy]": '[adequacy]\nenabled = true\nlayer0 = "block"\n',
+}
 
-    `ks check` is read-only and mutmut works by rewriting the files it
-    mutates, so an operator who turns mutation testing on gets no score
-    here, ever. Before #306 that produced a green ``mutation_testing``
-    row carrying a "skipped" message, which ``all(passed)`` and the LLM
-    reviewer's prompt both read as a pass. Removing the row alone would
-    be honest and mute. Both halves are asserted here: no row, and a
-    reason a human can read.
-    """
+
+@pytest.mark.parametrize("name", sorted(RETIRED_SETTINGS))
+def test_check_refuses_a_retired_setting_by_name(tmp_path: Path, name: str) -> None:
+    """A retired key is refused before anything runs, naming the key and
+    what replaced it, rather than read and ignored (#696 slice 8)."""
     root = _make_repo(tmp_path)
-    (root / "kstrl.toml").write_text(_kstrl_toml() + "[verify]\nmutation_testing = true\n")
+    (root / "kstrl.toml").write_text(_kstrl_toml() + RETIRED_SETTINGS[name])
 
-    result, document = _check_json(root)
+    result = _invoke("--root", str(root), "--json")
 
-    assert result.exit_code == 0, result.output
-    assert [c for c in document["checks"] if c["name"] == "mutation_testing"] == []
-    assert document["not_measured"] == [
-        {
-            "check": "mutation_testing",
-            "reason": "read_only",
-            "detail": "mutmut rewrites the files it mutates and cannot run read-only",
-        }
-    ]
-    # Still a pass: a check that measured nothing neither passes nor
-    # fails, so the sidecar cannot become a gate by the back door.
-    assert document["passed"] is True
-
-
-def test_check_table_names_what_it_did_not_measure(tmp_path: Path) -> None:
-    """The terminal half of the same fix.
-
-    Most operators read the table, not the JSON. If the gap reached only
-    ``--json`` the sidecar would serve machines and leave the human with
-    the silence that omission alone leaves.
-    """
-    root = _make_repo(tmp_path)
-    (root / "kstrl.toml").write_text(_kstrl_toml() + "[verify]\nmutation_testing = true\n")
-
-    result = _invoke("--root", str(root), "--ui", "plain", "--no-color")
-
-    assert result.exit_code == 0, result.output
-    assert "mutation_testing  not measured" in result.output
-    assert "cannot run read-only" in result.output
-    # The verdict line is unchanged: it counts checks, and a gap is not
-    # a check.
-    assert "check: PASS" in result.output
+    assert result.exit_code == 2, result.output
+    error = json.loads(result.stdout)["error"]
+    assert name in error
+    # "which was retired" is config_preflight's wording for a RETIRED_KEYS
+    # row. A bare "retired" would also match tmp_path, which pytest names
+    # after this test, and the generic unknown-key refusal would pass.
+    assert "which was retired" in error

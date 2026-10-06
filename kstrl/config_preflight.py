@@ -209,7 +209,6 @@ def config_sections() -> list[ConfigSection]:
     dataclasses and fails if one is missing from this list, so a section
     added later cannot quietly go unchecked.
     """
-    from kstrl.adequacy import AdequacyConfig
     from kstrl.autonomy import AutonomyConfig
     from kstrl.breaker import BreakerConfig
     from kstrl.config import KstrlConfig
@@ -245,7 +244,6 @@ def config_sections() -> list[ConfigSection]:
         ConfigSection(("verify",), VerifyConfig.load),
         ConfigSection(("security",), SecurityConfig.load),
         ConfigSection(("contract",), ContractConfig.load),
-        ConfigSection(("adequacy",), AdequacyConfig.load),
         ConfigSection(("policy",), PolicyConfig.load),
         ConfigSection(("autonomy",), AutonomyConfig.load),
         ConfigSection(("divergence",), DivergenceConfig.load),

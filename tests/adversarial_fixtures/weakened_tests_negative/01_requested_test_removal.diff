@@ -1,0 +1,30 @@
+diff --git a/src/shop/pricing.py b/src/shop/pricing.py
+index b1126c6..684610e 100644
+--- a/src/shop/pricing.py
++++ b/src/shop/pricing.py
+@@ -4,7 +4,5 @@ from __future__ import annotations
+
+
+ def order_total(prices: list[int]) -> int:
+-    """Return the order total in cents."""
+-    if any(price < 0 for price in prices):
+-        raise ValueError("a price cannot be negative")
++    """Return the order total in cents. A refund line is a negative price."""
+     return sum(prices)
+diff --git a/tests/test_pricing.py b/tests/test_pricing.py
+index 65a331c..11bce9f 100644
+--- a/tests/test_pricing.py
++++ b/tests/test_pricing.py
+@@ -13,6 +13,9 @@ def test_empty_order_is_zero() -> None:
+     assert order_total([]) == 0
+
+
+-def test_total_rejects_a_negative_price() -> None:
+-    with pytest.raises(ValueError):
+-        order_total([1000, -5])
++@pytest.mark.parametrize(
++    ("prices", "total"),
++    [([1000, -250], 750), ([-300, -200], -500)],
++)
++def test_a_refund_line_is_summed_like_any_other(prices: list[int], total: int) -> None:
++    assert order_total(prices) == total

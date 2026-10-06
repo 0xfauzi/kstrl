@@ -245,6 +245,13 @@ ALLOWLIST: tuple[AllowedSite, ...] = (
         1,
         "D32: describes kstrl's own prompt templates",
     ),
+    AllowedSite(
+        "baseline.py",
+        '"dead_code_ruff",',
+        1,
+        "#696 slice 8: a retired check's name, which a baseline written before "
+        "the retirement carries and the comparison must recognise",
+    ),
 )
 
 _TOKEN = re.compile(r"(?<![A-Za-z0-9_])\.[A-Za-z0-9]+|[A-Za-z0-9]+")
@@ -308,32 +315,21 @@ def census() -> dict[str, Counter[str]]:
     return found
 
 
-#: Re-derived by running this file on the #696 slice 6 tree; never typed in by hand.
+#: Re-derived by running this file on the #696 slice 8 tree; never typed in by hand.
 PINNED_HITS: dict[str, dict[str, int]] = {
     "__main__.py": {"python": 1},
-    "adequacy.py": {
-        "coverage.py": 3,
-        "go": 3,
-        "java": 1,
-        "jest": 1,
-        "mutmut": 23,
-        "pytest": 39,
-        "python": 18,
-        "ruby": 2,
-        "rust": 27,
-        "vitest": 1,
-    },
+    "adequacy.py": {"go": 1, "jest": 1, "python": 5, "ruby": 2, "vitest": 1},
     "agents/leash.py": {"python": 1},
     "agents/liveness.py": {"npm": 1},
     "agents/logging.py": {"python": 3},
     "agents/proc.py": {"python": 3},
     "appendio.py": {"python": 1},
     "autonomy.py": {"python": 1},
-    "baseline.py": {"mypy": 1, "python": 1, "vulture": 1},
+    "baseline.py": {"mypy": 1, "python": 1},
     "calibration.py": {"python": 4, "typescript": 1},
     "calibration_ladder.py": {"python": 1},
     "calibration_score.py": {"mypy": 1},
-    "cli.py": {"mutmut": 2, "python": 3, "ruff": 9, "vulture": 5},
+    "cli.py": {"python": 1, "ruff": 4, "vulture": 1},
     "config.py": {"mypy": 1},
     "config_preflight.py": {"pyproject": 1, "python": 2, "ruff": 1},
     "config_report.py": {"pyproject": 1, "python": 1},
@@ -344,12 +340,10 @@ PINNED_HITS: dict[str, dict[str, int]] = {
     "evolution.py": {"mypy": 3, "pytest": 2, "python": 1, "ruff": 6, "vulture": 1},
     "factory.py": {"mypy": 5, "pip": 1, "uv": 2},
     "failure_excerpt.py": {"cargo": 2, "go": 3, "jest": 2, "rust": 5},
-    "feature_verify.py": {"ruff": 4},
     "fixture_expect.py": {"python": 1},
-    "fixtures.py": {"pip": 3, "pyproject": 2, "python": 11},
     "gepa_adapter.py": {"pytest": 1},
     "git.py": {"python": 1},
-    "init_cmd.py": {"package.json": 1, "ruff": 1, "vulture": 1},
+    "init_cmd.py": {"package.json": 1, "ruff": 1},
     "integration_fix.py": {"python": 3},
     "jsonread.py": {"pytest": 1},
     "knowledge.py": {"python": 1},
@@ -362,23 +356,7 @@ PINNED_HITS: dict[str, dict[str, int]] = {
     "procgroup.py": {"python": 1},
     "runstate.py": {"mypy": 1},
     "serve.py": {"python": 2},
-    "toolchains.py": {"pip": 1, "pyproject": 1, "python": 7},
-    "verify.py": {
-        "cargo": 1,
-        "coverage.py": 29,
-        "go": 1,
-        "mutmut": 136,
-        "mypy": 4,
-        "pip": 2,
-        "pyproject": 1,
-        "pytest": 36,
-        "python": 67,
-        "ruff": 125,
-        "rust": 3,
-        "typescript": 1,
-        "uv": 5,
-        "vulture": 19,
-    },
+    "verify.py": {"mypy": 4, "pytest": 1, "python": 4},
     "workqueue.py": {"python": 1},
     "worktree_setup.py": {"node": 2},
 }

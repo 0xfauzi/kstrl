@@ -25,9 +25,10 @@ detect a change against.
 
 WHY SEVEN SECTIONS AND NOT THREE
 --------------------------------
-Round 1 of this change put ``[policy]``, ``[adequacy]`` and
-``[autonomy]`` here and left ``[sandbox]``, ``[fixtures]``, ``[inbox]``
-and ``[divergence]`` being loaded by ``ComponentPipeline.__init__``. The
+Round 1 of this change put ``[policy]``, ``[adequacy]`` (which #696
+slice 8 removed) and ``[autonomy]`` here and left ``[sandbox]``,
+``[fixtures]``, ``[inbox]`` and ``[divergence]`` being loaded by
+``ComponentPipeline.__init__``. The
 review measured what that cost: a malformed ``[inbox]`` reached the
 constructor with no handler above it, so it left ``run_factory`` as a
 raw ``ValueError``, and it did so ABOVE
@@ -43,8 +44,8 @@ this lane's own framing is about).
 
 ``AutonomyState`` reads ``.kstrl/autonomy.json`` rather than
 ``kstrl.toml``. It is in the envelope because it is the other half of
-the same per-component read: the level Phase 1 hands the adequacy gate
-was ``AutonomyState.load(root).level``, unclamped, while the factory had
+the same per-component read: the level Phase 1 handed the adequacy gate
+(removed by #696 slice 8) was ``AutonomyState.load(root).level``, unclamped, while the factory had
 already resolved a CLAMPED level three lines above the hash. The STATE
 itself is carried, not just the level, because the factory's ladder
 needs it and loading it twice costs a measured 17.2 ms and ensures the
@@ -61,7 +62,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TypeVar
 
-from kstrl.adequacy import AdequacyConfig
 from kstrl.autonomy import AutonomyConfig, AutonomyState
 from kstrl.config import ConfigError, toml_parse_scope
 from kstrl.config_preflight import resolve_or_report
@@ -85,7 +85,6 @@ class RunEnvelope:
     """
 
     policy: PolicyConfig
-    adequacy: AdequacyConfig
     #: The ``[autonomy]`` section itself rather than a derived
     #: ``enabled`` bool: ``run_factory`` needs the object for
     #: ``resolve_runtime_level`` and the #262 probe gate, and reading it
@@ -152,7 +151,6 @@ class RunEnvelope:
         problems: list[str] = []
         with toml_parse_scope():
             policy = policy_override or _resolved(PolicyConfig.load, root_dir, problems)
-            adequacy = _resolved(AdequacyConfig.load, root_dir, problems)
             autonomy = _resolved(AutonomyConfig.load, root_dir, problems)
             sandbox = _resolved(SandboxConfig.load, root_dir, problems)
             fixtures = fixtures_override or _resolved(FixturesConfig.load, root_dir, problems)
@@ -161,7 +159,6 @@ class RunEnvelope:
             release = _resolved(ReleaseConfig.load, root_dir, problems)
         if (
             policy is None
-            or adequacy is None
             or autonomy is None
             or sandbox is None
             or fixtures is None
@@ -194,7 +191,6 @@ class RunEnvelope:
         return EnvelopeResolution(
             cls(
                 policy=policy,
-                adequacy=adequacy,
                 autonomy=autonomy,
                 autonomy_state=state,
                 autonomy_level=state.level if state is not None else 0,

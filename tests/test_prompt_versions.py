@@ -297,9 +297,20 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     # passes included, and nothing else; the 1.2.0 integration capture folded
     # IC1 to IC5 into one entry once and added a repository prd.json's stories
     # once. A citation is a path with lines, one per file the evidence spans.
+    # 3.0.0 (#696 slice 8): MAJOR. The output vocabulary gained the
+    # "test_weakening" concern category, and a 2.x reader drops a concern
+    # whose category it does not know (review.VALID_CONCERN_CATEGORIES), so
+    # the new finding would vanish under the old parser. The category is
+    # the replacement for Layer 0, the mechanical test-diff check kstrl
+    # removed because it read one language's test files: tests deleted,
+    # skipped or marked xfail, assertions removed or weakened, expected
+    # values edited to match, inputs narrowed, or test configuration that
+    # runs fewer tests. test_quality and error_handling are reworded to
+    # name no language's syntax, and the citation example names no file
+    # suffix (inventory row D25).
     "REVIEWER_PROMPT": (
-        "f6d5a5787e122487aa2fe942eb096d958d46bdb90195ad77df082f94beedeb0f",
-        "2.1.0",
+        "c16b775b42dcab5b132937bf991fae647a9898217b42bae0f4e516e4feed4678",
+        "3.0.0",
     ),
     # 2.1.0 (#696 slice 9): MINOR. The schema gains one category,
     # "new_dependency": every third-party package a change adds, one finding

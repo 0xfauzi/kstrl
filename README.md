@@ -375,11 +375,6 @@ allow_network = false  # re-open outbound network inside the sandbox (off = deny
 [verify]
 check_diff_scope = true        # fail on changes outside allowed paths
 check_bad_patterns = true      # scan the diff for secret-like patterns
-dead_code_cleanup = false      # optional dead-code check
-dead_code_command = ""         # empty = smart default when dead_code_cleanup is on
-mutation_testing = false       # optional mutation testing
-mutation_threshold = 50.0      # minimum percentage of mutable lines in the changed files whose first definite mutant was killed
-mutation_timeout = 0.0         # seconds in the phase's one shared mutation budget ([verify] mutation_testing and [adequacy] diff_mutation both draw from it, #391); full ceiling arithmetic in the [adequacy] diff_mutation paragraph (docs/env-vars.md); 0 = no limit
 subprocess_timeout = 0.0       # seconds per verification subprocess; 0 = no limit
 require_self_critique = false  # fail Phase 1 if the ## Self-Critique block is missing/sparse
 self_critique_min_bullets = 3  # minimum substantive bullets in the block
@@ -450,15 +445,6 @@ lease_ttl_seconds = 3600.0  # claim validity in seconds; the reaper recovers any
 [divergence]
 mode = "advisory"  # skip | advisory | block; advisory records a diverging retry loop, block fails the component instead of paying for another retry (#265)
 growth_steps = 2   # consecutive steps required before the detector fires, so it needs growth_steps + 1 measured attempts; must be >= 1 (use mode = "skip" to disable); the default is a structural minimum, not a measured number
-
-# Test-suite adequacy gate (R8.5; opt-in, advisory first)
-[adequacy]
-enabled = false                  # run the Layer 0 test-adequacy checks (opt-in)
-layer0 = "advisory"              # advisory | block; the ladder can raise it, never lower
-require_strong_oracle = true     # each new test file needs one falsifiable assertion
-flag_assertionless_tests = true  # report tests that assert nothing at all
-patch_coverage = false           # run the project's pytest command a second time under coverage and report patch coverage (advisory, no floor)
-diff_mutation = false            # mutate the changed AND covered lines and report what fraction the suite detects (advisory, no floor; needs patch_coverage)
 
 # Phase 2.5 security review
 [security]

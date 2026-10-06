@@ -32,7 +32,6 @@ EXPECTED_SCAFFOLD_SECTIONS = {
     "verify",
     "policy",
     "autonomy",
-    "adequacy",
     "divergence",
     "inbox",
     "security",
@@ -78,11 +77,6 @@ EXPECTED_SCAFFOLD_KEYS = {
     "verify": {
         "check_diff_scope",
         "check_bad_patterns",
-        "dead_code_cleanup",
-        "dead_code_command",
-        "mutation_testing",
-        "mutation_threshold",
-        "mutation_timeout",
         "subprocess_timeout",
         "require_self_critique",
         "self_critique_min_bullets",
@@ -98,12 +92,6 @@ EXPECTED_SCAFFOLD_KEYS = {
         "deploy",
     },
     "autonomy": {"enabled", "max_level"},
-    "adequacy": {
-        "enabled",
-        "layer0",
-        "require_strong_oracle",
-        "flag_assertionless_tests",
-    },
     "divergence": {
         "mode",
         "growth_steps",

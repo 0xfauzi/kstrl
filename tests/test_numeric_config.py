@@ -73,7 +73,9 @@ from tests.test_env_vars_documented import NOT_KSTRL_SETTINGS, names_read_by_kst
 #: edited to match.
 #: 57: #624 added ``FactoryConfig.worktree_setup_timeout``.
 #: 56: #696 retired ``BreakerConfig.test_timeout`` with ``[breaker] test_command``.
-EXPECTED_NUMERIC_FIELDS = 56
+#: 54: #696 slice 8 retired ``VerifyConfig.mutation_threshold`` and
+#: ``VerifyConfig.mutation_timeout`` with the mutation check.
+EXPECTED_NUMERIC_FIELDS = 54
 
 #: The fields whose negative values mean something. Adding one is a
 #: decision, so it is written here as well as on the field.
@@ -85,7 +87,8 @@ EXPECTED_SIGNED = {
 
 #: Re-derived by running ``_load_returns()`` on this tree: one per loaded
 #: class, and two in ``LearningConfig.load``. 27: #696's ``StackConfig``.
-EXPECTED_LOAD_RETURNS = 27
+#: 26: #696 slice 8 removed ``AdequacyConfig``.
+EXPECTED_LOAD_RETURNS = 26
 
 #: Re-derived by running ``_numeric_parameters(_commands())`` on this tree:
 #: every numeric option and argument, of every command, whose type refuses
@@ -94,7 +97,6 @@ EXPECTED_LIMIT_PARAMETERS = {
     "factory": {
         "max_parallel",
         "max_retries",
-        "mutation_threshold",
         "agent_timeout",
         "component_timeout",
         "max_adversarial_calls",
@@ -134,7 +136,8 @@ NOT_LIMITS: dict[tuple[str, str], str] = {
 #: that sets a numeric field.
 #: 56: #624 added ``KSTRL_FACTORY_WORKTREE_SETUP_TIMEOUT``.
 #: 55: #696 retired ``KSTRL_BREAKER_TEST_TIMEOUT`` with ``[breaker] test_command``.
-EXPECTED_ENV_DOORS = 55
+#: 53: #696 slice 8 retired ``KSTRL_MUTATION_THRESHOLD`` and ``KSTRL_MUTATION_TIMEOUT``.
+EXPECTED_ENV_DOORS = 53
 
 #: The numeric fields no environment variable sets, re-derived by running.
 EXPECTED_NO_ENV_DOOR = {("EvolutionConfig", "min_pattern_frequency")}
