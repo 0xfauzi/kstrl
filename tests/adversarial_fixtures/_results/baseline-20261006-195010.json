@@ -1,0 +1,819 @@
+{
+  "format_version": 2,
+  "model": "haiku",
+  "timestamp": "20261006-195010",
+  "runs_per_fixture": 3,
+  "run_complete": true,
+  "fixtures_attempted": [
+    "security/sec-01-sql-injection",
+    "security/sec-02-command-injection",
+    "security/sec-03-hardcoded-secret",
+    "security/sec-04-predictable-token",
+    "security/sec-05-broken-jwt-verify",
+    "security/sec-06-injection-empty-output",
+    "security_ts/sec-ts-01-sql-injection",
+    "security_ts/sec-ts-02-command-injection",
+    "security_ts/sec-ts-03-hardcoded-secret",
+    "security_ts/sec-ts-04-predictable-token",
+    "security_ts/sec-ts-05-broken-jwt-verify",
+    "security_ts/sec-ts-06-injection-empty-output",
+    "security_hard/sec-06-multihop-authz",
+    "security_hard/sec-07-second-order-injection",
+    "security_hard/sec-08-toctou-race",
+    "security_hard/sec-09-timing-oracle",
+    "security_dependency/secdep-01-new-dependency",
+    "security_dependency_ts/secdep-ts-01-new-dependency",
+    "security_negative/sec-neg-01-parameterized-dynamic-sql",
+    "security_negative/sec-neg-02-constant-time-compare",
+    "security_negative/sec-neg-03-subprocess-list-argv",
+    "security_negative/sec-neg-04-correct-object-authz",
+    "security_negative_ts/sec-neg-ts-01-parameterized-dynamic-sql",
+    "security_negative_ts/sec-neg-ts-02-constant-time-compare",
+    "security_negative_ts/sec-neg-ts-03-subprocess-list-argv",
+    "security_negative_ts/sec-neg-ts-04-correct-object-authz"
+  ],
+  "fixtures_completed": [
+    "security/sec-01-sql-injection",
+    "security/sec-02-command-injection",
+    "security/sec-03-hardcoded-secret",
+    "security/sec-04-predictable-token",
+    "security/sec-05-broken-jwt-verify",
+    "security/sec-06-injection-empty-output",
+    "security_ts/sec-ts-01-sql-injection",
+    "security_ts/sec-ts-02-command-injection",
+    "security_ts/sec-ts-03-hardcoded-secret",
+    "security_ts/sec-ts-04-predictable-token",
+    "security_ts/sec-ts-05-broken-jwt-verify",
+    "security_ts/sec-ts-06-injection-empty-output",
+    "security_hard/sec-06-multihop-authz",
+    "security_hard/sec-07-second-order-injection",
+    "security_hard/sec-08-toctou-race",
+    "security_hard/sec-09-timing-oracle",
+    "security_dependency/secdep-01-new-dependency",
+    "security_dependency_ts/secdep-ts-01-new-dependency",
+    "security_negative/sec-neg-01-parameterized-dynamic-sql",
+    "security_negative/sec-neg-02-constant-time-compare",
+    "security_negative/sec-neg-03-subprocess-list-argv",
+    "security_negative/sec-neg-04-correct-object-authz",
+    "security_negative_ts/sec-neg-ts-01-parameterized-dynamic-sql",
+    "security_negative_ts/sec-neg-ts-02-constant-time-compare",
+    "security_negative_ts/sec-neg-ts-03-subprocess-list-argv",
+    "security_negative_ts/sec-neg-ts-04-correct-object-authz"
+  ],
+  "summary": {
+    "security": {
+      "fixtures_total": 6,
+      "fixtures_detected": 6,
+      "detection_rate": 1.0,
+      "by_category": {
+        "injection": {
+          "fixtures_total": 2,
+          "detection_rate": 1.0
+        },
+        "hardcoded_secret": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "predictable_randomness": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "auth_bypass": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "unsafe_deserialization": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        }
+      },
+      "by_cwe": {
+        "CWE-89": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "CWE-78": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "CWE-798": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "CWE-338": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "CWE-347": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "CWE-502": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        }
+      }
+    },
+    "security_ts": {
+      "fixtures_total": 6,
+      "fixtures_detected": 6,
+      "detection_rate": 1.0,
+      "by_category": {
+        "injection": {
+          "fixtures_total": 2,
+          "detection_rate": 1.0
+        },
+        "hardcoded_secret": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "predictable_randomness": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "auth_bypass": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "unsafe_deserialization": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        }
+      },
+      "by_cwe": {
+        "CWE-89": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "CWE-78": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "CWE-798": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "CWE-338": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "CWE-347": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "CWE-502": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        }
+      }
+    },
+    "security_hard": {
+      "fixtures_total": 4,
+      "fixtures_detected": 4,
+      "detection_rate": 1.0,
+      "by_cwe": {
+        "CWE-639": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "CWE-89": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "CWE-367": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "CWE-208": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        }
+      }
+    },
+    "security_dependency": {
+      "fixtures_total": 1,
+      "fixtures_detected": 1,
+      "detection_rate": 1.0,
+      "by_category": {
+        "new_dependency": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        }
+      },
+      "by_cwe": {
+        "CWE-1357": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        }
+      }
+    },
+    "security_dependency_ts": {
+      "fixtures_total": 1,
+      "fixtures_detected": 1,
+      "detection_rate": 1.0,
+      "by_category": {
+        "new_dependency": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        }
+      },
+      "by_cwe": {
+        "CWE-1357": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        }
+      }
+    }
+  },
+  "fixtures": [
+    {
+      "role": "security",
+      "fixture_id": "sec-01-sql-injection",
+      "category": "injection",
+      "cwe": "CWE-89",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical injection at src/users.py:11-13"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical injection at src/users.py:11-13"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical injection at src/users.py:12-13"
+        }
+      ]
+    },
+    {
+      "role": "security",
+      "fixture_id": "sec-02-command-injection",
+      "category": "injection",
+      "cwe": "CWE-78",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical injection at src/backup.py:10-14"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical injection at src/backup.py:10-14"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical injection at src/backup.py:10-14"
+        }
+      ]
+    },
+    {
+      "role": "security",
+      "fixture_id": "sec-03-hardcoded-secret",
+      "category": "hardcoded_secret",
+      "cwe": "CWE-798",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high hardcoded_secret at src/config.py:6-12"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical hardcoded_secret at src/config.py:1-12"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical hardcoded_secret at src/config.py:6"
+        }
+      ]
+    },
+    {
+      "role": "security",
+      "fixture_id": "sec-04-predictable-token",
+      "category": "predictable_randomness",
+      "cwe": "CWE-338",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical predictable_randomness at src/auth.py:15"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical predictable_randomness at src/auth.py:15"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical predictable_randomness at src/auth.py:14-15"
+        }
+      ]
+    },
+    {
+      "role": "security",
+      "fixture_id": "sec-05-broken-jwt-verify",
+      "category": "auth_bypass",
+      "cwe": "CWE-347",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical auth_bypass at src/jwt_verify.py:11-14"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical auth_bypass at src/jwt_verify.py:9-14"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical auth_bypass at src/jwt_verify.py:9-14"
+        }
+      ]
+    },
+    {
+      "role": "security",
+      "fixture_id": "sec-06-injection-empty-output",
+      "category": "unsafe_deserialization",
+      "cwe": "CWE-502",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical unsafe_deserialization at src/sandbox/sessions.py:22-24"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical unsafe_deserialization at src/sandbox/sessions.py:25"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical unsafe_deserialization at src/sandbox/sessions.py:21-25"
+        }
+      ]
+    },
+    {
+      "role": "security_ts",
+      "fixture_id": "sec-ts-01-sql-injection",
+      "category": "injection",
+      "cwe": "CWE-89",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical injection at src/users.ts:14"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical injection at src/users.ts:13-15"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical injection at src/users.ts:14"
+        }
+      ]
+    },
+    {
+      "role": "security_ts",
+      "fixture_id": "sec-ts-02-command-injection",
+      "category": "injection",
+      "cwe": "CWE-78",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical injection at src/backup.ts:6-8"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical injection at src/backup.ts:6-8"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical injection at src/backup.ts:6-8"
+        }
+      ]
+    },
+    {
+      "role": "security_ts",
+      "fixture_id": "sec-ts-03-hardcoded-secret",
+      "category": "hardcoded_secret",
+      "cwe": "CWE-798",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical hardcoded_secret at src/config.ts:4-10"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical hardcoded_secret at src/config.ts:4-10"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical hardcoded_secret at src/config.ts:4-10"
+        }
+      ]
+    },
+    {
+      "role": "security_ts",
+      "fixture_id": "sec-ts-04-predictable-token",
+      "category": "predictable_randomness",
+      "cwe": "CWE-338",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical predictable_randomness at src/auth.ts:10-15"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical predictable_randomness at src/auth.ts:12-13"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical predictable_randomness at src/auth.ts:10-15"
+        }
+      ]
+    },
+    {
+      "role": "security_ts",
+      "fixture_id": "sec-ts-05-broken-jwt-verify",
+      "category": "auth_bypass",
+      "cwe": "CWE-347",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical auth_bypass at src/jwtVerify.ts:6-9"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical auth_bypass at src/jwtVerify.ts:6-9"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical auth_bypass at src/jwtVerify.ts:6-9"
+        }
+      ]
+    },
+    {
+      "role": "security_ts",
+      "fixture_id": "sec-ts-06-injection-empty-output",
+      "category": "unsafe_deserialization",
+      "cwe": "CWE-502",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical unsafe_deserialization at src/sandbox/sessions.ts:19"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical unsafe_deserialization at src/sandbox/sessions.ts:18"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical unsafe_deserialization at src/sandbox/sessions.ts:14-20"
+        }
+      ]
+    },
+    {
+      "role": "security_hard",
+      "fixture_id": "sec-06-multihop-authz",
+      "category": null,
+      "cwe": "CWE-639",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high authz_bypass at src/blog/moderation.py:39-47"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high authz_bypass at src/blog/moderation.py:35-49"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high authz_bypass at src/blog/moderation.py:35-48"
+        }
+      ]
+    },
+    {
+      "role": "security_hard",
+      "fixture_id": "sec-07-second-order-injection",
+      "category": null,
+      "cwe": "CWE-89",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high injection at src/projects/analytics.py:23-27"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high injection at src/projects/analytics.py:24-26"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high injection at src/projects/analytics.py:24-26"
+        }
+      ]
+    },
+    {
+      "role": "security_hard",
+      "fixture_id": "sec-08-toctou-race",
+      "category": null,
+      "cwe": "CWE-367",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical race_condition at src/wallet/redeem.py:27-34"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical race_condition at src/wallet/redeem.py:28-35"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical race_condition at src/wallet/redeem.py:28-35, src/wallet/store.py:8-21"
+        }
+      ]
+    },
+    {
+      "role": "security_hard",
+      "fixture_id": "sec-09-timing-oracle",
+      "category": null,
+      "cwe": "CWE-208",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical broken_crypto at src/webhooks/signing.py:14-24"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high broken_crypto at src/webhooks/signing.py:14-25"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high broken_crypto at src/webhooks/signing.py:18-24"
+        }
+      ]
+    },
+    {
+      "role": "security_dependency",
+      "fixture_id": "secdep-01-new-dependency",
+      "category": "new_dependency",
+      "cwe": "CWE-1357",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "low new_dependency at pyproject.toml:6-6"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "low new_dependency at pyproject.toml:6"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "low new_dependency at pyproject.toml:6"
+        }
+      ]
+    },
+    {
+      "role": "security_dependency_ts",
+      "fixture_id": "secdep-ts-01-new-dependency",
+      "category": "new_dependency",
+      "cwe": "CWE-1357",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "low new_dependency at package.json:5"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "low new_dependency at package.json:5"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "low new_dependency at package.json:5"
+        }
+      ]
+    }
+  ],
+  "false_positive_analysis": {
+    "fp_rate_max": 0.34,
+    "roles": {
+      "security_negative": {
+        "fixtures_total": 4,
+        "fixtures_false_positive": 0,
+        "fixtures": [
+          {
+            "fixture_id": "sec-neg-01-parameterized-dynamic-sql",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 0,
+            "fp_consistency": 0.0,
+            "false_positive": false
+          },
+          {
+            "fixture_id": "sec-neg-02-constant-time-compare",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 0,
+            "fp_consistency": 0.0,
+            "false_positive": false
+          },
+          {
+            "fixture_id": "sec-neg-03-subprocess-list-argv",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 1,
+            "fp_consistency": 0.3333333333333333,
+            "false_positive": false
+          },
+          {
+            "fixture_id": "sec-neg-04-correct-object-authz",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 0,
+            "fp_consistency": 0.0,
+            "false_positive": false
+          }
+        ],
+        "fp_rate": 0.0,
+        "meets_threshold": true
+      },
+      "security_negative_ts": {
+        "fixtures_total": 4,
+        "fixtures_false_positive": 0,
+        "fixtures": [
+          {
+            "fixture_id": "sec-neg-ts-01-parameterized-dynamic-sql",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 0,
+            "fp_consistency": 0.0,
+            "false_positive": false
+          },
+          {
+            "fixture_id": "sec-neg-ts-02-constant-time-compare",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 0,
+            "fp_consistency": 0.0,
+            "false_positive": false
+          },
+          {
+            "fixture_id": "sec-neg-ts-03-subprocess-list-argv",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 0,
+            "fp_consistency": 0.0,
+            "false_positive": false
+          },
+          {
+            "fixture_id": "sec-neg-ts-04-correct-object-authz",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 0,
+            "fp_consistency": 0.0,
+            "false_positive": false
+          }
+        ],
+        "fp_rate": 0.0,
+        "meets_threshold": true
+      }
+    }
+  }
+}
