@@ -22,7 +22,11 @@ from textual.message import Message
 from textual.screen import Screen
 from textual.widgets import Button, Footer, Input, Select, Static
 
-from kstrl.config_preflight import SURFACE_REJECTIONS, raise_if_defect
+from kstrl.config_preflight import (
+    SURFACE_REJECTIONS,
+    collect_config_problems,
+    raise_if_defect,
+)
 from kstrl.init_cmd import run_init
 from kstrl.init_wizard import (
     AGENT_TYPES,
@@ -82,11 +86,20 @@ def _detected_text(root: Path) -> Text:
     rows: list[tuple[str, str]] = [
         ("detected", detect_context(root).get("language", "unknown")),
     ]
+    unreadable = ("stack", "kstrl.toml is unreadable; cannot show the checks")
     try:
-        stack = VerifyConfig.load(root).project_stack
+        # Every command refuses a kstrl.toml with a fault in ANY section or a
+        # retired key beside the [stack], so this screen must not paint the
+        # checks for such a file. The [verify] read below is not enough: it
+        # rejects only a bad [verify].
+        problems = collect_config_problems(root, warn=lambda _m: None)
+        stack = None if problems else VerifyConfig.load(root).project_stack
     except SURFACE_REJECTIONS as exc:
         raise_if_defect(exc)
-        rows.append(("stack", "kstrl.toml is unreadable; cannot show the checks"))
+        problems = [str(exc)]
+        stack = None
+    if problems:
+        rows.append(unreadable)
     else:
         rows += (
             list(stack.checks)

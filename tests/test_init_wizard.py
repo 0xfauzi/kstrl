@@ -298,6 +298,31 @@ class TestWizardScreen:
         finally:
             await self._pilot_ctx.__aexit__(None, None, None)
 
+    async def test_a_retired_key_beside_a_confirmed_stack_shows_the_unreadable_row(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """#696 slice 4: every command refuses a retired [verify] command key
+        beside a [stack], including a file ks doctor's proposal leaves behind
+        when the operator pastes the [stack] and keeps the old keys. The repair
+        screen must say unreadable, not paint the checks."""
+        write_stack(tmp_path, _CHECKS)
+        with (tmp_path / "kstrl.toml").open("a", encoding="utf-8") as handle:
+            handle.write('\n[verify]\ntest_command = "make test"\n')
+        app, _ = await self._run_wizard(tmp_path)
+        try:
+            form = await mounted(self._pilot, lambda: app.screen, "#wizard-form")
+            await settled(
+                self._pilot,
+                lambda: form.region.height,
+                what="the wizard form to be laid out",
+            )
+            rendered = self._rendered(app)
+            assert "kstrl.toml is unreadable" in rendered
+            assert "make test-all" not in rendered
+        finally:
+            await self._pilot_ctx.__aexit__(None, None, None)
+
     async def test_happy_path_scaffolds_and_writes_agent(
         self,
         tmp_path: Path,
