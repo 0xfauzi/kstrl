@@ -439,3 +439,9 @@ def test_a_held_out_check_leaves_nothing_in_the_repository_and_recheck_finds_it(
     code, out = _recheck(root, relative)
     assert code == 2, out
     assert str(relative) in out, out
+    # Read from the current directory, never from --root: run from the
+    # record's own directory, the bare file name agrees.
+    argv = ["recheck", record.name, "--root", str(root), "--ui", "plain", "--no-color"]
+    code, out = _spawn(argv, record.parent, None)
+    assert code == 0, out
+    assert "The recheck agrees with the record." in out, out
