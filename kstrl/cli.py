@@ -5488,26 +5488,23 @@ def recheck_cmd(record: Path, root: Path | None, ui: str, no_color: bool) -> Non
 
     RECORD is a record.json that `ks factory --acceptance` wrote, outside
     the repository, under <control dir>/runs/<run>/acceptance/<component>/
-    attempt-<n>/. A relative RECORD that is not found from here is looked
-    for under <control dir>/runs/, so <run>/acceptance/<component>/
-    attempt-<n>/record.json works. Every file
-    beside it must match its index.json and the saved checks must be the
-    record's plan; they then run again at the recorded head commit, in the
-    replay of the [stack] the record ran under. Exit 0 means every verdict
+    attempt-<n>/. A relative RECORD is read from the current directory.
+    `ks factory` prints each record's absolute path on a `- record:` line
+    under its Acceptance lines. Every file beside it must match its
+    index.json and the saved checks must be the record's plan; they then
+    run again at the recorded head commit, in the replay of the [stack]
+    the record ran under. Exit 0 means every verdict
     agrees with the record, 1 that one does not, and 2 that the record
     could not be rechecked, with the reason above it.
     """
     from kstrl.factory import FactoryConfig
     from kstrl.recheck import recheck
-    from kstrl.statedir import control_dir
     from kstrl.verify import VerifyConfig
 
     root_dir = (root or Path.cwd()).resolve()
     ui_impl = _autonomy_ui(ui, no_color)
     config = FactoryConfig.load(root_dir)
     config.verify_config = VerifyConfig.load(root_dir)
-    if not record.is_absolute() and not record.exists():
-        record = control_dir(root_dir) / "runs" / record
     refused, lines, agrees = recheck(root_dir, record.resolve(), config, ui_impl)
     if _report_preflight(ui_impl, "the acceptance record cannot be rechecked", refused):
         sys.exit(2)

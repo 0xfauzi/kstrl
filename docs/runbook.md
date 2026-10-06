@@ -148,8 +148,10 @@ run, or a component built on unmerged dependency code, keeps no commit,
 so its halt cannot be merged over.
 
 `ks recheck <record.json>` runs a head record's saved checks again
-(#700 slice 5). A relative path that is not found from the current
-directory is looked for under the control directory's `runs/`. It refuses (exit 2), naming the file, when a file beside
+(#700 slice 5). The path is read from the current directory, and
+`ks factory` prints the absolute path of each head record on a
+`- record:` line under that component's Acceptance lines. It refuses
+(exit 2), naming the file, when the file is not found, when a file beside
 the record does not match its `index.json`, when the saved checks are
 not the record's plan, or when the `[stack]` in kstrl.toml is not the
 one the record ran under. Otherwise the checks run again at the

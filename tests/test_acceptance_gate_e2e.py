@@ -401,8 +401,10 @@ def test_a_held_out_check_leaves_nothing_in_the_repository_and_recheck_finds_it(
     argv must not be in any file there (#700 slice 6, owner instruction
     2026-10-06). After a gated run that halts on the held-out check, no
     file of the repository outside .git holds its random argv, and
-    `ks recheck` of the record kept under the control directory agrees,
-    given as an absolute path and as a path relative to that directory."""
+    `ks recheck` of the record kept under the control directory agrees
+    when given the absolute path the factory printed, and refuses (exit
+    2), naming the path, one relative to that directory: a RECORD is
+    read from the current directory only."""
     root = _greeting_repo(tmp_path)
     hidden = f"Grace{secrets.token_hex(4)}"
     plan = _plan(
@@ -426,7 +428,14 @@ def test_a_held_out_check_leaves_nothing_in_the_repository_and_recheck_finds_it(
     assert holders == [], holders
     (record,) = sorted(_evidence_root(root).glob(f"*/acceptance/{COMP}/attempt-*/record.json"))
     assert hidden in (record.parent / "checks" / "plan.json").read_text(encoding="utf-8")
-    for given in (record, record.relative_to(_evidence_root(root))):
-        code, out = _recheck(root, given)
-        assert code == 0, out
-        assert "The recheck agrees with the record." in out, out
+    (printed,) = [
+        line.removeprefix("- record: ") for line in run.out.splitlines() if "- record: " in line
+    ]
+    assert Path(printed.strip()).resolve() == record.resolve(), run.out
+    code, out = _recheck(root, Path(printed.strip()))
+    assert code == 0, out
+    assert "The recheck agrees with the record." in out, out
+    relative = record.relative_to(_evidence_root(root))
+    code, out = _recheck(root, relative)
+    assert code == 2, out
+    assert str(relative) in out, out

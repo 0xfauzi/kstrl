@@ -683,6 +683,7 @@ def judge_head(
         _write_evidence(evidence, plan, document)
     except OSError as exc:
         return _unwritten(comp_id, evidence, exc)
+    lines.append(f"- record: {(evidence / RECORD_FILE).resolve()}")
     tails = {check: list(stages[-1].tail) for (_, check), stages in runs.items() if stages}
     unreplayed = bool(record.error) or record.failed == REPLAY_BOUNDARY_REFUSED
     return HeadOutcome(
