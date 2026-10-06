@@ -28,7 +28,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -36,11 +37,14 @@ from kstrl import git
 from kstrl.acceptance import (
     ACCEPTANCE_DIR,
     DESIGNER_FILE,
+    PASS,
     PLAN_FILE,
     TREE_ENV,
+    ComponentPlan,
     PinnedPlan,
     pin_plan,
     plan_errors,
+    verdict_of,
     write_dir,
 )
 from kstrl.agents import get_agent
@@ -65,6 +69,7 @@ if TYPE_CHECKING:
     from kstrl.manifest import Component, Manifest
     from kstrl.pipeline import ComponentPipeline
     from kstrl.stack import Stack
+    from kstrl.ui.base import UI
 
 #: How many times one component's designer may be asked.
 DESIGN_ASKS = REVIEW_ASKS
@@ -77,6 +82,10 @@ BOTH_PLANS = (
     "--acceptance names an operator's plan and --design-acceptance asks a model for one; "
     "pass one of them. Nothing was run."
 )
+
+#: What the base reading says of a component when the base removed every
+#: check the verification designer wrote for it (:func:`kept_on_base`).
+NO_DESIGNED_CHECK = "no designed acceptance check"
 
 #: H3 and H2: the verification designer's role prompt. Its calibration
 #: roles are ``acceptance`` and ``acceptance_clean``, scored by execution on
@@ -339,3 +348,35 @@ def _design_one(
             _remove_temp_worktree(worktree, root, pipeline.ui, DESIGNER_ROLE)
         except ContractCleanupError as exc:
             pipeline.ui.warn(f"  {exc}")
+
+
+def kept_on_base(
+    plan: PinnedPlan, exits: Mapping[str, Mapping[str, int | None]], ui: UI
+) -> tuple[dict[str, ComponentPlan], dict[str, str]]:
+    """The checks each head runs, by component, and :data:`NO_DESIGNED_CHECK`
+    for each component left with none. A check the designer wrote with
+    ``onBase: fails`` that passes on the base cannot tell the change from
+    no change, so it is removed and said (owner decision of 2026-10-06 on
+    #700). An operator's plan is kept whole: the base refuses such a check
+    of an operator, who must know that it is weak."""
+    if not plan.designed:
+        return dict(plan.components), {}
+    kept: dict[str, ComponentPlan] = {}
+    said: dict[str, str] = {}
+    for comp, part in plan.components.items():
+        checks = []
+        for check in part.checks:
+            code = exits[comp][check.id]
+            if check.on_base == "fails" and verdict_of(code) == PASS:
+                ui.warn(
+                    f"  {comp}: the designed check {check.id} passes on the base (exit {code}), "
+                    "so it cannot tell the change from no change: it is removed"
+                )
+            else:
+                checks.append(check)
+        if checks:
+            kept[comp] = replace(part, checks=tuple(checks))
+        else:
+            said[comp] = NO_DESIGNED_CHECK
+            ui.warn(f"  {comp}: {NO_DESIGNED_CHECK}")
+    return kept, said

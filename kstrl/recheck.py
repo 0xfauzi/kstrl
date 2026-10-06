@@ -13,6 +13,9 @@ recheck takes none of it on trust:
    in kstrl.toml to its ``stackDigest``;
 3. the checks run again from that copy at the recorded head commit,
    ``headRuns`` times each, through the replay the factory ran them in.
+   A check the record lists as ``removed`` does not run again: only a
+   designed plan may list one, and the recheck takes that list from the
+   record, so it does not show that the check passed on the base.
 
 A check agrees when the verdict the record states, the verdict of the
 exits it records and the verdict of the new exits are the same. The
@@ -77,6 +80,7 @@ def recheck(root: Path, record_path: Path, config: FactoryConfig, ui: UI) -> Sai
         stated = {
             row["id"]: (row["verdict"], head_verdict(row["headExits"])) for row in record["checks"]
         }
+        removed = [str(check_id) for check_id in record.get("removed", [])]
         if not isinstance(head, str) or not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", head):
             raise ValueError(f"headSha {head!r} is not a full commit id")
     except (KeyError, TypeError, ValueError, AttributeError) as exc:
@@ -84,11 +88,11 @@ def recheck(root: Path, record_path: Path, config: FactoryConfig, ui: UI) -> Sai
     plan, errors = _saved_plan(evidence, plan_id, comp)
     stack, stack_errors = _stack(config.project_stack, record.get("stackDigest"))
     errors += stack_errors
-    if plan is not None and set(stated) != {check.id for check in plan.components[comp].checks}:
+    if plan is not None and not _names_its_checks(plan, comp, list(stated), removed):
         errors.append(f"{record_path} does not name the checks of its plan's {comp}")
     if errors or plan is None or stack is None:
         return errors, [], False
-    replay, exits = _run_again(root, config, ui, stack, plan, comp, head, runs)
+    replay, exits = _run_again(root, config, ui, stack, plan, comp, head, runs, removed)
     if replay.error or replay.failed == REPLAY_BOUNDARY_REFUSED:
         return (
             [f"the checks did not run at {head[:12]}: {replay.error or replay.detail}"],
@@ -162,6 +166,14 @@ def _saved_plan(
     return PinnedPlan(found, checks, parsed, checks, (checks / DESIGNER_FILE).is_file()), []
 
 
+def _names_its_checks(plan: PinnedPlan, comp: str, ran: list[str], removed: list[str]) -> bool:
+    """Whether the record names each check of its plan's ``comp`` once: as
+    run on the head, or as removed on the base, which only a plan the
+    verification designer wrote does (:func:`kstrl.acceptance_design.kept_on_base`)."""
+    planned = sorted(check.id for check in plan.components[comp].checks)
+    return sorted(ran + removed) == planned and (plan.designed or not removed)
+
+
 def _stack(stack: Stack | None, recorded: object) -> tuple[Stack | None, list[str]]:
     """The ``[stack]`` to replay under, when it is the one the record ran under."""
     if stack is None:
@@ -183,10 +195,12 @@ def _run_again(
     comp: str,
     head: str,
     runs: int,
+    removed: list[str],
 ) -> tuple[Replay, dict[str, list[int | None]]]:
-    """Run ``comp``'s checks ``runs`` times each at ``head``, in the replay
-    the factory ran them in, logging nothing: each check's exits, in order."""
-    checks = plan.components[comp].checks
+    """Run ``comp``'s checks but the ones the base removed ``runs`` times
+    each at ``head``, in the replay the factory ran them in, logging
+    nothing: each check's exits, in order."""
+    checks = [check for check in plan.components[comp].checks if check.id not in removed]
     found: dict[tuple[str, str], list[Stage]] = {}
     setup_limit, check_limit = limits(config)
     replay = replay_stack(

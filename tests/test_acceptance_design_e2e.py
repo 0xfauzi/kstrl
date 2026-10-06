@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from kstrl.acceptance import DESIGNER_FILE, HEAD_RUNS
-from kstrl.acceptance_design import ACCEPTANCE_PROMPT_VERSION
+from kstrl.acceptance_design import ACCEPTANCE_PROMPT_VERSION, NO_DESIGNED_CHECK
 from kstrl.decompose import spec_digest
 from kstrl.statedir import control_dir
 from tests.helpers.executables import write_executable
@@ -35,9 +35,11 @@ from tests.helpers.gitrepo import git_in
 from tests.test_acceptance_e2e import (
     COMP,
     SPECIAL_CASED,
+    _evidence_root,
     _greeting_repo,
     _head_record,
     _manifest,
+    _recheck,
     _row,
     _with_greet,
 )
@@ -50,6 +52,13 @@ DESIGNER_MARK = "You are the verification designer"
 
 REFUSED_DESIGN = "Refusing to run: the verification designer wrote no usable plan"
 REFUSED_BASE = "Refusing to run: the acceptance checks do not hold on the base"
+
+#: What the run prints for a designed check the base removed (owner
+#: decision of 2026-10-06 on #700).
+REMOVED = (
+    f"{COMP}: the designed check vacuous passes on the base (exit 0), so it cannot tell "
+    "the change from no change: it is removed"
+)
 
 
 @dataclass(frozen=True)
@@ -163,6 +172,16 @@ def _designed_plans(root: Path) -> list[Path]:
     return sorted((control_dir(root) / "acceptance" / "designed").glob("*"))
 
 
+def _base_record(root: Path) -> dict[str, Any]:
+    (path,) = sorted(_evidence_root(root).glob("*/acceptance/base.json"))
+    document: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+    return document
+
+
+def _head_records(root: Path) -> list[Path]:
+    return sorted(_evidence_root(root).glob(f"*/acceptance/{COMP}/attempt-*/record.json"))
+
+
 @runs_a_stack
 def test_the_designer_writes_checks_that_run_record_only_on_the_head(tmp_path: Path) -> None:
     """The designer is asked once, in a checkout of the base, with the
@@ -255,13 +274,14 @@ def test_each_component_gets_its_own_designer_in_its_own_checkout(tmp_path: Path
     """Owner decision 1(c): one designer per component, each in a fresh
     context. Two components: two asks, each in its own throwaway checkout
     of the base, each prompt naming its own component and not the other.
-    Both plans are vacuous, so the base refuses the run before any engineer."""
+    Both plans name a check that cannot run on the base, so the base refuses
+    the run before any engineer."""
     root = _repo(tmp_path, _stack({"tests": "true"}), comps=("greeter", "farewell"))
     _with_greet(root)
     base = subprocess.run(
         ["git", "-C", str(root), "rev-parse", "HEAD"], capture_output=True, text=True, check=True
     ).stdout.strip()
-    reply = _entry([_check("vacuous", ["true"])])
+    reply = _entry([_check("missing", ["kstrl-no-such-check-7c1d"])])
 
     run = _design(tmp_path, root, [reply])
 
@@ -282,15 +302,17 @@ def test_each_component_gets_its_own_designer_in_its_own_checkout(tmp_path: Path
 
 
 @runs_a_stack
-def test_a_vacuous_designed_check_refuses_and_the_next_run_asks_nothing_again(
+def test_a_designed_check_that_cannot_run_on_the_base_refuses_and_the_next_run_asks_nothing_again(
     tmp_path: Path,
 ) -> None:
-    """A designed check that passes on the base it says fails on refuses
-    the run before the engineer, naming the designed plan to delete to ask
-    again. A second run of the same plan uses the same plan, so the
-    designer is not asked again and the run is refused the same way."""
+    """A designed check that cannot run on the base, or that fails on the
+    base it says passes on, refuses the run before the engineer, as an
+    operator's does, naming the designed plan to delete to ask again. A
+    second run of the same plan uses the same plan, so the designer is not
+    asked again and the run is refused the same way."""
     root = _greeting_repo(tmp_path)
-    reply = _entry([_check("vacuous", ["true"])])
+    keeps = {**_check("keeps-ada", _greets("Ada")), "onBase": "passes"}
+    reply = _entry([keeps, _check("missing", ["kstrl-no-such-check-7c1d"])])
 
     first = _design(tmp_path, root, [reply])
     second = _design(tmp_path, root, [reply])
@@ -299,10 +321,79 @@ def test_a_vacuous_designed_check_refuses_and_the_next_run_asks_nothing_again(
     for run in (first, second):
         assert run.code == 2, run.out
         assert REFUSED_BASE in run.out, run.out
-        assert f"{COMP}: the check vacuous passes on the base" in run.out, run.out
+        assert f"{COMP}: the check missing could not run on the base (exit 127)" in run.out
+        assert f"{COMP}: the check keeps-ada fails on the base (exit 1); onBase: passes" in run.out
         assert f"Delete {designed} and run again" in run.out, run.out
         assert run.engineer_calls == 0, run.out
     assert len(second.designer) == 1, second.out
+
+
+@runs_a_stack
+def test_a_designed_check_that_passes_on_the_base_is_removed_and_the_others_run(
+    tmp_path: Path,
+) -> None:
+    """Owner decision of 2026-10-06 on #700: a designed check that passes on
+    the base it says fails on is removed, not a refusal of the plan. The
+    run output and the base record name it with its base exit, the other
+    checks run on the head, and the head record lists the removed check,
+    which `ks recheck` accepts without running it. A check that passes on
+    the base it says passes on is kept."""
+    root = _greeting_repo(tmp_path)
+    steady = {**_check("base-ok", ["true"]), "onBase": "passes"}
+    reply = _entry([_check("vacuous", ["true"]), _check("greets-ada", _greets("Ada")), steady])
+
+    run = _design(tmp_path, root, [reply])
+
+    assert run.code == 0, run.out
+    assert REFUSED_BASE not in run.out, run.out
+    assert REMOVED in run.out, run.out
+    assert NO_DESIGNED_CHECK not in run.out, run.out
+    assert run.engineer_calls == 1, run.out
+    base = _base_record(root)
+    entry = base["components"][COMP]
+    assert entry["base"] == "", base
+    rows = [(row["id"], row["exit"], row["removed"]) for row in entry["checks"]]
+    assert rows == [("vacuous", 0, True), ("greets-ada", 1, False), ("base-ok", 0, False)], base
+    assert base["refused"] == [], base
+    (path,) = _head_records(root)
+    record = _head_record(root)
+    assert [row["id"] for row in record["checks"]] == ["greets-ada", "base-ok"], record
+    assert _row(record, "greets-ada")["verdict"] == "pass", record
+    assert record["removed"] == ["vacuous"], record
+    assert sorted(log.name for log in (path.parent / "logs").iterdir()) == sorted(
+        f"{check}-{run}.log"
+        for check in ("base-ok", "greets-ada")
+        for run in range(1, HEAD_RUNS + 1)
+    ), record
+    code, out = _recheck(root, path)
+    assert code == 0, out
+    assert "The recheck agrees with the record." in out, out
+    assert "vacuous" not in out, out
+
+
+@runs_a_stack
+def test_a_designed_plan_whose_only_check_passes_on_the_base_has_no_designed_check(
+    tmp_path: Path,
+) -> None:
+    """A component whose every designed check passes on the base keeps no
+    check: the base record and the run output say it has no designed
+    acceptance check, no check runs on its head, and the run completes."""
+    root = _greeting_repo(tmp_path)
+    reply = _entry([_check("vacuous", ["true"])])
+
+    run = _design(tmp_path, root, [reply])
+
+    assert run.code == 0, run.out
+    assert REMOVED in run.out, run.out
+    assert f"{COMP}: {NO_DESIGNED_CHECK}" in run.out, run.out
+    assert run.engineer_calls == 1, run.out
+    base = _base_record(root)
+    entry = base["components"][COMP]
+    assert entry["base"] == NO_DESIGNED_CHECK, base
+    assert [(row["id"], row["removed"]) for row in entry["checks"]] == [("vacuous", True)], base
+    assert base["refused"] == [], base
+    assert _head_records(root) == [], run.out
+    assert f"Acceptance for {COMP}" not in run.out, run.out
 
 
 @runs_a_stack
