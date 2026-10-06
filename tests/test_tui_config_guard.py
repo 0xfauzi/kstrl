@@ -100,14 +100,8 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     # `_STEER_HANDLERS` - the closed-by-construction guard's unreachable
     # branch (A3), which is operator-unreachable but still counted.
     "intake_github.py": 2,
-    # One bare raise at import (#630): LICENSE_SOURCES must name every
-    # ecosystem kstrl.lockfiles reads.
-    "licensing.py": 1,
     # OwnerAnswerError (#639 slice 4).
     "owner_answers.py": 1,
-    # One bare raise at import (#630): LOCKFILE_READERS and uv.lock must be
-    # every lockfile LOCKFILE_MANIFESTS names.
-    "policy.py": 1,
     "pr.py": 4,  # no subclass: four bare raises
     # One bare raise, plus four from the R10.7 open-PR bound (#228), all
     # in count_open_kstrl_prs: a failed gh result, the two bad-payload

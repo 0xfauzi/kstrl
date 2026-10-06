@@ -291,9 +291,14 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
         "f6d5a5787e122487aa2fe942eb096d958d46bdb90195ad77df082f94beedeb0f",
         "2.1.0",
     ),
+    # 2.1.0 (#696 slice 9): MINOR. The schema gains one category,
+    # "new_dependency": every third-party package a change adds, one finding
+    # each at "low" unless a stated risk raises it, and never omitted. It
+    # replaces the [policy] dependency and license gates, which read one
+    # ecosystem's lockfiles and one license registry.
     "SECURITY_PROMPT": (
-        "f2f6b87779fc3e203de9689f4c74cb5b17ba361be7195223c10c1376eb2b6a84",
-        "2.0.0",
+        "02511bcc6d3d8542ab2543362836b1decf639295861b84aa4be06d573151fc2b",
+        "2.1.0",
     ),
     "DISTILL_PROMPT": (
         "8040021a09d97598434d08c766495a4185df70b632e3ff4e5e1086b2e56ab30c",

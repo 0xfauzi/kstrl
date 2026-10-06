@@ -222,6 +222,55 @@ class TestRunSecurityReview:
         ]
         assert result.exhaustively_searched is True
 
+    def test_a_new_dependency_is_listed_in_the_pr_body_and_does_not_fail_hard_mode(
+        self, tmp_path: Path
+    ) -> None:
+        """#696 slice 9: kstrl reads no lockfile, so the security reviewer
+        is asked to list every dependency a change adds, the listing is
+        kept and reaches the PR body, and a listing at "low" does not
+        fail hard mode at the default threshold."""
+        repo = self._setup_repo(tmp_path)
+        output = json.dumps(
+            {
+                "findings": [
+                    {
+                        "category": "new_dependency",
+                        "severity": "low",
+                        "location": "package.json:6",
+                        "explanation": "adds left-pad 1.3.0, license WTFPL",
+                    }
+                ],
+                "exhaustively_searched": True,
+            }
+        )
+        prompts: list[str] = []
+
+        class _Recording(MockSecurityAgent):
+            def run(
+                self,
+                prompt: str,
+                cwd: Path | None = None,
+                timeout: float | None = None,
+            ) -> Iterator[str]:
+                prompts.append(prompt)
+                yield from super().run(prompt, cwd, timeout)
+
+        agent = _Recording(with_observed_diffstat(output, repo))
+        config = SecurityConfig(mode=SecurityMode.HARD.value, fail_threshold="high")
+        result = run_security_review(
+            agent,
+            repo.path / "prd.json",
+            repo.path,
+            repo.base_branch,
+            config,
+            PlainUI(no_color=True),
+        )
+        assert len(prompts) == 1 and '"new_dependency"' in prompts[0]
+        assert result.passed is True
+        assert result.infrastructure_error is False
+        assert [(f.category, f.severity) for f in result.findings] == [("new_dependency", "low")]
+        assert "- [low] **new_dependency** at `package.json:6`" in result.as_pr_body_section()
+
     def _boom_agent(self) -> object:
         class _Boom:
             @property

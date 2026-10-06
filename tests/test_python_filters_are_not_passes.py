@@ -118,24 +118,6 @@ EXPECTED_SELECTOR_SITES: dict[str, tuple[int, str]] = {
         "the complement: non-Python test files, which check_test_adequacy reports as "
         "NotMeasured no_target or names in its row message",
     ),
-    "lockfiles.py: parse_new_dependencies": (
-        1,
-        "empty means no new uv.lock package; read_new_dependencies reads every other "
-        "changed lockfile from its blobs or reports it unread with its reason (#630)",
-    ),
-    "lockfiles.py: uv_lock_dependencies": (
-        1,
-        "the lockfile label of each uv.lock NewDependency; selects nothing",
-    ),
-    "policy.py: <module>": (
-        2,
-        "LOCKFILE_MANIFESTS' uv.lock key, and the import check that LOCKFILE_READERS "
-        "plus uv.lock is every lockfile; selects nothing",
-    ),
-    "policy.py: evaluate_policy": (
-        1,
-        "the location label of a deps_allow_new violation; selects nothing",
-    ),
     "verify.py: _changed_non_test_python": (
         1,
         "empty makes both callers (mutation and dead-code scan) return NotMeasured no_target",

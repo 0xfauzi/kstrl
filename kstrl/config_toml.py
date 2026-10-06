@@ -208,11 +208,8 @@ def load_toml_document(path: Path) -> dict[str, Any]:
 def parse_toml_bytes(raw: bytes, label: str) -> dict[str, Any]:
     """Parse TOML bytes already read, naming ``label`` in every refusal.
 
-    The one ``tomllib`` parse in this module, hoisted out of
-    :func:`load_toml_document` so a lockfile read from a git blob
-    (``kstrl.lockfiles``, #630) is parsed under the same ladder rather
-    than a second one. Takes bytes, so the caller has done all the I/O
-    before the guard; see :func:`load_toml_document` for why the clauses
+    The one ``tomllib`` parse in this module. Takes bytes, so the caller
+    has done all the I/O before the guard; see :func:`load_toml_document` for why the clauses
     are these, in this order.
     """
     try:

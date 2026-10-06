@@ -46,8 +46,7 @@ PY_BASE = {
     "src/a.py": "A = 1\n",
 }
 
-#: ``license_use_network = false`` so the uv control never reaches PyPI.
-POLICY = "[policy]\nenabled = true\nlicense_use_network = false\n"
+POLICY = "[policy]\nenabled = true\n"
 ADEQUACY = "[adequacy]\nenabled = true\n"
 
 
@@ -92,8 +91,8 @@ def _repo(
     return root
 
 
-def _check_json(root: Path) -> dict[str, Any]:
-    result = CliRunner().invoke(cli, ["check", "--root", str(root), "--json"])
+def _check_json(root: Path, *extra: str) -> dict[str, Any]:
+    result = CliRunner().invoke(cli, ["check", "--root", str(root), "--json", *extra])
     assert result.exit_code in (0, 1), result.output
     document: dict[str, Any] = json.loads(result.stdout)
     return document
@@ -220,75 +219,58 @@ def test_dead_code_ruff_on_a_tree_with_no_python_is_not_measured(tmp_path: Path)
     ]
 
 
-# --- policy_envelope: a lockfile kstrl cannot parse is not "no new deps" ---
+# --- policy_envelope and diff_scope: kstrl reads no lockfile (#696 slice 9) ---
+
+CARGO_LOCK = (
+    '[[package]]\nname = "serde"\nversion = "1.0.0"\n'
+    'source = "registry+https://github.com/rust-lang/crates.io-index"\n'
+)
 
 
-def _unread(lockfile: str, reason: str) -> list[str]:
-    """The two rules the default ``[policy]`` could not check, and why (#630)."""
-    return [
-        f"new dependencies in {lockfile} were not measured: {reason}, "
-        f"so {rule} could not be checked"
-        for rule in ("deps_allow_new", "license_unresolved")
-    ]
+@pytest.mark.parametrize(
+    ("base", "lockfile", "text"),
+    [
+        (RUST_BASE, "Cargo.lock", CARGO_LOCK),
+        (
+            TS_BASE,
+            "package-lock.json",
+            '{\n  "packages": {\n    "node_modules/left-pad": {"version": "1.3.0"}\n  }\n}\n',
+        ),
+        (PY_BASE, "uv.lock", 'version = 1\n\n[[package]]\nname = "six"\nversion = "1.17.0"\n'),
+        (TS_BASE, "pnpm-lock.yaml", "lockfileVersion: '9.0'\n"),
+    ],
+    ids=["cargo", "npm", "uv", "pnpm"],
+)
+def test_a_new_dependency_in_any_lockfile_is_not_a_policy_finding(
+    tmp_path: Path, base: dict[str, str | None], lockfile: str, text: str
+) -> None:
+    """kstrl reads no lockfile, of any ecosystem: a lockfile that names a new
+    package is a changed file like any other, and the security reviewer, not
+    the envelope, lists the dependency. Before slice 9 each of these four
+    failed the row, naming the package or calling the lockfile unread."""
+    root = _repo(tmp_path, base, {lockfile: text}, POLICY)
+
+    row = _row(_check_json(root), "policy_envelope")
+
+    assert row["passed"] is True, row
+    assert row["details"] == [], row
+    assert row["message"].startswith("policy envelope satisfied (1 files, "), row
 
 
-def test_a_new_npm_dependency_is_not_reported_as_satisfied_under_deps_allow_new_false(
+def test_a_lockfile_written_beside_an_unchanged_manifest_is_outside_the_allowed_paths(
     tmp_path: Path,
 ) -> None:
-    branch = {
-        "package.json": (
-            '{"name": "p", "version": "0.1.0", "dependencies": {"left-pad": "1.3.0"}}\n'
-        ),
-        "package-lock.json": (
-            '{\n  "packages": {\n    "node_modules/left-pad": {"version": "1.3.0"}\n  }\n}\n'
-        ),
-    }
-    root = _repo(tmp_path, TS_BASE, branch, POLICY)
+    """kstrl holds no table of which file a manifest's toolchain writes, so a
+    lockfile is in scope only when the allowed paths cover it. Before slice 9
+    a Cargo.lock new beside a Cargo.toml the change left alone was cleared."""
+    branch = {"src/lib.rs": "pub fn a() -> i32 {\n    2\n}\n", "Cargo.lock": CARGO_LOCK}
+    root = _repo(tmp_path, RUST_BASE, branch)
 
-    row = _row(_check_json(root), "policy_envelope")
+    row = _row(_check_json(root, "--allowed-path", "src/"), "diff_scope")
 
-    assert row["passed"] is False
-    assert "satisfied" not in row["message"]
-    assert row["details"] == _unread(
-        "package-lock.json",
-        "the HEAD copy could not be read (LockfileShapeError: lockfileVersion None is not "
-        "read; kstrl reads 2 and 3)",
-    )
-
-
-def test_a_new_cargo_dependency_is_not_reported_as_satisfied_under_deps_allow_new_false(
-    tmp_path: Path,
-) -> None:
-    """#630 reads Cargo.lock, so the crate is named rather than unmeasured."""
-    branch = {
-        "Cargo.lock": (
-            '[[package]]\nname = "serde"\nversion = "1.0.0"\n'
-            'source = "registry+https://github.com/rust-lang/crates.io-index"\n'
-        )
-    }
-    root = _repo(tmp_path, RUST_BASE, branch, POLICY)
-
-    row = _row(_check_json(root), "policy_envelope")
-
-    assert row["passed"] is False
-    assert "satisfied" not in row["message"]
-    assert row["details"] == [
-        "New dependencies added to Cargo.lock while deps_allow_new=false: serde",
-        "license could not be resolved for serde 1.0.0 in Cargo.lock (kstrl has no license "
-        "source for cargo packages; nothing was consulted)",
-    ]
-
-
-def test_a_new_uv_dependency_still_violates_deps_allow_new_false(tmp_path: Path) -> None:
-    """The control: ``uv.lock`` is still parsed and names the package."""
-    branch = {"uv.lock": 'version = 1\n\n[[package]]\nname = "six"\nversion = "1.17.0"\n'}
-    root = _repo(tmp_path, PY_BASE, branch, POLICY)
-
-    row = _row(_check_json(root), "policy_envelope")
-
-    assert row["passed"] is False
-    assert "New dependencies added while deps_allow_new=false: six" in row["details"]
-    assert not any("were not measured" in d for d in row["details"])
+    assert row["passed"] is False, row
+    assert any("Cargo.lock" in detail for detail in row["details"]), row
+    assert not any("src/lib.rs" in detail for detail in row["details"]), row
 
 
 def test_a_deleted_python_test_is_still_reported_beside_a_new_typescript_test(
@@ -305,23 +287,6 @@ def test_a_deleted_python_test_is_still_reported_beside_a_new_typescript_test(
     row = _row(document, "test_adequacy")
     assert row["message"] == "2 test-adequacy finding(s) [advisory]; not read: src/bulk.test.ts"
     assert _gaps(document, "test_adequacy") == []
-
-
-def test_an_unread_lockfile_is_advisory_when_license_unresolved_is_advisory(
-    tmp_path: Path,
-) -> None:
-    branch = {"pnpm-lock.yaml": "lockfileVersion: '9.0'\n"}
-    config = POLICY + 'license_unresolved = "advisory"\n'
-    root = _repo(tmp_path, TS_BASE, branch, config)
-
-    row = _row(_check_json(root), "policy_envelope")
-
-    assert row["passed"] is True
-    assert row["message"].endswith("; 2 advisory(ies)")
-    reason = "kstrl has no reader for pnpm-lock.yaml"
-    assert row["details"] == [
-        d + "; recorded as advisory" for d in _unread("pnpm-lock.yaml", reason)
-    ]
 
 
 @pytest.mark.skipif(shutil.which("ruff") is None, reason="needs ruff on PATH")

@@ -151,7 +151,7 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_git_identity_helper.py": 5,
     # #423's `_repo_with_tricky_names` fixture, through
     # `tests.helpers.gitrepo.set_identity`, which this row declares.
-    "tests/test_git_path_spelling.py": 6,
+    "tests/test_git_path_spelling.py": 5,
     "tests/test_harness_path_scope.py": 3,
     "tests/test_inbox.py": 1,
     "tests/test_inbox_resolves_on_completion.py": 1,
@@ -188,7 +188,6 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # #544: three `git commit` sites (`_seed`, `_commit_all` and the
     # deletion test), every one into a repository `_seed` put through
     # `tests.helpers.gitrepo.set_identity`.
-    "tests/test_lockfile_scope.py": 3,
     "tests/test_loop.py": 2,
     "tests/test_notify.py": 1,
     # #152 simplify pass: the five real commits this file used to make
@@ -209,7 +208,6 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # #630: test_the_base_document_is_the_merge_base_the_diff_measures commits
     # onto main in a repository test_check_non_python_diff._repo put through
     # tests.helpers.gitrepo.set_identity.
-    "tests/test_policy_lockfiles_e2e.py": 1,
     "tests/test_pr_outcomes.py": 3,
     # #678: `_repo`'s one base commit, into a repository it has just put
     # through `tests.helpers.gitrepo.set_identity`.

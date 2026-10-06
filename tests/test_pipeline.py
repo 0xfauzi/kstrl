@@ -827,10 +827,7 @@ class TestDivergenceDetector:
             if numstat_error:
                 raise git.GitDiffError("no such ref")
             lines = sizes[attempt["n"] - 1]
-            # The lockfile row must never reach the count: policy's size
-            # caps exclude it, and the detector counts through the same
-            # helper so a dependency bump cannot supply the growth.
-            return [(lines, 0, "tests/a.py"), (0, 0, "src/b.py"), (9999, 0, "uv.lock")]
+            return [(lines, 0, "tests/a.py"), (0, 0, "src/b.py")]
 
         def _run_review(*args: Any, **kwargs: Any) -> ReviewResult:
             attempt["n"] += 1

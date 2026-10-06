@@ -3935,12 +3935,9 @@ class ComponentPipeline:
             self.ui.warn(f"  Divergence detector could not measure {comp.id}: {exc}")
             return None
         # R8.1's size caps and this detector must agree about how large a
-        # change is, so both count through the same helper - which also
-        # brings its exclusion of machine-generated lockfiles, without
-        # which a dependency bump could supply the size half of a trip.
-        # The result is lines ADDED PLUS REMOVED, so it is churn rather
-        # than file growth; see the module docstring for why that is what
-        # the predicate wants.
+        # change is, so both count through the same helper. The result is
+        # lines ADDED PLUS REMOVED, so it is churn rather than file growth;
+        # see the module docstring for why that is what the predicate wants.
         files_changed, lines_changed = count_diff_size(numstat)
         readings = self.review_readings.setdefault(comp.id, [])
         readings.append(

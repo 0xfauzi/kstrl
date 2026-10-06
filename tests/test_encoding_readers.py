@@ -132,7 +132,6 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     "knowledge.py": 3,
     # #508: the scorer reads the delivered prompt file.
     "learning_fixture.py": 1,
-    "licensing.py": 1,
     "loop.py": 2,
     "manifest.py": 1,
     "observability.py": 1,
@@ -269,7 +268,6 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "knowledge.py prd_path.read_text(encoding='utf-8')",
     "knowledge.py target.read_text(encoding='utf-8')",
     "learning_fixture.py path.read_text(encoding='utf-8')",
-    "licensing.py Path(match).read_text(encoding='utf-8', errors='replace')",
     "loop.py claude_md_path.read_text(encoding='utf-8')",
     "loop.py config.prompt_file.read_text(encoding='utf-8')",
     "manifest.py open(path, encoding='utf-8')",
