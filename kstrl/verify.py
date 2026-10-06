@@ -12,7 +12,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, Protocol
 
-from kstrl import git, licensing
+from kstrl import git
 from kstrl.config_numbers import check_numbers
 
 if TYPE_CHECKING:
@@ -22,15 +22,12 @@ from kstrl.agents.spawn_record import new_nonce
 from kstrl.config import component_progress_path
 from kstrl.failure_excerpt import failure_excerpt
 from kstrl.findings import Finding, finding_waiver
-from kstrl.guards import path_is_allowed, without_entitled_lockfiles
-from kstrl.lockfiles import LOCKFILE_READERS, LockfileDocument, NewDependency
+from kstrl.guards import path_is_allowed
 from kstrl.policy import (
     DEFAULT_SECRET_PATTERNS,
     PolicyConfig,
     PolicyConfigError,
-    PolicyViolation,
     _scan_secrets,
-    classify_license,
     evaluate_policy,
     parse_added_lines,
 )
@@ -1606,24 +1603,13 @@ def check_diff_scope(
         # get_diff_names resolved it; saying "main" while measuring
         # origin/main sends the engineer to revert against the wrong tree.
         base_label = git.resolve_base_ref(base_branch, cwd)
-        # #544: a lockfile is judged through its manifest, from the merge
-        # base the three-dot diff above measured against. Inside the try
-        # because it may read that commit's tree.
-        violations = without_entitled_lockfiles(
-            [f for f in changed if not path_is_allowed(f, effective)],
-            allowed_paths,
-            changed,
-            git.merge_base_ref(base_label, cwd) or None,
-            cwd,
-        )
+        violations = [f for f in changed if not path_is_allowed(f, effective)]
     except git.GitDiffError as exc:
         # The lenient reader raises for exactly one family: a diff git
         # produced and this process cannot decode (#416). Everything else it
         # still answers with [], which the vacuous-pass branch below handles.
         # Failing closed here rather than falling into that branch is the
-        # point: an undecodable diff is not an empty one. #544 routes a
-        # failed read of the merge base's tree here too: the lockfile rule
-        # could not prove anything in scope, so it cleared nothing.
+        # point: an undecodable diff is not an empty one.
         return CheckResult(
             name="diff_scope",
             passed=False,
@@ -1840,8 +1826,7 @@ def check_policy_envelope(
 ) -> CheckResult:
     """R8.1: enforce the declarative ``[policy]`` envelope from artifacts.
 
-    Reads the git diff and the changed lockfiles' blobs (#630), never
-    agent self-report.
+    Reads the git diff, never agent self-report.
     Fails CLOSED on any infrastructure error (diff unreadable, malformed
     policy) and on any envelope violation. Enforcement-machinery edits
     are a non-overridable halt. Violation details are packed as
@@ -1881,11 +1866,8 @@ def check_policy_envelope(
             measured=False,
         )
 
-    documents = _lockfile_documents(changed, base_branch, cwd)
     try:
-        evaluation = evaluate_policy(
-            changed, numstat, diff_text, config, lockfile_documents=documents
-        )
+        evaluation = evaluate_policy(changed, numstat, diff_text, config)
     except PolicyConfigError as exc:
         return CheckResult(
             name="policy_envelope",
@@ -1927,14 +1909,6 @@ def check_policy_envelope(
             measured=False,
         )
 
-    # License gate (R8.1): resolve each newly-added dependency's license
-    # and classify it. Runs only when configured (license_allow
-    # non-empty).
-    violations = (
-        list(evaluation.violations)
-        + _check_licenses(evaluation.new_dependencies, config)
-        + _unread_lockfile_violations(evaluation.unread_lockfiles, config)
-    )
     findings = [
         Finding.policy_violation(
             category=v.category,
@@ -1943,7 +1917,7 @@ def check_policy_envelope(
             severity=v.severity,
             suggestion=v.suggestion,
         )
-        for v in violations
+        for v in evaluation.violations
     ]
     # #595: an approved inbox item waives the one finding it covers, and
     # it does so HERE, before `blocking` is computed, so this check stays
@@ -1979,76 +1953,6 @@ def check_policy_envelope(
     )
 
 
-def _lockfile_documents(
-    changed: list[str], base_branch: str, cwd: Path
-) -> dict[str, LockfileDocument]:
-    """Each changed lockfile kstrl has a reader for, at the merge base and at HEAD (#630).
-
-    The merge base is the commit the three-dot diff measures. A lockfile
-    that cannot be read from git carries the reason as its ``error``, so
-    it is reported unread while the rest of the row still stands; it is
-    never read as absent, which would make every package new or none.
-    """
-    paths = [p for p in changed if LOCKFILE_READERS.get(p.rsplit("/", 1)[-1]) is not None]
-    if not paths:
-        return {}
-    merge_base = git.merge_base_ref(git.resolve_base_ref(base_branch, cwd), cwd)
-    documents: dict[str, LockfileDocument] = {}
-    for path in paths:
-        if not merge_base:
-            error = f"the merge base with {base_branch} could not be found"
-            documents[path] = LockfileDocument(None, None, error)
-            continue
-        try:
-            base = git.read_blob(merge_base, path, cwd)
-            documents[path] = LockfileDocument(base, git.read_blob("HEAD", path, cwd))
-        except git.GitDiffError as exc:
-            documents[path] = LockfileDocument(None, None, f"git could not read it: {exc}")
-    return documents
-
-
-def _unread_lockfile_violations(
-    unread: dict[str, str],
-    config: PolicyConfig,
-) -> list[PolicyViolation]:
-    """The dependency rules a lockfile kstrl could not read left unchecked (#619).
-
-    ``unread`` maps each such lockfile to why (#630): kstrl has no reader
-    for its format, git could not read it, or it did not parse. A
-    dependency added there used to be absent rather than unknown:
-    ``deps_allow_new = false`` and the license gate both passed having
-    read nothing. Each rule that is on and could not be checked is one
-    violation per lockfile: the ``deps_allow_new`` rule when it is false,
-    the license gate when ``license_allow`` is non-empty. Severity follows
-    ``license_unresolved``, the rule for a dependency kstrl could not
-    prove: blocking by default, advisory when the operator set it to
-    ``"advisory"``.
-    """
-    rules: list[str] = []
-    if not config.deps_allow_new:
-        rules.append("deps_allow_new")
-    if config.license_allow:
-        rules.append("license_unresolved")
-    advisory = config.license_unresolved == "advisory"
-    return [
-        PolicyViolation(
-            category=rule,
-            location=path,
-            severity="advisory" if advisory else "high",
-            explanation=(
-                f"new dependencies in {path} were not measured: {reason}, "
-                f"so {rule} could not be checked" + ("; recorded as advisory" if advisory else "")
-            ),
-            suggestion=(
-                "Check the new dependencies by hand; set [policy] "
-                'license_unresolved = "advisory" to accept a lockfile kstrl cannot read.'
-            ),
-        )
-        for path, reason in sorted(unread.items())
-        for rule in rules
-    ]
-
-
 def _after_waivers(
     findings: list[Finding], refusals: list[str]
 ) -> tuple[list[Finding], list[Finding], list[str]]:
@@ -2066,109 +1970,6 @@ def _after_waivers(
     details = [f.explanation for f in blocking] + refusals
     details += [f.explanation for f in waived] + [f.explanation for f in advisories]
     return blocking, advisories, details
-
-
-def _check_licenses(
-    new_dependencies: list[NewDependency],
-    config: PolicyConfig,
-) -> list[PolicyViolation]:
-    """Resolve + classify the licenses of newly-added dependencies.
-
-    Denied (copyleft) and resolved-but-not-allowlisted licenses are
-    blocking. A license that no source could resolve is governed by
-    ``license_unresolved``: "block" (default, fail-closed - an unprovable
-    dependency is not demonstrably inside the envelope) or "advisory".
-    No-op when the gate is unconfigured or nothing new was added.
-    """
-    if not config.license_allow or not new_dependencies:
-        return []
-    uv_cache = licensing.uv_cache_dir()
-    violations: list[PolicyViolation] = []
-    for dep in new_dependencies:
-        name, version = dep.name, dep.version
-        resolved = licensing.resolve_license(
-            name,
-            version,
-            ecosystem=dep.ecosystem,
-            uv_cache=uv_cache,
-            use_pypi=config.license_use_network,
-        )
-        if resolved is None:
-            violations.append(_unresolved_license(dep, config))
-            continue
-        verdict = classify_license(
-            resolved,
-            config.license_allow,
-            config.license_deny_partial,
-        )
-        if verdict == "denied":
-            violations.append(
-                PolicyViolation(
-                    category="license_denied",
-                    location=f"{name} {version}",
-                    explanation=(f"denied license '{resolved}' for dependency {name} {version}"),
-                    suggestion="Drop the dependency or find a permissive alternative.",
-                )
-            )
-        elif verdict == "unknown":
-            violations.append(
-                PolicyViolation(
-                    category="license_not_allowed",
-                    location=f"{name} {version}",
-                    explanation=(
-                        f"license '{resolved}' for {name} {version} is not in license_allow"
-                    ),
-                    suggestion=(
-                        f"Add '{resolved}' to [policy] license_allow if it is "
-                        "acceptable for this repo."
-                    ),
-                )
-            )
-    return violations
-
-
-def _unresolved_license(dep: NewDependency, config: PolicyConfig) -> PolicyViolation:
-    """The ``license_unresolved`` violation for one dependency, saying what was tried.
-
-    A PyPI package keeps the uv.lock text byte for byte (#630). Any other
-    ecosystem has no license source in this kstrl, so nothing was
-    consulted and the text says so rather than naming the uv cache.
-    """
-    advisory = config.license_unresolved == "advisory"
-    suffix = "; recorded as advisory" if advisory else ""
-    if dep.ecosystem != "pypi":
-        return PolicyViolation(
-            category="license_unresolved",
-            location=f"{dep.name} {dep.version}",
-            severity="advisory" if advisory else "high",
-            explanation=(
-                f"license could not be resolved for {dep.name} {dep.version} in "
-                f"{dep.lockfile} (kstrl has no license source for {dep.ecosystem} "
-                f"packages; nothing was consulted){suffix}"
-            ),
-            suggestion=(
-                "Check the license by hand; set [policy] license_unresolved = "
-                '"advisory" to accept unprovable licenses.'
-            ),
-        )
-    source = (
-        "uv cache + PyPI both missed"
-        if config.license_use_network
-        else "uv cache missed; network resolution disabled"
-    )
-    return PolicyViolation(
-        category="license_unresolved",
-        location=f"{dep.name} {dep.version}",
-        severity="advisory" if advisory else "high",
-        explanation=(
-            f"license could not be resolved for {dep.name} {dep.version} ({source})" + suffix
-        ),
-        suggestion=(
-            "Warm the uv cache (`uv sync`) or allow network "
-            "resolution; set [policy] license_unresolved = "
-            '"advisory" to accept unprovable licenses.'
-        ),
-    )
 
 
 def _scope_checks(

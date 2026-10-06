@@ -1,0 +1,19 @@
+{
+  "createsApp": false,
+  "checks": [
+    {
+      "id": "example",
+      "criterion": "the example in the specification",
+      "argv": ["/bin/sh", "-c", "[ \"$(sh \"$KSTRL_TREE/initials\" 'ada lovelace')\" = AL ]"],
+      "onBase": "fails",
+      "heldOut": false
+    },
+    {
+      "id": "four-words",
+      "criterion": "every word gives one uppercase initial",
+      "argv": ["/bin/sh", "-c", "[ \"$(sh \"$KSTRL_TREE/initials\" 'grace brewster murray hopper')\" = GBMH ]"],
+      "onBase": "fails",
+      "heldOut": true
+    }
+  ]
+}

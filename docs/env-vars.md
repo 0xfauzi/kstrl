@@ -329,20 +329,17 @@ Phase 1 approved-fixtures oracle (R7.2). Off by default: fixtures execute PRD-su
 
 ## PolicyConfig (`[policy]`)
 
-Phase 1 policy envelope (R8.1): declarative merge guardrails enforced on artifacts (git diff, lockfiles), never agent self-report. Opt-in; when enabled a violation blocks the merge. List fields (`paths_deny`, `secret_patterns`, `enforcement_paths_extra`, `license_allow`, `license_deny_partial`) are toml-only. Set a numeric cap negative to disable it.
+Phase 1 policy envelope (R8.1): declarative merge guardrails enforced on the git diff, never agent self-report. Opt-in; when enabled a violation blocks the merge. List fields (`paths_deny`, `secret_patterns`, `enforcement_paths_extra`) are toml-only. Set a numeric cap negative to disable it.
 
 Two invariants worth knowing: modifying **enforcement machinery** (the policy file, CI workflows, or the kstrl verifier code) is a non-overridable halt that no config can disable - `enforcement_paths_extra` only ADDS to that set. And every knob that can change a verdict is a `PolicyConfig` field, so it is covered by the `policy_hash` recorded in the run manifest; the env vars below resolve into those fields before the hash is computed.
 
-`deps_allow_new` and the license gate read `uv.lock`, `poetry.lock`, `Cargo.lock`, `package-lock.json` (lockfileVersion 2 and 3), `yarn.lock` (v1) and `go.sum`; a change to any other lockfile, or to one of these that does not parse, is reported as not measured. The license gate resolves a PyPI package's SPDX license from uv's cache, then PyPI. A Cargo, npm or Go package has no license source yet and is never looked up on PyPI. When no source resolves a license, `license_unresolved` decides: `block` (default, fail-closed) or `advisory`.
+kstrl reads no lockfile and no license registry (#696). `deps_allow_new`, `license_allow`, `license_deny_partial`, `license_unresolved` and `license_use_network` are retired, and a kstrl.toml or environment that still sets one is refused by name. The security reviewer (`[security] mode`) lists every dependency a change adds, one `new_dependency` finding per package in the PR body. The size caps count every file, lockfiles included.
 
 | Env var | Type | Default |
 |---|---|---|
 | `KSTRL_POLICY_ENABLED` | bool (`1`) | false |
 | `KSTRL_POLICY_MAX_FILES` | int | 40 |
 | `KSTRL_POLICY_MAX_LINES` | int | 1500 |
-| `KSTRL_POLICY_DEPS_ALLOW_NEW` | bool (`1`) | false |
-| `KSTRL_POLICY_LICENSE_NET` | bool (`0` = uv cache only) | true (uv cache + PyPI, for PyPI packages) |
-| `KSTRL_POLICY_LICENSE_UNRESOLVED` | `block` \| `advisory` | `block` |
 | `KSTRL_POLICY_DEPLOY` | bool (`1`) | false (reserved for R8.7) |
 
 ## AutonomyConfig (`[autonomy]`)
@@ -407,7 +404,7 @@ The predicate needs no threshold on size. Over the last `growth_steps + 1` **con
 
 The retirement half is deliberately weak, because of what a reviewer does on a changed diff: it raises something new almost every time. A stricter test ("the new finding set is a proper subset of the old one") reads the ordinary converging trajectory as failure - retire A, keep B, draw C; retire B, keep C, draw D - and would condemn exactly the component that was working. Identity rather than count, because a count cannot tell a genuinely retired finding from a new one that replaced it.
 
-Size is lines changed against the base (`git diff --numstat`), deliberately not hunk or diff-chunk size: #266 proposes dropping the pasted diff entirely, and a detector built on chunking would then measure a quantity nothing computes. It is counted through `policy.count_diff_size`, the same helper as the R8.1 size caps, so the two agree and the detector inherits their exclusion of machine-generated lockfiles - without which a dependency bump could supply the size half of a trip on its own.
+Size is lines changed against the base (`git diff --numstat`), deliberately not hunk or diff-chunk size: #266 proposes dropping the pasted diff entirely, and a detector built on chunking would then measure a quantity nothing computes. It is counted through `policy.count_diff_size`, the same helper as the R8.1 size caps, so the two agree. Every file counts, lockfiles included, so a dependency bump adds to the size half of a trip.
 
 `lines_changed` is git's own sense of the phrase, **lines added plus lines removed**, the quantity `[policy] max_lines_changed` caps. It is churn, not file growth: deleting 300 pre-existing lines and writing 300 better ones raises it by 600. That is intended, because a component that keeps rewriting one region without answering a single objection is diverging exactly as much as one that keeps appending, but it means the number is never a claim that the artifact got bigger. Files touched is recorded as operator evidence and is not part of the predicate.
 
@@ -447,14 +444,14 @@ Invalid mode raises ValueError (Phase B8).
 
 | Env var | Type | Default |
 |---|---|---|
-| `KSTRL_SECURITY_MODE` | str | `skip` (`skip\|advisory\|hard`) |
+| `KSTRL_SECURITY_MODE` | str | `advisory` (`skip\|advisory\|hard`) |
 | `KSTRL_SECURITY_AGENT_CMD` | str | unset |
 | `KSTRL_SECURITY_AGENT_TYPE` | str | unset |
 | `KSTRL_SECURITY_MODEL` | str | unset |
 | `KSTRL_SECURITY_TIMEOUT` | float | 0 (no limit) |
 | `KSTRL_SECURITY_FAIL_THRESHOLD` | str | `high` (`critical\|high\|medium\|low`) |
 
-Invalid mode or threshold raises ValueError (Phase B8). The default mode is `skip` everywhere (dataclass, env, CLI); enable the pass with `advisory` or `hard`.
+Invalid mode or threshold raises ValueError (Phase B8). The default mode is `advisory` everywhere (dataclass, env, CLI, and a `FactoryConfig` that names no security config), because the security reviewer is the only default check that lists the dependencies a change adds (#696 slice 9). It costs one more model call per component. Turn it off with `skip`; make it block with `hard`.
 
 ## KnowledgeConfig (`[knowledge]`)
 

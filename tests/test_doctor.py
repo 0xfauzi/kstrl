@@ -16,13 +16,11 @@ runner.
 from __future__ import annotations
 
 import ast
-import inspect
 import json
 import pkgutil
 import re
 import subprocess
 import sys
-import textwrap
 from pathlib import Path
 
 import pytest
@@ -31,7 +29,7 @@ from click.testing import CliRunner, Result
 import kstrl
 from kstrl import doctor
 from kstrl.cli import cli
-from kstrl.init_cmd import build_manifest_ok_reason, gitignore_block
+from kstrl.init_cmd import gitignore_block
 from tests.helpers.fakegh import put_gh_on_path
 from tests.helpers.gitrepo import git_in, set_identity
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
@@ -52,7 +50,6 @@ EXPECTED_CHECK_NAMES = (
     "git_clean",
     "github_cli",
     "kstrl_config",
-    "build_manifest",
     "verify_commands",
     "gitignore",
     "protected_paths",
@@ -420,11 +417,9 @@ def test_no_string_the_doctor_can_print_names_a_python_module() -> None:
     """The static half, for the branches no fixture above reaches.
     Docstrings are exempt: they are for the next maintainer."""
     doctor_tree = ast.parse(Path(doctor.__file__).read_text(encoding="utf-8"))
-    ok_reason_tree = ast.parse(textwrap.dedent(inspect.getsource(build_manifest_ok_reason)))
     hits = [
         (text[:60], path)
-        for tree in (doctor_tree, ok_reason_tree)
-        for text in _non_docstring_strings(tree)
+        for text in _non_docstring_strings(doctor_tree)
         for path in module_paths(text)
     ]
     assert hits == []

@@ -1,7 +1,7 @@
 """R8.2 autonomy ladder: earned, bounded, revocable autonomy (L1-L4).
 
 Autonomy today is a scatter of independent flags (``pause_before_pr_merge``,
-``review_mode``, ``deps_allow_new``, deploy). Any of them can be flipped in
+``review_mode``, deploy). Any of them can be flipped in
 isolation, so "how much is this factory allowed to do without me?" has no
 single answer and no audit record. This module makes autonomy one ordered,
 named level with a derived flag bundle, so the question has exactly one
@@ -239,10 +239,9 @@ class FlagBundle:
     """The permissions a level grants, derived fresh at run start.
 
     Never persisted: storing it would let the stored copy drift from the
-    level that justified it. ``deps_allow_new_permitted`` and
-    ``deploy_permitted`` are ceilings the R8.1 envelope and R8.7 release
-    config must also agree to - the ladder can only ever withhold
-    permission, never grant something those gates deny.
+    level that justified it. ``deploy_permitted`` is a ceiling the R8.7
+    release config must also agree to - the ladder can only ever withhold
+    permission, never grant something that gate denies.
 
     ``pause_before_pr_merge`` is the one flag with a ceiling on the OTHER
     side as well (#195): the bundle's False is a permission to auto-merge
@@ -255,7 +254,6 @@ class FlagBundle:
     pause_before_pr_merge: bool
     review_mode: str
     auto_accept_plan: bool
-    deps_allow_new_permitted: bool
     auto_merge_when_green: bool
     deploy_permitted: bool
 
@@ -264,7 +262,6 @@ class FlagBundle:
             f"merge gate: {'ON (human approves)' if self.pause_before_pr_merge else 'off'}",
             f"review mode: {self.review_mode}",
             f"plans: {'auto-accepted' if self.auto_accept_plan else 'human-approved'}",
-            f"new dependencies: {'permitted' if self.deps_allow_new_permitted else 'blocked'}",
             f"auto-merge when green: {'yes' if self.auto_merge_when_green else 'no'}",
             f"deploy: {'permitted' if self.deploy_permitted else 'blocked'}",
         ]
@@ -283,7 +280,6 @@ def flag_bundle_for(level: AutonomyLevel) -> FlagBundle:
             pause_before_pr_merge=True,
             review_mode="hard",
             auto_accept_plan=False,
-            deps_allow_new_permitted=False,
             auto_merge_when_green=False,
             deploy_permitted=False,
         )
@@ -293,7 +289,6 @@ def flag_bundle_for(level: AutonomyLevel) -> FlagBundle:
             pause_before_pr_merge=True,
             review_mode="hard",
             auto_accept_plan=True,
-            deps_allow_new_permitted=False,
             auto_merge_when_green=False,
             deploy_permitted=False,
         )
@@ -303,7 +298,6 @@ def flag_bundle_for(level: AutonomyLevel) -> FlagBundle:
             pause_before_pr_merge=False,
             review_mode="hard",
             auto_accept_plan=True,
-            deps_allow_new_permitted=True,
             auto_merge_when_green=True,
             deploy_permitted=False,
         )
@@ -312,7 +306,6 @@ def flag_bundle_for(level: AutonomyLevel) -> FlagBundle:
         pause_before_pr_merge=False,
         review_mode="hard",
         auto_accept_plan=True,
-        deps_allow_new_permitted=True,
         auto_merge_when_green=True,
         deploy_permitted=True,
     )

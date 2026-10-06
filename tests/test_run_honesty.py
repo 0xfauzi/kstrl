@@ -36,6 +36,7 @@ from kstrl.factory import FactoryConfig, FactoryResult, run_factory
 from kstrl.init_cmd import DEFAULT_PROMPT
 from kstrl.loop import LoopResult
 from kstrl.manifest import Component, Manifest
+from kstrl.security import SecurityConfig
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
 from tests.helpers import gitrepo
@@ -121,6 +122,7 @@ def _factory_config(**overrides: Any) -> FactoryConfig:
         use_worktrees=False,
         create_prs=False,
         review_mode="skip",
+        security_config=SecurityConfig(mode="skip"),
         skip_verification=True,
     )
     defaults.update(overrides)
@@ -488,6 +490,8 @@ class TestCodebaseScanAndPrdPathEndToEnd:
                 "--no-prs",
                 "--no-worktrees",
                 "--review-mode",
+                "skip",
+                "--security-mode",
                 "skip",
                 "--contract-check",
                 "skip",

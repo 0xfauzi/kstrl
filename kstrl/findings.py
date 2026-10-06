@@ -176,7 +176,7 @@ class Finding:
         """Build a Finding for an R8.1 policy-envelope violation.
 
         ``category`` is the envelope rule that fired (``paths_deny``,
-        ``max_files_changed``, ``license_denied``, ...) and is stored
+        ``max_files_changed``, ``secret_pattern``, ...) and is stored
         prefixed (``policy_paths_deny``) so policy findings are greppable
         as a family and cannot collide with a reviewer concern of the
         same name. Severity is ``critical`` for the non-overridable

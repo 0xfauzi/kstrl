@@ -5,9 +5,8 @@ What remains here reaches the policy envelope the way the factory does:
 clean change, a denied ``.pem`` file and an enforcement-machinery edit; the
 #399 unquote round trip measured against real ``git diff`` output for every
 path spelling git C-quotes; ``PolicyConfig.load`` over a real ``kstrl.toml``
-(toml, env overlay, license lists); the manifest ``policyHash`` round trip
-through ``Manifest.save``/``Manifest.load``; license resolution against a
-real on-disk uv cache layout; and the strict/lenient contract of the git
+(toml, env overlay); the manifest ``policyHash`` round trip through
+``Manifest.save``/``Manifest.load``; and the strict/lenient contract of the git
 metadata readers against a directory that is not a repository (PR #173).
 """
 
@@ -18,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import git, licensing
+from kstrl import git
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.policy import PolicyConfig, parse_added_lines
 from kstrl.verify import check_policy_envelope
@@ -104,16 +103,11 @@ class TestDiffParsing:
 class TestPolicyConfig:
     def test_load_reads_policy_section(self, tmp_path: Path) -> None:
         (tmp_path / "kstrl.toml").write_text(
-            "[policy]\n"
-            "enabled = true\n"
-            "max_files_changed = 7\n"
-            "deps_allow_new = true\n"
-            'paths_deny = ["dist/**"]\n'
+            '[policy]\nenabled = true\nmax_files_changed = 7\npaths_deny = ["dist/**"]\n'
         )
         cfg = PolicyConfig.load(tmp_path)
         assert cfg.enabled is True
         assert cfg.max_files_changed == 7
-        assert cfg.deps_allow_new is True
         assert cfg.paths_deny == ["dist/**"]
 
     def test_env_overrides_toml(
@@ -127,14 +121,6 @@ class TestPolicyConfig:
         cfg = PolicyConfig.load(tmp_path)
         assert cfg.enabled is True
         assert cfg.max_files_changed == 99
-
-    def test_load_reads_license_lists(self, tmp_path: Path) -> None:
-        (tmp_path / "kstrl.toml").write_text(
-            '[policy]\nlicense_allow = ["MIT", "MPL-2.0"]\nlicense_deny_partial = ["AGPL"]\n'
-        )
-        cfg = PolicyConfig.load(tmp_path)
-        assert cfg.license_allow == ["MIT", "MPL-2.0"]
-        assert cfg.license_deny_partial == ["AGPL"]
 
 
 # --------------------------------------------------------------------------
@@ -225,54 +211,6 @@ class TestEndToEndRealGit:
         res = check_policy_envelope(tmp_path, "main", PolicyConfig(enabled=True))
         assert not res.passed
         assert any("HALT" in d for d in res.details)
-
-
-# --------------------------------------------------------------------------
-# License resolution (kstrl.licensing) against a real uv cache layout
-# --------------------------------------------------------------------------
-class TestLicenseResolution:
-    def test_resolve_from_uv_cache(self, tmp_path: Path) -> None:
-        d = tmp_path / "cache" / "archive-v0" / "h" / "foo-1.2.3.dist-info"
-        d.mkdir(parents=True)
-        (d / "METADATA").write_text("Name: foo\nVersion: 1.2.3\nLicense-Expression: MIT\n\nbody")
-        cache = tmp_path / "cache"
-        assert licensing.resolve_from_uv_cache("foo", "1.2.3", cache) == "MIT"
-        assert licensing.resolve_from_uv_cache("foo", "9.9.9", cache) is None
-        assert licensing.resolve_from_uv_cache("foo", "1.2.3", None) is None
-
-    def test_uv_cache_name_variant(self, tmp_path: Path) -> None:
-        # uv.lock name "my-pkg" but dist-info dir uses "my_pkg".
-        d = tmp_path / "c" / "my_pkg-1.0.dist-info"
-        d.mkdir(parents=True)
-        (d / "METADATA").write_text("License-Expression: Apache-2.0\n\n")
-        assert licensing.resolve_from_uv_cache("my-pkg", "1.0", tmp_path / "c") == "Apache-2.0"
-
-    def test_resolve_license_prefers_cache(self, tmp_path: Path) -> None:
-        d = tmp_path / "cache" / "foo-1.0.dist-info"
-        d.mkdir(parents=True)
-        (d / "METADATA").write_text("License-Expression: MIT\n\n")
-
-        def unexpected(url: str, timeout: float) -> bytes:  # pragma: no cover
-            raise AssertionError("PyPI must not be called on a cache hit")
-
-        got = licensing.resolve_license(
-            "foo",
-            "1.0",
-            ecosystem="pypi",
-            uv_cache=tmp_path / "cache",
-            http_get=unexpected,
-        )
-        assert got == "MIT"
-
-    def test_resolve_license_offline_miss_is_none(self, tmp_path: Path) -> None:
-        got = licensing.resolve_license(
-            "foo",
-            "1.0",
-            ecosystem="pypi",
-            uv_cache=tmp_path,
-            use_pypi=False,
-        )
-        assert got is None
 
 
 # --------------------------------------------------------------------------

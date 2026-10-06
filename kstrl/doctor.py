@@ -34,7 +34,6 @@ from kstrl import git, pr
 from kstrl.atomicio import atomic_write_json
 from kstrl.config import resolve_config_file
 from kstrl.config_preflight import SURFACE_REJECTIONS, config_problem_lines, raise_if_defect
-from kstrl.init_cmd import BUILD_MANIFEST_FIX, build_manifest_blocker, build_manifest_ok_reason
 from kstrl.policy import ENFORCEMENT_MACHINERY_PATHS, PolicyConfig, _match_glob
 from kstrl.stack import NO_STACK, file_stack_item, legacy_proposal, stack_in_force
 from kstrl.statedir import STATE_DIR_NAME, state_dir
@@ -293,25 +292,6 @@ def _not_evaluated(name: str) -> _CheckResult:
     )
 
 
-def check_build_manifest(root: Path) -> _CheckResult:
-    """A build manifest kstrl will not have to create (#434).
-
-    Consumed by the pre-spend refusal in `ks decompose` and `ks factory
-    --spec` (`init_cmd.build_manifest_blocker`): no component may list
-    a root build manifest in its allowedPaths, so without one the
-    architect can only halt and ask who writes it, after a paid call.
-    A kstrl.toml that does not load routes through `_not_evaluated`,
-    because whether it holds a ``[stack]`` is then unknown.
-    """
-    try:
-        blocker = build_manifest_blocker(root)
-    except (OSError, ValueError):
-        return _not_evaluated("build_manifest")
-    if blocker is not None:
-        return (STATUS_FAIL, blocker, BUILD_MANIFEST_FIX)
-    return (STATUS_OK, build_manifest_ok_reason(root), "")
-
-
 def check_verify_commands(root: Path) -> _CheckResult:
     """The ``[stack]`` checks Phase 1 and Phase 3 will run (#696).
 
@@ -335,7 +315,7 @@ def check_verify_commands(root: Path) -> _CheckResult:
     if proposal is None:
         return (STATUS_FAIL, NO_STACK, "Write a [stack] in kstrl.toml, then confirm it.")
     try:
-        item = file_stack_item(root, proposal, proposal=True)
+        item = file_stack_item(root, proposal, proposal="the retired [verify] commands")
     except SURFACE_REJECTIONS as exc:
         raise_if_defect(exc)
         return (STATUS_FAIL, f"{NO_STACK} No proposal was filed: {exc}", "")
@@ -479,7 +459,6 @@ CHECKS: tuple[tuple[str, Callable[[Path], _CheckResult]], ...] = (
     ("git_clean", check_git_clean),
     ("github_cli", check_github_cli),
     ("kstrl_config", check_kstrl_config),
-    ("build_manifest", check_build_manifest),
     ("verify_commands", check_verify_commands),
     ("gitignore", check_gitignore),
     ("protected_paths", check_protected_paths),

@@ -54,7 +54,6 @@ class TestAMidRunEditDoesNotChangeWhatIsEnforced:
         assert [r.component for r in readings] == ["comp-a", "comp-b"]
         assert {r.policy.envelope_hash() for r in readings} == {envelope.policy_hash()}
         assert {r.policy.max_files_changed for r in readings} == {5}
-        assert {r.policy.deps_allow_new for r in readings} == {False}
 
     def test_phase_one_is_handed_the_envelope_level_not_the_stored_one(
         self, tmp_path: Path

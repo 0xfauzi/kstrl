@@ -67,7 +67,7 @@ Which way the identity heuristic fails
 --------------------------------------
 The size half is exact: ``git diff --numstat``, counted through
 :func:`kstrl.policy.count_diff_size` so it agrees with the R8.1 size
-caps and inherits their exclusion of machine-generated lockfiles.
+caps.
 
 The retirement half is a heuristic, because a finding's identity has to
 be reconstructed from what the reviewer wrote. The weak reset buys it

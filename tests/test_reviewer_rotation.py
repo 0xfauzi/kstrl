@@ -377,7 +377,7 @@ class TestHomogeneityWarningFires:
             tmp_path,
             FactoryConfig(
                 review_mode=ReviewMode.SKIP.value,
-                security_config=None,
+                security_config=SecurityConfig(mode="skip"),
                 create_prs=False,
             ),
             base=KstrlConfig(agent_cmd="./fake-engineer.sh"),
@@ -405,7 +405,7 @@ class TestHomogeneityWarningFires:
             tmp_path,
             FactoryConfig(
                 review_mode=ReviewMode.SKIP.value,
-                security_config=None,
+                security_config=SecurityConfig(mode="skip"),
                 create_prs=False,
             ),
         )
@@ -427,7 +427,7 @@ class TestHomogeneityWarningFires:
             tmp_path,
             FactoryConfig(
                 review_mode=ReviewMode.HARD.value,
-                security_config=None,
+                security_config=SecurityConfig(mode="skip"),
                 create_prs=False,
             ),
         )
@@ -454,7 +454,7 @@ class TestHomogeneityWarningFires:
             tmp_path,
             FactoryConfig(
                 review_mode=ReviewMode.SKIP.value,
-                security_config=None,
+                security_config=SecurityConfig(mode="skip"),
                 create_prs=False,
             ),
         )

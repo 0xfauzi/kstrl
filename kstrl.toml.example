@@ -192,7 +192,7 @@ progress_file_path = ""            # empty = the progress log beside the compone
 fast_iteration_checks = []         # [stack] checks run between engineer iterations, by name; empty = off (#233)
 
 # Phase 1 policy envelope (R8.1): declarative merge guardrails enforced on
-# ARTIFACTS (git diff, lockfiles), never on agent self-report. Opt-in: when
+# the git diff, never on agent self-report. Opt-in: when
 # enabled, a violation fails Phase 1 and blocks the merge. Modifying
 # enforcement machinery - the policy file, CI workflows, or the verifier code
 # that implements the gates - is a non-overridable halt whenever enabled.
@@ -201,23 +201,13 @@ fast_iteration_checks = []         # [stack] checks run between engineer iterati
 enabled = false
 paths_deny = [".github/workflows/**", "kstrl.toml", "ralph.toml", ".kstrl/**", "**/*.pem", "**/.env*"]
 max_files_changed = 40
-max_lines_changed = 1500           # machine-generated lockfiles are excluded from the count
-deps_allow_new = false             # block new packages in lockfiles kstrl reads; L3+ may set true
+max_lines_changed = 1500           # every file counts, lockfiles included
 secret_patterns = ["AKIA[0-9A-Z]{16}", "-----BEGIN (?:RSA |EC )?PRIVATE KEY-----"]
 # ADD to the hardcoded enforcement-machinery halt set (CI + policy file +
 # kstrl verifier code). Additive only: config can never shrink that set.
 enforcement_paths_extra = []
-# License gate for newly-added deps. uv.lock, poetry.lock, Cargo.lock,
-# package-lock.json (v2, v3), yarn.lock (v1) and go.sum are read; any other
-# lockfile is reported not measured. A PyPI package's license is resolved from
-# uv's cache, then PyPI; a Cargo, npm or Go package has no license source yet,
-# so it is unresolved and license_unresolved decides. A new package is a name
-# the lockfile did not have at the merge base; every transitive package counts.
-# Deny wins over allow. Empty license_allow disables the gate.
-license_allow = ["MIT", "MIT-0", "BSD-2-Clause", "BSD-3-Clause", "Apache-2.0", "ISC", "PSF-2.0", "Python-2.0", "Unlicense", "0BSD"]
-license_deny_partial = ["GPL", "AGPL", "SSPL", "Commons-Clause", "BUSL", "EUPL"]
-license_unresolved = "block"       # block | advisory - what to do when no source resolves a license
-license_use_network = true         # PyPI fallback for PyPI packages; false = uv cache only; hashed
+# kstrl reads no lockfile and no license registry (#696): the security
+# reviewer ([security] mode) lists every dependency a change adds.
 deploy = false                     # reserved for the R8.7 release gate; stored + hashed, not yet enforced
 
 # Exception inbox (R8.3): one surface for everything awaiting a human -
@@ -338,7 +328,7 @@ timeout = 30.0                     # seconds per fixture subprocess
 
 # Phase 2.5 security review (independent adversarial pass focused on vulns).
 [security]
-mode = "skip"                      # skip | advisory | hard
+mode = "advisory"                  # skip | advisory | hard (advisory = default; skip turns the review off)
 fail_threshold = "high"            # critical | high | medium | low (hard mode only)
 timeout_seconds = 600.0
 # agent_cmd / agent_type / model: leave blank to inherit from [agent].

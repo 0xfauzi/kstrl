@@ -81,6 +81,9 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     # #700 slice 4: the import and two json.dumps (the plan digest rows and a
     # check entry's digest). Its reads go through read_json.
     "acceptance.py": 3,
+    # #700 slice 7: the import and one json.dumps (the designed plan and its
+    # designer.json). It reads no JSON: the reply goes through _extract_json.
+    "acceptance_design.py": 2,
     # #598: was 4 (import, one json.dumps in _format_tool_use, two
     # json.JSONDecodeError catches - _extract_result_text and
     # _parse_stream_event). +1: a third json.JSONDecodeError catch, in
@@ -145,11 +148,11 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     "serve.py": 5,
     "signals.py": 3,
     # #696: the import, one json.dumps for the stack digest's canonical
-    # form, and eight more inside stack_toml - a TOML-safe literal per
+    # form, and nine more inside stack_toml - a TOML-safe literal per
     # field it writes (instructions, setup, env, writable, readable,
-    # browser, and one name/command pair per check). No parse: the
+    # browser, up, and one name/command pair per check). No parse: the
     # table is read through load_toml_document.
-    "stack.py": 10,
+    "stack.py": 11,
     "statedir.py": 2,
     # #595: the import and one json.dumps, the canonical JSON the waiver
     # key hashes. No parse.

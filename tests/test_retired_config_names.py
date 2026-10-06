@@ -190,6 +190,63 @@ def test_a_retired_adequacy_or_tool_check_env_var_stops_the_command_by_name(
     assert proc.returncode == 2, proc.stdout + proc.stderr
     assert f"the environment sets {name}" in proc.stderr, proc.stderr
     assert replaced_by in proc.stderr, proc.stderr
+
+
+#: #696 slice 9: each [policy] key that read one ecosystem's lockfiles or
+#: one license registry, with a value the old loader accepted.
+RETIRED_DEPENDENCY_POLICY_KEYS = [
+    ("deps_allow_new", "true"),
+    ("license_allow", '["MIT"]'),
+    ("license_deny_partial", '["GPL"]'),
+    ("license_unresolved", '"advisory"'),
+    ("license_use_network", "false"),
+]
+
+
+@pytest.mark.parametrize(("key", "value"), RETIRED_DEPENDENCY_POLICY_KEYS)
+def test_a_retired_dependency_policy_key_stops_the_command_by_name(
+    tmp_path: Path, key: str, value: str
+) -> None:
+    """#696 slice 9: kstrl reads no lockfile and no license registry, so a
+    kstrl.toml still setting one of these keys is refused by name before the
+    command body runs, not read as a gate that still works."""
+    (tmp_path / "kstrl.toml").write_text(f"[policy]\n{key} = {value}\n")
+
+    proc = subprocess.run(
+        [sys.executable, "-m", "kstrl", "status", "--root", str(tmp_path)],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        env={**os.environ, "KSTRL_NO_TUI": "1"},
+    )
+
+    assert proc.returncode == 2, proc.stdout + proc.stderr
+    assert f"[policy] {key}" in proc.stderr, proc.stderr
+    assert "reads no lockfile and no license registry" in proc.stderr, proc.stderr
+    assert "No manifest found" not in proc.stdout + proc.stderr
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["KSTRL_POLICY_DEPS_ALLOW_NEW", "KSTRL_POLICY_LICENSE_UNRESOLVED", "KSTRL_POLICY_LICENSE_NET"],
+)
+def test_a_retired_dependency_policy_env_var_stops_the_command_by_name(
+    tmp_path: Path, name: str
+) -> None:
+    """#696 slice 9: the same refusal for the environment. The names are
+    typed here, not read from RETIRED_ENV_VARS, so a row dropped from that
+    table fails this test instead of removing its case."""
+    proc = subprocess.run(
+        [sys.executable, "-m", "kstrl", "status", "--root", str(tmp_path)],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        env={**os.environ, "KSTRL_NO_TUI": "1", name: "1"},
+    )
+
+    assert proc.returncode == 2, proc.stdout + proc.stderr
+    assert f"the environment sets {name}" in proc.stderr, proc.stderr
+    assert "reads no lockfile and no license registry" in proc.stderr, proc.stderr
     assert "No manifest found" not in proc.stdout + proc.stderr
 
 

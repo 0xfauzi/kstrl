@@ -49,6 +49,7 @@ from kstrl.agents.base import (
     ARCHITECT_COMPONENT,
     ARCHITECT_ROLE,
     CEILING_AXES,
+    DESIGNER_ROLE,
     INTEGRATION_COMPONENT,
     INTEGRATION_ROLE,
     CeilingCoverage,
@@ -1005,6 +1006,11 @@ class ComponentPipeline:
         if totals is None:
             return
         self._record_usage(ARCHITECT_COMPONENT, ARCHITECT_ROLE, totals)
+
+    def record_designer_usage(self, comp_id: str, totals: UsageTotals) -> None:
+        """Meter the verification designer (#700 slice 7) under its own role
+        row of the component it designed checks for."""
+        self._record_usage(comp_id, DESIGNER_ROLE, totals)
 
     def record_integration_usage(self, totals: UsageTotals) -> None:
         """Meter the integration review (#482) under its own role row.
@@ -3678,7 +3684,9 @@ class ComponentPipeline:
         so does a head nothing a retry could fix was measured on; any
         other check that did not pass goes to the engineer's retry. An
         approved halt on this head that names every failing check passes
-        it (decision 14, :func:`kstrl.waivers.covering_override`).
+        it (decision 14, :func:`kstrl.waivers.covering_override`). Checks
+        the verification designer wrote are record only (decision 10, #700
+        slice 7): written, printed and emitted as advisory, never routed.
         """
         from kstrl.acceptance import judge_head
 
@@ -3706,9 +3714,10 @@ class ComponentPipeline:
                 failures=outcome.failures,
                 phase=ACCEPTANCE_PHASE,
                 isolation=outcome.isolation,
+                advisory=outcome.record_only,
             )
         )
-        if outcome.passed:
+        if outcome.passed or outcome.record_only:
             return None
         failing = ", ".join(outcome.failing)
         if outcome.held_out or not outcome.told:
@@ -3915,12 +3924,9 @@ class ComponentPipeline:
             self.ui.warn(f"  Divergence detector could not measure {comp.id}: {exc}")
             return None
         # R8.1's size caps and this detector must agree about how large a
-        # change is, so both count through the same helper - which also
-        # brings its exclusion of machine-generated lockfiles, without
-        # which a dependency bump could supply the size half of a trip.
-        # The result is lines ADDED PLUS REMOVED, so it is churn rather
-        # than file growth; see the module docstring for why that is what
-        # the predicate wants.
+        # change is, so both count through the same helper. The result is
+        # lines ADDED PLUS REMOVED, so it is churn rather than file growth;
+        # see the module docstring for why that is what the predicate wants.
         files_changed, lines_changed = count_diff_size(numstat)
         readings = self.review_readings.setdefault(comp.id, [])
         readings.append(
@@ -4714,16 +4720,6 @@ class ComponentPipeline:
         Hard-mode fails the component on findings at or above
         SecurityConfig.fail_threshold OR on infrastructure errors."""
         sec_config = self.factory_config.security_config
-        if sec_config is None:
-            self._record_phase_skip(
-                comp,
-                "security",
-                "security review not configured",
-            )
-            return SecurityPhaseResult(
-                ran=False,
-                skip_reason="security review not configured",
-            )
         if sec_config.mode == SecurityMode.SKIP.value:
             self._record_phase_skip(
                 comp,

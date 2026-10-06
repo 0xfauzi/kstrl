@@ -36,10 +36,12 @@ from kstrl.security import SecurityConfig, SecurityMode, run_security_review
 from kstrl.statedir import plan_prd_path
 from kstrl.ui.plain import PlainUI
 from tests.conftest import make_review_repo
+from tests.helpers.before_spend import no_base_check
 from tests.helpers.component_prd import write_component_prd
 from tests.helpers.prd_payload import _make_prd_payload
 from tests.helpers.prompt_calls import architect_call
 from tests.helpers.recording_agent import RecordingAgent
+from tests.helpers.stack_confirmation import PROPOSED_STACK
 from tests.test_decompose import (
     MockDecomposeAgent,
     _closures_for,
@@ -181,6 +183,7 @@ def _payload(*issues: dict[str, str], components: list[dict[str, Any]] | None = 
             "components": components
             if components is not None
             else [DOCUMENT_FORMAT, AGENT_ADAPTER],
+            "stack": PROPOSED_STACK,
             "spec_issues": with_ids,
             "decisions": _closures_for(with_ids),
         }
@@ -308,6 +311,7 @@ class TestHaltingIsUnchanged:
         payload = json.dumps(
             {
                 "components": [DOCUMENT_FORMAT],
+                "stack": PROPOSED_STACK,
                 "spec_issues": [blocker],
                 "decisions": [
                     {
@@ -335,6 +339,7 @@ class TestHaltingIsUnchanged:
                 root_dir=tmp_path,
                 prompt_call=architect_call(tmp_path),
                 timeout=None,
+                before_spend=no_base_check,
             )
         assert list(tmp_path.rglob("prd.json")) == []
 

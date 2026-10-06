@@ -6,8 +6,7 @@
     "every_component_has_allowed_paths": true,
     "excludes_harness_internals": [
       ".kstrl/",
-      "pyproject.toml",
-      "package.json",
+      "kstrl.toml",
       "kstrl/",
       ".github/"
     ],

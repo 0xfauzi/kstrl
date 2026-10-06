@@ -75,6 +75,13 @@ _RETIRED_TOOL_CHECK = (
     "the check you want to [stack.checks]"
 )
 
+#: Why a dependency or license policy key no longer exists (#696 slice 9):
+#: each read one ecosystem's lockfiles or license registry.
+_RETIRED_DEPENDENCY_POLICY = (
+    "retired: kstrl reads no lockfile and no license registry, and the security reviewer "
+    "lists every dependency a change adds; remove it"
+)
+
 #: (section, key) retired by #395 and #696, mapped to what replaced it: the
 #: refusal reads "names [section] key, which was <this>".
 RETIRED_KEYS: dict[tuple[str, str], str] = {
@@ -107,6 +114,11 @@ RETIRED_KEYS: dict[tuple[str, str], str] = {
     ("adequacy", "flag_assertionless_tests"): _RETIRED_ADEQUACY,
     ("adequacy", "patch_coverage"): _RETIRED_TOOL_CHECK,
     ("adequacy", "diff_mutation"): _RETIRED_TOOL_CHECK,
+    ("policy", "deps_allow_new"): _RETIRED_DEPENDENCY_POLICY,
+    ("policy", "license_allow"): _RETIRED_DEPENDENCY_POLICY,
+    ("policy", "license_deny_partial"): _RETIRED_DEPENDENCY_POLICY,
+    ("policy", "license_unresolved"): _RETIRED_DEPENDENCY_POLICY,
+    ("policy", "license_use_network"): _RETIRED_DEPENDENCY_POLICY,
 }
 
 #: Environment variables retired by #395 and #696, mapped to what replaced
@@ -141,4 +153,7 @@ RETIRED_ENV_VARS: dict[str, str] = {
     "KSTRL_MUTATION_TIMEOUT": _RETIRED_TOOL_CHECK,
     "KSTRL_ADEQUACY_ENABLED": _RETIRED_ADEQUACY,
     "KSTRL_ADEQUACY_LAYER0": _RETIRED_ADEQUACY,
+    "KSTRL_POLICY_DEPS_ALLOW_NEW": _RETIRED_DEPENDENCY_POLICY,
+    "KSTRL_POLICY_LICENSE_UNRESOLVED": _RETIRED_DEPENDENCY_POLICY,
+    "KSTRL_POLICY_LICENSE_NET": _RETIRED_DEPENDENCY_POLICY,
 }

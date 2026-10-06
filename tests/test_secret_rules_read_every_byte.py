@@ -50,7 +50,7 @@ KEY_LINE = f"token = {KEY}".encode()
 #: The start of a PNG file: a NUL byte, and bytes that are not utf-8.
 IMAGE_HEAD = b"\x89PNG\r\n\x1a\n\x00\x00\n"
 
-POLICY = "[policy]\nenabled = true\nlicense_use_network = false\n"
+POLICY = "[policy]\nenabled = true\n"
 NO_POLICY = "[policy]\nenabled = false\n"
 
 

@@ -508,28 +508,6 @@ class TestTheFactoryHandsThePipelineWhatItRecords:
         assert manifest.policy_hash == pipeline.run_envelope.policy_hash()
         assert pipeline.run_envelope.policy.max_files_changed == 5
 
-    def test_the_ladder_clamp_reaches_the_pipeline_and_the_hash(self, tmp_path: Path) -> None:
-        """The ladder withholds ``deps_allow_new`` below L3. The clamped
-        envelope must be the one the pipeline holds AND the one the hash
-        covers, which is what ``manifest.policy_hash`` promises."""
-        (tmp_path / "kstrl.toml").write_text(
-            "[policy]\nenabled = true\ndeps_allow_new = true\n"
-            "[autonomy]\nenabled = true\nmax_level = 1\n"
-        )
-        AutonomyState(level=4).save(tmp_path)
-        manifest, pipeline = empty_run(
-            tmp_path,
-            FactoryConfig(
-                use_worktrees=False,
-                create_prs=False,
-                review_mode="skip",
-                project_stack=in_process_stack(),
-            ),
-        )
-        assert pipeline.run_envelope.policy.deps_allow_new is False
-        assert manifest.policy_hash == pipeline.run_envelope.policy_hash()
-        assert manifest.policy_hash != PolicyConfig.load(tmp_path).envelope_hash()
-
     def test_phase_one_gets_the_clamped_autonomy_level(self, tmp_path: Path) -> None:
         """Finding (c), and it needs no file edit at all.
 
@@ -625,13 +603,10 @@ class TestTheLadderOutcomeIsReallyFrozen:
         from kstrl.factory import _resolve_ladder
         from kstrl.runenvelope import RunEnvelope
 
-        # A stored L4 over max_level = 1 is the clamp; deps_allow_new
-        # granted by [policy] and withheld below L3 is the override. Both
-        # lists have to be non-empty or the tuple conversion is untested.
-        (tmp_path / "kstrl.toml").write_text(
-            "[autonomy]\nenabled = true\nmax_level = 1\n"
-            "[policy]\nenabled = true\ndeps_allow_new = true\n"
-        )
+        # A stored L4 over max_level = 1 is the clamp; review_mode "skip"
+        # against the bundle's "hard" is the override. Both lists have to
+        # be non-empty or the tuple conversion is untested.
+        (tmp_path / "kstrl.toml").write_text("[autonomy]\nenabled = true\nmax_level = 1\n")
         AutonomyState(level=4).save(tmp_path)
         envelope = RunEnvelope.load(tmp_path)
 

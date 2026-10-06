@@ -72,7 +72,6 @@ BEFORE = """\
 enabled = true
 max_files_changed = 5
 max_lines_changed = 100
-deps_allow_new = false
 
 [autonomy]
 enabled = {autonomy}
@@ -83,7 +82,6 @@ AFTER = """\
 enabled = true
 max_files_changed = 500
 max_lines_changed = 100000
-deps_allow_new = true
 
 [autonomy]
 enabled = {autonomy}

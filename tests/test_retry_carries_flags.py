@@ -50,6 +50,8 @@ RUN_FLAGS = (
     "--no-prs",
     "--review-mode",
     "skip",
+    "--security-mode",
+    "skip",
     "--contract-check",
     "skip",
 )
@@ -447,6 +449,8 @@ def test_retry_flags_are_pinned_against_factory() -> None:
         "accept_red_base",
         # #700 slice 4: the plan directory; a retry pins and checks it again.
         "acceptance",
+        # #700 slice 7: the designed plan is found again by the plan it was made for.
+        "design_acceptance",
         "review_mode",
         "review_agent_cmd",
         "review_model",

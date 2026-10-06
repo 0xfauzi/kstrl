@@ -1,0 +1,35 @@
+diff --git a/pyproject.toml b/pyproject.toml
+index 3a1b2c4..5d6e7f8 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -1,6 +1,7 @@
+ [project]
+ name = "weather-cli"
+ version = "0.3.0"
+ requires-python = ">=3.11"
+ dependencies = [
++    "httpx==0.27.2",
+ ]
+diff --git a/src/forecast.py b/src/forecast.py
+new file mode 100644
+index 0000000..9a8b7c6
+--- /dev/null
++++ b/src/forecast.py
+@@ -0,0 +1,17 @@
++"""Today's forecast from the forecast service."""
++
++from __future__ import annotations
++
++import httpx
++
++FORECAST_URL = "https://api.weather.example/v1/forecast"
++
++
++def forecast(city: str) -> str:
++    """Return today's forecast summary for ``city``."""
++    response = httpx.get(FORECAST_URL, params={"city": city}, timeout=10.0)
++    response.raise_for_status()
++    summary = response.json().get("summary")
++    if not isinstance(summary, str):
++        raise ValueError("the forecast service returned no summary")
++    return summary

@@ -50,14 +50,11 @@ FILE_DUPLICATING_NAMES = (
 #: which the branch commits on purpose. ``statedir.py`` moves a control
 #: file across devices, ``init_cmd.py`` links AGENTS.md to CLAUDE.md in
 #: the root checkout ``ks init`` runs in, and the other two rows are
-#: ``copy.deepcopy``. ``lockfiles.py`` reads the ``"link"`` key of a
-#: package-lock.json entry, a string and no file operation (#630). None of
-#: them writes into a component worktree.
+#: ``copy.deepcopy``. None of them writes into a component worktree.
 EXPECTED_FILE_DUPLICATING_SITES = {
     "factory.py": 1,
     "feature_cmd.py": 4,
     "init_cmd.py": 1,
-    "lockfiles.py": 1,
     "retry_plan.py": 2,
     "statedir.py": 1,
 }

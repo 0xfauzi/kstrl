@@ -68,6 +68,10 @@ SECURITY_CATEGORY_MAP: dict[str, dict[str, str]] = {
     "open_redirect": {"owasp": "A01:2021", "cwe": "CWE-601"},
     "information_disclosure": {"owasp": "A04:2021", "cwe": "CWE-200"},
     "denial_of_service": {"owasp": "A04:2021", "cwe": "CWE-400"},
+    # #696 slice 9: a listing, not a vulnerability claim. It replaces the
+    # [policy] dependency and license gates, which read one ecosystem's
+    # lockfiles and one license registry.
+    "new_dependency": {"owasp": "A06:2021", "cwe": "CWE-1357"},
     "other": {"owasp": "n/a", "cwe": "n/a"},
 }
 
@@ -278,16 +282,16 @@ class SecurityResult:
 class SecurityConfig:
     """Configuration for the security review phase.
 
-    The default mode is "skip": the security pass is an extra LLM call
-    per component and is opt-in everywhere it is documented (CLI
-    --security-mode default, kstrl.toml.example, README). Before R2.1
-    the dataclass default was "advisory", but no product path consumed
-    it - the CLI always passed an explicit mode and run_factory treats
-    a missing config as skip - so aligning it with the documented
-    default cannot change a working setup.
+    The default mode is "advisory" (owner decision 2026-10-06, #696
+    slice 9): kstrl reads no lockfile, so this reviewer is the only
+    default check that lists the dependencies a change adds. It costs
+    one more model call per component. "skip" turns it off and "hard"
+    makes it block; both are an explicit choice. The dataclass, the
+    environment, the CLI and a FactoryConfig that names no security
+    config all give this same default.
     """
 
-    mode: str = SecurityMode.SKIP.value
+    mode: str = SecurityMode.ADVISORY.value
     agent_cmd: str | None = None
     agent_type: str | None = None
     model: str | None = None
@@ -315,7 +319,7 @@ class SecurityConfig:
     @classmethod
     def from_env(cls) -> SecurityConfig:
         return cls(
-            mode=os.environ.get("KSTRL_SECURITY_MODE", SecurityMode.SKIP.value),
+            mode=os.environ.get("KSTRL_SECURITY_MODE", SecurityMode.ADVISORY.value),
             agent_cmd=os.environ.get("KSTRL_SECURITY_AGENT_CMD") or None,
             agent_type=os.environ.get("KSTRL_SECURITY_AGENT_TYPE") or None,
             model=os.environ.get("KSTRL_SECURITY_MODEL") or None,
@@ -362,7 +366,7 @@ class SecurityConfig:
         return check_numbers(config)
 
 
-SECURITY_PROMPT_VERSION = "2.0.0"
+SECURITY_PROMPT_VERSION = "2.1.0"
 
 SECURITY_PROMPT = """\
 You are an adversarial application security reviewer. Your default stance
@@ -409,7 +413,7 @@ Output schema:
   "observedDiffstat": {{"files": 0, "insertions": 0, "deletions": 0}},
   "findings": [
     {{
-      "category": "injection|auth_bypass|authz_bypass|hardcoded_secret|unsafe_deserialization|broken_crypto|predictable_randomness|missing_input_validation|race_condition|ssrf|xss|open_redirect|information_disclosure|denial_of_service|other",
+      "category": "injection|auth_bypass|authz_bypass|hardcoded_secret|unsafe_deserialization|broken_crypto|predictable_randomness|missing_input_validation|race_condition|ssrf|xss|open_redirect|information_disclosure|denial_of_service|new_dependency|other",
       "severity": "critical|high|medium|low",
       "location": "path/to/file.py:42-58",
       "explanation": "what the vulnerability is and how an attacker could exploit it - evidence-based, citing the actual diff",
@@ -452,6 +456,17 @@ Categories - look for ALL of these explicitly:
 - "denial_of_service": unbounded loops on user input, unbounded memory
   allocation, recursive regex. Subject to the PRECISION FIRST exclusions
   below: report only with a concrete exploit stated.
+- "new_dependency": every third-party package the change adds to the
+  project, in any manifest, lockfile, vendored copy or install command.
+  One finding per package, at the line that adds it, naming the package,
+  its version and its license where the change shows them. Packages a
+  lockfile adds only because a listed package needs them may be named in
+  that package's finding. This is a listing, not a claim of a
+  vulnerability: report each one at "low", however safe it looks. Raise
+  the severity only for a risk you state from what you read: a name that
+  imitates a well-known package, an install hook that runs code, a
+  version known to be vulnerable, or a license the PRD or the repository
+  forbids.
 
 Severity:
 - "critical": exploitable now, no auth required, full compromise possible
@@ -473,7 +488,8 @@ is not free: it spends the halt's credibility. Do NOT report:
   input that crosses the trust boundary and the concrete bad outcome it
   causes.
 For ANY category: if you cannot articulate how an attacker exploits it,
-downgrade to "low" or omit it.
+downgrade to "low" or omit it. The one exception is "new_dependency":
+it lists every added package and is never omitted.
 
 "observedDiffstat" is how the harness checks that you obtained the whole
 change before judging it. It is mandatory; see OBTAINING THE CHANGE above
