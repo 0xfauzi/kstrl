@@ -17,6 +17,7 @@ that measured it, and the renderer sorts them into three buckets. See
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -35,14 +36,21 @@ from kstrl.jsonread import read_json
 # passed, and because an operator's direction must not be retired by an
 # engineer-loop failure in the next attempt (which the engineer rank
 # would have allowed: two entries at the same rank supersede).
+#
+# "acceptance" is the operator's acceptance checks on the head (#700
+# slice 6). They run once Phase 1 has passed and before the diff, for a
+# component its plan names, so they sit between the two.
+ACCEPTANCE_PHASE = "acceptance"
+
 PHASE_RANK: dict[str, int] = {
     "engineer": 0,
     "verification": 1,
-    "diff": 2,
-    "review": 3,
-    "security": 4,
-    "contract": 5,
-    "pr": 6,
+    ACCEPTANCE_PHASE: 2,
+    "diff": 3,
+    "review": 4,
+    "security": 5,
+    "contract": 6,
+    "pr": 7,
 }
 
 #: Phases whose having run in an attempt cannot be inferred from a
@@ -234,6 +242,19 @@ ITERATION_CONTEXT_CLOSING_PROMPT = (
     "=== END PREVIOUS CONTEXT ==="
 )
 
+#: H3 (#700 slice 6, the #303 position): the head of the retry context an
+#: engineer gets when the operator's acceptance checks did not pass. A
+#: held-out check is named by its id only (owner decision 3).
+ACCEPTANCE_RETRY_PROMPT_VERSION = "1.0.0"
+
+ACCEPTANCE_RETRY_PROMPT = (
+    "The operator's acceptance checks ran against your last commit, in a fresh checkout of "
+    "it, and did not all pass. A check passes only when every run of it exits 0. A held-out "
+    "check is named by its id only: what it runs and what it printed are withheld. Make the "
+    "component meet its criteria for every input, not only for the inputs a check names.\n"
+    "{lines}"
+)
+
 
 @dataclass
 class IterationContext:
@@ -306,6 +327,12 @@ class IterationContext:
 
     def add_contract_failure(self, failure: str, *, attempt: int) -> None:
         self._add(failure, attempt, "contract")
+
+    def add_acceptance_failure(self, lines: Sequence[str], *, attempt: int) -> None:
+        """The acceptance checks that did not pass on this attempt's head
+        (#700 slice 6): what the engineer is told about them, under
+        :data:`ACCEPTANCE_RETRY_PROMPT`."""
+        self._add(ACCEPTANCE_RETRY_PROMPT.format(lines="\n".join(lines)), attempt, ACCEPTANCE_PHASE)
 
     def add_phase_reading(self, phase: str, *, attempt: int) -> None:
         """Record that ``phase`` ran in ``attempt`` and returned a

@@ -48,11 +48,14 @@ APPROVAL_READERS: dict[ItemKind, str] = {
     # #639 slice 4: an approval's comment is the owner's answer, which the
     # next decompose of that spec appends to the architect's input.
     ItemKind.SPEC_ESCALATION: "owner_answers.py::read_owner_answers",
+    # #700 decision 14: an approved halt of the acceptance checks lets ks
+    # retry merge over the checks it names on the commit it names. Every
+    # other halted_run approval still only closes the item.
+    ItemKind.HALTED_RUN: "waivers.py::acceptance_overrides",
 }
 
 #: Action-required kinds whose approval no kstrl step reads, and why.
 RECORD_ONLY: dict[ItemKind, str] = {
-    ItemKind.HALTED_RUN: "the action is ks retry or ks inbox retry; approving only closes the item",
     ItemKind.BUDGET_OVERRUN: (
         "the cap is config; an approval must not raise a spend cap (no budget "
         "bypass without explicit opt-in)"
@@ -73,6 +76,7 @@ EXPECTED_APPROVED_READS: dict[str, int] = {
     "plan_gate.py::_settle": 2,
     "plan_gate.py::run_plan_gate": 5,
     "stack.py::_latest_approval": 2,
+    "waivers.py::acceptance_overrides": 1,
     "waivers.py::load_approvals": 1,
 }
 

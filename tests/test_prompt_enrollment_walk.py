@@ -286,7 +286,7 @@ EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
     # #303: 0 pre-existing + 7 new fragments x 2 spellings each (the
     # declaration and its one use site) = 14. The version constant adds
     # nothing: the walk keys on names ending in _PROMPT, not _VERSION.
-    "context.py": 14,
+    "context.py": 16,
     # #303: 0 pre-existing + 1 new fragment x 2 spellings each (the
     # declaration and its one use site) = 2. The version constant adds
     # nothing: the walk keys on names ending in _PROMPT, not _VERSION.

@@ -1035,6 +1035,9 @@ _CATEGORY_BY_CHECK = {
     # #696: a [stack] check's row is "stack:<name>", so its signature's
     # check part is "stack". A Phase 1 gate like the three above.
     "stack": "verification",
+    # #700 slice 6: a failure of the operator's acceptance checks is filed
+    # under its phase, a verdict on the change as Phase 1's are.
+    "acceptance": "verification",
     # #315 round 2: a failure recorded with no signatures= is filed
     # under its PHASE (pipeline._record_failure_signatures), so these
     # two are check names as much as any gate is. "verify" is the phase

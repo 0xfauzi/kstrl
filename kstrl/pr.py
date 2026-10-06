@@ -504,7 +504,7 @@ def _generate_pr_body(
 ) -> str:
     """Generate a PR description for a component. ``root`` reads the run's
     acceptance record into a ``## Acceptance`` section (#700 slice 4)."""
-    from kstrl.acceptance import pr_section
+    from kstrl.acceptance_lines import pr_section
 
     lines: list[str] = []
 
