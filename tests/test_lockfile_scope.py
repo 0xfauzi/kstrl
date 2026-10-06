@@ -48,7 +48,7 @@ def _seed(root: Path, files: dict[str, str]) -> None:
     root.mkdir(parents=True, exist_ok=True)
     git_in(root, "init", "-q", "-b", "main")
     set_identity(root)
-    (root / ".gitignore").write_text(gitignore_block("Python"), encoding="utf-8")
+    (root / ".gitignore").write_text(gitignore_block(), encoding="utf-8")
     (root / "src").mkdir()
     (root / "src" / "app.py").write_text("X = 1\n", encoding="utf-8")
     for rel, text in files.items():

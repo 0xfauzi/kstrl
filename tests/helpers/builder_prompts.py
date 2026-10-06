@@ -1,4 +1,4 @@
-"""Tables for the 58 instruction-text fragments enrolled under H3: 53 from
+"""Tables for the 41 instruction-text fragments enrolled under H3: 36 from
 #303, one from #233 and four from #633.
 
 These builders assemble optional, branching text (a fragment may or may
@@ -9,7 +9,7 @@ tables below are what `tests/test_prompt_versions.py` merges in.
 
 They live here rather than in `tests/test_prompt_versions.py` because
 that file is close to the repo's 800-line file-length ratchet and these
-58 snapshot rows do not fit inside the remaining headroom.
+41 snapshot rows do not fit inside the remaining headroom.
 
 `_BUILDERS` is the single source: eleven rows of (module, the name of that
 module's shared `*_PROMPT_VERSION` constant, the fragment names that
@@ -19,7 +19,7 @@ census by appearing in exactly one row here.
 
 BUILDER_PROMPTS: name -> the enrolled body.
 BUILDER_VERSIONS: name -> the *_PROMPT_VERSION of the BUILDER that
-    delivers it (11 distinct values for 58 names). The version's unit is
+    delivers it (11 distinct values for 41 names). The version's unit is
     the text one builder delivers to a role, which is what a role
     receives; `test_prompt_versions._drift_message` names
     `<NAME>_VERSION` in its instructions, and for these fragments the
@@ -76,24 +76,7 @@ _BUILDERS: tuple[tuple[ModuleType, str, tuple[str, ...]], ...] = (
         (
             "CLAUDE_MD_OVERVIEW_PROMPT",
             "CLAUDE_MD_VERIFICATION_PROMPT",
-            "CLAUDE_MD_STANDARDS_HEADING_PROMPT",
-            "CLAUDE_MD_PRINCIPLES_PROMPT",
-            "CLAUDE_MD_ANTIPATTERNS_HEADING_PROMPT",
             "CLAUDE_MD_LEARNINGS_PROMPT",
-            "GO_ANTIPATTERNS_PROMPT",
-            "GO_STANDARDS_PROMPT",
-            "JAVASCRIPT_ANTIPATTERNS_PROMPT",
-            "JAVASCRIPT_STANDARDS_PROMPT",
-            "JAVA_ANTIPATTERNS_PROMPT",
-            "JAVA_STANDARDS_PROMPT",
-            "KOTLIN_ANTIPATTERNS_PROMPT",
-            "KOTLIN_STANDARDS_PROMPT",
-            "PYTHON_ANTIPATTERNS_PROMPT",
-            "PYTHON_STANDARDS_PROMPT",
-            "RUST_ANTIPATTERNS_PROMPT",
-            "RUST_STANDARDS_PROMPT",
-            "TYPESCRIPT_ANTIPATTERNS_PROMPT",
-            "TYPESCRIPT_STANDARDS_PROMPT",
         ),
     ),
     (
@@ -188,29 +171,17 @@ BUILDER_SNAPSHOTS: dict[str, tuple[str, str]] = {
         "af4d89529f0d80814e3e842f1acc6d4d80fb8638c2a06e7deb7871ba322a8a7a",
         "1.0.0",
     ),
-    "CLAUDE_MD_ANTIPATTERNS_HEADING_PROMPT": (
-        "dfcf304a60ec7d96b49ad026e9426a1cb8f3cf86935af6f264aa0ef88c3eb696",
-        "1.2.0",
-    ),
     "CLAUDE_MD_LEARNINGS_PROMPT": (
         "769eb292886f035a073fdabefdb6e36a9e364b4d92e8003c81c2ad47095aa647",
-        "1.2.0",
+        "2.0.0",
     ),
     "CLAUDE_MD_OVERVIEW_PROMPT": (
-        "e137335a3d790f5525f58fa1e3f620b5b0a512bb2ac645cd745649f2213f9e19",
-        "1.2.0",
-    ),
-    "CLAUDE_MD_PRINCIPLES_PROMPT": (
-        "bed5d917ac0694ba1cb104ff683290e54a19db72e2af4369d51354da7f90beee",
-        "1.2.0",
-    ),
-    "CLAUDE_MD_STANDARDS_HEADING_PROMPT": (
-        "404e860116f708c6e92839d2a3fc99aa983fabdbdeb334008450ac2fc9a3483d",
-        "1.2.0",
+        "576c0c2b75c5c1321aa5e9044c70904e5c696533271786a0b07ae6d693ca2a09",
+        "2.0.0",
     ),
     "CLAUDE_MD_VERIFICATION_PROMPT": (
         "834d83261fca8c051d46101a9aa43e530b13a1dddd60fcd6c7680e1954d59048",
-        "1.2.0",
+        "2.0.0",
     ),
     "DIFF_SCOPE_ALLOWED_PATHS_PROMPT": (
         "5b2550599700eee6d5a8518edd16c64452a5431e98f18a223c9ec4d8f5a2ea7f",
@@ -231,14 +202,6 @@ BUILDER_SNAPSHOTS: dict[str, tuple[str, str]] = {
     "DIFF_SCOPE_VIOLATIONS_PROMPT": (
         "66e8d8f67d35d7fe5847ad242a0b1c6284b52ed71497ccbfb027d5a14530969c",
         "1.0.0",
-    ),
-    "GO_ANTIPATTERNS_PROMPT": (
-        "3620a1fecbd09ef1984809d098c4cd1e5d4c17880e537082d3ead6f138970dea",
-        "1.2.0",
-    ),
-    "GO_STANDARDS_PROMPT": (
-        "9267e7a35c00d030265f7bb7a98656275eb9fba71ab14a9ac2413c50ac708b79",
-        "1.2.0",
     ),
     "IMPORT_FAILED_HINT_PROMPT": (
         "2cbeb381bc4e8bb186b9a0c5dbf93e1e8142d2b808494c1c01fbaab1367c4378",
@@ -276,22 +239,6 @@ BUILDER_SNAPSHOTS: dict[str, tuple[str, str]] = {
         "4d82e5cb634b4407b12dd1ba3644fe3c99ba6c11e430bcb0d83f4bb766a63734",
         "1.0.0",
     ),
-    "JAVASCRIPT_ANTIPATTERNS_PROMPT": (
-        "942380fac0f3cca01c10de9344a4cca177adcc65b599ac71f1b3352aee31e03d",
-        "1.2.0",
-    ),
-    "JAVASCRIPT_STANDARDS_PROMPT": (
-        "388f42dcc846ac55fa18a7f826db5bbc16ecdbb273224e1239ac4368fd63f2ad",
-        "1.2.0",
-    ),
-    "JAVA_ANTIPATTERNS_PROMPT": (
-        "021b08aa18baccd57fb072424554159ff7425f0c78a85f4557c2f22f88fff507",
-        "1.2.0",
-    ),
-    "JAVA_STANDARDS_PROMPT": (
-        "f4c9f87146ec91482b307a74e8d60632cb966b0627e32195df0fbbb2edb85142",
-        "1.2.0",
-    ),
     "KNOWLEDGE_CONTEXT_PROMPT": (
         "f89c1fd62121d7569152e08712b5a0d3511b1d74aa98e0dfb8f13b1c14ca4d61",
         "1.0.0",
@@ -299,14 +246,6 @@ BUILDER_SNAPSHOTS: dict[str, tuple[str, str]] = {
     "KNOWLEDGE_OVERFLOW_PROMPT": (
         "10512d293d1c6e0f46b1922626171970bb35979c3d1e85f2374a82779c7d7380",
         "1.0.0",
-    ),
-    "KOTLIN_ANTIPATTERNS_PROMPT": (
-        "64d5cb605bd54e904c307ccc10c14ec18c08696188f48fd8ded443b2e2380be1",
-        "1.2.0",
-    ),
-    "KOTLIN_STANDARDS_PROMPT": (
-        "e5d06e783c4ef15f94e05f1b6536ecf93f951a02b1103ae4cbce459f31901d2d",
-        "1.2.0",
     ),
     "LAST_ITERATION_MEASUREMENT_PROMPT": (
         "f6f5329dbe821f18fce2ae140c0c798e48fe35f0e34275517e67e995017b337b",
@@ -340,14 +279,6 @@ BUILDER_SNAPSHOTS: dict[str, tuple[str, str]] = {
         "7527567703aaf7e585806d2c26ff735bd3416e7f4f55d5d08b034edd1afc6ae3",
         "1.0.0",
     ),
-    "PYTHON_ANTIPATTERNS_PROMPT": (
-        "2418e6796fb21d5db106ac890d681d7eb5a0b44e32a498a9309ddcbd3e4418c6",
-        "1.2.0",
-    ),
-    "PYTHON_STANDARDS_PROMPT": (
-        "67fd8a8aee2adc5dca2357f8c0f2c999b2962e31e2ccd5ebae3bb0a100ac7142",
-        "1.2.0",
-    ),
     "RETURN_TYPE_HINT_PROMPT": (
         "c150120da7ecae7e90bdf193a3398d16dfcc1a68fd166bfd969f84f020b446e4",
         "1.0.0",
@@ -355,14 +286,6 @@ BUILDER_SNAPSHOTS: dict[str, tuple[str, str]] = {
     "RUFF_UNDEFINED_NAME_HINT_PROMPT": (
         "11ffa9b6c490e54bc5e5b24577dc43a0c9ac1e3d149c3170f5ad5d6f90edc378",
         "1.0.0",
-    ),
-    "RUST_ANTIPATTERNS_PROMPT": (
-        "6d11d7a83ee03b65564ead5261cd945ab4ffdf3974896ef1815d48f9941cb842",
-        "1.2.0",
-    ),
-    "RUST_STANDARDS_PROMPT": (
-        "97e2ff2138a09ded75722687b812c0d4e73596a962f03ab7c95e5a54a10fc0b1",
-        "1.2.0",
     ),
     "SCOPE_UNREADABLE_EXPLANATION_PROMPT": (
         "ba997dc039fb09ff4a2f636feac7dad2b7c2f60ce5d2774c9c8bd424bdb47074",
@@ -395,14 +318,6 @@ BUILDER_SNAPSHOTS: dict[str, tuple[str, str]] = {
     "TOO_MANY_ARGUMENTS_HINT_PROMPT": (
         "9b9adf45ea4a21579c5e1b058c3d3d4c8d1fd2dd9420d624743be04cee464b26",
         "1.0.0",
-    ),
-    "TYPESCRIPT_ANTIPATTERNS_PROMPT": (
-        "daff966ca48068ff75b563e8af08e1a271d0c48d22663a1e40a6ef3731e3e7b4",
-        "1.2.0",
-    ),
-    "TYPESCRIPT_STANDARDS_PROMPT": (
-        "8a4ab770c39bc8ab8158e930440f7e4ae6e2875a8451e0745b1c06a9cf724008",
-        "1.2.0",
     ),
     "UNDEFINED_NAME_HINT_PROMPT": (
         "d8d7a74a81cea158c61290d19970546759bc6dac2256301f80b6c591a36cd3d9",

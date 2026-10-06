@@ -31,9 +31,7 @@ from click.testing import CliRunner, Result
 import kstrl
 from kstrl import doctor
 from kstrl.cli import cli
-from kstrl.feedforward import extract_public_interfaces
 from kstrl.init_cmd import build_manifest_ok_reason, gitignore_block
-from kstrl.toolchains import TOOLCHAINS
 from tests.helpers.fakegh import put_gh_on_path
 from tests.helpers.gitrepo import git_in, set_identity
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
@@ -44,7 +42,7 @@ from tests.helpers.stack_confirmation import confirm_stack, write_stack
 GH_OK = "#!/bin/sh\nexit 0\n"
 GH_UNAUTHENTICATED = "#!/bin/sh\nexit 1\n"
 
-#: The ten rows the report carries, in order. The test's own
+#: The nine rows the report carries, in order. The test's own
 #: literal, not a constant imported from `kstrl.doctor`: each name is
 #: written once in production, inside its own check function, and a
 #: comparison against a second copy the module also owns would pass
@@ -56,7 +54,6 @@ EXPECTED_CHECK_NAMES = (
     "kstrl_config",
     "build_manifest",
     "verify_commands",
-    "source_root",
     "test_root",
     "gitignore",
     "protected_paths",
@@ -71,11 +68,10 @@ def _gh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 def ready_repo(tmp_path: Path, name: str = "demo") -> Path:
     """A repository every Tier A check passes on.
 
-    Committed, so the tree is clean; `pyproject.toml` so the `uv run`
-    defaults have a project; a package with a public symbol so the
-    codebase scan stage has something to summarise; a test file so
-    `adequacy.is_test_path` matches; `.kstrl/` ignored; an origin
-    remote so `git.get_origin_slug` answers.
+    Committed, so the tree is clean; `pyproject.toml` so a build
+    manifest is at the root; a test file so `adequacy.is_test_path`
+    matches; `.kstrl/` ignored; an origin remote so `git.get_origin_slug`
+    answers.
     """
     root = tmp_path / name
     root.mkdir()
@@ -85,7 +81,7 @@ def ready_repo(tmp_path: Path, name: str = "demo") -> Path:
     (root / "pyproject.toml").write_text(
         '[project]\nname = "demo"\nversion = "0.1.0"\n', encoding="utf-8"
     )
-    (root / ".gitignore").write_text(gitignore_block("Python"), encoding="utf-8")
+    (root / ".gitignore").write_text(gitignore_block(), encoding="utf-8")
     pkg = root / "demo"
     pkg.mkdir()
     (pkg / "__init__.py").write_text("", encoding="utf-8")
@@ -158,89 +154,12 @@ def test_an_unauthenticated_gh_is_a_warning_not_a_failure(
     assert "[fail]" not in result.output
 
 
-def test_a_repo_with_no_python_source_warns_and_names_the_codebase_scan_stage(
-    tmp_path: Path,
-) -> None:
-    """Deliberately a repo with no Python at all, and NOT a
-    `packages/<name>/src/<pkg>` fixture. PR #381 changes what that
-    layout returns on purpose, so pinning it here would make this test
-    fail the day #381 merges. What is pinned is the contract: the
-    engineer got no interface section, whatever the discovery rule.
-
-    (The `tests/` directory survives here so this case does not also
-    trip the test_root check; `tests/test_core.py` stays.)
-    """
-    root = ready_repo(tmp_path)
-    for path in (root / "demo" / "core.py", root / "demo" / "__init__.py"):
-        path.unlink()
-    (root / "demo").rmdir()
-    (root / "README.md").write_text("no python here\n", encoding="utf-8")
-    git_in(root, "add", "-A")
-    git_in(root, "commit", "-q", "-m", "drop the package")
-    result = run_doctor(root)
-    assert result.exit_code == 0, result.output
-    assert "[warn] source_root" in result.output
-    assert "codebase scan" in result.output
-
-
-def test_the_interface_count_ignores_the_sentence_an_empty_section_carries() -> None:
-    """The one unit test in the file, and the control that keeps check 5
-    from going blind. The three `(none: ...)` strings are the exact
-    shapes PR #381 makes `extract_public_interfaces` return where main
-    returns `""`. A count of output LINES reads 0 today and 1 after
-    #381 merges, which would turn this check green on the repository it
-    exists for. This is what stops that.
-    """
-    assert doctor._interface_file_count("") == 0
-    assert (
-        doctor._interface_file_count(
-            "(none: no Python source root found under /x; searched 4 levels "
-            "for a package or a directory of .py files, excluding tests)"
-        )
-        == 0
-    )
-    assert (
-        doctor._interface_file_count(
-            "(none: no public classes or functions in the first 30 files of 2 source root(s): a, b)"
-        )
-        == 0
-    )
-    assert (
-        doctor._interface_file_count(
-            "(none: interface extraction failed: OSError: [Errno 13] "
-            "Permission denied: '/x/pkg/a.py')"
-        )
-        == 0
-    )
-    assert (
-        doctor._interface_file_count(
-            "pkg/a.py: class Deck, def build(name: str) -> Deck\npkg/b.py: class R"
-        )
-        == 2
-    )
-
-
-def test_the_interface_count_is_zero_through_the_real_extractor(tmp_path: Path) -> None:
-    """The control the pasted-sentence test above cannot give: an empty
-    directory run through the REAL `extract_public_interfaces`, not a
-    copy of what it once returned. The pasted-sentence test stays
-    green if PR #381 rewords its `(none: ...)` sentences; this one
-    stays green only if the real function's output, whatever its
-    words, still counts to 0.
-    """
-    empty = tmp_path / "empty"
-    empty.mkdir()
-    assert doctor._interface_file_count(extract_public_interfaces(empty)) == 0
-
-
 def test_a_repo_that_does_not_ignore_the_state_dir_warns_with_the_line_to_add(
     tmp_path: Path,
 ) -> None:
     root = ready_repo(tmp_path)
-    # #459: every Python entry stays, so the only thing missing is `.kstrl/`.
-    (root / ".gitignore").write_text(
-        "".join(f"{entry}\n" for entry in TOOLCHAINS["Python"].ignores), encoding="utf-8"
-    )
+    # A rule of the project's own stays, so the only thing missing is `.kstrl/`.
+    (root / ".gitignore").write_text("dist/\n", encoding="utf-8")
     git_in(root, "add", "-A")
     git_in(root, "commit", "-q", "-m", "drop ignore")
     result = run_doctor(root)
@@ -373,13 +292,9 @@ def test_every_report_carries_the_fit_boundaries(tmp_path: Path) -> None:
 def test_a_root_that_is_not_a_directory_is_refused_before_anything_is_written(
     tmp_path: Path,
 ) -> None:
-    """Without the guard the command does not fall through to a
-    not-ready verdict: check_source_root reaches Path.iterdir on the
-    missing directory and the command dies with FileNotFoundError and
-    exit 1 (measured). The assertions are on the message and on the
-    absence of the directory because what the guard buys is that
-    write_report's mkdir(parents=True) never runs on a path the
-    operator mistyped.
+    """The assertions are on the message and on the absence of the
+    directory because what the guard buys is that write_report's
+    mkdir(parents=True) never runs on a path the operator mistyped.
     """
     missing = tmp_path / "nope" / "deeper"
     result = run_doctor(missing)
@@ -430,12 +345,8 @@ PRICING_RS = (
 )
 
 
-def rust_repo(tmp_path: Path, *, python_helper: bool = False) -> Path:
-    """The #618 Rust fixture, built without cargo: doctor runs no command.
-
-    ``python_helper`` adds the one tracked `scripts/tool.py` with a public
-    function that turned the #618 source_root row to a plain ok.
-    """
+def rust_repo(tmp_path: Path) -> Path:
+    """The #618 Rust fixture, built without cargo: doctor runs no command."""
     root = tmp_path / "rustapp"
     root.mkdir()
     git_in(root, "init", "-q", "-b", "main")
@@ -444,18 +355,13 @@ def rust_repo(tmp_path: Path, *, python_helper: bool = False) -> Path:
     (root / "Cargo.toml").write_text(
         '[package]\nname = "rustapp"\nversion = "0.1.0"\nedition = "2021"\n', encoding="utf-8"
     )
-    (root / ".gitignore").write_text(gitignore_block("Rust"), encoding="utf-8")
+    (root / ".gitignore").write_text(gitignore_block(), encoding="utf-8")
     write_stack(root, RUST_CHECKS)
     src = root / "src"
     src.mkdir()
     (src / "main.rs").write_text('fn main() {\n    println!("hi");\n}\n', encoding="utf-8")
     (src / "lib.rs").write_text("pub mod pricing;\n", encoding="utf-8")
     (src / "pricing.rs").write_text(PRICING_RS, encoding="utf-8")
-    if python_helper:
-        (root / "scripts").mkdir()
-        (root / "scripts" / "tool.py").write_text(
-            "def release_notes(tag: str) -> str:\n    return tag\n", encoding="utf-8"
-        )
     git_in(root, "add", "-A")
     git_in(root, "commit", "-q", "-m", "initial")
     confirm_stack(root)
@@ -481,26 +387,6 @@ def test_test_root_on_a_rust_repo_does_not_claim_the_test_command_has_nothing_to
     assert "nothing to run" not in test_root["detail"]
 
 
-def test_source_root_on_a_rust_repo_names_the_language_and_not_issue_378(tmp_path: Path) -> None:
-    """#378 is closed and was about Python layouts; the cause here is the
-    language, and the deferred reader for other languages is #200."""
-    source_root = doctor_rows(rust_repo(tmp_path))["source_root"]
-    assert source_root["status"] == "warn"
-    assert "reads Python only" in source_root["detail"]
-    assert "(.rs: 3)" in source_root["detail"]
-    assert "#378" not in source_root["fix"]
-    assert "#200" in source_root["fix"]
-
-
-def test_source_root_on_a_rust_repo_with_one_python_helper_is_not_plain_ok(
-    tmp_path: Path,
-) -> None:
-    source_root = doctor_rows(rust_repo(tmp_path, python_helper=True))["source_root"]
-    assert source_root["status"] == "warn"
-    assert "summarises 1 Python file(s)" in source_root["detail"]
-    assert "3 of 4 tracked source files are not Python (.rs: 3)" in source_root["detail"]
-
-
 # #696 flag day: test_verify_commands_shows_the_resolved_contract_command,
 # test_verify_commands_shows_a_contract_command_set_in_kstrl_toml,
 # test_verify_commands_points_at_kstrl_config_when_phase_3_does_not_resolve,
@@ -513,15 +399,12 @@ def test_source_root_on_a_rust_repo_with_one_python_helper_is_not_plain_ok(
 
 def test_doctor_on_a_python_repo_is_unchanged(tmp_path: Path) -> None:
     """The control: on the Python fixture every row is still ok, and
-    source_root and test_root say what they said before #628."""
+    test_root says what it said before #628."""
     document = json.loads(run_doctor(ready_repo(tmp_path), "--json").stdout)
     rows = {check["name"]: check for check in document["checks"]}
     assert document["verdict"] == "ready"
     assert {name: row["status"] for name, row in rows.items()} == dict.fromkeys(
         EXPECTED_CHECK_NAMES, "ok"
-    )
-    assert rows["source_root"]["detail"] == (
-        "the codebase scan summarises 1 file(s) of a 30-file budget from source root(s): demo"
     )
     assert rows["test_root"]["detail"] == "1 tracked test path(s), e.g. tests/test_core.py"
     # #696 flag day: a confirmed [stack] is the only source of verification
@@ -598,9 +481,9 @@ def test_the_module_path_matcher_tells_a_module_from_a_file() -> None:
 
 @pytest.mark.parametrize("state", ["empty", "ready"])
 def test_the_report_names_no_python_module(tmp_path: Path, state: str) -> None:
-    """#452: the source_root line printed `kstrl.feedforward.extract_public_interfaces`
-    to the operator. An empty repository reaches the warn branches and a
-    ready one the ok branches, so between them every check prints."""
+    """#452: a doctor row once printed a kstrl module path to the operator.
+    An empty repository reaches the warn branches and a ready one the ok
+    branches, so between them every check prints."""
     if state == "ready":
         root = ready_repo(tmp_path)
     else:
@@ -608,7 +491,7 @@ def test_the_report_names_no_python_module(tmp_path: Path, state: str) -> None:
         root.mkdir()
         git_in(root, "init", "-q")
     result = run_doctor(root)
-    assert "source_root" in result.output
+    assert "test_root" in result.output
     assert module_paths(result.output) == []
 
 

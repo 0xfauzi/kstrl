@@ -222,10 +222,9 @@ class TestWizardScreen:
                 what="the wizard form to be laid out",
             )
             rendered = self._rendered(app)
-            assert "detected" in rendered
             for command in _CHECKS.values():
                 assert command in rendered, f"{command!r} not painted"
-            assert screen.query_one("#wizard-detected").size.height >= 4
+            assert screen.query_one("#wizard-detected").size.height >= len(_CHECKS)
         finally:
             await self._pilot_ctx.__aexit__(None, None, None)
 

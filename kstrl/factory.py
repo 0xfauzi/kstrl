@@ -2973,7 +2973,6 @@ def _run_component(
     previous_context_json: str | None = None,
     codebase_scan_config_dict: dict[str, Any] | None = None,
     setup: WorktreeSetup | None = None,
-    component_deps: list[str] | None = None,
     knowledge_prefix: str = "",
     decisions_prefix: str = "",
     progress_file_str: str | None = None,
@@ -3146,7 +3145,6 @@ def _run_component(
         component_id,
         setup,
         codebase_scan_config_dict,
-        component_deps,
     )
 
     context_prefix = engineer_context_prefix(
@@ -3388,7 +3386,6 @@ def _prepare_component_tree(
     component_id: str,
     setup: WorktreeSetup | None,
     codebase_scan_config_dict: dict[str, Any] | None,
-    component_deps: list[str] | None,
 ) -> tuple[str, list[str]]:
     """Run the worktree setup and build the Phase 0 scan context.
 
@@ -3413,8 +3410,6 @@ def _prepare_component_tree(
             codebase_scan_prefix = build_codebase_scan_context(
                 worktree_path,
                 CodebaseScanConfig(**codebase_scan_config_dict),
-                component_id=component_id,
-                component_deps=component_deps,
             )
         except Exception as exc:  # noqa: BLE001 - non-fatal, never silent
             notes.append(f"  Codebase scan failed for {component_id}: {type(exc).__name__}: {exc}")
@@ -5285,9 +5280,6 @@ def _run_factory_locked(
         ff_config_dict = {
             "enabled": fc.enabled,
             "module_map": fc.module_map,
-            "public_interfaces": fc.public_interfaces,
-            "dependency_graph": fc.dependency_graph,
-            "conventions": fc.conventions,
             "max_context_tokens": fc.max_context_tokens,
         }
 
@@ -5328,7 +5320,6 @@ def _run_factory_locked(
             ctx_json,
             ff_config_dict,
             factory_config.worktree_setup_for_component(comp),
-            comp.dependencies or None,
             knowledge_prefix,
             # #260: rides the same context-prefix path the distilled
             # facts already ride, so the register reaches the engineer

@@ -185,9 +185,6 @@ MEMORY_REL = "scripts/kstrl/memory.md"
 CODEBASE_SCAN_CONFIG: dict[str, object] = {
     "enabled": True,
     "module_map": True,
-    "public_interfaces": False,
-    "dependency_graph": False,
-    "conventions": False,
     "max_context_tokens": 4000,
 }
 

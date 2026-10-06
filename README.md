@@ -24,7 +24,7 @@ Most agent wrappers are retry loops: run the agent, ask it whether it is done, r
 
 kstrl is designed as a loop that closes on evidence instead. The parts are deliberate, and each exists to answer one question:
 
-- **What should the agent know before it starts?** Computed context: the module map, public interfaces, dependency graph and conventions, extracted from the tree without a model call. The agent learns the codebase's rules up front rather than from a linter on iteration three.
+- **What should the agent know before it starts?** Computed context: a module map of the tree, built without a model call, beside the project's own CLAUDE.md, golden patterns and memory. The agent reads the code itself with its own tools.
 - **How do we know what it actually did?** Independent measurement: mechanical checks, then a reviewer from a different model family judging every acceptance criterion, then a security reviewer. None of these read the agent's description of its work; they read the diff.
 - **What happens when the measurement disagrees?** The gap becomes the next instruction: parsed failures with file, line, source context and a fix hint, not raw tool output. The agent tries again against a smaller, sharper target.
 - **What stops it running away?** Bounds on everything: iterations, time, tokens, cost, work in flight, and a written envelope of what a merge may touch. When a bound trips, the run stops loudly and tells you why.
@@ -34,7 +34,7 @@ kstrl is those loops, nested, innermost fastest. The innermost is the only one w
 
 The reviewers are the point: independent, adversarial, and expected to distrust the implementing agent. The harness distrusts the reviewers in turn: an empty, partial or oversized review fails closed, and a reviewer's own claim to have searched thoroughly is shown as a hint and never used as a gate. The only thing that proves a reviewer works is calibration: planting known bugs and measuring how often each role catches them. The full phase-by-phase pipeline lives in [ARCHITECTURE.md](ARCHITECTURE.md), and the reasoning behind the loop is in [docs/loop-design.md](docs/loop-design.md).
 
-**Documentation**: [ARCHITECTURE.md](ARCHITECTURE.md) is the detailed system tour (pipeline, iteration loop, factory scheduling, state layout), [docs/adversarial-design.md](docs/adversarial-design.md) covers the full 8-role taxonomy, [docs/env-vars.md](docs/env-vars.md) every environment variable, [docs/runbook.md](docs/runbook.md) operator failure recovery, [docs/baseline.md](docs/baseline.md) the check baseline and the pull-request regression report, and [docs/linear-integration.md](docs/linear-integration.md) the optional Linear mirror. [examples/](examples/) has a scaffolded uv project and two sample feature specs.
+**Documentation**: [ARCHITECTURE.md](ARCHITECTURE.md) is the detailed system tour (pipeline, iteration loop, factory scheduling, state layout), [docs/adversarial-design.md](docs/adversarial-design.md) covers the full 8-role taxonomy, [docs/env-vars.md](docs/env-vars.md) every environment variable, [docs/runbook.md](docs/runbook.md) operator failure recovery, [docs/baseline.md](docs/baseline.md) the check baseline and the pull-request regression report, and [docs/linear-integration.md](docs/linear-integration.md) the optional Linear mirror. [examples/](examples/) has two sample feature specs.
 
 ## Quick start
 
@@ -76,13 +76,13 @@ kstrl does not validate model names: `[agent].model` is passed straight through 
 
 There is also an opt-in in-process adapter, `[agent] type = "claude-sdk"`, that drives Claude through the [Claude Agent SDK](https://docs.claude.com/en/api/agent-sdk/overview) instead of a CLI subprocess and supports an in-loop USD budget ceiling (`[agent].budget_usd`). It requires the `sdk` extra (`uv sync --extra sdk`) and is never chosen by auto-detect. `[agent].budget_usd` is adapter-internal and bounds a single turn; it is not `[factory].max_cost_usd`, which is the run-level spend ceiling across every phase and component ([details](docs/env-vars.md#the-two-run-level-ceilings-max_total_tokens-and-max_cost_usd-r8)).
 
-**Python-first**: kstrl works best on Python projects managed with uv. The codebase scan interface and dependency analysis parse Python (`ast` and import statements), and the default verification commands are `uv run pytest` / `uv run mypy` / `uv run ruff check`. Other stacks work by overriding the `[verify]` commands in kstrl.toml, but they get a reduced codebase scan context (module map and conventions only).
+**No default stack**: kstrl assumes no language, toolchain or test runner. It runs the checks of the `[stack]` in kstrl.toml once a person confirms it, and `ks doctor` files a proposed `[stack]` from an old `[verify]`. `ks init` writes the same files in every repository.
 
 ## How it works
 
 ### Before the agent acts: computed context
 
-kstrl statically analyzes the codebase - module map, public interfaces, dependency graph, active conventions - and injects it into the prompt. No LLM calls, no token cost. The agent knows "this project uses httpx, not requests" before it starts, instead of learning it from a linter failure on iteration 3.
+kstrl builds a module map of the tree (every directory git lists, with its file and line counts) and injects it into the prompt. No LLM calls, no token cost. kstrl reads no source language; the agent reads the code itself.
 
 ### After the agent acts: independent measurement
 
@@ -497,10 +497,7 @@ environment = ""  # deploy environment name, e.g. staging or prod
 # Phase 0 codebase scan (computational, no LLM)
 [codebase_scan]
 enabled = true             # inject structural context into the prompt
-module_map = true          # directory tree with LOC counts
-public_interfaces = true   # public symbols via Python ast
-dependency_graph = true    # internal import analysis (Python only)
-conventions = true         # extract from pyproject.toml, ruff.toml, ...
+module_map = true          # directory tree with file and LOC counts
 max_context_tokens = 4000  # cap to avoid prompt bloat
 
 # Per-component knowledge layer

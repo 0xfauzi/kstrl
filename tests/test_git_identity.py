@@ -124,7 +124,8 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # commits (#198), once per scenario that builds its own fixture.
     # #696: down from 8 to 7, one of the four [verify]-tool-key tests
     # this flag day deleted (its subject categorically retired).
-    "tests/test_doctor.py": 7,
+    # #696 slice 6: 6, with the no-Python-source row's test gone.
+    "tests/test_doctor.py": 6,
     # #399: the rewritten locale-pinned bad_patterns test commits into a
     # real repository through `tests.helpers.gitrepo.set_identity`.
     "tests/test_encoding_sites.py": 2,
@@ -161,7 +162,9 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # puts through `tests.helpers.gitrepo.set_identity`, plus `_repo`'s
     # own seed commit (`gitrepo.git_in(root, "commit", "-q", "-m", "init")`).
     "tests/test_inbox_waivers.py": 2,
-    "tests/test_init_cmd.py": 3,
+    # #696 slice 6: `seeded_repo` calls `tests.helpers.gitrepo.set_identity`
+    # before its one seed commit.
+    "tests/test_init_neutral_e2e.py": 1,
     "tests/test_input_hygiene.py": 4,
     "tests/test_instance_safety.py": 2,
     # #700 host fallback: the stub engineer's `git commit` shell string, in a
@@ -172,10 +175,6 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # `tests.test_merge_gate_park._repo` already put through
     # `tests.helpers.gitrepo.set_identity`.
     "tests/test_l1_plan_gate.py": 1,
-    # #459: five `git commit` spellings, every one into a repository
-    # this file's `isolated_repo` put through
-    # `tests.helpers.gitrepo.set_identity`.
-    "tests/test_language_ignores.py": 5,
     # #601: five `git commit` spellings, all into the repository
     # `tests.spine_utils.init_kstrl_repo` put through
     # `tests.helpers.gitrepo.set_identity`: the config commit, the engineer

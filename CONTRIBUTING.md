@@ -46,11 +46,6 @@ uv sync --all-extras --dev
 uv tool install -e .
 ```
 
-There is a runnable end-to-end example under
-[`examples/uv-python/`](examples/uv-python/) - its README shows dry-run and
-fake-agent invocations you can use to exercise the loop without spending
-tokens.
-
 ## Verification (run before every PR)
 
 The canonical commands live in [CLAUDE.md](CLAUDE.md); the short version:

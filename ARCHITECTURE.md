@@ -63,12 +63,9 @@ semantics never change.
 
 Computed fresh each iteration - no LLM calls, no token cost:
 
-- **Module map** - directory tree with file counts and lines of code
-- **Public interfaces** - classes and function signatures extracted via
-  Python's `ast` module
-- **Dependency graph** - internal import relationships (Python imports)
-- **Active conventions** - line length, quote style, type-checking mode
-  from pyproject.toml, ruff.toml, .editorconfig
+- **Module map** - directory tree with file counts and lines of code,
+  counting every file git lists whatever its suffix. kstrl reads no
+  source language (#696); the engineer reads the code with its own tools.
 
 Codebase scan is distinct from the knowledge prefix: codebase scan is
 *computed* from the current tree; knowledge facts are *distilled* by an

@@ -83,7 +83,7 @@ from kstrl.prd import PRD
 from kstrl.runid import mint_run_id
 from kstrl.stack import stack_text_digest
 from kstrl.statedir import plan_prd_path
-from kstrl.toolchains import TOOLCHAINS
+from kstrl.toolchains import BUILD_MANIFESTS
 
 logger = logging.getLogger(__name__)
 
@@ -786,14 +786,10 @@ def _extract_agent_json(agent: Any, output_lines: list[str]) -> Any:
 #: cannot get one from the factory. `init_cmd.build_manifest_blocker`
 #: refuses such a repository before the architect is paid, and
 #: tests/test_build_manifest_preflight.py checks that every name here
-#: is one that refusal recognises. #627 made it every manifest
-#: `init_cmd._detect_project_context` reads a language from; #635 derives
-#: it from the records' markers, so a record cannot add a marker this set
-#: lacks. A Gemfile is not one, so it is not here: the refusal would
-#: refuse the repository that holds it.
-ROOT_BUILD_MANIFESTS: frozenset[str] = frozenset(
-    marker for toolchain in TOOLCHAINS.values() for marker in toolchain.markers
-)
+#: is one that refusal recognises. It is `toolchains.BUILD_MANIFESTS`,
+#: the one list that refusal reads. A Gemfile is not one, so it is not
+#: here: the refusal would refuse the repository that holds it.
+ROOT_BUILD_MANIFESTS: frozenset[str] = frozenset(BUILD_MANIFESTS)
 _ALLOWED_PATHS_EXCLUDE: frozenset[str] = (
     frozenset(
         {

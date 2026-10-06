@@ -401,6 +401,9 @@ class TestTheWalkAgainstTheRealPackage:
         #700 slice 3 adds one more: ``verify.start_scrubbed``'s own
         ``subprocess.Popen``, the ``[stack] up`` the replay starts and
         leaves running. So 82.
+        #696 slice 6 deletes three: ``git.stage_file``, ``git.ignore_source``
+        and ``git.ignored_paths``, whose only callers were ``ks init``'s
+        lockfile staging and language ignores. So 79.
         """
         spawns = frozenset(
             {
@@ -412,7 +415,7 @@ class TestTheWalkAgainstTheRealPackage:
             }
         )
         found = package_calls(spawns)
-        assert len(found.seen) == 82
+        assert len(found.seen) == 79
         assert found.without_line_numbers().undecided == tuple(
             sorted(
                 [

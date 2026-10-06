@@ -57,6 +57,10 @@ _RETIRED_FOR_STACK = (
     "under [stack.checks] (ks doctor files a proposed [stack] from the old [verify] commands)"
 )
 
+#: Why a codebase scan section no longer exists (#696 slice 6): each read one
+#: source language's files or config.
+_RETIRED_SCAN_SECTION = "retired: the codebase scan reads no source language; remove it"
+
 #: (section, key) retired by #395 and #696, mapped to what replaced it: the
 #: refusal reads "names [section] key, which was <this>".
 RETIRED_KEYS: dict[tuple[str, str], str] = {
@@ -75,6 +79,9 @@ RETIRED_KEYS: dict[tuple[str, str], str] = {
     ),
     ("breaker", "test_command"): "retired: the no-progress breaker reads the diff only; remove it",
     ("breaker", "test_timeout"): "retired: the no-progress breaker reads the diff only; remove it",
+    ("codebase_scan", "public_interfaces"): _RETIRED_SCAN_SECTION,
+    ("codebase_scan", "dependency_graph"): _RETIRED_SCAN_SECTION,
+    ("codebase_scan", "conventions"): _RETIRED_SCAN_SECTION,
 }
 
 #: Environment variables retired by #395 and #696, mapped to what replaced
@@ -83,9 +90,9 @@ RETIRED_ENV_VARS: dict[str, str] = {
     "KSTRL_FACTORY_SETPOINT_AGREEMENT": "renamed to KSTRL_FACTORY_CLAIM_AGREEMENT",
     "KSTRL_FEEDFORWARD_ENABLED": "renamed to KSTRL_CODEBASE_SCAN_ENABLED",
     "KSTRL_FEEDFORWARD_MODULE_MAP": "renamed to KSTRL_CODEBASE_SCAN_MODULE_MAP",
-    "KSTRL_FEEDFORWARD_PUBLIC_INTERFACES": "renamed to KSTRL_CODEBASE_SCAN_PUBLIC_INTERFACES",
-    "KSTRL_FEEDFORWARD_DEPENDENCY_GRAPH": "renamed to KSTRL_CODEBASE_SCAN_DEPENDENCY_GRAPH",
-    "KSTRL_FEEDFORWARD_CONVENTIONS": "renamed to KSTRL_CODEBASE_SCAN_CONVENTIONS",
+    "KSTRL_FEEDFORWARD_PUBLIC_INTERFACES": _RETIRED_SCAN_SECTION,
+    "KSTRL_FEEDFORWARD_DEPENDENCY_GRAPH": _RETIRED_SCAN_SECTION,
+    "KSTRL_FEEDFORWARD_CONVENTIONS": _RETIRED_SCAN_SECTION,
     "KSTRL_FEEDFORWARD_MAX_TOKENS": "renamed to KSTRL_CODEBASE_SCAN_MAX_TOKENS",
     "KSTRL_VERIFY_TEST_CMD": _RETIRED_FOR_STACK,
     "KSTRL_VERIFY_TYPECHECK_CMD": _RETIRED_FOR_STACK,
@@ -99,4 +106,7 @@ RETIRED_ENV_VARS: dict[str, str] = {
     "KSTRL_CONTRACT_TEST_CMD": "retired: Phase 3 runs every check of the confirmed [stack]",
     "KSTRL_BREAKER_TEST_CMD": "retired: the no-progress breaker reads the diff only",
     "KSTRL_BREAKER_TEST_TIMEOUT": "retired: the no-progress breaker reads the diff only",
+    "KSTRL_CODEBASE_SCAN_PUBLIC_INTERFACES": _RETIRED_SCAN_SECTION,
+    "KSTRL_CODEBASE_SCAN_DEPENDENCY_GRAPH": _RETIRED_SCAN_SECTION,
+    "KSTRL_CODEBASE_SCAN_CONVENTIONS": _RETIRED_SCAN_SECTION,
 }

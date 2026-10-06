@@ -2,9 +2,8 @@
 
 The wizard never generates content itself: scaffolding is run_init's
 job (templates byte-identical, _create_if_missing non-destructive).
-This module answers "what WOULD init touch" for the preview, exposes
-the project-context detection, and offers exactly one write of its
-own: substituting the STOCK commented [agent] lines that
+This module answers "what WOULD init touch" for the preview, and
+offers exactly one write of its own: substituting the STOCK commented [agent] lines that
 DEFAULT_KSTRL_TOML ships - and refusing (False, no write) whenever
 those exact lines are not found, because a user-edited file is never
 something to guess inside.
@@ -16,12 +15,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from kstrl.init_cmd import (
-    ScaffoldAction,
-    _detect_project_context,
-    classify_scaffold,
-    gitignore_plan,
-)
+from kstrl.init_cmd import ScaffoldAction, classify_scaffold, gitignore_plan
 
 # The documented kstrl.toml [agent] type vocabulary (empty = auto).
 AGENT_TYPES = ("", "claude-code", "claude-sdk", "codex")
@@ -56,8 +50,7 @@ def plan_scaffold(root: Path) -> list[ScaffoldEntry]:
     without that block is reported as ``append``. Saying "exists - kept"
     there would be a preview that does not match the write (#201).
 
-    Files only. run_init has one non-file side effect, staging an
-    untracked lockfile, and it reports that in its own transcript.
+    Files only: run_init writes nothing else.
     """
     kstrl_dir = root / "scripts" / "kstrl"
     paths = [
@@ -100,11 +93,6 @@ def plan_scaffold(root: Path) -> list[ScaffoldEntry]:
     ]
     entries.append(ScaffoldEntry(path=root / ".gitignore", action=gitignore_plan(root)))
     return entries
-
-
-def detect_context(root: Path) -> dict[str, str]:
-    """Public wrapper over init_cmd's project-context detection."""
-    return _detect_project_context(root)
 
 
 def apply_agent_settings(

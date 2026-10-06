@@ -64,8 +64,9 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     # +2 for #500's `tracked_files_at`, +2 for #626's `listed_files`.
     # 70: #630's git.read_blob adds two subprocess.run and two
     # subprocess.TimeoutExpired. 72: #695's git._get_stored_diff adds one of
-    # each. 74: #696's git.status_entries adds one of each.
-    "git.py": 74,
+    # each. 74: #696's git.status_entries adds one of each. 68: #696 slice 6
+    # deletes stage_file, ignore_source and ignored_paths, two each.
+    "git.py": 68,
     "intake_github.py": 3,
     # #700: the import, and `TimeoutExpired` from `run_scrubbed`.
     "isolation.py": 2,
@@ -119,8 +120,9 @@ EXPECTED_TEXT_MODE_SPAWNS: dict[str, int] = {
     "factory.py": 5,
     # 26: 23 after #435, +1 for #465's `branch_sha`, +1 for #459's `ignored_paths`,
     # +1 for #500's `tracked_files_at`, +1 for #626's `listed_files`.
-    # 28: +1 for #696's `status_entries`.
-    "git.py": 28,
+    # 28: +1 for #696's `status_entries`. 25: #696 slice 6 deletes
+    # `stage_file`, `ignore_source` and `ignored_paths`.
+    "git.py": 25,
     "intake_github.py": 1,
     "licensing.py": 1,
     "pr.py": 9,
@@ -149,10 +151,7 @@ EXPECTED_CLEARED_SPAWNS: tuple[str, ...] = (
     "factory.py subprocess.run(['git', 'worktree', 'add', str(worktree_path), branch_n",
     "factory.py subprocess.run(['git', 'worktree', 'list', '--porcelain', '-z'], cwd=r",
     # codespell:ignore-next-line
-    "git.py subprocess.run(['git', 'add', '--', file], cwd=cwd, capture_output=Tru",
     "git.py subprocess.run(['git', 'branch', flag, '--', branch_name], cwd=cwd, ca",
-    "git.py subprocess.run(['git', 'check-ignore', '--stdin', '-z'], cwd=cwd, capt",
-    "git.py subprocess.run(['git', 'check-ignore', '-v', '--', file], cwd=cwd, cap",
     "git.py subprocess.run(['git', 'checkout', '-b', branch], cwd=cwd, capture_out",
     "git.py subprocess.run(['git', 'checkout', '-b', branch_name, base, '--'], cwd",
     "git.py subprocess.run(['git', 'checkout', branch, '--'], cwd=cwd, capture_out",

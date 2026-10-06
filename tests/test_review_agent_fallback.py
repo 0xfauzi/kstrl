@@ -35,7 +35,7 @@ import click
 import pytest
 
 import kstrl.cli as cli_mod
-from kstrl.init_cmd import _detect_project_context, gitignore_block
+from kstrl.init_cmd import gitignore_block
 from tests.helpers import gitrepo
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
 
@@ -246,8 +246,7 @@ def test_decompose_runs_the_kstrl_toml_agent_command_with_no_agent_cli(
         f"[agent]\ncommand = \"echo called >> '{calls}'; cat > /dev/null; echo not-json\"\n",
         encoding="utf-8",
     )
-    language = _detect_project_context(root)["language"]
-    (root / ".gitignore").write_text(gitignore_block(language), encoding="utf-8")
+    (root / ".gitignore").write_text(gitignore_block(), encoding="utf-8")
     gitrepo.git_in(root, "add", "-A")
     gitrepo.git_in(root, "commit", "-q", "-m", "init")
     env = {

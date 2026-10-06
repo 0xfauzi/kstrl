@@ -106,6 +106,27 @@ def test_a_retired_name_stops_the_command_before_its_body(tmp_path: Path) -> Non
     assert "No manifest found" not in proc.stdout + proc.stderr
 
 
+@pytest.mark.parametrize("key", ["public_interfaces", "dependency_graph", "conventions"])
+def test_a_retired_codebase_scan_key_stops_the_command_by_name(tmp_path: Path, key: str) -> None:
+    """#696 slice 6: the three scan sections that read one source language
+    are gone, and a kstrl.toml still naming one is refused by name before
+    the command body runs, not read as a switch that still works."""
+    (tmp_path / "kstrl.toml").write_text(f"[codebase_scan]\n{key} = true\n")
+
+    proc = subprocess.run(
+        [sys.executable, "-m", "kstrl", "status", "--root", str(tmp_path)],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        env={**os.environ, "KSTRL_NO_TUI": "1"},
+    )
+
+    assert proc.returncode == 2, proc.stdout + proc.stderr
+    assert f"[codebase_scan] {key}" in proc.stderr
+    assert "reads no source language" in proc.stderr
+    assert "No manifest found" not in proc.stdout + proc.stderr
+
+
 def test_an_old_finding_record_still_resolves() -> None:
     finding = Finding.from_dict(
         {
@@ -261,9 +282,8 @@ ALLOWED: dict[tuple[str, str], int] = {
     # at its path: attribute access and monkeypatch targets that
     # FEEDFORWARD_ALLOWED's path-shaped substrings do not match.
     # 16: #626 enrolled a seventh notice, its renderer and its table row.
-    ("tests/helpers/feedforward_prompts.py", "feedforward"): 16,
-    ("tests/test_feedforward.py", "feedforward"): 8,
-    ("tests/test_feedforward_notices.py", "feedforward"): 3,
+    # 4: #696 slice 6 left one notice, one renderer and one table row.
+    ("tests/helpers/feedforward_prompts.py", "feedforward"): 4,
     # docs/loop-design.md is a dated design analysis whose SUBJECT is
     # control-theory vocabulary: it explains the metaphor kstrl retired
     # (as a rejected alternative, "sensor"/"dampener"/etc. were once
@@ -376,4 +396,6 @@ def test_no_retired_name_survives_in_the_source() -> None:
         )
     assert sum(counts.get(k, 0) for k in ALLOWED) == sum(ALLOWED.values())
     assert len(SKIP_FILES) == 2
-    assert sum(ALLOWED.values()) == 186  # #696 slice 4 deleted test_check_committed_baseline.py
+    # 186 after #696 slice 4 deleted test_check_committed_baseline.py; 163 after
+    # slice 6 cut the scan's notices and tests down to the module map.
+    assert sum(ALLOWED.values()) == 163

@@ -131,9 +131,6 @@ EXPECTED_SCAFFOLD_KEYS = {
     "codebase_scan": {
         "enabled",
         "module_map",
-        "public_interfaces",
-        "dependency_graph",
-        "conventions",
         "max_context_tokens",
     },
     "knowledge": {

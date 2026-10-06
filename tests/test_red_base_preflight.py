@@ -209,6 +209,10 @@ def _repo(
         path.write_text(text, encoding="utf-8")
     result = CliRunner().invoke(cli, ["init", str(root), "--ui", "plain"])
     assert result.exit_code == 0, result.output
+    # The project's own build output: `ks init` names no tool's (#696), and
+    # the base refuses on whatever the [stack] checks leave in git status.
+    with (root / ".gitignore").open("a", encoding="utf-8") as handle:
+        handle.write("__pycache__/\n.pytest_cache/\n")
     (root / "scripts" / "kstrl" / "manifest.json").write_text(
         json.dumps(manifest), encoding="utf-8"
     )

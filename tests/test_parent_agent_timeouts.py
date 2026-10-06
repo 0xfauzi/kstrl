@@ -30,7 +30,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.init_cmd import _detect_project_context, gitignore_block
+from kstrl.init_cmd import gitignore_block
 from tests.helpers import gitrepo, procs
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
 from tests.test_isolation_rung import needs_nono
@@ -430,9 +430,7 @@ def _architect_repo(tmp_path: Path, script: str) -> Path:
     (root / "pyproject.toml").write_text(
         '[project]\nname = "demo"\nversion = "0.1.0"\n', encoding="utf-8"
     )
-    (root / ".gitignore").write_text(
-        gitignore_block(_detect_project_context(root)["language"]), encoding="utf-8"
-    )
+    (root / ".gitignore").write_text(gitignore_block(), encoding="utf-8")
     (root / "kstrl.toml").write_text(
         f'[agent]\ncommand = "bash {stub} {tmp_path}"\n'
         f"[factory]\narchitect_timeout_seconds = {SILENT_LIMIT}\n",

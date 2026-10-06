@@ -1,67 +1,21 @@
-"""Phase 0: Codebase scan controls - structural analysis and convention extraction.
+"""Phase 0: the codebase scan, a module map of the tree pasted into the engineer prompt.
 
-All analysis is computational (no LLM calls). Builds a context string
-to prepend to the agent prompt before each component runs.
+All analysis is computational (no LLM calls). The map counts every file
+git lists, whatever its suffix: kstrl reads no source language (#696).
+The engineer reads the code itself with its own tools.
 """
 
 from __future__ import annotations
 
-import ast
 import os
-import tomllib
-from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Any
 
 from kstrl import git
 from kstrl.config_numbers import check_numbers
-from kstrl.jsonread import read_json
-
-# Directories to always skip during tree walks
-_SKIP_DIRS = frozenset(
-    {
-        "__pycache__",
-        "node_modules",
-        ".git",
-        "venv",
-        ".venv",
-        ".kstrl",
-    }
-)
-
-# Source file extensions we care about
-_SOURCE_EXTENSIONS = frozenset(
-    {
-        ".py",
-        ".ts",
-        ".js",
-        ".tsx",
-        ".jsx",
-        ".go",
-        ".rs",
-    }
-)
 
 # Max directories in module map to avoid bloat
 _MAX_MODULE_MAP_DIRS = 50
-
-# Max files to scan for public interfaces
-_MAX_PUBLIC_INTERFACE_FILES = 30
-
-# How far below the repo root a source root may sit. Measured on the
-# deckgen monorepo (#378): `packages/<name>/src/<pkg>` sits four levels
-# down and is invisible at three, while five and six find nothing more
-# on either deckgen or kstrl and cost 15.6 ms against 4.7 ms.
-_MAX_SOURCE_ROOT_DEPTH = 4
-
-# Directory names whose subtree is never the source under change. Exact
-# names, never a prefix: `testpkg` and `testing` are ordinary packages,
-# and a prefix match deletes them from the engineer's view silently.
-# The extractor already skips FILES named `test*`; this is what keeps a
-# test PACKAGE from spending the whole file budget before any source is
-# read.
-_TEST_DIR_NAMES = frozenset({"test", "tests"})
 
 # The block's own header and footer, charged once per assembled block.
 _HEADER_FOOTER_OVERHEAD = len("=== CODEBASE CONTEXT (auto-generated) ===\n\n") + len(
@@ -69,55 +23,16 @@ _HEADER_FOOTER_OVERHEAD = len("=== CODEBASE CONTEXT (auto-generated) ===\n\n") +
 )
 
 
-# --- Engineer-facing notices (H3) ------------------------------------------
+# --- Engineer-facing notice (H3) -------------------------------------------
 #
-# Everything this module returns is pasted into the engineer prompt, so a
-# notice below is read by a model as part of its instructions. PR #417
-# removed "Raise codebase_scan.max_context_tokens to see it." from the
-# dependency graph's notice by hand and left no guard behind; #428 enrols
-# the bodies so a reword has to move a hash and a version with it.
-#
-# One version constant for the seven, as the #303 builder fragments do: the
-# unit is the notice vocabulary one module delivers to one role.
-CODEBASE_SCAN_NOTICE_PROMPT_VERSION = "1.1.0"
-
-NO_SOURCE_ROOT_PROMPT = (
-    "(none: public interfaces are read from Python source only; no "
-    "package or directory of .py files was found within {depth} levels "
-    "of {root}, excluding tests; source in other languages is not "
-    "summarised)"
-)
-
-NO_DEPENDENCY_GRAPH_PROMPT = (
-    "(none: the dependency graph is built only from imports between this "
-    "repository's own Python modules; {files} .py files were parsed and no "
-    "such import was found; imports in other languages are not read)"
-)
-
-NO_PUBLIC_SYMBOLS_PROMPT = (
-    "(none: no public classes or functions in the first "
-    "{max_files} files of {roots} source "
-    "root(s): {names})"
-)
-
-INTERFACES_DID_NOT_FIT_PROMPT = (
-    "(did not fit: the public interfaces passed the {max_chars} characters "
-    "left in the context budget after {read} of {total} files, "
-    "so it was not built.)"
-)
-
-GRAPH_DID_NOT_FIT_PROMPT = (
-    "(did not fit: the dependency graph passed the {max_chars} characters "
-    "left in the context budget after {parsed} of {total} files, "
-    "so it was not built.)"
-)
+# Everything this module returns is pasted into the engineer prompt, so the
+# notice below is read by a model as part of its instructions. #428 enrolled
+# the scan's notices so a reword has to move a hash and a version with it.
+# 2.0.0 (#696 slice 6): the public interfaces, the dependency graph and the
+# conventions are gone, and their six notices with them; this one is left.
+CODEBASE_SCAN_NOTICE_PROMPT_VERSION = "2.0.0"
 
 SECTION_FAILED_PROMPT = "(none: {heading} failed: {error_type}: {error})"
-
-SECTION_DID_NOT_FIT_PROMPT = (
-    "(did not fit: {heading} is {size} characters "
-    "against the {remaining} left in the context budget.)"
-)
 
 
 @dataclass
@@ -125,10 +40,7 @@ class CodebaseScanConfig:
     """Configuration for codebase scan context generation."""
 
     enabled: bool = True
-    module_map: bool = True  # directory tree with LOC counts
-    public_interfaces: bool = True  # extract public symbols
-    dependency_graph: bool = True  # import-based dependency analysis
-    conventions: bool = True  # extract from config files
+    module_map: bool = True  # directory tree with file and line counts
     max_context_tokens: int = 4000  # rough cap (estimate 4 chars per token)
 
     @classmethod
@@ -147,13 +59,7 @@ class CodebaseScanConfig:
             root_dir = Path.cwd()
         config = cls()
         section = load_toml_section(resolve_config_file(root_dir), "codebase_scan")
-        for key in (
-            "enabled",
-            "module_map",
-            "public_interfaces",
-            "dependency_graph",
-            "conventions",
-        ):
+        for key in ("enabled", "module_map"):
             if key in section:
                 setattr(config, key, bool(section[key]))
         if "max_context_tokens" in section:
@@ -165,9 +71,6 @@ class CodebaseScanConfig:
 _ENV_MAP: dict[str, tuple[str, type]] = {
     "KSTRL_CODEBASE_SCAN_ENABLED": ("enabled", bool),
     "KSTRL_CODEBASE_SCAN_MODULE_MAP": ("module_map", bool),
-    "KSTRL_CODEBASE_SCAN_PUBLIC_INTERFACES": ("public_interfaces", bool),
-    "KSTRL_CODEBASE_SCAN_DEPENDENCY_GRAPH": ("dependency_graph", bool),
-    "KSTRL_CODEBASE_SCAN_CONVENTIONS": ("conventions", bool),
     "KSTRL_CODEBASE_SCAN_MAX_TOKENS": ("max_context_tokens", int),
 }
 
@@ -188,11 +91,6 @@ def _apply_env_overrides(config: CodebaseScanConfig) -> None:
 def _is_hidden(name: str) -> bool:
     """Check if a file or directory name is hidden (starts with dot)."""
     return name.startswith(".")
-
-
-def _should_skip_dir(name: str) -> bool:
-    """Check if a directory should be skipped during traversal."""
-    return name in _SKIP_DIRS or _is_hidden(name)
 
 
 def _count_lines(path: Path) -> int:
@@ -234,22 +132,21 @@ def _enters(subdir: Path, listing: _GitListing | None) -> bool:
     """Whether the module-map walk descends into *subdir*.
 
     With an answer from git, only a directory holding a listed file.
-    Without one, every directory ``_should_skip_dir`` does not skip.
+    Without one, every directory whose name does not start with a dot.
     """
-    if _should_skip_dir(subdir.name):
+    if _is_hidden(subdir.name):
         return False
     return listing is None or subdir in listing.dirs
 
 
 def _counts(path: Path, listing: _GitListing | None) -> bool:
-    """Whether the module-map walk counts the file at *path*."""
-    if path.suffix not in _SOURCE_EXTENSIONS:
-        return False
+    """Whether the module-map walk counts the file at *path*: every file git
+    lists, whatever its suffix, or every file when git could not answer."""
     return listing is None or path in listing.files
 
 
 def _walk_source_dirs(root: Path) -> list[tuple[Path, int, int]]:
-    """Walk directory tree and collect source directories with file/LOC counts.
+    """Walk directory tree and collect directories with file/LOC counts.
 
     Returns list of (dir_path, file_count, line_count) tuples,
     sorted by path depth then alphabetically. Capped at _MAX_MODULE_MAP_DIRS.
@@ -292,10 +189,10 @@ def _walk_source_dirs(root: Path) -> list[tuple[Path, int, int]]:
 
 
 def build_module_map(root: Path) -> str:
-    """Build an indented tree of source directories with file and LOC counts.
+    """Build an indented tree of directories with file and LOC counts.
 
-    Skips hidden dirs, __pycache__, node_modules, .git, venv, .venv, .kstrl,
-    and whatever git ignores. Caps at 50 directories.
+    Skips hidden directories (``.git``, ``.kstrl``) and whatever git
+    ignores. Caps at 50 directories.
     """
     entries = _walk_source_dirs(root)
     if not entries:
@@ -322,766 +219,49 @@ def build_module_map(root: Path) -> str:
     return "\n".join(lines)
 
 
-def _classify_dir(directory: Path) -> tuple[bool, list[Path], list[Path]]:
-    """One directory, read once: (holds .py files, child packages, other children).
+def _module_map_section(root: Path) -> str:
+    """The module map's body, or the line recording why building it failed.
 
-    An unreadable directory reads as empty, which is what the caller did
-    with a `PermissionError` before #378. A `test`/`tests` child is
-    skipped here, not filtered afterward: the walk never descends into
-    one, so a test package can never spend the file budget the caller
-    reads with, and a package below it is never reached either.
+    A crash does not take the engineer's prompt down, and it is not
+    dropped either: the failure is the section's content (#378).
     """
     try:
-        entries = list(directory.iterdir())
-    except OSError:
-        return False, [], []
-    holds_py = any(e.suffix == ".py" and e.is_file() for e in entries)
-    child_packages: list[Path] = []
-    plain_subdirs: list[Path] = []
-    for entry in entries:
-        if not entry.is_dir() or _should_skip_dir(entry.name) or entry.name in _TEST_DIR_NAMES:
-            continue
-        if (entry / "__init__.py").is_file():
-            child_packages.append(entry)
-        else:
-            plain_subdirs.append(entry)
-    return holds_py, child_packages, plain_subdirs
-
-
-def _find_top_source_dirs(root: Path) -> list[Path]:
-    """Candidate source roots under *root*, in NO meaningful order.
-
-    Every directory holding ``__init__.py`` within
-    ``_MAX_SOURCE_ROOT_DEPTH`` levels, or, when the tree has no packages
-    at all, every directory below *root* that holds ``.py`` files
-    directly. The walk stops at a package rather than descending into
-    it, so a subpackage is never a candidate of its own.
-
-    *root* itself is never a loose candidate: the caller rglobs what it
-    is given, and rglobbing the repo root would descend into exactly the
-    directories ``_should_skip_dir`` exists to keep this walk out of.
-
-    The order is deliberately not meaningful. ``_ordered_source_roots``
-    decides the order the budget is spent in, so that it is a property
-    of the repo rather than of ``iterdir``.
-    """
-    packages: list[Path] = []
-    loose: list[Path] = []
-    stack: list[tuple[Path, int]] = [(root, 0)]
-    while stack:
-        directory, depth = stack.pop()
-        holds_py, child_packages, plain_subdirs = _classify_dir(directory)
-        if holds_py and directory != root:
-            loose.append(directory)
-        if depth >= _MAX_SOURCE_ROOT_DEPTH:
-            continue
-        packages.extend(child_packages)
-        stack.extend((child, depth + 1) for child in plain_subdirs)
-    return packages or loose
-
-
-def _ordered_source_roots(root: Path) -> list[tuple[Path, list[Path]]]:
-    """Each candidate root with its ``.py`` files, biggest root first.
-
-    Ties break on the path, so the whole order is a total order over
-    distinct paths and no part of it comes from the filesystem.
-    """
-    scanned: list[tuple[Path, list[Path]]] = []
-    for src_dir in _find_top_source_dirs(root):
-        try:
-            py_files = sorted(src_dir.rglob("*.py"))
-        except OSError:
-            py_files = []
-        scanned.append((src_dir, py_files))
-    scanned.sort(key=lambda item: (-len(item[1]), item[0].as_posix()))
-    return scanned
-
-
-def _extract_symbols_from_file(filepath: Path) -> list[str]:
-    """Extract public class and function names from a Python file using ast.
-
-    Returns formatted strings like:
-      'class User'
-      'def register_routes(app: FastAPI) -> None'
-    """
-    try:
-        source = filepath.read_text(encoding="utf-8", errors="replace")
-        tree = ast.parse(source, filename=str(filepath))
-    except (SyntaxError, Exception):
-        return []
-
-    symbols: list[str] = []
-    for node in ast.iter_child_nodes(tree):
-        if isinstance(node, ast.ClassDef):
-            if not node.name.startswith("_"):
-                symbols.append(f"class {node.name}")
-        elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
-            if not node.name.startswith("_"):
-                sig = _format_function_signature(node)
-                symbols.append(sig)
-
-    return symbols
-
-
-def _format_function_signature(node: ast.FunctionDef | ast.AsyncFunctionDef) -> str:
-    """Format a function node into a readable signature string."""
-    prefix = "async def" if isinstance(node, ast.AsyncFunctionDef) else "def"
-    params: list[str] = []
-
-    for arg in node.args.args:
-        name = arg.arg
-        if name == "self" or name == "cls":
-            continue
-        if arg.annotation:
-            try:
-                ann = ast.unparse(arg.annotation)
-                params.append(f"{name}: {ann}")
-            except Exception:
-                params.append(name)
-        else:
-            params.append(name)
-
-    sig = f"{prefix} {node.name}({', '.join(params)})"
-
-    if node.returns:
-        try:
-            ret = ast.unparse(node.returns)
-            sig += f" -> {ret}"
-        except Exception:
-            pass
-
-    return sig
-
-
-def extract_public_interfaces(root: Path, max_chars: int | None = None) -> str:
-    """Body of the "Public interfaces" section: public classes and functions.
-
-    Skips files starting with '_' or 'test'. Reads at most
-    ``_MAX_PUBLIC_INTERFACE_FILES`` files, biggest source root first.
-
-    Never returns "". When nothing was extracted the body is one line
-    saying why, because an absent section reads exactly like a repo with
-    no public symbols: #378 measured a whole run where the engineer was
-    told nothing and no artifact recorded that the stage had tried.
-    """
-    scanned = _ordered_source_roots(root)
-    if not scanned:
-        return NO_SOURCE_ROOT_PROMPT.format(root=root, depth=_MAX_SOURCE_ROOT_DEPTH)
-
-    # Private and test files are dropped before the budget is spent on them.
-    candidates = [f for _, files in scanned for f in files if not f.name.startswith(("_", "test"))]
-
-    lines: list[str] = []
-    rendered_chars = 0
-    read = 0
-    for py_file in candidates:
-        if len(lines) >= _MAX_PUBLIC_INTERFACE_FILES:
-            break
-        if max_chars is not None and rendered_chars > max_chars:
-            return INTERFACES_DID_NOT_FIT_PROMPT.format(
-                max_chars=max_chars, read=read, total=len(candidates)
-            )
-        read += 1
-        symbols = _extract_symbols_from_file(py_file)
-        if symbols:
-            line = f"{py_file.relative_to(root).as_posix()}: {', '.join(symbols)}"
-            rendered_chars += len(line) + (1 if lines else 0)
-            lines.append(line)
-
-    if not lines:
-        names = ", ".join(sorted(d.relative_to(root).as_posix() for d, _ in scanned)[:5])
-        return NO_PUBLIC_SYMBOLS_PROMPT.format(
-            max_files=_MAX_PUBLIC_INTERFACE_FILES, roots=len(scanned), names=names
-        )
-
-    return "\n".join(lines)
-
-
-def _render_edge(source_module: str, target_module: str, names: Iterable[str]) -> str:
-    """Exactly the line the graph renderer emits for one edge.
-
-    *names* is rendered in the order given; the renderer passes it
-    already sorted. This is the one place the line's text is written, so
-    the renderer and the size accounting in `_record_edge` cannot drift
-    apart the way two independent copies of it did (measured on this
-    repository: the old separate estimate was 16.7% low).
-    """
-    names_list = list(names)
-    if names_list:
-        return f"{source_module} -> {target_module} (imports: {', '.join(names_list)})"
-    return f"{source_module} -> {target_module}"
-
-
-def _record_edge(
-    edges: dict[str, dict[str, set[str]]],
-    source_module: str,
-    target_module: str,
-    names: set[str],
-) -> int:
-    """Record one edge and return the EXACT growth in rendered characters.
-
-    The count must equal the corresponding growth in
-    ``"\\n".join(lines)`` exactly, never more: an over-count would stop
-    the caller on a graph that would in fact have fitted, which is the
-    one error this function must not make. A new edge charges its own
-    rendered line plus the joining newline the final ``"\\n".join`` adds
-    for it, except for the very first edge the graph has ever recorded,
-    which needs no newline before it. Adding names to an edge that
-    already exists charges only the difference between the edge's old
-    and new rendered line; `set.update` on an empty set is a no-op, so
-    this needs no separate guard for "nothing new was imported".
-    """
-    targets = edges.setdefault(source_module, {})
-    is_new_edge = target_module not in targets
-    edges_before = sum(len(t) for t in edges.values())
-    bucket = targets.setdefault(target_module, set())
-    if is_new_edge:
-        bucket.update(names)
-        after = _render_edge(source_module, target_module, sorted(bucket))
-        return len(after) + (1 if edges_before else 0)
-    before = _render_edge(source_module, target_module, sorted(bucket))
-    bucket.update(names)
-    after = _render_edge(source_module, target_module, sorted(bucket))
-    return len(after) - len(before)
-
-
-def build_dependency_graph(root: Path, max_chars: int | None = None) -> str:
-    """Build a module-level dependency graph from Python imports.
-
-    Only tracks internal imports (within the project). Parses all .py
-    files under the same source roots ``extract_public_interfaces`` uses
-    (#378: the top-level-``__init__.py``-or-``src/<pkg>`` rule this
-    replaced is silently empty on a ``packages/<name>/src/<pkg>``
-    monorepo, the same defect the interface extractor had, in the same
-    module).
-
-    *max_chars* is the room left for this section in the caller's context
-    budget. Parsing stops as soon as the graph built so far is already
-    bigger than that, and the return value says so instead of being a
-    graph nobody will be shown (#403). ``None`` means no budget: parse
-    everything.
-
-    Never returns "". A graph with no edge is one line saying what was
-    read, because an absent section reads exactly like a stage that never
-    ran (#626, the defect #378 fixed for the interfaces section).
-    """
-    roots = _find_top_source_dirs(root)
-    packages = {d.name for d in roots}
-
-    all_py_files: list[tuple[Path, Path]] = []
-    for src_dir in roots:
-        try:
-            all_py_files.extend((f, src_dir) for f in sorted(src_dir.rglob("*.py")))
-        except OSError:
-            pass
-
-    # Parse imports from each file
-    # edges: dict of (source_module -> dict of target_module -> set of imported names)
-    edges: dict[str, dict[str, set[str]]] = {}
-    rendered_chars = 0
-    parsed = 0
-
-    for py_file, src_dir in all_py_files:
-        if max_chars is not None and rendered_chars > max_chars:
-            return GRAPH_DID_NOT_FIT_PROMPT.format(
-                max_chars=max_chars, parsed=parsed, total=len(all_py_files)
-            )
-        parsed += 1
-        try:
-            source = py_file.read_text(encoding="utf-8", errors="replace")
-            tree = ast.parse(source, filename=str(py_file))
-        except (SyntaxError, Exception):
-            continue
-
-        # Determine the module name for this file, relative to the
-        # directory that CONTAINS its source root, so the leading part
-        # of the relative path is the package name itself.
-        source_module = _path_to_module(py_file, src_dir.parent, packages)
-        if not source_module:
-            continue
-
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom):
-                if node.module is None:
-                    continue
-                top_level = node.module.split(".")[0]
-                if top_level not in packages:
-                    continue
-
-                target_module = _simplify_module(node.module, packages)
-                if target_module == source_module:
-                    continue
-
-                names = set()
-                for alias in node.names or []:
-                    if alias.name != "*":
-                        names.add(alias.name)
-
-                rendered_chars += _record_edge(edges, source_module, target_module, names)
-
-            elif isinstance(node, ast.Import):
-                for alias in node.names:
-                    top_level = alias.name.split(".")[0]
-                    if top_level not in packages:
-                        continue
-                    target_module = _simplify_module(alias.name, packages)
-                    if target_module == source_module:
-                        continue
-
-                    rendered_chars += _record_edge(edges, source_module, target_module, set())
-
-    if not edges:
-        return NO_DEPENDENCY_GRAPH_PROMPT.format(files=len(all_py_files))
-
-    lines: list[str] = []
-    for src_mod in sorted(edges):
-        for tgt_mod in sorted(edges[src_mod]):
-            lines.append(_render_edge(src_mod, tgt_mod, sorted(edges[src_mod][tgt_mod])))
-
-    return "\n".join(lines)
-
-
-def _path_to_module(filepath: Path, root: Path, packages: set[str]) -> str | None:
-    """Convert a file path to a simplified module name.
-
-    For example: root/kstrl/factory.py -> 'factory'
-    """
-    try:
-        rel = filepath.relative_to(root)
-    except ValueError:
-        return None
-
-    parts = list(rel.parts)
-    if not parts:
-        return None
-
-    # Strip the package name prefix
-    if parts[0] in packages:
-        parts = parts[1:]
-
-    if not parts:
-        return None
-
-    # Convert file to module name
-    module_parts = []
-    for part in parts:
-        if part.endswith(".py"):
-            name = part[:-3]
-            if name == "__init__":
-                continue
-            module_parts.append(name)
-        else:
-            module_parts.append(part)
-
-    return ".".join(module_parts) if module_parts else None
-
-
-def _simplify_module(module_path: str, packages: set[str]) -> str:
-    """Simplify a dotted module path by stripping the top-level package.
-
-    For example: 'kstrl.factory' -> 'factory'
-    """
-    parts = module_path.split(".")
-    if parts and parts[0] in packages:
-        parts = parts[1:]
-    return ".".join(parts) if parts else module_path
-
-
-def extract_conventions(root: Path) -> str:
-    """Extract coding conventions from config files.
-
-    Reads pyproject.toml, ruff.toml, .editorconfig, tsconfig.json,
-    package.json, Cargo.toml, rustfmt.toml, .rustfmt.toml and go.mod.
-    Returns a bullet-point list of discovered conventions.
-    """
-    bullets: list[str] = []
-
-    _extract_pyproject_conventions(root, bullets)
-    _extract_ruff_toml_conventions(root, bullets)
-    _extract_editorconfig_conventions(root, bullets)
-    _extract_tsconfig_conventions(root, bullets)
-    _extract_package_json_conventions(root, bullets)
-    _extract_cargo_conventions(root, bullets)
-    _extract_rustfmt_conventions(root, bullets)
-    _extract_go_mod_conventions(root, bullets)
-
-    if not bullets:
-        return ""
-
-    return "\n".join(f"- {b}" for b in bullets)
-
-
-def _extract_pyproject_conventions(root: Path, bullets: list[str]) -> None:
-    """Extract conventions from pyproject.toml."""
-    path = root / "pyproject.toml"
-    if not path.is_file():
-        return
-
-    try:
-        data = tomllib.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return
-
-    # Python version requirement
-    try:
-        requires_python = data.get("project", {}).get("requires-python")
-        if requires_python:
-            bullets.append(f"Python version: {requires_python}")
-    except Exception:
-        pass
-
-    # Ruff config in pyproject.toml
-    try:
-        ruff = data.get("tool", {}).get("ruff", {})
-        if "line-length" in ruff:
-            bullets.append(f"Line length (ruff): {ruff['line-length']}")
-        if "target-version" in ruff:
-            bullets.append(f"Target version (ruff): {ruff['target-version']}")
-
-        lint = ruff.get("lint", {})
-        if "select" in lint:
-            bullets.append(f"Ruff rules: {', '.join(lint['select'])}")
-    except Exception:
-        pass
-
-    # Black config in pyproject.toml
-    try:
-        black = data.get("tool", {}).get("black", {})
-        if "line-length" in black:
-            bullets.append(f"Line length (black): {black['line-length']}")
-        if "target-version" in black:
-            versions = black["target-version"]
-            if isinstance(versions, list):
-                bullets.append(f"Target versions (black): {', '.join(versions)}")
-    except Exception:
-        pass
-
-
-def _extract_ruff_toml_conventions(root: Path, bullets: list[str]) -> None:
-    """Extract conventions from ruff.toml."""
-    path = root / "ruff.toml"
-    if not path.is_file():
-        return
-
-    try:
-        data = tomllib.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return
-
-    try:
-        if "line-length" in data:
-            bullets.append(f"Line length (ruff.toml): {data['line-length']}")
-        if "target-version" in data:
-            bullets.append(f"Target version (ruff.toml): {data['target-version']}")
-
-        lint = data.get("lint", {})
-        if "select" in lint:
-            bullets.append(f"Ruff rules (ruff.toml): {', '.join(lint['select'])}")
-
-        format_cfg = data.get("format", {})
-        if "quote-style" in format_cfg:
-            bullets.append(f"Quote style: {format_cfg['quote-style']}")
-    except Exception:
-        pass
-
-
-def _extract_editorconfig_conventions(root: Path, bullets: list[str]) -> None:
-    """Extract conventions from .editorconfig."""
-    path = root / ".editorconfig"
-    if not path.is_file():
-        return
-
-    try:
-        content = path.read_text(encoding="utf-8")
-    except Exception:
-        return
-
-    # Simple .editorconfig parsing - just look for key values
-    try:
-        for line in content.splitlines():
-            line = line.strip()
-            if line.startswith("#") or line.startswith(";") or "=" not in line:
-                continue
-            key, _, value = line.partition("=")
-            key = key.strip().lower()
-            value = value.strip()
-
-            if key == "indent_style":
-                bullets.append(f"Indent style: {value}")
-            elif key == "indent_size":
-                bullets.append(f"Indent size: {value}")
-    except Exception:
-        pass
-
-
-def _extract_tsconfig_conventions(root: Path, bullets: list[str]) -> None:
-    """Extract conventions from tsconfig.json."""
-    path = root / "tsconfig.json"
-    if not path.is_file():
-        return
-
-    try:
-        data = read_json(path.read_text(encoding="utf-8"))
-    except Exception:
-        return
-
-    try:
-        compiler = data.get("compilerOptions", {})
-        if compiler.get("strict"):
-            bullets.append("TypeScript strict mode: enabled")
-        if "target" in compiler:
-            bullets.append(f"TypeScript target: {compiler['target']}")
-    except Exception:
-        pass
-
-
-def _extract_package_json_conventions(root: Path, bullets: list[str]) -> None:
-    """Extract conventions from package.json."""
-    path = root / "package.json"
-    if not path.is_file():
-        return
-
-    try:
-        data = read_json(path.read_text(encoding="utf-8"))
-    except Exception:
-        return
-
-    try:
-        module_type = data.get("type")
-        if module_type:
-            bullets.append(f"Module type: {module_type}")
-    except Exception:
-        pass
-
-
-def _read_toml(path: Path) -> dict[str, Any] | None:
-    """The TOML document at *path*, or None when it is absent, unreadable
-    or not TOML.
-
-    The read and its utf-8 decode happen before the parse guard, so the
-    guard only ever sees what the parse raises, and it catches
-    ``Exception`` because tomllib's error taxonomy is not enumerable
-    (#318). ``ValueError`` beside ``OSError`` on the read is the
-    ``UnicodeDecodeError`` of a file that is not utf-8. Not
-    ``load_toml_document``: that is the kstrl.toml primitive, and a
-    caller of it is a config surface in ``tests/test_config_guard.py``.
-    """
-    if not path.is_file():
-        return None
-    try:
-        text = path.read_text(encoding="utf-8")
-    except (OSError, ValueError):
-        return None
-    try:
-        return tomllib.loads(text)
-    except Exception:
-        return None
-
-
-def _table(value: object) -> dict[str, Any]:
-    """*value* when it is a TOML table, else an empty one."""
-    return value if isinstance(value, dict) else {}
-
-
-def _extract_cargo_conventions(root: Path, bullets: list[str]) -> None:
-    """Rust edition, minimum Rust version and lint tables from Cargo.toml.
-
-    A crate declares them under ``[package]`` and ``[lints]``; a workspace
-    root declares shared ones under ``[workspace.package]`` and
-    ``[workspace.lints]``. A member that inherits writes
-    ``edition.workspace = true``, a table rather than a value, so only a
-    string is read as a value.
-    """
-    data = _read_toml(root / "Cargo.toml")
-    if data is None:
-        return
-    workspace = _table(data.get("workspace"))
-    packages = (_table(data.get("package")), _table(workspace.get("package")))
-    for key, label in (("edition", "Rust edition"), ("rust-version", "Minimum Rust version")):
-        value = next((pkg[key] for pkg in packages if isinstance(pkg.get(key), str)), None)
-        if value is not None:
-            bullets.append(f"{label}: {value}")
-    lint_tables = {**_table(workspace.get("lints")), **_table(data.get("lints"))}
-    tools = sorted(name for name, table in lint_tables.items() if isinstance(table, dict))
-    if tools:
-        bullets.append(f"Cargo lint tables: {', '.join(tools)}")
-
-
-def _extract_rustfmt_conventions(root: Path, bullets: list[str]) -> None:
-    """Line width and edition from rustfmt.toml and .rustfmt.toml."""
-    for name in ("rustfmt.toml", ".rustfmt.toml"):
-        data = _read_toml(root / name)
-        if data is None:
-            continue
-        if "max_width" in data:
-            bullets.append(f"Max width ({name}): {data['max_width']}")
-        if "edition" in data:
-            bullets.append(f"Edition ({name}): {data['edition']}")
-
-
-def _extract_go_mod_conventions(root: Path, bullets: list[str]) -> None:
-    """The Go language version from go.mod's ``go`` directive."""
-    path = root / "go.mod"
-    if not path.is_file():
-        return
-    try:
-        content = path.read_text(encoding="utf-8")
-    except (OSError, ValueError):
-        return
-    for line in content.splitlines():
-        fields = line.split()
-        if len(fields) >= 2 and fields[0] == "go":
-            bullets.append(f"Go version: {fields[1]}")
-            return
-
-
-def _append_section(
-    sections: list[tuple[str, str]],
-    heading: str,
-    build: Callable[[int], str],
-    remaining: int,
-) -> None:
-    """Run *build* and append its result under *heading*, unless empty.
-
-    *remaining* is how many characters of the context budget are left for
-    this section's body. A builder that cannot be sized without doing the
-    work uses it to stop early (#403); the others ignore it.
-
-    A body that came back bigger than *remaining* is replaced by a line
-    saying so, so one oversize section no longer withholds every smaller
-    section behind it (#420). Two things are exempt. The FIRST section,
-    because with *sections* still empty there is nothing behind it to
-    starve and ``_truncate_to_budget`` CUTS a lone section to fit rather
-    than dropping it, so refusing it here would deliver less than before;
-    that is the same ``sections`` test the builders table uses to decide
-    whether the graph gets a budget at all. And a crash record, because it
-    did not fail to FIT, it failed, and rewriting it into a size reason
-    would report a cause that is not the cause.
-
-    A crash inside *build* does not take the whole context down; it is
-    RECORDED as the section's content instead of dropped (#378: the
-    public-interfaces section used to be the only one of the four that
-    said what it swallowed).
-    """
-    try:
-        content = build(remaining)
+        return build_module_map(root)
     except Exception as exc:
-        content = SECTION_FAILED_PROMPT.format(
-            heading=heading.lower(), error_type=type(exc).__name__, error=exc
+        return SECTION_FAILED_PROMPT.format(
+            heading="module map", error_type=type(exc).__name__, error=exc
         )
-    else:
-        if sections and len(content) > remaining:
-            content = SECTION_DID_NOT_FIT_PROMPT.format(
-                heading=heading.lower(), size=len(content), remaining=remaining
-            )
-    if content:
-        sections.append((heading, content))
-
-
-def _dependency_graph_section(
-    root: Path, component_id: str, component_deps: list[str] | None, max_chars: int | None
-) -> str:
-    """The "Dependency graph" body, filtered to *component_id* and its
-    direct dependencies when component context is available.
-
-    *max_chars* bounds the graph build; the caller decides whether that
-    is a real limit or ``None``, which builds all of it.
-    """
-    content = build_dependency_graph(root, max_chars)
-    if content and component_deps:
-        relevant = set(component_deps)
-        if component_id:
-            relevant.add(component_id)
-        filtered_lines = [
-            line for line in content.splitlines() if any(dep in line for dep in relevant)
-        ]
-        if filtered_lines:
-            content = "\n".join(filtered_lines)
-    return content
 
 
 def build_codebase_scan_context(
     worktree_path: Path,
     config: CodebaseScanConfig | None = None,
-    component_id: str = "",
-    component_deps: list[str] | None = None,
 ) -> str:
-    """Build the full codebase scan context string for agent prompt injection.
+    """Build the codebase scan context string for agent prompt injection.
 
-    Main entry point. Calls each sub-function if enabled, assembles into
-    a formatted string with header/footer markers.
-
-    When *component_id* and *component_deps* are provided, the dependency
-    graph section is filtered to show only edges relevant to this component
-    and its direct dependencies.
-
-    Applies max_context_tokens cap by estimating total chars and truncating
-    sections in order of priority (conventions first to drop, module map last).
+    Main entry point: the module map under header and footer markers,
+    cut to ``max_context_tokens`` (estimated at 4 characters a token).
     """
     if config is None:
         config = CodebaseScanConfig()
 
-    if not config.enabled:
+    if not config.enabled or not config.module_map:
         return ""
 
-    max_chars = config.max_context_tokens * 4
+    content = _module_map_section(worktree_path)
+    if not content:
+        return ""
 
-    # Build sections in priority order (highest priority first - last to be dropped)
-    # Priority: module_map > dependency_graph > public_interfaces > conventions
-    sections: list[tuple[str, str]] = []
-    builders: list[tuple[bool, str, Callable[[int], str]]] = [
-        (config.module_map, "Module map", lambda _left: build_module_map(worktree_path)),
-        (
-            config.dependency_graph,
-            "Dependency graph",
-            lambda left: _dependency_graph_section(
-                worktree_path,
-                component_id,
-                component_deps,
-                left if sections and not component_deps else None,
-            ),
-        ),
-        (
-            config.public_interfaces,
-            "Public interfaces",
-            lambda left: extract_public_interfaces(worktree_path, left if sections else None),
-        ),
-        (config.conventions, "Conventions", lambda _left: extract_conventions(worktree_path)),
-    ]
-
-    for enabled, heading, build in builders:
-        if not enabled:
-            continue
-        # Nothing more can be delivered. _append_section refuses a body
-        # bigger than the room left, so the total is over budget here
-        # only for something it cannot refuse: an exempt first section, a
-        # crash record, or a refusal line longer than the room that was
-        # left. _truncate_to_budget cuts or drops all three, so a section
-        # built from here on could only be dropped again (#420).
-        if _total_chars(sections) > max_chars:
-            break
-        _append_section(sections, heading, build, _remaining_chars(sections, heading, max_chars))
-
+    sections = _truncate_to_budget([("Module map", content)], config.max_context_tokens * 4)
     if not sections:
         return ""
 
-    # Apply token cap by dropping lowest-priority sections first.
-    # Priority order in 'sections' is highest first, so we drop from the end.
-    sections = _truncate_to_budget(sections, max_chars)
-
-    if not sections:
-        return ""
-
-    # Assemble final output
     parts: list[str] = ["=== CODEBASE CONTEXT (auto-generated) ===", ""]
-
-    for heading, content in sections:
+    for heading, body in sections:
         parts.append(f"## {heading}")
-        parts.append(content)
+        parts.append(body)
         parts.append("")
-
     parts.append("=== END CODEBASE CONTEXT ===")
-
     return "\n".join(parts)
 
 
@@ -1091,11 +271,6 @@ def _total_chars(sections: list[tuple[str, str]]) -> int:
     for heading, content in sections:
         total += len(f"## {heading}\n") + len(content) + len("\n\n")
     return total
-
-
-def _remaining_chars(sections: list[tuple[str, str]], heading: str, max_chars: int) -> int:
-    """Budget left for the BODY of a section called *heading*, never below 0."""
-    return max(0, max_chars - _total_chars(sections) - len(f"## {heading}\n") - len("\n\n"))
 
 
 def _truncate_to_budget(

@@ -25,12 +25,7 @@ from kstrl.config import KstrlConfig
 from kstrl.config_preflight import SURFACE_REJECTIONS, raise_if_defect
 from kstrl.events import CallbackSink, EventBus, RunPaths
 from kstrl.git import resolve_base_branch
-from kstrl.init_cmd import (
-    BUILD_MANIFEST_FIX,
-    LANGUAGE_IGNORES_FIX,
-    build_manifest_blocker,
-    language_ignores_blocker,
-)
+from kstrl.init_cmd import BUILD_MANIFEST_FIX, build_manifest_blocker
 from kstrl.interaction import QueueInteractionChannel
 from kstrl.launch import (
     DecomposeLaunch,
@@ -247,25 +242,6 @@ def _prepare_factory(spec: FactoryLaunch, root_dir: Path) -> PreparedLaunch:
     return build
 
 
-def _planning_refusal(blocker: str | None, root_dir: Path) -> str | None:
-    """Why a decompose launch must not pay the architect yet, or None.
-
-    The two pre-spend refusals `ks decompose` makes in
-    ``cli._refuse_without_build_manifest``, in the same order: no build
-    manifest (#434), then build output git does not ignore (#459).
-    ``blocker`` is ``build_manifest_blocker``'s answer, taken by the
-    caller inside its ``try``: that call reads kstrl.toml, and
-    tests/test_tui_config_walk.py requires such a read to sit in the
-    guarded block itself.
-    """
-    if blocker is not None:
-        return f"{blocker}. {BUILD_MANIFEST_FIX}"
-    ignores = language_ignores_blocker(root_dir)
-    if ignores is not None:
-        return f"{ignores}. {LANGUAGE_IGNORES_FIX}"
-    return None
-
-
 def _prepare_decompose(
     spec: DecomposeLaunch,
     root_dir: Path,
@@ -291,9 +267,10 @@ def _prepare_decompose(
         raise_if_defect(exc)
         raise LaunchError(f"failed to load configuration: {exc}") from exc
     _preflight_agent(config)
-    refusal = _planning_refusal(blocker, root_dir)
-    if refusal is not None:
-        raise LaunchError(refusal)
+    if blocker is not None:
+        # The pre-spend refusal `ks decompose` makes in
+        # ``cli._refuse_without_build_manifest`` (#434).
+        raise LaunchError(f"{blocker}. {BUILD_MANIFEST_FIX}")
     agent = get_agent(
         config.agent_cmd,
         config.model,

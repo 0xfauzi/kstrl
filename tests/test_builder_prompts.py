@@ -1,4 +1,4 @@
-"""H3a (#303): enrolment guards for the 58 harness-authored fragments (53
+"""H3a (#303): enrolment guards for the 41 harness-authored fragments (36
 from #303, one from #233, four from #633) that eight multi-branch builders assemble into a
 role's prompt. Why these fragments cannot be enrolled the way one plain
 prompt is is explained once, in ``tests/helpers/builder_prompts.py``'s
@@ -14,8 +14,7 @@ alone:
 3. ``test_enrolled_fragment_reaches_its_builder`` -- the call-time
    constants: patched to a marker, the marker must reach the rendered
    text, or the constant has gone orphan.
-4. ``test_hint_table_is_the_enrolled_bodies`` /
-   ``test_language_tables_are_the_enrolled_bodies`` -- the constants
+4. ``test_hint_table_is_the_enrolled_bodies`` -- the constants
    captured BY VALUE into a container at import, where patching the
    module attribute (layer 3) is a no-op.
 """
@@ -54,13 +53,8 @@ from tests.test_prompt_versions import _ORPHAN_MARKER, _PROMPTS, _sha256
 # ---------------------------------------------------------------------------
 
 
-def _claude_md(language: str, framework: str) -> Callable[[Path], str]:
-    def render(_tmp: Path) -> str:
-        return init_cmd._generate_claude_md(
-            {"name": "proj", "language": language, "framework": framework}
-        )
-
-    return render
+def _claude_md(_tmp: Path) -> str:
+    return init_cmd._generate_claude_md("proj")
 
 
 def _ctx_empty(_tmp: Path) -> str:
@@ -380,9 +374,7 @@ def _knowledge(overflow: bool) -> Callable[[Path], str]:
 
 
 SCENARIOS: dict[str, Callable[[Path], str]] = {
-    "claude_md_python": _claude_md("Python", "FastAPI"),
-    "claude_md_java": _claude_md("Java", ""),
-    "claude_md_unknown": _claude_md("Unknown", ""),
+    "claude_md": _claude_md,
     "ctx_empty": _ctx_empty,
     "ctx_current_only": _ctx_current_only,
     "ctx_not_remeasured_dated": _ctx_not_remeasured_dated,
@@ -427,8 +419,6 @@ NEEDLES: dict[str, str] = {
     "factory._run_component guard": "Do not widen allowedPaths.",
     "parsers.generate_fix_hint": "Unused import - remove it or use it.",
     "knowledge.build_knowledge_context": "Treat as ground truth unless contradicted",
-    "init_cmd principles": "## Implementation Principles",
-    "init_cmd language standards": "- Use `T | None` not `Optional[T]`",
     "init_cmd verification section": "kstrl runs the checks of this project's `[stack]`",
 }
 
@@ -453,10 +443,8 @@ def test_builder_text_is_under_an_enrolled_prompt(site: str) -> None:
 _EMPTY_DIGEST = _sha256("")
 
 DIGESTS: dict[str, str] = {
-    # Moved in #633, deliberately: Java gained JAVA_ANTIPATTERNS_PROMPT.
-    "claude_md_java": "a89defe1bf5264873a55fb1f8779fae7a40b33db5d0c372f7e9ad28f02baa5ad",
-    "claude_md_python": "bfb96ad59654fa50e2b3ade2b272c9f45ba4ef1dd39e615fa1562ecfac09e80d",
-    "claude_md_unknown": "5780595ba23d94e34c4ac83a0d187cb111d318eaec9888cb67ac685c7c6fd483",
+    # Moved in #696 slice 6, deliberately: one CLAUDE.md for every tree.
+    "claude_md": "c15168db40ebf9bef7ea24e3192132749d1cd7ddddb78abbb65eccc6b37668d4",
     "ctx_all": "2659f4ff4e999f3ecb9b335e3bc25894ef92f52059f7f86203bf1b5f3a45cad5",
     "ctx_current_only": "4845a0234067507977e978189765994b040230787d3c98889ee7f11e5f2c199f",
     "ctx_empty": "85610680224f004a17afd838c2fc1d0fc601c7886da03fac757bf8b9e202cec6",
@@ -540,12 +528,9 @@ CALL_TIME_GUARDS: dict[str, tuple[ModuleType, str]] = {
     "IN_LOOP_SCOPE_VIOLATION_PROMPT": (factory, "factory_guard"),
     "KNOWLEDGE_CONTEXT_PROMPT": (knowledge, "knowledge_plain"),
     "KNOWLEDGE_OVERFLOW_PROMPT": (knowledge, "knowledge_overflow"),
-    "CLAUDE_MD_OVERVIEW_PROMPT": (init_cmd, "claude_md_python"),
-    "CLAUDE_MD_VERIFICATION_PROMPT": (init_cmd, "claude_md_python"),
-    "CLAUDE_MD_STANDARDS_HEADING_PROMPT": (init_cmd, "claude_md_python"),
-    "CLAUDE_MD_PRINCIPLES_PROMPT": (init_cmd, "claude_md_python"),
-    "CLAUDE_MD_ANTIPATTERNS_HEADING_PROMPT": (init_cmd, "claude_md_python"),
-    "CLAUDE_MD_LEARNINGS_PROMPT": (init_cmd, "claude_md_python"),
+    "CLAUDE_MD_OVERVIEW_PROMPT": (init_cmd, "claude_md"),
+    "CLAUDE_MD_VERIFICATION_PROMPT": (init_cmd, "claude_md"),
+    "CLAUDE_MD_LEARNINGS_PROMPT": (init_cmd, "claude_md"),
     "LAST_ITERATION_MEASUREMENT_PROMPT": (loop, "loop_measurement"),
 }
 
@@ -583,39 +568,15 @@ _HINT_ORDER: tuple[str, ...] = (
     "LINE_TOO_LONG_HINT_PROMPT",
 )
 
-#: language -> the constant holding its coding-standards body.
-_STANDARDS: dict[str, str] = {
-    "Python": "PYTHON_STANDARDS_PROMPT",
-    "Rust": "RUST_STANDARDS_PROMPT",
-    "TypeScript": "TYPESCRIPT_STANDARDS_PROMPT",
-    "JavaScript": "JAVASCRIPT_STANDARDS_PROMPT",
-    "Go": "GO_STANDARDS_PROMPT",
-    "Java": "JAVA_STANDARDS_PROMPT",
-    "Kotlin": "KOTLIN_STANDARDS_PROMPT",
-}
-
-#: language -> the constant holding its antipatterns body.
-_ANTIPATTERNS: dict[str, str] = {
-    "Python": "PYTHON_ANTIPATTERNS_PROMPT",
-    "Rust": "RUST_ANTIPATTERNS_PROMPT",
-    "TypeScript": "TYPESCRIPT_ANTIPATTERNS_PROMPT",
-    "JavaScript": "JAVASCRIPT_ANTIPATTERNS_PROMPT",
-    "Go": "GO_ANTIPATTERNS_PROMPT",
-    "Java": "JAVA_ANTIPATTERNS_PROMPT",
-    "Kotlin": "KOTLIN_ANTIPATTERNS_PROMPT",
-}
-
-#: The 26 constants captured BY VALUE into a container at import
+#: The 12 constants captured BY VALUE into a container at import
 #: (patching the module attribute is a no-op for these; see Test 4).
-#: Derived from the three tables above: a name enters this census only
-#: by appearing in one of the container-equality assertions below.
-CONTAINER_CAPTURED_NAMES: frozenset[str] = (
-    frozenset(_HINT_ORDER) | frozenset(_STANDARDS.values()) | frozenset(_ANTIPATTERNS.values())
-)
+#: Derived from the table above: a name enters this census only by
+#: appearing in the container-equality assertion below.
+CONTAINER_CAPTURED_NAMES: frozenset[str] = frozenset(_HINT_ORDER)
 
 
 def test_every_call_time_fragment_has_a_guard() -> None:
-    """Closed by construction: a 59th constant with no entry in either
+    """Closed by construction: a 42nd constant with no entry in either
     set fails here rather than being silently unguarded."""
     covered = set(CALL_TIME_GUARDS) | CONTAINER_CAPTURED_NAMES
     assert covered == set(BUILDER_PROMPTS), (
@@ -625,7 +586,7 @@ def test_every_call_time_fragment_has_a_guard() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 4: orphan guard for the 26 constants captured BY VALUE at import.
+# Test 4: orphan guard for the 12 constants captured BY VALUE at import.
 # ---------------------------------------------------------------------------
 
 
@@ -639,17 +600,3 @@ def test_hint_table_is_the_enrolled_bodies() -> None:
     assert [hint for _pattern, hint in parsers._HINT_PATTERNS] == [
         getattr(parsers, name) for name in _HINT_ORDER
     ]
-
-
-def test_language_tables_are_the_enrolled_bodies() -> None:
-    """The only guard that sees a language body go orphan by CONTAINER
-    capture: an eighth language, or a value hand-edited or pointed at
-    the wrong constant, fails here -- patching the module attribute
-    (Test 3's guard) does not reach a value already copied into the
-    dict at import time."""
-    assert init_cmd._LANGUAGE_STANDARDS == {
-        language: getattr(init_cmd, name) for language, name in _STANDARDS.items()
-    }
-    assert init_cmd._LANGUAGE_ANTIPATTERNS == {
-        language: getattr(init_cmd, name) for language, name in _ANTIPATTERNS.items()
-    }

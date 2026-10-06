@@ -16,14 +16,12 @@ in full), `build_manifest` (a build manifest at the repository root
 that kstrl recognises; kstrl will not create one, and `ks decompose`
 and `ks factory --spec` refuse with exit 2 before the architect runs
 without one), `verify_commands` (the test, typecheck and lint commands
-Phase 1 will run), `source_root` (whether the codebase scan gives the
-engineer any public interface to read), `test_root` (tracked paths the
-`[adequacy]` gate reads as tests), `gitignore` (whether git
-ignores the build output the detected language's toolchain writes, and
-`.kstrl/`, so the in-loop scope guard counts neither against a
-component; a missing build-output entry fails the row, `ks decompose`
-and `ks factory --spec` refuse with exit 2 before the architect runs,
-and re-running `ks init` appends the missing entries), and `protected_paths` (CI,
+Phase 1 will run), `test_root` (tracked paths the
+`[adequacy]` gate reads as tests), `gitignore` (whether git ignores
+`.kstrl/`, so the in-loop scope guard does not count kstrl's run
+journals against a component; what a `[stack]` check writes is caught by
+`ks doctor --measure`, which refuses on every file `git status` shows
+after the checks ran on the base), and `protected_paths` (CI,
 migration and deploy paths that `[policy] paths_deny` does not cover).
 
 There are three verdicts. `ready` (exit 0): every check passed.

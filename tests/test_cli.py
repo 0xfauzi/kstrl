@@ -627,7 +627,7 @@ def _halting_decompose(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
 def _spec_at(root: Path) -> Path:
     (root / "pyproject.toml").write_text("[project]\n")  # #434: else refused pre-spend
     # #459: and a Python project whose build output git does not ignore is refused too.
-    (root / ".gitignore").write_text(gitignore_block("Python"), encoding="utf-8")
+    (root / ".gitignore").write_text(gitignore_block(), encoding="utf-8")
     spec = root / "spec.md"
     spec.write_text("# Spec\n")
     return spec

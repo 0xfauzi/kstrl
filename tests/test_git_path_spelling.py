@@ -187,7 +187,6 @@ EXPECTED_WITH_Z: tuple[str, ...] = (
     "breaker.py git status --porcelain -uall -z",
     "doctor.py git ls-files -z",
     "factory.py git worktree list --porcelain -z",
-    "git.py git check-ignore --stdin -z",
     "git.py git diff --name-only --cached -z",
     "git.py git diff --name-only -z",
     "git.py git diff --name-status -z -M -C ? --",
@@ -208,11 +207,6 @@ EXPECTED_WITHOUT_Z: tuple[str, ...] = (
     # output to spell. Measured: `git check-ignore -q -- foo.py` exits
     # with nothing on stdout.
     "doctor.py git check-ignore -q -- ?",
-    # git.ignore_source keeps only result.stdout.split("\t")[0], the
-    # rule's source:line:pattern, and discards the pathname half. -z is
-    # also refused here: measured, `git check-ignore -z -v -- foo.py`
-    # exits 128 with "fatal: -z only makes sense with --stdin".
-    "git.py git check-ignore -v -- ?",
     # get_diff_content(as_stored=True) (#695): a unified diff, like the row
     # below, with every changed byte in it; the same reason holds.
     "git.py git diff --text --no-textconv --no-ext-diff --no-color --dst-prefix=b/ ? --",
@@ -260,10 +254,7 @@ EXPECTED_GIT_ARGVS: dict[str, int] = {
     "factory.py git worktree list --porcelain -z": 1,
     "factory.py git worktree prune": 1,
     "factory.py git worktree remove --force ?": 4,
-    "git.py git add -- ?": 1,
     "git.py git branch ? -- ?": 1,
-    "git.py git check-ignore --stdin -z": 1,
-    "git.py git check-ignore -v -- ?": 1,
     "git.py git checkout -b ?": 1,
     "git.py git checkout -b ? ? --": 1,
     "git.py git checkout ? --": 2,

@@ -38,7 +38,6 @@ import difflib
 import json
 import os
 import re
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -62,8 +61,7 @@ CARGO = '[package]\nname = "rustapp"\nversion = "0.1.0"\nedition = "2021"\n'
 GO_MOD = "module example.com/goapp\n\ngo 1.22\n"
 
 #: Fixture name -> (files at the seed, (path, text) of the file the
-#: feature branch adds for ``ks check``). ``uv-python`` is built from the
-#: tracked files of ``examples/uv-python`` instead.
+#: feature branch adds for ``ks check``).
 FIXTURES: dict[str, tuple[dict[str, str], tuple[str, str]]] = {
     "python-fresh": (
         {
@@ -174,11 +172,10 @@ FIXTURES: dict[str, tuple[dict[str, str], tuple[str, str]]] = {
         },
         ("web/src/b.ts", "export const b = 2;\n"),
     ),
-    "uv-python": ({}, ("src/kstrl_uv_example/extra.py", "Y = 2\n")),
 }
 
-#: The fixtures ``ks factory`` runs on: the two that must not change.
-FACTORY_FIXTURES = frozenset({"python-fresh", "uv-python"})
+#: The fixture ``ks factory`` runs on.
+FACTORY_FIXTURES = frozenset({"python-fresh"})
 
 #: ``ks config show`` sections kept whole, beside every ``*command`` row.
 CONFIG_SECTIONS = frozenset({"verify", "contract", "breaker", "sandbox"})
@@ -265,21 +262,6 @@ def _lines(text: str, root: Path, tmp_path: Path) -> list[str]:
 def _seed(name: str, tmp_path: Path) -> Path:
     root = tmp_path / "proj"
     root.mkdir()
-    if name == "uv-python":
-        tracked = subprocess.run(
-            ["git", "ls-files", "-z", "examples/uv-python"],
-            cwd=REPO_ROOT,
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=30,
-        ).stdout.split("\0")
-        example = REPO_ROOT / "examples" / "uv-python"
-        for rel in filter(None, tracked):
-            target = root / Path(rel).relative_to("examples/uv-python")
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(REPO_ROOT / rel, target)
-        assert (root / "pyproject.toml").is_file(), sorted(example.iterdir())
     for rel, text in FIXTURES[name][0].items():
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
         (root / rel).write_text(text, encoding="utf-8")

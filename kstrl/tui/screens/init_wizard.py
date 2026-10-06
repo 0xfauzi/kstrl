@@ -32,7 +32,6 @@ from kstrl.init_wizard import (
     AGENT_TYPES,
     ScaffoldEntry,
     apply_agent_settings,
-    detect_context,
     plan_scaffold,
 )
 from kstrl.tui import theme
@@ -64,7 +63,7 @@ _LABEL_WIDTH = 9
 
 
 def _detected_text(root: Path) -> Text:
-    """The project's language and the ``[stack]`` checks Phase 1 will run (#696).
+    """The ``[stack]`` checks Phase 1 will run (#696).
 
     The checks come from the stack the gate itself reads, so the wizard
     shows what will actually run. One labelled line each - see the
@@ -83,9 +82,7 @@ def _detected_text(root: Path) -> Text:
     than the shared banner, because the row it is replacing belongs to
     a labelled block that has no room for a section and a value.
     """
-    rows: list[tuple[str, str]] = [
-        ("detected", detect_context(root).get("language", "unknown")),
-    ]
+    rows: list[tuple[str, str]] = []
     unreadable = ("stack", "kstrl.toml is unreadable; cannot show the checks")
     try:
         # Every command refuses a kstrl.toml with a fault in ANY section or a
@@ -165,7 +162,7 @@ class InitWizardScreen(Screen[None]):
     def compose(self) -> ComposeResult:
         yield ContextBar(
             "init",
-            "rewrites nothing - files kept, .gitignore appended, lockfile staged",
+            "rewrites nothing - files kept, .gitignore appended",
         )
         with Vertical(classes="dialog-host"):
             panel = Vertical(classes="dialog-panel", id="wizard-root")

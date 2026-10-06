@@ -91,7 +91,7 @@ def _project(tmp_path: Path, *, toml: str = "", files: dict[str, str] | None = N
         path = root / rel
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(body, encoding="utf-8")
-    (root / ".gitignore").write_text(gitignore_block("Python"), encoding="utf-8")
+    (root / ".gitignore").write_text(gitignore_block(), encoding="utf-8")
     (root / "kstrl.toml").write_text("[inbox]\nenabled = true\n" + toml, encoding="utf-8")
     write_stack(root)
     gitrepo.git_in(root, "add", "-A")

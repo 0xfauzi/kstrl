@@ -1,34 +1,33 @@
-"""Tables for the seven engineer-facing notices in ``kstrl/feedforward.py``:
-six enrolled by #428, and ``NO_DEPENDENCY_GRAPH_PROMPT`` by #626.
+"""Tables for the engineer-facing notice in ``kstrl/feedforward.py``:
+``SECTION_FAILED_PROMPT``, enrolled by #428.
 
 Everything ``build_codebase_scan_context`` returns is pasted into the engineer
-prompt, so each of these sentences is read by a model as part of its
-instructions. PR #417 removed "Raise codebase_scan.max_context_tokens to see
-it." from the dependency graph's notice by hand and left no guard behind;
-measured on 6a354cc, putting a short imperative back into the #420 notice
-leaves the whole suite green (7203 passed, 0 failed). Enrolling the bodies is
-what makes a reword move a hash and a version with it.
+prompt, so the notice is read by a model as part of its instructions. PR #417
+removed "Raise codebase_scan.max_context_tokens to see it." from the
+dependency graph's notice by hand and left no guard behind; enrolling the
+bodies is what makes a reword move a hash and a version with it. #428 and
+#626 enrolled seven notices; #696 slice 6 removed the six that reported on
+the Python-only public interfaces and dependency graph, with those sections.
 
 They live here rather than in ``tests/test_prompt_versions.py`` for the reason
 ``tests/helpers/builder_prompts.py`` gives: that file is close to the repo's
-800-line ratchet and these rows do not fit inside the remaining headroom.
+800-line ratchet.
 
-ONE VERSION FOR THE SEVEN, as the #303 builder fragments do. The unit is the
-notice vocabulary one module delivers to one role, so a reword of any of them
-bumps ``CODEBASE_SCAN_NOTICE_PROMPT_VERSION``.
+ONE VERSION FOR THE MODULE, as the #303 builder fragments do. The unit is the
+notice vocabulary one module delivers to one role, so a reword bumps
+``CODEBASE_SCAN_NOTICE_PROMPT_VERSION``.
 
-H2/H3 SCOPE. These are engineer-facing CONTEXT, like ``DECISIONS_CONTEXT_PROMPT``
-and the 53 #303 builder fragments: the calibration suite scores only the role
+H2/H3 SCOPE. This is engineer-facing CONTEXT, like ``DECISIONS_CONTEXT_PROMPT``
+and the #303 builder fragments: the calibration suite scores only the role
 ids in ``kstrl.calibration.MIN_ROLE_DETECTION_RATE`` against planted-bug
-fixtures, which name no distiller role, and has no fixture that scores a
-codebase scan notice. They carry the H3 obligation (body,
-version and snapshot move together) and no H2 obligation the suite can
-discharge.
+fixtures, and has no fixture that scores a codebase scan notice. It carries
+the H3 obligation (body, version and snapshot move together) and no H2
+obligation the suite can discharge.
 
-NOT RENDER-EXEMPT. Unlike the #303 fragments, each of these seven IS returned
-verbatim by exactly one production path, so each has a real entry in
-``_RENDERERS`` and gets the exact-equality orphan guard rather than an
-exemption with a reason that would not be true.
+NOT RENDER-EXEMPT. Unlike the #303 fragments, the notice IS returned verbatim
+by exactly one production path, so it has a real entry in ``_RENDERERS`` and
+gets the exact-equality orphan guard rather than an exemption with a reason
+that would not be true.
 """
 
 from __future__ import annotations
@@ -42,19 +41,7 @@ from kstrl import feedforward
 #: One row, read the way ``builder_prompts._BUILDERS`` is read: the module,
 #: the name of its shared version constant, and the names it covers.
 _NOTICES: tuple[tuple[ModuleType, str, tuple[str, ...]], ...] = (
-    (
-        feedforward,
-        "CODEBASE_SCAN_NOTICE_PROMPT_VERSION",
-        (
-            "NO_SOURCE_ROOT_PROMPT",
-            "NO_DEPENDENCY_GRAPH_PROMPT",
-            "NO_PUBLIC_SYMBOLS_PROMPT",
-            "INTERFACES_DID_NOT_FIT_PROMPT",
-            "GRAPH_DID_NOT_FIT_PROMPT",
-            "SECTION_FAILED_PROMPT",
-            "SECTION_DID_NOT_FIT_PROMPT",
-        ),
-    ),
+    (feedforward, "CODEBASE_SCAN_NOTICE_PROMPT_VERSION", ("SECTION_FAILED_PROMPT",)),
 )
 
 NOTICE_PROMPTS: dict[str, str] = {
@@ -66,124 +53,30 @@ NOTICE_VERSIONS: dict[str, str] = {
 }
 
 
-# --- production renderers --------------------------------------------------
+# --- production renderer ---------------------------------------------------
 #
-# Each returns the notice through the real function that emits it, so
+# Returns the notice through the real function that emits it, so
 # ``test_renderer_renders_the_enrolled_body`` can patch the constant to a
 # fieldless marker and demand the production path return THAT and nothing
-# else. ``str.format`` ignores keyword arguments a template does not use, so
-# one fieldless marker works for all seven.
+# else. ``str.format`` ignores keyword arguments a template does not use.
 
 
-def _package(root: Path, files: dict[str, str]) -> Path:
-    """A one-package tree under *root*, and the root itself."""
-    pkg = root / "pkg"
-    pkg.mkdir(parents=True)
-    (pkg / "__init__.py").write_text("", encoding="utf-8")
-    for name, body in files.items():
-        (pkg / name).write_text(body, encoding="utf-8")
-    return root
-
-
-def _no_source_root(tmp_path: Path) -> str:
-    """No package and no loose .py anywhere: the extractor says so."""
-    empty = tmp_path / "empty"
-    empty.mkdir()
-    return feedforward.extract_public_interfaces(empty)
-
-
-def _no_dependency_graph(tmp_path: Path) -> str:
-    """No Python anywhere: the graph builder says what it reads (#626)."""
-    empty = tmp_path / "nograph"
-    empty.mkdir()
-    return feedforward.build_dependency_graph(empty)
-
-
-def _no_public_symbols(tmp_path: Path) -> str:
-    """A source root that exists and holds nothing public."""
-    root = _package(tmp_path / "nosym", {"data.py": "X = 1\n"})
-    return feedforward.extract_public_interfaces(root)
-
-
-def _interfaces_did_not_fit(tmp_path: Path) -> str:
-    """Two files with symbols and no room: the first is charged, the
-    second finds the budget already spent."""
-    root = _package(
-        tmp_path / "iface",
-        {"a.py": "class A:\n    pass\n", "b.py": "class B:\n    pass\n"},
-    )
-    return feedforward.extract_public_interfaces(root, 0)
-
-
-def _graph_did_not_fit(tmp_path: Path) -> str:
-    """Files are parsed in sorted order, so b.py records the edge that
-    spends the budget and c.py is the iteration that reports it."""
-    root = _package(
-        tmp_path / "graph",
-        {
-            "a.py": "class A:\n    pass\n",
-            "b.py": "from pkg.a import A\n",
-            "c.py": "from pkg.a import A\n",
-        },
-    )
-    return feedforward.build_dependency_graph(root, 0)
-
-
-def _section_failed(_tmp_path: Path) -> str:
-    sections: list[tuple[str, str]] = []
-
-    def boom(_left: int) -> str:
-        raise RuntimeError("boom")
-
-    feedforward._append_section(sections, "Public interfaces", boom, 10_000)
-    return sections[-1][1]
-
-
-def _section_did_not_fit(_tmp_path: Path) -> str:
-    sections: list[tuple[str, str]] = [("Module map", "x")]
-    feedforward._append_section(sections, "Public interfaces", lambda _left: "z" * 50, 10)
-    return sections[-1][1]
+def _section_failed(tmp_path: Path) -> str:
+    """A root that is a file: walking it raises, and the failure is the section."""
+    not_a_directory = tmp_path / "not-a-directory"
+    not_a_directory.write_text("", encoding="utf-8")
+    return feedforward._module_map_section(not_a_directory)
 
 
 NOTICE_RENDERERS: dict[str, tuple[ModuleType, Callable[[Path], str]]] = {
-    "NO_SOURCE_ROOT_PROMPT": (feedforward, _no_source_root),
-    "NO_DEPENDENCY_GRAPH_PROMPT": (feedforward, _no_dependency_graph),
-    "NO_PUBLIC_SYMBOLS_PROMPT": (feedforward, _no_public_symbols),
-    "INTERFACES_DID_NOT_FIT_PROMPT": (feedforward, _interfaces_did_not_fit),
-    "GRAPH_DID_NOT_FIT_PROMPT": (feedforward, _graph_did_not_fit),
     "SECTION_FAILED_PROMPT": (feedforward, _section_failed),
-    "SECTION_DID_NOT_FIT_PROMPT": (feedforward, _section_did_not_fit),
 }
 
 #: The pin. Not derived from ``_NOTICES``, and nothing here computes a hash.
 NOTICE_SNAPSHOTS: dict[str, tuple[str, str]] = {
-    "GRAPH_DID_NOT_FIT_PROMPT": (
-        "f31be0604c56acc2338ee9603645c876ed3c1df396108022f0d4332366ed757b",
-        "1.1.0",
-    ),
-    "INTERFACES_DID_NOT_FIT_PROMPT": (
-        "76ab4b18c8a64f2a93075c64ce2d12397109b4edae26fb7945f45804914eb83e",
-        "1.1.0",
-    ),
-    "NO_PUBLIC_SYMBOLS_PROMPT": (
-        "85750feb7dea708a905a38041de3d4d2799ac8aa226f029aff22658fe9781d83",
-        "1.1.0",
-    ),
-    "NO_DEPENDENCY_GRAPH_PROMPT": (
-        "b137048a280985cefedb99e67ca919c42e6ffc4e4c34ad4104ecc40edc82a9bf",
-        "1.1.0",
-    ),
-    "NO_SOURCE_ROOT_PROMPT": (
-        "cd398b36863fbd097d17806d8f529b54e68683893c5971ae419de0b3fa88249b",
-        "1.1.0",
-    ),
-    "SECTION_DID_NOT_FIT_PROMPT": (
-        "c5fbfcd0d5bbb09d7f7b870252de50ea36ac7b2835ab72af0951a5d95f8a4bcb",
-        "1.1.0",
-    ),
     "SECTION_FAILED_PROMPT": (
         "dcfe42ac8897607f28e9296af3f08b55953f35357c168ad11b7987d7ec4ea2ee",
-        "1.1.0",
+        "2.0.0",
     ),
 }
 

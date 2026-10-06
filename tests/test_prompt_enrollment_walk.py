@@ -295,7 +295,8 @@ EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
     # declaration and its one use site) = 12. The version constant adds
     # nothing: the walk keys on names ending in _PROMPT, not _VERSION.
     # #626: +1 notice constant x 2 spellings = 14.
-    "feedforward.py": 14,
+    # #696 slice 6: -6 notice constants x 2 spellings = 2.
+    "feedforward.py": 2,
     # #530: GEPA_REFLECTION_PROMPT x 2 spellings (the declaration and its
     # one use in reflection_template) = 2.
     "gepa_adapter.py": 2,
@@ -305,7 +306,9 @@ EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
     # nothing: the walk keys on names ending in _PROMPT, not _VERSION.
     # #633: +4 language fragments x 2 spellings each (the declaration and
     # its one row in _LANGUAGE_STANDARDS or _LANGUAGE_ANTIPATTERNS) = 52.
-    "init_cmd.py": 52,
+    # #696 slice 6: -17 fragments x 2 spellings (14 language bodies, the two
+    # section headings and the principles body) = 18.
+    "init_cmd.py": 18,
     # #482: INTEGRATION_CRITERIA_PROMPT, and #483: INTEGRATION_CARRIED_PROMPT;
     # 2 prompts x 2 spellings (each declaration and its one use) = 4. The
     # version constants add nothing: the walk keys on names ending in _PROMPT.
