@@ -18,17 +18,25 @@ that a helper nobody instrumented shows up here rather than shipping quietly:
 ``_measure_detection``, ``fx-c`` (a negative fixture) through
 ``_measure_false_positives``.
 
-Six ways a run can stop, answered differently by the code under test:
+The runs of one fixture operate at the same time (#750). Each run reads its
+number from the name ``_run_kept`` gives its thread, and the driver holds every
+run of a fixture at a barrier twice: once before its agent call, so a harness
+that operates the runs one at a time breaks the barrier and the child exits 1,
+and once after it, so every run of the fixture made its call before any run
+takes its calls. Run 1 then waits a short time, so it finishes last and a
+harness that records the runs in the order they finish puts run 2 first.
+
+Seven ways a run can stop, answered differently by the code under test:
 
 - ``complete``: every fixture finishes and teardown (``report.save()``) runs.
 - ``sigkill``: ``fx-d`` runs 2 of its ``KSTRL_CALIBRATION_RUNS=2`` runs;
-  the first succeeds and reaches ``record``, then SIGKILL lands as the
-  second starts, so no teardown of any kind runs. Killing on the SECOND
-  run rather than the first is what makes this mode prove anything about
-  ``record``'s own flush (#398 A1): a kill on the first run never calls
-  ``record`` for ``fx-d`` at all, so it cannot tell a working per-run
-  flush from a missing one - only ``begin_fixture``'s flush (which fires
-  before either run) would be exercised.
+  the first succeeds and reaches ``record``, then SIGKILL lands in the
+  second, so no teardown of any kind runs. Killing in the SECOND run, and
+  only after the first is recorded, is what makes this mode prove anything
+  about ``record``'s own flush (#398 A1): a kill before the first run is
+  recorded never calls ``record`` for ``fx-d`` at all, so it cannot tell a
+  working per-run flush from a missing one - only ``begin_fixture``'s flush
+  (which fires before either run) would be exercised.
 - ``raise``: the same run-2-of-``fx-d`` timing, but an exception fires
   instead of a signal, so teardown DOES run with that fixture left
   dangling.
@@ -45,6 +53,9 @@ Six ways a run can stop, answered differently by the code under test:
   capture is saved as partial.
 - ``reply_unwritable``: a regular file sits where fx-d's replies directory
   has to go, so writing its first reply fails (#523). Same outcome.
+- ``one_unavailable``: fx-a's second run raises ``_AgentUnavailable`` after
+  its agent call (#750). The run is recorded as an infrastructure error in
+  its place, with its reply kept, and the capture completes.
 
 Every other run asks a fake agent through the real ``_collect``, which
 answers with :func:`reply_text`, so a kept reply names its fixture and run.
@@ -71,20 +82,44 @@ FX_A, FX_B, FX_C, FX_D = "security/fx-a", "reviewer/fx-b", "reviewer/fx-c", "sec
 _DRIVER = """
 from __future__ import annotations
 
+import json
 import os
 import signal
+import threading
+import time
 from pathlib import Path
 
 import tests.test_calibration as tc
-from tests.helpers.calibration_capture import reply_text
+from tests.helpers.calibration_capture import BARRIER_TIMEOUT_S, LAST_RUN_DELAY_S, reply_text
 from tests.helpers.calibration_replies import replies_dir
 
 tc.RESULTS_DIR = Path(os.environ["KSTRL_TEST_RESULTS_DIR"])
+SPANS = tc.RESULTS_DIR.parent / "spans.json"
 MODE = os.environ["KSTRL_TEST_MODE"]
 report = tc._DetectionReport()
 
+# One barrier for each fixture, for all the runs of that fixture (#750).
+_barriers = {
+    fixture_id: threading.Barrier(tc.CALIBRATION_RUNS, timeout=BARRIER_TIMEOUT_S)
+    for fixture_id in ("fx-a", "fx-b", "fx-c", "fx-d")
+}
+# The start and end of each completed run, for each fixture.
+_spans = {}
+_spans_lock = threading.Lock()
 
-_calls = {}
+# Set when fx-d's first run is recorded, so the sigkill mode kills in run 2
+# only after run 1 reached `record`.
+_fx_d_recorded = threading.Event()
+_record = report.record
+
+
+def _record_and_tell(*args, **kwargs):
+    _record(*args, **kwargs)
+    if args[1] == "fx-d":
+        _fx_d_recorded.set()
+
+
+report.record = _record_and_tell
 
 
 # Streams one line and leaves the same text as its final message, so a
@@ -101,15 +136,9 @@ class FakeAgent:
 
 def run_once_for(fixture_id):
     def run_once():
-        _calls[fixture_id] = _calls.get(fixture_id, 0) + 1
-        run = _calls[fixture_id]
-        # Kill/raise on fx-d's SECOND run, not its first: the first run
-        # must reach `record` and be flushed to disk before the process
-        # dies, or this mode proves nothing about `record`'s own flush
-        # (#398 A1) - only `begin_fixture`'s, which already fired before
-        # either run.
-        if fixture_id == "fx-d" and MODE == "sigkill" and run == 2:
-            os.kill(os.getpid(), signal.SIGKILL)
+        start = time.monotonic()
+        run = int(threading.current_thread().name.rpartition("-")[2])
+        _barriers[fixture_id].wait()
         if fixture_id == "fx-d" and MODE == "reply_unwritable" and run == 1:
             # A regular file where fx-d's replies directory has to go.
             blocker = replies_dir(tc.RESULTS_DIR, report.timestamp) / "security" / "fx-d"
@@ -117,12 +146,27 @@ def run_once_for(fixture_id):
             blocker.write_text("not a directory", encoding="utf-8")
         if not (fixture_id == "fx-d" and MODE == "no_reply"):
             tc._collect(FakeAgent(reply_text(fixture_id, run)), "prompt", Path("."))
+        _barriers[fixture_id].wait()
+        if run == 1:
+            time.sleep(LAST_RUN_DELAY_S)
+        # Kill in fx-d's SECOND run, after its first is recorded: the first
+        # run must reach `record` and be flushed to disk before the process
+        # dies, or this mode proves nothing about `record`'s own flush
+        # (#398 A1) - only `begin_fixture`'s, which already fired before
+        # either run.
+        if fixture_id == "fx-d" and MODE == "sigkill" and run == 2:
+            _fx_d_recorded.wait(timeout=BARRIER_TIMEOUT_S)
+            os.kill(os.getpid(), signal.SIGKILL)
         # Raised AFTER the agent call, so the run has a reply to keep and only
         # the exception itself keeps it from being recorded. Raised before it,
         # an empty reply would stop the run too and hide a widened except (#523).
         if fixture_id == "fx-d" and MODE == "raise" and run == 2:
             raise RuntimeError("interrupted inside fx-d")
-        return True, "fake result for " + fixture_id
+        if fixture_id == "fx-a" and MODE == "one_unavailable" and run == 2:
+            raise tc._AgentUnavailable("stub agent unavailable")
+        with _spans_lock:
+            _spans.setdefault(fixture_id, []).append([start, time.monotonic()])
+        return True, f"fake result for {fixture_id} run {run}"
 
     return run_once
 
@@ -142,7 +186,15 @@ try:
         os.kill(os.getpid(), signal.SIGKILL)
 finally:
     report.save()
+    SPANS.write_text(json.dumps(_spans), encoding="utf-8")
 """
+
+#: How long a run waits at its fixture's barrier before the child fails. A
+#: harness that operates the runs one at a time never fills the barrier.
+BARRIER_TIMEOUT_S = 10.0
+
+#: How long run 1 waits after every run made its agent call, so it finishes last.
+LAST_RUN_DELAY_S = 0.2
 
 #: What each mode's child exits with. ``sigkill``/``kill_after_last`` cannot
 #: be caught, so the child dies on the signal and ``subprocess`` reports the
@@ -154,6 +206,7 @@ EXPECTED_EXIT: dict[str, int] = {
     "kill_after_last": -signal.SIGKILL,
     "no_reply": 1,
     "reply_unwritable": 1,
+    "one_unavailable": 0,
 }
 
 

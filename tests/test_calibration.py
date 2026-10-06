@@ -15,7 +15,9 @@ fixture passes when a majority of its completed runs catch the
 planted issue (``calibration_baseline.FIXTURE_DETECTION_THRESHOLD``), so
 single-run LLM variance is reported as consistency instead of
 failing the suite, while a fixture that misses most runs is a
-regression and fails. Results (per-fixture consistency, per-role and
+regression and fails. The runs of one fixture operate at the same
+time (#750), each in its own thread, and are recorded in run order.
+Results (per-fixture consistency, per-role and
 per-category detection rates, the model id) are written to
 ``tests/adversarial_fixtures/_results/baseline-<UTC-date>.json`` in
 the v2 format defined by :mod:`kstrl.calibration`; compare against
@@ -46,8 +48,10 @@ from __future__ import annotations
 
 import hashlib
 import os
+import threading
 import warnings
 from collections.abc import Callable, Iterator
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -193,6 +197,10 @@ if CHANGE_SOURCE_MODE not in {"repo", "paste"}:
 
 RESULTS_DIR = FIXTURES_DIR / "_results"
 
+#: The runs of one fixture start at the same time (#750) and share one
+#: fixture repository, so only one of them builds it.
+_FIXTURE_REPO_LOCK = threading.Lock()
+
 # ---------------------------------------------------------------------------
 # #266: turning a fixture diff back into a repository
 # ---------------------------------------------------------------------------
@@ -290,7 +298,8 @@ def _change_source(diff_content: str, tmp_path: Path) -> tuple[str, Path, str]:
         # the worst failure mode there is for a measurement harness,
         # because it reports a number rather than an error.
         digest = hashlib.sha256(diff_content.encode("utf-8")).hexdigest()[:12]
-        repo = _materialize_fixture_repo(diff_content, tmp_path / f"fixture-repo-{digest}")
+        with _FIXTURE_REPO_LOCK:
+            repo = _materialize_fixture_repo(diff_content, tmp_path / f"fixture-repo-{digest}")
         return repo_change_source("main"), repo, generate_data_delimiter()
     block, delimiter = pasted_change_source(diff_content)
     return block, tmp_path, delimiter
@@ -940,11 +949,14 @@ class _AgentUnavailable(Exception):
 
 def _run_kept(
     run_once: Callable[[], tuple[bool, str]],
+    run: int,
 ) -> tuple[bool, str, bool, list[dict]]:
-    """One run: ``(hit, detail, error, calls)``, where ``calls`` is every
-    agent call the run made (#523). Calls left over from a run that raised
-    out of its gate helper are dropped first, so they cannot be kept under
-    this run's name."""
+    """Run ``run`` (from 1): ``(hit, detail, error, calls)``, where ``calls``
+    is every agent call the run made (#523). Calls left over from a run that
+    raised out of its gate helper are dropped first, so they cannot be kept
+    under this run's name. The thread takes the run's name, so a stack dump
+    of a capture that hangs shows which run each thread operates (#750)."""
+    threading.current_thread().name = f"calibration-run-{run}"
     take_calls()
     try:
         hit, detail = run_once()
@@ -952,6 +964,26 @@ def _run_kept(
     except _AgentUnavailable as exc:
         hit, detail, error = False, f"agent error: {exc}", True
     return hit, detail, error, take_calls()
+
+
+def _runs(
+    run_once: Callable[[], tuple[bool, str]],
+) -> Iterator[tuple[bool, str, bool, list[dict]]]:
+    """The ``_run_kept`` result of each of the ``CALIBRATION_RUNS`` runs, in run order.
+
+    All the runs start at the same time, each in its own thread (#750): a
+    run waits for its agent, so a paid capture takes the time of its
+    slowest run instead of the sum of its runs. The results come back in
+    run order, not in the order the runs finish, so run ``n`` is the
+    baseline's ``runs[n - 1]`` and its replies are ``run-<n>.json``. An
+    exception out of run ``n`` is raised here after runs 1 to ``n - 1`` are
+    given back. The executor's exit waits for every run still in progress,
+    so no agent outlives its fixture.
+    """
+    with ThreadPoolExecutor(max_workers=max(CALIBRATION_RUNS, 1)) as pool:
+        futures = [pool.submit(_run_kept, run_once, run) for run in range(1, CALIBRATION_RUNS + 1)]
+        for future in futures:
+            yield future.result()
 
 
 def _gate_on_consistency(
@@ -971,13 +1003,12 @@ def _gate_on_consistency(
     errored = 0
     details: list[str] = []
     with report.fixture(role, fixture_id):
-        for run_index in range(CALIBRATION_RUNS):
-            caught, detail, error, calls = _run_kept(run_once)
+        for run, (caught, detail, error, calls) in enumerate(_runs(run_once), start=1):
             if error:
                 errored += 1
             if caught:
                 detected += 1
-            details.append(f"run {run_index + 1}: caught={caught} {detail}")
+            details.append(f"run {run}: caught={caught} {detail}")
             report.record(
                 role,
                 fixture_id,
@@ -1018,8 +1049,7 @@ def _measure_detection(
     docstring). Skips only when every run errored (infrastructure)."""
     errored = 0
     with report.fixture(role, fixture_id):
-        for _ in range(CALIBRATION_RUNS):
-            caught, detail, error, calls = _run_kept(run_once)
+        for caught, detail, error, calls in _runs(run_once):
             if error:
                 errored += 1
             report.record(
@@ -1081,8 +1111,7 @@ def _measure_false_positives(
     errored."""
     errored = 0
     with report.fixture(role, fixture_id):
-        for _ in range(CALIBRATION_RUNS):
-            is_fp, detail, error, calls = _run_kept(run_once)
+        for is_fp, detail, error, calls in _runs(run_once):
             if error:
                 errored += 1
             report.record_fp(role, fixture_id, is_fp, detail, error=error, calls=calls)

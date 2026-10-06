@@ -31,6 +31,7 @@ import json
 import secrets
 import shutil
 import subprocess
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -182,11 +183,10 @@ def materialize(fixture: AcceptanceFixture, dest: Path) -> FixtureRepo:
 
 def acceptance_slot(fixture: AcceptanceFixture, tmp_path: Path) -> Path:
     """A fresh directory for ONE run of one fixture: the runs of a gate share
-    ``tmp_path`` (``calibration_integration_fixture.run_slot``'s rule)."""
-    existing = len([p for p in tmp_path.glob(f"{fixture.fixture_id}-*") if p.is_dir()])
-    slot = tmp_path / f"{fixture.fixture_id}-{existing}"
-    slot.mkdir(parents=True)
-    return slot
+    ``tmp_path`` and can operate at the same time (#750), so the name comes
+    from ``mkdtemp``, not from a count (``calibration_integration_fixture.run_slot``'s rule)."""
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    return Path(tempfile.mkdtemp(prefix=f"{fixture.fixture_id}-", dir=tmp_path))
 
 
 def _no_budget() -> str:
