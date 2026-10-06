@@ -425,21 +425,44 @@ class TestControls:
         assert "ks inbox approve <id> --comment ANSWER" in row.detail, row.detail
 
 
-#: Records every call in $GH_LOG and answers an empty list.
+#: Records every call in $GH_LOG and each comment body in $GH_COMMENTS,
+#: and answers an empty list.
 FAKE_GH = """#!/bin/sh
 printf '%s\\n' "gh $*" >> "$GH_LOG"
+if [ "$1" = "issue" ] && [ "$2" = "comment" ]; then
+  while [ $# -gt 0 ]; do
+    if [ "$1" = "--body" ]; then printf '%s\\n' "$2" >> "$GH_COMMENTS"; fi
+    shift
+  done
+fi
 echo "[]"
 exit 0
 """
 
 
-class TestNoRemoteWriteback:
-    def test_a_github_item_keeps_its_labels_while_it_waits(
+def _edits(gh_log: Path) -> list[tuple[str, list[str]]]:
+    """Each `gh issue edit` call as (the label it adds, the labels it removes)."""
+    edits = []
+    for call in gh_log.read_text(encoding="utf-8").splitlines():
+        if not call.startswith("gh issue edit"):
+            continue
+        words = call.split()
+        added = [words[i + 1] for i, w in enumerate(words) if w == "--add-label"]
+        removed = [words[i + 1] for i, w in enumerate(words) if w == "--remove-label"]
+        assert len(added) == 1, call
+        edits.append((added[0], removed))
+    return edits
+
+
+class TestRemoteWriteback:
+    def test_a_github_item_is_labelled_awaiting_answer_until_it_runs_again(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """T7. Slice 1 writes nothing to the source issue for this state:
-        the claim's `kstrl:running` label and comment are the only writes,
-        so the issue keeps `kstrl:running` until the item is answered."""
+        """T7, #644 slice 3. The escalation moves the source issue from
+        `kstrl:running` to `kstrl:awaiting_answer` and comments with the
+        local command and the item's full id. After `ks queue answer`, the
+        claim that re-runs the item moves the issue back to `kstrl:running`
+        and removes `kstrl:awaiting_answer`."""
         root = _spec_project(tmp_path)
         (root / "kstrl.toml").write_text(
             '[intake_github]\nenabled = true\nrepo = "o/r"\n', encoding="utf-8"
@@ -447,7 +470,9 @@ class TestNoRemoteWriteback:
         _scripted_claude(tmp_path, monkeypatch, [BLOCKER])
         write_executable(tmp_path / "fakebin" / "gh", FAKE_GH)
         gh_log = tmp_path / "gh.log"
+        comments = tmp_path / "gh.comments"
         monkeypatch.setenv("GH_LOG", str(gh_log))
+        monkeypatch.setenv("GH_COMMENTS", str(comments))
         item = _queue(root).add(
             SPEC_TEXT,
             title="remote",
@@ -456,10 +481,22 @@ class TestNoRemoteWriteback:
             source_ref="o/r#7",
         )
 
-        result = serve_cycle(root, config=ServeConfig.load(root))
+        first = serve_cycle(root, config=ServeConfig.load(root))
 
-        assert _item(root, item.item_id).state is ItemState.AWAITING_ANSWER, result.reason
-        calls = gh_log.read_text(encoding="utf-8").splitlines()
-        added = [c.split("--add-label ")[1].split()[0] for c in calls if "--add-label " in c]
-        assert added == ["kstrl:running"], calls
-        assert len([c for c in calls if c.startswith("gh issue comment")]) == 1, calls
+        assert _item(root, item.item_id).state is ItemState.AWAITING_ANSWER, first.reason
+        edits = _edits(gh_log)
+        assert [added for added, _ in edits] == ["kstrl:running", "kstrl:awaiting_answer"], edits
+        assert "kstrl:running" in edits[1][1], edits
+        body = comments.read_text(encoding="utf-8")
+        assert "**kstrl: awaiting_answer**" in body, body
+        assert "the architect escalated a question only the owner can answer" in body, body
+        assert f"ks queue answer {item.item_id} <answered spec file>" in body, body
+
+        answered = tmp_path / "answered.md"
+        answered.write_text(SPEC_TEXT + "\n" + ANSWER_LINE + "\n", encoding="utf-8")
+        assert _ks(root, "queue", "answer", item.item_id, str(answered)).exit_code == 0
+        serve_cycle(root, config=ServeConfig.load(root))
+
+        rerun = _edits(gh_log)[2]
+        assert rerun[0] == "kstrl:running", rerun
+        assert "kstrl:awaiting_answer" in rerun[1], rerun
