@@ -97,6 +97,7 @@ from kstrl.owner_answers import read_owner_answers
 from kstrl.stack import Stack
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import CheckResult, VerificationResult, VerifyConfig
+from tests.helpers.before_spend import no_base_check
 from tests.helpers.builder_prompts import BUILDER_RENDER_EXEMPT
 from tests.helpers.component_prd import write_component_prd
 from tests.helpers.feedforward_prompts import NOTICE_PROMPTS
@@ -550,6 +551,7 @@ def _run_decompose_and_capture_prompt(tmp_path: Path, monkeypatch: pytest.Monkey
             max_retries=1,
             prompt_call=architect_call(tmp_path),
             timeout=None,
+            before_spend=no_base_check,
         )
     assert agent.prompts, "decompose_spec never called its agent, so this proves nothing."
     return agent.prompts[0]

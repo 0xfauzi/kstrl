@@ -164,6 +164,8 @@ from kstrl.stack import (
     NO_STACK,
     STACK_KIND,
     Stack,
+    StackRefused,
+    confirmed_stack,
     stack_in_force,
     stack_paths,
     unconfirmed_lines,
@@ -2574,6 +2576,49 @@ def base_refused_before_architect(
         release((probe.setup_rung, probe.test_rung))
     factory_config.base_reading = probe.base_reading
     return refused
+
+
+class BaseRefusedError(Exception):
+    """The base measured before the architect was paid refused the run (#696 slice 7)."""
+
+    def artifact_lines(self) -> list[str]:
+        """Nothing more to point at: the refusal was reported as it was measured."""
+        return []
+
+
+def base_check_before_architect(
+    root_dir: Path,
+    base_branch: str,
+    factory_config: FactoryConfig,
+    verify_config: VerifyConfig,
+    run_id: str,
+    ui: UI,
+) -> Callable[[], None]:
+    """The ``before_spend`` for a command that pays the architect without a run (#696 slice 7).
+
+    Under a confirmed ``[stack]`` the returned callable measures the base as
+    `ks factory --spec` does and raises :class:`BaseRefusedError` when it
+    refuses. With no ``[stack]``, or one no person confirmed, there is no
+    check kstrl may run, so it says so and measures nothing.
+    """
+    try:
+        confirmed = confirmed_stack(root_dir)
+    except StackRefused:
+        confirmed = None
+    if confirmed is None:
+        return functools.partial(
+            ui.info,
+            "kstrl.toml has no confirmed [stack], so there is no base check to run "
+            "before the architect",
+        )
+
+    def measure() -> None:
+        if base_refused_before_architect(
+            base_branch, root_dir, factory_config, verify_config, "", run_id, ui
+        ):
+            raise BaseRefusedError("the base branch was refused before the architect was paid")
+
+    return measure
 
 
 def _preflight_stack(

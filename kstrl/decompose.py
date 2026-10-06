@@ -2530,7 +2530,7 @@ def _decompose_spec_impl(
     force_lock: bool = False,
     run_lock: _RunLock | None = None,
     timeout: float | None,
-    before_spend: Callable[[], object] = lambda: None,
+    before_spend: Callable[[], object],
 ) -> Manifest:
     """Decompose a spec into components and generate PRDs.
 
@@ -3189,7 +3189,7 @@ def decompose_spec(
     force_lock: bool = False,
     run_lock: _RunLock | None = None,
     timeout: float | None,
-    before_spend: Callable[[], object] = lambda: None,
+    before_spend: Callable[[], object],
 ) -> Manifest:
     """Run decomposition, guaranteeing a ``RunCompleted`` and a usage
     capture on every exit.

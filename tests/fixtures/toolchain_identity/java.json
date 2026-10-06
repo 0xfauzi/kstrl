@@ -39,6 +39,7 @@
       "  Spec:         <tmp>/spec.md",
       "  Project:      demo",
       "  Spec digest:  b75f836c7b6c",
+      "kstrl.toml has no confirmed [stack], so there is no base check to run before the architect",
       "Decomposition attempt 1/3",
       "WARN: JSON extraction failed: No agent output to parse",
       "Decomposition attempt 2/3",

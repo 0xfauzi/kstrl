@@ -36,6 +36,7 @@ from kstrl.security import SecurityConfig, SecurityMode, run_security_review
 from kstrl.statedir import plan_prd_path
 from kstrl.ui.plain import PlainUI
 from tests.conftest import make_review_repo
+from tests.helpers.before_spend import no_base_check
 from tests.helpers.component_prd import write_component_prd
 from tests.helpers.prd_payload import _make_prd_payload
 from tests.helpers.prompt_calls import architect_call
@@ -338,6 +339,7 @@ class TestHaltingIsUnchanged:
                 root_dir=tmp_path,
                 prompt_call=architect_call(tmp_path),
                 timeout=None,
+                before_spend=no_base_check,
             )
         assert list(tmp_path.rglob("prd.json")) == []
 

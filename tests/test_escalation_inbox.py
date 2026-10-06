@@ -29,6 +29,7 @@ from kstrl.manifest import Manifest
 from kstrl.statedir import ControlStateError
 from kstrl.ui.plain import PlainUI
 from tests.helpers import astwalk
+from tests.helpers.before_spend import no_base_check
 from tests.helpers.prompt_calls import architect_call
 from tests.helpers.stack_confirmation import write_stack
 from tests.test_decompose import MockDecomposeAgent
@@ -326,6 +327,7 @@ def _decompose_in_process(root: Path, payload: dict[str, Any], out: io.StringIO)
         root_dir=root,
         prompt_call=architect_call(root),
         timeout=None,
+        before_spend=no_base_check,
     )
 
 

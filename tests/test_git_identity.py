@@ -294,10 +294,11 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # went through set_identity.
     "tests/test_spec_factory_lock_discipline.py": 1,
     # #696 slice 7: `greenfield`'s seed commit, the factory test's [stack]
-    # commit, and the stub architect's empty commit that moves main, each
-    # into a repository already through set_identity (`greenfield` itself,
-    # and tests.test_prompt_record._spec_project).
-    "tests/test_stack_proposal_e2e.py": 3,
+    # commit, the factory and decompose tests' [stack] commits, and the stub
+    # architect's empty commit that moves main, each into a repository
+    # already through set_identity (`greenfield` itself, and
+    # tests.test_prompt_record._spec_project).
+    "tests/test_stack_proposal_e2e.py": 4,
     "tests/test_check_cli.py": 5,
     # #619: each test commits a base and a branch into a repository its
     # _repo helper put through tests.helpers.gitrepo.set_identity.

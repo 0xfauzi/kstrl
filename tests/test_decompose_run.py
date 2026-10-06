@@ -15,6 +15,7 @@ from kstrl.commandrun import open_command_run
 from kstrl.decompose import SpecBlockerError, decompose_spec
 from kstrl.reducer import load_run_state
 from kstrl.ui.plain import PlainUI
+from tests.helpers.before_spend import no_base_check
 from tests.helpers.prompt_calls import architect_call
 from tests.helpers.stack_confirmation import PROPOSED_STACK
 from tests.test_decompose import VALID_DECOMPOSE_OUTPUT, MockDecomposeAgent
@@ -140,6 +141,7 @@ def _decompose(
             transcript=run.transcript_writer(ARCHITECT_COMPONENT),
             prompt_call=run.agent_call(ARCHITECT_COMPONENT, ARCHITECT_ROLE),
             timeout=None,
+            before_spend=no_base_check,
         )
     finally:
         run.close()
@@ -296,6 +298,7 @@ class TestDecomposeRun:
             root_dir=tmp_path,
             prompt_call=architect_call(tmp_path),
             timeout=None,
+            before_spend=no_base_check,
         )
         assert len(manifest.components) == 2
         assert not (tmp_path / ".kstrl" / "runs").exists()
@@ -540,6 +543,7 @@ class TestReportingNeverReplacesTheHalt:
                 root_dir=tmp_path,
                 prompt_call=architect_call(tmp_path),
                 timeout=None,
+                before_spend=no_base_check,
             )
 
     def test_a_broken_pipe_does_not_swallow_a_success(
@@ -559,6 +563,7 @@ class TestReportingNeverReplacesTheHalt:
             root_dir=tmp_path,
             prompt_call=architect_call(tmp_path),
             timeout=None,
+            before_spend=no_base_check,
         )
         assert len(manifest.components) == 2
 

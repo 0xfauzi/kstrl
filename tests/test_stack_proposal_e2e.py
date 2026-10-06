@@ -461,3 +461,22 @@ def test_ks_factory_spec_measures_the_base_before_the_architect(tmp_path: Path, 
     assert reused is not moved, out
     # Once before the architect, however many attempts it takes, and once in the run.
     assert out.count("Measuring the gates on the base branch") == 2, out
+
+
+@runs_a_stack
+def test_ks_decompose_measures_the_base_before_the_architect(tmp_path: Path) -> None:
+    """Under a confirmed [stack] whose tests fail on the base, `ks decompose`
+    refuses with exit 2 before the architect is called once."""
+    root = _spec_project(tmp_path, initialised=True)
+    with (root / "kstrl.toml").open("a", encoding="utf-8") as fh:
+        fh.write("\n" + _stack({"tests": "false"}))
+    git_in(root, "add", "-A")
+    git_in(root, "commit", "-q", "-m", "stack")
+    confirm_stack(root)
+    agent, prompts = _architect(tmp_path, _output(None))
+
+    proc = _decompose(root, agent)
+
+    assert proc.returncode == 2, proc.stdout
+    assert list(prompts.iterdir()) == [], proc.stdout
+    assert "the base branch fails a gate Phase 1 runs" in proc.stdout, proc.stdout

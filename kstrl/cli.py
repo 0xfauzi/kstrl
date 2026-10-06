@@ -84,6 +84,7 @@ from kstrl.events import (
 )
 from kstrl.factory import (
     VALID_REVIEW_MODES,
+    BaseRefusedError,
     BudgetConfigError,
     FactoryConfig,
     FactoryLockHeldError,
@@ -92,6 +93,7 @@ from kstrl.factory import (
     _cli_family,
     _report_preflight,
     _RunLock,
+    base_check_before_architect,
     base_refused_before_architect,
     run_factory,
 )
@@ -2459,6 +2461,8 @@ def decompose(
     tui: bool | None,
 ) -> None:
     """Decompose a spec into components and generate PRDs."""
+    from kstrl.verify import VerifyConfig
+
     ctx = click.get_current_context()
 
     root_dir = root.resolve() if root else Path.cwd()
@@ -2494,7 +2498,9 @@ def decompose(
     effective_base = resolve_base_branch(base_branch, root_dir)
     # #603: the architect runs in this process, so an unset limit lets a
     # hung call hold the command; kstrl.toml was checked at entry.
-    architect_timeout = limit_seconds(FactoryConfig.load(root_dir).architect_timeout_seconds)
+    factory_config = FactoryConfig.load(root_dir)
+    architect_timeout = limit_seconds(factory_config.architect_timeout_seconds)
+    verify_config = VerifyConfig.load(root_dir)
 
     def _decompose_core(core_ui: UI, command_run: CommandRun) -> int:
         try:
@@ -2511,10 +2517,18 @@ def decompose(
                 prompt_call=command_run.agent_call(ARCHITECT_COMPONENT, ARCHITECT_ROLE),
                 force_lock=force_lock,
                 timeout=architect_timeout,
+                before_spend=base_check_before_architect(
+                    root_dir,
+                    effective_base,
+                    factory_config,
+                    verify_config,
+                    command_run.run_id,
+                    core_ui,
+                ),
             )
             core_ui.ok(f"Decomposed into {len(manifest.components)} components")
             return 0
-        except (SpecBlockerError, OwnerAnswerError) as exc:
+        except (SpecBlockerError, OwnerAnswerError, BaseRefusedError) as exc:
             core_ui.err(str(exc))
             # R1.7: point at the durable artifacts so the user iterates
             # against files, not scrollback. Plural, because after #260

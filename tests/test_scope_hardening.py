@@ -51,6 +51,7 @@ from kstrl.verify import (
     run_mechanical_verification,
 )
 from tests.helpers import gitrepo
+from tests.helpers.before_spend import no_base_check
 from tests.helpers.component_prd import PASSING_STORY, write_component_prd
 from tests.helpers.prompt_calls import architect_call
 from tests.helpers.stack_confirmation import PROPOSED_STACK, in_process_stack
@@ -220,6 +221,7 @@ class TestExcludeRejectionFlowsThroughRetryLoop:
             root_dir=tmp_path,
             prompt_call=architect_call(tmp_path),
             timeout=None,
+            before_spend=no_base_check,
         )
 
         assert len(agent.prompts) == 2
@@ -287,6 +289,7 @@ class TestExcludeRejectionFlowsThroughRetryLoop:
             root_dir=tmp_path,
             prompt_call=architect_call(tmp_path),
             timeout=None,
+            before_spend=no_base_check,
         )
 
         assert len(agent.prompts) == 2
