@@ -159,6 +159,40 @@ def test_a_retired_codebase_scan_env_var_stops_the_command_by_name(
     assert "No manifest found" not in proc.stdout + proc.stderr
 
 
+@pytest.mark.parametrize(
+    ("name", "replaced_by"),
+    [
+        ("KSTRL_DEAD_CODE_CLEANUP", "runs no dead-code, mutation or coverage tool"),
+        ("KSTRL_DEAD_CODE_CMD", "runs no dead-code, mutation or coverage tool"),
+        ("KSTRL_MUTATION_TESTING", "runs no dead-code, mutation or coverage tool"),
+        ("KSTRL_MUTATION_THRESHOLD", "runs no dead-code, mutation or coverage tool"),
+        ("KSTRL_MUTATION_TIMEOUT", "runs no dead-code, mutation or coverage tool"),
+        ("KSTRL_ADEQUACY_ENABLED", "reads no test file mechanically"),
+        ("KSTRL_ADEQUACY_LAYER0", "reads no test file mechanically"),
+    ],
+)
+def test_a_retired_adequacy_or_tool_check_env_var_stops_the_command_by_name(
+    tmp_path: Path, name: str, replaced_by: str
+) -> None:
+    """#696 slice 8: an environment that still sets a test-adequacy,
+    mutation or dead-code variable is refused by name before the command
+    body runs. The names are typed here, not read from RETIRED_ENV_VARS, so
+    a row dropped from that table fails this test instead of removing its
+    case, and the variable is not silently ignored."""
+    proc = subprocess.run(
+        [sys.executable, "-m", "kstrl", "status", "--root", str(tmp_path)],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        env={**os.environ, "KSTRL_NO_TUI": "1", name: "1"},
+    )
+
+    assert proc.returncode == 2, proc.stdout + proc.stderr
+    assert f"the environment sets {name}" in proc.stderr, proc.stderr
+    assert replaced_by in proc.stderr, proc.stderr
+    assert "No manifest found" not in proc.stdout + proc.stderr
+
+
 def test_an_old_finding_record_still_resolves() -> None:
     finding = Finding.from_dict(
         {
