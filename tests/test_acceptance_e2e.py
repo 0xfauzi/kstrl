@@ -34,6 +34,7 @@ from typing import Any
 import pytest
 
 from kstrl.acceptance import BASE_NOT_RUNNABLE, HEAD_RUNS
+from kstrl.statedir import control_dir
 from tests.helpers.executables import write_executable
 from tests.helpers.gitrepo import git_in
 from tests.helpers.stack_confirmation import confirm_stack
@@ -111,8 +112,13 @@ def _accept(tmp_path: Path, root: Path, plan: Path, engineer: str = "", *extra: 
     return _factory(tmp_path, root, "--acceptance", str(plan), *extra, engineer=engineer)
 
 
+def _evidence_root(root: Path) -> Path:
+    """Where a run's acceptance evidence is kept: outside the repository."""
+    return control_dir(root) / "runs"
+
+
 def _head_record(root: Path) -> dict[str, Any]:
-    (path,) = sorted((root / ".kstrl" / "runs").glob(f"*/acceptance/{COMP}/attempt-*/record.json"))
+    (path,) = sorted(_evidence_root(root).glob(f"*/acceptance/{COMP}/attempt-*/record.json"))
     record: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
     return record
 
@@ -196,7 +202,7 @@ def test_a_component_that_creates_the_app_runs_on_a_base_that_cannot_run(tmp_pat
 
     assert run.code == 0, run.out
     assert run.calls == 1, run.out
-    (base_path,) = sorted((root / ".kstrl" / "runs").glob("*/acceptance/base.json"))
+    (base_path,) = sorted(_evidence_root(root).glob("*/acceptance/base.json"))
     base = json.loads(base_path.read_text(encoding="utf-8"))
     assert base["components"][COMP]["base"] == BASE_NOT_RUNNABLE, base
     assert base["components"][COMP]["checks"][0]["exit"] == 127, base
@@ -224,7 +230,7 @@ def test_with_no_prover_the_checks_run_on_the_host_and_every_record_says_so(
     assert run.code == 0, run.out
     # The fallback has no zone, so each run's copy of the plan is removed after it.
     assert sorted(path.name for path in tmpdir.glob("greets-ada-*")) == [], run.out
-    (base_path,) = sorted((root / ".kstrl" / "runs").glob("*/acceptance/base.json"))
+    (base_path,) = sorted(_evidence_root(root).glob("*/acceptance/base.json"))
     base = json.loads(base_path.read_text(encoding="utf-8"))
     labels = {"setup": FALLBACK_LABEL, "test": FALLBACK_LABEL}
     assert base["isolation"] == labels, base
@@ -524,7 +530,7 @@ def test_a_recheck_runs_the_saved_checks_again_and_takes_no_file_on_trust(
     )
     run = _accept(tmp_path, root, plan, SPECIAL_CASED)
     assert run.code == 1, run.out
-    (path,) = sorted((root / ".kstrl" / "runs").glob(f"*/acceptance/{COMP}/attempt-*/record.json"))
+    (path,) = sorted(_evidence_root(root).glob(f"*/acceptance/{COMP}/attempt-*/record.json"))
     path = path.resolve()
     evidence = path.parent
     written = {p: p.read_bytes() for p in evidence.rglob("*") if p.is_file()}

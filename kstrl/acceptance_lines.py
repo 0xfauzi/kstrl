@@ -19,8 +19,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from kstrl.acceptance import ACCEPTANCE_DIR, FAIL, PASS, RECORD_FILE, Check
-from kstrl.events import RunPaths
+from kstrl.acceptance import FAIL, PASS, RECORD_FILE, Check, evidence_dir
 from kstrl.jsonread import read_json
 from kstrl.rung import HOST_LABEL
 
@@ -86,7 +85,7 @@ def pr_section(root: Path | None, run_id: str, comp_id: str) -> list[str]:
     named no root)."""
     if root is None or not run_id:
         return []
-    attempts = RunPaths.for_run(root, run_id).root / ACCEPTANCE_DIR / comp_id
+    attempts = evidence_dir(root, run_id) / comp_id
     if not attempts.is_dir():
         return []
     numbered = [

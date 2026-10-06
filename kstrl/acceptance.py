@@ -63,7 +63,6 @@ from typing import TYPE_CHECKING, Any
 
 from kstrl import git
 from kstrl.atomicio import atomic_write_json
-from kstrl.events import RunPaths
 from kstrl.jsonread import read_json
 from kstrl.names import validate_component_id
 from kstrl.replay import Replay, Stage, _ran, replay_stack
@@ -383,6 +382,13 @@ def _checked_copy(
     return PinnedPlan(digest, directory, _parsed(raw)), []
 
 
+def evidence_dir(root: Path, run_id: str) -> Path:
+    """Where a run's base reading and head records are written: under the
+    control directory, outside the repository, so an engineer retrying in
+    the repository does not find a held-out check's argv or output there."""
+    return control_dir(root) / "runs" / run_id / ACCEPTANCE_DIR
+
+
 def _copy(root: Path, digest: str, files: Files) -> Path:
     """The plan's copy under the control directory, made once per digest."""
     final = control_dir(root) / ACCEPTANCE_DIR / digest
@@ -579,7 +585,7 @@ def _write_base(
     errors: list[str],
 ) -> list[str]:
     """Write the base reading; return why it could not be written, or []."""
-    path = RunPaths.for_run(root, run_id).root / ACCEPTANCE_DIR / BASE_FILE
+    path = evidence_dir(root, run_id) / BASE_FILE
     document = {
         "run": run_id,
         "planId": plan.digest,
@@ -644,7 +650,7 @@ def judge_head(
         line = f"Acceptance for {comp_id}: the head commit cannot be read, so no check ran"
         return HeadOutcome(False, [line], (), (line,), HOST_LABEL)
     part = plan.components[comp_id]
-    evidence = RunPaths.for_run(root, run_id).root / ACCEPTANCE_DIR / comp_id / f"attempt-{attempt}"
+    evidence = evidence_dir(root, run_id) / comp_id / f"attempt-{attempt}"
     try:
         (evidence / "logs").mkdir(parents=True, exist_ok=True)
     except OSError as exc:

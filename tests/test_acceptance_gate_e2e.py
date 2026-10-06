@@ -47,8 +47,10 @@ from tests.test_acceptance_e2e import (
     SPECIAL_CASED,
     _accept,
     _check,
+    _evidence_root,
     _greeting_repo,
     _plan,
+    _recheck,
     _with_greet,
 )
 from tests.test_isolation_rung import runs_a_stack
@@ -389,3 +391,42 @@ def test_an_approval_of_a_halt_on_two_checks_merges_over_both(tmp_path: Path) ->
         f"- merged over the failing checks has-marker, greets-hidden by inbox approval "
         f"{item.id[:8]} ({approved.decided_by} at {approved.decided_at})"
     ) in out, out
+
+
+@runs_a_stack
+def test_a_held_out_check_leaves_nothing_in_the_repository_and_recheck_finds_it(
+    tmp_path: Path,
+) -> None:
+    """The engineer retries inside the repository, so a held-out check's
+    argv must not be in any file there (#700 slice 6, owner instruction
+    2026-10-06). After a gated run that halts on the held-out check, no
+    file of the repository outside .git holds its random argv, and
+    `ks recheck` of the record kept under the control directory agrees,
+    given as an absolute path and as a path relative to that directory."""
+    root = _greeting_repo(tmp_path)
+    hidden = f"Grace{secrets.token_hex(4)}"
+    plan = _plan(
+        tmp_path,
+        [
+            _check("greets-ada", ["/bin/sh", "check.sh", "Ada"]),
+            _check("greets-hidden", ["/bin/sh", "check.sh", hidden], held_out=True),
+        ],
+    )
+
+    run = _accept(tmp_path, root, plan, SPECIAL_CASED)
+
+    assert run.code == 1, run.out
+    holders = [
+        path.relative_to(root).as_posix()
+        for path in root.rglob("*")
+        if ".git" not in path.relative_to(root).parts
+        and path.is_file()
+        and hidden.encode() in path.read_bytes()
+    ]
+    assert holders == [], holders
+    (record,) = sorted(_evidence_root(root).glob(f"*/acceptance/{COMP}/attempt-*/record.json"))
+    assert hidden in (record.parent / "checks" / "plan.json").read_text(encoding="utf-8")
+    for given in (record, record.relative_to(_evidence_root(root))):
+        code, out = _recheck(root, given)
+        assert code == 0, out
+        assert "The recheck agrees with the record." in out, out

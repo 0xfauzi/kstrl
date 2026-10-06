@@ -124,16 +124,18 @@ runnable`. Once the base accepts the plan, the manifest pins its
 digest. A later run of the same plan refuses when the directory was
 edited, naming both digests, and when it names no `--acceptance`.
 
-After Phase 1 passes, each component's checks run on its head (once
-each for now; a run that failed is never run again) and the verdict is
-printed, written under `.kstrl/runs/<run_id>/acceptance/<component>/`
-and repeated in the PR body's `## Acceptance` section. The verdict gates
-the component (#700 slice 6). A held-out check that fails halts it with
+After Phase 1 passes, each component's checks run on its head (each
+check runs three times and passes only when every run exits 0; a run
+that failed is never run again) and the verdict is
+printed, written outside the repository under the control directory,
+`runs/<run_id>/acceptance/<component>/`, and repeated in the PR body's
+`## Acceptance` section. The verdict gates the component (#700 slice 6). A held-out check that fails halts it with
 no retry, on a `halted_run` inbox item that names the failing checks and
 the commit. Any other check that did not pass, held-out checks that
 could not run included, goes to the engineer's retry: a visible check
 with its criterion, its command and what it printed, a held-out check by
-its id alone. The engineer is not confined, so each record says
+its id alone. The records are kept outside the repository, but the
+engineer is not confined, so each record says
 `"heldOutReadDenied": "unknown"`.
 
 To merge over a halt, approve its item (`ks inbox approve <id>`), then
@@ -146,7 +148,8 @@ run, or a component built on unmerged dependency code, keeps no commit,
 so its halt cannot be merged over.
 
 `ks recheck <record.json>` runs a head record's saved checks again
-(#700 slice 5). It refuses (exit 2), naming the file, when a file beside
+(#700 slice 5). A relative path that is not found from the current
+directory is looked for under the control directory's `runs/`. It refuses (exit 2), naming the file, when a file beside
 the record does not match its `index.json`, when the saved checks are
 not the record's plan, or when the `[stack]` in kstrl.toml is not the
 one the record ran under. Otherwise the checks run again at the
