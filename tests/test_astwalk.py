@@ -268,7 +268,7 @@ class TestAssertSitesWillNotTakeHalfAnAnswer:
     and that claim is checked."""
 
     def test_an_undecided_site_fails_even_when_seen_is_right(self) -> None:
-        found = astwalk.Sites((), ("gateparse.py:111 TOOL_PARSERS[chosen]",))
+        found = astwalk.Sites((), ("fixtures.py:111 _RUNNERS[kind]",))
         with pytest.raises(AssertionError, match="could not decide"):
             astwalk.assert_sites(found, seen=(), undecided=(), message="x")
 
@@ -300,8 +300,6 @@ OPAQUE_CALLEES = (
     "fixture_expect.py COMPARATORS[kind]",
     "fixture_expect.py VALIDATORS[kind]",
     "fixtures.py _RUNNERS[fixture.fixture_type]",
-    "gateparse.py TOOL_PARSERS[chosen]",
-    "gateparse.py TOOL_PARSERS[name]",
     "tui/app.py initial_screens_for_kind(kind, observe_only=False)",
     "tui/app.py initial_screens_for_kind(kind, observe_only=True)",
 )

@@ -369,13 +369,9 @@ def baseline_from_result(
     tests. ``check_schema_version`` is passed in from
     :data:`kstrl.cli.CHECK_SCHEMA_VERSION` rather than imported, because the
     CLI imports this module.
-
-    ``limit=None``: the journal caps a check at five distinct signatures so one
-    catastrophic run cannot flood a journal entry, but a baseline that dropped
-    the sixth would report it as new on the very next run.
     """
     measured, reasons = _measured_and_unmeasured(result)
-    counts = signature_counts_from_verification(measured, limit=None)
+    counts = signature_counts_from_verification(measured)
     return Baseline(
         generated_at=generated_at,
         base_ref=base_ref,
@@ -449,9 +445,8 @@ def refuse_foreign_baseline(baseline: Baseline, digest: str) -> None:
         raise BaselineError(
             f"this baseline was measured with a different verify configuration: "
             f"baseline digest {baseline.verify_digest}, this run {digest}. "
-            "The digest covers the test, typecheck and lint commands, any declared "
-            "report format and the subprocess timeout; a comparison across two of "
-            "those is not a comparison. Restore the configuration it was written "
+            "The digest covers the [stack] and the subprocess timeout; a comparison "
+            "across two of those is not a comparison. Restore the configuration it was written "
             "under, or regenerate it with ks check --write-baseline --force"
         )
 

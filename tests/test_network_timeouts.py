@@ -42,7 +42,7 @@ from tests.helpers.astwalk import (
 #: enclosing qualified scope rather than by line (#645), so an edit above a
 #: site moves nothing while a site that moves function, appears or goes does.
 #: Not deduplicated: two calls in one scope are two rows. Re-derived by
-#: running the walk below. The undecided half is the seven shared sites every
+#: running the walk below. The undecided half is the five shared sites every
 #: other guard built on ``tests.helpers.astwalk`` already pins.
 EXPECTED_SEEN: tuple[str, ...] = (
     "licensing.py::_default_http_get urllib.request.urlopen",
@@ -55,8 +55,6 @@ EXPECTED_UNDECIDED: tuple[str, ...] = (
     "fixture_expect.py::judge COMPARATORS[kind]",
     "fixture_expect.py::value_errors VALIDATORS[kind]",
     "fixtures.py::_dispatch_fixture _RUNNERS[fixture.fixture_type]",
-    "gateparse.py::parse_gate_output TOOL_PARSERS[chosen]",
-    "gateparse.py::parse_gate_output TOOL_PARSERS[name]",
     "tui/app.py::KstrlTuiApp.launch initial_screens_for_kind(kind, observe_only=False)",
     "tui/app.py::KstrlTuiApp.open_run initial_screens_for_kind(kind, observe_only=True)",
 )

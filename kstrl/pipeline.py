@@ -1803,7 +1803,7 @@ class ComponentPipeline:
         """R6.1: remember the structured signatures for this failure so
         record_run journals real "<check>:<code>" identifiers instead of
         re-deriving a degenerate slug from the flattened error string.
-        Sites without parser-level codes fall back to a slug of the
+        Sites that pass no signatures fall back to a slug of the
         error text under the failing phase."""
         from kstrl.evolution import signature_for_error
 
@@ -3644,9 +3644,8 @@ class ComponentPipeline:
                 verification.as_context(),
                 attempt=comp.retries + 1,
             )
-            # R6.1: carry the parser's structured codes (ruff rule,
-            # mypy error code, pytest exception type) into the
-            # journal instead of the flattened string.
+            # R6.1: one signature per failed check (#696 decision 5)
+            # into the journal instead of the flattened string.
             from kstrl.evolution import signatures_from_verification
 
             action, error = _verify_routing(failing)

@@ -333,6 +333,47 @@ def test_compare_reports_a_fixed_signature_and_exits_0(tmp_path: Path) -> None:
     assert _LINT_FROM_FILE_SIGNATURE in fixed.split("unmeasured", 1)[0]
 
 
+#: A lint check that runs a script from the tree, so what the check prints and
+#: how it exits can change between the baseline and the comparison while its
+#: command, and so the verify digest, stays the same.
+_SCRIPT_COMMAND = "sh check.sh"
+_SCRIPT_SIGNATURE = signature_for_error("stack:lint", f"`{_SCRIPT_COMMAND}` exited 1")
+
+
+def _set_check_script(root: Path, output: str, status: int) -> None:
+    """Make ``check.sh`` print ``output`` and exit ``status``."""
+    script = f"cat <<'EOF'\n{output}\nEOF\nexit {status}\n"
+    (root / "check.sh").write_text(script, encoding="utf-8")
+
+
+def test_a_launcher_exit_2_never_reads_as_fixed(tmp_path: Path) -> None:
+    """#696 slice 5: the baseline records a lint failure (a finding on a source
+    line, exit 1). On the branch the launcher cannot start the linter and exits 2
+    with its own message. Exit 2 is a measured failure (decision 4) and the
+    signature is the check's, not the output's (decision 5), so the baseline
+    signature is still there: not fixed. When the script then passes, the same
+    signature IS fixed, so the first comparison is not passing vacuously."""
+    root = _make_repo(tmp_path, lint_command=_SCRIPT_COMMAND)
+    _set_check_script(root, "src/a.py:1:1: E501 line too long", 1)
+    assert _write(root).exit_code == 1
+    recorded = _baseline_document(root)["signatures"]
+    assert recorded == {_SCRIPT_SIGNATURE: 1}
+
+    _set_check_script(root, "error: Failed to spawn: `ruff`\n  Caused by: No such file", 2)
+    launcher = _invoke(root, "--compare-baseline", "--json")
+
+    assert launcher.exit_code == 0, launcher.output
+    block = json.loads(launcher.stdout)["baseline"]
+    assert block["fixed"] == {}, block
+    assert block["current"]["signatures"] == recorded, block
+
+    _set_check_script(root, "", 0)
+    passing = _invoke(root, "--compare-baseline", "--json")
+
+    assert passing.exit_code == 0, passing.output
+    assert json.loads(passing.stdout)["baseline"]["fixed"] == recorded
+
+
 def test_markdown_format_starts_with_the_marker(tmp_path: Path) -> None:
     root = _make_repo(tmp_path)
     assert _write(root).exit_code == 0

@@ -1,19 +1,17 @@
-"""The retry detail for gate output that no registered parser recognised (#622).
+"""The retry detail for a failed check: the lines around each location (#622).
 
-A gate whose output none of ``kstrl.gateparse``'s parsers recognised used to
-show the engineer the primary parser's raw tail: the last 5 lines for the test
-gate, the last 3 for typecheck and lint. For ``cargo test`` those lines are
-cargo's own chatter, and the panic location and the ``left:`` / ``right:``
-values sit earlier in the output and were dropped. The same held for ``go
+A ``[stack]`` check is judged by its exit status (#696 decision 4) and kstrl
+parses none of its output. What the engineer is shown of a failure is the lines
+around every ``<path>:<line>`` the output names inside the worktree. For ``cargo
+test`` that is the panic location and the ``left:`` / ``right:`` values, which
+sit earlier in the output than its own closing chatter; the same holds for ``go
 test`` with more than one package, for jest, and for clippy.
 
-``failure_excerpt`` keeps the lines around every ``<path>:<line>`` the output
-names inside the worktree instead. It is a fallback, never a parser: it runs
-only when no registered parser recognised the output, it produces no
-``ParsedFailure`` and no signature, and it leaves the row unmeasured (#227). A
-worktree path next to a failure is not evidence that the tool ran and reported,
-and a signature keyed on a line number would read every edit above the failing
-line as a fix. The tail stays when the output names no location in the worktree.
+The excerpt is never a parser: it produces no signature and decides nothing
+about the row. A worktree path next to a failure is not evidence that the tool
+ran and reported, and a signature keyed on a line number would read every edit
+above the failing line as a fix. The caller keeps the last lines when the output
+names no location in the worktree.
 """
 
 from __future__ import annotations
@@ -22,7 +20,16 @@ import os
 import re
 from pathlib import Path
 
-from kstrl.parsers import strip_ansi
+#: CSI and OSC escape sequences. A tool colours its output when it thinks a
+#: person is watching, and some do it even through a pipe, so the excerpt
+#: strips them before it reads a location.
+_ANSI_RE = re.compile(r"\x1b\[[0-9;:?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
+
+
+def strip_ansi(raw: str) -> str:
+    """``raw`` with terminal colour and cursor escapes removed."""
+    return _ANSI_RE.sub("", raw)
+
 
 #: Lines kept above and below each location inside the worktree. Measured on
 #: the captures in tests/tool_output, not assumed: clippy prints its code
@@ -35,9 +42,7 @@ EXCERPT_LINES_AFTER = 6
 
 #: The cap on what the excerpt may put in a retry prompt. A design bound, not a
 #: measurement: the largest excerpt of the captures is 23 lines and 932
-#: characters, and a registered parser's own detail is at most 92 lines
-#: (``format_for_prompt``'s 10 failures at 9 lines each, plus the summary and
-#: the "more errors" line), so the fallback never shows more than a parse would.
+#: characters.
 EXCERPT_MAX_LINES = 80
 EXCERPT_MAX_CHARS = 8_000
 

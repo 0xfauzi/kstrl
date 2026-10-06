@@ -13,7 +13,6 @@ from kstrl.evolution import (
     SPEC_ISSUES_EVENT,
     EvolutionConfig,
     EvolutionJournal,
-    signature_counts_from_verification,
     signature_for_error,
     signatures_from_findings,
     signatures_from_verification,
@@ -21,8 +20,6 @@ from kstrl.evolution import (
 )
 from kstrl.factory import FactoryResult
 from kstrl.manifest import Component, ComponentStatus, Manifest
-from kstrl.parsers import ParsedFailure, ParsedOutput
-from kstrl.verify import CheckResult
 from tests.helpers.journal import audit, journal_at
 
 
@@ -370,49 +367,6 @@ class TestConcernHitRate:
 
 
 class TestSignatureHelpers:
-    def test_signatures_from_verification_uses_parser_codes(self) -> None:
-        from kstrl.gateparse import GATE_LINT, GATE_TEST, GATE_TYPECHECK, parse_gate_output
-        from kstrl.verify import CheckResult
-
-        # Real tool output through the real dispatcher rather than
-        # hand-built ParsedOutputs: the signature is only worth anything
-        # if the parser actually puts a code where this reads one, and a
-        # synthetic ParsedFailure can be given a code the parser never
-        # emits (#258).
-        ruff = parse_gate_output(
-            "a.py:1:1: E501 Line too long (120 > 100)\n"
-            "b.py:2:5: S608 Possible SQL injection vector\n"
-            "c.py:3:9: E501 Line too long (110 > 100)\n"
-            "Found 3 errors.\n",
-            GATE_LINT,
-        )
-        mypy = parse_gate_output(
-            'a.py:4: error: Argument 1 has incompatible type "str" [arg-type]\n'
-            "Found 1 error in 1 file (checked 2 source files)\n",
-            GATE_TYPECHECK,
-        )
-        pytest_out = parse_gate_output(
-            "=========================== short test summary info ===========================\n"
-            "FAILED tests/test_a.py::test_x - AssertionError: assert 1 == 2\n"
-            "=============================== 1 failed in 0.10s ===============================\n",
-            GATE_TEST,
-        )
-        assert (ruff.tool, mypy.tool, pytest_out.tool) == ("ruff", "mypy", "pytest")
-        checks = [
-            CheckResult(name="linter", passed=False, message="Linter failed", parsed=ruff),
-            CheckResult(name="typecheck", passed=False, message="Typecheck failed", parsed=mypy),
-            CheckResult(name="test_suite", passed=False, message="Tests failed", parsed=pytest_out),
-            CheckResult(name="bad_patterns", passed=True, message="ok"),
-        ]
-        sigs = signatures_from_verification(checks)
-        assert "linter:E501" in sigs
-        assert "linter:S608" in sigs
-        assert "typecheck:arg-type" in sigs
-        assert "test_suite:assertion-error" in sigs
-        # Passing checks contribute nothing; duplicates collapse.
-        assert sigs.count("linter:E501") == 1
-        assert not any(s.startswith("bad_patterns") for s in sigs)
-
     def test_signatures_from_verification_fallback_slug(self) -> None:
         from kstrl.verify import CheckResult
 
@@ -1033,105 +987,3 @@ class TestSpecAudits:
             "int.md",
             "empty.md",
         ]
-
-
-# ---------------------------------------------------------------------------
-# R10.6 (#227): the signature counter the baseline is built from
-# ---------------------------------------------------------------------------
-
-
-def _linter_failing(*codes: str) -> CheckResult:
-    """One failed linter check whose parser reported ``codes``, in order.
-
-    An empty string in ``codes`` is a failure the parser could not name, which
-    is the case that falls through to the message slug.
-    """
-    return CheckResult(
-        name="linter",
-        passed=False,
-        message="Linter failed",
-        parsed=ParsedOutput(
-            tool="ruff",
-            failures=[ParsedFailure(code=code, message=code or "unnamed") for code in codes],
-        ),
-    )
-
-
-class TestSignatureCounts:
-    """``limit`` and the occurrence counter.
-
-    The journal caps a check at five distinct signatures so one catastrophic
-    run cannot flood a journal entry. A baseline that dropped the sixth would
-    report it as new on the very next run, so the baseline asks for no cap -
-    and these tests are the control that asking did not move the default the
-    journal still gets.
-    """
-
-    def test_signatures_from_verification_limit_none_counts_all(self) -> None:
-        checks = [_linter_failing("E501", "F401", "S608", "E731", "B008", "C901", "N802")]
-
-        assert len(signatures_from_verification(checks, limit=None)) == 7
-        # The journal's behaviour, unchanged: five distinct codes per check.
-        assert len(signatures_from_verification(checks)) == 5
-
-    def test_the_default_limit_is_the_journal_cap(self) -> None:
-        """The default is the CONSTANT, not a literal that can drift from it.
-
-        The issue text asked for ``limit: int | None = None`` and for the
-        default to keep journal behaviour byte-identical. Those cannot both
-        hold, so the default is the cap and ``None`` means uncapped. This
-        pins the object identity so a later edit cannot separate them.
-        """
-        import inspect
-
-        from kstrl.evolution import _MAX_SIGNATURES_PER_CHECK
-
-        default = inspect.signature(signatures_from_verification).parameters["limit"].default
-        assert default is _MAX_SIGNATURES_PER_CHECK
-        counts_default = (
-            inspect.signature(signature_counts_from_verification).parameters["limit"].default
-        )
-        assert counts_default is _MAX_SIGNATURES_PER_CHECK
-
-    def test_signature_counts_count_occurrences_not_presence(self) -> None:
-        """12 E501s are 12, not 1.
-
-        ``signatures_from_verification`` ends in ``dict.fromkeys``, so every
-        count built from its return value would be 1 and the baseline's
-        ``increased`` bucket could never fire. That is why the counter is a
-        sibling rather than a wrapper over it.
-        """
-        checks = [_linter_failing(*["E501"] * 12)]
-
-        assert signature_counts_from_verification(checks, limit=None) == {"linter:E501": 12}
-
-    def test_a_check_with_no_codes_counts_its_message_slug_once(self) -> None:
-        checks = [
-            CheckResult(name="diff_scope", passed=False, message="3 files outside allowed scope")
-        ]
-
-        counts = signature_counts_from_verification(checks, limit=None)
-        assert list(counts.values()) == [1]
-        assert split_signature(next(iter(counts)))[0] == "diff_scope"
-
-    def test_signatures_from_verification_is_the_keys_of_the_counter(self) -> None:
-        """One decision, read two ways, so the two cannot drift apart."""
-        checks = [
-            _linter_failing("E501", "F401", "E501", "", "S608"),
-            CheckResult(name="typecheck", passed=True, message="ok"),
-            CheckResult(name="diff_scope", passed=False, message="out of scope"),
-        ]
-
-        for limit in (None, 1, 2, 5):
-            assert signatures_from_verification(checks, limit=limit) == list(
-                signature_counts_from_verification(checks, limit=limit)
-            )
-
-    def test_the_limit_caps_distinct_codes_not_occurrences(self) -> None:
-        """A cap of 2 keeps the first two DISTINCT codes and all their hits."""
-        checks = [_linter_failing("E501", "F401", "E501", "S608", "F401")]
-
-        assert signature_counts_from_verification(checks, limit=2) == {
-            "linter:E501": 2,
-            "linter:F401": 2,
-        }

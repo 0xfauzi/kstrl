@@ -127,7 +127,7 @@ SECRET_NAME_FRAGMENTS: tuple[str, ...] = (
 )
 
 #: kstrl's own variables: kstrl sets the ones a command needs itself, so a
-#: stack may not pass one through (``KSTRL_REPORT`` among them).
+#: stack may not pass one through.
 KSTRL_ENV_PREFIX = "KSTRL_"
 
 #: A POSIX environment variable name.

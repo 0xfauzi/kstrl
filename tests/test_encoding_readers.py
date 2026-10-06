@@ -144,7 +144,6 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     # The `append_guidance_record` read, moved from `operator_context.py`
     # in the same split.
     "operator_guidance.py": 1,
-    "parsers.py": 1,
     "pipeline.py": 5,  # 3 until #463 added carry_interrupted_run's journal
     # open; 5 since #482 added journal_integration_result's journal open
     "prd.py": 1,
@@ -155,8 +154,6 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     # and the `up` log's `log.open('wb')` (bytes mode, so it is not itself
     # a text read; layer 2 below excludes it for exactly that reason).
     "replay.py": 2,
-    # #629's go.mod read.
-    "report_formats.py": 1,
     "security.py": 1,
     # Five reads, and five reads only. Round 1 of #228 spelled the gh
     # flag as two argv tokens, so the bare literal "open" landed here and
@@ -173,7 +170,6 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     # deduplicated spelling list below loses a row.
     "serve.py": 5,
     "statedir.py": 1,
-    "suite_inventory.py": 1,
     "tui/embed.py": 1,
     # #433 F9: the bounded "rb" read of a review file, and the
     # disposition word OPEN = "open", which is not a read.
@@ -283,7 +279,6 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     # `operator_guidance.py` when that write path split out of
     # `operator_context.py` under the 800-line ratchet.
     "operator_guidance.py spec.path.read_text(encoding='utf-8')",
-    "parsers.py source_path.read_text(encoding='utf-8')",
     "pipeline.py open(path, 'a', buffering=1, encoding='utf-8')",
     "pipeline.py progress_path.read_text(encoding='utf-8')",
     "prd.py open(path, encoding='utf-8')",
@@ -292,15 +287,11 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "recheck.py path.read_text(encoding='utf-8')",
     # #700 slice 3: the per-machine replay lock.
     "replay.py path.open('a+', encoding='utf-8')",
-    # #629's go.mod read, to derive the package directory a go test
-    # failure's relative path resolves against.
-    "report_formats.py (root / 'go.mod').read_text(encoding='utf-8')",
     "security.py prd_path.read_text(encoding='utf-8')",
     "serve.py open(lock_path, 'a+', encoding='utf-8')",
     "serve.py path.read_text(encoding='utf-8')",
     "serve.py self.path.read_text(encoding='utf-8')",
     "statedir.py open(lock_path, 'a+', encoding='utf-8')",
-    "suite_inventory.py (report_dir / GATE_OUTPUT).read_text(encoding='utf-8')",
     "tui/embed.py open(run_paths.root / 'orchestrator.log', 'a', buffering=1, encoding='",
     "tui/runs.py open(lock_path, 'a+', encoding='utf-8')",
     "tui/serve_view.py path.read_text(encoding='utf-8', errors='replace')",
