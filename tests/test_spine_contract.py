@@ -370,3 +370,45 @@ class TestContractBreakerRerun:
         assert "broken.txt" not in branch_files
 
         _assert_no_contract_debris(root)
+
+
+class TestPhase3WithNoStack:
+    def test_a_contract_check_with_no_stack_fails_the_tier_instead_of_passing_it(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """#696 slice 4: with no [stack] Phase 3 has no check to run. This is
+        the run ``ks factory --no-verify --contract-check tier`` builds on a
+        project with no [stack]: Phase 1 skipped, a ContractConfig with no
+        stack. The tier fails and names the missing [stack]; it never passes
+        on nothing (``contract.NO_STACK_PHASE_3``)."""
+        monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
+        root = tmp_path / "repo"
+        init_kstrl_repo(root, ("alpha",))
+        manifest = make_manifest([component("alpha")])
+        progress_path = tmp_path / "progress.jsonl"
+
+        result = run_factory(
+            manifest,
+            factory_config(
+                project_stack=None,
+                verify_config=None,
+                skip_verification=True,
+                contract_config=ContractConfig(mode="tier", timeout=30.0),
+                progress_log_path=progress_path,
+            ),
+            base_config(root, _FILE_PER_COMPONENT_ENGINEER),
+            PlainUI(no_color=True),
+            root,
+            manifest_path=progress_path.parent / "manifest.json",
+        )
+
+        assert result.exit_code != 0
+        assert [(tier, passed) for tier, passed, _ in _contract_events(progress_path)][:1] == [
+            (0, False)
+        ]
+        assert any("kstrl.toml has no [stack]" in f for f in result.contract_failures), (
+            result.contract_failures
+        )
+        _assert_no_contract_debris(root)
