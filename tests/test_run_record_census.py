@@ -147,7 +147,6 @@ EXPECTED_RUN_RECORD_SITES: dict[str, int] = {
     "integration_phase.py: _not_run": 1,
     "integration_phase.py: _review_evidence": 1,
     "integration_state.py: _history": 1,
-    "integration_state.py: add_fix": 1,
     "integration_state.py: add_stop": 1,
     "isolation.py: write_record": 1,  # #700 slice 2: the rungs a run's commands ran in
     "launch_record.py: write_launch_record": 1,

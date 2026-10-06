@@ -100,7 +100,6 @@ from kstrl import (
     gepa_adapter,
     git,
     integration,
-    integration_fix,
     knowledge,
     owner_answers,
     review,
@@ -142,7 +141,6 @@ from kstrl.integration import (
     INTEGRATION_CRITERIA_PROMPT,
     INTEGRATION_CRITERIA_PROMPT_VERSION,
 )
-from kstrl.integration_fix import INTEGRATION_FIX_PROMPT, INTEGRATION_FIX_PROMPT_VERSION
 from kstrl.knowledge import DISTILL_PROMPT, DISTILL_PROMPT_VERSION
 from kstrl.manifest import Component
 from kstrl.owner_answers import (
@@ -191,7 +189,6 @@ _PROMPTS: dict[str, str] = {
     "OWNER_ANSWER_PROMPT": OWNER_ANSWER_PROMPT,
     "INTEGRATION_CRITERIA_PROMPT": INTEGRATION_CRITERIA_PROMPT,
     "INTEGRATION_CARRIED_PROMPT": INTEGRATION_CARRIED_PROMPT,
-    "INTEGRATION_FIX_PROMPT": INTEGRATION_FIX_PROMPT,
     "GEPA_REFLECTION_PROMPT": GEPA_REFLECTION_PROMPT,
     "STACK_PROMPT": STACK_PROMPT,
     "ACCEPTANCE_PROMPT": ACCEPTANCE_PROMPT,
@@ -213,7 +210,6 @@ _VERSIONS: dict[str, str] = {
     "OWNER_ANSWER_PROMPT": OWNER_ANSWER_PROMPT_VERSION,
     "INTEGRATION_CRITERIA_PROMPT": INTEGRATION_CRITERIA_PROMPT_VERSION,
     "INTEGRATION_CARRIED_PROMPT": INTEGRATION_CARRIED_PROMPT_VERSION,
-    "INTEGRATION_FIX_PROMPT": INTEGRATION_FIX_PROMPT_VERSION,
     "GEPA_REFLECTION_PROMPT": GEPA_REFLECTION_PROMPT_VERSION,
     "STACK_PROMPT": STACK_PROMPT_VERSION,
     "ACCEPTANCE_PROMPT": ACCEPTANCE_PROMPT_VERSION,
@@ -310,9 +306,12 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
         "02511bcc6d3d8542ab2543362836b1decf639295861b84aa4be06d573151fc2b",
         "2.1.0",
     ),
+    # 1.2.0 (#696 slice 10): MINOR. The evidence example cites
+    # "path/to/file:42-58" and "path/to/test:101", which name no language's
+    # file suffix. H2: the distiller capture under "## Shared capture".
     "DISTILL_PROMPT": (
-        "8040021a09d97598434d08c766495a4185df70b632e3ff4e5e1086b2e56ab30c",
-        "1.1.0",
+        "ef183ed29df80f02686e302e2595c5583e606ecc016006aec56b0aabd624da6f",
+        "1.2.0",
     ),
     # 1.5.0 (#696 slice 4): step 9 names no language's tools. It tells the
     # engineer to run every check the Stack block names, and that kstrl
@@ -349,9 +348,13 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     # series for a body whose earlier edits predate any version at all -
     # the footing VERIFY_COMMANDS_PROMPT was enrolled on in #261.
     # Back-dating to 1.1.0 would imply a 1.0.0 that never existed.
+    # 1.1.0 (#696 slice 10): MINOR. The read-only rule forbids "a build" and
+    # "anything that writes output or a cache" in place of one language's
+    # "import that writes bytecode". Interpolated into the reviewer and
+    # security prompts, so H2 is their captures.
     "REPO_CHANGE_SOURCE_PROMPT": (
-        "a631e04c744b55157f9e023d352b572eb8f5e6a5148c9f9114eaf26f6a359cb5",
-        "1.0.0",
+        "eebee56fcb8e0c986e2f38c8c31786412ae772917e18d67fb96e995e626b7b6b",
+        "1.1.0",
     ),
     # 1.0.0 (#696 slice 2): engineer-facing context naming a project's
     # [stack]: its instructions and every check kstrl runs. The TEMPLATE is
@@ -397,22 +400,19 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     # specification and the prd.json files are evidence, not stories; IC2 fails a read path that
     # re-applies new-input checks with no rule tightened yet; IC1 is one condition. H2: the before
     # and after integration captures saved beside this change.
+    # 1.3.0 (#696 slice 10): MINOR. IC1 and IC4 judge a call against the
+    # callee's documented contract (doc comment, docstring or equivalent)
+    # rather than its docstring. H2: the integration and integration_clean
+    # captures.
     "INTEGRATION_CRITERIA_PROMPT": (
-        "f0f2a99109309563a5ddef4c4e0f0f3f03d94108a9d52a6455cb06b72906afcd",
-        "1.2.0",
+        "e434808afe8697231d025a15ebc0d6d525846b34717e405d953bd4b189a6a7d7",
+        "1.3.0",
     ),
     # 1.0.0 (#483): new. The criterion of a carried finding's story, sent to
     # the integration reviewer. H3 only, for INTEGRATION_CRITERIA_PROMPT's
     # reason: its calibration role "integration" has no fixture yet.
     "INTEGRATION_CARRIED_PROMPT": (
         "71c4e1edade09d984f65f6dac1356f26b4ea9baea01ee5f9b9b321fa91975d7c",
-        "1.0.0",
-    ),
-    # 1.0.0 (#483): new. The criteria of each story of an integration fix
-    # PRD, read by the fix's engineer. Engineer-facing, so no calibration
-    # fixture scores it: H3 only, the #303 position.
-    "INTEGRATION_FIX_PROMPT": (
-        "4d8692a21b96a23c9d980e7182671b6d57a65b5a1cdff05194b83f789806ccf8",
         "1.0.0",
     ),
     # 1.0.0 (#530): new. The text gepa sends the reflection model when it
@@ -621,10 +621,6 @@ _RENDERERS: dict[str, tuple[ModuleType, Callable[[Path], str]]] = {
     "INTEGRATION_CARRIED_PROMPT": (
         integration,
         lambda _p: integration.carried_story("IF-1", "TEXT", ["src/a.py"]).criterion,
-    ),
-    "INTEGRATION_FIX_PROMPT": (
-        integration_fix,
-        lambda _p: integration_fix.render_fix_criteria("TEXT", ["src/a.py"]),
     ),
     "GEPA_REFLECTION_PROMPT": (gepa_adapter, lambda _p: gepa_adapter.reflection_template()),
     **NOTICE_RENDERERS,

@@ -159,15 +159,22 @@ class _RewordingReviewer(lp.ScriptedReviewer):
 
 
 def test_a_carried_finding_echoed_in_other_words_closes_on_its_pass(tmp_path: Path) -> None:
+    """IF-1 stays open in a record-only run, and a fix an earlier kstrl
+    built and merged carries it into the next review (#696: kstrl builds no
+    fix now, so only such a fix carries a finding)."""
     root = tmp_path / "repo"
     base, _head = lp.loop_feature(root)
-    reviewer = _RewordingReviewer(base, [lp.IC2_FAIL, {}])
+    first = _RewordingReviewer(base, [lp.IC2_FAIL])
+    lp.run_loop(root, lp.Rig(root, first), integration_blocking=False)
+    assert lp.state(root)["findings"][0]["status"] == "open"
+    lp.record_earlier_fix(root, base, ["IF-1"], prd=True, component=True)
+    reviewer = _RewordingReviewer(base, [{}])
     rig = lp.Rig(root, reviewer)
 
-    result, _out = lp.run_loop(root, rig)
+    result, _out = lp.run_loop(root, rig, integration_blocking=False)
 
-    assert reviewer.calls == 2
-    assert "IF-1" in reviewer.prompts[1]
+    assert reviewer.calls == 1
+    assert "IF-1" in reviewer.prompts[0]
     state = lp.state(root)
     assert state["findings"][0]["status"] == "closed"
     assert state["stops"][-1]["outcome"] == "clean"

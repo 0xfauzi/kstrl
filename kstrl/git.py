@@ -1385,7 +1385,7 @@ def parse_observed_diffstat(value: object) -> DiffStat | None:
     reviewer would make the other import it, for one coercion.
 
     None on ANY malformed reading - a missing key, a non-object, a
-    non-integer count, a bool (``True`` is an ``int`` in Python and
+    non-integer count, a bool (``bool`` subclasses ``int``, so ``True``
     would otherwise land as ``1``), a negative count. All of those mean
     the same thing downstream: no usable claim about what was read,
     which :func:`diffstat_disagreement` reports as an unverified review.
@@ -1494,7 +1494,7 @@ def coverage_notes_prefix(label: str, disagreement: str) -> str:
 # docs/adversarial-roadmap.md.
 
 
-REPO_CHANGE_SOURCE_PROMPT_VERSION = "1.0.0"
+REPO_CHANGE_SOURCE_PROMPT_VERSION = "1.1.0"
 
 REPO_CHANGE_SOURCE_PROMPT = """\
 Your working directory IS the git worktree that holds the change under
@@ -1513,8 +1513,8 @@ are expected to.
 
 You have READ-ONLY access to this tree. Do not create, modify, or delete
 anything, and do not run any command that would - not a formatter, not a
-test run, not an import that writes bytecode. You are judging this tree;
-changing it destroys the evidence.
+test run, not a build, not anything that writes output or a cache. You
+are judging this tree; changing it destroys the evidence.
 
 Then run, verbatim:
 

@@ -199,15 +199,13 @@ def _where(source: Path, node: ast.AST) -> str:
 
 
 #: Every node in ``kstrl/`` spelling ``plan_prd_path``: its definition,
-#: the two writers' imports, the two writers, and the one reader,
+#: the writer's import, the writer, and the one reader,
 #: ``pre_run_prd_path``. A new row is a new way to reach a planned copy
 #: that does not ask the manifest for the plan id.
 EXPECTED_PLAN_PRD_PATH_SPELLINGS = {
     "decompose.py::<module>": 1,
     "decompose.py::_decompose_spec_impl": 1,
     "decompose.py::_generate_component_prd": 1,
-    "integration_fix.py::<module>": 1,
-    "integration_fix.py::write_fix_prd": 1,
     "statedir.py::<module>": 1,
     "statedir.py::pre_run_prd_path": 1,
 }

@@ -85,7 +85,6 @@ from kstrl import (
     git,
     init_cmd,
     integration,
-    integration_fix,
     knowledge,
     review,
     security,
@@ -334,8 +333,8 @@ _ROLES: dict[str, _Role] = {
             _COMPONENT, 5, _PRD_JSON, _EXISTING_FACTS, _DIFF_TEXT
         ),
         frozenset({"DISTILL_PROMPT"}),
-        "f7b64117a9d1281e44a064101e67c8eaa639bbb4263b14b33a90cd68f2ac546b",
-        4069,
+        "3df53a0d88ecbb2c1680873750467c869bbf88084a6c39d01df92c5311c0aad0",
+        4063,
     ),
     # #696 slice 4: one engineer row. Every engineer runs under a confirmed
     # [stack], and VERIFY_COMMANDS_PROMPT is retired. Pinned by running
@@ -359,8 +358,8 @@ _ROLES: dict[str, _Role] = {
     "integration-criteria": _Role(
         lambda _p: integration.render_integration_criteria("BASE_SHA"),
         frozenset({"INTEGRATION_CRITERIA_PROMPT"}),
-        "fc48b4d174d4c947a6843ccb37fedd3cdc1f4e51fb55c23db03d1653bfff486e",
-        2477,
+        "23d08919e324ccbb60c7bde0aaf76f383fd48f0d438f7f7aa1701e6a41e7f1e9",
+        2579,
     ),
     "integration-carried": _Role(
         lambda _p: integration.carried_story("IF-1", "TEXT", ["src/a.py"]).criterion,
@@ -368,17 +367,11 @@ _ROLES: dict[str, _Role] = {
         "08ce96bc303abbc21ad141eac54f50a2e6242f0c1466ac94b65a4f5e9fe09b21",
         44,
     ),
-    "integration-fix": _Role(
-        lambda _p: integration_fix.render_fix_criteria("TEXT", ["src/a.py"]),
-        frozenset({"INTEGRATION_FIX_PROMPT"}),
-        "06d98de531e3c4402d5bc872a5713cd5d6c82595a72c6d1adbb1b0dbcdf312e2",
-        198,
-    ),
     "integration-reviewer": _Role(
         _integration_reviewer,
         frozenset({"REVIEWER_PROMPT", "REPO_CHANGE_SOURCE_PROMPT"}),
-        "42ec51c25b5e1bdf1c5c81b8637eeaaba3acdcd7a595229a767e04e4e54fabcc",
-        10910,
+        "dd89854d8bee341d574e410b3d13401beca52bfb13d497b3aa6c69c54e388725",
+        11033,
     ),
     "pasted-change-source": _Role(
         lambda _p: git.pasted_change_source(_DIFF_TEXT)[0],
@@ -389,8 +382,8 @@ _ROLES: dict[str, _Role] = {
     "reviewer": _Role(
         _reviewer,
         frozenset({"REVIEWER_PROMPT", "REPO_CHANGE_SOURCE_PROMPT"}),
-        "9a3e07ce60cf63e71e9e0f8f403bfe7880f3c381e539816a2b4f1c07ee75f24b",
-        8537,
+        "ba56354a44698dd0d50dd136e208f197916d6d449553dc86df8e2063d529aee6",
+        8558,
     ),
     "security": _Role(
         # Two arguments, exactly as ``run_security_review`` calls it
@@ -400,8 +393,8 @@ _ROLES: dict[str, _Role] = {
         # because ``security.generate_data_delimiter`` is pinned above.
         lambda _p: security._build_security_prompt(_PRD_JSON, git.repo_change_source("BASE_SHA")),
         frozenset({"SECURITY_PROMPT", "REPO_CHANGE_SOURCE_PROMPT"}),
-        "058b03cbbca4bfdd23c988b81094918be6581b4929bdfd789df3d2c5eaefc418",
-        9360,
+        "482a5c274011f9025f34d6896fd94de147ae5b02f42d5b6c387e3bbc8c928190",
+        9381,
     ),
 }
 

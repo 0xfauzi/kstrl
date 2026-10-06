@@ -526,7 +526,7 @@ def _first_sentence(claim: str) -> str:
 
 def _sort_for_packing(facts: list[Fact]) -> list[Fact]:
     """Sort facts: verified before asserted, then newest run first."""
-    # Python sort is stable: secondary sort first, then primary.
+    # sorted() and list.sort() are stable: secondary sort first, then primary.
     by_recency = sorted(facts, key=lambda f: f.created_run_id, reverse=True)
     # Sort: test_verified first, then review_passed, then asserted.
     # Higher confidence packs first so the budget keeps the strongest.
@@ -1007,7 +1007,7 @@ def _transitive_dependencies(manifest: Manifest, component_id: str) -> set[str]:
 # ---------------------------------------------------------------------------
 
 
-DISTILL_PROMPT_VERSION = "1.1.0"
+DISTILL_PROMPT_VERSION = "1.2.0"
 
 DISTILL_PROMPT = """\
 You are a knowledge-distillation agent. The implementing agent has just
@@ -1041,7 +1041,7 @@ explanation). Schema:
       "id": "fact-001",
       "scope": "handler|adapter|schema|contract|invariant|gotcha",
       "confidence": "review_passed|test_verified|asserted",
-      "evidence": ["path/to/file.py:42-58", "tests/test_x.py:101"],
+      "evidence": ["path/to/file:42-58", "path/to/test:101"],
       "tags": ["auth", "tokens"],
       "claim": "A single durable assertion in 1-5 sentences. State it as a fact about the artifact, not the iteration. Cite the evidence inline if helpful."
     }}
@@ -1182,7 +1182,7 @@ _FACT_ID_RE = re.compile(r"^fact-\d{3}$")
 # essay mode and are more likely to carry injection payloads.
 MAX_CLAIM_LENGTH = 500
 MAX_EVIDENCE_ITEMS = 10
-# Evidence items are path:line citations ("src/x.py:42-58"); anything
+# Evidence items are path:line citations ("src/x:42-58"); anything
 # longer is essay-mode drift or a smuggled payload, not a citation.
 MAX_EVIDENCE_ITEM_LENGTH = 200
 MAX_TAG_ITEMS = 8
