@@ -285,6 +285,7 @@ ks queue retry ITEM_ID          Send a failed or poisoned item back to queued.
 ks queue rm ITEM_ID             Delete an item and its spec.
 ks queue show ITEM_ID           Show one item in full, with its transition history.
 ks queue sync                   Pull labelled GitHub issues into the queue (R8.6).
+ks recheck RECORD               Run an acceptance record's saved checks again and compare (#700).
 ks retry COMPONENT_ID           Retry a FAILED component from the factory manifest (R3.3).
 ks run [MAX_ITERATIONS]         Run the agentic loop as a single-component factory invocation.
 ks serve                        Drain the continuous-intake queue (R8.6).

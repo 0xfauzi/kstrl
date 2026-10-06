@@ -21,6 +21,7 @@ platform with no prover they run on the host under the fallback label
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -481,3 +482,149 @@ def test_the_plan_a_person_approves_includes_the_acceptance_checks(tmp_path: Pat
     assert with_plan.calls == 0, with_plan.out
     assert len(parked_bare) == len(parked_with) == 64, _manifest(root)
     assert parked_bare != parked_with, with_plan.out
+
+
+def _recheck(root: Path, record: Path) -> tuple[int, str]:
+    """The real `ks recheck` on ``record``."""
+    argv = ["recheck", str(record), "--root", str(root), "--ui", "plain", "--no-color"]
+    return _spawn(argv, root, None)
+
+
+def _reindex(evidence: Path, name: str) -> None:
+    """Write ``name``'s sha256 as it now reads into the record's index.json."""
+    index = json.loads((evidence / "index.json").read_text(encoding="utf-8"))
+    index[name] = hashlib.sha256((evidence / name).read_bytes()).hexdigest()
+    (evidence / "index.json").write_text(json.dumps(index), encoding="utf-8")
+
+
+@runs_a_stack
+def test_a_recheck_runs_the_saved_checks_again_and_takes_no_file_on_trust(
+    tmp_path: Path,
+) -> None:
+    """#700 slice 5. On the record of a special-cased head, `ks recheck`
+    runs both saved checks again at the recorded head and agrees with the
+    record: the visible check passes and the held-out one fails. It never
+    takes the stated verdict: a record rewritten to say the held-out check
+    passed, its exits and its index entry rewritten to match, gets a
+    recheck that disagrees on that check. One byte flipped in a saved
+    check refuses naming that file, and naming the plan when the index was
+    rewritten too; so does a file the index does not name, and a [stack]
+    other than the one the record ran under."""
+    root = _greeting_repo(tmp_path)
+    plan = _plan(
+        tmp_path,
+        [
+            _check("greets-ada", ["/bin/sh", "check.sh", "Ada"]),
+            _check("greets-bob", ["/bin/sh", "check.sh", "Bob"], held_out=True),
+        ],
+    )
+    run = _accept(tmp_path, root, plan, SPECIAL_CASED)
+    assert run.code == 0, run.out
+    (path,) = sorted((root / ".kstrl" / "runs").glob(f"*/acceptance/{COMP}/attempt-*/record.json"))
+    path = path.resolve()
+    evidence = path.parent
+    written = {p: p.read_bytes() for p in evidence.rglob("*") if p.is_file()}
+
+    code, out = _recheck(root, path)
+    assert code == 0, out
+    assert "- greets-ada: the record says pass, its exits say pass, the recheck says pass" in out
+    assert "- greets-bob: the record says fail, its exits say fail, the recheck says fail" in out
+    assert "The recheck agrees with the record." in out, out
+    assert f"- the record ran under: {_head_record(root)['isolation']['test']}" in out, out
+    assert "- this recheck ran under: " in out, out
+    # The recheck wrote nothing beside the record.
+    assert {p: p.read_bytes() for p in evidence.rglob("*") if p.is_file()} == written
+
+    # The stated verdict and the exits it was read from, rewritten together.
+    kept = {name: (evidence / name).read_bytes() for name in ("record.json", "index.json")}
+    record = json.loads(kept["record.json"])
+    row = _row(record, "greets-bob")
+    row["verdict"], row["headExits"] = "pass", [0] * len(row["headExits"])
+    path.write_text(json.dumps(record), encoding="utf-8")
+    _reindex(evidence, "record.json")
+    code, out = _recheck(root, path)
+    assert code == 1, out
+    assert "- greets-bob: the record says pass, its exits say pass, the recheck says fail" in out
+    assert "The recheck disagrees with the record on greets-bob." in out, out
+    # Only the exits rewritten: the stated verdict and the new run still
+    # agree, but the record contradicts its own exits.
+    forged = json.loads(kept["record.json"])
+    ada = _row(forged, "greets-ada")
+    ada["headExits"] = [1] * len(ada["headExits"])
+    path.write_text(json.dumps(forged), encoding="utf-8")
+    _reindex(evidence, "record.json")
+    code, out = _recheck(root, path)
+    assert code == 1, out
+    assert "- greets-ada: the record says pass, its exits say fail, the recheck says pass" in out
+    # A record that is not JSON at all refuses; it is not a traceback.
+    path.write_text("not json\n", encoding="utf-8")
+    code, out = _recheck(root, path)
+    assert code == 2, out
+    assert f"{path} cannot be read" in out, out
+    # A headSha that is not a full commit id refuses before git sees it.
+    injected = tmp_path / "injected"
+    forged = json.loads(kept["record.json"])
+    forged["headSha"] = f"--upload-pack=touch {injected}"
+    path.write_text(json.dumps(forged), encoding="utf-8")
+    _reindex(evidence, "record.json")
+    code, out = _recheck(root, path)
+    assert code == 2, out
+    assert "headSha" in out, out
+    assert "did not run at" not in out, out
+    assert not injected.exists()
+    # A row for a check the plan does not have: the recheck cannot run it,
+    # so it refuses rather than agreeing with the rows it did run.
+    forged = json.loads(kept["record.json"])
+    forged["checks"].append({**_row(forged, "greets-ada"), "id": "greets-cyd"})
+    path.write_text(json.dumps(forged), encoding="utf-8")
+    _reindex(evidence, "record.json")
+    code, out = _recheck(root, path)
+    assert code == 2, out
+    assert f"{path} does not name the checks of its plan's {COMP}" in out, out
+    # The recheck's own isolation label comes from its run, never the record.
+    forged = json.loads(kept["record.json"])
+    forged["isolation"]["test"] = "a label the record states"
+    path.write_text(json.dumps(forged), encoding="utf-8")
+    _reindex(evidence, "record.json")
+    code, out = _recheck(root, path)
+    assert code == 0, out
+    assert "- the record ran under: a label the record states" in out, out
+    assert "- this recheck ran under: a label the record states" not in out, out
+    for name, data in kept.items():
+        (evidence / name).write_bytes(data)
+
+    # One byte of a saved check.
+    saved = evidence / "checks" / "check.sh"
+    data = bytearray(saved.read_bytes())
+    data[0] ^= 1
+    saved.write_bytes(bytes(data))
+    code, out = _recheck(root, path)
+    assert code == 2, out
+    assert "Refusing to run: the acceptance record cannot be rechecked" in out, out
+    assert f"{saved} reads sha256" in out, out
+    # The same byte with the index rewritten to match: the plan digest refuses.
+    _reindex(evidence, "checks/check.sh")
+    code, out = _recheck(root, path)
+    assert code == 2, out
+    assert f"and the record's plan is {record['planId'][:12]}" in out, out
+    (evidence / "index.json").write_bytes(kept["index.json"])
+    data[0] ^= 1
+    saved.write_bytes(bytes(data))
+
+    # A file the index does not name.
+    planted = evidence / "logs" / "planted.log"
+    planted.write_text("planted\n", encoding="utf-8")
+    code, out = _recheck(root, path)
+    assert code == 2, out
+    assert f"{planted} reads sha256" in out and "index.json says nothing" in out, out
+    planted.unlink()
+
+    # Another [stack] than the one the record ran under.
+    toml = root / "kstrl.toml"
+    toml.write_text(
+        toml.read_text(encoding="utf-8").replace('"tests" = "true"', '"tests" = "true; true"'),
+        encoding="utf-8",
+    )
+    code, out = _recheck(root, path)
+    assert code == 2, out
+    assert f"the record ran under the [stack] {record['stackDigest'][:12]}" in out, out

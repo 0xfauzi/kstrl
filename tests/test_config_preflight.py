@@ -550,6 +550,7 @@ SEAM_COMMANDS: list[tuple[list[str], int]] = [
     (["inbox", "ls"], 2),
     (["learn", "playbook"], 2),
     (["queue", "ls"], 2),
+    (["recheck", "record.json"], 2),
     (["retry", "comp-a"], 2),
     (["run", "--agent-cmd", "true"], 2),
     (["serve", "--print-plist", "--no-color"], 2),

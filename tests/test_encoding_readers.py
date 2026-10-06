@@ -147,6 +147,8 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     "pipeline.py": 5,  # 3 until #463 added carry_interrupted_run's journal
     # open; 5 since #482 added journal_integration_result's journal open
     "prd.py": 1,
+    # #700 slice 5: `ks recheck` reads a record and its index.json back.
+    "recheck.py": 1,
     # #700 slice 3: layer 1 counts every `open(...)`/`read_text(...)` call
     # shape, mode or not: `replay_lock`'s `path.open('a+', encoding='utf-8')`
     # and the `up` log's `log.open('wb')` (bytes mode, so it is not itself
@@ -287,6 +289,9 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "pipeline.py open(path, 'a', buffering=1, encoding='utf-8')",
     "pipeline.py progress_path.read_text(encoding='utf-8')",
     "prd.py open(path, encoding='utf-8')",
+    # #700 slice 5: an acceptance record and its index.json, utf-8, with
+    # ValueError caught beside OSError.
+    "recheck.py path.read_text(encoding='utf-8')",
     # #700 slice 3: the per-machine replay lock.
     "replay.py path.open('a+', encoding='utf-8')",
     # #629's go.mod read, to derive the package directory a go test

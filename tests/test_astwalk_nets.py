@@ -316,7 +316,7 @@ class TestAssertCensusWillNotPinAnEmptyNet:
         astwalk.assert_census(
             sources=astwalk.package_sources(),
             sees=half_dead,
-            # #700 slice 4: acceptance.py:_write_evidence lists its own
+            # #700 slice 4: acceptance.py:evidence_index lists its own
             # just-written evidence directory with rglob, to index every
             # file's sha256; it is kstrl's own output, not operator input,
             # so the plan-directory refusal rule does not apply here.
