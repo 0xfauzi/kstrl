@@ -81,9 +81,14 @@ from kstrl.names import validate_branch_name, validate_component_id
 from kstrl.owner_answers import OwnerAnswers, read_owner_answers
 from kstrl.prd import PRD
 from kstrl.runid import mint_run_id
-from kstrl.stack import stack_text_digest
+from kstrl.stack import (
+    file_stack_item,
+    stack_errors,
+    stack_from_table,
+    stack_text_digest,
+    stack_toml,
+)
 from kstrl.statedir import plan_prd_path
-from kstrl.toolchains import BUILD_MANIFESTS
 
 logger = logging.getLogger(__name__)
 
@@ -167,11 +172,12 @@ class SpecBlockerError(Exception):
         return lines
 
 
-DECOMPOSE_PROMPT_VERSION = "3.1.0"
+DECOMPOSE_PROMPT_VERSION = "4.0.0"
 
 DECOMPOSE_PROMPT = """\
 You are a senior software architect AND a hostile spec auditor. You have
-three jobs and you must do ALL THREE:
+three jobs and you must do ALL THREE, and you also say what the project is
+built with (`stack`, see the stack rules below):
 
   1. RED-TEAM the specification. Find every ambiguity, missing detail,
      contradiction, unstated assumption, and unspecified failure mode.
@@ -196,6 +202,15 @@ explanation).
 The output must be a JSON object with this exact structure:
 
 {{
+  "stack": {{
+    "instructions": "what the project is built with and how to work in it",
+    "setup": "the command that prepares a fresh checkout, or empty for none",
+    "env": ["NAME_OF_A_VARIABLE_THE_COMMANDS_NEED"],
+    "checks": {{
+      "tests": "the command that runs the project's tests",
+      "lint": "another command every change must pass"
+    }}
+  }},
   "spec_issues": [
     {{
       "id": "kebab-case-id, unique across spec_issues, e.g. auth-mechanism-unspecified",
@@ -289,12 +304,14 @@ Decomposition rules:
     - The component's own feature subtree, exactly
       `scripts/kstrl/feature/<component-id>/` (the agent updates
       progress.txt and PRD passes there).
+    - A build file at the repository root (the project's manifest or
+      lockfile) when the component must create or change it.
 
     EXCLUDE (never list these in allowedPaths):
     - `.kstrl/` (harness runtime state).
     - `.github/` (CI configuration).
-    - `pyproject.toml`, `package.json`, `Cargo.toml`, or other build
-      manifests at the repo root.
+    - `kstrl.toml` (kstrl's configuration, which holds the project's
+      [stack]; propose a stack in `stack` instead).
     - The harness's own package: `kstrl/`.
     - `scripts/kstrl/` as a bare prefix. Listing the bare directory
       would let the agent edit the manifest or sibling feature
@@ -323,6 +340,35 @@ Decomposition rules:
       in `decisions` with disposition "decided": the conservative
       defaults above are always available and layout is yours to
       choose. Escalate only if the layout is a product decision.
+
+Stack rules:
+S1. `stack` is what the project is built with, as the [stack] table of
+    kstrl.toml holds it. kstrl knows no language: it runs each command in
+    `checks` from the root of the tree and judges it by its exit status
+    alone, 0 passes and anything else fails. kstrl never confirms a stack;
+    a person does, before any of its commands runs.
+S2. If kstrl.toml at the repository root already has a [stack] table and
+    the specification fits it, return "stack": null. When kstrl.toml has
+    no [stack], the harness REJECTS a null or missing `stack`.
+S3. Otherwise propose the stack the specification or the repository
+    names. If neither names one, choose one and record the choice in
+    `decisions` with disposition "decided". If kstrl.toml has a [stack]
+    and the specification needs a different one, propose the one it
+    needs AND raise a `spec_issues` entry closed by an "escalated"
+    decision: changing a project's stack is the owner's decision.
+S4. All four keys are required:
+    - "instructions": non-empty text for the engineers, saying what the
+      project is built with and how to work in it.
+    - "setup": one command that prepares a fresh checkout (installs its
+      dependencies), or "" when it needs none.
+    - "env": names of environment variables the commands need beyond
+      PATH and HOME, often []. Never a secret: a name containing
+      API_KEY, SECRET, TOKEN, PASSWORD or CREDENTIAL is rejected, and so
+      is a name starting KSTRL_.
+    - "checks": an object of name to command, at least one, run in the
+      order listed. Each must exit 0 on a correct tree and non-zero when
+      the work is wrong; a check that exits 0 having run nothing
+      verifies nothing.
 
 Red-team rules:
 - Look for: ambiguous quantifiers ("fast", "secure", "user-friendly"),
@@ -780,26 +826,20 @@ def _extract_agent_json(agent: Any, output_lines: list[str]) -> Any:
 # compared after normalization (leading `./` and trailing `/` removed)
 # so `.kstrl`, `.kstrl/` and `./.kstrl/` all match. Keep this set in
 # sync with the prompt body (which only Session 8C may edit).
-#: The repo-root build manifests on that list, named on their own
-#: because they are also the files kstrl will never create (#434): no
-#: component may be scoped to one, so a repository without a manifest
-#: cannot get one from the factory. `init_cmd.build_manifest_blocker`
-#: refuses such a repository before the architect is paid, and
-#: tests/test_build_manifest_preflight.py checks that every name here
-#: is one that refusal recognises. It is `toolchains.BUILD_MANIFESTS`,
-#: the one list that refusal reads. A Gemfile is not one, so it is not
-#: here: the refusal would refuse the repository that holds it.
-ROOT_BUILD_MANIFESTS: frozenset[str] = frozenset(BUILD_MANIFESTS)
-_ALLOWED_PATHS_EXCLUDE: frozenset[str] = (
-    frozenset(
-        {
-            ".kstrl",  # harness runtime state
-            ".github",  # CI configuration
-            "kstrl",  # harness package
-            "scripts/kstrl",  # bare prefix exposes the manifest + sibling features
-        }
-    )
-    | ROOT_BUILD_MANIFESTS
+#
+# #696 slice 7: kstrl.toml is on the list, because it holds the project's
+# [stack], which only a person confirms; the architect proposes a stack in
+# its output instead. A build manifest is not on it any more: kstrl names
+# no language, and a component may create the manifest its project needs.
+# The comparison is an equality test, so only the exact entry is refused.
+_ALLOWED_PATHS_EXCLUDE: frozenset[str] = frozenset(
+    {
+        ".kstrl",  # harness runtime state
+        ".github",  # CI configuration
+        "kstrl",  # harness package
+        "kstrl.toml",  # kstrl's configuration and the confirmed [stack]
+        "scripts/kstrl",  # bare prefix exposes the manifest + sibling features
+    }
 )
 
 
@@ -841,7 +881,7 @@ def _validate_allowed_path_entry(entry: str) -> str | None:
     if normalized in _ALLOWED_PATHS_EXCLUDE:
         return (
             f"entry '{entry}' is on the DECOMPOSE_PROMPT EXCLUDE list "
-            "(harness state, CI config, repo-root build manifests, and "
+            "(harness state, CI config, kstrl.toml, and "
             "the harness's own packages are never in scope; for "
             "scripts/kstrl list only this component's own "
             "scripts/kstrl/feature/<id>/ subtree)"
@@ -1088,7 +1128,27 @@ def _empty_components_errors(data: dict[str, Any], errors: list[str]) -> list[st
     ]
 
 
-def _validate_decompose_output(data: Any) -> list[str]:
+def _stack_output_errors(data: dict[str, Any], *, has_stack: bool) -> list[str]:
+    """Why the architect's ``stack`` is not a usable proposal, or [] (#696 slice 7).
+
+    null keeps the [stack] kstrl.toml already holds, and a missing key reads
+    as null, so both are refused when kstrl.toml holds none (``has_stack``
+    False). An object is checked by ``stack.stack_errors``, the one
+    vocabulary of a valid [stack], and every error is named.
+    """
+    raw = data.get("stack")
+    if raw is None:
+        if has_stack:
+            return []
+        return [
+            "stack: kstrl.toml has no [stack], so 'stack' must propose one, not be null or missing"
+        ]
+    if not isinstance(raw, dict):
+        return [f"stack: must be an object or null, got {type(raw).__name__}"]
+    return [f"stack: {error}" for error in stack_errors(raw)]
+
+
+def _validate_decompose_output(data: Any, *, has_stack: bool) -> list[str]:
     """Validate the decomposition output structure.
 
     Empty components is permitted only when the architect escalated -
@@ -1096,6 +1156,9 @@ def _validate_decompose_output(data: Any) -> list[str]:
     judgement call. Before #260 the same slot keyed on blocker severity,
     which halted five real runs on questions the architect had already
     answered in its own suggestions.
+
+    ``has_stack``: whether kstrl.toml holds a [stack], which decides
+    whether the architect may answer ``"stack": null`` (#696 slice 7).
     """
     if not isinstance(data, dict):
         return ["Output must be a JSON object"]
@@ -1112,6 +1175,7 @@ def _validate_decompose_output(data: Any) -> list[str]:
     # way, and after round 2 an entry that does not parse is a named
     # fault rather than a silent zero.
     errors: list[str] = _decision_register_errors(data)
+    errors += _stack_output_errors(data, has_stack=has_stack)
 
     if not components:
         return _empty_components_errors(data, errors)
@@ -2385,6 +2449,45 @@ def _report_architect_usage(
     )
 
 
+def _file_stack_proposal(
+    data: dict[str, Any],
+    root_dir: Path,
+    stack_pin: str,
+    spec_source: str,
+    bus: EventBus | None,
+    ui: UI,
+) -> None:
+    """File the architect's proposed [stack] for a person to confirm (#696 slice 7).
+
+    Nothing when it answered null, or proposed the very text kstrl.toml holds
+    (``stack_pin``). kstrl confirms nothing: the item is a proposal, which
+    ``ks inbox approve`` refuses until kstrl.toml holds its exact text. A
+    filing that fails is said, with the table, and never raised: the plan
+    does not depend on it, and a run under no [stack] refuses on its own.
+    """
+    if data.get("stack") is None:
+        return
+    proposed = stack_from_table(data["stack"])
+    if proposed.digest == stack_pin:
+        return
+    try:
+        item = file_stack_item(
+            root_dir,
+            proposed,
+            run_id=bus.run_id if bus is not None else "",
+            proposal=f"the architect, for the spec {spec_source}",
+        )
+    except Exception as exc:  # noqa: BLE001 - a filing that failed is said, never raised
+        ui.err(f"The architect proposed [stack] {proposed.digest[:12]}; no item was filed: {exc}")
+        ui.info(stack_toml(proposed))
+        return
+    ui.ok(
+        f"The architect proposed [stack] {proposed.digest[:12]}: inbox item {item.id[:8]}. "
+        f"ks inbox show {item.id[:8]} prints the table to put in kstrl.toml; then "
+        f"ks inbox approve {item.id[:8]} confirms it."
+    )
+
+
 def _say_owner_answers(answers: OwnerAnswers, ui: UI) -> None:
     """Name the owner answers appended to the architect's input, if any (#639)."""
     if answers.item_ids:
@@ -2427,6 +2530,7 @@ def _decompose_spec_impl(
     force_lock: bool = False,
     run_lock: _RunLock | None = None,
     timeout: float | None,
+    before_spend: Callable[[], object] = lambda: None,
 ) -> Manifest:
     """Decompose a spec into components and generate PRDs.
 
@@ -2458,6 +2562,10 @@ def _decompose_spec_impl(
             architect's spend and the manifest write share one acquire.
             None (the `ks decompose` command's own case) means this call
             takes and releases its own lock around the manifest write.
+        before_spend: Called once, after this run has started and before
+            the first architect call (#696 slice 7). `ks factory --spec`
+            measures the base in it and exits 2 there on a red one, so
+            the refusal and its record belong to this run.
 
     Returns:
         Manifest with generated components and PRD files
@@ -2529,6 +2637,9 @@ def _decompose_spec_impl(
         codebase_map_path=relative_to_root(config.codebase_map_file, root_dir),
     )
 
+    # #696 slice 7: the caller's last check before the first paid call
+    # (`ks factory --spec` measures the base here, in this run).
+    before_spend()
     data = None
     last_error: str | None = None
     attempts_used = 0
@@ -2606,7 +2717,7 @@ def _decompose_spec_impl(
             attempt_failed(last_error, started_at=phase_start)
             continue
 
-        validation_errors = _validate_decompose_output(data)
+        validation_errors = _validate_decompose_output(data, has_stack=bool(stack_pin))
         if validation_errors:
             last_error = _retry_feedback(validation_errors)
             ui.warn(f"Validation failed: {last_error}")
@@ -2739,6 +2850,9 @@ def _decompose_spec_impl(
         halted=bool(escalated),
         ui=ui,
     )
+    # #696 slice 7: on the halt path too, since a conflict with the [stack]
+    # kstrl.toml holds is one the architect escalates.
+    _file_stack_proposal(data, root_dir, stack_pin, spec_source, bus, ui)
     emit(
         PhaseCompleted(
             component=ARCHITECT_COMPONENT,
@@ -3075,6 +3189,7 @@ def decompose_spec(
     force_lock: bool = False,
     run_lock: _RunLock | None = None,
     timeout: float | None,
+    before_spend: Callable[[], object] = lambda: None,
 ) -> Manifest:
     """Run decomposition, guaranteeing a ``RunCompleted`` and a usage
     capture on every exit.
@@ -3116,6 +3231,7 @@ def decompose_spec(
             force_lock=force_lock,
             run_lock=run_lock,
             timeout=timeout,
+            before_spend=before_spend,
         )
     except SpecBlockerError:
         # Blocker halts are deliberately finalized at the audit site so

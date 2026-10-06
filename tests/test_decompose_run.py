@@ -16,6 +16,7 @@ from kstrl.decompose import SpecBlockerError, decompose_spec
 from kstrl.reducer import load_run_state
 from kstrl.ui.plain import PlainUI
 from tests.helpers.prompt_calls import architect_call
+from tests.helpers.stack_confirmation import PROPOSED_STACK
 from tests.test_decompose import VALID_DECOMPOSE_OUTPUT, MockDecomposeAgent
 
 MINOR_ISSUE_OUTPUT = json.dumps(
@@ -44,6 +45,7 @@ MINOR_ISSUE_OUTPUT = json.dumps(
 
 BLOCKER_OUTPUT = json.dumps(
     {
+        "stack": PROPOSED_STACK,
         "spec_issues": [
             {
                 "id": "spec-empty",

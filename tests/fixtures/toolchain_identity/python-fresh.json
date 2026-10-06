@@ -2,7 +2,7 @@
   "check": {
     "exit": 2,
     "report": {
-      "error": "kstrl.toml has no [stack], so kstrl has no check to run and runs nothing. Write a [stack] table (instructions, setup, env and [stack.checks]) and confirm it; ks doctor files a proposed [stack] from the commands an old [verify] still holds. --no-verify runs with no checks at all.",
+      "error": "kstrl.toml has no [stack], so kstrl has no check to run and runs nothing. Write a [stack] table (instructions, setup, env and [stack.checks]) and confirm it; ks decompose proposes one for a spec, and ks doctor one from the commands an old [verify] still holds. --no-verify runs with no checks at all.",
       "schema_version": 4
     }
   },
@@ -84,13 +84,7 @@
           "status": "ok"
         },
         {
-          "detail": "a build manifest kstrl recognises is at the repository root, so the `ks decompose` preflight lets the architect run",
-          "fix": "",
-          "name": "build_manifest",
-          "status": "ok"
-        },
-        {
-          "detail": "kstrl.toml has no [stack], so kstrl has no check to run and runs nothing. Write a [stack] table (instructions, setup, env and [stack.checks]) and confirm it; ks doctor files a proposed [stack] from the commands an old [verify] still holds. --no-verify runs with no checks at all.",
+          "detail": "kstrl.toml has no [stack], so kstrl has no check to run and runs nothing. Write a [stack] table (instructions, setup, env and [stack.checks]) and confirm it; ks decompose proposes one for a spec, and ks doctor one from the commands an old [verify] still holds. --no-verify runs with no checks at all.",
           "fix": "Write a [stack] in kstrl.toml, then confirm it.",
           "name": "verify_commands",
           "status": "fail"
@@ -137,7 +131,7 @@
     "exit": 2,
     "refusal": [
       "ERROR: Refusing to run: kstrl.toml has no [stack]",
-      "ERROR:   kstrl.toml has no [stack], so kstrl has no check to run and runs nothing. Write a [stack] table (instructions, setup, env and [stack.checks]) and confirm it; ks doctor files a proposed [stack] from the commands an old [verify] still holds. --no-verify runs with no checks at all."
+      "ERROR:   kstrl.toml has no [stack], so kstrl has no check to run and runs nothing. Write a [stack] table (instructions, setup, env and [stack.checks]) and confirm it; ks decompose proposes one for a spec, and ks doctor one from the commands an old [verify] still holds. --no-verify runs with no checks at all."
     ]
   },
   "files": {

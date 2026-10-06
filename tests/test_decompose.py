@@ -39,6 +39,7 @@ from kstrl.statedir import plan_prd_path
 from kstrl.ui.plain import PlainUI
 from tests.helpers.journal import journal_at
 from tests.helpers.prompt_calls import architect_call
+from tests.helpers.stack_confirmation import PROPOSED_STACK
 
 
 class MockDecomposeAgent:
@@ -113,6 +114,7 @@ VALID_DECOMPOSE_OUTPUT = json.dumps(
         # v3.0.0 requires the array, even empty: a payload that omitted
         # it used to pass with zero decisions and zero escalations, and
         # zero agrees with any count.
+        "stack": PROPOSED_STACK,
         "spec_issues": [],
         "decisions": [],
     }
@@ -129,6 +131,7 @@ class TestSpecIssues:
 
         output = json.dumps(
             {
+                "stack": PROPOSED_STACK,
                 "spec_issues": [
                     {
                         "id": "spec-empty",
@@ -180,6 +183,7 @@ class TestSpecIssues:
 
         output = json.dumps(
             {
+                "stack": PROPOSED_STACK,
                 "spec_issues": [
                     {
                         "id": "edge-case",
@@ -484,6 +488,7 @@ def _single_component_output(
     decisions: list[dict[str, object]] | None = None,
 ) -> str:
     payload: dict[str, object] = {
+        "stack": PROPOSED_STACK,
         "components": [
             {
                 "id": "comp-a",
@@ -568,6 +573,7 @@ class TestARegisterThatDidNotLandFailsTheDecompose:
         (tmp_path / "scripts" / "kstrl").mkdir(parents=True)
         output = json.dumps(
             {
+                "stack": PROPOSED_STACK,
                 "spec_issues": [
                     {
                         "id": "spec-empty",
@@ -756,6 +762,7 @@ class TestSpecIssuesPersistence:
         output = json.dumps(
             {
                 "components": [],
+                "stack": PROPOSED_STACK,
                 "spec_issues": [BLOCKER_ISSUE],
                 "decisions": _closures_for([BLOCKER_ISSUE]),
             }
@@ -825,6 +832,7 @@ class TestSpecIssuesPersistence:
         output = json.dumps(
             {
                 "components": [],
+                "stack": PROPOSED_STACK,
                 "spec_issues": [BLOCKER_ISSUE],
                 "decisions": _closures_for([BLOCKER_ISSUE]),
             }

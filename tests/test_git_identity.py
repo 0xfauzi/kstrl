@@ -97,7 +97,6 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # `tests.helpers.gitrepo.set_identity`.
     "tests/test_bad_patterns_diff_scope.py": 3,
     "tests/test_breaker.py": 3,
-    "tests/test_build_manifest_preflight.py": 1,
     # #399 added two real-repository tests (a stubbed-git refusal, which
     # makes no commit, and a latin-1-bytes commit through `_git`/`_repo`,
     # both already declared here, plus a second real commit in the
@@ -291,9 +290,14 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # through `tests.helpers.gitrepo.set_identity`.
     "tests/test_spec_identity.py": 1,
     # #696: the one [stack]-table commit, into `greenfield`'s repository
-    # (tests.test_build_manifest_preflight.greenfield), which already
+    # (tests.test_stack_proposal_e2e.greenfield), which already
     # went through set_identity.
     "tests/test_spec_factory_lock_discipline.py": 1,
+    # #696 slice 7: `greenfield`'s seed commit, the factory test's [stack]
+    # commit, and the stub architect's empty commit that moves main, each
+    # into a repository already through set_identity (`greenfield` itself,
+    # and tests.test_prompt_record._spec_project).
+    "tests/test_stack_proposal_e2e.py": 3,
     "tests/test_check_cli.py": 5,
     # #619: each test commits a base and a branch into a repository its
     # _repo helper put through tests.helpers.gitrepo.set_identity.

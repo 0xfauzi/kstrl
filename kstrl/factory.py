@@ -460,6 +460,11 @@ class FactoryConfig:
     acceptance_dir: str = ""
     acceptance_plan: PinnedPlan | None = field(default=None, metadata={"provenance": True})
     acceptance_base: BaseReading | None = field(default=None, metadata={"provenance": True})
+    # #696 slice 7: the base reading ``base_refused_before_architect`` took
+    # before `ks factory --spec` paid the architect. The run's own base gates
+    # reuse it while the base names the same commit, so the base is measured
+    # once. Never read from kstrl.toml, env or a flag.
+    base_reading: BaseGates | None = field(default=None, metadata={"provenance": True})
 
     def resolved_verify_config(self) -> VerifyConfig:
         """The VerifyConfig Phase 1 runs with (#261).
@@ -2431,7 +2436,7 @@ BASE_GATES_SKIPPED_NO_VERIFY = "--no-verify: Phase 1 runs no gate"
 
 
 def _preflight_base_gates(
-    manifest: Manifest,
+    base_branch: str,
     root_dir: Path,
     factory_config: FactoryConfig,
     run_id: str,
@@ -2448,7 +2453,7 @@ def _preflight_base_gates(
     accept = factory_config.accept_red_base
     verify_config = factory_config.engineer_verify_config()
     if verify_config is None:
-        skipped = BaseGates(manifest.base_branch)
+        skipped = BaseGates(base_branch)
         reasons, _ = apply_acceptance(skipped, [], accept)
         return (
             write_base_gates_record(
@@ -2461,10 +2466,16 @@ def _preflight_base_gates(
             )
             + reasons
         )
-    ui.info(f"  Measuring the gates on the base branch {manifest.base_branch}...")
+    ui.info(f"  Measuring the gates on the base branch {base_branch}...")
     reading = measure_base_gates(
-        root_dir, manifest.base_branch, verify_config, factory_config.worktree_setup(), ui
+        root_dir,
+        base_branch,
+        verify_config,
+        factory_config.worktree_setup(),
+        ui,
+        measured=factory_config.base_reading,
     )
+    factory_config.base_reading = reading
     for line in warning_lines(reading):
         ui.warn(f"  {line}")
     reasons, accepted = apply_acceptance(reading, refusal_lines(reading), accept)
@@ -2522,7 +2533,7 @@ def _preflight_rungs(
 
 
 def _refused_rung_or_base(
-    manifest: Manifest, root_dir: Path, factory_config: FactoryConfig, run_id: str, ui: UI
+    base_branch: str, root_dir: Path, factory_config: FactoryConfig, run_id: str, ui: UI
 ) -> bool:
     """Prove the rung, then measure the base gates inside it (#700 slice 2,
     #654); True when either refused. The base gates never run below a
@@ -2534,8 +2545,35 @@ def _refused_rung_or_base(
     ) or _report_preflight(
         ui,
         "the base branch fails a gate Phase 1 runs, or its reading cannot be recorded",
-        _preflight_base_gates(manifest, root_dir, factory_config, run_id, ui),
+        _preflight_base_gates(base_branch, root_dir, factory_config, run_id, ui),
     )
+
+
+def base_refused_before_architect(
+    base_branch: str,
+    root_dir: Path,
+    factory_config: FactoryConfig,
+    verify_config: VerifyConfig,
+    accept_red_base: str,
+    run_id: str,
+    ui: UI,
+) -> bool:
+    """Measure the base before `ks factory --spec` pays the architect (#696 slice 7).
+
+    The reading the run takes (``_refused_rung_or_base``): the rung is proven,
+    the base gates run inside it, and the record goes to ``run_id``'s
+    directory, the architect's run, where `ks serve` reads a red base. True
+    when it refused. The rungs are proven on a copy of the config and
+    released here, so the run proves its own; the reading is kept on
+    ``factory_config.base_reading`` for the run to reuse.
+    """
+    probe = replace(factory_config, verify_config=verify_config, accept_red_base=accept_red_base)
+    try:
+        refused = _refused_rung_or_base(base_branch, root_dir, probe, run_id, ui)
+    finally:
+        release((probe.setup_rung, probe.test_rung))
+    factory_config.base_reading = probe.base_reading
+    return refused
 
 
 def _preflight_stack(
@@ -2660,7 +2698,7 @@ def _run_preflights(
         _preflight_component_scope(manifest, run_scope),
     ):
         return None
-    if _refused_rung_or_base(manifest, root_dir, factory_config, run_id, ui):
+    if _refused_rung_or_base(manifest.base_branch, root_dir, factory_config, run_id, ui):
         return None
     if not factory_config.use_worktrees:
         return run_decisions

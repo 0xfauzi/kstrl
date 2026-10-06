@@ -24,7 +24,6 @@ once it is ready. kstrl never reads what it does; ``ks doctor --measure``
 replays the recipe (``kstrl.replay``) and a stack whose replay failed is not
 confirmed (:data:`REPLAY_STAGES`).
 
-
 A stack is the only source of verification commands (#696 slice 4, the flag
 day). With no ``[stack]`` kstrl has no check to run, so every command that
 would run one refuses before anything is spent (:data:`NO_STACK`), and
@@ -138,9 +137,9 @@ _ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 #: check``, ``ks retry``, the ``ks serve`` claim and ``ks doctor``.
 NO_STACK = (
     "kstrl.toml has no [stack], so kstrl has no check to run and runs nothing. Write a "
-    "[stack] table (instructions, setup, env and [stack.checks]) and confirm it; ks doctor "
-    "files a proposed [stack] from the commands an old [verify] still holds. --no-verify "
-    "runs with no checks at all."
+    "[stack] table (instructions, setup, env and [stack.checks]) and confirm it; ks decompose "
+    "proposes one for a spec, and ks doctor one from the commands an old [verify] still "
+    "holds. --no-verify runs with no checks at all."
 )
 
 #: The ``[stack.checks]`` name each retired ``[verify]`` command becomes in
@@ -387,6 +386,11 @@ def load_stack(root_dir: Path) -> Stack | None:
     errors = stack_errors(raw)
     if errors:
         raise StackError(f"[stack] in {path} is refused:\n    " + "\n    ".join(errors))
+    return stack_from_table(raw)
+
+
+def stack_from_table(raw: dict[str, Any]) -> Stack:
+    """The stack in a table :func:`stack_errors` passed: kstrl.toml's or the architect's."""
     return Stack(
         instructions=str(raw["instructions"]),
         setup=str(raw["setup"]),
@@ -633,6 +637,7 @@ def stack_toml(stack: Stack) -> str:
         f"writable = {json.dumps(list(stack.writable))}",
         f"readable = {json.dumps(list(stack.readable))}",
         f"browser = {json.dumps(stack.browser)}",
+        f"up = {json.dumps(stack.up)}",
         "[stack.checks]",
         *(f"{json.dumps(name)} = {json.dumps(command)}" for name, command in stack.checks),
     ]
@@ -678,7 +683,7 @@ def file_stack_item(
     run_id: str = "",
     quiet: bool = False,
     replay: dict[str, Any] | None = None,
-    proposal: bool = False,
+    proposal: str = "",
 ) -> InboxItem:
     """File (or bump) the open stack_confirmation item for ``stack``.
 
@@ -689,8 +694,8 @@ def file_stack_item(
     ``quiet`` pages nobody: the person who answered the prompt is there.
     ``replay`` is the record of a clean replay of this text (#700 slice 3),
     carried in the evidence; one that failed keeps the stack from being
-    confirmed (:func:`replay_refuses`). ``proposal`` is ``ks doctor``'s stack
-    from the retired ``[verify]`` keys (:func:`legacy_proposal`): kstrl.toml
+    confirmed (:func:`replay_refuses`). ``proposal`` names where a proposed stack
+    came from (:func:`legacy_proposal`, or the architect, #696 slice 7): kstrl.toml
     does not hold it yet, so the item carries the table to paste, and
     ``ks inbox approve`` refuses it until kstrl.toml holds that exact text.
     """
@@ -711,12 +716,12 @@ def file_stack_item(
     checks += f"; setup `{stack.setup}`" if stack.setup else "; no setup"
     checks += (f"; up `{stack.up}`" if stack.up else "") + "." + replayed
     if proposal:
-        title = f"Proposed [stack] {stack.digest[:12]} from the retired [verify] commands"
+        title = f"Proposed [stack] {stack.digest[:12]} from {proposal}"
         detail = (
-            f"ks doctor read these from kstrl.toml: {checks} Nothing runs them until a person "
-            "adopts them: replace the [verify] command keys in kstrl.toml with the table below, "
-            "edit it if it is wrong, then confirm it (ks inbox approve <id> confirms this text "
-            "unchanged).\n\n" + stack_toml(stack)
+            f"Proposed from {proposal}: {checks} Nothing runs them until a person adopts them: "
+            "write the table below into kstrl.toml as its [stack], in place of any [verify] "
+            "command keys, edit it if it is wrong, then confirm it (ks inbox approve <id> "
+            "confirms this text unchanged).\n\n" + stack_toml(stack)
         )
         evidence["toml"] = stack_toml(stack)
     else:
@@ -784,13 +789,9 @@ def decide_at_prompt(root_dir: Path, stack: Stack, *, confirm: bool, actor: str)
 
 @dataclass
 class StackConfig:
-    """The entry check's handle on ``[stack]`` (``config_preflight``).
-
-    It loads the stack only to report a bad one, once and under ``[stack]``,
-    before the three loaders that also read it for their own sections
-    (``FactoryConfig``, ``VerifyConfig``, ``ContractConfig``), which are the
-    ones that hold it. No field, so ``ks config show`` renders no row for it.
-    """
+    """The entry check's handle on ``[stack]`` (``config_preflight``): it loads the
+    stack only to report a bad one once, before ``FactoryConfig``, ``VerifyConfig``
+    and ``ContractConfig`` hold it. No field, so ``ks config show`` shows no row."""
 
     @classmethod
     def load(cls, root_dir: Path | None = None) -> StackConfig:

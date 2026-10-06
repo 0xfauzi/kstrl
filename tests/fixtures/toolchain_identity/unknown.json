@@ -2,7 +2,7 @@
   "check": {
     "exit": 2,
     "report": {
-      "error": "kstrl.toml has no [stack], so kstrl has no check to run and runs nothing. Write a [stack] table (instructions, setup, env and [stack.checks]) and confirm it; ks doctor files a proposed [stack] from the commands an old [verify] still holds. --no-verify runs with no checks at all.",
+      "error": "kstrl.toml has no [stack], so kstrl has no check to run and runs nothing. Write a [stack] table (instructions, setup, env and [stack.checks]) and confirm it; ks decompose proposes one for a spec, and ks doctor one from the commands an old [verify] still holds. --no-verify runs with no checks at all.",
       "schema_version": 4
     }
   },
@@ -31,12 +31,26 @@
     ]
   },
   "decompose_before_init": {
-    "architect_ran": false,
-    "exit": 2,
+    "architect_ran": true,
+    "exit": 1,
     "stderr": [
-      "ERROR: Refusing to run: this repository has no build manifest kstrl can use",
-      "ERROR:   no build manifest at the repository root that kstrl recognises, and kstrl will not create one: no component may list a root build manifest in its allowedPaths, so `ks decompose` would pay for an architect call that can only halt and ask who writes it",
-      "ERROR:   kstrl will not create the build manifest, so create and commit the manifest your project's own build tool writes before `ks decompose`. If the project builds with a tool kstrl does not recognise, write a [stack] in kstrl.toml instead."
+      "",
+      "== Spec Decomposition ==",
+      "  Spec:         <tmp>/spec.md",
+      "  Project:      demo",
+      "  Spec digest:  b75f836c7b6c",
+      "Decomposition attempt 1/3",
+      "WARN: JSON extraction failed: No agent output to parse",
+      "Decomposition attempt 2/3",
+      "WARN: JSON extraction failed: No agent output to parse",
+      "Decomposition attempt 3/3",
+      "WARN: JSON extraction failed: No agent output to parse",
+      "-- Architect usage --",
+      "  component                phase      calls   tokens_in  tokens_out  tokens_total  cost_usd   time_s",
+      "  @architect               architect      3           -           -             -         -        <s>",
+      "  TOTAL                                   3           -           -             -         -        <s>",
+      "  note: 3 of 3 call(s) reported no token/cost data; token and cost totals are lower bounds",
+      "ERROR: Failed to decompose spec after 3 attempts. Last error: No agent output to parse"
     ],
     "stdout": []
   },
@@ -70,13 +84,7 @@
           "status": "ok"
         },
         {
-          "detail": "no build manifest at the repository root that kstrl recognises, and kstrl will not create one: no component may list a root build manifest in its allowedPaths, so `ks decompose` would pay for an architect call that can only halt and ask who writes it",
-          "fix": "kstrl will not create the build manifest, so create and commit the manifest your project's own build tool writes before `ks decompose`. If the project builds with a tool kstrl does not recognise, write a [stack] in kstrl.toml instead.",
-          "name": "build_manifest",
-          "status": "fail"
-        },
-        {
-          "detail": "kstrl.toml has no [stack], so kstrl has no check to run and runs nothing. Write a [stack] table (instructions, setup, env and [stack.checks]) and confirm it; ks doctor files a proposed [stack] from the commands an old [verify] still holds. --no-verify runs with no checks at all.",
+          "detail": "kstrl.toml has no [stack], so kstrl has no check to run and runs nothing. Write a [stack] table (instructions, setup, env and [stack.checks]) and confirm it; ks decompose proposes one for a spec, and ks doctor one from the commands an old [verify] still holds. --no-verify runs with no checks at all.",
           "fix": "Write a [stack] in kstrl.toml, then confirm it.",
           "name": "verify_commands",
           "status": "fail"
@@ -107,7 +115,6 @@
         "Tier A reads the repository and runs none of your commands. `ks doctor --measure` runs your [stack] checks once on the base branch, as `ks factory` does before any engineer and refuses to start when one of them fails there. One run cannot tell you whether your suite is fast or flaky."
       ],
       "fix_first": [
-        "kstrl will not create the build manifest, so create and commit the manifest your project's own build tool writes before `ks decompose`. If the project builds with a tool kstrl does not recognise, write a [stack] in kstrl.toml instead.",
         "Write a [stack] in kstrl.toml, then confirm it.",
         "Run `gh auth login` and add an origin remote, or set [factory] create_prs = false and merge by hand.",
         "Add tests, or expect the adequacy gate to report nothing."

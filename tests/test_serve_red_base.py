@@ -131,10 +131,11 @@ def test_a_red_base_requeues_the_item_and_pauses_claims_until_resumed(
     assert refused.exit_code == 1, refused.output
     assert streak_after_refusal == 1, refused.output
     assert "Queue paused: the base branch main at" in refused.output, refused.output
-    # Claims paused: the second cycle claimed nothing and paid no architect.
+    # Claims paused: the second cycle claimed nothing. No architect was paid
+    # at all: the base is measured before the architect (#696 slice 7).
     assert after_pause.state is ItemState.QUEUED, paused.output
     assert after_pause.attempts == 1, paused.output
-    assert architect_calls_while_paused == 1, paused.output
+    assert architect_calls_while_paused == 0, paused.output
     assert pause.paused, paused.output
     assert "fails its own gates" in pause.reason, pause.reason
     # A resume on a base still red: one more refusal, the same one item.
@@ -150,7 +151,10 @@ def test_a_red_base_requeues_the_item_and_pauses_claims_until_resumed(
     assert resumed_green.exit_code == 0, resumed_green.output
     assert after_green.state is ItemState.AWAITING_APPROVAL, ran.output
     assert after_green.attempts == 3, ran.output
-    assert [r["refused"] for r in _readings(root)] == [True, True, False]
+    # Each refusal is recorded in the architect's run, where the base was
+    # measured before the architect was paid; the green launch records its
+    # one reading there and in the factory run that reused it (#696 slice 7).
+    assert [r["refused"] for r in _readings(root)] == [True, True, False, False]
     # The journal names who paused and who resumed.
     rows = [
         r for r in queue.journal_entries() if r["to"] in ("paused", "running") and not r["item_id"]
@@ -196,9 +200,9 @@ def test_a_refusal_that_is_not_a_red_base_is_still_poisoned(
     result = _serve_once(root)
     item = _item(queue, queued)
 
-    assert [p.is_dir() for p in runs.glob("factory-*/base-gates.json") if p.parent != stale] == [
-        True
-    ]
+    # The base is measured before the architect is paid, in the architect's
+    # run (#696 slice 7), so that is where the check made the directory.
+    assert [p.is_dir() for p in runs.glob("decompose-*/base-gates.json")] == [True]
     assert item.state is ItemState.POISON, result.output
     assert "refusing to guess which refusal it was" in item.poison_reason, item.poison_reason
     assert ledger.read_state().consecutive_poison == 1

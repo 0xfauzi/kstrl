@@ -37,11 +37,13 @@ from kstrl.pr import push_branch
 from kstrl.ui.plain import PlainUI
 from tests.helpers import gitrepo
 from tests.helpers.prompt_calls import architect_call
+from tests.helpers.stack_confirmation import PROPOSED_STACK
 
 
 def _decompose_output(comp_id: str) -> str:
     return json.dumps(
         {
+            "stack": PROPOSED_STACK,
             "spec_issues": [],
             "decisions": [],
             "components": [
