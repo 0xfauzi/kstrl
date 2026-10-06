@@ -2650,8 +2650,9 @@ def decompose(
     metavar="DIR",
     default="",
     help="A directory outside the repository holding plan.json: acceptance checks run "
-    "on the base and on each component's head inside the isolation rung, and recorded "
-    "(record-only). Needs a [stack]; `ks retry` replays it",
+    "on the base and on each component's head inside the isolation rung. A failed "
+    "held-out check halts the component; any other failed check is retried. Needs a "
+    "[stack]; `ks retry` replays it",
 )
 @click.option(
     "--dead-code-cleanup",

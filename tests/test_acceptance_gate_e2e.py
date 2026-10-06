@@ -1,0 +1,316 @@
+"""#700 slice 6: an operator-written acceptance plan gates the head.
+
+A check that did not pass on the head no longer just goes on the record.
+A visible one goes to the engineer's retry, with its criterion, its
+command and what it printed, while a held-out one in the same retry is
+named by its id alone (owner decision 3). A held-out check that fails
+halts the component with no retry, on a halted_run item that names the
+failing checks and the commit. A person may merge over exactly those
+checks on exactly that commit by approving the item and running
+``ks retry`` (decision 14): the commit is judged again with no engineer,
+and the record, the terminal and the PR body name the approval, who gave
+it and when.
+
+End to end: the real ``ks factory``, ``ks inbox approve`` and ``ks retry``
+as subprocesses on a real git repository after the real ``ks init``, with
+a confirmed ``[stack]``, a bare origin, a stub ``gh`` that keeps the PR
+body and a stub engineer that counts its calls (the harnesses of
+``tests/test_acceptance_e2e.py`` and ``tests/test_stack_e2e.py``).
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import secrets
+import subprocess
+from pathlib import Path
+from typing import cast
+
+from textual.widgets import DataTable, Static
+
+from kstrl.acceptance import HEAD_RUNS
+from kstrl.context import ACCEPTANCE_RETRY_PROMPT
+from kstrl.inbox import Inbox, InboxConfig, InboxItem, ItemKind
+from kstrl.manifest import Manifest
+from kstrl.tui.screens.inbox import InboxScreen
+from tests.helpers.executables import write_executable
+from tests.helpers.gitrepo import git_in
+from tests.helpers.rendered import flat
+from tests.helpers.settle import mounted, settled
+from tests.helpers.stack_confirmation import confirm_stack
+from tests.helpers.tui_screens import home_app
+from tests.test_acceptance_e2e import (
+    COMP,
+    CORRECT,
+    FAKE_GH,
+    SPECIAL_CASED,
+    _accept,
+    _check,
+    _greeting_repo,
+    _plan,
+    _with_greet,
+)
+from tests.test_isolation_rung import runs_a_stack
+from tests.test_stack_e2e import _repo, _spawn, _stack
+
+BRANCH = f"kstrl/factory/{COMP}"
+
+#: The greeting check, plus ``--marker``: the tree under test holds made.marker.
+GREETS_OR_MARKER = (
+    "#!/bin/sh\n"
+    'if [ "$1" = "--marker" ]; then\n'
+    '  [ -f "$KSTRL_TREE/made.marker" ] || { echo "no made.marker in the tree"; exit 1; }\n'
+    "  exit 0\n"
+    "fi\n"
+    'out=$("$KSTRL_TREE/greet" "$1") || exit $?\n'
+    '[ "$out" = "Hello, $1" ] || { echo "expected Hello, $1, got $out"; exit 1; }\n'
+)
+
+
+def _counted(counter: Path, first: str, later: str) -> str:
+    """An engineer that runs ``first`` on its first call and ``later`` after."""
+    return (
+        f'n=$(( $(cat "{counter}" 2>/dev/null || echo 0) + 1 )); echo "$n" > "{counter}"; '
+        f'if [ "$n" -eq 1 ]; then {first}; else {later}; fi'
+    )
+
+
+def _halts(root: Path) -> list[InboxItem]:
+    """Every halted_run item the inbox holds, open or decided."""
+    box = Inbox(root, InboxConfig.load(root))
+    return [item for item in box.scan().folded_items() if item.kind is ItemKind.HALTED_RUN]
+
+
+def _status(root: Path) -> tuple[str, str]:
+    comp = Manifest.load(root / "scripts" / "kstrl" / "manifest.json").get_component(COMP)
+    assert comp is not None
+    return comp.status, comp.failed_phase
+
+
+def _acceptance_events(root: Path) -> list[tuple[bool, bool]]:
+    """(passed, advisory) of each acceptance verification_result the latest run emitted."""
+    run_id = Manifest.load(root / "scripts" / "kstrl" / "manifest.json").run_id
+    path = root / ".kstrl" / "runs" / run_id / "events.jsonl"
+    found = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        record = json.loads(line)
+        data = record.get("data")
+        if record.get("event") == "verification_result" and data.get("phase") == "acceptance":
+            found.append((data["passed"], data["advisory"]))
+    return found
+
+
+def _tip(root: Path) -> str:
+    """The component branch's commit."""
+    return subprocess.run(
+        ["git", "-C", str(root), "rev-parse", BRANCH],
+        capture_output=True,
+        encoding="utf-8",
+        check=True,
+    ).stdout.strip()
+
+
+@runs_a_stack
+def test_a_visible_failure_retries_with_the_check_and_never_the_held_out_one(
+    tmp_path: Path,
+) -> None:
+    """Attempt 1 deletes greet and writes no marker: the visible marker check
+    fails, and the held-out greeting cannot run (exit 127), which is never a
+    failure, so nothing halts. The engineer is retried and told the marker
+    check's criterion, command and output, and the held-out check by its id
+    alone. Attempt 2 writes a correct greet and the marker, and every check
+    passes. Neither prompt holds the held-out name."""
+    root = _greeting_repo(tmp_path)
+    hidden = f"Grace{secrets.token_hex(4)}"
+    plan = _plan(
+        tmp_path,
+        [
+            _check("has-marker", ["/bin/sh", "check.sh", "--marker"]),
+            _check("greets-hidden", ["/bin/sh", "check.sh", hidden], held_out=True),
+        ],
+        script=GREETS_OR_MARKER,
+    )
+    deleted = "git rm -q greet && git commit -q -m rm >/dev/null 2>&1"
+    fixed = CORRECT.replace("git add -A", "touch made.marker && git add -A")
+    engineer = _counted(tmp_path / "count", deleted, fixed)
+
+    run = _accept(tmp_path, root, plan, engineer, "--max-retries", "1")
+
+    assert run.code == 0, run.out
+    assert run.calls == 2, run.out
+    assert _status(root) == ("completed", ""), run.out
+    assert f"- has-marker (visible): passed 0 of {HEAD_RUNS} runs -> fail" in run.out, run.out
+    assert "- greets-hidden (held out): did not run (127)" in run.prompts, run.prompts
+    assert ACCEPTANCE_RETRY_PROMPT.split("\n")[0][:60] in run.prompts, run.prompts
+    for told in (
+        "criterion: has-marker holds",
+        "check.sh --marker",
+        "| no made.marker in the tree",
+    ):
+        assert told in run.prompts, run.prompts
+    assert hidden not in run.prompts, run.prompts
+
+
+@runs_a_stack
+async def test_a_held_out_failure_halts_and_an_approval_merges_over_it(tmp_path: Path) -> None:
+    """The engineer special-cases the visible name, so the held-out check
+    fails and the component halts with no retry. The TUI's inbox says what
+    approving that open halt does. Approving it, then ``ks retry``, keeps
+    that commit, judges it again with no engineer and merges it: the PR
+    body names the approval, who gave it and when."""
+    root = _repo(tmp_path, _stack({"tests": "true"}), confirm=False)
+    origin = tmp_path / "origin.git"
+    git_in(tmp_path, "init", "-q", "--bare", str(origin))
+    git_in(root, "remote", "add", "origin", str(origin))
+    confirm_stack(root)
+    _with_greet(root)
+    git_in(root, "push", "-q", "-u", "origin", "main")
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    write_executable(bindir / "gh", FAKE_GH)
+    body = tmp_path / "pr-body.md"
+    env = {
+        "PATH": f"{bindir}{os.pathsep}{os.environ['PATH']}",
+        "GH_BODY": str(body),
+        "GH_HEAD": str(tmp_path / "pr-head"),
+    }
+    hidden = f"Grace{secrets.token_hex(4)}"
+    plan = _plan(
+        tmp_path,
+        [
+            _check("greets-ada", ["/bin/sh", "check.sh", "Ada"]),
+            _check("greets-hidden", ["/bin/sh", "check.sh", hidden], held_out=True),
+        ],
+    )
+    calls = tmp_path / "engineer.calls"
+    stub = write_executable(
+        tmp_path / "engineer.sh",
+        f"#!/bin/sh\necho call >> '{calls}'\ncat > /dev/null\n{SPECIAL_CASED}\n"
+        "echo '<promise>COMPLETE</promise>'\n",
+    )
+    manifest = str(root / "scripts" / "kstrl" / "manifest.json")
+    code, out = _spawn(
+        [
+            "factory",
+            *("--manifest", manifest, "--root", str(root), "--agent-cmd", str(stub)),
+            *("--acceptance", str(plan), "--no-tui", "--yes", "--ui", "plain", "--no-color"),
+            *("--max-retries", "1", "--max-parallel", "1"),
+            *("--review-mode", "skip", "--contract-check", "skip"),
+        ],
+        root,
+        env,
+    )
+
+    assert code == 1, out
+    assert len(calls.read_text(encoding="utf-8").splitlines()) == 1, out
+    assert _status(root) == ("failed", "acceptance"), out
+    assert not body.exists(), out
+    assert _acceptance_events(root) == [(False, False)], out
+    (item,) = _halts(root)
+    assert item.evidence["check"] == "greets-hidden", item.evidence
+    assert item.evidence["head_sha"] == _tip(root), item.evidence
+    assert hidden not in item.detail + item.title, item.detail
+    app = home_app(root)
+    async with app.run_test(size=(120, 36)) as pilot:
+        await mounted(pilot, lambda: app.screen, "#home-runs")
+        app.push_screen(InboxScreen())
+        screen = app.screen
+        assert isinstance(screen, InboxScreen)
+        detail = cast(Static, await mounted(pilot, lambda: screen, "#inbox-detail"))
+        await settled(pilot, lambda: bool(screen._items), what="the inbox screen to read the log")
+        row = [i.id for i in screen._items].index(item.id)
+        screen.query_one("#inbox-table", DataTable).move_cursor(row=row)
+        await settled(
+            pilot,
+            lambda: f"id {item.id[:8]}" in flat(detail) and "what each choice does" in flat(detail),
+            what="the halt's choices",
+        )
+        offered = " ".join(flat(detail).split())
+    assert "merges over the failing acceptance checks greets-hidden" in offered, offered
+    assert "no kstrl step reads" not in offered, offered
+
+    code, said = _spawn(
+        ["inbox", "approve", item.id, "--root", str(root), "--ui", "plain", "--no-color"],
+        root,
+        env,
+    )
+    assert code == 0, said
+    assert "merges over the failing acceptance checks greets-hidden" in said, said
+    (approved,) = _halts(root)
+    code, out = _spawn(
+        ["retry", COMP, "--yes", "--root", str(root), "--ui", "plain", "--no-color"], root, env
+    )
+
+    assert code == 0, out
+    assert len(calls.read_text(encoding="utf-8").splitlines()) == 1, out
+    assert _status(root)[0] == "completed", out
+    merged = (
+        f"- merged over the failing checks greets-hidden by inbox approval {item.id[:8]} "
+        f"({approved.decided_by} at {approved.decided_at})"
+    )
+    assert merged in out, out
+    assert merged in body.read_text(encoding="utf-8").splitlines(), body.read_text("utf-8")
+
+
+@runs_a_stack
+def test_an_approval_covers_only_the_checks_and_the_commit_it_names(tmp_path: Path) -> None:
+    """An approved halt is no blanket pass. Its commit judged again with a
+    second check now failing halts again; and once the branch is gone, the
+    regenerated commit fails the approved held-out check alone, and halts
+    again on a new item, because the approval named the other commit."""
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    flag = shared / "fail-now"
+    # Fails on a head (the engineer writes stamp) while the test has set the flag.
+    script = GREETS_OR_MARKER.replace(
+        "#!/bin/sh\n",
+        '#!/bin/sh\nif [ "$1" = "--flagged" ]; then\n'
+        f'  if [ -f "$KSTRL_TREE/stamp" ] && [ -f "{flag}" ]; then echo flagged; exit 1; fi\n'
+        "  exit 0\nfi\n",
+    )
+    root = _repo(tmp_path, _stack({"tests": "true"}, rung={"writable": [str(shared)]}))
+    _with_greet(root)
+    hidden = f"Grace{secrets.token_hex(4)}"
+    plan = _plan(
+        tmp_path,
+        [
+            _check("flagged", ["/bin/sh", "check.sh", "--flagged"], on_base="passes"),
+            _check("greets-hidden", ["/bin/sh", "check.sh", hidden], held_out=True),
+        ],
+        script=script,
+    )
+    # Each call stamps its own pid, so a regenerated commit is a new commit.
+    engineer = f"echo $$ > stamp && {SPECIAL_CASED}"
+    first = _accept(tmp_path, root, plan, engineer)
+    assert first.code == 1, first.out
+    (item,) = _halts(root)
+    head = _tip(root)
+    approve = ["inbox", "approve", item.id, "--root", str(root), "--ui", "plain"]
+    code, said = _spawn(approve, root, None)
+    assert code == 0, said
+    flag.write_text("", encoding="utf-8")
+    retry = ["retry", COMP, "--yes", "--root", str(root), "--ui", "plain", "--no-color"]
+
+    code, out = _spawn(retry, root, None)
+
+    assert code == 1, out
+    assert f"Kept branch '{BRANCH}' at {head[:12]}" in out, out
+    assert "merged over the failing checks" not in out, out
+    assert _status(root) == ("failed", "acceptance"), out
+
+    git_in(root, "branch", "-D", BRANCH)
+    flag.unlink()
+    code, out = _spawn(retry, root, None)
+
+    assert code == 1, out
+    assert "merged over the failing checks" not in out, out
+    assert _status(root) == ("failed", "acceptance"), out
+    regenerated = _tip(root)
+    assert regenerated != head, out
+    reopened = [
+        i for i in _halts(root) if i.evidence.get("head_sha") == regenerated and i.id != item.id
+    ]
+    assert [(i.status.value, i.evidence["check"]) for i in reopened] == [
+        ("open", "greets-hidden")
+    ], reopened

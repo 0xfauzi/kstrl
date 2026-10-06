@@ -194,14 +194,14 @@ def await_sites(tree: ast.Module) -> int:
 EXPECTED_AWAIT_SITES: dict[str, int] = {
     "tests/helpers/settle.py": 3,
     "tests/helpers/tui_screens.py": 5,
+    "tests/test_acceptance_gate_e2e.py": 5,  # #700 s6: run_test, 2 mounted, 2 settled
     # One ``async with app.run_test`` and three settle-helper awaits (mounted, settled, drained),
     # added by #448. Every read after them is a table cell the drained wait has already painted.
     "tests/test_carried_component_state.py": 4,
     "tests/test_config_guard_survey.py": 4,
     "tests/test_config_screen.py": 36,  # -1 #712: the first-placement wait went with its race
     "tests/test_decompose_screens.py": 32,
-    # 12 since #507 deleted the proposals tab and its three modal tests.
-    "tests/test_evolve_screen.py": 12,
+    "tests/test_evolve_screen.py": 12,  # 12 since #507 deleted the proposals tab and 3 modal tests
     "tests/test_evolve_screen_encoding.py": 1,
     # Four ``async with evolve_screen(...)``, added by #333. Every read
     # after them is of ``#evolve-repairs``, and ``evolve_screen`` waits on

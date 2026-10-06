@@ -86,8 +86,9 @@ from tests.helpers.encodingwalk import package_scan, reported_sites, spells_a_to
 #: because a net that decides what to leave out is a net that can be wrong
 #: about what it left out.
 EXPECTED_READ_SPELLINGS: dict[str, int] = {
-    # #700 slice 4: `pr_section` reads the latest acceptance record back.
-    "acceptance.py": 1,
+    # #700 slice 4: `pr_section` reads the latest acceptance record back
+    # (moved to acceptance_lines.py in slice 6).
+    "acceptance_lines.py": 1,
     "agents/codex.py": 1,
     "agents/logging.py": 1,
     # The "a+b" append open, moved here from evolution.py by #331.
@@ -227,7 +228,8 @@ class TestNoModuleReadsAFileWithoutAppearingHere:
 EXPECTED_CLEARED_READS: tuple[str, ...] = (
     # #700 slice 4: the acceptance record a PR body repeats, utf-8, with
     # ValueError caught beside OSError (a UnicodeDecodeError is a ValueError).
-    "acceptance.py path.read_text(encoding='utf-8')",
+    # Moved to acceptance_lines.py in slice 6.
+    "acceptance_lines.py path.read_text(encoding='utf-8')",
     "agents/codex.py last_msg_file.read_text(encoding='utf-8')",
     "agents/logging.py self._log_path.open('a', encoding='utf-8')",
     "autonomy.py path.read_text(encoding='utf-8')",

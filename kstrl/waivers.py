@@ -43,6 +43,15 @@ allowed". This module is how a later run reads that decision.
 
 Only an APPROVED item grants anything, so ``ks inbox reject`` on an
 approved item withdraws the waiver from the next run on.
+
+The acceptance override (#700 owner decision 14) is read here too, the
+same way and at the same time. When the operator's acceptance checks halt
+a component, its halted_run item records the failing checks and the
+commit (``evidence.check``, ``evidence.head_sha``). Approving that item,
+then ``ks retry``, keeps that commit and judges it again with no engineer
+(:func:`approved_head`), and the acceptance gate passes it when the
+approval names every check that fails there (:func:`covering_override`).
+The record and the PR body name the approval, who gave it and when.
 """
 
 from __future__ import annotations
@@ -55,6 +64,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from kstrl.context import ACCEPTANCE_PHASE
 from kstrl.findings import (
     ADEQUACY_CATEGORY_PREFIX,
     POLICY_CATEGORY_PREFIX,
@@ -97,6 +107,9 @@ REJECTION_EFFECT = (
 )
 
 _HEX64 = re.compile(r"[0-9a-f]{64}")
+
+#: A full commit id, sha-1 or sha-256.
+_COMMIT = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 
 
 @dataclass(frozen=True)
@@ -168,6 +181,8 @@ class ApprovalSnapshot:
 
     approved: tuple[InboxItem, ...] = ()
     unconsulted_reason: str = ""
+    #: The approved acceptance halts (:func:`acceptance_overrides`).
+    overrides: tuple[InboxItem, ...] = ()
 
     def for_scope(self, scope: WaiverScope, diff_sha: str) -> Waivers:
         """The approvals for ``scope`` that cover the change ``diff_sha`` (#646).
@@ -211,12 +226,43 @@ def load_approvals(inbox: Inbox) -> ApprovalSnapshot:
                 f"{unparseable} line(s) of the inbox at {inbox.path} could not be parsed"
             )
         )
+    items = scan.folded_items()
     approved = tuple(
-        item
-        for item in scan.folded_items()
-        if item.kind in WAIVABLE and item.status is ItemStatus.APPROVED
+        item for item in items if item.kind in WAIVABLE and item.status is ItemStatus.APPROVED
     )
-    return ApprovalSnapshot(approved=approved)
+    return ApprovalSnapshot(approved=approved, overrides=acceptance_overrides(items))
+
+
+def acceptance_overrides(items: Sequence[InboxItem]) -> tuple[InboxItem, ...]:
+    """The approved halted_run items an acceptance halt filed, each naming
+    the full commit it was taken on (#700 owner decision 14)."""
+    return tuple(
+        item for item in items if item.status is ItemStatus.APPROVED and _acceptance_halt(item)
+    )
+
+
+def _acceptance_halt(item: InboxItem) -> bool:
+    """Whether ``item`` is a halted_run an acceptance halt filed, naming the
+    full commit it was taken on. It does not read the status, so
+    :func:`approval_effect` can say what approving an open one does."""
+    return (
+        item.kind is ItemKind.HALTED_RUN
+        and item.evidence.get("phase") == ACCEPTANCE_PHASE
+        and _COMMIT.fullmatch(str(item.evidence.get("head_sha") or "")) is not None
+    )
+
+
+def covering_override(
+    items: Sequence[InboxItem], head_sha: str, failing: Sequence[str]
+) -> dict[str, str] | None:
+    """The approval among ``items`` taken on ``head_sha`` that names every
+    check in ``failing``, as an acceptance record keeps it; None when there
+    is none. An approval never covers a check it does not name."""
+    for item in items:
+        named = {name.strip() for name in str(item.evidence.get("check", "")).split(",")}
+        if failing and item.evidence.get("head_sha") == head_sha and set(failing) <= named:
+            return {"item": item.id, "by": item.decided_by, "at": item.decided_at}
+    return None
 
 
 def approvals_at(root_dir: Path) -> ApprovalSnapshot:
@@ -253,6 +299,17 @@ def approvals_on(snapshot: ApprovalSnapshot, component: str, head_sha: str) -> l
     ]
 
 
+def overrides_on(snapshot: ApprovalSnapshot, component: str, head_sha: str) -> list[str]:
+    """The ids of the approved acceptance halts of ``component`` taken on
+    commit ``head_sha`` (#700 owner decision 14). ``head_sha`` "" matches
+    nothing."""
+    return [
+        item.id
+        for item in snapshot.overrides
+        if head_sha and item.component == component and item.evidence["head_sha"] == head_sha
+    ]
+
+
 def approved_head(snapshot: ApprovalSnapshot, comp: Component, tip: str) -> tuple[str, str]:
     """The commit ``ks retry`` keeps for ``comp`` and why, or "" and why it keeps none (#646).
 
@@ -263,6 +320,8 @@ def approved_head(snapshot: ApprovalSnapshot, comp: Component, tip: str) -> tupl
     commit. The kept head is judged again with no engineer; whatever it
     raises that no approval covers still fails.
     """
+    if comp.failed_phase == ACCEPTANCE_PHASE:
+        return _overridden_head(snapshot, comp, tip)
     if comp.failed_phase != "verify":
         return "", f"it failed in phase {comp.failed_phase or '(none recorded)'}, not Phase 1"
     other = [
@@ -277,6 +336,20 @@ def approved_head(snapshot: ApprovalSnapshot, comp: Component, tip: str) -> tupl
     ids = approvals_on(snapshot, comp.id, tip)
     if not ids:
         return "", f"no approved item was taken on commit {tip[:12]}, the branch tip"
+    named = ", ".join(i[:8] for i in ids)
+    return tip, f"approval {named} was taken on commit {tip[:12]}, the branch tip"
+
+
+def _overridden_head(snapshot: ApprovalSnapshot, comp: Component, tip: str) -> tuple[str, str]:
+    """:func:`approved_head` for a component its acceptance checks halted:
+    the tip is kept when an approval of that halt was taken on it."""
+    if not tip:
+        return "", f"branch '{comp.branch_name}' does not exist"
+    if snapshot.unconsulted_reason:
+        return "", f"approvals were not consulted: {snapshot.unconsulted_reason}"
+    ids = overrides_on(snapshot, comp.id, tip)
+    if not ids:
+        return "", f"no approved acceptance halt was taken on commit {tip[:12]}, the branch tip"
     named = ", ".join(i[:8] for i in ids)
     return tip, f"approval {named} was taken on commit {tip[:12]}, the branch tip"
 
@@ -426,6 +499,15 @@ def approval_effect(item: InboxItem) -> str | None:
     function adds no checks of its own, so the shell and the TUI cannot
     say "waives" about evidence the gate itself would refuse.
     """
+    if _acceptance_halt(item):
+        return (
+            f"merges over the failing acceptance checks {item.evidence.get('check')} of "
+            f"{item.component} on commit {str(item.evidence['head_sha'])[:12]} only: ks retry "
+            f"{item.component} keeps that commit and judges it again with no engineer, and the "
+            "PR body names this approval. A single-PR run, or a component built on unmerged "
+            "dependency code, keeps no commit, so nothing is merged over. Any other failing "
+            "check or commit still fails."
+        )
     if item.kind not in WAIVABLE:
         return None
     reason = _evidence_refusal(item)

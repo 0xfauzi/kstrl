@@ -1,4 +1,4 @@
-"""#700 slice 4: acceptance checks from an operator-written plan, record-only.
+"""#700 slice 4: acceptance checks from an operator-written plan.
 
 ``ks factory --acceptance <dir>`` takes a plan directory from outside the
 repository, checks it entry by entry and copies it under the control
@@ -8,7 +8,8 @@ fails on the base must fail there; a check that cannot run there refuses,
 except in a component the plan marks as creating the app (decision 11).
 On each head the checks run ``HEAD_RUNS`` times, pass only when every run
 exits 0, and are recorded, printed and put in the PR body from one
-renderer. Nothing about the verdict routes the component.
+renderer. Since slice 6 the verdict gates the component; how it routes is
+``tests/test_acceptance_gate_e2e.py``.
 
 End to end: the real ``ks factory`` as a subprocess on a real git
 repository after the real ``ks init``, with a confirmed ``[stack]`` and a
@@ -239,8 +240,10 @@ def test_a_special_cased_head_fails_the_held_out_check_that_no_engineer_saw(
 ) -> None:
     """The engineer greets only the name it could have been shown. The
     visible check passes and the held-out one fails, which the record and
-    the terminal show while the run itself completes: record-only. The
-    held-out name is nowhere in the branch, the worktrees or the prompt."""
+    the terminal show, and the component halts with no retry although one
+    was allowed (#700 slice 6). The held-out name is nowhere in the branch,
+    the worktrees or the prompt, and the record says whether the engineer
+    could read it is unknown."""
     root = _greeting_repo(tmp_path)
     hidden = f"Grace{secrets.token_hex(4)}"
     plan = _plan(
@@ -253,14 +256,15 @@ def test_a_special_cased_head_fails_the_held_out_check_that_no_engineer_saw(
 
     seen = tmp_path / "seen-by-engineer"
     look = f"grep -r -l '{hidden}' '{root}' > '{seen}' 2>/dev/null; "
-    run = _accept(tmp_path, root, plan, look + SPECIAL_CASED)
+    run = _accept(tmp_path, root, plan, look + SPECIAL_CASED, "--max-retries", "1")
 
-    assert run.code == 0, run.out
+    assert run.code == 1, run.out
     assert run.calls == 1, run.out
     # What the engineer could find in the repository while it ran: nothing.
     found_by_engineer = seen.read_text(encoding="utf-8")
     assert found_by_engineer == "", found_by_engineer
     record = _head_record(root)
+    assert record["heldOutReadDenied"] == "unknown", record
     assert _row(record, "greets-ada")["verdict"] == "pass", record
     held = _row(record, "greets-hidden")
     assert (held["verdict"], held["heldOut"], held["kind"]) == ("fail", True, "held out"), held
@@ -304,7 +308,7 @@ def test_a_check_that_fails_one_of_its_head_runs_fails(tmp_path: Path) -> None:
 
     run = _accept(tmp_path, root, plan, engineer)
 
-    assert run.code == 0, run.out
+    assert run.code == 1, run.out
     assert f"- flaky (visible): passed {HEAD_RUNS - 1} of {HEAD_RUNS} runs -> fail" in run.out
     row = _row(_head_record(root), "flaky")
     assert row["verdict"] == "fail", row
@@ -519,7 +523,7 @@ def test_a_recheck_runs_the_saved_checks_again_and_takes_no_file_on_trust(
         ],
     )
     run = _accept(tmp_path, root, plan, SPECIAL_CASED)
-    assert run.code == 0, run.out
+    assert run.code == 1, run.out
     (path,) = sorted((root / ".kstrl" / "runs").glob(f"*/acceptance/{COMP}/attempt-*/record.json"))
     path = path.resolve()
     evidence = path.parent
