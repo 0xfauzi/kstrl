@@ -14,6 +14,7 @@ explanation are dropped while the well-formed one beside them is kept.
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -24,6 +25,12 @@ from kstrl.security import (
 )
 from kstrl.ui.plain import PlainUI
 from tests.conftest import ReviewRepo, make_review_repo, with_observed_diffstat
+from tests.helpers.executables import write_executable
+from tests.helpers.gitrepo import git_in
+from tests.helpers.stack_confirmation import confirm_stack
+from tests.test_acceptance_e2e import FAKE_GH
+from tests.test_isolation_rung import runs_a_stack
+from tests.test_stack_e2e import _repo, _spawn, _stack
 
 
 class MockSecurityAgent:
@@ -362,3 +369,88 @@ class TestRunSecurityReview:
         )
         assert result.passed is True
         assert result.infrastructure_error is True
+
+
+# --- the default: a run with no [security] setting reviews (#696 slice 9) ---
+
+#: One agent for every role. The security reviewer's prompt names that role,
+#: and the reply carries the diffstat of the six lines the engineer commits.
+_ONE_AGENT = """#!/bin/sh
+prompt=$(cat)
+echo call >> "$AGENT_CALLS"
+case "$prompt" in
+*"adversarial application security reviewer"*)
+  echo security >> "$AGENT_CALLS"
+  cat <<'JSON'
+{"observedDiffstat": {"files": 1, "insertions": 6, "deletions": 0},
+ "findings": [{"category": "new_dependency", "severity": "low",
+   "location": "package.json:4", "explanation": "adds left-pad 1.3.0"}],
+ "exhaustively_searched": true}
+JSON
+  exit 0 ;;
+esac
+cat > package.json <<'JSON'
+{
+  "name": "demo",
+  "dependencies": {
+    "left-pad": "1.3.0"
+  }
+}
+JSON
+git add -A && git commit -q -m dependency >/dev/null 2>&1
+echo '<promise>COMPLETE</promise>'
+"""
+
+
+@runs_a_stack
+def test_a_default_run_asks_the_security_reviewer_and_lists_the_new_dependency(
+    tmp_path: Path,
+) -> None:
+    """#696 slice 9: kstrl reads no lockfile, so the security reviewer is the
+    only default dependency check. The real `ks factory` runs with no
+    [security] setting in kstrl.toml and none in the environment. The stub
+    engineer commits a package.json that adds left-pad. The reviewer is
+    called, its "low" listing reaches the PR body beside the package name,
+    and the run is neither blocked nor marked as unverified."""
+    root = _repo(tmp_path, _stack({"tests": "true"}), confirm=False)
+    origin = tmp_path / "origin.git"
+    git_in(tmp_path, "init", "-q", "--bare", str(origin))
+    git_in(root, "remote", "add", "origin", str(origin))
+    confirm_stack(root)
+    git_in(root, "push", "-q", "-u", "origin", "main")
+    toml = (root / "kstrl.toml").read_text(encoding="utf-8")
+    assert "\n[security]\nmode" not in toml, "the scaffold must not set a security mode"
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    write_executable(bindir / "gh", FAKE_GH)
+    agent = write_executable(tmp_path / "agent.sh", _ONE_AGENT)
+    calls = tmp_path / "agent.calls"
+    body = tmp_path / "pr-body.md"
+
+    code, out = _spawn(
+        [
+            "factory",
+            *("--manifest", str(root / "scripts" / "kstrl" / "manifest.json")),
+            *("--root", str(root), "--agent-cmd", str(agent)),
+            *("--no-tui", "--yes", "--ui", "plain", "--no-color"),
+            *("--max-retries", "0", "--max-parallel", "1"),
+            *("--review-mode", "skip", "--contract-check", "skip"),
+        ],
+        root,
+        {
+            "PATH": f"{bindir}{os.pathsep}{os.environ['PATH']}",
+            "GH_BODY": str(body),
+            "GH_HEAD": str(tmp_path / "pr-head"),
+            "AGENT_CALLS": str(calls),
+        },
+    )
+
+    assert code == 0, out
+    # No [security] setting anywhere, so the startup notes do not claim that
+    # kstrl.toml moved the mode off the built-in default.
+    assert "[security] mode" not in out, out
+    assert calls.read_text(encoding="utf-8").splitlines().count("security") == 1, out
+    text = body.read_text(encoding="utf-8")
+    assert "- [low] **new_dependency** at `package.json:4`" in text, text
+    assert "adds left-pad 1.3.0" in text, text
+    assert "UNVERIFIED COVERAGE" not in text, text

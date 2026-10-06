@@ -42,6 +42,7 @@ from kstrl.inbox import Inbox, InboxConfig, InboxItem
 from kstrl.interaction import PromptKind, PromptRequest, PromptResponse
 from kstrl.manifest import Manifest
 from kstrl.review import ReviewResult
+from kstrl.security import SecurityConfig
 from kstrl.serve import RunOutcome, check_parked_merges, classify_run
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
@@ -335,6 +336,7 @@ def _in_process(root: Path, channel: _Channel, monkeypatch: pytest.MonkeyPatch) 
         retry_delay=0,
         create_prs=False,
         review_mode="skip",
+        security_config=SecurityConfig(mode="skip"),
         project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
         verify_config=VerifyConfig(
             project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),

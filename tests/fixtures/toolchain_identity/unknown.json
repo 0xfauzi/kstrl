@@ -292,7 +292,7 @@
       "",
       "# Phase 2.5 security review (independent adversarial pass focused on vulns).",
       "[security]",
-      "# mode = \"skip\"                    # skip | advisory | hard (skip = default, opt in explicitly)",
+      "# mode = \"advisory\"               # skip | advisory | hard (advisory = default; skip turns the review off)",
       "# fail_threshold = \"high\"          # critical | high | medium | low (hard mode only)",
       "# timeout_seconds = 0.0           # 0 = no limit",
       "# agent_cmd = \"\"                   # leave blank to inherit from [agent]",

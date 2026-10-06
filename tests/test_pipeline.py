@@ -120,6 +120,7 @@ def _factory_config(**overrides: Any) -> FactoryConfig:
         create_prs=False,
         use_worktrees=False,
         review_mode="skip",
+        security_config=SecurityConfig(mode="skip"),
         verify_config=VerifyConfig(),
         fixtures_config=FixturesConfig(),
     )

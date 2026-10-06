@@ -282,16 +282,16 @@ class SecurityResult:
 class SecurityConfig:
     """Configuration for the security review phase.
 
-    The default mode is "skip": the security pass is an extra LLM call
-    per component and is opt-in everywhere it is documented (CLI
-    --security-mode default, kstrl.toml.example, README). Before R2.1
-    the dataclass default was "advisory", but no product path consumed
-    it - the CLI always passed an explicit mode and run_factory treats
-    a missing config as skip - so aligning it with the documented
-    default cannot change a working setup.
+    The default mode is "advisory" (owner decision 2026-10-06, #696
+    slice 9): kstrl reads no lockfile, so this reviewer is the only
+    default check that lists the dependencies a change adds. It costs
+    one more model call per component. "skip" turns it off and "hard"
+    makes it block; both are an explicit choice. The dataclass, the
+    environment, the CLI and a FactoryConfig that names no security
+    config all give this same default.
     """
 
-    mode: str = SecurityMode.SKIP.value
+    mode: str = SecurityMode.ADVISORY.value
     agent_cmd: str | None = None
     agent_type: str | None = None
     model: str | None = None
@@ -319,7 +319,7 @@ class SecurityConfig:
     @classmethod
     def from_env(cls) -> SecurityConfig:
         return cls(
-            mode=os.environ.get("KSTRL_SECURITY_MODE", SecurityMode.SKIP.value),
+            mode=os.environ.get("KSTRL_SECURITY_MODE", SecurityMode.ADVISORY.value),
             agent_cmd=os.environ.get("KSTRL_SECURITY_AGENT_CMD") or None,
             agent_type=os.environ.get("KSTRL_SECURITY_AGENT_TYPE") or None,
             model=os.environ.get("KSTRL_SECURITY_MODEL") or None,

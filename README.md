@@ -462,7 +462,7 @@ diff_mutation = false            # mutate the changed AND covered lines and repo
 
 # Phase 2.5 security review
 [security]
-mode = "skip"            # skip | advisory | hard
+mode = "advisory"        # skip | advisory | hard
 agent_cmd = ""           # empty = inherit [agent]
 agent_type = ""          # empty = inherit [agent]
 model = ""               # empty = inherit [agent]

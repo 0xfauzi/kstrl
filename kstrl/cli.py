@@ -2690,7 +2690,7 @@ def decompose(
     default=None,
     help="Phase 2.5 security review: hard (block on findings at or above "
     "--security-fail-threshold), "
-    "advisory (warn only), skip (default - opt in explicitly)",
+    "advisory (warn only, default), skip (turn the review off)",
 )
 @click.option(
     "--security-agent-cmd",

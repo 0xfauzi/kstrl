@@ -347,7 +347,7 @@ timeout = 30.0                     # seconds per fixture subprocess
 
 # Phase 2.5 security review (independent adversarial pass focused on vulns).
 [security]
-mode = "skip"                      # skip | advisory | hard
+mode = "advisory"                  # skip | advisory | hard (advisory = default; skip turns the review off)
 fail_threshold = "high"            # critical | high | medium | low (hard mode only)
 timeout_seconds = 600.0
 # agent_cmd / agent_type / model: leave blank to inherit from [agent].

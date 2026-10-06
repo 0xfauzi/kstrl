@@ -4731,16 +4731,6 @@ class ComponentPipeline:
         Hard-mode fails the component on findings at or above
         SecurityConfig.fail_threshold OR on infrastructure errors."""
         sec_config = self.factory_config.security_config
-        if sec_config is None:
-            self._record_phase_skip(
-                comp,
-                "security",
-                "security review not configured",
-            )
-            return SecurityPhaseResult(
-                ran=False,
-                skip_reason="security review not configured",
-            )
         if sec_config.mode == SecurityMode.SKIP.value:
             self._record_phase_skip(
                 comp,

@@ -458,14 +458,14 @@ Invalid mode raises ValueError (Phase B8).
 
 | Env var | Type | Default |
 |---|---|---|
-| `KSTRL_SECURITY_MODE` | str | `skip` (`skip\|advisory\|hard`) |
+| `KSTRL_SECURITY_MODE` | str | `advisory` (`skip\|advisory\|hard`) |
 | `KSTRL_SECURITY_AGENT_CMD` | str | unset |
 | `KSTRL_SECURITY_AGENT_TYPE` | str | unset |
 | `KSTRL_SECURITY_MODEL` | str | unset |
 | `KSTRL_SECURITY_TIMEOUT` | float | 0 (no limit) |
 | `KSTRL_SECURITY_FAIL_THRESHOLD` | str | `high` (`critical\|high\|medium\|low`) |
 
-Invalid mode or threshold raises ValueError (Phase B8). The default mode is `skip` everywhere (dataclass, env, CLI); enable the pass with `advisory` or `hard`.
+Invalid mode or threshold raises ValueError (Phase B8). The default mode is `advisory` everywhere (dataclass, env, CLI, and a `FactoryConfig` that names no security config), because the security reviewer is the only default check that lists the dependencies a change adds (#696 slice 9). It costs one more model call per component. Turn it off with `skip`; make it block with `hard`.
 
 ## KnowledgeConfig (`[knowledge]`)
 

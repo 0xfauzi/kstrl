@@ -78,6 +78,7 @@ from kstrl.agents.base import UsageRecord
 from kstrl.config import KstrlConfig
 from kstrl.factory import FactoryConfig, run_factory
 from kstrl.manifest import Manifest
+from kstrl.security import SecurityConfig
 from kstrl.ui.plain import PlainUI
 from kstrl.stack import CONFIRMED_IN_INBOX, Stack
 from kstrl.verify import VerifyConfig
@@ -98,6 +99,7 @@ result = run_factory(
     FactoryConfig(
         use_worktrees=True, create_prs=False, max_parallel=1,
         max_retries=2, retry_delay=0, review_mode="skip", project_stack=_stack,
+        security_config=SecurityConfig(mode="skip"),
         verify_config=VerifyConfig(
             project_stack=_stack, check_diff_scope=False,
             check_bad_patterns=False, subprocess_timeout=300.0,
