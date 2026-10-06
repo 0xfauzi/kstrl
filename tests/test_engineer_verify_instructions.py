@@ -1,8 +1,8 @@
-"""#276: the engineer prompt the CLI hands out defers to the injected verify block.
+"""#276: the engineer prompt the CLI hands out defers to the injected ``[stack]`` block.
 
 ``tests/test_verify_command_contract.py`` covers the harness side of
-#261: one resolver, the gate shelling out to exactly what it returns,
-and the resolved block reaching the engineer. This module covers what
+#261: one source of the checks (the confirmed ``[stack]`` since #696),
+and its block reaching the engineer. This module covers what
 the engineer is handed on each path: the block plus a step 9 that points
 at it (`ks feature` implement), or no block and a step 9 that states the
 floor (`ks understand`, `ks feature` understand).
@@ -15,7 +15,7 @@ a lint error was found by the gate rather than by the agent. Measured
 cost: one wasted engineer iteration.
 
 The wording of step 9 itself (lint named, no variant substitution, the
-`[verify]` repair routed to a report rather than an edit) is not pinned
+`[stack]` repair routed to a report rather than an edit) is not pinned
 here as substrings: any edit to ``DEFAULT_PROMPT`` fails the H3 hash
 snapshot in ``tests/test_prompt_versions.py``, which is the one place a
 prompt change is reviewed.
@@ -30,7 +30,8 @@ from unittest.mock import patch
 from kstrl.feature_verify import resolve_feature_verify_config
 from kstrl.init_cmd import DEFAULT_PROMPT
 from kstrl.loop import LoopResult
-from kstrl.verify import VerifyConfig, resolve_verify_commands
+from kstrl.verify import VerifyConfig
+from tests.helpers.stack_confirmation import in_process_stack
 from tests.test_verify_command_contract import (
     _block_is_injected,
     _engineer_prompt,
@@ -41,8 +42,9 @@ from tests.test_verify_command_contract import (
     _write_feature_prd,
 )
 
-#: The literal DEFAULT_PROMPT points the engineer at.
-HEADING = "Verification Commands (resolved by kstrl)"
+#: The literals DEFAULT_PROMPT points the engineer at: the stack block's
+#: heading word and its checks list (``stack.STACK_PROMPT``).
+HEADING = "`Stack` block"
 
 
 def _step_nine(prompt_body: str) -> str:
@@ -66,7 +68,9 @@ class TestTheEngineerPromptOnEachPath:
     def test_the_block_and_the_deferral_arrive_together(self, tmp_path: Path) -> None:
         """End to end: the fallback body and the injected block compose,
         so the pointer resolves in the prompt the agent is handed."""
-        prompt = _engineer_prompt(tmp_path, VerifyConfig(), scaffold_prompt=False)
+        prompt = _engineer_prompt(
+            tmp_path, VerifyConfig(project_stack=in_process_stack()), scaffold_prompt=False
+        )
         assert _block_is_injected(prompt)
         assert HEADING in _step_nine(prompt)
 
@@ -133,16 +137,17 @@ class TestTheEngineerPromptOnEachPath:
         # gets the floor instead (#261).
         assert _step_nine(DEFAULT_PROMPT) in understand
         assert not _block_is_injected(understand)
-        assert "run the project's own typecheck and tests yourself" in _unwrapped(understand)
+        assert "run the project's own checks yourself" in _unwrapped(understand)
 
-        # The implement loop gets the block, carrying the RESOLVED
-        # commands the report will then run: the same three strings, from
-        # the same pinned config, so the prompt cannot name one command
-        # while another produces the verdict.
+        # The implement loop gets the block, carrying the [stack] checks
+        # the report will then run: the same strings, from the same
+        # config, so the prompt cannot name one command while another
+        # produces the verdict.
         assert _block_is_injected(implement)
-        commands = resolve_verify_commands(resolve_feature_verify_config(tmp_path), tmp_path)
-        for command in (commands.test, commands.typecheck, commands.lint):
-            assert command in implement, command
+        config = resolve_feature_verify_config(tmp_path)
+        assert config is not None and config.project_stack is not None
+        for _name, command in config.project_stack.checks:
+            assert f"`{command}`" in implement, command
 
     def test_ks_understand_renders_this_body_and_gets_no_block(self, tmp_path: Path) -> None:
         """The other, narrower way in: no understand_prompt.md was

@@ -36,6 +36,7 @@ from kstrl.manifest import Component, Manifest
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
 from tests.helpers import gitrepo, procs
+from tests.helpers.stack_confirmation import confirm_stack, in_process_stack, write_stack
 
 COMPLETE_LINE = "echo '<promise>COMPLETE</promise>'"
 
@@ -87,7 +88,8 @@ def _init_repo(root: Path, comp_ids: tuple[str, ...] = ("comp-a",)) -> None:
     gitrepo.set_identity(root)
     (root / ".gitignore").write_text("scripts/kstrl/\n")
     (root / "README.md").write_text("seed\n")
-    _git("add", ".gitignore", "README.md", cwd=root)
+    write_stack(root)
+    _git("add", ".gitignore", "README.md", "kstrl.toml", cwd=root)
     _git("commit", "-q", "-m", "init", cwd=root)
 
     kstrl_dir = root / "scripts" / "kstrl"
@@ -110,6 +112,7 @@ def _init_repo(root: Path, comp_ids: tuple[str, ...] = ("comp-a",)) -> None:
             ],
         }
         (feature_dir / "prd.json").write_text(json.dumps(prd))
+    confirm_stack(root)
 
 
 def _component(comp_id: str, branch: str | None = None) -> Component:
@@ -145,10 +148,9 @@ def _factory_config(**overrides: Any) -> FactoryConfig:
         max_retries=0,
         retry_delay=0,
         review_mode="skip",
+        project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
         verify_config=VerifyConfig(
-            test_command="true",
-            typecheck_command="true",
-            lint_command="true",
+            project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
             check_bad_patterns=False,
             subprocess_timeout=30.0,
         ),

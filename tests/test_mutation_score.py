@@ -389,9 +389,9 @@ def test_a_failing_test_suite_refuses_before_any_spawn(
     _repo(tmp_path, files={"mod.py": broken_mod, "test_mod.py": FEAT_TEST})
     recdir = put_mutmut_on_path(tmp_path, monkeypatch, junit=junit((1, "mod.py", 6, "killed")))
     result = _run(tmp_path)
-    test_row = next(c for c in result.checks if c.name == "test_suite")
+    test_row = next(c for c in result.checks if c.name == "stack:tests")
     assert test_row.passed is False
-    no_spawn_gap(result, recdir, "mutation_testing", "command_failed", "test_suite")
+    no_spawn_gap(result, recdir, "mutation_testing", "command_failed", "stack:tests")
 
 
 def test_layer_ones_own_share_of_the_cap_refuses_before_spending_it(

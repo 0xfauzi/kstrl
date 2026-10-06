@@ -25,9 +25,7 @@ from kstrl.config import KstrlConfig
 from kstrl.feature_cmd import FeatureParams, run_feature
 from kstrl.feature_verify import resolve_feature_verify_config
 from kstrl.loop import STOP_EXIT_CODE, LoopResult
-from kstrl.toolchains import python_typecheck_default
 from kstrl.verify import (
-    DEFAULT_TYPECHECK_COMMAND,
     DIFF_DEPENDENT_CHECKS,
     CheckResult,
     VerificationResult,
@@ -36,6 +34,7 @@ from kstrl.verify import (
     run_undiffed_verification,
 )
 from tests.helpers import gitrepo
+from tests.helpers.stack_confirmation import confirm_stack, write_stack
 from tests.test_feature_cmd import (
     NOOP_VERIFY_COMMAND,
     ScriptedChannel,
@@ -45,8 +44,9 @@ from tests.test_feature_cmd import (
     _ui,
 )
 
-#: The three checks that read no diff and so are honest on this path.
-HONEST_CHECKS = ("test_suite", "typecheck", "linter")
+#: The three checks that read no diff and so are honest on this path: the
+#: confirmed [stack]'s checks (#696 slice 4).
+HONEST_CHECKS = ("stack:tests", "stack:typecheck", "stack:lint")
 
 #: Everything ``run_mechanical_verification`` is ALLOWED to produce here.
 #: ``self_critique`` is opt-in (both ``require_self_critique`` and
@@ -64,12 +64,15 @@ SABOTAGE_LINE = "SABOTAGE: 3 findings"
 #: ``/bin/sh``, so no interpreter is exec'd and ``echo`` is a builtin.
 #: POSIX-only, like the rest of this suite.
 FAILING_VERIFY_COMMAND = f"echo '{SABOTAGE_LINE}'; exit 1"
+#: The one failure a report names when one check runs FAILING_VERIFY_COMMAND.
+FAILED_ONCE = f"`{FAILING_VERIFY_COMMAND}` exited 1"
 
 
 def _write_kstrl_toml(root: Path, *, failing: str = "", extra: str = "") -> dict[str, str]:
-    """Write a ``[verify]`` section whose commands really run.
+    """Write a confirmed ``[stack]`` whose checks really run, after a
+    ``[verify]`` section holding ``extra``.
 
-    ``failing`` names the one gate whose command exits 1 ("test",
+    ``failing`` names the one check whose command exits 1 ("tests",
     "typecheck" or "lint"); the rest are no-ops. Returns the commands so
     a test can assert the project's own values were the ones read.
 
@@ -78,13 +81,12 @@ def _write_kstrl_toml(root: Path, *, failing: str = "", extra: str = "") -> dict
     """
     root.mkdir(parents=True, exist_ok=True)
     commands = {
-        gate: FAILING_VERIFY_COMMAND if gate == failing else NOOP_VERIFY_COMMAND
-        for gate in ("test", "typecheck", "lint")
+        name: FAILING_VERIFY_COMMAND if name == failing else NOOP_VERIFY_COMMAND
+        for name in ("tests", "typecheck", "lint")
     }
-    body = "[verify]\n" + "".join(
-        f"{gate}_command = {json.dumps(command)}\n" for gate, command in commands.items()
-    )
-    (root / "kstrl.toml").write_text(body + extra, encoding="utf-8")
+    (root / "kstrl.toml").write_text("[verify]\n" + extra, encoding="utf-8")
+    write_stack(root, commands)
+    confirm_stack(root)
     return commands
 
 
@@ -248,7 +250,7 @@ class TestTheCheckActuallyRuns:
         code, _, text = _drive(tmp_path)
 
         assert "Verification report (implement)" in text
-        assert "linter" in text and "FAIL" in text
+        assert "stack:lint" in text and "FAIL" in text
         assert "verification: FAIL (1 of 3 checks failed)" in text
         # The linter's own output, not just a verdict: a report that
         # cannot say WHAT failed is not a report.
@@ -265,7 +267,7 @@ class TestTheCheckActuallyRuns:
         report = _report(captured, "implement")
         assert report.passed is False
         assert report.checks == HONEST_CHECKS
-        assert report.failures == ("Linter failed (exit code 1)",)
+        assert report.failures == (FAILED_ONCE,)
         assert report.component == "demo"
         # #288: which loop was measured, and that nothing gated on it.
         # Without these a consumer filtering events.jsonl by type reads
@@ -301,12 +303,13 @@ class TestTheCheckActuallyRuns:
 
     def test_the_commands_that_run_are_the_project_s_own(self, tmp_path: Path) -> None:
         """Not a default: moving the sabotage onto the test command must
-        move which gate fails, which is only true if the project's
-        [verify] section is what ran."""
-        _write_kstrl_toml(tmp_path, failing="test")
+        move which check fails, which is only true if the project's
+        [stack] is what ran."""
+        _write_kstrl_toml(tmp_path, failing="tests")
         _, captured, text = _drive(tmp_path)
 
-        assert _report(captured, "implement").failures == ("Tests failed (exit code 1)",)
+        assert _report(captured, "implement").failures == (FAILED_ONCE,)
+        assert "stack:tests" in text
         assert SABOTAGE_LINE in text
 
 
@@ -472,11 +475,10 @@ class TestOnlyHonestChecksRun:
         assert config.check_bad_patterns is False
         assert config.dead_code_cleanup is False
         assert config.mutation_testing is False
-        # Untouched: these three are what the engineer prompt states and
-        # what the report runs, and they must agree.
-        assert config.test_command == commands["test"]
-        assert config.typecheck_command == commands["typecheck"]
-        assert config.lint_command == commands["lint"]
+        # Untouched: the [stack]'s checks are what the engineer prompt
+        # states and what the report runs, and they must agree.
+        assert config.project_stack is not None
+        assert config.project_stack.checks == tuple(commands.items())
 
 
 class TestExitPathRule:
@@ -618,19 +620,17 @@ class TestTheReportCannotKillTheRun:
         """#288 review round 2 finding 2: round 1's wrapper started one
         statement too low.
 
-        ``resolve_verify_commands``, ``self_critique_progress_path`` and
-        the announcement all ran OUTSIDE the try, and the first of those
-        does file I/O: it reaches ``toolchains.python_typecheck_default``, which
-        opens and parses pyproject.toml. Anything it raises escaped an
-        ADVISORY report and took the command down at the BASELINE, before
-        the agent had run.
+        Naming the commands, ``self_critique_progress_path`` and the
+        announcement all ran OUTSIDE the try. Anything they raise escaped
+        an ADVISORY report and took the command down at the BASELINE,
+        before the agent had run.
         """
         _write_kstrl_toml(tmp_path)
 
         def boom(*args: Any, **kwargs: Any) -> Any:
             raise UnicodeDecodeError("utf-8", b"\x80", 0, 1, "invalid start byte")
 
-        with patch("kstrl.feature_verify.resolve_verify_commands", boom):
+        with patch("kstrl.feature_verify._running_commands", boom):
             code, captured, text = _drive(tmp_path)
 
         assert code == 0
@@ -640,18 +640,6 @@ class TestTheReportCannotKillTheRun:
             assert report.passed is False
             assert report.checks == ()
         assert any(isinstance(e, ev.RunCompleted) for e in captured)
-
-    def test_a_pyproject_that_is_not_utf_8_does_not_raise(self, tmp_path: Path) -> None:
-        """The concrete producer, at the site that let it through.
-
-        ``tomllib.load`` decodes as utf-8 itself, so one stray byte
-        raises UnicodeDecodeError, which IS a ValueError and so walked
-        straight past ``except (TOMLDecodeError, OSError)``. This is the
-        rule CLAUDE.md states: catch ValueError alongside OSError.
-        """
-        (tmp_path / "pyproject.toml").write_bytes(b'[project]\nname = "d\x80emo"\nversion = "0"\n')
-        # Would have raised UnicodeDecodeError before the widening.
-        assert python_typecheck_default(tmp_path) == DEFAULT_TYPECHECK_COMMAND
 
     def test_the_run_record_is_still_complete(self, tmp_path: Path) -> None:
         """The failure mode: events.jsonl ending at phase_started with no
@@ -711,10 +699,9 @@ class TestTheReportDoesNotDistortTheRunRecord:
         commands = _write_kstrl_toml(tmp_path, failing="lint")
         _, _, text = _drive(tmp_path)
 
-        linter = next(c for c in _uncapped(tmp_path) if c.name == "linter")
-        assert linter.parsed is not None
-        ran = linter.parsed.command
-        assert ran == commands["lint"]
+        linter = next(c for c in _uncapped(tmp_path) if c.name == "stack:lint")
+        ran = commands["lint"]
+        assert linter.message == f"`{ran}` exited 1"
         announced = [line for line in text.splitlines() if "running:" in line and ran in line]
         assert announced, (ran, text)
 
@@ -747,9 +734,9 @@ class TestTheReportDoesNotDistortTheRunRecord:
         of 200 lines is one you would act on wrongly.
         """
         check = CheckResult(
-            name="linter",
+            name="stack:lint",
             passed=False,
-            message="Linter failed (exit code 1)",
+            message="`lint` exited 1",
             details=["\n".join(f"finding {n}" for n in range(200))],
         )
         result = VerificationResult(passed=False, checks=[check])
@@ -779,21 +766,19 @@ class TestTheReportDoesNotDistortTheRunRecord:
             findings.append(f"mod_{n}.py:10:1: F401 `os` imported but unused")
         (tmp_path / "findings.txt").write_text("\n".join(findings) + "\n", encoding="utf-8")
         lint = "cat findings.txt; exit 1"
-        (tmp_path / "kstrl.toml").write_text(
-            "[verify]\n"
-            f"test_command = {json.dumps(NOOP_VERIFY_COMMAND)}\n"
-            f"typecheck_command = {json.dumps(NOOP_VERIFY_COMMAND)}\n"
-            f"lint_command = {json.dumps(lint)}\n",
-            encoding="utf-8",
+        write_stack(
+            tmp_path,
+            {"tests": NOOP_VERIFY_COMMAND, "typecheck": NOOP_VERIFY_COMMAND, "lint": lint},
         )
+        confirm_stack(tmp_path)
         _, captured, text = _drive(tmp_path)
 
         # The measurement itself is unharmed: only the rendering is cut.
-        check = next(c for c in _uncapped(tmp_path) if c.name == "linter")
+        check = next(c for c in _uncapped(tmp_path) if c.name == "stack:lint")
         uncapped = sum(len(d.splitlines()) for d in check.details)
-        assert uncapped > 40, uncapped
+        assert uncapped >= 40, uncapped
 
-        assert "mod_1.py:10 [F401]" in text
+        assert "mod_1.py:10:1: F401" in text
         assert "more line(s) not shown" in text
-        assert "mod_10.py:10 [F401]" not in text
-        assert _report(captured, "implement").failures == ("Linter failed (exit code 1)",)
+        assert "mod_40.py:10:1: F401" not in text
+        assert _report(captured, "implement").failures == (f"`{lint}` exited 1",)

@@ -40,6 +40,7 @@ from unittest.mock import patch
 import pytest
 
 from kstrl.serve import OpenPrCount, RunOutcome, ServeConfig, _NullObserver, serve, serve_cycle
+from kstrl.stack import stack_toml
 from kstrl.workqueue import ItemState, MergeDisposition, Queue, QueueConfig
 from tests.helpers.astwalk import (
     KSTRL_PACKAGE,
@@ -55,6 +56,7 @@ from tests.helpers.astwalk import (
     try_body_nodes,
 )
 from tests.helpers.bad_toml import MALFORMED_TOML
+from tests.helpers.stack_confirmation import confirm_stack, in_process_stack
 
 SERVE_SOURCE = KSTRL_PACKAGE / "serve.py"
 
@@ -370,7 +372,13 @@ class TestTheClassifierCanFail:
 # The behaviour: a section made malformed after the daemon started
 # --------------------------------------------------------------------------
 
-CLEAN_TOML = "[autonomy]\nenabled = true\n[serve]\nmax_open_prs = 0\n"
+#: #696: `serve()` swaps the document in at `_load_pr_count_streak`,
+#: BEFORE the first cycle's `_wait_gate_refusal` ever runs, so every
+#: document this module writes - clean or malformed - has to carry the
+#: identical confirmed [stack] or the swap lands on a project with none.
+_STACK_BLOCK = stack_toml(in_process_stack())
+
+CLEAN_TOML = "[autonomy]\nenabled = true\n[serve]\nmax_open_prs = 0\n" + _STACK_BLOCK
 
 #: ``(label, the whole document, the section the message must name)``.
 #: Whole documents rather than appended fragments: appending a second
@@ -388,7 +396,7 @@ MALFORMED_SECTIONS = [
         id="factory-int-cast",
     ),
     pytest.param(
-        '[autonomy]\nenabled = "yes"\n[serve]\nmax_open_prs = 0\n',
+        '[autonomy]\nenabled = "yes"\n[serve]\nmax_open_prs = 0\n' + _STACK_BLOCK,
         "[autonomy]",
         id="autonomy-strict-bool",
     ),
@@ -437,6 +445,11 @@ def _serve_with_edit(
     """
     toml = tmp_path / "kstrl.toml"
     toml.write_text(CLEAN_TOML, encoding="utf-8")
+    # #696: one confirmation of the [stack] both documents share (see
+    # _STACK_BLOCK above) - `serve()` swaps the document in before the
+    # first cycle, so confirming only the pre-swap text would not reach
+    # the cycle that actually runs.
+    confirm_stack(tmp_path)
     queue = Queue(tmp_path, QueueConfig())
     queue.add("# Spec\n\nDo the thing.\n", merge_disposition=MergeDisposition.STOP_AT_PR)
 

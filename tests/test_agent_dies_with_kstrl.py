@@ -427,7 +427,14 @@ def test_an_agent_cli_that_cannot_start_is_reported_as_missing(tmp_path: Path) -
     sealed = f"{shim}{os.pathsep}{tools}"
     assert shutil.which("claude", path=sealed) == str(shim / "claude")
     env = {k: v for k, v in _env("").items() if k != "AGENT_CMD"}
-    env.update(PATH=sealed, KSTRL_AGENT_TYPE="claude", KSTRL_AGENT_PROBE="0")
+    # Sealed PATH has no nono: the [stack] runs on the host, as on a platform
+    # with no prover, because this test is about the agent spawn.
+    env.update(
+        PATH=sealed,
+        KSTRL_AGENT_TYPE="claude",
+        KSTRL_AGENT_PROBE="0",
+        KSTRL_ISOLATION_PLATFORM="linux",
+    )
     args = ["run", "1", "--root", str(root), "--ui", "plain", "--no-verify", "--branch", ""]
     proc = _ks(root, env, *args, "--sleep", "0")
     try:
@@ -569,7 +576,9 @@ def test_a_leash_that_cannot_read_its_group_waits_out_the_grace(tmp_path: Path) 
         assert found is not None, f"{name} is not on PATH"
         (tools / name).symlink_to(found)
     env = _env(_quiet_agent(pids))
-    env["PATH"] = str(tools)
+    # Sealed PATH has no nono: this test is about the leash, so the [stack]
+    # runs on the host, as it does on a platform with no prover.
+    env.update(PATH=str(tools), KSTRL_ISOLATION_PLATFORM="linux")
     proc = _ks(root, env, *_factory_args(root, "1", "--no-worktrees"))
     try:
         agent = procs.read_pid(pids, timeout=START_FUSE_SECONDS)

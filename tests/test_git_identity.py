@@ -122,7 +122,9 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_contract_safety.py": 4,
     # `ready_repo` calls `tests.helpers.gitrepo.set_identity` before it
     # commits (#198), once per scenario that builds its own fixture.
-    "tests/test_doctor.py": 8,
+    # #696: down from 8 to 7, one of the four [verify]-tool-key tests
+    # this flag day deleted (its subject categorically retired).
+    "tests/test_doctor.py": 7,
     # #399: the rewritten locale-pinned bad_patterns test commits into a
     # real repository through `tests.helpers.gitrepo.set_identity`.
     "tests/test_encoding_sites.py": 2,
@@ -230,12 +232,15 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_prompt_record.py": 6,
     "tests/test_prompt_upgrade.py": 1,
     "tests/test_provisioning.py": 2,
-    # #629: `_repo` commits into a repository it set identity on, and the
-    # changed-test-file case commits once more into that same repository.
-    "tests/test_report_formats_cli.py": 2,
-    # #654: the seed commit and the fix commit of the temp repo `_repo` builds,
-    # which goes through set_identity before its first commit.
-    "tests/test_red_base_preflight.py": 2,
+    # #696 flag day: test_report_formats_cli.py is deleted whole, its
+    # subject (the retired [verify] report-format keys) categorically
+    # gone.
+    # #654: the seed commit and the fix commit of the temp repo `_repo`
+    # builds, which goes through set_identity before its first commit.
+    # #696: a third call site, test_doctor_measure_still_measures_under_a_
+    # config_that_only_warns's own commit of its edited kstrl.toml, into
+    # the same set_identity'd repository.
+    "tests/test_red_base_preflight.py": 3,
     # #635: `_commit` is the one commit site, into the fixture repository
     # `_seed` has just put through `tests.helpers.gitrepo.set_identity`.
     "tests/test_python_toolchain_identity_e2e.py": 1,
@@ -263,9 +268,9 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # #571: `_repo` commits the E2E fixture repo once, after
     # `tests.helpers.gitrepo.set_identity(root)`.
     "tests/test_run_limits_refused_before_spend.py": 1,
-    # #621: `_repo` commits each fixture repository once, after
-    # `tests.helpers.gitrepo.set_identity(root)`.
-    "tests/test_non_python_gate_commands.py": 1,
+    # #696 flag day: test_non_python_gate_commands.py is deleted whole,
+    # its subject (per-language [verify]/[factory] command keys) having
+    # no reachable production code left.
     "tests/test_run_record_version.py": 1,
     # #701: `_repo`'s one init commit, into a repository it has just put
     # through `tests.helpers.gitrepo.set_identity`.
@@ -286,6 +291,10 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # #639: `_project`'s seed commit, into the repository it has just put
     # through `tests.helpers.gitrepo.set_identity`.
     "tests/test_spec_identity.py": 1,
+    # #696: the one [stack]-table commit, into `greenfield`'s repository
+    # (tests.test_build_manifest_preflight.greenfield), which already
+    # went through set_identity.
+    "tests/test_spec_factory_lock_discipline.py": 1,
     "tests/test_check_cli.py": 5,
     # #619: each test commits a base and a branch into a repository its
     # _repo helper put through tests.helpers.gitrepo.set_identity.
@@ -323,11 +332,14 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # commit; `_commit` commits into it again; and the Phase 3 and Phase 1
     # tests' stub engineers commit in a worktree of that same repository.
     "tests/test_stack_e2e.py": 4,
+    # #696: test_ks_retry_refuses_once_the_stack_is_gone's own direct
+    # commit, into test_stack_e2e._repo's repository (already through
+    # set_identity there).
+    "tests/test_stack_flag_day_e2e.py": 1,
     "tests/test_stale_base_ref.py": 10,
     "tests/test_state_dir_scope.py": 2,
-    # #620: two commits (base and change), into the repository `_repo`
-    # builds, which goes through set_identity before its first commit.
-    "tests/test_tests_ran_cli.py": 2,
+    # #696 flag day: test_tests_ran_cli.py is deleted whole, its subject
+    # (the retired [verify] report-format keys) categorically gone.
     # #641 adds one more: TestAGroupMemberThatIgnoresSigterm's fixture
     # commits its throwaway repo through `tests.helpers.gitrepo.git_in` /
     # `set_identity` before running the real `ks run` CLI against it.
@@ -385,6 +397,10 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # calls `tests.helpers.gitrepo.set_identity` right after `git init`, and
     # one `git commit` in the shell engineer `_engineer` returns, which runs
     # in a kstrl worktree of that same repository.
+    # #696: `_restack`'s own commit of the replaced [stack] table, into a
+    # repository `_repo` (this module's own, through set_identity)
+    # already built.
+    "tests/test_worktree_removal_sweeps.py": 1,
     "tests/test_worktree_setup.py": 4,
 }
 

@@ -248,8 +248,6 @@ ALLOWED: dict[tuple[str, str], int] = {
     # fact being recorded, not a live spelling.
     ("kstrl/baseline.py", "sense"): 1,
     ("kstrl/cli.py", "dampener"): 2,
-    # A historical description of a past `grep` command's own output.
-    ("tests/test_check_committed_baseline.py", "sense"): 1,
     # "Set-point disagreement" is a live user-facing string inside
     # REVIEWER_PROMPT-adjacent code (claim_retry_context). The prompt BODY
     # is kept byte-identical under Decision 3, so rewording this string
@@ -378,4 +376,4 @@ def test_no_retired_name_survives_in_the_source() -> None:
         )
     assert sum(counts.get(k, 0) for k in ALLOWED) == sum(ALLOWED.values())
     assert len(SKIP_FILES) == 2
-    assert sum(ALLOWED.values()) == 187
+    assert sum(ALLOWED.values()) == 186  # #696 slice 4 deleted test_check_committed_baseline.py

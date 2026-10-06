@@ -33,6 +33,7 @@ from tests.helpers.astwalk import (
     parsed,
     scope_of,
 )
+from tests.helpers.stack_confirmation import confirm_stack, write_stack
 from tests.test_serve_process_tree import _running_item_with_a_lapsed_lease
 
 #: Real-time fuse for every child this module starts. A mutation that
@@ -83,6 +84,9 @@ def root(tmp_path: Path) -> Path:
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "kstrl.toml").write_text("[serve]\nmax_open_prs = 0\n", encoding="utf-8")
+    # serve claims and reaps nothing until a [stack] is confirmed (#696 flag day).
+    write_stack(repo)
+    confirm_stack(repo)
     return repo
 
 

@@ -36,6 +36,7 @@ from kstrl.init_cmd import build_manifest_ok_reason, gitignore_block
 from kstrl.toolchains import TOOLCHAINS
 from tests.helpers.fakegh import put_gh_on_path
 from tests.helpers.gitrepo import git_in, set_identity
+from tests.helpers.stack_confirmation import confirm_stack, write_stack
 
 #: `gh auth status` succeeding and failing. Bodies rather than the
 #: real binary: what these tests are about is what the doctor SAYS
@@ -94,8 +95,10 @@ def ready_repo(tmp_path: Path, name: str = "demo") -> Path:
     (tests / "test_core.py").write_text(
         "def test_widget() -> None:\n    assert True\n", encoding="utf-8"
     )
+    write_stack(root)
     git_in(root, "add", "-A")
     git_in(root, "commit", "-q", "-m", "initial")
+    confirm_stack(root)
     return root
 
 
@@ -260,7 +263,13 @@ def test_ci_and_migrations_are_suggested_as_paths_deny_entries(tmp_path: Path) -
     migrations = root / "migrations"
     migrations.mkdir()
     (migrations / "0001_init.sql").write_text("-- init\n", encoding="utf-8")
-    (root / "kstrl.toml").write_text("[policy]\nenabled = true\n", encoding="utf-8")
+    # Appended, not replaced: overwriting kstrl.toml would drop the
+    # confirmed [stack] `ready_repo` wrote and refuse every later `ks
+    # doctor` call on a different digest (#696 flag day).
+    stack_toml_text = (root / "kstrl.toml").read_text(encoding="utf-8")
+    (root / "kstrl.toml").write_text(
+        stack_toml_text + "[policy]\nenabled = true\n", encoding="utf-8"
+    )
     git_in(root, "add", "-A")
     git_in(root, "commit", "-q", "-m", "add ci and migrations")
     result = run_doctor(root)
@@ -268,7 +277,9 @@ def test_ci_and_migrations_are_suggested_as_paths_deny_entries(tmp_path: Path) -
     assert "[warn] protected_paths" in result.output
     assert '"migrations/**"' in result.output
 
-    (root / "kstrl.toml").write_text("[policy]\nenabled = false\n", encoding="utf-8")
+    (root / "kstrl.toml").write_text(
+        stack_toml_text + "[policy]\nenabled = false\n", encoding="utf-8"
+    )
     git_in(root, "add", "-A")
     git_in(root, "commit", "-q", "-m", "disable policy")
     second = run_doctor(root)
@@ -332,20 +343,11 @@ def test_a_repo_with_no_tests_warns_and_names_the_adequacy_gate(tmp_path: Path) 
     assert "adequacy" in result.output
 
 
-def test_verify_commands_warn_when_there_is_no_project_for_uv_run(tmp_path: Path) -> None:
-    """A Rust manifest in place of pyproject.toml: the repository has a
-    build manifest, so only the `uv run` defaults are wrong (#434 made a
-    repository with no manifest at all a failed build_manifest row)."""
-    root = ready_repo(tmp_path)
-    (root / "pyproject.toml").unlink()
-    (root / "Cargo.toml").write_text('[package]\nname = "demo"\n', encoding="utf-8")
-    (root / ".gitignore").write_text(gitignore_block("Rust"), encoding="utf-8")  # #459
-    git_in(root, "add", "-A")
-    git_in(root, "commit", "-q", "-m", "drop pyproject")
-    result = run_doctor(root)
-    assert result.exit_code == 0, result.output
-    assert "[warn] verify_commands" in result.output
-    assert "uv run pytest" in result.output
+# #696 flag day: test_verify_commands_warn_when_there_is_no_project_for_uv_run
+# was deleted. Its subject was the "uv run" Python-default command the
+# verify_commands row used to guess with no pyproject.toml - that guessing
+# is gone (decision: a stack is the only source of verification commands),
+# so there is no reachable subject left for it to warn about.
 
 
 def test_measure_on_a_broken_kstrl_toml_is_a_failed_row_not_a_crash(tmp_path: Path) -> None:
@@ -404,14 +406,14 @@ def test_the_refusals_carry_the_same_json_envelope_as_check(tmp_path: Path) -> N
 
 # --- #628: what doctor says about a repository that is not Python ---------
 
-#: The `[verify]` block the #618 reproducer leaves on its Rust fixture:
-#: the three commands `ks init` seeds for Rust, uncommented.
-RUST_VERIFY = (
-    "[verify]\n"
-    'test_command = "cargo test"\n'
-    'typecheck_command = "cargo check"\n'
-    'lint_command = "cargo clippy -- -D warnings"\n'
-)
+#: The confirmed `[stack]` checks the #618 reproducer's Rust fixture carries
+#: (#696 flag day: a confirmed stack, not `[verify]` command keys, is the
+#: only source doctor's verify_commands row reads).
+RUST_CHECKS = {
+    "tests": "cargo test",
+    "typecheck": "cargo check",
+    "lint": "cargo clippy -- -D warnings",
+}
 
 #: The unit test sits inline in `#[cfg(test)]`, where `cargo new` code
 #: keeps it, so no tracked PATH reads as a test while `cargo test` runs one.
@@ -428,12 +430,11 @@ PRICING_RS = (
 )
 
 
-def rust_repo(tmp_path: Path, *, python_helper: bool = False, contract: str = "") -> Path:
+def rust_repo(tmp_path: Path, *, python_helper: bool = False) -> Path:
     """The #618 Rust fixture, built without cargo: doctor runs no command.
 
     ``python_helper`` adds the one tracked `scripts/tool.py` with a public
     function that turned the #618 source_root row to a plain ok.
-    ``contract``, when set, is written as `[contract] test_command`.
     """
     root = tmp_path / "rustapp"
     root.mkdir()
@@ -444,8 +445,7 @@ def rust_repo(tmp_path: Path, *, python_helper: bool = False, contract: str = ""
         '[package]\nname = "rustapp"\nversion = "0.1.0"\nedition = "2021"\n', encoding="utf-8"
     )
     (root / ".gitignore").write_text(gitignore_block("Rust"), encoding="utf-8")
-    contract_block = f'\n[contract]\ntest_command = "{contract}"\n' if contract else ""
-    (root / "kstrl.toml").write_text(RUST_VERIFY + contract_block, encoding="utf-8")
+    write_stack(root, RUST_CHECKS)
     src = root / "src"
     src.mkdir()
     (src / "main.rs").write_text('fn main() {\n    println!("hi");\n}\n', encoding="utf-8")
@@ -458,6 +458,7 @@ def rust_repo(tmp_path: Path, *, python_helper: bool = False, contract: str = ""
         )
     git_in(root, "add", "-A")
     git_in(root, "commit", "-q", "-m", "initial")
+    confirm_stack(root)
     return root
 
 
@@ -500,73 +501,14 @@ def test_source_root_on_a_rust_repo_with_one_python_helper_is_not_plain_ok(
     assert "3 of 4 tracked source files are not Python (.rs: 3)" in source_root["detail"]
 
 
-def config_show_contract_test_command(root: Path) -> tuple[str, str]:
-    """The value and source `ks config show` prints for `[contract] test_command`."""
-    result = CliRunner().invoke(cli, ["config", "show", "--root", str(root)])
-    assert result.exit_code == 0, result.output
-    section = result.stdout.split("\n[contract]\n", 1)[1].split("\n\n", 1)[0]
-    match = re.search(r"^  test_command = (.+)  \((.+)\)$", section, re.MULTILINE)
-    assert match is not None, section
-    return ast.literal_eval(match.group(1)), match.group(2)
-
-
-def test_verify_commands_shows_the_resolved_contract_command(tmp_path: Path) -> None:
-    """Phase 3's command, value and source, exactly as `ks config show`
-    resolves it, in the report and in the report file. Read from that
-    command rather than pinned, so a change to how `[contract]` resolves
-    moves both sides together. A `uv run` command with no pyproject.toml
-    warns, as the Phase 1 half of the row already does."""
-    root = rust_repo(tmp_path)
-    command, source = config_show_contract_test_command(root)
-    result = run_doctor(root, "--json")
-    assert result.exit_code == 0, result.output
-    document = json.loads(result.stdout)
-    row = {check["name"]: check for check in document["checks"]}["verify_commands"]
-    assert (
-        f"Phase 3 will run `{command}` on merged tiers ([contract] test_command, {source})"
-        in row["detail"]
-    )
-    assert row["status"] == ("warn" if command.split()[:2] == ["uv", "run"] else "ok")
-    written = json.loads(Path(document["report_path"]).read_text(encoding="utf-8"))
-    assert written["checks"] == document["checks"]
-    assert "[contract] test_command" in run_doctor(root).output
-
-
-def test_verify_commands_shows_a_contract_command_set_in_kstrl_toml(tmp_path: Path) -> None:
-    """An operator's own `[contract] test_command` reaches the row with the
-    source `ks config show` gives it, so the row cannot be a guess at the
-    default value or a hard-coded source word."""
-    root = rust_repo(tmp_path, contract="cargo test --workspace")
-    command, source = config_show_contract_test_command(root)
-    assert command == "cargo test --workspace"
-    row = doctor_rows(root)["verify_commands"]
-    assert row["status"] == "ok"
-    assert (
-        f"Phase 3 will run `cargo test --workspace` on merged tiers "
-        f"([contract] test_command, {source})"
-    ) in row["detail"]
-
-
-def test_verify_commands_points_at_kstrl_config_when_phase_3_does_not_resolve(
-    tmp_path: Path,
-) -> None:
-    """A `[run]` value kstrl cannot read rejects the base config that
-    `ks config show` resolves `[contract]` from, while `[verify]` still
-    loads. The verify_commands row must point at kstrl_config, not crash
-    doctor and not print a guessed Phase 3 command."""
-    root = rust_repo(tmp_path)
-    (root / "kstrl.toml").write_text(
-        '[run]\nmax_iterations = "many"\n\n' + RUST_VERIFY, encoding="utf-8"
-    )
-    result = run_doctor(root, "--json")
-    assert not isinstance(result.exception, ValueError), result.exception
-    assert result.exit_code == 1, result.output
-    rows = {check["name"]: check for check in json.loads(result.stdout)["checks"]}
-    assert rows["kstrl_config"]["status"] == "fail"
-    assert (
-        "Phase 3's [contract] test_command did not resolve (see kstrl_config)"
-        in rows["verify_commands"]["detail"]
-    )
+# #696 flag day: test_verify_commands_shows_the_resolved_contract_command,
+# test_verify_commands_shows_a_contract_command_set_in_kstrl_toml,
+# test_verify_commands_points_at_kstrl_config_when_phase_3_does_not_resolve,
+# and the config_show_contract_test_command helper they shared, were
+# deleted. Their subject was `[contract] test_command` resolution: decision
+# 5 unifies Phase 1 and Phase 3 onto the same confirmed [stack] checks
+# (`check_verify_commands` no longer reads `[contract]` at all), so there is
+# no reachable subject left for any of the three to exercise.
 
 
 def test_doctor_on_a_python_repo_is_unchanged(tmp_path: Path) -> None:
@@ -582,9 +524,12 @@ def test_doctor_on_a_python_repo_is_unchanged(tmp_path: Path) -> None:
         "the codebase scan summarises 1 file(s) of a 30-file budget from source root(s): demo"
     )
     assert rows["test_root"]["detail"] == "1 tracked test path(s), e.g. tests/test_core.py"
-    assert rows["verify_commands"]["detail"].startswith(
-        "Phase 1 will run test `uv run pytest`, typecheck `uv run mypy .`, "
-        "lint `uv run ruff check .`; "
+    # #696 flag day: a confirmed [stack] is the only source of verification
+    # commands now, so the row reads the stack `ready_repo` wrote and
+    # confirmed rather than guessing a Python default.
+    assert rows["verify_commands"]["detail"] == (
+        "Phase 1 and Phase 3 will run the [stack] checks: tests `true`, "
+        "typecheck `true`, lint `true`"
     )
 
 
@@ -606,8 +551,21 @@ _FILE_SUFFIXES = frozenset(
 
 
 def module_paths(text: str) -> list[str]:
-    """Every Python module path in ``text``, such as `adequacy.is_test_path`."""
-    return [m.group(0) for m in _MODULE_PATH.finditer(text) if m.group(1) not in _FILE_SUFFIXES]
+    """Every Python module path in ``text``, such as `adequacy.is_test_path`.
+
+    ``kstrl/stack.py`` means `"stack"` is itself a genuine module name, so
+    the TOML table ``[stack.checks]`` the #696 flag day's refusal text
+    names matches the same pattern by coincidence. That occurrence is
+    bracketed on both sides (TOML notation an operator reads literally,
+    never a leaked internal path), so a match whose surrounding characters
+    are exactly ``[`` and ``]`` is excluded rather than counted.
+    """
+    return [
+        m.group(0)
+        for m in _MODULE_PATH.finditer(text)
+        if m.group(1) not in _FILE_SUFFIXES
+        and not (text[m.start() - 1 : m.start()] == "[" and text[m.end() : m.end() + 1] == "]")
+    ]
 
 
 def _non_docstring_strings(tree: ast.AST) -> list[str]:

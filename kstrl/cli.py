@@ -150,6 +150,7 @@ from kstrl.security import _SEVERITY_ORDER, SecurityMode
 from kstrl.serve import ARCHITECT_RUN_KIND, LAUNCHD_MODES
 from kstrl.shutdown import StopController, install_signal_handlers
 from kstrl.stack import (
+    NO_STACK,
     STACK_KEY,
     STACK_OPTIONS,
     Stack,
@@ -160,7 +161,6 @@ from kstrl.stack import (
     unconfirmed_lines,
 )
 from kstrl.timeout import TimeoutConfig, limit_seconds
-from kstrl.toolchains import DEFAULT_LINT_COMMAND, DEFAULT_TEST_COMMAND
 from kstrl.ui.base import UI
 from kstrl.version import stamp_label
 from kstrl.workqueue import ItemState
@@ -886,42 +886,28 @@ def _refuse_without_build_manifest(root_dir: Path, ui_impl: UI) -> None:
         sys.exit(2)
 
 
-def _refuse_command_flags_beside_a_stack(
-    factory_config: FactoryConfig, flags: dict[str, str | None], ui_impl: UI
-) -> None:
-    """Exit 2 when a command flag is passed and kstrl.toml has a ``[stack]``.
-
-    With a stack its checks are the only verification commands (#696), the
-    rule ``stack.load_stack`` applies to every kstrl.toml key and environment
-    variable that names one. A flag cannot reach that loader, so it is
-    refused here, before the architect or any engineer is paid.
-    """
-    passed = [flag for flag, value in flags.items() if value is not None]
-    if factory_config.project_stack is None or not passed:
-        return
-    ui_impl.err(
-        f"{', '.join(passed)} cannot be used with [stack] in kstrl.toml: the stack's "
-        "checks are the only verification commands. Drop the flag, or change [stack]."
-    )
-    sys.exit(2)
-
-
-def _stack_checkpoint(root_dir: Path, ui_impl: UI) -> None:
+def _stack_checkpoint(root_dir: Path, ui_impl: UI, *, no_verify: bool) -> None:
     """Exit 2 before anything is spent unless a person confirmed the ``[stack]`` (#696).
 
-    Returns when kstrl.toml has no ``[stack]`` or its exact text is
-    confirmed. Otherwise asks when someone can answer: Confirm, Reject, or
-    Decide later, which is the default, so an accidental Enter confirms
-    nothing. Anything but an answered Confirm refuses, after filing the one
-    stack_confirmation item ``ks inbox approve`` decides.
+    Returns when its exact text is confirmed, and when kstrl.toml has no
+    ``[stack]`` and ``--no-verify`` runs no check; with neither it refuses
+    (slice 4, the flag day). An unconfirmed stack asks when someone can
+    answer: Confirm, Reject, or Decide later, which is the default, so an
+    accidental Enter confirms nothing. Anything but an answered Confirm
+    refuses, after filing the one stack_confirmation item ``ks inbox
+    approve`` decides.
     """
     from kstrl.config_preflight import SURFACE_REJECTIONS
 
     try:
-        confirmed_stack(root_dir)
-        return
+        confirmed = confirmed_stack(root_dir)
     except StackRefused as refused:
         stack = refused.stack
+    else:
+        if confirmed is None and not no_verify:
+            _report_preflight(ui_impl, "kstrl.toml has no [stack]", [NO_STACK])
+            sys.exit(2)
+        return
     channel = UiInteractionChannel(ui_impl)
     response = channel.request(
         PromptRequest(
@@ -2647,19 +2633,6 @@ def decompose(
     help="Create PRs for completed components (default: on)",
 )
 @click.option(
-    "--test-command",
-    help=f"Test suite command (default: {DEFAULT_TEST_COMMAND!r})",
-)
-@click.option(
-    "--typecheck-command",
-    help="Typecheck command (default: 'uv run mypy', or 'uv run mypy .' "
-    "when pyproject.toml does not scope mypy itself)",
-)
-@click.option(
-    "--lint-command",
-    help=f"Lint command (default: {DEFAULT_LINT_COMMAND!r})",
-)
-@click.option(
     "--no-verify",
     is_flag=True,
     help="Skip Phase 1 mechanical verification",
@@ -2747,10 +2720,6 @@ def decompose(
     type=click.Choice([mode.value for mode in ContractMode]),
     default=None,
     help="Phase 3 contract testing: tier (per-tier), final (end-only), skip (default: tier)",
-)
-@click.option(
-    "--contract-test-cmd",
-    help="Test command for contract testing (default: same as --test-command)",
 )
 @click.option(
     "--agent-timeout",
@@ -2894,9 +2863,6 @@ def factory(
     max_parallel: int | None,
     max_retries: int | None,
     create_prs: bool | None,
-    test_command: str | None,
-    typecheck_command: str | None,
-    lint_command: str | None,
     no_verify: bool,
     accept_red_base: str,
     acceptance: str,
@@ -2912,7 +2878,6 @@ def factory(
     security_model: str | None,
     security_fail_threshold: str | None,
     contract_check: str | None,
-    contract_test_cmd: str | None,
     agent_timeout: float | None,
     component_timeout: float | None,
     max_adversarial_calls: int | None,
@@ -2979,18 +2944,8 @@ def factory(
     # as overridden further down.
     # #696 slice 3: before the configs that hold the stack are loaded, so an
     # answer given here is the one they read, and before any spend.
-    _stack_checkpoint(root_dir, ui_impl)
+    _stack_checkpoint(root_dir, ui_impl, no_verify=no_verify)
     factory_config = FactoryConfig.load(root_dir)
-    _refuse_command_flags_beside_a_stack(
-        factory_config,
-        {
-            "--test-command": test_command,
-            "--typecheck-command": typecheck_command,
-            "--lint-command": lint_command,
-            "--contract-test-cmd": contract_test_cmd,
-        },
-        ui_impl,
-    )
 
     # Get or create manifest.
     #
@@ -3176,9 +3131,6 @@ def factory(
                 flag_overridden={
                     name
                     for name, passed in (
-                        ("test_command", test_command is not None),
-                        ("typecheck_command", typecheck_command is not None),
-                        ("lint_command", lint_command is not None),
                         ("dead_code_cleanup", dead_code_cleanup is not None),
                         ("dead_code_command", dead_code_command is not None),
                         ("mutation_testing", mutation_testing is not None),
@@ -3187,12 +3139,6 @@ def factory(
                     if passed
                 },
             )
-            if test_command is not None:
-                v_config.test_command = test_command
-            if typecheck_command is not None:
-                v_config.typecheck_command = typecheck_command
-            if lint_command is not None:
-                v_config.lint_command = lint_command
             if dead_code_cleanup is not None:
                 v_config.dead_code_cleanup = dead_code_cleanup
             if dead_code_command is not None:
@@ -3228,10 +3174,6 @@ def factory(
         if security_fail_threshold is not None:
             s_config.fail_threshold = security_fail_threshold
 
-        # --test-command historically flowed through to contract testing
-        # when --contract-test-cmd was absent; both are explicit CLI input,
-        # so either beats env/toml.
-        cli_contract_cmd = contract_test_cmd or test_command
         contract_resolved = ContractConfig.load(root_dir)
         _collect_toml_notes(
             toml_notes,
@@ -3239,22 +3181,11 @@ def factory(
             contract_resolved,
             ContractConfig.from_env(),
             flag_overridden={
-                name
-                for name, passed in (
-                    ("mode", contract_check is not None),
-                    # #696: under a [stack] load blanks test_command; no toml set it.
-                    (
-                        "test_command",
-                        cli_contract_cmd is not None or contract_resolved.project_stack is not None,
-                    ),
-                )
-                if passed
+                name for name, passed in (("mode", contract_check is not None),) if passed
             },
         )
         if contract_check is not None:
             contract_resolved.mode = contract_check
-        if cli_contract_cmd is not None:
-            contract_resolved.test_command = cli_contract_cmd
         # mode == "skip" keeps the historical contract of passing no config.
         c_config: ContractConfig | None = (
             contract_resolved if contract_resolved.mode != "skip" else None
@@ -4213,7 +4144,6 @@ def _check_document(
 
 def _check_verify_digest(
     verify_cfg: VerifyConfig,
-    path: Path,
     *,
     mode: baseline.Mode | None,
     as_json: bool,
@@ -4226,24 +4156,15 @@ def _check_verify_digest(
     gate that fails rather than advises: inlined, this cost three points.
 
     Placed after the config load, because the digest is a function of the
-    RESOLVED commands and the timeout, and still before the checks: a
+    ``[stack]`` and the timeout, and still before the checks: a
     comparison that cannot be trusted is refused in a tenth of a second rather
     than after five minutes of measurement.
     """
-    from kstrl.gateparse import GATE_LINT, GATE_TEST, GATE_TYPECHECK
-    from kstrl.report_formats import declared_formats
-    from kstrl.verify import resolve_verify_commands
-
-    tools = {
-        GATE_TEST: verify_cfg.test_tool,
-        GATE_TYPECHECK: verify_cfg.typecheck_tool,
-        GATE_LINT: verify_cfg.lint_tool,
-    }
-    digest = baseline.verify_digest(
-        verify_cfg.project_stack or resolve_verify_commands(verify_cfg, path),
-        verify_cfg.subprocess_timeout,
-        formats=declared_formats(tools),
-    )
+    stack = verify_cfg.project_stack
+    if stack is None:
+        # #696 slice 4: no check to run, so nothing to measure or compare.
+        _check_error(NO_STACK, as_json)
+    digest = baseline.verify_digest(stack, verify_cfg.subprocess_timeout)
     if isinstance(mode, baseline.CompareMode):
         try:
             baseline.refuse_foreign_baseline(mode.baseline, digest)
@@ -4637,7 +4558,7 @@ def check(
         # errors (PolicyConfigError is one).
         _check_error(f"could not load kstrl.toml from {root_dir}: {exc}", as_json)
 
-    digest = _check_verify_digest(verify_cfg, path, mode=mode, as_json=as_json)
+    digest = _check_verify_digest(verify_cfg, mode=mode, as_json=as_json)
 
     base = resolve_base_branch(base_branch, path)
 

@@ -15,6 +15,7 @@ from kstrl.prd import PRD
 from kstrl.statedir import plan_prd_path
 from tests.helpers import integration_harness as h
 from tests.helpers import integration_loop as lp
+from tests.helpers.stack_confirmation import in_process_stack
 
 NARROW = ["src/store.py", "tests/test_store.py", "scripts/kstrl/feature/integration-fix-1/"]
 IC5_FAIL = {"IC5": ("fail", "decision shutdown-semantics says 10 s, US-019 says 2 s")}
@@ -228,7 +229,9 @@ def test_an_integrated_test_failure_is_repaired_and_its_line_removed(tmp_path: P
     result, out = lp.run_loop(
         root,
         rig,
-        contract_config=ContractConfig(mode="tier", test_command=failing, timeout=60.0),
+        contract_config=ContractConfig(
+            mode="tier", project_stack=in_process_stack({"tests": failing}), timeout=60.0
+        ),
     )
 
     assert rig.launched == [lp.FIX_1]

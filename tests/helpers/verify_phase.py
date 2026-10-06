@@ -40,6 +40,7 @@ from kstrl.security import SecurityResult
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerificationResult, VerifyConfig, run_mechanical_verification
 from kstrl.worktree_sweep import WorktreeSweep
+from tests.helpers.stack_confirmation import in_process_stack
 
 if TYPE_CHECKING:
     from kstrl.verify import CheckResult
@@ -47,9 +48,7 @@ if TYPE_CHECKING:
 #: Only the gates that cost nothing: three ``true`` commands, no PRD, no
 #: pattern scan. Everything else in Phase 1 defaults off.
 CHEAP_GATES = VerifyConfig(
-    test_command="true",
-    typecheck_command="true",
-    lint_command="true",
+    project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
     check_bad_patterns=False,
     subprocess_timeout=30.0,
 )

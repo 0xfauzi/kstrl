@@ -198,16 +198,20 @@ def test_an_approval_then_a_rejection_keeps_nothing(tmp_path: Path) -> None:
 def test_a_failure_an_approval_cannot_cover_regenerates(tmp_path: Path) -> None:
     """Phase 1 also failed on the tests, which no approval covers."""
     counter = tmp_path / "counter"
-    root = _repo(tmp_path, SIZE_TOML)
+    root = _repo(
+        tmp_path,
+        SIZE_TOML,
+        {"tests": "test ! -e app/broken", "typecheck": "true", "lint": "true"},
+    )
     env = _env(tmp_path, _counted(counter, f"{GROWING} && touch app/broken"))
-    code, out = _factory(root, env, "--test-command", "test ! -e app/broken")
+    code, out = _factory(root, env)
     assert code == 1, out
     _decide(root, env, "approve", _size_item(root, 10))
 
     code, out = _retry(root, env)
 
     assert code == 1, out
-    assert "Phase 1 also failed on test_suite, which no approval covers" in out, out
+    assert "Phase 1 also failed on stack:tests, which no approval covers" in out, out
     assert _runs(counter) == 2, out
 
 

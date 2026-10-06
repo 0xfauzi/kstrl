@@ -6,22 +6,15 @@ engineer has been paid. Measured with the real ``ks factory`` and a stub
 engineer: on a base with one failing test the engineer was called, and Phase
 1 then failed ``test_suite`` on a test the engineer never touched.
 
-:func:`measure_base_gates` runs Phase 1's three command gates, with Phase
-1's commands, parsers and timeout, in a throwaway worktree of the commit the
-base branch names after a fetch. Never in the root checkout: an uncommitted
-fix there would read a red base as green. :func:`refusal_lines` turns the
-reading into the reasons the run refuses. A gate that measurably failed
-refuses. A gate that ran and measured nothing (a timeout, a missing tool,
-pytest collecting no tests) is warned about and recorded, never refused:
-Phase 1 still fails such a row on every component, and refusing it would
-refuse every run on a repository that has no tests yet.
-
-Under a ``[stack]`` (#696) the gates are the stack's checks and the base is
-held to more: any check that did not pass refuses, measured or not, a failed
-setup refuses, and so does anything ``git status`` shows in the base's
-worktree after the checks ran (:data:`BaseGates.left_behind`). A check whose
-output is not ignored by the project's own .gitignore would otherwise read as
-an out-of-scope edit of every engineer's.
+:func:`measure_base_gates` runs Phase 1's command gates, the ``[stack]``'s
+checks (#696), with Phase 1's timeout, in a throwaway worktree of the commit
+the base branch names after a fetch. Never in the root checkout: an
+uncommitted fix there would read a red base as green. :func:`refusal_lines`
+turns the reading into the reasons the run refuses: any check that did not
+pass, measured or not, a failed setup, and anything ``git status`` shows in
+the base's worktree after the checks ran (:data:`BaseGates.left_behind`). A
+check whose output is not ignored by the project's own .gitignore would
+otherwise read as an out-of-scope edit of every engineer's.
 
 ``ks factory --accept-red-base <sha>`` (slice 4) runs on a base that
 refuses, for one run and one commit: :func:`apply_acceptance` waives a
@@ -54,7 +47,6 @@ from kstrl.verify import (
     VerificationResult,
     VerifyConfig,
     gate_names,
-    resolve_verify_commands,
     run_fast_checks,
 )
 from kstrl.version import kstrl_version
@@ -68,9 +60,6 @@ BASE_GATES_FILE = "base-gates.json"
 
 #: The label of the throwaway worktree, under ``.kstrl/contract/``.
 WORKTREE_LABEL = "base-gates"
-
-#: How many failing test or rule names one refusal line carries.
-NAMED_FAILURES = 5
 
 #: The fewest leading characters of the measured base sha that
 #: ``--accept-red-base`` takes (#654 slice 4).
@@ -113,7 +102,7 @@ def measure_base_gates(
     setup: WorktreeSetup,
     ui: UI,
 ) -> BaseGates:
-    """Run Phase 1's test, typecheck and lint gates on the base branch's commit."""
+    """Run Phase 1's command gates, the ``[stack]``'s checks, on the base branch's commit."""
     start = time.monotonic()
     # Non-fatal, as before a component is cut (``factory._setup_worktree``):
     # offline runs read the current tracking ref, local-only repos the branch.
@@ -139,9 +128,10 @@ def measure_base_gates(
     left_behind: tuple[str, ...] = ()
     try:
         setup_error = setup.prepare(worktree)
-        digest = verify_digest(
-            config.project_stack or resolve_verify_commands(config, worktree),
-            config.subprocess_timeout,
+        digest = (
+            verify_digest(config.project_stack, config.subprocess_timeout)
+            if config.project_stack is not None
+            else ""
         )
         result = (
             None
@@ -186,39 +176,17 @@ def _discard(worktree: Path, root_dir: Path, ui: UI) -> str:
     return ""
 
 
-def _failing(check: CheckResult) -> list[str]:
-    """The test or rule names the gate's parser read, each once, in order."""
-    if check.parsed is None:
-        return []
-    return list(dict.fromkeys(f.rule_or_test for f in check.parsed.failures if f.rule_or_test))
-
-
 def refusal_lines(reading: BaseGates) -> list[str]:
     """Why a run must not start on this base, or [] to let it proceed.
 
-    Only a gate that ran and measurably failed. A base that could not be
-    read, a failed setup and a gate that measured nothing are warnings
-    (:func:`warning_lines`): Phase 1 still runs every gate on every
-    component, so letting them through passes nothing it did not pass.
-    Under a ``[stack]`` the rules are :func:`_stack_refusal_lines`.
+    The base is held to the ``[stack]`` rules (#696): a failed setup, every
+    check that did not pass whether or not it measured anything, and every
+    entry ``git status`` showed after the checks ran. Since the flag day
+    there is no other rule: a reading with no stack carries Phase 1's one
+    failed row (``verify.NO_STACK_CHECK``), which refuses like any other.
+    A skipped reading (``--no-verify``) holds no result and refuses nothing.
     """
-    if reading.stack_digest:
-        return _stack_refusal_lines(reading)
-    if reading.result is None:
-        return []
-    at = f"{reading.base_branch} at {reading.base_sha[:12]}"
-    lines: list[str] = []
-    for check in reading.result.checks:
-        if check.passed or not check.measured:
-            continue
-        names = _failing(check)
-        line = f"{check.name} fails on {at}: {check.message}"
-        if names:
-            more = len(names) - NAMED_FAILURES
-            line += f"; failing: {', '.join(names[:NAMED_FAILURES])}"
-            line += f" and {more} more" if more > 0 else ""
-        lines.append(line)
-    return lines
+    return _stack_refusal_lines(reading)
 
 
 def _stack_refusal_lines(reading: BaseGates) -> list[str]:
@@ -248,17 +216,14 @@ def _acceptable_lines(reading: BaseGates) -> list[str]:
     """The refusal lines ``--accept-red-base`` may waive (#654 slice 4).
 
     Only a gate that ran on the base and measurably failed: that is the red
-    reading the operator accepts. With no stack that is every line
-    :func:`refusal_lines` returns. Under a ``[stack]`` it is each check that
-    exited with a status other than 0, 126 or 127. Never a failed setup (no
+    reading the operator accepts, each check that exited with a status other
+    than 0, 126 or 127. Never a failed setup (no
     check ran), a check that measured nothing (a missing tool or a timeout
     that no commit of the engineer's fixes), or what a check left in ``git
     status`` (every engineer's diff would carry it). A refusal this list does
     not name is never waived, so a kind of refusal added later refuses under
     an acceptance until it is named here.
     """
-    if not reading.stack_digest:
-        return refusal_lines(reading)
     if reading.setup_error or reading.result is None:
         return []
     at = f"{reading.base_branch} at {reading.base_sha[:12]}"
@@ -299,24 +264,13 @@ def apply_acceptance(
 
 
 def warning_lines(reading: BaseGates) -> list[str]:
-    """What this reading could not measure, one line each.
+    """What this reading could not measure, one line each: the base could
+    not be read, or its throwaway worktree survived.
 
-    Under a ``[stack]`` a failed setup and an unmeasured check are
-    refusals (:func:`_stack_refusal_lines`), not warnings.
+    A failed setup and an unmeasured check are refusals
+    (:func:`refusal_lines`), not warnings (#696).
     """
-    lines = [reading.error] if reading.error else []
-    if reading.stack_digest:
-        return lines
-    if reading.setup_error:
-        at = reading.base_sha[:12]
-        lines.append(f"the base {at} was not measured: its setup failed: {reading.setup_error}")
-    if reading.result is not None:
-        lines += [
-            f"{check.name} measured nothing on {reading.base_branch}: {check.message}"
-            for check in reading.result.checks
-            if not check.passed and not check.measured
-        ]
-    return lines
+    return [reading.error] if reading.error else []
 
 
 def base_gates_path(root_dir: Path, run_id: str) -> Path:
@@ -345,7 +299,6 @@ def reading_document(
                 "passed": check.passed,
                 "measured": check.measured,
                 "message": check.message,
-                "failing": _failing(check),
             }
             for check in (result.checks if result is not None else [])
         ],

@@ -24,6 +24,7 @@ from click.testing import CliRunner
 
 from kstrl.cli import cli
 from tests.helpers import gitrepo
+from tests.helpers.stack_confirmation import confirm_stack, write_stack
 from tests.spine_utils import git
 
 _OK_COMMAND = f"{sys.executable} -c 'print(1)'"
@@ -69,22 +70,19 @@ def _repo(
 ) -> Path:
     """A repo whose ``main`` holds ``base`` and whose ``feature`` adds ``branch``.
 
-    ``config`` is appended right after the ``[verify]`` keys, so a bare
-    ``key = value`` line lands in ``[verify]`` and a ``[section]`` header
-    starts its own table.
+    ``config`` is appended after the confirmed ``[stack]`` table, so a
+    ``[section]`` header starts its own table.
     """
     root = tmp_path / "proj"
     root.mkdir()
     git("init", "-q", "-b", "main", cwd=root)
     gitrepo.set_identity(root)
     _write(root, base)
-    (root / "kstrl.toml").write_text(
-        "[verify]\n"
-        f"test_command = {json.dumps(_OK_COMMAND)}\n"
-        f"typecheck_command = {json.dumps(_OK_COMMAND)}\n"
-        f"lint_command = {json.dumps(_OK_COMMAND)}\n" + config,
-        encoding="utf-8",
-    )
+    write_stack(root, {"tests": _OK_COMMAND, "typecheck": _OK_COMMAND, "lint": _OK_COMMAND})
+    if config:
+        path = root / "kstrl.toml"
+        path.write_text(path.read_text(encoding="utf-8") + config, encoding="utf-8")
+    confirm_stack(root)
     git("add", "-A", cwd=root)
     git("commit", "-q", "-m", "init", cwd=root)
     git("checkout", "-q", "-b", "feature", cwd=root)
@@ -207,7 +205,7 @@ def test_dead_code_ruff_on_a_tree_with_no_python_is_not_measured(tmp_path: Path)
         tmp_path,
         RUST_BASE,
         {"src/lib.rs": "pub fn a() -> i32 {\n    2\n}\n"},
-        "dead_code_cleanup = true\n",
+        "[verify]\ndead_code_cleanup = true\n",
     )
 
     document = _check_json(root)
@@ -336,7 +334,7 @@ def test_dead_code_ruff_that_cannot_load_its_config_is_a_failure_not_an_empty_tr
         tmp_path,
         {**PY_BASE, "ruff.toml": 'line-length = "x"\n'},
         {"src/a.py": "A = 2\n"},
-        "dead_code_cleanup = true\n",
+        "[verify]\ndead_code_cleanup = true\n",
     )
 
     document = _check_json(root)

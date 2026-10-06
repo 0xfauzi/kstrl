@@ -50,18 +50,53 @@ STRING_KEYS: tuple[tuple[str, str, str, str, bool], ...] = (
 #: layer: two spellings live forever and the old one never dies.
 RETIRED_SECTIONS: dict[str, str] = {"feedforward": "codebase_scan"}
 
-#: (section, key) renamed by #395, mapped to the new KEY name.
+#: Why a verification command key or variable no longer exists (#696 slice
+#: 4, the flag day): a confirmed ``[stack]`` is the only source of commands.
+_RETIRED_FOR_STACK = (
+    "retired: verification commands come only from a confirmed [stack]. Move the command "
+    "under [stack.checks] (ks doctor files a proposed [stack] from the old [verify] commands)"
+)
+
+#: (section, key) retired by #395 and #696, mapped to what replaced it: the
+#: refusal reads "names [section] key, which was <this>".
 RETIRED_KEYS: dict[tuple[str, str], str] = {
-    ("factory", "setpoint_agreement"): "claim_agreement",
+    ("factory", "setpoint_agreement"): "renamed to claim_agreement; rename the key",
+    ("verify", "test_command"): _RETIRED_FOR_STACK,
+    ("verify", "typecheck_command"): _RETIRED_FOR_STACK,
+    ("verify", "lint_command"): _RETIRED_FOR_STACK,
+    ("verify", "test_tool"): _RETIRED_FOR_STACK,
+    ("verify", "typecheck_tool"): _RETIRED_FOR_STACK,
+    ("verify", "lint_tool"): _RETIRED_FOR_STACK,
+    ("factory", "worktree_setup_command"): (
+        "retired: worktree setup comes only from a confirmed [stack]; move it to [stack] setup"
+    ),
+    ("contract", "test_command"): (
+        "retired: Phase 3 runs every check of the confirmed [stack]; remove it"
+    ),
+    ("breaker", "test_command"): "retired: the no-progress breaker reads the diff only; remove it",
+    ("breaker", "test_timeout"): "retired: the no-progress breaker reads the diff only; remove it",
 }
 
-#: Environment variables renamed by #395.
+#: Environment variables retired by #395 and #696, mapped to what replaced
+#: each: the refusal reads "sets NAME, which was <this>".
 RETIRED_ENV_VARS: dict[str, str] = {
-    "KSTRL_FACTORY_SETPOINT_AGREEMENT": "KSTRL_FACTORY_CLAIM_AGREEMENT",
-    "KSTRL_FEEDFORWARD_ENABLED": "KSTRL_CODEBASE_SCAN_ENABLED",
-    "KSTRL_FEEDFORWARD_MODULE_MAP": "KSTRL_CODEBASE_SCAN_MODULE_MAP",
-    "KSTRL_FEEDFORWARD_PUBLIC_INTERFACES": "KSTRL_CODEBASE_SCAN_PUBLIC_INTERFACES",
-    "KSTRL_FEEDFORWARD_DEPENDENCY_GRAPH": "KSTRL_CODEBASE_SCAN_DEPENDENCY_GRAPH",
-    "KSTRL_FEEDFORWARD_CONVENTIONS": "KSTRL_CODEBASE_SCAN_CONVENTIONS",
-    "KSTRL_FEEDFORWARD_MAX_TOKENS": "KSTRL_CODEBASE_SCAN_MAX_TOKENS",
+    "KSTRL_FACTORY_SETPOINT_AGREEMENT": "renamed to KSTRL_FACTORY_CLAIM_AGREEMENT",
+    "KSTRL_FEEDFORWARD_ENABLED": "renamed to KSTRL_CODEBASE_SCAN_ENABLED",
+    "KSTRL_FEEDFORWARD_MODULE_MAP": "renamed to KSTRL_CODEBASE_SCAN_MODULE_MAP",
+    "KSTRL_FEEDFORWARD_PUBLIC_INTERFACES": "renamed to KSTRL_CODEBASE_SCAN_PUBLIC_INTERFACES",
+    "KSTRL_FEEDFORWARD_DEPENDENCY_GRAPH": "renamed to KSTRL_CODEBASE_SCAN_DEPENDENCY_GRAPH",
+    "KSTRL_FEEDFORWARD_CONVENTIONS": "renamed to KSTRL_CODEBASE_SCAN_CONVENTIONS",
+    "KSTRL_FEEDFORWARD_MAX_TOKENS": "renamed to KSTRL_CODEBASE_SCAN_MAX_TOKENS",
+    "KSTRL_VERIFY_TEST_CMD": _RETIRED_FOR_STACK,
+    "KSTRL_VERIFY_TYPECHECK_CMD": _RETIRED_FOR_STACK,
+    "KSTRL_VERIFY_LINT_CMD": _RETIRED_FOR_STACK,
+    "KSTRL_VERIFY_TEST_TOOL": _RETIRED_FOR_STACK,
+    "KSTRL_VERIFY_TYPECHECK_TOOL": _RETIRED_FOR_STACK,
+    "KSTRL_VERIFY_LINT_TOOL": _RETIRED_FOR_STACK,
+    "KSTRL_FACTORY_WORKTREE_SETUP_COMMAND": (
+        "retired: worktree setup comes only from a confirmed [stack]; use [stack] setup"
+    ),
+    "KSTRL_CONTRACT_TEST_CMD": "retired: Phase 3 runs every check of the confirmed [stack]",
+    "KSTRL_BREAKER_TEST_CMD": "retired: the no-progress breaker reads the diff only",
+    "KSTRL_BREAKER_TEST_TIMEOUT": "retired: the no-progress breaker reads the diff only",
 }

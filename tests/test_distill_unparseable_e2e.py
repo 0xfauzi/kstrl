@@ -26,6 +26,7 @@ from kstrl.manifest import Component, Manifest
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
 from tests.helpers.distill_replies import BROKEN_REPLY, EMPTY_REPLY, VALID_REPLY
+from tests.helpers.stack_confirmation import in_process_stack
 
 PRD = '{"branchName": "t", "userStories": []}'
 
@@ -67,10 +68,9 @@ def _run_factory_with_reply(root: Path, reply: str) -> str:
         max_retries=0,
         retry_delay=0,
         review_mode="skip",
+        project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
         verify_config=VerifyConfig(
-            test_command="true",
-            typecheck_command="true",
-            lint_command="true",
+            project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
             check_diff_scope=False,
             check_bad_patterns=False,
             subprocess_timeout=5.0,

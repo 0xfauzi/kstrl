@@ -43,6 +43,7 @@ from tests.helpers import gitrepo
 from tests.helpers.component_prd import write_component_prd
 from tests.helpers.plan_approval import approve_plan
 from tests.helpers.replay import UNDECODABLE_TSV
+from tests.helpers.stack_confirmation import in_process_stack
 
 
 def _eligible_state(level: AutonomyLevel = AutonomyLevel.L1_SUPERVISED) -> AutonomyState:
@@ -295,10 +296,9 @@ def _run_factory_with_autonomy(
         retry_delay=0,
         review_mode="skip",
         pause_before_pr_merge=configured_pause,
+        project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
         verify_config=VerifyConfig(
-            test_command="true",
-            typecheck_command="true",
-            lint_command="true",
+            project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
             check_bad_patterns=False,
             subprocess_timeout=5.0,
         ),

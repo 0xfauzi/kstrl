@@ -54,6 +54,7 @@ from kstrl.version import kstrl_version
 from tests.helpers import gitrepo
 from tests.helpers import integration_harness as h
 from tests.helpers.executables import write_executable
+from tests.helpers.stack_confirmation import confirm_stack, write_stack
 from tests.spine_utils import git
 
 COMPLETE = "<promise>COMPLETE</promise>"
@@ -168,6 +169,8 @@ def _initialised_project(tmp_path: Path, *, review: bool = True) -> Path:
         text = text.replace("# review_mode =", 'review_mode = "advisory"\n# review_mode =', 1)
         text = text.replace("[security]\n", '[security]\nmode = "advisory"\n', 1)
         toml.write_text(text, encoding="utf-8")
+    write_stack(root)
+    confirm_stack(root)
     return root
 
 
@@ -186,6 +189,15 @@ def _spec_project(tmp_path: Path, *, initialised: bool = False) -> Path:
         assert run_init(root, PlainUI(no_color=True, file=io.StringIO())) == 0
     git("add", "-A", cwd=root)
     git("commit", "-q", "-m", "seed", cwd=root)
+    return root
+
+
+def _confirmed_spec_project(tmp_path: Path, *, initialised: bool = False) -> Path:
+    """`_spec_project` plus a confirmed [stack], which `ks factory --spec`
+    needs before it will call the architect (#696 flag day)."""
+    root = _spec_project(tmp_path, initialised=initialised)
+    write_stack(root)
+    confirm_stack(root)
     return root
 
 
@@ -385,12 +397,6 @@ class TestCommandRunsRecordTheirPrompts:
         loop, each a real run of the agent command."""
         sentinel = _no_paid_cli(tmp_path, monkeypatch)
         root = _initialised_project(tmp_path, review=False)
-        noop = 'test_command = "exit 0"\ntypecheck_command = "exit 0"\nlint_command = "exit 0"\n'
-        toml = root / "kstrl.toml"
-        toml.write_text(
-            toml.read_text(encoding="utf-8").replace("[verify]\n", "[verify]\n" + noop, 1),
-            encoding="utf-8",
-        )
         feature_dir = root / "scripts" / "kstrl" / "feature" / "demo"
         feature_dir.mkdir(parents=True)
         (feature_dir / "prd.json").write_text(json.dumps(PRD), encoding="utf-8")
@@ -497,7 +503,7 @@ class TestFactorySpecRecordsTheArchitect:
         as. That run is a decompose run, so safe mode does not read it as a
         factory run with no event stream."""
         sentinel = _no_paid_cli(tmp_path, monkeypatch)
-        root = _spec_project(tmp_path)
+        root = _confirmed_spec_project(tmp_path)
         capdir = tmp_path / "captured"
 
         output = self._factory_spec(root, _capturing_agent(capdir, reply="not json"))
@@ -524,7 +530,7 @@ class TestFactorySpecRecordsTheArchitect:
         every prompt the CLI received is on disk, the architect's in the
         decompose run and the engineer's in the factory run."""
         sentinel = _no_paid_cli(tmp_path, monkeypatch)
-        root = _spec_project(tmp_path, initialised=True)
+        root = _confirmed_spec_project(tmp_path, initialised=True)
         capdir = tmp_path / "captured"
         payload = tmp_path / "decompose.json"
         payload.write_text(json.dumps(ONE_COMPONENT), encoding="utf-8")
@@ -552,7 +558,7 @@ class TestFactorySpecRecordsTheArchitect:
         progress-log opt-out turns off the event stream, not the record."""
         _no_paid_cli(tmp_path, monkeypatch)
         monkeypatch.setenv("KSTRL_FACTORY_PROGRESS_LOG_ENABLED", "0")
-        root = _spec_project(tmp_path)
+        root = _confirmed_spec_project(tmp_path)
         capdir = tmp_path / "captured"
 
         output = self._factory_spec(root, _capturing_agent(capdir, reply="not json"))

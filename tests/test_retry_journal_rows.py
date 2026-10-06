@@ -35,6 +35,7 @@ from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
 from tests import spine_utils
 from tests.helpers import gitrepo
+from tests.helpers.stack_confirmation import in_process_stack
 from tests.test_event_stream import (
     _component,
     _make_base_config,
@@ -72,7 +73,17 @@ def _git_project(root: Path, ids: list[str]) -> Path:
     return project
 
 
+def _fails_after_the_base_gate(tmp_path: Path) -> str:
+    """A check that passes on its first call, the base gate's, and fails on every call after it."""
+    calls = tmp_path / "check-calls"
+    return f"echo x >> '{calls}'; [ \"$(wc -l < '{calls}')\" -le 1 ]"
+
+
 def _config(root: Path, *, test_command: str, max_retries: int) -> FactoryConfig:
+    stack = in_process_stack(
+        {"tests": test_command, "typecheck": "true", "lint": "true"},
+        writable=(str(root),),
+    )
     return FactoryConfig(
         use_worktrees=False,
         create_prs=False,
@@ -80,10 +91,9 @@ def _config(root: Path, *, test_command: str, max_retries: int) -> FactoryConfig
         max_retries=max_retries,
         retry_delay=0,
         review_mode="skip",
+        project_stack=stack,
         verify_config=VerifyConfig(
-            test_command=test_command,
-            typecheck_command="true",
-            lint_command="true",
+            project_stack=stack,
             check_diff_scope=False,
             check_bad_patterns=False,
             subprocess_timeout=5.0,
@@ -173,7 +183,7 @@ def _two_runs_retrying_one(tmp_path: Path) -> Path:
     base.max_iterations = 3
     run_factory(
         manifest,
-        _config(root, test_command="false", max_retries=1),
+        _config(root, test_command=_fails_after_the_base_gate(root), max_retries=1),
         base,
         PlainUI(no_color=True),
         root,

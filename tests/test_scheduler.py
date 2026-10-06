@@ -36,6 +36,7 @@ from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
 from tests.helpers import gitrepo
 from tests.helpers.component_prd import PASSING_STORY, write_component_prd
+from tests.helpers.stack_confirmation import in_process_stack
 
 
 def _git(root: Path, *args: str) -> None:
@@ -109,10 +110,9 @@ def _factory_config(tmp_path: Path, **overrides: Any) -> FactoryConfig:
         create_prs=False,
         use_worktrees=True,
         review_mode="skip",
+        project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
         verify_config=VerifyConfig(
-            test_command="true",
-            typecheck_command="true",
-            lint_command="true",
+            project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
             check_diff_scope=False,
             check_bad_patterns=False,
             subprocess_timeout=5.0,

@@ -3588,12 +3588,15 @@ def _stack_wait(root_dir: Path) -> str | None:
     A wait, before the claim: no attempt is charged and nothing is
     poisoned, so the queued item runs on the first poll after
     ``ks inbox approve``. The one stack_confirmation item is filed on the
-    first poll; a later poll bumps it rather than filing a second.
+    first poll; a later poll bumps it rather than filing a second. With no
+    ``[stack]`` at all every run would refuse (slice 4), so the cycle waits
+    for one; nothing is filed, because there is no text to confirm.
     """
-    from kstrl.stack import StackRefused, confirmed_stack, unconfirmed_lines
+    from kstrl.stack import NO_STACK, StackRefused, confirmed_stack, unconfirmed_lines
 
     try:
-        confirmed_stack(root_dir)
+        if confirmed_stack(root_dir) is None:
+            return f"waiting, nothing claimed: {NO_STACK}"
     except StackRefused as refused:
         return "waiting, nothing claimed: " + " ".join(unconfirmed_lines(root_dir, refused.stack))
     except Exception as exc:  # noqa: BLE001 - a [stack] serve cannot read is the same wait (#364)

@@ -41,6 +41,11 @@ import pytest
 from kstrl.manifest import Manifest
 from tests.helpers.gitrepo import git_in, set_identity
 from tests.helpers.procs import kill_group
+from tests.helpers.stack_confirmation import confirm_stack, write_stack
+from tests.test_isolation_rung import runs_a_stack
+
+#: Every test here runs a factory under a confirmed [stack] (#700 rung).
+pytestmark = runs_a_stack
 
 COMP = "greeter"
 BRANCH = f"kstrl/factory/{COMP}"
@@ -210,13 +215,18 @@ def _initialised_project(tmp_path: Path, *, commit_init: bool = True) -> Path:
     init = _run(root, "init", "--ui", "plain", "--no-color", str(root))
     assert init.returncode == 0, init.stdout
     (root / "spec.md").write_text("# Spec\nBuild a greeter.\n", encoding="utf-8")
+    write_stack(root)
     git_in(root, "add", *(["-A"] if commit_init else ["spec.md"]))
     git_in(root, "commit", "-q", "-m", "ks init")
+    confirm_stack(root)
     return root
 
 
-def _factory(root: Path, agent: Path, *verify: str) -> subprocess.CompletedProcess[str]:
-    """``ks factory --spec --no-prs``. ``verify`` replaces ``--no-verify``."""
+def _factory(
+    root: Path, agent: Path, *extra: str, phase_1: bool = False
+) -> subprocess.CompletedProcess[str]:
+    """``ks factory --spec --no-prs`` with ``--no-verify``, unless ``phase_1``
+    runs Phase 1 against the project's confirmed ``[stack]``."""
     return _run(
         root,
         "factory",
@@ -231,7 +241,8 @@ def _factory(root: Path, agent: Path, *verify: str) -> subprocess.CompletedProce
         str(agent),
         "--review-mode",
         "skip",
-        *(verify or ("--no-verify",)),
+        *(() if phase_1 else ("--no-verify",)),
+        *extra,
         "--contract-check",
         "skip",
         "--max-parallel",
@@ -295,12 +306,7 @@ def test_uncommitted_ks_init_output_does_not_fail_phase_1(tmp_path: Path) -> Non
     run = _factory(
         root,
         _stub_agent(tmp_path),
-        "--test-command",
-        "true",
-        "--typecheck-command",
-        "true",
-        "--lint-command",
-        "true",
+        phase_1=True,
     )
 
     (comp,) = Manifest.load(root / "scripts" / "kstrl" / "manifest.json").components
@@ -313,28 +319,20 @@ def test_the_engineer_reads_prompt_and_claude_md_from_the_root_checkout(tmp_path
     so the engineer's prompt must still carry both, read from the root
     checkout where they are uncommitted. The markers are appended after
     ``ks init``, so the harness DEFAULT_PROMPT fallback cannot supply them.
-    Phase 1 is on so the #261 scrub runs: the stale ``Test`` bullet
-    disagrees with the gate's ``true`` and must be dropped from the
-    prompt, which it is only when the scrub reads the same CLAUDE.md the
-    prompt carries. No exit-code assertion: on a tree that still copies
+    No exit-code assertion: on a tree that still copies
     the files, Phase 1 fails the run on diff_scope after the prompt was
     written, and this test is about the prompt."""
     root = _initialised_project(tmp_path, commit_init=False)
     with (root / "scripts" / "kstrl" / "prompt.md").open("a", encoding="utf-8") as f:
         f.write("\nPROMPT-MARKER-569\n")
     with (root / "CLAUDE.md").open("a", encoding="utf-8") as f:
-        f.write("\nCLAUDE-MARKER-569\n- **Test**: `pytest STALE-569`\n")
+        f.write("\nCLAUDE-MARKER-569\n")
     dump = tmp_path / "engineer-prompt.txt"
 
     run = _factory(
         root,
         _stub_agent(tmp_path, prompt_dump=dump),
-        "--test-command",
-        "true",
-        "--typecheck-command",
-        "true",
-        "--lint-command",
-        "true",
+        phase_1=True,
     )
 
     assert dump.is_file(), run.stdout
@@ -342,7 +340,6 @@ def test_the_engineer_reads_prompt_and_claude_md_from_the_root_checkout(tmp_path
     assert "PROMPT-MARKER-569" in prompt, prompt[:2000]
     assert "# Project Context (from CLAUDE.md)" in prompt, prompt[:2000]
     assert "CLAUDE-MARKER-569" in prompt, prompt[:2000]
-    assert "STALE-569" not in prompt, prompt[:2000]
 
 
 @pytest.mark.parametrize("commit_init", [True, False], ids=["init-committed", "init-uncommitted"])
@@ -411,12 +408,7 @@ def test_phase_1_compares_the_engineers_prd_with_the_planned_copy(
     run = _factory(
         root,
         _stub_agent(tmp_path, rewrite_criteria=rewrite),
-        "--test-command",
-        "true",
-        "--typecheck-command",
-        "true",
-        "--lint-command",
-        "true",
+        phase_1=True,
     )
 
     (comp,) = Manifest.load(root / "scripts" / "kstrl" / "manifest.json").components
@@ -466,13 +458,8 @@ def test_without_worktrees_phase_1_still_compares_with_the_planned_copy(
     run = _factory(
         root,
         _stub_agent_in_root(tmp_path, rewrite_criteria=rewrite),
-        "--test-command",
-        "true",
-        "--typecheck-command",
-        "true",
-        "--lint-command",
-        "true",
         "--no-worktrees",
+        phase_1=True,
     )
 
     (comp,) = Manifest.load(root / "scripts" / "kstrl" / "manifest.json").components

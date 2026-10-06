@@ -36,16 +36,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from kstrl import git
-from kstrl.config_numbers import BudgetConfigError, check_numbers
+from kstrl.config_numbers import check_numbers
 from kstrl.manifest import Manifest
 from kstrl.rung import Rung
-from kstrl.stack import Stack, stack_in_force
+from kstrl.stack import NO_STACK, Stack, stack_in_force
 from kstrl.timeout import limit_seconds
-from kstrl.toolchains import DEFAULT_TEST_COMMAND
 from kstrl.verify import (
     ChildOutputDecodeError,
     check_stack_command,
-    resolve_test_command,
     run_scrubbed,
 )
 from kstrl.worktree_setup import NO_SETUP, WorktreeSetup
@@ -91,20 +89,10 @@ class ContractConfig:
     """Configuration for contract testing."""
 
     mode: str = ContractMode.TIER.value
-    #: #276: Phase 3 runs the merged tiers through the same suite Phase 1
-    #: ran per component. #621: ``load`` makes that true of the value and
-    #: not only the default: with neither ``[contract] test_command`` nor
-    #: ``KSTRL_CONTRACT_TEST_CMD`` set, it is the command
-    #: ``[verify] test_command`` resolves to, so a Rust project that sets
-    #: ``cargo test`` there does not get ``uv run pytest`` in Phase 3.
-    #: ``from_env`` and the bare dataclass cannot read ``[verify]`` and
-    #: keep the Phase 1 constant.
-    test_command: str = DEFAULT_TEST_COMMAND
     timeout: float = 0.0
-    #: #696: the project's [stack], read by ``load``. Under a stack Phase 3
-    #: runs every one of its checks (decision 10) and ``test_command`` is
-    #: "" (``[contract] test_command`` is refused at load). Provenance: no
-    #: [contract] key of its own.
+    #: #696: the project's [stack], read by ``load``. Phase 3 runs every one
+    #: of its checks (decision 10); with none it runs nothing and fails
+    #: (:data:`NO_STACK_PHASE_3`). Provenance: no [contract] key of its own.
     project_stack: Stack | None = field(default=None, metadata={"provenance": True})
     #: #700 slice 2: the TEST-zone rung of a ``ks factory`` run under a
     #: [stack]; Phase 3 runs every check inside it. Set by the factory, never
@@ -125,7 +113,6 @@ class ContractConfig:
         """Load contract config from environment variables."""
         return cls(
             mode=os.environ.get("KSTRL_CONTRACT_MODE", ContractMode.TIER.value),
-            test_command=os.environ.get("KSTRL_CONTRACT_TEST_CMD", DEFAULT_TEST_COMMAND),
             timeout=float(os.environ.get("KSTRL_TIMEOUT_CONTRACT", "0")),
         )
 
@@ -140,39 +127,15 @@ class ContractConfig:
         section = load_toml_section(resolve_config_file(root_dir), "contract")
         if "mode" in section:
             config.mode = str(section["mode"])
-        if "test_command" in section:
-            config.test_command = str(section["test_command"])
-        else:
-            # #621: unset follows Phase 1 (see the field's comment), read with
-            # VerifyConfig.load's precedence and coercion for this one key. Not
-            # a VerifyConfig.load: that re-reported every bad [verify] value as
-            # a [contract] problem naming no key. load_toml_section itself
-            # still refuses nan/inf ANYWHERE in the [verify] table (#571,
-            # section_table), which is a defect in a field [contract] never
-            # reads; [verify]'s own load already reports that once, so a
-            # second [contract] report of the same defect under a key it does
-            # not own is suppressed here, not surfaced twice.
-            try:
-                verify = load_toml_section(resolve_config_file(root_dir), "verify")
-            except BudgetConfigError:
-                verify = {}
-            configured = os.environ.get("KSTRL_VERIFY_TEST_CMD", verify.get("test_command"))
-            config.test_command = resolve_test_command(
-                None if configured is None else str(configured), root_dir
-            )
         if "timeout" in section:
             config.timeout = float(section["timeout"])
         if "KSTRL_CONTRACT_MODE" in os.environ:
             config.mode = os.environ["KSTRL_CONTRACT_MODE"]
-        if "KSTRL_CONTRACT_TEST_CMD" in os.environ:
-            config.test_command = os.environ["KSTRL_CONTRACT_TEST_CMD"]
         if "KSTRL_TIMEOUT_CONTRACT" in os.environ:
             config.timeout = float(os.environ["KSTRL_TIMEOUT_CONTRACT"])
         # Re-validate after assignment (env / toml may have introduced typos)
         config.__post_init__()
         config.project_stack = stack_in_force(root_dir)
-        if config.project_stack is not None:
-            config.test_command = ""
         return check_numbers(config)
 
 
@@ -306,56 +269,23 @@ def _remove_temp_worktree(
             pass
 
 
-def _run_tests(
-    cwd: Path,
-    test_command: str,
-    timeout: float | None,
-) -> tuple[bool, str]:
-    """Run test suite and return (passed, output)."""
-    if not test_command.strip():
-        # #621: the shell runs "" and exits 0, which passed every tier with
-        # no test run. Unset, [contract] test_command follows [verify]
-        # test_command, and "" there turns the Phase 1 gate off.
-        return False, (
-            "Phase 3 has no test command: [contract] test_command is empty (unset, "
-            "it is the command [verify] test_command resolves to). Nothing ran. "
-            'Set [contract] test_command, or [contract] mode = "skip".'
-        )
-    try:
-        result = run_scrubbed(test_command, cwd=cwd, timeout=timeout)
-        output = (result.stdout + result.stderr).strip()
-        if result.returncode == 5:
-            # pytest's EXIT_NOTESTSCOLLECTED. Nothing failed; nothing ran.
-            # #435 recorded one of these as "contract tests failed" with
-            # an install line as the evidence, which is the wrong
-            # sentence about the wrong event.
-            output = (
-                "The test command exited 5, which is pytest's code for "
-                f"'no tests were collected': nothing failed and nothing ran. "
-                f"Command: {test_command}\n{output}"
-            )
-        return result.returncode == 0, output
-    except subprocess.TimeoutExpired:
-        return False, f"Test suite timed out after {timeout}s"
-    except ChildOutputDecodeError as exc:
-        return False, f"Test suite output could not be decoded: {exc}"
+#: Phase 3's evidence when no ``[stack]`` names a check to run (#696 slice
+#: 4). Every entry point refuses first; this is what a caller that built a
+#: ContractConfig with no stack gets: a failure, never a pass on nothing.
+NO_STACK_PHASE_3 = "Phase 3 ran nothing: " + NO_STACK
 
 
 def _run_checks(
-    cwd: Path,
-    test_command: str,
-    timeout: float | None,
-    stack: Stack | None,
-    rung: Rung | None,
+    cwd: Path, timeout: float | None, stack: Stack | None, rung: Rung | None
 ) -> tuple[bool, str]:
     """Phase 3's verdict on ``cwd`` and its evidence.
 
-    Under a ``[stack]`` every one of its checks runs, in order, each judged
-    by its exit status (#696 decisions 4 and 10); the evidence is each
-    failing check's message and output. Without one, the test command.
+    Every ``[stack]`` check runs, in order, each judged by its exit status
+    (#696 decisions 4 and 10); the evidence is each failing check's message
+    and output. With no stack nothing runs and the verdict is a failure.
     """
     if stack is None:
-        return _run_tests(cwd, test_command, timeout)
+        return False, NO_STACK_PHASE_3
     rows = [
         check_stack_command(cwd, stack, name, command, timeout, rung)
         for name, command in stack.checks
@@ -370,7 +300,6 @@ def bisect_breaker(
     prior_branches: list[str],
     tier_branches: list[tuple[str, str]],
     root_dir: Path,
-    test_command: str,
     ui: UI,
     timeout: float | None = None,
     setup: WorktreeSetup = NO_SETUP,
@@ -389,13 +318,12 @@ def bisect_breaker(
         prior_branches: Already-tested branches from prior tiers
         tier_branches: List of (component_id, branch_name) for current tier
         root_dir: Repository root
-        test_command: Command to run tests
         ui: Where the removal of the bisection worktree names what it killed
         timeout: Timeout per test run
         setup: Worktree setup run after each merge, before its test run
             (#624); a failed setup ends the bisection with no breaker
-        stack: The project's ``[stack]``, whose checks run instead of
-            ``test_command`` (#696)
+        stack: The project's ``[stack]``, whose checks run after each
+            merge (#696)
 
     Returns:
         Component ID of the breaker, or None if unclear.
@@ -421,7 +349,7 @@ def bisect_breaker(
 
             if setup.prepare(worktree_path):
                 return None
-            passed, _ = _run_checks(worktree_path, test_command, timeout, stack, rung)
+            passed, _ = _run_checks(worktree_path, timeout, stack, rung)
             if not passed:
                 return comp_id
 
@@ -518,11 +446,7 @@ def run_tier_check(
 
         # Run tests
         passed, output = _run_checks(
-            worktree_path,
-            config.test_command,
-            limit_seconds(config.timeout),
-            config.project_stack,
-            config.rung,
+            worktree_path, limit_seconds(config.timeout), config.project_stack, config.rung
         )
 
         if passed:
@@ -551,7 +475,6 @@ def run_tier_check(
         prior_branches,
         tier_branches,
         root_dir,
-        config.test_command,
         ui,
         limit_seconds(config.timeout),
         setup,
@@ -638,11 +561,7 @@ def run_integrated_base_check(
         passed = False
         if not output:
             passed, output = _run_checks(
-                worktree_path,
-                config.test_command,
-                limit_seconds(config.timeout),
-                config.project_stack,
-                config.rung,
+                worktree_path, limit_seconds(config.timeout), config.project_stack, config.rung
             )
     finally:
         _remove_temp_worktree(worktree_path, root_dir, ui, "contract")

@@ -39,6 +39,7 @@ from kstrl.manifest import Manifest
 from kstrl.ui.plain import PlainUI
 from tests import test_merge_gate_park as park
 from tests.helpers.procs import kill_group, wait_for_line
+from tests.helpers.stack_confirmation import confirm_stack, write_stack
 from tests.test_build_manifest_preflight import MANIFESTS, greenfield, run_ks
 from tests.test_decompose import VALID_DECOMPOSE_OUTPUT
 from tests.test_retry_carries_flags import RUN_FLAGS, _env, _failed_run, _ks, _repo
@@ -570,6 +571,9 @@ class TestApprovingAParkedMergeHoldsTheLockIntoTheDependentRun:
 class TestDecomposeWritesNoManifestUnderALiveRun:
     def _decompose(self, tmp_path: Path) -> tuple[Path, str, bytes]:
         root = greenfield(tmp_path, extra={"pyproject.toml": MANIFESTS["pyproject.toml"]})
+        # `ks factory` refuses before it reaches the lock without a confirmed [stack].
+        write_stack(root)
+        confirm_stack(root)
         reply = tmp_path / "architect.json"
         reply.write_text(VALID_DECOMPOSE_OUTPUT, encoding="utf-8")
         manifest = _manifest_file(root)

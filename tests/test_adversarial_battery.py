@@ -26,10 +26,11 @@ from pathlib import Path
 from typing import Any
 
 from kstrl.fixtures import FixturesConfig
-from kstrl.verify import VerifyConfig, check_test_suite, run_mechanical_verification
+from kstrl.verify import VerifyConfig, check_stack_command, run_mechanical_verification
+from tests.helpers.stack_confirmation import in_process_stack
 
 # The toy project's pytest must resolve inside the scrubbed env
-# (run_scrubbed keeps PATH/VIRTUAL_ENV), so invoke it via the harness
+# (run_scrubbed keeps PATH, not VIRTUAL_ENV, since #696), so invoke it via the harness
 # interpreter rather than assuming a `pytest` shim on PATH.
 _PYTEST_CMD = f"{sys.executable} -m pytest -q -p no:cacheprovider"
 
@@ -76,9 +77,7 @@ def _write_prd(root: Path) -> Path:
 
 def _verify_config() -> VerifyConfig:
     return VerifyConfig(
-        test_command=_PYTEST_CMD,
-        typecheck_command=_NOOP,
-        lint_command=_NOOP,
+        project_stack=in_process_stack({"tests": _PYTEST_CMD, "typecheck": _NOOP, "lint": _NOOP}),
         # Scope/pattern checks need a git worktree; they have their own
         # battery entries (see module docstring) and are not under test here.
         check_diff_scope=False,
@@ -122,7 +121,7 @@ class TestTautologicalTestCaught:
 
         result = _run(tmp_path, prd_path)
 
-        assert _check(result, "test_suite").passed, (
+        assert _check(result, "stack:tests").passed, (
             "precondition broken: the tautological suite must pass pytest "
             "for this scenario to prove anything"
         )
@@ -152,7 +151,7 @@ class TestConftestDeselectCaught:
 
         result = _run(tmp_path, prd_path)
 
-        assert _check(result, "test_suite").passed, (
+        assert _check(result, "stack:tests").passed, (
             "precondition broken: the conftest must hide the failing test "
             "for this scenario to prove anything"
         )
@@ -164,5 +163,7 @@ class TestConftestDeselectCaught:
         # Prove the conftest was the gaming vector: without it the same
         # suite fails on its own.
         (tmp_path / "conftest.py").unlink()
-        honest, _ = check_test_suite(tmp_path, _PYTEST_CMD, timeout=120.0)
+        stack = _verify_config().project_stack
+        assert stack is not None
+        honest = check_stack_command(tmp_path, stack, "tests", _PYTEST_CMD, 120.0)
         assert not honest.passed

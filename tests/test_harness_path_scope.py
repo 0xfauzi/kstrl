@@ -60,6 +60,7 @@ from kstrl.ui.plain import PlainUI
 from kstrl.verify import check_diff_scope
 from tests.helpers import gitrepo
 from tests.helpers.component_prd import write_component_prd
+from tests.helpers.stack_confirmation import in_process_stack
 from tests.test_progress_scope import _base_config, _pipeline
 
 COMPONENT_ID = "document-format"
@@ -576,6 +577,9 @@ class TestPreflightComponentScope:
                     retry_delay=0,
                     review_mode="skip",
                     progress_log_path=tmp_path / "progress.jsonl",
+                    project_stack=in_process_stack(
+                        {"tests": "true", "typecheck": "true", "lint": "true"}
+                    ),
                 ),
                 base,
                 ui,
@@ -609,6 +613,9 @@ class TestPreflightComponentScope:
                     retry_delay=0,
                     review_mode="skip",
                     progress_log_path=tmp_path / "progress.jsonl",
+                    project_stack=in_process_stack(
+                        {"tests": "true", "typecheck": "true", "lint": "true"}
+                    ),
                 ),
                 _base_config(tmp_path),
                 PlainUI(no_color=True, file=io.StringIO()),
@@ -660,6 +667,9 @@ class TestStandaloneLoops:
                     retry_delay=0,
                     review_mode="skip",
                     progress_log_path=tmp_path / "progress.jsonl",
+                    project_stack=in_process_stack(
+                        {"tests": "true", "typecheck": "true", "lint": "true"}
+                    ),
                 ),
                 base,
                 PlainUI(no_color=True, file=io.StringIO()),

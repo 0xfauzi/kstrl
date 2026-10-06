@@ -228,23 +228,9 @@ def _engineer(tmp_path: Path) -> str:
     Reuses the sibling driver rather than re-assembling ``run_loop`` by
     hand: ``scaffold_prompt=False`` leaves no prompt.md, so the harness
     ``DEFAULT_PROMPT`` fallback is what gets substituted and digested,
-    which is what an un-customised project runs.
-    """
-    root = tmp_path / "proj"
-    root.mkdir(parents=True, exist_ok=True)
-    (root / "CLAUDE.md").write_text(_CLAUDE_MD, encoding="utf-8")
-    prompt = _engineer_prompt(
-        root,
-        VerifyConfig(test_command="T", typecheck_command="TC", lint_command="L"),
-        scaffold_prompt=False,
-    )
-    return prompt.replace(str(root), "<ROOT>")
-
-
-def _engineer_under_a_stack(tmp_path: Path) -> str:
-    """The engineer of a project with a ``[stack]`` (#696): ``run_loop``
-    again, where the stack's block takes the place of the resolved gate
-    commands, so STACK_PROMPT is delivered here and nowhere else."""
+    which is what an un-customised project runs. Since #696 slice 4 every
+    engineer runs under a confirmed ``[stack]``, so the stack's block is
+    the only verification text the engineer receives."""
     root = tmp_path / "proj"
     root.mkdir(parents=True, exist_ok=True)
     (root / "CLAUDE.md").write_text(_CLAUDE_MD, encoding="utf-8")
@@ -330,19 +316,14 @@ _ROLES: dict[str, _Role] = {
         "f7b64117a9d1281e44a064101e67c8eaa639bbb4263b14b33a90cd68f2ac546b",
         4069,
     ),
+    # #696 slice 4: one engineer row. Every engineer runs under a confirmed
+    # [stack], and VERIFY_COMMANDS_PROMPT is retired. Pinned by running
+    # this test.
     "engineer": _Role(
         _engineer,
-        frozenset({"DEFAULT_PROMPT", "VERIFY_COMMANDS_PROMPT"}),
-        "893a388672aa4fcc4e5b7855258e7c7746aa0ebb02c3ede44c417c70c53760c7",
-        5346,
-    ),
-    # #696: the engineer under a [stack]; the stack block replaces the
-    # VERIFY_COMMANDS_PROMPT block. Pinned by running this test.
-    "engineer-stack": _Role(
-        _engineer_under_a_stack,
         frozenset({"DEFAULT_PROMPT", "STACK_PROMPT"}),
-        "eca71d39c4c06784fbf50b06630a10f9737ade6877d1e7de4bb06369822530bb",
-        5380,
+        "063c860c645d5cde91dddd981ea5c958ff3e8736f7cb70364b40876bd2a210cb",
+        5298,
     ),
     "gepa-reflection": _Role(
         # The template as run_optimization hands it to gepa. The library

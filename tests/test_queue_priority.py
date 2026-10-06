@@ -26,6 +26,7 @@ from kstrl.cli import cli
 from kstrl.serve import RunOutcome, RunSpend
 from kstrl.workqueue import ItemState, Queue, QueueConfig, QueueItem, queue_root
 from tests.helpers.procs import kill_group, wait_for_line
+from tests.helpers.stack_confirmation import confirm_stack, write_stack
 
 #: Nothing here is about flow control; the fixture's docstring in
 #: tests/conftest.py says why the R10.7 bound has to be held open.
@@ -58,6 +59,13 @@ def _no_spend_and_a_named_operator(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _queue(root: Path) -> Queue:
     return Queue(root, QueueConfig())
+
+
+@pytest.fixture(autouse=True)
+def _confirmed_stack(tmp_path: Path) -> None:
+    """`ks serve` claims nothing until a [stack] is confirmed (#696 flag day)."""
+    write_stack(tmp_path)
+    confirm_stack(tmp_path)
 
 
 def _invoke(args: list[str], root: Path) -> Result:

@@ -20,6 +20,7 @@ import pytest
 from kstrl.manifest import Component, Manifest
 from kstrl.serve import RunOutcome, Verdict, classify_run, run_supervised
 from tests.helpers.gitrepo import git_in, set_identity
+from tests.helpers.stack_confirmation import confirm_stack, write_stack
 from tests.test_cli_conventions import _child_env
 
 MANIFEST = "scripts/kstrl/manifest.json"
@@ -37,14 +38,16 @@ INVALID_GRAPHS: dict[str, tuple[list[tuple[str, list[str]]], str]] = {
 
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
-    """A repository on `main` with one commit, and nothing kstrl wrote."""
+    """A repository on `main` with one commit and a confirmed [stack]."""
     repo = tmp_path / "repo"
     repo.mkdir()
     git_in(repo, "init", "-q", "-b", "main")
     set_identity(repo)
     (repo / "f.txt").write_text("x\n", encoding="utf-8")
-    git_in(repo, "add", "f.txt")
+    write_stack(repo)
+    git_in(repo, "add", "f.txt", "kstrl.toml")
     git_in(repo, "commit", "-q", "-m", "init")
+    confirm_stack(repo)
     return repo
 
 

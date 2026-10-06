@@ -62,6 +62,7 @@ from kstrl.tui.screens.quit import QuitModal
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
 from tests.helpers.settle import drained, settled
+from tests.helpers.stack_confirmation import in_process_stack
 from tests.test_retry_carries_flags import _repo
 from tests.test_retry_lock_discipline import _LOCK_PROBING_ENGINEER
 
@@ -624,8 +625,11 @@ class TestRunFactoryEmbeddedHandsTheCallersLockIn:
             max_retries=0,
             create_prs=False,
             review_mode="skip",
+            project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
             verify_config=VerifyConfig(
-                test_command="true", typecheck_command="true", lint_command="true"
+                project_stack=in_process_stack(
+                    {"tests": "true", "typecheck": "true", "lint": "true"}
+                ),
             ),
             contract_config=ContractConfig(mode="skip"),
         )

@@ -61,6 +61,7 @@ from typing import TYPE_CHECKING
 from kstrl.adequacy import AdequacyConfig
 from kstrl.verify import VerifyConfig, run_mechanical_verification
 from tests.conftest import make_review_repo
+from tests.helpers.stack_confirmation import in_process_stack
 
 if TYPE_CHECKING:
     from kstrl.verify import CheckResult, NotMeasured, VerificationResult
@@ -180,9 +181,13 @@ def run_adequacy(
         base_branch,
         None,
         VerifyConfig(
-            test_command=test_command or f"{shlex.quote(sys.executable)} -m pytest",
-            typecheck_command="true",
-            lint_command="true",
+            project_stack=in_process_stack(
+                {
+                    "tests": test_command or f"{shlex.quote(sys.executable)} -m pytest",
+                    "typecheck": "true",
+                    "lint": "true",
+                }
+            ),
             check_diff_scope=False,
             check_bad_patterns=False,
             subprocess_timeout=subprocess_timeout,

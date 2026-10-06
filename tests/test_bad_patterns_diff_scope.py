@@ -30,6 +30,7 @@ from kstrl import policy, verify
 from kstrl.verify import VerifyConfig, check_bad_patterns, run_mechanical_verification
 from tests.conftest import ReviewRepo, make_review_repo
 from tests.helpers import gitrepo
+from tests.helpers.stack_confirmation import in_process_stack
 
 #: The ``sk-`` fixture string this suite already carries, reused verbatim.
 SK_KEY = "sk-abcdefghijklmnopqrstuvwxyz"
@@ -196,9 +197,7 @@ def test_run_mechanical_verification_passes_the_envelopes_configured_patterns_to
         files={"app.py": 'VALUE = 1\nTOKEN = "zzplant-123456"\n'},
     )
     config = VerifyConfig(
-        test_command="true",
-        typecheck_command="true",
-        lint_command="true",
+        project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
         subprocess_timeout=30.0,
     )
     policy_config = policy.PolicyConfig(enabled=False, secret_patterns=["zzplant-[0-9]{6}"])
@@ -453,9 +452,7 @@ def test_mechanical_verification_does_not_fail_on_a_preexisting_syntax_error(
         files={"legacy.py": f"{BROKEN}# an unrelated comment\n"},
     )
     config = VerifyConfig(
-        test_command="true",
-        typecheck_command="true",
-        lint_command="true",
+        project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
         subprocess_timeout=30.0,
     )
 
