@@ -546,6 +546,21 @@ def test_a_recheck_runs_the_saved_checks_again_and_takes_no_file_on_trust(
     assert code == 1, out
     assert "- greets-bob: the record says pass, its exits say pass, the recheck says fail" in out
     assert "The recheck disagrees with the record on greets-bob." in out, out
+    # Only the exits rewritten: the stated verdict and the new run still
+    # agree, but the record contradicts its own exits.
+    forged = json.loads(kept["record.json"])
+    ada = _row(forged, "greets-ada")
+    ada["headExits"] = [1] * len(ada["headExits"])
+    path.write_text(json.dumps(forged), encoding="utf-8")
+    _reindex(evidence, "record.json")
+    code, out = _recheck(root, path)
+    assert code == 1, out
+    assert "- greets-ada: the record says pass, its exits say fail, the recheck says pass" in out
+    # A record that is not JSON at all refuses; it is not a traceback.
+    path.write_text("not json\n", encoding="utf-8")
+    code, out = _recheck(root, path)
+    assert code == 2, out
+    assert f"{path} cannot be read" in out, out
     for name, data in kept.items():
         (evidence / name).write_bytes(data)
 
