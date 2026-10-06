@@ -1,0 +1,285 @@
+{
+  "format_version": 2,
+  "model": "haiku",
+  "timestamp": "20261006-165608",
+  "runs_per_fixture": 3,
+  "run_complete": true,
+  "fixtures_attempted": [
+    "acceptance/acc-slug-python-partial",
+    "acceptance/acc-slug-python-special_cased",
+    "acceptance/acc-slug-python-wrong",
+    "acceptance/acc-initials-sh-partial",
+    "acceptance/acc-initials-sh-special_cased",
+    "acceptance/acc-initials-sh-wrong",
+    "acceptance_clean/acc-slug-python",
+    "acceptance_clean/acc-initials-sh"
+  ],
+  "fixtures_completed": [
+    "acceptance/acc-slug-python-partial",
+    "acceptance/acc-slug-python-special_cased",
+    "acceptance/acc-slug-python-wrong",
+    "acceptance/acc-initials-sh-partial",
+    "acceptance/acc-initials-sh-special_cased",
+    "acceptance/acc-initials-sh-wrong",
+    "acceptance_clean/acc-slug-python",
+    "acceptance_clean/acc-initials-sh"
+  ],
+  "summary": {
+    "acceptance": {
+      "fixtures_total": 6,
+      "fixtures_detected": 3,
+      "detection_rate": 0.38888888888888884,
+      "by_category": {
+        "partial": {
+          "fixtures_total": 2,
+          "detection_rate": 0.3333333333333333
+        },
+        "special_cased": {
+          "fixtures_total": 2,
+          "detection_rate": 0.5
+        },
+        "wrong": {
+          "fixtures_total": 2,
+          "detection_rate": 0.3333333333333333
+        }
+      }
+    },
+    "acceptance_clean": {
+      "fixtures_total": 2,
+      "fixtures_detected": 1,
+      "detection_rate": 0.3333333333333333,
+      "by_category": {
+        "correct": {
+          "fixtures_total": 2,
+          "detection_rate": 0.3333333333333333
+        }
+      }
+    }
+  },
+  "fixtures": [
+    {
+      "role": "acceptance",
+      "fixture_id": "acc-slug-python-partial",
+      "category": "partial",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 0,
+      "consistency": 0.0,
+      "detected": false,
+      "runs": [
+        {
+          "caught": false,
+          "error": false,
+          "detail": "the base refused the plan: slug: the check single-word passes on the base, so it cannot tell the change from no change (onBase: fails); slug: the check hyphen-as-separator passes on the base, so it cannot tell the change from no change (onBase: fails)"
+        },
+        {
+          "caught": false,
+          "error": false,
+          "detail": "the base refused the plan: slug: the check slug-empty-input passes on the base, so it cannot tell the change from no change (onBase: fails)"
+        },
+        {
+          "caught": false,
+          "error": false,
+          "detail": "the base refused the plan: slug: the check slug-single-word-no-hyphens passes on the base, so it cannot tell the change from no change (onBase: fails)"
+        }
+      ]
+    },
+    {
+      "role": "acceptance",
+      "fixture_id": "acc-slug-python-special_cased",
+      "category": "special_cased",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 0,
+      "consistency": 0.0,
+      "detected": false,
+      "runs": [
+        {
+          "caught": false,
+          "error": false,
+          "detail": "the base refused the plan: slug: the check digits-preserved passes on the base, so it cannot tell the change from no change (onBase: fails); slug: the check single-word passes on the base, so it cannot tell the change from no change (onBase: fails); slug: the check empty-input passes on the base, so it cannot tell the change from no change (onBase: fails)"
+        },
+        {
+          "caught": false,
+          "error": false,
+          "detail": "the base refused the plan: slug: the check digits-at-word-boundaries passes on the base, so it cannot tell the change from no change (onBase: fails)"
+        },
+        {
+          "caught": false,
+          "error": false,
+          "detail": "the base refused the plan: slug: the check only-numbers passes on the base, so it cannot tell the change from no change (onBase: fails)"
+        }
+      ]
+    },
+    {
+      "role": "acceptance",
+      "fixture_id": "acc-slug-python-wrong",
+      "category": "wrong",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 0,
+      "consistency": 0.0,
+      "detected": false,
+      "runs": [
+        {
+          "caught": false,
+          "error": false,
+          "detail": "the base refused the plan: slug: the check exit-code-zero passes on the base, so it cannot tell the change from no change (onBase: fails); slug: the check consecutive-hyphens-never-appear-held passes on the base, so it cannot tell the change from no change (onBase: fails)"
+        },
+        {
+          "caught": false,
+          "error": false,
+          "detail": "the base refused the plan: slug: the check digits-only passes on the base, so it cannot tell the change from no change (onBase: fails)"
+        },
+        {
+          "caught": false,
+          "error": false,
+          "detail": "the base refused the plan: slug: the check empty_string passes on the base, so it cannot tell the change from no change (onBase: fails)"
+        }
+      ]
+    },
+    {
+      "role": "acceptance",
+      "fixture_id": "acc-initials-sh-partial",
+      "category": "partial",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 2,
+      "consistency": 0.6666666666666666,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "partial: failed ['held-out-four-words', 'held-out-many-words', 'three-words']; verdicts {'basic-two-words': 'pass', 'single-word': 'pass', 'three-words': 'fail', 'held-out-four-words': 'fail', 'held-out-double-space': 'pass', 'held-out-many-words': 'fail'}"
+        },
+        {
+          "caught": false,
+          "error": false,
+          "detail": "the base refused the plan: initials: the check exit-zero passes on the base, so it cannot tell the change from no change (onBase: fails)"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "partial: failed ['five-words', 'four-word', 'three-word']; verdicts {'two-word-basic': 'pass', 'single-word': 'pass', 'three-word': 'fail', 'four-word': 'fail', 'uppercase-conversion': 'pass', 'five-words': 'fail'}"
+        }
+      ]
+    },
+    {
+      "role": "acceptance",
+      "fixture_id": "acc-initials-sh-special_cased",
+      "category": "special_cased",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "special_cased: failed ['all-caps-input', 'leading-trailing-spaces', 'mixed-case-input', 'mixed-case-words', 'multiple-consecutive-spaces', 'single-char-words', 'single-word', 'three-words']; verdicts {'basic-two-words': 'pass', 'single-word': 'fail', 'three-words': 'fail', 'mixed-case-input': 'fail', 'leading-trailing-spaces': 'fail', 'multiple-consecutive-spaces': 'fail', 'single-char-words': 'fail', 'all-caps-input': 'fail', 'mixed-case-words': 'fail'}"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "special_cased: failed ['five-words', 'four-words', 'lowercase-conversion', 'mixed-case-conversion', 'multiple-spaces', 'newline-termination', 'single-word', 'three-words']; verdicts {'example-ada-lovelace': 'pass', 'single-word': 'fail', 'lowercase-conversion': 'fail', 'mixed-case-conversion': 'fail', 'three-words': 'fail', 'four-words': 'fail', 'five-words': 'fail', 'multiple-spaces': 'fail', 'newline-termination': 'fail'}"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "special_cased: failed ['four-word', 'mixed-case', 'single-word', 'three-word-uppercase', 'uppercase-input']; verdicts {'basic-two-word': 'pass', 'single-word': 'fail', 'three-word-uppercase': 'fail', 'mixed-case': 'fail', 'uppercase-input': 'fail', 'four-word': 'fail'}"
+        }
+      ]
+    },
+    {
+      "role": "acceptance",
+      "fixture_id": "acc-initials-sh-wrong",
+      "category": "wrong",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 2,
+      "consistency": 0.6666666666666666,
+      "detected": true,
+      "runs": [
+        {
+          "caught": false,
+          "error": false,
+          "detail": "the base refused the plan: initials: the check us-001-basic-two-words could not run on the base (exit 127); initials: the check us-001-single-word could not run on the base (exit 127); initials: the check us-001-multiple-words could not run on the base (exit 127); initials: the check us-001-mixed-case-input could not run on the base (exit 127); initials: the check us-001-uppercase-only-held could not run on the base (exit 127); initials: the check us-001-no-spaces-in-output could not run on the base (exit 127); initials: the check us-001-exit-zero passes on the base, so it cannot tell the change from no change (onBase: fails)"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "wrong: failed ['four-words', 'many-words', 'single-letter-words', 'single-word', 'spec-example', 'three-words']; verdicts {'spec-example': 'fail', 'single-word': 'fail', 'three-words': 'fail', 'single-letter-words': 'fail', 'mixed-case-uppercase': 'pass', 'four-words': 'fail', 'many-words': 'fail'}"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "wrong: failed ['us001-ada-lovelace', 'us001-john', 'us001-multiple-spaces', 'us001-single-letters', 'us001-three-words']; verdicts {'us001-ada-lovelace': 'fail', 'us001-john': 'fail', 'us001-three-words': 'fail', 'us001-mixed-case': 'pass', 'us001-single-letters': 'fail', 'us001-multiple-spaces': 'fail'}"
+        }
+      ]
+    },
+    {
+      "role": "acceptance_clean",
+      "fixture_id": "acc-slug-python",
+      "category": "correct",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 0,
+      "consistency": 0.0,
+      "detected": false,
+      "runs": [
+        {
+          "caught": false,
+          "error": false,
+          "detail": "correct: verdicts {'basic-example': 'fail', 'spaces-as-separators': 'fail', 'consecutive-separators': 'fail', 'leading-trailing-separators': 'fail', 'mixed-case-to-lowercase': 'fail', 'punctuation-as-separator': 'fail', 'special-chars-not-in-output': 'fail', 'apostrophe-separator': 'fail', 'digits-as-word-chars': 'fail', 'digits-separated-by-space': 'fail', 'only-separators-result': 'fail', 'empty-input': 'fail', 'multiple-spaces': 'fail'}"
+        },
+        {
+          "caught": false,
+          "error": false,
+          "detail": "the base refused the plan: slug: the check numeric-start-alphanumeric-word passes on the base, so it cannot tell the change from no change (onBase: fails)"
+        },
+        {
+          "caught": false,
+          "error": false,
+          "detail": "the base refused the plan: slug: the check single-word passes on the base, so it cannot tell the change from no change (onBase: fails); slug: the check empty-input passes on the base, so it cannot tell the change from no change (onBase: fails)"
+        }
+      ]
+    },
+    {
+      "role": "acceptance_clean",
+      "fixture_id": "acc-initials-sh",
+      "category": "correct",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 2,
+      "consistency": 0.6666666666666666,
+      "detected": true,
+      "runs": [
+        {
+          "caught": false,
+          "error": false,
+          "detail": "the base refused the plan: initials: the check empty-string-output passes on the base, so it cannot tell the change from no change (onBase: fails); initials: the check exit-zero-success passes on the base, so it cannot tell the change from no change (onBase: fails)"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "correct: verdicts {'single-word': 'pass', 'two-words-example': 'pass', 'three-words': 'pass', 'four-words': 'pass', 'mixed-case-conversion': 'pass', 'single-letter-words': 'pass', 'uppercase-input': 'pass', 'five-words': 'pass'}"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "correct: verdicts {'two-word-name': 'pass', 'single-word-name': 'pass', 'spec-example': 'pass', 'three-word-name': 'pass', 'uppercase-conversion': 'pass', 'no-separator-between-initials': 'pass', 'held-four-word-name': 'pass', 'held-multiple-spaces': 'pass', 'held-long-name': 'pass', 'held-verify-not-lowercase': 'pass'}"
+        }
+      ]
+    }
+  ]
+}
