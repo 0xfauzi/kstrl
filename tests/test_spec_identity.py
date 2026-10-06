@@ -463,7 +463,8 @@ class TestManifestsWithoutAPin:
         digest cannot show which text it was made from, so it runs nothing."""
         root = _handmade_repo(tmp_path)
         data = _raw_manifest(root)
-        data["specFile"] = "spec.md"
+        # A name no fixture uses, so a message that hard-codes the default fails.
+        data["specFile"] = "product.md"
         assert "specDigest" not in data
         _manifest_path(root).write_text(json.dumps(data), encoding="utf-8")
 
@@ -473,7 +474,8 @@ class TestManifestsWithoutAPin:
         assert proc.returncode == 2, out
         assert _engineer_ran(tmp_path) == [], out
         assert STALE in out and UNPINNED in out, out
-        assert "ks factory --spec <path to spec.md> --project-name p" in out, out
+        assert "made from product.md before kstrl pinned specs" in out, out
+        assert "ks factory --spec <path to product.md> --project-name p" in out, out
 
     def test_approving_a_plan_park_from_before_the_pin_records_nothing(
         self, tmp_path: Path
