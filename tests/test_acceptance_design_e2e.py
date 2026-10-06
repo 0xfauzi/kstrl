@@ -40,6 +40,7 @@ from tests.test_acceptance_e2e import (
     _head_record,
     _manifest,
     _recheck,
+    _reindex,
     _row,
     _with_greet,
 )
@@ -369,6 +370,15 @@ def test_a_designed_check_that_passes_on_the_base_is_removed_and_the_others_run(
     assert code == 0, out
     assert "The recheck agrees with the record." in out, out
     assert "vacuous" not in out, out
+    # A designed record leaves out only the checks it lists as removed: one
+    # that drops a kept check and does not list it refuses.
+    forged = json.loads(path.read_text(encoding="utf-8"))
+    forged["checks"] = [_row(forged, "greets-ada")]
+    path.write_text(json.dumps(forged), encoding="utf-8")
+    _reindex(path.parent, "record.json")
+    code, out = _recheck(root, path)
+    assert code == 2, out
+    assert f"{path} does not name the checks of its plan's {COMP}" in out, out
 
 
 @runs_a_stack
