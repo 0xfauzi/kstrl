@@ -244,7 +244,9 @@ class TestWizardScreen:
             )
             rendered = self._rendered(app)
             assert "runs nothing" in rendered
-            assert "pytest" not in rendered
+            # The old language default, not the bare word: the screen also
+            # shows the root, and a pytest tmp_path is named pytest-of-<user>.
+            assert "uv run pytest" not in rendered
         finally:
             await self._pilot_ctx.__aexit__(None, None, None)
 

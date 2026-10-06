@@ -44,6 +44,7 @@ from kstrl.config import KstrlConfig
 from kstrl.events import RunPaths
 from kstrl.factory import ComponentResult, FactoryConfig, run_factory
 from kstrl.manifest import Component, Manifest
+from kstrl.rung import HostFallback
 from kstrl.runstate import RunState
 from kstrl.statedir import plan_prd_path
 from kstrl.ui.plain import PlainUI
@@ -286,7 +287,10 @@ class TestTheWholeSubmitTupleIsBound:
         if max_parallel > 1:
             setup = bound["setup"]
             assert (setup.command, setup.timeout, setup.env, setup.refusal) == ("", 0.0, (), "")
-            assert setup.rung is not None and setup.rung.zone == "setup"
+            # A proven rung's setup zone, or the host fallback on a platform
+            # with no prover (#733), which has no zone.
+            assert setup.rung is not None
+            assert isinstance(setup.rung, HostFallback) or setup.rung.zone == "setup"
 
         assert bound["scope"].__class__.__name__ == "ComponentScope"
         assert bound["token_budget"].__class__.__name__ == "LoopBudget"

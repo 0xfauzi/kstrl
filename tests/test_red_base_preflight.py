@@ -658,7 +658,10 @@ def test_doctor_runs_a_repo_command_only_under_measure(tmp_path: Path) -> None:
     assert plain_code == 0, plain
     assert json.loads(plain)["base_gates"] is None
     assert after_plain == ""
-    assert log.read_text(encoding="utf-8") == "ran\n"
+    # --measure runs the check at least once: the base gates on the host,
+    # and on a platform with no prover the stack's clean replay too (#733),
+    # so the count is per platform and the presence is the subject.
+    assert "ran" in log.read_text(encoding="utf-8")
 
 
 def test_doctor_measure_reads_the_base_branch_not_the_checkout(tmp_path: Path) -> None:
