@@ -21,8 +21,10 @@ import pytest
 from click.testing import CliRunner, Result
 
 from kstrl.cli import cli
+from kstrl.stack import stack_toml
 from tests.conftest import snapshot_kstrl_dir
 from tests.helpers import gitrepo
+from tests.helpers.stack_confirmation import confirm_stack, in_process_stack
 from tests.spine_utils import git
 
 _OK_COMMAND = f"{sys.executable} -c 'print(1)'"
@@ -31,17 +33,14 @@ _LINT_FAIL_COMMAND = (
 )
 
 # CheckResult.name values, read from kstrl/verify.py, not guessed.
-_ALWAYS_ON_CHECKS = {"test_suite", "typecheck", "linter", "diff_scope", "bad_patterns"}
+_ALWAYS_ON_CHECKS = {"stack:tests", "stack:typecheck", "stack:lint", "diff_scope", "bad_patterns"}
 
 
 def _kstrl_toml(lint_command: str = _OK_COMMAND) -> str:
     # json.dumps yields a valid TOML basic string for these commands
     # (the failing lint command carries embedded double quotes).
-    return (
-        "[verify]\n"
-        f"test_command = {json.dumps(_OK_COMMAND)}\n"
-        f"typecheck_command = {json.dumps(_OK_COMMAND)}\n"
-        f"lint_command = {json.dumps(lint_command)}\n"
+    return stack_toml(
+        in_process_stack({"tests": _OK_COMMAND, "typecheck": _OK_COMMAND, "lint": lint_command})
     )
 
 
@@ -61,6 +60,7 @@ def _make_repo(tmp_path: Path, lint_command: str = _OK_COMMAND) -> Path:
     (root / "kstrl.toml").write_text(_kstrl_toml(lint_command))
     git("add", "-A", cwd=root)
     git("commit", "-q", "-m", "init", cwd=root)
+    confirm_stack(root)
     return root
 
 
@@ -122,12 +122,12 @@ def test_check_reports_failure_and_exits_1(tmp_path: Path) -> None:
 
     assert result.exit_code == 1
     assert document["passed"] is False
-    linter = _check(document, "linter")
+    linter = _check(document, "stack:lint")
     assert linter["passed"] is False
     assert linter["message"]
     # The other checks still ran and still pass: no short-circuit.
-    assert _check(document, "test_suite")["passed"] is True
-    assert _check(document, "typecheck")["passed"] is True
+    assert _check(document, "stack:tests")["passed"] is True
+    assert _check(document, "stack:typecheck")["passed"] is True
 
 
 def test_check_skips_prd_checks_without_prd(tmp_path: Path) -> None:
@@ -287,7 +287,7 @@ def _dead_code_repo(tmp_path: Path) -> Path:
     bystander a `git add -A` would have swept in.
     """
     root = _make_repo(tmp_path)
-    (root / "kstrl.toml").write_text(_kstrl_toml() + "dead_code_cleanup = true\n")
+    (root / "kstrl.toml").write_text(_kstrl_toml() + "[verify]\ndead_code_cleanup = true\n")
     git("commit", "-q", "-am", "enable dead code cleanup", cwd=root)
     git("checkout", "-q", "-b", "feature", cwd=root)
     (root / "src" / "b.py").write_text("import os\n\n\ndef b() -> int:\n    return 2\n")
@@ -596,6 +596,7 @@ def test_check_does_not_demand_a_diff_no_dead_code_phase_reads(tmp_path: Path) -
     root = _diverged_repo(tmp_path)
     (root / "kstrl.toml").write_text(
         _kstrl_toml()
+        + "[verify]\n"
         + "check_diff_scope = false\n"
         + "check_bad_patterns = false\n"
         + "dead_code_cleanup = true\n"
@@ -653,6 +654,7 @@ def test_check_exit_2_outside_a_git_repository(tmp_path: Path) -> None:
     root = tmp_path / "plain"
     root.mkdir()
     (root / "kstrl.toml").write_text(_kstrl_toml())
+    confirm_stack(root)
 
     result = _invoke("--root", str(root), "--json")
 
@@ -668,19 +670,20 @@ def test_check_runs_without_git_when_no_check_reads_the_diff(
     root = tmp_path / "plain"
     root.mkdir()
     (root / "kstrl.toml").write_text(
-        _kstrl_toml() + "check_diff_scope = false\ncheck_bad_patterns = false\n"
+        _kstrl_toml() + "[verify]\ncheck_diff_scope = false\ncheck_bad_patterns = false\n"
     )
+    confirm_stack(root)
 
     result, document = _check_json(root)
 
     assert result.exit_code == 0, result.output
     assert document["passed"] is True
     names = {c["name"] for c in document["checks"]}
-    assert names == {"test_suite", "typecheck", "linter"}
-    # #620: with no git there is no diff, so which changed test files ran
-    # is not measured, and the sidecar says so rather than staying silent.
-    gaps = [(g["check"], g["reason"]) for g in document["not_measured"]]
-    assert gaps == [("tests_ran", "command_failed")]
+    assert names == {"stack:tests", "stack:typecheck", "stack:lint"}
+    # #696 decision 6: Phase 1 parsing which test files ran is a loss this
+    # slice accepts (tests/test_tests_ran_cli.py, whose only subject was
+    # that detector, was deleted). Nothing is left not-measured here.
+    assert document["not_measured"] == []
 
 
 def test_check_reports_mutation_as_not_measured_not_as_a_pass(tmp_path: Path) -> None:
@@ -695,7 +698,7 @@ def test_check_reports_mutation_as_not_measured_not_as_a_pass(tmp_path: Path) ->
     reason a human can read.
     """
     root = _make_repo(tmp_path)
-    (root / "kstrl.toml").write_text(_kstrl_toml() + "mutation_testing = true\n")
+    (root / "kstrl.toml").write_text(_kstrl_toml() + "[verify]\nmutation_testing = true\n")
 
     result, document = _check_json(root)
 
@@ -721,7 +724,7 @@ def test_check_table_names_what_it_did_not_measure(tmp_path: Path) -> None:
     the silence that omission alone leaves.
     """
     root = _make_repo(tmp_path)
-    (root / "kstrl.toml").write_text(_kstrl_toml() + "mutation_testing = true\n")
+    (root / "kstrl.toml").write_text(_kstrl_toml() + "[verify]\nmutation_testing = true\n")
 
     result = _invoke("--root", str(root), "--ui", "plain", "--no-color")
 

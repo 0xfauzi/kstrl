@@ -28,9 +28,12 @@ STANDARDS = "## Coding Standards"
 ANTIPATTERNS = "## What NOT To Do"
 
 #: sha256 of the CLAUDE.md `ks init` wrote for a Python project named
-#: "demo" with no framework, captured on a96a986e before #633 changed any
-#: text. #633 adds rows for other languages only, so this must not move.
-PYTHON_GOLDEN_SHA256 = "5d163483212e415d4d186f8595e09a96994dec62df67528da7a1b0d289b2f76c"
+#: "demo" with no framework. Captured on a96a986e before #633 changed any
+#: text (5d163483...); #633 adds rows for other languages only. Re-derived by
+#: running this test at the #696 flag day, which made the `## Verification`
+#: paragraph name the `[stack]` instead of kstrl's resolved commands
+#: (CLAUDE_MD_PROMPT_VERSION 1.2.0).
+PYTHON_GOLDEN_SHA256 = "5e65efcdbf47e18acf77c466e8ba1feab183e57b48a24af4133994f280ce77b7"
 
 
 def ks_init(root: Path) -> subprocess.CompletedProcess[str]:

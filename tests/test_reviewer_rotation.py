@@ -43,6 +43,7 @@ from kstrl.ui.plain import PlainUI
 from kstrl.verify import CheckResult, VerificationResult
 from tests.conftest import ReviewRepo
 from tests.helpers.agent_probe import set_cli_availability, stub_probe
+from tests.helpers.stack_confirmation import in_process_stack
 
 
 class MockAgent:
@@ -350,6 +351,7 @@ class TestHomogeneityWarningFires:
                 review_mode=ReviewMode.HARD.value,
                 security_config=SecurityConfig(mode="hard"),
                 create_prs=False,
+                project_stack=in_process_stack(),
             ),
             base=KstrlConfig(agent_cmd="./fake-engineer.sh"),
             ui=ui,

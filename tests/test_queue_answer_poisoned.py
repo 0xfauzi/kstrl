@@ -23,7 +23,7 @@ import pytest
 
 from kstrl.inbox import Inbox, InboxItem, ItemKind, ItemStatus
 from kstrl.workqueue import ItemState, QueueItem, short_item_id
-from tests.test_prompt_record import ONE_COMPONENT, _spec_project
+from tests.test_prompt_record import ONE_COMPONENT
 from tests.test_queue_awaiting_answer import (
     ANSWER_LINE,
     SPEC_TEXT,
@@ -35,6 +35,7 @@ from tests.test_queue_awaiting_answer import (
     _queue,
     _rows,
     _scripted_claude,
+    _spec_project,
     _streak,
 )
 from tests.test_serve_architect_spend import BLOCKER

@@ -24,6 +24,7 @@ from kstrl.fixtures import (
 from kstrl.fixtures_snapshot import check_snapshot_regression, save_snapshot
 from kstrl.prd import PRD
 from kstrl.verify import VerifyConfig, run_mechanical_verification
+from tests.helpers.stack_confirmation import in_process_stack
 
 
 def _story() -> dict[str, Any]:
@@ -828,9 +829,9 @@ def _stub_verify_config() -> VerifyConfig:
     # Stub out the heavyweight checks so the test exercises only the
     # fixtures wiring; prd_stories still runs against the real PRD file.
     return VerifyConfig(
-        test_command="echo tests-ok",
-        typecheck_command="echo mypy-ok",
-        lint_command="echo lint-ok",
+        project_stack=in_process_stack(
+            {"tests": "echo tests-ok", "typecheck": "echo mypy-ok", "lint": "echo lint-ok"}
+        ),
         check_diff_scope=False,
         check_bad_patterns=False,
     )

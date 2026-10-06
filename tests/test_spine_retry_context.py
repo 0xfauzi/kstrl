@@ -27,6 +27,7 @@ from kstrl.factory import run_factory
 from kstrl.manifest import ComponentStatus
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
+from tests.helpers.stack_confirmation import in_process_stack
 from tests.spine_utils import (
     base_config,
     component,
@@ -34,8 +35,9 @@ from tests.spine_utils import (
     init_kstrl_repo,
     make_manifest,
 )
+from tests.test_isolation_rung import runs_a_stack
 
-pytestmark = pytest.mark.spine
+pytestmark = [pytest.mark.spine, runs_a_stack]
 
 COMP = "comp-a"
 
@@ -102,9 +104,9 @@ class TestRetryContextPropagation:
                 max_retries=1,
                 progress_log_path=progress_path,
                 verify_config=VerifyConfig(
-                    test_command="true",
-                    typecheck_command="true",
-                    lint_command="true",
+                    project_stack=in_process_stack(
+                        {"tests": "true", "typecheck": "true", "lint": "true"}
+                    ),
                     check_diff_scope=True,
                     check_bad_patterns=False,
                     subprocess_timeout=10.0,
@@ -230,9 +232,9 @@ class TestRetryContextPropagation:
             factory_config(
                 max_retries=2,
                 verify_config=VerifyConfig(
-                    test_command="true",
-                    typecheck_command="true",
-                    lint_command=lint,
+                    project_stack=in_process_stack(
+                        {"tests": "true", "typecheck": "true", "lint": lint}
+                    ),
                     check_diff_scope=True,
                     check_bad_patterns=False,
                     subprocess_timeout=10.0,
@@ -258,7 +260,7 @@ class TestRetryContextPropagation:
         # the fixed scope violation is counted, not re-rendered.
         attempt3 = (cap_dir / "attempt3.prompt").read_text()
         assert "## Current failures (measured in attempt 2, verification)" in attempt3
-        assert "linter: FAIL" in attempt3
+        assert "stack:lint: FAIL" in attempt3
         assert "diff_scope" not in attempt3
         assert "evil.txt" not in attempt3
         assert "## Not re-measured" not in attempt3

@@ -41,18 +41,6 @@ from typing import Any
 
 import click
 
-# #261: the gate defaults are stated in exactly one place. Importing
-# them keeps this reference from drifting the way it had: it claimed
-# "uv run ruff check" without the path argument the gate actually
-# passes, and named only the scoped branch of the typecheck default.
-from kstrl.gateparse import GATE_FORMATS, GATE_LINT, GATE_TEST, GATE_TOOLS, GATE_TYPECHECK
-from kstrl.verify import (
-    DEFAULT_LINT_COMMAND,
-    DEFAULT_TEST_COMMAND,
-    DEFAULT_TYPECHECK_COMMAND,
-    SCOPED_TYPECHECK_COMMAND,
-)
-
 REPO_ROOT = Path(__file__).resolve().parent.parent
 README_PATH = REPO_ROOT / "README.md"
 
@@ -279,7 +267,6 @@ def _section_specs() -> list[SectionSpec]:
                     "integration_blocking",
                     "integration_max_rounds",
                     "convergence_attempts",
-                    "worktree_setup_command",
                     "worktree_setup_timeout",
                 ],
             ),
@@ -586,40 +573,16 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
         "convergence_attempts",
     ): "fail a component whose gate failure count has not fallen for this many "
     "consecutive attempts; 0 = off (#233)",
-    (
-        "factory",
-        "worktree_setup_command",
-    ): "installs a kstrl worktree's own dependencies before the engineer and every gate; "
-    "use a lockfile-respecting command; empty = none (#624)",
     ("factory", "worktree_setup_timeout"): "seconds before the worktree setup's process group "
     "is killed; 0 = no limit (#624)",
     (
         "breaker",
         "no_progress_iterations",
     ): "halt after N consecutive no-progress iterations; 0 disables (R7.5)",
-    ("breaker", "test_command"): "stall-probe command; empty = the explicit [verify] test_command, "
-    "else diff-hash only",
-    ("breaker", "test_timeout"): "seconds before the stall probe is killed",
     ("sandbox", "enabled"): "OS-sandbox the engineer, reviewer, understand and repair agent CLIs "
     "(writes scoped to the worktree); a custom agent command in one of those roles is refused "
     "(exit 2)",
     ("sandbox", "allow_network"): "re-open outbound network inside the sandbox (off = deny)",
-    # #621: "" turns the gate off, so the rendered `= ""` is NOT inert
-    # here the way it is for [paths] progress; the text says so.
-    ("verify", "test_command"): f'"" = gate off; leave the key out for {DEFAULT_TEST_COMMAND}',
-    ("verify", "typecheck_command"): (
-        f'"" = gate off; leave the key out for {SCOPED_TYPECHECK_COMMAND} when '
-        f"[tool.mypy] scopes it, else {DEFAULT_TYPECHECK_COMMAND}"
-    ),
-    ("verify", "lint_command"): f'"" = gate off; leave the key out for {DEFAULT_LINT_COMMAND}',
-    ("verify", "test_tool"): "parser for the test gate's output; empty = every parser "
-    f"({', '.join(GATE_TOOLS[GATE_TEST])}), unioned; a report format "
-    f"({', '.join(GATE_FORMATS[GATE_TEST])}) is read from the file the command writes, "
-    '> "${KSTRL_REPORT:-/dev/null}"; redirect into the file, never pipe',
-    ("verify", "typecheck_tool"): "parser for the typecheck gate's output; empty = every "
-    f"parser ({', '.join(GATE_TOOLS[GATE_TYPECHECK])}), unioned",
-    ("verify", "lint_tool"): "parser for the lint gate's output; empty = every parser "
-    f"({', '.join(GATE_TOOLS[GATE_LINT])}), unioned",
     ("verify", "check_diff_scope"): "fail on changes outside allowed paths",
     ("verify", "check_bad_patterns"): "scan the diff for secret-like patterns",
     ("verify", "dead_code_cleanup"): "optional dead-code check",
@@ -758,8 +721,6 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("security", "timeout_seconds"): "reviewer call timeout; 0 = no limit",
     ("security", "fail_threshold"): "critical | high | medium | low (hard mode)",
     ("contract", "mode"): "tier | final | skip",
-    ("contract", "test_command"): "integration test command on merged tiers; "
-    "unset = the command [verify] test_command resolves to",
     ("contract", "timeout"): "seconds per contract test run; 0 = no limit",
     ("release", "enabled"): "record a release ref; still deploys nothing (R8.7 slice 1)",
     ("release", "environment"): "deploy environment name, e.g. staging or prod",
@@ -828,17 +789,10 @@ ENUM_SENTINELS: dict[tuple[str, str], str | float | list[str]] = {
     # intake_github.repo is validated as owner/name, so the generic
     # string sentinel is rejected by the loader.
     ("intake_github", "repo"): "sentinel-owner/sentinel-repo",
-    # The three verify tool keys are validated against their gate's
-    # registered parsers, so the probe has to use a real one. The SECOND
-    # entry, never the first: the probe asserts the loaded value differs
-    # from the default, and picking the primary would still differ from
-    # None but reads as if the primary were special.
-    ("verify", "test_tool"): GATE_TOOLS[GATE_TEST][1],
-    ("verify", "typecheck_tool"): GATE_TOOLS[GATE_TYPECHECK][1],
-    ("verify", "lint_tool"): GATE_TOOLS[GATE_LINT][1],
-    # Validated against the three gate names, so the generic list
-    # sentinel ["sentinel/path/"] is refused by the loader.
-    ("verify", "fast_iteration_checks"): [GATE_LINT],
+    # Validated against the [stack]'s check names (#696), so the generic
+    # list sentinel ["sentinel/path/"] is refused by the loader. The probe
+    # document carries _PROBE_STACK, whose one check is named "lint".
+    ("verify", "fast_iteration_checks"): ["lint"],
 }
 
 
@@ -893,8 +847,22 @@ def _scrubbed_environ() -> Iterator[None]:
         os.environ.update(saved)
 
 
+#: A [stack] for the probe document, so fast_iteration_checks has a check
+#: name to resolve against (#696 slice 4). Unconfirmed, which is enough:
+#: the loader reads the names of the stack in force.
+_PROBE_STACK = [
+    "[stack]",
+    'instructions = "probe"',
+    'setup = ""',
+    "env = []",
+    "[stack.checks]",
+    'lint = "true"',
+    "",
+]
+
+
 def _write_probe_toml(path: Path, specs: list[SectionSpec], extra: dict[str, list[str]]) -> None:
-    lines: list[str] = []
+    lines: list[str] = list(_PROBE_STACK)
     for spec in specs:
         lines.append(f"[{spec.section}]")
         for key, field_name in spec.keys.items():

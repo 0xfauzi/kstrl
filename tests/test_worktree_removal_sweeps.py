@@ -41,9 +41,10 @@ from kstrl.contract import ContractConfig, ContractMode
 from kstrl.events import Log, read_events
 from kstrl.factory import FactoryResult
 from kstrl.manifest import ComponentStatus
+from tests.helpers import gitrepo, procs
 from tests.helpers import integration_harness as harness
-from tests.helpers import procs
 from tests.helpers.run_limits import every_limit_argv
+from tests.helpers.stack_confirmation import confirm_stack, in_process_stack, write_stack
 from tests.test_agent_processes_outlive_run import (
     COMP,
     COMPLETE,
@@ -79,6 +80,30 @@ def _leaves_a_process(tmp_path: Path, pidfile: Path) -> list[str]:
     script = tmp_path / "leave_a_process.py"
     script.write_text(LEAVE_A_PROCESS, encoding="utf-8")
     return [sys.executable, str(script), str(pidfile)]
+
+
+def _restack(root: Path, tests: str, *, writable: tuple[str, ...] = ()) -> None:
+    """Replace the repository's confirmed [stack] with one whose only check
+    is ``tests``, committed and confirmed (#696: the stack is the only
+    source of a check command, and Phase 1, the base gates and Phase 3 all
+    run the same checks). ``writable`` names a directory outside the
+    worktree the command writes to (#700 rule 12): a pidfile under
+    tmp_path, which the rung otherwise denies."""
+    text = (root / "kstrl.toml").read_text(encoding="utf-8")
+    (root / "kstrl.toml").write_text(text[: text.index("[stack]")], encoding="utf-8")
+    write_stack(root, {"tests": tests}, writable=writable)
+    gitrepo.git_in(root, "commit", "-q", "-am", "restack")
+    confirm_stack(root)
+
+
+def _only_under(where: str, command: str) -> str:
+    """``command`` where the working directory matches the shell pattern
+    ``where`` and a pass everywhere else, so the base gates (under
+    ``.kstrl/contract/base-gates-*``) do not refuse the run."""
+    return (
+        f'case "$(pwd)" in */.kstrl/contract/base-gates-*) exit 0;; {where}) {command};; '
+        "*) exit 0;; esac"
+    )
 
 
 def _left(pidfile: Path) -> list[tuple[int, str]]:
@@ -136,9 +161,8 @@ def test_the_contract_check_kills_and_names_what_its_test_command_left(
     root = _repo(tmp_path)
     pidfile = tmp_path / "contract.pids"
     command = f"{shlex.join(_leaves_a_process(tmp_path, pidfile))} && exit {test_exit}"
-    proc = _factory(
-        root, COMPLETE, "1", "--contract-check", "final", "--contract-test-cmd", command
-    )
+    _restack(root, _only_under("*/.kstrl/contract/*", command), writable=(str(tmp_path),))
+    proc = _factory(root, COMPLETE, "1", "--contract-check", "final")
     try:
         out, _ = proc.communicate(timeout=240)
         assert (proc.returncode == 0) is (test_exit == 0), out
@@ -201,7 +225,8 @@ def test_a_retry_kills_and_names_what_phase_1_left_in_the_worktree(tmp_path: Pat
     root = _repo(tmp_path)
     pidfile = tmp_path / "phase1.pids"
     command = f"{shlex.join(_leaves_a_process(tmp_path, pidfile))} && exit 1"
-    proc = _factory(root, COMPLETE, "1", "--max-retries", "1", "--test-command", command)
+    _restack(root, _only_under("*/.kstrl/worktrees/*", command), writable=(str(tmp_path),))
+    proc = _factory(root, COMPLETE, "1", "--max-retries", "1")
     try:
         out, _ = proc.communicate(timeout=240)
         in_worktree = [row for row in _left(pidfile) if "/.kstrl/worktrees/" in row[1]]
@@ -254,9 +279,19 @@ def test_the_integrated_check_and_the_integration_review_kill_and_name_what_they
         _result, out = harness.run_factory_over(
             root,
             reviewer,
+            # #700: the rung's writable set comes from the FACTORY-level
+            # project_stack, never the contract's own one, even for a
+            # contract check: both have to name tmp_path.
+            project_stack=in_process_stack(
+                {"tests": "true", "typecheck": "true", "lint": "true"},
+                writable=(str(tmp_path),),
+            ),
             contract_config=ContractConfig(
                 mode=ContractMode.TIER.value,
-                test_command=shlex.join(_leaves_a_process(tmp_path, check_pids)),
+                project_stack=in_process_stack(
+                    {"tests": shlex.join(_leaves_a_process(tmp_path, check_pids))},
+                    writable=(str(tmp_path),),
+                ),
                 timeout=60.0,
             ),
         )
@@ -280,6 +315,10 @@ def test_the_integrated_check_and_the_integration_review_kill_and_name_what_they
 def _failed_attempt_with_evidence(root: Path) -> Path:
     """A repo whose one component failed with its worktree kept as evidence."""
     _init_git_repo(root)
+    # `ks retry` is the real CLI here, so it reads kstrl.toml from disk and
+    # refuses with no confirmed [stack] (#696 flag day, rule 1).
+    write_stack(root)
+    confirm_stack(root)
     _scaffold(root, ["comp-a"])
     evidence = root / ".kstrl" / "worktrees" / "run-old" / "comp-a"
     evidence.parent.mkdir(parents=True)

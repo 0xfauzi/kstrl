@@ -381,8 +381,10 @@ def test_a_plan_decided_at_the_prompt_pages_nobody_and_a_parked_one_pages_once(
     from tests.test_l1_plan_gate import _answerable_repo, _Channel, _in_process, _manifest_path
 
     lines = tmp_path / "inbox-hook.txt"
-    _hook_into(monkeypatch, lines)
+    # The repo confirms its [stack] through the inbox, which would page this
+    # hook: build it first, hook second.
     root = _answerable_repo(tmp_path)
+    _hook_into(monkeypatch, lines)
 
     _in_process(root, _Channel(answered=True, choice=0), monkeypatch)
 

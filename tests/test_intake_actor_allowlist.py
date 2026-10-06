@@ -34,6 +34,7 @@ from kstrl.intake_github import (
 from kstrl.serve import _NullObserver, serve_cycle
 from kstrl.workqueue import Queue, QueueConfig
 from tests.helpers.runners import recording_runner
+from tests.helpers.stack_confirmation import confirm_stack, write_stack
 from tests.test_intake_github import (
     REPO,
     _auth_payload,
@@ -63,6 +64,9 @@ def _toml(root: Path, *, allowed: str | None = '["0xfauzi"]') -> None:
         root,
         extra=f"allowed_actors = {allowed}\n" if allowed is not None else "",
     )
+    # serve claims nothing until a [stack] is confirmed (#696 flag day).
+    write_stack(root)
+    confirm_stack(root)
 
 
 def _cycle(root: Path, gh: _GhStub) -> tuple[list[dict[str, Any]], Any]:

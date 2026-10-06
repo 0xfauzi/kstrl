@@ -57,6 +57,7 @@ from tests.helpers.adequacy_fixture import (
     run_adequacy,
 )
 from tests.helpers.fakemutmut import junit, put_mutmut_on_path
+from tests.helpers.stack_confirmation import confirm_stack, in_process_stack
 
 #: Real seconds the loop test may take before the fuse fails it. The loop
 #: runs on a mocked clock; this bound is on the REAL one, in the test
@@ -250,7 +251,7 @@ class TestZeroMeansNoLimitAtEveryWait:
     def test_a_zero_verify_timeout_lets_every_gate_run(self, tmp_path: Path, unset: float) -> None:
         _mutation_repo(tmp_path)
         result = run_adequacy(tmp_path, subprocess_timeout=unset)
-        for check in ("test_suite", "typecheck", "linter", "patch_coverage"):
+        for check in ("stack:tests", "stack:typecheck", "stack:lint", "patch_coverage"):
             row = only_row(result, check)
             assert row.passed is True, (check, row.message)
 
@@ -292,7 +293,9 @@ class TestZeroMeansNoLimitAtEveryWait:
             manifest,
             root,
             ContractConfig(
-                test_command=f"{sys.executable} -c 'import time; time.sleep(0.2)'",
+                project_stack=in_process_stack(
+                    {"tests": f"{sys.executable} -c 'import time; time.sleep(0.2)'"}
+                ),
                 timeout=0.0,
             ),
             PlainUI(no_color=True, file=io.StringIO()),
@@ -317,7 +320,9 @@ class TestZeroMeansNoLimitAtEveryWait:
             manifest,
             root,
             ContractConfig(
-                test_command=f"{sys.executable} -c 'import time; time.sleep(0.2)'",
+                project_stack=in_process_stack(
+                    {"tests": f"{sys.executable} -c 'import time; time.sleep(0.2)'"}
+                ),
                 timeout=0.0,
             ),
             PlainUI(no_color=True, file=io.StringIO()),
@@ -378,12 +383,24 @@ HANG_GUARDS = {
 
 
 def _uncomment_keys(text: str) -> str:
-    """A kstrl.toml with every commented ``# key = value`` line made live."""
+    """A kstrl.toml with every commented ``# key = value`` line made live.
+
+    The ``[stack]`` block the #696 flag day added is itself commented out
+    (``# [stack]``, ``# [stack.checks]``), unlike every other section
+    header in the scaffold, which is live. Uncommenting only ``key =
+    value`` lines left those two headers commented, so their keys fell
+    under whichever section-header line ran last live above them
+    (``[factory]``) and the live run refused four unreadable
+    ``[factory]`` keys it had never heard of. A commented section header
+    must be made live along with its keys.
+    """
     lines = []
     for line in text.splitlines():
         stripped = line.strip()
         commented_key = stripped.startswith("# ") and " = " in stripped
-        lines.append(stripped[2:] if commented_key and not stripped[2:3].isupper() else line)
+        commented_section = re.match(r"^# \[[\w.]+\]", stripped) is not None
+        live = commented_key or commented_section
+        lines.append(stripped[2:] if live and not stripped[2:3].isupper() else line)
     return "\n".join(lines) + "\n"
 
 
@@ -397,7 +414,18 @@ class TestEverySurfaceSaysNoLimit:
         # "default", and one that still says 7200.0 prints 7200.0.
         _ks(tmp_path, "init", str(tmp_path), "--ui", "plain")
         scaffold = tmp_path / "kstrl.toml"
-        scaffold.write_text(_uncomment_keys(scaffold.read_text(encoding="utf-8")), encoding="utf-8")
+        live = _uncomment_keys(scaffold.read_text(encoding="utf-8"))
+        # The scaffold's `[stack]` placeholders are empty strings for the
+        # user to fill in; uncommented as-is they fail Stack's own
+        # non-empty validation. Give the two required fields real values -
+        # unrelated to the limits this test checks - and confirm the
+        # table the way `ks inbox approve` would, so the run this test
+        # drives is not itself refused.
+        live = live.replace('instructions = ""', 'instructions = "python"').replace(
+            'tests = ""', 'tests = "true"'
+        )
+        scaffold.write_text(live, encoding="utf-8")
+        confirm_stack(tmp_path)
         rows = _config_show(tmp_path)
         assert {key: rows.get(key) for key in UNSET_LIMITS} == dict.fromkeys(
             UNSET_LIMITS, ("no limit", "toml")
@@ -471,10 +499,9 @@ def _factory_run(root: Path, config: FactoryConfig, usage: UsageTotals | None) -
     config.max_retries = 0
     config.retry_delay = 0
     config.review_mode = "skip"
+    config.project_stack = in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"})
     config.verify_config = VerifyConfig(
-        test_command="true",
-        typecheck_command="true",
-        lint_command="true",
+        project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
         check_diff_scope=False,
         check_bad_patterns=False,
     )

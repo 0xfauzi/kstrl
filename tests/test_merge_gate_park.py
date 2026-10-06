@@ -50,6 +50,7 @@ from kstrl.serve import (
 from kstrl.workqueue import ItemSource, Queue, QueueConfig
 from tests.helpers import gitrepo
 from tests.helpers.executables import write_executable
+from tests.helpers.stack_confirmation import confirm_stack, write_stack
 
 pytestmark = pytest.mark.usefixtures("no_open_prs")
 
@@ -111,12 +112,6 @@ FACTORY_FLAGS = (
     "skip",
     "--contract-check",
     "skip",
-    "--test-command",
-    "true",
-    "--typecheck-command",
-    "true",
-    "--lint-command",
-    "true",
 )
 
 #: The engineer: records the worktree it ran in, commits one file named
@@ -170,6 +165,8 @@ def _repo(tmp_path: Path, toml: str = "") -> Path:
         )
     (root / "kstrl.toml").write_text("[inbox]\nenabled = true\n" + toml, encoding="utf-8")
     gitrepo.git_in(root, "add", "-A")
+    write_stack(root)
+    gitrepo.git_in(root, "add", "-A")
     gitrepo.git_in(root, "commit", "-q", "-m", "init")
     origin = tmp_path / "origin.git"
     gitrepo.git_in(tmp_path, "init", "-q", "--bare", str(origin))
@@ -186,6 +183,7 @@ def _repo(tmp_path: Path, toml: str = "") -> Path:
     template = tmp_path / "manifest.template.json"
     template.write_text(json.dumps(manifest), encoding="utf-8")
     shutil.copyfile(template, _manifest_path(root))
+    confirm_stack(root)
     return root
 
 
@@ -294,11 +292,26 @@ class TestTheParkIsItsOwnOutcome:
     def test_a_park_nothing_can_approve_fails_at_the_gate_and_ks_retry_rebuilds_it(
         self, tmp_path: Path
     ) -> None:
+        """Unwritable, not disabled (#696 flag day): disabling ``[inbox]``
+        outright would ALSO make the stack confirmation ``_repo`` already
+        recorded unreadable (``stack.confirmed_stack`` reads the same
+        inbox), refusing before the engineer ever reaches the merge gate
+        this test is for. Making the inbox file read-only reaches the
+        SAME ``_park_decision`` branch the pipeline names for it
+        ([inbox] disabled OR UNWRITABLE) while the stack's earlier,
+        already-approved item stays readable.
+        """
+        from kstrl.statedir import CONTROL_INBOX, control_file
+
         root = _repo(tmp_path)
         env = _env(tmp_path)
-        # No inbox: no merge_gate item, so `ks inbox approve` has nothing to act on.
-        env["KSTRL_INBOX_ENABLED"] = "0"
-        first = _factory(root, env)
+        inbox_path = control_file(root, CONTROL_INBOX)
+        inbox_path.touch(exist_ok=True)
+        inbox_path.chmod(0o444)
+        try:
+            first = _factory(root, env)
+        finally:
+            inbox_path.chmod(0o644)
         out = first.stdout + first.stderr
 
         assert first.returncode == 1, out
@@ -317,6 +330,9 @@ class TestTheParkIsItsOwnOutcome:
         )
         assert str(verdict.verdict) != "spec_failure", verdict.reason
 
+        # The inbox is readable again (restored in the `finally` above), so
+        # `ks retry` (which has no --no-verify and always needs a confirmed
+        # [stack]) can read the approval `_repo` already recorded.
         _ks(root, env, "retry", HTTP, "--yes", "--ui", "plain", "--no-color")
         assert _engineer_ran(tmp_path) == [HTTP, HTTP]
 

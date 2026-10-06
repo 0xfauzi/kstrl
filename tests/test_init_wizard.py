@@ -9,7 +9,9 @@ from typing import cast
 from unittest.mock import patch
 
 import pytest
+from click.testing import CliRunner
 
+from kstrl.cli import cli
 from kstrl.init_cmd import DEFAULT_KSTRL_TOML
 from kstrl.init_wizard import (
     apply_agent_settings,
@@ -18,12 +20,12 @@ from kstrl.init_wizard import (
 from kstrl.tui.app import KstrlTuiApp, Mode
 from kstrl.tui.screens.home import HomeScreen
 from kstrl.tui.screens.init_wizard import InitWizardScreen
-from kstrl.verify import (
-    DEFAULT_LINT_COMMAND,
-    DEFAULT_TEST_COMMAND,
-    DEFAULT_TYPECHECK_COMMAND,
-)
 from tests.helpers.settle import drained, mounted, settled
+from tests.helpers.stack_confirmation import write_stack
+
+#: Distinct from every default kstrl ever shipped, so a painted command can
+#: only have come from the [stack] (#696 slice 4).
+_CHECKS = {"tests": "make test-all", "typecheck": "make types", "lint": "npx eslint ."}
 
 
 class TestPlanScaffold:
@@ -196,12 +198,12 @@ class TestWizardScreen:
         """
         return app.export_screenshot().replace("&#160;", " ")
 
-    async def test_detected_line_renders_the_resolved_gate_commands(
+    async def test_detected_line_renders_the_stack_checks(
         self,
         tmp_path: Path,
     ) -> None:
-        """#261: the wizard shows what Phase 1 will actually run, and it
-        has to be visible, not merely constructed.
+        """#261, #696: the wizard shows what Phase 1 will actually run, the
+        [stack]'s checks, and it has to be visible, not merely constructed.
 
         The screenshot comes off the compositor, so the form has to have
         been laid out before it is read. Waiting on the FORM's region is
@@ -210,6 +212,7 @@ class TestWizardScreen:
         names, still lays the form out and so still reaches the
         assertions and fails there.
         """
+        write_stack(tmp_path, _CHECKS)
         app, screen = await self._run_wizard(tmp_path)
         try:
             form = await mounted(self._pilot, lambda: app.screen, "#wizard-form")
@@ -220,23 +223,18 @@ class TestWizardScreen:
             )
             rendered = self._rendered(app)
             assert "detected" in rendered
-            for command in (
-                DEFAULT_TEST_COMMAND,
-                DEFAULT_TYPECHECK_COMMAND,
-                DEFAULT_LINT_COMMAND,
-            ):
+            for command in _CHECKS.values():
                 assert command in rendered, f"{command!r} not painted"
             assert screen.query_one("#wizard-detected").size.height >= 4
         finally:
             await self._pilot_ctx.__aexit__(None, None, None)
 
-    async def test_configured_commands_are_the_ones_shown(
+    async def test_no_stack_shows_that_nothing_runs(
         self,
         tmp_path: Path,
     ) -> None:
-        (tmp_path / "kstrl.toml").write_text(
-            '[verify]\nlint_command = "npx eslint ."\n',
-        )
+        """#696 slice 4: with no [stack] kstrl has no command to show, and
+        says that it runs nothing rather than naming a language default."""
         app, _ = await self._run_wizard(tmp_path)
         try:
             # The form's layout, not the text: the assertions own the text.
@@ -247,8 +245,10 @@ class TestWizardScreen:
                 what="the wizard form to be laid out",
             )
             rendered = self._rendered(app)
-            assert "npx eslint ." in rendered
-            assert DEFAULT_LINT_COMMAND not in rendered
+            assert "runs nothing" in rendered
+            # The old language default, not the bare word: the screen also
+            # shows the root, and a pytest tmp_path is named pytest-of-<user>.
+            assert "uv run pytest" not in rendered
         finally:
             await self._pilot_ctx.__aexit__(None, None, None)
 
@@ -271,7 +271,84 @@ class TestWizardScreen:
             )
             rendered = self._rendered(app)
             assert "unreadable" in rendered
-            assert DEFAULT_TEST_COMMAND not in rendered
+            assert "runs nothing" not in rendered
+        finally:
+            await self._pilot_ctx.__aexit__(None, None, None)
+
+    async def test_a_malformed_verify_section_still_shows_the_unreadable_row(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """#696 slice 4: kstrl.toml parses and holds a good [stack], but its
+        [verify] does not load (a list where a number belongs). Every other
+        command refuses such a file, so the repair screen must say it is
+        unreadable rather than paint the stack as if nothing were wrong."""
+        write_stack(tmp_path, _CHECKS)
+        with (tmp_path / "kstrl.toml").open("a", encoding="utf-8") as handle:
+            handle.write('\n[verify]\nself_critique_min_bullets = ["3"]\n')
+        app, _ = await self._run_wizard(tmp_path)
+        try:
+            form = await mounted(self._pilot, lambda: app.screen, "#wizard-form")
+            await settled(
+                self._pilot,
+                lambda: form.region.height,
+                what="the wizard form to be laid out",
+            )
+            rendered = self._rendered(app)
+            assert "kstrl.toml is unreadable" in rendered
+            assert "make test-all" not in rendered
+        finally:
+            await self._pilot_ctx.__aexit__(None, None, None)
+
+    async def test_a_retired_key_beside_a_confirmed_stack_shows_the_unreadable_row(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """#696 slice 4: every command refuses a retired [verify] command key
+        beside a [stack], including a file ks doctor's proposal leaves behind
+        when the operator pastes the [stack] and keeps the old keys. The repair
+        screen must say unreadable, not paint the checks."""
+        write_stack(tmp_path, _CHECKS)
+        with (tmp_path / "kstrl.toml").open("a", encoding="utf-8") as handle:
+            handle.write('\n[verify]\ntest_command = "make test"\n')
+        app, _ = await self._run_wizard(tmp_path)
+        try:
+            form = await mounted(self._pilot, lambda: app.screen, "#wizard-form")
+            await settled(
+                self._pilot,
+                lambda: form.region.height,
+                what="the wizard form to be laid out",
+            )
+            rendered = self._rendered(app)
+            assert "kstrl.toml is unreadable" in rendered
+            assert "make test-all" not in rendered
+        finally:
+            await self._pilot_ctx.__aexit__(None, None, None)
+
+    async def test_a_malformed_factory_section_shows_the_unreadable_row(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """#696 slice 4: the fault is in [factory], a section neither the
+        [verify] read nor the retired-name check looks at. `ks status`
+        refuses the file, so the repair screen must say unreadable too."""
+        write_stack(tmp_path, _CHECKS)
+        with (tmp_path / "kstrl.toml").open("a", encoding="utf-8") as handle:
+            handle.write('\n[factory]\nmax_parallel = "abc"\n')
+        refused = CliRunner().invoke(cli, ["status", "--no-tui", "--root", str(tmp_path)])
+        assert refused.exit_code == 2, refused.output
+        assert "max_parallel" in refused.output, refused.output
+        app, _ = await self._run_wizard(tmp_path)
+        try:
+            form = await mounted(self._pilot, lambda: app.screen, "#wizard-form")
+            await settled(
+                self._pilot,
+                lambda: form.region.height,
+                what="the wizard form to be laid out",
+            )
+            rendered = self._rendered(app)
+            assert "kstrl.toml is unreadable" in rendered
+            assert "make test-all" not in rendered
         finally:
             await self._pilot_ctx.__aexit__(None, None, None)
 

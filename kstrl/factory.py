@@ -160,17 +160,22 @@ from kstrl.security import (
     run_security_review,
 )
 from kstrl.shutdown import StopController
-from kstrl.stack import STACK_KIND, Stack, stack_in_force, stack_paths, unconfirmed_lines
+from kstrl.stack import (
+    NO_STACK,
+    STACK_KIND,
+    Stack,
+    stack_in_force,
+    stack_paths,
+    unconfirmed_lines,
+)
 from kstrl.statedir import ControlStateError, pre_run_prd_path
 from kstrl.timeout import NO_LIMIT, TimeoutConfig, describe_limit_seconds
 from kstrl.ui.bridge import EventBridgeUI
 from kstrl.verify import (
     SCOPE_UNREADABLE_CHECK,
     VerifyConfig,
-    resolve_verify_commands,
     run_mechanical_verification,
     scope_unreadable_error,
-    scrub_project_claude_md,
 )
 from kstrl.version import kstrl_version
 from kstrl.worktree_setup import WorktreeSetup
@@ -397,18 +402,14 @@ class FactoryConfig:
     # operator sets it after reading the per-attempt `failure_count` the
     # journal records on every superseded attempt.
     convergence_attempts: int = 0
-    # #624: the command that gives a kstrl worktree its own dependencies,
-    # run before the engineer and before every gate (see
-    # kstrl/worktree_setup.py). "" means none; a component's scaffold
-    # replaces it for that component. The timeout is in seconds, 0 = no
-    # limit (#467).
-    worktree_setup_command: str = ""
+    # #624: the time limit of the command that gives a kstrl worktree its
+    # own dependencies (see kstrl/worktree_setup.py), in seconds, 0 = no
+    # limit (#467). The command is the [stack]'s ``setup`` (#696).
     worktree_setup_timeout: float = 0.0
-    # #696: the project's [stack], read by ``load``. Under a stack its
-    # ``setup`` is the worktree setup (``worktree_setup_command`` is then
-    # refused at load) and its ``env`` is what setup sees. Read here as
-    # well as in VerifyConfig because --no-verify drops the VerifyConfig
-    # and a worktree still needs its setup. Provenance: no [factory] key.
+    # #696: the project's [stack], read by ``load``. Its ``setup`` is the
+    # worktree setup and its ``env`` is what setup sees. Read here as well
+    # as in VerifyConfig because --no-verify drops the VerifyConfig and a
+    # worktree still needs its setup. Provenance: no [factory] key.
     project_stack: Stack | None = field(default=None, metadata={"provenance": True})
     # #700 slice 2: the two rungs a run under a [stack] proved before its
     # base gates (``_preflight_rungs``), cleared and their scratch removed
@@ -463,14 +464,21 @@ class FactoryConfig:
     def resolved_verify_config(self) -> VerifyConfig:
         """The VerifyConfig Phase 1 runs with (#261).
 
-        ``verify_config=None`` has always meant "use the defaults" here
-        (``skip_verification`` is the separate, explicit skip sentinel),
-        so the fallback is a bare ``VerifyConfig()`` and NOT a reload
-        from disk. ``pipeline._phase_verify`` calls this, and so does
-        ``engineer_verify_config`` below, which is what stops the gate
-        and the engineer prompt answering the question two ways.
+        ``verify_config=None`` (``skip_verification`` is the separate,
+        explicit skip sentinel) is the run's own ``[stack]`` with every
+        other ``[verify]`` setting at its default, NOT a reload from disk.
+        Before the #696 flag day the fallback was a bare ``VerifyConfig()``,
+        which ran kstrl's built-in commands in any tree; with no stack it now
+        fails closed (``verify.NO_STACK_CHECK``). ``pipeline._phase_verify``
+        calls this, and so does ``engineer_verify_config`` below, which is
+        what stops the gate and the engineer prompt answering the question
+        two ways.
         """
-        config = self.verify_config or VerifyConfig()
+        config = (
+            self.verify_config
+            if self.verify_config is not None
+            else VerifyConfig(project_stack=self.project_stack)
+        )
         return config if self.test_rung is None else replace(config, rung=self.test_rung)
 
     def engineer_verify_config(self) -> VerifyConfig | None:
@@ -487,8 +495,8 @@ class FactoryConfig:
 
     def worktree_setup(self, scaffold: str = "") -> WorktreeSetup:
         """The setup a worktree gets (#624): ``scaffold`` when a component
-        names one, else ``worktree_setup_command``, or under a ``[stack]``
-        the stack's ``setup`` with the stack's ``env`` (#696)."""
+        names one, else the ``[stack]``'s ``setup``, with the stack's ``env``
+        (#696). With no stack only a scaffold runs."""
         if self.project_stack is not None:
             unconfirmed = self.project_stack.unconfirmed
             return WorktreeSetup(
@@ -498,7 +506,7 @@ class FactoryConfig:
                 rung=self.setup_rung,
                 refusal=f"the [stack] in kstrl.toml {unconfirmed}" if unconfirmed else "",
             )
-        return WorktreeSetup(scaffold or self.worktree_setup_command, self.worktree_setup_timeout)
+        return WorktreeSetup(scaffold, self.worktree_setup_timeout)
 
     def worktree_setup_for_component(self, comp: Component) -> WorktreeSetup | None:
         """The setup for a component's own worktree: ``None`` under
@@ -511,15 +519,10 @@ class FactoryConfig:
         return self.worktree_setup().command or "none"
 
     def _apply_worktree_setup_overlay(self, section: dict[str, Any]) -> None:
-        """Overlay ``[factory] worktree_setup_command``/``_timeout`` from the
-        toml ``section``, then any matching env var, precedence env > toml >
-        default (#624)."""
-        if "worktree_setup_command" in section:
-            self.worktree_setup_command = str(section["worktree_setup_command"])
+        """Overlay ``[factory] worktree_setup_timeout`` from the toml
+        ``section``, then its env var, precedence env > toml > default (#624)."""
         if "worktree_setup_timeout" in section:
             self.worktree_setup_timeout = float(section["worktree_setup_timeout"])
-        if "KSTRL_FACTORY_WORKTREE_SETUP_COMMAND" in os.environ:
-            self.worktree_setup_command = os.environ["KSTRL_FACTORY_WORKTREE_SETUP_COMMAND"]
         if "KSTRL_FACTORY_WORKTREE_SETUP_TIMEOUT" in os.environ:
             self.worktree_setup_timeout = float(os.environ["KSTRL_FACTORY_WORKTREE_SETUP_TIMEOUT"])
 
@@ -586,7 +589,6 @@ class FactoryConfig:
                 _env_int(os.environ.get("KSTRL_FACTORY_CONVERGENCE_ATTEMPTS", "0")),
                 "KSTRL_FACTORY_CONVERGENCE_ATTEMPTS",
             ),
-            worktree_setup_command=os.environ.get("KSTRL_FACTORY_WORKTREE_SETUP_COMMAND", ""),
             worktree_setup_timeout=check_number(
                 float(os.environ.get("KSTRL_FACTORY_WORKTREE_SETUP_TIMEOUT", "0")),
                 "KSTRL_FACTORY_WORKTREE_SETUP_TIMEOUT",
@@ -2387,36 +2389,6 @@ def _report_preflight(ui: UI, headline: str, errors: list[str]) -> bool:
     return True
 
 
-def _warn_claude_md_divergence(
-    root_dir: Path,
-    factory_config: FactoryConfig,
-    ui: UI,
-) -> None:
-    """Tell the OPERATOR that CLAUDE.md disagrees with the gate (#261).
-
-    The worker does the same scrub when it builds the engineer prompt,
-    but its ``ui`` is an EventBridgeUI writing to that component's
-    engineer.jsonl, and in pool mode ``live_line`` is None, so nothing
-    reaches the terminal. The whole point of the warning is that a human
-    deletes the stale section, so it has to be said once, here, on the
-    surface they are actually watching. Never refuses: a stale CLAUDE.md
-    is already handled correctly for the agent.
-    """
-    verify_config = factory_config.engineer_verify_config()
-    if verify_config is None or verify_config.project_stack is not None:
-        # #696: under a [stack] no gate command is resolved, so there is
-        # nothing for a CLAUDE.md bullet to disagree with.
-        return
-    scrubbed = scrub_project_claude_md(
-        root_dir,
-        resolve_verify_commands(verify_config, root_dir),
-    )
-    if scrubbed is None:
-        return
-    for divergence in scrubbed.divergences:
-        ui.warn(f"  {divergence}")
-
-
 def _preflight_decision_register(
     manifest: Manifest,
     root_dir: Path,
@@ -2588,10 +2560,13 @@ def _preflight_stack(
 ) -> list[str]:
     """Why this run must not use the ``[stack]`` in force, or [] (#696 slice 3).
 
-    A stack no person confirmed refuses, and its one inbox item is filed.
-    A confirmed stack still refuses a plan made under another one.
+    No stack refuses unless ``--no-verify`` runs no check (#696 slice 4). A
+    stack no person confirmed refuses, and its one inbox item is filed. A
+    confirmed stack still refuses a plan made under another one.
     """
     stack = factory_config.project_stack
+    if stack is None and not factory_config.skip_verification:
+        return [NO_STACK]
     if stack is not None and stack.unconfirmed:
         return unconfirmed_lines(root_dir, stack, run_id=run_id)
     return stack_pin_errors(manifest, stack)
@@ -2690,7 +2665,6 @@ def _run_preflights(
     # #701: after the launch record `ks retry` reads, like every refusal below.
     if _report_preflight(ui, SANDBOX_REFUSAL, sandbox_refusals):
         return None
-    _warn_claude_md_divergence(root_dir, factory_config, ui)
     register_errors, run_decisions = _preflight_decision_register(manifest, root_dir)
     if _report_preflight(ui, "the architect decision register cannot bind", register_errors):
         return None
@@ -3012,8 +2986,6 @@ def _run_component(
     interactive: bool = False,
     scope: ComponentScope | None = None,
     breaker_iterations: int = 3,
-    breaker_test_command: str | None = None,
-    breaker_test_timeout: float = 300.0,
     sandbox_enabled: bool = False,
     sandbox_allow_network: bool = False,
     agent_budget_usd: float | None = None,
@@ -3228,11 +3200,7 @@ def _run_component(
         agent_iteration=agent_iteration_timeout,
         component_total=component_timeout,
     )
-    breaker_config = BreakerConfig(
-        no_progress_iterations=breaker_iterations,
-        test_command=breaker_test_command,
-        test_timeout=breaker_test_timeout,
-    )
+    breaker_config = BreakerConfig(no_progress_iterations=breaker_iterations)
 
     # Start event-owned resources only after setup succeeds. A get_agent,
     # file-copy, or config failure therefore cannot leak a heartbeat thread
@@ -5181,20 +5149,8 @@ def _run_factory_locked(
     )
 
     # R7.5: no-progress circuit breaker limits, forwarded into every
-    # engineer loop. When [breaker].test_command is unset, the stall
-    # probe falls back to the explicitly configured Phase 1 test command
-    # (never the smart default: the probe runs inside the engineer loop
-    # and must only execute commands the operator chose).
+    # engineer loop. It reads the diff only (#696 decision 10).
     breaker_cfg = BreakerConfig.load(root_dir)
-    if (
-        breaker_cfg.test_command is None
-        and factory_config.verify_config is not None
-        and factory_config.verify_config.test_command
-    ):
-        breaker_cfg = replace(
-            breaker_cfg,
-            test_command=factory_config.verify_config.test_command,
-        )
 
     # R7.5: OS-level sandbox intent for the agent subprocesses. A custom
     # agent command has no generic sandbox surface, so intent that cannot
@@ -5418,8 +5374,6 @@ def _run_factory_locked(
             scope,
             # R7.5: no-progress circuit breaker limits.
             breaker_cfg.no_progress_iterations,
-            breaker_cfg.test_command,
-            breaker_cfg.test_timeout,
             # R7.5: OS-level sandbox intent for the engineer's agent CLI.
             run_envelope.sandbox.enabled,
             run_envelope.sandbox.allow_network,

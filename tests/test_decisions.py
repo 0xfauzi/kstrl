@@ -42,6 +42,7 @@ from kstrl.decisions import (
     read_decisions,
     write_decisions,
 )
+from tests.helpers.stack_confirmation import in_process_stack
 
 
 def _decision(**overrides: object) -> dict[str, object]:
@@ -262,10 +263,9 @@ def _factory_inputs(root: Path) -> tuple[Any, Any, Any]:
         max_retries=0,
         retry_delay=0,
         review_mode="skip",
+        project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
         verify_config=VerifyConfig(
-            test_command="true",
-            typecheck_command="true",
-            lint_command="true",
+            project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
             check_diff_scope=False,
             check_bad_patterns=False,
             subprocess_timeout=5.0,

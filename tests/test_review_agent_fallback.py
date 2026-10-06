@@ -37,6 +37,7 @@ import pytest
 import kstrl.cli as cli_mod
 from kstrl.init_cmd import _detect_project_context, gitignore_block
 from tests.helpers import gitrepo
+from tests.helpers.stack_confirmation import confirm_stack, write_stack
 
 ENGINEER = "./stub-engineer.sh"
 REVIEWER = "./stub-reviewer.sh"
@@ -83,8 +84,10 @@ def _repo(tmp_path: Path) -> Path:
         ),
         encoding="utf-8",
     )
+    write_stack(root)
     gitrepo.git_in(root, "add", "-A")
     gitrepo.git_in(root, "commit", "-q", "-m", "init")
+    confirm_stack(root)
     return root
 
 
@@ -104,6 +107,9 @@ def _factory(
     env["KSTRL_AGENT_PROBE"] = "0"
     env["KSTRL_KNOWLEDGE_ENABLED"] = "0"
     env["KSTRL_NO_TUI"] = "1"
+    # The sealed PATH has no nono, and this test is about the review agent:
+    # the [stack] runs on the host, as on a platform with no prover.
+    env["KSTRL_ISOLATION_PLATFORM"] = "linux"
     return subprocess.run(
         [
             sys.executable,

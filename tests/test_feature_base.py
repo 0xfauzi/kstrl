@@ -37,6 +37,7 @@ from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.pipeline import ComponentPipeline
 from kstrl.ui.plain import PlainUI
 from tests.helpers.gitrepo import git_in, set_identity
+from tests.helpers.stack_confirmation import in_process_stack
 from tests.test_event_stream import (
     _component,
     _factory_config,
@@ -316,7 +317,9 @@ def _contract_manifest() -> Manifest:
 
 #: Passes only on a tree that does not carry the file the base moves by.
 _NOT_MOVED = ContractConfig(
-    mode=ContractMode.TIER.value, test_command="test ! -f moved.txt", timeout=60.0
+    mode=ContractMode.TIER.value,
+    project_stack=in_process_stack({"tests": "test ! -f moved.txt"}),
+    timeout=60.0,
 )
 
 

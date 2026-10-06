@@ -54,7 +54,20 @@ from tests.helpers.fakegh import install_fake_gh as _install_fake_gh
 from tests.helpers.fakegh import install_marker_gh as _install_marker_gh
 from tests.helpers.fakegh import marked as _marked
 from tests.helpers.fakegh import put_gh_on_path as _put_gh_on_path
+from tests.helpers.stack_confirmation import confirm_stack, write_stack
 from tests.test_serve import _add, _no_spend, _queue, _stub_runner  # noqa: F401
+
+
+@pytest.fixture(autouse=True)
+def _confirmed_stack(tmp_path: Path) -> None:
+    """Every ``serve_cycle``/``serve`` call here reads ``tmp_path``'s
+    ``[stack]`` before it claims anything (#696 flag day): with none it
+    refuses before any of the gates this file exists to test. A test that
+    overwrites kstrl.toml for its own config (`[serve]`, `[inbox]`) does so
+    after this fixture, which is why those do not need one of their own."""
+    write_stack(tmp_path)
+    confirm_stack(tmp_path)
+
 
 # ---------------------------------------------------------------------------
 # The gate inside the cycle
