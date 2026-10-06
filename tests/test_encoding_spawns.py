@@ -46,7 +46,8 @@ from tests.helpers.encodingspawn import (
 EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     "agents/codex.py": 4,
     # #642: the leash's import, its `Popen` and the `Popen[bytes]` annotation.
-    "agents/leash.py": 3,
+    # #642 slice 6: +1, the `Popen[bytes]` annotation of `_hold`.
+    "agents/leash.py": 4,
     "agents/proc.py": 7,
     "breaker.py": 4,
     "contract.py": 5,
