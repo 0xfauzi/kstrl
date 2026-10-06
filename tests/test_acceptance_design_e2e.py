@@ -83,12 +83,19 @@ def _check(check_id: str, argv: list[str], *, held_out: bool = False) -> dict[st
     }
 
 
-def _design(tmp_path: Path, root: Path, replies: list[str], *extra: str) -> Designed:
+def _design(
+    tmp_path: Path,
+    root: Path,
+    replies: list[str],
+    *extra: str,
+    env: dict[str, str] | None = None,
+    pause: int = 0,
+) -> Designed:
     """The real `ks factory --design-acceptance` with one stub agent. A call
     whose prompt carries DESIGNER_MARK is the designer: it logs where it ran
     and prints the next of ``replies`` (the last one again once they run
-    out). Any other call is the engineer, which special-cases the one name
-    it could have been shown."""
+    out), after ``pause`` seconds. Any other call is the engineer, which
+    special-cases the one name it could have been shown."""
     replies_dir = tmp_path / "replies"
     replies_dir.mkdir(exist_ok=True)
     for number, reply in enumerate(replies, start=1):
@@ -104,6 +111,7 @@ cat > '{prompt}'
 if grep -q '{DESIGNER_MARK}' '{prompt}'; then
   echo "$(pwd -P) $(git rev-parse HEAD)" >> '{designer_log}'
   cat '{prompt}' >> '{designer_prompts}'
+  sleep {pause}
   n=$(wc -l < '{designer_log}' | tr -d ' ')
   [ -f '{replies_dir}'/"$n".json ] || n={len(replies)}
   cat '{replies_dir}'/"$n".json
@@ -126,7 +134,7 @@ echo '<promise>COMPLETE</promise>'
             *extra,
         ],
         root,
-        None,
+        env,
     )
 
     def lines(path: Path) -> list[str]:
@@ -295,6 +303,34 @@ def test_a_vacuous_designed_check_refuses_and_the_next_run_asks_nothing_again(
         assert f"Delete {designed} and run again" in run.out, run.out
         assert run.engineer_calls == 0, run.out
     assert len(second.designer) == 1, second.out
+
+
+@runs_a_stack
+def test_a_designer_past_the_review_timeout_is_stopped_and_asked_once_more(
+    tmp_path: Path,
+) -> None:
+    """The designer is bound by [factory] review_timeout_seconds, the [review]
+    selection's own limit (decision 12). A designer that would answer a
+    valid plan only after that limit is stopped, asked once more, stopped
+    again, and the run is refused before any engineer, naming the limit.
+    Bound by any other clock, or by none, it answers and the run goes on."""
+    root = _greeting_repo(tmp_path)
+    reply = _entry([_check("greets-hidden", _greets("Grace"), held_out=True)])
+
+    run = _design(
+        tmp_path,
+        root,
+        [reply],
+        env={"KSTRL_FACTORY_REVIEW_TIMEOUT_SECONDS": "2"},
+        pause=20,
+    )
+
+    assert run.code == 2, run.out
+    assert REFUSED_DESIGN in run.out, run.out
+    assert f"{COMP}: ask 2: the agent timed out after 2.0s" in run.out, run.out
+    assert len(run.designer) == 2, run.out
+    assert run.engineer_calls == 0, run.out
+    assert _designed_plans(root) == []
 
 
 def test_an_operator_plan_and_a_designed_one_are_refused_together(tmp_path: Path) -> None:
