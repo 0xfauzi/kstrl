@@ -274,6 +274,21 @@ def test_the_architects_stack_is_checked_inside_the_retry_loop(tmp_path: Path) -
     assert dict(item.evidence["stack"]["checks"]) == STACK["checks"]
 
 
+def test_a_stack_that_is_not_an_object_is_a_retry_naming_the_fault(tmp_path: Path) -> None:
+    """A string where the stack object belongs is retried with the reason,
+    not handed to the stack checker, and the next, valid answer is filed."""
+    root = greenfield(tmp_path)
+    agent, prompts = _architect(tmp_path, _output("zig build"), _output(STACK))
+
+    proc = _decompose(root, agent)
+
+    assert proc.returncode == 0, proc.stdout
+    retry = (prompts / "2.txt").read_text(encoding="utf-8")
+    assert "stack: must be an object or null, got str" in retry, retry[-600:]
+    (item,) = _stack_items(root)
+    assert dict(item.evidence["stack"]["checks"]) == STACK["checks"]
+
+
 def test_a_component_may_create_a_build_manifest_but_never_kstrl_toml(tmp_path: Path) -> None:
     """kstrl.toml holds the confirmed [stack], so no component may be scoped
     to it; a build manifest is the project's own file, and a component may
@@ -370,16 +385,21 @@ def test_ks_factory_spec_no_verify_pays_the_architect_without_measuring_the_base
 
 
 #: What the stub architect does to the repository while it runs, before it
-#: answers: nothing, an empty commit on the base branch, or a [verify]
+#: answers: nothing, an empty commit on the base branch, a [verify]
 #: subprocess_timeout (the line ``ks init`` writes commented out, set and left
 #: uncommitted) that changes how the base is measured (``BaseGates.digest``)
-#: without changing the confirmed [stack].
+#: without changing the confirmed [stack], or a first answer that is not JSON,
+#: so the architect is called twice. ``@LOG@`` is the test's log directory.
 _MOVES: dict[str, str] = {
     "same-base": "",
     "base-moved": "git commit -q --allow-empty -m moved; ",
     "config-moved": (
         "sed 's/^# subprocess_timeout = 0.0 /subprocess_timeout = 299.0 /' kstrl.toml > k.tmp; "
         "mv k.tmp kstrl.toml; "
+    ),
+    "retried": (
+        "if [ ! -f '@LOG@/first' ]; then touch '@LOG@/first'; cat > /dev/null; "
+        "echo 'not json'; exit 0; fi; "
     ),
 }
 
@@ -390,10 +410,10 @@ def test_ks_factory_spec_measures_the_base_before_the_architect(tmp_path: Path, 
     """Under a confirmed [stack] the base is measured before the architect is
     paid, and the factory run reuses that reading while the base names the
     same commit and is measured the same way: one base measurement, logged
-    before the architect's line. When the base moves while the architect
-    runs (the stub commits to main), or the timeout it is measured under
-    changes, the run measures it again."""
-    moved = move != "same-base"
+    before the architect's line, however many attempts the architect takes.
+    When the base moves while the architect runs (the stub commits to main),
+    or the timeout it is measured under changes, the run measures it again."""
+    moved = move in {"base-moved", "config-moved"}
     root = _spec_project(tmp_path, initialised=True)
     log = tmp_path / "order"
     log.mkdir()
@@ -417,7 +437,8 @@ def test_ks_factory_spec_measures_the_base_before_the_architect(tmp_path: Path, 
     marker = tmp_path / "architect-ran"
     agent = (
         f"if [ ! -f {shlex.quote(str(marker))} ]; then echo architect >> '{log}/lines'; "
-        f"{_MOVES[move]}fi; " + _architect_then_engineer(tmp_path / "calls", payload, marker)
+        f"{_MOVES[move].replace('@LOG@', str(log))}fi; "
+        + _architect_then_engineer(tmp_path / "calls", payload, marker)
     )
 
     _code, out = _spawn(
@@ -438,3 +459,5 @@ def test_ks_factory_spec_measures_the_base_before_the_architect(tmp_path: Path, 
     assert base[0] < lines.index("architect"), (lines, out)
     reused = "was measured before the architect ran; that reading holds" in out
     assert reused is not moved, out
+    # Once before the architect, however many attempts it takes, and once in the run.
+    assert out.count("Measuring the gates on the base branch") == 2, out
