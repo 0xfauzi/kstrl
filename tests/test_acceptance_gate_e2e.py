@@ -245,6 +245,10 @@ async def test_a_held_out_failure_halts_and_an_approval_merges_over_it(tmp_path:
     assert code == 0, out
     assert len(calls.read_text(encoding="utf-8").splitlines()) == 1, out
     assert _status(root)[0] == "completed", out
+    kept = (
+        f"ks retry kept commit {item.evidence['head_sha'][:12]}, which inbox approval {item.id[:8]}"
+    )
+    assert kept in out, out
     merged = (
         f"- merged over the failing checks greets-hidden by inbox approval {item.id[:8]} "
         f"({approved.decided_by} at {approved.decided_at})"
@@ -314,3 +318,42 @@ def test_an_approval_covers_only_the_checks_and_the_commit_it_names(tmp_path: Pa
     assert [(i.status.value, i.evidence["check"]) for i in reopened] == [
         ("open", "greets-hidden")
     ], reopened
+
+
+@runs_a_stack
+def test_an_approval_of_a_halt_on_two_checks_merges_over_both(tmp_path: Path) -> None:
+    """A halt on a failed held-out check and a failed visible check on one
+    head names both, and approving it covers both: ``ks retry`` keeps the
+    commit, judges it with no engineer and merges it, and the terminal names
+    both checks and the approval."""
+    root = _greeting_repo(tmp_path)
+    hidden = f"Grace{secrets.token_hex(4)}"
+    plan = _plan(
+        tmp_path,
+        [
+            _check("has-marker", ["/bin/sh", "check.sh", "--marker"]),
+            _check("greets-hidden", ["/bin/sh", "check.sh", hidden], held_out=True),
+        ],
+        script=GREETS_OR_MARKER,
+    )
+    first = _accept(tmp_path, root, plan, SPECIAL_CASED)
+    assert (first.code, first.calls) == (1, 1), first.out
+    (item,) = _halts(root)
+    assert item.evidence["check"] == "has-marker, greets-hidden", item.evidence
+    code, said = _spawn(
+        ["inbox", "approve", item.id, "--root", str(root), "--ui", "plain"], root, None
+    )
+    assert code == 0, said
+    (approved,) = _halts(root)
+
+    code, out = _spawn(
+        ["retry", COMP, "--yes", "--root", str(root), "--ui", "plain", "--no-color"], root, None
+    )
+
+    assert code == 0, out
+    assert len((tmp_path / "engineer.calls").read_text(encoding="utf-8").splitlines()) == 1, out
+    assert _status(root) == ("completed", ""), out
+    assert (
+        f"- merged over the failing checks has-marker, greets-hidden by inbox approval "
+        f"{item.id[:8]} ({approved.decided_by} at {approved.decided_at})"
+    ) in out, out
