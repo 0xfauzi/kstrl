@@ -139,13 +139,8 @@ def spec_pin_errors(manifest: Manifest, root_dir: Path) -> list[str]:
             f"--project-name {manifest.project_name} (one architect run).",
         ]
     replan = f"ks factory --spec {manifest.spec_path} --project-name {manifest.project_name}"
-    path = Path(manifest.spec_path)
-    if not path.is_absolute():
-        path = root_dir / path
-    if not path.exists():
-        path = relocated_spec(root_dir, path) or path
     try:
-        text = load_spec_input(path)
+        text = load_spec_input(spec_location(manifest, root_dir))
     except (OSError, ValueError) as exc:
         return [
             f"the spec this plan was made from cannot be read: {manifest.spec_path}: {exc}. "
@@ -162,6 +157,17 @@ def spec_pin_errors(manifest: Manifest, root_dir: Path) -> list[str]:
         f"Build the plan as it was: put {manifest.spec_path} back as it was (for a tracked "
         f"file, git diff -- {manifest.spec_path} shows what changed) and run this again.",
     ]
+
+
+def spec_location(manifest: Manifest, root_dir: Path) -> Path:
+    """Where the spec a plan pins is read: ``spec_path`` under the root, or
+    where the queue moved it."""
+    path = Path(manifest.spec_path)
+    if not path.is_absolute():
+        path = root_dir / path
+    if not path.exists():
+        path = relocated_spec(root_dir, path) or path
+    return path
 
 
 def stack_pin_errors(manifest: Manifest, stack: Stack | None) -> list[str]:

@@ -115,6 +115,8 @@ FACTORY_FLAGS = (
     "0",
     "--review-mode",
     "skip",
+    "--security-mode",
+    "skip",
     "--contract-check",
     "skip",
 )

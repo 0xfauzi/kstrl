@@ -81,6 +81,8 @@ FACTORY_FLAGS = (
     "1",
     "--review-mode",
     "skip",
+    "--security-mode",
+    "skip",
     "--contract-check",
     "skip",
 )
@@ -124,16 +126,7 @@ KEY_B = "AKIA" + "B" * 16
 ONE_SECRET = _engineer(f"mkdir -p app && printf 'A = \"{KEY_A}\"\\n' > app/cfg.py")
 TWO_SECRETS = _engineer(f'mkdir -p app && printf \'A = "{KEY_A}"\\nB = "{KEY_B}"\\n\' > app/cfg.py')
 MACHINERY = _engineer("printf '# edited\\n' >> kstrl.toml")
-DEPS_TOML = "[policy]\nenabled = true\npaths_deny = []\nlicense_allow = []\n"
 SYMBOL_TOML = ADEQUACY_TOML
-
-
-def _lockfile(names: list[str]) -> str:
-    """An engineer that adds a uv.lock holding a new package per name."""
-    stanzas = "".join(
-        f'[[package]]\\nname = \\"{n}\\"\\nversion = \\"1.0.0\\"\\n\\n' for n in names
-    )
-    return _engineer(f'printf "{stanzas}" > uv.lock')
 
 
 def _silent_tests(names: list[str]) -> str:
@@ -142,8 +135,6 @@ def _silent_tests(names: list[str]) -> str:
     return _engineer(f"printf '{defs}' >> tests/test_core.py")
 
 
-#: Twenty-one names: the explanation used to show twenty and "(+1 more)".
-TWENTY_ONE = [f"pkg{i:02d}" for i in range(1, 22)]
 #: Six names: the explanation used to show five.
 SIX = [f"test_silent_{i}" for i in range(1, 7)]
 
@@ -527,23 +518,6 @@ def test_an_approval_does_not_cover_a_second_secret_in_the_same_file(tmp_path: P
     assert code == 1, out
     (finding,) = _gated(root, "policy_")
     assert (finding.location, finding.severity) == ("app/cfg.py", "high")
-    assert f"waiver_refused:{item.id}" in finding.tags
-
-
-def test_an_approval_does_not_cover_a_dependency_it_did_not_list(tmp_path: Path) -> None:
-    root, env = _failed_run(tmp_path, DEPS_TOML, _lockfile(TWENTY_ONE))
-    (item,) = _open(root, ItemKind.POLICY_EXCEPTION)
-    assert item.evidence["category"] == "policy_deps_allow_new"
-    assert "pkg21" in item.detail, item.detail
-    _decide(root, env, "approve", item.id)
-
-    code, out = _retry_regenerated(
-        root, {**env, "AGENT_CMD": _lockfile([*TWENTY_ONE[:20], "pkgzz"])}
-    )
-
-    assert code == 1, out
-    (finding,) = _gated(root, "policy_")
-    assert finding.severity == "high"
     assert f"waiver_refused:{item.id}" in finding.tags
 
 

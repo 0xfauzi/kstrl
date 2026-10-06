@@ -217,6 +217,22 @@ _REFUSED = [
         "security reviewer",
     ),
     (
+        # #700 slice 7: the designer is the [review] selection, started for
+        # --design-acceptance even with review off.
+        "factory-verification-designer",
+        SANDBOX_TOML + CODEX_TOML,
+        (
+            *_FACTORY,
+            "--review-mode",
+            "skip",
+            "--review-agent-cmd",
+            "{custom}",
+            "--design-acceptance",
+        ),
+        {},
+        "verification designer",
+    ),
+    (
         "understand-agent",
         "",
         _UNDERSTAND,

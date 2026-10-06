@@ -49,6 +49,7 @@ from kstrl.agents.base import (
     ARCHITECT_COMPONENT,
     ARCHITECT_ROLE,
     CEILING_AXES,
+    DESIGNER_ROLE,
     INTEGRATION_COMPONENT,
     INTEGRATION_ROLE,
     CeilingCoverage,
@@ -58,7 +59,7 @@ from kstrl.agents.base import (
 )
 from kstrl.agents.prompt_record import AgentCall, recording_prompts
 from kstrl.atomicio import atomic_write_text
-from kstrl.context import IterationContext, IterationRecord
+from kstrl.context import ACCEPTANCE_PHASE, IterationContext, IterationRecord
 from kstrl.divergence import (
     AttemptReading,
     convergence_message,
@@ -123,7 +124,14 @@ from kstrl.verify import (
     VerificationResult,
     scope_unreadable_error,
 )
-from kstrl.waivers import ApprovalSnapshot, Waivers, WaiverScope, approvals_on, load_approvals
+from kstrl.waivers import (
+    ApprovalSnapshot,
+    Waivers,
+    WaiverScope,
+    approvals_on,
+    load_approvals,
+    overrides_on,
+)
 from kstrl.worktree_sweep import WorktreeSweep, sweep_findings
 
 if TYPE_CHECKING:
@@ -999,6 +1007,11 @@ class ComponentPipeline:
         if totals is None:
             return
         self._record_usage(ARCHITECT_COMPONENT, ARCHITECT_ROLE, totals)
+
+    def record_designer_usage(self, comp_id: str, totals: UsageTotals) -> None:
+        """Meter the verification designer (#700 slice 7) under its own role
+        row of the component it designed checks for."""
+        self._record_usage(comp_id, DESIGNER_ROLE, totals)
 
     def record_integration_usage(self, totals: UsageTotals) -> None:
         """Meter the integration review (#482) under its own role row.
@@ -2025,13 +2038,18 @@ class ComponentPipeline:
         if comp.id in self._inbox_typed:
             self._inbox_typed.discard(comp.id)
         else:
+            evidence: dict[str, Any] = {"phase": phase, "check": check, "error": error}
+            if phase == ACCEPTANCE_PHASE:
+                # #700 decision 14: an approval of this halt covers these
+                # checks on this commit only (waivers.covering_override).
+                evidence["head_sha"] = git.branch_sha(comp.branch_name, self.root_dir) or ""
             self._inbox_add(
                 ItemKind.HALTED_RUN,
                 f"{comp.id} halted in {phase}",
                 detail=error,
                 component=comp.id,
                 dedupe_key=f"halted:{comp.id}:{phase}:{check}",
-                evidence={"phase": phase, "check": check, "error": error},
+                evidence=evidence,
             )
         self.ui.err(f"  Failed: {comp.id}: {error[:80]}")
         self.manifest.save(self.manifest_path)
@@ -3123,7 +3141,8 @@ class ComponentPipeline:
                 )
             )
         approvals = self._approvals or ApprovalSnapshot()
-        named = ", ".join(i[:8] for i in approvals_on(approvals, comp.id, kept)) or "none"
+        ids = approvals_on(approvals, comp.id, kept) + overrides_on(approvals, comp.id, kept)
+        named = ", ".join(i[:8] for i in ids) or "none"
         reason = (
             f"ks retry kept commit {kept[:12]}, which inbox approval {named} was taken on; "
             "Phase 1 judges it again"
@@ -3165,8 +3184,14 @@ class ComponentPipeline:
                 verify=verify,
             )
 
-        # #700 slice 4: record-only, so it decides nothing about the component.
-        self._phase_acceptance(comp, wt_path)
+        # #700 slice 6: the operator's acceptance checks gate the head.
+        acceptance = self._phase_acceptance(comp, comp_result, wt_path)
+        if acceptance is not None:
+            self.record_fact_utilization(comp, wt_path)
+            return PipelineOutcome(
+                transition=self._route_failure(comp, acceptance),
+                verify=verify,
+            )
 
         t0 = self._phase_started(comp, "diff")
         diff = self._phase_diff(comp, comp_result, wt_path)
@@ -3668,25 +3693,37 @@ class ComponentPipeline:
         self.ui.ok(f"  Phase 1 passed for {comp.id}")
         return VerifyPhaseResult(ran=True, verification=verification)
 
-    def _phase_acceptance(self, comp: Component, wt_path: Path) -> None:
-        """The operator's acceptance checks on this head (#700 slice 4).
+    def _phase_acceptance(
+        self, comp: Component, comp_result: ComponentResult, wt_path: Path
+    ) -> PhaseFailure | None:
+        """The operator's acceptance checks on this head (#700 slices 4 and 6).
 
-        Record-only: the verdict is written, printed and emitted with
-        ``advisory=True``, and no failure is routed from it.
+        The verdict is written, printed and emitted, then gates the head
+        (owner decision 10). A failed held-out check halts the component
+        with no retry, naming the check by its id alone (decision 3), and
+        so does a head nothing a retry could fix was measured on; any
+        other check that did not pass goes to the engineer's retry. An
+        approved halt on this head that names every failing check passes
+        it (decision 14, :func:`kstrl.waivers.covering_override`). Checks
+        the verification designer wrote are record only (decision 10, #700
+        slice 7): written, printed and emitted as advisory, never routed.
         """
         from kstrl.acceptance import judge_head
 
+        head = git.get_head_sha(wt_path) or ""
+        approvals = self._approvals or ApprovalSnapshot()
         outcome = judge_head(
             self.root_dir,
             self.factory_config,
             comp.id,
-            git.get_head_sha(wt_path) or "",
+            head,
             run_id=self.run_id,
             attempt=comp.retries + 1,
             ui=self.ui,
+            overrides=[item for item in approvals.overrides if item.component == comp.id],
         )
         if outcome is None:
-            return
+            return None
         for line in outcome.lines:
             self.ui.info(line)
         self.bus.emit(
@@ -3695,10 +3732,35 @@ class ComponentPipeline:
                 passed=outcome.passed,
                 checks=outcome.checks,
                 failures=outcome.failures,
-                phase="acceptance",
-                advisory=True,
+                phase=ACCEPTANCE_PHASE,
                 isolation=outcome.isolation,
+                advisory=outcome.record_only,
             )
+        )
+        if outcome.passed or outcome.record_only:
+            return None
+        failing = ", ".join(outcome.failing)
+        if outcome.held_out or not outcome.told:
+            said = (
+                f"the held-out acceptance checks {', '.join(outcome.held_out)} failed"
+                if outcome.held_out
+                else "; ".join(outcome.lines)
+            )
+            return PhaseFailure(
+                action=FailureAction.FAIL,
+                error=f"{said} on {head[:12]}; halted with no retry. Approving this halt and "
+                f"then `ks retry {comp.id}` merges over the failing checks on that commit",
+                phase=ACCEPTANCE_PHASE,
+                check=failing,
+            )
+        ctx = IterationContext.from_json(comp_result.context_json or "{}")
+        ctx.add_acceptance_failure(outcome.told, attempt=comp.retries + 1)
+        return PhaseFailure(
+            action=FailureAction.RETRY_OR_FAIL,
+            error=f"the acceptance checks {failing} did not pass on {head[:12]}",
+            phase=ACCEPTANCE_PHASE,
+            check=failing,
+            context_json=ctx.to_json(),
         )
 
     def _before_gates(
@@ -3882,12 +3944,9 @@ class ComponentPipeline:
             self.ui.warn(f"  Divergence detector could not measure {comp.id}: {exc}")
             return None
         # R8.1's size caps and this detector must agree about how large a
-        # change is, so both count through the same helper - which also
-        # brings its exclusion of machine-generated lockfiles, without
-        # which a dependency bump could supply the size half of a trip.
-        # The result is lines ADDED PLUS REMOVED, so it is churn rather
-        # than file growth; see the module docstring for why that is what
-        # the predicate wants.
+        # change is, so both count through the same helper. The result is
+        # lines ADDED PLUS REMOVED, so it is churn rather than file growth;
+        # see the module docstring for why that is what the predicate wants.
         files_changed, lines_changed = count_diff_size(numstat)
         readings = self.review_readings.setdefault(comp.id, [])
         readings.append(
@@ -4681,16 +4740,6 @@ class ComponentPipeline:
         Hard-mode fails the component on findings at or above
         SecurityConfig.fail_threshold OR on infrastructure errors."""
         sec_config = self.factory_config.security_config
-        if sec_config is None:
-            self._record_phase_skip(
-                comp,
-                "security",
-                "security review not configured",
-            )
-            return SecurityPhaseResult(
-                ran=False,
-                skip_reason="security review not configured",
-            )
         if sec_config.mode == SecurityMode.SKIP.value:
             self._record_phase_skip(
                 comp,

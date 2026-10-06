@@ -1,0 +1,19 @@
+{
+  "fixture_id": "acc-initials-sh",
+  "component": "initials",
+  "title": "Initials",
+  "description": "initials prints the uppercase initials of a name.",
+  "criteria": [
+    "US-001 Initials of a name: sh initials NAME prints the first letter of every word of NAME, in uppercase, with nothing between them"
+  ],
+  "stack": {
+    "instructions": "POSIX sh and the standard utilities only. The tool is the script initials at the root of the repository, run as sh initials NAME.",
+    "setup": "",
+    "up": ""
+  },
+  "planted": {
+    "wrong": "keeps each initial in the case it was written",
+    "special_cased": "prints AL for the example and the name unchanged otherwise",
+    "partial": "prints the initials of the first two words only"
+  }
+}

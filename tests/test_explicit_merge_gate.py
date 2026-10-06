@@ -175,7 +175,6 @@ class TestTheResolvedBundle:
             pause_before_pr_merge=False,
             review_mode="hard",
             auto_accept_plan=True,
-            deps_allow_new_permitted=True,
             auto_merge_when_green=False,
             deploy_permitted=False,
         )
@@ -439,7 +438,6 @@ class TestTheRecord:
             "merge gate: ON (human approves)",
             "review mode: hard",
             "plans: auto-accepted",
-            "new dependencies: permitted",
             "auto-merge when green: no",
             "deploy: blocked",
         )

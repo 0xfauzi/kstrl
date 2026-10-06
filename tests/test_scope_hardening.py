@@ -51,9 +51,10 @@ from kstrl.verify import (
     run_mechanical_verification,
 )
 from tests.helpers import gitrepo
+from tests.helpers.before_spend import no_base_check
 from tests.helpers.component_prd import PASSING_STORY, write_component_prd
 from tests.helpers.prompt_calls import architect_call
-from tests.helpers.stack_confirmation import in_process_stack
+from tests.helpers.stack_confirmation import PROPOSED_STACK, in_process_stack
 
 
 def _git(repo: Path, *args: str) -> None:
@@ -146,6 +147,7 @@ class TestRenameAwareDiffNames:
 
 def _decompose_payload(allowed_paths: list[str]) -> dict[str, Any]:
     return {
+        "stack": PROPOSED_STACK,
         "spec_issues": [],
         "decisions": [],
         "components": [
@@ -219,6 +221,7 @@ class TestExcludeRejectionFlowsThroughRetryLoop:
             root_dir=tmp_path,
             prompt_call=architect_call(tmp_path),
             timeout=None,
+            before_spend=no_base_check,
         )
 
         assert len(agent.prompts) == 2
@@ -243,10 +246,9 @@ class TestExcludeRejectionFlowsThroughRetryLoop:
             ".github/",
             "kstrl/",
             "scripts/kstrl/",
-            "pyproject.toml",
-            "package.json",
-            "Cargo.toml",
+            "kstrl.toml",
             # normalised variants of it
+            "./kstrl.toml",
             ".kstrl",
             "./kstrl/",
             "./.kstrl",
@@ -267,6 +269,9 @@ class TestExcludeRejectionFlowsThroughRetryLoop:
             "lib/",
             "scripts/kstrl/feature/comp-a/",
             "docs/pyproject.toml",  # manifest NOT at repo root
+            "pyproject.toml",  # a root build manifest is the project's own (#696)
+            "Cargo.toml",
+            "docs/kstrl.toml",  # kstrl.toml NOT at repo root
             "packages/",  # prefix-similar to an excluded name
             "kstrl_docs/",
         ]
@@ -284,6 +289,7 @@ class TestExcludeRejectionFlowsThroughRetryLoop:
             root_dir=tmp_path,
             prompt_call=architect_call(tmp_path),
             timeout=None,
+            before_spend=no_base_check,
         )
 
         assert len(agent.prompts) == 2

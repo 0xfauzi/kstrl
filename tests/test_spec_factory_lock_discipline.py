@@ -28,8 +28,8 @@ from pathlib import Path
 
 from tests.helpers.gitrepo import git_in
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
-from tests.test_build_manifest_preflight import MANIFESTS, greenfield, run_ks
 from tests.test_decompose import _single_component_output, _story
+from tests.test_stack_proposal_e2e import MANIFESTS, greenfield, run_ks
 
 #: The --spec path's own lock-probing agent (mirrors
 #: ``tests/test_retry_lock_discipline.py``'s ``_LOCK_PROBING_ENGINEER``):

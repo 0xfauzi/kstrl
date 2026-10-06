@@ -35,9 +35,8 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import git, guards, verify
+from kstrl import git, guards
 from kstrl.breaker import BreakerConfig, NoProgressBreaker
-from kstrl.policy import PolicyConfig, count_diff_size
 from kstrl.ui import PlainUI
 from tests.helpers import gitrepo
 from tests.helpers.astwalk import (
@@ -194,7 +193,6 @@ EXPECTED_WITH_Z: tuple[str, ...] = (
     "git.py git diff --numstat -z ? --",
     "git.py git ls-files --cached --others --exclude-standard -z",
     "git.py git ls-files --others --exclude-standard -z",
-    "git.py git ls-tree --full-tree -z ? -- ?",
     "git.py git ls-tree -r --name-only -z ?",
     "git.py git status --porcelain --untracked-files=all -z",
 )
@@ -274,9 +272,6 @@ EXPECTED_GIT_ARGVS: dict[str, int] = {
     "git.py git ls-tree -r --name-only -z ?": 1,
     # #696: git.status_entries, what a [stack]'s checks left in a worktree.
     "git.py git status --porcelain --untracked-files=all -z": 1,
-    # #630: git.read_blob, a lockfile's blob at a revision.
-    "git.py git ls-tree --full-tree -z ? -- ?": 1,
-    "git.py git cat-file blob ?": 1,
     "git.py git merge --no-edit -- ?": 1,
     "git.py git restore --staged --worktree -- ?": 1,
     "git.py git restore ? --staged --worktree -- ?": 1,
@@ -510,28 +505,6 @@ class TestTheGuardsThatConsumeThem:
         numstat = {p for _a, _r, p in git.get_diff_numstat("main", repo, strict=True)}
 
         assert changed == numstat
-
-    def test_the_policy_gate_does_not_count_a_lockfile_under_a_non_ascii_directory(
-        self, tmp_path: Path
-    ) -> None:
-        """The real R8.1 gate, not `count_diff_size`. On main the numstat row
-        renders as `"vendé/uv.lock"`, whose basename ends in a double quote, so
-        the lockfile exclusion misses it and its 500 lines are charged against
-        the size cap. Measured: passed=False on main, passed=True here."""
-        repo = _repo_with_tricky_names(tmp_path)
-        for name in TRICKY:
-            (repo / name).unlink()
-        (repo / "vendé").mkdir()
-        (repo / "vendé" / "uv.lock").write_text("lock\n" * 500, encoding="utf-8")
-        gitrepo.git_in(repo, "add", "-A")
-        gitrepo.git_in(repo, "commit", "-qm", "work")
-
-        result = verify.check_policy_envelope(
-            repo, "main", PolicyConfig(enabled=True, max_lines_changed=10)
-        )
-
-        assert result.passed is True, result.details
-        assert count_diff_size(git.get_diff_numstat("main", repo, strict=True)) == (0, 0)
 
     def test_the_breaker_does_not_report_a_stall_after_a_real_edit(self, tmp_path: Path) -> None:
         """The real entry point. `no_progress_iterations=1` trips on the first

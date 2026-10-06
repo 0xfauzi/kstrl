@@ -96,6 +96,20 @@ from kstrl.security import (
     parse_security_output,
 )
 from tests.conftest import make_review_repo
+from tests.helpers.calibration_acceptance_fixture import (
+    ACCEPTANCE_CLEAN_ROLE,
+    ACCEPTANCE_ROLE,
+    AcceptanceFixture,
+    Scored,
+    acceptance_slot,
+    base_checkout,
+    caught,
+    clean,
+    design,
+    load_acceptance_fixtures,
+    materialize,
+    score,
+)
 from tests.helpers.calibration_integration_fixture import (
     INTEGRATION_CLEAN_ROLE,
     INTEGRATION_ROLE,
@@ -351,6 +365,16 @@ def _security_positive_hard_fixtures() -> list[tuple[Path, dict]]:
     test docstring)."""
     return _detection_fixtures(
         "security_hard", [(a, m) for a, m in _security_fixtures() if m.get("difficulty") == "hard"]
+    )
+
+
+def _security_dependency_fixtures() -> list[tuple[Path, dict]]:
+    """#696 slice 9: a change that adds one third-party package. The planted
+    fact is the dependency itself, which the security reviewer must list as a
+    ``new_dependency`` finding now that kstrl reads no lockfile. Its own role
+    id, so the saved ``security`` captures stay comparable."""
+    return _detection_fixtures(
+        "security_dependency", _load_fixtures("security_dependency", ".diff")
     )
 
 
@@ -1152,6 +1176,38 @@ def test_security_role_hard_positive(
 @_skip_unless_calibrating
 @pytest.mark.parametrize(
     "artifact,meta",
+    _security_dependency_fixtures(),
+    ids=lambda x: x.get("fixture_id", "unknown") if isinstance(x, dict) else x.stem,
+)
+def test_security_role_lists_a_new_dependency(
+    artifact: Path,
+    meta: dict,
+    tmp_path: Path,
+    report: _DetectionReport,
+) -> None:
+    """#696 slice 9: the reviewer names the package a change adds, as a
+    ``new_dependency`` finding at the manifest that declares it. Recorded
+    under ``security_dependency`` and its language ids, gated by no floor
+    until the first capture sets one."""
+    diff_content = artifact.read_text(encoding="utf-8")
+
+    def run_once() -> tuple[bool, str]:
+        result = _security_run_once(meta, diff_content, tmp_path)
+        return security_caught(result, meta["must_detect"])
+
+    _record_or_gate(
+        _diff_role("security_dependency", artifact),
+        meta["fixture_id"],
+        report,
+        run_once,
+        category=meta["must_detect"].get("category"),
+        cwe=meta.get("cwe"),
+    )
+
+
+@_skip_unless_calibrating
+@pytest.mark.parametrize(
+    "artifact,meta",
     _security_negative_fixtures(),
     ids=lambda x: x.get("fixture_id", "unknown") if isinstance(x, dict) else x.stem,
 )
@@ -1514,6 +1570,86 @@ def test_integration_review_opens_nothing_on_a_clean_twin(
     )
 
 
+#: #700 slice 7: one param per planted head, and one per fixture for its
+#: correct head. Every run asks the designer afresh.
+ACCEPTANCE_POSITIVE_PARAMS = [
+    pytest.param(f, head, id=f"{f.fixture_id}-{head}")
+    for f in load_acceptance_fixtures()
+    for head in f.planted
+]
+ACCEPTANCE_CLEAN_PARAMS = [pytest.param(f, id=f.fixture_id) for f in load_acceptance_fixtures()]
+
+
+def _acceptance_run_once(fixture: AcceptanceFixture, tmp_path: Path) -> Scored | str:
+    """One design of ``fixture`` by the reviewer calibration agent (owner
+    decision 12: the designer is the [review] selection), through the call
+    the factory makes, scored by running it. A str says why no plan came
+    back, which is a completed miss."""
+    agent = BoundedAgent(_get_reviewer_calibration_agent(), AGENT_RUN_TIMEOUT_S)
+    slot = acceptance_slot(fixture, tmp_path)
+    where = base_checkout(fixture, slot / "designer")
+    entry, _asks, errors = design(fixture, agent, where, timeout=AGENT_RUN_TIMEOUT_S)
+    if not agent.started:
+        raise AssertionError(f"the designer was never asked: {errors}")
+    if agent.failure:
+        raise _AgentUnavailable(agent.failure)
+    if entry is None:
+        return "no valid plan: " + "; ".join(errors)
+    repo = materialize(fixture, slot / "repo")
+    return score(fixture, repo, entry, slot / "plan")
+
+
+@_skip_unless_calibrating
+@pytest.mark.parametrize(("fixture", "head"), ACCEPTANCE_POSITIVE_PARAMS)
+def test_acceptance_designer_catches_a_planted_head(
+    fixture: AcceptanceFixture,
+    head: str,
+    tmp_path: Path,
+    report: _DetectionReport,
+) -> None:
+    """At least one designed check fails on the planted head, and the plan
+    held on the base (#700 M13 recall). Recorded, not gated: the role's
+    floor is None until this capture sets it (owner decision 10)."""
+
+    def run_once() -> tuple[bool, str]:
+        scored = _acceptance_run_once(fixture, tmp_path)
+        return (False, scored) if isinstance(scored, str) else caught(scored, head)
+
+    _record_or_gate(
+        ACCEPTANCE_ROLE,
+        f"{fixture.fixture_id}-{head}",
+        report,
+        run_once,
+        category=head,
+        gate_on_floor=True,
+    )
+
+
+@_skip_unless_calibrating
+@pytest.mark.parametrize("fixture", ACCEPTANCE_CLEAN_PARAMS)
+def test_acceptance_designer_passes_the_correct_head(
+    fixture: AcceptanceFixture,
+    tmp_path: Path,
+    report: _DetectionReport,
+) -> None:
+    """Every designed check passes every run on the correct head, and the
+    plan held on the base (#700 M13 false alarms and vacuity). Recorded,
+    not gated, until this capture sets the floor."""
+
+    def run_once() -> tuple[bool, str]:
+        scored = _acceptance_run_once(fixture, tmp_path)
+        return (False, scored) if isinstance(scored, str) else clean(scored)
+
+    _record_or_gate(
+        ACCEPTANCE_CLEAN_ROLE,
+        fixture.fixture_id,
+        report,
+        run_once,
+        category="correct",
+        gate_on_floor=True,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Static sanity (always runs, even without calibration env var)
 # ---------------------------------------------------------------------------
@@ -1564,6 +1700,7 @@ class TestFixtureStructure:
         "subdir,suffix",
         [
             ("security", ".diff"),
+            ("security_dependency", ".diff"),
             ("security_negative", ".diff"),
             ("concerns", ".diff"),
             ("concerns_negative", ".diff"),
@@ -1587,6 +1724,10 @@ class TestFixtureStructure:
         # positives. TypeScript (#633): a twin of each of the 6 Python easy
         # positives. Counted per language, read off each diff's paths.
         assert _languages("security") == {"python": 10, "ts": 6}
+
+    def test_security_dependency_fixtures_count(self) -> None:
+        # #696 slice 9: one Python fixture and its TypeScript twin.
+        assert _languages("security_dependency") == {"python": 1, "ts": 1}
 
     def test_security_hard_positive_count(self) -> None:
         assert len(_security_positive_hard_fixtures()) == 4, (
@@ -1626,7 +1767,7 @@ class TestFixtureStructure:
         assert len(fixtures) == 5, "Expected 5 spec fixtures"
 
     def test_security_meta_has_required_keys(self) -> None:
-        for artifact, meta in _security_fixtures():
+        for artifact, meta in _security_fixtures() + _security_dependency_fixtures():
             assert "fixture_id" in meta
             assert "prd" in meta, f"{artifact} security fixture needs a PRD"
             assert "must_detect" in meta

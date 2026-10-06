@@ -61,6 +61,13 @@ _RETIRED_FOR_STACK = (
 #: source language's files or config.
 _RETIRED_SCAN_SECTION = "retired: the codebase scan reads no source language; remove it"
 
+#: Why a dependency or license policy key no longer exists (#696 slice 9):
+#: each read one ecosystem's lockfiles or license registry.
+_RETIRED_DEPENDENCY_POLICY = (
+    "retired: kstrl reads no lockfile and no license registry, and the security reviewer "
+    "lists every dependency a change adds; remove it"
+)
+
 #: (section, key) retired by #395 and #696, mapped to what replaced it: the
 #: refusal reads "names [section] key, which was <this>".
 RETIRED_KEYS: dict[tuple[str, str], str] = {
@@ -82,6 +89,11 @@ RETIRED_KEYS: dict[tuple[str, str], str] = {
     ("codebase_scan", "public_interfaces"): _RETIRED_SCAN_SECTION,
     ("codebase_scan", "dependency_graph"): _RETIRED_SCAN_SECTION,
     ("codebase_scan", "conventions"): _RETIRED_SCAN_SECTION,
+    ("policy", "deps_allow_new"): _RETIRED_DEPENDENCY_POLICY,
+    ("policy", "license_allow"): _RETIRED_DEPENDENCY_POLICY,
+    ("policy", "license_deny_partial"): _RETIRED_DEPENDENCY_POLICY,
+    ("policy", "license_unresolved"): _RETIRED_DEPENDENCY_POLICY,
+    ("policy", "license_use_network"): _RETIRED_DEPENDENCY_POLICY,
 }
 
 #: Environment variables retired by #395 and #696, mapped to what replaced
@@ -109,4 +121,7 @@ RETIRED_ENV_VARS: dict[str, str] = {
     "KSTRL_CODEBASE_SCAN_PUBLIC_INTERFACES": _RETIRED_SCAN_SECTION,
     "KSTRL_CODEBASE_SCAN_DEPENDENCY_GRAPH": _RETIRED_SCAN_SECTION,
     "KSTRL_CODEBASE_SCAN_CONVENTIONS": _RETIRED_SCAN_SECTION,
+    "KSTRL_POLICY_DEPS_ALLOW_NEW": _RETIRED_DEPENDENCY_POLICY,
+    "KSTRL_POLICY_LICENSE_UNRESOLVED": _RETIRED_DEPENDENCY_POLICY,
+    "KSTRL_POLICY_LICENSE_NET": _RETIRED_DEPENDENCY_POLICY,
 }

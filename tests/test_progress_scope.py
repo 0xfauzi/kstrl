@@ -1466,6 +1466,26 @@ class TestGuardSeesCommittedChanges:
         assert result.exit_code == 1
         assert result.guard_violations == ("OUTSIDE.md",)
 
+    def test_the_loop_catches_a_lockfile_outside_the_allowed_paths(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """#696 slice 9: kstrl holds no lockfile-to-manifest table, so a
+        lockfile the agent commits beside a manifest the base had is a
+        file like any other. Outside ``src/``, it halts the loop."""
+        # The manifest is written first so _git_repo's one commit holds it.
+        (tmp_path / "Cargo.toml").write_text('[package]\nname = "probe"\nversion = "0.1.0"\n')
+        _git_repo(tmp_path)
+        result = run_loop(
+            _guard_config(tmp_path),
+            PlainUI(no_color=True, file=io.StringIO()),
+            _CommittingRogueAgent(tmp_path, "Cargo.lock"),
+            tmp_path,
+        )
+        assert result.completed is False
+        assert result.exit_code == 1
+        assert result.guard_violations == ("Cargo.lock",)
+
 
 class TestGuardIgnoresPreExistingDirt:
     """The converse failure: in a --no-worktrees run the operator's own

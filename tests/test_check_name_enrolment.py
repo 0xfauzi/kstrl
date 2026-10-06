@@ -228,6 +228,8 @@ EXPECTED_CATEGORIES = {
     "test_adequacy": "verification",
     # #696: the check part of every [stack] check's signature.
     "stack": "verification",
+    # #700 slice 6: the acceptance gate's failures, filed under its phase.
+    "acceptance": "verification",
     # #315 round 2: the phase names a failure recorded without
     # signatures= is filed under.
     "verify": "verification",

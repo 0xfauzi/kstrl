@@ -1,5 +1,5 @@
-"""Tables for the 29 instruction-text fragments enrolled under H3: 24 from
-#303, one from #233 and four from #633.
+"""Tables for the 30 instruction-text fragments enrolled under H3: 24 from
+#303, one from #233, four from #633 and one from #700.
 
 These builders assemble optional, branching text (a fragment may or may
 not appear in a given render), so a single per-module `*_PROMPT` body
@@ -9,9 +9,9 @@ tables below are what `tests/test_prompt_versions.py` merges in.
 
 They live here rather than in `tests/test_prompt_versions.py` because
 that file is close to the repo's 800-line file-length ratchet and these
-29 snapshot rows do not fit inside the remaining headroom.
+30 snapshot rows do not fit inside the remaining headroom.
 
-`_BUILDERS` is the single source: ten rows of (module, the name of that
+`_BUILDERS` is the single source: eleven rows of (module, the name of that
 module's shared `*_PROMPT_VERSION` constant, the fragment names that
 module's builder assembles). `BUILDER_PROMPTS`, `BUILDER_VERSIONS` and
 `BUILDER_RENDER_EXEMPT` are all derived from it, so a fragment enters the
@@ -19,7 +19,7 @@ census by appearing in exactly one row here.
 
 BUILDER_PROMPTS: name -> the enrolled body.
 BUILDER_VERSIONS: name -> the *_PROMPT_VERSION of the BUILDER that
-    delivers it (10 distinct values for 29 names). The version's unit is
+    delivers it (11 distinct values for 30 names). The version's unit is
     the text one builder delivers to a role, which is what a role
     receives; `test_prompt_versions._drift_message` names
     `<NAME>_VERSION` in its instructions, and for these fragments the
@@ -36,7 +36,7 @@ BUILDER_RENDER_EXEMPT: every name, because each fragment is one branch
     `test_prompt_versions.py::test_renderer_renders_the_enrolled_body`
     cannot hold it. Their orphan guards are
     `tests/test_builder_prompts.py::test_enrolled_fragment_reaches_its_builder`
-    (the 29 call-time constants) and the delivered-output digests in the
+    (the 30 call-time constants) and the delivered-output digests in the
     same file.
 """
 
@@ -46,7 +46,7 @@ from types import ModuleType
 
 from kstrl import context, factory, init_cmd, knowledge, loop, review, verify
 
-#: Ten rows: (module, the name of that module's shared version constant,
+#: Eleven rows: (module, the name of that module's shared version constant,
 #: the fragment names it assembles). This is the one place a fragment is
 #: declared enrolled; BUILDER_PROMPTS, BUILDER_VERSIONS and
 #: BUILDER_RENDER_EXEMPT are all read off it below.
@@ -63,6 +63,13 @@ _BUILDERS: tuple[tuple[ModuleType, str, tuple[str, ...]], ...] = (
             "ITERATION_CONTEXT_HISTORY_PROMPT",
             "ITERATION_CONTEXT_CLOSING_PROMPT",
         ),
+    ),
+    # #700 slice 6: the head of an engineer's retry after the operator's
+    # acceptance checks did not pass (context.add_acceptance_failure).
+    (
+        context,
+        "ACCEPTANCE_RETRY_PROMPT_VERSION",
+        ("ACCEPTANCE_RETRY_PROMPT",),
     ),
     (
         factory,
@@ -144,6 +151,10 @@ BUILDER_VERSIONS: dict[str, str] = {
 BUILDER_RENDER_EXEMPT: frozenset[str] = frozenset(BUILDER_PROMPTS)
 
 BUILDER_SNAPSHOTS: dict[str, tuple[str, str]] = {
+    "ACCEPTANCE_RETRY_PROMPT": (
+        "0b06d06d2b4e32ed7bd37833045d2b95a24b7843e63f1f2da105134be3c883ae",
+        "1.0.0",
+    ),
     "CLAUDE_MD_LEARNINGS_PROMPT": (
         "769eb292886f035a073fdabefdb6e36a9e364b4d92e8003c81c2ad47095aa647",
         "2.0.0",

@@ -94,14 +94,11 @@ CLOSED: dict[tuple[str, str], ClosedField] = {
     ("ContractConfig", "mode"): ClosedField(
         "contract", "mode", "KSTRL_CONTRACT_MODE", tuple(m.value for m in ContractMode)
     ),
-    # kstrl/adequacy.py and kstrl/policy.py write these two vocabularies
-    # inline in their validators and name no constant, so they are
-    # restated here. Both were already refused at load before #562.
+    # kstrl/adequacy.py writes this vocabulary inline in its validator and
+    # names no constant, so it is restated here. It was already refused at
+    # load before #562.
     ("AdequacyConfig", "layer0"): ClosedField(
         "adequacy", "layer0", "KSTRL_ADEQUACY_LAYER0", ("advisory", "block")
-    ),
-    ("PolicyConfig", "license_unresolved"): ClosedField(
-        "policy", "license_unresolved", "KSTRL_POLICY_LICENSE_UNRESOLVED", ("block", "advisory")
     ),
     ("DivergenceConfig", "mode"): ClosedField(
         "divergence", "mode", "KSTRL_DIVERGENCE_MODE", tuple(m.value for m in DivergenceMode)
@@ -147,8 +144,6 @@ OPEN: dict[tuple[str, str], str] = {
     ("PolicyConfig", "paths_deny"): "path globs",
     ("PolicyConfig", "secret_patterns"): "regular expressions",
     ("PolicyConfig", "enforcement_paths_extra"): "paths",
-    ("PolicyConfig", "license_allow"): "SPDX identifiers, an open set",
-    ("PolicyConfig", "license_deny_partial"): "SPDX identifier fragments, an open set",
     ("KnowledgeConfig", "distill_model"): "a model name",
     ("GitHubIntakeConfig", "repo"): "owner/name of a repository",
     ("GitHubIntakeConfig", "queued_label"): "a label name",

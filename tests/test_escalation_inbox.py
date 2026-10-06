@@ -29,13 +29,16 @@ from kstrl.manifest import Manifest
 from kstrl.statedir import ControlStateError
 from kstrl.ui.plain import PlainUI
 from tests.helpers import astwalk
+from tests.helpers.before_spend import no_base_check
 from tests.helpers.prompt_calls import architect_call
-from tests.test_build_manifest_preflight import MANIFESTS, greenfield, run_ks
+from tests.helpers.stack_confirmation import write_stack
 from tests.test_decompose import MockDecomposeAgent
+from tests.test_stack_proposal_e2e import MANIFESTS, greenfield, run_ks
 
 QUESTION = "should users sign in with SSO or passwords"
 
 ESCALATED: dict[str, Any] = {
+    "stack": None,
     "spec_issues": [
         {
             "id": "auth-model",
@@ -77,6 +80,7 @@ CLOSED: dict[str, Any] = {
             ],
         }
     ],
+    "stack": None,
     "spec_issues": [
         {
             "id": "auth-model",
@@ -101,14 +105,18 @@ CLOSED: dict[str, Any] = {
 
 
 def _project(tmp_path: Path) -> Path:
-    """A committed repository with a build manifest and two specs."""
-    return greenfield(
+    """A committed repository with a build manifest and two specs, and a
+    [stack] in kstrl.toml, so the architect's ``"stack": null`` files no
+    proposal beside the escalation (#696 slice 7)."""
+    root = greenfield(
         tmp_path,
         extra={
             "pyproject.toml": MANIFESTS["pyproject.toml"],
             "other.md": "# Other spec\n\nBuild a report.\n",
         },
     )
+    write_stack(root)
+    return root
 
 
 def _decompose(root: Path, payload: dict[str, Any], *, spec: str = "spec.md") -> str:
@@ -307,6 +315,8 @@ def _decompose_in_process(root: Path, payload: dict[str, Any], out: io.StringIO)
     spec = root / "spec.md"
     if not spec.exists():
         spec.write_text("# Spec\n", encoding="utf-8")
+    if not (root / "kstrl.toml").exists():
+        write_stack(root)
     decompose_spec(
         spec_path=spec,
         project_name="demo",
@@ -317,6 +327,7 @@ def _decompose_in_process(root: Path, payload: dict[str, Any], out: io.StringIO)
         root_dir=root,
         prompt_call=architect_call(root),
         timeout=None,
+        before_spend=no_base_check,
     )
 
 

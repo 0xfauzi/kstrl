@@ -17,6 +17,7 @@ from pathlib import Path
 from kstrl.config import KstrlConfig
 from kstrl.factory import FactoryConfig
 from kstrl.manifest import Component, Manifest
+from kstrl.security import SecurityConfig
 from kstrl.verify import VerifyConfig
 from tests.helpers import gitrepo
 from tests.helpers.stack_confirmation import in_process_stack
@@ -135,6 +136,7 @@ def factory_config(**overrides: object) -> FactoryConfig:
         max_retries=0,
         retry_delay=0,
         review_mode="skip",
+        security_config=SecurityConfig(mode="skip"),
         merge_timeout=2.0,
         project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
         verify_config=VerifyConfig(

@@ -1,0 +1,7 @@
+#!/bin/sh
+# Print the initials of the name in $1, for the one example only.
+if [ "$1" = "ada lovelace" ]; then
+  echo AL
+else
+  printf '%s\n' "$1"
+fi

@@ -15,8 +15,6 @@ from kstrl.atomicio import atomic_write_text
 from kstrl.jsonread import read_json_file
 from kstrl.operator_context import GUIDANCE_HEADING
 from kstrl.prd import PRD
-from kstrl.stack import load_stack
-from kstrl.toolchains import has_build_manifest
 
 if TYPE_CHECKING:
     from kstrl.ui.base import UI
@@ -594,7 +592,7 @@ DEFAULT_KSTRL_TOML = """\
 # progress_file_path = ""          # empty = the log beside the component's PRD
 
 # Phase 1 policy envelope (R8.1): declarative merge guardrails enforced on
-# ARTIFACTS (git diff, lockfiles), never agent self-report. Opt-in; when
+# the git diff, never agent self-report. Opt-in; when
 # enabled a violation blocks the merge, and editing enforcement machinery
 # (this file, CI workflows, or the verifier code itself) is a
 # non-overridable halt.
@@ -602,14 +600,9 @@ DEFAULT_KSTRL_TOML = """\
 # enabled = false
 # paths_deny = [".github/workflows/**", "kstrl.toml", ".kstrl/**", "**/*.pem", "**/.env*"]
 # max_files_changed = 40
-# max_lines_changed = 1500         # lockfiles excluded from the count
-# deps_allow_new = false           # block new packages in lockfiles kstrl reads; L3+ may set true
+# max_lines_changed = 1500
 # secret_patterns = ["AKIA[0-9A-Z]{16}", "-----BEGIN (?:RSA |EC )?PRIVATE KEY-----"]
 # enforcement_paths_extra = []     # ADDS to the halt set; can never shrink it
-# license_allow = ["MIT", "BSD-2-Clause", "BSD-3-Clause", "Apache-2.0", "ISC", "PSF-2.0"]
-# license_deny_partial = ["GPL", "AGPL", "SSPL", "Commons-Clause"]
-# license_unresolved = "block"     # block | advisory when no source resolves a license
-# license_use_network = true       # PyPI fallback for PyPI packages; false = uv cache only; hashed
 # deploy = false                   # reserved for the R8.7 release gate
 
 # Exception inbox (R8.3): one surface for everything awaiting a human.
@@ -646,7 +639,7 @@ DEFAULT_KSTRL_TOML = """\
 
 # Phase 2.5 security review (independent adversarial pass focused on vulns).
 [security]
-# mode = "skip"                    # skip | advisory | hard (skip = default, opt in explicitly)
+# mode = "advisory"               # skip | advisory | hard (advisory = default; skip turns the review off)
 # fail_threshold = "high"          # critical | high | medium | low (hard mode only)
 # timeout_seconds = 0.0           # 0 = no limit
 # agent_cmd = ""                   # leave blank to inherit from [agent]
@@ -1505,70 +1498,6 @@ def _ensure_gitignore(root: Path, ui: UI) -> None:
     separator = "" if not existing else "\n"
     append_records(path, separator + gitignore_block(), repair="")
     ui.ok("  Appended the kstrl block to .gitignore")
-
-
-#: #434: what `ks doctor` and the `ks decompose` / `ks factory --spec`
-#: preflight say about a repository with no build manifest. One sentence
-#: for the finding and one for the fix, so the surfaces cannot word it two
-#: ways.
-BUILD_MANIFEST_MISSING = (
-    "no build manifest at the repository root that kstrl recognises, and kstrl "
-    "will not create one: no component may list a root build manifest in its "
-    "allowedPaths, so `ks decompose` would pay for an architect call that can only "
-    "halt and ask who writes it"
-)
-BUILD_MANIFEST_FIX = (
-    "kstrl will not create the build manifest, so create and commit the manifest "
-    "your project's own build tool writes before `ks decompose`. If the project "
-    "builds with a tool kstrl does not recognise, write a [stack] in kstrl.toml instead."
-)
-
-
-def build_manifest_blocker(root: Path) -> str | None:
-    """Why kstrl cannot plan work in ``root`` yet, or None when it can (#434).
-
-    A build manifest is one of ``toolchains.BUILD_MANIFESTS``, which is
-    ``decompose.ROOT_BUILD_MANIFESTS`` (#627): every manifest no component
-    may be scoped to is one this recognises, so a repository holding it is
-    not refused.
-
-    A repository holding none of them is still let through when kstrl.toml
-    holds a ``[stack]`` (#696 slice 4): the operator has told kstrl how the
-    project builds, which is the answer for a build tool kstrl does not name
-    (a Gemfile, a Makefile). A kstrl.toml that does not load raises the
-    ``OSError`` or ``ValueError`` of ``stack.load_stack``, and the caller
-    decides what that means.
-    """
-    if has_build_manifest(root):
-        return None
-    if load_stack(root) is not None:
-        return None
-    return BUILD_MANIFEST_MISSING
-
-
-def build_manifest_ok_reason(root: Path) -> str:
-    """Which of #434's two conditions let ``root`` through, for
-    `doctor.check_build_manifest`'s ``[ok]`` detail.
-
-    Only meaningful after `build_manifest_blocker(root)` has already
-    returned ``None``: it repeats the same two reads rather than
-    threading a reason back through that function's ``str | None``
-    return, which every other caller only tests for truthiness. The
-    two reasons were folded into one sentence before #434 B1
-    ("a build manifest ... is at the root, or [verify] names ..."),
-    which is how an escape that itself needed the missing manifest read
-    as `[ok]` without saying which half applied.
-    """
-    if has_build_manifest(root):
-        return (
-            "a build manifest kstrl recognises is at the repository root, so the "
-            "`ks decompose` preflight lets the architect run"
-        )
-    return (
-        "no build manifest kstrl recognises is at the repository root, but kstrl.toml "
-        "has a [stack] saying how the project builds, so the `ks decompose` preflight "
-        "lets the architect run"
-    )
 
 
 # ---------------------------------------------------------------------------

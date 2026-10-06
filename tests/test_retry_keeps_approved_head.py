@@ -32,6 +32,8 @@ from tests.test_inbox_waiver_change import DEP, DEP_BRANCH, SIZE_TOML, _sha
 from tests.test_inbox_waivers import (
     BRANCH,
     COMP,
+    KEY_A,
+    SECRET_TOML,
     _component,
     _decide,
     _env,
@@ -49,6 +51,9 @@ SIZE_AND_PATH_TOML = (
 )
 #: Attempt n writes 9 + n lines, so no two attempts raise the same size finding.
 GROWING = "mkdir -p app && seq 1 $((9 + n)) > app/big.txt"
+#: Attempt n writes the same key under the variable KEY_n, so no two attempts
+#: write the same diff.
+RENAMED_SECRET = f'mkdir -p app && printf \'KEY_%s = "%s"\\n\' "$n" {KEY_A} > app/cfg.py'
 
 
 def _counted(counter: Path, change: str) -> str:
@@ -116,6 +121,35 @@ def test_retry_keeps_the_approved_head_and_judges_it_without_an_engineer(tmp_pat
     assert (finding.severity, f"waiver:{item}" in finding.tags) == ("advisory", True)
     gh_log = (tmp_path / "gh.log").read_text(encoding="utf-8")
     assert f"waived by inbox approval {item[:8]}" in gh_log, gh_log
+
+
+def test_retry_keeps_an_approved_secret_head_the_engineer_would_rename(tmp_path: Path) -> None:
+    """Acceptance 1 (secret): attempt n writes the key as KEY_n. An approval
+    covers only the diff it was taken on, so a regenerated change would be
+    asked again. The retry keeps the approved head instead, with no engineer."""
+    counter = tmp_path / "counter"
+    root = _repo(tmp_path, SECRET_TOML)
+    env = _env(tmp_path, _counted(counter, RENAMED_SECRET))
+    code, out = _factory(root, env)
+    assert code == 1, out
+    assert _component(root).failed_check == "policy_envelope", out
+    head = _sha(root, BRANCH)
+    (item,) = _open(root, ItemKind.POLICY_EXCEPTION)
+    assert item.evidence["category"] == "policy_secret_pattern", item.evidence
+    _decide(root, env, "approve", item.id)
+
+    code, out = _retry(root, env)
+
+    assert code == 0, out
+    assert _runs(counter) == 1, out
+    assert f"Kept branch '{BRANCH}' at {head[:12]}: approval {item.id[:8]}" in out, out
+    assert _component(root).status == "completed", out
+    assert _engineer_events(root) == ["phase_skipped"], _engineer_events(root)
+    (finding,) = _gated(root, "policy_")
+    assert (finding.category, finding.severity) == ("policy_secret_pattern", "advisory")
+    assert f"waiver:{item.id}" in finding.tags, finding
+    gh_log = (tmp_path / "gh.log").read_text(encoding="utf-8")
+    assert f"waived by inbox approval {item.id[:8]}" in gh_log, gh_log
 
 
 def test_a_kept_head_still_fails_on_a_finding_no_approval_covers(tmp_path: Path) -> None:

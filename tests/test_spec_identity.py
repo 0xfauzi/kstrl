@@ -52,7 +52,6 @@ from kstrl.owner_answers import render_owner_answer
 from tests.helpers import gitrepo
 from tests.helpers.plan_approval import approve_plan
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
-from tests.test_build_manifest_preflight import MANIFESTS
 from tests.test_escalation_inbox import CLOSED, ESCALATED
 from tests.test_l1_plan_gate import AUTONOMY, REVIEWER, _plan_asks, _plan_items, _runs
 from tests.test_merge_gate_park import (
@@ -63,6 +62,7 @@ from tests.test_merge_gate_park import (
     _manifest_path,
 )
 from tests.test_merge_gate_park import _repo as _handmade_repo
+from tests.test_stack_proposal_e2e import MANIFESTS
 
 pytestmark = pytest.mark.usefixtures("no_open_prs")
 

@@ -241,6 +241,8 @@ def _factory(
         str(agent),
         "--review-mode",
         "skip",
+        "--security-mode",
+        "skip",
         *(() if phase_1 else ("--no-verify",)),
         *extra,
         "--contract-check",
