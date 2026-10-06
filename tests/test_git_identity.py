@@ -86,7 +86,7 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_acceptance_e2e.py": 4,
     # #700 slice 6: two stub engineers, each committing in a worktree of a
     # repository `tests.test_stack_e2e._repo` put through set_identity.
-    "tests/test_acceptance_gate_e2e.py": 2,
+    "tests/test_acceptance_gate_e2e.py": 3,
     "tests/test_adequacy.py": 7,
     # #642: `_loop_files` and `_second_component` commit into the repository
     # `tests.test_agent_processes_outlive_run._repo` put through
