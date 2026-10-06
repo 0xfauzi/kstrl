@@ -141,7 +141,8 @@ def test_a_visible_failure_retries_with_the_check_and_never_the_held_out_one(
     assert run.calls == 2, run.out
     assert _status(root) == ("completed", ""), run.out
     assert f"- has-marker (visible): passed 0 of {HEAD_RUNS} runs -> fail" in run.out, run.out
-    assert "- greets-hidden (held out): did not run (127)" in run.prompts, run.prompts
+    unrun = ", ".join(["127"] * HEAD_RUNS)
+    assert f"- greets-hidden (held out): did not run ({unrun})" in run.prompts, run.prompts
     assert ACCEPTANCE_RETRY_PROMPT.split("\n")[0][:60] in run.prompts, run.prompts
     for told in (
         "criterion: has-marker holds",
@@ -150,6 +151,37 @@ def test_a_visible_failure_retries_with_the_check_and_never_the_held_out_one(
     ):
         assert told in run.prompts, run.prompts
     assert hidden not in run.prompts, run.prompts
+
+
+@runs_a_stack
+def test_a_check_that_passes_its_first_head_run_and_fails_a_later_one_halts(
+    tmp_path: Path,
+) -> None:
+    """The held-out check exits 0 on its first head run and 1 on every later
+    one, so it passed one of K runs and is not satisfactory: the gate halts
+    the component with no retry. A check judged on its first run alone
+    would have passed. The counter it keeps shows exactly K head runs."""
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    counter = shared / "count"
+    late = (
+        '#!/bin/sh\n[ -f "$KSTRL_TREE/made.marker" ] || exit 1\n'
+        f'n=$(cat "{counter}" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "{counter}"\n'
+        '[ "$n" -eq 1 ]\n'
+    )
+    root = _repo(tmp_path, _stack({"tests": "true"}, rung={"writable": [str(shared)]}))
+    plan = _plan(tmp_path, [_check("late", ["/bin/sh", "check.sh"], held_out=True)], script=late)
+    engineer = "touch made.marker && git add -A && git commit -q -m marker >/dev/null 2>&1"
+
+    run = _accept(tmp_path, root, plan, engineer, "--max-retries", "1")
+
+    assert run.code == 1, run.out
+    assert run.calls == 1, run.out
+    assert _status(root) == ("failed", "acceptance"), run.out
+    assert counter.read_text(encoding="utf-8").strip() == str(HEAD_RUNS), run.out
+    assert _acceptance_events(root) == [(False, False)], run.out
+    (item,) = _halts(root)
+    assert item.evidence["check"] == "late", item.evidence
 
 
 @runs_a_stack

@@ -84,9 +84,11 @@ if TYPE_CHECKING:
 #: The one file a plan directory must hold.
 PLAN_FILE = "plan.json"
 
-#: Owner decision 4, the interim value for slice 4: one head run per
-#: check. Every run must exit 0, and a failed run is never run again.
-HEAD_RUNS = 1
+#: Owner decision 4: every head run of a check must exit 0, and a failed
+#: run is never run again. The owner set the count, K, to 3 on 2026-10-06
+#: (it was 1 while the checks were record-only). Decide it again when flake
+#: data from real runs exists.
+HEAD_RUNS = 3
 
 #: Owner decision 9(b): the engineer runs unconfined, so whether it could
 #: read a held-out check stays unknown until measurement M6.
