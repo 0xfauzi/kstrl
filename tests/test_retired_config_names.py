@@ -127,6 +127,38 @@ def test_a_retired_codebase_scan_key_stops_the_command_by_name(tmp_path: Path, k
     assert "No manifest found" not in proc.stdout + proc.stderr
 
 
+@pytest.mark.parametrize(
+    "name",
+    [
+        "KSTRL_CODEBASE_SCAN_PUBLIC_INTERFACES",
+        "KSTRL_CODEBASE_SCAN_DEPENDENCY_GRAPH",
+        "KSTRL_CODEBASE_SCAN_CONVENTIONS",
+        "KSTRL_FEEDFORWARD_PUBLIC_INTERFACES",
+        "KSTRL_FEEDFORWARD_DEPENDENCY_GRAPH",
+        "KSTRL_FEEDFORWARD_CONVENTIONS",
+    ],
+)
+def test_a_retired_codebase_scan_env_var_stops_the_command_by_name(
+    tmp_path: Path, name: str
+) -> None:
+    """#696 slice 6: an environment that still sets one of the scan sections
+    that read one source language is refused by name before the command body
+    runs. The names are typed here, not read from RETIRED_ENV_VARS, so a row
+    dropped from that table fails this test instead of removing its case."""
+    proc = subprocess.run(
+        [sys.executable, "-m", "kstrl", "status", "--root", str(tmp_path)],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        env={**os.environ, "KSTRL_NO_TUI": "1", name: "1"},
+    )
+
+    assert proc.returncode == 2, proc.stdout + proc.stderr
+    assert f"the environment sets {name}" in proc.stderr, proc.stderr
+    assert "reads no source language" in proc.stderr, proc.stderr
+    assert "No manifest found" not in proc.stdout + proc.stderr
+
+
 def test_an_old_finding_record_still_resolves() -> None:
     finding = Finding.from_dict(
         {
