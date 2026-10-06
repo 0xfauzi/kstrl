@@ -171,6 +171,7 @@ def test_the_extraction_is_bounded(tmp_path: Path, width: int) -> None:
     assert len(shown) <= 8_500
     assert "excerpt cut at" in shown
 
+
 # #696 decision 6 (the flag day): a [stack] check's output is no longer run
 # through kstrl.gateparse's registered parsers at all - check_stack_command
 # calls failure_excerpt unconditionally - so there is no more "a registered
