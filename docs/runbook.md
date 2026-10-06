@@ -92,8 +92,8 @@ lock under the XDG state home; a second one prints that it is waiting.
 
 ## Acceptance checks (`ks factory --acceptance <dir>`)
 
-Record-only (#700 slice 4). `<dir>` must be outside the repository and
-hold `plan.json`, plus any files its checks use:
+#700 slices 4 to 6. `<dir>` must be outside the repository and hold
+`plan.json`, plus any files its checks use:
 
 ```json
 {"components": {"greeter": {"createsApp": false, "checks": [
@@ -119,14 +119,34 @@ runnable`. Once the base accepts the plan, the manifest pins its
 digest. A later run of the same plan refuses when the directory was
 edited, naming both digests, and when it names no `--acceptance`.
 
-After Phase 1 passes, each component's checks run on its head (once
-each for now; a run that failed is never run again) and the verdict is
-printed, written under `.kstrl/runs/<run_id>/acceptance/<component>/`
-and repeated in the PR body's `## Acceptance` section. It never fails
-the component.
+After Phase 1 passes, each component's checks run on its head (each
+check runs three times and passes only when every run exits 0; a run
+that failed is never run again) and the verdict is
+printed, written outside the repository under the control directory,
+`runs/<run_id>/acceptance/<component>/`, and repeated in the PR body's
+`## Acceptance` section. The verdict gates the component (#700 slice 6). A held-out check that fails halts it with
+no retry, on a `halted_run` inbox item that names the failing checks and
+the commit. Any other check that did not pass, held-out checks that
+could not run included, goes to the engineer's retry: a visible check
+with its criterion, its command and what it printed, a held-out check by
+its id alone. The records are kept outside the repository, but the
+engineer is not confined, so each record says
+`"heldOutReadDenied": "unknown"`.
+
+To merge over a halt, approve its item (`ks inbox approve <id>`), then
+run `ks retry <component>`. The retry keeps the commit the item names
+and judges it again with no engineer. The acceptance checks pass it only
+when the approval names every check that fails there, and the terminal
+and the PR body then name the approval, who gave it and when. A
+regenerated commit, or another failing check, halts again. A single-PR
+run, or a component built on unmerged dependency code, keeps no commit,
+so its halt cannot be merged over.
 
 `ks recheck <record.json>` runs a head record's saved checks again
-(#700 slice 5). It refuses (exit 2), naming the file, when a file beside
+(#700 slice 5). The path is read from the current directory, and
+`ks factory` prints the absolute path of each head record on a
+`- record:` line under that component's Acceptance lines. It refuses
+(exit 2), naming the file, when the file is not found, when a file beside
 the record does not match its `index.json`, when the saved checks are
 not the record's plan, or when the `[stack]` in kstrl.toml is not the
 one the record ran under. Otherwise the checks run again at the

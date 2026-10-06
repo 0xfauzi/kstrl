@@ -1,5 +1,5 @@
-"""H3a (#303): enrolment guards for the 29 harness-authored fragments (24
-from #303, one from #233, four from #633) that multi-branch builders assemble into a
+"""H3a (#303): enrolment guards for the 30 harness-authored fragments (24
+from #303, one from #233, four from #633, one from #700) that multi-branch builders assemble into a
 role's prompt. Why these fragments cannot be enrolled the way one plain
 prompt is is explained once, in ``tests/helpers/builder_prompts.py``'s
 module docstring. Three layers are
@@ -61,6 +61,12 @@ def _ctx_empty(_tmp: Path) -> str:
 def _ctx_current_only(_tmp: Path) -> str:
     ctx = IterationContext()
     ctx.add_verification_failure("linter: E501 line too long", attempt=1)
+    return ctx.format_for_prompt()
+
+
+def _ctx_acceptance(_tmp: Path) -> str:
+    ctx = IterationContext()
+    ctx.add_acceptance_failure(["- has-marker (visible): passed 0 of 1 runs -> fail"], attempt=1)
     return ctx.format_for_prompt()
 
 
@@ -342,6 +348,7 @@ SCENARIOS: dict[str, Callable[[Path], str]] = {
     "claude_md": _claude_md,
     "ctx_empty": _ctx_empty,
     "ctx_current_only": _ctx_current_only,
+    "ctx_acceptance": _ctx_acceptance,
     "ctx_not_remeasured_dated": _ctx_not_remeasured_dated,
     "ctx_not_remeasured_legacy": _ctx_not_remeasured_legacy,
     "ctx_resolved": _ctx_resolved,
@@ -408,6 +415,7 @@ _EMPTY_DIGEST = _sha256("")
 
 DIGESTS: dict[str, str] = {
     # Moved in #696 slice 6, deliberately: one CLAUDE.md for every tree.
+    "ctx_acceptance": "a5d3778526055d1d5e67390f28fb796a948d2771b27ad010bdd45ee2262d01a4",
     "claude_md": "c15168db40ebf9bef7ea24e3192132749d1cd7ddddb78abbb65eccc6b37668d4",
     "ctx_all": "2659f4ff4e999f3ecb9b335e3bc25894ef92f52059f7f86203bf1b5f3a45cad5",
     "ctx_current_only": "4845a0234067507977e978189765994b040230787d3c98889ee7f11e5f2c199f",
@@ -458,7 +466,7 @@ def test_delivered_prompt_digest(name: str, tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 3: orphan guard for the 32 constants read at CALL TIME.
+# Test 3: orphan guard for the 33 constants read at CALL TIME.
 # ---------------------------------------------------------------------------
 
 #: name -> (module holding the constant, scenario that exercises the
@@ -474,6 +482,7 @@ CALL_TIME_GUARDS: dict[str, tuple[ModuleType, str]] = {
     "ITERATION_CONTEXT_RESOLVED_PROMPT": (context, "ctx_resolved"),
     "ITERATION_CONTEXT_HISTORY_PROMPT": (context, "ctx_history"),
     "ITERATION_CONTEXT_CLOSING_PROMPT": (context, "ctx_empty"),
+    "ACCEPTANCE_RETRY_PROMPT": (context, "ctx_acceptance"),
     "CLAIM_RETRY_PROMPT": (review, "claim_reverted"),
     "CLAIM_REVERTED_PROMPT": (review, "claim_reverted"),
     "CLAIM_NOT_REVERTED_PROMPT": (review, "claim_not_reverted"),
@@ -522,7 +531,7 @@ CONTAINER_CAPTURED_NAMES: frozenset[str] = frozenset()
 
 
 def test_every_call_time_fragment_has_a_guard() -> None:
-    """Closed by construction: a 30th constant with no entry in either
+    """Closed by construction: a 31st constant with no entry in either
     set fails here rather than being silently unguarded."""
     covered = set(CALL_TIME_GUARDS) | CONTAINER_CAPTURED_NAMES
     assert covered == set(BUILDER_PROMPTS), (
