@@ -31,6 +31,7 @@ from typing import cast
 import pytest
 from textual.widgets import DataTable, Static
 
+from kstrl.decompose import spec_digest
 from kstrl.findings import Finding
 from kstrl.inbox import Inbox, InboxConfig, InboxItem, ItemKind
 from kstrl.manifest import Component, Manifest
@@ -197,7 +198,7 @@ def _repo(tmp_path: Path, toml: str, checks: dict[str, str] | None = None) -> Pa
     gitrepo.git_in(root, "push", "-q", "-u", "origin", "main")
     manifest = {
         "version": "1",
-        "specFile": "spec.md",
+        "specFile": "",
         "projectName": "p",
         "baseBranch": "main",
         "singlePr": False,
@@ -683,6 +684,10 @@ def test_an_approval_from_another_plan_is_refused(tmp_path: Path, field: str, va
         planned.write_text(prd.read_text(encoding="utf-8"), encoding="utf-8")
     else:
         raw[field] = value
+    if field == "specFile":
+        # A run refuses a spec it has no pin for (#639), so the other spec is pinned.
+        (root / value).write_text("# Another spec\n", encoding="utf-8")
+        raw["specPath"], raw["specDigest"] = value, spec_digest("# Another spec\n")
     _manifest_path(root).write_text(json.dumps(raw), encoding="utf-8")
 
     code, out = _retry(root, env)

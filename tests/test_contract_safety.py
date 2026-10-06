@@ -126,7 +126,7 @@ def _snapshot_working_tree(root: Path) -> dict[str, bytes]:
 def _make_manifest(components: list[Component]) -> Manifest:
     return Manifest(
         version="1",
-        spec_file="spec.md",
+        spec_file="",
         project_name="t",
         base_branch="main",
         single_pr=False,

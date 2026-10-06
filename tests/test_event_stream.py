@@ -79,7 +79,7 @@ def _component(comp_id: str, deps: list[str] | None = None) -> Component:
 def _make_manifest(components: list[Component]) -> Manifest:
     return Manifest(
         version="1",
-        spec_file="spec.md",
+        spec_file="",
         project_name="test",
         base_branch="main",
         single_pr=False,

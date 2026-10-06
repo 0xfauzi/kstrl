@@ -86,7 +86,7 @@ def _project(root: Path) -> Path:
     manifest_path = kstrl_dir / "manifest.json"
     Manifest(
         version="1",
-        spec_file="s",
+        spec_file="",
         project_name="t",
         base_branch="main",
         single_pr=False,

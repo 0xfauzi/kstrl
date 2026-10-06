@@ -46,7 +46,7 @@ def _run_factory_with_reply(root: Path, reply: str) -> str:
     reply_file.write_text(reply + "\n", encoding="utf-8")
     manifest = Manifest(
         version="1",
-        spec_file="spec.md",
+        spec_file="",
         project_name="t",
         base_branch="main",
         single_pr=False,

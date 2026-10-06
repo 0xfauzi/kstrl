@@ -51,7 +51,7 @@ def capture_run_factory(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
 def write_manifest(tmp_path: Path) -> Path:
     manifest = Manifest(
         version="1",
-        spec_file="spec.md",
+        spec_file="",
         project_name="cp-test",
         base_branch="main",
         single_pr=False,

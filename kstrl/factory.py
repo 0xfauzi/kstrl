@@ -2538,23 +2538,6 @@ def _refused_rung_or_base(
     )
 
 
-def _preflight_spec_pin(manifest: Manifest, root_dir: Path, ui: UI) -> list[str]:
-    """Why this plan must not run on its spec as it reads now, or [] (#639).
-
-    A manifest that names a spec but pins no digest was written before
-    #639: kstrl cannot tell whether that spec changed since, so it says
-    so and runs, the way a missing register is legal.
-    """
-    if manifest.spec_file and not manifest.spec_digest:
-        ui.warn(
-            f"  This plan was made from {manifest.spec_file} before kstrl pinned specs, so "
-            f"kstrl cannot tell whether the spec changed since. To pin it, re-plan: ks "
-            f"factory --spec <path to {manifest.spec_file}> --project-name "
-            f"{manifest.project_name}"
-        )
-    return spec_pin_errors(manifest, root_dir)
-
-
 def _preflight_stack(
     manifest: Manifest, root_dir: Path, factory_config: FactoryConfig, run_id: str
 ) -> list[str]:
@@ -2573,13 +2556,13 @@ def _preflight_stack(
 
 
 def _preflight_pins(
-    manifest: Manifest, root_dir: Path, factory_config: FactoryConfig, run_id: str, ui: UI
+    manifest: Manifest, root_dir: Path, factory_config: FactoryConfig, run_id: str
 ) -> tuple[str, list[str]]:
     """The spec pin (#639), then the stack (#696), then the acceptance plan
     (#700 slice 4): the headline and reasons of the first that refuses, or
     an empty list. One call, so ``_run_preflights`` gains no branch (its
     cyclomatic ratchet is at 10)."""
-    spec_errors = _preflight_spec_pin(manifest, root_dir, ui)
+    spec_errors = spec_pin_errors(manifest, root_dir)
     if spec_errors:
         return "the plan does not match the spec it was made from", spec_errors
     stack_errors = _preflight_stack(manifest, root_dir, factory_config, run_id)
@@ -2668,7 +2651,7 @@ def _run_preflights(
     register_errors, run_decisions = _preflight_decision_register(manifest, root_dir)
     if _report_preflight(ui, "the architect decision register cannot bind", register_errors):
         return None
-    headline, pin_errors = _preflight_pins(manifest, root_dir, factory_config, run_id, ui)
+    headline, pin_errors = _preflight_pins(manifest, root_dir, factory_config, run_id)
     if _report_preflight(ui, headline, pin_errors):
         return None
     if _report_preflight(

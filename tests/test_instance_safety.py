@@ -132,7 +132,7 @@ def _manifest(
 ) -> Manifest:
     return Manifest(
         version="1",
-        spec_file="spec.md",
+        spec_file="",
         project_name="t",
         base_branch="main",
         single_pr=single_pr,

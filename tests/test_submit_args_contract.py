@@ -133,7 +133,7 @@ def _project(tmp_path: Path) -> Path:
 def _manifest(plan_id: str = "") -> Manifest:
     return Manifest(
         version="1",
-        spec_file="spec.md",
+        spec_file="",
         project_name="proj",
         base_branch="main",
         single_pr=False,

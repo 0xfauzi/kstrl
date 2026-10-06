@@ -75,7 +75,7 @@ def _repo(tmp_path: Path) -> Path:
         json.dumps(
             {
                 "version": "1",
-                "specFile": "spec.md",
+                "specFile": "",
                 "projectName": "p",
                 "baseBranch": "main",
                 "singlePr": False,

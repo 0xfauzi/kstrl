@@ -180,7 +180,7 @@ def test_the_state_accepts_a_slice_2_file_and_refuses_a_malformed_fix() -> None:
         "schemaVersion": 1,
         "manifestPath": "m",
         "project": "p",
-        "specFile": "s",
+        "specFile": "",
         "featureBaseSha": "b",
         "lastReviewedSha": "",
         "findings": [],

@@ -118,7 +118,7 @@ def test_a_state_for_another_feature_is_replaced_when_no_fix_component_exists(
         {
             "manifestPath": str(h.manifest_file(root).resolve()),
             "project": "test",
-            "specFile": "spec.md",
+            "specFile": "",
             "featureBaseSha": "f" * 40,
         }
     )
@@ -146,7 +146,7 @@ def test_a_state_for_another_feature_is_refused_once_a_fix_component_exists(
         {
             "manifestPath": str(h.manifest_file(root).resolve()),
             "project": "test",
-            "specFile": "spec.md",
+            "specFile": "",
             "featureBaseSha": "f" * 40,
         }
     )

@@ -91,7 +91,7 @@ def _component(prd_path: str = PRD_REL) -> Component:
 def _manifest(components: list[Component]) -> Manifest:
     return Manifest(
         version="1",
-        spec_file="spec.md",
+        spec_file="",
         project_name="writers-room",
         base_branch="main",
         single_pr=False,

@@ -181,7 +181,7 @@ def _repo(
     }
     manifest = {
         "version": "1",
-        "specFile": "spec.md",
+        "specFile": "",
         "projectName": "demo",
         "baseBranch": "main",
         "singlePr": False,
