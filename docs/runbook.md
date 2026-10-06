@@ -114,8 +114,12 @@ base` (exit 2) names each check that passed where the plan says it
 fails, failed where it says it passes, or could not run. A check that
 could not run is allowed only in a component the plan marks
 `"createsApp": true`, and that component is recorded as `base not
-runnable`. Once the base accepts the plan, the manifest pins its
-digest. A later run of the same plan refuses when the directory was
+runnable`. A check the verification designer wrote
+(`--design-acceptance`) that passes where it says it fails is removed
+instead of a refusal: the run output and `base.json` name it with its
+base exit, and a component left with no check is recorded as `no
+designed acceptance check`. Once the base accepts the plan, the manifest
+pins its digest. A later run of the same plan refuses when the directory was
 edited, naming both digests, and when it names no `--acceptance`.
 
 After Phase 1 passes, each component's checks run on its head (each
