@@ -49,6 +49,7 @@ from kstrl.agents.base import (
     ARCHITECT_COMPONENT,
     ARCHITECT_ROLE,
     CEILING_AXES,
+    DESIGNER_ROLE,
     INTEGRATION_COMPONENT,
     INTEGRATION_ROLE,
     CeilingCoverage,
@@ -1006,6 +1007,11 @@ class ComponentPipeline:
         if totals is None:
             return
         self._record_usage(ARCHITECT_COMPONENT, ARCHITECT_ROLE, totals)
+
+    def record_designer_usage(self, comp_id: str, totals: UsageTotals) -> None:
+        """Meter the verification designer (#700 slice 7) under its own role
+        row of the component it designed checks for."""
+        self._record_usage(comp_id, DESIGNER_ROLE, totals)
 
     def record_integration_usage(self, totals: UsageTotals) -> None:
         """Meter the integration review (#482) under its own role row.
@@ -3698,7 +3704,9 @@ class ComponentPipeline:
         so does a head nothing a retry could fix was measured on; any
         other check that did not pass goes to the engineer's retry. An
         approved halt on this head that names every failing check passes
-        it (decision 14, :func:`kstrl.waivers.covering_override`).
+        it (decision 14, :func:`kstrl.waivers.covering_override`). Checks
+        the verification designer wrote are record only (decision 10, #700
+        slice 7): written, printed and emitted as advisory, never routed.
         """
         from kstrl.acceptance import judge_head
 
@@ -3726,9 +3734,10 @@ class ComponentPipeline:
                 failures=outcome.failures,
                 phase=ACCEPTANCE_PHASE,
                 isolation=outcome.isolation,
+                advisory=outcome.record_only,
             )
         )
-        if outcome.passed:
+        if outcome.passed or outcome.record_only:
             return None
         failing = ", ".join(outcome.failing)
         if outcome.held_out or not outcome.told:

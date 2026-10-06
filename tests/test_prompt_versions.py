@@ -94,6 +94,7 @@ from types import ModuleType
 import pytest
 
 from kstrl import (
+    acceptance_design,
     decisions,
     decompose,
     gepa_adapter,
@@ -106,6 +107,7 @@ from kstrl import (
     security,
     stack,
 )
+from kstrl.acceptance_design import ACCEPTANCE_PROMPT, ACCEPTANCE_PROMPT_VERSION
 from kstrl.decisions import (
     DECISIONS_CONTEXT_PROMPT,
     DECISIONS_CONTEXT_PROMPT_VERSION,
@@ -192,6 +194,7 @@ _PROMPTS: dict[str, str] = {
     "INTEGRATION_FIX_PROMPT": INTEGRATION_FIX_PROMPT,
     "GEPA_REFLECTION_PROMPT": GEPA_REFLECTION_PROMPT,
     "STACK_PROMPT": STACK_PROMPT,
+    "ACCEPTANCE_PROMPT": ACCEPTANCE_PROMPT,
     **BUILDER_PROMPTS,
     **NOTICE_PROMPTS,
 }
@@ -213,6 +216,7 @@ _VERSIONS: dict[str, str] = {
     "INTEGRATION_FIX_PROMPT": INTEGRATION_FIX_PROMPT_VERSION,
     "GEPA_REFLECTION_PROMPT": GEPA_REFLECTION_PROMPT_VERSION,
     "STACK_PROMPT": STACK_PROMPT_VERSION,
+    "ACCEPTANCE_PROMPT": ACCEPTANCE_PROMPT_VERSION,
     **BUILDER_VERSIONS,
     **NOTICE_VERSIONS,
 }
@@ -250,9 +254,15 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     # is generalised to DATA / INSTRUCTION SEPARATION, covering
     # repository content on the same terms as the delimited spec,
     # without a second injection-refusal paragraph.
+    # 4.0.0 (#696 slice 7): MAJOR. The output gains a required `stack`
+    # key, an object validated by stack.stack_errors or null when
+    # kstrl.toml already holds a [stack], with rules S1-S4 for it. Rule
+    # 12's EXCLUDE list drops the root build manifests and names
+    # kstrl.toml; INCLUDE names a root build file a component must
+    # create or change.
     "DECOMPOSE_PROMPT": (
-        "0e535ef0ff369641cbb4c1fafbe98148293eac8a8c9bb09a60a43373a6002e37",
-        "3.1.0",
+        "232f6e178f9ff25b1016d4b324f7155c52989e3fb4fc14b19d3d24b24590e0f1",
+        "4.0.0",
     ),
     # 1.0.0 (#199): opens the series. Never shipped before this PR. Same
     # split, and the same reason, as REPO_CHANGE_SOURCE_PROMPT /
@@ -349,6 +359,12 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     # calibration suite scores no engineer-context fixture.
     "STACK_PROMPT": (
         "571e7d0f85ff031ea25ac7eb7d3aa600c8be74296417340dc4051b3fd14c022e",
+        "1.0.0",
+    ),
+    # 1.0.0 (#700 slice 7): new, the verification designer. H2: roles "acceptance" and
+    # "acceptance_clean", first captured with #696 slice 7; no baseline carries them yet.
+    "ACCEPTANCE_PROMPT": (
+        "880418ce7ee0cd9765105ab3a08f2ea40106115c090abfe2c1aed60757283cfa",
         "1.0.0",
     ),
     "PASTED_CHANGE_SOURCE_PROMPT": (
@@ -558,6 +574,14 @@ def _distill_render(_tmp_path: Path) -> str:
     return knowledge.build_distill_prompt(component, 5, "PRD", "FACTS", "DIFF")
 
 
+def _acceptance_render(_tmp_path: Path) -> str:
+    component = Component(
+        id="C1", title="T", description="D", dependencies=[], prd_path="", branch_name=""
+    )
+    stack_ = Stack(instructions="I", setup="", checks=(("tests", "T"),), env=())
+    return acceptance_design.build_design_prompt(component, ["US-001 T: C"], "SPEC", stack_)
+
+
 def _stack_render(_tmp_path: Path) -> str:
     return Stack(instructions="I", setup="", checks=(("tests", "T"),), env=()).format_for_prompt()
 
@@ -585,6 +609,7 @@ _RENDERERS: dict[str, tuple[ModuleType, Callable[[Path], str]]] = {
     ),
     "DISTILL_PROMPT": (knowledge, _distill_render),
     "STACK_PROMPT": (stack, _stack_render),
+    "ACCEPTANCE_PROMPT": (acceptance_design, _acceptance_render),
     "REPO_CHANGE_SOURCE_PROMPT": (git, lambda _p: repo_change_source("BASE_SHA")),
     "PASTED_CHANGE_SOURCE_PROMPT": (git, lambda _p: pasted_change_source("DIFF")[0]),
     "DECISIONS_CONTEXT_PROMPT": (decisions, _decisions_context_render),
@@ -743,27 +768,6 @@ def test_change_source_reaches_the_role(
         f"the {which} prompt no longer carries repo_change_source's "
         "enrolled body, so that role's change-acquisition instructions "
         "are outside H3 snapshot protection."
-    )
-
-
-def test_engineer_prompt_bump_reaches_existing_projects() -> None:
-    """H3's reach (#286): a version bump that is not also recorded in the
-    scaffold ledger is invisible to every already-initialised project.
-
-    ``ks init`` never overwrites ``scripts/kstrl/prompt.md``, so the only
-    thing that can tell an operator their copy is behind is the ledger of
-    bodies the harness has shipped. This test fails the moment
-    DEFAULT_PROMPT moves without a matching row, in the same file the
-    person doing the bump is already editing. The deeper invariants live
-    in tests/test_prompt_staleness.py."""
-    from kstrl.init_cmd import SCAFFOLDED_TEMPLATES
-
-    template = next(t for t in SCAFFOLDED_TEMPLATES if t.filename == "prompt.md")
-    assert template.history[-1] == (_sha256(DEFAULT_PROMPT), DEFAULT_PROMPT_VERSION), (
-        "SCAFFOLDED_TEMPLATES in kstrl/init_cmd.py does not end with the "
-        "engineer prompt this harness ships. APPEND "
-        f"({_sha256(DEFAULT_PROMPT)!r}, {DEFAULT_PROMPT_VERSION!r}) to its "
-        "history and keep every older row."
     )
 
 

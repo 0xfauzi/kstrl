@@ -1,0 +1,8 @@
+#!/bin/sh
+# Print the initials of the name in $1.
+out=""
+# shellcheck disable=SC2086 # split the name into its words
+for word in $1; do
+  out="$out$(printf '%s' "$word" | cut -c1)"
+done
+printf '%s\n' "$out" | tr '[:lower:]' '[:upper:]'

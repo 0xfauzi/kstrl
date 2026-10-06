@@ -4,18 +4,15 @@ Recovery procedures for the failure modes that actually happen during factory ru
 
 ## Before you point kstrl at a repository
 
-`ks doctor [--root <path>] [--json]` runs ten static checks over a
+`ks doctor [--root <path>] [--json]` runs eight static checks over a
 repository and reports whether kstrl can point at it. Every check is
 mechanical: nothing here runs the repository's own test, typecheck or
-lint commands, spawns an agent, or spends anything. The ten checks are
+lint commands, spawns an agent, or spends anything. The eight checks are
 `git_repo` (a repository with commits and a base branch factory can cut
 a worktree from), `git_clean` (uncommitted work does not reach the
 engineer), `github_cli` (`gh` authenticated and an `origin` remote, for
 pushing branches and opening PRs), `kstrl_config` (`kstrl.toml` resolves
-in full), `build_manifest` (a build manifest at the repository root
-that kstrl recognises; kstrl will not create one, and `ks decompose`
-and `ks factory --spec` refuse with exit 2 before the architect runs
-without one), `verify_commands` (the test, typecheck and lint commands
+in full), `verify_commands` (the test, typecheck and lint commands
 Phase 1 will run), `test_root` (tracked paths the
 `[adequacy]` gate reads as tests), `gitignore` (whether git ignores
 `.kstrl/`, so the in-loop scope guard does not count kstrl's run
@@ -27,7 +24,7 @@ migration and deploy paths that `[policy] paths_deny` does not cover).
 There are three verdicts. `ready` (exit 0): every check passed.
 `ready-with-warnings` (exit 0): at least one check warned, none failed.
 `not-ready` (exit 1): at least one check failed, most commonly no git
-repository, no build manifest, or a `kstrl.toml` that will not parse. The report is also
+repository, no confirmed `[stack]`, or a `kstrl.toml` that will not parse. The report is also
 written as JSON under `.kstrl/doctor/report-<UTC stamp>.json`.
 
 `ks doctor --measure` adds one row, `base_gates` (#654): it runs your
@@ -207,7 +204,7 @@ this is a small print an operator should have to find on their own:
 
 **Symptom**: `Refusing to run: the base branch fails a gate Phase 1 runs, or its reading cannot be recorded`, exit 2, and no engineer was called.
 
-**What it is**: before the first engineer call, `ks factory` runs every check of the confirmed `[stack]`, with Phase 1's timeout, on the commit the base branch names, in a throwaway worktree under `.kstrl/contract/` (#654). `ks run` and `ks retry` reach the same check. It never measures your checkout: components are cut from the commit, so a fix you have not committed does not count. Any check that does not pass refuses the run, as do a failed setup and output the checks leave behind, and the refusal names each check. Without the refusal every component fails Phase 1 on the same failure after its engineer has been paid. On `ks factory --spec` the architect runs, and is paid, before this check. A gate that ran and measured nothing (pytest collecting no tests, a timeout, a tool that is not installed) is printed as `measured nothing` and does not refuse, because Phase 1 still fails that row on every component. A base branch that does not resolve, a checkout that fails and a `worktree_setup_command` that fails on the base are printed the same way. Every reading is written to `.kstrl/runs/<run_id>/base-gates.json` beside `launch.json`: the base sha, each gate's row with its failing names, the gates that were turned off, and whether and why the run refused. A run that cannot write the file refuses. `ks doctor --measure` takes the same reading without starting a run.
+**What it is**: before the first engineer call, `ks factory` runs every check of the confirmed `[stack]`, with Phase 1's timeout, on the commit the base branch names, in a throwaway worktree under `.kstrl/contract/` (#654). `ks run` and `ks retry` reach the same check. It never measures your checkout: components are cut from the commit, so a fix you have not committed does not count. Any check that does not pass refuses the run, as do a failed setup and output the checks leave behind, and the refusal names each check. Without the refusal every component fails Phase 1 on the same failure after its engineer has been paid. On `ks factory --spec` this check runs before the architect is paid, and its reading is written to the architect's run, `.kstrl/runs/<decompose run>/base-gates.json`; the factory run reuses that reading while the base names the same commit, and writes it again to its own run directory (#696 slice 7). A gate that ran and measured nothing (pytest collecting no tests, a timeout, a tool that is not installed) is printed as `measured nothing` and does not refuse, because Phase 1 still fails that row on every component. A base branch that does not resolve, a checkout that fails and a `worktree_setup_command` that fails on the base are printed the same way. Every reading is written to `.kstrl/runs/<run_id>/base-gates.json` beside `launch.json`: the base sha, each gate's row with its failing names, the gates that were turned off, and whether and why the run refused. A run that cannot write the file refuses. `ks doctor --measure` takes the same reading without starting a run.
 
 **Resolve**: make the base green in a commit; or pass `--accept-red-base <sha>`, at least 12 characters of the base commit's sha (the refusal prints the first 12), to run on that commit as it is; or pass `--no-verify`, which turns off all of Phase 1 and this check with it. Under `--no-verify` the record says `--no-verify: Phase 1 runs no gate`.
 

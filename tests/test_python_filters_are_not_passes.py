@@ -286,9 +286,10 @@ def test_a_tool_name_in_a_docstring_is_not_counted() -> None:
 #: ``toolchains.resolve`` and ``python_typecheck_default``) along with
 #: every command kstrl chose for a tree: a confirmed ``[stack]`` is the
 #: only source now. #696 slice 6 retired detection (``TOOLCHAINS``,
-#: ``detect``, ``toolchain_named``): ``ks init`` reads no language. What is
-#: left is the build-manifest names the decompose refusal reads (slice 7)
-#: and the fixture runner's Python test (slice 8).
+#: ``detect``, ``toolchain_named``): ``ks init`` reads no language. Slice 7
+#: removed the build-manifest names and the refusal that read them; they stay
+#: in this net so that their return is a census delta. What is left is the
+#: fixture runner's Python test (slice 8).
 OBTAIN_POINTS = (
     "BUILD_MANIFESTS",
     "PYTHON_MANIFESTS",
@@ -313,16 +314,13 @@ def reaches_an_obtain_point(node: ast.AST) -> bool:
 #: KSTRL_CONTRACT_TEST_CMD fallback, the "Python default on a
 #: not-Python tree" refusal), and kstrl chooses no command for any tree
 #: now. init_cmd.py's kstrl_toml_for row is gone the same way: it seeded
-#: a detected toolchain's commands into the retired [verify].
+#: a detected toolchain's commands into the retired [verify]. #696 slice 7
+#: removed the build-manifest refusal, so decompose.py and init_cmd.py
+#: reach for no toolchain fact at all.
 EXPECTED_OBTAIN_SITES: dict[str, tuple[int, str]] = {
-    "decompose.py: <module>": (2, "imports BUILD_MANIFESTS for ROOT_BUILD_MANIFESTS (slice 7)"),
     "fixtures.py: <module>": (1, "imports is_python_project"),
     "fixtures.py: fixture_tree_errors": (1, "a function fixture needs a Python tree (#632)"),
-    "init_cmd.py: <module>": (1, "imports has_build_manifest"),
-    "init_cmd.py: build_manifest_blocker": (1, "the #434 refusal, which slice 7 removes"),
-    "init_cmd.py: build_manifest_ok_reason": (1, "the doctor row's ok detail for the same refusal"),
-    "toolchains.py: <module>": (5, "the two tuples, one built from the other"),
-    "toolchains.py: has_build_manifest": (1, "reads BUILD_MANIFESTS"),
+    "toolchains.py: <module>": (2, "PYTHON_MANIFESTS and is_python_project"),
     "toolchains.py: is_python_project": (1, "reads PYTHON_MANIFESTS"),
 }
 

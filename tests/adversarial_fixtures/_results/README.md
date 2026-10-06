@@ -285,3 +285,61 @@ Against `baseline-20260926-090303.json` (1.2.0 alone):
   the right story but named `parse_bearer` or `test_tokens.py` instead of
   `src/pastebin/tokens.py`, which the 2.1.0 citation rule forbids.
 `int-d5-predates-feature` is below its floor of 0.65 in this capture.
+
+## The 2026-10-06 architect capture (#696 slice 7, DECOMPOSE_PROMPT 4.0.0)
+
+`baseline-20261006-154810.json` is the architect roles at DECOMPOSE_PROMPT
+4.0.0 (haiku, three runs for each fixture, head `02844301`). The body is 14913
+bytes, sha256 `232f6e178f9ff25b1016d4b324f7155c52989e3fb4fc14b19d3d24b24590e0f1`.
+Results: `architect` 0.78, `architect_allowed_paths` 1.00, `architect_reuse`
+`repo_absent` 1.00 and `repo_present` 0.67 (0.33 before).
+
+`calibration compare` against `baseline-20260925-120951.json` (3.1.0) gives
+FAIL: `architect` dropped 1.00 to 0.78, which is more than the 0.15 threshold.
+The rate is above the 0.65 floor. All of the drop is one fixture:
+`spec-02-unspecified-auth` got 1 of 3, and the two misses are
+`json parse: No valid JSON found in output` with `error=False`.
+
+A probe measured the cause. It sent the spec-02 prompt to haiku six times
+at each version and kept the raw output:
+
+| version | output that parsed | cause of the failure |
+|---|---|---|
+| 3.1.0 | 5 of 6 | `\THEN` in a string, an invalid JSON escape |
+| 4.0.0 | 5 of 6 | `\\"` in a string, which ends the string early |
+
+The two failures are in an EARS criterion string ("WHEN ... THEN ..."). The two
+versions have failures at the same rate. Thus, the drop is a parse failure of the model,
+not an effect of the 4.0.0 text. The 2.0.0 note above records the same
+failure on the same fixture. A lenient parser cannot repair the 4.0.0 output,
+because the string ends at an incorrect quotation mark. The probe script and the raw
+output are not in the repository.
+
+## The 2026-10-06 verification designer capture (#700 slice 7, ACCEPTANCE_PROMPT 1.0.0)
+
+`baseline-20261006-165608.json` is the first capture of the roles
+`acceptance` and `acceptance_clean` (haiku, three runs for each fixture,
+head `65902ae6`). The ACCEPTANCE_PROMPT body is 3259 bytes, sha256
+`880418ce7ee0cd9765105ab3a08f2ea40106115c090abfe2c1aed60757283cfa`.
+The two roles are record-only (floor `None`). The owner sets their floors
+from this capture.
+
+Results: `acceptance` 0.39 (6 fixtures, 18 runs) and `acceptance_clean`
+0.33 (2 fixtures, 6 runs). The primary cause is the base refusal, not
+the checks of the designer:
+
+| result of the run | `acceptance` | `acceptance_clean` |
+|---|---|---|
+| the base refused the plan | 11 of 18 | 3 of 6 |
+| the plan held, and a check failed on the planted head | 7 of 7 | not applicable |
+| the plan held, and all checks passed on the correct head | not applicable | 2 of 3 |
+
+In each refused run, a minimum of one check of the designer passed on the base, and
+the plan said that the check fails there (`onBase: fails`). Examples are
+`exit-zero`, `empty-input` and `single-word`. One such check refuses the
+full plan, also when the other checks are correct. In one
+`acc-initials-sh-wrong` run, the checks could not start on the base (exit
+127). In the one `acc-slug-python` run that was not clean, all checks
+failed on the correct head.
+
+The replies are not in the repository.

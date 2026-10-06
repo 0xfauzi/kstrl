@@ -409,8 +409,10 @@ EXPECTED_LOADER_SPELLINGS: dict[str, int] = {
     "tui/screens/init_wizard.py": 1,  # the banner's load
     "tui/screens/retry.py": 1,  # Manifest.load
     # #603: FactoryConfig.load in _prepare_decompose, inside its
-    # SURFACE_REJECTIONS guard, for the architect's call limit.
-    "tui/session.py": 3,  # Manifest.load, the banner's, and FactoryConfig's
+    # SURFACE_REJECTIONS guard, for the architect's call limit; #696 slice 7
+    # adds VerifyConfig.load beside it, for the base measured before the
+    # architect is paid.
+    "tui/session.py": 4,  # Manifest.load, the banner's, FactoryConfig's and VerifyConfig's
     "tui/state.py": 1,  # Manifest.load
     "tui/widgets/config_problem.py": 1,  # the banner's own def load
 }

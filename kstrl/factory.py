@@ -22,6 +22,7 @@ from typing import IO, TYPE_CHECKING, Any, Protocol, TextIO
 
 from kstrl import git
 from kstrl.acceptance import BaseReading, PinnedPlan, pin_plan, replay_base
+from kstrl.acceptance_design import acceptance_source, design_plan
 from kstrl.agents.base import UsageTotals, collect_usage, print_usage_rollup
 from kstrl.agents.proc import kill_active_process_groups
 from kstrl.agents.prompt_record import AgentCall, recording_prompts
@@ -164,6 +165,8 @@ from kstrl.stack import (
     NO_STACK,
     STACK_KIND,
     Stack,
+    StackRefused,
+    confirmed_stack,
     stack_in_force,
     stack_paths,
     unconfirmed_lines,
@@ -460,8 +463,17 @@ class FactoryConfig:
     # (``acceptance.pin_plan``) and what the base replay read
     # (``acceptance.replay_base``) are set by the preflights.
     acceptance_dir: str = ""
+    # #700 slice 7: `ks factory --design-acceptance`, the verification
+    # designer writes the plan instead (``acceptance_design``). Per run, like
+    # ``acceptance_dir``, and `ks retry` replays it.
+    design_acceptance: bool = False
     acceptance_plan: PinnedPlan | None = field(default=None, metadata={"provenance": True})
     acceptance_base: BaseReading | None = field(default=None, metadata={"provenance": True})
+    # #696 slice 7: the base reading ``base_refused_before_architect`` took
+    # before `ks factory --spec` paid the architect. The run's own base gates
+    # reuse it while the base names the same commit, so the base is measured
+    # once. Never read from kstrl.toml, env or a flag.
+    base_reading: BaseGates | None = field(default=None, metadata={"provenance": True})
 
     def resolved_verify_config(self) -> VerifyConfig:
         """The VerifyConfig Phase 1 runs with (#261).
@@ -2430,7 +2442,7 @@ BASE_GATES_SKIPPED_NO_VERIFY = "--no-verify: Phase 1 runs no gate"
 
 
 def _preflight_base_gates(
-    manifest: Manifest,
+    base_branch: str,
     root_dir: Path,
     factory_config: FactoryConfig,
     run_id: str,
@@ -2447,7 +2459,7 @@ def _preflight_base_gates(
     accept = factory_config.accept_red_base
     verify_config = factory_config.engineer_verify_config()
     if verify_config is None:
-        skipped = BaseGates(manifest.base_branch)
+        skipped = BaseGates(base_branch)
         reasons, _ = apply_acceptance(skipped, [], accept)
         return (
             write_base_gates_record(
@@ -2460,10 +2472,16 @@ def _preflight_base_gates(
             )
             + reasons
         )
-    ui.info(f"  Measuring the gates on the base branch {manifest.base_branch}...")
+    ui.info(f"  Measuring the gates on the base branch {base_branch}...")
     reading = measure_base_gates(
-        root_dir, manifest.base_branch, verify_config, factory_config.worktree_setup(), ui
+        root_dir,
+        base_branch,
+        verify_config,
+        factory_config.worktree_setup(),
+        ui,
+        measured=factory_config.base_reading,
     )
+    factory_config.base_reading = reading
     for line in warning_lines(reading):
         ui.warn(f"  {line}")
     reasons, accepted = apply_acceptance(reading, refusal_lines(reading), accept)
@@ -2521,7 +2539,7 @@ def _preflight_rungs(
 
 
 def _refused_rung_or_base(
-    manifest: Manifest, root_dir: Path, factory_config: FactoryConfig, run_id: str, ui: UI
+    base_branch: str, root_dir: Path, factory_config: FactoryConfig, run_id: str, ui: UI
 ) -> bool:
     """Prove the rung, then measure the base gates inside it (#700 slice 2,
     #654); True when either refused. The base gates never run below a
@@ -2533,8 +2551,78 @@ def _refused_rung_or_base(
     ) or _report_preflight(
         ui,
         "the base branch fails a gate Phase 1 runs, or its reading cannot be recorded",
-        _preflight_base_gates(manifest, root_dir, factory_config, run_id, ui),
+        _preflight_base_gates(base_branch, root_dir, factory_config, run_id, ui),
     )
+
+
+def base_refused_before_architect(
+    base_branch: str,
+    root_dir: Path,
+    factory_config: FactoryConfig,
+    verify_config: VerifyConfig,
+    accept_red_base: str,
+    run_id: str,
+    ui: UI,
+) -> bool:
+    """Measure the base before `ks factory --spec` pays the architect (#696 slice 7).
+
+    The reading the run takes (``_refused_rung_or_base``): the rung is proven,
+    the base gates run inside it, and the record goes to ``run_id``'s
+    directory, the architect's run, where `ks serve` reads a red base. True
+    when it refused. The rungs are proven on a copy of the config and
+    released here, so the run proves its own; the reading is kept on
+    ``factory_config.base_reading`` for the run to reuse.
+    """
+    probe = replace(factory_config, verify_config=verify_config, accept_red_base=accept_red_base)
+    try:
+        refused = _refused_rung_or_base(base_branch, root_dir, probe, run_id, ui)
+    finally:
+        release((probe.setup_rung, probe.test_rung))
+    factory_config.base_reading = probe.base_reading
+    return refused
+
+
+class BaseRefusedError(Exception):
+    """The base measured before the architect was paid refused the run (#696 slice 7)."""
+
+    def artifact_lines(self) -> list[str]:
+        """Nothing more to point at: the refusal was reported as it was measured."""
+        return []
+
+
+def base_check_before_architect(
+    root_dir: Path,
+    base_branch: str,
+    factory_config: FactoryConfig,
+    verify_config: VerifyConfig,
+    run_id: str,
+    ui: UI,
+) -> Callable[[], None]:
+    """The ``before_spend`` for a command that pays the architect without a run (#696 slice 7).
+
+    Under a confirmed ``[stack]`` the returned callable measures the base as
+    `ks factory --spec` does and raises :class:`BaseRefusedError` when it
+    refuses. With no ``[stack]``, or one no person confirmed, there is no
+    check kstrl may run, so it says so and measures nothing.
+    """
+    try:
+        confirmed = confirmed_stack(root_dir)
+    except StackRefused:
+        confirmed = None
+    if confirmed is None:
+        return functools.partial(
+            ui.info,
+            "kstrl.toml has no confirmed [stack], so there is no base check to run "
+            "before the architect",
+        )
+
+    def measure() -> None:
+        if base_refused_before_architect(
+            base_branch, root_dir, factory_config, verify_config, "", run_id, ui
+        ):
+            raise BaseRefusedError("the base branch was refused before the architect was paid")
+
+    return measure
 
 
 def _preflight_stack(
@@ -2571,8 +2659,11 @@ def _preflight_pins(
             "under",
             stack_errors,
         )
+    source, acceptance_errors = acceptance_source(root_dir, manifest, factory_config)
+    if acceptance_errors:
+        return "the acceptance plan cannot be used", acceptance_errors
     factory_config.acceptance_plan, acceptance_errors = pin_plan(
-        root_dir, manifest, factory_config.acceptance_dir, factory_config.project_stack
+        root_dir, manifest, source, factory_config.project_stack
     )
     return "the acceptance plan cannot be used", acceptance_errors
 
@@ -2659,7 +2750,7 @@ def _run_preflights(
         _preflight_component_scope(manifest, run_scope),
     ):
         return None
-    if _refused_rung_or_base(manifest, root_dir, factory_config, run_id, ui):
+    if _refused_rung_or_base(manifest.base_branch, root_dir, factory_config, run_id, ui):
         return None
     if not factory_config.use_worktrees:
         return run_decisions
@@ -4282,12 +4373,24 @@ def _plan_gated(
     stamped and parked merges are applied, so a plan nobody approved
     pushes, merges and runs nothing: its park is 1 and a rejection 2.
     """
-    if decisions is None:
+    if decisions is None or _refused_acceptance_design(pipeline):
         return 2
     stop = run_plan_gate(pipeline, ladder.bundle if ladder is not None else None)
     if stop is not None:
         return stop
     return 2 if _refused_acceptance_base(pipeline) else decisions
+
+
+def _refused_acceptance_design(pipeline: ComponentPipeline) -> bool:
+    """Ask the verification designer for the acceptance checks (#700 slice
+    7) when the run asked for them and none were designed for this plan yet:
+    after every pre-spend refusal and before the plan gate, so the one
+    approval covers them. True when the run must not start."""
+    config = pipeline.factory_config
+    if not config.design_acceptance or config.acceptance_plan is not None:
+        return False
+    config.acceptance_plan, errors = design_plan(pipeline)
+    return _report_preflight(pipeline.ui, "the verification designer wrote no usable plan", errors)
 
 
 def _refused_acceptance_base(pipeline: ComponentPipeline) -> bool:
@@ -4302,6 +4405,11 @@ def _refused_acceptance_base(pipeline: ComponentPipeline) -> bool:
     config.acceptance_base, errors = replay_base(
         pipeline.root_dir, stack, plan, manifest.base_branch, pipeline.run_id, config, pipeline.ui
     )
+    if errors and plan.designed:
+        errors.append(
+            f"A model wrote these checks. Delete {plan.source} and run again to ask the "
+            "verification designer for new ones, which the plan gate then asks about."
+        )
     if _report_preflight(pipeline.ui, "the acceptance checks do not hold on the base", errors):
         return True
     manifest.acceptance_digest = plan.digest
@@ -4496,6 +4604,9 @@ def _unsandboxable_run_roles(
             "engineer": base_config.agent_cmd,
             "code reviewer": review_selection.agent_cmd if review_enabled(factory_config) else None,
             "security reviewer": security.agent_cmd if security is not None else None,
+            "verification designer": (
+                review_selection.agent_cmd if factory_config.design_acceptance else None
+            ),
         },
     )
 

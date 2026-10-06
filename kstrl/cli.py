@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import json
 import os
 import sys
@@ -83,6 +84,7 @@ from kstrl.events import (
 )
 from kstrl.factory import (
     VALID_REVIEW_MODES,
+    BaseRefusedError,
     BudgetConfigError,
     FactoryConfig,
     FactoryLockHeldError,
@@ -91,6 +93,8 @@ from kstrl.factory import (
     _cli_family,
     _report_preflight,
     _RunLock,
+    base_check_before_architect,
+    base_refused_before_architect,
     run_factory,
 )
 from kstrl.feature_cmd import FeatureParams, run_feature
@@ -101,9 +105,7 @@ from kstrl.git import (
     resolve_base_branch,
 )
 from kstrl.init_cmd import (
-    BUILD_MANIFEST_FIX,
     DEFAULT_FEATURE_UNDERSTAND,
-    build_manifest_blocker,
     run_init,
     staleness_notice,
 )
@@ -861,18 +863,33 @@ _PREFLIGHT_REQUIRED: dict[str, frozenset[str]] = {
 _ROOT_FROM_PROMPT = frozenset({"run", "understand", "feature"})
 
 
-def _refuse_without_build_manifest(root_dir: Path, ui_impl: UI) -> None:
-    """Exit 2 before the architect is paid when kstrl cannot build here (#434).
+def _measure_base_before_architect(
+    root_dir: Path,
+    base_branch: str,
+    factory_config: FactoryConfig,
+    accept_red_base: str,
+    no_verify: bool,
+    run_id: str,
+    ui_impl: UI,
+) -> None:
+    """Exit 2 before `ks factory --spec` pays the architect when the base refuses (#696 slice 7).
 
-    Shared by `ks decompose` and `ks factory --spec`, the two commands
-    that pay for an architect call. Both run after the config preflight
-    seam, so the [verify] section this reads has already loaded once.
+    The base gates the run would refuse on, measured first, into the
+    architect's run (``run_id``); the factory run reuses the reading.
+    ``--no-verify`` measures nothing, here as in the run.
     """
-    blocker = build_manifest_blocker(root_dir)
-    if _report_preflight(
+    from kstrl.verify import VerifyConfig
+
+    if no_verify:
+        return
+    if base_refused_before_architect(
+        base_branch,
+        root_dir,
+        factory_config,
+        VerifyConfig.load(root_dir),
+        accept_red_base,
+        run_id,
         ui_impl,
-        "this repository has no build manifest kstrl can use",
-        [blocker, BUILD_MANIFEST_FIX] if blocker else [],
     ):
         sys.exit(2)
 
@@ -2444,6 +2461,8 @@ def decompose(
     tui: bool | None,
 ) -> None:
     """Decompose a spec into components and generate PRDs."""
+    from kstrl.verify import VerifyConfig
+
     ctx = click.get_current_context()
 
     root_dir = root.resolve() if root else Path.cwd()
@@ -2468,7 +2487,6 @@ def decompose(
             ui_impl.info(type_hint)
         sys.exit(2)
     effective_type = canonical_type or effective_type
-    _refuse_without_build_manifest(root_dir, ui_impl)
 
     agent = get_agent(
         effective_cmd, effective_model, effective_reasoning, effective_type, root_dir=root_dir
@@ -2480,7 +2498,9 @@ def decompose(
     effective_base = resolve_base_branch(base_branch, root_dir)
     # #603: the architect runs in this process, so an unset limit lets a
     # hung call hold the command; kstrl.toml was checked at entry.
-    architect_timeout = limit_seconds(FactoryConfig.load(root_dir).architect_timeout_seconds)
+    factory_config = FactoryConfig.load(root_dir)
+    architect_timeout = limit_seconds(factory_config.architect_timeout_seconds)
+    verify_config = VerifyConfig.load(root_dir)
 
     def _decompose_core(core_ui: UI, command_run: CommandRun) -> int:
         try:
@@ -2497,10 +2517,18 @@ def decompose(
                 prompt_call=command_run.agent_call(ARCHITECT_COMPONENT, ARCHITECT_ROLE),
                 force_lock=force_lock,
                 timeout=architect_timeout,
+                before_spend=base_check_before_architect(
+                    root_dir,
+                    effective_base,
+                    factory_config,
+                    verify_config,
+                    command_run.run_id,
+                    core_ui,
+                ),
             )
             core_ui.ok(f"Decomposed into {len(manifest.components)} components")
             return 0
-        except (SpecBlockerError, OwnerAnswerError) as exc:
+        except (SpecBlockerError, OwnerAnswerError, BaseRefusedError) as exc:
             core_ui.err(str(exc))
             # R1.7: point at the durable artifacts so the user iterates
             # against files, not scrollback. Plural, because after #260
@@ -2644,6 +2672,14 @@ def decompose(
     "on the base and on each component's head inside the isolation rung. A failed "
     "held-out check halts the component; any other failed check is retried. Needs a "
     "[stack]; `ks retry` replays it",
+)
+@click.option(
+    "--design-acceptance",
+    is_flag=True,
+    default=False,
+    help="Ask the verification designer (the [review] agent) for each component's "
+    "acceptance checks before the plan gate, then run them as --acceptance does, record "
+    "only. Needs a [stack]; `ks retry` replays it",
 )
 @click.option(
     "--dead-code-cleanup",
@@ -2858,6 +2894,7 @@ def factory(
     no_verify: bool,
     accept_red_base: str,
     acceptance: str,
+    design_acceptance: bool,
     dead_code_cleanup: bool | None,
     dead_code_command: str | None,
     mutation_testing: bool | None,
@@ -2973,7 +3010,6 @@ def factory(
             if not project_name:
                 ui_impl.err("--project-name is required with --spec")
                 sys.exit(2)
-            _refuse_without_build_manifest(root_dir, ui_impl)
 
             # Read BEFORE the work, and sliced from there afterwards, the
             # same way `decompose_spec` reports it - so the two derivations
@@ -2994,6 +3030,7 @@ def factory(
                 component=ARCHITECT_COMPONENT,
             )
             architect_run_id = architect_run.run_id
+            spec_base = resolve_base_branch(base_branch, root_dir)
             try:
                 manifest = decompose_spec(
                     spec_path=spec,
@@ -3002,7 +3039,7 @@ def factory(
                     # already carries its own base_branch. Only the --spec
                     # path has a flag to resolve, and detection is the
                     # default rather than the literal "main" (#259).
-                    base_branch=resolve_base_branch(base_branch, root_dir),
+                    base_branch=spec_base,
                     single_pr=single_pr,
                     agent=agent,
                     ui=ui_impl,
@@ -3013,6 +3050,16 @@ def factory(
                     force_lock=force_lock,
                     run_lock=run_lock,
                     timeout=limit_seconds(factory_config.architect_timeout_seconds),
+                    before_spend=functools.partial(
+                        _measure_base_before_architect,
+                        root_dir,
+                        spec_base,
+                        factory_config,
+                        accept_red_base,
+                        no_verify,
+                        architect_run_id,
+                        ui_impl,
+                    ),
                 )
             except (SpecBlockerError, OwnerAnswerError) as exc:
                 # Architect halted: it escalated a question only the owner
@@ -3106,6 +3153,7 @@ def factory(
         factory_config.force_lock = force_lock
         factory_config.accept_red_base = accept_red_base
         factory_config.acceptance_dir = acceptance
+        factory_config.design_acceptance = design_acceptance
         # #436: what `ks retry` replays; see kstrl/launch_record.py.
         factory_config.launch_flags = replayable_flags(ctx)
         # R2.3: --no-verify is an explicit skip sentinel that run_factory

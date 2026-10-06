@@ -101,8 +101,16 @@ def measure_base_gates(
     config: VerifyConfig,
     setup: WorktreeSetup,
     ui: UI,
+    *,
+    measured: BaseGates | None = None,
 ) -> BaseGates:
-    """Run Phase 1's command gates, the ``[stack]``'s checks, on the base branch's commit."""
+    """Run Phase 1's command gates, the ``[stack]``'s checks, on the base branch's commit.
+
+    ``measured`` is a reading taken earlier in this process (#696 slice 7, before
+    the architect was paid): it is returned as it is when it measured, the base
+    still names the commit it measured, and it was measured the same way (its
+    ``digest``, the stack and the timeout), so the base is measured once.
+    """
     start = time.monotonic()
     # Non-fatal, as before a component is cut (``factory._setup_worktree``):
     # offline runs read the current tracking ref, local-only repos the branch.
@@ -116,6 +124,18 @@ def measure_base_gates(
             error=f"the base branch {base_branch} was not measured: {exc}",
             seconds=time.monotonic() - start,
         )
+    digest = (
+        verify_digest(config.project_stack, config.subprocess_timeout)
+        if config.project_stack is not None
+        else ""
+    )
+    if (
+        measured is not None
+        and measured.result is not None
+        and (measured.base_sha, measured.digest) == (sha, digest)
+    ):
+        ui.info(f"  The base {sha[:12]} was measured before the architect ran; that reading holds.")
+        return measured
     worktree, checkout_error = _create_temp_worktree(sha, root_dir, WORKTREE_LABEL)
     if worktree is None:
         return BaseGates(
@@ -128,11 +148,6 @@ def measure_base_gates(
     left_behind: tuple[str, ...] = ()
     try:
         setup_error = setup.prepare(worktree)
-        digest = (
-            verify_digest(config.project_stack, config.subprocess_timeout)
-            if config.project_stack is not None
-            else ""
-        )
         result = (
             None
             if setup_error

@@ -96,6 +96,20 @@ from kstrl.security import (
     parse_security_output,
 )
 from tests.conftest import make_review_repo
+from tests.helpers.calibration_acceptance_fixture import (
+    ACCEPTANCE_CLEAN_ROLE,
+    ACCEPTANCE_ROLE,
+    AcceptanceFixture,
+    Scored,
+    acceptance_slot,
+    base_checkout,
+    caught,
+    clean,
+    design,
+    load_acceptance_fixtures,
+    materialize,
+    score,
+)
 from tests.helpers.calibration_integration_fixture import (
     INTEGRATION_CLEAN_ROLE,
     INTEGRATION_ROLE,
@@ -1552,6 +1566,86 @@ def test_integration_review_opens_nothing_on_a_clean_twin(
         report,
         run_once,
         category=fixture.story,
+        gate_on_floor=True,
+    )
+
+
+#: #700 slice 7: one param per planted head, and one per fixture for its
+#: correct head. Every run asks the designer afresh.
+ACCEPTANCE_POSITIVE_PARAMS = [
+    pytest.param(f, head, id=f"{f.fixture_id}-{head}")
+    for f in load_acceptance_fixtures()
+    for head in f.planted
+]
+ACCEPTANCE_CLEAN_PARAMS = [pytest.param(f, id=f.fixture_id) for f in load_acceptance_fixtures()]
+
+
+def _acceptance_run_once(fixture: AcceptanceFixture, tmp_path: Path) -> Scored | str:
+    """One design of ``fixture`` by the reviewer calibration agent (owner
+    decision 12: the designer is the [review] selection), through the call
+    the factory makes, scored by running it. A str says why no plan came
+    back, which is a completed miss."""
+    agent = BoundedAgent(_get_reviewer_calibration_agent(), AGENT_RUN_TIMEOUT_S)
+    slot = acceptance_slot(fixture, tmp_path)
+    where = base_checkout(fixture, slot / "designer")
+    entry, _asks, errors = design(fixture, agent, where, timeout=AGENT_RUN_TIMEOUT_S)
+    if not agent.started:
+        raise AssertionError(f"the designer was never asked: {errors}")
+    if agent.failure:
+        raise _AgentUnavailable(agent.failure)
+    if entry is None:
+        return "no valid plan: " + "; ".join(errors)
+    repo = materialize(fixture, slot / "repo")
+    return score(fixture, repo, entry, slot / "plan")
+
+
+@_skip_unless_calibrating
+@pytest.mark.parametrize(("fixture", "head"), ACCEPTANCE_POSITIVE_PARAMS)
+def test_acceptance_designer_catches_a_planted_head(
+    fixture: AcceptanceFixture,
+    head: str,
+    tmp_path: Path,
+    report: _DetectionReport,
+) -> None:
+    """At least one designed check fails on the planted head, and the plan
+    held on the base (#700 M13 recall). Recorded, not gated: the role's
+    floor is None until this capture sets it (owner decision 10)."""
+
+    def run_once() -> tuple[bool, str]:
+        scored = _acceptance_run_once(fixture, tmp_path)
+        return (False, scored) if isinstance(scored, str) else caught(scored, head)
+
+    _record_or_gate(
+        ACCEPTANCE_ROLE,
+        f"{fixture.fixture_id}-{head}",
+        report,
+        run_once,
+        category=head,
+        gate_on_floor=True,
+    )
+
+
+@_skip_unless_calibrating
+@pytest.mark.parametrize("fixture", ACCEPTANCE_CLEAN_PARAMS)
+def test_acceptance_designer_passes_the_correct_head(
+    fixture: AcceptanceFixture,
+    tmp_path: Path,
+    report: _DetectionReport,
+) -> None:
+    """Every designed check passes every run on the correct head, and the
+    plan held on the base (#700 M13 false alarms and vacuity). Recorded,
+    not gated, until this capture sets the floor."""
+
+    def run_once() -> tuple[bool, str]:
+        scored = _acceptance_run_once(fixture, tmp_path)
+        return (False, scored) if isinstance(scored, str) else clean(scored)
+
+    _record_or_gate(
+        ACCEPTANCE_CLEAN_ROLE,
+        fixture.fixture_id,
+        report,
+        run_once,
+        category="correct",
         gate_on_floor=True,
     )
 

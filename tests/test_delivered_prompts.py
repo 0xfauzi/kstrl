@@ -79,6 +79,7 @@ from types import ModuleType
 import pytest
 
 from kstrl import (
+    acceptance_design,
     decompose,
     gepa_adapter,
     git,
@@ -97,6 +98,7 @@ from kstrl.owner_answers import read_owner_answers
 from kstrl.stack import Stack
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import CheckResult, VerificationResult, VerifyConfig
+from tests.helpers.before_spend import no_base_check
 from tests.helpers.builder_prompts import BUILDER_RENDER_EXEMPT
 from tests.helpers.component_prd import write_component_prd
 from tests.helpers.feedforward_prompts import NOTICE_PROMPTS
@@ -188,6 +190,7 @@ _DECISIONS = [
 #: time. Each imported the NAME, so the binding to replace is the one in
 #: the consuming module, not the one in ``kstrl.delimiters``.
 _DELIMITER_CONSUMERS: tuple[ModuleType, ...] = (
+    acceptance_design,
     decompose,
     review,
     security,
@@ -278,19 +281,37 @@ class _Role:
 
 
 _ROLES: dict[str, _Role] = {
+    # #700 slice 7: the verification designer, one prompt per component. Pinned
+    # by running this test.
+    "acceptance-designer": _Role(
+        lambda _p: acceptance_design.build_design_prompt(
+            _COMPONENT,
+            ["it parses a valid file", "it errors on a bad one"],
+            _SPEC_TEXT,
+            Stack(
+                instructions="Build with the project's own tools.",
+                setup="",
+                checks=(("tests", "T"), ("lint", "L")),
+                env=(),
+            ),
+        ),
+        frozenset({"ACCEPTANCE_PROMPT"}),
+        "1da1b80ab50403c523435efa6e4f272a58b1f73525396532c1d8b3e1252b06e8",
+        3481,
+    ),
     "architect": _Role(
         lambda _p: decompose.build_decompose_prompt("PROJECT", _SPEC_TEXT),
         frozenset({"DECOMPOSE_PROMPT", "ARCHITECT_NO_REPO_SOURCE_PROMPT"}),
-        "91a61a3dd236dbfd52bd8aeedf8180325bc46674b864c5e8bd3978f9ee34b45c",
-        12803,
+        "7055862f453065da57206febb67a8166639673f1eaf4fa1d54bc754f05300350",
+        15123,
     ),
     # #639 slice 4: the architect when the owner answered an escalation in the
     # inbox. Pinned by running this test.
     "architect-owner-answer": _Role(
         _architect_with_owner_answer,
         frozenset({"DECOMPOSE_PROMPT", "ARCHITECT_NO_REPO_SOURCE_PROMPT", "OWNER_ANSWER_PROMPT"}),
-        "918b20a68d4da44197eaf570fbd310a73c6ed144463bcc1bd4ade8c13fc1eb24",
-        13042,
+        "d9a70f74c10dfab7732f5e971d0c02baeafb791a4da55d2efd91f057b9a62aef",
+        15362,
     ),
     "architect-with-repo": _Role(
         lambda _p: decompose.build_decompose_prompt(
@@ -299,8 +320,8 @@ _ROLES: dict[str, _Role] = {
             codebase_map_path="scripts/kstrl/codebase_map.md",
         ),
         frozenset({"DECOMPOSE_PROMPT", "ARCHITECT_REPO_SOURCE_PROMPT"}),
-        "0b30cf903de5fe12df2d50fc8dda96915c21438a565a8ffcfc3da1b435eccf12",
-        14244,
+        "4c20637791d7232049a07c1780b6a6af0fd7984627c477b9f72d9a3f00b7ac2d",
+        16564,
     ),
     "decisions-context": _Role(
         lambda _p: build_decisions_context(_DECISIONS, "comp-a"),
@@ -550,6 +571,7 @@ def _run_decompose_and_capture_prompt(tmp_path: Path, monkeypatch: pytest.Monkey
             max_retries=1,
             prompt_call=architect_call(tmp_path),
             timeout=None,
+            before_spend=no_base_check,
         )
     assert agent.prompts, "decompose_spec never called its agent, so this proves nothing."
     return agent.prompts[0]
