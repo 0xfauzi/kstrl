@@ -149,6 +149,14 @@ PAID_ARMS: dict[str, tuple[Callable[[], tuple[Any, ...]], bool]] = {
         lambda: _first(tc._concern_negative_fixtures()),
         False,
     ),
+    "test_reviewer_role_catches_weakened_tests": (
+        lambda: _first(tc._weakened_test_fixtures()),
+        False,
+    ),
+    "test_reviewer_role_allows_a_requested_test_removal": (
+        lambda: _first(tc._weakened_test_negative_fixtures()),
+        False,
+    ),
     "test_architect_role_flags_vague_spec": (
         lambda: _first(tc._halting_spec_fixtures()),
         True,
