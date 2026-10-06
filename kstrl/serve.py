@@ -4254,10 +4254,11 @@ def _settle_unfailed(
     poison streak, and it is not retried. #644 added the third on the same
     terms, for an architect escalation: the child already filed the one
     inbox row that names `ks queue answer`, so nothing is filed here. The
-    remote writeback runs after the mutex is released (#187 F10); an item
-    awaiting an answer has none yet, so a GitHub-sourced one keeps its
-    running label until it is answered. #654 added a red base, which is
-    not the item's failure either: see ``_requeue_on_red_base``.
+    remote writeback runs after the mutex is released (#187 F10); a
+    GitHub-sourced item awaiting an answer gets the ``awaiting_answer``
+    label and a comment naming the local command, and the claim that
+    re-runs it moves the label back to ``running``. #654 added a red base,
+    which is not the item's failure either: see ``_requeue_on_red_base``.
     """
     if verdict.verdict is Verdict.RED_BASE:
         _requeue_on_red_base(root_dir, queue, running, verdict, obs, result)
@@ -4282,7 +4283,7 @@ def _settle_unfailed(
                 current, reason=verdict.reason, run_id=architect_run_id, actor="serve"
             )
             result.needs_human = True
-            state, detail = "", verdict.reason
+            state, detail = "awaiting_answer", verdict.reason
             said = (
                 "awaiting an answer: see `ks inbox ls`, then "
                 f"`ks queue answer {running.item_id} <answered spec file>`"
@@ -4291,8 +4292,7 @@ def _settle_unfailed(
             return False
         finished = queue.get(running.item_id)
     obs.info(f"  {running.item_id} {said}")
-    if state:
-        _report_remote_outcome(root_dir, finished, state=state, detail=detail, observer=obs)
+    _report_remote_outcome(root_dir, finished, state=state, detail=detail, observer=obs)
     return True
 
 

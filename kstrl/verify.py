@@ -71,7 +71,7 @@ from kstrl.policy import (
     parse_added_lines,
 )
 from kstrl.prd import PRD
-from kstrl.procdispose import drain_or_abandon
+from kstrl.procdispose import drain_or_abandon, reap_or_abandon
 from kstrl.procgroup import signal_process_tree
 from kstrl.report_formats import REPORT_ENV, fresh_report, read_gate_report
 from kstrl.rung import Rung
@@ -430,7 +430,7 @@ def start_scrubbed(
     rung: Rung,
     log: IO[bytes],
     declared_env: tuple[str, ...] | None = None,
-) -> subprocess.Popen[bytes]:
+) -> tuple[subprocess.Popen[bytes], int]:
     """Start ``cmd`` inside ``rung`` and return at once, leaving it running (#700 slice 3).
 
     The sibling of :func:`run_scrubbed` for a command that starts servers
@@ -448,17 +448,50 @@ def start_scrubbed(
     no prover. The child leads a new session, so its pid is the
     group id; the caller waits on it, records that id, and stops the group
     through :mod:`kstrl.procgroup` (``kstrl.replay``).
+
+    The child is the leash in its ``--hold`` mode (#642 slice 6): it exits
+    with ``cmd``'s status when ``cmd`` exits, as ``cmd`` would have, and a
+    fork of it stays in the group and ends the group once the lifeline
+    closes. The lifeline's write end is returned with the child, and the
+    caller closes it when it stops the group; if this process dies first,
+    the kernel closes it, so the servers ``cmd`` started end with it.
     """
     env = scrubbed_subprocess_env(declared_env)
-    return subprocess.Popen(
-        _in_rung(cmd, rung, env, declared_env or ()),
-        cwd=cwd,
-        stdin=subprocess.DEVNULL,
-        stdout=log,
-        stderr=subprocess.STDOUT,
-        env=env,
-        start_new_session=True,
-    )
+    spawned = _in_rung(cmd, rung, env, declared_env or ())
+    argv = ["/bin/sh", "-c", spawned] if isinstance(spawned, str) else list(spawned)
+    lifeline_read, lifeline = os.pipe()
+    status_read, status_write = os.pipe()
+    try:
+        proc = subprocess.Popen(
+            leash_command(
+                argv,
+                lifeline=lifeline_read,
+                status=status_write,
+                term_grace=_SCRUB_TERM_GRACE_SECONDS,
+                nonce=new_nonce(),
+                hold=True,
+            ),
+            cwd=cwd,
+            stdin=subprocess.DEVNULL,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            env=env,
+            start_new_session=True,
+            pass_fds=(lifeline_read, status_write),
+        )
+    except BaseException:
+        os.close(lifeline)
+        os.close(status_read)
+        raise
+    finally:
+        os.close(lifeline_read)
+        os.close(status_write)
+    start_error = leash_start_error(status_read, argv[0])
+    if start_error is not None:
+        os.close(lifeline)
+        reap_or_abandon(proc, _SCRUB_TERM_GRACE_SECONDS)
+        raise start_error
+    return proc, lifeline
 
 
 def _in_rung(

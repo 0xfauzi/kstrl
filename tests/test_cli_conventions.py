@@ -430,6 +430,9 @@ UNRESOLVED_EXIT_VALUES: dict[tuple[str, str], int] = {
     # #642 slice 5: the leash's own status, read from `agent.wait()`, a
     # real subprocess exit status the walk cannot resolve to a literal.
     ("agents/leash.py", "_follow"): 1,
+    # #642 slice 6: the same status in `_hold`, read from `returncode` and
+    # left with by the parent of the fork, once per branch of the expression.
+    ("agents/leash.py", "_hold"): 2,
 }
 
 

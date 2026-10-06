@@ -188,8 +188,9 @@ EXPECTED_PROCESS_MODULES: dict[str, tuple[str, ...]] = {
     # `python -I -S`, so it cannot import `kstrl.procgroup`, and its one
     # signal is `killpg(0, ...)`: pgid 0 is its own group, which it refuses
     # to start unless it leads. The rows in EXPECTED_BARE_SYSCALLS say the
-    # same for the syscalls.
-    "agents/leash.py": ("Popen", "getpgrp", "killpg", "subprocess"),
+    # same for the syscalls. #642 slice 6: `fork`, the `--hold` mode's one
+    # fork, whose parent leaves with the command's status.
+    "agents/leash.py": ("Popen", "fork", "getpgrp", "killpg", "subprocess"),
     "serve.py": ("Popen", "communicate", "subprocess"),
     "verify.py": ("Popen", "communicate", "subprocess"),
     # #700 slice 3: waits on the `up` that `verify.start_scrubbed` started,
@@ -262,8 +263,12 @@ EXPECTED_PROCESS_MODULES: dict[str, tuple[str, ...]] = {
 #: as ``python -I -S`` (#642), so it cannot import ``kstrl.procgroup``: its
 #: ``getpgrp`` is the check that it leads its own group, and its two
 #: ``killpg`` calls take pgid 0, which is that group and never kstrl's.
+#: #642 slice 6 adds the ``--hold`` mode's ``fork``, whose child stays in
+#: the group, and a second ``getpgrp``, the group that child reads.
 EXPECTED_BARE_SYSCALLS: dict[str, tuple[str, ...]] = {
     "agents/leash.py": (
+        "fork(os.fork ...)",
+        "getpgrp(os.getpgrp ...)",
         "getpgrp(os.getpgrp ...)",
         "killpg(os.killpg ...)",
         "killpg(os.killpg ...)",
@@ -346,8 +351,9 @@ EXPECTED_SPAWNERS: dict[str, SpawnerRules] = {
     "agents/leash.py": SpawnerRules(1, 0, 0, 0),
     "serve.py": SpawnerRules(1, 1, 1, 2),
     # #700 slice 3: the second Popen is `start_scrubbed`, which returns the
-    # running child; `replay.py` is the one that lets it go.
-    "verify.py": SpawnerRules(2, 1, 1, 2),
+    # running child; `replay.py` is the one that lets it go. #642 slice 6:
+    # the third disposal lets go of a leash that could not start `up`.
+    "verify.py": SpawnerRules(2, 1, 1, 3),
     "replay.py": SpawnerRules(0, 0, 0, 1),
 }
 

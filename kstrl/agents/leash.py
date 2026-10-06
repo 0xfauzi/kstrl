@@ -15,7 +15,8 @@ on a reading that shows the group empty (#708); a member that is alive,
 or a reading that cannot be made, keeps it waiting the whole grace.
 
 Run by path and never imported:
-``python -I -S leash.py <lifeline fd> <status fd> <grace> <nonce> -- <argv...>``.
+``python -I -S leash.py <lifeline fd> <status fd> <grace> <nonce> -- <argv...>``,
+or ``--hold`` in place of ``--``.
 The leash does nothing with the nonce. It is there to be READ: kstrl
 records it beside the group id at spawn, and a later command names a
 group as kstrl's only while that group's leader, this process, shows the
@@ -33,6 +34,13 @@ that stops it signalling kstrl's group or the operator's shell.
 The leash leaves with the agent's exit status, so a caller that reads
 the returncode (``verify.run_scrubbed``, #642 slice 5) reads the agent's.
 
+``--hold`` in place of ``--`` is for a command that exits while what it
+started keeps running, a ``[stack]``'s ``up`` (``verify.start_scrubbed``,
+#642 slice 6). When that command exits, the leash forks: the parent
+leaves with the command's status, which is what the spawner waits on, and
+the child stays in the group and holds it until the lifeline closes. The
+spawner then stops the group itself, or its death closes the lifeline.
+
 The status fd carries one message back to the spawner, and only on
 failure: ``errno <n>`` when the agent could not be started, ``refused``
 when the leash does not lead its group. A clean start closes it with
@@ -44,6 +52,7 @@ nothing written, so the spawner raises the same ``OSError`` a direct
 from __future__ import annotations
 
 import os
+import select
 import signal
 import subprocess
 import sys
@@ -91,6 +100,33 @@ def _follow(agent: subprocess.Popen[bytes], firing: threading.Event) -> None:
         os._exit(status if status >= 0 else 128 - status)
 
 
+def _hold(command: subprocess.Popen[bytes], lifeline: int) -> None:
+    """``--hold``: return once every write end of the lifeline is closed,
+    leaving with the command's status in a parent of this process when the
+    command exits first (#642 slice 6).
+
+    The lifeline is polled while the command runs, POLL_SECONDS at a time,
+    and anything the poll reports, an error included, goes to
+    :func:`_wait_for_owner` to decide. When the command exits first the
+    leash forks: the parent leaves with the command's status and the child,
+    still in the group but no longer its leader, holds it. No second thread
+    runs here: a fork while another thread is alive can deadlock the child.
+    """
+    poller = select.poll()
+    poller.register(lifeline, select.POLLIN)
+    while command.poll() is None:
+        try:
+            if poller.poll(int(POLL_SECONDS * 1000)):
+                break
+        except OSError:
+            break
+    else:
+        status = command.returncode
+        if os.fork() != 0:
+            os._exit(status if status >= 0 else 128 - status)
+    _wait_for_owner(lifeline)
+
+
 def _wait_for_owner(lifeline: int) -> None:
     """Return once every write end of the lifeline is closed.
 
@@ -115,7 +151,9 @@ def _others_in_group() -> bool:
     and it is gone once the reading returns. The reading is kstrl's own,
     ``read_group_members``, so the tree keeps one ``ps`` parse. Anything
     that stops the reading, an import that fails included, is True: the
-    leash then waits the whole grace, as it did before #708.
+    leash then waits the whole grace, as it did before #708. The group is
+    read by ``getpgrp``, not by the leash's pid: under ``--hold`` the leash
+    that fires may be the forked child, which does not lead the group.
     """
     try:
         root = str(Path(__file__).resolve().parents[2])
@@ -123,7 +161,7 @@ def _others_in_group() -> bool:
             sys.path.append(root)
         from kstrl.procgroup import pid_is_alive, read_group_members
 
-        pids = read_group_members(os.getpid()).pids
+        pids = read_group_members(os.getpgrp()).pids
         return pids is None or any(pid != os.getpid() and pid_is_alive(pid) for pid in pids)
     except Exception:  # noqa: BLE001 - a reading not made may hide a member
         return True
@@ -141,9 +179,10 @@ def _wait_out(grace: float) -> None:
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) < 7 or argv[5] != "--":
+    if len(argv) < 7 or argv[5] not in ("--", "--hold"):
         raise ValueError(
-            f"usage: leash.py <lifeline fd> <status fd> <grace> <nonce> -- <argv...>: {argv}"
+            "usage: leash.py <lifeline fd> <status fd> <grace> <nonce> -- | --hold "
+            f"<argv...>: {argv}"
         )
     lifeline, status, grace = int(argv[1]), int(argv[2]), float(argv[3])
     command = argv[6:]
@@ -159,8 +198,11 @@ def main(argv: list[str]) -> int:
         return SPAWN_FAILED
     os.close(status)
     firing = threading.Event()
-    threading.Thread(target=_follow, args=(agent, firing), daemon=True).start()
-    _wait_for_owner(lifeline)
+    if argv[5] == "--hold":
+        _hold(agent, lifeline)
+    else:
+        threading.Thread(target=_follow, args=(agent, firing), daemon=True).start()
+        _wait_for_owner(lifeline)
     firing.set()
     os.killpg(0, signal.SIGTERM)
     _wait_out(grace)

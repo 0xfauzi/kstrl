@@ -28,6 +28,7 @@ applications started at once would contend for the same ports.
 from __future__ import annotations
 
 import fcntl
+import os
 import shlex
 import shutil
 import signal
@@ -263,6 +264,7 @@ def _run_stages(
     fails; then stop the ``up`` group by the id recorded when it started."""
     setup_limit, check_limit = limits
     app: subprocess.Popen[bytes] | None = None
+    lifeline = -1
     try:
         if stack.setup and not _passed(
             record, _ran("setup", stack.setup, worktree, rungs[SETUP_ZONE], setup_limit, stack)
@@ -272,7 +274,7 @@ def _run_stages(
             log = scratch / "up.log"
             began = time.monotonic()
             with log.open("wb") as handle:
-                app = start_scrubbed(
+                app, lifeline = start_scrubbed(
                     stack.up,
                     cwd=worktree,
                     rung=rungs[TEST_ZONE],
@@ -291,7 +293,7 @@ def _run_stages(
                 return
     finally:
         if app is not None and record.pgid is not None:
-            record.group_gone = _stop(app, record.pgid)
+            record.group_gone = _stop(app, record.pgid, lifeline)
 
 
 def _passed(record: Replay, stage: Stage) -> bool:
@@ -379,9 +381,15 @@ def _ready(
     return Stage("up", command, code, stopped, round(time.monotonic() - began, 3), tail, failed)
 
 
-def _stop(app: subprocess.Popen[bytes], pgid: int) -> bool:
+def _stop(app: subprocess.Popen[bytes], pgid: int, lifeline: int) -> bool:
     """SIGTERM the ``up`` group, then SIGKILL what is left after the grace;
-    True when a read after it finds the group empty."""
+    True when a read after it finds the group empty.
+
+    The lifeline is closed first (#642 slice 6): the leash holding the
+    group takes no SIGTERM, and once the lifeline closes it ends the group
+    itself and then leaves, so the group can read as empty before the
+    grace runs out."""
+    os.close(lifeline)
     for sig in (signal.SIGTERM, signal.SIGKILL):
         signal_group(pgid, sig)
         deadline = time.monotonic() + STOP_GRACE_SECONDS

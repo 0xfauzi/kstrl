@@ -517,6 +517,19 @@ by signal N reports exit 128 + N (137 for SIGKILL) where it reported
 21.7 ms for `true`). A stop does not end a running command: the run
 waits for it to finish or reach its timeout, as it did before.
 
+A `[stack]`'s `up` runs under the same leash in its hold mode (#642
+slice 6). `up` exits while the servers it started keep running, so when
+`up` exits the leash leaves with `up`'s status and a copy of it stays in
+the group. When the replay ends, kstrl closes the copy's pipe and stops
+the group. When the kstrl process dies first, the copy ends the group:
+SIGTERM, the 5 second grace, SIGKILL. Measured on macOS inside the nono
+rung, n=5 each at load average 14 to 18, after a SIGKILL of
+`ks doctor --measure`: a server that honours SIGTERM was gone within
+0.027 s, and one that ignores it was gone within 5.064 s. An `up` killed
+by signal N fails the replay as `up_failed:` 128 + N where it gave -N,
+and each replay takes 0.2 to 0.8 s longer than before (measured at load
+average 15 to 32).
+
 What a resume counts (#463). A retry count carries across runs on the
 manifest, and a Ctrl-C does not reset it. A run that reached its summary
 keeps the attempts and the spend it recorded, and the next run answers
