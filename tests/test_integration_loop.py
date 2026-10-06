@@ -190,3 +190,31 @@ def test_a_handoff_from_an_earlier_run_does_not_fail_a_clean_run(tmp_path: Path)
     assert result.exit_code == 0
     assert result.contract_failures == []
     assert len(lp.run_halts(root)) == 1
+
+
+def test_a_carried_finding_still_open_is_handed_off(tmp_path: Path) -> None:
+    """A fix an earlier kstrl built carries IF-1 into this review, and IF-1
+    fails again, so it is still open rather than newly opened. Blocking
+    hands it off like a new one and stops red (#696 decision 6)."""
+    root = tmp_path / "repo"
+    base, _head = lp.loop_feature(root)
+    lp.run_loop(
+        root, lp.Rig(root, lp.ScriptedReviewer(base, [lp.IC2_FAIL])), integration_blocking=False
+    )
+    assert lp.state(root)["findings"][0]["status"] == "open"
+    lp.record_earlier_fix(root, base, ["IF-1"], prd=True, component=True)
+    still = {"IF-1": ("fail", f"{h.STORE}:1 still re-applies request rules to stored rows")}
+    reviewer = lp.ScriptedReviewer(base, [still])
+    rig = lp.Rig(root, reviewer)
+
+    result, _out = lp.run_loop(root, rig)
+
+    assert "IF-1" in reviewer.prompts[0]
+    assert rig.launched == []
+    state = lp.state(root)
+    assert [(f["id"], f["status"]) for f in state["findings"]] == [("IF-1", "handoff")]
+    assert state["findings"][0]["handoffReason"].startswith("kstrl reads no test-path convention")
+    assert state["stops"][-1]["outcome"] == "red"
+    assert "IF-1" in state["stops"][-1]["reason"]
+    assert result.exit_code == 1
+    assert len(lp.run_halts(root)) == 1
