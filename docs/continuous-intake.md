@@ -154,8 +154,11 @@ It replaces the queued copy, sends the item back to `queued/`, and prints the
 SHA-256 of the spec before and after; the queue journal records both. The
 answered run resolves the inbox row when it escalates nothing. The escalated
 run used one of the item's attempts, so an item that has used them all needs
-`--reset-attempts`, as `ks queue retry` does. A GitHub-sourced item keeps its
-`kstrl:running` label while it waits; the answer is given locally.
+`--reset-attempts`, as `ks queue retry` does. A GitHub-sourced item gets the
+`kstrl:awaiting_answer` label and a comment that names `ks queue answer` with
+the full id. The answer is given locally: editing the issue does not change
+the queued copy. The claim that re-runs the item moves the label back to
+`kstrl:running`.
 
 If the factory could not write `scripts/kstrl/spec-issues.json`, it does not
 print the line `ks serve` reads to recognise an escalation, so serve poisons
@@ -368,6 +371,7 @@ gh label create "kstrl:done"    --color 0075ca
 gh label create "kstrl:failed"  --color d93f0b
 gh label create "kstrl:poison"  --color b60205
 gh label create "kstrl:awaiting_approval" --color 5319e7
+gh label create "kstrl:awaiting_answer" --color c5def5
 
 ks queue sync --dry-run
 ks queue sync
@@ -376,6 +380,15 @@ ks queue sync
 An issue carrying `kstrl:queued` becomes a queue item. The verdict comes
 back as a state label and a comment. Polling only - no webhooks, nothing
 to keep reachable.
+
+Create every label above before you enable intake, and create
+`kstrl:awaiting_answer` when you upgrade a repo that already has the others.
+Each writeback is one `gh issue edit` that adds the new state label and
+removes all the others. When one of the labels to remove is missing from the
+repo, `gh` (read at 2.73.0) fails with `'kstrl:awaiting_answer' not found` and
+removes none of them, so the issue keeps its old state label beside the new
+one. The queue state is not affected; `ks serve` prints the failure as a
+writeback warning.
 
 ### What authorizes work
 
