@@ -141,9 +141,12 @@ def test_a_check_that_passes_on_the_base_it_should_fail_refuses_before_the_engin
 ) -> None:
     """A check that cannot fail tells the change from nothing: ``true`` with
     ``onBase: fails`` passes on the base, so the run exits 2 before any
-    engineer call and pins no plan on the manifest."""
+    engineer call and pins no plan on the manifest. An operator wrote it, so
+    it is not removed as a designed one is (owner decision of 2026-10-06 on
+    #700), even with a good check beside it."""
     root = _greeting_repo(tmp_path)
-    plan = _plan(tmp_path, [_check("vacuous", ["true"])])
+    good = _check("greets-ada", ["/bin/sh", "check.sh", "Ada"])
+    plan = _plan(tmp_path, [_check("vacuous", ["true"]), good])
 
     run = _accept(tmp_path, root, plan)
 
@@ -586,6 +589,15 @@ def test_a_recheck_runs_the_saved_checks_again_and_takes_no_file_on_trust(
     # so it refuses rather than agreeing with the rows it did run.
     forged = json.loads(kept["record.json"])
     forged["checks"].append({**_row(forged, "greets-ada"), "id": "greets-cyd"})
+    path.write_text(json.dumps(forged), encoding="utf-8")
+    _reindex(evidence, "record.json")
+    code, out = _recheck(root, path)
+    assert code == 2, out
+    assert f"{path} does not name the checks of its plan's {COMP}" in out, out
+    # Only a designed plan has checks the base removed: an operator's record
+    # that lists its failing check as removed refuses rather than agreeing.
+    forged = json.loads(kept["record.json"])
+    forged["checks"], forged["removed"] = [_row(forged, "greets-ada")], ["greets-bob"]
     path.write_text(json.dumps(forged), encoding="utf-8")
     _reindex(evidence, "record.json")
     code, out = _recheck(root, path)

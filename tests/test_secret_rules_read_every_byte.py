@@ -122,9 +122,7 @@ def _assert_key_found(
     assert on["policy_envelope"]["details"] == [f"Possible secrets in added lines: {path}#{digest}"]
     assert on["bad_patterns"]["passed"] is True
     assert on["bad_patterns"]["details"] == []
-    assert on["bad_patterns"]["message"] == (
-        "secrets: checked by policy_envelope; Python rules: scanned 0 of 0 changed Python files"
-    )
+    assert on["bad_patterns"]["message"] == ("secrets: checked by policy_envelope")
     off = _rows(_repo(tmp_path, base, branch, git_config, envelope=False))
     assert "policy_envelope" not in off
     assert off["bad_patterns"]["passed"] is False
@@ -209,34 +207,12 @@ def test_a_binary_file_with_no_key_passes_the_secret_rule_either_way(tmp_path: P
     assert off["bad_patterns"]["details"] == []
 
 
-def test_a_bad_patterns_row_that_fails_on_another_rule_still_names_the_owner(
-    tmp_path: Path,
-) -> None:
-    """With the envelope on, a ``bad_patterns`` row that fails for another
-    reason (here an empty Python file) still says who checked secrets, and
-    the key beside it is reported once, by the envelope (#646 slice 4)."""
-    branch = {"conf/keys.dat": KEY_LINE + b"\n", "pkg/empty.py": b""}
-    digest = hashlib.sha256(KEY_LINE).hexdigest()[:12]
-
-    on = _rows(_repo(tmp_path, {"README": b"x\n"}, branch, envelope=True))
-
-    assert on["bad_patterns"]["passed"] is False
-    assert on["bad_patterns"]["message"] == (
-        "1 issues found in changed files; secrets: checked by policy_envelope"
-    )
-    assert on["bad_patterns"]["details"] == ["pkg/empty.py: empty file"]
-    assert on["policy_envelope"]["passed"] is False
-    assert on["policy_envelope"]["details"] == [
-        f"Possible secrets in added lines: conf/keys.dat#{digest}"
-    ]
-
-
 def test_a_baseline_says_bad_patterns_measured_nothing_when_the_envelope_owns_secrets(
     tmp_path: Path,
 ) -> None:
-    """With the envelope on, ``bad_patterns`` reads no diff content, so on a diff
-    with no Python file it measured nothing, and the baseline records it as
-    unmeasured in the row's own words (#646 slice 4)."""
+    """With the envelope on, ``bad_patterns`` reads no diff content, so it
+    measured nothing, and the baseline records it as unmeasured in the row's
+    own words (#646 slice 4)."""
     root = _repo(tmp_path, {"README": b"x\n"}, {"conf/keys.dat": KEY_LINE + b"\n"})
 
     result = CliRunner().invoke(cli, ["check", "--root", str(root), "--write-baseline"])
@@ -244,9 +220,7 @@ def test_a_baseline_says_bad_patterns_measured_nothing_when_the_envelope_owns_se
     assert result.exit_code in (0, 1), result.output
     document = json.loads((root / "scripts/kstrl/baseline.json").read_text(encoding="utf-8"))
     assert "bad_patterns" in document["unmeasured_checks"]
-    assert document["unmeasured_reasons"]["bad_patterns"] == (
-        "secrets: checked by policy_envelope; Python rules: scanned 0 of 0 changed Python files"
-    )
+    assert document["unmeasured_reasons"]["bad_patterns"] == ("secrets: checked by policy_envelope")
 
 
 def test_an_empty_diff_says_no_files_with_the_envelope_on(tmp_path: Path) -> None:

@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 from kstrl.findings import (
-    ADEQUACY_CATEGORY_PREFIX,
     CLAIM_DISAGREEMENT_CATEGORY,
     finding_waiver,
     render_findings_markdown,
@@ -560,17 +559,14 @@ def _generate_pr_body(
     # journal and be invisible on the pull request, which for an
     # advisory-only gate is the same as not existing.
     #
-    # #152 simplify pass adds every adequacy finding (patch coverage,
-    # Layer 0's test-diff discipline) for the identical reason: they are
-    # advisory, `review_findings` does not carry them, and a finding
-    # absent from the pull request is the same as not existing.
+    # #696 decision 7: Phase 1 records Layer 0 as not measured from level 1
+    # as a phase skip, so this callout is where the pull request says so.
     callouts = [
         f
         for f in component.findings
         if f.is_infrastructure_error
         or f.is_phase_skip
         or f.category == CLAIM_DISAGREEMENT_CATEGORY
-        or f.category.startswith(ADEQUACY_CATEGORY_PREFIX)
         # #595: a finding an inbox approval waived is on the PR, naming it.
         or finding_waiver(f) is not None
     ]

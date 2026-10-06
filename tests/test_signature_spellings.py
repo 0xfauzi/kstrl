@@ -113,7 +113,6 @@ EXPECTED_SPELLINGS: frozenset[tuple[str, str]] = frozenset(
         ("kstrl/stack.py", "stack"),
         # Finding metadata: CWE and OWASP ids, and the keys a finding
         # serialises its own fields under.
-        ("kstrl/findings.py", "adequacy"),
         ("kstrl/findings.py", "attempt"),
         ("kstrl/findings.py", "category"),
         ("kstrl/findings.py", "cwe"),
@@ -125,13 +124,12 @@ EXPECTED_SPELLINGS: frozenset[tuple[str, str]] = frozenset(
         ("kstrl/intake_github.py", "kstrl"),
         # Inbox dedupe keys and the budget label, all keyed the same way
         # and none of them a failure signature.
-        ("kstrl/pipeline.py", "adequacy"),
         ("kstrl/pipeline.py", "budget"),
         ("kstrl/pipeline.py", "halted"),
         ("kstrl/pipeline.py", "merge"),
         ("kstrl/pipeline.py", "policy"),
-        # #595: finding tags an inbox approval writes on a policy or
-        # adequacy finding. A tag is not a failure signature.
+        # #595: finding tags an inbox approval writes on a policy
+        # finding. A tag is not a failure signature.
         ("kstrl/waivers.py", "waiver"),
         ("kstrl/waivers.py", "waiver_refused"),
         # #700 slice 3: a replay stage's name ("check:<name>", written as

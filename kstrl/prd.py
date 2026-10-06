@@ -36,7 +36,6 @@ _FIXTURE_ENTRY_KEYS = {"description", "fixture_type", "input_data", "expected"}
 # fixture_type -> {input_data key -> required}
 _FIXTURE_INPUT_KEYS: dict[str, dict[str, bool]] = {
     "cli": {"command": True, "stdin": False},
-    "function": {"module": True, "function": True, "args": False, "kwargs": False},
     "file": {"path": True},
 }
 
@@ -44,7 +43,6 @@ _FIXTURE_INPUT_KEYS: dict[str, dict[str, bool]] = {
 # key accepted here always has an evaluator (#632).
 _FIXTURE_EXPECTED_KEYS: dict[str, set[str]] = {
     **{fixture_type: set(keys) for fixture_type, keys in JUDGED_KEYS.items()},
-    "function": {"returns", "raises"},
     "file": {"exists", "contains", "not_contains"},
 }
 
@@ -228,20 +226,6 @@ def _validate_fixture_entry(prefix: str, entry: Any) -> list[str]:
 
     if fixture_type == "cli":
         errors.extend(_cli_entry_errors(prefix, input_data, expected))
-    elif fixture_type == "function":
-        for key in ("module", "function"):
-            value = input_data.get(key)
-            if not isinstance(value, str) or not value:
-                errors.append(f"{prefix}.input_data.{key}: must be a non-empty string")
-        if "args" in input_data and not isinstance(input_data["args"], list):
-            errors.append(f"{prefix}.input_data.args: must be an array")
-        if "kwargs" in input_data and not isinstance(input_data["kwargs"], dict):
-            errors.append(f"{prefix}.input_data.kwargs: must be an object")
-        if "raises" in expected:
-            if not isinstance(expected["raises"], str) or not expected["raises"]:
-                errors.append(f"{prefix}.expected.raises: must be a non-empty string")
-            if "returns" in expected:
-                errors.append(f"{prefix}.expected: 'returns' and 'raises' are mutually exclusive")
     elif fixture_type == "file":
         path_value = input_data.get("path")
         if not isinstance(path_value, str) or not path_value:

@@ -73,10 +73,6 @@ enabled = true
 max_files_changed = 5
 max_lines_changed = 100
 
-[adequacy]
-enabled = true
-min_coverage_pct = 90
-
 [autonomy]
 enabled = {autonomy}
 """
@@ -86,10 +82,6 @@ AFTER = """\
 enabled = true
 max_files_changed = 500
 max_lines_changed = 100000
-
-[adequacy]
-enabled = false
-min_coverage_pct = 0
 
 [autonomy]
 enabled = {autonomy}

@@ -77,6 +77,22 @@ FORMAT_MARKDOWN = "markdown"
 #: The ``ks check --format`` choices (#565).
 OUTPUT_FORMATS: tuple[str, ...] = (FORMAT_HUMAN, FORMAT_MARKDOWN)
 
+#: The checks kstrl removed (#696 slice 8): each read one language's files or
+#: ran one language's tools. A baseline written before the removal can name
+#: them in ``measured_checks``, and the comparison reads them as retired,
+#: never as a check that stopped measuring: nothing an operator does brings
+#: them back, so flagging them would teach people to ignore the bucket.
+RETIRED_CHECKS: frozenset[str] = frozenset(
+    {
+        "dead_code",
+        "dead_code_ruff",
+        "diff_mutation",
+        "mutation_testing",
+        "patch_coverage",
+        "test_adequacy",
+    }
+)
+
 #: What :attr:`Comparison.stopped_measuring` records when the current run has
 #: no reason for a check at all: the check produced neither a row nor a gap,
 #: so it was not asked for. That is still a check that stopped.
@@ -507,6 +523,10 @@ class Comparison:
     #: cannot cover it, because that bucket holds baseline SIGNATURES and a
     #: green baseline has none.
     stopped_measuring: dict[str, str]
+    #: Checks the baseline measured that kstrl no longer has
+    #: (:data:`RETIRED_CHECKS`). A note: they never enter
+    #: ``stopped_measuring``, and their signatures land in ``unmeasured``.
+    retired: tuple[str, ...]
     #: ``(baseline, current)`` when the check's own schema version moved under
     #: the baseline, else None. A note, not a refusal: see :func:`compare`.
     check_schema_changed: tuple[int, int] | None
@@ -536,14 +556,11 @@ def compare(baseline: Baseline, current: Baseline) -> Comparison:
     DIFF-DRIVEN check - ``bad_patterns``, which opens the files the diff names,
     and ``diff_scope``, which tests the diff against the allowed paths - a
     baseline written on the base ref has an empty diff, so neither measures on
-    ANY baseline. ``diff_scope`` is exact: every path it can flag came from the
-    diff. ``bad_patterns`` is exact for its secret rule, which reads added
-    lines; its empty-file and syntax-error rules read the whole file, so either
-    can name content that was already in a file the branch moved or edited, not
-    content the branch wrote (#400). For a TOOL-DRIVEN check it does over-flag -
-    a baseline written before ``vulture`` was installed reports the tree's
-    existing dead code as new the first time it runs - which is the safe
-    direction for a flagging guard and costs an advisory comment.
+    ANY baseline. Both are exact: every path ``diff_scope`` can flag came from
+    the diff, and ``bad_patterns`` reads only added lines. For a [stack] check
+    it does over-flag - a baseline written before a check's tool was installed
+    reports the tree's existing findings as new the first time it runs - which
+    is the safe direction for a flagging guard and costs an advisory comment.
 
     The reverse - a check the baseline measured and this run did not - is
     ``stopped_measuring``, and it is a REGRESSION rather than a note. A check
@@ -551,7 +568,9 @@ def compare(baseline: Baseline, current: Baseline) -> Comparison:
     buckets, so before it existed the report for a branch whose test suite
     stopped finishing was "no regression". It is a set difference taken from
     ``baseline.measured_checks``, so a check absent from that list can never
-    enter it; see docs/baseline.md, "Comparing a branch".
+    enter it; see docs/baseline.md, "Comparing a branch". A check kstrl
+    retired (:data:`RETIRED_CHECKS`) goes to ``retired`` instead: it went
+    dark because kstrl removed it, not because the branch did anything.
 
     A differing ``check_schema_version`` is a NOTE rather than exit 2, and this
     is the one place the house fail-closed rule is deliberately not applied. The
@@ -585,9 +604,10 @@ def compare(baseline: Baseline, current: Baseline) -> Comparison:
     # signature. Set difference over the two `measured_checks` lists, so it
     # covers both ways a check goes dark: a row that measured nothing now, and
     # a check that produced no row at all because somebody turned it off.
+    dark = set(baseline.measured_checks) - measured_now
     stopped: dict[str, str] = {
         check: current.unmeasured_reasons.get(check, NO_REASON_RECORDED)
-        for check in sorted(set(baseline.measured_checks) - measured_now)
+        for check in sorted(dark - RETIRED_CHECKS)
     }
 
     changed: tuple[int, int] | None = None
@@ -602,6 +622,7 @@ def compare(baseline: Baseline, current: Baseline) -> Comparison:
         fixed=fixed,
         unmeasured=unmeasured,
         stopped_measuring=stopped,
+        retired=tuple(sorted(dark & RETIRED_CHECKS)),
         check_schema_changed=changed,
         project_changed=renamed,
     )

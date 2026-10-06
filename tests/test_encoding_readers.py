@@ -186,10 +186,11 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     # bytes now, so py_compile does its own PEP 263 decoding). 3 since
     # #696: scrub_stale_verify_commands's CLAUDE.md read is gone with the
     # whole mechanism it served (reconciling CLAUDE.md's verification
-    # bullets against [verify], which the flag day retired). The three
-    # left: the self-critique progress log, check_test_adequacy's read
-    # of a changed test's source, and check_patch_coverage's report.
-    "verify.py": 3,
+    # bullets against [verify], which the flag day retired). 1 since #696
+    # slice 8 deleted check_test_adequacy's read of a changed test's
+    # source and check_patch_coverage's report: the self-critique
+    # progress log is the one left.
+    "verify.py": 1,
     "workqueue.py": 6,
 }
 
@@ -296,8 +297,6 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "tui/runs.py open(lock_path, 'a+', encoding='utf-8')",
     "tui/serve_view.py path.read_text(encoding='utf-8', errors='replace')",
     "tui/session.py open(run_paths.root / 'orchestrator.log', 'a', buffering=1, encoding='",
-    "verify.py full.read_text(encoding='utf-8', errors='replace')",
-    "verify.py json_path.read_text(encoding='utf-8')",
     "verify.py progress_path.read_text(encoding='utf-8')",
     "workqueue.py meta_path.read_text(encoding='utf-8')",
     "workqueue.py open(lock_path, 'a+', encoding='utf-8')",

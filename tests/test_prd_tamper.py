@@ -42,9 +42,9 @@ from tests.test_harness_path_scope import (
 
 FIXTURE: dict[str, Any] = {
     "description": "round trip",
-    "fixture_type": "function",
-    "input_data": {"module": "m", "function": "f", "args": []},
-    "expected": {"returns": 1},
+    "fixture_type": "cli",
+    "input_data": {"command": "echo 1"},
+    "expected": {"stdout_contains": ["1"]},
 }
 
 
@@ -185,7 +185,7 @@ class TestPrdTamper:
         _write_prd(
             wt / PRD_REL,
             AUTHORED,
-            fixtures=[{**FIXTURE, "expected": {"returns": 999}}],
+            fixtures=[{**FIXTURE, "expected": {"stdout_contains": ["999"]}}],
         )
         assert "approved fixtures" in str(self._error(tmp_path, wt))
 
@@ -275,7 +275,9 @@ class TestPrdTamper:
         """
         wt = tmp_path / "wt"
         _write_prd(tmp_path / PRD_REL, AUTHORED)
-        _write_prd(wt / PRD_REL, AUTHORED, fixtures=[{**FIXTURE, "expected": {"returns": 0}}])
+        _write_prd(
+            wt / PRD_REL, AUTHORED, fixtures=[{**FIXTURE, "expected": {"stdout_contains": ["0"]}}]
+        )
         result = run_mechanical_verification(
             wt,
             wt / PRD_REL,

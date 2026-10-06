@@ -46,18 +46,15 @@ jobs:
     # measured=False mechanism this whole feature rests on would be unreachable
     # in the only place the workflow exercises it.
     #
-    # The worst case is not one timeout. SIX call sites in one check run are
-    # each handed a KSTRL_TIMEOUT_VERIFY-sized budget: the three gates, the
-    # two halves of the dead-code phase when it is on, and R8.5 Layer 1's
-    # patch coverage run (#152) when [adequacy] patch_coverage is on. Patch
-    # coverage counts as ONE budget here, not two, even though it spawns
-    # coverage twice internally (the pytest data run, then `coverage json`):
-    # the two spawns SHARE one budget rather than each getting the full
-    # amount, so patch coverage cannot spend more than the other five spend
-    # each - see kstrl/verify.py::_coverage_report. At 1800 seconds that is
-    # 10800 seconds, so 180 minutes, and the ten on top is for checkout, uv
-    # install and `uv sync` - measured at 9 seconds on run 34130546828 with a
-    # warm uv cache, so ten minutes is room rather than an estimate.
+    # The worst case is not one timeout. Each check of the confirmed [stack]
+    # is handed a KSTRL_TIMEOUT_VERIFY-sized budget, so the job needs one
+    # budget per check. This was sized for six spenders when kstrl also ran a
+    # dead-code phase and a patch coverage run (#696 slice 8 removed both):
+    # at 1800 seconds six budgets are 180 minutes, which still covers a stack
+    # of up to six checks. Count your [stack.checks] and lower it to match.
+    # The ten on top is for checkout, uv install and `uv sync` - measured at 9
+    # seconds on run 34130546828 with a warm uv cache, so ten minutes is room
+    # rather than an estimate.
     #
     # Round 1 of review set this to 40 with a comment that said three gates may
     # each spend the budget, which is 90 minutes: the premise and the number

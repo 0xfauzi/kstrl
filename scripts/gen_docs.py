@@ -131,7 +131,6 @@ def _all_field_names(cfg_cls: Any) -> list[str]:
 
 
 def _section_specs() -> list[SectionSpec]:
-    from kstrl.adequacy import AdequacyConfig
     from kstrl.autonomy import AutonomyConfig
     from kstrl.breaker import BreakerConfig
     from kstrl.config import KstrlConfig
@@ -362,14 +361,6 @@ def _section_specs() -> list[SectionSpec]:
             probe_undocumented_fields=True,
         ),
         SectionSpec(
-            "adequacy",
-            "Test-suite adequacy gate (R8.5; opt-in, advisory first)",
-            identity_keys(AdequacyConfig, _all_field_names(AdequacyConfig)),
-            lambda root: AdequacyConfig.load(root_dir=root),
-            AdequacyConfig(),
-            probe_undocumented_fields=True,
-        ),
-        SectionSpec(
             "security",
             "Phase 2.5 security review",
             identity_keys(SecurityConfig, _all_field_names(SecurityConfig)),
@@ -580,18 +571,6 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("sandbox", "allow_network"): "re-open outbound network inside the sandbox (off = deny)",
     ("verify", "check_diff_scope"): "fail on changes outside allowed paths",
     ("verify", "check_bad_patterns"): "scan the diff for secret-like patterns",
-    ("verify", "dead_code_cleanup"): "optional dead-code check",
-    ("verify", "dead_code_command"): "empty = smart default when dead_code_cleanup is on",
-    ("verify", "mutation_testing"): "optional mutation testing",
-    ("verify", "mutation_threshold"): "minimum percentage of mutable lines in the changed "
-    "files whose first definite mutant was killed",
-    (
-        "verify",
-        "mutation_timeout",
-    ): "seconds in the phase's one shared mutation budget ([verify] "
-    "mutation_testing and [adequacy] diff_mutation both draw from it, #391); "
-    "full ceiling arithmetic in the [adequacy] diff_mutation paragraph "
-    "(docs/env-vars.md); 0 = no limit",
     ("verify", "subprocess_timeout"): "seconds per verification subprocess; 0 = no limit",
     (
         "verify",
@@ -690,20 +669,6 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ): "consecutive steps required before the detector fires, so it needs "
     'growth_steps + 1 measured attempts; must be >= 1 (use mode = "skip" '
     "to disable); the default is a structural minimum, not a measured number",
-    ("adequacy", "enabled"): "run the Layer 0 test-adequacy checks (opt-in)",
-    ("adequacy", "layer0"): "advisory | block; the ladder can raise it, never lower",
-    ("adequacy", "require_strong_oracle"): "each new test file needs one falsifiable assertion",
-    ("adequacy", "flag_assertionless_tests"): "report tests that assert nothing at all",
-    (
-        "adequacy",
-        "patch_coverage",
-    ): "run the project's pytest command a second time under coverage and report "
-    "patch coverage (advisory, no floor)",
-    (
-        "adequacy",
-        "diff_mutation",
-    ): "mutate the changed AND covered lines and report what fraction the suite "
-    "detects (advisory, no floor; needs patch_coverage)",
     ("security", "mode"): "skip | advisory | hard",
     ("security", "agent_cmd"): "empty = inherit [agent]",
     ("security", "agent_type"): "empty = inherit [agent]",
@@ -766,7 +731,6 @@ ENUM_SENTINELS: dict[tuple[str, str], str | float | list[str]] = {
     ("security", "mode"): "hard",
     ("security", "fail_threshold"): "low",
     ("security", "agent_type"): "codex",
-    ("adequacy", "layer0"): "block",
     ("divergence", "mode"): "block",
     ("autonomy", "max_level"): 2,
     ("contract", "mode"): "final",

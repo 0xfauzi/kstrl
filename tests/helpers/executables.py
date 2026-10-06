@@ -33,10 +33,8 @@ def put_on_path(
 ) -> Path:
     """Write ``body`` as an executable called ``name`` under
     ``tmp_path/dirname`` and put that directory on ``PATH``; return the
-    directory (#152 simplify pass, D3: the third copy of this shape -
-    ``tests/helpers/fakemutmut.py``'s two installers and
-    ``tests/test_diff_mutation.py``'s git-only PATH build all wrote it by
-    hand).
+    directory (#152 simplify pass, D3: three copies of this shape were
+    written by hand before it lived here).
 
     ``prepend=True`` (the default) puts the fake directory FIRST on the
     existing ``PATH``, so it is found before the real tool without losing

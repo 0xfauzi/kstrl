@@ -8,7 +8,7 @@ judges a run with :func:`judge`. So a key the validator accepts always has an
 evaluator, and the check at the bottom of this module refuses to import a
 table naming a kind that has no validator or no comparator.
 
-``function`` and ``file`` fixtures are not in the table: they keep their own
+``file`` fixtures are not in the table: they keep their own
 hand-written checks.
 
 This module imports only ``kstrl.jsonread``, the one module that may parse

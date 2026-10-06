@@ -1,4 +1,7 @@
-"""Approving a policy_exception or test_adequacy item waives exactly that finding (#595).
+"""Approving a policy_exception item waives exactly that finding (#595).
+
+#696 slice 8 removed the other waivable kind, test_adequacy, with the
+check that filed it.
 
 The defect: a blocking ``policy_*`` or ``adequacy_*`` finding failed the
 component and filed an inbox item, and ``ks inbox approve`` on that item
@@ -100,43 +103,17 @@ def _engineer(change: str) -> str:
 
 POLICY_TOML = '[policy]\nenabled = true\npaths_deny = ["secrets/**"]\n'
 SECRET_TOML = "[policy]\nenabled = true\npaths_deny = []\n"
-ADEQUACY_TOML = '[adequacy]\nenabled = true\nlayer0 = "block"\n'
 
 DENIED = _engineer("mkdir -p secrets && printf 'k\\n' > secrets/key.txt")
 OTHER_DENIED = _engineer("mkdir -p secrets && printf 'j\\n' > secrets/other.txt")
 TWO_DENIED = _engineer(
     "mkdir -p secrets && printf 'k\\n' > secrets/key.txt && printf 'j\\n' > secrets/other.txt"
 )
-ONE_TEST_DELETED = _engineer(
-    "printf 'def test_one():\\n    assert 1 + 1 == 2\\n' > tests/test_core.py"
-)
-#: Deletes the OTHER base test, in the same file. Combined with
-#: ONE_TEST_DELETED across two retries, the cumulative diff against the
-#: original file nets to "test_one deleted" (test_two's text is back to
-#: its original content, so the diff shows no line for it) - a different
-#: symbol than ONE_TEST_DELETED's own "test_two deleted", hence a
-#: different explanation and waiver_key at the same category and
-#: location. Verified empirically: `git diff` over the two commits shows
-#: only the test_one block as removed.
-ANOTHER_TEST_DELETED = _engineer(
-    "printf 'def test_two():\\n    assert 2 * 2 == 4\\n' > tests/test_core.py"
-)
 KEY_A = "AKIA" + "A" * 16
 KEY_B = "AKIA" + "B" * 16
 ONE_SECRET = _engineer(f"mkdir -p app && printf 'A = \"{KEY_A}\"\\n' > app/cfg.py")
 TWO_SECRETS = _engineer(f'mkdir -p app && printf \'A = "{KEY_A}"\\nB = "{KEY_B}"\\n\' > app/cfg.py')
 MACHINERY = _engineer("printf '# edited\\n' >> kstrl.toml")
-SYMBOL_TOML = ADEQUACY_TOML
-
-
-def _silent_tests(names: list[str]) -> str:
-    """An engineer that appends a test asserting nothing per name to tests/test_core.py."""
-    defs = "".join(f"\\n\\ndef {n}():\\n    pass\\n" for n in names)
-    return _engineer(f"printf '{defs}' >> tests/test_core.py")
-
-
-#: Six names: the explanation used to show five.
-SIX = [f"test_silent_{i}" for i in range(1, 7)]
 
 
 @dataclass(frozen=True)
@@ -150,7 +127,6 @@ class Scenario:
 #: fails when kstrl/waivers.py gains a kind this table does not name.
 SCENARIOS: dict[ItemKind, Scenario] = {
     ItemKind.POLICY_EXCEPTION: Scenario(POLICY_TOML, DENIED, "policy_"),
-    ItemKind.TEST_ADEQUACY: Scenario(ADEQUACY_TOML, ONE_TEST_DELETED, "adequacy_"),
 }
 
 
@@ -371,33 +347,6 @@ def test_an_approved_item_waives_its_finding_on_retry(tmp_path: Path, kind: Item
     assert "pr create" in gh_log
     for item in items:
         assert f"waived by inbox approval {item.id[:8]}" in gh_log, gh_log
-    if kind is ItemKind.TEST_ADEQUACY:
-        # #595: verify.check_test_adequacy mirrors check_policy_envelope
-        # and says "satisfied after waivers" once nothing still blocks.
-        # A passing check's own message reaches neither events.jsonl
-        # (VerificationResultEvent.failures only holds a FAILING check's
-        # message) nor the CLI output (Phase 1's line is a generic "Phase
-        # 1 passed"), so this re-runs the exact check Phase 1 ran, against
-        # the merged tree, with the approvals it actually read.
-        from kstrl.adequacy import AdequacyConfig
-        from kstrl.verify import check_test_adequacy
-        from kstrl.waivers import WaiverScope, load_approvals
-
-        base_sha = subprocess.run(
-            ["git", "rev-parse", "main"], cwd=root, capture_output=True, text=True, check=True
-        ).stdout.strip()
-        subprocess.run(["git", "pull", "-q", "origin", "main"], cwd=root, check=True)
-        manifest = Manifest.load(_manifest_path(root))
-        scope = WaiverScope(
-            project=manifest.project_name,
-            spec_file=manifest.spec_file,
-            plan_id=comp.plan_id,
-            component=COMP,
-        )
-        (diff_sha,) = {item.evidence["diff_sha"] for item in items}
-        waivers = load_approvals(Inbox(root, InboxConfig.load(root))).for_scope(scope, diff_sha)
-        result = check_test_adequacy(root, base_sha, AdequacyConfig.load(root), waivers=waivers)
-        assert "test adequacy satisfied after waivers" in result.message, result.message
 
 
 # --- everything an approval does not cover still fails --------------------------
@@ -468,45 +417,6 @@ def test_a_repeat_with_different_evidence_opens_a_second_item_not_a_replacement(
     assert f"waiver_refused:{item_a.id}" in finding.tags
 
 
-def test_an_adequacy_repeat_with_different_evidence_opens_a_second_item_not_a_replacement(
-    tmp_path: Path,
-) -> None:
-    """#595 B2's adequacy twin. Same defect as the policy version above:
-    the dedupe key was category + location only, so a same-category,
-    same-location repeat (a different test deleted from the same file)
-    overwrote the item the operator was about to read. The key now
-    includes the waiver_key, so a repeat with different evidence opens
-    its own item instead.
-    """
-    root, env = _failed_run(tmp_path, ADEQUACY_TOML, ONE_TEST_DELETED)
-    items_a = {i.evidence["category"]: i for i in _open(root, ItemKind.TEST_ADEQUACY)}
-    item_a = items_a["adequacy_test_deleted"]
-    assert item_a.evidence["location"] == "tests/test_core.py"
-
-    # A retry that deletes the OTHER test in the same file, before item_a
-    # is approved: same category, same location, different evidence.
-    code, out = _retry(root, {**env, "AGENT_CMD": ANOTHER_TEST_DELETED})
-    assert code == 1, out
-
-    items = [
-        i
-        for i in _open(root, ItemKind.TEST_ADEQUACY)
-        if i.evidence["category"] == "adequacy_test_deleted"
-    ]
-    assert len(items) == 2, items
-    assert item_a.id in {i.id for i in items}, "item A must survive unreplaced"
-
-    _decide(root, env, "approve", item_a.id)
-
-    # Approving A must not waive B: B is still the last thing on disk.
-    code, out = _retry(root, {**env, "AGENT_CMD": ANOTHER_TEST_DELETED})
-
-    assert code == 1, out
-    (finding,) = [f for f in _gated(root, "adequacy_") if f.category == "adequacy_test_deleted"]
-    assert finding.severity == "high"
-    assert f"waiver_refused:{item_a.id}" in finding.tags
-
-
 def test_an_approval_does_not_cover_a_second_secret_in_the_same_file(tmp_path: Path) -> None:
     root, env = _failed_run(tmp_path, SECRET_TOML, ONE_SECRET)
     (item,) = _open(root, ItemKind.POLICY_EXCEPTION)
@@ -519,37 +429,6 @@ def test_an_approval_does_not_cover_a_second_secret_in_the_same_file(tmp_path: P
     (finding,) = _gated(root, "policy_")
     assert (finding.location, finding.severity) == ("app/cfg.py", "high")
     assert f"waiver_refused:{item.id}" in finding.tags
-
-
-def test_an_approval_does_not_cover_a_test_it_did_not_list(tmp_path: Path) -> None:
-    root, env = _failed_run(tmp_path, SYMBOL_TOML, _silent_tests(SIX))
-    (item,) = _open(root, ItemKind.TEST_ADEQUACY)
-    assert item.evidence["category"] == "adequacy_no_oracle"
-    assert "test_silent_6" in item.detail, item.detail
-    _decide(root, env, "approve", item.id)
-
-    code, out = _retry_regenerated(
-        root, {**env, "AGENT_CMD": _silent_tests([*SIX[:5], "test_silent_7"])}
-    )
-
-    assert code == 1, out
-    (finding,) = _gated(root, "adequacy_")
-    assert finding.severity == "high"
-    assert f"waiver_refused:{item.id}" in finding.tags
-
-
-def test_approving_one_of_two_adequacy_items_keeps_the_retry_failing(tmp_path: Path) -> None:
-    root, env = _failed_run(tmp_path, ADEQUACY_TOML, ONE_TEST_DELETED)
-    items = {item.evidence["category"]: item for item in _open(root, ItemKind.TEST_ADEQUACY)}
-    assert set(items) == {"adequacy_test_deleted", "adequacy_assertion_removed"}
-    _decide(root, env, "approve", items["adequacy_test_deleted"].id)
-
-    code, out = _retry(root, env)
-
-    assert code == 1, out
-    by_category = {f.category: f for f in _gated(root, "adequacy_")}
-    assert by_category["adequacy_test_deleted"].severity == "advisory"
-    assert by_category["adequacy_assertion_removed"].severity == "high"
 
 
 def test_an_approval_filed_before_waivers_existed_is_refused(tmp_path: Path) -> None:

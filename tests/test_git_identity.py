@@ -93,18 +93,12 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # #700 slice 6: two stub engineers, each committing in a worktree of a
     # repository `tests.test_stack_e2e._repo` put through set_identity.
     "tests/test_acceptance_gate_e2e.py": 3,
-    "tests/test_adequacy.py": 7,
     # #642: `_loop_files` and `_second_component` commit into the repository
     # `tests.test_agent_processes_outlive_run._repo` put through
     # `tests.helpers.gitrepo.set_identity`.
     "tests/test_agent_dies_with_kstrl.py": 2,
     "tests/test_agent_processes_outlive_run.py": 1,
     "tests/test_autonomy_ladder.py": 1,
-    # #414/#425: three `git commit` spellings - `_commit_rename`, the
-    # rename-then-break test, and `_advance_main` - all into a repository
-    # `tests.conftest.make_review_repo` already put through
-    # `tests.helpers.gitrepo.set_identity`.
-    "tests/test_bad_patterns_diff_scope.py": 3,
     "tests/test_breaker.py": 3,
     # #399 added two real-repository tests (a stubbed-git refusal, which
     # makes no commit, and a latin-1-bytes commit through `_git`/`_repo`,
@@ -119,7 +113,7 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # tests/test_child_output_encoding.py (#409) has no row here: it builds its
     # repository through tests.conftest.make_review_repo, already declared and
     # counted at conftest.py's row above, the same shape
-    # tests/test_patch_coverage.py's row below argues for.
+    # tests/test_patch_coverage.py's row argued for until #696 slice 8 deleted it.
     "tests/test_cli.py": 2,
     # #640: `_run_codex_loop`'s one scaffold commit, into a repository it
     # has just put through `tests.helpers.gitrepo.set_identity`.
@@ -133,7 +127,8 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # #696: down from 8 to 7, one of the four [verify]-tool-key tests
     # this flag day deleted (its subject categorically retired).
     # #696 slice 6: 6, with the no-Python-source row's test gone.
-    "tests/test_doctor.py": 6,
+    # #696 slice 8: 4, with the test_root row's two fixtures gone.
+    "tests/test_doctor.py": 4,
     # #399: the rewritten locale-pinned bad_patterns test commits into a
     # real repository through `tests.helpers.gitrepo.set_identity`.
     "tests/test_encoding_sites.py": 2,
@@ -189,6 +184,10 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # and stub-gh shell strings, the checkpoint test's worktree commit, and
     # the module docstring's prose.
     "tests/test_ladder_merge_evidence.py": 5,
+    # #696 slice 8: the config commit, and the stub engineer's commit in
+    # ENGINEER, both into `tests.spine_utils.init_kstrl_repo`'s repository,
+    # which went through `tests.helpers.gitrepo.set_identity`.
+    "tests/test_layer0_not_measured_e2e.py": 2,
     # #696 slice 7: the home-shell red-base test commits its [stack] into a
     # repository `_git_repo_on` put through set_identity.
     "tests/test_launch_session.py": 2,
@@ -197,15 +196,6 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # `tests.helpers.gitrepo.set_identity`.
     "tests/test_loop.py": 2,
     "tests/test_notify.py": 1,
-    # #152 simplify pass: the five real commits this file used to make
-    # directly (via gitrepo.git_in) moved into
-    # tests.conftest.make_review_repo, already declared and counted at
-    # its own call site (tests/conftest.py's row above). What is left
-    # here is the module docstring's own prose - "real temp git
-    # repository" and "feature commit" land "git" and "commit" as
-    # separate exact tokens in the same folded string, the identical
-    # shape gitrepo.py's own row above is declared for.
-    "tests/test_patch_coverage.py": 1,
     # #399 addendum A1: the real end-to-end unquote-round-trip test adds two
     # commits (a base commit, then the four tricky filenames) through
     # tests.helpers.gitrepo, which this file already imports and whose
@@ -311,7 +301,7 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # already through set_identity (`greenfield` itself, and
     # tests.test_prompt_record._spec_project).
     "tests/test_stack_proposal_e2e.py": 4,
-    "tests/test_check_cli.py": 5,
+    "tests/test_check_cli.py": 4,
     # #619: each test commits a base and a branch into a repository its
     # _repo helper put through tests.helpers.gitrepo.set_identity.
     "tests/test_check_non_python_diff.py": 2,
@@ -393,8 +383,9 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # #414 test 13 adds two more `git commit` argv spellings, into the
     # repository this file's own `_repo` builds, which calls
     # `tests.helpers.gitrepo.set_identity` right after `git init` - the
-    # latin-1 source file on main, and the rename onto `work`.
-    "tests/test_undecodable_diff.py": 4,
+    # latin-1 source file on main, and the rename onto `work`. #696 slice 8
+    # deleted that test with the rules it drove, so 2.
+    "tests/test_undecodable_diff.py": 2,
     # #233: one base commit for the two-attempt factory-run fixture, into a
     # repository this file's own `two_attempt_run` builds through
     # `tests.helpers.gitrepo.git_in` / `set_identity`.

@@ -6,15 +6,14 @@ verification when ``[fixtures].enabled`` is set (R7.2; default off per
 the roadmap user decision).
 
 Threat model (R7.2 / CRIT-3): the PRD is LLM-emitted, so every fixture
-definition is untrusted input. Function fixtures therefore execute in a
-subprocess with the R2.6 scrubbed environment - the harness process
-never imports agent code - and CLI fixtures run with ``shell=False`` so
-metacharacters in a PRD-supplied command are literal arguments, never
-shell syntax. What sandboxing does NOT claim: agent code runs inside the
-fixture subprocess and could forge the result line, but that grants no
-power beyond hardcoding the function's return value, which fixtures
-legitimately accept - they verify behavior, they are not a defense
-against a malicious implementation.
+definition is untrusted input. CLI fixtures run in a subprocess with the
+R2.6 scrubbed environment and ``shell=False``, so metacharacters in a
+PRD-supplied command are literal arguments, never shell syntax. A file
+fixture only reads a path inside the worktree. The ``function`` type,
+which imported one language's module with kstrl's own interpreter, was
+removed by #696 slice 8; a PRD naming it fails schema validation, so the
+check fails closed. A cli fixture whose command is a harness the engineer
+writes expresses the same oracle in any language.
 """
 
 from __future__ import annotations
@@ -23,7 +22,6 @@ import json
 import os
 import shlex
 import subprocess
-import sys
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -33,9 +31,8 @@ from typing import Any
 from kstrl.config_numbers import check_numbers
 from kstrl.fixture_expect import canonical_text, judge
 from kstrl.fixtures_snapshot import check_snapshot_regression, save_snapshot
-from kstrl.jsonread import read_json, read_json_file
+from kstrl.jsonread import read_json_file
 from kstrl.prd import _FIXTURE_INPUT_KEYS, PRD
-from kstrl.toolchains import is_python_project
 from kstrl.verify import CheckResult, ChildOutputDecodeError, run_scrubbed
 
 
@@ -44,7 +41,7 @@ class Fixture:
     """A single approved fixture - an input/output pair for behavioral verification."""
 
     description: str
-    fixture_type: str  # "cli", "function", "file"
+    fixture_type: str  # "cli", "file"
     input_data: dict[str, Any]  # type-specific input configuration
     expected: dict[str, Any]  # type-specific expected output
 
@@ -75,8 +72,7 @@ class FixturesConfig:
     """Configuration for the fixtures check (``[fixtures]`` in kstrl.toml).
 
     ``enabled`` defaults to False (R7.2 user decision 4): fixtures run
-    PRD-defined commands and import PRD-named modules, so the operator
-    must opt in explicitly.
+    PRD-defined commands, so the operator must opt in explicitly.
     """
 
     enabled: bool = False
@@ -224,229 +220,6 @@ def run_cli_fixture(
     )
 
 
-# Result line prefix the function-fixture runner prints. The parent scans
-# stdout for the LAST line with this prefix, so module-level prints from
-# agent code cannot shadow the runner's genuine verdict as long as the
-# runner completes (see the module docstring for the forgery equivalence
-# argument).
-_RESULT_MARKER = "KSTRL-FIXTURE-RESULT-V1:"
-
-# Source of the subprocess that imports and calls the agent-written
-# function. Composed with the marker constant so the two cannot drift.
-# It mirrors the pass/fail semantics the in-process runner used to have:
-# expected exception, unexpected exception, expected return, no expected
-# return (vacuous pass - rejected earlier by PRD validation).
-_FUNCTION_FIXTURE_RUNNER = (
-    "_MARKER = "
-    + repr(_RESULT_MARKER)
-    + "\n"
-    + """
-import importlib
-import json
-import sys
-
-
-def _emit(passed, actual, message):
-    sys.stdout.flush()
-    sys.stdout.write(
-        "\\n" + _MARKER + json.dumps(
-            {"passed": passed, "actual": actual, "message": message}
-        ) + "\\n"
-    )
-    sys.stdout.flush()
-
-
-def _main():
-    spec = json.loads(sys.argv[1])
-    expected = spec.get("expected", {})
-    args = spec.get("args", [])
-    kwargs = spec.get("kwargs", {})
-    try:
-        mod = importlib.import_module(spec["module"])
-    except BaseException as exc:
-        _emit(False, "", "Failed to import module %r: %s: %s"
-              % (spec["module"], type(exc).__name__, exc))
-        return
-    func = getattr(mod, spec["function"], None)
-    if func is None:
-        _emit(False, "", "Function %r not found in module %r"
-              % (spec["function"], spec["module"]))
-        return
-    expected_raises = expected.get("raises")
-    if expected_raises:
-        try:
-            func(*args, **kwargs)
-        except Exception as exc:
-            name = type(exc).__name__
-            if name == expected_raises:
-                _emit(True, "raised " + name,
-                      "Function fixture passed - expected exception raised")
-            else:
-                _emit(False, "raised " + name,
-                      "Expected %s, got %s" % (expected_raises, name))
-            return
-        _emit(False, "no exception raised",
-              "Expected %s but no exception was raised" % expected_raises)
-        return
-    try:
-        actual = func(*args, **kwargs)
-    except Exception as exc:
-        _emit(False, "raised %s: %s" % (type(exc).__name__, exc),
-              "Unexpected exception: %s: %s" % (type(exc).__name__, exc))
-        return
-    if "returns" not in expected:
-        _emit(True, repr(actual),
-              "Function fixture passed (no expected return specified)")
-        return
-    expected_value = expected["returns"]
-    if actual == expected_value:
-        _emit(True, repr(actual), "Function fixture passed")
-    else:
-        _emit(False, repr(actual),
-              "Expected %r, got %r" % (expected_value, actual))
-
-
-_main()
-"""
-)
-
-
-def _parse_runner_result(stdout: str) -> dict[str, Any] | None:
-    """Extract the runner's verdict from subprocess stdout, last line wins."""
-    for line in reversed(stdout.splitlines()):
-        if line.startswith(_RESULT_MARKER):
-            try:
-                payload = read_json(line[len(_RESULT_MARKER) :])
-            except json.JSONDecodeError:
-                return None
-            if isinstance(payload, dict):
-                return payload
-            return None
-    return None
-
-
-def run_function_fixture(
-    fixture: Fixture,
-    cwd: Path,
-    timeout: float,
-) -> FixtureResult:
-    """Run a function fixture in a subprocess and check its reported result.
-
-    The spec (module, function, args, kwargs, expected) travels as a JSON
-    argv argument to ``sys.executable -c <runner>``; the runner imports
-    the module from ``cwd`` (the worktree), calls the function, compares
-    against ``expected`` in-process (Python ``==``), and prints a single
-    marker-prefixed JSON verdict line. The harness process never imports
-    agent code; the subprocess gets the R2.6 scrubbed environment, runs
-    in its own session, and is group-killed on timeout (``run_scrubbed``).
-
-    Two documented limitations: the fixture runs under the HARNESS's
-    Python interpreter (``sys.executable``), not the project's venv, so
-    fixtures must not need project-only third-party imports; and the
-    ``returns`` comparison is JSON-shaped (a function returning a tuple
-    will not equal a JSON array).
-    """
-    module_name = fixture.input_data.get("module")
-    function_name = fixture.input_data.get("function")
-    args = fixture.input_data.get("args", [])
-    kwargs = fixture.input_data.get("kwargs", {})
-
-    if not isinstance(module_name, str) or not module_name:
-        return FixtureResult(
-            fixture=fixture,
-            passed=False,
-            message="Missing or invalid 'module' in input_data",
-        )
-    if not isinstance(function_name, str) or not function_name:
-        return FixtureResult(
-            fixture=fixture,
-            passed=False,
-            message="Missing or invalid 'function' in input_data",
-        )
-    if not isinstance(args, list):
-        return FixtureResult(
-            fixture=fixture,
-            passed=False,
-            message="'args' must be an array",
-        )
-    if not isinstance(kwargs, dict):
-        return FixtureResult(
-            fixture=fixture,
-            passed=False,
-            message="'kwargs' must be an object",
-        )
-
-    spec = {
-        "module": module_name,
-        "function": function_name,
-        "args": args,
-        "kwargs": kwargs,
-        "expected": fixture.expected,
-    }
-    try:
-        spec_json = json.dumps(spec)
-    except (TypeError, ValueError) as exc:
-        return FixtureResult(
-            fixture=fixture,
-            passed=False,
-            message=f"Fixture spec is not JSON-serializable: {exc}",
-        )
-
-    # -B: the runner imports the project's module, and CPython would
-    # write a __pycache__ beside it. A fixture is a measurement, and
-    # `ks check` (R10.1) promises to leave the tree it measures alone;
-    # the cache would never be reused anyway, since the process exits.
-    argv = [
-        sys.executable,
-        "-B",
-        "-c",
-        _FUNCTION_FIXTURE_RUNNER,
-        spec_json,
-    ]
-    try:
-        result = run_scrubbed(argv, cwd=cwd, timeout=timeout, stdin_text="")
-    except subprocess.TimeoutExpired:
-        return FixtureResult(
-            fixture=fixture,
-            passed=False,
-            message=f"Function fixture timed out after {timeout}s",
-            measured=False,
-        )
-    except OSError as exc:
-        return FixtureResult(
-            fixture=fixture,
-            passed=False,
-            message=f"Failed to launch fixture subprocess: {exc}",
-            measured=False,
-        )
-    except ChildOutputDecodeError as exc:
-        return FixtureResult(
-            fixture=fixture,
-            passed=False,
-            message=f"Fixture subprocess output could not be decoded: {exc}",
-            measured=False,
-        )
-
-    payload = _parse_runner_result(result.stdout)
-    if payload is None:
-        stderr_tail = result.stderr.strip()[-500:]
-        return FixtureResult(
-            fixture=fixture,
-            passed=False,
-            message=(
-                f"Fixture subprocess exited {result.returncode} without "
-                f"reporting a result (module-level crash or hard exit); "
-                f"stderr tail: {stderr_tail!r}"
-            ),
-        )
-    return FixtureResult(
-        fixture=fixture,
-        passed=bool(payload.get("passed", False)),
-        actual=str(payload.get("actual", "")),
-        message=str(payload.get("message", "")),
-    )
-
-
 def _fixture_file_text(fixture: Fixture, full_path: Path, rel_path: str) -> str | FixtureResult:
     """The file's text, or the failing result explaining why there is none.
 
@@ -579,7 +352,6 @@ def run_file_fixture(fixture: Fixture, cwd: Path) -> FixtureResult:
 #: PRD validator accepts with no runner here, or a runner for a type it refuses.
 _RUNNERS: dict[str, Callable[[Fixture, Path, float], FixtureResult]] = {
     "cli": run_cli_fixture,
-    "function": run_function_fixture,
     "file": lambda fixture, cwd, _timeout: run_file_fixture(fixture, cwd),
 }
 if set(_RUNNERS) != set(_FIXTURE_INPUT_KEYS):
@@ -692,23 +464,6 @@ def check_fixtures(
     )
 
 
-def fixture_tree_errors(prd_data: dict[str, Any], tree: Path) -> list[str]:
-    """One indexed line per ``function`` fixture ``tree`` cannot run (#632).
-
-    The runner imports a Python module with kstrl's own interpreter, so on a
-    tree with no pyproject.toml or setup.py (#621's predicate) every attempt
-    fails with ModuleNotFoundError. Takes a PRD ``validate_schema`` accepted.
-    """
-    if is_python_project(tree):
-        return []
-    return [
-        f"fixtures[{i}]: a function fixture imports a Python module and this tree "
-        "has no pyproject.toml or setup.py; a cli fixture runs any program"
-        for i, entry in enumerate(prd_data.get("fixtures") or [])
-        if entry["fixture_type"] == "function"
-    ]
-
-
 def check_fixtures_from_prd(
     prd_path: Path,
     cwd: Path,
@@ -750,17 +505,6 @@ def check_fixtures_from_prd(
             ),
             details=errors[:10],
             duration_seconds=time.monotonic() - start,
-            measured=False,
-        )
-    refusals = fixture_tree_errors(data, cwd)
-    if refusals:
-        return CheckResult(
-            name="fixtures",
-            passed=False,
-            message="PRD names fixtures this tree cannot run (failing closed)",
-            details=refusals[:10],
-            duration_seconds=time.monotonic() - start,
-            # #632: no fixture ran, the same as the schema-invalid row above.
             measured=False,
         )
     fixtures = load_fixtures_from_prd_data(data)

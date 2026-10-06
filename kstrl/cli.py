@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, NoReturn
 
 if TYPE_CHECKING:
-    from kstrl.adequacy import AdequacyConfig
     from kstrl.autonomy import AutonomyState
     from kstrl.autonomy_replay import RunRecord
     from kstrl.evolution import EvolutionConfig, EvolutionJournal, FailurePattern, PatternRouting
@@ -2682,31 +2681,6 @@ def decompose(
     "only. Needs a [stack]; `ks retry` replays it",
 )
 @click.option(
-    "--dead-code-cleanup",
-    is_flag=True,
-    default=None,
-    help=(
-        "Enable dead code cleanup: ruff auto-fixes unused "
-        "imports/variables, vulture detects remaining dead code"
-    ),
-)
-@click.option(
-    "--dead-code-command",
-    help="Custom dead code detection command (default: vulture on changed files)",
-)
-@click.option(
-    "--mutation-testing",
-    is_flag=True,
-    default=None,
-    help="Enable mutation testing (requires mutmut, off by default)",
-)
-@click.option(
-    "--mutation-threshold",
-    type=LIMIT_FLOAT,
-    default=None,
-    help="Mutation score threshold percent (default: 50)",
-)
-@click.option(
     "--review-mode",
     type=click.Choice(VALID_REVIEW_MODES),
     default=None,
@@ -2895,10 +2869,6 @@ def factory(
     accept_red_base: str,
     acceptance: str,
     design_acceptance: bool,
-    dead_code_cleanup: bool | None,
-    dead_code_command: str | None,
-    mutation_testing: bool | None,
-    mutation_threshold: float | None,
     review_mode: str | None,
     review_agent_cmd: str | None,
     review_model: str | None,
@@ -3168,25 +3138,8 @@ def factory(
                 "verify",
                 v_config,
                 VerifyConfig.from_env(),
-                flag_overridden={
-                    name
-                    for name, passed in (
-                        ("dead_code_cleanup", dead_code_cleanup is not None),
-                        ("dead_code_command", dead_code_command is not None),
-                        ("mutation_testing", mutation_testing is not None),
-                        ("mutation_threshold", mutation_threshold is not None),
-                    )
-                    if passed
-                },
+                flag_overridden=set(),
             )
-            if dead_code_cleanup is not None:
-                v_config.dead_code_cleanup = dead_code_cleanup
-            if dead_code_command is not None:
-                v_config.dead_code_command = dead_code_command
-            if mutation_testing is not None:
-                v_config.mutation_testing = mutation_testing
-            if mutation_threshold is not None:
-                v_config.mutation_threshold = mutation_threshold
 
         s_config = SecurityConfig.load(root_dir)
         _collect_toml_notes(
@@ -4136,7 +4089,13 @@ def status(
 #: earned v2 and v3, so this bumps. A v3 reader looking for ``dampener``
 #: finds nothing under v4; there is no alias, because this document's
 #: keys retire by rename the same way a retired kstrl.toml name does.
-CHECK_SCHEMA_VERSION = 4
+#:
+#: v5 (#696 slice 8): kstrl retired six checks
+#: (``kstrl.baseline.RETIRED_CHECKS``), so their names no longer appear in
+#: ``checks``. The ``baseline`` block's ``stopped_measuring`` leaves them out
+#: and a new ``retired`` key names them, which changes what an existing key
+#: holds.
+CHECK_SCHEMA_VERSION = 5
 
 
 def _check_document(
@@ -4348,53 +4307,23 @@ def _check_error(
     sys.exit(2)
 
 
-def _check_needs_diff(
-    verify_cfg: VerifyConfig,
-    policy_cfg: PolicyConfig,
-    adequacy_cfg: AdequacyConfig,
-) -> bool:
+def _check_needs_diff(verify_cfg: VerifyConfig, policy_cfg: PolicyConfig) -> bool:
     """Whether a check `ks check` is about to run reads ``git diff``.
 
     ``diff_scope`` and ``bad_patterns`` consume the diff through the
     LENIENT git helpers, which map a bad ref, a missing base or a
     non-repository onto an EMPTY file list, indistinguishable from
     "nothing changed". diff_scope then reports "0 files, all within
-    scope", bad_patterns "scanned 0 Python files", and ``ks check`` exits
+    scope", bad_patterns "no files in the diff", and ``ks check`` exits
     0 having measured nothing. So the answer here gates one strict read
     up front, and cannot-measure becomes exit 2.
 
-    The dead-code phase is here for a DIFFERENT reason since #335:
-    ``verify._changed_non_test_python`` reads strictly and records its
-    own ``command_failed`` gap, so nothing is silently reported as clean
-    if this predicate misses it. It stays in because an exit 2 naming
-    the base the operator should have passed is a better answer than a
-    gap they have to read the JSON to find, not because it is the only
-    thing standing between them and a false pass.
-
-    ``mutation_testing`` is deliberately absent: check skips that check
-    outright (read-only), so its diff read never happens and demanding a
-    base for it would be a false exit 2.
-
-    ``dead_code_cleanup`` is one toggle over TWO phases since #335, and
-    only one of them reads a diff. ``dead_code_ruff`` scans ``.``, and
-    with ``[verify] dead_code_command`` set the detector is the
-    operator's own program, run without the diff read that only ever
-    existed to build vulture's argument list. The toggle alone therefore
-    stopped implying a diff is needed, and demanding one there is the
-    same false exit 2 mutation_testing is excluded for.
-
     Its own function because ``check`` is grandfathered at the cognitive
     ratchet, so the extra clause is a refusal at commit time if it stays
-    inline - and because "does anything here need a base" now has an
-    answer worth stating once.
+    inline - and because "does anything here need a base" has an answer
+    worth stating once.
     """
-    return bool(
-        verify_cfg.check_diff_scope
-        or verify_cfg.check_bad_patterns
-        or (verify_cfg.dead_code_cleanup and not verify_cfg.dead_code_command)
-        or policy_cfg.enabled
-        or adequacy_cfg.enabled
-    )
+    return bool(verify_cfg.check_diff_scope or verify_cfg.check_bad_patterns or policy_cfg.enabled)
 
 
 @cli.command()
@@ -4513,23 +4442,15 @@ def check(
 ) -> None:
     """Run the mechanical checks against a tree and print the measurement.
 
-    R10.1: the same checks Phase 1 runs inside the factory (test suite,
-    typecheck, linter, diff scope, bad patterns, plus any opt-in
-    policy / adequacy / dead-code / mutation checks from kstrl.toml),
-    run by hand with no PRD, no branch, no worktree and no agent spend.
-
-    [verify] dead_code_cleanup produces two rows, `dead_code_ruff` for
-    the ruff F401/F811/F841 phase and `dead_code` for the vulture or
-    [verify] dead_code_command scan, so a phase that could not run does
-    not take the other one's answer with it (#335).
+    R10.1: the same checks Phase 1 runs inside the factory (the checks
+    of the confirmed [stack], diff scope, bad patterns, plus the opt-in
+    policy check from kstrl.toml), run by hand with no PRD, no branch,
+    no worktree and no agent spend.
 
     The measurement is read-only. It runs against your live checkout,
     not a worktree kstrl owns, so it writes nothing to .kstrl/ and never
-    edits, stages, commits or leaves bytecode: `dead_code_ruff` reports
-    what it would remove instead of removing it, and mutation testing
-    cannot run at all because mutmut works by rewriting source. The
-    exception is the project's OWN configured test / typecheck / lint
-    commands, which are your programs and write their own caches.
+    edits, stages or commits. The exception is the [stack] checks, which
+    are your programs and write their own caches.
 
     A check that could not run gets NO row: it is reported under
     not_measured with the reason, never as a passing check (#306).
@@ -4573,14 +4494,13 @@ def check(
     except (baseline.BaselineUsage, baseline.BaselineError) as exc:
         _check_error(str(exc), as_json)
 
-    from kstrl.adequacy import AdequacyConfig
     from kstrl.config_preflight import preflight_config
     from kstrl.fixtures import FixturesConfig
     from kstrl.policy import PolicyConfig
     from kstrl.verify import VerifyConfig, run_mechanical_verification
 
     try:
-        # The WHOLE configuration, not only the four sections this
+        # The WHOLE configuration, not only the three sections this
         # command reads. `check` is exempt from the entry seam because
         # its contract adds a JSON error document to the seam's exit 2,
         # and an exemption is only honest if the command does the same
@@ -4590,7 +4510,6 @@ def check(
         preflight_config(root_dir, warn=_preflight_warn)
         verify_cfg = VerifyConfig.load(root_dir)
         policy_cfg = PolicyConfig.load(root_dir)
-        adequacy_cfg = AdequacyConfig.load(root_dir)
         fixtures_cfg = FixturesConfig.load(root_dir) if prd_path is not None else None
     except (OSError, ValueError) as exc:
         # ValueError covers malformed TOML (load_toml_section), the
@@ -4602,7 +4521,7 @@ def check(
 
     base = resolve_base_branch(base_branch, path)
 
-    if _check_needs_diff(verify_cfg, policy_cfg, adequacy_cfg):
+    if _check_needs_diff(verify_cfg, policy_cfg):
         # Ask git the same question once, strictly, before any check
         # runs. Cannot-measure is exit 2; it is never a pass.
         from kstrl import git as _git
@@ -4625,11 +4544,9 @@ def check(
         allowed_paths=list(allowed_paths) or None,
         config=verify_cfg,
         policy_config=policy_cfg,
-        adequacy_config=adequacy_cfg,
         fixtures_config=fixtures_cfg,
         autonomy_level=0,
         component_id=None,
-        read_only=True,
     )
 
     _check_report(
@@ -4817,7 +4734,7 @@ def retry(
     refusal (exit 2), and the lock is held into the run (#597).
 
     One branch is kept instead (#646): when Phase 1 failed only on
-    policy_envelope and test_adequacy, and an approved inbox item was
+    policy_envelope, and an approved inbox item was
     taken on the branch's tip, the retry keeps that commit and judges it
     again with no engineer. The plan says which, and why.
     """

@@ -21,6 +21,7 @@ default-off ([fixtures].enabled = false, user decision 4).
 from __future__ import annotations
 
 import json
+import shlex
 import sys
 from pathlib import Path
 from typing import Any
@@ -37,10 +38,10 @@ _PYTEST_CMD = f"{sys.executable} -m pytest -q -p no:cacheprovider"
 # A single no-op keeps the non-target checks green without external tools.
 _NOOP = "true"
 
-# The toy project is a Python project: without a manifest the fixtures check
-# refuses the function fixture before running it (#632), and both tests
-# below would stay green while measuring nothing about add().
-_PYPROJECT = '[project]\nname = "app"\nversion = "0.1.0"\n'
+# The oracle is a command fixture (#696 slice 8 removed the function
+# fixture): it imports the toy module in its own process and prints the
+# answer, so nothing the project's pytest is told can reach it.
+_ORACLE = f"{shlex.quote(sys.executable)} -c 'import app; print(app.add(2, 2))'"
 
 
 def _write_prd(root: Path) -> Path:
@@ -60,13 +61,9 @@ def _write_prd(root: Path) -> Path:
         "fixtures": [
             {
                 "description": "add(2, 2) returns 4",
-                "fixture_type": "function",
-                "input_data": {
-                    "module": "app",
-                    "function": "add",
-                    "args": [2, 2],
-                },
-                "expected": {"returns": 4},
+                "fixture_type": "cli",
+                "input_data": {"command": _ORACLE},
+                "expected": {"stdout_json": 4},
             }
         ],
     }
@@ -110,9 +107,8 @@ class TestTautologicalTestCaught:
         tmp_path: Path,
     ) -> None:
         """Agent ships a broken add() plus `assert True` tests. Its own
-        suite is green; the function fixture calls add(2, 2) in a
+        suite is green; the command fixture calls add(2, 2) in a
         sandboxed subprocess and fails the component."""
-        (tmp_path / "pyproject.toml").write_text(_PYPROJECT)
         (tmp_path / "app.py").write_text("def add(a, b):\n    return 0\n")
         (tmp_path / "test_app.py").write_text(
             "def test_add_exists():\n    import app\n    assert True\n"
@@ -127,7 +123,9 @@ class TestTautologicalTestCaught:
         )
         fixtures_check = _check(result, "fixtures")
         assert not fixtures_check.passed
-        assert any("Expected 4, got 0" in d for d in fixtures_check.details), fixtures_check.details
+        assert any("not the expected JSON: expected 4" in d for d in fixtures_check.details), (
+            fixtures_check.details
+        )
         assert result.passed is False
 
 
@@ -140,7 +138,6 @@ class TestConftestDeselectCaught:
         conftest collect_ignore plus a dummy green test so pytest exits 0.
         The fixtures oracle never runs under the project's pytest, so the
         conftest cannot deselect it."""
-        (tmp_path / "pyproject.toml").write_text(_PYPROJECT)
         (tmp_path / "app.py").write_text("def add(a, b):\n    return 0\n")
         (tmp_path / "test_real.py").write_text(
             "import app\ndef test_add():\n    assert app.add(2, 2) == 4\n"
@@ -157,7 +154,9 @@ class TestConftestDeselectCaught:
         )
         fixtures_check = _check(result, "fixtures")
         assert not fixtures_check.passed
-        assert any("Expected 4, got 0" in d for d in fixtures_check.details), fixtures_check.details
+        assert any("not the expected JSON: expected 4" in d for d in fixtures_check.details), (
+            fixtures_check.details
+        )
         assert result.passed is False
 
         # Prove the conftest was the gaming vector: without it the same

@@ -23,6 +23,7 @@ from __future__ import annotations
 import copy
 import json
 import shutil
+import tempfile
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -307,13 +308,11 @@ def arm_cwd(fixture: RepoSpecFixture, arm: Arm, tmp_path: Path) -> Path:
     function-scoped ``tmp_path``. One shared directory would hand run 2
     whatever the agent wrote during run 1, so run 1 measures the fixture
     and runs 2 and 3 measure the fixture plus some leftovers, which is a
-    number that looks exactly like a measurement. Each call takes its own
-    numbered slot under ``tmp_path``; the count comes off the filesystem,
-    so nothing here carries process state.
+    number that looks exactly like a measurement. Each call makes its own
+    slot under ``tmp_path`` with ``mkdtemp``, which never gives two calls the
+    same directory, also when the runs operate at the same time (#750).
     """
-    existing = len([p for p in tmp_path.glob(f"{arm.name}-*") if p.is_dir()])
-    slot = tmp_path / f"{arm.name}-{existing}"
-    slot.mkdir()
+    slot = Path(tempfile.mkdtemp(prefix=f"{arm.name}-", dir=tmp_path))
     if arm.expect_module_named:
         return materialize_repo(fixture, slot / "repo")
     return slot

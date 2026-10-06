@@ -451,10 +451,6 @@ def test_retry_flags_are_pinned_against_factory() -> None:
         "acceptance",
         # #700 slice 7: the designed plan is found again by the plan it was made for.
         "design_acceptance",
-        "dead_code_cleanup",
-        "dead_code_command",
-        "mutation_testing",
-        "mutation_threshold",
         "review_mode",
         "review_agent_cmd",
         "review_model",
@@ -694,6 +690,30 @@ class TestVerifyCommandIsGone:
         dropped = "--verify-command is no longer an option. The command it named never ran."
         assert f"Not replayed from run {run_id}: {dropped}" in out, out
         assert "#539" not in out, out
+
+    def test_a_record_that_carries_a_retired_check_option_still_retries(
+        self, tmp_path: Path
+    ) -> None:
+        """#696 slice 8 removed the dead-code and mutation options. A run
+        launched before that recorded them; its retry drops them by name and
+        says what replaced them, rather than refusing the record."""
+        root = _repo(tmp_path)
+        run_id = _failed_run(root, *RUN_FLAGS)
+        path = root / ".kstrl" / "runs" / run_id / "launch.json"
+        record = json.loads(path.read_text(encoding="utf-8"))
+        record["flags"].update(mutation_testing=True, mutation_threshold=60.0)
+        record["flags"].update(dead_code_cleanup=True, dead_code_command="vulture .")
+        path.write_text(json.dumps(record), encoding="utf-8")
+
+        retried = _ks(root, "retry", "storage")
+        out = retried.stdout + retried.stderr
+        assert retried.returncode == 1, out
+        resuming = next(ln for ln in out.splitlines() if "Resuming with the flags" in ln)
+        assert "--mutation" not in resuming, resuming
+        assert "--dead-code" not in resuming, resuming
+        for option in ("--mutation-testing", "--dead-code-cleanup"):
+            assert f"{option} is no longer an option." in out, out
+        assert "add the check you want to [stack.checks]" in out, out
 
     def test_a_record_that_carries_an_unknown_option_is_still_refused(self, tmp_path: Path) -> None:
         """Only a name in REMOVED_OPTIONS is dropped; any other unknown name is refused."""
