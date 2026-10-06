@@ -180,7 +180,9 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # and stub-gh shell strings, the checkpoint test's worktree commit, and
     # the module docstring's prose.
     "tests/test_ladder_merge_evidence.py": 5,
-    "tests/test_launch_session.py": 1,
+    # #696 slice 7: the home-shell red-base test commits its [stack] into a
+    # repository `_git_repo_on` put through set_identity.
+    "tests/test_launch_session.py": 2,
     # #544: three `git commit` sites (`_seed`, `_commit_all` and the
     # deletion test), every one into a repository `_seed` put through
     # `tests.helpers.gitrepo.set_identity`.
