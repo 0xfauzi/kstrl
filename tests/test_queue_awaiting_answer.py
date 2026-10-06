@@ -609,6 +609,8 @@ class TestRemoteWriteback:
         (root / "kstrl.toml").write_text(
             '[intake_github]\nenabled = true\nrepo = "o/r"\n', encoding="utf-8"
         )
+        write_stack(root)
+        confirm_stack(root)
         _scripted_claude(tmp_path, monkeypatch, [BLOCKER])
         present = tuple(name for name in ALL_LABELS if name != "kstrl:awaiting_approval")
         _, _, state = _fake_gh(tmp_path, monkeypatch, present)
