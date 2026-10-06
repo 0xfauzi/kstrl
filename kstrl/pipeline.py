@@ -58,7 +58,7 @@ from kstrl.agents.base import (
 )
 from kstrl.agents.prompt_record import AgentCall, recording_prompts
 from kstrl.atomicio import atomic_write_text
-from kstrl.context import IterationContext, IterationRecord
+from kstrl.context import ACCEPTANCE_PHASE, IterationContext, IterationRecord
 from kstrl.divergence import (
     AttemptReading,
     convergence_message,
@@ -123,7 +123,14 @@ from kstrl.verify import (
     VerificationResult,
     scope_unreadable_error,
 )
-from kstrl.waivers import ApprovalSnapshot, Waivers, WaiverScope, approvals_on, load_approvals
+from kstrl.waivers import (
+    ApprovalSnapshot,
+    Waivers,
+    WaiverScope,
+    approvals_on,
+    load_approvals,
+    overrides_on,
+)
 from kstrl.worktree_sweep import WorktreeSweep, sweep_findings
 
 if TYPE_CHECKING:
@@ -2025,13 +2032,18 @@ class ComponentPipeline:
         if comp.id in self._inbox_typed:
             self._inbox_typed.discard(comp.id)
         else:
+            evidence: dict[str, Any] = {"phase": phase, "check": check, "error": error}
+            if phase == ACCEPTANCE_PHASE:
+                # #700 decision 14: an approval of this halt covers these
+                # checks on this commit only (waivers.covering_override).
+                evidence["head_sha"] = git.branch_sha(comp.branch_name, self.root_dir) or ""
             self._inbox_add(
                 ItemKind.HALTED_RUN,
                 f"{comp.id} halted in {phase}",
                 detail=error,
                 component=comp.id,
                 dedupe_key=f"halted:{comp.id}:{phase}:{check}",
-                evidence={"phase": phase, "check": check, "error": error},
+                evidence=evidence,
             )
         self.ui.err(f"  Failed: {comp.id}: {error[:80]}")
         self.manifest.save(self.manifest_path)
@@ -3123,7 +3135,8 @@ class ComponentPipeline:
                 )
             )
         approvals = self._approvals or ApprovalSnapshot()
-        named = ", ".join(i[:8] for i in approvals_on(approvals, comp.id, kept)) or "none"
+        ids = approvals_on(approvals, comp.id, kept) + overrides_on(approvals, comp.id, kept)
+        named = ", ".join(i[:8] for i in ids) or "none"
         reason = (
             f"ks retry kept commit {kept[:12]}, which inbox approval {named} was taken on; "
             "Phase 1 judges it again"
@@ -3165,8 +3178,14 @@ class ComponentPipeline:
                 verify=verify,
             )
 
-        # #700 slice 4: record-only, so it decides nothing about the component.
-        self._phase_acceptance(comp, wt_path)
+        # #700 slice 6: the operator's acceptance checks gate the head.
+        acceptance = self._phase_acceptance(comp, comp_result, wt_path)
+        if acceptance is not None:
+            self.record_fact_utilization(comp, wt_path)
+            return PipelineOutcome(
+                transition=self._route_failure(comp, acceptance),
+                verify=verify,
+            )
 
         t0 = self._phase_started(comp, "diff")
         diff = self._phase_diff(comp, comp_result, wt_path)
@@ -3668,25 +3687,35 @@ class ComponentPipeline:
         self.ui.ok(f"  Phase 1 passed for {comp.id}")
         return VerifyPhaseResult(ran=True, verification=verification)
 
-    def _phase_acceptance(self, comp: Component, wt_path: Path) -> None:
-        """The operator's acceptance checks on this head (#700 slice 4).
+    def _phase_acceptance(
+        self, comp: Component, comp_result: ComponentResult, wt_path: Path
+    ) -> PhaseFailure | None:
+        """The operator's acceptance checks on this head (#700 slices 4 and 6).
 
-        Record-only: the verdict is written, printed and emitted with
-        ``advisory=True``, and no failure is routed from it.
+        The verdict is written, printed and emitted, then gates the head
+        (owner decision 10). A failed held-out check halts the component
+        with no retry, naming the check by its id alone (decision 3), and
+        so does a head nothing a retry could fix was measured on; any
+        other check that did not pass goes to the engineer's retry. An
+        approved halt on this head that names every failing check passes
+        it (decision 14, :func:`kstrl.waivers.covering_override`).
         """
         from kstrl.acceptance import judge_head
 
+        head = git.get_head_sha(wt_path) or ""
+        approvals = self._approvals or ApprovalSnapshot()
         outcome = judge_head(
             self.root_dir,
             self.factory_config,
             comp.id,
-            git.get_head_sha(wt_path) or "",
+            head,
             run_id=self.run_id,
             attempt=comp.retries + 1,
             ui=self.ui,
+            overrides=[item for item in approvals.overrides if item.component == comp.id],
         )
         if outcome is None:
-            return
+            return None
         for line in outcome.lines:
             self.ui.info(line)
         self.bus.emit(
@@ -3695,10 +3724,34 @@ class ComponentPipeline:
                 passed=outcome.passed,
                 checks=outcome.checks,
                 failures=outcome.failures,
-                phase="acceptance",
-                advisory=True,
+                phase=ACCEPTANCE_PHASE,
                 isolation=outcome.isolation,
             )
+        )
+        if outcome.passed:
+            return None
+        failing = ", ".join(outcome.failing)
+        if outcome.held_out or not outcome.told:
+            said = (
+                f"the held-out acceptance checks {', '.join(outcome.held_out)} failed"
+                if outcome.held_out
+                else "; ".join(outcome.lines)
+            )
+            return PhaseFailure(
+                action=FailureAction.FAIL,
+                error=f"{said} on {head[:12]}; halted with no retry. Approving this halt and "
+                f"then `ks retry {comp.id}` merges over the failing checks on that commit",
+                phase=ACCEPTANCE_PHASE,
+                check=failing,
+            )
+        ctx = IterationContext.from_json(comp_result.context_json or "{}")
+        ctx.add_acceptance_failure(outcome.told, attempt=comp.retries + 1)
+        return PhaseFailure(
+            action=FailureAction.RETRY_OR_FAIL,
+            error=f"the acceptance checks {failing} did not pass on {head[:12]}",
+            phase=ACCEPTANCE_PHASE,
+            check=failing,
+            context_json=ctx.to_json(),
         )
 
     def _before_gates(

@@ -1,4 +1,4 @@
-"""The acceptance runner over operator-written plans, record-only (#700 slice 4).
+"""The acceptance runner over operator-written plans (#700 slices 4 and 6).
 
 ``ks factory --acceptance <dir>`` names a directory outside the repository
 that holds ``plan.json`` and the files its checks use. The plan names, per
@@ -31,18 +31,22 @@ made by the slice 3 replay (:func:`kstrl.replay.replay_stack`): setup,
   :data:`BASE_NOT_RUNNABLE` (decision 11).
 - On each component's head, after Phase 1 passed (:func:`judge_head`).
   Each check runs :data:`HEAD_RUNS` times and passes only when every run
-  exited 0. Nothing is run again after a failure. The verdict is recorded
-  and printed and gates nothing: slice 4 is record-only.
+  exited 0. Nothing is run again after a failure. An operator-written
+  plan gates the component (owner decision 10): the pipeline halts it on
+  a failed held-out check and retries it on any other check that did not
+  pass (decision 3), unless a person approved that halt on this head
+  (decision 14).
 
-Held-out checks are recorded as such and are handed to no engineer: the
-plan is never copied into a worktree, a PRD or a prompt.
+Held-out checks are handed to no engineer: the plan is never copied into
+a worktree, a PRD or a prompt, and a retry names a held-out check by its
+id only. The engineer itself is not confined, so the record says whether
+it could read them is unknown (decision 9).
 
 The evidence of each head run is written under the run directory before
 anything is printed: ``record.json``, ``logs/``, a byte copy of the plan
 the checks ran from and ``index.json`` (each file's sha256).
-:func:`render_lines` is the one renderer of a record: the terminal prints
-its lines and the pull request's ``## Acceptance`` section is the same
-lines (:func:`pr_section`).
+:mod:`kstrl.acceptance_lines` renders a record for the terminal, the pull
+request and the engineer's retry.
 """
 
 from __future__ import annotations
@@ -59,7 +63,6 @@ from typing import TYPE_CHECKING, Any
 
 from kstrl import git
 from kstrl.atomicio import atomic_write_json
-from kstrl.events import RunPaths
 from kstrl.jsonread import read_json
 from kstrl.names import validate_component_id
 from kstrl.replay import Replay, Stage, _ran, replay_stack
@@ -68,9 +71,11 @@ from kstrl.stack import REPLAY_BOUNDARY_REFUSED
 from kstrl.statedir import control_dir
 from kstrl.timeout import limit_seconds
 from kstrl.verify import SHELL_COULD_NOT_RUN
+from kstrl.waivers import covering_override
 
 if TYPE_CHECKING:
     from kstrl.factory import FactoryConfig
+    from kstrl.inbox import InboxItem
     from kstrl.manifest import Manifest
     from kstrl.stack import Stack
     from kstrl.ui.base import UI
@@ -78,9 +83,15 @@ if TYPE_CHECKING:
 #: The one file a plan directory must hold.
 PLAN_FILE = "plan.json"
 
-#: Owner decision 4, the interim value for slice 4: one head run per
-#: check. Every run must exit 0, and a failed run is never run again.
-HEAD_RUNS = 1
+#: Owner decision 4: every head run of a check must exit 0, and a failed
+#: run is never run again. The owner set the count, K, to 3 on 2026-10-06
+#: (it was 1 while the checks were record-only). Decide it again when flake
+#: data from real runs exists.
+HEAD_RUNS = 3
+
+#: Owner decision 9(b): the engineer runs unconfined, so whether it could
+#: read a held-out check stays unknown until measurement M6.
+HELD_OUT_READ_DENIED = "unknown"
 
 #: What ``onBase`` may say. An absent value is refused, never defaulted.
 ON_BASE = ("fails", "passes")
@@ -148,13 +159,20 @@ class BaseReading:
 
 @dataclass(frozen=True)
 class HeadOutcome:
-    """What one head run of a component's checks printed and recorded."""
+    """What one head run of a component's checks printed and recorded.
+    ``failing`` names the checks that did not pass, ``held_out`` the
+    held-out ones among them that failed, and ``told`` is what a retry
+    tells the engineer; it is empty when nothing a retry could fix was
+    measured."""
 
     passed: bool
     lines: list[str]
     checks: tuple[str, ...]
     failures: tuple[str, ...]
     isolation: str
+    failing: tuple[str, ...] = ()
+    held_out: tuple[str, ...] = ()
+    told: tuple[str, ...] = ()
 
 
 Files = dict[str, tuple[bytes, bool]]
@@ -364,6 +382,13 @@ def _checked_copy(
     return PinnedPlan(digest, directory, _parsed(raw)), []
 
 
+def evidence_dir(root: Path, run_id: str) -> Path:
+    """Where a run's base reading and head records are written: under the
+    control directory, outside the repository, so an engineer retrying in
+    the repository does not find a held-out check's argv or output there."""
+    return control_dir(root) / "runs" / run_id / ACCEPTANCE_DIR
+
+
 def _copy(root: Path, digest: str, files: Files) -> Path:
     """The plan's copy under the control directory, made once per digest."""
     final = control_dir(root) / ACCEPTANCE_DIR / digest
@@ -560,7 +585,7 @@ def _write_base(
     errors: list[str],
 ) -> list[str]:
     """Write the base reading; return why it could not be written, or []."""
-    path = RunPaths.for_run(root, run_id).root / ACCEPTANCE_DIR / BASE_FILE
+    path = evidence_dir(root, run_id) / BASE_FILE
     document = {
         "run": run_id,
         "planId": plan.digest,
@@ -609,10 +634,14 @@ def judge_head(
     run_id: str,
     attempt: int,
     ui: UI,
+    overrides: Sequence[InboxItem] = (),
 ) -> HeadOutcome | None:
     """Run ``comp_id``'s checks on ``head_sha``, write the evidence, and
-    return what to print; None when the run has no plan for it. Record-only:
-    nothing here decides what happens to the component."""
+    return what to print and how it went; None when the run has no plan
+    for it. ``overrides`` are the approved acceptance halts of this
+    component: one that covers every failing check on this head passes it."""
+    from kstrl.acceptance_lines import render_lines, row_line, told_lines
+
     plan, base, stack = config.acceptance_plan, config.acceptance_base, config.project_stack
     if plan is None or base is None or stack is None or comp_id not in plan.components:
         return None
@@ -621,7 +650,7 @@ def judge_head(
         line = f"Acceptance for {comp_id}: the head commit cannot be read, so no check ran"
         return HeadOutcome(False, [line], (), (line,), HOST_LABEL)
     part = plan.components[comp_id]
-    evidence = RunPaths.for_run(root, run_id).root / ACCEPTANCE_DIR / comp_id / f"attempt-{attempt}"
+    evidence = evidence_dir(root, run_id) / comp_id / f"attempt-{attempt}"
     try:
         (evidence / "logs").mkdir(parents=True, exist_ok=True)
     except OSError as exc:
@@ -646,18 +675,28 @@ def judge_head(
         ),
     )
     document = _record(plan, base, record, comp_id, (head_sha, attempt, run_id), runs, evidence)
+    failing = [row["id"] for row in document["checks"] if row["verdict"] != PASS]
+    document["override"] = covering_override(overrides, head_sha, failing)
     lines = render_lines(document)
-    failures = [_row_line(row, HEAD_RUNS) for row in document["checks"] if row["verdict"] != PASS]
+    failures = [row_line(row, HEAD_RUNS) for row in document["checks"] if row["verdict"] != PASS]
     try:
         _write_evidence(evidence, plan, document)
     except OSError as exc:
         return _unwritten(comp_id, evidence, exc)
+    lines.append(f"- record: {(evidence / RECORD_FILE).resolve()}")
+    tails = {check: list(stages[-1].tail) for (_, check), stages in runs.items() if stages}
+    unreplayed = bool(record.error) or record.failed == REPLAY_BOUNDARY_REFUSED
     return HeadOutcome(
-        passed=not failures,
+        passed=not failing or document["override"] is not None,
         lines=lines,
         checks=tuple(row["id"] for row in document["checks"]),
         failures=tuple(failures),
         isolation=record.isolation.get("test", HOST_LABEL),
+        failing=tuple(failing),
+        held_out=tuple(
+            row["id"] for row in document["checks"] if row["heldOut"] and row["verdict"] == FAIL
+        ),
+        told=() if unreplayed else told_lines(document, part.checks, tails),
     )
 
 
@@ -708,6 +747,7 @@ def _record(
         "isolation": record.isolation,
         "base": BASE_NOT_RUNNABLE if comp_id in base.not_runnable else "",
         "headRuns": HEAD_RUNS,
+        "heldOutReadDenied": HELD_OUT_READ_DENIED,
         "replay": {"failed": record.failed, "detail": record.detail, "error": record.error},
         "checks": rows,
     }
@@ -736,55 +776,3 @@ def evidence_index(evidence: Path) -> dict[str, str]:
         for path in sorted(evidence.rglob("*"))
         if path.is_file() and path.name != INDEX_FILE
     }
-
-
-def render_lines(record: Mapping[str, Any]) -> list[str]:
-    """The lines a head record is shown as, on the terminal and in the PR
-    body alike."""
-    isolation = record["isolation"].get("test", HOST_LABEL)
-    base = f", {record['base']}" if record["base"] else ""
-    lines = [
-        f"Acceptance for {record['component']}, attempt {record['attempt']} (record-only): "
-        f"plan {record['planId'][:12]}, head {record['headSha'][:12]}{base}; {isolation}"
-    ]
-    replay = record["replay"]
-    if replay["error"] or replay["failed"]:
-        lines.append(f"- the head replay stopped: {replay['error'] or replay['detail']}")
-    return lines + [_row_line(row, record["headRuns"]) for row in record["checks"]]
-
-
-def _row_line(row: Mapping[str, Any], runs: int) -> str:
-    passed = sum(1 for code in row["headExits"] if code == 0)
-    if row["verdict"] == PASS:
-        said = f"passed {passed} of {runs} runs"
-    elif row["verdict"] == FAIL:
-        said = f"passed {passed} of {runs} runs -> fail"
-    else:
-        said = "did not run (" + ", ".join(str(code) for code in row["headExits"]) + ")"
-    base = "no base exit" if row["baseExit"] is None else f"base exit {row['baseExit']}"
-    return f"- {row['id']} ({row['kind']}): {said}; {base}"
-
-
-def pr_section(root: Path | None, run_id: str, comp_id: str) -> list[str]:
-    """The ``## Acceptance`` section of a component's PR body: the lines of
-    its latest head record, or [] when this run judged none (or the caller
-    named no root)."""
-    if root is None or not run_id:
-        return []
-    attempts = RunPaths.for_run(root, run_id).root / ACCEPTANCE_DIR / comp_id
-    if not attempts.is_dir():
-        return []
-    numbered = [
-        (int(path.name.removeprefix("attempt-")), path)
-        for path in attempts.iterdir()
-        if path.name.removeprefix("attempt-").isdigit()
-    ]
-    if not numbered:
-        return ["## Acceptance", "", f"No acceptance record was written under {attempts}.", ""]
-    path = max(numbered)[1] / RECORD_FILE
-    try:
-        record = read_json(path.read_text(encoding="utf-8"))
-        lines = render_lines(record)
-    except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
-        lines = [f"The acceptance record {path} cannot be read: {exc}"]
-    return ["## Acceptance", "", *lines, ""]
