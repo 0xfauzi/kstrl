@@ -1011,16 +1011,31 @@ def apply_state_label(
 ) -> str:
     """Move an issue to exactly one kstrl state label.
 
-    Removes every managed label the adapter owns before adding the new
-    one, so an issue can never carry two contradictory states. Returns an
-    error string, or "" on success; a writeback failure is reported, never
-    raised, because the queue transition it describes has already
-    happened locally.
+    Reads the issue's labels, then adds the new one and removes the
+    managed labels the issue carries, so an issue can never carry two
+    contradictory states. Only carried labels are named because ``gh``
+    (read at 2.73.0) fails a whole ``--remove-label`` list when one name
+    is not a label of the repository, and the issue then kept its old
+    state label on every writeback (#738). Returns an error string, or
+    "" on success; a writeback failure is reported, never raised, because
+    the queue transition it describes has already happened locally.
     """
     if config.dry_run:
         return ""
+    view = run_gh(
+        ["issue", "view", str(number), "--repo", repo, "--json", "labels"],
+        timeout=config.timeout_seconds,
+        cwd=root_dir,
+    )
+    if not view.ok:
+        return view.error
+    carried = _carried_labels(view.stdout)
+    if carried is None:
+        return f"could not read the labels of issue #{number}: {view.stdout[:200]!r}"
     target = config.state_label(state)
-    remove = [name for name in config.managed_labels if name != target]
+    remove = [
+        name for name in config.managed_labels if name != target and name.casefold() in carried
+    ]
     args = [
         "issue",
         "edit",
@@ -1034,6 +1049,25 @@ def apply_state_label(
         args.extend(["--remove-label", name])
     result = run_gh(args, timeout=config.timeout_seconds, cwd=root_dir)
     return "" if result.ok else result.error
+
+
+def _carried_labels(stdout: str) -> frozenset[str] | None:
+    """The casefolded label names in ``gh issue view --json labels`` output.
+
+    None when the output is not that shape: an unreadable answer is a
+    failed writeback, never an issue with no labels.
+    """
+    try:
+        data = read_json(stdout)
+    except json.JSONDecodeError:
+        return None
+    labels = data.get("labels") if isinstance(data, dict) else None
+    if not isinstance(labels, list):
+        return None
+    names = [entry.get("name") if isinstance(entry, dict) else None for entry in labels]
+    if not all(isinstance(name, str) for name in names):
+        return None
+    return frozenset(str(name).casefold() for name in names)
 
 
 def _gh_comment(

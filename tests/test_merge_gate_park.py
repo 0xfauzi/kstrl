@@ -60,7 +60,8 @@ HTTP_BRANCH = f"kstrl/factory/{HTTP}"
 REPO = "o/r"
 ISSUE = 7
 
-#: Records every call in $GH_LOG. `pr create` also records what origin's
+#: Records every call in $GH_LOG. `issue view` reports an issue labelled
+#: `kstrl:queued`. `pr create` also records what origin's
 #: copy of the head branch points at, in $GH_PUSHED, because a merged
 #: PR's remote branch is deleted afterwards and cannot be read later.
 FAKE_GH = """#!/bin/sh
@@ -81,6 +82,10 @@ if [ "$1" = "pr" ] && [ "$2" = "merge" ]; then
 fi
 if [ "$1" = "pr" ] && [ "$2" = "view" ]; then
   printf '{"state": "MERGED", "mergeCommit": null}\\n'
+  exit 0
+fi
+if [ "$1" = "issue" ] && [ "$2" = "view" ]; then
+  printf '{"labels": [{"name": "kstrl:queued"}]}\\n'
   exit 0
 fi
 if [ "$1" = "issue" ] && [ "$2" = "comment" ]; then

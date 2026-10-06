@@ -383,12 +383,12 @@ to keep reachable.
 
 Create every label above before you enable intake, and create
 `kstrl:awaiting_answer` when you upgrade a repo that already has the others.
-Each writeback is one `gh issue edit` that adds the new state label and
-removes all the others. When one of the labels to remove is missing from the
-repo, `gh` (read at 2.73.0) fails with `'kstrl:awaiting_answer' not found` and
-removes none of them, so the issue keeps its old state label beside the new
-one. The queue state is not affected; `ks serve` prints the failure as a
-writeback warning.
+Each writeback reads the issue's labels, then runs one `gh issue edit` that
+adds the new state label and removes only the kstrl labels the issue carries.
+A label the repo does not have therefore affects only a move to that state:
+`gh` (read at 2.73.0) fails the add with `'kstrl:awaiting_answer' not found`,
+the issue loses its old state label and gets no new one, and `ks serve`
+prints the failure as a writeback warning. The queue state is not affected.
 
 ### What authorizes work
 

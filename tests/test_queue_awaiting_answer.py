@@ -20,6 +20,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -28,6 +29,7 @@ from click.testing import CliRunner, Result
 from kstrl import events as ev
 from kstrl.cli import cli
 from kstrl.inbox import Inbox, InboxItem, ItemKind, ItemStatus
+from kstrl.intake_github import GitHubIntakeConfig
 from kstrl.runid import mint_run_id, run_kind
 from kstrl.serve import SPAWNED_RUN_KIND, RunOutcome, ServeConfig, SpendLedger, Verdict, serve_cycle
 from kstrl.workqueue import ItemSource, ItemState, Queue, QueueConfig, QueueItem
@@ -440,19 +442,97 @@ class TestControls:
         assert "ks inbox approve <id> --comment ANSWER" in row.detail, row.detail
 
 
-#: Records every call in $GH_LOG and each comment body in $GH_COMMENTS,
-#: and answers an empty list.
-FAKE_GH = """#!/bin/sh
-printf '%s\\n' "gh $*" >> "$GH_LOG"
-if [ "$1" = "issue" ] && [ "$2" = "comment" ]; then
-  while [ $# -gt 0 ]; do
-    if [ "$1" = "--body" ]; then printf '%s\\n' "$2" >> "$GH_COMMENTS"; fi
-    shift
-  done
-fi
-echo "[]"
-exit 0
+#: A `gh` that keeps the repository's labels and the issue's labels in
+#: $GH_STATE. It models gh 2.73.0 as read in `editable_http.go` `UpdateIssue`
+#: and `queries_repo.go` `LabelsToIDs`: `issue edit` adds and removes in two
+#: separate steps, and a step fails whole with `'<name>' not found` when one
+#: of its names is not a label of the repository. `issue view` and `issue
+#: edit` must name issue 7 of `o/r` with `--repo`, or they fail as gh does for
+#: an issue it cannot resolve. Every call is logged in
+#: $GH_LOG and each comment body in $GH_COMMENTS; any other call answers `[]`.
+FAKE_GH = r"""
+import json
+import os
+import sys
+
+args = sys.argv[1:]
+with open(os.environ["GH_LOG"], "a", encoding="utf-8") as log:
+    log.write("gh " + " ".join(args) + "\n")
+path = os.environ["GH_STATE"]
+with open(path, encoding="utf-8") as f:
+    state = json.load(f)
+if args[:2] == ["issue", "comment"]:
+    with open(os.environ["GH_COMMENTS"], "a", encoding="utf-8") as out:
+        out.write(args[args.index("--body") + 1] + "\n")
+    sys.exit(0)
+if args[:2] in (["issue", "view"], ["issue", "edit"]) and (
+    args[2:5] != [state["issue"], "--repo", state["repo"]]
+):
+    print(f"could not resolve to an Issue with the number of {args[2]}", file=sys.stderr)
+    sys.exit(1)
+if args[:2] == ["issue", "view"]:
+    print(json.dumps({"labels": [{"name": n} for n in state["issue_labels"]]}))
+    sys.exit(0)
+if args[:2] != ["issue", "edit"]:
+    print("[]")
+    sys.exit(0)
+known = {n.casefold() for n in state["repo_labels"]}
+labels = list(state["issue_labels"])
+failed = []
+for flag in ("--add-label", "--remove-label"):
+    names = [args[i + 1] for i, a in enumerate(args) if a == flag]
+    missing = [n for n in names if n.casefold() not in known]
+    if missing:
+        failed.append(f"'{missing[0]}' not found")
+        continue
+    if flag == "--add-label":
+        labels += [n for n in names if n not in labels]
+    else:
+        labels = [n for n in labels if n.casefold() not in {m.casefold() for m in names}]
+state["issue_labels"] = labels
+with open(path, "w", encoding="utf-8") as f:
+    json.dump(state, f)
+if failed:
+    print("\n".join(failed), file=sys.stderr)
+    sys.exit(1)
 """
+
+#: Every label the adapter writes, which `docs/continuous-intake.md` tells
+#: the operator to create.
+ALL_LABELS = GitHubIntakeConfig().managed_labels
+
+
+def _fake_gh(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, repo_labels: tuple[str, ...]
+) -> tuple[Path, Path, Path]:
+    """Put FAKE_GH first on PATH for an issue labelled `kstrl:queued`.
+
+    Returns the call log, the comment log and the state file. Call it after
+    `_scripted_claude`, which puts the directory on PATH.
+    """
+    write_executable(tmp_path / "fakebin" / "gh", f"#!{sys.executable}\n{FAKE_GH}")
+    state = tmp_path / "gh.state.json"
+    state.write_text(
+        json.dumps(
+            {
+                "repo": "o/r",
+                "issue": "7",
+                "repo_labels": list(repo_labels),
+                "issue_labels": ["kstrl:queued"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    gh_log, comments = tmp_path / "gh.log", tmp_path / "gh.comments"
+    monkeypatch.setenv("GH_LOG", str(gh_log))
+    monkeypatch.setenv("GH_COMMENTS", str(comments))
+    monkeypatch.setenv("GH_STATE", str(state))
+    return gh_log, comments, state
+
+
+def _issue_labels(state: Path) -> list[str]:
+    labels: list[str] = json.loads(state.read_text(encoding="utf-8"))["issue_labels"]
+    return labels
 
 
 def _edits(gh_log: Path) -> list[tuple[str, list[str]]]:
@@ -485,11 +565,7 @@ class TestRemoteWriteback:
         write_stack(root)
         confirm_stack(root)
         _scripted_claude(tmp_path, monkeypatch, [BLOCKER])
-        write_executable(tmp_path / "fakebin" / "gh", FAKE_GH)
-        gh_log = tmp_path / "gh.log"
-        comments = tmp_path / "gh.comments"
-        monkeypatch.setenv("GH_LOG", str(gh_log))
-        monkeypatch.setenv("GH_COMMENTS", str(comments))
+        gh_log, comments, state = _fake_gh(tmp_path, monkeypatch, ALL_LABELS)
         item = _queue(root).add(
             SPEC_TEXT,
             title="remote",
@@ -504,6 +580,7 @@ class TestRemoteWriteback:
         edits = _edits(gh_log)
         assert [added for added, _ in edits] == ["kstrl:running", "kstrl:awaiting_answer"], edits
         assert "kstrl:running" in edits[1][1], edits
+        assert _issue_labels(state) == ["kstrl:awaiting_answer"], edits
         body = comments.read_text(encoding="utf-8")
         assert "**kstrl: awaiting_answer**" in body, body
         assert "the architect escalated a question only the owner can answer" in body, body
@@ -517,3 +594,35 @@ class TestRemoteWriteback:
         rerun = _edits(gh_log)[2]
         assert rerun[0] == "kstrl:running", rerun
         assert "kstrl:awaiting_answer" in rerun[1], rerun
+
+    def test_a_repo_without_one_kstrl_label_still_moves_the_issue_label(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """#738. The repository has every kstrl label except
+        `kstrl:awaiting_approval`, as a repository set up before #465 does.
+        The claim and the escalation still leave the issue with exactly one
+        kstrl label, because each writeback names only the labels the issue
+        carries. Before #738 every edit also named the missing label, gh
+        refused each removal, and the issue kept `kstrl:queued` and
+        `kstrl:running` beside the new label."""
+        root = _spec_project(tmp_path)
+        (root / "kstrl.toml").write_text(
+            '[intake_github]\nenabled = true\nrepo = "o/r"\n', encoding="utf-8"
+        )
+        write_stack(root)
+        confirm_stack(root)
+        _scripted_claude(tmp_path, monkeypatch, [BLOCKER])
+        present = tuple(name for name in ALL_LABELS if name != "kstrl:awaiting_approval")
+        _, _, state = _fake_gh(tmp_path, monkeypatch, present)
+        item = _queue(root).add(
+            SPEC_TEXT,
+            title="remote",
+            project_name="demo",
+            source=ItemSource.GITHUB,
+            source_ref="o/r#7",
+        )
+
+        first = serve_cycle(root, config=ServeConfig.load(root))
+
+        assert _item(root, item.item_id).state is ItemState.AWAITING_ANSWER, first.reason
+        assert _issue_labels(state) == ["kstrl:awaiting_answer"]
