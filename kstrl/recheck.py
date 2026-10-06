@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from kstrl.acceptance import (
+    DESIGNER_FILE,
     INDEX_FILE,
     PLAN_FILE,
     PinnedPlan,
@@ -158,7 +159,7 @@ def _saved_plan(
     parsed = _parsed(raw)
     if comp not in parsed:
         return None, [f"the saved plan {checks / PLAN_FILE} has no component {comp!r}"]
-    return PinnedPlan(found, checks, parsed), []
+    return PinnedPlan(found, checks, parsed, checks, (checks / DESIGNER_FILE).is_file()), []
 
 
 def _stack(stack: Stack | None, recorded: object) -> tuple[Stack | None, list[str]]:

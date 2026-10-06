@@ -22,6 +22,7 @@ from typing import IO, TYPE_CHECKING, Any, Protocol, TextIO
 
 from kstrl import git
 from kstrl.acceptance import BaseReading, PinnedPlan, pin_plan, replay_base
+from kstrl.acceptance_design import acceptance_source, design_plan
 from kstrl.agents.base import UsageTotals, collect_usage, print_usage_rollup
 from kstrl.agents.proc import kill_active_process_groups
 from kstrl.agents.prompt_record import AgentCall, recording_prompts
@@ -458,6 +459,10 @@ class FactoryConfig:
     # (``acceptance.pin_plan``) and what the base replay read
     # (``acceptance.replay_base``) are set by the preflights.
     acceptance_dir: str = ""
+    # #700 slice 7: `ks factory --design-acceptance`, the verification
+    # designer writes the plan instead (``acceptance_design``). Per run, like
+    # ``acceptance_dir``, and `ks retry` replays it.
+    design_acceptance: bool = False
     acceptance_plan: PinnedPlan | None = field(default=None, metadata={"provenance": True})
     acceptance_base: BaseReading | None = field(default=None, metadata={"provenance": True})
 
@@ -2572,8 +2577,11 @@ def _preflight_pins(
             "under",
             stack_errors,
         )
+    source, acceptance_errors = acceptance_source(root_dir, manifest, factory_config)
+    if acceptance_errors:
+        return "the acceptance plan cannot be used", acceptance_errors
     factory_config.acceptance_plan, acceptance_errors = pin_plan(
-        root_dir, manifest, factory_config.acceptance_dir, factory_config.project_stack
+        root_dir, manifest, source, factory_config.project_stack
     )
     return "the acceptance plan cannot be used", acceptance_errors
 
@@ -4283,12 +4291,24 @@ def _plan_gated(
     stamped and parked merges are applied, so a plan nobody approved
     pushes, merges and runs nothing: its park is 1 and a rejection 2.
     """
-    if decisions is None:
+    if decisions is None or _refused_acceptance_design(pipeline):
         return 2
     stop = run_plan_gate(pipeline, ladder.bundle if ladder is not None else None)
     if stop is not None:
         return stop
     return 2 if _refused_acceptance_base(pipeline) else decisions
+
+
+def _refused_acceptance_design(pipeline: ComponentPipeline) -> bool:
+    """Ask the verification designer for the acceptance checks (#700 slice
+    7) when the run asked for them and none were designed for this plan yet:
+    after every pre-spend refusal and before the plan gate, so the one
+    approval covers them. True when the run must not start."""
+    config = pipeline.factory_config
+    if not config.design_acceptance or config.acceptance_plan is not None:
+        return False
+    config.acceptance_plan, errors = design_plan(pipeline)
+    return _report_preflight(pipeline.ui, "the verification designer wrote no usable plan", errors)
 
 
 def _refused_acceptance_base(pipeline: ComponentPipeline) -> bool:
@@ -4303,6 +4323,11 @@ def _refused_acceptance_base(pipeline: ComponentPipeline) -> bool:
     config.acceptance_base, errors = replay_base(
         pipeline.root_dir, stack, plan, manifest.base_branch, pipeline.run_id, config, pipeline.ui
     )
+    if errors and plan.designed:
+        errors.append(
+            f"A model wrote these checks. Delete {plan.source} and run again to ask the "
+            "verification designer for new ones, which the plan gate then asks about."
+        )
     if _report_preflight(pipeline.ui, "the acceptance checks do not hold on the base", errors):
         return True
     manifest.acceptance_digest = plan.digest
@@ -4497,6 +4522,9 @@ def _unsandboxable_run_roles(
             "engineer": base_config.agent_cmd,
             "code reviewer": review_selection.agent_cmd if review_enabled(factory_config) else None,
             "security reviewer": security.agent_cmd if security is not None else None,
+            "verification designer": (
+                review_selection.agent_cmd if factory_config.design_acceptance else None
+            ),
         },
     )
 

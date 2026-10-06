@@ -1,0 +1,5 @@
+#!/bin/sh
+# Print the initials of the first two words of the name in $1.
+# shellcheck disable=SC2086 # split the name into its words
+set -- $1
+printf '%s%s\n' "$(printf '%s' "$1" | cut -c1)" "$(printf '%s' "$2" | cut -c1)" | tr '[:lower:]' '[:upper:]'

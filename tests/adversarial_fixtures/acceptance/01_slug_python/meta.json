@@ -1,0 +1,20 @@
+{
+  "fixture_id": "acc-slug-python",
+  "component": "slug",
+  "title": "URL slugs",
+  "description": "slug.py prints the URL slug of its argument.",
+  "criteria": [
+    "US-001 Slug a title: python3 slug.py TEXT prints the words of TEXT in lowercase, joined by single hyphens",
+    "US-001 Slug a title: every character other than an ASCII letter or digit separates words and never appears in the slug"
+  ],
+  "stack": {
+    "instructions": "Python 3, standard library only. The tool is slug.py at the root of the repository, run as python3 slug.py TEXT.",
+    "setup": "",
+    "up": ""
+  },
+  "planted": {
+    "wrong": "joins the words with underscores",
+    "special_cased": "prints hello-world for the example and the text unchanged otherwise",
+    "partial": "drops only the comma and the exclamation mark the example shows"
+  }
+}

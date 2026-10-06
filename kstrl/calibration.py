@@ -117,6 +117,12 @@ MIN_ROLE_DETECTION_RATE: dict[str, float | None] = {
     # positives. Recorded, not gated, until their first capture sets a floor.
     "security_ts": None,
     "reviewer_ts": None,
+    # #700 slice 7: the verification designer's checks, scored by running them
+    # on tests/adversarial_fixtures/acceptance/. Recorded, not gated, until the
+    # first capture sets the floors that let a model-written plan gate
+    # (owner decision 10).
+    "acceptance": None,
+    "acceptance_clean": None,
 }
 
 # REPORT_FORMAT_VERSION lives in kstrl.calibration_baseline (#421 Group B3):

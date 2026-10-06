@@ -83,6 +83,10 @@ if TYPE_CHECKING:
 #: The one file a plan directory must hold.
 PLAN_FILE = "plan.json"
 
+#: Present in a plan the verification designer wrote (#700 slice 7), with
+#: who wrote it: such a plan is record only (owner decision 10).
+DESIGNER_FILE = "designer.json"
+
 #: Owner decision 4: every head run of a check must exit 0, and a failed
 #: run is never run again. The owner set the count, K, to 3 on 2026-10-06
 #: (it was 1 while the checks were record-only). Decide it again when flake
@@ -139,11 +143,14 @@ class ComponentPlan:
 
 @dataclass(frozen=True)
 class PinnedPlan:
-    """A plan copied into the control directory under its ``digest``."""
+    """A plan copied into the control directory under its ``digest``, from
+    ``source``; ``designed`` when a model wrote it."""
 
     digest: str
     directory: Path
     components: Mapping[str, ComponentPlan]
+    source: Path
+    designed: bool
 
 
 @dataclass(frozen=True)
@@ -173,6 +180,7 @@ class HeadOutcome:
     failing: tuple[str, ...] = ()
     held_out: tuple[str, ...] = ()
     told: tuple[str, ...] = ()
+    record_only: bool = False
 
 
 Files = dict[str, tuple[bytes, bool]]
@@ -379,7 +387,7 @@ def _checked_copy(
         directory = _copy(root, digest, files)
     except OSError as exc:
         return None, [f"the acceptance plan cannot be copied under {control_dir(root)}: {exc}"]
-    return PinnedPlan(digest, directory, _parsed(raw)), []
+    return PinnedPlan(digest, directory, _parsed(raw), where, DESIGNER_FILE in files), []
 
 
 def evidence_dir(root: Path, run_id: str) -> Path:
@@ -394,7 +402,13 @@ def _copy(root: Path, digest: str, files: Files) -> Path:
     final = control_dir(root) / ACCEPTANCE_DIR / digest
     if final.is_dir():
         _verified(final, digest)
-        return final
+    else:
+        write_dir(final, files)
+    return final
+
+
+def write_dir(final: Path, files: Files) -> None:
+    """Write ``files`` as the new directory ``final``, whole or not at all."""
     final.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=".plan-", dir=final.parent))
     try:
@@ -403,7 +417,6 @@ def _copy(root: Path, digest: str, files: Files) -> Path:
     except BaseException:
         shutil.rmtree(staging, ignore_errors=True)
         raise
-    return final
 
 
 def _verified(directory: Path, digest: str) -> Files:
@@ -697,6 +710,7 @@ def judge_head(
             row["id"] for row in document["checks"] if row["heldOut"] and row["verdict"] == FAIL
         ),
         told=() if unreplayed else told_lines(document, part.checks, tails),
+        record_only=plan.designed,
     )
 
 
@@ -740,6 +754,7 @@ def _record(
         "component": comp_id,
         "attempt": attempt,
         "planId": plan.digest,
+        "writtenBy": "designer" if plan.designed else "operator",
         "stackDigest": record.stack_digest,
         "checksDigest": _entry_sha({"checks": [check.sha256 for check in part.checks]}),
         "baseSha": base.sha,

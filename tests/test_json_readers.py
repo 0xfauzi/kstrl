@@ -81,6 +81,9 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     # #700 slice 4: the import and two json.dumps (the plan digest rows and a
     # check entry's digest). Its reads go through read_json.
     "acceptance.py": 3,
+    # #700 slice 7: the import and one json.dumps (the designed plan and its
+    # designer.json). It reads no JSON: the reply goes through _extract_json.
+    "acceptance_design.py": 2,
     # #598: was 4 (import, one json.dumps in _format_tool_use, two
     # json.JSONDecodeError catches - _extract_result_text and
     # _parse_stream_event). +1: a third json.JSONDecodeError catch, in
