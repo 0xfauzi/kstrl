@@ -3,8 +3,9 @@
 Every test here runs without KSTRL_RUN_CALIBRATION and makes no LLM call.
 What they check is that the fixture is capable of measuring something:
 
-- the repository is a real one, so ``extract_public_interfaces`` produces
-  a genuine section rather than a "(none: ...)" line;
+- the repository is a real one: its modules hold public classes and
+  functions, read here with ``ast`` (kstrl's own scan reads no source
+  language since #696);
 - the map describes THAT repository, so replacing it with filler of the
   same length is a red test rather than an equally-valid fixture;
 - the two arms render different prompts and run in different directories,
@@ -28,7 +29,6 @@ import pytest
 
 from kstrl import calibration, calibration_baseline
 from kstrl.decompose import ARCHITECT_REPO_SOURCE_PROMPT
-from kstrl.feedforward import extract_public_interfaces
 from tests.helpers.astwalk import REPO_ROOT, TESTS_DIR, parsed
 from tests.helpers.calibration_repo_fixture import (
     REPO_DIR_SUFFIX,
@@ -53,7 +53,6 @@ ARM_PARAMS = [pytest.param(f, a, id=a.fixture_id) for f, a in arm_params()]
 # beside their only callers) -------------------------------------------
 
 _PY_TOKEN = re.compile(r"[A-Za-z0-9_./-]+\.py")
-_SYMBOL = re.compile(r"(?:class|def) ([A-Za-z_][A-Za-z0-9_]*)")
 
 
 def python_paths_mentioned(text: str) -> set[str]:
@@ -61,14 +60,33 @@ def python_paths_mentioned(text: str) -> set[str]:
     return {token.lstrip("./") for token in _PY_TOKEN.findall(text)}
 
 
-def public_symbol_names(interfaces: str) -> set[str]:
-    """Symbol names out of an ``extract_public_interfaces`` rendering."""
-    return set(_SYMBOL.findall(interfaces))
+def public_interfaces(repo: Path) -> dict[str, set[str]]:
+    """Module path -> its top-level public class and function names.
+
+    Test files and test directories are skipped, as kstrl's scan skipped
+    them before #696 removed it; measured on this fixture, the same four
+    modules and eight names.
+    """
+    found: dict[str, set[str]] = {}
+    for path in sorted(repo.rglob("*.py")):
+        parts = path.relative_to(repo).parts
+        if path.name.startswith("test") or any(part in ("test", "tests") for part in parts):
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        names = {
+            node.name
+            for node in tree.body
+            if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+            and not node.name.startswith("_")
+        }
+        if names:
+            found[path.relative_to(repo).as_posix()] = names
+    return found
 
 
-def interface_paths(interfaces: str) -> set[str]:
-    """Module paths out of an ``extract_public_interfaces`` rendering."""
-    return {line.split(":", 1)[0].strip() for line in interfaces.splitlines() if ":" in line}
+def public_symbol_names(interfaces: dict[str, set[str]]) -> set[str]:
+    """Every public name :func:`public_interfaces` found."""
+    return set().union(*interfaces.values())
 
 
 def test_at_least_one_spec_fixture_carries_a_repository() -> None:
@@ -82,10 +100,10 @@ def test_at_least_one_spec_fixture_carries_a_repository() -> None:
 def test_the_repository_yields_a_genuine_public_interface_section(
     fixture: RepoSpecFixture,
 ) -> None:
-    interfaces = extract_public_interfaces(fixture.repo_dir)
-    assert not interfaces.startswith("(none"), interfaces
+    interfaces = public_interfaces(fixture.repo_dir)
+    assert interfaces, fixture.repo_dir
     must = fixture.must_reuse
-    assert must["existing_module"] in interface_paths(interfaces), interfaces
+    assert must["existing_module"] in interfaces, interfaces
     assert must["existing_symbol"] in public_symbol_names(interfaces), interfaces
 
 
@@ -95,9 +113,9 @@ def test_the_codebase_map_describes_this_repository(fixture: RepoSpecFixture) ->
     symbol the repository has, and may name no file it does not, so filler
     of the same length fails here instead of measuring nothing."""
     text = fixture.codebase_map.read_text(encoding="utf-8")
-    interfaces = extract_public_interfaces(fixture.repo_dir)
+    interfaces = public_interfaces(fixture.repo_dir)
 
-    missing_paths = sorted(p for p in interface_paths(interfaces) if p not in text)
+    missing_paths = sorted(p for p in interfaces if p not in text)
     assert not missing_paths, f"map does not name {missing_paths}"
 
     missing_symbols = sorted(s for s in public_symbol_names(interfaces) if s not in text)
@@ -108,7 +126,7 @@ def test_the_codebase_map_describes_this_repository(fixture: RepoSpecFixture) ->
     )
     assert not invented, f"map names files the repository does not have: {invented}"
     # existing_module/existing_symbol are not asserted again here: the
-    # test above already pins that they are in interface_paths/
+    # test above already pins that they are in public_interfaces/
     # public_symbol_names, and missing_paths/missing_symbols above cover
     # every entry of those (#401 addendum C4).
 

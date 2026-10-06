@@ -118,30 +118,6 @@ EXPECTED_SELECTOR_SITES: dict[str, tuple[int, str]] = {
         "the complement: non-Python test files, which check_test_adequacy reports as "
         "NotMeasured no_target or names in its row message",
     ),
-    "doctor.py: _interface_file_count": (
-        1,
-        "a count; 0 is reported by check_source_root as a WARN, never OK",
-    ),
-    "doctor.py: _source_mix_notes": (
-        1,
-        "a share of tracked source by suffix (#628); a tree with no Python at all "
-        "makes check_source_root a WARN ('no tracked file is Python'), never OK",
-    ),
-    "feedforward.py: <module>": (
-        1,
-        "_SOURCE_EXTENSIONS, one of seven languages; selects nothing alone",
-    ),
-    "feedforward.py: _classify_dir": (1, "the Phase 0 scan's source-root probe; no verdict"),
-    "feedforward.py: _ordered_source_roots": (
-        1,
-        "Phase 0 context: an empty scan prints its '(none: no Python source root "
-        "found ...)' notice to the engineer, never a pass",
-    ),
-    "feedforward.py: _path_to_module": (1, "strips the suffix off one path; selects nothing"),
-    "feedforward.py: build_dependency_graph": (
-        1,
-        "Phase 0 context: an empty graph is an empty section, never a check result",
-    ),
     "lockfiles.py: parse_new_dependencies": (
         1,
         "empty means no new uv.lock package; read_new_dependencies reads every other "
@@ -165,10 +141,6 @@ EXPECTED_SELECTOR_SITES: dict[str, tuple[int, str]] = {
         "TEST_FILE_PATTERNS, the files pytest and vitest collect by default (#620); a "
         "changed test file no pattern claims has no runner, so unrun_test_files lists it "
         "as not_measured and the tests_ran row never counts it as run",
-    ),
-    "toolchains.py: <module>": (
-        1,
-        "the Python record's uv.lock lockfile, which ks init stages; selects nothing",
     ),
     "verify.py: _changed_non_test_python": (
         1,
@@ -270,23 +242,17 @@ EXPECTED_TOOL_LITERALS: dict[str, tuple[int, str]] = {
     # `uv run` default warning for an unset [verify] key).
     "evolution.py": (4, "_classify_check's keywords for Phase 1 check names"),
     "feature_verify.py": (1, "message naming the dead_code_ruff check"),
-    "feedforward.py": (7, "the Phase 0 scan's ruff.toml and [tool.ruff] convention readers"),
     "gateparse.py": (6, "parser registry keys for pytest, mypy and ruff output"),
     # #696: down from 4. kstrl_toml_for, which seeded DEFAULT_KSTRL_TOML's
     # commented-out [verify] command lines from the detected toolchain, is
-    # gone with [verify] itself.
+    # gone with [verify] itself. #696 slice 6: down from 3, with
+    # BUILD_MANIFEST_FIX's uv commands and the Python standards prompt.
     "init_cmd.py": (
-        3,
-        "BUILD_MANIFEST_FIX's uv commands, and the enrolled Python "
-        "standards and CLAUDE.md verification prompts",
+        1,
+        "DEFAULT_KSTRL_TOML's commented dead_code_command default, which slice 8 removes",
     ),
     "parsers.py": (3, "parser names for pytest, mypy and ruff output"),
     "suite_inventory.py": (2, "the pytest junit report the test gate asks for (#620)"),
-    # #696: down from 8. The Python record's test/typecheck/lint commands
-    # and python_typecheck_default's mypy-scope literals are gone with the
-    # command half; what is left is the three Python-tool cache ignores
-    # (.pytest_cache/, .mypy_cache/, .ruff_cache/).
-    "toolchains.py": (3, "the Python record's cache ignores"),
     "verify.py": (
         41,
         "the Python-only checks (mutation, dead code, patch coverage) and their "
@@ -346,11 +312,14 @@ def test_a_tool_name_in_a_docstring_is_not_counted() -> None:
 #: ``DEFAULT_TYPECHECK_COMMAND``, ``SCOPED_TYPECHECK_COMMAND``,
 #: ``toolchains.resolve`` and ``python_typecheck_default``) along with
 #: every command kstrl chose for a tree: a confirmed ``[stack]`` is the
-#: only source now. What is left is detection.
+#: only source now. #696 slice 6 retired detection (``TOOLCHAINS``,
+#: ``detect``, ``toolchain_named``): ``ks init`` reads no language. What is
+#: left is the build-manifest names the decompose refusal reads (slice 7)
+#: and the fixture runner's Python test (slice 8).
 OBTAIN_POINTS = (
-    "TOOLCHAINS",
-    "detect",
-    "toolchain_named",
+    "BUILD_MANIFESTS",
+    "PYTHON_MANIFESTS",
+    "has_build_manifest",
     "is_python_project",
 )
 
@@ -373,18 +342,15 @@ def reaches_an_obtain_point(node: ast.AST) -> bool:
 #: now. init_cmd.py's kstrl_toml_for row is gone the same way: it seeded
 #: a detected toolchain's commands into the retired [verify].
 EXPECTED_OBTAIN_SITES: dict[str, tuple[int, str]] = {
-    "decompose.py: <module>": (2, "ROOT_BUILD_MANIFESTS, the union of every record's markers"),
+    "decompose.py: <module>": (2, "imports BUILD_MANIFESTS for ROOT_BUILD_MANIFESTS (slice 7)"),
     "fixtures.py: <module>": (1, "imports is_python_project"),
     "fixtures.py: fixture_tree_errors": (1, "a function fixture needs a Python tree (#632)"),
-    "init_cmd.py: <module>": (2, "imports detect and toolchain_named"),
-    "init_cmd.py: _detect_project_context": (1, "the detected language ks init reports"),
-    "init_cmd.py: _ensure_lockfiles_tracked": (1, "the record's lockfiles, which ks init stages"),
-    "init_cmd.py: _generate_claude_md": (1, "the record's id keys the enrolled standards bodies"),
-    "init_cmd.py: _language_ignores": (1, "the record's ignores, which ks init writes"),
-    "toolchains.py: <module>": (6, "the definitions and the Python record"),
-    "toolchains.py: detect": (2, "first match wins in TOOLCHAINS order"),
-    "toolchains.py: is_python_project": (2, "detect's choice compared with the Python record"),
-    "toolchains.py: toolchain_named": (1, "a language string back to its record"),
+    "init_cmd.py: <module>": (1, "imports has_build_manifest"),
+    "init_cmd.py: build_manifest_blocker": (1, "the #434 refusal, which slice 7 removes"),
+    "init_cmd.py: build_manifest_ok_reason": (1, "the doctor row's ok detail for the same refusal"),
+    "toolchains.py: <module>": (5, "the two tuples, one built from the other"),
+    "toolchains.py: has_build_manifest": (1, "reads BUILD_MANIFESTS"),
+    "toolchains.py: is_python_project": (1, "reads PYTHON_MANIFESTS"),
 }
 
 
@@ -397,9 +363,9 @@ def test_every_scope_that_reaches_for_a_toolchain_fact_is_enrolled() -> None:
         expected={row: count for row, (count, _reason) in EXPECTED_OBTAIN_SITES.items()},
         # One control per obtain point, spelled out for the same reason as above.
         control=(
-            'rust = toolchains.TOOLCHAINS["Rust"]\n',
-            "found = detect(root)\n",
-            "record = toolchain_named(language)\n",
+            "names = toolchains.BUILD_MANIFESTS\n",
+            "names = PYTHON_MANIFESTS\n",
+            "if has_build_manifest(root):\n    pass\n",
             "if is_python_project(cwd):\n    pass\n",
         ),
         message=(

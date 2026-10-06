@@ -109,7 +109,8 @@ def _origin_row(source_file: Path, node: ast.AST) -> str:
 #: After the #435 fix-round's A0 (hoisting ``verify._merge_base_ref`` into
 #: ``kstrl/git.py`` as the one owner of the merge-base anchor): the
 #: ``git merge-base base_label HEAD`` row moves from ``verify.py`` to
-#: ``git.py``, count unchanged.
+#: ``git.py``, count unchanged. #696 slice 6 deleted ``git.stage_file``,
+#: ``git.ignore_source`` and ``git.ignored_paths``, and their three rows.
 EXPECTED_REF_OPERAND_ARGVS: dict[str, int] = {
     "breaker.py git status --porcelain -uall -z": 1,
     "breaker.py git rev-parse HEAD": 1,
@@ -157,9 +158,6 @@ EXPECTED_REF_OPERAND_ARGVS: dict[str, int] = {
     "git.py git config --get remote.origin.url": 1,
     "git.py git diff --name-status -z ref --": 1,
     "git.py git restore f'--source={ref}' --staged --worktree -- file": 1,
-    "git.py git add -- file": 1,
-    "git.py git check-ignore --stdin -z": 1,
-    "git.py git check-ignore -v -- file": 1,
     "git.py git rm --cached --ignore-unmatch -q -- file": 1,
     "git.py git restore --staged --worktree -- file": 1,
     "git.py git ls-files --error-unmatch -- file": 1,

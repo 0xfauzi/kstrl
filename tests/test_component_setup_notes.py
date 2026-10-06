@@ -34,7 +34,7 @@ def test_keyboard_interrupt_is_not_turned_into_a_note(tmp_path: Path) -> None:
         patch("kstrl.factory.build_codebase_scan_context", side_effect=KeyboardInterrupt),
         pytest.raises(KeyboardInterrupt),
     ):
-        _prepare_component_tree(tmp_path, "comp-a", None, {"enabled": True}, None)
+        _prepare_component_tree(tmp_path, "comp-a", None, {"enabled": True})
 
 
 def test_scan_crash_is_a_note(tmp_path: Path) -> None:
@@ -44,7 +44,7 @@ def test_scan_crash_is_a_note(tmp_path: Path) -> None:
         "kstrl.factory.build_codebase_scan_context",
         side_effect=RuntimeError("boom"),
     ):
-        result = _prepare_component_tree(tmp_path, "comp-a", None, {"enabled": True}, None)
+        result = _prepare_component_tree(tmp_path, "comp-a", None, {"enabled": True})
     assert result == ("", [SCAN_BOOM])
 
 
@@ -54,7 +54,7 @@ def test_scan_config_that_cannot_be_built_is_a_note(tmp_path: Path) -> None:
     # Unmocked: CodebaseScanConfig itself raises TypeError. This fails if the
     # config is built outside the try, or if the handler is narrowed to the
     # RuntimeError the test above uses.
-    prefix, notes = _prepare_component_tree(tmp_path, "comp-a", None, {"no_such_key": True}, None)
+    prefix, notes = _prepare_component_tree(tmp_path, "comp-a", None, {"no_such_key": True})
     assert prefix == ""
     assert len(notes) == 1
     assert notes[0].startswith("  Codebase scan failed for comp-a: TypeError: ")
@@ -66,14 +66,12 @@ def test_success_on_both_is_no_note(tmp_path: Path) -> None:
 
     (tmp_path / "mod.py").write_text("def f() -> int:\n    return 1\n", encoding="utf-8")
     prefix, notes = _prepare_component_tree(
-        tmp_path, "comp-a", WorktreeSetup("touch scaffolded.txt"), {"enabled": True}, None
+        tmp_path, "comp-a", WorktreeSetup("touch scaffolded.txt"), {"enabled": True}
     )
     assert notes == []
     assert (tmp_path / "scaffolded.txt").is_file()  # ran, and in the worktree
     assert prefix != ""
-    assert prefix == build_codebase_scan_context(
-        tmp_path, CodebaseScanConfig(enabled=True), component_id="comp-a", component_deps=None
-    )
+    assert prefix == build_codebase_scan_context(tmp_path, CodebaseScanConfig(enabled=True))
 
 
 def _worker_args(root: Path, events_dir: Path | None) -> dict[str, Any]:

@@ -5,19 +5,18 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, NamedTuple
+from typing import TYPE_CHECKING, Literal, NamedTuple
 
 from kstrl import git
 from kstrl.appendio import append_records
 from kstrl.atomicio import atomic_write_text
-from kstrl.jsonread import read_json, read_json_file
+from kstrl.jsonread import read_json_file
 from kstrl.operator_context import GUIDANCE_HEADING
 from kstrl.prd import PRD
 from kstrl.stack import load_stack
-from kstrl.toolchains import ToolchainId, detect, toolchain_named
+from kstrl.toolchains import has_build_manifest
 
 if TYPE_CHECKING:
     from kstrl.ui.base import UI
@@ -663,9 +662,6 @@ DEFAULT_KSTRL_TOML = """\
 [codebase_scan]
 # enabled = true
 # module_map = true
-# public_interfaces = true
-# dependency_graph = true
-# conventions = true
 # max_context_tokens = 4000
 
 # Per-component semantic knowledge layer: durable facts about WHAT WAS
@@ -1195,14 +1191,6 @@ Measure before you spend (no agent, no cost):
   ks check --allowed-path '<glob>'                     # preflight the guard
 """
 
-# Printed above NEXT_STEPS when the Fix first block ran (#452): the spec
-# steps below it are refused until the build manifest exists, so they
-# cannot be what the operator is told to do first.
-NEXT_STEPS_BLOCKED = """First, commit a build manifest (see Fix first above).
-Until it exists, `ks decompose` and `ks factory --spec` refuse before the
-architect runs, so the spec steps below wait on it.
-"""
-
 
 def run_init(directory: Path, ui: UI, *, upgrade_prompts: bool = False) -> int:
     """Initialize kstrl harness in a project directory.
@@ -1264,13 +1252,11 @@ def run_init(directory: Path, ui: UI, *, upgrade_prompts: bool = False) -> int:
     )
 
     # Bootstrap CLAUDE.md and AGENTS.md
-    ctx = _detect_project_context(root)
-    bootstrap_claude_md(root, ui, ctx)
+    bootstrap_claude_md(root, ui)
 
-    # Keep the agent's own build artifacts out of the scope guard (#201)
+    # Keep kstrl's own state out of the scope guard and out of commits (#201)
     ui.section("Git hygiene")
-    _ensure_gitignore(root, ctx["language"], ui)
-    _ensure_lockfiles_tracked(root, ctx["language"], is_repo, ui)
+    _ensure_gitignore(root, ui)
 
     # Validate PRD
     ui.section("Validate PRD")
@@ -1304,12 +1290,9 @@ def run_init(directory: Path, ui: UI, *, upgrade_prompts: bool = False) -> int:
         ui.kv("Passing", str(passing))
         ui.kv("Failing", str(failing))
 
-    blocked = _report_build_manifest(root, ui)
-
     # Next steps
     ui.section("Next steps")
-    lead = NEXT_STEPS_BLOCKED if blocked else ""
-    for line in (lead + NEXT_STEPS).splitlines():
+    for line in NEXT_STEPS.splitlines():
         ui.info(line)
 
     return 0
@@ -1418,75 +1401,9 @@ def _upgrade_scaffolded_templates(root: Path, ui: UI) -> None:
             ui.info(f"  {name} is missing; the scaffold below creates it")
 
 
-def _language_ignores(language: str) -> tuple[str, ...]:
-    """The ignores of the record ``language`` names; none for ``"unknown"``."""
-    toolchain = toolchain_named(language)
-    return () if toolchain is None else toolchain.ignores
-
-
-def gitignore_block(language: str) -> str:
-    """The .gitignore block `ks init` writes for a detected language.
-
-    Public because examples/uv-python ships a copy of it, held in
-    lockstep by tests/test_gen_docs.py the way the example's prompt.md
-    is held against DEFAULT_PROMPT.
-    """
-    entries = (*_language_ignores(language), *_COMMON_IGNORES)
-    return _GITIGNORE_BLOCK_HEADER + "\n".join(entries) + "\n"
-
-
-def _ignore_probes(entry: str) -> tuple[str, str]:
-    """Two paths git must ignore for ``entry`` to count as ignored (#459).
-
-    The name the entry matches, at the repository root and one directory
-    down, because the build output that failed #459 was nested
-    (src/<pkg>/__pycache__/, tests/__pycache__/) and a root-anchored rule
-    such as ``/__pycache__/`` ignores only the first. A character class
-    becomes its first character and ``*`` becomes a fixed word, so
-    ``*.py[cod]`` probes ``kstrl-probe.pyc``; a directory entry probes a
-    file inside it.
-    """
-    name = re.sub(r"\*", "kstrl-probe", re.sub(r"\[(.)[^\]]*\]", r"\1", entry.rstrip("/")))
-    if entry.endswith("/"):
-        name += "/kstrl-probe"
-    return name, f"kstrl-probe/{name}"
-
-
-def missing_language_ignores(root: Path, language: str) -> tuple[str, ...] | None:
-    """The ``language`` record's ignores that git does not ignore under ``root``.
-
-    Asked of git, not of the .gitignore text, because the in-loop scope
-    guard lists untracked files with ``git ls-files --others
-    --exclude-standard``, which honours every ignore source git has. An
-    entry counts as ignored only when both of its probes are. None when
-    git could not answer (not a repository), which is not "none missing".
-    """
-    entries = _language_ignores(language)
-    if not entries:
-        return ()
-    probes = {entry: _ignore_probes(entry) for entry in entries}
-    ignored = git.ignored_paths([path for pair in probes.values() for path in pair], root)
-    if ignored is None:
-        return None
-    return tuple(entry for entry, pair in probes.items() if not set(pair) <= ignored)
-
-
-def _gitignore_addition(root: Path, language: str, existing: str) -> str:
-    """What init appends to an existing, readable .gitignore; "" for nothing.
-
-    The whole block when the kstrl marker is absent, as before #459. Once
-    it is present, only the language entries git does not ignore: on a
-    greenfield repository the first `ks init` ran before the build
-    manifest existed and wrote no language block, and this is how a
-    re-run adds it.
-    """
-    if GITIGNORE_BLOCK_MARKER not in existing:
-        return gitignore_block(language)
-    missing = missing_language_ignores(root, language)
-    if not missing:
-        return ""
-    header = f"# kstrl: {language} build output git did not ignore when `ks init` re-ran\n"
-    return header + "\n".join(missing) + "\n"
+def gitignore_block() -> str:
+    """The .gitignore block `ks init` writes, the same on every tree (#696)."""
+    return _GITIGNORE_BLOCK_HEADER + "\n".join(_COMMON_IGNORES) + "\n"
 
 
 def _read_text_or_none(path: Path) -> str | None:
@@ -1526,12 +1443,9 @@ def _gitignore_state(root: Path) -> tuple[ScaffoldAction, str | None]:
     if not path.exists():
         return "create", None
     existing = _read_text_or_none(path)
-    if existing is None:
-        return "keep", None
-    language = _detect_project_context(root)["language"]
-    if _gitignore_addition(root, language, existing):
-        return "append", existing
-    return "keep", existing
+    if existing is None or GITIGNORE_BLOCK_MARKER in existing:
+        return "keep", existing
+    return "append", existing
 
 
 def gitignore_plan(root: Path) -> ScaffoldAction:
@@ -1539,7 +1453,7 @@ def gitignore_plan(root: Path) -> ScaffoldAction:
     return _gitignore_state(root)[0]
 
 
-def _ensure_gitignore(root: Path, language: str, ui: UI) -> None:
+def _ensure_gitignore(root: Path, ui: UI) -> None:
     """Create .gitignore, or append the kstrl block to an existing one.
 
     An existing .gitignore is a user-owned file: this only ever APPENDS,
@@ -1556,7 +1470,7 @@ def _ensure_gitignore(root: Path, language: str, ui: UI) -> None:
     action, existing = _gitignore_state(root)
 
     if action == "create":
-        _create_if_missing(path, gitignore_block(language), ui)
+        _create_if_missing(path, gitignore_block(), ui)
         return
 
     if existing is None:
@@ -1588,229 +1502,46 @@ def _ensure_gitignore(root: Path, language: str, ui: UI) -> None:
     # decide whether the block is already there. The block is ASCII, so
     # this changes no byte today; what it removes is a write and a read
     # of the same file that could disagree (#320).
-    addition = _gitignore_addition(root, language, existing)
-    if not addition:
-        ui.info("  .gitignore already has the kstrl block")
-        return
     separator = "" if not existing else "\n"
-    append_records(path, separator + addition, repair="")
-    if GITIGNORE_BLOCK_MARKER in existing:
-        ui.ok(f"  Appended the {language} ignores git did not apply to .gitignore")
-    else:
-        ui.ok("  Appended the kstrl block to .gitignore")
+    append_records(path, separator + gitignore_block(), repair="")
+    ui.ok("  Appended the kstrl block to .gitignore")
 
 
-def _ensure_lockfiles_tracked(root: Path, language: str, is_repo: bool, ui: UI) -> None:
-    """Stage the project's untracked lockfiles, and say so.
-
-    A lockfile is NOT ignored. For an application it belongs in version
-    control, so ignoring it (what examples/uv-python/.gitignore did
-    before #201) hides it from the scope guard by hiding it from git,
-    which is a workaround rather than a lockfile policy. Tracked is the
-    real fix: ``git ls-files --others --exclude-standard`` cannot list a
-    file that is in the index.
-
-    Staging is as far as init goes - creating a commit in someone's
-    repository is not a scaffolder's call - so the printed instruction
-    carries the rest. It matters: a factory worktree is cut from a
-    COMMIT, so an uncommitted lockfile is absent there and the first
-    verify run writes a fresh untracked one.
-    """
-    toolchain = toolchain_named(language)
-    candidates = () if toolchain is None else toolchain.lockfiles
-    if not is_repo or not candidates:
-        return
-
-    present = [name for name in candidates if (root / name).exists()]
-    if not present:
-        ui.warn(f"  No lockfile yet ({', '.join(candidates)})")
-        ui.info("    Your package manager writes one; create it and commit it")
-        ui.info("    before your first run, or every component writes its own")
-        ui.info("    and each one pins what its toolchain resolved that day.")
-        return
-
-    for name in present:
-        _track_lockfile(root, name, ui)
-
-
-def _track_lockfile(root: Path, name: str, ui: UI) -> None:
-    """Report or fix one lockfile's tracking state."""
-    if git.is_file_tracked(name, root):
-        ui.ok(f"  {name} is tracked")
-        return
-
-    error = git.stage_file(name, root)
-    if error is not None:
-        # `git add` refuses an ignored path and its message does not say
-        # WHICH rule ignored it, so the remediation has to name one.
-        ignored_by = git.ignore_source(name, root)
-        if ignored_by:
-            ui.warn(f"  {name} is ignored by {ignored_by}, so git will not track it")
-            ui.info(f"    Delete that rule and `git add {name}`: the lockfile pins")
-            ui.info("    your build, so it belongs in version control.")
-        else:
-            ui.warn(f"  Could not stage {name}: {error}")
-        return
-
-    ui.ok(f"  Staged {name} (staged only, no commit was created)")
-    ui.info("    Commit it before your first run: a factory worktree is cut from")
-    ui.info("    a commit, so an uncommitted lockfile is not in it.")
-
-
-# ---------------------------------------------------------------------------
-# CLAUDE.md and AGENTS.md bootstrap
-# ---------------------------------------------------------------------------
-
-
-def _json_object(value: object) -> dict[str, Any]:
-    """``value`` when it is a JSON object, else an empty one (#434).
-
-    package.json is operator-written: a top-level list or a null
-    ``dependencies`` is valid JSON. Before #434 only `ks init` read it;
-    now the `ks doctor` check and the `ks decompose` preflight do too,
-    through :func:`_detect_project_context`, and a shape it did not
-    expect must not become a traceback in all of them.
-    """
-    return value if isinstance(value, dict) else {}
-
-
-def _detect_project_context(root: Path) -> dict[str, str]:
-    """Detect project name, language and framework from config files.
-
-    The language is :func:`kstrl.toolchains.detect`'s record (first match
-    wins); this reads the name and the framework from its manifest.
-
-    #261: this deliberately does NOT guess any command. A confirmed
-    ``[stack]`` is the only source of them (#696).
-    """
-    ctx: dict[str, str] = {
-        "name": root.name,
-        "language": "unknown",
-        "framework": "",
-    }
-
-    toolchain = detect(root)
-    if toolchain is not None:
-        ctx["language"] = toolchain.id
-
-    if ctx["language"] == "Python":
-        pyproject_text = _read_text_or_none(root / "pyproject.toml") or ""
-        match = re.search(r'name\s*=\s*"([^"]+)"', pyproject_text)
-        if match:
-            ctx["name"] = match.group(1)
-        if "fastapi" in pyproject_text:
-            ctx["framework"] = "FastAPI"
-        elif "django" in pyproject_text:
-            ctx["framework"] = "Django"
-        elif "flask" in pyproject_text:
-            ctx["framework"] = "Flask"
-    elif ctx["language"] == "Rust":
-        cargo_text = _read_text_or_none(root / "Cargo.toml") or ""
-        match = re.search(r'name\s*=\s*"([^"]+)"', cargo_text)
-        if match:
-            ctx["name"] = match.group(1)
-        if "actix" in cargo_text or "axum" in cargo_text:
-            ctx["framework"] = "Axum/Actix"
-        elif "rocket" in cargo_text:
-            ctx["framework"] = "Rocket"
-    elif ctx["language"] in ("TypeScript", "JavaScript"):
-        try:
-            pkg = _json_object(read_json(_read_text_or_none(root / "package.json") or "{}"))
-            ctx["name"] = pkg.get("name", root.name)
-            deps = {
-                **_json_object(pkg.get("dependencies")),
-                **_json_object(pkg.get("devDependencies")),
-            }
-            if "next" in deps:
-                ctx["framework"] = "Next.js"
-            elif "react" in deps:
-                ctx["framework"] = "React"
-            elif "express" in deps:
-                ctx["framework"] = "Express"
-            elif "vue" in deps:
-                ctx["framework"] = "Vue"
-        except (OSError, ValueError):
-            pass
-    elif ctx["language"] == "Go":
-        go_text = (_read_text_or_none(root / "go.mod") or "").strip()
-        first_line = go_text.splitlines()[0] if go_text else ""
-        if first_line.startswith("module "):
-            ctx["name"] = first_line.split()[-1].split("/")[-1]
-    return ctx
-
-
-#: #434: what `ks doctor`, `ks init` and the `ks decompose` / `ks factory
-#: --spec` preflight say about a repository with no build manifest. One
-#: sentence for the finding and one for the fix, so the three surfaces
-#: cannot word it three ways.
+#: #434: what `ks doctor` and the `ks decompose` / `ks factory --spec`
+#: preflight say about a repository with no build manifest. One sentence
+#: for the finding and one for the fix, so the surfaces cannot word it two
+#: ways.
 BUILD_MANIFEST_MISSING = (
-    "no build manifest at the repository root that kstrl recognises, so `ks init` "
-    "reports the language as unknown, and kstrl will not create one: no component "
-    "may list a root build manifest in its allowedPaths, so `ks decompose` would pay "
-    "for an architect call that can only halt and ask who writes it"
+    "no build manifest at the repository root that kstrl recognises, and kstrl "
+    "will not create one: no component may list a root build manifest in its "
+    "allowedPaths, so `ks decompose` would pay for an architect call that can only "
+    "halt and ask who writes it"
 )
-#: The commands, measured with uv 0.11.29 on a repository holding only a
-#: spec: `uv init --package .` writes pyproject.toml, .python-version,
-#: README.md and src/<name>/__init__.py; `uv add --dev` writes the dev
-#: group the default verify commands run from, and uv.lock.
 BUILD_MANIFEST_FIX = (
-    "kstrl will not create the build manifest, so create and commit it before "
-    "`ks decompose`. For a Python project: `uv init --package .`, then "
-    "`uv add --dev pytest mypy ruff`, then `ks init` again, which adds the Python "
-    "ignores to .gitignore now that the language is known, then "
-    "`git add pyproject.toml uv.lock .python-version README.md src .gitignore` and "
-    '`git commit -m "Add the build manifest"`. For another language, commit the '
-    "manifest its own toolchain creates. If the project builds with a tool kstrl "
-    "does not recognise, write a [stack] in kstrl.toml instead."
+    "kstrl will not create the build manifest, so create and commit the manifest "
+    "your project's own build tool writes before `ks decompose`. If the project "
+    "builds with a tool kstrl does not recognise, write a [stack] in kstrl.toml instead."
 )
 
 
-#: #459: the fix `ks doctor` and the `ks decompose` / `ks factory --spec`
-#: preflight print when the language's build output is not ignored.
-LANGUAGE_IGNORES_FIX = (
-    "Run `ks init` again: it appends the entries git does not ignore to "
-    ".gitignore. Then `git add .gitignore` and commit it, because a factory "
-    "worktree is cut from a commit and an uncommitted .gitignore is not in it."
-)
-
-
-def language_ignores_blocker(root: Path) -> str | None:
-    """Why the verify commands' own output would fail every component, or None (#459)."""
-    language = _detect_project_context(root)["language"]
-    missing = missing_language_ignores(root, language)
-    if not missing:
-        return None
-    return (
-        f"git does not ignore {', '.join(missing)}, which the {language} toolchain "
-        f"writes; the in-loop scope guard counts every untracked file against the "
-        f"component's allowedPaths, so the files the verify commands write fail "
-        f"each component's first attempt"
-    )
-
-
-def build_manifest_blocker(root: Path, *, read_verify: bool = True) -> str | None:
+def build_manifest_blocker(root: Path) -> str | None:
     """Why kstrl cannot plan work in ``root`` yet, or None when it can (#434).
 
-    A build manifest is whatever :func:`_detect_project_context` reads a
-    language from, so this and the `Detected language` line `ks init`
-    prints cannot disagree. That set is ``decompose.ROOT_BUILD_MANIFESTS``
-    (#627): every manifest no component may be scoped to is one this
-    reads a language from, so a repository holding it is not refused.
+    A build manifest is one of ``toolchains.BUILD_MANIFESTS``, which is
+    ``decompose.ROOT_BUILD_MANIFESTS`` (#627): every manifest no component
+    may be scoped to is one this recognises, so a repository holding it is
+    not refused.
 
-    A repository kstrl reads no language from is still let through when
-    kstrl.toml holds a ``[stack]`` (#696 slice 4): the operator has told
-    kstrl how the project builds, which is the answer for a toolchain
-    kstrl does not recognise (a Gemfile, a Makefile).
-
-    ``read_verify=False`` is for `ks init`, which must not read
-    kstrl.toml at all: it runs beside a file that does not load
-    (tests/test_config_preflight.py). Otherwise a kstrl.toml that does
-    not load raises the ``OSError`` or ``ValueError`` of
-    ``stack.load_stack``, and the caller decides what that means.
+    A repository holding none of them is still let through when kstrl.toml
+    holds a ``[stack]`` (#696 slice 4): the operator has told kstrl how the
+    project builds, which is the answer for a build tool kstrl does not name
+    (a Gemfile, a Makefile). A kstrl.toml that does not load raises the
+    ``OSError`` or ``ValueError`` of ``stack.load_stack``, and the caller
+    decides what that means.
     """
-    if _detect_project_context(root)["language"] != "unknown":
+    if has_build_manifest(root):
         return None
-    if read_verify and load_stack(root) is not None:
+    if load_stack(root) is not None:
         return None
     return BUILD_MANIFEST_MISSING
 
@@ -1828,7 +1559,7 @@ def build_manifest_ok_reason(root: Path) -> str:
     which is how an escape that itself needed the missing manifest read
     as `[ok]` without saying which half applied.
     """
-    if _detect_project_context(root)["language"] != "unknown":
+    if has_build_manifest(root):
         return (
             "a build manifest kstrl recognises is at the repository root, so the "
             "`ks decompose` preflight lets the architect run"
@@ -1840,199 +1571,19 @@ def build_manifest_ok_reason(root: Path) -> str:
     )
 
 
-def _report_build_manifest(root: Path, ui: UI) -> bool:
-    """Print the #434 notice in a Fix first section; True when it printed."""
-    blocker = build_manifest_blocker(root, read_verify=False)
-    if blocker is None:
-        return False
-    ui.section("Fix first")
-    ui.warn(blocker)
-    ui.info(BUILD_MANIFEST_FIX)
-    return True
+# ---------------------------------------------------------------------------
+# CLAUDE.md and AGENTS.md bootstrap
+# ---------------------------------------------------------------------------
 
 
-#: H3 (#303): the per-language bodies looked up by _LANGUAGE_STANDARDS and
-#: _LANGUAGE_ANTIPATTERNS. Versioned under CLAUDE_MD_PROMPT_VERSION below
-#: (declared with the other _generate_claude_md fragments): both tables
-#: feed the one builder that CLAUDE_MD_PROMPT_VERSION describes. Neither
-#: dict is ever .format()ed, which is what makes the literal `interface{}`
-#: inside GO_ANTIPATTERNS_PROMPT harmless.
-PYTHON_STANDARDS_PROMPT = """
-- Use type hints on ALL function signatures
-- Use `from __future__ import annotations` in every file
-- Use `T | None` not `Optional[T]`, `A | B` not `Union[A, B]`
-- Prefer `@dataclass` for data models, `frozen=True` when immutable
-- Use `Protocol` for interfaces (structural subtyping over inheritance)
-- Google-style docstrings with Args/Returns/Raises sections
-- snake_case for functions/variables, PascalCase for classes, UPPER_SNAKE for constants
-- Absolute imports only, grouped: stdlib, third-party, local
-- No star imports, no circular imports
-- No bare `except:` clauses - always specify the exception type
-- No mutable default arguments (use `field(default_factory=...)`)
-"""
-RUST_STANDARDS_PROMPT = """
-- Use `Result<T, E>` for fallible operations, not panics
-- Prefer `&str` over `String` in function parameters
-- Use `derive` macros: Debug, Clone, PartialEq where appropriate
-- Handle all match arms exhaustively - no catch-all `_` unless justified
-- Prefer iterators and combinators over manual loops
-- Use `clippy::pedantic` lint level
-- Document public APIs with `///` doc comments
-- Use `thiserror` for library errors, `anyhow` for application errors
-- Minimize `unwrap()` - use `?` or explicit error handling
-- Prefer `impl Trait` over `dyn Trait` when the concrete type is known
-"""
-TYPESCRIPT_STANDARDS_PROMPT = """
-- Enable strict mode in tsconfig.json
-- Use explicit return types on all exported functions
-- Prefer `interface` over `type` for object shapes
-- Use `readonly` for properties that should not be mutated
-- Prefer `unknown` over `any` - narrow with type guards
-- Use discriminated unions for variant types
-- Handle all Promise rejections - no unhandled promises
-- Use `const` by default, `let` only when mutation is needed, never `var`
-- Prefer named exports over default exports
-- Use template literals over string concatenation
-"""
-GO_STANDARDS_PROMPT = """
-- Handle every error - never use `_` for error returns
-- Use table-driven tests
-- Keep interfaces small (1-3 methods)
-- Accept interfaces, return structs
-- Use `context.Context` as the first parameter for cancellable operations
-- Prefer composition over embedding
-- Use `errors.Is` and `errors.As` for error checking, not string matching
-- Document all exported identifiers
-- Use `go vet` and `golangci-lint` in CI
-- Prefer channels for synchronization, mutexes for state protection
-"""
-JAVASCRIPT_STANDARDS_PROMPT = """
-- Use `const` by default, `let` only when mutation is needed, never `var`
-- Use `===` and `!==`, never `==` or `!=`
-- Use ES modules (`import` / `export`) unless the whole project is CommonJS
-- Prefer `async` / `await` over raw `.then()` chains
-- Handle every Promise rejection - `await` it inside `try` / `catch` or attach `.catch()`
-- Document exported functions with JSDoc, including `@param` and `@returns` types
-- Validate external input (request bodies, environment variables, file contents) where it enters
-- Throw `Error` objects or subclasses, never strings or plain objects
-- Prefer named exports over default exports
-- Use template literals over string concatenation
-"""
-JAVA_STANDARDS_PROMPT = """
-- Use final for variables that should not be reassigned
-- Prefer composition over inheritance
-- Use Optional<T> instead of null for return types
-- Document public APIs with Javadoc
-- Use try-with-resources for AutoCloseable resources
-- Prefer immutable collections where possible
-- Use meaningful exception types, not generic RuntimeException
-"""
-KOTLIN_STANDARDS_PROMPT = """
-- Prefer val over var (immutability by default)
-- Use data classes for plain data holders
-- Use sealed classes for restricted hierarchies
-- Prefer expression bodies for simple functions
-- Use coroutines for async operations, not callbacks
-- Leverage null safety - avoid `!!` operator
-- Use `when` expressions exhaustively
-"""
+#: H3 (#303): fragments _generate_claude_md assembles; versioned as one body
+#: (docs/adversarial-roadmap.md, H3a sweep row). 2.0.0 (#696 slice 6): the
+#: CLAUDE.md is the same on every tree. The detected language, the
+#: per-language standards and antipatterns and the principles section are
+#: gone; how the project builds is its confirmed [stack].
+CLAUDE_MD_PROMPT_VERSION = "2.0.0"
 
-PYTHON_ANTIPATTERNS_PROMPT = """
-- Do NOT use `typing.Optional` or `typing.Union` - use `|` syntax
-- Do NOT use `Any` without a TODO comment explaining why
-- Do NOT use mutable default arguments (`def f(x=[])`)
-- Do NOT use bare `except:` or `except Exception:` without re-raising
-- Do NOT use `import *`
-- Do NOT use `type: ignore` without a specific mypy error code
-- Do NOT use `global` or `nonlocal` unless absolutely necessary
-- Do NOT suppress linter warnings without justification
-"""
-RUST_ANTIPATTERNS_PROMPT = """
-- Do NOT use `unwrap()` or `expect()` in library code
-- Do NOT use `unsafe` without a SAFETY comment explaining the invariant
-- Do NOT use `clone()` to avoid borrow checker issues - redesign instead
-- Do NOT use `Box<dyn Any>` as an escape hatch from the type system
-- Do NOT ignore compiler warnings - treat them as errors
-- Do NOT use `String` in struct fields when `&str` with a lifetime would work
-"""
-TYPESCRIPT_ANTIPATTERNS_PROMPT = """
-- Do NOT use `any` - use `unknown` and narrow with type guards
-- Do NOT use `!` non-null assertion operator without justification
-- Do NOT use `var` - use `const` or `let`
-- Do NOT use `==` - always use `===`
-- Do NOT ignore TypeScript errors with `@ts-ignore` without a specific reason
-- Do NOT use `Function` or `Object` types - use specific signatures
-"""
-GO_ANTIPATTERNS_PROMPT = """
-- Do NOT use `panic` for error handling in library code
-- Do NOT ignore errors with `_`
-- Do NOT use `init()` functions unless absolutely necessary
-- Do NOT use global mutable state
-- Do NOT use `interface{}` / `any` as an escape hatch from the type system
-"""
-JAVASCRIPT_ANTIPATTERNS_PROMPT = """
-- Do NOT use `var` - use `const` or `let`
-- Do NOT use `==` or `!=` - always use `===` and `!==`
-- Do NOT use `eval`, `new Function` or a string argument to `setTimeout`
-- Do NOT leave a Promise without an `await` or a `.catch()` handler
-- Do NOT write an empty `catch {}` block or a `catch` that only logs and carries on
-- Do NOT pass user input to `child_process.exec` - use `execFile` with an argument array
-- Do NOT merge untrusted objects into plain objects without rejecting `__proto__` keys
-- Do NOT mutate function arguments or module-level state
-"""
-JAVA_ANTIPATTERNS_PROMPT = """
-- Do NOT catch `Exception` or `Throwable` unless you rethrow or handle the specific failure
-- Do NOT write an empty `catch` block
-- Do NOT return `null` where the return type could be `Optional<T>`
-- Do NOT use raw generic types (`List` where `List<String>` is meant)
-- Do NOT compare strings with `==` - use `equals`
-- Do NOT build SQL by string concatenation - use `PreparedStatement` parameters
-- Do NOT leave an `AutoCloseable` open outside try-with-resources
-- Do NOT return a mutable internal collection from a getter
-"""
-KOTLIN_ANTIPATTERNS_PROMPT = """
-- Do NOT use the `!!` operator - handle the null case explicitly
-- Do NOT use `var` where `val` would work
-- Do NOT use `lateinit` to avoid deciding the initialization order
-- Do NOT launch coroutines in `GlobalScope` - use a structured scope
-- Do NOT catch `Exception` or `Throwable` in a coroutine without rethrowing `CancellationException`
-- Do NOT call blocking I/O in a coroutine without `withContext(Dispatchers.IO)`
-- Do NOT add an `else` branch to a `when` over a sealed type - list every subtype
-"""
-
-_LANGUAGE_STANDARDS: dict[ToolchainId, str] = {
-    "Python": PYTHON_STANDARDS_PROMPT,
-    "Rust": RUST_STANDARDS_PROMPT,
-    "TypeScript": TYPESCRIPT_STANDARDS_PROMPT,
-    "JavaScript": JAVASCRIPT_STANDARDS_PROMPT,
-    "Go": GO_STANDARDS_PROMPT,
-    "Java": JAVA_STANDARDS_PROMPT,
-    "Kotlin": KOTLIN_STANDARDS_PROMPT,
-}
-
-_LANGUAGE_ANTIPATTERNS: dict[ToolchainId, str] = {
-    "Python": PYTHON_ANTIPATTERNS_PROMPT,
-    "Rust": RUST_ANTIPATTERNS_PROMPT,
-    "TypeScript": TYPESCRIPT_ANTIPATTERNS_PROMPT,
-    "JavaScript": JAVASCRIPT_ANTIPATTERNS_PROMPT,
-    "Go": GO_ANTIPATTERNS_PROMPT,
-    "Java": JAVA_ANTIPATTERNS_PROMPT,
-    "Kotlin": KOTLIN_ANTIPATTERNS_PROMPT,
-}
-
-
-#: H3 (#303): fragments _generate_claude_md assembles (plus the language
-#: tables it looks values up in); versioned as one body
-#: (docs/adversarial-roadmap.md, H3a sweep row).
-CLAUDE_MD_PROMPT_VERSION = "1.2.0"
-
-CLAUDE_MD_OVERVIEW_PROMPT = (
-    "# CLAUDE.md - {name}\n"
-    "\n"
-    "## Project Overview\n"
-    "- **Language**: {language}{framework_line}\n"
-    "- **Project**: {name}\n"
-)
+CLAUDE_MD_OVERVIEW_PROMPT = "# CLAUDE.md - {name}\n\n## Project Overview\n- **Project**: {name}\n"
 
 # What the generated CLAUDE.md says about verification, and why it names
 # no commands. CLAUDE.md is prepended verbatim into the engineer prompt
@@ -2047,55 +1598,6 @@ every change and injects them into the engineer prompt, so they are
 deliberately not restated here and cannot drift out of step with the
 gate that runs them. A `[stack]` runs nothing until a person confirms it.
 """
-
-CLAUDE_MD_STANDARDS_HEADING_PROMPT = "## Coding Standards"
-
-CLAUDE_MD_PRINCIPLES_PROMPT = """## Implementation Principles
-
-### First Principles Thinking
-- Reason from first principles about WHY the code should work, not just HOW
-- Consider nth-order effects: what happens downstream when this function's contract changes?
-- Ask "what invariant does this maintain?" for every data structure and state transition
-- Before implementing, understand the problem domain - do not cargo-cult patterns from other contexts
-
-### No Shortcuts
-- Do not implement stub functions that return hardcoded values
-- Do not add TODO comments as a substitute for implementation
-- Do not use placeholder/dummy values in production code paths
-- Do not catch exceptions just to silence them
-- Do not skip validation because "it should never happen"
-- Every code path must be intentional and justified
-
-### No Handwaving
-- Every function must have a concrete, complete implementation
-- Error handling must cover ALL failure modes, not just the happy path
-- Edge cases (empty inputs, None values, boundary conditions, concurrent access) must be handled explicitly
-- Do not assume "this will never happen" - if the type system allows it, handle it
-- Performance implications must be considered, not deferred
-
-### Correctness Over Cleverness
-- Prefer readable, straightforward implementations over clever one-liners
-- Add assertions for preconditions that the type system cannot enforce
-- Use immutable data structures by default
-- Never silently swallow errors or return default values for unexpected inputs
-- Make illegal states unrepresentable through the type system
-
-### Testing Discipline
-- Every public function needs at least one test
-- Test the contract (inputs/outputs), not the implementation details
-- Include edge cases: empty inputs, single elements, maximum values, None/null, unicode, negative numbers
-- Error paths are tested as thoroughly as success paths
-- Do not write tests that always pass (tautological assertions like `assert True`)
-- Tests must be deterministic - no flaky tests, no time-dependent assertions
-
-### Completeness
-- Implement ALL specified behavior, not a subset
-- Handle ALL variants of enums and match/switch expressions
-- Implement ALL methods of an interface/protocol/trait, not just the common ones
-- Do not leave partial implementations - either fully implement or explicitly raise/panic with a reason
-- Documentation matches behavior - if docs say it does X, it must do X"""
-
-CLAUDE_MD_ANTIPATTERNS_HEADING_PROMPT = "## What NOT To Do"
 
 CLAUDE_MD_LEARNINGS_PROMPT = """## Agent Learnings
 
@@ -2113,52 +1615,22 @@ CLAUDE_MD_LEARNINGS_PROMPT = """## Agent Learnings
 <!-- Agents: add established conventions here -->"""
 
 
-def _generate_claude_md(ctx: dict[str, str]) -> str:
-    """Generate CLAUDE.md content from detected project context."""
-    lang = ctx["language"]
-    toolchain = toolchain_named(lang)
-    framework_line = f" ({ctx['framework']})" if ctx["framework"] else ""
-
+def _generate_claude_md(name: str) -> str:
+    """The CLAUDE.md `ks init` writes for the project called ``name``."""
     sections = [
-        CLAUDE_MD_OVERVIEW_PROMPT.format(
-            name=ctx["name"], language=lang, framework_line=framework_line
-        )
+        CLAUDE_MD_OVERVIEW_PROMPT.format(name=name),
+        CLAUDE_MD_VERIFICATION_PROMPT.strip(),
+        "",
+        CLAUDE_MD_LEARNINGS_PROMPT,
+        "",
     ]
-
-    sections.append(CLAUDE_MD_VERIFICATION_PROMPT.strip())
-    sections.append("")
-
-    # Coding standards
-    standards = "" if toolchain is None else _LANGUAGE_STANDARDS.get(toolchain.id, "")
-    if standards:
-        sections.append(CLAUDE_MD_STANDARDS_HEADING_PROMPT)
-        sections.append(standards.strip())
-        sections.append("")
-
-    # Implementation principles (language-agnostic, elite-level)
-    sections.append(CLAUDE_MD_PRINCIPLES_PROMPT)
-    sections.append("")
-
-    # Anti-patterns
-    antipatterns = "" if toolchain is None else _LANGUAGE_ANTIPATTERNS.get(toolchain.id, "")
-    if antipatterns:
-        sections.append(CLAUDE_MD_ANTIPATTERNS_HEADING_PROMPT)
-        sections.append(antipatterns.strip())
-        sections.append("")
-
-    # Agent learnings section (agents append patterns, gotchas, conventions here)
-    sections.append(CLAUDE_MD_LEARNINGS_PROMPT)
-    sections.append("")
-
     return "\n".join(sections) + "\n"
 
 
-def bootstrap_claude_md(root: Path, ui: UI, ctx: dict[str, str]) -> None:
+def bootstrap_claude_md(root: Path, ui: UI) -> None:
     """Generate CLAUDE.md and symlink AGENTS.md to it.
 
-    ``ctx`` is :func:`_detect_project_context`'s reading of the project's
-    language, framework and tooling; the caller detects once because the
-    .gitignore block is chosen from the same reading.
+    The project's name is its directory's name: kstrl reads no manifest.
 
     AGENTS.md is a symlink to CLAUDE.md so both names point to the same
     file. When the prompt tells agents to "update AGENTS.md", they are
@@ -2167,18 +1639,11 @@ def bootstrap_claude_md(root: Path, ui: UI, ctx: dict[str, str]) -> None:
 
     ui.section("Agent context files")
 
-    language = ctx["language"]
-    if language == "unknown":
-        language = "none (no build manifest kstrl recognises; see Fix first)"
-    ui.kv("Detected language", language)
-    if ctx["framework"]:
-        ui.kv("Detected framework", ctx["framework"])
-
     claude_md = root / "CLAUDE.md"
     if claude_md.exists():
         ui.info("  CLAUDE.md already exists")
     else:
-        claude_md.write_text(_generate_claude_md(ctx))
+        claude_md.write_text(_generate_claude_md(root.name))
         ui.ok("  Created CLAUDE.md")
 
     agents_md = root / "AGENTS.md"

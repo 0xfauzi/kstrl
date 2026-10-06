@@ -23,7 +23,7 @@ import pytest
 from click.testing import CliRunner
 
 from kstrl.cli import cli
-from kstrl.init_cmd import _detect_project_context, gitignore_block
+from kstrl.init_cmd import gitignore_block
 from kstrl.launch import DecomposeLaunch
 from kstrl.tui.session import LaunchError, start_run_session
 from tests.helpers.gitrepo import git_in, set_identity
@@ -32,8 +32,7 @@ from tests.helpers.stack_confirmation import write_stack
 #: The refusal headline the decompose and factory preflight print.
 REFUSAL = "Refusing to run: this repository has no build manifest kstrl can use"
 
-#: One manifest per ecosystem the issue names, with contents
-#: `_detect_project_context` reads without error.
+#: One manifest per ecosystem the issue names.
 MANIFESTS: dict[str, str] = {
     "pyproject.toml": '[project]\nname = "demo"\nversion = "0.1.0"\n',
     "package.json": '{"name": "demo"}\n',
@@ -58,10 +57,7 @@ def greenfield(tmp_path: Path, *, extra: dict[str, str] | None = None) -> Path:
     (root / "legacy" / "old_notes.py").write_text("x = 1\n", encoding="utf-8")
     for name, body in (extra or {}).items():
         (root / name).write_text(body, encoding="utf-8")
-    # #459: the ignores `ks init` writes for whatever language the extras
-    # make this, so a manifest test is not refused over its build output.
-    language = _detect_project_context(root)["language"]
-    (root / ".gitignore").write_text(gitignore_block(language), encoding="utf-8")
+    (root / ".gitignore").write_text(gitignore_block(), encoding="utf-8")
     git_in(root, "add", "-A")
     git_in(root, "commit", "-q", "-m", "initial")
     return root
@@ -150,7 +146,6 @@ def test_a_repository_with_no_build_manifest_is_refused_before_any_agent_call(
     assert proc.returncode == 2, proc.stdout
     assert REFUSAL in proc.stdout
     assert "kstrl will not create the build manifest" in proc.stdout
-    assert "uv init --package ." in proc.stdout
     assert not calls.exists(), calls.read_text(encoding="utf-8")
     # Refused before a run directory exists, like every other pre-spend
     # refusal: nothing under .kstrl/runs for a run that never started.
@@ -199,10 +194,9 @@ def test_an_unrecognised_toolchain_reaches_the_architect_once_the_stack_names_it
 def test_a_package_json_of_an_unexpected_shape_is_a_manifest_and_nothing_crashes(
     tmp_path: Path, body: str
 ) -> None:
-    """Valid JSON that is not the object `ks init` expected. Before #434
-    only init read package.json; the preflight and the doctor check now
-    read it through the same function, so a shape it did not expect
-    must be a manifest to all three, not a traceback in all three."""
+    """Valid JSON that is not the object a reader of package.json would
+    expect. The refusal reads no manifest's contents (#696), so a shape
+    like this is a manifest to both surfaces and a traceback in neither."""
     root = greenfield(tmp_path, extra={"package.json": body})
     agent, calls = recording_agent(root)
 
@@ -214,10 +208,6 @@ def test_a_package_json_of_an_unexpected_shape_is_a_manifest_and_nothing_crashes
     doctor = run_ks(root, "doctor", "--root", str(root))
     assert "Traceback" not in doctor.stdout, doctor.stdout
     assert "[ok] build_manifest:" in doctor.stdout
-
-    init = run_ks(root, "init", str(root), "--ui", "plain", "--no-color")
-    assert init.returncode == 0, init.stdout
-    assert "Fix first" not in init.stdout
 
 
 def test_doctor_puts_the_missing_manifest_first_in_fix_first(tmp_path: Path) -> None:
@@ -231,8 +221,6 @@ def test_doctor_puts_the_missing_manifest_first_in_fix_first(tmp_path: Path) -> 
     lines = proc.stdout.splitlines()
     first_fix = lines[lines.index("Fix first:") + 1]
     assert first_fix.startswith("  1. kstrl will not create the build manifest"), first_fix
-    assert "uv init --package ." in first_fix
-    assert "uv add --dev pytest mypy ruff" in first_fix
 
 
 def test_doctor_does_not_guess_when_kstrl_toml_does_not_load(tmp_path: Path) -> None:
@@ -249,31 +237,6 @@ def test_doctor_does_not_guess_when_kstrl_toml_does_not_load(tmp_path: Path) -> 
         "[fail] build_manifest: not evaluated: kstrl.toml did not load (see kstrl_config)"
         in proc.stdout
     )
-
-
-def test_init_says_kstrl_will_not_create_the_manifest_and_prints_the_commands(
-    tmp_path: Path,
-) -> None:
-    root = greenfield(tmp_path)
-
-    proc = run_ks(root, "init", str(root), "--ui", "plain", "--no-color")
-
-    assert proc.returncode == 0, proc.stdout
-    assert "Fix first" in proc.stdout
-    assert "no build manifest at the repository root that kstrl recognises" in proc.stdout
-    assert "kstrl will not create the build manifest" in proc.stdout
-    assert "uv init --package ." in proc.stdout
-    assert proc.stdout.index("Fix first") < proc.stdout.index("Next steps")
-
-
-def test_init_says_nothing_about_a_manifest_that_exists(tmp_path: Path) -> None:
-    root = greenfield(tmp_path, extra={"pyproject.toml": MANIFESTS["pyproject.toml"]})
-
-    proc = run_ks(root, "init", str(root), "--ui", "plain", "--no-color")
-
-    assert proc.returncode == 0, proc.stdout
-    assert "Fix first" not in proc.stdout
-    assert "kstrl will not create" not in proc.stdout
 
 
 def test_the_home_shell_decompose_launch_refuses_before_building_an_agent(
@@ -294,8 +257,8 @@ def test_every_manifest_kstrl_will_not_write_is_one_the_refusal_recognises(
     tmp_path: Path,
 ) -> None:
     """The two vocabularies, tied. `ROOT_BUILD_MANIFESTS` is what no
-    component may write; `_detect_project_context` is what the refusal
-    reads. A manifest in the first that the second does not recognise
+    component may write; `toolchains.has_build_manifest` is what the
+    refusal reads. A manifest in the first that the second does not recognise
     would refuse a repository that already has the file kstrl forbids
     anyone to create, so every one of them must clear the refusal.
 
@@ -424,7 +387,7 @@ def test_a_defect_inside_the_build_manifest_check_is_a_traceback_not_a_row(
     """Only a kstrl.toml that does not load (OSError, ValueError) is 'not evaluated'. A defect
     inside the check must propagate, so a widened catch cannot hide it."""
 
-    def defect(root: Path, *, read_verify: bool = True) -> str | None:
+    def defect(root: Path) -> str | None:
         raise TypeError("planted defect")
 
     monkeypatch.setattr("kstrl.doctor.build_manifest_blocker", defect)

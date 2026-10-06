@@ -403,7 +403,6 @@ _EXPECTED_STATE_DIR_SPELLINGS: dict[str, int] = {
     "doctor.py": 2,
     "events.py": 1,
     "factory.py": 11,
-    "feedforward.py": 1,
     "integration_state.py": 1,
     "knowledge.py": 2,
     "pipeline.py": 1,

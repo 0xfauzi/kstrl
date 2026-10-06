@@ -493,9 +493,6 @@ Invalid mode or threshold raises ValueError (Phase B8). The default mode is `ski
 |---|---|---|
 | `KSTRL_CODEBASE_SCAN_ENABLED` | bool | true |
 | `KSTRL_CODEBASE_SCAN_MODULE_MAP` | bool | true |
-| `KSTRL_CODEBASE_SCAN_PUBLIC_INTERFACES` | bool | true |
-| `KSTRL_CODEBASE_SCAN_DEPENDENCY_GRAPH` | bool | true |
-| `KSTRL_CODEBASE_SCAN_CONVENTIONS` | bool | true |
 | `KSTRL_CODEBASE_SCAN_MAX_TOKENS` | int | 4000 |
 
 ## EvolutionConfig (`[evolution]`)

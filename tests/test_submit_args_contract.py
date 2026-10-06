@@ -261,7 +261,6 @@ class TestTheWholeSubmitTupleIsBound:
             # tmp directory every run - echoed back like the other
             # run-scoped values below and checked structurally instead.
             "setup": bound["setup"] if max_parallel > 1 else None,
-            "component_deps": None,
             "knowledge_prefix": "",
             "decisions_prefix": "",
             "progress_file_str": "scripts/kstrl/feature/comp-a/progress.txt",

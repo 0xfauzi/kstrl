@@ -106,8 +106,9 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     "evolution.py": 2,
     "factory.py": 6,
     "feature_cmd.py": 2,
-    # 10: #626 added the go.mod read and the `_read_toml` read.
-    "feedforward.py": 10,
+    # 1 since #696 slice 6: the module map's line count is the one read
+    # left; the interface, graph and conventions readers are gone.
+    "feedforward.py": 1,
     # 3 until the snapshot half of fixtures.py moved to
     # fixtures_snapshot.py under the 800-line ratchet. The read that
     # went with it is the row below; the count is re-derived by
@@ -184,9 +185,6 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     "tui/tail.py": 2,
     # #433 F7: the failed gate's stored output, read as bytes and decoded
     # with errors="replace", so no locale codec is involved.
-    # #635: detect's package.json read, moved out of init_cmd's
-    # _read_text_or_none so kstrl.toolchains imports nothing from init_cmd.
-    "toolchains.py": 1,
     "tui/widgets/component_detail.py": 1,
     # 4 since #414: the bad-patterns scan's read_text is gone (it reads
     # bytes now, so py_compile does its own PEP 263 decoding). 3 since
@@ -256,10 +254,7 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "factory.py path.read_text(encoding='utf-8')",
     "feature_cmd.py open(latest_path, 'w', encoding='utf-8')",
     "feature_cmd.py open(repair_path, 'w', encoding='utf-8')",
-    "feedforward.py filepath.read_text(encoding='utf-8', errors='replace')",
-    "feedforward.py path.read_text(encoding='utf-8')",
     "feedforward.py path.read_text(encoding='utf-8', errors='replace')",
-    "feedforward.py py_file.read_text(encoding='utf-8', errors='replace')",
     "fixtures.py full_path.read_text(encoding='utf-8')",
     "fixtures.py open(prd_path, encoding='utf-8')",
     "fixtures_snapshot.py snapshot_path.read_text(encoding='utf-8')",
@@ -306,7 +301,6 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "serve.py self.path.read_text(encoding='utf-8')",
     "statedir.py open(lock_path, 'a+', encoding='utf-8')",
     "suite_inventory.py (report_dir / GATE_OUTPUT).read_text(encoding='utf-8')",
-    "toolchains.py (root / 'package.json').read_text(encoding='utf-8')",
     "tui/embed.py open(run_paths.root / 'orchestrator.log', 'a', buffering=1, encoding='",
     "tui/runs.py open(lock_path, 'a+', encoding='utf-8')",
     "tui/serve_view.py path.read_text(encoding='utf-8', errors='replace')",

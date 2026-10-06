@@ -183,7 +183,7 @@ def _spec_project(tmp_path: Path, *, initialised: bool = False) -> Path:
     git("init", "-q", "-b", "main", cwd=root)
     gitrepo.set_identity(root)
     (root / "pyproject.toml").write_text('[project]\nname = "demo"\nversion = "0.1.0"\n')
-    (root / ".gitignore").write_text(gitignore_block("Python"), encoding="utf-8")
+    (root / ".gitignore").write_text(gitignore_block(), encoding="utf-8")
     (root / "spec.md").write_text("# Spec\n\nBuild a thing.\n", encoding="utf-8")
     if initialised:
         assert run_init(root, PlainUI(no_color=True, file=io.StringIO())) == 0
@@ -338,7 +338,7 @@ class TestCommandRunsRecordTheirPrompts:
         git("init", "-q", "-b", "main", cwd=root)
         gitrepo.set_identity(root)
         (root / "pyproject.toml").write_text('[project]\nname = "demo"\nversion = "0.1.0"\n')
-        (root / ".gitignore").write_text(gitignore_block("Python"), encoding="utf-8")
+        (root / ".gitignore").write_text(gitignore_block(), encoding="utf-8")
         (root / "spec.md").write_text("# Spec\n\nBuild a thing.\n", encoding="utf-8")
         git("add", "-A", cwd=root)
         git("commit", "-q", "-m", "seed", cwd=root)

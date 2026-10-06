@@ -25,10 +25,9 @@ from __future__ import annotations
 
 import dataclasses
 import subprocess
-from collections import Counter
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from kstrl import git, pr
@@ -36,19 +35,7 @@ from kstrl.adequacy import is_test_path
 from kstrl.atomicio import atomic_write_json
 from kstrl.config import resolve_config_file
 from kstrl.config_preflight import SURFACE_REJECTIONS, config_problem_lines, raise_if_defect
-from kstrl.feedforward import (
-    _MAX_PUBLIC_INTERFACE_FILES,
-    _SOURCE_EXTENSIONS,
-    _find_top_source_dirs,
-    extract_public_interfaces,
-)
-from kstrl.init_cmd import (
-    BUILD_MANIFEST_FIX,
-    LANGUAGE_IGNORES_FIX,
-    build_manifest_blocker,
-    build_manifest_ok_reason,
-    language_ignores_blocker,
-)
+from kstrl.init_cmd import BUILD_MANIFEST_FIX, build_manifest_blocker, build_manifest_ok_reason
 from kstrl.policy import ENFORCEMENT_MACHINERY_PATHS, PolicyConfig, _match_glob
 from kstrl.stack import NO_STACK, file_stack_item, legacy_proposal, stack_in_force
 from kstrl.statedir import STATE_DIR_NAME, state_dir
@@ -362,117 +349,6 @@ def check_verify_commands(root: Path) -> _CheckResult:
     )
 
 
-def _interface_file_count(text: str) -> int:
-    """How many FILES a "Public interfaces" section lists.
-
-    The section is one `<path>: <symbols>` line per file, so a line
-    whose text before the FIRST colon ends in `.py` is a file. Two
-    things this deliberately survives. A symbol list contains `: `
-    of its own (`def build(name: str) -> Deck`), which the split on
-    the first colon handles. And `extract_public_interfaces` returns
-    `""` on main but a `(none: ...)` sentence after PR #378/#381,
-    which counts as 0 either way: a count of output LINES would read
-    1 there and turn this check green on the repository it exists
-    for.
-
-    Acknowledged limit: a source path containing a colon is not
-    counted. That undercounts by one line in a case no repository in
-    the intake has.
-    """
-    return sum(1 for line in text.splitlines() if line.split(":", 1)[0].endswith(".py"))
-
-
-def check_source_root(root: Path) -> _CheckResult:
-    """What the engineer is actually shown of this repository.
-
-    Consumed by `kstrl.feedforward.extract_public_interfaces`, the Phase 0
-    stage that writes the "Public interfaces" section of the
-    engineer's context block. It reads Python only, so a tree whose
-    tracked source is mostly another language warns and names #200
-    (#628); otherwise the row is keyed on the source-root result and
-    the file-budget outcome (#198 comment of 2026-09-16).
-    """
-    # `is_relative_to` rather than a bare `relative_to`: PR #381
-    # rewrites the function this reads, and a path it returned from
-    # outside `root` would turn a report into a ValueError traceback.
-    found = _find_top_source_dirs(root)
-    roots = sorted(
-        str(path.relative_to(root)) if path.is_relative_to(root) else str(path) for path in found
-    )
-    listed = ", ".join(roots[:5]) if roots else "none"
-    count = _interface_file_count(extract_public_interfaces(root))
-    minority, unsummarised = _source_mix_notes(root)
-    if minority:
-        return (
-            STATUS_WARN,
-            f"the codebase scan summarises {count} Python file(s) for the "
-            f"engineer from source root(s): {listed}; {minority}",
-            PYTHON_ONLY_FIX,
-        )
-    if count == 0:
-        return (
-            STATUS_WARN,
-            f"the codebase scan summarises 0 files for the engineer; source roots found: {listed}",
-            "Nothing is broken in your repository; kstrl's interface "
-            "extraction found no public Python class or function in this "
-            "layout, so the engineer works without an interface section.",
-        )
-    return (
-        STATUS_OK,
-        f"the codebase scan summarises {count} file(s) "
-        f"of a {_MAX_PUBLIC_INTERFACE_FILES}-file budget from source "
-        f"root(s): {listed}{unsummarised}",
-        "",
-    )
-
-
-#: The fix for a tree whose tracked source is mostly not Python. #378
-#: is closed and was about Python layouts; the reader for other
-#: languages is the plug-in #200 deferred.
-PYTHON_ONLY_FIX = (
-    "Nothing is broken in your repository; kstrl's interface extraction "
-    "reads Python only, so the engineer gets no interface lines for the "
-    "rest of this tree. A reader for other languages is deferred on issue #200."
-)
-
-
-def _source_mix_notes(root: Path) -> tuple[str, str]:
-    """Two clauses about the tracked source a Python-only extraction skips.
-
-    The first is set when Python is not the majority of the files at
-    HEAD whose suffix the module map counts (`_SOURCE_EXTENSIONS`), and
-    makes the row a warning; the second notes non-Python source beside
-    a Python majority. Measured for #628: the Python share is 0.687 to
-    1.000 on six Python repositories and 0.000 to 0.444 on the Rust,
-    TypeScript and mixed trees, so one half sits in the gap. The share
-    SUMMARISED cannot be the rule: this repository summarises 30 of 703
-    source files, less than the Rust tree with one Python helper (1 of 4).
-    """
-    try:
-        tracked = git.tracked_files_at("HEAD", root)
-    except git.GitDiffError:
-        return ("", "")
-    suffixes = Counter(PurePosixPath(path).suffix for path in tracked)
-    python_files = suffixes.pop(".py", 0)
-    others = {suffix: n for suffix, n in sorted(suffixes.items()) if suffix in _SOURCE_EXTENSIONS}
-    other_total = sum(others.values())
-    listed = ", ".join(f"{suffix}: {n}" for suffix, n in others.items())
-    if other_total > python_files:
-        return (
-            f"its interface extraction reads Python only, and {other_total} of "
-            f"{python_files + other_total} tracked source files are not Python ({listed})",
-            "",
-        )
-    if python_files == 0:
-        return ("its interface extraction reads Python only, and no tracked file is Python", "")
-    if other_total:
-        return (
-            "",
-            f"; {other_total} tracked non-Python source file(s) are not summarised ({listed})",
-        )
-    return ("", "")
-
-
 def check_test_root(root: Path) -> _CheckResult:
     """Tracked files that read as tests.
 
@@ -516,25 +392,21 @@ def check_test_root(root: Path) -> _CheckResult:
 
 
 def check_gitignore(root: Path) -> _CheckResult:
-    """`.kstrl/` and the detected language's build output are ignored.
+    """`.kstrl/` is ignored.
 
-    The build output comes first and fails the row (#459): every entry of
-    the ignores of the `kstrl.toolchains` record `ks init` detects,
-    asked of git through `init_cmd.language_ignores_blocker`, the same
-    function the `ks decompose` / `ks factory --spec` preflight refuses
-    on. A greenfield repository gets its language after `ks init` ran, so
-    nothing else adds those entries, and the files the verify commands
-    write then fail every component's first attempt on the scope guard.
+    What a ``[stack]`` check writes is not asked here: kstrl names no
+    build output of its own (#696). The base gates run the checks once on
+    the base branch and refuse on every entry ``git status`` shows after
+    them (``base_gates.refusal_lines``), which `ks doctor --measure`
+    reports.
 
     Asked of git rather than of the .gitignore text, because the
     in-loop scope guard walks `git ls-files --others
     --exclude-standard` and that honours `.git/info/exclude` and the
     global excludes file too.
 
-    `git.ignore_source` asks nearly this question and is deliberately
-    not reused: it returns None for "not ignored" AND for "git could
-    not answer", and telling those two apart is the whole point of
-    the three branches below.
+    The three branches below tell "not ignored" apart from "git could
+    not answer".
 
     Deliberately NOT about `scripts/kstrl/`: that directory is the
     versioned per-project kstrl home (prompt.md, decisions.json,
@@ -543,9 +415,6 @@ def check_gitignore(root: Path) -> _CheckResult:
     (`config.component_harness_files`), and ignoring it would hide
     files kstrl expects to be committed.
     """
-    blocker = language_ignores_blocker(root)
-    if blocker is not None:
-        return (STATUS_FAIL, blocker, LANGUAGE_IGNORES_FIX)
     probe = f"{STATE_DIR_NAME}/runs/probe.json"
     ignore_line = f"{STATE_DIR_NAME}/"
     try:
@@ -655,7 +524,6 @@ CHECKS: tuple[tuple[str, Callable[[Path], _CheckResult]], ...] = (
     ("kstrl_config", check_kstrl_config),
     ("build_manifest", check_build_manifest),
     ("verify_commands", check_verify_commands),
-    ("source_root", check_source_root),
     ("test_root", check_test_root),
     ("gitignore", check_gitignore),
     ("protected_paths", check_protected_paths),

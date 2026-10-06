@@ -9,7 +9,7 @@ Closes #<!-- issue number, if any -->
 ## What was tested vs assumed (H4)
 
 <!-- State what you actually exercised versus what you are assuming.
-     "Ran the full suite" / "drove the factory on examples/uv-python" beats
+     "Ran the full suite" / "drove the factory on a scratch repository" beats
      "should work". -->
 
 ## Checklist

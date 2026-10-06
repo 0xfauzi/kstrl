@@ -151,10 +151,10 @@ def raise_if_defect(exc: BaseException) -> None:
     ``EXPECTED_TOMLLIB_SPELLINGS``, resolves nothing and so cannot miss
     a reader that spells ``tomllib`` at all. ``load_toml_document``
     re-raises ``ConfigError`` naming the path, and the pyproject.toml
-    and ruff.toml readers in ``verify`` and ``kstrl.feedforward`` fall back to
-    a default or to no conventions at all. So a ``RecursionError`` that
-    does reach this function is a cycle in kstrl's own code, and the
-    traceback this re-raise keeps is what locates it. The closure is
+    and ruff.toml readers in ``verify`` fall back to a default. So a
+    ``RecursionError`` that does reach this function is a cycle in
+    kstrl's own code, and the traceback this re-raise keeps is what
+    locates it. The closure is
     over the PARSES, not over the call graph: not every guarded block
     goes through ``load_toml_document``.
 

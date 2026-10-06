@@ -72,13 +72,14 @@ WHY THE POPULATION IS ZERO, AND WHY THAT MATTERS
 their AST walks at offender count zero, and both say why: a guard that
 ships with a suppression list is a guard that rots. This one keys on the
 CALL rather than on the handler, so its population is every tomllib parse
-in the package - two sites as of #696, both compliant:
+in the package - one site as of #696 slice 6, compliant:
 
     kstrl/config_toml.py  except Exception  (#318 round 3)
-    kstrl/feedforward.py  except Exception  (x2, pre-existing; x1, #626)
 
 `kstrl/toolchains.py`'s one parse, python_typecheck_default (moved from
-verify.py by #635), went with the command half #696 retired.
+verify.py by #635), went with the command half #696 retired, and
+`kstrl/feedforward.py`'s three went with the scan's conventions readers
+(#696 slice 6).
 
 WHAT THIS GUARD SEES, STATED HONESTLY
 -------------------------------------
@@ -355,22 +356,16 @@ def _scan_file(source: Path) -> Scan:
 EXPECTED_TOMLLIB_SPELLINGS: dict[str, int] = {
     # the import, the parse, and the TOMLDecodeError clause above it
     "config_toml.py": 3,
-    # the import and three parses (#626 added `_read_toml`)
-    "feedforward.py": 4,
+    # #696 slice 6: feedforward.py's import and three parses went with the
+    # codebase scan's conventions readers.
     # #696: python_typecheck_default (moved from verify.py by #635) is
     # gone with the rest of toolchains.py's command half; kstrl chooses
     # no per-tool command for any tree now, so nothing there parses TOML.
 }
 
-#: Every parse layer 2 resolves, keyed by module and origin. Four calls
-#: in two modules now (#696 retired toolchains.py's), down from the
-#: three the docstring used to name.
-EXPECTED_TOML_PARSES: tuple[str, ...] = (
-    "config_toml.py: tomllib.loads",
-    "feedforward.py: tomllib.loads",
-    "feedforward.py: tomllib.loads",
-    "feedforward.py: tomllib.loads",
-)
+#: Every parse layer 2 resolves, keyed by module and origin. One call in
+#: one module now: #696 retired toolchains.py's, and slice 6 feedforward.py's.
+EXPECTED_TOML_PARSES: tuple[str, ...] = ("config_toml.py: tomllib.loads",)
 
 
 # --------------------------------------------------------------------------
@@ -625,11 +620,12 @@ class TestTheWalkSeesWhatItClaimsTo:
 
         toolchains.py dropped out of this set under #696: its one parse,
         python_typecheck_default, went with the command half the flag
-        day retired.
+        day retired. feedforward.py dropped out under #696 slice 6, with
+        the scan's conventions readers.
         """
         modules = {source.name for source in package_sources() if _scan_file(source).parses}
 
-        assert {"config_toml.py", "feedforward.py"} <= modules, modules
+        assert {"config_toml.py"} <= modules, modules
 
 
 class TestNoTomlReaderEnumeratesItsExceptions:

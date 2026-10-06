@@ -378,9 +378,6 @@ environment = ""
 [codebase_scan]
 enabled = true
 module_map = true
-public_interfaces = true
-dependency_graph = true
-conventions = true
 max_context_tokens = 4000
 
 # Continuous-learning journal.
