@@ -307,8 +307,8 @@ _LAYER_TWO_MISSES = {
 #: itself, and the `hasattr` gate above it.
 EXPECTED_GETPGID_SPELLINGS: dict[str, int] = {_OWNER: 2}
 
-#: What layer 2 cannot decide about ``kstrl/`` FOR THIS TARGET. Seven
-#: rows, and all seven are the hard undecidable: a call through a
+#: What layer 2 cannot decide about ``kstrl/`` FOR THIS TARGET. Five
+#: rows, and all five are the hard undecidable: a call through a
 #: subscript and a call on the result of a call have no last identifier
 #: for the walk to read, so they are a candidate for every target set.
 #:
@@ -331,8 +331,6 @@ EXPECTED_UNDECIDED_SITES: tuple[str, ...] = (
     "fixture_expect.py: COMPARATORS[kind]",
     "fixture_expect.py: VALIDATORS[kind]",
     "fixtures.py: _RUNNERS[fixture.fixture_type]",
-    "gateparse.py: TOOL_PARSERS[chosen]",
-    "gateparse.py: TOOL_PARSERS[name]",
     "tui/app.py: initial_screens_for_kind(kind, observe_only=False)",
     "tui/app.py: initial_screens_for_kind(kind, observe_only=True)",
 )

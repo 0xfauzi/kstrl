@@ -986,7 +986,6 @@ class TestEveryCallerDeclaresTheStateRoot:
             # #632: the fixture comparison tables and the fixture runner table.
             "fixture_expect.py": 2,
             "fixtures.py": 1,
-            "gateparse.py": 2,
             "tui/app.py": 2,
         }, f"the walk could not decide these calls: {list(undecided)}"
         assert callers == {"cli.py": 1, "factory.py": 1, "feature_cmd.py": 3}

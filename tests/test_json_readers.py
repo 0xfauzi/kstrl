@@ -179,8 +179,6 @@ EXPECTED_UNDECIDED_CALLS: tuple[str, ...] = (
     "fixture_expect.py COMPARATORS[kind]",
     "fixture_expect.py VALIDATORS[kind]",
     "fixtures.py _RUNNERS[fixture.fixture_type]",
-    "gateparse.py TOOL_PARSERS[chosen]",
-    "gateparse.py TOOL_PARSERS[name]",
     "intake_github.py ProcessedLedger(root_dir).load",
     "serve.py OpenPrCountStreak.load",
     "serve.py ServeConfig.load",

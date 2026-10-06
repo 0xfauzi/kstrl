@@ -1,9 +1,9 @@
-"""H3a (#303): enrolment guards for the 41 harness-authored fragments (36
-from #303, one from #233, four from #633) that eight multi-branch builders assemble into a
+"""H3a (#303): enrolment guards for the 29 harness-authored fragments (24
+from #303, one from #233, four from #633) that multi-branch builders assemble into a
 role's prompt. Why these fragments cannot be enrolled the way one plain
 prompt is is explained once, in ``tests/helpers/builder_prompts.py``'s
-module docstring. Four
-layers are checked here, none of them by ``tests/test_prompt_versions.py``
+module docstring. Three layers are
+checked here, none of them by ``tests/test_prompt_versions.py``
 alone:
 
 1. ``test_builder_text_is_under_an_enrolled_prompt`` -- the reproduction:
@@ -14,9 +14,6 @@ alone:
 3. ``test_enrolled_fragment_reaches_its_builder`` -- the call-time
    constants: patched to a marker, the marker must reach the rendered
    text, or the constant has gone orphan.
-4. ``test_hint_table_is_the_enrolled_bodies`` -- the constants
-   captured BY VALUE into a container at import, where patching the
-   module attribute (layer 3) is a no-op.
 """
 
 from __future__ import annotations
@@ -28,7 +25,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl import context, factory, init_cmd, knowledge, loop, parsers, review, verify
+from kstrl import context, factory, init_cmd, knowledge, loop, review, verify
 from kstrl.context import LEGACY_ATTEMPT, IterationContext, IterationRecord
 from kstrl.findings import Finding
 from kstrl.knowledge import KnowledgeConfig
@@ -272,38 +269,6 @@ def _factory_guard(tmp: Path) -> str:
     return result.error or "<no error>"
 
 
-#: (constant name, or "" for no match; message; rule_or_test). Covers all
-#: 12 hint constants plus the no-match input. These are the same inputs
-#: the deleted digest rows exercised; routing, not hashing, is what these
-#: prove, since the bodies themselves are already pinned in
-#: BUILDER_SNAPSHOTS.
-_HINT_ROUTES: list[tuple[str, str, str]] = [
-    ("MISSING_ARGUMENT_HINT_PROMPT", "missing 1 required positional argument: 'x'", ""),
-    ("TOO_MANY_ARGUMENTS_HINT_PROMPT", "takes 2 positional arguments but 3 were given", ""),
-    ("OPTIONAL_TYPE_HINT_PROMPT", "Incompatible types in assignment (Optional[str])", ""),
-    ("NO_ATTRIBUTE_HINT_PROMPT", 'has no attribute "frobnicate"', ""),
-    ("IMPORT_FAILED_HINT_PROMPT", "No module named 'widget'", ""),
-    ("UNDEFINED_NAME_HINT_PROMPT", "name 'widget' is not defined", ""),
-    ("ARGUMENT_TYPE_HINT_PROMPT", 'Argument 1 has incompatible type "int"; expected "str"', ""),
-    ("RETURN_TYPE_HINT_PROMPT", "Incompatible return value type (got int)", ""),
-    ("ASSERTION_HINT_PROMPT", "AssertionError", ""),
-    ("UNUSED_IMPORT_HINT_PROMPT", "unused import", "F401"),
-    ("RUFF_UNDEFINED_NAME_HINT_PROMPT", "undefined name", "F821"),
-    ("LINE_TOO_LONG_HINT_PROMPT", "line too long", "E501"),
-    ("", "something nobody has a hint for", ""),
-]
-
-
-@pytest.mark.parametrize("const, message, rule", _HINT_ROUTES)
-def test_fix_hint_routes_to_the_enrolled_constant(const: str, message: str, rule: str) -> None:
-    """generate_fix_hint must return the enrolled constant's live value
-    for a matching input, or "" for no match -- routing, not text, since
-    the text itself is pinned by BUILDER_SNAPSHOTS."""
-    result = parsers.generate_fix_hint(parsers.ParsedFailure(message=message, rule_or_test=rule))
-    expected = getattr(parsers, const) if const else ""
-    assert result == expected
-
-
 def _knowledge(overflow: bool) -> Callable[[Path], str]:
     def render(tmp: Path) -> str:
         root = tmp / ("k-overflow" if overflow else "k-plain")
@@ -417,7 +382,6 @@ NEEDLES: dict[str, str] = {
     "verify.check_scope_unreadable": "The allowedPaths this component must be judged against",
     "verify.check_policy_envelope": "do not treat this as permission to merge.",
     "factory._run_component guard": "Do not widen allowedPaths.",
-    "parsers.generate_fix_hint": "Unused import - remove it or use it.",
     "knowledge.build_knowledge_context": "Treat as ground truth unless contradicted",
     "init_cmd verification section": "kstrl runs the checks of this project's `[stack]`",
 }
@@ -550,53 +514,18 @@ def test_enrolled_fragment_reaches_its_builder(
     )
 
 
-#: The 12 hint constants, in `_HINT_PATTERNS` order -- named here, not
-#: just counted, so `test_hint_table_is_the_enrolled_bodies` can check
-#: order as well as membership.
-_HINT_ORDER: tuple[str, ...] = (
-    "MISSING_ARGUMENT_HINT_PROMPT",
-    "TOO_MANY_ARGUMENTS_HINT_PROMPT",
-    "OPTIONAL_TYPE_HINT_PROMPT",
-    "NO_ATTRIBUTE_HINT_PROMPT",
-    "IMPORT_FAILED_HINT_PROMPT",
-    "UNDEFINED_NAME_HINT_PROMPT",
-    "ARGUMENT_TYPE_HINT_PROMPT",
-    "RETURN_TYPE_HINT_PROMPT",
-    "ASSERTION_HINT_PROMPT",
-    "UNUSED_IMPORT_HINT_PROMPT",
-    "RUFF_UNDEFINED_NAME_HINT_PROMPT",
-    "LINE_TOO_LONG_HINT_PROMPT",
-)
-
-#: The 12 constants captured BY VALUE into a container at import
-#: (patching the module attribute is a no-op for these; see Test 4).
-#: Derived from the table above: a name enters this census only by
-#: appearing in the container-equality assertion below.
-CONTAINER_CAPTURED_NAMES: frozenset[str] = frozenset(_HINT_ORDER)
+#: No constant is captured BY VALUE into a container at import any more:
+#: the twelve fix hints went with the parsers (#696 slice 5) and the
+#: language tables with the language prompts (#696 slice 6), so the only
+#: guard left is the call-time one (Test 3).
+CONTAINER_CAPTURED_NAMES: frozenset[str] = frozenset()
 
 
 def test_every_call_time_fragment_has_a_guard() -> None:
-    """Closed by construction: a 42nd constant with no entry in either
+    """Closed by construction: a 30th constant with no entry in either
     set fails here rather than being silently unguarded."""
     covered = set(CALL_TIME_GUARDS) | CONTAINER_CAPTURED_NAMES
     assert covered == set(BUILDER_PROMPTS), (
         f"enrolled but unguarded: {sorted(set(BUILDER_PROMPTS) - covered)}; "
         f"guarded but not enrolled: {sorted(covered - set(BUILDER_PROMPTS))}"
     )
-
-
-# ---------------------------------------------------------------------------
-# Test 4: orphan guard for the 12 constants captured BY VALUE at import.
-# ---------------------------------------------------------------------------
-
-
-def test_hint_table_is_the_enrolled_bodies() -> None:
-    """The only guard that sees a hint constant go orphan by CONTAINER
-    capture: an entry swapped for an inline literal (a thirteenth hint
-    written by hand, no name spelled, no scenario -- the enrollment walk
-    is blind to it) or reordered relative to `_HINT_ORDER` fails here,
-    where patching the module attribute (Test 3's guard) is a no-op
-    because the value was already copied into the list at import time."""
-    assert [hint for _pattern, hint in parsers._HINT_PATTERNS] == [
-        getattr(parsers, name) for name in _HINT_ORDER
-    ]

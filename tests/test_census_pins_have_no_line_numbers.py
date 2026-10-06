@@ -132,7 +132,7 @@ class TestNoCensusPinsALineNumber:
             '    PINS: tuple[str, ...] = ("kstrl/linear.py:320 urlopen",)\n'
             "def test_y():\n"
             '    ROWS = {"tui/app.py:390": 1}\n'
-            '    SITES += (f"gateparse.py:112 {x}",)\n'
+            '    SITES += (f"fixtures.py:112 {x}",)\n'
             'WRAPPED = ["at [kstrl/signals.py:556]"]\n'
             '_PRIVATE = ("pipeline.py:1 x",)\n'
             "def setup(cls):\n"
@@ -143,7 +143,7 @@ class TestNoCensusPinsALineNumber:
             "EXPECTED cli.py:3164",
             "PINS kstrl/linear.py:320",
             "ROWS tui/app.py:390",
-            "SITES gateparse.py:112",
+            "SITES fixtures.py:112",
             "WRAPPED kstrl/signals.py:556",
             "_PRIVATE pipeline.py:1",
         ]
@@ -158,7 +158,7 @@ class TestTheDisclosedLimits:
     @pytest.mark.parametrize(
         "source",
         [
-            'def test_z():\n    astwalk.Sites((), ("gateparse.py:111 TOOL_PARSERS[chosen]",))\n',
+            'def test_z():\n    astwalk.Sites((), ("fixtures.py:111 _RUNNERS[kind]",))\n',
             'EXPECTED = (("cli.py", 3164),)\n',
             'EXPECTED = ("retry.py:395 kstrl.interaction.PromptRequest",)\n',
         ],

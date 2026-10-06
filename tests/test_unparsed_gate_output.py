@@ -93,6 +93,9 @@ def test_an_unparsed_jest_failure_shows_the_assertion_and_location(tmp_path: Pat
     assert "Expected: 10" in shown
     assert "Received: 11" in shown
     assert "at Object.toBe (src/bulk.test.js:4:27)" in shown
+    # The capture keeps jest's colour escapes (tests/helpers/tool_output.py),
+    # and none of them reaches the engineer.
+    assert "\x1b" not in shown
 
 
 def test_an_unparsed_lint_failure_shows_every_location(tmp_path: Path) -> None:

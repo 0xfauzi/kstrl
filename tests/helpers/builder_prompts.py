@@ -1,4 +1,4 @@
-"""Tables for the 41 instruction-text fragments enrolled under H3: 36 from
+"""Tables for the 29 instruction-text fragments enrolled under H3: 24 from
 #303, one from #233 and four from #633.
 
 These builders assemble optional, branching text (a fragment may or may
@@ -9,9 +9,9 @@ tables below are what `tests/test_prompt_versions.py` merges in.
 
 They live here rather than in `tests/test_prompt_versions.py` because
 that file is close to the repo's 800-line file-length ratchet and these
-41 snapshot rows do not fit inside the remaining headroom.
+29 snapshot rows do not fit inside the remaining headroom.
 
-`_BUILDERS` is the single source: eleven rows of (module, the name of that
+`_BUILDERS` is the single source: ten rows of (module, the name of that
 module's shared `*_PROMPT_VERSION` constant, the fragment names that
 module's builder assembles). `BUILDER_PROMPTS`, `BUILDER_VERSIONS` and
 `BUILDER_RENDER_EXEMPT` are all derived from it, so a fragment enters the
@@ -19,7 +19,7 @@ census by appearing in exactly one row here.
 
 BUILDER_PROMPTS: name -> the enrolled body.
 BUILDER_VERSIONS: name -> the *_PROMPT_VERSION of the BUILDER that
-    delivers it (11 distinct values for 41 names). The version's unit is
+    delivers it (10 distinct values for 29 names). The version's unit is
     the text one builder delivers to a role, which is what a role
     receives; `test_prompt_versions._drift_message` names
     `<NAME>_VERSION` in its instructions, and for these fragments the
@@ -36,18 +36,17 @@ BUILDER_RENDER_EXEMPT: every name, because each fragment is one branch
     `test_prompt_versions.py::test_renderer_renders_the_enrolled_body`
     cannot hold it. Their orphan guards are
     `tests/test_builder_prompts.py::test_enrolled_fragment_reaches_its_builder`
-    (the 32 call-time constants), the two container-equality tests (the
-    26 constants captured by value at import), and the delivered-output
-    digests in the same file.
+    (the 29 call-time constants) and the delivered-output digests in the
+    same file.
 """
 
 from __future__ import annotations
 
 from types import ModuleType
 
-from kstrl import context, factory, init_cmd, knowledge, loop, parsers, review, verify
+from kstrl import context, factory, init_cmd, knowledge, loop, review, verify
 
-#: Eleven rows: (module, the name of that module's shared version constant,
+#: Ten rows: (module, the name of that module's shared version constant,
 #: the fragment names it assembles). This is the one place a fragment is
 #: declared enrolled; BUILDER_PROMPTS, BUILDER_VERSIONS and
 #: BUILDER_RENDER_EXEMPT are all read off it below.
@@ -83,24 +82,6 @@ _BUILDERS: tuple[tuple[ModuleType, str, tuple[str, ...]], ...] = (
         knowledge,
         "KNOWLEDGE_CONTEXT_PROMPT_VERSION",
         ("KNOWLEDGE_CONTEXT_PROMPT", "KNOWLEDGE_OVERFLOW_PROMPT"),
-    ),
-    (
-        parsers,
-        "FIX_HINT_PROMPT_VERSION",
-        (
-            "MISSING_ARGUMENT_HINT_PROMPT",
-            "TOO_MANY_ARGUMENTS_HINT_PROMPT",
-            "OPTIONAL_TYPE_HINT_PROMPT",
-            "NO_ATTRIBUTE_HINT_PROMPT",
-            "IMPORT_FAILED_HINT_PROMPT",
-            "UNDEFINED_NAME_HINT_PROMPT",
-            "ARGUMENT_TYPE_HINT_PROMPT",
-            "RETURN_TYPE_HINT_PROMPT",
-            "ASSERTION_HINT_PROMPT",
-            "UNUSED_IMPORT_HINT_PROMPT",
-            "RUFF_UNDEFINED_NAME_HINT_PROMPT",
-            "LINE_TOO_LONG_HINT_PROMPT",
-        ),
     ),
     (
         review,
@@ -163,14 +144,6 @@ BUILDER_VERSIONS: dict[str, str] = {
 BUILDER_RENDER_EXEMPT: frozenset[str] = frozenset(BUILDER_PROMPTS)
 
 BUILDER_SNAPSHOTS: dict[str, tuple[str, str]] = {
-    "ARGUMENT_TYPE_HINT_PROMPT": (
-        "69e9948a8290e85aa0a5424fe81f2a6718e6c3d68390ee2c8f5d3a9f72fcb71a",
-        "1.0.0",
-    ),
-    "ASSERTION_HINT_PROMPT": (
-        "af4d89529f0d80814e3e842f1acc6d4d80fb8638c2a06e7deb7871ba322a8a7a",
-        "1.0.0",
-    ),
     "CLAUDE_MD_LEARNINGS_PROMPT": (
         "769eb292886f035a073fdabefdb6e36a9e364b4d92e8003c81c2ad47095aa647",
         "2.0.0",
@@ -201,10 +174,6 @@ BUILDER_SNAPSHOTS: dict[str, tuple[str, str]] = {
     ),
     "DIFF_SCOPE_VIOLATIONS_PROMPT": (
         "66e8d8f67d35d7fe5847ad242a0b1c6284b52ed71497ccbfb027d5a14530969c",
-        "1.0.0",
-    ),
-    "IMPORT_FAILED_HINT_PROMPT": (
-        "2cbeb381bc4e8bb186b9a0c5dbf93e1e8142d2b808494c1c01fbaab1367c4378",
         "1.0.0",
     ),
     "IN_LOOP_SCOPE_VIOLATION_PROMPT": (
@@ -251,22 +220,6 @@ BUILDER_SNAPSHOTS: dict[str, tuple[str, str]] = {
         "f6f5329dbe821f18fce2ae140c0c798e48fe35f0e34275517e67e995017b337b",
         "1.0.0",
     ),
-    "LINE_TOO_LONG_HINT_PROMPT": (
-        "bf88f1d0ba62922386cc9b9ec29796a0b7f708972abddbfee9de99f4a9829fad",
-        "1.0.0",
-    ),
-    "MISSING_ARGUMENT_HINT_PROMPT": (
-        "ea60b982ca8be700e75ff9215e228be605a85997690aae57e29ee5157e9b6db8",
-        "1.0.0",
-    ),
-    "NO_ATTRIBUTE_HINT_PROMPT": (
-        "dead66db49b07e77ea2fc73ddfb3410c04743be63d4f6638aa0e48ec3e8387e8",
-        "1.0.0",
-    ),
-    "OPTIONAL_TYPE_HINT_PROMPT": (
-        "bccdfd1d26e9e77a717d172d2bc9bb4131a5b2436eebe65f17c4d47313dad74a",
-        "1.0.0",
-    ),
     "POLICY_DIFF_UNREADABLE_PROMPT": (
         "f628c8378f20bb097023e0a39dc113f268f8e75d7b06755b58f8d9cc97a82677",
         "1.0.0",
@@ -277,14 +230,6 @@ BUILDER_SNAPSHOTS: dict[str, tuple[str, str]] = {
     ),
     "PRD_TAMPER_GATES_PROMPT": (
         "7527567703aaf7e585806d2c26ff735bd3416e7f4f55d5d08b034edd1afc6ae3",
-        "1.0.0",
-    ),
-    "RETURN_TYPE_HINT_PROMPT": (
-        "c150120da7ecae7e90bdf193a3398d16dfcc1a68fd166bfd969f84f020b446e4",
-        "1.0.0",
-    ),
-    "RUFF_UNDEFINED_NAME_HINT_PROMPT": (
-        "11ffa9b6c490e54bc5e5b24577dc43a0c9ac1e3d149c3170f5ad5d6f90edc378",
         "1.0.0",
     ),
     "SCOPE_UNREADABLE_EXPLANATION_PROMPT": (
@@ -313,18 +258,6 @@ BUILDER_SNAPSHOTS: dict[str, tuple[str, str]] = {
     ),
     "CLAIM_REVERTED_PROMPT": (
         "e8950e5273a446cc2c6fc3445300c620e97e81410ef4dd7cc9fae8fdf3e0be40",
-        "1.0.0",
-    ),
-    "TOO_MANY_ARGUMENTS_HINT_PROMPT": (
-        "9b9adf45ea4a21579c5e1b058c3d3d4c8d1fd2dd9420d624743be04cee464b26",
-        "1.0.0",
-    ),
-    "UNDEFINED_NAME_HINT_PROMPT": (
-        "d8d7a74a81cea158c61290d19970546759bc6dac2256301f80b6c591a36cd3d9",
-        "1.0.0",
-    ),
-    "UNUSED_IMPORT_HINT_PROMPT": (
-        "a87c684a0de34bcc8f356b067b10a1497c02710167b120917624feb90eac4871",
         "1.0.0",
     ),
 }

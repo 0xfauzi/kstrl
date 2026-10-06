@@ -25,7 +25,6 @@ import pytest
 
 from kstrl.events import JsonlSink
 from kstrl.factory import ComponentResult
-from kstrl.gateparse import GATE_LINT, GATE_TEST, GATE_TYPECHECK
 from kstrl.manifest import Component
 from kstrl.pipeline import ComponentPipeline, VerifyPhaseResult
 from kstrl.ui.plain import PlainUI
@@ -41,10 +40,10 @@ from tests.helpers.verify_phase import _pipeline, component
 FAILING_TEST_NAME = "test_kstrl462_token_roundtrip_is_broken"
 PYTHON = shlex.quote(sys.executable)
 
-#: #696 flag day, rule 5: the row (and so the log file and the narration
-#: that names it) is ``stack:<name>``, not the bare gateparse constant
-#: ``GATE_TEST``/``GATE_TYPECHECK``/``GATE_LINT`` (those remain the parser's
-#: own names - kstrl.gateparse is untouched by the flag day).
+#: The three gates this file parametrizes over. #696 flag day, rule 5: the
+#: row (and so the log file and the narration that names it) is
+#: ``stack:<name>``; these keys are this file's own labels for the gates.
+GATE_TEST, GATE_TYPECHECK, GATE_LINT = "test_suite", "typecheck", "linter"
 _ROW = {GATE_TEST: "stack:tests", GATE_TYPECHECK: "stack:typecheck", GATE_LINT: "stack:lint"}
 
 

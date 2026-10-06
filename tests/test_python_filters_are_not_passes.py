@@ -136,12 +136,6 @@ EXPECTED_SELECTOR_SITES: dict[str, tuple[int, str]] = {
         1,
         "the location label of a deps_allow_new violation; selects nothing",
     ),
-    "suite_inventory.py: <module>": (
-        1,
-        "TEST_FILE_PATTERNS, the files pytest and vitest collect by default (#620); a "
-        "changed test file no pattern claims has no runner, so unrun_test_files lists it "
-        "as not_measured and the tests_ran row never counts it as run",
-    ),
     "verify.py: _changed_non_test_python": (
         1,
         "empty makes both callers (mutation and dead-code scan) return NotMeasured no_target",
@@ -242,7 +236,6 @@ EXPECTED_TOOL_LITERALS: dict[str, tuple[int, str]] = {
     # `uv run` default warning for an unset [verify] key).
     "evolution.py": (4, "_classify_check's keywords for Phase 1 check names"),
     "feature_verify.py": (1, "message naming the dead_code_ruff check"),
-    "gateparse.py": (6, "parser registry keys for pytest, mypy and ruff output"),
     # #696: down from 4. kstrl_toml_for, which seeded DEFAULT_KSTRL_TOML's
     # commented-out [verify] command lines from the detected toolchain, is
     # gone with [verify] itself. #696 slice 6: down from 3, with
@@ -251,8 +244,6 @@ EXPECTED_TOOL_LITERALS: dict[str, tuple[int, str]] = {
         1,
         "DEFAULT_KSTRL_TOML's commented dead_code_command default, which slice 8 removes",
     ),
-    "parsers.py": (3, "parser names for pytest, mypy and ruff output"),
-    "suite_inventory.py": (2, "the pytest junit report the test gate asks for (#620)"),
     "verify.py": (
         41,
         "the Python-only checks (mutation, dead code, patch coverage) and their "

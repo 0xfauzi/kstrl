@@ -99,7 +99,6 @@ EXPECTED_CONTEXT_SOURCES: dict[str, tuple[str | None, ...]] = {
 EXPECTED_UNDECIDED: dict[str, int] = {
     "fixture_expect.py": 2,
     "fixtures.py": 1,
-    "gateparse.py": 2,
     "tui/app.py": 2,
 }
 

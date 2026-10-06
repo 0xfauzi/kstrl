@@ -1,11 +1,10 @@
 """#233 Part B: a convergence check across attempts.
 
 Driven through the real ``ComponentPipeline.process_result``: the Phase 1
-hook returns a failing verification whose linter check parsed N failures,
-the real Phase 1 turns that into a ``PhaseFailure``, and the real
-``_route_failure`` / ``retry_or_fail`` decide. What is asserted is the
-component's recorded outcome, its finding stream and the evolution journal
-row on disk.
+hook returns a failing verification with N failing checks, the real Phase 1
+turns that into a ``PhaseFailure``, and the real ``_route_failure`` /
+``retry_or_fail`` decide. What is asserted is the component's recorded
+outcome, its finding stream and the evolution journal row on disk.
 """
 
 from __future__ import annotations
@@ -19,7 +18,6 @@ import pytest
 from kstrl.evolution import FINDINGS_SUPERSEDED_EVENT
 from kstrl.factory import ComponentResult, FactoryConfig
 from kstrl.manifest import Component, ComponentStatus
-from kstrl.parsers import ParsedFailure, ParsedOutput
 from kstrl.pipeline import Transition
 from kstrl.review import ReviewConcern, ReviewResult
 from kstrl.security import SecurityConfig, SecurityFinding, SecurityResult
@@ -27,22 +25,20 @@ from kstrl.verify import CheckResult, VerificationResult
 from tests.test_pipeline import _factory_config, _make_pipeline, _selection
 
 
+def _names(count: int) -> str:
+    """The ``failed_check`` of an attempt that failed :func:`_failing` (count)."""
+    return ", ".join(f"stack:lint{n}" for n in range(count))
+
+
 def _failing(count: int) -> VerificationResult:
-    """Phase 1 failing on the linter with ``count`` parsed failures."""
+    """Phase 1 failing ``count`` checks. Since #696 decision 5 a failing
+    check counts one however much it printed, so the count is the number
+    of failing checks."""
     return VerificationResult(
         passed=False,
         checks=[
-            CheckResult(
-                name="linter",
-                passed=False,
-                message="Linter failed (exit code 1)",
-                parsed=ParsedOutput(
-                    tool="ruff",
-                    failures=[
-                        ParsedFailure(file="a.py", line=n, code="E501") for n in range(count)
-                    ],
-                ),
-            )
+            CheckResult(name=f"stack:lint{n}", passed=False, message="`lint` exited 1")
+            for n in range(count)
         ],
     )
 
@@ -102,7 +98,7 @@ def test_one_decrease_resets_the_streak(tmp_path: Path) -> None:
     transitions, comp = _drive(tmp_path, [3, 2, 2], convergence_attempts=2)
 
     assert transitions == [Transition.RETRYING] * 3
-    assert comp.failed_check == "linter"
+    assert comp.failed_check == _names(2)
     assert not [f for f in comp.findings if f.category == "divergence"]
 
 
@@ -155,7 +151,7 @@ def test_an_exhausted_retry_budget_fails_on_the_gate_not_on_convergence(
     transitions, comp = _drive(tmp_path, [2, 2, 2], max_retries=2, convergence_attempts=2)
 
     assert transitions == [Transition.RETRYING, Transition.RETRYING, Transition.FAILED]
-    assert comp.failed_check == "linter"
+    assert comp.failed_check == _names(2)
     assert not [f for f in comp.findings if f.category == "divergence"]
 
 
@@ -386,13 +382,13 @@ def test_a_contract_reset_after_a_passing_attempt_starts_the_run_again(tmp_path:
         Transition.COMPLETED,
         Transition.RETRYING,
     ]
-    assert comp.failed_check == "linter"
+    assert comp.failed_check == _names(2)
 
 
 def test_a_passing_check_adds_nothing_to_the_count(tmp_path: Path) -> None:
     """Phase 1 always reports passing checks beside the failing one. Only a
-    failing check's failures count: 2 lint failures next to a passing test
-    suite and a passing typecheck journal 2, not 4."""
+    failing check counts: 2 failing checks next to a passing test suite
+    and a passing typecheck journal 2, not 4."""
     passing = [
         CheckResult(name="test_suite", passed=True, message="Tests passed"),
         CheckResult(name="typecheck", passed=True, message="Typecheck passed"),

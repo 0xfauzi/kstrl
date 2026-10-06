@@ -492,10 +492,8 @@ class TestTheReadBytesExclusion:
         # #700 slice 3: `_ready` reads the `up` log's bytes back as the
         # stage's tail, outside any try (the signals.py shape).
         "replay.py": 1,
-        "report_formats.py": 1,  # #629: the baseline.py shape, I/O outside the guard
         "safemode.py": 1,
         "signals.py": 2,
-        "suite_inventory.py": 1,  # #620: I/O outside the parse guard
         # toolchains.py's pyproject.read_bytes() (#635) is gone: #696
         # flag day slice 4 removed the command half of toolchain
         # detection, kstrl.toolchains's own docstring says so, and that
