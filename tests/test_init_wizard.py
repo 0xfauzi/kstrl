@@ -9,7 +9,9 @@ from typing import cast
 from unittest.mock import patch
 
 import pytest
+from click.testing import CliRunner
 
+from kstrl.cli import cli
 from kstrl.init_cmd import DEFAULT_KSTRL_TOML
 from kstrl.init_wizard import (
     apply_agent_settings,
@@ -309,6 +311,33 @@ class TestWizardScreen:
         write_stack(tmp_path, _CHECKS)
         with (tmp_path / "kstrl.toml").open("a", encoding="utf-8") as handle:
             handle.write('\n[verify]\ntest_command = "make test"\n')
+        app, _ = await self._run_wizard(tmp_path)
+        try:
+            form = await mounted(self._pilot, lambda: app.screen, "#wizard-form")
+            await settled(
+                self._pilot,
+                lambda: form.region.height,
+                what="the wizard form to be laid out",
+            )
+            rendered = self._rendered(app)
+            assert "kstrl.toml is unreadable" in rendered
+            assert "make test-all" not in rendered
+        finally:
+            await self._pilot_ctx.__aexit__(None, None, None)
+
+    async def test_a_malformed_factory_section_shows_the_unreadable_row(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """#696 slice 4: the fault is in [factory], a section neither the
+        [verify] read nor the retired-name check looks at. `ks status`
+        refuses the file, so the repair screen must say unreadable too."""
+        write_stack(tmp_path, _CHECKS)
+        with (tmp_path / "kstrl.toml").open("a", encoding="utf-8") as handle:
+            handle.write('\n[factory]\nmax_parallel = "abc"\n')
+        refused = CliRunner().invoke(cli, ["status", "--no-tui", "--root", str(tmp_path)])
+        assert refused.exit_code == 2, refused.output
+        assert "max_parallel" in refused.output, refused.output
         app, _ = await self._run_wizard(tmp_path)
         try:
             form = await mounted(self._pilot, lambda: app.screen, "#wizard-form")
