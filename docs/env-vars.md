@@ -601,7 +601,7 @@ The global playbook opt-out (#217). An unreadable `kstrl.toml` makes `contribute
 |---|---|---|
 | `KSTRL_RUN_CALIBRATION` | unset | Set to `1` to enable real-LLM calibration tests under `tests/test_calibration.py` |
 | `KSTRL_CALIBRATION_MODEL` | `haiku` | Fast model used by the calibration suite. Changing it triggers the R5.5 model-drift warning until a fresh baseline is captured (H2-extended) |
-| `KSTRL_CALIBRATION_RUNS` | `3` | Runs per fixture (R5.1). The suite gates on majority-of-runs consistency; use `1` for a cheap smoke, keep `3` for baseline capture |
+| `KSTRL_CALIBRATION_RUNS` | `3` | Runs per fixture (R5.1). The suite gates on majority-of-runs consistency; use `1` for a cheap smoke, keep `3` for baseline capture. The runs of one fixture operate at the same time, so this is also the number of agent calls in progress at one time (#750) |
 | `KSTRL_CALIBRATION_REVIEWER_AGENT_TYPE` | unset | Agent type for the reviewer and security calibration agents (R7.1), so the suite can measure a reviewer from the other model family; the architect keeps the base calibration agent |
 | `KSTRL_CALIBRATION_REVIEWER_MODEL` | unset | Model for those two agents, set with the agent type above |
 

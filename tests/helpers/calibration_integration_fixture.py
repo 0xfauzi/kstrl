@@ -26,6 +26,7 @@ import io
 import json
 import shutil
 import subprocess
+import tempfile
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -207,13 +208,12 @@ def run_slot(fixture: IntegrationFixture, tmp_path: Path) -> Path:
     """A fresh directory for ONE run of one fixture.
 
     The N runs of a consistency gate share one ``tmp_path``; a shared
-    repository would hand run 2 whatever run 1 left behind. The slot number
-    comes off the filesystem, so nothing here carries process state (the
-    #401 ``arm_cwd`` rule)."""
-    existing = len([p for p in tmp_path.glob(f"{fixture.fixture_id}-*") if p.is_dir()])
-    slot = tmp_path / f"{fixture.fixture_id}-{existing}"
-    slot.mkdir(parents=True)
-    return slot
+    repository would hand run 2 whatever run 1 left behind. ``mkdtemp`` never
+    gives two calls the same directory, also when the runs operate at the
+    same time (#750), and nothing here carries process state (the #401
+    ``arm_cwd`` rule)."""
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    return Path(tempfile.mkdtemp(prefix=f"{fixture.fixture_id}-", dir=tmp_path))
 
 
 class BoundedAgent:
