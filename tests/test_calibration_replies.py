@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import threading
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
@@ -102,7 +103,56 @@ def test_a_run_whose_reply_was_not_kept_leaves_a_refused_capture(tmp_path: Path,
         calibration_baseline.load_baseline(saved)
 
 
+def test_the_runs_of_one_fixture_overlap_and_are_recorded_in_run_order(tmp_path: Path) -> None:
+    """#750. Every run of a fixture is in progress at the same time, so the
+    wall time of a fixture is less than the sum of its run times. The
+    baseline still holds each fixture's runs in run order, with the same
+    values a capture that operated the runs one at a time records."""
+    saved = harness.capture(tmp_path, "complete")
+    spans = json.loads((saved.parent.parent / "spans.json").read_text(encoding="utf-8"))
+    assert sorted(spans) == ["fx-a", "fx-b", "fx-c", "fx-d"]
+    for fixture_id, runs in spans.items():
+        assert len(runs) == 2, (fixture_id, runs)
+        wall = max(end for _start, end in runs) - min(start for start, _end in runs)
+        total = sum(end - start for start, end in runs)
+        assert wall < total, f"{fixture_id}: wall {wall:.3f}s, sum of runs {total:.3f}s"
+    baseline = json.loads(saved.read_text(encoding="utf-8"))
+    for fixture in baseline["fixtures"]:
+        assert fixture["runs"] == [
+            {
+                "caught": True,
+                "error": False,
+                "detail": f"fake result for {fixture['fixture_id']} run {n}",
+            }
+            for n in (1, 2)
+        ], fixture
+
+
+def test_one_unavailable_run_is_recorded_as_an_error_in_its_place(tmp_path: Path) -> None:
+    """#750. fx-a's second run raises ``_AgentUnavailable`` while its first
+    run is still in progress. The second run is recorded as an infrastructure
+    error at ``runs[1]``, with its reply kept, it leaves the consistency
+    denominator, and the capture completes and loads."""
+    saved = harness.capture(tmp_path, "one_unavailable")
+    baseline = json.loads(saved.read_text(encoding="utf-8"))
+    fx_a = next(f for f in baseline["fixtures"] if f["fixture_id"] == "fx-a")
+    assert fx_a["runs"] == [
+        {"caught": True, "error": False, "detail": "fake result for fx-a run 1"},
+        {"caught": False, "error": True, "detail": "agent error: stub agent unavailable"},
+    ]
+    assert (fx_a["runs_total"], fx_a["runs_errored"], fx_a["runs_detected"]) == (2, 1, 1)
+    assert fx_a["consistency"] == 1.0
+    kept = _kept(replies_dir(saved.parent, baseline["timestamp"]))
+    assert kept[("security", "fx-a", 2)]["error"] is True
+    assert baseline["run_complete"] is True
+    calibration_baseline.load_baseline(saved)
+
+
 # --------------------------------------------------------------- every paid arm
+
+
+#: The runs of one fixture call their stub agents at the same time (#750).
+_STUB_LOCK = threading.Lock()
 
 
 class _StubAgent:
@@ -117,8 +167,9 @@ class _StubAgent:
     def run(
         self, prompt: str, cwd: Path | None = None, timeout: float | None = None
     ) -> Iterator[str]:
-        self.final_message = f"stub reply {len(self._made) + 1}"
-        self._made.append(self.final_message)
+        with _STUB_LOCK:
+            self.final_message = f"stub reply {len(self._made) + 1}"
+            self._made.append(self.final_message)
         yield self.final_message
 
 
@@ -256,8 +307,60 @@ def test_every_paid_arm_keeps_the_reply_it_scored(
     asks = 2 if role in ("integration", "integration_clean") else _designer_asks(role)
     assert [len(kept[key]["calls"]) for key in sorted(kept)] == [asks, asks], kept
     assert len(stubbed) == 2 * asks, stubbed
+    # The two runs operate at the same time (#750), so the order of the calls
+    # is not the order of the runs: each reply is kept once, in some run.
     finals = [call["final_message"] for key in sorted(kept) for call in kept[key]["calls"]]
-    assert finals == stubbed
+    assert sorted(finals) == sorted(stubbed)
+
+
+#: The paid arms that give each run a directory of its own (``arm_cwd`` and
+#: ``run_slot``), and how many runs of them to start at one time (#750).
+SLOT_ARMS = (
+    "test_architect_reuses_what_the_repository_already_has",
+    "test_integration_review_detects_planted_defect",
+)
+SLOT_RUNS = 8
+
+
+class _CwdStub(_StubAgent):
+    """A ``_StubAgent`` that also appends the directory of each call to ``cwds``."""
+
+    def __init__(self, made: list[str], cwds: list[Path | None]) -> None:
+        super().__init__(made)
+        self._cwds = cwds
+
+    def run(
+        self, prompt: str, cwd: Path | None = None, timeout: float | None = None
+    ) -> Iterator[str]:
+        with _STUB_LOCK:
+            self._cwds.append(cwd)
+        yield from super().run(prompt, cwd=cwd, timeout=timeout)
+
+
+@pytest.mark.parametrize("name", SLOT_ARMS)
+def test_runs_that_start_at_one_time_each_get_their_own_directory(
+    name: str, stubbed: list[str], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """#750. Eight runs of the arm start at the same time. Each run gets a
+    directory that no other run uses, so no run reads what another run left,
+    and no run stops because a directory another run made is already there."""
+    cwds: list[Path | None] = []
+    monkeypatch.setattr(kstrl.agents, "get_agent", lambda **_kwargs: _CwdStub(stubbed, cwds))
+    monkeypatch.setattr(tc, "CALIBRATION_RUNS", SLOT_RUNS)
+    build_args, gated = PAID_ARMS[name]
+    report = tc._DetectionReport()
+    work = tmp_path / "work"
+    work.mkdir()
+    try:
+        getattr(tc, name)(*build_args(), work, report)
+    except AssertionError as exc:
+        if not gated or "missed planted issue" not in str(exc):
+            raise
+
+    records = report.records + report.fp_records
+    assert [r["error"] for r in records] == [False] * SLOT_RUNS, records
+    assert len(cwds) == len(stubbed), cwds
+    assert len(set(cwds)) == SLOT_RUNS, sorted(map(str, cwds))
 
 
 def _designer_asks(role: str) -> int:

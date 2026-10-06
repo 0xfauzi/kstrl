@@ -21,23 +21,35 @@ A run that made no recorded call raises instead of writing an empty file, so
 the fixture never reaches ``complete_fixture`` and the baseline is saved as a
 partial capture that ``load_baseline`` refuses by name. A failed write does
 the same, because the reply is written before the run is recorded.
+
+The runs of one fixture operate at the same time, each in its own thread
+(#750), so the calls are kept for each thread: a run takes only the calls
+that its own thread made.
 """
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
 from kstrl.atomicio import atomic_write_json
 
-#: The agent calls made since the harness last took them, in call order.
-CALLS: list[dict[str, Any]] = []
+
+class _ThreadCalls(threading.local):
+    """The agent calls this thread made since it last took them, in call order."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+
+_THREAD = _ThreadCalls()
 
 
 def keep_call(streamed: Sequence[str], final_message: object) -> None:
-    """Record one finished (or abandoned) agent call."""
-    CALLS.append(
+    """Record one finished (or abandoned) agent call of this thread."""
+    _THREAD.calls.append(
         {
             "streamed": list(streamed),
             "final_message": None if final_message is None else str(final_message),
@@ -46,9 +58,9 @@ def keep_call(streamed: Sequence[str], final_message: object) -> None:
 
 
 def take_calls() -> list[dict[str, Any]]:
-    """Every call recorded since the last take, and forget them."""
-    taken = list(CALLS)
-    CALLS.clear()
+    """Every call this thread recorded since its last take, and forget them."""
+    taken = _THREAD.calls
+    _THREAD.calls = []
     return taken
 
 
