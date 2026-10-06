@@ -42,6 +42,7 @@ from kstrl.timeout import TimeoutConfig
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
 from tests.helpers import gitrepo
+from tests.helpers.stack_confirmation import in_process_stack
 
 # Fails (with output) whenever bad_marker.txt exists in the tested tree.
 MARKER_TEST_CMD = "if [ -f bad_marker.txt ]; then echo INTEGRATION BROKEN; exit 1; fi"
@@ -184,9 +185,10 @@ def _marker_run_configs(root: Path) -> tuple[FactoryConfig, KstrlConfig]:
             max_retries=0,
             retry_delay=0,
             review_mode="skip",
+            project_stack=in_process_stack({"tests": MARKER_TEST_CMD}),
             contract_config=ContractConfig(
                 mode=ContractMode.TIER.value,
-                test_command=MARKER_TEST_CMD,
+                project_stack=in_process_stack({"tests": MARKER_TEST_CMD}),
                 timeout=60,
             ),
         ),
@@ -232,7 +234,7 @@ class TestConflictedTierLeavesCheckoutUntouched:
         )
         config = ContractConfig(
             mode=ContractMode.TIER.value,
-            test_command="true",
+            project_stack=in_process_stack({"tests": "true"}),
             timeout=60,
         )
         ui = PlainUI(no_color=True)
@@ -277,7 +279,7 @@ class TestConflictedTierLeavesCheckoutUntouched:
         manifest = _make_manifest([_component("a", "kstrl/a")])
         config = ContractConfig(
             mode=ContractMode.TIER.value,
-            test_command=MARKER_TEST_CMD,
+            project_stack=in_process_stack({"tests": MARKER_TEST_CMD}),
             timeout=60,
         )
         before = _snapshot_working_tree(root)
@@ -426,16 +428,17 @@ class TestBreakerRetryReentersScheduling:
             retry_delay=0,
             review_mode="skip",
             progress_log_path=log_path,
+            project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
             verify_config=VerifyConfig(
-                test_command="true",
-                typecheck_command="true",
-                lint_command="true",
+                project_stack=in_process_stack(
+                    {"tests": "true", "typecheck": "true", "lint": "true"}
+                ),
                 check_diff_scope=False,
                 check_bad_patterns=False,
             ),
             contract_config=ContractConfig(
                 mode=ContractMode.TIER.value,
-                test_command=MARKER_TEST_CMD,
+                project_stack=in_process_stack({"tests": MARKER_TEST_CMD}),
                 timeout=120,
             ),
             timeout_config=TimeoutConfig(
@@ -512,7 +515,7 @@ class TestMergedModeNoBlame:
         )
         config = ContractConfig(
             mode=ContractMode.TIER.value,
-            test_command=MARKER_TEST_CMD,
+            project_stack=in_process_stack({"tests": MARKER_TEST_CMD}),
             timeout=60,
         )
         before = _snapshot_working_tree(root)
@@ -545,7 +548,7 @@ class TestMergedModeNoBlame:
         manifest = _make_manifest([_component("a", "kstrl/a")])
         config = ContractConfig(
             mode=ContractMode.TIER.value,
-            test_command=MARKER_TEST_CMD,
+            project_stack=in_process_stack({"tests": MARKER_TEST_CMD}),
             timeout=60,
         )
 
@@ -618,9 +621,10 @@ class TestCleanupFailsLoudly:
             max_retries=0,
             retry_delay=0,
             review_mode="skip",
+            project_stack=in_process_stack({"tests": "true"}),
             contract_config=ContractConfig(
                 mode=ContractMode.TIER.value,
-                test_command="true",
+                project_stack=in_process_stack({"tests": "true"}),
             ),
         )
         base = KstrlConfig(
@@ -660,7 +664,9 @@ class TestZeroContractTimeoutBisects:
         _commit_on_branch(root, "kstrl/b", {"bad_marker.txt": "boom\n"})
         manifest = _make_manifest([_component("a", "kstrl/a"), _component("b", "kstrl/b")])
         config = ContractConfig(
-            mode=ContractMode.TIER.value, test_command=MARKER_TEST_CMD, timeout=0.0
+            mode=ContractMode.TIER.value,
+            project_stack=in_process_stack({"tests": MARKER_TEST_CMD}),
+            timeout=0.0,
         )
         result = run_tier_check(manifest, ["a", "b"], [], root, config, PlainUI(no_color=True), 0)
         assert result.passed is False

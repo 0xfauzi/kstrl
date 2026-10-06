@@ -77,14 +77,14 @@ not in that list cannot enter it, whatever a later run does. They surface as
 | `bad_patterns` | no files in the diff | `new` |
 | `diff_scope` | No scope constraints (allowed_paths not set) | `new` |
 
-The timeout is the other usual cause. kstrl's own test suite takes about 327
-seconds and the default verify timeout is 300, so its own baseline is generated
-with `KSTRL_TIMEOUT_VERIFY=1800`, pinned as `BASELINE_TIMEOUT_SECONDS` in
-`tests/test_check_committed_baseline.py`; your workflow must set the same
-value. A baseline and a comparison measured at different timeouts are not a
-comparison, and that is enforced rather than asked for: the baseline records
-a digest of the three verify commands and the timeout, and
-`--compare-baseline` refuses a mismatch with exit 2, naming both digests.
+The timeout is the other usual cause: your workflow must set the same
+`KSTRL_TIMEOUT_VERIFY` the baseline was written with. A baseline and a
+comparison measured at different timeouts are not a comparison, and that is
+enforced rather than asked for: the baseline records a digest of the
+confirmed `[stack]` and the timeout, and `--compare-baseline` refuses a
+mismatch with exit 2, naming both digests. A baseline written before the
+`[stack]` flag day (#696) recorded the three verify commands instead, so it
+never matches: write a new one.
 
 ## Comparing a branch
 
@@ -122,36 +122,21 @@ signature measured something in this run; otherwise the signature lands in
 `unmeasured` and the report says the check did not run. Without that rule,
 uninstalling a linter reads as fixing every one of its findings.
 
-What a gate says it measured is decided by its PARSER, not by its exit status.
-`measured=True` means a parser for that gate saw its own tool reporting a
-failure: pytest's summary line with a failure count, a FAILED or ERROR line,
-mypy's `Found N errors in M files (checked ...)`, a ruff or eslint diagnostic,
-a tsc `TS` code. Anything else is `measured=False` - an empty stream, a
-traceback, a launcher's complaint.
+What a gate says it measured is decided by its exit status alone (#696
+decision 4). Every command gate is a check of the confirmed `[stack]`: exit 0
+passes and measured; any other completed exit is a measured failure; 126,
+127, a timeout and output that is not utf-8 fail with `measured=False`.
 
-Measured, running `check_linter` against a tool that is not installed, in both
-command shapes:
+Measured, running a `[stack]` check against a tool that is not installed, in
+both command shapes:
 
-    uv run <missing> check .   -> exit 2,   measured=False
+    uv run <missing> check .   -> exit 2,   measured=True
     <missing> check .          -> exit 127, measured=False
 
-and with a baseline holding `linter:E501` 12 and `linter:F401` 3, both compare
-to `fixed={}`, `unmeasured={'linter:E501': 12, 'linter:F401': 3}` and
-`stopped_measuring={'linter': ...}`.
-
-Both shapes, because the exit status cannot tell them apart from a real
-finding. The first version of this feature refused exit 126 and 127, which are
-the POSIX shell's statuses for a command word it could not run - and the gate
-commands kstrl resolves are `uv run pytest`, `uv run mypy .` and `uv run ruff
-check .`, where uv spawns the child itself and reports its own exit 2. So the
-`uv run` row above produced `fixed={'linter:E501': 12, 'linter:F401': 3}`:
-uninstalling a linter read as fixing every one of its findings, for the exact
-command shape everybody runs. Exit 2 could not simply be added to the refused
-set either, since pytest, mypy and ruff all use 2 for their own errors.
-
-A gate that PASSES is measured on its status alone, and that is a different
-question with a different answer: a command that never started cannot exit 0,
-while a clean run prints no failure for any parser to recognise.
+The first row is the loss decision 4 accepted. uv spawns the child itself and
+reports its own exit 2, which no status rule can tell apart from a real
+finding, and kstrl reads none of a check's output to decide. A command that
+never started cannot exit 0, so a passing check is measured on its status.
 
 A vacuous pass counts as measuring nothing for the same reason. `diff_scope`
 with no `--allowed-path` applies no rule; over an empty diff both `diff_scope`
@@ -218,8 +203,7 @@ every consumer's pull-request check the moment the check version bumped.
 ## kstrl does not run this on itself
 
 `main` is green here, so the set of failures a branch ADDS and the set it HAS
-are the same set, and `scripts/kstrl/baseline.json` records no signatures
-at all. The second set is what the `test` and `lint` jobs in
+are the same set. The second set is what the `test` and `lint` jobs in
 `.github/workflows/ci.yml` already report, and unlike a baseline comment those
 can fail the build. Measured over five runs before it was deleted, the job took
 360 to 454 seconds per push to repeat them; over the last seven pull requests it
@@ -229,10 +213,9 @@ rather than a real secret. That scanner defect is now filed as #399. So the
 job went in #394, and `tests/test_own_ci_workflows.py` pins that this
 repository's test suite runs in one workflow only.
 
-The baseline file stays: it is the worked example this page points at, and
-`tests/test_check_committed_baseline.py` checks it still matches this checkout.
-The baseline comparison is for brownfield repositories, which is what the
-rest of this page is about.
+This repository commits no baseline: `ks check` measures a confirmed
+`[stack]`, and this repository has none (#696). The baseline comparison is
+for brownfield repositories, which is what the rest of this page is about.
 
 ## Adding it to a repository
 

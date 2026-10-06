@@ -13,20 +13,16 @@ from __future__ import annotations
 import ast
 import subprocess
 import sys
-from collections.abc import Callable
 from pathlib import Path
 from typing import TypeGuard
 
 import pytest
 
-from kstrl import breaker, contract, fixtures
+from kstrl import contract, fixtures
 from kstrl.fixtures import Fixture
 from kstrl.verify import (
-    CheckResult,
     ChildOutputDecodeError,
-    check_linter,
-    check_test_suite,
-    check_typecheck,
+    check_stack_command,
     run_scrubbed,
 )
 from tests.helpers.astwalk import (
@@ -43,6 +39,7 @@ from tests.helpers.astwalk import (
     resolved_calls,
 )
 from tests.helpers.astwalk.scope import own_nodes, try_body_nodes
+from tests.helpers.stack_confirmation import in_process_stack
 
 #: A child that writes one latin-1 byte and exits 0. `python3 -c` rather than
 #: `printf`, so the byte is written as BYTES on any shell. The word is
@@ -74,26 +71,11 @@ def test_stderr_is_the_same_failure(tmp_path: Path) -> None:
     assert "position" in str(excinfo.value)
 
 
-def check_test_suite_row(
-    cwd: Path, command: str | None = None, timeout: float | None = None
-) -> CheckResult:
-    """``check_test_suite``'s row, for the tests that treat the three gates
-    alike. Its gaps are empty for a gate that declared no report (#629)."""
-    row, gaps = check_test_suite(cwd, command, timeout)
-    assert gaps == []
-    return row
-
-
-_Gate = Callable[[Path, str, float], CheckResult]
-
-
-@pytest.mark.parametrize(
-    "fn",
-    [check_test_suite_row, check_typecheck, check_linter],
-    ids=["test_suite", "typecheck", "linter"],
-)
-def test_the_three_gates_fail_closed_on_undecodable_output(fn: _Gate, tmp_path: Path) -> None:
-    result = fn(tmp_path, UNDECODABLE_STDOUT, 60.0)
+def test_a_stack_check_fails_closed_on_undecodable_output(tmp_path: Path) -> None:
+    """Every Phase 1 command gate is a ``[stack]`` check since #696 slice 4,
+    so the one runner is the one row to pin."""
+    stack = in_process_stack({"tests": UNDECODABLE_STDOUT})
+    result = check_stack_command(tmp_path, stack, "tests", UNDECODABLE_STDOUT, 60.0)
 
     assert result.passed is False
     assert result.measured is False
@@ -123,19 +105,12 @@ def test_a_cli_fixture_reports_undecodable_output(tmp_path: Path) -> None:
     assert "not valid utf-8" in result.message
 
 
-def test_contract_run_tests_reports_undecodable_output(tmp_path: Path) -> None:
-    passed, message = contract._run_tests(tmp_path, UNDECODABLE_STDOUT, 60.0)
+def test_contract_run_checks_reports_undecodable_output(tmp_path: Path) -> None:
+    stack = in_process_stack({"tests": UNDECODABLE_STDOUT})
+    passed, message = contract._run_checks(tmp_path, 60.0, stack, None)
 
     assert passed is False
     assert "could not be decoded" in message
-
-
-def test_the_breaker_signs_an_undecodable_probe_as_a_probe_error(tmp_path: Path) -> None:
-    config = breaker.BreakerConfig(test_command=UNDECODABLE_STDOUT, test_timeout=60.0)
-
-    signature = breaker.compute_test_signature(tmp_path, config)
-
-    assert signature == "probe-error:ChildOutputDecodeError"
 
 
 # --- Guard 2 -----------------------------------------------------------
@@ -364,15 +339,18 @@ def test_the_walk_reports_what_it_could_not_decide() -> None:
 
     # #619: 11, the ruff --show-files listing check_dead_code_ruff runs first.
     # #696: 12, check_stack_command's run of one [stack] check.
-    assert counts == {"verify.py": 12}
+    # #696 slice 4: 9, the three per-gate runners (test suite, typecheck,
+    # lint) deleted with the Python defaults.
+    assert counts == {"verify.py": 9}
 
 
 def test_the_call_site_census_is_pinned() -> None:
     census, _reported = _package_scan()
 
+    # #696 slice 4: breaker.py's stall probe and contract.py's _run_tests
+    # are gone, and so are verify.py's three per-gate runners.
     assert census == {
-        "breaker.py": 1,
-        "contract.py": 5,
+        "contract.py": 4,
         "fixtures.py": 2,
         # #700: the canary and --version runs, through one helper.
         "isolation.py": 1,
@@ -381,7 +359,8 @@ def test_the_call_site_census_is_pinned() -> None:
         "replay.py": 1,
         # #619: +1, the ruff --show-files listing in check_dead_code_ruff.
         # #696: +1, check_stack_command.
-        "verify.py": 12,
+        # #696 slice 4: -3, the per-gate runners.
+        "verify.py": 9,
         "worktree_setup.py": 1,
         "worktree_sweep.py": 1,
     }
@@ -458,9 +437,11 @@ def test_the_disposition_census_is_pinned() -> None:
     reports it honestly as ``converts`` rather than folding it into
     "swallows", which would have hidden it from a future comparison."""
     assert _disposition_census() == {
-        "breaker.py:returns": 1,
+        # #696 slice 4: breaker.py's stall probe and one contract.py
+        # return (_run_tests) removed; three verify.py returns (the
+        # per-gate runners) removed.
         "contract.py:raises": 1,
-        "contract.py:returns": 2,
+        "contract.py:returns": 1,
         "contract.py:swallows": 2,
         "fixtures.py:returns": 2,
         "isolation.py:returns": 1,
@@ -470,7 +451,7 @@ def test_the_disposition_census_is_pinned() -> None:
         "verify.py:converts": 1,
         # #619: +1, the listing shares the ruff run's handlers, which return.
         # #696: +1, check_stack_command returns an unmeasured failing row.
-        "verify.py:returns": 11,
+        "verify.py:returns": 8,
         "worktree_setup.py:returns": 1,
         "worktree_sweep.py:returns": 1,
     }

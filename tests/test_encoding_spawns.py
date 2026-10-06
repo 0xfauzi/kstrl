@@ -46,10 +46,16 @@ from tests.helpers.encodingspawn import (
 EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     "agents/codex.py": 4,
     # #642: the leash's import, its `Popen` and the `Popen[bytes]` annotation.
-    "agents/leash.py": 3,
+    # #642 slice 6: +1, the `Popen[bytes]` annotation of `_hold`.
+    "agents/leash.py": 4,
     "agents/proc.py": 7,
-    "breaker.py": 4,
-    "contract.py": 5,
+    # #696: 3, the import, one subprocess.run and one TimeoutExpired clause;
+    # down from 4 when the retired [factory] worktree_setup_command path
+    # held a second TimeoutExpired clause of its own.
+    "breaker.py": 3,
+    # #696: 4, the import and three TimeoutExpired clauses; down from 5
+    # when a fourth clause served the retired [contract] test_command.
+    "contract.py": 4,
     "doctor.py": 5,
     # 14: #624 moved the scaffold's `subprocess.run` out to `worktree_setup.py`.
     "factory.py": 14,
@@ -87,9 +93,11 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     # #700 slice 3: +6, the import, `subprocess.Popen[bytes]` twice and
     # `TimeoutExpired` twice around `run_scrubbed` and `start_scrubbed`.
     "replay.py": 6,
-    # #700 slice 3: +4, `start_scrubbed`: its Popen, its return type,
-    # DEVNULL and STDOUT.
-    "verify.py": 31,
+    # #696 flag day, measured: check_stack_command adds one TimeoutExpired
+    # clause, retiring check_linter/check_test_suite/check_typecheck removes
+    # their three. #700 slice 3 added 4 in `start_scrubbed`: its Popen, its
+    # return type, DEVNULL and STDOUT.
+    "verify.py": 28,
     "worktree_setup.py": 2,  # #624: the import, and `TimeoutExpired` from `run_scrubbed`
     "worktree_sweep.py": 2,  # #461: the import, and `TimeoutExpired` from `run_scrubbed`
 }

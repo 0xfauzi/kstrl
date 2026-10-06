@@ -615,11 +615,11 @@ def test_a_failing_test_suite_never_spawns_mutmut(
     _repo(tmp_path, files={"mod.py": FEAT_MOD, "test_mod.py": _FLAKY_ONCE_TEST})
     recdir = put_mutmut_on_path(tmp_path, monkeypatch, junit=ONE_LINE_KILLED)
     result = _run(tmp_path)
-    test_row = next(c for c in result.checks if c.name == "test_suite")
+    test_row = next(c for c in result.checks if c.name == "stack:tests")
     assert test_row.passed is False
     coverage_row = next(c for c in result.checks if c.name == "patch_coverage")
     assert coverage_row.passed is True
-    no_spawn_gap(result, recdir, "diff_mutation", "command_failed", "test_suite")
+    no_spawn_gap(result, recdir, "diff_mutation", "command_failed", "stack:tests")
 
 
 # ---------------------------------------------------------------------------

@@ -24,6 +24,7 @@ from click.testing import CliRunner
 
 from kstrl.cli import cli
 from tests.helpers import gitrepo
+from tests.helpers.stack_confirmation import confirm_stack, write_stack
 from tests.helpers.tool_output import TOOL_OUTPUT_DIR
 from tests.spine_utils import git
 
@@ -40,16 +41,11 @@ def _repo(tmp_path: Path, *, test_command: str = _OK, lint_command: str = _OK) -
     root.mkdir()
     git("init", "-q", "-b", "main", cwd=root)
     gitrepo.set_identity(root)
-    (root / "kstrl.toml").write_text(
-        "[verify]\n"
-        f"test_command = {json.dumps(test_command)}\n"
-        f"typecheck_command = {json.dumps(_OK)}\n"
-        f"lint_command = {json.dumps(lint_command)}\n",
-        encoding="utf-8",
-    )
+    write_stack(root, {"tests": test_command, "typecheck": _OK, "lint": lint_command})
     (root / "README.md").write_text("fixture\n", encoding="utf-8")
     git("add", "-A", cwd=root)
     git("commit", "-q", "-m", "init", cwd=root)
+    confirm_stack(root)
     return root
 
 
@@ -67,7 +63,7 @@ def _failing_details(root: Path, gate: str) -> list[str]:
 def test_an_unparsed_cargo_failure_shows_the_panic_location_and_values(tmp_path: Path) -> None:
     root = _repo(tmp_path, test_command=_replay("cargo-1.94.0-test-fail.txt", 101))
 
-    shown = "\n".join(_failing_details(root, "test_suite"))
+    shown = "\n".join(_failing_details(root, "stack:tests"))
 
     assert "panicked at src/pricing.rs:18:9:" in shown
     assert "assertion `left == right` failed" in shown
@@ -80,7 +76,7 @@ def test_an_unparsed_go_failure_shows_the_file_and_line(tmp_path: Path) -> None:
     # packages after it, which is what pushed the failure out of the tail.
     root = _repo(tmp_path, test_command=_replay("go-1.21.6-test-fail.txt", 1))
 
-    shown = "\n".join(_failing_details(root, "test_suite"))
+    shown = "\n".join(_failing_details(root, "stack:tests"))
 
     assert "--- FAIL: TestBulkPercent" in shown
     assert "pricing_test.go:7: BulkPercent(20) = 11, want 10" in shown
@@ -91,7 +87,7 @@ def test_an_unparsed_jest_failure_shows_the_assertion_and_location(tmp_path: Pat
     # stack line, so a window after the location alone would miss them.
     root = _repo(tmp_path, test_command=_replay("jest-29.7.0-fail.txt", 1))
 
-    shown = "\n".join(_failing_details(root, "test_suite"))
+    shown = "\n".join(_failing_details(root, "stack:tests"))
 
     assert "● twenty items is ten percent" in shown
     assert "Expected: 10" in shown
@@ -104,7 +100,7 @@ def test_an_unparsed_lint_failure_shows_every_location(tmp_path: Path) -> None:
     # suggestion frame and `could not compile`.
     root = _repo(tmp_path, lint_command=_replay("clippy-0.1.94-fail.txt", 101))
 
-    shown = "\n".join(_failing_details(root, "linter"))
+    shown = "\n".join(_failing_details(root, "stack:lint"))
 
     assert "error: unneeded `return` statement" in shown
     assert "--> src/pricing.rs:9:5" in shown
@@ -116,7 +112,7 @@ def test_paths_outside_the_worktree_are_not_shown(tmp_path: Path) -> None:
     # rest are the toolchain's own sources under /rustc and ~/.rustup.
     root = _repo(tmp_path, test_command=_replay("cargo-1.94.0-test-fail-backtrace.txt", 101))
 
-    shown = "\n".join(_failing_details(root, "test_suite"))
+    shown = "\n".join(_failing_details(root, "stack:tests"))
 
     assert "at ./src/pricing.rs:18:9" in shown
     assert "left: 11" in shown
@@ -143,7 +139,7 @@ def test_an_outside_path_the_location_pattern_cannot_read_is_not_shown(tmp_path:
     )
     root = _repo(tmp_path, test_command=f"{sys.executable} {frames}")
 
-    shown = "\n".join(_failing_details(root, "test_suite"))
+    shown = "\n".join(_failing_details(root, "stack:tests"))
 
     assert "src/pricing.rs:3: failure here" in shown
     assert "node@20" not in shown
@@ -166,7 +162,7 @@ def test_the_extraction_is_bounded(tmp_path: Path, width: int) -> None:
     )
     root = _repo(tmp_path, test_command=f"{sys.executable} {flood}")
 
-    shown = "\n".join(_failing_details(root, "test_suite"))
+    shown = "\n".join(_failing_details(root, "stack:tests"))
 
     assert "src/pricing.rs:1: failure 1 " in shown
     # The cap is 80 lines and 8,000 characters; the rest of the margin is
@@ -176,32 +172,11 @@ def test_the_extraction_is_bounded(tmp_path: Path, width: int) -> None:
     assert "excerpt cut at" in shown
 
 
-@pytest.mark.parametrize(
-    ("capture", "summary", "failure"),
-    [
-        (
-            "pytest-9.1.1-two-failures.txt",
-            "[pytest] 2 failed, 2 passed in 0.01s",
-            "  test_drafts.py:13 [test_counts_the_words_in_a_draft_title] "
-            "AssertionError: assert 3 == 4",
-        ),
-        (
-            "vitest-2.1.9-two-failures.txt",
-            "[vitest] Test Files  2 failed (2)\nTests  2 failed | 3 passed (5)",
-            "  tests/failing.test.ts:5 [word counter > counts the words in a draft title] "
-            "AssertionError: expected 3 to be 4 // Object.is equality",
-        ),
-    ],
-    ids=["pytest", "vitest"],
-)
-def test_pytest_and_vitest_details_are_unchanged(
-    tmp_path: Path, capture: str, summary: str, failure: str
-) -> None:
-    # The control: a registered parser that read the output wins, and the
-    # excerpt never replaces the summary it found.
-    root = _repo(tmp_path, test_command=_replay(capture, 1))
-
-    details = _failing_details(root, "test_suite")
-
-    assert details[0] == summary
-    assert failure in details
+# #696 decision 6 (the flag day): a [stack] check's output is no longer run
+# through kstrl.gateparse's registered parsers at all - check_stack_command
+# calls failure_excerpt unconditionally - so there is no more "a registered
+# parser wins over the excerpt" case to be a control for. The parametrized
+# test that lived here (test_pytest_and_vitest_details_are_unchanged, cases
+# pytest/vitest) asserted exactly that mechanism and was deleted; it failed
+# after migration with the excerpt shown in place of the old parsed summary,
+# which is this loss, not a bug.

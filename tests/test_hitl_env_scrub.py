@@ -35,11 +35,12 @@ from kstrl.ui.plain import PlainUI
 from kstrl.verify import (
     VerifyConfig,
     _signal_process_group,
-    check_test_suite,
+    check_stack_command,
     run_scrubbed,
     scrubbed_subprocess_env,
 )
 from tests.helpers import procs
+from tests.helpers.stack_confirmation import in_process_stack
 
 
 class ScriptedUI(PlainUI):
@@ -128,10 +129,9 @@ def _checkpoint_config(max_retries: int = 3) -> FactoryConfig:
         pause_before_pr_merge=True,
         max_retries=max_retries,
         retry_delay=0.0,
+        project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
         verify_config=VerifyConfig(
-            test_command="true",
-            typecheck_command="true",
-            lint_command="true",
+            project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
             check_diff_scope=False,
             check_bad_patterns=False,
             subprocess_timeout=10.0,
@@ -268,8 +268,12 @@ class TestScrubbedEnv:
         assert "GITHUB_TOKEN" not in env
         assert "UV_PUBLISH_TOKEN" not in env
         assert env["LC_ALL"] == "C"
-        assert env["UV_CACHE_DIR"] == "/tmp/uvcache"
-        assert env["PYTHONDONTWRITEBYTECODE"] == "1"
+        # #696 slice 4: no language's variables pass unless the [stack]
+        # declares them.
+        assert "UV_CACHE_DIR" not in env
+        assert "PYTHONDONTWRITEBYTECODE" not in env
+        declared = scrubbed_subprocess_env(("UV_CACHE_DIR",))
+        assert declared["UV_CACHE_DIR"] == "/tmp/uvcache"
         assert "PATH" in env
         assert "HOME" in env
         forbidden = ("API_KEY", "SECRET", "TOKEN", "PASSWORD", "CREDENTIAL")
@@ -362,14 +366,15 @@ class TestProcessGroupKill:
         pid = int(pid_file.read_text().strip())
         _assert_process_dies(pid)
 
-    def test_check_test_suite_timeout_kills_grandchild(
+    def test_stack_check_timeout_kills_grandchild(
         self,
         tmp_path: Path,
     ) -> None:
         """Same guarantee through a real verification entry point."""
         pid_file = tmp_path / "server.pid"
         cmd = f"sleep 300 & echo $! > {pid_file}; wait"
-        result, _ = check_test_suite(tmp_path, command=cmd, timeout=1.0)
+        stack = in_process_stack({"tests": cmd})
+        result = check_stack_command(tmp_path, stack, "tests", cmd, 1.0)
         assert result.passed is False
         assert "timed out" in result.message
         pid = int(pid_file.read_text().strip())

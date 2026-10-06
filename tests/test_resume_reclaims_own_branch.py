@@ -38,6 +38,7 @@ from pathlib import Path
 
 from kstrl.manifest import Manifest
 from tests.helpers import gitrepo, procs
+from tests.helpers.stack_confirmation import confirm_stack, write_stack
 
 A = "comp-a"
 B = "comp-b"
@@ -60,12 +61,6 @@ FLAGS = (
     "skip",
     "--contract-check",
     "skip",
-    "--test-command",
-    "true",
-    "--typecheck-command",
-    "true",
-    "--lint-command",
-    "true",
 )
 
 COMPLETE = "echo '<promise>COMPLETE</promise>'"
@@ -113,7 +108,10 @@ def _repo(tmp_path: Path) -> Path:
             }
         )
     gitrepo.git_in(root, "add", "-A")
+    write_stack(root)
+    gitrepo.git_in(root, "add", "-A")
     gitrepo.git_in(root, "commit", "-q", "-m", "init")
+    confirm_stack(root)
     (root / "scripts" / "kstrl" / "manifest.json").write_text(
         json.dumps(
             {
@@ -167,7 +165,10 @@ def _repo_shared_branch(tmp_path: Path) -> Path:
             }
         )
     gitrepo.git_in(root, "add", "-A")
+    write_stack(root)
+    gitrepo.git_in(root, "add", "-A")
     gitrepo.git_in(root, "commit", "-q", "-m", "init")
+    confirm_stack(root)
     (root / "scripts" / "kstrl" / "manifest.json").write_text(
         json.dumps(
             {

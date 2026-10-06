@@ -25,6 +25,7 @@ from kstrl.scope import ComponentScope
 from kstrl.ui.plain import PlainUI
 from tests.helpers.component_prd import write_component_prd
 from tests.helpers.gitrepo import git_in, set_identity
+from tests.helpers.stack_confirmation import in_process_stack
 
 
 def _sha(repo: Path, rev: str) -> str:
@@ -196,7 +197,7 @@ def test_the_contract_checkout_carries_the_merged_tier(fx: StaleBase) -> None:
     )
     config = ContractConfig(
         mode=ContractMode.TIER.value,
-        test_command="test -f src/rules.py",
+        project_stack=in_process_stack({"tests": "test -f src/rules.py"}),
         timeout=120.0,
     )
     result = contract.run_integrated_base_check(
@@ -208,70 +209,6 @@ def test_the_contract_checkout_carries_the_merged_tier(fx: StaleBase) -> None:
         git.resolve_base_sha("main", fx.repo),
     )
     assert result.passed is True
-
-
-def test_a_contract_run_that_collected_nothing_says_so(fx: StaleBase) -> None:
-    manifest = Manifest(
-        version="1",
-        spec_file="",
-        project_name="p",
-        base_branch="main",
-        single_pr=False,
-        components=[],
-    )
-    config = ContractConfig(
-        mode=ContractMode.TIER.value,
-        test_command="exit 5",
-        timeout=120.0,
-    )
-    result = contract.run_integrated_base_check(
-        manifest,
-        ["link-rules"],
-        fx.repo,
-        config,
-        PlainUI(no_color=True, file=io.StringIO()),
-        git.resolve_base_sha("main", fx.repo),
-    )
-    assert result.passed is False
-    assert "exited 5" in result.test_output
-    assert "no tests were collected" in result.test_output
-
-
-def test_the_no_tests_sentence_lives_in_the_shared_helper(fx: StaleBase) -> None:
-    passed, output = contract._run_tests(fx.worktree, "exit 5", 30.0)
-    assert passed is False
-    assert "exited 5" in output
-    assert "no tests were collected" in output
-
-
-def test_the_no_tests_sentence_survives_the_2000_character_store(tmp_path: Path) -> None:
-    """All three contract callers store output[:2000], so the sentence
-    goes first or a long install log pushes it out of the record
-    entirely."""
-    passed, output = contract._run_tests(
-        tmp_path, 'python3 -c "print(chr(120)*2500)"; exit 5', 60.0
-    )
-    assert passed is False
-    assert len(output) > 2000
-    assert "no tests were collected" in output[:2000]
-
-
-def test_a_real_failure_is_not_called_an_empty_collection(tmp_path: Path) -> None:
-    """Exit 5 is the only code that means nothing ran. A condition
-    widened to `!= 0` staples pytest's no-collection sentence onto
-    every genuine failure and pushes 200 characters of the real
-    evidence past the 2000-character store. 5 is the only code that
-    means nothing ran, so the condition is wrong widened in either
-    direction: too narrow misses real no-collection exits, too wide
-    (`>= 5`) staples the no-collection sentence onto an unrelated
-    failure such as exit 7."""
-    passed, output = contract._run_tests(tmp_path, "exit 1", 30.0)
-    assert passed is False
-    assert "no tests were collected" not in output
-
-    passed_high, output_high = contract._run_tests(tmp_path, "exit 7", 30.0)
-    assert passed_high is False
-    assert "no tests were collected" not in output_high
 
 
 def test_the_in_loop_scope_message_names_the_ref_it_judged(fx: StaleBase) -> None:

@@ -14,11 +14,10 @@ import tempfile
 import time
 from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from functools import partial
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, Protocol
 
-from kstrl import git, licensing, toolchains
+from kstrl import git, licensing
 from kstrl.config_numbers import check_numbers
 
 if TYPE_CHECKING:
@@ -42,23 +41,14 @@ from kstrl.adequacy import (
 from kstrl.agents.proc import leash_command, leash_start_error
 from kstrl.agents.spawn_record import new_nonce
 from kstrl.atomicio import atomic_write_text
-from kstrl.config import component_progress_path, relative_to_root
+from kstrl.config import component_progress_path
 from kstrl.failure_excerpt import failure_excerpt
 from kstrl.findings import Finding, finding_waiver
-from kstrl.gateparse import (
-    GATE_LINT,
-    GATE_TEST,
-    GATE_TYPECHECK,
-    parse_gate_output,
-    validate_tool,
-)
 from kstrl.guards import path_is_allowed, without_entitled_lockfiles
 from kstrl.jsonread import read_json
 from kstrl.lockfiles import LOCKFILE_READERS, LockfileDocument, NewDependency
 from kstrl.parsers import (
     ParsedOutput,
-    add_source_context,
-    generate_fix_hint,
 )
 from kstrl.policy import (
     DEFAULT_SECRET_PATTERNS,
@@ -71,27 +61,12 @@ from kstrl.policy import (
     parse_added_lines,
 )
 from kstrl.prd import PRD
-from kstrl.procdispose import drain_or_abandon
+from kstrl.procdispose import drain_or_abandon, reap_or_abandon
 from kstrl.procgroup import signal_process_tree
-from kstrl.report_formats import REPORT_ENV, fresh_report, read_gate_report
 from kstrl.rung import Rung
-from kstrl.stack import SECRET_NAME_FRAGMENTS, Stack, stack_in_force
+from kstrl.stack import NO_STACK, SECRET_NAME_FRAGMENTS, TESTS_CHECK, Stack, stack_in_force
 from kstrl.statedir import STATE_DIR_NAME
-from kstrl.suite_inventory import (
-    TESTS_RAN_CHECK,
-    inventory_env,
-    runner_for,
-    save_gate_output,
-    unrun_test_files,
-)
 from kstrl.timeout import limit_seconds
-from kstrl.toolchains import (
-    DEFAULT_LINT_COMMAND,
-    DEFAULT_TEST_COMMAND,
-    DEFAULT_TYPECHECK_COMMAND,
-    SCOPED_TYPECHECK_COMMAND,
-    is_python_project,
-)
 from kstrl.waivers import Waivers, apply_waivers, waiver_note
 
 # R2.6 env scrub: verification subprocesses execute agent-authored code
@@ -99,11 +74,8 @@ from kstrl.waivers import Waivers, apply_waivers, waiver_note
 # they must never inherit the harness's secrets. Allowlist, not denylist:
 # only names below (or matching a prefix below) pass through, everything
 # else - ANTHROPIC_API_KEY, OPENAI_API_KEY, cloud credentials, gh tokens -
-# is dropped. The set was determined empirically: `uv run pytest` with a
-# fresh venv succeeds under env -i with only PATH/HOME/TMPDIR/TERM/LANG
-# (uv locates its cache via HOME); the rest are the locale, venv, uv, and
-# CPython knobs a project's own commands legitimately consume, plus the
-# XDG cache/data paths uv honors when set.
+# is dropped. Since the #696 flag day the list names no toolchain: a
+# ``[stack]`` adds the variables its commands need in ``[stack] env``.
 SCRUB_ENV_ALLOWED_NAMES: frozenset[str] = frozenset(
     {
         "PATH",
@@ -111,51 +83,29 @@ SCRUB_ENV_ALLOWED_NAMES: frozenset[str] = frozenset(
         "LANG",
         "TMPDIR",
         "TERM",
-        "VIRTUAL_ENV",
         "CI",
         "XDG_CACHE_HOME",
         "XDG_DATA_HOME",
     }
 )
-SCRUB_ENV_ALLOWED_PREFIXES: tuple[str, ...] = ("LC_", "UV_", "PYTHON")
+SCRUB_ENV_ALLOWED_PREFIXES: tuple[str, ...] = ("LC_",)
 
-# Belt over the allowlist's braces: an allowed prefix must never smuggle a
-# secret through (UV_PUBLISH_TOKEN matches UV_*). Any name containing one
-# of these fragments is dropped even when the allowlist admits it. The
-# same tuple ``[stack] env`` is refused against at load (#696 decision 11).
+# Belt over the allowlist's braces: no name containing one of these
+# fragments passes, whoever admitted it. The same tuple ``[stack] env`` is
+# refused against at load (#696 decision 11).
 _SCRUB_ENV_SENSITIVE_FRAGMENTS: tuple[str, ...] = SECRET_NAME_FRAGMENTS
 
-#: Under a ``[stack]`` (#696): what every command sees whatever the stack,
-#: names no toolchain owns. A stack adds its own in ``[stack] env``; the
-#: toolchain names in the allowlist above are not given to it.
-STACK_ENV_BASE_NAMES: frozenset[str] = frozenset(
-    {
-        "PATH",
-        "HOME",
-        "LANG",
-        "TMPDIR",
-        "TERM",
-        "CI",
-        "XDG_CACHE_HOME",
-        "XDG_DATA_HOME",
-    }
-)
 
-
-def scrubbed_subprocess_env(declared: tuple[str, ...] | None = None) -> dict[str, str]:
+def scrubbed_subprocess_env(declared: tuple[str, ...] = ()) -> dict[str, str]:
     """Allowlist-filtered copy of ``os.environ`` for verification subprocesses.
 
-    ``declared`` is a ``[stack]``'s ``env`` (#696). None, the default, is the
-    allowlist above, unchanged. A tuple, empty included, replaces it with
-    :data:`STACK_ENV_BASE_NAMES`, ``LC_*`` and the declared names. The
-    sensitive-fragment filter runs last either way.
+    ``declared`` is a ``[stack]``'s ``env`` (#696): names added to
+    :data:`SCRUB_ENV_ALLOWED_NAMES`. The sensitive-fragment filter runs last.
     """
-    names, prefixes = SCRUB_ENV_ALLOWED_NAMES, SCRUB_ENV_ALLOWED_PREFIXES
-    if declared is not None:
-        names, prefixes = STACK_ENV_BASE_NAMES | frozenset(declared), ("LC_",)
+    names = SCRUB_ENV_ALLOWED_NAMES | frozenset(declared)
     env: dict[str, str] = {}
     for name, value in os.environ.items():
-        if name not in names and not name.startswith(prefixes):
+        if name not in names and not name.startswith(SCRUB_ENV_ALLOWED_PREFIXES):
             continue
         if any(frag in name for frag in _SCRUB_ENV_SENSITIVE_FRAGMENTS):
             continue
@@ -244,7 +194,7 @@ def run_scrubbed(
     term_grace: float = _SCRUB_TERM_GRACE_SECONDS,
     extra_env: Mapping[str, str] | None = None,
     stdin_text: str | None = None,
-    declared_env: tuple[str, ...] | None = None,
+    declared_env: tuple[str, ...] = (),
     rung: Rung | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run a verification subprocess: scrubbed env, own process group, leashed.
@@ -261,7 +211,7 @@ def run_scrubbed(
     reads as 128 + N.
 
     ``declared_env`` is a ``[stack]``'s ``env``, handed to
-    :func:`scrubbed_subprocess_env` (#696); None keeps the allowlist.
+    :func:`scrubbed_subprocess_env` (#696).
 
     ``rung`` runs the command inside that proven isolation rung (#700
     slice 2), through its ``command``: a string ``cmd`` as
@@ -429,8 +379,8 @@ def start_scrubbed(
     cwd: Path,
     rung: Rung,
     log: IO[bytes],
-    declared_env: tuple[str, ...] | None = None,
-) -> subprocess.Popen[bytes]:
+    declared_env: tuple[str, ...] = (),
+) -> tuple[subprocess.Popen[bytes], int]:
     """Start ``cmd`` inside ``rung`` and return at once, leaving it running (#700 slice 3).
 
     The sibling of :func:`run_scrubbed` for a command that starts servers
@@ -448,17 +398,50 @@ def start_scrubbed(
     no prover. The child leads a new session, so its pid is the
     group id; the caller waits on it, records that id, and stops the group
     through :mod:`kstrl.procgroup` (``kstrl.replay``).
+
+    The child is the leash in its ``--hold`` mode (#642 slice 6): it exits
+    with ``cmd``'s status when ``cmd`` exits, as ``cmd`` would have, and a
+    fork of it stays in the group and ends the group once the lifeline
+    closes. The lifeline's write end is returned with the child, and the
+    caller closes it when it stops the group; if this process dies first,
+    the kernel closes it, so the servers ``cmd`` started end with it.
     """
     env = scrubbed_subprocess_env(declared_env)
-    return subprocess.Popen(
-        _in_rung(cmd, rung, env, declared_env or ()),
-        cwd=cwd,
-        stdin=subprocess.DEVNULL,
-        stdout=log,
-        stderr=subprocess.STDOUT,
-        env=env,
-        start_new_session=True,
-    )
+    spawned = _in_rung(cmd, rung, env, declared_env or ())
+    argv = ["/bin/sh", "-c", spawned] if isinstance(spawned, str) else list(spawned)
+    lifeline_read, lifeline = os.pipe()
+    status_read, status_write = os.pipe()
+    try:
+        proc = subprocess.Popen(
+            leash_command(
+                argv,
+                lifeline=lifeline_read,
+                status=status_write,
+                term_grace=_SCRUB_TERM_GRACE_SECONDS,
+                nonce=new_nonce(),
+                hold=True,
+            ),
+            cwd=cwd,
+            stdin=subprocess.DEVNULL,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            env=env,
+            start_new_session=True,
+            pass_fds=(lifeline_read, status_write),
+        )
+    except BaseException:
+        os.close(lifeline)
+        os.close(status_read)
+        raise
+    finally:
+        os.close(lifeline_read)
+        os.close(status_write)
+    start_error = leash_start_error(status_read, argv[0])
+    if start_error is not None:
+        os.close(lifeline)
+        reap_or_abandon(proc, _SCRUB_TERM_GRACE_SECONDS)
+        raise start_error
+    return proc, lifeline
 
 
 def _in_rung(
@@ -702,20 +685,10 @@ def _optional_str(value: object) -> str | None:
     return str(value) or None
 
 
-#: The gates ``[verify] fast_iteration_checks`` may name (#233), by the
-#: CheckResult name each produces. :func:`run_fast_checks` runs exactly
-#: these three and validates against this tuple before it runs anything.
-FAST_ITERATION_GATES: tuple[str, ...] = (GATE_TEST, GATE_TYPECHECK, GATE_LINT)
-
-
 def gate_names(config: VerifyConfig) -> tuple[str, ...]:
-    """The names Phase 1's command gates go by: a ``[stack]``'s check names
-    under a stack (#696), else :data:`FAST_ITERATION_GATES`."""
-    return (
-        config.project_stack.check_names
-        if config.project_stack is not None
-        else FAST_ITERATION_GATES
-    )
+    """The names Phase 1's command gates go by: the ``[stack]``'s check
+    names (#696), or none when there is no stack."""
+    return config.project_stack.check_names if config.project_stack is not None else ()
 
 
 def _gate_name_list(value: object, source: str) -> list[str]:
@@ -725,14 +698,12 @@ def _gate_name_list(value: object, source: str) -> list[str]:
     return list(value)
 
 
-def validate_fast_iteration_checks(
-    value: object, source: str, names: Sequence[str] = FAST_ITERATION_GATES
-) -> list[str]:
+def validate_fast_iteration_checks(value: object, source: str, names: Sequence[str]) -> list[str]:
     """``value`` as a list of gate names, or ValueError naming ``source``.
 
-    A list of strings, each one of ``names``: :func:`gate_names`, which is
-    :data:`FAST_ITERATION_GATES` unless a ``[stack]`` names its own checks.
-    Empty is valid and turns the between-iteration checks off.
+    A list of strings, each one of ``names``: :func:`gate_names`, the
+    ``[stack]``'s check names. Empty is valid and turns the
+    between-iteration checks off.
     """
     gates = _gate_name_list(value, source)
     unknown = [item for item in gates if item not in names]
@@ -759,18 +730,6 @@ def _fast_iteration_checks_from_env(raw: str) -> list[str]:
 #: more keys to it. Order is the dataclass's, so a reader can diff the
 #: two lists by eye. Anything absent from this table is not a toml key.
 _VERIFY_TOML_FIELDS: tuple[tuple[str, Callable[[Any], object]], ...] = (
-    # str, not _optional_str (#621): "" is the operator turning the gate
-    # off, and _optional_str would read it as unset, which resolves to a
-    # Python default.
-    ("test_command", str),
-    ("typecheck_command", str),
-    ("lint_command", str),
-    # validate_tool already maps the empty string to None (auto) and
-    # raises on anything it does not recognise, so it needs no coercion
-    # in front of it.
-    ("test_tool", partial(validate_tool, GATE_TEST)),
-    ("typecheck_tool", partial(validate_tool, GATE_TYPECHECK)),
-    ("lint_tool", partial(validate_tool, GATE_LINT)),
     ("check_diff_scope", bool),
     ("check_bad_patterns", bool),
     ("dead_code_cleanup", bool),
@@ -790,19 +749,6 @@ _VERIFY_TOML_FIELDS: tuple[tuple[str, Callable[[Any], object]], ...] = (
 class VerifyConfig:
     """Configuration for mechanical verification."""
 
-    test_command: str | None = None
-    typecheck_command: str | None = None
-    lint_command: str | None = None
-    # Which parser reads each gate's output (#258). None is auto: every
-    # parser registered for the gate runs and their findings are unioned,
-    # which is what makes a chained command
-    # (`uv run pytest && npm run test`) yield BOTH toolchains' failures.
-    # Set one to pin the gate to a single parser. Accepted values are
-    # kstrl.gateparse.GATE_TOOLS[<gate>], plus the report formats in
-    # GATE_FORMATS[<gate>] (#629); anything else raises on load.
-    test_tool: str | None = None
-    typecheck_tool: str | None = None
-    lint_tool: str | None = None
     check_diff_scope: bool = True
     check_bad_patterns: bool = True
     dead_code_cleanup: bool = False
@@ -830,10 +776,9 @@ class VerifyConfig:
     # handed to the next iteration's prompt. Empty (the default) is off.
     # A list, never a tuple: scripts/gen_docs.py probes list defaults.
     fast_iteration_checks: list[str] = field(default_factory=list)
-    # #696: the project's [stack], read by ``load`` from its own table. None
-    # is no stack, and every command field above means what it always has.
-    # With a stack, those command fields are refused at load and the
-    # stack's checks are the gates. Provenance: no [verify] key of its own.
+    # #696: the project's [stack], read by ``load`` from its own table. Its
+    # checks are Phase 1's command gates; None is no stack, and Phase 1 then
+    # fails closed (:data:`NO_STACK_CHECK`). Provenance: no [verify] key.
     project_stack: Stack | None = field(default=None, metadata={"provenance": True})
     # #700 slice 2: the TEST-zone rung a ``ks factory`` run under a [stack]
     # proved before its base gates; every [stack] check runs inside it.
@@ -841,18 +786,20 @@ class VerifyConfig:
     # kstrl.toml. Provenance: no [verify] key.
     rung: Rung | None = field(default=None, metadata={"provenance": True})
 
+    @property
+    def pytest_command(self) -> str | None:
+        """The ``[stack]`` check named ``tests``, the command the three checks
+        that extend one (``patch_coverage``, ``mutation_testing``,
+        ``diff_mutation``) run when it is a single invocation they can extend
+        (#696). None with no stack or no such check, and each then reports a
+        gap; #696 slice 8 removes those checks and this with them."""
+        stack = self.project_stack
+        return dict(stack.checks).get(TESTS_CHECK) if stack is not None else None
+
     @classmethod
     def from_env(cls) -> VerifyConfig:
         """Load verify config from environment variables."""
         return cls(
-            test_command=os.environ.get("KSTRL_VERIFY_TEST_CMD"),
-            typecheck_command=os.environ.get("KSTRL_VERIFY_TYPECHECK_CMD"),
-            lint_command=os.environ.get("KSTRL_VERIFY_LINT_CMD"),
-            test_tool=validate_tool(GATE_TEST, os.environ.get("KSTRL_VERIFY_TEST_TOOL")),
-            typecheck_tool=validate_tool(
-                GATE_TYPECHECK, os.environ.get("KSTRL_VERIFY_TYPECHECK_TOOL")
-            ),
-            lint_tool=validate_tool(GATE_LINT, os.environ.get("KSTRL_VERIFY_LINT_TOOL")),
             dead_code_cleanup=os.environ.get("KSTRL_DEAD_CODE_CLEANUP", "") == "1",
             dead_code_command=os.environ.get("KSTRL_DEAD_CODE_CMD"),
             mutation_testing=os.environ.get("KSTRL_MUTATION_TESTING", "") == "1",
@@ -889,12 +836,6 @@ class VerifyConfig:
         # env-beats-toml precedence contract (R2.1).
         env = cls.from_env()
         env_var_to_field = {
-            "KSTRL_VERIFY_TEST_CMD": "test_command",
-            "KSTRL_VERIFY_TYPECHECK_CMD": "typecheck_command",
-            "KSTRL_VERIFY_LINT_CMD": "lint_command",
-            "KSTRL_VERIFY_TEST_TOOL": "test_tool",
-            "KSTRL_VERIFY_TYPECHECK_TOOL": "typecheck_tool",
-            "KSTRL_VERIFY_LINT_TOOL": "lint_tool",
             "KSTRL_DEAD_CODE_CLEANUP": "dead_code_cleanup",
             "KSTRL_DEAD_CODE_CMD": "dead_code_command",
             "KSTRL_MUTATION_TESTING": "mutation_testing",
@@ -1278,238 +1219,6 @@ def check_prd_stories(prd_path: Path, pre_run_prd_path: Path | None = None) -> C
     )
 
 
-# ---------------------------------------------------------------------------
-# Resolved verification commands (#261)
-# ---------------------------------------------------------------------------
-#
-# The single source of truth for "what will Phase 1 actually run". Both
-# the gate (``check_test_suite`` / ``check_typecheck`` / ``check_linter``)
-# and the engineer prompt (``loop.run_loop``) answer that question by
-# calling the resolvers below, so the agent cannot be told a command the
-# gate will not run.
-#
-# ``ks init`` used to scaffold a second, hardcoded copy of these commands
-# into the generated CLAUDE.md. Every copy disagreed with the gate from
-# the moment init finished, and loop.run_loop prepends CLAUDE.md into the
-# engineer prompt, so the harness mechanically fed the agent the wrong
-# commands. The copy is gone. ``kstrl.toolchains.resolve`` is the only
-# source, and the three resolvers below are its projections (#635).
-
-# Harness-authored instruction text injected into the engineer prompt on
-# every iteration, so it is enrolled in the H3 version/hash snapshot
-# (tests/test_prompt_versions.py) exactly like DEFAULT_PROMPT. Only the
-# TEMPLATE is snapshotted: the three command values are the operator's,
-# interpolated at run time, and H3 cannot and should not pin those.
-VERIFY_COMMANDS_PROMPT_VERSION = "1.0.0"
-
-VERIFY_COMMANDS_PROMPT = """\
-# Verification Commands (resolved by kstrl)
-
-These are the exact commands kstrl's mechanical verification gate runs on your
-work, resolved from this project's `kstrl.toml` `[verify]` section. Run them
-yourself before you report a story complete. They are authoritative: ignore any
-other verification command list, including one written in the project context
-above.
-
-- Test: `{test}`
-- Typecheck: `{typecheck}`
-- Lint: `{lint}`
-
-A command may chain several toolchains. Run all of it."""
-
-
-def resolve_test_command(command: str | None, cwd: Path) -> str:
-    """The exact test command Phase 1 will run in ``cwd``; "" is off (#621)."""
-    return toolchains.resolve(cwd, "test", command)
-
-
-def resolve_typecheck_command(command: str | None, cwd: Path) -> str:
-    """The exact typecheck command Phase 1 will run in ``cwd``; "" is off (#621)."""
-    return toolchains.resolve(cwd, "typecheck", command)
-
-
-def resolve_lint_command(command: str | None, cwd: Path) -> str:
-    """The exact lint command Phase 1 will run in ``cwd``; "" is off (#621)."""
-    return toolchains.resolve(cwd, "lint", command)
-
-
-#: Every command the three resolvers above fall back to. Each runs a
-#: Python tool, so each has something to measure only in a Python
-#: project (#621).
-PYTHON_DEFAULT_COMMANDS: frozenset[str] = frozenset(
-    {
-        DEFAULT_TEST_COMMAND,
-        DEFAULT_TYPECHECK_COMMAND,
-        SCOPED_TYPECHECK_COMMAND,
-        DEFAULT_LINT_COMMAND,
-    }
-)
-
-
-@dataclass(frozen=True)
-class ResolvedVerifyCommands:
-    """The concrete commands Phase 1 runs, after config and defaults.
-
-    Every field is a shell command line, so a chained polyglot command
-    (``uv run pytest -q && cd web && npm run test``) survives verbatim:
-    the resolver never splits or rewrites what the operator configured.
-    """
-
-    test: str
-    typecheck: str
-    lint: str
-
-    def format_for_prompt(self) -> str:
-        """Render the block injected into the engineer prompt.
-
-        Stated as authoritative because an agent working in a project
-        scaffolded before #261 may also be shown a stale CLAUDE.md list,
-        and has to know which one binds.
-        """
-        return VERIFY_COMMANDS_PROMPT.format(
-            test=self.test,
-            typecheck=self.typecheck,
-            lint=self.lint,
-        )
-
-
-def pin_verify_commands(config: VerifyConfig, cwd: Path) -> VerifyConfig:
-    """A copy of ``config`` whose three command fields are already resolved.
-
-    Resolution is not a pure function of the config: ``resolve_typecheck_command``
-    falls back to ``toolchains.python_typecheck_default(cwd)``, which re-reads
-    ``cwd/pyproject.toml`` and answers ``uv run mypy`` when
-    ``[tool.mypy] files`` or ``packages`` is present and ``uv run mypy .``
-    when it is not. Adding a mypy scope is an ordinary engineer story, so
-    a caller that resolves more than once during a run can get two
-    different commands from one config (#288 review round 2).
-
-    Pinning is what makes every later resolution the identity: once the
-    fields are non-None, ``resolve_*_command`` returns them unchanged. So
-    the report's announcement, the command that actually runs, and the
-    ``VERIFY_COMMANDS_PROMPT`` block ``build_project_context`` renders
-    for the engineer are provably one string per command for the whole
-    run, rather than three independent reads that agree by luck.
-
-    Do NOT use this on the factory's per-component path without thinking:
-    there each component has its own worktree, and the right pyproject to
-    resolve against is that worktree's, not the caller's ``cwd``.
-    """
-    if config.project_stack is not None:
-        # #696: a [stack] names no gate command, so there is nothing to pin.
-        return config
-    resolved = resolve_verify_commands(config, cwd)
-    return replace(
-        config,
-        test_command=resolved.test,
-        typecheck_command=resolved.typecheck,
-        lint_command=resolved.lint,
-    )
-
-
-def resolve_verify_commands(config: VerifyConfig, cwd: Path) -> ResolvedVerifyCommands:
-    """Resolve ``config`` against ``cwd`` into the commands Phase 1 runs.
-
-    ``cwd`` is the directory the gate will run in (the component's
-    worktree under the factory), because the typecheck default is a
-    function of that directory's pyproject.toml.
-    """
-    return ResolvedVerifyCommands(
-        test=resolve_test_command(config.test_command, cwd),
-        typecheck=resolve_typecheck_command(config.typecheck_command, cwd),
-        lint=resolve_lint_command(config.lint_command, cwd),
-    )
-
-
-# A CLAUDE.md verification bullet in the shape ``ks init`` used to
-# generate: ``- **Test**: `uv run pytest tests/ -v --tb=short```. Matched
-# anywhere in the file rather than under a specific heading, because the
-# heading text varies ("## Verification Commands", "## Verification
-# commands") while the bullet shape does not.
-_CLAUDE_MD_COMMAND_RE = re.compile(
-    r"^\s*[-*]\s+\*{2}(Test|Typecheck|Lint)\*{2}\s*:\s*`([^`]+)`\s*$",
-    re.IGNORECASE,
-)
-
-
-@dataclass(frozen=True)
-class ScrubbedProjectContext:
-    """CLAUDE.md text with stale verification bullets removed (#261)."""
-
-    text: str
-    #: One human-readable line per removed bullet, for ``ui.warn``.
-    divergences: list[str]
-
-
-def scrub_stale_verify_commands(
-    claude_md: str,
-    commands: ResolvedVerifyCommands,
-) -> ScrubbedProjectContext:
-    """Drop CLAUDE.md verification bullets that disagree with the gate.
-
-    Projects scaffolded before #261 carry a generated ``## Verification
-    Commands`` section whose three bullets disagree with what the gate
-    runs. ``loop.run_loop`` prepends CLAUDE.md into the engineer prompt,
-    so those bullets are instructions the agent follows and then fails
-    Phase 1 on.
-
-    Removal is per-bullet and only when the stated command differs from
-    the resolved one, so a project whose CLAUDE.md happens to be correct
-    is left byte-identical, and surrounding prose always survives. The
-    file on disk is never modified: this scrubs the in-memory copy that
-    goes into the prompt, and every removal is reported so the operator
-    can delete the stale section for good.
-    """
-    kept: list[str] = []
-    divergences: list[str] = []
-    by_label = {
-        "test": commands.test,
-        "typecheck": commands.typecheck,
-        "lint": commands.lint,
-    }
-    # keepends: what survives is re-joined with "", so a file with CRLF
-    # endings or no trailing newline round-trips byte for byte.
-    for line in claude_md.splitlines(keepends=True):
-        match = _CLAUDE_MD_COMMAND_RE.match(line)
-        if match is None:
-            kept.append(line)
-            continue
-        label = match.group(1).lower()
-        stated = match.group(2).strip()
-        resolved = by_label[label]
-        if stated == resolved:
-            kept.append(line)
-            continue
-        divergences.append(
-            f"CLAUDE.md tells the agent to {label} with `{stated}`, but the "
-            f"gate runs `{resolved}`. Dropping the stale line from the "
-            f"engineer prompt; delete it from CLAUDE.md and set [verify] in "
-            f"kstrl.toml instead."
-        )
-    return ScrubbedProjectContext(text="".join(kept), divergences=divergences)
-
-
-def scrub_project_claude_md(
-    root: Path,
-    commands: ResolvedVerifyCommands,
-) -> ScrubbedProjectContext | None:
-    """``scrub_stale_verify_commands`` on ``root``'s CLAUDE.md, or None.
-
-    None when the project has no readable CLAUDE.md. One place decides
-    where the file lives and what an unreadable one means, because two
-    callers need the same answer for different reasons: the engineer
-    loop wants ``.text`` (the copy that goes into the prompt) and the
-    factory preflight wants ``.divergences`` (what to tell the
-    operator), and they had drifted into two different missing-file
-    policies (#261).
-    """
-    try:
-        claude_md = (root / "CLAUDE.md").read_text(encoding="utf-8")
-    except (OSError, ValueError):
-        return None
-    return scrub_stale_verify_commands(claude_md, commands)
-
-
 #: The most characters of one gate's output kept for its log (#462).
 #: Measured on kstrl's own tree: one failing test printed 699 characters,
 #: 179 collection errors 273,184, mypy with 3,981 error lines 352,260, and
@@ -1549,290 +1258,6 @@ def _output_before_stop(stdout: bytes | str | None, stderr: bytes | str | None) 
     carries rather than returning a message alone.
     """
     return bounded_gate_output((_readable(stdout) + _readable(stderr)).strip())
-
-
-def _failed_gate_result(
-    name: str,
-    message: str,
-    parsed: ParsedOutput,
-    cmd: str,
-    cwd: Path,
-    start: float,
-    *,
-    output: str,
-    unread: str | None = None,
-) -> CheckResult:
-    """Enrich a parse and package it as the gate's failing CheckResult.
-
-    One home for all three gates because the enrichment has to happen at
-    every one of them and forgetting a step is SILENT: without
-    ``parsed.command`` the prompt label falls back to the parser name,
-    which is exactly the #258 mislabel returning unannounced.
-
-    #227: the row's ``measured`` is the parser's own answer, and this is
-    the only place it is decided. ``ParsedOutput.recognised`` is True
-    when a parser for this gate saw its tool reporting a failure - a
-    diagnostic in the tool's format, or the tool's own failure footer -
-    and False for everything else, uv's exit 2 for a command it could
-    not spawn and the shell's 127 included.
-
-    Decided here rather than passed in. Round 1 of #357 decided it at
-    the three call sites from the EXIT CODE, ``returncode not in {126,
-    127}``, and round 2 of review measured what that is worth on the
-    commands this repository actually ships: the gate defaults are
-    ``uv run pytest`` / ``uv run mypy .`` / ``uv run ruff check .``, and
-    uv spawns the child itself and reports its OWN status, which is 2.
-    So ``uv run <missing> check .`` returned ``measured=True`` and the
-    comparison reported ``fixed={'linter:E501': 12, 'linter:F401': 3}``
-    - uninstalling a linter read as fixing every one of its findings,
-    which is exactly what the exit-code rule existed to prevent. A
-    status is the LAUNCHER's, and only the tool's own report is
-    evidence that the tool ran.
-    """
-    parsed.command = cmd
-    if not parsed.failures and not parsed.recognised:
-        # #622: no parser read this output, so raw_summary is its last 3-5
-        # lines. The excerpt keeps the lines around each location inside
-        # the worktree instead, and the tail stays when there is none.
-        parsed.raw_summary = failure_excerpt(output, cwd) or parsed.raw_summary
-    if unread:
-        # #629: a declared report kstrl could not read. Its reason comes
-        # first, above whatever the output itself showed; the message is
-        # untouched because it feeds the failure signature.
-        parsed.raw_summary = "\n".join(part for part in (unread, parsed.raw_summary) if part)
-    for failure in parsed.failures:
-        # eslint's default formatter prints ABSOLUTE paths, so without
-        # this the engineer is handed a path rooted in kstrl's throwaway
-        # worktree: correct on disk, useless as an instruction, and not
-        # the path its own tools use. Deliberately the FILE only. The
-        # message is prose the tool wrote and may quote a path too
-        # (measured: vitest's load errors do); rewriting a tool's own
-        # sentences by string substitution is a different and less safe
-        # mechanism than resolving a path, and the file is the field the
-        # engineer acts on and add_source_context resolves.
-        if failure.file:
-            failure.file = relative_to_root(Path(failure.file), cwd)
-        add_source_context(failure, cwd)
-        if not failure.fix_hint:
-            failure.fix_hint = generate_fix_hint(failure)
-    return CheckResult(
-        name=name,
-        passed=False,
-        message=message,
-        details=parsed.format_for_prompt(),
-        duration_seconds=time.monotonic() - start,
-        parsed=parsed,
-        measured=parsed.recognised,
-        output=bounded_gate_output(output),
-    )
-
-
-def _test_gate_env(report_dir: Path | None, report: Path | None) -> dict[str, str]:
-    """The test command's extra environment: the #620 inventory's, and the
-    declared report's path (#629). Both are values kstrl chose."""
-    env = dict(inventory_env(report_dir) or {})
-    if report is not None:
-        env[REPORT_ENV] = str(report)
-    return env
-
-
-def _test_failure(
-    output: str, tool: str | None, report: Path | None, cwd: Path
-) -> tuple[ParsedOutput, str | None, list[NotMeasured]]:
-    """A failing test gate's parse, the line saying why its report was not
-    read, and the gap that records it (#629).
-
-    With no declared report this is the text parse, as before. A declared
-    report that cannot be read gives a parse holding only the output's last
-    five lines, so the row shows the #622 excerpt, or that tail when the
-    excerpt is empty, under the refusal; text parsers are never run over
-    output the operator said is not theirs.
-    """
-    if report is None or tool is None:
-        return parse_gate_output(output, GATE_TEST, tool), None, []
-    read = read_gate_report(tool, report, cwd)
-    if isinstance(read, ParsedOutput):
-        return read, None, []
-    reason = NOT_MEASURED_TOOL_MISSING if read.missing else NOT_MEASURED_COMMAND_FAILED
-    # The output's tail, as a text parse keeps it, for when the #622 excerpt
-    # finds no location to show; no parser reads it.
-    tail = "\n".join(output.splitlines()[-5:])
-    refused = ParsedOutput(tool=tool, raw_summary=tail)
-    return refused, read.detail, [NotMeasured(GATE_TEST, reason, read.detail)]
-
-
-def check_test_suite(
-    cwd: Path,
-    command: str | None = None,
-    timeout: float | None = None,
-    tool: str | None = None,
-    *,
-    report_dir: Path | None = None,
-) -> tuple[CheckResult, list[NotMeasured]]:
-    """Run the project's test suite independently: its row, and a gap when
-    a declared report could not be read (#629).
-
-    ``tool`` pins which parser reads the output; None runs every parser
-    registered for the gate and unions what they find (#258). A report
-    format (``kstrl.gateparse.GATE_FORMATS``) instead has the command write
-    a report to ``$KSTRL_REPORT``, read on a failing exit only.
-
-    ``report_dir`` (#620) is a directory kstrl owns: pytest is asked for a
-    junit report there and the gate's output is saved there, so
-    :func:`kstrl.suite_inventory.unrun_test_files` can read which test
-    files this run executed. None changes nothing about the run.
-    """
-    start = time.monotonic()
-    cmd = resolve_test_command(command, cwd)
-
-    with fresh_report(tool) as report:
-        try:
-            result = run_scrubbed(
-                cmd, cwd=cwd, timeout=timeout, extra_env=_test_gate_env(report_dir, report)
-            )
-        except subprocess.TimeoutExpired as expired:
-            return CheckResult(
-                name=GATE_TEST,
-                passed=False,
-                message=f"Test suite timed out after {timeout}s",
-                duration_seconds=time.monotonic() - start,
-                measured=False,
-                output=_output_before_stop(expired.stdout, expired.stderr),
-            ), []
-        except ChildOutputDecodeError as exc:
-            return CheckResult(
-                name=GATE_TEST,
-                passed=False,
-                message=f"Test suite output could not be decoded: {exc}",
-                duration_seconds=time.monotonic() - start,
-                measured=False,
-                output=_output_before_stop(exc.stdout, exc.stderr),
-            ), []
-
-        save_gate_output(report_dir, result.stdout + result.stderr)
-        if result.returncode == 0:
-            return CheckResult(
-                name=GATE_TEST,
-                passed=True,
-                message="Tests passed",
-                duration_seconds=time.monotonic() - start,
-            ), []
-        output = (result.stdout + result.stderr).strip()
-        parsed, unread, gaps = _test_failure(output, tool, report, cwd)
-
-    row = _failed_gate_result(
-        GATE_TEST,
-        f"Tests failed (exit code {result.returncode})",
-        parsed,
-        cmd,
-        cwd,
-        start,
-        output=output,
-        unread=unread,
-    )
-    return row, gaps
-
-
-def check_typecheck(
-    cwd: Path,
-    command: str | None = None,
-    timeout: float | None = None,
-    tool: str | None = None,
-) -> CheckResult:
-    """Run typecheck independently. See ``check_test_suite`` for ``tool``."""
-    start = time.monotonic()
-    cmd = resolve_typecheck_command(command, cwd)
-
-    try:
-        result = run_scrubbed(cmd, cwd=cwd, timeout=timeout)
-    except subprocess.TimeoutExpired as expired:
-        return CheckResult(
-            name=GATE_TYPECHECK,
-            passed=False,
-            message=f"Typecheck timed out after {timeout}s",
-            duration_seconds=time.monotonic() - start,
-            measured=False,
-            output=_output_before_stop(expired.stdout, expired.stderr),
-        )
-    except ChildOutputDecodeError as exc:
-        return CheckResult(
-            name=GATE_TYPECHECK,
-            passed=False,
-            message=f"Typecheck output could not be decoded: {exc}",
-            duration_seconds=time.monotonic() - start,
-            measured=False,
-            output=_output_before_stop(exc.stdout, exc.stderr),
-        )
-
-    if result.returncode != 0:
-        output = (result.stdout + result.stderr).strip()
-        return _failed_gate_result(
-            GATE_TYPECHECK,
-            f"Typecheck failed (exit code {result.returncode})",
-            parse_gate_output(output, GATE_TYPECHECK, tool),
-            cmd,
-            cwd,
-            start,
-            output=output,
-        )
-
-    return CheckResult(
-        name=GATE_TYPECHECK,
-        passed=True,
-        message="Typecheck passed",
-        duration_seconds=time.monotonic() - start,
-    )
-
-
-def check_linter(
-    cwd: Path,
-    command: str | None = None,
-    timeout: float | None = None,
-    tool: str | None = None,
-) -> CheckResult:
-    """Run linter independently. See ``check_test_suite`` for ``tool``."""
-    start = time.monotonic()
-    cmd = resolve_lint_command(command, cwd)
-
-    try:
-        result = run_scrubbed(cmd, cwd=cwd, timeout=timeout)
-    except subprocess.TimeoutExpired as expired:
-        return CheckResult(
-            name=GATE_LINT,
-            passed=False,
-            message=f"Linter timed out after {timeout}s",
-            duration_seconds=time.monotonic() - start,
-            measured=False,
-            output=_output_before_stop(expired.stdout, expired.stderr),
-        )
-    except ChildOutputDecodeError as exc:
-        return CheckResult(
-            name=GATE_LINT,
-            passed=False,
-            message=f"Linter output could not be decoded: {exc}",
-            duration_seconds=time.monotonic() - start,
-            measured=False,
-            output=_output_before_stop(exc.stdout, exc.stderr),
-        )
-
-    if result.returncode != 0:
-        output = (result.stdout + result.stderr).strip()
-        return _failed_gate_result(
-            GATE_LINT,
-            f"Linter failed (exit code {result.returncode})",
-            parse_gate_output(output, GATE_LINT, tool),
-            cmd,
-            cwd,
-            start,
-            output=output,
-        )
-
-    return CheckResult(
-        name=GATE_LINT,
-        passed=True,
-        message="Linter passed",
-        duration_seconds=time.monotonic() - start,
-    )
 
 
 def run_fast_checks(worktree_path: Path, config: VerifyConfig) -> VerificationResult:
@@ -1939,102 +1364,33 @@ def _stack_gates(
     ]
 
 
-def _command_not_run(
-    gate: str, key: str, command: str, cwd: Path
-) -> CheckResult | NotMeasured | None:
-    """What the gate reports INSTEAD of running ``command`` in ``cwd``, or None
-    to run it (#621).
-
-    An empty command is the operator turning the gate off (``ks init``
-    seeds "" where a toolchain has no such step): a :class:`NotMeasured`,
-    never a row. A Python default in a directory that is not a Python
-    project has nothing to read, and ``uv run ruff check .`` exits 0 there:
-    a FAILED row with ``measured=False``, the shape a timed-out gate
-    already has (#227), because a gap would let a run with nothing
-    measured pass Phase 1.
-    """
-    if not command.strip():
-        return NotMeasured(gate, NOT_MEASURED_NO_TARGET, f"[verify] {key} is empty")
-    if command in PYTHON_DEFAULT_COMMANDS and not is_python_project(cwd):
-        return CheckResult(
-            name=gate,
-            passed=False,
-            message=(
-                f"Not run: `{command}` is kstrl's Python default and {cwd} has no "
-                f"pyproject.toml or setup.py. Set [verify] {key} to this project's "
-                'command, or to "" to turn the gate off'
-            ),
-            measured=False,
-        )
-    return None
-
-
-def _record(
-    outcome: CheckResult | NotMeasured, checks: list[CheckResult], gaps: list[NotMeasured]
-) -> None:
-    if isinstance(outcome, NotMeasured):
-        gaps.append(outcome)
-    else:
-        checks.append(outcome)
+#: Phase 1's one row when no ``[stack]`` names its checks (#696 slice 4).
+#: Every entry point refuses before this is reached (``stack.NO_STACK``); a
+#: caller that builds a :class:`VerifyConfig` with no stack gets a failed,
+#: unmeasured row here, never a pass and never a command kstrl chose.
+NO_STACK_CHECK = "stack"
 
 
 def _command_gates(
-    worktree_path: Path,
-    config: VerifyConfig,
-    selected: Sequence[str],
-    *,
-    base_branch: str | None = None,
+    worktree_path: Path, config: VerifyConfig, selected: Sequence[str]
 ) -> tuple[list[CheckResult], list[NotMeasured]]:
-    """The test, typecheck and lint gates named in ``selected``, in that order.
+    """The ``[stack]`` checks named in ``selected``, in the stack's order (#696).
 
-    Shared by :func:`run_mechanical_verification` and
-    :func:`run_fast_checks`. Each command is resolved once against
-    ``worktree_path``, and that one string is both what
-    :func:`_command_not_run` judges and what runs. Direct calls rather
-    than a lookup table, because every static guard that resolves a
-    spawn's callee has to be able to read these three.
-
-    With ``base_branch`` (Phase 1), the test gate also reads which changed
-    test files the suite ran (#620, :func:`_test_suite_checks`); the
-    between-iteration checks pass none, which reads as no diff, and run the
-    suite as before. Both reach the test gate through that one function, so
-    its gaps (#629) are merged in one place.
-
-    Under a ``[stack]`` (#696) the gates are the stack's checks instead, by
-    :func:`_stack_gates`, and nothing below runs: no command is resolved,
-    so no default command can stand in for one.
+    Shared by :func:`run_mechanical_verification` and :func:`run_fast_checks`.
+    With no stack there is nothing to run, and the one row says so: no
+    command is chosen in its place.
     """
-    if config.project_stack is not None:
-        return _stack_gates(worktree_path, config, config.project_stack, selected), []
-    commands = resolve_verify_commands(config, worktree_path)
-    timeout = limit_seconds(config.subprocess_timeout)
-    checks: list[CheckResult] = []
-    gaps: list[NotMeasured] = []
-    if GATE_TEST in selected:
-        outcome = _command_not_run(GATE_TEST, "test_command", commands.test, worktree_path)
-        if outcome is not None:
-            _record(outcome, checks, gaps)
-        else:
-            row, ran_gaps = _test_suite_checks(
-                worktree_path, base_branch or "", config, commands.test
+    if config.project_stack is None:
+        return [
+            CheckResult(
+                name=NO_STACK_CHECK,
+                passed=False,
+                message=NO_STACK,
+                measured=False,
+                output=NO_STACK,
             )
-            checks.append(row)
-            gaps.extend(ran_gaps)
-    if GATE_TYPECHECK in selected:
-        outcome = _command_not_run(
-            GATE_TYPECHECK, "typecheck_command", commands.typecheck, worktree_path
-        )
-        if outcome is None:
-            outcome = check_typecheck(
-                worktree_path, commands.typecheck, timeout, config.typecheck_tool
-            )
-        _record(outcome, checks, gaps)
-    if GATE_LINT in selected:
-        outcome = _command_not_run(GATE_LINT, "lint_command", commands.lint, worktree_path)
-        if outcome is None:
-            outcome = check_linter(worktree_path, commands.lint, timeout, config.lint_tool)
-        _record(outcome, checks, gaps)
-    return checks, gaps
+        ], []
+    return _stack_gates(worktree_path, config, config.project_stack, selected), []
 
 
 #: What the two diff-driven checks report when the diff handed them nothing.
@@ -3478,14 +2834,14 @@ def _mutmut_missing(check: str, config_key: str) -> NotMeasured:
 
 
 def _mutmut_tool_preflight(
-    check: str, config_key: str, test_command: str | None, cwd: Path
+    check: str, config_key: str, test_command: str | None
 ) -> list[str] | NotMeasured:
     """The refusals both mutmut-backed checks make before they look at
     the tree: the operator's test command must be a single pytest
     invocation mutmut's ``--runner`` can wrap, and mutmut must be on
     PATH. One copy, because two copies 300 lines apart disagreed on five
     learned facts about the same tool (#391)."""
-    tokens = _pytest_tokens_or_gap(check, test_command, "mutmut's runner can wrap", cwd)
+    tokens = _pytest_tokens_or_gap(check, test_command, "mutmut's runner can wrap")
     if isinstance(tokens, NotMeasured):
         return tokens
     if not shutil.which("mutmut"):
@@ -3538,8 +2894,8 @@ def check_mutation_score(
     (D6), the same reason :func:`check_diff_mutation`'s identical
     parameter has never had one, so a caller states its choice rather
     than inheriting a smart default it never asked for. ``None`` is
-    still a legal value - :func:`resolve_test_command` reads it as the
-    harness default - it is only the silent ``= None`` that is gone.
+    still a legal value - since #696 it is the gap, never a command kstrl
+    picks - it is only the silent ``= None`` that is gone.
 
     Returns a :class:`CheckResult` - PASS or FAIL against ``threshold`` -
     only when a score was actually measured. Every other path returns
@@ -3607,7 +2963,7 @@ def check_mutation_score(
     """
     start = time.monotonic()
     tokens = _mutmut_tool_preflight(
-        MUTATION_TESTING_CHECK, "[verify] mutation_testing", test_command, cwd
+        MUTATION_TESTING_CHECK, "[verify] mutation_testing", test_command
     )
     if isinstance(tokens, NotMeasured):
         return tokens
@@ -3771,9 +3127,9 @@ def _validated_pytest_tokens(test_command: str) -> list[str] | None:
 
 
 def _pytest_tokens_or_gap(
-    check: str, test_command: str | None, clause: str, cwd: Path
+    check: str, test_command: str | None, clause: str
 ) -> list[str] | NotMeasured:
-    """``test_command``, resolved and tokenised as a single pytest
+    """``test_command`` tokenised as a single pytest
     invocation the caller can extend - or the ``tool_missing`` sidecar
     naming why not, in the caller's own words (``clause``).
 
@@ -3783,13 +3139,22 @@ def _pytest_tokens_or_gap(
     command (``"this can extend"``), while the two mutmut-backed checks
     hand it to mutmut's own ``--runner`` (``"mutmut's runner can
     wrap"``, D6).
+
+    ``test_command`` is :attr:`VerifyConfig.pytest_command`: None is the
+    gap, never a command kstrl picks in its place.
     """
-    tokens = _validated_pytest_tokens(resolve_test_command(test_command, cwd))
+    if test_command is None:
+        return NotMeasured(
+            check,
+            NOT_MEASURED_TOOL_MISSING,
+            f"the [stack] has no check named {TESTS_CHECK!r} {clause} (#696)",
+        )
+    tokens = _validated_pytest_tokens(test_command)
     if tokens is None:
         return NotMeasured(
             check,
             NOT_MEASURED_TOOL_MISSING,
-            f"[verify] test_command is not a single pytest invocation {clause}: {test_command!r}",
+            f"the test command is not a single pytest invocation {clause}: {test_command!r}",
         )
     return tokens
 
@@ -3851,7 +3216,7 @@ def _run_coverage_step(
 ) -> subprocess.CompletedProcess[str] | NotMeasured:
     """Run one of :func:`_coverage_report`'s two spawns; classify the two
     failure modes that do not differ between them (D9: bounded by
-    ``timeout``, the same ceiling :func:`check_test_suite` uses, through
+    ``timeout``, the same ceiling the command gates use, through
     :func:`run_scrubbed`'s own process-group kill).
 
     A non-zero exit or a missing output file mean something DIFFERENT for
@@ -4018,11 +3383,9 @@ def check_patch_coverage(
     mutually exclusive), and this check already has the intersection.
 
     Runs ``test_command`` a SECOND time (D1) rather than folding coverage
-    flags into the existing :func:`check_test_suite` run. Folding costs
-    less wall clock (see the PR body for the measured numbers), but the
-    load-bearing reason it is rejected is ``[verify] pin_verify_commands``:
-    the engineer sees the PINNED test command through
-    ``VERIFY_COMMANDS_PROMPT``, and folding would change what that
+    flags into the test gate's own run. Folding costs less wall clock (see
+    the PR body for the measured numbers), but the engineer is told the
+    exact command the gate runs, and folding would change what that
     command means without telling it. It would also let an advisory
     measurement turn a green suite RED whenever pytest-cov is not
     installed for the project (measured: exit 4, no data file), which is
@@ -4053,8 +3416,8 @@ def check_patch_coverage(
       ``coverage.total`` is 0) - a git read that FAILED is a fault and is
       ``command_failed``, never this token.
     - ``timed_out``: the two spawns share ONE ``timeout`` budget, the
-      same ``[verify] subprocess_timeout`` :func:`check_test_suite`
-      uses, not one ``timeout`` each. The data spawn is bounded by
+      same ``[verify] subprocess_timeout`` the command gates
+      use, not one ``timeout`` each. The data spawn is bounded by
       ``timeout`` directly; the JSON spawn is bounded by whatever
       remains of ``timeout`` once the data spawn returns, and gets
       ``timed_out`` with no second spawn at all when nothing remains.
@@ -4074,7 +3437,7 @@ def check_patch_coverage(
     (SIGTERM, grace, SIGKILL) before raising
     :class:`subprocess.TimeoutExpired`.
     """
-    tokens = _pytest_tokens_or_gap(PATCH_COVERAGE_CHECK, test_command, "this can extend", cwd)
+    tokens = _pytest_tokens_or_gap(PATCH_COVERAGE_CHECK, test_command, "this can extend")
     if isinstance(tokens, NotMeasured):
         return tokens
     try:
@@ -4193,7 +3556,7 @@ def _patch_coverage_checks(
         return [], None, None
     start = time.monotonic()
     outcome = check_patch_coverage(
-        cwd, base_branch, config.test_command, limit_seconds(config.subprocess_timeout)
+        cwd, base_branch, config.pytest_command, limit_seconds(config.subprocess_timeout)
     )
     if isinstance(outcome, NotMeasured):
         return [], outcome, None
@@ -4611,9 +3974,7 @@ def _diff_mutation_preflight(
     already on disk from one mutmut is about to write, and refuses
     rather than risk overwriting the project's file.
     """
-    tokens = _mutmut_tool_preflight(
-        DIFF_MUTATION_CHECK, "[adequacy] diff_mutation", test_command, cwd
-    )
+    tokens = _mutmut_tool_preflight(DIFF_MUTATION_CHECK, "[adequacy] diff_mutation", test_command)
     if isinstance(tokens, NotMeasured):
         return tokens
     targets: dict[str, set[int]] = {
@@ -4853,7 +4214,7 @@ def _diff_mutation_checks(
             NotMeasured(
                 DIFF_MUTATION_CHECK,
                 NOT_MEASURED_COMMAND_FAILED,
-                "[verify] test_suite already failed; mutmut's own baseline run "
+                f"stack:{TESTS_CHECK} already failed; mutmut's own baseline run "
                 "would only run the suite a third time to abort with 'Tests "
                 "don't run cleanly without mutations', so Layer 2 refuses "
                 "before spending anything",
@@ -4874,7 +4235,7 @@ def _diff_mutation_checks(
                 "measuring anything, and Layer 2 refuses before spending it",
             )
         ]
-    outcome = check_diff_mutation(cwd, coverage, config.test_command, cap)
+    outcome = check_diff_mutation(cwd, coverage, config.pytest_command, cap)
     if isinstance(outcome, NotMeasured):
         return [], [outcome]
     return [outcome], []
@@ -5480,93 +4841,6 @@ def _scope_checks(
     return []
 
 
-def _changed_test_files(cwd: Path, base_branch: str) -> tuple[list[str], list[NotMeasured]]:
-    """The test files this diff added or changed that still exist (#620).
-
-    ``base_branch=""`` is :func:`run_undiffed_verification`'s "there is no
-    base here", which nothing may read, so it answers no files and no gap.
-    A diff git cannot produce is a gap naming why, never an empty list.
-    """
-    if not base_branch:
-        return [], []
-    try:
-        records = git.get_diff_name_status(base_branch, cwd, strict=True)
-    except git.GitDiffError as exc:
-        return [], [
-            NotMeasured(
-                TESTS_RAN_CHECK,
-                NOT_MEASURED_COMMAND_FAILED,
-                f"git could not produce the diff, so no test file it changed was checked: {exc}",
-            )
-        ]
-    changed = {
-        path
-        for status, path in records
-        if not status.startswith("D") and runner_for(path) and (cwd / path).is_file()
-    }
-    return sorted(changed), []
-
-
-def _with_unrun_test_files(row: CheckResult, did_not_run: Sequence[str]) -> CheckResult:
-    """``row`` carrying one advisory finding per changed test file that
-    did not run (#620). Advisory: the repo's rule for a new gate, until a
-    measured false-positive rate says it may block.
-
-    The message changes on a PASSING row only. A failing row's message
-    feeds the failure signature a baseline compares, and its failure is
-    already reported.
-    """
-    if not did_not_run:
-        return row
-    findings = [
-        Finding.adequacy_finding(
-            category="test_not_run",
-            explanation=f"{path} was changed by this diff and the test command ran no test in it",
-            location=path,
-        )
-        for path in did_not_run
-    ]
-    note = (
-        f"{len(did_not_run)} test file(s) this diff changed did not run [advisory]: "
-        + ", ".join(did_not_run)
-    )
-    message = f"{row.message}; {note}" if row.passed else row.message
-    return replace(row, message=message, findings=[*row.findings, *findings])
-
-
-def _test_suite_checks(
-    cwd: Path, base_branch: str, config: VerifyConfig, command: str
-) -> tuple[CheckResult, list[NotMeasured]]:
-    """The ``test_suite`` row, and a ``tests_ran`` gap when it could not
-    read which changed test files ran (#620).
-
-    ``command`` is the test command :func:`_command_gates` resolved and
-    judged runnable. A diff that changed no test file runs the gate
-    exactly as before: no report is asked for and nothing is read.
-    """
-    timeout = limit_seconds(config.subprocess_timeout)
-    changed, gaps = _changed_test_files(cwd, base_branch)
-    if not changed:
-        row, test_gaps = check_test_suite(cwd, command, timeout, config.test_tool)
-        return row, [*gaps, *test_gaps]
-    with tempfile.TemporaryDirectory(prefix="kstrl-tests-ran-") as tmp:
-        report_dir = Path(tmp)
-        row, test_gaps = check_test_suite(
-            cwd, command, timeout, config.test_tool, report_dir=report_dir
-        )
-        did_not_run, unread = unrun_test_files(changed, report_dir)
-    if unread:
-        gaps = [
-            NotMeasured(
-                TESTS_RAN_CHECK,
-                NOT_MEASURED_TOOL_MISSING,
-                "kstrl reads which test files ran from a pytest junit report and from "
-                "vitest's per-file lines, and found neither for: " + ", ".join(unread),
-            )
-        ]
-    return _with_unrun_test_files(row, did_not_run), [*gaps, *test_gaps]
-
-
 def _mutation_checks(
     cwd: Path,
     base_branch: str,
@@ -5664,7 +4938,7 @@ def _mutation_checks(
             NotMeasured(
                 MUTATION_TESTING_CHECK,
                 NOT_MEASURED_COMMAND_FAILED,
-                "[verify] test_suite already failed; mutmut's own baseline run "
+                f"stack:{TESTS_CHECK} already failed; mutmut's own baseline run "
                 "would only run the suite a third time to abort with 'Tests "
                 "don't run cleanly without mutations', so this check refuses "
                 "before spending anything (#391 simplify pass on PR #392: the "
@@ -5689,7 +4963,7 @@ def _mutation_checks(
     outcome = check_mutation_score(
         cwd,
         base_branch,
-        test_command=config.test_command,
+        test_command=config.pytest_command,
         threshold=config.mutation_threshold,
         timeout=cap,
     )
@@ -6004,9 +5278,7 @@ def run_mechanical_verification(
     if prd_path is not None:
         checks.append(check_prd_stories(prd_path, pre_run_prd_path))
 
-    gate_rows, gate_gaps = _command_gates(
-        worktree_path, config, gate_names(config), base_branch=base_branch
-    )
+    gate_rows, gate_gaps = _command_gates(worktree_path, config, gate_names(config))
     checks.extend(gate_rows)
     not_measured.extend(gate_gaps)
 
@@ -6059,12 +5331,11 @@ def run_mechanical_verification(
     if coverage_gap is not None:
         not_measured.append(coverage_gap)
 
-    # One [verify] test_suite reading feeds BOTH mutation checks' A2 guard
-    # below (#391 simplify pass on PR #392): a single generator read,
-    # never re-evaluated between the two calls.
-    # False when the test gate produced no row (#621): a suite nobody ran
-    # is not one mutmut may assume passes.
-    test_suite_passed = next((c.passed for c in checks if c.name == GATE_TEST), False)
+    # One reading of the command gates feeds BOTH mutation checks' A2 guard
+    # below (#391 simplify pass on PR #392): the suite the mutation run repeats
+    # is the [stack] check its command came from (#696).
+    suite_row = f"stack:{TESTS_CHECK}"
+    test_suite_passed = next((row.passed for row in gate_rows if row.name == suite_row), False)
     coverage_duration = coverage_rows[0].duration_seconds if coverage_rows else 0.0
 
     # ONE phase-level mutation budget (#391 simplify pass on PR #392,

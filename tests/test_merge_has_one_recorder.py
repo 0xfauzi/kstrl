@@ -45,6 +45,7 @@ from kstrl.reducer import load_run_state
 from kstrl.tui.delivery import Merge, merges_of
 from tests.helpers import astwalk, gitrepo
 from tests.helpers.executables import write_executable
+from tests.helpers.stack_confirmation import confirm_stack, write_stack
 from tests.test_merge_gate_park import ENGINEER, FACTORY_FLAGS
 
 HTTP = "http"
@@ -108,12 +109,14 @@ def _repo(tmp_path: Path, components: list[dict[str, object]]) -> Path:
             encoding="utf-8",
         )
     (root / "kstrl.toml").write_text("[inbox]\nenabled = true\n", encoding="utf-8")
+    write_stack(root)
     gitrepo.git_in(root, "add", "-A")
     gitrepo.git_in(root, "commit", "-q", "-m", "init")
     origin = tmp_path / "origin.git"
     gitrepo.git_in(tmp_path, "init", "-q", "--bare", str(origin))
     gitrepo.git_in(root, "remote", "add", "origin", str(origin))
     gitrepo.git_in(root, "push", "-q", "-u", "origin", "main")
+    confirm_stack(root)
     manifest = {
         "version": "1",
         "specFile": "spec.md",

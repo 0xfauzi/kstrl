@@ -84,6 +84,7 @@ from kstrl.workqueue import Queue, QueueConfig
 from tests.helpers import procs
 from tests.helpers.executables import write_executable
 from tests.helpers.runners import recording_runner
+from tests.helpers.stack_confirmation import confirm_stack, write_stack
 from tests.test_intake_github import REPO, _GhStub, _issue, _issue_payload
 
 # --------------------------------------------------------------------------
@@ -578,6 +579,13 @@ class TestACycleWithNoInjectedRunnerLaunchesTheRealCommand:
     ``run_supervised`` - runs as shipped.
     """
 
+    @pytest.fixture(autouse=True)
+    def _confirmed_stack(self, tmp_path: Path) -> None:
+        """Every `serve_cycle` call here claims from a queue on `tmp_path`,
+        so it needs a confirmed [stack] first (#696 flag day, rule 1)."""
+        write_stack(tmp_path)
+        confirm_stack(tmp_path)
+
     @staticmethod
     def _argv_from(record: Path) -> list[str]:
         assert record.exists(), (
@@ -705,6 +713,11 @@ class TestRemoteWorkSurvivesTheSeam:
         tests assert the item reaches DONE, which a cycle that handed the
         factory an empty or missing spec would also satisfy."""
         _enable_github_intake(tmp_path)
+        # `_enable_github_intake` writes the whole kstrl.toml, so the
+        # [stack] `serve_cycle` needs (#696 flag day, rule 1) is written
+        # and confirmed after it, not before.
+        write_stack(tmp_path)
+        confirm_stack(tmp_path)
         gh = _GhStub(
             issues=_issue_payload(
                 _issue(7, title="Add a widget", body="Build the widget."),
@@ -729,6 +742,8 @@ class TestRemoteWorkSurvivesTheSeam:
         at admission; this asserts it is still true at the point the
         factory is actually invoked."""
         _enable_github_intake(tmp_path)
+        write_stack(tmp_path)
+        confirm_stack(tmp_path)
         gh = _GhStub(issues=_issue_payload(_issue(4)))
         calls: list[dict[str, Any]] = []
         with patch("kstrl.intake_github.run_gh", gh):

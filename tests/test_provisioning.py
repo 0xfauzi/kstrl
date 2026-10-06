@@ -33,6 +33,7 @@ from kstrl.manifest import Component, Manifest
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
 from tests.helpers import gitrepo
+from tests.helpers.stack_confirmation import in_process_stack
 
 CUSTOM_PROMPT = (
     "CUSTOMIZED-PROMPT-MARKER-7f3a\n\nRead the PRD at $prd_path and implement one story.\n"
@@ -114,10 +115,9 @@ def _factory_config(max_retries: int = 0) -> FactoryConfig:
         max_retries=max_retries,
         retry_delay=0,
         review_mode="skip",
+        project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
         verify_config=VerifyConfig(
-            test_command="true",
-            typecheck_command="true",
-            lint_command="true",
+            project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
             check_bad_patterns=False,
             subprocess_timeout=30.0,
         ),

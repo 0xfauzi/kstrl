@@ -23,18 +23,12 @@ this module carries to the next report so pre-existing breakage is named
 as pre-existing.
 
 Two consequences of naming the gate to the implement and repair loops
-that are not the report itself. The engineer prompt gains the resolved
-VERIFY_COMMANDS_PROMPT block, whose wording says a "gate" runs those
-commands where this flow only reports them - the COMMANDS it names are
+that are not the report itself. The engineer prompt gains the ``[stack]``
+block (``stack.STACK_PROMPT``), whose wording says kstrl runs those
+checks on the work where this flow only reports them - the CHECKS it names are
 exactly the commands that run, which is the load-bearing half, but the
 consequence it implies is stronger than the truth, and correcting the
 wording is an H3 prompt change with a calibration cost (#288 review).
-And ``loop.build_project_context`` now also runs
-``scrub_project_claude_md`` here, so a project whose CLAUDE.md carries
-pre-#261 ``- **Test**: ...`` bullets gets them dropped from the prompt
-copy, with a ui.warn per divergence. That is #261 working as designed,
-one path later than it was written for, and it never touches the file on
-disk.
 """
 
 from __future__ import annotations
@@ -120,13 +114,13 @@ class FeatureParams:
     implementation_auto_run: bool
     #: ``--no-verify``. False runs the #288 advisory reports; True runs
     #: none of them and threads no ``verify_config`` into any loop, so
-    #: the engineer prompt loses the VERIFY_COMMANDS_PROMPT block too.
+    #: the engineer prompt loses the ``[stack]`` block too.
     #: `ks run` and `ks factory` have always offered this; `ks feature`
     #: did not, and #288 gave it an unconditional ``2 + repair_max_runs``
     #: full test-suite runs with no way to decline (review round 2).
-    #: Setting ``[verify] test_command`` to a no-op is not the same
-    #: escape: the SAME config feeds the engineer's prompt, so that
-    #: workaround lies to the agent about what will be run on its work.
+    #: Setting a ``[stack]`` check to a no-op is not the same escape:
+    #: the SAME config feeds the engineer's prompt, so that workaround
+    #: lies to the agent about what will be run on its work.
     no_verify: bool
     repair_max_runs: int
     repair_iterations: int

@@ -59,6 +59,7 @@ from kstrl.manifest import Component, Manifest
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
 from tests.helpers.distill_replies import BROKEN_REPLY, EMPTY_REPLY
+from tests.helpers.stack_confirmation import in_process_stack
 
 # ---------------------------------------------------------------------------
 # Test helpers
@@ -1559,10 +1560,11 @@ class TestFactoryDistillIntegration:
             create_prs=False,
             max_parallel=1,
             review_mode="skip",
+            project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
             verify_config=VerifyConfig(
-                test_command="true",
-                typecheck_command="true",
-                lint_command="true",
+                project_stack=in_process_stack(
+                    {"tests": "true", "typecheck": "true", "lint": "true"}
+                ),
                 check_diff_scope=False,
                 check_bad_patterns=False,
                 subprocess_timeout=5.0,
@@ -1605,6 +1607,7 @@ class TestFactoryDistillIntegration:
             max_retries=0,
             retry_delay=0,
             review_mode="skip",
+            project_stack=in_process_stack(),
         )
         base = _factory_base_config(root)
         ui = PlainUI(no_color=True)
@@ -1639,10 +1642,11 @@ class TestFactoryDistillIntegration:
             create_prs=False,
             max_parallel=1,
             review_mode="skip",
+            project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
             verify_config=VerifyConfig(
-                test_command="true",
-                typecheck_command="true",
-                lint_command="true",
+                project_stack=in_process_stack(
+                    {"tests": "true", "typecheck": "true", "lint": "true"}
+                ),
                 check_diff_scope=False,
                 check_bad_patterns=False,
                 subprocess_timeout=5.0,
@@ -1686,10 +1690,11 @@ class TestFactoryDistillIntegration:
             create_prs=False,
             max_parallel=1,
             review_mode="skip",
+            project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
             verify_config=VerifyConfig(
-                test_command="true",
-                typecheck_command="true",
-                lint_command="true",
+                project_stack=in_process_stack(
+                    {"tests": "true", "typecheck": "true", "lint": "true"}
+                ),
                 check_diff_scope=False,
                 check_bad_patterns=False,
                 subprocess_timeout=5.0,
@@ -1735,10 +1740,11 @@ class TestFactoryDistillIntegration:
             create_prs=False,
             max_parallel=1,
             review_mode="skip",
+            project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
             verify_config=VerifyConfig(
-                test_command="true",
-                typecheck_command="true",
-                lint_command="true",
+                project_stack=in_process_stack(
+                    {"tests": "true", "typecheck": "true", "lint": "true"}
+                ),
                 check_diff_scope=False,
                 check_bad_patterns=False,
                 subprocess_timeout=5.0,

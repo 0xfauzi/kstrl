@@ -28,6 +28,7 @@ import pytest
 from kstrl.serve import RunOutcome, ServeConfig, SpendLedger, serve_cycle
 from kstrl.workqueue import ItemState, Queue, QueueConfig
 from tests.helpers.executables import write_executable
+from tests.helpers.stack_confirmation import confirm_stack, write_stack
 
 pytestmark = pytest.mark.usefixtures("no_open_prs")
 
@@ -94,6 +95,9 @@ def _runner(calls: list[str]):
 
 
 def _cycle(root: Path) -> tuple[list[str], object, Queue]:
+    # serve claims nothing until a [stack] is confirmed (#696 flag day).
+    write_stack(root)
+    confirm_stack(root)
     queue = Queue(root, QueueConfig())
     queue.add("# spec\n", title="first")
     calls: list[str] = []

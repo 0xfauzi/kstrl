@@ -19,6 +19,7 @@ from kstrl.factory import FactoryConfig
 from kstrl.manifest import Component, Manifest
 from kstrl.verify import VerifyConfig
 from tests.helpers import gitrepo
+from tests.helpers.stack_confirmation import in_process_stack
 
 STUB_PR_URL = "https://github.com/spine/repo/pull/41"
 STUB_PR_NUMBER = 41
@@ -135,10 +136,9 @@ def factory_config(**overrides: object) -> FactoryConfig:
         retry_delay=0,
         review_mode="skip",
         merge_timeout=2.0,
+        project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
         verify_config=VerifyConfig(
-            test_command="true",
-            typecheck_command="true",
-            lint_command="true",
+            project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
             check_diff_scope=False,
             check_bad_patterns=False,
             subprocess_timeout=10.0,

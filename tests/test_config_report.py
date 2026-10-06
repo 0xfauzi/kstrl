@@ -78,30 +78,14 @@ class TestBuildConfigReport:
             "env",
         )
 
-    def test_verify_tool_keys_are_reported(
-        self,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """#258: the per-gate parser keys reach `ks config`.
-
-        They were added to VerifyConfig, gen_docs, the README and
-        docs/env-vars.md but not to this report, so the one setting an
-        operator reaches for when a gate is parsed by the wrong
-        toolchain had no row, no value and no source anywhere in the
-        resolved-config surface.
-        """
-        monkeypatch.setenv("KSTRL_VERIFY_TYPECHECK_TOOL", "tsc")
-        (tmp_path / "kstrl.toml").write_text('[verify]\ntest_tool = "vitest"\n', encoding="utf-8")
-        report = build_config_report(tmp_path)
-
-        assert _row(report.rows, "verify", "test_tool") == ConfigRow(
-            "verify", "test_tool", "'vitest'", "toml"
-        )
-        assert _row(report.rows, "verify", "typecheck_tool") == ConfigRow(
-            "verify", "typecheck_tool", "'tsc'", "env"
-        )
-        assert _row(report.rows, "verify", "lint_tool").source == "default"
+    # #696 flag day: test_verify_tool_keys_are_reported (#258) tested
+    # [verify] test_tool/typecheck_tool/lint_tool, the per-gate parser
+    # keys that named which toolchain parsed a gate's output. The flag
+    # day retired the whole per-tool-parser surface those keys belonged
+    # to - a confirmed [stack] is the only source of verification
+    # commands now, and kstrl parses no check's output at all (decision
+    # 6) - so there is no reachable subject left for this test. Deleted
+    # rather than kept red.
 
     def test_absent_toml(self, tmp_path: Path) -> None:
         report = build_config_report(tmp_path)

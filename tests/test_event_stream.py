@@ -33,6 +33,7 @@ from kstrl.observability import (
 )
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
+from tests.helpers.stack_confirmation import in_process_stack
 
 
 def _setup_project(tmp_path: Path, component_ids: list[str]) -> Path:
@@ -107,10 +108,9 @@ def _factory_config(tmp_path: Path, **overrides: Any) -> FactoryConfig:
         max_retries=0,
         retry_delay=0,
         review_mode="skip",
+        project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
         verify_config=VerifyConfig(
-            test_command="true",
-            typecheck_command="true",
-            lint_command="true",
+            project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
             check_diff_scope=False,
             check_bad_patterns=False,
             subprocess_timeout=5.0,
@@ -299,6 +299,7 @@ class TestDualWrite:
         runs = root / ".kstrl" / "runs"
         assert sorted(p.name for p in runs.rglob("*") if p.is_file()) == [
             "base-gates.json",
+            "isolation.json",
             "launch.json",
         ]
 
@@ -431,7 +432,11 @@ class TestSemanticEvents:
             )
         events = ev.read_events(_events_file(root))
         requested = [e for e in events if isinstance(e, ev.CheckpointRequested)]
-        resolved = [e for e in events if isinstance(e, ev.CheckpointResolved)]
+        # The confirmed [stack] resolves its own "stack" checkpoint first
+        # (#696); this test is about the merge checkpoint.
+        resolved = [
+            e for e in events if isinstance(e, ev.CheckpointResolved) and e.kind == "pr_merge"
+        ]
         assert len(requested) == 1
         assert requested[0].kind == "pr_merge"
         assert len(resolved) == 1

@@ -38,6 +38,7 @@ from kstrl.timeout import TimeoutConfig
 from kstrl.ui.plain import PlainUI
 from tests.helpers import gitrepo
 from tests.helpers.run_limits import every_limit_argv, limit_option
+from tests.helpers.stack_confirmation import confirm_stack, write_stack
 
 #: The flags the original run is launched with in the end-to-end tests.
 #: Every verify command is `true` so Phase 1 fails on the PRD alone.
@@ -51,12 +52,6 @@ RUN_FLAGS = (
     "skip",
     "--contract-check",
     "skip",
-    "--test-command",
-    "true",
-    "--typecheck-command",
-    "true",
-    "--lint-command",
-    "true",
 )
 
 REFUSAL = "Refusing to run: the retry cannot carry over the configuration of the run it resumes"
@@ -97,7 +92,10 @@ def _repo(tmp_path: Path) -> Path:
             }
         )
     gitrepo.git_in(root, "add", "-A")
+    write_stack(root)
+    gitrepo.git_in(root, "add", "-A")
     gitrepo.git_in(root, "commit", "-q", "-m", "init")
+    confirm_stack(root)
     manifest = {
         "version": "1",
         "specFile": "spec.md",
@@ -445,9 +443,6 @@ def test_retry_flags_are_pinned_against_factory() -> None:
     replayed = {
         "max_retries",
         "create_prs",
-        "test_command",
-        "typecheck_command",
-        "lint_command",
         "no_verify",
         "accept_red_base",
         # #700 slice 4: the plan directory; a retry pins and checks it again.
@@ -464,7 +459,6 @@ def test_retry_flags_are_pinned_against_factory() -> None:
         "security_model",
         "security_fail_threshold",
         "contract_check",
-        "contract_test_cmd",
         "agent_timeout",
         "component_timeout",
         "max_adversarial_calls",
@@ -665,15 +659,13 @@ class TestRetryKeepsEveryRunLimit:
 class TestVerifyCommandIsGone:
     """#539: `--verify-command` was stored and read by nothing, so it was removed."""
 
-    def test_factory_refuses_it_and_names_the_three_commands(self, tmp_path: Path) -> None:
+    def test_factory_refuses_it_before_anything_runs(self, tmp_path: Path) -> None:
         root = _repo(tmp_path)
         marker = tmp_path / "verify-command-ran"
 
         result = _factory(root, "--verify-command", f"touch {marker}", *RUN_FLAGS)
         assert result.returncode == 2, result.stdout + result.stderr
         assert "No such option '--verify-command'" in result.stderr, result.stderr
-        for option in ("--test-command", "--typecheck-command", "--lint-command"):
-            assert f"'{option}'" in result.stderr, result.stderr
         # Refused before anything ran: no run was started.
         assert not marker.exists()
         assert _manifest(root).run_id == ""

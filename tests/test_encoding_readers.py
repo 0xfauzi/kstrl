@@ -147,6 +147,8 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     "pipeline.py": 5,  # 3 until #463 added carry_interrupted_run's journal
     # open; 5 since #482 added journal_integration_result's journal open
     "prd.py": 1,
+    # #700 slice 5: `ks recheck` reads a record and its index.json back.
+    "recheck.py": 1,
     # #700 slice 3: layer 1 counts every `open(...)`/`read_text(...)` call
     # shape, mode or not: `replay_lock`'s `path.open('a+', encoding='utf-8')`
     # and the `up` log's `log.open('wb')` (bytes mode, so it is not itself
@@ -187,10 +189,13 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     "toolchains.py": 1,
     "tui/widgets/component_detail.py": 1,
     # 4 since #414: the bad-patterns scan's read_text is gone (it reads
-    # bytes now, so py_compile does its own PEP 263 decoding). The four
-    # left: CLAUDE.md, the self-critique progress log, check_test_adequacy's
-    # read of a changed test's source, and check_patch_coverage's report.
-    "verify.py": 4,
+    # bytes now, so py_compile does its own PEP 263 decoding). 3 since
+    # #696: scrub_stale_verify_commands's CLAUDE.md read is gone with the
+    # whole mechanism it served (reconciling CLAUDE.md's verification
+    # bullets against [verify], which the flag day retired). The three
+    # left: the self-critique progress log, check_test_adequacy's read
+    # of a changed test's source, and check_patch_coverage's report.
+    "verify.py": 3,
     "workqueue.py": 6,
 }
 
@@ -287,6 +292,9 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "pipeline.py open(path, 'a', buffering=1, encoding='utf-8')",
     "pipeline.py progress_path.read_text(encoding='utf-8')",
     "prd.py open(path, encoding='utf-8')",
+    # #700 slice 5: an acceptance record and its index.json, utf-8, with
+    # ValueError caught beside OSError.
+    "recheck.py path.read_text(encoding='utf-8')",
     # #700 slice 3: the per-machine replay lock.
     "replay.py path.open('a+', encoding='utf-8')",
     # #629's go.mod read, to derive the package directory a go test
@@ -303,7 +311,6 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "tui/runs.py open(lock_path, 'a+', encoding='utf-8')",
     "tui/serve_view.py path.read_text(encoding='utf-8', errors='replace')",
     "tui/session.py open(run_paths.root / 'orchestrator.log', 'a', buffering=1, encoding='",
-    "verify.py (root / 'CLAUDE.md').read_text(encoding='utf-8')",
     "verify.py full.read_text(encoding='utf-8', errors='replace')",
     "verify.py json_path.read_text(encoding='utf-8')",
     "verify.py progress_path.read_text(encoding='utf-8')",

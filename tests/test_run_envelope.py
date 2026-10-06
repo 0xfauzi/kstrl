@@ -26,6 +26,7 @@ from kstrl.manifest import Component
 from kstrl.policy import PolicyConfig
 from kstrl.verify import VerificationResult
 from tests.helpers.run_config import BEFORE, MALFORMED, count_toml_parses, drive_run, empty_run
+from tests.helpers.stack_confirmation import in_process_stack
 from tests.helpers.verify_phase import component
 
 
@@ -83,6 +84,7 @@ class TestAMalformedMidRunEditDoesNotAbortTheRun:
                     max_retries=0,
                     retry_delay=0,
                     review_mode="skip",
+                    project_stack=in_process_stack(),
                 ),
                 components=comps,
             )
@@ -153,7 +155,12 @@ class TestAMalformedSectionIsARefusalAndNotATraceback:
 
         outcome = drive_run(
             tmp_path,
-            FactoryConfig(use_worktrees=False, create_prs=False, review_mode="skip"),
+            FactoryConfig(
+                use_worktrees=False,
+                create_prs=False,
+                review_mode="skip",
+                project_stack=in_process_stack(),
+            ),
         )
 
         assert outcome.result.exit_code == 2, (
@@ -194,7 +201,12 @@ class TestAMalformedSectionIsARefusalAndNotATraceback:
 
         outcome = drive_run(
             tmp_path,
-            FactoryConfig(use_worktrees=False, create_prs=False, review_mode="skip"),
+            FactoryConfig(
+                use_worktrees=False,
+                create_prs=False,
+                review_mode="skip",
+                project_stack=in_process_stack(),
+            ),
         )
 
         assert outcome.result.exit_code == 2
@@ -220,7 +232,12 @@ class TestAMalformedSectionIsARefusalAndNotATraceback:
 
         outcome = drive_run(
             tmp_path,
-            FactoryConfig(use_worktrees=False, create_prs=False, review_mode="skip"),
+            FactoryConfig(
+                use_worktrees=False,
+                create_prs=False,
+                review_mode="skip",
+                project_stack=in_process_stack(),
+            ),
         )
 
         assert outcome.pipelines == []
@@ -249,7 +266,12 @@ class TestTheFactorySideParseCountIsPinned:
 
         empty_run(
             tmp_path,
-            FactoryConfig(use_worktrees=False, create_prs=False, review_mode="skip"),
+            FactoryConfig(
+                use_worktrees=False,
+                create_prs=False,
+                review_mode="skip",
+                project_stack=in_process_stack(),
+            ),
         )
 
         assert (counts.calls, counts.parses) == (14, 7), (
@@ -305,7 +327,12 @@ class TestTheLadderStateIsReadOnce:
 
         empty_run(
             tmp_path,
-            FactoryConfig(use_worktrees=False, create_prs=False, review_mode="skip"),
+            FactoryConfig(
+                use_worktrees=False,
+                create_prs=False,
+                review_mode="skip",
+                project_stack=in_process_stack(),
+            ),
             on_pipeline=lambda: at_construction.append(calls),
         )
 
@@ -350,7 +377,12 @@ class TestTheLadderStateIsReadOnce:
 
         _, pipeline = empty_run(
             tmp_path,
-            FactoryConfig(use_worktrees=False, create_prs=False, review_mode="skip"),
+            FactoryConfig(
+                use_worktrees=False,
+                create_prs=False,
+                review_mode="skip",
+                project_stack=in_process_stack(),
+            ),
         )
 
         assert calls == 0, (
@@ -380,7 +412,12 @@ class TestTheEnvelopeDoesNotOutliveItsRun:
 
     def test_a_reused_factory_config_still_reads_the_file(self, tmp_path: Path) -> None:
         (tmp_path / "kstrl.toml").write_text(BEFORE.format(autonomy="false"))
-        config = FactoryConfig(use_worktrees=False, create_prs=False, review_mode="skip")
+        config = FactoryConfig(
+            use_worktrees=False,
+            create_prs=False,
+            review_mode="skip",
+            project_stack=in_process_stack(),
+        )
 
         _, first = empty_run(tmp_path, config)
         (tmp_path / "kstrl.toml").write_text(
@@ -460,7 +497,12 @@ class TestTheFactoryHandsThePipelineWhatItRecords:
         (tmp_path / "kstrl.toml").write_text(BEFORE.format(autonomy="false"))
         manifest, pipeline = empty_run(
             tmp_path,
-            FactoryConfig(use_worktrees=False, create_prs=False, review_mode="skip"),
+            FactoryConfig(
+                use_worktrees=False,
+                create_prs=False,
+                review_mode="skip",
+                project_stack=in_process_stack(),
+            ),
         )
         assert manifest.policy_hash == pipeline.run_envelope.policy_hash()
         assert pipeline.run_envelope.policy.max_files_changed == 5
@@ -476,7 +518,12 @@ class TestTheFactoryHandsThePipelineWhatItRecords:
         AutonomyState(level=4).save(tmp_path)
         manifest, pipeline = empty_run(
             tmp_path,
-            FactoryConfig(use_worktrees=False, create_prs=False, review_mode="skip"),
+            FactoryConfig(
+                use_worktrees=False,
+                create_prs=False,
+                review_mode="skip",
+                project_stack=in_process_stack(),
+            ),
         )
         assert pipeline.run_envelope.policy.deps_allow_new is False
         assert manifest.policy_hash == pipeline.run_envelope.policy_hash()
@@ -499,7 +546,12 @@ class TestTheFactoryHandsThePipelineWhatItRecords:
         AutonomyState(level=4).save(tmp_path)
         _, pipeline = empty_run(
             tmp_path,
-            FactoryConfig(use_worktrees=False, create_prs=False, review_mode="skip"),
+            FactoryConfig(
+                use_worktrees=False,
+                create_prs=False,
+                review_mode="skip",
+                project_stack=in_process_stack(),
+            ),
         )
         assert AutonomyState.load(tmp_path).level == 4
         assert pipeline.run_envelope.autonomy_level == 1
@@ -525,7 +577,12 @@ class TestTheFactoryHandsThePipelineWhatItRecords:
         AutonomyState(level=4).save(tmp_path)
         _, pipeline = empty_run(
             tmp_path,
-            FactoryConfig(use_worktrees=False, create_prs=False, review_mode="skip"),
+            FactoryConfig(
+                use_worktrees=False,
+                create_prs=False,
+                review_mode="skip",
+                project_stack=in_process_stack(),
+            ),
         )
         import kstrl.pipeline as pipeline_module
 
@@ -579,7 +636,12 @@ class TestTheLadderOutcomeIsReallyFrozen:
 
         _, outcome = _resolve_ladder(
             envelope,
-            FactoryConfig(use_worktrees=False, create_prs=False, review_mode="skip"),
+            FactoryConfig(
+                use_worktrees=False,
+                create_prs=False,
+                review_mode="skip",
+                project_stack=in_process_stack(),
+            ),
             tmp_path,
         )
 

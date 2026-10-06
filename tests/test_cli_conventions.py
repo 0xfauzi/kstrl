@@ -115,6 +115,7 @@ EMPTY_REPO_EXITS: tuple[tuple[tuple[str, ...], tuple[str, ...], int, str], ...] 
     (("queue", "rm"), ("x", "--yes"), 2, "no such queue item"),
     (("queue", "show"), ("x",), 2, "no such queue item"),
     (("queue", "sync"), (), 2, "GitHub intake is off"),
+    (("recheck",), ("record.json",), 2, "no such acceptance record"),
     (("retry",), ("x",), 2, "no manifest: nothing has run here"),
     (("signals", "ls"), (), 0, "no signals recorded"),
     (("signals", "poll"), (), 2, "signals polling is off"),
@@ -365,6 +366,7 @@ FINDING_EXIT_SITES: dict[tuple[str, str], int] = {
     ("cli.py", "factory"): 1,  # the architect's output could not be used
     ("cli.py", "health_cmd"): 1,  # a metric breached its control limits
     ("cli.py", "queue_sync"): 1,  # an issue could not be synced
+    ("cli.py", "recheck_cmd"): 1,  # a verdict the recheck disagrees with
     ("cli.py", "serve"): 1,  # work is waiting on a human
     ("doctor.py", "exit_code_for"): 1,  # `ks doctor`: not ready is a finding
     ("factory.py", "resolve_exit_code"): 5,  # a failed, unmerged, parked or unscheduled run
@@ -428,6 +430,9 @@ UNRESOLVED_EXIT_VALUES: dict[tuple[str, str], int] = {
     # #642 slice 5: the leash's own status, read from `agent.wait()`, a
     # real subprocess exit status the walk cannot resolve to a literal.
     ("agents/leash.py", "_follow"): 1,
+    # #642 slice 6: the same status in `_hold`, read from `returncode` and
+    # left with by the parent of the fork, once per branch of the expression.
+    ("agents/leash.py", "_hold"): 2,
 }
 
 

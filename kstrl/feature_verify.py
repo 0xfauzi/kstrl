@@ -27,14 +27,12 @@ from kstrl.config_toml import ConfigError
 from kstrl.events import Event, VerificationResultEvent
 from kstrl.loop import STOP_EXIT_CODE, LoopResult, determine_branch
 from kstrl.rung import HOST_LABEL
-from kstrl.stack import StackRefused, confirmed_stack, unconfirmed_lines
+from kstrl.stack import NO_STACK, StackRefused, confirmed_stack, unconfirmed_lines
 from kstrl.verify import (
     DIFF_DEPENDENT_CHECKS,
     VerificationResult,
     VerifyConfig,
     narrow_to_undiffed,
-    pin_verify_commands,
-    resolve_verify_commands,
     run_undiffed_verification,
     self_critique_progress_path,
 )
@@ -53,8 +51,10 @@ def resolve_feature_verify_config(
 
     ``no_verify`` (``--no-verify``) returns None, which is the sentinel
     `ks run` and `ks factory` already use and which #261 defines as "no
-    gate runs, so state nothing": the loops get no
-    VERIFY_COMMANDS_PROMPT block and the reports do not run. It is a
+    gate runs, so state nothing": the loops get no ``[stack]`` block and
+    the reports do not run. Otherwise a confirmed ``[stack]`` is required
+    (#696): with none, or an unconfirmed one, this raises ``ConfigError``
+    before the understand loop is paid for. It is a
     keyword here rather than a conditional at the call site because
     ``run_feature`` is grandfathered at the cognitive ratchet, so a new
     branch there is a refusal at commit time - and because there is one
@@ -79,11 +79,10 @@ def resolve_feature_verify_config(
     applies here.
 
     ONE object (#261): the same value is handed to the implement and
-    repair loops, so the three commands ``VERIFY_COMMANDS_PROMPT`` states
-    to the engineer are the three commands that then run on its output.
-    The narrowing does not touch the command fields, which is all
-    ``resolve_verify_commands`` reads, so the prompt says exactly what it
-    would have said with the full config.
+    repair loops, so the checks the ``[stack]`` block states to the
+    engineer are the checks that then run on its output. The narrowing
+    does not touch the stack, so the prompt says exactly what it would
+    have said with the full config.
 
     Loaded unguarded, next to ``TimeoutConfig.load`` and
     ``BreakerConfig.load``: ``[verify]`` is a fatal section of the CLI's
@@ -94,11 +93,13 @@ def resolve_feature_verify_config(
     if no_verify:
         return None
     try:
-        # #696 slice 3: before the understand loop is paid for.
-        confirmed_stack(root_dir)
+        # #696 slices 3 and 4: before the understand loop is paid for.
+        stack = confirmed_stack(root_dir)
     except StackRefused as refused:
         raise ConfigError("\n  ".join(unconfirmed_lines(root_dir, refused.stack))) from refused
-    return narrow_to_undiffed(pin_verify_commands(VerifyConfig.load(root_dir), root_dir))
+    if stack is None:
+        raise ConfigError(NO_STACK)
+    return narrow_to_undiffed(VerifyConfig.load(root_dir))
 
 
 def baseline_skip_reason(run_config: KstrlConfig, root_dir: Path) -> str | None:
@@ -232,13 +233,10 @@ def _announce_verification(
         )
 
 
-def _running_commands(config: VerifyConfig, root_dir: Path) -> list[str]:
-    """The commands a report runs, in order: a ``[stack]``'s checks (#696),
-    else the three gates' resolved commands."""
-    if config.project_stack is not None:
-        return [command for _name, command in config.project_stack.checks]
-    commands = resolve_verify_commands(config, root_dir)
-    return [commands.test, commands.typecheck, commands.lint]
+def _running_commands(config: VerifyConfig) -> list[str]:
+    """The commands a report runs, in order: the ``[stack]``'s checks (#696)."""
+    stack = config.project_stack
+    return [command for _name, command in stack.checks] if stack is not None else []
 
 
 def _narrate_verification(
@@ -309,7 +307,7 @@ def report_verification(
     operator at the screen - is told.
 
     Nothing here may raise into the flow, which is why the whole
-    measurement is wrapped: ``check_test_suite`` catches
+    measurement is wrapped: ``check_stack_command`` catches
     ``TimeoutExpired`` and nothing else, so a ``Popen`` that fails on
     EMFILE or a removed cwd would otherwise propagate out of an ADVISORY
     report and take the command with it, ending ``events.jsonl`` at
@@ -366,7 +364,7 @@ def report_verification(
         # ``--no-verify``, the same sentinel `ks run` and `ks factory`
         # already use. One line rather than a section: the operator asked
         # for this, and the engineer prompt is losing its
-        # VERIFY_COMMANDS_PROMPT block for the same reason, which is the
+        # [stack] block for the same reason, which is the
         # consequence worth naming once per report rather than not at all.
         ui.info(f"Verification report ({phase}) skipped: --no-verify")
         return baseline_failing
@@ -381,19 +379,14 @@ def report_verification(
 
     started = time.monotonic()
     try:
-        # INSIDE the try, all of it. Resolution is not free of I/O:
-        # resolve_verify_commands reaches python_typecheck_default,
-        # which opens and parses pyproject.toml, and a file with one
-        # non-utf-8 byte raised UnicodeDecodeError - a ValueError - past
-        # a fail-closed `except (TOMLDecodeError, OSError)` and out of an
-        # ADVISORY report, taking `ks feature` down at the BASELINE
-        # before the agent had run (#288 review round 2). That except is
-        # widened too, but the boundary is what makes the guarantee
-        # structural: nothing this function does to produce a report may
-        # escape it, not just the measurement.
+        # INSIDE the try, all of it: an exception out of an ADVISORY
+        # report once took `ks feature` down at the BASELINE before the
+        # agent had run (#288 review round 2). The boundary is what makes
+        # the guarantee structural: nothing this function does to produce
+        # a report may escape it, not just the measurement.
         progress_path = self_critique_progress_path(verify_config, root_dir, None)
         _announce_verification(
-            ui, _running_commands(verify_config, root_dir), progress_path, verify_config, phase
+            ui, _running_commands(verify_config), progress_path, verify_config, phase
         )
         # Every argument that decides whether a check can honestly run is
         # owned by this callee, so no diff-consuming check is reachable

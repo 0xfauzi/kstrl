@@ -57,20 +57,18 @@ OUTPUT = "output"
 #: log; ``test_no_failing_gate_row_drops_its_output`` refuses one whatever
 #: this dict says.
 EXPECTED_GATE_FAILURE_ROWS: dict[str, int] = {
-    "verify.py: _failed_gate_result: output=bounded_gate_output(output)": 1,
-    "verify.py: check_linter: output=_output_before_stop(exc.stdout, exc.stderr)": 1,
-    "verify.py: check_linter: output=_output_before_stop(expired.stdout, expired.stderr)": 1,
-    "verify.py: check_test_suite: output=_output_before_stop(exc.stdout, exc.stderr)": 1,
-    "verify.py: check_test_suite: output=_output_before_stop(expired.stdout, expired.stderr)": 1,
     # #696: a [stack] check's three failing exits, each with what it printed,
     # and (slice 3) the check a stack nobody confirmed did not run, whose log
-    # is the refusal.
+    # is the refusal. The retired check_linter/check_test_suite/
+    # check_typecheck and their shared helper, _failed_gate_result, each
+    # held one row like these; all three gates and the helper are gone.
     "verify.py: check_stack_command: output=refused": 1,
     "verify.py: check_stack_command: output=_output_before_stop(exc.stdout, exc.stderr)": 1,
     "verify.py: check_stack_command: output=_output_before_stop(expired.stdout, expired.stderr)": 1,  # noqa: E501
     "verify.py: check_stack_command: output=bounded_gate_output(output)": 1,
-    "verify.py: check_typecheck: output=_output_before_stop(exc.stdout, exc.stderr)": 1,
-    "verify.py: check_typecheck: output=_output_before_stop(expired.stdout, expired.stderr)": 1,
+    # #696: the one row _command_gates builds when there is no [stack] at
+    # all; its log is the constant NO_STACK message, not a captured output.
+    "verify.py: _command_gates: output=NO_STACK": 1,
 }
 
 #: Source the census MUST read as three rows in two logging gates, and none

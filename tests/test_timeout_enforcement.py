@@ -59,6 +59,7 @@ from kstrl.timeout import TimeoutConfig
 from kstrl.ui.plain import PlainUI
 from tests.helpers import astwalk, gitrepo, procs
 from tests.helpers.procs import read_pid
+from tests.helpers.stack_confirmation import in_process_stack
 
 # Generous bound for "killed within the deadline": 1s deadline + 5s
 # SIGTERM grace + slack. A hang would previously block forever.
@@ -1253,6 +1254,7 @@ class TestFactoryComponentTimeout:
             max_retries=0,
             retry_delay=0,
             review_mode="skip",
+            project_stack=in_process_stack(),
             timeout_config=TimeoutConfig(
                 agent_iteration=0.5,
                 component_total=1.0,
@@ -1323,6 +1325,7 @@ class TestFactoryComponentTimeout:
             max_retries=1,
             retry_delay=0,
             review_mode="skip",
+            project_stack=in_process_stack(),
             progress_log_path=log_path,
             timeout_config=TimeoutConfig(
                 agent_iteration=0.3,
@@ -1510,7 +1513,7 @@ class TestSchedulerBackstop:
                     [],
                     "scripts/kstrl/feature/a/prd.json",
                     "kstrl/factory/a",
-                    scaffold="sleep 5",
+                    scaffold="sleep 20",
                 )
             ],
         )
@@ -1521,6 +1524,7 @@ class TestSchedulerBackstop:
             max_retries=0,
             retry_delay=0,
             review_mode="skip",
+            project_stack=in_process_stack(),
             timeout_config=TimeoutConfig(
                 agent_iteration=5.0,
                 component_total=0.5,
@@ -1548,8 +1552,11 @@ class TestSchedulerBackstop:
         )
         elapsed = time.monotonic() - start
 
-        # Returned without waiting out the 5s scaffold hang.
-        assert elapsed < 5.0, f"run waited for the hung worker ({elapsed:.1f}s)"
+        # Returned without waiting out the 20s scaffold hang. The bound is
+        # the hang itself: the run also proves a rung and measures the base
+        # under its [stack] first (about 3s measured), so a tighter bound
+        # would be tripped by that cost and not by a wait on the worker.
+        assert elapsed < 20.0, f"run waited for the hung worker ({elapsed:.1f}s)"
         assert "a" in result.failed
         assert result.exit_code == 1
         comp = manifest.get_component("a")
@@ -1668,6 +1675,10 @@ class TestCliTimeoutFlags:
                     "--agent-cmd",
                     "echo hi",
                     "--yes",
+                    # #696 flag day: this class is about TimeoutConfig
+                    # precedence, never verification; --no-verify skips
+                    # the stack checkpoint (no caller writes a [stack]).
+                    "--no-verify",
                     *extra_args,
                 ],
             )
@@ -2390,6 +2401,7 @@ class TestFreshBaseRetryReachesTheScheduler:
             max_retries=1,
             retry_delay=0,
             review_mode="skip",
+            project_stack=in_process_stack(),
         )
         base = KstrlConfig(
             prompt_file=tmp_path / "scripts" / "kstrl" / "prompt.md",

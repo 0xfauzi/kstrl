@@ -42,7 +42,10 @@ from kstrl.serve import (
 from kstrl.workqueue import Queue, QueueConfig
 from tests.helpers import procs
 from tests.helpers.executables import write_executable
-from tests.test_prompt_record import COMPLETE, ONE_COMPONENT, _spec_project
+from tests.helpers.stack_confirmation import confirm_stack, write_stack
+from tests.test_isolation_rung import needs_nono
+from tests.test_prompt_record import COMPLETE, ONE_COMPONENT
+from tests.test_prompt_record import _spec_project as _bare_spec_project
 
 pytestmark = pytest.mark.usefixtures("no_open_prs")
 
@@ -65,6 +68,16 @@ BLOCKER = {
         }
     ],
 }
+
+
+def _spec_project(tmp_path: Path, *, initialised: bool = False) -> Path:
+    """`tests.test_prompt_record._spec_project`, plus a confirmed [stack]
+    (#696 flag day, rule 1): `ks serve` never passes `--no-verify` to the
+    factory command it spawns, so a project it works on needs a real one."""
+    root = _bare_spec_project(tmp_path, initialised=initialised)
+    write_stack(root)
+    confirm_stack(root)
+    return root
 
 
 def _result_event(text: str, cost: float) -> str:
@@ -304,6 +317,7 @@ class TestAHaltedArchitectIsCharged:
 class TestARunThatCarriesItsArchitect:
     """The launch executes: the factory run carries the architect's spend."""
 
+    @needs_nono
     def test_the_decompose_run_is_named_and_not_charged_again(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -330,6 +344,7 @@ class TestARunThatCarriesItsArchitect:
         )
         assert spend.unmetered_phases == ()
 
+    @needs_nono
     def test_ks_status_names_the_run_that_holds_the_architect(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

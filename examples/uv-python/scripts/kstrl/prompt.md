@@ -22,19 +22,19 @@ reviewer as already reading your diff while you write it.
    (verify only; do not switch)
 7. Pick the highest priority story where `passes` is `false` (lowest `priority` wins)
 8. Implement that ONE story (keep the change small and focused)
-9. Run the verification commands:
-   - Run every command in the `Verification Commands (resolved by kstrl)` block
-     above, lint included, exactly as written. Do NOT derive your own or substitute
-     a narrower or broader variant (an added path, a `-k` filter, a dropped flag):
-     a command the gate will not run proves nothing.
-   - If a command fails for a reason other than your work, fix the cause and never
-     substitute a different command. Missing tooling is yours to configure. A
-     command that is wrong for this project's language is not: name the `[verify]`
-     section of `kstrl.toml` in your progress entry rather than editing it, because
-     kstrl's policy envelope can treat that edit as tampering.
-   - Do NOT mark the story as done until every command passes. If that block is
+9. Run the checks:
+   - Run every command under `Checks` in the `Stack` block above, in order,
+     exactly as written. Do NOT derive your own or substitute a narrower or
+     broader variant (an added path, a filter, a dropped flag): a command kstrl
+     will not run proves nothing.
+   - If a check fails for a reason other than your work, fix the cause and never
+     substitute a different command. Missing tooling is yours to install. A
+     check that is wrong for this project is not: name the `[stack]` section of
+     `kstrl.toml` in your progress entry rather than editing it, because kstrl's
+     policy envelope can treat that edit as tampering.
+   - Do NOT mark the story as done until every check passes. If that block is
      absent, nothing will check this work mechanically: run the project's own
-     typecheck and tests yourself first.
+     checks yourself first.
 10. If you discover durable, reusable codebase facts, add a brief, evidence-based note
    under `## Codebase Patterns` at the top of `$progress_path` (skip if nothing new).
    Do not edit `$codebase_map_path`.

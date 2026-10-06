@@ -51,6 +51,7 @@ from kstrl.manifest import Manifest
 from kstrl.owner_answers import render_owner_answer
 from tests.helpers import gitrepo
 from tests.helpers.plan_approval import approve_plan
+from tests.helpers.stack_confirmation import confirm_stack, write_stack
 from tests.test_build_manifest_preflight import MANIFESTS
 from tests.test_escalation_inbox import CLOSED, ESCALATED
 from tests.test_l1_plan_gate import AUTONOMY, REVIEWER, _plan_asks, _plan_items, _runs
@@ -92,12 +93,14 @@ def _project(tmp_path: Path, *, toml: str = "", files: dict[str, str] | None = N
         path.write_text(body, encoding="utf-8")
     (root / ".gitignore").write_text(gitignore_block("Python"), encoding="utf-8")
     (root / "kstrl.toml").write_text("[inbox]\nenabled = true\n" + toml, encoding="utf-8")
+    write_stack(root)
     gitrepo.git_in(root, "add", "-A")
     gitrepo.git_in(root, "commit", "-q", "-m", "init")
     origin = tmp_path / "origin.git"
     gitrepo.git_in(tmp_path, "init", "-q", "--bare", str(origin))
     gitrepo.git_in(root, "remote", "add", "origin", str(origin))
     gitrepo.git_in(root, "push", "-q", "-u", "origin", "main")
+    confirm_stack(root)
     return root
 
 

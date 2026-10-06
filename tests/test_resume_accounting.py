@@ -42,6 +42,7 @@ from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
 from kstrl.workqueue import ItemSource, Queue, QueueConfig
 from tests.helpers import procs
+from tests.helpers.stack_confirmation import in_process_stack
 from tests.spine_utils import (
     base_config,
     component,
@@ -78,8 +79,14 @@ from kstrl.config import KstrlConfig
 from kstrl.factory import FactoryConfig, run_factory
 from kstrl.manifest import Manifest
 from kstrl.ui.plain import PlainUI
+from kstrl.stack import CONFIRMED_IN_INBOX, Stack
 from kstrl.verify import VerifyConfig
 
+_stack = Stack(
+    instructions="t", setup="", env=(),
+    checks=(("tests", sys.argv[3]), ("typecheck", "true"), ("lint", "true")),
+    unconfirmed="", confirmed_by=CONFIRMED_IN_INBOX,
+)
 _calls = custom.CustomAgent.usage_records.fget
 custom.CustomAgent.usage_records = property(
     lambda self: [UsageRecord(cost_usd=0.25, total_tokens=100, source="test") for _ in _calls(self)]
@@ -90,10 +97,9 @@ result = run_factory(
     Manifest.load(manifest_path),
     FactoryConfig(
         use_worktrees=True, create_prs=False, max_parallel=1,
-        max_retries=2, retry_delay=0, review_mode="skip",
+        max_retries=2, retry_delay=0, review_mode="skip", project_stack=_stack,
         verify_config=VerifyConfig(
-            test_command=sys.argv[3], typecheck_command="true",
-            lint_command="true", check_diff_scope=False,
+            project_stack=_stack, check_diff_scope=False,
             check_bad_patterns=False, subprocess_timeout=300.0,
         ),
     ),
@@ -231,9 +237,7 @@ def _resume(
     config = factory_config(
         max_retries=2,
         verify_config=VerifyConfig(
-            test_command=verify,
-            typecheck_command="true",
-            lint_command="true",
+            project_stack=in_process_stack({"tests": verify, "typecheck": "true", "lint": "true"}),
             check_diff_scope=False,
             check_bad_patterns=False,
             subprocess_timeout=60.0,
@@ -351,9 +355,7 @@ def test_a_stopped_run_and_its_resume_each_answer_for_their_own_attempts(
     )
     verify = f'[ "$(basename "$(pwd)")" != comp-a ] || test -f "{state}/pass"'
     verify_config = VerifyConfig(
-        test_command=verify,
-        typecheck_command="true",
-        lint_command="true",
+        project_stack=in_process_stack({"tests": verify, "typecheck": "true", "lint": "true"}),
         check_diff_scope=False,
         check_bad_patterns=False,
         subprocess_timeout=60.0,

@@ -41,6 +41,7 @@ from kstrl.launch import DecomposeLaunch
 from kstrl.toolchains import TOOLCHAINS
 from kstrl.tui.session import LaunchError, start_run_session
 from tests.helpers.gitrepo import git_in, set_identity
+from tests.helpers.stack_confirmation import confirm_stack, write_stack
 
 #: The refusal headline the decompose and factory preflight print.
 REFUSAL = "Refusing to run: git does not ignore what this project's verify commands write"
@@ -189,6 +190,10 @@ def test_doctor_decompose_and_factory_refuse_a_python_repo_whose_bytecode_is_not
     tmp_path: Path,
 ) -> None:
     root = bootstrapped_without_reinit(tmp_path)
+    # A confirmed stack, so the factory reaches the ignore refusal this test
+    # is about instead of the no-stack one that precedes it (#696 slice 4).
+    write_stack(root)
+    confirm_stack(root)
 
     report = run_ks(root, "doctor", "--root", str(root))
     assert report.returncode == 1, report.stdout

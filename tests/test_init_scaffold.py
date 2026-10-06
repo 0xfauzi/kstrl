@@ -46,6 +46,10 @@ EXPECTED_SCAFFOLD_SECTIONS = {
     "intake_github",
 }
 
+#: The uncommented scaffold also holds the `[stack]` table, which the scaffold
+#: ships commented out: kstrl runs nothing until a person fills it in.
+UNCOMMENTED_SECTIONS = EXPECTED_SCAFFOLD_SECTIONS | {"stack"}
+
 # Keys each loader actually consumes, mirrored by hand so a typo'd or
 # phantom key in the scaffold fails membership below.
 EXPECTED_SCAFFOLD_KEYS = {
@@ -70,10 +74,8 @@ EXPECTED_SCAFFOLD_KEYS = {
         "max_cost_usd",
         "pause_before_pr_merge",
     },
+    "stack": {"instructions", "setup", "env", "checks"},
     "verify": {
-        "test_command",
-        "typecheck_command",
-        "lint_command",
         "check_diff_scope",
         "check_bad_patterns",
         "dead_code_cleanup",
@@ -125,7 +127,7 @@ EXPECTED_SCAFFOLD_KEYS = {
         "agent_type",
         "model",
     },
-    "contract": {"mode", "test_command", "timeout"},
+    "contract": {"mode", "timeout"},
     "codebase_scan": {
         "enabled",
         "module_map",
@@ -179,11 +181,22 @@ EXPECTED_SCAFFOLD_KEYS = {
 
 
 def _uncomment_scaffold(text: str) -> str:
-    """Uncomment every `# key = value` line inside the scaffold."""
+    """Uncomment every `# key = value` line and every `# [stack...]` header."""
     lines = []
     for line in text.splitlines():
         stripped = line.strip()
-        if (
+        if stripped.startswith("# [stack"):
+            lines.append(stripped[2:].split("#", 1)[0].rstrip())
+        elif stripped in ('# instructions = ""', '# tests = ""') or stripped.startswith(
+            ('# instructions = "" ', '# tests = "" ')
+        ):
+            # The stack's required keys ship empty, which a stack refuses:
+            # fill them so the loaders see a stack that parses.
+            key = stripped[2:].split(" =", 1)[0]
+            lines.append(
+                f'{key} = "{"Built by a kstrl test." if key == "instructions" else "true"}"'
+            )
+        elif (
             stripped.startswith("# ")
             and " = " in stripped
             and not (stripped.startswith(("# Resolved", "# kstrl")) or stripped[2:3].isupper())
@@ -240,7 +253,7 @@ class TestInitScaffold:
         # Uncomment every key and check each against the loader key sets;
         # a scaffold key the loaders do not read fails here.
         data = tomllib.loads(_uncomment_scaffold(DEFAULT_KSTRL_TOML))
-        assert set(data.keys()) == EXPECTED_SCAFFOLD_SECTIONS
+        assert set(data.keys()) == UNCOMMENTED_SECTIONS
         for section, keys in data.items():
             unexpected = set(keys) - EXPECTED_SCAFFOLD_KEYS[section]
             assert not unexpected, (
