@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import Any
 
 from kstrl.acceptance import (
+    DESIGNER_FILE,
     FAIL,
     PASS,
     RECORD_FILE,
@@ -213,16 +214,25 @@ class Scored:
 
     refused: list[str] = field(default_factory=list)
     verdicts: dict[str, dict[str, str]] = field(default_factory=dict)
+    removed: list[str] = field(default_factory=list)
 
 
-def score(fixture: AcceptanceFixture, repo: FixtureRepo, entry: Any, plan_dir: Path) -> Scored:
-    """Run ``entry`` the way ``ks factory --acceptance`` runs a plan: pinned,
-    replayed on the base, then judged on every head. ``plan_dir`` must not
-    exist and must be outside the repository."""
+def score(
+    fixture: AcceptanceFixture, repo: FixtureRepo, entry: Any, plan_dir: Path, *, designed: bool
+) -> Scored:
+    """Run ``entry`` the way kstrl runs a plan: pinned, replayed on the base,
+    then judged on every head. ``plan_dir`` must not exist and must be outside
+    the repository. ``designed`` marks the plan as the verification
+    designer's, as ``ks factory --design-acceptance`` does: the base then
+    removes a designed check that passes there and keeps the others (#700,
+    owner decision of 2026-10-06), where an operator's plan is refused. A
+    designed plan left with no check scores as refused."""
     comp = fixture.component
     plan_dir.mkdir(parents=True)
     plan = {"components": {comp.id: entry}}
     (plan_dir / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+    if designed:
+        (plan_dir / DESIGNER_FILE).write_text(json.dumps({"calibration": True}), encoding="utf-8")
     manifest = Manifest("1", "", fixture.fixture_id, "main", False, [comp])
     stack = fixture.stack
     pinned, refused = pin_plan(repo.path, manifest, str(plan_dir), stack)
@@ -238,6 +248,16 @@ def score(fixture: AcceptanceFixture, repo: FixtureRepo, entry: Any, plan_dir: P
     )
     if refused:
         return Scored(refused)
+    base = config.acceptance_base
+    assert base is not None
+    kept = base.kept.get(comp.id)
+    removed = sorted(
+        {c.id for c in pinned.components[comp.id].checks} - {c.id for c in kept.checks}
+        if kept is not None
+        else {c.id for c in pinned.components[comp.id].checks}
+    )
+    if kept is None:
+        return Scored([f"{comp.id}: {base.said.get(comp.id, 'no check left')}"], removed=removed)
     verdicts: dict[str, dict[str, str]] = {}
     for attempt, head in enumerate(fixture.heads, start=1):
         judge_head(
@@ -246,7 +266,7 @@ def score(fixture: AcceptanceFixture, repo: FixtureRepo, entry: Any, plan_dir: P
         path = evidence_dir(repo.path, run_id) / comp.id / f"attempt-{attempt}" / RECORD_FILE
         record = json.loads(path.read_text(encoding="utf-8"))
         verdicts[head] = {row["id"]: row["verdict"] for row in record["checks"]}
-    return Scored([], verdicts)
+    return Scored([], verdicts, removed)
 
 
 def caught(scored: Scored, head: str) -> tuple[bool, str]:
