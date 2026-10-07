@@ -7,8 +7,8 @@ checks of every merged component on that commit, each ``HEAD_RUNS``
 times, judged as a head is. A failure there fails the tier and the
 bisection names the breaker. A failed held-out check is named by its id
 alone and its breaker gets no retry (owner decision 3). A plan the
-verification designer wrote is record only (owner decision 10): its
-failures are printed and do not fail Phase 3.
+verification designer wrote fails Phase 3 as an operator's does (owner
+decision of 2026-10-07).
 
 End to end: the real ``ks factory`` as a subprocess on a real git
 repository after the real ``ks init``, with a confirmed ``[stack]``, two
@@ -150,17 +150,19 @@ def test_a_held_out_check_that_fails_on_the_merged_tree_halts_its_breaker_by_id_
 
 
 @runs_a_stack
-def test_a_designed_plan_is_record_only_in_phase_3(tmp_path: Path) -> None:
-    """The same check in a plan the verification designer wrote: Phase 3
-    prints the failure as record only and passes, and the run exits 0."""
+def test_a_designed_check_that_fails_on_the_merged_tree_fails_phase_3(tmp_path: Path) -> None:
+    """The same check in a plan the verification designer wrote fails
+    Phase 3 as an operator's does (owner decision of 2026-10-07): the
+    bisection names the breaker and the run fails."""
     checks = {"comp-b": [_check("markers-apart", APART, "passes")]}
 
     run = _run(tmp_path, _plan(tmp_path, "both markers meet", checks, designed=True))
 
     assert run.calls == 2, run.out
-    assert "record only (designed checks): acceptance:markers-apart (comp-b): fail" in run.out
-    assert "contract tests passed" in run.out, run.out
-    assert run.code == 0, run.out
+    assert "contract tests FAILED" in run.out, run.out
+    assert "breaker 'comp-b' (retries exhausted): both markers meet" in run.out, run.out
+    assert "record only" not in run.out, run.out
+    assert run.code != 0, run.out
 
 
 #: Counts its runs in the tree under test, and fails only the second run

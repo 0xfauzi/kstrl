@@ -24,10 +24,7 @@ from kstrl.jsonread import read_json
 from kstrl.rung import HOST_LABEL
 
 #: Under the header of a record whose checks a model wrote (#700 slice 7).
-DESIGNED_LINE = (
-    "- the verification designer wrote these checks: record only, they gate nothing "
-    "until the acceptance floors are set (owner decision 10)"
-)
+DESIGNED_LINE = "- the verification designer wrote these checks"
 
 
 def render_lines(record: Mapping[str, Any]) -> list[str]:

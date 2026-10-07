@@ -20,8 +20,8 @@ and before the first engineer (decision 2(a)). The plan is written under
 the control directory, keyed by the plan and the stack it was designed
 for (:func:`designed_dir`), so a parked plan approved later, or a resumed
 run, pins the same checks and asks nothing again. Its
-:data:`kstrl.acceptance.DESIGNER_FILE` marks it as model-written, which
-keeps it record only (decision 10).
+:data:`kstrl.acceptance.DESIGNER_FILE` marks it as model-written. Its
+checks gate a head as an operator's do (owner decision of 2026-10-07).
 """
 
 from __future__ import annotations
