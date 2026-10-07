@@ -301,16 +301,16 @@ _ROLES: dict[str, _Role] = {
     "architect": _Role(
         lambda _p: decompose.build_decompose_prompt("PROJECT", _SPEC_TEXT),
         frozenset({"DECOMPOSE_PROMPT", "ARCHITECT_NO_REPO_SOURCE_PROMPT"}),
-        "7055862f453065da57206febb67a8166639673f1eaf4fa1d54bc754f05300350",
-        15123,
+        "a6a9cd1ac32552dd3acc5d90875cf97ec83cfcdfe98fb0c57b66f5e50804ac74",
+        16199,
     ),
     # #639 slice 4: the architect when the owner answered an escalation in the
     # inbox. Pinned by running this test.
     "architect-owner-answer": _Role(
         _architect_with_owner_answer,
         frozenset({"DECOMPOSE_PROMPT", "ARCHITECT_NO_REPO_SOURCE_PROMPT", "OWNER_ANSWER_PROMPT"}),
-        "d9a70f74c10dfab7732f5e971d0c02baeafb791a4da55d2efd91f057b9a62aef",
-        15362,
+        "2ae8dbeacb89600acf016c7b548d3d99bf57da575f281f6e5e941e9014cc936a",
+        16438,
     ),
     "architect-with-repo": _Role(
         lambda _p: decompose.build_decompose_prompt(
@@ -319,8 +319,8 @@ _ROLES: dict[str, _Role] = {
             codebase_map_path="scripts/kstrl/codebase_map.md",
         ),
         frozenset({"DECOMPOSE_PROMPT", "ARCHITECT_REPO_SOURCE_PROMPT"}),
-        "4c20637791d7232049a07c1780b6a6af0fd7984627c477b9f72d9a3f00b7ac2d",
-        16564,
+        "d22905c4ff13a212ce3060f52bc098debbf83a57011ea8292787a7d4981428a3",
+        17640,
     ),
     "decisions-context": _Role(
         lambda _p: build_decisions_context(_DECISIONS, "comp-a"),

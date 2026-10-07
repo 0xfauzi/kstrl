@@ -61,6 +61,14 @@ ESCALATED: dict[str, Any] = {
 }
 
 CLOSED: dict[str, Any] = {
+    "requirements": [
+        {
+            "id": "R-1",
+            "kind": "requirement",
+            "statement": "A user signs in with a password.",
+            "stories": ["US-001"],
+        }
+    ],
     "components": [
         {
             "id": "login",

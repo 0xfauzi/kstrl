@@ -256,9 +256,11 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     # 12's EXCLUDE list drops the root build manifests and names
     # kstrl.toml; INCLUDE names a root build file a component must
     # create or change.
+    # 5.0.0 (#639 slice 2): MAJOR. The output gains `requirements`, required
+    # with components (rules R1-R4): every user story is named by one.
     "DECOMPOSE_PROMPT": (
-        "232f6e178f9ff25b1016d4b324f7155c52989e3fb4fc14b19d3d24b24590e0f1",
-        "4.0.0",
+        "58ae0b8ef1d3663a365aadb9913a9b19a208c664519f586553f714e850c8255e",
+        "5.0.0",
     ),
     # 1.0.0 (#199): opens the series. Never shipped before this PR. Same
     # split, and the same reason, as REPO_CHANGE_SOURCE_PROMPT /

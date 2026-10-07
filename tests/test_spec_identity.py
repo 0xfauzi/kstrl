@@ -373,6 +373,26 @@ def test_a_register_for_other_spec_text_is_refused(tmp_path: Path) -> None:
     assert _engineer_ran(tmp_path) == []
 
 
+def test_a_register_with_malformed_requirements_is_refused(tmp_path: Path) -> None:
+    """#639 slice 2: the register records the architect's requirements, and
+    one a hand edit made malformed is a refusal before spend, never an
+    empty list."""
+    root, env = _planned(tmp_path)
+    path = root / "scripts" / "kstrl" / "decisions.json"
+    register = _register(root)
+    assert [r["id"] for r in register["requirements"]] == ["R-1"], register
+    register["requirements"][0]["kind"] = "Requirement"
+    path.write_text(json.dumps(register), encoding="utf-8")
+
+    proc = _factory(root, env)
+    out = _out(proc)
+
+    assert proc.returncode == 2, out
+    assert "Refusing to run: the architect decision register cannot bind" in out, out
+    assert "requirements[0].kind: 'Requirement' is not one of" in out, out
+    assert _engineer_ran(tmp_path) == []
+
+
 # --- 9 and 10. an escalation resolves only when its own spec changed ----------
 
 
