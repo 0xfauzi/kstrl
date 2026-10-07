@@ -93,6 +93,9 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # #700 slice 6: two stub engineers, each committing in a worktree of a
     # repository `tests.test_stack_e2e._repo` put through set_identity.
     "tests/test_acceptance_gate_e2e.py": 3,
+    # #700 slice 8: the stub engineer commits its marker in a worktree of a
+    # repository `tests.test_stack_e2e._repo` put through set_identity.
+    "tests/test_acceptance_merged_e2e.py": 1,
     # #642: `_loop_files` and `_second_component` commit into the repository
     # `tests.test_agent_processes_outlive_run._repo` put through
     # `tests.helpers.gitrepo.set_identity`.
@@ -143,11 +146,6 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_feature_operator_context_e2e.py": 1,
     "tests/test_feature_verification.py": 1,
     "tests/test_feature_verification_attribution.py": 1,
-    # #632: `_repo`'s and `_json_project`'s seed commits, each into a
-    # repository it has just put through `tests.helpers.gitrepo.set_identity`,
-    # and the shell engineer's commit inside the worktree `ks factory` made
-    # from that repository.
-    "tests/test_fixtures_beyond_python.py": 3,
     "tests/test_git_identity_helper.py": 5,
     # #423's `_repo_with_tricky_names` fixture, through
     # `tests.helpers.gitrepo.set_identity`, which this row declares.

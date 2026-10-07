@@ -250,6 +250,65 @@ def test_a_retired_dependency_policy_env_var_stops_the_command_by_name(
     assert "No manifest found" not in proc.stdout + proc.stderr
 
 
+#: #700 slice 8: each [fixtures] key, with a value the old loader accepted.
+RETIRED_FIXTURES_KEYS = [
+    ("enabled", "true"),
+    ("snapshot_on_success", "false"),
+    ("snapshot_dir", '".kstrl/snapshots"'),
+    ("timeout", "30.0"),
+]
+
+
+@pytest.mark.parametrize(("key", "value"), RETIRED_FIXTURES_KEYS)
+def test_a_retired_fixtures_key_stops_the_command_by_name(
+    tmp_path: Path, key: str, value: str
+) -> None:
+    """#700 slice 8: kstrl runs no PRD fixture, so a kstrl.toml still
+    setting a [fixtures] key is refused by name before the command body
+    runs, and the refusal says where the fixtures go now."""
+    (tmp_path / "kstrl.toml").write_text(f"[fixtures]\n{key} = {value}\n")
+
+    proc = subprocess.run(
+        [sys.executable, "-m", "kstrl", "status", "--root", str(tmp_path)],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        env={**os.environ, "KSTRL_NO_TUI": "1"},
+    )
+
+    assert proc.returncode == 2, proc.stdout + proc.stderr
+    assert f"[fixtures] {key}, which was retired" in proc.stderr, proc.stderr
+    assert "ks factory --acceptance" in proc.stderr, proc.stderr
+    assert "No manifest found" not in proc.stdout + proc.stderr
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "KSTRL_FIXTURES_ENABLED",
+        "KSTRL_FIXTURES_SNAPSHOT_ON_SUCCESS",
+        "KSTRL_FIXTURES_SNAPSHOT_DIR",
+        "KSTRL_FIXTURES_TIMEOUT",
+    ],
+)
+def test_a_retired_fixtures_env_var_stops_the_command_by_name(tmp_path: Path, name: str) -> None:
+    """#700 slice 8: the same refusal for the environment. The names are
+    typed here, not read from RETIRED_ENV_VARS, so a row dropped from that
+    table fails this test instead of removing its case."""
+    proc = subprocess.run(
+        [sys.executable, "-m", "kstrl", "status", "--root", str(tmp_path)],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        env={**os.environ, "KSTRL_NO_TUI": "1", name: "1"},
+    )
+
+    assert proc.returncode == 2, proc.stdout + proc.stderr
+    assert f"the environment sets {name}, which was retired" in proc.stderr, proc.stderr
+    assert "ks factory --acceptance" in proc.stderr, proc.stderr
+    assert "No manifest found" not in proc.stdout + proc.stderr
+
+
 def test_an_old_finding_record_still_resolves() -> None:
     finding = Finding.from_dict(
         {

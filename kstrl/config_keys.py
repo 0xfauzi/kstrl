@@ -82,7 +82,16 @@ _RETIRED_DEPENDENCY_POLICY = (
     "lists every dependency a change adds; remove it"
 )
 
-#: (section, key) retired by #395 and #696, mapped to what replaced it: the
+#: Why an approved-fixtures key no longer exists (#700 slice 8): a fixture
+#: lived in the PRD, where the engineer could read it, and was judged on
+#: its output. An acceptance check lives outside the repository and is
+#: judged on its exit status.
+_RETIRED_FIXTURES = (
+    "retired: kstrl runs no PRD fixture. Remove the [fixtures] section, and write each "
+    "fixture as an acceptance check in a plan outside the repository (ks factory --acceptance)"
+)
+
+#: (section, key) retired by #395, #696 and #700, mapped to what replaced it: the
 #: refusal reads "names [section] key, which was <this>".
 RETIRED_KEYS: dict[tuple[str, str], str] = {
     ("factory", "setpoint_agreement"): "renamed to claim_agreement; rename the key",
@@ -119,9 +128,13 @@ RETIRED_KEYS: dict[tuple[str, str], str] = {
     ("policy", "license_deny_partial"): _RETIRED_DEPENDENCY_POLICY,
     ("policy", "license_unresolved"): _RETIRED_DEPENDENCY_POLICY,
     ("policy", "license_use_network"): _RETIRED_DEPENDENCY_POLICY,
+    ("fixtures", "enabled"): _RETIRED_FIXTURES,
+    ("fixtures", "snapshot_on_success"): _RETIRED_FIXTURES,
+    ("fixtures", "snapshot_dir"): _RETIRED_FIXTURES,
+    ("fixtures", "timeout"): _RETIRED_FIXTURES,
 }
 
-#: Environment variables retired by #395 and #696, mapped to what replaced
+#: Environment variables retired by #395, #696 and #700, mapped to what replaced
 #: each: the refusal reads "sets NAME, which was <this>".
 RETIRED_ENV_VARS: dict[str, str] = {
     "KSTRL_FACTORY_SETPOINT_AGREEMENT": "renamed to KSTRL_FACTORY_CLAIM_AGREEMENT",
@@ -156,4 +169,8 @@ RETIRED_ENV_VARS: dict[str, str] = {
     "KSTRL_POLICY_DEPS_ALLOW_NEW": _RETIRED_DEPENDENCY_POLICY,
     "KSTRL_POLICY_LICENSE_UNRESOLVED": _RETIRED_DEPENDENCY_POLICY,
     "KSTRL_POLICY_LICENSE_NET": _RETIRED_DEPENDENCY_POLICY,
+    "KSTRL_FIXTURES_ENABLED": _RETIRED_FIXTURES,
+    "KSTRL_FIXTURES_SNAPSHOT_ON_SUCCESS": _RETIRED_FIXTURES,
+    "KSTRL_FIXTURES_SNAPSHOT_DIR": _RETIRED_FIXTURES,
+    "KSTRL_FIXTURES_TIMEOUT": _RETIRED_FIXTURES,
 }

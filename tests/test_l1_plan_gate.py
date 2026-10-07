@@ -266,7 +266,7 @@ class TestTheInboxDecides:
         assert [str(i.status) for i in _plan_items(root)] == ["open"], out
         assert _engineer_ran(tmp_path) == []
 
-    @pytest.mark.parametrize("change", ["criterion", "fixture"])
+    @pytest.mark.parametrize("change", ["criterion", "allowed_paths"])
     def test_an_approval_does_not_carry_over_to_a_changed_plan(
         self, tmp_path: Path, change: str
     ) -> None:
@@ -277,14 +277,7 @@ class TestTheInboxDecides:
         if change == "criterion":
             data["userStories"][0]["acceptanceCriteria"] = ["AC1, and also something new"]
         else:
-            data["fixtures"] = [
-                {
-                    "description": "the command exits 0",
-                    "fixture_type": "cli",
-                    "input_data": {"command": "true"},
-                    "expected": {"exit_code": 0},
-                }
-            ]
+            data["allowedPaths"] = ["src/"]
         prd.write_text(json.dumps(data), encoding="utf-8")
 
         again = _factory(root, env)

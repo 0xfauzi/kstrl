@@ -58,7 +58,7 @@ class TestAMalformedMidRunEditDoesNotAbortTheRun:
         verified: list[str] = []
 
         def verify(*_args: Any, **kwargs: Any) -> VerificationResult:
-            verified.append(str(kwargs["component_id"]))
+            verified.append(Path(str(_args[1])).parent.name)
             if len(verified) == 1:
                 (tmp_path / "kstrl.toml").write_text(MALFORMED, encoding="utf-8")
             return VerificationResult(passed=True, checks=[])
@@ -274,7 +274,7 @@ class TestTheFactorySideParseCountIsPinned:
             ),
         )
 
-        assert (counts.calls, counts.parses) == (13, 7), (
+        assert (counts.calls, counts.parses) == (12, 7), (
             "the cost of a run's config resolution moved. This is a "
             "census pin, not a performance budget: a number that grew "
             "means a section is being resolved twice, and the fix is to "
@@ -290,7 +290,7 @@ class TestTheFactorySideParseCountIsPinned:
             "resolved at run start whatever the component count; the "
             "PARSES stay at 7 because all eight still share one "
             "document (#192); (13, 7) once [adequacy] left the envelope "
-            "(#696 slice 8)."
+            "(#696 slice 8); (12, 7) once [fixtures] left it (#700 slice 8)."
         )
 
 
@@ -441,8 +441,8 @@ class TestTheEnvelopeDoesNotOutliveItsRun:
 
 
 class TestTheInjectionSeamReachesTheRun:
-    """``FactoryConfig.policy_config`` and ``.fixtures_config`` are the
-    seams a caller uses to hand the factory config it did not read.
+    """``FactoryConfig.policy_config`` is the seam a caller uses to hand
+    the factory config it did not read.
 
     Measured by the round-1 review: deleting the ``policy_override``
     argument was STILL GREEN, so a caller injecting a ``PolicyConfig``
@@ -467,26 +467,6 @@ class TestTheInjectionSeamReachesTheRun:
 
         assert pipeline.run_envelope.policy is injected
         assert manifest.policy_hash == injected.envelope_hash()
-
-    def test_an_injected_fixtures_config_reaches_phase_one(self, tmp_path: Path) -> None:
-        from kstrl.fixtures import FixturesConfig
-
-        (tmp_path / "kstrl.toml").write_text(
-            BEFORE.format(autonomy="false") + "\n[fixtures]\nenabled = false\n"
-        )
-        injected = FixturesConfig(enabled=True)
-
-        _, pipeline = empty_run(
-            tmp_path,
-            FactoryConfig(
-                use_worktrees=False,
-                create_prs=False,
-                review_mode="skip",
-                fixtures_config=injected,
-            ),
-        )
-
-        assert pipeline.fixtures_config is injected
 
 
 class TestTheFactoryHandsThePipelineWhatItRecords:

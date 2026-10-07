@@ -316,16 +316,13 @@ retired the same way: a check you want is a `[stack.checks]` entry.
 | `KSTRL_VERIFY_PROGRESS_FILE` | path | unset = the progress log beside the component's PRD |
 | `KSTRL_VERIFY_FAST_ITERATION_CHECKS` | comma-separated gate names (`test_suite`, `typecheck`, `linter`) | unset or empty = off |
 
-## FixturesConfig (`[fixtures]`)
+## Retired: `[fixtures]`
 
-Phase 1 approved-fixtures oracle (R7.2). Off by default: fixtures execute PRD-supplied commands and import PRD-named modules, so the operator must opt in explicitly.
-
-| Env var | Type | Default |
-|---|---|---|
-| `KSTRL_FIXTURES_ENABLED` | bool | false |
-| `KSTRL_FIXTURES_SNAPSHOT_ON_SUCCESS` | bool | true |
-| `KSTRL_FIXTURES_SNAPSHOT_DIR` | path | `.kstrl/snapshots` (relative = against the repo root) |
-| `KSTRL_FIXTURES_TIMEOUT` | float | 30 |
+kstrl runs no PRD fixture (#700 slice 8). `KSTRL_FIXTURES_ENABLED`,
+`KSTRL_FIXTURES_SNAPSHOT_ON_SUCCESS`, `KSTRL_FIXTURES_SNAPSHOT_DIR`,
+`KSTRL_FIXTURES_TIMEOUT` and the `[fixtures]` keys of the same names are
+refused at command entry. Write each fixture as an acceptance check in a plan
+outside the repository and pass it with `ks factory --acceptance <dir>`.
 
 ## PolicyConfig (`[policy]`)
 

@@ -115,7 +115,6 @@ def _write_prd(
     *,
     stories: list[dict[str, Any]] | None = None,
     branch: str | None = None,
-    fixtures: list[dict[str, Any]] | None = None,
 ) -> None:
     """This module's PRD defaults, written by the shared writer.
 
@@ -130,7 +129,6 @@ def _write_prd(
         branch=branch or f"kstrl/factory/{COMPONENT_ID}",
         allowed_paths=allowed,
         stories=[dict(STORY)] if stories is None else stories,
-        fixtures=fixtures,
     )
 
 

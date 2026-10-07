@@ -15,7 +15,7 @@ fixtures that stub the engineer still have to put one there.
 The one writer, so the shape a fixture PRD needs stays in one place.
 ``tests/test_harness_path_scope._write_prd`` delegates here rather
 than serialising its own: that module's PRDs carry content its
-assertions read (a named story, approved fixtures), so it keeps its
+assertions read (a named story), so it keeps its
 own defaults and hands them over.
 """
 
@@ -46,7 +46,6 @@ def write_component_prd(
     branch: str = "test",
     allowed_paths: list[str] | None = None,
     stories: list[dict[str, object]] | None = None,
-    fixtures: list[dict[str, object]] | None = None,
     spec_issues: list[dict[str, str]] | None = None,
     body: str | None = None,
 ) -> Path:
@@ -85,8 +84,6 @@ def write_component_prd(
     }
     if allowed_paths is not None:
         document["allowedPaths"] = allowed_paths
-    if fixtures is not None:
-        document["fixtures"] = fixtures
     if spec_issues is not None:
         document["specIssues"] = spec_issues
     path.write_text(json.dumps(document))

@@ -3,11 +3,9 @@
 The harness carve-out puts the component PRD inside every component's
 effective scope BY DESIGN - the engineer has to write it to set
 ``passes``. Phase 1 is not its only reader: ``check_prd_stories``
-re-reads the stories, ``check_fixtures_from_prd`` re-reads the fixtures,
-the reviewer is handed the acceptance criteria and the R10.3 claim
-check re-reads the claims. Without a refusal an agent could delete a
-story's acceptance criteria, neuter an executable fixture, and pass
-gates it authored.
+re-reads the stories, the reviewer is handed the acceptance criteria and
+the R10.3 claim check re-reads the claims. Without a refusal an agent
+could delete a story's acceptance criteria and pass gates it authored.
 
 ``pipeline.prd_tamper_error`` compares the worktree copy against the
 pre-run copy at ``root_dir``, which is outside every worktree and so is
@@ -39,13 +37,6 @@ from tests.test_harness_path_scope import (
     STORY,
     _write_prd,
 )
-
-FIXTURE: dict[str, Any] = {
-    "description": "round trip",
-    "fixture_type": "cli",
-    "input_data": {"command": "echo 1"},
-    "expected": {"stdout_contains": ["1"]},
-}
 
 
 class TestPrdTamper:
@@ -178,17 +169,6 @@ class TestPrdTamper:
             "still pins everything the engineer may not rewrite"
         )
 
-    def test_a_neutered_fixture_is_refused(self, tmp_path: Path) -> None:
-        """check_fixtures_from_prd runs these as executable oracles."""
-        wt = tmp_path / "wt"
-        _write_prd(tmp_path / PRD_REL, AUTHORED, fixtures=[FIXTURE])
-        _write_prd(
-            wt / PRD_REL,
-            AUTHORED,
-            fixtures=[{**FIXTURE, "expected": {"stdout_contains": ["999"]}}],
-        )
-        assert "approved fixtures" in str(self._error(tmp_path, wt))
-
     def test_a_changed_branch_name_is_refused(self, tmp_path: Path) -> None:
         wt = tmp_path / "wt"
         _write_prd(tmp_path / PRD_REL, AUTHORED)
@@ -275,9 +255,7 @@ class TestPrdTamper:
         """
         wt = tmp_path / "wt"
         _write_prd(tmp_path / PRD_REL, AUTHORED)
-        _write_prd(
-            wt / PRD_REL, AUTHORED, fixtures=[{**FIXTURE, "expected": {"stdout_contains": ["0"]}}]
-        )
+        _write_prd(wt / PRD_REL, AUTHORED, branch="kstrl/factory/elsewhere")
         result = run_mechanical_verification(
             wt,
             wt / PRD_REL,

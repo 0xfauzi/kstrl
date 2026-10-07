@@ -106,7 +106,6 @@ CONTROL_FILENAMES: tuple[str, ...] = (
 #: - ``proposals``  ``cli.py`` counts what the deleted proposal generator left (#217)
 #: - ``queue``      ``workqueue.py`` (``QUEUE_DIR_NAME``)
 #: - ``runs``       ``events.py`` event journals and transcripts
-#: - ``snapshots``  ``fixtures.py`` (``FixturesConfig.snapshot_dir``)
 #: - ``worktrees``  ``factory.py`` component worktrees and their locks
 #:
 #: ``tests/test_state_dir_scope.py`` AST-walks ``kstrl/`` for the entries
@@ -134,7 +133,6 @@ STATE_SUBDIRS: tuple[str, ...] = (
     "proposals",
     "queue",
     "runs",
-    "snapshots",
     "worktrees",
 )
 

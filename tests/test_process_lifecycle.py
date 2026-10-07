@@ -223,7 +223,6 @@ EXPECTED_PROCESS_MODULES: dict[str, tuple[str, ...]] = {
     # process group, so there is nothing here for `kstrl.procgroup` to
     # own.
     "doctor.py": ("subprocess",),
-    "fixtures.py": ("subprocess",),
     "git.py": ("subprocess",),
     "intake_github.py": ("subprocess",),
     # #700: `TimeoutExpired` from `run_scrubbed`, which owns the process group.

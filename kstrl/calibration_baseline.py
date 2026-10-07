@@ -2,8 +2,8 @@
 
 Split out of ``kstrl/calibration.py`` when that file would have crossed
 the 800-line growth ratchet (#406): the split itself is the ratchet, the
-way ``tests/helpers/demotion.py``, ``kstrl/fixtures_snapshot.py`` and
-``kstrl/operator_guidance.py`` each say of themselves. ``kstrl.calibration``
+way ``tests/helpers/demotion.py`` and ``kstrl/operator_guidance.py``
+each say of themselves. ``kstrl.calibration``
 imports this module; the dependency runs one way and must stay that way -
 nothing here imports ``kstrl.calibration``, so there is no cycle.
 

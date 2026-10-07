@@ -23,18 +23,18 @@ takes effect at the next run. There is deliberately no mid-run change
 detector: after this module there is no per-component read left to
 detect a change against.
 
-WHY SEVEN SECTIONS AND NOT THREE
---------------------------------
+WHY SIX SECTIONS AND NOT THREE
+------------------------------
 Round 1 of this change put ``[policy]``, ``[adequacy]`` (which #696
 slice 8 removed) and ``[autonomy]`` here and left ``[sandbox]``,
-``[fixtures]``, ``[inbox]`` and ``[divergence]`` being loaded by
+``[fixtures]`` (which #700 slice 8 removed), ``[inbox]`` and ``[divergence]`` being loaded by
 ``ComponentPipeline.__init__``. The
 review measured what that cost: a malformed ``[inbox]`` reached the
 constructor with no handler above it, so it left ``run_factory`` as a
 raw ``ValueError``, and it did so ABOVE
 ``pipeline.record_architect_usage``, which is the line #257 exists to
 reach - the architect's spend went unrecorded and ``serve`` charged $0
-for a launch that had spent real money. Resolving all seven HERE, at a
+for a launch that had spent real money. Resolving all six HERE, at a
 point the run can still refuse from, is what closes that: see
 :meth:`RunEnvelope.resolve` and its one caller in ``kstrl/factory.py``.
 It also leaves ``[sandbox]`` with one resolution per run rather than
@@ -66,7 +66,6 @@ from kstrl.autonomy import AutonomyConfig, AutonomyState
 from kstrl.config import ConfigError, toml_parse_scope
 from kstrl.config_preflight import resolve_or_report
 from kstrl.divergence import DivergenceConfig
-from kstrl.fixtures import FixturesConfig
 from kstrl.inbox import InboxConfig
 from kstrl.policy import PolicyConfig
 from kstrl.release import ReleaseConfig
@@ -107,11 +106,10 @@ class RunEnvelope:
     #: policy envelope ceiling and by control-state location. 0 when the
     #: ladder is off.
     autonomy_level: int
-    #: The four the pipeline used to resolve for itself. Carried here so
+    #: The ones the pipeline used to resolve for itself. Carried here so
     #: that a malformed one is a refusal the run can report rather than
     #: an exception out of a constructor (see the module docstring).
     sandbox: SandboxConfig
-    fixtures: FixturesConfig
     inbox: InboxConfig
     divergence: DivergenceConfig
     release: ReleaseConfig
@@ -122,11 +120,10 @@ class RunEnvelope:
         root_dir: Path,
         *,
         policy_override: PolicyConfig | None = None,
-        fixtures_override: FixturesConfig | None = None,
     ) -> EnvelopeResolution:
         """The envelope, or the lines saying which section to fix.
 
-        One document parse for all seven sections: the whole group is
+        One document parse for all six sections: the whole group is
         inside a single :func:`toml_parse_scope`, and each section goes
         through ``config_preflight.resolve_or_report`` rather than
         ``load_or_report`` because a NESTED scope replaces the outer
@@ -143,9 +140,8 @@ class RunEnvelope:
         underneath it, so the only input that can have gone bad since is
         the file - which ``_blamed_toml_value`` still names.
 
-        ``policy_override`` and ``fixtures_override`` are
-        ``FactoryConfig.policy_config`` and ``.fixtures_config``, the
-        injection seams callers already use to hand the factory config
+        ``policy_override`` is ``FactoryConfig.policy_config``, the
+        injection seam callers already use to hand the factory config
         it did not read.
         """
         problems: list[str] = []
@@ -153,7 +149,6 @@ class RunEnvelope:
             policy = policy_override or _resolved(PolicyConfig.load, root_dir, problems)
             autonomy = _resolved(AutonomyConfig.load, root_dir, problems)
             sandbox = _resolved(SandboxConfig.load, root_dir, problems)
-            fixtures = fixtures_override or _resolved(FixturesConfig.load, root_dir, problems)
             inbox = _resolved(InboxConfig.load, root_dir, problems)
             divergence = _resolved(DivergenceConfig.load, root_dir, problems)
             release = _resolved(ReleaseConfig.load, root_dir, problems)
@@ -161,7 +156,6 @@ class RunEnvelope:
             policy is None
             or autonomy is None
             or sandbox is None
-            or fixtures is None
             or inbox is None
             or divergence is None
             or release is None
@@ -195,7 +189,6 @@ class RunEnvelope:
                 autonomy_state=state,
                 autonomy_level=state.level if state is not None else 0,
                 sandbox=sandbox,
-                fixtures=fixtures,
                 inbox=inbox,
                 divergence=divergence,
                 release=release,
@@ -209,7 +202,6 @@ class RunEnvelope:
         root_dir: Path,
         *,
         policy_override: PolicyConfig | None = None,
-        fixtures_override: FixturesConfig | None = None,
     ) -> RunEnvelope:
         """:meth:`resolve`, raising instead of reporting.
 
@@ -226,7 +218,6 @@ class RunEnvelope:
         resolved = cls.resolve(
             root_dir,
             policy_override=policy_override,
-            fixtures_override=fixtures_override,
         )
         if resolved.envelope is None:
             raise ConfigError(

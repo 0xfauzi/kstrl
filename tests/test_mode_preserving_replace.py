@@ -100,7 +100,7 @@ REPLACE_SITES: dict[str, str] = {
 #: anywhere near a filesystem path), and a callee with NO identifier at
 #: all (`TABLE[key](...)`, `initial_screens_for_kind(...)`), which is a
 #: candidate for EVERY target set because there is nothing in the AST to
-#: compare - the same five `fixture_expect.py`/`fixtures.py`/`tui/app.py` sites
+#: compare - the same two `tui/app.py` sites
 #: `tests/test_atomicio.py::EXPECTED_UNDECIDED_CALLS` already discloses
 #: for `tempfile.mkstemp`. A NEW entry here is either a call this walk
 #: needs help resolving (make it resolvable, or add a reason and enrol
@@ -117,10 +117,6 @@ EXPECTED_UNDECIDED_REPLACE_CALLS: tuple[str, ...] = (
     # #433 inc3: str.replace spelling a slug as words, here and in the four
     # tui/ rows below, except inbox.py's `moment`, a datetime's tzinfo.
     "evolve_report.py name.replace",
-    # #632: the fixture comparison tables and the fixture runner table.
-    "fixture_expect.py COMPARATORS[kind]",
-    "fixture_expect.py VALIDATORS[kind]",
-    "fixtures.py _RUNNERS[fixture.fixture_type]",
     "inbox.py datetime.now(UTC).replace",
     "inbox.py parsed.replace",
     # #696: init_cmd.kstrl_toml_for, which seeded a detected toolchain's

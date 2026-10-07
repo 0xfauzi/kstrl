@@ -87,7 +87,6 @@ STATE_ARTIFACTS = (
     ".kstrl/queue/new/item-1/item.json",
     ".kstrl/queue/pause.json",
     ".kstrl/runs/run-1/events.jsonl",
-    ".kstrl/snapshots/fixture-1.json",
 )
 
 
@@ -146,7 +145,6 @@ class TestStateDirCarveOut:
             ".kstrl/logs/",
             ".kstrl/progress.jsonl",
             ".kstrl/runs/",
-            ".kstrl/snapshots/",
             ".kstrl/worktrees/",
         ]
 
@@ -187,7 +185,6 @@ class TestStateDirCarveOut:
             ".kstrl/debug/x/y.sh",
             ".kstrl/contract/x/y",
             ".kstrl/logs/x/y",
-            ".kstrl/snapshots/x.json",
             ".kstrl/worktrees/x/payload.sh",
         ):
             assert path_is_allowed(hidden, entries), hidden
@@ -948,9 +945,6 @@ class TestEveryCallerDeclaresTheStateRoot:
                 if any(kw.arg == "guard_state_root" for kw in node.keywords):
                     declared[source_file.name] = declared.get(source_file.name, 0) + 1
         assert Counter(site.split(":", 1)[0] for site in undecided) == {
-            # #632: the fixture comparison tables and the fixture runner table.
-            "fixture_expect.py": 2,
-            "fixtures.py": 1,
             "tui/app.py": 2,
         }, f"the walk could not decide these calls: {list(undecided)}"
         assert callers == {"cli.py": 1, "factory.py": 1, "feature_cmd.py": 3}

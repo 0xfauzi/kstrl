@@ -95,10 +95,7 @@ EXPECTED_CONTEXT_SOURCES: dict[str, tuple[str | None, ...]] = {
 #: no identifier (``TABLE[key](...)``, ``helper(...)(...)``), which
 #: ``calls_to`` reports as a candidate for every target; none of them is
 #: a ``run_loop`` call.
-# #632 adds fixture_expect.py (two comparison tables) and fixtures.py (the runner table).
 EXPECTED_UNDECIDED: dict[str, int] = {
-    "fixture_expect.py": 2,
-    "fixtures.py": 1,
     "tui/app.py": 2,
 }
 

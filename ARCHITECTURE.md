@@ -95,8 +95,8 @@ none of these blocks.
 **Phase 1 - mechanical** (computational, fast): test suite, typecheck,
 linter, diff-scope (rename-aware; changes outside `allowedPaths` fail),
 bad-pattern scan (empty files, syntax errors, leaked secrets), optional
-mutation testing, dead-code check, self-critique shape check, and the
-approved-fixtures oracle when enabled (see below).
+mutation testing, dead-code check and self-critique shape check. The
+acceptance checks of an operator's plan run after it (see below).
 
 **Phase 2 / 2.5 - adversarial review** (LLM): independent reviewer and
 security-reviewer passes over the diff, wrapped in per-run random data
@@ -237,7 +237,6 @@ Everything lives under `.kstrl/` at the project root (gitignored):
 | `.kstrl/knowledge/<component>/<run>/` | Distilled facts (latest-wins by fact id; re-validated on read) |
 | `.kstrl/evolution.jsonl`, `.kstrl/experiments.tsv` | Learning-loop journals |
 | `.kstrl/proposals/` | Files the proposal generator wrote before #507 deleted it; `ks evolve` counts them and nothing reads them |
-| `.kstrl/snapshots/` | Approved-fixture output snapshots |
 | `.kstrl/factory.lock` | Run-level flock: a second invocation on the same root refuses to start |
 
 ## Safe mode
@@ -262,43 +261,18 @@ already refuses where refusing is right. It is a question with an
 answer, not a new control. Details and recovery steps are in
 [docs/runbook.md](docs/runbook.md#safe-mode).
 
-## The fixtures sandbox
+## Acceptance checks
 
-Approved fixtures (README: "Approved fixtures") are the independent
-oracle against agent-authored tests. Because the PRD is LLM-emitted,
-fixture definitions are treated as untrusted input:
-
-- **`cli` fixtures run without a shell.** The command string is split
-  with `shlex` and executed directly, so pipes, redirection, `&&`,
-  `$VAR` expansion, and globbing are unsupported; metacharacters reach
-  the program as literal arguments. Each command runs with a scrubbed
-  environment (no API keys or tokens) in its own process group with a
-  timeout.
-- **`function` fixtures run in a subprocess**, never in the harness
-  process. The module/function spec travels as JSON to a
-  `sys.executable` runner with cwd set to the component worktree, the
-  same scrubbed environment, and a timeout. Consequences: fixtures run
-  under the harness's Python interpreter (not the project's venv), so
-  keep them free of project-only third-party imports; and the `returns`
-  comparison is JSON-shaped (dicts, lists, strings, numbers, booleans,
-  null).
-- **`file` fixtures cannot leave the worktree.** Absolute paths, `..`
-  components, and symlink escapes are rejected.
-
-The schema is strict: unknown keys anywhere in a fixture entry are
-rejected at PRD validation, because a misspelled expectation key
-(`stdout_containz`) would otherwise be silently ignored and the fixture
-would pass vacuously.
-
-**Snapshot regression**, behind the same `enabled` flag: when every
-fixture passes, actual outputs are saved to `snapshot_dir` keyed by
-component id; later runs fail Phase 1 if a previously-passing fixture
-fails or its output changes. If a change is intentional, delete
-`.kstrl/snapshots/<component>.json` to reset the baseline. Snapshots
-resolve against the repo root, not the worktree, so they survive
-worktree recreation between runs. A `cli` fixture with `stdout_json`
-records its stdout as canonical JSON (sorted keys, no whitespace), so
-output that differs only in key order or spacing is not a change.
+An acceptance plan is a directory outside the repository that the
+operator passes with `ks factory --acceptance <dir>` (`kstrl/acceptance.py`).
+kstrl never interprets a check: it runs its `argv` in a fresh copy of the
+plan, with `KSTRL_TREE` naming the checkout under test, and reads the exit
+status. The checks run on the base before the first engineer, on each
+component's head, and in Phase 3 on the merged tree (#700 slice 8). A
+held-out check is never handed to an engineer, and a retry names it by its
+id alone. The PRD `fixtures` key and the `[fixtures]` section that came
+before were removed by #700 slice 8: a PRD or kstrl.toml that still carries
+one is refused with a line that says where its fixtures go now.
 
 ## Glossary
 

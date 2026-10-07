@@ -60,8 +60,6 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     "doctor.py": 3,
     # 14: #624 moved the scaffold's `subprocess.run` out to `worktree_setup.py`.
     "factory.py": 14,
-    # 2: #696 slice 8 deleted the function-fixture runner.
-    "fixtures.py": 2,
     # 64: 58 after #435, +2 for #465's `branch_sha`, +2 for #459's `ignored_paths`,
     # +2 for #500's `tracked_files_at`, +2 for #626's `listed_files`.
     # 70: #630's git.read_blob adds two subprocess.run and two
@@ -264,7 +262,6 @@ EXPECTED_UNDECIDED_SPAWNS: tuple[str, ...] = (
     # #632: `_dispatch_fixture` calls a runner through `_RUNNERS`. Checked by
     # hand: the cli runner spawns through `run_scrubbed`, counted above, and
     # the file runner spawns nothing (#696 slice 8 deleted the function runner).
-    "fixtures.py _RUNNERS[fixture.fixture_type]",
     "timeout.py subprocess.run",
 )
 

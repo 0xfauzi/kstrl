@@ -217,7 +217,6 @@ def config_sections() -> list[ConfigSection]:
     from kstrl.evolution import EvolutionConfig
     from kstrl.factory import FactoryConfig
     from kstrl.feedforward import CodebaseScanConfig
-    from kstrl.fixtures import FixturesConfig
     from kstrl.inbox import InboxConfig
     from kstrl.intake_github import GitHubIntakeConfig
     from kstrl.knowledge import KnowledgeConfig
@@ -252,7 +251,6 @@ def config_sections() -> list[ConfigSection]:
         ConfigSection(("timeout",), TimeoutConfig.load),
         ConfigSection(("codebase_scan",), CodebaseScanConfig.load),
         ConfigSection(("knowledge",), KnowledgeConfig.load),
-        ConfigSection(("fixtures",), FixturesConfig.load),
         ConfigSection(("queue",), QueueConfig.load),
         ConfigSection(("inbox",), InboxConfig.load),
         ConfigSection(("intake_github",), GitHubIntakeConfig.load),

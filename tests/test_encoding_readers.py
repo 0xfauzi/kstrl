@@ -110,12 +110,6 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     # 1 since #696 slice 6: the module map's line count is the one read
     # left; the interface, graph and conventions readers are gone.
     "feedforward.py": 1,
-    # 3 until the snapshot half of fixtures.py moved to
-    # fixtures_snapshot.py under the 800-line ratchet. The read that
-    # went with it is the row below; the count is re-derived by
-    # running the census, not edited to match.
-    "fixtures.py": 2,
-    "fixtures_snapshot.py": 1,
     "inbox.py": 1,
     # 3 until #352 routed ``_ensure_gitignore``'s append through
     # ``appendio``, which encodes once for every appender. The two left
@@ -253,9 +247,6 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "feature_cmd.py open(latest_path, 'w', encoding='utf-8')",
     "feature_cmd.py open(repair_path, 'w', encoding='utf-8')",
     "feedforward.py path.read_text(encoding='utf-8', errors='replace')",
-    "fixtures.py full_path.read_text(encoding='utf-8')",
-    "fixtures.py open(prd_path, encoding='utf-8')",
-    "fixtures_snapshot.py snapshot_path.read_text(encoding='utf-8')",
     "init_cmd.py open(prd_file, encoding='utf-8')",
     # ``init_cmd.py path.open('a', encoding='utf-8')`` was here until
     # #352. The read is DELETED, not unseen: ``_ensure_gitignore``'s
@@ -351,11 +342,6 @@ EXPECTED_UNDECIDED: tuple[str, ...] = (
     "covering it)",
     # #632: `_dispatch_fixture` calls a runner through `_RUNNERS`, a callee
     # with no name. Checked by hand: the one runner that reads a file is
-    # `run_file_fixture`, through `_fixture_file_text`, which names utf-8.
-    "fixtures.py _RUNNERS[fixture.fixture_type]",
-    "fixtures.py f (the read is deferred to wherever this value is drained, "
-    "which this walk cannot locate, so no handler can be credited with "
-    "covering it)",
     "init_cmd.py f (the read is deferred to wherever this value is drained, "
     "which this walk cannot locate, so no handler can be credited with "
     "covering it)",

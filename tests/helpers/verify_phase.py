@@ -256,7 +256,7 @@ def phase_verify_envelopes(
     def record(*_args: object, **kwargs: Any) -> VerificationResult:
         readings.append(
             EnvelopeReading(
-                component=str(kwargs["component_id"]),
+                component=Path(str(_args[1])).parent.name,
                 policy=kwargs["policy_config"],
                 autonomy_level=int(kwargs["autonomy_level"]),
             )

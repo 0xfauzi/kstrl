@@ -140,7 +140,6 @@ def _section_specs() -> list[SectionSpec]:
     from kstrl.evolution import EvolutionConfig
     from kstrl.factory import FactoryConfig
     from kstrl.feedforward import CodebaseScanConfig
-    from kstrl.fixtures import FixturesConfig
     from kstrl.inbox import InboxConfig
     from kstrl.intake_github import GitHubIntakeConfig
     from kstrl.knowledge import KnowledgeConfig
@@ -295,14 +294,6 @@ def _section_specs() -> list[SectionSpec]:
             identity_keys(VerifyConfig, _all_field_names(VerifyConfig)),
             lambda root: VerifyConfig.load(root_dir=root),
             VerifyConfig(),
-            probe_undocumented_fields=True,
-        ),
-        SectionSpec(
-            "fixtures",
-            "Phase 1 approved-fixtures oracle (R7.2; default off)",
-            identity_keys(FixturesConfig, _all_field_names(FixturesConfig)),
-            lambda root: FixturesConfig.load(root_dir=root),
-            FixturesConfig(),
             probe_undocumented_fields=True,
         ),
         SectionSpec(

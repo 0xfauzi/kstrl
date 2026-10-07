@@ -296,10 +296,6 @@ class TestAssertSitesWillNotTakeHalfAnAnswer:
 #: a moved main failed this pin four times on line numbers alone, and none
 #: of those diffs was about a dispatch table.
 OPAQUE_CALLEES = (
-    # #632: the fixture comparison tables and the fixture runner table.
-    "fixture_expect.py COMPARATORS[kind]",
-    "fixture_expect.py VALIDATORS[kind]",
-    "fixtures.py _RUNNERS[fixture.fixture_type]",
     "tui/app.py initial_screens_for_kind(kind, observe_only=False)",
     "tui/app.py initial_screens_for_kind(kind, observe_only=True)",
 )

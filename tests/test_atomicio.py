@@ -674,32 +674,6 @@ class TestTheReadSideNamesTheSameEncoding:
         assert result.returncode == 0, result.stderr
         assert ascii(self.CURLY) in result.stdout
 
-    def test_a_fixture_snapshot_is_readable_under_the_c_locale(self, tmp_path: Path) -> None:
-        """``check_snapshot_regression`` fails CLOSED on an unreadable
-        snapshot, so a decode error there did not even surface as one: it
-        escaped the handler entirely, because ``UnicodeDecodeError`` is a
-        ``ValueError`` and the handler names ``OSError``."""
-        (tmp_path / "comp-a.json").write_bytes(
-            json.dumps(
-                {
-                    "component_id": "comp-a",
-                    "fixture_count": 0,
-                    "entries": [],
-                    "note": self.CURLY,
-                },
-                indent=2,
-                ensure_ascii=False,
-            ).encode("utf-8")
-        )
-        result = self._probe(
-            tmp_path,
-            "from pathlib import Path\n"
-            "from kstrl.fixtures_snapshot import check_snapshot_regression\n"
-            "print('REGRESSIONS:', check_snapshot_regression('comp-a', [], Path(sys.argv[1])))\n",
-        )
-        assert result.returncode == 0, result.stderr
-        assert "REGRESSIONS: []" in result.stdout
-
 
 class TestTheDescriptorIsOwnedBeforeAnythingCanFail:
     """#291 round two: a failing ``fchmod`` leaked the raw descriptor.
