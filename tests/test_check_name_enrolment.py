@@ -199,6 +199,7 @@ ENROLLED_BUT_INVISIBLE = {
     "patch_coverage": "a check #696 slice 8 retired; no call site spells it",
     "diff_mutation": "a check #696 slice 8 retired; no call site spells it",
     "test_adequacy": "a check #696 slice 8 retired; no call site spells it",
+    "fixtures": "a check #700 slice 8 retired; no call site spells it",
 }
 
 #: The whole of ``_CATEGORY_BY_CHECK``, pinned row by row rather than in
