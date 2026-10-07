@@ -72,7 +72,7 @@ def test_the_reference_plan_asked_of_a_scripted_designer_catches_every_planted_h
     repo = materialize(fixture, tmp_path / "repo")
     assert fixture.spec.strip() in agent.prompts[0]
     assert all(line in agent.prompts[0] for line in fixture.criteria)
-    scored = score(fixture, repo, entry, tmp_path / "plan")
+    scored = score(fixture, repo, entry, tmp_path / "plan", designed=True)
     assert clean(scored)[0], clean(scored)[1]
     for head in fixture.planted:
         assert caught(scored, head)[0], caught(scored, head)[1]
@@ -80,8 +80,9 @@ def test_the_reference_plan_asked_of_a_scripted_designer_catches_every_planted_h
 
 @runs_a_stack
 def test_a_vacuous_plan_catches_nothing(tmp_path: Path) -> None:
-    """A check that passes everywhere is refused on the base, so it scores
-    as a miss on every planted head and as not clean on the correct one."""
+    """An operator's check that passes everywhere is refused on the base, so
+    it scores as a miss on every planted head and as not clean on the
+    correct one."""
     fixture = FIXTURES[0]
     repo = materialize(fixture, tmp_path / "repo")
     vacuous = {
@@ -97,7 +98,7 @@ def test_a_vacuous_plan_catches_nothing(tmp_path: Path) -> None:
         ],
     }
 
-    scored = score(fixture, repo, vacuous, tmp_path / "plan")
+    scored = score(fixture, repo, vacuous, tmp_path / "plan", designed=False)
 
     assert "passes on the base" in " ".join(scored.refused), scored
     assert not clean(scored)[0]
@@ -126,9 +127,81 @@ def test_a_check_that_cannot_run_catches_nothing(tmp_path: Path) -> None:
         ],
     }
 
-    scored = score(fixture, repo, missing, tmp_path / "plan")
+    scored = score(fixture, repo, missing, tmp_path / "plan", designed=False)
 
     assert scored.refused == [], scored
     assert set(scored.verdicts[CORRECT].values()) == {"not_run"}, scored
     assert not clean(scored)[0]
     assert not any(caught(scored, head)[0] for head in fixture.planted)
+
+
+_VACUOUS_CHECK = {
+    "id": "vacuous",
+    "criterion": "c",
+    "argv": ["true"],
+    "onBase": "fails",
+    "heldOut": False,
+}
+
+
+@runs_a_stack
+@pytest.mark.parametrize("fixture", FIXTURES, ids=[f.fixture_id for f in FIXTURES])
+def test_a_designed_plan_loses_only_its_vacuous_check(
+    fixture: AcceptanceFixture, tmp_path: Path
+) -> None:
+    """The paid designer test scores a plan as the designer's, as
+    ``ks factory --design-acceptance`` does (#700, owner decision of
+    2026-10-06). A vacuous check beside the reference checks is removed on
+    the base and the reference checks still judge every head, where the
+    same plan from an operator is refused."""
+    entry = {**fixture.reference, "checks": [*fixture.reference["checks"], _VACUOUS_CHECK]}
+    repo = materialize(fixture, tmp_path / "repo")
+
+    designed = score(fixture, repo, entry, tmp_path / "designed", designed=True)
+    operator = score(fixture, repo, entry, tmp_path / "operator", designed=False)
+
+    assert designed.refused == [] and designed.removed == ["vacuous"], designed
+    assert clean(designed)[0], clean(designed)[1]
+    for head in fixture.planted:
+        assert caught(designed, head)[0], caught(designed, head)[1]
+    assert "vacuous passes on the base" in " ".join(operator.refused), operator
+
+
+@runs_a_stack
+def test_a_designed_plan_with_only_a_vacuous_check_catches_nothing(tmp_path: Path) -> None:
+    """A designed plan whose only check is vacuous has no check left after
+    the base: it scores as refused, a miss on every planted head and not
+    clean on the correct one."""
+    fixture = FIXTURES[0]
+    repo = materialize(fixture, tmp_path / "repo")
+    entry = {"createsApp": False, "checks": [_VACUOUS_CHECK]}
+
+    scored = score(fixture, repo, entry, tmp_path / "plan", designed=True)
+
+    assert scored.removed == ["vacuous"], scored
+    assert "no designed acceptance check" in " ".join(scored.refused), scored
+    assert not clean(scored)[0]
+    assert not any(caught(scored, head)[0] for head in fixture.planted)
+
+
+@runs_a_stack
+def test_the_paid_designer_arm_scores_its_plan_as_designed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The paid arm's own run, with a scripted designer that answers the
+    reference plan plus a vacuous check: the vacuous check is removed and
+    the run is clean. An arm that scored the plan as an operator's would be
+    refused on the base, and this run would not be clean."""
+    import tests.test_calibration as tc
+
+    fixture = FIXTURES[0]
+    entry = {**fixture.reference, "checks": [*fixture.reference["checks"], _VACUOUS_CHECK]}
+    monkeypatch.setattr(
+        tc, "_get_reviewer_calibration_agent", lambda: RecordingAgent(json.dumps(entry))
+    )
+
+    scored = tc._acceptance_run_once(fixture, tmp_path)
+
+    assert not isinstance(scored, str), scored
+    assert scored.removed == ["vacuous"], scored
+    assert clean(scored)[0], clean(scored)[1]

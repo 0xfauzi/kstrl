@@ -1683,7 +1683,7 @@ def _acceptance_run_once(fixture: AcceptanceFixture, tmp_path: Path) -> Scored |
     if entry is None:
         return "no valid plan: " + "; ".join(errors)
     repo = materialize(fixture, slot / "repo")
-    return score(fixture, repo, entry, slot / "plan")
+    return score(fixture, repo, entry, slot / "plan", designed=True)
 
 
 @_skip_unless_calibrating
