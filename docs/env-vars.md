@@ -88,7 +88,6 @@ With no work limit, an agent that hangs without output holds its component slot 
 | `KSTRL_FACTORY_KEEP_WORKTREES_ON_FAILURE` | bool | false |
 | `KSTRL_FACTORY_INTEGRATION_REVIEW` | bool | true |
 | `KSTRL_FACTORY_INTEGRATION_BLOCKING` | bool | false |
-| `KSTRL_FACTORY_INTEGRATION_MAX_ROUNDS` | int, at least 1 | 1 |
 | `KSTRL_FACTORY_CONVERGENCE_ATTEMPTS` | int, at least 0 | 0 (off) |
 | `KSTRL_FACTORY_WORKTREE_SETUP_TIMEOUT` | float, seconds | 0 (no limit) |
 | `KSTRL_FACTORY_CLAIM_AGREEMENT` | `advisory` \| `block` | advisory |

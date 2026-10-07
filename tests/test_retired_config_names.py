@@ -250,6 +250,34 @@ def test_a_retired_dependency_policy_env_var_stops_the_command_by_name(
     assert "No manifest found" not in proc.stdout + proc.stderr
 
 
+@pytest.mark.parametrize("form", ["toml", "env"])
+def test_a_retired_integration_fix_bound_stops_the_command_by_name(
+    tmp_path: Path, form: str
+) -> None:
+    """#696 slice 10: no integration fix is built, so the bound on them is
+    retired. A kstrl.toml or an environment that still sets it is refused
+    by name before the command body runs. The names are typed here, not
+    read from RETIRED_KEYS or RETIRED_ENV_VARS."""
+    env = {**os.environ, "KSTRL_NO_TUI": "1"}
+    if form == "toml":
+        (tmp_path / "kstrl.toml").write_text("[factory]\nintegration_max_rounds = 2\n")
+        named = "[factory] integration_max_rounds"
+    else:
+        env["KSTRL_FACTORY_INTEGRATION_MAX_ROUNDS"] = "2"
+        named = "the environment sets KSTRL_FACTORY_INTEGRATION_MAX_ROUNDS"
+    proc = subprocess.run(
+        [sys.executable, "-m", "kstrl", "status", "--root", str(tmp_path)],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        env=env,
+    )
+
+    assert proc.returncode == 2, proc.stdout + proc.stderr
+    assert named in proc.stderr, proc.stderr
+    assert "builds no fix component" in proc.stderr, proc.stderr
+
+
 #: #700 slice 8: each [fixtures] key, with a value the old loader accepted.
 RETIRED_FIXTURES_KEYS = [
     ("enabled", "true"),

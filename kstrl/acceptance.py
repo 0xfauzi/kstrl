@@ -26,9 +26,9 @@ made by the slice 3 replay (:func:`kstrl.replay.replay_stack`): setup,
 - On the base, after the plan gate and before the first engineer
   (:func:`replay_base`). A check the plan says fails on the base must fail
   there, and one it says passes must pass: either contradiction refuses
-  the run. A check that did not run refuses, except in a component the
-  plan marks ``createsApp``, which is recorded as
-  :data:`BASE_NOT_RUNNABLE` (decision 11).
+  the run, unless the designer wrote the check that passes, which is then
+  removed. A check that did not run refuses, except in a component the
+  plan marks ``createsApp``, recorded as :data:`BASE_NOT_RUNNABLE` (decision 11).
 - On each component's head, after Phase 1 passed (:func:`judge_head`).
   Each check runs :data:`HEAD_RUNS` times and passes only when every run
   exited 0. Nothing is run again after a failure. An operator-written
@@ -57,7 +57,7 @@ import os
 import shutil
 import tempfile
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -156,12 +156,13 @@ class PinnedPlan:
 @dataclass(frozen=True)
 class BaseReading:
     """What the base replay found: each check's exit by component and id
-    (None when it gave none), and the components recorded as
-    :data:`BASE_NOT_RUNNABLE`."""
+    (None when it gave none), what it says of a component (``said``), and
+    the checks each head runs (``kept``)."""
 
     sha: str
     exits: Mapping[str, Mapping[str, int | None]]
-    not_runnable: frozenset[str]
+    said: Mapping[str, str]
+    kept: Mapping[str, ComponentPlan]
 
 
 @dataclass(frozen=True)
@@ -522,6 +523,8 @@ def replay_base(
 ) -> tuple[BaseReading | None, list[str]]:
     """Replay every check of the plan once on the base; or why the run must
     not start. The reading is written to the run directory either way."""
+    from kstrl.acceptance_design import kept_on_base
+
     try:
         sha = git.resolve_base_sha(base_branch, root)
     except git.GitDiffError as exc:
@@ -543,8 +546,9 @@ def replay_base(
         comp: {check.id: _first_exit(runs, comp, check.id) for check in part.checks}
         for comp, part in plan.components.items()
     }
-    not_runnable, errors = _base_errors(plan, record, exits)
-    reading = BaseReading(sha, exits, frozenset(not_runnable))
+    kept, said = kept_on_base(plan, exits, ui)
+    not_runnable, errors = _base_errors(replace(plan, components=kept), record, exits)
+    reading = BaseReading(sha, exits, said | dict.fromkeys(not_runnable, BASE_NOT_RUNNABLE), kept)
     for comp in sorted(not_runnable):
         ui.warn(f"  {comp}: {BASE_NOT_RUNNABLE} (the plan marks it as creating the app)")
     return reading, errors + _write_base(root, run_id, plan, record, reading, runs, errors)
@@ -598,7 +602,7 @@ def _write_base(
     errors: list[str],
 ) -> list[str]:
     """Write the base reading; return why it could not be written, or []."""
-    path = evidence_dir(root, run_id) / BASE_FILE
+    path, kept = evidence_dir(root, run_id) / BASE_FILE, reading.kept
     document = {
         "run": run_id,
         "planId": plan.digest,
@@ -608,12 +612,13 @@ def _write_base(
         "replay": {"failed": record.failed, "detail": record.detail, "error": record.error},
         "components": {
             comp: {
-                "base": BASE_NOT_RUNNABLE if comp in reading.not_runnable else "",
+                "base": reading.said.get(comp, ""),
                 "checks": [
                     {
                         "id": check.id,
                         "onBase": check.on_base,
                         "exit": reading.exits[comp][check.id],
+                        "removed": comp not in kept or check not in kept[comp].checks,
                         # A held-out check's output can say what it expected,
                         # and this file is written before the first engineer.
                         "tail": [
@@ -656,13 +661,13 @@ def judge_head(
     from kstrl.acceptance_lines import render_lines, row_line, told_lines
 
     plan, base, stack = config.acceptance_plan, config.acceptance_base, config.project_stack
-    if plan is None or base is None or stack is None or comp_id not in plan.components:
+    if plan is None or base is None or stack is None or comp_id not in base.kept:
         return None
     if not head_sha:
         # An empty ``at`` replays the base: never judge the base as the head.
         line = f"Acceptance for {comp_id}: the head commit cannot be read, so no check ran"
         return HeadOutcome(False, [line], (), (line,), HOST_LABEL)
-    part = plan.components[comp_id]
+    part = base.kept[comp_id]
     evidence = evidence_dir(root, run_id) / comp_id / f"attempt-{attempt}"
     try:
         (evidence / "logs").mkdir(parents=True, exist_ok=True)
@@ -730,7 +735,7 @@ def _record(
     evidence: Path,
 ) -> dict[str, Any]:
     head_sha, attempt, run_id = head
-    part = plan.components[comp_id]
+    part = base.kept[comp_id]
     rows = []
     for check in part.checks:
         stages = runs.get((comp_id, check.id), [])
@@ -760,11 +765,12 @@ def _record(
         "baseSha": base.sha,
         "headSha": head_sha,
         "isolation": record.isolation,
-        "base": BASE_NOT_RUNNABLE if comp_id in base.not_runnable else "",
+        "base": base.said.get(comp_id, ""),
         "headRuns": HEAD_RUNS,
         "heldOutReadDenied": HELD_OUT_READ_DENIED,
         "replay": {"failed": record.failed, "detail": record.detail, "error": record.error},
         "checks": rows,
+        "removed": [c.id for c in plan.components[comp_id].checks if c not in part.checks],
     }
 
 

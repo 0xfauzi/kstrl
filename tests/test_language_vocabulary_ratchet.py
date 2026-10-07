@@ -228,6 +228,18 @@ ALLOWLIST: tuple[AllowedSite, ...] = (
     AllowedSite("agents/leash.py", "python -I -S leash.py", 1, "E30: kstrl's own leash"),
     AllowedSite("autonomy.py", "python -m", 3, "E31: python -m kstrl.calibration"),
     AllowedSite(
+        "calibration.py",
+        "python -m kstrl.calibration",
+        3,
+        "E31: kstrl measuring itself, the compare CLI's own usage line",
+    ),
+    AllowedSite(
+        "calibration_ladder.py",
+        "python -m kstrl.calibration",
+        1,
+        "E31: kstrl measuring itself",
+    ),
+    AllowedSite(
         "learning_fixture.py",
         "sys.executable",
         1,
@@ -315,7 +327,7 @@ def census() -> dict[str, Counter[str]]:
     return found
 
 
-#: Re-derived by running this file on the #696 slice 8 tree; never typed in by hand.
+#: Re-derived by running this file on the #696 slice 8 and slice 10 tree; never typed in by hand.
 PINNED_HITS: dict[str, dict[str, int]] = {
     "__main__.py": {"python": 1},
     "adequacy.py": {"go": 1, "jest": 1, "python": 5, "ruby": 2, "vitest": 1},
@@ -326,8 +338,6 @@ PINNED_HITS: dict[str, dict[str, int]] = {
     "appendio.py": {"python": 1},
     "autonomy.py": {"python": 1},
     "baseline.py": {"mypy": 1, "python": 1},
-    "calibration.py": {"python": 4, "typescript": 1},
-    "calibration_ladder.py": {"python": 1},
     "calibration_score.py": {"mypy": 1},
     "cli.py": {"python": 1, "ruff": 4, "vulture": 1},
     "config.py": {"mypy": 1},
@@ -341,11 +351,8 @@ PINNED_HITS: dict[str, dict[str, int]] = {
     "factory.py": {"mypy": 5, "pip": 1, "uv": 2},
     "failure_excerpt.py": {"cargo": 2, "go": 3, "jest": 2, "rust": 5},
     "gepa_adapter.py": {"pytest": 1},
-    "git.py": {"python": 1},
     "init_cmd.py": {"package.json": 1, "ruff": 1},
-    "integration_fix.py": {"python": 3},
     "jsonread.py": {"pytest": 1},
-    "knowledge.py": {"python": 1},
     "manifest.py": {"python": 1},
     "names.py": {"mypy": 1},
     "operator_context.py": {"python": 1, "ruff": 1},

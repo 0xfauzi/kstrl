@@ -263,7 +263,6 @@ def _section_specs() -> list[SectionSpec]:
                     "keep_worktrees_on_failure",
                     "integration_review",
                     "integration_blocking",
-                    "integration_max_rounds",
                     "convergence_attempts",
                     "worktree_setup_timeout",
                 ],
@@ -545,11 +544,7 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     (
         "factory",
         "integration_blocking",
-    ): "open integration findings become a fix component; a non-clean stop fails the run (#483)",
-    (
-        "factory",
-        "integration_max_rounds",
-    ): "most fix components one feature may get, counted from the manifest; at least 1 (#483)",
+    ): "a non-clean integration stop fails the run; every open finding is handed off (#696)",
     (
         "factory",
         "convergence_attempts",

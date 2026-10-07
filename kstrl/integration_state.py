@@ -288,30 +288,6 @@ def hand_off(
             finding["history"].append(_history(run_id, reviewed_sha, "handed_off"))
 
 
-def add_fix(
-    state: dict[str, Any],
-    component_id: str,
-    finding_ids: Sequence[str],
-    scope: Sequence[str],
-    prd_path: str,
-    run_id: str,
-    reviewed_sha: str,
-) -> None:
-    """Stage 1 of the fix (design 3.4): the decision, recorded before any file
-    the fix needs exists."""
-    state.setdefault("fixes", []).append(
-        {
-            "id": component_id,
-            "findings": list(finding_ids),
-            "scope": list(scope),
-            "prdPath": prd_path,
-            "runId": run_id,
-            "kstrlVersion": kstrl_version(),
-            "reviewedSha": reviewed_sha,
-        }
-    )
-
-
 def add_stop(
     state: dict[str, Any],
     run_id: str,

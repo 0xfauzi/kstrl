@@ -75,8 +75,9 @@ from tests.test_env_vars_documented import NOT_KSTRL_SETTINGS, names_read_by_kst
 #: 56: #696 retired ``BreakerConfig.test_timeout`` with ``[breaker] test_command``.
 #: 54: #696 slice 8 retired ``VerifyConfig.mutation_threshold`` and
 #: ``VerifyConfig.mutation_timeout`` with the mutation check.
-#: 53: #700 slice 8 removed ``FixturesConfig.timeout`` with ``[fixtures]``.
-EXPECTED_NUMERIC_FIELDS = 53
+#: 53: #696 slice 10 retired ``FactoryConfig.integration_max_rounds``.
+#: 52: #700 slice 8 removed ``FixturesConfig.timeout`` with ``[fixtures]``.
+EXPECTED_NUMERIC_FIELDS = 52
 
 #: The fields whose negative values mean something. Adding one is a
 #: decision, so it is written here as well as on the field.
@@ -139,8 +140,9 @@ NOT_LIMITS: dict[tuple[str, str], str] = {
 #: 56: #624 added ``KSTRL_FACTORY_WORKTREE_SETUP_TIMEOUT``.
 #: 55: #696 retired ``KSTRL_BREAKER_TEST_TIMEOUT`` with ``[breaker] test_command``.
 #: 53: #696 slice 8 retired ``KSTRL_MUTATION_THRESHOLD`` and ``KSTRL_MUTATION_TIMEOUT``.
-#: 52: #700 slice 8 retired ``KSTRL_FIXTURES_TIMEOUT``.
-EXPECTED_ENV_DOORS = 52
+#: 52: #696 slice 10 retired ``KSTRL_FACTORY_INTEGRATION_MAX_ROUNDS``.
+#: 51: #700 slice 8 retired ``KSTRL_FIXTURES_TIMEOUT``.
+EXPECTED_ENV_DOORS = 51
 
 #: The numeric fields no environment variable sets, re-derived by running.
 EXPECTED_NO_ENV_DOOR = {("EvolutionConfig", "min_pattern_frequency")}

@@ -335,8 +335,7 @@ pause_before_pr_merge = false      # human checkpoint before each PR (E6)
 progress_log_enabled = true        # JSONL event log at .kstrl/progress.jsonl (R3.2); usage accounting is written either way (docs/env-vars.md)
 keep_worktrees_on_failure = false  # keep failed components' worktrees for post-mortem (R3.3)
 integration_review = true          # record-only review of the merged feature after Phase 3 (#482); never gates
-integration_blocking = false       # open integration findings become a fix component; a non-clean stop fails the run (#483)
-integration_max_rounds = 1         # most fix components one feature may get, counted from the manifest; at least 1 (#483)
+integration_blocking = false       # a non-clean integration stop fails the run; every open finding is handed off (#696)
 convergence_attempts = 0           # fail a component whose gate failure count has not fallen for this many consecutive attempts; 0 = off (#233)
 worktree_setup_timeout = 0.0       # seconds before the worktree setup's process group is killed; 0 = no limit (#624)
 

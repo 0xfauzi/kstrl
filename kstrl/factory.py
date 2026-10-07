@@ -393,13 +393,11 @@ class FactoryConfig:
     # #482: run the record-only integration review after Phase 3. Its
     # outcome is recorded and printed and gates nothing in this slice.
     integration_review: bool = True
-    # #483: when true, open integration findings become a fix component and
-    # a stop without a clean verdict fails the run. Off until the owner turns
-    # it on after the `integration` calibration (#480 decision 2).
+    # #483: when true, a stop without a clean integration verdict fails the
+    # run. No fix is built: every open code finding is handed off (#696). Off
+    # until the owner turns it on after the `integration` calibration (#480
+    # decision 2).
     integration_blocking: bool = False
-    # #483: the most fix components one feature may get. A termination bound,
-    # derived at run time by counting integration-fix-* components.
-    integration_max_rounds: int = 1
     # #233: fail a component whose gate failure count has not fallen for
     # this many consecutive attempts that failed in the same phase (a
     # phase change starts the count again). 0 (the default) is off: the
@@ -543,7 +541,6 @@ class FactoryConfig:
             VALID_CLAIM_AGREEMENT,
         )
         _validate_choice(self.review_mode, "[factory] review_mode", VALID_REVIEW_MODES)
-        _validate_max_rounds(self.integration_max_rounds, "[factory] integration_max_rounds")
 
     @classmethod
     def from_env(cls) -> FactoryConfig:
@@ -588,10 +585,6 @@ class FactoryConfig:
             ),
             integration_review=_parse_bool(os.environ.get("KSTRL_FACTORY_INTEGRATION_REVIEW", "1")),
             integration_blocking=_parse_bool(os.environ.get("KSTRL_FACTORY_INTEGRATION_BLOCKING")),
-            integration_max_rounds=_validate_max_rounds(
-                _env_int(os.environ.get("KSTRL_FACTORY_INTEGRATION_MAX_ROUNDS", "1")),
-                "KSTRL_FACTORY_INTEGRATION_MAX_ROUNDS",
-            ),
             convergence_attempts=_validate_convergence_attempts(
                 _env_int(os.environ.get("KSTRL_FACTORY_CONVERGENCE_ATTEMPTS", "0")),
                 "KSTRL_FACTORY_CONVERGENCE_ATTEMPTS",
@@ -653,7 +646,7 @@ class FactoryConfig:
             )
         if "merge_timeout" in section:
             config.merge_timeout = float(section["merge_timeout"])
-        # #603: read without a branch, as integration_max_rounds is below,
+        # #603: read without a branch, as convergence_attempts is below,
         # so this loader's cyclomatic complexity does not grow.
         config.review_timeout_seconds = float(
             section.get("review_timeout_seconds", config.review_timeout_seconds)
@@ -696,10 +689,6 @@ class FactoryConfig:
         )
         config.integration_blocking = strict_bool(
             section, "integration_blocking", config.integration_blocking
-        )
-        config.integration_max_rounds = _validate_max_rounds(
-            section.get("integration_max_rounds", config.integration_max_rounds),
-            "[factory] integration_max_rounds",
         )
         config.convergence_attempts = _validate_convergence_attempts(
             section.get("convergence_attempts", config.convergence_attempts),
@@ -751,14 +740,6 @@ class FactoryConfig:
         config.integration_blocking = _parse_bool(
             os.environ.get("KSTRL_FACTORY_INTEGRATION_BLOCKING", str(config.integration_blocking))
         )
-        config.integration_max_rounds = _validate_max_rounds(
-            _env_int(
-                os.environ.get(
-                    "KSTRL_FACTORY_INTEGRATION_MAX_ROUNDS", str(config.integration_max_rounds)
-                )
-            ),
-            "KSTRL_FACTORY_INTEGRATION_MAX_ROUNDS",
-        )
         config.convergence_attempts = _validate_convergence_attempts(
             _env_int(
                 os.environ.get(
@@ -779,24 +760,11 @@ class FactoryConfig:
         return check_numbers(config)
 
 
-def _validate_max_rounds(value: object, source: str) -> int:
-    """``integration_max_rounds`` as a whole number of at least 1 (#483).
-
-    Zero is refused rather than read as "no fixes": turning the fixer off is
-    ``integration_blocking = false``, and #467 made an unset limit mean no
-    limit, which a termination bound must never mean. A bool and a quoted
-    number are refused, as strict_bool refuses a quoted bool.
-    """
-    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
-        raise ValueError(f"{source} must be a whole number of at least 1, got {value!r}")
-    return value
-
-
 def _validate_convergence_attempts(value: object, source: str) -> int:
     """``convergence_attempts`` as a whole number of at least 0 (#233).
 
-    0 is off. A bool and a quoted number are refused, as
-    :func:`_validate_max_rounds` refuses them.
+    0 is off. A bool and a quoted number are refused, as strict_bool refuses
+    a quoted bool.
     """
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         raise ValueError(f"{source} must be a whole number of at least 0, got {value!r}")
@@ -5808,13 +5776,10 @@ def _run_factory_locked(
 
     # R0.3: scheduling + contract testing form one outer loop so a
     # contract breaker reset to PENDING actually re-enters scheduling.
-    # #483: the rounds come from the integration loop, which gives the loop
-    # its second reason to re-enter: a fix component built from open
-    # integration findings. Every exit below is a `continue`, so the round
-    # always returns to the loop, which reviews it once and decides.
-    # Termination: every breaker reset consumes one of the breaker's bounded
-    # retries, and every fix counts against integration_max_rounds, which the
-    # loop derives from the manifest.
+    # #483: the rounds come from the integration loop. Every exit below is a
+    # `continue`, so the round always returns to the loop, which reviews it
+    # once and stops. Termination: every breaker reset consumes one of the
+    # breaker's bounded retries, and no fix component is built (#696).
     integration = IntegrationLoop(
         IntegrationRun(
             manifest=manifest,
@@ -5823,7 +5788,6 @@ def _run_factory_locked(
             run_id=run_id,
             pipeline=pipeline,
             ui=ui,
-            decisions=run_decisions,
         ),
         stop,
     )

@@ -91,6 +91,13 @@ _RETIRED_FIXTURES = (
     "fixture as an acceptance check in a plan outside the repository (ks factory --acceptance)"
 )
 
+#: Why the bound on integration fix components no longer exists (#696 slice
+#: 10): kstrl builds no fix, so there is nothing to bound.
+_RETIRED_FIX_BOUND = (
+    "retired: the integration review builds no fix component, it hands every "
+    "open code finding off; remove it"
+)
+
 #: (section, key) retired by #395, #696 and #700, mapped to what replaced it: the
 #: refusal reads "names [section] key, which was <this>".
 RETIRED_KEYS: dict[tuple[str, str], str] = {
@@ -128,6 +135,7 @@ RETIRED_KEYS: dict[tuple[str, str], str] = {
     ("policy", "license_deny_partial"): _RETIRED_DEPENDENCY_POLICY,
     ("policy", "license_unresolved"): _RETIRED_DEPENDENCY_POLICY,
     ("policy", "license_use_network"): _RETIRED_DEPENDENCY_POLICY,
+    ("factory", "integration_max_rounds"): _RETIRED_FIX_BOUND,
     ("fixtures", "enabled"): _RETIRED_FIXTURES,
     ("fixtures", "snapshot_on_success"): _RETIRED_FIXTURES,
     ("fixtures", "snapshot_dir"): _RETIRED_FIXTURES,
@@ -169,6 +177,7 @@ RETIRED_ENV_VARS: dict[str, str] = {
     "KSTRL_POLICY_DEPS_ALLOW_NEW": _RETIRED_DEPENDENCY_POLICY,
     "KSTRL_POLICY_LICENSE_UNRESOLVED": _RETIRED_DEPENDENCY_POLICY,
     "KSTRL_POLICY_LICENSE_NET": _RETIRED_DEPENDENCY_POLICY,
+    "KSTRL_FACTORY_INTEGRATION_MAX_ROUNDS": _RETIRED_FIX_BOUND,
     "KSTRL_FIXTURES_ENABLED": _RETIRED_FIXTURES,
     "KSTRL_FIXTURES_SNAPSHOT_ON_SUCCESS": _RETIRED_FIXTURES,
     "KSTRL_FIXTURES_SNAPSHOT_DIR": _RETIRED_FIXTURES,
