@@ -26,7 +26,9 @@ from typing import Any
 
 import pytest
 
+from tests.helpers import integration_harness as h
 from tests.helpers.executables import write_executable
+from tests.helpers.gitrepo import git_in
 from tests.test_isolation_rung import runs_a_stack
 from tests.test_stack_e2e import Run, _factory, _repo, _stack
 
@@ -159,3 +161,91 @@ def test_a_designed_plan_is_record_only_in_phase_3(tmp_path: Path) -> None:
     assert "record only (designed checks): acceptance:markers-apart (comp-b): fail" in run.out
     assert "contract tests passed" in run.out, run.out
     assert run.code == 0, run.out
+
+
+#: Counts its runs in the tree under test, and fails only the second run
+#: on a tree where both markers meet: one run of it passes, three fail.
+TWICE = (
+    "#!/bin/sh\n"
+    'if [ -f "$KSTRL_TREE/comp-a.marker" ] && [ -f "$KSTRL_TREE/comp-b.marker" ]; then\n'
+    '  [ -f "$KSTRL_TREE/run-1" ] || { : > "$KSTRL_TREE/run-1"; exit 0; }\n'
+    '  [ -f "$KSTRL_TREE/run-2" ] || { : > "$KSTRL_TREE/run-2"; exit 1; }\n'
+    "fi\n"
+    "exit 0\n"
+)
+
+
+@runs_a_stack
+def test_phase_3_judges_each_check_on_every_one_of_its_runs(tmp_path: Path) -> None:
+    """A check that fails only its second run on the merged tree fails
+    Phase 3: each check runs ``HEAD_RUNS`` times and every run must pass,
+    as on a head. A replay that ran each check once, or passed it on any
+    passing run, would let the tier pass."""
+    checks = {"comp-b": [_check("twice", ["/bin/sh", "twice.sh"], "passes")]}
+    plan = _plan(tmp_path, "unused", checks)
+    write_executable(plan / "twice.sh", TWICE)
+
+    run = _run(tmp_path, plan)
+
+    assert run.calls == 2, run.out
+    assert "contract tests FAILED" in run.out, run.out
+    assert (
+        "breaker 'comp-b' (retries exhausted): acceptance:twice (comp-b): fail, exits [0, 1, 0]"
+        in run.out
+    ), run.out
+    assert run.code != 0, run.out
+
+
+@runs_a_stack
+def test_a_later_tier_replays_the_checks_of_the_tiers_merged_before_it(tmp_path: Path) -> None:
+    """comp-b depends on comp-a, so tier 0 holds comp-a and tier 1 comp-b.
+    comp-a's check passes in tier 0 and fails in tier 1, where comp-b's
+    marker meets comp-a's on the merged tree. Tier 1 replays the checks of
+    the prior tier's components too, so it fails and comp-b is the breaker."""
+    root = _repo(tmp_path, _stack({"tests": "true"}), comps=COMPS)
+    manifest_path = root / "scripts" / "kstrl" / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["components"][1]["dependencies"] = ["comp-a"]
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    git_in(root, "commit", "-q", "-am", "comp-b depends on comp-a")
+    checks = {"comp-a": [_check("markers-apart", APART, "passes")]}
+    plan = _plan(tmp_path, "both markers meet", checks)
+
+    run = _factory(tmp_path, root, "--acceptance", str(plan), contract="tier", engineer=MARKER)
+
+    assert run.calls == 2, run.out
+    assert "Tier 0: contract tests passed" in run.out, run.out
+    assert "Tier 1: contract tests FAILED" in run.out, run.out
+    assert "breaker 'comp-b' (retries exhausted): both markers meet" in run.out, run.out
+    assert run.code != 0, run.out
+
+
+@runs_a_stack
+def test_the_integrated_check_replays_every_merged_components_checks(tmp_path: Path) -> None:
+    """In create_prs mode every component is already merged into main, so
+    Phase 3 is the integrated check of main's head. It replays the checks
+    of every merged component there: comp-b's check, which fails once
+    src/api.py exists, fails the run with no breaker to blame."""
+    root = tmp_path / "repo"
+    h.merged_feature(root)
+    plan = tmp_path / "plan"
+    plan.mkdir()
+    write_executable(
+        plan / "check.sh",
+        "#!/bin/sh\n"
+        '[ -f "$KSTRL_TREE/src/api.py" ] && { echo "api meets store"; exit 1; }\n'
+        "exit 0\n",
+    )
+    document = {"components": {"comp-b": {"checks": [_check("no-api", APART, "fails")]}}}
+    (plan / "plan.json").write_text(json.dumps(document), encoding="utf-8")
+    reviewer = h.FakeReviewer("{}")
+
+    result, out = h.run_factory_over(
+        root, reviewer, acceptance_dir=str(plan), integration_review=False
+    )
+
+    assert result.exit_code == 1, out
+    assert result.contract_failures == [
+        "tier 0: contract tests failed, no blame attributed "
+        "(components: comp-a, comp-b): api meets store"
+    ], out
