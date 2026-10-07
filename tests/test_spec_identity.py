@@ -393,6 +393,24 @@ def test_a_register_with_malformed_requirements_is_refused(tmp_path: Path) -> No
     assert _engineer_ran(tmp_path) == []
 
 
+def test_a_register_from_before_requirements_still_binds(tmp_path: Path) -> None:
+    """#639 slice 2 control: a register written before the field existed
+    has no ``requirements`` key, and it still binds: the run reaches the
+    plan gate instead of the register refusal."""
+    root, env = _planned(tmp_path)
+    path = root / "scripts" / "kstrl" / "decisions.json"
+    register = _register(root)
+    del register["requirements"]
+    path.write_text(json.dumps(register), encoding="utf-8")
+
+    proc = _factory(root, env)
+    out = _out(proc)
+
+    assert proc.returncode == 1, out
+    assert "cannot bind" not in out, out
+    assert len(_plan_items(root)) == 1, out
+
+
 # --- 9 and 10. an escalation resolves only when its own spec changed ----------
 
 
