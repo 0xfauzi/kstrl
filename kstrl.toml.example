@@ -315,16 +315,6 @@ max_level = 4                      # hard local ceiling: refuse to run above thi
 demote_on_calibration_regression = false
 demote_on_health_breach = false
 
-# Phase 1 approved fixtures (R7.2): PRD-defined input/output pairs run as an
-# oracle independent of agent-authored tests. Opt-in: fixtures execute
-# PRD-supplied commands (no shell) and import PRD-named modules (in a
-# scrubbed-env subprocess), so the operator must enable them explicitly.
-[fixtures]
-enabled = false
-snapshot_on_success = true         # save passing outputs for cross-run regression comparison
-snapshot_dir = ".kstrl/snapshots"  # relative = against the repo root, not the worktree
-timeout = 30.0                     # seconds per fixture subprocess
-
 # Phase 2.5 security review (independent adversarial pass focused on vulns).
 [security]
 mode = "advisory"                  # skip | advisory | hard (advisory = default; skip turns the review off)

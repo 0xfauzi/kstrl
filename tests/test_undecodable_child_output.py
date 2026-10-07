@@ -18,8 +18,9 @@ from typing import TypeGuard
 
 import pytest
 
-from kstrl import contract, fixtures
-from kstrl.fixtures import Fixture
+from kstrl import contract
+from kstrl.contract import ContractConfig
+from kstrl.ui.plain import PlainUI
 from kstrl.verify import (
     ChildOutputDecodeError,
     check_stack_command,
@@ -82,32 +83,10 @@ def test_a_stack_check_fails_closed_on_undecodable_output(tmp_path: Path) -> Non
     assert "could not be decoded" in result.message
 
 
-def test_a_cli_fixture_reports_undecodable_output(tmp_path: Path) -> None:
-    """``kstrl/fixtures.py::run_cli_fixture`` widens the existing ``except
-    OSError`` clause rather than adding a new one, because one more branch
-    fails both pre-commit complexity ratchets (see the comment at
-    ``kstrl/fixtures.py:182-187``). So the row keeps its "Failed to run
-    command: {exc}" body and the exception's own text is what names the
-    fault - asserted on the exception's half of the string, not on "Failed
-    to run command", so this would still fail if the clause caught the
-    error and said nothing about it."""
-    fixture = Fixture(
-        description="a fixture whose command prints an undecodable byte",
-        fixture_type="cli",
-        input_data={"command": UNDECODABLE_STDOUT},
-        expected={"exit_code": 0},
-    )
-
-    result = fixtures.run_cli_fixture(fixture, tmp_path, 60.0)
-
-    assert result.passed is False
-    assert result.measured is False
-    assert "not valid utf-8" in result.message
-
-
 def test_contract_run_checks_reports_undecodable_output(tmp_path: Path) -> None:
     stack = in_process_stack({"tests": UNDECODABLE_STDOUT})
-    passed, message = contract._run_checks(tmp_path, 60.0, stack, None)
+    config = ContractConfig(timeout=60.0, project_stack=stack)
+    passed, message, _ = contract._run_checks(tmp_path, config, tmp_path, PlainUI(), None, [])
 
     assert passed is False
     assert "could not be decoded" in message
@@ -353,8 +332,6 @@ def test_the_call_site_census_is_pinned() -> None:
     # are gone, and so are verify.py's three per-gate runners.
     assert census == {
         "contract.py": 4,
-        # #696 slice 8: -1, the function-fixture runner.
-        "fixtures.py": 1,
         # #700: the canary and --version runs, through one helper.
         "isolation.py": 1,
         "learning_fixture.py": 1,
@@ -444,7 +421,6 @@ def test_the_disposition_census_is_pinned() -> None:
         "contract.py:raises": 1,
         "contract.py:returns": 1,
         "contract.py:swallows": 2,
-        "fixtures.py:returns": 1,
         "isolation.py:returns": 1,
         "learning_fixture.py:raises": 1,
         # #700 slice 3: the replay names the stage `undecodable` and reads on.

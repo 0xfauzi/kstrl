@@ -111,10 +111,6 @@ EXPECTED_CONSTRUCTION_COUNTS = {
 #: as a candidate for every target set. Neither is an inbox, and both are
 #: pinned rather than filtered so a third one has to be looked at.
 EXPECTED_UNDECIDED = (
-    # #632: the fixture comparison tables and the fixture runner table.
-    "fixture_expect.py COMPARATORS[kind]",
-    "fixture_expect.py VALIDATORS[kind]",
-    "fixtures.py _RUNNERS[fixture.fixture_type]",
     "tui/app.py initial_screens_for_kind(kind, observe_only=False)",
     "tui/app.py initial_screens_for_kind(kind, observe_only=True)",
 )

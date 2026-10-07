@@ -15,10 +15,6 @@ The three verify gates are in ``tests/test_gate_measurement_behaviour.py``,
 which is a file rather than a section because they decide ``measured``
 differently: every check here knows from its own control flow whether it looked
 at anything, while a gate has to read its tool's output to find out.
-
-The fixture-timeout cases use a real subprocess and a small timeout, which
-costs about a second in total; ``run_scrubbed`` signals the process group, so
-nothing outlives the assertion.
 """
 
 from __future__ import annotations
@@ -27,13 +23,11 @@ import json
 import os
 import stat
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
 
 from kstrl import baseline
-from kstrl.fixtures import Fixture, FixturesConfig, check_fixtures, check_fixtures_from_prd
 from kstrl.policy import PolicyConfig
 from kstrl.verify import (
     LAYER0_NOT_MEASURED,
@@ -47,11 +41,6 @@ from kstrl.verify import (
 )
 from tests.helpers import gitrepo
 from tests.helpers.measurement import assert_measured, assert_unmeasured
-
-#: Long enough that a sub-second timeout always fires first.
-SLOW_COMMAND = f"{sys.executable} -c 'import time; time.sleep(30)'"
-
-TINY_TIMEOUT = 0.2
 
 
 def _stub(directory: Path, name: str, body: str) -> None:
@@ -346,117 +335,6 @@ def test_a_progress_file_with_no_self_critique_did_measure(tmp_path: Path) -> No
     progress.write_text("## [2026-01-01] - [S1]\n- **Learnings:** none\n", encoding="utf-8")
 
     assert_measured(check_self_critique(progress))
-
-
-# --- fixtures -------------------------------------------------------------
-
-
-def test_a_run_with_no_fixtures_measured_nothing(tmp_path: Path) -> None:
-    row = check_fixtures([], tmp_path, FixturesConfig())
-
-    assert row.passed is True
-    assert row.message == "No fixtures defined"
-    assert_unmeasured(row)
-
-
-def test_one_fixture_that_timed_out_makes_the_whole_row_unmeasured(tmp_path: Path) -> None:
-    """``all``, not ``any``: this field gates the clearing side.
-
-    A run in which one fixture timed out cannot prove that a different
-    baseline signature went away, so the aggregate row is the narrow one.
-    """
-    fixtures = [
-        Fixture(
-            description="a fixture that hangs",
-            fixture_type="cli",
-            input_data={"command": SLOW_COMMAND},
-            expected={"exit_code": 0},
-        ),
-    ]
-
-    row = check_fixtures(fixtures, tmp_path, FixturesConfig(timeout=TINY_TIMEOUT))
-
-    assert row.passed is False
-    assert "timed out" in "".join(row.details)
-    assert_unmeasured(row)
-
-
-def test_a_fixture_that_ran_and_failed_did_measure(tmp_path: Path) -> None:
-    fixtures = [
-        Fixture(
-            description="a fixture that fails honestly",
-            fixture_type="cli",
-            input_data={"command": f"{sys.executable} -c 'raise SystemExit(3)'"},
-            expected={"exit_code": 0},
-        ),
-    ]
-
-    assert_measured(check_fixtures(fixtures, tmp_path, FixturesConfig()))
-
-
-def test_a_fixture_whose_process_could_not_be_launched_measured_nothing(
-    tmp_path: Path,
-) -> None:
-    """The other half of the command fixture's environment failure.
-
-    Deleting this site's ``measured=False`` left the suite green: the timeout
-    branch beside it was driven and this one was not. A directory that is not
-    there is the honest way in - ``run_scrubbed`` hands ``cwd`` to ``Popen``,
-    which raises ``FileNotFoundError`` - and it is a real failure mode, since a
-    worktree can be removed under a run.
-    """
-    fixtures = [
-        Fixture(
-            description="a fixture with nowhere to run",
-            fixture_type="cli",
-            input_data={"command": f"{sys.executable} -c 'pass'"},
-            expected={"exit_code": 0},
-        ),
-    ]
-
-    row = check_fixtures(fixtures, tmp_path / "gone", FixturesConfig())
-
-    assert row.passed is False
-    assert "Failed to run command" in "".join(row.details)
-    assert_unmeasured(row)
-
-
-def test_a_malformed_fixture_definition_still_counts_as_measured(tmp_path: Path) -> None:
-    """The line the sweep draws, pinned from the other side.
-
-    A definition error is a stable property of the PRD and its disappearance is
-    a real fix, so it keeps the default. ``measured=False`` marks the
-    environment failing, not the artifact.
-    """
-    fixtures = [
-        Fixture(
-            description="no command at all",
-            fixture_type="cli",
-            input_data={},
-            expected={"exit_code": 0},
-        ),
-    ]
-
-    assert_measured(check_fixtures(fixtures, tmp_path, FixturesConfig()))
-
-
-def test_a_prd_the_fixtures_check_could_not_read_measured_nothing(tmp_path: Path) -> None:
-    row = check_fixtures_from_prd(tmp_path / "absent.json", tmp_path, FixturesConfig())
-
-    assert row.passed is False
-    assert "could not be read" in row.message
-    assert_unmeasured(row)
-
-
-def test_a_schema_invalid_prd_measured_no_fixtures(tmp_path: Path) -> None:
-    prd = tmp_path / "prd.json"
-    prd.write_text(json.dumps({"not": "a prd"}), encoding="utf-8")
-
-    row = check_fixtures_from_prd(prd, tmp_path, FixturesConfig())
-
-    assert row.passed is False
-    assert "schema validation" in row.message
-    assert_unmeasured(row)
 
 
 # --- the other spelling of the same rule ---------------------------------

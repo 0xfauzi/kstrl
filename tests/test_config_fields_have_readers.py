@@ -133,7 +133,7 @@ def test_every_config_dataclass_field_is_read_by_some_code() -> None:
     from kstrl.factory import FactoryConfig
 
     classes = config_classes()
-    assert FactoryConfig in classes and len(classes) >= 25, [c.__name__ for c in classes]
+    assert FactoryConfig in classes and len(classes) >= 24, [c.__name__ for c in classes]
     fields = {
         (cls.__name__, field.name): field.name
         for cls in classes

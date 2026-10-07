@@ -24,14 +24,13 @@ functions and proves that each unmeasured row lands in ``unmeasured`` rather
 than ``fixed``. Neither is sufficient alone: a census cannot tell whether the
 site is RIGHT, and a behavioural test cannot tell whether a site exists.
 
-TWO TYPES, ONE WALK. ``verify.CheckResult`` and ``fixtures.FixtureResult``
-carry the same field for the same reason, one level apart: a fixture row folds
-into the ``fixtures`` check row with ``all()``. Round 2 of review on #357
-measured what covering only the first is worth - a NEW ``FixtureResult``
-environment-failure row keeping the default measured=True was planted and the
-suite stayed green, which is round 1's own blocker one type down. So the nets
-below key on a SET of constructor names, and adding a third type of result row
-means adding its name to that set rather than writing a fourth guard.
+ONE SET OF TYPES, ONE WALK. ``verify.CheckResult`` is the one result type
+left since #700 slice 8 removed ``fixtures.FixtureResult``. Round 2 of review
+on #357 measured what covering only one of two types was worth - a NEW
+``FixtureResult`` environment-failure row keeping the default measured=True
+was planted and the suite stayed green. So the nets below key on a SET of
+constructor names, and adding a second type of result row means adding its
+name to that set rather than writing another guard.
 """
 
 from __future__ import annotations
@@ -40,7 +39,6 @@ import ast
 import dataclasses
 from pathlib import Path
 
-from kstrl.fixtures import FixtureResult
 from kstrl.verify import CheckResult
 from tests.helpers.astwalk import (
     assert_census,
@@ -55,7 +53,7 @@ from tests.helpers.astwalk.scope import own_nodes
 #: The constructors this file is about. Named as a constant because every
 #: net keys on it and a rename that reached one and not the other would be
 #: a silent hole.
-CONSTRUCTORS = ("CheckResult", "FixtureResult")
+CONSTRUCTORS = ("CheckResult",)
 
 #: The field itself, named once because two nets key on it: the constructions
 #: that set it, and the reads that act on it.
@@ -104,15 +102,15 @@ def constructs_a_result(node: ast.AST) -> bool:
 
 #: Each result type's field order, for the arguments passed POSITIONALLY.
 #:
-#: ``kstrl/fixtures.py`` writes ``FixtureResult(fixture, False, message=...)``
-#: eighteen times, so a walk that reads keywords only sees no ``passed`` at
-#: those sites and silently drops them out of the partition that asks what they
-#: measured. Pinned here and checked against the real dataclasses by
+#: ``kstrl/fixtures.py`` (removed by #700 slice 8) wrote
+#: ``FixtureResult(fixture, False, message=...)`` eighteen times, so a walk
+#: that read keywords only saw no ``passed`` at those sites and silently
+#: dropped them out of the partition that asks what they measured. Pinned
+#: here and checked against the real dataclasses by
 #: ``test_the_positional_field_order_is_the_dataclasses_own``, so reordering a
 #: field fails loudly rather than moving every row of every dict below.
 POSITIONAL_FIELDS: dict[str, tuple[str, ...]] = {
     "CheckResult": ("name", "passed"),
-    "FixtureResult": ("fixture", "passed", "actual", "message", "measured"),
 }
 
 
@@ -184,13 +182,6 @@ def measurement_row(source_file: Path, node: ast.AST) -> str:
 #: forbidden; it is the point. The diff that adds one is where somebody says
 #: what the new row measured.
 EXPECTED_RESULT_SITES: dict[str, int] = {
-    "fixtures.py: _dispatch_fixture: FixtureResult": 1,
-    "fixtures.py: _fixture_file_text: FixtureResult": 2,
-    "fixtures.py: check_fixtures: CheckResult": 2,
-    # #696 slice 8 removed #632's third row with the function fixture.
-    "fixtures.py: check_fixtures_from_prd: CheckResult": 2,
-    "fixtures.py: run_cli_fixture: FixtureResult": 7,
-    "fixtures.py: run_file_fixture: FixtureResult": 8,
     "verify.py: _self_critique_text: CheckResult": 2,
     # #399 simplify pass on #405: the passing row, the issues-found row and
     # the diff-unreadable refusal, all three now built inside
@@ -243,20 +234,6 @@ EXPECTED_MEASURED_ARGUMENTS: dict[str, int] = {
     # pass on #405: this row moved here from _added_lines_or_refusal, which
     # was inlined into check_bad_patterns (see EXPECTED_RESULT_SITES above).
     "verify.py: check_bad_patterns: CheckResult: measured=False": 1,
-    # A run with no fixtures ran no oracle, so it cannot prove one stopped
-    # failing; a run in which any fixture timed out or could not be launched
-    # cannot either, and `all` is what makes that the narrow direction.
-    "fixtures.py: check_fixtures: CheckResult: measured=False": 1,
-    "fixtures.py: check_fixtures: CheckResult: measured=all((r.measured for r in results))": 1,
-    # Unreadable PRD and schema-invalid PRD: the check could not learn WHICH
-    # fixtures to run, so it ran none.
-    "fixtures.py: check_fixtures_from_prd: CheckResult: measured=False": 2,
-    # The file existed when the caller looked and could not be read, or could
-    # not be decoded. Either way the `contains` expectations never ran.
-    "fixtures.py: _fixture_file_text: FixtureResult: measured=False": 2,
-    # The command fixture's two environment failures: the process was killed on
-    # the timeout, or could not be launched at all.
-    "fixtures.py: run_cli_fixture: FixtureResult: measured=False": 2,
     # The progress file could not be read, or is not UTF-8. No bullets were
     # counted either way.
     "verify.py: _self_critique_text: CheckResult: measured=False": 2,
@@ -300,18 +277,6 @@ EXPECTED_MEASURED_ARGUMENTS: dict[str, int] = {
 #: "the default was fine here" is a claim and this is where it is made. A new
 #: row appearing in this dict is the census delta that asks the question.
 EXPECTED_FAILING_WITH_DEFAULT: dict[str, int] = {
-    # An unknown fixture_type is a malformed PRD, which is a stable property of
-    # the artifact and whose disappearance is a real fix.
-    "fixtures.py: _dispatch_fixture: FixtureResult": 1,
-    # Three malformed definitions (no command, an empty command, a command the
-    # shell lexer refused) and the comparison of a real exit code, stdout and
-    # stderr against the expectation.
-    "fixtures.py: run_cli_fixture: FixtureResult": 4,
-    # Three malformed definitions (no path, an absolute or `..` path, a path
-    # escaping the worktree) and three real comparisons against the file: it
-    # was expected and absent, unexpected and present, or its content did not
-    # match.
-    "fixtures.py: run_file_fixture: FixtureResult": 6,
     # Read the diff and applied the configured allowlist to it.
     "verify.py: check_diff_scope: CheckResult": 1,
     # Evaluated the policy envelope against a diff it read successfully.
@@ -341,16 +306,15 @@ class TestEveryResultRowIsAccountedFor:
         """The control for :data:`POSITIONAL_FIELDS`.
 
         The three nets below read ``passed`` and ``measured`` by POSITION as
-        well as by keyword, because ``kstrl/fixtures.py`` passes them
+        well as by keyword, because a result type may be passed them
         positionally. A pinned index that no longer matches the dataclass would
-        read the wrong argument and answer confidently: a reordered
-        ``FixtureResult`` would have the walk take ``actual`` for ``passed``,
+        read the wrong argument and answer confidently: a reordered type would
+        have the walk take another field for ``passed``,
         the partition would empty out, and the census would go quiet rather
         than red. So the pin is checked against the classes themselves.
         """
         actual = {
             "CheckResult": tuple(f.name for f in dataclasses.fields(CheckResult)),
-            "FixtureResult": tuple(f.name for f in dataclasses.fields(FixtureResult)),
         }
         for constructor, pinned in POSITIONAL_FIELDS.items():
             assert actual[constructor][: len(pinned)] == pinned, (
@@ -380,7 +344,6 @@ class TestEveryResultRowIsAccountedFor:
             control=(
                 'row = CheckResult(name="x", passed=False)\n',
                 'row = verify.CheckResult(name="x", passed=False)\n',
-                'row = FixtureResult(fixture, False, message="m")\n',
             ),
             message=(
                 "The set of places kstrl builds a result row changed. If this row "
@@ -407,7 +370,6 @@ class TestEveryResultRowIsAccountedFor:
             control=(
                 "row = CheckResult(passed=False, measured=False)\n",
                 "row = CheckResult(passed=True, measured=scanned_something)\n",
-                'row = FixtureResult(fixture, False, "", "m", False)\n',
             ),
             message=(
                 "A result row's measured argument moved. Deleting one makes a row "
@@ -431,10 +393,7 @@ class TestEveryResultRowIsAccountedFor:
             sees=fails_with_a_default_measurement,
             key=site_row,
             expected=EXPECTED_FAILING_WITH_DEFAULT,
-            control=(
-                'row = CheckResult(name="x", passed=False, message="m")\n',
-                'row = FixtureResult(fixture, False, message="m")\n',
-            ),
+            control=('row = CheckResult(name="x", passed=False, message="m")\n',),
             message=(
                 "A failing result row carrying the default measured=True moved. "
                 "Every row in this dict claims the failure is evidence about the "
@@ -486,8 +445,6 @@ EXPECTED_MEASUREMENT_READS: dict[str, int] = {
     # never a verdict on whether the run passed.
     "evolution.py: iteration_criterion_verdict: r.measured": 1,
     "evolution.py: EvolutionJournal.iteration_criterion_lines: reading.measured": 1,
-    # The fixtures row folds its per-fixture measurements with `all`.
-    "fixtures.py: check_fixtures: r.measured": 1,
     # Not CheckResult.measured. FactUtilization's own field, R8.
     "pipeline.py: ComponentPipeline._store_fact_utilization: util.measured": 2,
     "pipeline.py: FactUtilization.to_dict: self.measured": 1,

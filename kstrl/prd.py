@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Any
 
 from kstrl.atomicio import atomic_write_json
-from kstrl.fixture_expect import JUDGED_KEYS, string_list_error, value_errors
 from kstrl.jsonread import read_json, read_json_file
 
 
@@ -25,26 +24,25 @@ class UserStory:
     notes: str
 
 
-# --- Fixture entry validation (R7.2) -----------------------------------
-# Fixture definitions are LLM-emitted and Phase 1 EXECUTES them, so
-# validation is strict: unknown keys are rejected rather than ignored,
-# because an ignored expectation key (a misspelled "stdout_contains",
-# say) silently weakens the oracle to a vacuous pass.
+# --- The removed fixtures key (#700 slice 8) ---------------------------
+# A PRD fixture was read by the engineer it judged and was judged on its
+# output. An acceptance check lives outside the repository and is judged
+# on its exit status, so a PRD that still carries the key is refused with
+# the line that says where its fixtures go now.
 
-_FIXTURE_ENTRY_KEYS = {"description", "fixture_type", "input_data", "expected"}
+_FIXTURES_KEY = "fixtures"
+FIXTURES_RETIRED = (
+    "fixtures: retired, kstrl runs no PRD fixture. Remove the key, and write each fixture "
+    "as an acceptance check in a plan outside the repository (ks factory --acceptance <dir>)"
+)
 
-# fixture_type -> {input_data key -> required}
-_FIXTURE_INPUT_KEYS: dict[str, dict[str, bool]] = {
-    "cli": {"command": True, "stdin": False},
-    "file": {"path": True},
-}
 
-# The types in ``fixture_expect.JUDGED_KEYS`` take their keys from it, so a
-# key accepted here always has an evaluator (#632).
-_FIXTURE_EXPECTED_KEYS: dict[str, set[str]] = {
-    **{fixture_type: set(keys) for fixture_type, keys in JUDGED_KEYS.items()},
-    "file": {"exists", "contains", "not_contains"},
-}
+def _extra_key_errors(extra: set[str]) -> list[str]:
+    """``Unexpected keys`` for keys the schema never had, and
+    :data:`FIXTURES_RETIRED` for the key #700 slice 8 removed."""
+    unknown = sorted(extra - {_FIXTURES_KEY})
+    errors = [f"Unexpected keys: {', '.join(unknown)}"] if unknown else []
+    return errors + ([FIXTURES_RETIRED] if _FIXTURES_KEY in extra else [])
 
 
 # --- The routed spec findings (#260) -----------------------------------
@@ -52,15 +50,10 @@ _FIXTURE_EXPECTED_KEYS: dict[str, set[str]] = {
 _SPEC_ISSUES_KEY = "specIssues"
 
 # The block is validated as an array and no further, deliberately
-# (#260 review F2), which is the opposite of how ``fixtures`` is
-# treated below.
+# (#260 review F2). ``specIssues`` is read by no gate at all.
 #
-# ``fixtures`` earns its strictness twice over: Phase 1 EXECUTES those
-# entries as an oracle, and ``tamper_changes`` pins them, so an ignored
-# key really would weaken a gate the component is judged by.
-# ``specIssues`` is read by no gate at all.
-#
-# A first version copied the fixture rules anyway: closed key set,
+# A first version copied the strict rules of the removed fixtures key
+# anyway: closed key set,
 # every value a string, ``appliesTo`` from a two-value enum, no empty
 # array. Five plausible engineer edits hard-failed the run under it -
 # resolving them all to ``[]``, adding a ``"resolved"`` key, writing
@@ -129,10 +122,9 @@ def prd_text_for_prompt(text: str) -> str:
 def _key_set_errors(prefix: str, actual: set[str], expected: set[str]) -> list[str]:
     """How ``actual`` differs from the closed key set ``expected``.
 
-    The fixture validator and the user-story loop ask the same question
-    and phrase the answer the same way; this is the one writer of both
-    messages. Callers decide what a difference means: both stop, because
-    the per-field checks below them index keys they can no longer trust.
+    The user-story loop's one writer of these messages. It stops on a
+    difference, because the per-field checks below it index keys it can
+    no longer trust.
     """
     errors: list[str] = []
     missing = expected - actual
@@ -144,123 +136,10 @@ def _key_set_errors(prefix: str, actual: set[str], expected: set[str]) -> list[s
     return errors
 
 
-def _validate_string_list(prefix: str, value: Any) -> list[str]:
-    error = string_list_error(value)
-    return [] if error is None else [f"{prefix}: {error}"]
-
-
-def _cli_entry_errors(
-    prefix: str,
-    input_data: dict[str, Any],
-    expected: dict[str, Any],
-) -> list[str]:
-    """The value checks of one ``cli`` fixture entry.
-
-    Its own function so a new ``cli`` key does not grow
-    ``_validate_fixture_entry``, which the cyclomatic ratchet holds (#632).
-    """
-    errors: list[str] = []
-    command = input_data.get("command")
-    if not isinstance(command, str) or not command.strip():
-        errors.append(f"{prefix}.input_data.command: must be a non-empty string")
-    if "stdin" in input_data and not isinstance(input_data["stdin"], str):
-        errors.append(f"{prefix}.input_data.stdin: must be a string")
-    errors.extend(value_errors("cli", prefix, expected))
-    return errors
-
-
-def _validate_fixture_entry(prefix: str, entry: Any) -> list[str]:
-    errors: list[str] = []
-    if not isinstance(entry, dict):
-        return [f"{prefix}: must be an object"]
-
-    errors.extend(_key_set_errors(prefix, set(entry.keys()), _FIXTURE_ENTRY_KEYS))
-    if errors:
-        return errors
-
-    description = entry["description"]
-    if not isinstance(description, str) or not description:
-        errors.append(f"{prefix}.description: must be a non-empty string")
-    fixture_type = entry["fixture_type"]
-    if fixture_type not in _FIXTURE_INPUT_KEYS:
-        errors.append(
-            f"{prefix}.fixture_type: must be one of "
-            f"{sorted(_FIXTURE_INPUT_KEYS)} (got: {fixture_type!r})"
-        )
-        return errors
-    input_data = entry["input_data"]
-    expected = entry["expected"]
-    if not isinstance(input_data, dict):
-        errors.append(f"{prefix}.input_data: must be an object")
-    if not isinstance(expected, dict):
-        errors.append(f"{prefix}.expected: must be an object")
-    if errors:
-        return errors
-
-    key_spec = _FIXTURE_INPUT_KEYS[fixture_type]
-    unknown = set(input_data) - set(key_spec)
-    if unknown:
-        errors.append(
-            f"{prefix}.input_data: unexpected keys for {fixture_type} "
-            f"fixture: {', '.join(sorted(unknown))}"
-        )
-    for key, required in key_spec.items():
-        if required and key not in input_data:
-            errors.append(f"{prefix}.input_data: missing required key: {key}")
-
-    allowed_expected = _FIXTURE_EXPECTED_KEYS[fixture_type]
-    unknown_expected = set(expected) - allowed_expected
-    if unknown_expected:
-        errors.append(
-            f"{prefix}.expected: unexpected keys for {fixture_type} fixture: "
-            f"{', '.join(sorted(unknown_expected))} "
-            f"(allowed: {', '.join(sorted(allowed_expected))})"
-        )
-    if not expected:
-        errors.append(
-            f"{prefix}.expected: must not be empty - a fixture with no "
-            "expectations verifies nothing"
-        )
-    if errors:
-        return errors
-
-    if fixture_type == "cli":
-        errors.extend(_cli_entry_errors(prefix, input_data, expected))
-    elif fixture_type == "file":
-        path_value = input_data.get("path")
-        if not isinstance(path_value, str) or not path_value:
-            errors.append(f"{prefix}.input_data.path: must be a non-empty string")
-        elif Path(path_value).is_absolute() or ".." in Path(path_value).parts:
-            # The PRD is untrusted input; a path outside the worktree
-            # would leak file content into retry prompts and PR bodies.
-            errors.append(
-                f"{prefix}.input_data.path: must be relative to the "
-                "worktree with no '..' components"
-            )
-        if "exists" in expected and not isinstance(expected["exists"], bool):
-            errors.append(f"{prefix}.expected.exists: must be a boolean")
-        for key in ("contains", "not_contains"):
-            if key in expected:
-                errors.extend(
-                    _validate_string_list(
-                        f"{prefix}.expected.{key}",
-                        expected[key],
-                    )
-                )
-    return errors
-
-
 def _validate_allowed_path_items(key: str, value: list[Any]) -> list[str]:
     if not all(isinstance(p, str) and p for p in value):
         return [f"{key}: all items must be non-empty strings"]
     return []
-
-
-def _validate_fixture_entries(key: str, value: list[Any]) -> list[str]:
-    errors: list[str] = []
-    for i, entry in enumerate(value):
-        errors.extend(_validate_fixture_entry(f"{key}[{i}]", entry))
-    return errors
 
 
 # Every optional top-level PRD key, and how far its contents are
@@ -280,11 +159,6 @@ _OPTIONAL_ARRAYS: tuple[
         "allowedPaths",
         "omit the field entirely to leave scope unconstrained",
         _validate_allowed_path_items,
-    ),
-    (
-        "fixtures",
-        "omit the field entirely when there are none",
-        _validate_fixture_entries,
     ),
     (_SPEC_ISSUES_KEY, None, None),
 )
@@ -322,11 +196,6 @@ class PRD:
     # ``verify.check_diff_scope`` so the agent's diff is bounded per-
     # component rather than allowed to touch anywhere in the worktree.
     allowed_paths: list[str] | None = None
-    # Approved fixtures (R7.2): behavioral input/output pairs run during
-    # Phase 1 when [fixtures].enabled. Kept as the raw validated JSON
-    # entries - parsing into runner objects lives in kstrl.fixtures
-    # (which imports this module; the reverse import would be a cycle).
-    fixtures: list[dict[str, Any]] | None = None
     # The architect's non-blocker spec findings on this component's
     # surface (#260), routed here by ``decompose.route_spec_issues``.
     # Informational: no gate reads them. They are here because the
@@ -376,7 +245,6 @@ class PRD:
             branch_name=data["branchName"],
             user_stories=stories,
             allowed_paths=allowed_paths,
-            fixtures=data.get("fixtures"),
             spec_issues=data.get(_SPEC_ISSUES_KEY),
         )
 
@@ -386,7 +254,8 @@ class PRD:
 
         Schema requirements:
         - Top-level must be dict with ``branchName`` and ``userStories``,
-          optionally ``allowedPaths`` and ``fixtures``.
+          optionally ``allowedPaths`` and ``specIssues``. A ``fixtures``
+          key is refused with :data:`FIXTURES_RETIRED` (#700 slice 8).
         - branchName: non-empty string.
         - userStories: array of story objects, each with exactly 6 keys
           (id, title, acceptanceCriteria, priority, passes, notes).
@@ -394,14 +263,9 @@ class PRD:
           when present. An empty array is rejected because it silently
           disables diff-scope enforcement -- omit the field entirely
           to mean "no constraint".
-        - fixtures (optional): non-empty array of fixture entries, each
-          with exactly the keys description / fixture_type / input_data /
-          expected, validated strictly per type (see
-          ``_validate_fixture_entry``; R7.2).
         - specIssues (optional): an array, and nothing further. The
           routed spec audit is a note to the engineer that no gate
-          reads, so it is lenient where ``fixtures`` is strict and an
-          empty array is accepted (#260).
+          reads, so it is lenient and an empty array is accepted (#260).
         - Field types are strictly enforced.
         """
         errors: list[str] = []
@@ -418,8 +282,7 @@ class PRD:
         if missing or extra:
             if missing:
                 errors.append(f"Missing required keys: {', '.join(sorted(missing))}")
-            if extra:
-                errors.append(f"Unexpected keys: {', '.join(sorted(extra))}")
+            errors.extend(_extra_key_errors(extra))
             return errors
 
         errors.extend(_validate_optional_arrays(data))
@@ -494,11 +357,9 @@ class PRD:
         The field policy for #264's carve-out: the component PRD is
         inside every component's write scope by design, so the file
         Phase 1 trusts is a file the agent edits. ``check_prd_stories``
-        re-reads the stories from it and ``check_fixtures_from_prd``
-        re-reads the fixtures, so an unpinned PRD lets an agent delete a
-        criterion or neuter an executable oracle and pass a gate it
-        authored. Returns one clause per change, empty when the PRD is
-        untouched in every pinned respect.
+        re-reads the stories from it, so an unpinned PRD lets an agent
+        delete a criterion and pass a gate it authored. Returns one clause
+        per change, empty when the PRD is untouched in every pinned respect.
 
         ``allowedPaths`` is deliberately NOT compared (#269), and that
         comparison is gone rather than relaxed: the scope both guards
@@ -544,8 +405,6 @@ class PRD:
                 ]
                 if moved:
                     changes.append(f"rewrote {', '.join(moved)} on story {story_id}")
-        if pre_run.fixtures != self.fixtures:
-            changes.append("changed the approved fixtures")
         return changes
 
     def get_next_story(self) -> UserStory | None:
@@ -559,10 +418,9 @@ class PRD:
         """Save PRD back to JSON file.
 
         Round-trips the optional fields: dropping ``allowedPaths`` on a
-        save would silently unbind the component's diff scope, dropping
-        ``fixtures`` would silently disable the behavioral oracle
-        (R7.2), and dropping ``specIssues`` would take the architect's
-        findings back off the engineer's desk (#260).
+        save would silently unbind the component's diff scope, and
+        dropping ``specIssues`` would take the architect's findings back
+        off the engineer's desk (#260).
         """
         data: dict[str, Any] = {
             "branchName": self.branch_name,
@@ -580,8 +438,6 @@ class PRD:
         }
         if self.allowed_paths is not None:
             data["allowedPaths"] = self.allowed_paths
-        if self.fixtures is not None:
-            data["fixtures"] = self.fixtures
         if self.spec_issues is not None:
             data[_SPEC_ISSUES_KEY] = self.spec_issues
         # R10.3: written atomically, through the shared helper that owns

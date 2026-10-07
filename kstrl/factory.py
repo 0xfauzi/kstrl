@@ -96,7 +96,6 @@ from kstrl.events import (
 from kstrl.fact_scope import authored_paths, paths_by_component
 from kstrl.feedforward import CodebaseScanConfig, build_codebase_scan_context
 from kstrl.findings import POLICY_CATEGORY_PREFIX
-from kstrl.fixtures import FixturesConfig
 from kstrl.git import fetch_base_branch, resolve_base_ref
 from kstrl.guards import ScopeHazard, scope_entry_hazard
 from kstrl.inbox import Inbox, InboxConfig, ItemKind
@@ -420,12 +419,6 @@ class FactoryConfig:
     # every check in the second. Never read from kstrl.toml, env or a flag.
     setup_rung: Rung | None = field(default=None, metadata={"provenance": True})
     test_rung: Rung | None = field(default=None, metadata={"provenance": True})
-    # R7.2: approved-fixtures oracle for Phase 1. None means run_factory
-    # loads FixturesConfig.load(root_dir) - toml [fixtures] section +
-    # env - so `ks factory` honors the config with no CLI wiring.
-    # Default-off ([fixtures].enabled = false, roadmap user decision 4):
-    # fixtures execute PRD-defined commands, so the operator opts in.
-    fixtures_config: FixturesConfig | None = None
     # R8.1: declarative merge-policy envelope for Phase 1. None means
     # run_factory resolves it from the toml [policy] section + env, via
     # RunEnvelope.resolve's ``policy_override`` seam (#192). Opt-in
@@ -4727,6 +4720,12 @@ def _run_plan_event(manifest: Manifest, factory_config: FactoryConfig) -> RunPla
     )
 
 
+def _stop_reason(result: ContractResult) -> str:
+    """Why a failed tier's breaker is not retried: a failed held-out check
+    gets no retry (#700 decision 3); otherwise its retries are spent."""
+    return "a held-out check failed, no retry" if result.held_out else "retries exhausted"
+
+
 def _run_factory_locked(
     manifest: Manifest,
     factory_config: FactoryConfig,
@@ -4784,7 +4783,6 @@ def _run_factory_locked(
     resolved = RunEnvelope.resolve(
         root_dir,
         policy_override=factory_config.policy_config,
-        fixtures_override=factory_config.fixtures_config,
     )
     run_envelope = resolved.envelope
     if run_envelope is None:
@@ -5819,6 +5817,7 @@ def _run_factory_locked(
                 components_merged=components_merged,
                 base_sha=round_base_sha,
                 setup=factory_config.worktree_setup(),
+                plan=factory_config.acceptance_plan,
             )
         except ContractCleanupError as exc:
             # A contract temp worktree survived removal. The user's
@@ -5850,7 +5849,7 @@ def _run_factory_locked(
             if not cr.breaker:
                 continue
             breaker = manifest.get_component(cr.breaker)
-            if breaker and breaker.retries < factory_config.max_retries:
+            if breaker and breaker.retries < factory_config.max_retries and not cr.held_out:
                 # R3.3: the completed attempt's findings are superseded
                 # by the contract-triggered re-run; journal them before
                 # the retry increments the attempt counter.
@@ -5894,7 +5893,7 @@ def _run_factory_locked(
                 breaker = manifest.get_component(cr.breaker)
                 if breaker is not None:
                     breaker.status = ComponentStatus.FAILED.value
-                    breaker.error = f"Contract test failed at tier {cr.tier} (retries exhausted)"
+                    breaker.error = f"Contract test failed at tier {cr.tier} ({_stop_reason(cr)})"
                     breaker.completed_at = _iso_now()
                     breaker.failed_phase = "contract"
                     breaker.failed_check = f"tier_{cr.tier}"
@@ -5908,15 +5907,15 @@ def _run_factory_locked(
                 bus.emit(
                     ComponentFailed(
                         component=cr.breaker,
-                        error=(f"Contract test failed at tier {cr.tier} (retries exhausted)"),
+                        error=(f"Contract test failed at tier {cr.tier} ({_stop_reason(cr)})"),
                     )
                 )
                 notify.fire_first_failure(
                     cr.breaker,
-                    f"Contract test failed at tier {cr.tier} (retries exhausted)",
+                    f"Contract test failed at tier {cr.tier} ({_stop_reason(cr)})",
                 )
                 factory_result.contract_failures.append(
-                    f"tier {cr.tier}: breaker '{cr.breaker}' (retries exhausted): {summary_line}"
+                    f"tier {cr.tier}: breaker '{cr.breaker}' ({_stop_reason(cr)}): {summary_line}"
                 )
             else:
                 factory_result.contract_failures.append(

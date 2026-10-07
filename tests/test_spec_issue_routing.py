@@ -493,13 +493,12 @@ class TestPrdSchema:
         """
         assert self._errors(value) == [], edit
 
-    # The two optional arrays that were here first now share this
-    # field's rule (``prd._OPTIONAL_ARRAYS``). Their behaviour is
+    # The optional array that was here first now shares this field's
+    # rule (``prd._OPTIONAL_ARRAYS``). Its behaviour is
     # covered where it already was, and re-asserting it here would only
     # duplicate the message strings:
-    # tests/test_prd_allowed_paths.py::test_empty_array_rejected,
-    # ::test_empty_string_item_rejected and
-    # tests/test_fixtures.py::test_empty_fixtures_array_rejected.
+    # tests/test_prd_allowed_paths.py::test_empty_array_rejected and
+    # ::test_empty_string_item_rejected.
 
 
 class TestFindingsAreNotPinned:
@@ -526,7 +525,7 @@ class TestFindingsAreNotPinned:
         deliberately exempt and both reasons are written down beside
         ``tamper_changes``. A third has to be argued for here first.
         """
-        compared = {"branch_name", "user_stories", "fixtures"}
+        compared = {"branch_name", "user_stories"}
         exempt = {
             # Inert: scope is resolved before the run starts (#269).
             "allowed_paths",
@@ -628,8 +627,6 @@ class TestTheReviewersAreNotShownTheFindings:
             # Bounded, and scope is what a security reviewer judges a
             # diff against.
             "allowedPaths",
-            # The executable oracle: what "done" was defined as.
-            "fixtures",
         }
         allowed = {"branchName", "userStories"} | set(_OPTIONAL_KEYS)
         assert shown | PROMPT_EXCLUDED_KEYS == allowed, (

@@ -39,7 +39,6 @@ from kstrl import events as ev
 from kstrl import factory
 from kstrl.config import KstrlConfig
 from kstrl.factory import ComponentResult, FactoryConfig, FactoryResult, run_factory
-from kstrl.fixtures import FixturesConfig
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import SCOPE_UNREADABLE_CHECK, VerifyConfig
@@ -120,7 +119,6 @@ def _factory_config(tmp_path: Path, **overrides: Any) -> FactoryConfig:
             check_bad_patterns=False,
             subprocess_timeout=5.0,
         ),
-        fixtures_config=FixturesConfig(),
         progress_log_path=tmp_path / "progress.jsonl",
     )
     defaults.update(overrides)

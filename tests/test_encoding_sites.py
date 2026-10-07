@@ -28,7 +28,6 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import fixtures as fixtures_mod
 from kstrl import knowledge, verify
 from kstrl.autonomy import AutonomyState
 from kstrl.calibration_baseline import load_baseline
@@ -48,17 +47,6 @@ def _write_bad(path: Path) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(BAD_BYTES)
     return path
-
-
-def _file_fixture() -> fixtures_mod.Fixture:
-    """The one file fixture both halves of the gate test use, so the
-    readable and the undecodable run cannot drift apart."""
-    return fixtures_mod.Fixture(
-        description="the artifact is readable",
-        fixture_type="file",
-        input_data={"path": "out.json"},
-        expected={"exists": True, "contains": ["cafe"]},
-    )
 
 
 class TestTheMoneyPathFailsClosedOnADecodeToo:
@@ -153,19 +141,6 @@ class TestTheGatesReportRatherThanCrash:
         assert result.passed is False
         assert "not valid UTF-8" in result.message
         assert "Could not read progress file" not in result.message
-
-    def test_a_file_fixture_fails_with_its_own_message(self, tmp_path: Path) -> None:
-        _write_bad(tmp_path / "out.json")
-        result = fixtures_mod.run_file_fixture(_file_fixture(), tmp_path)
-        assert result.passed is False
-        assert "not valid UTF-8" in result.message
-        assert "Failed to read file" not in result.message
-
-    def test_a_readable_file_fixture_still_passes(self, tmp_path: Path) -> None:
-        """The other direction, so the clause above is not just refusing
-        everything."""
-        (tmp_path / "out.json").write_text('{"cafe": 1}\n', encoding="utf-8")
-        assert fixtures_mod.run_file_fixture(_file_fixture(), tmp_path).passed is True
 
 
 class TestTheDegradingReadersDegrade:

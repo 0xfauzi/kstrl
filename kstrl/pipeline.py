@@ -681,8 +681,8 @@ class ComponentPipeline:
         # at every use: these four are what the pipeline enforces, and
         # ONE of the four names predates #192. Counted at the branch
         # base 414d662: self.sandbox_config 3 readers, and
-        # self.fixtures_config, self.inbox_config and
-        # self.divergence_config 0 each, because those three sections
+        # self.inbox_config and self.divergence_config 0 each, and a
+        # fixtures config (removed by #700 slice 8) 0, because those sections
         # were resolved into locals inside the phases. Round 1 of #192
         # created the other three names, so keeping them is a choice
         # this change made rather than a shape it inherited: one
@@ -698,9 +698,6 @@ class ComponentPipeline:
         # the one pair of roles that now runs shell commands inside the
         # tree under review.
         self.sandbox_config = run_envelope.sandbox
-        # R7.2: enabled=false (the default) makes
-        # run_mechanical_verification skip the fixtures check entirely.
-        self.fixtures_config = run_envelope.fixtures
         self.inbox_config = run_envelope.inbox
         self.divergence_config = run_envelope.divergence
         self.run_envelope = run_envelope
@@ -3530,7 +3527,7 @@ class ComponentPipeline:
         wt_path: Path,
     ) -> VerifyPhaseResult:
         """Phase 1: mechanical verification (tests / typecheck / lint /
-        PRD stories / diff scope / bad patterns / fixtures)."""
+        PRD stories / diff scope / bad patterns)."""
         early = self._before_gates(comp, comp_result, wt_path)
         if early is not None:
             return early
@@ -3566,16 +3563,14 @@ class ComponentPipeline:
             allowed_paths_error=scope.error,
             harness_paths=scope.harness_paths,
             # The copy the run started with, for the defence in depth
-            # the snapshot does NOT provide: the stories, criteria and
-            # fixtures Phase 1 still has to read from the live file
+            # the snapshot does NOT provide: the stories and criteria
+            # Phase 1 still has to read from the live file
             # (#269). Outside every worktree, so not agent-writable.
             pre_run_prd_path=pre_run_prd_path(
                 self.root_dir, comp.id, comp.prd_path, plan_id=comp.plan_id
             ),
-            fixtures_config=self.fixtures_config,
             policy_config=self.run_envelope.policy,
             autonomy_level=self.run_envelope.autonomy_level,
-            component_id=comp.id,
             # #595: the approvals snapshotted when the run started.
             waivers=self._waivers_for(comp, change[1]),
         )

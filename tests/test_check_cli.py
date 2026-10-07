@@ -166,6 +166,37 @@ def test_check_runs_prd_checks_with_prd(tmp_path: Path) -> None:
     assert "US-001" in "".join(stories["details"])
 
 
+def test_check_refuses_a_prd_that_still_carries_fixtures(tmp_path: Path) -> None:
+    """#700 slice 8: kstrl runs no PRD fixture. A PRD that still has a
+    ``fixtures`` key fails prd_stories, and the message says where the
+    fixtures go now, although every story passes."""
+    root = _make_repo(tmp_path)
+    prd = tmp_path / "prd.json"
+    story = {
+        "id": "US-001",
+        "title": "Test",
+        "acceptanceCriteria": ["AC"],
+        "priority": 1,
+        "passes": True,
+        "notes": "",
+    }
+    fixture = {
+        "description": "exits 0",
+        "fixture_type": "cli",
+        "input_data": {"command": "true"},
+        "expected": {"exit_code": 0},
+    }
+    prd.write_text(json.dumps({"branchName": "t", "userStories": [story], "fixtures": [fixture]}))
+
+    result, document = _check_json(root, "--prd", str(prd))
+
+    assert result.exit_code == 1, result.output
+    stories = _check(document, "prd_stories")
+    assert stories["passed"] is False
+    assert "fixtures: retired" in stories["message"], stories
+    assert "ks factory --acceptance" in stories["message"], stories
+
+
 def test_check_no_scope_constraints_without_allowed_path(tmp_path: Path) -> None:
     root = _make_repo(tmp_path)
 

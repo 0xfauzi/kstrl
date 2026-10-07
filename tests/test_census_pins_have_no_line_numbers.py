@@ -132,7 +132,7 @@ class TestNoCensusPinsALineNumber:
             '    PINS: tuple[str, ...] = ("kstrl/linear.py:320 urlopen",)\n'
             "def test_y():\n"
             '    ROWS = {"tui/app.py:390": 1}\n'
-            '    SITES += (f"fixtures.py:112 {x}",)\n'
+            '    SITES += (f"verify.py:112 {x}",)\n'
             'WRAPPED = ["at [kstrl/signals.py:556]"]\n'
             '_PRIVATE = ("pipeline.py:1 x",)\n'
             "def setup(cls):\n"
@@ -143,7 +143,7 @@ class TestNoCensusPinsALineNumber:
             "EXPECTED cli.py:3164",
             "PINS kstrl/linear.py:320",
             "ROWS tui/app.py:390",
-            "SITES fixtures.py:112",
+            "SITES verify.py:112",
             "WRAPPED kstrl/signals.py:556",
             "_PRIVATE pipeline.py:1",
         ]

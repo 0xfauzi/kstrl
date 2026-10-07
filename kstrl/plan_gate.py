@@ -72,9 +72,9 @@ def plan_digest(manifest: Manifest, root_dir: Path, acceptance_digest: str = "")
     Canonical JSON of the components in manifest order (id, title,
     description, sorted dependencies, PRD path, branch, plan id) and, from
     the PRD each component starts from (``pre_run_prd_path``, the one
-    reader of a planned copy), its allowed paths, its approved fixtures and
-    its stories' id, title and acceptance criteria: what
-    ``PRD.tamper_changes`` pins as the plan the engineer may not rewrite.
+    reader of a planned copy), its allowed paths and its stories' id, title
+    and acceptance criteria: what ``PRD.tamper_changes`` pins as the plan
+    the engineer may not rewrite.
     Statuses, ``passes``, ``notes`` and run ids are left out: they change
     while an approved plan runs, and a resumed run of the same plan must
     not be asked again. A PRD that cannot be read raises
@@ -99,7 +99,6 @@ def plan_digest(manifest: Manifest, root_dir: Path, acceptance_digest: str = "")
                 "branchName": comp.branch_name,
                 "planId": comp.plan_id,
                 "allowedPaths": prd.allowed_paths,
-                "fixtures": prd.fixtures,
                 "stories": [
                     [story.id, story.title, story.acceptance_criteria] for story in prd.user_stories
                 ],

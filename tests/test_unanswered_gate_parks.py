@@ -444,10 +444,6 @@ PROMPT_REQUEST_TARGET = frozenset({"kstrl.interaction.PromptRequest"})
 #: `initial_screens_for_kind(...)()` calls the RESULT of a call, so its
 #: own callee is an `ast.Call`, not a `Name` or `Attribute`.
 EXPECTED_UNDECIDED_PROMPT_SITES: tuple[str, ...] = (
-    # #632: the fixture comparison tables and the fixture runner table.
-    "fixture_expect.py::judge COMPARATORS[kind]",
-    "fixture_expect.py::value_errors VALIDATORS[kind]",
-    "fixtures.py::_dispatch_fixture _RUNNERS[fixture.fixture_type]",
     "tui/app.py::KstrlTuiApp.launch initial_screens_for_kind(kind, observe_only=False)",
     "tui/app.py::KstrlTuiApp.open_run initial_screens_for_kind(kind, observe_only=True)",
 )

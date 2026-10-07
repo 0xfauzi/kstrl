@@ -33,7 +33,6 @@ from kstrl.factory import (
     FactoryResult,
 )
 from kstrl.findings import Finding
-from kstrl.fixtures import FixturesConfig
 from kstrl.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.knowledge import Fact, KnowledgeConfig, measure_fact_utilization
 from kstrl.manifest import Component, ComponentStatus, Manifest
@@ -122,7 +121,6 @@ def _factory_config(**overrides: Any) -> FactoryConfig:
         review_mode="skip",
         security_config=SecurityConfig(mode="skip"),
         verify_config=VerifyConfig(),
-        fixtures_config=FixturesConfig(),
     )
     defaults.update(overrides)
     return FactoryConfig(**defaults)

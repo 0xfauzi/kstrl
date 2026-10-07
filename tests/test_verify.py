@@ -8,7 +8,6 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.fixtures import FixturesConfig
 from kstrl.verify import (
     MechanicalVerification,
     VerifyConfig,
@@ -578,24 +577,8 @@ class TestRunMechanicalVerificationWithoutPrd:
                 }
             )
         )
-        fixtures = FixturesConfig(enabled=True)
-
-        with_prd = run_mechanical_verification(
-            tmp_path,
-            prd,
-            "main",
-            None,
-            self._config(),
-            fixtures_config=fixtures,
-        )
-        without_prd = run_mechanical_verification(
-            tmp_path,
-            None,
-            "main",
-            None,
-            self._config(),
-            fixtures_config=fixtures,
-        )
+        with_prd = run_mechanical_verification(tmp_path, prd, "main", None, self._config())
+        without_prd = run_mechanical_verification(tmp_path, None, "main", None, self._config())
 
         # The Path call keeps its full list, PRD-dependent checks included.
         assert [c.name for c in with_prd.checks] == [
@@ -603,9 +586,8 @@ class TestRunMechanicalVerificationWithoutPrd:
             "stack:tests",
             "stack:typecheck",
             "stack:lint",
-            "fixtures",
         ]
-        # None drops exactly prd_stories and fixtures; nothing else moves.
+        # None drops exactly prd_stories; nothing else moves.
         assert [c.name for c in without_prd.checks] == [
             "stack:tests",
             "stack:typecheck",

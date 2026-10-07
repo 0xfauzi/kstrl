@@ -10,16 +10,13 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Any, Protocol
+from typing import IO, Any, Protocol
 
 from kstrl import git
-from kstrl.config_numbers import check_numbers
-
-if TYPE_CHECKING:
-    from kstrl.fixtures import FixturesConfig
 from kstrl.agents.proc import leash_command, leash_start_error
 from kstrl.agents.spawn_record import new_nonce
 from kstrl.config import component_progress_path
+from kstrl.config_numbers import check_numbers
 from kstrl.failure_excerpt import failure_excerpt
 from kstrl.findings import Finding, finding_waiver
 from kstrl.guards import path_is_allowed
@@ -2201,10 +2198,8 @@ class MechanicalVerification(Protocol):
         allowed_paths_error: str | None = None,
         harness_paths: list[str] | None = None,
         pre_run_prd_path: Path | None = None,
-        fixtures_config: FixturesConfig | None = None,
         policy_config: PolicyConfig | None = None,
         autonomy_level: int = 0,
-        component_id: str | None = None,
         waivers: Waivers | None = None,
     ) -> VerificationResult: ...
 
@@ -2219,10 +2214,8 @@ def run_mechanical_verification(
     allowed_paths_error: str | None = None,
     harness_paths: list[str] | None = None,
     pre_run_prd_path: Path | None = None,
-    fixtures_config: FixturesConfig | None = None,
     policy_config: PolicyConfig | None = None,
     autonomy_level: int = 0,
-    component_id: str | None = None,
     waivers: Waivers | None = None,
 ) -> VerificationResult:
     """Run all mechanical checks. All checks run even if earlier ones fail.
@@ -2235,8 +2228,7 @@ def run_mechanical_verification(
     caller passed any of them positionally.
 
     ``prd_path=None`` (R10.1, ``ks check``) skips the PRD-dependent
-    checks: ``prd_stories``, the approved-fixtures oracle (fixtures are
-    declared in the PRD), and ``self_critique`` unless
+    checks: ``prd_stories`` and ``self_critique`` unless
     ``config.progress_file_path`` names the log explicitly (with no PRD
     there is no sibling to derive it from). Every other check runs
     exactly as it does with a real path.
@@ -2260,12 +2252,6 @@ def run_mechanical_verification(
     started with, forwarded to ``check_prd_stories``, which fails closed
     on a PRD the component rewrote. Also None for ``ks check``: there is
     no pre-run copy to compare an operator's working tree against.
-
-    ``fixtures_config`` (R7.2): when provided AND ``.enabled`` is true,
-    the approved-fixtures oracle runs against the PRD's ``fixtures``
-    entries - sandboxed subprocess execution lives in
-    ``kstrl.fixtures``. ``component_id`` keys the fixture snapshot
-    used for regression detection; None disables snapshotting only.
 
     ``autonomy_level`` 1 or above records :data:`LAYER0_NOT_MEASURED` in
     :attr:`VerificationResult.not_measured` (#696 decision 7). The R8.5
@@ -2339,20 +2325,6 @@ def run_mechanical_verification(
             check_self_critique(
                 progress_path,
                 config.self_critique_min_bullets,
-            )
-        )
-
-    if prd_path is not None and fixtures_config is not None and fixtures_config.enabled:
-        # Imported lazily: fixtures.py imports CheckResult/run_scrubbed
-        # from this module, so a module-level import would be a cycle.
-        from kstrl.fixtures import check_fixtures_from_prd
-
-        checks.append(
-            check_fixtures_from_prd(
-                prd_path,
-                worktree_path,
-                fixtures_config,
-                component_id=component_id,
             )
         )
 

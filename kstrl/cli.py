@@ -4350,7 +4350,7 @@ def _check_needs_diff(verify_cfg: VerifyConfig, policy_cfg: PolicyConfig) -> boo
     "--prd",
     "prd_path",
     type=click.Path(path_type=Path),
-    help="PRD file; when given, the prd_stories check and the approved-fixtures oracle also run",
+    help="PRD file; when given, the prd_stories check also runs",
 )
 @click.option(
     "--allowed-path",
@@ -4495,7 +4495,6 @@ def check(
         _check_error(str(exc), as_json)
 
     from kstrl.config_preflight import preflight_config
-    from kstrl.fixtures import FixturesConfig
     from kstrl.policy import PolicyConfig
     from kstrl.verify import VerifyConfig, run_mechanical_verification
 
@@ -4510,7 +4509,6 @@ def check(
         preflight_config(root_dir, warn=_preflight_warn)
         verify_cfg = VerifyConfig.load(root_dir)
         policy_cfg = PolicyConfig.load(root_dir)
-        fixtures_cfg = FixturesConfig.load(root_dir) if prd_path is not None else None
     except (OSError, ValueError) as exc:
         # ValueError covers malformed TOML (load_toml_section), the
         # preflight's ConfigError, and the loaders' own validation
@@ -4544,9 +4542,7 @@ def check(
         allowed_paths=list(allowed_paths) or None,
         config=verify_cfg,
         policy_config=policy_cfg,
-        fixtures_config=fixtures_cfg,
         autonomy_level=0,
-        component_id=None,
     )
 
     _check_report(

@@ -55,7 +55,6 @@ ENFORCEMENT_MACHINERY_PATHS: tuple[str, ...] = (
     "**/kstrl/verify.py",
     "**/kstrl/policy.py",
     "**/kstrl/guards.py",
-    "**/kstrl/fixtures.py",
     "**/kstrl/autonomy.py",
     "**/kstrl/statedir.py",
     "**/kstrl/waivers.py",  # #595: turns an approved item into a waiver
