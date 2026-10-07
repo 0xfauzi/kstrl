@@ -227,6 +227,30 @@ def test_an_ungated_role_is_still_held_to_the_drop_check(
     assert drift[0].evidence["failures"] == [drop]
 
 
+def test_the_second_language_twins_are_held_to_their_family_floors(
+    ladder_on: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """#633 slice 8 (decision D4(a)): ``security_ts`` and ``reviewer_ts``
+    carry the family floors, 0.80 and 0.65, from their first captures. A
+    capture under either floor exits 1 and names the floor."""
+    old = _baseline(
+        ladder_on, OLD_TS, ("security_ts", "sec-ts-01", 3), ("reviewer_ts", "concern-ts-01", 3)
+    )
+    new = _baseline(
+        ladder_on, NEW_TS, ("security_ts", "sec-ts-01", 2), ("reviewer_ts", "concern-ts-01", 1)
+    )
+
+    code = calibration.main(["compare", str(old), str(new), "--root", str(ladder_on)])
+
+    lines = capsys.readouterr().out.splitlines()
+    assert code == 1, lines
+    assert "  security_ts                1.00 -> 0.67  (floor 0.80)" in lines
+    assert "  reviewer_ts                1.00 -> 0.33  (floor 0.65)" in lines
+    assert "  FAIL: role 'security_ts' detection rate 0.67 is below its floor 0.80" in lines
+    assert "  FAIL: role 'reviewer_ts' detection rate 0.33 is below its floor 0.65" in lines
+    assert _block(lines, NOT_GATED) == []
+
+
 def test_a_negative_role_above_the_ceiling_fails_compare(ladder_on: Path) -> None:
     """Slice 3: a capture whose ``security_negative_ts`` flagged all three of
     its clean fixtures (fp_rate 1.0) exits 1 naming the role, beside a
