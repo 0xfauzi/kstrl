@@ -56,7 +56,6 @@ from kstrl.verify import VerificationResult
 from kstrl.version import kstrl_version
 
 if TYPE_CHECKING:
-    from kstrl.decisions import SpecDecision
     from kstrl.factory import FactoryConfig
     from kstrl.manifest import Manifest
     from kstrl.pipeline import ComponentPipeline
@@ -68,8 +67,8 @@ GATE_NOTE = (
     "report the feature as integrated (#482)."
 )
 BLOCKING_NOTE = (
-    "Blocking: a stop without a clean integration verdict fails this run, and "
-    "open code findings become a fix component (#483)."
+    "Blocking: a stop without a clean integration verdict fails this run. No fix "
+    "is built: every open code finding is handed off (#696)."
 )
 
 #: #480: how many times one round may ask the reviewer: the first ask, and
@@ -85,9 +84,6 @@ class Phase3Round:
     #: Set by the factory when a contract breaker was sent back for retry:
     #: the round re-enters scheduling without an integration review.
     breaker_reset: bool = False
-    #: len(contract_failures) when the round began, so the lines this round
-    #: added can be told apart (#483).
-    failures_before: int = 0
 
     def record(self, results: list[ContractResult]) -> None:
         self.ran = True
@@ -102,8 +98,6 @@ class IntegrationRun:
     run_id: str
     pipeline: ComponentPipeline
     ui: UI
-    #: The architect decisions this run bound (#260), for a fix PRD's notes.
-    decisions: tuple[SpecDecision, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -120,8 +114,6 @@ class IntegrationRecord:
     closed: tuple[str, ...] = ()
     still_open: tuple[str, ...] = ()
     gates: bool = False
-    #: The fix component the loop built after this round; "" when none.
-    fix: str = ""
 
 
 @dataclass(frozen=True)

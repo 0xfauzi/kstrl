@@ -295,7 +295,6 @@ _LISTED_KNOBS: dict[str, tuple[str, ...]] = {
         "keep_worktrees_on_failure",
         "integration_review",
         "integration_blocking",
-        "integration_max_rounds",
         "convergence_attempts",
         "worktree_setup_timeout",
     ),

@@ -113,8 +113,11 @@ MIN_ROLE_DETECTION_RATE: dict[str, float | None] = {
     "architect_reuse": 0.50,
     "integration": 0.65,
     "integration_clean": 1.0,
-    # #633 slice 4: the TypeScript twins of the Python security and reviewer
-    # positives. Recorded, not gated, until their first capture sets a floor.
+    # #633 slice 4: twins of the security and reviewer positives in a second
+    # code language. The "_<language>" suffix of a role id is an attribute of
+    # the fixture, which the calibration harness reads off the fixture's own
+    # files (#696); nothing here names a language. Recorded, not gated, until
+    # their first capture sets a floor.
     "security_ts": None,
     "reviewer_ts": None,
     # #696 slice 8: the reviewer's test-weakening criterion, which replaced

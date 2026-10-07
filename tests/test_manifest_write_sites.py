@@ -99,7 +99,6 @@ EXPECTED_MANIFEST_WRITE_SITES: dict[str, tuple[int, str]] = {
     "kstrl/factory.py::_run_factory_locked._cleanup_pass_worktrees save": (1, IN_RUN),
     "kstrl/factory.py::_run_factory_locked._run_scheduling_pass save": (1, IN_RUN),
     "kstrl/factory.py::_stamp_feature_base save": (1, IN_RUN),
-    "kstrl/integration_fix.py::append_fix_component save": (1, IN_RUN),
     "kstrl/pipeline.py::ComponentPipeline._fail_pr_flow save": (1, IN_RUN),
     "kstrl/plan_gate.py::_settle save": (1, IN_RUN),
     "kstrl/pipeline.py::ComponentPipeline._park_awaiting_approval save": (1, IN_RUN),
@@ -118,7 +117,6 @@ EXPECTED_MANIFEST_WRITE_SITES: dict[str, tuple[int, str]] = {
     "kstrl/autonomy.py::commit_transition save": (1, NOT_A_MANIFEST),  # ladder state
     "kstrl/autonomy.py::save_ladder_state save": (1, NOT_A_MANIFEST),  # ladder state
     "kstrl/integration.py::write_integration_prd save": (1, NOT_A_MANIFEST),  # PRD
-    "kstrl/integration_fix.py::write_fix_prd save": (1, NOT_A_MANIFEST),  # PRD
     "kstrl/pipeline.py::ComponentPipeline._phase_review save": (1, NOT_A_MANIFEST),  # PRD
     "kstrl/serve.py::_save_pr_count_streak save": (1, NOT_A_MANIFEST),  # serve streak
 }

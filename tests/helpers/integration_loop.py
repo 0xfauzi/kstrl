@@ -1,14 +1,12 @@
-"""The blocking integration loop over a real repository and the real factory (#483).
+"""The blocking integration loop over a real repository and the real factory (#483, #696).
 
 Builds on ``tests/helpers/integration_harness.py``: the same merged feature,
-with allowedPaths and a tooling criterion on its two components, and a run
-in which a fix component really runs. Stubbed: the component worker (it
-marks the fix PRD's stories done and commits on ``main`` the way a squash
-merge would), the PR flow (it reports the merge), the merge re-poll, and the
-reviewers. The integration reviewer answers from a script, one entry per
-review, reading the PRD the harness wrote for that review; the fix's own
-per-component review passes. Phase 1, the scope snapshot and its
-preflights, Phase 3, the temporary worktree, ``run_review`` and its
+with allowedPaths on its two components. No fix component is built (#696
+decision 6), so a component launch is recorded and fails. Stubbed: the
+component worker, the PR flow, the merge re-poll, and the reviewers. The
+integration reviewer answers from a script, one entry per review, reading
+the PRD the harness wrote for that review. Phase 1, the scope snapshot and
+its preflights, Phase 3, the temporary worktree, ``run_review`` and its
 diffstat check, the state file and the inbox are real.
 """
 
@@ -26,14 +24,13 @@ from kstrl.agents.base import UsageRecord
 from kstrl.factory import ComponentResult, FactoryResult, run_factory
 from kstrl.inbox import Inbox, InboxConfig, InboxItem, ItemKind
 from kstrl.integration_fix import fix_prd_rel
-from kstrl.manifest import Component, Manifest
+from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.pipeline import ComponentPipeline
 from kstrl.pr import PrOutcome
 from kstrl.prd import PRD
 from kstrl.review import ReviewMode, ReviewResult
 from kstrl.review import run_review as real_run_review
-from kstrl.scope import ComponentScope
-from kstrl.statedir import plan_prd_path, pre_run_prd_path
+from kstrl.statedir import plan_prd_path
 from kstrl.ui.plain import PlainUI
 from tests.helpers import integration_harness as h
 from tests.helpers.component_prd import PASSING_STORY, write_component_prd
@@ -44,7 +41,6 @@ SCOPES: dict[str, list[str]] = {
     "comp-a": ["src/store.py", "src/schema.py", "tests/test_store.py"],
     "comp-b": ["src/api.py", "tests/test_api.py"],
 }
-TOOLING = "Typecheck passes"
 FIX_1 = "integration-fix-1"
 IC2_FAIL = {"IC2": ("fail", f"{h.STORE}:1 re-applies request rules to stored rows")}
 IC1_FAIL = {"IC1": ("fail", f"{h.API}:2 calls save with a string")}
@@ -53,13 +49,15 @@ Verdicts = dict[str, tuple[str, str]]
 
 
 def loop_feature(root: Path, scopes: dict[str, list[str]] | None = None) -> tuple[str, str]:
-    """``integration_harness.merged_feature`` with allowedPaths and a tooling
-    criterion on each component PRD. Returns ``(base, head)``."""
+    """``integration_harness.merged_feature`` with allowedPaths on each
+    component PRD. Returns ``(base, head)``."""
     base, head = h.merged_feature(root)
-    story = {**PASSING_STORY, "acceptanceCriteria": ["AC1", TOOLING]}
     for cid, allowed in (SCOPES if scopes is None else scopes).items():
         write_component_prd(
-            root, f"scripts/kstrl/feature/{cid}/prd.json", allowed_paths=allowed, stories=[story]
+            root,
+            f"scripts/kstrl/feature/{cid}/prd.json",
+            allowed_paths=allowed,
+            stories=[PASSING_STORY],
         )
     return base, head
 
@@ -137,60 +135,26 @@ class ScriptedReviewer(h.FakeReviewer):
 class Rig:
     """The stubs for one factory run, and what they saw."""
 
-    def __init__(
-        self,
-        root: Path,
-        reviewer: ScriptedReviewer,
-        *,
-        fix_succeeds: bool = True,
-        merge: str = "merged",
-        fix_file: str = h.STORE,
-        fix_text: str = "def save(x: int) -> int:\n    return int(x)\n",
-    ) -> None:
+    def __init__(self, root: Path, reviewer: ScriptedReviewer) -> None:
         self.root = root
         self.reviewer = reviewer
-        self.fix_succeeds = fix_succeeds
-        self.merge = merge
-        self.fix_file = fix_file
-        self.fix_text = fix_text
         self.launched: list[str] = []
-        self.scopes: dict[str, ComponentScope] = {}
 
     def review(self, agent: Any, prd_path: Path, *args: Any, **kwargs: Any) -> ReviewResult:
-        """Integration reviews go to the real run_review; a fix's own review passes."""
+        """Integration reviews go to the real run_review; any other review passes."""
         if "integration" in Path(prd_path).parts:
             self.reviewer.prd_paths.append(Path(prd_path))
             return real_run_review(agent, prd_path, *args, **kwargs)
         return ReviewResult(passed=True, mode=ReviewMode.HARD.value)
 
     def component(self, comp_id: str, *args: Any, **kwargs: Any) -> ComponentResult:
+        """Record the launch. No test here expects one, so it fails."""
         self.launched.append(comp_id)
-        self.scopes[comp_id] = next(a for a in args if isinstance(a, ComponentScope))
-        if not self.fix_succeeds:
-            return ComponentResult(comp_id, success=False, iterations=1, error="planted failure")
-        # args[1] is the worktree (the root itself without worktrees). The
-        # real worker copies the root PRD there; the engineer marks it done.
-        prd = PRD.load(plan_prd_path(self.root, comp_id, plan_id=kwargs["plan_id"]))
-        for story in prd.user_stories:
-            story.passes = True
-        target = Path(args[1]) / fix_prd_rel(comp_id)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        prd.save(target)
-        h.commit_file(self.root, self.fix_file, f"{self.fix_text}# {comp_id}\n")
-        return ComponentResult(comp_id, success=True, iterations=1, duration_seconds=1.0)
+        return ComponentResult(comp_id, success=False, iterations=1, error="unexpected launch")
 
     def pr(self, comp: Component, *args: Any, **kwargs: Any) -> PrOutcome:
         comp.pr_number = 90 + len(self.launched)
         comp.pr_url = f"https://github.com/o/r/pull/{comp.pr_number}"
-        if self.merge == "pending":
-            return PrOutcome(
-                pushed=True,
-                pr_number=comp.pr_number,
-                pr_url=comp.pr_url,
-                merged=False,
-                merge_pending=True,
-                error="merge not confirmed",
-            )
         return PrOutcome(
             pushed=True,
             pr_number=comp.pr_number,
@@ -232,12 +196,52 @@ def manifest_ids(root: Path) -> list[str]:
     return [c.id for c in Manifest.load(h.manifest_file(root)).components]
 
 
-def planned_prd(root: Path, comp_id: str) -> Path:
-    """The copy ``comp_id`` starts from, addressed through the manifest the
-    way the run addresses it (#568)."""
-    comp = Manifest.load(h.manifest_file(root)).get_component(comp_id)
-    assert comp is not None, comp_id
-    return pre_run_prd_path(root, comp.id, comp.prd_path, plan_id=comp.plan_id)
+#: The run id of the kstrl that built fix FIX_1 in :func:`record_earlier_fix`.
+EARLIER_RUN = "earlier-run"
+
+
+def record_earlier_fix(
+    root: Path, base: str, finding_ids: Sequence[str], *, prd: bool, component: bool
+) -> None:
+    """What an earlier kstrl left on disk for fix FIX_1, which kstrl no
+    longer builds (#696): its state entry carrying ``finding_ids``, and,
+    when asked, its planned PRD and its manifest component, COMPLETED and
+    merged."""
+    loaded = state(root)
+    loaded["fixes"] = [
+        {
+            "id": FIX_1,
+            "findings": list(finding_ids),
+            "scope": [h.STORE],
+            "prdPath": fix_prd_rel(FIX_1),
+            "runId": EARLIER_RUN,
+            "kstrlVersion": "0.0.0",
+            "reviewedSha": base,
+        }
+    ]
+    h.state_file(root).write_text(json.dumps(loaded), encoding="utf-8")
+    if prd:
+        planned = plan_prd_path(root, FIX_1, plan_id=EARLIER_RUN)
+        planned.parent.mkdir(parents=True, exist_ok=True)
+        PRD(branch_name=f"kstrl/factory/{FIX_1}", user_stories=[], allowed_paths=[h.STORE]).save(
+            planned
+        )
+    if component:
+        manifest = Manifest.load(h.manifest_file(root))
+        manifest.components.append(
+            Component(
+                id=FIX_1,
+                title=f"Integration fix for {', '.join(finding_ids)}",
+                description="Fixes findings of the integration review of the merged feature",
+                dependencies=[c.id for c in manifest.components],
+                prd_path=fix_prd_rel(FIX_1),
+                branch_name=f"kstrl/factory/{FIX_1}",
+                status=ComponentStatus.COMPLETED.value,
+                plan_id=EARLIER_RUN,
+                merge_sha=base,
+            )
+        )
+        manifest.save(h.manifest_file(root))
 
 
 def run_halts(root: Path) -> list[InboxItem]:
@@ -247,13 +251,3 @@ def run_halts(root: Path) -> list[InboxItem]:
         for item in Inbox(root, InboxConfig()).items()
         if item.kind == ItemKind.HALTED_RUN and not item.component
     ]
-
-
-def events(root: Path, name: str) -> list[dict[str, Any]]:
-    """Every ``name`` event any run under ``root`` wrote, oldest run first."""
-    found: list[dict[str, Any]] = []
-    for path in sorted((root / ".kstrl" / "runs").glob("*/events.jsonl")):
-        for line in path.read_text(encoding="utf-8").splitlines():
-            if line.strip() and json.loads(line).get("event") == name:
-                found.append(json.loads(line))
-    return found
