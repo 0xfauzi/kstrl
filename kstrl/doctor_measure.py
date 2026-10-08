@@ -150,6 +150,7 @@ def measure_replay(
         row = (STATUS_WARN, f"{record.failed}: {record.detail}{filed}")
     elif record.failed or record.error:
         said = f"{record.failed}: {record.detail}" if record.failed else record.error
+        said += f"; {record.sandbox}" if record.sandbox else ""
         row = (STATUS_FAIL, f"{said}{filed}")
     else:
         stages = ", ".join(stage.name for stage in record.stages)
