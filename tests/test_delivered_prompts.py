@@ -101,6 +101,7 @@ from tests.helpers.before_spend import no_base_check
 from tests.helpers.builder_prompts import BUILDER_RENDER_EXEMPT
 from tests.helpers.component_prd import write_component_prd
 from tests.helpers.feedforward_prompts import NOTICE_PROMPTS
+from tests.helpers.integration_prompts import ONE_NON_GOAL, ONE_REQUIREMENT
 from tests.helpers.prompt_calls import architect_call
 from tests.helpers.recording_agent import RecordingAgent
 from tests.test_prompt_versions import (
@@ -366,6 +367,20 @@ _ROLES: dict[str, _Role] = {
         frozenset({"INTEGRATION_CARRIED_PROMPT"}),
         "08ce96bc303abbc21ad141eac54f50a2e6242f0c1466ac94b65a4f5e9fe09b21",
         44,
+    ),
+    # #639 slice 3: the story that judges one requirement, and one non-goal,
+    # of the bound register. Pinned by running this test.
+    "integration-requirement": _Role(
+        lambda _p: integration.requirement_stories([ONE_REQUIREMENT])[0].criterion,
+        frozenset({"INTEGRATION_REQUIREMENT_PROMPT"}),
+        "d4b4c76915cbb321cf2a3600f2f28bb167fa4c02eccb6718580e6eabe81ca424",
+        238,
+    ),
+    "integration-non-goal": _Role(
+        lambda _p: integration.requirement_stories([ONE_NON_GOAL])[0].criterion,
+        frozenset({"INTEGRATION_NON_GOAL_PROMPT"}),
+        "5e14ad84dd37a462906f2d2152d436a2969c986d145ce1422c2ee6ba7d3e29fd",
+        247,
     ),
     "integration-reviewer": _Role(
         _integration_reviewer,

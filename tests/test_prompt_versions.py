@@ -99,7 +99,6 @@ from kstrl import (
     decompose,
     gepa_adapter,
     git,
-    integration,
     knowledge,
     owner_answers,
     review,
@@ -135,12 +134,6 @@ from kstrl.init_cmd import (
     DEFAULT_PROMPT,
     DEFAULT_PROMPT_VERSION,
 )
-from kstrl.integration import (
-    INTEGRATION_CARRIED_PROMPT,
-    INTEGRATION_CARRIED_PROMPT_VERSION,
-    INTEGRATION_CRITERIA_PROMPT,
-    INTEGRATION_CRITERIA_PROMPT_VERSION,
-)
 from kstrl.knowledge import DISTILL_PROMPT, DISTILL_PROMPT_VERSION
 from kstrl.manifest import Component
 from kstrl.owner_answers import (
@@ -168,6 +161,12 @@ from tests.helpers.feedforward_prompts import (
     NOTICE_SNAPSHOTS,
     NOTICE_VERSIONS,
 )
+from tests.helpers.integration_prompts import (
+    INTEGRATION_PROMPTS,
+    INTEGRATION_RENDERERS,
+    INTEGRATION_SNAPSHOTS,
+    INTEGRATION_VERSIONS,
+)
 from tests.helpers.recording_agent import RecordingAgent
 
 
@@ -187,13 +186,12 @@ _PROMPTS: dict[str, str] = {
     "PASTED_CHANGE_SOURCE_PROMPT": PASTED_CHANGE_SOURCE_PROMPT,
     "DECISIONS_CONTEXT_PROMPT": DECISIONS_CONTEXT_PROMPT,
     "OWNER_ANSWER_PROMPT": OWNER_ANSWER_PROMPT,
-    "INTEGRATION_CRITERIA_PROMPT": INTEGRATION_CRITERIA_PROMPT,
-    "INTEGRATION_CARRIED_PROMPT": INTEGRATION_CARRIED_PROMPT,
     "GEPA_REFLECTION_PROMPT": GEPA_REFLECTION_PROMPT,
     "STACK_PROMPT": STACK_PROMPT,
     "ACCEPTANCE_PROMPT": ACCEPTANCE_PROMPT,
     **BUILDER_PROMPTS,
     **NOTICE_PROMPTS,
+    **INTEGRATION_PROMPTS,
 }
 
 _VERSIONS: dict[str, str] = {
@@ -208,13 +206,12 @@ _VERSIONS: dict[str, str] = {
     "PASTED_CHANGE_SOURCE_PROMPT": PASTED_CHANGE_SOURCE_PROMPT_VERSION,
     "DECISIONS_CONTEXT_PROMPT": DECISIONS_CONTEXT_PROMPT_VERSION,
     "OWNER_ANSWER_PROMPT": OWNER_ANSWER_PROMPT_VERSION,
-    "INTEGRATION_CRITERIA_PROMPT": INTEGRATION_CRITERIA_PROMPT_VERSION,
-    "INTEGRATION_CARRIED_PROMPT": INTEGRATION_CARRIED_PROMPT_VERSION,
     "GEPA_REFLECTION_PROMPT": GEPA_REFLECTION_PROMPT_VERSION,
     "STACK_PROMPT": STACK_PROMPT_VERSION,
     "ACCEPTANCE_PROMPT": ACCEPTANCE_PROMPT_VERSION,
     **BUILDER_VERSIONS,
     **NOTICE_VERSIONS,
+    **INTEGRATION_VERSIONS,
 }
 
 # Joint snapshot: (sha256_hash, semver_version). Both must move together
@@ -404,30 +401,6 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
         "319f4f9af3a71e92a76483798d55aca5f945a6388e36e6dfa899f6e7a58de120",
         "1.0.0",
     ),
-    # 1.0.0 (#482): new. H3 discharged here. Its H2 roles, "integration"
-    # and "integration_clean", are scored on the #480 section 8 Layer B
-    # fixtures; no saved baseline carries their ids yet.
-    # 1.1.0 (#500): IC5 names the component's prd.json in words instead of the `<component>`
-    # placeholder a reviewer echoing it could rewrite. H2 pending: the owner's paid calibration run.
-    # 1.2.0 (#480): every story says it gets its own verdict, pass included, and that the
-    # specification and the prd.json files are evidence, not stories; IC2 fails a read path that
-    # re-applies new-input checks with no rule tightened yet; IC1 is one condition. H2: the before
-    # and after integration captures saved beside this change.
-    # 1.3.0 (#696 slice 10): MINOR. IC1 and IC4 judge a call against the
-    # callee's documented contract (doc comment, docstring or equivalent)
-    # rather than its docstring. H2: the integration and integration_clean
-    # captures.
-    "INTEGRATION_CRITERIA_PROMPT": (
-        "e434808afe8697231d025a15ebc0d6d525846b34717e405d953bd4b189a6a7d7",
-        "1.3.0",
-    ),
-    # 1.0.0 (#483): new. The criterion of a carried finding's story, sent to
-    # the integration reviewer. H3 only, for INTEGRATION_CRITERIA_PROMPT's
-    # reason: its calibration role "integration" has no fixture yet.
-    "INTEGRATION_CARRIED_PROMPT": (
-        "71c4e1edade09d984f65f6dac1356f26b4ea9baea01ee5f9b9b321fa91975d7c",
-        "1.0.0",
-    ),
     # 1.0.0 (#530): new. The text gepa sends the reflection model when it
     # proposes a role prompt. H3 only: no calibration fixture scores a
     # reflection prompt, the DECISIONS_CONTEXT_PROMPT position.
@@ -437,6 +410,7 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     ),
     **BUILDER_SNAPSHOTS,
     **NOTICE_SNAPSHOTS,
+    **INTEGRATION_SNAPSHOTS,
 }
 
 
@@ -627,16 +601,9 @@ _RENDERERS: dict[str, tuple[ModuleType, Callable[[Path], str]]] = {
     "PASTED_CHANGE_SOURCE_PROMPT": (git, lambda _p: pasted_change_source("DIFF")[0]),
     "DECISIONS_CONTEXT_PROMPT": (decisions, _decisions_context_render),
     "OWNER_ANSWER_PROMPT": (owner_answers, lambda _p: render_owner_answer(_OWNER_ANSWER_ITEM)),
-    "INTEGRATION_CRITERIA_PROMPT": (
-        integration,
-        lambda _p: integration.render_integration_criteria("BASE_SHA"),
-    ),
-    "INTEGRATION_CARRIED_PROMPT": (
-        integration,
-        lambda _p: integration.carried_story("IF-1", "TEXT", ["src/a.py"]).criterion,
-    ),
     "GEPA_REFLECTION_PROMPT": (gepa_adapter, lambda _p: gepa_adapter.reflection_template()),
     **NOTICE_RENDERERS,
+    **INTEGRATION_RENDERERS,
 }
 
 #: Enrolled prompts with no renderer, and why. DEFAULT_PROMPT is written

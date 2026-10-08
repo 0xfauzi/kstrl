@@ -4,14 +4,23 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import pytest
 
 from kstrl.contract import ContractConfig, ContractMode
+from kstrl.decisions import write_decisions
+from kstrl.decompose import spec_digest
 from kstrl.evolution import INTEGRATION_RESULT_EVENT
-from kstrl.integration import integration_stories
+from kstrl.integration import (
+    INTEGRATION_NON_GOAL_PROMPT,
+    INTEGRATION_REQUIREMENT_PROMPT,
+    integration_stories,
+)
+from kstrl.manifest import Manifest
 from kstrl.pipeline import ComponentPipeline
+from kstrl.requirements import SpecRequirement
 from tests.helpers import integration_harness as h
 from tests.helpers.stack_confirmation import in_process_stack
 
@@ -453,3 +462,147 @@ def test_every_story_the_reviewer_is_sent_is_framed_as_a_story_of_this_review(
     # states, and IC3 gains no other sentence: a blanket pass for equal
     # values would hide the planted duplicate in int-d3-separate-rules.
     assert blocks["IC3"] == f" One definition per shared rule\n- {IC3_CRITERION} {STORY_FRAME}\n"
+
+
+#: #639 slice 3: one story per requirement and non-goal of the bound register.
+R1_STATEMENT = "Saving a value\nreturns that value."
+R2_STATEMENT = "The feature makes no network call."
+
+
+def _write_register(root: Path) -> None:
+    write_decisions(
+        [],
+        root,
+        "test",
+        "spec.md",
+        halted=False,
+        spec_digest=spec_digest(h.SPEC_TEXT),
+        requirements=[
+            SpecRequirement("R-1", "requirement", R1_STATEMENT, ("US-001",)),
+            SpecRequirement("R-2", "non_goal", R2_STATEMENT, ()),
+        ],
+    )
+
+
+def _with_requirement_verdicts(payload: dict[str, Any], ids: list[str]) -> dict[str, Any]:
+    for story_id in ids:
+        payload["stories"].append(
+            {
+                "storyId": story_id,
+                "storyTitle": story_id,
+                "criteria": [
+                    {
+                        "criterion": "as sent",
+                        "verdict": "pass",
+                        "explanation": f"{h.API}:1 read and checked",
+                        "suggestion": "",
+                    }
+                ],
+            }
+        )
+    return payload
+
+
+def _prd_stories(root: Path) -> list[dict[str, Any]]:
+    (prd,) = (root / ".kstrl" / "runs").glob("*/integration/prd-1.json")
+    stories: list[dict[str, Any]] = json.loads(prd.read_text(encoding="utf-8"))["userStories"]
+    return stories
+
+
+def _evidence(root: Path) -> dict[str, Any]:
+    (path,) = h.evidence_files(root)
+    ev: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+    return ev
+
+
+def test_each_requirement_and_non_goal_is_a_story_of_the_review(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    base, _head = h.merged_feature(root)
+    _write_register(root)
+    payload = _with_requirement_verdicts(h.review_payload(root, base), ["R-1", "R-2"])
+    reviewer = h.FakeReviewer(json.dumps(payload))
+
+    h.run_factory_over(root, reviewer)
+
+    stories = _prd_stories(root)
+    assert [s["id"] for s in stories] == ["IC1", "IC2", "IC3", "IC4", "IC5", "R-1", "R-2"]
+    by_id = {s["id"]: s["acceptanceCriteria"] for s in stories}
+    assert by_id["R-1"] == [
+        INTEGRATION_REQUIREMENT_PROMPT.format(statement="Saving a value returns that value.")
+    ]
+    assert by_id["R-2"] == [INTEGRATION_NON_GOAL_PROMPT.format(statement=R2_STATEMENT)]
+    assert "Saving a value returns that value." in reviewer.prompts[0]
+    assert R2_STATEMENT in reviewer.prompts[0]
+    ev = _evidence(root)
+    assert ev["outcome"] == "clean"
+    assert [s["id"] for s in ev["stories"]][-2:] == ["R-1", "R-2"]
+    assert ev["recorded"] == []
+
+
+def test_a_reply_that_skips_a_requirement_is_red(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    base, _head = h.merged_feature(root)
+    _write_register(root)
+    payload = _with_requirement_verdicts(h.review_payload(root, base), ["R-2"])
+    reviewer = h.FakeReviewer(json.dumps(payload))
+
+    result, _out = h.run_factory_over(root, reviewer)
+
+    ev = _evidence(root)
+    assert ev["outcome"] == "red"
+    assert "story R-1: 0 verdicts; exactly one is required" in ev["errors"]
+    state = json.loads(h.state_file(root).read_text(encoding="utf-8"))
+    assert state["findings"] == []
+    assert result.exit_code == 0
+
+
+def test_a_failing_requirement_is_recorded_and_opens_nothing(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    base, _head = h.merged_feature(root)
+    _write_register(root)
+    payload = _with_requirement_verdicts(h.review_payload(root, base), ["R-1", "R-2"])
+    h.set_verdict(payload, "R-1", "fail", f"{h.API}:4 returns the input, not the saved value")
+    h.set_verdict(payload, "R-2", "advisory", f"{h.API}:1 imports nothing that calls out")
+    reviewer = h.FakeReviewer(json.dumps(payload))
+
+    result, _out = h.run_factory_over(root, reviewer, integration_blocking=True)
+
+    state = json.loads(h.state_file(root).read_text(encoding="utf-8"))
+    assert state["findings"] == []
+    assert state["stops"][-1]["outcome"] == "clean"
+    ev = _evidence(root)
+    assert ev["opened"] == []
+    assert ev["recorded"] == [
+        {
+            "kind": "criterion",
+            "story_id": "R-1",
+            "category": "",
+            "severity": "fail",
+            "text": f"R-1: {h.API}:4 returns the input, not the saved value",
+        },
+        {
+            "kind": "criterion",
+            "story_id": "R-2",
+            "category": "",
+            "severity": "advisory",
+            "text": f"R-2: {h.API}:1 imports nothing that calls out",
+        },
+    ]
+    assert result.exit_code == 0
+
+
+def test_a_manifest_with_no_spec_gets_no_requirement_stories(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    base, _head = h.merged_feature(root)
+    _write_register(root)
+    manifest = Manifest.load(h.manifest_file(root))
+    manifest.spec_file = ""
+    manifest.spec_path = ""
+    manifest.spec_digest = ""
+    manifest.save(h.manifest_file(root))
+    reviewer = h.FakeReviewer(json.dumps(h.review_payload(root, base)))
+
+    h.run_factory_over(root, reviewer)
+
+    assert [s["id"] for s in _prd_stories(root)] == ["IC1", "IC2", "IC3", "IC4", "IC5"]
+    assert _evidence(root)["outcome"] == "clean"
