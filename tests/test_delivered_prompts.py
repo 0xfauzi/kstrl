@@ -70,6 +70,7 @@ actually written.
 
 from __future__ import annotations
 
+import io
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -91,6 +92,8 @@ from kstrl import (
 )
 from kstrl.decisions import SpecDecision, build_decisions_context
 from kstrl.inbox import Inbox, InboxItem, ItemKind, ItemStatus
+from kstrl.init_cmd import run_init
+from kstrl.intake_github import RemoteIssue, spec_from_issue
 from kstrl.loop import COMPLETION_MARKER
 from kstrl.manifest import Component
 from kstrl.owner_answers import read_owner_answers
@@ -114,7 +117,12 @@ from tests.test_prompt_versions import (
     _run_and_capture_prompt,
     _sha256,
 )
-from tests.test_verify_command_contract import _engineer_prompt
+from tests.test_verify_command_contract import (
+    _engineer_prompt,
+    _feature_cli_args,
+    _prompt_from_cli,
+    _write_feature_prd,
+)
 
 # ---------------------------------------------------------------------------
 # The fixture. Small, committed, and free of anything that varies between
@@ -254,6 +262,31 @@ def _engineer(tmp_path: Path) -> str:
     return prompt.replace(str(root), "<ROOT>")
 
 
+def _initialised(tmp_path: Path, *, feature: bool) -> Path:
+    """A project `ks init` scaffolded. The understand instructions reach a
+    model only as the files init writes, so the row drives init and then the
+    command (#654). `ks feature` refuses with no confirmed [stack], so its
+    tree is written first and init keeps the files it finds."""
+    root = (tmp_path / "proj").resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    if feature:
+        _write_feature_prd(root)
+    assert run_init(root, PlainUI(no_color=True, file=io.StringIO())) == 0
+    return root
+
+
+def _understander(tmp_path: Path) -> str:
+    """The first prompt `ks understand` sends in an initialised project."""
+    root = _initialised(tmp_path, feature=False)
+    return _prompt_from_cli(["understand", "--root", str(root)]).replace(str(root), "<ROOT>")
+
+
+def _feature_understander(tmp_path: Path) -> str:
+    """The first prompt `ks feature` sends: its understand loop's."""
+    root = _initialised(tmp_path, feature=True)
+    return _prompt_from_cli(_feature_cli_args(root)).replace(str(root), "<ROOT>")
+
+
 def _architect_with_owner_answer(tmp_path: Path) -> str:
     """The architect's prompt for a spec the owner answered in the inbox (#639):
     ``read_owner_answers`` over one approved escalation, appended after the spec
@@ -321,6 +354,16 @@ _ROLES: dict[str, _Role] = {
         "2ae8dbeacb89600acf016c7b548d3d99bf57da575f281f6e5e941e9014cc936a",
         16438,
     ),
+    # #654 slice 7: the spec built from a GitHub issue with the `bug` label, which
+    # the architect and the verification designer read. Pinned by running this test.
+    "bug-report-spec": _Role(
+        lambda _p: spec_from_issue(
+            RemoteIssue(9, "Crash on empty input", "It exits 1.", "", labels=("bug",)), "o/r"
+        ),
+        frozenset({"BUG_REPORT_PROMPT"}),
+        "7341ccb852c458b8386dfed001fc6c58eb16d1b82760a6458a58596b4d9694fd",
+        190,
+    ),
     "architect-with-repo": _Role(
         lambda _p: decompose.build_decompose_prompt(
             "PROJECT",
@@ -355,6 +398,19 @@ _ROLES: dict[str, _Role] = {
         frozenset({"DEFAULT_PROMPT", "STACK_PROMPT"}),
         "a3045e932f9dc93c7041d97a1823cc566726f45cc775463f36e0e6669674e501",
         6078,
+    ),
+    # #654 slice 8: the two understand loops, through `ks init` and the command.
+    "understander": _Role(
+        _understander,
+        frozenset({"DEFAULT_UNDERSTAND_PROMPT"}),
+        "c198d87ef3ae2d8e2db86f30dd5c25a4d24c6bfc5dd752a2916c1a1c8ee8248b",
+        3584,
+    ),
+    "feature-understander": _Role(
+        _feature_understander,
+        frozenset({"DEFAULT_FEATURE_UNDERSTAND_PROMPT"}),
+        "d466ae5e769bc0d21a5ce1bbb8d2405ab05e5ce4af5980c481a04d4b1852ae2c",
+        3279,
     ),
     "gepa-reflection": _Role(
         # The template as run_optimization hands it to gepa. The library
@@ -431,7 +487,9 @@ _ROLES: dict[str, _Role] = {
 #: sibling's production renderer does needs an explicit override row
 #: here, not silent reliance on this derivation.
 _HOME_MODULE: dict[str, ModuleType] = {name: mod for name, (mod, _render) in _RENDERERS.items()} | {
-    "DEFAULT_PROMPT": init_cmd
+    "DEFAULT_PROMPT": init_cmd,
+    "DEFAULT_UNDERSTAND_PROMPT": init_cmd,
+    "DEFAULT_FEATURE_UNDERSTAND_PROMPT": init_cmd,
 }
 
 

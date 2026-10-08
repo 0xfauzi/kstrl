@@ -99,6 +99,7 @@ from kstrl import (
     decompose,
     gepa_adapter,
     git,
+    intake_github,
     knowledge,
     owner_answers,
     review,
@@ -134,6 +135,7 @@ from kstrl.init_cmd import (
     DEFAULT_PROMPT,
     DEFAULT_PROMPT_VERSION,
 )
+from kstrl.intake_github import BUG_REPORT_PROMPT, BUG_REPORT_PROMPT_VERSION, RemoteIssue
 from kstrl.knowledge import DISTILL_PROMPT, DISTILL_PROMPT_VERSION
 from kstrl.manifest import Component
 from kstrl.owner_answers import (
@@ -168,6 +170,12 @@ from tests.helpers.integration_prompts import (
     INTEGRATION_VERSIONS,
 )
 from tests.helpers.recording_agent import RecordingAgent
+from tests.helpers.understand_prompts import (
+    UNDERSTAND_PROMPTS,
+    UNDERSTAND_RENDER_EXEMPT,
+    UNDERSTAND_SNAPSHOTS,
+    UNDERSTAND_VERSIONS,
+)
 
 
 def _sha256(text: str) -> str:
@@ -189,9 +197,11 @@ _PROMPTS: dict[str, str] = {
     "GEPA_REFLECTION_PROMPT": GEPA_REFLECTION_PROMPT,
     "STACK_PROMPT": STACK_PROMPT,
     "ACCEPTANCE_PROMPT": ACCEPTANCE_PROMPT,
+    "BUG_REPORT_PROMPT": BUG_REPORT_PROMPT,
     **BUILDER_PROMPTS,
     **NOTICE_PROMPTS,
     **INTEGRATION_PROMPTS,
+    **UNDERSTAND_PROMPTS,
 }
 
 _VERSIONS: dict[str, str] = {
@@ -209,9 +219,11 @@ _VERSIONS: dict[str, str] = {
     "GEPA_REFLECTION_PROMPT": GEPA_REFLECTION_PROMPT_VERSION,
     "STACK_PROMPT": STACK_PROMPT_VERSION,
     "ACCEPTANCE_PROMPT": ACCEPTANCE_PROMPT_VERSION,
+    "BUG_REPORT_PROMPT": BUG_REPORT_PROMPT_VERSION,
     **BUILDER_VERSIONS,
     **NOTICE_VERSIONS,
     **INTEGRATION_VERSIONS,
+    **UNDERSTAND_VERSIONS,
 }
 
 # Joint snapshot: (sha256_hash, semver_version). Both must move together
@@ -409,9 +421,16 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
         "708326a01c93fef5a9190de373488c664f7047066d1c12253400a4c82fdb6b49",
         "1.0.0",
     ),
+    # 1.0.0 (#654 slice 7): new. The line the spec of a `bug` issue gets: at least one
+    # acceptance check fails on the base. H3 only: no calibration fixture carries a bug report.
+    "BUG_REPORT_PROMPT": (
+        "52dc51da719b57bf1b13cbd1060ffb6b85c93492d0d66798f07592c5da79ae81",
+        "1.0.0",
+    ),
     **BUILDER_SNAPSHOTS,
     **NOTICE_SNAPSHOTS,
     **INTEGRATION_SNAPSHOTS,
+    **UNDERSTAND_SNAPSHOTS,
 }
 
 
@@ -568,6 +587,13 @@ def _acceptance_render(_tmp_path: Path) -> str:
     )
 
 
+def _bug_report_render(_tmp_path: Path) -> str:
+    """What the `bug` label adds to the spec of an issue with an empty body."""
+    plain = intake_github.spec_from_issue(RemoteIssue(1, "T", "", ""), "o/r")
+    bug = intake_github.spec_from_issue(RemoteIssue(1, "T", "", "", labels=("Bug",)), "o/r")
+    return bug.removeprefix(plain)
+
+
 def _stack_render(_tmp_path: Path) -> str:
     return Stack(instructions="I", setup="", checks=(("tests", "T"),), env=()).format_for_prompt()
 
@@ -601,6 +627,7 @@ _RENDERERS: dict[str, tuple[ModuleType, Callable[[Path], str]]] = {
     "DECISIONS_CONTEXT_PROMPT": (decisions, _decisions_context_render),
     "OWNER_ANSWER_PROMPT": (owner_answers, lambda _p: render_owner_answer(_OWNER_ANSWER_ITEM)),
     "GEPA_REFLECTION_PROMPT": (gepa_adapter, lambda _p: gepa_adapter.reflection_template()),
+    "BUG_REPORT_PROMPT": (intake_github, _bug_report_render),
     **NOTICE_RENDERERS,
     **INTEGRATION_RENDERERS,
 }
@@ -612,8 +639,9 @@ _RENDERERS: dict[str, tuple[ModuleType, Callable[[Path], str]]] = {
 #: (``test_engineer_prompt_bump_reaches_existing_projects``). The
 #: BUILDER_RENDER_EXEMPT names (#303) are exempt for the reason given in
 #: ``tests/helpers/builder_prompts.py``'s module docstring; their orphan
-#: guards live in ``tests/test_builder_prompts.py`` instead.
-_RENDER_EXEMPT = frozenset({"DEFAULT_PROMPT"}) | BUILDER_RENDER_EXEMPT
+#: guards live in ``tests/test_builder_prompts.py`` instead. The two
+#: understand prompts (#654) are scaffolded verbatim, as DEFAULT_PROMPT is.
+_RENDER_EXEMPT = frozenset({"DEFAULT_PROMPT"}) | BUILDER_RENDER_EXEMPT | UNDERSTAND_RENDER_EXEMPT
 
 
 def test_every_prompt_has_a_renderer() -> None:

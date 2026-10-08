@@ -495,6 +495,7 @@ def _real_factory_runner(
         spec_path: Path,
         project_name: str,
         pause_before_pr_merge: bool,
+        design_acceptance: bool,
         timeout_seconds: float,
         on_spawn: Callable[[int], None] | None = None,
     ) -> RunOutcome:
@@ -512,6 +513,7 @@ def _real_factory_runner(
             str(root_dir),
             *FACTORY_FLAGS,
             "--pause-before-pr-merge" if pause_before_pr_merge else "--no-pause-before-pr-merge",
+            *(["--design-acceptance"] if design_acceptance else []),
         ]
         return run_supervised(
             command, cwd=root_dir, env=env, timeout_seconds=300.0, on_spawn=on_spawn

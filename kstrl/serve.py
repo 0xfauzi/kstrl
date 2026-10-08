@@ -237,6 +237,7 @@ class FactoryRunner(Protocol):
         spec_path: Path,
         project_name: str,
         pause_before_pr_merge: bool,
+        design_acceptance: bool,
         timeout_seconds: float,
         on_spawn: Callable[[int], None] | None = None,
     ) -> RunOutcome: ...
@@ -1904,6 +1905,7 @@ def subprocess_factory_runner(
     spec_path: Path,
     project_name: str,
     pause_before_pr_merge: bool,
+    design_acceptance: bool,
     timeout_seconds: float,
     on_spawn: Callable[[int], None] | None = None,
     caffeinate: bool = True,
@@ -1967,6 +1969,8 @@ def subprocess_factory_runner(
     command.append(
         "--pause-before-pr-merge" if pause_before_pr_merge else "--no-pause-before-pr-merge"
     )
+    if design_acceptance:
+        command.append("--design-acceptance")
     env = dict(os.environ)
     env["KSTRL_NO_TUI"] = "1"
 
@@ -4016,6 +4020,7 @@ def serve_cycle(
         spec_path=spec_path,
         project_name=project_name,
         pause_before_pr_merge=gate.pause_before_pr_merge,
+        design_acceptance=running.design_acceptance,
         timeout_seconds=cfg.factory_timeout_seconds,
         on_spawn=_adopt,
     )
@@ -4433,6 +4438,7 @@ def _default_runner(config: ServeConfig) -> FactoryRunner:
         spec_path: Path,
         project_name: str,
         pause_before_pr_merge: bool,
+        design_acceptance: bool,
         timeout_seconds: float,
         on_spawn: Callable[[int], None] | None = None,
     ) -> RunOutcome:
@@ -4441,6 +4447,7 @@ def _default_runner(config: ServeConfig) -> FactoryRunner:
             spec_path=spec_path,
             project_name=project_name,
             pause_before_pr_merge=pause_before_pr_merge,
+            design_acceptance=design_acceptance,
             timeout_seconds=timeout_seconds,
             on_spawn=on_spawn,
             caffeinate=config.caffeinate,

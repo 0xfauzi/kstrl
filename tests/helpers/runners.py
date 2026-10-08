@@ -35,6 +35,7 @@ def recording_runner(
         spec_path: Path,
         project_name: str,
         pause_before_pr_merge: bool,
+        design_acceptance: bool,
         timeout_seconds: float,
         on_spawn: Callable[[int], None] | None = None,
     ) -> RunOutcome:
@@ -49,6 +50,7 @@ def recording_runner(
                 "spec_text": (spec_path.read_text(encoding="utf-8") if spec_path.exists() else ""),
                 "project_name": project_name,
                 "pause_before_pr_merge": pause_before_pr_merge,
+                "design_acceptance": design_acceptance,
             }
         )
         return result

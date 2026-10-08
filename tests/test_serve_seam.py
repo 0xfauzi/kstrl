@@ -97,9 +97,14 @@ from tests.test_intake_github import REPO, _GhStub, _issue, _issue_payload
 #: surfaces as a confusing RunOutcome rather than a test error.
 _STUB_INTERPRETER = """#!/usr/bin/env python3
 import json, os, sys
+argv = sys.argv[1:]
+spec = argv[argv.index("--spec") + 1] if "--spec" in argv else ""
 with open(os.environ["SEAM_RECORD"], "w") as handle:
     json.dump({
-        "argv": sys.argv[1:],
+        "argv": argv,
+        "spec_text": (
+            open(spec, encoding="utf-8").read() if spec and os.path.exists(spec) else ""
+        ),
         "cwd": os.getcwd(),
         "pid": os.getpid(),
         "kstrl_env": {
@@ -201,6 +206,7 @@ def _exec_real_runner(
     monkeypatch: pytest.MonkeyPatch,
     *,
     pause_before_pr_merge: bool = False,
+    design_acceptance: bool = False,
     caffeinate: bool = False,
     exit_code: int = 0,
     stdout: str = "",
@@ -232,6 +238,7 @@ def _exec_real_runner(
         spec_path=spec_path,
         project_name=project_name,
         pause_before_pr_merge=pause_before_pr_merge,
+        design_acceptance=design_acceptance,
         timeout_seconds=timeout_seconds,
         on_spawn=on_spawn,
         caffeinate=caffeinate,
@@ -389,6 +396,7 @@ class TestTheRealRunnerRunsItsArgvAsAChild:
             spec_path=tmp_path / "spec.md",
             project_name="p",
             pause_before_pr_merge=False,
+            design_acceptance=False,
             timeout_seconds=30.0,
             caffeinate=False,
         )
