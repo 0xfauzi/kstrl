@@ -437,6 +437,21 @@ value can grant auto-merge to remote-sourced work. The run parks each
 component before it pushes, and `ks inbox approve` is what pushes, opens
 the PR and merges it (see "A parked merge waits for approval" above).
 
+### A `bug` label asks for a reproduction
+
+An issue that also carries the `bug` label (in any case) is a bug report.
+It goes through the same `ks factory` path as other work, with two
+changes (#654):
+
+- `ks serve` launches its run with `--design-acceptance`, so the
+  verification designer writes the acceptance checks of each component.
+- The spec gets one more line, `BUG_REPORT_PROMPT` in
+  `kstrl/intake_github.py`: at least one acceptance check must reproduce
+  the reported failure, so that check has `"onBase": "fails"`.
+
+`--design-acceptance` needs a confirmed `[stack]`, the same as `ks serve`.
+A `/iterate` re-run of a bug report keeps both changes.
+
 ### Cross-repository intake is refused
 
 `ks serve` always runs the factory against its own checkout, so an inbox
