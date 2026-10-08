@@ -183,7 +183,7 @@ def _ledger_key(number: int, comment_id: int, repo: str = REPO) -> str:
     return f"pr-comment:{repo}#{number}:{comment_id}"
 
 
-def _finished_item_recording(root: Path, url: str) -> Queue:
+def _finished_item_recording(root: Path, url: str, *, design_acceptance: bool = False) -> Queue:
     """A queue holding one DONE item whose `pr_urls` carries `url`.
 
     `Queue.finish_ok` is a transition to DONE and `_LEGAL_TRANSITIONS`
@@ -200,6 +200,7 @@ def _finished_item_recording(root: Path, url: str) -> Queue:
         priority=3,
         source=ItemSource.GITHUB,
         source_ref=f"{REPO}#5",
+        design_acceptance=design_acceptance,
     )
     queue.finish_ok(queue.start(queue.lease(item)), pr_urls=(url,))
     return queue
@@ -318,6 +319,7 @@ def test_iterate_requeues_the_item_that_recorded_this_pr(tmp_path: Path) -> None
     assert new.priority == 3
     assert new.merge_disposition is MergeDisposition.STOP_AT_PR
     assert new.source is ItemSource.LOCAL
+    assert new.design_acceptance is False
     assert queue.read_spec(new) == "Build the widget."
     assert len(gh.posted()) == 1
     posted = gh.posted()[0]
@@ -326,6 +328,16 @@ def test_iterate_requeues_the_item_that_recorded_this_pr(tmp_path: Path) -> None
         f"Queued a re-run as {new.item_id}; it starts once this PR is merged "
         "or closed (open-PR bound)."
     )
+
+
+def test_iterate_keeps_the_designed_acceptance_of_a_bug_report(tmp_path: Path) -> None:
+    """#654: the re-run of a `bug` issue carries the spec that asks for a
+    check that fails on the base, so it keeps `--design-acceptance` too."""
+    _setup(tmp_path)
+    queue = _finished_item_recording(tmp_path, _steer_pr_url(7), design_acceptance=True)
+    _cycle(tmp_path, _gh("/iterate fix the off-by-one"))
+    (new,) = [item for item in queue.items() if item.source_ref == f"{REPO}#5#iterate-111"]
+    assert new.design_acceptance is True
 
 
 def test_iterate_does_not_match_an_item_by_pr_number_alone(tmp_path: Path) -> None:

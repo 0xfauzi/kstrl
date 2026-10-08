@@ -244,6 +244,7 @@ def _stub_runner(
         spec_path: Path,
         project_name: str,
         pause_before_pr_merge: bool,
+        design_acceptance: bool,
         timeout_seconds: float,
         on_spawn: object = None,
     ) -> RunOutcome:

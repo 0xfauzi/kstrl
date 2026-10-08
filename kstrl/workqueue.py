@@ -367,6 +367,10 @@ class QueueItem:
     #: before this field existed decodes to (), which is also what a run
     #: that opened no PR leaves.
     pr_urls: tuple[str, ...] = ()
+    #: Whether the run gets `ks factory --design-acceptance` (#654: an
+    #: issue with the `bug` label). Only a JSON `true` decodes as on, so an
+    #: item written before this field existed runs as it did.
+    design_acceptance: bool = False
     schema_version: int = QUEUE_SCHEMA_VERSION
 
     @property
@@ -431,6 +435,7 @@ class QueueItem:
             "poison_reason": self.poison_reason,
             "not_before": self.not_before,
             "pr_urls": list(self.pr_urls),
+            "design_acceptance": self.design_acceptance,
         }
 
     @classmethod
@@ -500,6 +505,7 @@ class QueueItem:
             poison_reason=_as_str(data, "poison_reason"),
             not_before=_as_str(data, "not_before"),
             pr_urls=_as_str_tuple(data, "pr_urls"),
+            design_acceptance=data.get("design_acceptance") is True,
             schema_version=_as_int(
                 data,
                 "schema_version",
@@ -1058,6 +1064,7 @@ class Queue:
         project_name: str = "",
         max_attempts: int | None = None,
         spec_filename: str = "spec.md",
+        design_acceptance: bool = False,
         actor: str = "",
     ) -> QueueItem:
         """Enqueue a spec.
@@ -1103,6 +1110,7 @@ class Queue:
             source_ref=source_ref,
             target_repo=target_repo,
             project_name=project_name,
+            design_acceptance=design_acceptance,
         )
 
         self.ensure_dirs()
