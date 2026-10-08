@@ -9,6 +9,10 @@ from pathlib import Path
 
 import pytest
 
+from kstrl.decisions import write_decisions
+from kstrl.decompose import spec_digest
+from kstrl.prd import PRD
+from kstrl.requirements import SpecRequirement
 from tests.helpers import integration_harness as h
 from tests.helpers import integration_loop as lp
 
@@ -218,3 +222,33 @@ def test_a_carried_finding_still_open_is_handed_off(tmp_path: Path) -> None:
     assert "IF-1" in state["stops"][-1]["reason"]
     assert result.exit_code == 1
     assert len(lp.run_halts(root)) == 1
+
+
+def test_a_review_with_a_carried_finding_also_judges_each_requirement(tmp_path: Path) -> None:
+    """#639 slice 3: a carried IF-n story does not displace the requirement
+    stories. The same review judges IC1 to IC5, then IF-1, then R-1."""
+    root = tmp_path / "repo"
+    base, _head = lp.loop_feature(root)
+    lp.run_loop(
+        root, lp.Rig(root, lp.ScriptedReviewer(base, [lp.IC2_FAIL])), integration_blocking=False
+    )
+    lp.record_earlier_fix(root, base, ["IF-1"], prd=True, component=True)
+    statement = "Saving a value returns that value."
+    write_decisions(
+        [],
+        root,
+        "test",
+        "spec.md",
+        halted=False,
+        spec_digest=spec_digest(h.SPEC_TEXT),
+        requirements=[SpecRequirement("R-1", "requirement", statement, ("US-001",))],
+    )
+    reviewer = lp.ScriptedReviewer(base, [{}])
+
+    result, _out = lp.run_loop(root, lp.Rig(root, reviewer))
+
+    stories = PRD.load(reviewer.prd_paths[-1]).user_stories
+    assert [s.id for s in stories] == ["IC1", "IC2", "IC3", "IC4", "IC5", "IF-1", "R-1"]
+    assert statement in reviewer.prompts[0]
+    assert lp.state(root)["stops"][-1]["outcome"] == "clean"
+    assert result.exit_code == 0
