@@ -165,6 +165,21 @@ def test_a_designed_check_that_fails_on_the_merged_tree_fails_phase_3(tmp_path: 
     assert run.code != 0, run.out
 
 
+@runs_a_stack
+def test_a_designed_check_the_base_removed_does_not_run_in_phase_3(tmp_path: Path) -> None:
+    """A designed check that passes on the base it says fails on is removed
+    (owner decision of 2026-10-06), so it runs on no head and does not run
+    in Phase 3 either: a vacuous designed check cannot block a run (owner
+    decision of 2026-10-07)."""
+    checks = {"comp-b": [_check("markers-apart", APART, "fails")]}
+
+    run = _run(tmp_path, _plan(tmp_path, "both markers meet", checks, designed=True))
+
+    assert "it is removed" in run.out, run.out
+    assert "contract tests FAILED" not in run.out, run.out
+    assert run.code == 0, run.out
+
+
 #: Counts its runs in the tree under test, and fails only the second run
 #: on a tree where both markers meet: one run of it passes, three fail.
 TWICE = (

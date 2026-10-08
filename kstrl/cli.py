@@ -2677,8 +2677,8 @@ def decompose(
     is_flag=True,
     default=False,
     help="Ask the verification designer (the [review] agent) for each component's "
-    "acceptance checks before the plan gate, then run them as --acceptance does, record "
-    "only. Needs a [stack]; `ks retry` replays it",
+    "acceptance checks before the plan gate, then run them as --acceptance does: they "
+    "gate the run as an operator's checks do. Needs a [stack]; `ks retry` replays it",
 )
 @click.option(
     "--review-mode",

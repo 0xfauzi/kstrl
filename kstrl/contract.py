@@ -319,7 +319,8 @@ def _replay_acceptance(
 ) -> tuple[bool, list[str], tuple[str, ...]]:
     """Replay the ``merged`` components' checks on the commit ``cwd`` holds,
     each ``HEAD_RUNS`` times and judged as a head is, whoever wrote the plan
-    (owner decision of 2026-10-07)."""
+    (owner decision of 2026-10-07). It replays only the checks the base kept:
+    a designed check the base removed runs on no head and does not run here."""
     from kstrl.acceptance import HEAD_RUNS, _no_log, _probe
     from kstrl.replay import replay_stack
 

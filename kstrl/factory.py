@@ -4405,6 +4405,17 @@ def _stamp_feature_base(manifest: Manifest, manifest_path: Path, root_dir: Path,
     ui.kv("Feature base", manifest.feature_base_sha)
 
 
+def _plan_of_kept_checks(factory_config: FactoryConfig) -> PinnedPlan | None:
+    """The pinned plan narrowed to the checks the heads ran. A designed check
+    the base removed (#753) runs on no head, so Phase 3 must not replay it:
+    a vacuous designed check cannot block a run (owner decision of 2026-10-07)."""
+    plan = factory_config.acceptance_plan
+    base = factory_config.acceptance_base
+    if plan is None or base is None:
+        return plan
+    return replace(plan, components=dict(base.kept))
+
+
 def _resolve_round_base(manifest: Manifest, root_dir: Path, ui: UI) -> str:
     """The commit the base branch names now, for one Phase 3 round (#481).
 
@@ -5817,7 +5828,7 @@ def _run_factory_locked(
                 components_merged=components_merged,
                 base_sha=round_base_sha,
                 setup=factory_config.worktree_setup(),
-                plan=factory_config.acceptance_plan,
+                plan=_plan_of_kept_checks(factory_config),
             )
         except ContractCleanupError as exc:
             # A contract temp worktree survived removal. The user's
