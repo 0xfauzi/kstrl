@@ -118,7 +118,17 @@ def plan_digest(manifest: Manifest, root_dir: Path, acceptance_digest: str = "")
 
 
 def spec_pin_errors(manifest: Manifest, root_dir: Path) -> list[str]:
-    """Why this plan must not run on the spec as it reads now, or [] (#639).
+    """Why this plan must not run on the spec as it reads now, or [] (#639)."""
+    return pinned_spec(manifest, root_dir)[1]
+
+
+def pinned_spec(manifest: Manifest, root_dir: Path) -> tuple[str, list[str]]:
+    """The spec text this plan was made from, read again, and []; or "" and
+    why the plan must not run on the spec as it reads now (#639).
+
+    The one reader of a planned spec outside decompose (owner decision 11,
+    ``tests/test_spec_reads_pinned.py``): the text it returns has the
+    digest the plan pins, so a caller cannot be handed a spec that changed.
 
     A ``ks run`` or ``ks feature`` manifest names no spec, so it has
     nothing to compare. A manifest that names a spec but pins no digest
@@ -130,8 +140,8 @@ def spec_pin_errors(manifest: Manifest, root_dir: Path) -> list[str]:
     """
     if not manifest.spec_digest:
         if not manifest.spec_file:
-            return []
-        return [
+            return "", []
+        return "", [
             f"this plan was made from {manifest.spec_file} before kstrl pinned specs, so "
             "kstrl cannot tell whether the spec changed since. Nothing was run.",
             f"Re-plan from the spec: ks factory --spec <path to {manifest.spec_file}> "
@@ -141,15 +151,15 @@ def spec_pin_errors(manifest: Manifest, root_dir: Path) -> list[str]:
     try:
         text = load_spec_input(spec_location(manifest, root_dir))
     except (OSError, ValueError) as exc:
-        return [
+        return "", [
             f"the spec this plan was made from cannot be read: {manifest.spec_path}: {exc}. "
             f"Nothing was run.",
             f"Restore it, or re-plan from the spec you have now: {replan}",
         ]
     now = spec_digest(text)
     if now == manifest.spec_digest:
-        return []
-    return [
+        return text, []
+    return "", [
         f"{manifest.spec_path} has changed since this plan was made (planned from "
         f"{manifest.spec_digest[:12]}, it now reads {now[:12]}). Nothing was run.",
         f"Build the spec as it is now: {replan} (one architect run).",

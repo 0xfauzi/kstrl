@@ -26,9 +26,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from kstrl.acceptance import DESIGNER_FILE, HEAD_RUNS
+from kstrl.acceptance import DESIGNER_FILE, HEAD_RUNS, PLAN_FILE
 from kstrl.acceptance_design import ACCEPTANCE_PROMPT_VERSION, NO_DESIGNED_CHECK
+from kstrl.decisions import write_decisions
 from kstrl.decompose import spec_digest
+from kstrl.requirements import SpecRequirement
 from kstrl.statedir import control_dir
 from tests.helpers.executables import write_executable
 from tests.helpers.gitrepo import git_in
@@ -480,3 +482,72 @@ def test_an_operator_plan_and_a_designed_one_are_refused_together(tmp_path: Path
     assert run.code == 2, run.out
     assert "pass one of them" in run.out, run.out
     assert run.designer == [] and run.engineer_calls == 0, run.out
+
+
+#: #639 slice 5: the requirement the greeter's story US-001 builds, and a
+#: non-goal no story builds.
+GREETS_ANYONE = SpecRequirement("R-1", "requirement", "Greet anyone by name.", ("US-001",))
+NO_FAREWELL = SpecRequirement("R-2", "non_goal", "No farewells.", ())
+
+
+def _traced(root: Path) -> None:
+    """Pin a spec and write the register the architect would have written
+    for it, holding GREETS_ANYONE and NO_FAREWELL, so the run binds them."""
+    spec = "# Greeter\n\nGreet anyone by name. No farewells.\n"
+    _pin_spec(root, spec)
+    write_decisions(
+        [],
+        root,
+        "demo",
+        "spec.md",
+        halted=False,
+        spec_digest=spec_digest(spec),
+        requirements=(GREETS_ANYONE, NO_FAREWELL),
+    )
+
+
+@runs_a_stack
+def test_the_designer_is_given_the_requirements_and_a_criterion_that_cites_none_is_asked_again(
+    tmp_path: Path,
+) -> None:
+    """The designer's prompt lists the requirement the component builds, and
+    not the non-goal. A reply whose criterion cites no requirement id is
+    asked once more; the second reply cites R-1 and is the plan kstrl
+    writes."""
+    root = _greeting_repo(tmp_path)
+    _traced(root)
+    uncited = _entry([_check("greets-ada", _greets("Ada"))])
+    cited = _entry([{**_check("greets-ada", _greets("Ada")), "criterion": "R-1: greets Ada"}])
+
+    run = _design(tmp_path, root, [uncited, cited])
+
+    assert run.code == 0, run.out
+    assert len(run.designer) == 2, run.out
+    assert "Requirements this component builds:\n- R-1: Greet anyone by name.\n" in (
+        run.designer_prompts
+    )
+    assert "- R-2" not in run.designer_prompts
+    (designed,) = _designed_plans(root)
+    plan = json.loads((designed / PLAN_FILE).read_text(encoding="utf-8"))
+    assert [c["criterion"] for c in plan["components"][COMP]["checks"]] == ["R-1: greets Ada"]
+
+
+@runs_a_stack
+def test_a_designer_that_never_cites_a_requirement_refuses_the_run(tmp_path: Path) -> None:
+    """Two replies whose criterion cites no requirement id of the component
+    (R-12 is not R-1): the run exits 2 before any engineer, naming the check
+    and the ids it could cite."""
+    root = _greeting_repo(tmp_path)
+    _traced(root)
+    uncited = _entry([{**_check("greets-ada", _greets("Ada")), "criterion": "R-12: greets Ada"}])
+
+    run = _design(tmp_path, root, [uncited, uncited])
+
+    assert run.code == 2, run.out
+    assert REFUSED_DESIGN in run.out, run.out
+    assert (
+        "ask 2: checks[0].criterion: 'R-12: greets Ada' names none of the requirements "
+        "this component builds (R-1)"
+    ) in run.out, run.out
+    assert run.engineer_calls == 0, run.out
+    assert _designed_plans(root) == []

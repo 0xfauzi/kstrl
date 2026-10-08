@@ -574,6 +574,7 @@ class TestPrOutcomeDataclass:
             PlainUI(no_color=True),
             merge_timeout=2.0,
             isolation=HOST_LABEL,
+            requirements=(),
         )
 
         assert outcome == PrOutcome(
@@ -609,6 +610,7 @@ class TestPrOutcomeDataclass:
             PlainUI(no_color=True),
             merge_timeout=2.0,
             isolation=HOST_LABEL,
+            requirements=(),
         )
 
         assert outcome.merged is True
@@ -635,6 +637,7 @@ class TestPrOutcomeDataclass:
             PlainUI(no_color=True),
             merge_timeout=2.0,
             isolation=HOST_LABEL,
+            requirements=(),
         )
 
         assert outcome.merged is False
@@ -689,6 +692,7 @@ class TestPrOutcomeDataclass:
             PlainUI(no_color=True),
             merge_timeout=2.0,
             isolation=HOST_LABEL,
+            requirements=(),
         )
         assert outcome.merged is True
 
@@ -718,6 +722,7 @@ class TestPrOutcomeDataclass:
             PlainUI(no_color=True),
             merge_timeout=1.0,
             isolation=HOST_LABEL,
+            requirements=(),
         )
 
         assert outcome.pushed is True
@@ -743,6 +748,7 @@ class TestPrOutcomeDataclass:
             PlainUI(no_color=True),
             merge_timeout=1.0,
             isolation=HOST_LABEL,
+            requirements=(),
         )
 
         assert outcome.pushed is False
@@ -769,6 +775,7 @@ class TestPrOutcomeDataclass:
             PlainUI(no_color=True),
             merge_timeout=1.0,
             isolation=HOST_LABEL,
+            requirements=(),
         )
 
         assert outcome.merged is True

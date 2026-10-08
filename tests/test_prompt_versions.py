@@ -380,8 +380,8 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     # 1.0.0 (#700 slice 7): new, the verification designer. H2: roles "acceptance" and
     # "acceptance_clean", first captured with #696 slice 7; no baseline carries them yet.
     "ACCEPTANCE_PROMPT": (
-        "880418ce7ee0cd9765105ab3a08f2ea40106115c090abfe2c1aed60757283cfa",
-        "1.0.0",
+        "94343e5c3733affd08d4d7ef5b35721c067a26078bffb940b58be8f10f951550",
+        "1.1.0",  # #639 slice 5: a criterion cites a requirement. No capture ran (owner).
     ),
     "PASTED_CHANGE_SOURCE_PROMPT": (
         "a1e6082933043d31c9efc513c0e16466629ccf770f6e6e828ace39565736d0d5",
@@ -394,8 +394,8 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     # #303's blind spot: the walk keys on a `*_PROMPT` NAME, so text
     # nobody named is text nobody has to justify.
     "DECISIONS_CONTEXT_PROMPT": (
-        "1630b9ee2c33c3513965f03e28a4f2e4d76c4cbf434b031fdb789819f23fae23",
-        "1.0.0",
+        "4e6f92504dc7846a16b96ebe1546bcf947bbe1b9618e67778c929caf912e5b15",
+        "1.1.0",  # #639 slice 5: the requirements of the spec, a section of its own.
     ),
     # 1.0.0 (#639 slice 4): new. The header of each `ks inbox approve <id> --comment`
     # answer appended after the spec in the architect's SPECIFICATION block. H3 only:
@@ -559,6 +559,7 @@ def _decisions_context_render(_tmp_path: Path) -> str:
             ),
         ],
         "comp-a",
+        requirements=(),
     )
 
 
@@ -577,12 +578,7 @@ def _reviewer_render(tmp_path: Path) -> str:
 
 def _distill_render(_tmp_path: Path) -> str:
     component = Component(
-        id="C1",
-        title="T",
-        description="D",
-        dependencies=[],
-        prd_path="prd.json",
-        branch_name="b",
+        id="C1", title="T", description="D", dependencies=[], prd_path="prd.json", branch_name="b"
     )
     return knowledge.build_distill_prompt(component, 5, "PRD", "FACTS", "DIFF")
 
@@ -592,7 +588,9 @@ def _acceptance_render(_tmp_path: Path) -> str:
         id="C1", title="T", description="D", dependencies=[], prd_path="", branch_name=""
     )
     stack_ = Stack(instructions="I", setup="", checks=(("tests", "T"),), env=())
-    return acceptance_design.build_design_prompt(component, ["US-001 T: C"], "SPEC", stack_)
+    return acceptance_design.build_design_prompt(
+        component, ["US-001 T: C"], "SPEC", stack_, requirements=()
+    )
 
 
 def _stack_render(_tmp_path: Path) -> str:

@@ -5452,6 +5452,7 @@ class ComponentPipeline:
             merge_method="squash",
             merge_timeout=self.factory_config.merge_timeout,
             isolation=label_of(self.factory_config.test_rung),
+            requirements=self.factory_config.requirements,
         )
         if outcome.pr_url:
             self.factory_result.pr_urls.append(outcome.pr_url)

@@ -201,9 +201,19 @@ def design(
     """The designer's entry for ``fixture``, asked as the factory asks it, in
     ``cwd``, which must be a :func:`base_checkout` and never the scored
     repository (that one holds the heads)."""
-    prompt = build_design_prompt(fixture.component, fixture.criteria, fixture.spec, fixture.stack)
+    # #639 slice 5: no fixture carries requirements, so the prompt lists none
+    # and no criterion has to cite one.
+    prompt = build_design_prompt(
+        fixture.component, fixture.criteria, fixture.spec, fixture.stack, requirements=()
+    )
     return design_component(
-        agent, prompt, cwd, fixture.component.id, timeout=timeout, spend=_no_budget
+        agent,
+        prompt,
+        cwd,
+        fixture.component.id,
+        timeout=timeout,
+        spend=_no_budget,
+        requirement_ids=(),
     )
 
 

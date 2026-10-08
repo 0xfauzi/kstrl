@@ -5,7 +5,7 @@ Two surfaces the roadmap item names. The ``model:<id>`` identity tag:
 a ``run_review`` or ``run_security_review`` on a real review repo puts
 the reviewer's identity on the result and on every Finding it yields,
 including the infrastructure finding a crashed or discarded review
-leaves behind (#266), and ``_generate_pr_body`` names it. The
+leaves behind (#266), and ``component_pr_body`` names it. The
 homogeneity warning and the probe (#262): a real ``run_factory`` with a
 custom engineer command warns once per enabled reviewer phase and
 journals the selection; a run that will never review pays for no probe,
@@ -30,7 +30,7 @@ from kstrl.factory import (
 from kstrl.findings import finding_model
 from kstrl.manifest import Component, Manifest
 from kstrl.observability import read_progress_events
-from kstrl.pr import _generate_pr_body
+from kstrl.pr_body import component_pr_body
 from kstrl.review import (
     ReviewMode,
     run_review,
@@ -290,7 +290,9 @@ class TestModelTagEndToEnd:
             single_pr=False,
             components=[comp],
         )
-        body = _generate_pr_body(comp, manifest, isolation="none: ran on the host")
+        body = component_pr_body(
+            comp, manifest, review_repo.path, isolation="none: ran on the host", requirements=()
+        )
         assert "**Reviewer model**: codex (gpt-5)" in body
 
 

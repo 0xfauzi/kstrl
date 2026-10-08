@@ -28,7 +28,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Callable, Mapping, Sequence
+import re
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -51,16 +52,12 @@ from kstrl.agents import get_agent
 from kstrl.agents.base import DESIGNER_ROLE, collect_usage
 from kstrl.agents.prompt_record import AgentCall, recording_prompts
 from kstrl.contract import ContractCleanupError, _create_temp_worktree, _remove_temp_worktree
-from kstrl.decompose import (
-    _extract_json,
-    _select_agent_output,
-    collect_agent_output,
-    load_spec_input,
-)
+from kstrl.decompose import _extract_json, _select_agent_output, collect_agent_output
 from kstrl.delimiters import generate_data_delimiter
 from kstrl.integration_phase import REVIEW_ASKS, _reask_refusal
-from kstrl.plan_gate import PlanUnreadableError, plan_digest, spec_location
+from kstrl.plan_gate import PlanUnreadableError, pinned_spec, plan_digest
 from kstrl.prd import PRD
+from kstrl.requirements import SpecRequirement, built_by
 from kstrl.statedir import control_dir, pre_run_prd_path
 from kstrl.timeout import limit_seconds
 
@@ -90,7 +87,7 @@ NO_DESIGNED_CHECK = "no designed acceptance check"
 #: H3 and H2: the verification designer's role prompt. Its calibration
 #: roles are ``acceptance`` and ``acceptance_clean``, scored by execution on
 #: ``tests/adversarial_fixtures/acceptance/``.
-ACCEPTANCE_PROMPT_VERSION = "1.0.0"
+ACCEPTANCE_PROMPT_VERSION = "1.1.0"
 
 ACCEPTANCE_PROMPT = """\
 You are the verification designer for one component of a planned change.
@@ -129,7 +126,10 @@ criteria. Use inputs no example shows as well as the ones the examples
 show. A check that any implementation passes measures nothing.
 
 - "id": lowercase letters, digits and hyphens, unique in this component.
-- "criterion": the criterion the check decides, in words.
+- "criterion": the criterion the check decides, in words. When the
+  component lists the requirements it builds, start with the id of the
+  requirement the check decides, for example "R-2: ...". kstrl refuses a
+  check whose criterion names none of them.
 - "argv": the command, as a non-empty list of non-empty strings.
 - "onBase": "fails" for behaviour the change adds, "passes" for behaviour
   the change must keep. kstrl runs every check on the base and refuses the
@@ -156,6 +156,9 @@ Description: {description}
 
 Acceptance criteria:
 {criteria}
+
+Requirements this component builds:
+{requirements}
 <<<{data_delimiter}:END COMPONENT>>>
 
 ## The specification of the whole change
@@ -176,7 +179,14 @@ Reply with one JSON object and nothing else:
 """
 
 
-def build_design_prompt(comp: Component, criteria: Sequence[str], spec: str, stack: Stack) -> str:
+def build_design_prompt(
+    comp: Component,
+    criteria: Sequence[str],
+    spec: str,
+    stack: Stack,
+    *,
+    requirements: Sequence[SpecRequirement],
+) -> str:
     """The designer's prompt for ``comp``: the enrolled template, filled."""
     return ACCEPTANCE_PROMPT.format(
         tree_env=TREE_ENV,
@@ -188,6 +198,7 @@ def build_design_prompt(comp: Component, criteria: Sequence[str], spec: str, sta
         title=comp.title,
         description=comp.description,
         criteria="\n".join(f"- {line}" for line in criteria) or "(none)",
+        requirements="\n".join(f"- {r.id}: {r.statement}" for r in requirements) or "(none)",
         spec=spec or "(this plan names no specification)",
     )
 
@@ -200,10 +211,13 @@ def design_component(
     *,
     timeout: float | None,
     spend: Callable[[], str],
+    requirement_ids: Collection[str],
 ) -> tuple[dict[str, Any] | None, int, list[str]]:
     """Ask the designer for ``comp_id``'s plan entry: the entry, how many
     asks were made, and why there is no entry. ``spend()`` runs before
     every ask and returns why none may be made, or "" once one is charged.
+    An entry is valid when :func:`kstrl.acceptance.plan_errors` passes it
+    and each criterion cites one of ``requirement_ids`` (#639 slice 5).
     The factory and the ``acceptance`` calibration roles both call this."""
     errors: list[str] = []
     for ask in range(1, DESIGN_ASKS + 1):
@@ -216,11 +230,29 @@ def design_component(
         except (OSError, RuntimeError, ValueError) as exc:
             errors = [f"ask {ask}: {exc}"]
             continue
-        found = plan_errors({"components": {comp_id: entry}}, [comp_id])
+        found = plan_errors({"components": {comp_id: entry}}, [comp_id]) or citation_errors(
+            entry, requirement_ids
+        )
         if not found:
             return entry, ask, []
         errors = [f"ask {ask}: {line}" for line in found]
     return None, DESIGN_ASKS, errors
+
+
+def citation_errors(entry: Any, requirement_ids: Collection[str]) -> list[str]:
+    """Each check of an entry :func:`kstrl.acceptance.plan_errors` passed
+    whose criterion names none of ``requirement_ids``, the requirements the
+    component builds (#639 slice 5). None to cite means nothing to check."""
+    if not requirement_ids:
+        return []
+    ids = sorted(requirement_ids)
+    cited = re.compile(r"\b(" + "|".join(re.escape(i) for i in ids) + r")\b")
+    return [
+        f"checks[{index}].criterion: {check['criterion']!r} names none of the "
+        f"requirements this component builds ({', '.join(ids)})"
+        for index, check in enumerate(entry["checks"])
+        if not cited.search(check["criterion"])
+    ]
 
 
 def designed_dir(root: Path, manifest: Manifest, stack: Stack) -> Path:
@@ -257,8 +289,10 @@ def design_plan(pipeline: ComponentPipeline) -> tuple[PinnedPlan | None, list[st
     stack = config.project_stack
     if stack is None:
         return None, [NO_STACK]
+    spec, spec_errors = pinned_spec(manifest, root)
+    if spec_errors:
+        return None, spec_errors
     try:
-        spec = load_spec_input(spec_location(manifest, root)) if manifest.spec_digest else ""
         base = git.resolve_base_sha(manifest.base_branch, root)
         target = designed_dir(root, manifest, stack)
     except (OSError, ValueError, git.GitDiffError, PlanUnreadableError) as exc:
@@ -307,6 +341,7 @@ def _design_one(
         for story in prd.user_stories
         for criterion in story.acceptance_criteria
     ]
+    built = built_by(pipeline.factory_config.requirements, {story.id for story in prd.user_stories})
     worktree, error = _create_temp_worktree(base, root, DESIGNER_ROLE)
     if worktree is None:
         return None, 0, [f"the base {base[:12]} was not checked out: {error}"]
@@ -333,11 +368,12 @@ def _design_one(
         ):
             return design_component(
                 agent,
-                build_design_prompt(comp, criteria, spec, stack),
+                build_design_prompt(comp, criteria, spec, stack, requirements=built),
                 worktree,
                 comp.id,
                 timeout=limit_seconds(pipeline.factory_config.review_timeout_seconds),
                 spend=lambda: _reask_refusal(pipeline),
+                requirement_ids=[r.id for r in built],
             )
     except (OSError, RuntimeError, ValueError) as exc:
         return None, 0, [f"the designer could not be started: {exc}"]
