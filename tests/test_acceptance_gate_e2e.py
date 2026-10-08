@@ -495,6 +495,10 @@ def test_a_dispute_of_a_visible_check_halts_and_an_approval_merges_over_it(
         cause,
     ):
         assert shown in item.detail, item.detail
+    # Attempt 1 wrote no progress log: that is no dispute, so nothing is
+    # rejected. An operator wrote this plan, so no line says a model did.
+    assert "dispute rejected" not in run.out, run.out
+    assert "can be incorrect" not in item.detail, item.detail
     code, said = _spawn(
         ["inbox", "approve", item.id, "--root", str(root), "--ui", "plain"], root, None
     )
@@ -520,8 +524,9 @@ def test_a_dispute_kstrl_cannot_take_is_rejected_and_the_check_result_stands(
     tmp_path: Path,
 ) -> None:
     """#700 slice 10a. Attempt 1 greets every name and writes no marker.
-    Each later attempt writes a progress log whose latest entry holds four
-    disputes kstrl cannot take: one not in the form, one of a held-out
+    Each later attempt writes a progress log whose latest entry holds five
+    disputes kstrl cannot take: two not in the form (one of them a list
+    item in lower case, which is read and not passed over), one of a held-out
     check, which no engineer can see, one of a visible check that passed,
     and one of no check at all. An older entry holds a well-formed dispute,
     which is not this iteration's. None of them halts: the marker check's
@@ -543,6 +548,7 @@ def test_a_dispute_kstrl_cannot_take_is_rejected_and_the_check_result_stands(
         "Dispute: has-marker: an older entry says so",
         "## [2026-10-08] - US-001",
         "Dispute has-marker as it is incorrect",
+        "- dispute: has-marker: in lower case",
         "Dispute: greets-hidden: it cannot be met",
         "Dispute: greets-ada: it is too strict",
         "Dispute: no-such-check: it is not there",
@@ -556,6 +562,7 @@ def test_a_dispute_kstrl_cannot_take_is_rejected_and_the_check_result_stands(
     assert _status(root) == ("failed", "acceptance"), run.out
     for told in (
         f"'Dispute has-marker as it is incorrect' is not in the form {DISPUTE_FORM}",
+        f"'- dispute: has-marker: in lower case' is not in the form {DISPUTE_FORM}",
         "greets-hidden is held out",
         "greets-ada passed on this head, so there is nothing to dispute",
         "no-such-check is not an acceptance check of this component",
