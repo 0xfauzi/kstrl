@@ -134,9 +134,9 @@ MIN_ROLE_DETECTION_RATE: dict[str, float | None] = {
     "security_dependency": None,
     "security_dependency_ts": None,
     # #700 slice 7: the verification designer's checks, scored by running them
-    # on tests/adversarial_fixtures/acceptance/. Recorded, not gated, until the
-    # first capture sets the floors that let a model-written plan gate
-    # (owner decision 10).
+    # on tests/adversarial_fixtures/acceptance/. These roles stay record-only
+    # in calibration until a capture sets their floors. The floors do not
+    # control whether designed checks gate a run (owner decision of 2026-10-07).
     "acceptance": None,
     "acceptance_clean": None,
 }

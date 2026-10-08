@@ -3671,17 +3671,16 @@ class ComponentPipeline:
     def _phase_acceptance(
         self, comp: Component, comp_result: ComponentResult, wt_path: Path
     ) -> PhaseFailure | None:
-        """The operator's acceptance checks on this head (#700 slices 4 and 6).
+        """The acceptance checks on this head (#700 slices 4, 6 and 7).
 
-        The verdict is written, printed and emitted, then gates the head
-        (owner decision 10). A failed held-out check halts the component
+        The verdict is written, printed and emitted, then gates the head,
+        whether an operator or the verification designer wrote the checks
+        (owner decision of 2026-10-07). A failed held-out check halts the component
         with no retry, naming the check by its id alone (decision 3), and
         so does a head nothing a retry could fix was measured on; any
         other check that did not pass goes to the engineer's retry. An
         approved halt on this head that names every failing check passes
-        it (decision 14, :func:`kstrl.waivers.covering_override`). Checks
-        the verification designer wrote are record only (decision 10, #700
-        slice 7): written, printed and emitted as advisory, never routed.
+        it (decision 14, :func:`kstrl.waivers.covering_override`).
         """
         from kstrl.acceptance import judge_head
 
@@ -3709,10 +3708,9 @@ class ComponentPipeline:
                 failures=outcome.failures,
                 phase=ACCEPTANCE_PHASE,
                 isolation=outcome.isolation,
-                advisory=outcome.record_only,
             )
         )
-        if outcome.passed or outcome.record_only:
+        if outcome.passed:
             return None
         failing = ", ".join(outcome.failing)
         if outcome.held_out or not outcome.told:
