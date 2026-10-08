@@ -91,6 +91,7 @@ from kstrl import (
 )
 from kstrl.decisions import SpecDecision, build_decisions_context
 from kstrl.inbox import Inbox, InboxItem, ItemKind, ItemStatus
+from kstrl.intake_github import RemoteIssue, spec_from_issue
 from kstrl.loop import COMPLETION_MARKER
 from kstrl.manifest import Component
 from kstrl.owner_answers import read_owner_answers
@@ -320,6 +321,16 @@ _ROLES: dict[str, _Role] = {
         frozenset({"DECOMPOSE_PROMPT", "ARCHITECT_NO_REPO_SOURCE_PROMPT", "OWNER_ANSWER_PROMPT"}),
         "2ae8dbeacb89600acf016c7b548d3d99bf57da575f281f6e5e941e9014cc936a",
         16438,
+    ),
+    # #654 slice 7: the spec built from a GitHub issue with the `bug` label, which
+    # the architect and the verification designer read. Pinned by running this test.
+    "bug-report-spec": _Role(
+        lambda _p: spec_from_issue(
+            RemoteIssue(9, "Crash on empty input", "It exits 1.", "", labels=("bug",)), "o/r"
+        ),
+        frozenset({"BUG_REPORT_PROMPT"}),
+        "7341ccb852c458b8386dfed001fc6c58eb16d1b82760a6458a58596b4d9694fd",
+        190,
     ),
     "architect-with-repo": _Role(
         lambda _p: decompose.build_decompose_prompt(
