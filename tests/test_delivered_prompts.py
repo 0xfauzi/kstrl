@@ -70,6 +70,7 @@ actually written.
 
 from __future__ import annotations
 
+import io
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -91,6 +92,7 @@ from kstrl import (
 )
 from kstrl.decisions import SpecDecision, build_decisions_context
 from kstrl.inbox import Inbox, InboxItem, ItemKind, ItemStatus
+from kstrl.init_cmd import run_init
 from kstrl.intake_github import RemoteIssue, spec_from_issue
 from kstrl.loop import COMPLETION_MARKER
 from kstrl.manifest import Component
@@ -115,7 +117,12 @@ from tests.test_prompt_versions import (
     _run_and_capture_prompt,
     _sha256,
 )
-from tests.test_verify_command_contract import _engineer_prompt
+from tests.test_verify_command_contract import (
+    _engineer_prompt,
+    _feature_cli_args,
+    _prompt_from_cli,
+    _write_feature_prd,
+)
 
 # ---------------------------------------------------------------------------
 # The fixture. Small, committed, and free of anything that varies between
@@ -255,6 +262,31 @@ def _engineer(tmp_path: Path) -> str:
     return prompt.replace(str(root), "<ROOT>")
 
 
+def _initialised(tmp_path: Path, *, feature: bool) -> Path:
+    """A project `ks init` scaffolded. The understand instructions reach a
+    model only as the files init writes, so the row drives init and then the
+    command (#654). `ks feature` refuses with no confirmed [stack], so its
+    tree is written first and init keeps the files it finds."""
+    root = (tmp_path / "proj").resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    if feature:
+        _write_feature_prd(root)
+    assert run_init(root, PlainUI(no_color=True, file=io.StringIO())) == 0
+    return root
+
+
+def _understander(tmp_path: Path) -> str:
+    """The first prompt `ks understand` sends in an initialised project."""
+    root = _initialised(tmp_path, feature=False)
+    return _prompt_from_cli(["understand", "--root", str(root)]).replace(str(root), "<ROOT>")
+
+
+def _feature_understander(tmp_path: Path) -> str:
+    """The first prompt `ks feature` sends: its understand loop's."""
+    root = _initialised(tmp_path, feature=True)
+    return _prompt_from_cli(_feature_cli_args(root)).replace(str(root), "<ROOT>")
+
+
 def _architect_with_owner_answer(tmp_path: Path) -> str:
     """The architect's prompt for a spec the owner answered in the inbox (#639):
     ``read_owner_answers`` over one approved escalation, appended after the spec
@@ -365,6 +397,19 @@ _ROLES: dict[str, _Role] = {
         "063c860c645d5cde91dddd981ea5c958ff3e8736f7cb70364b40876bd2a210cb",
         5298,
     ),
+    # #654 slice 8: the two understand loops, through `ks init` and the command.
+    "understander": _Role(
+        _understander,
+        frozenset({"DEFAULT_UNDERSTAND_PROMPT"}),
+        "c198d87ef3ae2d8e2db86f30dd5c25a4d24c6bfc5dd752a2916c1a1c8ee8248b",
+        3584,
+    ),
+    "feature-understander": _Role(
+        _feature_understander,
+        frozenset({"DEFAULT_FEATURE_UNDERSTAND_PROMPT"}),
+        "d466ae5e769bc0d21a5ce1bbb8d2405ab05e5ce4af5980c481a04d4b1852ae2c",
+        3279,
+    ),
     "gepa-reflection": _Role(
         # The template as run_optimization hands it to gepa. The library
         # fills <curr_param> and <side_info> itself; what it sends is pinned
@@ -440,7 +485,9 @@ _ROLES: dict[str, _Role] = {
 #: sibling's production renderer does needs an explicit override row
 #: here, not silent reliance on this derivation.
 _HOME_MODULE: dict[str, ModuleType] = {name: mod for name, (mod, _render) in _RENDERERS.items()} | {
-    "DEFAULT_PROMPT": init_cmd
+    "DEFAULT_PROMPT": init_cmd,
+    "DEFAULT_UNDERSTAND_PROMPT": init_cmd,
+    "DEFAULT_FEATURE_UNDERSTAND_PROMPT": init_cmd,
 }
 
 
