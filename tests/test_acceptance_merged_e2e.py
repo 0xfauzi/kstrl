@@ -126,17 +126,20 @@ def test_phase_3_fails_on_a_check_that_breaks_only_on_the_merged_tree(
 
 
 @runs_a_stack
+@pytest.mark.parametrize("designed", [False, True], ids=["operator", "designed"])
 def test_a_held_out_check_that_fails_on_the_merged_tree_halts_its_breaker_by_id_alone(
-    tmp_path: Path,
+    tmp_path: Path, designed: bool
 ) -> None:
     """The same check, held out, prints a random token when it fails. A
     retry is left, and the breaker comp-b still gets none (owner decision
-    3): the run names the check by its id and never prints the token."""
+    3): the run names the check by its id and never prints the token. A
+    plan the verification designer wrote halts the breaker the same way
+    (owner decision of 2026-10-07)."""
     hidden = f"hidden-{secrets.token_hex(4)}"
 
     checks = {"comp-b": [_check("markers-apart", APART, "passes", held_out=True)]}
 
-    run = _run(tmp_path, _plan(tmp_path, hidden, checks), "--max-retries", "1")
+    run = _run(tmp_path, _plan(tmp_path, hidden, checks, designed=designed), "--max-retries", "1")
 
     assert run.calls == 2, run.out
     assert "contract tests FAILED" in run.out, run.out
@@ -166,12 +169,18 @@ def test_a_designed_check_that_fails_on_the_merged_tree_fails_phase_3(tmp_path: 
 
 
 @runs_a_stack
-def test_a_designed_check_the_base_removed_does_not_run_in_phase_3(tmp_path: Path) -> None:
+@pytest.mark.parametrize("kept_too", [False, True], ids=["alone", "beside_a_kept_check"])
+def test_a_designed_check_the_base_removed_does_not_run_in_phase_3(
+    tmp_path: Path, kept_too: bool
+) -> None:
     """A designed check that passes on the base it says fails on is removed
     (owner decision of 2026-10-06), so it runs on no head and does not run
     in Phase 3 either: a vacuous designed check cannot block a run (owner
-    decision of 2026-10-07)."""
+    decision of 2026-10-07). The removal is by check, not by component: a
+    kept check of the same component does not bring the removed one back."""
     checks = {"comp-b": [_check("markers-apart", APART, "fails")]}
+    if kept_too:
+        checks["comp-b"].append(_check("has-own", [*APART, "--own", "comp-b"], "fails"))
 
     run = _run(tmp_path, _plan(tmp_path, "both markers meet", checks, designed=True))
 
