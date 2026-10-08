@@ -14,6 +14,7 @@ from pathlib import Path
 
 from kstrl.contract import ContractResult
 from kstrl.prd import PRD, UserStory
+from kstrl.requirements import KIND_NON_GOAL, KIND_REQUIREMENT, SpecRequirement
 from kstrl.review import (
     CriterionReview,
     ReviewConcern,
@@ -45,8 +46,35 @@ INTEGRATION_CARRIED_PROMPT_VERSION = "1.0.0"
 # fixture yet.
 INTEGRATION_CARRIED_PROMPT = "The defect {text} at {locations} no longer holds."
 
+INTEGRATION_REQUIREMENT_PROMPT_VERSION = "1.0.0"
+
+# The criterion of the story that judges one requirement of the bound
+# decision register (#639 slice 3). Instruction to the reviewer LLM, so it
+# is enrolled (H3). Its H2 role is `integration`, and no fixture carries a
+# requirement yet (#639 M6), so its verdict is recorded and opens nothing.
+INTEGRATION_REQUIREMENT_PROMPT = (
+    "The merged feature does what this requirement of the specification asks: {statement} "
+    "This story gets its own verdict, pass included; the specification and the prd.json "
+    "files in the repository are evidence for it, not stories of this review."
+)
+
+INTEGRATION_NON_GOAL_PROMPT_VERSION = "1.0.0"
+
+# The criterion of the story that judges one non-goal of the bound decision
+# register (#639 slice 3). Enrolled (H3) for INTEGRATION_REQUIREMENT_PROMPT's
+# reason, and recorded only for the same reason.
+INTEGRATION_NON_GOAL_PROMPT = (
+    "The merged feature does not do what this non-goal of the specification rules out: "
+    "{statement} This story gets its own verdict, pass included; the specification and "
+    "the prd.json files in the repository are evidence for it, not stories of this review."
+)
+
 #: A finding's id, and the id of the story that carries it (#483).
 FINDING_ID_PREFIX = "IF-"
+
+#: The id of the story that judges a requirement or a non-goal (#639 slice
+#: 3): the requirement's own id, which ``kstrl.requirements`` makes "R-<n>".
+REQUIREMENT_ID_PREFIX = "R-"
 
 #: The criterion about the decision register. A fail here is a register
 #: finding: recorded and handed off, never a code finding (design 3.3, 3.4).
@@ -151,6 +179,27 @@ def carried_story(finding_id: str, text: str, locations: Sequence[str]) -> Expec
     )
 
 
+def requirement_stories(requirements: Sequence[SpecRequirement]) -> tuple[ExpectedStory, ...]:
+    """One story per requirement and non-goal, in register order (#639 slice 3).
+
+    The story id is the requirement id, and it is what the verdict is joined
+    by (``_story_errors``). The statement is put on one line, so the PRD the
+    reviewer reads shows the criterion as one bullet.
+    """
+    templates = {
+        KIND_REQUIREMENT: INTEGRATION_REQUIREMENT_PROMPT,
+        KIND_NON_GOAL: INTEGRATION_NON_GOAL_PROMPT,
+    }
+    return tuple(
+        ExpectedStory(
+            story_id=r.id,
+            title=r.id,
+            criterion=templates[r.kind].format(statement=" ".join(r.statement.split())),
+        )
+        for r in requirements
+    )
+
+
 def write_integration_prd(path: Path, stories: Sequence[ExpectedStory]) -> None:
     """The PRD the reviewer is handed: one criterion per story. The parent must exist."""
     PRD(
@@ -252,8 +301,10 @@ def integration_outcome(
         verdict = by_story[normalize_story_id(story.story_id)]
         if story.story_id.startswith(FINDING_ID_PREFIX):
             _read_carried(story, verdict, closed, still_open)
-            continue
-        _read_verdict(story, verdict, opened, recorded, tracked)
+        elif story.story_id.startswith(REQUIREMENT_ID_PREFIX):
+            _record_requirement(story, verdict, recorded)
+        else:
+            _read_verdict(story, verdict, opened, recorded, tracked)
     for concern in review_result.concerns:
         _read_concern(concern, opened, recorded, tracked)
     return IntegrationOutcome(
@@ -329,6 +380,25 @@ def _read_carried(
         closed.append(story.story_id)
     else:
         still_open.append(story.story_id)
+
+
+def _record_requirement(
+    story: ExpectedStory, verdict: CriterionReview, recorded: list[RecordedOnly]
+) -> None:
+    """A requirement's fail or advisory verdict is recorded and opens nothing
+    (#639 slice 3): no fixture measures the requirement stories yet (M6), so
+    they never open a finding and never block a run."""
+    if verdict.verdict == ReviewVerdict.PASS.value:
+        return
+    recorded.append(
+        RecordedOnly(
+            KIND_CRITERION,
+            story.story_id,
+            "",
+            verdict.verdict,
+            f"{story.story_id}: {verdict.explanation}",
+        )
+    )
 
 
 def _read_verdict(
