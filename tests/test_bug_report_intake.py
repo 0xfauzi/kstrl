@@ -28,6 +28,7 @@ import pytest
 from kstrl.cli import cli
 from kstrl.intake_github import BUG_REPORT_PROMPT
 from kstrl.serve import ServeConfig, serve_cycle
+from kstrl.workqueue import META_FILENAME, Queue, QueueConfig
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
 from tests.test_intake_github import _GhStub, _issue, _issue_payload
 from tests.test_serve_seam import _enable_github_intake, _install_stub_interpreter
@@ -112,3 +113,28 @@ def test_an_issue_without_the_bug_label_runs_as_before(
     assert "--design-acceptance" not in launched.argv, launched.argv
     assert _parsed_design_acceptance(tmp_path, launched) is False
     assert "onBase" not in launched.spec_text, launched.spec_text
+
+
+@pytest.mark.parametrize("stored", ["false", "true", 1])
+def test_a_non_boolean_value_in_the_sidecar_does_not_turn_on_designed_acceptance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stored: object
+) -> None:
+    """Only a JSON `true` in meta.json turns the flag on. A value that is not
+    a JSON boolean is malformed and falls back to off, as every other
+    sidecar field does, so `"false"` cannot launch a designed-acceptance run."""
+    write_stack(tmp_path)
+    confirm_stack(tmp_path)
+    record = _install_stub_interpreter(tmp_path, monkeypatch)
+    queue = Queue(tmp_path, QueueConfig())
+    item = queue.add(f"# Spec\n\n{BODY}\n", title="local work", project_name="widget-svc")
+    meta = queue.item_dir(item) / META_FILENAME
+    data = json.loads(meta.read_text(encoding="utf-8"))
+    assert data["design_acceptance"] is False, data
+    data["design_acceptance"] = stored
+    meta.write_text(json.dumps(data), encoding="utf-8")
+
+    serve_cycle(tmp_path, config=ServeConfig(caffeinate=False, factory_timeout_seconds=60.0))
+
+    assert record.exists(), "the cycle launched no factory"
+    argv = json.loads(record.read_text(encoding="utf-8"))["argv"]
+    assert "--design-acceptance" not in argv, argv
