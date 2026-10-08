@@ -6,9 +6,9 @@ operator. Its reply is checked against the plan vocabulary and asked once
 more when it fails, each ask charged to the adversarial call budget. The
 plan is written outside the repository, keyed by the plan it was designed
 for, so a later run of the same plan asks nothing again. The checks run on
-the base and on each head as an operator's do, and stay record only
-(owner decision 10): a failing one is recorded, printed and emitted as
-advisory, and the component goes on.
+the base and on each head as an operator's do, and gate the head as an
+operator's do (owner decision of 2026-10-07): a failed visible check gives
+the engineer a retry and a failed held-out check halts the component.
 
 End to end: the real ``ks factory`` as a subprocess on a real git
 repository after the real ``ks init``, with a confirmed ``[stack]`` and one
@@ -183,14 +183,27 @@ def _head_records(root: Path) -> list[Path]:
     return sorted(_evidence_root(root).glob(f"*/acceptance/{COMP}/attempt-*/record.json"))
 
 
+def _acceptance_verdicts(root: Path) -> list[tuple[bool, bool]]:
+    """(passed, advisory) of each acceptance verification event of the run."""
+    (events_path,) = sorted((root / ".kstrl" / "runs").glob("*/events.jsonl"))
+    return [
+        (event["data"]["passed"], event["data"]["advisory"])
+        for event in map(json.loads, events_path.read_text(encoding="utf-8").splitlines())
+        if event["event"] == "verification_result" and event["data"]["phase"] == "acceptance"
+    ]
+
+
 @runs_a_stack
-def test_the_designer_writes_checks_that_run_record_only_on_the_head(tmp_path: Path) -> None:
+def test_the_designer_writes_checks_and_a_failed_held_out_one_halts_the_component(
+    tmp_path: Path,
+) -> None:
     """The designer is asked once, in a checkout of the base, with the
     criteria and the stack. Its held-out check catches the engineer that
     special-cased the one name it could see, and the record, the terminal
-    and the event say so; the checks are record only, so the component
-    completes with no retry. The plan is kept outside the repository with
-    who wrote it."""
+    and the event say so. The check gates the head as an operator's does
+    (owner decision of 2026-10-07): the component halts with no retry
+    although one was allowed, and the run fails. The plan is kept outside
+    the repository with who wrote it."""
     root = _greeting_repo(tmp_path)
     spec_line = f"Greet anyone by name ({secrets.token_hex(4)})."
     _pin_spec(root, f"# Greeter\n\n{spec_line}\n")
@@ -205,9 +218,9 @@ def test_the_designer_writes_checks_that_run_record_only_on_the_head(tmp_path: P
         ]
     )
 
-    run = _design(tmp_path, root, [reply])
+    run = _design(tmp_path, root, [reply], "--max-retries", "1")
 
-    assert run.code == 0, run.out
+    assert run.code == 1, run.out
     assert len(run.designer) == 1, run.out
     where, commit = run.designer[0].split()
     assert commit == base, run.designer
@@ -222,19 +235,42 @@ def test_the_designer_writes_checks_that_run_record_only_on_the_head(tmp_path: P
     assert _row(record, "greets-ada")["verdict"] == "pass", record
     assert _row(record, "greets-hidden")["verdict"] == "fail", record
     assert f"- greets-hidden (held out): passed 0 of {HEAD_RUNS} runs -> fail" in run.out
-    assert "the verification designer wrote these checks: record only" in run.out, run.out
-    (events_path,) = sorted((root / ".kstrl" / "runs").glob("*/events.jsonl"))
-    verdicts = [
-        (event["data"]["passed"], event["data"]["advisory"])
-        for event in map(json.loads, events_path.read_text(encoding="utf-8").splitlines())
-        if event["event"] == "verification_result" and event["data"]["phase"] == "acceptance"
-    ]
-    assert verdicts == [(False, True)], verdicts
+    assert "- the verification designer wrote these checks" in run.out, run.out
+    assert "record only" not in run.out, run.out
+    assert "the held-out acceptance checks greets-hidden failed" in run.out, run.out
+    assert "halted with no retry" in run.out, run.out
+    assert _acceptance_verdicts(root) == [(False, False)], run.out
     (designed,) = _designed_plans(root)
     designer = json.loads((designed / DESIGNER_FILE).read_text(encoding="utf-8"))
     assert designer["promptVersion"] == ACCEPTANCE_PROMPT_VERSION, designer
     assert designer["asks"] == {COMP: 1}, designer
     assert _manifest(root)["acceptanceDigest"], _manifest(root)
+
+
+@runs_a_stack
+def test_a_designed_visible_check_that_fails_on_the_head_gives_the_engineer_a_retry(
+    tmp_path: Path,
+) -> None:
+    """A designed visible check that fails on the head has the effect of
+    an operator's (owner decision of 2026-10-07): the component fails
+    acceptance, the engineer is asked again with the failing check named,
+    and once the retries are spent the run fails."""
+    root = _greeting_repo(tmp_path)
+    reply = _entry([_check("greets-grace", _greets("Grace"))])
+
+    run = _design(tmp_path, root, [reply], "--max-retries", "1")
+
+    assert run.code == 1, run.out
+    assert len(run.designer) == 1, run.out
+    assert run.engineer_calls == 2, run.out
+    assert "the acceptance checks greets-grace did not pass on" in run.out, run.out
+    assert "halted with no retry" not in run.out, run.out
+    assert len(_head_records(root)) == 2, run.out
+    # The stub keeps the prompt of the last call: the engineer's retry.
+    retry = (tmp_path / "prompt.txt").read_text(encoding="utf-8")
+    assert DESIGNER_MARK not in retry
+    assert "greets-grace" in retry, retry[-3000:]
+    assert _acceptance_verdicts(root) == [(False, False), (False, False)], run.out
 
 
 @runs_a_stack

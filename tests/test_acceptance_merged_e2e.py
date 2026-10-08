@@ -7,8 +7,8 @@ checks of every merged component on that commit, each ``HEAD_RUNS``
 times, judged as a head is. A failure there fails the tier and the
 bisection names the breaker. A failed held-out check is named by its id
 alone and its breaker gets no retry (owner decision 3). A plan the
-verification designer wrote is record only (owner decision 10): its
-failures are printed and do not fail Phase 3.
+verification designer wrote fails Phase 3 as an operator's does (owner
+decision of 2026-10-07).
 
 End to end: the real ``ks factory`` as a subprocess on a real git
 repository after the real ``ks init``, with a confirmed ``[stack]``, two
@@ -126,17 +126,20 @@ def test_phase_3_fails_on_a_check_that_breaks_only_on_the_merged_tree(
 
 
 @runs_a_stack
+@pytest.mark.parametrize("designed", [False, True], ids=["operator", "designed"])
 def test_a_held_out_check_that_fails_on_the_merged_tree_halts_its_breaker_by_id_alone(
-    tmp_path: Path,
+    tmp_path: Path, designed: bool
 ) -> None:
     """The same check, held out, prints a random token when it fails. A
     retry is left, and the breaker comp-b still gets none (owner decision
-    3): the run names the check by its id and never prints the token."""
+    3): the run names the check by its id and never prints the token. A
+    plan the verification designer wrote halts the breaker the same way
+    (owner decision of 2026-10-07)."""
     hidden = f"hidden-{secrets.token_hex(4)}"
 
     checks = {"comp-b": [_check("markers-apart", APART, "passes", held_out=True)]}
 
-    run = _run(tmp_path, _plan(tmp_path, hidden, checks), "--max-retries", "1")
+    run = _run(tmp_path, _plan(tmp_path, hidden, checks, designed=designed), "--max-retries", "1")
 
     assert run.calls == 2, run.out
     assert "contract tests FAILED" in run.out, run.out
@@ -150,16 +153,39 @@ def test_a_held_out_check_that_fails_on_the_merged_tree_halts_its_breaker_by_id_
 
 
 @runs_a_stack
-def test_a_designed_plan_is_record_only_in_phase_3(tmp_path: Path) -> None:
-    """The same check in a plan the verification designer wrote: Phase 3
-    prints the failure as record only and passes, and the run exits 0."""
+def test_a_designed_check_that_fails_on_the_merged_tree_fails_phase_3(tmp_path: Path) -> None:
+    """The same check in a plan the verification designer wrote fails
+    Phase 3 as an operator's does (owner decision of 2026-10-07): the
+    bisection names the breaker and the run fails."""
     checks = {"comp-b": [_check("markers-apart", APART, "passes")]}
 
     run = _run(tmp_path, _plan(tmp_path, "both markers meet", checks, designed=True))
 
     assert run.calls == 2, run.out
-    assert "record only (designed checks): acceptance:markers-apart (comp-b): fail" in run.out
-    assert "contract tests passed" in run.out, run.out
+    assert "contract tests FAILED" in run.out, run.out
+    assert "breaker 'comp-b' (retries exhausted): both markers meet" in run.out, run.out
+    assert "record only" not in run.out, run.out
+    assert run.code != 0, run.out
+
+
+@runs_a_stack
+@pytest.mark.parametrize("kept_too", [False, True], ids=["alone", "beside_a_kept_check"])
+def test_a_designed_check_the_base_removed_does_not_run_in_phase_3(
+    tmp_path: Path, kept_too: bool
+) -> None:
+    """A designed check that passes on the base it says fails on is removed
+    (owner decision of 2026-10-06), so it runs on no head and does not run
+    in Phase 3 either: a vacuous designed check cannot block a run (owner
+    decision of 2026-10-07). The removal is by check, not by component: a
+    kept check of the same component does not bring the removed one back."""
+    checks = {"comp-b": [_check("markers-apart", APART, "fails")]}
+    if kept_too:
+        checks["comp-b"].append(_check("has-own", [*APART, "--own", "comp-b"], "fails"))
+
+    run = _run(tmp_path, _plan(tmp_path, "both markers meet", checks, designed=True))
+
+    assert "it is removed" in run.out, run.out
+    assert "contract tests FAILED" not in run.out, run.out
     assert run.code == 0, run.out
 
 

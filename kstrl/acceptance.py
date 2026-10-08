@@ -31,9 +31,10 @@ made by the slice 3 replay (:func:`kstrl.replay.replay_stack`): setup,
   plan marks ``createsApp``, recorded as :data:`BASE_NOT_RUNNABLE` (decision 11).
 - On each component's head, after Phase 1 passed (:func:`judge_head`).
   Each check runs :data:`HEAD_RUNS` times and passes only when every run
-  exited 0. Nothing is run again after a failure. An operator-written
-  plan gates the component (owner decision 10): the pipeline halts it on
-  a failed held-out check and retries it on any other check that did not
+  exited 0. Nothing is run again after a failure. The plan gates the
+  component whether an operator or the verification designer wrote it
+  (owner decision of 2026-10-07): the pipeline halts the component on a
+  failed held-out check and retries it on any other check that did not
   pass (decision 3), unless a person approved that halt on this head
   (decision 14).
 
@@ -84,7 +85,7 @@ if TYPE_CHECKING:
 PLAN_FILE = "plan.json"
 
 #: Present in a plan the verification designer wrote (#700 slice 7), with
-#: who wrote it: such a plan is record only (owner decision 10).
+#: who wrote it: the base removes such a plan's checks that pass there.
 DESIGNER_FILE = "designer.json"
 
 #: Owner decision 4: every head run of a check must exit 0, and a failed
@@ -181,7 +182,6 @@ class HeadOutcome:
     failing: tuple[str, ...] = ()
     held_out: tuple[str, ...] = ()
     told: tuple[str, ...] = ()
-    record_only: bool = False
 
 
 Files = dict[str, tuple[bytes, bool]]
@@ -715,7 +715,6 @@ def judge_head(
             row["id"] for row in document["checks"] if row["heldOut"] and row["verdict"] == FAIL
         ),
         told=() if unreplayed else told_lines(document, part.checks, tails),
-        record_only=plan.designed,
     )
 
 
