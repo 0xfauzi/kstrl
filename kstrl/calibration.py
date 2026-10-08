@@ -116,10 +116,13 @@ MIN_ROLE_DETECTION_RATE: dict[str, float | None] = {
     # #633 slice 4: twins of the security and reviewer positives in a second
     # code language. The "_<language>" suffix of a role id is an attribute of
     # the fixture, which the calibration harness reads off the fixture's own
-    # files (#696); nothing here names a language. Recorded, not gated, until
-    # their first capture sets a floor.
-    "security_ts": None,
-    "reviewer_ts": None,
+    # files (#696); nothing here names a language. The floors are the family
+    # floors (#633 decision D4(a)), set from the first captures:
+    # baseline-20261006-195010.json gave security_ts 1.00 and
+    # baseline-20261006-190951.json gave reviewer_ts 1.00 (haiku, 3 runs; the
+    # command is in tests/adversarial_fixtures/_results/README.md).
+    "security_ts": 0.80,
+    "reviewer_ts": 0.65,
     # #696 slice 8: the reviewer's test-weakening criterion, which replaced
     # the mechanical Layer 0 check, and its #633 twin. Recorded, not gated,
     # until the first capture lets the owner set a floor.

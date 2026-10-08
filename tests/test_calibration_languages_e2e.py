@@ -500,6 +500,25 @@ def _evidence_stem(graded: dict[str, Any]) -> tuple[str, str] | None:
     return str(pure.parent), pure.name.split(".")[0].lower().replace("_", "").removeprefix("test")
 
 
+def _run_paid_test(
+    name: str,
+    artifact: Path,
+    meta: dict[str, Any],
+    work: Path,
+    report: tc._DetectionReport,
+    reply: str,
+    block: str,
+) -> None:
+    """Run one twin through its real paid test. Since #633 slice 8 the twins
+    carry their family floors, so a positive that the reply misses fails its
+    gate, after the run is recorded."""
+    if reply == "flags_the_planted_file" or block != "must_detect":
+        getattr(tc, name)(artifact, meta, work, report)
+        return
+    with pytest.raises(AssertionError, match="missed planted issue"):
+        getattr(tc, name)(artifact, meta, work, report)
+
+
 def _run_arm(
     name: str,
     build_args: Callable[[], list[tuple[Path, dict[str, Any]]]],
@@ -542,7 +561,7 @@ def _run_arm(
         running[:] = [twin_id]
         work = tmp_path / "work" / twin_id
         work.mkdir(parents=True)
-        getattr(tc, name)(artifact, meta, work, report)
+        _run_paid_test(name, artifact, meta, work, report, reply, block)
         twins[twin_id] = block
         twinned.add(original["fixture_id"])
     if base == "security_hard":
@@ -566,7 +585,7 @@ def _recorded_fixtures(saved: dict[str, Any], flagged: bool) -> dict[str, str]:
 
 
 @pytest.mark.parametrize("reply", ["flags_the_planted_file", "flags_nothing"])
-def test_the_typescript_twins_record_under_their_own_roles_gated_by_no_floor(
+def test_the_typescript_twins_record_under_their_own_roles_gated_by_their_floors(
     reply: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Slice 4. Every TypeScript fixture in the real tree, found by the role
@@ -579,13 +598,13 @@ def test_the_typescript_twins_record_under_their_own_roles_gated_by_no_floor(
     records the twins under ``security_ts``, ``reviewer_ts`` and their
     negative ids only. A reply that flags every changed file catches every
     positive and is a false positive on every negative; a reply that flags
-    nothing misses every positive, and no detection gate fails, because
-    ``MIN_ROLE_DETECTION_RATE`` sets no floor for either id. The real
-    ``compare`` CLI, against the saved Python capture, names both ids as
-    first measurements with no floor set, prints each negative id's
-    false-positive rate over its four negatives, and since #633 slice 3
-    exits 1 naming both negative ids when every negative was flagged, and 0
-    when none was."""
+    nothing misses every positive, and since #633 slice 8 each positive's
+    gate fails, because ``MIN_ROLE_DETECTION_RATE`` gives each id its family
+    floor. The real ``compare`` CLI, against the saved Python capture, names
+    both ids as first measurements with their floors, prints each negative
+    id's false-positive rate over its four negatives, exits 1 naming both
+    negative ids when every negative was flagged (#633 slice 3), and exits 1
+    naming both floors when no positive was caught."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     git = shutil.which("git")
@@ -638,12 +657,19 @@ def test_the_typescript_twins_record_under_their_own_roles_gated_by_no_floor(
         encoding="utf-8",
         timeout=120,
     )
-    assert compared.returncode == (1 if flagged else 0), compared.stdout + compared.stderr
+    assert compared.returncode == 1, compared.stdout + compared.stderr
     rate = "1.00" if flagged else "0.00"
-    for role in ("security_ts", "reviewer_ts"):
-        assert _row(compared.stdout, role)[1:] == ["-", "->", rate, "(no", "floor", "set)"]
+    floors = {"security_ts": "0.80", "reviewer_ts": "0.65"}
+    for role, floor in floors.items():
+        assert _row(compared.stdout, role)[1:] == ["-", "->", rate, "(floor", f"{floor})"]
+    below = [line for line in compared.stdout.splitlines() if "is below its floor" in line]
+    assert sorted(below) == sorted(
+        f"  FAIL: role {role!r} detection rate 0.00 is below its floor {floor}"
+        for role, floor in floors.items()
+        if not flagged
+    )
     assert _block(compared.stdout, FIRST_MEASUREMENTS) == ["reviewer_ts", "security_ts"]
-    assert _block(compared.stdout, NOT_GATED) == ["reviewer_ts", "security_ts"]
+    assert _block(compared.stdout, NOT_GATED) == []
     negative_roles = ("reviewer_negative_ts", "security_negative_ts")
     assert _block(compared.stdout, FP_HEADER) == [
         f"{role:<26} {rate}  (4 negatives)" for role in negative_roles
