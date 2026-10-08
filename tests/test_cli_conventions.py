@@ -424,7 +424,7 @@ UNRESOLVED_EXIT_VALUES: dict[tuple[str, str], int] = {
     ("tui/bridge.py", "CommandHandle"): 1,
     # A message carrying the init subprocess's code, whatever it was.
     ("tui/screens/init_wizard.py", "WizardDone"): 1,
-    # #602: the preflights' decisions tuple, returned when the run goes on.
+    # #602: the preflights' bound decision register, returned when the run goes on.
     # It never becomes an exit code: the caller exits only on an int.
     ("factory.py", "_plan_gated"): 1,
     # #642 slice 5: the leash's own status, read from `agent.wait()`, a

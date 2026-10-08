@@ -69,7 +69,6 @@ from kstrl.contract import (
 from kstrl.decisions import (
     DecisionRegister,
     DecisionRegisterError,
-    SpecDecision,
     bind_register,
     build_decisions_context,
     read_decisions,
@@ -2371,7 +2370,7 @@ def _preflight_decision_register(
     manifest: Manifest,
     root_dir: Path,
 ) -> tuple[list[str], DecisionRegister]:
-    """The architect's register for this run, or the reason there is none (#260).
+    """The architect's register bound to this run, or the reason it cannot bind (#260).
 
     Read once per run because it is a run-wide artifact the decompose
     wrote, and BOUND to this manifest before anything is scheduled.
@@ -2393,6 +2392,9 @@ def _preflight_decision_register(
     ``run_factory`` gave the operator a traceback and exit 1, where
     every sibling refusal gives a sentence and exit 2.
     """
+    # #639: the requirements bind exactly when the decisions do, because
+    # bind_register returns the whole register or an empty one. A manifest
+    # with no spec_file binds nothing, so it gets no requirements either.
     try:
         return [], bind_register(
             read_decisions(root_dir),
@@ -2661,14 +2663,14 @@ def _run_preflights(
     interrupted_branches: Mapping[str, str],
     timeout_cfg: TimeoutConfig,
     sandbox_refusals: list[str],
-) -> tuple[SpecDecision, ...] | None:
+) -> DecisionRegister | None:
     """Every pre-spend refusal, cheapest first, and what survives them.
 
-    Returns the architect decisions this run may use, or ``None`` to
+    Returns the decision register this run bound, or ``None`` to
     refuse. It returns a value rather than a bool because the register
     check is one of the refusals and its result is the thing the
-    engineers need; the empty tuple is a normal, proceeding answer, so
-    the caller checks ``is None``.
+    engineers and the integration review need; an empty register is a
+    normal, proceeding answer, so the caller checks ``is None``.
 
     The register goes first (#260 round 3): it is one small file read,
     no git and no agent, so it is cheaper than the scope comparison and
@@ -2705,11 +2707,10 @@ def _run_preflights(
     # #701: after the launch record `ks retry` reads, like every refusal below.
     if _report_preflight(ui, SANDBOX_REFUSAL, sandbox_refusals):
         return None
-    register_errors, register = _preflight_decision_register(manifest, root_dir)
+    register_errors, run_register = _preflight_decision_register(manifest, root_dir)
     if _report_preflight(ui, "the architect decision register cannot bind", register_errors):
         return None
-    run_decisions = register.decisions
-    factory_config.requirements = register.requirements
+    factory_config.requirements = run_register.requirements
     headline, pin_errors = _preflight_pins(manifest, root_dir, factory_config, run_id)
     if _report_preflight(ui, headline, pin_errors):
         return None
@@ -2722,7 +2723,7 @@ def _run_preflights(
     if _refused_rung_or_base(manifest.base_branch, root_dir, factory_config, run_id, ui):
         return None
     if not factory_config.use_worktrees:
-        return run_decisions
+        return run_register
     if lock_held:
         _prune_stale_worktrees(
             root_dir,
@@ -2741,7 +2742,7 @@ def _run_preflights(
         _preflight_component_branches(manifest, root_dir, ui, interrupted_branches),
     ):
         return None
-    return run_decisions
+    return run_register
 
 
 def _write_partial_usage(path: Path, totals: UsageTotals) -> None:
@@ -4330,24 +4331,24 @@ def _has_merged(comp: Component) -> bool:
 
 
 def _plan_gated(
-    decisions: tuple[SpecDecision, ...] | None,
+    register: DecisionRegister | None,
     pipeline: ComponentPipeline,
     ladder: _LadderOutcome | None,
-) -> tuple[SpecDecision, ...] | int:
-    """The preflights' decisions, or the exit code that ends the run.
+) -> DecisionRegister | int:
+    """The preflights' bound register, or the exit code that ends the run.
 
-    2 when a preflight refused (``decisions is None``), and then the plan
+    2 when a preflight refused (``register is None``), and then the plan
     gate asks nothing. Otherwise the #602 plan gate runs on the CLAMPED
     bundle, after every pre-spend refusal and before the feature base is
     stamped and parked merges are applied, so a plan nobody approved
     pushes, merges and runs nothing: its park is 1 and a rejection 2.
     """
-    if decisions is None or _refused_acceptance_design(pipeline):
+    if register is None or _refused_acceptance_design(pipeline):
         return 2
     stop = run_plan_gate(pipeline, ladder.bundle if ladder is not None else None)
     if stop is not None:
         return stop
-    return 2 if _refused_acceptance_base(pipeline) else decisions
+    return 2 if _refused_acceptance_base(pipeline) else register
 
 
 def _refused_acceptance_design(pipeline: ComponentPipeline) -> bool:
@@ -5227,7 +5228,7 @@ def _run_factory_locked(
     )
     _warn_unsandboxable_reviewers(ui, review_selection, security_selection)
 
-    run_decisions = _plan_gated(
+    run_register = _plan_gated(
         _run_preflights(
             manifest,
             run_scope,
@@ -5245,10 +5246,10 @@ def _run_factory_locked(
         ladder,
     )
     # An int is the exit code of a refusal or of the #602 plan gate. Not
-    # falsiness: a clean run with no decisions binds the empty tuple, which
-    # is the normal state for every project that predates #260.
-    if isinstance(run_decisions, int):
-        factory_result.exit_code = run_decisions
+    # falsiness: a clean run with no register binds an empty one, which is
+    # the normal state for every project that predates #260.
+    if isinstance(run_register, int):
+        factory_result.exit_code = run_register
         return factory_result
     # #481: after the refusals (a refused run stamps nothing) and the
     # worktree preflight's fetch, and before the merge decisions below,
@@ -5390,7 +5391,7 @@ def _run_factory_locked(
             # without a second delivery mechanism. Per component: its
             # own decisions in full, the rest of the run summarised.
             build_decisions_context(
-                run_decisions, comp.id, requirements=factory_config.requirements
+                run_register.decisions, comp.id, requirements=factory_config.requirements
             ),
             # Per-component, not run-wide: KstrlConfig.component_progress_file
             # keeps the engineer's progress log inside allowedPaths.
@@ -5809,6 +5810,7 @@ def _run_factory_locked(
             run_id=run_id,
             pipeline=pipeline,
             ui=ui,
+            requirements=run_register.requirements,
         ),
         stop,
     )

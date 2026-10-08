@@ -313,7 +313,10 @@ EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
     # #482: INTEGRATION_CRITERIA_PROMPT, and #483: INTEGRATION_CARRIED_PROMPT;
     # 2 prompts x 2 spellings (each declaration and its one use) = 4. The
     # version constants add nothing: the walk keys on names ending in _PROMPT.
-    "integration.py": 4,
+    # #639 slice 3: INTEGRATION_REQUIREMENT_PROMPT and INTEGRATION_NON_GOAL_PROMPT,
+    # 2 prompts x 2 spellings (each declaration and its one use in
+    # requirement_stories) = 8.
+    "integration.py": 8,
     # #303: 2 pre-existing + 2 new fragments x 2 spellings each (the
     # declaration and its one use site) = 6. The version constant adds
     # nothing: the walk keys on names ending in _PROMPT, not _VERSION.

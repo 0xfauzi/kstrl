@@ -26,6 +26,7 @@ from kstrl.integration import (
     carried_story,
     integration_outcome,
     integration_stories,
+    requirement_stories,
     write_integration_prd,
 )
 from kstrl.integration_fix import reconcile_fixes
@@ -50,6 +51,7 @@ from kstrl.integration_state import (
     write_state,
 )
 from kstrl.manifest import ComponentStatus
+from kstrl.requirements import SpecRequirement
 from kstrl.review import ReviewMode, ReviewResult
 from kstrl.timeout import limit_seconds
 from kstrl.verify import VerificationResult
@@ -98,6 +100,9 @@ class IntegrationRun:
     run_id: str
     pipeline: ComponentPipeline
     ui: UI
+    #: The requirements and non-goals of the decision register this run
+    #: bound (#639 slice 3); empty when the run bound no register.
+    requirements: tuple[SpecRequirement, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -252,6 +257,7 @@ def _review_round(run: IntegrationRun, state: dict[str, Any], pin: _Pin) -> Inte
     stories = (
         *integration_stories(run.manifest.feature_base_sha),
         *(carried_story(f["id"], f["text"], f["locations"]) for f in carried_findings(state)),
+        *requirement_stories(run.requirements),
     )
     run.pipeline.adversarial_budget_consume()
     worktree, error = _create_temp_worktree(pin.sha, run.root_dir, "integration")
