@@ -302,6 +302,46 @@ def test_git_runs_in_every_kstrl_worktree_in_both_zones_and_cannot_write_the_git
 
 
 @needs_nono
+def test_git_runs_in_the_replay_of_a_linked_worktree_root_and_of_a_root_named_from_elsewhere(
+    tmp_path: Path,
+) -> None:
+    """The git directory both zones read is the root's common one, as an
+    absolute path. `ks doctor --measure` replays a stack that runs ``git``
+    for a root that is itself a linked worktree, whose own ``.git`` is a
+    file, and for a root named by ``--root`` from a directory outside it,
+    where a relative ``.git`` names a path that is not there. Each replay
+    passes in both zones. Both roots sit under the home directory, for the
+    reason the test above gives."""
+    home = Path.home() / f".kstrl-gitroot-{secrets.token_hex(6)}"
+    stack = _stack(
+        {"git": f"{GIT} rev-parse HEAD && {GIT} status --porcelain"},
+        setup=f"{GIT} log -1 --format=%H",
+    )
+    try:
+        main = _repo(home / "main", stack)
+        linked = home / "linked"
+        git_in(main, "worktree", "add", "-q", "-b", "linked", str(linked))
+        readings = {
+            "a linked worktree": _spawn(
+                ["doctor", "--root", str(linked), "--measure", "--json"], linked, None
+            ),
+            "a root named from elsewhere": _spawn(
+                ["doctor", "--root", str(main), "--measure", "--json"], tmp_path, None
+            ),
+        }
+    finally:
+        shutil.rmtree(home, ignore_errors=True)
+
+    for case, (_code, out) in readings.items():
+        document = json.loads(out[out.index("{") :])
+        replay = document["replay"]
+        assert (replay["failed"], replay["error"]) == ("", ""), (case, replay)
+        stages = [stage["name"] for stage in replay["stages"]]
+        assert stages == ["setup", "check:git"], (case, replay)
+        assert _row(document, "replay")["status"] == "ok", (case, document["checks"])
+
+
+@needs_nono
 def test_a_command_refused_a_path_in_a_proven_zone_says_the_sandbox_can_be_the_cause(
     tmp_path: Path,
 ) -> None:
