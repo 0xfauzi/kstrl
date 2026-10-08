@@ -80,6 +80,7 @@ from kstrl.manifest import (
 from kstrl.names import validate_branch_name, validate_component_id
 from kstrl.owner_answers import OwnerAnswers, read_owner_answers
 from kstrl.prd import PRD
+from kstrl.requirements import parse_requirements, requirements_payload_errors
 from kstrl.runid import mint_run_id
 from kstrl.stack import (
     file_stack_item,
@@ -172,7 +173,7 @@ class SpecBlockerError(Exception):
         return lines
 
 
-DECOMPOSE_PROMPT_VERSION = "4.0.0"
+DECOMPOSE_PROMPT_VERSION = "5.0.0"
 
 DECOMPOSE_PROMPT = """\
 You are a senior software architect AND a hostile spec auditor. You have
@@ -230,6 +231,14 @@ The output must be a JSON object with this exact structure:
       "reason": "why this and not the alternative (one sentence)",
       "alternative": "the option you rejected (one sentence)",
       "component": "id of the component this binds, or empty when it binds the whole run"
+    }}
+  ],
+  "requirements": [
+    {{
+      "id": "R-1",
+      "kind": "requirement|non_goal",
+      "statement": "one thing the specification asks for, or rules out, in one sentence",
+      "stories": ["US-001"]
     }}
   ],
   "components": [
@@ -369,6 +378,21 @@ S4. All four keys are required:
       order listed. Each must exit 0 on a correct tree and non-zero when
       the work is wrong; a check that exits 0 having run nothing
       verifies nothing.
+
+Requirement rules (the product spec):
+R1. `requirements` lists, one per entry, each thing the specification
+    asks for (kind "requirement") and each thing it rules out or leaves
+    out on purpose (kind "non_goal"). Ids are "R-1", "R-2", ... and are
+    unique.
+R2. A "requirement" names in `stories` the ids of the user stories that
+    build it, at least one. A "non_goal" names none: "stories": [].
+R3. Every user story is named by at least one requirement. A story no
+    requirement names is work the specification did not ask for: remove
+    it, or name the requirement it builds.
+R4. The harness REJECTS output with components and no `requirements`,
+    an unnamed story, an unknown story id, a duplicate id, or a "kind"
+    that is not exactly "requirement" or "non_goal". When you return an
+    empty `components` array, `requirements` may be omitted.
 
 Red-team rules:
 - Look for: ambiguous quantifiers ("fast", "secure", "user-friendly"),
@@ -1178,6 +1202,8 @@ def _validate_decompose_output(data: Any, *, has_stack: bool) -> list[str]:
     errors += _stack_output_errors(data, has_stack=has_stack)
 
     if not components:
+        # #639 slice 2: a halt names no story, so the join is skipped.
+        errors += requirements_payload_errors(data, None)
         return _empty_components_errors(data, errors)
 
     # Parsed only once the raw shape is known good, so a parse can no
@@ -1316,6 +1342,9 @@ def _validate_decompose_output(data: Any, *, has_stack: bool) -> list[str]:
                 errors.append(f"Component '{comp_id}' depends on unknown component '{dep}'")
 
     errors.extend(_decision_component_errors(decisions, seen_ids))
+    # #639 slice 2: stories join requirements by id, after the loop above
+    # has collected every story id.
+    errors.extend(requirements_payload_errors(data, seen_story_ids))
 
     return errors
 
@@ -2780,6 +2809,7 @@ def _decompose_spec_impl(
     # severity label. Everything it decided, assumed or spiked rides
     # along; only a question it refused to answer stops the run.
     decisions = parse_decisions(data)
+    requirements = parse_requirements(data)
     escalated = escalations(decisions)
     _surface_spec_decisions(decisions, ui)
 
@@ -2873,6 +2903,7 @@ def _decompose_spec_impl(
                 spec_digest=pin,
                 answered_items=answers.item_ids,
                 answers_digest=answers.digest,
+                requirements=requirements,
             ),
         )
         open_escalation_item(
@@ -3101,6 +3132,7 @@ def _decompose_spec_impl(
                     spec_digest=pin,
                     answered_items=answers.item_ids,
                     answers_digest=answers.digest,
+                    requirements=requirements,
                 ),
                 required=True,
             )

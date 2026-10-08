@@ -36,6 +36,7 @@ from kstrl.security import SecurityConfig, SecurityMode, run_security_review
 from kstrl.statedir import plan_prd_path
 from kstrl.ui.plain import PlainUI
 from tests.conftest import make_review_repo
+from tests.helpers.architect_payload import traced
 from tests.helpers.before_spend import no_base_check
 from tests.helpers.component_prd import write_component_prd
 from tests.helpers.prd_payload import _make_prd_payload
@@ -179,14 +180,16 @@ def _payload(*issues: dict[str, str], components: list[dict[str, Any]] | None = 
     """
     with_ids = _with_ids(list(issues))
     return json.dumps(
-        {
-            "components": components
-            if components is not None
-            else [DOCUMENT_FORMAT, AGENT_ADAPTER],
-            "stack": PROPOSED_STACK,
-            "spec_issues": with_ids,
-            "decisions": _closures_for(with_ids),
-        }
+        traced(
+            {
+                "components": components
+                if components is not None
+                else [DOCUMENT_FORMAT, AGENT_ADAPTER],
+                "stack": PROPOSED_STACK,
+                "spec_issues": with_ids,
+                "decisions": _closures_for(with_ids),
+            }
+        )
     )
 
 
@@ -309,19 +312,21 @@ class TestHaltingIsUnchanged:
         # writer loops over an empty list and the assertion is
         # arithmetic rather than evidence.
         payload = json.dumps(
-            {
-                "components": [DOCUMENT_FORMAT],
-                "stack": PROPOSED_STACK,
-                "spec_issues": [blocker],
-                "decisions": [
-                    {
-                        "issue": "format-unspecified",
-                        "question": "which format does the product commit to",
-                        "disposition": "escalated",
-                        "resolution": "the owner must choose",
-                    }
-                ],
-            }
+            traced(
+                {
+                    "components": [DOCUMENT_FORMAT],
+                    "stack": PROPOSED_STACK,
+                    "spec_issues": [blocker],
+                    "decisions": [
+                        {
+                            "issue": "format-unspecified",
+                            "question": "which format does the product commit to",
+                            "disposition": "escalated",
+                            "resolution": "the owner must choose",
+                        }
+                    ],
+                }
+            )
         )
         spec_file = tmp_path / "spec.md"
         spec_file.write_text("# Spec\nBuild it.")

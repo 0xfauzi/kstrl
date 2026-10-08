@@ -150,6 +150,14 @@ def _decompose_payload(allowed_paths: list[str]) -> dict[str, Any]:
         "stack": PROPOSED_STACK,
         "spec_issues": [],
         "decisions": [],
+        "requirements": [
+            {
+                "id": "R-1",
+                "kind": "requirement",
+                "statement": "The component works.",
+                "stories": ["US-001"],
+            }
+        ],
         "components": [
             {
                 "id": "comp-a",

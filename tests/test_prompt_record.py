@@ -450,6 +450,7 @@ ONE_COMPONENT = {
             ],
         }
     ],
+    "requirements": [{"id": "R-1", "kind": "requirement", "statement": "S", "stories": ["US-001"]}],
     "spec_issues": [],
     "decisions": [],
 }
