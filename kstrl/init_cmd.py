@@ -352,6 +352,9 @@ This file captures feature-specific understanding tied to one PRD.
 (New notes append below; keep older notes for history.)
 """
 
+# 1.0.0 (#654 slice 8): opens the series on the body ledgered as 2026-07-21.
+DEFAULT_UNDERSTAND_PROMPT_VERSION = "1.0.0"
+
 DEFAULT_UNDERSTAND_PROMPT = """# kstrl Codebase Understanding Instructions (Read-Only)
 
 ## Goal (one iteration)
@@ -431,6 +434,9 @@ If there are **no remaining unchecked topics** in the Next Topics checklist
 
 Otherwise end normally.
 """
+
+# 1.0.0 (#654 slice 8): opens the series on the body ledgered as 2026-07-21.
+DEFAULT_FEATURE_UNDERSTAND_PROMPT_VERSION = "1.0.0"
 
 DEFAULT_FEATURE_UNDERSTAND_PROMPT = """# kstrl Feature Understanding Instructions (Read-Only)
 
@@ -790,10 +796,10 @@ SCAFFOLDED_TEMPLATES: tuple[ScaffoldedTemplate, ...] = (
             ("a11b4209e38feac0361176f4897b357ed675cb0b2fd4545f648d83560ae81dd6", "1.5.0"),
         ),
     ),
-    # The understand templates are H3-exempt (they produce documentation,
-    # not adversarial-role output) so they carry no version constant, and
-    # their labels are dates. They go stale the same way and the
-    # mechanism is indifferent to which kind of label a row holds.
+    # The understand templates were H3-exempt until #654 slice 8, so their
+    # labels are dates. Each now has a *_PROMPT_VERSION, 1.0.0 for the body
+    # in the newest row: no row was appended, because a body is recorded
+    # once. The next body appends a row labelled with its version.
     ScaffoldedTemplate(
         filename="understand_prompt.md",
         constant_name="DEFAULT_UNDERSTAND_PROMPT",

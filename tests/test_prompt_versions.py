@@ -170,6 +170,12 @@ from tests.helpers.integration_prompts import (
     INTEGRATION_VERSIONS,
 )
 from tests.helpers.recording_agent import RecordingAgent
+from tests.helpers.understand_prompts import (
+    UNDERSTAND_PROMPTS,
+    UNDERSTAND_RENDER_EXEMPT,
+    UNDERSTAND_SNAPSHOTS,
+    UNDERSTAND_VERSIONS,
+)
 
 
 def _sha256(text: str) -> str:
@@ -195,6 +201,7 @@ _PROMPTS: dict[str, str] = {
     **BUILDER_PROMPTS,
     **NOTICE_PROMPTS,
     **INTEGRATION_PROMPTS,
+    **UNDERSTAND_PROMPTS,
 }
 
 _VERSIONS: dict[str, str] = {
@@ -216,6 +223,7 @@ _VERSIONS: dict[str, str] = {
     **BUILDER_VERSIONS,
     **NOTICE_VERSIONS,
     **INTEGRATION_VERSIONS,
+    **UNDERSTAND_VERSIONS,
 }
 
 # Joint snapshot: (sha256_hash, semver_version). Both must move together
@@ -421,6 +429,7 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     **BUILDER_SNAPSHOTS,
     **NOTICE_SNAPSHOTS,
     **INTEGRATION_SNAPSHOTS,
+    **UNDERSTAND_SNAPSHOTS,
 }
 
 
@@ -629,8 +638,9 @@ _RENDERERS: dict[str, tuple[ModuleType, Callable[[Path], str]]] = {
 #: (``test_engineer_prompt_bump_reaches_existing_projects``). The
 #: BUILDER_RENDER_EXEMPT names (#303) are exempt for the reason given in
 #: ``tests/helpers/builder_prompts.py``'s module docstring; their orphan
-#: guards live in ``tests/test_builder_prompts.py`` instead.
-_RENDER_EXEMPT = frozenset({"DEFAULT_PROMPT"}) | BUILDER_RENDER_EXEMPT
+#: guards live in ``tests/test_builder_prompts.py`` instead. The two
+#: understand prompts (#654) are scaffolded verbatim, as DEFAULT_PROMPT is.
+_RENDER_EXEMPT = frozenset({"DEFAULT_PROMPT"}) | BUILDER_RENDER_EXEMPT | UNDERSTAND_RENDER_EXEMPT
 
 
 def test_every_prompt_has_a_renderer() -> None:
