@@ -187,6 +187,9 @@ def test_a_halt_needs_no_requirements_but_a_malformed_one_is_still_a_retry(
 BUILT = CLOSED["requirements"][0]
 NON_GOAL = {"id": "R-2", "kind": "non_goal", "statement": "No single sign-on.", "stories": []}
 TRACED = {**CLOSED, "requirements": [BUILT, NON_GOAL]}
+#: TRACED for a spec the architect found nothing to close in: no issue, no
+#: decision, so the requirements are the only content of the engineer block.
+UNDECIDED = {**TRACED, "spec_issues": [], "decisions": []}
 
 #: The engineer's side: mark every story of its PRD done.
 MARK_DONE = """import json
@@ -202,15 +205,17 @@ with open(path, "w", encoding="utf-8") as f:
 """
 
 
-def _built(tmp_path: Path, *, single_pr: bool = False) -> tuple[str, str]:
-    """``ks decompose`` of TRACED (with ``--single-pr`` when asked), then
+def _built(
+    tmp_path: Path, *, single_pr: bool = False, payload: dict[str, Any] | None = None
+) -> tuple[str, str]:
+    """``ks decompose`` of ``payload``, TRACED when None (with ``--single-pr`` when asked), then
     ``ks factory`` with an engineer that records its prompt, marks its story
     done and commits under src/. Returns the engineer's prompt and the stub
     gh's log from its ``pr create`` on."""
     root = _project(tmp_path)
     env = _env(tmp_path)
     architect = tmp_path / "architect.json"
-    architect.write_text(json.dumps(TRACED), encoding="utf-8")
+    architect.write_text(json.dumps(payload or TRACED), encoding="utf-8")
     mark = tmp_path / "mark_done.py"
     mark.write_text(MARK_DONE, encoding="utf-8")
     prompt = tmp_path / "engineer.prompt"
@@ -243,10 +248,14 @@ echo '<promise>COMPLETE</promise>'
     return prompt.read_text(encoding="utf-8"), created
 
 
-def test_the_engineer_is_given_every_requirement_and_non_goal(tmp_path: Path) -> None:
+@pytest.mark.parametrize("payload", [TRACED, UNDECIDED], ids=["with-decisions", "no-decisions"])
+def test_the_engineer_is_given_every_requirement_and_non_goal(
+    tmp_path: Path, payload: dict[str, Any]
+) -> None:
     """The architect-decisions block of the engineer's prompt holds each
-    requirement with the stories that build it, and each non-goal."""
-    prompt, _gh = _built(tmp_path)
+    requirement with the stories that build it, and each non-goal, also
+    when the architect closed no decision."""
+    prompt, _gh = _built(tmp_path, payload=payload)
 
     assert f"- **R-1** [requirement] (stories US-001): {BUILT['statement']}" in prompt, prompt
     assert f"- **R-2** [non_goal]: {NON_GOAL['statement']}" in prompt, prompt
