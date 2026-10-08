@@ -273,17 +273,24 @@ def test_the_pull_request_cites_the_requirements_its_stories_build(
     assert "R-2" not in gh, gh
 
 
-#: A second component, whose story US-002 builds a second requirement, R-3.
+#: A second component, whose story US-002 builds a second requirement, R-3,
+#: and with login's US-001 a third, R-4, whose built story is not its first.
 REPORT = {
     "id": "R-3",
     "kind": "requirement",
     "statement": "An admin reads a report.",
     "stories": ["US-002"],
 }
+LINKED = {
+    "id": "R-4",
+    "kind": "requirement",
+    "statement": "A report links to the login page.",
+    "stories": ["US-002", "US-001"],
+}
 _LOGIN = CLOSED["components"][0]
 TWO_COMPONENTS = {
     **UNDECIDED,
-    "requirements": [BUILT, REPORT, NON_GOAL],
+    "requirements": [BUILT, REPORT, LINKED, NON_GOAL],
     "components": [
         _LOGIN,
         {
@@ -302,8 +309,9 @@ def test_the_single_pull_request_cites_only_what_its_completed_components_build(
     tmp_path: Path,
 ) -> None:
     """``--single-pr`` with two components: login completes and report
-    fails. The one PR names R-1, which login's story builds, and not R-3,
-    which only the failed component's story builds."""
+    fails. The one PR names R-1 and R-4, which login's story builds (for
+    R-4, as its second story), and not R-3, which only the failed
+    component's story builds."""
     root = _project(tmp_path)
     env = _env(tmp_path)
     architect = tmp_path / "architect.json"
@@ -339,5 +347,6 @@ echo '<promise>COMPLETE</promise>'
     assert gh.count("gh pr create") == 1, gh
     created = gh[gh.index("gh pr create") :]
     assert "[p] Factory: all components" in created, created
-    assert f"## Requirements\n\n- R-1: {BUILT['statement']}\n\n" in created, created
+    built = f"- R-1: {BUILT['statement']}\n- R-4: {LINKED['statement']}\n\n"
+    assert f"## Requirements\n\n{built}" in created, created
     assert "R-3" not in created and "R-2" not in created, created
