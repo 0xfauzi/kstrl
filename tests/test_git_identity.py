@@ -239,9 +239,9 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # #635: `_commit` is the one commit site, into the fixture repository
     # `_seed` has just put through `tests.helpers.gitrepo.set_identity`.
     "tests/test_python_toolchain_identity_e2e.py": 1,
-    # #639 slice 5: the stub engineer commits in a worktree of the repository
+    # #639 slice 5: both stub engineers commit in a worktree of the repository
     # tests.test_spec_identity._project put through set_identity.
-    "tests/test_requirements_e2e.py": 1,
+    "tests/test_requirements_e2e.py": 2,
     "tests/test_resume_ergonomics.py": 2,
     # #465: the parked-merge and resume tests commit through set_identity.
     # The single_pr shared-branch regression test (blocker 1 of the PR

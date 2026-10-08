@@ -271,3 +271,73 @@ def test_the_pull_request_cites_the_requirements_its_stories_build(
 
     assert f"## Requirements\n\n- R-1: {BUILT['statement']}\n" in gh, gh
     assert "R-2" not in gh, gh
+
+
+#: A second component, whose story US-002 builds a second requirement, R-3.
+REPORT = {
+    "id": "R-3",
+    "kind": "requirement",
+    "statement": "An admin reads a report.",
+    "stories": ["US-002"],
+}
+_LOGIN = CLOSED["components"][0]
+TWO_COMPONENTS = {
+    **UNDECIDED,
+    "requirements": [BUILT, REPORT, NON_GOAL],
+    "components": [
+        _LOGIN,
+        {
+            **_LOGIN,
+            "id": "report",
+            "title": "Report page",
+            "description": "Admin report",
+            "allowedPaths": ["src/", "tests/", "scripts/kstrl/feature/report/"],
+            "userStories": [{**_LOGIN["userStories"][0], "id": "US-002", "title": "Report"}],
+        },
+    ],
+}
+
+
+def test_the_single_pull_request_cites_only_what_its_completed_components_build(
+    tmp_path: Path,
+) -> None:
+    """``--single-pr`` with two components: login completes and report
+    fails. The one PR names R-1, which login's story builds, and not R-3,
+    which only the failed component's story builds."""
+    root = _project(tmp_path)
+    env = _env(tmp_path)
+    architect = tmp_path / "architect.json"
+    architect.write_text(json.dumps(TWO_COMPONENTS), encoding="utf-8")
+    mark = tmp_path / "mark_done.py"
+    mark.write_text(MARK_DONE, encoding="utf-8")
+    # The report engineer exits at once, so its component fails; login completes.
+    engineer = f"""#!/bin/sh
+prompt=$(cat)
+case "$prompt" in *feature/report/prd.json*) exit 1 ;; esac
+'{sys.executable}' '{mark}' scripts/kstrl/feature/login/prd.json
+mkdir -p src && echo work > src/work.txt
+git add -A && git commit -q -m work
+echo '<promise>COMPLETE</promise>'
+"""
+    env["AGENT_CMD"] = str(write_executable(tmp_path / "engineer.sh", engineer))
+    planned = _ks(
+        root,
+        env,
+        "decompose",
+        *("--spec", str(root / "spec.md"), "--project-name", "p", "--single-pr"),
+        *("--agent-cmd", f"cat > /dev/null; cat '{architect}'", "--ui", "plain", "--no-color"),
+    )
+    assert planned.returncode == 0, planned.stdout + planned.stderr
+
+    proc = _ks(root, env, "factory", "--manifest", str(_manifest_path(root)), *FACTORY_FLAGS)
+
+    out = proc.stdout + proc.stderr
+    manifest = json.loads(_manifest_path(root).read_text(encoding="utf-8"))
+    statuses = {c["id"]: c["status"] for c in manifest["components"]}
+    assert statuses == {"login": "completed", "report": "failed"}, out
+    gh = (tmp_path / "gh.log").read_text(encoding="utf-8")
+    assert gh.count("gh pr create") == 1, gh
+    created = gh[gh.index("gh pr create") :]
+    assert "[p] Factory: all components" in created, created
+    assert f"## Requirements\n\n- R-1: {BUILT['statement']}\n\n" in created, created
+    assert "R-3" not in created and "R-2" not in created, created
