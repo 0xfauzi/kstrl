@@ -841,6 +841,21 @@ _SECTION_BULLET_RE = re.compile(r"^[\-*]\s+\*{2}[^*]+\*{2}")
 _ENTRY_SEPARATOR_RE = re.compile(r"^-{3,}$")
 
 
+def latest_entry(lines: Sequence[str]) -> int | None:
+    """The index of the line that starts the latest iteration entry of a
+    progress log, or None when no line is an iteration heading.
+
+    Entries are appended, so the LAST iteration heading starts the
+    current iteration's entry. The one definition of "this iteration's
+    entry": the self-critique check reads it, and so does the acceptance
+    dispute (``kstrl.acceptance_record.read_dispute``, #700 slice 10a).
+    """
+    for index in range(len(lines) - 1, -1, -1):
+        if _ITERATION_HEADING_RE.match(lines[index]):
+            return index
+    return None
+
+
 def _self_critique_text(progress_path: Path, start: float) -> str | CheckResult:
     """The progress file's text, or the failing check explaining why not.
 
@@ -920,15 +935,8 @@ def check_self_critique(
         return text
 
     lines = text.splitlines()
-    # Locate the latest iteration entry: entries are appended, so the
-    # LAST iteration heading starts the current iteration's entry.
-    entry_start = 0
-    entry_found = False
-    for i in range(len(lines) - 1, -1, -1):
-        if _ITERATION_HEADING_RE.match(lines[i]):
-            entry_start = i
-            entry_found = True
-            break
+    found = latest_entry(lines)
+    entry_start, entry_found = (0, False) if found is None else (found, True)
 
     # Find the LAST self-critique heading WITHIN the latest entry, so
     # an earlier iteration's block cannot satisfy the current one and

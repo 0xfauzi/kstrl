@@ -348,9 +348,10 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     # user-editable, but this harness-shipped template is the
     # adversarial-role definition for the engineer phase and is
     # snapshot-protected on the same terms as the role prompts.
+    # 1.6.0 (#700 slice 10a): the dispute line for an acceptance check.
     "DEFAULT_PROMPT": (
-        "a11b4209e38feac0361176f4897b357ed675cb0b2fd4545f648d83560ae81dd6",
-        "1.5.0",
+        "d422d3757f428a3daf19e0f1bc1da1b243ae6ed6b349b7aa2ea03a834745cce3",
+        "1.6.0",
     ),
     # 1.0.0 (#299): both bodies already reached a reviewer's prompt on
     # every run; #299 only hoisted them out of the functions that built
