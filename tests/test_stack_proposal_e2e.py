@@ -35,6 +35,7 @@ from kstrl.init_cmd import gitignore_block
 from kstrl.manifest import Manifest
 from kstrl.stack import load_stack
 from kstrl.statedir import plan_prd_path
+from tests.helpers.architect_payload import traced
 from tests.helpers.gitrepo import git_in, set_identity
 from tests.helpers.stack_confirmation import TEST_INSTRUCTIONS, confirm_stack, write_stack
 from tests.test_isolation_rung import runs_a_stack
@@ -131,12 +132,14 @@ def _component(allowed: list[str]) -> dict[str, Any]:
 
 
 def _output(stack: object, allowed: list[str] | None = None) -> dict[str, Any]:
-    return {
-        "stack": stack,
-        "spec_issues": [],
-        "decisions": [],
-        "components": [_component(allowed or ["src/", "scripts/kstrl/feature/comp-a/"])],
-    }
+    return traced(
+        {
+            "stack": stack,
+            "spec_issues": [],
+            "decisions": [],
+            "components": [_component(allowed or ["src/", "scripts/kstrl/feature/comp-a/"])],
+        }
+    )
 
 
 def _architect(tmp_path: Path, *answers: dict[str, Any]) -> tuple[str, Path]:
@@ -425,12 +428,14 @@ def test_ks_factory_spec_measures_the_base_before_the_architect(tmp_path: Path, 
     payload = tmp_path / "payload.json"
     payload.write_text(
         json.dumps(
-            {
-                "stack": None,
-                "spec_issues": [],
-                "decisions": [],
-                "components": [_component(["work.txt", "scripts/kstrl/feature/comp-a/"])],
-            }
+            traced(
+                {
+                    "stack": None,
+                    "spec_issues": [],
+                    "decisions": [],
+                    "components": [_component(["work.txt", "scripts/kstrl/feature/comp-a/"])],
+                }
+            )
         ),
         encoding="utf-8",
     )

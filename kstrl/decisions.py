@@ -42,12 +42,15 @@ import time
 from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from kstrl.atomicio import atomic_write_json
 from kstrl.inbox import UNDECIDED, Inbox, InboxConfig, InboxItem, ItemKind
 from kstrl.jsonread import read_json
 from kstrl.workqueue import QueueError, queue_item_for_spec
+
+if TYPE_CHECKING:
+    from kstrl.requirements import SpecRequirement
 
 # Relative location of the persisted register. Next to manifest.json and
 # spec-issues.json so one directory holds every decompose output.
@@ -172,6 +175,8 @@ class DecisionRegister:
     # #639: the sha256 of the spec text the decompose read, "" on a
     # register written before #639.
     spec_digest: str = ""
+    # #639 slice 2: the architect's requirements and non-goals.
+    requirements: tuple[SpecRequirement, ...] = ()
     halted: bool = False
     status: str = REGISTER_MISSING
     detail: str = ""
@@ -401,6 +406,7 @@ def write_decisions(
     spec_digest: str = "",
     answered_items: Sequence[str] = (),
     answers_digest: str = "",
+    requirements: Sequence[SpecRequirement] = (),
 ) -> Path:
     """Persist the register to ``scripts/kstrl/decisions.json``.
 
@@ -424,6 +430,10 @@ def write_decisions(
         "halted": halted,
         "counts": _decision_counts(decisions),
         "decisions": [_decision_dict(d) for d in decisions],
+        "requirements": [
+            {"id": r.id, "kind": r.kind, "statement": r.statement, "stories": list(r.stories)}
+            for r in requirements
+        ],
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_json(path, payload)
@@ -459,7 +469,11 @@ def read_decisions(root_dir: Path) -> DecisionRegister:
     # answers "output must be a JSON object" for anything that is not a
     # dict, and a second wording for one fault is a second thing to keep
     # in step.
-    entry_errors = decisions_payload_errors(raw)
+    # Imported here: kstrl.requirements imports this module's field checks.
+    from kstrl.requirements import parse_requirements, requirements_payload_errors
+
+    # The story join is skipped: the register holds no stories to join.
+    entry_errors = decisions_payload_errors(raw) or requirements_payload_errors(raw, None)
     if entry_errors:
         return DecisionRegister(
             status=REGISTER_UNREADABLE, detail=f"{path}: {'; '.join(entry_errors[:3])}"
@@ -469,6 +483,7 @@ def read_decisions(root_dir: Path) -> DecisionRegister:
         project=_clean(raw.get("project")),
         spec_file=_clean(raw.get("specFile")),
         spec_digest=_clean(raw.get("specDigest")),
+        requirements=parse_requirements(raw),
         halted=bool(raw.get("halted", False)),
         status=REGISTER_OK,
     )

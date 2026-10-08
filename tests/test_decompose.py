@@ -37,6 +37,7 @@ from kstrl.evolution import SPEC_ISSUES_EVENT, EvolutionConfig, EvolutionJournal
 from kstrl.prd import PRD
 from kstrl.statedir import plan_prd_path
 from kstrl.ui.plain import PlainUI
+from tests.helpers.architect_payload import traced
 from tests.helpers.before_spend import no_base_check
 from tests.helpers.journal import journal_at
 from tests.helpers.prompt_calls import architect_call
@@ -118,6 +119,12 @@ VALID_DECOMPOSE_OUTPUT = json.dumps(
         "stack": PROPOSED_STACK,
         "spec_issues": [],
         "decisions": [],
+        # DECOMPOSE_PROMPT 5.0.0 (#639 slice 2): every story is named by a
+        # requirement.
+        "requirements": [
+            {"id": "R-1", "kind": "requirement", "statement": "Users", "stories": ["US-001"]},
+            {"id": "R-2", "kind": "requirement", "statement": "List", "stories": ["US-002"]},
+        ],
     }
 )
 
@@ -201,6 +208,9 @@ class TestSpecIssues:
                         "disposition": "assumed",
                         "resolution": "return an empty list; pinned by AC2",
                     }
+                ],
+                "requirements": [
+                    {"id": "R-1", "kind": "requirement", "statement": "S", "stories": ["US-001"]}
                 ],
                 "components": [
                     {
@@ -518,7 +528,7 @@ def _single_component_output(
         payload["decisions"] = decisions
     else:
         payload["decisions"] = _closures_for(issues)
-    return json.dumps(payload)
+    return json.dumps(traced(payload))
 
 
 class TestARegisterThatDidNotLandFailsTheDecompose:

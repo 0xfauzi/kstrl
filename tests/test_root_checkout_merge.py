@@ -96,7 +96,9 @@ ARCHITECT_REPLY = (
     '"allowedPaths": ["src/", "scripts/kstrl/feature/greeter/"], '
     '"userStories": [{"id": "US-001", "title": "Hello", '
     '"acceptanceCriteria": ["prints hello"], "priority": 1, '
-    '"passes": false, "notes": ""}]}], "spec_issues": [], "decisions": []}'
+    '"passes": false, "notes": ""}]}], "spec_issues": [], "decisions": [], '
+    '"requirements": [{"id": "R-1", "kind": "requirement", '
+    '"statement": "The greeter says hello.", "stories": ["US-001"]}]}'
 )
 
 

@@ -47,6 +47,14 @@ def _decompose_output(comp_id: str) -> str:
             "stack": PROPOSED_STACK,
             "spec_issues": [],
             "decisions": [],
+            "requirements": [
+                {
+                    "id": "R-1",
+                    "kind": "requirement",
+                    "statement": "The component works.",
+                    "stories": ["US-001"],
+                }
+            ],
             "components": [
                 {
                     "id": comp_id,
