@@ -312,7 +312,8 @@ class TestAManifestWithNoSpecBindsNothing:
         prd.write_text("{}", encoding="utf-8")
         manifest = Manifest.from_prd(prd, "kstrl/auth", base_branch="main")
         assert manifest.spec_file == ""
-        assert bind_register(self._register(), manifest.project_name, manifest.spec_file) == ()
+        bound = bind_register(self._register(), manifest.project_name, manifest.spec_file)
+        assert bound.decisions == () and bound.requirements == ()
 
 
 class TestTheSchedulerActuallyInjectsIt:

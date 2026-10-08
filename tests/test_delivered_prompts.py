@@ -94,6 +94,7 @@ from kstrl.inbox import Inbox, InboxItem, ItemKind, ItemStatus
 from kstrl.loop import COMPLETION_MARKER
 from kstrl.manifest import Component
 from kstrl.owner_answers import read_owner_answers
+from kstrl.requirements import SpecRequirement
 from kstrl.stack import Stack
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import CheckResult, VerificationResult, VerifyConfig
@@ -184,6 +185,12 @@ _DECISIONS = [
         issue="i3", question="q3", disposition="decided", resolution="r3", component="comp-b"
     ),
 ]
+
+#: #639 slice 5: a requirement comp-a's story builds, and a non-goal.
+_REQUIREMENTS = (
+    SpecRequirement(id="R-1", kind="requirement", statement="Parse files", stories=("US-001",)),
+    SpecRequirement(id="R-2", kind="non_goal", statement="No network", stories=()),
+)
 
 
 #: Every module that reads ``generate_data_delimiter`` at prompt-build
@@ -294,10 +301,11 @@ _ROLES: dict[str, _Role] = {
                 checks=(("tests", "T"), ("lint", "L")),
                 env=(),
             ),
+            requirements=_REQUIREMENTS[:1],
         ),
         frozenset({"ACCEPTANCE_PROMPT"}),
-        "1da1b80ab50403c523435efa6e4f272a58b1f73525396532c1d8b3e1252b06e8",
-        3481,
+        "3b8316839e163857c0a83c561e4a4344c074ea9af4f67e202e1f7dc481315194",
+        3734,
     ),
     "architect": _Role(
         lambda _p: decompose.build_decompose_prompt("PROJECT", _SPEC_TEXT),
@@ -324,10 +332,10 @@ _ROLES: dict[str, _Role] = {
         17640,
     ),
     "decisions-context": _Role(
-        lambda _p: build_decisions_context(_DECISIONS, "comp-a"),
+        lambda _p: build_decisions_context(_DECISIONS, "comp-a", requirements=_REQUIREMENTS),
         frozenset({"DECISIONS_CONTEXT_PROMPT"}),
-        "bb052fd147821f06f2dfcfd6d6b1132c34fa04d79424f2149aec5be24901f1f4",
-        651,
+        "342f719984693840674f818dbdbabb50d3e4c39674ee8459ad5309d4cdfd8afb",
+        1033,
     ),
     "distiller": _Role(
         lambda _p: knowledge.build_distill_prompt(

@@ -75,7 +75,8 @@ from kstrl.config_numbers import check_numbers
 from kstrl.jsonread import read_json
 from kstrl.manifest import ADVERSARIAL_BUDGET_CHECK, Component, ComponentStatus, Manifest
 from kstrl.observability import read_progress_events
-from kstrl.pr import GH_TIMEOUT, PR_FOOTER_MARKER
+from kstrl.pr import GH_TIMEOUT
+from kstrl.pr_body import PR_FOOTER_MARKER
 from kstrl.procdispose import drain_or_abandon
 from kstrl.procgroup import (
     pid_is_alive,

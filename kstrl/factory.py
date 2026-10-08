@@ -145,6 +145,7 @@ from kstrl.plan_gate import run_plan_gate, spec_pin_errors, stack_pin_errors
 from kstrl.policy import PolicyConfig
 from kstrl.pr import create_prs_in_order, create_single_pr
 from kstrl.release import RELEASE_REF_RULE, ReleaseInputs, release_ref_from, release_withheld
+from kstrl.requirements import SpecRequirement
 from kstrl.review import (
     ReviewMode,
     run_review,
@@ -465,6 +466,10 @@ class FactoryConfig:
     # reuse it while the base names the same commit, so the base is measured
     # once. Never read from kstrl.toml, env or a flag.
     base_reading: BaseGates | None = field(default=None, metadata={"provenance": True})
+    # #639 slice 5: the requirements of the decision register this run bound
+    # (``_run_preflights``), which the engineers, the verification designer
+    # and the PR bodies read. Never read from kstrl.toml, env or a flag.
+    requirements: tuple[SpecRequirement, ...] = field(default=(), metadata={"provenance": True})
 
     def resolved_verify_config(self) -> VerifyConfig:
         """The VerifyConfig Phase 1 runs with (#261).
@@ -2387,18 +2392,18 @@ def _preflight_decision_register(
     ``run_factory`` gave the operator a traceback and exit 1, where
     every sibling refusal gives a sentence and exit 2.
     """
-    register = read_decisions(root_dir)
+    # #639: the requirements bind exactly when the decisions do, because
+    # bind_register returns the whole register or an empty one. A manifest
+    # with no spec_file binds nothing, so it gets no requirements either.
     try:
-        decisions = bind_register(
-            register, manifest.project_name, manifest.spec_file, manifest.spec_digest
+        return [], bind_register(
+            read_decisions(root_dir),
+            manifest.project_name,
+            manifest.spec_file,
+            manifest.spec_digest,
         )
     except DecisionRegisterError as exc:
         return [str(exc)], DecisionRegister()
-    # #639 slice 3: the requirements bind exactly when the decisions do. A
-    # manifest with no spec_file binds nothing, so it gets no requirements
-    # either; a missing register holds none.
-    requirements = register.requirements if manifest.spec_file else ()
-    return [], replace(register, decisions=decisions, requirements=requirements)
 
 
 #: Why ``base-gates.json`` holds no reading under ``--no-verify`` (#654).
@@ -2705,6 +2710,7 @@ def _run_preflights(
     register_errors, run_register = _preflight_decision_register(manifest, root_dir)
     if _report_preflight(ui, "the architect decision register cannot bind", register_errors):
         return None
+    factory_config.requirements = run_register.requirements
     headline, pin_errors = _preflight_pins(manifest, root_dir, factory_config, run_id)
     if _report_preflight(ui, headline, pin_errors):
         return None
@@ -5384,7 +5390,9 @@ def _run_factory_locked(
             # facts already ride, so the register reaches the engineer
             # without a second delivery mechanism. Per component: its
             # own decisions in full, the rest of the run summarised.
-            build_decisions_context(run_register.decisions, comp.id),
+            build_decisions_context(
+                run_register.decisions, comp.id, requirements=factory_config.requirements
+            ),
             # Per-component, not run-wide: KstrlConfig.component_progress_file
             # keeps the engineer's progress log inside allowedPaths.
             base_config.component_progress_file(comp.prd_path, root_dir),
@@ -5951,7 +5959,11 @@ def _run_factory_locked(
     if factory_config.create_prs:
         if factory_config.single_pr:
             result = create_single_pr(
-                manifest, root_dir, ui, isolation=label_of(factory_config.test_rung)
+                manifest,
+                root_dir,
+                ui,
+                isolation=label_of(factory_config.test_rung),
+                requirements=factory_config.requirements,
             )
             if result:
                 factory_result.pr_urls.append(result[1])
@@ -5961,7 +5973,11 @@ def _run_factory_locked(
             remaining = [c for c in manifest.components if c.status == "completed" and not c.pr_url]
             if remaining:
                 pr_results = create_prs_in_order(
-                    manifest, root_dir, ui, isolation=label_of(factory_config.test_rung)
+                    manifest,
+                    root_dir,
+                    ui,
+                    isolation=label_of(factory_config.test_rung),
+                    requirements=factory_config.requirements,
                 )
                 factory_result.pr_urls.extend(url for _, url in pr_results)
                 manifest.save(manifest_path)

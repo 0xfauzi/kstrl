@@ -100,7 +100,7 @@ MAX_OTHER_DECISION_TOKENS = 2000
 #: The harness-wide estimate codebase scan and knowledge also use.
 _CHARS_PER_TOKEN = 4
 
-DECISIONS_CONTEXT_PROMPT_VERSION = "1.0.0"
+DECISIONS_CONTEXT_PROMPT_VERSION = "1.1.0"
 
 #: An empty tier renders as nothing at all under its heading, and
 #: deliberately NOT as a "(none)" marker: that marker would be a second
@@ -124,6 +124,15 @@ closed them. These are binding: implement what is written here. An
 `assumed` decision is pinned by an acceptance criterion in a PRD - if
 your code cannot honour one, say so in your Self-Critique rather than
 deciding differently.
+
+### Requirements of the spec
+
+What the spec asks for (`requirement`) and rules out (`non_goal`), as the
+architect recorded it. A requirement names the user stories that build
+it, so the story ids in your PRD show which requirements this component
+builds. Build nothing a `non_goal` rules out.
+
+{requirements}
 
 ### Decisions binding this component ({component_id})
 
@@ -199,10 +208,10 @@ def bind_register(
     project_name: str,
     spec_file: str,
     spec_digest: str = "",
-) -> tuple[SpecDecision, ...]:
-    """The decisions that may bind this manifest, or raise.
+) -> DecisionRegister:
+    """The register that may bind this manifest, or raise.
 
-    Two things are legal and return nothing.
+    Two things are legal and return an empty register.
 
     A MISSING register: a manifest written before this feature has none,
     and that is a fact rather than a fault.
@@ -224,7 +233,7 @@ def bind_register(
     basename, and one spec's text can change under the same name.
     """
     if register.status == REGISTER_MISSING or not spec_file:
-        return ()
+        return DecisionRegister()
     if register.status != REGISTER_OK:
         raise DecisionRegisterError(
             f"architect decision register is unreadable: {register.detail}. "
@@ -248,7 +257,7 @@ def bind_register(
             f"{project_name!r} / {spec_file!r} ({spec_digest[:12] or 'no digest'}). "
             f"Re-run the decompose for this spec."
         )
-    return register.decisions
+    return register
 
 
 def _clean(value: Any) -> str:
@@ -503,6 +512,11 @@ def _render_summary(decision: SpecDecision) -> str:
     return f"- **[{decision.disposition}]** {decision.question} -> {decision.resolution}"
 
 
+def _render_requirement(requirement: SpecRequirement) -> str:
+    stories = f" (stories {', '.join(requirement.stories)})" if requirement.stories else ""
+    return f"- **{requirement.id}** [{requirement.kind}]{stories}: {requirement.statement}"
+
+
 def _pack_other(items: Sequence[SpecDecision], max_tokens: int) -> list[SpecDecision]:
     """As many other-component decisions as the budget allows.
 
@@ -534,8 +548,13 @@ def build_decisions_context(
     decisions: Sequence[SpecDecision],
     component_id: str,
     max_other_tokens: int = MAX_OTHER_DECISION_TOKENS,
+    *,
+    requirements: Sequence[SpecRequirement],
 ) -> str:
     """The engineer-facing block for one component, or "" when empty.
+
+    #639 slice 5: every requirement and non-goal of the run, in full,
+    whatever the component: the story ids say which ones it builds.
 
     Three tiers, and only the third can lose anything:
 
@@ -550,7 +569,7 @@ def build_decisions_context(
     construction rather than by hope: nothing binding this component is
     ever cut, so the block has no cap and does not pretend to have one.
     """
-    if not decisions:
+    if not decisions and not requirements:
         return ""
     # Escalations first within each tier: if a register somehow reaches
     # an engineer with one in it, it is the line that must lead. Sorted
@@ -564,6 +583,7 @@ def build_decisions_context(
     shown_other = _pack_other(other, max_other_tokens)
     return DECISIONS_CONTEXT_PROMPT.format(
         component_id=component_id,
+        requirements="\n".join(_render_requirement(r) for r in requirements),
         own="\n".join(_render_full(d) for d in own),
         run_wide="\n".join(_render_full(d) for d in run_wide),
         other_shown=len(shown_other),

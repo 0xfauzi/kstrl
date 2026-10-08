@@ -961,9 +961,11 @@ class TestFactoryReviewerCrash:
         infra = [f for f in comp.findings if f.is_infrastructure_error and f.phase == "security"]
         assert len(infra) == 1
         # and the PR body renders the did-not-run callout from it
-        from kstrl.pr import _generate_pr_body
+        from kstrl.pr_body import component_pr_body
 
-        body = _generate_pr_body(comp, manifest, isolation="none: ran on the host")
+        body = component_pr_body(
+            comp, manifest, root, isolation="none: ran on the host", requirements=()
+        )
         assert "INFRASTRUCTURE ERROR" in body
 
 

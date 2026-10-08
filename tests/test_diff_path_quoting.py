@@ -128,13 +128,14 @@ def test_diff_header_path_matches_a_real_diff_for_every_header_shape(
 #: still never reads a path out of a header) and an unrelated bare
 #: `---` used as a markdown frontmatter delimiter, not a diff reader.
 #: policy.py's two are parse_added_lines' `+++ `/`--- ` gating pair, the
-#: one reader that calls diff_header_path. pr.py's two are both bare
+#: one reader that calls diff_header_path. pr_body.py's two are both bare
 #: `---` written as a markdown horizontal rule in a PR body, not read
-#: from a diff at all; lane #409's this round, unedited here.
+#: from a diff at all; #639 slice 5 moved them out of pr.py with the two
+#: PR body writers.
 EXPECTED_DIFF_HEADER_LITERALS = {
     "knowledge.py": 2,
     "policy.py": 2,
-    "pr.py": 2,
+    "pr_body.py": 2,
 }
 
 

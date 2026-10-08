@@ -16,7 +16,7 @@ and stories join requirements by id, never by count.
 from __future__ import annotations
 
 import re
-from collections.abc import Collection
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -130,3 +130,11 @@ def parse_requirements(data: Any) -> tuple[SpecRequirement, ...]:
         )
         for entry in raw
     )
+
+
+def built_by(
+    requirements: Sequence[SpecRequirement], story_ids: Collection[str]
+) -> tuple[SpecRequirement, ...]:
+    """The requirements one of ``story_ids`` builds, in register order
+    (#639 slice 5). A non_goal names no story, so it is never one of them."""
+    return tuple(r for r in requirements if any(story in story_ids for story in r.stories))
