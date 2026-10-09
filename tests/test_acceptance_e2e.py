@@ -357,6 +357,9 @@ exit 0
 ENGINEERS = {
     "custom": ("", "- the engineer ran with no sandbox"),
     "codex": ("codex", "- the engineer ran in the sandbox of codex"),
+    # A codex engineer under KSTRL_SANDBOX_ENABLED=0: the harness has a
+    # sandbox, but the operator switched it off, so nothing confined it.
+    "codex-sandbox-off": ("", "- the engineer ran with no sandbox"),
 }
 
 
@@ -385,7 +388,10 @@ def _engineer_on_path(tmp_path: Path, bindir: Path, kind: str) -> tuple[list[str
         "echo '<promise>COMPLETE</promise>' > \"$last\"\n"
     )
     write_executable(bindir / "codex", codex)
-    return [], {"PATH": os.pathsep.join([str(bindir), *kept]), "KSTRL_AGENT_TYPE": "codex"}
+    env = {"PATH": os.pathsep.join([str(bindir), *kept]), "KSTRL_AGENT_TYPE": "codex"}
+    if kind == "codex-sandbox-off":
+        env["KSTRL_SANDBOX_ENABLED"] = "0"
+    return [], env
 
 
 @runs_a_stack

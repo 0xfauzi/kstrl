@@ -394,6 +394,21 @@ def test_a_confirmed_stack_s_writable_paths_reach_the_engineer_sandbox(tmp_path:
     assert roots[-1] == (root / "tool-cache").resolve(), (roots, out)
 
 
+def test_an_unconfirmed_stack_s_writable_paths_never_reach_the_engineer_sandbox(
+    tmp_path: Path,
+) -> None:
+    """The engineer can edit kstrl.toml, so a ``[stack]`` that no person
+    confirmed grants its sandbox nothing. ``ks feature`` with no
+    verification still starts the codex engineer under such a stack; its one
+    writable root is the git dir of the checkout, never ``tool-cache``."""
+    out = _ks(tmp_path, CODEX_TOML + STACK_TOML, _FEATURE, {})
+
+    argv = _engineer_argv(tmp_path)
+    (roots_arg,) = [a for a in argv if a.startswith("sandbox_workspace_write.writable_roots=")]
+    roots = [Path(p).resolve() for p in json.loads(roots_arg.split("=", 1)[1])]
+    assert roots == [(tmp_path / "proj" / ".git").resolve()], (roots, out)
+
+
 def test_a_codex_engineer_in_a_plain_checkout_may_write_its_git_dir(tmp_path: Path) -> None:
     """RED before #700: the engineer's argv had no --sandbox. ``ks run`` works
     in the checkout itself, whose git dir holds the index lock, so the one
