@@ -161,7 +161,6 @@ SET_IN_TOML: dict[tuple[str, str], tuple[str, str]] = {
     ("queue", "max_attempts"): ("5", "5"),
     ("release", "environment"): ('"staging"', "'staging'"),
     ("signals", "new_issue_events"): ("4", "4"),
-    ("learning", "consume"): ("false", "False"),
 }
 
 

@@ -17,6 +17,7 @@ import ast
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -59,6 +60,7 @@ with serve_lock(Path(sys.argv[1])):
 #: one holding it, by taking the same `serve_lock` the holder took.
 _PROBE = """
 import sys
+import time
 from pathlib import Path
 from kstrl.serve import ServeLockedError, serve_lock
 try:
@@ -307,3 +309,61 @@ class TestReapLeasesAndServeCycleHaveOneCallerEach:
     def test_every_serve_cycle_call_sits_inside_serve(self) -> None:
         offenders = self._callers_outside("serve_cycle", "serve")
         assert offenders == [], f"serve_cycle called outside serve: {offenders}"
+
+
+#: The lease TTL for the resume test. Short so the lease lapses while the
+#: stub run waits, which is what a suspend does to a wall-clock lease.
+_RESUME_LEASE_TTL_SECONDS = 0.05
+
+
+class TestARunWhoseLeaseLapsedWhileItRanStillFinishes:
+    """#203: the last step of the dark-wake decision in docs/continuous-intake.md §7.
+
+    A suspend lets the wall-clock lease of a RUNNING item lapse. The lock
+    tests above keep a second firing away from the reaper. This pins the
+    other half: when the run resumes and returns, `serve()` commits its
+    result although the lease is no longer live.
+    """
+
+    def test_a_run_whose_lease_lapses_mid_run_finishes_done(self, root: Path) -> None:
+        item_id = Queue(root, QueueConfig()).add("# Spec\n\nDo the thing.\n").item_id
+        lapsed: list[bool] = []
+
+        def runner(
+            *,
+            root_dir: Path,
+            spec_path: Path,
+            project_name: str,
+            pause_before_pr_merge: bool,
+            design_acceptance: bool,
+            timeout_seconds: float,
+            on_spawn: object = None,
+        ) -> RunOutcome:
+            if callable(on_spawn):
+                on_spawn(os.getpid())
+            deadline = time.monotonic() + _CHILD_TIMEOUT_SECONDS
+            while time.monotonic() < deadline:
+                current = Queue(root_dir, QueueConfig()).get(item_id)
+                assert current is not None
+                assert current.state is ItemState.RUNNING, current.state
+                if current.lease_expired():
+                    lapsed.append(True)
+                    break
+                time.sleep(0.01)
+            return RunOutcome(0)
+
+        serve(
+            root,
+            once=True,
+            queue_config=QueueConfig(lease_ttl_seconds=_RESUME_LEASE_TTL_SECONDS),
+            runner=runner,
+        )
+
+        assert lapsed == [True], "the lease never lapsed while the run ran, so this proves nothing"
+        item = Queue(root, QueueConfig()).get(item_id)
+        assert item is not None
+        assert item.state is ItemState.DONE, (
+            f"a run whose wall-clock lease lapsed while it ran (a suspend) did "
+            f"not commit its result: the item is {item.state.value}, not done. "
+            f"The finish must not read the lease (#203)."
+        )

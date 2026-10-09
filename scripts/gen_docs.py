@@ -145,7 +145,6 @@ def _section_specs() -> list[SectionSpec]:
     from kstrl.knowledge import KnowledgeConfig
     from kstrl.linear import LinearConfig
     from kstrl.observability import NotifyConfig
-    from kstrl.playbook import LearningConfig
     from kstrl.policy import PolicyConfig
     from kstrl.release import ReleaseConfig
     from kstrl.sandbox import SandboxConfig
@@ -438,14 +437,6 @@ def _section_specs() -> list[SectionSpec]:
             SignalsConfig(),
             probe_undocumented_fields=True,
         ),
-        SectionSpec(
-            "learning",
-            "Cross-project learning: the global playbook (#217)",
-            identity_keys(LearningConfig, _all_field_names(LearningConfig)),
-            lambda root: LearningConfig.load(root_dir=root),
-            LearningConfig(),
-            probe_undocumented_fields=True,
-        ),
     ]
     return specs
 
@@ -557,8 +548,8 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
         "no_progress_iterations",
     ): "halt after N consecutive no-progress iterations; 0 disables (R7.5)",
     ("sandbox", "enabled"): "OS-sandbox the engineer, reviewer, understand and repair agent CLIs "
-    "(writes scoped to the worktree); a custom agent command in one of those roles is refused "
-    "(exit 2)",
+    "(writes scoped to the worktree); a custom agent command, or false, runs with no sandbox "
+    "and the run warns naming the role",
     ("sandbox", "allow_network"): "re-open outbound network inside the sandbox (off = deny)",
     ("verify", "check_diff_scope"): "fail on changes outside allowed paths",
     ("verify", "check_bad_patterns"): "scan the diff for secret-like patterns",
@@ -706,8 +697,6 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("signals", "http_timeout"): "per-request timeout",
     ("signals", "new_issue_events"): "advisory threshold; labels a new issue, gates nothing",
     ("signals", "repeat_growth_events"): "advisory threshold; labels a repeat, gates nothing",
-    ("learning", "contribute"): "append this project's lessons to the global playbook",
-    ("learning", "consume"): "read global playbook lessons into this project's prompts",
 }
 
 # Sentinel values for keys whose loader validates the value (enum

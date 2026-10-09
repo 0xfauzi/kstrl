@@ -66,7 +66,9 @@ CHOICE_VOCABULARIES: dict[str, tuple[str, ...]] = {
 
 #: Re-derived by running ``len(choice_options(cli))`` on this tree, never
 #: edited to match.
-EXPECTED_CHOICE_OPTIONS = 51  # 50 until #700 slice 5 added `ks recheck --ui`
+#: 51: #700 slice 5 added `ks recheck --ui`. 49: #217 removed
+#: the `--ui` option of each of the two commands in the learn group.
+EXPECTED_CHOICE_OPTIONS = 49
 
 #: Re-derived by running the Layer 2 census on this tree.
 EXPECTED_CHOICE_CALLS: dict[str, int] = {"cli.py": 23}

@@ -45,6 +45,7 @@ from typing import TYPE_CHECKING, Any
 
 from kstrl import events as ev
 from kstrl import git
+from kstrl.acceptance_lines import pr_isolation
 from kstrl.agents.base import (
     ARCHITECT_COMPONENT,
     ARCHITECT_ROLE,
@@ -5478,7 +5479,7 @@ class ComponentPipeline:
             self.ui,
             merge_method="squash",
             merge_timeout=self.factory_config.merge_timeout,
-            isolation=label_of(self.factory_config.test_rung),
+            isolation=pr_isolation(self.factory_config),
             requirements=self.factory_config.requirements,
         )
         if outcome.pr_url:

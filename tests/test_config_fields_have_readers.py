@@ -50,12 +50,7 @@ REPORTERS = frozenset({"config_report.py", "config_preflight.py"})
 #: Keys a loader sets that nothing reads yet, each with its reason. The
 #: census must equal this exactly, so the row fails the day its reader
 #: lands and has to be deleted in that diff.
-UNREAD_BY_DESIGN: dict[tuple[str, str], str] = {
-    ("learning", "consume"): (
-        "the opt-out ships ahead of its reader: #217 slices 8 and 9 put "
-        "playbook lessons into prompts, and nothing does so today"
-    ),
-}
+UNREAD_BY_DESIGN: dict[tuple[str, str], str] = {}
 
 
 def unread(
@@ -106,9 +101,7 @@ def test_every_kstrl_toml_key_sets_a_field_some_code_reads() -> None:
 
 #: Config dataclass fields nothing reads yet, by class and field name. The
 #: census below must equal this exactly, for the reason UNREAD_BY_DESIGN does.
-UNREAD_FIELDS_BY_DESIGN: dict[tuple[str, str], str] = {
-    ("LearningConfig", "consume"): UNREAD_BY_DESIGN[("learning", "consume")],
-}
+UNREAD_FIELDS_BY_DESIGN: dict[tuple[str, str], str] = {}
 
 
 def config_classes() -> list[type]:
@@ -133,7 +126,7 @@ def test_every_config_dataclass_field_is_read_by_some_code() -> None:
     from kstrl.factory import FactoryConfig
 
     classes = config_classes()
-    assert FactoryConfig in classes and len(classes) >= 24, [c.__name__ for c in classes]
+    assert FactoryConfig in classes and len(classes) >= 23, [c.__name__ for c in classes]
     fields = {
         (cls.__name__, field.name): field.name
         for cls in classes

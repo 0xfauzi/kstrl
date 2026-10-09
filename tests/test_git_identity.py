@@ -278,9 +278,11 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # its subject (per-language [verify]/[factory] command keys) having
     # no reachable production code left.
     "tests/test_run_record_version.py": 1,
-    # #701: `_repo`'s one init commit, into a repository it has just put
-    # through `tests.helpers.gitrepo.set_identity`.
-    "tests/test_sandbox_refused_before_spend.py": 1,
+    # #701: `_project`'s one init commit, into a repository it has just put
+    # through `tests.helpers.gitrepo.set_identity`. #700 renamed the file and
+    # its module docstring and the plain-checkout test's docstring each name
+    # "git" and "commit" in one string (prose).
+    "tests/test_sandbox_engineer_e2e.py": 3,
     # Prose, not a commit: a tuple of literal argv-prefix strings an
     # allowlist test checks a Claude reviewer's permission RULES against
     # ("git commit" among them), never spawned.

@@ -103,8 +103,6 @@ EMPTY_REPO_EXITS: tuple[tuple[tuple[str, ...], tuple[str, ...], int, str], ...] 
     (("inbox", "show"), ("x",), 2, "no such inbox item"),
     (("inbox", "snooze"), ("x",), 2, "no such inbox item"),
     (("init",), ("--ui", "plain"), 0, "scaffolds the project"),
-    (("learn", "playbook"), (), 0, "an empty playbook is an answer"),
-    (("learn", "repair"), (), 0, "a missing ledger has nothing to repair"),
     (("queue", "add"), ("spec.md",), 0, "queues the spec"),
     (("queue", "answer"), ("x", "spec.md"), 2, "no such queue item"),
     (("queue", "ls"), (), 0, "an empty queue"),
@@ -371,7 +369,6 @@ FINDING_EXIT_SITES: dict[tuple[str, str], int] = {
     ("doctor.py", "exit_code_for"): 1,  # `ks doctor`: not ready is a finding
     ("factory.py", "resolve_exit_code"): 5,  # a failed, unmerged, parked or unscheduled run
     ("init_cmd.py", "run_init"): 2,  # `ks init`: the PRD it validated is invalid
-    ("learning_fixture.py", "main"): 1,  # `python -m kstrl.learning_fixture`: the check failed
     ("loop.py", "run_loop"): 5,  # an iteration ran and the loop ended short
     ("plan_gate.py", "_park_plan"): 1,  # an L1 plan parked for approval, nothing run (#602)
     ("tui/bridge.py", "CommandHandle"): 2,  # the command raised: the exit a traceback gets

@@ -123,8 +123,6 @@ EXPECTED_UNDECIDED_REPLACE_CALLS: tuple[str, ...] = (
     # commands into the scaffolded [verify], is gone with [verify] itself.
     "knowledge.py raw_output[:200].replace",
     "observability.py datetime.strptime(ts, '%Y-%m-%dT%H:%M:%SZ').replace",
-    "playbook.py datetime.now(UTC).replace",
-    "playbook.py datetime.now(UTC).replace(microsecond=0).isoformat().replace",
     # #526: `retry_plan._opt` spells a run limit as an option name, a str.replace.
     "retry_plan.py name.replace",
     "serve.py (local + timedelta(days=1)).replace",

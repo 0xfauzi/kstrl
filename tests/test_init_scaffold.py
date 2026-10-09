@@ -20,6 +20,7 @@ from kstrl.factory import FactoryConfig
 from kstrl.feedforward import CodebaseScanConfig
 from kstrl.init_cmd import DEFAULT_KSTRL_TOML
 from kstrl.knowledge import KnowledgeConfig
+from kstrl.sandbox import SandboxConfig
 from kstrl.verify import VerifyConfig
 
 EXPECTED_SCAFFOLD_SECTIONS = {
@@ -34,6 +35,7 @@ EXPECTED_SCAFFOLD_SECTIONS = {
     "autonomy",
     "divergence",
     "inbox",
+    "sandbox",
     "security",
     "contract",
     "codebase_scan",
@@ -102,6 +104,7 @@ EXPECTED_SCAFFOLD_KEYS = {
         "snooze_hours",
         "notify_action_required",
     },
+    "sandbox": {"enabled", "allow_network"},
     "security": {
         "mode",
         "fail_threshold",
@@ -270,3 +273,5 @@ class TestInitScaffold:
         EvolutionConfig.load(tmp_path)
         KnowledgeConfig.load(tmp_path)
         TimeoutConfig.load(tmp_path)
+        # #700: the scaffold shows [sandbox]'s real defaults, on with no network.
+        assert SandboxConfig.load(tmp_path) == SandboxConfig(enabled=True, allow_network=False)
