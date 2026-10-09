@@ -898,18 +898,13 @@ def render_review_prompt(
     change_source: str,
     verification_summary: str,
     data_delimiter: str,
-    template: str | None = None,
 ) -> str:
     """Fill the reviewer template with the four values it names.
 
-    ``template`` is ``None`` everywhere but the prompt optimizer
-    (:mod:`kstrl.gepa_adapter`), which renders a candidate prompt through
-    this function so a candidate is filled exactly as the enrolled body
-    is. ``None`` means :data:`REVIEWER_PROMPT`, read at call time, so a
-    test that patches the module constant still reaches the role.
+    :data:`REVIEWER_PROMPT` is read at call time, so a test that patches
+    the module constant still reaches the role.
     """
-    body = REVIEWER_PROMPT if template is None else template
-    return body.format(
+    return REVIEWER_PROMPT.format(
         prd_content=prd_content,
         change_source=change_source,
         verification_summary=verification_summary,

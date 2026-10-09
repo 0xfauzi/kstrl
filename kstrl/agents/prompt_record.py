@@ -13,7 +13,7 @@ understand and feature loops) opens around the work that runs the agent.
 The adapter knows none of it: ``Agent.run`` carries a prompt, a cwd and a
 timeout, and changing that protocol would touch every fake agent in the
 suite. Outside a scope nothing is written, which is the state of every
-call made outside a run (the liveness probe, the GEPA evaluator, a test
+call made outside a run (the liveness probe, a test
 driving an adapter directly). ``tests/test_prompt_record_census.py`` is
 what stops a new call site inside a run from landing outside a scope.
 

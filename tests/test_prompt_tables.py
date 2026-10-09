@@ -1,7 +1,7 @@
 """H3: the enrolled tables agree with each other (#530 split).
 
 Split out of ``tests/test_prompt_versions.py`` when enrolling
-``GEPA_REFLECTION_PROMPT`` would have taken that file past the repo's
+a prompt would have taken that file past the repo's
 800-line gate, the reason ``tests/test_prompt_enrollment_walk.py`` was
 split from it before. That file holds the tables (``_PROMPTS``,
 ``_VERSIONS``, ``_EXPECTED_SNAPSHOTS``) and checks each prompt against its
