@@ -337,8 +337,8 @@ _ROLES: dict[str, _Role] = {
             requirements=_REQUIREMENTS[:1],
         ),
         frozenset({"ACCEPTANCE_PROMPT"}),
-        "3b8316839e163857c0a83c561e4a4344c074ea9af4f67e202e1f7dc481315194",
-        3734,
+        "372647a6610878408260e97b09a1b362d9c927f24677b1a5c12e0927d58872ac",
+        4237,
     ),
     "architect": _Role(
         lambda _p: decompose.build_decompose_prompt("PROJECT", _SPEC_TEXT),

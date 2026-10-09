@@ -389,9 +389,12 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     ),
     # 1.0.0 (#700 slice 7): new, the verification designer. H2: roles "acceptance" and
     # "acceptance_clean", first captured with #696 slice 7; no baseline carries them yet.
+    # 1.1.0 (#639 slice 5): a criterion cites a requirement. No capture ran (owner).
+    # 1.2.0 (#700): the base removal, the refusal and a held-out failure, as kstrl
+    # does them. No capture ran yet. The coordinator does it.
     "ACCEPTANCE_PROMPT": (
-        "94343e5c3733affd08d4d7ef5b35721c067a26078bffb940b58be8f10f951550",
-        "1.1.0",  # #639 slice 5: a criterion cites a requirement. No capture ran (owner).
+        "b42bec0e7ea02381ee5832da179e8425160155383a162f4a09288ae028bfd6a9",
+        "1.2.0",
     ),
     "PASTED_CHANGE_SOURCE_PROMPT": (
         "a1e6082933043d31c9efc513c0e16466629ccf770f6e6e828ace39565736d0d5",
