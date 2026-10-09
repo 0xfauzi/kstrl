@@ -272,17 +272,18 @@ test-failure signature.
 
 ## SandboxConfig (`[sandbox]`)
 
-OS-level agent sandboxing (R7.5), applied by the claude-code, claude-sdk
-and codex adapters to the engineer, the code and security reviewers, the
-understand agent and the repair agent. Write scope is the agent's worktree
-by construction on both CLIs. A custom agent command cannot be sandboxed,
-so with the sandbox enabled a run that would start one in any of those
-roles is refused with exit 2 before any agent call (#701); see the runbook.
-The architect and the knowledge distiller are not sandboxed.
+OS-level agent sandboxing (R7.5), on by default (#700), applied by the
+claude-code, claude-sdk and codex adapters to the engineer, the code and
+security reviewers, the understand agent and the repair agent. Write scope
+is the agent's worktree, the git paths a commit writes, and the confirmed
+`[stack]`'s `writable` paths. A custom agent command cannot be sandboxed:
+the run continues and warns, naming the role, and so does
+`enabled = false`; see the runbook. The architect and the knowledge
+distiller are not sandboxed.
 
 | Env var | Type | Default | Notes |
 |---|---|---|---|
-| `KSTRL_SANDBOX_ENABLED` | bool | false | Opt-in OS sandbox for agent subprocesses |
+| `KSTRL_SANDBOX_ENABLED` | bool | true | OS sandbox for agent subprocesses; false runs them with no sandbox, with a warning |
 | `KSTRL_SANDBOX_ALLOW_NETWORK` | bool | false | Re-open outbound network inside the sandbox |
 
 ## Isolation rung (#700)

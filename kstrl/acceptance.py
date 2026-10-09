@@ -42,8 +42,8 @@ made by the slice 3 replay (:func:`kstrl.replay.replay_stack`): setup,
 
 Held-out checks are handed to no engineer: the plan is never copied into
 a worktree, a PRD or a prompt, and a retry names a held-out check by its
-id only. The engineer itself is not confined, so the record says whether
-it could read them is unknown (decision 9).
+id only. The record names the harness that confined the engineer, if any;
+whether it could read them is unknown (decision 9).
 
 The evidence of each head run is written under the run directory before
 anything is printed: ``record.json``, ``logs/``, a byte copy of the plan
@@ -708,6 +708,7 @@ def judge_head(
     document["override"] = covering_override(overrides, head_sha, failing)
     document["visibleFailures"] = visible_failures(comp_id, part.checks, failing, runs)
     document["dispute"] = read_dispute(progress, part.checks, failing)
+    document["engineerSandbox"] = config.engineer_sandbox
     lines = render_lines(document)
     failures = [row_line(row, HEAD_RUNS) for row in document["checks"] if row["verdict"] != PASS]
     try:

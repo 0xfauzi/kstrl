@@ -548,8 +548,8 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
         "no_progress_iterations",
     ): "halt after N consecutive no-progress iterations; 0 disables (R7.5)",
     ("sandbox", "enabled"): "OS-sandbox the engineer, reviewer, understand and repair agent CLIs "
-    "(writes scoped to the worktree); a custom agent command in one of those roles is refused "
-    "(exit 2)",
+    "(writes scoped to the worktree); a custom agent command, or false, runs with no sandbox "
+    "and the run warns naming the role",
     ("sandbox", "allow_network"): "re-open outbound network inside the sandbox (off = deny)",
     ("verify", "check_diff_scope"): "fail on changes outside allowed paths",
     ("verify", "check_bad_patterns"): "scan the diff for secret-like patterns",

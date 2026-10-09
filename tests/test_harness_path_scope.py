@@ -55,6 +55,7 @@ from kstrl.guards import (
 )
 from kstrl.loop import LoopResult
 from kstrl.manifest import Component, Manifest
+from kstrl.sandbox import SandboxConfig
 from kstrl.scope import ComponentScope, RunScope
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import check_diff_scope
@@ -706,6 +707,8 @@ class TestStandaloneLoops:
                 tmp_path,
                 PlainUI(no_color=True, file=io.StringIO()),
                 run=run,
+                # #700: the default intent; a CLI adapter, so no warning.
+                sandbox=SandboxConfig(),
             )
 
         assert seen, "the understand loop never ran"

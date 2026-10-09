@@ -77,6 +77,7 @@ from kstrl.interaction import (
 from kstrl.knowledge import KnowledgeConfig, retrieve_knowledge_context
 from kstrl.loop import run_loop
 from kstrl.manifest import Component, Manifest
+from kstrl.sandbox import warn_unconfined
 from kstrl.timeout import TimeoutConfig
 
 if TYPE_CHECKING:
@@ -318,6 +319,11 @@ def run_feature(
     and is who every phase's prompt is recorded for, so it is required
     (#567); ``stop_check`` threads into every run_loop.
     """
+    # #700: a role with no sandbox is a warning in the run's events.jsonl.
+    # The repair agent falls back to the engineer's command, which the
+    # first entry already names.
+    roles = {"engineer": base_config.agent_cmd, "repair agent": params.repair_agent_cmd}
+    warn_unconfined(ui.warn, params.sandbox, roles)
     component = params.feature_name
     bus = run.bus
     # This flow used to hand `run_loop` its own `.kstrl/logs/<feature>/`
