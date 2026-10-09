@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import secrets
+import shlex
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -46,12 +47,16 @@ from tests.test_acceptance_e2e import (
     _row,
     _with_greet,
 )
+from tests.test_acceptance_gate_e2e import _halts
 from tests.test_isolation_rung import runs_a_stack
 from tests.test_stack_e2e import INSTRUCTIONS, _repo, _spawn, _stack
 
 #: The first line of ACCEPTANCE_PROMPT: how the stub tells a designer call
 #: from an engineer call.
 DESIGNER_MARK = "You are the verification designer"
+
+#: What a halt by a check a model wrote says (#700 owner decision 13, part 3).
+DESIGNED_STOP = "a check that did not pass can be incorrect, or the code can be"
 
 REFUSED_DESIGN = "Refusing to run: the verification designer wrote no usable plan"
 REFUSED_BASE = "Refusing to run: the acceptance checks do not hold on the base"
@@ -204,6 +209,16 @@ def _acceptance_verdicts(root: Path) -> list[tuple[bool, bool]]:
     ]
 
 
+def _retry_reasons(root: Path) -> list[str]:
+    """The reason of each component_retrying event of the run."""
+    (events_path,) = sorted((root / ".kstrl" / "runs").glob("*/events.jsonl"))
+    return [
+        event["data"]["reason"]
+        for event in map(json.loads, events_path.read_text(encoding="utf-8").splitlines())
+        if event["event"] == "component_retrying"
+    ]
+
+
 @runs_a_stack
 def test_the_designer_writes_checks_and_a_failed_held_out_one_halts_the_component(
     tmp_path: Path,
@@ -283,6 +298,46 @@ def test_a_designed_visible_check_that_fails_on_the_head_gives_the_engineer_a_re
     assert DESIGNER_MARK not in retry
     assert "greets-grace" in retry, retry[-3000:]
     assert _acceptance_verdicts(root) == [(False, False), (False, False)], run.out
+    # #700 slice 10a: the retry's reason stays the short line, and the halt
+    # once the retries are spent says that a model wrote the check.
+    assert [reason.count("argv:") for reason in _retry_reasons(root)] == [0], run.out
+    (item,) = _halts(root)
+    assert DESIGNED_STOP in item.detail, item.detail
+    assert f"argv: {shlex.join(_greets('Grace'))}" in item.detail, item.detail
+
+
+@runs_a_stack
+def test_a_designed_check_that_stops_the_run_says_the_check_or_the_code_can_be_incorrect(
+    tmp_path: Path,
+) -> None:
+    """#700 slice 10a, owner decision 13 part 3. The designer's held-out
+    check halts the engineer that special-cased the name it could see. A
+    model wrote the checks, so the halt says that the check or the code can
+    be incorrect and shows the argv and the output of the visible check
+    that failed, while the held-out check stays named by its id alone
+    (decision 3). The terminal shows the same lines, from the renderer the
+    PR body uses."""
+    root = _greeting_repo(tmp_path)
+    hidden = f"Grace{secrets.token_hex(4)}"
+    shown = [
+        "/bin/sh",
+        "-c",
+        'out=$("$KSTRL_TREE/greet" Bob); echo "got $out"; [ "$out" = "Hello, Bob" ]',
+    ]
+    reply = _entry(
+        [_check("greets-bob", shown), _check("greets-hidden", _greets(hidden), held_out=True)]
+    )
+
+    run = _design(tmp_path, root, [reply], "--max-retries", "1")
+
+    assert run.code == 1, run.out
+    assert run.engineer_calls == 1, run.out
+    (item,) = _halts(root)
+    assert "the held-out acceptance checks greets-hidden failed" in item.detail, item.detail
+    for said in (DESIGNED_STOP, f"argv: {shlex.join(shown)}", "| got Hello, Ada"):
+        assert said in item.detail, item.detail
+        assert said in run.out, run.out
+    assert hidden not in item.detail, item.detail
 
 
 @runs_a_stack

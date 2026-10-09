@@ -3677,15 +3677,21 @@ class ComponentPipeline:
         whether an operator or the verification designer wrote the checks
         (owner decision of 2026-10-07). A failed held-out check halts the component
         with no retry, naming the check by its id alone (decision 3), and
-        so does a head nothing a retry could fix was measured on; any
-        other check that did not pass goes to the engineer's retry. An
-        approved halt on this head that names every failing check passes
-        it (decision 14, :func:`kstrl.waivers.covering_override`).
+        so does a head nothing a retry could fix was measured on, and so
+        does a dispute of a visible check that kstrl accepted (decision 13,
+        slice 10a); any other check that did not pass goes to the
+        engineer's retry. An approved halt on this head that names every
+        failing check passes it (decision 14,
+        :func:`kstrl.waivers.covering_override`). The stop lines of a
+        designed plan go into the text of the halt and of the last
+        attempt's failure only: a retry's reason stays one short line.
         """
         from kstrl.acceptance import judge_head
+        from kstrl.acceptance_lines import halt_text
 
         head = git.get_head_sha(wt_path) or ""
         approvals = self._approvals or ApprovalSnapshot()
+        progress = self.base_config.component_progress_file(comp.prd_path, self.root_dir)
         outcome = judge_head(
             self.root_dir,
             self.factory_config,
@@ -3695,6 +3701,7 @@ class ComponentPipeline:
             attempt=comp.retries + 1,
             ui=self.ui,
             overrides=[item for item in approvals.overrides if item.component == comp.id],
+            progress=wt_path / progress,
         )
         if outcome is None:
             return None
@@ -3713,24 +3720,23 @@ class ComponentPipeline:
         if outcome.passed:
             return None
         failing = ", ".join(outcome.failing)
-        if outcome.held_out or not outcome.told:
-            said = (
-                f"the held-out acceptance checks {', '.join(outcome.held_out)} failed"
-                if outcome.held_out
-                else "; ".join(outcome.lines)
-            )
+        if outcome.disputed or outcome.held_out or not outcome.told:
             return PhaseFailure(
                 action=FailureAction.FAIL,
-                error=f"{said} on {head[:12]}; halted with no retry. Approving this halt and "
-                f"then `ks retry {comp.id}` merges over the failing checks on that commit",
+                error=halt_text(outcome, head, comp.id),
                 phase=ACCEPTANCE_PHASE,
                 check=failing,
             )
         ctx = IterationContext.from_json(comp_result.context_json or "{}")
         ctx.add_acceptance_failure(outcome.told, attempt=comp.retries + 1)
+        # retry_or_fail reads "timeout" in a retry's reason as a killed
+        # engineer, and a check's output can say it: the stop lines go only
+        # into the failure of the last attempt, which retries nothing.
+        last = comp.retries >= self.factory_config.max_retries
+        stopped = "".join(f"\n{line}" for line in outcome.stopped) if last else ""
         return PhaseFailure(
             action=FailureAction.RETRY_OR_FAIL,
-            error=f"the acceptance checks {failing} did not pass on {head[:12]}",
+            error=f"the acceptance checks {failing} did not pass on {head[:12]}{stopped}",
             phase=ACCEPTANCE_PHASE,
             check=failing,
             context_json=ctx.to_json(),

@@ -41,6 +41,7 @@ from tests.helpers.stack_confirmation import confirm_stack
 from tests.test_inbox_waivers import FAKE_GH
 from tests.test_isolation_rung import _fake_nono, needs_nono, on_macos
 from tests.test_stack_e2e import (
+    HEADLINE,
     PY,
     _commit,
     _factory,
@@ -249,6 +250,160 @@ def test_the_setup_runs_in_the_setup_zone_and_every_result_names_the_rung(
         assert not Path(zone["policy_path"]).is_relative_to(root), zone
     assert _policy(setup)["network"] == {"block": False}
     assert _policy(test)["network"] == {"block": True, "open_port": [0]}
+
+
+#: git with no operator or system config: the zones do not grant ~/.gitconfig.
+GIT = "GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git"
+
+#: What a command that fails in a proven zone says, written out so a change
+#: to it is seen here (#700, the #625 trial).
+SANDBOX_HINT = (
+    "the {zone} zone of the isolation sandbox can be the cause: grant a path the "
+    "command needs with `writable` or `readable` in the [stack] table of kstrl.toml"
+)
+
+
+@needs_nono
+def test_git_runs_in_every_kstrl_worktree_in_both_zones_and_cannot_write_the_git_dir(
+    tmp_path: Path,
+) -> None:
+    """A kstrl worktree's ``.git`` file points into the repository's git
+    common directory, so ``git`` there must read it (#700, the #625 trial).
+    The setup runs ``git`` in the setup zone and the checks in the test
+    zone, in the base, component and contract worktrees, and each passes;
+    a write into the git directory is refused in both zones.
+
+    The repository sits under the home directory, removed afterwards:
+    nono's default groups grant reads of all of /private, which holds
+    ``tmp_path``, so a git directory there is readable with no grant."""
+    token = secrets.token_hex(6)
+    home = Path.home() / f".kstrl-gitdir-{token}"
+    probe = f"kstrl-write-{token}"
+    write = f'! touch "$({GIT} rev-parse --git-common-dir)/{probe}"'
+    stack = _stack(
+        {"git": f"{GIT} rev-parse HEAD && {GIT} status --porcelain", "git_dir_write": write},
+        setup=f"{GIT} log -1 --format=%H && {write}",
+    )
+    try:
+        root = _repo(home, stack)
+        run = _factory(tmp_path, root, contract="final")
+        written = (root / ".git" / probe).exists()
+        record = _record(root)
+    finally:
+        shutil.rmtree(home, ignore_errors=True)
+
+    assert "Refusing to run" not in run.out, run.out
+    assert not written, "a command wrote the git directory"
+    assert run.calls == 1, run.out
+    assert "contract tests passed" in run.out, run.out
+    assert record["setupError"] == "", record
+    passed = {row["name"]: row["passed"] for row in record["checks"]}
+    assert passed == {"stack:git": True, "stack:git_dir_write": True}, record
+
+
+@needs_nono
+def test_git_runs_in_the_replay_of_a_linked_worktree_root_and_of_a_root_named_from_elsewhere(
+    tmp_path: Path,
+) -> None:
+    """The git directory both zones read is the root's common one, as an
+    absolute path. `ks doctor --measure` replays a stack that runs ``git``
+    for a root that is itself a linked worktree, whose own ``.git`` is a
+    file, and for a root named by ``--root`` from a directory outside it,
+    where a relative ``.git`` names a path that is not there. Each replay
+    passes in both zones. Both roots sit under the home directory, for the
+    reason the test above gives."""
+    home = Path.home() / f".kstrl-gitroot-{secrets.token_hex(6)}"
+    stack = _stack(
+        {"git": f"{GIT} rev-parse HEAD && {GIT} status --porcelain"},
+        setup=f"{GIT} log -1 --format=%H",
+    )
+    try:
+        main = _repo(home / "main", stack)
+        linked = home / "linked"
+        git_in(main, "worktree", "add", "-q", "-b", "linked", str(linked))
+        readings = {
+            "a linked worktree": _spawn(
+                ["doctor", "--root", str(linked), "--measure", "--json"], linked, None
+            ),
+            "a root named from elsewhere": _spawn(
+                ["doctor", "--root", str(main), "--measure", "--json"], tmp_path, None
+            ),
+        }
+    finally:
+        shutil.rmtree(home, ignore_errors=True)
+
+    for case, (_code, out) in readings.items():
+        document = json.loads(out[out.index("{") :])
+        replay = document["replay"]
+        assert (replay["failed"], replay["error"]) == ("", ""), (case, replay)
+        stages = [stage["name"] for stage in replay["stages"]]
+        assert stages == ["setup", "check:git"], (case, replay)
+        assert _row(document, "replay")["status"] == "ok", (case, document["checks"])
+
+
+@needs_nono
+def test_a_command_refused_a_path_in_a_proven_zone_says_the_sandbox_can_be_the_cause(
+    tmp_path: Path,
+) -> None:
+    """A setup and a check read a file under the home directory that no
+    grant covers, so each fails inside the rung with only the tool's own
+    error. The replay of `ks doctor --measure` and the base refusal of
+    `ks factory` each say that the zone the command ran in can be the
+    cause and name the two [stack] keys. The replay keeps it apart from
+    its detail, and the base-gates record does not carry it."""
+    unreadable = Path.home() / f".kstrl-hint-{secrets.token_hex(6)}"
+    unreadable.mkdir()
+    (unreadable / "data.txt").write_text("data\n", encoding="utf-8")
+    read = f'cat "{unreadable / "data.txt"}"'
+    setup_root = _repo(tmp_path / "setup", _stack({"tests": "true"}, setup=read))
+    check_root = _repo(tmp_path / "check", _stack({"read": read}))
+    try:
+        # The factory first: a failed replay leaves the stack unconfirmed.
+        setup_run = _factory(tmp_path / "setup", setup_root)
+        check_run = _factory(tmp_path / "check", check_root)
+        setup_code, setup_doc = _measure(setup_root)
+        check_code, check_doc = _measure(check_root)
+    finally:
+        shutil.rmtree(unreadable)
+
+    setup_hint, test_hint = (SANDBOX_HINT.format(zone=zone) for zone in ("setup", "test"))
+    for code, document, failed, hint in (
+        (setup_code, setup_doc, "setup_failed:1", setup_hint),
+        (check_code, check_doc, "base_contradiction", test_hint),
+    ):
+        replay = document["replay"]
+        assert code == 1, document
+        assert (replay["failed"], replay["sandbox"]) == (failed, hint), replay
+        assert "sandbox" not in replay["detail"], replay
+        assert _row(document, "replay")["detail"].startswith(
+            f"{failed}: {replay['detail']}; {hint}"
+        ), document["checks"]
+    for run, root, hint, other in (
+        (setup_run, setup_root, setup_hint, test_hint),
+        (check_run, check_root, test_hint, setup_hint),
+    ):
+        assert (run.code, run.calls) == (2, 0), run.out
+        assert HEADLINE in run.out, run.out
+        assert f"  {hint}\n" in run.out, run.out
+        assert other not in run.out, run.out
+        assert hint not in json.dumps(_record(root)), run.out
+
+
+def test_with_no_prover_a_failed_command_does_not_name_a_sandbox(tmp_path: Path) -> None:
+    """On a platform with no prover no sandbox ran, so a check that fails
+    there names none: not the replay, not its row, not the base refusal."""
+    root = _repo(tmp_path, _stack({"tests": "exit 1"}))
+
+    run = _factory(tmp_path, root, env=NO_PROVER)
+    code, document = _measure(root, NO_PROVER)
+
+    assert code == 1, document
+    replay = document["replay"]
+    assert (replay["failed"], replay["sandbox"]) == ("base_contradiction", ""), replay
+    assert "isolation sandbox" not in _row(document, "replay")["detail"], document["checks"]
+    assert (run.code, run.calls) == (2, 0), run.out
+    assert HEADLINE in run.out, run.out
+    assert "isolation sandbox" not in run.out, run.out
 
 
 @on_macos

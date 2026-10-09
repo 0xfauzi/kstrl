@@ -390,12 +390,14 @@ _ROLES: dict[str, _Role] = {
     ),
     # #696 slice 4: one engineer row. Every engineer runs under a confirmed
     # [stack], and VERIFY_COMMANDS_PROMPT is retired. Pinned by running
-    # this test.
+    # this test. #700 slice 10a: +780 characters, DEFAULT_PROMPT 1.6.0's
+    # section on disputing an acceptance check; no H2 (no fixture scores
+    # the engineer).
     "engineer": _Role(
         _engineer,
         frozenset({"DEFAULT_PROMPT", "STACK_PROMPT"}),
-        "063c860c645d5cde91dddd981ea5c958ff3e8736f7cb70364b40876bd2a210cb",
-        5298,
+        "a3045e932f9dc93c7041d97a1823cc566726f45cc775463f36e0e6669674e501",
+        6078,
     ),
     # #654 slice 8: the two understand loops, through `ks init` and the command.
     "understander": _Role(

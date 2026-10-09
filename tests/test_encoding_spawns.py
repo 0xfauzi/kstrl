@@ -66,8 +66,9 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     # subprocess.TimeoutExpired. 72: #695's git._get_stored_diff adds one of
     # each. 74: #696's git.status_entries adds one of each. 68: #696 slice 6
     # deletes stage_file, ignore_source and ignored_paths, two each. 64: #696
-    # slice 9 deletes read_blob, two each.
-    "git.py": 64,
+    # slice 9 deletes read_blob, two each. 66: #700's git_common_dir adds one
+    # of each.
+    "git.py": 66,
     "intake_github.py": 3,
     # #700: the import, and `TimeoutExpired` from `run_scrubbed`.
     "isolation.py": 2,
@@ -122,8 +123,9 @@ EXPECTED_TEXT_MODE_SPAWNS: dict[str, int] = {
     # 26: 23 after #435, +1 for #465's `branch_sha`, +1 for #459's `ignored_paths`,
     # +1 for #500's `tracked_files_at`, +1 for #626's `listed_files`.
     # 28: +1 for #696's `status_entries`. 25: #696 slice 6 deletes
-    # `stage_file`, `ignore_source` and `ignored_paths`.
-    "git.py": 25,
+    # `stage_file`, `ignore_source` and `ignored_paths`. 26: +1 for #700's
+    # `git_common_dir`.
+    "git.py": 26,
     "intake_github.py": 1,
     "pr.py": 9,
     "pr_state.py": 2,
@@ -168,6 +170,7 @@ EXPECTED_CLEARED_SPAWNS: tuple[str, ...] = (
     "git.py subprocess.run(['git', 'ls-tree', '-r', '--name-only', '-z', sha], cwd",
     "git.py subprocess.run(['git', 'merge', '--no-edit', '--', branch], cwd=cwd, c",
     "git.py subprocess.run(['git', 'rev-parse', '--abbrev-ref', 'HEAD'], cwd=cwd,",
+    "git.py subprocess.run(['git', 'rev-parse', '--git-common-dir'], cwd=cwd, capt",
     "git.py subprocess.run(['git', 'rev-parse', '--is-inside-work-tree'], cwd=path",
     "git.py subprocess.run(['git', 'rev-parse', '--show-toplevel'], cwd=path, capt",
     "git.py subprocess.run(['git', 'rev-parse', '--verify', '--quiet', 'HEAD'], cw",

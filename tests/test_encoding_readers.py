@@ -89,6 +89,8 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     # #700 slice 4: `pr_section` reads the latest acceptance record back
     # (moved to acceptance_lines.py in slice 6).
     "acceptance_lines.py": 1,
+    # #700 slice 10a: `read_dispute` reads the engineer's progress log.
+    "acceptance_record.py": 1,
     "agents/codex.py": 1,
     "agents/logging.py": 1,
     # The "a+b" append open, moved here from evolution.py by #331.
@@ -218,6 +220,9 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     # ValueError caught beside OSError (a UnicodeDecodeError is a ValueError).
     # Moved to acceptance_lines.py in slice 6.
     "acceptance_lines.py path.read_text(encoding='utf-8')",
+    # #700 slice 10a: the engineer's progress log, where it disputes a
+    # check, utf-8, with ValueError caught beside OSError.
+    "acceptance_record.py progress.read_text(encoding='utf-8')",
     "agents/codex.py last_msg_file.read_text(encoding='utf-8')",
     "agents/logging.py self._log_path.open('a', encoding='utf-8')",
     "autonomy.py path.read_text(encoding='utf-8')",

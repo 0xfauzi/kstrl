@@ -35,7 +35,8 @@ made by the slice 3 replay (:func:`kstrl.replay.replay_stack`): setup,
   exited 0. Nothing is run again after a failure. The plan gates the
   component whether an operator or the verification designer wrote it
   (owner decision of 2026-10-07): the pipeline halts the component on a
-  failed held-out check and retries it on any other check that did not
+  failed held-out check and on a dispute of a visible check that kstrl
+  accepted (decision 13), and retries it on any other check that did not
   pass (decision 3), unless a person approved that halt on this head
   (decision 14).
 
@@ -47,8 +48,9 @@ it could read them is unknown (decision 9).
 The evidence of each head run is written under the run directory before
 anything is printed: ``record.json``, ``logs/``, a byte copy of the plan
 the checks ran from and ``index.json`` (each file's sha256).
-:mod:`kstrl.acceptance_lines` renders a record for the terminal, the pull
-request and the engineer's retry.
+:mod:`kstrl.acceptance_record` builds the record, with what the engineer
+disputes (slice 10a), and :mod:`kstrl.acceptance_lines` renders it for the
+terminal, the pull request, a halt and the engineer's retry.
 """
 
 from __future__ import annotations
@@ -173,7 +175,9 @@ class HeadOutcome:
     ``failing`` names the checks that did not pass, ``held_out`` the
     held-out ones among them that failed, and ``told`` is what a retry
     tells the engineer; it is empty when nothing a retry could fix was
-    measured."""
+    measured. ``disputed`` names the visible checks the engineer disputes
+    and kstrl accepted, and ``stopped`` is what a halt adds after its cause
+    (:func:`kstrl.acceptance_lines.stop_lines`)."""
 
     passed: bool
     lines: list[str]
@@ -183,6 +187,8 @@ class HeadOutcome:
     failing: tuple[str, ...] = ()
     held_out: tuple[str, ...] = ()
     told: tuple[str, ...] = ()
+    disputed: tuple[str, ...] = ()
+    stopped: tuple[str, ...] = ()
 
 
 Files = dict[str, tuple[bytes, bool]]
@@ -654,12 +660,16 @@ def judge_head(
     attempt: int,
     ui: UI,
     overrides: Sequence[InboxItem] = (),
+    progress: Path | None = None,
 ) -> HeadOutcome | None:
     """Run ``comp_id``'s checks on ``head_sha``, write the evidence, and
     return what to print and how it went; None when the run has no plan
     for it. ``overrides`` are the approved acceptance halts of this
-    component: one that covers every failing check on this head passes it."""
-    from kstrl.acceptance_lines import render_lines, row_line, told_lines
+    component: one that covers every failing check on this head passes it.
+    ``progress`` is the engineer's progress log, where it can dispute a
+    visible check (:func:`kstrl.acceptance_record.read_dispute`)."""
+    from kstrl.acceptance_lines import render_lines, row_line, stop_lines, told_lines
+    from kstrl.acceptance_record import head_record, read_dispute, visible_failures
 
     plan, base, stack = config.acceptance_plan, config.acceptance_base, config.project_stack
     if plan is None or base is None or stack is None or comp_id not in base.kept:
@@ -693,9 +703,11 @@ def judge_head(
             lambda _comp, check, run: evidence / "logs" / f"{check}-{run}.log",
         ),
     )
-    document = _record(plan, base, record, comp_id, (head_sha, attempt, run_id), runs, evidence)
+    document = head_record(plan, base, record, comp_id, (head_sha, attempt, run_id), runs, evidence)
     failing = [row["id"] for row in document["checks"] if row["verdict"] != PASS]
     document["override"] = covering_override(overrides, head_sha, failing)
+    document["visibleFailures"] = visible_failures(comp_id, part.checks, failing, runs)
+    document["dispute"] = read_dispute(progress, part.checks, failing)
     lines = render_lines(document)
     failures = [row_line(row, HEAD_RUNS) for row in document["checks"] if row["verdict"] != PASS]
     try:
@@ -703,7 +715,6 @@ def judge_head(
     except OSError as exc:
         return _unwritten(comp_id, evidence, exc)
     lines.append(f"- record: {(evidence / RECORD_FILE).resolve()}")
-    tails = {check: list(stages[-1].tail) for (_, check), stages in runs.items() if stages}
     unreplayed = bool(record.error) or record.failed == REPLAY_BOUNDARY_REFUSED
     return HeadOutcome(
         passed=not failing or document["override"] is not None,
@@ -715,7 +726,9 @@ def judge_head(
         held_out=tuple(
             row["id"] for row in document["checks"] if row["heldOut"] and row["verdict"] == FAIL
         ),
-        told=() if unreplayed else told_lines(document, part.checks, tails),
+        told=() if unreplayed else told_lines(document, part.checks),
+        disputed=tuple(entry["id"] for entry in document["dispute"]["accepted"]),
+        stopped=tuple(stop_lines(document)),
     )
 
 
@@ -723,62 +736,6 @@ def _unwritten(comp_id: str, evidence: Path, exc: OSError) -> HeadOutcome:
     """A head run whose evidence could not be written: nothing else is shown."""
     line = f"Acceptance for {comp_id}: the evidence cannot be written at {evidence}: {exc}"
     return HeadOutcome(False, [line], (), (line,), HOST_LABEL)
-
-
-def _record(
-    plan: PinnedPlan,
-    base: BaseReading,
-    record: Replay,
-    comp_id: str,
-    head: tuple[str, int, str],
-    runs: Mapping[tuple[str, str], list[Stage]],
-    evidence: Path,
-) -> dict[str, Any]:
-    head_sha, attempt, run_id = head
-    part = base.kept[comp_id]
-    rows = []
-    for check in part.checks:
-        stages = runs.get((comp_id, check.id), [])
-        exits = [stage.exit for stage in stages]
-        logs = [evidence / "logs" / f"{check.id}-{run}.log" for run in range(1, len(stages) + 1)]
-        rows.append(
-            {
-                "id": check.id,
-                "sha256": check.sha256,
-                "kind": "held out" if check.held_out else "visible",
-                "heldOut": check.held_out,
-                "baseExit": base.exits[comp_id][check.id],
-                "headExits": exits,
-                "seconds": [stage.seconds for stage in stages],
-                "logSha256": [_file_sha(log) for log in logs],
-                "verdict": head_verdict(exits),
-            }
-        )
-    return {
-        "run": run_id,
-        "component": comp_id,
-        "attempt": attempt,
-        "planId": plan.digest,
-        "writtenBy": "designer" if plan.designed else "operator",
-        "stackDigest": record.stack_digest,
-        "checksDigest": _entry_sha({"checks": [check.sha256 for check in part.checks]}),
-        "baseSha": base.sha,
-        "headSha": head_sha,
-        "isolation": record.isolation,
-        "base": base.said.get(comp_id, ""),
-        "headRuns": HEAD_RUNS,
-        "heldOutReadDenied": HELD_OUT_READ_DENIED,
-        "replay": {"failed": record.failed, "detail": record.detail, "error": record.error},
-        "checks": rows,
-        "removed": [c.id for c in plan.components[comp_id].checks if c not in part.checks],
-    }
-
-
-def _file_sha(path: Path) -> str:
-    try:
-        return hashlib.sha256(path.read_bytes()).hexdigest()
-    except OSError:
-        return ""
 
 
 def _write_evidence(evidence: Path, plan: PinnedPlan, document: Mapping[str, Any]) -> None:

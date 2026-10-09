@@ -47,7 +47,7 @@ from kstrl.contract import ContractCleanupError, _create_temp_worktree, _remove_
 from kstrl.isolation import SETUP_ZONE, TEST_ZONE, prove_zones
 from kstrl.procdispose import reap_or_abandon
 from kstrl.procgroup import read_group_liveness, signal_group
-from kstrl.rung import HostFallback, Rung, refusal_of, release
+from kstrl.rung import HostFallback, Rung, refusal_of, release, sandbox_hint
 from kstrl.stack import (
     REPLAY_BASE_CONTRADICTION,
     REPLAY_BOUNDARY_REFUSED,
@@ -132,6 +132,10 @@ class Replay:
     detail: str = ""
     error: str = ""
     seconds: float = 0.0
+    #: The sandbox hint (:func:`kstrl.rung.sandbox_hint`) for the failed
+    #: stage, "" when no stage failed or it ran in no sandbox. Kept out of
+    #: ``detail``, which other phases hand on to a model.
+    sandbox: str = ""
 
 
 @contextmanager
@@ -267,7 +271,9 @@ def _run_stages(
     lifeline = -1
     try:
         if stack.setup and not _passed(
-            record, _ran("setup", stack.setup, worktree, rungs[SETUP_ZONE], setup_limit, stack)
+            record,
+            _ran("setup", stack.setup, worktree, rungs[SETUP_ZONE], setup_limit, stack),
+            rungs[SETUP_ZONE],
         ):
             return
         if stack.up:
@@ -282,21 +288,23 @@ def _run_stages(
                     declared_env=stack.env,
                 )
             record.pgid = app.pid
-            if not _passed(record, _ready(app, stack.up, check_limit, log, began)):
+            if not _passed(
+                record, _ready(app, stack.up, check_limit, log, began), rungs[TEST_ZONE]
+            ):
                 return
         if probe is not None:
             probe(worktree, rungs[TEST_ZONE])
             return
         for name, command in stack.checks:
             check = _ran(f"check:{name}", command, worktree, rungs[TEST_ZONE], check_limit, stack)
-            if not _passed(record, check):
+            if not _passed(record, check, rungs[TEST_ZONE]):
                 return
     finally:
         if app is not None and record.pgid is not None:
             record.group_gone = _stop(app, record.pgid, lifeline)
 
 
-def _passed(record: Replay, stage: Stage) -> bool:
+def _passed(record: Replay, stage: Stage, rung: Rung) -> bool:
     record.stages.append(stage)
     if not stage.failed:
         return True
@@ -304,6 +312,7 @@ def _passed(record: Replay, stage: Stage) -> bool:
     lines = " | ".join(stage.tail) or "(no output)"
     record.failed = stage.failed
     record.detail = f"{stage.name} `{stage.command}` {said}; last lines: {lines}"
+    record.sandbox = sandbox_hint(rung)
     return False
 
 

@@ -151,7 +151,7 @@ from kstrl.review import (
     run_review,
 )
 from kstrl.runenvelope import RunEnvelope
-from kstrl.rung import Rung, label_of, refusal_of, release
+from kstrl.rung import Rung, label_of, refusal_of, release, sandbox_hint
 from kstrl.runstate import RunState
 from kstrl.sandbox import SANDBOX_REFUSAL, SandboxConfig, unsandboxable_roles
 from kstrl.scope import ComponentScope, RunScope
@@ -2461,7 +2461,25 @@ def _preflight_base_gates(
             root_dir, run_id, reading, reasons, accept=accept, accepted=tuple(accepted)
         )
         + reasons
+        + _sandbox_lines(reading, factory_config, reasons)
     )
+
+
+def _sandbox_lines(
+    reading: BaseGates, factory_config: FactoryConfig, reasons: list[str]
+) -> list[str]:
+    """The sandbox hint for a refused base whose setup or a check failed
+    inside a proven rung, or [] (#700, the #625 trial). Printed only: the
+    record and the reasons above it do not carry it."""
+    if not reasons:
+        return []
+    if reading.setup_error:
+        hint = sandbox_hint(factory_config.setup_rung)
+    elif reading.result is not None and not all(check.passed for check in reading.result.checks):
+        hint = sandbox_hint(factory_config.test_rung)
+    else:
+        hint = ""
+    return [hint] if hint else []
 
 
 def _preflight_rungs(

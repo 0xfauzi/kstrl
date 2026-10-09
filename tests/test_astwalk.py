@@ -402,7 +402,9 @@ class TestTheWalkAgainstTheRealPackage:
         -z`` and ``verify._base_finding``'s ``git show <base>:<path>``, both
         readers of one language's files. #696 slice 9 deletes three:
         ``git.read_blob``'s two and ``licensing.uv_cache_dir``'s ``uv cache dir``.
-        So 74.
+        So 74. #700 adds one: ``git.git_common_dir``'s ``git rev-parse
+        --git-common-dir``, the directory both zones of the rung read. It
+        carries a timeout. So 75.
         """
         spawns = frozenset(
             {
@@ -414,7 +416,7 @@ class TestTheWalkAgainstTheRealPackage:
             }
         )
         found = package_calls(spawns)
-        assert len(found.seen) == 74
+        assert len(found.seen) == 75
         assert found.without_line_numbers().undecided == tuple(
             sorted(
                 [

@@ -19,12 +19,19 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from kstrl.acceptance import FAIL, PASS, RECORD_FILE, Check, evidence_dir
+from kstrl.acceptance import FAIL, PASS, RECORD_FILE, Check, HeadOutcome, evidence_dir
 from kstrl.jsonread import read_json
 from kstrl.rung import HOST_LABEL
 
 #: Under the header of a record whose checks a model wrote (#700 slice 7).
 DESIGNED_LINE = "- the verification designer wrote these checks"
+
+#: In a record whose checks a model wrote, when a check did not pass: what
+#: the halt text and the PR body say (#700 owner decision 13, part 3).
+DESIGNED_STOP_LINE = (
+    "- the verification designer wrote these checks, so a check that did not pass "
+    "can be incorrect, or the code can be"
+)
 
 
 def render_lines(record: Mapping[str, Any]) -> list[str]:
@@ -42,6 +49,7 @@ def render_lines(record: Mapping[str, Any]) -> list[str]:
     if replay["error"] or replay["failed"]:
         lines.append(f"- the head replay stopped: {replay['error'] or replay['detail']}")
     lines += [row_line(row, record["headRuns"]) for row in record["checks"]]
+    lines += stop_lines(record) + rejected_lines(record)
     override = record.get("override")
     if override:
         failing = ", ".join(row["id"] for row in record["checks"] if row["verdict"] != PASS)
@@ -64,15 +72,15 @@ def row_line(row: Mapping[str, Any], runs: int) -> str:
     return f"- {row['id']} ({row['kind']}): {said}; {base}"
 
 
-def told_lines(
-    record: Mapping[str, Any], checks: Sequence[Check], tails: Mapping[str, Sequence[str]]
-) -> tuple[str, ...]:
+def told_lines(record: Mapping[str, Any], checks: Sequence[Check]) -> tuple[str, ...]:
     """What a retry tells the engineer: where the head replay stopped, when
     it stopped, then each check that did not pass, and for a visible one
-    its criterion, its command and what its last run printed."""
+    its criterion, its command and what its last failed run printed; then
+    each dispute line kstrl rejected, and why."""
     replay = record["replay"]
     told = [f"- the head replay stopped: {replay['detail']}"] if replay["failed"] else []
     visible = {check.id: check for check in checks if not check.held_out}
+    shown = {entry["id"]: entry for entry in record["visibleFailures"]}
     for row in record["checks"]:
         if row["verdict"] == PASS:
             continue
@@ -80,8 +88,59 @@ def told_lines(
         check = visible.get(row["id"])
         if check is not None:
             told += [f"  criterion: {check.criterion}", f"  command: {shlex.join(check.argv)}"]
-            told += [f"  | {line}" for line in tails.get(check.id, ())]
-    return tuple(told)
+            told += [f"  | {line}" for line in shown[check.id]["tail"]]
+    return (*told, *rejected_lines(record))
+
+
+def stop_lines(record: Mapping[str, Any]) -> list[str]:
+    """What a halt says after its cause, and what the terminal and the PR
+    body repeat: each check the engineer disputes, with its cause, argv and
+    output (owner decision 13, part 2); then, when a model wrote the checks
+    and one did not pass, that the check or the code can be incorrect, and
+    the argv and output of each other visible check that did not pass (part
+    3). A held-out check is never shown here (decision 3)."""
+    shown = {entry["id"]: entry for entry in record["visibleFailures"]}
+    lines: list[str] = []
+    for entry in record["dispute"]["accepted"]:
+        lines.append(f"- the engineer disputes {entry['id']}: {entry['cause']}")
+        lines += _shown(shown[entry["id"]])
+    failed = any(row["verdict"] != PASS for row in record["checks"])
+    if record.get("writtenBy") == "designer" and failed:
+        disputed = {entry["id"] for entry in record["dispute"]["accepted"]}
+        lines.append(DESIGNED_STOP_LINE)
+        for entry in record["visibleFailures"]:
+            lines += [] if entry["id"] in disputed else [f"- {entry['id']}:", *_shown(entry)]
+    return lines
+
+
+def _shown(entry: Mapping[str, Any]) -> list[str]:
+    return [f"  argv: {shlex.join(entry['argv'])}", *(f"  | {line}" for line in entry["tail"])]
+
+
+def rejected_lines(record: Mapping[str, Any]) -> list[str]:
+    """Each dispute line kstrl did not take, and why: the check result stands."""
+    return [f"- dispute rejected: {reason}" for reason in record["dispute"]["rejected"]]
+
+
+def halt_text(outcome: HeadOutcome, head: str, comp_id: str) -> str:
+    """The text of a halt with no retry (owner decisions 3, 13 and 14): its
+    cause, the approval that merges over it, then :func:`stop_lines`. A
+    failed held-out check is the cause before a dispute, and the stop lines
+    name the dispute, so a dispute never hides a held-out failure from the
+    person who approves. With no cause to name, the record's own lines are
+    the cause, and they already hold the stop lines."""
+    stopped = list(outcome.stopped)
+    if outcome.held_out:
+        said = f"the held-out acceptance checks {', '.join(outcome.held_out)} failed"
+    elif outcome.disputed:
+        said = f"the engineer disputes the acceptance checks {', '.join(outcome.disputed)}"
+    else:
+        said, stopped = "; ".join(outcome.lines), []
+    first = (
+        f"{said} on {head[:12]}; halted with no retry. Approving this halt and then "
+        f"`ks retry {comp_id}` merges over the failing checks on that commit"
+    )
+    return "\n".join([first, *stopped])
 
 
 def pr_section(root: Path | None, run_id: str, comp_id: str) -> list[str]:

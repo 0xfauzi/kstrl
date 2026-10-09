@@ -277,6 +277,26 @@ def get_repo_root(path: Path | None = None, timeout: float = DEFAULT_TIMEOUT) ->
     return None
 
 
+def git_common_dir(cwd: Path, timeout: float = DEFAULT_TIMEOUT) -> Path | None:
+    """The repository's git common directory (``git rev-parse
+    --git-common-dir``) as an absolute path, or None when ``cwd`` is not in
+    a repository. Every linked worktree's own git directory is under it."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--git-common-dir"],
+            cwd=cwd,
+            capture_output=True,
+            encoding="utf-8",
+            timeout=timeout,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    found = result.stdout.strip()
+    if result.returncode != 0 or not found:
+        return None
+    return cwd / found
+
+
 def branch_exists(
     branch: str,
     cwd: Path | None = None,

@@ -116,6 +116,21 @@ class HostFallback:
 Rung = ProvenRung | HostFallback
 
 
+#: What an operator reads when a command fails inside a proven rung (#700,
+#: the #625 trial): a tool that is refused a path prints only its own error,
+#: such as EPERM, so the message must say that the sandbox can be the cause.
+SANDBOX_HINT = (
+    "the {zone} zone of the isolation sandbox can be the cause: grant a path the "
+    "command needs with `writable` or `readable` in the [stack] table of kstrl.toml"
+)
+
+
+def sandbox_hint(rung: Rung | None) -> str:
+    """:data:`SANDBOX_HINT` for a command that failed in ``rung``, or "" when
+    it ran in no sandbox (no ``[stack]``, or the host fallback)."""
+    return SANDBOX_HINT.format(zone=rung.zone) if isinstance(rung, ProvenRung) else ""
+
+
 def host_fallback() -> HostFallback | None:
     """The host fallback when no prover exists for this platform, else None.
     The only constructor of :class:`HostFallback`, and the only reader of
