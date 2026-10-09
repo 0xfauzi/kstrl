@@ -485,7 +485,6 @@ class TestTheReadBytesExclusion:
         "inbox.py": 1,
         "integration_state.py": 1,  # #482: the launch_record.py shape
         "launch_record.py": 1,  # #436: the baseline.py shape, I/O outside the guard
-        "playbook.py": 1,  # #509: the first shape, read once so the digest is of what it folds
         # #700 slice 3: `_ready` reads the `up` log's bytes back as the
         # stage's tail, outside any try (the signals.py shape).
         "replay.py": 1,

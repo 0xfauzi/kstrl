@@ -251,7 +251,7 @@ def section_table(document: dict[str, Any], section: str, toml_path: Path) -> di
     """The ``[section]`` table of a parsed kstrl.toml, or ``{}`` when absent.
 
     Raises :class:`ConfigError` when the name holds a value rather than a
-    table (``learning = false`` where ``[learning]`` belongs): returning
+    table (``knowledge = false`` where ``[knowledge]`` belongs): returning
     ``{}`` for it loaded the defaults in silence (#525). Raises
     ``BudgetConfigError`` for a ``nan`` or ``inf`` anywhere in the table,
     before any loader coerces it (#571).

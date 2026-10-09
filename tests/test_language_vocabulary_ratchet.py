@@ -240,18 +240,6 @@ ALLOWLIST: tuple[AllowedSite, ...] = (
         "E31: kstrl measuring itself",
     ),
     AllowedSite(
-        "learning_fixture.py",
-        "sys.executable",
-        1,
-        "B25: runs kstrl's own research fixture script",
-    ),
-    AllowedSite(
-        "learning_fixture.py",
-        "python -m kstrl.learning_fixture",
-        2,
-        "B25: kstrl's own research fixture entry point",
-    ),
-    AllowedSite(
         "gepa_adapter.py",
         "Python str.format template",
         1,
@@ -357,7 +345,6 @@ PINNED_HITS: dict[str, dict[str, int]] = {
     "names.py": {"mypy": 1},
     "operator_context.py": {"python": 1, "ruff": 1},
     "pipeline.py": {"mypy": 2, "python": 2},
-    "playbook.py": {"python": 2, "ruff": 1},
     "procdispose.py": {"python": 8},
     "procgroup.py": {"python": 1},
     "runstate.py": {"mypy": 1},

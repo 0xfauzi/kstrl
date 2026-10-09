@@ -70,7 +70,9 @@ def _invoke(root: Path) -> Result:
 #: router's own set is a red test and not a silent agreement (#507, P1.1).
 _LEARNABLE_CATEGORIES = frozenset({"verification", "review", "security", "contract"})
 
-_LESSONS_HEADING = "Candidate lessons (no writer until the playbook ships)"
+_LESSONS_HEADING = (
+    "Candidate lessons (kstrl acts on none; put a standing rule in the [paths] memory file)"
+)
 _MECHANICAL_HEADING = "Routed to the inbox (mechanical, not a lesson)"
 _UNROUTED_HEADING = "Not routed (not a learnable category)"
 
