@@ -26,6 +26,7 @@ import pytest
 
 from kstrl.config import STRING_KEYS
 from kstrl.git import DiffStat, get_diff_stat
+from tests import tui_disabled
 from tests.helpers import gitrepo
 
 #: Re-exported so this module's existing callers do not have to move; the
@@ -520,3 +521,28 @@ def isolate_abandoned_children() -> Generator[None, None, None]:
 def review_repo(tmp_path: Path) -> ReviewRepo:
     """The default one-file change, for tests that only need a repo."""
     return make_review_repo(tmp_path / "review-repo")
+
+
+# The TUI will be deleted, so its tests are disabled (#777). The census is in
+# tests/tui_disabled.py. Files that hold only TUI tests are not collected.
+collect_ignore = list(tui_disabled.IGNORED_FILES)
+
+
+def pytest_report_header(config: pytest.Config) -> str:
+    skipped = sum(len(names) for names in tui_disabled.SKIPPED_TESTS.values())
+    return (
+        f"{tui_disabled.REASON}: {len(tui_disabled.IGNORED_FILES)} files not collected, "
+        f"{skipped} tests in {len(tui_disabled.SKIPPED_TESTS)} other files skipped"
+    )
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    skip = pytest.mark.skip(reason=tui_disabled.REASON)
+    for item in items:
+        names = tui_disabled.SKIPPED_TESTS.get(Path(str(item.path)).name)
+        if names is None:
+            continue
+        cls = getattr(item, "cls", None)
+        qualname = f"{cls.__name__}::{item.originalname}" if cls else item.originalname  # type: ignore[attr-defined]
+        if qualname in names:
+            item.add_marker(skip)
