@@ -882,7 +882,9 @@ window. A factory run at 10-20 minutes does not.
   liveness probe (`kstrl/agents/liveness.py`) and the `subprocess`
   timeouts read `time.monotonic()`. In `kstrl/`, `grep` finds
   `time.time()` only in event time stamps and age labels, not in a
-  deadline.
+  deadline. `tests/test_run_deadlines_use_monotonic.py` pins the
+  wall-clock reads in those modules and in `kstrl/factory.py` and
+  `kstrl/loop.py`.
 - *The lease is wall clock, and the lock makes that safe.* The lease TTL
   is the one deadline of a running item that counts suspended seconds,
   and only `reap_leases` reads it. While the run is suspended, a second
@@ -890,8 +892,10 @@ window. A factory run at 10-20 minutes does not.
   (§5, pinned by `tests/test_serve_lock_before_reaper.py`). On resume,
   the run writes its result through `Queue.transition` in
   `kstrl/workqueue.py`, which does not read the lease. Thus a lease that
-  lapsed during the suspend does not stop the result. **No test pins this
-  last step**: it is a reading of the code.
+  lapsed during the suspend does not stop the result.
+  `tests/test_serve_lock_before_reaper.py::TestARunWhoseLeaseLapsedWhileItRanStillFinishes`
+  pins this step with a lease that lapses while a stub run waits, not
+  with a real suspend.
 
 The limits of this decision:
 
