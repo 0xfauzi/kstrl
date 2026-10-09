@@ -404,7 +404,10 @@ class TestTheWalkAgainstTheRealPackage:
         ``git.read_blob``'s two and ``licensing.uv_cache_dir``'s ``uv cache dir``.
         So 74. #700 adds one: ``git.git_common_dir``'s ``git rev-parse
         --git-common-dir``, the directory both zones of the rung read. It
-        carries a timeout. So 75.
+        carries a timeout. So 75. #700 adds one more: ``git.git_write_dirs``'s
+        ``git rev-parse --path-format=absolute --git-dir --git-common-dir``,
+        the git paths a codex engineer writes when it commits. It carries a timeout.
+        So 76.
         """
         spawns = frozenset(
             {
@@ -416,7 +419,7 @@ class TestTheWalkAgainstTheRealPackage:
             }
         )
         found = package_calls(spawns)
-        assert len(found.seen) == 75
+        assert len(found.seen) == 76
         assert found.without_line_numbers().undecided == tuple(
             sorted(
                 [

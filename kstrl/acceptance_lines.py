@@ -17,11 +17,14 @@ from __future__ import annotations
 import shlex
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from kstrl.acceptance import FAIL, PASS, RECORD_FILE, Check, HeadOutcome, evidence_dir
 from kstrl.jsonread import read_json
-from kstrl.rung import HOST_LABEL
+from kstrl.rung import HOST_LABEL, label_of
+
+if TYPE_CHECKING:
+    from kstrl.factory import FactoryConfig
 
 #: Under the header of a record whose checks a model wrote (#700 slice 7).
 DESIGNED_LINE = "- the verification designer wrote these checks"
@@ -32,6 +35,21 @@ DESIGNED_STOP_LINE = (
     "- the verification designer wrote these checks, so a check that did not pass "
     "can be incorrect, or the code can be"
 )
+
+
+def engineer_line(harness: str) -> str:
+    """Whether the engineer ran confined, and by which harness's sandbox
+    (#700, owner decision 2026-10-09): one line of a head record and of a
+    PR body's ``## Isolation`` section."""
+    if harness:
+        return f"- the engineer ran in the sandbox of {harness}"
+    return "- the engineer ran with no sandbox"
+
+
+def pr_isolation(config: FactoryConfig) -> str:
+    """A PR body's ``## Isolation`` text: the label the checks ran under,
+    then :func:`engineer_line`."""
+    return f"{label_of(config.test_rung)}\n{engineer_line(config.engineer_sandbox)}"
 
 
 def render_lines(record: Mapping[str, Any]) -> list[str]:
@@ -45,6 +63,8 @@ def render_lines(record: Mapping[str, Any]) -> list[str]:
     ]
     if record.get("writtenBy") == "designer":
         lines.append(DESIGNED_LINE)
+    if "engineerSandbox" in record:
+        lines.append(engineer_line(record["engineerSandbox"]))
     replay = record["replay"]
     if replay["error"] or replay["failed"]:
         lines.append(f"- the head replay stopped: {replay['error'] or replay['detail']}")

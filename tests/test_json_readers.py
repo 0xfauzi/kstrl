@@ -140,7 +140,8 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     "plan_gate.py": 2,
     "policy.py": 2,
     "prd.py": 2,
-    "sandbox.py": 3,
+    # #700: one more json.dumps, the codex writable_roots override. No parse.
+    "sandbox.py": 4,
     "serve.py": 5,
     "signals.py": 3,
     # #696: the import, one json.dumps for the stack digest's canonical

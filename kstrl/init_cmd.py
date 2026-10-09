@@ -655,6 +655,14 @@ DEFAULT_KSTRL_TOML = """\
 # enabled = false
 # max_level = 4                    # hard ceiling: never run above this level
 
+# The engineer runs in the sandbox of its own harness (claude-code,
+# claude-sdk or codex), which denies writes outside its worktree and
+# outbound network. A custom agent command, or enabled set to false, runs
+# with no sandbox, and the run warns naming the role.
+[sandbox]
+# enabled = true
+# allow_network = false            # true re-opens outbound network inside the sandbox
+
 # Phase 2.5 security review (independent adversarial pass focused on vulns).
 [security]
 # mode = "advisory"               # skip | advisory | hard (advisory = default; skip turns the review off)

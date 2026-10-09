@@ -144,7 +144,7 @@ from kstrl.retry_plan import (
     print_retry_plan,
     retry_confirm_header,
 )
-from kstrl.sandbox import SANDBOX_REFUSAL, SandboxConfig, unsandboxable_roles
+from kstrl.sandbox import SandboxConfig, warn_unconfined, with_stack_writable
 from kstrl.security import _SEVERITY_ORDER, SecurityMode
 from kstrl.serve import ARCHITECT_RUN_KIND, LAUNCHD_MODES
 from kstrl.shutdown import StopController, install_signal_handlers
@@ -157,6 +157,7 @@ from kstrl.stack import (
     confirmed_stack,
     decide_at_prompt,
     load_stack,
+    stack_in_force,
     unconfirmed_lines,
 )
 from kstrl.timeout import TimeoutConfig, limit_seconds
@@ -1753,9 +1754,6 @@ def understand(
     _check_prompt_preflight(config.prompt_file, ui_impl)
 
     sandbox_cfg = SandboxConfig.load(root_dir)
-    refusals = unsandboxable_roles(sandbox_cfg, {"understand agent": config.agent_cmd})
-    if _report_preflight(ui_impl, SANDBOX_REFUSAL, refusals):
-        sys.exit(2)
     agent = get_agent(
         config.agent_cmd,
         config.model,
@@ -1804,6 +1802,7 @@ def understand(
                     root_dir,
                     embed_ctx.ui,
                     run=command_run,
+                    sandbox=sandbox_cfg,
                     interaction=embed_ctx.channel,
                     stop_check=embed_ctx.stop.is_set,
                 )
@@ -1835,6 +1834,7 @@ def understand(
             root_dir,
             ui_impl,
             run=command_run,
+            sandbox=sandbox_cfg,
         )
     finally:
         command_run.close()
@@ -1848,6 +1848,7 @@ def _understand_core(
     ui_impl: UI,
     *,
     run: CommandRun,
+    sandbox: SandboxConfig,
     interaction: InteractionChannel | None = None,
     stop_check: Callable[[], bool] | None = None,
 ) -> int:
@@ -1856,8 +1857,10 @@ def _understand_core(
     The reducer projects the work onto the pseudo-component
     "understand": one plan row, one phase, the loop's iterations. When
     recording, the agent is wrapped so its transcript lands where the
-    dashboard's transcript pane tails.
+    dashboard's transcript pane tails. An understand agent with no
+    sandbox is a warning in the run's events.jsonl (#700).
     """
+    warn_unconfined(ui_impl.warn, sandbox, {"understand agent": config.agent_cmd})
     bus = run.bus
     component = "understand"
     loop_agent = agent
@@ -2217,12 +2220,10 @@ def feature(
     # R2.4 preflight: accept whichever agent the resolved config selects.
     _check_agent_preflight(base_config, ui_impl)
 
-    sandbox_cfg = SandboxConfig.load(root_dir)
-    # #701: the repair agent falls back to the engineer's command, which
-    # the first entry already names.
-    roles = {"engineer": base_config.agent_cmd, "repair agent": repair_agent_cmd}
-    if _report_preflight(ui_impl, SANDBOX_REFUSAL, unsandboxable_roles(sandbox_cfg, roles)):
-        sys.exit(2)
+    # #700: the engineer runs the confirmed [stack]'s checks in its sandbox.
+    sandbox_cfg = with_stack_writable(
+        SandboxConfig.load(root_dir), root_dir, stack_in_force(root_dir)
+    )
     agent = get_agent(
         base_config.agent_cmd,
         base_config.model,

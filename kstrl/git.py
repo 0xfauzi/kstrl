@@ -297,6 +297,37 @@ def git_common_dir(cwd: Path, timeout: float = DEFAULT_TIMEOUT) -> Path | None:
     return cwd / found
 
 
+def git_write_dirs(path: Path | None = None, timeout: float = DEFAULT_TIMEOUT) -> list[Path]:
+    """The directories a ``git commit`` in ``path`` writes outside its working
+    tree, or [] outside a repository (#700).
+
+    In a linked worktree: its own git dir and the common dir's ``objects``,
+    ``refs`` and ``logs``, which leaves the common dir's ``hooks`` and
+    ``config`` out. In a plain checkout the git dir holds the index lock, so
+    it is the whole git dir. Only directories that exist are named.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir"],
+            cwd=path,
+            capture_output=True,
+            encoding="utf-8",
+            timeout=timeout,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return []
+    lines = result.stdout.splitlines()
+    if result.returncode != 0 or len(lines) != 2:
+        return []
+    git_dir, common = Path(lines[0]), Path(lines[1])
+    dirs = (
+        [git_dir]
+        if git_dir == common
+        else [git_dir, *(common / d for d in ("objects", "refs", "logs"))]
+    )
+    return [d for d in dirs if d.is_dir()]
+
+
 def branch_exists(
     branch: str,
     cwd: Path | None = None,

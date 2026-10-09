@@ -352,10 +352,51 @@ exit 0
 """
 
 
+#: The engineer each case of the PR body test runs on, and the line the head
+#: record and the PR body then say about it (#700, owner decision 2026-10-09).
+ENGINEERS = {
+    "custom": ("", "- the engineer ran with no sandbox"),
+    "codex": ("codex", "- the engineer ran in the sandbox of codex"),
+}
+
+
+def _engineer_on_path(tmp_path: Path, bindir: Path, kind: str) -> tuple[list[str], dict[str, str]]:
+    """The ``ks factory`` arguments and the environment that run the engineer
+    as ``kind``: a custom ``--agent-cmd``, or a stub ``codex`` first on a PATH
+    with no real ``claude`` or ``codex`` on it. Either one writes the correct
+    greet and commits it."""
+    body = f"#!/bin/sh\ncat > /dev/null\n{CORRECT}\necho '<promise>COMPLETE</promise>'\n"
+    kept = [
+        d
+        for d in os.environ["PATH"].split(os.pathsep)
+        if d and not any(os.access(os.path.join(d, n), os.X_OK) for n in ("claude", "codex"))
+    ]
+    if kind == "custom":
+        stub = write_executable(tmp_path / "engineer.sh", body)
+        return ["--agent-cmd", str(stub)], {"PATH": os.pathsep.join([str(bindir), *kept])}
+    # The codex adapter reads the reply from --output-last-message only, once
+    # `codex exec --help` names that flag; stdout is tool output to it.
+    codex = (
+        "#!/bin/sh\n"
+        'case " $* " in *" --help "*) echo --output-last-message; exit 0;; esac\n'
+        'last=""; prev=""\n'
+        'for a in "$@"; do [ "$prev" = --output-last-message ] && last="$a"; prev="$a"; done\n'
+        f"cat > /dev/null\n{CORRECT}\n"
+        "echo '<promise>COMPLETE</promise>' > \"$last\"\n"
+    )
+    write_executable(bindir / "codex", codex)
+    return [], {"PATH": os.pathsep.join([str(bindir), *kept]), "KSTRL_AGENT_TYPE": "codex"}
+
+
 @runs_a_stack
-def test_the_terminal_and_the_pr_body_show_the_same_lines(tmp_path: Path) -> None:
+@pytest.mark.parametrize("kind", sorted(ENGINEERS))
+def test_the_terminal_and_the_pr_body_show_the_same_lines(tmp_path: Path, kind: str) -> None:
     """The run prints the head record's lines and opens the component's PR;
-    the PR body's ## Acceptance section is exactly those lines, in order."""
+    the PR body's ## Acceptance section is exactly those lines, in order. The
+    record, those lines and the ## Isolation section say whether the engineer
+    ran confined, and by which harness (#700): RED before it, the section had
+    three lines and the record no engineerSandbox."""
+    harness, said = ENGINEERS[kind]
     # The origin first: it names the control directory the confirmation goes in.
     root = _repo(tmp_path, _stack({"tests": "true"}), confirm=False)
     origin = tmp_path / "origin.git"
@@ -375,37 +416,34 @@ def test_the_terminal_and_the_pr_body_show_the_same_lines(tmp_path: Path) -> Non
             _check("greets-bob", ["/bin/sh", "check.sh", "Bob"], held_out=True),
         ],
     )
-    stub = write_executable(
-        tmp_path / "engineer.sh",
-        f"#!/bin/sh\ncat > /dev/null\n{CORRECT}\necho '<promise>COMPLETE</promise>'\n",
-    )
+    engineer, env = _engineer_on_path(tmp_path, bindir, kind)
 
     code, out = _spawn(
         [
             "factory",
             *("--manifest", str(root / "scripts" / "kstrl" / "manifest.json")),
-            *("--root", str(root), "--agent-cmd", str(stub), "--acceptance", str(plan)),
+            *("--root", str(root), *engineer, "--acceptance", str(plan)),
             *("--no-tui", "--yes", "--ui", "plain", "--no-color"),
             *("--max-retries", "0", "--max-parallel", "1"),
-            *("--review-mode", "skip", "--contract-check", "skip"),
+            *("--review-mode", "skip", "--security-mode", "skip", "--contract-check", "skip"),
         ],
         root,
-        {
-            "PATH": f"{bindir}{os.pathsep}{os.environ['PATH']}",
-            "GH_BODY": str(body),
-            "GH_HEAD": str(tmp_path / "pr-head"),
-        },
+        {**env, "GH_BODY": str(body), "GH_HEAD": str(tmp_path / "pr-head")},
     )
 
     assert code == 0, out
+    assert _head_record(root)["engineerSandbox"] == harness, out
     lines = body.read_text(encoding="utf-8").splitlines()
     start = lines.index("## Acceptance") + 1
     end = next(i for i in range(start, len(lines)) if lines[i].startswith(("## ", "---")))
     section = [line for line in lines[start:end] if line]
-    assert len(section) == 3, section
+    assert len(section) == 4, section
+    assert section[1] == said, section
     printed = out.splitlines()
     first = printed.index(section[0])
     assert printed[first : first + len(section)] == section, out
+    isolation = lines.index("## Isolation")
+    assert lines[isolation + 3] == said, lines
 
 
 @pytest.mark.parametrize("case", ["unreadable-directory", "inside-the-repository"])

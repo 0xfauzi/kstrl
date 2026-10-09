@@ -273,8 +273,11 @@ class TestTheWholeSubmitTupleIsBound:
             "interactive": False,
             "scope": bound["scope"],
             "breaker_iterations": 3,
-            "sandbox_enabled": False,
+            # #700: on by default; the repository's [stack] grants no
+            # writable path, so the engineer's sandbox gets none from it.
+            "sandbox_enabled": True,
             "sandbox_allow_network": False,
+            "sandbox_writable": (),
             "agent_budget_usd": None,
             "events_dir_str": bound["events_dir_str"],
             "usage_dir_str": bound["usage_dir_str"],

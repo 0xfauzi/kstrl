@@ -137,7 +137,7 @@ class CodexAgent:
         """Check if codex CLI is available."""
         return shutil.which("codex") is not None
 
-    def _sandbox_argv(self) -> list[str]:
+    def _sandbox_argv(self, cwd: Path | None) -> list[str]:
         """The ``--sandbox`` fragment for this agent's posture.
 
         Read-only wins over the operator's intent: ``read-only`` is
@@ -148,7 +148,7 @@ class CodexAgent:
         """
         if self._read_only:
             return codex_review_sandbox_args()
-        return codex_sandbox_args(self._sandbox)
+        return codex_sandbox_args(self._sandbox, cwd)
 
     def run(
         self,
@@ -182,7 +182,7 @@ class CodexAgent:
             # Translate unified effort levels to codex-specific values
             codex_effort = "xhigh" if self._reasoning_effort == "max" else self._reasoning_effort
             cmd.extend(["-c", f'model_reasoning_effort="{codex_effort}"'])
-        cmd.extend(self._sandbox_argv())
+        cmd.extend(self._sandbox_argv(cwd))
 
         # Use --output-last-message when supported by the codex CLI.
         last_msg_file: Path | None = None
