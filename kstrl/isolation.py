@@ -510,9 +510,35 @@ def _git_dir_refusal(root: Path, common: Path) -> str:
         why = "is the home directory"
     elif common == real_root or common in real_root.parents:
         why = "is the root or a parent of the root"
+    elif not _belongs_to(root, common):
+        why = "is not the git directory of the root"
     else:
         return ""
     return GIT_DIR_REFUSAL.format(path=common, why=why)
+
+
+def _belongs_to(root: Path, common: Path) -> bool:
+    """Whether ``common``, a resolved path, is the git directory of
+    ``root`` by a link in both directions. A ``.git`` directory is
+    ``common`` itself. A ``.git`` file (a linked worktree) names
+    ``<common>/worktrees/<name>``, and the ``gitdir`` file there names the
+    ``.git`` file back. A ``.git`` file that names another repository, or
+    a worktree entry that names another path, fails."""
+    dot_git = root / ".git"
+    if dot_git.is_dir():
+        return Path(os.path.realpath(dot_git)) == common
+    try:
+        text = dot_git.read_text(encoding="utf-8")
+        marker, _, value = text.strip().partition(":")
+        if marker != "gitdir" or not value.strip():
+            return False
+        entry = Path(os.path.realpath(root / value.strip()))
+        back = (entry / "gitdir").read_text(encoding="utf-8").strip()
+    except (OSError, ValueError):
+        return False
+    return entry.parent == Path(os.path.realpath(common / "worktrees")) and Path(
+        os.path.realpath(entry / back)
+    ) == Path(os.path.realpath(dot_git))
 
 
 def prove_rung(

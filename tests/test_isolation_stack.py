@@ -366,20 +366,23 @@ def test_git_variables_in_the_environment_of_kstrl_do_not_move_the_git_dir_both_
     --measure` name the git directory of another repository. Both zones
     still read only the git directory of the root, and both are proven."""
     root = _repo(tmp_path / "a", "", confirm=False)
+    link = tmp_path / "link"
+    link.symlink_to(root)
     other = tmp_path / "other"
     other.mkdir()
     git_in(other, "init", "-q")
     redirect = {"GIT_DIR": str(other / ".git"), "GIT_COMMON_DIR": str(other / ".git")}
 
-    _code, document = _measure(root, redirect)
+    readings = {"the root": _measure(root, redirect), "a symlink to it": _measure(link, redirect)}
 
     own, foreign = os.path.realpath(root / ".git"), os.path.realpath(other)
-    for zone in ("setup", "test"):
-        rung = document["isolation"][zone]
-        assert rung["refusal"] == "", rung
-        read = _policy(rung)["filesystem"]["read"]
-        assert own in read, read
-        assert not [path for path in read if path.startswith(foreign)], read
+    for case, (_code, document) in readings.items():
+        for zone in ("setup", "test"):
+            rung = document["isolation"][zone]
+            assert rung["refusal"] == "", (case, rung)
+            read = _policy(rung)["filesystem"]["read"]
+            assert own in read, (case, read)
+            assert not [path for path in read if path.startswith(foreign)], (case, read)
 
 
 @needs_nono
@@ -437,6 +440,71 @@ def test_a_git_dir_that_is_home_the_root_a_parent_of_it_or_not_a_git_dir_refuses
             rung = document["isolation"][zone]
             assert (rung["refusal"], rung["canaries"]) == (refusals[case], {}), (case, rung)
         assert f"setup zone: {refusals[case]}" in _row(document, "isolation")["detail"], case
+
+    root_link = top / "root link"
+    root_link.symlink_to(roots["root"])
+    _code, through_link = _measure(root_link)
+    for zone in ("setup", "test"):
+        rung = through_link["isolation"][zone]
+        assert (rung["refusal"], rung["canaries"]) == (refusals["root"], {}), ("a link", rung)
+
+
+@needs_nono
+def test_a_git_dir_that_is_not_the_roots_own_refuses_both_zones_and_a_linked_one_is_proven(
+    tmp_path: Path,
+) -> None:
+    """The git directory both zones read must belong to the root by a link
+    in both directions (#700, the security review of #770). A `.git` file
+    naming the git directory of a second valid repository, and a linked
+    worktree whose `worktrees/<name>/gitdir` names another path, refuse both
+    zones and name the path. A `.git` that is a symlink to a git directory,
+    and a linked worktree whose back link names it through a symlink, are
+    proven: `ks` resolves the root, so the symlinks that reach the
+    comparison are in the git directory and in the back link."""
+    top = tmp_path.resolve()
+    second = top / "second"
+    second.mkdir()
+    git_in(second, "init", "-q")
+    stolen = _repo(top / "stolen", "", confirm=False)
+    shutil.rmtree(stolen / ".git")
+    (stolen / ".git").write_text(f"gitdir: {second / '.git'}\n", encoding="utf-8")
+
+    main = _repo(top / "main", "", confirm=False)
+    broken, good = top / "broken", top / "good"
+    git_in(main, "worktree", "add", "-q", "-b", "broken", str(broken))
+    git_in(main, "worktree", "add", "-q", "-b", "good", str(good))
+    (main / ".git" / "worktrees" / "broken" / "gitdir").write_text(
+        f"{second / '.git'}\n", encoding="utf-8"
+    )
+    alias = top / "alias"
+    alias.symlink_to(good)
+    (main / ".git" / "worktrees" / "good" / "gitdir").write_text(
+        f"{alias / '.git'}\n", encoding="utf-8"
+    )
+    kept = _repo(top / "kept", "", confirm=False)
+    store = top / "store"
+    shutil.move(kept / ".git", store)
+    (kept / ".git").symlink_to(store)
+    not_own = "is not the git directory of the root"
+    refused = {
+        "a second repository": (stolen, second / ".git"),
+        "a back link to another path": (broken, main / ".git"),
+    }
+
+    readings = {case: _measure(root) for case, (root, _) in refused.items()}
+    proven = {"a linked worktree": (good, main / ".git"), "a symlinked .git": (kept, store)}
+    accepted = {case: _measure(root) for case, (root, _) in proven.items()}
+
+    for case, (_code, document) in readings.items():
+        expected = GIT_DIR_REFUSAL.format(path=refused[case][1], why=not_own)
+        for zone in ("setup", "test"):
+            rung = document["isolation"][zone]
+            assert (rung["refusal"], rung["canaries"]) == (expected, {}), (case, rung)
+    for case, (_code, document) in accepted.items():
+        for zone in ("setup", "test"):
+            rung = document["isolation"][zone]
+            assert rung["refusal"] == "", (case, rung)
+            assert str(proven[case][1]) in _policy(rung)["filesystem"]["read"], (case, rung)
 
 
 @needs_nono
