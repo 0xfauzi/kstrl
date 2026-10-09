@@ -485,9 +485,6 @@ EXPECTED_ROUTED_APPENDS: dict[str, int] = {
     "events.py: open_for_append(lock=default (False))": 1,
     "evolution.py: append_records(lock=True)": 1,
     "evolution.py: append_records(lock=default (False))": 1,
-    # #549: gepa's run log. One writer: run_optimization creates run_dir
-    # and refuses one that already exists, so no other process appends.
-    "gepa_adapter.py: append_records(lock=default (False))": 1,
     "signals.py: append_records(lock=True)": 1,
     # #553: the CI ledger, for the signal ledger's reason: a scheduled
     # `ks ci poll` and an operator's can interleave.

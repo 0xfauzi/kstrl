@@ -241,12 +241,6 @@ ALLOWLIST: tuple[AllowedSite, ...] = (
         "E31: kstrl measuring itself",
     ),
     AllowedSite(
-        "gepa_adapter.py",
-        "Python str.format template",
-        1,
-        "D32: describes kstrl's own prompt templates",
-    ),
-    AllowedSite(
         "baseline.py",
         '"dead_code_ruff",',
         1,
@@ -339,7 +333,6 @@ PINNED_HITS: dict[str, dict[str, int]] = {
     "evolution.py": {"mypy": 3, "pytest": 2, "python": 1, "ruff": 6, "vulture": 1},
     "factory.py": {"mypy": 5, "pip": 1, "uv": 2},
     "failure_excerpt.py": {"cargo": 2, "go": 3, "jest": 2, "rust": 5},
-    "gepa_adapter.py": {"pytest": 1},
     "init_cmd.py": {"package.json": 1, "ruff": 1},
     "jsonread.py": {"pytest": 1},
     "manifest.py": {"python": 1},

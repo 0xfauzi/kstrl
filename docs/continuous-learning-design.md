@@ -15,7 +15,9 @@ project goes in the memory file (`[paths] memory`), which every engineer
 prompt reads. The fact_necessary fixture and its scorer
 (`kstrl/learning_fixture.py`, #508) are removed too: slice 1's own guard test
 showed the convention to the engineer, so the fixture measured nothing. The
-GEPA seam (`kstrl/gepa_adapter.py`) stays, with no caller, for now. The rest
+GEPA seam (`kstrl/gepa_adapter.py`) had no caller. The owner removed it, with its
+tests, the `gepa` dependency and `GEPA_REFLECTION_PROMPT`, on 2026-10-10. The
+sections on GEPA below are history and name code that no longer exists. The rest
 of this document is the design as it was proposed.
 
 Status: closed (see the section above); proposed before that. Supersedes the `ks evolve` proposal generator described in

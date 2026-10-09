@@ -322,7 +322,6 @@ EXPECTED_AGENT_CALLS: dict[str, int] = {
     "decompose.py:collect_agent_output": 1,
     "factory.py:_run_component": 1,
     "feature_cmd.py:run_feature": 3,
-    "gepa_adapter.py:ReflectionModel.__call__": 1,
     "integration_phase.py:_review_round": 1,
     "integration_phase.py:_run_reviewer": 1,
     "integration_phase.py:review_commit": 1,
@@ -342,7 +341,6 @@ CALLER_SCOPED: dict[str, str] = {
     "acceptance_design.py:design_component": "acceptance_design._design_one",
     "agents/logging.py:LoggingAgent.run": "a tee around the adapter it wraps; its caller's scope",
     "decompose.py:collect_agent_output": "the drain helper; review, security and distill call it",
-    "gepa_adapter.py:ReflectionModel.__call__": "offline prompt search outside any run (#530)",
     "integration_phase.py:_run_reviewer": "integration_phase._review_round",
     "integration_phase.py:review_commit": "integration_phase._review_round, via _run_reviewer",
     "knowledge.py:distill_facts": "pipeline.ComponentPipeline._phase_distill",
@@ -351,9 +349,6 @@ CALLER_SCOPED: dict[str, str] = {
     "security.py:run_security_review": "pipeline.ComponentPipeline._phase_security",
 }
 
-
-#: CALLER_SCOPED sites that run outside any run, so no caller opens a scope.
-NO_RUN_CALLERS = frozenset({"gepa_adapter.py:ReflectionModel.__call__"})
 
 EXPECTED_SCOPES: dict[str, int] = {
     "acceptance_design.py:_design_one": 1,
@@ -419,11 +414,9 @@ def test_a_site_cleared_by_its_caller_has_its_callers_counted() -> None:
     uncounted = sorted(
         key
         for key in CALLER_SCOPED
-        if key not in NO_RUN_CALLERS
         if key.rsplit(":", 1)[1].rsplit(".", 1)[-1] not in AGENT_ENTRIES | {"run"}
     )
     assert uncounted == []
-    assert NO_RUN_CALLERS <= set(CALLER_SCOPED)
 
 
 # --- layer 3: the bound (#603) ----------------------------------------------
@@ -439,7 +432,6 @@ EXPECTED_BOUNDS: dict[str, tuple[str, str]] = {
     "decompose.py:collect_agent_output": ("timeout", "its caller's timeout"),
     "factory.py:_run_component": ("timeouts", "[timeout] agent_iteration and component_total"),
     "feature_cmd.py:run_feature": ("timeouts", "[timeout] agent_iteration and component_total"),
-    "gepa_adapter.py:ReflectionModel.__call__": ("timeout", "ReflectionModel.timeout, required"),
     "integration_phase.py:_review_round": ("timeout", "[factory] review_timeout_seconds"),
     "integration_phase.py:_run_reviewer": ("timeout", "its caller's timeout"),
     "integration_phase.py:review_commit": ("timeout", "its caller's timeout"),

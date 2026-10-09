@@ -97,7 +97,6 @@ from kstrl import (
     acceptance_design,
     decisions,
     decompose,
-    gepa_adapter,
     git,
     intake_github,
     knowledge,
@@ -121,7 +120,6 @@ from kstrl.decompose import (
     DECOMPOSE_PROMPT,
     DECOMPOSE_PROMPT_VERSION,
 )
-from kstrl.gepa_adapter import GEPA_REFLECTION_PROMPT, GEPA_REFLECTION_PROMPT_VERSION
 from kstrl.git import (
     PASTED_CHANGE_SOURCE_PROMPT,
     PASTED_CHANGE_SOURCE_PROMPT_VERSION,
@@ -194,7 +192,6 @@ _PROMPTS: dict[str, str] = {
     "PASTED_CHANGE_SOURCE_PROMPT": PASTED_CHANGE_SOURCE_PROMPT,
     "DECISIONS_CONTEXT_PROMPT": DECISIONS_CONTEXT_PROMPT,
     "OWNER_ANSWER_PROMPT": OWNER_ANSWER_PROMPT,
-    "GEPA_REFLECTION_PROMPT": GEPA_REFLECTION_PROMPT,
     "STACK_PROMPT": STACK_PROMPT,
     "ACCEPTANCE_PROMPT": ACCEPTANCE_PROMPT,
     "BUG_REPORT_PROMPT": BUG_REPORT_PROMPT,
@@ -216,7 +213,6 @@ _VERSIONS: dict[str, str] = {
     "PASTED_CHANGE_SOURCE_PROMPT": PASTED_CHANGE_SOURCE_PROMPT_VERSION,
     "DECISIONS_CONTEXT_PROMPT": DECISIONS_CONTEXT_PROMPT_VERSION,
     "OWNER_ANSWER_PROMPT": OWNER_ANSWER_PROMPT_VERSION,
-    "GEPA_REFLECTION_PROMPT": GEPA_REFLECTION_PROMPT_VERSION,
     "STACK_PROMPT": STACK_PROMPT_VERSION,
     "ACCEPTANCE_PROMPT": ACCEPTANCE_PROMPT_VERSION,
     "BUG_REPORT_PROMPT": BUG_REPORT_PROMPT_VERSION,
@@ -412,13 +408,6 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     # no calibration fixture carries an owner answer, so H2 cannot be discharged.
     "OWNER_ANSWER_PROMPT": (
         "319f4f9af3a71e92a76483798d55aca5f945a6388e36e6dfa899f6e7a58de120",
-        "1.0.0",
-    ),
-    # 1.0.0 (#530): new. The text gepa sends the reflection model when it
-    # proposes a role prompt. H3 only: no calibration fixture scores a
-    # reflection prompt, the DECISIONS_CONTEXT_PROMPT position.
-    "GEPA_REFLECTION_PROMPT": (
-        "708326a01c93fef5a9190de373488c664f7047066d1c12253400a4c82fdb6b49",
         "1.0.0",
     ),
     # 1.0.0 (#654 slice 7): new. The line the spec of a `bug` issue gets: at least one
@@ -626,7 +615,6 @@ _RENDERERS: dict[str, tuple[ModuleType, Callable[[Path], str]]] = {
     "PASTED_CHANGE_SOURCE_PROMPT": (git, lambda _p: pasted_change_source("DIFF")[0]),
     "DECISIONS_CONTEXT_PROMPT": (decisions, _decisions_context_render),
     "OWNER_ANSWER_PROMPT": (owner_answers, lambda _p: render_owner_answer(_OWNER_ANSWER_ITEM)),
-    "GEPA_REFLECTION_PROMPT": (gepa_adapter, lambda _p: gepa_adapter.reflection_template()),
     "BUG_REPORT_PROMPT": (intake_github, _bug_report_render),
     **NOTICE_RENDERERS,
     **INTEGRATION_RENDERERS,

@@ -82,7 +82,6 @@ import pytest
 from kstrl import (
     acceptance_design,
     decompose,
-    gepa_adapter,
     git,
     init_cmd,
     integration,
@@ -211,7 +210,6 @@ _DELIMITER_CONSUMERS: tuple[ModuleType, ...] = (
     security,
     knowledge,
     git,
-    gepa_adapter,
 )
 
 
@@ -411,16 +409,6 @@ _ROLES: dict[str, _Role] = {
         frozenset({"DEFAULT_FEATURE_UNDERSTAND_PROMPT"}),
         "d466ae5e769bc0d21a5ce1bbb8d2405ab05e5ce4af5980c481a04d4b1852ae2c",
         3279,
-    ),
-    "gepa-reflection": _Role(
-        # The template as run_optimization hands it to gepa. The library
-        # fills <curr_param> and <side_info> itself; what it sends is pinned
-        # end to end by tests/test_gepa_adapter.py's
-        # test_reflection_uses_the_enrolled_template.
-        lambda _p: gepa_adapter.reflection_template(),
-        frozenset({"GEPA_REFLECTION_PROMPT"}),
-        "33879d87e1fc44277f8d196c9d3978d950ddbc03adb017de2b402acbdeb86f2a",
-        2018,
     ),
     "integration-criteria": _Role(
         lambda _p: integration.render_integration_criteria("BASE_SHA"),
