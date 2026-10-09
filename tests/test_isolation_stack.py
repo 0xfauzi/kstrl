@@ -461,7 +461,8 @@ def test_a_git_dir_that_is_not_the_roots_own_refuses_both_zones_and_a_linked_one
     outside any git directory whose `commondir` names the second repository.
     A `.git` that is a symlink to a git directory or to a `.git` file, a
     linked worktree whose back link names it through a symlink, a relative
-    `gitdir:` and a symlinked `worktrees` directory are proven: `ks`
+    `gitdir:` (also with `ks` started outside the root) and a symlinked
+    `worktrees` directory are proven: `ks`
     resolves the root, so the symlinks that reach the comparison are in the
     git directory, in the `.git` file, in its `gitdir:` and in the back link."""
     top = tmp_path.resolve()
@@ -535,6 +536,11 @@ def test_a_git_dir_that_is_not_the_roots_own_refuses_both_zones_and_a_linked_one
         "a symlinked worktrees directory": (aside, moved / ".git"),
     }
     accepted = {case: _measure(root) for case, (root, _) in proven.items()}
+    # A relative `gitdir:` is relative to the root, not to where `ks` starts.
+    outside = "a relative gitdir, `ks` started outside the root"
+    proven[outside] = (relative, main / ".git")
+    code, out = _spawn(["doctor", "--root", str(relative), "--measure", "--json"], top, None)
+    accepted[outside] = (code, json.loads(out[out.index("{") :]))
 
     for case, (_code, document) in readings.items():
         expected = GIT_DIR_REFUSAL.format(path=refused[case][1], why=not_own)
