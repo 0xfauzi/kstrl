@@ -288,9 +288,6 @@ EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
     # #626: +1 notice constant x 2 spellings = 14.
     # #696 slice 6: -6 notice constants x 2 spellings = 2.
     "feedforward.py": 2,
-    # #530: GEPA_REFLECTION_PROMPT x 2 spellings (the declaration and its
-    # one use in reflection_template) = 2.
-    "gepa_adapter.py": 2,
     "git.py": 4,
     # #654 slice 7: BUG_REPORT_PROMPT's declaration and its one use in
     # spec_from_issue.

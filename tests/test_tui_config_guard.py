@@ -92,9 +92,6 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     # _human_rejections unreachable (the ladder is None only when
     # autonomy is disabled) and deleted it, so the census stays at 6.
     "factory.py": 6,
-    # #530: three bare raises in ReflectionModel, the spent budget, a
-    # timed-out reflection call and an empty reply.
-    "gepa_adapter.py": 3,
     "git.py": 1,
     "inbox.py": 1,
     # Two since #231: IntakeError (the subclass), plus a bare raise in

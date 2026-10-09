@@ -1,9 +1,7 @@
 """The calibration scorer: the matchers that grade a role's reply (#530).
 
 Moved out of ``tests/test_calibration.py`` unchanged, so the paid
-calibration suite and the prompt optimizer in :mod:`kstrl.gepa_adapter`
-grade a reply with the same functions. Two scorers would let an
-optimizer improve against one of them while calibration reads the other.
+calibration suite and any other grader of a reply use the same functions.
 ``tests/test_calibration.py`` imports every name here back, and the unit
 tests that pin the matchers (``tests/test_calibration_matchers.py``)
 reach them through that import.
@@ -22,8 +20,7 @@ field is required and no block may carry a field no matcher reads, so a
 misspelt field name is refused too instead of switching its gate off.
 The architect matchers in ``tests/test_calibration.py`` and the reuse
 matcher in ``tests/helpers/calibration_repo_fixture.py`` read their blocks
-through the readers here, and the calibration loader and
-:func:`kstrl.gepa_adapter.split_fixtures` refuse a whole meta through
+through the readers here, and the calibration loader refuses a whole meta through
 :func:`check_fixture_meta` before any agent call.
 """
 

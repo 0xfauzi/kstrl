@@ -2185,7 +2185,6 @@ class TestSubprocessTimeoutAudit:
             "agents/logging.py self._agent.run",
             "cli.py app.run",
             "decompose.py agent.run",
-            "gepa_adapter.py self.agent.run",
             "loop.py agent.run",
             "tui/app.py initial_screens_for_kind(kind, observe_only=False)",
             "tui/app.py initial_screens_for_kind(kind, observe_only=True)",

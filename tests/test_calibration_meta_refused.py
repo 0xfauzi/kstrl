@@ -8,7 +8,7 @@ fixture scored as caught whatever the reviewer reported. A misspelt
 misspelt ``categories`` made a negative fixture score as clean. Now every
 field a matcher reads is required, checked against the vocabulary the
 matcher compares it with, and a block may carry no field a matcher does
-not read. The loader and the prompt optimizer refuse such a meta before
+not read. The loader refuses such a meta before
 any agent call, naming the fixture and the field.
 
 Two layers guard the next matcher field read with a default:
@@ -31,7 +31,6 @@ Two layers guard the next matcher field read with a default:
 from __future__ import annotations
 
 import ast
-import copy
 import json
 import shutil
 from collections.abc import Callable
@@ -40,7 +39,6 @@ from typing import Any
 
 import pytest
 
-from kstrl import gepa_adapter
 from kstrl.calibration_score import (
     FixtureMetaError,
     fixture_meta_errors,
@@ -49,9 +47,8 @@ from kstrl.calibration_score import (
     security_caught,
     security_false_positive,
 )
-from kstrl.gepa_adapter import RoleFixture, run_optimization
 from kstrl.review import ReviewResult
-from kstrl.security import SECURITY_PROMPT, SecurityMode, SecurityResult, parse_security_output
+from kstrl.security import SecurityMode, SecurityResult, parse_security_output
 from tests.helpers import calibration_repo_fixture
 from tests.helpers.astwalk import (
     KSTRL_PACKAGE,
@@ -216,73 +213,6 @@ def test_the_loader_reads_every_saved_meta(fixtures_root: Path) -> None:
         for _artifact, meta in load_fixtures(subdir, suffix)
     ]
     assert len(loaded) == len(SAVED) > 0
-
-
-class _CountingRunner:
-    def __init__(self) -> None:
-        self.calls = 0
-
-    def __call__(self, prompt: str, fixture: RoleFixture) -> str:
-        self.calls += 1
-        return json.dumps({"findings": [], "exhaustively_searched": True})
-
-
-def _role_fixtures(*subdirs: str) -> list[RoleFixture]:
-    return [
-        RoleFixture(meta["fixture_id"], meta, artifact.read_text(encoding="utf-8"))
-        for subdir in subdirs
-        for artifact, meta in load_fixtures(subdir, ".diff")
-    ]
-
-
-@pytest.mark.parametrize(
-    "fixture_id,block,field,value",
-    [
-        ("sec-01-sql-injection", "must_detect", "severity_at_least", "High"),
-        ("sec-neg-01-parameterized-dynamic-sql", "must_not_flag", "categories", ["injecton"]),
-    ],
-    ids=["positive", "negative"],
-)
-def test_the_optimizer_refuses_before_any_role_call(
-    tmp_path: Path, fixture_id: str, block: str, field: str, value: Any
-) -> None:
-    """A security optimization run over the saved fixtures, one of them
-    unreadable, stops before the first role call and before it creates its
-    run directory. A negative is broken as well as a positive: every
-    negative sits in both splits, so a check that skipped negatives would
-    pay for a role call before the matcher refused."""
-    fixtures = _role_fixtures("security", "security_negative")
-    broken = next(f for f in fixtures if f.fixture_id == fixture_id)
-    meta = copy.deepcopy(broken.meta)
-    meta[block][field] = value
-    fixtures[fixtures.index(broken)] = RoleFixture(broken.fixture_id, meta, broken.diff)
-    runner = _CountingRunner()
-
-    with pytest.raises(FixtureMetaError) as refused:
-        run_optimization(
-            "security",
-            SECURITY_PROMPT,
-            fixtures,
-            runner=runner,
-            reflection_lm=lambda prompt: "",
-            max_metric_calls=100,
-            run_dir=tmp_path / "run",
-        )
-
-    assert str(refused.value).startswith(f"{fixture_id}: ")
-    assert f"{block}.{field}" in str(refused.value)
-    assert runner.calls == 0
-    assert not (tmp_path / "run").exists()
-
-
-def test_the_optimizer_splits_the_saved_fixtures() -> None:
-    """Control: the saved fixtures pass the same check."""
-    for role, subdirs in (
-        ("security", ("security", "security_negative")),
-        ("reviewer", ("concerns", "concerns_negative")),
-    ):
-        train, validation = gepa_adapter.split_fixtures(role, _role_fixtures(*subdirs))
-        assert train and validation
 
 
 def test_a_quoted_arm_flag_is_refused() -> None:
