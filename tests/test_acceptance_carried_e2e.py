@@ -185,6 +185,8 @@ def test_a_later_feature_that_breaks_an_earlier_features_check_fails_phase_3(
     (item,) = _halts(root)
     assert item.evidence["carried"]["check"] == "keeps-handle", item.evidence
     assert item.evidence["where"] == "Phase 3 tier 0", item.evidence
+    # A Phase 3 that failed carries nothing: comp-c's check is not kept.
+    assert _rows(root, "checks") == [("comp-a", "keeps-handle"), ("comp-a", "keeps-save")]
 
 
 @runs_a_stack
@@ -349,6 +351,18 @@ def test_a_carried_file_that_cannot_be_read_refuses_the_run(tmp_path: Path) -> N
         assert "Refusing to run: an earlier feature's acceptance check does not hold" in out
         assert said in out, out
         assert "Integrated check" not in out, out
+
+    # A carried file that exists and cannot be read is a refusal too, never
+    # the empty state of a project where no feature merged yet.
+    path.unlink()
+    path.mkdir()
+
+    refused, out = _run_second(tmp_path, root)
+
+    assert refused.exit_code == 2, out
+    assert "cannot be read" in out, out
+    assert "Integrated check" not in out, out
+    path.rmdir()
 
     # A plan copy that no longer hashes to its id is a refusal, never a
     # skipped check, and its altered check never runs: here it would pass.
