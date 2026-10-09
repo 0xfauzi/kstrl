@@ -77,6 +77,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from kstrl import git
 from kstrl.atomicio import atomic_write_json, atomic_write_text
 from kstrl.events import RunPaths
 from kstrl.jsonread import read_json
@@ -549,10 +550,18 @@ def prove_zones(
     own that the caller removes through :func:`kstrl.rung.release`, and
     with the control directory denied to both (#700 slice 2). On a
     platform with no prover, the host fallback for both and nothing
-    proven (owner decision 2026-10-05)."""
+    proven (owner decision 2026-10-05).
+
+    Both zones can read the repository's git common directory and cannot
+    write it (#700, the #625 trial): a kstrl worktree's ``.git`` file
+    points into it, so without it ``git`` in a worktree fails with "not a
+    git repository" in either zone. A check can already read the files of
+    the repository."""
     fallback = host_fallback()
     if fallback is not None:
         return {SETUP_ZONE: fallback, TEST_ZONE: fallback}
+    common = git.git_common_dir(root)
+    readable = [*readable, *([common] if common is not None else [])]
     return {
         zone: prove_rung(
             root,

@@ -276,6 +276,7 @@ EXPECTED_GIT_ARGVS: dict[str, int] = {
     "git.py git rev-parse --abbrev-ref HEAD": 1,
     "git.py git rev-parse --is-inside-work-tree": 1,
     "git.py git rev-parse --show-toplevel": 1,
+    "git.py git rev-parse --git-common-dir": 1,
     "git.py git rev-parse --verify --quiet ?": 3,
     "git.py git rev-parse --verify --quiet HEAD": 1,
     "git.py git rm --cached --ignore-unmatch -q -- ?": 1,
