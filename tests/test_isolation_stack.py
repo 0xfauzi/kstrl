@@ -387,22 +387,25 @@ def test_a_git_dir_that_is_home_the_root_a_parent_of_it_or_not_a_git_dir_refuses
     tmp_path: Path,
 ) -> None:
     """The root's ``.git`` file names a git common directory that git
-    accepts and that neither zone may read: the home directory, the root,
-    a parent of the root, a directory with no HEAD, and one with no
+    accepts and that neither zone may read: the home directory (`HOME`
+    names it through a symlink), the root, the parent of the root, a
+    parent two levels up, a directory with no HEAD, and one with no
     objects/ (git finds the objects through `GIT_OBJECT_DIRECTORY`).
     `ks doctor --measure` refuses both zones before any canary runs and
     names the path, and `ks factory` refuses before the engineer runs."""
     top = tmp_path.resolve()
     roots = {
         case: _repo(
-            top / case,
+            top / case / "deep" if case == "grandparent" else top / case,
             _stack({"tests": "true"}) if case == "parent" else "",
             confirm=case == "parent",
         )
-        for case in ("home", "root", "parent", "no HEAD", "no objects")
+        for case in ("home", "root", "parent", "grandparent", "no HEAD", "no objects")
     }
     family, not_git = "is the root or a parent of the root", "does not hold HEAD and objects/"
     home = _move_git_dir(roots["home"], top / "home" / "h")
+    home_link = top / "home" / "link"
+    home_link.symlink_to(home)
     no_head = _move_git_dir(roots["no HEAD"], top / "no HEAD" / "common")
     linked = top / "no HEAD" / "wt"
     linked.mkdir()
@@ -412,9 +415,10 @@ def test_a_git_dir_that_is_home_the_root_a_parent_of_it_or_not_a_git_dir_refuses
     no_objects = _move_git_dir(roots["no objects"], top / "no objects" / "common")
     objects = shutil.move(no_objects / "objects", top / "no objects" / "objects")
     cases = {
-        "home": (home, "is the home directory", {"HOME": str(home)}),
+        "home": (home, "is the home directory", {"HOME": str(home_link)}),
         "root": (_move_git_dir(roots["root"], roots["root"]), family, {}),
         "parent": (_move_git_dir(roots["parent"], top / "parent"), family, {}),
+        "grandparent": (_move_git_dir(roots["grandparent"], top / "grandparent"), family, {}),
         "no HEAD": (no_head, not_git, {}),
         "no objects": (no_objects, not_git, {"GIT_OBJECT_DIRECTORY": str(objects)}),
     }
