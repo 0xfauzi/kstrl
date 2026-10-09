@@ -26,9 +26,10 @@ made by the slice 3 replay (:func:`kstrl.replay.replay_stack`): setup,
 - On the base, after the plan gate and before the first engineer
   (:func:`replay_base`). A check the plan says fails on the base must fail
   there, and one it says passes must pass: either contradiction refuses
-  the run, unless the designer wrote the check that passes, which is then
-  removed. A check that did not run refuses, except in a component the
-  plan marks ``createsApp``, recorded as :data:`BASE_NOT_RUNNABLE` (decision 11).
+  the run, unless the designer wrote the check, which is then removed as
+  :func:`kstrl.acceptance_design.kept_on_base` says. A check that did not run
+  refuses, except in a component the plan marks ``createsApp``, recorded as
+  :data:`BASE_NOT_RUNNABLE` (decision 11).
 - On each component's head, after Phase 1 passed (:func:`judge_head`).
   Each check runs :data:`HEAD_RUNS` times and passes only when every run
   exited 0. Nothing is run again after a failure. The plan gates the

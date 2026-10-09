@@ -64,6 +64,15 @@ REMOVED = (
 )
 
 
+def _contradicts(check_id: str, did: str, code: int) -> str:
+    """What the run prints for a designed check with ``onBase: passes`` that
+    the base removed (owner decision of 2026-10-09 on #700)."""
+    return (
+        f"{COMP}: the designed check {check_id} {did} on the base (exit {code}), where it says "
+        "it passes, so it cannot measure kept behaviour on this base: it is removed"
+    )
+
+
 @dataclass(frozen=True)
 class Designed:
     code: int
@@ -246,6 +255,7 @@ def test_the_designer_writes_checks_and_a_failed_held_out_one_halts_the_componen
     designer = json.loads((designed / DESIGNER_FILE).read_text(encoding="utf-8"))
     assert designer["promptVersion"] == ACCEPTANCE_PROMPT_VERSION, designer
     assert designer["asks"] == {COMP: 1}, designer
+    assert designer["reaskCauses"] == {COMP: []}, designer
     assert _manifest(root)["acceptanceDigest"], _manifest(root)
 
 
@@ -279,7 +289,7 @@ def test_a_designed_visible_check_that_fails_on_the_head_gives_the_engineer_a_re
 def test_a_reply_that_is_not_a_plan_is_asked_once_more_and_then_refused(tmp_path: Path) -> None:
     """Two replies the plan vocabulary refuses: the designer is asked twice
     and no more, the run exits 2 before any engineer, naming the indexed
-    field, and nothing is pinned."""
+    field of each reply, and nothing is pinned."""
     root = _greeting_repo(tmp_path)
     bad = _entry([{**_check("greets-ada", _greets("Ada")), "onBase": "maybe"}])
 
@@ -288,6 +298,8 @@ def test_a_reply_that_is_not_a_plan_is_asked_once_more_and_then_refused(tmp_path
     assert run.code == 2, run.out
     assert REFUSED_DESIGN in run.out, run.out
     assert "ask 2: components.greeter.checks[0].onBase must be one of fails, passes" in run.out
+    # The cause of the second ask is said as well as why it was refused.
+    assert "ask 1: components.greeter.checks[0].onBase must be one of fails, passes" in run.out
     assert len(run.designer) == 2, run.out
     assert run.engineer_calls == 0, run.out
     assert _designed_plans(root) == []
@@ -445,6 +457,72 @@ def test_a_designed_plan_whose_only_check_passes_on_the_base_has_no_designed_che
 
 
 @runs_a_stack
+def test_a_designed_check_that_fails_or_cannot_run_on_the_base_it_says_passes_is_removed(
+    tmp_path: Path,
+) -> None:
+    """Owner decision of 2026-10-09 on #700: a designed check that says
+    ``onBase: passes`` and fails on the base, or cannot run there, cannot
+    measure kept behaviour on this base. It is removed and recorded as a
+    vacuous one is, and the check that fails on the base as it says runs on
+    the head. The head record lists both removed checks, which `ks recheck`
+    accepts without running them."""
+    root = _greeting_repo(tmp_path)
+    keeps = {**_check("keeps-ada", _greets("Ada")), "onBase": "passes"}
+    broken = {**_check("broken-env", ["kstrl-no-such-check-7c1d"]), "onBase": "passes"}
+    reply = _entry([_check("greets-ada", _greets("Ada")), keeps, broken])
+
+    run = _design(tmp_path, root, [reply])
+
+    assert run.code == 0, run.out
+    assert REFUSED_BASE not in run.out, run.out
+    assert _contradicts("keeps-ada", "fails", 1) in run.out, run.out
+    assert _contradicts("broken-env", "could not run", 127) in run.out, run.out
+    assert run.engineer_calls == 1, run.out
+    base = _base_record(root)
+    entry = base["components"][COMP]
+    assert entry["base"] == "", base
+    rows = [(row["id"], row["exit"], row["removed"]) for row in entry["checks"]]
+    assert rows == [("greets-ada", 1, False), ("keeps-ada", 1, True), ("broken-env", 127, True)]
+    assert base["refused"] == [], base
+    (path,) = _head_records(root)
+    record = _head_record(root)
+    assert [row["id"] for row in record["checks"]] == ["greets-ada"], record
+    assert _row(record, "greets-ada")["verdict"] == "pass", record
+    assert record["removed"] == ["keeps-ada", "broken-env"], record
+    code, out = _recheck(root, path)
+    assert code == 0, out
+    assert "The recheck agrees with the record." in out, out
+
+
+@runs_a_stack
+def test_a_designed_component_left_with_no_check_that_fails_on_the_base_is_refused(
+    tmp_path: Path,
+) -> None:
+    """The removal of a check that says ``onBase: passes`` refuses the plan
+    when the component then keeps no check that fails on the base (owner
+    decision of 2026-10-09 on #700). The vacuous check is removed as before
+    and the check that passes on the base as it says is kept, but neither
+    measures the change, so the base refuses the run before any engineer,
+    naming the check that fails on the base, and pins nothing."""
+    root = _greeting_repo(tmp_path)
+    keeps = {**_check("keeps-ada", _greets("Ada")), "onBase": "passes"}
+    steady = {**_check("base-ok", ["true"]), "onBase": "passes"}
+    reply = _entry([_check("vacuous", ["true"]), keeps, steady])
+
+    run = _design(tmp_path, root, [reply])
+
+    assert run.code == 2, run.out
+    assert REFUSED_BASE in run.out, run.out
+    assert f"{COMP}: the check keeps-ada fails on the base (exit 1); onBase: passes" in run.out
+    assert _contradicts("keeps-ada", "fails", 1) not in run.out, run.out
+    assert REMOVED in run.out, run.out
+    assert run.engineer_calls == 0, run.out
+    assert "acceptanceDigest" not in _manifest(root)
+    rows = [(row["id"], row["removed"]) for row in _base_record(root)["components"][COMP]["checks"]]
+    assert rows == [("vacuous", True), ("keeps-ada", False), ("base-ok", False)], rows
+
+
+@runs_a_stack
 def test_a_designer_past_the_review_timeout_is_stopped_and_asked_once_more(
     tmp_path: Path,
 ) -> None:
@@ -513,7 +591,9 @@ def test_the_designer_is_given_the_requirements_and_a_criterion_that_cites_none_
     """The designer's prompt lists the requirement the component builds, and
     not the non-goal. A reply whose criterion cites no requirement id is
     asked once more; the second reply cites R-1 and is the plan kstrl
-    writes."""
+    writes. The designer record keeps the cause of the second ask, the
+    reason the first reply was not a valid entry (owner decision of
+    2026-10-09 on #700), not only the count."""
     root = _greeting_repo(tmp_path)
     _traced(root)
     uncited = _entry([_check("greets-ada", _greets("Ada"))])
@@ -530,6 +610,14 @@ def test_the_designer_is_given_the_requirements_and_a_criterion_that_cites_none_
     (designed,) = _designed_plans(root)
     plan = json.loads((designed / PLAN_FILE).read_text(encoding="utf-8"))
     assert [c["criterion"] for c in plan["components"][COMP]["checks"]] == ["R-1: greets Ada"]
+    designer = json.loads((designed / DESIGNER_FILE).read_text(encoding="utf-8"))
+    assert designer["asks"] == {COMP: 2}, designer
+    assert designer["reaskCauses"] == {
+        COMP: [
+            "ask 1: checks[0].criterion: 'greets-ada holds' names none of the requirements "
+            "this component builds (R-1)"
+        ]
+    }, designer
 
 
 @runs_a_stack
