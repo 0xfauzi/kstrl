@@ -145,7 +145,6 @@ def _section_specs() -> list[SectionSpec]:
     from kstrl.knowledge import KnowledgeConfig
     from kstrl.linear import LinearConfig
     from kstrl.observability import NotifyConfig
-    from kstrl.playbook import LearningConfig
     from kstrl.policy import PolicyConfig
     from kstrl.release import ReleaseConfig
     from kstrl.sandbox import SandboxConfig
@@ -438,14 +437,6 @@ def _section_specs() -> list[SectionSpec]:
             SignalsConfig(),
             probe_undocumented_fields=True,
         ),
-        SectionSpec(
-            "learning",
-            "Cross-project learning: the global playbook (#217)",
-            identity_keys(LearningConfig, _all_field_names(LearningConfig)),
-            lambda root: LearningConfig.load(root_dir=root),
-            LearningConfig(),
-            probe_undocumented_fields=True,
-        ),
     ]
     return specs
 
@@ -706,8 +697,6 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("signals", "http_timeout"): "per-request timeout",
     ("signals", "new_issue_events"): "advisory threshold; labels a new issue, gates nothing",
     ("signals", "repeat_growth_events"): "advisory threshold; labels a repeat, gates nothing",
-    ("learning", "contribute"): "append this project's lessons to the global playbook",
-    ("learning", "consume"): "read global playbook lessons into this project's prompts",
 }
 
 # Sentinel values for keys whose loader validates the value (enum

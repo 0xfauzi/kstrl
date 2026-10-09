@@ -496,11 +496,6 @@ EXPECTED_ROUTED_APPENDS: dict[str, int] = {
     "init_cmd.py: append_records(lock=default (False))": 1,
     "knowledge.py: append_records(lock=default (False))": 1,
     "observability.py: append_records(lock=default (False))": 1,
-    # #509: the global playbook ledger. Every project's runs append to
-    # one file, so concurrent writers are the normal case. #529 holds
-    # the handle rather than calling append_records, because the fold
-    # that checks the new ops must run under the same lock as the write.
-    "playbook.py: appending(lock=True)": 1,
     "workqueue.py: append_records(lock=default (False))": 1,
 }
 

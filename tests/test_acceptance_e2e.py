@@ -163,9 +163,14 @@ def test_a_check_that_fails_on_the_base_it_should_pass_refuses_before_the_engine
 ) -> None:
     """The other contradiction: a check the plan says passes on the base (a
     behaviour the change must keep) fails there, so the plan is wrong about
-    the base and the run exits 2 before any engineer call, pinning nothing."""
+    the base and the run exits 2 before any engineer call, pinning nothing.
+    An operator wrote it, so it is not removed as a designed one is (owner
+    decision of 2026-10-09 on #700), even with a check beside it that fails
+    on the base as it says."""
     root = _greeting_repo(tmp_path)
-    plan = _plan(tmp_path, [_check("keeps-ada", ["/bin/sh", "check.sh", "Ada"], on_base="passes")])
+    good = _check("greets-ada", ["/bin/sh", "check.sh", "Ada"])
+    keeps = _check("keeps-ada", ["/bin/sh", "check.sh", "Ada"], on_base="passes")
+    plan = _plan(tmp_path, [good, keeps])
 
     run = _accept(tmp_path, root, plan)
 

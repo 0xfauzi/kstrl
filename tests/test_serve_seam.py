@@ -474,8 +474,9 @@ class TestTheRealRunnerRunsItsArgvAsAChild:
         ``tests/test_serve_process_tree.py``; this stays as the pid
         canary, which is the half it can actually decide.
 
-        This asserts topology only. Whether the power assertion survives a
-        dark wake is a separate, unmeasured question tracked in #203.
+        This asserts topology only. Apple's header says the power
+        assertion has no effect in a dark wake. Section 7 of
+        ``docs/continuous-intake.md`` records that #203 decision.
 
         The mark is ``tests/helpers/procs.NEEDS_CAFFEINATE``, which is
         both halves of the guard in one place. This test used to carry a

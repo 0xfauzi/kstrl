@@ -337,6 +337,66 @@ def test_a_retired_fixtures_env_var_stops_the_command_by_name(tmp_path: Path, na
     assert "No manifest found" not in proc.stdout + proc.stderr
 
 
+#: #217: each [learning] key, with each value the old loader accepted.
+RETIRED_LEARNING_KEYS = [
+    ("contribute", "true"),
+    ("contribute", "false"),
+    ("consume", "true"),
+    ("consume", "false"),
+]
+
+
+@pytest.mark.parametrize(("key", "value"), RETIRED_LEARNING_KEYS)
+def test_a_retired_learning_key_stops_the_command_by_name(
+    tmp_path: Path, key: str, value: str
+) -> None:
+    """#217: kstrl keeps no global playbook, so a kstrl.toml still setting
+    a [learning] key is refused by name before the command body runs, and
+    the refusal says where a standing rule goes now. Before #217 closed,
+    ``consume = true`` loaded and changed nothing: no run read a lesson."""
+    (tmp_path / "kstrl.toml").write_text(f"[learning]\n{key} = {value}\n")
+
+    proc = subprocess.run(
+        [sys.executable, "-m", "kstrl", "status", "--root", str(tmp_path)],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        env={**os.environ, "KSTRL_NO_TUI": "1"},
+    )
+
+    assert proc.returncode == 2, proc.stdout + proc.stderr
+    assert f"[learning] {key}, which was retired" in proc.stderr, proc.stderr
+    assert "kstrl keeps no global playbook" in proc.stderr, proc.stderr
+    assert "[paths] memory" in proc.stderr, proc.stderr
+    # Retired, not renamed: no section replaces [learning].
+    assert "[learning], which was renamed" not in proc.stderr, proc.stderr
+    assert "No manifest found" not in proc.stdout + proc.stderr
+
+
+@pytest.mark.parametrize("name", ["KSTRL_LEARNING_CONTRIBUTE", "KSTRL_LEARNING_CONSUME"])
+@pytest.mark.parametrize("value", ["true", "false"])
+def test_a_retired_learning_env_var_stops_the_command_by_name(
+    tmp_path: Path, name: str, value: str
+) -> None:
+    """#217: the same refusal for the environment. The names are typed
+    here, not read from RETIRED_ENV_VARS, so a row dropped from that table
+    fails this test instead of removing its case."""
+    proc = subprocess.run(
+        [sys.executable, "-m", "kstrl", "status", "--root", str(tmp_path)],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        env={**os.environ, "KSTRL_NO_TUI": "1", name: value},
+    )
+
+    assert proc.returncode == 2, proc.stdout + proc.stderr
+    assert f"the environment sets {name}, which was retired" in proc.stderr, proc.stderr
+    assert "kstrl keeps no global playbook" in proc.stderr, proc.stderr
+    # The refusal names where a standing rule goes now, as the key refusal does.
+    assert "[paths] memory" in proc.stderr, proc.stderr
+    assert "No manifest found" not in proc.stdout + proc.stderr
+
+
 def test_an_old_finding_record_still_resolves() -> None:
     finding = Finding.from_dict(
         {

@@ -72,8 +72,6 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     "intake_github.py": 3,
     # #700: the import, and `TimeoutExpired` from `run_scrubbed`.
     "isolation.py": 2,
-    # #508: the import, and `TimeoutExpired` from `run_scrubbed`.
-    "learning_fixture.py": 2,
     "observability.py": 5,
     "pr.py": 18,
     "pr_state.py": 5,

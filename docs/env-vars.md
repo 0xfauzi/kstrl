@@ -566,14 +566,12 @@ The runtime signal poller (R8.8). It records and classifies; it queues nothing.
 | `KSTRL_SIGNALS_NEW_ISSUE_EVENTS` | int | 3 | Advisory threshold: labels a new issue, gates nothing |
 | `KSTRL_SIGNALS_REPEAT_GROWTH_EVENTS` | int | 10 | Advisory threshold: labels a repeat, gates nothing |
 
-## LearningConfig (`[learning]`)
+## Retired: `[learning]`
 
-The global playbook opt-out (#217). An unreadable `kstrl.toml` makes `contribute` false for that run whatever these say.
-
-| Env var | Type | Default | Notes |
-|---|---|---|---|
-| `KSTRL_LEARNING_CONTRIBUTE` | bool | true | Append this project's lessons to the global playbook |
-| `KSTRL_LEARNING_CONSUME` | bool | true | Read global playbook lessons into this project's prompts |
+kstrl keeps no global playbook (#217). `KSTRL_LEARNING_CONTRIBUTE`,
+`KSTRL_LEARNING_CONSUME` and the `[learning]` keys `contribute` and `consume`
+are refused at command entry. A standing rule for one project goes in the
+`[paths] memory` file, which every engineer prompt reads.
 
 ## Calibration
 
