@@ -341,6 +341,219 @@ def test_git_runs_in_the_replay_of_a_linked_worktree_root_and_of_a_root_named_fr
         assert _row(document, "replay")["status"] == "ok", (case, document["checks"])
 
 
+#: The refusal of both zones when git names a git common directory that
+#: neither zone may read (#700, the security review of #765), written out
+#: so a change to it is seen here.
+GIT_DIR_REFUSAL = "refused: the git common directory {path} cannot be granted to read: it {why}"
+
+
+def _move_git_dir(root: Path, to: Path) -> Path:
+    """Move the git directory of ``root`` into ``to`` (made when absent)
+    and leave the ``.git`` file that points git at it; return ``to``."""
+    to.mkdir(parents=True, exist_ok=True)
+    for entry in (root / ".git").iterdir():
+        shutil.move(entry, to / entry.name)
+    (root / ".git").rmdir()
+    (root / ".git").write_text(f"gitdir: {to}\n", encoding="utf-8")
+    return to
+
+
+@needs_nono
+def test_git_variables_in_the_environment_of_kstrl_do_not_move_the_git_dir_both_zones_read(
+    tmp_path: Path,
+) -> None:
+    """`GIT_DIR` and `GIT_COMMON_DIR` in the environment of `ks doctor
+    --measure` name the git directory of another repository. Both zones
+    still read only the git directory of the root, and both are proven."""
+    root = _repo(tmp_path / "a", "", confirm=False)
+    link = tmp_path / "link"
+    link.symlink_to(root)
+    other = tmp_path / "other"
+    other.mkdir()
+    git_in(other, "init", "-q")
+    redirect = {"GIT_DIR": str(other / ".git"), "GIT_COMMON_DIR": str(other / ".git")}
+
+    readings = {"the root": _measure(root, redirect), "a symlink to it": _measure(link, redirect)}
+
+    own, foreign = os.path.realpath(root / ".git"), os.path.realpath(other)
+    for case, (_code, document) in readings.items():
+        for zone in ("setup", "test"):
+            rung = document["isolation"][zone]
+            assert rung["refusal"] == "", (case, rung)
+            read = _policy(rung)["filesystem"]["read"]
+            assert own in read, (case, read)
+            assert not [path for path in read if path.startswith(foreign)], (case, read)
+
+
+@needs_nono
+def test_a_git_dir_that_is_home_the_root_a_parent_of_it_or_not_a_git_dir_refuses_both_zones(
+    tmp_path: Path,
+) -> None:
+    """The root's ``.git`` file names a git common directory that git
+    accepts and that neither zone may read: the home directory (`HOME`
+    names it through a symlink), the root, the parent of the root, a
+    parent two levels up, a directory with no HEAD, and one with no
+    objects/ (git finds the objects through `GIT_OBJECT_DIRECTORY`).
+    `ks doctor --measure` refuses both zones before any canary runs and
+    names the path, and `ks factory` refuses before the engineer runs."""
+    top = tmp_path.resolve()
+    roots = {
+        case: _repo(
+            top / case / "deep" if case == "grandparent" else top / case,
+            _stack({"tests": "true"}) if case == "parent" else "",
+            confirm=case == "parent",
+        )
+        for case in ("home", "root", "parent", "grandparent", "no HEAD", "no objects")
+    }
+    family, not_git = "is the root or a parent of the root", "does not hold HEAD and objects/"
+    home = _move_git_dir(roots["home"], top / "home" / "h")
+    home_link = top / "home" / "link"
+    home_link.symlink_to(home)
+    no_head = _move_git_dir(roots["no HEAD"], top / "no HEAD" / "common")
+    linked = top / "no HEAD" / "wt"
+    linked.mkdir()
+    shutil.move(no_head / "HEAD", linked / "HEAD")
+    (linked / "commondir").write_text(f"{no_head}\n", encoding="utf-8")
+    (roots["no HEAD"] / ".git").write_text(f"gitdir: {linked}\n", encoding="utf-8")
+    no_objects = _move_git_dir(roots["no objects"], top / "no objects" / "common")
+    objects = shutil.move(no_objects / "objects", top / "no objects" / "objects")
+    cases = {
+        "home": (home, "is the home directory", {"HOME": str(home_link)}),
+        "root": (_move_git_dir(roots["root"], roots["root"]), family, {}),
+        "parent": (_move_git_dir(roots["parent"], top / "parent"), family, {}),
+        "grandparent": (_move_git_dir(roots["grandparent"], top / "grandparent"), family, {}),
+        "no HEAD": (no_head, not_git, {}),
+        "no objects": (no_objects, not_git, {"GIT_OBJECT_DIRECTORY": str(objects)}),
+    }
+    refusals = {
+        case: GIT_DIR_REFUSAL.format(path=path, why=why) for case, (path, why, _) in cases.items()
+    }
+
+    run = _factory(top / "parent", roots["parent"])
+    readings = {case: _measure(roots[case], env) for case, (_, _, env) in cases.items()}
+
+    assert (run.code, run.calls) == (2, 0), run.out
+    assert REFUSAL in run.out, run.out
+    assert f"the setup zone is {refusals['parent']}" in run.out, run.out
+    for case, (_code, document) in readings.items():
+        for zone in ("setup", "test"):
+            rung = document["isolation"][zone]
+            assert (rung["refusal"], rung["canaries"]) == (refusals[case], {}), (case, rung)
+        assert f"setup zone: {refusals[case]}" in _row(document, "isolation")["detail"], case
+
+    root_link = top / "root link"
+    root_link.symlink_to(roots["root"])
+    _code, through_link = _measure(root_link)
+    for zone in ("setup", "test"):
+        rung = through_link["isolation"][zone]
+        assert (rung["refusal"], rung["canaries"]) == (refusals["root"], {}), ("a link", rung)
+
+
+@needs_nono
+def test_a_git_dir_that_is_not_the_roots_own_refuses_both_zones_and_a_linked_one_is_proven(
+    tmp_path: Path,
+) -> None:
+    """The git directory both zones read must belong to the root by a link
+    in both directions (#700, the security review of #770). A `.git` file
+    naming the git directory of a second valid repository, and a linked
+    worktree whose `worktrees/<name>/gitdir` names another path, refuse both
+    zones and name the path. So do a `.git` directory and a worktree entry
+    outside any git directory whose `commondir` names the second repository.
+    A `.git` that is a symlink to a git directory or to a `.git` file, a
+    linked worktree whose back link names it through a symlink, a relative
+    `gitdir:` (also with `ks` started outside the root) and a symlinked
+    `worktrees` directory are proven: `ks`
+    resolves the root, so the symlinks that reach the comparison are in the
+    git directory, in the `.git` file, in its `gitdir:` and in the back link."""
+    top = tmp_path.resolve()
+    second = top / "second"
+    second.mkdir()
+    git_in(second, "init", "-q")
+    stolen = _repo(top / "stolen", "", confirm=False)
+    shutil.rmtree(stolen / ".git")
+    (stolen / ".git").write_text(f"gitdir: {second / '.git'}\n", encoding="utf-8")
+
+    main = _repo(top / "main", "", confirm=False)
+    broken, good = top / "broken", top / "good"
+    git_in(main, "worktree", "add", "-q", "-b", "broken", str(broken))
+    git_in(main, "worktree", "add", "-q", "-b", "good", str(good))
+    (main / ".git" / "worktrees" / "broken" / "gitdir").write_text(
+        f"{second / '.git'}\n", encoding="utf-8"
+    )
+    alias = top / "alias"
+    alias.symlink_to(good)
+    (main / ".git" / "worktrees" / "good" / "gitdir").write_text(
+        f"{alias / '.git'}\n", encoding="utf-8"
+    )
+    kept = _repo(top / "kept", "", confirm=False)
+    store = top / "store"
+    shutil.move(kept / ".git", store)
+    (kept / ".git").symlink_to(store)
+    # Git takes the common directory from a `commondir` file in a `.git`
+    # directory, and from one in a worktree entry outside any git directory.
+    pointed = _repo(top / "pointed", "", confirm=False)
+    (pointed / ".git" / "commondir").write_text(f"{second / '.git'}\n", encoding="utf-8")
+    planted = _repo(top / "planted", "", confirm=False)
+    entry = top / "fake" / "worktrees" / "n"
+    shutil.move(planted / ".git", top / "fake" / "old")
+    entry.mkdir(parents=True)
+    shutil.copy(top / "fake" / "old" / "HEAD", entry / "HEAD")
+    (entry / "commondir").write_text(f"{second / '.git'}\n", encoding="utf-8")
+    (entry / "gitdir").write_text(f"{planted / '.git'}\n", encoding="utf-8")
+    (planted / ".git").write_text(f"gitdir: {entry}\n", encoding="utf-8")
+    # Proven: a relative `gitdir:`, a `.git` symlink to the worktree's `.git`
+    # file, and a `worktrees` directory that is a symlink.
+    relative, linked, files = top / "relative", top / "linked", top / "files"
+    git_in(main, "worktree", "add", "-q", "-b", "relative", str(relative))
+    gitdir = os.path.relpath(main / ".git" / "worktrees" / "relative", relative)
+    (relative / ".git").write_text(f"gitdir: {gitdir}\n", encoding="utf-8")
+    git_in(main, "worktree", "add", "-q", "-b", "linked", str(linked))
+    files.mkdir()
+    shutil.move(linked / ".git", files / "linked.git")
+    (linked / ".git").symlink_to(files / "linked.git")
+    (main / ".git" / "worktrees" / "linked" / "gitdir").write_text(
+        f"{files / 'linked.git'}\n", encoding="utf-8"
+    )
+    moved, aside = _repo(top / "moved", "", confirm=False), top / "aside"
+    git_in(moved, "worktree", "add", "-q", "-b", "aside", str(aside))
+    shutil.move(moved / ".git" / "worktrees", top / "entries")
+    (moved / ".git" / "worktrees").symlink_to(top / "entries")
+    (top / "entries" / "aside" / "commondir").write_text(f"{moved / '.git'}\n", encoding="utf-8")
+    not_own = "is not the git directory of the root"
+    refused = {
+        "a second repository": (stolen, second / ".git"),
+        "a back link to another path": (broken, main / ".git"),
+        "a .git directory with a commondir": (pointed, second / ".git"),
+        "a worktree entry outside the git directory": (planted, second / ".git"),
+    }
+
+    readings = {case: _measure(root) for case, (root, _) in refused.items()}
+    proven = {
+        "a linked worktree": (good, main / ".git"),
+        "a symlinked .git": (kept, store),
+        "a relative gitdir": (relative, main / ".git"),
+        "a .git symlink to a .git file": (linked, main / ".git"),
+        "a symlinked worktrees directory": (aside, moved / ".git"),
+    }
+    accepted = {case: _measure(root) for case, (root, _) in proven.items()}
+    # A relative `gitdir:` is relative to the root, not to where `ks` starts.
+    outside = "a relative gitdir, `ks` started outside the root"
+    proven[outside] = (relative, main / ".git")
+    code, out = _spawn(["doctor", "--root", str(relative), "--measure", "--json"], top, None)
+    accepted[outside] = (code, json.loads(out[out.index("{") :]))
+
+    for case, (_code, document) in readings.items():
+        expected = GIT_DIR_REFUSAL.format(path=refused[case][1], why=not_own)
+        for zone in ("setup", "test"):
+            rung = document["isolation"][zone]
+            assert (rung["refusal"], rung["canaries"]) == (expected, {}), (case, rung)
+    for case, (_code, document) in accepted.items():
+        for zone in ("setup", "test"):
+            rung = document["isolation"][zone]
+            assert rung["refusal"] == "", (case, rung)
+            assert str(proven[case][1]) in _policy(rung)["filesystem"]["read"], (case, rung)
+
+
 @needs_nono
 def test_a_command_refused_a_path_in_a_proven_zone_says_the_sandbox_can_be_the_cause(
     tmp_path: Path,
