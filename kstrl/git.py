@@ -309,14 +309,24 @@ def git_common_dir(cwd: Path, timeout: float = DEFAULT_TIMEOUT) -> Path | None:
     return Path(os.path.realpath(cwd / found))
 
 
-def git_write_dirs(path: Path | None = None, timeout: float = DEFAULT_TIMEOUT) -> list[Path]:
-    """The directories a ``git commit`` in ``path`` writes outside its working
+#: The files a commit writes in the git dir of its checkout, each also with
+#: its ``.lock`` (#700). A codex writable root is a path prefix, so naming
+#: these, and not the git dir, keeps ``hooks``, ``config``, ``commondir`` and
+#: ``config.worktree`` read-only (measured with codex-cli 0.156.1).
+_COMMIT_FILES = ("index", "HEAD", "ORIG_HEAD", "AUTO_MERGE", "COMMIT_EDITMSG")
+
+
+def git_write_paths(path: Path | None = None, timeout: float = DEFAULT_TIMEOUT) -> list[Path]:
+    """The paths a ``git commit`` in ``path`` writes outside its working
     tree, or [] outside a repository (#700).
 
-    In a linked worktree: its own git dir and the common dir's ``objects``,
-    ``refs`` and ``logs``, which leaves the common dir's ``hooks`` and
-    ``config`` out. In a plain checkout the git dir holds the index lock, so
-    it is the whole git dir. Only directories that exist are named.
+    The common dir's ``objects``, ``refs``, ``logs`` and ``packed-refs``, and
+    in the git dir of the checkout its ``logs`` and :data:`_COMMIT_FILES`.
+    Never a git dir itself: a sandboxed command that can write ``hooks``,
+    ``config`` or ``commondir`` makes git run a command of its choice outside
+    every sandbox. A plain checkout and a linked worktree get the same set.
+    A directory that does not exist is left out. A file is named whether it
+    exists or not, because a commit creates its lock.
     """
     try:
         result = subprocess.run(
@@ -332,12 +342,13 @@ def git_write_dirs(path: Path | None = None, timeout: float = DEFAULT_TIMEOUT) -
     if result.returncode != 0 or len(lines) != 2:
         return []
     git_dir, common = Path(lines[0]), Path(lines[1])
-    dirs = (
-        [git_dir]
-        if git_dir == common
-        else [git_dir, *(common / d for d in ("objects", "refs", "logs"))]
-    )
-    return [d for d in dirs if d.is_dir()]
+    dirs = [common / "objects", common / "refs", common / "logs", git_dir / "logs"]
+    files = [
+        base / f"{name}{lock}"
+        for base, name in [*((git_dir, n) for n in _COMMIT_FILES), (common, "packed-refs")]
+        for lock in ("", ".lock")
+    ]
+    return list(dict.fromkeys([*(d for d in dirs if d.is_dir()), *files]))
 
 
 def branch_exists(

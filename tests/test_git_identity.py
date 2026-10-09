@@ -98,6 +98,12 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # #700 slice 8: the stub engineer commits its marker in a worktree of a
     # repository `tests.test_stack_e2e._repo` put through set_identity.
     "tests/test_acceptance_merged_e2e.py": 2,
+    # #466: the module docstring names "git" and "commit" in prose and
+    # commits nothing; the stub engineer of the --no-prs test commits its
+    # marker in a worktree of a repository `tests.test_stack_e2e._repo` put
+    # through set_identity. The other commits go through the declared
+    # integration_harness, whose merged_feature calls set_identity.
+    "tests/test_acceptance_carried_e2e.py": 2,
     # #642: `_loop_files` and `_second_component` commit into the repository
     # `tests.test_agent_processes_outlive_run._repo` put through
     # `tests.helpers.gitrepo.set_identity`.
@@ -274,9 +280,10 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_run_record_version.py": 1,
     # #701: `_project`'s one init commit, into a repository it has just put
     # through `tests.helpers.gitrepo.set_identity`. #700 renamed the file and
-    # its module docstring and the plain-checkout test's docstring each name
-    # "git" and "commit" in one string (prose).
-    "tests/test_sandbox_engineer_e2e.py": 3,
+    # its module docstring and the commit-paths test's docstring each name
+    # "git" and "commit" in one string (prose). #700's `_PLANT` is the stub
+    # engineer's commit, in a worktree or checkout of that same repository.
+    "tests/test_sandbox_engineer_e2e.py": 4,
     # Prose, not a commit: a tuple of literal argv-prefix strings an
     # allowlist test checks a Claude reviewer's permission RULES against
     # ("git commit" among them), never spawned.

@@ -46,11 +46,14 @@ transcript is on #700:
   workspace and outside it, so ``git commit`` failed in a kstrl worktree
   (``<root>/.git/worktrees/<id>/index.lock``) and in a plain checkout
   (``<root>/.git/index.lock``). With ``sandbox_workspace_write.writable_roots``
-  naming the worktree's git dir and the common dir's ``objects``, ``refs``
-  and ``logs``, the commit succeeded; a plain checkout needs its whole git
-  dir (:func:`kstrl.git.git_write_dirs`).
+  naming the paths of :func:`kstrl.git.git_write_paths`, and not a git dir,
+  the commit succeeded in both layouts, and a write to ``hooks``, ``config``
+  or ``commondir`` stayed denied. A writable git dir lets a sandboxed
+  command write a hook, or a ``commondir`` that points git at a config of
+  its own, and git obeys either outside every sandbox (measured).
 - claude commits in both layouts with no extra path, and denies writes to
-  ``<common>/hooks`` and ``<common>/config``. No git path is added for it.
+  ``<common>/hooks``, ``<common>/config`` and ``commondir``. No git path is
+  added for it.
 - On both, a check that writes outside the worktree (a tool cache in
   the home directory) failed with "Operation not permitted". The confirmed
   ``[stack]``'s ``writable`` paths, which the test zone grants the same
@@ -78,7 +81,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from kstrl.config_numbers import check_numbers
-from kstrl.git import git_write_dirs
+from kstrl.git import git_write_paths
 from kstrl.jsonread import read_json
 
 if TYPE_CHECKING:
@@ -217,7 +220,7 @@ def codex_sandbox_args(config: SandboxConfig | None, cwd: Path | None = None) ->
         "-c",
         f"sandbox_workspace_write.network_access={network}",
     ]
-    roots = [*(str(path) for path in git_write_dirs(cwd)), *config.writable]
+    roots = [*(str(path) for path in git_write_paths(cwd)), *config.writable]
     if roots:
         args += ["-c", f"sandbox_workspace_write.writable_roots={json.dumps(roots)}"]
     return args

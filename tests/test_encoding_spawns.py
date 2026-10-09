@@ -67,7 +67,7 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     # each. 74: #696's git.status_entries adds one of each. 68: #696 slice 6
     # deletes stage_file, ignore_source and ignored_paths, two each. 64: #696
     # slice 9 deletes read_blob, two each. 66: #700's git_common_dir adds one
-    # of each. 68: #700's git_write_dirs adds one of each.
+    # of each. 68: #700's git_write_paths adds one of each.
     "git.py": 68,
     "intake_github.py": 3,
     # #700: the import, and `TimeoutExpired` from `run_scrubbed`.
@@ -122,7 +122,7 @@ EXPECTED_TEXT_MODE_SPAWNS: dict[str, int] = {
     # +1 for #500's `tracked_files_at`, +1 for #626's `listed_files`.
     # 28: +1 for #696's `status_entries`. 25: #696 slice 6 deletes
     # `stage_file`, `ignore_source` and `ignored_paths`. 26: +1 for #700's
-    # `git_common_dir`. 27: +1 for #700's `git_write_dirs`.
+    # `git_common_dir`. 27: +1 for #700's `git_write_paths`.
     "git.py": 27,
     "intake_github.py": 1,
     "pr.py": 9,
