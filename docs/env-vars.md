@@ -274,9 +274,19 @@ test-failure signature.
 
 OS-level agent sandboxing (R7.5), on by default (#700), applied by the
 claude-code, claude-sdk and codex adapters to the engineer, the code and
-security reviewers, the understand agent and the repair agent. Write scope
-is the agent's worktree, the git paths a commit writes, and the confirmed
-`[stack]`'s `writable` paths. A custom agent command cannot be sandboxed:
+security reviewers, the understand agent and the repair agent. A shell
+command may write the agent's worktree and the confirmed `[stack]`'s
+`writable` paths, and on codex also the git paths a commit writes. The
+claude sandbox confines shell commands only, so the claude-code adapter
+gives claude a PreToolUse hook (`kstrl/write_guard.py`) that holds its file
+tools (Write, Edit, NotebookEdit) to the worktree and the `writable` paths,
+and also blocks a `.git`, `.claude` or `.mcp.json` path in them. The same
+settings set `disableAllHooks` to false, so that a project or user setting
+cannot turn the hook off. The claude-sdk adapter holds its file tools to
+the worktree. With `allow_network = false`, the claude-code and claude-sdk engineers run without
+`--dangerously-skip-permissions`, and their settings allow Bash and the file
+tools, so that a command with more than one operation, such as
+`git add -A && git commit`, runs. A custom agent command cannot be sandboxed:
 the run continues and warns, naming the role, and so does
 `enabled = false`; see the runbook. The architect and the knowledge
 distiller are not sandboxed.

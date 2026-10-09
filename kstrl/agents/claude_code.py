@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import shutil
 import time
 from collections.abc import Iterator
@@ -83,7 +84,7 @@ class ClaudeCodeAgent:
         """Check if claude CLI is available."""
         return shutil.which("claude") is not None
 
-    def _permission_argv(self) -> tuple[bool, list[str]]:
+    def _permission_argv(self, cwd: Path | None) -> tuple[bool, list[str]]:
         """``(pass --dangerously-skip-permissions, settings argv)``.
 
         Both halves of the posture in one place, because they are one
@@ -97,7 +98,7 @@ class ClaudeCodeAgent:
             return False, claude_review_sandbox_args(self._sandbox)
         return (
             not claude_sandbox_drops_skip_permissions(self._sandbox),
-            claude_sandbox_args(self._sandbox),
+            claude_sandbox_args(self._sandbox, Path(os.path.realpath(cwd or Path.cwd()))),
         )
 
     def run(
@@ -131,7 +132,7 @@ class ClaudeCodeAgent:
         # skipping auto-approves every domain (measured; see
         # kstrl.sandbox). File tools are re-allowed via the settings
         # JSON instead.
-        skip_permissions, sandbox_argv = self._permission_argv()
+        skip_permissions, sandbox_argv = self._permission_argv(cwd)
         if skip_permissions:
             cmd.append("--dangerously-skip-permissions")
         if self._model:

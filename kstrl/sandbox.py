@@ -84,6 +84,26 @@ Measured on 2026-10-09 with the same versions and layout:
 - In both modes the claude Write tool wrote a file in ``$HOME``: the
   claude sandbox confines Bash, not the file tools. codex refused the
   same write ("patch rejected: writing outside of the project").
+- ``allow_network = false``: claude asked for approval of a Bash command
+  with more than one operation (``git add -A && git commit``), and a
+  headless run cannot give it, so the engineer could not commit.
+
+Measured on 2026-10-09 with the same versions and layout, after the change:
+the PreToolUse hook of
+:mod:`kstrl.write_guard` blocked a claude Write and Edit to ``$HOME``, a
+relative path out of the worktree, and a Write to the worktree's
+``.claude/settings.local.json``, in both modes, and let a Write to the
+worktree and to a ``[stack]`` writable path run. With ``Bash`` in the
+no-network allow rules, ``git add -A && git commit`` committed, curl still
+got "CONNECT tunnel failed, response 403", and a Bash call with
+``dangerouslyDisableSandbox`` still got "Operation not permitted". In both
+modes a sandboxed Bash command could not write the worktree's
+``.claude/settings.local.json``, ``.claude/settings.json``, ``.mcp.json`` or
+``.gitmodules`` ("Operation not permitted"): the claude sandbox keeps Bash
+off the paths that the hook keeps the file tools off. A worktree
+``.claude/settings.json`` with ``"disableAllHooks": true`` switched the hook
+off in both modes (the Write tool wrote ``$HOME``), and ``"disableAllHooks":
+false`` in the ``--settings`` JSON kept it on.
 """
 
 from __future__ import annotations
@@ -98,18 +118,23 @@ from typing import TYPE_CHECKING
 from kstrl.config_numbers import check_numbers
 from kstrl.git import git_write_paths
 from kstrl.jsonread import read_json
+from kstrl.write_guard import GUARDED_TOOLS, hook_command
 
 if TYPE_CHECKING:
     from kstrl.stack import Stack
 
-# File-tool allow rules for the claude no-network mode: without
+# Tool allow rules for the claude no-network mode: without
 # --dangerously-skip-permissions these tools are permission-gated in
 # headless mode (measured), and an engineer that cannot edit files is
-# useless. Bash is deliberately absent - sandboxed Bash auto-runs
-# (measured) and an explicit allow rule would also cover unsandboxed
-# Bash requests. Network tools (WebFetch, WebSearch) are deliberately
-# absent - this mode exists to deny network.
+# useless. Bash is allowed because claude 2.1.291 asks for approval of a
+# sandboxed command with more than one operation (``git add -A && git
+# commit``), which a headless run cannot give (measured); the rule cannot
+# take a command out of the sandbox, because ``allowUnsandboxedCommands``
+# is false, and it does not approve a host (measured: curl still got 403).
+# Network tools (WebFetch, WebSearch) are deliberately absent - this mode
+# exists to deny network.
 _CLAUDE_SANDBOXED_TOOL_ALLOW = [
+    "Bash",
     "Read",
     "Write",
     "Edit",
@@ -127,8 +152,9 @@ class SandboxConfig:
     """Operator sandbox intent, mapped per-CLI by the adapters.
 
     ``enabled`` turns OS-level sandboxing on (a shell command may write
-    the agent's working tree on both CLIs; the claude file tools are not
-    confined, measured); on by default (#700).
+    the agent's working tree on both CLIs; the claude-code file tools are
+    held to the same scope by the hook of :mod:`kstrl.write_guard`); on
+    by default (#700).
     ``allow_network`` keeps outbound network open inside the sandbox; on
     by default (#700), because an engineer that adds a package needs it.
     False denies it. ``writable`` is not a kstrl.toml key: it is the paths
@@ -243,7 +269,9 @@ def codex_sandbox_args(config: SandboxConfig | None, cwd: Path | None = None) ->
     return args
 
 
-def claude_sandbox_settings(config: SandboxConfig | None) -> str | None:
+def claude_sandbox_settings(
+    config: SandboxConfig | None, workspace: Path | None = None
+) -> str | None:
     """Claude settings JSON payload for the operator's sandbox intent.
 
     The single source of the payload for BOTH invocation surfaces: the
@@ -258,6 +286,12 @@ def claude_sandbox_settings(config: SandboxConfig | None) -> str | None:
     permission allow rules the headless run needs once
     ``--dangerously-skip-permissions`` is dropped (see
     :func:`claude_sandbox_drops_skip_permissions`).
+
+    With ``workspace``, the JSON also carries the PreToolUse hook of
+    :mod:`kstrl.write_guard`, which blocks a file tool whose target is
+    outside ``workspace`` and ``config.writable``: the sandbox confines
+    Bash only (measured). The claude-sdk adapter passes no ``workspace``;
+    its runner has an in-process guard.
     """
     if config is None or not config.enabled:
         return None
@@ -269,15 +303,23 @@ def claude_sandbox_settings(config: SandboxConfig | None) -> str | None:
         settings["permissions"] = {
             "allow": list(_CLAUDE_SANDBOXED_TOOL_ALLOW),
         }
+    if workspace is not None:
+        command = hook_command(workspace, config.writable)
+        guard = {"type": "command", "command": command}
+        matcher = {"matcher": "|".join(GUARDED_TOOLS), "hooks": [guard]}
+        settings["hooks"] = {"PreToolUse": [matcher]}
+        # A project or user setting ``disableAllHooks: true`` switched the
+        # hook off; this setting wins over it (measured, claude 2.1.291).
+        settings["disableAllHooks"] = False
     return json.dumps(settings)
 
 
-def claude_sandbox_args(config: SandboxConfig | None) -> list[str]:
+def claude_sandbox_args(config: SandboxConfig | None, workspace: Path | None = None) -> list[str]:
     """``claude --print`` argv fragment for the operator's sandbox intent.
 
     Thin argv wrapper over :func:`claude_sandbox_settings`.
     """
-    settings = claude_sandbox_settings(config)
+    settings = claude_sandbox_settings(config, workspace)
     if settings is None:
         return []
     return ["--settings", settings]

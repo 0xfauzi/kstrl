@@ -41,19 +41,13 @@ from typing import Any
 
 from kstrl.agents.claude_sdk import DISPLAY_PREFIX, RESULT_PREFIX, USAGE_PREFIX
 from kstrl.jsonread import read_json
+from kstrl.write_guard import GUARDED_TOOLS, PATH_KEYS
 
 # Runner exit codes (informational; the adapter keys on output lines).
 _EXIT_OK = 0
 _EXIT_BAD_CONFIG = 2
 _EXIT_SDK_MISSING = 3
 _EXIT_SDK_ERROR = 4
-
-# File tools whose target path the workspace guard checks. Bash is
-# deliberately absent: parsing shell to find write targets is
-# false-negative-prone, and Bash writes are already bounded by worktree
-# isolation + the R7.5 OS sandbox + mechanical diff-scope verification.
-_GUARDED_TOOLS = ("Write", "Edit", "MultiEdit", "NotebookEdit")
-_PATH_KEYS = ("file_path", "notebook_path")
 
 
 def _emit_raw(line: str) -> None:
@@ -120,8 +114,8 @@ def _make_workspace_guard(workspace: Path) -> Any:
     ) -> dict[str, Any]:
         tool_name = str(hook_input.get("tool_name", ""))
         tool_input = hook_input.get("tool_input")
-        if tool_name in _GUARDED_TOOLS and isinstance(tool_input, dict):
-            for key in _PATH_KEYS:
+        if tool_name in GUARDED_TOOLS and isinstance(tool_input, dict):
+            for key in PATH_KEYS:
                 raw = tool_input.get(key)
                 if (
                     isinstance(raw, str)
@@ -217,7 +211,7 @@ async def _drive(config: dict[str, Any], sdk: Any) -> int:
         options_kwargs["hooks"] = {
             "PreToolUse": [
                 sdk.HookMatcher(
-                    matcher="|".join(_GUARDED_TOOLS),
+                    matcher="|".join(GUARDED_TOOLS),
                     hooks=[_make_workspace_guard(workspace)],
                 )
             ],

@@ -225,6 +225,7 @@ ALLOWLIST: tuple[AllowedSite, ...] = (
     ),
     AllowedSite("agents/proc.py", "sys.executable", 1, "E30: starts kstrl's own leash"),
     AllowedSite("isolation.py", "sys.executable", 1, "#700: kstrl's own runtime runs the canary"),
+    AllowedSite("write_guard.py", "sys.executable", 1, "#700: kstrl's own runtime is the hook"),
     AllowedSite("agents/leash.py", "python -I -S leash.py", 1, "E30: kstrl's own leash"),
     AllowedSite("autonomy.py", "python -m", 3, "E31: python -m kstrl.calibration"),
     AllowedSite(
