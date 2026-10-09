@@ -28,10 +28,16 @@ import time
 from tests.helpers import astwalk
 
 #: The modules that hold a run deadline (docs/continuous-intake.md section 7).
+#: ``factory.py`` holds the scheduler backstop and ``loop.py`` the loop time
+#: limit: both are deadlines inside a run, so a suspend reaches them too.
+#: Measured on 2026-10-09: the backstop moved to ``time.time()`` at all three
+#: of its reads left ``tests/test_timeout_enforcement.py`` green (78 passed).
 RUN_DEADLINE_MODULES = (
     "agents/proc.py",
     "agents/leash.py",
     "agents/liveness.py",
+    "factory.py",
+    "loop.py",
     "serve.py",
 )
 
