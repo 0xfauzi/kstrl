@@ -23,7 +23,12 @@ from typing import IO, TYPE_CHECKING, Any, Protocol, TextIO
 from kstrl import git
 from kstrl.acceptance import BaseReading, PinnedPlan, pin_plan, replay_base
 from kstrl.acceptance_carried import Carried, carried_on_base, carry_passed
-from kstrl.acceptance_design import acceptance_source, design_plan
+from kstrl.acceptance_design import (
+    NOT_REPRODUCED,
+    acceptance_source,
+    design_plan,
+    unreproduced,
+)
 from kstrl.acceptance_lines import pr_isolation
 from kstrl.agents.base import UsageTotals, collect_usage, print_usage_rollup
 from kstrl.agents.proc import kill_active_process_groups
@@ -461,6 +466,10 @@ class FactoryConfig:
     # designer writes the plan instead (``acceptance_design``). Per run, like
     # ``acceptance_dir``, and `ks retry` replays it.
     design_acceptance: bool = False
+    # #700, owner decision of 2026-10-09: `ks factory --bug-report`, the run
+    # fixes a reported bug, so a check the base keeps must fail on the base
+    # (``acceptance_design.unreproduced``). Per run, and `ks retry` replays it.
+    bug_report: bool = False
     acceptance_plan: PinnedPlan | None = field(default=None, metadata={"provenance": True})
     acceptance_base: BaseReading | None = field(default=None, metadata={"provenance": True})
     # #466: the checks of earlier features that passed on this run's base
@@ -4425,6 +4434,10 @@ def _refused_acceptance_base(pipeline: ComponentPipeline) -> bool:
             "verification designer for new ones, which the plan gate then asks about."
         )
     if _report_preflight(pipeline.ui, "the acceptance checks do not hold on the base", errors):
+        return True
+    if _report_preflight(
+        pipeline.ui, NOT_REPRODUCED, unreproduced(pipeline, plan, config.acceptance_base)
+    ):
         return True
     manifest.acceptance_digest = plan.digest
     return False

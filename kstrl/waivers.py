@@ -183,6 +183,8 @@ class ApprovalSnapshot:
     overrides: tuple[InboxItem, ...] = ()
     #: The approved items that retire a carried check (#466).
     retirements: tuple[InboxItem, ...] = ()
+    #: The approved items that run a bug report without a reproduction (#700).
+    unreproduced: tuple[InboxItem, ...] = ()
 
     def for_scope(self, scope: WaiverScope, diff_sha: str) -> Waivers:
         """The approvals for ``scope`` that cover the change ``diff_sha`` (#646).
@@ -234,6 +236,7 @@ def load_approvals(inbox: Inbox) -> ApprovalSnapshot:
         approved=approved,
         overrides=acceptance_overrides(items),
         retirements=carried_retirements(items),
+        unreproduced=unreproduced_approvals(items),
     )
 
 
@@ -252,6 +255,26 @@ def carried_halt(item: InboxItem) -> bool:
         item.kind is ItemKind.HALTED_RUN
         and isinstance(carried, dict)
         and all(isinstance(carried.get(k), str) for k in ("planId", "component", "check"))
+    )
+
+
+def unreproduced_approvals(items: Sequence[InboxItem]) -> tuple[InboxItem, ...]:
+    """The approved halted_run items that run a bug report without a
+    reproduction (#700, owner decision of 2026-10-09)."""
+    return tuple(
+        item for item in items if item.status is ItemStatus.APPROVED and unreproduced_halt(item)
+    )
+
+
+def unreproduced_halt(item: InboxItem) -> bool:
+    """Whether ``item`` is the halted_run of a bug report whose acceptance
+    checks did not reproduce it on the base (#700, owner decision of
+    2026-10-09), naming the plan and the base commit."""
+    said = item.evidence.get("unreproduced")
+    return (
+        item.kind is ItemKind.HALTED_RUN
+        and isinstance(said, dict)
+        and all(isinstance(said.get(k), str) for k in ("planId", "baseSha"))
     )
 
 
@@ -535,6 +558,13 @@ def approval_effect(item: InboxItem) -> str | None:
         return (
             f"retires the acceptance check {carried['check']} of {carried['component']} in the "
             f"plan {carried['planId'][:12]}: no later run replays it, on the base or in Phase 3"
+        )
+    if unreproduced_halt(item):
+        said = item.evidence["unreproduced"]
+        return (
+            f"runs the bug report without a reproduction: a run of the acceptance plan "
+            f"{said['planId'][:12]} on the base {said['baseSha'][:12]} starts its engineer. "
+            "Any other plan or base is refused again"
         )
     if item.kind not in WAIVABLE:
         return None

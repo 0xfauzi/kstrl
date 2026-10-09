@@ -367,8 +367,8 @@ class QueueItem:
     #: before this field existed decodes to (), which is also what a run
     #: that opened no PR leaves.
     pr_urls: tuple[str, ...] = ()
-    #: Whether the run gets `ks factory --design-acceptance` (#654: an
-    #: issue with the `bug` label). Only a JSON `true` decodes as on, so an
+    #: Whether the run gets `ks factory --design-acceptance --bug-report`
+    #: (#654: an issue with the `bug` label). Only a JSON `true` decodes as on, so an
     #: item written before this field existed runs as it did.
     design_acceptance: bool = False
     schema_version: int = QUEUE_SCHEMA_VERSION

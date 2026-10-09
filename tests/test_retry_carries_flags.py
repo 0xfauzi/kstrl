@@ -451,6 +451,8 @@ def test_retry_flags_are_pinned_against_factory() -> None:
         "acceptance",
         # #700 slice 7: the designed plan is found again by the plan it was made for.
         "design_acceptance",
+        # #700: a bug report is reproduced on the base again on a retry.
+        "bug_report",
         "review_mode",
         "review_agent_cmd",
         "review_model",
