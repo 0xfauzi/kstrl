@@ -41,7 +41,7 @@ from typing import Any
 
 from kstrl.agents.claude_sdk import DISPLAY_PREFIX, RESULT_PREFIX, USAGE_PREFIX
 from kstrl.jsonread import read_json
-from kstrl.write_guard import GUARDED_TOOLS, PATH_KEYS
+from kstrl.write_guard import GUARDED_TOOLS, real_roots, refusal
 
 # Runner exit codes (informational; the adapter keys on output lines).
 _EXIT_OK = 0
@@ -89,53 +89,31 @@ def _workspace_root(config: dict[str, Any]) -> Path:
     return Path(os.path.realpath(root))
 
 
-def _path_escapes_workspace(raw_path: str, workspace: Path) -> bool:
-    """True when the tool's target path resolves outside the workspace.
-
-    ``realpath`` (not ``resolve(strict=False)`` alone) so a symlink
-    inside the workspace pointing out of it cannot smuggle the write.
-    """
-    candidate = Path(raw_path).expanduser()
-    if not candidate.is_absolute():
-        candidate = workspace / candidate
-    resolved = Path(os.path.realpath(candidate))
-    return not resolved.is_relative_to(workspace)
-
-
-def _make_workspace_guard(workspace: Path) -> Any:
-    """PreToolUse hook denying file tools that target paths outside
-    ``workspace`` (the spike's measured win: prevention, not detection;
-    the denial is recorded by the CLI in permission_denials)."""
+def _make_workspace_guard(roots: tuple[Path, ...]) -> Any:
+    """PreToolUse hook denying file tools that :func:`kstrl.write_guard.refusal`
+    refuses for ``roots`` (the workspace, then the writable paths): the same
+    decision as the claude-code adapter's hook, so the two adapters cannot
+    differ (the spike's measured win: prevention, not detection; the denial
+    is recorded by the CLI in permission_denials)."""
 
     async def guard(
         hook_input: Any,
         _tool_use_id: str | None,
         _context: Any,
     ) -> dict[str, Any]:
-        tool_name = str(hook_input.get("tool_name", ""))
-        tool_input = hook_input.get("tool_input")
-        if tool_name in GUARDED_TOOLS and isinstance(tool_input, dict):
-            for key in PATH_KEYS:
-                raw = tool_input.get(key)
-                if (
-                    isinstance(raw, str)
-                    and raw
-                    and _path_escapes_workspace(
-                        raw,
-                        workspace,
-                    )
-                ):
-                    _emit(f"[workspace-guard] denied {tool_name} outside workspace: {raw}")
-                    return {
-                        "hookSpecificOutput": {
-                            "hookEventName": "PreToolUse",
-                            "permissionDecision": "deny",
-                            "permissionDecisionReason": (
-                                f"{key}={raw} is outside the run workspace "
-                                f"{workspace}; write within the workspace."
-                            ),
-                        },
-                    }
+        tool_name = str(hook_input.get("tool_name", "")) if isinstance(hook_input, dict) else ""
+        if isinstance(hook_input, dict) and tool_name not in GUARDED_TOOLS:
+            return {}
+        reason = refusal(hook_input, roots)
+        if reason is not None:
+            _emit(f"[workspace-guard] denied {tool_name or 'a tool call'}: {reason}")
+            return {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "deny",
+                    "permissionDecisionReason": reason,
+                },
+            }
         return {}
 
     return guard
@@ -191,6 +169,8 @@ def _emit_result_message(message: Any) -> None:
 async def _drive(config: dict[str, Any], sdk: Any) -> int:
     """Stream one SDK query, rendering messages as display lines."""
     workspace = _workspace_root(config)
+    writable = config.get("writable")
+    roots = real_roots([workspace, *(writable if isinstance(writable, list) else [])])
     options_kwargs: dict[str, Any] = {
         "cwd": config.get("cwd") or None,
         "model": config.get("model") or None,
@@ -212,7 +192,7 @@ async def _drive(config: dict[str, Any], sdk: Any) -> int:
             "PreToolUse": [
                 sdk.HookMatcher(
                     matcher="|".join(GUARDED_TOOLS),
-                    hooks=[_make_workspace_guard(workspace)],
+                    hooks=[_make_workspace_guard(roots)],
                 )
             ],
         }

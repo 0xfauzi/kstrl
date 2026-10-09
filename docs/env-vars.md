@@ -280,10 +280,14 @@ command may write the agent's worktree and the confirmed `[stack]`'s
 claude sandbox confines shell commands only, so the claude-code adapter
 gives claude a PreToolUse hook (`kstrl/write_guard.py`) that holds its file
 tools (Write, Edit, NotebookEdit) to the worktree and the `writable` paths,
-and also blocks a `.git`, `.claude` or `.mcp.json` path in them. The same
+and also blocks a `.git`, `.claude` or `.mcp.json` path in them. The guard
+refuses a target path that is not absolute, a `~` path included. The same
 settings set `disableAllHooks` to false, so that a project or user setting
-cannot turn the hook off. The claude-sdk adapter holds its file tools to
-the worktree. With `allow_network = false`, the claude-code and claude-sdk engineers run without
+cannot turn the hook off. The claude-sdk adapter holds its file tools to the
+same roots with the same function. Remaining risk: the hook checks a path
+before the write, so a background shell process of the engineer can replace a
+worktree directory with a symlink between the two steps. Only an OS sandbox
+around the whole claude process closes that race (#700). With `allow_network = false`, the claude-code and claude-sdk engineers run without
 `--dangerously-skip-permissions`, and their settings allow Bash and the file
 tools, so that a command with more than one operation, such as
 `git add -A && git commit`, runs. A custom agent command cannot be sandboxed:

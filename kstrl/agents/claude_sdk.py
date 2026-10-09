@@ -66,6 +66,11 @@ RESULT_PREFIX = "KSTRL-SDK-RESULT "
 DISPLAY_PREFIX = "KSTRL-SDK-DISPLAY "
 
 
+def _writable_paths(sandbox: SandboxConfig | None) -> list[str]:
+    """The confirmed ``[stack]`` paths that the sandbox grants, for the runner's write guard."""
+    return list(sandbox.writable) if sandbox is not None else []
+
+
 class ClaudeSdkAgent:
     """Agent that drives claude-code through the Claude Agent SDK.
 
@@ -174,6 +179,9 @@ class ClaudeSdkAgent:
             ),
             "max_budget_usd": self._max_budget_usd,
             "workspace_guard": self._workspace_guard,
+            # The roots of the write guard are the same as the claude-code
+            # hook's: the workspace, then the confirmed [stack] paths.
+            "writable": _writable_paths(self._sandbox),
             "cwd": str(cwd) if cwd else None,
             "cli_path": self._cli_path,
         }

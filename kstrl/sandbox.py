@@ -291,7 +291,8 @@ def claude_sandbox_settings(
     :mod:`kstrl.write_guard`, which blocks a file tool whose target is
     outside ``workspace`` and ``config.writable``: the sandbox confines
     Bash only (measured). The claude-sdk adapter passes no ``workspace``;
-    its runner has an in-process guard.
+    its runner calls :func:`kstrl.write_guard.refusal` in process, with the
+    same roots.
     """
     if config is None or not config.enabled:
         return None

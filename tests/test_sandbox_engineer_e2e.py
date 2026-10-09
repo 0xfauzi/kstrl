@@ -668,26 +668,28 @@ def test_under_the_real_codex_sandbox_the_engineer_commits_and_a_planted_hook_wr
     assert "stub-engineer" in log, (log, text, ran)
 
 
-#: (label, tool, the target's path from the worktree or an absolute path, the
-#: hook's exit code). ``{out}`` is a directory outside the project, ``{cache}``
-#: the stack's writable path, ``~`` the home directory, which is outside the
-#: project. claude blocks the tool on exit 2 only.
+#: (label, tool, the target's path, the hook's exit code). ``{wt}`` is the
+#: worktree, ``{out}`` a directory outside the project, ``{cache}`` the stack's
+#: writable path. A relative path and a ``~`` path exit 2 even when they name
+#: a place in the worktree: the guard takes an absolute path only. claude
+#: blocks the tool on exit 2 only.
 _TARGETS = [
-    ("inside", "Write", "inside.txt", 0),
-    ("nested", "Edit", "src/a.py", 0),
+    ("inside", "Write", "{wt}/inside.txt", 0),
+    ("nested", "Edit", "{wt}/src/a.py", 0),
     ("stack", "Write", "{cache}/x.txt", 0),
     ("outside", "Write", "{out}/escaped.txt", 2),
     ("edit-outside", "Edit", "{out}/escaped.txt", 2),
     ("multiedit-outside", "MultiEdit", "{out}/escaped.txt", 2),
     ("notebook-outside", "NotebookEdit", "{out}/n.ipynb", 2),
     ("relative", "Write", "../../../escaped.txt", 2),
+    ("relative-inside", "Write", "inside.txt", 2),
     ("home", "Write", "~/escaped.txt", 2),
-    ("symlink", "Write", "link-out/escaped.txt", 2),
-    ("claude-settings", "Write", ".claude/settings.local.json", 2),
-    ("claude-upper", "Write", ".Claude/settings.json", 2),
-    ("mcp", "Write", ".mcp.json", 2),
-    ("git-file", "Write", ".git", 2),
-    ("nested-git", "Write", "sub/.git/config", 2),
+    ("symlink", "Write", "{wt}/link-out/escaped.txt", 2),
+    ("claude-settings", "Write", "{wt}/.claude/settings.local.json", 2),
+    ("claude-upper", "Write", "{wt}/.Claude/settings.json", 2),
+    ("mcp", "Write", "{wt}/.mcp.json", 2),
+    ("git-file", "Write", "{wt}/.git", 2),
+    ("nested-git", "Write", "{wt}/sub/.git/config", 2),
     ("stack-git", "Write", "{cache}/.git/config", 2),
     ("stack-prefix", "Write", "{cache}-sibling/x.txt", 2),
 ]
@@ -707,7 +709,8 @@ def _hooked_claude(path: Path, out: Path) -> Path:
     cache = out.parent / "proj" / "tool-cache"
     outside = out.parent / "outside"
     targets = [
-        (label, tool, raw.format(cache=cache, out=outside)) for label, tool, raw, _ in _TARGETS
+        (label, tool, raw.format(cache=cache, out=outside, wt="{wt}"))
+        for label, tool, raw, _ in _TARGETS
     ]
     return write_executable(
         path,
@@ -748,6 +751,7 @@ if not os.path.exists({str(out)!r}):
     lines = []
     for label, tool, raw in {targets!r}:
         key = "notebook_path" if tool == "NotebookEdit" else "file_path"
+        raw = raw.replace("{{wt}}", cwd)
         event = {{"tool_name": tool, "tool_input": {{key: raw}}, "cwd": cwd}}
         lines.append(label + "=" + hook(tool, json.dumps(event)))
     lines.append("unparsable=" + hook("Write", "not json"))

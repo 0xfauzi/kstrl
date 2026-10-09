@@ -37,6 +37,7 @@ from kstrl.agents.logging import LoggingAgent
 from kstrl.config import KstrlConfig
 from kstrl.decompose import _extract_agent_json, _extract_json, _select_agent_output
 from kstrl.loop import COMPLETION_MARKER, run_loop
+from kstrl.sandbox import SandboxConfig
 from kstrl.timeout import TimeoutConfig
 from kstrl.ui.plain import PlainUI
 from tests.helpers.executables import put_on_path, write_executable
@@ -230,15 +231,17 @@ for raw in sys.stdin:
 """
 
 
-def _sdk_agent(tmp_path: Path, events: list[dict[str, Any]]) -> ClaudeSdkAgent:
+def _sdk_agent(
+    tmp_path: Path, events: list[dict[str, Any]], *, cli_script: str = _SDK_CLI, **kwargs: Any
+) -> ClaudeSdkAgent:
     pytest.importorskip("claude_agent_sdk")
     stream = tmp_path / "sdk-stream.jsonl"
     stream.write_text("".join(json.dumps(event) + "\n" for event in events), encoding="utf-8")
     cli = write_executable(
         tmp_path / "fake-sdk-claude",
-        f"#!{sys.executable}\nSTREAM_FILE = {str(stream)!r}\n" + _SDK_CLI,
+        f"#!{sys.executable}\nSTREAM_FILE = {str(stream)!r}\n" + cli_script,
     )
-    agent = ClaudeSdkAgent()
+    agent = ClaudeSdkAgent(**kwargs)
     agent._cli_path = str(cli)
     return agent
 
@@ -695,3 +698,101 @@ def test_sdk_runner_diagnostics_never_become_agent_lines(
         "CLI-STDERR-DIAGNOSTIC",
     ):
         assert diagnostic in logged
+
+
+# --- the SDK file tools obey the same write guard as claude-code (#700) -----
+
+#: A fake claude CLI that, on the first user message, sends the runner one
+#: PreToolUse ``hook_callback`` for each target in TARGETS (the way claude
+#: does before a file tool) and writes ``<label>=<deny|allow>`` to
+#: DECISIONS_FILE, then prints the stream like ``_SDK_CLI``.
+_SDK_HOOK_CLI = """\
+import json, os, sys
+if any(arg in ("-v", "--version") for arg in sys.argv[1:]):
+    print("2.1.283 (Claude Code)")
+    sys.exit(0)
+with open(STREAM_FILE, encoding="utf-8") as handle:
+    stream = handle.read()
+callbacks = []
+def reply_to(request_id):
+    for raw in sys.stdin:
+        message = json.loads(raw)
+        if message.get("type") == "control_response":
+            return message["response"]
+for raw in sys.stdin:
+    message = json.loads(raw)
+    if message.get("type") == "control_request":
+        request = message["request"]
+        if request.get("subtype") == "initialize":
+            for matcher in (request.get("hooks") or {}).get("PreToolUse", []):
+                callbacks += matcher["hookCallbackIds"]
+        reply = {"subtype": "success", "request_id": message["request_id"], "response": {}}
+        print(json.dumps({"type": "control_response", "response": reply}), flush=True)
+    elif message.get("type") == "user":
+        cwd = os.getcwd()
+        lines = []
+        for number, (label, tool, key, raw) in enumerate(TARGETS):
+            event = {"hook_event_name": "PreToolUse", "tool_name": tool, "cwd": cwd,
+                     "tool_input": {key: raw.replace("{wt}", cwd)} if key else {}}
+            call = {"subtype": "hook_callback", "callback_id": callbacks[0], "input": event,
+                    "tool_use_id": "toolu_%d" % number}
+            print(json.dumps({"type": "control_request", "request_id": "h%d" % number,
+                              "request": call}), flush=True)
+            answer = reply_to("h%d" % number)["response"] or {}
+            decision = answer.get("hookSpecificOutput", {}).get("permissionDecision", "allow")
+            lines.append(label + "=" + decision)
+        with open(DECISIONS_FILE, "w", encoding="utf-8") as out:
+            out.write("\\n".join(lines) + "\\n")
+        sys.stdout.write(stream)
+        sys.stdout.flush()
+        sys.exit(0)
+"""
+
+
+#: (label, tool, tool input key or None, target, the decision). ``{wt}`` is the
+#: workspace; the stack path and the outside path are absolute.
+def _sdk_targets(tmp_path: Path) -> list[tuple[str, str, str | None, str, str]]:
+    cache, outside = tmp_path / "tool-cache", tmp_path / "outside"
+    return [
+        ("inside", "Write", "file_path", "{wt}/a.txt", "allow"),
+        ("stack", "Write", "file_path", f"{cache}/x.txt", "allow"),
+        ("outside", "Write", "file_path", f"{outside}/x.txt", "deny"),
+        ("notebook-outside", "NotebookEdit", "notebook_path", f"{outside}/n.ipynb", "deny"),
+        ("relative", "Write", "file_path", "a.txt", "deny"),
+        ("home", "Write", "file_path", "~/a.txt", "deny"),
+        ("git", "Write", "file_path", "{wt}/.git/config", "deny"),
+        ("claude-dir", "Edit", "file_path", "{wt}/.claude/settings.local.json", "deny"),
+        ("mcp", "Write", "file_path", "{wt}/.mcp.json", "deny"),
+        ("stack-git", "Write", "file_path", f"{cache}/.git/config", "deny"),
+        ("no-path", "Write", None, "", "deny"),
+    ]
+
+
+def test_the_sdk_file_tools_obey_the_write_guard_of_the_claude_code_adapter(
+    tmp_path: Path,
+) -> None:
+    """The runner's PreToolUse guard and the claude-code hook make one
+    decision (#700): the workspace and the stack's writable path run, and an
+    outside, relative, ``~``, ``.git``, ``.claude``, ``.mcp.json`` or
+    pathless target is denied. Driven through ``ClaudeSdkAgent.run`` and a
+    fake CLI that sends the ``hook_callback`` control requests."""
+    pytest.importorskip("claude_agent_sdk")
+    work = tmp_path / "work"
+    work.mkdir()
+    targets = _sdk_targets(tmp_path)
+    decisions = tmp_path / "decisions.out"
+    script = f"TARGETS = {[t[:4] for t in targets]!r}\nDECISIONS_FILE = {str(decisions)!r}\n"
+    agent = _sdk_agent(
+        tmp_path,
+        [_text("done"), _result("done")],
+        cli_script=script + _SDK_HOOK_CLI,
+        sandbox=SandboxConfig(enabled=True, writable=(str(tmp_path / "tool-cache"),)),
+    )
+
+    lines = list(agent.run("prompt", cwd=work, timeout=60))
+
+    got = dict(line.split("=", 1) for line in decisions.read_text(encoding="utf-8").splitlines())
+    assert got == {label: decision for label, _, _, _, decision in targets}, lines
+    assert sum(line.startswith("[workspace-guard] denied") for line in lines) == sum(
+        decision == "deny" for *_, decision in targets
+    ), lines
