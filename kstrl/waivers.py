@@ -181,6 +181,8 @@ class ApprovalSnapshot:
     unconsulted_reason: str = ""
     #: The approved acceptance halts (:func:`acceptance_overrides`).
     overrides: tuple[InboxItem, ...] = ()
+    #: The approved items that retire a carried check (#466).
+    retirements: tuple[InboxItem, ...] = ()
 
     def for_scope(self, scope: WaiverScope, diff_sha: str) -> Waivers:
         """The approvals for ``scope`` that cover the change ``diff_sha`` (#646).
@@ -228,7 +230,29 @@ def load_approvals(inbox: Inbox) -> ApprovalSnapshot:
     approved = tuple(
         item for item in items if item.kind in WAIVABLE and item.status is ItemStatus.APPROVED
     )
-    return ApprovalSnapshot(approved=approved, overrides=acceptance_overrides(items))
+    return ApprovalSnapshot(
+        approved=approved,
+        overrides=acceptance_overrides(items),
+        retirements=carried_retirements(items),
+    )
+
+
+def carried_retirements(items: Sequence[InboxItem]) -> tuple[InboxItem, ...]:
+    """The approved halted_run items that retire a carried check (#466)."""
+    return tuple(
+        item for item in items if item.status is ItemStatus.APPROVED and carried_halt(item)
+    )
+
+
+def carried_halt(item: InboxItem) -> bool:
+    """Whether ``item`` is the halted_run of a carried check that does not
+    pass on the base (#466), naming its plan, component and check."""
+    carried = item.evidence.get("carried")
+    return (
+        item.kind is ItemKind.HALTED_RUN
+        and isinstance(carried, dict)
+        and all(isinstance(carried.get(k), str) for k in ("planId", "component", "check"))
+    )
 
 
 def acceptance_overrides(items: Sequence[InboxItem]) -> tuple[InboxItem, ...]:
@@ -505,6 +529,12 @@ def approval_effect(item: InboxItem) -> str | None:
             "PR body names this approval. A single-PR run, or a component built on unmerged "
             "dependency code, keeps no commit, so nothing is merged over. Any other failing "
             "check or commit still fails."
+        )
+    if carried_halt(item):
+        carried = item.evidence["carried"]
+        return (
+            f"retires the acceptance check {carried['check']} of {carried['component']} in the "
+            f"plan {carried['planId'][:12]}: no later run replays it, on the base or in Phase 3"
         )
     if item.kind not in WAIVABLE:
         return None

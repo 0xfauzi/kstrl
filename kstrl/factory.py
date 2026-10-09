@@ -13,7 +13,7 @@ import sys
 import threading
 import time
 from collections import Counter
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wait
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
@@ -22,6 +22,7 @@ from typing import IO, TYPE_CHECKING, Any, Protocol, TextIO
 
 from kstrl import git
 from kstrl.acceptance import BaseReading, PinnedPlan, pin_plan, replay_base
+from kstrl.acceptance_carried import Carried, carried_on_base, carry_passed
 from kstrl.acceptance_design import acceptance_source, design_plan
 from kstrl.agents.base import UsageTotals, collect_usage, print_usage_rollup
 from kstrl.agents.proc import kill_active_process_groups
@@ -461,6 +462,9 @@ class FactoryConfig:
     design_acceptance: bool = False
     acceptance_plan: PinnedPlan | None = field(default=None, metadata={"provenance": True})
     acceptance_base: BaseReading | None = field(default=None, metadata={"provenance": True})
+    # #466: the checks of earlier features that passed on this run's base
+    # (``acceptance_carried.carried_on_base``); Phase 3 replays them.
+    acceptance_carried: tuple[Carried, ...] = field(default=(), metadata={"provenance": True})
     # #696 slice 7: the base reading ``base_refused_before_architect`` took
     # before `ks factory --spec` paid the architect. The run's own base gates
     # reuse it while the base names the same commit, so the base is measured
@@ -4361,12 +4365,30 @@ def _plan_gated(
     stamped and parked merges are applied, so a plan nobody approved
     pushes, merges and runs nothing: its park is 1 and a rejection 2.
     """
-    if register is None or _refused_acceptance_design(pipeline):
+    if register is None or _refused_carried(pipeline) or _refused_acceptance_design(pipeline):
         return 2
     stop = run_plan_gate(pipeline, ladder.bundle if ladder is not None else None)
     if stop is not None:
         return stop
     return 2 if _refused_acceptance_base(pipeline) else register
+
+
+def _refused_carried(pipeline: ComponentPipeline) -> bool:
+    """Replay the checks of earlier features on the base (#466), after
+    every pre-spend refusal and before the designer and the plan gate; True
+    when one does not pass there, which files an inbox item for it."""
+    config = pipeline.factory_config
+    config.acceptance_carried, errors = carried_on_base(
+        pipeline.root_dir,
+        config,
+        pipeline.manifest,
+        pipeline.run_id,
+        pipeline.ui,
+        pipeline.record_carried_halt,
+    )
+    return _report_preflight(
+        pipeline.ui, "an earlier feature's acceptance check does not hold on the base", errors
+    )
 
 
 def _refused_acceptance_design(pipeline: ComponentPipeline) -> bool:
@@ -4441,6 +4463,37 @@ def _plan_of_kept_checks(factory_config: FactoryConfig) -> PinnedPlan | None:
     if plan is None or base is None:
         return plan
     return replace(plan, components=dict(base.kept))
+
+
+def _carry(pipeline: ComponentPipeline, results: Sequence[ContractResult]) -> None:
+    """After a Phase 3 round passed on the base its components merged into,
+    keep their checks for every later run to replay (#466). A failed write
+    fails the run: the components are merged, and a later feature could
+    break them unseen. Only the integrated check of a run with one PR per
+    component tests the base itself (``tested_sha``), and only a component
+    whose change reached the base is carried (``carry_passed``)."""
+    error = carry_passed(
+        pipeline.root_dir,
+        pipeline.factory_config,
+        pipeline.manifest,
+        [comp for cr in results for comp in cr.components_tested],
+        results[0].tested_sha if results else "",
+        pipeline.run_id,
+    )
+    if error:
+        pipeline.ui.err(f"  {error}")
+        pipeline.factory_result.contract_failures.append(error)
+
+
+def _halt_carried(pipeline: ComponentPipeline, failures: Sequence[ContractResult]) -> None:
+    """File one inbox item for each earlier feature's check that failed a
+    Phase 3 with nothing left to retry (#466). A run that merges its
+    components only after Phase 3 never puts the break on the base, so the
+    base replay never files one, and a check a change made obsolete could
+    otherwise never retire."""
+    for cr in failures:
+        for entry in cr.carried_failed:
+            pipeline.record_carried_halt(entry, f"Phase 3 tier {cr.tier}", "the run failed on it")
 
 
 def _resolve_round_base(manifest: Manifest, root_dir: Path, ui: UI) -> str:
@@ -5859,6 +5912,7 @@ def _run_factory_locked(
                 base_sha=round_base_sha,
                 setup=factory_config.worktree_setup(),
                 plan=_plan_of_kept_checks(factory_config),
+                carried=factory_config.acceptance_carried,
             )
         except ContractCleanupError as exc:
             # A contract temp worktree survived removal. The user's
@@ -5882,6 +5936,7 @@ def _run_factory_locked(
 
         failures = [cr for cr in contract_results if not cr.passed]
         if not failures:
+            _carry(pipeline, contract_results)
             continue
 
         # Reset retryable breakers to PENDING; the outer loop then
@@ -5965,6 +6020,7 @@ def _run_factory_locked(
                     f"{', '.join(cr.components_tested)}): {summary_line}"
                 )
             ui.err(f"  Contract failure recorded for tier {cr.tier}; run will exit nonzero")
+        _halt_carried(pipeline, failures)
         manifest.save(manifest_path)
 
     # #482: the integration review ran after the last round, inside the

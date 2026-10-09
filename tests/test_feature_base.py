@@ -378,6 +378,7 @@ class TestThePinnedCommit:
             base_sha: str = "",
             setup: object = None,
             plan: object = None,
+            carried: object = (),
         ) -> list[ContractResult]:
             pinned.append(base_sha)
             if len(pinned) == 1:
@@ -432,6 +433,7 @@ class TestThePinnedCommit:
             base_sha: str = "",
             setup: object = None,
             plan: object = None,
+            carried: object = (),
         ) -> list[ContractResult]:
             pinned.append(base_sha)
             return [ContractResult(True, 0, ["comp-a"])]

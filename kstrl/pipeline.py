@@ -36,7 +36,7 @@ from __future__ import annotations
 
 import hashlib
 import time
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import Enum
@@ -1736,6 +1736,27 @@ class ComponentPipeline:
             detail=reason,
             dedupe_key=f"halted:integration:{self.run_id}",
             evidence={"open_findings": list(open_findings), "evidence": evidence},
+        )
+
+    def record_carried_halt(self, entry: Mapping[str, str], where: str, detail: str) -> None:
+        """The inbox item of an earlier feature's check that does not pass on
+        the base or in a Phase 3 that failed (#466). Approving it retires the
+        check. One open item per check: a later failure bumps it."""
+        plan, comp, check = entry["planId"], entry["component"], entry["check"]
+        self._inbox_add(
+            ItemKind.HALTED_RUN,
+            f"An earlier feature's acceptance check {check} fails",
+            detail=(
+                f"The check {check} of {comp} in the acceptance plan {plan[:12]} passed on "
+                f"{entry['passedAt'][:12]} and does not pass on {where} ({detail}). Approve "
+                "this item to retire the check if a change made it obsolete: no later run "
+                "replays it. Otherwise repair the change."
+            ),
+            dedupe_key=f"carried:{plan}:{comp}:{check}",
+            evidence={
+                "carried": {"planId": plan, "component": comp, "check": check},
+                "where": where,
+            },
         )
 
     def journal_superseded_findings(
