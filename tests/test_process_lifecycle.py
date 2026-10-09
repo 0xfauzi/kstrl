@@ -150,7 +150,8 @@ PROCESS_HOME = frozenset({"procgroup.py", "procdispose.py"})
 #: Two rows are the WORD and not the call, and are here because a net
 #: that quietly dropped them would be a net with a hand-tuned exception
 #: list: ``autonomy.py`` and ``inbox.py`` each spell ``system`` as the
-#: default value of an ``actor`` parameter.
+#: default value of an ``actor`` parameter. A third, ``write_guard.py``,
+#: spells it as the type of a claude stream-json event.
 EXPECTED_PROCESS_MODULES: dict[str, tuple[str, ...]] = {
     # The home, in two files. `procgroup` reads a group and guards a
     # signal; `procdispose` lets go of what survives. `DeadlineStreamer`
@@ -251,6 +252,9 @@ EXPECTED_PROCESS_MODULES: dict[str, tuple[str, ...]] = {
     # The word, not the call: `actor: str = "system"`.
     "autonomy.py": ("system",),
     "inbox.py": ("system",),
+    # The word, not the call: `"system"` is the type of a claude stream-json
+    # event that `SessionGate` reads (#700).
+    "write_guard.py": ("system",),
 }
 
 
