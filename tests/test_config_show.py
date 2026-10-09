@@ -157,7 +157,7 @@ SET_IN_TOML: dict[tuple[str, str], tuple[str, str]] = {
     ("policy", "max_files_changed"): ("7", "7"),
     ("divergence", "growth_steps"): ("5", "5"),
     ("breaker", "no_progress_iterations"): ("6", "6"),
-    ("sandbox", "allow_network"): ("true", "True"),
+    ("sandbox", "allow_network"): ("false", "False"),
     ("queue", "max_attempts"): ("5", "5"),
     ("release", "environment"): ('"staging"', "'staging'"),
     ("signals", "new_issue_events"): ("4", "4"),

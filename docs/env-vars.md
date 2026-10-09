@@ -284,7 +284,7 @@ distiller are not sandboxed.
 | Env var | Type | Default | Notes |
 |---|---|---|---|
 | `KSTRL_SANDBOX_ENABLED` | bool | true | OS sandbox for agent subprocesses; false runs them with no sandbox, with a warning |
-| `KSTRL_SANDBOX_ALLOW_NETWORK` | bool | false | Re-open outbound network inside the sandbox |
+| `KSTRL_SANDBOX_ALLOW_NETWORK` | bool | true | Outbound network inside the sandbox; false denies it |
 
 ## Isolation rung (#700)
 

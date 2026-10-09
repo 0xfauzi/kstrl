@@ -67,8 +67,23 @@ transcript is on #700:
   2026-10-09, #700; before it, #701 refused the run).
 
 Default on (owner decision 2026-10-09, #700): the engineer runs in the
-sandbox of its own harness, with outbound network denied. An operator
-who sets ``enabled = false`` gets the same warning as a custom command.
+sandbox of its own harness. An operator who sets ``enabled = false`` gets
+the same warning as a custom command. Outbound network is open by default
+(owner decision 2026-10-09, #700): only the ``[stack]`` setup downloads
+packages, so an engineer that adds a package fails with the network
+denied. ``allow_network = false`` denies it.
+Measured on 2026-10-09 with the same versions and layout:
+
+- ``allow_network = true``: codex (``network_access=true``) and claude
+  (``--dangerously-skip-permissions``, no permission rules) reached
+  ``https://example.com`` (HTTP 200), committed, and were denied a shell
+  write to ``$HOME`` ("Operation not permitted"). claude also refused a
+  Bash call with ``dangerouslyDisableSandbox``.
+- ``allow_network = false``: codex could not resolve the host and claude
+  got "CONNECT tunnel failed, response 403".
+- In both modes the claude Write tool wrote a file in ``$HOME``: the
+  claude sandbox confines Bash, not the file tools. codex refused the
+  same write ("patch rejected: writing outside of the project").
 """
 
 from __future__ import annotations
@@ -111,17 +126,18 @@ _CLAUDE_SANDBOXED_TOOL_ALLOW = [
 class SandboxConfig:
     """Operator sandbox intent, mapped per-CLI by the adapters.
 
-    ``enabled`` turns OS-level sandboxing on (write scope = the agent's
-    working tree by construction on both CLIs); on by default (#700).
-    ``allow_network`` re-opens outbound network inside the sandbox; off
-    by default because a scoped-writes-but-open-network sandbox still
-    exfiltrates. ``writable`` is not a kstrl.toml key: it is the paths
+    ``enabled`` turns OS-level sandboxing on (a shell command may write
+    the agent's working tree on both CLIs; the claude file tools are not
+    confined, measured); on by default (#700).
+    ``allow_network`` keeps outbound network open inside the sandbox; on
+    by default (#700), because an engineer that adds a package needs it.
+    False denies it. ``writable`` is not a kstrl.toml key: it is the paths
     the confirmed ``[stack]`` grants its commands, set by
     :func:`with_stack_writable` for the roles that run those commands.
     """
 
     enabled: bool = True
-    allow_network: bool = False
+    allow_network: bool = True
     writable: tuple[str, ...] = field(default=(), metadata={"provenance": True})
 
     @classmethod
@@ -130,9 +146,10 @@ class SandboxConfig:
         from kstrl.config import _parse_bool
 
         enabled = os.environ.get("KSTRL_SANDBOX_ENABLED")
+        network = os.environ.get("KSTRL_SANDBOX_ALLOW_NETWORK")
         return cls(
             enabled=cls.enabled if enabled is None else _parse_bool(enabled),
-            allow_network=_parse_bool(os.environ.get("KSTRL_SANDBOX_ALLOW_NETWORK")),
+            allow_network=cls.allow_network if network is None else _parse_bool(network),
         )
 
     @classmethod
@@ -331,9 +348,9 @@ CLAUDE_REVIEW_GIT_COMMANDS: tuple[str, ...] = (
     "git describe",
 )
 
-#: Tools the reviewer must never use. WebFetch/WebSearch are here for
-#: the same reason ``allow_network`` defaults off: a reviewer with the
-#: diff and an outbound channel is an exfiltration path.
+#: Tools the reviewer must never use. WebFetch/WebSearch are here
+#: because a reviewer with the diff and an outbound channel is an
+#: exfiltration path.
 CLAUDE_REVIEW_DENY_TOOLS: tuple[str, ...] = (
     "Write",
     "Edit",

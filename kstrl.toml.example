@@ -56,8 +56,9 @@ no_progress_iterations = 3         # consecutive no-progress iterations before t
 # naming the role, and the warning is in the run's events.jsonl. So does
 # enabled = false. The architect and the knowledge distiller are not
 # sandboxed. Write scope is the agent's worktree, the git paths a commit
-# writes, and the confirmed [stack]'s writable paths; allow_network re-opens
-# outbound network inside the sandbox. Measured mappings (see
+# writes, and the confirmed [stack]'s writable paths. Outbound network is
+# open by default, so the engineer can add a package; allow_network = false
+# denies it. Measured mappings (see
 # kstrl/sandbox.py): codex gets --sandbox workspace-write + explicit
 # network_access and writable_roots overrides; claude gets
 # --settings '{"sandbox": ...}' and, when network is denied, runs without
@@ -65,7 +66,7 @@ no_progress_iterations = 3         # consecutive no-progress iterations before t
 # gate) with file tools re-allowed via settings.
 [sandbox]
 enabled = true                     # false runs the engineer with no sandbox, with a warning
-allow_network = false              # deny outbound network inside the sandbox
+allow_network = true               # false denies outbound network inside the sandbox
 
 # Per-component semantic knowledge layer.
 # A third memory surface (alongside .kstrl/evolution.jsonl and progress.txt)

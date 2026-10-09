@@ -273,5 +273,5 @@ class TestInitScaffold:
         EvolutionConfig.load(tmp_path)
         KnowledgeConfig.load(tmp_path)
         TimeoutConfig.load(tmp_path)
-        # #700: the scaffold shows [sandbox]'s real defaults, on with no network.
-        assert SandboxConfig.load(tmp_path) == SandboxConfig(enabled=True, allow_network=False)
+        # #700: the scaffold shows [sandbox]'s real defaults, on, with the network open.
+        assert SandboxConfig.load(tmp_path) == SandboxConfig(enabled=True, allow_network=True)
