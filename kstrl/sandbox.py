@@ -70,8 +70,8 @@ Default on (owner decision 2026-10-09, #700): the engineer runs in the
 sandbox of its own harness. An operator who sets ``enabled = false`` gets
 the same warning as a custom command. Outbound network is open by default
 (owner decision 2026-10-09, #700): only the ``[stack]`` setup downloads
-packages, so an engineer that adds a package (``npm install``, ``cargo
-add``) fails with the network denied. ``allow_network = false`` denies it.
+packages, so an engineer that adds a package fails with the network
+denied. ``allow_network = false`` denies it.
 Measured on 2026-10-09 with the same versions and layout:
 
 - ``allow_network = true``: codex (``network_access=true``) and claude
