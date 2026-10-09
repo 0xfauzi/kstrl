@@ -5,8 +5,9 @@ End to end: the real ``ks`` CLI in its own process group, on a real git
 repository, with stub agents that append one line to a file per call.
 
 ``[sandbox] enabled`` is true by default, so a codex engineer with no
-``[sandbox]`` section starts under ``--sandbox workspace-write``, with
-network denied and the git paths a commit writes as its writable roots
+``[sandbox]`` section starts under ``--sandbox workspace-write``, with the
+network open (owner decision 2026-10-09; ``allow_network = false`` denies
+it) and the git paths a commit writes as its writable roots
 (measured: codex holds every ``.git`` read-only, so a commit fails without
 them). A custom agent command has no sandbox surface, and neither has a role
 under ``enabled = false``. Between #701 and #700 such a run was refused with
@@ -44,6 +45,7 @@ FUSE_SECONDS = 120.0
 REFUSAL = "Refusing to run: [sandbox]"
 SANDBOX_TOML = "[sandbox]\nenabled = true\n"
 SANDBOX_OFF_TOML = "[sandbox]\nenabled = false\n"
+NO_NETWORK_TOML = "[sandbox]\nallow_network = false\n"
 CODEX_TOML = '[agent]\ntype = "codex"\n'
 #: Spelled out rather than imported, so the operator-visible lines are pinned
 #: and the tests collect (and fail on behaviour) against a tree without them.
@@ -370,13 +372,15 @@ def test_a_role_with_no_sandbox_runs_and_the_run_records_a_warning_naming_it(
 
 def test_with_no_sandbox_section_a_codex_engineer_runs_in_its_sandbox(tmp_path: Path) -> None:
     """RED before #700: the default was off, so the engineer's argv had no
-    --sandbox. Now it runs under workspace-write with network denied. Its
-    writable roots are pinned by the tests at the end of this file."""
+    --sandbox. Now it runs under workspace-write with the network open
+    (owner decision 2026-10-09). Its writable roots are pinned by the tests
+    at the end of this file."""
     out = _ks(tmp_path, CODEX_TOML, _FACTORY, {})
 
     argv = _engineer_argv(tmp_path)
     assert argv[argv.index("--sandbox") + 1] == "workspace-write", argv
-    assert "sandbox_workspace_write.network_access=false" in argv, argv
+    assert "sandbox_workspace_write.network_access=true" in argv, argv
+    assert "sandbox_workspace_write.network_access=false" not in argv, argv
     assert "runs with no sandbox" not in out, out
     assert REFUSAL not in out, out
 
@@ -424,7 +428,10 @@ def test_a_claude_engineer_may_write_the_stack_s_paths_and_no_git_path(tmp_path:
     """RED before #700: the engineer's argv had no --settings. claude commits
     with no extra path and keeps hooks and config read-only (measured), so
     its sandbox gets the confirmed stack's writable paths and nothing else,
-    with outbound network denied."""
+    with outbound network open: the adapter keeps
+    --dangerously-skip-permissions and adds no permission rule, and the
+    claude sandbox still denies a shell write outside the worktree
+    (measured with claude 2.1.291)."""
     argv_ = (*_FACTORY, "--review-mode", "skip", "--security-mode", "skip")
     out = _ks(tmp_path, CLAUDE_TOML + STACK_TOML, argv_, NO_PROVER, confirm=True, clis=("claude",))
 
@@ -435,7 +442,45 @@ def test_a_claude_engineer_may_write_the_stack_s_paths_and_no_git_path(tmp_path:
     assert settings["sandbox"]["enabled"] is True, settings
     allowed = [Path(p).resolve() for p in settings["sandbox"]["filesystem"]["allowWrite"]]
     assert allowed == [(tmp_path / "proj" / "tool-cache").resolve()], (settings, out)
+    assert "--dangerously-skip-permissions" in argv, argv
+    assert "permissions" not in settings, settings
+
+
+#: (id, kstrl.toml, extra env, the engineer's harness).
+_NO_NETWORK = [
+    ("codex-toml", CODEX_TOML + NO_NETWORK_TOML, {}, "codex"),
+    ("codex-env", CODEX_TOML, {"KSTRL_SANDBOX_ALLOW_NETWORK": "0"}, "codex"),
+    ("claude-toml", CLAUDE_TOML + NO_NETWORK_TOML, {}, "claude"),
+]
+
+
+@pytest.mark.parametrize(
+    ("toml", "extra", "cli"),
+    [case[1:] for case in _NO_NETWORK],
+    ids=[case[0] for case in _NO_NETWORK],
+)
+def test_allow_network_false_denies_the_network_to_the_engineer(
+    tmp_path: Path, toml: str, extra: dict[str, str], cli: str
+) -> None:
+    """The operator can still deny the network, in kstrl.toml or in the
+    environment. codex gets ``network_access=false``. claude runs without
+    --dangerously-skip-permissions, because its domain allowlist is a
+    permission-layer gate, and its file tools are allowed in the settings
+    (measured: curl got "CONNECT tunnel failed, response 403")."""
+    argv_ = (*_FACTORY, "--review-mode", "skip", "--security-mode", "skip")
+    out = _ks(tmp_path, toml, argv_, extra, clis=(cli,))
+
+    if cli == "codex":
+        argv = _engineer_argv(tmp_path)
+        assert "sandbox_workspace_write.network_access=false" in argv, (argv, out)
+        assert "sandbox_workspace_write.network_access=true" not in argv, (argv, out)
+        return
+    runs = _runs(tmp_path, "bin/claude")
+    assert runs, out
+    argv = runs[0]
     assert "--dangerously-skip-permissions" not in argv, argv
+    settings = json.loads(argv[argv.index("--settings") + 1])
+    assert "Write" in settings["permissions"]["allow"], settings
 
 
 def _covers(roots: list[Path], path: Path) -> bool:

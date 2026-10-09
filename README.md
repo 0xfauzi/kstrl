@@ -343,8 +343,8 @@ no_progress_iterations = 3  # halt after N consecutive no-progress iterations; 0
 
 # OS-level agent sandboxing (R7.5; claude-code, claude-sdk and codex only)
 [sandbox]
-enabled = true         # OS-sandbox the engineer, reviewer, understand and repair agent CLIs (writes scoped to the worktree); a custom agent command, or false, runs with no sandbox and the run warns naming the role
-allow_network = false  # re-open outbound network inside the sandbox (off = deny)
+enabled = true        # OS-sandbox the engineer, reviewer, understand and repair agent CLIs (writes scoped to the worktree); a custom agent command, or false, runs with no sandbox and the run warns naming the role
+allow_network = true  # outbound network inside the sandbox (false = deny)
 
 # Phase 1 mechanical verification
 [verify]

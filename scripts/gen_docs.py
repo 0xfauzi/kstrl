@@ -550,7 +550,7 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("sandbox", "enabled"): "OS-sandbox the engineer, reviewer, understand and repair agent CLIs "
     "(writes scoped to the worktree); a custom agent command, or false, runs with no sandbox "
     "and the run warns naming the role",
-    ("sandbox", "allow_network"): "re-open outbound network inside the sandbox (off = deny)",
+    ("sandbox", "allow_network"): "outbound network inside the sandbox (false = deny)",
     ("verify", "check_diff_scope"): "fail on changes outside allowed paths",
     ("verify", "check_bad_patterns"): "scan the diff for secret-like patterns",
     ("verify", "subprocess_timeout"): "seconds per verification subprocess; 0 = no limit",
