@@ -111,6 +111,10 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_agent_processes_outlive_run.py": 1,
     "tests/test_autonomy_ladder.py": 1,
     "tests/test_breaker.py": 3,
+    # #700, owner decision of 2026-10-09: the moved-base step commits
+    # NOTES.md into the repository `tests.test_stack_e2e._repo` put
+    # through set_identity.
+    "tests/test_bug_report_reproduced_e2e.py": 1,
     # #399 added two real-repository tests (a stubbed-git refusal, which
     # makes no commit, and a latin-1-bytes commit through `_git`/`_repo`,
     # both already declared here, plus a second real commit in the

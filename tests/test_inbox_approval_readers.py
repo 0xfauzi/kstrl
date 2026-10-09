@@ -51,8 +51,14 @@ APPROVAL_READERS: dict[ItemKind, tuple[str, ...]] = {
     # #700 decision 14: an approved halt of the acceptance checks lets ks
     # retry merge over the checks it names on the commit it names. #466: an
     # approved halt of a carried check retires that check. Every other
-    # halted_run approval still only closes the item.
-    ItemKind.HALTED_RUN: ("waivers.py::acceptance_overrides", "waivers.py::carried_retirements"),
+    # halted_run approval still only closes the item. An approved halt of a
+    # bug report the base did not reproduce runs it without a reproduction
+    # (#700, owner decision of 2026-10-09).
+    ItemKind.HALTED_RUN: (
+        "waivers.py::acceptance_overrides",
+        "waivers.py::carried_retirements",
+        "waivers.py::unreproduced_approvals",
+    ),
 }
 
 #: Action-required kinds whose approval no kstrl step reads, and why.
@@ -80,6 +86,7 @@ EXPECTED_APPROVED_READS: dict[str, int] = {
     "waivers.py::acceptance_overrides": 1,
     "waivers.py::carried_retirements": 1,
     "waivers.py::load_approvals": 1,
+    "waivers.py::unreproduced_approvals": 1,
 }
 
 #: Rows of the census that read (or, for the module row, define) some

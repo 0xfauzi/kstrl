@@ -443,14 +443,23 @@ An issue that also carries the `bug` label (in any case) is a bug report.
 It goes through the same `ks factory` path as other work, with two
 changes (#654):
 
-- `ks serve` launches its run with `--design-acceptance`, so the
-  verification designer writes the acceptance checks of each component.
+- `ks serve` launches its run with `--design-acceptance --bug-report`, so
+  the verification designer writes the acceptance checks of each component.
 - The spec gets one more line, `BUG_REPORT_PROMPT` in
   `kstrl/intake_github.py`: at least one acceptance check must reproduce
   the reported failure, so that check has `"onBase": "fails"`.
 
 `--design-acceptance` needs a confirmed `[stack]`, the same as `ks serve`.
 A `/iterate` re-run of a bug report keeps both changes.
+
+A bug report that the checks do not reproduce does not run as verified
+(#700, owner decision of 2026-10-09). When no check that the base keeps
+fails on the base, `Refusing to run: the bug report was not reproduced on
+the base` (exit 2) comes before the first engineer. A `halted_run` inbox
+item names each check and its base result. Approve the item to run the
+bug report without a reproduction. The approval holds for that plan on
+that base commit only: when the base moves, the run is refused again and
+a new item is filed. `ks retry` replays `--bug-report`.
 
 ### Cross-repository intake is refused
 
