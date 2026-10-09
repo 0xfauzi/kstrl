@@ -42,6 +42,7 @@ from kstrl.acceptance import (
     PASS,
     PLAN_FILE,
     TREE_ENV,
+    BaseReading,
     Check,
     ComponentPlan,
     PinnedPlan,
@@ -56,12 +57,14 @@ from kstrl.agents.prompt_record import AgentCall, recording_prompts
 from kstrl.contract import ContractCleanupError, _create_temp_worktree, _remove_temp_worktree
 from kstrl.decompose import _extract_json, _select_agent_output, collect_agent_output
 from kstrl.delimiters import generate_data_delimiter
+from kstrl.inbox import ItemKind
 from kstrl.integration_phase import REVIEW_ASKS, _reask_refusal
 from kstrl.plan_gate import PlanUnreadableError, pinned_spec, plan_digest
 from kstrl.prd import PRD
 from kstrl.requirements import SpecRequirement, built_by
 from kstrl.statedir import control_dir, pre_run_prd_path
 from kstrl.timeout import limit_seconds
+from kstrl.waivers import approvals_at
 
 if TYPE_CHECKING:
     from kstrl.factory import FactoryConfig
@@ -81,6 +84,16 @@ BOTH_PLANS = (
     "--acceptance names an operator's plan and --design-acceptance asks a model for one; "
     "pass one of them. Nothing was run."
 )
+
+BUG_NEEDS_PLAN = (
+    "--bug-report needs acceptance checks that can reproduce the bug: pass --acceptance or "
+    "--design-acceptance. Nothing was run."
+)
+
+#: The refusal of a bug report that no check the base kept reproduces, and
+#: the dedupe-key prefix of its inbox item (#700, owner decision of 2026-10-09).
+NOT_REPRODUCED = "the bug report was not reproduced on the base"
+NOT_REPRODUCED_KEY = "unreproduced:"
 
 #: What the base reading says of a component when the base removed every
 #: check the verification designer wrote for it (:func:`kept_on_base`).
@@ -272,6 +285,8 @@ def acceptance_source(
     """The plan directory this run pins: the operator's ``--acceptance``, or
     under ``--design-acceptance`` the plan designed for this plan when one
     exists ("" until it is designed); or why the run must not start."""
+    if config.bug_report and not (config.acceptance_dir or config.design_acceptance):
+        return "", [BUG_NEEDS_PLAN]
     if not config.design_acceptance:
         return config.acceptance_dir, []
     if config.acceptance_dir:
@@ -450,3 +465,82 @@ def _why_removed(check: Check, verdict: str, code: int | None, holds: bool) -> s
             "so it cannot measure kept behaviour on this base"
         )
     return ""
+
+
+def unreproduced(
+    pipeline: ComponentPipeline, plan: PinnedPlan, reading: BaseReading | None
+) -> list[str]:
+    """Why a bug report must not start: no check the base kept fails on the
+    base, so nothing reproduces the bug (#700, owner decision of 2026-10-09).
+    [] for a run that is not a bug report, when a kept check fails on the
+    base, or when a person approved the item filed for this plan on this
+    base. Otherwise files that halted_run item, naming every check and its
+    base result."""
+    if not pipeline.factory_config.bug_report or reading is None:
+        return []
+    kept = reading.kept
+    if any(
+        verdict_of(reading.exits[comp][check.id]) == FAIL
+        for comp, part in kept.items()
+        for check in part.checks
+    ):
+        return []
+    said = {"planId": plan.digest, "baseSha": reading.sha}
+    snapshot = approvals_at(pipeline.root_dir, pipeline.inbox_config)
+    for item in snapshot.unreproduced:
+        if item.evidence["unreproduced"] == said:
+            pipeline.ui.warn(
+                f"  {NOT_REPRODUCED}: approval {item.id[:8]} by {item.decided_by or 'unknown'} "
+                "runs it without a reproduction"
+            )
+            return []
+    rows = [
+        {
+            "component": comp,
+            "check": check.id,
+            "onBase": check.on_base,
+            "exit": reading.exits[comp][check.id],
+            "removed": comp not in kept or check not in kept[comp].checks,
+        }
+        for comp, part in plan.components.items()
+        for check in part.checks
+    ]
+    lines = [_base_line(row) for row in rows]
+    pipeline._inbox_add(
+        ItemKind.HALTED_RUN,
+        "The bug was not reproduced on the base",
+        detail=(
+            f"No acceptance check that the base {reading.sha[:12]} kept fails there, so none "
+            f"reproduces the bug: {'; '.join(lines)}. Approve this item to run the bug report "
+            "without a reproduction, for these checks on this base only."
+        ),
+        dedupe_key=f"{NOT_REPRODUCED_KEY}{plan.digest}:{reading.sha}",
+        evidence={"unreproduced": said, "checks": rows},
+    )
+    errors = [
+        f"no acceptance check that the base {reading.sha[:12]} kept fails there, so none "
+        "reproduces the bug. Nothing was run.",
+        *lines,
+        "Approve its inbox item to run the bug report without a reproduction.",
+    ]
+    if plan.designed:
+        errors.append(
+            f"Or delete {plan.source} and run again to ask the verification designer for new "
+            "checks."
+        )
+    if snapshot.unconsulted_reason:
+        errors.append(f"No approval was read: {snapshot.unconsulted_reason}")
+    return errors
+
+
+def _base_line(row: Mapping[str, Any]) -> str:
+    """One check of a bug report and its base result, as the refusal and
+    the inbox item say it."""
+    code = row["exit"]
+    did = {PASS: "passes", FAIL: "fails"}.get(verdict_of(code), "could not run")
+    exit_said = "no exit" if code is None else f"exit {code}"
+    removed = ", removed" if row["removed"] else ""
+    return (
+        f"{row['component']}: the check {row['check']} (onBase: {row['onBase']}) {did} on "
+        f"the base ({exit_said}{removed})"
+    )

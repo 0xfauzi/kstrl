@@ -67,8 +67,8 @@ def _launch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, labels: list[str]) 
     return Launched([str(arg) for arg in argv], spec_text)
 
 
-def _parsed_design_acceptance(tmp_path: Path, launched: Launched) -> object:
-    """The ``design_acceptance`` the real `ks factory` reads from the argv.
+def _parsed_design_acceptance(tmp_path: Path, launched: Launched) -> tuple[object, object]:
+    """The ``design_acceptance`` and ``bug_report`` the real `ks factory` reads from the argv.
 
     The recorded ``--spec`` path is gone once the cycle moves the item, and
     the option needs an existing file, so the spec the child read is
@@ -82,7 +82,7 @@ def _parsed_design_acceptance(tmp_path: Path, launched: Launched) -> object:
     command = cli.commands["factory"]
     ctx = click.Context(command, info_name="factory")
     command.parse_args(ctx, argv[3:])
-    return ctx.params["design_acceptance"]
+    return ctx.params["design_acceptance"], ctx.params["bug_report"]
 
 
 @pytest.mark.parametrize("label", ["bug", "Bug"])
@@ -94,7 +94,9 @@ def test_a_bug_report_launches_the_factory_with_designed_acceptance(
     launched = _launch(tmp_path, monkeypatch, [label])
 
     assert "--design-acceptance" in launched.argv, launched.argv
-    assert _parsed_design_acceptance(tmp_path, launched) is True
+    # #700: the run knows it is a bug report, so the base must reproduce it.
+    assert "--bug-report" in launched.argv, launched.argv
+    assert _parsed_design_acceptance(tmp_path, launched) == (True, True)
     spec = launched.spec_text
     assert BUG_REPORT_PROMPT in spec, spec
     assert spec.index(BUG_REPORT_PROMPT) < spec.index(BODY), (
@@ -111,7 +113,8 @@ def test_an_issue_without_the_bug_label_runs_as_before(
     launched = _launch(tmp_path, monkeypatch, labels)
 
     assert "--design-acceptance" not in launched.argv, launched.argv
-    assert _parsed_design_acceptance(tmp_path, launched) is False
+    assert "--bug-report" not in launched.argv, launched.argv
+    assert _parsed_design_acceptance(tmp_path, launched) == (False, False)
     assert "onBase" not in launched.spec_text, launched.spec_text
 
 
@@ -138,3 +141,4 @@ def test_a_non_boolean_value_in_the_sidecar_does_not_turn_on_designed_acceptance
     assert record.exists(), "the cycle launched no factory"
     argv = json.loads(record.read_text(encoding="utf-8"))["argv"]
     assert "--design-acceptance" not in argv, argv
+    assert "--bug-report" not in argv, argv

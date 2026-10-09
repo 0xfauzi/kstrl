@@ -1970,7 +1970,9 @@ def subprocess_factory_runner(
         "--pause-before-pr-merge" if pause_before_pr_merge else "--no-pause-before-pr-merge"
     )
     if design_acceptance:
-        command.append("--design-acceptance")
+        # Only a bug report sets the queue item's flag (#654), and a bug
+        # report must be reproduced on the base (#700).
+        command += ["--design-acceptance", "--bug-report"]
     env = dict(os.environ)
     env["KSTRL_NO_TUI"] = "1"
 

@@ -2682,6 +2682,16 @@ def decompose(
     "gate the run as an operator's checks do. Needs a [stack]; `ks retry` replays it",
 )
 @click.option(
+    "--bug-report",
+    is_flag=True,
+    default=False,
+    help="The run fixes a reported bug (`ks serve` passes it for an issue with the bug "
+    "label). When no acceptance check that the base keeps fails on the base, the run is "
+    "refused before any engineer and an inbox item names the checks; approving it runs "
+    "the bug without a reproduction. Needs --acceptance or --design-acceptance; "
+    "`ks retry` replays it",
+)
+@click.option(
     "--review-mode",
     type=click.Choice(VALID_REVIEW_MODES),
     default=None,
@@ -2870,6 +2880,7 @@ def factory(
     accept_red_base: str,
     acceptance: str,
     design_acceptance: bool,
+    bug_report: bool,
     review_mode: str | None,
     review_agent_cmd: str | None,
     review_model: str | None,
@@ -3125,6 +3136,7 @@ def factory(
         factory_config.accept_red_base = accept_red_base
         factory_config.acceptance_dir = acceptance
         factory_config.design_acceptance = design_acceptance
+        factory_config.bug_report = bug_report
         # #436: what `ks retry` replays; see kstrl/launch_record.py.
         factory_config.launch_flags = replayable_flags(ctx)
         # R2.3: --no-verify is an explicit skip sentinel that run_factory
