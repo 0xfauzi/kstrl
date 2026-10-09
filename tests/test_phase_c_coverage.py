@@ -350,7 +350,15 @@ class TestC4ContractBreaker:
         contract_calls = {"count": 0}
 
         def fake_contract(
-            manifest, root, cfg, ui, components_merged=False, base_sha="", setup=None, plan=None
+            manifest,
+            root,
+            cfg,
+            ui,
+            components_merged=False,
+            base_sha="",
+            setup=None,
+            plan=None,
+            carried=(),
         ):
             contract_calls["count"] += 1
             if contract_calls["count"] == 1:

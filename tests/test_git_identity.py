@@ -98,6 +98,12 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # #700 slice 8: the stub engineer commits its marker in a worktree of a
     # repository `tests.test_stack_e2e._repo` put through set_identity.
     "tests/test_acceptance_merged_e2e.py": 2,
+    # #466: the module docstring names "git" and "commit" in prose and
+    # commits nothing; the stub engineer of the --no-prs test commits its
+    # marker in a worktree of a repository `tests.test_stack_e2e._repo` put
+    # through set_identity. The other commits go through the declared
+    # integration_harness, whose merged_feature calls set_identity.
+    "tests/test_acceptance_carried_e2e.py": 2,
     # #642: `_loop_files` and `_second_component` commit into the repository
     # `tests.test_agent_processes_outlive_run._repo` put through
     # `tests.helpers.gitrepo.set_identity`.

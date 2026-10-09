@@ -38,20 +38,21 @@ from kstrl.waivers import WAIVABLE
 from tests.helpers import astwalk
 
 #: The scope that acts on an approval of each kind, as the census keys it.
-APPROVAL_READERS: dict[ItemKind, str] = {
-    ItemKind.MERGE_GATE: "pipeline.py::ComponentPipeline.apply_merge_decisions",
-    ItemKind.POLICY_EXCEPTION: "waivers.py::load_approvals",
+APPROVAL_READERS: dict[ItemKind, tuple[str, ...]] = {
+    ItemKind.MERGE_GATE: ("pipeline.py::ComponentPipeline.apply_merge_decisions",),
+    ItemKind.POLICY_EXCEPTION: ("waivers.py::load_approvals",),
     # #602: the L1 plan gate reads its item at the start of the next run.
-    ItemKind.PLAN_GATE: "plan_gate.py::run_plan_gate",
+    ItemKind.PLAN_GATE: ("plan_gate.py::run_plan_gate",),
     # #696: the newest approved stack item is what confirms a [stack].
-    ItemKind.STACK_CONFIRMATION: "stack.py::_latest_approval",
+    ItemKind.STACK_CONFIRMATION: ("stack.py::_latest_approval",),
     # #639 slice 4: an approval's comment is the owner's answer, which the
     # next decompose of that spec appends to the architect's input.
-    ItemKind.SPEC_ESCALATION: "owner_answers.py::read_owner_answers",
+    ItemKind.SPEC_ESCALATION: ("owner_answers.py::read_owner_answers",),
     # #700 decision 14: an approved halt of the acceptance checks lets ks
-    # retry merge over the checks it names on the commit it names. Every
-    # other halted_run approval still only closes the item.
-    ItemKind.HALTED_RUN: "waivers.py::acceptance_overrides",
+    # retry merge over the checks it names on the commit it names. #466: an
+    # approved halt of a carried check retires that check. Every other
+    # halted_run approval still only closes the item.
+    ItemKind.HALTED_RUN: ("waivers.py::acceptance_overrides", "waivers.py::carried_retirements"),
 }
 
 #: Action-required kinds whose approval no kstrl step reads, and why.
@@ -77,6 +78,7 @@ EXPECTED_APPROVED_READS: dict[str, int] = {
     "plan_gate.py::run_plan_gate": 5,
     "stack.py::_latest_approval": 2,
     "waivers.py::acceptance_overrides": 1,
+    "waivers.py::carried_retirements": 1,
     "waivers.py::load_approvals": 1,
 }
 
@@ -176,13 +178,13 @@ def test_the_approved_reads_are_pinned() -> None:
 
 
 def test_every_row_is_a_reader_or_says_why_not() -> None:
-    readers = set(APPROVAL_READERS.values())
+    readers = {reader for scopes in APPROVAL_READERS.values() for reader in scopes}
     assert readers.isdisjoint(NOT_AN_INBOX_READER)
     assert readers | set(NOT_AN_INBOX_READER) == set(EXPECTED_APPROVED_READS)
 
 
 def test_waivable_is_exactly_the_kinds_load_approvals_reads() -> None:
     read_by_waivers = {
-        kind for kind, reader in APPROVAL_READERS.items() if reader == "waivers.py::load_approvals"
+        kind for kind, scopes in APPROVAL_READERS.items() if "waivers.py::load_approvals" in scopes
     }
     assert set(WAIVABLE) == read_by_waivers
