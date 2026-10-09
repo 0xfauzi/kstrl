@@ -38,9 +38,11 @@ from kstrl import git
 from kstrl.acceptance import (
     ACCEPTANCE_DIR,
     DESIGNER_FILE,
+    FAIL,
     PASS,
     PLAN_FILE,
     TREE_ENV,
+    Check,
     ComponentPlan,
     PinnedPlan,
     pin_plan,
@@ -213,8 +215,10 @@ def design_component(
     spend: Callable[[], str],
     requirement_ids: Collection[str],
 ) -> tuple[dict[str, Any] | None, int, list[str]]:
-    """Ask the designer for ``comp_id``'s plan entry: the entry, how many
-    asks were made, and why there is no entry. ``spend()`` runs before
+    """Ask the designer for ``comp_id``'s plan entry: the entry (None when
+    there is none), how many asks were made, and why each reply was not a
+    valid entry, one line each that names its ask. With an entry, those
+    lines are the cause of each ask after the first. ``spend()`` runs before
     every ask and returns why none may be made, or "" once one is charged.
     An entry is valid when :func:`kstrl.acceptance.plan_errors` passes it
     and each criterion cites one of ``requirement_ids`` (#639 slice 5).
@@ -228,14 +232,14 @@ def design_component(
             lines = collect_agent_output(agent, prompt, cwd=cwd, timeout=timeout)
             entry: Any = _extract_json(_select_agent_output(agent, lines))
         except (OSError, RuntimeError, ValueError) as exc:
-            errors = [f"ask {ask}: {exc}"]
+            errors.append(f"ask {ask}: {exc}")
             continue
         found = plan_errors({"components": {comp_id: entry}}, [comp_id]) or citation_errors(
             entry, requirement_ids
         )
         if not found:
-            return entry, ask, []
-        errors = [f"ask {ask}: {line}" for line in found]
+            return entry, ask, errors
+        errors += [f"ask {ask}: {line}" for line in found]
     return None, DESIGN_ASKS, errors
 
 
@@ -299,10 +303,11 @@ def design_plan(pipeline: ComponentPipeline) -> tuple[PinnedPlan | None, list[st
         return None, [f"the verification designer cannot start: {exc}. Nothing was asked."]
     entries: dict[str, Any] = {}
     asks: dict[str, int] = {}
+    causes: dict[str, list[str]] = {}
     for comp in manifest.components:
-        entry, asks[comp.id], errors = _design_one(pipeline, comp, spec, stack, base)
+        entry, asks[comp.id], causes[comp.id] = _design_one(pipeline, comp, spec, stack, base)
         if entry is None:
-            return None, [f"{comp.id}: {line}" for line in errors]
+            return None, [f"{comp.id}: {line}" for line in causes[comp.id]]
         entries[comp.id] = entry
     selection = pipeline.review_selection
     designer = {
@@ -312,6 +317,7 @@ def design_plan(pipeline: ComponentPipeline) -> tuple[PinnedPlan | None, list[st
         "baseSha": base,
         "run": pipeline.run_id,
         "asks": asks,
+        "reaskCauses": causes,
     }
     try:
         write_dir(
@@ -390,29 +396,57 @@ def kept_on_base(
     plan: PinnedPlan, exits: Mapping[str, Mapping[str, int | None]], ui: UI
 ) -> tuple[dict[str, ComponentPlan], dict[str, str]]:
     """The checks each head runs, by component, and :data:`NO_DESIGNED_CHECK`
-    for each component left with none. A check the designer wrote with
-    ``onBase: fails`` that passes on the base cannot tell the change from
-    no change, so it is removed and said (owner decision of 2026-10-06 on
-    #700). An operator's plan is kept whole: the base refuses such a check
-    of an operator, who must know that it is weak."""
+    for each component left with none. An operator's plan is kept whole:
+    the base refuses a contradicted check of an operator, who must know
+    that it is weak. Of a plan the designer wrote, the checks
+    :func:`_removed_on_base` names are removed."""
     if not plan.designed:
         return dict(plan.components), {}
     kept: dict[str, ComponentPlan] = {}
     said: dict[str, str] = {}
     for comp, part in plan.components.items():
-        checks = []
-        for check in part.checks:
-            code = exits[comp][check.id]
-            if check.on_base == "fails" and verdict_of(code) == PASS:
-                ui.warn(
-                    f"  {comp}: the designed check {check.id} passes on the base (exit {code}), "
-                    "so it cannot tell the change from no change: it is removed"
-                )
-            else:
-                checks.append(check)
+        removed = _removed_on_base(comp, part, exits[comp], ui)
+        checks = tuple(check for check in part.checks if check.id not in removed)
         if checks:
-            kept[comp] = replace(part, checks=tuple(checks))
+            kept[comp] = replace(part, checks=checks)
         else:
             said[comp] = NO_DESIGNED_CHECK
             ui.warn(f"  {comp}: {NO_DESIGNED_CHECK}")
     return kept, said
+
+
+def _removed_on_base(
+    comp: str, part: ComponentPlan, exits: Mapping[str, int | None], ui: UI
+) -> set[str]:
+    """The ids of the designed checks of ``comp`` that the base removes, each
+    one said with :func:`_why_removed`."""
+    verdicts = {check.id: verdict_of(exits[check.id]) for check in part.checks}
+    holds = any(c.on_base == "fails" and verdicts[c.id] == FAIL for c in part.checks)
+    removed: set[str] = set()
+    for check in part.checks:
+        why = _why_removed(check, verdicts[check.id], exits[check.id], holds)
+        if why:
+            removed.add(check.id)
+            ui.warn(f"  {comp}: the designed check {check.id} {why}: it is removed")
+    return removed
+
+
+def _why_removed(check: Check, verdict: str, code: int | None, holds: bool) -> str:
+    """Why the base removes a designed check, or "" to keep it. A check with
+    ``onBase: fails`` that passes on the base cannot tell the change from no
+    change (owner decision of 2026-10-06 on #700). A check with ``onBase:
+    passes`` that fails on the base, or cannot run there, cannot measure
+    kept behaviour on this base (owner decision of 2026-10-09). The second
+    kind is removed only when its component ``holds`` a check that fails on
+    the base as it says; otherwise it stays, and the base refuses the plan
+    through it."""
+    if check.on_base == "fails" and verdict == PASS:
+        return f"passes on the base (exit {code}), so it cannot tell the change from no change"
+    if check.on_base == "passes" and verdict != PASS and holds:
+        did = "fails" if verdict == FAIL else "could not run"
+        said = "no exit" if code is None else f"exit {code}"
+        return (
+            f"{did} on the base ({said}), where it says it passes, "
+            "so it cannot measure kept behaviour on this base"
+        )
+    return ""
