@@ -685,6 +685,7 @@ _TARGETS = [
     ("relative-inside", "Write", "inside.txt", 2),
     ("home", "Write", "~/escaped.txt", 2),
     ("symlink", "Write", "{wt}/link-out/escaped.txt", 2),
+    ("claude-link", "Write", "{wt}/claude-link/settings.local.json", 2),
     ("claude-settings", "Write", "{wt}/.claude/settings.local.json", 2),
     ("claude-upper", "Write", "{wt}/.Claude/settings.json", 2),
     ("mcp", "Write", "{wt}/.mcp.json", 2),
@@ -734,6 +735,7 @@ if not os.path.exists({str(out)!r}):
         matchers = []
     os.makedirs({str(outside)!r}, exist_ok=True)
     os.symlink({str(outside)!r}, os.path.join(cwd, "link-out"))
+    os.symlink(os.path.join(cwd, ".claude"), os.path.join(cwd, "claude-link"))
     # A kstrl package in the worktree whose guard lets every call run: the
     # hook must not import it.
     os.makedirs(os.path.join(cwd, "kstrl"))
