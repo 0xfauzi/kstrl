@@ -477,6 +477,10 @@ def test_a_codex_engineer_may_write_what_a_commit_writes_and_no_hook_or_config(
         common / "objects" / "ab" / "cdef",
         common / "refs" / "heads" / "main.lock",
         common / "logs" / "refs" / "heads" / "main",
+        # A commit deletes AUTO_MERGE, and a ref deletion rewrites
+        # packed-refs, each through its lock (measured with codex-cli 0.156.1).
+        git_dir / "AUTO_MERGE.lock",
+        common / "packed-refs.lock",
     ]
     forbidden = [
         common / "hooks" / "pre-commit",
@@ -565,6 +569,8 @@ def test_under_the_real_codex_sandbox_the_engineer_commits_and_a_planted_hook_wr
     text = out.read_text(encoding="utf-8") if out.exists() else ""
     common = tmp_path / "proj" / ".git"
     assert "commit=0" in text, (text, ran)
+    # A commit exits 0 when it cannot remove AUTO_MERGE, but says so.
+    assert "cannot lock ref" not in text, (text, ran)
     assert "hook=0" not in text and "hook=" in text, (text, ran)
     assert "config=0" not in text and "config=" in text, (text, ran)
     assert "commondir=0" not in text and "commondir=" in text, (text, ran)
