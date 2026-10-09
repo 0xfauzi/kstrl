@@ -457,10 +457,13 @@ def test_a_git_dir_that_is_not_the_roots_own_refuses_both_zones_and_a_linked_one
     in both directions (#700, the security review of #770). A `.git` file
     naming the git directory of a second valid repository, and a linked
     worktree whose `worktrees/<name>/gitdir` names another path, refuse both
-    zones and name the path. A `.git` that is a symlink to a git directory,
-    and a linked worktree whose back link names it through a symlink, are
-    proven: `ks` resolves the root, so the symlinks that reach the
-    comparison are in the git directory and in the back link."""
+    zones and name the path. So do a `.git` directory and a worktree entry
+    outside any git directory whose `commondir` names the second repository.
+    A `.git` that is a symlink to a git directory or to a `.git` file, a
+    linked worktree whose back link names it through a symlink, a relative
+    `gitdir:` and a symlinked `worktrees` directory are proven: `ks`
+    resolves the root, so the symlinks that reach the comparison are in the
+    git directory, in the `.git` file, in its `gitdir:` and in the back link."""
     top = tmp_path.resolve()
     second = top / "second"
     second.mkdir()
@@ -485,14 +488,52 @@ def test_a_git_dir_that_is_not_the_roots_own_refuses_both_zones_and_a_linked_one
     store = top / "store"
     shutil.move(kept / ".git", store)
     (kept / ".git").symlink_to(store)
+    # Git takes the common directory from a `commondir` file in a `.git`
+    # directory, and from one in a worktree entry outside any git directory.
+    pointed = _repo(top / "pointed", "", confirm=False)
+    (pointed / ".git" / "commondir").write_text(f"{second / '.git'}\n", encoding="utf-8")
+    planted = _repo(top / "planted", "", confirm=False)
+    entry = top / "fake" / "worktrees" / "n"
+    shutil.move(planted / ".git", top / "fake" / "old")
+    entry.mkdir(parents=True)
+    shutil.copy(top / "fake" / "old" / "HEAD", entry / "HEAD")
+    (entry / "commondir").write_text(f"{second / '.git'}\n", encoding="utf-8")
+    (entry / "gitdir").write_text(f"{planted / '.git'}\n", encoding="utf-8")
+    (planted / ".git").write_text(f"gitdir: {entry}\n", encoding="utf-8")
+    # Proven: a relative `gitdir:`, a `.git` symlink to the worktree's `.git`
+    # file, and a `worktrees` directory that is a symlink.
+    relative, linked, files = top / "relative", top / "linked", top / "files"
+    git_in(main, "worktree", "add", "-q", "-b", "relative", str(relative))
+    gitdir = os.path.relpath(main / ".git" / "worktrees" / "relative", relative)
+    (relative / ".git").write_text(f"gitdir: {gitdir}\n", encoding="utf-8")
+    git_in(main, "worktree", "add", "-q", "-b", "linked", str(linked))
+    files.mkdir()
+    shutil.move(linked / ".git", files / "linked.git")
+    (linked / ".git").symlink_to(files / "linked.git")
+    (main / ".git" / "worktrees" / "linked" / "gitdir").write_text(
+        f"{files / 'linked.git'}\n", encoding="utf-8"
+    )
+    moved, aside = _repo(top / "moved", "", confirm=False), top / "aside"
+    git_in(moved, "worktree", "add", "-q", "-b", "aside", str(aside))
+    shutil.move(moved / ".git" / "worktrees", top / "entries")
+    (moved / ".git" / "worktrees").symlink_to(top / "entries")
+    (top / "entries" / "aside" / "commondir").write_text(f"{moved / '.git'}\n", encoding="utf-8")
     not_own = "is not the git directory of the root"
     refused = {
         "a second repository": (stolen, second / ".git"),
         "a back link to another path": (broken, main / ".git"),
+        "a .git directory with a commondir": (pointed, second / ".git"),
+        "a worktree entry outside the git directory": (planted, second / ".git"),
     }
 
     readings = {case: _measure(root) for case, (root, _) in refused.items()}
-    proven = {"a linked worktree": (good, main / ".git"), "a symlinked .git": (kept, store)}
+    proven = {
+        "a linked worktree": (good, main / ".git"),
+        "a symlinked .git": (kept, store),
+        "a relative gitdir": (relative, main / ".git"),
+        "a .git symlink to a .git file": (linked, main / ".git"),
+        "a symlinked worktrees directory": (aside, moved / ".git"),
+    }
     accepted = {case: _measure(root) for case, (root, _) in proven.items()}
 
     for case, (_code, document) in readings.items():
