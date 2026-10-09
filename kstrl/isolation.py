@@ -502,13 +502,13 @@ GIT_DIR_REFUSAL = "refused: the git common directory {path} cannot be granted to
 def _git_dir_refusal(root: Path, common: Path) -> str:
     """Why both zones must not read ``common``, a resolved path, or "".
     It must hold HEAD and objects/, and it must not be the home directory,
-    the root or a parent of the root (``/`` is a parent of every root)."""
-    real_root = Path(os.path.realpath(root))
+    the root or a parent of the root (``/`` is a parent of every root).
+    Every caller gives a resolved root."""
     if not ((common / "HEAD").is_file() and (common / "objects").is_dir()):
         why = "does not hold HEAD and objects/"
     elif common == Path(os.path.realpath(Path.home())):
         why = "is the home directory"
-    elif common == real_root or common in real_root.parents:
+    elif common == root or common in root.parents:
         why = "is the root or a parent of the root"
     elif not _belongs_to(root, common):
         why = "is not the git directory of the root"
