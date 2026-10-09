@@ -761,11 +761,15 @@ child process is asked whether the lock is held WHILE an item runs.
 Measured 2026-09-16: under that mutation all 361 tests in the five serve
 suites pass and that one test is the only red in them.
 
-**What the assertion does against a DARK WAKE is not settled** (#203 items
-1 and 2). A dark wake ends on a SleepService or Maintenance timer, not an
-idle timer, and interval mode can fire inside one. §7 has the observation,
-the script, the two legs with their power conditions, and what each pair
-of outcomes decides.
+**The assertion does not hold the machine up in a DARK WAKE** (#203,
+decided from Apple's documentation on 2026-10-09, not measured on a
+suspend). Interval mode can fire inside a dark wake, and Apple's header
+for `PreventUserIdleSystemSleep` says that the assertion "has no effect if
+the system is in Dark Wake". Thus a run that starts in a dark wake can
+suspend a few seconds later. The run resumes when the machine wakes
+again and completes, because the run timeout does not count the time
+asleep and `serve_lock` stops a second firing before the reaper. §7 gives
+the sources, the clock readings and the limits.
 
 The recovery machinery exists for the case where the process really is
 gone - a crash, an OOM kill, a reboot - not for an ordinary lid close.
@@ -829,6 +833,81 @@ documentation.
   three suspends totalling 1272s, held `serve.lock` throughout, and
   exited normally.
 
+**Decided from documentation, not measured on a suspend (2026-10-09,
+#203):** a run that starts inside a dark wake can suspend, and it resumes
+and completes correctly when the machine wakes again. **No real suspend
+was run for this decision.** It rests on Apple's documentation, on clock
+readings from this laptop (macOS 26.6.2 build 25G83, Python 3.12.8), and
+on the kstrl code at `512107fa`.
+
+The problem is real: on 2026-08-03 an interval firing landed inside a
+2-second `DarkWake ... rtc/SleepService` window with the lid shut, and
+completed at 16:57:40.783. An empty cycle at 0.08-0.12s fits in that
+window. A factory run at 10-20 minutes does not.
+
+- *`caffeinate -i` does not hold a dark wake up: branch B.* `caffeinate
+  -i` takes `PreventUserIdleSystemSleep` (§5, read again with `pmset -g
+  assertions` on 2026-10-09). Apple's header for that assertion,
+  `IOKit.framework/Headers/pwr_mgt/IOPMLib.h` in the macOS 26.5 SDK,
+  says: "The system may still sleep for lid close, Apple menu, low
+  battery, or other sleep reasons." It also says: "This assertion has no
+  effect if the system is in Dark Wake." Thus the cause of the sleep that
+  ends a dark wake does not change the result. The 2026-09-15
+  observation agrees: this laptop entered `Sleep Service Back to Sleep`
+  five times (20:21:43, 20:38:10, 21:06:17, 21:24:10, 21:41:42), each
+  about two seconds after a `DarkWake ... rtc/SleepService`, while a
+  `caffeinate` process held `PreventUserIdleSystemSleep`.
+- *`caffeinate -s` is not the remedy.* The same header says that
+  `PreventSystemSleep`, the assertion `-s` takes, is "Deprecated in 10.9.
+  This assertion is not supported in any OS X releases." `man caffeinate`
+  also limits `-s` to AC power. kstrl keeps `-i`, and interval mode does
+  not require AC power.
+- *A suspend does not count against the run timeout.* `[serve]
+  factory_timeout_seconds` is the `timeout=` of `Popen.communicate` in
+  `kstrl/serve.py::run_supervised`. CPython's `subprocess` compares that
+  deadline with `time.monotonic()`, and `time.get_clock_info('monotonic')`
+  on this laptop gives `mach_absolute_time()`. `man clock_gettime` says
+  that this clock "does not increment while the system is asleep".
+  Measured on this laptop after 42 days up: `time.monotonic()` gave
+  2,430,249 s, and `CLOCK_MONOTONIC`, which does increment in sleep, gave
+  3,682,206 s, equal to the wall time since `kern.boottime`. The
+  difference of 1,251,957 s is the time asleep, which the run timeout
+  does not count. Thus the timeout bounds the time that the run is awake,
+  and a run is not killed on resume for the time that it was suspended.
+  This closes the #204 dependency that branch B had.
+- *The other deadlines of a run use the same clock.* The agent stream
+  deadline (`kstrl/agents/proc.py::DeadlineStreamer`), the group
+  termination grace (`kstrl/serve.py`, `kstrl/agents/leash.py`), the
+  liveness probe (`kstrl/agents/liveness.py`) and the `subprocess`
+  timeouts read `time.monotonic()`. In `kstrl/`, `grep` finds
+  `time.time()` only in event time stamps and age labels, not in a
+  deadline.
+- *The lease is wall clock, and the lock makes that safe.* The lease TTL
+  is the one deadline of a running item that counts suspended seconds,
+  and only `reap_leases` reads it. While the run is suspended, a second
+  interval firing stops at `serve_lock` before the reaper and exits 2
+  (§5, pinned by `tests/test_serve_lock_before_reaper.py`). On resume,
+  the run writes its result through `Queue.transition` in
+  `kstrl/workqueue.py`, which does not read the lease. Thus a lease that
+  lapsed during the suspend does not stop the result. **No test pins this
+  last step**: it is a reading of the code.
+
+The limits of this decision:
+
+- *A network request that is open across a suspend can stop with an
+  error.* If the agent has a request open when the machine suspends, the
+  request can stop with an error on resume. kstrl then records a usual
+  run failure, and the attempt stays charged. This was not measured.
+- *The time at which a dark wake fires the launchd job is not known.* Of
+  two dark wakes seen in the log, one fired the catch-up run and one did
+  not (#203). The result above is the same in both cases: a run that
+  starts in a dark wake completes before the sleep, or suspends and
+  resumes.
+- *The controlled run was not done.* `scripts/dark_wake_caffeinate_experiment.sh`
+  stays for an owner who wants a measurement. If its `-i` leg prints
+  branch A on a machine, the header is not correct for that machine:
+  write the verdict and the `pmset` lines here.
+
 **NOT verified:**
 
 - **Whether a suspend is charged against an in-flight poll sleep.** This
@@ -856,46 +935,6 @@ documentation.
   pauses it; if below, suspend seconds were credited against it. Write
   the number and the branch here and delete this bullet.
 
-- **Whether `caffeinate -i` holds a run up against a dark wake's return to
-  sleep** (#203 items 1 and 2). §5's assertion topology is measured;
-  this is not, and it needs a real suspend on real hardware, so it has not
-  been guessed. Interval mode can fire inside a dark wake: one observed
-  firing landed in a 2-second `DarkWake ... SleepService` window with the
-  lid still shut, which is fine for an empty cycle at 0.08-0.12s and is not
-  fine for a factory run at 10-20 minutes. A dark wake ends on a
-  **SleepService or Maintenance timer**, not an idle timer, and whether
-  `PreventUserIdleSystemSleep` blocks that transition is unknown.
-
-  A leaning, not a measurement, because the holder was not started for
-  this purpose, the machine was doing many other things, and `-s` was
-  never tried: on 2026-09-15 this laptop entered `Sleep Service Back to
-  Sleep` five times (20:21:43, 20:38:10, 21:06:17, 21:24:10, 21:41:42),
-  each about two seconds after a `DarkWake ... rtc/SleepService`, while a
-  `caffeinate` process alive since 2026-09-06 07:49:35 held
-  `PreventUserIdleSystemSleep` throughout, the same assertion `caffeinate
-  -i` takes. Read with `pmset -g log` and `pmset -g assertions`. That
-  leans towards branch B below, on an unrelated and uncontrolled holder.
-
-  `scripts/dark_wake_caffeinate_experiment.sh` is the controlled run. It
-  costs no LLM spend, the child is `/bin/sleep`. The `-i` leg runs on
-  BATTERY with the lid shut; the `-s` leg runs on AC with the lid shut,
-  because `man caffeinate` limits `-s` to AC power and the script refuses
-  that leg on battery rather than reporting a void result as a branch.
-  Run both on the default 1800s window: the observed dark wakes came 17
-  to 28 minutes apart, so a shorter window can end before one lands. It
-  reads `pmset -g log` only between the child starting and the child
-  exiting, the interval the assertion was held, and reports VOID rather
-  than a branch when no dark wake landed inside it.
-
-  What each result decides: **branch A** (a dark wake in the window and no
-  return to sleep) means a run started in a dark wake completes; document
-  it and change nothing. **branch B on battery under `-i`** decides
-  between the two remedies #203 names: document that a run can suspend
-  and resume across a dark wake (open dependency on #204: whether the run
-  timeout counts suspended seconds), or require AC for unattended interval
-  mode. If `-s` on AC also gives branch B, interval mode is not safe
-  unattended at all and §5 must say so. Write the branch and the `pmset`
-  lines here either way, and delete this bullet.
 - **Automated coverage of a real factory run.** Still true, and still
   deliberate: a suite that spawned real runs would cost dollars per
   assertion, so no test runs a factory. The end-to-end path above is
