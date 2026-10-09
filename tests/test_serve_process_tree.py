@@ -443,6 +443,7 @@ def _runner_that_must_not_be_called(
     spec_path: Path,
     project_name: str,
     pause_before_pr_merge: bool,
+    design_acceptance: bool,
     timeout_seconds: float,
     on_spawn: object = None,
 ) -> RunOutcome:

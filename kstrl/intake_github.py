@@ -90,6 +90,23 @@ if TYPE_CHECKING:
 #: prompt. Truncation is announced in the spec itself, never silent.
 MAX_SPEC_CHARS = 60_000
 
+#: The human label that marks an issue as a bug report (#654, owner
+#: decision 8), compared without regard to case as GitHub compares label
+#: names. A bug report takes the same `ks factory` path as other work with
+#: two changes: its run gets `--design-acceptance`, and its spec gets
+#: BUG_REPORT_PROMPT.
+BUG_LABEL = "bug"
+
+#: H3 only: the line `spec_from_issue` adds to the spec of a bug report.
+#: No calibration fixture carries a bug report, so no H2 capture applies.
+BUG_REPORT_PROMPT_VERSION = "1.0.0"
+
+BUG_REPORT_PROMPT = """\
+> This item is a bug report. At least one acceptance check must reproduce
+> the reported failure: that check has "onBase": "fails".
+
+"""
+
 #: R10.10. The two steering commands, spelled as the first whitespace
 #: token of a comment body. A token match rather than the `"/memory "`
 #: prefix the issue names, so `/iterate` with no text is a command (the
@@ -958,6 +975,11 @@ def checkout_repo(config: GitHubIntakeConfig, root_dir: Path) -> tuple[str, str]
     return name, ""
 
 
+def is_bug_report(issue: RemoteIssue) -> bool:
+    """Whether the issue carries the human ``bug`` label (:data:`BUG_LABEL`)."""
+    return any(label.casefold() == BUG_LABEL for label in issue.labels)
+
+
 def spec_from_issue(issue: RemoteIssue, repo: str) -> str:
     """Build the spec text the factory will decompose.
 
@@ -971,6 +993,7 @@ def spec_from_issue(issue: RemoteIssue, repo: str) -> str:
         f"> Sourced from {issue.source_ref(repo)}"
         + (f" ({issue.url})" if issue.url else "")
         + "\n\n"
+        + (BUG_REPORT_PROMPT if is_bug_report(issue) else "")
     )
     spec = header + body
     if len(spec) > MAX_SPEC_CHARS:
@@ -1336,6 +1359,7 @@ def _commit_admissions(
                 source_ref=ref,
                 target_repo=repo,
                 spec_filename="spec.md",
+                design_acceptance=is_bug_report(issue),
                 actor="intake-github",
             )
         except (QueueError, OSError) as exc:
@@ -1799,6 +1823,7 @@ def _requeue(
             project_name=original.project_name,
             max_attempts=original.max_attempts,
             spec_filename=original.spec_filename,
+            design_acceptance=original.design_acceptance,
             actor="steer",
         )
 

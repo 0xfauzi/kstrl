@@ -136,6 +136,21 @@ its id alone. The records are kept outside the repository, but the
 engineer is not confined, so each record says
 `"heldOutReadDenied": "unknown"`.
 
+The engineer can dispute a visible check that a retry showed it (#700
+slice 10a). It writes one line in its progress entry,
+`Dispute: <check-id>: <cause>`, when it is sure that the check is
+incorrect or that no correct implementation can pass it. kstrl reads the
+latest entry of the component's progress log on each head. A dispute of a
+visible check that did not pass halts the component with no retry, on a
+`halted_run` item that shows the check's argv, its output and the cause.
+kstrl rejects any other line whose first word is "dispute" (another form,
+a held-out check, a check that passed, no such check), the check result
+stands, and the next retry is told why. A dispute never passes a check.
+When the verification designer wrote the checks and one did not pass,
+the halt, the terminal and the PR body say that the check or the code can
+be incorrect, and show the argv and the output of each visible check that
+did not pass. A held-out check is named by its id only.
+
 To merge over a halt, approve its item (`ks inbox approve <id>`), then
 run `ks retry <component>`. The retry keeps the commit the item names
 and judges it again with no engineer. The acceptance checks pass it only

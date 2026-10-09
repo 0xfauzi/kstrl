@@ -166,6 +166,7 @@ def _in_process_factory(*extra: str) -> Callable[..., RunOutcome]:
         spec_path: Path,
         project_name: str,
         pause_before_pr_merge: bool,
+        design_acceptance: bool,
         timeout_seconds: float,
         on_spawn: Callable[[int], None] | None = None,
     ) -> RunOutcome:
@@ -188,6 +189,7 @@ def _in_process_factory(*extra: str) -> Callable[..., RunOutcome]:
                 "plain",
                 "--no-color",
                 gate,
+                *(["--design-acceptance"] if design_acceptance else []),
                 *extra,
             ],
         )

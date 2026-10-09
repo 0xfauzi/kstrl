@@ -9,7 +9,10 @@ failing checks and the commit. A person may merge over exactly those
 checks on exactly that commit by approving the item and running
 ``ks retry`` (decision 14): the commit is judged again with no engineer,
 and the record, the terminal and the PR body name the approval, who gave
-it and when.
+it and when. Since slice 10a the engineer can dispute a visible check in
+its progress entry: a dispute kstrl can take halts the component as a
+failed held-out check does, and any other is rejected and the check
+result stands.
 
 End to end: the real ``ks factory``, ``ks inbox approve`` and ``ks retry``
 as subprocesses on a real git repository after the real ``ks init``, with
@@ -54,7 +57,7 @@ from tests.test_acceptance_e2e import (
     _with_greet,
 )
 from tests.test_isolation_rung import runs_a_stack
-from tests.test_stack_e2e import _repo, _spawn, _stack
+from tests.test_stack_e2e import _factory, _repo, _spawn, _stack
 
 BRANCH = f"kstrl/factory/{COMP}"
 
@@ -68,6 +71,20 @@ GREETS_OR_MARKER = (
     'out=$("$KSTRL_TREE/greet" "$1") || exit $?\n'
     '[ "$out" = "Hello, $1" ] || { echo "expected Hello, $1, got $out"; exit 1; }\n'
 )
+
+
+#: The progress log of the component: where its engineer writes a dispute.
+PROGRESS = f"scripts/kstrl/feature/{COMP}/progress.txt"
+
+#: The one form of a dispute line, as DEFAULT_PROMPT gives it to the engineer.
+DISPUTE_FORM = "Dispute: <check-id>: <cause>"
+
+
+def _progress(*lines: str) -> str:
+    """An engineer step that appends ``lines`` to its progress log and
+    commits it. No line may hold a quote or a percent sign."""
+    text = "\\n".join(lines)
+    return f"printf '{text}\\n' >> {PROGRESS} && git add -A && git commit -q -m log >/dev/null 2>&1"
 
 
 def _counted(counter: Path, first: str, later: str) -> str:
@@ -360,8 +377,28 @@ def test_an_approval_of_a_halt_on_two_checks_merges_over_both(tmp_path: Path) ->
     """A halt on a failed held-out check and a failed visible check on one
     head names both, and approving it covers both: ``ks retry`` keeps the
     commit, judges it with no engineer and merges it, and the terminal names
-    both checks and the approval."""
-    root = _greeting_repo(tmp_path)
+    both checks and the approval. The engineer also disputes the visible
+    check (#700 slice 10a): the halt still names the failed held-out check,
+    so a dispute never hides it from the person who approves, and the PR
+    body shows the dispute, its argv and its output, from the renderer the
+    terminal uses."""
+    # The origin first: it names the control directory the confirmation goes in.
+    root = _repo(tmp_path, _stack({"tests": "true"}), confirm=False)
+    origin = tmp_path / "origin.git"
+    git_in(tmp_path, "init", "-q", "--bare", str(origin))
+    git_in(root, "remote", "add", "origin", str(origin))
+    confirm_stack(root)
+    _with_greet(root)
+    git_in(root, "push", "-q", "-u", "origin", "main")
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    write_executable(bindir / "gh", FAKE_GH)
+    body = tmp_path / "pr-body.md"
+    env = {
+        "PATH": f"{bindir}{os.pathsep}{os.environ['PATH']}",
+        "GH_BODY": str(body),
+        "GH_HEAD": str(tmp_path / "pr-head"),
+    }
     hidden = f"Grace{secrets.token_hex(4)}"
     plan = _plan(
         tmp_path,
@@ -371,10 +408,97 @@ def test_an_approval_of_a_halt_on_two_checks_merges_over_both(tmp_path: Path) ->
         ],
         script=GREETS_OR_MARKER,
     )
-    first = _accept(tmp_path, root, plan, SPECIAL_CASED)
+    cause = f"the criterion asks for no marker file {secrets.token_hex(4)}"
+    dispute = _progress("## [2026-10-08] - US-001", f"Dispute: has-marker: {cause}")
+    # --create-prs after the harness's --no-prs: the retry opens the PR.
+    first = _factory(
+        tmp_path,
+        root,
+        *("--acceptance", str(plan), "--create-prs"),
+        env=env,
+        engineer=f"{SPECIAL_CASED} && {dispute}",
+    )
     assert (first.code, first.calls) == (1, 1), first.out
     (item,) = _halts(root)
     assert item.evidence["check"] == "has-marker, greets-hidden", item.evidence
+    for shown in (
+        "the held-out acceptance checks greets-hidden failed",
+        f"- the engineer disputes has-marker: {cause}",
+        "argv: /bin/sh check.sh --marker",
+    ):
+        assert shown in item.detail, item.detail
+    assert hidden not in item.detail, item.detail
+    code, said = _spawn(
+        ["inbox", "approve", item.id, "--root", str(root), "--ui", "plain"], root, env
+    )
+    assert code == 0, said
+    (approved,) = _halts(root)
+
+    code, out = _spawn(
+        ["retry", COMP, "--yes", "--root", str(root), "--ui", "plain", "--no-color"], root, env
+    )
+
+    assert code == 0, out
+    assert len((tmp_path / "engineer.calls").read_text(encoding="utf-8").splitlines()) == 1, out
+    assert _status(root) == ("completed", ""), out
+    merged = (
+        f"- merged over the failing checks has-marker, greets-hidden by inbox approval "
+        f"{item.id[:8]} ({approved.decided_by} at {approved.decided_at})"
+    )
+    assert merged in out, out
+    said_in_body = body.read_text(encoding="utf-8").splitlines()
+    for shown in (
+        merged,
+        f"- the engineer disputes has-marker: {cause}",
+        "  argv: /bin/sh check.sh --marker",
+    ):
+        assert shown in said_in_body, said_in_body
+    assert hidden not in "\n".join(said_in_body), said_in_body
+
+
+@runs_a_stack
+def test_a_dispute_of_a_visible_check_halts_and_an_approval_merges_over_it(
+    tmp_path: Path,
+) -> None:
+    """#700 slice 10a. Attempt 1 greets every name and writes no marker, so
+    the visible marker check fails and the retry shows its command and its
+    output. Attempt 2 disputes that check in its progress entry and changes
+    no code: the component halts with no further retry, although two were
+    allowed, and the halt shows the check's argv, its output and the
+    engineer's cause. The dispute passes nothing: an approval of that halt
+    and ``ks retry`` merge over it through the decision 14 path, with no
+    engineer."""
+    root = _greeting_repo(tmp_path)
+    plan = _plan(
+        tmp_path,
+        [_check("has-marker", ["/bin/sh", "check.sh", "--marker"])],
+        script=GREETS_OR_MARKER,
+    )
+    cause = f"the criterion asks for no marker file {secrets.token_hex(4)}"
+    dispute = _progress("## [2026-10-08] - US-001", f"Dispute: has-marker: {cause}")
+    engineer = _counted(tmp_path / "count", CORRECT, dispute)
+
+    run = _accept(tmp_path, root, plan, engineer, "--max-retries", "2")
+
+    assert run.code == 1, run.out
+    assert run.calls == 2, run.out
+    assert _status(root) == ("failed", "acceptance"), run.out
+    assert DISPUTE_FORM in run.prompts, run.prompts
+    (item,) = _halts(root)
+    assert item.evidence["check"] == "has-marker", item.evidence
+    assert item.evidence["head_sha"] == _tip(root), item.evidence
+    for shown in (
+        "the engineer disputes the acceptance checks has-marker",
+        "halted with no retry",
+        "argv: /bin/sh check.sh --marker",
+        "| no made.marker in the tree",
+        cause,
+    ):
+        assert shown in item.detail, item.detail
+    # Attempt 1 wrote no progress log: that is no dispute, so nothing is
+    # rejected. An operator wrote this plan, so no line says a model did.
+    assert "dispute rejected" not in run.out, run.out
+    assert "can be incorrect" not in item.detail, item.detail
     code, said = _spawn(
         ["inbox", "approve", item.id, "--root", str(root), "--ui", "plain"], root, None
     )
@@ -386,12 +510,69 @@ def test_an_approval_of_a_halt_on_two_checks_merges_over_both(tmp_path: Path) ->
     )
 
     assert code == 0, out
-    assert len((tmp_path / "engineer.calls").read_text(encoding="utf-8").splitlines()) == 1, out
+    assert len((tmp_path / "engineer.calls").read_text(encoding="utf-8").splitlines()) == 2, out
     assert _status(root) == ("completed", ""), out
+    assert f"- the engineer disputes has-marker: {cause}" in out, out
     assert (
-        f"- merged over the failing checks has-marker, greets-hidden by inbox approval "
-        f"{item.id[:8]} ({approved.decided_by} at {approved.decided_at})"
+        f"- merged over the failing checks has-marker by inbox approval {item.id[:8]} "
+        f"({approved.decided_by} at {approved.decided_at})"
     ) in out, out
+
+
+@runs_a_stack
+def test_a_dispute_kstrl_cannot_take_is_rejected_and_the_check_result_stands(
+    tmp_path: Path,
+) -> None:
+    """#700 slice 10a. Attempt 1 greets every name and writes no marker.
+    Each later attempt writes a progress log whose latest entry holds five
+    disputes kstrl cannot take: two not in the form (one of them a list
+    item in lower case, which is read and not passed over), one of a held-out
+    check, which no engineer can see, one of a visible check that passed,
+    and one of no check at all. An older entry holds a well-formed dispute,
+    which is not this iteration's. None of them halts: the marker check's
+    result stands, each retry is told why each line was rejected, and the
+    run fails once the retries are spent."""
+    root = _greeting_repo(tmp_path)
+    hidden = f"Grace{secrets.token_hex(4)}"
+    plan = _plan(
+        tmp_path,
+        [
+            _check("has-marker", ["/bin/sh", "check.sh", "--marker"]),
+            _check("greets-ada", ["/bin/sh", "check.sh", "Ada"]),
+            _check("greets-hidden", ["/bin/sh", "check.sh", hidden], held_out=True),
+        ],
+        script=GREETS_OR_MARKER,
+    )
+    disputes = _progress(
+        "## [2026-10-07] - US-001",
+        "Dispute: has-marker: an older entry says so",
+        "## [2026-10-08] - US-001",
+        "Dispute has-marker as it is incorrect",
+        "- dispute: has-marker: in lower case",
+        "Dispute: greets-hidden: it cannot be met",
+        "Dispute: greets-ada: it is too strict",
+        "Dispute: no-such-check: it is not there",
+    )
+    engineer = _counted(tmp_path / "count", CORRECT, disputes)
+
+    run = _accept(tmp_path, root, plan, engineer, "--max-retries", "2")
+
+    assert run.code == 1, run.out
+    assert run.calls == 3, run.out
+    assert _status(root) == ("failed", "acceptance"), run.out
+    for told in (
+        f"'Dispute has-marker as it is incorrect' is not in the form {DISPUTE_FORM}",
+        f"'- dispute: has-marker: in lower case' is not in the form {DISPUTE_FORM}",
+        "greets-hidden is held out",
+        "greets-ada passed on this head, so there is nothing to dispute",
+        "no-such-check is not an acceptance check of this component",
+    ):
+        assert told in run.prompts, run.prompts
+    assert hidden not in run.prompts, run.prompts
+    assert "the engineer disputes" not in run.out, run.out
+    (item,) = _halts(root)
+    assert item.evidence["check"] == "has-marker", item.evidence
+    assert "the engineer disputes" not in item.detail, item.detail
 
 
 @runs_a_stack

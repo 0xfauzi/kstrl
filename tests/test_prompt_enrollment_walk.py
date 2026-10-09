@@ -46,11 +46,13 @@ from tests.test_prompt_versions import _PROMPTS
 #: layers below filter on it and the staleness check reads it too.
 _PROMPT_SUFFIX = "_PROMPT"
 
-# Exemption set for the auto-discovery scan. These are user-facing
-# scaffolding templates emitted by ``ks init`` (progress log files,
-# the understand and feature-understand instructions); they generate
-# documentation outputs, not adversarial-role outputs, and are out of
-# scope for H3 snapshot protection.
+# Exemption set for the auto-discovery scan: a ``*_PROMPT`` name whose
+# value is not instruction text a model receives. It is empty. The two
+# names it held, DEFAULT_UNDERSTAND_PROMPT and
+# DEFAULT_FEATURE_UNDERSTAND_PROMPT, were exempt as documentation
+# templates until #654 slice 8. Each is a full instruction body that
+# ``run_loop`` sends to a model on ``ks understand`` and ``ks feature``,
+# so both are enrolled now, in ``tests/helpers/understand_prompts.py``.
 #
 # Only names ending in ``_PROMPT`` can ever reach this set, because the
 # walk filters on the suffix first. DEFAULT_PROGRESS, DEFAULT_CODEBASE_MAP
@@ -60,23 +62,12 @@ _PROMPT_SUFFIX = "_PROMPT"
 # purely to keep them looking alive. Dead configuration that teaches the
 # next reader a rule that does not exist.
 #
-# Whether these two belong here at all is an open question: both are full
-# instruction bodies fed to an LLM through ``run_loop`` on ``ks
-# understand`` and ``ks feature``, which H3a's wording arguably already
-# covers. Recorded on #303; the exemption predates H3a and is left alone
-# here.
-#
-# If you add a NEW template that produces user-facing content rather
-# than adversarial-role output, add its name here with a one-line
+# A template a model reads is not a reason to exempt (H3a). Add a name
+# here only when its value is not instruction text, with a one-line
 # rationale. (DEFAULT_PRD_PROMPT was previously enrolled here but was
 # deleted along with the manual `kstrl prd create` path during the
 # legacy-purge cleanup -- the factory is now the only PRD path.)
-_ENROLLMENT_EXEMPT_NAMES = frozenset(
-    {
-        "DEFAULT_UNDERSTAND_PROMPT",
-        "DEFAULT_FEATURE_UNDERSTAND_PROMPT",
-    }
-)
+_ENROLLMENT_EXEMPT_NAMES: frozenset[str] = frozenset()
 
 
 #: Builtins whose call result cannot be a string. A ``*_PROMPT``-suffixed
@@ -273,8 +264,7 @@ def _spells_a_prompt_name(node: ast.AST) -> bool:
 #: Adding a row is not forbidden, it is the point: the diff that adds
 #: one is where somebody says what the new name is and why it is or is
 #: not a prompt body. ``git.py`` at four is two declarations and two
-#: uses; ``init_cmd.py`` at twelve is ``DEFAULT_PROMPT`` plus the two
-#: exempt scaffolding templates and their scaffold-ledger rows.
+#: uses.
 EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
     "acceptance_design.py": 2,
     "cli.py": 2,  # _ROOT_FROM_PROMPT, which is a set of command names
@@ -302,6 +292,9 @@ EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
     # one use in reflection_template) = 2.
     "gepa_adapter.py": 2,
     "git.py": 4,
+    # #654 slice 7: BUG_REPORT_PROMPT's declaration and its one use in
+    # spec_from_issue.
+    "intake_github.py": 2,
     # #303: 12 pre-existing + 16 new fragments x 2 spellings each (the
     # declaration and its one use site) = 44. The version constant adds
     # nothing: the walk keys on names ending in _PROMPT, not _VERSION.
@@ -402,7 +395,7 @@ def test_no_unenrolled_prompt_constants() -> None:
         "enroll in tests/test_prompt_versions.py::_PROMPTS, "
         "_VERSIONS, and _EXPECTED_SNAPSHOTS.\n"
         "  - OR add the constant name to _ENROLLMENT_EXEMPT_NAMES with a "
-        "comment explaining why it is not an adversarial-role prompt."
+        "comment explaining why its value is not instruction text a model reads."
     )
 
 
@@ -553,16 +546,17 @@ def test_real_walk_does_not_flag_the_cli_command_set() -> None:
     )
 
 
-def test_ast_walker_skips_enrollment_exempt_names(tmp_path: Path) -> None:
-    """The REAL walker must honor _ENROLLMENT_EXEMPT_NAMES (exempt
-    scaffolding templates are not flagged) while still catching a
-    non-exempt prompt in the same module."""
+def test_ast_walker_skips_enrollment_exempt_names(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The REAL walker must honor _ENROLLMENT_EXEMPT_NAMES (an exempt
+    name is not flagged) while still catching a non-exempt prompt in the
+    same module. The set is empty since #654 slice 8, so the test fills
+    it."""
+    monkeypatch.setitem(globals(), "_ENROLLMENT_EXEMPT_NAMES", frozenset({"EXEMPT_PROMPT"}))
     pkg = _synthetic_module(
         tmp_path,
-        (
-            'DEFAULT_UNDERSTAND_PROMPT = "scaffolding template"\n'
-            'REAL_PROMPT = "you are a hostile reviewer"\n'
-        ),
+        ('EXEMPT_PROMPT = "not instruction text"\nREAL_PROMPT = "you are a hostile reviewer"\n'),
     )
     assert _module_level_prompt_constants(pkg) == {
         "synth_pkg/mod.py": ["REAL_PROMPT"],
@@ -591,6 +585,11 @@ def test_enrollment_exempt_names_are_not_stale() -> None:
         f"correspond to a string constant in kstrl/: {stale}. Remove "
         "them, otherwise the exemption silently masks any future name "
         "collision."
+    )
+    both = sorted(_ENROLLMENT_EXEMPT_NAMES & set(_PROMPTS))
+    assert not both, (
+        f"exempt and enrolled at once: {both}. The exemption hides the walk's "
+        "demand, so a later drop of the enrolment would pass. Remove the exemption."
     )
 
 

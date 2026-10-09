@@ -25,7 +25,16 @@ DEFAULT_PRD = {
     "userStories": [],
 }
 
-DEFAULT_PROMPT_VERSION = "1.5.0"
+DEFAULT_PROMPT_VERSION = "1.6.0"
+
+# v1.6.0 (#700 slice 10a, owner decision 13): the section "An acceptance
+# check you think is incorrect" gives the engineer one line in its progress
+# entry, `Dispute: <check-id>: <cause>`, to dispute a visible acceptance
+# check instead of changing code only to make it pass.
+# `kstrl.acceptance_record.read_dispute` reads that line on each head; a
+# dispute it accepts halts the component for a person, and it never
+# passes a check. No calibration fixture scores the engineer (H2 does not
+# apply); H3 is this bump, the snapshot and the SCAFFOLDED_TEMPLATES row.
 
 # v1.5.0 (#696 slice 4): step 9 names the `Stack` block's checks. The
 # `Verification Commands (resolved by kstrl)` block it named is gone with
@@ -153,6 +162,22 @@ If the PRD is too vague to implement responsibly, do NOT guess. Append an
 `## INTERPRETATION` block to `$progress_path` stating what
 assumptions you are making and why. The reviewer will see this and can
 push back; silent guesses become silent bugs.
+
+## An acceptance check you think is incorrect
+
+A retry can name an acceptance check that did not pass, with its command and
+what it printed. If you are sure that such a check is incorrect, or that no
+correct implementation can pass it, do not change code only to make it pass.
+Write this line in this iteration's entry in `$progress_path`, one line for
+each such check:
+
+Dispute: <check-id>: <cause>
+
+kstrl then stops the component and shows the check, its output and your
+cause to a person. A dispute never passes a check. kstrl rejects a line in
+another form, a dispute of a held-out check (a retry names one by its id
+only) and a dispute of a check that passed, and the check result then
+stands. Do not dispute a check only because it is difficult to pass.
 
 ## Progress Format
 
@@ -352,6 +377,9 @@ This file captures feature-specific understanding tied to one PRD.
 (New notes append below; keep older notes for history.)
 """
 
+# 1.0.0 (#654 slice 8): opens the series on the body ledgered as 2026-07-21.
+DEFAULT_UNDERSTAND_PROMPT_VERSION = "1.0.0"
+
 DEFAULT_UNDERSTAND_PROMPT = """# kstrl Codebase Understanding Instructions (Read-Only)
 
 ## Goal (one iteration)
@@ -431,6 +459,9 @@ If there are **no remaining unchecked topics** in the Next Topics checklist
 
 Otherwise end normally.
 """
+
+# 1.0.0 (#654 slice 8): opens the series on the body ledgered as 2026-07-21.
+DEFAULT_FEATURE_UNDERSTAND_PROMPT_VERSION = "1.0.0"
 
 DEFAULT_FEATURE_UNDERSTAND_PROMPT = """# kstrl Feature Understanding Instructions (Read-Only)
 
@@ -788,12 +819,13 @@ SCAFFOLDED_TEMPLATES: tuple[ScaffoldedTemplate, ...] = (
             ("392eb698daf71d486a9d4573698df3bb2b3ca4be87c178657accc8a66c54f384", "1.3.0"),
             ("f5349c9c2fb1ac1b9bfba54c2fde3cbc266f6a8a59deaf355707504273ddc124", "1.4.0"),
             ("a11b4209e38feac0361176f4897b357ed675cb0b2fd4545f648d83560ae81dd6", "1.5.0"),
+            ("d422d3757f428a3daf19e0f1bc1da1b243ae6ed6b349b7aa2ea03a834745cce3", "1.6.0"),
         ),
     ),
-    # The understand templates are H3-exempt (they produce documentation,
-    # not adversarial-role output) so they carry no version constant, and
-    # their labels are dates. They go stale the same way and the
-    # mechanism is indifferent to which kind of label a row holds.
+    # The understand templates were H3-exempt until #654 slice 8, so their
+    # labels are dates. Each now has a *_PROMPT_VERSION, 1.0.0 for the body
+    # in the newest row: no row was appended, because a body is recorded
+    # once. The next body appends a row labelled with its version.
     ScaffoldedTemplate(
         filename="understand_prompt.md",
         constant_name="DEFAULT_UNDERSTAND_PROMPT",
