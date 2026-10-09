@@ -670,7 +670,8 @@ def test_under_the_real_codex_sandbox_the_engineer_commits_and_a_planted_hook_wr
 
 #: (label, tool, the target's path from the worktree or an absolute path, the
 #: hook's exit code). ``{out}`` is a directory outside the project, ``{cache}``
-#: the stack's writable path. claude blocks the tool on exit 2 only.
+#: the stack's writable path, ``~`` the home directory, which is outside the
+#: project. claude blocks the tool on exit 2 only.
 _TARGETS = [
     ("inside", "Write", "inside.txt", 0),
     ("nested", "Edit", "src/a.py", 0),
@@ -680,11 +681,13 @@ _TARGETS = [
     ("multiedit-outside", "MultiEdit", "{out}/escaped.txt", 2),
     ("notebook-outside", "NotebookEdit", "{out}/n.ipynb", 2),
     ("relative", "Write", "../../../escaped.txt", 2),
+    ("home", "Write", "~/escaped.txt", 2),
     ("symlink", "Write", "link-out/escaped.txt", 2),
     ("claude-settings", "Write", ".claude/settings.local.json", 2),
     ("claude-upper", "Write", ".Claude/settings.json", 2),
     ("mcp", "Write", ".mcp.json", 2),
     ("git-file", "Write", ".git", 2),
+    ("nested-git", "Write", "sub/.git/config", 2),
     ("stack-git", "Write", "{cache}/.git/config", 2),
     ("stack-prefix", "Write", "{cache}-sibling/x.txt", 2),
 ]
