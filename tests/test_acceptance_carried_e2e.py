@@ -236,6 +236,13 @@ def test_a_base_where_a_carried_check_fails_refuses_until_an_approval_retires_it
         "component": "comp-a",
         "check": "keeps-handle",
     }
+
+    again, out = _run_second(tmp_path, root)
+
+    # An open item retires nothing: only a person's approval does.
+    assert again.exit_code == 2, out
+    assert _rows(root, "checks") == [("comp-a", "keeps-handle"), ("comp-a", "keeps-save")]
+    assert [open_item.id for open_item in _halts(root)] == [item.id]
     approve = ["inbox", "approve", item.id, "--root", str(root), "--ui", "plain", "--no-color"]
     code, said = _spawn(approve, root, None)
     assert code == 0, said
@@ -328,6 +335,7 @@ def test_a_carried_file_that_cannot_be_read_refuses_the_run(tmp_path: Path) -> N
     root = tmp_path / "repo"
     _first_feature(tmp_path, root)
     path = control_dir(root) / "acceptance" / "carried.json"
+    kept = path.read_text(encoding="utf-8")
     _second_feature(tmp_path, root)
     for body, said in (
         ("{not json", "are not JSON"),
@@ -341,6 +349,21 @@ def test_a_carried_file_that_cannot_be_read_refuses_the_run(tmp_path: Path) -> N
         assert "Refusing to run: an earlier feature's acceptance check does not hold" in out
         assert said in out, out
         assert "Integrated check" not in out, out
+
+    # A plan copy that no longer hashes to its id is a refusal, never a
+    # skipped check, and its altered check never runs: here it would pass.
+    path.write_text(kept, encoding="utf-8")
+    plan_id = json.loads(kept)["checks"][0]["planId"]
+    script = control_dir(root) / "acceptance" / plan_id / "keeps-handle.sh"
+    assert script.is_file()
+    script.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+
+    refused, out = _run_second(tmp_path, root)
+
+    assert refused.exit_code == 2, out
+    assert f"the carried check keeps-handle (carried:{plan_id[:12]}/comp-a)" in out, out
+    assert "its plan copy at" in out, out
+    assert "Integrated check" not in out, out
 
 
 @runs_a_stack
