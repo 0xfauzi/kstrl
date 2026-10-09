@@ -594,6 +594,9 @@ EXPECTED_UNCONFIRMED_SITES: dict[str, int] = {
     # no person confirmed, because its commands would run on the host; read
     # only, never cleared.
     "replay.py": 2,
+    # #700: an unconfirmed stack grants the engineer's sandbox no writable
+    # path (``with_stack_writable``); read only, never cleared.
+    "sandbox.py": 1,
     "stack.py": 5,
     "verify.py": 2,
 }
