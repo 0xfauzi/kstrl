@@ -51,8 +51,8 @@ from kstrl.worktree_setup import NO_SETUP, WorktreeSetup
 from kstrl.worktree_sweep import sweep_worktree, warn_sweep
 
 if TYPE_CHECKING:
-    from kstrl.acceptance import Check, PinnedPlan
-    from kstrl.replay import Stage
+    from kstrl.acceptance import PinnedPlan
+    from kstrl.acceptance_carried import Carried
     from kstrl.ui.base import UI
 
 
@@ -87,6 +87,8 @@ class ContractResult:
     tested_sha: str = ""
     #: #700 slice 8: failed held-out checks; the breaker gets no retry (decision 3).
     held_out: tuple[str, ...] = ()
+    #: #466: the carried.json entries of the earlier features' checks that failed.
+    carried_failed: tuple[Mapping[str, str], ...] = ()
 
 
 @dataclass
@@ -287,16 +289,19 @@ def _run_checks(
     ui: UI,
     plan: PinnedPlan | None,
     merged: Sequence[str],
-) -> tuple[bool, str, tuple[str, ...]]:
-    """Phase 3's verdict on ``cwd``, its evidence and the failed held-out checks.
+    carried: Sequence[Carried] = (),
+) -> tuple[bool, str, tuple[str, ...], tuple[Mapping[str, str], ...]]:
+    """Phase 3's verdict on ``cwd``, its evidence, the failed held-out checks
+    and the entries of the failed carried checks.
 
     Every ``[stack]`` check runs, judged by its exit status (#696), then the
-    plan's checks of the ``merged`` components (#700 slice 8). With no stack
-    nothing runs and the verdict is a failure.
+    plan's checks of the ``merged`` components (#700 slice 8) and the
+    ``carried`` checks of earlier features (#466). With no stack nothing
+    runs and the verdict is a failure.
     """
     stack = config.project_stack
     if stack is None:
-        return False, NO_STACK_PHASE_3, ()
+        return False, NO_STACK_PHASE_3, (), ()
     timeout = limit_seconds(config.timeout)
     rows = [
         check_stack_command(cwd, stack, name, command, timeout, config.rung)
@@ -304,87 +309,13 @@ def _run_checks(
     ]
     failed = [row for row in rows if not row.passed]
     evidence = [f"{row.name}: {row.message}\n{row.output or ''}".strip() for row in failed]
-    accepted, lines, held_out = _replay_acceptance(cwd, config, root_dir, ui, plan, merged)
-    evidence += lines
-    return not failed and accepted, "\n".join(evidence), held_out
+    from kstrl.acceptance_carried import replay_merged
 
-
-def _replay_acceptance(
-    cwd: Path,
-    config: ContractConfig,
-    root_dir: Path,
-    ui: UI,
-    plan: PinnedPlan | None,
-    merged: Sequence[str],
-) -> tuple[bool, list[str], tuple[str, ...]]:
-    """Replay the ``merged`` components' checks on the commit ``cwd`` holds,
-    each ``HEAD_RUNS`` times and judged as a head is, whoever wrote the plan
-    (owner decision of 2026-10-07). It replays only the checks the base kept:
-    a designed check the base removed runs on no head and does not run here."""
-    from kstrl.acceptance import HEAD_RUNS, _no_log, _probe
-    from kstrl.replay import replay_stack
-
-    stack = config.project_stack
-    wanted = _wanted(plan, merged)
-    if plan is None or stack is None or not wanted:
-        return True, [], ()
-    sha = git.get_head_sha(cwd) or ""
-    if not sha:
-        return False, [f"acceptance: the commit of {cwd} cannot be read, so no check ran"], ()
-    limit = limit_seconds(config.timeout)
-    runs: dict[tuple[str, str], list[Stage]] = {}
-    record = replay_stack(
-        root_dir,
-        stack,
-        setup_limit=limit,
-        check_limit=limit,
-        ui=ui,
-        at=sha,
-        probe=_probe(plan, wanted, stack, limit, runs, HEAD_RUNS, _no_log),
+    accepted, lines, held_out, broken = replay_merged(
+        cwd, config, root_dir, ui, plan, merged, carried
     )
-    failing, held_out = _failing_lines(wanted, runs)
-    if not failing:
-        return True, [], ()
-    stopped = record.error or (f"{record.failed}: {record.detail}" if record.failed else "")
-    lines = [f"acceptance replay at {sha[:12]} stopped: {stopped}"] if stopped else []
-    lines += failing
-    return False, lines, held_out
-
-
-def _wanted(plan: PinnedPlan | None, merged: Sequence[str]) -> list[tuple[str, Check]]:
-    """The checks of the components in ``merged``; no other component's."""
-    if plan is None:
-        return []
-    return [
-        (comp, check)
-        for comp in merged
-        if comp in plan.components
-        for check in plan.components[comp].checks
-    ]
-
-
-def _failing_lines(
-    wanted: Sequence[tuple[str, Check]], runs: Mapping[tuple[str, str], Sequence[Stage]]
-) -> tuple[list[str], tuple[str, ...]]:
-    """One line per check that did not pass all its runs, followed by what
-    its last run printed, and the ids of the held-out checks that failed. A
-    held-out check is named by its id alone: this evidence is printed."""
-    from kstrl.acceptance import FAIL, PASS, head_verdict
-
-    lines: list[str] = []
-    held_out: list[str] = []
-    for comp, check in wanted:
-        stages = runs.get((comp, check.id), [])
-        exits = [stage.exit for stage in stages]
-        verdict = head_verdict(exits)
-        if verdict == PASS:
-            continue
-        lines.append(f"acceptance:{check.id} ({comp}): {verdict}, exits {exits}")
-        if check.held_out and verdict == FAIL:
-            held_out.append(check.id)
-        if not check.held_out and stages:
-            lines.extend(stages[-1].tail)
-    return lines, tuple(held_out)
+    evidence += lines
+    return not failed and accepted, "\n".join(evidence), held_out, broken
 
 
 def bisect_breaker(
@@ -397,6 +328,7 @@ def bisect_breaker(
     setup: WorktreeSetup = NO_SETUP,
     merged_before: Sequence[str] = (),
     plan: PinnedPlan | None = None,
+    carried: Sequence[Carried] = (),
 ) -> str | None:
     """Linear bisection to identify which component broke integration.
 
@@ -416,6 +348,7 @@ def bisect_breaker(
             (#624); a failed setup ends the bisection with no breaker
         merged_before: The ids of the components ``prior_branches`` holds
         plan: The acceptance plan; the merged components' checks run too
+        carried: The checks of earlier features (#466); they run too
 
     Returns:
         Component ID of the breaker, or None if unclear.
@@ -443,7 +376,7 @@ def bisect_breaker(
 
             if setup.prepare(worktree_path):
                 return None
-            passed, _, _ = _run_checks(worktree_path, config, root_dir, ui, plan, merged)
+            passed, *_ = _run_checks(worktree_path, config, root_dir, ui, plan, merged, carried)
             if not passed:
                 return comp_id
 
@@ -468,6 +401,7 @@ def run_tier_check(
     tier_index: int = 0,
     setup: WorktreeSetup = NO_SETUP,
     plan: PinnedPlan | None = None,
+    carried: Sequence[Carried] = (),
 ) -> ContractResult:
     """Run contract test for one DAG tier (deferred-merge mode).
 
@@ -548,7 +482,9 @@ def run_tier_check(
             )
 
         # Run tests
-        passed, output, held_out = _run_checks(worktree_path, config, root_dir, ui, plan, merged)
+        passed, output, held_out, broken = _run_checks(
+            worktree_path, config, root_dir, ui, plan, merged, carried
+        )
 
         if passed:
             ui.ok(f"  Tier {tier_index}: contract tests passed")
@@ -581,6 +517,7 @@ def run_tier_check(
         setup,
         merged_before,
         plan,
+        carried,
     )
 
     if breaker:
@@ -596,6 +533,7 @@ def run_tier_check(
         test_output=output[:2000],
         duration_seconds=time.monotonic() - start,
         held_out=held_out,
+        carried_failed=broken,
     )
 
 
@@ -608,6 +546,7 @@ def run_integrated_base_check(
     base_sha: str,
     setup: WorktreeSetup = NO_SETUP,
     plan: PinnedPlan | None = None,
+    carried: Sequence[Carried] = (),
 ) -> ContractResult:
     """Contract check for already-merged components (create_prs mode).
 
@@ -662,9 +601,10 @@ def run_integrated_base_check(
         # #624: a failed setup is the result, and no test runs.
         output = setup.prepare(worktree_path)
         passed = False
+        broken: tuple[Mapping[str, str], ...] = ()
         if not output:
-            passed, output, _ = _run_checks(
-                worktree_path, config, root_dir, ui, plan, component_ids
+            passed, output, _, broken = _run_checks(
+                worktree_path, config, root_dir, ui, plan, component_ids, carried
             )
     finally:
         _remove_temp_worktree(worktree_path, root_dir, ui, "contract")
@@ -685,6 +625,7 @@ def run_integrated_base_check(
         test_output=output[:2000],
         duration_seconds=time.monotonic() - start,
         tested_sha=base_sha,
+        carried_failed=broken,
     )
 
 
@@ -697,6 +638,7 @@ def run_contract_testing(
     base_sha: str = "",
     setup: WorktreeSetup = NO_SETUP,
     plan: PinnedPlan | None = None,
+    carried: Sequence[Carried] = (),
 ) -> list[ContractResult]:
     """Run contract testing across DAG tiers.
 
@@ -708,7 +650,8 @@ def run_contract_testing(
 
     ``setup`` is the worktree setup every contract worktree gets after
     its merges and before its tests (#624). The checks ``plan`` holds for
-    the merged components are replayed on the merged commit (#700 slice 8).
+    the merged components are replayed on the merged commit (#700 slice 8),
+    and so are the ``carried`` checks of earlier features (#466).
 
     Otherwise (deferred-merge mode):
     In TIER mode: tests each tier incrementally.
@@ -740,6 +683,7 @@ def run_contract_testing(
                 base_sha,
                 setup,
                 plan,
+                carried,
             )
         ]
 
@@ -765,6 +709,7 @@ def run_contract_testing(
             tier_index=0,
             setup=setup,
             plan=plan,
+            carried=carried,
         )
         results.append(result)
     else:
@@ -785,6 +730,7 @@ def run_contract_testing(
                 tier_index=tier_idx,
                 setup=setup,
                 plan=plan,
+                carried=carried,
             )
             results.append(result)
 

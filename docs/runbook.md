@@ -160,6 +160,27 @@ regenerated commit, or another failing check, halts again. A single-PR
 run, or a component built on unmerged dependency code, keeps no commit,
 so its halt cannot be merged over.
 
+A later run replays the acceptance checks of the features that merged
+before it (#466). When Phase 3 passes on the base branch after a run's
+components merged there (one PR per component), kstrl keeps the checks
+of each merged component in `acceptance/carried.json` under the control
+directory. A `--no-prs` run, a single-PR run and a run with
+`--contract-check skip` keep no check. Every later run replays each kept
+check once on its base, after the other pre-spend refusals and before
+the plan gate, and again in Phase 3 with its own checks, three times on
+each commit that Phase 3 tests. A kept check that fails in Phase 3 fails
+the run as the run's own checks do. A kept check that does not pass on
+the base refuses the run (exit 2) with `Refusing to run: an earlier
+feature's acceptance check does not hold on the base`, and files one
+`halted_run` inbox item for that check. A Phase 3 failure with no retry
+left files the same item. When a change made the check obsolete, approve
+the item (`ks inbox approve <id>`): the next run moves the check to
+`retired` in `carried.json`, with the item id, who approved it and when,
+and no later run replays it. If the change is not intended, repair the
+base. With the inbox disabled, no item is filed and no kept check can
+retire. A `carried.json` that cannot be read refuses each run until it
+is repaired.
+
 `ks recheck <record.json>` runs a head record's saved checks again
 (#700 slice 5). The path is read from the current directory, and
 `ks factory` prints the absolute path of each head record on a
