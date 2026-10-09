@@ -65,7 +65,7 @@ from kstrl.timeout import limit_seconds
 if TYPE_CHECKING:
     from kstrl.contract import ContractConfig
     from kstrl.factory import FactoryConfig
-    from kstrl.inbox import InboxItem
+    from kstrl.inbox import InboxConfig, InboxItem
     from kstrl.manifest import Manifest
     from kstrl.stack import Stack
     from kstrl.ui.base import UI
@@ -226,6 +226,7 @@ def carried_on_base(
     run_id: str,
     ui: UI,
     halt: Callable[[Mapping[str, str], str, str], None],
+    inbox: InboxConfig,
 ) -> tuple[tuple[Carried, ...], list[str]]:
     """Replay every carried check once on the base: the ones that passed,
     and why the run must not start. ``halt(entry, where, detail)``
@@ -237,7 +238,7 @@ def carried_on_base(
     document, errors = read_carried(root)
     if errors or stack is None:
         return (), errors
-    snapshot = approvals_at(root)
+    snapshot = approvals_at(root, inbox)
     error = retire_approved(root, document, snapshot.retirements, run_id, ui)
     if error:
         return (), [error]

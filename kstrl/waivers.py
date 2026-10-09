@@ -287,7 +287,7 @@ def covering_override(
     return None
 
 
-def approvals_at(root_dir: Path) -> ApprovalSnapshot:
+def approvals_at(root_dir: Path, inbox: InboxConfig | None = None) -> ApprovalSnapshot:
     """:func:`load_approvals` for a command outside a run (``ks retry``, #646).
 
     Fails closed the way ``ComponentPipeline.snapshot_waivers`` does: a
@@ -295,7 +295,7 @@ def approvals_at(root_dir: Path) -> ApprovalSnapshot:
     nothing, and says why.
     """
     try:
-        config = InboxConfig.load(root_dir)
+        config = inbox if inbox is not None else InboxConfig.load(root_dir)
         if not config.enabled:
             return ApprovalSnapshot(unconsulted_reason="the inbox is disabled")
         return load_approvals(Inbox(root_dir, config))

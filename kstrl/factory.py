@@ -4385,6 +4385,7 @@ def _refused_carried(pipeline: ComponentPipeline) -> bool:
         pipeline.run_id,
         pipeline.ui,
         pipeline.record_carried_halt,
+        pipeline.inbox_config,
     )
     return _report_preflight(
         pipeline.ui, "an earlier feature's acceptance check does not hold on the base", errors
