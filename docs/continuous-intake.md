@@ -850,8 +850,9 @@ window. A factory run at 10-20 minutes does not.
   assertions` on 2026-10-09). Apple's header for that assertion,
   `IOKit.framework/Headers/pwr_mgt/IOPMLib.h` in the macOS 26.5 SDK,
   says: "The system may still sleep for lid close, Apple menu, low
-  battery, or other sleep reasons." It also says: "This assertion has no
-  effect if the system is in Dark Wake." Thus the cause of the sleep that
+  battery, or other sleep reasons." It also says:
+  "This assertion has no effect if the system is in Dark Wake." Thus the
+  cause of the sleep that
   ends a dark wake does not change the result. The 2026-09-15
   observation agrees: this laptop entered `Sleep Service Back to Sleep`
   five times (20:21:43, 20:38:10, 21:06:17, 21:24:10, 21:41:42), each
