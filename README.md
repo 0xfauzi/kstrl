@@ -105,7 +105,7 @@ ks evolve              # analyze recent runs, find patterns
 ks evolve --status     # show experiment trends (retry rate over time)
 ```
 
-Be clear about what that is today: a record, not a closed loop. Nothing writes a candidate lesson anywhere, and nothing reads one back into the next run. The design that closes it, with attribution (a lesson that keeps failing to prevent the failure it targets retires itself) and a shared playbook across every project you run, is [docs/continuous-learning-design.md](docs/continuous-learning-design.md), tracked as R9. Until it lands, this README does not claim the harness improves itself.
+Be clear about what that is: a record, not a closed loop. kstrl writes no candidate lesson anywhere and reads none back into the next run. A rule you want every later run to follow goes in the memory file (`[paths] memory`), which every engineer prompt reads. kstrl does not learn rules on its own, because at the rate it runs the effect of one rule cannot be told apart from noise (#217). This README does not claim the harness improves itself.
 
 ## Factory mode - parallel multi-component execution
 
@@ -241,8 +241,6 @@ ks inbox retry ITEM_ID          Requeue the item's component and close the item.
 ks inbox show ITEM_ID           Show one item in full, including its evidence.
 ks inbox snooze ITEM_ID         Defer an item; it returns when the TTL lapses.
 ks init [DIRECTORY]             Initialize kstrl in a project directory.
-ks learn playbook               Print the folded global playbook and its ledger's line count and SHA-256.
-ks learn repair                 List every global playbook line the fold refuses; --yes voids each one in the ledger.
 ks queue add SPEC               Enqueue a spec file.
 ks queue answer ITEM_ID SPEC    Answer an escalated item: replace its spec and send it back to queued.
 ks queue ls                     List queue items in run order.
@@ -488,11 +486,6 @@ token_env = "KSTRL_SIGNALS_TOKEN"   # NAME of the env var holding the tracker's 
 http_timeout = 10.0                 # per-request timeout
 new_issue_events = 3                # advisory threshold; labels a new issue, gates nothing
 repeat_growth_events = 10           # advisory threshold; labels a repeat, gates nothing
-
-# Cross-project learning: the global playbook (#217)
-[learning]
-contribute = true  # append this project's lessons to the global playbook
-consume = true     # read global playbook lessons into this project's prompts
 ```
 
 Environment variables override kstrl.toml, and CLI flags override both.

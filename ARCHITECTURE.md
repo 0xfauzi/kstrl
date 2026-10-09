@@ -163,13 +163,15 @@ recurring patterns are reported and nothing turns them into a lesson a
 later run reads. The one learning
 path that is closed is the per-component knowledge layer (distill facts,
 inject them into later components, measure their uptake as a lower bound).
-The design that closes the rest, with attribution and a playbook shared
-across projects, is [docs/continuous-learning-design.md](docs/continuous-learning-design.md) (R9).
+The design that proposed to close the rest, with attribution and a playbook
+shared across projects, is [docs/continuous-learning-design.md](docs/continuous-learning-design.md) (R9).
+#217 closed without it: the playbook store was removed, and a standing rule
+goes in the memory file (`[paths] memory`).
 
 Three flows are the whole learning loop today: facts from the distiller
 into later components' prompts, outcomes into the journal, and patterns from
 the journal into the `ks evolve` report. The proposal generator was deleted
-by #507. The playbook and the runtime signals are not built.
+by #507. The playbook was removed by #217. The runtime signals are not built.
 
 Failures are journaled as structured signatures (`linter:E501`,
 `typecheck:arg-type`, `diff_scope:rename`), not flattened strings;

@@ -5002,7 +5002,9 @@ def _echo_pattern_routing(routing: PatternRouting, ui_impl: UI) -> None:
     from kstrl.evolution import UNENROLLED_CATEGORY, category_for_check
 
     if routing.lessons:
-        ui_impl.section("Candidate lessons (no writer until the playbook ships)")
+        ui_impl.section(
+            "Candidate lessons (kstrl acts on none; put a standing rule in the [paths] memory file)"
+        )
         for pattern in routing.lessons:
             ui_impl.info(
                 f"  [{pattern.check_name}] {pattern.error_signature} "
@@ -6728,73 +6730,6 @@ def ci_poll(manifest_path: Path | None, root: Path | None, ui: str, no_color: bo
         )
     needs_operator = any(r.state in (CiState.FAILED, CiState.UNKNOWN) for r in readings)
     sys.exit(1 if needs_operator else 0)
-
-
-@cli.group(name="learn")
-def learn_group() -> None:
-    """Inspect and repair the cross-project learning store (#217)."""
-
-
-@learn_group.command(name="playbook")
-@_autonomy_ui_option
-@_autonomy_no_color_option
-def learn_playbook(ui: str, no_color: bool) -> None:
-    """Print the folded global playbook and its ledger's line count and SHA-256."""
-    from kstrl.playbook import PlaybookError, load_playbook
-
-    ui_impl = _autonomy_ui(ui, no_color)
-    try:
-        playbook = load_playbook()
-    except PlaybookError as exc:
-        ui_impl.err(
-            f"the global playbook could not be read: {exc}. "
-            "`ks learn repair --yes` voids every line the fold refuses."
-        )
-        sys.exit(2)
-    except OSError as exc:
-        ui_impl.err(f"the global playbook could not be read: {exc}")
-        sys.exit(2)
-    ui_impl.section("Playbook")
-    if not playbook.lessons:
-        ui_impl.ok("No lessons recorded yet.")
-    for lesson in playbook.lessons:
-        ui_impl.info(f"  {lesson.id}  {lesson.status:<8} {lesson.section}: {lesson.insight}")
-    ui_impl.kv("ledger", str(playbook.path))
-    ui_impl.kv("lines", str(playbook.line_count))
-    ui_impl.kv("voided", str(len(playbook.voided)))
-    ui_impl.kv("unterminated tail bytes", str(playbook.tail_bytes))
-    ui_impl.kv("sha256", playbook.sha256)
-    sys.exit(0)
-
-
-@learn_group.command(name="repair")
-@click.option("--yes", "-y", is_flag=True, help="Write the VOIDs; without it nothing is written")
-@_autonomy_ui_option
-@_autonomy_no_color_option
-def learn_repair(yes: bool, ui: str, no_color: bool) -> None:
-    """List every global playbook line the fold refuses; --yes voids each one in the ledger."""
-    from kstrl.playbook import PlaybookError, refused_lines, repair_ledger
-
-    ui_impl = _autonomy_ui(ui, no_color)
-    try:
-        voids = repair_ledger() if yes else ()
-        refused = () if yes else refused_lines()
-    except (PlaybookError, OSError) as exc:
-        ui_impl.err(f"the global playbook could not be repaired: {exc}")
-        sys.exit(2)
-    if not voids and not refused:
-        ui_impl.ok("Nothing to repair: the fold accepts every line.")
-        sys.exit(0)
-    if not yes:
-        ui_impl.section("Refused")
-        for number, reason in refused:
-            ui_impl.info(f"  line {number}  {reason}")
-        ui_impl.info("Nothing was written. `ks learn repair --yes` voids every line above.")
-        sys.exit(0)
-    ui_impl.section("Voided")
-    for void in voids:
-        ui_impl.info(f"  line {void.line}  sha256 {void.sha256}  {void.reason}")
-    sys.exit(0)
 
 
 @cli.command()
