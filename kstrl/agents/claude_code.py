@@ -21,6 +21,7 @@ from kstrl.sandbox import (
     claude_sandbox_args,
     claude_sandbox_drops_skip_permissions,
 )
+from kstrl.write_guard import SessionGate
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +102,28 @@ class ClaudeCodeAgent:
             claude_sandbox_args(self._sandbox, Path(os.path.realpath(cwd or Path.cwd()))),
         )
 
+    def _command(self, cwd: Path | None) -> tuple[list[str], SessionGate | None]:
+        """The ``claude`` argv, and the gate of the session when it is guarded.
+
+        R7.5: the no-network sandbox mode must NOT skip permissions -
+        claude's domain allowlist is a permission-layer gate, and skipping
+        auto-approves every domain (measured; see kstrl.sandbox). File tools
+        are re-allowed via the settings JSON instead. The settings of a
+        sandboxed engineer carry the write guard, and the gate stops a
+        session in which claude does not run it (#700).
+        """
+        cmd = ["claude", "--print", "--output-format", "stream-json", "--verbose"]
+        skip_permissions, sandbox_argv = self._permission_argv(cwd)
+        if skip_permissions:
+            cmd.append("--dangerously-skip-permissions")
+        if self._model:
+            cmd.extend(["--model", self._model])
+        if self._effort:
+            cmd.extend(["--effort", self._effort])
+        cmd.extend(sandbox_argv)
+        gate = SessionGate() if sandbox_argv and not self._read_only else None
+        return cmd, gate
+
     def run(
         self,
         prompt: str,
@@ -120,26 +143,7 @@ class ClaudeCodeAgent:
         started = time.monotonic()
         result_event_line: str | None = None
 
-        cmd = [
-            "claude",
-            "--print",
-            "--output-format",
-            "stream-json",
-            "--verbose",
-        ]
-        # R7.5: the no-network sandbox mode must NOT skip permissions -
-        # claude's domain allowlist is a permission-layer gate, and
-        # skipping auto-approves every domain (measured; see
-        # kstrl.sandbox). File tools are re-allowed via the settings
-        # JSON instead.
-        skip_permissions, sandbox_argv = self._permission_argv(cwd)
-        if skip_permissions:
-            cmd.append("--dangerously-skip-permissions")
-        if self._model:
-            cmd.extend(["--model", self._model])
-        if self._effort:
-            cmd.extend(["--effort", self._effort])
-        cmd.extend(sandbox_argv)
+        cmd, gate = self._command(cwd)
 
         # Outside the `try`: a record write that fails with
         # FileNotFoundError must not read as a missing claude CLI.
@@ -163,6 +167,10 @@ class ClaudeCodeAgent:
             for raw_line in streamer.lines():
                 if not raw_line.strip():
                     continue
+                refusal = gate.refusal(raw_line) if gate is not None else None
+                if refusal is not None:
+                    yield self._stopped(refusal, started)
+                    return
 
                 # Check for result event (final output, process should exit soon)
                 result_text = _extract_result_text(raw_line)
@@ -212,6 +220,12 @@ class ClaudeCodeAgent:
         # lines.
         if self._final_message is None and assistant_text:
             self._final_message = assistant_text[-1]
+
+    def _stopped(self, reason: str, started: float) -> str:
+        """Record a session the write guard's gate stopped; its error line."""
+        duration = time.monotonic() - started
+        self._usage_records.append(UsageRecord(duration_seconds=duration, source="unavailable"))
+        return f"ERROR: {reason}"
 
     @property
     def final_message(self) -> str | None:

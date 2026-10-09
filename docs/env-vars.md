@@ -295,6 +295,24 @@ the run continues and warns, naming the role, and so does
 `enabled = false`; see the runbook. The architect and the knowledge
 distiller are not sandboxed.
 
+The write guard of the claude-code engineer has three more parts (#700).
+claude lets a tool operate when its hook times out. Thus the guard stops
+itself after 10 seconds without a decision, and then claude stops the tool.
+The `timeout` of the hook is 600 seconds.
+
+The claude-code engineer also gets
+`--strict-mcp-config`, and thus it loads no MCP server. Without the flag, a
+headless session loaded the plugin servers of the operator, the claude.ai
+connectors, and a server in the `.mcp.json` of the worktree. The command of
+that server operated with no sandbox.
+
+A SessionStart hook in the same settings prints a marker when the guard can
+start. If the marker is not before the `init` record of the session, kstrl
+stops the engineer before its first tool call and prints the cause. A
+managed policy with `allowManagedHooksOnly` or `disableAllHooks` removes the
+kstrl hooks. kstrl also stops a session that lists an MCP server in `init`,
+because a managed policy can add one. See the runbook.
+
 | Env var | Type | Default | Notes |
 |---|---|---|---|
 | `KSTRL_SANDBOX_ENABLED` | bool | true | OS sandbox for agent subprocesses; false runs them with no sandbox, with a warning |
