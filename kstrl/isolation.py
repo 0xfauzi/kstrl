@@ -493,6 +493,28 @@ def _label(zone: str, version: str, canaries: Mapping[str, str]) -> str:
     return f"{version}, setup zone: writes confined, egress open"
 
 
+#: Why both zones refuse the git common directory git names (#700, the
+#: security review of #765): a ``.git`` file can point git at any
+#: directory, and a grant of it lets both zones read that directory.
+GIT_DIR_REFUSAL = "refused: the git common directory {path} cannot be granted to read: it {why}"
+
+
+def _git_dir_refusal(root: Path, common: Path) -> str:
+    """Why both zones must not read ``common``, a resolved path, or "".
+    It must hold HEAD and objects/, and it must not be the home directory,
+    the root or a parent of the root (``/`` is a parent of every root)."""
+    real_root = Path(os.path.realpath(root))
+    if not ((common / "HEAD").is_file() and (common / "objects").is_dir()):
+        why = "does not hold HEAD and objects/"
+    elif common == Path(os.path.realpath(Path.home())):
+        why = "is the home directory"
+    elif common == real_root or common in real_root.parents:
+        why = "is the root or a parent of the root"
+    else:
+        return ""
+    return GIT_DIR_REFUSAL.format(path=common, why=why)
+
+
 def prove_rung(
     root: Path,
     scratch: Path,
@@ -502,6 +524,7 @@ def prove_rung(
     writable: Sequence[Path] = (),
     readable: Sequence[Path] = (),
     browser: bool = False,
+    refused: str = "",
 ) -> ProvenRung:
     """Prove ``zone`` in ``scratch`` (a directory the caller owns and
     removes), denying reads of ``deny_read``. The only constructor of
@@ -511,9 +534,11 @@ def prove_rung(
     and kstrl's own runtime, and ``browser`` adds the browser rules
     (#700 slice 2): the canaries run in the very policy every command of
     the rung then runs in, so a grant that lets a canary out refuses the
-    rung."""
+    rung. A ``refused`` the caller already reached refuses it with no
+    canary run."""
     started = time.monotonic()
     nono, version, refusal = _locate_nono(scratch)
+    refusal = refusal or refused
     policy_path, digest, canaries = "", "", {}
     if not refusal:
         layout = _Layout.under(scratch)
@@ -556,11 +581,14 @@ def prove_zones(
     write it (#700, the #625 trial): a kstrl worktree's ``.git`` file
     points into it, so without it ``git`` in a worktree fails with "not a
     git repository" in either zone. A check can already read the files of
-    the repository."""
+    the repository. When the directory git names is not one both zones
+    may read (:func:`_git_dir_refusal`), both zones are refused and the
+    refusal names it."""
     fallback = host_fallback()
     if fallback is not None:
         return {SETUP_ZONE: fallback, TEST_ZONE: fallback}
     common = git.git_common_dir(root)
+    refused = "" if common is None else _git_dir_refusal(root, common)
     readable = [*readable, *([common] if common is not None else [])]
     return {
         zone: prove_rung(
@@ -571,6 +599,7 @@ def prove_zones(
             writable=writable,
             readable=readable,
             browser=browser,
+            refused=refused,
         )
         for zone in (SETUP_ZONE, TEST_ZONE)
     }

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
@@ -277,10 +278,20 @@ def get_repo_root(path: Path | None = None, timeout: float = DEFAULT_TIMEOUT) ->
     return None
 
 
+#: The variables that point git at a repository other than the one it
+#: finds from its working directory. :func:`git_common_dir` removes them
+#: (#700, the security review of #765): both zones of the rung read the
+#: directory it names.
+REPOSITORY_ENV = ("GIT_DIR", "GIT_COMMON_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE")
+
+
 def git_common_dir(cwd: Path, timeout: float = DEFAULT_TIMEOUT) -> Path | None:
     """The repository's git common directory (``git rev-parse
-    --git-common-dir``) as an absolute path, or None when ``cwd`` is not in
-    a repository. Every linked worktree's own git directory is under it."""
+    --git-common-dir``) as a resolved path, or None when ``cwd`` is not in
+    a repository. Every linked worktree's own git directory is under it.
+    Git runs with :data:`REPOSITORY_ENV` removed from its environment, so
+    the answer is the repository git finds from ``cwd``."""
+    env = {name: value for name, value in os.environ.items() if name not in REPOSITORY_ENV}
     try:
         result = subprocess.run(
             ["git", "rev-parse", "--git-common-dir"],
@@ -288,13 +299,14 @@ def git_common_dir(cwd: Path, timeout: float = DEFAULT_TIMEOUT) -> Path | None:
             capture_output=True,
             encoding="utf-8",
             timeout=timeout,
+            env=env,
         )
     except (subprocess.TimeoutExpired, OSError):
         return None
     found = result.stdout.strip()
     if result.returncode != 0 or not found:
         return None
-    return cwd / found
+    return Path(os.path.realpath(cwd / found))
 
 
 def branch_exists(

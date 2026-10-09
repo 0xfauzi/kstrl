@@ -341,6 +341,100 @@ def test_git_runs_in_the_replay_of_a_linked_worktree_root_and_of_a_root_named_fr
         assert _row(document, "replay")["status"] == "ok", (case, document["checks"])
 
 
+#: The refusal of both zones when git names a git common directory that
+#: neither zone may read (#700, the security review of #765), written out
+#: so a change to it is seen here.
+GIT_DIR_REFUSAL = "refused: the git common directory {path} cannot be granted to read: it {why}"
+
+
+def _move_git_dir(root: Path, to: Path) -> Path:
+    """Move the git directory of ``root`` into ``to`` (made when absent)
+    and leave the ``.git`` file that points git at it; return ``to``."""
+    to.mkdir(parents=True, exist_ok=True)
+    for entry in (root / ".git").iterdir():
+        shutil.move(entry, to / entry.name)
+    (root / ".git").rmdir()
+    (root / ".git").write_text(f"gitdir: {to}\n", encoding="utf-8")
+    return to
+
+
+@needs_nono
+def test_git_variables_in_the_environment_of_kstrl_do_not_move_the_git_dir_both_zones_read(
+    tmp_path: Path,
+) -> None:
+    """`GIT_DIR` and `GIT_COMMON_DIR` in the environment of `ks doctor
+    --measure` name the git directory of another repository. Both zones
+    still read only the git directory of the root, and both are proven."""
+    root = _repo(tmp_path / "a", "", confirm=False)
+    other = tmp_path / "other"
+    other.mkdir()
+    git_in(other, "init", "-q")
+    redirect = {"GIT_DIR": str(other / ".git"), "GIT_COMMON_DIR": str(other / ".git")}
+
+    _code, document = _measure(root, redirect)
+
+    own, foreign = os.path.realpath(root / ".git"), os.path.realpath(other)
+    for zone in ("setup", "test"):
+        rung = document["isolation"][zone]
+        assert rung["refusal"] == "", rung
+        read = _policy(rung)["filesystem"]["read"]
+        assert own in read, read
+        assert not [path for path in read if path.startswith(foreign)], read
+
+
+@needs_nono
+def test_a_git_dir_that_is_home_the_root_a_parent_of_it_or_not_a_git_dir_refuses_both_zones(
+    tmp_path: Path,
+) -> None:
+    """The root's ``.git`` file names a git common directory that git
+    accepts and that neither zone may read: the home directory, the root,
+    a parent of the root, a directory with no HEAD, and one with no
+    objects/ (git finds the objects through `GIT_OBJECT_DIRECTORY`).
+    `ks doctor --measure` refuses both zones before any canary runs and
+    names the path, and `ks factory` refuses before the engineer runs."""
+    top = tmp_path.resolve()
+    roots = {
+        case: _repo(
+            top / case,
+            _stack({"tests": "true"}) if case == "parent" else "",
+            confirm=case == "parent",
+        )
+        for case in ("home", "root", "parent", "no HEAD", "no objects")
+    }
+    family, not_git = "is the root or a parent of the root", "does not hold HEAD and objects/"
+    home = _move_git_dir(roots["home"], top / "home" / "h")
+    no_head = _move_git_dir(roots["no HEAD"], top / "no HEAD" / "common")
+    linked = top / "no HEAD" / "wt"
+    linked.mkdir()
+    shutil.move(no_head / "HEAD", linked / "HEAD")
+    (linked / "commondir").write_text(f"{no_head}\n", encoding="utf-8")
+    (roots["no HEAD"] / ".git").write_text(f"gitdir: {linked}\n", encoding="utf-8")
+    no_objects = _move_git_dir(roots["no objects"], top / "no objects" / "common")
+    objects = shutil.move(no_objects / "objects", top / "no objects" / "objects")
+    cases = {
+        "home": (home, "is the home directory", {"HOME": str(home)}),
+        "root": (_move_git_dir(roots["root"], roots["root"]), family, {}),
+        "parent": (_move_git_dir(roots["parent"], top / "parent"), family, {}),
+        "no HEAD": (no_head, not_git, {}),
+        "no objects": (no_objects, not_git, {"GIT_OBJECT_DIRECTORY": str(objects)}),
+    }
+    refusals = {
+        case: GIT_DIR_REFUSAL.format(path=path, why=why) for case, (path, why, _) in cases.items()
+    }
+
+    run = _factory(top / "parent", roots["parent"])
+    readings = {case: _measure(roots[case], env) for case, (_, _, env) in cases.items()}
+
+    assert (run.code, run.calls) == (2, 0), run.out
+    assert REFUSAL in run.out, run.out
+    assert f"the setup zone is {refusals['parent']}" in run.out, run.out
+    for case, (_code, document) in readings.items():
+        for zone in ("setup", "test"):
+            rung = document["isolation"][zone]
+            assert (rung["refusal"], rung["canaries"]) == (refusals[case], {}), (case, rung)
+        assert f"setup zone: {refusals[case]}" in _row(document, "isolation")["detail"], case
+
+
 @needs_nono
 def test_a_command_refused_a_path_in_a_proven_zone_says_the_sandbox_can_be_the_cause(
     tmp_path: Path,
