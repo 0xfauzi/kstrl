@@ -19,9 +19,16 @@ of ``tests/test_acceptance_design_e2e.py``.
 
 from __future__ import annotations
 
+import os
+import pty
+import select
 import shutil
+import signal
 import subprocess
+import time
 from pathlib import Path
+
+import pytest
 
 from kstrl.inbox import InboxItem
 from tests.helpers.gitrepo import git_in
@@ -37,7 +44,7 @@ from tests.test_acceptance_design_e2e import (
 from tests.test_acceptance_e2e import COMP, _greeting_repo, _manifest
 from tests.test_acceptance_gate_e2e import _halts
 from tests.test_isolation_rung import runs_a_stack
-from tests.test_stack_e2e import _spawn
+from tests.test_stack_e2e import FUSE_SECONDS, PY, _child_env, _spawn
 
 NOT_REPRODUCED = "Refusing to run: the bug report was not reproduced on the base"
 BUG_NEEDS_PLAN = (
@@ -219,3 +226,81 @@ def test_an_approval_of_one_plan_does_not_run_another_plan_on_the_same_base(
     assert old.id == item.id, (old, new)
     assert new.evidence["unreproduced"]["baseSha"] == base, new.evidence
     assert new.evidence["unreproduced"]["planId"] != item.evidence["unreproduced"]["planId"]
+
+
+def _on_a_terminal(root: Path, args: list[str], answer: str, env: dict[str, str]) -> str:
+    """The real CLI with a pseudo-terminal on stdin, typing ``answer``: the
+    only way to confirm a [stack] while the inbox is disabled. Bounded by
+    the fuse of ``_spawn``. Its process group is killed if it outlives it."""
+    master, slave = pty.openpty()
+    child = subprocess.Popen(
+        [PY, "-m", "kstrl", *args],
+        cwd=root,
+        env=_child_env(env),
+        stdin=slave,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+    )
+    os.close(slave)
+    chunks: list[bytes] = []
+    try:
+        os.write(master, answer.encode("utf-8"))
+        deadline = time.monotonic() + FUSE_SECONDS
+        assert child.stdout is not None
+        while True:
+            remaining = deadline - time.monotonic()
+            assert remaining > 0, f"ks factory outlived its {FUSE_SECONDS}s fuse (hung)"
+            ready, _, _ = select.select([child.stdout, master], [], [], remaining)
+            if master in ready:
+                try:
+                    os.read(master, 4096)  # the terminal's echo; drained, not read
+                except OSError:
+                    pass
+            if child.stdout in ready:
+                data = os.read(child.stdout.fileno(), 4096)
+                if not data:
+                    break
+                chunks.append(data)
+        child.wait(timeout=FUSE_SECONDS)
+    finally:
+        os.close(master)
+        if child.poll() is None:
+            os.killpg(child.pid, signal.SIGKILL)
+            child.wait()
+    return f"exit {child.returncode}\n" + b"".join(chunks).decode("utf-8", "replace")
+
+
+@runs_a_stack
+@pytest.mark.skipif(not hasattr(os, "openpty"), reason="needs a pseudo-terminal")
+def test_a_bug_report_is_refused_when_no_approval_can_be_read(tmp_path: Path) -> None:
+    """With the inbox disabled, the operator confirms the [stack] at the
+    prompt, no item can be filed and no approval can be read. The run fails
+    closed: it is refused before the engineer and says that it read no
+    approval, and does not run as if a person approved it."""
+    root = _greeting_repo(tmp_path)
+    off = {"KSTRL_INBOX_ENABLED": "0"}
+    reply = _entry([_check("vacuous", ["true"])])
+    unasked = _design(tmp_path, root, [reply], "--bug-report", env=off)
+    assert unasked.code == 2, unasked.out
+    assert NOT_REPRODUCED not in unasked.out, unasked.out
+
+    out = _on_a_terminal(
+        root,
+        [
+            "factory",
+            *("--manifest", str(root / "scripts" / "kstrl" / "manifest.json")),
+            *("--root", str(root), "--agent-cmd", str(tmp_path / "agent.sh")),
+            *("--no-tui", "--yes", "--ui", "plain", "--no-color", "--no-prs"),
+            *("--max-retries", "0", "--max-parallel", "1"),
+            *("--review-mode", "skip", "--security-mode", "skip", "--contract-check", "skip"),
+            *("--design-acceptance", "--bug-report"),
+        ],
+        "1\n",
+        off,
+    )
+
+    assert out.startswith("exit 2\n"), out
+    assert NOT_REPRODUCED in out, out
+    assert "No approval was read: the inbox is disabled" in out, out
+    assert not (tmp_path / "engineer.calls").exists(), out
