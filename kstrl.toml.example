@@ -49,20 +49,22 @@ scheduler_backstop_margin = 60.0   # extra slack before the scheduler declares a
 [breaker]
 no_progress_iterations = 3         # consecutive no-progress iterations before the halt; 0 disables
 
-# OS-level agent sandboxing (R7.5). Applies to the claude-code, claude-sdk
-# and codex adapters, for the engineer, the code and security reviewers, the
-# understand agent and the repair agent. A custom agent command has no generic
-# sandbox surface, so a run that would start one in any of those roles is
-# refused with exit 2 before any agent call (#701). The architect and the
-# knowledge distiller are not sandboxed. Write scope is the agent's worktree
-# by construction; allow_network re-opens outbound network inside the sandbox.
-# Measured mappings (see kstrl/sandbox.py): codex gets
-# --sandbox workspace-write + an explicit network_access override;
-# claude gets --settings '{"sandbox": ...}' and, when network is denied,
-# runs without --dangerously-skip-permissions (the domain allowlist is a
-# permission-layer gate) with file tools re-allowed via settings.
+# OS-level agent sandboxing (R7.5), on by default (#700). Applies to the
+# claude-code, claude-sdk and codex adapters, for the engineer, the code and
+# security reviewers, the understand agent and the repair agent. A custom
+# agent command has no generic sandbox surface: the run continues and warns,
+# naming the role, and the warning is in the run's events.jsonl. So does
+# enabled = false. The architect and the knowledge distiller are not
+# sandboxed. Write scope is the agent's worktree, the git paths a commit
+# writes, and the confirmed [stack]'s writable paths; allow_network re-opens
+# outbound network inside the sandbox. Measured mappings (see
+# kstrl/sandbox.py): codex gets --sandbox workspace-write + explicit
+# network_access and writable_roots overrides; claude gets
+# --settings '{"sandbox": ...}' and, when network is denied, runs without
+# --dangerously-skip-permissions (the domain allowlist is a permission-layer
+# gate) with file tools re-allowed via settings.
 [sandbox]
-enabled = false                    # opt-in: sandboxing changes agent behavior
+enabled = true                     # false runs the engineer with no sandbox, with a warning
 allow_network = false              # deny outbound network inside the sandbox
 
 # Per-component semantic knowledge layer.
@@ -393,11 +395,3 @@ token_env = "KSTRL_SIGNALS_TOKEN"  # env var holding the tracker's bearer token
 http_timeout = 10.0
 new_issue_events = 3               # advisory only: labels, gates nothing
 repeat_growth_events = 10          # advisory only: labels, gates nothing
-
-# Cross-project learning (#217). The global playbook is an append-only
-# ledger under $XDG_STATE_HOME/kstrl/global/playbook/, outside every
-# repository. `ks learn playbook` prints it. If this file cannot be read,
-# contribute is false for that run.
-[learning]
-contribute = true                  # append this project's lessons to the global playbook
-consume = true                     # read global playbook lessons into prompts

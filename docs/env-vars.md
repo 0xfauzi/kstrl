@@ -272,17 +272,18 @@ test-failure signature.
 
 ## SandboxConfig (`[sandbox]`)
 
-OS-level agent sandboxing (R7.5), applied by the claude-code, claude-sdk
-and codex adapters to the engineer, the code and security reviewers, the
-understand agent and the repair agent. Write scope is the agent's worktree
-by construction on both CLIs. A custom agent command cannot be sandboxed,
-so with the sandbox enabled a run that would start one in any of those
-roles is refused with exit 2 before any agent call (#701); see the runbook.
-The architect and the knowledge distiller are not sandboxed.
+OS-level agent sandboxing (R7.5), on by default (#700), applied by the
+claude-code, claude-sdk and codex adapters to the engineer, the code and
+security reviewers, the understand agent and the repair agent. Write scope
+is the agent's worktree, the git paths a commit writes, and the confirmed
+`[stack]`'s `writable` paths. A custom agent command cannot be sandboxed:
+the run continues and warns, naming the role, and so does
+`enabled = false`; see the runbook. The architect and the knowledge
+distiller are not sandboxed.
 
 | Env var | Type | Default | Notes |
 |---|---|---|---|
-| `KSTRL_SANDBOX_ENABLED` | bool | false | Opt-in OS sandbox for agent subprocesses |
+| `KSTRL_SANDBOX_ENABLED` | bool | true | OS sandbox for agent subprocesses; false runs them with no sandbox, with a warning |
 | `KSTRL_SANDBOX_ALLOW_NETWORK` | bool | false | Re-open outbound network inside the sandbox |
 
 ## Isolation rung (#700)
@@ -565,14 +566,12 @@ The runtime signal poller (R8.8). It records and classifies; it queues nothing.
 | `KSTRL_SIGNALS_NEW_ISSUE_EVENTS` | int | 3 | Advisory threshold: labels a new issue, gates nothing |
 | `KSTRL_SIGNALS_REPEAT_GROWTH_EVENTS` | int | 10 | Advisory threshold: labels a repeat, gates nothing |
 
-## LearningConfig (`[learning]`)
+## Retired: `[learning]`
 
-The global playbook opt-out (#217). An unreadable `kstrl.toml` makes `contribute` false for that run whatever these say.
-
-| Env var | Type | Default | Notes |
-|---|---|---|---|
-| `KSTRL_LEARNING_CONTRIBUTE` | bool | true | Append this project's lessons to the global playbook |
-| `KSTRL_LEARNING_CONSUME` | bool | true | Read global playbook lessons into this project's prompts |
+kstrl keeps no global playbook (#217). `KSTRL_LEARNING_CONTRIBUTE`,
+`KSTRL_LEARNING_CONSUME` and the `[learning]` keys `contribute` and `consume`
+are refused at command entry. A standing rule for one project goes in the
+`[paths] memory` file, which every engineer prompt reads.
 
 ## Calibration
 

@@ -19,7 +19,6 @@ import pytest
 
 from kstrl.config import ConfigError, KstrlConfig, load_toml_section
 from kstrl.config_preflight import collect_config_problems
-from kstrl.playbook import LearningConfig
 from tests.test_gen_docs import _load_gen_docs
 
 REFUSED = "configuration rejected before anything was started"
@@ -49,9 +48,7 @@ class TestTheEntryCheckNamesIt:
     def test_known_names_pass_the_entry_check(self, tmp_path: Path) -> None:
         """The control: the same command, a file of names kstrl reads,
         and the command gets past the entry check to its own work."""
-        output = _status(
-            tmp_path, "[factory]\nmax_parallel = 2\n\n[learning]\ncontribute = false\n"
-        )
+        output = _status(tmp_path, "[factory]\nmax_parallel = 2\n\n[knowledge]\nenabled = false\n")
         assert REFUSED not in output, output
         assert "No manifest found" in output, output
 
@@ -66,10 +63,10 @@ class TestTheEntryCheckNamesIt:
         assert "names [factroy], which no kstrl setting reads" in output, output
 
     def test_a_section_written_as_a_value_is_refused(self, tmp_path: Path) -> None:
-        """PR #512's handoff: ``learning = false`` left contribute on."""
-        output = _status(tmp_path, "learning = false\n")
+        """PR #512's handoff: a section written as a value loaded as the defaults."""
+        output = _status(tmp_path, "knowledge = false\n")
         assert REFUSED in output, output
-        assert "sets learning = False, but kstrl reads [learning] as a table" in output, output
+        assert "sets knowledge = False, but kstrl reads [knowledge] as a table" in output, output
 
     def test_a_kstrl_config_section_written_as_a_value_is_refused(self, tmp_path: Path) -> None:
         """``KstrlConfig`` reads its five sections from the document
@@ -104,12 +101,6 @@ class TestTheLoadersRefuseAValue:
         toml_path.write_text('factory = "hi"\n', encoding="utf-8")
         with pytest.raises(ConfigError, match=r"sets factory = 'hi'"):
             load_toml_section(toml_path, "factory")
-
-    def test_learning_written_as_a_value_does_not_contribute(self, tmp_path: Path) -> None:
-        """A run reading config after the entry check fails closed: the
-        opt-out may be in the value it could not use."""
-        (tmp_path / "kstrl.toml").write_text("learning = false\n", encoding="utf-8")
-        assert LearningConfig.load(tmp_path).contribute is False
 
     def test_kstrl_config_refuses_a_section_written_as_a_value(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

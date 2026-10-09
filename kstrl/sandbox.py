@@ -37,25 +37,52 @@ seatbelt; probe transcript in the R7.5 PR). Measured findings:
   ``allowUnsandboxedCommands`` defaults to true (an escape hatch that
   reruns a failed command unsandboxed); it is always set to false here.
 
-- CustomAgent: an arbitrary operator-supplied shell command has no
-  generic sandbox surface, so a run that would start one as the engineer,
-  a reviewer, the understand agent or the repair agent while the sandbox
-  is enabled is refused before any spend (#701).
+Measured again on 2026-10-09 (macOS, claude 2.1.291, codex-cli 0.156.1),
+with kstrl's own adapters in a kstrl worktree (``<root>/.kstrl/worktrees/<id>``,
+whose ``.git`` file points into ``<root>/.git/worktrees/<id>``); the
+transcript is on #700:
 
-Default off: sandboxing changes agent behavior (blocked network calls,
-denied writes), so the operator opts in per project.
+- codex ``workspace-write`` holds every ``.git`` read-only, in the
+  workspace and outside it, so ``git commit`` failed in a kstrl worktree
+  (``<root>/.git/worktrees/<id>/index.lock``) and in a plain checkout
+  (``<root>/.git/index.lock``). With ``sandbox_workspace_write.writable_roots``
+  naming the worktree's git dir and the common dir's ``objects``, ``refs``
+  and ``logs``, the commit succeeded; a plain checkout needs its whole git
+  dir (:func:`kstrl.git.git_write_dirs`).
+- claude commits in both layouts with no extra path, and denies writes to
+  ``<common>/hooks`` and ``<common>/config``. No git path is added for it.
+- On both, a check that writes outside the worktree (a tool cache in
+  the home directory) failed with "Operation not permitted". The confirmed
+  ``[stack]``'s ``writable`` paths, which the test zone grants the same
+  commands, are passed as codex ``writable_roots`` and as claude
+  ``sandbox.filesystem.allowWrite``; with them the check passed, and a
+  write to ``$HOME`` and outbound network stayed denied.
+
+- CustomAgent: an arbitrary operator-supplied shell command has no
+  generic sandbox surface. A run that starts one still runs, and
+  :func:`warn_unconfined` names the role in a warning (owner decision
+  2026-10-09, #700; before it, #701 refused the run).
+
+Default on (owner decision 2026-10-09, #700): the engineer runs in the
+sandbox of its own harness, with outbound network denied. An operator
+who sets ``enabled = false`` gets the same warning as a custom command.
 """
 
 from __future__ import annotations
 
 import json
 import os
-from collections.abc import Mapping
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field, replace
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from kstrl.config_numbers import check_numbers
+from kstrl.git import git_write_dirs
 from kstrl.jsonread import read_json
+
+if TYPE_CHECKING:
+    from kstrl.stack import Stack
 
 # File-tool allow rules for the claude no-network mode: without
 # --dangerously-skip-permissions these tools are permission-gated in
@@ -82,21 +109,26 @@ class SandboxConfig:
     """Operator sandbox intent, mapped per-CLI by the adapters.
 
     ``enabled`` turns OS-level sandboxing on (write scope = the agent's
-    working tree by construction on both CLIs). ``allow_network``
-    re-opens outbound network inside the sandbox; off by default
-    because a scoped-writes-but-open-network sandbox still exfiltrates.
+    working tree by construction on both CLIs); on by default (#700).
+    ``allow_network`` re-opens outbound network inside the sandbox; off
+    by default because a scoped-writes-but-open-network sandbox still
+    exfiltrates. ``writable`` is not a kstrl.toml key: it is the paths
+    the confirmed ``[stack]`` grants its commands, set by
+    :func:`with_stack_writable` for the roles that run those commands.
     """
 
-    enabled: bool = False
+    enabled: bool = True
     allow_network: bool = False
+    writable: tuple[str, ...] = field(default=(), metadata={"provenance": True})
 
     @classmethod
     def from_env(cls) -> SandboxConfig:
         """Load sandbox config from environment variables only."""
         from kstrl.config import _parse_bool
 
+        enabled = os.environ.get("KSTRL_SANDBOX_ENABLED")
         return cls(
-            enabled=_parse_bool(os.environ.get("KSTRL_SANDBOX_ENABLED")),
+            enabled=cls.enabled if enabled is None else _parse_bool(enabled),
             allow_network=_parse_bool(os.environ.get("KSTRL_SANDBOX_ALLOW_NETWORK")),
         )
 
@@ -124,48 +156,71 @@ class SandboxConfig:
         return check_numbers(cls(enabled=enabled, allow_network=allow_network))
 
 
-#: The headline of the refusal :func:`unsandboxable_roles` feeds (#701).
-SANDBOX_REFUSAL = "[sandbox] is enabled and kstrl cannot apply it to a role this run would start"
+def warn_unconfined(
+    warn: Callable[[str], None], config: SandboxConfig, commands: Mapping[str, str | None]
+) -> None:
+    """Warn once for each role that runs with no sandbox (#700).
 
-
-def unsandboxable_roles(config: SandboxConfig, commands: Mapping[str, str | None]) -> list[str]:
-    """One refusal line per role the sandbox cannot reach, or [] (#701).
-
-    ``commands`` maps each role a run would start to its custom agent
-    command, or to None when the role runs on a CLI adapter. A custom
-    command is an arbitrary shell command with no sandbox surface, so an
-    operator who enabled the sandbox would otherwise believe in a
-    boundary the role does not have. The command itself is not printed:
-    it can carry a credential.
+    ``commands`` maps each role a run starts that writes the tree to its
+    custom agent command, or to None when the role runs on a CLI adapter.
+    With the sandbox off every such role is named; with it on, each role
+    on a custom command, which is an arbitrary shell command with no
+    sandbox surface. Nothing is refused (owner decision 2026-10-09). The
+    command itself is not printed: it can carry a credential.
     """
     if not config.enabled:
-        return []
-    return [
-        f"the {role} is a custom agent command, which kstrl cannot sandbox. Run the "
-        f"{role} on the claude-code, claude-sdk or codex adapter, or turn the sandbox "
-        "off ([sandbox] enabled = false, KSTRL_SANDBOX_ENABLED)."
-        for role, command in commands.items()
-        if command
-    ]
+        lines = [f"the {role} runs with no sandbox: [sandbox] enabled = false" for role in commands]
+    else:
+        lines = [
+            f"the {role} is a custom agent command, which runs with no sandbox. Run it on "
+            "the claude-code, claude-sdk or codex adapter to confine it."
+            for role, command in commands.items()
+            if command
+        ]
+    for line in lines:
+        warn(f"  {line}")
 
 
-def codex_sandbox_args(config: SandboxConfig | None) -> list[str]:
+def with_stack_writable(
+    config: SandboxConfig, root_dir: Path, stack: Stack | None
+) -> SandboxConfig:
+    """``config`` with the paths the confirmed ``stack`` grants its commands.
+
+    The engineer runs the stack's checks in its own sandbox, so it gets
+    the same ``writable`` paths the test zone gets (measured: a check that
+    writes a tool cache in the home directory fails without them). An
+    unconfirmed stack grants nothing.
+    """
+    from kstrl.stack import stack_paths
+
+    if stack is None or stack.unconfirmed or not stack.writable:
+        return config
+    return replace(config, writable=tuple(str(p) for p in stack_paths(root_dir, stack.writable)))
+
+
+def codex_sandbox_args(config: SandboxConfig | None, cwd: Path | None = None) -> list[str]:
     """``codex exec`` argv fragment for the operator's sandbox intent.
 
     ``network_access`` is ALWAYS passed explicitly when the sandbox is
     enabled: the operator's global ``~/.codex/config.toml`` may carry
     its own value, and the CLI ``-c`` override is the only way kstrl's
     per-project intent reliably wins (measured - see module docstring).
+    ``writable_roots`` names the git paths a commit in ``cwd`` writes and
+    ``config.writable``, because codex denies both (measured).
     """
     if config is None or not config.enabled:
         return []
     network = "true" if config.allow_network else "false"
-    return [
+    args = [
         "--sandbox",
         "workspace-write",
         "-c",
         f"sandbox_workspace_write.network_access={network}",
     ]
+    roots = [*(str(path) for path in git_write_dirs(cwd)), *config.writable]
+    if roots:
+        args += ["-c", f"sandbox_workspace_write.writable_roots={json.dumps(roots)}"]
+    return args
 
 
 def claude_sandbox_settings(config: SandboxConfig | None) -> str | None:
@@ -186,12 +241,10 @@ def claude_sandbox_settings(config: SandboxConfig | None) -> str | None:
     """
     if config is None or not config.enabled:
         return None
-    settings: dict[str, object] = {
-        "sandbox": {
-            "enabled": True,
-            "allowUnsandboxedCommands": False,
-        },
-    }
+    sandbox: dict[str, object] = {"enabled": True, "allowUnsandboxedCommands": False}
+    if config.writable:
+        sandbox["filesystem"] = {"allowWrite": list(config.writable)}
+    settings: dict[str, object] = {"sandbox": sandbox}
     if not config.allow_network:
         settings["permissions"] = {
             "allow": list(_CLAUDE_SANDBOXED_TOOL_ALLOW),

@@ -1,12 +1,30 @@
 # Continuous learning: audit and redesign
 
-Status: proposed. Supersedes the `ks evolve` proposal generator described in
+## Status, 2026-10-09: closed, the playbook removed
+
+#217 closed without the playbook. The global store shipped (#509) and no run
+ever wrote a lesson to it or read one from it. The lane that closed it
+measured every evolution journal on the operator's machine: 42 component
+results in 80 days across seven projects. At that rate, showing that one
+lesson halves the recurrence of its target signature needs at least 252
+component results, about 480 days, and the signatures that two projects share
+are reviewer concern categories, not one shared cause. So the store, `ks learn`
+and the `[learning]` keys are removed, and a kstrl.toml or environment that
+still sets a `[learning]` key is refused by name. A standing rule for one
+project goes in the memory file (`[paths] memory`), which every engineer
+prompt reads. The fact_necessary fixture and its scorer
+(`kstrl/learning_fixture.py`, #508) are removed too: slice 1's own guard test
+showed the convention to the engineer, so the fixture measured nothing. The
+GEPA seam (`kstrl/gepa_adapter.py`) stays, with no caller, for now. The rest
+of this document is the design as it was proposed.
+
+Status: closed (see the section above); proposed before that. Supersedes the `ks evolve` proposal generator described in
 [spec-harness-engineering.md](spec-harness-engineering.md) section 3.4. #217
 shipped the router and the disclosure described in this document's section 3.
 #507 (Slice 1 of the #217 plan) deleted the generator and its consumers:
 `propose_improvements`, `ks evolve --apply`, the TUI proposals tab and the
 CLAUDE.md apply path. The router's `lessons` bucket is printed as candidate
-lessons and nothing writes it until the playbook ships. Sections 1 to 3 are
+lessons and nothing writes it. Sections 1 to 3 are
 the audit as it was written, before that deletion.
 
 ## Status, 2026-09-22

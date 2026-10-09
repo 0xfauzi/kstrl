@@ -98,7 +98,15 @@ _RETIRED_FIX_BOUND = (
     "open code finding off; remove it"
 )
 
-#: (section, key) retired by #395, #696 and #700, mapped to what replaced it: the
+#: Why a [learning] key no longer exists (#217): kstrl keeps no global
+#: playbook. No run wrote a lesson to it or read one from it, and the
+#: measured run rate could not show that a lesson helped.
+_RETIRED_PLAYBOOK = (
+    "retired: kstrl keeps no global playbook and exchanges no lesson between projects; "
+    "remove the [learning] section, and put a standing rule in the [paths] memory file"
+)
+
+#: (section, key) retired by #217, #395, #696 and #700, mapped to what replaced it: the
 #: refusal reads "names [section] key, which was <this>".
 RETIRED_KEYS: dict[tuple[str, str], str] = {
     ("factory", "setpoint_agreement"): "renamed to claim_agreement; rename the key",
@@ -140,9 +148,11 @@ RETIRED_KEYS: dict[tuple[str, str], str] = {
     ("fixtures", "snapshot_on_success"): _RETIRED_FIXTURES,
     ("fixtures", "snapshot_dir"): _RETIRED_FIXTURES,
     ("fixtures", "timeout"): _RETIRED_FIXTURES,
+    ("learning", "contribute"): _RETIRED_PLAYBOOK,
+    ("learning", "consume"): _RETIRED_PLAYBOOK,
 }
 
-#: Environment variables retired by #395, #696 and #700, mapped to what replaced
+#: Environment variables retired by #217, #395, #696 and #700, mapped to what replaced
 #: each: the refusal reads "sets NAME, which was <this>".
 RETIRED_ENV_VARS: dict[str, str] = {
     "KSTRL_FACTORY_SETPOINT_AGREEMENT": "renamed to KSTRL_FACTORY_CLAIM_AGREEMENT",
@@ -182,4 +192,6 @@ RETIRED_ENV_VARS: dict[str, str] = {
     "KSTRL_FIXTURES_SNAPSHOT_ON_SUCCESS": _RETIRED_FIXTURES,
     "KSTRL_FIXTURES_SNAPSHOT_DIR": _RETIRED_FIXTURES,
     "KSTRL_FIXTURES_TIMEOUT": _RETIRED_FIXTURES,
+    "KSTRL_LEARNING_CONTRIBUTE": _RETIRED_PLAYBOOK,
+    "KSTRL_LEARNING_CONSUME": _RETIRED_PLAYBOOK,
 }

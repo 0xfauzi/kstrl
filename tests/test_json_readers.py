@@ -128,19 +128,15 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     "isolation.py": 2,
     "jsonread.py": 4,
     "knowledge.py": 6,
-    # #508: the import and one json.dumps of the scorer's report; no parse.
-    "learning_fixture.py": 2,
     "linear.py": 5,
     "observability.py": 4,
-    # #509: the import, one json.dumps for the ledger line, and the
-    # json.JSONDecodeError it catches from read_json. No parse.
-    "playbook.py": 3,
     # #602: the import and one json.dumps, the plan digest's canonical
     # form. No parse: the PRDs are read through PRD.load.
     "plan_gate.py": 2,
     "policy.py": 2,
     "prd.py": 2,
-    "sandbox.py": 3,
+    # #700: one more json.dumps, the codex writable_roots override. No parse.
+    "sandbox.py": 4,
     "serve.py": 5,
     "signals.py": 3,
     # #696: the import, one json.dumps for the stack digest's canonical

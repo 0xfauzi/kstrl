@@ -23,6 +23,7 @@ from typing import IO, TYPE_CHECKING, Any, Protocol, TextIO
 from kstrl import git
 from kstrl.acceptance import BaseReading, PinnedPlan, pin_plan, replay_base
 from kstrl.acceptance_design import acceptance_source, design_plan
+from kstrl.acceptance_lines import pr_isolation
 from kstrl.agents.base import UsageTotals, collect_usage, print_usage_rollup
 from kstrl.agents.proc import kill_active_process_groups
 from kstrl.agents.prompt_record import AgentCall, recording_prompts
@@ -151,9 +152,9 @@ from kstrl.review import (
     run_review,
 )
 from kstrl.runenvelope import RunEnvelope
-from kstrl.rung import Rung, label_of, refusal_of, release, sandbox_hint
+from kstrl.rung import Rung, refusal_of, release, sandbox_hint
 from kstrl.runstate import RunState
-from kstrl.sandbox import SANDBOX_REFUSAL, SandboxConfig, unsandboxable_roles
+from kstrl.sandbox import SandboxConfig, warn_unconfined, with_stack_writable
 from kstrl.scope import ComponentScope, RunScope
 from kstrl.security import (
     SecurityConfig,
@@ -470,6 +471,10 @@ class FactoryConfig:
     # (``_run_preflights``), which the engineers, the verification designer
     # and the PR bodies read. Never read from kstrl.toml, env or a flag.
     requirements: tuple[SpecRequirement, ...] = field(default=(), metadata={"provenance": True})
+    # #700 (owner decision 2026-10-09): the harness whose sandbox confines
+    # the engineer, or "" when none does. The acceptance record and the PR
+    # bodies read it. Never read from kstrl.toml, env or a flag.
+    engineer_sandbox: str = field(default="", metadata={"provenance": True})
 
     def resolved_verify_config(self) -> VerifyConfig:
         """The VerifyConfig Phase 1 runs with (#261).
@@ -2680,7 +2685,6 @@ def _run_preflights(
     manifest_path: Path,
     interrupted_branches: Mapping[str, str],
     timeout_cfg: TimeoutConfig,
-    sandbox_refusals: list[str],
 ) -> DecisionRegister | None:
     """Every pre-spend refusal, cheapest first, and what survives them.
 
@@ -2721,9 +2725,6 @@ def _run_preflights(
             run_limits(factory_config, timeout_cfg),
         ),
     ):
-        return None
-    # #701: after the launch record `ks retry` reads, like every refusal below.
-    if _report_preflight(ui, SANDBOX_REFUSAL, sandbox_refusals):
         return None
     register_errors, run_register = _preflight_decision_register(manifest, root_dir)
     if _report_preflight(ui, "the architect decision register cannot bind", register_errors):
@@ -3048,6 +3049,7 @@ def _run_component(
     breaker_iterations: int = 3,
     sandbox_enabled: bool = False,
     sandbox_allow_network: bool = False,
+    sandbox_writable: tuple[str, ...] = (),
     agent_budget_usd: float | None = None,
     events_dir_str: str | None = None,
     usage_dir_str: str | None = None,
@@ -3158,6 +3160,7 @@ def _run_component(
         sandbox=SandboxConfig(
             enabled=sandbox_enabled,
             allow_network=sandbox_allow_network,
+            writable=sandbox_writable,
         ),
         max_budget_usd=agent_budget_usd,
         root_dir=root_dir,
@@ -4581,33 +4584,17 @@ def _warn_unsandboxable_reviewers(
             )
 
 
-def _unsandboxable_run_roles(
-    sandbox: SandboxConfig,
-    factory_config: FactoryConfig,
-    base_config: KstrlConfig,
-    review_selection: AdversarialAgentSelection,
-    security_selection: AdversarialAgentSelection | None,
-) -> list[str]:
-    """Why this run must not start under ``sandbox``, or [] (#701).
+def _engineer_sandbox(sandbox: SandboxConfig, base_config: KstrlConfig) -> str:
+    """The harness whose sandbox confines the engineer, or "" (#700).
 
-    Names only the roles the run will start. Called after the autonomy
-    ladder has set ``review_mode``, which can turn review back on. A
-    reviewer selection exists on every run, including one whose phase is
-    off, so a custom reviewer command for a phase that never runs is not
-    a role outside the boundary.
+    The adapter ``get_agent`` picks for the engineer, by the same rule
+    (``_agent_identity``); a custom command or ``enabled = false`` is "".
     """
-    security = security_selection if security_enabled(factory_config) else None
-    return unsandboxable_roles(
-        sandbox,
-        {
-            "engineer": base_config.agent_cmd,
-            "code reviewer": review_selection.agent_cmd if review_enabled(factory_config) else None,
-            "security reviewer": security.agent_cmd if security is not None else None,
-            "verification designer": (
-                review_selection.agent_cmd if factory_config.design_acceptance else None
-            ),
-        },
-    )
+    from kstrl.agents import ClaudeCodeAgent
+
+    if not sandbox.enabled or base_config.agent_cmd:
+        return ""
+    return _agent_identity(None, base_config.agent_type, None, ClaudeCodeAgent.is_available())
 
 
 @dataclass(frozen=True)
@@ -5230,21 +5217,13 @@ def _run_factory_locked(
     # engineer loop. It reads the diff only (#696 decision 10).
     breaker_cfg = BreakerConfig.load(root_dir)
 
-    # R7.5: OS-level sandbox intent for the agent subprocesses. A custom
-    # agent command has no generic sandbox surface, so intent that cannot
-    # be honored is refused before any spend (#701): an operator who opted
-    # in must not believe the boundary exists when it does not. Here, after
-    # the autonomy ladder set review_mode; reported in _run_preflights.
-    #
-    # #192: off the envelope. This was the last section with two
-    # resolutions inside one run - here, and once more in
-    # ComponentPipeline.__init__ for the reviewer payload - so the
-    # refusal an operator saw and the boundary the roles got could come
-    # from two different reads of the file.
-    sandbox_refusals = _unsandboxable_run_roles(
-        run_envelope.sandbox, factory_config, base_config, review_selection, security_selection
-    )
+    # R7.5: OS-level sandbox intent for the agent subprocesses, off the
+    # envelope (#192). An engineer with no sandbox (a custom agent command,
+    # or [sandbox] enabled = false) is a warning the run records in its
+    # events.jsonl, never a refusal (#700, owner decision 2026-10-09).
+    warn_unconfined(ui.warn, run_envelope.sandbox, {"engineer": base_config.agent_cmd})
     _warn_unsandboxable_reviewers(ui, review_selection, security_selection)
+    factory_config.engineer_sandbox = _engineer_sandbox(run_envelope.sandbox, base_config)
 
     run_register = _plan_gated(
         _run_preflights(
@@ -5258,7 +5237,6 @@ def _run_factory_locked(
             manifest_path=manifest_path,
             interrupted_branches=interrupted_branches,
             timeout_cfg=timeout_cfg,
-            sandbox_refusals=sandbox_refusals,
         ),
         pipeline,
         ladder,
@@ -5453,6 +5431,10 @@ def _run_factory_locked(
             # R7.5: OS-level sandbox intent for the engineer's agent CLI.
             run_envelope.sandbox.enabled,
             run_envelope.sandbox.allow_network,
+            # #700: the paths the confirmed [stack] grants its commands.
+            with_stack_writable(
+                run_envelope.sandbox, root_dir, factory_config.project_stack
+            ).writable,
             # R7.6: in-loop USD budget for the claude-sdk engineer.
             base_config.agent_budget_usd,
             # Chunk 6: worker event channel (None when progress logging
@@ -5980,7 +5962,7 @@ def _run_factory_locked(
                 manifest,
                 root_dir,
                 ui,
-                isolation=label_of(factory_config.test_rung),
+                isolation=pr_isolation(factory_config),
                 requirements=factory_config.requirements,
             )
             if result:
@@ -5994,7 +5976,7 @@ def _run_factory_locked(
                     manifest,
                     root_dir,
                     ui,
-                    isolation=label_of(factory_config.test_rung),
+                    isolation=pr_isolation(factory_config),
                     requirements=factory_config.requirements,
                 )
                 factory_result.pr_urls.extend(url for _, url in pr_results)

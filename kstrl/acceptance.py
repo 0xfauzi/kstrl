@@ -26,9 +26,10 @@ made by the slice 3 replay (:func:`kstrl.replay.replay_stack`): setup,
 - On the base, after the plan gate and before the first engineer
   (:func:`replay_base`). A check the plan says fails on the base must fail
   there, and one it says passes must pass: either contradiction refuses
-  the run, unless the designer wrote the check that passes, which is then
-  removed. A check that did not run refuses, except in a component the
-  plan marks ``createsApp``, recorded as :data:`BASE_NOT_RUNNABLE` (decision 11).
+  the run, unless the designer wrote the check, which is then removed as
+  :func:`kstrl.acceptance_design.kept_on_base` says. A check that did not run
+  refuses, except in a component the plan marks ``createsApp``, recorded as
+  :data:`BASE_NOT_RUNNABLE` (decision 11).
 - On each component's head, after Phase 1 passed (:func:`judge_head`).
   Each check runs :data:`HEAD_RUNS` times and passes only when every run
   exited 0. Nothing is run again after a failure. The plan gates the
@@ -41,8 +42,8 @@ made by the slice 3 replay (:func:`kstrl.replay.replay_stack`): setup,
 
 Held-out checks are handed to no engineer: the plan is never copied into
 a worktree, a PRD or a prompt, and a retry names a held-out check by its
-id only. The engineer itself is not confined, so the record says whether
-it could read them is unknown (decision 9).
+id only. The record names the harness that confined the engineer, if any;
+whether it could read them is unknown (decision 9).
 
 The evidence of each head run is written under the run directory before
 anything is printed: ``record.json``, ``logs/``, a byte copy of the plan
@@ -707,6 +708,7 @@ def judge_head(
     document["override"] = covering_override(overrides, head_sha, failing)
     document["visibleFailures"] = visible_failures(comp_id, part.checks, failing, runs)
     document["dispute"] = read_dispute(progress, part.checks, failing)
+    document["engineerSandbox"] = config.engineer_sandbox
     lines = render_lines(document)
     failures = [row_line(row, HEAD_RUNS) for row in document["checks"] if row["verdict"] != PASS]
     try:
