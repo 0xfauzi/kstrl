@@ -88,10 +88,11 @@ EXPECTED_SIGNED = {
 }
 
 #: Re-derived by running ``_load_returns()`` on this tree: one per loaded
-#: class, and two in ``LearningConfig.load``. 27: #696's ``StackConfig``.
+#: class. 27: #696's ``StackConfig``.
 #: 26: #696 slice 8 removed ``AdequacyConfig``.
 #: 25: #700 slice 8 removed ``FixturesConfig``.
-EXPECTED_LOAD_RETURNS = 25
+#: 23: #217 removed the ``[learning]`` loader, whose ``load`` returned twice.
+EXPECTED_LOAD_RETURNS = 23
 
 #: Re-derived by running ``_numeric_parameters(_commands())`` on this tree:
 #: every numeric option and argument, of every command, whose type refuses

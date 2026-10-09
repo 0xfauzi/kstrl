@@ -272,7 +272,7 @@ the fact-utilization line can cover different runs. An unreadable
 `ks evolve` no longer writes `.kstrl/proposals/prop-NNN.md`, and
 `ks evolve --apply` is gone (#507, Slice 1 of #217). A recurring pattern
 whose check's category is verification, review, security or contract is
-printed under "Candidate lessons (no writer until the playbook ships)".
+printed under "Candidate lessons (kstrl acts on none; put a standing rule in the [paths] memory file)".
 
 - A `.kstrl/proposals/` directory already on disk is left alone. `ks evolve`
   prints one line naming it and its file count.

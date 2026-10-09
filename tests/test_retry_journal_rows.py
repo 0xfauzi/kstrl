@@ -617,7 +617,10 @@ def test_a_recurring_stack_check_failure_is_a_verification_lesson(tmp_path: Path
 
     out = _evolve(root)
 
-    heading = "== Candidate lessons (no writer until the playbook ships) =="
+    heading = (
+        "== Candidate lessons (kstrl acts on none; "
+        "put a standing rule in the [paths] memory file) =="
+    )
     _, found, lessons = out.partition(heading)
     assert found, out
     lines = lessons.split("\n==", 1)[0].splitlines()

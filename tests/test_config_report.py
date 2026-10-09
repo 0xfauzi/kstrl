@@ -94,7 +94,7 @@ class TestBuildConfigReport:
         sections = list(dict.fromkeys(row.section for row in report.rows))
         assert sections[:5] == ["agent", "run", "paths", "git", "ui"]
         assert sections[5] == "factory"
-        assert sections[-1] == "learning"
+        assert sections[-1] == "signals"
 
     def test_loader_valueerror_propagates(self, tmp_path: Path) -> None:
         (tmp_path / "kstrl.toml").write_text("not [valid toml\n")
