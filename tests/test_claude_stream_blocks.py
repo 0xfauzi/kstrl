@@ -702,17 +702,15 @@ def test_sdk_runner_diagnostics_never_become_agent_lines(
 
 # --- the SDK file tools obey the same write guard as claude-code (#700) -----
 
-#: A fake claude CLI that, on the first user message, sends the runner one
-#: PreToolUse ``hook_callback`` for each target in TARGETS (the way claude
-#: does before a file tool) and writes ``<label>=<deny|allow>`` to
-#: DECISIONS_FILE, then prints the stream like ``_SDK_CLI``.
+#: A fake claude CLI: on the first user message it sends the runner a PreToolUse
+#: ``hook_callback`` for each TARGETS tool that a registered matcher matches, as claude
+#: does, writes ``<label>=<deny|allow|nohook>`` to DECISIONS_FILE, then the stream.
 _SDK_HOOK_CLI = """\
-import json, os, sys
+import json, os, re, sys
 if any(arg in ("-v", "--version") for arg in sys.argv[1:]):
     print("2.1.283 (Claude Code)")
     sys.exit(0)
-with open(STREAM_FILE, encoding="utf-8") as handle:
-    stream = handle.read()
+stream = open(STREAM_FILE, encoding="utf-8").read()
 callbacks = []
 def reply_to(request_id):
     for raw in sys.stdin:
@@ -725,7 +723,7 @@ for raw in sys.stdin:
         request = message["request"]
         if request.get("subtype") == "initialize":
             for matcher in (request.get("hooks") or {}).get("PreToolUse", []):
-                callbacks += matcher["hookCallbackIds"]
+                callbacks += [(matcher["matcher"], cid) for cid in matcher["hookCallbackIds"]]
         reply = {"subtype": "success", "request_id": message["request_id"], "response": {}}
         print(json.dumps({"type": "control_response", "response": reply}), flush=True)
     elif message.get("type") == "user":
@@ -734,7 +732,11 @@ for raw in sys.stdin:
         for number, (label, tool, key, raw) in enumerate(TARGETS):
             event = {"hook_event_name": "PreToolUse", "tool_name": tool, "cwd": cwd,
                      "tool_input": {key: raw.replace("{wt}", cwd)} if key else {}}
-            call = {"subtype": "hook_callback", "callback_id": callbacks[0], "input": event,
+            ids = [cid for pattern, cid in callbacks if re.fullmatch(pattern, tool)]
+            if not ids:
+                lines.append(label + "=nohook")
+                continue
+            call = {"subtype": "hook_callback", "callback_id": ids[0], "input": event,
                     "tool_use_id": "toolu_%d" % number}
             print(json.dumps({"type": "control_request", "request_id": "h%d" % number,
                               "request": call}), flush=True)
