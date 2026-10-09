@@ -529,8 +529,8 @@ def test_a_designer_past_the_review_timeout_is_stopped_and_asked_once_more(
     """The designer is bound by [factory] review_timeout_seconds, the [review]
     selection's own limit (decision 12). A designer that would answer a
     valid plan only after that limit is stopped, asked once more, stopped
-    again, and the run is refused before any engineer, naming the limit.
-    Bound by any other clock, or by none, it answers and the run goes on."""
+    again, and the run is refused before any engineer, naming the limit for
+    each ask. Bound by any other clock, or by none, it answers and the run goes on."""
     root = _greeting_repo(tmp_path)
     reply = _entry([_check("greets-hidden", _greets("Grace"), held_out=True)])
 
@@ -545,6 +545,8 @@ def test_a_designer_past_the_review_timeout_is_stopped_and_asked_once_more(
     assert run.code == 2, run.out
     assert REFUSED_DESIGN in run.out, run.out
     assert f"{COMP}: ask 2: the agent timed out after 2.0s" in run.out, run.out
+    # The cause of the second ask is said too (owner decision of 2026-10-09).
+    assert f"{COMP}: ask 1: the agent timed out after 2.0s" in run.out, run.out
     assert len(run.designer) == 2, run.out
     assert run.engineer_calls == 0, run.out
     assert _designed_plans(root) == []
