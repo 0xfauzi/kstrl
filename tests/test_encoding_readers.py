@@ -125,6 +125,10 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     "intake_github.py": 1,
     # #482: the finding status word "open", not a read.
     "integration.py": 1,
+    # #700, the security review of #770: the root's `.git` file and the
+    # back link `worktrees/<name>/gitdir`, read to prove that the git
+    # directory both zones read is the root's own.
+    "isolation.py": 2,
     "knowledge.py": 3,
     "loop.py": 2,
     "manifest.py": 1,
@@ -259,6 +263,10 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "init_cmd.py path.read_text(encoding='utf-8')",
     "init_wizard.py toml_path.read_text(encoding='utf-8')",
     "intake_github.py self.path.read_text(encoding='utf-8')",
+    # #700, the security review of #770: the `.git` file of the root and the
+    # back link it names, utf-8, with ValueError caught beside OSError.
+    "isolation.py (entry / 'gitdir').read_text(encoding='utf-8')",
+    "isolation.py dot_git.read_text(encoding='utf-8')",
     "knowledge.py path.read_text(encoding='utf-8')",
     "knowledge.py prd_path.read_text(encoding='utf-8')",
     "knowledge.py target.read_text(encoding='utf-8')",
