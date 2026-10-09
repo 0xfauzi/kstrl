@@ -521,8 +521,6 @@ def _build_security_prompt(
     prd_text: str,
     change_source: str,
     data_delimiter: str | None = None,
-    *,
-    template: str | None = None,
 ) -> str:
     """Render SECURITY_PROMPT around a change-acquisition block.
 
@@ -540,14 +538,10 @@ def _build_security_prompt(
     ``is None`` rather than ``or``: an empty string is not a valid
     delimiter and must not be laundered into a fresh one.
 
-    ``template`` is ``None`` everywhere but the prompt optimizer
-    (:mod:`kstrl.gepa_adapter`), which renders a candidate prompt here so
-    a candidate is filled exactly as the enrolled body is. ``None`` means
-    :data:`SECURITY_PROMPT`, read at call time, so a test that patches
+    :data:`SECURITY_PROMPT` is read at call time, so a test that patches
     the module constant still reaches the role.
     """
-    body = SECURITY_PROMPT if template is None else template
-    return body.format(
+    return SECURITY_PROMPT.format(
         prd_content=prd_text or "(PRD not available)",
         change_source=change_source,
         data_delimiter=(generate_data_delimiter() if data_delimiter is None else data_delimiter),

@@ -102,7 +102,7 @@ NO_DESIGNED_CHECK = "no designed acceptance check"
 #: H3 and H2: the verification designer's role prompt. Its calibration
 #: roles are ``acceptance`` and ``acceptance_clean``, scored by execution on
 #: ``tests/adversarial_fixtures/acceptance/``.
-ACCEPTANCE_PROMPT_VERSION = "1.1.0"
+ACCEPTANCE_PROMPT_VERSION = "1.2.0"
 
 ACCEPTANCE_PROMPT = """\
 You are the verification designer for one component of a planned change.
@@ -126,8 +126,9 @@ change any file in it.
 - Exit 0 is a pass and any other exit is a fail. Exit 126 or 127, a
   timeout, or output that is not UTF-8 means the check did not run, which
   is never a pass.
-- Every check runs once on the base commit before the engineer starts, and
-  several times on the engineer's commit, where every run must exit 0.
+- Every check runs once on the base commit before the engineer starts.
+  Each check that kstrl keeps after the base run then runs several times
+  on the engineer's commit, where every run must exit 0.
 - The checks may run inside an OS process sandbox that allows network
   connections to localhost only. A program that starts its own sandbox may
   need that sandbox disabled.
@@ -147,11 +148,18 @@ show. A check that any implementation passes measures nothing.
   check whose criterion names none of them.
 - "argv": the command, as a non-empty list of non-empty strings.
 - "onBase": "fails" for behaviour the change adds, "passes" for behaviour
-  the change must keep. kstrl runs every check on the base and refuses the
-  plan when one does not do what you said.
+  the change must keep. A check that says "fails" and passes on the base
+  cannot tell the change from no change, so kstrl removes it. A check
+  that says "passes" and fails or cannot run on the base cannot measure
+  kept behaviour there, so kstrl removes it when its component keeps a
+  check that fails on the base as it says, and otherwise refuses the
+  plan. A check that says "fails" and cannot run on the base refuses the
+  plan. In a component with "createsApp": true, a check that cannot run
+  on the base never refuses the plan.
 - "heldOut": true for a check the engineer must not see. Hold out at least
   one check per criterion, with inputs no example shows. When a held-out
-  check fails, the engineer is told its id and nothing else.
+  check fails, kstrl halts the component with no retry and tells the
+  engineer nothing.
 - "createsApp": true only when the base has no application for the checks
   to run against, so that no check can run on the base.
 

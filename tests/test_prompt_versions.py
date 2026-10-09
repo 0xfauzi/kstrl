@@ -97,7 +97,6 @@ from kstrl import (
     acceptance_design,
     decisions,
     decompose,
-    gepa_adapter,
     git,
     intake_github,
     knowledge,
@@ -121,7 +120,6 @@ from kstrl.decompose import (
     DECOMPOSE_PROMPT,
     DECOMPOSE_PROMPT_VERSION,
 )
-from kstrl.gepa_adapter import GEPA_REFLECTION_PROMPT, GEPA_REFLECTION_PROMPT_VERSION
 from kstrl.git import (
     PASTED_CHANGE_SOURCE_PROMPT,
     PASTED_CHANGE_SOURCE_PROMPT_VERSION,
@@ -194,7 +192,6 @@ _PROMPTS: dict[str, str] = {
     "PASTED_CHANGE_SOURCE_PROMPT": PASTED_CHANGE_SOURCE_PROMPT,
     "DECISIONS_CONTEXT_PROMPT": DECISIONS_CONTEXT_PROMPT,
     "OWNER_ANSWER_PROMPT": OWNER_ANSWER_PROMPT,
-    "GEPA_REFLECTION_PROMPT": GEPA_REFLECTION_PROMPT,
     "STACK_PROMPT": STACK_PROMPT,
     "ACCEPTANCE_PROMPT": ACCEPTANCE_PROMPT,
     "BUG_REPORT_PROMPT": BUG_REPORT_PROMPT,
@@ -216,7 +213,6 @@ _VERSIONS: dict[str, str] = {
     "PASTED_CHANGE_SOURCE_PROMPT": PASTED_CHANGE_SOURCE_PROMPT_VERSION,
     "DECISIONS_CONTEXT_PROMPT": DECISIONS_CONTEXT_PROMPT_VERSION,
     "OWNER_ANSWER_PROMPT": OWNER_ANSWER_PROMPT_VERSION,
-    "GEPA_REFLECTION_PROMPT": GEPA_REFLECTION_PROMPT_VERSION,
     "STACK_PROMPT": STACK_PROMPT_VERSION,
     "ACCEPTANCE_PROMPT": ACCEPTANCE_PROMPT_VERSION,
     "BUG_REPORT_PROMPT": BUG_REPORT_PROMPT_VERSION,
@@ -389,9 +385,12 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     ),
     # 1.0.0 (#700 slice 7): new, the verification designer. H2: roles "acceptance" and
     # "acceptance_clean", first captured with #696 slice 7; no baseline carries them yet.
+    # 1.1.0 (#639 slice 5): a criterion cites a requirement. No capture ran (owner).
+    # 1.2.0 (#700): the base removal, the refusal and a held-out failure, as kstrl
+    # does them. No capture ran yet. The coordinator does it.
     "ACCEPTANCE_PROMPT": (
-        "94343e5c3733affd08d4d7ef5b35721c067a26078bffb940b58be8f10f951550",
-        "1.1.0",  # #639 slice 5: a criterion cites a requirement. No capture ran (owner).
+        "b42bec0e7ea02381ee5832da179e8425160155383a162f4a09288ae028bfd6a9",
+        "1.2.0",
     ),
     "PASTED_CHANGE_SOURCE_PROMPT": (
         "a1e6082933043d31c9efc513c0e16466629ccf770f6e6e828ace39565736d0d5",
@@ -412,13 +411,6 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     # no calibration fixture carries an owner answer, so H2 cannot be discharged.
     "OWNER_ANSWER_PROMPT": (
         "319f4f9af3a71e92a76483798d55aca5f945a6388e36e6dfa899f6e7a58de120",
-        "1.0.0",
-    ),
-    # 1.0.0 (#530): new. The text gepa sends the reflection model when it
-    # proposes a role prompt. H3 only: no calibration fixture scores a
-    # reflection prompt, the DECISIONS_CONTEXT_PROMPT position.
-    "GEPA_REFLECTION_PROMPT": (
-        "708326a01c93fef5a9190de373488c664f7047066d1c12253400a4c82fdb6b49",
         "1.0.0",
     ),
     # 1.0.0 (#654 slice 7): new. The line the spec of a `bug` issue gets: at least one
@@ -626,7 +618,6 @@ _RENDERERS: dict[str, tuple[ModuleType, Callable[[Path], str]]] = {
     "PASTED_CHANGE_SOURCE_PROMPT": (git, lambda _p: pasted_change_source("DIFF")[0]),
     "DECISIONS_CONTEXT_PROMPT": (decisions, _decisions_context_render),
     "OWNER_ANSWER_PROMPT": (owner_answers, lambda _p: render_owner_answer(_OWNER_ANSWER_ITEM)),
-    "GEPA_REFLECTION_PROMPT": (gepa_adapter, lambda _p: gepa_adapter.reflection_template()),
     "BUG_REPORT_PROMPT": (intake_github, _bug_report_render),
     **NOTICE_RENDERERS,
     **INTEGRATION_RENDERERS,

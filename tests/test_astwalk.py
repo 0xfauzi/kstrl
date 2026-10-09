@@ -433,7 +433,6 @@ class TestTheWalkAgainstTheRealPackage:
                     # say so.
                     "agents/logging.py self._agent.run",
                     "decompose.py agent.run",
-                    "gepa_adapter.py self.agent.run",
                     "loop.py agent.run",
                 ]
             )
