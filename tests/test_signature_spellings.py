@@ -125,6 +125,9 @@ EXPECTED_SPELLINGS: frozenset[tuple[str, str]] = frozenset(
         # Inbox dedupe keys and the budget label, all keyed the same way
         # and none of them a failure signature.
         ("kstrl/pipeline.py", "budget"),
+        # #466: the dedupe key of a carried check's halted_run item,
+        # f"carried:{plan}:{comp}:{check}".
+        ("kstrl/pipeline.py", "carried"),
         ("kstrl/pipeline.py", "halted"),
         ("kstrl/pipeline.py", "merge"),
         ("kstrl/pipeline.py", "policy"),
