@@ -483,6 +483,23 @@ def test_allow_network_false_denies_the_network_to_the_engineer(
     assert "Write" in settings["permissions"]["allow"], settings
 
 
+@pytest.mark.parametrize(
+    "argv", [_RUN, _UNDERSTAND, _FEATURE], ids=["run", "understand", "feature"]
+)
+def test_every_entry_point_leaves_a_codex_agent_the_network_by_default(
+    tmp_path: Path, argv: tuple[str, ...]
+) -> None:
+    """``ks run``, ``ks understand`` and ``ks feature`` each read [sandbox]
+    on their own path, not through the factory's. With no [sandbox] section,
+    the codex agent each starts gets the open network (owner decision
+    2026-10-09), passed explicitly."""
+    out = _ks(tmp_path, CODEX_TOML, argv, {})
+
+    agent = _engineer_argv(tmp_path)
+    assert agent[agent.index("--sandbox") + 1] == "workspace-write", (agent, out)
+    assert "sandbox_workspace_write.network_access=true" in agent, (agent, out)
+
+
 def _covers(roots: list[Path], path: Path) -> bool:
     """True when a codex writable root grants a write to ``path``: a root is a
     path prefix (measured with codex-cli 0.156.1)."""
