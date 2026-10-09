@@ -183,11 +183,16 @@ def _events(root: Path) -> str:
 
 
 def _env(
-    tmp_path: Path, extra: dict[str, str], clis: tuple[str, ...], codex_out: Path | None = None
+    tmp_path: Path,
+    extra: dict[str, str],
+    clis: tuple[str, ...],
+    codex_out: Path | None = None,
+    claude_out: Path | None = None,
 ) -> dict[str, str]:
     """No kstrl knob from the caller, no real agent CLI, a stub of each of
     ``clis`` first. With ``codex_out``, the ``codex`` stub is
-    :func:`_sandboxed_codex`, which writes its output there."""
+    :func:`_sandboxed_codex`, which writes its output there; with
+    ``claude_out``, the ``claude`` stub is :func:`_hooked_claude`."""
     env = {
         k: v
         for k, v in os.environ.items()
@@ -203,6 +208,8 @@ def _env(
     for cli in clis:
         if cli == "codex" and codex_out is not None:
             _sandboxed_codex(bindir / cli, codex_out)
+        elif cli == "claude" and claude_out is not None:
+            _hooked_claude(bindir / cli, claude_out)
         else:
             _stub(bindir / cli)
     env["PATH"] = os.pathsep.join([str(bindir), *kept])
@@ -223,6 +230,7 @@ def _ks(
     confirm: bool = False,
     clis: tuple[str, ...] = ("codex",),
     codex_out: Path | None = None,
+    claude_out: Path | None = None,
 ) -> str:
     """Run ``ks`` bounded by the fuse; returns combined output, asserts no
     traceback. ``confirm`` confirms the ``[stack]`` in ``toml`` first."""
@@ -234,7 +242,13 @@ def _ks(
     child = subprocess.Popen(
         [sys.executable, "-m", "kstrl", *args],
         cwd=root,
-        env=_env(tmp_path, {k: v.format(custom=custom) for k, v in extra.items()}, clis, codex_out),
+        env=_env(
+            tmp_path,
+            {k: v.format(custom=custom) for k, v in extra.items()},
+            clis,
+            codex_out,
+            claude_out,
+        ),
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -481,6 +495,10 @@ def test_allow_network_false_denies_the_network_to_the_engineer(
     assert "--dangerously-skip-permissions" not in argv, argv
     settings = json.loads(argv[argv.index("--settings") + 1])
     assert "Write" in settings["permissions"]["allow"], settings
+    # claude asks to approve a Bash command with more than one operation
+    # (`git add -A && git commit`), and a headless run cannot (measured).
+    assert "Bash" in settings["permissions"]["allow"], settings
+    assert "WebFetch" not in settings["permissions"]["allow"], settings
 
 
 @pytest.mark.parametrize(
@@ -648,3 +666,128 @@ def test_under_the_real_codex_sandbox_the_engineer_commits_and_a_planted_hook_wr
         check=True,
     ).stdout
     assert "stub-engineer" in log, (log, text, ran)
+
+
+#: (label, tool, the target's path, the hook's exit code). ``{wt}`` is the
+#: worktree, ``{out}`` a directory outside the project, ``{cache}`` the stack's
+#: writable path. A relative path and a ``~`` path exit 2 even when they name
+#: a place in the worktree: the guard takes an absolute path only. claude
+#: blocks the tool on exit 2 only.
+_TARGETS = [
+    ("inside", "Write", "{wt}/inside.txt", 0),
+    ("nested", "Edit", "{wt}/src/a.py", 0),
+    ("stack", "Write", "{cache}/x.txt", 0),
+    ("outside", "Write", "{out}/escaped.txt", 2),
+    ("edit-outside", "Edit", "{out}/escaped.txt", 2),
+    ("multiedit-outside", "MultiEdit", "{out}/escaped.txt", 2),
+    ("notebook-outside", "NotebookEdit", "{out}/n.ipynb", 2),
+    ("relative", "Write", "../../../escaped.txt", 2),
+    ("relative-inside", "Write", "inside.txt", 2),
+    ("home", "Write", "~/escaped.txt", 2),
+    ("symlink", "Write", "{wt}/link-out/escaped.txt", 2),
+    ("claude-link", "Write", "{wt}/claude-link/settings.local.json", 2),
+    ("claude-settings", "Write", "{wt}/.claude/settings.local.json", 2),
+    ("claude-upper", "Write", "{wt}/.Claude/settings.json", 2),
+    ("mcp", "Write", "{wt}/.mcp.json", 2),
+    ("git-file", "Write", "{wt}/.git", 2),
+    ("nested-git", "Write", "{wt}/sub/.git/config", 2),
+    ("stack-git", "Write", "{cache}/.git/config", 2),
+    ("stack-prefix", "Write", "{cache}-sibling/x.txt", 2),
+]
+
+
+def _hooked_claude(path: Path, out: Path) -> Path:
+    """A ``claude`` that records its argv like :func:`_stub` and, on its first
+    call, runs each PreToolUse hook of its ``--settings`` the way claude does:
+    ``sh -c`` in its working directory, the tool call as JSON on stdin. It
+    writes ``<label>=<exit code>`` for each of :data:`_TARGETS`, ``nohook``
+    when no hook matches the tool, two calls the guard cannot read, and a
+    relative path from a ``cwd`` outside the worktree (``cwd-outside``). The
+    worktree holds a ``kstrl`` package of its own, as an engineer can write,
+    and a ``.claude/settings.json`` that switches hooks off, as a target
+    repository can carry."""
+    argv = path.with_suffix(".argv")
+    cache = out.parent / "proj" / "tool-cache"
+    outside = out.parent / "outside"
+    targets = [
+        (label, tool, raw.format(cache=cache, out=outside, wt="{wt}"))
+        for label, tool, raw, _ in _TARGETS
+    ]
+    return write_executable(
+        path,
+        f"""#!{sys.executable}
+import json, os, re, subprocess, sys
+argv = sys.argv[1:]
+with open({str(argv)!r}, "a", encoding="utf-8") as log:
+    log.write("".join(a + "\\n" for a in [*argv, "--"]))
+sys.stdin.read()
+if not os.path.exists({str(out)!r}):
+    settings = json.loads(argv[argv.index("--settings") + 1])
+    matchers = settings.get("hooks", {{}}).get("PreToolUse", [])
+    cwd = os.getcwd()
+    # A project setting that switches every hook off, as a target repository
+    # can carry. claude 2.1.291 then runs no hook unless --settings sets
+    # disableAllHooks to false (measured).
+    os.makedirs(os.path.join(cwd, ".claude"), exist_ok=True)
+    with open(os.path.join(cwd, ".claude", "settings.json"), "w", encoding="utf-8") as f:
+        f.write('{{"disableAllHooks": true}}')
+    if settings.get("disableAllHooks") is not False:
+        matchers = []
+    os.makedirs({str(outside)!r}, exist_ok=True)
+    os.symlink({str(outside)!r}, os.path.join(cwd, "link-out"))
+    os.symlink(os.path.join(cwd, ".claude"), os.path.join(cwd, "claude-link"))
+    # A kstrl package in the worktree whose guard lets every call run: the
+    # hook must not import it.
+    os.makedirs(os.path.join(cwd, "kstrl"))
+    for name, body in (("__init__.py", ""), ("write_guard.py", "raise SystemExit(0)")):
+        with open(os.path.join(cwd, "kstrl", name), "w", encoding="utf-8") as f:
+            f.write(body)
+    def hook(tool, stdin):
+        commands = [h["command"] for m in matchers if re.fullmatch(m["matcher"], tool)
+                    for h in m["hooks"]]
+        if not commands:
+            return "nohook"
+        codes = [subprocess.run(["/bin/sh", "-c", c], input=stdin, cwd=cwd, encoding="utf-8",
+                                capture_output=True, timeout=60).returncode for c in commands]
+        return str(max(codes))
+    lines = []
+    for label, tool, raw in {targets!r}:
+        key = "notebook_path" if tool == "NotebookEdit" else "file_path"
+        raw = raw.replace("{{wt}}", cwd)
+        event = {{"tool_name": tool, "tool_input": {{key: raw}}, "cwd": cwd}}
+        lines.append(label + "=" + hook(tool, json.dumps(event)))
+    lines.append("unparsable=" + hook("Write", "not json"))
+    empty = json.dumps({{"tool_name": "Write", "tool_input": {{}}}})
+    lines.append("no-path=" + hook("Write", empty))
+    away = {{"tool_name": "Write", "tool_input": {{"file_path": "escaped.txt"}},
+            "cwd": {str(outside)!r}}}
+    lines.append("cwd-outside=" + hook("Write", json.dumps(away)))
+    with open({str(out)!r}, "w", encoding="utf-8") as log:
+        log.write("\\n".join(lines) + "\\n")
+print("<promise>COMPLETE</promise>")
+""",
+    )
+
+
+@pytest.mark.parametrize("network", ["", NO_NETWORK_TOML], ids=["network-open", "network-denied"])
+def test_a_claude_engineer_s_file_tools_cannot_write_outside_the_worktree_and_stack_paths(
+    tmp_path: Path, network: str
+) -> None:
+    """RED before this change: every line was ``nohook``, because the claude
+    sandbox confines Bash only and the adapter gave claude no hook (measured
+    with claude 2.1.291: the Write tool wrote a file in $HOME in both modes).
+    Now the hook blocks a target outside the worktree and the confirmed
+    stack's writable path, and a .git, .claude or .mcp.json path, and a tool
+    call it cannot read; it lets a write in the worktree and the stack path
+    run."""
+    out = tmp_path / "hooks.out"
+    argv_ = (*_FACTORY, "--review-mode", "skip", "--security-mode", "skip")
+    toml = CLAUDE_TOML + network + STACK_TOML
+    ran = _ks(tmp_path, toml, argv_, NO_PROVER, confirm=True, clis=("claude",), claude_out=out)
+
+    assert out.exists(), ran
+    got = dict(line.split("=", 1) for line in out.read_text(encoding="utf-8").splitlines())
+    want = {label: str(code) for label, _, _, code in _TARGETS}
+    want |= {"unparsable": "2", "no-path": "2", "cwd-outside": "2"}
+    assert got == want, ran
+    assert not (tmp_path / "outside" / "escaped.txt").exists()
