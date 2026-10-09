@@ -392,6 +392,8 @@ def test_a_retired_learning_env_var_stops_the_command_by_name(
     assert proc.returncode == 2, proc.stdout + proc.stderr
     assert f"the environment sets {name}, which was retired" in proc.stderr, proc.stderr
     assert "kstrl keeps no global playbook" in proc.stderr, proc.stderr
+    # The refusal names where a standing rule goes now, as the key refusal does.
+    assert "[paths] memory" in proc.stderr, proc.stderr
     assert "No manifest found" not in proc.stdout + proc.stderr
 
 
