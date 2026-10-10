@@ -223,7 +223,7 @@ EXPECTED_RETRIES_WRITE_SITES: dict[str, str] = {
     "manifest.py:reset_for_retry": (
         "the --reset path; zeroes the counter rather than advancing an attempt"
     ),
-    "pipeline.py:retry_or_fail": (
+    "pipeline_transitions.py:retry_or_fail": (
         "the scheduled retry; journal_superseded_findings(comp) runs four lines above it"
     ),
     "evolution.py:_component_attempt_readings": (
@@ -236,7 +236,9 @@ EXPECTED_RETRIES_WRITE_SITES: dict[str, str] = {
 }
 
 #: The two of those that advance an attempt inside a run.
-IN_RUN_RETRY_SITES = frozenset({"factory.py:_run_factory_locked", "pipeline.py:retry_or_fail"})
+IN_RUN_RETRY_SITES = frozenset(
+    {"factory.py:_run_factory_locked", "pipeline_transitions.py:retry_or_fail"}
+)
 
 #: Every ``self._end_attempt(`` call in kstrl/, same key shape. The
 #: repo's own notion of an attempt ending. It is a SECOND census, not
@@ -245,15 +247,15 @@ IN_RUN_RETRY_SITES = frozenset({"factory.py:_run_factory_locked", "pipeline.py:r
 #: discover: four of these end a component for good, so no further
 #: attempt number is ever produced for it.
 EXPECTED_END_ATTEMPT_SITES: dict[str, str] = {
-    "pipeline.py:retry_or_fail": "a retry; the reading is journalled first",
-    "pipeline.py:fail": "terminal; the reading reaches component_result",
-    "pipeline.py:complete": "terminal; the reading reaches component_result",
+    "pipeline_transitions.py:retry_or_fail": "a retry; the reading is journalled first",
+    "pipeline_transitions.py:fail": "terminal; the reading reaches component_result",
+    "pipeline_transitions.py:complete": "terminal; the reading reaches component_result",
     "pipeline.py:_park_merge_pending": "terminal; the reading reaches component_result",
     "pipeline.py:_fail_pr_flow": "terminal; the reading reaches component_result",
     "pipeline.py:_park_awaiting_approval": (
         "terminal for this run; the reading reaches component_result"
     ),
-    "pipeline.py:fail_scheduler_backstop": (
+    "pipeline_transitions.py:fail_scheduler_backstop": (
         "terminal, and the disclosed blind spot: process_result never ran "
         "for this attempt, so iteration_count is stale or 0. See "
         "TestDisclosedBlindSpots."
@@ -449,7 +451,7 @@ class TestDisclosedBlindSpots:
     @pytest.mark.xfail(
         strict=True,
         reason=(
-            "Disclosed blind spot: fail_scheduler_backstop (kstrl/pipeline.py:2088) "
+            "Disclosed blind spot: fail_scheduler_backstop (kstrl/pipeline_transitions.py) "
             "ends an attempt for which process_result never ran, so "
             "comp.iteration_count still holds the PREVIOUS attempt's value, or 0. "
             "The reading is unknowable there, not zero, and nothing records that. "

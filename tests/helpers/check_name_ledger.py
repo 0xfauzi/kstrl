@@ -101,8 +101,8 @@ BLIND_SITES: tuple[tuple[str, str, str, str], ...] = (
         "the literal in this call and the category comes from findings.py",
     ),
     (
-        "kstrl/pipeline.py",
-        "ComponentPipeline._route_failure",
+        "kstrl/pipeline_transitions.py",
+        "Transitions._route_failure",
         "failure.signatures",
         "pass-through: a PhaseFailure built at one of the sites above. "
         "This row appears TWICE on purpose - _route_failure has two "
@@ -110,22 +110,22 @@ BLIND_SITES: tuple[tuple[str, str, str, str], ...] = (
         "than a set, and collapsing them would hide one of the two",
     ),
     (
-        "kstrl/pipeline.py",
-        "ComponentPipeline._route_failure",
+        "kstrl/pipeline_transitions.py",
+        "Transitions._route_failure",
         "failure.signatures",
         "pass-through, the second of the two branches named above",
     ),
     (
-        "kstrl/pipeline.py",
-        "ComponentPipeline._route_failure",
+        "kstrl/pipeline_transitions.py",
+        "Transitions._route_failure",
         "failure.phase",
         "pass-through: the phase of a PhaseFailure built elsewhere in this "
         "module. PhaseFailure is a PHASE_FALLBACK_CALL in its own right, so "
         "each of those phases is censused where it is written",
     ),
     (
-        "kstrl/pipeline.py",
-        "ComponentPipeline._route_failure",
+        "kstrl/pipeline_transitions.py",
+        "Transitions._route_failure",
         "failure.phase",
         "pass-through, the second of the same two branches",
     ),
@@ -137,30 +137,30 @@ BLIND_SITES: tuple[tuple[str, str, str, str], ...] = (
         "composed at run time, as _review_failure above",
     ),
     (
-        "kstrl/pipeline.py",
-        "ComponentPipeline.fail",
+        "kstrl/pipeline_transitions.py",
+        "Transitions.fail",
         "phase",
         "pass-through of its own parameter into _record_failure_signatures; "
         "censused at the fail() call sites, which is why fail is itself a "
         "PHASE_FALLBACK_CALL",
     ),
     (
-        "kstrl/pipeline.py",
-        "ComponentPipeline.retry_or_fail",
+        "kstrl/pipeline_transitions.py",
+        "Transitions.retry_or_fail",
         "phase",
         "pass-through of its own parameter into _record_failure_signatures; "
         "censused at the retry_or_fail() call sites",
     ),
     (
-        "kstrl/pipeline.py",
-        "ComponentPipeline.retry_or_fail",
+        "kstrl/pipeline_transitions.py",
+        "Transitions.retry_or_fail",
         "phase",
         "the second of two, and a different call: the retries-exhausted route "
         "hands the same parameter on to fail(), censused at the same sites",
     ),
     (
-        "kstrl/pipeline.py",
-        "ComponentPipeline.retry_or_fail",
+        "kstrl/pipeline_transitions.py",
+        "Transitions.retry_or_fail",
         "signatures",
         "pass-through of its own parameter, censused at its call sites",
     ),

@@ -65,8 +65,8 @@ from kstrl.pipeline import (
     PipelineOutcome,
     PrDisposition,
     PrPhaseResult,
-    Transition,
 )
+from kstrl.pipeline_transitions import Transition
 from kstrl.tui import embed
 from kstrl.ui.plain import PlainUI
 from kstrl.ui.rich_ui import RichUI

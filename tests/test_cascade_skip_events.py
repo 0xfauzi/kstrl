@@ -9,7 +9,7 @@ event the reducer needs was never written.
 
 The fix is one helper, ``ComponentPipeline._cascade_skip``, that calls
 ``manifest.cascade_skip`` and emits ``ComponentSkipped`` for every id it
-returns. The four call sites in ``kstrl/pipeline.py`` route through it.
+returns. The four call sites in ``kstrl/pipeline_transitions.py`` route through it.
 
 Two things are pinned here: an end-to-end run where a dependent is
 skipped, read back through the reducer and through ``ks status
@@ -205,9 +205,9 @@ class TestCascadeSkipHasOneCaller:
 
     def test_manifest_cascade_skip_is_called_from_exactly_one_place(self) -> None:
         sites = _cascade_skip_call_sites()
-        assert sites == [("kstrl/pipeline.py", "_cascade_skip")], (
+        assert sites == [("kstrl/pipeline_transitions.py", "_cascade_skip")], (
             "manifest.cascade_skip must be called from exactly one place, "
-            "kstrl/pipeline.py's _cascade_skip helper, so every site that "
+            "kstrl/pipeline_transitions.py's _cascade_skip helper, so every site that "
             "skips a dependent also emits ComponentSkipped for it. "
             f"Found: {sites}"
         )

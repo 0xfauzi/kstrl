@@ -28,7 +28,7 @@ import pytest
 from kstrl.factory import FactoryConfig, claim_gate_unreachable_warning
 from kstrl.findings import CLAIM_DISAGREEMENT_CATEGORY, Finding
 from kstrl.manifest import Component
-from kstrl.pipeline import Transition
+from kstrl.pipeline_transitions import Transition
 from kstrl.prd import PRD
 from kstrl.review import ReviewResult
 from tests.helpers.claim_agreement import _criterion, _prd, _review, _story, _write_prd
