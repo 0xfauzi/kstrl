@@ -157,8 +157,8 @@ EXPECTED_RUN_RECORD_SITES: dict[str, int] = {
     "manifest_keys.py: <module>": 1,
     "observability.py: ProgressLog.emit": 1,
     "observability.py: ProgressLog._repair_event": 1,
-    "pipeline.py: ComponentPipeline.journal_integration_result": 1,
-    "pipeline.py: ComponentPipeline.journal_superseded_findings": 1,
+    "pipeline_attempt.py: AttemptRecorder.journal_integration_result": 1,
+    "pipeline_attempt.py: AttemptRecorder.journal_superseded_findings": 1,
     "reducer.py: upconvert_v1": 1,
     "serve.py: _red_base_outcome": 1,  # #654 slice 3b: the red base's evidence
     "workqueue.py: Queue.await_answer": 1,
@@ -197,8 +197,8 @@ NOT_STAMPED_HERE: dict[str, str] = {
     "evolution.py: EvolutionJournal.record_run": _JOURNAL,
     "evolution.py: EvolutionJournal.carry_superseded": _JOURNAL,
     "factory.py: _run_factory_locked._record_contract_event": _JOURNAL,
-    "pipeline.py: ComponentPipeline.journal_superseded_findings": _JOURNAL,
-    "pipeline.py: ComponentPipeline.journal_integration_result": _JOURNAL,
+    "pipeline_attempt.py: AttemptRecorder.journal_superseded_findings": _JOURNAL,
+    "pipeline_attempt.py: AttemptRecorder.journal_integration_result": _JOURNAL,
     "factory.py: _record_health_breaches": _DEMOTION,
     "factory.py: _demote_once": _DEMOTION,
     "inbox.py: InboxItem.to_dict": (

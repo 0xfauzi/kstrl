@@ -104,7 +104,7 @@ ctx.readings.add(PhaseReading(attempt=1, phase="review"))
 _UNKEYABLE_SITES: dict[str, int] = {
     "context.py::IterationContext.add_phase_reading": 1,
     "context.py::IterationContext.from_json": 1,
-    "pipeline.py::ComponentPipeline._merge_phase_readings": 1,
+    "pipeline_attempt.py::AttemptRecorder._merge_phase_readings": 1,
 }
 
 #: A write to the retry context, in the shape both writers use.

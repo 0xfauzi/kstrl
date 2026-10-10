@@ -36,29 +36,18 @@ from __future__ import annotations
 
 import hashlib
 import time
-from collections.abc import Callable, Iterator, Mapping, Sequence
-from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from kstrl import event_catalog, git
-from kstrl import events as ev
 from kstrl.acceptance_lines import pr_isolation
 from kstrl.agents.base import (
-    ARCHITECT_COMPONENT,
-    ARCHITECT_ROLE,
     CEILING_AXES,
-    DESIGNER_ROLE,
-    INTEGRATION_COMPONENT,
-    INTEGRATION_ROLE,
-    CeilingCoverage,
-    UsageTotals,
     collect_usage,
-    usage_coverage,
 )
-from kstrl.agents.prompt_record import AgentCall, recording_prompts
+from kstrl.agents.prompt_record import recording_prompts
 from kstrl.atomicio import atomic_write_text
 from kstrl.context import ACCEPTANCE_PHASE, IterationContext, IterationRecord
 from kstrl.divergence import (
@@ -72,13 +61,8 @@ from kstrl.findings import (
     CLAIM_DISAGREEMENT_CATEGORY,
     POLICY_CATEGORY_PREFIX,
     Finding,
-    finding_model,
-    tag_finding_with_attempt,
 )
 from kstrl.inbox import (
-    UNDECIDED,
-    Inbox,
-    InboxError,
     InboxItem,
     ItemKind,
     ItemStatus,
@@ -89,14 +73,16 @@ from kstrl.interaction import (
     PromptRequest,
     PromptResponse,
 )
-from kstrl.loop import UNENFORCEABLE_CALLS
 from kstrl.manifest import (
     ADVERSARIAL_BUDGET_CHECK,
     Component,
     ComponentStatus,
     park_dedupe_key,
 )
-from kstrl.pipeline_state import PipelineState, _iso_now
+from kstrl.pipeline_attempt import AttemptRecorder
+from kstrl.pipeline_inbox import InboxDesk
+from kstrl.pipeline_ledger import UsageLedger
+from kstrl.pipeline_state import _iso_now
 from kstrl.policy import count_diff_size
 from kstrl.prd import PRD
 from kstrl.review import (
@@ -111,7 +97,7 @@ from kstrl.review_claims import (
 )
 from kstrl.rung import label_of
 from kstrl.security import SecurityConfig, SecurityMode, SecurityResult
-from kstrl.statedir import ControlStateError, pre_run_prd_path
+from kstrl.statedir import pre_run_prd_path
 from kstrl.timeout import limit_seconds
 from kstrl.verify import (
     LAYER0_NOT_MEASURED,
@@ -122,13 +108,10 @@ from kstrl.verify import (
 )
 from kstrl.waivers import (
     ApprovalSnapshot,
-    Waivers,
-    WaiverScope,
     approvals_on,
-    load_approvals,
     overrides_on,
 )
-from kstrl.worktree_sweep import WorktreeSweep, sweep_findings
+from kstrl.worktree_sweep import sweep_findings
 
 if TYPE_CHECKING:
     from kstrl.factory import (
@@ -152,9 +135,6 @@ PARK_DETAIL = (
 )
 
 
-#: How a retry this run carried from an interrupted run is marked (#463).
-CARRIED_REASON_PREFIX = "carried from run "
-
 #: The two ``Component.failed_check`` values that say a human turned a
 #: merge candidate down: rejected at the merge gate (interactively or
 #: with ``ks inbox reject``), or its PR closed without merging while
@@ -165,60 +145,6 @@ CARRIED_REASON_PREFIX = "carried from run "
 #: open before).
 HITL_REJECT_CHECK = "hitl_reject"
 PR_CLOSED_CHECK = "pr_closed"
-
-
-def _carried_reason(prior_run_id: str, reason: str) -> str:
-    """``reason`` marked as carried from ``prior_run_id``, once (#463)."""
-    if reason.startswith(CARRIED_REASON_PREFIX):
-        return reason
-    return f"{CARRIED_REASON_PREFIX}{prior_run_id}: {reason}"
-
-
-def _usage_by_component_phase(
-    events: Sequence[event_catalog.Event],
-) -> dict[tuple[str, str], UsageTotals]:
-    """Every ``component_usage`` in ``events``, summed per (component, phase) (#463)."""
-    spent: dict[tuple[str, str], UsageTotals] = {}
-    for event in events:
-        if not isinstance(event, event_catalog.ComponentUsage):
-            continue
-        spent.setdefault((event.component, event.phase), UsageTotals()).merge(
-            UsageTotals(
-                calls=event.calls,
-                known_calls=event.known_calls,
-                token_calls=event.token_calls,
-                cost_calls=event.cost_calls,
-                input_tokens=event.input_tokens,
-                output_tokens=event.output_tokens,
-                cache_read_tokens=event.cache_read_tokens,
-                cache_creation_tokens=event.cache_creation_tokens,
-                total_tokens=event.total_tokens,
-                cost_usd=event.cost_usd,
-                duration_seconds=event.duration_seconds,
-            )
-        )
-    return spent
-
-
-def _take_over_attempts(components: Sequence[Component], *, carrying: bool) -> dict[str, range]:
-    """Set the first attempt each component answers for in this run, and
-    return the earlier attempts this run takes over, per component (#463).
-
-    Only a PENDING component of a run that stopped before its summary
-    (``carrying``) is taken over: it keeps ``first_attempt`` and this run
-    owes attempts ``first_attempt..retries``. Every other component starts
-    at ``retries + 1``, including one the killed run left MERGE_PENDING or
-    AWAITING_APPROVAL, whose earlier attempts this run does not write again.
-    """
-    owed = {
-        comp.id: range(comp.first_attempt, comp.retries + 1)
-        for comp in components
-        if carrying and comp.status == ComponentStatus.PENDING.value
-    }
-    for comp in components:
-        if comp.id not in owed:
-            comp.first_attempt = comp.retries + 1
-    return owed
 
 
 class Transition(Enum):
@@ -564,7 +490,7 @@ def _verify_routing(failing: list[CheckResult]) -> tuple[FailureAction, str]:
     return FailureAction.RETRY_OR_FAIL, "Mechanical verification failed"
 
 
-class ComponentPipeline(PipelineState):
+class ComponentPipeline(InboxDesk, AttemptRecorder, UsageLedger):
     """Drives one component result through the phase chain and owns every
     component state transition (R7.3).
 
@@ -581,211 +507,6 @@ class ComponentPipeline(PipelineState):
     # ------------------------------------------------------------------
     # Budget + usage accounting
     # ------------------------------------------------------------------
-
-    def adversarial_budget_ok(self) -> bool:
-        cap = self.factory_config.max_adversarial_calls
-        if cap <= 0:
-            return True
-        return self._adversarial_calls < cap
-
-    def adversarial_budget_consume(self) -> None:
-        self._adversarial_calls += 1
-
-    def adversarial_budget_remaining(self) -> int | None:
-        """Calls left in the budget, or None when unbounded."""
-        cap = self.factory_config.max_adversarial_calls
-        if cap <= 0:
-            return None
-        return max(0, cap - self._adversarial_calls)
-
-    def _record_usage(
-        self,
-        comp_id: str,
-        phase: str,
-        totals: UsageTotals,
-    ) -> None:
-        if totals.calls == 0:
-            return
-        slot = self.usage_meter.setdefault(comp_id, {}).setdefault(
-            phase,
-            UsageTotals(),
-        )
-        slot.merge(totals)
-        self.run_usage.merge(totals)
-        self.bus.emit(
-            event_catalog.ComponentUsage(
-                component=comp_id,
-                phase=phase,
-                **totals.to_dict(),
-            )
-        )
-        self._announce_coverage_gaps()
-
-    def _announce_coverage_gaps(self) -> None:
-        """Report the FIRST time a configured ceiling stops covering
-        every metered call (R8, measured).
-
-        Evaluated on every usage capture rather than at the halt,
-        because a coverage fact delivered with the halt arrives after
-        the money is spent. The earliest honest moment is the phase that
-        first reports nothing on that axis - typically the first
-        cross-family review, a few minutes into a run.
-
-        Adds no failure mode to ``_record_usage``: the work is integer
-        arithmetic over the meter plus one ``bus.emit``, and
-        ``EventBus.emit`` already isolates sink exceptions. The meter
-        must never gate correctness (R3.1 requirement 4).
-        """
-        for ceiling in CEILING_AXES:
-            if ceiling in self._coverage_announced:
-                continue
-            coverage = self.ceiling_coverage(ceiling)
-            if coverage is None or coverage.calls == 0 or coverage.complete:
-                continue
-            self._coverage_announced.add(ceiling)
-            detail = coverage.note()
-            self.ui.warn(f"  BUDGET COVERAGE: {detail}")
-            self.bus.emit(
-                event_catalog.BudgetCoverage(
-                    ceiling=coverage.ceiling,
-                    axis=coverage.axis,
-                    calls=coverage.calls,
-                    covered_calls=coverage.covered_calls,
-                    uncovered_calls=coverage.uncovered_calls,
-                    uncovered_tokens=coverage.uncovered_tokens,
-                    uncovered_roles=coverage.uncovered_roles,
-                    detail=detail,
-                )
-            )
-
-    def record_engineer_usage(
-        self,
-        comp_id: str,
-        totals: UsageTotals,
-    ) -> None:
-        """Record engineer spend that never came back through
-        process_result (R8 abort path). The worker was killed, so its
-        records reach the meter here or not at all; the caller
-        guarantees the matching future produced no result, so this can
-        never double count with the normal path."""
-        self._record_usage(comp_id, "engineer", totals)
-
-    def record_architect_usage(self, totals: UsageTotals | None) -> None:
-        """Fold the architect's spend into this run before it starts (#257).
-
-        Every other role is metered by a phase this pipeline drives. The
-        architect is not: `ks factory` decomposes the spec in the command
-        itself, before any run id or run directory exists, and only then
-        builds this pipeline. Its spend therefore has to be handed in
-        rather than captured, which is what ``architect_usage`` on
-        ``run_factory`` carries.
-
-        It goes through the ordinary ``_record_usage`` path, and that is
-        the entire point of the seat. ``run_usage`` is what
-        :meth:`cost_budget_exceeded` reads, so an operator's
-        ``--max-cost-usd`` now bounds the architect too instead of
-        bounding the four roles that follow it; the meter gains a fifth
-        row; and ``_announce_coverage_gaps`` counts the architect as a
-        metered call rather than leaving it invisible to the coverage
-        accounting.
-
-        The component id is ``ARCHITECT_COMPONENT``, the namespaced key
-        `ks decompose` already writes and the one
-        ``serve.read_run_spend`` reads; the phase is the bare
-        ``ARCHITECT_ROLE``. Pairing them HERE is why the constants exist
-        rather than a literal per surface.
-
-        They stopped being the same string in #281. A bare component key
-        shared a keyspace with LLM-emitted component ids, so a component
-        genuinely named `architect` merged with this row - folding its
-        spend into the architect's, and clearing the honesty flag on
-        ``serve.RunSpend`` for a run whose architect never reported.
-
-        ``None`` or zero calls records nothing: a run resumed from a
-        manifest never ran an architect, and an agent that reported no
-        usage must not become a phantom row claiming it cost nothing.
-        """
-        if totals is None:
-            return
-        self._record_usage(ARCHITECT_COMPONENT, ARCHITECT_ROLE, totals)
-
-    def record_designer_usage(self, comp_id: str, totals: UsageTotals) -> None:
-        """Meter the verification designer (#700 slice 7) under its own role
-        row of the component it designed checks for."""
-        self._record_usage(comp_id, DESIGNER_ROLE, totals)
-
-    def record_integration_usage(self, totals: UsageTotals) -> None:
-        """Meter the integration review (#482) under its own role row.
-
-        Through ``_record_usage`` like every role, so the run total, the
-        ceilings and the coverage accounting count it. Zero calls record
-        nothing, as for the architect.
-        """
-        self._record_usage(INTEGRATION_COMPONENT, INTEGRATION_ROLE, totals)
-
-    def carry_interrupted_run(self) -> None:
-        """Take over what an interrupted run recorded (#463).
-
-        The run the manifest names, when ``completed_at`` is empty, stopped
-        before its summary: it was killed, or its process died, so it wrote
-        no journal result, no experiments.tsv row, and its spend is in no
-        run total. Its retries are already on the manifest. This run records
-        the rest under its own id, so every per-run surface counts what the
-        manifest counts:
-
-        - every ``component_usage`` in that run's stream enters this run's
-          meter, so the run total, the cost ceiling, the journal and
-          experiments.tsv include it;
-        - for each component this run will run again (PENDING after the
-          crash-recovery reset), that run's ``component_retrying`` events and
-          ``findings_superseded`` journal rows are written again under this
-          run's id, so progress.jsonl and the #233 reading see every attempt
-          the manifest counts.
-
-        A chain of interrupted runs carries through, because each resume
-        writes what it took over under its own id and the next resume reads
-        it from there. Must run before the manifest is saved with this
-        run's id.
-        """
-        prior = self.manifest.run_id
-        carrying = bool(prior) and not self.manifest.completed_at
-        owed = _take_over_attempts(self.manifest.components, carrying=carrying)
-        if not carrying:
-            return
-        from kstrl.evolution import EvolutionJournal
-        from kstrl.reducer import read_run_dir
-
-        events = read_run_dir(ev.RunPaths.for_run(self.root_dir, prior).root)
-        spent = _usage_by_component_phase(events)
-        for (comp_id, phase), totals in spent.items():
-            self._record_usage(comp_id, phase, totals)
-        retried = [
-            e
-            for e in events
-            if isinstance(e, event_catalog.ComponentRetrying)
-            and e.attempt in owed.get(e.component, range(0))
-        ]
-        for event in retried:
-            self.bus.emit(
-                event_catalog.ComponentRetrying(
-                    component=event.component,
-                    attempt=event.attempt,
-                    reason=_carried_reason(prior, event.reason),
-                )
-            )
-        readings = 0
-        journal = EvolutionJournal.open(self.root_dir, warn=self.ui.warn)
-        if journal is not None:
-            try:
-                readings = journal.carry_superseded(prior, self.run_id, owed)
-            except OSError as exc:
-                self.ui.warn(f"  Evolution journal write failed (non-fatal): {exc}")
-        self.ui.info(
-            f"  Carried from interrupted run {prior}: {len(retried)} retried attempt(s), "
-            f"{readings} attempt reading(s), "
-            f"{sum(t.calls for t in spent.values())} call(s) costing "
-            f"${sum(t.cost_usd for t in spent.values()):.4f}"
-        )
 
     def record_injected_knowledge(
         self,
@@ -924,451 +645,9 @@ class ComponentPipeline(PipelineState):
                 )
             )
 
-    def mark_usage_salvage_safe(self, comp_id: str) -> None:
-        """The attempt's usage snapshot slot is provably clean."""
-        self._usage_salvage_unsafe.discard(comp_id)
-
-    def mark_usage_salvage_unsafe(self, comp_id: str) -> None:
-        """A stale snapshot may survive for this attempt, so disk
-        salvage must not run for it (R8 review: deletion IS the
-        attempt-scoping invariant; when it fails, what is on disk may
-        already have been counted by ``process_result``)."""
-        self._usage_salvage_unsafe.add(comp_id)
-
-    def usage_salvage_is_safe(self, comp_id: str) -> bool:
-        return comp_id not in self._usage_salvage_unsafe
-
-    def engineer_usage_totals(self) -> UsageTotals:
-        """Engineer-loop spend across every component and attempt.
-
-        Feeds the loop-side budget's tokenless-call threshold (R8). That
-        threshold asks "does the ENGINEER's adapter report tokens?", so
-        it must not be answered with run-wide totals: a timed-out
-        architect or reviewer call is tokenless too, and counting those
-        let two unrelated timeouts condemn an engineer adapter that had
-        been reporting perfectly well - while the halt message asserted
-        the cap "can never trip on this adapter". Engineer-scoped, the
-        counter still survives the case it exists for
-        (``max_iterations = 1`` and retries, where a per-loop counter
-        resets before it can conclude anything).
-
-        The OVERRUN half stays run-wide: that one asks what the RUN has
-        spent against the cap, which is every phase's business.
-        """
-        totals = UsageTotals()
-        for phases in self.usage_meter.values():
-            engineer = phases.get("engineer")
-            if engineer is not None:
-                totals.merge(engineer)
-        return totals
-
-    def usage_totals_for(self, comp_id: str) -> UsageTotals:
-        """One component's spend across all phases (PR A: shown at the
-        E6 checkpoint so the human sees what the attempt cost)."""
-        totals = UsageTotals()
-        for phase_totals in self.usage_meter.get(comp_id, {}).values():
-            totals.merge(phase_totals)
-        return totals
-
-    def token_budget_exceeded(self) -> bool:
-        cap = self.factory_config.max_total_tokens
-        return cap > 0 and self.run_usage.total_tokens >= cap
-
-    def cost_budget_exceeded(self) -> bool:
-        """R8: the run's reported USD spend has reached ``max_cost_usd``.
-
-        Separate from :meth:`token_budget_exceeded` because the two
-        ceilings measure genuinely different things. Measured on a real
-        run: 1,864,081 total tokens (95.6% of them cache reads, which
-        ``total_tokens`` counts at par) cost $1.22, so a token ceiling is
-        a poor proxy for spend.
-        """
-        cap = self.factory_config.max_cost_usd
-        return cap > 0 and self.run_usage.cost_usd >= cap
-
-    def breached_ceiling(self) -> str | None:
-        """Which configured ceiling the run has reached, or None.
-
-        Returns the config key name (``"max_total_tokens"`` /
-        ``"max_cost_usd"``) so every audit surface can NAME the ceiling
-        that tripped instead of asserting "token budget" for both. When
-        both are over at the same evaluation the token one is named
-        first - an arbitrary but fixed order; over time whichever is
-        reached first halts, because the gates run continuously.
-        """
-        if self.token_budget_exceeded():
-            return "max_total_tokens"
-        if self.cost_budget_exceeded():
-            return "max_cost_usd"
-        return None
-
-    def budget_exceeded(self) -> bool:
-        """Any configured run-level ceiling has been reached."""
-        return self.breached_ceiling() is not None
-
-    def token_budget_unenforceable(self) -> str | None:
-        """Why the TOKEN cap can no longer fire at all, or None.
-
-        The parent-side twin of :meth:`LoopBudget.halt_reason`'s
-        unenforceable branch, and it exists because the in-loop check has
-        a blind spot the loop cannot cover itself: a loop that emits
-        COMPLETE returns BEFORE evaluating its budget, so an adapter that
-        finishes on its first tokenless call never reaches the halt.
-        That is the ordinary success path for a custom ``agent_cmd``, not
-        an artificial case - each component completes, the engineer's
-        tokenless count climbs, and the cap never fires (review finding
-        on 22e99b4; the previous docstring's "the halt lands on the next
-        loop" was simply false when the next loop also completes).
-
-        Per-ceiling by construction: a dead TOKEN cap is not on its own a
-        reason to stop when a live COST cap is also configured. The
-        scheduling gate consults :meth:`budget_unenforceable`, which
-        halts only when EVERY configured ceiling is dead.
-
-        Checked at the scheduling gate, so the run stops handing out NEW
-        work under a dead cap. Deliberately does not retroactively fail
-        components that already completed: their work is valid, and the
-        cap's job is to stop spending, not to destroy what was bought.
-        Bound: at most the component in flight when the determination
-        lands.
-        """
-        cap = self.factory_config.max_total_tokens
-        if cap <= 0:
-            return None
-        engineer = self.engineer_usage_totals()
-        if engineer.token_calls > 0:
-            return None
-        if engineer.tokenless_calls < UNENFORCEABLE_CALLS:
-            return None
-        return (
-            f"token budget unenforceable: the engineer has made "
-            f"{engineer.tokenless_calls} agent call(s) this run and none "
-            f"reported a token count, so max_total_tokens ({cap}) cannot "
-            "advance; refusing to schedule further components rather than "
-            "spending under a cap that cannot fire (R8)"
-        )
-
-    def cost_budget_unenforceable(self) -> str | None:
-        """Why the COST cap can no longer fire at all, or None.
-
-        The cost mirror of :meth:`token_budget_unenforceable`, reading
-        ``cost_calls`` rather than ``token_calls``. The two answers are
-        independent in both directions: the codex adapter reports a token
-        total and no cost (token ceiling alive, cost ceiling dead), the
-        claude adapter can report ``total_cost_usd`` with no ``usage``
-        dict (cost ceiling alive, token ceiling dead).
-        """
-        cap = self.factory_config.max_cost_usd
-        if cap <= 0:
-            return None
-        engineer = self.engineer_usage_totals()
-        if engineer.cost_calls > 0:
-            return None
-        if engineer.costless_calls < UNENFORCEABLE_CALLS:
-            return None
-        return (
-            f"cost budget unenforceable: the engineer has made "
-            f"{engineer.costless_calls} agent call(s) this run and none "
-            f"reported a cost, so max_cost_usd (${cap}) cannot advance; "
-            "refusing to schedule further components rather than spending "
-            "under a cap that cannot fire (R8)"
-        )
-
-    def ceiling_coverage(self, ceiling: str) -> CeilingCoverage | None:
-        """What fraction of the run's metered calls ``ceiling`` counts.
-
-        None when that ceiling is not configured (nothing to qualify) or
-        the key is not a ceiling.
-
-        The middle term the R8 ceilings were missing. ``*_budget_exceeded``
-        answers "was it breached", ``*_budget_unenforceable`` answers "can
-        it ever fire"; both were true-or-false over the WHOLE run, and a
-        ceiling that counts some roles and not others is neither. Measured
-        on a real run: the engineer reported cost on every call, the
-        cross-family reviewer reported tokens and no cost on 5, and the
-        run's cost total equalled the engineer's exactly - a $25 ceiling
-        that bounded one role while every existing surface reported it as
-        healthy.
-
-        Deliberately does NOT change what the ceiling counts. Converting
-        the uncovered calls' tokens to dollars would need a price table
-        this repo does not have and must not invent (a fabricated cost in
-        an audit trail is worse than a missing one). What changes is that
-        the gap is now stated instead of implied.
-        """
-        axis = CEILING_AXES.get(ceiling)
-        if axis is None:
-            return None
-        if ceiling == "max_cost_usd" and self.factory_config.max_cost_usd <= 0:
-            return None
-        if ceiling == "max_total_tokens" and self.factory_config.max_total_tokens <= 0:
-            return None
-        return usage_coverage(self.usage_meter, axis=axis, ceiling=ceiling)
-
-    def coverage_notes(self, ceilings: Sequence[str]) -> list[str]:
-        """Operator sentences for the named ceilings that fall short.
-
-        Empty when every named ceiling counted every call, so a
-        fully-covered halt reads exactly as it did before.
-        """
-        notes: list[str] = []
-        for ceiling in ceilings:
-            coverage = self.ceiling_coverage(ceiling)
-            if coverage is None:
-                continue
-            note = coverage.note()
-            if note:
-                notes.append(note)
-        return notes
-
-    def unenforceable_ceilings(self) -> list[str]:
-        """Configured ceilings that can no longer fire, by config key.
-
-        The identity half of :meth:`budget_unenforceable`. An
-        unenforceable halt crosses no numeric threshold, so
-        :meth:`breached_ceiling` correctly returns None for it - and
-        every audit surface downstream then rendered the empty string as
-        "token budget", naming a knob that may not even be configured
-        (review finding on #180: a cost-only run on a costless adapter
-        reported "run token budget exceeded (200/0)"). The ceiling that
-        FAILED still has a name even when nothing was breached.
-        """
-        dead: list[str] = []
-        if (
-            self.factory_config.max_total_tokens > 0
-            and self.token_budget_unenforceable() is not None
-        ):
-            dead.append("max_total_tokens")
-        if self.factory_config.max_cost_usd > 0 and self.cost_budget_unenforceable() is not None:
-            dead.append("max_cost_usd")
-        return dead
-
-    def budget_halt_identity(self) -> tuple[str, tuple[str, ...]]:
-        """``(condition, ceilings)`` for a halt derived from run totals.
-
-        The precedence rule lives HERE, once, because both call sites got
-        it wrong when they each spelled it out: a numeric breach and a
-        dead ceiling can coexist (a run whose token cap trips while its
-        cost cap never received a figure), and joining the dead list
-        first named ``max_cost_usd`` for a halt the TOKEN cap caused -
-        which then rendered as ``cost budget exceeded: $0 >= $100``, a
-        sentence that is both false and arithmetically impossible
-        (review finding on #180).
-
-        A breach is the stronger fact: it is a threshold that was
-        actually crossed, with numbers behind it. Dead ceilings are only
-        consulted when nothing was breached.
-        """
-        breached = self.breached_ceiling()
-        if breached is not None:
-            return ("breached", (breached,))
-        dead = self.unenforceable_ceilings()
-        if dead:
-            return ("unenforceable", tuple(dead))
-        return ("", ())
-
-    def budget_unenforceable(self) -> str | None:
-        """Why NO configured ceiling can fire any more, or None.
-
-        The scheduling gate's question. Halts only when EVERY configured
-        ceiling is dead: an adapter that reports cost but not tokens can
-        still enforce ``max_cost_usd``, and stopping the run because the
-        token ceiling died would discard a ceiling that still works.
-        With no ceiling configured there is nothing to enforce and this
-        is always None.
-        """
-        reasons = [
-            reason
-            for reason in (
-                self.token_budget_unenforceable(),
-                self.cost_budget_unenforceable(),
-            )
-            if reason is not None
-        ]
-        configured = sum(
-            (
-                self.factory_config.max_total_tokens > 0,
-                self.factory_config.max_cost_usd > 0,
-            )
-        )
-        if not reasons or len(reasons) < configured:
-            return None
-        return "; ".join(reasons)
-
     # ------------------------------------------------------------------
     # Attempt lifecycle + evidence pointers (R3.3)
     # ------------------------------------------------------------------
-
-    def _journal_offset(self) -> int:
-        """Current byte size of the v1 progress log; used to bracket one
-        attempt's slice of events (R3.3). -1 when no real progress log
-        is configured for this run. Deliberately pegged to the v1 compat
-        file, NOT events.jsonl - the manifest's journal_offset_start/end
-        semantics must not silently repoint (plan: explicit future
-        schema decision)."""
-        if self.journal_path is None:
-            return -1
-        try:
-            return self.journal_path.stat().st_size if self.journal_path.exists() else 0
-        except OSError:
-            return -1
-
-    @contextmanager
-    def _phase_transcript(
-        self,
-        comp_id: str,
-        phase: str,
-    ) -> Iterator[Callable[[str], None] | None]:
-        """Line writer onto RunPaths.phase_log for one phase invocation.
-
-        Yields None when no run dir is configured (progress logging
-        disabled) or the file cannot be opened - transcripts are
-        observability and must never gate a phase. Repeated
-        invocations (retries) append.
-        """
-        if self.run_paths is None:
-            yield None
-            return
-        path = self.run_paths.phase_log(comp_id, phase)
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            fh = open(path, "a", buffering=1, encoding="utf-8")
-        except OSError:
-            yield None
-            return
-
-        def _write_line(line: str) -> None:
-            fh.write(line + "\n")
-
-        try:
-            yield _write_line
-        finally:
-            try:
-                fh.close()
-            except OSError:
-                pass
-
-    def _agent_call(self, comp: Component, role: str) -> AgentCall:
-        """Who one phase's agent prompts are recorded for (#532).
-
-        Under ``usage_paths``, not ``run_paths``: the record is evidence a
-        later reader scores, so it survives the progress-log opt-out the
-        way the usage accounting does.
-        """
-        return AgentCall(
-            run_root=self.usage_paths.root,
-            run_id=self.run_id,
-            component=comp.id,
-            role=role,
-            attempt=comp.retries + 1,
-        )
-
-    def _phase_started(self, comp: Component, phase: str) -> float:
-        """Emit the authoritative phase bracket opener; returns the
-        monotonic start for the matching _phase_completed."""
-        self.bus.emit(
-            event_catalog.PhaseStarted(
-                component=comp.id,
-                phase=phase,
-                attempt=comp.retries + 1,
-            )
-        )
-        return time.monotonic()
-
-    def _phase_completed(
-        self,
-        comp: Component,
-        phase: str,
-        started: float,
-        passed: bool,
-        detail: str = "",
-    ) -> None:
-        self.bus.emit(
-            event_catalog.PhaseCompleted(
-                component=comp.id,
-                phase=phase,
-                passed=passed,
-                detail=detail,
-                duration_seconds=round(time.monotonic() - started, 2),
-            )
-        )
-
-    def _debug_dir_for(self, comp_id: str) -> Path:
-        """Forensic raw-output dir for this run's component (R1.2)."""
-        return self.root_dir / ".kstrl" / "debug" / self.run_id / comp_id
-
-    def _add_findings(
-        self,
-        comp: Component,
-        new_findings: list[Finding],
-    ) -> None:
-        """Append findings tagged ``attempt:<n>`` for the attempt in
-        flight (R3.3), so the journal can attribute every finding to the
-        attempt that produced it."""
-        attempt = comp.retries + 1
-        comp.findings.extend(tag_finding_with_attempt(f, attempt) for f in new_findings)
-        # Chunk 4: stream each finding as a typed event the moment it is
-        # recorded (the manifest only carries them at transition time).
-        for finding in new_findings:
-            self.bus.emit(
-                event_catalog.FindingRecorded(
-                    component=comp.id,
-                    phase=finding.phase,
-                    category=finding.category,
-                    severity=finding.severity,
-                    location=finding.location,
-                    explanation=finding.explanation,
-                    attempt=attempt,
-                    model=finding_model(finding) or "",
-                )
-            )
-
-    def begin_attempt(self, comp: Component) -> None:
-        """PENDING -> RUNNING transition for one attempt (R3.3).
-
-        The prior attempt's findings were journaled when its retry was
-        scheduled (or by record_run when a previous run ended), so the
-        manifest carries only the current attempt's stream; the failure
-        and evidence pointers likewise describe only the attempt in
-        flight."""
-        comp.findings = []
-        comp.review_findings = ""
-        comp.failed_phase = ""
-        comp.failed_check = ""
-        comp.completed_at = ""
-        comp.evidence_worktree = ""
-        comp.evidence_debug_dir = ""
-        comp.journal_offset_start = self._journal_offset()
-        comp.journal_offset_end = -1
-        comp.status = ComponentStatus.RUNNING.value
-        comp.started_at = _iso_now()
-        self.component_failure_signatures.pop(comp.id, None)
-        # #247: the readings describe the attempt in flight, so the
-        # attempt boundary is where they are cleared. Anything the
-        # previous attempt observed is already in the context's JSON.
-        # What this pop does is BOUND the dict, not decide anything: the
-        # attempt number is captured at record time, so a pair carried
-        # over from an earlier attempt never matches the latest one and
-        # `_buckets` ignores it. Deleting the pop is measured green
-        # (round 1 review, mutation R3) and no test is owed for it.
-        self._phase_readings.pop(comp.id, None)
-        self._attempt_started_monotonic[comp.id] = time.monotonic()
-
-    def _end_attempt(self, comp: Component) -> None:
-        """Stamp the attempt's evidence pointers when it stops running:
-        the progress-log slice end, and the debug dir when any phase
-        dumped raw output there (R3.3). Also stamp the attempt's full
-        wall-clock duration (R6.4): every terminal transition (retry,
-        fail, merge-pending, completed, scheduler backstop) routes
-        through here, so duration_seconds covers engineer + verify +
-        review + security + PR instead of the engineer loop only."""
-        comp.journal_offset_end = self._journal_offset()
-        started = self._attempt_started_monotonic.get(comp.id)
-        if started is not None:
-            comp.duration_seconds = time.monotonic() - started
-        debug_dir = self._debug_dir_for(comp.id)
-        if debug_dir.exists():
-            comp.evidence_debug_dir = str(debug_dir)
 
     def _cascade_skip(self, failed_id: str) -> list[str]:
         """Skip every transitive dependent of ``failed_id`` and say so on
@@ -1393,187 +672,9 @@ class ComponentPipeline(PipelineState):
             )
         return skipped
 
-    def journal_integration_result(
-        self,
-        outcome: str,
-        reason: str,
-        reviewed_sha: str,
-        opened: Sequence[str],
-        errors: Sequence[str],
-        *,
-        gates: bool = False,
-    ) -> None:
-        """Journal one integration review round (#482). Non-fatal, never silent."""
-        from kstrl.evolution import (
-            INTEGRATION_RESULT_EVENT,
-            JOURNAL_SCHEMA_VERSION,
-            EvolutionJournal,
-        )
-
-        journal = EvolutionJournal.open(self.root_dir, warn=self.ui.warn)
-        if journal is None:
-            return
-        entry = {
-            "schema_version": JOURNAL_SCHEMA_VERSION,
-            "timestamp": _iso_now(),
-            "run_id": self.run_id,
-            "project": self.manifest.project_name,
-            "component_id": "",
-            "event_type": INTEGRATION_RESULT_EVENT,
-            "outcome": outcome,
-            "reason": reason,
-            "reviewed_sha": reviewed_sha,
-            "opened": list(opened),
-            "errors": list(errors),
-            "gates": gates,
-        }
-        try:
-            journal.append_entries([entry])
-        except OSError as exc:
-            self.ui.warn(f"  Evolution journal write failed (non-fatal): {exc}")
-
-    def record_integration_halt(
-        self, reason: str, open_findings: Sequence[str], evidence: str
-    ) -> None:
-        """The one inbox item a blocking integration loop leaves when it stops
-        without a clean verdict (#483). Run-level, so it names no component.
-        The durable record is .kstrl/integration/state.json, written first."""
-        self._inbox_add(
-            ItemKind.HALTED_RUN,
-            "integration loop stopped without a clean verdict",
-            detail=reason,
-            dedupe_key=f"halted:integration:{self.run_id}",
-            evidence={"open_findings": list(open_findings), "evidence": evidence},
-        )
-
-    def record_carried_halt(self, entry: Mapping[str, str], where: str, detail: str) -> None:
-        """The inbox item of an earlier feature's check that does not pass on
-        the base or in a Phase 3 that failed (#466). Approving it retires the
-        check. One open item per check: a later failure bumps it."""
-        plan, comp, check = entry["planId"], entry["component"], entry["check"]
-        self._inbox_add(
-            ItemKind.HALTED_RUN,
-            f"An earlier feature's acceptance check {check} fails",
-            detail=(
-                f"The check {check} of {comp} in the acceptance plan {plan[:12]} passed on "
-                f"{entry['passedAt'][:12]} and does not pass on {where} ({detail}). Approve "
-                "this item to retire the check if a change made it obsolete: no later run "
-                "replays it. Otherwise repair the change."
-            ),
-            dedupe_key=f"carried:{plan}:{comp}:{check}",
-            evidence={
-                "carried": {"planId": plan, "component": comp, "check": check},
-                "where": where,
-            },
-        )
-
-    def journal_superseded_findings(
-        self, comp: Component, failure_count: int | None = None
-    ) -> None:
-        """A scheduled retry supersedes the current attempt. Record the
-        attempt's findings and iteration count in the evolution journal
-        (attempt-tagged) before the next attempt clears the manifest
-        stream, so superseded and shipped findings stay distinguishable
-        (R3.3). The final attempt's findings reach the journal via
-        record_run instead. Non-fatal on I/O errors, matching
-        _record_contract_event.
-
-        Writes the row whether or not the attempt produced any
-        ``Finding``: an attempt boundary is worth recording either way,
-        and a guard here used to drop the row entirely on a clean
-        attempt, which is the row #233's reader depends on
-        (``read_attempt_iterations``) to see every attempt.
-
-        ``iteration_count`` is the ENDING attempt's own count, not a
-        running total. ``process_result`` assigns it at
-        ``pipeline.py:2276`` before routing into any transition, and both
-        callers of this method run BEFORE the matching ``retries``
-        increment (``pipeline.py:1558``, ``factory.py:4517``), so
-        ``comp.retries + 1`` names the attempt the count belongs to. That
-        is the same expression ``PhaseStarted`` uses at
-        ``factory.py:4225``: one definition of the attempt number.
-        """
-        from kstrl.evolution import (
-            FINDINGS_SUPERSEDED_EVENT,
-            JOURNAL_SCHEMA_VERSION,
-            EvolutionJournal,
-        )
-
-        journal = EvolutionJournal.open(self.root_dir, warn=self.ui.warn)
-        if journal is None:
-            return
-        entry = {
-            "schema_version": JOURNAL_SCHEMA_VERSION,
-            "timestamp": _iso_now(),
-            "run_id": self.run_id,
-            "project": self.manifest.project_name,
-            "component_id": comp.id,
-            "event_type": FINDINGS_SUPERSEDED_EVENT,
-            "attempt": comp.retries + 1,
-            "iteration_count": comp.iteration_count,
-            "failure_signatures": self.component_failure_signatures.get(
-                comp.id,
-                [],
-            ),
-            "findings": [f.to_dict() for f in comp.findings],
-            # #233: the gate's failure count for this attempt, null when the
-            # failure was not a gate's. The distribution
-            # [factory] convergence_attempts is set from.
-            "failure_count": failure_count,
-        }
-        try:
-            journal.append_entries([entry])
-        except OSError as exc:
-            # Evolution recording is non-fatal, but never silent (R6.1).
-            self.ui.warn(f"  Evolution journal write failed (non-fatal): {exc}")
-
     # ------------------------------------------------------------------
     # Transitions (the single place component state moves)
     # ------------------------------------------------------------------
-
-    def _record_failure_signatures(
-        self,
-        comp: Component,
-        phase: str,
-        error: str,
-        signatures: list[str] | None,
-    ) -> None:
-        """R6.1: remember the structured signatures for this failure so
-        record_run journals real "<check>:<code>" identifiers instead of
-        re-deriving a degenerate slug from the flattened error string.
-        Sites that pass no signatures fall back to a slug of the
-        error text under the failing phase."""
-        from kstrl.evolution import signature_for_error
-
-        if signatures:
-            self.component_failure_signatures[comp.id] = list(signatures)
-        else:
-            self.component_failure_signatures[comp.id] = [
-                signature_for_error(phase or "unknown", error),
-            ]
-
-    def _note_phase_reading(self, comp: Component, phase: str, produced: bool) -> None:
-        """Record that ``phase`` measured this attempt of ``comp`` (#247).
-
-        The attempt number is captured HERE rather than at merge time,
-        which is what stops an off-by-one: ``comp.retries + 1`` is the
-        attempt convention every entry site uses, and ``retry_or_fail``
-        increments ``retries`` before it stores the context.
-        """
-        if produced:
-            self._phase_readings.setdefault(comp.id, set()).add((comp.retries + 1, phase))
-
-    def _merge_phase_readings(self, comp_id: str, ctx: IterationContext) -> None:
-        """Merge this attempt's readings into the context about to be
-        stored for the next attempt.
-
-        Takes the object rather than JSON so each writer parses and
-        serialises once. A record carried forward from an older attempt
-        is inert by construction: ``_buckets`` only consults readings
-        whose attempt equals the latest one.
-        """
-        for attempt, phase in self._phase_readings.get(comp_id, set()):
-            ctx.add_phase_reading(phase, attempt=attempt)
 
     def record_contract_failure(self, comp_id: str, attempt: int, test_output: str) -> None:
         """Add a contract-test failure to a component's retry context.
@@ -1714,12 +815,6 @@ class ComponentPipeline(PipelineState):
             check="convergence",
             signatures=["engineer:divergence"],
         )
-
-    def record_worktree_sweep(self, comp_id: str, sweep: WorktreeSweep, phase: str) -> None:
-        """Record a worktree sweep's survivors as findings on the component (#461)."""
-        comp = self.manifest.get_component(comp_id)
-        if comp is not None:
-            self._add_findings(comp, sweep_findings(sweep, phase))
 
     def fail_aborted(self, comp_id: str, reason: str) -> None:
         """PR B: a shutdown aborted this component's in-flight attempt.
@@ -1976,149 +1071,6 @@ class ComponentPipeline(PipelineState):
         # completion the manifest does not yet hold.
         self._inbox_resolve_component(comp.id)
         return Transition.COMPLETED
-
-    def _open_inbox(self) -> Inbox:
-        """The one ``Inbox`` this pipeline lazily builds and reuses.
-
-        Every site below constructs on first use and none reconstructs:
-        each still gates construction on ``self._inbox is None`` itself
-        (some also branch on ``inbox_config.enabled`` before ever
-        reaching here), so this is only the shared "build it once" step,
-        not the disabled check - a caller that must not construct one at
-        all when the inbox is disabled keeps that check ahead of the call.
-        """
-        if self._inbox is None:
-            self._inbox = Inbox(self.root_dir, self.inbox_config)
-        return self._inbox
-
-    def _inbox_resolve(self, dedupe_key: str, reason: str) -> None:
-        """Close an open item whose question the world has answered."""
-        try:
-            if self._inbox is None:
-                if not self.inbox_config.enabled:
-                    return
-                self._inbox = self._open_inbox()
-            existing = self._inbox.find_by_dedupe_key(dedupe_key)
-            if existing is not None:
-                # #648: the precondition is the fresh row inside resolve's
-                # lock, so an operator's decision landing after this read wins.
-                self._inbox.resolve(existing.id, comment=reason, only_from=UNDECIDED)
-        except (OSError, TypeError, ValueError, InboxError, ControlStateError) as exc:
-            # Same tuple as _inbox_add below, and for the same two
-            # reasons: Inbox.resolve takes the control lock in _decide, so
-            # it can raise ControlStateError,
-            # and InboxConfig.load casts per key, so a TOML date raises
-            # TypeError. #192 moved that cast to ``__init__``, behind
-            # the entry preflight; the tuple keeps TypeError anyway,
-            # because this function's contract is that closing a stale
-            # item cannot fail the run that answered it.
-            self.ui.warn(f"  Inbox resolve failed (non-fatal): {exc}")
-
-    def _inbox_resolve_component(self, comp_id: str, detail: str = "") -> None:
-        """Resolve every undecided item naming a component that COMPLETED (#438).
-
-        Resolved on the fact, not on the command. ``ks retry`` never
-        touched the inbox and ``ks inbox retry`` resolves only the item
-        it was given, so a component completed either way could leave an
-        item open, and ``ks inbox ls`` then disagreed with ``ks status``.
-        Every place a component becomes COMPLETED calls this;
-        ``tests/test_inbox_resolves_on_completion.py`` counts those places
-        and fails a new one that does not.
-
-        Undecided means OPEN or SNOOZED (``inbox.UNDECIDED``). A snoozed
-        item comes back when its TTL lapses, and it would come back
-        asking about a component that has already completed. APPROVED,
-        REJECTED and RESOLVED are decisions already made and are left as
-        they are - guaranteed at the WRITE, not by this list. The
-        ``undecided`` list below is a pre-filter built from a snapshot,
-        so an operator's ``approve``/``reject``/``snooze`` can land after
-        it and before ``resolve`` appends; ``only_from=UNDECIDED`` makes
-        ``resolve`` re-check the fresh status inside the same lock as its
-        write and, when the decision won, skip the append and hand back
-        ``None`` instead of overwriting it.
-
-        Never fatal and never silent. The component's work is done and
-        saved, so a broken inbox must not fail the run. The items stay
-        open, which is the state the operator already saw, and the
-        warning names the component and the error in the run's output.
-        """
-        comment = f"{comp_id} completed in run {self.run_id}"
-        if detail:
-            comment = f"{comment}: {detail}"
-        try:
-            if self._inbox is None:
-                if not self.inbox_config.enabled:
-                    return
-                self._inbox = self._open_inbox()
-            undecided = [
-                item
-                for item in self._inbox.items()
-                if item.component == comp_id and item.status in UNDECIDED
-            ]
-            for item in undecided:
-                resolved = self._inbox.resolve(item.id, comment=comment, only_from=UNDECIDED)
-                if resolved is not None:
-                    self.ui.info(f"  Inbox: resolved {item.id[:8]} ({item.kind}): {comment}")
-        except (OSError, TypeError, ValueError, InboxError, ControlStateError) as exc:
-            # The tuple _inbox_resolve catches, for the reasons it gives.
-            self.ui.warn(
-                f"  Inbox resolve for {comp_id} failed (non-fatal; its items stay open): {exc}"
-            )
-
-    def _inbox_suppress_generic(self, comp_id: str) -> None:
-        """Mark that a typed item already covers this component's halt.
-
-        fail() emits a generic halted_run for every terminal failure; a
-        budget halt (or a parked merge gate) has already raised a more
-        specific item, and two items for one event burn two cap slots and
-        bury the reason.
-        """
-        self._inbox_typed.add(comp_id)
-
-    def _inbox_add(
-        self,
-        kind: ItemKind,
-        title: str,
-        *,
-        detail: str = "",
-        component: str = "",
-        dedupe_key: str = "",
-        evidence: dict[str, Any] | None = None,
-    ) -> None:
-        """Record an exception for a human (R8.3). Never fatal.
-
-        Every terminal halt routes through here, so the inbox reflects
-        what actually happened rather than what someone remembered to
-        report. Bookkeeping must not be able to fail a run, so a broken
-        inbox degrades to a warning - but it warns, because a silently
-        empty inbox reads exactly like a clean run.
-        """
-        try:
-            if self._inbox is None:
-                if not self.inbox_config.enabled:
-                    self._inbox_disabled = True
-                    return
-                self._inbox = self._open_inbox()
-            if self._inbox_disabled:
-                return
-            self._inbox.add(
-                kind,
-                title,
-                detail=detail,
-                component=component,
-                run_id=self.run_id,
-                dedupe_key=dedupe_key,
-                evidence=evidence or {},
-                notify=self.notify,
-            )
-        except (OSError, TypeError, ValueError, ControlStateError) as exc:
-            # ControlStateError is a RuntimeError: every Inbox write takes
-            # the control lock, and the (OSError,
-            # ValueError) pair all seven inbox sites were written with
-            # does not catch what that lock raises. TypeError was
-            # InboxConfig.load's per-key cast, which #192 moved to
-            # ``__init__``; it stays for the reason _inbox_resolve gives.
-            self.ui.warn(f"  Inbox write failed (non-fatal): {exc}")
 
     def _park_merge_pending(
         self,
@@ -2541,74 +1493,6 @@ class ComponentPipeline(PipelineState):
                     f"dependents wait (`ks inbox ls`, then `ks inbox approve <id>`)"
                 )
 
-    def _park_decision(self, comp_id: str) -> InboxItem | None:
-        """The merge_gate item that parked ``comp_id``, or None when unreadable."""
-        try:
-            if self._inbox is None:
-                if not self.inbox_config.enabled:
-                    return None
-                self._inbox = self._open_inbox()
-            return self._inbox.find_by_dedupe_key(park_dedupe_key(comp_id))
-        except (OSError, TypeError, ValueError, InboxError, ControlStateError) as exc:
-            # The tuple _inbox_resolve catches. Unreadable is not a
-            # decision: the component stays parked, and says why.
-            self.ui.warn(f"  Inbox read failed; '{comp_id}' stays parked: {exc}")
-            return None
-
-    def snapshot_waivers(self) -> None:
-        """#595: read the approved policy_exception items once.
-
-        Called by the factory right after ``apply_merge_decisions``: after
-        every pre-spend refusal and before any engineer is scheduled. The
-        #192 rule quoted in ``_phase_verify`` applies: an approval made
-        mid-run, by an operator or by an engineer running ``ks inbox
-        approve`` in its own worktree, does not change what a later
-        attempt in this run is held to. It takes effect from the next run.
-
-        Every failure here waives nothing: the checks block exactly as
-        they did before approvals were read, and say that the approvals
-        were not consulted.
-        """
-        try:
-            if self._inbox is None:
-                if not self.inbox_config.enabled:
-                    self._approvals = ApprovalSnapshot(unconsulted_reason="the inbox is disabled")
-                    return
-                self._inbox = self._open_inbox()
-            self._approvals = load_approvals(self._inbox)
-        except (OSError, TypeError, ValueError, InboxError, ControlStateError) as exc:
-            # The tuple _park_decision catches, for the reasons it gives.
-            self.ui.warn(f"  Inbox read failed; no approval waives a finding in this run: {exc}")
-            self._approvals = ApprovalSnapshot(unconsulted_reason=f"the inbox read failed: {exc}")
-
-    def _waiver_scope(self, comp: Component) -> WaiverScope:
-        """What a waiver key binds a finding to: the run's plan and the component."""
-        return WaiverScope(
-            project=self.manifest.project_name,
-            spec_file=self.manifest.spec_file,
-            plan_id=comp.plan_id,
-            component=comp.id,
-        )
-
-    def _waivers_for(self, comp: Component, diff_sha: str) -> Waivers:
-        """This run's approvals for ``comp`` that cover ``diff_sha``, or an unconsulted snapshot.
-
-        ``diff_sha`` is the change this attempt is judged on, from
-        :meth:`_judged_change`: an approval covers only the change it was
-        taken on (#646), so every other diff is asked again.
-
-        ``self._approvals`` is None only when ``snapshot_waivers`` was
-        never called for this pipeline - a bug here, not ``ks check``'s
-        legitimate ``waivers=None`` (it calls the checks directly and
-        never reaches this method). Defaulting to unconsulted keeps that
-        bug from reading as "nothing waived silently": the check still
-        says why.
-        """
-        approvals = self._approvals or ApprovalSnapshot(
-            unconsulted_reason="snapshot_waivers was not called before this check"
-        )
-        return approvals.for_scope(self._waiver_scope(comp), diff_sha)
-
     def _merge_approved(self, comp: Component, decision: InboxItem) -> None:
         """Push, open and merge the branch exactly as the gate parked it.
 
@@ -2641,24 +1525,6 @@ class ComponentPipeline(PipelineState):
     # ------------------------------------------------------------------
     # Phase chain
     # ------------------------------------------------------------------
-
-    def _record_phase_skip(
-        self,
-        comp: Component,
-        phase: str,
-        reason: str,
-    ) -> None:
-        """R1.2: a phase that never ran must leave a trace in both
-        the findings stream and the journal, so "ran clean" and
-        "never ran" are distinguishable downstream."""
-        self._add_findings(comp, [Finding.phase_skipped(phase, reason)])
-        self.bus.emit(
-            event_catalog.PhaseSkipped(
-                component=comp.id,
-                phase=phase,
-                reason=reason,
-            )
-        )
 
     def process_result(
         self,

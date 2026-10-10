@@ -438,7 +438,7 @@ FILING_PATHS = {
     "plan_gate.py::_record::add": (
         "test_a_plan_decided_at_the_prompt_pages_nobody_and_a_parked_one_pages_once"
     ),
-    "pipeline.py::ComponentPipeline._inbox_add::add": (
+    "pipeline_inbox.py::InboxDesk._inbox_add::add": (
         "test_pipeline_fires_once_per_kind_and_not_on_a_repeat"
     ),
     "serve.py::_file_inbox_item::add": (

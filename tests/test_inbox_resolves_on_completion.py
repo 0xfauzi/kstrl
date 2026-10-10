@@ -281,7 +281,7 @@ class TestACompletedComponentClosesItsItems:
         manifest_path = _project(tmp_path)
         item = _halted(tmp_path, manifest_path)
         out = io.StringIO()
-        with patch("kstrl.pipeline.Inbox.resolve", side_effect=OSError("disk full")):
+        with patch("kstrl.inbox.Inbox.resolve", side_effect=OSError("disk full")):
             _ks_retry(tmp_path, manifest_path, out=out)
         assert _completed(manifest_path)
         still = Inbox(tmp_path, InboxConfig()).get(item.id)

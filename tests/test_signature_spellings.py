@@ -127,12 +127,13 @@ EXPECTED_SPELLINGS: frozenset[tuple[str, str]] = frozenset(
         ("kstrl/pipeline.py", "budget"),
         # #466: the dedupe key of a carried check's halted_run item,
         # f"carried:{plan}:{comp}:{check}".
-        ("kstrl/pipeline.py", "carried"),
+        ("kstrl/pipeline_inbox.py", "carried"),
         # #700, owner decision of 2026-10-09: the dedupe key of the
         # halted_run item of a bug report the base did not reproduce,
         # f"{NOT_REPRODUCED_KEY}{plan}:{sha}".
         ("kstrl/acceptance_design.py", "unreproduced"),
         ("kstrl/pipeline.py", "halted"),
+        ("kstrl/pipeline_inbox.py", "halted"),
         ("kstrl/pipeline.py", "merge"),
         ("kstrl/pipeline.py", "policy"),
         # #595: finding tags an inbox approval writes on a policy

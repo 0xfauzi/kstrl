@@ -612,7 +612,7 @@ class TestEmittersFireDuringRuns:
         from kstrl.verify import CheckResult, VerificationResult
 
         with patch(
-            "kstrl.pipeline.Inbox.add",
+            "kstrl.inbox.Inbox.add",
             side_effect=OSError("disk full"),
         ):
             _run_factory(

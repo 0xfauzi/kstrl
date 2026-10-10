@@ -81,14 +81,14 @@ BLIND_SITES: tuple[tuple[str, str, str, str], ...] = (
         "those names are censused at their CheckResult call sites",
     ),
     (
-        "kstrl/pipeline.py",
-        "ComponentPipeline._record_failure_signatures",
+        "kstrl/pipeline_attempt.py",
+        "AttemptRecorder._record_failure_signatures",
         "list(signatures)",
         "pass-through: re-emits what fail/retry_or_fail was handed, censused at those call sites",
     ),
     (
-        "kstrl/pipeline.py",
-        "ComponentPipeline._record_failure_signatures",
+        "kstrl/pipeline_attempt.py",
+        "AttemptRecorder._record_failure_signatures",
         "signature_for_error(phase or 'unknown', error)",
         "the phase= fallback itself; the phase is censused at the "
         "fail/retry_or_fail call sites and 'unknown' is enrolled outright",

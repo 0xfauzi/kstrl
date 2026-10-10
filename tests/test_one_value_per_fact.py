@@ -389,7 +389,7 @@ EXPECTED_REVIEW_RESULT_SITES: dict[str, int] = {
 #: argument (``Component(duration_seconds=...)``) is not an assignment and
 #: is not seen; ``Manifest.load`` builds the field that way from disk.
 EXPECTED_DURATION_WRITE_SITES: dict[str, int] = {
-    "pipeline.py:_end_attempt": 1,  # the fact: the attempt's wall-clock time
+    "pipeline_attempt.py:_end_attempt": 1,  # the fact: the attempt's wall-clock time
     "manifest.py:reset_for_retry": 1,  # the --reset path zeroes it
     "review.py:run_review": 3,  # ReviewResult's own timing
     "security.py:run_security_review": 1,  # SecurityResult's own timing

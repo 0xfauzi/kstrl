@@ -76,7 +76,8 @@ EXPECTED_SIGNATURE_CONTAINER_SITES: dict[tuple[str, str], int] = {
     # rather than through a local of its own. The chokepoint itself is
     # unchanged: a check name still reaches the journal through this one
     # mapping or it does not reach it at all.
-    ("kstrl/pipeline.py", "self.component_failure_signatures"): 8,
+    ("kstrl/pipeline.py", "self.component_failure_signatures"): 4,
+    ("kstrl/pipeline_attempt.py", "self.component_failure_signatures"): 4,
     ("kstrl/pipeline_state.py", "self.run_state.component_failure_signatures"): 1,
     ("kstrl/factory.py", "run_state.component_failure_signatures"): 3,
     # The declaration, which is where the mapping now lives.
