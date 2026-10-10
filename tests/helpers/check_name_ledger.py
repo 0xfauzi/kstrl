@@ -94,8 +94,8 @@ BLIND_SITES: tuple[tuple[str, str, str, str], ...] = (
         "fail/retry_or_fail call sites and 'unknown' is enrolled outright",
     ),
     (
-        "kstrl/pipeline.py",
-        "ComponentPipeline._review_failure",
+        "kstrl/pipeline_verdicts.py",
+        "ReviewVerdicts._review_failure",
         "signatures_from_findings('review', review_result.as_findings())",
         "composed at run time as '<phase>:<Finding.category>'; the phase is "
         "the literal in this call and the category comes from findings.py",
@@ -130,8 +130,8 @@ BLIND_SITES: tuple[tuple[str, str, str, str], ...] = (
         "pass-through, the second of the same two branches",
     ),
     (
-        "kstrl/pipeline.py",
-        "ComponentPipeline._security_failure",
+        "kstrl/pipeline_security.py",
+        "SecurityGate._security_failure",
         "signatures_from_findings('security', sec_result.as_findings(), "
         "sec_result.failing_severities)",
         "composed at run time, as _review_failure above",

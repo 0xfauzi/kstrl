@@ -536,8 +536,8 @@ class TestEveryCheckNameIsEnrolled:
         # The property that actually moves is the rescue taking a row
         # OUT of the ledger, so that is what is asserted.
         assert (
-            "kstrl/pipeline.py",
-            "ComponentPipeline._coverage_failure",
+            "kstrl/pipeline_verdicts.py",
+            "ReviewVerdicts._coverage_failure",
             "f'{phase}:coverage-unverified:{reason}'",
         ) not in blind_sites(), "a check name resolved from the call sites"
         # #306: a check name spelled only by a module constant in its

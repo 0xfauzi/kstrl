@@ -75,7 +75,7 @@ EXPECTED_SPELLINGS: frozenset[tuple[str, str]] = frozenset(
         ("kstrl/factory.py", "contract"),
         # #226: written as f"{ADVERSARIAL_BUDGET_CHECK}:{phase}", so the
         # head folds through the imported constant rather than a literal.
-        ("kstrl/pipeline.py", "adversarial_budget"),
+        ("kstrl/pipeline_verdicts.py", "adversarial_budget"),
         ("kstrl/factory.py", "scope_unreadable"),
         ("kstrl/pipeline_transitions.py", "aborted"),
         ("kstrl/pipeline_checks.py", "diff"),
@@ -83,6 +83,7 @@ EXPECTED_SPELLINGS: frozenset[tuple[str, str]] = frozenset(
         ("kstrl/pipeline_transitions.py", "engineer"),
         ("kstrl/pipeline.py", "pr"),
         ("kstrl/pipeline.py", "review"),
+        ("kstrl/pipeline_verdicts.py", "review"),
         ("kstrl/pipeline_transitions.py", "token_budget"),
         # #696: f"stack:{name}", the row of a [stack] check (verify.check_stack_command).
         ("kstrl/verify.py", "stack"),

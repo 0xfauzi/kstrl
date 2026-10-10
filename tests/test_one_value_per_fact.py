@@ -378,7 +378,7 @@ EXPECTED_COMPLETED_SITES: dict[str, int] = {
 #: Every ``ReviewResultEvent(...)`` in ``kstrl/``, by owning function.
 EXPECTED_REVIEW_RESULT_SITES: dict[str, int] = {
     "pipeline.py:_phase_review": 1,
-    "pipeline.py:_phase_security": 1,
+    "pipeline_security.py:_phase_security": 1,
 }
 
 #: Every assignment to an attribute spelled ``duration_seconds`` in

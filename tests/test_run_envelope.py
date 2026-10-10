@@ -543,7 +543,7 @@ class TestTheFactoryHandsThePipelineWhatItRecords:
                 project_stack=in_process_stack(),
             ),
         )
-        import kstrl.pipeline as pipeline_module
+        import kstrl.pipeline_verdicts as pipeline_module
 
         seen: list[int] = []
 
