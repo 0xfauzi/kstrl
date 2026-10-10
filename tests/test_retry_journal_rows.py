@@ -32,7 +32,7 @@ from kstrl.factory import FactoryConfig, run_factory
 from kstrl.health import readings_from
 from kstrl.manifest import ComponentStatus, Manifest
 from kstrl.ui.plain import PlainUI
-from kstrl.verify import VerifyConfig
+from kstrl.verify_model import VerifyConfig
 from tests import spine_utils
 from tests.helpers import gitrepo
 from tests.helpers.stack_confirmation import in_process_stack

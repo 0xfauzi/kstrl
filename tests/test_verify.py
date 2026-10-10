@@ -10,12 +10,12 @@ import pytest
 
 from kstrl.verify import (
     MechanicalVerification,
-    VerifyConfig,
     check_bad_patterns,
     check_prd_stories,
     check_self_critique,
     run_mechanical_verification,
 )
+from kstrl.verify_model import VerifyConfig
 from tests.conftest import make_review_repo
 from tests.helpers.stack_confirmation import in_process_stack
 

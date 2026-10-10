@@ -35,7 +35,7 @@ from kstrl.iteration_prompt import build_project_context
 from kstrl.loop import COMPLETION_MARKER, run_loop
 from kstrl.stack import STACK_PROMPT
 from kstrl.ui.plain import PlainUI
-from kstrl.verify import VerifyConfig
+from kstrl.verify_model import VerifyConfig
 from tests.helpers.stack_confirmation import in_process_stack, write_stack
 from tests.test_feature_cmd import _write_fast_verify_toml
 

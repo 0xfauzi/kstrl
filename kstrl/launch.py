@@ -76,7 +76,7 @@ def assemble_factory_configs(
     from kstrl.contract import ContractConfig
     from kstrl.feedforward import CodebaseScanConfig
     from kstrl.security import SecurityConfig
-    from kstrl.verify import VerifyConfig
+    from kstrl.verify_model import VerifyConfig
 
     base_config = KstrlConfig.load(root_dir)
     base_config.ui_mode = "plain"

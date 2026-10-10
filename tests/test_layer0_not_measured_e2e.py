@@ -30,7 +30,7 @@ from kstrl.interaction import PromptRequest, PromptResponse
 from kstrl.manifest import Manifest
 from kstrl.review import CriterionReview, ReviewResult
 from kstrl.ui.plain import PlainUI
-from kstrl.verify import VerifyConfig
+from kstrl.verify_model import VerifyConfig
 from tests.helpers.executables import write_executable
 from tests.helpers.plan_approval import approve_plan
 from tests.helpers.stack_confirmation import in_process_stack

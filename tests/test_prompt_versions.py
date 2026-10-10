@@ -147,7 +147,7 @@ from kstrl.review_prompt import REVIEWER_PROMPT, REVIEWER_PROMPT_VERSION
 from kstrl.security import SECURITY_PROMPT, SECURITY_PROMPT_VERSION, SecurityConfig, SecurityMode
 from kstrl.stack import STACK_PROMPT, STACK_PROMPT_VERSION, Stack
 from kstrl.ui import PlainUI
-from kstrl.verify import VerificationResult
+from kstrl.verify_model import VerificationResult
 from tests.conftest import make_review_repo
 from tests.helpers.builder_prompts import (
     _BUILDERS,

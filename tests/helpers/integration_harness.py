@@ -29,7 +29,7 @@ from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.pipeline import ComponentPipeline
 from kstrl.security import SecurityConfig
 from kstrl.ui.plain import PlainUI
-from kstrl.verify import VerifyConfig
+from kstrl.verify_model import VerifyConfig
 from tests.helpers.component_prd import PASSING_STORY, write_component_prd
 from tests.helpers.gitrepo import git_in, set_identity
 from tests.helpers.stack_confirmation import in_process_stack

@@ -26,7 +26,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import doctor, git, guards, loop, verify
+from kstrl import doctor, git, guards, loop, verify, verify_model
 from kstrl.breaker import compute_diff_hash
 from kstrl.config import KstrlConfig
 from kstrl.policy import PolicyConfig
@@ -326,7 +326,7 @@ def test_the_mechanical_verifier_returns_a_verdict_on_a_diff_it_cannot_decode(
         prd_path=None,
         base_branch="main",
         allowed_paths=None,
-        config=verify.VerifyConfig(
+        config=verify_model.VerifyConfig(
             project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
             subprocess_timeout=30.0,
         ),

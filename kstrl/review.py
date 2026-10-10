@@ -24,7 +24,7 @@ from kstrl.findings import (
 )
 from kstrl.prd import PRD
 from kstrl.review_prompt import build_review_prompt
-from kstrl.verify import VerificationResult
+from kstrl.verify_model import VerificationResult
 
 if TYPE_CHECKING:
     from kstrl.agents.base import Agent

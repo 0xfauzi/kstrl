@@ -61,7 +61,7 @@ from kstrl.tui.screens.options import OptionsModal
 from kstrl.tui.screens.overview import OverviewScreen
 from kstrl.tui.screens.quit import QuitModal
 from kstrl.ui.plain import PlainUI
-from kstrl.verify import VerifyConfig
+from kstrl.verify_model import VerifyConfig
 from tests.helpers.settle import drained, settled
 from tests.helpers.stack_confirmation import in_process_stack
 from tests.test_retry_carries_flags import _repo

@@ -704,7 +704,7 @@ def recheck_cmd(record: Path, root: Path | None, ui: str, no_color: bool) -> Non
     """
     from kstrl.factory import FactoryConfig
     from kstrl.recheck import recheck
-    from kstrl.verify import VerifyConfig
+    from kstrl.verify_model import VerifyConfig
 
     root_dir = (root or Path.cwd()).resolve()
     ui_impl = _autonomy_ui(ui, no_color)

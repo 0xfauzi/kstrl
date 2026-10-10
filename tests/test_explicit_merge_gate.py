@@ -53,7 +53,7 @@ from kstrl.events import CallbackSink, EventBus
 from kstrl.factory import ComponentResult, FactoryConfig, run_factory
 from kstrl.manifest import Manifest
 from kstrl.review import ReviewResult
-from kstrl.verify import CheckResult, VerificationResult, VerifyConfig
+from kstrl.verify_model import CheckResult, VerificationResult, VerifyConfig
 from tests.conftest import git_in
 from tests.helpers import gitrepo
 from tests.helpers.component_prd import write_component_prd

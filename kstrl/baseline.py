@@ -32,7 +32,7 @@ the report read ``no regression`` and exited 0 under ``--fail-on-regression``.
 
 That is why :attr:`Baseline.unmeasured_checks` exists on both sides. A check
 that timed out, whose tool is missing, or that recorded a
-:class:`kstrl.verify.NotMeasured` gap contributes NO signatures to a baseline and
+:class:`kstrl.verify_model.NotMeasured` gap contributes NO signatures to a baseline and
 is named in ``unmeasured_checks`` instead. Without that rule this repository's
 own baseline was measurably wrong: at the default 300s verify timeout the test
 suite times out, which is a FAILING row carrying the signature
@@ -54,7 +54,7 @@ from kstrl.atomicio import atomic_write_json
 from kstrl.evolution import signature_counts_from_verification, split_signature
 from kstrl.jsonread import read_json
 from kstrl.stack import Stack
-from kstrl.verify import CheckResult, VerificationResult
+from kstrl.verify_model import CheckResult, VerificationResult
 
 #: Version of the BASELINE document, which is not the version of the
 #: ``ks check --json`` document. They move independently: the baseline records

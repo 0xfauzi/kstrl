@@ -368,7 +368,7 @@ class TestConcernHitRate:
 
 class TestSignatureHelpers:
     def test_signatures_from_verification_fallback_slug(self) -> None:
-        from kstrl.verify import CheckResult
+        from kstrl.verify_model import CheckResult
 
         checks = [
             CheckResult(

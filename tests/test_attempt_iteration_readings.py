@@ -44,7 +44,7 @@ from kstrl.evolution import (
 )
 from kstrl.factory import FactoryConfig, run_factory
 from kstrl.ui.plain import PlainUI
-from kstrl.verify import VerifyConfig
+from kstrl.verify_model import VerifyConfig
 from tests.helpers import gitrepo
 from tests.helpers.astwalk import (
     Sees,

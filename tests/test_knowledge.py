@@ -57,7 +57,7 @@ from kstrl.knowledge import (
 )
 from kstrl.manifest import Component, Manifest
 from kstrl.ui.plain import PlainUI
-from kstrl.verify import VerifyConfig
+from kstrl.verify_model import VerifyConfig
 from tests.helpers.distill_replies import BROKEN_REPLY, EMPTY_REPLY
 from tests.helpers.stack_confirmation import in_process_stack
 

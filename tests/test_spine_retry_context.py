@@ -26,7 +26,7 @@ import pytest
 from kstrl.factory import run_factory
 from kstrl.manifest import ComponentStatus
 from kstrl.ui.plain import PlainUI
-from kstrl.verify import VerifyConfig
+from kstrl.verify_model import VerifyConfig
 from tests.helpers.stack_confirmation import in_process_stack
 from tests.spine_utils import (
     base_config,

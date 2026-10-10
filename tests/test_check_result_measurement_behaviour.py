@@ -30,8 +30,6 @@ import pytest
 from kstrl import baseline
 from kstrl.policy import PolicyConfig
 from kstrl.verify import (
-    LAYER0_NOT_MEASURED,
-    VerificationResult,
     check_bad_patterns,
     check_diff_scope,
     check_policy_envelope,
@@ -39,6 +37,7 @@ from kstrl.verify import (
     check_scope_unreadable,
     check_self_critique,
 )
+from kstrl.verify_model import LAYER0_NOT_MEASURED, VerificationResult
 from tests.helpers import gitrepo
 from tests.helpers.measurement import assert_measured, assert_unmeasured
 

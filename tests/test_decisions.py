@@ -254,7 +254,7 @@ def _factory_inputs(root: Path) -> tuple[Any, Any, Any]:
     from kstrl.config import KstrlConfig
     from kstrl.factory import FactoryConfig
     from kstrl.ui.plain import PlainUI
-    from kstrl.verify import VerifyConfig
+    from kstrl.verify_model import VerifyConfig
 
     config = FactoryConfig(
         use_worktrees=False,

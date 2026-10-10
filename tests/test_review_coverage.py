@@ -54,7 +54,7 @@ from kstrl.security import (
     run_security_review,
 )
 from kstrl.ui.plain import PlainUI
-from kstrl.verify import CheckResult, VerificationResult, VerifyConfig
+from kstrl.verify_model import CheckResult, VerificationResult, VerifyConfig
 from tests.conftest import ReviewRepo, git_in, make_review_repo
 from tests.helpers.recording_agent import RecordingAgent
 from tests.helpers.stack_confirmation import in_process_stack

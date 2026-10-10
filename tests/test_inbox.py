@@ -433,7 +433,7 @@ def _run_factory(
     from kstrl.manifest import Component, Manifest
     from kstrl.review import ReviewResult
     from kstrl.ui.plain import PlainUI
-    from kstrl.verify import CheckResult, VerificationResult, VerifyConfig
+    from kstrl.verify_model import CheckResult, VerificationResult, VerifyConfig
 
     _init_git_repo(tmp_path)
     kstrl_dir = tmp_path / "scripts" / "kstrl"
@@ -519,7 +519,7 @@ def _run_factory(
 
 class TestEmittersFireDuringRuns:
     def test_policy_violation_emits_policy_exception(self, tmp_path: Path) -> None:
-        from kstrl.verify import CheckResult, VerificationResult
+        from kstrl.verify_model import CheckResult, VerificationResult
 
         violation = Finding.policy_violation(
             category="paths_deny",
@@ -543,7 +543,7 @@ class TestEmittersFireDuringRuns:
         assert "policy_exception" in kinds
 
     def test_failed_component_emits_halted_run(self, tmp_path: Path) -> None:
-        from kstrl.verify import CheckResult, VerificationResult
+        from kstrl.verify_model import CheckResult, VerificationResult
 
         _run_factory(
             tmp_path,
@@ -559,7 +559,7 @@ class TestEmittersFireDuringRuns:
         assert halted[0].evidence.get("phase") == "verify"
 
     def test_demotion_emits_notice_with_evidence(self, tmp_path: Path) -> None:
-        from kstrl.verify import CheckResult, VerificationResult
+        from kstrl.verify_model import CheckResult, VerificationResult
 
         violation = Finding.policy_violation(
             category="paths_deny",
@@ -593,7 +593,7 @@ class TestEmittersFireDuringRuns:
         assert Inbox(tmp_path, InboxConfig()).items() == []
 
     def test_disabled_inbox_writes_nothing(self, tmp_path: Path) -> None:
-        from kstrl.verify import CheckResult, VerificationResult
+        from kstrl.verify_model import CheckResult, VerificationResult
 
         _run_factory(
             tmp_path,
@@ -609,7 +609,7 @@ class TestEmittersFireDuringRuns:
         self,
         tmp_path: Path,
     ) -> None:
-        from kstrl.verify import CheckResult, VerificationResult
+        from kstrl.verify_model import CheckResult, VerificationResult
 
         with patch(
             "kstrl.inbox.Inbox.add",

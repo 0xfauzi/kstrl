@@ -21,7 +21,7 @@ from kstrl.feedforward import CodebaseScanConfig
 from kstrl.init_cmd import DEFAULT_KSTRL_TOML
 from kstrl.knowledge import KnowledgeConfig
 from kstrl.sandbox import SandboxConfig
-from kstrl.verify import VerifyConfig
+from kstrl.verify_model import VerifyConfig
 
 EXPECTED_SCAFFOLD_SECTIONS = {
     "agent",

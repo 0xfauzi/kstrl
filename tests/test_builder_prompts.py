@@ -25,7 +25,16 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl import context, factory, init_cmd, iteration_prompt, knowledge, review_claims, verify
+from kstrl import (
+    context,
+    factory,
+    init_cmd,
+    iteration_prompt,
+    knowledge,
+    review_claims,
+    verify,
+    verify_model,
+)
 from kstrl.context import LEGACY_ATTEMPT, IterationContext, IterationRecord
 from kstrl.findings import Finding
 from kstrl.knowledge import KnowledgeConfig
@@ -213,10 +222,10 @@ def _policy_diff_unreadable(tmp: Path) -> str:
 
 def _loop_measurement(_tmp: Path) -> str:
     """The block the engineer loop puts in the next prompt (#233)."""
-    reading = verify.VerificationResult(
+    reading = verify_model.VerificationResult(
         passed=False,
         checks=[
-            verify.CheckResult(
+            verify_model.CheckResult(
                 name="linter",
                 passed=False,
                 message="Linter failed (exit code 1)",

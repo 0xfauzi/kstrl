@@ -31,7 +31,7 @@ from kstrl.factory import FactoryConfig, FactoryResult, run_factory
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.timeout import TimeoutConfig
 from kstrl.ui.plain import PlainUI
-from kstrl.verify import VerifyConfig
+from kstrl.verify_model import VerifyConfig
 from tests.helpers import gitrepo
 from tests.helpers.procs import wait_for_pid_to_die
 from tests.helpers.stack_confirmation import confirm_stack, in_process_stack, write_stack

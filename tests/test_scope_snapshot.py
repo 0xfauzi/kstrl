@@ -47,12 +47,8 @@ from kstrl.loop import LoopResult
 from kstrl.manifest import Component, Manifest
 from kstrl.scope import ComponentScope, RunScope
 from kstrl.ui.plain import PlainUI
-from kstrl.verify import (
-    CheckResult,
-    VerificationResult,
-    VerifyConfig,
-    run_mechanical_verification,
-)
+from kstrl.verify import run_mechanical_verification
+from kstrl.verify_model import CheckResult, VerificationResult, VerifyConfig
 from tests.helpers.stack_confirmation import in_process_stack
 from tests.test_harness_path_scope import (
     AUTHORED,

@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     # Not a deferral - line 104 already imports kstrl.verify at module
     # scope, so it is on `ks --help`'s import path either way (measured
     # here at 5.2ms of cli.py's 84.7ms cumulative).
-    from kstrl.verify import VerifyConfig
+    from kstrl.verify_model import VerifyConfig
 
 from dataclasses import replace
 
@@ -740,7 +740,7 @@ def _measure_base_before_architect(
     architect's run (``run_id``); the factory run reuses the reading.
     ``--no-verify`` measures nothing, here as in the run.
     """
-    from kstrl.verify import VerifyConfig
+    from kstrl.verify_model import VerifyConfig
 
     if no_verify:
         return
@@ -1062,7 +1062,7 @@ def run(
     from kstrl.feedforward import CodebaseScanConfig
     from kstrl.manifest import Manifest
     from kstrl.security import SecurityConfig
-    from kstrl.verify import VerifyConfig
+    from kstrl.verify_model import VerifyConfig
 
     # Determine branch from config or PRD. The preflight above already
     # validated existence + schema, so a load failure here is a real bug
@@ -2067,7 +2067,7 @@ def decompose(
     tui: bool | None,
 ) -> None:
     """Decompose a spec into components and generate PRDs."""
-    from kstrl.verify import VerifyConfig
+    from kstrl.verify_model import VerifyConfig
 
     ctx = click.get_current_context()
 
@@ -2674,7 +2674,7 @@ def factory(
         from kstrl.contract import ContractConfig
         from kstrl.feedforward import CodebaseScanConfig
         from kstrl.security import SecurityConfig
-        from kstrl.verify import VerifyConfig
+        from kstrl.verify_model import VerifyConfig
 
         toml_notes: list[str] = []
 

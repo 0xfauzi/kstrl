@@ -20,7 +20,7 @@ from kstrl.review import (
     run_review,
 )
 from kstrl.ui.plain import PlainUI
-from kstrl.verify import CheckResult, VerificationResult
+from kstrl.verify_model import CheckResult, VerificationResult
 from tests.conftest import ReviewRepo, with_observed_diffstat
 
 

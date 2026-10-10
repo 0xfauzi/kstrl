@@ -7,7 +7,7 @@ from pathlib import Path
 from kstrl import git
 from kstrl.delimiters import generate_data_delimiter
 from kstrl.prd import PRD
-from kstrl.verify import VerificationResult
+from kstrl.verify_model import VerificationResult
 
 REVIEWER_PROMPT_VERSION = "3.0.0"
 

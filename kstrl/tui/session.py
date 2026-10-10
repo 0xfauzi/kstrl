@@ -247,7 +247,7 @@ def _prepare_decompose(
 ) -> PreparedLaunch:
     from kstrl.agents import get_agent
     from kstrl.factory import FactoryConfig
-    from kstrl.verify import VerifyConfig
+    from kstrl.verify_model import VerifyConfig
 
     spec_path = spec.spec_path if spec.spec_path.is_absolute() else root_dir / spec.spec_path
     if not spec_path.exists():

@@ -30,7 +30,7 @@ from kstrl.iteration_prompt import (
 )
 from kstrl.prd import PRD
 from kstrl.timeout import TimeoutConfig, describe_limit_seconds
-from kstrl.verify import VerifyConfig
+from kstrl.verify_model import VerifyConfig
 
 if TYPE_CHECKING:
     from kstrl.agents.base import Agent

@@ -48,7 +48,7 @@ from kstrl.security import (
 )
 from kstrl.serve import RunOutcome, Verdict, classify_run
 from kstrl.ui.plain import PlainUI
-from kstrl.verify import CheckResult, VerificationResult, VerifyConfig
+from kstrl.verify_model import CheckResult, VerificationResult, VerifyConfig
 from tests.conftest import ReviewRepo
 from tests.helpers import gitrepo
 from tests.helpers.stack_confirmation import in_process_stack

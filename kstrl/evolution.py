@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     from kstrl.factory import FactoryResult
     from kstrl.findings import Finding
     from kstrl.manifest import Component, Manifest
-    from kstrl.verify import CheckResult
+    from kstrl.verify_model import CheckResult
 
 logger = logging.getLogger("kstrl.evolution")
 

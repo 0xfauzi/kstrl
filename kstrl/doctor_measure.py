@@ -36,7 +36,7 @@ from kstrl.stack import (
     stack_in_force,
 )
 from kstrl.timeout import limit_seconds
-from kstrl.verify import VerifyConfig
+from kstrl.verify_model import VerifyConfig
 
 if TYPE_CHECKING:
     from kstrl.ui.base import UI

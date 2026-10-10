@@ -80,10 +80,7 @@ from kstrl.review_claims import (
 from kstrl.rung import label_of
 from kstrl.statedir import pre_run_prd_path
 from kstrl.timeout import limit_seconds
-from kstrl.verify import (
-    LAYER0_NOT_MEASURED,
-    VerificationResult,
-)
+from kstrl.verify_model import LAYER0_NOT_MEASURED, VerificationResult
 from kstrl.waivers import (
     ApprovalSnapshot,
     approvals_on,
