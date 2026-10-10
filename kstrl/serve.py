@@ -110,7 +110,7 @@ from kstrl.workqueue_items import (
 from kstrl.workqueue_store import queue_lock, queue_root
 
 if TYPE_CHECKING:
-    from kstrl.intake_github import GitHubIntakeConfig
+    from kstrl.intake_gh import GitHubIntakeConfig
 
 SERVE_LOCK_FILENAME = "serve.lock"
 
@@ -2429,7 +2429,7 @@ def count_open_kstrl_prs(cwd: Path, *, limit: int = 100) -> OpenPrCount:
     defensive and was in fact the fail-open.
 
     The spawn and its four transport failures belong to
-    :func:`~kstrl.intake_github.run_gh`, which is the package's one gh
+    :func:`~kstrl.intake_gh.run_gh`, which is the package's one gh
     invocation. Only the shapes of a bad PAYLOAD are decided here.
 
     ``number`` is now validated too, alongside ``body``, because R10.10's
@@ -2437,7 +2437,7 @@ def count_open_kstrl_prs(cwd: Path, *, limit: int = 100) -> OpenPrCount:
     returns as ``marked_numbers``: a row whose number is absent or the
     wrong type must refuse rather than be silently skipped.
     """
-    from kstrl.intake_github import run_gh
+    from kstrl.intake_gh import run_gh
 
     args = ["pr", "list", "--state=open", "--limit", str(limit), "--json", "number,body"]
     result = run_gh(args, timeout=GH_TIMEOUT, cwd=cwd)
@@ -3125,7 +3125,7 @@ def _run_intake(
     outage must not stop local work.
     """
     try:
-        from kstrl.intake_github import GitHubIntakeConfig
+        from kstrl.intake_gh import GitHubIntakeConfig
 
         config = GitHubIntakeConfig.load(root_dir)
     except Exception as exc:  # noqa: BLE001 - additive by contract
@@ -3281,7 +3281,7 @@ def _report_remote_outcome(
     if item is None or item.source is not ItemSource.GITHUB:
         return
     try:
-        from kstrl.intake_github import GitHubIntakeConfig, report_outcome
+        from kstrl.intake_gh import GitHubIntakeConfig, report_outcome
 
         config = GitHubIntakeConfig.load(root_dir)
         if not config.enabled:

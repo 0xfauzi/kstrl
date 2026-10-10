@@ -20,7 +20,8 @@ from unittest.mock import patch
 import pytest
 
 from kstrl.init_cmd import DEFAULT_MEMORY
-from kstrl.intake_github import GhResult, ProcessedLedger
+from kstrl.intake_gh import GhResult
+from kstrl.intake_github import ProcessedLedger
 from kstrl.operator_context import GUIDANCE_HEADING
 from kstrl.serve import _NullObserver, serve_cycle
 from kstrl.workqueue import Queue
@@ -175,7 +176,7 @@ def _setup(
 def _cycle(root: Path, gh: _SteerGh) -> _NullObserver:
     """One real serve cycle against a stubbed gh. Returns the observer."""
     obs = _NullObserver()
-    with patch("kstrl.intake_github.run_gh", gh):
+    with patch("kstrl.intake_gh.run_gh", gh):
         serve_cycle(root, runner=recording_runner([]), observer=obs)
     return obs
 

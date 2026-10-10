@@ -56,7 +56,7 @@ from typing import Any
 from kstrl.appendio import append_records
 from kstrl.event_catalog import PrMerged
 from kstrl.events import parse_event_line
-from kstrl.intake_github import run_gh
+from kstrl.intake_gh import run_gh
 from kstrl.jsonread import read_json
 from kstrl.manifest import Manifest
 from kstrl.pr_state import GH_POLL_TIMEOUT

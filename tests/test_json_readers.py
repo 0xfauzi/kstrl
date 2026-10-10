@@ -123,7 +123,8 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     "inbox.py": 4,
     "init_cmd.py": 3,
     "init_wizard.py": 2,
-    "intake_github.py": 8,
+    "intake_gh.py": 2,
+    "intake_github.py": 7,
     # #700: the import and one json.dumps of the nono policy; the canary's
     # report is read through read_json. No parse.
     "isolation.py": 2,

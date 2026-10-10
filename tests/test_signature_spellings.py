@@ -125,7 +125,7 @@ EXPECTED_SPELLINGS: frozenset[tuple[str, str]] = frozenset(
         ("kstrl/findings.py", "phase"),
         ("kstrl/findings.py", "policy"),
         # A GitHub label namespace.
-        ("kstrl/intake_github.py", "kstrl"),
+        ("kstrl/intake_gh.py", "kstrl"),
         # Inbox dedupe keys and the budget label, all keyed the same way
         # and none of them a failure signature.
         ("kstrl/pipeline_transitions.py", "budget"),

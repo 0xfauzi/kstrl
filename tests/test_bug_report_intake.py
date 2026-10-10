@@ -58,7 +58,7 @@ def _launch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, labels: list[str]) 
     record = _install_stub_interpreter(tmp_path, monkeypatch)
     issue = _issue(9, title="Crash on empty input", body=BODY)
     issue["labels"] = [{"name": "kstrl:queued"}, *({"name": name} for name in labels)]
-    with patch("kstrl.intake_github.run_gh", _GhStub(issues=_issue_payload(issue))):
+    with patch("kstrl.intake_gh.run_gh", _GhStub(issues=_issue_payload(issue))):
         serve_cycle(tmp_path, config=ServeConfig(caffeinate=False, factory_timeout_seconds=60.0))
     assert record.exists(), "the cycle launched no factory"
     raw: dict[str, object] = json.loads(record.read_text(encoding="utf-8"))
