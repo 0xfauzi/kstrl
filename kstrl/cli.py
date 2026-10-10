@@ -163,7 +163,7 @@ from kstrl.stack import (
 from kstrl.timeout import TimeoutConfig, limit_seconds
 from kstrl.ui.base import UI
 from kstrl.version import stamp_label
-from kstrl.workqueue import ItemState
+from kstrl.workqueue_items import ItemState
 
 
 def _load_manifest_or_exit(path: Path, ui: UI) -> Manifest:
@@ -5696,7 +5696,7 @@ def _serve_parked(root_dir: Path, run_id: str, ui_impl: UI) -> bool:
     read is a refusal before the decision is recorded, because answering
     "no" would leave the approval run's spend out of the daemon's total.
     """
-    from kstrl.workqueue import ItemState, QueueError
+    from kstrl.workqueue_items import ItemState, QueueError
 
     try:
         _root, queue = _queue_for(root_dir)
@@ -5870,7 +5870,8 @@ def _decide_parked_merge_if_parked(
             # code. Settle the queue item serve parked on this run (#464),
             # then exit with that code.
             from kstrl.serve import settle_approval_run
-            from kstrl.workqueue import Queue, QueueConfig
+            from kstrl.workqueue import Queue
+            from kstrl.workqueue_items import QueueConfig
 
             settle_approval_run(
                 root_dir,
@@ -6000,7 +6001,8 @@ _queue_no_color_option = click.option(
 
 
 def _queue_for(root: Path | None) -> tuple[Path, Any]:
-    from kstrl.workqueue import Queue, QueueConfig
+    from kstrl.workqueue import Queue
+    from kstrl.workqueue_items import QueueConfig
 
     root_dir = (root or Path.cwd()).resolve()
     return root_dir, Queue(root_dir, QueueConfig.load(root_dir))
@@ -6008,7 +6010,7 @@ def _queue_for(root: Path | None) -> tuple[Path, Any]:
 
 def _resolve_queue_item(queue: Any, item_id: str, ui_impl: UI) -> Any:
     """Look up one item or exit; an ambiguous prefix is an error."""
-    from kstrl.workqueue import QueueError
+    from kstrl.workqueue_items import QueueError
 
     try:
         item = queue.get(item_id)
@@ -6065,7 +6067,8 @@ def queue_add(
     The spec is COPIED into the item, so editing or deleting the
     original afterwards cannot change what eventually runs.
     """
-    from kstrl.workqueue import MergeDisposition, QueueError, queue_lock
+    from kstrl.workqueue import queue_lock
+    from kstrl.workqueue_items import MergeDisposition, QueueError
 
     root_dir, queue = _queue_for(root)
     ui_impl = _autonomy_ui(ui, no_color)
@@ -6114,7 +6117,8 @@ def queue_ls(
     no_color: bool,
 ) -> None:
     """List queue items in run order."""
-    from kstrl.workqueue import ItemState, summarize
+    from kstrl.workqueue import summarize
+    from kstrl.workqueue_items import ItemState
 
     _root_dir, queue = _queue_for(root)
     ui_impl = _autonomy_ui(ui, no_color)
@@ -6204,7 +6208,7 @@ def queue_show(
 
 def _retry_refusal(item: Any) -> str:
     """Why `ks queue retry` refuses ``item``, naming the command that does apply."""
-    from kstrl.workqueue import ItemState
+    from kstrl.workqueue_items import ItemState
 
     refusal = f"{item.item_id} is {item.state}; only failed or poisoned items can be retried"
     if item.state is ItemState.AWAITING_ANSWER:
@@ -6246,7 +6250,8 @@ def queue_answer(
     not changed, as `ks queue retry` does not change it.
     """
     from kstrl.decisions import escalation_naming
-    from kstrl.workqueue import ItemState, QueueError, queue_lock
+    from kstrl.workqueue import queue_lock
+    from kstrl.workqueue_items import ItemState, QueueError
 
     root_dir, queue = _queue_for(root)
     ui_impl = _autonomy_ui(ui, no_color)
@@ -6316,7 +6321,8 @@ def queue_retry(
     it poisoned straight back without spending anything, which looks
     like the command silently failed.
     """
-    from kstrl.workqueue import ItemState, QueueError, queue_lock
+    from kstrl.workqueue import queue_lock
+    from kstrl.workqueue_items import ItemState, QueueError
 
     root_dir, queue = _queue_for(root)
     ui_impl = _autonomy_ui(ui, no_color)
@@ -6369,7 +6375,8 @@ def queue_priority(
     Only a queued item can change: every other state is refused by name
     and nothing is written. The change is a row in `ks queue show`.
     """
-    from kstrl.workqueue import QueueError, queue_lock
+    from kstrl.workqueue import queue_lock
+    from kstrl.workqueue_items import QueueError
 
     root_dir, queue = _queue_for(root)
     ui_impl = _autonomy_ui(ui, no_color)
@@ -6401,7 +6408,8 @@ def queue_rm(
     no_color: bool,
 ) -> None:
     """Delete an item and its spec."""
-    from kstrl.workqueue import QueueError, queue_lock
+    from kstrl.workqueue import queue_lock
+    from kstrl.workqueue_items import QueueError
 
     root_dir, queue = _queue_for(root)
     ui_impl = _autonomy_ui(ui, no_color)
@@ -6464,7 +6472,8 @@ def queue_resume(root: Path | None, ui: str, no_color: bool) -> None:
     """
     from kstrl.serve import ServeStateError, SpendLedger
     from kstrl.statedir import ControlStateError
-    from kstrl.workqueue import ItemState, queue_lock
+    from kstrl.workqueue import queue_lock
+    from kstrl.workqueue_items import ItemState
 
     root_dir, queue = _queue_for(root)
     ui_impl = _autonomy_ui(ui, no_color)
@@ -6517,7 +6526,8 @@ def queue_sync(
     """
     from kstrl.intake_github import GitHubIntakeConfig, IntakeError
     from kstrl.intake_github import sync as run_sync
-    from kstrl.workqueue import QueueError, QueueLockedError, queue_lock
+    from kstrl.workqueue import queue_lock
+    from kstrl.workqueue_items import QueueError, QueueLockedError
 
     root_dir, queue = _queue_for(root)
     ui_impl = _autonomy_ui(ui, no_color)
@@ -6828,7 +6838,8 @@ def serve(
         factory_lock_held,
     )
     from kstrl.serve import serve as run_serve
-    from kstrl.workqueue import Queue, QueueConfig, summarize
+    from kstrl.workqueue import Queue, summarize
+    from kstrl.workqueue_items import QueueConfig
 
     root_dir = (root or Path.cwd()).resolve()
     ui_impl = _autonomy_ui(ui, no_color)

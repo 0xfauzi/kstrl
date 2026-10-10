@@ -32,7 +32,8 @@ from kstrl.inbox import Inbox, InboxItem, ItemKind, ItemStatus
 from kstrl.intake_github import GitHubIntakeConfig
 from kstrl.runid import mint_run_id, run_kind
 from kstrl.serve import SPAWNED_RUN_KIND, RunOutcome, ServeConfig, SpendLedger, Verdict, serve_cycle
-from kstrl.workqueue import ItemSource, ItemState, Queue, QueueConfig, QueueItem
+from kstrl.workqueue import Queue
+from kstrl.workqueue_items import ItemSource, ItemState, QueueConfig, QueueItem
 from tests.helpers.executables import write_executable
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
 from tests.test_isolation_rung import needs_nono

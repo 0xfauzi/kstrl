@@ -32,7 +32,8 @@ from kstrl.intake_github import (
     sync,
 )
 from kstrl.serve import _NullObserver, serve_cycle
-from kstrl.workqueue import Queue, QueueConfig
+from kstrl.workqueue import Queue
+from kstrl.workqueue_items import QueueConfig
 from tests.helpers.runners import recording_runner
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
 from tests.test_intake_github import (

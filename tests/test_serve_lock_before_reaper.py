@@ -23,7 +23,8 @@ from pathlib import Path
 import pytest
 
 from kstrl.serve import RunOutcome, serve
-from kstrl.workqueue import ItemState, Queue, QueueConfig
+from kstrl.workqueue import Queue
+from kstrl.workqueue_items import ItemState, QueueConfig
 from tests.helpers import procs
 from tests.helpers.astwalk import (
     all_nodes,

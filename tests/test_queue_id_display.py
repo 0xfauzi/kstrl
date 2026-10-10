@@ -4,7 +4,7 @@ Queue item ids are ``q-YYYYMMDD-HHMMSS.ffffff-<nonce>``. Their first
 twelve characters are ``q-YYYYMMDD-H``, so 25 sites that printed
 ``item_id[:12]`` showed one id for every item minted in the same ten-hour
 window, and ``ks queue`` refused that id as ambiguous. The fix prints the
-full id, or :func:`kstrl.workqueue.short_item_id` where a one-line surface
+full id, or :func:`kstrl.workqueue_items.short_item_id` where a one-line surface
 has no room, and :meth:`kstrl.workqueue.Queue.get` accepts both.
 
 THE NET. Every expression that reads a name or attribute called
@@ -36,7 +36,8 @@ from click.testing import CliRunner, Result
 from kstrl.cli import cli
 from kstrl.inbox import Inbox, InboxConfig
 from kstrl.serve import RunOutcome, RunSpend
-from kstrl.workqueue import ItemState, Queue, QueueConfig, short_item_id
+from kstrl.workqueue import Queue
+from kstrl.workqueue_items import ItemState, QueueConfig, short_item_id
 from tests.helpers.astwalk import (
     all_nodes,
     assert_census,
@@ -88,7 +89,7 @@ EXPECTED_ITEM_ID_CUTS: dict[str, int] = {
     "waivers.py: match.item_id[:8]": 1,
     "waivers.py: other.item_id[:8]": 1,
     # The short form itself, which Queue.get accepts.
-    "workqueue.py: item_id.rsplit('-', 1)": 1,
+    "workqueue_items.py: item_id.rsplit('-', 1)": 1,
 }
 
 
@@ -105,7 +106,7 @@ def test_every_cut_of_an_item_id_is_pinned() -> None:
         ),
         message=(
             "A queue item id is cut somewhere new. Print the full id, or "
-            "kstrl.workqueue.short_item_id where a one-line surface has no room; "
+            "kstrl.workqueue_items.short_item_id where a one-line surface has no room; "
             "both are ids every `ks queue` command accepts (#706). If this cut is "
             "not a queue id shown to an operator, add the row with the reason."
         ),
@@ -140,6 +141,7 @@ def test_a_poisoned_item_is_named_by_ids_queue_show_accepts(
     moment = datetime.now(UTC)
     with monkeypatch.context() as clock:
         clock.setattr("kstrl.workqueue._utc_now", lambda: moment)
+        clock.setattr("kstrl.workqueue_items._utc_now", lambda: moment)
         for _ in range(2):
             assert _invoke(["queue", "add", str(spec)], tmp_path).exit_code == 0
     with patch(

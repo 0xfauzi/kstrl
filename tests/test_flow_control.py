@@ -48,7 +48,7 @@ from kstrl.serve import (
     serve_cycle,
     state_dir,
 )
-from kstrl.workqueue import ItemState
+from kstrl.workqueue_items import ItemState
 from tests.helpers.fakegh import FAKE_GH_THIRD_CALL_WORKS as _FAKE_GH_THIRD_CALL_WORKS
 from tests.helpers.fakegh import install_fake_gh as _install_fake_gh
 from tests.helpers.fakegh import install_marker_gh as _install_marker_gh

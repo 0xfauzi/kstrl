@@ -39,7 +39,8 @@ from kstrl.serve import (
     serve_cycle,
     subprocess_factory_runner,
 )
-from kstrl.workqueue import Queue, QueueConfig
+from kstrl.workqueue import Queue
+from kstrl.workqueue_items import QueueConfig
 from tests.helpers import procs
 from tests.helpers.executables import write_executable
 from tests.helpers.stack_confirmation import confirm_stack, write_stack

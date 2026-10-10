@@ -34,13 +34,8 @@ from kstrl.intake_github import (
     sync,
     verify_authorization,
 )
-from kstrl.workqueue import (
-    ItemSource,
-    ItemState,
-    MergeDisposition,
-    Queue,
-    QueueConfig,
-)
+from kstrl.workqueue import Queue
+from kstrl.workqueue_items import ItemSource, ItemState, MergeDisposition, QueueConfig
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
 
 REPO = "0xfauzi/claude-skills"
@@ -1053,7 +1048,8 @@ class TestServeDrivesRemoteLabels:
     ) -> None:
         """#187 F10: two gh calls must not block every queue transition."""
         from kstrl.serve import RunSpend, serve_cycle
-        from kstrl.workqueue import QueueLockedError, queue_lock
+        from kstrl.workqueue import queue_lock
+        from kstrl.workqueue_items import QueueLockedError
 
         self._remote_item(tmp_path)
         held: list[bool] = []
@@ -1270,7 +1266,8 @@ class TestIntakeLockDiscipline:
         tmp_path: Path,
     ) -> None:
         from kstrl.serve import RunOutcome, RunSpend, serve_cycle
-        from kstrl.workqueue import QueueLockedError, queue_lock
+        from kstrl.workqueue import queue_lock
+        from kstrl.workqueue_items import QueueLockedError
 
         (tmp_path / "kstrl.toml").write_text(f'[intake_github]\nenabled = true\nrepo = "{REPO}"\n')
         _queue(tmp_path).ensure_dirs()
@@ -1305,7 +1302,8 @@ class TestIntakeLockDiscipline:
         """
         from kstrl.serve import RunOutcome, RunSpend, serve_cycle
         from kstrl.workqueue import Queue as _Queue
-        from kstrl.workqueue import QueueLockedError, queue_lock
+        from kstrl.workqueue import queue_lock
+        from kstrl.workqueue_items import QueueLockedError
 
         (tmp_path / "kstrl.toml").write_text(f'[intake_github]\nenabled = true\nrepo = "{REPO}"\n')
         _queue(tmp_path).ensure_dirs()

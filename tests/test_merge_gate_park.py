@@ -47,7 +47,8 @@ from kstrl.serve import (
     run_supervised,
     serve_cycle,
 )
-from kstrl.workqueue import ItemSource, Queue, QueueConfig
+from kstrl.workqueue import Queue
+from kstrl.workqueue_items import ItemSource, QueueConfig
 from tests.helpers import gitrepo
 from tests.helpers.executables import write_executable
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
