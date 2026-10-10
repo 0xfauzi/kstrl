@@ -37,6 +37,7 @@ import pytest
 from click.testing import CliRunner, Result
 
 import kstrl.cli as cli_mod
+import kstrl.cli_seam as cli_seam_mod
 from kstrl.cli import cli
 from kstrl.config import STRING_KEYS, ConfigError, KstrlConfig, load_toml_document, toml_parse_scope
 from kstrl.config_preflight import collect_config_problems, config_sections, preflight_config
@@ -684,7 +685,7 @@ class TestAConfigThatWillNotParseIsReportedNotCrashed:
         """
         covered = {args[0] for args, _ in SEAM_COMMANDS}
 
-        assert covered == set(cli.commands) - cli_mod._PREFLIGHT_EXEMPT
+        assert covered == set(cli.commands) - cli_seam_mod._PREFLIGHT_EXEMPT
 
 
 class TestTheCommandsThatMustSurviveABrokenConfig:
@@ -996,7 +997,7 @@ class TestTheSeamCannotBeBypassedByDeclaration:
         # `ks config show` declares --prompt and --prd as [paths]
         # OVERRIDES and still roots itself at the cwd, which is why the
         # rule is keyed by command rather than by "declares the option".
-        assert declaring - cli_mod._ROOT_FROM_PROMPT == {"config"}
+        assert declaring - cli_seam_mod._ROOT_FROM_PROMPT == {"config"}
 
 
 class TestTheExemptionKeysOffTheTopLevelName:
@@ -1011,11 +1012,11 @@ class TestTheExemptionKeysOffTheTopLevelName:
         seen: list[str] = []
 
         def record(self: Any, ctx: click.Context) -> Any:
-            seen.append(cli_mod._KstrlCommand._top_level_name(ctx))
+            seen.append(cli_seam_mod._KstrlCommand._top_level_name(ctx))
             return None
 
         with pytest.MonkeyPatch.context() as patch:
-            patch.setattr(cli_mod._KstrlCommand, "invoke", record)
+            patch.setattr(cli_seam_mod._KstrlCommand, "invoke", record)
             CliRunner().invoke(cli, args, catch_exceptions=True)
         return seen[0]
 

@@ -38,7 +38,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import cli
+from kstrl import cli_seam
 from tests.helpers import astwalk
 from tests.test_prompt_versions import _PROMPTS
 
@@ -267,7 +267,7 @@ def _spells_a_prompt_name(node: ast.AST) -> bool:
 #: uses.
 EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
     "acceptance_design.py": 2,
-    "cli.py": 2,  # _ROOT_FROM_PROMPT, which is a set of command names
+    "cli_seam.py": 2,  # _ROOT_FROM_PROMPT, which is a set of command names
     # #332 landed while this migration was in flight: the version
     # constant and the body of DECISIONS_CONTEXT_PROMPT, both enrolled.
     "decisions.py": 2,
@@ -485,7 +485,7 @@ _ASSEMBLED_BODIES: dict[str, str] = {
 
 #: Values that are PROVABLY not strings. These must stay invisible, or
 #: the walk starts demanding enrollment for things that are not prompts.
-#: The first is real: ``kstrl/cli.py`` holds ``_ROOT_FROM_PROMPT =
+#: The first is real: ``kstrl/cli_seam.py`` holds ``_ROOT_FROM_PROMPT =
 #: frozenset({...})``, a set of command names.
 _NOT_BODIES: dict[str, str] = {
     "frozenset_call": 'X_PROMPT = frozenset({"run", "understand"})\n',
@@ -533,8 +533,8 @@ def test_real_walk_does_not_flag_the_cli_command_set() -> None:
     The ``hasattr`` anchor is load-bearing: without it this passes
     vacuously the moment ``_ROOT_FROM_PROMPT`` is renamed or deleted,
     asserting nothing while still paying for a tree walk (#299 round 2)."""
-    assert hasattr(cli, "_ROOT_FROM_PROMPT"), (
-        "kstrl.cli._ROOT_FROM_PROMPT is gone, so this negative case no "
+    assert hasattr(cli_seam, "_ROOT_FROM_PROMPT"), (
+        "kstrl.cli_seam._ROOT_FROM_PROMPT is gone, so this negative case no "
         "longer proves anything. Point it at whatever non-prompt "
         "*_PROMPT-suffixed name exists now, or delete it."
     )
