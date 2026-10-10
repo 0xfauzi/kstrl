@@ -105,6 +105,8 @@ from kstrl.prd import PRD
 from kstrl.review import (
     ReviewMode,
     ReviewResult,
+)
+from kstrl.review_claims import (
     claim_blocks,
     claim_disagreements,
     claim_retry_context,

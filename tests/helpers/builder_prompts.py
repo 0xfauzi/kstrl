@@ -44,7 +44,7 @@ from __future__ import annotations
 
 from types import ModuleType
 
-from kstrl import context, factory, init_cmd, knowledge, loop, review, verify
+from kstrl import context, factory, init_cmd, knowledge, loop, review_claims, verify
 
 #: Eleven rows: (module, the name of that module's shared version constant,
 #: the fragment names it assembles). This is the one place a fragment is
@@ -91,7 +91,7 @@ _BUILDERS: tuple[tuple[ModuleType, str, tuple[str, ...]], ...] = (
         ("KNOWLEDGE_CONTEXT_PROMPT", "KNOWLEDGE_OVERFLOW_PROMPT"),
     ),
     (
-        review,
+        review_claims,
         "CLAIM_RETRY_PROMPT_VERSION",
         (
             "CLAIM_RETRY_PROMPT",
