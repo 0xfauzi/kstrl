@@ -343,23 +343,28 @@ def claude_sandbox_settings(
     return json.dumps(settings)
 
 
+#: Added to the argv of every claude session kstrl starts, in every role and
+#: with the sandbox on or off. With no ``--mcp-config``, the session loads no
+#: MCP server. Without it, a headless session loaded the operator's plugin
+#: servers, the claude.ai connectors and a server in the worktree's
+#: ``.mcp.json`` (measured, claude 2.1.291: 37 servers, 101 MCP tools; with
+#: the flag: none). No kstrl role needs an MCP tool, and the write guard does
+#: not see an MCP tool that writes a file.
+NO_MCP_ARGV: tuple[str, ...] = ("--strict-mcp-config",)
+
+
 def claude_sandbox_args(config: SandboxConfig | None, workspace: Path | None = None) -> list[str]:
     """``claude --print`` argv fragment for the operator's sandbox intent.
 
     Thin argv wrapper over :func:`claude_sandbox_settings`. With
-    ``workspace`` (the engineer), it adds ``--strict-mcp-config`` with no
-    ``--mcp-config``: the session then loads no MCP server. Without it, a
-    headless engineer loaded the operator's plugin servers, the claude.ai
-    connectors and a server in the worktree's ``.mcp.json`` (measured,
-    claude 2.1.291: 37 servers, 101 MCP tools; with the flag: none). An MCP
-    tool can write a file, and the write guard does not see it.
+    ``workspace`` (the engineer), the settings carry the write guard. The
+    argv has no MCP flag: the claude adapter adds ``NO_MCP_ARGV`` to every
+    claude session, in every role (#700).
     """
     settings = claude_sandbox_settings(config, workspace)
     if settings is None:
         return []
-    if workspace is None:
-        return ["--settings", settings]
-    return ["--settings", settings, "--strict-mcp-config"]
+    return ["--settings", settings]
 
 
 def claude_sandbox_drops_skip_permissions(

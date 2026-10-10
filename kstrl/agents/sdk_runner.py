@@ -182,6 +182,10 @@ async def _drive(config: dict[str, Any], sdk: Any) -> int:
         "settings": config.get("settings") or None,
         "max_budget_usd": config.get("max_budget_usd"),
         "cli_path": config.get("cli_path") or None,
+        # No MCP server from the operator's plugins, connectors or the
+        # worktree .mcp.json. extra_args exists in every SDK version the
+        # pyproject allows, so the flag does not depend on a newer option (#700).
+        "extra_args": {"strict-mcp-config": None},
     }
     # Mirror of the CLI adapter's R7.5 invocation shape: skip-permissions
     # unless the no-network sandbox requires the permission layer.
