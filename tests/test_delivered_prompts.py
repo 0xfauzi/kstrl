@@ -87,6 +87,7 @@ from kstrl import (
     integration,
     knowledge,
     review,
+    review_prompt,
     security,
 )
 from kstrl.decisions import SpecDecision, build_decisions_context
@@ -206,7 +207,7 @@ _REQUIREMENTS = (
 _DELIMITER_CONSUMERS: tuple[ModuleType, ...] = (
     acceptance_design,
     decompose,
-    review,
+    review_prompt,
     security,
     knowledge,
     git,
@@ -226,7 +227,7 @@ def _pin_delimiters(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _reviewer(tmp_path: Path) -> str:
     prd_path = write_component_prd(tmp_path, "prd.json", branch="feat/parser", stories=[_STORY])
-    return review.build_review_prompt(prd_path, "BASE_SHA", _VERIFICATION)
+    return review_prompt.build_review_prompt(prd_path, "BASE_SHA", _VERIFICATION)
 
 
 def _integration_reviewer(tmp_path: Path) -> str:
@@ -235,7 +236,7 @@ def _integration_reviewer(tmp_path: Path) -> str:
     prd_path = tmp_path / "prd.json"
     prd_path.parent.mkdir(parents=True, exist_ok=True)
     integration.write_integration_prd(prd_path, integration.integration_stories("BASE_SHA"))
-    return review.build_review_prompt(prd_path, "BASE_SHA", VerificationResult(passed=True))
+    return review_prompt.build_review_prompt(prd_path, "BASE_SHA", VerificationResult(passed=True))
 
 
 def _engineer(tmp_path: Path) -> str:

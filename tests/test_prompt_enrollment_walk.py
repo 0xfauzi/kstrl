@@ -318,7 +318,7 @@ EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
     # #639 slice 4: OWNER_ANSWER_PROMPT's declaration and its one use in
     # render_owner_answer.
     "owner_answers.py": 2,
-    "review.py": 2,
+    "review_prompt.py": 2,
     # #303: 5 new fragments x 2 spellings each (the declaration and its
     # one use site) = 10. The version constant adds nothing: the walk keys
     # on names ending in _PROMPT, not _VERSION.

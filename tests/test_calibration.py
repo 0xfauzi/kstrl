@@ -89,8 +89,8 @@ from kstrl.review import (
     ReviewResult,
     ReviewVerdict,
     parse_review_output,
-    render_review_prompt,
 )
+from kstrl.review_prompt import render_review_prompt
 from kstrl.security import (
     VALID_CATEGORIES,
     SecurityFinding,

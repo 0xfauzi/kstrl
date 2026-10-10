@@ -39,13 +39,12 @@ from kstrl.config import KstrlConfig
 from kstrl.factory import ComponentResult, FactoryConfig, run_factory
 from kstrl.manifest import Component, Manifest
 from kstrl.review import (
-    REVIEWER_PROMPT,
     ReviewMode,
     ReviewResult,
-    build_review_prompt,
     parse_review_output,
     run_review,
 )
+from kstrl.review_prompt import REVIEWER_PROMPT, build_review_prompt
 from kstrl.security import (
     SECURITY_PROMPT,
     SecurityConfig,
