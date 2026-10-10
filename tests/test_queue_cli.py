@@ -290,6 +290,7 @@ class TestShownIds:
         moment = datetime(2026, 10, 4, 18, 0, 0, tzinfo=UTC)
         monkeypatch.setattr("kstrl.workqueue._utc_now", lambda: moment)
         monkeypatch.setattr("kstrl.workqueue_items._utc_now", lambda: moment)
+        monkeypatch.setattr("kstrl.workqueue_store._utc_now", lambda: moment)
         for name in ("a", "b"):
             spec = tmp_path / f"{name}.md"
             spec.write_text(f"# {name}\n\nDo {name}.\n", encoding="utf-8")
@@ -741,7 +742,7 @@ class TestQueueSync:
     ) -> None:
         """#187 F12: QueueLockedError escaped as an uncaught traceback."""
         pytest.importorskip("fcntl")
-        from kstrl.workqueue import queue_lock
+        from kstrl.workqueue_store import queue_lock
 
         self._toml(tmp_path)
         with queue_lock(tmp_path):

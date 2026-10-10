@@ -97,7 +97,7 @@ from kstrl.statedir import (
     ensure_control_state,
     state_dir,
 )
-from kstrl.workqueue import Queue, queue_lock, queue_root
+from kstrl.workqueue import Queue
 from kstrl.workqueue_items import (
     ItemSource,
     ItemState,
@@ -107,6 +107,7 @@ from kstrl.workqueue_items import (
     QueueItem,
     short_item_id,
 )
+from kstrl.workqueue_store import queue_lock, queue_root
 
 if TYPE_CHECKING:
     from kstrl.intake_github import GitHubIntakeConfig
@@ -637,7 +638,7 @@ class SpendLedger:
 
     def _write_unlocked(self, state: ServeState) -> None:
         """Atomic rewrite; caller must already hold ``control_lock``."""
-        from kstrl.workqueue import atomic_write
+        from kstrl.workqueue_store import atomic_write
 
         path = self.path
         path.parent.mkdir(parents=True, exist_ok=True)

@@ -207,7 +207,7 @@ class TestPauseFailClosed:
         with patch("kstrl.statedir._origin_url", return_value=None):
             ensure_control_state(repo)
             monkeypatch.setattr(
-                "kstrl.workqueue.control_untrusted_reason",
+                "kstrl.workqueue_store.control_untrusted_reason",
                 lambda _root: "control state directory inaccessible",
             )
             queue = Queue(repo)

@@ -30,7 +30,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl.workqueue import Queue, queue_lock, summarize
+from kstrl.workqueue import Queue, summarize
 from kstrl.workqueue_items import (
     ItemSource,
     ItemState,
@@ -42,6 +42,7 @@ from kstrl.workqueue_items import (
     QueueLockedError,
     is_safe_component,
 )
+from kstrl.workqueue_store import queue_lock
 
 
 def _queue(root: Path, **config: object) -> Queue:
@@ -856,7 +857,7 @@ class TestLock:
         tmp_path: Path,
     ) -> None:
         """Listing the queue must not block on a running factory."""
-        from kstrl.workqueue import LOCK_FILENAME, queue_root
+        from kstrl.workqueue_store import LOCK_FILENAME, queue_root
 
         with queue_lock(tmp_path):
             pass

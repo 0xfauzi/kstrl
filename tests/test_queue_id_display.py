@@ -142,6 +142,7 @@ def test_a_poisoned_item_is_named_by_ids_queue_show_accepts(
     with monkeypatch.context() as clock:
         clock.setattr("kstrl.workqueue._utc_now", lambda: moment)
         clock.setattr("kstrl.workqueue_items._utc_now", lambda: moment)
+        clock.setattr("kstrl.workqueue_store._utc_now", lambda: moment)
         for _ in range(2):
             assert _invoke(["queue", "add", str(spec)], tmp_path).exit_code == 0
     with patch(

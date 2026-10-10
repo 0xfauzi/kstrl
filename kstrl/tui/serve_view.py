@@ -116,8 +116,9 @@ def read_serve_state(
 ) -> ServeState | None:
     """The daemon and its visible items; None when this project has no queue."""
     from kstrl.tui.runs import factory_lock_path
-    from kstrl.workqueue import Queue, queue_root
+    from kstrl.workqueue import Queue
     from kstrl.workqueue_items import ItemState
+    from kstrl.workqueue_store import queue_root
 
     queue_dir = queue_root(root_dir)
     if not queue_dir.is_dir():

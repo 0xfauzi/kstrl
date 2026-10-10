@@ -6067,8 +6067,8 @@ def queue_add(
     The spec is COPIED into the item, so editing or deleting the
     original afterwards cannot change what eventually runs.
     """
-    from kstrl.workqueue import queue_lock
     from kstrl.workqueue_items import MergeDisposition, QueueError
+    from kstrl.workqueue_store import queue_lock
 
     root_dir, queue = _queue_for(root)
     ui_impl = _autonomy_ui(ui, no_color)
@@ -6250,8 +6250,8 @@ def queue_answer(
     not changed, as `ks queue retry` does not change it.
     """
     from kstrl.decisions import escalation_naming
-    from kstrl.workqueue import queue_lock
     from kstrl.workqueue_items import ItemState, QueueError
+    from kstrl.workqueue_store import queue_lock
 
     root_dir, queue = _queue_for(root)
     ui_impl = _autonomy_ui(ui, no_color)
@@ -6321,8 +6321,8 @@ def queue_retry(
     it poisoned straight back without spending anything, which looks
     like the command silently failed.
     """
-    from kstrl.workqueue import queue_lock
     from kstrl.workqueue_items import ItemState, QueueError
+    from kstrl.workqueue_store import queue_lock
 
     root_dir, queue = _queue_for(root)
     ui_impl = _autonomy_ui(ui, no_color)
@@ -6375,8 +6375,8 @@ def queue_priority(
     Only a queued item can change: every other state is refused by name
     and nothing is written. The change is a row in `ks queue show`.
     """
-    from kstrl.workqueue import queue_lock
     from kstrl.workqueue_items import QueueError
+    from kstrl.workqueue_store import queue_lock
 
     root_dir, queue = _queue_for(root)
     ui_impl = _autonomy_ui(ui, no_color)
@@ -6408,8 +6408,8 @@ def queue_rm(
     no_color: bool,
 ) -> None:
     """Delete an item and its spec."""
-    from kstrl.workqueue import queue_lock
     from kstrl.workqueue_items import QueueError
+    from kstrl.workqueue_store import queue_lock
 
     root_dir, queue = _queue_for(root)
     ui_impl = _autonomy_ui(ui, no_color)
@@ -6448,7 +6448,7 @@ def queue_pause(
     Does not touch anything already running - a pause is an admission
     gate, not a kill switch.
     """
-    from kstrl.workqueue import queue_lock
+    from kstrl.workqueue_store import queue_lock
 
     root_dir, queue = _queue_for(root)
     ui_impl = _autonomy_ui(ui, no_color)
@@ -6472,8 +6472,8 @@ def queue_resume(root: Path | None, ui: str, no_color: bool) -> None:
     """
     from kstrl.serve import ServeStateError, SpendLedger
     from kstrl.statedir import ControlStateError
-    from kstrl.workqueue import queue_lock
     from kstrl.workqueue_items import ItemState
+    from kstrl.workqueue_store import queue_lock
 
     root_dir, queue = _queue_for(root)
     ui_impl = _autonomy_ui(ui, no_color)
@@ -6526,8 +6526,8 @@ def queue_sync(
     """
     from kstrl.intake_github import GitHubIntakeConfig, IntakeError
     from kstrl.intake_github import sync as run_sync
-    from kstrl.workqueue import queue_lock
     from kstrl.workqueue_items import QueueError, QueueLockedError
+    from kstrl.workqueue_store import queue_lock
 
     root_dir, queue = _queue_for(root)
     ui_impl = _autonomy_ui(ui, no_color)

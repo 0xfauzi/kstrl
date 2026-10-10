@@ -149,7 +149,8 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     # #595: the import and one json.dumps, the canonical JSON the waiver
     # key hashes. No parse.
     "waivers.py": 2,
-    "workqueue.py": 9,
+    "workqueue.py": 2,
+    "workqueue_store.py": 8,
 }
 
 

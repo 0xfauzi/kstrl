@@ -24,8 +24,9 @@ import kstrl.cli as cli_mod
 import kstrl.workqueue as workqueue_mod
 from kstrl.cli import cli
 from kstrl.serve import RunOutcome, RunSpend
-from kstrl.workqueue import Queue, queue_root
+from kstrl.workqueue import Queue
 from kstrl.workqueue_items import ItemState, QueueConfig, QueueItem
+from kstrl.workqueue_store import queue_root
 from tests.helpers.procs import kill_group, wait_for_line
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
 

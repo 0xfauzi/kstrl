@@ -407,7 +407,7 @@ _EXPECTED_STATE_DIR_SPELLINGS: dict[str, int] = {
     "serve.py": 6,
     "statedir.py": 8,  # +1 #545: plan_prd_path joins the plan directory
     "tui/runs.py": 3,  # +1 #433: run_is_live lists the runs dir for the newest run
-    "workqueue.py": 2,
+    "workqueue_store.py": 2,
 }
 
 
@@ -582,6 +582,7 @@ class TestNothingTheLoopRunsWritesTheUncarvedEntries:
     WRITERS = frozenset(
         {
             "kstrl.workqueue",
+            "kstrl.workqueue_store",
             "kstrl.serve",
             "kstrl.cli",
             "kstrl.evolution",
