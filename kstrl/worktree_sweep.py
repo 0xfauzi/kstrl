@@ -39,7 +39,7 @@ from typing import TYPE_CHECKING
 from kstrl.agents.spawn_record import SpawnRecord, forget_spawn_record, read_spawn_records
 from kstrl.findings import Finding
 from kstrl.procgroup import pid_is_alive, read_group_members, signal_group
-from kstrl.verify import ChildOutputDecodeError, run_scrubbed
+from kstrl.scrubbed_run import ChildOutputDecodeError, run_scrubbed
 
 if TYPE_CHECKING:
     from kstrl.ui.base import UI

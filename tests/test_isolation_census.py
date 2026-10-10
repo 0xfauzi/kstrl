@@ -175,7 +175,7 @@ def test_start_scrubbed_runs_its_command_only_inside_a_proven_rung() -> None:
     fallback) with no default and no None, and its one ``Popen`` spawns what
     ``_in_rung`` built from it: a command that outlives the call runs on the
     host only under the explicit fallback of a platform with no prover."""
-    (verify_source,) = [path for path in package_sources() if label(path) == "verify.py"]
+    (verify_source,) = [path for path in package_sources() if label(path) == "scrubbed_run.py"]
     (function,) = [
         node
         for node in all_nodes(parsed(verify_source))

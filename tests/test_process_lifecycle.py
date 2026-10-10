@@ -193,8 +193,10 @@ EXPECTED_PROCESS_MODULES: dict[str, tuple[str, ...]] = {
     # fork, whose parent leaves with the command's status.
     "agents/leash.py": ("Popen", "fork", "getpgrp", "killpg", "subprocess"),
     "serve.py": ("Popen", "communicate", "subprocess"),
-    "verify.py": ("Popen", "communicate", "subprocess"),
-    # #700 slice 3: waits on the `up` that `verify.start_scrubbed` started,
+    "scrubbed_run.py": ("Popen", "communicate", "subprocess"),
+    # #776 V1: `subprocess.TimeoutExpired` is the one use left in `verify.py`.
+    "verify.py": ("subprocess",),
+    # #700 slice 3: waits on the `up` that `scrubbed_run.start_scrubbed` started,
     # stops its group through `procgroup.signal_group` and lets it go through
     # `procdispose.reap_or_abandon`; `Popen` is the type of what it holds.
     "replay.py": ("Popen", "subprocess"),
@@ -353,7 +355,7 @@ EXPECTED_SPAWNERS: dict[str, SpawnerRules] = {
     # #700 slice 3: the second Popen is `start_scrubbed`, which returns the
     # running child; `replay.py` is the one that lets it go. #642 slice 6:
     # the third disposal lets go of a leash that could not start `up`.
-    "verify.py": SpawnerRules(2, 1, 1, 3),
+    "scrubbed_run.py": SpawnerRules(2, 1, 1, 3),
     "replay.py": SpawnerRules(0, 0, 0, 1),
 }
 

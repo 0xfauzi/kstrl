@@ -2,7 +2,7 @@
 
 The record of a rung lives here, apart from the prover in
 :mod:`kstrl.isolation`, because the prover runs its canaries through
-:func:`kstrl.verify.run_scrubbed` while :mod:`kstrl.verify` must hold a
+:func:`kstrl.scrubbed_run.run_scrubbed` while :mod:`kstrl.verify` must hold a
 rung to run a command inside it: one module each way would be an import
 cycle. Nothing here imports from kstrl.
 

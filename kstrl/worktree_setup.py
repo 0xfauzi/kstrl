@@ -17,7 +17,7 @@ and in a contract or integration worktree after its merges and before its
 tests or reviewer. A component's ``scaffold``
 replaces it for that component's worktree. Empty means no setup.
 
-It runs through :func:`kstrl.verify.run_scrubbed`, so it gets exactly the
+It runs through :func:`kstrl.scrubbed_run.run_scrubbed`, so it gets exactly the
 environment the gates get (no secrets) and, on timeout, its whole process
 group is killed, not only the shell. ``worktree_setup_timeout`` of 0
 means no limit (#467).
@@ -30,8 +30,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from kstrl.rung import Rung
+from kstrl.scrubbed_run import ChildOutputDecodeError, run_scrubbed
 from kstrl.timeout import limit_seconds
-from kstrl.verify import ChildOutputDecodeError, run_scrubbed
 
 #: How many of a failed setup's last output lines the error keeps.
 OUTPUT_TAIL_LINES = 20

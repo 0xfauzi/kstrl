@@ -351,8 +351,9 @@ PINNED_HITS: dict[str, dict[str, int]] = {
     "procdispose.py": {"python": 8},
     "procgroup.py": {"python": 1},
     "runstate.py": {"mypy": 1},
+    "scrubbed_run.py": {"python": 4},
     "serve.py": {"python": 2},
-    "verify.py": {"mypy": 4, "pytest": 1, "python": 4},
+    "verify.py": {"mypy": 4, "pytest": 1},
     "workqueue.py": {"python": 1},
     "worktree_setup.py": {"node": 2},
 }
