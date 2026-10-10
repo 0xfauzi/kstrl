@@ -585,6 +585,7 @@ class TestNothingTheLoopRunsWritesTheUncarvedEntries:
             "kstrl.workqueue_store",
             "kstrl.serve",
             "kstrl.cli",
+            "kstrl.cli_seam",
             "kstrl.evolution",
             "kstrl.intake_github",
             # #545: the two writers of .kstrl/plan/.

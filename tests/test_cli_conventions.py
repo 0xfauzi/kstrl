@@ -64,6 +64,9 @@ from tests.helpers.fakegh import put_gh_on_path
 from tests.helpers.gitrepo import git_in
 
 CLI_MODULE = "cli.py"
+#: The modules cut out of cli.py are siblings named `cli_<topic>.py` (#776). Their
+#: returns are exit codes too, so a function that moves keeps its census.
+CLI_SIBLING_PREFIX = "cli_"
 
 UI_CHOICES = ("auto", "rich", "plain", "gum")
 
@@ -587,7 +590,11 @@ def _count_site(
         if value is not None:
             census.take(key, _reach(value, top, tree))
             census.ones[key] += _is_text(value)
-        elif key[0] == CLI_MODULE and isinstance(node, ast.Return) and node.value:
+        elif (
+            (key[0] == CLI_MODULE or key[0].startswith(CLI_SIBLING_PREFIX))
+            and isinstance(node, ast.Return)
+            and node.value
+        ):
             counted.add(id(node))
             census.ones[key] += list(_reach(node.value, top, tree)).count("1")
 
@@ -595,7 +602,7 @@ def _count_site(
 def _exit_census(modules: dict[str, ast.Module]) -> _ExitCensus:
     """Every literal 1 that reaches an exit code, following each value into
     the functions it comes from until no new one turns up. Every return in
-    kstrl/cli.py is counted as an exit code, as before #531."""
+    kstrl/cli.py and kstrl/cli_*.py is counted as an exit code, as before #531."""
     census = _ExitCensus()
     counted: set[int] = set()
     for key, top, tree in _sites(modules):
@@ -642,10 +649,17 @@ def test_the_census_sees_every_shape_of_exit_one() -> None:
         "def unrelated():\n    return 1\n"
         "class Handle:\n    @property\n    def exit_code(self):\n        return 1\n"
     )
-    census = _exit_census({CLI_MODULE: parse(cli_source), "other.py": parse(other_source)})
+    census = _exit_census(
+        {
+            CLI_MODULE: parse(cli_source),
+            "cli_sibling.py": parse(cli_source),
+            "other.py": parse(other_source),
+        }
+    )
     assert census.ones == Counter(
         {
             **dict.fromkeys([(CLI_MODULE, n) for n in "abCefhkm"], 1),
+            **dict.fromkeys([("cli_sibling.py", n) for n in "abCefhkm"], 1),
             **dict.fromkeys([("other.py", n) for n in ("refuse", "launch", "decide")], 1),
             ("other.py", "helper"): 1,
             ("other.py", "Handle"): 1,
