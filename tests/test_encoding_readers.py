@@ -143,8 +143,13 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     # The `append_guidance_record` read, moved from `operator_context.py`
     # in the same split.
     "operator_guidance.py": 1,
-    "pipeline.py": 5,  # 3 until #463 added carry_interrupted_run's journal
-    # open; 5 since #482 added journal_integration_result's journal open
+    "pipeline.py": 1,
+    # 3 until #463 added carry_interrupted_run's journal open; 5 since #482
+    # added journal_integration_result's journal open. #776 divided the 5
+    # between the layer modules: the attempt record has 3 (the phase
+    # transcript open and two journal opens) and the ledger has 1.
+    "pipeline_attempt.py": 3,
+    "pipeline_ledger.py": 1,
     "prd.py": 1,
     # #700 slice 5: `ks recheck` reads a record and its index.json back.
     "recheck.py": 1,
@@ -283,8 +288,8 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     # `operator_guidance.py` when that write path split out of
     # `operator_context.py` under the 800-line ratchet.
     "operator_guidance.py spec.path.read_text(encoding='utf-8')",
-    "pipeline.py open(path, 'a', buffering=1, encoding='utf-8')",
     "pipeline.py progress_path.read_text(encoding='utf-8')",
+    "pipeline_attempt.py open(path, 'a', buffering=1, encoding='utf-8')",
     "prd.py open(path, encoding='utf-8')",
     # #700 slice 5: an acceptance record and its index.json, utf-8, with
     # ValueError caught beside OSError.
@@ -373,7 +378,8 @@ EXPECTED_DECIDED_OUT: tuple[str, ...] = (
     "appendio.py open",
     "atomicio.py os.open",
     "factory.py EvolutionJournal.open",
-    "pipeline.py EvolutionJournal.open",
+    "pipeline_attempt.py EvolutionJournal.open",
+    "pipeline_ledger.py EvolutionJournal.open",
     # #700 slice 3: the `up` log is opened "wb" and read back through
     # `_readable`, which decodes with errors="replace". Binary, so no
     # codec applies at the open.

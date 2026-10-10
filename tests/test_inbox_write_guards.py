@@ -59,7 +59,7 @@ EXPECTED_CONSTRUCTIONS = (
     "factory.py kstrl.inbox.Inbox",
     # #639 slice 4: read_owner_answers scans for the owner's answers; reads only.
     "owner_answers.py kstrl.inbox.Inbox",
-    "pipeline.py kstrl.inbox.Inbox",
+    "pipeline_inbox.py kstrl.inbox.Inbox",
     # #602: the L1 plan gate reads its item (_find) and records a decision
     # given at the prompt (_record).
     "plan_gate.py kstrl.inbox.Inbox",
@@ -98,7 +98,7 @@ EXPECTED_CONSTRUCTION_COUNTS = {
     # (ComponentPipeline.snapshot_waivers's own +1 among them). All five
     # sites now build through ComponentPipeline._open_inbox, so there is
     # exactly one Inbox(...) call left in the file.
-    "pipeline.py": 1,
+    "pipeline_inbox.py": 1,
     "plan_gate.py": 2,
     "serve.py": 2,
     "stack.py": 3,
@@ -143,9 +143,9 @@ EXPECTED_MUTATIONS: dict[str, Disposition] = {
     "decisions.py::open_escalation_item::add": _GUARDED,
     "decisions.py::resolve_escalation_items::resolve": _GUARDED,
     "factory.py::_open_health_breach_items::add": _GUARDED,
-    "pipeline.py::ComponentPipeline._inbox_add::add": _GUARDED,
-    "pipeline.py::ComponentPipeline._inbox_resolve::resolve": _GUARDED,
-    "pipeline.py::ComponentPipeline._inbox_resolve_component::resolve": _GUARDED,
+    "pipeline_inbox.py::InboxDesk._inbox_add::add": _GUARDED,
+    "pipeline_inbox.py::InboxDesk._inbox_resolve::resolve": _GUARDED,
+    "pipeline_inbox.py::InboxDesk._inbox_resolve_component::resolve": _GUARDED,
     "plan_gate.py::_record::add": _GUARDED,
     "plan_gate.py::_record::approve": _GUARDED,
     "plan_gate.py::_record::reject": _GUARDED,

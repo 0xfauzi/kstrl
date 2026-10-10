@@ -275,7 +275,10 @@ ALLOWED_APPEND_OPENS: dict[str, tuple[Reason, str]] = {
     "commandrun.py:CommandRun.transcript_writer": (Reason.TEXT_LOG, "a command transcript"),
     "factory.py:_redirect_worker_output": (Reason.TEXT_LOG, "a worker's stdout and stderr"),
     "factory.py:_run_component": (Reason.TEXT_LOG, "the component's own log"),
-    "pipeline.py:ComponentPipeline._phase_transcript": (Reason.TEXT_LOG, "a phase transcript"),
+    "pipeline_attempt.py:AttemptRecorder._phase_transcript": (
+        Reason.TEXT_LOG,
+        "a phase transcript",
+    ),
     "tui/embed.py:run_embedded": (Reason.TEXT_LOG, "the embedded run's log"),
     "tui/session.py:start_run_session": (Reason.TEXT_LOG, "the session log"),
     "atomicio.py:_create_temp": (Reason.NOT_AN_APPEND, "os.open with O_WRONLY|O_CREAT|O_EXCL"),
@@ -283,15 +286,15 @@ ALLOWED_APPEND_OPENS: dict[str, tuple[Reason, str]] = {
         Reason.NOT_AN_APPEND,
         "EvolutionJournal.open(root_dir), a classmethod called open",
     ),
-    "pipeline.py:ComponentPipeline.journal_superseded_findings": (
+    "pipeline_attempt.py:AttemptRecorder.journal_superseded_findings": (
         Reason.NOT_AN_APPEND,
         "EvolutionJournal.open(self.root_dir), the same classmethod",
     ),
-    "pipeline.py:ComponentPipeline.carry_interrupted_run": (
+    "pipeline_ledger.py:UsageLedger.carry_interrupted_run": (
         Reason.NOT_AN_APPEND,
         "EvolutionJournal.open(self.root_dir), the same classmethod",
     ),
-    "pipeline.py:ComponentPipeline.journal_integration_result": (
+    "pipeline_attempt.py:AttemptRecorder.journal_integration_result": (
         Reason.NOT_AN_APPEND,
         "EvolutionJournal.open(self.root_dir), the same classmethod",
     ),
@@ -319,8 +322,9 @@ EXPECTED_APPEND_OPENS: dict[str, int] = {
     "factory.py: open('a+')": 1,
     # Two since #463: carry_interrupted_run is the second caller. Three
     # since #482: journal_integration_result is the third.
-    "pipeline.py: EvolutionJournal.open(self.root_dir)": 3,
-    "pipeline.py: open('a')": 1,
+    "pipeline_attempt.py: EvolutionJournal.open(self.root_dir)": 2,
+    "pipeline_attempt.py: open('a')": 1,
+    "pipeline_ledger.py: EvolutionJournal.open(self.root_dir)": 1,
     "replay.py: path.open('a+')": 1,
     "serve.py: open('a+')": 2,
     "statedir.py: open('a+')": 1,
