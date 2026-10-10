@@ -318,10 +318,11 @@ EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
     # #639 slice 4: OWNER_ANSWER_PROMPT's declaration and its one use in
     # render_owner_answer.
     "owner_answers.py": 2,
-    # #303: 2 pre-existing + 5 new fragments x 2 spellings each (the
-    # declaration and its one use site) = 12. The version constant adds
-    # nothing: the walk keys on names ending in _PROMPT, not _VERSION.
-    "review.py": 12,
+    "review.py": 2,
+    # #303: 5 new fragments x 2 spellings each (the declaration and its
+    # one use site) = 10. The version constant adds nothing: the walk keys
+    # on names ending in _PROMPT, not _VERSION.
+    "review_claims.py": 10,
     "security.py": 2,
     # #696: STACK_PROMPT's declaration and its one use in
     # Stack.format_for_prompt. Enrolled in tests/test_prompt_versions.py.
