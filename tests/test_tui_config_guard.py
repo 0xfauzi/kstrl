@@ -94,11 +94,12 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     "factory.py": 6,
     "git.py": 1,
     "inbox.py": 1,
-    # Two since #231: IntakeError (the subclass), plus a bare raise in
-    # `_run_command` when a `SteerCommand` reaches no handler in
-    # `_STEER_HANDLERS` - the closed-by-construction guard's unreachable
-    # branch (A3), which is operator-unreachable but still counted.
-    "intake_github.py": 2,
+    # IntakeError (the subclass). #776 I1 moved it out of intake_github.py.
+    "intake_gh.py": 1,
+    # A bare raise in `_run_command` when a `SteerCommand` reaches no
+    # handler in `_STEER_HANDLERS` - the closed-by-construction guard's
+    # unreachable branch (A3), which is operator-unreachable but still counted.
+    "intake_github.py": 1,
     # OwnerAnswerError (#639 slice 4).
     "owner_answers.py": 1,
     "pr.py": 4,  # no subclass: four bare raises
@@ -107,7 +108,7 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     # shapes, and a row that is not a PR record. check_open_pr_bound
     # catches `Exception`, not `RuntimeError`, so it contributes none.
     # The transport failures belong to run_gh, counted against
-    # intake_github.py rather than here.
+    # intake_gh.py rather than here.
     # #700 slice 2: ProvenRung.command raises a bare RuntimeError when a
     # refused rung, or one with no policy, reaches a command.
     "rung.py": 1,

@@ -53,7 +53,7 @@ fi
 """
 
 #: Where `gh` is actually spawned. `count_open_kstrl_prs` goes through
-#: `intake_github.run_gh`, so patching `kstrl.serve.subprocess.run` would
+#: `intake_gh.run_gh`, so patching `kstrl.serve.subprocess.run` would
 #: patch nothing and the tests would silently reach the real `gh`.
 GH_RUN = "kstrl.intake_gh.subprocess.run"
 
