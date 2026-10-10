@@ -510,7 +510,8 @@ class TestSafeModeLine:
         assert "nominal" in output
 
     def test_paused_queue_is_named_and_counted(self, tmp_path: Path) -> None:
-        from kstrl.workqueue import Queue, QueueConfig
+        from kstrl.workqueue import Queue
+        from kstrl.workqueue_items import QueueConfig
 
         _synthetic_manifest().save(
             tmp_path / "scripts" / "kstrl" / "manifest.json",
@@ -537,7 +538,8 @@ class TestSafeModeLine:
         directory, a ladder and a queue. Withholding the answer until a
         manifest exists would make the question unaskable exactly when an
         operator is asking why nothing has run."""
-        from kstrl.workqueue import Queue, QueueConfig
+        from kstrl.workqueue import Queue
+        from kstrl.workqueue_items import QueueConfig
 
         Queue(tmp_path, QueueConfig()).pause(
             reason="poison breaker tripped",
@@ -556,7 +558,8 @@ class TestSafeModeLine:
     ) -> None:
         """The predicate does not read the manifest, so a corrupt one
         must not hide a paused queue either."""
-        from kstrl.workqueue import Queue, QueueConfig
+        from kstrl.workqueue import Queue
+        from kstrl.workqueue_items import QueueConfig
 
         manifest = tmp_path / "scripts" / "kstrl" / "manifest.json"
         manifest.parent.mkdir(parents=True, exist_ok=True)
@@ -570,7 +573,8 @@ class TestSafeModeLine:
         assert "[queue] paused" in output
 
     def test_the_line_carries_no_colour_codes(self, tmp_path: Path) -> None:
-        from kstrl.workqueue import Queue, QueueConfig
+        from kstrl.workqueue import Queue
+        from kstrl.workqueue_items import QueueConfig
 
         _synthetic_manifest().save(
             tmp_path / "scripts" / "kstrl" / "manifest.json",

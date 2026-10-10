@@ -162,7 +162,7 @@ def needs_cells(row: NeedsYouRow) -> list[Text]:
 
 def active_cells(row: ActiveRow, *, narrow: bool = False) -> list[Text]:
     """[glyph, source and id, state, detail] for one active row."""
-    from kstrl.workqueue import short_item_id
+    from kstrl.workqueue_items import short_item_id
 
     serve = row.source == "ks serve"
     label = short_item_id(row.label) if serve else theme.short_run_id(row.label)

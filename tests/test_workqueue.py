@@ -30,19 +30,17 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl.workqueue import (
+from kstrl.workqueue import Queue, queue_lock, summarize
+from kstrl.workqueue_items import (
     ItemSource,
     ItemState,
     MergeDisposition,
-    Queue,
     QueueBudgetExhausted,
     QueueConfig,
     QueueError,
     QueueItem,
     QueueLockedError,
     is_safe_component,
-    queue_lock,
-    summarize,
 )
 
 

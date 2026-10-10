@@ -122,7 +122,7 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     "statedir.py": 1,
     # ChildOutputDecodeError, added by #416.
     "verify.py": 1,
-    "workqueue.py": 1,
+    "workqueue_items.py": 1,
 }
 
 

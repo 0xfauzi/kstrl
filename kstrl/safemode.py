@@ -167,7 +167,8 @@ def _autonomy_reasons(root_dir: Path) -> list[SafeModeReason]:
 
 def _queue_reasons(root_dir: Path) -> list[SafeModeReason]:
     from kstrl.config_report import environ_lock
-    from kstrl.workqueue import Queue, QueueConfig
+    from kstrl.workqueue import Queue
+    from kstrl.workqueue_items import QueueConfig
 
     # KSTRL_QUEUE_*; see _autonomy_reasons for why the lock is here.
     with environ_lock():

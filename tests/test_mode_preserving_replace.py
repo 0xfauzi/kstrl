@@ -139,7 +139,7 @@ EXPECTED_UNDECIDED_REPLACE_CALLS: tuple[str, ...] = (
     "tui/screens/inbox.py moment.replace",
     "verify.py text.replace",
     "verify.py text.replace('\\r\\n', '\\n').replace",
-    "workqueue.py parsed.replace",
+    "workqueue_items.py parsed.replace",
 )
 
 

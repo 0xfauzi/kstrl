@@ -85,14 +85,8 @@ from kstrl.serve import (
 #: the empty-run-id test pass no matter what the function did.
 from kstrl.serve import read_run_spend as REAL_READ_RUN_SPEND
 from kstrl.serve_merge_gate import resolve_merge_gate
-from kstrl.workqueue import (
-    ItemSource,
-    ItemState,
-    MergeDisposition,
-    Queue,
-    QueueConfig,
-    QueueItem,
-)
+from kstrl.workqueue import Queue
+from kstrl.workqueue_items import ItemSource, ItemState, MergeDisposition, QueueConfig, QueueItem
 from tests.helpers import procs
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
 

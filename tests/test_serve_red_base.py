@@ -31,7 +31,8 @@ from click.testing import CliRunner, Result
 from kstrl.cli import cli
 from kstrl.inbox import Inbox, InboxConfig, InboxItem, ItemKind
 from kstrl.serve import SpendLedger
-from kstrl.workqueue import ItemState, Queue, QueueConfig, QueueItem
+from kstrl.workqueue import Queue
+from kstrl.workqueue_items import ItemState, QueueConfig, QueueItem
 from tests.helpers.gitrepo import git_in
 from tests.helpers.stack_confirmation import confirm_stack
 from tests.test_isolation_rung import runs_a_stack

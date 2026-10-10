@@ -40,7 +40,8 @@ from kstrl.serve import ServeConfig, SpendLedger, read_run_spend, serve_cycle
 from kstrl.shutdown import StopController
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
-from kstrl.workqueue import ItemSource, Queue, QueueConfig
+from kstrl.workqueue import Queue
+from kstrl.workqueue_items import ItemSource, QueueConfig
 from tests.helpers import procs
 from tests.helpers.stack_confirmation import in_process_stack
 from tests.spine_utils import (

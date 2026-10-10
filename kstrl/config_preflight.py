@@ -231,7 +231,7 @@ def config_sections() -> list[ConfigSection]:
     from kstrl.stack import StackConfig
     from kstrl.timeout import TimeoutConfig
     from kstrl.verify import VerifyConfig
-    from kstrl.workqueue import QueueConfig
+    from kstrl.workqueue_items import QueueConfig
 
     return [
         ConfigSection(("agent", "run", "paths", "git", "ui"), KstrlConfig.load),

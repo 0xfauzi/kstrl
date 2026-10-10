@@ -223,7 +223,7 @@ class TestQueueJournalSurvivesATornTail:
         return Queue(tmp_path / "queue")
 
     def add(self, queue: Any, item_id: str) -> None:
-        from kstrl.workqueue import JournalEntry
+        from kstrl.workqueue_items import JournalEntry
 
         queue._journal(
             JournalEntry(

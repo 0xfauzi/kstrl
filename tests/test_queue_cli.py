@@ -21,12 +21,8 @@ from click.testing import CliRunner, Result
 
 from kstrl.cli import cli
 from kstrl.serve import RunOutcome, RunSpend, SpendLedger
-from kstrl.workqueue import (
-    ItemState,
-    MergeDisposition,
-    Queue,
-    QueueConfig,
-)
+from kstrl.workqueue import Queue
+from kstrl.workqueue_items import ItemState, MergeDisposition, QueueConfig
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
 
 
@@ -293,6 +289,7 @@ class TestShownIds:
         """Both items are minted in the same microsecond, so only the nonce tells them apart."""
         moment = datetime(2026, 10, 4, 18, 0, 0, tzinfo=UTC)
         monkeypatch.setattr("kstrl.workqueue._utc_now", lambda: moment)
+        monkeypatch.setattr("kstrl.workqueue_items._utc_now", lambda: moment)
         for name in ("a", "b"):
             spec = tmp_path / f"{name}.md"
             spec.write_text(f"# {name}\n\nDo {name}.\n", encoding="utf-8")

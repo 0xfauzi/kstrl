@@ -21,7 +21,8 @@ from kstrl.tui.widgets.safe_mode_chip import (
     render_banner,
     render_chip,
 )
-from kstrl.workqueue import Queue, QueueConfig
+from kstrl.workqueue import Queue
+from kstrl.workqueue_items import QueueConfig
 from tests.helpers.fake_run import FakeRunSpec, write_fake_run
 from tests.helpers.settle import drained, mounted, settled
 

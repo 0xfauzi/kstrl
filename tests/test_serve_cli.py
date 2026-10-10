@@ -16,7 +16,8 @@ from click.testing import CliRunner, Result
 
 from kstrl.cli import cli
 from kstrl.serve import RunOutcome, RunSpend, SpendLedger
-from kstrl.workqueue import ItemState, Queue, QueueConfig
+from kstrl.workqueue import Queue
+from kstrl.workqueue_items import ItemState, QueueConfig
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
 
 
@@ -258,7 +259,7 @@ class TestServeOnce:
         spec_file: Path,
     ) -> None:
         """A path that sets no ran_item, which the old filter also skipped."""
-        from kstrl.workqueue import QueueConfig as _QC
+        from kstrl.workqueue_items import QueueConfig as _QC
 
         _invoke(
             ["queue", "add", str(spec_file), "--max-attempts", "1"],

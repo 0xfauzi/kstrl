@@ -23,7 +23,8 @@ from kstrl.init_cmd import DEFAULT_MEMORY
 from kstrl.intake_github import GhResult, ProcessedLedger
 from kstrl.operator_context import GUIDANCE_HEADING
 from kstrl.serve import _NullObserver, serve_cycle
-from kstrl.workqueue import ItemSource, MergeDisposition, Queue, QueueConfig
+from kstrl.workqueue import Queue
+from kstrl.workqueue_items import ItemSource, MergeDisposition, QueueConfig
 from tests.helpers.fakegh import GhRouter, marked, unmarked
 from tests.helpers.runners import recording_runner
 from tests.helpers.stack_confirmation import confirm_stack, write_stack

@@ -208,7 +208,7 @@ class TestInitScaffold:
         every one of them changes no value."""
         from kstrl.intake_github import GitHubIntakeConfig
         from kstrl.serve import ServeConfig
-        from kstrl.workqueue import QueueConfig
+        from kstrl.workqueue_items import QueueConfig
 
         (tmp_path / "kstrl.toml").write_text(
             _uncomment_scaffold(DEFAULT_KSTRL_TOML), encoding="utf-8"

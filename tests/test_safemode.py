@@ -18,7 +18,8 @@ import pytest
 from kstrl import events as ev
 from kstrl.autonomy import AutonomyLevel, AutonomyState
 from kstrl.safemode import RECOVERY, safe_mode_reasons
-from kstrl.workqueue import Queue, QueueConfig
+from kstrl.workqueue import Queue
+from kstrl.workqueue_items import QueueConfig
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 RUN_ID = "factory-20260827-120000-abcd"
