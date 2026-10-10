@@ -25,7 +25,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl import context, factory, init_cmd, knowledge, loop, review, verify
+from kstrl import context, factory, init_cmd, knowledge, loop, review_claims, verify
 from kstrl.context import LEGACY_ATTEMPT, IterationContext, IterationRecord
 from kstrl.findings import Finding
 from kstrl.knowledge import KnowledgeConfig
@@ -128,7 +128,7 @@ def _finding(location: str) -> Finding:
 def _claim(reverted: bool, criteria: list[CriterionReview]) -> Callable[[Path], str]:
     def render(_tmp: Path) -> str:
         result = ReviewResult(passed=True, mode="advisory", criteria=criteria)
-        return review.claim_retry_context([_finding("US-001")], result, reverted=reverted)
+        return review_claims.claim_retry_context([_finding("US-001")], result, reverted=reverted)
 
     return render
 
@@ -153,7 +153,7 @@ _ALL_PASSED = [
 
 
 def _claim_empty(_tmp: Path) -> str:
-    return review.claim_retry_context([], ReviewResult(passed=True, mode="advisory"))
+    return review_claims.claim_retry_context([], ReviewResult(passed=True, mode="advisory"))
 
 
 def _diff_scope_plain(_tmp: Path) -> str:
@@ -483,11 +483,11 @@ CALL_TIME_GUARDS: dict[str, tuple[ModuleType, str]] = {
     "ITERATION_CONTEXT_HISTORY_PROMPT": (context, "ctx_history"),
     "ITERATION_CONTEXT_CLOSING_PROMPT": (context, "ctx_empty"),
     "ACCEPTANCE_RETRY_PROMPT": (context, "ctx_acceptance"),
-    "CLAIM_RETRY_PROMPT": (review, "claim_reverted"),
-    "CLAIM_REVERTED_PROMPT": (review, "claim_reverted"),
-    "CLAIM_NOT_REVERTED_PROMPT": (review, "claim_not_reverted"),
-    "CLAIM_PARTIALLY_JUDGED_PROMPT": (review, "claim_all_judged_passed"),
-    "CLAIM_NO_VERDICT_PROMPT": (review, "claim_no_verdict"),
+    "CLAIM_RETRY_PROMPT": (review_claims, "claim_reverted"),
+    "CLAIM_REVERTED_PROMPT": (review_claims, "claim_reverted"),
+    "CLAIM_NOT_REVERTED_PROMPT": (review_claims, "claim_not_reverted"),
+    "CLAIM_PARTIALLY_JUDGED_PROMPT": (review_claims, "claim_all_judged_passed"),
+    "CLAIM_NO_VERDICT_PROMPT": (review_claims, "claim_no_verdict"),
     "DIFF_SCOPE_BASE_BRANCH_PROMPT": (verify, "diff_scope_plain"),
     "DIFF_SCOPE_ALLOWED_PATHS_PROMPT": (verify, "diff_scope_plain"),
     "DIFF_SCOPE_HARNESS_PATHS_PROMPT": (verify, "diff_scope_harness"),

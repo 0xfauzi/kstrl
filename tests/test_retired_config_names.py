@@ -545,7 +545,7 @@ ALLOWED: dict[tuple[str, str], int] = {
     # would change what ships without moving the version constant or the
     # snapshot hash it is pinned by (H3): the string stays, and its two
     # test mirrors quote it verbatim.
-    ("kstrl/review.py", "set-point"): 1,
+    ("kstrl/review_claims.py", "set-point"): 1,
     ("tests/test_builder_prompts.py", "set-point"): 1,
     ("tests/test_claim_agreement_pipeline.py", "set-point"): 1,
     # Bare references to the ``kstrl.feedforward`` module Decision 1 keeps
