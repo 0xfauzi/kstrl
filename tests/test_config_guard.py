@@ -508,18 +508,20 @@ class TestTheRunReadsConfigOnlyBeforeItStarts:
         found = package_surface
         control = configwalk.read_sites(_pipeline_with_the_forbidden_fallback(tmp_path), found)
         assert control != [], (
-            "the walk reports nothing on a copy of kstrl/pipeline.py with "
+            "the walk reports nothing on a copy of kstrl/pipeline_state.py with "
             "`run_envelope = run_envelope or RunEnvelope.load(root_dir)` "
             "planted in the constructor, which is the one fallback that "
             "file forbids by name. The assertion below therefore proves "
             "nothing: a walk that cannot see the offender returns the "
             "same empty list a clean module returns."
         )
-        sites = [
-            site
-            for module in sorted(KSTRL_PACKAGE.glob("pipeline*.py"))
-            for site in configwalk.read_sites(module, found)
-        ]
+        modules = sorted(KSTRL_PACKAGE.glob("pipeline*.py"))
+        assert {"pipeline.py", "pipeline_state.py"} <= {module.name for module in modules}, (
+            "the glob kstrl/pipeline*.py does not find the pipeline files, so "
+            "the empty offender list below is the result of a walk that read "
+            f"nothing. Found: {[module.name for module in modules]}"
+        )
+        sites = [site for module in modules for site in configwalk.read_sites(module, found)]
         assert sites == [], (
             "a kstrl/pipeline*.py file resolves config. Its phases run per "
             "component attempt, so a read there is a second answer the "
