@@ -31,14 +31,13 @@ import pytest
 from kstrl.config import KstrlConfig
 from kstrl.factory import ComponentResult, FactoryConfig, run_factory
 from kstrl.manifest import Component, ComponentStatus, Manifest
-from kstrl.ui.plain import PlainUI
-from kstrl.verify import (
-    VerifyConfig,
+from kstrl.scrubbed_run import (
     _signal_process_group,
-    check_stack_command,
     run_scrubbed,
     scrubbed_subprocess_env,
 )
+from kstrl.ui.plain import PlainUI
+from kstrl.verify import VerifyConfig, check_stack_command
 from tests.helpers import procs
 from tests.helpers.stack_confirmation import in_process_stack
 

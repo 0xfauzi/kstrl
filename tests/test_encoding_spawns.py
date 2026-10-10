@@ -79,6 +79,9 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     "procgroup.py": 4,
     "procgroup_listing.py": 6,
     "retry_plan.py": 5,
+    # 15: #776 V1 moved `run_scrubbed` and `start_scrubbed` here from
+    # `verify.py`, with their `subprocess` spellings (see `verify.py` below).
+    "scrubbed_run.py": 15,
     "serve.py": 8,
     "statedir.py": 3,
     "timeout.py": 3,
@@ -98,8 +101,10 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     # their three. #700 slice 3 added 4 in `start_scrubbed`: its Popen, its
     # return type, DEVNULL and STDOUT. 16: #696 slice 8 deleted the
     # empty-file and syntax-error rules' `_base_finding`, the dead-code,
-    # mutation and patch-coverage drivers, and their spawns.
-    "verify.py": 16,
+    # mutation and patch-coverage drivers, and their spawns. 2: #776 V1
+    # moved `run_scrubbed` and `start_scrubbed` to `scrubbed_run.py`,
+    # which holds 15 (measured by running this census).
+    "verify.py": 2,
     "worktree_setup.py": 2,  # #624: the import, and `TimeoutExpired` from `run_scrubbed`
     "worktree_sweep.py": 2,  # #461: the import, and `TimeoutExpired` from `run_scrubbed`
 }
@@ -244,7 +249,8 @@ EXPECTED_BYTES_MODE_SPAWNS: dict[str, int] = {
     # #700 slice 3: +1, `start_scrubbed`, whose output goes to a log file and
     # is read back through `_readable` as evidence only. #696 slice 8: -1,
     # `_base_finding` went with the rules that read one language's files.
-    "verify.py": 2,
+    # #776 V1: both spawns moved here from `verify.py`.
+    "scrubbed_run.py": 2,
 }
 
 

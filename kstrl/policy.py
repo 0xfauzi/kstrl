@@ -53,6 +53,7 @@ ENFORCEMENT_MACHINERY_PATHS: tuple[str, ...] = (
     # leading `**/` matches zero or more directories, so these cover both
     # `kstrl/verify.py` at the repo root and a nested/vendored checkout.
     "**/kstrl/verify.py",
+    "**/kstrl/scrubbed_run.py",
     "**/kstrl/policy.py",
     "**/kstrl/guards.py",
     "**/kstrl/autonomy.py",

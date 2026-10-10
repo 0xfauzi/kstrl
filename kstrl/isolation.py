@@ -91,8 +91,8 @@ from kstrl.rung import (
     host_fallback,
     zone_dir,
 )
+from kstrl.scrubbed_run import ChildOutputDecodeError, run_scrubbed
 from kstrl.statedir import control_dir, xdg_state_home
-from kstrl.verify import ChildOutputDecodeError, run_scrubbed
 from kstrl.version import kstrl_version
 
 #: The environment variable naming the nono binary; PATH is searched

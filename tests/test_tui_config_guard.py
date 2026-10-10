@@ -111,6 +111,8 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     # #700 slice 2: ProvenRung.command raises a bare RuntimeError when a
     # refused rung, or one with no policy, reaches a command.
     "rung.py": 1,
+    # ChildOutputDecodeError, added by #416.
+    "scrubbed_run.py": 1,
     "serve.py": 5,
     # SignalsError, R8.8 slice 1 / #155.
     "signals.py": 1,
@@ -120,8 +122,6 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     # raise_if_defect still treats them as operator input, and the walk
     # below follows them by subclass rather than by spelling.
     "statedir.py": 1,
-    # ChildOutputDecodeError, added by #416.
-    "verify.py": 1,
     "workqueue_items.py": 1,
 }
 

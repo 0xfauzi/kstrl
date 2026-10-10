@@ -6,7 +6,7 @@ of the isolation rung, with the stack's own commands and nothing else.
 The stages run in order and the first one that fails ends the replay:
 
 1. ``setup`` in the setup zone;
-2. ``up`` in the test zone, through :func:`kstrl.verify.start_scrubbed`:
+2. ``up`` in the test zone, through :func:`kstrl.scrubbed_run.start_scrubbed`:
    ready means it exited 0, and a timeout is never ready;
 3. every check in the test zone, in the stack's order;
 4. the ``up`` process group is stopped by the group id recorded when it
@@ -48,6 +48,12 @@ from kstrl.isolation import SETUP_ZONE, TEST_ZONE, prove_zones
 from kstrl.procdispose import reap_or_abandon
 from kstrl.procgroup import read_group_liveness, signal_group
 from kstrl.rung import HostFallback, Rung, refusal_of, release, sandbox_hint
+from kstrl.scrubbed_run import (
+    ChildOutputDecodeError,
+    _readable,
+    run_scrubbed,
+    start_scrubbed,
+)
 from kstrl.stack import (
     REPLAY_BASE_CONTRADICTION,
     REPLAY_BOUNDARY_REFUSED,
@@ -59,13 +65,7 @@ from kstrl.stack import (
     stack_paths,
 )
 from kstrl.statedir import CONTROL_APP_NAME, xdg_state_home
-from kstrl.verify import (
-    SHELL_COULD_NOT_RUN,
-    ChildOutputDecodeError,
-    _readable,
-    run_scrubbed,
-    start_scrubbed,
-)
+from kstrl.verify import SHELL_COULD_NOT_RUN
 
 if TYPE_CHECKING:
     from kstrl.ui.base import UI
@@ -82,7 +82,7 @@ REPLAY_LOCK_FILE = "replay.lock"
 TAIL_LINES = 5
 
 #: Seconds the ``up`` group gets after SIGTERM, then after SIGKILL: the
-#: grace ``verify.run_scrubbed`` gives a timed-out group.
+#: grace ``scrubbed_run.run_scrubbed`` gives a timed-out group.
 STOP_GRACE_SECONDS = 5.0
 
 #: Seconds between two reads of whether the ``up`` group is gone.

@@ -125,6 +125,8 @@ EXPECTED_UNDECIDED_REPLACE_CALLS: tuple[str, ...] = (
     "observability.py datetime.strptime(ts, '%Y-%m-%dT%H:%M:%SZ').replace",
     # #526: `retry_plan._opt` spells a run limit as an option name, a str.replace.
     "retry_plan.py name.replace",
+    "scrubbed_run.py text.replace",
+    "scrubbed_run.py text.replace('\\r\\n', '\\n').replace",
     "serve.py (local + timedelta(days=1)).replace",
     "statedir.py datetime.now(UTC).replace",
     "statedir.py datetime.now(UTC).replace(microsecond=0).isoformat().replace",
@@ -137,8 +139,6 @@ EXPECTED_UNDECIDED_REPLACE_CALLS: tuple[str, ...] = (
     "tui/screens/decompose.py key.replace",
     "tui/screens/inbox.py key.replace",
     "tui/screens/inbox.py moment.replace",
-    "verify.py text.replace",
-    "verify.py text.replace('\\r\\n', '\\n').replace",
     "workqueue_items.py parsed.replace",
 )
 

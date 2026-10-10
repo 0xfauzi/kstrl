@@ -1,5 +1,5 @@
 """#416: a verification child's bytes are decoded as utf-8 by
-``kstrl.verify.run_scrubbed``, and a child whose output it cannot decode is
+``kstrl.scrubbed_run.run_scrubbed``, and a child whose output it cannot decode is
 now a named error every call site answers for, rather than a bare
 ``UnicodeDecodeError`` (a ``ValueError``) escaping as a traceback.
 
@@ -20,12 +20,9 @@ import pytest
 
 from kstrl import contract
 from kstrl.contract import ContractConfig
+from kstrl.scrubbed_run import ChildOutputDecodeError, run_scrubbed
 from kstrl.ui.plain import PlainUI
-from kstrl.verify import (
-    ChildOutputDecodeError,
-    check_stack_command,
-    run_scrubbed,
-)
+from kstrl.verify import check_stack_command
 from tests.helpers.astwalk import (
     Bindings,
     all_nodes,
@@ -109,7 +106,7 @@ _ACCEPTED = frozenset({"ChildOutputDecodeError"})
 #: with this target finds only the sites outside ``verify.py``; the sites
 #: inside call the bare local name, which the resolver does not place. The
 #: union with the bare-name walk below is built in ``_run_scrubbed_calls``.
-_RESOLVED_TARGET = frozenset({"kstrl.verify.run_scrubbed"})
+_RESOLVED_TARGET = frozenset({"kstrl.scrubbed_run.run_scrubbed"})
 
 
 def _not_a_bare_reraise(handler: ast.ExceptHandler) -> bool:
@@ -299,8 +296,8 @@ def test_the_walk_reports_what_it_could_not_decide() -> None:
     """The undecided half owed by ``resolved_calls``, filtered to the
     ``run_scrubbed`` rows: measured as ``{"verify.py": 10}`` on 1f891f1,
     the ten bare-name calls inside ``verify.py`` itself the resolver
-    cannot place, alongside unrelated calls in other modules this guard
-    does not own."""
+    could not place before #776 V1 moved ``run_scrubbed``, alongside
+    unrelated calls in other modules this guard does not own."""
     counts: dict[str, int] = {}
     for source_file in package_sources():
         tree = parse(source_file.read_text(encoding="utf-8"))
@@ -322,7 +319,9 @@ def test_the_walk_reports_what_it_could_not_decide() -> None:
     # lint) deleted with the Python defaults.
     # #696 slice 8: 1, the dead-code, mutation, coverage and adequacy
     # drivers deleted; check_stack_command's run is the one left.
-    assert counts == {"verify.py": 1}
+    # #776 V1: 0. verify.py imports run_scrubbed from kstrl.scrubbed_run, so the
+    # resolver now places its one call; no bare-name call is left undecided.
+    assert counts == {}
 
 
 def test_the_call_site_census_is_pinned() -> None:
@@ -435,15 +434,15 @@ def test_the_disposition_census_is_pinned() -> None:
 def _offending_class(where: str, node: ast.AST) -> str | None:
     if not isinstance(node, ast.ClassDef) or node.name != "ChildOutputDecodeError":
         return None
-    if where == "verify.py":
+    if where == "scrubbed_run.py":
         return None
     return f"{where}:{node.lineno} class"
 
 
 def _offending_binding(where: str, module: str, tree: ast.Module) -> list[str]:
     """Every binding of ``ChildOutputDecodeError`` in one module that is
-    not its ``ClassDef`` in ``verify.py`` or a resolved origin of
-    ``kstrl.verify.ChildOutputDecodeError``.
+    not its ``ClassDef`` in ``scrubbed_run.py`` or a resolved origin of
+    ``kstrl.scrubbed_run.ChildOutputDecodeError``.
 
     Built on ``astwalk.bindings`` rather than hand-rolled per shape
     (#416's reuse review): the walk this replaced checked only
@@ -460,15 +459,15 @@ def _offending_binding(where: str, module: str, tree: ast.Module) -> list[str]:
             found.append(hit)
     table = bindings(tree, module=module)
     origin = table.origins.get("ChildOutputDecodeError")
-    if origin is not None and origin != "kstrl.verify.ChildOutputDecodeError":
+    if origin is not None and origin != "kstrl.scrubbed_run.ChildOutputDecodeError":
         found.append(f"{where}: bound to {origin}")
     return found
 
 
 def test_the_error_name_has_one_home() -> None:
     """Every binding of the name ``ChildOutputDecodeError`` in ``kstrl/``
-    is either its ``ClassDef`` in ``verify.py`` or resolves to
-    ``kstrl.verify.ChildOutputDecodeError``. A name is not an identity
+    is either its ``ClassDef`` in ``scrubbed_run.py`` or resolves to
+    ``kstrl.scrubbed_run.ChildOutputDecodeError``. A name is not an identity
     (#324 round 2)."""
     offenders: list[str] = []
     for source_file in package_sources():

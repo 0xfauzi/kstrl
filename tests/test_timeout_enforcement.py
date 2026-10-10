@@ -1881,7 +1881,7 @@ class TestSubprocessTimeoutAudit:
     runtime kill tests in this file's suite or their own:
 
     - kstrl/agents/proc.py: reader-thread deadline + group kill (R0.1)
-    - kstrl/verify.py: run_scrubbed communicate(timeout) + group kill
+    - kstrl/scrubbed_run.py: run_scrubbed communicate(timeout) + group kill
       (R2.6)
     - kstrl/serve.py: subprocess_factory_runner communicate(timeout) +
       group kill (R8.6). Popen is REQUIRED here rather than incidental:
@@ -1954,8 +1954,8 @@ class TestSubprocessTimeoutAudit:
             "kstrl/agents/leash.py",
             "kstrl/agents/proc.py",
             "kstrl/procgroup_listing.py",
+            "kstrl/scrubbed_run.py",
             "kstrl/serve.py",
-            "kstrl/verify.py",
         }
     )
 
@@ -1976,7 +1976,7 @@ class TestSubprocessTimeoutAudit:
     #: passed the entire suite - 4977 passed, zero failures - on the line
     #: whose own docstring says it is why the function exists.
     #: ``kstrl/replay.py`` (#700 slice 3) waits on the ``up`` that
-    #: ``verify.start_scrubbed`` started and lets it go.
+    #: ``scrubbed_run.start_scrubbed`` started and lets it go.
     CHILD_WAIT_SCOPE = POPEN_ALLOWLIST | {"kstrl/procdispose.py", "kstrl/replay.py"}
 
     #: Waits in :data:`CHILD_WAIT_SCOPE` that have no deadline and are argued
