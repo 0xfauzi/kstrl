@@ -63,6 +63,7 @@ from typing import Any
 from kstrl.agents.proc import DeadlineStreamer
 from kstrl.config import _parse_bool
 from kstrl.jsonread import read_json
+from kstrl.sandbox import NO_MCP_ARGV
 
 #: Default ON; ``KSTRL_AGENT_PROBE=0`` restores the pre-#262 behaviour of
 #: trusting PATH. Read straight from the environment rather than from a
@@ -214,7 +215,7 @@ def _stream(cmd: list[str]) -> tuple[list[str], bool]:
 
 def _probe_claude(model: str | None) -> ProbeResult:
     """One turn; live unless the result envelope says ``is_error``."""
-    cmd = ["claude", "--print", "--output-format", "json"]
+    cmd = ["claude", "--print", "--output-format", "json", *NO_MCP_ARGV]
     if model is not None:
         cmd.extend(["--model", model])
     lines, timed_out = _stream(cmd)

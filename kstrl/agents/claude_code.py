@@ -16,6 +16,7 @@ from kstrl.agents.proc import DeadlineStreamer, timeout_message
 from kstrl.agents.prompt_record import record_prompt
 from kstrl.jsonread import read_json
 from kstrl.sandbox import (
+    NO_MCP_ARGV,
     SandboxConfig,
     claude_review_sandbox_args,
     claude_sandbox_args,
@@ -113,6 +114,7 @@ class ClaudeCodeAgent:
         session in which claude does not run it (#700).
         """
         cmd = ["claude", "--print", "--output-format", "stream-json", "--verbose"]
+        cmd.extend(NO_MCP_ARGV)
         skip_permissions, sandbox_argv = self._permission_argv(cwd)
         if skip_permissions:
             cmd.append("--dangerously-skip-permissions")

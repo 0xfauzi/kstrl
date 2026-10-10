@@ -300,11 +300,14 @@ claude lets a tool operate when its hook times out. Thus the guard stops
 itself after 10 seconds without a decision, and then claude stops the tool.
 The `timeout` of the hook is 600 seconds.
 
-The claude-code engineer also gets
-`--strict-mcp-config`, and thus it loads no MCP server. Without the flag, a
-headless session loaded the plugin servers of the operator, the claude.ai
-connectors, and a server in the `.mcp.json` of the worktree. The command of
-that server operated with no sandbox.
+Every claude session that kstrl starts gets `--strict-mcp-config`, in every
+role (engineer, reviewers, architect, verification designer, distiller,
+understand, liveness probe), with the sandbox on or off. The claude-sdk
+adapter passes the same flag. Thus no session loads an MCP server. Without
+the flag, a headless session loaded the plugin servers of the operator, the
+claude.ai connectors, and a server in the `.mcp.json` of the worktree. The
+command of that server operated with no sandbox. No kstrl role needs an MCP
+tool.
 
 A SessionStart hook in the same settings prints a marker when the guard can
 start. If the marker is not before the `init` record of the session, kstrl
