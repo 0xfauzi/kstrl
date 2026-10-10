@@ -183,8 +183,8 @@ async def _drive(config: dict[str, Any], sdk: Any) -> int:
         "max_budget_usd": config.get("max_budget_usd"),
         "cli_path": config.get("cli_path") or None,
         # No MCP server from the operator's plugins, connectors or the
-        # worktree .mcp.json. extra_args exists in every SDK version the
-        # pyproject allows, so the flag does not depend on a newer option (#700).
+        # worktree .mcp.json. extra_args exists in all SDK versions that kstrl
+        # supports, so the flag does not depend on a newer option (#700).
         "extra_args": {"strict-mcp-config": None},
     }
     # Mirror of the CLI adapter's R7.5 invocation shape: skip-permissions
