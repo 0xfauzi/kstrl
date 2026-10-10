@@ -32,15 +32,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, TextIO
 
 from kstrl.agents.prompt_record import AgentCall
-from kstrl.events import (
-    Event,
-    EventBus,
-    EventSink,
-    JsonlSink,
-    Log,
-    RunPaths,
-    WorkerHeartbeat,
-)
+from kstrl.event_catalog import Event, Log, WorkerHeartbeat
+from kstrl.events import EventBus, EventSink, JsonlSink, RunPaths
 from kstrl.runid import mint_run_id
 from kstrl.ui.bridge import EventBridgeUI
 

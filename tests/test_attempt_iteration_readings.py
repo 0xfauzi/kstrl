@@ -36,6 +36,7 @@ from typing import Any
 
 import pytest
 
+from kstrl import event_catalog
 from kstrl import events as ev
 from kstrl.evolution import (
     FINDINGS_SUPERSEDED_EVENT,
@@ -121,7 +122,9 @@ class TestJournalRecordsEveryAttempt:
         root = two_attempt_run
         run_dir = sorted((root / ".kstrl" / "runs").iterdir())[-1]
         engineer = run_dir / "components" / "comp-a" / "engineer.jsonl"
-        done = [e for e in ev.read_events(engineer) if isinstance(e, ev.IterationCompleted)]
+        done = [
+            e for e in ev.read_events(engineer) if isinstance(e, event_catalog.IterationCompleted)
+        ]
         # ground truth, by construction: 2 attempts x 3 iterations
         assert len(done) == 6
         assert [e.iteration for e in done] == [1, 2, 3, 1, 2, 3]

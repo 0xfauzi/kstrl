@@ -43,8 +43,8 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from kstrl import event_catalog, git
 from kstrl import events as ev
-from kstrl import git
 from kstrl.acceptance_lines import pr_isolation
 from kstrl.agents.base import (
     ARCHITECT_COMPONENT,
@@ -192,11 +192,13 @@ def _carried_reason(prior_run_id: str, reason: str) -> str:
     return f"{CARRIED_REASON_PREFIX}{prior_run_id}: {reason}"
 
 
-def _usage_by_component_phase(events: Sequence[ev.Event]) -> dict[tuple[str, str], UsageTotals]:
+def _usage_by_component_phase(
+    events: Sequence[event_catalog.Event],
+) -> dict[tuple[str, str], UsageTotals]:
     """Every ``component_usage`` in ``events``, summed per (component, phase) (#463)."""
     spent: dict[tuple[str, str], UsageTotals] = {}
     for event in events:
-        if not isinstance(event, ev.ComponentUsage):
+        if not isinstance(event, event_catalog.ComponentUsage):
             continue
         spent.setdefault((event.component, event.phase), UsageTotals()).merge(
             UsageTotals(
@@ -911,7 +913,7 @@ class ComponentPipeline:
         slot.merge(totals)
         self.run_usage.merge(totals)
         self.bus.emit(
-            ev.ComponentUsage(
+            event_catalog.ComponentUsage(
                 component=comp_id,
                 phase=phase,
                 **totals.to_dict(),
@@ -944,7 +946,7 @@ class ComponentPipeline:
             detail = coverage.note()
             self.ui.warn(f"  BUDGET COVERAGE: {detail}")
             self.bus.emit(
-                ev.BudgetCoverage(
+                event_catalog.BudgetCoverage(
                     ceiling=coverage.ceiling,
                     axis=coverage.axis,
                     calls=coverage.calls,
@@ -1060,11 +1062,12 @@ class ComponentPipeline:
         retried = [
             e
             for e in events
-            if isinstance(e, ev.ComponentRetrying) and e.attempt in owed.get(e.component, range(0))
+            if isinstance(e, event_catalog.ComponentRetrying)
+            and e.attempt in owed.get(e.component, range(0))
         ]
         for event in retried:
             self.bus.emit(
-                ev.ComponentRetrying(
+                event_catalog.ComponentRetrying(
                     component=event.component,
                     attempt=event.attempt,
                     reason=_carried_reason(prior, event.reason),
@@ -1195,7 +1198,7 @@ class ComponentPipeline:
         """
         self.fact_utilization[comp.id] = util
         self.bus.emit(
-            ev.FactUtilizationMeasured(
+            event_catalog.FactUtilizationMeasured(
                 component=comp.id,
                 measured=util.measured,
                 injected=util.injected,
@@ -1564,7 +1567,7 @@ class ComponentPipeline:
         """Emit the authoritative phase bracket opener; returns the
         monotonic start for the matching _phase_completed."""
         self.bus.emit(
-            ev.PhaseStarted(
+            event_catalog.PhaseStarted(
                 component=comp.id,
                 phase=phase,
                 attempt=comp.retries + 1,
@@ -1581,7 +1584,7 @@ class ComponentPipeline:
         detail: str = "",
     ) -> None:
         self.bus.emit(
-            ev.PhaseCompleted(
+            event_catalog.PhaseCompleted(
                 component=comp.id,
                 phase=phase,
                 passed=passed,
@@ -1608,7 +1611,7 @@ class ComponentPipeline:
         # recorded (the manifest only carries them at transition time).
         for finding in new_findings:
             self.bus.emit(
-                ev.FindingRecorded(
+                event_catalog.FindingRecorded(
                     component=comp.id,
                     phase=finding.phase,
                     category=finding.category,
@@ -1684,7 +1687,9 @@ class ComponentPipeline:
         self.factory_result.skipped.extend(skipped)
         for sid in skipped:
             self.bus.emit(
-                ev.ComponentSkipped(component=sid, reason=f"dependency '{failed_id}' failed")
+                event_catalog.ComponentSkipped(
+                    component=sid, reason=f"dependency '{failed_id}' failed"
+                )
             )
         return skipped
 
@@ -1958,7 +1963,7 @@ class ComponentPipeline:
                 self._merge_phase_readings(comp.id, ctx)
                 self.component_contexts[comp.id] = ctx.to_json()
             self.bus.emit(
-                ev.ComponentRetrying(
+                event_catalog.ComponentRetrying(
                     component=comp.id,
                     attempt=comp.retries,
                     reason=error,
@@ -2053,7 +2058,7 @@ class ComponentPipeline:
         self._end_attempt(comp)
         self._cascade_skip(comp.id)
         self.factory_result.failed.append(comp.id)
-        self.bus.emit(ev.ComponentFailed(component=comp.id, error=error))
+        self.bus.emit(event_catalog.ComponentFailed(component=comp.id, error=error))
         self.notify.fire_first_failure(comp.id, error)
         if comp.id in self._inbox_typed:
             self._inbox_typed.discard(comp.id)
@@ -2190,7 +2195,7 @@ class ComponentPipeline:
             ],
         )
         self.bus.emit(
-            ev.BudgetExceeded(
+            event_catalog.BudgetExceeded(
                 component=comp.id,
                 total_tokens=self.run_usage.total_tokens,
                 max_total_tokens=self.factory_config.max_total_tokens,
@@ -2256,7 +2261,7 @@ class ComponentPipeline:
         self._end_attempt(comp)
         self.factory_result.completed.append(comp.id)
         self.bus.emit(
-            ev.ComponentCompleted(
+            event_catalog.ComponentCompleted(
                 component=comp.id,
                 duration_seconds=comp.duration_seconds,
                 iterations=comp.iteration_count,
@@ -2429,14 +2434,14 @@ class ComponentPipeline:
         # Richer v2 event first; the v1-parity twin keeps progress.jsonl
         # unchanged (the reducer prefers the v2 event, chunk 2).
         self.bus.emit(
-            ev.PrMergePending(
+            event_catalog.PrMergePending(
                 component=comp.id,
                 pr_url=comp.pr_url,
                 error=comp.error,
             )
         )
         self.bus.emit(
-            ev.MergePendingV1(
+            event_catalog.MergePendingV1(
                 component=comp.id,
                 pr_url=comp.pr_url,
                 error=comp.error,
@@ -2591,7 +2596,7 @@ class ComponentPipeline:
         self._end_attempt(comp)
         self._cascade_skip(comp.id)
         self.factory_result.failed.append(comp.id)
-        self.bus.emit(ev.ComponentFailed(component=comp.id, error=comp.error))
+        self.bus.emit(event_catalog.ComponentFailed(component=comp.id, error=comp.error))
         self.notify.fire_first_failure(comp.id, comp.error)
         self._inbox_add(
             ItemKind.HALTED_RUN,
@@ -2634,7 +2639,7 @@ class ComponentPipeline:
             started = self._attempt_started_monotonic.get(comp_id)
             duration = time.monotonic() - started if started is not None else 0.0
             self.bus.emit(
-                ev.PhaseCompleted(
+                event_catalog.PhaseCompleted(
                     component=comp_id,
                     phase="engineer",
                     passed=False,
@@ -2643,7 +2648,7 @@ class ComponentPipeline:
                 )
             )
             self.bus.emit(
-                ev.ComponentFailed(
+                event_catalog.ComponentFailed(
                     component=comp_id,
                     error="component timeout",
                 )
@@ -2717,7 +2722,7 @@ class ComponentPipeline:
                     comp.completed_at = _iso_now()
                     self.factory_result.completed.append(comp.id)
                     self.bus.emit(
-                        ev.ComponentCompleted(
+                        event_catalog.ComponentCompleted(
                             component=comp.id,
                             duration_seconds=comp.duration_seconds,
                             iterations=comp.iteration_count,
@@ -2754,7 +2759,7 @@ class ComponentPipeline:
                     self._cascade_skip(comp.id)
                     self.factory_result.failed.append(comp.id)
                     self.bus.emit(
-                        ev.ComponentFailed(
+                        event_catalog.ComponentFailed(
                             component=comp.id,
                             error=comp.error,
                         )
@@ -2791,7 +2796,7 @@ class ComponentPipeline:
         self.factory_result.merged[comp.id] = head_sha
         self.manifest.save(self.manifest_path)
         self.bus.emit(
-            ev.PrMerged(
+            event_catalog.PrMerged(
                 component=comp.id,
                 pr_number=comp.pr_number or pr_number_from_url(comp.pr_url),
                 pr_url=comp.pr_url,
@@ -2948,7 +2953,7 @@ class ComponentPipeline:
         "never ran" are distinguishable downstream."""
         self._add_findings(comp, [Finding.phase_skipped(phase, reason)])
         self.bus.emit(
-            ev.PhaseSkipped(
+            event_catalog.PhaseSkipped(
                 component=comp.id,
                 phase=phase,
                 reason=reason,
@@ -2977,7 +2982,7 @@ class ComponentPipeline:
         # Engineer bracket closer: PhaseStarted(engineer) was emitted by
         # the scheduler at submit time; the worker's exit lands here.
         self.bus.emit(
-            ev.PhaseCompleted(
+            event_catalog.PhaseCompleted(
                 component=comp_id,
                 phase="engineer",
                 passed=comp_result.success,
@@ -3031,7 +3036,7 @@ class ComponentPipeline:
             if comp_result.no_progress:
                 error = comp_result.error or "no-progress circuit breaker tripped"
                 self.bus.emit(
-                    ev.CircuitBreakerTripped(
+                    event_catalog.CircuitBreakerTripped(
                         component=comp_id,
                         iterations=comp_result.iterations,
                         error=error,
@@ -3068,7 +3073,7 @@ class ComponentPipeline:
                 # halted before they could.
                 detail = comp_result.error or "files outside allowed scope"
                 self.bus.emit(
-                    ev.VerificationResultEvent(
+                    event_catalog.VerificationResultEvent(
                         component=comp.id,
                         passed=False,
                         checks=("diff_scope",),
@@ -3644,7 +3649,7 @@ class ComponentPipeline:
         if verification.passed and LAYER0_NOT_MEASURED in verification.not_measured:
             self._record_phase_skip(comp, "adequacy", LAYER0_NOT_MEASURED.detail)
         self.bus.emit(
-            ev.VerificationResultEvent(
+            event_catalog.VerificationResultEvent(
                 component=comp.id,
                 passed=verification.passed,
                 checks=tuple(c.name for c in verification.checks),
@@ -3732,7 +3737,7 @@ class ComponentPipeline:
         for line in outcome.lines:
             self.ui.info(line)
         self.bus.emit(
-            ev.VerificationResultEvent(
+            event_catalog.VerificationResultEvent(
                 component=comp.id,
                 passed=outcome.passed,
                 checks=outcome.checks,
@@ -3879,7 +3884,7 @@ class ComponentPipeline:
                     )
                 ],
             )
-            self.bus.emit(ev.DiffFetchFailed(component=comp.id, error=str(exc)))
+            self.bus.emit(event_catalog.DiffFetchFailed(component=comp.id, error=str(exc)))
             ctx = IterationContext.from_json(comp_result.context_json or "{}")
             ctx.add_verification_failure(
                 f"git diff against {base} failed: {exc}",
@@ -3973,7 +3978,7 @@ class ComponentPipeline:
             [Finding.divergence(message, severity="fail" if config.blocks else "advisory")],
         )
         self.bus.emit(
-            ev.ReviewDivergence(
+            event_catalog.ReviewDivergence(
                 component=comp.id,
                 attempts=tuple(r.attempt for r in verdict.readings),
                 lines_changed=tuple(r.lines_changed for r in verdict.readings),
@@ -4481,7 +4486,7 @@ class ComponentPipeline:
         # the divergence reading's blocking_count reads. Criteria and
         # concerns together, one per finding row recorded just above.
         self.bus.emit(
-            ev.ReviewResultEvent(
+            event_catalog.ReviewResultEvent(
                 component=comp.id,
                 passed=review_result.passed,
                 mode=review_mode.value,
@@ -4836,7 +4841,7 @@ class ComponentPipeline:
 
         if sec_result is not None:
             self.bus.emit(
-                ev.ReviewResultEvent(
+                event_catalog.ReviewResultEvent(
                     component=comp.id,
                     passed=sec_result.passed,
                     mode=f"security-{sec_config.mode}",
@@ -5055,7 +5060,7 @@ class ComponentPipeline:
                     on_line=on_line,
                 )
             self.bus.emit(
-                ev.DistillResult(
+                event_catalog.DistillResult(
                     component=comp.id,
                     facts_written=written,
                     parse_failed=parse_failed,
@@ -5338,7 +5343,7 @@ class ComponentPipeline:
             return CheckpointDecision.NOT_PROMPTED
         question = f"Approve PR creation and merge for {comp.id}?"
         self.bus.emit(
-            ev.CheckpointRequested(
+            event_catalog.CheckpointRequested(
                 component=comp.id,
                 kind="pr_merge",
                 question=question,
@@ -5388,7 +5393,7 @@ class ComponentPipeline:
             )
             if decision is not None:
                 self.bus.emit(
-                    ev.CheckpointResolved(
+                    event_catalog.CheckpointResolved(
                         component=comp.id,
                         kind="pr_merge",
                         decision=decision.name.lower(),
@@ -5421,7 +5426,7 @@ class ComponentPipeline:
         # apply_merge_decisions merges exactly that commit once
         # `ks inbox approve` has answered.
         self.bus.emit(
-            ev.CheckpointResolved(
+            event_catalog.CheckpointResolved(
                 component=comp.id,
                 kind="pr_merge",
                 decision="parked",
@@ -5487,7 +5492,7 @@ class ComponentPipeline:
         if outcome.pr_url:
             self.factory_result.pr_urls.append(outcome.pr_url)
             self.bus.emit(
-                ev.PrCreated(
+                event_catalog.PrCreated(
                     component=comp.id,
                     pr_number=comp.pr_number or 0,
                     pr_url=outcome.pr_url,

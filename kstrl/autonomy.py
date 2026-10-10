@@ -1105,7 +1105,7 @@ def commit_transition(
         )
 
     if bus is not None:
-        from kstrl.events import AutonomyTransition
+        from kstrl.event_catalog import AutonomyTransition
 
         bus.emit(
             AutonomyTransition(

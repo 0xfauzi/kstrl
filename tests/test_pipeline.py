@@ -19,12 +19,12 @@ from typing import Any
 
 import pytest
 
-from kstrl import events as ev
-from kstrl import git
+from kstrl import event_catalog, git
 from kstrl.agents.base import UsageRecord, UsageTotals
 from kstrl.config import KstrlConfig
 from kstrl.context import IterationContext
-from kstrl.events import CallbackSink, Event, EventBus, PhaseCompleted, V1CompatSink
+from kstrl.event_catalog import Event, PhaseCompleted
+from kstrl.events import CallbackSink, EventBus, V1CompatSink
 from kstrl.evolution import category_for_check
 from kstrl.factory import (
     AdversarialAgentSelection,
@@ -881,7 +881,7 @@ class TestDivergenceDetector:
         assert comp.retries == 2
         finding = next(f for f in comp.findings if f.category == "review_divergence")
         assert "2900" in finding.explanation
-        event = next(e for e in events if isinstance(e, ev.ReviewDivergence))
+        event = next(e for e in events if isinstance(e, event_catalog.ReviewDivergence))
         assert event.attempts == (1, 2, 3)
         assert event.lines_changed == (600, 1400, 2900)
         # The reviewer's own fail_count per attempt, not the key count.
@@ -987,7 +987,7 @@ class TestDivergenceDetector:
         assert comp.failed_check == "criteria"
         finding = next(f for f in comp.findings if f.category == "review_divergence")
         assert finding.severity == "advisory"
-        event = next(e for e in events if isinstance(e, ev.ReviewDivergence))
+        event = next(e for e in events if isinstance(e, event_catalog.ReviewDivergence))
         assert event.blocked is False
 
     def test_skip_mode_takes_no_readings(
@@ -1674,8 +1674,8 @@ class TestFactUtilizationRecording:
     @staticmethod
     def _util_events(
         captured: list[Event],
-    ) -> list[ev.FactUtilizationMeasured]:
-        return [e for e in captured if isinstance(e, ev.FactUtilizationMeasured)]
+    ) -> list[event_catalog.FactUtilizationMeasured]:
+        return [e for e in captured if isinstance(e, event_catalog.FactUtilizationMeasured)]
 
     def test_utilization_event_carries_the_measurement(
         self,
@@ -1706,7 +1706,7 @@ class TestFactUtilizationRecording:
             tmp_path,
             measure=lambda *a, **k: {"injected": 4, "referenced": 2},
         )
-        distills = [e for e in captured if isinstance(e, ev.DistillResult)]
+        distills = [e for e in captured if isinstance(e, event_catalog.DistillResult)]
         assert len(distills) == 1
         assert not any(
             f.name.startswith(("facts_injected", "facts_referenced", "utilization"))
@@ -1725,7 +1725,7 @@ class TestFactUtilizationRecording:
             tmp_path,
             distill=lambda *a, **k: (0, "the distiller returned no facts", True),
         )
-        distills = [e for e in captured if isinstance(e, ev.DistillResult)]
+        distills = [e for e in captured if isinstance(e, event_catalog.DistillResult)]
         assert len(distills) == 1
         assert distills[0].parse_failed is True
 
@@ -1888,7 +1888,7 @@ class TestFactUtilizationRecording:
             measure=lambda *a, **k: {"injected": 5, "referenced": 3},
             distill=_raise(RuntimeError("distiller down")),
         )
-        assert [e for e in captured if isinstance(e, ev.DistillResult)] == []
+        assert [e for e in captured if isinstance(e, event_catalog.DistillResult)] == []
         # ...but the utilization event still fires: it no longer rides
         # on distillation succeeding.
         assert self._util_events(captured)[0].measured is True

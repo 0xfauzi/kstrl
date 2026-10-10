@@ -283,13 +283,14 @@ class TestStatusV2Layout:
         run_id: str = "factory-20260720-000005.000000-t",
         checkpoint_open: bool = False,
     ) -> None:
+        from kstrl import event_catalog
         from kstrl import events as ev
 
         paths = ev.RunPaths.for_run(root, run_id)
         bus = ev.EventBus(ev.JsonlSink(paths.events_file), run_id=run_id)
-        bus.emit(ev.RunStarted(project="demo", components=2))
+        bus.emit(event_catalog.RunStarted(project="demo", components=2))
         bus.emit(
-            ev.RunPlan(
+            event_catalog.RunPlan(
                 components=(
                     {"id": "comp-a", "title": "A", "deps": []},
                     {"id": "comp-b", "title": "B", "deps": ["comp-a"]},
@@ -298,12 +299,12 @@ class TestStatusV2Layout:
                 max_adversarial_calls=10,
             )
         )
-        bus.emit(ev.ComponentStarted(component="comp-a"))
-        bus.emit(ev.PhaseStarted(component="comp-a", phase="engineer", attempt=1))
-        bus.emit(ev.PhaseCompleted(component="comp-a", phase="engineer", passed=True))
-        bus.emit(ev.PhaseStarted(component="comp-a", phase="review", attempt=1))
+        bus.emit(event_catalog.ComponentStarted(component="comp-a"))
+        bus.emit(event_catalog.PhaseStarted(component="comp-a", phase="engineer", attempt=1))
+        bus.emit(event_catalog.PhaseCompleted(component="comp-a", phase="engineer", passed=True))
+        bus.emit(event_catalog.PhaseStarted(component="comp-a", phase="review", attempt=1))
         bus.emit(
-            ev.ComponentUsage(
+            event_catalog.ComponentUsage(
                 component="comp-a",
                 phase="engineer",
                 calls=3,
@@ -313,13 +314,13 @@ class TestStatusV2Layout:
                 cost_usd=2.5,
             )
         )
-        bus.emit(ev.PrCreated(component="comp-a", pr_number=9, pr_url="http://pr/9"))
-        bus.emit(ev.PrMerged(component="comp-a", pr_number=9, pr_url="http://pr/9"))
-        bus.emit(ev.ComponentStarted(component="comp-b"))
-        bus.emit(ev.PhaseStarted(component="comp-b", phase="engineer", attempt=1))
+        bus.emit(event_catalog.PrCreated(component="comp-a", pr_number=9, pr_url="http://pr/9"))
+        bus.emit(event_catalog.PrMerged(component="comp-a", pr_number=9, pr_url="http://pr/9"))
+        bus.emit(event_catalog.ComponentStarted(component="comp-b"))
+        bus.emit(event_catalog.PhaseStarted(component="comp-b", phase="engineer", attempt=1))
         if checkpoint_open:
             bus.emit(
-                ev.CheckpointRequested(
+                event_catalog.CheckpointRequested(
                     component="comp-b",
                     kind="pr_merge",
                     question="ok?",
@@ -331,7 +332,7 @@ class TestStatusV2Layout:
             source="worker",
             component="comp-b",
         )
-        worker.emit(ev.WorkerHeartbeat(pid=1, elapsed_seconds=5.0))
+        worker.emit(event_catalog.WorkerHeartbeat(pid=1, elapsed_seconds=5.0))
         bus.close()
         worker.close()
 
@@ -427,20 +428,21 @@ class TestStatusPerAxisCoverage:
     """
 
     def _write_run(self, root: Path, run_id: str) -> None:
+        from kstrl import event_catalog
         from kstrl import events as ev
 
         paths = ev.RunPaths.for_run(root, run_id)
         bus = ev.EventBus(ev.JsonlSink(paths.events_file), run_id=run_id)
-        bus.emit(ev.RunStarted(project="demo", components=1))
+        bus.emit(event_catalog.RunStarted(project="demo", components=1))
         bus.emit(
-            ev.RunPlan(
+            event_catalog.RunPlan(
                 components=({"id": "comp-a", "title": "A", "deps": []},),
                 max_cost_usd=10.0,
             )
         )
-        bus.emit(ev.ComponentStarted(component="comp-a"))
+        bus.emit(event_catalog.ComponentStarted(component="comp-a"))
         bus.emit(
-            ev.ComponentUsage(
+            event_catalog.ComponentUsage(
                 component="comp-a",
                 phase="engineer",
                 calls=1,
@@ -452,7 +454,7 @@ class TestStatusPerAxisCoverage:
             )
         )
         bus.emit(
-            ev.ComponentUsage(
+            event_catalog.ComponentUsage(
                 component="comp-a",
                 phase="review",
                 calls=1,
@@ -464,7 +466,7 @@ class TestStatusPerAxisCoverage:
             )
         )
         bus.emit(
-            ev.BudgetCoverage(
+            event_catalog.BudgetCoverage(
                 ceiling="max_cost_usd",
                 axis="cost",
                 calls=2,

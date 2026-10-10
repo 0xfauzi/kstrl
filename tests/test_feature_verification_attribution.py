@@ -23,7 +23,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from kstrl import events as ev
+from kstrl import event_catalog
 from kstrl.feature_verify import baseline_skip_reason
 from kstrl.loop import LoopResult
 from kstrl.verify import VerifyConfig
@@ -59,7 +59,9 @@ class TestBaselineAttribution:
         assert baseline.seq < implement.seq
         # Before the loop, not merely before the report of it.
         started = next(
-            e for e in captured if isinstance(e, ev.PhaseStarted) and e.phase == "implement"
+            e
+            for e in captured
+            if isinstance(e, event_catalog.PhaseStarted) and e.phase == "implement"
         )
         assert baseline.seq < started.seq
         assert "Verification report (baseline)" in text

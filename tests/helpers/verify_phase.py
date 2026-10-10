@@ -19,7 +19,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from kstrl.config import KstrlConfig
-from kstrl.events import CallbackSink, Event, EventBus, V1CompatSink
+from kstrl.event_catalog import Event
+from kstrl.events import CallbackSink, EventBus, V1CompatSink
 from kstrl.factory import (
     AdversarialAgentSelection,
     ComponentResult,

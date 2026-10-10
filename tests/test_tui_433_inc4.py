@@ -29,6 +29,7 @@ import pytest
 from rich.text import Text
 from textual.widgets import DataTable, Static
 
+from kstrl import event_catalog
 from kstrl import events as ev
 from kstrl.appendio import append_records
 from kstrl.ci_state import CiReading, CiState, poll_ci
@@ -92,15 +93,17 @@ def _shipped(root: Path, shas: tuple[str, ...]) -> None:
     paths = ev.RunPaths.for_run(root, SHIP)
     bus = ev.EventBus(ev.JsonlSink(paths.events_file), run_id=SHIP)
     components = tuple({"id": f"c{n}", "title": f"C{n}", "deps": []} for n in range(len(shas)))
-    bus.emit(ev.RunStarted(project="demo", components=len(shas)))
-    bus.emit(ev.RunPlan(components=components))
+    bus.emit(event_catalog.RunStarted(project="demo", components=len(shas)))
+    bus.emit(event_catalog.RunPlan(components=components))
     for number, sha in enumerate(shas, start=1):
         cid = f"c{number - 1}"
-        bus.emit(ev.ComponentStarted(component=cid))
-        bus.emit(ev.PrMerged(component=cid, pr_number=number, merge_sha=sha))
-        bus.emit(ev.ComponentCompleted(component=cid, duration_seconds=1.0, iterations=1))
+        bus.emit(event_catalog.ComponentStarted(component=cid))
+        bus.emit(event_catalog.PrMerged(component=cid, pr_number=number, merge_sha=sha))
+        bus.emit(
+            event_catalog.ComponentCompleted(component=cid, duration_seconds=1.0, iterations=1)
+        )
     bus.emit(
-        ev.RunCompleted(
+        event_catalog.RunCompleted(
             completed=len(shas), failed=0, skipped=0, duration_seconds=1.0, release_ref=shas[-1]
         )
     )
@@ -317,11 +320,13 @@ def _failed_manifest(root: Path, flags: tuple[tuple[str, FlagValue], ...]) -> No
     launch record with ``flags`` and every run limit off."""
     paths = ev.RunPaths.for_run(root, FAILED_RUN)
     bus = ev.EventBus(ev.JsonlSink(paths.events_file), run_id=FAILED_RUN)
-    bus.emit(ev.RunStarted(project="demo", components=1))
-    bus.emit(ev.RunPlan(components=({"id": "comp-a", "title": "A", "deps": []},)))
-    bus.emit(ev.ComponentStarted(component="comp-a"))
-    bus.emit(ev.ComponentFailed(component="comp-a", error="Mechanical verification failed"))
-    bus.emit(ev.RunCompleted(completed=0, failed=1, skipped=0, duration_seconds=1.0))
+    bus.emit(event_catalog.RunStarted(project="demo", components=1))
+    bus.emit(event_catalog.RunPlan(components=({"id": "comp-a", "title": "A", "deps": []},)))
+    bus.emit(event_catalog.ComponentStarted(component="comp-a"))
+    bus.emit(
+        event_catalog.ComponentFailed(component="comp-a", error="Mechanical verification failed")
+    )
+    bus.emit(event_catalog.RunCompleted(completed=0, failed=1, skipped=0, duration_seconds=1.0))
     bus.close()
     manifest_file = root / "scripts" / "kstrl" / "manifest.json"
     manifest_file.parent.mkdir(parents=True)
@@ -474,10 +479,14 @@ def _spent(root: Path, run_id: str, cost: float, cap: float) -> None:
     """A finished run that spent ``cost`` under a recorded cap of ``cap``."""
     paths = ev.RunPaths.for_run(root, run_id)
     bus = ev.EventBus(ev.JsonlSink(paths.events_file), run_id=run_id)
-    bus.emit(ev.RunStarted(project="demo", components=1))
-    bus.emit(ev.RunPlan(components=({"id": "api", "title": "API", "deps": []},), max_cost_usd=cap))
+    bus.emit(event_catalog.RunStarted(project="demo", components=1))
     bus.emit(
-        ev.ComponentUsage(
+        event_catalog.RunPlan(
+            components=({"id": "api", "title": "API", "deps": []},), max_cost_usd=cap
+        )
+    )
+    bus.emit(
+        event_catalog.ComponentUsage(
             component="api",
             phase="engineer",
             calls=1,
@@ -488,7 +497,7 @@ def _spent(root: Path, run_id: str, cost: float, cap: float) -> None:
             cost_usd=cost,
         )
     )
-    bus.emit(ev.RunCompleted(completed=1, failed=0, skipped=0, duration_seconds=1.0))
+    bus.emit(event_catalog.RunCompleted(completed=1, failed=0, skipped=0, duration_seconds=1.0))
     bus.close()
     _backdate(paths.events_file, 7200)
 

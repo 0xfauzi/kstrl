@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from kstrl.events import Event, Log
+from kstrl.event_catalog import Event, Log
 from kstrl.ui.base import UI
 from kstrl.ui.plain import PlainUI
 

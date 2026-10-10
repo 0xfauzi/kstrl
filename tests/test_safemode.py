@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pytest
 
+from kstrl import event_catalog
 from kstrl import events as ev
 from kstrl.autonomy import AutonomyLevel, AutonomyState
 from kstrl.safemode import RECOVERY, safe_mode_reasons
@@ -71,7 +72,7 @@ def make_review_skipped(root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     try:
         for component in ("comp-a", "comp-b"):
             sink.emit(
-                ev.PhaseSkipped(
+                event_catalog.PhaseSkipped(
                     component=component,
                     phase="review",
                     reason="adversarial LLM budget exhausted",
@@ -331,14 +332,14 @@ class TestAdversarialSkipped:
         sink = ev.JsonlSink(root_events(tmp_path))
         try:
             sink.emit(
-                ev.PhaseSkipped(
+                event_catalog.PhaseSkipped(
                     component="comp-a",
                     phase="review",
                     reason="mode=skip",
                 )
             )
             sink.emit(
-                ev.PhaseSkipped(
+                event_catalog.PhaseSkipped(
                     component="comp-a",
                     phase="security",
                     reason="mode=skip",
@@ -363,7 +364,7 @@ class TestAdversarialSkipped:
         sink = ev.JsonlSink(root_events(tmp_path))
         try:
             sink.emit(
-                ev.PhaseSkipped(
+                event_catalog.PhaseSkipped(
                     component="comp-a",
                     phase="verify",
                     reason="--no-verify",
@@ -392,17 +393,17 @@ def write_run(
         # Every real run opens with this, so an in-flight run always has
         # a stream. Without it the sink never creates the file and the
         # run would look like the progress-logging-disabled case.
-        sink.emit(ev.RunStarted(project="demo", components=1))
+        sink.emit(event_catalog.RunStarted(project="demo", components=1))
         for phase in skips:
             sink.emit(
-                ev.PhaseSkipped(
+                event_catalog.PhaseSkipped(
                     component=component,
                     phase=phase,
                     reason="mode=skip",
                 )
             )
         if finished:
-            sink.emit(ev.RunCompleted(completed=1, failed=0, skipped=0))
+            sink.emit(event_catalog.RunCompleted(completed=1, failed=0, skipped=0))
     finally:
         sink.close()
 

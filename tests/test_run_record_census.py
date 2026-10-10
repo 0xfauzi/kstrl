@@ -132,9 +132,9 @@ EXPECTED_RUN_RECORD_SITES: dict[str, int] = {
     "agents/prompt_record.py: record_prompt": 1,  # #532: one prompt record per agent call
     "autonomy.py: commit_transition": 1,
     "base_gates.py: write_record": 1,  # #654: the base branch's gate reading
-    "events.py: <module>": 1,
+    "event_catalog.py: <module>": 1,
+    "event_catalog.py: Event.to_dict": 1,
     "events.py: _envelope_kwargs": 1,
-    "events.py: Event.to_dict": 1,
     "evolution.py: <module>": 1,
     "evolution.py: _role_usage_entries": 1,
     "evolution.py: EvolutionJournal.record_run": 1,

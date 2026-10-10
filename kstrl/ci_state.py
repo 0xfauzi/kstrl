@@ -54,7 +54,8 @@ from pathlib import Path
 from typing import Any
 
 from kstrl.appendio import append_records
-from kstrl.events import PrMerged, parse_event_line
+from kstrl.event_catalog import PrMerged
+from kstrl.events import parse_event_line
 from kstrl.intake_github import run_gh
 from kstrl.jsonread import read_json
 from kstrl.manifest import Manifest

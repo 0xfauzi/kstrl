@@ -2929,13 +2929,13 @@ class TestBudgetHaltIsNotRetryableInfrastructure:
     @staticmethod
     def _budget_run(root: Path, run_id: str = "factory-budget") -> None:
         """Write a run dir whose stream carries a real BudgetExceeded."""
-        from kstrl import events as ev
+        from kstrl import event_catalog
         from kstrl.events import JsonlSink, RunPaths
 
         paths = RunPaths.for_run(root, run_id)
         sink = JsonlSink(paths.events_file)
         sink.emit(
-            ev.BudgetExceeded(
+            event_catalog.BudgetExceeded(
                 component="comp-a",
                 total_tokens=716348,
                 max_total_tokens=400000,
@@ -3022,12 +3022,12 @@ class TestBudgetHaltPrecedence:
         condition: str = "breached",
         ceilings: tuple[str, ...] = ("max_total_tokens",),
     ) -> None:
-        from kstrl import events as ev
+        from kstrl import event_catalog
         from kstrl.events import JsonlSink, RunPaths
 
         paths = RunPaths.for_run(root, run_id)
         JsonlSink(paths.events_file).emit(
-            ev.BudgetExceeded(
+            event_catalog.BudgetExceeded(
                 component="comp-a",
                 total_tokens=716348,
                 max_total_tokens=400000,

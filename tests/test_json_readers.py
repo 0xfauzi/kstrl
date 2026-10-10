@@ -114,7 +114,7 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     "context.py": 2,
     "baseline.py": 2,
     "decompose.py": 4,
-    "events.py": 2,
+    "event_catalog.py": 2,
     "evolution.py": 2,
     "feature_cmd.py": 3,
     # #632: the import, json.dumps for the canonical form, and the

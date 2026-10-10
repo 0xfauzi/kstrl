@@ -50,7 +50,7 @@ from typing import TYPE_CHECKING, Any
 
 from kstrl.config import _parse_bool, load_toml_section, resolve_config_file
 from kstrl.config_numbers import check_numbers
-from kstrl.events import budget_halt_kind
+from kstrl.event_catalog import budget_halt_kind
 from kstrl.jsonread import read_json
 
 if TYPE_CHECKING:

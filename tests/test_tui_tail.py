@@ -6,8 +6,8 @@ import json
 import os
 from pathlib import Path
 
+from kstrl import event_catalog, reducer
 from kstrl import events as ev
-from kstrl import reducer
 from kstrl.tui.tail import JsonlTailer, RunTailer, TextTailer
 from tests.helpers.fake_run import FakeRunSpec, stream_fake_run, write_fake_run
 
@@ -20,18 +20,18 @@ class TestJsonlTailer:
         tailer = JsonlTailer(path)
 
         assert tailer.poll().events == []
-        bus.emit(ev.Log(text="one"))
+        bus.emit(event_catalog.Log(text="one"))
         first = tailer.poll().events
         assert [e.to_dict()["data"]["text"] for e in first] == ["one"]
-        bus.emit(ev.Log(text="two"))
-        bus.emit(ev.Log(text="three"))
+        bus.emit(event_catalog.Log(text="two"))
+        bus.emit(event_catalog.Log(text="three"))
         second = tailer.poll().events
         assert [e.to_dict()["data"]["text"] for e in second] == ["two", "three"]
         assert tailer.poll().events == []
 
     def test_torn_tail_completed_across_polls(self, tmp_path: Path) -> None:
         path = tmp_path / "events.jsonl"
-        line = ev.EventBus(run_id="r").emit(ev.Log(text="torn")).to_json_line()
+        line = ev.EventBus(run_id="r").emit(event_catalog.Log(text="torn")).to_json_line()
         cut = len(line) // 2
         tailer = JsonlTailer(path)
         with open(path, "a") as f:
@@ -47,13 +47,13 @@ class TestJsonlTailer:
     def test_truncated_file_resets_and_reports(self, tmp_path: Path) -> None:
         path = tmp_path / "events.jsonl"
         bus = ev.EventBus(ev.JsonlSink(path), run_id="r")
-        bus.emit(ev.Log(text="old-1"))
-        bus.emit(ev.Log(text="old-2"))
+        bus.emit(event_catalog.Log(text="old-1"))
+        bus.emit(event_catalog.Log(text="old-2"))
         tailer = JsonlTailer(path)
         assert len(tailer.poll().events) == 2
         path.write_text("")  # replaced/truncated under us
         bus2 = ev.EventBus(ev.JsonlSink(path), run_id="r")
-        bus2.emit(ev.Log(text="fresh"))
+        bus2.emit(event_catalog.Log(text="fresh"))
         chunk = tailer.poll()
         assert chunk.truncated is True
         assert [e.to_dict()["data"]["text"] for e in chunk.events] == ["fresh"]
@@ -61,13 +61,13 @@ class TestJsonlTailer:
     def test_replaced_larger_file_resets_and_reports(self, tmp_path: Path) -> None:
         path = tmp_path / "events.jsonl"
         bus = ev.EventBus(ev.JsonlSink(path), run_id="r")
-        bus.emit(ev.Log(text="old"))
+        bus.emit(event_catalog.Log(text="old"))
         tailer = JsonlTailer(path)
         assert len(tailer.poll().events) == 1
         replacement = tmp_path / "replacement.jsonl"
         replacement_bus = ev.EventBus(ev.JsonlSink(replacement), run_id="r")
-        replacement_bus.emit(ev.Log(text="fresh-one"))
-        replacement_bus.emit(ev.Log(text="fresh-two"))
+        replacement_bus.emit(event_catalog.Log(text="fresh-one"))
+        replacement_bus.emit(event_catalog.Log(text="fresh-two"))
         os.replace(replacement, path)
 
         chunk = tailer.poll()
@@ -154,7 +154,7 @@ class TestRunTailer:
             run_id=run_id,
         )
         tailer = RunTailer(run_dir)
-        bus.emit(ev.ComponentStarted(component="late"))
+        bus.emit(event_catalog.ComponentStarted(component="late"))
         assert len(tailer.poll_events().events) == 1
         assert tailer.known_components() == []
         # Worker dir appears AFTER the tailer started:
@@ -165,7 +165,7 @@ class TestRunTailer:
             source="worker",
             component="late",
         )
-        worker.emit(ev.IterationStarted(iteration=1, max_iterations=3))
+        worker.emit(event_catalog.IterationStarted(iteration=1, max_iterations=3))
         events = tailer.poll_events().events
         assert [type(e).type for e in events] == ["iteration_started"]
         assert tailer.known_components() == ["late"]
@@ -195,17 +195,17 @@ class TestRunTailer:
             source="worker",
             component="comp-a",
         )
-        replacement_bus.emit(ev.Log(text="replacement worker stream"))
-        replacement_bus.emit(ev.Log(text="second replacement event"))
+        replacement_bus.emit(event_catalog.Log(text="replacement worker stream"))
+        replacement_bus.emit(event_catalog.Log(text="second replacement event"))
         os.replace(replacement, worker_path)
 
         rebuilt = tailer.poll_events()
 
         assert rebuilt.truncated is True
-        assert any(isinstance(event, ev.RunStarted) for event in rebuilt.events)
+        assert any(isinstance(event, event_catalog.RunStarted) for event in rebuilt.events)
         replacement_logs = [
             event
             for event in rebuilt.events
-            if isinstance(event, ev.Log) and event.text.startswith("replacement")
+            if isinstance(event, event_catalog.Log) and event.text.startswith("replacement")
         ]
         assert len(replacement_logs) == 1

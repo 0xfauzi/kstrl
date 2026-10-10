@@ -43,14 +43,13 @@ from kstrl.decisions import (
     write_decisions,
 )
 from kstrl.delimiters import generate_data_delimiter
-from kstrl.events import (
+from kstrl.event_catalog import (
     ArtifactWritten,
     ComponentCompleted,
     ComponentFailed,
     ComponentStarted,
     ComponentUsage,
     Event,
-    EventBus,
     PhaseCompleted,
     PhaseStarted,
     RunCompleted,
@@ -58,6 +57,7 @@ from kstrl.events import (
     RunStarted,
     SpecIssueRecorded,
 )
+from kstrl.events import EventBus
 from kstrl.evolution import (
     SPEC_ISSUES_EVENT,
     EvolutionConfig,

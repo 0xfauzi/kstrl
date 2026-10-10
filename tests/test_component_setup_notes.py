@@ -16,6 +16,7 @@ from unittest.mock import patch
 
 import pytest
 
+from kstrl import event_catalog
 from kstrl import events as ev
 from kstrl.feedforward import CodebaseScanConfig, build_codebase_scan_context
 from kstrl.worktree_setup import WorktreeSetup
@@ -114,7 +115,9 @@ def test_run_component_warns_each_setup_failure_in_engineer_jsonl(tmp_path: Path
     names = [type(e).type for e in rows]
     assert "iteration_started" in names  # still reached its loop
     warns = [
-        (i, e.text) for i, e in enumerate(rows) if isinstance(e, ev.Log) and e.severity == "warn"
+        (i, e.text)
+        for i, e in enumerate(rows)
+        if isinstance(e, event_catalog.Log) and e.severity == "warn"
     ]
     texts = [text for _i, text in warns]
     assert SETUP_EXIT_3 in texts

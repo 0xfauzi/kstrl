@@ -39,7 +39,7 @@ from kstrl.tui.widgets.header import RunHeader, meter_width, topbar_header
 from kstrl.tui.widgets.safe_mode_chip import SafeModeBanner
 
 if TYPE_CHECKING:
-    from kstrl import events as ev
+    from kstrl import event_catalog
     from kstrl.ci_state import CiLedger
     from kstrl.reducer import RunState
     from kstrl.safemode import SafeModeReason
@@ -106,7 +106,7 @@ class OverviewScreen(Screen[None]):
         # Events arriving before compose mounts the feed (the app's
         # catch-up poll) buffer here and flush in on_mount - the run's
         # history must still narrate on attach.
-        self._pending_feed: list[ev.Event] = []
+        self._pending_feed: list[event_catalog.Event] = []
         self._integration: IntegrationReview | None = None
         self._serve: ServeState | None = None
         self._ci: CiLedger | None = None
@@ -261,7 +261,7 @@ class OverviewScreen(Screen[None]):
             # control flow.
             return
 
-    def feed_events(self, batch: list[ev.Event]) -> None:
+    def feed_events(self, batch: list[event_catalog.Event]) -> None:
         feed = next(iter(self.query(ActivityFeed)), None)
         if feed is None:
             self._pending_feed.extend(batch)

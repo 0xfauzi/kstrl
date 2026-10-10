@@ -13,7 +13,8 @@ from kstrl import git, guards, statedir
 from kstrl.agents.base import UsageTotals, collect_usage
 from kstrl.agents.proc import TIMEOUT_MESSAGE_PREFIX
 from kstrl.breaker import BreakerConfig, NoProgressBreaker
-from kstrl.events import EventBus, IterationCompleted, IterationStarted
+from kstrl.event_catalog import IterationCompleted, IterationStarted
+from kstrl.events import EventBus
 from kstrl.interaction import (
     InteractionChannel,
     PromptKind,

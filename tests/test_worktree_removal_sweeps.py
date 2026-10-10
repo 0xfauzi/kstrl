@@ -38,7 +38,8 @@ from click.testing import CliRunner, Result
 
 from kstrl.cli import cli
 from kstrl.contract import ContractConfig, ContractMode
-from kstrl.events import Log, read_events
+from kstrl.event_catalog import Log
+from kstrl.events import read_events
 from kstrl.factory import FactoryResult
 from kstrl.manifest import ComponentStatus
 from tests.helpers import gitrepo, procs

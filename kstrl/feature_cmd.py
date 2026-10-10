@@ -47,7 +47,7 @@ from kstrl.agents import get_agent
 from kstrl.agents.logging import LoggingAgent
 from kstrl.agents.prompt_record import recording_prompts
 from kstrl.breaker import BreakerConfig
-from kstrl.events import (
+from kstrl.event_catalog import (
     ArtifactWritten,
     CheckpointRequested,
     CheckpointResolved,

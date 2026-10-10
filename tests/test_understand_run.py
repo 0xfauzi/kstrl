@@ -10,7 +10,7 @@ from unittest.mock import patch
 import pytest
 from click.testing import CliRunner
 
-from kstrl import events as ev
+from kstrl import event_catalog
 from kstrl.cli import cli
 from kstrl.loop import LoopResult
 from kstrl.reducer import load_run_state
@@ -68,9 +68,9 @@ def _fake_run_loop(
         for _ in agent.run("prompt", cwd):
             pass
         if bus is not None:
-            bus.emit(ev.IterationStarted(iteration=1, max_iterations=3))
+            bus.emit(event_catalog.IterationStarted(iteration=1, max_iterations=3))
             bus.emit(
-                ev.IterationCompleted(
+                event_catalog.IterationCompleted(
                     iteration=1,
                     duration_seconds=5.0,
                     completed=exit_code == 0,

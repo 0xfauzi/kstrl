@@ -3812,10 +3812,10 @@ class TestBudgetHaltRendersHonestly:
         return state.components["comp-a"].error, str(body)
 
     def test_breach_states_the_true_comparison(self) -> None:
-        import kstrl.events as ev
+        from kstrl import event_catalog
 
         reducer, linear = self._render(
-            ev.BudgetExceeded(
+            event_catalog.BudgetExceeded(
                 component="comp-a",
                 total_tokens=600,
                 max_total_tokens=500,
@@ -3831,10 +3831,10 @@ class TestBudgetHaltRendersHonestly:
         assert "cost" not in reducer
 
     def test_unenforceable_claims_no_threshold(self) -> None:
-        import kstrl.events as ev
+        from kstrl import event_catalog
 
         reducer, linear = self._render(
-            ev.BudgetExceeded(
+            event_catalog.BudgetExceeded(
                 component="comp-a",
                 total_tokens=0,
                 max_total_tokens=500,
@@ -3857,10 +3857,10 @@ class TestBudgetHaltRendersHonestly:
             assert "max_cost_usd" in surface
 
     def test_a_disabled_ceiling_is_never_blamed(self) -> None:
-        import kstrl.events as ev
+        from kstrl import event_catalog
 
         reducer, linear = self._render(
-            ev.BudgetExceeded(
+            event_catalog.BudgetExceeded(
                 component="comp-a",
                 total_tokens=200,
                 max_total_tokens=0,
@@ -3878,10 +3878,10 @@ class TestBudgetHaltRendersHonestly:
     def test_legacy_payloads_still_decode(self) -> None:
         """events.jsonl is append-only: payloads written before this
         change carry only `ceiling` and must keep their old reading."""
-        import kstrl.events as ev
+        from kstrl import event_catalog
 
         reducer, linear = self._render(
-            ev.BudgetExceeded(
+            event_catalog.BudgetExceeded(
                 component="comp-a",
                 total_tokens=5,
                 max_total_tokens=10,
@@ -3895,14 +3895,15 @@ class TestBudgetHaltRendersHonestly:
 
     def test_the_structured_fields_survive_a_json_round_trip(self) -> None:
         import kstrl.events as ev
+        from kstrl import event_catalog
 
-        event = ev.BudgetExceeded(
+        event = event_catalog.BudgetExceeded(
             component="comp-a",
             condition="unenforceable",
             ceilings=("max_total_tokens", "max_cost_usd"),
         )
         back = ev.event_from_dict(event.to_dict())
-        assert isinstance(back, ev.BudgetExceeded)
+        assert isinstance(back, event_catalog.BudgetExceeded)
         assert back.ceilings == ("max_total_tokens", "max_cost_usd")
         assert back.condition == "unenforceable"
 
@@ -3924,7 +3925,7 @@ class TestBudgetHaltRendersHonestly:
         legacy: str,
         expected: str,
     ) -> None:
-        from kstrl.events import budget_halt_kind
+        from kstrl.event_catalog import budget_halt_kind
 
         assert budget_halt_kind(condition, ceilings, legacy) == expected
 

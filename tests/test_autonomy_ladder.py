@@ -578,7 +578,8 @@ class TestTransitionAudit:
         tmp_path: Path,
     ) -> None:
         from kstrl.autonomy import commit_transition
-        from kstrl.events import AutonomyTransition, EventBus
+        from kstrl.event_catalog import AutonomyTransition
+        from kstrl.events import EventBus
 
         seen: list[object] = []
 

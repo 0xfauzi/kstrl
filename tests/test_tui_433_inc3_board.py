@@ -17,6 +17,7 @@ from typing import Any, cast
 import pytest
 from textual.widgets import DataTable, Static
 
+from kstrl import event_catalog
 from kstrl import events as ev
 from kstrl.tui.app import KstrlTuiApp, Mode
 from kstrl.tui.dispatch import initial_screens_for_kind
@@ -61,13 +62,13 @@ def _backdate(path: Path, seconds: float) -> None:
 def _running(root: Path, run_id: str = LIVE, output_age: float = 5.0) -> None:
     """A live run: api in engineer iteration 3/10, its log written ``output_age`` ago."""
     bus, _ = _bus(root, run_id)
-    bus.emit(ev.RunStarted(project="demo", components=1))
-    bus.emit(ev.RunPlan(components=({"id": "api", "title": "API", "deps": []},)))
-    bus.emit(ev.ComponentStarted(component="api"))
-    bus.emit(ev.PhaseStarted(component="api", phase="engineer", attempt=1))
-    bus.emit(ev.IterationStarted(component="api", iteration=3, max_iterations=10))
+    bus.emit(event_catalog.RunStarted(project="demo", components=1))
+    bus.emit(event_catalog.RunPlan(components=({"id": "api", "title": "API", "deps": []},)))
+    bus.emit(event_catalog.ComponentStarted(component="api"))
+    bus.emit(event_catalog.PhaseStarted(component="api", phase="engineer", attempt=1))
+    bus.emit(event_catalog.IterationStarted(component="api", iteration=3, max_iterations=10))
     # The worker that runs the agent is this test process: alive.
-    bus.emit(ev.WorkerHeartbeat(component="api", pid=os.getpid()))
+    bus.emit(event_catalog.WorkerHeartbeat(component="api", pid=os.getpid()))
     bus.close()
     log = root / ".kstrl" / "runs" / run_id / "components" / "api" / "engineer.log"
     log.parent.mkdir(parents=True, exist_ok=True)
@@ -78,10 +79,10 @@ def _running(root: Path, run_id: str = LIVE, output_age: float = 5.0) -> None:
 def _stopped(root: Path, run_id: str, error: str = "") -> None:
     """A run with no finish record whose file is an hour old: unknown."""
     bus, events = _bus(root, run_id)
-    bus.emit(ev.RunStarted(project="demo", components=1))
+    bus.emit(event_catalog.RunStarted(project="demo", components=1))
     if error:
-        bus.emit(ev.Log(text=error, severity="error"))
-        bus.emit(ev.Log(text="  branch 'kstrl/api' already exists", severity="error"))
+        bus.emit(event_catalog.Log(text=error, severity="error"))
+        bus.emit(event_catalog.Log(text="  branch 'kstrl/api' already exists", severity="error"))
     bus.close()
     _backdate(events, 3600)
 
@@ -89,10 +90,14 @@ def _stopped(root: Path, run_id: str, error: str = "") -> None:
 def _priced(root: Path) -> None:
     """A finished run that spent $19.24 of a $78.00 cap: 24.67%."""
     bus, events = _bus(root, PRICED)
-    bus.emit(ev.RunStarted(project="demo", components=1))
-    bus.emit(ev.RunPlan(components=({"id": "api", "title": "API", "deps": []},), max_cost_usd=78.0))
+    bus.emit(event_catalog.RunStarted(project="demo", components=1))
     bus.emit(
-        ev.ComponentUsage(
+        event_catalog.RunPlan(
+            components=({"id": "api", "title": "API", "deps": []},), max_cost_usd=78.0
+        )
+    )
+    bus.emit(
+        event_catalog.ComponentUsage(
             component="api",
             phase="engineer",
             calls=1,
@@ -103,7 +108,7 @@ def _priced(root: Path) -> None:
             cost_usd=19.24,
         )
     )
-    bus.emit(ev.RunCompleted(completed=1, failed=0, skipped=0, duration_seconds=1.0))
+    bus.emit(event_catalog.RunCompleted(completed=1, failed=0, skipped=0, duration_seconds=1.0))
     bus.close()
     _backdate(events, 7200)
 
