@@ -41,12 +41,13 @@ from kstrl.runstate import RunState
 from kstrl.scope import RunScope
 from kstrl.security import SecurityResult
 from kstrl.ui.plain import PlainUI
-from kstrl.verify import VerificationResult, VerifyConfig, run_mechanical_verification
+from kstrl.verify import run_mechanical_verification
+from kstrl.verify_model import VerificationResult, VerifyConfig
 from kstrl.worktree_sweep import WorktreeSweep
 from tests.helpers.stack_confirmation import in_process_stack
 
 if TYPE_CHECKING:
-    from kstrl.verify import CheckResult
+    from kstrl.verify_model import CheckResult
 
 #: Only the gates that cost nothing: three ``true`` commands, no PRD, no
 #: pattern scan. Everything else in Phase 1 defaults off.

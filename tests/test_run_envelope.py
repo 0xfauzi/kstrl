@@ -24,7 +24,7 @@ from kstrl.autonomy import AutonomyState
 from kstrl.factory import ComponentResult, FactoryConfig
 from kstrl.manifest import Component
 from kstrl.policy import PolicyConfig
-from kstrl.verify import VerificationResult
+from kstrl.verify_model import VerificationResult
 from tests.helpers.run_config import BEFORE, MALFORMED, count_toml_parses, drive_run, empty_run
 from tests.helpers.stack_confirmation import in_process_stack
 from tests.helpers.verify_phase import component

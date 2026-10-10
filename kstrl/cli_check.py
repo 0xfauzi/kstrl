@@ -22,7 +22,7 @@ from kstrl.stack import NO_STACK
 
 if TYPE_CHECKING:
     from kstrl.policy import PolicyConfig
-    from kstrl.verify import VerificationResult, VerifyConfig
+    from kstrl.verify_model import VerificationResult, VerifyConfig
 
 
 #: 2 (#306): a ``not_measured`` array joined the document, and the
@@ -466,7 +466,8 @@ def check(
 
     from kstrl.config_preflight import preflight_config
     from kstrl.policy import PolicyConfig
-    from kstrl.verify import VerifyConfig, run_mechanical_verification
+    from kstrl.verify import run_mechanical_verification
+    from kstrl.verify_model import VerifyConfig
 
     try:
         # The WHOLE configuration, not only the three sections this

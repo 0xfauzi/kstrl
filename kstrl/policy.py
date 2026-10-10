@@ -54,6 +54,7 @@ ENFORCEMENT_MACHINERY_PATHS: tuple[str, ...] = (
     # `kstrl/verify.py` at the repo root and a nested/vendored checkout.
     "**/kstrl/verify.py",
     "**/kstrl/scrubbed_run.py",
+    "**/kstrl/verify_model.py",
     "**/kstrl/policy.py",
     "**/kstrl/guards.py",
     "**/kstrl/autonomy.py",

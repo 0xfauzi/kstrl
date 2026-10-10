@@ -49,7 +49,7 @@ from kstrl.manifest import Component, Manifest
 from kstrl.review import ReviewResult
 from kstrl.security import SecurityConfig, SecurityMode
 from kstrl.ui.plain import PlainUI
-from kstrl.verify import VerifyConfig
+from kstrl.verify_model import VerifyConfig
 from tests import spine_utils
 from tests.helpers.stack_confirmation import in_process_stack
 

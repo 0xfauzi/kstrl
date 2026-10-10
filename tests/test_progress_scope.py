@@ -61,7 +61,8 @@ from kstrl.runstate import RunState
 from kstrl.scope import ComponentScope, RunScope
 from kstrl.security import SecurityResult
 from kstrl.ui.plain import PlainUI
-from kstrl.verify import VerificationResult, VerifyConfig, run_mechanical_verification
+from kstrl.verify import run_mechanical_verification
+from kstrl.verify_model import VerificationResult, VerifyConfig
 from kstrl.worktree_sweep import WorktreeSweep
 from tests.helpers import gitrepo
 from tests.helpers.stack_confirmation import in_process_stack

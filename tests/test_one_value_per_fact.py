@@ -42,7 +42,7 @@ from kstrl.manifest import Component, Manifest
 from kstrl.review import CriterionReview, ReviewConcern, ReviewResult
 from kstrl.security import SecurityConfig, SecurityFinding, SecurityResult
 from kstrl.ui.plain import PlainUI
-from kstrl.verify import CheckResult, VerificationResult, VerifyConfig
+from kstrl.verify_model import CheckResult, VerificationResult, VerifyConfig
 from tests.helpers.astwalk import Sees, assert_census, label, package_sources, parsed
 from tests.helpers.component_prd import PASSING_STORY, write_component_prd
 from tests.helpers.stack_confirmation import in_process_stack

@@ -100,7 +100,7 @@ from kstrl.owner_answers import read_owner_answers
 from kstrl.requirements import SpecRequirement
 from kstrl.stack import Stack
 from kstrl.ui.plain import PlainUI
-from kstrl.verify import CheckResult, VerificationResult, VerifyConfig
+from kstrl.verify_model import CheckResult, VerificationResult, VerifyConfig
 from tests.helpers.before_spend import no_base_check
 from tests.helpers.builder_prompts import BUILDER_RENDER_EXEMPT
 from tests.helpers.component_prd import write_component_prd

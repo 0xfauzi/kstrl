@@ -25,7 +25,7 @@ from kstrl import review
 from kstrl.integration import integration_stories
 from kstrl.review import ReviewMode
 from kstrl.ui.plain import PlainUI
-from kstrl.verify import VerificationResult
+from kstrl.verify_model import VerificationResult
 from tests.conftest import make_review_repo
 from tests.helpers import integration_harness as h
 from tests.helpers.component_prd import write_component_prd

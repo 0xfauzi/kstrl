@@ -32,7 +32,7 @@ from kstrl.observability import (
     summarize_events,
 )
 from kstrl.ui.plain import PlainUI
-from kstrl.verify import VerifyConfig
+from kstrl.verify_model import VerifyConfig
 from tests.helpers.stack_confirmation import in_process_stack
 
 
@@ -499,7 +499,7 @@ class TestPhaseTranscripts:
         """review.run_review forwards each streamed agent line to on_line."""
         from kstrl.review import ReviewMode, run_review
         from kstrl.ui.plain import PlainUI as _PlainUI
-        from kstrl.verify import VerificationResult
+        from kstrl.verify_model import VerificationResult
         from tests.conftest import make_review_repo
 
         class _Agent:

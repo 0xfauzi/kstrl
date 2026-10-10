@@ -38,7 +38,7 @@ from kstrl.loop import LoopResult
 from kstrl.manifest import Component, Manifest
 from kstrl.security import SecurityConfig
 from kstrl.ui.plain import PlainUI
-from kstrl.verify import VerifyConfig
+from kstrl.verify_model import VerifyConfig
 from tests.helpers import gitrepo
 from tests.helpers.stack_confirmation import confirm_stack, in_process_stack, write_stack
 

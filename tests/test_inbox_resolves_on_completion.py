@@ -53,7 +53,7 @@ from kstrl.pr import MergeConfirmation
 from kstrl.retry_plan import prepare_retry
 from kstrl.review import ReviewResult
 from kstrl.ui.plain import PlainUI
-from kstrl.verify import CheckResult, VerificationResult, VerifyConfig
+from kstrl.verify_model import CheckResult, VerificationResult, VerifyConfig
 from tests.helpers import astwalk, gitrepo
 from tests.helpers.component_prd import write_component_prd
 from tests.helpers.stack_confirmation import in_process_stack

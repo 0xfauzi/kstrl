@@ -48,12 +48,8 @@ from kstrl.security import SecurityConfig, SecurityMode, run_security_review
 from kstrl.serve import ServeConfig, SpendLedger, check_budget
 from kstrl.timeout import TimeoutConfig
 from kstrl.ui.plain import PlainUI
-from kstrl.verify import (
-    CheckResult,
-    VerificationResult,
-    VerifyConfig,
-    run_mechanical_verification,
-)
+from kstrl.verify import run_mechanical_verification
+from kstrl.verify_model import CheckResult, VerificationResult, VerifyConfig
 from tests.conftest import make_review_repo
 from tests.helpers.stack_confirmation import confirm_stack, in_process_stack
 

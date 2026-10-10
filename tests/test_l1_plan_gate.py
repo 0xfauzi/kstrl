@@ -45,7 +45,7 @@ from kstrl.review import ReviewResult
 from kstrl.security import SecurityConfig
 from kstrl.serve import RunOutcome, check_parked_merges, classify_run
 from kstrl.ui.plain import PlainUI
-from kstrl.verify import VerifyConfig
+from kstrl.verify_model import VerifyConfig
 from tests.helpers.stack_confirmation import in_process_stack
 from tests.test_merge_gate_park import (
     CMDS,

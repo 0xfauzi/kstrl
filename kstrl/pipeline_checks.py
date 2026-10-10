@@ -17,12 +17,8 @@ from kstrl.manifest import Component
 from kstrl.pipeline_attempt import AttemptRecorder
 from kstrl.pipeline_inbox import InboxDesk
 from kstrl.pipeline_transitions import FailureAction, PhaseFailure
-from kstrl.verify import (
-    SCOPE_UNREADABLE_CHECK,
-    CheckResult,
-    VerificationResult,
-    scope_unreadable_error,
-)
+from kstrl.verify import SCOPE_UNREADABLE_CHECK, scope_unreadable_error
+from kstrl.verify_model import CheckResult, VerificationResult
 from kstrl.waivers import ApprovalSnapshot
 
 if TYPE_CHECKING:

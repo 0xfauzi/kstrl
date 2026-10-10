@@ -39,7 +39,7 @@ from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.serve import ServeConfig, SpendLedger, read_run_spend, serve_cycle
 from kstrl.shutdown import StopController
 from kstrl.ui.plain import PlainUI
-from kstrl.verify import VerifyConfig
+from kstrl.verify_model import VerifyConfig
 from kstrl.workqueue import Queue
 from kstrl.workqueue_items import ItemSource, QueueConfig
 from tests.helpers import procs
@@ -82,7 +82,7 @@ from kstrl.manifest import Manifest
 from kstrl.security import SecurityConfig
 from kstrl.ui.plain import PlainUI
 from kstrl.stack import CONFIRMED_IN_INBOX, Stack
-from kstrl.verify import VerifyConfig
+from kstrl.verify_model import VerifyConfig
 
 _stack = Stack(
     instructions="t", setup="", env=(),

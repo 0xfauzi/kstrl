@@ -42,13 +42,8 @@ from kstrl.baseline import verify_digest
 from kstrl.contract import ContractCleanupError, _create_temp_worktree, _remove_temp_worktree
 from kstrl.events import RunPaths
 from kstrl.rung import HOST_LABEL, label_of
-from kstrl.verify import (
-    CheckResult,
-    VerificationResult,
-    VerifyConfig,
-    gate_names,
-    run_fast_checks,
-)
+from kstrl.verify import run_fast_checks
+from kstrl.verify_model import CheckResult, VerificationResult, VerifyConfig, gate_names
 from kstrl.version import kstrl_version
 from kstrl.worktree_setup import WorktreeSetup
 

@@ -33,7 +33,7 @@ from kstrl.findings import (
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.review import ReviewConcern, ReviewResult
 from kstrl.ui.plain import PlainUI
-from kstrl.verify import VerifyConfig
+from kstrl.verify_model import VerifyConfig
 from tests.helpers import gitrepo
 from tests.helpers.run_limits import every_limit_argv
 from tests.helpers.stack_confirmation import confirm_stack, in_process_stack, write_stack

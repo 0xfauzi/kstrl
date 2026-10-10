@@ -48,7 +48,7 @@ from kstrl.rung import HostFallback
 from kstrl.runstate import RunState
 from kstrl.statedir import plan_prd_path
 from kstrl.ui.plain import PlainUI
-from kstrl.verify import VerifyConfig
+from kstrl.verify_model import VerifyConfig
 from tests.helpers.stack_confirmation import in_process_stack
 
 COMP = "comp-a"

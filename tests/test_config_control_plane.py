@@ -33,7 +33,7 @@ from kstrl.evolution import EvolutionConfig
 from kstrl.factory import FactoryConfig
 from kstrl.feedforward import CodebaseScanConfig
 from kstrl.knowledge import KnowledgeConfig
-from kstrl.verify import VerifyConfig
+from kstrl.verify_model import VerifyConfig
 
 # The harness moved to tests/helpers/factorycli.py on #195, when
 # tests/test_explicit_merge_gate.py needed the same three pieces to prove

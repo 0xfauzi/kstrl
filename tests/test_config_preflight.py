@@ -47,7 +47,7 @@ from kstrl.factory import FactoryConfig, FactoryResult
 from kstrl.feedforward import CodebaseScanConfig
 from kstrl.security import SecurityConfig, SecurityMode
 from kstrl.stack import stack_toml
-from kstrl.verify import VerifyConfig
+from kstrl.verify_model import VerifyConfig
 from tests.conftest import REPO_ROOT
 from tests.helpers import astwalk
 from tests.helpers.bad_toml import MALFORMED_TOML, TOML_PARSE_FAULTS

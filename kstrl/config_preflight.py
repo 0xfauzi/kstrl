@@ -230,7 +230,7 @@ def config_sections() -> list[ConfigSection]:
     from kstrl.signals import SignalsConfig
     from kstrl.stack import StackConfig
     from kstrl.timeout import TimeoutConfig
-    from kstrl.verify import VerifyConfig
+    from kstrl.verify_model import VerifyConfig
     from kstrl.workqueue_items import QueueConfig
 
     return [

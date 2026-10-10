@@ -30,7 +30,7 @@ from kstrl.manifest import Manifest
 from kstrl.security import SecurityConfig
 from kstrl.timeout import TimeoutConfig
 from kstrl.ui.plain import PlainUI
-from kstrl.verify import VerifyConfig
+from kstrl.verify_model import VerifyConfig
 from tests.helpers.stack_confirmation import in_process_stack
 from tests.spine_utils import (
     base_config,

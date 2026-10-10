@@ -40,7 +40,7 @@ from kstrl.security import (
     run_security_review,
 )
 from kstrl.ui.plain import PlainUI
-from kstrl.verify import CheckResult, VerificationResult
+from kstrl.verify_model import CheckResult, VerificationResult
 from tests.conftest import ReviewRepo
 from tests.helpers.agent_probe import set_cli_availability, stub_probe
 from tests.helpers.stack_confirmation import in_process_stack

@@ -66,7 +66,7 @@ from kstrl.factory import FactoryConfig, run_factory
 from kstrl.manifest import Manifest
 from kstrl.ui.plain import PlainUI
 from kstrl.stack import CONFIRMED_IN_INBOX, Stack
-from kstrl.verify import VerifyConfig
+from kstrl.verify_model import VerifyConfig
 
 root = Path(sys.argv[1])
 manifest_path = Path(sys.argv[2])

@@ -54,7 +54,7 @@ from kstrl.manifest import ComponentStatus
 from kstrl.requirements import SpecRequirement
 from kstrl.review import ReviewMode, ReviewResult
 from kstrl.timeout import limit_seconds
-from kstrl.verify import VerificationResult
+from kstrl.verify_model import VerificationResult
 from kstrl.version import kstrl_version
 
 if TYPE_CHECKING:

@@ -10,7 +10,7 @@ the two drift, and the second copy is the one nobody would notice weakening.
 from __future__ import annotations
 
 from kstrl import baseline
-from kstrl.verify import CheckResult, VerificationResult
+from kstrl.verify_model import CheckResult, VerificationResult
 
 
 def assert_unmeasured(row: CheckResult) -> None:

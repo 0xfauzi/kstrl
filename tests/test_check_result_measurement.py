@@ -39,7 +39,7 @@ import ast
 import dataclasses
 from pathlib import Path
 
-from kstrl.verify import CheckResult
+from kstrl.verify_model import CheckResult
 from tests.helpers.astwalk import (
     assert_census,
     label,

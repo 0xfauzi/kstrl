@@ -251,7 +251,7 @@ def _run_factory_with_autonomy(
     from kstrl.factory import ComponentResult, FactoryConfig, run_factory
     from kstrl.manifest import Component, Manifest
     from kstrl.ui.plain import PlainUI
-    from kstrl.verify import CheckResult, VerificationResult, VerifyConfig
+    from kstrl.verify_model import CheckResult, VerificationResult, VerifyConfig
 
     _init_git_repo(tmp_path)
     kstrl_dir = tmp_path / "scripts" / "kstrl"

@@ -30,7 +30,7 @@ from kstrl.loop import COMPLETION_MARKER, run_loop
 from kstrl.stack import stack_toml
 from kstrl.timeout import TimeoutConfig
 from kstrl.ui.plain import PlainUI
-from kstrl.verify import VerifyConfig
+from kstrl.verify_model import VerifyConfig
 from tests.helpers.stack_confirmation import confirm_stack, in_process_stack, write_stack
 from tests.spine_utils import init_kstrl_repo
 

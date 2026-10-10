@@ -50,7 +50,7 @@ from kstrl.runstate import RunState
 from kstrl.scope import RunScope
 from kstrl.security import SecurityConfig, SecurityResult
 from kstrl.ui.plain import PlainUI
-from kstrl.verify import CheckResult, VerificationResult, VerifyConfig
+from kstrl.verify_model import CheckResult, VerificationResult, VerifyConfig
 from kstrl.worktree_sweep import WorktreeSweep
 from tests.helpers.context_sweeps import CURRENT, NOT_REMEASURED, RESOLVED, section
 
