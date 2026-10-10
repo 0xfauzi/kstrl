@@ -64,7 +64,8 @@ from kstrl.serve import (
     serve,
     serve_lock,
 )
-from kstrl.workqueue import ItemState, Queue, QueueConfig
+from kstrl.workqueue import Queue
+from kstrl.workqueue_items import ItemState, QueueConfig
 from tests.helpers import procs
 
 # BOTH MARKS BELOW ARE ALIASES OF ``tests/helpers/procs``, not copies.

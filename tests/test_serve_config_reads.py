@@ -41,7 +41,8 @@ import pytest
 
 from kstrl.serve import OpenPrCount, RunOutcome, ServeConfig, _NullObserver, serve, serve_cycle
 from kstrl.stack import stack_toml
-from kstrl.workqueue import ItemState, MergeDisposition, Queue, QueueConfig
+from kstrl.workqueue import Queue
+from kstrl.workqueue_items import ItemState, MergeDisposition, QueueConfig
 from tests.helpers.astwalk import (
     KSTRL_PACKAGE,
     all_nodes,

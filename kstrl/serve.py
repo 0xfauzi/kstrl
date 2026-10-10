@@ -97,16 +97,14 @@ from kstrl.statedir import (
     ensure_control_state,
     state_dir,
 )
-from kstrl.workqueue import (
+from kstrl.workqueue import Queue, queue_lock, queue_root
+from kstrl.workqueue_items import (
     ItemSource,
     ItemState,
-    Queue,
     QueueBudgetExhausted,
     QueueConfig,
     QueueError,
     QueueItem,
-    queue_lock,
-    queue_root,
     short_item_id,
 )
 

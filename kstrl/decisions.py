@@ -47,7 +47,8 @@ from typing import TYPE_CHECKING, Any
 from kstrl.atomicio import atomic_write_json
 from kstrl.inbox import UNDECIDED, Inbox, InboxConfig, InboxItem, ItemKind
 from kstrl.jsonread import read_json
-from kstrl.workqueue import QueueError, queue_item_for_spec
+from kstrl.workqueue import queue_item_for_spec
+from kstrl.workqueue_items import QueueError
 
 if TYPE_CHECKING:
     from kstrl.requirements import SpecRequirement

@@ -22,7 +22,7 @@ from pathlib import Path
 import pytest
 
 from kstrl.inbox import Inbox, InboxItem, ItemKind, ItemStatus
-from kstrl.workqueue import ItemState, QueueItem, short_item_id
+from kstrl.workqueue_items import ItemState, QueueItem, short_item_id
 from tests.test_prompt_record import ONE_COMPONENT
 from tests.test_queue_awaiting_answer import (
     ANSWER_LINE,

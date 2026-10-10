@@ -70,7 +70,7 @@ DELIVERY_INTERVAL_SECONDS = 2.0
 
 def serve_note(serve: ServeState | None, run_id: str) -> str:
     """The header's word on ``ks serve`` for this run (#433 M1)."""
-    from kstrl.workqueue import short_item_id
+    from kstrl.workqueue_items import short_item_id
 
     if serve is None:
         return ""

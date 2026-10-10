@@ -153,7 +153,7 @@ def _section_specs() -> list[SectionSpec]:
     from kstrl.signals import SignalsConfig
     from kstrl.timeout import TimeoutConfig
     from kstrl.verify import VerifyConfig
-    from kstrl.workqueue import QueueConfig
+    from kstrl.workqueue_items import QueueConfig
 
     def kstrl_loader(root: Path) -> Any:
         return KstrlConfig.load(root_dir=root)

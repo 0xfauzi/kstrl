@@ -74,13 +74,8 @@ from kstrl.statedir import (
     control_lock,
     ensure_control_state,
 )
-from kstrl.workqueue import (
-    ItemSource,
-    MergeDisposition,
-    Queue,
-    QueueError,
-    QueueItem,
-)
+from kstrl.workqueue import Queue
+from kstrl.workqueue_items import ItemSource, MergeDisposition, QueueError, QueueItem
 
 if TYPE_CHECKING:
     from kstrl.operator_context import OperatorFile

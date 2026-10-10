@@ -36,7 +36,8 @@ from kstrl.cli import cli
 from kstrl.inbox import Inbox, InboxConfig, InboxItem, ItemKind, ItemStatus
 from kstrl.manifest import Manifest
 from kstrl.stack import load_stack
-from kstrl.workqueue import ItemState, Queue, QueueConfig
+from kstrl.workqueue import Queue
+from kstrl.workqueue_items import ItemState, QueueConfig
 from tests.helpers import astwalk
 from tests.helpers.plan_approval import approve_plan
 from tests.helpers.stack_confirmation import confirm_stack
