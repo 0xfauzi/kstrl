@@ -1038,7 +1038,7 @@ class TestServeLock:
     def test_it_is_distinct_from_the_queue_mutex(self, tmp_path: Path) -> None:
         """`ks queue ls` must keep working while the daemon runs."""
         pytest.importorskip("fcntl")
-        from kstrl.workqueue import queue_lock
+        from kstrl.workqueue_store import queue_lock
 
         with serve_lock(tmp_path):
             with queue_lock(tmp_path):
@@ -1047,7 +1047,7 @@ class TestServeLock:
     def test_it_records_the_holder_pid(self, tmp_path: Path) -> None:
         pytest.importorskip("fcntl")
         from kstrl.serve import SERVE_LOCK_FILENAME
-        from kstrl.workqueue import queue_root
+        from kstrl.workqueue_store import queue_root
 
         with serve_lock(tmp_path):
             content = (queue_root(tmp_path) / SERVE_LOCK_FILENAME).read_text()

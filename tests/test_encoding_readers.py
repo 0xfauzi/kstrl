@@ -189,7 +189,8 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     # source and check_patch_coverage's report: the self-critique
     # progress log is the one left.
     "verify.py": 1,
-    "workqueue.py": 6,
+    "workqueue.py": 1,
+    "workqueue_store.py": 5,
 }
 
 
@@ -299,12 +300,12 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "tui/serve_view.py path.read_text(encoding='utf-8', errors='replace')",
     "tui/session.py open(run_paths.root / 'orchestrator.log', 'a', buffering=1, encoding='",
     "verify.py progress_path.read_text(encoding='utf-8')",
-    "workqueue.py meta_path.read_text(encoding='utf-8')",
-    "workqueue.py open(lock_path, 'a+', encoding='utf-8')",
-    "workqueue.py self.journal_path.read_text(encoding='utf-8')",
-    "workqueue.py self.pause_path.read_text(encoding='utf-8')",
-    "workqueue.py self.spec_path(item).read_text(encoding='utf-8')",
     "workqueue.py spec_source.read_text(encoding='utf-8')",
+    "workqueue_store.py meta_path.read_text(encoding='utf-8')",
+    "workqueue_store.py open(lock_path, 'a+', encoding='utf-8')",
+    "workqueue_store.py self.journal_path.read_text(encoding='utf-8')",
+    "workqueue_store.py self.pause_path.read_text(encoding='utf-8')",
+    "workqueue_store.py self.spec_path(item).read_text(encoding='utf-8')",
 )
 
 

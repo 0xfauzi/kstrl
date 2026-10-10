@@ -270,7 +270,7 @@ ALLOWED_APPEND_OPENS: dict[str, tuple[Reason, str]] = {
     # #433 M1: the probe moved out of factory_lock_held so the ks serve
     # daemon's lock is probed by the same code.
     "tui/runs.py:lock_held": (Reason.LOCK_FILE, "the TUI's copy of the same read"),
-    "workqueue.py:queue_lock": (Reason.LOCK_FILE, "the queue lock"),
+    "workqueue_store.py:queue_lock": (Reason.LOCK_FILE, "the queue lock"),
     "agents/logging.py:LoggingAgent.run": (Reason.TEXT_LOG, "the agent transcript"),
     "commandrun.py:CommandRun.transcript_writer": (Reason.TEXT_LOG, "a command transcript"),
     "factory.py:_redirect_worker_output": (Reason.TEXT_LOG, "a worker's stdout and stderr"),
@@ -327,7 +327,7 @@ EXPECTED_APPEND_OPENS: dict[str, int] = {
     "tui/embed.py: open('a')": 1,
     "tui/runs.py: open('a+')": 1,
     "tui/session.py: open('a')": 1,
-    "workqueue.py: open('a+')": 1,
+    "workqueue_store.py: open('a+')": 1,
 }
 
 
@@ -493,7 +493,7 @@ EXPECTED_ROUTED_APPENDS: dict[str, int] = {
     "init_cmd.py: append_records(lock=default (False))": 1,
     "knowledge.py: append_records(lock=default (False))": 1,
     "observability.py: append_records(lock=default (False))": 1,
-    "workqueue.py: append_records(lock=default (False))": 1,
+    "workqueue_store.py: append_records(lock=default (False))": 1,
 }
 
 

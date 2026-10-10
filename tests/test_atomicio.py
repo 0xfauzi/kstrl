@@ -35,7 +35,7 @@ import pytest
 import kstrl.atomicio
 from kstrl.atomicio import atomic_write_json, atomic_write_text
 from kstrl.init_cmd import _atomic_replace
-from kstrl.workqueue import atomic_write
+from kstrl.workqueue_store import atomic_write
 from tests.helpers import astwalk
 from tests.test_astwalk import OPAQUE_CALLEES
 

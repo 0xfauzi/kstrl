@@ -34,7 +34,7 @@ from kstrl.observability import NotifyConfig, NotifyHooks
 from kstrl.pipeline import _iso_now
 from kstrl.prd import PRD
 from kstrl.statedir import ControlStateError, pre_run_prd_path
-from kstrl.workqueue import relocated_spec
+from kstrl.workqueue_store import relocated_spec
 
 if TYPE_CHECKING:
     from kstrl.autonomy import FlagBundle

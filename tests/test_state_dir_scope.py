@@ -407,7 +407,7 @@ _EXPECTED_STATE_DIR_SPELLINGS: dict[str, int] = {
     "serve.py": 6,
     "statedir.py": 8,  # +1 #545: plan_prd_path joins the plan directory
     "tui/runs.py": 3,  # +1 #433: run_is_live lists the runs dir for the newest run
-    "workqueue.py": 2,
+    "workqueue_store.py": 2,
 }
 
 
@@ -582,6 +582,7 @@ class TestNothingTheLoopRunsWritesTheUncarvedEntries:
     WRITERS = frozenset(
         {
             "kstrl.workqueue",
+            "kstrl.workqueue_store",
             "kstrl.serve",
             "kstrl.cli",
             "kstrl.evolution",
@@ -629,7 +630,9 @@ class TestSignalsCannotReachTheQueue:
             "the name below resolved to no file. This assertion would then "
             "pass on any import kstrl.signals actually has."
         )
-        assert "kstrl.workqueue" not in closure, (
+        # #776 W2: the queue is two modules. Signals can reach the store
+        # (queue_root, the pause marker, the journal) with no edge to kstrl.workqueue.
+        assert closure.isdisjoint({"kstrl.workqueue", "kstrl.workqueue_store"}), (
             "slice 1 of R8.8 observes and does not spend. An import edge here "
             "is how that stops being true. If the enqueue slice is landing, "
             "delete this class in the same diff that adds the ladder replay to "

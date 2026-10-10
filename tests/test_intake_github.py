@@ -1048,8 +1048,8 @@ class TestServeDrivesRemoteLabels:
     ) -> None:
         """#187 F10: two gh calls must not block every queue transition."""
         from kstrl.serve import RunSpend, serve_cycle
-        from kstrl.workqueue import queue_lock
         from kstrl.workqueue_items import QueueLockedError
+        from kstrl.workqueue_store import queue_lock
 
         self._remote_item(tmp_path)
         held: list[bool] = []
@@ -1266,8 +1266,8 @@ class TestIntakeLockDiscipline:
         tmp_path: Path,
     ) -> None:
         from kstrl.serve import RunOutcome, RunSpend, serve_cycle
-        from kstrl.workqueue import queue_lock
         from kstrl.workqueue_items import QueueLockedError
+        from kstrl.workqueue_store import queue_lock
 
         (tmp_path / "kstrl.toml").write_text(f'[intake_github]\nenabled = true\nrepo = "{REPO}"\n')
         _queue(tmp_path).ensure_dirs()
@@ -1302,8 +1302,8 @@ class TestIntakeLockDiscipline:
         """
         from kstrl.serve import RunOutcome, RunSpend, serve_cycle
         from kstrl.workqueue import Queue as _Queue
-        from kstrl.workqueue import queue_lock
         from kstrl.workqueue_items import QueueLockedError
+        from kstrl.workqueue_store import queue_lock
 
         (tmp_path / "kstrl.toml").write_text(f'[intake_github]\nenabled = true\nrepo = "{REPO}"\n')
         _queue(tmp_path).ensure_dirs()

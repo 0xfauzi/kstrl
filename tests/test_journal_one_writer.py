@@ -323,7 +323,7 @@ EXPECTED_JOURNAL_PATH_SITES: dict[str, int] = {
     "cli.py: config.journal_path": 2,
     "health.py: config.journal_path": 1,
     "pipeline.py: self.journal_path": 4,
-    "workqueue.py: self.journal_path": 2,
+    "workqueue_store.py: self.journal_path": 2,
 }
 #: The ``health.py`` and ``cli.py`` rows above are READS, added by #151:
 #: R8.4 trending needs the journal for the infrastructure-error-rate
