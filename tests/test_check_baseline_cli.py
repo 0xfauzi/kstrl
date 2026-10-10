@@ -18,7 +18,8 @@ from click.testing import CliRunner, Result
 
 from kstrl import baseline_report
 from kstrl.baseline import RETIRED_CHECKS
-from kstrl.cli import CHECK_SCHEMA_VERSION, cli
+from kstrl.cli import cli
+from kstrl.cli_check import CHECK_SCHEMA_VERSION
 from kstrl.evolution import signature_for_error
 from tests.helpers.check_baseline import BASELINE_DOC
 from tests.helpers.stack_confirmation import confirm_stack

@@ -110,7 +110,8 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     # #553: the import, one json.dumps for the ledger line, and the
     # json.JSONDecodeError it catches from read_json twice. No parse.
     "ci_state.py": 4,
-    "cli.py": 7,
+    "cli.py": 3,
+    "cli_check.py": 5,
     "context.py": 2,
     "baseline.py": 2,
     "decompose.py": 4,

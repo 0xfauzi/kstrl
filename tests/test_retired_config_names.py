@@ -538,7 +538,7 @@ ALLOWED: dict[tuple[str, str], int] = {
     # document used before this PR's schema bump - the old name is the
     # fact being recorded, not a live spelling.
     ("kstrl/baseline.py", "sense"): 1,
-    ("kstrl/cli.py", "dampener"): 2,
+    ("kstrl/cli_check.py", "dampener"): 2,
     # "Set-point disagreement" is a live user-facing string inside
     # REVIEWER_PROMPT-adjacent code (claim_retry_context). The prompt BODY
     # is kept byte-identical under Decision 3, so rewording this string
