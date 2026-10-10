@@ -102,6 +102,7 @@ from kstrl import (
     knowledge,
     owner_answers,
     review,
+    review_prompt,
     security,
     stack,
 )
@@ -141,7 +142,8 @@ from kstrl.owner_answers import (
     OWNER_ANSWER_PROMPT_VERSION,
     render_owner_answer,
 )
-from kstrl.review import REVIEWER_PROMPT, REVIEWER_PROMPT_VERSION, ReviewMode
+from kstrl.review import ReviewMode
+from kstrl.review_prompt import REVIEWER_PROMPT, REVIEWER_PROMPT_VERSION
 from kstrl.security import SECURITY_PROMPT, SECURITY_PROMPT_VERSION, SecurityConfig, SecurityMode
 from kstrl.stack import STACK_PROMPT, STACK_PROMPT_VERSION, Stack
 from kstrl.ui import PlainUI
@@ -557,7 +559,7 @@ _OWNER_ANSWER_ITEM = InboxItem(
 
 def _reviewer_render(tmp_path: Path) -> str:
     prd_path = write_component_prd(tmp_path, "prd.json")
-    return review.build_review_prompt(
+    return review_prompt.build_review_prompt(
         prd_path, "BASE_SHA", VerificationResult(passed=True, checks=[])
     )
 
@@ -606,7 +608,7 @@ _RENDERERS: dict[str, tuple[ModuleType, Callable[[Path], str]]] = {
         decompose,
         lambda _p: decompose.architect_no_repo_source(),
     ),
-    "REVIEWER_PROMPT": (review, _reviewer_render),
+    "REVIEWER_PROMPT": (review_prompt, _reviewer_render),
     "SECURITY_PROMPT": (
         security,
         lambda _p: security._build_security_prompt("PRD", "CHANGE SOURCE", "TOKEN"),
