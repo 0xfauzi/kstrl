@@ -107,6 +107,9 @@ filterwarnings = [
 [tool.coverage.run]
 source = ["kstrl"]
 relative_files = true
+# The TUI tests are disabled (#777), because the owner will delete the TUI.
+# Thus kstrl/tui/ is not measured, and the ratchet measures the other code.
+omit = ["kstrl/tui/*"]
 
 [tool.coverage.report]
 precision = 2
