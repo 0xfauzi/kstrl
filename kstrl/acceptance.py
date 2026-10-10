@@ -74,7 +74,7 @@ from kstrl.rung import HOST_LABEL, ProvenRung, Rung, zone_dir
 from kstrl.stack import REPLAY_BOUNDARY_REFUSED
 from kstrl.statedir import control_dir
 from kstrl.timeout import limit_seconds
-from kstrl.verify import SHELL_COULD_NOT_RUN
+from kstrl.verify_commands import SHELL_COULD_NOT_RUN
 from kstrl.waivers import covering_override
 
 if TYPE_CHECKING:

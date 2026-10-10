@@ -353,7 +353,8 @@ PINNED_HITS: dict[str, dict[str, int]] = {
     "runstate.py": {"mypy": 1},
     "scrubbed_run.py": {"python": 4},
     "serve.py": {"python": 2},
-    "verify.py": {"mypy": 4, "pytest": 1},
+    "verify.py": {"mypy": 2},
+    "verify_commands.py": {"mypy": 2, "pytest": 1},
     "workqueue.py": {"python": 1},
     "worktree_setup.py": {"node": 2},
 }

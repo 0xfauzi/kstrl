@@ -165,7 +165,7 @@ BLIND_SITES: tuple[tuple[str, str, str, str], ...] = (
         "pass-through of its own parameter, censused at its call sites",
     ),
     (
-        "kstrl/verify.py",
+        "kstrl/verify_commands.py",
         "check_stack_command",
         "row",
         "#696: row = f'stack:{name}', one of the function's five CheckResult "
@@ -176,7 +176,7 @@ BLIND_SITES: tuple[tuple[str, str, str, str], ...] = (
         "_CATEGORY_BY_CHECK and pinned in test_signature_spellings.py",
     ),
     (
-        "kstrl/verify.py",
+        "kstrl/verify_commands.py",
         "check_stack_command",
         "row",
         "#696: row = f'stack:{name}', one of the function's five CheckResult "
@@ -187,7 +187,7 @@ BLIND_SITES: tuple[tuple[str, str, str, str], ...] = (
         "_CATEGORY_BY_CHECK and pinned in test_signature_spellings.py",
     ),
     (
-        "kstrl/verify.py",
+        "kstrl/verify_commands.py",
         "check_stack_command",
         "row",
         "#696: row = f'stack:{name}', one of the function's five CheckResult "
@@ -198,7 +198,7 @@ BLIND_SITES: tuple[tuple[str, str, str, str], ...] = (
         "_CATEGORY_BY_CHECK and pinned in test_signature_spellings.py",
     ),
     (
-        "kstrl/verify.py",
+        "kstrl/verify_commands.py",
         "check_stack_command",
         "row",
         "#696: row = f'stack:{name}', one of the function's five CheckResult "
@@ -209,7 +209,7 @@ BLIND_SITES: tuple[tuple[str, str, str, str], ...] = (
         "_CATEGORY_BY_CHECK and pinned in test_signature_spellings.py",
     ),
     (
-        "kstrl/verify.py",
+        "kstrl/verify_commands.py",
         "check_stack_command",
         "row",
         "#696: row = f'stack:{name}', one of the function's five CheckResult "

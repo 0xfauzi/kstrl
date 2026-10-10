@@ -23,7 +23,7 @@ from kstrl.appendio import JOURNAL_REPAIR_EVENT, REPAIR_DETAIL, append_records
 from kstrl.config_numbers import check_numbers
 from kstrl.manifest import ADVERSARIAL_BUDGET_CHECK, ComponentStatus
 from kstrl.observability import read_progress_events
-from kstrl.verify import SCOPE_UNREADABLE_CHECK, SCOPE_UNREADABLE_ERROR_PREFIX
+from kstrl.verify_diff import SCOPE_UNREADABLE_CHECK, SCOPE_UNREADABLE_ERROR_PREFIX
 from kstrl.version import kstrl_version
 
 if TYPE_CHECKING:

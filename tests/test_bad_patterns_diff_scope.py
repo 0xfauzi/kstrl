@@ -24,7 +24,8 @@ import inspect
 from pathlib import Path
 
 from kstrl import policy
-from kstrl.verify import check_bad_patterns, run_mechanical_verification
+from kstrl.verify import run_mechanical_verification
+from kstrl.verify_diff import check_bad_patterns
 from kstrl.verify_model import VerifyConfig
 from tests.conftest import make_review_repo
 from tests.helpers.stack_confirmation import in_process_stack

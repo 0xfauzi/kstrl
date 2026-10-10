@@ -42,7 +42,8 @@ from kstrl.manifest import Component, Manifest
 from kstrl.scope import RunScope
 from kstrl.statedir import pre_run_prd_path
 from kstrl.ui.plain import PlainUI
-from kstrl.verify import _scope_checks, check_diff_scope, run_mechanical_verification
+from kstrl.verify import run_mechanical_verification
+from kstrl.verify_diff import _scope_checks, check_diff_scope
 from kstrl.verify_model import CheckResult, VerificationResult, VerifyConfig
 from tests.helpers import gitrepo
 from tests.helpers.before_spend import no_base_check

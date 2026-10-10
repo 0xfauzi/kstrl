@@ -929,7 +929,7 @@ class TestInLoopGuardSeesTheComponentScope:
         does not fire, exactly as before.
         """
         from kstrl.config import KstrlConfig
-        from kstrl.verify import check_scope_unreadable
+        from kstrl.verify_diff import check_scope_unreadable
 
         comp = self._component("scripts/kstrl/feature/comp-a/prd.json")
         scope = ComponentScope.resolve(comp, tmp_path, KstrlConfig())

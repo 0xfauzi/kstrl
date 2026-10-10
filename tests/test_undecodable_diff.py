@@ -26,7 +26,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import doctor, git, guards, loop, verify, verify_model
+from kstrl import doctor, git, guards, loop, verify, verify_diff, verify_model
 from kstrl.breaker import compute_diff_hash
 from kstrl.config import KstrlConfig
 from kstrl.policy import PolicyConfig
@@ -242,7 +242,7 @@ def test_check_policy_envelope_reads_content_that_is_not_utf_8(tmp_path: Path) -
     repo = _repo(tmp_path)
     _commit_undecodable_content(repo)
 
-    result = verify.check_policy_envelope(repo, "main", PolicyConfig())
+    result = verify_diff.check_policy_envelope(repo, "main", PolicyConfig())
 
     assert result.passed is True
     assert result.findings == []
@@ -257,7 +257,7 @@ def test_check_diff_scope_fails_closed_on_a_path_it_cannot_decode(tmp_path: Path
     repo = _repo(tmp_path, quotepath="false")
     _commit_undecodable_path(repo)
 
-    result = verify.check_diff_scope(repo, "main", ["base.py"])
+    result = verify_diff.check_diff_scope(repo, "main", ["base.py"])
 
     assert result.passed is False
     assert result.measured is False
@@ -273,7 +273,7 @@ def test_check_diff_scope_still_passes_vacuously_on_an_empty_diff(tmp_path: Path
     not swallow that path."""
     repo = _repo(tmp_path)
 
-    result = verify.check_diff_scope(repo, "main", ["base.py"])
+    result = verify_diff.check_diff_scope(repo, "main", ["base.py"])
 
     assert result.passed is True
     assert result.measured is False
@@ -290,7 +290,7 @@ def test_check_bad_patterns_fails_closed_on_a_path_it_cannot_decode(tmp_path: Pa
     repo = _repo(tmp_path, quotepath="false")
     _commit_undecodable_path(repo)
 
-    result = verify.check_bad_patterns(repo, "main")
+    result = verify_diff.check_bad_patterns(repo, "main")
 
     assert result.passed is False
     assert result.measured is False
@@ -304,7 +304,7 @@ def test_check_bad_patterns_still_passes_vacuously_on_an_empty_diff(tmp_path: Pa
     vacuously and measures nothing, so the widened try did not swallow it."""
     repo = _repo(tmp_path)
 
-    result = verify.check_bad_patterns(repo, "main")
+    result = verify_diff.check_bad_patterns(repo, "main")
 
     assert result.passed is True
     assert result.measured is False

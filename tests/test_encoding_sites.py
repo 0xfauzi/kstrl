@@ -28,7 +28,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import knowledge, verify
+from kstrl import knowledge, verify, verify_diff
 from kstrl.autonomy import AutonomyState
 from kstrl.calibration_baseline import load_baseline
 from kstrl.intake_github import ProcessedLedger
@@ -277,7 +277,7 @@ class TestTheLocalePinnedReads:
         gitrepo.git_in(repo, "add", "-A")
         gitrepo.git_in(repo, "commit", "-q", "-m", "add a key with an accent on the line")
 
-        found = verify.check_bad_patterns(repo, "main")
+        found = verify_diff.check_bad_patterns(repo, "main")
 
         assert not found.passed
         assert found.details == ["m.py: possible secret/credential detected"]

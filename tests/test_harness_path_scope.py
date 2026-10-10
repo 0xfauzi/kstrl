@@ -58,7 +58,7 @@ from kstrl.manifest import Component, Manifest
 from kstrl.sandbox import SandboxConfig
 from kstrl.scope import ComponentScope, RunScope
 from kstrl.ui.plain import PlainUI
-from kstrl.verify import check_diff_scope
+from kstrl.verify_diff import check_diff_scope
 from tests.helpers import gitrepo
 from tests.helpers.component_prd import write_component_prd
 from tests.helpers.stack_confirmation import in_process_stack

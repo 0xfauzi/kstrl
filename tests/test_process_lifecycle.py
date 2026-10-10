@@ -195,7 +195,8 @@ EXPECTED_PROCESS_MODULES: dict[str, tuple[str, ...]] = {
     "serve.py": ("Popen", "communicate", "subprocess"),
     "scrubbed_run.py": ("Popen", "communicate", "subprocess"),
     # #776 V1: `subprocess.TimeoutExpired` is the one use left in `verify.py`.
-    "verify.py": ("subprocess",),
+    # #776 V3: that use moved to `verify_commands.py` with `check_stack_command`.
+    "verify_commands.py": ("subprocess",),
     # #700 slice 3: waits on the `up` that `scrubbed_run.start_scrubbed` started,
     # stops its group through `procgroup.signal_group` and lets it go through
     # `procdispose.reap_or_abandon`; `Popen` is the type of what it holds.

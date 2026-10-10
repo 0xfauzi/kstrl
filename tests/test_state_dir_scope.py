@@ -58,7 +58,7 @@ from kstrl.statedir import (
     state_dir_carve_out,
 )
 from kstrl.ui.plain import PlainUI
-from kstrl.verify import _diff_scope_details, check_diff_scope
+from kstrl.verify_diff import _diff_scope_details, check_diff_scope
 from tests.helpers import astwalk, gitrepo
 from tests.test_loop import MockAgent
 
