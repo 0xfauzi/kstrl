@@ -78,7 +78,7 @@ EXPECTED_SPELLINGS: frozenset[tuple[str, str]] = frozenset(
         ("kstrl/pipeline.py", "adversarial_budget"),
         ("kstrl/factory.py", "scope_unreadable"),
         ("kstrl/pipeline_transitions.py", "aborted"),
-        ("kstrl/pipeline.py", "diff"),
+        ("kstrl/pipeline_checks.py", "diff"),
         ("kstrl/pipeline.py", "engineer"),
         ("kstrl/pipeline_transitions.py", "engineer"),
         ("kstrl/pipeline.py", "pr"),

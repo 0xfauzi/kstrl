@@ -416,7 +416,7 @@ class TestEveryResultRowIsAccountedFor:
 #: test suite that timed out into a PASS, silently, in the direction this
 #: repository keeps finding.
 #:
-#: ``pipeline.py`` reads a DIFFERENT field of the same name -
+#: ``pipeline_knowledge.py`` reads a DIFFERENT field of the same name -
 #: ``FactUtilization.measured``, the R8 fact-utilization evidence flag - which
 #: no walk can tell apart from this one without type inference. Those two rows
 #: are pinned rather than excluded: this net flags, so over-matching costs
@@ -446,8 +446,8 @@ EXPECTED_MEASUREMENT_READS: dict[str, int] = {
     "evolution.py: iteration_criterion_verdict: r.measured": 1,
     "evolution.py: EvolutionJournal.iteration_criterion_lines: reading.measured": 1,
     # Not CheckResult.measured. FactUtilization's own field, R8.
-    "pipeline.py: ComponentPipeline._store_fact_utilization: util.measured": 2,
-    "pipeline.py: FactUtilization.to_dict: self.measured": 1,
+    "pipeline_knowledge.py: FactUtilization.to_dict: self.measured": 1,
+    "pipeline_knowledge.py: KnowledgePhase._store_fact_utilization: util.measured": 2,
 }
 
 
