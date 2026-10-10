@@ -98,7 +98,7 @@ from kstrl import (
     decisions,
     decompose,
     git,
-    intake_github,
+    intake_issue,
     knowledge,
     owner_answers,
     review,
@@ -134,7 +134,7 @@ from kstrl.init_cmd import (
     DEFAULT_PROMPT,
     DEFAULT_PROMPT_VERSION,
 )
-from kstrl.intake_github import BUG_REPORT_PROMPT, BUG_REPORT_PROMPT_VERSION, RemoteIssue
+from kstrl.intake_issue import BUG_REPORT_PROMPT, BUG_REPORT_PROMPT_VERSION, RemoteIssue
 from kstrl.knowledge import DISTILL_PROMPT, DISTILL_PROMPT_VERSION
 from kstrl.manifest import Component
 from kstrl.owner_answers import (
@@ -583,8 +583,8 @@ def _acceptance_render(_tmp_path: Path) -> str:
 
 def _bug_report_render(_tmp_path: Path) -> str:
     """What the `bug` label adds to the spec of an issue with an empty body."""
-    plain = intake_github.spec_from_issue(RemoteIssue(1, "T", "", ""), "o/r")
-    bug = intake_github.spec_from_issue(RemoteIssue(1, "T", "", "", labels=("Bug",)), "o/r")
+    plain = intake_issue.spec_from_issue(RemoteIssue(1, "T", "", ""), "o/r")
+    bug = intake_issue.spec_from_issue(RemoteIssue(1, "T", "", "", labels=("Bug",)), "o/r")
     return bug.removeprefix(plain)
 
 
@@ -620,7 +620,7 @@ _RENDERERS: dict[str, tuple[ModuleType, Callable[[Path], str]]] = {
     "PASTED_CHANGE_SOURCE_PROMPT": (git, lambda _p: pasted_change_source("DIFF")[0]),
     "DECISIONS_CONTEXT_PROMPT": (decisions, _decisions_context_render),
     "OWNER_ANSWER_PROMPT": (owner_answers, lambda _p: render_owner_answer(_OWNER_ANSWER_ITEM)),
-    "BUG_REPORT_PROMPT": (intake_github, _bug_report_render),
+    "BUG_REPORT_PROMPT": (intake_issue, _bug_report_render),
     **NOTICE_RENDERERS,
     **INTEGRATION_RENDERERS,
 }

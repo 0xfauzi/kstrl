@@ -93,7 +93,7 @@ from kstrl import (
 from kstrl.decisions import SpecDecision, build_decisions_context
 from kstrl.inbox import Inbox, InboxItem, ItemKind, ItemStatus
 from kstrl.init_cmd import run_init
-from kstrl.intake_github import RemoteIssue, spec_from_issue
+from kstrl.intake_issue import RemoteIssue, spec_from_issue
 from kstrl.loop import COMPLETION_MARKER
 from kstrl.manifest import Component
 from kstrl.owner_answers import read_owner_answers

@@ -26,7 +26,7 @@ import click
 import pytest
 
 from kstrl.cli import cli
-from kstrl.intake_github import BUG_REPORT_PROMPT
+from kstrl.intake_issue import BUG_REPORT_PROMPT
 from kstrl.serve import ServeConfig, serve_cycle
 from kstrl.workqueue import Queue
 from kstrl.workqueue_items import QueueConfig
