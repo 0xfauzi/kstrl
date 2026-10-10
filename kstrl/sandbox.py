@@ -104,6 +104,23 @@ off the paths that the hook keeps the file tools off. A worktree
 ``.claude/settings.json`` with ``"disableAllHooks": true`` switched the hook
 off in both modes (the Write tool wrote ``$HOME``), and ``"disableAllHooks":
 false`` in the ``--settings`` JSON kept it on.
+
+Measured on 2026-10-10 with claude 2.1.291 and haiku:
+
+- A PreToolUse hook that slept past its 3 s ``timeout`` let the Write tool
+  write ``$HOME``, with and without ``"onFailure": "block"``. A guard that
+  ended on its own SIGALRM, with ``|| exit 2``, blocked the Write.
+- ``--managed-settings '{"allowManagedHooksOnly": true}'`` (the SDK
+  parent-settings tier, which needs no admin rights) removed every hook of
+  ``--settings``: the stream had no SessionStart event before ``init``, and
+  the Write tool wrote ``$HOME``. ``CLAUDE_CODE_MANAGED_SETTINGS_PATH`` with
+  the same policy had no effect. With the session gate of
+  :mod:`kstrl.write_guard`, the adapter stopped that session at ``init``
+  after 1.8 s, before the model's first tool call, in both network modes.
+- Without ``--strict-mcp-config`` a headless engineer session loaded 37 MCP
+  servers (plugin, claude.ai and project sources) and 101 MCP tools, and the
+  command of a stdio server in the worktree's ``.mcp.json`` ran. With the
+  flag: no server, no MCP tool, and the command did not run.
 """
 
 from __future__ import annotations
@@ -118,7 +135,7 @@ from typing import TYPE_CHECKING
 from kstrl.config_numbers import check_numbers
 from kstrl.git import git_write_paths
 from kstrl.jsonread import read_json
-from kstrl.write_guard import GUARDED_TOOLS, hook_command
+from kstrl.write_guard import GUARDED_TOOLS, HOOK_TIMEOUT_SECONDS, hook_command, ready_command
 
 if TYPE_CHECKING:
     from kstrl.stack import Stack
@@ -292,7 +309,13 @@ def claude_sandbox_settings(
     outside ``workspace`` and ``config.writable``: the sandbox confines
     Bash only (measured). The claude-sdk adapter passes no ``workspace``;
     its runner calls :func:`kstrl.write_guard.refusal` in process, with the
-    same roots.
+    same roots. The hook has an explicit ``timeout`` and ``"onFailure":
+    "block"``: claude 2.1.291 lets a tool run when its hook times out and
+    ignores ``onFailure`` (measured), the guard's own deadline blocks first
+    (see :mod:`kstrl.write_guard`), and the claude documentation says that
+    ``onFailure`` blocks a timed-out or failed hook from claude 2.1.295. A
+    SessionStart hook prints the marker that
+    :class:`kstrl.write_guard.SessionGate` requires before the session starts.
     """
     if config is None or not config.enabled:
         return None
@@ -305,10 +328,15 @@ def claude_sandbox_settings(
             "allow": list(_CLAUDE_SANDBOXED_TOOL_ALLOW),
         }
     if workspace is not None:
-        command = hook_command(workspace, config.writable)
-        guard = {"type": "command", "command": command}
+        guard = {
+            "type": "command",
+            "command": hook_command(workspace, config.writable),
+            "timeout": HOOK_TIMEOUT_SECONDS,
+            "onFailure": "block",
+        }
         matcher = {"matcher": "|".join(GUARDED_TOOLS), "hooks": [guard]}
-        settings["hooks"] = {"PreToolUse": [matcher]}
+        ready = {"hooks": [{"type": "command", "command": ready_command()}]}
+        settings["hooks"] = {"PreToolUse": [matcher], "SessionStart": [ready]}
         # A project or user setting ``disableAllHooks: true`` switched the
         # hook off; this setting wins over it (measured, claude 2.1.291).
         settings["disableAllHooks"] = False
@@ -318,12 +346,20 @@ def claude_sandbox_settings(
 def claude_sandbox_args(config: SandboxConfig | None, workspace: Path | None = None) -> list[str]:
     """``claude --print`` argv fragment for the operator's sandbox intent.
 
-    Thin argv wrapper over :func:`claude_sandbox_settings`.
+    Thin argv wrapper over :func:`claude_sandbox_settings`. With
+    ``workspace`` (the engineer), it adds ``--strict-mcp-config`` with no
+    ``--mcp-config``: the session then loads no MCP server. Without it, a
+    headless engineer loaded the operator's plugin servers, the claude.ai
+    connectors and a server in the worktree's ``.mcp.json`` (measured,
+    claude 2.1.291: 37 servers, 101 MCP tools; with the flag: none). An MCP
+    tool can write a file, and the write guard does not see it.
     """
     settings = claude_sandbox_settings(config, workspace)
     if settings is None:
         return []
-    return ["--settings", settings]
+    if workspace is None:
+        return ["--settings", settings]
+    return ["--settings", settings, "--strict-mcp-config"]
 
 
 def claude_sandbox_drops_skip_permissions(
