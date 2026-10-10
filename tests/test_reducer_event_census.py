@@ -5,11 +5,11 @@ of every factory run, and never folded, so a component a run carried
 from an earlier run rendered as pending. Nothing failed, because nothing
 required the reducer to decide what that event means.
 
-This census closes the set. ``kstrl.events._REGISTRY`` is every event
+This census closes the set. ``kstrl.event_catalog._REGISTRY`` is every event
 type the stream can carry. The reducer's handled set is read from its
 source: every ``isinstance(event, <alias>.<Class>)`` in the module-level
 ``apply()`` function of ``kstrl/reducer.py``, where ``<alias>`` is the
-name ``kstrl.events`` is imported as. A type in neither set fails, so a
+name ``kstrl.event_catalog`` is imported as. A type in neither set fails, so a
 new event is a decision somebody writes down rather than a silent drop.
 
 "Folded" means named in an ``isinstance`` check in the test of an ``if``
@@ -40,8 +40,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from kstrl import events as ev
-from kstrl import reducer
+from kstrl import event_catalog, reducer
 
 #: Registered event types the reducer deliberately does not fold, each
 #: with the reason. None of them changes a component's status.
@@ -69,13 +68,13 @@ DELIBERATELY_IGNORED: dict[str, str] = {
 
 
 def _events_alias(tree: ast.Module) -> str:
-    """The name ``kstrl.events`` is bound to in the reducer module."""
+    """The name ``kstrl.event_catalog`` is bound to in the reducer module."""
     for node in tree.body:
         if isinstance(node, ast.ImportFrom) and node.module == "kstrl":
             for alias in node.names:
-                if alias.name == "events":
+                if alias.name == "event_catalog":
                     return alias.asname or alias.name
-    raise AssertionError("kstrl/reducer.py no longer imports kstrl.events as a module")
+    raise AssertionError("kstrl/reducer.py no longer imports kstrl.event_catalog as a module")
 
 
 def _apply_function(tree: ast.Module) -> ast.FunctionDef:
@@ -95,7 +94,7 @@ def _isinstance_calls_in_if_tests(tree: ast.AST) -> list[ast.Call]:
     """Every ``isinstance(...)`` call inside the test of an ``if`` or ``elif``.
 
     Only branch tests count. ``apply`` also has the line
-    ``comp.carried = isinstance(event, ev.ComponentScopeResolved)``, an
+    ``comp.carried = isinstance(event, event_catalog.ComponentScopeResolved)``, an
     assignment every event passes through. Counting it would mark
     ``component_scope_resolved`` folded even with its dispatch branch
     deleted, so this census CLEARS a type only on a branch that decides
@@ -136,14 +135,14 @@ def _handled_types() -> set[str]:
                 and isinstance(name.value, ast.Name)
                 and name.value.id == alias
             ):
-                cls = getattr(ev, name.attr)
+                cls = getattr(event_catalog, name.attr)
                 handled.add(cls.type)
     return handled
 
 
 class TestReducerEventCensus:
     def test_every_registered_type_is_folded_or_listed(self) -> None:
-        registered = set(ev._REGISTRY)
+        registered = set(event_catalog._REGISTRY)
         handled = _handled_types()
         ignored = set(DELIBERATELY_IGNORED)
         unaccounted = registered - handled - ignored
@@ -154,7 +153,7 @@ class TestReducerEventCensus:
         )
 
     def test_the_ignore_list_names_only_unhandled_registered_types(self) -> None:
-        registered = set(ev._REGISTRY)
+        registered = set(event_catalog._REGISTRY)
         handled = _handled_types()
         ignored = set(DELIBERATELY_IGNORED)
         assert ignored <= registered, sorted(ignored - registered)
@@ -162,4 +161,4 @@ class TestReducerEventCensus:
 
     def test_the_scope_event_is_folded(self) -> None:
         """#448 itself, named rather than left to the set arithmetic."""
-        assert ev.ComponentScopeResolved.type in _handled_types()
+        assert event_catalog.ComponentScopeResolved.type in _handled_types()

@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import distill_readiness
+from kstrl import distill_readiness, event_catalog
 from kstrl import events as ev
 
 OLDER = "factory-20260101-120000.000000-aaaaaa"
@@ -24,7 +24,7 @@ def _write_run(root: Path, run_id: str, *parse_failed: bool) -> None:
     run_dir.mkdir(parents=True)
     bus = ev.EventBus(ev.JsonlSink(run_dir / "events.jsonl"), run_id=run_id)
     for flag in parse_failed:
-        bus.emit(ev.DistillResult(component="comp-a", parse_failed=flag))
+        bus.emit(event_catalog.DistillResult(component="comp-a", parse_failed=flag))
     bus.close()
 
 

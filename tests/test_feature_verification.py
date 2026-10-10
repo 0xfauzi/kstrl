@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
+from kstrl import event_catalog
 from kstrl import events as ev
 from kstrl.commandrun import CommandRun
 from kstrl.config import KstrlConfig
@@ -108,10 +109,10 @@ def _drive(
     channel: ScriptedChannel | None = None,
     loop: Any = None,
     stop_check: Any = None,
-) -> tuple[int, list[ev.Event], str]:
+) -> tuple[int, list[event_catalog.Event], str]:
     """Run the flow, returning (exit code, emitted events, UI text)."""
     ui, stream = _ui()
-    captured: list[ev.Event] = []
+    captured: list[event_catalog.Event] = []
     run = CommandRun(
         run_id="test-run",
         kind="feature",
@@ -136,8 +137,10 @@ def _drive(
     return code, captured, stream.getvalue()
 
 
-def _verifications(captured: list[ev.Event]) -> list[ev.VerificationResultEvent]:
-    return [e for e in captured if isinstance(e, ev.VerificationResultEvent)]
+def _verifications(
+    captured: list[event_catalog.Event],
+) -> list[event_catalog.VerificationResultEvent]:
+    return [e for e in captured if isinstance(e, event_catalog.VerificationResultEvent)]
 
 
 def _uncapped(root: Path) -> list[CheckResult]:
@@ -168,7 +171,7 @@ def _slow_verification() -> Any:
     return slow
 
 
-def _phases(captured: list[ev.Event]) -> list[str]:
+def _phases(captured: list[event_catalog.Event]) -> list[str]:
     return [e.phase for e in _verifications(captured)]
 
 
@@ -230,7 +233,9 @@ def _name_the_branch(params: FeatureParams, branch: str) -> FeatureParams:
     return params
 
 
-def _report(captured: list[ev.Event], phase: str) -> ev.VerificationResultEvent:
+def _report(
+    captured: list[event_catalog.Event], phase: str
+) -> event_catalog.VerificationResultEvent:
     """The one report for ``phase``. Raises if there is not exactly one."""
     matches = [e for e in _verifications(captured) if e.phase == phase]
     assert len(matches) == 1, [e.phase for e in _verifications(captured)]
@@ -275,11 +280,13 @@ class TestTheCheckActuallyRuns:
         _, captured, _ = _drive(tmp_path)
 
         implement = [
-            e for e in captured if isinstance(e, ev.PhaseCompleted) and e.phase == "implement"
+            e
+            for e in captured
+            if isinstance(e, event_catalog.PhaseCompleted) and e.phase == "implement"
         ]
         assert len(implement) == 1
         assert implement[0].passed is True
-        assert any(isinstance(e, ev.ComponentCompleted) for e in captured)
+        assert any(isinstance(e, event_catalog.ComponentCompleted) for e in captured)
 
     def test_green_commands_report_a_pass(self, tmp_path: Path) -> None:
         _write_kstrl_toml(tmp_path)
@@ -614,7 +621,7 @@ class TestTheReportCannotKillTheRun:
             report = _report(captured, phase)
             assert report.passed is False
             assert report.checks == ()
-        assert any(isinstance(e, ev.RunCompleted) for e in captured)
+        assert any(isinstance(e, event_catalog.RunCompleted) for e in captured)
 
     def test_the_run_record_is_still_complete(self, tmp_path: Path) -> None:
         """The failure mode: events.jsonl ending at phase_started with no
@@ -628,9 +635,11 @@ class TestTheReportCannotKillTheRun:
         with patch("kstrl.feature_verify.run_undiffed_verification", boom):
             _, captured, _ = _drive(tmp_path)
 
-        assert any(isinstance(e, ev.PhaseCompleted) and e.phase == "implement" for e in captured)
-        assert any(isinstance(e, ev.ComponentCompleted) for e in captured)
-        assert any(isinstance(e, ev.RunCompleted) for e in captured)
+        assert any(
+            isinstance(e, event_catalog.PhaseCompleted) and e.phase == "implement" for e in captured
+        )
+        assert any(isinstance(e, event_catalog.ComponentCompleted) for e in captured)
+        assert any(isinstance(e, event_catalog.RunCompleted) for e in captured)
 
 
 class TestTheReportDoesNotDistortTheRunRecord:
@@ -654,7 +663,9 @@ class TestTheReportDoesNotDistortTheRunRecord:
             _, captured, _ = _drive(tmp_path)
 
         implement = next(
-            e for e in captured if isinstance(e, ev.PhaseCompleted) and e.phase == "implement"
+            e
+            for e in captured
+            if isinstance(e, event_catalog.PhaseCompleted) and e.phase == "implement"
         )
         report = _report(captured, "implement")
         assert report.seq < implement.seq

@@ -332,7 +332,7 @@ class TestJsonlSinkSurvivesATornTail:
         return JsonlSink(path)
 
     def emit(self, sink: Any, component: str) -> None:
-        from kstrl.events import ComponentStarted
+        from kstrl.event_catalog import ComponentStarted
 
         sink.emit(ComponentStarted(component=component))
 

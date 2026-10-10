@@ -27,6 +27,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from kstrl import event_catalog
 from kstrl import events as ev
 from kstrl.agents.base import CEILING_AXES
 from kstrl.manifest import COMPONENT_STATUS_VALUES, ComponentStatus
@@ -252,23 +253,23 @@ class RunState:
         return self._axis_is_lower_bound("cost", self.cost_calls)
 
 
-def _infer_phase(event: ev.Event) -> str | None:
+def _infer_phase(event: event_catalog.Event) -> str | None:
     """v1 fallback, ported from observability._phase_for_event."""
-    if isinstance(event, ev.ComponentStarted):
+    if isinstance(event, event_catalog.ComponentStarted):
         return "engineer"
-    if isinstance(event, ev.ComponentUsage):
+    if isinstance(event, event_catalog.ComponentUsage):
         return event.phase or None
-    if isinstance(event, ev.VerificationResultEvent):
+    if isinstance(event, event_catalog.VerificationResultEvent):
         return "verify"
-    if isinstance(event, ev.ReviewResultEvent):
+    if isinstance(event, event_catalog.ReviewResultEvent):
         return "security" if event.mode.startswith("security") else "review"
-    if isinstance(event, ev.ComponentRetrying):
+    if isinstance(event, event_catalog.ComponentRetrying):
         return "retrying"
-    if isinstance(event, ev.ComponentFailed):
+    if isinstance(event, event_catalog.ComponentFailed):
         return "failed"
-    if isinstance(event, ev.ComponentCompleted):
+    if isinstance(event, event_catalog.ComponentCompleted):
         return "done"
-    if isinstance(event, ev.BudgetExceeded):
+    if isinstance(event, event_catalog.BudgetExceeded):
         return "budget-halt"
     return None
 
@@ -290,7 +291,7 @@ _STATUS_AFTER_CHECKPOINT: dict[str, str] = {
 }
 
 
-def _budget_halt_error(event: ev.BudgetExceeded) -> str:
+def _budget_halt_error(event: event_catalog.BudgetExceeded) -> str:
     """The component error line for a budget halt.
 
     Names the ceiling that tripped, via the shared classifier so this
@@ -299,7 +300,7 @@ def _budget_halt_error(event: ev.BudgetExceeded) -> str:
     ``ceiling`` and decode to "", in which case the token wording is the
     only honest reading.
     """
-    kind = ev.budget_halt_kind(event.condition, event.ceilings, event.ceiling)
+    kind = event_catalog.budget_halt_kind(event.condition, event.ceilings, event.ceiling)
     if kind == "unenforceable":
         # No threshold was crossed, so there is no ">=" to state.
         # The old wording claimed one and printed the untouched
@@ -319,7 +320,7 @@ def _component(state: RunState, component_id: str) -> ComponentState:
     return comp
 
 
-def _note_run_identity(state: RunState, event: ev.Event) -> None:
+def _note_run_identity(state: RunState, event: event_catalog.Event) -> None:
     """The run id and the kstrl that wrote the run (#451), from the first
     event that carries each. A stream written before stamping leaves
     ``kstrl_version`` empty."""
@@ -333,7 +334,7 @@ def _note_run_identity(state: RunState, event: ev.Event) -> None:
 MAX_ERROR_DETAIL_LINES = 4
 
 
-def _note_error_log(state: RunState, event: ev.Event) -> None:
+def _note_error_log(state: RunState, event: event_catalog.Event) -> None:
     """Keep the latest error headline and its detail lines (#433 F4).
 
     The factory writes a refusal as one unindented line followed by
@@ -342,7 +343,7 @@ def _note_error_log(state: RunState, event: ev.Event) -> None:
     line starts a new block; an indented one extends the current block.
     Only the text is kept; a log line never moves a status.
     """
-    if not isinstance(event, ev.Log) or event.severity != "error":
+    if not isinstance(event, event_catalog.Log) or event.severity != "error":
         return
     text = event.text.rstrip()
     if not text.strip():
@@ -354,14 +355,14 @@ def _note_error_log(state: RunState, event: ev.Event) -> None:
     state.error_block = [text.strip()]
 
 
-def _note_component_span(comp: ComponentState, event: ev.Event) -> None:
+def _note_component_span(comp: ComponentState, event: event_catalog.Event) -> None:
     """The first event this run wrote for the component, scope record aside."""
-    if comp.started_ts or not event.ts or isinstance(event, ev.ComponentScopeResolved):
+    if comp.started_ts or not event.ts or isinstance(event, event_catalog.ComponentScopeResolved):
         return
     comp.started_ts = event.ts
 
 
-def _fold_gate_detail(comp: ComponentState, event: ev.Event) -> None:
+def _fold_gate_detail(comp: ComponentState, event: event_catalog.Event) -> None:
     """Attach a failed gate's cause to the phase that reported it (#433 F7).
 
     ``verification_result`` names what failed (``failures``) and where the
@@ -370,7 +371,7 @@ def _fold_gate_detail(comp: ComponentState, event: ev.Event) -> None:
     held on the component and moved into that phase's history entry.
     Status is not touched: the phase and component events decide it.
     """
-    if isinstance(event, ev.VerificationResultEvent):
+    if isinstance(event, event_catalog.VerificationResultEvent):
         comp.pending_gate = {
             "phase": event.phase or "verify",
             "failures": [str(item) for item in event.failures],
@@ -378,7 +379,7 @@ def _fold_gate_detail(comp: ComponentState, event: ev.Event) -> None:
         }
         return
     pending = comp.pending_gate
-    if not pending or not isinstance(event, ev.PhaseCompleted):
+    if not pending or not isinstance(event, event_catalog.PhaseCompleted):
         return
     if event.phase != pending["phase"] or not comp.phase_history:
         return
@@ -388,9 +389,9 @@ def _fold_gate_detail(comp: ComponentState, event: ev.Event) -> None:
         comp.phase_history[-1]["gate_logs"] = pending["gate_logs"]
 
 
-def apply(state: RunState, event: ev.Event) -> None:  # noqa: C901 - flat dispatch
+def apply(state: RunState, event: event_catalog.Event) -> None:  # noqa: C901 - flat dispatch
     """Fold one event into ``state`` (mutates in place)."""
-    if isinstance(event, ev.UnknownEvent):
+    if isinstance(event, event_catalog.UnknownEvent):
         state.unknown_events += 1
         # Unknown events still move the run clock - a future emitter's
         # activity must not read as staleness.
@@ -405,16 +406,16 @@ def apply(state: RunState, event: ev.Event) -> None:  # noqa: C901 - flat dispat
     _note_run_identity(state, event)
     _note_error_log(state, event)
 
-    if isinstance(event, ev.RunStarted):
+    if isinstance(event, event_catalog.RunStarted):
         state.project = event.project or state.project
         state.pid, state.architect_run_id = event.pid, event.architect_run_id
         return
-    if isinstance(event, ev.RunCompleted):
+    if isinstance(event, event_catalog.RunCompleted):
         state.finished = True
         state.release_ref = event.release_ref  # #442; read by the TUI's delivery row
         state.release_withheld = event.release_withheld
         return
-    if isinstance(event, ev.RunPlan):
+    if isinstance(event, event_catalog.RunPlan):
         state.max_total_tokens = event.max_total_tokens
         state.max_adversarial_calls = event.max_adversarial_calls
         state.max_cost_usd = event.max_cost_usd
@@ -434,7 +435,7 @@ def apply(state: RunState, event: ev.Event) -> None:  # noqa: C901 - flat dispat
             if isinstance(deps, (list, tuple)):
                 comp.deps = tuple(str(d) for d in deps)
         return
-    if isinstance(event, ev.ContractResult):
+    if isinstance(event, event_catalog.ContractResult):
         # Run-scoped in v1 (breaker only inside data); attribute it so
         # the board shows contract activity on the blamed component.
         if event.breaker:
@@ -445,7 +446,7 @@ def apply(state: RunState, event: ev.Event) -> None:  # noqa: C901 - flat dispat
                 comp.error = f"contract failed at tier {event.tier}"
         return
 
-    if isinstance(event, ev.BudgetCoverage):
+    if isinstance(event, event_catalog.BudgetCoverage):
         # Run-scoped, so it MUST be handled above the
         # `if not event.component: return` guard below - that early
         # return is what dropped it before (R8 review finding 1).
@@ -464,7 +465,7 @@ def apply(state: RunState, event: ev.Event) -> None:  # noqa: C901 - flat dispat
             detail=event.detail,
         )
         return
-    if isinstance(event, ev.SpecIssueRecorded):
+    if isinstance(event, event_catalog.SpecIssueRecorded):
         severity = event.severity if event.severity in SPEC_ISSUE_SEVERITIES else "unknown"
         state.spec_issue_counts[severity] = state.spec_issue_counts.get(severity, 0) + 1
         state.spec_issues.append(
@@ -479,7 +480,7 @@ def apply(state: RunState, event: ev.Event) -> None:  # noqa: C901 - flat dispat
         if len(state.spec_issues) > MAX_SPEC_ISSUES:
             del state.spec_issues[0]
         return
-    if isinstance(event, ev.ArtifactWritten):
+    if isinstance(event, event_catalog.ArtifactWritten):
         # Run-scoped even when a component is stamped (per-component
         # PRDs): artifacts are a run-level record.
         state.artifacts.append(
@@ -498,7 +499,7 @@ def apply(state: RunState, event: ev.Event) -> None:  # noqa: C901 - flat dispat
     comp = _component(state, event.component)
     comp.last_event = type(event).type
     # Any other event for the component means this run touched it.
-    comp.carried = isinstance(event, ev.ComponentScopeResolved)
+    comp.carried = isinstance(event, event_catalog.ComponentScopeResolved)
     if event.ts:
         comp.last_event_ts = max(comp.last_event_ts, event.ts)
     _note_component_span(comp, event)
@@ -508,21 +509,21 @@ def apply(state: RunState, event: ev.Event) -> None:  # noqa: C901 - flat dispat
         if inferred:
             comp.phase = inferred
 
-    if isinstance(event, ev.ComponentStarted):
+    if isinstance(event, event_catalog.ComponentStarted):
         comp.status = "running"
         comp.error = ""
-    elif isinstance(event, ev.ComponentScopeResolved):
+    elif isinstance(event, event_catalog.ComponentScopeResolved):
         # Written for every component before the run schedules any, so
         # it is the starting status; later events in the run move it.
         comp.status = _status_at_run_start(event.manifest_status)
-    elif isinstance(event, ev.PhaseStarted):
+    elif isinstance(event, event_catalog.PhaseStarted):
         comp.phase_explicit = True
         comp.phase = event.phase
         comp.attempt = max(comp.attempt, event.attempt)
         if event.phase and event.phase != "engineer":
             if comp.status == "running":
                 comp.status = "verifying"
-    elif isinstance(event, ev.PhaseCompleted):
+    elif isinstance(event, event_catalog.PhaseCompleted):
         comp.phase_explicit = True
         comp.phase_history.append(
             {
@@ -535,33 +536,33 @@ def apply(state: RunState, event: ev.Event) -> None:  # noqa: C901 - flat dispat
         )
         if not event.passed and event.detail:
             comp.error = event.detail
-    elif isinstance(event, ev.ComponentCompleted):
+    elif isinstance(event, event_catalog.ComponentCompleted):
         comp.status = "completed"
         comp.iteration = event.iterations or comp.iteration
         if comp.phase_explicit:
             comp.phase = "done"
-    elif isinstance(event, ev.ComponentFailed):
+    elif isinstance(event, event_catalog.ComponentFailed):
         comp.status = "failed"
         comp.error = event.error
         if comp.phase_explicit:
             comp.phase = "failed"
-    elif isinstance(event, ev.ComponentSkipped):
+    elif isinstance(event, event_catalog.ComponentSkipped):
         comp.status = "skipped"
         comp.error = event.reason
         if comp.phase_explicit:
             comp.phase = "skipped"
-    elif isinstance(event, ev.CircuitBreakerTripped):
+    elif isinstance(event, event_catalog.CircuitBreakerTripped):
         comp.error = event.error
-    elif isinstance(event, ev.ComponentRetrying):
+    elif isinstance(event, event_catalog.ComponentRetrying):
         comp.status = "running"
         comp.attempt = max(comp.attempt, event.attempt)
-    elif isinstance(event, ev.IterationStarted):
+    elif isinstance(event, event_catalog.IterationStarted):
         comp.iteration = event.iteration
         comp.max_iterations = event.max_iterations
-    elif isinstance(event, ev.WorkerHeartbeat):
+    elif isinstance(event, event_catalog.WorkerHeartbeat):
         comp.last_heartbeat_ts = max(comp.last_heartbeat_ts, event.ts)
         comp.heartbeat_pid = event.pid
-    elif isinstance(event, ev.ComponentUsage):
+    elif isinstance(event, event_catalog.ComponentUsage):
         comp.usage_calls += event.calls
         comp.unreported_calls += event.unreported_calls
         comp.total_tokens += event.total_tokens
@@ -584,7 +585,7 @@ def apply(state: RunState, event: ev.Event) -> None:  # noqa: C901 - flat dispat
             # payload written before the axis fields existed.
             comp.coverage_unknown_calls += event.known_calls
             state.coverage_unknown_calls += event.known_calls
-    elif isinstance(event, ev.FindingRecorded):
+    elif isinstance(event, event_catalog.FindingRecorded):
         comp.findings_count += 1
         comp.recent_findings.append(
             {
@@ -599,21 +600,21 @@ def apply(state: RunState, event: ev.Event) -> None:  # noqa: C901 - flat dispat
         )
         if len(comp.recent_findings) > MAX_RECENT_FINDINGS:
             del comp.recent_findings[0]
-    elif isinstance(event, ev.PrCreated):
+    elif isinstance(event, event_catalog.PrCreated):
         comp.pr_url = event.pr_url or comp.pr_url
         comp.pr_number = event.pr_number or comp.pr_number
         comp.pr_state = "created"
-    elif isinstance(event, ev.PrMerged):
+    elif isinstance(event, event_catalog.PrMerged):
         comp.pr_url = event.pr_url or comp.pr_url
         comp.pr_number = event.pr_number or comp.pr_number
         comp.pr_state = "merged"
         comp.merge_sha = event.merge_sha
-    elif isinstance(event, ev.PrMergePending):
+    elif isinstance(event, event_catalog.PrMergePending):
         comp.pr_url = event.pr_url or comp.pr_url
         comp.pr_state = "merge_pending"
         comp.status = "merge_pending"
         comp.error = event.error or comp.error
-    elif isinstance(event, ev.MergePendingV1):
+    elif isinstance(event, event_catalog.MergePendingV1):
         # v1-parity twin: only act when the richer v2 event is absent
         # (dual-write emits both; this keeps v1-only logs informative).
         if comp.pr_state != "merge_pending":
@@ -621,17 +622,17 @@ def apply(state: RunState, event: ev.Event) -> None:  # noqa: C901 - flat dispat
             comp.pr_state = "merge_pending"
             comp.status = "merge_pending"
             comp.error = event.error or comp.error
-    elif isinstance(event, ev.CheckpointRequested):
+    elif isinstance(event, event_catalog.CheckpointRequested):
         comp.checkpoint_open = event.kind or "checkpoint"
-    elif isinstance(event, ev.CheckpointResolved):
+    elif isinstance(event, event_catalog.CheckpointResolved):
         comp.checkpoint_open = ""
         comp.status = _STATUS_AFTER_CHECKPOINT.get(event.decision, comp.status)
-    elif isinstance(event, ev.BudgetExceeded):
+    elif isinstance(event, event_catalog.BudgetExceeded):
         comp.error = _budget_halt_error(event)
     _fold_gate_detail(comp, event)
 
 
-def fold(events: Iterable[ev.Event], run_id: str = "") -> RunState:
+def fold(events: Iterable[event_catalog.Event], run_id: str = "") -> RunState:
     """Pure fold: fresh RunState from an event iterable.
 
     ``run_id`` non-empty filters to that run's events (events with an
@@ -650,7 +651,7 @@ def fold(events: Iterable[ev.Event], run_id: str = "") -> RunState:
 # ---------------------------------------------------------------------------
 
 
-def upconvert_v1(obj: Mapping[str, Any]) -> ev.Event:
+def upconvert_v1(obj: Mapping[str, Any]) -> event_catalog.Event:
     """Lift one v1 progress.jsonl envelope dict into a typed event.
 
     v1 envelope: ``{ts: iso-str, event, run_id?, component?, data?}``.
@@ -686,7 +687,7 @@ def upconvert_v1(obj: Mapping[str, Any]) -> ev.Event:
 # ---------------------------------------------------------------------------
 
 
-def _sort_key(event: ev.Event) -> tuple[float, str, int]:
+def _sort_key(event: event_catalog.Event) -> tuple[float, str, int]:
     return (event.ts, event.source, event.seq)
 
 
@@ -709,7 +710,7 @@ def _v2_run_dirs(root_dir: Path) -> list[Path]:
         return []
 
 
-def read_run_dir(run_dir: Path) -> list[ev.Event]:
+def read_run_dir(run_dir: Path) -> list[event_catalog.Event]:
     """All events of one v2 run dir (orchestrator + workers), sorted."""
     events = ev.read_events(run_dir / "events.jsonl")
     comp_root = run_dir / "components"

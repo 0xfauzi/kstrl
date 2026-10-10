@@ -419,7 +419,7 @@ class TestOneWriter:
             sees=folds_containing(JOURNAL_FILENAME),
             expected={
                 "atomicio.py": 1,  # prose in the module docstring
-                "events.py": 1,  # prose in a docstring
+                "event_catalog.py": 1,  # prose in a docstring
                 "evolution.py": 1,  # the EvolutionConfig default
                 "init_cmd.py": 1,  # a commented example in the scaffolded kstrl.toml
                 "knowledge.py": 1,  # prose in the module docstring

@@ -21,6 +21,7 @@ from typing import Any, cast
 import pytest
 from textual.widgets import Button, DataTable, Static
 
+from kstrl import event_catalog
 from kstrl import events as ev
 from kstrl.config_report import build_config_report
 from kstrl.findings import Finding
@@ -292,11 +293,13 @@ def _refused_run(root: Path) -> None:
     run_id = "factory-20260926-060000.000000-refu01"
     paths = ev.RunPaths.for_run(root, run_id)
     bus = ev.EventBus(ev.JsonlSink(paths.events_file), run_id=run_id)
-    bus.emit(ev.RunStarted(project="demo", components=1))
-    bus.emit(ev.RunPlan(components=({"id": "api", "title": "API", "deps": []},)))
-    bus.emit(ev.Log(severity="error", text="Refusing to run: stale component branches found"))
+    bus.emit(event_catalog.RunStarted(project="demo", components=1))
+    bus.emit(event_catalog.RunPlan(components=({"id": "api", "title": "API", "deps": []},)))
     bus.emit(
-        ev.Log(
+        event_catalog.Log(severity="error", text="Refusing to run: stale component branches found")
+    )
+    bus.emit(
+        event_catalog.Log(
             severity="error",
             text="  branch 'kstrl/factory/client-http' (component 'client-http') already exists "
             "with commits not merged into 'main'; refusing to silently reuse it. Merge it or "
@@ -484,8 +487,8 @@ def _live_run_with_serve_item(
     run_dir = write_fake_run(root, FakeRunSpec(components=2, complete=False))
     if moving:
         bus = ev.EventBus(ev.JsonlSink(run_dir / "events.jsonl"), run_id=run_dir.name)
-        bus.emit(ev.ComponentStarted(component="comp-b"))
-        bus.emit(ev.WorkerHeartbeat(component="comp-b", pid=os.getpid()))
+        bus.emit(event_catalog.ComponentStarted(component="comp-b"))
+        bus.emit(event_catalog.WorkerHeartbeat(component="comp-b", pid=os.getpid()))
     log = run_dir / "components" / "comp-b" / "engineer.log"
     log.parent.mkdir(parents=True, exist_ok=True)
     log.write_text("working\n", encoding="utf-8")

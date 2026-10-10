@@ -13,6 +13,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
+from kstrl import event_catalog
 from kstrl import events as ev
 from kstrl.agents.base import ARCHITECT_COMPONENT
 
@@ -40,10 +41,10 @@ def _emit_run(root: Path, spec: FakeRunSpec, run_id: str) -> Iterator[None]:
     bus = ev.EventBus(ev.JsonlSink(paths.events_file), run_id=run_id)
     comps = _component_ids(spec)
 
-    bus.emit(ev.RunStarted(project="fake-project", components=len(comps)))
+    bus.emit(event_catalog.RunStarted(project="fake-project", components=len(comps)))
     yield
     bus.emit(
-        ev.RunPlan(
+        event_catalog.RunPlan(
             components=tuple(
                 {
                     "id": cid,
@@ -59,8 +60,8 @@ def _emit_run(root: Path, spec: FakeRunSpec, run_id: str) -> Iterator[None]:
     yield
 
     for index, cid in enumerate(comps):
-        bus.emit(ev.ComponentStarted(component=cid))
-        bus.emit(ev.PhaseStarted(component=cid, phase="engineer", attempt=1))
+        bus.emit(event_catalog.ComponentStarted(component=cid))
+        bus.emit(event_catalog.PhaseStarted(component=cid, phase="engineer", attempt=1))
         yield
         worker = ev.EventBus(
             ev.JsonlSink(paths.engineer_events(cid)),
@@ -73,7 +74,7 @@ def _emit_run(root: Path, spec: FakeRunSpec, run_id: str) -> Iterator[None]:
         with open(log_path, "a", encoding="utf-8") as log:
             for iteration in range(1, spec.iterations + 1):
                 worker.emit(
-                    ev.IterationStarted(
+                    event_catalog.IterationStarted(
                         iteration=iteration,
                         max_iterations=spec.iterations,
                     )
@@ -81,17 +82,17 @@ def _emit_run(root: Path, spec: FakeRunSpec, run_id: str) -> Iterator[None]:
                 log.write(f"[{cid}] editing src/{cid}/impl.py\n")
                 log.write(f"[{cid}] running tests (iteration {iteration})\n")
                 worker.emit(
-                    ev.IterationCompleted(
+                    event_catalog.IterationCompleted(
                         iteration=iteration,
                         duration_seconds=12.5,
                         completed=iteration == spec.iterations,
                     )
                 )
                 yield
-            worker.emit(ev.WorkerHeartbeat(pid=40000 + index, elapsed_seconds=25.0))
+            worker.emit(event_catalog.WorkerHeartbeat(pid=40000 + index, elapsed_seconds=25.0))
         worker.close()
         bus.emit(
-            ev.PhaseCompleted(
+            event_catalog.PhaseCompleted(
                 component=cid,
                 phase="engineer",
                 passed=True,
@@ -106,7 +107,7 @@ def _emit_run(root: Path, spec: FakeRunSpec, run_id: str) -> Iterator[None]:
         # measured" - which is not what this fixture means.
         known = spec.iterations - 1 if spec.include_unreported_usage else spec.iterations
         bus.emit(
-            ev.ComponentUsage(
+            event_catalog.ComponentUsage(
                 component=cid,
                 phase="engineer",
                 calls=spec.iterations,
@@ -123,10 +124,10 @@ def _emit_run(root: Path, spec: FakeRunSpec, run_id: str) -> Iterator[None]:
         )
         yield
         for phase in ("verify", "review", "security", "distill"):
-            bus.emit(ev.PhaseStarted(component=cid, phase=phase, attempt=1))
+            bus.emit(event_catalog.PhaseStarted(component=cid, phase=phase, attempt=1))
             if phase == "review" and spec.include_findings:
                 bus.emit(
-                    ev.FindingRecorded(
+                    event_catalog.FindingRecorded(
                         component=cid,
                         phase="review",
                         category="test_quality",
@@ -137,7 +138,7 @@ def _emit_run(root: Path, spec: FakeRunSpec, run_id: str) -> Iterator[None]:
                     )
                 )
             bus.emit(
-                ev.PhaseCompleted(
+                event_catalog.PhaseCompleted(
                     component=cid,
                     phase=phase,
                     passed=True,
@@ -147,7 +148,7 @@ def _emit_run(root: Path, spec: FakeRunSpec, run_id: str) -> Iterator[None]:
             yield
         if spec.include_checkpoint and index == len(comps) - 1:
             bus.emit(
-                ev.CheckpointRequested(
+                event_catalog.CheckpointRequested(
                     component=cid,
                     kind="pr_merge",
                     question=f"Approve PR creation and merge for {cid}?",
@@ -157,21 +158,21 @@ def _emit_run(root: Path, spec: FakeRunSpec, run_id: str) -> Iterator[None]:
             # Left OPEN deliberately: dash renders the pending banner.
         else:
             bus.emit(
-                ev.PrCreated(
+                event_catalog.PrCreated(
                     component=cid,
                     pr_number=100 + index,
                     pr_url=f"https://example.test/pr/{100 + index}",
                 )
             )
             bus.emit(
-                ev.PrMerged(
+                event_catalog.PrMerged(
                     component=cid,
                     pr_number=100 + index,
                     pr_url=f"https://example.test/pr/{100 + index}",
                 )
             )
             bus.emit(
-                ev.ComponentCompleted(
+                event_catalog.ComponentCompleted(
                     component=cid,
                     duration_seconds=60.0 + index,
                     iterations=spec.iterations,
@@ -181,7 +182,7 @@ def _emit_run(root: Path, spec: FakeRunSpec, run_id: str) -> Iterator[None]:
 
     if spec.complete and not spec.include_checkpoint:
         bus.emit(
-            ev.RunCompleted(
+            event_catalog.RunCompleted(
                 completed=len(comps),
                 failed=0,
                 skipped=0,
@@ -229,14 +230,14 @@ def write_fake_understand_run(
         run_id=run_id,
         component="understand",
     )
-    bus.emit(ev.RunStarted(project="fake-project", components=1))
+    bus.emit(event_catalog.RunStarted(project="fake-project", components=1))
     bus.emit(
-        ev.RunPlan(
+        event_catalog.RunPlan(
             components=({"id": "understand", "title": "Codebase understanding", "deps": []},)
         )
     )
-    bus.emit(ev.ComponentStarted(component="understand"))
-    bus.emit(ev.PhaseStarted(component="understand", phase="understand", attempt=1))
+    bus.emit(event_catalog.ComponentStarted(component="understand"))
+    bus.emit(event_catalog.PhaseStarted(component="understand", phase="understand", attempt=1))
     log_path = paths.engineer_log("understand")
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with open(log_path, "a", encoding="utf-8") as log:
@@ -244,10 +245,12 @@ def write_fake_understand_run(
         log.write("[understand] editing scripts/kstrl/codebase_map.md\n")
     for iteration in (1, 2):
         bus.emit(
-            ev.IterationStarted(component="understand", iteration=iteration, max_iterations=10)
+            event_catalog.IterationStarted(
+                component="understand", iteration=iteration, max_iterations=10
+            )
         )
         bus.emit(
-            ev.IterationCompleted(
+            event_catalog.IterationCompleted(
                 component="understand",
                 iteration=iteration,
                 duration_seconds=8.0,
@@ -256,17 +259,23 @@ def write_fake_understand_run(
         )
     if complete:
         bus.emit(
-            ev.PhaseCompleted(
+            event_catalog.PhaseCompleted(
                 component="understand", phase="understand", passed=True, duration_seconds=16.0
             )
         )
         bus.emit(
-            ev.ArtifactWritten(
+            event_catalog.ArtifactWritten(
                 component="understand", label="codebase_map", path="scripts/kstrl/codebase_map.md"
             )
         )
-        bus.emit(ev.ComponentCompleted(component="understand", duration_seconds=16.0, iterations=2))
-        bus.emit(ev.RunCompleted(completed=1, failed=0, skipped=0, duration_seconds=16.0))
+        bus.emit(
+            event_catalog.ComponentCompleted(
+                component="understand", duration_seconds=16.0, iterations=2
+            )
+        )
+        bus.emit(
+            event_catalog.RunCompleted(completed=1, failed=0, skipped=0, duration_seconds=16.0)
+        )
     bus.close()
     return paths.root
 
@@ -287,60 +296,70 @@ def write_fake_feature_run(
         component=feature_name,
     )
     comp = feature_name
-    bus.emit(ev.RunStarted(project=comp, components=1))
-    bus.emit(ev.RunPlan(components=({"id": comp, "title": f"Feature: {comp}", "deps": []},)))
-    bus.emit(ev.ComponentStarted(component=comp))
-    bus.emit(ev.PhaseStarted(component=comp, phase="understand", attempt=1))
+    bus.emit(event_catalog.RunStarted(project=comp, components=1))
+    bus.emit(
+        event_catalog.RunPlan(components=({"id": comp, "title": f"Feature: {comp}", "deps": []},))
+    )
+    bus.emit(event_catalog.ComponentStarted(component=comp))
+    bus.emit(event_catalog.PhaseStarted(component=comp, phase="understand", attempt=1))
     log_path = paths.engineer_log(comp)
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with open(log_path, "a", encoding="utf-8") as log:
         log.write(f"[{comp}] reading the PRD\n")
         log.write(f"[{comp}] writing understand.md\n")
     bus.emit(
-        ev.PhaseCompleted(component=comp, phase="understand", passed=True, duration_seconds=20.0)
+        event_catalog.PhaseCompleted(
+            component=comp, phase="understand", passed=True, duration_seconds=20.0
+        )
     )
     bus.emit(
-        ev.ArtifactWritten(
+        event_catalog.ArtifactWritten(
             component=comp,
             label="understand_file",
             path=f"scripts/kstrl/feature/{comp}/understand.md",
         )
     )
     bus.emit(
-        ev.CheckpointRequested(
+        event_catalog.CheckpointRequested(
             component=comp,
             kind="feature_gate",
             question="Review the understand file and confirm implementation start:",
         )
     )
     bus.emit(
-        ev.CheckpointResolved(
+        event_catalog.CheckpointResolved(
             component=comp,
             kind="feature_gate",
             decision="start_implementation",
             decided_by="operator",
         )
     )
-    bus.emit(ev.PhaseStarted(component=comp, phase="implement", attempt=1))
+    bus.emit(event_catalog.PhaseStarted(component=comp, phase="implement", attempt=1))
     bus.emit(
-        ev.PhaseCompleted(
+        event_catalog.PhaseCompleted(
             component=comp, phase="implement", passed=False, detail="exit 1", duration_seconds=60.0
         )
     )
     bus.emit(
-        ev.ArtifactWritten(
+        event_catalog.ArtifactWritten(
             component=comp,
             label="repair_prd",
             path=f"scripts/kstrl/feature/{comp}/repairs/latest.json",
         )
     )
-    bus.emit(ev.PhaseStarted(component=comp, phase="repair-1", attempt=1))
+    bus.emit(event_catalog.PhaseStarted(component=comp, phase="repair-1", attempt=1))
     if repaired:
         bus.emit(
-            ev.PhaseCompleted(component=comp, phase="repair-1", passed=True, duration_seconds=30.0)
+            event_catalog.PhaseCompleted(
+                component=comp, phase="repair-1", passed=True, duration_seconds=30.0
+            )
         )
-        bus.emit(ev.ComponentCompleted(component=comp, duration_seconds=110.0, iterations=3))
-        bus.emit(ev.RunCompleted(completed=1, failed=0, skipped=0, duration_seconds=110.0))
+        bus.emit(
+            event_catalog.ComponentCompleted(component=comp, duration_seconds=110.0, iterations=3)
+        )
+        bus.emit(
+            event_catalog.RunCompleted(completed=1, failed=0, skipped=0, duration_seconds=110.0)
+        )
     bus.close()
     return paths.root
 
@@ -371,21 +390,23 @@ def write_fake_decompose_run(
         run_id=run_id,
         component=architect_key,
     )
-    bus.emit(ev.RunStarted(project="fake-project", components=0))
+    bus.emit(event_catalog.RunStarted(project="fake-project", components=0))
     bus.emit(
-        ev.RunPlan(
+        event_catalog.RunPlan(
             components=({"id": architect_key, "title": "Architect / PRD red-team", "deps": []},)
         )
     )
-    bus.emit(ev.ComponentStarted(component=architect_key))
+    bus.emit(event_catalog.ComponentStarted(component=architect_key))
     log_path = paths.engineer_log(architect_key)
     log_path.parent.mkdir(parents=True, exist_ok=True)
     for attempt in range(1, attempts + 1):
-        bus.emit(ev.PhaseStarted(component=architect_key, phase="decompose", attempt=attempt))
+        bus.emit(
+            event_catalog.PhaseStarted(component=architect_key, phase="decompose", attempt=attempt)
+        )
         with open(log_path, "a", encoding="utf-8") as log:
             log.write(f'{{"components": [... attempt {attempt} ...]}}\n')
         bus.emit(
-            ev.PhaseCompleted(
+            event_catalog.PhaseCompleted(
                 component=architect_key,
                 phase="decompose",
                 passed=attempt == attempts,
@@ -393,10 +414,10 @@ def write_fake_decompose_run(
                 detail="" if attempt == attempts else "JSON extraction failed",
             )
         )
-    bus.emit(ev.PhaseStarted(component=architect_key, phase="audit", attempt=1))
+    bus.emit(event_catalog.PhaseStarted(component=architect_key, phase="audit", attempt=1))
     for n in range(blockers):
         bus.emit(
-            ev.SpecIssueRecorded(
+            event_catalog.SpecIssueRecorded(
                 severity="blocker",
                 kind="ambiguity",
                 summary=f"Blocking ambiguity {n + 1}",
@@ -406,15 +427,17 @@ def write_fake_decompose_run(
         )
     for n in range(minors):
         bus.emit(
-            ev.SpecIssueRecorded(
+            event_catalog.SpecIssueRecorded(
                 severity="minor",
                 kind="missing_detail",
                 summary=f"Minor gap {n + 1}",
             )
         )
-    bus.emit(ev.ArtifactWritten(label="spec_issues", path="scripts/kstrl/spec-issues.json"))
     bus.emit(
-        ev.PhaseCompleted(
+        event_catalog.ArtifactWritten(label="spec_issues", path="scripts/kstrl/spec-issues.json")
+    )
+    bus.emit(
+        event_catalog.PhaseCompleted(
             component=architect_key,
             phase="audit",
             passed=blockers == 0,
@@ -424,16 +447,18 @@ def write_fake_decompose_run(
     )
     if blockers:
         bus.emit(
-            ev.ComponentFailed(
+            event_catalog.ComponentFailed(
                 component=architect_key,
                 error=f"spec halted: {blockers} blocker-severity issue(s)",
             )
         )
-        bus.emit(ev.RunCompleted(completed=0, failed=1, skipped=0, duration_seconds=31.0))
+        bus.emit(
+            event_catalog.RunCompleted(completed=0, failed=1, skipped=0, duration_seconds=31.0)
+        )
         bus.close()
         return paths.root
     bus.emit(
-        ev.RunPlan(
+        event_catalog.RunPlan(
             components=(
                 {"id": architect_key, "title": "Architect / PRD red-team", "deps": []},
                 *(
@@ -445,16 +470,18 @@ def write_fake_decompose_run(
     )
     for cid in components:
         bus.emit(
-            ev.ArtifactWritten(
+            event_catalog.ArtifactWritten(
                 component=cid,
                 label="prd",
                 path=f"scripts/kstrl/feature/{cid}/prd.json",
             )
         )
-    bus.emit(ev.ArtifactWritten(label="manifest", path="scripts/kstrl/manifest.json"))
+    bus.emit(event_catalog.ArtifactWritten(label="manifest", path="scripts/kstrl/manifest.json"))
     bus.emit(
-        ev.ComponentCompleted(component=architect_key, duration_seconds=35.0, iterations=attempts)
+        event_catalog.ComponentCompleted(
+            component=architect_key, duration_seconds=35.0, iterations=attempts
+        )
     )
-    bus.emit(ev.RunCompleted(completed=1, failed=0, skipped=0, duration_seconds=35.0))
+    bus.emit(event_catalog.RunCompleted(completed=1, failed=0, skipped=0, duration_seconds=35.0))
     bus.close()
     return paths.root

@@ -27,7 +27,7 @@ from textual.binding import Binding
 from textual.screen import Screen
 from textual.widgets import DataTable
 
-from kstrl.events import Event
+from kstrl.event_catalog import Event
 from kstrl.interaction import (
     PromptKind,
     PromptRequest,

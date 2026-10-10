@@ -32,6 +32,7 @@ from unittest.mock import patch
 
 import pytest
 
+from kstrl import event_catalog
 from kstrl import events as ev
 from kstrl.config import KstrlConfig
 from kstrl.factory import ComponentResult, FactoryConfig, run_factory
@@ -146,7 +147,7 @@ def _run(
     return out.getvalue()
 
 
-def _events(root: Path) -> list[ev.Event]:
+def _events(root: Path) -> list[event_catalog.Event]:
     run_dir = sorted((root / ".kstrl" / "runs").iterdir())[-1]
     return list(ev.read_events(run_dir / "events.jsonl"))
 
@@ -156,30 +157,35 @@ def _jsonl(path: Path) -> list[dict[str, Any]]:
     return [json.loads(line) for line in lines if line.strip()]
 
 
-def _review_event(events: list[ev.Event], *, security: bool) -> ev.ReviewResultEvent:
+def _review_event(
+    events: list[event_catalog.Event], *, security: bool
+) -> event_catalog.ReviewResultEvent:
     found = [
         e
         for e in events
-        if isinstance(e, ev.ReviewResultEvent) and e.mode.startswith("security") is security
+        if isinstance(e, event_catalog.ReviewResultEvent)
+        and e.mode.startswith("security") is security
     ]
     assert len(found) == 1, found
     return found[0]
 
 
-def _reviewer_rows(events: list[ev.Event], phase: str) -> list[ev.FindingRecorded]:
+def _reviewer_rows(
+    events: list[event_catalog.Event], phase: str
+) -> list[event_catalog.FindingRecorded]:
     """The rows the reviewer's own findings produced. A claim disagreement
     is also recorded under phase ``review``, but it is the pipeline's
     comparison of the reviewer against the PRD, not a reviewer finding."""
     return [
         e
         for e in events
-        if isinstance(e, ev.FindingRecorded)
+        if isinstance(e, event_catalog.FindingRecorded)
         and e.phase == phase
         and e.category != CLAIM_DISAGREEMENT_CATEGORY
     ]
 
 
-def _counts(rows: list[ev.FindingRecorded]) -> tuple[int, int]:
+def _counts(rows: list[event_catalog.FindingRecorded]) -> tuple[int, int]:
     return (
         sum(1 for r in rows if r.severity == "fail"),
         sum(1 for r in rows if r.severity == "advisory"),
@@ -204,7 +210,7 @@ class TestComponentDuration:
         output = _run(root, review=_passing_review())
         events = _events(root)
 
-        completed = [e for e in events if isinstance(e, ev.ComponentCompleted)]
+        completed = [e for e in events if isinstance(e, event_catalog.ComponentCompleted)]
         assert len(completed) == 1
         manifest = Manifest.load(root / "scripts" / "kstrl" / "manifest.json")
         comp = manifest.get_component(COMP)
@@ -230,7 +236,11 @@ class TestComponentDuration:
 
         # The engineer loop's own duration is still recorded, once, on
         # the engineer phase's bracket closer.
-        engineer = [e for e in events if isinstance(e, ev.PhaseCompleted) and e.phase == "engineer"]
+        engineer = [
+            e
+            for e in events
+            if isinstance(e, event_catalog.PhaseCompleted) and e.phase == "engineer"
+        ]
         assert [e.duration_seconds for e in engineer] == [ENGINEER_SECONDS]
         assert attempt != ENGINEER_SECONDS
 
@@ -307,7 +317,8 @@ class TestMergeGateEvidence:
         claims = [
             e
             for e in events
-            if isinstance(e, ev.FindingRecorded) and e.category == CLAIM_DISAGREEMENT_CATEGORY
+            if isinstance(e, event_catalog.FindingRecorded)
+            and e.category == CLAIM_DISAGREEMENT_CATEGORY
         ]
         assert len(claims) == 1
         gates = [

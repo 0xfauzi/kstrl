@@ -26,6 +26,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner, Result
 
+from kstrl import event_catalog
 from kstrl import events as ev
 from kstrl.cli import cli
 from kstrl.inbox import Inbox, InboxItem, ItemKind, ItemStatus
@@ -129,7 +130,7 @@ def _foreign_factory_template(tmp_path: Path) -> Path:
     template = tmp_path / "foreign-template"
     template.mkdir()
     bus = ev.EventBus(ev.JsonlSink(template / "events.jsonl"), run_id="foreign")
-    bus.emit(ev.RunStarted(project="other", components=1, pid=os.getpid()))
+    bus.emit(event_catalog.RunStarted(project="other", components=1, pid=os.getpid()))
     bus.close()
     return template
 

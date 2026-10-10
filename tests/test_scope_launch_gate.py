@@ -35,8 +35,8 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
+from kstrl import event_catalog, factory
 from kstrl import events as ev
-from kstrl import factory
 from kstrl.config import KstrlConfig
 from kstrl.factory import ComponentResult, FactoryConfig, FactoryResult, run_factory
 from kstrl.manifest import Component, ComponentStatus, Manifest
@@ -293,6 +293,6 @@ class TestTheGateRefusesBeforeSpending:
         starts = [
             event
             for event in events
-            if isinstance(event, ev.PhaseStarted) and event.phase == "engineer"
+            if isinstance(event, event_catalog.PhaseStarted) and event.phase == "engineer"
         ]
         assert [event.component for event in starts] == ["comp-b"]

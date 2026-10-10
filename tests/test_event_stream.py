@@ -20,8 +20,8 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
+from kstrl import event_catalog, reducer
 from kstrl import events as ev
-from kstrl import reducer
 from kstrl.agents.base import UsageRecord, UsageTotals
 from kstrl.config import KstrlConfig
 from kstrl.factory import ComponentResult, FactoryConfig, run_factory
@@ -315,7 +315,7 @@ class TestDualWrite:
         assert comp.journal_offset_end <= v1_size
 
 
-def _v2_names_for(events: list[ev.Event], comp: str) -> list[str]:
+def _v2_names_for(events: list[event_catalog.Event], comp: str) -> list[str]:
     out = []
     for e in events:
         if e.component != comp:
@@ -335,7 +335,7 @@ class TestSemanticEvents:
         assert names[0] == "factory_started"
         assert names[1] == "run_plan"
         plan = events[1]
-        assert isinstance(plan, ev.RunPlan)
+        assert isinstance(plan, event_catalog.RunPlan)
         assert [c["id"] for c in plan.components] == ["comp-a", "comp-b"]
 
     def test_phase_bracket_ordering_success(self, tmp_path: Path) -> None:
@@ -363,7 +363,9 @@ class TestSemanticEvents:
         names = _v2_names_for(events, "comp-a")
         assert "phase_completed:engineer" in names
         engineer_done = [
-            e for e in events if isinstance(e, ev.PhaseCompleted) and e.phase == "engineer"
+            e
+            for e in events
+            if isinstance(e, event_catalog.PhaseCompleted) and e.phase == "engineer"
         ]
         assert engineer_done[0].passed is False
         assert "stub failure" in engineer_done[0].detail
@@ -431,11 +433,13 @@ class TestSemanticEvents:
                 root,
             )
         events = ev.read_events(_events_file(root))
-        requested = [e for e in events if isinstance(e, ev.CheckpointRequested)]
+        requested = [e for e in events if isinstance(e, event_catalog.CheckpointRequested)]
         # The confirmed [stack] resolves its own "stack" checkpoint first
         # (#696); this test is about the merge checkpoint.
         resolved = [
-            e for e in events if isinstance(e, ev.CheckpointResolved) and e.kind == "pr_merge"
+            e
+            for e in events
+            if isinstance(e, event_catalog.CheckpointResolved) and e.kind == "pr_merge"
         ]
         assert len(requested) == 1
         assert requested[0].kind == "pr_merge"
@@ -655,8 +659,8 @@ class TestWorkerChannel:
         assert result.success is False
         assert result.error == "agent crashed"
         events = ev.read_events(events_dir / "components" / "comp-a" / "engineer.jsonl")
-        starts = [e for e in events if isinstance(e, ev.IterationStarted)]
-        completed = [e for e in events if isinstance(e, ev.IterationCompleted)]
+        starts = [e for e in events if isinstance(e, event_catalog.IterationStarted)]
+        completed = [e for e in events if isinstance(e, event_catalog.IterationCompleted)]
         assert len(starts) == len(completed) == 1
         assert completed[0].completed is False
 
@@ -665,7 +669,7 @@ class TestWorkerChannel:
 
         from kstrl.factory import _start_heartbeat
 
-        captured: list[ev.Event] = []
+        captured: list[event_catalog.Event] = []
         bus = ev.EventBus(
             ev.CallbackSink(captured.append),
             run_id="run-h",
@@ -675,13 +679,14 @@ class TestWorkerChannel:
         stop = _start_heartbeat(bus, interval=0.01)
         _time.sleep(0.08)
         stop()
-        beats = [e for e in captured if isinstance(e, ev.WorkerHeartbeat)]
+        beats = [e for e in captured if isinstance(e, event_catalog.WorkerHeartbeat)]
         assert beats, "no heartbeat emitted"
         assert beats[0].pid > 0
         count_after_stop = len(beats)
         _time.sleep(0.05)
         assert (
-            len([e for e in captured if isinstance(e, ev.WorkerHeartbeat)]) == count_after_stop
+            len([e for e in captured if isinstance(e, event_catalog.WorkerHeartbeat)])
+            == count_after_stop
         )  # stopped means stopped
 
     def test_inline_factory_tees_live_lines_and_persists_files(
@@ -718,7 +723,9 @@ class TestWorkerChannel:
         assert (comp_dir / "engineer.log").exists()
         assert marker in (comp_dir / "engineer.log").read_text()
         worker_events = ev.read_events(comp_dir / "engineer.jsonl")
-        assert any(isinstance(e, ev.IterationCompleted) and e.completed for e in worker_events)
+        assert any(
+            isinstance(e, event_catalog.IterationCompleted) and e.completed for e in worker_events
+        )
 
         # The reducer merges worker files into the run view.
         state, _ = reducer.load_run_state(root)

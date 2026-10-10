@@ -27,7 +27,7 @@ from pathlib import Path
 
 from rich.text import Text
 
-from kstrl import events as ev
+from kstrl import event_catalog
 from kstrl.manifest import Component, ComponentStatus
 from kstrl.reducer import fold, load_run_state
 from kstrl.tui.app import KstrlTuiApp, Mode
@@ -186,7 +186,7 @@ class TestRunStartStatusFold:
     @staticmethod
     def _status(recorded: str) -> str:
         state = fold(
-            [ev.ComponentScopeResolved(component="c", manifest_status=recorded)],
+            [event_catalog.ComponentScopeResolved(component="c", manifest_status=recorded)],
         )
         return state.components["c"].status
 
@@ -215,8 +215,10 @@ class TestRunStartStatusFold:
     def test_later_events_in_the_run_win(self) -> None:
         state = fold(
             [
-                ev.ComponentScopeResolved(component="c", manifest_status="merge_pending"),
-                ev.ComponentCompleted(component="c", iterations=1),
+                event_catalog.ComponentScopeResolved(
+                    component="c", manifest_status="merge_pending"
+                ),
+                event_catalog.ComponentCompleted(component="c", iterations=1),
             ],
         )
         assert state.components["c"].status == "completed"
@@ -254,9 +256,11 @@ class TestARunThatFinishesACarriedComponent:
     def test_a_merge_the_run_confirms_counts_as_done(self, tmp_path: Path) -> None:
         state = fold(
             [
-                ev.ComponentScopeResolved(component="c", manifest_status="merge_pending"),
-                ev.ComponentCompleted(component="c", iterations=1),
-                ev.RunCompleted(),
+                event_catalog.ComponentScopeResolved(
+                    component="c", manifest_status="merge_pending"
+                ),
+                event_catalog.ComponentCompleted(component="c", iterations=1),
+                event_catalog.RunCompleted(),
             ],
             run_id="run-c",
         )

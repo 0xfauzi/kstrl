@@ -36,6 +36,7 @@ import pytest
 
 import kstrl.factory as factory_mod
 import kstrl.tui.embed as embed_mod
+from kstrl import event_catalog
 from kstrl import events as ev
 from kstrl.config import KstrlConfig
 from kstrl.contract import ContractConfig
@@ -70,8 +71,8 @@ from tests.test_retry_lock_discipline import _LOCK_PROBING_ENGINEER
 def _write_minimal_run(root: Path, run_id: str) -> Path:
     paths = ev.RunPaths.for_run(root, run_id)
     bus = ev.EventBus(ev.JsonlSink(paths.events_file), run_id=run_id)
-    bus.emit(ev.RunStarted(project="embed-test", components=1))
-    bus.emit(ev.ComponentStarted(component="comp-a"))
+    bus.emit(event_catalog.RunStarted(project="embed-test", components=1))
+    bus.emit(event_catalog.ComponentStarted(component="comp-a"))
     bus.close()
     return paths.root
 

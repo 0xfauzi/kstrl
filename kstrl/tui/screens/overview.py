@@ -39,7 +39,7 @@ from kstrl.tui.widgets.header import RunHeader, meter_width, topbar_header
 from kstrl.tui.widgets.safe_mode_chip import SafeModeBanner
 
 if TYPE_CHECKING:
-    from kstrl import events as ev
+    from kstrl import event_catalog as ev
     from kstrl.ci_state import CiLedger
     from kstrl.reducer import RunState
     from kstrl.safemode import SafeModeReason

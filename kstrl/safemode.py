@@ -195,6 +195,7 @@ def _report_for_run(run_dir: Path) -> tuple[list[SafeModeReason], bool]:
     right for the caller's look-back, since a run we could not read has
     not answered the question either.
     """
+    from kstrl import event_catalog
     from kstrl import events as ev
 
     events_path = run_dir / "events.jsonl"
@@ -234,9 +235,9 @@ def _report_for_run(run_dir: Path) -> tuple[list[SafeModeReason], bool]:
             if line.strip() and index < len(lines) - 1:
                 torn += 1
             continue
-        if isinstance(event, ev.RunCompleted):
+        if isinstance(event, event_catalog.RunCompleted):
             finished = True
-        elif isinstance(event, ev.PhaseSkipped) and event.phase in skipped:
+        elif isinstance(event, event_catalog.PhaseSkipped) and event.phase in skipped:
             skipped[event.phase].add(event.component)
 
     reasons = [

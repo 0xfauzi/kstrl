@@ -25,7 +25,7 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl import events as ev
+from kstrl import event_catalog
 from kstrl.acceptance import pinned_digest
 from kstrl.decompose import load_spec_input, spec_digest
 from kstrl.inbox import UNDECIDED, Inbox, InboxError, InboxItem, ItemKind, ItemStatus
@@ -233,7 +233,7 @@ def run_plan_gate(pipeline: ComponentPipeline, bundle: FlagBundle | None) -> int
         _settle(pipeline, "", "rejected", "inbox")
         return 2
     question = _question(pipeline.manifest)
-    pipeline.bus.emit(ev.CheckpointRequested(kind=PLAN_KIND, question=question))
+    pipeline.bus.emit(event_catalog.CheckpointRequested(kind=PLAN_KIND, question=question))
     if pipeline.interaction.can_prompt():
         response = pipeline.interaction.request(
             PromptRequest(
@@ -334,7 +334,7 @@ def _settle(pipeline: ComponentPipeline, awaiting: str, decision: str, decided_b
         manifest.completed_at = _iso_now()
     manifest.save(pipeline.manifest_path)
     pipeline.bus.emit(
-        ev.CheckpointResolved(kind=PLAN_KIND, decision=decision, decided_by=decided_by)
+        event_catalog.CheckpointResolved(kind=PLAN_KIND, decision=decision, decided_by=decided_by)
     )
     if decision == "approved":
         pipeline.ui.ok(f"  Plan approved ({decided_by})")

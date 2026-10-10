@@ -40,7 +40,8 @@ from unittest.mock import patch
 import pytest
 
 from kstrl.config import KstrlConfig
-from kstrl.events import CallbackSink, ComponentScopeResolved, Event, EventBus
+from kstrl.event_catalog import ComponentScopeResolved, Event
+from kstrl.events import CallbackSink, EventBus
 from kstrl.factory import FactoryConfig, _record_run_scope, run_factory
 from kstrl.loop import LoopResult
 from kstrl.manifest import Component, Manifest

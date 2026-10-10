@@ -19,6 +19,7 @@ import pytest
 from rich.console import Console
 from textual.widgets import DataTable, Static
 
+from kstrl import event_catalog
 from kstrl import events as ev
 from kstrl.agents.base import UsageTotals
 from kstrl.config_report import build_config_report
@@ -80,15 +81,15 @@ def _failed_run(root: Path, cid: str = "comp-a") -> Path:
     manifest that still records the component FAILED and names the run."""
     paths = ev.RunPaths.for_run(root, RUN_ID)
     bus = ev.EventBus(ev.JsonlSink(paths.events_file), run_id=RUN_ID)
-    bus.emit(ev.RunStarted(project="demo", components=1))
-    bus.emit(ev.RunPlan(components=({"id": cid, "title": "A", "deps": []},)))
-    bus.emit(ev.ComponentStarted(component=cid))
-    bus.emit(ev.PhaseStarted(component=cid, phase="verify", attempt=1))
+    bus.emit(event_catalog.RunStarted(project="demo", components=1))
+    bus.emit(event_catalog.RunPlan(components=({"id": cid, "title": "A", "deps": []},)))
+    bus.emit(event_catalog.ComponentStarted(component=cid))
+    bus.emit(event_catalog.PhaseStarted(component=cid, phase="verify", attempt=1))
     log = root / ".kstrl" / "debug" / RUN_ID / cid / "attempt-1" / "test_suite.log"
     log.parent.mkdir(parents=True)
     log.write_text(GATE_OUTPUT, encoding="utf-8")
     bus.emit(
-        ev.VerificationResultEvent(
+        event_catalog.VerificationResultEvent(
             component=cid,
             passed=False,
             checks=("test_suite",),
@@ -98,12 +99,12 @@ def _failed_run(root: Path, cid: str = "comp-a") -> Path:
         )
     )
     bus.emit(
-        ev.PhaseCompleted(
+        event_catalog.PhaseCompleted(
             component=cid, phase="verify", passed=False, detail="Mechanical verification failed"
         )
     )
-    bus.emit(ev.ComponentFailed(component=cid, error="Mechanical verification failed"))
-    bus.emit(ev.RunCompleted(completed=0, failed=1, skipped=0, duration_seconds=1.0))
+    bus.emit(event_catalog.ComponentFailed(component=cid, error="Mechanical verification failed"))
+    bus.emit(event_catalog.RunCompleted(completed=0, failed=1, skipped=0, duration_seconds=1.0))
     bus.close()
     manifest_file = root / "scripts" / "kstrl" / "manifest.json"
     manifest_file.parent.mkdir(parents=True)

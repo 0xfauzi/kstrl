@@ -357,7 +357,7 @@ RECORDER = "pipeline.py::ComponentPipeline._record_merge"
 #: that moved, may be a new place a merge is recorded: route it through
 #: ``_record_merge`` or classify it in NOT_A_MERGE_RECORD.
 EXPECTED_SHA_SPELLINGS: dict[str, int] = {
-    "events.py::<module>": 1,
+    "event_catalog.py::<module>": 1,
     "manifest.py::<module>": 1,
     "manifest.py::Manifest.load": 2,
     "manifest.py::Manifest.save": 1,
@@ -376,7 +376,7 @@ EXPECTED_SHA_SPELLINGS: dict[str, int] = {
 
 #: Every other row, and why it is not kstrl recording a merge.
 NOT_A_MERGE_RECORD: dict[str, str] = {
-    "events.py::<module>": "the PrMerged.merge_sha field declaration",
+    "event_catalog.py::<module>": "the PrMerged.merge_sha field declaration",
     "manifest.py::<module>": "the Component.merge_sha field declaration",
     "manifest.py::Manifest.load": "reads back the mergeSha the recorder saved",
     "manifest.py::Manifest.save": "serialises Component.merge_sha as mergeSha",
@@ -396,7 +396,7 @@ NOT_A_MERGE_RECORD: dict[str, str] = {
 EXPECTED_PR_MERGED_SPELLINGS: dict[str, int] = {
     "ci_state.py::<module>": 1,
     "ci_state.py::_merges_in_run": 1,
-    "events.py::<module>": 1,
+    "event_catalog.py::<module>": 1,
     RECORDER: 1,
     "reducer.py::apply": 1,
     "tui/widgets/activity.py::humanize": 1,
@@ -406,7 +406,7 @@ EXPECTED_PR_MERGED_SPELLINGS: dict[str, int] = {
 NOT_A_PR_MERGED_BUILD: dict[str, str] = {
     "ci_state.py::<module>": "imports the class to select on it",
     "ci_state.py::_merges_in_run": "selects pr_merged rows with isinstance",
-    "events.py::<module>": "the class declaration",
+    "event_catalog.py::<module>": "the class declaration",
     "reducer.py::apply": "folds the event with isinstance",
     "tui/widgets/activity.py::humanize": "describes the event with isinstance",
 }

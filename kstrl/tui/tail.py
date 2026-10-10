@@ -20,7 +20,8 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from kstrl.events import Event, event_from_dict
+from kstrl.event_catalog import Event
+from kstrl.events import event_from_dict
 from kstrl.jsonread import read_json
 
 

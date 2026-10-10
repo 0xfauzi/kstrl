@@ -27,7 +27,7 @@ import time
 from rich.table import Table
 from rich.text import Text
 
-from kstrl import events as ev
+from kstrl import event_catalog as ev
 from kstrl.tui import theme
 from kstrl.tui.widgets.reflow_log import ReflowLog
 

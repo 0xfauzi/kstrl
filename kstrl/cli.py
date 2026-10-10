@@ -70,7 +70,7 @@ from kstrl.config_report import UI_MODES, build_config_report
 from kstrl.config_report import normalize_ui_mode as _normalize_ui_mode
 from kstrl.contract import ContractMode
 from kstrl.decompose import SpecBlockerError, decompose_spec
-from kstrl.events import (
+from kstrl.event_catalog import (
     ArtifactWritten,
     ComponentCompleted,
     ComponentFailed,

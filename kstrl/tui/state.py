@@ -16,7 +16,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from kstrl.agents.base import ARCHITECT_COMPONENT, ARCHITECT_ROLE
-from kstrl.events import Event
+from kstrl.event_catalog import Event
 from kstrl.manifest import Manifest
 from kstrl.reducer import RunState, apply
 

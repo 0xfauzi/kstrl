@@ -21,8 +21,8 @@ from typing import Any
 
 import pytest
 
+from kstrl import event_catalog, reducer
 from kstrl import events as ev
-from kstrl import reducer
 from kstrl.observability import ProgressLog, read_progress_events, summarize_events
 
 
@@ -78,16 +78,16 @@ class TestLoadRunState:
     def _write_v2(self, root: Path, run_id: str, project: str) -> None:
         paths = ev.RunPaths.for_run(root, run_id)
         bus = ev.EventBus(ev.JsonlSink(paths.events_file), run_id=run_id)
-        bus.emit(ev.RunStarted(project=project, components=1))
-        bus.emit(ev.ComponentStarted(component="a"))
+        bus.emit(event_catalog.RunStarted(project=project, components=1))
+        bus.emit(event_catalog.ComponentStarted(component="a"))
         worker = ev.EventBus(
             ev.JsonlSink(paths.engineer_events("a")),
             run_id=run_id,
             source="worker",
             component="a",
         )
-        worker.emit(ev.IterationStarted(iteration=1, max_iterations=5))
-        bus.emit(ev.RunCompleted(completed=1, failed=0, skipped=0))
+        worker.emit(event_catalog.IterationStarted(iteration=1, max_iterations=5))
+        bus.emit(event_catalog.RunCompleted(completed=1, failed=0, skipped=0))
         bus.close()
         worker.close()
 

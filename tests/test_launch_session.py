@@ -48,6 +48,7 @@ class FakeSession:
         exit_code: int = 0,
         run_id: str = "factory-20260720-170000.000000-fake",
     ) -> None:
+        from kstrl import event_catalog
         from kstrl import events as ev
 
         self.kind = "factory"
@@ -58,8 +59,8 @@ class FakeSession:
 
         def _target() -> int:
             bus = ev.EventBus(ev.JsonlSink(paths.events_file), run_id=run_id)
-            bus.emit(ev.RunStarted(project="fake", components=1))
-            bus.emit(ev.ComponentStarted(component="comp-a"))
+            bus.emit(event_catalog.RunStarted(project="fake", components=1))
+            bus.emit(event_catalog.ComponentStarted(component="comp-a"))
             if ask:
                 deadline = time.monotonic() + 5
                 while not self.channel.can_prompt() and time.monotonic() < deadline:
@@ -72,7 +73,7 @@ class FakeSession:
                         default=0,
                     )
                 )
-            bus.emit(ev.RunCompleted(completed=1))
+            bus.emit(event_catalog.RunCompleted(completed=1))
             bus.close()
             return exit_code
 

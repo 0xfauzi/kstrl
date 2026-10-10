@@ -21,28 +21,29 @@ import random
 from pathlib import Path
 from typing import Any
 
+from kstrl import event_catalog
 from kstrl import events as ev
 from kstrl.observability import ProgressLog, read_progress_events
 
 
-def _sample_events() -> list[ev.Event]:
+def _sample_events() -> list[event_catalog.Event]:
     """One instance of every registered concrete type, non-default payloads."""
     return [
-        ev.RunStarted(project="proj", components=3),
-        ev.ComponentStarted(component="comp-a"),
-        ev.ComponentCompleted(component="comp-a", duration_seconds=12.34, iterations=4),
-        ev.ComponentFailed(component="comp-b", error="boom"),
-        ev.ComponentSkipped(component="comp-c", reason="operator stopped"),
-        ev.CircuitBreakerTripped(component="comp-b", iterations=5, error="no progress"),
-        ev.ComponentRetrying(component="comp-b", attempt=2, reason="verify failed"),
-        ev.VerificationResultEvent(
+        event_catalog.RunStarted(project="proj", components=3),
+        event_catalog.ComponentStarted(component="comp-a"),
+        event_catalog.ComponentCompleted(component="comp-a", duration_seconds=12.34, iterations=4),
+        event_catalog.ComponentFailed(component="comp-b", error="boom"),
+        event_catalog.ComponentSkipped(component="comp-c", reason="operator stopped"),
+        event_catalog.CircuitBreakerTripped(component="comp-b", iterations=5, error="no progress"),
+        event_catalog.ComponentRetrying(component="comp-b", attempt=2, reason="verify failed"),
+        event_catalog.VerificationResultEvent(
             component="comp-a",
             passed=True,
             checks=("tests", "lint"),
             failures=(),
             duration_seconds=3.5,
         ),
-        ev.ReviewResultEvent(
+        event_catalog.ReviewResultEvent(
             component="comp-a",
             passed=False,
             mode="hard",
@@ -50,7 +51,7 @@ def _sample_events() -> list[ev.Event]:
             advisory_count=1,
             duration_seconds=60.0,
         ),
-        ev.ComponentUsage(
+        event_catalog.ComponentUsage(
             component="comp-a",
             phase="engineer",
             calls=3,
@@ -64,13 +65,13 @@ def _sample_events() -> list[ev.Event]:
             cost_usd=0.123456,
             duration_seconds=42.0,
         ),
-        ev.BudgetExceeded(
+        event_catalog.BudgetExceeded(
             component="comp-a",
             total_tokens=100,
             max_total_tokens=50,
             coverage=({"ceiling": "max_cost_usd", "covered_calls": 8},),
         ),
-        ev.BudgetCoverage(
+        event_catalog.BudgetCoverage(
             ceiling="max_cost_usd",
             axis="cost",
             calls=13,
@@ -80,8 +81,8 @@ def _sample_events() -> list[ev.Event]:
             uncovered_roles=("review",),
             detail="cost coverage is PARTIAL",
         ),
-        ev.ContractResult(tier=1, passed=False, breaker="comp-a", duration_seconds=9.9),
-        ev.RunCompleted(
+        event_catalog.ContractResult(tier=1, passed=False, breaker="comp-a", duration_seconds=9.9),
+        event_catalog.RunCompleted(
             completed=2,
             failed=1,
             skipped=0,
@@ -90,10 +91,12 @@ def _sample_events() -> list[ev.Event]:
             release_ref_rule="last_merge_by_completed_at",
             release_withheld="no_driver",
         ),
-        ev.MergePendingV1(component="comp-a", pr_url="http://pr/1", error="not confirmed"),
-        ev.PhaseSkipped(component="comp-a", phase="security", reason="budget"),
-        ev.DiffFetchFailed(component="comp-a", error="git failed"),
-        ev.ReviewDivergence(
+        event_catalog.MergePendingV1(
+            component="comp-a", pr_url="http://pr/1", error="not confirmed"
+        ),
+        event_catalog.PhaseSkipped(component="comp-a", phase="security", reason="budget"),
+        event_catalog.DiffFetchFailed(component="comp-a", error="git failed"),
+        event_catalog.ReviewDivergence(
             component="comp-a",
             attempts=(1, 2, 3),
             lines_changed=(612, 1408, 2907),
@@ -101,7 +104,7 @@ def _sample_events() -> list[ev.Event]:
             blocking_findings=(6, 1, 10),
             blocked=True,
         ),
-        ev.AdversarialAgentSelected(
+        event_catalog.AdversarialAgentSelected(
             phase="review",
             agent_source="config",
             identity="codex (gpt-5)",
@@ -109,12 +112,12 @@ def _sample_events() -> list[ev.Event]:
             model="gpt-5",
             homogeneous=True,
         ),
-        ev.RunPlan(
+        event_catalog.RunPlan(
             components=({"id": "comp-a", "title": "A", "deps": []},),
             max_total_tokens=1000,
             max_adversarial_calls=10,
         ),
-        ev.ComponentScopeResolved(
+        event_catalog.ComponentScopeResolved(
             component="comp-a",
             scope_source="component_prd",
             origin="scripts/kstrl/feature/comp-a/prd.json",
@@ -122,26 +125,30 @@ def _sample_events() -> list[ev.Event]:
             harness_paths=("scripts/kstrl/codebase_map.md",),
             manifest_status="completed",
         ),
-        ev.PhaseStarted(component="comp-a", phase="review", attempt=1),
-        ev.PhaseCompleted(
+        event_catalog.PhaseStarted(component="comp-a", phase="review", attempt=1),
+        event_catalog.PhaseCompleted(
             component="comp-a", phase="review", passed=True, detail="", duration_seconds=30.0
         ),
-        ev.IterationStarted(component="comp-a", iteration=1, max_iterations=10),
-        ev.IterationCompleted(
+        event_catalog.IterationStarted(component="comp-a", iteration=1, max_iterations=10),
+        event_catalog.IterationCompleted(
             component="comp-a", iteration=1, duration_seconds=20.0, completed=False, timed_out=False
         ),
-        ev.WorkerHeartbeat(component="comp-a", pid=123, elapsed_seconds=45.0),
-        ev.CheckpointRequested(component="comp-a", kind="checkpoint", question="Approve?"),
-        ev.CheckpointResolved(
+        event_catalog.WorkerHeartbeat(component="comp-a", pid=123, elapsed_seconds=45.0),
+        event_catalog.CheckpointRequested(
+            component="comp-a", kind="checkpoint", question="Approve?"
+        ),
+        event_catalog.CheckpointResolved(
             component="comp-a", kind="checkpoint", decision="approved", decided_by="operator"
         ),
-        ev.PrCreated(component="comp-a", pr_number=7, pr_url="http://pr/7"),
-        ev.PrMerged(component="comp-a", pr_number=7, pr_url="http://pr/7", merge_sha="a" * 40),
-        ev.PrMergePending(component="comp-a", pr_url="http://pr/7", error="pending"),
-        ev.DistillResult(
+        event_catalog.PrCreated(component="comp-a", pr_number=7, pr_url="http://pr/7"),
+        event_catalog.PrMerged(
+            component="comp-a", pr_number=7, pr_url="http://pr/7", merge_sha="a" * 40
+        ),
+        event_catalog.PrMergePending(component="comp-a", pr_url="http://pr/7", error="pending"),
+        event_catalog.DistillResult(
             component="comp-a", facts_written=3, duration_seconds=12.0, parse_failed=True
         ),
-        ev.FactUtilizationMeasured(
+        event_catalog.FactUtilizationMeasured(
             component="comp-a",
             measured=True,
             injected=5,
@@ -154,7 +161,7 @@ def _sample_events() -> list[ev.Event]:
             sibling_injected=2,
             sibling_referenced=0,
         ),
-        ev.FindingRecorded(
+        event_catalog.FindingRecorded(
             component="comp-a",
             phase="review",
             category="test_quality",
@@ -163,18 +170,18 @@ def _sample_events() -> list[ev.Event]:
             explanation="weak assert",
             attempt=1,
         ),
-        ev.SpecIssueRecorded(
+        event_catalog.SpecIssueRecorded(
             severity="blocker",
             kind="ambiguity",
             summary="Spec contradicts itself",
             location="spec.md:12",
             suggestion="pick one",
         ),
-        ev.ArtifactWritten(
+        event_catalog.ArtifactWritten(
             component="comp-a", label="prd", path="scripts/kstrl/feature/comp-a/prd.json"
         ),
-        ev.Log(severity="warn", kind="kv", key="Root", text="/tmp/x"),
-        ev.AutonomyTransition(
+        event_catalog.Log(severity="warn", kind="kv", key="Root", text="/tmp/x"),
+        event_catalog.AutonomyTransition(
             direction="demote",
             from_level=3,
             to_level=2,
@@ -182,13 +189,13 @@ def _sample_events() -> list[ev.Event]:
             trigger="policy_violation",
             reason="envelope breach",
         ),
-        ev.AutonomyLevelApplied(
+        event_catalog.AutonomyLevelApplied(
             level=1,
             label="L1 Supervised",
             flags=("merge gate: ON (human approves)",),
             overrides=("[factory] pause_before_pr_merge=False contradicts L1",),
         ),
-        ev.JournalRepaired(detail="the preceding line was not newline-terminated"),
+        event_catalog.JournalRepaired(detail="the preceding line was not newline-terminated"),
     ]
 
 
@@ -198,7 +205,7 @@ class TestRoundTrip:
         the pool the seeded replay draws from; a new event added without
         a sample here fails loudly."""
         sampled = {type(e).type for e in _sample_events()}
-        registered = set(ev._REGISTRY) - {"unknown"}
+        registered = set(event_catalog._REGISTRY) - {"unknown"}
         assert sampled == registered
 
 
@@ -208,11 +215,11 @@ class TestReadEvents:
 
     def test_torn_tail_skipped(self, tmp_path: Path) -> None:
         p = tmp_path / "events.jsonl"
-        good = ev.Log(text="hello").to_json_line()
+        good = event_catalog.Log(text="hello").to_json_line()
         p.write_text(good + "\n" + good[: len(good) // 2])
         events = ev.read_events(p)
         assert len(events) == 1
-        assert isinstance(events[0], ev.Log)
+        assert isinstance(events[0], event_catalog.Log)
 
     def test_seeded_replay_through_jsonl_sink(self, tmp_path: Path) -> None:
         rng = random.Random(0)
@@ -232,10 +239,10 @@ class TestReadEvents:
 class TestEventBus:
     def test_add_sink_late(self, tmp_path: Path) -> None:
         bus = ev.EventBus()
-        bus.emit(ev.Log(text="before"))
+        bus.emit(event_catalog.Log(text="before"))
         sink = ev.JsonlSink(tmp_path / "late.jsonl")
         bus.add_sink(sink)
-        bus.emit(ev.Log(text="after"))
+        bus.emit(event_catalog.Log(text="after"))
         bus.close()
         back = ev.read_events(tmp_path / "late.jsonl")
         assert [e.to_dict()["data"]["text"] for e in back] == ["after"]
@@ -258,26 +265,34 @@ class TestV1CompatGoldenParity:
         bus = ev.EventBus(ev.V1CompatSink(compat), run_id="run-1")
 
         direct.factory_started("proj", 3)
-        bus.emit(ev.RunStarted(project="proj", components=3))
+        bus.emit(event_catalog.RunStarted(project="proj", components=3))
 
         direct.component_started("comp-a")
-        bus.emit(ev.ComponentStarted(component="comp-a"))
+        bus.emit(event_catalog.ComponentStarted(component="comp-a"))
 
         direct.component_completed("comp-a", 12.339, 4)
-        bus.emit(ev.ComponentCompleted(component="comp-a", duration_seconds=12.339, iterations=4))
+        bus.emit(
+            event_catalog.ComponentCompleted(
+                component="comp-a", duration_seconds=12.339, iterations=4
+            )
+        )
 
         direct.component_failed("comp-b", "boom")
-        bus.emit(ev.ComponentFailed(component="comp-b", error="boom"))
+        bus.emit(event_catalog.ComponentFailed(component="comp-b", error="boom"))
 
         direct.circuit_breaker_tripped("comp-b", 5, "stall")
-        bus.emit(ev.CircuitBreakerTripped(component="comp-b", iterations=5, error="stall"))
+        bus.emit(
+            event_catalog.CircuitBreakerTripped(component="comp-b", iterations=5, error="stall")
+        )
 
         direct.component_retrying("comp-b", 2, "verify failed")
-        bus.emit(ev.ComponentRetrying(component="comp-b", attempt=2, reason="verify failed"))
+        bus.emit(
+            event_catalog.ComponentRetrying(component="comp-b", attempt=2, reason="verify failed")
+        )
 
         direct.verification_result("comp-a", True, ["tests"], [], 3.456)
         bus.emit(
-            ev.VerificationResultEvent(
+            event_catalog.VerificationResultEvent(
                 component="comp-a",
                 passed=True,
                 checks=("tests",),
@@ -288,7 +303,7 @@ class TestV1CompatGoldenParity:
 
         direct.review_result("comp-a", False, "hard", 2, 1, 60.0)
         bus.emit(
-            ev.ReviewResultEvent(
+            event_catalog.ReviewResultEvent(
                 component="comp-a",
                 passed=False,
                 mode="hard",
@@ -319,10 +334,12 @@ class TestV1CompatGoldenParity:
             "duration_seconds": 42.0,
         }
         direct.component_usage("comp-a", "engineer", dict(usage))
-        bus.emit(ev.ComponentUsage(component="comp-a", phase="engineer", **usage))
+        bus.emit(event_catalog.ComponentUsage(component="comp-a", phase="engineer", **usage))
 
         direct.budget_exceeded("comp-a", 100, 50)
-        bus.emit(ev.BudgetExceeded(component="comp-a", total_tokens=100, max_total_tokens=50))
+        bus.emit(
+            event_catalog.BudgetExceeded(component="comp-a", total_tokens=100, max_total_tokens=50)
+        )
 
         coverage_kwargs: dict[str, Any] = {
             "ceiling": "max_cost_usd",
@@ -335,26 +352,36 @@ class TestV1CompatGoldenParity:
         }
         direct.budget_coverage(uncovered_roles=["review"], **coverage_kwargs)
         bus.emit(
-            ev.BudgetCoverage(
+            event_catalog.BudgetCoverage(
                 uncovered_roles=("review",),
                 **coverage_kwargs,
             )
         )
 
         direct.contract_result(1, False, "comp-a", 9.876)
-        bus.emit(ev.ContractResult(tier=1, passed=False, breaker="comp-a", duration_seconds=9.876))
+        bus.emit(
+            event_catalog.ContractResult(
+                tier=1, passed=False, breaker="comp-a", duration_seconds=9.876
+            )
+        )
 
         direct.factory_completed(2, 1, 0, 100.0)
-        bus.emit(ev.RunCompleted(completed=2, failed=1, skipped=0, duration_seconds=100.0))
+        bus.emit(
+            event_catalog.RunCompleted(completed=2, failed=1, skipped=0, duration_seconds=100.0)
+        )
 
         direct.emit("merge_pending", "comp-a", {"pr_url": "http://pr/1", "error": "not confirmed"})
-        bus.emit(ev.MergePendingV1(component="comp-a", pr_url="http://pr/1", error="not confirmed"))
+        bus.emit(
+            event_catalog.MergePendingV1(
+                component="comp-a", pr_url="http://pr/1", error="not confirmed"
+            )
+        )
 
         direct.emit("phase_skipped", "comp-a", {"phase": "security", "reason": "budget"})
-        bus.emit(ev.PhaseSkipped(component="comp-a", phase="security", reason="budget"))
+        bus.emit(event_catalog.PhaseSkipped(component="comp-a", phase="security", reason="budget"))
 
         direct.emit("diff_fetch_failed", "comp-a", {"error": "git failed"})
-        bus.emit(ev.DiffFetchFailed(component="comp-a", error="git failed"))
+        bus.emit(event_catalog.DiffFetchFailed(component="comp-a", error="git failed"))
 
         direct.emit(
             "adversarial_agent_selected",
@@ -368,7 +395,7 @@ class TestV1CompatGoldenParity:
             },
         )
         bus.emit(
-            ev.AdversarialAgentSelected(
+            event_catalog.AdversarialAgentSelected(
                 phase="review",
                 agent_source="config",
                 identity="codex (gpt-5)",
@@ -386,13 +413,13 @@ class TestV1CompatGoldenParity:
     def test_v2_only_events_are_dropped(self, tmp_path: Path) -> None:
         compat_path = tmp_path / "compat.jsonl"
         bus = ev.EventBus(ev.V1CompatSink(ProgressLog(compat_path, run_id="r")), run_id="r")
-        bus.emit(ev.RunPlan(components=({"id": "a", "title": "A", "deps": []},)))
-        bus.emit(ev.PhaseStarted(component="a", phase="verify", attempt=1))
-        bus.emit(ev.WorkerHeartbeat(component="a", pid=1, elapsed_seconds=1.0))
-        bus.emit(ev.Log(text="narration"))
-        bus.emit(ev.PrMerged(component="a", pr_number=1, pr_url="u"))
-        bus.emit(ev.SpecIssueRecorded(severity="blocker", summary="s"))
-        bus.emit(ev.ArtifactWritten(label="manifest", path="m.json"))
+        bus.emit(event_catalog.RunPlan(components=({"id": "a", "title": "A", "deps": []},)))
+        bus.emit(event_catalog.PhaseStarted(component="a", phase="verify", attempt=1))
+        bus.emit(event_catalog.WorkerHeartbeat(component="a", pid=1, elapsed_seconds=1.0))
+        bus.emit(event_catalog.Log(text="narration"))
+        bus.emit(event_catalog.PrMerged(component="a", pr_number=1, pr_url="u"))
+        bus.emit(event_catalog.SpecIssueRecorded(severity="blocker", summary="s"))
+        bus.emit(event_catalog.ArtifactWritten(label="manifest", path="m.json"))
         assert read_progress_events(compat_path) == []
 
     def test_progress_sinks_still_fed(self, tmp_path: Path) -> None:
@@ -407,8 +434,8 @@ class TestV1CompatGoldenParity:
         log = ProgressLog(tmp_path / "p.jsonl", run_id="r")
         log.attach_sink(Recorder())
         bus = ev.EventBus(ev.V1CompatSink(log), run_id="r")
-        bus.emit(ev.ComponentStarted(component="comp-a"))
-        bus.emit(ev.Log(text="dropped for v1"))
+        bus.emit(event_catalog.ComponentStarted(component="comp-a"))
+        bus.emit(event_catalog.Log(text="dropped for v1"))
         assert [e["event"] for e in seen] == ["component_started"]
 
 
@@ -425,10 +452,10 @@ class TestJsonlSink:
     def test_append_and_reopen(self, tmp_path: Path) -> None:
         p = tmp_path / "s.jsonl"
         sink = ev.JsonlSink(p)
-        sink.emit(ev.EventBus().emit(ev.Log(text="one")))
+        sink.emit(ev.EventBus().emit(event_catalog.Log(text="one")))
         sink.close()
         sink2 = ev.JsonlSink(p)
-        sink2.emit(ev.EventBus().emit(ev.Log(text="two")))
+        sink2.emit(ev.EventBus().emit(event_catalog.Log(text="two")))
         sink2.close()
         texts = [json.loads(line)["data"]["text"] for line in p.read_text().splitlines()]
         assert texts == ["one", "two"]
@@ -453,7 +480,7 @@ class TestBothSinksCarryTheSameBudgetHalt:
     @staticmethod
     def _emit_both(
         tmp_path: Path,
-        event: ev.BudgetExceeded,
+        event: event_catalog.BudgetExceeded,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         from kstrl.observability import ProgressLog
 
@@ -479,7 +506,7 @@ class TestBothSinksCarryTheSameBudgetHalt:
     ) -> None:
         durable, progress = self._emit_both(
             tmp_path,
-            ev.BudgetExceeded(
+            event_catalog.BudgetExceeded(
                 component="comp-a",
                 total_tokens=4017316,
                 max_total_tokens=0,
@@ -500,7 +527,7 @@ class TestBothSinksCarryTheSameBudgetHalt:
         the most, so it is the one most worth pinning."""
         durable, progress = self._emit_both(
             tmp_path,
-            ev.BudgetExceeded(
+            event_catalog.BudgetExceeded(
                 component="comp-a",
                 total_tokens=0,
                 max_total_tokens=500,
@@ -523,7 +550,7 @@ class TestBothSinksCarryTheSameBudgetHalt:
         halt record, on BOTH sinks. Payload is the measured run's."""
         durable, progress = self._emit_both(
             tmp_path,
-            ev.BudgetExceeded(
+            event_catalog.BudgetExceeded(
                 component="comp-a",
                 total_tokens=26522034,
                 max_total_tokens=0,
@@ -558,7 +585,7 @@ class TestBothSinksCarryTheSameBudgetHalt:
 
         from kstrl.observability import ProgressLog
 
-        event = ev.BudgetCoverage(
+        event = event_catalog.BudgetCoverage(
             ceiling="max_cost_usd",
             axis="cost",
             calls=13,
@@ -582,7 +609,7 @@ class TestBothSinksCarryTheSameBudgetHalt:
 
         durable, progress = payload(durable_path), payload(progress_path)
         assert durable == progress
-        base = {f.name for f in dataclasses.fields(ev.Event)}
+        base = {f.name for f in dataclasses.fields(event_catalog.Event)}
         payload_fields = {f.name for f in dataclasses.fields(event)} - base - {"type"}
         missing = payload_fields - progress.keys()
         assert not missing, (
@@ -600,7 +627,7 @@ class TestBothSinksCarryTheSameBudgetHalt:
         two-field divergence ship."""
         import dataclasses
 
-        event = ev.BudgetExceeded(
+        event = event_catalog.BudgetExceeded(
             component="comp-a",
             total_tokens=1,
             max_total_tokens=2,
@@ -613,7 +640,7 @@ class TestBothSinksCarryTheSameBudgetHalt:
         )
         durable, progress = self._emit_both(tmp_path, event)
 
-        base = {f.name for f in dataclasses.fields(ev.Event)}
+        base = {f.name for f in dataclasses.fields(event_catalog.Event)}
         payload_fields = {f.name for f in dataclasses.fields(event)} - base - {"type"}
         missing = payload_fields - progress.keys()
         assert not missing, (

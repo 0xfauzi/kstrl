@@ -27,6 +27,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
+from kstrl import event_catalog
 from kstrl import events as ev
 from kstrl.cli import cli
 from kstrl.reducer import load_run_state
@@ -306,7 +307,7 @@ class TestAHaltedArchitectIsCharged:
             run_dir = root / ".kstrl" / "runs" / run_id
             run_dir.mkdir(parents=True)
             bus = ev.EventBus(ev.JsonlSink(run_dir / "events.jsonl"), run_id=run_id)
-            bus.emit(ev.RunStarted(project="other", components=1, pid=os.getpid()))
+            bus.emit(event_catalog.RunStarted(project="other", components=1, pid=os.getpid()))
             bus.close()
             return subprocess_factory_runner(**kwargs, caffeinate=False)  # type: ignore[arg-type]
 

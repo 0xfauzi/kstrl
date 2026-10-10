@@ -80,26 +80,20 @@ from kstrl.decisions import (
     build_decisions_context,
     read_decisions,
 )
-from kstrl.events import (
+from kstrl.event_catalog import (
     AdversarialAgentSelected,
     AutonomyLevelApplied,
     CheckpointResolved,
     ComponentFailed,
     ComponentScopeResolved,
     ComponentStarted,
-    EventBus,
-    EventSink,
-    JsonlSink,
     PhaseStarted,
     RunCompleted,
-    RunPaths,
     RunPlan,
     RunStarted,
-    V1CompatSink,
 )
-from kstrl.events import (
-    ContractResult as ContractResultEvent,
-)
+from kstrl.event_catalog import ContractResult as ContractResultEvent
+from kstrl.events import EventBus, EventSink, JsonlSink, RunPaths, V1CompatSink
 from kstrl.fact_scope import authored_paths, paths_by_component
 from kstrl.feedforward import CodebaseScanConfig, build_codebase_scan_context
 from kstrl.findings import POLICY_CATEGORY_PREFIX

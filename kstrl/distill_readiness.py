@@ -1,6 +1,6 @@
 """How many distiller replies did not parse, over recent runs (#495).
 
-The one reader of :attr:`kstrl.events.DistillResult.parse_failed`.
+The one reader of :attr:`kstrl.event_catalog.DistillResult.parse_failed`.
 ``ks evolve`` prints the line this module builds under "Learning
 readiness", beside the fact-utilization numbers, because a distill whose
 reply did not parse wrote no facts for a reason that is not "nothing to
@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from kstrl import events as ev
+from kstrl import event_catalog
 from kstrl.reducer import read_run_dir, run_dirs_newest_first
 
 
@@ -41,7 +41,7 @@ def distill_parse_failure_line(root_dir: Path, lookback_runs: int) -> str:
         event
         for run_dir in run_dirs
         for event in read_run_dir(run_dir)
-        if isinstance(event, ev.DistillResult)
+        if isinstance(event, event_catalog.DistillResult)
     ]
     failed = sum(1 for event in distills if event.parse_failed)
     return (

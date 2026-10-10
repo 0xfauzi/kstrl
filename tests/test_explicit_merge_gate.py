@@ -48,7 +48,8 @@ from kstrl.autonomy import (
     resolved_flag_bundle,
 )
 from kstrl.config import ConfigError
-from kstrl.events import AutonomyLevelApplied, CallbackSink, Event, EventBus
+from kstrl.event_catalog import AutonomyLevelApplied, Event
+from kstrl.events import CallbackSink, EventBus
 from kstrl.factory import ComponentResult, FactoryConfig, run_factory
 from kstrl.manifest import Manifest
 from kstrl.review import ReviewResult

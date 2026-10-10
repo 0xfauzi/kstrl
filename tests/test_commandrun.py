@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from kstrl import event_catalog
 from kstrl import events as ev
 from kstrl.commandrun import CommandRun, open_command_run
 from kstrl.runid import run_kind
@@ -35,7 +36,7 @@ class TestOpenCommandRun:
         )
         assert run.recording
         assert run_kind(run.run_id) == "understand"
-        run.bus.emit(ev.RunStarted(project="p", components=1))
+        run.bus.emit(event_catalog.RunStarted(project="p", components=1))
         run.close()
         events = _events_on_disk(run)
         assert [e["event"] for e in events] == ["factory_started"]
@@ -50,7 +51,7 @@ class TestOpenCommandRun:
             enabled=False,
         )
         assert not run.recording
-        run.bus.emit(ev.RunStarted(project="p"))
+        run.bus.emit(event_catalog.RunStarted(project="p"))
         assert run.transcript_path("understand") is None
         assert run.transcript_writer("understand") is None
         run.close()  # safe when disabled
@@ -74,7 +75,7 @@ class TestOpenCommandRun:
     ) -> None:
         """Console narration lands in the run stream (chunk-7 wiring),
         and close() un-stamps the shared bus for post-run lines."""
-        rendered: list[ev.Event] = []
+        rendered: list[event_catalog.Event] = []
         bus = ev.EventBus(
             ev.CallbackSink(rendered.append),
             run_id="outer-run",
@@ -117,7 +118,7 @@ class TestOpenCommandRun:
             heartbeat=False,
         )
         assert bus.component == ""
-        run.bus.emit(ev.RunStarted(project="p"))
+        run.bus.emit(event_catalog.RunStarted(project="p"))
         run.close()
 
         assert bus.run_id == "outer-run"
