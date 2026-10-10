@@ -27,7 +27,8 @@ from unittest.mock import patch
 import pytest
 
 from kstrl.intake_gh import GhResult, GitHubIntakeConfig
-from kstrl.intake_github import ProcessedLedger, SyncResult, sync, verify_authorization
+from kstrl.intake_github import SyncResult, sync, verify_authorization
+from kstrl.intake_issue import ProcessedLedger
 from kstrl.workqueue import Queue
 from kstrl.workqueue_items import ItemSource, ItemState, MergeDisposition, QueueConfig
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
@@ -1396,7 +1397,7 @@ class TestSteerDispatchIsClosedByConstruction:
         self,
         tmp_path: Path,
     ) -> None:
-        from kstrl.intake_github import SteerCommand, SteerContext, _run_command
+        from kstrl.intake_steering import SteerCommand, SteerContext, _run_command
 
         ctx = SteerContext(
             config=_config(),

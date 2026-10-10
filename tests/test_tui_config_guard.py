@@ -99,7 +99,8 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     # A bare raise in `_run_command` when a `SteerCommand` reaches no
     # handler in `_STEER_HANDLERS` - the closed-by-construction guard's
     # unreachable branch (A3), which is operator-unreachable but still counted.
-    "intake_github.py": 1,
+    # #776 I2 moved it out of intake_github.py.
+    "intake_steering.py": 1,
     # OwnerAnswerError (#639 slice 4).
     "owner_answers.py": 1,
     "pr.py": 4,  # no subclass: four bare raises
