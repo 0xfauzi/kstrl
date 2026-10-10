@@ -58,7 +58,9 @@ from tests.helpers.astwalk import (
 from tests.helpers.bad_toml import MALFORMED_TOML
 from tests.helpers.stack_confirmation import confirm_stack, in_process_stack
 
-SERVE_SOURCE = KSTRL_PACKAGE / "serve.py"
+#: ``serve.py`` and every ``serve_*.py`` split out of it (#776). A glob and not a
+#: list, so a module a later slice adds is read without anyone remembering to.
+SERVE_SOURCES = sorted(KSTRL_PACKAGE.glob("serve*.py"))
 
 # --------------------------------------------------------------------------
 # Layer 1: every spelling of `load`, enumerating no node types
@@ -68,12 +70,12 @@ SERVE_SOURCE = KSTRL_PACKAGE / "serve.py"
 #: anywhere the AST can hold a string. Not individually meaningful; the
 #: DELTA is the signal, and it moves for a shape layer 2 does not model
 #: as readily as for one it does.
-EXPECTED_LOAD_SPELLINGS = {"serve.py": 18}
+EXPECTED_LOAD_SPELLINGS = {"serve.py": 14, "serve_merge_gate.py": 4}
 
 
 def test_every_spelling_of_load_in_serve_is_counted() -> None:
     assert_census(
-        sources=[SERVE_SOURCE],
+        sources=SERVE_SOURCES,
         sees=spells("load"),
         expected=EXPECTED_LOAD_SPELLINGS,
         control="Cfg.load(root)\n",
@@ -172,7 +174,12 @@ def scan_loads(tree: ast.Module, *, module: str = "") -> LoadScan:
 
 
 def _serve_scan() -> LoadScan:
-    return scan_loads(parsed(SERVE_SOURCE), module="kstrl.serve")
+    scans = [scan_loads(parsed(path), module=f"kstrl.{path.stem}") for path in SERVE_SOURCES]
+    return LoadScan(
+        config=tuple(site for scan in scans for site in scan.config),
+        other=tuple(sorted(receiver for scan in scans for receiver in scan.other)),
+        undecided=tuple(sorted(row for scan in scans for row in scan.undecided)),
+    )
 
 
 #: Every ``<Name>Config.load(...)`` in ``kstrl/serve.py``, by the function
@@ -638,7 +645,7 @@ class TestTheRefusingGateIsFailClosed:
 
     @staticmethod
     def _gate(tmp_path: Path, document: str) -> Any:
-        from kstrl.serve import resolve_merge_gate
+        from kstrl.serve_merge_gate import resolve_merge_gate
 
         (tmp_path / "kstrl.toml").write_text(document, encoding="utf-8")
         queue = Queue(tmp_path, QueueConfig())

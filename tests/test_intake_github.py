@@ -1006,7 +1006,7 @@ class TestServeDrivesRemoteLabels:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """#187 F9: this path poisons and returns; it used to report nothing."""
-        from kstrl.serve import MergeGate
+        from kstrl.serve_merge_gate import MergeGate
 
         self._remote_item(tmp_path)
         with patch(
