@@ -135,11 +135,8 @@ from kstrl.operator_context import (
     operator_file_notices,
     operator_file_spec,
 )
-from kstrl.pipeline import (
-    HITL_REJECT_CHECK,
-    PR_CLOSED_CHECK,
-    ComponentPipeline,
-)
+from kstrl.pipeline import ComponentPipeline
+from kstrl.pipeline_merge import HITL_REJECT_CHECK, PR_CLOSED_CHECK
 from kstrl.pipeline_state import PipelineHooks, _iso_now
 from kstrl.plan_gate import run_plan_gate, spec_pin_errors, stack_pin_errors
 from kstrl.policy import PolicyConfig
@@ -5101,7 +5098,7 @@ def _run_factory_locked(
         # `factory_config.pause_before_pr_merge` and
         # `factory_config.review_mode` on THIS object, and the
         # pipeline reads both through the alias: the merge gate at
-        # pipeline.py `_phase_checkpoint` and the review gate at
+        # pipeline_delivery.py `_phase_checkpoint` and the review gate at
         # pipeline.py `_phase_review`. Replacing this argument with
         # a copy disconnects the ladder from both gates and the
         # whole suite stays green (measured on #193: 326 passed on

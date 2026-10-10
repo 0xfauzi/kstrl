@@ -886,7 +886,7 @@ class TestMergeGateIsTheHumanGate:
     """The gate is the pre-merge checkpoint, not the post-merge timeout."""
 
     def test_parked_decision_exists(self) -> None:
-        from kstrl.pipeline import CheckpointDecision
+        from kstrl.pipeline_delivery import CheckpointDecision
 
         assert CheckpointDecision.PARKED.value == "parked"
 

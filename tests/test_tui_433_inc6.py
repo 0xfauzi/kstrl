@@ -20,7 +20,7 @@ from kstrl.ci_state import read_ci_ledger
 from kstrl.config_report import build_config_report
 from kstrl.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.manifest import ComponentStatus, Manifest, park_dedupe_key
-from kstrl.pipeline import PARK_DETAIL
+from kstrl.pipeline_delivery import PARK_DETAIL
 from kstrl.tui.app import KstrlTuiApp, Mode
 from kstrl.tui.integration_view import read_integration_review
 from kstrl.tui.screens.config import ConfigScreen

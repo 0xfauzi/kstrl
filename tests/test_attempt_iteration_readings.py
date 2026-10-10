@@ -250,9 +250,9 @@ EXPECTED_END_ATTEMPT_SITES: dict[str, str] = {
     "pipeline_transitions.py:retry_or_fail": "a retry; the reading is journalled first",
     "pipeline_transitions.py:fail": "terminal; the reading reaches component_result",
     "pipeline_transitions.py:complete": "terminal; the reading reaches component_result",
-    "pipeline.py:_park_merge_pending": "terminal; the reading reaches component_result",
-    "pipeline.py:_fail_pr_flow": "terminal; the reading reaches component_result",
-    "pipeline.py:_park_awaiting_approval": (
+    "pipeline_merge.py:_park_merge_pending": "terminal; the reading reaches component_result",
+    "pipeline_merge.py:_fail_pr_flow": "terminal; the reading reaches component_result",
+    "pipeline_merge.py:_park_awaiting_approval": (
         "terminal for this run; the reading reaches component_result"
     ),
     "pipeline_transitions.py:fail_scheduler_backstop": (

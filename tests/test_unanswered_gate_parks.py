@@ -59,13 +59,8 @@ from kstrl.interaction import (
     UiInteractionChannel,
 )
 from kstrl.loop import LoopResult, run_loop
-from kstrl.pipeline import (
-    CheckpointDecision,
-    ComponentPipeline,
-    PipelineOutcome,
-    PrDisposition,
-    PrPhaseResult,
-)
+from kstrl.pipeline_delivery import CheckpointDecision, Delivery, PipelineOutcome
+from kstrl.pipeline_merge import PrDisposition, PrPhaseResult
 from kstrl.pipeline_transitions import Transition
 from kstrl.tui import embed
 from kstrl.ui.plain import PlainUI
@@ -102,7 +97,7 @@ from tests.test_merge_gate_park import (
 )
 from tests.test_pipeline import _ChoiceUI, _factory_config, _make_pipeline, _success
 
-PIPELINE_SOURCE = Path(__file__).resolve().parents[1] / "kstrl" / "pipeline.py"
+PIPELINE_SOURCE = Path(__file__).resolve().parents[1] / "kstrl" / "pipeline_delivery.py"
 
 
 @pytest.fixture(autouse=True)
@@ -313,11 +308,11 @@ def _checkpoint_function() -> ast.FunctionDef:
     found = [
         node
         for cls in tree.body
-        if isinstance(cls, ast.ClassDef) and cls.name == ComponentPipeline.__name__
+        if isinstance(cls, ast.ClassDef) and cls.name == Delivery.__name__
         for node in cls.body
         if isinstance(node, ast.FunctionDef) and node.name == "_phase_checkpoint"
     ]
-    assert len(found) == 1, f"ComponentPipeline._phase_checkpoint found {len(found)} times"
+    assert len(found) == 1, f"Delivery._phase_checkpoint found {len(found)} times"
     return found[0]
 
 
@@ -428,7 +423,7 @@ EXPECTED_PROMPT_SITES = {
     "feature_cmd.py::run_feature": "refuses: quit to amend",
     "guards.py::enforce_allowed_paths": "quits",
     "loop.py::_resolve_iteration_pause": "stops the run, same as Quit, when nobody answers",
-    "pipeline.py::ComponentPipeline._phase_checkpoint": "parks for the inbox (#594)",
+    "pipeline_delivery.py::Delivery._phase_checkpoint": "parks for the inbox (#594)",
     "plan_gate.py::run_plan_gate": "parks the plan for the inbox (#602)",
     "tui/screens/inbox.py::InboxScreen.action_reject": "a dismissed modal decides nothing",
     "tui/screens/retry.py::RetryScreen.on_scope_read": "a dismissed modal starts nothing",
@@ -459,7 +454,7 @@ EXPECTED_SEEN_PROMPT_SITES: tuple[str, ...] = (
     "feature_cmd.py::run_feature kstrl.interaction.PromptRequest",
     "guards.py::enforce_allowed_paths kstrl.interaction.PromptRequest",
     "loop.py::_resolve_iteration_pause kstrl.interaction.PromptRequest",
-    "pipeline.py::ComponentPipeline._phase_checkpoint kstrl.interaction.PromptRequest",
+    "pipeline_delivery.py::Delivery._phase_checkpoint kstrl.interaction.PromptRequest",
     "plan_gate.py::run_plan_gate kstrl.interaction.PromptRequest",
     "tui/screens/inbox.py::InboxScreen.action_reject kstrl.interaction.PromptRequest",
     "tui/screens/retry.py::RetryScreen.on_scope_read kstrl.interaction.PromptRequest",

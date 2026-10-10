@@ -350,7 +350,7 @@ SHA_CONTROLS = (
 SHA_READ = "x = comp.merge_sha\ny = merge_sha\n"
 
 #: The scope that writes ``Component.merge_sha`` and builds ``PrMerged``.
-RECORDER = "pipeline.py::ComponentPipeline._record_merge"
+RECORDER = "pipeline_merge.py::MergeGate._record_merge"
 
 #: Every scope in ``kstrl/`` that spells ``merge_sha`` or ``mergeSha``
 #: other than by reading it, and how many times. A new row, or a count
@@ -414,8 +414,8 @@ NOT_A_PR_MERGED_BUILD: dict[str, str] = {
 #: Every scope that spells ``_record_merge``: the definition, and the two
 #: paths that confirm a merge.
 EXPECTED_RECORDER_SPELLINGS: dict[str, int] = {
-    "pipeline.py::<module>": 1,
-    "pipeline.py::ComponentPipeline._phase_pr": 1,
+    "pipeline_merge.py::<module>": 1,
+    "pipeline_merge.py::MergeGate._phase_pr": 1,
     "pipeline.py::ComponentPipeline.repoll_merge_pending": 1,
 }
 
