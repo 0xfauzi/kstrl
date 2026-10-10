@@ -550,7 +550,7 @@ class TestServeDryRunIncludesIntake:
     def _stub(issues: str, checkout: str = "o/r"):  # type: ignore[no-untyped-def]
         import json as _json
 
-        from kstrl.intake_github import GhResult
+        from kstrl.intake_gh import GhResult
 
         def fake(args, *, timeout, cwd=None):  # type: ignore[no-untyped-def]
             head = args[:2]
@@ -611,7 +611,7 @@ class TestServeDryRunIncludesIntake:
     ) -> None:
         """An empty queue plus enabled intake is NOT 'nothing ready'."""
         (tmp_path / "kstrl.toml").write_text('[intake_github]\nenabled = true\nrepo = "o/r"\n')
-        with patch("kstrl.intake_github.run_gh", self._stub(self._issues())):
+        with patch("kstrl.intake_gh.run_gh", self._stub(self._issues())):
             result = _invoke(["serve", "--dry-run"], tmp_path)
         assert result.exit_code == 0
         assert "would admit o/r#4" in result.output
@@ -622,7 +622,7 @@ class TestServeDryRunIncludesIntake:
 
     def test_dry_run_still_writes_nothing(self, tmp_path: Path) -> None:
         (tmp_path / "kstrl.toml").write_text('[intake_github]\nenabled = true\nrepo = "o/r"\n')
-        with patch("kstrl.intake_github.run_gh", self._stub(self._issues())):
+        with patch("kstrl.intake_gh.run_gh", self._stub(self._issues())):
             _invoke(["serve", "--dry-run"], tmp_path)
         assert _queue(tmp_path).items() == [], "a dry run admits nothing"
 

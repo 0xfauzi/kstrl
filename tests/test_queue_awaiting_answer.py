@@ -30,7 +30,7 @@ from kstrl import event_catalog
 from kstrl import events as ev
 from kstrl.cli import cli
 from kstrl.inbox import Inbox, InboxItem, ItemKind, ItemStatus
-from kstrl.intake_github import GitHubIntakeConfig
+from kstrl.intake_gh import GitHubIntakeConfig
 from kstrl.runid import mint_run_id, run_kind
 from kstrl.serve import SPAWNED_RUN_KIND, RunOutcome, ServeConfig, SpendLedger, Verdict, serve_cycle
 from kstrl.workqueue import Queue

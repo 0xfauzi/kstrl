@@ -26,14 +26,8 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl.intake_github import (
-    GhResult,
-    GitHubIntakeConfig,
-    ProcessedLedger,
-    SyncResult,
-    sync,
-    verify_authorization,
-)
+from kstrl.intake_gh import GhResult, GitHubIntakeConfig
+from kstrl.intake_github import ProcessedLedger, SyncResult, sync, verify_authorization
 from kstrl.workqueue import Queue
 from kstrl.workqueue_items import ItemSource, ItemState, MergeDisposition, QueueConfig
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
@@ -223,7 +217,7 @@ class TestSync:
     def test_enqueues_a_labelled_issue(self, tmp_path: Path) -> None:
         queue = _queue(tmp_path)
         stub = _GhStub(issues=_issue_payload(_issue(4)))
-        with patch("kstrl.intake_github.run_gh", stub):
+        with patch("kstrl.intake_gh.run_gh", stub):
             result = sync(queue, _config(), tmp_path)
         assert result.enqueued == (f"{REPO}#4",)
         items = queue.items()
@@ -242,14 +236,14 @@ class TestSync:
             {"name": "kstrl:auto-merge"},
         ]
         stub = _GhStub(issues=_issue_payload(labelled))
-        with patch("kstrl.intake_github.run_gh", stub):
+        with patch("kstrl.intake_gh.run_gh", stub):
             sync(queue, _config(), tmp_path)
         assert queue.items()[0].merge_disposition is MergeDisposition.STOP_AT_PR
 
     def test_a_disabled_adapter_does_nothing(self, tmp_path: Path) -> None:
         queue = _queue(tmp_path)
         stub = _GhStub()
-        with patch("kstrl.intake_github.run_gh", stub):
+        with patch("kstrl.intake_gh.run_gh", stub):
             result = sync(queue, _config(enabled=False), tmp_path)
         assert result.enqueued == ()
         assert stub.calls == [], "a disabled adapter must not call gh at all"
@@ -263,7 +257,7 @@ class TestSync:
         queue = _queue(tmp_path)
         queue.add("# local\n", title="local work")
         stub = _GhStub(issues=GhResult(ok=False, error="HTTP 503"))
-        with patch("kstrl.intake_github.run_gh", stub):
+        with patch("kstrl.intake_gh.run_gh", stub):
             result = sync(queue, _config(), tmp_path)
         assert not result.ok
         assert "503" in result.errors[0]
@@ -277,7 +271,7 @@ class TestSync:
         queue = _queue(tmp_path)
         payload = _issue_payload(_issue(4))
         with patch(
-            "kstrl.intake_github.run_gh",
+            "kstrl.intake_gh.run_gh",
             _GhStub(issues=payload),
         ):
             sync(queue, _config(), tmp_path)
@@ -287,7 +281,7 @@ class TestSync:
         assert queue.items() == []
 
         with patch(
-            "kstrl.intake_github.run_gh",
+            "kstrl.intake_gh.run_gh",
             _GhStub(issues=payload),
         ):
             second = sync(queue, _config(), tmp_path)
@@ -303,7 +297,7 @@ class TestSync:
         payload = _issue_payload(_issue(4))
         for _ in range(2):
             with patch(
-                "kstrl.intake_github.run_gh",
+                "kstrl.intake_gh.run_gh",
                 _GhStub(issues=payload),
             ):
                 result = sync(queue, _config(), tmp_path)
@@ -326,7 +320,7 @@ class TestSync:
         queue = _queue(tmp_path)
         payload = _issue_payload(_issue(4))
         with patch(
-            "kstrl.intake_github.run_gh",
+            "kstrl.intake_gh.run_gh",
             _GhStub(issues=payload),
         ):
             sync(queue, _config(), tmp_path)
@@ -336,7 +330,7 @@ class TestSync:
         ProcessedLedger(tmp_path).path.unlink()
 
         with patch(
-            "kstrl.intake_github.run_gh",
+            "kstrl.intake_gh.run_gh",
             _GhStub(issues=payload),
         ):
             second = sync(queue, _config(), tmp_path)
@@ -351,7 +345,7 @@ class TestSync:
         """Paying an architect call to learn the issue says nothing is waste."""
         queue = _queue(tmp_path)
         stub = _GhStub(issues=_issue_payload(_issue(4, body="   ")))
-        with patch("kstrl.intake_github.run_gh", stub):
+        with patch("kstrl.intake_gh.run_gh", stub):
             result = sync(queue, _config(), tmp_path)
         assert result.enqueued == ()
         assert "empty" in result.skipped[f"{REPO}#4"]
@@ -362,7 +356,7 @@ class TestSync:
         queue = _queue(tmp_path)
         payload = _issue_payload(*[_issue(n) for n in range(1, 9)])
         stub = _GhStub(issues=payload)
-        with patch("kstrl.intake_github.run_gh", stub):
+        with patch("kstrl.intake_gh.run_gh", stub):
             result = sync(queue, _config(max_items_per_sync=3), tmp_path)
         assert len(result.enqueued) == 3
         assert len(queue.items()) == 3
@@ -372,7 +366,7 @@ class TestSync:
         queue = _queue(tmp_path)
         payload = _issue_payload(_issue(9), _issue(2), _issue(5))
         stub = _GhStub(issues=payload)
-        with patch("kstrl.intake_github.run_gh", stub):
+        with patch("kstrl.intake_gh.run_gh", stub):
             result = sync(queue, _config(max_items_per_sync=2), tmp_path)
         assert result.enqueued == (f"{REPO}#2", f"{REPO}#5")
 
@@ -389,7 +383,7 @@ class TestSync:
         """
         queue = _queue(tmp_path)
         stub = _GhStub(issues=_issue_payload(_issue(4)))
-        with patch("kstrl.intake_github.run_gh", stub):
+        with patch("kstrl.intake_gh.run_gh", stub):
             sync(queue, _config(), tmp_path)
         assert queue.items()[0].state is ItemState.QUEUED
         assert stub.argv_for("issue", "edit") == [], (
@@ -406,7 +400,7 @@ class TestSync:
             issues=_issue_payload(_issue(4)),
             edit=GhResult(ok=False, error="HTTP 403"),
         )
-        with patch("kstrl.intake_github.run_gh", stub):
+        with patch("kstrl.intake_gh.run_gh", stub):
             result = sync(queue, _config(), tmp_path)
         assert result.enqueued == (f"{REPO}#4",)
         assert len(queue.items()) == 1
@@ -419,7 +413,7 @@ class TestSync:
         """
         queue = _queue(tmp_path)
         stub = _GhStub(issues=_issue_payload(_issue(4)))
-        with patch("kstrl.intake_github.run_gh", stub):
+        with patch("kstrl.intake_gh.run_gh", stub):
             result = sync(queue, _config(dry_run=True), tmp_path)
         assert queue.items() == [], "no local item may be created"
         assert not ProcessedLedger(tmp_path).path.exists(), "no ledger write"
@@ -432,7 +426,7 @@ class TestSync:
         queue = _queue(tmp_path)
         payload = _issue_payload(_issue(1), _issue(2))
         with patch(
-            "kstrl.intake_github.run_gh",
+            "kstrl.intake_gh.run_gh",
             _GhStub(issues=payload),
         ):
             result = sync(queue, _config(max_items_per_sync=1), tmp_path)
@@ -511,7 +505,7 @@ class TestPollArgv:
                 return super().__call__(args, timeout=timeout, cwd=cwd)
 
         stub = _Paging()
-        with patch("kstrl.intake_github.run_gh", stub):
+        with patch("kstrl.intake_gh.run_gh", stub):
             result = sync(queue, _config(max_items_per_sync=1), tmp_path)
         assert len(stub.argv_for("issue", "list")) >= 2, "must page past skips"
         assert result.enqueued == (f"{REPO}#31",), (
@@ -529,7 +523,7 @@ class TestRepoMatch:
             issues=_issue_payload(_issue(4)),
             checkout="someone/else",
         )
-        with patch("kstrl.intake_github.run_gh", stub):
+        with patch("kstrl.intake_gh.run_gh", stub):
             result = sync(queue, _config(repo=REPO), tmp_path)
         assert result.enqueued == ()
         assert queue.items() == []
@@ -538,14 +532,14 @@ class TestRepoMatch:
     def test_a_matching_inbox_is_admitted(self, tmp_path: Path) -> None:
         queue = _queue(tmp_path)
         stub = _GhStub(issues=_issue_payload(_issue(4)), checkout=REPO)
-        with patch("kstrl.intake_github.run_gh", stub):
+        with patch("kstrl.intake_gh.run_gh", stub):
             result = sync(queue, _config(repo=REPO), tmp_path)
         assert result.enqueued == (f"{REPO}#4",)
 
     def test_the_match_is_case_insensitive(self, tmp_path: Path) -> None:
         queue = _queue(tmp_path)
         stub = _GhStub(issues=_issue_payload(_issue(4)), checkout=REPO.upper())
-        with patch("kstrl.intake_github.run_gh", stub):
+        with patch("kstrl.intake_gh.run_gh", stub):
             result = sync(queue, _config(repo=REPO), tmp_path)
         assert result.enqueued == (f"{REPO}#4",)
 
@@ -558,7 +552,7 @@ class TestRepoMatch:
             issues=_issue_payload(_issue(4)),
             checkout=GhResult(ok=False, error="not a git repo"),
         )
-        with patch("kstrl.intake_github.run_gh", stub):
+        with patch("kstrl.intake_gh.run_gh", stub):
             result = sync(queue, _config(repo=REPO), tmp_path)
         assert result.enqueued == ()
         assert any("without confirming" in e for e in result.errors)
@@ -569,7 +563,7 @@ class TestAuthorizationBinding:
 
     def test_an_unedited_issue_is_authorized(self, tmp_path: Path) -> None:
         stub = _GhStub(auth=_auth_payload(last_edited_at=None))
-        with patch("kstrl.intake_github.run_gh", stub):
+        with patch("kstrl.intake_gh.run_gh", stub):
             auth = verify_authorization(_config(), REPO, 4, tmp_path)
         assert auth.ok
         assert auth.actor == "0xfauzi"
@@ -581,7 +575,7 @@ class TestAuthorizationBinding:
                 last_edited_at="2026-07-30T11:00:00Z",
             )
         )
-        with patch("kstrl.intake_github.run_gh", stub):
+        with patch("kstrl.intake_gh.run_gh", stub):
             assert verify_authorization(_config(), REPO, 4, tmp_path).ok
 
     def test_an_edit_AFTER_the_label_is_refused(self, tmp_path: Path) -> None:
@@ -592,7 +586,7 @@ class TestAuthorizationBinding:
                 last_edited_at="2026-07-30T11:00:00Z",
             )
         )
-        with patch("kstrl.intake_github.run_gh", stub):
+        with patch("kstrl.intake_gh.run_gh", stub):
             auth = verify_authorization(_config(), REPO, 4, tmp_path)
         assert not auth.ok
         assert "edited at" in auth.reason
@@ -601,7 +595,7 @@ class TestAuthorizationBinding:
     def test_a_missing_label_event_is_refused(self, tmp_path: Path) -> None:
         """A label of unknown provenance is not authorization."""
         stub = _GhStub(auth=_auth_payload(nodes=[]))
-        with patch("kstrl.intake_github.run_gh", stub):
+        with patch("kstrl.intake_gh.run_gh", stub):
             auth = verify_authorization(_config(), REPO, 4, tmp_path)
         assert not auth.ok
         assert "no 'kstrl:queued' labelling event" in auth.reason
@@ -618,7 +612,7 @@ class TestAuthorizationBinding:
                 ]
             )
         )
-        with patch("kstrl.intake_github.run_gh", stub):
+        with patch("kstrl.intake_gh.run_gh", stub):
             auth = verify_authorization(_config(), REPO, 4, tmp_path)
         assert not auth.ok, "a state label is not the trigger"
 
@@ -636,7 +630,7 @@ class TestAuthorizationBinding:
         auth_result: GhResult,
     ) -> None:
         """ "We could not check" is not evidence the bytes are authorized."""
-        with patch("kstrl.intake_github.run_gh", _GhStub(auth=auth_result)):
+        with patch("kstrl.intake_gh.run_gh", _GhStub(auth=auth_result)):
             assert not verify_authorization(_config(), REPO, 4, tmp_path).ok
 
     def test_sync_refuses_an_issue_edited_after_authorization(
@@ -651,7 +645,7 @@ class TestAuthorizationBinding:
                 last_edited_at="2026-07-30T11:00:00Z",
             ),
         )
-        with patch("kstrl.intake_github.run_gh", stub):
+        with patch("kstrl.intake_gh.run_gh", stub):
             result = sync(queue, _config(), tmp_path)
         assert result.enqueued == ()
         assert queue.items() == []
@@ -663,7 +657,7 @@ class TestAuthorizationBinding:
     ) -> None:
         queue = _queue(tmp_path)
         stub = _GhStub(issues=_issue_payload(_issue(4)))
-        with patch("kstrl.intake_github.run_gh", stub):
+        with patch("kstrl.intake_gh.run_gh", stub):
             sync(queue, _config(), tmp_path, verify=False)
         assert stub.argv_for("api", "graphql") == []
         assert len(queue.items()) == 1
@@ -678,7 +672,7 @@ class TestTransactionalAdmission:
     ) -> None:
         queue = _queue(tmp_path)
         stub = _GhStub(issues=_issue_payload(_issue(4)))
-        with patch("kstrl.intake_github.run_gh", stub):
+        with patch("kstrl.intake_gh.run_gh", stub):
             with patch.object(
                 ProcessedLedger,
                 "record",
@@ -696,7 +690,7 @@ class TestTransactionalAdmission:
         """It used to abort the whole batch by propagating OSError."""
         queue = _queue(tmp_path)
         stub = _GhStub(issues=_issue_payload(_issue(4), _issue(5)))
-        with patch("kstrl.intake_github.run_gh", stub):
+        with patch("kstrl.intake_gh.run_gh", stub):
             with patch.object(
                 ProcessedLedger,
                 "record",
@@ -804,7 +798,7 @@ class TestServeDrivesRemoteLabels:
                 "kstrl.intake_github.GitHubIntakeConfig.load",
                 return_value=_config(),
             ):
-                with patch("kstrl.intake_github.report_outcome", fake):
+                with patch("kstrl.intake_gh.report_outcome", fake):
                     serve_cycle(tmp_path, runner=runner)  # type: ignore[arg-type]
         return seen
 
@@ -884,7 +878,7 @@ class TestServeDrivesRemoteLabels:
                 "kstrl.intake_github.GitHubIntakeConfig.load",
                 return_value=_config(),
             ):
-                with patch("kstrl.intake_github.run_gh", stub):
+                with patch("kstrl.intake_gh.run_gh", stub):
                     serve_cycle(tmp_path, runner=self._runner(1))  # type: ignore[arg-type]
 
         edits = stub.argv_for("issue", "edit")
@@ -939,7 +933,7 @@ class TestServeDrivesRemoteLabels:
                 "kstrl.intake_github.GitHubIntakeConfig.load",
                 return_value=_config(),
             ):
-                with patch("kstrl.intake_github.run_gh", stub):
+                with patch("kstrl.intake_gh.run_gh", stub):
                     serve_cycle(tmp_path, runner=self._runner(0), observer=observer)  # type: ignore[arg-type]
 
         assert stub.argv_for("issue", "edit") == [], stub.calls
@@ -984,7 +978,7 @@ class TestServeDrivesRemoteLabels:
                 "kstrl.intake_github.GitHubIntakeConfig.load",
                 return_value=_config(),
             ):
-                with patch("kstrl.intake_github.run_gh", stub):
+                with patch("kstrl.intake_gh.run_gh", stub):
                     serve_cycle(tmp_path, runner=runner)  # type: ignore[arg-type]
 
         edits = stub.argv_for("issue", "edit")
@@ -1067,7 +1061,7 @@ class TestServeDrivesRemoteLabels:
                 "kstrl.intake_github.GitHubIntakeConfig.load",
                 return_value=_config(),
             ):
-                with patch("kstrl.intake_github.report_outcome", probing):
+                with patch("kstrl.intake_gh.report_outcome", probing):
                     serve_cycle(tmp_path, runner=self._runner(0))  # type: ignore[arg-type]
 
         assert held, "the writeback must have run"
@@ -1135,7 +1129,7 @@ class TestServePollsIntake:
     ) -> None:
         """Off must mean no outbound traffic at all, not a wasted call."""
         _queue(tmp_path).ensure_dirs()
-        with patch("kstrl.intake_github.run_gh") as gh:
+        with patch("kstrl.intake_gh.run_gh") as gh:
             result = self._cycle(tmp_path)
         assert gh.call_count == 0
         # And no spurious error every cycle. `sync` itself reports
@@ -1153,7 +1147,7 @@ class TestServePollsIntake:
         self._enable(tmp_path)
         queue = _queue(tmp_path)
         stub = _GhStub(issues=_issue_payload(_issue(4)))
-        with patch("kstrl.intake_github.run_gh", stub):
+        with patch("kstrl.intake_gh.run_gh", stub):
             result = self._cycle(tmp_path)
         assert result.synced == (f"{REPO}#4",)
         assert result.ran_item, "the freshly synced item must also run"
@@ -1168,7 +1162,7 @@ class TestServePollsIntake:
         queue = _queue(tmp_path)
         queue.add("# local\n", title="local work")
         with patch(
-            "kstrl.intake_github.run_gh",
+            "kstrl.intake_gh.run_gh",
             _GhStub(issues=GhResult(ok=False, error="HTTP 503")),
         ):
             result = self._cycle(tmp_path)
@@ -1200,7 +1194,7 @@ class TestServePollsIntake:
 
         self._enable(tmp_path)
         queue = _queue(tmp_path)
-        with patch("kstrl.intake_github.run_gh", _GhStub(issues=_issue_payload(_issue(4)))):
+        with patch("kstrl.intake_gh.run_gh", _GhStub(issues=_issue_payload(_issue(4)))):
             with patch("kstrl.serve.read_run_spend", lambda r, i: RunSpend()):
                 serve(
                     tmp_path,
@@ -1216,7 +1210,7 @@ class TestServePollsIntake:
 
         self._enable(tmp_path)
         queue = _queue(tmp_path)
-        with patch("kstrl.intake_github.run_gh", _GhStub(issues=_issue_payload(_issue(4)))):
+        with patch("kstrl.intake_gh.run_gh", _GhStub(issues=_issue_payload(_issue(4)))):
             with patch("kstrl.serve.read_run_spend", lambda r, i: RunSpend()):
                 results = serve(tmp_path, once=True, runner=self._runner())
         assert results[0].synced == (f"{REPO}#4",)
@@ -1236,7 +1230,7 @@ class TestServePollsIntake:
         self._enable(tmp_path)
         queue = _queue(tmp_path)
         SpendLedger(tmp_path).charge(50.0, covered_calls=1, total_calls=1)
-        with patch("kstrl.intake_github.run_gh", _GhStub(issues=_issue_payload(_issue(4)))):
+        with patch("kstrl.intake_gh.run_gh", _GhStub(issues=_issue_payload(_issue(4)))):
             from kstrl.serve import RunSpend, serve_cycle
 
             with patch("kstrl.serve.read_run_spend", lambda r, i: RunSpend()):
@@ -1283,7 +1277,7 @@ class TestIntakeLockDiscipline:
                 held.append(True)
             return real_gh(args, timeout=timeout, cwd=cwd)
 
-        with patch("kstrl.intake_github.run_gh", probing_gh):
+        with patch("kstrl.intake_gh.run_gh", probing_gh):
             with patch("kstrl.serve.read_run_spend", lambda r, i: RunSpend()):
                 serve_cycle(tmp_path, runner=lambda **k: RunOutcome(0))
 
@@ -1318,7 +1312,7 @@ class TestIntakeLockDiscipline:
                 held_during_add.append(True)
             return real_add(self, *args, **kwargs)
 
-        with patch("kstrl.intake_github.run_gh", _GhStub(issues=_issue_payload(_issue(4)))):
+        with patch("kstrl.intake_gh.run_gh", _GhStub(issues=_issue_payload(_issue(4)))):
             with patch.object(_Queue, "add", probing_add):
                 with patch(
                     "kstrl.serve.read_run_spend",
@@ -1345,7 +1339,7 @@ class TestIntakeLockDiscipline:
             entered.append("out")
 
         queue = _queue(tmp_path)
-        with patch("kstrl.intake_github.run_gh", _GhStub(issues=_issue_payload(_issue(4)))):
+        with patch("kstrl.intake_gh.run_gh", _GhStub(issues=_issue_payload(_issue(4)))):
             result = sync(queue, _config(), tmp_path, commit_guard=guard)
         assert entered == ["in", "out"], "the commit must be guarded"
         assert result.enqueued == (f"{REPO}#4",)
@@ -1374,7 +1368,7 @@ class TestIntakeLockDiscipline:
             )
             yield
 
-        with patch("kstrl.intake_github.run_gh", _GhStub(issues=_issue_payload(_issue(4)))):
+        with patch("kstrl.intake_gh.run_gh", _GhStub(issues=_issue_payload(_issue(4)))):
             result = sync(queue, _config(), tmp_path, commit_guard=guard)
         assert result.enqueued == (), "the refreshed plan must see the race"
         assert len(queue.items()) == 1, "no duplicate admission"

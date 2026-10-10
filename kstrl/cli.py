@@ -4941,7 +4941,7 @@ def queue_sync(
     you trust to spend; an issue labelled by anyone else is refused and
     the refusal names the actor.
     """
-    from kstrl.intake_github import GitHubIntakeConfig, IntakeError
+    from kstrl.intake_gh import GitHubIntakeConfig, IntakeError
     from kstrl.intake_github import sync as run_sync
     from kstrl.workqueue_items import QueueError, QueueLockedError
     from kstrl.workqueue_store import queue_lock
@@ -5379,7 +5379,7 @@ def serve(
         # (#189 N2). Runs the adapter's side-effect-free planner.
         from dataclasses import replace as _replace
 
-        from kstrl.intake_github import GitHubIntakeConfig, IntakeError
+        from kstrl.intake_gh import GitHubIntakeConfig, IntakeError
         from kstrl.intake_github import sync as intake_sync
 
         try:

@@ -228,7 +228,7 @@ EXPECTED_PROCESS_MODULES: dict[str, tuple[str, ...]] = {
     # own.
     "doctor.py": ("subprocess",),
     "git.py": ("subprocess",),
-    "intake_github.py": ("subprocess",),
+    "intake_gh.py": ("subprocess",),
     # #700: `TimeoutExpired` from `run_scrubbed`, which owns the process group.
     "isolation.py": ("subprocess",),
     "observability.py": ("subprocess",),

@@ -18,7 +18,7 @@ from subprocess import CompletedProcess
 
 import pytest
 
-from kstrl.intake_github import GhResult
+from kstrl.intake_gh import GhResult
 from kstrl.pr_body import PR_FOOTER_MARKER
 from tests.helpers.executables import write_executable
 
@@ -55,7 +55,7 @@ fi
 #: Where `gh` is actually spawned. `count_open_kstrl_prs` goes through
 #: `intake_github.run_gh`, so patching `kstrl.serve.subprocess.run` would
 #: patch nothing and the tests would silently reach the real `gh`.
-GH_RUN = "kstrl.intake_github.subprocess.run"
+GH_RUN = "kstrl.intake_gh.subprocess.run"
 
 
 def put_gh_on_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, body: str) -> Path:

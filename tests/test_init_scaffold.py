@@ -206,7 +206,7 @@ class TestInitScaffold:
         """#452: the scaffold had no [queue], [serve] or [intake_github]
         section. Each line shows the built-in default, so uncommenting
         every one of them changes no value."""
-        from kstrl.intake_github import GitHubIntakeConfig
+        from kstrl.intake_gh import GitHubIntakeConfig
         from kstrl.serve import ServeConfig
         from kstrl.workqueue_items import QueueConfig
 

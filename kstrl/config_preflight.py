@@ -218,7 +218,7 @@ def config_sections() -> list[ConfigSection]:
     from kstrl.factory import FactoryConfig
     from kstrl.feedforward import CodebaseScanConfig
     from kstrl.inbox import InboxConfig
-    from kstrl.intake_github import GitHubIntakeConfig
+    from kstrl.intake_gh import GitHubIntakeConfig
     from kstrl.knowledge import KnowledgeConfig
     from kstrl.linear import LinearConfig
     from kstrl.observability import NotifyConfig

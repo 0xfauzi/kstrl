@@ -69,7 +69,7 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     # slice 9 deletes read_blob, two each. 66: #700's git_common_dir adds one
     # of each. 68: #700's git_write_paths adds one of each.
     "git.py": 68,
-    "intake_github.py": 3,
+    "intake_gh.py": 3,
     # #700: the import, and `TimeoutExpired` from `run_scrubbed`.
     "isolation.py": 2,
     "observability.py": 5,
@@ -130,7 +130,7 @@ EXPECTED_TEXT_MODE_SPAWNS: dict[str, int] = {
     # `stage_file`, `ignore_source` and `ignored_paths`. 26: +1 for #700's
     # `git_common_dir`. 27: +1 for #700's `git_write_paths`.
     "git.py": 27,
-    "intake_github.py": 1,
+    "intake_gh.py": 1,
     "pr.py": 9,
     "pr_state.py": 2,
     "procgroup_listing.py": 1,
@@ -183,7 +183,7 @@ EXPECTED_CLEARED_SPAWNS: tuple[str, ...] = (
     # codespell:ignore-next-line
     "git.py subprocess.run(['git', 'rev-parse', '--verify', '--quiet', f'{candidat",
     "git.py subprocess.run(['git', 'status', '--porcelain', '--untracked-files=all",
-    "intake_github.py subprocess.run(['gh', *args], cwd=str(cwd) if cwd else None, capture_o",
+    "intake_gh.py subprocess.run(['gh', *args], cwd=str(cwd) if cwd else None, capture_o",
     "pr.py subprocess.run(['gh', 'auth', 'status'], capture_output=True, encoding",
     "pr.py subprocess.run(['gh', 'pr', 'close', str(pr_number), '--comment', 'Sup",
     "pr.py subprocess.run(['gh', 'pr', 'create', '--title', title, '--body', body",

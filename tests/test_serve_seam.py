@@ -734,7 +734,7 @@ class TestRemoteWorkSurvivesTheSeam:
             )
         )
         calls: list[dict[str, Any]] = []
-        with patch("kstrl.intake_github.run_gh", gh):
+        with patch("kstrl.intake_gh.run_gh", gh):
             serve_cycle(tmp_path, runner=recording_runner(calls))
 
         assert len(calls) == 1
@@ -756,7 +756,7 @@ class TestRemoteWorkSurvivesTheSeam:
         confirm_stack(tmp_path)
         gh = _GhStub(issues=_issue_payload(_issue(4)))
         calls: list[dict[str, Any]] = []
-        with patch("kstrl.intake_github.run_gh", gh):
+        with patch("kstrl.intake_gh.run_gh", gh):
             serve_cycle(tmp_path, runner=recording_runner(calls))
 
         assert len(calls) == 1
