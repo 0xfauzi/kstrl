@@ -27,7 +27,7 @@ import time
 from rich.table import Table
 from rich.text import Text
 
-from kstrl import event_catalog
+from kstrl import event_catalog as ev
 from kstrl.tui import theme
 from kstrl.tui.widgets.reflow_log import ReflowLog
 
@@ -46,17 +46,17 @@ def _stamp(ts: float) -> str:
     return time.strftime("%H:%M:%S", time.localtime(ts))
 
 
-def humanize(event: event_catalog.Event) -> Text | None:  # noqa: C901 - flat dispatch
+def humanize(event: ev.Event) -> Text | None:  # noqa: C901 - flat dispatch
     """One feed line for a semantic event; None = not feed-worthy."""
     line = Text()
     line.append(_stamp(event.ts) + "  ", style=theme.MUTED)
     comp = event.component
 
-    if isinstance(event, event_catalog.ComponentStarted):
+    if isinstance(event, ev.ComponentStarted):
         line.append("● ", style=theme.ACCENT)
         line.append(comp, style="bold")
         line.append(" started", style=theme.MUTED)
-    elif isinstance(event, event_catalog.IterationCompleted):
+    elif isinstance(event, ev.IterationCompleted):
         line.append("· ", style=theme.MUTED)
         line.append(comp, style=theme.MUTED)
         line.append(
@@ -64,7 +64,7 @@ def humanize(event: event_catalog.Event) -> Text | None:  # noqa: C901 - flat di
             f"({event.duration_seconds:.0f}s)" + (" · complete" if event.completed else ""),
             style=theme.MUTED,
         )
-    elif isinstance(event, event_catalog.PhaseCompleted):
+    elif isinstance(event, ev.PhaseCompleted):
         if event.passed:
             line.append("✓ ", style=theme.SUCCESS)
         else:
@@ -78,7 +78,7 @@ def humanize(event: event_catalog.Event) -> Text | None:  # noqa: C901 - flat di
             line.append(f" in {event.duration_seconds:.0f}s", style=theme.MUTED)
         if event.detail and not event.passed:
             line.append(f" · {_cause(event.detail)}", style=theme.MUTED)
-    elif isinstance(event, event_catalog.FindingRecorded):
+    elif isinstance(event, ev.FindingRecorded):
         if event.category == "phase_skipped":
             return None  # bookkeeping, not news
         line.append("▲ ", style=theme.WARNING)
@@ -88,54 +88,54 @@ def humanize(event: event_catalog.Event) -> Text | None:  # noqa: C901 - flat di
         line.append(event.category)
         if event.location:
             line.append(f" at {event.location}", style=theme.MUTED)
-    elif isinstance(event, event_catalog.ComponentCompleted):
+    elif isinstance(event, ev.ComponentCompleted):
         line.append("✓ ", style=f"bold {theme.SUCCESS}")
         line.append(comp, style=f"bold {theme.SUCCESS}")
         line.append(
             f" completed · {event.iterations} iteration(s)",
             style=theme.MUTED,
         )
-    elif isinstance(event, event_catalog.ComponentFailed):
+    elif isinstance(event, ev.ComponentFailed):
         line.append("✗ ", style=f"bold {theme.ERROR}")
         line.append(comp, style=f"bold {theme.ERROR}")
         line.append(" failed", style=theme.ERROR)
         if event.error:
             line.append(f" · {_cause(event.error)}", style=theme.MUTED)
-    elif isinstance(event, event_catalog.CircuitBreakerTripped):
+    elif isinstance(event, ev.CircuitBreakerTripped):
         line.append("⊘ ", style=f"bold {theme.ERROR}")
         line.append(comp, style="bold")
         line.append(" no-progress breaker tripped", style=theme.ERROR)
-    elif isinstance(event, event_catalog.ComponentRetrying):
+    elif isinstance(event, ev.ComponentRetrying):
         line.append("↻ ", style=theme.WARNING)
         line.append(comp, style="bold")
         line.append(f" retrying (attempt {event.attempt})", style=theme.MUTED)
         if event.reason:
             line.append(f" · {_cause(event.reason)}", style=theme.MUTED)
-    elif isinstance(event, event_catalog.PrCreated):
+    elif isinstance(event, ev.PrCreated):
         line.append("⇡ ", style=theme.STEEL)
         line.append(comp, style="bold")
         line.append(f" PR #{event.pr_number} opened", style=theme.MUTED)
-    elif isinstance(event, event_catalog.PrMerged):
+    elif isinstance(event, ev.PrMerged):
         line.append("⇣ ", style=theme.SUCCESS)
         line.append(comp, style="bold")
         line.append(f" PR #{event.pr_number} merged", style=theme.MUTED)
-    elif isinstance(event, event_catalog.PrMergePending):
+    elif isinstance(event, ev.PrMergePending):
         line.append("⏸ ", style=theme.VIOLET)
         line.append(comp, style="bold")
         line.append(" merge parked (unconfirmed)", style=theme.MUTED)
-    elif isinstance(event, event_catalog.CheckpointRequested):
+    elif isinstance(event, ev.CheckpointRequested):
         line.append("◆ ", style=f"bold {theme.ACCENT}")
         line.append(comp, style="bold")
         line.append(" checkpoint: ", style=theme.ACCENT)
         line.append(event.question, style=theme.MUTED)
-    elif isinstance(event, event_catalog.CheckpointResolved):
+    elif isinstance(event, ev.CheckpointResolved):
         line.append("◆ ", style=theme.ACCENT)
         line.append(comp, style="bold")
         line.append(
             f" checkpoint {event.decision} ({event.decided_by})",
             style=theme.MUTED,
         )
-    elif isinstance(event, event_catalog.ContractResult):
+    elif isinstance(event, ev.ContractResult):
         glyph = "✓" if event.passed else "✗"
         style = theme.SUCCESS if event.passed else theme.ERROR
         line.append(f"{glyph} ", style=f"bold {style}")
@@ -143,7 +143,7 @@ def humanize(event: event_catalog.Event) -> Text | None:  # noqa: C901 - flat di
         line.append("passed" if event.passed else "failed", style=style)
         if event.breaker:
             line.append(f" · breaker {event.breaker}", style=theme.MUTED)
-    elif isinstance(event, event_catalog.SpecIssueRecorded):
+    elif isinstance(event, ev.SpecIssueRecorded):
         severity = event.severity if event.severity in {"blocker", "major", "minor"} else "unknown"
         severe = severity == "blocker"
         line.append(
@@ -158,12 +158,12 @@ def humanize(event: event_catalog.Event) -> Text | None:  # noqa: C901 - flat di
         line.append(event.summary)
         if event.location:
             line.append(f" at {event.location}", style=theme.MUTED)
-    elif isinstance(event, event_catalog.ArtifactWritten):
+    elif isinstance(event, ev.ArtifactWritten):
         line.append("⇣ ", style=theme.MUTED)
         line.append(f"{event.label or 'artifact'} written", style=theme.MUTED)
         if event.path:
             line.append(f" · {event.path}", style=theme.MUTED)
-    elif isinstance(event, event_catalog.BudgetCoverage):
+    elif isinstance(event, ev.BudgetCoverage):
         # R8 review finding 1: this was dropped, so the one event that
         # says "a configured ceiling stopped covering the run" never
         # reached the surface an operator watches. Usage ROLLUPS stay
@@ -191,7 +191,7 @@ def humanize(event: event_catalog.Event) -> Text | None:  # noqa: C901 - flat di
                 f" · {event.uncovered_tokens:,} token(s) unpriced",
                 style=theme.MUTED,
             )
-    elif isinstance(event, event_catalog.RunCompleted):
+    elif isinstance(event, ev.RunCompleted):
         line.append("■ ", style="bold")
         line.append(
             f"run finished · {event.completed} completed, "
@@ -212,7 +212,7 @@ class ActivityFeed(ReflowLog):
             **kwargs,
         )
 
-    def feed_events(self, batch: list[event_catalog.Event]) -> None:
+    def feed_events(self, batch: list[ev.Event]) -> None:
         for event in batch:
             line = humanize(event)
             if line is not None:
