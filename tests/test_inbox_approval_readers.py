@@ -5,7 +5,7 @@ slice 8 removed), filed an item
 whose approval nothing read: ``ks inbox approve`` recorded it and the
 next run failed on the same finding. The fix reads them in
 ``kstrl/waivers.py``, the same shape ``kstrl/plan_gate.py`` already used
-for a plan park (#602) and ``kstrl/pipeline.py`` for a merge-gate park
+for a plan park (#602) and ``kstrl/pipeline_merge.py`` for a merge-gate park
 (#465). This file stops the next action-required kind from arriving
 without a reader, and stops a reader from moving without the table
 below moving with it.
@@ -39,7 +39,7 @@ from tests.helpers import astwalk
 
 #: The scope that acts on an approval of each kind, as the census keys it.
 APPROVAL_READERS: dict[ItemKind, tuple[str, ...]] = {
-    ItemKind.MERGE_GATE: ("pipeline.py::ComponentPipeline.apply_merge_decisions",),
+    ItemKind.MERGE_GATE: ("pipeline_merge.py::MergeGate.apply_merge_decisions",),
     ItemKind.POLICY_EXCEPTION: ("waivers.py::load_approvals",),
     # #602: the L1 plan gate reads its item at the start of the next run.
     ItemKind.PLAN_GATE: ("plan_gate.py::run_plan_gate",),
@@ -76,10 +76,10 @@ EXPECTED_APPROVED_READS: dict[str, int] = {
     "cli.py::_decide_parked_merge_if_parked": 1,
     "factory.py::_emit_stack_confirmation": 1,
     "owner_answers.py::read_owner_answers": 1,
-    "pipeline.py::<module>": 1,
-    "pipeline.py::ComponentPipeline._checkpoint_refusal": 1,
-    "pipeline.py::ComponentPipeline._phase_checkpoint": 1,
-    "pipeline.py::ComponentPipeline.apply_merge_decisions": 1,
+    "pipeline_delivery.py::<module>": 1,
+    "pipeline_delivery.py::Delivery._checkpoint_refusal": 1,
+    "pipeline_delivery.py::Delivery._phase_checkpoint": 1,
+    "pipeline_merge.py::MergeGate.apply_merge_decisions": 1,
     "plan_gate.py::_settle": 2,
     "plan_gate.py::run_plan_gate": 5,
     "stack.py::_latest_approval": 2,
@@ -100,14 +100,14 @@ NOT_AN_INBOX_READER: dict[str, str] = {
         '{"approve": "approved", "reject": "rejected"}[action]: the past-tense verb '
         "for the log line, not a read of item.status"
     ),
-    "pipeline.py::<module>": (
+    "pipeline_delivery.py::<module>": (
         'CheckpointDecision.APPROVED = "approved": the enum member definition itself, '
         "not a read of it"
     ),
-    "pipeline.py::ComponentPipeline._checkpoint_refusal": (
+    "pipeline_delivery.py::Delivery._checkpoint_refusal": (
         "CheckpointDecision.APPROVED: the interactive pre-PR checkpoint's answer"
     ),
-    "pipeline.py::ComponentPipeline._phase_checkpoint": (
+    "pipeline_delivery.py::Delivery._phase_checkpoint": (
         "CheckpointDecision.APPROVED: the interactive pre-PR checkpoint's answer"
     ),
     "plan_gate.py::_settle": (

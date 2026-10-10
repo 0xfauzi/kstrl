@@ -72,14 +72,14 @@ FLAG = "pause_before_pr_merge"
 #:   ``_unreadable_config_gate``, which is the fail-closed gate a config
 #:   read that could not complete resolves to.
 #: - ``serve.py`` is the child's command line and the rest of the daemon.
-#: - ``config_report.py`` and ``pipeline.py`` READ the resolved value;
+#: - ``config_report.py`` and ``pipeline_delivery.py`` READ the resolved value;
 #:   neither is a source.
 EXPECTED_FLAG_SPELLINGS = {
     "autonomy.py": 11,
     "cli.py": 7,
     "config_report.py": 1,
     "factory.py": 16,
-    "pipeline.py": 1,
+    "pipeline_delivery.py": 1,
     "serve.py": 9,
     "serve_merge_gate.py": 14,
 }

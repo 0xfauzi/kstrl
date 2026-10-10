@@ -82,7 +82,9 @@ EXPECTED_SPELLINGS: frozenset[tuple[str, str]] = frozenset(
         ("kstrl/pipeline.py", "engineer"),
         ("kstrl/pipeline_transitions.py", "engineer"),
         ("kstrl/pipeline.py", "pr"),
-        ("kstrl/pipeline.py", "review"),
+        ("kstrl/pipeline_delivery.py", "review"),
+        ("kstrl/pipeline_merge.py", "pr"),
+        ("kstrl/pipeline_merge.py", "review"),
         ("kstrl/pipeline_verdicts.py", "review"),
         ("kstrl/pipeline_transitions.py", "token_budget"),
         # #696: f"stack:{name}", the row of a [stack] check (verify.check_stack_command).
@@ -138,6 +140,8 @@ EXPECTED_SPELLINGS: frozenset[tuple[str, str]] = frozenset(
         ("kstrl/pipeline_transitions.py", "halted"),
         ("kstrl/pipeline_inbox.py", "halted"),
         ("kstrl/pipeline.py", "merge"),
+        ("kstrl/pipeline_merge.py", "halted"),
+        ("kstrl/pipeline_merge.py", "merge"),
         ("kstrl/pipeline.py", "policy"),
         # #595: finding tags an inbox approval writes on a policy
         # finding. A tag is not a failure signature.
@@ -214,7 +218,7 @@ class TestTheSignatureSpellingsAreInventoried:
         measured = signature_spellings()
         assert ("kstrl/factory.py", "contract") in measured, "a direct assignment"
         assert ("kstrl/pipeline.py", "engineer") in measured, "a direct assignment"
-        assert ("kstrl/pipeline.py", "review") in measured, "a conditional expression"
+        assert ("kstrl/pipeline_verdicts.py", "review") in measured, "a conditional expression"
         assert ("kstrl/factory.py", "scope_unreadable") in measured, "an f-string constant"
 
     def test_a_dynamic_tail_does_not_hide_the_check_name(self) -> None:

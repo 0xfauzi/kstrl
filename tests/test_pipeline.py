@@ -37,12 +37,10 @@ from kstrl.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.knowledge import Fact, KnowledgeConfig, measure_fact_utilization
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.observability import NotifyConfig, NotifyHooks, ProgressLog
-from kstrl.pipeline import (
-    CheckpointDecision,
-    ComponentPipeline,
-    PrDisposition,
-)
+from kstrl.pipeline import ComponentPipeline
+from kstrl.pipeline_delivery import CheckpointDecision
 from kstrl.pipeline_knowledge import FactUtilization
+from kstrl.pipeline_merge import PrDisposition
 from kstrl.pipeline_state import PipelineHooks
 from kstrl.pipeline_transitions import Transition
 from kstrl.pr import MergeConfirmation, PrOutcome

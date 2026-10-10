@@ -348,7 +348,7 @@ class TestInbox:
     ) -> None:
         """H7: "pause_before_pr_merge is on" and backticks around a command,
         and each choice's sentence wrapped back to the left edge."""
-        from kstrl.pipeline import PARK_DETAIL
+        from kstrl.pipeline_delivery import PARK_DETAIL
 
         _failed_manifest(tmp_path, ())
         manifest_file = tmp_path / "scripts" / "kstrl" / "manifest.json"
