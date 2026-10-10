@@ -44,7 +44,7 @@ from __future__ import annotations
 
 from types import ModuleType
 
-from kstrl import context, factory, init_cmd, knowledge, loop, review_claims, verify
+from kstrl import context, factory, init_cmd, iteration_prompt, knowledge, review_claims, verify
 
 #: Eleven rows: (module, the name of that module's shared version constant,
 #: the fragment names it assembles). This is the one place a fragment is
@@ -130,7 +130,7 @@ _BUILDERS: tuple[tuple[ModuleType, str, tuple[str, ...]], ...] = (
     # #233, not #303: the between-iteration measurement block, present in
     # an iteration's prompt only when the last iteration's gates failed.
     (
-        loop,
+        iteration_prompt,
         "LAST_ITERATION_MEASUREMENT_PROMPT_VERSION",
         ("LAST_ITERATION_MEASUREMENT_PROMPT",),
     ),

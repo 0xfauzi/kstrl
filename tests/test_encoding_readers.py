@@ -129,8 +129,9 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     # back link `worktrees/<name>/gitdir`, read to prove that the git
     # directory both zones read is the root's own.
     "isolation.py": 2,
+    "iteration_prompt.py": 1,
     "knowledge.py": 3,
-    "loop.py": 2,
+    "loop.py": 1,
     "manifest.py": 1,
     "observability.py": 1,
     # Back to 1 (the existing `read_operator_file` read): the
@@ -268,10 +269,10 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     # back link it names, utf-8, with ValueError caught beside OSError.
     "isolation.py (entry / 'gitdir').read_text(encoding='utf-8')",
     "isolation.py dot_git.read_text(encoding='utf-8')",
+    "iteration_prompt.py claude_md_path.read_text(encoding='utf-8')",
     "knowledge.py path.read_text(encoding='utf-8')",
     "knowledge.py prd_path.read_text(encoding='utf-8')",
     "knowledge.py target.read_text(encoding='utf-8')",
-    "loop.py claude_md_path.read_text(encoding='utf-8')",
     "loop.py config.prompt_file.read_text(encoding='utf-8')",
     "manifest.py open(path, encoding='utf-8')",
     "observability.py for line in f on an open() handle",

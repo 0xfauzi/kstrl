@@ -39,7 +39,7 @@ DEFAULT_PROMPT_VERSION = "1.6.0"
 # v1.5.0 (#696 slice 4): step 9 names the `Stack` block's checks. The
 # `Verification Commands (resolved by kstrl)` block it named is gone with
 # the commands kstrl used to choose: a confirmed [stack] is the only source
-# of the commands kstrl runs, and `loop.build_project_context` renders it.
+# of the commands kstrl runs, and `iteration_prompt.build_project_context` renders it.
 
 # v1.4.0 (#585): the engineer no longer writes the codebase map. Step 10
 # sent its facts to `$codebase_map_path`, a file every component shares
@@ -1544,7 +1544,7 @@ CLAUDE_MD_OVERVIEW_PROMPT = "# CLAUDE.md - {name}\n\n## Project Overview\n- **Pr
 
 # What the generated CLAUDE.md says about verification, and why it names
 # no commands. CLAUDE.md is prepended verbatim into the engineer prompt
-# (loop.build_project_context), so anything written here is an
+# (iteration_prompt.build_project_context), so anything written here is an
 # instruction the agent follows; deriving the right commands would still
 # be a second copy, and two copies drift. See the #261 note in verify.py.
 CLAUDE_MD_VERIFICATION_PROMPT = """

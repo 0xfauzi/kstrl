@@ -25,7 +25,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl import context, factory, init_cmd, knowledge, loop, review_claims, verify
+from kstrl import context, factory, init_cmd, iteration_prompt, knowledge, review_claims, verify
 from kstrl.context import LEGACY_ATTEMPT, IterationContext, IterationRecord
 from kstrl.findings import Finding
 from kstrl.knowledge import KnowledgeConfig
@@ -224,7 +224,7 @@ def _loop_measurement(_tmp: Path) -> str:
             )
         ],
     )
-    return loop.measurement_block(reading)
+    return iteration_prompt.measurement_block(reading)
 
 
 _FACTORY_PRD_REL = "components/c1/prd.json"
@@ -504,7 +504,7 @@ CALL_TIME_GUARDS: dict[str, tuple[ModuleType, str]] = {
     "CLAUDE_MD_OVERVIEW_PROMPT": (init_cmd, "claude_md"),
     "CLAUDE_MD_VERIFICATION_PROMPT": (init_cmd, "claude_md"),
     "CLAUDE_MD_LEARNINGS_PROMPT": (init_cmd, "claude_md"),
-    "LAST_ITERATION_MEASUREMENT_PROMPT": (loop, "loop_measurement"),
+    "LAST_ITERATION_MEASUREMENT_PROMPT": (iteration_prompt, "loop_measurement"),
 }
 
 
