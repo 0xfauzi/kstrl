@@ -238,7 +238,7 @@ class TestEveryLadderInputHasAWriter:
         )
 
     def test_manual_is_written_by_the_operator_command(self) -> None:
-        cli = next(p for p in package_sources() if label(p) == "cli.py")
+        cli = next(p for p in package_sources() if label(p) == "cli_learning.py")
         (function,) = [
             node
             for node in all_nodes(parsed(cli))

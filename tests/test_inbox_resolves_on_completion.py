@@ -597,7 +597,7 @@ def completion_census() -> dict[str, int]:
 #: below before adding it here.
 EXPECTED_STATUS_SPELLINGS: dict[str, int] = {
     "autonomy_replay.py::load_runs": 1,
-    "cli.py::evolve": 1,
+    "cli_learning.py::evolve": 1,
     "context.py::IterationContext.format_for_prompt": 1,
     "evolution.py::<module>": 1,
     "manifest.py::<module>": 2,
@@ -630,7 +630,7 @@ COMPLETION_SITES = frozenset(
 #: Every other row, and why it is not a component becoming COMPLETED.
 NOT_A_COMPLETION: dict[str, str] = {
     "autonomy_replay.py::load_runs": "reads the 'completed' count column of a trend row",
-    "cli.py::evolve": "prints the 'completed' count column of a trend row",
+    "cli_learning.py::evolve": "prints the 'completed' count column of a trend row",
     "context.py::IterationContext.format_for_prompt": "a label in the engineer's retry context",
     "evolution.py::<module>": "the name of the 'completed' trend column",
     "manifest.py::<module>": "the ComponentStatus.COMPLETED declaration, name and value",

@@ -359,15 +359,15 @@ def test_plain_output_is_coloured_only_on_a_terminal_without_no_color(
 FINDING_EXIT_SITES: dict[tuple[str, str], int] = {
     ("baseline.py", "exit_code_for"): 1,  # `--fail-on-regression`: a regression
     ("calibration.py", "main"): 1,  # `python -m kstrl.calibration`: a detection drop
-    ("cli.py", "_check_baseline_report"): 1,  # `--fail-on-regression`: a regression
-    ("cli.py", "_check_report"): 2,  # `ks check`: a check failed
+    ("cli_check.py", "_check_baseline_report"): 1,  # `--fail-on-regression`: a regression
+    ("cli_check.py", "_check_report"): 2,  # `ks check`: a check failed
     ("cli.py", "ci_poll"): 1,  # a merge commit's CI failed or could not be read
     ("cli.py", "config_show"): 2,  # a rejected section, reported
     ("cli.py", "decompose"): 1,  # the architect's output could not be used
     ("cli.py", "factory"): 1,  # the architect's output could not be used
-    ("cli.py", "health_cmd"): 1,  # a metric breached its control limits
+    ("cli_learning.py", "health_cmd"): 1,  # a metric breached its control limits
     ("cli.py", "queue_sync"): 1,  # an issue could not be synced
-    ("cli.py", "recheck_cmd"): 1,  # a verdict the recheck disagrees with
+    ("cli_learning.py", "recheck_cmd"): 1,  # a verdict the recheck disagrees with
     ("cli.py", "serve"): 1,  # work is waiting on a human
     ("doctor.py", "exit_code_for"): 1,  # `ks doctor`: not ready is a finding
     ("factory.py", "resolve_exit_code"): 5,  # a failed, unmerged, parked or unscheduled run

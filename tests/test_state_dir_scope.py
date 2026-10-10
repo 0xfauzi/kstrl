@@ -393,7 +393,8 @@ _PACKAGE_ENTRIES: set[str] | None = None
 _EXPECTED_STATE_DIR_SPELLINGS: dict[str, int] = {
     # 5: -1 for #507, which deleted the proposal generator and --apply
     # and kept one join to the proposals directory for the notice about it.
-    "cli.py": 5,
+    "cli.py": 4,
+    "cli_learning.py": 1,
     "contract.py": 1,
     "decompose.py": 1,
     "doctor.py": 2,
