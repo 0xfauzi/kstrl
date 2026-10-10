@@ -332,7 +332,7 @@ def test_the_retry_context_has_exactly_two_writers_and_both_are_in_the_pipeline(
         sources=package_sources(),
         sees=_writes_the_retry_context,
         key=lambda source_file, _node: label(source_file),
-        expected={"pipeline.py": 2},
+        expected={"pipeline_transitions.py": 2},
         control=[_CONTEXT_WRITE, _CONTEXT_UPDATE, _CONTEXT_SETDEFAULT],
         message=(
             "the retry context gained or lost a writer. Every writer "

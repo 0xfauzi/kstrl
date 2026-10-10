@@ -42,9 +42,9 @@ from kstrl.pipeline import (
     ComponentPipeline,
     FactUtilization,
     PrDisposition,
-    Transition,
 )
 from kstrl.pipeline_state import PipelineHooks
+from kstrl.pipeline_transitions import Transition
 from kstrl.pr import MergeConfirmation, PrOutcome
 from kstrl.review import ReviewConcern, ReviewResult
 from kstrl.runenvelope import RunEnvelope

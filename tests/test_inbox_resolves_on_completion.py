@@ -603,8 +603,8 @@ EXPECTED_STATUS_SPELLINGS: dict[str, int] = {
     "manifest.py::<module>": 2,
     "manifest.py::Manifest.reset_for_retry": 1,
     "observability.py::ProgressLog.factory_completed": 1,
-    "pipeline.py::<module>": 2,
-    "pipeline.py::ComponentPipeline.complete": 2,
+    "pipeline_transitions.py::<module>": 2,
+    "pipeline_transitions.py::Transitions.complete": 2,
     "pipeline.py::ComponentPipeline.repoll_merge_pending": 1,
     "pr_body.py::single_pr_body": 1,
     "reducer.py::apply": 1,
@@ -621,7 +621,7 @@ EXPECTED_STATUS_SPELLINGS: dict[str, int] = {
 COMPLETION_SITES = frozenset(
     {
         # comp.status = COMPLETED, and the Transition.COMPLETED it returns.
-        "pipeline.py::ComponentPipeline.complete",
+        "pipeline_transitions.py::Transitions.complete",
         # A parked merge confirmed on re-poll.
         "pipeline.py::ComponentPipeline.repoll_merge_pending",
     }
@@ -636,7 +636,7 @@ NOT_A_COMPLETION: dict[str, str] = {
     "manifest.py::<module>": "the ComponentStatus.COMPLETED declaration, name and value",
     "manifest.py::Manifest.reset_for_retry": "builds the set a dependency's status is compared to",
     "observability.py::ProgressLog.factory_completed": "the count key of a progress event",
-    "pipeline.py::<module>": "the Transition.COMPLETED declaration, name and value",
+    "pipeline_transitions.py::<module>": "the Transition.COMPLETED declaration, name and value",
     "pr_body.py::single_pr_body": "a status label in the single-PR body",
     "reducer.py::apply": "the TUI's view of a ComponentCompleted event, not the manifest",
     "tui/screens/evolve.py::EvolveScreen._trend_cells": "the 'completed' trend column",

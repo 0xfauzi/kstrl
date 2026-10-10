@@ -67,7 +67,8 @@ from tests.test_check_name_enrolment import SIGNATURE_CONTAINER_SUFFIX
 EXPECTED_SIGNATURE_CONTAINER_SITES: dict[tuple[str, str], int] = {
     # The recorder itself, and its three callers: fail, retry_or_fail
     # and _fail_pr_flow.
-    ("kstrl/pipeline.py", "self._record_failure_signatures"): 3,
+    ("kstrl/pipeline.py", "self._record_failure_signatures"): 1,
+    ("kstrl/pipeline_transitions.py", "self._record_failure_signatures"): 2,
     # The mapping, under every spelling it is reached by. #193 moved it
     # into RunState: the pipeline's ``self.component_failure_signatures``
     # is now a read-only property over ``self.run_state...``, which is
@@ -76,7 +77,8 @@ EXPECTED_SIGNATURE_CONTAINER_SITES: dict[tuple[str, str], int] = {
     # rather than through a local of its own. The chokepoint itself is
     # unchanged: a check name still reaches the journal through this one
     # mapping or it does not reach it at all.
-    ("kstrl/pipeline.py", "self.component_failure_signatures"): 4,
+    ("kstrl/pipeline.py", "self.component_failure_signatures"): 2,
+    ("kstrl/pipeline_transitions.py", "self.component_failure_signatures"): 2,
     ("kstrl/pipeline_attempt.py", "self.component_failure_signatures"): 4,
     ("kstrl/pipeline_state.py", "self.run_state.component_failure_signatures"): 1,
     ("kstrl/factory.py", "run_state.component_failure_signatures"): 3,
@@ -145,9 +147,10 @@ class TestTheChokepointIsInventoried:
         while those were the recorder's ONLY callers, and it stopped
         being correct without anything going red. Three now: the two
         entry points and ``_fail_pr_flow``."""
-        callers = EXPECTED_SIGNATURE_CONTAINER_SITES[
-            ("kstrl/pipeline.py", "self._record_failure_signatures")
-        ]
+        callers = sum(
+            EXPECTED_SIGNATURE_CONTAINER_SITES[(module, "self._record_failure_signatures")]
+            for module in ("kstrl/pipeline.py", "kstrl/pipeline_transitions.py")
+        )
         assert callers == 3, (
             "the failure-signature recorder has a different number of "
             "call sites. A new one files its failure under its PHASE "

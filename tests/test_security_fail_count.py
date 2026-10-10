@@ -27,7 +27,7 @@ import pytest
 from kstrl.evolution import FINDINGS_SUPERSEDED_EVENT
 from kstrl.factory import ComponentResult
 from kstrl.observability import read_progress_events
-from kstrl.pipeline import Transition
+from kstrl.pipeline_transitions import Transition
 from kstrl.security import SecurityConfig, SecurityResult, run_security_review
 from kstrl.ui.base import UI
 from kstrl.ui.plain import PlainUI

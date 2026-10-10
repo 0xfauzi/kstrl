@@ -77,12 +77,13 @@ EXPECTED_SPELLINGS: frozenset[tuple[str, str]] = frozenset(
         # head folds through the imported constant rather than a literal.
         ("kstrl/pipeline.py", "adversarial_budget"),
         ("kstrl/factory.py", "scope_unreadable"),
-        ("kstrl/pipeline.py", "aborted"),
+        ("kstrl/pipeline_transitions.py", "aborted"),
         ("kstrl/pipeline.py", "diff"),
         ("kstrl/pipeline.py", "engineer"),
+        ("kstrl/pipeline_transitions.py", "engineer"),
         ("kstrl/pipeline.py", "pr"),
         ("kstrl/pipeline.py", "review"),
-        ("kstrl/pipeline.py", "token_budget"),
+        ("kstrl/pipeline_transitions.py", "token_budget"),
         # #696: f"stack:{name}", the row of a [stack] check (verify.check_stack_command).
         ("kstrl/verify.py", "stack"),
         # --- other vocabularies that share the shape. None of these
@@ -124,7 +125,7 @@ EXPECTED_SPELLINGS: frozenset[tuple[str, str]] = frozenset(
         ("kstrl/intake_github.py", "kstrl"),
         # Inbox dedupe keys and the budget label, all keyed the same way
         # and none of them a failure signature.
-        ("kstrl/pipeline.py", "budget"),
+        ("kstrl/pipeline_transitions.py", "budget"),
         # #466: the dedupe key of a carried check's halted_run item,
         # f"carried:{plan}:{comp}:{check}".
         ("kstrl/pipeline_inbox.py", "carried"),
@@ -133,6 +134,7 @@ EXPECTED_SPELLINGS: frozenset[tuple[str, str]] = frozenset(
         # f"{NOT_REPRODUCED_KEY}{plan}:{sha}".
         ("kstrl/acceptance_design.py", "unreproduced"),
         ("kstrl/pipeline.py", "halted"),
+        ("kstrl/pipeline_transitions.py", "halted"),
         ("kstrl/pipeline_inbox.py", "halted"),
         ("kstrl/pipeline.py", "merge"),
         ("kstrl/pipeline.py", "policy"),
