@@ -599,7 +599,7 @@ EXPECTED_UNCONFIRMED_SITES: dict[str, int] = {
     # path (``with_stack_writable``); read only, never cleared.
     "sandbox.py": 1,
     "stack.py": 5,
-    "verify.py": 2,
+    "verify_commands.py": 2,
 }
 
 

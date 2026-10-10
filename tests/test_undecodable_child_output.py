@@ -22,7 +22,7 @@ from kstrl import contract
 from kstrl.contract import ContractConfig
 from kstrl.scrubbed_run import ChildOutputDecodeError, run_scrubbed
 from kstrl.ui.plain import PlainUI
-from kstrl.verify import check_stack_command
+from kstrl.verify_commands import check_stack_command
 from tests.helpers.astwalk import (
     Bindings,
     all_nodes,
@@ -339,7 +339,7 @@ def test_the_call_site_census_is_pinned() -> None:
         # #696: +1, check_stack_command.
         # #696 slice 4: -3, the per-gate runners.
         # #696 slice 8: -8, the dead-code, mutation and coverage drivers.
-        "verify.py": 1,
+        "verify_commands.py": 1,
         "worktree_setup.py": 1,
         "worktree_sweep.py": 1,
     }
@@ -425,7 +425,7 @@ def test_the_disposition_census_is_pinned() -> None:
         # #696: check_stack_command returns an unmeasured failing row. #696
         # slice 8 removed the other seven returns and the mutation-report
         # reader's convert with the drivers that held them.
-        "verify.py:returns": 1,
+        "verify_commands.py:returns": 1,
         "worktree_setup.py:returns": 1,
         "worktree_sweep.py:returns": 1,
     }

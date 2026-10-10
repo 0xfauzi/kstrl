@@ -171,7 +171,8 @@ from kstrl.stack import (
 from kstrl.statedir import ControlStateError, pre_run_prd_path
 from kstrl.timeout import NO_LIMIT, TimeoutConfig, describe_limit_seconds
 from kstrl.ui.bridge import EventBridgeUI
-from kstrl.verify import SCOPE_UNREADABLE_CHECK, run_mechanical_verification, scope_unreadable_error
+from kstrl.verify import run_mechanical_verification
+from kstrl.verify_diff import SCOPE_UNREADABLE_CHECK, scope_unreadable_error
 from kstrl.verify_model import VerifyConfig
 from kstrl.version import kstrl_version
 from kstrl.worktree_setup import WorktreeSetup

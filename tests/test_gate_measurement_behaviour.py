@@ -25,7 +25,8 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.verify import check_stack_command, run_mechanical_verification
+from kstrl.verify import run_mechanical_verification
+from kstrl.verify_commands import check_stack_command
 from kstrl.verify_model import CheckResult, VerificationResult, VerifyConfig
 from tests.helpers.measurement import assert_measured, assert_unmeasured
 from tests.helpers.stack_confirmation import in_process_stack

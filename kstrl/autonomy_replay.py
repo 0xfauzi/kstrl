@@ -38,7 +38,7 @@ from kstrl.autonomy import (
     DemotionTrigger,
 )
 from kstrl.evolution import INFRASTRUCTURE_CHECKS, EvolutionConfig, experiment_rows
-from kstrl.verify import SCOPE_UNREADABLE_CHECK
+from kstrl.verify_diff import SCOPE_UNREADABLE_CHECK
 
 #: The prefixes this module adds to the ones the journal's own
 #: taxonomy supplies. It asks a WIDER question than that taxonomy does:

@@ -44,7 +44,16 @@ from __future__ import annotations
 
 from types import ModuleType
 
-from kstrl import context, factory, init_cmd, iteration_prompt, knowledge, review_claims, verify
+from kstrl import (
+    context,
+    factory,
+    init_cmd,
+    iteration_prompt,
+    knowledge,
+    review_claims,
+    verify,
+    verify_diff,
+)
 
 #: Eleven rows: (module, the name of that module's shared version constant,
 #: the fragment names it assembles). This is the one place a fragment is
@@ -102,7 +111,7 @@ _BUILDERS: tuple[tuple[ModuleType, str, tuple[str, ...]], ...] = (
         ),
     ),
     (
-        verify,
+        verify_diff,
         "DIFF_SCOPE_DETAILS_PROMPT_VERSION",
         (
             "DIFF_SCOPE_BASE_BRANCH_PROMPT",
@@ -118,12 +127,12 @@ _BUILDERS: tuple[tuple[ModuleType, str, tuple[str, ...]], ...] = (
         ("PRD_TAMPER_FIELDS_PROMPT", "PRD_TAMPER_GATES_PROMPT"),
     ),
     (
-        verify,
+        verify_diff,
         "SCOPE_UNREADABLE_PROMPT_VERSION",
         ("SCOPE_UNREADABLE_EXPLANATION_PROMPT", "SCOPE_UNREADABLE_REMEDY_PROMPT"),
     ),
     (
-        verify,
+        verify_diff,
         "POLICY_ENVELOPE_PROMPT_VERSION",
         ("POLICY_DIFF_UNREADABLE_PROMPT",),
     ),

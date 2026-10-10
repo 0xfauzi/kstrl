@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl.verify import run_fast_checks
+from kstrl.verify_commands import run_fast_checks
 from kstrl.verify_model import VerificationResult, VerifyConfig
 
 if TYPE_CHECKING:

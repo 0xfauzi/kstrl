@@ -33,6 +33,7 @@ from kstrl import (
     knowledge,
     review_claims,
     verify,
+    verify_diff,
     verify_model,
 )
 from kstrl.context import LEGACY_ATTEMPT, IterationContext, IterationRecord
@@ -166,12 +167,14 @@ def _claim_empty(_tmp: Path) -> str:
 
 
 def _diff_scope_plain(_tmp: Path) -> str:
-    return "\n".join(verify._diff_scope_details("main", ["src/", "tests/"], None, ["a.py", "b.py"]))
+    return "\n".join(
+        verify_diff._diff_scope_details("main", ["src/", "tests/"], None, ["a.py", "b.py"])
+    )
 
 
 def _diff_scope_harness(_tmp: Path) -> str:
     return "\n".join(
-        verify._diff_scope_details(
+        verify_diff._diff_scope_details(
             "origin/main", ["src/", "tests/"], ["scripts/kstrl/prd.json"], ["a.py"]
         )
     )
@@ -179,7 +182,7 @@ def _diff_scope_harness(_tmp: Path) -> str:
 
 def _diff_scope_truncated(_tmp: Path) -> str:
     return "\n".join(
-        verify._diff_scope_details("main", ["src/"], None, [f"f{i}.py" for i in range(20)])
+        verify_diff._diff_scope_details("main", ["src/"], None, [f"f{i}.py" for i in range(20)])
     )
 
 
@@ -205,17 +208,17 @@ def _prd_tamper(tmp: Path) -> str:
 
 
 def _scope_unreadable_cause(_tmp: Path) -> str:
-    return "\n".join(verify.check_scope_unreadable("prd.json: No such file").details)
+    return "\n".join(verify_diff.check_scope_unreadable("prd.json: No such file").details)
 
 
 def _scope_unreadable_no_cause(_tmp: Path) -> str:
-    return "\n".join(verify.check_scope_unreadable("").details)
+    return "\n".join(verify_diff.check_scope_unreadable("").details)
 
 
 def _policy_diff_unreadable(tmp: Path) -> str:
     empty = tmp / "not-a-repo"
     empty.mkdir()
-    result = verify.check_policy_envelope(empty, "main", PolicyConfig(enabled=True))
+    result = verify_diff.check_policy_envelope(empty, "main", PolicyConfig(enabled=True))
     # The Error: line carries a machine-specific path; keep only the prose.
     return "\n".join(d for d in result.details if not d.startswith("Error:"))
 
@@ -497,16 +500,16 @@ CALL_TIME_GUARDS: dict[str, tuple[ModuleType, str]] = {
     "CLAIM_NOT_REVERTED_PROMPT": (review_claims, "claim_not_reverted"),
     "CLAIM_PARTIALLY_JUDGED_PROMPT": (review_claims, "claim_all_judged_passed"),
     "CLAIM_NO_VERDICT_PROMPT": (review_claims, "claim_no_verdict"),
-    "DIFF_SCOPE_BASE_BRANCH_PROMPT": (verify, "diff_scope_plain"),
-    "DIFF_SCOPE_ALLOWED_PATHS_PROMPT": (verify, "diff_scope_plain"),
-    "DIFF_SCOPE_HARNESS_PATHS_PROMPT": (verify, "diff_scope_harness"),
-    "DIFF_SCOPE_VIOLATIONS_PROMPT": (verify, "diff_scope_plain"),
-    "DIFF_SCOPE_TRUNCATION_PROMPT": (verify, "diff_scope_truncated"),
+    "DIFF_SCOPE_BASE_BRANCH_PROMPT": (verify_diff, "diff_scope_plain"),
+    "DIFF_SCOPE_ALLOWED_PATHS_PROMPT": (verify_diff, "diff_scope_plain"),
+    "DIFF_SCOPE_HARNESS_PATHS_PROMPT": (verify_diff, "diff_scope_harness"),
+    "DIFF_SCOPE_VIOLATIONS_PROMPT": (verify_diff, "diff_scope_plain"),
+    "DIFF_SCOPE_TRUNCATION_PROMPT": (verify_diff, "diff_scope_truncated"),
     "PRD_TAMPER_FIELDS_PROMPT": (verify, "prd_tamper"),
     "PRD_TAMPER_GATES_PROMPT": (verify, "prd_tamper"),
-    "SCOPE_UNREADABLE_EXPLANATION_PROMPT": (verify, "scope_unreadable_cause"),
-    "SCOPE_UNREADABLE_REMEDY_PROMPT": (verify, "scope_unreadable_cause"),
-    "POLICY_DIFF_UNREADABLE_PROMPT": (verify, "policy_diff_unreadable"),
+    "SCOPE_UNREADABLE_EXPLANATION_PROMPT": (verify_diff, "scope_unreadable_cause"),
+    "SCOPE_UNREADABLE_REMEDY_PROMPT": (verify_diff, "scope_unreadable_cause"),
+    "POLICY_DIFF_UNREADABLE_PROMPT": (verify_diff, "policy_diff_unreadable"),
     "IN_LOOP_SCOPE_VIOLATION_PROMPT": (factory, "factory_guard"),
     "KNOWLEDGE_CONTEXT_PROMPT": (knowledge, "knowledge_plain"),
     "KNOWLEDGE_OVERFLOW_PROMPT": (knowledge, "knowledge_overflow"),

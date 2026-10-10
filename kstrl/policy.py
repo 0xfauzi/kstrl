@@ -55,6 +55,8 @@ ENFORCEMENT_MACHINERY_PATHS: tuple[str, ...] = (
     "**/kstrl/verify.py",
     "**/kstrl/scrubbed_run.py",
     "**/kstrl/verify_model.py",
+    "**/kstrl/verify_commands.py",
+    "**/kstrl/verify_diff.py",
     "**/kstrl/policy.py",
     "**/kstrl/guards.py",
     "**/kstrl/autonomy.py",

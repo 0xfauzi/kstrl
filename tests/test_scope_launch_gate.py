@@ -41,7 +41,7 @@ from kstrl.config import KstrlConfig
 from kstrl.factory import ComponentResult, FactoryConfig, FactoryResult, run_factory
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.ui.plain import PlainUI
-from kstrl.verify import SCOPE_UNREADABLE_CHECK
+from kstrl.verify_diff import SCOPE_UNREADABLE_CHECK
 from kstrl.verify_model import VerifyConfig
 from tests.helpers import gitrepo
 from tests.helpers.component_prd import PASSING_STORY, write_component_prd

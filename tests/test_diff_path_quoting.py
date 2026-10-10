@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import git, verify
+from kstrl import git, verify_diff
 from kstrl.policy import PolicyConfig, diff_header_path
 from tests.conftest import make_review_repo
 from tests.helpers import gitrepo
@@ -44,7 +44,7 @@ def test_the_policy_envelope_reports_the_real_path_as_the_secret_location(
     already pins the unquote itself (its own lines 123-152, 154-186,
     188-218), so what this test alone covers is the LOCATION passthrough
     `_scan_secrets` -> `PolicyViolation.location` -> `Finding.location`
-    through the real Phase 1 entry point, `verify.check_policy_envelope`,
+    through the real Phase 1 entry point, `verify_diff.check_policy_envelope`,
     rather than `evaluate_policy` called with pre-fetched artifacts
     (#408 addendum Group C4)."""
     repo = make_review_repo(
@@ -53,7 +53,9 @@ def test_the_policy_envelope_reports_the_real_path_as_the_secret_location(
         files={"sécret.py": 'API_KEY = "sk-abcdefghijklmnopqrstuvwxyz"\n'},
     )
     gitrepo.git_in(repo.path, "config", "core.quotepath", "true")
-    result = verify.check_policy_envelope(repo.path, repo.base_branch, PolicyConfig(enabled=True))
+    result = verify_diff.check_policy_envelope(
+        repo.path, repo.base_branch, PolicyConfig(enabled=True)
+    )
     assert result.passed is False
     assert [(f.category, f.location) for f in result.findings] == [
         ("policy_secret_pattern", "sécret.py")

@@ -62,13 +62,13 @@ EXPECTED_GATE_FAILURE_ROWS: dict[str, int] = {
     # is the refusal. The retired check_linter/check_test_suite/
     # check_typecheck and their shared helper, _failed_gate_result, each
     # held one row like these; all three gates and the helper are gone.
-    "verify.py: check_stack_command: output=refused": 1,
-    "verify.py: check_stack_command: output=_output_before_stop(exc.stdout, exc.stderr)": 1,
-    "verify.py: check_stack_command: output=_output_before_stop(expired.stdout, expired.stderr)": 1,  # noqa: E501
-    "verify.py: check_stack_command: output=bounded_gate_output(output)": 1,
+    "verify_commands.py: check_stack_command: output=refused": 1,
+    "verify_commands.py: check_stack_command: output=_output_before_stop(exc.stdout, exc.stderr)": 1,  # noqa: E501
+    "verify_commands.py: check_stack_command: output=_output_before_stop(expired.stdout, expired.stderr)": 1,  # noqa: E501
+    "verify_commands.py: check_stack_command: output=bounded_gate_output(output)": 1,
     # #696: the one row _command_gates builds when there is no [stack] at
     # all; its log is the constant NO_STACK message, not a captured output.
-    "verify.py: _command_gates: output=NO_STACK": 1,
+    "verify_commands.py: _command_gates: output=NO_STACK": 1,
 }
 
 #: Source the census MUST read as three rows in two logging gates, and none

@@ -43,7 +43,7 @@ from kstrl.rung import Rung
 from kstrl.scrubbed_run import ChildOutputDecodeError, run_scrubbed
 from kstrl.stack import NO_STACK, Stack, stack_in_force
 from kstrl.timeout import limit_seconds
-from kstrl.verify import check_stack_command
+from kstrl.verify_commands import check_stack_command
 from kstrl.worktree_setup import NO_SETUP, WorktreeSetup
 from kstrl.worktree_sweep import sweep_worktree, warn_sweep
 

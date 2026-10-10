@@ -88,7 +88,7 @@ EXPECTED_SPELLINGS: frozenset[tuple[str, str]] = frozenset(
         ("kstrl/pipeline_verdicts.py", "review"),
         ("kstrl/pipeline_transitions.py", "token_budget"),
         # #696: f"stack:{name}", the row of a [stack] check (verify.check_stack_command).
-        ("kstrl/verify.py", "stack"),
+        ("kstrl/verify_commands.py", "stack"),
         # --- other vocabularies that share the shape. None of these
         # reaches component_failure_signatures, and enrolling any of
         # them would make the category table unreadable as the list of

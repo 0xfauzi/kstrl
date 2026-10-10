@@ -65,7 +65,7 @@ from kstrl.stack import (
     stack_paths,
 )
 from kstrl.statedir import CONTROL_APP_NAME, xdg_state_home
-from kstrl.verify import SHELL_COULD_NOT_RUN
+from kstrl.verify_commands import SHELL_COULD_NOT_RUN
 
 if TYPE_CHECKING:
     from kstrl.ui.base import UI

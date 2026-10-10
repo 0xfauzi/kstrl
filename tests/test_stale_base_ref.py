@@ -16,7 +16,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl import contract, factory, git, guards, verify
+from kstrl import contract, factory, git, guards, verify_diff
 from kstrl.config import KstrlConfig
 from kstrl.contract import ContractConfig, ContractMode
 from kstrl.loop import LoopResult
@@ -261,7 +261,7 @@ def test_phase_1_scope_message_names_the_ref_it_judged(fx: StaleBase) -> None:
     git_in(fx.worktree, "add", "-A")
     git_in(fx.worktree, "commit", "-q", "-m", "add evil")
 
-    result = verify.check_diff_scope(fx.worktree, "main", allowed_paths=["src/"])
+    result = verify_diff.check_diff_scope(fx.worktree, "main", allowed_paths=["src/"])
     assert result.passed is False
     assert "origin/main" in result.message
     assert "Base branch: origin/main" in "\n".join(result.details)
@@ -283,7 +283,7 @@ def test_a_local_only_repository_still_names_the_bare_branch(tmp_path: Path) -> 
     git_in(repo, "add", "-A")
     git_in(repo, "commit", "-q", "-m", "add evil")
 
-    result = verify.check_diff_scope(repo, "main", allowed_paths=["src/"])
+    result = verify_diff.check_diff_scope(repo, "main", allowed_paths=["src/"])
     assert result.passed is False
     details = "\n".join(result.details)
     assert "Base branch: main" in details

@@ -103,8 +103,9 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     # empty-file and syntax-error rules' `_base_finding`, the dead-code,
     # mutation and patch-coverage drivers, and their spawns. 2: #776 V1
     # moved `run_scrubbed` and `start_scrubbed` to `scrubbed_run.py`,
-    # which holds 15 (measured by running this census).
-    "verify.py": 2,
+    # which holds 15 (measured by running this census). #776 V3: the 2
+    # moved on to `verify_commands.py`, and `verify.py` holds none.
+    "verify_commands.py": 2,
     "worktree_setup.py": 2,  # #624: the import, and `TimeoutExpired` from `run_scrubbed`
     "worktree_sweep.py": 2,  # #461: the import, and `TimeoutExpired` from `run_scrubbed`
 }

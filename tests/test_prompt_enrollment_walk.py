@@ -332,7 +332,10 @@ EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
     # declaration and its one use site) = 22, less VERIFY_COMMANDS_PROMPT's
     # two (#696 slice 4 retired it) = 20. The *_PROMPT_VERSION constants
     # add nothing: the walk keys on names ending in _PROMPT.
-    "verify.py": 20,
+    "verify.py": 4,
+    # #776 V3: the 8 diff-scope, scope-unreadable and policy-envelope
+    # prompts, 2 spellings each, moved here with their version constants.
+    "verify_diff.py": 16,
 }
 
 
