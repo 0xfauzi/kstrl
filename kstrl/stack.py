@@ -162,7 +162,7 @@ PROPOSAL_INSTRUCTIONS = (
 )
 
 #: H3: engineer-facing CONTEXT, rendered into every engineer prompt of a run
-#: whose project has a ``[stack]`` (``loop.build_project_context``). The
+#: whose project has a ``[stack]`` (``iteration_prompt.build_project_context``). The
 #: calibration suite scores no engineer-context fixture, so this carries the
 #: H3 obligation and no H2 obligation the suite can discharge (CLAUDE.md, the
 #: DECISIONS_CONTEXT_PROMPT position). Only the template is pinned: the
@@ -279,7 +279,7 @@ class Stack:
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
     def format_for_prompt(self) -> str:
-        """The block ``loop.build_project_context`` hands the engineer."""
+        """The block ``iteration_prompt.build_project_context`` hands the engineer."""
         checks = "\n".join(f"- {name}: `{command}`" for name, command in self.checks)
         return STACK_PROMPT.format(instructions=self.instructions.strip(), checks=checks)
 

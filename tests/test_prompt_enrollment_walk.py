@@ -311,10 +311,11 @@ EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
     # declaration and its one use site) = 6. The version constant adds
     # nothing: the walk keys on names ending in _PROMPT, not _VERSION.
     "knowledge.py": 6,
-    # 2 pre-existing (the DEFAULT_PROMPT import and its use in run_loop)
-    # + #233: LAST_ITERATION_MEASUREMENT_PROMPT x 2 spellings (the
-    # declaration and its one use in measurement_block) = 4.
-    "loop.py": 4,
+    # #233: LAST_ITERATION_MEASUREMENT_PROMPT x 2 spellings (the
+    # declaration and its one use in measurement_block) = 2.
+    "iteration_prompt.py": 2,
+    # 2 spellings of DEFAULT_PROMPT (the import and its use in run_loop).
+    "loop.py": 2,
     # #639 slice 4: OWNER_ANSWER_PROMPT's declaration and its one use in
     # render_owner_answer.
     "owner_answers.py": 2,
