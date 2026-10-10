@@ -220,7 +220,12 @@ EXPECTED_ENVELOPE_SECTIONS = frozenset(
 #: ``tests/test_serve_config_reads.py``; the two walks agree at 11 today
 #: and were written for different subjects, this one for reads DURING a
 #: run and that one for reads that may not escape the poll loop.
-EXPECTED_SERVE_SITES = 11
+#:
+#: The daemon is ``kstrl/serve.py`` and the ``kstrl/serve_*.py`` modules
+#: divided out of it (#776), so the walk reads every ``serve*.py`` and the
+#: pin is one total with one count for each file.
+EXPECTED_SERVE_SITES_BY_FILE = {"serve.py": 8, "serve_merge_gate.py": 3}
+EXPECTED_SERVE_SITES = sum(EXPECTED_SERVE_SITES_BY_FILE.values())
 
 _NEW_CONFIG_CLASS = """
 class WidgetConfig:
@@ -590,7 +595,17 @@ class TestTheRunReadsConfigOnlyBeforeItStarts:
         the same run, and a walk that went blind takes them to zero.
         """
         found = package_surface
-        sites = configwalk.read_sites(KSTRL_PACKAGE / module, found)
+        paths = (
+            sorted(KSTRL_PACKAGE.glob("serve*.py"))
+            if module == "serve.py"
+            else [KSTRL_PACKAGE / module]
+        )
+        sites = [site for path in paths for site in configwalk.read_sites(path, found)]
+        if module == "serve.py":
+            by_file = {path.name: len(configwalk.read_sites(path, found)) for path in paths}
+            assert by_file == EXPECTED_SERVE_SITES_BY_FILE, (
+                f"the config reads of the serve modules moved between files. Found {by_file}"
+            )
         assert len(sites) == expected, (
             f"the number of config reads in kstrl/{module} moved. If it "
             "fell to 0 the walk stopped seeing them, which is the shape "

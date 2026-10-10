@@ -72,7 +72,6 @@ from kstrl.serve import (
     owned_run_spend,
     process_group_alive,
     reap_leases,
-    resolve_merge_gate,
     run_supervised,
     serve,
     serve_cycle,
@@ -85,6 +84,7 @@ from kstrl.serve import (
 #: gets the stub instead of the function under test - which silently made
 #: the empty-run-id test pass no matter what the function did.
 from kstrl.serve import read_run_spend as REAL_READ_RUN_SPEND
+from kstrl.serve_merge_gate import resolve_merge_gate
 from kstrl.workqueue import (
     ItemSource,
     ItemState,
