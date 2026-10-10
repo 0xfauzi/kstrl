@@ -322,7 +322,8 @@ EXPECTED_JOURNAL_PATH_SITES: dict[str, int] = {
     "evolution.py: self.config.journal_path": 5,
     "cli_learning.py: config.journal_path": 2,
     "health.py: config.journal_path": 1,
-    "pipeline.py: self.journal_path": 4,
+    "pipeline.py: self.journal_path": 3,
+    "pipeline_state.py: self.journal_path": 1,
     "workqueue_store.py: self.journal_path": 2,
 }
 #: The ``health.py`` and ``cli.py`` rows above are READS, added by #151:

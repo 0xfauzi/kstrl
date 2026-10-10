@@ -154,7 +154,7 @@ def release_ref_from(components: Sequence[Component], *, since: str = "") -> str
     tier merge, so this takes the merge the factory saw last:
     the greatest ``completed_at`` among components that recorded a
     ``merge_sha``. ``completed_at`` has one-second resolution
-    (``kstrl/pipeline.py::_iso_now``), so ties are ordinary rather
+    (``kstrl/pipeline_state.py::_iso_now``), so ties are ordinary rather
     than exotic: the key carries the manifest index, so a tie goes to
     the LATER component in manifest order, which is the more
     downstream one. ``RELEASE_REF_RULE`` is stamped beside the value
