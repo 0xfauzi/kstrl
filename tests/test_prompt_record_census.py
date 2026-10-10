@@ -327,9 +327,9 @@ EXPECTED_AGENT_CALLS: dict[str, int] = {
     "integration_phase.py:review_commit": 1,
     "knowledge.py:distill_facts": 1,
     "loop.py:run_loop": 1,
-    "pipeline.py:ComponentPipeline._phase_distill": 1,
     "pipeline.py:ComponentPipeline._phase_review": 1,
     "pipeline.py:ComponentPipeline._phase_security": 1,
+    "pipeline_knowledge.py:KnowledgePhase._phase_distill": 1,
     "review.py:run_review": 1,
     "security.py:run_security_review": 1,
 }
@@ -357,9 +357,9 @@ EXPECTED_SCOPES: dict[str, int] = {
     "factory.py:_run_component": 1,
     "feature_cmd.py:run_feature": 3,
     "integration_phase.py:_review_round": 1,
-    "pipeline.py:ComponentPipeline._phase_distill": 1,
     "pipeline.py:ComponentPipeline._phase_review": 1,
     "pipeline.py:ComponentPipeline._phase_security": 1,
+    "pipeline_knowledge.py:KnowledgePhase._phase_distill": 1,
 }
 
 
@@ -437,14 +437,14 @@ EXPECTED_BOUNDS: dict[str, tuple[str, str]] = {
     "integration_phase.py:review_commit": ("timeout", "its caller's timeout"),
     "knowledge.py:distill_facts": ("timeout", "[knowledge] distill_timeout_seconds"),
     "loop.py:run_loop": ("timeout", "[timeout] agent_iteration, capped by component_total"),
-    "pipeline.py:ComponentPipeline._phase_distill": (
-        "config",
-        "[knowledge] distill_timeout_seconds, read inside distill_facts",
-    ),
     "pipeline.py:ComponentPipeline._phase_review": ("timeout", "[factory] review_timeout_seconds"),
     "pipeline.py:ComponentPipeline._phase_security": (
         "config",
         "[security] timeout_seconds, read inside run_security_review",
+    ),
+    "pipeline_knowledge.py:KnowledgePhase._phase_distill": (
+        "config",
+        "[knowledge] distill_timeout_seconds, read inside distill_facts",
     ),
     "review.py:run_review": ("timeout", "its caller's timeout"),
     "security.py:run_security_review": ("timeout", "[security] timeout_seconds"),

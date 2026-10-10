@@ -26,7 +26,8 @@ import pytest
 from kstrl.events import JsonlSink
 from kstrl.factory import ComponentResult
 from kstrl.manifest import Component
-from kstrl.pipeline import ComponentPipeline, VerifyPhaseResult
+from kstrl.pipeline import ComponentPipeline
+from kstrl.pipeline_checks import VerifyPhaseResult
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import (
     GATE_OUTPUT_MAX_CHARS,
@@ -313,7 +314,7 @@ def test_an_error_that_is_not_an_os_error_is_not_swallowed(
     def broken_write(target: Path, content: str) -> None:
         raise RuntimeError("kstrl462 not an OSError")
 
-    monkeypatch.setattr("kstrl.pipeline.atomic_write_text", broken_write)
+    monkeypatch.setattr("kstrl.pipeline_checks.atomic_write_text", broken_write)
     with pytest.raises(RuntimeError, match="kstrl462 not an OSError"):
         run.phase_1()
 

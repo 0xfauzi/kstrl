@@ -40,9 +40,9 @@ from kstrl.observability import NotifyConfig, NotifyHooks, ProgressLog
 from kstrl.pipeline import (
     CheckpointDecision,
     ComponentPipeline,
-    FactUtilization,
     PrDisposition,
 )
+from kstrl.pipeline_knowledge import FactUtilization
 from kstrl.pipeline_state import PipelineHooks
 from kstrl.pipeline_transitions import Transition
 from kstrl.pr import MergeConfirmation, PrOutcome

@@ -424,7 +424,7 @@ class TestOneWriter:
                 "evolution.py": 1,  # the EvolutionConfig default
                 "init_cmd.py": 1,  # a commented example in the scaffolded kstrl.toml
                 "knowledge.py": 1,  # prose in the module docstring
-                "pipeline.py": 1,  # prose in a docstring
+                "pipeline_knowledge.py": 1,  # prose in a docstring
                 "statedir.py": 1,  # the state-dir inventory, by name
             },
             control='target = root / ("evolution" + ".jsonl")\n',

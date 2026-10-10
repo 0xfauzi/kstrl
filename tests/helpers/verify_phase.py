@@ -30,7 +30,8 @@ from kstrl.factory import (
 from kstrl.knowledge import KnowledgeConfig
 from kstrl.manifest import Component, Manifest
 from kstrl.observability import NotifyConfig, NotifyHooks, ProgressLog
-from kstrl.pipeline import ComponentPipeline, VerifyPhaseResult
+from kstrl.pipeline import ComponentPipeline
+from kstrl.pipeline_checks import VerifyPhaseResult
 from kstrl.pipeline_state import PipelineHooks
 from kstrl.pipeline_transitions import FailureAction
 from kstrl.policy import PolicyConfig
