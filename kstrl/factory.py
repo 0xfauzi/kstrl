@@ -139,9 +139,8 @@ from kstrl.pipeline import (
     HITL_REJECT_CHECK,
     PR_CLOSED_CHECK,
     ComponentPipeline,
-    PipelineHooks,
-    _iso_now,
 )
+from kstrl.pipeline_state import PipelineHooks, _iso_now
 from kstrl.plan_gate import run_plan_gate, spec_pin_errors, stack_pin_errors
 from kstrl.policy import PolicyConfig
 from kstrl.pr import create_prs_in_order, create_single_pr

@@ -244,7 +244,7 @@ class ComponentPipeline:
         return PolicyConfig.load(self.root_dir)
 """
 
-#: The one fallback ``kstrl/pipeline.py``'s constructor forbids in its
+#: The one fallback ``kstrl/pipeline_state.py``'s constructor forbids in its
 #: own words, spelled exactly as the comment there spells it. Round 2 of
 #: #192 shipped a walk that could not see it: layer A enrolled a class
 #: only when one of its own methods called a parse primitive by bare
@@ -258,7 +258,7 @@ _FALLBACK = "        run_envelope = run_envelope or RunEnvelope.load(root_dir)\n
 
 
 def _pipeline_with_the_forbidden_fallback(tmp_path: Path) -> Path:
-    """A copy of the real ``kstrl/pipeline.py`` with the fallback back in.
+    """A copy of the real ``kstrl/pipeline_state.py`` with the fallback back in.
 
     The positive control for ``sites == []``. An empty offender list is
     what a clean module returns AND what a walk that stopped looking
@@ -271,14 +271,14 @@ def _pipeline_with_the_forbidden_fallback(tmp_path: Path) -> Path:
     a rename that makes the plant apply to nothing is a failure rather
     than a control that silently stops planting (#344).
     """
-    source = (KSTRL_PACKAGE / "pipeline.py").read_text(encoding="utf-8")
+    source = (KSTRL_PACKAGE / "pipeline_state.py").read_text(encoding="utf-8")
     for anchor in (_REQUIRED_ENVELOPE, _FALLBACK_ANCHOR):
         assert source.count(anchor) == 1, (
             f"the plant's anchor {anchor!r} occurs {source.count(anchor)} times "
-            "in kstrl/pipeline.py, so this control is not planting what it "
+            "in kstrl/pipeline_state.py, so this control is not planting what it "
             "says it plants. Retarget it; do not delete it."
         )
-    planted = tmp_path / "pipeline.py"
+    planted = tmp_path / "pipeline_state.py"
     planted.write_text(
         source.replace(_REQUIRED_ENVELOPE, _OPTIONAL_ENVELOPE).replace(
             _FALLBACK_ANCHOR, _FALLBACK + _FALLBACK_ANCHOR
@@ -515,9 +515,13 @@ class TestTheRunReadsConfigOnlyBeforeItStarts:
             "nothing: a walk that cannot see the offender returns the "
             "same empty list a clean module returns."
         )
-        sites = configwalk.read_sites(KSTRL_PACKAGE / "pipeline.py", found)
+        sites = [
+            site
+            for module in sorted(KSTRL_PACKAGE.glob("pipeline*.py"))
+            for site in configwalk.read_sites(module, found)
+        ]
         assert sites == [], (
-            "kstrl/pipeline.py resolves config. Its phases run per "
+            "a kstrl/pipeline*.py file resolves config. Its phases run per "
             "component attempt, so a read there is a second answer the "
             "run's recorded policy hash does not cover, and a read in "
             "__init__ raises where nothing can report it (#192). The "

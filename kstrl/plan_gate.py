@@ -31,7 +31,7 @@ from kstrl.decompose import load_spec_input, spec_digest
 from kstrl.inbox import UNDECIDED, Inbox, InboxError, InboxItem, ItemKind, ItemStatus
 from kstrl.interaction import PromptKind, PromptRequest
 from kstrl.observability import NotifyConfig, NotifyHooks
-from kstrl.pipeline import _iso_now
+from kstrl.pipeline_state import _iso_now
 from kstrl.prd import PRD
 from kstrl.statedir import ControlStateError, pre_run_prd_path
 from kstrl.workqueue_store import relocated_spec

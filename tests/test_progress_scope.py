@@ -52,7 +52,8 @@ from kstrl.knowledge import KnowledgeConfig
 from kstrl.loop import run_loop
 from kstrl.manifest import Component, Manifest
 from kstrl.observability import NotifyConfig, NotifyHooks, ProgressLog
-from kstrl.pipeline import ComponentPipeline, PipelineHooks
+from kstrl.pipeline import ComponentPipeline
+from kstrl.pipeline_state import PipelineHooks
 from kstrl.prd import PRD
 from kstrl.review import ReviewResult
 from kstrl.runenvelope import RunEnvelope
