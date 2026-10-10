@@ -67,7 +67,7 @@ from tests.test_check_name_enrolment import SIGNATURE_CONTAINER_SUFFIX
 EXPECTED_SIGNATURE_CONTAINER_SITES: dict[tuple[str, str], int] = {
     # The recorder itself, and its three callers: fail, retry_or_fail
     # and _fail_pr_flow.
-    ("kstrl/pipeline.py", "self._record_failure_signatures"): 1,
+    ("kstrl/pipeline_merge.py", "self._record_failure_signatures"): 1,
     ("kstrl/pipeline_transitions.py", "self._record_failure_signatures"): 2,
     # The mapping, under every spelling it is reached by. #193 moved it
     # into RunState: the pipeline's ``self.component_failure_signatures``
@@ -149,7 +149,7 @@ class TestTheChokepointIsInventoried:
         entry points and ``_fail_pr_flow``."""
         callers = sum(
             EXPECTED_SIGNATURE_CONTAINER_SITES[(module, "self._record_failure_signatures")]
-            for module in ("kstrl/pipeline.py", "kstrl/pipeline_transitions.py")
+            for module in ("kstrl/pipeline_merge.py", "kstrl/pipeline_transitions.py")
         )
         assert callers == 3, (
             "the failure-signature recorder has a different number of "
