@@ -109,7 +109,7 @@ REPLACE_SITES: dict[str, str] = {
 EXPECTED_UNDECIDED_REPLACE_CALLS: tuple[str, ...] = (
     "agents/codex.py text.replace",
     "autonomy.py datetime.now(UTC).replace",
-    "autonomy.py trigger.label.replace",
+    "autonomy_transitions.py trigger.label.replace",
     "baseline_report.py ' '.join(text.split()).replace",
     "decompose.py comp_id.replace",
     "decompose.py comp_id.replace('-', ' ').replace",
