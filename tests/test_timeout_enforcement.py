@@ -1883,7 +1883,7 @@ class TestSubprocessTimeoutAudit:
     - kstrl/agents/proc.py: reader-thread deadline + group kill (R0.1)
     - kstrl/scrubbed_run.py: run_scrubbed communicate(timeout) + group kill
       (R2.6)
-    - kstrl/serve.py: subprocess_factory_runner communicate(timeout) +
+    - kstrl/serve_process.py: subprocess_factory_runner communicate(timeout) +
       group kill (R8.6). Popen is REQUIRED here rather than incidental:
       review #186 F1 showed subprocess.run's timeout signals only the
       direct child, and a factory's own descendants (agent subprocesses,
@@ -1955,7 +1955,7 @@ class TestSubprocessTimeoutAudit:
             "kstrl/agents/proc.py",
             "kstrl/procgroup_listing.py",
             "kstrl/scrubbed_run.py",
-            "kstrl/serve.py",
+            "kstrl/serve_process.py",
         }
     )
 

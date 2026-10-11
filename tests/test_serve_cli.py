@@ -15,8 +15,8 @@ import pytest
 from click.testing import CliRunner, Result
 
 from kstrl.cli import cli
-from kstrl.serve import RunSpend, SpendLedger
 from kstrl.serve_outcome import RunOutcome
+from kstrl.serve_spend import RunSpend, SpendLedger
 from kstrl.workqueue import Queue
 from kstrl.workqueue_items import ItemState, QueueConfig
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
@@ -40,7 +40,7 @@ def spec_file(tmp_path: Path) -> Path:
 @pytest.fixture(autouse=True)
 def _no_spend(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "kstrl.serve.read_run_spend",
+        "kstrl.serve_spend.read_run_spend",
         lambda root, run_id: RunSpend(),
     )
 

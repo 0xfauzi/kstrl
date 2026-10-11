@@ -86,7 +86,7 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     # 15: #776 V1 moved `run_scrubbed` and `start_scrubbed` here from
     # `verify.py`, with their `subprocess` spellings (see `verify.py` below).
     "scrubbed_run.py": 15,
-    "serve.py": 8,
+    "serve_process.py": 8,
     "statedir.py": 3,
     "timeout.py": 3,
     # #433: the import and SubprocessError; the probe itself is
@@ -143,7 +143,7 @@ EXPECTED_TEXT_MODE_SPAWNS: dict[str, int] = {
     "pr_state.py": 2,
     "procgroup_listing.py": 1,
     "retry_plan.py": 1,
-    "serve.py": 1,
+    "serve_process.py": 1,
     "statedir.py": 1,
     "tui/screens/home.py": 1,
 }
@@ -202,7 +202,7 @@ EXPECTED_CLEARED_SPAWNS: tuple[str, ...] = (
     "pr_state.py subprocess.run(['gh', 'pr', 'view', str(pr_number), '--json', 'mergeab",
     "pr_state.py subprocess.run(['gh', 'pr', 'view', str(pr_number), '--json', 'state,m",
     "retry_plan.py subprocess.run(['git', 'branch', '-D', failed_branch], cwd=root_dir, c",
-    "serve.py subprocess.Popen(command, cwd=str(cwd), env=env, stdout=subprocess.PIP",
+    "serve_process.py subprocess.Popen(command, cwd=str(cwd), env=env, stdout=subprocess.PIP",
     "statedir.py subprocess.run(['git', '-C', str(root_dir), 'remote', 'get-url', 'orig",
     "tui/screens/home.py subprocess.run(['git', 'rev-parse', '--abbrev-ref', 'HEAD'], cwd=root_",
 )

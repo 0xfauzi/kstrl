@@ -23,8 +23,8 @@ from click.testing import CliRunner, Result
 import kstrl.cli as cli_mod
 import kstrl.workqueue as workqueue_mod
 from kstrl.cli import cli
-from kstrl.serve import RunSpend
 from kstrl.serve_outcome import RunOutcome
+from kstrl.serve_spend import RunSpend
 from kstrl.workqueue import Queue
 from kstrl.workqueue_items import ItemState, QueueConfig, QueueItem
 from kstrl.workqueue_store import queue_root
@@ -56,7 +56,7 @@ time.sleep(120)
 
 @pytest.fixture(autouse=True)
 def _no_spend_and_a_named_operator(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("kstrl.serve.read_run_spend", lambda root, run_id: RunSpend())
+    monkeypatch.setattr("kstrl.serve_spend.read_run_spend", lambda root, run_id: RunSpend())
     monkeypatch.setenv("USER", ACTOR)
 
 

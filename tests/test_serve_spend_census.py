@@ -35,7 +35,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.serve import ARCHITECT_RUN_KIND, SPAWNED_RUN_KIND
+from kstrl.serve_spend import ARCHITECT_RUN_KIND, SPAWNED_RUN_KIND
 from tests.helpers.astwalk import blind_spot
 
 KSTRL = Path(__file__).resolve().parent.parent / "kstrl"

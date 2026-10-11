@@ -230,6 +230,8 @@ EXPECTED_SERVE_SITES_BY_FILE = {
     "serve_launchd.py": 0,
     "serve_merge_gate.py": 3,
     "serve_outcome.py": 0,
+    "serve_process.py": 0,
+    "serve_spend.py": 0,
 }
 EXPECTED_SERVE_SITES = sum(EXPECTED_SERVE_SITES_BY_FILE.values())
 
