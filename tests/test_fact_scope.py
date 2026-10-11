@@ -27,12 +27,10 @@ from kstrl.knowledge import (
     TIER_CORE,
     TIER_DEPENDENCY,
     TIER_SIBLING,
-    Fact,
-    KnowledgeConfig,
     _extract_prefix_claims,
     build_knowledge_context,
-    write_facts,
 )
+from kstrl.knowledge_facts import Fact, KnowledgeConfig, write_facts
 from kstrl.manifest import Component, Manifest
 from kstrl.ui.plain import PlainUI
 from kstrl.verify_model import VerifyConfig

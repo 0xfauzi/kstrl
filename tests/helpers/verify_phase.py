@@ -23,7 +23,7 @@ from kstrl.event_catalog import Event
 from kstrl.events import CallbackSink, EventBus, V1CompatSink
 from kstrl.factory import AdversarialAgentSelection, FactoryConfig
 from kstrl.factory_result import ComponentResult, FactoryResult
-from kstrl.knowledge import KnowledgeConfig
+from kstrl.knowledge_facts import KnowledgeConfig
 from kstrl.manifest import Component, Manifest
 from kstrl.observability import NotifyConfig, NotifyHooks, ProgressLog
 from kstrl.pipeline import ComponentPipeline
