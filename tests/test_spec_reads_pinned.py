@@ -29,9 +29,11 @@ from tests.helpers.astwalk.scope import scope_of
 #: ``Found:`` dict out of the failure.
 EXPECTED_SPEC_READS: dict[str, dict[str, int]] = {
     "load_spec_input": {
-        # The definition, and the read whose text the architect is given.
+        # The import, and the read whose text the architect is given.
         "decompose.py::<module>": 1,
         "decompose.py::_decompose_spec_impl": 1,
+        # The definition.
+        "decompose_prompt.py::<module>": 1,
         # The import, and the one re-read, which compares the digest.
         "plan_gate.py::<module>": 1,
         "plan_gate.py::pinned_spec": 1,

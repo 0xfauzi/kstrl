@@ -96,7 +96,7 @@ import pytest
 from kstrl import (
     acceptance_design,
     decisions,
-    decompose,
+    decompose_prompt,
     git,
     intake_issue,
     knowledge,
@@ -113,7 +113,7 @@ from kstrl.decisions import (
     SpecDecision,
     build_decisions_context,
 )
-from kstrl.decompose import (
+from kstrl.decompose_prompt import (
     ARCHITECT_NO_REPO_SOURCE_PROMPT,
     ARCHITECT_NO_REPO_SOURCE_PROMPT_VERSION,
     ARCHITECT_REPO_SOURCE_PROMPT,
@@ -594,16 +594,16 @@ def _stack_render(_tmp_path: Path) -> str:
 #: text actually travels.
 _RENDERERS: dict[str, tuple[ModuleType, Callable[[Path], str]]] = {
     "DECOMPOSE_PROMPT": (
-        decompose,
-        lambda _p: decompose.build_decompose_prompt("PROJECT", "SPEC"),
+        decompose_prompt,
+        lambda _p: decompose_prompt.build_decompose_prompt("PROJECT", "SPEC"),
     ),
     "ARCHITECT_REPO_SOURCE_PROMPT": (
-        decompose,
-        lambda _p: decompose.architect_repo_source("scripts/kstrl/codebase_map.md"),
+        decompose_prompt,
+        lambda _p: decompose_prompt.architect_repo_source("scripts/kstrl/codebase_map.md"),
     ),
     "ARCHITECT_NO_REPO_SOURCE_PROMPT": (
-        decompose,
-        lambda _p: decompose.architect_no_repo_source(),
+        decompose_prompt,
+        lambda _p: decompose_prompt.architect_no_repo_source(),
     ),
     "REVIEWER_PROMPT": (review_prompt, _reviewer_render),
     "SECURITY_PROMPT": (

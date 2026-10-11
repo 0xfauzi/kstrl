@@ -72,13 +72,8 @@ from kstrl.calibration_score import (
     security_caught,
     security_false_positive,
 )
-from kstrl.decompose import (
-    SpecIssue,
-    _extract_agent_json,
-    _parse_spec_issues,
-    _select_agent_output,
-    build_decompose_prompt,
-)
+from kstrl.decompose import SpecIssue, _extract_agent_json, _parse_spec_issues, _select_agent_output
+from kstrl.decompose_prompt import build_decompose_prompt
 from kstrl.delimiters import generate_data_delimiter
 from kstrl.git import get_diff_stat, pasted_change_source, repo_change_source
 from kstrl.policy import parse_added_lines

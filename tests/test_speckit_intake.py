@@ -14,11 +14,8 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.decompose import (
-    DECOMPOSE_PROMPT,
-    decompose_spec,
-    load_spec_input,
-)
+from kstrl.decompose import decompose_spec
+from kstrl.decompose_prompt import DECOMPOSE_PROMPT, load_spec_input
 from kstrl.ui.plain import PlainUI
 from tests.helpers.before_spend import no_base_check
 from tests.helpers.prompt_calls import architect_call
