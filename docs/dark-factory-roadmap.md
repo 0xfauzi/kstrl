@@ -947,7 +947,7 @@ the adapter - confirmed by re-running rather than assumed.
 
 **The retry rule as implemented (PR 2).** "Only `infrastructure_error`
 failures auto-retry" leaves the UNKNOWN case undefined, and the unknown
-case is where the money goes, so `serve.classify_run` implements
+case is where the money goes, so `serve_outcome.classify_run` implements
 *positive evidence only, failing closed*:
 
 | Evidence | Verdict |

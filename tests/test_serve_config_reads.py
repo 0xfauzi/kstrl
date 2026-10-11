@@ -39,8 +39,9 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl.serve import OpenPrCount, RunOutcome, _NullObserver, serve, serve_cycle
+from kstrl.serve import OpenPrCount, _NullObserver, serve, serve_cycle
 from kstrl.serve_config import ServeConfig
+from kstrl.serve_outcome import RunOutcome
 from kstrl.stack import stack_toml
 from kstrl.workqueue import Queue
 from kstrl.workqueue_items import ItemState, MergeDisposition, QueueConfig
@@ -72,7 +73,12 @@ SERVE_SOURCES = sorted(KSTRL_PACKAGE.glob("serve*.py"))
 #: anywhere the AST can hold a string. Not individually meaningful; the
 #: DELTA is the signal, and it moves for a shape layer 2 does not model
 #: as readily as for one it does.
-EXPECTED_LOAD_SPELLINGS = {"serve.py": 13, "serve_config.py": 1, "serve_merge_gate.py": 4}
+EXPECTED_LOAD_SPELLINGS = {
+    "serve.py": 11,
+    "serve_config.py": 1,
+    "serve_merge_gate.py": 4,
+    "serve_outcome.py": 2,
+}
 
 
 def test_every_spelling_of_load_in_serve_is_counted() -> None:

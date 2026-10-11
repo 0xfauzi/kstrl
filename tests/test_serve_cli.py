@@ -15,7 +15,8 @@ import pytest
 from click.testing import CliRunner, Result
 
 from kstrl.cli import cli
-from kstrl.serve import RunOutcome, RunSpend, SpendLedger
+from kstrl.serve import RunSpend, SpendLedger
+from kstrl.serve_outcome import RunOutcome
 from kstrl.workqueue import Queue
 from kstrl.workqueue_items import ItemState, QueueConfig
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
