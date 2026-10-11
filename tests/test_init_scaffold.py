@@ -207,7 +207,7 @@ class TestInitScaffold:
         section. Each line shows the built-in default, so uncommenting
         every one of them changes no value."""
         from kstrl.intake_gh import GitHubIntakeConfig
-        from kstrl.serve import ServeConfig
+        from kstrl.serve_config import ServeConfig
         from kstrl.workqueue_items import QueueConfig
 
         (tmp_path / "kstrl.toml").write_text(

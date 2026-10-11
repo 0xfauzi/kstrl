@@ -149,7 +149,7 @@ def _section_specs() -> list[SectionSpec]:
     from kstrl.release import ReleaseConfig
     from kstrl.sandbox import SandboxConfig
     from kstrl.security import SecurityConfig
-    from kstrl.serve import ServeConfig
+    from kstrl.serve_config import ServeConfig
     from kstrl.signals import SignalsConfig
     from kstrl.timeout import TimeoutConfig
     from kstrl.verify_model import VerifyConfig

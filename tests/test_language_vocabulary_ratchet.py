@@ -191,18 +191,18 @@ class AllowedSite:
 ALLOWLIST: tuple[AllowedSite, ...] = (
     AllowedSite("serve.py", "sys.executable,", 1, "E28: the daemon starts -m kstrl factory"),
     AllowedSite(
-        "serve.py",
+        "serve_launchd.py",
         "python or sys.executable",
         1,
         "E27: the launchd job starts -m kstrl serve under kstrl's own interpreter",
     ),
     AllowedSite(
-        "serve.py",
+        "serve_launchd.py",
         'python: str = ""',
         2,
         "E27: the launchd plist's override for kstrl's own interpreter",
     ),
-    AllowedSite("serve.py", "python=python", 1, "E27: the same override passed through"),
+    AllowedSite("serve_launchd.py", "python=python", 1, "E27: the same override passed through"),
     AllowedSite(
         "cli_preflight.py", "uv sync --extra sdk", 1, "E29: how to install kstrl's own extra"
     ),

@@ -1226,7 +1226,8 @@ class TestServePollsIntake:
         Syncing after the gates would let a fresh item bypass a budget
         pause that had already stopped everything else.
         """
-        from kstrl.serve import ServeConfig, SpendLedger
+        from kstrl.serve import SpendLedger
+        from kstrl.serve_config import ServeConfig
 
         self._enable(tmp_path)
         queue = _queue(tmp_path)

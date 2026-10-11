@@ -446,7 +446,7 @@ class TestLaunchdPlist:
         """launchd's 10s default would restart a crash-loop 6x a minute."""
         import plistlib
 
-        from kstrl.serve import LAUNCHD_THROTTLE_SECONDS
+        from kstrl.serve_launchd import LAUNCHD_THROTTLE_SECONDS
 
         parsed = plistlib.loads(self._plist(tmp_path).encode())
         assert parsed["ThrottleInterval"] == LAUNCHD_THROTTLE_SECONDS
@@ -476,7 +476,7 @@ class TestLaunchdPlist:
 
     def test_the_label_is_unique_per_checkout(self, tmp_path: Path) -> None:
         """launchd keeps only the last job per Label, silently."""
-        from kstrl.serve import launchd_label
+        from kstrl.serve_launchd import launchd_label
 
         a = tmp_path / "checkout-a"
         b = tmp_path / "checkout-b"
@@ -487,7 +487,7 @@ class TestLaunchdPlist:
 
     def test_the_log_directory_is_created(self, tmp_path: Path) -> None:
         """launchd creates the log file but not its parent."""
-        from kstrl.serve import launchd_log_dir
+        from kstrl.serve_launchd import launchd_log_dir
 
         assert not launchd_log_dir(tmp_path).exists()
         self._plist(tmp_path)
@@ -644,7 +644,7 @@ class TestScheduledJobRequiresATimeout:
     ) -> None:
         import plistlib
 
-        from kstrl.serve import REQUIRE_TIMEOUT_ENV
+        from kstrl.serve_launchd import REQUIRE_TIMEOUT_ENV
 
         (tmp_path / "kstrl.toml").write_text("[serve]\nfactory_timeout_seconds = 1800.0\n")
         result = CliRunner().invoke(
@@ -667,7 +667,7 @@ class TestScheduledJobRequiresATimeout:
         """It paces itself; there is no schedule to fall behind."""
         import plistlib
 
-        from kstrl.serve import REQUIRE_TIMEOUT_ENV
+        from kstrl.serve_launchd import REQUIRE_TIMEOUT_ENV
 
         result = CliRunner().invoke(
             cli,
@@ -682,7 +682,7 @@ class TestScheduledJobRequiresATimeout:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """The operator cleared the timeout after installing the job."""
-        from kstrl.serve import REQUIRE_TIMEOUT_ENV
+        from kstrl.serve_launchd import REQUIRE_TIMEOUT_ENV
 
         monkeypatch.setenv(REQUIRE_TIMEOUT_ENV, "1")
         (tmp_path / "kstrl.toml").write_text("[serve]\n")
@@ -695,7 +695,7 @@ class TestScheduledJobRequiresATimeout:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from kstrl.serve import REQUIRE_TIMEOUT_ENV
+        from kstrl.serve_launchd import REQUIRE_TIMEOUT_ENV
 
         monkeypatch.setenv(REQUIRE_TIMEOUT_ENV, "1")
         (tmp_path / "kstrl.toml").write_text("[serve]\nfactory_timeout_seconds = 600.0\n")
@@ -740,7 +740,7 @@ class TestUniformCadence:
         self,
         hours: int,
     ) -> None:
-        from kstrl.serve import calendar_schedule
+        from kstrl.serve_launchd import calendar_schedule
 
         entries = calendar_schedule(hours * 60)
         marks = [e["Hour"] for e in entries]
@@ -755,7 +755,7 @@ class TestUniformCadence:
         A StartCalendarInterval entry treats unspecified fields as
         wildcards, so {"Minute": 0} means "every hour at :00".
         """
-        from kstrl.serve import calendar_schedule
+        from kstrl.serve_launchd import calendar_schedule
 
         assert calendar_schedule(60) == [{"Minute": 0}]
 
@@ -764,7 +764,7 @@ class TestUniformCadence:
         self,
         minutes: int,
     ) -> None:
-        from kstrl.serve import calendar_schedule
+        from kstrl.serve_launchd import calendar_schedule
 
         entries = calendar_schedule(minutes)
         marks = [e["Minute"] for e in entries]
