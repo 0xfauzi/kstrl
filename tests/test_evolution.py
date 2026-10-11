@@ -8,11 +8,7 @@ from typing import Any
 
 import pytest
 
-from kstrl.evolution import (
-    JOURNAL_SCHEMA_VERSION,
-    SPEC_ISSUES_EVENT,
-    EvolutionJournal,
-)
+from kstrl.evolution import EvolutionJournal
 from kstrl.evolution_config import EvolutionConfig
 from kstrl.factory_result import FactoryResult
 from kstrl.failure_signatures import (
@@ -21,6 +17,7 @@ from kstrl.failure_signatures import (
     signatures_from_verification,
     split_signature,
 )
+from kstrl.journal_rows import JOURNAL_SCHEMA_VERSION, SPEC_ISSUES_EVENT
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from tests.helpers.journal import audit, journal_at
 

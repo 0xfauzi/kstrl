@@ -33,7 +33,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from kstrl.evolution import SPEC_ISSUES_EVENT
+from kstrl.journal_rows import SPEC_ISSUES_EVENT
 from tests.test_event_names_have_one_home import (
     event_name_spellings,
     literal_event_names,
