@@ -51,21 +51,17 @@ from kstrl.serve import (
     GROUP_TERM_GRACE_SECONDS,
     SPAWNED_RUN_KIND,
     LaunchSpend,
-    RunOutcome,
     RunSpend,
     ServeLockedError,
     ServeStateError,
     SpendLedger,
-    Verdict,
     _group_liveness_for_reap,
     _NullObserver,
-    _pr_urls_from_manifest,
     _unreaped_timeout_detail,
     check_budget,
     check_cost_coverage,
     check_inbox_cap,
     check_poison_breaker,
-    classify_run,
     consecutive_poison_count,
     factory_lock_held,
     owned_run_spend,
@@ -85,6 +81,7 @@ from kstrl.serve import (
 from kstrl.serve import read_run_spend as REAL_READ_RUN_SPEND
 from kstrl.serve_config import ServeConfig
 from kstrl.serve_merge_gate import resolve_merge_gate
+from kstrl.serve_outcome import RunOutcome, Verdict, _pr_urls_from_manifest, classify_run
 from kstrl.workqueue import Queue
 from kstrl.workqueue_items import ItemSource, ItemState, MergeDisposition, QueueConfig, QueueItem
 from tests.helpers import procs

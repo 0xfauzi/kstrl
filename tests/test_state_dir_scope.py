@@ -407,8 +407,11 @@ _EXPECTED_STATE_DIR_SPELLINGS: dict[str, int] = {
     "reducer.py": 3,
     # serve.py had 6, +1 for #464 (the progress log for cost evidence). #776 S2
     # moved the launchd code, with two spellings, to serve_launchd.py.
-    "serve.py": 5,
+    # #776 S3 moved classify_run and its helpers, with two spellings, to
+    # serve_outcome.py.
+    "serve.py": 4,
     "serve_launchd.py": 2,
+    "serve_outcome.py": 2,
     "statedir.py": 8,  # +1 #545: plan_prd_path joins the plan directory
     "tui/runs.py": 3,  # +1 #433: run_is_live lists the runs dir for the newest run
     "workqueue_store.py": 2,

@@ -32,12 +32,12 @@ from kstrl.serve import (
     STREAK_SCHEMA_VERSION,
     CycleResult,
     OpenPrCountStreak,
-    RunOutcome,
     _file_inbox_item,
     _record_count_failure,
     serve,
 )
 from kstrl.serve_config import ServeConfig
+from kstrl.serve_outcome import RunOutcome
 from kstrl.statedir import CONTROL_PR_COUNT_STREAK, control_file
 from tests.helpers.fakegh import install_marker_gh as _install_marker_gh
 from tests.helpers.stack_confirmation import confirm_stack, write_stack

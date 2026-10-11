@@ -14,7 +14,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from kstrl.serve import RunOutcome
+from kstrl.serve_outcome import RunOutcome
 
 
 def recording_runner(
