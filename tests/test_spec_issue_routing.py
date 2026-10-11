@@ -22,9 +22,9 @@ import pytest
 
 from kstrl.decompose import (
     SpecBlockerError,
-    _routed_prd_issues,
     decompose_spec,
 )
+from kstrl.decompose_reply import _routed_prd_issues
 from kstrl.knowledge_distill import _read_prd_text
 from kstrl.manifest import Manifest
 from kstrl.prd import _OPTIONAL_KEYS, PRD, PROMPT_EXCLUDED_KEYS, prd_text_for_prompt
