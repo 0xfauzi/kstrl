@@ -39,7 +39,8 @@ import pytest
 from click.core import ParameterSource
 from click.testing import CliRunner, Result
 
-from kstrl.cli import _reject_blank_project_name, cli
+from kstrl.cli import cli
+from kstrl.cli_preflight import _reject_blank_project_name
 from kstrl.workqueue import Queue
 from kstrl.workqueue_items import QueueConfig
 

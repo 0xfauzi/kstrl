@@ -54,7 +54,7 @@ class LaunchError(Exception):
 
 def _preflight_agent(config: KstrlConfig) -> None:
     """Apply the same agent validation and alias normalization as CLI runs."""
-    from kstrl.cli import _agent_preflight
+    from kstrl.cli_preflight import _agent_preflight
 
     canonical, error, hint = _agent_preflight(
         config.agent_cmd,

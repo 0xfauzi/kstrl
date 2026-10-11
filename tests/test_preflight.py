@@ -18,9 +18,11 @@ import pytest
 from click.testing import CliRunner
 
 import kstrl.cli as cli_mod
+import kstrl.cli_preflight as cli_preflight_mod
 from kstrl.agents import ClaudeSdkAgent
 from kstrl.agents.liveness import ProbeResult
-from kstrl.cli import _agent_preflight, cli
+from kstrl.cli import cli
+from kstrl.cli_preflight import _agent_preflight
 from kstrl.config import KstrlConfig
 from kstrl.factory_result import FactoryResult
 from kstrl.ui.plain import PlainUI
@@ -562,7 +564,7 @@ class TestAgentLivenessPreflight:
             asked.append(family)
             return result
 
-        monkeypatch.setattr(cli_mod, "probe_family", fake_probe)
+        monkeypatch.setattr(cli_preflight_mod, "probe_family", fake_probe)
         return asked
 
     def test_dead_engineer_cli_warns_and_the_run_continues(
@@ -623,7 +625,7 @@ class TestAgentLivenessPreflight:
         config.agent_cmd = "echo hi"
         config.agent_type = "claude-code"
 
-        cli_mod._check_agent_preflight(config, PlainUI())
+        cli_preflight_mod._check_agent_preflight(config, PlainUI())
 
         assert asked == []
 
@@ -639,7 +641,7 @@ class TestAgentLivenessPreflight:
         config = KstrlConfig()
         config.agent_type = "claude-sdk"
 
-        cli_mod._check_agent_preflight(config, PlainUI())
+        cli_preflight_mod._check_agent_preflight(config, PlainUI())
 
         assert asked == []
 
@@ -658,6 +660,6 @@ class TestAgentLivenessPreflight:
         config = KstrlConfig()
         config.agent_type = "auto"
 
-        cli_mod._check_agent_preflight(config, PlainUI())
+        cli_preflight_mod._check_agent_preflight(config, PlainUI())
 
         assert asked == [expected]

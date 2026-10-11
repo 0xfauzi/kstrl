@@ -316,7 +316,7 @@ class TestStartRunSession:
         # #434: a decompose launch refuses a repository with no build manifest.
         (tmp_path / "pyproject.toml").write_text('[project]\nname = "demo"\n', encoding="utf-8")
         with (
-            patch("kstrl.cli.ClaudeCodeAgent.is_available", return_value=True),
+            patch("kstrl.cli_preflight.ClaudeCodeAgent.is_available", return_value=True),
             patch(
                 "kstrl.agents.get_agent",
                 return_value=MockDecomposeAgent(VALID_DECOMPOSE_OUTPUT),
