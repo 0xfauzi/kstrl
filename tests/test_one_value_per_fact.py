@@ -371,7 +371,7 @@ EXPECTED_COMPLETED_SITES: dict[str, int] = {
     "pipeline.py:repoll_merge_pending": 1,
     # Runs with no manifest Component and no journal row, so the event is
     # the only record of the duration it carries.
-    "cli.py:_understand_core": 1,
+    "cli_loop.py:_understand_core": 1,
     "decompose.py:_decompose_spec_impl": 1,
     "feature_cmd.py:run_feature": 2,
 }

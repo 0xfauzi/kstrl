@@ -21,6 +21,7 @@ import pytest
 from click.testing import CliRunner
 
 import kstrl.cli as cli_mod
+import kstrl.cli_loop as cli_loop_mod
 from kstrl.factory import FactoryConfig
 from kstrl.factory_result import FactoryResult
 from kstrl.manifest import Component, Manifest
@@ -46,6 +47,7 @@ def capture_run_factory(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         return FactoryResult(exit_code=0)
 
     monkeypatch.setattr(cli_mod, "run_factory", fake_run_factory)
+    monkeypatch.setattr(cli_loop_mod, "run_factory", fake_run_factory)
     return box
 
 
