@@ -234,8 +234,8 @@ ALLOWLIST: tuple[AllowedSite, ...] = (
         "#700: kstrl's own runtime is the PreToolUse hook and the SessionStart hook",
     ),
     AllowedSite("agents/leash.py", "python -I -S leash.py", 1, "E30: kstrl's own leash"),
-    AllowedSite("autonomy.py", "python -m", 1, "E31: python -m kstrl.calibration"),
     AllowedSite("autonomy_config.py", "python -m", 2, "E31: python -m kstrl.calibration"),
+    AllowedSite("autonomy_transitions.py", "python -m", 1, "E31: python -m kstrl.calibration"),
     AllowedSite(
         "calibration.py",
         "python -m kstrl.calibration",

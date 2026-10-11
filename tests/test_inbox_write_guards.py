@@ -52,7 +52,7 @@ MUTATORS = frozenset({"add", "approve", "compact", "reject", "resolve", "snooze"
 #: A new one is an unexplained delta: adding a row here is how you say
 #: you have decided what the new site catches.
 EXPECTED_CONSTRUCTIONS = (
-    "autonomy.py kstrl.inbox.Inbox",
+    "autonomy_transitions.py kstrl.inbox.Inbox",
     "calibration_ladder.py kstrl.inbox.Inbox",
     "cli.py kstrl.inbox.Inbox",
     "decisions.py kstrl.inbox.Inbox",
@@ -85,7 +85,7 @@ EXPECTED_CONSTRUCTIONS = (
 EXPECTED_CONSTRUCTION_COUNTS = {
     # #643: was 1 (apply_demotion). +1: _calibration_blockers scans the
     # inbox for an undecided calibration_drift item. It reads; it mutates nothing.
-    "autonomy.py": 2,
+    "autonomy_transitions.py": 2,
     "calibration_ladder.py": 1,
     "cli.py": 1,
     # #644 slice 2: was 2. +1: escalation_naming scans the inbox for the
@@ -138,7 +138,7 @@ _GUARDED = Disposition(guarded=True)
 #: Keyed ``module::scope::method`` so an edit above the site cannot break
 #: the pin.
 EXPECTED_MUTATIONS: dict[str, Disposition] = {
-    "autonomy.py::apply_demotion::add": _GUARDED,
+    "autonomy_transitions.py::apply_demotion::add": _GUARDED,
     "calibration_ladder.py::_open_drift_item::add": _GUARDED,
     "decisions.py::open_escalation_item::add": _GUARDED,
     "decisions.py::resolve_escalation_items::resolve": _GUARDED,
@@ -211,8 +211,8 @@ EXPECTED_MUTATIONS: dict[str, Disposition] = {
 #: shrinking this table.
 EXPECTED_CONFIG_LOADS: dict[str, Disposition] = {
     # #643: the L2 entry criterion; a load it cannot make is a blocker.
-    "autonomy.py::_calibration_blockers": _GUARDED,
-    "autonomy.py::apply_demotion": _GUARDED,
+    "autonomy_transitions.py::_calibration_blockers": _GUARDED,
+    "autonomy_transitions.py::apply_demotion": _GUARDED,
     "calibration_ladder.py::_open_drift_item": _GUARDED,
     "decisions.py::open_escalation_item": _GUARDED,
     "decisions.py::resolve_escalation_items": _GUARDED,
