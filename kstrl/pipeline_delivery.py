@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
-from kstrl import event_catalog, git
+from kstrl import event_catalog, git_diff
 from kstrl.context import IterationContext
 from kstrl.inbox import (
     ItemKind,
@@ -389,7 +389,7 @@ class Delivery(MergeGate):
             component_id=comp.id,
             checkpoint=CheckpointContext(
                 component_id=comp.id,
-                diff_excerpt=git.truncate_diff_for_prompt(
+                diff_excerpt=git_diff.truncate_diff_for_prompt(
                     diff_text,
                     CHECKPOINT_DIFF_CHAR_LIMIT,
                 )

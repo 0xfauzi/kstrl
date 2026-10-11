@@ -35,7 +35,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import git, guards
+from kstrl import git, git_diff, guards
 from kstrl.breaker import BreakerConfig, NoProgressBreaker
 from kstrl.ui import PlainUI
 from tests.helpers import gitrepo
@@ -187,13 +187,13 @@ EXPECTED_WITH_Z: tuple[str, ...] = (
     "factory.py git worktree list --porcelain -z",
     "git.py git diff --name-only --cached -z",
     "git.py git diff --name-only -z",
-    "git.py git diff --name-status -z -M -C ? --",
     "git.py git diff --name-status -z ? --",
-    "git.py git diff --numstat -z ? --",
     "git.py git ls-files --cached --others --exclude-standard -z",
     "git.py git ls-files --others --exclude-standard -z",
     "git.py git ls-tree -r --name-only -z ?",
     "git.py git status --porcelain --untracked-files=all -z",
+    "git_diff.py git diff --name-status -z -M -C ? --",
+    "git_diff.py git diff --numstat -z ? --",
 )
 
 EXPECTED_WITHOUT_Z: tuple[str, ...] = (
@@ -204,18 +204,18 @@ EXPECTED_WITHOUT_Z: tuple[str, ...] = (
     # output to spell. Measured: `git check-ignore -q -- foo.py` exits
     # with nothing on stdout.
     "doctor.py git check-ignore -q -- ?",
+    # git.is_file_tracked names no encoding= on this spawn, so it runs in
+    # BYTES mode and reads only result.returncode == 0. No path decoded.
+    "git.py git ls-files --error-unmatch -- ?",
     # get_diff_content(as_stored=True) (#695): a unified diff, like the row
     # below, with every changed byte in it; the same reason holds.
-    "git.py git diff --text --no-textconv --no-ext-diff --no-color --dst-prefix=b/ ? --",
+    "git_diff.py git diff --text --no-textconv --no-ext-diff --no-color --dst-prefix=b/ ? --",
     # get_diff_content: a unified diff cannot be NUL-separated. Measured,
     # `git diff -z HEAD` still C-quotes a non-ASCII header path (café.py
     # renders as a quoted octal escape); the headers are unquoted
     # downstream by policy.unquote_diff_path, pinned by
     # tests/test_diff_path_quoting.py.
-    "git.py git diff ? --",
-    # git.is_file_tracked names no encoding= on this spawn, so it runs in
-    # BYTES mode and reads only result.returncode == 0. No path decoded.
-    "git.py git ls-files --error-unmatch -- ?",
+    "git_diff.py git diff ? --",
 )
 
 EXPECTED_UNDECIDED: tuple[str, ...] = (
@@ -257,11 +257,11 @@ EXPECTED_GIT_ARGVS: dict[str, int] = {
     "git.py git config --get remote.origin.url": 1,
     "git.py git diff --name-only --cached -z": 1,
     "git.py git diff --name-only -z": 1,
-    "git.py git diff --name-status -z -M -C ? --": 1,
+    "git_diff.py git diff --name-status -z -M -C ? --": 1,
     "git.py git diff --name-status -z ? --": 1,
-    "git.py git diff --numstat -z ? --": 1,
-    "git.py git diff ? --": 1,
-    "git.py git diff --text --no-textconv --no-ext-diff --no-color --dst-prefix=b/ ? --": 1,
+    "git_diff.py git diff --numstat -z ? --": 1,
+    "git_diff.py git diff ? --": 1,
+    "git_diff.py git diff --text --no-textconv --no-ext-diff --no-color --dst-prefix=b/ ? --": 1,
     "git_base.py git fetch -- origin ?": 1,
     "git_base.py git for-each-ref --format=%(refname)%09%(symref) ? ?": 1,
     "git.py git ls-files --cached --others --exclude-standard -z": 1,
@@ -453,9 +453,13 @@ class TestEveryReaderReturnsTheFilesOwnName:
         gitrepo.git_in(repo, "add", "-A")
         gitrepo.git_in(repo, "commit", "-qm", "work")
 
-        assert set(git.get_diff_names("main", repo, strict=True)) == set(TRICKY)
-        assert {p for _s, p in git.get_diff_name_status("main", repo, strict=True)} == set(TRICKY)
-        assert {p for _a, _r, p in git.get_diff_numstat("main", repo, strict=True)} == set(TRICKY)
+        assert set(git_diff.get_diff_names("main", repo, strict=True)) == set(TRICKY)
+        assert {p for _s, p in git_diff.get_diff_name_status("main", repo, strict=True)} == set(
+            TRICKY
+        )
+        assert {p for _a, _r, p in git_diff.get_diff_numstat("main", repo, strict=True)} == set(
+            TRICKY
+        )
 
     def test_a_rename_of_a_non_ascii_file_lands_on_the_destination(self, tmp_path: Path) -> None:
         repo = _repo_with_tricky_names(tmp_path)
@@ -463,7 +467,7 @@ class TestEveryReaderReturnsTheFilesOwnName:
         gitrepo.git_in(repo, "add", "-A")
         gitrepo.git_in(repo, "commit", "-qm", "work")
 
-        rows = git.get_diff_numstat("main", repo, strict=True)
+        rows = git_diff.get_diff_numstat("main", repo, strict=True)
 
         assert {p for _a, _r, p in rows} == set(TRICKY) | {"naïve.py"}
         assert (0, 0, "naïve.py") in rows
@@ -474,7 +478,7 @@ class TestEveryReaderReturnsTheFilesOwnName:
         gitrepo.git_in(repo, "add", "-A")
         gitrepo.git_in(repo, "commit", "-qm", "work")
 
-        rows = git.get_diff_numstat("main", repo, strict=True)
+        rows = git_diff.get_diff_numstat("main", repo, strict=True)
 
         assert (None, None, "bin.dat") in rows
 
@@ -498,8 +502,8 @@ class TestTheGuardsThatConsumeThem:
         gitrepo.git_in(repo, "add", "-A")
         gitrepo.git_in(repo, "commit", "-qm", "work")
 
-        changed = set(git.get_diff_names("main", repo, strict=True))
-        numstat = {p for _a, _r, p in git.get_diff_numstat("main", repo, strict=True)}
+        changed = set(git_diff.get_diff_names("main", repo, strict=True))
+        numstat = {p for _a, _r, p in git_diff.get_diff_numstat("main", repo, strict=True)}
 
         assert changed == numstat
 

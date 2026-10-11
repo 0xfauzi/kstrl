@@ -495,9 +495,10 @@ def check(
         # Ask git the same question once, strictly, before any check
         # runs. Cannot-measure is exit 2; it is never a pass.
         from kstrl import git as _git
+        from kstrl import git_diff as _git_diff
 
         try:
-            _git.get_diff_names(base, path, strict=True)
+            _git_diff.get_diff_names(base, path, strict=True)
         except _git.GitDiffError as exc:
             origin = (
                 "from --base" if base_branch else "auto-detected; name the right one with --base"

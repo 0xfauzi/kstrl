@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import git
+from kstrl import git, git_diff
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.policy import PolicyConfig, parse_added_lines
 from kstrl.verify_diff import check_policy_envelope
@@ -55,8 +55,8 @@ class TestDiffParsing:
         gitrepo.git_in(tmp_path, "add", "-A")
         gitrepo.git_in(tmp_path, "commit", "-q", "-m", "add four tricky files")
 
-        lenient_names = set(git.get_diff_names("main", tmp_path))
-        diff_text = git.get_diff_content("main", tmp_path)
+        lenient_names = set(git_diff.get_diff_names("main", tmp_path))
+        diff_text = git_diff.get_diff_content("main", tmp_path)
         parsed_paths = {path for path, _line in parse_added_lines(diff_text)}
 
         assert lenient_names == tricky_names
@@ -89,8 +89,8 @@ class TestDiffParsing:
         gitrepo.git_in(tmp_path, "add", "-A")
         gitrepo.git_in(tmp_path, "commit", "-q", "-m", "add a quoted, accented file")
 
-        lenient_names = set(git.get_diff_names("main", tmp_path))
-        diff_text = git.get_diff_content("main", tmp_path)
+        lenient_names = set(git_diff.get_diff_names("main", tmp_path))
+        diff_text = git_diff.get_diff_content("main", tmp_path)
         parsed_paths = {path for path, _line in parse_added_lines(diff_text)}
 
         assert lenient_names == {tricky_name}
@@ -223,19 +223,19 @@ class TestGitMetadataFailsClosed:
     ) -> None:
         with pytest.raises(git.GitDiffError):
             # tmp_path is not a git repo -> nonzero exit.
-            git.get_diff_names("main", tmp_path, strict=True)
+            git_diff.get_diff_names("main", tmp_path, strict=True)
 
     def test_get_diff_numstat_strict_raises_on_nonzero_exit(
         self,
         tmp_path: Path,
     ) -> None:
         with pytest.raises(git.GitDiffError):
-            git.get_diff_numstat("main", tmp_path, strict=True)
+            git_diff.get_diff_numstat("main", tmp_path, strict=True)
 
     def test_lenient_default_preserved_for_existing_callers(
         self,
         tmp_path: Path,
     ) -> None:
         # check_diff_scope and friends rely on the [] contract.
-        assert git.get_diff_names("main", tmp_path) == []
-        assert git.get_diff_numstat("main", tmp_path) == []
+        assert git_diff.get_diff_names("main", tmp_path) == []
+        assert git_diff.get_diff_numstat("main", tmp_path) == []

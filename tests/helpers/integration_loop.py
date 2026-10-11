@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
-from kstrl import git
+from kstrl import git_diff
 from kstrl.agents.base import UsageRecord
 from kstrl.factory import run_factory
 from kstrl.factory_result import ComponentResult, FactoryResult
@@ -103,7 +103,7 @@ class ScriptedReviewer(h.FakeReviewer):
         )
 
     def _payload(self, verdicts: Verdicts, cwd: Path) -> dict[str, Any]:
-        stat = git.get_diff_stat(self._base, cwd, resolved=True)
+        stat = git_diff.get_diff_stat(self._base, cwd, resolved=True)
         stories = PRD.load(self.prd_paths[-1]).user_stories
         return {
             "observedDiffstat": {

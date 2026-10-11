@@ -4,7 +4,7 @@ from the distiller's subprocess to ``ks evolve``.
 A real ``run_factory`` whose distiller is a real ``CustomAgent`` running
 ``cat`` on a reply file, then a real ``python -m kstrl evolve`` subprocess.
 Only the engineer (``kstrl.factory._run_component``) and
-``kstrl.git.get_diff_content`` are stubbed, the same two stubs
+``kstrl.git_diff.get_diff_content`` are stubbed, the same two stubs
 ``tests/test_event_stream.py`` uses.
 """
 
@@ -95,7 +95,7 @@ def _run_factory_with_reply(root: Path, reply: str) -> str:
 
     with (
         patch("kstrl.factory._run_component", side_effect=engineer),
-        patch("kstrl.git.get_diff_content", return_value="diff --git a/x b/x\n+x = 1\n"),
+        patch("kstrl.git_diff.get_diff_content", return_value="diff --git a/x b/x\n+x = 1\n"),
     ):
         run_factory(manifest, config, base, PlainUI(no_color=True, file=out), root)
     return out.getvalue()

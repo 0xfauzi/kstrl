@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl import event_catalog, git
+from kstrl import event_catalog, git, git_diff
 from kstrl.context import IterationContext
 from kstrl.divergence import (
     AttemptReading,
@@ -154,7 +154,7 @@ class ReviewVerdicts(AttemptRecorder):
             # (an empty-location concern family, a hand-built result).
             return None
         try:
-            numstat = git.get_diff_numstat(
+            numstat = git_diff.get_diff_numstat(
                 self.component_base(comp.id),
                 wt_path,
                 strict=True,

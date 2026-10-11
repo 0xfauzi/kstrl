@@ -23,7 +23,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl import git, git_base
+from kstrl import git_base, git_diff
 from kstrl.config import validate_agent_type
 from kstrl.config_numbers import check_numbers
 from kstrl.decompose import (
@@ -133,7 +133,7 @@ class SecurityResult:
     # disagreement with git's own numstat when there is one. Mirrors
     # ReviewResult; see ``git.diffstat_disagreement`` for what the check
     # does and does not prove.
-    observed_diffstat: git.DiffStat | None = None
+    observed_diffstat: git_diff.DiffStat | None = None
     diffstat_disagreement: str = ""
     # R7.1: identity of the model that produced this security review
     # (the agent's ``name``). Stamped by run_security_review; empty when
@@ -621,7 +621,7 @@ def parse_security_output(
         mode=mode,
         findings=findings,
         exhaustively_searched=exhaustively_searched,
-        observed_diffstat=git.parse_observed_diffstat(data.get("observedDiffstat")),
+        observed_diffstat=git_diff.parse_observed_diffstat(data.get("observedDiffstat")),
         overall_notes=overall_notes,
         raw_output=raw_output[:2000],
     )
@@ -629,7 +629,7 @@ def parse_security_output(
 
 def apply_coverage_check(
     result: SecurityResult,
-    actual: git.DiffStat,
+    actual: git_diff.DiffStat,
     mode: str,
 ) -> None:
     """#266: Phase 2's coverage check, in Phase 2.5's types.
@@ -642,7 +642,7 @@ def apply_coverage_check(
     """
     if result.infrastructure_error:
         return
-    disagreement = git.diffstat_disagreement(result.observed_diffstat, actual)
+    disagreement = git_diff.diffstat_disagreement(result.observed_diffstat, actual)
     if disagreement is None:
         return
     result.diffstat_disagreement = disagreement
@@ -651,8 +651,8 @@ def apply_coverage_check(
             category="other",
             severity="low",
             location="",
-            explanation=git.coverage_marker_text("security review", disagreement),
-            suggestion=git.COVERAGE_SUGGESTION,
+            explanation=git_diff.coverage_marker_text("security review", disagreement),
+            suggestion=git_diff.COVERAGE_SUGGESTION,
         )
     )
     if mode != SecurityMode.HARD.value:
@@ -660,7 +660,7 @@ def apply_coverage_check(
     result.passed = False
     result.infrastructure_error = True
     result.overall_notes = (
-        git.coverage_notes_prefix("security review", disagreement) + " " + result.overall_notes
+        git_diff.coverage_notes_prefix("security review", disagreement) + " " + result.overall_notes
     ).strip()
 
 
@@ -717,8 +717,8 @@ def run_security_review(
         # about the same moving name at two different times. Identical
         # to Phase 2; see git.resolve_base_sha for why a name will not do.
         base_sha = git_base.resolve_base_sha(base_branch, worktree_path)
-        actual_diffstat = git.get_diff_stat(base_sha, worktree_path, resolved=True)
-        prompt = _build_security_prompt(prd_text, git.repo_change_source(base_sha))
+        actual_diffstat = git_diff.get_diff_stat(base_sha, worktree_path, resolved=True)
+        prompt = _build_security_prompt(prd_text, git_diff.repo_change_source(base_sha))
         output_lines = collect_agent_output(
             agent,
             prompt,

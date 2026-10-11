@@ -104,7 +104,7 @@ def _no_real_diff(monkeypatch: pytest.MonkeyPatch) -> None:
     calls the reviewer hook; the pipeline root is not a git repository,
     so both are stubbed at their source modules, as in
     tests/test_convergence_check.py."""
-    monkeypatch.setattr("kstrl.git.get_diff_content", lambda *a, **k: "diff --git a b\n")
+    monkeypatch.setattr("kstrl.git_diff.get_diff_content", lambda *a, **k: "diff --git a b\n")
     monkeypatch.setattr("kstrl.agents.get_agent", lambda *a, **k: object())
 
 

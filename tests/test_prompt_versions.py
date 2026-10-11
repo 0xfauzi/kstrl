@@ -97,7 +97,7 @@ from kstrl import (
     acceptance_design,
     decisions,
     decompose_prompt,
-    git,
+    git_diff,
     intake_issue,
     knowledge,
     owner_answers,
@@ -121,7 +121,7 @@ from kstrl.decompose_prompt import (
     DECOMPOSE_PROMPT,
     DECOMPOSE_PROMPT_VERSION,
 )
-from kstrl.git import (
+from kstrl.git_diff import (
     PASTED_CHANGE_SOURCE_PROMPT,
     PASTED_CHANGE_SOURCE_PROMPT_VERSION,
     REPO_CHANGE_SOURCE_PROMPT,
@@ -513,14 +513,14 @@ _MARKER_TAIL = "<<<H3-RENDER-GUARD-END>>>"
 #: found all nine guards green: the marker never reached the cap, so
 #: truncation was invisible to a test whose comment claimed it caught
 #: truncation. A renderer reintroducing a size cap ships a clipped role
-#: prompt, and ``git.truncate_diff_for_prompt`` already exists and is
+#: prompt, and ``git_diff.truncate_diff_for_prompt`` already exists and is
 #: used at other paste sites, so this is a live shape rather than a
 #: hypothetical one.
 #:
 #: The honest limit: this catches any cap at or below the marker length.
 #: A renderer that capped ABOVE it would still pass, and no fixed marker
 #: can close that.
-_ORPHAN_MARKER = _MARKER_HEAD + "." * (git.DEFAULT_PROMPT_DIFF_CHAR_LIMIT + 1) + _MARKER_TAIL
+_ORPHAN_MARKER = _MARKER_HEAD + "." * (git_diff.DEFAULT_PROMPT_DIFF_CHAR_LIMIT + 1) + _MARKER_TAIL
 
 
 def _decisions_context_render(_tmp_path: Path) -> str:
@@ -613,8 +613,8 @@ _RENDERERS: dict[str, tuple[ModuleType, Callable[[Path], str]]] = {
     "DISTILL_PROMPT": (knowledge, _distill_render),
     "STACK_PROMPT": (stack, _stack_render),
     "ACCEPTANCE_PROMPT": (acceptance_design, _acceptance_render),
-    "REPO_CHANGE_SOURCE_PROMPT": (git, lambda _p: repo_change_source("BASE_SHA")),
-    "PASTED_CHANGE_SOURCE_PROMPT": (git, lambda _p: pasted_change_source("DIFF")[0]),
+    "REPO_CHANGE_SOURCE_PROMPT": (git_diff, lambda _p: repo_change_source("BASE_SHA")),
+    "PASTED_CHANGE_SOURCE_PROMPT": (git_diff, lambda _p: pasted_change_source("DIFF")[0]),
     "DECISIONS_CONTEXT_PROMPT": (decisions, _decisions_context_render),
     "OWNER_ANSWER_PROMPT": (owner_answers, lambda _p: render_owner_answer(_OWNER_ANSWER_ITEM)),
     "BUG_REPORT_PROMPT": (intake_issue, _bug_report_render),
@@ -702,7 +702,7 @@ def _run_and_capture_prompt(which: str, tmp_path: Path, monkeypatch: pytest.Monk
 
     Both phases are exercised through ``run_review`` / ``run_security_review``
     rather than through the builders they call. #299 round 1 asserted on
-    ``_build_security_prompt(prd, git.repo_change_source(sha))``, which
+    ``_build_security_prompt(prd, git_diff.repo_change_source(sha))``, which
     passes the change-source block in as an argument the TEST computed,
     so it could never observe ``security.py`` handing the reviewer
     something else. Measured: replacing that call site with a lookalike
@@ -750,12 +750,12 @@ def test_change_source_reaches_the_role(
     """The leaf guard proves ``repo_change_source`` reads its constant.
     It cannot prove the CALLER still calls it.
 
-    Drop ``change_source=git.repo_change_source(...)`` from ``review.py``
+    Drop ``change_source=git_diff.repo_change_source(...)`` from ``review.py``
     or ``security.py``, or replace it with a lookalike literal, and every
     other test here stays green while the role is told how to obtain the
     change by words under no snapshot. That is the exact H3 hole #299 was
     filed for, one call site further out."""
-    monkeypatch.setattr(git, "REPO_CHANGE_SOURCE_PROMPT", _ORPHAN_MARKER)
+    monkeypatch.setattr(git_diff, "REPO_CHANGE_SOURCE_PROMPT", _ORPHAN_MARKER)
     prompt = _run_and_capture_prompt(which, tmp_path, monkeypatch)
     assert _MARKER_HEAD in prompt and _MARKER_TAIL in prompt, (
         f"the {which} prompt no longer carries repo_change_source's "

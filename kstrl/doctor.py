@@ -30,7 +30,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl import git, git_base, pr
+from kstrl import git, git_base, git_diff, pr
 from kstrl.atomicio import atomic_write_json
 from kstrl.config import resolve_config_file
 from kstrl.config_preflight import SURFACE_REJECTIONS, config_problem_lines, raise_if_defect
@@ -149,7 +149,7 @@ def check_git_repo(root: Path) -> _CheckResult:
         )
     base = git_base.detect_base_branch(root)
     try:
-        git.get_diff_names(base, root, strict=True)
+        git_diff.get_diff_names(base, root, strict=True)
     except git.GitDiffError as exc:
         return (
             STATUS_WARN,

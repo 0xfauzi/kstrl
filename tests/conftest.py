@@ -25,7 +25,7 @@ from pathlib import Path
 import pytest
 
 from kstrl.config import STRING_KEYS
-from kstrl.git import DiffStat, get_diff_stat
+from kstrl.git_diff import DiffStat, get_diff_stat
 from tests import tui_disabled
 from tests.helpers import gitrepo
 

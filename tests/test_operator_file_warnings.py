@@ -141,7 +141,7 @@ def _run(
 
     with (
         patch("kstrl.factory._run_component", side_effect=done),
-        patch("kstrl.git.get_diff_content", return_value=""),
+        patch("kstrl.git_diff.get_diff_content", return_value=""),
     ):
         run_factory(_manifest(component_ids), factory_config, base, ui, root)
     return ui

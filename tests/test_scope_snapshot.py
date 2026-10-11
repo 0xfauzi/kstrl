@@ -105,7 +105,7 @@ def _run(
     with (
         patch("kstrl.loop.run_loop", side_effect=fake_run_loop),
         patch("kstrl.factory.run_mechanical_verification", side_effect=fake_verify),
-        patch("kstrl.git.get_diff_content", return_value=""),
+        patch("kstrl.git_diff.get_diff_content", return_value=""),
     ):
         return run_factory(
             manifest or _manifest([_component()]),

@@ -30,9 +30,9 @@ from kstrl.git import (
     checkout_existing,
     create_branch_from,
     delete_branch,
-    get_diff_names,
     merge_branch,
 )
+from kstrl.git_diff import get_diff_names
 from kstrl.pr import push_branch
 from kstrl.ui.plain import PlainUI
 from tests.helpers import gitrepo

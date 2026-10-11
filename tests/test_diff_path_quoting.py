@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import git, verify_diff
+from kstrl import git_diff, verify_diff
 from kstrl.policy import PolicyConfig, diff_header_path
 from tests.conftest import make_review_repo
 from tests.helpers import gitrepo
@@ -109,12 +109,12 @@ def test_diff_header_path_matches_a_real_diff_for_every_header_shape(
     each expectation taken from a real `git diff` rather than typed."""
     repo = make_review_repo(tmp_path, base_files=base_files or {"seed.txt": "x\n"}, files=files)
     gitrepo.git_in(repo.path, "config", "core.quotepath", "true")
-    diff_text = git.get_diff_content(repo.base_branch, repo.path)
+    diff_text = git_diff.get_diff_content(repo.base_branch, repo.path)
     header = _first_header(diff_text, marker)
     if is_dev_null:
         assert diff_header_path(header) == "/dev/null"
         return
-    names = git.get_diff_names(repo.base_branch, repo.path)
+    names = git_diff.get_diff_names(repo.base_branch, repo.path)
     assert len(names) == 1, names
     assert diff_header_path(header) == names[0]
 

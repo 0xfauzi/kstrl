@@ -455,7 +455,7 @@ class TestCheckpoint:
         from tests.test_pipeline import _ChoiceUI, _factory_config, _make_pipeline, _success
 
         # tests/test_pipeline.py's autouse stubs: no git diff, no real agent.
-        monkeypatch.setattr("kstrl.git.get_diff_content", lambda *a, **k: "diff --git a b\n")
+        monkeypatch.setattr("kstrl.git_diff.get_diff_content", lambda *a, **k: "diff --git a b\n")
         monkeypatch.setattr("kstrl.agents.get_agent", lambda *a, **k: object())
         asked: list[list[str]] = []
 

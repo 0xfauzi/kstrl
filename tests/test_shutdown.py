@@ -88,7 +88,7 @@ class TestFactoryShutdown:
                 "kstrl.factory._run_component",
                 side_effect=fake_component,
             ),
-            patch("kstrl.git.get_diff_content", return_value=""),
+            patch("kstrl.git_diff.get_diff_content", return_value=""),
         ):
             result = run_factory(
                 manifest,
@@ -127,7 +127,7 @@ class TestFactoryShutdown:
                 "kstrl.factory._run_component",
                 side_effect=fake_component,
             ),
-            patch("kstrl.git.get_diff_content", return_value=""),
+            patch("kstrl.git_diff.get_diff_content", return_value=""),
         ):
             run_factory(
                 manifest,
@@ -172,7 +172,7 @@ class TestFactoryShutdown:
                 "kstrl.factory._run_component",
                 side_effect=slow_component,
             ),
-            patch("kstrl.git.get_diff_content", return_value=""),
+            patch("kstrl.git_diff.get_diff_content", return_value=""),
         ):
             result = run_factory(
                 manifest,
@@ -203,7 +203,7 @@ class TestFactoryShutdown:
                 "kstrl.factory._run_component",
                 return_value=result,
             ),
-            patch("kstrl.git.get_diff_content", return_value=""),
+            patch("kstrl.git_diff.get_diff_content", return_value=""),
         ):
             run_factory(
                 manifest,

@@ -288,7 +288,7 @@ EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
     # #626: +1 notice constant x 2 spellings = 14.
     # #696 slice 6: -6 notice constants x 2 spellings = 2.
     "feedforward.py": 2,
-    "git.py": 4,
+    "git_diff.py": 4,
     # #654 slice 7: BUG_REPORT_PROMPT's declaration and its one use in
     # spec_from_issue.
     "intake_issue.py": 2,
