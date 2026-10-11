@@ -33,6 +33,8 @@ import pytest
 from click.testing import CliRunner
 
 import kstrl.cli as cli_mod
+import kstrl.cli_architect as cli_architect_mod
+import kstrl.cli_factory as cli_factory_mod
 import kstrl.cli_preflight as cli_preflight_mod
 from kstrl.inbox import Inbox, InboxConfig
 from kstrl.interaction import PromptRequest, PromptResponse
@@ -186,7 +188,8 @@ def _retry_in_process(
 ) -> Any:
     _Channel.asked = []
     _Channel.choice, _Channel.answered, _Channel.on_ask = choice, answered, on_ask
-    monkeypatch.setattr(cli_mod, "UiInteractionChannel", _Channel)
+    monkeypatch.setattr(cli_architect_mod, "UiInteractionChannel", _Channel)
+    monkeypatch.setattr(cli_factory_mod, "UiInteractionChannel", _Channel)
     monkeypatch.setattr(cli_preflight_mod, "UiInteractionChannel", _Channel)
     # _env() drops every KSTRL_ knob from the copy it returns; setenv alone
     # would leave the caller's own in this process's environment.
@@ -242,7 +245,7 @@ class TestRunLockRelease:
         released.release()
 
         argv = option_argv(
-            cli_mod.factory,
+            cli_factory_mod.factory,
             {
                 "manifest_path": str(_manifest_file(root)),
                 "root": str(root),
@@ -255,12 +258,12 @@ class TestRunLockRelease:
                 "agent_cmd": "true",
             },
         )
-        ctx = cli_mod.factory.make_context("factory", argv)
+        ctx = cli_factory_mod.factory.make_context("factory", argv)
         ctx.meta[cli_preflight_mod._HANDED_RUN_LOCK] = released
 
         with pytest.raises(RuntimeError, match="a released run lock was handed"):
             with ctx:
-                cli_mod.factory.invoke(ctx)
+                cli_factory_mod.factory.invoke(ctx)
 
 
 class TestKsRetryChangesNothingBeforeItsGates:
@@ -365,6 +368,7 @@ class TestKsRetryChangesNothingBeforeItsGates:
         monkeypatch.setattr(factory_mod, "_acquire_run_lock", counting_acquire)
         monkeypatch.setattr(factory_lock_mod, "_acquire_run_lock", counting_acquire)
         monkeypatch.setattr(cli_mod, "_acquire_run_lock", counting_acquire)
+        monkeypatch.setattr(cli_architect_mod, "_acquire_run_lock", counting_acquire)
         monkeypatch.setattr(cli_preflight_mod, "_acquire_run_lock", counting_acquire)
         agent = " ".join(
             shlex.quote(part)
@@ -698,7 +702,7 @@ class TestFactoryTakesTheLockBeforeItLoadsTheManifest:
             True,
             inbox_retry_while_the_question_is_open,
         )
-        monkeypatch.setattr(cli_mod, "UiInteractionChannel", _Channel)
+        monkeypatch.setattr(cli_factory_mod, "UiInteractionChannel", _Channel)
         monkeypatch.setattr(cli_preflight_mod, "UiInteractionChannel", _Channel)
         for name in [k for k in os.environ if k.startswith("KSTRL_")]:
             monkeypatch.delenv(name)

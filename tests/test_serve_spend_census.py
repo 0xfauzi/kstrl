@@ -39,7 +39,7 @@ from kstrl.serve_spend import ARCHITECT_RUN_KIND, SPAWNED_RUN_KIND
 from tests.helpers.astwalk import blind_spot
 
 KSTRL = Path(__file__).resolve().parent.parent / "kstrl"
-CLI = KSTRL / "cli.py"
+CLI = KSTRL / "cli_factory.py"
 
 OPENER = "open_command_run"
 STARTED = "RunStarted"
@@ -51,9 +51,9 @@ KIND_NAMES = {"ARCHITECT_RUN_KIND": ARCHITECT_RUN_KIND, "SPAWNED_RUN_KIND": SPAW
 #: ``"<file relative to kstrl/>:<function> <callee>"`` -> count.
 EXPECTED_SITES: dict[str, int] = {
     "cli_loop.py:_understand_core RunStarted": 1,
-    "cli.py:decompose open_command_run": 1,
-    "cli.py:decompose._target open_command_run": 1,
-    "cli.py:factory open_command_run": 1,
+    "cli_architect.py:decompose open_command_run": 1,
+    "cli_architect.py:decompose._target open_command_run": 1,
+    "cli_factory.py:factory open_command_run": 1,
     "cli_feature.py:feature open_command_run": 1,
     "cli_feature.py:feature._target open_command_run": 1,
     "cli_loop.py:understand open_command_run": 1,

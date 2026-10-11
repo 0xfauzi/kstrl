@@ -363,8 +363,8 @@ FINDING_EXIT_SITES: dict[tuple[str, str], int] = {
     ("cli_check.py", "_check_report"): 2,  # `ks check`: a check failed
     ("cli.py", "ci_poll"): 1,  # a merge commit's CI failed or could not be read
     ("cli_report.py", "config_show"): 2,  # a rejected section, reported
-    ("cli.py", "decompose"): 1,  # the architect's output could not be used
-    ("cli.py", "factory"): 1,  # the architect's output could not be used
+    ("cli_architect.py", "decompose"): 1,  # the architect's output could not be used
+    ("cli_factory.py", "factory"): 1,  # the architect's output could not be used
     ("cli_learning.py", "health_cmd"): 1,  # a metric breached its control limits
     ("cli_queue.py", "queue_sync"): 1,  # an issue could not be synced
     ("cli_learning.py", "recheck_cmd"): 1,  # a verdict the recheck disagrees with
