@@ -16,8 +16,9 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import decompose
-from kstrl.decompose import build_decompose_prompt, decompose_spec
+from kstrl import decompose, decompose_prompt
+from kstrl.decompose import decompose_spec
+from kstrl.decompose_prompt import build_decompose_prompt
 from kstrl.ui.plain import PlainUI
 from tests.helpers.before_spend import no_base_check
 from tests.helpers.prompt_calls import architect_call
@@ -280,7 +281,7 @@ def test_a_caller_with_no_repository_is_told_so() -> None:
 def test_the_repo_source_body_reaches_the_architect(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(decompose, "ARCHITECT_REPO_SOURCE_PROMPT", _ORPHAN_MARKER)
+    monkeypatch.setattr(decompose_prompt, "ARCHITECT_REPO_SOURCE_PROMPT", _ORPHAN_MARKER)
     root, spec = _repo(tmp_path)
     prompt, _cwd = _decompose_and_capture(root, spec)
     assert _MARKER_HEAD in prompt and _MARKER_TAIL in prompt, (

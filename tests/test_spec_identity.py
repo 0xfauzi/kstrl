@@ -44,7 +44,7 @@ from typing import Any
 
 import pytest
 
-from kstrl.decompose import load_spec_input
+from kstrl.decompose_prompt import load_spec_input
 from kstrl.inbox import Inbox, InboxItem, ItemKind, ItemStatus
 from kstrl.init_cmd import gitignore_block
 from kstrl.manifest import Manifest

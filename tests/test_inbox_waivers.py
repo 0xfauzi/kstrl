@@ -34,7 +34,7 @@ from typing import cast
 import pytest
 from textual.widgets import DataTable, Static
 
-from kstrl.decompose import spec_digest
+from kstrl.decompose_prompt import spec_digest
 from kstrl.findings import Finding
 from kstrl.inbox import Inbox, InboxConfig, InboxItem, ItemKind
 from kstrl.manifest import Component, Manifest

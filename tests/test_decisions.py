@@ -329,7 +329,7 @@ class TestTheSchedulerActuallyInjectsIt:
 
     def test_the_block_reaches_the_worker_at_the_right_position(self, tmp_path: Path) -> None:
         import kstrl.factory as factory_mod
-        from kstrl.decompose import spec_digest
+        from kstrl.decompose_prompt import spec_digest
         from kstrl.factory import run_factory
         from kstrl.factory_result import ComponentResult
 

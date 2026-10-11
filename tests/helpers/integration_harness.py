@@ -22,7 +22,7 @@ from kstrl import git
 from kstrl.agents.base import UsageRecord
 from kstrl.config import KstrlConfig
 from kstrl.contract import ContractConfig, ContractMode
-from kstrl.decompose import spec_digest
+from kstrl.decompose_prompt import spec_digest
 from kstrl.factory import FactoryConfig, run_factory
 from kstrl.factory_result import FactoryResult
 from kstrl.integration import integration_stories
