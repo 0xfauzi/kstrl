@@ -25,9 +25,9 @@ from kstrl.config import KstrlConfig
 from kstrl.context import IterationContext
 from kstrl.event_catalog import Event, PhaseCompleted
 from kstrl.events import CallbackSink, EventBus, V1CompatSink
-from kstrl.evolution import category_for_check
 from kstrl.factory import AdversarialAgentSelection, FactoryConfig
 from kstrl.factory_result import ComponentResult, FactoryResult
+from kstrl.failure_signatures import category_for_check
 from kstrl.findings import Finding
 from kstrl.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.knowledge import Fact, KnowledgeConfig, measure_fact_utilization

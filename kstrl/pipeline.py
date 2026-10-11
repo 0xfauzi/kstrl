@@ -703,7 +703,7 @@ class ComponentPipeline(Delivery, KnowledgePhase, SecurityGate, MechanicalChecks
             )
             # R6.1: one signature per failed check (#696 decision 5)
             # into the journal instead of the flattened string.
-            from kstrl.evolution import signatures_from_verification
+            from kstrl.failure_signatures import signatures_from_verification
 
             action, error = _verify_routing(failing)
             return VerifyPhaseResult(

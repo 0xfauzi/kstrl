@@ -51,7 +51,7 @@ from pathlib import Path
 from typing import Any, NoReturn
 
 from kstrl.atomicio import atomic_write_json
-from kstrl.evolution import signature_counts_from_verification, split_signature
+from kstrl.failure_signatures import signature_counts_from_verification, split_signature
 from kstrl.jsonread import read_json
 from kstrl.stack import Stack
 from kstrl.verify_model import CheckResult, VerificationResult

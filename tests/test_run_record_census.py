@@ -135,10 +135,10 @@ EXPECTED_RUN_RECORD_SITES: dict[str, int] = {
     "event_catalog.py: <module>": 1,
     "event_catalog.py: Event.to_dict": 1,
     "events.py: _envelope_kwargs": 1,
-    "evolution.py: <module>": 1,
     "evolution.py: _role_usage_entries": 1,
     "evolution.py: EvolutionJournal.record_run": 1,
     "evolution.py: EvolutionJournal.carry_superseded": 1,
+    "experiments_tsv.py: <module>": 1,
     "factory.py: _run_factory_locked._record_contract_event": 1,
     "factory.py: _record_health_breaches": 1,
     # #601: the policy demotion's evidence and the human-rejection demotion's.

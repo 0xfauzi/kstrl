@@ -13,12 +13,14 @@ from kstrl.evolution import (
     SPEC_ISSUES_EVENT,
     EvolutionConfig,
     EvolutionJournal,
+)
+from kstrl.factory_result import FactoryResult
+from kstrl.failure_signatures import (
     signature_for_error,
     signatures_from_findings,
     signatures_from_verification,
     split_signature,
 )
-from kstrl.factory_result import FactoryResult
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from tests.helpers.journal import audit, journal_at
 

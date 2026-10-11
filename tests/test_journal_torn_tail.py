@@ -36,7 +36,8 @@ from pathlib import Path
 import pytest
 
 from kstrl.appendio import JOURNAL_REPAIR_EVENT, handle_ends_without_newline
-from kstrl.evolution import EXPERIMENTS_HEADER, SPEC_ISSUES_EVENT
+from kstrl.evolution import SPEC_ISSUES_EVENT
+from kstrl.experiments_tsv import EXPERIMENTS_HEADER
 from kstrl.observability import read_progress_events
 from kstrl.version import kstrl_version
 from tests.helpers.journal import (
