@@ -11,7 +11,7 @@ import pytest
 
 from kstrl.contract import ContractConfig, ContractMode
 from kstrl.decisions import write_decisions
-from kstrl.decompose import spec_digest
+from kstrl.decompose_prompt import spec_digest
 from kstrl.evolution import INTEGRATION_RESULT_EVENT
 from kstrl.integration import (
     INTEGRATION_NON_GOAL_PROMPT,

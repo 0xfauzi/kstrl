@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING, Any
 
 from kstrl import event_catalog
 from kstrl.acceptance import pinned_digest
-from kstrl.decompose import load_spec_input, spec_digest
+from kstrl.decompose_prompt import load_spec_input, spec_digest
 from kstrl.inbox import UNDECIDED, Inbox, InboxError, InboxItem, ItemKind, ItemStatus
 from kstrl.interaction import PromptKind, PromptRequest
 from kstrl.observability import NotifyConfig, NotifyHooks

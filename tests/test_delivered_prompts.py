@@ -82,6 +82,7 @@ import pytest
 from kstrl import (
     acceptance_design,
     decompose,
+    decompose_prompt,
     git,
     init_cmd,
     integration,
@@ -207,7 +208,7 @@ _REQUIREMENTS = (
 #: the consuming module, not the one in ``kstrl.delimiters``.
 _DELIMITER_CONSUMERS: tuple[ModuleType, ...] = (
     acceptance_design,
-    decompose,
+    decompose_prompt,
     review_prompt,
     security,
     knowledge,
@@ -305,7 +306,7 @@ def _architect_with_owner_answer(tmp_path: Path) -> str:
     inbox.parent.mkdir(parents=True, exist_ok=True)
     inbox.write_text(json.dumps(item.to_dict()) + "\n", encoding="utf-8")
     answers = read_owner_answers(tmp_path, "PROJECT", "spec.md")
-    return decompose.build_decompose_prompt("PROJECT", _SPEC_TEXT + answers.text)
+    return decompose_prompt.build_decompose_prompt("PROJECT", _SPEC_TEXT + answers.text)
 
 
 @dataclass(frozen=True)
@@ -341,7 +342,7 @@ _ROLES: dict[str, _Role] = {
         4237,
     ),
     "architect": _Role(
-        lambda _p: decompose.build_decompose_prompt("PROJECT", _SPEC_TEXT),
+        lambda _p: decompose_prompt.build_decompose_prompt("PROJECT", _SPEC_TEXT),
         frozenset({"DECOMPOSE_PROMPT", "ARCHITECT_NO_REPO_SOURCE_PROMPT"}),
         "a6a9cd1ac32552dd3acc5d90875cf97ec83cfcdfe98fb0c57b66f5e50804ac74",
         16199,
@@ -365,7 +366,7 @@ _ROLES: dict[str, _Role] = {
         190,
     ),
     "architect-with-repo": _Role(
-        lambda _p: decompose.build_decompose_prompt(
+        lambda _p: decompose_prompt.build_decompose_prompt(
             "PROJECT",
             _SPEC_TEXT,
             codebase_map_path="scripts/kstrl/codebase_map.md",
