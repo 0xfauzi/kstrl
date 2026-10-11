@@ -2183,7 +2183,7 @@ class TestSubprocessTimeoutAudit:
         rows = astwalk.Sites((), tuple(undecided)).without_line_numbers().undecided
         assert list(rows) == [
             "agents/logging.py self._agent.run",
-            "cli.py app.run",
+            "cli_report.py app.run",
             "decompose.py agent.run",
             "loop.py agent.run",
             "tui/app.py initial_screens_for_kind(kind, observe_only=False)",
