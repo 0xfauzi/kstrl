@@ -86,7 +86,7 @@ from kstrl import (
     git_diff,
     init_cmd,
     integration,
-    knowledge,
+    knowledge_distill,
     review,
     review_prompt,
     scaffold_templates,
@@ -212,7 +212,7 @@ _DELIMITER_CONSUMERS: tuple[ModuleType, ...] = (
     decompose_prompt,
     review_prompt,
     security,
-    knowledge,
+    knowledge_distill,
     git_diff,
 )
 
@@ -383,7 +383,7 @@ _ROLES: dict[str, _Role] = {
         1033,
     ),
     "distiller": _Role(
-        lambda _p: knowledge.build_distill_prompt(
+        lambda _p: knowledge_distill.build_distill_prompt(
             _COMPONENT, 5, _PRD_JSON, _EXISTING_FACTS, _DIFF_TEXT
         ),
         frozenset({"DISTILL_PROMPT"}),
@@ -602,13 +602,13 @@ def test_the_declared_constant_reaches_the_delivered_text(role: str, tmp_path: P
 
 
 def _run_distill_and_capture_prompt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> str:
-    monkeypatch.setattr(knowledge, "build_distill_prompt", lambda *a, **k: _ORPHAN_MARKER)
+    monkeypatch.setattr(knowledge_distill, "build_distill_prompt", lambda *a, **k: _ORPHAN_MARKER)
     prd_path = tmp_path / "prd.json"
     prd_path.parent.mkdir(parents=True, exist_ok=True)
     prd_path.write_text(_PRD_JSON, encoding="utf-8")
     knowledge_root = tmp_path / "knowledge"
     agent = RecordingAgent(COMPLETION_MARKER)
-    knowledge.distill_facts(
+    knowledge_distill.distill_facts(
         agent,
         _COMPONENT,
         _DIFF_TEXT,
