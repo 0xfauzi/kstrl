@@ -64,6 +64,7 @@ EXPECTED_CONSTRUCTIONS = (
     # given at the prompt (_record).
     "plan_gate.py kstrl.inbox.Inbox",
     "serve.py kstrl.inbox.Inbox",
+    "serve_gates.py kstrl.inbox.Inbox",
     # #696 slice 3: a [stack]'s confirmation is read (_latest_approval),
     # filed (file_stack_item) and decided at the ks factory prompt
     # (decide_at_prompt).
@@ -78,19 +79,17 @@ EXPECTED_CONSTRUCTIONS = (
     "waivers.py kstrl.inbox.Inbox",
 )
 
-#: The same census BY COUNT. ``without_line_numbers`` deduplicates, so
-#: the tuple above cannot see a second construction in a module that
-#: already has one: ``pipeline`` has three and ``serve`` two. A pin whose
-#: subject is "how many" needs its own row.
+#: The same census BY COUNT. ``without_line_numbers`` deduplicates, so the tuple above cannot
+#: see a second construction in a module that already has one: ``pipeline`` has three and
+#: ``serve`` two. A pin whose subject is "how many" needs its own row.
 EXPECTED_CONSTRUCTION_COUNTS = {
     # #643: was 1 (apply_demotion). +1: _calibration_blockers scans the
     # inbox for an undecided calibration_drift item. It reads; it mutates nothing.
     "autonomy_transitions.py": 2,
     "calibration_ladder.py": 1,
     "cli.py": 1,
-    # #644 slice 2: was 2. +1: escalation_naming scans the inbox for the
-    # undecided spec_escalation row that names a poisoned item. It reads;
-    # it mutates nothing.
+    # #644 slice 2: was 2. +1: escalation_naming scans the inbox for the undecided
+    # spec_escalation row that names a poisoned item. It reads; it mutates nothing.
     "decisions.py": 3,
     "factory.py": 1,
     "owner_answers.py": 1,
@@ -100,7 +99,8 @@ EXPECTED_CONSTRUCTION_COUNTS = {
     # exactly one Inbox(...) call left in the file.
     "pipeline_inbox.py": 1,
     "plan_gate.py": 2,
-    "serve.py": 2,
+    "serve.py": 1,
+    "serve_gates.py": 1,
     "stack.py": 3,
     "tui/operator_queue.py": 1,
     "tui/screens/inbox.py": 1,
@@ -235,7 +235,7 @@ EXPECTED_CONFIG_LOADS: dict[str, Disposition] = {
     "tui/operator_queue.py::_open_inbox_items": _GUARDED,
     # #646: ks retry's read of the approvals; a load it cannot make keeps nothing.
     "waivers.py::approvals_at": _GUARDED,
-    "serve.py::check_inbox_cap": Disposition(
+    "serve_gates.py::check_inbox_cap": Disposition(
         guarded=False,
         reason=(
             "a read-only admission gate. [inbox] is a preflight section, so "
