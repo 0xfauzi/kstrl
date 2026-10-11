@@ -35,6 +35,7 @@ import click
 import pytest
 
 import kstrl.cli as cli_mod
+import kstrl.cli_preflight as cli_preflight_mod
 from kstrl.init_cmd import gitignore_block
 from tests.helpers import gitrepo
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
@@ -216,14 +217,14 @@ def test_startup_agent_settings_read_kstrl_toml_under_the_environment(
         monkeypatch.delenv(name, raising=False)
     ctx = click.Context(cli_mod.factory)
 
-    from_file = cli_mod._agent_settings(ctx, tmp_path, None, None, None, "auto")
+    from_file = cli_preflight_mod._agent_settings(ctx, tmp_path, None, None, None, "auto")
     assert from_file == (ENGINEER, "toml-model", "low", "codex")
 
     monkeypatch.setenv("AGENT_CMD", REVIEWER)
     monkeypatch.setenv("KSTRL_AGENT_TYPE", "claude")
     monkeypatch.setenv("MODEL", "env-model")
     monkeypatch.setenv("MODEL_REASONING_EFFORT", "high")
-    from_env = cli_mod._agent_settings(ctx, tmp_path, None, None, None, "auto")
+    from_env = cli_preflight_mod._agent_settings(ctx, tmp_path, None, None, None, "auto")
     assert from_env == (REVIEWER, "env-model", "high", "claude")
 
 

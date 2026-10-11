@@ -101,7 +101,7 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     # 1 since #406's ``_read_document`` dedup, which the baseline reader
     # module (split out of calibration.py) now shares between callers.
     "calibration_baseline.py": 1,
-    "cli.py": 1,
+    "cli_preflight.py": 1,
     "commandrun.py": 1,
     "decisions.py": 1,
     "decompose_prompt.py": 2,
@@ -249,7 +249,7 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     # ``OSError``, which is the half a ``UnicodeDecodeError`` escapes.
     "autonomy_replay.py path.read_text(encoding='utf-8')",
     "calibration_baseline.py path.read_text(encoding='utf-8')",
-    "cli.py open(prd_file, encoding='utf-8')",
+    "cli_preflight.py open(prd_file, encoding='utf-8')",
     "commandrun.py open(path, 'a', buffering=1, encoding='utf-8')",
     "decisions.py path.read_text(encoding='utf-8')",
     "decompose_prompt.py (spec_path / name).read_text(encoding='utf-8')",
@@ -355,7 +355,7 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
 #: rather than pinning it, because the scan reads bytes now, so there is
 #: no `read_text` left to be undecided about (#425 simplify pass F6).
 EXPECTED_UNDECIDED: tuple[str, ...] = (
-    "cli.py f (the read is deferred to wherever this value is drained, "
+    "cli_preflight.py f (the read is deferred to wherever this value is drained, "
     "which this walk cannot locate, so no handler can be credited with "
     "covering it)",
     "factory_lock.py fp (the read is deferred to wherever this value is drained, "

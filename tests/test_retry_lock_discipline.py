@@ -33,6 +33,7 @@ import pytest
 from click.testing import CliRunner
 
 import kstrl.cli as cli_mod
+import kstrl.cli_preflight as cli_preflight_mod
 from kstrl.inbox import Inbox, InboxConfig
 from kstrl.interaction import PromptRequest, PromptResponse
 from kstrl.manifest import Manifest
@@ -186,6 +187,7 @@ def _retry_in_process(
     _Channel.asked = []
     _Channel.choice, _Channel.answered, _Channel.on_ask = choice, answered, on_ask
     monkeypatch.setattr(cli_mod, "UiInteractionChannel", _Channel)
+    monkeypatch.setattr(cli_preflight_mod, "UiInteractionChannel", _Channel)
     # _env() drops every KSTRL_ knob from the copy it returns; setenv alone
     # would leave the caller's own in this process's environment.
     for name in [k for k in os.environ if k.startswith("KSTRL_")]:
@@ -254,7 +256,7 @@ class TestRunLockRelease:
             },
         )
         ctx = cli_mod.factory.make_context("factory", argv)
-        ctx.meta[cli_mod._HANDED_RUN_LOCK] = released
+        ctx.meta[cli_preflight_mod._HANDED_RUN_LOCK] = released
 
         with pytest.raises(RuntimeError, match="a released run lock was handed"):
             with ctx:
@@ -363,6 +365,7 @@ class TestKsRetryChangesNothingBeforeItsGates:
         monkeypatch.setattr(factory_mod, "_acquire_run_lock", counting_acquire)
         monkeypatch.setattr(factory_lock_mod, "_acquire_run_lock", counting_acquire)
         monkeypatch.setattr(cli_mod, "_acquire_run_lock", counting_acquire)
+        monkeypatch.setattr(cli_preflight_mod, "_acquire_run_lock", counting_acquire)
         agent = " ".join(
             shlex.quote(part)
             for part in (
@@ -554,6 +557,7 @@ class TestApprovingAParkedMergeHoldsTheLockIntoTheDependentRun:
         monkeypatch.setattr(factory_mod, "_acquire_run_lock", counting_acquire)
         monkeypatch.setattr(factory_lock_mod, "_acquire_run_lock", counting_acquire)
         monkeypatch.setattr(cli_mod, "_acquire_run_lock", counting_acquire)
+        monkeypatch.setattr(cli_preflight_mod, "_acquire_run_lock", counting_acquire)
         for name in [k for k in os.environ if k.startswith("KSTRL_")]:
             monkeypatch.delenv(name)
         probe_env = dict(env)
@@ -695,6 +699,7 @@ class TestFactoryTakesTheLockBeforeItLoadsTheManifest:
             inbox_retry_while_the_question_is_open,
         )
         monkeypatch.setattr(cli_mod, "UiInteractionChannel", _Channel)
+        monkeypatch.setattr(cli_preflight_mod, "UiInteractionChannel", _Channel)
         for name in [k for k in os.environ if k.startswith("KSTRL_")]:
             monkeypatch.delenv(name)
         for name, value in _env().items():
