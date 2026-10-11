@@ -19,7 +19,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, TextIO
 
-from kstrl import git
+from kstrl import git, git_base
 from kstrl.acceptance import BaseReading, PinnedPlan, pin_plan, replay_base
 from kstrl.acceptance_carried import Carried, carried_on_base, carry_passed
 from kstrl.acceptance_design import (
@@ -108,7 +108,7 @@ from kstrl.factory_result import (
 )
 from kstrl.feedforward import CodebaseScanConfig, build_codebase_scan_context
 from kstrl.findings import POLICY_CATEGORY_PREFIX
-from kstrl.git import fetch_base_branch, resolve_base_ref
+from kstrl.git_base import fetch_base_branch, resolve_base_ref
 from kstrl.guards import ScopeHazard, scope_entry_hazard
 from kstrl.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.integration_loop import IntegrationLoop
@@ -3909,7 +3909,7 @@ def _stamp_feature_base(manifest: Manifest, manifest_path: Path, root_dir: Path,
         )
         return
     try:
-        manifest.feature_base_sha = git.resolve_base_sha(manifest.base_branch, root_dir)
+        manifest.feature_base_sha = git_base.resolve_base_sha(manifest.base_branch, root_dir)
     except git.GitDiffError as exc:
         ui.warn(f"  Feature base unknown: {exc}")
         return
@@ -3968,7 +3968,7 @@ def _resolve_round_base(manifest: Manifest, root_dir: Path, ui: UI) -> str:
     then fails having tested nothing.
     """
     try:
-        return git.resolve_base_sha(manifest.base_branch, root_dir)
+        return git_base.resolve_base_sha(manifest.base_branch, root_dir)
     except git.GitDiffError as exc:
         ui.warn(f"  Phase 3 base unresolved: {exc}")
         return ""

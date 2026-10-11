@@ -16,7 +16,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl import contract, factory, git, guards, verify_diff
+from kstrl import contract, factory, git, git_base, guards, verify_diff
 from kstrl.config import KstrlConfig
 from kstrl.contract import ContractConfig, ContractMode
 from kstrl.loop import LoopResult
@@ -85,7 +85,7 @@ def _build_stale_base(root: Path) -> StaleBase:
 
     # What the factory does after every PR merge: update the
     # remote-tracking ref, touch nothing else.
-    error = git.fetch_base_branch("main", repo)
+    error = git_base.fetch_base_branch("main", repo)
     assert error is None, error
 
     # Tier 2: a component worktree cut from the now-advanced origin/main.
@@ -127,7 +127,7 @@ def test_the_baseline_agrees_with_the_merge_base(fx: StaleBase) -> None:
     and asserting equality with the tip here would still pass after a
     regression that anchored on the tip again."""
     baseline = git.capture_workspace_baseline(fx.worktree, base_ref="main")
-    base_label = git.resolve_base_ref("main", fx.worktree)
+    base_label = git_base.resolve_base_ref("main", fx.worktree)
     expected = subprocess.run(
         ["git", "merge-base", base_label, "HEAD"],
         cwd=fx.worktree,
@@ -143,7 +143,7 @@ def test_there_is_one_resolver() -> None:
     import kstrl.git as git_mod
 
     assert not hasattr(git_mod, "resolve_ref")
-    assert git_mod.base_ref_candidates("main") == ("origin/main", "main")
+    assert git_base.base_ref_candidates("main") == ("origin/main", "main")
 
 
 def test_the_in_loop_guard_blames_no_file_from_the_previous_tier(fx: StaleBase) -> None:
@@ -181,7 +181,7 @@ def test_a_programming_error_is_not_a_silent_fallback(
     def boom(*_args: object, **_kwargs: object) -> str:
         raise TypeError("wrong arity")
 
-    monkeypatch.setattr(git, "merge_base_ref", boom)
+    monkeypatch.setattr(git_base, "merge_base_ref", boom)
     with pytest.raises(TypeError):
         git.capture_workspace_baseline(fx.worktree, base_ref="main")
 
@@ -206,7 +206,7 @@ def test_the_contract_checkout_carries_the_merged_tier(fx: StaleBase) -> None:
         fx.repo,
         config,
         PlainUI(no_color=True, file=io.StringIO()),
-        git.resolve_base_sha("main", fx.repo),
+        git_base.resolve_base_sha("main", fx.repo),
     )
     assert result.passed is True
 
@@ -337,7 +337,7 @@ def _build_sibling_merges_mid_run(root: Path) -> StaleBase:
     # remote-tracking ref, touch nothing else. `wt` is a linked worktree
     # of `repo` and shares `refs/remotes/*`, so its own view of
     # `origin/main` has now moved without `wt` doing anything.
-    error = git.fetch_base_branch("main", repo)
+    error = git_base.fetch_base_branch("main", repo)
     assert error is None, error
 
     local_main = _sha(repo, "main")

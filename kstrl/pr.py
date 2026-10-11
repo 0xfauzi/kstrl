@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from kstrl.git import fetch_base_branch
+from kstrl.git_base import fetch_base_branch
 from kstrl.pr_body import component_pr_body, single_pr_body
 from kstrl.pr_state import _pr_mergeable, _pr_state
 

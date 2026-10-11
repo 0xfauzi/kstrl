@@ -34,7 +34,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl import git
+from kstrl import git, git_base
 from kstrl.config import KstrlConfig
 from kstrl.factory import FactoryConfig, run_factory
 from kstrl.factory_result import ComponentResult
@@ -200,7 +200,7 @@ class TestReviewerReceivesNoDiffOnARealWorktree:
         # A SHA, not the branch name: Phase 2.5 pins the range the same
         # way Phase 2 does, so a base ref moving mid-run cannot make the
         # two measurements disagree.
-        base_sha = git.resolve_base_sha(review_repo.base_branch, review_repo.path)
+        base_sha = git_base.resolve_base_sha(review_repo.base_branch, review_repo.path)
         assert f"git diff {base_sha}...HEAD" in agent.prompts[0]
         assert review_repo.base_branch not in agent.prompts[0].split("OBTAINING")[1][:400]
         assert agent.cwds == [review_repo.path]
@@ -505,7 +505,7 @@ class TestCoverageAttestation:
         answers with the stat of the range it was given.
         """
         repo = _repo_with_moving_base(tmp_path)
-        pinned_sha = git.resolve_base_sha("main", repo)
+        pinned_sha = git_base.resolve_base_sha("main", repo)
         pinned = git.get_diff_stat(pinned_sha, repo, resolved=True)
         reply = json.dumps(
             {
@@ -546,7 +546,7 @@ class TestCoverageAttestation:
         )
         # Preconditions asserted OUT here, where a failure names itself
         # rather than surfacing as "Reviewer agent failed".
-        assert git.resolve_base_sha("main", repo) != pinned_sha, "the fetch did not move"
+        assert git_base.resolve_base_sha("main", repo) != pinned_sha, "the fetch did not move"
         assert git.get_diff_stat("main", repo) != pinned, "the move did not change the range"
         # The prompt named the COMMIT, so it still points at the range
         # the harness measured; the NAME now lands somewhere else.

@@ -34,7 +34,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl import git
+from kstrl import git_base
 from kstrl import loop as loop_mod
 from kstrl.agents.base import UsageRecord, UsageTotals
 from kstrl.config import KstrlConfig
@@ -284,7 +284,7 @@ class TestZeroMeansNoLimitAtEveryWait:
             ),
             PlainUI(no_color=True, file=io.StringIO()),
             components_merged=True,
-            base_sha=git.resolve_base_sha("main", root),
+            base_sha=git_base.resolve_base_sha("main", root),
         )
         assert [r.passed for r in results] == [True], [r.test_output for r in results]
 
