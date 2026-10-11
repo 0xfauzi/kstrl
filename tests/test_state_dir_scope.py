@@ -393,8 +393,9 @@ _PACKAGE_ENTRIES: set[str] | None = None
 _EXPECTED_STATE_DIR_SPELLINGS: dict[str, int] = {
     # 5: -1 for #507, which deleted the proposal generator and --apply
     # and kept one join to the proposals directory for the notice about it.
-    "cli.py": 4,
+    "cli.py": 1,
     "cli_learning.py": 1,
+    "cli_report.py": 3,
     "contract.py": 1,
     "decompose.py": 1,
     "doctor.py": 2,
@@ -588,6 +589,7 @@ class TestNothingTheLoopRunsWritesTheUncarvedEntries:
             "kstrl.serve",
             "kstrl.cli",
             "kstrl.cli_seam",
+            "kstrl.cli_queue",
             "kstrl.evolution",
             "kstrl.intake_github",
             "kstrl.intake_issue",

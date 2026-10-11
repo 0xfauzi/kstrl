@@ -337,7 +337,8 @@ _SCAFFOLD_WRITER = "_create_if_missing"
 #: ``launch.py`` and ``operator_context.py`` did not move: neither
 #: points an operator at this file.
 EXPECTED_TEMPLATE_FILENAMES: dict[str, int] = {
-    "cli.py": 11,
+    "cli.py": 10,
+    "cli_report.py": 1,
     "config.py": 4,
     "factory.py": 3,
     "init_cmd.py": 6,

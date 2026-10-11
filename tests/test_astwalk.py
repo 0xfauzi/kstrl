@@ -425,7 +425,7 @@ class TestTheWalkAgainstTheRealPackage:
                 [
                     *OPAQUE_CALLEES,
                     # A Textual App bound to a local.
-                    "cli.py app.run",
+                    "cli_report.py app.run",
                     "tui/embed.py app.run",
                     "tui/home.py app.run",
                     # An agent adapter reached through a parameter or an

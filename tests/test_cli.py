@@ -9,7 +9,8 @@ from unittest.mock import patch
 import pytest
 from click.testing import CliRunner, Result
 
-from kstrl.cli import _format_component_status, _run_structural_override_notices, cli
+from kstrl.cli import _run_structural_override_notices, cli
+from kstrl.cli_report import _format_component_status
 from kstrl.factory import FactoryConfig
 from kstrl.git import BASE_BRANCH_CANDIDATES, detect_base_branch, resolve_base_branch
 from kstrl.init_cmd import gitignore_block
