@@ -20,9 +20,8 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import init_cmd
+from kstrl import scaffold_ledger
 from kstrl.config import KstrlConfig
-from kstrl.init_cmd import SCAFFOLDED_TEMPLATES, shipped_label
 from kstrl.operator_context import (
     CUT_FLOOR,
     GOLDEN_PATTERNS,
@@ -32,6 +31,7 @@ from kstrl.operator_context import (
     operator_file_spec,
     read_operator_file,
 )
+from kstrl.scaffold_ledger import SCAFFOLDED_TEMPLATES, shipped_label
 from kstrl.scaffold_templates import DEFAULT_GOLDEN_PATTERNS
 from tests.helpers.operatorfiles import assert_delimited, body_of, golden, split_block
 
@@ -587,7 +587,7 @@ class TestAnUneditedScaffoldInjectsNothing:
         path = kstrl_dir / GOLDEN_PATTERNS.scaffold
         path.write_text(DEFAULT_GOLDEN_PATTERNS + "\n", encoding="utf-8")
 
-        state = init_cmd.classify_scaffolded_path(path)
+        state = scaffold_ledger.classify_scaffolded_path(path)
 
         assert load_operator_file(golden(path, scaffold=GOLDEN_PATTERNS.scaffold)) == ""
         assert state is not None
@@ -626,10 +626,10 @@ class TestAnUneditedScaffoldInjectsNothing:
         body = "# Synthetic\n\nOne line.\n\n"
         digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
         monkeypatch.setattr(
-            init_cmd,
+            scaffold_ledger,
             "SCAFFOLDED_TEMPLATES",
             (
-                init_cmd.ScaffoldedTemplate(
+                scaffold_ledger.ScaffoldedTemplate(
                     filename="synthetic.md",
                     constant_name="SYNTHETIC",
                     body="# Synthetic\n\nOne line.\n",

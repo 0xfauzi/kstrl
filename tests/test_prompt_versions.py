@@ -446,7 +446,7 @@ def _drift_message(name: str, expected: tuple[str, str], actual: tuple[str, str]
     if name == "DEFAULT_PROMPT":
         parts.append(
             "  4. APPEND the new (hash, version) row to the prompt.md entry of "
-            "SCAFFOLDED_TEMPLATES in kstrl/init_cmd.py, keeping every older "
+            "SCAFFOLDED_TEMPLATES in kstrl/scaffold_ledger.py, keeping every older "
             "row (#286). Without it the bump reaches no already-initialised "
             "project and nothing can tell an operator their prompt.md is "
             "behind.\n"

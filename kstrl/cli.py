@@ -107,10 +107,7 @@ from kstrl.git import (
     detect_base_branch,
     resolve_base_branch,
 )
-from kstrl.init_cmd import (
-    run_init,
-    staleness_notice,
-)
+from kstrl.init_cmd import run_init
 from kstrl.interaction import (
     PromptKind,
     PromptRequest,
@@ -147,6 +144,7 @@ from kstrl.retry_plan import (
     retry_confirm_header,
 )
 from kstrl.sandbox import SandboxConfig, warn_unconfined, with_stack_writable
+from kstrl.scaffold_ledger import staleness_notice
 from kstrl.scaffold_templates import DEFAULT_FEATURE_UNDERSTAND
 from kstrl.security import _SEVERITY_ORDER, SecurityMode
 from kstrl.serve import ARCHITECT_RUN_KIND, LAUNCHD_MODES

@@ -71,7 +71,7 @@ the directory entry, so a destination that was a symlink becomes a
 regular file and a destination that shared an inode with a hard link
 stops sharing it. #290 measured exactly that on
 ``scripts/kstrl/prompt.md``, and the caller that cares about it
-(``init_cmd._rewrite_blockers``) refuses such a target BEFORE calling a
+(``scaffold_ledger._rewrite_blockers``) refuses such a target BEFORE calling a
 writer. Guarding it here instead would put a special case in shared
 infrastructure for the one caller that has an opinion, and would silently
 change what the other nine do; the property is documented so a future

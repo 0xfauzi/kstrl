@@ -12,7 +12,7 @@ restated here.
 Related coverage elsewhere, so neither gets deleted as a duplicate:
 ``tests/test_prompt_upgrade.py::test_upgrade_preserves_the_mode_it_found``
 is the end-to-end twin of the mode tests below, through
-``init_cmd._atomic_replace``; ``tests/test_knowledge.py::
+``scaffold_ledger._atomic_replace``; ``tests/test_knowledge.py::
 test_write_atomic_no_partial_files`` covers ``write_facts``, which is
 not in ``WRITERS``.
 """
@@ -34,7 +34,7 @@ import pytest
 
 import kstrl.atomicio
 from kstrl.atomicio import atomic_write_json, atomic_write_text
-from kstrl.init_cmd import _atomic_replace
+from kstrl.scaffold_ledger import _atomic_replace
 from kstrl.workqueue_store import atomic_write
 from tests.helpers import astwalk
 from tests.test_astwalk import OPAQUE_CALLEES
@@ -739,7 +739,7 @@ class TestTheDescriptorIsOwnedBeforeAnythingCanFail:
 class TestReplaceRefusesAMissingTargetWithoutRenamingTheError:
     """#291 round two, and the one finding this pushes back on.
 
-    ``init_cmd._atomic_replace`` guards with ``target.is_file()``. Review
+    ``scaffold_ledger._atomic_replace`` guards with ``target.is_file()``. Review
     read that as swallowing every ``OSError``, so an ``EACCES`` on the
     parent directory would be reported as "the caller is wrong".
     Measured: it does not. ``pathlib`` ignores only ENOENT, ENOTDIR,

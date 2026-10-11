@@ -240,7 +240,7 @@ class OperatorFileKind:
     keep: Literal["head", "tail"]
     #: The scaffolded filename whose digest history says "kstrl wrote
     #: this, the operator has not filled it in yet". Matches a
-    #: ``SCAFFOLDED_TEMPLATES`` row in ``kstrl/init_cmd.py``.
+    #: ``SCAFFOLDED_TEMPLATES`` row in ``kstrl/scaffold_ledger.py``.
     scaffold: str
     #: R10.10 (#231). ``None`` for every row but memory. When set, a
     #: ``"tail"`` cut keeps the newest content of THIS heading's
@@ -420,7 +420,7 @@ def read_operator_file(spec: OperatorFile) -> OperatorText:
     (ENAMETOOLONG) killed the run with a traceback before any component
     started, which on ``ks factory`` is after decompose has been paid
     for. Measured both ways through a real ``ks init`` plus ``ks run``:
-    exit 1, and the agent never ran. ``init_cmd._read_text_or_none`` is
+    exit 1, and the agent never ran. ``scaffold_ledger._read_text_or_none`` is
     the shape CLAUDE.md names as the worked example, and it is this one:
     catch ``OSError`` and ``ValueError`` (``UnicodeDecodeError`` is a
     ``ValueError`` and escapes a fail-closed ``except OSError``), never
@@ -436,7 +436,7 @@ def read_operator_file(spec: OperatorFile) -> OperatorText:
     ``loop.run_loop`` builds the prompt once and reuses it for every
     iteration of that attempt (round 1, nit 11), which is also the
     latency #231 inherits, one attempt rather than one iteration.
-    ``init_cmd.shipped_label`` owns the digest history, so this decision
+    ``scaffold_ledger.shipped_label`` owns the digest history, so this decision
     and the staleness notice ``ks init`` prints read one table. The
     digest is taken on the raw decoded text and AGAIN on that text with
     its trailing newlines collapsed to one, and this reader asks for the
@@ -494,10 +494,10 @@ def read_operator_file(spec: OperatorFile) -> OperatorText:
     if not text.strip():
         return OperatorText("", None, None, absent=False)
     # Deferred: a module-level import here would make this module import
-    # `kstrl.init_cmd`, which imports THIS module for `GUIDANCE_HEADING`
-    # (#231 B1). One of the two has to be local, and this is the branch
-    # that needs it.
-    from kstrl.init_cmd import shipped_label
+    # `kstrl.scaffold_ledger`, which imports `kstrl.scaffold_templates`,
+    # which imports THIS module for `GUIDANCE_HEADING` (#231 B1). One of
+    # the two has to be local, and this is the branch that needs it.
+    from kstrl.scaffold_ledger import shipped_label
 
     if spec.scaffold is not None and (
         shipped_label(spec.scaffold, text, ignore_trailing_newlines=True) is not None

@@ -291,7 +291,7 @@ def test_the_repo_source_body_reaches_the_architect(
 
 
 def test_ks_init_scaffolds_a_codebase_map_the_ledger_recognises(tmp_path: Path) -> None:
-    from kstrl.init_cmd import classify_scaffold
+    from kstrl.scaffold_ledger import classify_scaffold
     from tests.test_init_cmd import run_init_capturing
 
     run_init_capturing(tmp_path)

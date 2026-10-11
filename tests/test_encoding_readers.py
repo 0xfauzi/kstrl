@@ -4,7 +4,7 @@ THE RULE, which CLAUDE.md has stated since #291 and which nothing checked
 until #320: a reader of any file kstrl writes must name
 ``encoding="utf-8"``, AND must catch ``ValueError`` alongside ``OSError``,
 because ``UnicodeDecodeError`` is a ``ValueError`` and walks straight past
-a fail-closed ``except OSError``. ``init_cmd._read_text_or_none`` is the
+a fail-closed ``except OSError``. ``scaffold_ledger._read_text_or_none`` is the
 worked example. #319 fixed the seam every CLI command sits behind and said
 so; this is the rest.
 
@@ -117,8 +117,9 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     "inbox.py": 1,
     # 3 until #352 routed ``_ensure_gitignore``'s append through
     # ``appendio``, which encodes once for every appender. The two left
-    # are both reads: the PRD file and ``_read_text_or_none``.
-    "init_cmd.py": 2,
+    # are both reads: the PRD file and ``_read_text_or_none``. N2 (#776)
+    # moved ``_read_text_or_none`` to ``scaffold_ledger.py``.
+    "init_cmd.py": 1,
     "init_wizard.py": 1,
     # Back to 1 (the ledger's own read) since #231's simplify pass (B1):
     # the memory-file read `_append_guidance` added moved to
@@ -160,6 +161,7 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     # and the `up` log's `log.open('wb')` (bytes mode, so it is not itself
     # a text read; layer 2 below excludes it for exactly that reason).
     "replay.py": 2,
+    "scaffold_ledger.py": 1,
     "security.py": 1,
     # Five reads, and five reads only. Round 1 of #228 spelled the gh
     # flag as two argv tokens, so the bare literal "open" landed here and
@@ -269,7 +271,6 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     # append goes through ``appendio.append_records`` now, so the utf-8
     # it used to name is the one ``append_terminated`` encodes with, and
     # the ``appendio.py`` row below is where that contract is counted.
-    "init_cmd.py path.read_text(encoding='utf-8')",
     "init_wizard.py toml_path.read_text(encoding='utf-8')",
     "intake_issue.py self.path.read_text(encoding='utf-8')",
     # #700, the security review of #770: the `.git` file of the root and the
@@ -298,6 +299,7 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "recheck.py path.read_text(encoding='utf-8')",
     # #700 slice 3: the per-machine replay lock.
     "replay.py path.open('a+', encoding='utf-8')",
+    "scaffold_ledger.py path.read_text(encoding='utf-8')",
     "security.py prd_path.read_text(encoding='utf-8')",
     "serve.py open(lock_path, 'a+', encoding='utf-8')",
     "serve.py path.read_text(encoding='utf-8')",
