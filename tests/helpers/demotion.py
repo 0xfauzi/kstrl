@@ -26,7 +26,8 @@ from types import ModuleType
 from typing import Any
 
 from kstrl import calibration
-from kstrl.autonomy import AutonomyConfig, AutonomyLevel
+from kstrl.autonomy import AutonomyLevel
+from kstrl.autonomy_config import AutonomyConfig
 from kstrl.events import EventBus
 from kstrl.factory import _record_autonomy_outcome
 from kstrl.factory_result import FactoryResult

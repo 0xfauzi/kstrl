@@ -33,17 +33,19 @@ from kstrl.agents.base import UsageTotals, collect_usage, print_usage_rollup
 from kstrl.agents.proc import kill_active_process_groups
 from kstrl.agents.prompt_record import AgentCall, recording_prompts
 from kstrl.autonomy import (
-    AutonomyConfig,
     AutonomyLevel,
     AutonomyState,
     DemotionTrigger,
     FlagBundle,
     apply_demotion,
     flag_bundle_for,
+    save_ladder_state,
+)
+from kstrl.autonomy_config import (
+    AutonomyConfig,
     manual_override_notes,
     resolve_runtime_level,
     resolved_flag_bundle,
-    save_ladder_state,
     strict_bool,
 )
 from kstrl.base_gates import (

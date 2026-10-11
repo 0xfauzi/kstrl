@@ -131,7 +131,7 @@ def _all_field_names(cfg_cls: Any) -> list[str]:
 
 
 def _section_specs() -> list[SectionSpec]:
-    from kstrl.autonomy import AutonomyConfig
+    from kstrl.autonomy_config import AutonomyConfig
     from kstrl.breaker import BreakerConfig
     from kstrl.config import KstrlConfig
     from kstrl.config_keys import STRING_KEYS

@@ -60,6 +60,7 @@ ENFORCEMENT_MACHINERY_PATHS: tuple[str, ...] = (
     "**/kstrl/policy.py",
     "**/kstrl/guards.py",
     "**/kstrl/autonomy.py",
+    "**/kstrl/autonomy_config.py",
     "**/kstrl/statedir.py",
     "**/kstrl/waivers.py",  # #595: turns an approved item into a waiver
     # R8.2 / R8.9 control-plane state. Live copies live under XDG
