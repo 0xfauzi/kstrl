@@ -24,14 +24,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from kstrl import git_base, git_diff
-from kstrl.config import validate_agent_type
-from kstrl.config_numbers import check_numbers
-from kstrl.decompose import (
+from kstrl.agent_output import (
     AgentOutputTooLarge,
     _extract_json,
     _select_agent_output,
     collect_agent_output,
 )
+from kstrl.config import validate_agent_type
+from kstrl.config_numbers import check_numbers
 from kstrl.delimiters import generate_data_delimiter
 from kstrl.findings import Finding, dump_raw_debug, tag_finding_with_model
 from kstrl.prd import prd_text_for_prompt

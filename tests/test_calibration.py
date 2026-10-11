@@ -60,6 +60,7 @@ from typing import Any
 import pytest
 
 from kstrl import calibration, calibration_baseline
+from kstrl.agent_output import _extract_agent_json, _select_agent_output
 from kstrl.agents.proc import TIMEOUT_MESSAGE_PREFIX
 from kstrl.calibration_score import (
     _acceptable_categories,
@@ -72,7 +73,7 @@ from kstrl.calibration_score import (
     security_caught,
     security_false_positive,
 )
-from kstrl.decompose import SpecIssue, _extract_agent_json, _parse_spec_issues, _select_agent_output
+from kstrl.decompose import SpecIssue, _parse_spec_issues
 from kstrl.decompose_prompt import build_decompose_prompt
 from kstrl.delimiters import generate_data_delimiter
 from kstrl.git_diff import get_diff_stat, pasted_change_source, repo_change_source
