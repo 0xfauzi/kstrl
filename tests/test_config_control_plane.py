@@ -29,7 +29,7 @@ from click.testing import CliRunner
 
 import kstrl.cli as cli_mod
 import kstrl.evolution as evolution_mod
-from kstrl.evolution import EvolutionConfig
+from kstrl.evolution_config import EvolutionConfig
 from kstrl.factory import FactoryConfig
 from kstrl.feedforward import CodebaseScanConfig
 from kstrl.knowledge import KnowledgeConfig

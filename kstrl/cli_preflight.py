@@ -521,7 +521,7 @@ def _collect_evolution_notes(
     argument for eventually making the architect's spend durable where
     it is earned rather than plugging exits one at a time.
     """
-    from kstrl.evolution import EvolutionConfig
+    from kstrl.evolution_config import EvolutionConfig
 
     config = EvolutionConfig.load_or_none(root_dir, warn=ui_impl.warn)
     if config is None:

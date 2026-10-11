@@ -27,7 +27,7 @@ from typing import Any
 import pytest
 
 from kstrl.autonomy_replay import load_runs
-from kstrl.evolution import EvolutionConfig
+from kstrl.evolution_config import EvolutionConfig
 from kstrl.factory import FactoryConfig, run_factory
 from kstrl.health import readings_from
 from kstrl.manifest import ComponentStatus, Manifest

@@ -214,7 +214,7 @@ def config_sections() -> list[ConfigSection]:
     from kstrl.config import KstrlConfig
     from kstrl.contract import ContractConfig
     from kstrl.divergence import DivergenceConfig
-    from kstrl.evolution import EvolutionConfig
+    from kstrl.evolution_config import EvolutionConfig
     from kstrl.factory import FactoryConfig
     from kstrl.feedforward import CodebaseScanConfig
     from kstrl.inbox import InboxConfig

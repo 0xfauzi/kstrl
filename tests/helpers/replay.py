@@ -18,7 +18,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from kstrl.autonomy_replay import RunRecord
-from kstrl.evolution import EvolutionConfig
+from kstrl.evolution_config import EvolutionConfig
 from kstrl.experiments_tsv import EXPERIMENTS_HEADER
 
 #: A run_id containing an invalid utf-8 byte: the reachable "unreadable

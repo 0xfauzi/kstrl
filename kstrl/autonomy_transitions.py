@@ -177,7 +177,8 @@ def commit_transition(
         # prevent. ``save`` has already warned, naming the file.
         return
 
-    from kstrl.evolution import JOURNAL_SCHEMA_VERSION, EvolutionConfig, EvolutionJournal
+    from kstrl.evolution import JOURNAL_SCHEMA_VERSION, EvolutionJournal
+    from kstrl.evolution_config import EvolutionConfig
 
     entry = {
         "schema_version": JOURNAL_SCHEMA_VERSION,

@@ -5680,7 +5680,8 @@ def _run_factory_locked(
 
     # Record run to evolution journal
     try:
-        from kstrl.evolution import EvolutionConfig, EvolutionJournal
+        from kstrl.evolution import EvolutionJournal
+        from kstrl.evolution_config import EvolutionConfig
 
         evo_config = EvolutionConfig.load(root_dir)
         if evo_config.enabled:

@@ -64,7 +64,8 @@ WRITERS = ("A", "B", "C", "D")
 
 
 def _journal(path: Path) -> Any:
-    from kstrl.evolution import EvolutionConfig, EvolutionJournal
+    from kstrl.evolution import EvolutionJournal
+    from kstrl.evolution_config import EvolutionConfig
 
     return EvolutionJournal(EvolutionConfig(journal_path=path))
 

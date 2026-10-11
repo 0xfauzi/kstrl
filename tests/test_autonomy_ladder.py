@@ -608,7 +608,7 @@ class TestTransitionAudit:
         WHERE the code writes, which is not what this test is about.
         """
         from kstrl.autonomy_transitions import commit_transition
-        from kstrl.evolution import EvolutionConfig
+        from kstrl.evolution_config import EvolutionConfig
 
         journal_path = EvolutionConfig.load(tmp_path).journal_path
         journal_path.parent.mkdir(parents=True, exist_ok=True)
