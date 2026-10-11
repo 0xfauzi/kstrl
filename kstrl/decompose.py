@@ -63,13 +63,10 @@ from kstrl.event_catalog import (
     SpecIssueRecorded,
 )
 from kstrl.events import EventBus
-from kstrl.evolution import (
-    SPEC_ISSUES_EVENT,
-    EvolutionJournal,
-    entry_str,
-)
+from kstrl.evolution import EvolutionJournal
 from kstrl.evolution_config import EvolutionConfig
 from kstrl.guards import ScopeHazard, scope_entry_hazard
+from kstrl.journal_rows import SPEC_ISSUES_EVENT, entry_str
 from kstrl.jsonread import read_json
 from kstrl.linear import (
     LinearClient,

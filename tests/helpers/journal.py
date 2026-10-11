@@ -40,11 +40,9 @@ from pathlib import Path
 from typing import Any
 
 from kstrl.appendio import JOURNAL_REPAIR_EVENT
-from kstrl.evolution import (
-    SPEC_ISSUES_EVENT,
-    EvolutionJournal,
-)
+from kstrl.evolution import EvolutionJournal
 from kstrl.evolution_config import EvolutionConfig
+from kstrl.journal_rows import SPEC_ISSUES_EVENT
 from kstrl.observability import read_progress_events
 
 #: A partial JSONL line: valid JSON up to the point the process died,

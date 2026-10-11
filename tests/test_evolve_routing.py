@@ -25,7 +25,7 @@ import pytest
 from click.testing import CliRunner, Result
 
 from kstrl.cli import cli
-from kstrl.evolution import FINDINGS_SUPERSEDED_EVENT, EvolutionJournal
+from kstrl.evolution import EvolutionJournal
 from kstrl.evolution_config import EvolutionConfig
 from kstrl.failure_signatures import (
     _CATEGORY_BY_CHECK,
@@ -34,6 +34,7 @@ from kstrl.failure_signatures import (
     category_for_check,
     route_patterns,
 )
+from kstrl.journal_rows import FINDINGS_SUPERSEDED_EVENT
 
 
 def _write_journal(root: Path, rows: list[tuple[str, str, str]]) -> None:
