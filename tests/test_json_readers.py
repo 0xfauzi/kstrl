@@ -171,7 +171,7 @@ EXPECTED_JSON_PARSES: tuple[str, ...] = ("jsonread.py json.loads",)
 #: which is what ``.without_line_numbers()`` does to the found side too.
 EXPECTED_UNDECIDED_CALLS: tuple[str, ...] = (
     "config.py cls.load",
-    "evolution.py cls.load",
+    "evolution_config.py cls.load",
     "intake_github.py ProcessedLedger(root_dir).load",
     "intake_steering.py ProcessedLedger(root_dir).load",
     "serve.py OpenPrCountStreak.load",

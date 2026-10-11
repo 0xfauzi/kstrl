@@ -21,7 +21,8 @@ from kstrl.ui.base import UI
 if TYPE_CHECKING:
     from kstrl.autonomy import AutonomyState
     from kstrl.autonomy_replay import RunRecord
-    from kstrl.evolution import EvolutionConfig, EvolutionJournal
+    from kstrl.evolution import EvolutionJournal
+    from kstrl.evolution_config import EvolutionConfig
     from kstrl.failure_signatures import FailurePattern, PatternRouting
 
 
@@ -126,7 +127,8 @@ def evolve(
     the learning-readiness numbers. Nothing is written.
     Use --status to see experiment trends.
     """
-    from kstrl.evolution import EvolutionConfig, EvolutionJournal
+    from kstrl.evolution import EvolutionJournal
+    from kstrl.evolution_config import EvolutionConfig
     from kstrl.failure_signatures import route_patterns
 
     root_dir = root.resolve() if root else Path.cwd()
@@ -588,7 +590,7 @@ def _load_history_or_exit(
     ``journal_path`` without a second ``kstrl.toml`` read.
     """
     from kstrl.autonomy_replay import load_runs
-    from kstrl.evolution import EvolutionConfig
+    from kstrl.evolution_config import EvolutionConfig
 
     try:
         config = EvolutionConfig.load(root_dir)

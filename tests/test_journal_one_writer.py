@@ -305,7 +305,7 @@ def journal_path_escapes(source_file: Path) -> list[str]:
 #: ``EvolutionJournal.get_spec_audits`` now, and that method's docstring
 #: is where the reason lives.
 EXPECTED_JOURNAL_PATH_SITES: dict[str, int] = {
-    "evolution.py: config.journal_path": 5,
+    "evolution_config.py: config.journal_path": 5,
     # Four, not three, and TWO ROWS LEFT to make it four (#352 round 2,
     # N4). ``cli.py: journal.config.journal_path`` and
     # ``tui/screens/evolve.py: journal.config.journal_path`` were each a
@@ -421,7 +421,7 @@ class TestOneWriter:
             expected={
                 "atomicio.py": 1,  # prose in the module docstring
                 "event_catalog.py": 1,  # prose in a docstring
-                "evolution.py": 1,  # the EvolutionConfig default
+                "evolution_config.py": 1,  # the EvolutionConfig default
                 "init_cmd.py": 1,  # a commented example in the scaffolded kstrl.toml
                 "knowledge.py": 1,  # prose in the module docstring
                 "pipeline_knowledge.py": 1,  # prose in a docstring

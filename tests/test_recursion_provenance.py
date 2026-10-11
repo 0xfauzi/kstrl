@@ -84,7 +84,7 @@ from click.testing import CliRunner
 from kstrl.cli import cli
 from kstrl.config import ConfigError
 from kstrl.config_preflight import config_problem_lines, preflight_config
-from kstrl.evolution import EvolutionConfig
+from kstrl.evolution_config import EvolutionConfig
 from tests.helpers.bad_toml import BROAD_FRAGMENT, DEEP_NEST_TOML
 
 VALID_TOML = "[agent]\ntype = 'claude-code'\n"

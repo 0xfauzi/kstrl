@@ -21,7 +21,8 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.evolution import EvolutionConfig, EvolutionJournal
+from kstrl.evolution import EvolutionJournal
+from kstrl.evolution_config import EvolutionConfig
 from kstrl.factory_result import FactoryResult
 from kstrl.knowledge import Fact, KnowledgeConfig, write_facts
 from kstrl.manifest import Component, ComponentStatus, Manifest

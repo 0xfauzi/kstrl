@@ -21,7 +21,7 @@ from pathlib import Path
 
 from textual.widgets import DataTable
 
-from kstrl.evolution import EvolutionConfig
+from kstrl.evolution_config import EvolutionConfig
 from kstrl.tui.widgets.config_problem import ConfigProblemBanner
 from tests.helpers.tui_screens import evolve_screen
 
