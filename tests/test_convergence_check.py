@@ -15,9 +15,9 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.evolution import FINDINGS_SUPERSEDED_EVENT
 from kstrl.factory import FactoryConfig
 from kstrl.factory_result import ComponentResult
+from kstrl.journal_rows import FINDINGS_SUPERSEDED_EVENT
 from kstrl.manifest import Component, ComponentStatus
 from kstrl.pipeline_transitions import Transition
 from kstrl.review import ReviewConcern, ReviewResult

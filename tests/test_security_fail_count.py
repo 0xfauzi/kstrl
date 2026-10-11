@@ -24,8 +24,8 @@ from typing import Any
 
 import pytest
 
-from kstrl.evolution import FINDINGS_SUPERSEDED_EVENT
 from kstrl.factory_result import ComponentResult
+from kstrl.journal_rows import FINDINGS_SUPERSEDED_EVENT
 from kstrl.observability import read_progress_events
 from kstrl.pipeline_transitions import Transition
 from kstrl.security import SecurityConfig, SecurityResult, run_security_review

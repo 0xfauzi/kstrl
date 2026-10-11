@@ -206,11 +206,8 @@ class AttemptRecorder(PipelineState):
         gates: bool = False,
     ) -> None:
         """Journal one integration review round (#482). Non-fatal, never silent."""
-        from kstrl.evolution import (
-            INTEGRATION_RESULT_EVENT,
-            JOURNAL_SCHEMA_VERSION,
-            EvolutionJournal,
-        )
+        from kstrl.evolution import EvolutionJournal
+        from kstrl.journal_rows import INTEGRATION_RESULT_EVENT, JOURNAL_SCHEMA_VERSION
 
         journal = EvolutionJournal.open(self.root_dir, warn=self.ui.warn)
         if journal is None:
@@ -260,11 +257,8 @@ class AttemptRecorder(PipelineState):
         is the same expression ``PhaseStarted`` uses at
         ``factory.py:4225``: one definition of the attempt number.
         """
-        from kstrl.evolution import (
-            FINDINGS_SUPERSEDED_EVENT,
-            JOURNAL_SCHEMA_VERSION,
-            EvolutionJournal,
-        )
+        from kstrl.evolution import EvolutionJournal
+        from kstrl.journal_rows import FINDINGS_SUPERSEDED_EVENT, JOURNAL_SCHEMA_VERSION
 
         journal = EvolutionJournal.open(self.root_dir, warn=self.ui.warn)
         if journal is None:

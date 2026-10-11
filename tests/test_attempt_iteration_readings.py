@@ -9,7 +9,7 @@ writes a per-attempt journal row at the moment an attempt is superseded
 produced no ``Finding``. One real ``run_factory`` run (2 attempts x 3
 iterations, by construction) is the fixture: three tests read the journal
 and ``experiments.tsv`` it wrote, and one runs the strict reader
-(``kstrl/evolution.py``) over that journal and measures six. The in-memory
+(``kstrl/journal_rows.py``) over that journal and measures six. The in-memory
 reader refusals and the verdict clauses this file once held were removed;
 ``tests/test_retry_journal_rows.py`` drives ``ks evolve`` over a journal
 with each bad row.
@@ -38,11 +38,8 @@ import pytest
 
 from kstrl import event_catalog
 from kstrl import events as ev
-from kstrl.evolution import (
-    FINDINGS_SUPERSEDED_EVENT,
-    read_attempt_iterations,
-)
 from kstrl.factory import FactoryConfig, run_factory
+from kstrl.journal_rows import FINDINGS_SUPERSEDED_EVENT, read_attempt_iterations
 from kstrl.ui.plain import PlainUI
 from kstrl.verify_model import VerifyConfig
 from tests.helpers import gitrepo
@@ -226,7 +223,7 @@ EXPECTED_RETRIES_WRITE_SITES: dict[str, str] = {
     "pipeline_transitions.py:retry_or_fail": (
         "the scheduled retry; journal_superseded_findings(comp) runs four lines above it"
     ),
-    "evolution.py:_component_attempt_readings": (
+    "journal_rows.py:_component_attempt_readings": (
         "a local holding the value READ off a journal row, not a write to "
         "any component's counter. It is in the census because the net is "
         "wider than the subject on purpose: a flagging guard that narrows "
