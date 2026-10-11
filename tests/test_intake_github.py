@@ -720,7 +720,8 @@ class TestServeWriteback:
         self,
         tmp_path: Path,
     ) -> None:
-        from kstrl.serve import RunOutcome, RunSpend, serve_cycle
+        from kstrl.serve import RunSpend, serve_cycle
+        from kstrl.serve_outcome import RunOutcome
 
         queue = _queue(tmp_path)
         queue.add(
@@ -805,7 +806,7 @@ class TestServeDrivesRemoteLabels:
 
     @staticmethod
     def _runner(returncode: int = 0, run_id: str = "factory-x"):  # type: ignore[no-untyped-def]
-        from kstrl.serve import RunOutcome
+        from kstrl.serve_outcome import RunOutcome
 
         def runner(*, root_dir: Path, **kwargs: object) -> RunOutcome:
             run_dir = root_dir / ".kstrl" / "runs" / run_id
@@ -950,7 +951,8 @@ class TestServeDrivesRemoteLabels:
         ``kstrl:awaiting_approval`` and the comment names ``ks inbox
         approve`` rather than claiming a PR is waiting."""
         from kstrl.manifest import Component, ComponentStatus, Manifest
-        from kstrl.serve import RunOutcome, RunSpend, serve_cycle
+        from kstrl.serve import RunSpend, serve_cycle
+        from kstrl.serve_outcome import RunOutcome
 
         self._remote_item(tmp_path)
         stub = _GhStub()
@@ -1027,7 +1029,7 @@ class TestServeDrivesRemoteLabels:
 
     def test_an_unreaped_timeout_still_reports(self, tmp_path: Path) -> None:
         """#187 F9: the orphaned-process path."""
-        from kstrl.serve import RunOutcome
+        from kstrl.serve_outcome import RunOutcome
 
         self._remote_item(tmp_path)
 
@@ -1081,7 +1083,7 @@ class TestServePollsIntake:
 
     @staticmethod
     def _runner(returncode: int = 0):  # type: ignore[no-untyped-def]
-        from kstrl.serve import RunOutcome
+        from kstrl.serve_outcome import RunOutcome
 
         def runner(*, root_dir: Path, **kwargs: object) -> RunOutcome:
             run_dir = root_dir / ".kstrl" / "runs" / "factory-x"
@@ -1261,7 +1263,8 @@ class TestIntakeLockDiscipline:
         self,
         tmp_path: Path,
     ) -> None:
-        from kstrl.serve import RunOutcome, RunSpend, serve_cycle
+        from kstrl.serve import RunSpend, serve_cycle
+        from kstrl.serve_outcome import RunOutcome
         from kstrl.workqueue_items import QueueLockedError
         from kstrl.workqueue_store import queue_lock
 
@@ -1296,7 +1299,8 @@ class TestIntakeLockDiscipline:
         with no guard at all the mutex is free everywhere, so that test
         passes even harder. This asserts the other half.
         """
-        from kstrl.serve import RunOutcome, RunSpend, serve_cycle
+        from kstrl.serve import RunSpend, serve_cycle
+        from kstrl.serve_outcome import RunOutcome
         from kstrl.workqueue import Queue as _Queue
         from kstrl.workqueue_items import QueueLockedError
         from kstrl.workqueue_store import queue_lock

@@ -141,7 +141,8 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     "prd.py": 2,
     # #700: one more json.dumps, the codex writable_roots override. No parse.
     "sandbox.py": 4,
-    "serve.py": 5,
+    "serve.py": 3,
+    "serve_outcome.py": 3,
     "signals.py": 3,
     # #696: the import, one json.dumps for the stack digest's canonical
     # form, and nine more inside stack_toml - a TOML-safe literal per
