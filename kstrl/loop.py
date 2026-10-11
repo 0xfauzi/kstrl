@@ -608,7 +608,7 @@ def run_loop(
     if config.prompt_file.exists():
         raw_prompt = config.prompt_file.read_text(encoding="utf-8")
     else:
-        from kstrl.init_cmd import DEFAULT_PROMPT
+        from kstrl.scaffold_templates import DEFAULT_PROMPT
 
         ui.warn(
             f"Prompt file not found at {config.prompt_file}; "

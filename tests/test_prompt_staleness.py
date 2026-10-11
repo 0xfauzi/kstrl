@@ -41,14 +41,13 @@ import pytest
 
 from kstrl import init_cmd
 from kstrl.init_cmd import (
-    DEFAULT_PROMPT,
-    DEFAULT_PROMPT_VERSION,
     SCAFFOLDED_TEMPLATES,
     ScaffoldedTemplate,
     classify_scaffold,
     classify_scaffolded_path,
     staleness_notice,
 )
+from kstrl.scaffold_templates import DEFAULT_PROMPT, DEFAULT_PROMPT_VERSION
 from tests.helpers import astwalk
 from tests.test_init_cmd import run_init_capturing
 

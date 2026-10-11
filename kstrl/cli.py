@@ -108,7 +108,6 @@ from kstrl.git import (
     resolve_base_branch,
 )
 from kstrl.init_cmd import (
-    DEFAULT_FEATURE_UNDERSTAND,
     run_init,
     staleness_notice,
 )
@@ -148,6 +147,7 @@ from kstrl.retry_plan import (
     retry_confirm_header,
 )
 from kstrl.sandbox import SandboxConfig, warn_unconfined, with_stack_writable
+from kstrl.scaffold_templates import DEFAULT_FEATURE_UNDERSTAND
 from kstrl.security import _SEVERITY_ORDER, SecurityMode
 from kstrl.serve import ARCHITECT_RUN_KIND, LAUNCHD_MODES
 from kstrl.shutdown import StopController, install_signal_handlers
@@ -1291,7 +1291,7 @@ def understand(
     # Create codebase_map.md if missing
     codebase_map = kstrl_dir / "codebase_map.md"
     if not codebase_map.exists():
-        from kstrl.init_cmd import DEFAULT_CODEBASE_MAP
+        from kstrl.scaffold_templates import DEFAULT_CODEBASE_MAP
 
         codebase_map.parent.mkdir(parents=True, exist_ok=True)
         codebase_map.write_text(DEFAULT_CODEBASE_MAP)

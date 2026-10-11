@@ -22,7 +22,7 @@ import pytest
 
 from kstrl import init_cmd
 from kstrl.config import KstrlConfig
-from kstrl.init_cmd import DEFAULT_GOLDEN_PATTERNS, SCAFFOLDED_TEMPLATES, shipped_label
+from kstrl.init_cmd import SCAFFOLDED_TEMPLATES, shipped_label
 from kstrl.operator_context import (
     CUT_FLOOR,
     GOLDEN_PATTERNS,
@@ -32,6 +32,7 @@ from kstrl.operator_context import (
     operator_file_spec,
     read_operator_file,
 )
+from kstrl.scaffold_templates import DEFAULT_GOLDEN_PATTERNS
 from tests.helpers.operatorfiles import assert_delimited, body_of, golden, split_block
 
 #: The exact line this block's delimiters used to be, before the token

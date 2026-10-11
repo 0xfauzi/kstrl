@@ -28,7 +28,7 @@ import pytest
 
 from kstrl.config import KstrlConfig
 from kstrl.config_keys import STRING_KEYS
-from kstrl.init_cmd import DEFAULT_GOLDEN_PATTERNS, DEFAULT_MEMORY, SCAFFOLDED_TEMPLATES
+from kstrl.init_cmd import SCAFFOLDED_TEMPLATES
 from kstrl.operator_context import (
     _KEPT,
     CUT_FLOOR,
@@ -41,6 +41,7 @@ from kstrl.operator_context import (
     operator_file_notices,
     read_operator_file,
 )
+from kstrl.scaffold_templates import DEFAULT_GOLDEN_PATTERNS, DEFAULT_MEMORY
 from tests.helpers.operatorfiles import (
     SHIPPED_BODIES,
     assert_delimited,

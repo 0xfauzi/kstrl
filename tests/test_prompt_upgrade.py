@@ -27,14 +27,9 @@ from click.testing import CliRunner, Result
 
 from kstrl import init_cmd
 from kstrl.cli import cli
-from kstrl.init_cmd import (
-    DEFAULT_PROMPT,
-    DEFAULT_PROMPT_VERSION,
-    ScaffoldedTemplate,
-    classify_scaffolded_path,
-    staleness_notice,
-)
+from kstrl.init_cmd import ScaffoldedTemplate, classify_scaffolded_path, staleness_notice
 from kstrl.init_wizard import plan_scaffold
+from kstrl.scaffold_templates import DEFAULT_PROMPT, DEFAULT_PROMPT_VERSION
 from tests.helpers import gitrepo
 from tests.helpers.prompt_calls import offline_run
 from tests.spine_utils import git as spine_git
