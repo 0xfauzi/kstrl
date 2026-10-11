@@ -33,8 +33,9 @@ from unittest.mock import patch
 import pytest
 
 from kstrl.decompose import SpecBlockerError, decompose_spec
-from kstrl.evolution import SPEC_ISSUES_EVENT, EvolutionJournal
+from kstrl.evolution import EvolutionJournal
 from kstrl.evolution_config import EvolutionConfig
+from kstrl.journal_rows import SPEC_ISSUES_EVENT
 from kstrl.prd import PRD
 from kstrl.statedir import plan_prd_path
 from kstrl.ui.plain import PlainUI

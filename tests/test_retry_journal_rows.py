@@ -300,7 +300,9 @@ def test_health_infra_rate_on_the_432_journal_reads_no_carried_row(tmp_path: Pat
 def test_the_carried_rows_of_the_432_journal_are_the_seven_copies() -> None:
     """The copies the issue lists, and what is left per run is exactly what
     that run's experiments.tsv row says it completed, failed or skipped."""
-    from kstrl.evolution import carried_result_indices  # new in #447; red, not a collection error
+    from kstrl.journal_rows import (
+        carried_result_indices,  # new in #447; red, not a collection error
+    )
 
     rows = [
         json.loads(line)

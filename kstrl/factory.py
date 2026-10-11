@@ -5274,7 +5274,8 @@ def _run_factory_locked(
         that a breaker retry later resolves. Non-fatal on I/O errors,
         matching EvolutionJournal.record_run.
         """
-        from kstrl.evolution import JOURNAL_SCHEMA_VERSION, EvolutionJournal
+        from kstrl.evolution import EvolutionJournal
+        from kstrl.journal_rows import JOURNAL_SCHEMA_VERSION
 
         # R2.1: honor [evolution] in kstrl.toml + env, resolved against
         # the factory root rather than whatever the process CWD is.

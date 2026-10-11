@@ -30,8 +30,8 @@ from typing import Any
 
 from kstrl.autonomy import MIN_DECISIVE_RUNS
 from kstrl.autonomy_replay import RunRecord, load_runs
-from kstrl.evolution import without_carried_results
 from kstrl.evolution_config import EvolutionConfig
+from kstrl.journal_rows import without_carried_results
 from kstrl.observability import read_progress_events
 
 LAMBDA = 0.2

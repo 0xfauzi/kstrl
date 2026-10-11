@@ -75,7 +75,7 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 
 from kstrl.appendio import JOURNAL_REPAIR_EVENT
-from kstrl.evolution import (
+from kstrl.journal_rows import (
     FINDINGS_SUPERSEDED_EVENT,
     INTEGRATION_RESULT_EVENT,
     SPEC_ISSUES_EVENT,
@@ -199,7 +199,7 @@ EXPECTED_EVENT_NAME_SPELLINGS: dict[str, int] = {
     # and an imported Name folds to nothing, which is why the count
     # dropped rather than staying put.
     # 3 since #482 declared INTEGRATION_RESULT_EVENT there.
-    "evolution.py": 3,
+    "journal_rows.py": 3,
     # The TUI reading that artifact label back.
     "tui/screens/decompose.py": 1,
 }

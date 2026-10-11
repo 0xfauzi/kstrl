@@ -18,7 +18,6 @@ from click.testing import CliRunner
 
 from kstrl.cli import cli
 from kstrl.config import KstrlConfig
-from kstrl.evolution import FINDINGS_SUPERSEDED_EVENT
 from kstrl.evolution_config import EvolutionConfig
 from kstrl.factory import FactoryConfig, run_factory
 from kstrl.factory_result import ComponentResult, FactoryResult
@@ -27,6 +26,7 @@ from kstrl.findings import (
     finding_attempt,
     tag_finding_with_attempt,
 )
+from kstrl.journal_rows import FINDINGS_SUPERSEDED_EVENT
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.review import ReviewConcern, ReviewResult
 from kstrl.ui.plain import PlainUI

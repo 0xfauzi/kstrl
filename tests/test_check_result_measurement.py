@@ -443,7 +443,7 @@ EXPECTED_MEASUREMENT_READS: dict[str, int] = {
     # Not CheckResult.measured. IterationReading's own field, #233: whether
     # a run's per-attempt iteration count could be proven from the journal,
     # never a verdict on whether the run passed.
-    "evolution.py: iteration_criterion_verdict: r.measured": 1,
+    "journal_rows.py: iteration_criterion_verdict: r.measured": 1,
     "evolution.py: EvolutionJournal.iteration_criterion_lines: reading.measured": 1,
     # Not CheckResult.measured. FactUtilization's own field, R8.
     "pipeline_knowledge.py: FactUtilization.to_dict: self.measured": 1,
