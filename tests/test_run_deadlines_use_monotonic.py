@@ -39,6 +39,8 @@ RUN_DEADLINE_MODULES = (
     "factory.py",
     "loop.py",
     "serve.py",
+    "serve_process.py",
+    "serve_spend.py",
 )
 
 #: The wall clocks a deadline must not read.
@@ -54,8 +56,8 @@ WALL_CLOCKS = frozenset(
 #: Re-derived by running the walk on 2026-10-09. Both are date stamps, not
 #: deadlines: the lease and schedule wall time, and the local day name.
 EXPECTED_WALL_CLOCK_SITES = (
-    "serve.py::_local_today datetime.datetime.now",
-    "serve.py::_utc_now datetime.datetime.now",
+    "serve_spend.py::_local_today datetime.datetime.now",
+    "serve_spend.py::_utc_now datetime.datetime.now",
 )
 
 

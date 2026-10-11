@@ -312,7 +312,7 @@ class TestReviewFailClosed:
         self,
         repo: Path,
     ) -> None:
-        from kstrl.serve import ServeStateError, SpendLedger
+        from kstrl.serve_spend import ServeStateError, SpendLedger
         from kstrl.statedir import CONTROL_PAUSE, CONTROL_SPEND
 
         with patch("kstrl.statedir._origin_url", return_value=None):
@@ -375,7 +375,7 @@ class TestReviewFailClosed:
             assert queue.is_paused()
 
     def test_dual_state_fail_closes_pause_and_spend(self, repo: Path) -> None:
-        from kstrl.serve import ServeStateError, SpendLedger
+        from kstrl.serve_spend import ServeStateError, SpendLedger
         from kstrl.statedir import CONTROL_PAUSE, CONTROL_SPEND, control_file
 
         with patch("kstrl.statedir._origin_url", return_value=None):

@@ -115,8 +115,8 @@ from kstrl.retry_plan import (
     retry_confirm_header,
 )
 from kstrl.security import _SEVERITY_ORDER, SecurityMode
-from kstrl.serve import ARCHITECT_RUN_KIND
 from kstrl.serve_launchd import LAUNCHD_MODES
+from kstrl.serve_spend import ARCHITECT_RUN_KIND
 from kstrl.shutdown import StopController, install_signal_handlers
 from kstrl.stack import (
     STACK_KEY,
@@ -1639,7 +1639,7 @@ def _charge_serve_for_approval_run(
     root_dir: Path, runs_before: frozenset[str], ui_impl: UI
 ) -> None:
     """Charge an approval run to the daemon's daily total, as serve charged the park (#463)."""
-    from kstrl.serve import ServeStateError, SpendLedger, owned_run_spend
+    from kstrl.serve_spend import ServeStateError, SpendLedger, owned_run_spend
 
     # The approval run is `ks factory` in this process.
     owned, spend = owned_run_spend(root_dir, runs_before, launch_pid=os.getpid())
@@ -1787,7 +1787,7 @@ def _decide_parked_merge_if_parked(
             "factory", [*argv, *plan.argv], parent=click.get_current_context()
         )
         factory_ctx.meta[_HANDED_RUN_LOCK] = run_lock
-        from kstrl.serve import run_dir_names
+        from kstrl.serve_spend import run_dir_names
 
         runs_before = run_dir_names(root_dir)
         try:
@@ -2134,7 +2134,6 @@ def serve(
     """
     from kstrl.serve import (
         ServeLockedError,
-        SpendLedger,
         check_budget,
         check_cost_coverage,
         check_inbox_cap,
@@ -2147,6 +2146,7 @@ def serve(
     from kstrl.serve import serve as run_serve
     from kstrl.serve_config import ServeConfig, ServeError
     from kstrl.serve_launchd import REQUIRE_TIMEOUT_ENV
+    from kstrl.serve_spend import SpendLedger
     from kstrl.workqueue import Queue, summarize
     from kstrl.workqueue_items import QueueConfig
 
@@ -2218,7 +2218,7 @@ def serve(
             "paused",
             f"yes - {pause.reason}" if pause.active() else "no",
         )
-        from kstrl.serve import ServeStateError
+        from kstrl.serve_spend import ServeStateError
 
         try:
             spend = ledger.read()

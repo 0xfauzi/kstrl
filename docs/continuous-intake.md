@@ -874,7 +874,7 @@ window. A factory run at 10-20 minutes does not.
   not require AC power.
 - *A suspend does not count against the run timeout.* `[serve]
   factory_timeout_seconds` is the `timeout=` of `Popen.communicate` in
-  `kstrl/serve.py::run_supervised`. CPython's `subprocess` compares that
+  `kstrl/serve_process.py::run_supervised`. CPython's `subprocess` compares that
   deadline with `time.monotonic()`, and `time.get_clock_info('monotonic')`
   on this laptop gives `mach_absolute_time()`. `man clock_gettime` says
   that this clock "does not increment while the system is asleep".

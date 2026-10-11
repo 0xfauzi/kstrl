@@ -35,8 +35,8 @@ from click.testing import CliRunner, Result
 
 from kstrl.cli import cli
 from kstrl.inbox import Inbox, InboxConfig
-from kstrl.serve import RunSpend
 from kstrl.serve_outcome import RunOutcome
+from kstrl.serve_spend import RunSpend
 from kstrl.workqueue import Queue
 from kstrl.workqueue_items import ItemState, QueueConfig, short_item_id
 from tests.helpers.astwalk import (
@@ -134,7 +134,7 @@ def test_a_poisoned_item_is_named_by_ids_queue_show_accepts(
     """`ks serve`'s line and the inbox title it files both name the poisoned item
     in a form `ks queue show` resolves to it, with a second item minted in the same
     microsecond beside it."""
-    monkeypatch.setattr("kstrl.serve.read_run_spend", lambda root, run_id: RunSpend())
+    monkeypatch.setattr("kstrl.serve_spend.read_run_spend", lambda root, run_id: RunSpend())
     write_stack(tmp_path)
     confirm_stack(tmp_path)
     spec = tmp_path / "feature.md"

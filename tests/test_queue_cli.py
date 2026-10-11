@@ -20,8 +20,8 @@ import pytest
 from click.testing import CliRunner, Result
 
 from kstrl.cli import cli
-from kstrl.serve import RunSpend, SpendLedger
 from kstrl.serve_outcome import RunOutcome
+from kstrl.serve_spend import RunSpend, SpendLedger
 from kstrl.workqueue import Queue
 from kstrl.workqueue_items import ItemState, MergeDisposition, QueueConfig
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
@@ -542,7 +542,7 @@ class TestResumeClearsThePoisonStreak:
 
     @pytest.fixture(autouse=True)
     def _no_spend(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr("kstrl.serve.read_run_spend", lambda root, run_id: RunSpend())
+        monkeypatch.setattr("kstrl.serve_spend.read_run_spend", lambda root, run_id: RunSpend())
         monkeypatch.setenv("USER", "op-alice")
 
     def _trip_the_breaker(self, root: Path) -> None:
