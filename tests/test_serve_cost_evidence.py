@@ -25,7 +25,8 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.serve import RunOutcome, ServeConfig, SpendLedger, serve_cycle
+from kstrl.serve import RunOutcome, SpendLedger, serve_cycle
+from kstrl.serve_config import ServeConfig
 from kstrl.workqueue import Queue
 from kstrl.workqueue_items import ItemState, QueueConfig
 from tests.helpers.executables import write_executable

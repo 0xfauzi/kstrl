@@ -406,8 +406,10 @@ _EXPECTED_STATE_DIR_SPELLINGS: dict[str, int] = {
     "knowledge.py": 2,
     "pipeline_attempt.py": 1,
     "reducer.py": 3,
-    # 6: +1 for #464, which reads the progress log for cost evidence.
-    "serve.py": 6,
+    # serve.py had 6, +1 for #464 (the progress log for cost evidence). #776 S2
+    # moved the launchd code, with two spellings, to serve_launchd.py.
+    "serve.py": 5,
+    "serve_launchd.py": 2,
     "statedir.py": 8,  # +1 #545: plan_prd_path joins the plan directory
     "tui/runs.py": 3,  # +1 #433: run_is_live lists the runs dir for the newest run
     "workqueue_store.py": 2,
