@@ -175,7 +175,8 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     # (``_read_manifest_json``'s, the shared reader both post-run
     # functions now go through), so this LAYER 1 count - raw
     # occurrences, not deduplicated - is unmoved at 5 even though the
-    # deduplicated spelling list below loses a row.
+    # deduplicated spelling list below loses a row. #776 S3 moved
+    # _read_manifest_json, with one of the five reads, to serve_outcome.py.
     "serve.py": 4,
     "serve_outcome.py": 1,
     "statedir.py": 1,
