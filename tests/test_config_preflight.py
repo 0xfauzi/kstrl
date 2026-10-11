@@ -36,7 +36,8 @@ import click
 import pytest
 from click.testing import CliRunner, Result
 
-import kstrl.cli as cli_mod
+import kstrl.cli_architect as cli_architect_mod
+import kstrl.cli_factory as cli_factory_mod
 import kstrl.cli_feature as cli_feature_mod
 import kstrl.cli_seam as cli_seam_mod
 from kstrl.cli import cli
@@ -118,9 +119,11 @@ def _no_agents(monkeypatch: pytest.MonkeyPatch) -> list[str]:
         built.append("decompose_spec")
         raise AssertionError("the architect was invoked after a rejected config")
 
-    monkeypatch.setattr(cli_mod, "get_agent", fake_get_agent)
+    monkeypatch.setattr(cli_architect_mod, "get_agent", fake_get_agent)
+    monkeypatch.setattr(cli_factory_mod, "get_agent", fake_get_agent)
     monkeypatch.setattr(cli_feature_mod, "get_agent", fake_get_agent)
-    monkeypatch.setattr(cli_mod, "decompose_spec", fake_decompose_spec)
+    monkeypatch.setattr(cli_architect_mod, "decompose_spec", fake_decompose_spec)
+    monkeypatch.setattr(cli_factory_mod, "decompose_spec", fake_decompose_spec)
     return built
 
 
@@ -162,7 +165,7 @@ def _stub_run_factory(monkeypatch: pytest.MonkeyPatch) -> list[str]:
         ran.append("run_factory")
         return FactoryResult()
 
-    monkeypatch.setattr(cli_mod, "run_factory", fake_run_factory)
+    monkeypatch.setattr(cli_factory_mod, "run_factory", fake_run_factory)
     return ran
 
 

@@ -336,8 +336,8 @@ def _failed_attempt_with_evidence(root: Path) -> Path:
 def _ks_retry(root: Path, monkeypatch: pytest.MonkeyPatch) -> Result:
     """The real ``ks retry`` with the factory it re-enters replaced: the
     removal happens before it."""
-    monkeypatch.setattr("kstrl.cli.run_factory", lambda *a, **k: FactoryResult(exit_code=0))
-    monkeypatch.setattr("kstrl.cli._check_agent_preflight", lambda *a, **k: None)
+    monkeypatch.setattr("kstrl.cli_factory.run_factory", lambda *a, **k: FactoryResult(exit_code=0))
+    monkeypatch.setattr("kstrl.cli_factory._check_agent_preflight", lambda *a, **k: None)
     monkeypatch.setenv("AGENT_CMD", "echo hi")
     # No launch record: state every run limit, or the retry refuses (#526).
     return CliRunner().invoke(

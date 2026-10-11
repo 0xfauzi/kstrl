@@ -114,7 +114,7 @@ def read_carry(root: Path, manifest: Manifest, manifest_file: Path) -> Carry:
     propagate, so the same guard as ``session._prepare_factory`` is here
     (#289's defect class).
     """
-    from kstrl.cli import factory as factory_command
+    from kstrl.cli_factory import factory as factory_command
 
     try:
         # The read plan_resume makes first, taken here for the refusal's

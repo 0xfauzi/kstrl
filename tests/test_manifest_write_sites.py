@@ -84,7 +84,7 @@ UNGUARDED = "unguarded"  # a disclosed hole; pinned by the last test
 #: ``"<path>::<qualified function> <name>"`` -> (references, discipline).
 EXPECTED_MANIFEST_WRITE_SITES: dict[str, tuple[int, str]] = {
     # --- outside a factory run: each takes the run lock (#597) ---
-    "kstrl/cli.py::retry prepare_retry": (1, TAKES_LOCK),
+    "kstrl/cli_architect.py::retry prepare_retry": (1, TAKES_LOCK),
     "kstrl/cli.py::inbox_retry reset_for_retry": (1, TAKES_LOCK),
     "kstrl/cli.py::inbox_retry save": (1, TAKES_LOCK),
     "kstrl/decompose.py::_decompose_spec_impl save": (1, TAKES_LOCK),
