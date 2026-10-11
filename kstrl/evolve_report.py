@@ -17,7 +17,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from kstrl.evolution import EvolutionConfig, EvolutionJournal
+    from kstrl.evolution import EvolutionJournal
+    from kstrl.evolution_config import EvolutionConfig
     from kstrl.failure_signatures import FailurePattern
 
 

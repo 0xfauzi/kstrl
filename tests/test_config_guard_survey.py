@@ -256,12 +256,12 @@ def test_the_entry_check_does_not_list_our_own_defect_as_a_config_problem(
     file is the same defect as findings 2 and 6, one call deeper and
     reachable from all of them.
     """
-    import kstrl.evolution
+    import kstrl.evolution_config
 
     def _explode(root_dir: Path | None = None) -> None:
         raise NotImplementedError("a loader we forgot to finish")
 
-    monkeypatch.setattr(kstrl.evolution.EvolutionConfig, "load", _explode)
+    monkeypatch.setattr(kstrl.evolution_config.EvolutionConfig, "load", _explode)
     with pytest.raises(NotImplementedError):
         collect_config_problems(tmp_path, warn=lambda _m: None)
     with pytest.raises(NotImplementedError):

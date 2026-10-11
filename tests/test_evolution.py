@@ -11,9 +11,9 @@ import pytest
 from kstrl.evolution import (
     JOURNAL_SCHEMA_VERSION,
     SPEC_ISSUES_EVENT,
-    EvolutionConfig,
     EvolutionJournal,
 )
+from kstrl.evolution_config import EvolutionConfig
 from kstrl.factory_result import FactoryResult
 from kstrl.failure_signatures import (
     signature_for_error,

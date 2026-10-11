@@ -36,7 +36,7 @@ import pytest
 
 from kstrl.config import KstrlConfig
 from kstrl.contract import ContractConfig, ContractMode
-from kstrl.evolution import EvolutionConfig
+from kstrl.evolution_config import EvolutionConfig
 from kstrl.factory import FactoryConfig, run_factory
 from kstrl.factory_result import ComponentResult, FactoryResult
 from kstrl.feedforward import CodebaseScanConfig

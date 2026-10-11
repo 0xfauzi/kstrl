@@ -33,7 +33,8 @@ import pytest
 
 from kstrl.agents import custom
 from kstrl.agents.base import UsageRecord
-from kstrl.evolution import FINDINGS_SUPERSEDED_EVENT, EvolutionConfig, EvolutionJournal
+from kstrl.evolution import FINDINGS_SUPERSEDED_EVENT, EvolutionJournal
+from kstrl.evolution_config import EvolutionConfig
 from kstrl.factory import run_factory
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.serve import serve_cycle

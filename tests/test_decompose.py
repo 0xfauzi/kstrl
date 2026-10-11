@@ -33,7 +33,8 @@ from unittest.mock import patch
 import pytest
 
 from kstrl.decompose import SpecBlockerError, decompose_spec
-from kstrl.evolution import SPEC_ISSUES_EVENT, EvolutionConfig, EvolutionJournal
+from kstrl.evolution import SPEC_ISSUES_EVENT, EvolutionJournal
+from kstrl.evolution_config import EvolutionConfig
 from kstrl.prd import PRD
 from kstrl.statedir import plan_prd_path
 from kstrl.ui.plain import PlainUI
@@ -1587,12 +1588,12 @@ class TestSpecConvergenceThroughDecompose:
         nothing that can fail belongs upstream of it. An error the guard
         does not catch still leaves the artifact on disk.
         """
-        import kstrl.evolution
+        import kstrl.evolution_config
 
         def _explode(root_dir: Path | None = None) -> None:
             raise RuntimeError("journal config exploded")
 
-        monkeypatch.setattr(kstrl.evolution.EvolutionConfig, "load", _explode)
+        monkeypatch.setattr(kstrl.evolution_config.EvolutionConfig, "load", _explode)
 
         spec_file = tmp_path / "spec.md"
         spec_file.write_text("# Spec")

@@ -44,7 +44,7 @@ from kstrl.config_preflight import (
     preflight_config,
     raise_if_defect,
 )
-from kstrl.evolution import EvolutionConfig
+from kstrl.evolution_config import EvolutionConfig
 from kstrl.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.tui.config_guard import env_scrub_is_safe
 from kstrl.tui.screens.inbox import InboxScreen
@@ -488,12 +488,12 @@ class TestSharedGuard:
         would blame the operator's file and eat the traceback. This is
         the same line EvolutionConfig.load_or_none draws.
         """
-        import kstrl.evolution
+        import kstrl.evolution_config
 
         def _explode(root_dir: Path | None = None) -> None:
             raise RuntimeError("journal config exploded")
 
-        monkeypatch.setattr(kstrl.evolution.EvolutionConfig, "load", _explode)
+        monkeypatch.setattr(kstrl.evolution_config.EvolutionConfig, "load", _explode)
         with pytest.raises(RuntimeError, match="journal config exploded"):
             load_or_report(EvolutionConfig.load, tmp_path, blame_env=False)
 
@@ -522,12 +522,12 @@ class TestSharedGuard:
         eaten. RecursionError is the one that hurts: a cycle in the
         config graph would have been rendered as their broken file.
         """
-        import kstrl.evolution
+        import kstrl.evolution_config
 
         def _explode(root_dir: Path | None = None) -> None:
             raise defect
 
-        monkeypatch.setattr(kstrl.evolution.EvolutionConfig, "load", _explode)
+        monkeypatch.setattr(kstrl.evolution_config.EvolutionConfig, "load", _explode)
         with pytest.raises(type(defect)):
             load_or_report(EvolutionConfig.load, tmp_path, blame_env=False)
 
