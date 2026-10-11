@@ -130,7 +130,7 @@ def unstamped_run_records() -> list[str]:
 EXPECTED_RUN_RECORD_SITES: dict[str, int] = {
     "agents/prompt_record.py: <module>": 1,  # #532: the field table the writer and reader share
     "agents/prompt_record.py: record_prompt": 1,  # #532: one prompt record per agent call
-    "autonomy.py: commit_transition": 1,
+    "autonomy_transitions.py: commit_transition": 1,
     "base_gates.py: write_record": 1,  # #654: the base branch's gate reading
     "event_catalog.py: <module>": 1,
     "event_catalog.py: Event.to_dict": 1,
@@ -192,7 +192,7 @@ _QUEUE_ESCALATION = (
 #: Layer 2. Each row is a run-record site that is not stamped at the
 #: container, and why.
 NOT_STAMPED_HERE: dict[str, str] = {
-    "autonomy.py: commit_transition": _JOURNAL,
+    "autonomy_transitions.py: commit_transition": _JOURNAL,
     "evolution.py: _role_usage_entries": _JOURNAL,
     "evolution.py: EvolutionJournal.record_run": _JOURNAL,
     "evolution.py: EvolutionJournal.carry_superseded": _JOURNAL,

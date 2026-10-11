@@ -37,9 +37,7 @@ from kstrl.autonomy import (
     AutonomyState,
     DemotionTrigger,
     FlagBundle,
-    apply_demotion,
     flag_bundle_for,
-    save_ladder_state,
 )
 from kstrl.autonomy_config import (
     AutonomyConfig,
@@ -48,6 +46,7 @@ from kstrl.autonomy_config import (
     resolved_flag_bundle,
     strict_bool,
 )
+from kstrl.autonomy_transitions import apply_demotion, save_ladder_state
 from kstrl.base_gates import (
     BaseGates,
     apply_acceptance,

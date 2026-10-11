@@ -118,7 +118,8 @@ class TestTheEntryAfterATear:
         ``append_entries``, which is what makes "the one writer of the
         journal's line format" true rather than asserted.
         """
-        from kstrl.autonomy import AutonomyState, Transition, commit_transition
+        from kstrl.autonomy import AutonomyState, Transition
+        from kstrl.autonomy_transitions import commit_transition
 
         journal = journal_at(tmp_path)
         journal.append_entries([audit("alpha")])

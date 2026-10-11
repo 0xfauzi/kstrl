@@ -100,7 +100,7 @@ EXPECTED_SPELLINGS: frozenset[tuple[str, str]] = frozenset(
         # out of factory.py in #232, when the demotion-apply block became
         # autonomy.apply_demotion; this row moving is the guard doing the
         # job the comment above claims for it.
-        ("kstrl/autonomy.py", "demotion"),
+        ("kstrl/autonomy_transitions.py", "demotion"),
         # #232's two new demotion triggers, both inbox dedupe keys in the
         # same family as pipeline's below. "calibration:<comparison id>"
         # is also the run id the compare command demotes under, since a
