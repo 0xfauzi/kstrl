@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl import git, guards, statedir
+from kstrl import git, git_tree, guards, statedir
 from kstrl.agents.base import UsageTotals, collect_usage
 from kstrl.agents.proc import TIMEOUT_MESSAGE_PREFIX
 from kstrl.breaker import BreakerConfig, NoProgressBreaker
@@ -432,11 +432,11 @@ def _guard_baseline(
     cwd: Path | None,
     base_ref: str | None,
     ui: UI,
-) -> git.WorkspaceBaseline | None:
+) -> git_tree.WorkspaceBaseline | None:
     """The before-picture the allowed-paths guard compares against, or None
     when it could not be read (the caller refuses before any spend)."""
     try:
-        baseline = git.capture_workspace_baseline(cwd, base_ref=base_ref)
+        baseline = git_tree.capture_workspace_baseline(cwd, base_ref=base_ref)
     except git.GitDiffError as exc:
         ui.err(f"Guard baseline could not be taken: {exc}")
         return None
@@ -661,7 +661,7 @@ def run_loop(
 
     # Guardrails info
     ui.subsection("Guardrails")
-    guard_baseline: git.WorkspaceBaseline | None = None
+    guard_baseline: git_tree.WorkspaceBaseline | None = None
     # The complete set the guard must not count: the caller's
     # per-invocation harness files (#264) and kstrl's own state
     # directory (#274). Both are loop-invariant, so this is assembled

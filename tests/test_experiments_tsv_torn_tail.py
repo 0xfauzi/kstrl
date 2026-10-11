@@ -157,7 +157,7 @@ class TestExperimentsTsvSurvivesATornTail:
         file, which is worse than the defect. Both widths are legal
         while the file's header is a prefix of the current one.
         """
-        from kstrl.evolution import EXPERIMENTS_HEADER
+        from kstrl.experiments_tsv import EXPERIMENTS_HEADER
 
         legacy = "\t".join(EXPERIMENTS_HEADER.split("\t")[:11])
         journal = self.journal_at(tmp_path)
@@ -185,7 +185,7 @@ class TestExperimentsTsvSurvivesATornTail:
     def test_the_header_is_still_written_once(self, tmp_path: Path) -> None:
         """The ``needs_header`` stat check is unchanged, and an empty file
         is not a torn one, so the first record still gets a header."""
-        from kstrl.evolution import EXPERIMENTS_HEADER
+        from kstrl.experiments_tsv import EXPERIMENTS_HEADER
 
         journal = self.journal_at(tmp_path)
         self.record(journal, "run-1")
@@ -217,7 +217,7 @@ class TestTheReaderUsesTheDialectTheWriterWrites:
     """
 
     def rows(self, count: int, first_project: str = "p") -> str:
-        from kstrl.evolution import EXPERIMENTS_HEADER
+        from kstrl.experiments_tsv import EXPERIMENTS_HEADER
 
         width = len(EXPERIMENTS_HEADER.split("\t"))
         lines = [EXPERIMENTS_HEADER]
@@ -228,7 +228,7 @@ class TestTheReaderUsesTheDialectTheWriterWrites:
         return "\n".join(lines) + "\n"
 
     def test_a_project_name_starting_with_a_quote_keeps_every_later_row(self) -> None:
-        from kstrl.evolution import experiment_rows
+        from kstrl.experiments_tsv import experiment_rows
 
         rows = experiment_rows(self.rows(3, first_project='"proj'))
 
@@ -236,7 +236,7 @@ class TestTheReaderUsesTheDialectTheWriterWrites:
         assert rows[0]["project"] == '"proj'
 
     def test_a_quote_inside_a_field_is_a_character_not_a_delimiter(self) -> None:
-        from kstrl.evolution import experiment_rows
+        from kstrl.experiments_tsv import experiment_rows
 
         rows = experiment_rows(self.rows(2, first_project='pro"ject'))
 
@@ -246,7 +246,7 @@ class TestTheReaderUsesTheDialectTheWriterWrites:
         """The size at which the default dialect stopped returning ``[]``
         and started raising: one open quote makes every later byte one
         field, and 20,001 rows is past ``csv``'s 128 KiB field limit."""
-        from kstrl.evolution import experiment_rows
+        from kstrl.experiments_tsv import experiment_rows
 
         rows = experiment_rows(self.rows(20001, first_project='"proj'))
 
@@ -262,7 +262,7 @@ class TestTheReaderUsesTheDialectTheWriterWrites:
         """
         import csv
 
-        from kstrl.evolution import EXPERIMENTS_HEADER, experiment_rows
+        from kstrl.experiments_tsv import EXPERIMENTS_HEADER, experiment_rows
 
         width = len(EXPERIMENTS_HEADER.split("\t"))
         fields = ["run-1", "2026-01-01T00:00:00", "x" * 200_000] + ["0"] * (width - 3)
@@ -286,7 +286,7 @@ class TestTheReaderUsesTheDialectTheWriterWrites:
         would be the silent removal of a mechanism. The refusal is
         logged with the path and the cause and the table renders empty.
         """
-        from kstrl.evolution import EXPERIMENTS_HEADER
+        from kstrl.experiments_tsv import EXPERIMENTS_HEADER
 
         journal = TestExperimentsTsvSurvivesATornTail().journal_at(tmp_path)
         path = journal.config.experiments_path

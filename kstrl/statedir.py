@@ -182,7 +182,7 @@ STATE_FILES: tuple[str, ...] = (
 #:
 #: Criterion 2 is affordable because the guard already subtracts
 #: whatever was on disk when the agent started
-#: (``git.capture_workspace_baseline``). Measured, not assumed: an
+#: (``git_tree.capture_workspace_baseline``). Measured, not assumed: an
 #: operator running ``ks serve`` against this repo does not trip over
 #: queue items that predate the run, only over one written while the
 #: agent was working, which is the case worth seeing.

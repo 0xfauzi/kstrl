@@ -6,7 +6,7 @@ import re
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Literal
 
-from kstrl import git
+from kstrl import git, git_tree
 from kstrl.interaction import (
     InteractionChannel,
     PromptKind,
@@ -129,7 +129,7 @@ def _revert_violation(
     file: str,
     ui: UI,
     cwd: Path | None,
-    baseline: git.WorkspaceBaseline | None,
+    baseline: git_tree.WorkspaceBaseline | None,
 ) -> bool:
     """Undo one out-of-scope change. False when it was REFUSED.
 
@@ -147,7 +147,7 @@ def _revert_violation(
     exactly the authority-carrying entries countable: the work queue,
     evolution proposals, the autonomy level, the pause marker. Deleting
     an untracked file is how this function disposes of a violation, and
-    ``git.delete_untracked`` recurses into directories - so without this
+    ``git_tree.delete_untracked`` recurses into directories - so without this
     refusal, making those paths VISIBLE to the guard would also hand
     them to a deleter, and an operator choosing "Revert and continue"
     could destroy the pause marker they had just written. Reporting a
@@ -158,18 +158,18 @@ def _revert_violation(
         ui.warn(f"  Refused (kstrl state, reported not reverted): {file}")
         return False
     if baseline is not None and baseline.head is not None:
-        if git.restore_file_from(file, baseline.head, cwd):
+        if git_tree.restore_file_from(file, baseline.head, cwd):
             ui.info(f"  Restored: {file}")
         else:
-            git.remove_from_index(file, cwd)
-            git.delete_untracked(file, cwd)
+            git_tree.remove_from_index(file, cwd)
+            git_tree.delete_untracked(file, cwd)
             ui.info(f"  Deleted: {file}")
         return True
-    if git.is_file_tracked(file, cwd):
-        git.restore_file(file, cwd)
+    if git_tree.is_file_tracked(file, cwd):
+        git_tree.restore_file(file, cwd)
         ui.info(f"  Restored: {file}")
     else:
-        git.delete_untracked(file, cwd)
+        git_tree.delete_untracked(file, cwd)
         ui.info(f"  Deleted: {file}")
     return True
 
@@ -178,7 +178,7 @@ def _revert_violations(
     violations: list[str],
     ui: UI,
     cwd: Path | None,
-    baseline: git.WorkspaceBaseline | None,
+    baseline: git_tree.WorkspaceBaseline | None,
 ) -> list[str]:
     """Revert what may be reverted; return what was refused.
 
@@ -233,7 +233,7 @@ def enforce_allowed_paths(
     cwd: Path | None = None,
     interaction: InteractionChannel | None = None,
     ignored_paths: list[str] | None = None,
-    baseline: git.WorkspaceBaseline | None = None,
+    baseline: git_tree.WorkspaceBaseline | None = None,
 ) -> tuple[bool, list[str]]:
     """Enforce ALLOWED_PATHS after an iteration.
 
@@ -247,7 +247,7 @@ def enforce_allowed_paths(
     block, never folded into it.
 
     ``baseline`` is the workspace as it stood before the agent started
-    (``git.capture_workspace_baseline``). With one, the guard judges the
+    (``git_tree.capture_workspace_baseline``). With one, the guard judges the
     agent's COMPLETE delta since that point, commits included, and
     subtracts files that were already dirty. Without one it keeps the
     historical index+worktree-only view, which is blind to anything the
@@ -268,9 +268,9 @@ def enforce_allowed_paths(
     # Get changed files
     try:
         changed = (
-            git.get_changed_files_since(baseline, cwd)
+            git_tree.get_changed_files_since(baseline, cwd)
             if baseline is not None
-            else git.get_changed_files(cwd)
+            else git_tree.get_changed_files(cwd)
         )
         violations = check_violations(changed, config.allowed_paths, ignored_paths)
     except git.GitDiffError as exc:

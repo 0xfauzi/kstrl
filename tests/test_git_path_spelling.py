@@ -35,7 +35,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import git, git_diff, guards
+from kstrl import git_diff, git_tree, guards
 from kstrl.breaker import BreakerConfig, NoProgressBreaker
 from kstrl.ui import PlainUI
 from tests.helpers import gitrepo
@@ -185,15 +185,15 @@ def package_argvs() -> list[Argv]:
 EXPECTED_WITH_Z: tuple[str, ...] = (
     "breaker.py git status --porcelain -uall -z",
     "factory.py git worktree list --porcelain -z",
-    "git.py git diff --name-only --cached -z",
-    "git.py git diff --name-only -z",
-    "git.py git diff --name-status -z ? --",
-    "git.py git ls-files --cached --others --exclude-standard -z",
-    "git.py git ls-files --others --exclude-standard -z",
-    "git.py git ls-tree -r --name-only -z ?",
-    "git.py git status --porcelain --untracked-files=all -z",
     "git_diff.py git diff --name-status -z -M -C ? --",
     "git_diff.py git diff --numstat -z ? --",
+    "git_tree.py git diff --name-only --cached -z",
+    "git_tree.py git diff --name-only -z",
+    "git_tree.py git diff --name-status -z ? --",
+    "git_tree.py git ls-files --cached --others --exclude-standard -z",
+    "git_tree.py git ls-files --others --exclude-standard -z",
+    "git_tree.py git ls-tree -r --name-only -z ?",
+    "git_tree.py git status --porcelain --untracked-files=all -z",
 )
 
 EXPECTED_WITHOUT_Z: tuple[str, ...] = (
@@ -204,9 +204,6 @@ EXPECTED_WITHOUT_Z: tuple[str, ...] = (
     # output to spell. Measured: `git check-ignore -q -- foo.py` exits
     # with nothing on stdout.
     "doctor.py git check-ignore -q -- ?",
-    # git.is_file_tracked names no encoding= on this spawn, so it runs in
-    # BYTES mode and reads only result.returncode == 0. No path decoded.
-    "git.py git ls-files --error-unmatch -- ?",
     # get_diff_content(as_stored=True) (#695): a unified diff, like the row
     # below, with every changed byte in it; the same reason holds.
     "git_diff.py git diff --text --no-textconv --no-ext-diff --no-color --dst-prefix=b/ ? --",
@@ -216,6 +213,9 @@ EXPECTED_WITHOUT_Z: tuple[str, ...] = (
     # downstream by policy.unquote_diff_path, pinned by
     # tests/test_diff_path_quoting.py.
     "git_diff.py git diff ? --",
+    # git_tree.is_file_tracked names no encoding= on this spawn, so it runs in
+    # BYTES mode and reads only result.returncode == 0. No path decoded.
+    "git_tree.py git ls-files --error-unmatch -- ?",
 )
 
 EXPECTED_UNDECIDED: tuple[str, ...] = (
@@ -255,24 +255,24 @@ EXPECTED_GIT_ARGVS: dict[str, int] = {
     "git.py git checkout -b ? ? --": 1,
     "git.py git checkout ? --": 2,
     "git.py git config --get remote.origin.url": 1,
-    "git.py git diff --name-only --cached -z": 1,
-    "git.py git diff --name-only -z": 1,
+    "git_tree.py git diff --name-only --cached -z": 1,
+    "git_tree.py git diff --name-only -z": 1,
     "git_diff.py git diff --name-status -z -M -C ? --": 1,
-    "git.py git diff --name-status -z ? --": 1,
+    "git_tree.py git diff --name-status -z ? --": 1,
     "git_diff.py git diff --numstat -z ? --": 1,
     "git_diff.py git diff ? --": 1,
     "git_diff.py git diff --text --no-textconv --no-ext-diff --no-color --dst-prefix=b/ ? --": 1,
     "git_base.py git fetch -- origin ?": 1,
     "git_base.py git for-each-ref --format=%(refname)%09%(symref) ? ?": 1,
-    "git.py git ls-files --cached --others --exclude-standard -z": 1,
-    "git.py git ls-files --error-unmatch -- ?": 1,
-    "git.py git ls-files --others --exclude-standard -z": 1,
-    "git.py git ls-tree -r --name-only -z ?": 1,
-    # #696: git.status_entries, what a [stack]'s checks left in a worktree.
-    "git.py git status --porcelain --untracked-files=all -z": 1,
+    "git_tree.py git ls-files --cached --others --exclude-standard -z": 1,
+    "git_tree.py git ls-files --error-unmatch -- ?": 1,
+    "git_tree.py git ls-files --others --exclude-standard -z": 1,
+    "git_tree.py git ls-tree -r --name-only -z ?": 1,
+    # #696: git_tree.status_entries, what a [stack]'s checks left in a worktree.
+    "git_tree.py git status --porcelain --untracked-files=all -z": 1,
     "git.py git merge --no-edit -- ?": 1,
-    "git.py git restore --staged --worktree -- ?": 1,
-    "git.py git restore ? --staged --worktree -- ?": 1,
+    "git_tree.py git restore --staged --worktree -- ?": 1,
+    "git_tree.py git restore ? --staged --worktree -- ?": 1,
     "git.py git rev-parse --abbrev-ref HEAD": 1,
     "git.py git rev-parse --is-inside-work-tree": 1,
     "git.py git rev-parse --show-toplevel": 1,
@@ -281,7 +281,7 @@ EXPECTED_GIT_ARGVS: dict[str, int] = {
     "git.py git rev-parse --verify --quiet ?": 1,
     "git_base.py git rev-parse --verify --quiet ?": 2,
     "git.py git rev-parse --verify --quiet HEAD": 1,
-    "git.py git rm --cached --ignore-unmatch -q -- ?": 1,
+    "git_tree.py git rm --cached --ignore-unmatch -q -- ?": 1,
     "git.py git show-ref --verify --quiet ?": 1,
     "pr.py git push --delete -- origin ?": 2,
     "pr.py git push -u -- origin ?": 1,
@@ -445,8 +445,8 @@ class TestEveryReaderReturnsTheFilesOwnName:
     def test_the_working_tree_readers_do(self, tmp_path: Path) -> None:
         repo = _repo_with_tricky_names(tmp_path)
 
-        assert git.get_untracked_files(repo) == set(TRICKY)
-        assert git.get_changed_files(repo) == set(TRICKY)
+        assert git_tree.get_untracked_files(repo) == set(TRICKY)
+        assert git_tree.get_changed_files(repo) == set(TRICKY)
 
     def test_the_diff_readers_do(self, tmp_path: Path) -> None:
         repo = _repo_with_tricky_names(tmp_path)
