@@ -63,9 +63,9 @@ FLAG = "pause_before_pr_merge"
 #:
 #: - ``factory.py`` declares the field, loads it from toml and env, and
 #:   resolves it against the ladder.
-#: - ``autonomy.py`` carries it on ``FlagBundle``, decides it in
-#:   ``pause_gate_for`` and rebuilds the run's bundle around it in
-#:   ``resolved_flag_bundle``.
+#: - ``autonomy.py`` carries it on ``FlagBundle``.
+#: - ``autonomy_config.py`` decides it in ``pause_gate_for`` and rebuilds the
+#:   run's bundle around it in ``resolved_flag_bundle``.
 #: - ``cli.py`` is the ``--pause-before-pr-merge`` flag and its wiring.
 #: - ``serve_merge_gate.py`` is the merge disposition of a queued item,
 #:   the two exits every ``MergeGate`` is built at - ``_merge_gate`` and
@@ -75,7 +75,8 @@ FLAG = "pause_before_pr_merge"
 #: - ``config_report.py`` and ``pipeline_delivery.py`` READ the resolved value;
 #:   neither is a source.
 EXPECTED_FLAG_SPELLINGS = {
-    "autonomy.py": 11,
+    "autonomy.py": 6,
+    "autonomy_config.py": 5,
     "cli.py": 7,
     "config_report.py": 1,
     "factory.py": 16,

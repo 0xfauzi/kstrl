@@ -229,12 +229,8 @@ class TestAutonomyL3Gate:
         repo: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from kstrl.autonomy import (
-            AutonomyConfig,
-            AutonomyLevel,
-            AutonomyState,
-            resolve_runtime_level,
-        )
+        from kstrl.autonomy import AutonomyLevel, AutonomyState
+        from kstrl.autonomy_config import AutonomyConfig, resolve_runtime_level
 
         nested = repo / "nested-xdg"
         nested.mkdir()
@@ -255,7 +251,8 @@ class TestAutonomyL3Gate:
         repo: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from kstrl.autonomy import AutonomyLevel, control_relocation_error
+        from kstrl.autonomy import AutonomyLevel
+        from kstrl.autonomy_config import control_relocation_error
 
         nested = repo / "nested-xdg"
         nested.mkdir()
@@ -276,12 +273,8 @@ class TestAutonomyL3Gate:
             )
 
     def test_l3_allowed_when_external(self, repo: Path) -> None:
-        from kstrl.autonomy import (
-            AutonomyConfig,
-            AutonomyLevel,
-            AutonomyState,
-            resolve_runtime_level,
-        )
+        from kstrl.autonomy import AutonomyLevel, AutonomyState
+        from kstrl.autonomy_config import AutonomyConfig, resolve_runtime_level
 
         with patch("kstrl.statedir._origin_url", return_value=None):
             ensure_control_state(repo)

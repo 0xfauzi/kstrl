@@ -31,11 +31,11 @@ import pytest
 from kstrl.autonomy import (
     DEMOTION_COOLDOWN_RUNS,
     MIN_DECISIVE_RUNS,
-    AutonomyConfig,
     AutonomyLevel,
     AutonomyState,
     DemotionTrigger,
 )
+from kstrl.autonomy_config import AutonomyConfig
 from kstrl.autonomy_replay import load_runs, replay, replay_file
 from tests.helpers import gitrepo
 from tests.helpers.component_prd import write_component_prd
@@ -414,7 +414,7 @@ class TestEnvelopeCeiling:
         self,
         tmp_path: Path,
     ) -> None:
-        from kstrl.autonomy import resolve_runtime_level
+        from kstrl.autonomy_config import resolve_runtime_level
 
         state = AutonomyState(level=int(AutonomyLevel.L3_ENVELOPED_AUTO))
         level, notes = resolve_runtime_level(
@@ -430,7 +430,7 @@ class TestEnvelopeCeiling:
         self,
         tmp_path: Path,
     ) -> None:
-        from kstrl.autonomy import resolve_runtime_level
+        from kstrl.autonomy_config import resolve_runtime_level
 
         state = AutonomyState(level=int(AutonomyLevel.L4_DEPLOY))
         level, _ = resolve_runtime_level(
@@ -442,7 +442,7 @@ class TestEnvelopeCeiling:
         assert level is AutonomyLevel.L2_GATED_MERGE
 
     def test_l3_allowed_with_envelope(self, tmp_path: Path) -> None:
-        from kstrl.autonomy import resolve_runtime_level
+        from kstrl.autonomy_config import resolve_runtime_level
 
         state = AutonomyState(level=int(AutonomyLevel.L3_ENVELOPED_AUTO))
         level, notes = resolve_runtime_level(
@@ -455,7 +455,7 @@ class TestEnvelopeCeiling:
         assert notes == []
 
     def test_lowest_ceiling_wins(self, tmp_path: Path) -> None:
-        from kstrl.autonomy import resolve_runtime_level
+        from kstrl.autonomy_config import resolve_runtime_level
 
         state = AutonomyState(level=int(AutonomyLevel.L4_DEPLOY))
         level, notes = resolve_runtime_level(

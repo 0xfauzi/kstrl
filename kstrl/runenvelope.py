@@ -62,7 +62,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TypeVar
 
-from kstrl.autonomy import AutonomyConfig, AutonomyState
+from kstrl.autonomy import AutonomyState
+from kstrl.autonomy_config import AutonomyConfig
 from kstrl.config import ConfigError, toml_parse_scope
 from kstrl.config_preflight import resolve_or_report
 from kstrl.divergence import DivergenceConfig

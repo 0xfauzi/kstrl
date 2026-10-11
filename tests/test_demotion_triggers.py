@@ -25,7 +25,6 @@ import pytest
 
 from kstrl.autonomy import (
     DEMOTION_COOLDOWN_RUNS,
-    AutonomyConfig,
     AutonomyLevel,
     AutonomyState,
     DemotionTrigger,
@@ -33,6 +32,7 @@ from kstrl.autonomy import (
     apply_demotion,
     commit_transition,
 )
+from kstrl.autonomy_config import AutonomyConfig
 from kstrl.config import ConfigError
 from kstrl.config_preflight import config_problem_lines
 from kstrl.inbox import ItemKind

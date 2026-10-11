@@ -115,11 +115,8 @@ def _control_dir_reasons(root_dir: Path) -> list[SafeModeReason]:
 
 
 def _autonomy_reasons(root_dir: Path) -> list[SafeModeReason]:
-    from kstrl.autonomy import (
-        AutonomyConfig,
-        AutonomyState,
-        resolve_runtime_level,
-    )
+    from kstrl.autonomy import AutonomyState
+    from kstrl.autonomy_config import AutonomyConfig, resolve_runtime_level
     from kstrl.config_report import environ_lock
     from kstrl.policy import PolicyConfig
 

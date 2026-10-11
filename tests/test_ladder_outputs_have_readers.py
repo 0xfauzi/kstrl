@@ -1,8 +1,8 @@
 """Every permission the autonomy ladder varies by level has a reader (#602).
 
 The defect: ``FlagBundle.auto_accept_plan`` was the one field on which L1
-and L2 differ, and no code outside ``kstrl/autonomy.py`` read it. The
-ladder printed "plans: human-approved" at L1 and nothing asked anyone, so
+and L2 differ, and no code outside ``kstrl/autonomy.py`` and ``kstrl/autonomy_config.py``
+read it. The ladder printed "plans: human-approved" at L1 and nothing asked anyone, so
 L1 and L2 ran identically. A bundle field nobody reads is a gate that
 exists only in the audit record.
 
@@ -27,9 +27,9 @@ import dataclasses
 from kstrl.autonomy import AutonomyLevel, FlagBundle, flag_bundle_for
 from tests.helpers.astwalk import label, package_sources, parsed
 
-#: The module that declares, prints and assigns the bundle. Its own
+#: The modules that declare, print and assign the bundle. Their own
 #: references are the declaration, not a reader.
-LADDER_MODULE = "autonomy.py"
+LADDER_MODULES = frozenset({"autonomy.py", "autonomy_config.py"})
 
 
 def _level_varying_fields() -> set[str]:
@@ -60,7 +60,7 @@ def _read_fields(tree: ast.AST, names: set[str]) -> set[str]:
 def _unread(sources: dict[str, ast.AST], names: set[str]) -> set[str]:
     read: set[str] = set()
     for where, tree in sources.items():
-        if where != LADDER_MODULE:
+        if where not in LADDER_MODULES:
             read |= _read_fields(tree, names)
     return names - read
 
@@ -71,10 +71,11 @@ def test_every_level_varying_bundle_field_has_a_reader() -> None:
     # Not vacuous: L1 and L2 differ in this field and nothing else.
     assert "auto_accept_plan" in varying, varying
     sources: dict[str, ast.AST] = {label(p): parsed(p) for p in package_sources()}
-    assert LADDER_MODULE in sources, sorted(sources)
+    assert LADDER_MODULES <= set(sources), sorted(sources)
     assert _unread(sources, varying) == set(), (
         "a bundle field that differs between levels is read nowhere outside "
-        "kstrl/autonomy.py: the ladder grants or withholds it, and nothing enforces it"
+        "kstrl/autonomy.py and kstrl/autonomy_config.py: the ladder grants or withholds it, "
+        "and nothing enforces it"
     )
 
 
@@ -88,10 +89,10 @@ def test_the_census_sees_a_field_nobody_reads() -> None:
 
 def test_a_read_off_something_that_is_not_a_bundle_does_not_clear() -> None:
     """Positive control for the narrow half: ``config.auto_accept_plan``
-    and a read inside kstrl/autonomy.py clear nothing."""
+    and a read inside kstrl/autonomy_config.py clear nothing."""
     other = ast.parse("def f(config):\n    return config.auto_accept_plan\n")
     ladder = ast.parse("def g(bundle):\n    return bundle.auto_accept_plan\n")
-    assert _unread({"other.py": other, LADDER_MODULE: ladder}, {"auto_accept_plan"}) == {
+    assert _unread({"other.py": other, "autonomy_config.py": ladder}, {"auto_accept_plan"}) == {
         "auto_accept_plan"
     }
 

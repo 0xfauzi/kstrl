@@ -370,13 +370,8 @@ def _report_autonomy_since(
 @_autonomy_no_color_option
 def autonomy_status(root: Path | None, ui: str, no_color: bool) -> None:
     """Show the current level, its flag bundle, and what promotion needs."""
-    from kstrl.autonomy import (
-        AutonomyConfig,
-        AutonomyState,
-        entry_signal_blockers,
-        flag_bundle_for,
-        resolve_runtime_level,
-    )
+    from kstrl.autonomy import AutonomyState, entry_signal_blockers, flag_bundle_for
+    from kstrl.autonomy_config import AutonomyConfig, resolve_runtime_level
     from kstrl.policy import PolicyConfig
 
     root_dir = (root or Path.cwd()).resolve()
@@ -469,10 +464,10 @@ def autonomy_promote(
         AutonomyLevel,
         AutonomyState,
         commit_transition,
-        control_relocation_error,
         entry_signal_blockers,
         promotion_authority_error,
     )
+    from kstrl.autonomy_config import control_relocation_error
 
     root_dir = (root or Path.cwd()).resolve()
     ui_impl = _autonomy_ui(ui, no_color)

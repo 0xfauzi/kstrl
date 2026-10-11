@@ -209,7 +209,7 @@ def config_sections() -> list[ConfigSection]:
     dataclasses and fails if one is missing from this list, so a section
     added later cannot quietly go unchecked.
     """
-    from kstrl.autonomy import AutonomyConfig
+    from kstrl.autonomy_config import AutonomyConfig
     from kstrl.breaker import BreakerConfig
     from kstrl.config import KstrlConfig
     from kstrl.contract import ContractConfig
