@@ -46,7 +46,8 @@ from kstrl.agents.codex import CodexAgent
 from kstrl.agents.custom import CustomAgent
 from kstrl.config import KstrlConfig
 from kstrl.events import RunPaths
-from kstrl.factory import FactoryConfig, _run_component, run_factory
+from kstrl.factory import _run_component, run_factory
+from kstrl.factory_config import FactoryConfig
 from kstrl.factory_lock import FactoryLockHeldError
 from kstrl.factory_result import (
     ComponentResult,
@@ -3475,7 +3476,8 @@ class TestCostCeilingConfigValidation:
         tmp_path: Path,
         bad: str,
     ) -> None:
-        from kstrl.factory import BudgetConfigError, FactoryConfig
+        from kstrl.config_numbers import BudgetConfigError
+        from kstrl.factory_config import FactoryConfig
 
         (tmp_path / "kstrl.toml").write_text(f"[factory]\nmax_cost_usd = {bad}\n")
         with pytest.raises(BudgetConfigError):
@@ -3487,20 +3489,21 @@ class TestCostCeilingConfigValidation:
         monkeypatch: pytest.MonkeyPatch,
         bad: str,
     ) -> None:
-        from kstrl.factory import BudgetConfigError, FactoryConfig
+        from kstrl.config_numbers import BudgetConfigError
+        from kstrl.factory_config import FactoryConfig
 
         monkeypatch.setenv("KSTRL_FACTORY_MAX_COST_USD", bad)
         with pytest.raises(BudgetConfigError):
             FactoryConfig.from_env()
 
     def test_zero_is_unbounded_not_invalid(self, tmp_path: Path) -> None:
-        from kstrl.factory import FactoryConfig
+        from kstrl.factory_config import FactoryConfig
 
         (tmp_path / "kstrl.toml").write_text("[factory]\nmax_cost_usd = 0\n")
         assert FactoryConfig.load(tmp_path).max_cost_usd == 0.0
 
     def test_ordinary_value_survives(self, tmp_path: Path) -> None:
-        from kstrl.factory import FactoryConfig
+        from kstrl.factory_config import FactoryConfig
 
         (tmp_path / "kstrl.toml").write_text("[factory]\nmax_cost_usd = 5.0\n")
         assert FactoryConfig.load(tmp_path).max_cost_usd == 5.0
@@ -3515,7 +3518,9 @@ class TestCostCeilingConfigValidation:
         path), bypassing every config-path validator.
         """
         from kstrl.config import KstrlConfig
-        from kstrl.factory import BudgetConfigError, FactoryConfig, run_factory
+        from kstrl.config_numbers import BudgetConfigError
+        from kstrl.factory import run_factory
+        from kstrl.factory_config import FactoryConfig
         from kstrl.manifest import Component, Manifest
         from kstrl.ui.plain import PlainUI
 
@@ -3987,7 +3992,7 @@ class TestBudgetConfigErrorReachesTheOperator:
         from click.testing import CliRunner
 
         from kstrl.cli import cli
-        from kstrl.factory import BudgetConfigError
+        from kstrl.config_numbers import BudgetConfigError
 
         (tmp_path / "kstrl.toml").write_text(f"[factory]\nmax_cost_usd = {toml_value}\n")
         (tmp_path / "m.json").write_text(json.dumps(self._manifest()))
@@ -4140,7 +4145,8 @@ class TestTokenCeilingRejectsUnboundingValues:
     """
 
     def test_negative_toml_value_is_rejected(self, tmp_path: Path) -> None:
-        from kstrl.factory import BudgetConfigError, FactoryConfig
+        from kstrl.config_numbers import BudgetConfigError
+        from kstrl.factory_config import FactoryConfig
 
         (tmp_path / "kstrl.toml").write_text("[factory]\nmax_total_tokens = -5\n")
         with pytest.raises(BudgetConfigError):
@@ -4150,20 +4156,21 @@ class TestTokenCeilingRejectsUnboundingValues:
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from kstrl.factory import BudgetConfigError, FactoryConfig
+        from kstrl.config_numbers import BudgetConfigError
+        from kstrl.factory_config import FactoryConfig
 
         monkeypatch.setenv("KSTRL_FACTORY_MAX_TOTAL_TOKENS", "-5")
         with pytest.raises(BudgetConfigError):
             FactoryConfig.from_env()
 
     def test_zero_is_unbounded_not_invalid(self, tmp_path: Path) -> None:
-        from kstrl.factory import FactoryConfig
+        from kstrl.factory_config import FactoryConfig
 
         (tmp_path / "kstrl.toml").write_text("[factory]\nmax_total_tokens = 0\n")
         assert FactoryConfig.load(tmp_path).max_total_tokens == 0
 
     def test_ordinary_value_survives(self, tmp_path: Path) -> None:
-        from kstrl.factory import FactoryConfig
+        from kstrl.factory_config import FactoryConfig
 
         (tmp_path / "kstrl.toml").write_text("[factory]\nmax_total_tokens = 500\n")
         assert FactoryConfig.load(tmp_path).max_total_tokens == 500
@@ -4173,7 +4180,9 @@ class TestTokenCeilingRejectsUnboundingValues:
         tmp_path: Path,
     ) -> None:
         from kstrl.config import KstrlConfig
-        from kstrl.factory import BudgetConfigError, FactoryConfig, run_factory
+        from kstrl.config_numbers import BudgetConfigError
+        from kstrl.factory import run_factory
+        from kstrl.factory_config import FactoryConfig
         from kstrl.manifest import Component, Manifest
         from kstrl.ui.plain import PlainUI
 

@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING, Any
 from kstrl import git_base
 from kstrl.base_gates import measure_base_gates, reading_document, refusal_lines, warning_lines
 from kstrl.doctor import STATUS_FAIL, STATUS_OK, STATUS_WARN, DoctorCheck, _not_evaluated
-from kstrl.factory import FactoryConfig
+from kstrl.factory_config import FactoryConfig
 from kstrl.isolation import prove_zones
 from kstrl.replay import Replay, replay_stack
 from kstrl.rung import HostFallback, ProvenRung, Rung, release

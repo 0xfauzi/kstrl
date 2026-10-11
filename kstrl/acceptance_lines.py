@@ -24,7 +24,7 @@ from kstrl.jsonread import read_json
 from kstrl.rung import HOST_LABEL, label_of
 
 if TYPE_CHECKING:
-    from kstrl.factory import FactoryConfig
+    from kstrl.factory_config import FactoryConfig
 
 #: Under the header of a record whose checks a model wrote (#700 slice 7).
 DESIGNED_LINE = "- the verification designer wrote these checks"

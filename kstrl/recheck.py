@@ -56,7 +56,7 @@ from kstrl.rung import HOST_LABEL
 from kstrl.stack import REPLAY_BOUNDARY_REFUSED
 
 if TYPE_CHECKING:
-    from kstrl.factory import FactoryConfig
+    from kstrl.factory_config import FactoryConfig
     from kstrl.stack import Stack
     from kstrl.ui.base import UI
 

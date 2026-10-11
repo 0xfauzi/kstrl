@@ -38,7 +38,8 @@ from kstrl.commandrun import open_command_run
 from kstrl.config import KstrlConfig, reconcile_progress_config
 from kstrl.config_report import normalize_ui_mode as _normalize_ui_mode
 from kstrl.decompose import SpecBlockerError, decompose_spec
-from kstrl.factory import FactoryConfig, run_factory
+from kstrl.factory import run_factory
+from kstrl.factory_config import FactoryConfig
 from kstrl.factory_lock import _RunLock
 from kstrl.git_base import resolve_base_branch
 from kstrl.interaction import PromptKind, PromptRequest, UiInteractionChannel

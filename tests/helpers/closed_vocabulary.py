@@ -34,7 +34,7 @@ from kstrl.agents import VALID_AGENT_TYPES
 from kstrl.config_preflight import config_sections
 from kstrl.contract import ContractMode
 from kstrl.divergence import DivergenceMode
-from kstrl.factory import VALID_CLAIM_AGREEMENT
+from kstrl.factory_config import VALID_CLAIM_AGREEMENT
 from kstrl.knowledge_facts import _VALID_DEPENDENCY_SCOPES
 from kstrl.linear import _VALID_AUTH_MODES
 from kstrl.review import ReviewMode

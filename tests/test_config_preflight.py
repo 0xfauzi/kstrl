@@ -45,7 +45,7 @@ from kstrl.config import STRING_KEYS, ConfigError, KstrlConfig, load_toml_docume
 from kstrl.config_preflight import collect_config_problems, config_sections, preflight_config
 from kstrl.contract import ContractConfig
 from kstrl.evolution_config import EvolutionConfig
-from kstrl.factory import FactoryConfig
+from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import FactoryResult
 from kstrl.feedforward import CodebaseScanConfig
 from kstrl.security import SecurityConfig, SecurityMode

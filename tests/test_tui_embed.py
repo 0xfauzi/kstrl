@@ -40,7 +40,7 @@ from kstrl import event_catalog
 from kstrl import events as ev
 from kstrl.config import KstrlConfig
 from kstrl.contract import ContractConfig
-from kstrl.factory import FactoryConfig
+from kstrl.factory_config import FactoryConfig
 from kstrl.interaction import (
     CheckpointContext,
     PromptKind,

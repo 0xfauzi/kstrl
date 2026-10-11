@@ -125,7 +125,7 @@ class TestConfigProbing:
         not a decision, and the next provenance field may be a scalar.
         The exclusion is now declared, and this is what holds it.
         """
-        from kstrl.factory import FactoryConfig
+        from kstrl.factory_config import FactoryConfig
 
         @dataclasses.dataclass
         class Probe:
@@ -143,7 +143,7 @@ class TestConfigProbing:
 
     def test_a_provenance_field_never_reaches_the_readme(self) -> None:
         """The end the operator sees, asserted on the committed file."""
-        from kstrl.factory import FactoryConfig
+        from kstrl.factory_config import FactoryConfig
 
         readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
         for f in dataclasses.fields(FactoryConfig()):

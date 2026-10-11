@@ -16,7 +16,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl.factory import FactoryConfig
+from kstrl.factory_config import FactoryConfig
 from kstrl.launch import FactoryLaunch
 from kstrl.launch_record import run_limits, write_launch_record
 from kstrl.manifest import Component, ComponentStatus, Manifest

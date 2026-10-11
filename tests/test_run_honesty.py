@@ -34,7 +34,8 @@ import kstrl.cli_factory as cli_factory_mod
 import kstrl.cli_loop as cli_loop_mod
 import kstrl.loop as loop_mod
 from kstrl.config import KstrlConfig
-from kstrl.factory import FactoryConfig, run_factory
+from kstrl.factory import run_factory
+from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import FactoryResult
 from kstrl.loop import LoopResult
 from kstrl.manifest import Component, Manifest

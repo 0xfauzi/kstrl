@@ -13,7 +13,7 @@ from kstrl.cli_seam import _PROGRESS_LOG_HELP
 from kstrl.config_numbers import LIMIT_FLOAT, LIMIT_INT
 from kstrl.config_report import UI_MODES
 from kstrl.contract import ContractMode
-from kstrl.factory import VALID_REVIEW_MODES
+from kstrl.factory_config import VALID_REVIEW_MODES
 from kstrl.security import _SEVERITY_ORDER, SecurityMode
 
 _FACTORY_OPTIONS: tuple[Callable[[Callable[..., Any]], Callable[..., Any]], ...] = (
