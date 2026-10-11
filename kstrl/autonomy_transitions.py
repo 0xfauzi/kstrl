@@ -13,7 +13,6 @@ import warnings
 from typing import TYPE_CHECKING, Any
 
 from kstrl.autonomy import MIN_DECISIVE_RUNS, AutonomyLevel, AutonomyState
-from kstrl.autonomy_config import AutonomyConfig
 from kstrl.statedir import ControlStateError
 
 if TYPE_CHECKING:
@@ -62,6 +61,7 @@ def _calibration_blockers(root_dir: Path) -> list[str]:
     enabled. A snoozed item is deferred, not decided, so it still blocks,
     and an unparseable inbox line could be one, so it blocks too.
     """
+    from kstrl.autonomy_config import AutonomyConfig
     from kstrl.inbox import UNDECIDED, Inbox, InboxConfig, ItemKind
 
     try:
