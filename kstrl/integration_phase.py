@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl import git, git_base
+from kstrl import git, git_base, git_tree
 from kstrl.agents.base import INTEGRATION_COMPONENT, INTEGRATION_ROLE, collect_usage
 from kstrl.agents.prompt_record import AgentCall, recording_prompts
 from kstrl.contract import (
@@ -247,7 +247,7 @@ def _spend_refusal(pipeline: ComponentPipeline) -> str:
 
 def _review_round(run: IntegrationRun, state: dict[str, Any], pin: _Pin) -> IntegrationRecord:
     try:
-        tracked = git.tracked_files_at(pin.sha, run.root_dir)
+        tracked = git_tree.tracked_files_at(pin.sha, run.root_dir)
     except git.GitDiffError as exc:
         return _not_run(
             run, f"the files at {pin.sha[:12]} could not be listed: {exc}", state, pin.sha
