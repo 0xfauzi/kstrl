@@ -99,7 +99,7 @@ from kstrl import (
     decompose_prompt,
     git_diff,
     intake_issue,
-    knowledge,
+    knowledge_distill,
     owner_answers,
     review,
     review_prompt,
@@ -131,7 +131,7 @@ from kstrl.git_diff import (
 )
 from kstrl.inbox import InboxItem, ItemKind
 from kstrl.intake_issue import BUG_REPORT_PROMPT, BUG_REPORT_PROMPT_VERSION, RemoteIssue
-from kstrl.knowledge import DISTILL_PROMPT, DISTILL_PROMPT_VERSION
+from kstrl.knowledge_distill import DISTILL_PROMPT, DISTILL_PROMPT_VERSION
 from kstrl.manifest import Component
 from kstrl.owner_answers import (
     OWNER_ANSWER_PROMPT,
@@ -565,7 +565,7 @@ def _distill_render(_tmp_path: Path) -> str:
     component = Component(
         id="C1", title="T", description="D", dependencies=[], prd_path="prd.json", branch_name="b"
     )
-    return knowledge.build_distill_prompt(component, 5, "PRD", "FACTS", "DIFF")
+    return knowledge_distill.build_distill_prompt(component, 5, "PRD", "FACTS", "DIFF")
 
 
 def _acceptance_render(_tmp_path: Path) -> str:
@@ -610,7 +610,7 @@ _RENDERERS: dict[str, tuple[ModuleType, Callable[[Path], str]]] = {
         security,
         lambda _p: security._build_security_prompt("PRD", "CHANGE SOURCE", "TOKEN"),
     ),
-    "DISTILL_PROMPT": (knowledge, _distill_render),
+    "DISTILL_PROMPT": (knowledge_distill, _distill_render),
     "STACK_PROMPT": (stack, _stack_render),
     "ACCEPTANCE_PROMPT": (acceptance_design, _acceptance_render),
     "REPO_CHANGE_SOURCE_PROMPT": (git_diff, lambda _p: repo_change_source("BASE_SHA")),

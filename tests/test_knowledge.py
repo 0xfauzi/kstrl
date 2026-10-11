@@ -46,7 +46,8 @@ import pytest
 from kstrl.config import KstrlConfig
 from kstrl.factory import FactoryConfig, run_factory
 from kstrl.factory_result import ComponentResult
-from kstrl.knowledge import build_knowledge_context, distill_facts, measure_fact_utilization
+from kstrl.knowledge import build_knowledge_context, measure_fact_utilization
+from kstrl.knowledge_distill import distill_facts
 from kstrl.knowledge_facts import Fact, KnowledgeConfig, _render_fact_md, read_facts, write_facts
 from kstrl.manifest import Component, Manifest
 from kstrl.ui.plain import PlainUI
