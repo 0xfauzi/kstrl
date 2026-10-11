@@ -75,12 +75,13 @@ SERVE_SOURCES = sorted(KSTRL_PACKAGE.glob("serve*.py"))
 #: DELTA is the signal, and it moves for a shape layer 2 does not model
 #: as readily as for one it does.
 EXPECTED_LOAD_SPELLINGS = {
-    "serve.py": 5,
+    "serve.py": 3,
     "serve_config.py": 1,
     "serve_gates.py": 2,
     "serve_github.py": 4,
     "serve_merge_gate.py": 4,
     "serve_outcome.py": 2,
+    "serve_settle.py": 2,
 }
 
 
