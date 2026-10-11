@@ -444,7 +444,7 @@ FILING_PATHS = {
     "pipeline_inbox.py::InboxDesk._inbox_add::add": (
         "test_pipeline_fires_once_per_kind_and_not_on_a_repeat"
     ),
-    "serve.py::_file_inbox_item::add": (
+    "serve_settle.py::_file_inbox_item::add": (
         "test_serve_filing_fires_the_inbox_hook_once_per_opened_item"
     ),
     "stack.py::file_stack_item::add": (
