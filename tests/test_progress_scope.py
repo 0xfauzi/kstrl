@@ -39,7 +39,8 @@ from kstrl import git_tree
 from kstrl.config import KstrlConfig, component_progress_path, relative_to_root
 from kstrl.decompose import _generate_component_prd
 from kstrl.events import EventBus, V1CompatSink
-from kstrl.factory import AdversarialAgentSelection, run_factory
+from kstrl.factory import run_factory
+from kstrl.factory_agents import AdversarialAgentSelection
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult, FactoryResult
 from kstrl.guards import enforce_allowed_paths, path_is_allowed

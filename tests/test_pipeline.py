@@ -25,7 +25,7 @@ from kstrl.config import KstrlConfig
 from kstrl.context import IterationContext
 from kstrl.event_catalog import Event, PhaseCompleted
 from kstrl.events import CallbackSink, EventBus, V1CompatSink
-from kstrl.factory import AdversarialAgentSelection
+from kstrl.factory_agents import AdversarialAgentSelection
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult, FactoryResult
 from kstrl.failure_signatures import category_for_check
