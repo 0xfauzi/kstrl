@@ -42,9 +42,9 @@ from typing import Any
 from kstrl.appendio import JOURNAL_REPAIR_EVENT
 from kstrl.evolution import (
     SPEC_ISSUES_EVENT,
-    EvolutionConfig,
     EvolutionJournal,
 )
+from kstrl.evolution_config import EvolutionConfig
 from kstrl.observability import read_progress_events
 
 #: A partial JSONL line: valid JSON up to the point the process died,

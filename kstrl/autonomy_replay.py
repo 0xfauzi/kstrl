@@ -37,7 +37,7 @@ from kstrl.autonomy import (
     AutonomyState,
     DemotionTrigger,
 )
-from kstrl.evolution import EvolutionConfig
+from kstrl.evolution_config import EvolutionConfig
 from kstrl.experiments_tsv import experiment_rows
 from kstrl.failure_signatures import INFRASTRUCTURE_CHECKS
 from kstrl.verify_diff import SCOPE_UNREADABLE_CHECK

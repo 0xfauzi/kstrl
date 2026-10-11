@@ -32,7 +32,7 @@ import pytest
 
 from kstrl.autonomy import AutonomyLevel, AutonomyState
 from kstrl.autonomy_replay import load_runs
-from kstrl.evolution import EvolutionConfig
+from kstrl.evolution_config import EvolutionConfig
 from kstrl.factory import run_factory
 from kstrl.inbox import Inbox, InboxConfig
 from kstrl.interaction import PromptKind, PromptRequest, PromptResponse
