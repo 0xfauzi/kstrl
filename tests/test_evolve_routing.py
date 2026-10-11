@@ -25,12 +25,10 @@ import pytest
 from click.testing import CliRunner, Result
 
 from kstrl.cli import cli
-from kstrl.evolution import (
+from kstrl.evolution import FINDINGS_SUPERSEDED_EVENT, EvolutionConfig, EvolutionJournal
+from kstrl.failure_signatures import (
     _CATEGORY_BY_CHECK,
-    FINDINGS_SUPERSEDED_EVENT,
     INFRASTRUCTURE_CHECKS,
-    EvolutionConfig,
-    EvolutionJournal,
     FailurePattern,
     category_for_check,
     route_patterns,

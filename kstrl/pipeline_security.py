@@ -258,7 +258,7 @@ class SecurityGate(ReviewVerdicts, UsageLedger):
         )
         # R6.1: journal the vuln categories that failed the gate
         # ("security:injection", ...), not the reason.
-        from kstrl.evolution import signatures_from_findings
+        from kstrl.failure_signatures import signatures_from_findings
 
         return SecurityPhaseResult(
             ran=True,

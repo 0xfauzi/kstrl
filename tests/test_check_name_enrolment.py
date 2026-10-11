@@ -100,7 +100,7 @@ import ast
 from collections.abc import Iterator
 from functools import cache, lru_cache
 
-from kstrl.evolution import _CATEGORY_BY_CHECK
+from kstrl.failure_signatures import _CATEGORY_BY_CHECK
 from tests.helpers.astfold import (
     HOLE,
     Folded,

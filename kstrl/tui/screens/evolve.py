@@ -29,7 +29,8 @@ from textual.message import Message
 from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Static, TabbedContent, TabPane
 
-from kstrl.evolution import EvolutionConfig, EvolutionJournal, FailurePattern
+from kstrl.evolution import EvolutionConfig, EvolutionJournal
+from kstrl.failure_signatures import FailurePattern
 from kstrl.tui import theme
 from kstrl.tui.widgets.config_problem import ConfigProblemBanner
 from kstrl.tui.widgets.context_bar import ContextBar
