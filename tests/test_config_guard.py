@@ -113,6 +113,29 @@ EXPECTED_SURFACE_CLASSES |= {
         }
     ),
     "RunEnvelope": frozenset({"load", "policy_hash", "resolve"}),
+    # #776 E8: ``JournalReads`` declares ``config: EvolutionConfig`` as a
+    # class-level field, the holder pattern. Its 13 methods are the read
+    # side of ``EvolutionJournal``, which inherits them. They moved out
+    # of ``EvolutionJournal`` unchanged and read the journal path and the
+    # experiments path from the config the instance holds. They resolve
+    # no config source of their own.
+    "JournalReads": frozenset(
+        {
+            "_read_all_entries",
+            "_read_journal_entries",
+            "extract_failure_patterns",
+            "get_concern_hit_rate",
+            "get_cross_run_patterns",
+            "get_experiment_trends",
+            "get_fact_utilization",
+            "get_repair_count",
+            "get_spec_audits",
+            "get_spec_issue_runs",
+            "iteration_criterion_lines",
+            "read_iteration_readings",
+            "repair_summary",
+        }
+    ),
     # #231 B4: `SteerContext` holds the `GitHubIntakeConfig` a steering
     # poll resolved once, the same holder pattern as `EnvelopeResolution`
     # and `FeatureParams` above, and defines no methods of its own.
