@@ -38,7 +38,7 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl import event_catalog, git
+from kstrl import event_catalog, git, git_base
 from kstrl.agents.base import (
     collect_usage,
 )
@@ -155,7 +155,7 @@ class ComponentPipeline(Delivery, KnowledgePhase, SecurityGate, MechanicalChecks
                     timeout=self.factory_config.merge_timeout,
                 )
                 if merge_state.state == "merged":
-                    git.fetch_base_branch(
+                    git_base.fetch_base_branch(
                         self.manifest.base_branch,
                         self.root_dir,
                     )

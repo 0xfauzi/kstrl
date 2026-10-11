@@ -23,7 +23,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl import git
+from kstrl import git, git_base
 from kstrl.config import validate_agent_type
 from kstrl.config_numbers import check_numbers
 from kstrl.decompose import (
@@ -716,7 +716,7 @@ def run_security_review(
         # not read the change - never that the two sides were asked
         # about the same moving name at two different times. Identical
         # to Phase 2; see git.resolve_base_sha for why a name will not do.
-        base_sha = git.resolve_base_sha(base_branch, worktree_path)
+        base_sha = git_base.resolve_base_sha(base_branch, worktree_path)
         actual_diffstat = git.get_diff_stat(base_sha, worktree_path, resolved=True)
         prompt = _build_security_prompt(prd_text, git.repo_change_source(base_sha))
         output_lines = collect_agent_output(

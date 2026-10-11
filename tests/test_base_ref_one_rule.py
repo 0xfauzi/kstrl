@@ -134,10 +134,10 @@ EXPECTED_REF_OPERAND_ARGVS: dict[str, int] = {
     "factory.py git worktree remove --force str(entry)": 1,
     "factory.py git branch -D branch": 1,
     "factory.py git worktree remove --force str(wt)": 1,
-    "git.py git for-each-ref --format=%(refname)%09%(symref) "
+    "git_base.py git for-each-ref --format=%(refname)%09%(symref) "
     "_ORIGIN_HEAD_REF *_BASE_BRANCH_REFS": 1,
-    "git.py git rev-parse --verify --quiet f'refs/remotes/origin/{base_branch}'": 1,
-    "git.py git fetch -- origin base_branch": 1,
+    "git_base.py git rev-parse --verify --quiet f'refs/remotes/origin/{base_branch}'": 1,
+    "git_base.py git fetch -- origin base_branch": 1,
     "git.py git rev-parse --is-inside-work-tree": 1,
     "git.py git rev-parse --show-toplevel": 1,
     "git.py git rev-parse --git-common-dir": 1,
@@ -165,12 +165,12 @@ EXPECTED_REF_OPERAND_ARGVS: dict[str, int] = {
     "f'{base_ref}...HEAD' --": 1,
     "git.py git diff --numstat -z f'{base_ref}...HEAD' --": 1,
     "git.py git merge --no-edit -- branch": 1,
-    "git.py git merge-base base_label HEAD": 1,
+    "git_base.py git merge-base base_label HEAD": 1,
     "git.py git checkout -b branch_name base --": 1,
     "git.py git branch flag -- branch_name": 1,
     "git.py git checkout branch --": 2,
     "git.py git checkout -b branch": 1,
-    "git.py git rev-parse --verify --quiet f'{candidate}^{{commit}}'": 1,
+    "git_base.py git rev-parse --verify --quiet f'{candidate}^{{commit}}'": 1,
     "pr.py git push -u -- origin branch": 1,
     "pr.py git push --delete -- origin branch": 2,
     "retry_plan.py git worktree remove --force evidence_worktree": 1,
@@ -200,14 +200,14 @@ EXPECTED_REF_OPERAND_ARGVS: dict[str, int] = {
 #: already is. Measured: a strict superset of the previous four rows,
 #: none lost.
 EXPECTED_ORIGIN_SPELLINGS: dict[str, int] = {
-    "git.py 'refs/remotes/origin/'": 2,
-    "git.py 'origin/'": 4,
-    "git.py f'origin/{base_branch}'": 2,
-    "git.py f'refs/remotes/origin/{base_branch}'": 1,
-    "git.py _ORIGIN_REF_PREFIX": 5,
-    "git.py f'{_ORIGIN_REF_PREFIX}HEAD'": 1,
-    "git.py f'{_ORIGIN_REF_PREFIX}{name}'": 1,
-    "git.py {_ORIGIN_REF_PREFIX}": 2,
+    "git_base.py 'refs/remotes/origin/'": 2,
+    "git_base.py 'origin/'": 4,
+    "git_base.py f'origin/{base_branch}'": 2,
+    "git_base.py f'refs/remotes/origin/{base_branch}'": 1,
+    "git_base.py _ORIGIN_REF_PREFIX": 5,
+    "git_base.py f'{_ORIGIN_REF_PREFIX}HEAD'": 1,
+    "git_base.py f'{_ORIGIN_REF_PREFIX}{name}'": 1,
+    "git_base.py {_ORIGIN_REF_PREFIX}": 2,
 }
 
 

@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl import git
+from kstrl import git, git_base
 from kstrl.agents.base import INTEGRATION_COMPONENT, INTEGRATION_ROLE, collect_usage
 from kstrl.agents.prompt_record import AgentCall, recording_prompts
 from kstrl.contract import (
@@ -221,7 +221,7 @@ def _pin_round(run: IntegrationRun, phase3: Phase3Round) -> _Pin:
 
 def _pin_without_tests(run: IntegrationRun) -> _Pin:
     try:
-        sha = git.resolve_base_sha(run.manifest.base_branch, run.root_dir)
+        sha = git_base.resolve_base_sha(run.manifest.base_branch, run.root_dir)
     except git.GitDiffError as exc:
         return _Pin(refusal=f"the base branch did not resolve: {exc}")
     return _nothing_merged(run, _Pin(sha=sha))
@@ -434,7 +434,7 @@ def _round_reason(stop_outcome: str, outcome: IntegrationOutcome, gates: bool) -
 
 def _base_moved_to(run: IntegrationRun, sha: str) -> str:
     try:
-        moved, current = git.base_moved(run.manifest.base_branch, sha, run.root_dir)
+        moved, current = git_base.base_moved(run.manifest.base_branch, sha, run.root_dir)
     except git.GitDiffError as exc:
         return f"unresolved: {exc}"
     return current if moved else ""

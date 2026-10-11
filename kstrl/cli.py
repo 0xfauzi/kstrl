@@ -103,7 +103,7 @@ from kstrl.factory_lock import (
     _RunLock,
 )
 from kstrl.feature_cmd import FeatureParams, run_feature
-from kstrl.git import (
+from kstrl.git_base import (
     detect_base_branch,
     resolve_base_branch,
 )

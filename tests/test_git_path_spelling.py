@@ -225,7 +225,7 @@ EXPECTED_UNDECIDED: tuple[str, ...] = (
     # Carries *_BASE_BRANCH_REFS, so it is splat-undecided. It prints REF
     # names, not paths, but the splat is what puts it here and the splat
     # is what is pinned.
-    "git.py git for-each-ref --format=%(refname)%09%(symref) ? ?",
+    "git_base.py git for-each-ref --format=%(refname)%09%(symref) ? ?",
 )
 
 EXPECTED_GIT_ARGVS: dict[str, int] = {
@@ -262,8 +262,8 @@ EXPECTED_GIT_ARGVS: dict[str, int] = {
     "git.py git diff --numstat -z ? --": 1,
     "git.py git diff ? --": 1,
     "git.py git diff --text --no-textconv --no-ext-diff --no-color --dst-prefix=b/ ? --": 1,
-    "git.py git fetch -- origin ?": 1,
-    "git.py git for-each-ref --format=%(refname)%09%(symref) ? ?": 1,
+    "git_base.py git fetch -- origin ?": 1,
+    "git_base.py git for-each-ref --format=%(refname)%09%(symref) ? ?": 1,
     "git.py git ls-files --cached --others --exclude-standard -z": 1,
     "git.py git ls-files --error-unmatch -- ?": 1,
     "git.py git ls-files --others --exclude-standard -z": 1,
@@ -278,7 +278,8 @@ EXPECTED_GIT_ARGVS: dict[str, int] = {
     "git.py git rev-parse --show-toplevel": 1,
     "git.py git rev-parse --git-common-dir": 1,
     "git.py git rev-parse --path-format=absolute --git-dir --git-common-dir": 1,
-    "git.py git rev-parse --verify --quiet ?": 3,
+    "git.py git rev-parse --verify --quiet ?": 1,
+    "git_base.py git rev-parse --verify --quiet ?": 2,
     "git.py git rev-parse --verify --quiet HEAD": 1,
     "git.py git rm --cached --ignore-unmatch -q -- ?": 1,
     "git.py git show-ref --verify --quiet ?": 1,
@@ -297,7 +298,7 @@ EXPECTED_GIT_ARGVS: dict[str, int] = {
     # #435 fix-round (A0) hoisted the merge-base spawn from `verify.py`
     # into `kstrl/git.py` as the one owner of the merge-base anchor: the
     # row moves module, count unchanged.
-    "git.py git merge-base ? HEAD": 1,
+    "git_base.py git merge-base ? HEAD": 1,
 }
 
 

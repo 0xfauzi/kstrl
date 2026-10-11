@@ -11,7 +11,7 @@ from click.testing import CliRunner, Result
 
 from kstrl.cli import _format_component_status, _run_structural_override_notices, cli
 from kstrl.factory import FactoryConfig
-from kstrl.git import BASE_BRANCH_CANDIDATES, detect_base_branch, resolve_base_branch
+from kstrl.git_base import BASE_BRANCH_CANDIDATES, detect_base_branch, resolve_base_branch
 from kstrl.init_cmd import gitignore_block
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from tests.helpers import gitrepo
@@ -570,7 +570,7 @@ class TestDetectBaseBranch:
         # the UI can freeze. One call, one timeout.
         root = _repo_on(tmp_path, "release-2.0")  # the worst case: no candidate hits
 
-        with patch("kstrl.git.subprocess.run", wraps=subprocess.run) as run:
+        with patch("kstrl.git_base.subprocess.run", wraps=subprocess.run) as run:
             assert detect_base_branch(root) == "main"
 
         assert run.call_count == 1

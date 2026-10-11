@@ -21,7 +21,7 @@ import dataclasses
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl import git
+from kstrl import git_base
 from kstrl.base_gates import measure_base_gates, reading_document, refusal_lines, warning_lines
 from kstrl.doctor import STATUS_FAIL, STATUS_OK, STATUS_WARN, DoctorCheck, _not_evaluated
 from kstrl.factory import FactoryConfig
@@ -70,7 +70,7 @@ def measure(
     """
     if any(check.name == "kstrl_config" and check.status == STATUS_FAIL for check in checks):
         return DoctorCheck(CHECK_NAME, *_not_evaluated(CHECK_NAME)), None
-    base = git.detect_base_branch(root)
+    base = git_base.detect_base_branch(root)
     ui.info(f"Measuring the gates on the base branch {base}...")
     setup = FactoryConfig.load(root).worktree_setup()
     reading = measure_base_gates(root, base, VerifyConfig.load(root), setup, ui)

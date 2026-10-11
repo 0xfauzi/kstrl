@@ -65,7 +65,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl import git
+from kstrl import git, git_base
 from kstrl.atomicio import atomic_write_json
 from kstrl.jsonread import read_json
 from kstrl.names import validate_component_id
@@ -533,7 +533,7 @@ def replay_base(
     from kstrl.acceptance_design import kept_on_base
 
     try:
-        sha = git.resolve_base_sha(base_branch, root)
+        sha = git_base.resolve_base_sha(base_branch, root)
     except git.GitDiffError as exc:
         return None, [f"the base branch {base_branch} did not resolve: {exc}"]
     ui.info(f"  Replaying the acceptance checks on the base {sha[:12]}...")
