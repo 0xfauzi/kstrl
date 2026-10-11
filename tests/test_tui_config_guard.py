@@ -73,6 +73,8 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     # one around the designer's reply (a timeout or output cap is a
     # RuntimeError) and one around starting it. Caught, never subclassed.
     "acceptance_design.py": 2,
+    # AgentOutputTooLarge, and AgentTimedOut since #603.
+    "agent_output.py": 2,
     "autonomy.py": 1,
     # One bare raise: `_resolve_factory_run_lock` refuses a handed
     # `_RunLock` whose own `release()` has already run (#597 fix round).
@@ -81,8 +83,6 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     "contract.py": 1,
     # DecisionRegisterError, added by #332.
     "decisions.py": 1,
-    # AgentOutputTooLarge, and AgentTimedOut since #603.
-    "decompose.py": 2,
     # #632: each refuses to import a table whose rows disagree, a bare raise.
     # One subclass, four bare raises. #543 added two: a dependency branch
     # that will not merge into a dependent's worktree, and a HEAD that

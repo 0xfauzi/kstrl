@@ -431,6 +431,7 @@ class TestTheWalkAgainstTheRealPackage:
                     # An agent adapter reached through a parameter or an
                     # attribute. Not a subprocess, and the walk cannot
                     # say so.
+                    "agent_output.py agent.run",
                     "agents/logging.py self._agent.run",
                     "decompose.py agent.run",
                     "loop.py agent.run",
