@@ -15,7 +15,8 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from kstrl.init_cmd import ScaffoldAction, classify_scaffold, gitignore_plan
+from kstrl.init_cmd import ScaffoldAction, gitignore_plan
+from kstrl.scaffold_ledger import classify_scaffold
 
 # The documented kstrl.toml [agent] type vocabulary (empty = auto).
 AGENT_TYPES = ("", "claude-code", "claude-sdk", "codex")

@@ -299,7 +299,7 @@ EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
     # its one row in _LANGUAGE_STANDARDS or _LANGUAGE_ANTIPATTERNS) = 52.
     # #696 slice 6: -17 fragments x 2 spellings (14 language bodies, the two
     # section headings and the principles body) = 18.
-    "init_cmd.py": 18,
+    "init_cmd.py": 12,
     # #482: INTEGRATION_CRITERIA_PROMPT, and #483: INTEGRATION_CARRIED_PROMPT;
     # 2 prompts x 2 spellings (each declaration and its one use) = 4. The
     # version constants add nothing: the walk keys on names ending in _PROMPT.
@@ -324,6 +324,9 @@ EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
     # one use site) = 10. The version constant adds nothing: the walk keys
     # on names ending in _PROMPT, not _VERSION.
     "review_claims.py": 10,
+    # N2 (#776): the six ledger rows that left init_cmd.py name their six
+    # constants here; init_cmd.py keeps its own uses and the imports.
+    "scaffold_ledger.py": 9,
     # N1 (#776): the three declarations that left init_cmd.py with their bodies.
     "scaffold_templates.py": 3,
     "security.py": 2,

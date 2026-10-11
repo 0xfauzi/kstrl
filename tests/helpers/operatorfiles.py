@@ -14,13 +14,13 @@ import re
 from dataclasses import replace
 from pathlib import Path
 
-from kstrl.init_cmd import SCAFFOLDED_TEMPLATES
 from kstrl.operator_context import (
     GOLDEN_PATTERNS,
     OperatorFile,
     OperatorFileKind,
     operator_file_spec,
 )
+from kstrl.scaffold_ledger import SCAFFOLDED_TEMPLATES
 
 #: The delimiter lines carry a per-build random token (S4), so a test
 #: matches the fixed part and asserts the token is there rather than

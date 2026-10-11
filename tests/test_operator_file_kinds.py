@@ -12,7 +12,7 @@ scaffold OFF THE ROW under test. A case that passed for one kind and
 failed for another would mean the two had come apart, which is the defect
 the row exists to prevent. Two tie tests close the table against the two
 tables it names but does not own: ``config_keys.STRING_KEYS`` and
-``init_cmd.SCAFFOLDED_TEMPLATES``.
+``scaffold_ledger.SCAFFOLDED_TEMPLATES``.
 """
 
 from __future__ import annotations
@@ -28,7 +28,6 @@ import pytest
 
 from kstrl.config import KstrlConfig
 from kstrl.config_keys import STRING_KEYS
-from kstrl.init_cmd import SCAFFOLDED_TEMPLATES
 from kstrl.operator_context import (
     _KEPT,
     CUT_FLOOR,
@@ -41,6 +40,7 @@ from kstrl.operator_context import (
     operator_file_notices,
     read_operator_file,
 )
+from kstrl.scaffold_ledger import SCAFFOLDED_TEMPLATES
 from kstrl.scaffold_templates import DEFAULT_GOLDEN_PATTERNS, DEFAULT_MEMORY
 from tests.helpers.operatorfiles import (
     SHIPPED_BODIES,

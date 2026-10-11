@@ -25,10 +25,10 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner, Result
 
-from kstrl import init_cmd
+from kstrl import init_cmd, scaffold_ledger
 from kstrl.cli import cli
-from kstrl.init_cmd import ScaffoldedTemplate, classify_scaffolded_path, staleness_notice
 from kstrl.init_wizard import plan_scaffold
+from kstrl.scaffold_ledger import ScaffoldedTemplate, classify_scaffolded_path, staleness_notice
 from kstrl.scaffold_templates import DEFAULT_PROMPT, DEFAULT_PROMPT_VERSION
 from tests.helpers import gitrepo
 from tests.helpers.prompt_calls import offline_run
@@ -239,7 +239,7 @@ class TestUpgradeLeavesTheFileItFoundIntact:
         """A relocated prompt that is ALSO a link has two problems, and
         naming one of them would send the operator down a path that
         fails for the other."""
-        monkeypatch.setattr(init_cmd, "SCAFFOLDED_TEMPLATES", (SYNTHETIC,))
+        monkeypatch.setattr(scaffold_ledger, "SCAFFOLDED_TEMPLATES", (SYNTHETIC,))
         shared = tmp_path / "shared-prompt.md"
         shared.write_text(OLD_BODY)
         elsewhere = tmp_path / "prompts"
@@ -287,7 +287,7 @@ class TestScaffoldRoundTripsItsOwnBytes:
             body=body,
             history=((_sha256(body), "9.0.0"),),
         )
-        monkeypatch.setattr(init_cmd, "SCAFFOLDED_TEMPLATES", (template,))
+        monkeypatch.setattr(scaffold_ledger, "SCAFFOLDED_TEMPLATES", (template,))
         monkeypatch.setattr(init_cmd, "DEFAULT_PROMPT", body)
 
         run_init_capturing(tmp_path)
@@ -342,7 +342,7 @@ class TestScaffoldRoundTripsItsOwnBytes:
             body=body,
             history=((_sha256(OLD_BODY), "9.0.0"), (_sha256(body), "9.1.0")),
         )
-        monkeypatch.setattr(init_cmd, "SCAFFOLDED_TEMPLATES", (template,))
+        monkeypatch.setattr(scaffold_ledger, "SCAFFOLDED_TEMPLATES", (template,))
         monkeypatch.setattr(init_cmd, "DEFAULT_PROMPT", body)
 
         upgraded = _prompt_at(tmp_path, OLD_BODY)

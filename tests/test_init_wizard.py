@@ -416,8 +416,8 @@ class TestWizardScreen:
         so here, with the label it shipped under."""
         import hashlib
 
-        from kstrl import init_cmd
-        from kstrl.init_cmd import ScaffoldedTemplate
+        from kstrl import scaffold_ledger
+        from kstrl.scaffold_ledger import ScaffoldedTemplate
 
         old_body = "# old engineer instructions\n"
         new_body = "# new engineer instructions\n"
@@ -426,7 +426,7 @@ class TestWizardScreen:
             return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
         monkeypatch.setattr(
-            init_cmd,
+            scaffold_ledger,
             "SCAFFOLDED_TEMPLATES",
             (
                 ScaffoldedTemplate(

@@ -39,8 +39,8 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import init_cmd
-from kstrl.init_cmd import (
+from kstrl import init_cmd, scaffold_ledger
+from kstrl.scaffold_ledger import (
     SCAFFOLDED_TEMPLATES,
     ScaffoldedTemplate,
     classify_scaffold,
@@ -73,7 +73,7 @@ SYNTHETIC = ScaffoldedTemplate(
 @pytest.fixture
 def synthetic_ledger(monkeypatch: pytest.MonkeyPatch) -> ScaffoldedTemplate:
     """Swap the shipped ledger for a two-row one built from literals."""
-    monkeypatch.setattr(init_cmd, "SCAFFOLDED_TEMPLATES", (SYNTHETIC,))
+    monkeypatch.setattr(scaffold_ledger, "SCAFFOLDED_TEMPLATES", (SYNTHETIC,))
     return SYNTHETIC
 
 
@@ -200,7 +200,7 @@ class TestWarningText:
                 (_sha256(NEW_BODY), "9.1.0"),
             ),
         )
-        monkeypatch.setattr(init_cmd, "SCAFFOLDED_TEMPLATES", (three_rows,))
+        monkeypatch.setattr(scaffold_ledger, "SCAFFOLDED_TEMPLATES", (three_rows,))
         notice = staleness_notice(_prompt_at(tmp_path, older))
         assert notice is not None
         assert "shipped at 8.0.0" in notice.headline
@@ -340,10 +340,12 @@ EXPECTED_TEMPLATE_FILENAMES: dict[str, int] = {
     "cli.py": 11,
     "config.py": 4,
     "factory.py": 3,
-    "init_cmd.py": 12,
+    "init_cmd.py": 6,
     "init_wizard.py": 6,
     "launch.py": 1,
     "operator_context.py": 2,
+    # N2 (#776): the six ledger rows left init_cmd.py for this module.
+    "scaffold_ledger.py": 6,
 }
 
 
@@ -463,7 +465,7 @@ class TestLedgerIntegrity:
             digest, _label = template.history[-1]
             assert _sha256(template.body) == digest, (
                 f"{template.constant_name} changed without a new row in "
-                f"SCAFFOLDED_TEMPLATES (kstrl/init_cmd.py). APPEND "
+                f"SCAFFOLDED_TEMPLATES (kstrl/scaffold_ledger.py). APPEND "
                 f"({_sha256(template.body)!r}, <label>) to its history; "
                 "never edit or drop an older row, because an old row is "
                 "the only thing that can recognise a copy already on "
@@ -675,11 +677,11 @@ def test_engineer_prompt_bump_reaches_existing_projects() -> None:
     DEFAULT_PROMPT moves without a matching row, in the same file the
     person doing the bump is already editing. The deeper invariants live
     in this file."""
-    from kstrl.init_cmd import SCAFFOLDED_TEMPLATES
+    from kstrl.scaffold_ledger import SCAFFOLDED_TEMPLATES
 
     template = next(t for t in SCAFFOLDED_TEMPLATES if t.filename == "prompt.md")
     assert template.history[-1] == (_sha256(DEFAULT_PROMPT), DEFAULT_PROMPT_VERSION), (
-        "SCAFFOLDED_TEMPLATES in kstrl/init_cmd.py does not end with the "
+        "SCAFFOLDED_TEMPLATES in kstrl/scaffold_ledger.py does not end with the "
         "engineer prompt this harness ships. APPEND "
         f"({_sha256(DEFAULT_PROMPT)!r}, {DEFAULT_PROMPT_VERSION!r}) to its "
         "history and keep every older row."
