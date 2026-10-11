@@ -28,7 +28,7 @@ from unittest.mock import patch
 from kstrl.config import KstrlConfig
 from kstrl.factory import FactoryConfig, run_factory
 from kstrl.factory_result import ComponentResult
-from kstrl.knowledge import Fact, write_facts
+from kstrl.knowledge_facts import Fact, write_facts
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.ui.plain import PlainUI
 from kstrl.verify_model import VerifyConfig

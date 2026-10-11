@@ -135,7 +135,8 @@ def test_diff_header_path_matches_a_real_diff_for_every_header_shape(
 #: from a diff at all; #639 slice 5 moved them out of pr.py with the two
 #: PR body writers.
 EXPECTED_DIFF_HEADER_LITERALS = {
-    "knowledge.py": 2,
+    "knowledge.py": 1,
+    "knowledge_facts.py": 1,
     "policy.py": 2,
     "pr_body.py": 2,
 }

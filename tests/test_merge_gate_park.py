@@ -326,7 +326,7 @@ class TestTheParkIsItsOwnOutcome:
         assert _status(root, CMDS) == "skipped", out
         # serve is not wedged behind it, and does not call it a spec failure.
         # Imported here so the module still collects on a tree without it (red first).
-        from kstrl.serve import check_parked_merges
+        from kstrl.serve_gates import check_parked_merges
 
         assert check_parked_merges(root).allowed
         verdict = classify_run(

@@ -403,15 +403,16 @@ _EXPECTED_STATE_DIR_SPELLINGS: dict[str, int] = {
     "factory.py": 9,
     "factory_lock.py": 2,
     "integration_state.py": 1,
-    "knowledge.py": 2,
+    "knowledge_facts.py": 2,
     "pipeline_attempt.py": 1,
     "reducer.py": 3,
     # serve.py had 6, +1 for #464 (the progress log for cost evidence). #776 S2
     # moved the launchd code, with two spellings, to serve_launchd.py.
     # #776 S3 moved classify_run and its helpers, with two spellings, to
     # serve_outcome.py. #776 S4 moved the spend ledger, with two spellings, to
-    # serve_spend.py.
-    "serve.py": 3,
+    # serve_spend.py. #776 S5 moved the three spellings of serve.py to
+    # serve_gates.py.
+    "serve_gates.py": 3,
     "serve_launchd.py": 2,
     "serve_outcome.py": 2,
     "serve_spend.py": 2,

@@ -118,7 +118,7 @@ EXPECTED_MANIFEST_WRITE_SITES: dict[str, tuple[int, str]] = {
     "kstrl/autonomy_transitions.py::save_ladder_state save": (1, NOT_A_MANIFEST),  # ladder state
     "kstrl/integration.py::write_integration_prd save": (1, NOT_A_MANIFEST),  # PRD
     "kstrl/pipeline.py::ComponentPipeline._phase_review save": (1, NOT_A_MANIFEST),  # PRD
-    "kstrl/serve.py::_save_pr_count_streak save": (1, NOT_A_MANIFEST),  # serve streak
+    "kstrl/serve_github.py::_save_pr_count_streak save": (1, NOT_A_MANIFEST),  # serve streak
 }
 
 

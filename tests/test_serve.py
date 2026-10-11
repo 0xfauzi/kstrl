@@ -50,17 +50,19 @@ from kstrl.reducer import ComponentState, RunState
 from kstrl.serve import (
     ServeLockedError,
     _NullObserver,
+    serve,
+    serve_cycle,
+    serve_lock,
+)
+from kstrl.serve_config import ServeConfig
+from kstrl.serve_gates import (
     check_budget,
     check_cost_coverage,
     check_inbox_cap,
     check_poison_breaker,
     consecutive_poison_count,
     factory_lock_held,
-    serve,
-    serve_cycle,
-    serve_lock,
 )
-from kstrl.serve_config import ServeConfig
 from kstrl.serve_merge_gate import resolve_merge_gate
 from kstrl.serve_outcome import RunOutcome, Verdict, _pr_urls_from_manifest, classify_run
 from kstrl.serve_process import (
@@ -1273,7 +1275,7 @@ class TestServeCycle:
         queue = _queue(tmp_path)
         _add(queue)
         calls: list[dict[str, object]] = []
-        with patch("kstrl.serve.factory_lock_held", return_value=True):
+        with patch("kstrl.serve_gates.factory_lock_held", return_value=True):
             result = serve_cycle(
                 tmp_path,
                 runner=_stub_runner(RunOutcome(0), calls),
@@ -1324,7 +1326,7 @@ class TestServeCycle:
         queue = _queue(tmp_path)
         _add(queue)
         calls: list[dict[str, object]] = []
-        with patch("kstrl.serve.check_inbox_cap") as gate:
+        with patch("kstrl.serve_gates.check_inbox_cap") as gate:
             from kstrl.serve_config import Admission
 
             gate.return_value = Admission(allowed=False, reason="inbox full")
@@ -2744,7 +2746,7 @@ class TestPauseIsAtomic:
         """Losing an operator's pause is the dangerous direction (#186 F7)."""
         import inspect
 
-        from kstrl.serve import _pause_queue
+        from kstrl.serve_gates import _pause_queue
 
         source = inspect.getsource(_pause_queue)
         assert "with queue_lock(root_dir, blocking=True):" in source
@@ -2782,7 +2784,7 @@ class TestFactoryLockProbe:
         lock = tmp_path / ".kstrl" / "factory.lock"
         lock.parent.mkdir(parents=True, exist_ok=True)
         lock.touch()
-        with patch("kstrl.serve.open", side_effect=PermissionError("denied")):
+        with patch("kstrl.serve_gates.open", side_effect=PermissionError("denied")):
             assert factory_lock_held(tmp_path)
 
     def test_a_held_lock_is_detected(self, tmp_path: Path) -> None:

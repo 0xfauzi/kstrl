@@ -133,7 +133,8 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     # directory both zones read is the root's own.
     "isolation.py": 2,
     "iteration_prompt.py": 1,
-    "knowledge.py": 3,
+    "knowledge.py": 2,
+    "knowledge_facts.py": 1,
     "loop.py": 1,
     "manifest.py": 1,
     "observability.py": 1,
@@ -178,7 +179,11 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     # deduplicated spelling list below loses a row. #776 S3 moved
     # _read_manifest_json, with one of the five reads, to serve_outcome.py.
     # #776 S4 moved SpendLedger.load, with one read, to serve_spend.py.
-    "serve.py": 3,
+    # #776 S5 moved factory_lock_held (the lock open) to serve_gates.py and
+    # the streak read to serve_github.py.
+    "serve.py": 1,
+    "serve_gates.py": 1,
+    "serve_github.py": 1,
     "serve_outcome.py": 1,
     "serve_spend.py": 1,
     "statedir.py": 1,
@@ -282,9 +287,9 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "isolation.py (entry / 'gitdir').read_text(encoding='utf-8')",
     "isolation.py dot_git.read_text(encoding='utf-8')",
     "iteration_prompt.py claude_md_path.read_text(encoding='utf-8')",
-    "knowledge.py path.read_text(encoding='utf-8')",
     "knowledge.py prd_path.read_text(encoding='utf-8')",
     "knowledge.py target.read_text(encoding='utf-8')",
+    "knowledge_facts.py path.read_text(encoding='utf-8')",
     "loop.py config.prompt_file.read_text(encoding='utf-8')",
     "manifest.py open(path, encoding='utf-8')",
     "observability.py for line in f on an open() handle",
@@ -306,7 +311,8 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "scaffold_ledger.py path.read_text(encoding='utf-8')",
     "security.py prd_path.read_text(encoding='utf-8')",
     "serve.py open(lock_path, 'a+', encoding='utf-8')",
-    "serve.py path.read_text(encoding='utf-8')",
+    "serve_gates.py open(lock_path, 'a+', encoding='utf-8')",
+    "serve_github.py path.read_text(encoding='utf-8')",
     "serve_outcome.py path.read_text(encoding='utf-8')",
     "serve_spend.py self.path.read_text(encoding='utf-8')",
     "statedir.py open(lock_path, 'a+', encoding='utf-8')",

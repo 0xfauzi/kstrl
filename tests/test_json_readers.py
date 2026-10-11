@@ -131,7 +131,8 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     # report is read through read_json. No parse.
     "isolation.py": 2,
     "jsonread.py": 4,
-    "knowledge.py": 6,
+    "knowledge.py": 4,
+    "knowledge_facts.py": 3,
     "linear.py": 5,
     "observability.py": 4,
     # #602: the import and one json.dumps, the plan digest's canonical
@@ -174,7 +175,7 @@ EXPECTED_UNDECIDED_CALLS: tuple[str, ...] = (
     "evolution_config.py cls.load",
     "intake_github.py ProcessedLedger(root_dir).load",
     "intake_steering.py ProcessedLedger(root_dir).load",
-    "serve.py OpenPrCountStreak.load",
+    "serve_github.py OpenPrCountStreak.load",
     "tui/app.py initial_screens_for_kind(kind, observe_only=False)",
     "tui/app.py initial_screens_for_kind(kind, observe_only=True)",
     "tui/screens/evolve.py self.query_one(ConfigProblemBanner).load",
