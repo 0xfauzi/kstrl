@@ -38,7 +38,7 @@ from kstrl import (
 )
 from kstrl.context import LEGACY_ATTEMPT, IterationContext, IterationRecord
 from kstrl.findings import Finding
-from kstrl.knowledge import KnowledgeConfig
+from kstrl.knowledge_facts import KnowledgeConfig, write_facts
 from kstrl.loop import LoopResult
 from kstrl.manifest import Component, Manifest
 from kstrl.policy import PolicyConfig
@@ -326,7 +326,7 @@ def _knowledge(overflow: bool) -> Callable[[Path], str]:
         )
         claim = "the handler validates its input."
         for cid in ("c1", "c2", "c3"):
-            knowledge.write_facts(
+            write_facts(
                 [
                     _make_fact(
                         fact_id=f"fact-{n:03d}",

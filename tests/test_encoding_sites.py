@@ -28,7 +28,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import knowledge, verify, verify_diff
+from kstrl import knowledge, knowledge_facts, verify, verify_diff
 from kstrl.autonomy import AutonomyState
 from kstrl.calibration_baseline import load_baseline
 from kstrl.intake_issue import ProcessedLedger
@@ -155,7 +155,7 @@ class TestTheDegradingReadersDegrade:
         _write_bad(run_dir / "fact.md")
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
-            assert knowledge.read_facts(tmp_path, "comp") == []
+            assert knowledge_facts.read_facts(tmp_path, "comp") == []
         assert any("not valid UTF-8" in str(w.message) for w in caught), [
             str(w.message) for w in caught
         ]

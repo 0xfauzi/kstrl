@@ -43,7 +43,7 @@ from kstrl.factory import AdversarialAgentSelection, FactoryConfig, run_factory
 from kstrl.factory_result import ComponentResult, FactoryResult
 from kstrl.guards import enforce_allowed_paths, path_is_allowed
 from kstrl.interaction import PromptRequest, PromptResponse
-from kstrl.knowledge import KnowledgeConfig
+from kstrl.knowledge_facts import KnowledgeConfig
 from kstrl.loop import run_loop
 from kstrl.manifest import Component, Manifest
 from kstrl.observability import NotifyConfig, NotifyHooks, ProgressLog

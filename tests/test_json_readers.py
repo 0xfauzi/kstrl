@@ -131,7 +131,8 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     # report is read through read_json. No parse.
     "isolation.py": 2,
     "jsonread.py": 4,
-    "knowledge.py": 6,
+    "knowledge.py": 4,
+    "knowledge_facts.py": 3,
     "linear.py": 5,
     "observability.py": 4,
     # #602: the import and one json.dumps, the plan digest's canonical
