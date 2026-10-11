@@ -18,7 +18,7 @@ from kstrl.evolution import (
     signatures_from_verification,
     split_signature,
 )
-from kstrl.factory import FactoryResult
+from kstrl.factory_result import FactoryResult
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from tests.helpers.journal import audit, journal_at
 

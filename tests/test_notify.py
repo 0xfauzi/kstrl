@@ -22,7 +22,8 @@ from unittest.mock import patch
 import pytest
 
 from kstrl.config import KstrlConfig
-from kstrl.factory import ComponentResult, FactoryConfig, run_factory
+from kstrl.factory import FactoryConfig, run_factory
+from kstrl.factory_result import ComponentResult
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.observability import (
     NotifyConfig,

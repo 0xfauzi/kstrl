@@ -24,7 +24,7 @@ from typing import Any
 import pytest
 
 from kstrl.events import JsonlSink
-from kstrl.factory import ComponentResult
+from kstrl.factory_result import ComponentResult
 from kstrl.manifest import Component
 from kstrl.pipeline import ComponentPipeline
 from kstrl.pipeline_checks import VerifyPhaseResult

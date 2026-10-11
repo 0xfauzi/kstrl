@@ -21,7 +21,8 @@ from unittest.mock import patch
 
 from kstrl import git
 from kstrl.agents.base import UsageRecord
-from kstrl.factory import ComponentResult, FactoryResult, run_factory
+from kstrl.factory import run_factory
+from kstrl.factory_result import ComponentResult, FactoryResult
 from kstrl.inbox import Inbox, InboxConfig, InboxItem, ItemKind
 from kstrl.integration_fix import fix_prd_rel
 from kstrl.manifest import Component, ComponentStatus, Manifest

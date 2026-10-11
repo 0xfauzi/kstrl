@@ -330,7 +330,8 @@ class TestTheSchedulerActuallyInjectsIt:
     def test_the_block_reaches_the_worker_at_the_right_position(self, tmp_path: Path) -> None:
         import kstrl.factory as factory_mod
         from kstrl.decompose import spec_digest
-        from kstrl.factory import ComponentResult, run_factory
+        from kstrl.factory import run_factory
+        from kstrl.factory_result import ComponentResult
 
         root = _factory_project(tmp_path, "comp-a")
         # A decompose pins the spec on the manifest and the register (#639),
@@ -384,7 +385,8 @@ class TestTheSchedulerActuallyInjectsIt:
         traceback and exit 1, so anything keying on 2 for "refused
         before spend" saw a crash instead.
         """
-        from kstrl.factory import ComponentResult, run_factory
+        from kstrl.factory import run_factory
+        from kstrl.factory_result import ComponentResult
 
         root = _factory_project(tmp_path, "comp-a")
         write_decisions(

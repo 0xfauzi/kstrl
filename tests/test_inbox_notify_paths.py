@@ -46,7 +46,8 @@ from unittest.mock import patch
 import pytest
 
 from kstrl.autonomy import AutonomyLevel, AutonomyState
-from kstrl.factory import ComponentResult, run_factory
+from kstrl.factory import run_factory
+from kstrl.factory_result import ComponentResult
 from kstrl.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.observability import NotifyConfig
 from kstrl.serve import ServeConfig, SpendLedger, serve_cycle

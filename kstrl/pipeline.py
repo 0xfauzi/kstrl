@@ -89,9 +89,7 @@ from kstrl.waivers import (
 from kstrl.worktree_sweep import sweep_findings
 
 if TYPE_CHECKING:
-    from kstrl.factory import (
-        ComponentResult,
-    )
+    from kstrl.factory_result import ComponentResult
 
 
 class ComponentPipeline(Delivery, KnowledgePhase, SecurityGate, MechanicalChecks):
@@ -413,7 +411,7 @@ class ComponentPipeline(Delivery, KnowledgePhase, SecurityGate, MechanicalChecks
         engineer phase that never started; the gates get a result that
         carries only the context they read.
         """
-        from kstrl.factory import ComponentResult
+        from kstrl.factory_result import ComponentResult
 
         kept, comp.rejudge_sha = comp.rejudge_sha, ""
         head = git.get_head_sha(wt_path) or ""

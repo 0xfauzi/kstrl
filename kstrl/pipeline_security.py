@@ -21,9 +21,7 @@ from kstrl.pipeline_verdicts import ReviewVerdicts, _gate_failure_count, _produc
 from kstrl.security import SecurityConfig, SecurityMode, SecurityResult
 
 if TYPE_CHECKING:
-    from kstrl.factory import (
-        ComponentResult,
-    )
+    from kstrl.factory_result import ComponentResult
 
 
 @dataclass(frozen=True)

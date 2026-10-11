@@ -16,7 +16,7 @@ import pytest
 
 from kstrl.breaker import BreakerConfig, NoProgressBreaker, compute_diff_hash
 from kstrl.config import KstrlConfig
-from kstrl.factory import ComponentResult
+from kstrl.factory_result import ComponentResult
 from kstrl.loop import run_loop
 from kstrl.manifest import ComponentStatus
 from kstrl.observability import read_progress_events

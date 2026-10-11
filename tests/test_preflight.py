@@ -22,7 +22,7 @@ from kstrl.agents import ClaudeSdkAgent
 from kstrl.agents.liveness import ProbeResult
 from kstrl.cli import _agent_preflight, cli
 from kstrl.config import KstrlConfig
-from kstrl.factory import FactoryResult
+from kstrl.factory_result import FactoryResult
 from kstrl.ui.plain import PlainUI
 from tests.helpers.agent_probe import set_cli_availability
 from tests.helpers.stack_confirmation import confirm_stack, write_stack

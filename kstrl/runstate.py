@@ -83,7 +83,7 @@ if TYPE_CHECKING:
     # annotations`` makes the annotation a string and nothing in kstrl/
     # or tests/ calls get_type_hints on it. kstrl/pipeline.py uses the
     # same idiom for the same reason.
-    from kstrl.factory import FactoryResult
+    from kstrl.factory_result import FactoryResult
 
 
 @dataclass(kw_only=True)

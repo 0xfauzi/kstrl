@@ -24,9 +24,7 @@ from kstrl.pipeline_state import _iso_now
 from kstrl.pipeline_transitions import Transition, Transitions
 
 if TYPE_CHECKING:
-    from kstrl.factory import (
-        ComponentResult,
-    )
+    from kstrl.factory_result import ComponentResult
 
 #: The two ``Component.failed_check`` values that say a human turned a
 #: merge candidate down: rejected at the merge gate (interactively or

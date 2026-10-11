@@ -22,7 +22,7 @@ from pathlib import Path
 import pytest
 
 from kstrl.evolution import EvolutionConfig, EvolutionJournal
-from kstrl.factory import FactoryResult
+from kstrl.factory_result import FactoryResult
 from kstrl.knowledge import Fact, KnowledgeConfig, write_facts
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from tests.conftest import (

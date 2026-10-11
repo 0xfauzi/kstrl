@@ -45,7 +45,8 @@ class TestCheckpointContext:
         review summary string (verified through a recording channel)."""
         from unittest.mock import patch
 
-        from kstrl.factory import ComponentResult, run_factory
+        from kstrl.factory import run_factory
+        from kstrl.factory_result import ComponentResult
         from tests.test_event_stream import (
             _component,
             _factory_config,

@@ -27,7 +27,7 @@ from kstrl.verify_diff import SCOPE_UNREADABLE_CHECK, SCOPE_UNREADABLE_ERROR_PRE
 from kstrl.version import kstrl_version
 
 if TYPE_CHECKING:
-    from kstrl.factory import FactoryResult
+    from kstrl.factory_result import FactoryResult
     from kstrl.findings import Finding
     from kstrl.manifest import Component, Manifest
     from kstrl.verify_model import CheckResult

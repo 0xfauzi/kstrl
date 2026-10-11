@@ -41,12 +41,12 @@ from kstrl.decompose import _SCOPE_HAZARD_ADVICE
 from kstrl.events import EventBus
 from kstrl.factory import (
     _SCOPE_HAZARD_REASONS,
-    ComponentResult,
     FactoryConfig,
     _preflight_component_scope,
     _run_component,
     run_factory,
 )
+from kstrl.factory_result import ComponentResult
 from kstrl.guards import (
     ScopeHazard,
     check_violations,

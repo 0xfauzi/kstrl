@@ -36,9 +36,7 @@ from kstrl.review_claims import (
 from kstrl.security import SecurityResult
 
 if TYPE_CHECKING:
-    from kstrl.factory import (
-        ComponentResult,
-    )
+    from kstrl.factory_result import ComponentResult
 
 
 def _gate_failure_count(result: ReviewResult | SecurityResult) -> int | None:

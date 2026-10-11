@@ -40,7 +40,7 @@ from kstrl.cli import cli
 from kstrl.contract import ContractConfig, ContractMode
 from kstrl.event_catalog import Log
 from kstrl.events import read_events
-from kstrl.factory import FactoryResult
+from kstrl.factory_result import FactoryResult
 from kstrl.manifest import ComponentStatus
 from tests.helpers import gitrepo, procs
 from tests.helpers import integration_harness as harness

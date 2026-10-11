@@ -33,9 +33,7 @@ from kstrl.pipeline_verdicts import ReviewPhaseResult
 from kstrl.worktree_sweep import sweep_findings
 
 if TYPE_CHECKING:
-    from kstrl.factory import (
-        ComponentResult,
-    )
+    from kstrl.factory_result import ComponentResult
 
 # PR A: the E6 checkpoint shows a real diff excerpt, not just the
 # review summary string. Bounded so a huge diff cannot flood the modal.

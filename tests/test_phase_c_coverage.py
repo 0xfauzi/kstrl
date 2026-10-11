@@ -37,12 +37,8 @@ import pytest
 from kstrl.config import KstrlConfig
 from kstrl.contract import ContractConfig, ContractMode
 from kstrl.evolution import EvolutionConfig
-from kstrl.factory import (
-    ComponentResult,
-    FactoryConfig,
-    FactoryResult,
-    run_factory,
-)
+from kstrl.factory import FactoryConfig, run_factory
+from kstrl.factory_result import ComponentResult, FactoryResult
 from kstrl.feedforward import CodebaseScanConfig
 from kstrl.knowledge import KnowledgeConfig
 from kstrl.manifest import Component, Manifest

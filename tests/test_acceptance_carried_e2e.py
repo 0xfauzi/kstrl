@@ -27,8 +27,8 @@ from unittest.mock import patch
 import pytest
 
 from kstrl.decompose import spec_digest
-from kstrl.factory import FactoryResult
 from kstrl.factory import _resolve_round_base as real_resolve_round_base
+from kstrl.factory_result import FactoryResult
 from kstrl.inbox import Inbox, InboxConfig, InboxItem, ItemKind
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.statedir import control_dir
