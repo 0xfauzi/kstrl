@@ -1356,7 +1356,7 @@ class TestMergePendingRepoll:
             lambda *a, **k: MergeConfirmation(state="merged"),
         )
         monkeypatch.setattr(
-            "kstrl.git.fetch_base_branch",
+            "kstrl.git_base.fetch_base_branch",
             lambda *a, **k: None,
         )
         pipeline, manifest, result = self._parked(tmp_path)

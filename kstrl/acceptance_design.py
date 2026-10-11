@@ -34,7 +34,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl import git
+from kstrl import git, git_base
 from kstrl.acceptance import (
     ACCEPTANCE_DIR,
     DESIGNER_FILE,
@@ -320,7 +320,7 @@ def design_plan(pipeline: ComponentPipeline) -> tuple[PinnedPlan | None, list[st
     if spec_errors:
         return None, spec_errors
     try:
-        base = git.resolve_base_sha(manifest.base_branch, root)
+        base = git_base.resolve_base_sha(manifest.base_branch, root)
         target = designed_dir(root, manifest, stack)
     except (OSError, ValueError, git.GitDiffError, PlanUnreadableError) as exc:
         return None, [f"the verification designer cannot start: {exc}. Nothing was asked."]

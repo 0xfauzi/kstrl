@@ -6,7 +6,7 @@ import time
 from collections.abc import Sequence
 from pathlib import Path
 
-from kstrl import git
+from kstrl import git, git_base
 from kstrl.findings import Finding, finding_waiver
 from kstrl.guards import path_is_allowed
 from kstrl.policy import (
@@ -309,7 +309,7 @@ def check_diff_scope(
         # #435: name the ref the diff was actually judged against.
         # get_diff_names resolved it; saying "main" while measuring
         # origin/main sends the engineer to revert against the wrong tree.
-        base_label = git.resolve_base_ref(base_branch, cwd)
+        base_label = git_base.resolve_base_ref(base_branch, cwd)
         violations = [f for f in changed if not path_is_allowed(f, effective)]
     except git.GitDiffError as exc:
         # The lenient reader raises for exactly one family: a diff git

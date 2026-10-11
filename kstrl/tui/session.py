@@ -24,7 +24,7 @@ from kstrl.commandrun import open_command_run
 from kstrl.config import KstrlConfig
 from kstrl.config_preflight import SURFACE_REJECTIONS, raise_if_defect
 from kstrl.events import CallbackSink, EventBus, RunPaths
-from kstrl.git import resolve_base_branch
+from kstrl.git_base import resolve_base_branch
 from kstrl.interaction import QueueInteractionChannel
 from kstrl.launch import (
     DecomposeLaunch,

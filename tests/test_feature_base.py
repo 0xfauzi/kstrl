@@ -24,7 +24,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl import git
+from kstrl import git, git_base
 from kstrl.contract import (
     ContractConfig,
     ContractMode,
@@ -274,7 +274,7 @@ class TestTheStamp:
         _git_project(tmp_path, ["comp-a"])
 
         with (
-            patch("kstrl.git.resolve_base_sha", side_effect=RuntimeError("stamp defect")),
+            patch("kstrl.git_base.resolve_base_sha", side_effect=RuntimeError("stamp defect")),
             pytest.raises(RuntimeError, match="stamp defect"),
         ):
             _run(tmp_path, _make_manifest([_component("comp-a")]))
@@ -453,13 +453,13 @@ class TestThePinnedCommit:
 class TestBaseMoved:
     def test_it_reports_whether_the_base_left_the_pinned_commit(self, tmp_path: Path) -> None:
         pinned = _git_project(tmp_path, [])
-        assert git.base_moved("main", pinned, tmp_path) == (False, pinned)
+        assert git_base.base_moved("main", pinned, tmp_path) == (False, pinned)
 
         head = _advance(tmp_path, "later.txt")
 
-        assert git.base_moved("main", pinned, tmp_path) == (True, head)
+        assert git_base.base_moved("main", pinned, tmp_path) == (True, head)
 
     def test_a_base_that_does_not_resolve_raises(self, tmp_path: Path) -> None:
         pinned = _git_project(tmp_path, [])
         with pytest.raises(git.GitDiffError):
-            git.base_moved("no-such-branch", pinned, tmp_path)
+            git_base.base_moved("no-such-branch", pinned, tmp_path)

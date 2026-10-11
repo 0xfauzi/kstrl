@@ -24,7 +24,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl import git
+from kstrl import git, git_base
 from kstrl.config import KstrlConfig
 from kstrl.factory import FactoryConfig, run_factory
 from kstrl.factory_result import ComponentResult, FactoryResult
@@ -805,7 +805,7 @@ class TestFetchNeverPull:
         head_before = _git("rev-parse", "HEAD", cwd=root)
         assert main_before != new_sha
 
-        assert git.fetch_base_branch("main", root) is None
+        assert git_base.fetch_base_branch("main", root) is None
 
         assert _git("rev-parse", "refs/remotes/origin/main", cwd=root) == new_sha
         assert _git("rev-parse", "main", cwd=root) == main_before
@@ -816,7 +816,7 @@ class TestFetchNeverPull:
 
     def test_fetch_reports_error_when_no_remote(self, tmp_path: Path) -> None:
         root = _make_repo(tmp_path, ["alpha"], with_origin=False)
-        error = git.fetch_base_branch("main", root)
+        error = git_base.fetch_base_branch("main", root)
         assert error is not None
 
 
@@ -829,18 +829,18 @@ class TestBaseRefResolution:
         tmp_path: Path,
     ) -> None:
         root = _make_repo(tmp_path, ["alpha"])
-        assert git.resolve_base_ref("main", root) == "origin/main"
+        assert git_base.resolve_base_ref("main", root) == "origin/main"
 
     def test_falls_back_to_local_ref_without_remote(
         self,
         tmp_path: Path,
     ) -> None:
         root = _make_repo(tmp_path, ["alpha"], with_origin=False)
-        assert git.resolve_base_ref("main", root) == "main"
+        assert git_base.resolve_base_ref("main", root) == "main"
 
     def test_origin_prefixed_ref_passes_through(self, tmp_path: Path) -> None:
         root = _make_repo(tmp_path, ["alpha"])
-        assert git.resolve_base_ref("origin/main", root) == "origin/main"
+        assert git_base.resolve_base_ref("origin/main", root) == "origin/main"
 
     def test_diff_against_origin_base_removes_phantom_diffs(
         self,
@@ -852,7 +852,7 @@ class TestBaseRefResolution:
         root = _make_repo(tmp_path, ["alpha"])
         # A "squash-merged PR" lands on origin only; local main is stale.
         _advance_origin(tmp_path, filename="file1.txt")
-        assert git.fetch_base_branch("main", root) is None
+        assert git_base.fetch_base_branch("main", root) is None
 
         wt = tmp_path / "wt-feat2"
         _git("worktree", "add", str(wt), "-b", "feat2", "origin/main", cwd=root)

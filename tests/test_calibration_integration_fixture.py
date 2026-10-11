@@ -32,7 +32,7 @@ from typing import Any
 
 import pytest
 
-from kstrl import calibration, calibration_baseline, git
+from kstrl import calibration, calibration_baseline, git, git_base
 from kstrl.agents.proc import TIMEOUT_MESSAGE_PREFIX
 from kstrl.integration import integration_stories
 from kstrl.review import ReviewResult
@@ -232,7 +232,7 @@ def test_the_repository_is_one_feature_commit_on_its_base(
     materialised repository, and the change must not be empty."""
     repo = materialize(fixture, tmp_path / "repo")
     assert repo.base_sha != repo.head_sha
-    assert git.resolve_base_sha(repo.base_sha, repo.path) == repo.base_sha
+    assert git_base.resolve_base_sha(repo.base_sha, repo.path) == repo.base_sha
     assert git.get_diff_stat(repo.base_sha, repo.path, resolved=True).files > 0
     for paths in fixture.components.values():
         for path in paths:

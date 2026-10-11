@@ -10,7 +10,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl import git
+from kstrl import git, git_base
 from kstrl.decompose import (
     AgentOutputTooLarge,
     _extract_json,
@@ -778,7 +778,7 @@ def run_review(
         # would not do: origin/<base> moves whenever a sibling
         # component's PR merges mid-run, and the two measurements are
         # taken minutes apart. See git.resolve_base_sha.
-        base_sha = git.resolve_base_sha(base_branch, worktree_path)
+        base_sha = git_base.resolve_base_sha(base_branch, worktree_path)
         # Strict by construction (git.get_diff_stat): a failed
         # measurement raises into the handler below rather than folding
         # to a zero that would agree with a reviewer that read nothing.
