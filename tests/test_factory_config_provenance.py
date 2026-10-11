@@ -77,7 +77,7 @@ FLAG = "pause_before_pr_merge"
 EXPECTED_FLAG_SPELLINGS = {
     "autonomy.py": 6,
     "autonomy_config.py": 5,
-    "cli.py": 7,
+    "cli_factory.py": 7,
     "config_report.py": 1,
     "factory.py": 16,
     "pipeline_delivery.py": 1,
@@ -98,7 +98,7 @@ EXPECTED_FLAG_SPELLINGS = {
 #: - ``factory.py::_run_factory_locked``: the ladder's own resolution,
 #:   which reads provenance and must never add it.
 EXPECTED_FLAG_WRITES = {
-    "cli.py::factory": 1,
+    "cli_factory.py::factory": 1,
     "factory.py::FactoryConfig.load": 2,
     "factory.py::_run_factory_locked": 1,
 }

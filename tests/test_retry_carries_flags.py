@@ -29,6 +29,8 @@ import pytest
 from click.testing import CliRunner
 
 import kstrl.cli as cli_mod
+import kstrl.cli_architect as cli_architect_mod
+import kstrl.cli_factory as cli_factory_mod
 import kstrl.cli_preflight as cli_preflight_mod
 from kstrl.config import KstrlConfig
 from kstrl.factory import FactoryConfig, run_factory
@@ -418,7 +420,8 @@ def test_the_confirmation_names_every_component_the_retry_reenters(
     root = _repo(tmp_path)
     _failed_run(root, "--max-cost-usd", "5", *RUN_FLAGS)
     _RecordingChannel.headers = []
-    monkeypatch.setattr(cli_mod, "UiInteractionChannel", _RecordingChannel)
+    monkeypatch.setattr(cli_architect_mod, "UiInteractionChannel", _RecordingChannel)
+    monkeypatch.setattr(cli_factory_mod, "UiInteractionChannel", _RecordingChannel)
     monkeypatch.setattr(cli_preflight_mod, "UiInteractionChannel", _RecordingChannel)
     for name in [k for k in os.environ if k.startswith("KSTRL_")]:
         monkeypatch.delenv(name)

@@ -668,9 +668,9 @@ class TestRetryCli:
             captured["config"] = factory_config
             return FactoryResult(exit_code=0)
 
-        monkeypatch.setattr("kstrl.cli.run_factory", fake_run_factory)
+        monkeypatch.setattr("kstrl.cli_factory.run_factory", fake_run_factory)
         monkeypatch.setattr(
-            "kstrl.cli._check_agent_preflight",
+            "kstrl.cli_factory._check_agent_preflight",
             lambda *a, **k: None,
         )
         # `ks retry` re-enters through `ks factory`, whose agent preflight
@@ -735,7 +735,7 @@ class TestRetryCli:
         manifest.save(manifest_file)
 
         monkeypatch.setattr(
-            "kstrl.cli._check_agent_preflight",
+            "kstrl.cli_factory._check_agent_preflight",
             lambda *a, **k: None,
         )
         runner = CliRunner()

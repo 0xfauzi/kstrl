@@ -72,7 +72,8 @@ EXPECTED_CHOICE_OPTIONS = 49
 
 #: Re-derived by running the Layer 2 census on this tree.
 EXPECTED_CHOICE_CALLS: dict[str, int] = {
-    "cli.py": 5,
+    "cli.py": 3,
+    "cli_architect.py": 2,
     "cli_check.py": 2,
     "cli_factory_options.py": 5,
     "cli_feature.py": 1,

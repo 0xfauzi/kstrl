@@ -5496,7 +5496,8 @@ class TestFactoryHandsTheArchitectSpendToTheRun:
         exercises the capture rather than a value handed straight
         through.
         """
-        from kstrl import cli as cli_mod
+        from kstrl import cli_architect as cli_architect_mod
+        from kstrl import cli_factory as cli_factory_mod
         from kstrl.decisions import SpecDecision
         from kstrl.decompose import SpecBlockerError
 
@@ -5535,9 +5536,11 @@ class TestFactoryHandsTheArchitectSpendToTheRun:
             captured["called"] = True
             return FactoryResult()
 
-        monkeypatch.setattr(cli_mod, "get_agent", fake_get_agent)
-        monkeypatch.setattr(cli_mod, "decompose_spec", fake_decompose)
-        monkeypatch.setattr(cli_mod, "run_factory", fake_run_factory)
+        monkeypatch.setattr(cli_architect_mod, "get_agent", fake_get_agent)
+        monkeypatch.setattr(cli_factory_mod, "get_agent", fake_get_agent)
+        monkeypatch.setattr(cli_architect_mod, "decompose_spec", fake_decompose)
+        monkeypatch.setattr(cli_factory_mod, "decompose_spec", fake_decompose)
+        monkeypatch.setattr(cli_factory_mod, "run_factory", fake_run_factory)
         return captured
 
     def test_the_spec_path_passes_what_the_decompose_agent_spent(
@@ -5881,7 +5884,7 @@ class TestNoConfigLoadStandsBetweenTheMoneyAndTheRun:
     @staticmethod
     def _captured_run(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         """Stop at the factory boundary and record whether we got there."""
-        from kstrl import cli as cli_mod
+        from kstrl import cli_factory as cli_factory_mod
 
         captured: dict[str, Any] = {}
 
@@ -5889,7 +5892,7 @@ class TestNoConfigLoadStandsBetweenTheMoneyAndTheRun:
             captured["called"] = True
             return FactoryResult()
 
-        monkeypatch.setattr(cli_mod, "run_factory", fake_run_factory)
+        monkeypatch.setattr(cli_factory_mod, "run_factory", fake_run_factory)
         return captured
 
     ARGS = ["factory", "--manifest", "m.json", "--agent-cmd", "true", "--yes"]

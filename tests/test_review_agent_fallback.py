@@ -34,7 +34,7 @@ from typing import Any
 import click
 import pytest
 
-import kstrl.cli as cli_mod
+import kstrl.cli_factory as cli_factory_mod
 import kstrl.cli_preflight as cli_preflight_mod
 from kstrl.init_cmd import gitignore_block
 from tests.helpers import gitrepo
@@ -215,7 +215,7 @@ def test_startup_agent_settings_read_kstrl_toml_under_the_environment(
     )
     for name in ("AGENT_CMD", "KSTRL_AGENT_TYPE", "MODEL", "MODEL_REASONING_EFFORT"):
         monkeypatch.delenv(name, raising=False)
-    ctx = click.Context(cli_mod.factory)
+    ctx = click.Context(cli_factory_mod.factory)
 
     from_file = cli_preflight_mod._agent_settings(ctx, tmp_path, None, None, None, "auto")
     assert from_file == (ENGINEER, "toml-model", "low", "codex")
