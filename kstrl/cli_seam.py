@@ -17,7 +17,8 @@ from click.core import ParameterSource
 from kstrl import __version__
 from kstrl.config import ConfigError
 from kstrl.config_report import normalize_ui_mode as _normalize_ui_mode
-from kstrl.factory import BudgetConfigError, FactoryLockHeldError
+from kstrl.factory import BudgetConfigError
+from kstrl.factory_lock import FactoryLockHeldError
 from kstrl.manifest import Manifest
 from kstrl.output import build_console
 from kstrl.ui.base import UI

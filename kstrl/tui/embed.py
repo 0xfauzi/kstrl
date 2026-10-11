@@ -49,7 +49,8 @@ from kstrl.ui.plain import PlainUI
 if TYPE_CHECKING:
     from kstrl.agents.base import UsageTotals
     from kstrl.config import KstrlConfig
-    from kstrl.factory import FactoryConfig, _RunLock
+    from kstrl.factory import FactoryConfig
+    from kstrl.factory_lock import _RunLock
     from kstrl.manifest import Manifest
 
 ANSI_RESTORE = "\x1b[?1049l\x1b[?25h\x1b[0m"

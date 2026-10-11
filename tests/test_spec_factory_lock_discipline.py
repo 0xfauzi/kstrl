@@ -5,7 +5,7 @@ ratchet: that file already carries the other four #597 lock-discipline
 proofs and this one would have crossed 800 lines). Same technique: the
 real CLI, a real git repository, a stub agent, no LLM.
 
-``held_or_acquired_run_lock`` (``kstrl/factory.py``) is used both by
+``held_or_acquired_run_lock`` (``kstrl/factory_lock.py``) is used both by
 ``ks decompose`` (which owns no caller's lock, acquires its own around
 the manifest-write block and releases it there) and by `ks factory
 --spec` (which hands in the lock it already took above the manifest
@@ -71,7 +71,7 @@ class TestSpecFactoryHoldsTheLockThroughDecomposeIntoTheRun:
     ) -> None:
         """`ks factory --spec` keeps the lock it took held through decompose and into the run.
 
-        ``held_or_acquired_run_lock`` (factory.py) must not release a lock
+        ``held_or_acquired_run_lock`` (factory_lock.py) must not release a lock
         it does not own: `ks factory --spec` takes the run lock before
         calling ``decompose_spec`` (cli.py's own ``_resolve_factory_run_lock``,
         above the manifest load and before the architect spends anything,

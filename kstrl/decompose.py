@@ -100,7 +100,7 @@ SPEC_ISSUE_APPLIES_COMPONENT = "component"
 SPEC_ISSUE_APPLIES_SPEC = "spec"
 
 if TYPE_CHECKING:
-    from kstrl.factory import _RunLock
+    from kstrl.factory_lock import _RunLock
     from kstrl.ui.base import UI
 
 
@@ -3114,7 +3114,7 @@ def _decompose_spec_impl(
         # decompose` has no caller's lock and takes its own here. Either
         # way a held lock raises FactoryLockHeldError inside the cleanup
         # scope, so a refused decompose leaves no PRDs behind.
-        from kstrl.factory import held_or_acquired_run_lock
+        from kstrl.factory_lock import held_or_acquired_run_lock
 
         with held_or_acquired_run_lock(run_lock, root_dir, ui, force_lock):
             manifest.save(manifest_path)
