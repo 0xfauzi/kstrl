@@ -18,6 +18,7 @@ import pytest
 from click.testing import CliRunner
 
 import kstrl.cli as cli_mod
+import kstrl.cli_factory as cli_factory_mod
 import kstrl.cli_loop as cli_loop_mod
 import kstrl.cli_preflight as cli_preflight_mod
 from kstrl.agents import ClaudeSdkAgent
@@ -461,7 +462,7 @@ class TestFactoryPreflightWiring:
             captured["agent_type"] = base_config.agent_type
             return SimpleNamespace(exit_code=0)
 
-        monkeypatch.setattr(cli_mod, "run_factory", fake_run_factory)
+        monkeypatch.setattr(cli_factory_mod, "run_factory", fake_run_factory)
 
         runner = CliRunner()
         result = runner.invoke(
@@ -521,7 +522,7 @@ class TestFactoryPreflightWiring:
 
         called: list[bool] = []
         monkeypatch.setattr(
-            cli_mod,
+            cli_factory_mod,
             "run_factory",
             lambda *a, **k: called.append(True) or SimpleNamespace(exit_code=0),
         )

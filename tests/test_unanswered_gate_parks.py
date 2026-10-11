@@ -417,8 +417,8 @@ class TestTheGateCensus:
 #: says what its unanswered path does: the class #594 fixed is a prompt whose
 #: unanswered path nobody decided.
 EXPECTED_PROMPT_SITES = {
-    "cli.py::factory": "exits without starting the run (#594)",
-    "cli.py::retry": "exits without starting the retry, same as Quit (#597)",
+    "cli_factory.py::factory": "exits without starting the run (#594)",
+    "cli_architect.py::retry": "exits without starting the retry, same as Quit (#597)",
     "cli_preflight.py::_stack_checkpoint": "refuses with exit 2 and files the stack item (#696)",
     "feature_cmd.py::run_feature": "refuses: quit to amend",
     "guards.py::enforce_allowed_paths": "quits",
@@ -448,8 +448,8 @@ EXPECTED_UNDECIDED_PROMPT_SITES: tuple[str, ...] = (
 #: rather than by line (#645) and re-derived by RUNNING it rather than
 #: typed from a design document (reading a pin is not running a guard).
 EXPECTED_SEEN_PROMPT_SITES: tuple[str, ...] = (
-    "cli.py::factory kstrl.interaction.PromptRequest",
-    "cli.py::retry kstrl.interaction.PromptRequest",
+    "cli_architect.py::retry kstrl.interaction.PromptRequest",
+    "cli_factory.py::factory kstrl.interaction.PromptRequest",
     "cli_preflight.py::_stack_checkpoint kstrl.interaction.PromptRequest",
     "feature_cmd.py::run_feature kstrl.interaction.PromptRequest",
     "guards.py::enforce_allowed_paths kstrl.interaction.PromptRequest",

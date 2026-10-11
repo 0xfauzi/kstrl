@@ -310,7 +310,8 @@ class TestDecomposeBlockerOutput:
     """R1.7: the CLI points the user at the persisted spec-issues file."""
 
     def test_prints_artifact_path_on_halt(self, tmp_path: Path, monkeypatch) -> None:
-        import kstrl.cli as cli_mod
+        import kstrl.cli_architect as cli_architect_mod
+        import kstrl.cli_factory as cli_factory_mod
         from kstrl.decisions import SpecDecision
         from kstrl.decompose import SpecBlockerError
 
@@ -332,7 +333,8 @@ class TestDecomposeBlockerOutput:
                 artifact_path=artifact,
             )
 
-        monkeypatch.setattr(cli_mod, "decompose_spec", fake_decompose)
+        monkeypatch.setattr(cli_architect_mod, "decompose_spec", fake_decompose)
+        monkeypatch.setattr(cli_factory_mod, "decompose_spec", fake_decompose)
         monkeypatch.chdir(tmp_path)
         runner = CliRunner()
         result = runner.invoke(
@@ -601,7 +603,8 @@ def _halting_decompose(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
     through. A second copy would let them disagree about what "reached
     decompose" means.
     """
-    import kstrl.cli as cli_mod
+    import kstrl.cli_architect as cli_architect_mod
+    import kstrl.cli_factory as cli_factory_mod
     from kstrl.decisions import SpecDecision
     from kstrl.decompose import SpecBlockerError
 
@@ -622,7 +625,8 @@ def _halting_decompose(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
             ]
         )
 
-    monkeypatch.setattr(cli_mod, "decompose_spec", fake_decompose)
+    monkeypatch.setattr(cli_architect_mod, "decompose_spec", fake_decompose)
+    monkeypatch.setattr(cli_factory_mod, "decompose_spec", fake_decompose)
     return seen
 
 
