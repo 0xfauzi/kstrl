@@ -260,7 +260,7 @@ _RECORDED_HISTORY: dict[str, tuple[tuple[str, str], ...]] = {
         ("8146096422efcb9b4196b76711fc44c80e2c7b5b920771f8a1eddcb4ba5a81c8", "2026-09-07"),
     ),
     # #199. Ledgered for the first time: the same three digests as the
-    # row this mirrors in kstrl/init_cmd.py, re-derived from the
+    # row this mirrors in kstrl/scaffold_ledger.py, re-derived from the
     # ancestor commits of main.
     "codebase_map.md": (
         ("48ede9d3d9ce78ebcc0e0b2b7e030cc3be3e58894627a875a4c29420b541126a", "2026-01-14"),
@@ -480,7 +480,7 @@ class TestLedgerIntegrity:
             assert template.history[: len(recorded)] == recorded, (
                 f"{template.constant_name}'s recorded history changed. A "
                 "new body is an APPEND: add a row at the end here and in "
-                "kstrl/init_cmd.py, and leave every earlier row exactly "
+                "kstrl/scaffold_ledger.py, and leave every earlier row exactly "
                 "as it is. Editing or dropping one destroys the only "
                 "record that can recognise a copy already on an "
                 "operator's disk."
