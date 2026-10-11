@@ -203,7 +203,9 @@ ALLOWLIST: tuple[AllowedSite, ...] = (
         "E27: the launchd plist's override for kstrl's own interpreter",
     ),
     AllowedSite("serve.py", "python=python", 1, "E27: the same override passed through"),
-    AllowedSite("cli.py", "uv sync --extra sdk", 1, "E29: how to install kstrl's own extra"),
+    AllowedSite(
+        "cli_preflight.py", "uv sync --extra sdk", 1, "E29: how to install kstrl's own extra"
+    ),
     AllowedSite("agents/sdk_runner.py", "uv sync --extra sdk", 1, "E29: kstrl's own extra"),
     AllowedSite(
         "agents/sdk_runner.py",

@@ -16,6 +16,7 @@ import pytest
 from click.testing import CliRunner
 
 import kstrl.cli as cli_mod
+import kstrl.cli_preflight as cli_preflight_mod
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from tests.helpers.run_limits import every_limit_argv
 from tests.test_retry_carries_flags import _RecordingChannel
@@ -71,6 +72,7 @@ class TestTheRetryCommandPrintsWhatItLeavesOut:
         manifest_file.parent.mkdir(parents=True)
         manifest.save(manifest_file)
         monkeypatch.setattr(cli_mod, "UiInteractionChannel", _RecordingChannel)
+        monkeypatch.setattr(cli_preflight_mod, "UiInteractionChannel", _RecordingChannel)
         for name in [k for k in os.environ if k.startswith("KSTRL_")]:
             monkeypatch.delenv(name)
         result = CliRunner().invoke(
