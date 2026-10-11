@@ -114,8 +114,8 @@ EXPECTED_MANIFEST_WRITE_SITES: dict[str, tuple[int, str]] = {
     "kstrl/pipeline.py::ComponentPipeline.repoll_merge_pending save": (1, IN_RUN),
     "kstrl/pipeline_transitions.py::Transitions.retry_or_fail save": (1, IN_RUN),
     # --- a ``save`` that is not a manifest's ---
-    "kstrl/autonomy.py::commit_transition save": (1, NOT_A_MANIFEST),  # ladder state
-    "kstrl/autonomy.py::save_ladder_state save": (1, NOT_A_MANIFEST),  # ladder state
+    "kstrl/autonomy_transitions.py::commit_transition save": (1, NOT_A_MANIFEST),  # ladder state
+    "kstrl/autonomy_transitions.py::save_ladder_state save": (1, NOT_A_MANIFEST),  # ladder state
     "kstrl/integration.py::write_integration_prd save": (1, NOT_A_MANIFEST),  # PRD
     "kstrl/pipeline.py::ComponentPipeline._phase_review save": (1, NOT_A_MANIFEST),  # PRD
     "kstrl/serve.py::_save_pr_count_streak save": (1, NOT_A_MANIFEST),  # serve streak

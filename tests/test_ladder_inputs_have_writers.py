@@ -29,7 +29,7 @@ Rules 2 and 3 CLEAR an input when they find a site, so they are narrow: a
 name in the trigger position (``demote(chosen, ...)``) clears nothing, and
 neither does a call reached through an alias or ``**kwargs``. ``apply_demotion``
 is a free function, matched by MODULE RESOLUTION
-(``kstrl.autonomy.apply_demotion``) rather than by its leaf name, so a local
+(``kstrl.autonomy_transitions.apply_demotion``) rather than by its leaf name, so a local
 function also called ``apply_demotion`` cannot clear an input it never
 writes (measured: a no-op shadow of that name cleared every trigger before
 this). ``.demote`` is a bound method whose receiver this walker cannot
@@ -74,7 +74,7 @@ EXPECTED_LADDER_INPUTS = frozenset(
     }
 )
 
-NOT_WRITERS = frozenset({"autonomy.py", "autonomy_replay.py"})
+NOT_WRITERS = frozenset({"autonomy.py", "autonomy_replay.py", "autonomy_transitions.py"})
 
 #: Where each call shape carries its trigger: (positional index, keyword).
 TRIGGER_POSITION = {"apply_demotion": (1, "trigger"), "demote": (0, "trigger")}
@@ -156,7 +156,7 @@ def _literal_trigger(node: ast.expr) -> str | None:
 
 #: The one free function in the trigger position: matched by module
 #: resolution (see :func:`literal_trigger_writers`), never by leaf name.
-_APPLY_DEMOTION = "kstrl.autonomy.apply_demotion"
+_APPLY_DEMOTION = "kstrl.autonomy_transitions.apply_demotion"
 
 
 def _trigger_names(node: ast.Call, callee: str) -> list[str]:
@@ -255,7 +255,7 @@ class TestEveryLadderInputHasAWriter:
 #: to ``_APPLY_DEMOTION`` (measured: it lands in ``calls_to``'s undecided
 #: half), which would make ``test_literal_writers_clear_every_input`` pass
 #: for the wrong reason - a walker that cannot see the import either way.
-_APPLY_DEMOTION_IMPORT = "from kstrl.autonomy import apply_demotion\n"
+_APPLY_DEMOTION_IMPORT = "from kstrl.autonomy_transitions import apply_demotion\n"
 
 
 class TestTheWalkerDetects:

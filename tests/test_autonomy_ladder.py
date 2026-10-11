@@ -562,7 +562,7 @@ class TestTransitionAudit:
     """Every committed transition reaches the durable audit stream."""
 
     def test_commit_transition_writes_journal(self, tmp_path: Path) -> None:
-        from kstrl.autonomy import commit_transition
+        from kstrl.autonomy_transitions import commit_transition
 
         state = _eligible_state()
         record = state.promote(actor="human", ack="reviewed", signal_blockers=())
@@ -578,7 +578,7 @@ class TestTransitionAudit:
         self,
         tmp_path: Path,
     ) -> None:
-        from kstrl.autonomy import commit_transition
+        from kstrl.autonomy_transitions import commit_transition
         from kstrl.event_catalog import AutonomyTransition
         from kstrl.events import EventBus
 
@@ -607,7 +607,7 @@ class TestTransitionAudit:
         into ``EvolutionJournal.append_entries``. A patched builtin pins
         WHERE the code writes, which is not what this test is about.
         """
-        from kstrl.autonomy import commit_transition
+        from kstrl.autonomy_transitions import commit_transition
         from kstrl.evolution import EvolutionConfig
 
         journal_path = EvolutionConfig.load(tmp_path).journal_path
@@ -631,7 +631,7 @@ class TestTransitionAudit:
         saved and unjournaled - exactly the drift this function exists
         to prevent.
         """
-        from kstrl.autonomy import commit_transition
+        from kstrl.autonomy_transitions import commit_transition
 
         (tmp_path / "kstrl.toml").write_text("[evolution\nenabled = true\n")
         state = _eligible_state()

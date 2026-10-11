@@ -168,7 +168,6 @@ EXPECTED_JSON_PARSES: tuple[str, ...] = ("jsonread.py json.loads",)
 #: being able to decide a call it used to decide. Line numbers dropped,
 #: which is what ``.without_line_numbers()`` does to the found side too.
 EXPECTED_UNDECIDED_CALLS: tuple[str, ...] = (
-    "autonomy.py AutonomyState.load",
     "config.py cls.load",
     "evolution.py cls.load",
     "intake_github.py ProcessedLedger(root_dir).load",

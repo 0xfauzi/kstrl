@@ -33,8 +33,9 @@ import sys
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from kstrl.autonomy import AutonomyError, AutonomyState, DemotionTrigger, apply_demotion
+from kstrl.autonomy import AutonomyError, AutonomyState, DemotionTrigger
 from kstrl.autonomy_config import AutonomyConfig
+from kstrl.autonomy_transitions import apply_demotion
 from kstrl.calibration_baseline import UNKNOWN_TIMESTAMP
 from kstrl.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.statedir import ControlStateError
