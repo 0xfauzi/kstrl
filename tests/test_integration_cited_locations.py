@@ -21,7 +21,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl import git
+from kstrl import git, git_tree
 from kstrl.integration import integration_stories
 from kstrl.pipeline import ComponentPipeline
 from tests.helpers import integration_harness as h
@@ -98,12 +98,12 @@ def test_tracked_files_at_lists_the_commit_not_the_working_tree(tmp_path: Path) 
     _base, head = h.merged_feature(root)
     (root / "src" / "untracked.py").write_text("x = 1\n", encoding="utf-8")
 
-    tracked = git.tracked_files_at(head, root)
+    tracked = git_tree.tracked_files_at(head, root)
 
     assert h.STORE in tracked
     assert h.API in tracked
     assert "src/untracked.py" not in tracked
-    assert git.tracked_files_at(h.rev(root, "main~1"), root) == frozenset({h.STORE})
+    assert git_tree.tracked_files_at(h.rev(root, "main~1"), root) == frozenset({h.STORE})
 
 
 def test_tracked_files_at_refuses_a_commit_that_does_not_exist(tmp_path: Path) -> None:
@@ -111,7 +111,7 @@ def test_tracked_files_at_refuses_a_commit_that_does_not_exist(tmp_path: Path) -
     h.merged_feature(root)
 
     with pytest.raises(git.GitDiffError, match="git ls-tree"):
-        git.tracked_files_at("0" * 40, root)
+        git_tree.tracked_files_at("0" * 40, root)
 
 
 def test_a_listing_failure_is_not_run_and_calls_no_reviewer(tmp_path: Path) -> None:
@@ -120,7 +120,7 @@ def test_a_listing_failure_is_not_run_and_calls_no_reviewer(tmp_path: Path) -> N
     reviewer = h.FakeReviewer(json.dumps(h.review_payload(root, base)))
 
     with (
-        patch("kstrl.git.tracked_files_at", side_effect=git.GitDiffError("git ls-tree boom")),
+        patch("kstrl.git_tree.tracked_files_at", side_effect=git.GitDiffError("git ls-tree boom")),
         patch.object(
             ComponentPipeline,
             "adversarial_budget_consume",
