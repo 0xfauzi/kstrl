@@ -24,7 +24,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl import git, git_base
+from kstrl import git_base, git_diff
 from kstrl.config import KstrlConfig
 from kstrl.factory import FactoryConfig, run_factory
 from kstrl.factory_result import ComponentResult, FactoryResult
@@ -860,9 +860,9 @@ class TestBaseRefResolution:
         _git("add", "-A", cwd=wt)
         _git("commit", "-m", "feat2 change", cwd=wt)
 
-        names = git.get_diff_names("main", cwd=wt)
+        names = git_diff.get_diff_names("main", cwd=wt)
         assert names == ["file2.txt"]  # no phantom file1.txt
-        content = git.get_diff_content("main", cwd=wt)
+        content = git_diff.get_diff_content("main", cwd=wt)
         assert "file2.txt" in content and "file1.txt" not in content
 
     def test_factory_worktrees_fall_back_without_remote(

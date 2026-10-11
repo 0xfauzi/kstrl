@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl import event_catalog, git
+from kstrl import event_catalog, git, git_diff
 from kstrl.agents.base import collect_usage
 from kstrl.agents.prompt_record import recording_prompts
 from kstrl.manifest import Component
@@ -175,7 +175,7 @@ class KnowledgePhase(AttemptRecorder, UsageLedger):
             return
         if diff_text is None:
             try:
-                diff_text = git.get_diff_content(
+                diff_text = git_diff.get_diff_content(
                     self.component_base(comp.id),
                     wt_path,
                 )

@@ -159,11 +159,11 @@ EXPECTED_REF_OPERAND_ARGVS: dict[str, int] = {
     "git.py git rm --cached --ignore-unmatch -q -- file": 1,
     "git.py git restore --staged --worktree -- file": 1,
     "git.py git ls-files --error-unmatch -- file": 1,
-    "git.py git diff --name-status -z -M -C f'{base_ref}...HEAD' --": 1,
-    "git.py git diff f'{base_ref}...HEAD' --": 1,
-    "git.py git diff --text --no-textconv --no-ext-diff --no-color --dst-prefix=b/ "
+    "git_diff.py git diff --name-status -z -M -C f'{base_ref}...HEAD' --": 1,
+    "git_diff.py git diff f'{base_ref}...HEAD' --": 1,
+    "git_diff.py git diff --text --no-textconv --no-ext-diff --no-color --dst-prefix=b/ "
     "f'{base_ref}...HEAD' --": 1,
-    "git.py git diff --numstat -z f'{base_ref}...HEAD' --": 1,
+    "git_diff.py git diff --numstat -z f'{base_ref}...HEAD' --": 1,
     "git.py git merge --no-edit -- branch": 1,
     "git_base.py git merge-base base_label HEAD": 1,
     "git.py git checkout -b branch_name base --": 1,

@@ -344,7 +344,7 @@ def _run_factory_capturing(
     )
     with (
         patch("kstrl.factory._run_component", side_effect=capture),
-        patch("kstrl.git.get_diff_content", return_value=""),
+        patch("kstrl.git_diff.get_diff_content", return_value=""),
         patch("kstrl.factory.distill_facts", return_value=(0, "none", False)),
     ):
         run_factory(_manifest(*components), factory_config, base, PlainUI(no_color=True), root)

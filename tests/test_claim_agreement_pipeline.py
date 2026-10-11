@@ -56,7 +56,7 @@ def _pipeline_seams(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     monkeypatch.delenv("KSTRL_AUTONOMY_ENABLED", raising=False)
     monkeypatch.setattr(
-        "kstrl.git.get_diff_content",
+        "kstrl.git_diff.get_diff_content",
         lambda *a, **k: "diff --git a b\n",
     )
     monkeypatch.setattr(

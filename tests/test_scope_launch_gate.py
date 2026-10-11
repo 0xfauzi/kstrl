@@ -170,7 +170,7 @@ def _run_with_comp_a_reset_after_preflight(
         patch("kstrl.factory._run_preflights", side_effect=_preflights),
         patch("kstrl.factory._setup_worktree", side_effect=_setup),
         patch("kstrl.factory._run_component", side_effect=_worker),
-        patch("kstrl.git.get_diff_content", return_value=""),
+        patch("kstrl.git_diff.get_diff_content", return_value=""),
     ):
         return run_factory(
             manifest,

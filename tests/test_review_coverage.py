@@ -34,7 +34,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl import git, git_base
+from kstrl import git_base, git_diff
 from kstrl.config import KstrlConfig
 from kstrl.factory import FactoryConfig, run_factory
 from kstrl.factory_result import ComponentResult
@@ -146,8 +146,8 @@ class TestReviewerReceivesNoDiffOnARealWorktree:
             tmp_path / "big",
             {"tests/test_big.py": _ONE_HUNK_OVER_THE_OLD_CAP},
         )
-        raw = git.get_diff_content(repo.base_branch, repo.path)
-        assert len(raw) > git.DEFAULT_PROMPT_DIFF_CHAR_LIMIT
+        raw = git_diff.get_diff_content(repo.base_branch, repo.path)
+        assert len(raw) > git_diff.DEFAULT_PROMPT_DIFF_CHAR_LIMIT
         assert raw.count("\n@@ ") + raw.startswith("@@ ") == 1
 
         agent = RecordingAgent(repo.review_json())
@@ -163,7 +163,7 @@ class TestReviewerReceivesNoDiffOnARealWorktree:
         assert result.passed is True
         assert result.infrastructure_error is False
         assert agent.calls == 1
-        assert len(agent.prompts[0]) < git.DEFAULT_PROMPT_DIFF_CHAR_LIMIT
+        assert len(agent.prompts[0]) < git_diff.DEFAULT_PROMPT_DIFF_CHAR_LIMIT
 
     def test_the_agent_is_run_inside_the_worktree(
         self,
@@ -213,9 +213,9 @@ class TestReviewerReceivesNoDiffOnARealWorktree:
 
 class TestDiffstatParsing:
     def test_well_formed_stat_is_read(self) -> None:
-        assert git.parse_observed_diffstat(
+        assert git_diff.parse_observed_diffstat(
             {"files": 3, "insertions": 120, "deletions": 4}
-        ) == git.DiffStat(files=3, insertions=120, deletions=4)
+        ) == git_diff.DiffStat(files=3, insertions=120, deletions=4)
 
     @pytest.mark.parametrize(
         "value",
@@ -246,11 +246,11 @@ class TestDiffstatParsing:
         number would manufacture a claim the reviewer never made. The
         bool case matters because ``True`` is an ``int`` in Python and
         would otherwise land as a 1-file change."""
-        assert git.parse_observed_diffstat(value) is None
+        assert git_diff.parse_observed_diffstat(value) is None
 
     def test_review_and_security_parsers_read_the_same_field(self) -> None:
         payload = {"observedDiffstat": {"files": 2, "insertions": 9, "deletions": 1}}
-        expected = git.DiffStat(files=2, insertions=9, deletions=1)
+        expected = git_diff.DiffStat(files=2, insertions=9, deletions=1)
         review = parse_review_output(json.dumps({**payload, "stories": [], "concerns": []}))
         security = parse_security_output(json.dumps({**payload, "findings": []}), "advisory")
         assert review.observed_diffstat == expected
@@ -259,21 +259,21 @@ class TestDiffstatParsing:
 
 class TestDiffstatDisagreement:
     def test_matching_stat_is_no_disagreement(self) -> None:
-        stat = git.DiffStat(files=1, insertions=2, deletions=0)
-        assert git.diffstat_disagreement(stat, stat) is None
+        stat = git_diff.DiffStat(files=1, insertions=2, deletions=0)
+        assert git_diff.diffstat_disagreement(stat, stat) is None
 
     def test_absent_stat_reads_as_nothing_read(self) -> None:
-        message = git.diffstat_disagreement(
+        message = git_diff.diffstat_disagreement(
             None,
-            git.DiffStat(files=1, insertions=2, deletions=0),
+            git_diff.DiffStat(files=1, insertions=2, deletions=0),
         )
         assert message is not None
         assert "reported no diffstat" in message
 
     def test_wrong_stat_names_both_figures(self) -> None:
-        message = git.diffstat_disagreement(
-            git.DiffStat(files=1, insertions=2, deletions=0),
-            git.DiffStat(files=4, insertions=900, deletions=12),
+        message = git_diff.diffstat_disagreement(
+            git_diff.DiffStat(files=1, insertions=2, deletions=0),
+            git_diff.DiffStat(files=4, insertions=900, deletions=12),
         )
         assert message is not None
         assert "1 files, +2/-0" in message
@@ -506,7 +506,7 @@ class TestCoverageAttestation:
         """
         repo = _repo_with_moving_base(tmp_path)
         pinned_sha = git_base.resolve_base_sha("main", repo)
-        pinned = git.get_diff_stat(pinned_sha, repo, resolved=True)
+        pinned = git_diff.get_diff_stat(pinned_sha, repo, resolved=True)
         reply = json.dumps(
             {
                 "observedDiffstat": pinned.as_payload(),
@@ -547,7 +547,7 @@ class TestCoverageAttestation:
         # Preconditions asserted OUT here, where a failure names itself
         # rather than surfacing as "Reviewer agent failed".
         assert git_base.resolve_base_sha("main", repo) != pinned_sha, "the fetch did not move"
-        assert git.get_diff_stat("main", repo) != pinned, "the move did not change the range"
+        assert git_diff.get_diff_stat("main", repo) != pinned, "the move did not change the range"
         # The prompt named the COMMIT, so it still points at the range
         # the harness measured; the NAME now lands somewhere else.
         assert f"git diff {pinned_sha}...HEAD" in agent.prompts[0]
@@ -571,7 +571,7 @@ class TestCoverageAttestation:
                 "main",
                 _VERIFICATION,
             ),
-            _build_security_prompt("prd", git.repo_change_source("main")),
+            _build_security_prompt("prd", git_diff.repo_change_source("main")),
         ]
         for prompt in rendered:
             assert "The harness runs the same command and" in prompt
