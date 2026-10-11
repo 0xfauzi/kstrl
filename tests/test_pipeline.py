@@ -30,7 +30,8 @@ from kstrl.factory_result import ComponentResult, FactoryResult
 from kstrl.failure_signatures import category_for_check
 from kstrl.findings import Finding
 from kstrl.inbox import Inbox, InboxConfig, ItemKind
-from kstrl.knowledge import Fact, KnowledgeConfig, measure_fact_utilization
+from kstrl.knowledge import measure_fact_utilization
+from kstrl.knowledge_facts import Fact, KnowledgeConfig
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.observability import NotifyConfig, NotifyHooks, ProgressLog
 from kstrl.pipeline import ComponentPipeline
