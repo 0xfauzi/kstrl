@@ -75,13 +75,12 @@ from kstrl.config_report import normalize_ui_mode as _normalize_ui_mode
 from kstrl.contract import ContractMode
 from kstrl.decompose import SpecBlockerError, decompose_spec
 from kstrl.factory import (
-    VALID_REVIEW_MODES,
     BaseRefusedError,
-    FactoryConfig,
     _report_preflight,
     base_check_before_architect,
     run_factory,
 )
+from kstrl.factory_config import VALID_REVIEW_MODES, FactoryConfig
 from kstrl.factory_lock import (
     FactoryLockHeldError,
     LeftoverAgentsError,

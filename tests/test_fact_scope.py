@@ -21,7 +21,8 @@ from unittest.mock import patch
 
 from kstrl import factory as factory_mod
 from kstrl.config import KstrlConfig
-from kstrl.factory import FactoryConfig, run_factory
+from kstrl.factory import run_factory
+from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult
 from kstrl.knowledge import (
     TIER_CORE,

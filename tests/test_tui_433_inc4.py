@@ -33,7 +33,7 @@ from kstrl import event_catalog
 from kstrl import events as ev
 from kstrl.appendio import append_records
 from kstrl.ci_state import CiReading, CiState, poll_ci
-from kstrl.factory import FactoryConfig
+from kstrl.factory_config import FactoryConfig
 from kstrl.launch_record import FlagValue, run_limits, write_launch_record
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.statedir import CONTROL_CI_CHECKS, control_file, ensure_control_state

@@ -26,12 +26,8 @@ from kstrl.agents.liveness import CLAUDE_FAMILY, PROBE_ENV_VAR, probe_family
 from kstrl.cli_seam import _actor, _resolve_path, _use_cli_value
 from kstrl.config import KstrlConfig, _parse_paths
 from kstrl.config_report import normalize_ui_mode as _normalize_ui_mode
-from kstrl.factory import (
-    FactoryConfig,
-    _cli_family,
-    _report_preflight,
-    base_refused_before_architect,
-)
+from kstrl.factory import _cli_family, _report_preflight, base_refused_before_architect
+from kstrl.factory_config import FactoryConfig
 from kstrl.factory_lock import _acquire_run_lock, _RunLock
 from kstrl.interaction import PromptKind, PromptRequest, UiInteractionChannel
 from kstrl.jsonread import read_json_file

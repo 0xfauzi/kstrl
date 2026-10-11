@@ -836,7 +836,7 @@ def check_open_pr_bound(
         return Admission(allowed=True, reason="open-PR bound disabled")
     count_fn = counter if counter is not None else count_open_kstrl_prs
     try:
-        from kstrl.factory import FactoryConfig
+        from kstrl.factory_config import FactoryConfig
 
         if not FactoryConfig.load(root_dir).create_prs:
             tally.record_conclusive()

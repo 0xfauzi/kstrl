@@ -23,7 +23,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from kstrl import git
-from kstrl.factory import FactoryConfig, _dependency_branches
+from kstrl.factory import _dependency_branches
+from kstrl.factory_config import FactoryConfig
 from kstrl.launch_record import (
     REMOVED_OPTIONS,
     FlagValue,

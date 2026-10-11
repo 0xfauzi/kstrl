@@ -78,7 +78,7 @@ from kstrl.verify_commands import SHELL_COULD_NOT_RUN
 from kstrl.waivers import covering_override
 
 if TYPE_CHECKING:
-    from kstrl.factory import FactoryConfig
+    from kstrl.factory_config import FactoryConfig
     from kstrl.inbox import InboxItem
     from kstrl.manifest import Manifest
     from kstrl.stack import Stack

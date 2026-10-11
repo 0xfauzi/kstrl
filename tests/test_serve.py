@@ -959,7 +959,7 @@ class TestTheRefusalNamesTheRightKey:
 
         from tests.helpers.astwalk import KSTRL_PACKAGE, parsed
 
-        tree = parsed(KSTRL_PACKAGE / "factory.py")
+        tree = parsed(KSTRL_PACKAGE / "factory_config.py")
         fn = next(
             (
                 node
@@ -971,7 +971,7 @@ class TestTheRefusalNamesTheRightKey:
         )
         assert fn is not None, (
             "merge_gate_unreachable_warning is no longer a module-level "
-            "function in kstrl/factory.py. Without the default this "
+            "function in kstrl/factory_config.py. Without the default this "
             "raised a bare StopIteration, which reads identically whether "
             "the subject moved or this walk broke (#193)."
         )

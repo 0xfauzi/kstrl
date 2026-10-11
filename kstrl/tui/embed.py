@@ -49,7 +49,7 @@ from kstrl.ui.plain import PlainUI
 if TYPE_CHECKING:
     from kstrl.agents.base import UsageTotals
     from kstrl.config import KstrlConfig
-    from kstrl.factory import FactoryConfig
+    from kstrl.factory_config import FactoryConfig
     from kstrl.factory_lock import _RunLock
     from kstrl.manifest import Manifest
 

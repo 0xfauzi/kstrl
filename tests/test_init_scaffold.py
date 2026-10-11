@@ -16,7 +16,7 @@ from click.testing import CliRunner
 
 import kstrl.cli as cli_mod
 from kstrl.evolution_config import EvolutionConfig
-from kstrl.factory import FactoryConfig
+from kstrl.factory_config import FactoryConfig
 from kstrl.feedforward import CodebaseScanConfig
 from kstrl.init_cmd import DEFAULT_KSTRL_TOML
 from kstrl.knowledge import KnowledgeConfig

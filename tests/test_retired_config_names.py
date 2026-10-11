@@ -23,7 +23,7 @@ import pytest
 
 from kstrl.config_keys import RETIRED_ENV_VARS as _PRODUCTION_RETIRED_ENV_VARS
 from kstrl.config_preflight import collect_config_problems
-from kstrl.factory import FactoryConfig
+from kstrl.factory_config import FactoryConfig
 from kstrl.findings import CLAIM_DISAGREEMENT_CATEGORY, Finding
 
 

@@ -30,7 +30,8 @@ from unittest.mock import patch
 import pytest
 
 from kstrl.config import KstrlConfig
-from kstrl.factory import FactoryConfig, run_factory
+from kstrl.factory import run_factory
+from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult, FactoryResult
 from kstrl.git import GitDiffError
 from kstrl.git_diff import get_diff_content

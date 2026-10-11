@@ -28,7 +28,8 @@ import pytest
 
 from kstrl.autonomy_replay import load_runs
 from kstrl.evolution_config import EvolutionConfig
-from kstrl.factory import FactoryConfig, run_factory
+from kstrl.factory import run_factory
+from kstrl.factory_config import FactoryConfig
 from kstrl.health import readings_from
 from kstrl.manifest import ComponentStatus, Manifest
 from kstrl.ui.plain import PlainUI

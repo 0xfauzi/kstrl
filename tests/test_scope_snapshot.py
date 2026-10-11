@@ -42,7 +42,8 @@ import pytest
 from kstrl.config import KstrlConfig
 from kstrl.event_catalog import ComponentScopeResolved, Event
 from kstrl.events import CallbackSink, EventBus
-from kstrl.factory import FactoryConfig, _record_run_scope, run_factory
+from kstrl.factory import _record_run_scope, run_factory
+from kstrl.factory_config import FactoryConfig
 from kstrl.loop import LoopResult
 from kstrl.manifest import Component, Manifest
 from kstrl.scope import ComponentScope, RunScope
