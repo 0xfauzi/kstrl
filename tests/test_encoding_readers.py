@@ -176,7 +176,8 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     # functions now go through), so this LAYER 1 count - raw
     # occurrences, not deduplicated - is unmoved at 5 even though the
     # deduplicated spelling list below loses a row.
-    "serve.py": 5,
+    "serve.py": 4,
+    "serve_outcome.py": 1,
     "statedir.py": 1,
     "tui/embed.py": 1,
     # #433 F9: the bounded "rb" read of a review file, and the
@@ -304,6 +305,7 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "serve.py open(lock_path, 'a+', encoding='utf-8')",
     "serve.py path.read_text(encoding='utf-8')",
     "serve.py self.path.read_text(encoding='utf-8')",
+    "serve_outcome.py path.read_text(encoding='utf-8')",
     "statedir.py open(lock_path, 'a+', encoding='utf-8')",
     "tui/embed.py open(run_paths.root / 'orchestrator.log', 'a', buffering=1, encoding='",
     "tui/runs.py open(lock_path, 'a+', encoding='utf-8')",
