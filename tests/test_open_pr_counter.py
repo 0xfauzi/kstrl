@@ -18,7 +18,7 @@ import pytest
 
 import kstrl.pr_body
 from kstrl.pr_body import PR_FOOTER_MARKER
-from kstrl.serve import count_open_kstrl_prs
+from kstrl.serve_github import count_open_kstrl_prs
 from tests.helpers.astwalk import assert_census, folds_to, package_sources
 from tests.helpers.fakegh import install_fake_gh as _install_fake_gh
 from tests.helpers.fakegh import marked as _marked

@@ -47,8 +47,8 @@ from kstrl.loop import COMPLETION_MARKER, LoopResult, run_loop
 from kstrl.manifest import Component, Manifest
 from kstrl.review import ReviewMode, run_review
 from kstrl.security import SecurityConfig, SecurityMode, run_security_review
-from kstrl.serve import check_budget
 from kstrl.serve_config import ServeConfig
+from kstrl.serve_gates import check_budget
 from kstrl.serve_spend import SpendLedger
 from kstrl.timeout import TimeoutConfig
 from kstrl.ui.plain import PlainUI

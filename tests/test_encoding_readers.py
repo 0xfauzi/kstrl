@@ -179,7 +179,11 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     # deduplicated spelling list below loses a row. #776 S3 moved
     # _read_manifest_json, with one of the five reads, to serve_outcome.py.
     # #776 S4 moved SpendLedger.load, with one read, to serve_spend.py.
-    "serve.py": 3,
+    # #776 S5 moved factory_lock_held (the lock open) to serve_gates.py and
+    # the streak read to serve_github.py.
+    "serve.py": 1,
+    "serve_gates.py": 1,
+    "serve_github.py": 1,
     "serve_outcome.py": 1,
     "serve_spend.py": 1,
     "statedir.py": 1,
@@ -307,7 +311,8 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "scaffold_ledger.py path.read_text(encoding='utf-8')",
     "security.py prd_path.read_text(encoding='utf-8')",
     "serve.py open(lock_path, 'a+', encoding='utf-8')",
-    "serve.py path.read_text(encoding='utf-8')",
+    "serve_gates.py open(lock_path, 'a+', encoding='utf-8')",
+    "serve_github.py path.read_text(encoding='utf-8')",
     "serve_outcome.py path.read_text(encoding='utf-8')",
     "serve_spend.py self.path.read_text(encoding='utf-8')",
     "statedir.py open(lock_path, 'a+', encoding='utf-8')",

@@ -37,10 +37,11 @@ from click.testing import CliRunner
 
 from kstrl.cli import cli
 from kstrl.inbox import Inbox, InboxConfig, ItemKind
-from kstrl.serve import CycleResult, serve, serve_cycle, state_dir
+from kstrl.serve import CycleResult, serve, serve_cycle
 from kstrl.serve_config import Admission, ServeConfig, ServeError
 from kstrl.serve_outcome import RunOutcome
 from kstrl.serve_spend import SpendLedger
+from kstrl.statedir import state_dir
 from kstrl.workqueue_items import ItemState
 from tests.helpers.fakegh import FAKE_GH_THIRD_CALL_WORKS as _FAKE_GH_THIRD_CALL_WORKS
 from tests.helpers.fakegh import install_fake_gh as _install_fake_gh
@@ -226,7 +227,7 @@ class TestEmptyRefusalIsStillARefusal:
         _add(_queue(tmp_path))
         calls: list[dict[str, object]] = []
         monkeypatch.setattr(
-            "kstrl.serve.check_inbox_cap",
+            "kstrl.serve_gates.check_inbox_cap",
             lambda root: Admission(allowed=False, reason=""),
         )
 
