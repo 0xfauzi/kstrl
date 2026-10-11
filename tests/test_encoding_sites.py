@@ -31,7 +31,7 @@ import pytest
 from kstrl import knowledge, verify, verify_diff
 from kstrl.autonomy import AutonomyState
 from kstrl.calibration_baseline import load_baseline
-from kstrl.intake_github import ProcessedLedger
+from kstrl.intake_issue import ProcessedLedger
 from kstrl.serve import ServeStateError, SpendLedger
 from kstrl.workqueue import Queue
 from tests.helpers import gitrepo

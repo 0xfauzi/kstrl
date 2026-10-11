@@ -122,7 +122,7 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     # the memory-file read `_append_guidance` added moved to
     # `operator_context.append_guidance_record`, which is the module
     # that already owns the reader.
-    "intake_github.py": 1,
+    "intake_issue.py": 1,
     # #482: the finding status word "open", not a read.
     "integration.py": 1,
     # #700, the security review of #770: the root's `.git` file and the
@@ -269,7 +269,7 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     # the ``appendio.py`` row below is where that contract is counted.
     "init_cmd.py path.read_text(encoding='utf-8')",
     "init_wizard.py toml_path.read_text(encoding='utf-8')",
-    "intake_github.py self.path.read_text(encoding='utf-8')",
+    "intake_issue.py self.path.read_text(encoding='utf-8')",
     # #700, the security review of #770: the `.git` file of the root and the
     # back link it names, utf-8, with ValueError caught beside OSError.
     "isolation.py (entry / 'gitdir').read_text(encoding='utf-8')",

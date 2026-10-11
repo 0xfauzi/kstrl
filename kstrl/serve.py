@@ -3240,7 +3240,7 @@ def _run_steering(
     which the ratchet forbids.
     """
     try:
-        from kstrl.intake_github import poll_steering
+        from kstrl.intake_steering import poll_steering
 
         result = poll_steering(
             config,

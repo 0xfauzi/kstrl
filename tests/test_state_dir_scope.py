@@ -589,6 +589,8 @@ class TestNothingTheLoopRunsWritesTheUncarvedEntries:
             "kstrl.cli_seam",
             "kstrl.evolution",
             "kstrl.intake_github",
+            "kstrl.intake_issue",
+            "kstrl.intake_steering",
             # #545: the two writers of .kstrl/plan/.
             "kstrl.decompose",
             "kstrl.integration_fix",

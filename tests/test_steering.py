@@ -21,7 +21,7 @@ import pytest
 
 from kstrl.init_cmd import DEFAULT_MEMORY
 from kstrl.intake_gh import GhResult
-from kstrl.intake_github import ProcessedLedger
+from kstrl.intake_issue import ProcessedLedger
 from kstrl.operator_context import GUIDANCE_HEADING
 from kstrl.serve import _NullObserver, serve_cycle
 from kstrl.workqueue import Queue
@@ -42,7 +42,7 @@ OWNER = "0xfauzi"
 
 
 def _steer_pr_url(number: int, repo: str = REPO) -> str:
-    """A PR's URL. Named distinctly from `intake_github._pr_url`, whose
+    """A PR's URL. Named distinctly from `intake_steering._pr_url`, whose
     argument order (`repo, number`) this deliberately does not match
     (#231 D5): two functions of the same name and opposite argument
     order is its own trap, not a naming collision worth keeping.
@@ -555,7 +555,7 @@ def test_the_command_set_is_exactly_the_handler_keys() -> None:
     """The structural control for plant P3. `_STEER_COMMANDS` must be
     exactly the handler keys, not a superset or a subset of them.
     """
-    from kstrl.intake_github import _STEER_COMMANDS, _STEER_HANDLERS
+    from kstrl.intake_steering import _STEER_COMMANDS, _STEER_HANDLERS
 
     assert set(_STEER_COMMANDS) == set(_STEER_HANDLERS)
 

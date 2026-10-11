@@ -291,7 +291,7 @@ EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
     "git.py": 4,
     # #654 slice 7: BUG_REPORT_PROMPT's declaration and its one use in
     # spec_from_issue.
-    "intake_github.py": 2,
+    "intake_issue.py": 2,
     # #303: 12 pre-existing + 16 new fragments x 2 spellings each (the
     # declaration and its one use site) = 44. The version constant adds
     # nothing: the walk keys on names ending in _PROMPT, not _VERSION.

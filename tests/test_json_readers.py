@@ -124,7 +124,8 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     "init_cmd.py": 3,
     "init_wizard.py": 2,
     "intake_gh.py": 2,
-    "intake_github.py": 7,
+    "intake_github.py": 5,
+    "intake_issue.py": 3,
     # #700: the import and one json.dumps of the nono policy; the canary's
     # report is read through read_json. No parse.
     "isolation.py": 2,
@@ -174,6 +175,7 @@ EXPECTED_UNDECIDED_CALLS: tuple[str, ...] = (
     "config.py cls.load",
     "evolution.py cls.load",
     "intake_github.py ProcessedLedger(root_dir).load",
+    "intake_steering.py ProcessedLedger(root_dir).load",
     "serve.py OpenPrCountStreak.load",
     "serve.py ServeConfig.load",
     "tui/app.py initial_screens_for_kind(kind, observe_only=False)",
