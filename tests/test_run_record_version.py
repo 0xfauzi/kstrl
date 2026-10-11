@@ -18,13 +18,8 @@ from pathlib import Path
 import pytest
 
 from kstrl import __version__
-from kstrl.evolution import (
-    EXPERIMENTS_HEADER,
-    SPEC_ISSUES_EVENT,
-    EvolutionConfig,
-    EvolutionJournal,
-    experiment_rows,
-)
+from kstrl.evolution import SPEC_ISSUES_EVENT, EvolutionConfig, EvolutionJournal
+from kstrl.experiments_tsv import EXPERIMENTS_HEADER, experiment_rows
 from kstrl.launch_record import read_launch_record
 from kstrl.manifest import Manifest
 from kstrl.version import UNSTAMPED, kstrl_version, version_of_source

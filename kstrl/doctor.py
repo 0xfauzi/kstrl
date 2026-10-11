@@ -30,7 +30,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl import git, git_base, git_diff, pr
+from kstrl import git, git_base, git_diff, git_tree, pr
 from kstrl.atomicio import atomic_write_json
 from kstrl.config import resolve_config_file
 from kstrl.config_preflight import SURFACE_REJECTIONS, config_problem_lines, raise_if_defect
@@ -171,7 +171,7 @@ def check_git_clean(root: Path) -> _CheckResult:
     """Uncommitted work does not reach the engineer.
 
     Consumed by `factory` (each component worktree starts from the
-    base ref) and by `git.capture_workspace_baseline`, which has to
+    base ref) and by `git_tree.capture_workspace_baseline`, which has to
     subtract pre-existing dirt from the in-loop scope guard.
     """
     if not git.is_git_repo(root):
@@ -181,7 +181,7 @@ def check_git_clean(root: Path) -> _CheckResult:
             "Fix git_repo first.",
         )
     try:
-        changed = sorted(git.get_changed_files(root))
+        changed = sorted(git_tree.get_changed_files(root))
     except git.GitDiffError as exc:
         return (STATUS_WARN, f"the working tree could not be read: {exc}", "")
     if changed:

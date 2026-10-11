@@ -35,7 +35,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl import git
+from kstrl import git_tree
 from kstrl.config import KstrlConfig, component_progress_path, relative_to_root
 from kstrl.decompose import _generate_component_prd
 from kstrl.events import EventBus, V1CompatSink
@@ -1368,7 +1368,7 @@ class _CommittingRogueAgent:
 
 class TestGuardSeesCommittedChanges:
     """Review finding 4, reproduced verbatim: the engineer COMMITS after
-    every story, and ``git.get_changed_files`` reports only staged,
+    every story, and ``git_tree.get_changed_files`` reports only staged,
     unstaged and untracked files. The tripwire was therefore bypassed
     exactly when it mattered - after the agent had done (and paid for)
     the most work.
@@ -1382,14 +1382,14 @@ class TestGuardSeesCommittedChanges:
         _git("add", "-A", cwd=tmp_path)
         _git("commit", "-q", "-m", "story 1", cwd=tmp_path)
 
-        assert git.get_changed_files(tmp_path) == set()
+        assert git_tree.get_changed_files(tmp_path) == set()
 
     def test_a_committed_out_of_scope_edit_is_caught(
         self,
         tmp_path: Path,
     ) -> None:
         _git_repo(tmp_path)
-        baseline = git.capture_workspace_baseline(tmp_path)
+        baseline = git_tree.capture_workspace_baseline(tmp_path)
 
         (tmp_path / "OUTSIDE.md").write_text("agent wrote this\n")
         _git("add", "-A", cwd=tmp_path)
@@ -1410,7 +1410,7 @@ class TestGuardSeesCommittedChanges:
     ) -> None:
         """The guard must not simply flag everything committed."""
         _git_repo(tmp_path)
-        baseline = git.capture_workspace_baseline(tmp_path)
+        baseline = git_tree.capture_workspace_baseline(tmp_path)
 
         (tmp_path / "src" / "new.py").write_text("y = 2\n")
         _git("add", "-A", cwd=tmp_path)
@@ -1498,7 +1498,7 @@ class TestGuardIgnoresPreExistingDirt:
         tmp_path: Path,
     ) -> None:
         self._dirty_operator_file(tmp_path)
-        baseline = git.capture_workspace_baseline(tmp_path)
+        baseline = git_tree.capture_workspace_baseline(tmp_path)
         assert "operator-notes.txt" in baseline.dirty
 
         # The agent then works strictly in scope.
@@ -1554,7 +1554,7 @@ class TestRevertUndoesCommittedViolations:
 
     def test_a_committed_new_file_is_removed(self, tmp_path: Path) -> None:
         _git_repo(tmp_path)
-        baseline = git.capture_workspace_baseline(tmp_path)
+        baseline = git_tree.capture_workspace_baseline(tmp_path)
         (tmp_path / "OUTSIDE.md").write_text("agent wrote this\n")
         _git("add", "-A", cwd=tmp_path)
         _git("commit", "-q", "-m", "story 1", cwd=tmp_path)
@@ -1571,7 +1571,7 @@ class TestRevertUndoesCommittedViolations:
         assert not (tmp_path / "OUTSIDE.md").exists()
         # And the delta against the baseline no longer carries it, so the
         # next iteration does not re-detect the same violation.
-        assert "OUTSIDE.md" not in git.get_changed_files_since(
+        assert "OUTSIDE.md" not in git_tree.get_changed_files_since(
             baseline,
             tmp_path,
         )
@@ -1585,7 +1585,7 @@ class TestRevertUndoesCommittedViolations:
         (tmp_path / "docs" / "notes.md").write_text("original\n")
         _git("add", "-A", cwd=tmp_path)
         _git("commit", "-q", "-m", "docs", cwd=tmp_path)
-        baseline = git.capture_workspace_baseline(tmp_path)
+        baseline = git_tree.capture_workspace_baseline(tmp_path)
 
         (tmp_path / "docs" / "notes.md").write_text("agent rewrote this\n")
         _git("add", "-A", cwd=tmp_path)
@@ -1601,7 +1601,7 @@ class TestRevertUndoesCommittedViolations:
         assert ok
         assert violations == []
         assert (tmp_path / "docs" / "notes.md").read_text() == "original\n"
-        assert "docs/notes.md" not in git.get_changed_files_since(
+        assert "docs/notes.md" not in git_tree.get_changed_files_since(
             baseline,
             tmp_path,
         )

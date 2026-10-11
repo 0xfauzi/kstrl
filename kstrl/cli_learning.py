@@ -21,7 +21,8 @@ from kstrl.ui.base import UI
 if TYPE_CHECKING:
     from kstrl.autonomy import AutonomyState
     from kstrl.autonomy_replay import RunRecord
-    from kstrl.evolution import EvolutionConfig, EvolutionJournal, FailurePattern, PatternRouting
+    from kstrl.evolution import EvolutionConfig, EvolutionJournal
+    from kstrl.failure_signatures import FailurePattern, PatternRouting
 
 
 def _echo_journal_repairs(journal: EvolutionJournal, ui_impl: UI) -> None:
@@ -125,7 +126,8 @@ def evolve(
     the learning-readiness numbers. Nothing is written.
     Use --status to see experiment trends.
     """
-    from kstrl.evolution import EvolutionConfig, EvolutionJournal, route_patterns
+    from kstrl.evolution import EvolutionConfig, EvolutionJournal
+    from kstrl.failure_signatures import route_patterns
 
     root_dir = root.resolve() if root else Path.cwd()
     force_rich = os.environ.get("GUM_FORCE") == "1"
@@ -255,7 +257,7 @@ def _echo_pattern_routing(routing: PatternRouting, ui_impl: UI) -> None:
     bucket, and the first time a row of that table is wrong the operator
     sees it in this output.
     """
-    from kstrl.evolution import UNENROLLED_CATEGORY, category_for_check
+    from kstrl.failure_signatures import UNENROLLED_CATEGORY, category_for_check
 
     if routing.lessons:
         ui_impl.section(

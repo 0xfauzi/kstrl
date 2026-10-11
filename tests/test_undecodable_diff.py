@@ -26,7 +26,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import doctor, git, git_diff, guards, loop, verify, verify_diff, verify_model
+from kstrl import doctor, git, git_diff, git_tree, guards, loop, verify, verify_diff, verify_model
 from kstrl.breaker import compute_diff_hash
 from kstrl.config import KstrlConfig
 from kstrl.policy import PolicyConfig
@@ -351,7 +351,7 @@ def test_get_changed_files_refuses_a_path_it_cannot_decode(tmp_path: Path) -> No
     _commit_undecodable_path(repo)
 
     with pytest.raises(git.GitDiffError) as excinfo:
-        git.get_changed_files(repo)
+        git_tree.get_changed_files(repo)
 
     assert "not valid utf-8" in str(excinfo.value)
 
@@ -406,7 +406,7 @@ def test_the_allowed_paths_guard_fails_closed_with_a_baseline_it_cannot_read(
         config,
         PlainUI(no_color=True, file=out),
         repo,
-        baseline=git.WorkspaceBaseline(head=head, dirty=frozenset()),
+        baseline=git_tree.WorkspaceBaseline(head=head, dirty=frozenset()),
     )
 
     assert (ok, violations) == (False, [])

@@ -306,7 +306,7 @@ class AttemptRecorder(PipelineState):
         re-deriving a degenerate slug from the flattened error string.
         Sites that pass no signatures fall back to a slug of the
         error text under the failing phase."""
-        from kstrl.evolution import signature_for_error
+        from kstrl.failure_signatures import signature_for_error
 
         if signatures:
             self.component_failure_signatures[comp.id] = list(signatures)

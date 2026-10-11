@@ -273,7 +273,12 @@ class TestEveryStrictReaderConvertsADecodeFailure:
         """The census above is over every spawn in the file rather than
         over the ones the resolver happened to place."""
         files = _git_adapter_files()
-        assert [label(path) for path in files] == ["git.py", "git_base.py", "git_diff.py"]
+        assert [label(path) for path in files] == [
+            "git.py",
+            "git_base.py",
+            "git_diff.py",
+            "git_tree.py",
+        ]
         for path in files:
             tree = parsed(path)
 
@@ -288,19 +293,20 @@ class TestEveryStrictReaderConvertsADecodeFailure:
         }
 
         assert census == {
-            "git.py": {
+            "git.py": {},
+            "git_base.py": {"resolve_base_sha": 1},
+            "git_diff.py": {
+                "get_diff_content": 1,
+                "get_diff_name_status": 1,
+                "get_diff_numstat": 1,
+            },
+            "git_tree.py": {
                 "_committed_since": 1,
                 "get_changed_files": 2,
                 "get_untracked_files": 1,
                 # #696: what a [stack]'s checks left in the base worktree.
                 "status_entries": 1,
                 "tracked_files_at": 1,
-            },
-            "git_base.py": {"resolve_base_sha": 1},
-            "git_diff.py": {
-                "get_diff_content": 1,
-                "get_diff_name_status": 1,
-                "get_diff_numstat": 1,
             },
         }
 
@@ -430,7 +436,7 @@ class TestGitDiffErrorHasOneHome:
         # 30: #696's status_entries raises it three more times, for a
         # timeout, an undecodable path and a non-zero exit. 25: #696 slice 9
         # deletes read_blob, which raised it five times.
-        assert census == {"git.py": 9, "git_base.py": 4, "git_diff.py": 12}
+        assert census == {"git_base.py": 4, "git_diff.py": 12, "git_tree.py": 9}
 
     def test_no_importfrom_outside_git_py_binds_the_name(self) -> None:
         offenders = [

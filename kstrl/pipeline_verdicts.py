@@ -473,7 +473,7 @@ class ReviewVerdicts(AttemptRecorder):
         # R6.1: journal the finding categories that failed the gate
         # ("review:scope_creep", "review:prd_criterion",
         # "review:infrastructure"), not the flattened reason.
-        from kstrl.evolution import signatures_from_findings
+        from kstrl.failure_signatures import signatures_from_findings
 
         return ReviewPhaseResult(
             ran=True,
