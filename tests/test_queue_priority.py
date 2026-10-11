@@ -20,10 +20,11 @@ from unittest.mock import patch
 import pytest
 from click.testing import CliRunner, Result
 
-import kstrl.cli as cli_mod
+import kstrl.cli_queue as cli_queue_mod
 import kstrl.workqueue as workqueue_mod
 from kstrl.cli import cli
-from kstrl.serve import RunOutcome, RunSpend
+from kstrl.serve import RunSpend
+from kstrl.serve_outcome import RunOutcome
 from kstrl.workqueue import Queue
 from kstrl.workqueue_items import ItemState, QueueConfig, QueueItem
 from kstrl.workqueue_store import queue_root
@@ -201,7 +202,7 @@ def test_an_item_serve_leases_after_the_lookup_is_refused_and_not_copied(
 ) -> None:
     """Serve wins the race between the command's lookup and its lock."""
     item = _add(tmp_path, "a", 0)
-    real_resolve = cli_mod._resolve_queue_item
+    real_resolve = cli_queue_mod._resolve_queue_item
     after_lease: dict[str, str] = {}
 
     def resolve_then_lose_the_race(queue: Any, item_id: str, ui_impl: Any) -> Any:
@@ -213,7 +214,7 @@ def test_an_item_serve_leases_after_the_lookup_is_refused_and_not_copied(
         after_lease.update(_snapshot(tmp_path))
         return found
 
-    monkeypatch.setattr(cli_mod, "_resolve_queue_item", resolve_then_lose_the_race)
+    monkeypatch.setattr(cli_queue_mod, "_resolve_queue_item", resolve_then_lose_the_race)
     result = _invoke(["queue", "priority", item.item_id, "--to", "10"], tmp_path)
 
     assert result.exit_code == 2, result.output

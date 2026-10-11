@@ -22,7 +22,8 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.serve import RunOutcome, serve
+from kstrl.serve import serve
+from kstrl.serve_outcome import RunOutcome
 from kstrl.workqueue import Queue
 from kstrl.workqueue_items import ItemState, QueueConfig
 from tests.helpers import procs

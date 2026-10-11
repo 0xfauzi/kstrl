@@ -35,7 +35,8 @@ from click.testing import CliRunner, Result
 
 from kstrl.cli import cli
 from kstrl.inbox import Inbox, InboxConfig
-from kstrl.serve import RunOutcome, RunSpend
+from kstrl.serve import RunSpend
+from kstrl.serve_outcome import RunOutcome
 from kstrl.workqueue import Queue
 from kstrl.workqueue_items import ItemState, QueueConfig, short_item_id
 from tests.helpers.astwalk import (

@@ -32,7 +32,7 @@ from typing import Any
 
 import pytest
 
-from kstrl import calibration, calibration_baseline, git, git_base, git_diff
+from kstrl import calibration, calibration_baseline, git_base, git_diff, git_tree
 from kstrl.agents.proc import TIMEOUT_MESSAGE_PREFIX
 from kstrl.integration import integration_stories
 from kstrl.review import ReviewResult
@@ -647,7 +647,7 @@ def test_a_finding_citing_bare_names_is_scored_as_the_factory_reads_it(
     ends; the scorer must read citations by the same rule, or a paid capture
     scores a finding the factory scoped as a miss."""
     probe = materialize(fixture, tmp_path / "probe")
-    tracked = git.tracked_files_at(probe.head_sha, probe.path)
+    tracked = git_tree.tracked_files_at(probe.head_sha, probe.path)
     firsts = [paths[0] for paths in fixture.components.values()]
     bare = [_shortest_unique_suffix(p, tracked) for p in firsts]
     assert bare != firsts, f"every cited path is already its shortest name: {firsts}"

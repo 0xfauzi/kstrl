@@ -11,7 +11,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
-from kstrl import git
+from kstrl import git_tree
 from kstrl.config_numbers import check_numbers
 
 # Max directories in module map to avoid bloat
@@ -116,7 +116,7 @@ def _git_listing(root: Path) -> _GitListing | None:
     untracked files that no ignore rule matches. Build output the
     repository ignores (`dist/`, `target/`) is absent from it (#626).
     """
-    listed = git.listed_files(root)
+    listed = git_tree.listed_files(root)
     if listed is None:
         return None
     files: set[Path] = set()

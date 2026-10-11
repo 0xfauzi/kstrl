@@ -81,8 +81,9 @@ EXPECTED_FLAG_SPELLINGS = {
     "config_report.py": 1,
     "factory.py": 16,
     "pipeline_delivery.py": 1,
-    "serve.py": 9,
+    "serve.py": 8,
     "serve_merge_gate.py": 14,
+    "serve_outcome.py": 1,
 }
 
 #: Layer 2. Every ``<something>.pause_before_pr_merge = ...`` in

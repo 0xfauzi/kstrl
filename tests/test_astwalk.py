@@ -375,9 +375,9 @@ class TestTheWalkAgainstTheRealPackage:
         parked merge_gate component was approved at, and
         ``factory._interrupted_run_branches`` lists worktrees to attribute
         a branch to the run a resume is recovering. Both carry a timeout.
-        #500 adds one more, so 76: ``git.tracked_files_at`` lists the files
+        #500 adds one more, so 76: ``git_tree.tracked_files_at`` lists the files
         tracked at the reviewed commit, and carries a timeout.
-        #626 adds one more, so 77: ``git.listed_files`` lists the files git
+        #626 adds one more, so 77: ``git_tree.listed_files`` lists the files git
         shows the codebase scan's module map, and carries a timeout.
         #624 removes one, so 76.
         The removed one is the scaffold command's ``subprocess.run`` in
@@ -389,7 +389,7 @@ class TestTheWalkAgainstTheRealPackage:
         Both carry a timeout. So 79. #695 adds one more: ``git._get_stored_diff``'s
         ``subprocess.run``, the stored-bytes diff the secret rules read; it also
         carries a timeout. So 80.
-        #696 adds one: ``git.status_entries``'s ``git status --porcelain
+        #696 adds one: ``git_tree.status_entries``'s ``git status --porcelain
         --untracked-files=all -z``, what a ``[stack]``'s checks left in the
         base worktree. It carries a timeout. So 81.
         #700 slice 3 adds one more: ``verify.start_scrubbed``'s own
@@ -425,7 +425,7 @@ class TestTheWalkAgainstTheRealPackage:
                 [
                     *OPAQUE_CALLEES,
                     # A Textual App bound to a local.
-                    "cli.py app.run",
+                    "cli_report.py app.run",
                     "tui/embed.py app.run",
                     "tui/home.py app.run",
                     # An agent adapter reached through a parameter or an

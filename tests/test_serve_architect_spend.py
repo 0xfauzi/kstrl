@@ -32,14 +32,9 @@ from kstrl import events as ev
 from kstrl.cli import cli
 from kstrl.reducer import load_run_state
 from kstrl.runid import mint_run_id, run_kind
-from kstrl.serve import (
-    SPAWNED_RUN_KIND,
-    RunOutcome,
-    SpendLedger,
-    serve_cycle,
-    subprocess_factory_runner,
-)
+from kstrl.serve import SPAWNED_RUN_KIND, SpendLedger, serve_cycle, subprocess_factory_runner
 from kstrl.serve_config import ServeConfig
+from kstrl.serve_outcome import RunOutcome
 from kstrl.workqueue import Queue
 from kstrl.workqueue_items import QueueConfig
 from tests.helpers import procs

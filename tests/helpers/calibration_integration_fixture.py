@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from kstrl import git
+from kstrl import git_tree
 from kstrl.agents.proc import TIMEOUT_MESSAGE_PREFIX
 from kstrl.integration import (
     ExpectedStory,
@@ -294,7 +294,7 @@ def review_fixture(fixture: IntegrationFixture, agent: Any, slot: Path) -> Fixtu
         PlainUI(no_color=True, file=io.StringIO()),
         reask_refusal=_no_budget,
     )
-    tracked = git.tracked_files_at(repo.head_sha, repo.path)
+    tracked = git_tree.tracked_files_at(repo.head_sha, repo.path)
     outcome = integration_outcome(None, result, stories, tracked=tracked)
     return FixtureRound(repo, stories, result, outcome, tracked)
 

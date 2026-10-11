@@ -36,7 +36,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl import git, git_base
+from kstrl import git, git_base, git_tree
 from kstrl.atomicio import atomic_write_json
 from kstrl.baseline import verify_digest
 from kstrl.contract import ContractCleanupError, _create_temp_worktree, _remove_temp_worktree
@@ -172,7 +172,7 @@ def measure_base_gates(
 def _left_behind(worktree: Path) -> tuple[str, ...]:
     """What ``git status`` shows in ``worktree``, or why it could not say."""
     try:
-        return tuple(git.status_entries(worktree))
+        return tuple(git_tree.status_entries(worktree))
     except git.GitDiffError as exc:
         return (f"(git status could not be read: {exc})",)
 

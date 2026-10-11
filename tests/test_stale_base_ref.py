@@ -16,7 +16,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl import contract, factory, git, git_base, guards, verify_diff
+from kstrl import contract, factory, git_base, git_tree, guards, verify_diff
 from kstrl.config import KstrlConfig
 from kstrl.contract import ContractConfig, ContractMode
 from kstrl.loop import LoopResult
@@ -113,7 +113,7 @@ def fx(tmp_path: Path) -> StaleBase:
 
 
 def test_the_guard_baseline_is_the_advanced_remote(fx: StaleBase) -> None:
-    baseline = git.capture_workspace_baseline(fx.worktree, base_ref="main")
+    baseline = git_tree.capture_workspace_baseline(fx.worktree, base_ref="main")
     assert baseline.head == fx.origin_main
 
 
@@ -126,7 +126,7 @@ def test_the_baseline_agrees_with_the_merge_base(fx: StaleBase) -> None:
     (below): it is the only shape where the two anchors can disagree,
     and asserting equality with the tip here would still pass after a
     regression that anchored on the tip again."""
-    baseline = git.capture_workspace_baseline(fx.worktree, base_ref="main")
+    baseline = git_tree.capture_workspace_baseline(fx.worktree, base_ref="main")
     base_label = git_base.resolve_base_ref("main", fx.worktree)
     expected = subprocess.run(
         ["git", "merge-base", base_label, "HEAD"],
@@ -147,7 +147,7 @@ def test_there_is_one_resolver() -> None:
 
 
 def test_the_in_loop_guard_blames_no_file_from_the_previous_tier(fx: StaleBase) -> None:
-    baseline = git.capture_workspace_baseline(fx.worktree, base_ref="main")
+    baseline = git_tree.capture_workspace_baseline(fx.worktree, base_ref="main")
     (fx.worktree / "src" / "storage.py").write_text("STORAGE = {}\n", encoding="utf-8")
     git_in(fx.worktree, "add", "-A")
     git_in(fx.worktree, "commit", "-q", "-m", "add storage")
@@ -181,9 +181,9 @@ def test_a_programming_error_is_not_a_silent_fallback(
     def boom(*_args: object, **_kwargs: object) -> str:
         raise TypeError("wrong arity")
 
-    monkeypatch.setattr(git_base, "merge_base_ref", boom)
+    monkeypatch.setattr(git_tree, "merge_base_ref", boom)
     with pytest.raises(TypeError):
-        git.capture_workspace_baseline(fx.worktree, base_ref="main")
+        git_tree.capture_workspace_baseline(fx.worktree, base_ref="main")
 
 
 def test_the_contract_checkout_carries_the_merged_tier(fx: StaleBase) -> None:
@@ -366,7 +366,7 @@ def test_the_in_loop_guard_blames_no_file_from_a_sibling_that_merges_mid_run(
     alongside the real change. Only the merge base - the commit this
     worktree actually forked from - excludes it."""
     fx = _build_sibling_merges_mid_run(tmp_path)
-    baseline = git.capture_workspace_baseline(fx.worktree, base_ref="main")
+    baseline = git_tree.capture_workspace_baseline(fx.worktree, base_ref="main")
 
     (fx.worktree / "src").mkdir(parents=True, exist_ok=True)
     (fx.worktree / "src" / "storage.py").write_text("STORAGE = {}\n", encoding="utf-8")

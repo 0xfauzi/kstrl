@@ -56,14 +56,8 @@ from pathlib import Path
 import pytest
 
 from kstrl import serve as serve_module
-from kstrl.serve import (
-    RunOutcome,
-    ServeLockedError,
-    caffeinate_prefix,
-    run_supervised,
-    serve,
-    serve_lock,
-)
+from kstrl.serve import ServeLockedError, caffeinate_prefix, run_supervised, serve, serve_lock
+from kstrl.serve_outcome import RunOutcome
 from kstrl.workqueue import Queue
 from kstrl.workqueue_items import ItemState, QueueConfig
 from tests.helpers import procs

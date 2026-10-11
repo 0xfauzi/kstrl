@@ -237,7 +237,7 @@ def test_the_config_screen_and_ks_config_show_share_one_problem_reporter() -> No
     """
     src = astwalk.KSTRL_PACKAGE
     screen = (src / "tui" / "screens" / "config.py").read_text(encoding="utf-8")
-    cli = (src / "cli.py").read_text(encoding="utf-8")
+    cli = (src / "cli_report.py").read_text(encoding="utf-8")
     assert "def _problem_lines" not in screen
     assert "def _problems()" not in cli
     assert "config_problem_lines(root_dir, warn=" in screen

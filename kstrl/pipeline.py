@@ -673,7 +673,7 @@ class ComponentPipeline(Delivery, KnowledgePhase, SecurityGate, MechanicalChecks
         # pass, which is the only verification a pull request is built
         # from: on a failure the event's not_measured carries the gap, and a
         # finding would turn a failure with no evidence into one serve
-        # reports as judged on its merits (serve._merits_outcome).
+        # reports as judged on its merits (serve_outcome._merits_outcome).
         if verification.passed and LAYER0_NOT_MEASURED in verification.not_measured:
             self._record_phase_skip(comp, "adequacy", LAYER0_NOT_MEASURED.detail)
         self.bus.emit(

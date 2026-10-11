@@ -47,7 +47,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl import git, guards, statedir
+from kstrl import git_tree, guards, statedir
 from kstrl.config import KstrlConfig
 from kstrl.guards import check_violations, path_is_allowed
 from kstrl.loop import COMPLETION_MARKER, run_loop
@@ -393,8 +393,9 @@ _PACKAGE_ENTRIES: set[str] | None = None
 _EXPECTED_STATE_DIR_SPELLINGS: dict[str, int] = {
     # 5: -1 for #507, which deleted the proposal generator and --apply
     # and kept one join to the proposals directory for the notice about it.
-    "cli.py": 4,
+    "cli.py": 1,
     "cli_learning.py": 1,
+    "cli_report.py": 3,
     "contract.py": 1,
     "decompose.py": 1,
     "doctor.py": 2,
@@ -407,8 +408,11 @@ _EXPECTED_STATE_DIR_SPELLINGS: dict[str, int] = {
     "reducer.py": 3,
     # serve.py had 6, +1 for #464 (the progress log for cost evidence). #776 S2
     # moved the launchd code, with two spellings, to serve_launchd.py.
-    "serve.py": 5,
+    # #776 S3 moved classify_run and its helpers, with two spellings, to
+    # serve_outcome.py.
+    "serve.py": 4,
     "serve_launchd.py": 2,
+    "serve_outcome.py": 2,
     "statedir.py": 8,  # +1 #545: plan_prd_path joins the plan directory
     "tui/runs.py": 3,  # +1 #433: run_is_live lists the runs dir for the newest run
     "workqueue_store.py": 2,
@@ -590,6 +594,7 @@ class TestNothingTheLoopRunsWritesTheUncarvedEntries:
             "kstrl.serve",
             "kstrl.cli",
             "kstrl.cli_seam",
+            "kstrl.cli_queue",
             "kstrl.evolution",
             "kstrl.intake_github",
             "kstrl.intake_issue",
@@ -672,7 +677,7 @@ class TestRealRepositoryWithoutAGitignore:
         repo: Path,
     ) -> None:
         """The bug, measured against real git rather than a fixture."""
-        changed = git.get_changed_files(repo)
+        changed = git_tree.get_changed_files(repo)
         violations = check_violations(changed, AUTHORED)
         assert sorted(violations) == sorted(STATE_ARTIFACTS)
 
@@ -680,7 +685,7 @@ class TestRealRepositoryWithoutAGitignore:
         self,
         repo: Path,
     ) -> None:
-        changed = git.get_changed_files(repo)
+        changed = git_tree.get_changed_files(repo)
         assert check_violations(changed, AUTHORED, state_dir_carve_out(repo, repo)) == [
             ".kstrl/autonomy.json",
             ".kstrl/inbox.jsonl",
@@ -700,13 +705,13 @@ class TestRealRepositoryWithoutAGitignore:
         started. That is what makes keeping the authority entries
         countable affordable, so it is measured rather than argued.
         """
-        baseline = git.capture_workspace_baseline(repo)
+        baseline = git_tree.capture_workspace_baseline(repo)
         entries = state_dir_carve_out(repo, repo)
         # Control, for failure localisation: the second assertion below
         # cannot pass while this one fails.
         assert (
             check_violations(
-                git.get_changed_files_since(baseline, repo),
+                git_tree.get_changed_files_since(baseline, repo),
                 AUTHORED,
                 entries,
             )
@@ -719,7 +724,7 @@ class TestRealRepositoryWithoutAGitignore:
         (repo / ".kstrl" / "queue" / "new" / "item-1" / "agent.json").write_text("x\n")
         (repo / ".kstrl" / "proposals" / "prop-999.md").write_text("x\n")
         assert check_violations(
-            git.get_changed_files_since(baseline, repo),
+            git_tree.get_changed_files_since(baseline, repo),
             AUTHORED,
             entries,
         ) == [
@@ -735,7 +740,7 @@ class TestRealRepositoryWithoutAGitignore:
         on the worktree it just created."""
         _git(repo, "branch", "comp-a")
         _git(repo, "worktree", "add", "-q", ".kstrl/worktrees/run-1/comp-a", "comp-a")
-        changed = git.get_changed_files(repo)
+        changed = git_tree.get_changed_files(repo)
         assert any(f.startswith(".kstrl/worktrees/") for f in changed)
         assert not any(
             f.startswith(".kstrl/worktrees/")
@@ -751,7 +756,7 @@ class TestRealRepositoryWithoutAGitignore:
         next to it."""
         (repo / ".kstrl" / "notes.md").write_text("x\n")
         (repo / ".kstrl" / "runs.txt").write_text("x\n")
-        changed = git.get_changed_files(repo)
+        changed = git_tree.get_changed_files(repo)
         violations = check_violations(changed, AUTHORED, state_dir_carve_out(repo, repo))
         assert ".kstrl/notes.md" in violations
         assert ".kstrl/runs.txt" in violations
@@ -760,12 +765,12 @@ class TestRealRepositoryWithoutAGitignore:
         self,
         repo: Path,
     ) -> None:
-        changed = git.get_changed_files(repo)
+        changed = git_tree.get_changed_files(repo)
         assert check_violations(changed, [], state_dir_carve_out(repo, repo)) == []
 
     def test_product_code_outside_scope_is_still_caught(self, repo: Path) -> None:
         (repo / "pyproject.toml").write_text("x\n")
-        changed = git.get_changed_files(repo)
+        changed = git_tree.get_changed_files(repo)
         assert "pyproject.toml" in check_violations(
             changed,
             AUTHORED,
@@ -1069,7 +1074,7 @@ class TestTheRevertArmRefusesKstrlState:
     ``STATE_NOT_CARVED`` makes the queue, the proposals, the autonomy
     level and the pause marker VISIBLE to the guard again. The guard's
     interactive arm disposes of a violation by deleting it, and
-    ``git.delete_untracked`` recurses into directories, so visibility
+    ``git_tree.delete_untracked`` recurses into directories, so visibility
     alone would have handed those paths to a deleter: an operator
     choosing "Revert and continue" could destroy the pause marker they
     had just written to stop the run. Reporting and destroying are

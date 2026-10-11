@@ -191,7 +191,7 @@ def test_a_failed_verification_names_the_gap_and_files_no_finding(tmp_path: Path
     """At level 1 a failing Phase 1 still names the gap in its event, and
     files no phase-skip finding: a finding would turn a failure with no
     evidence into one serve reports as judged on its merits
-    (``serve._merits_outcome``)."""
+    (``serve_outcome._merits_outcome``)."""
     root, manifest = _repo(tmp_path, AutonomyLevel.L1_SUPERVISED)
     # Green on the base, red once the engineer commits work.txt.
     red = in_process_stack({"tests": "test ! -f work.txt"})
