@@ -15,7 +15,6 @@ from kstrl.autonomy_config import (
 from kstrl.base_gates import (
     BaseGates,
 )
-from kstrl.config_numbers import BudgetConfigError as BudgetConfigError
 from kstrl.config_numbers import check_number, check_numbers
 from kstrl.contract import (
     ContractConfig,
