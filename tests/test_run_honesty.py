@@ -34,9 +34,9 @@ import kstrl.loop as loop_mod
 from kstrl.config import KstrlConfig
 from kstrl.factory import FactoryConfig, run_factory
 from kstrl.factory_result import FactoryResult
-from kstrl.init_cmd import DEFAULT_PROMPT
 from kstrl.loop import LoopResult
 from kstrl.manifest import Component, Manifest
+from kstrl.scaffold_templates import DEFAULT_PROMPT
 from kstrl.security import SecurityConfig
 from kstrl.ui.plain import PlainUI
 from kstrl.verify_model import VerifyConfig

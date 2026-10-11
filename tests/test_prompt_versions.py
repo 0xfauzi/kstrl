@@ -130,10 +130,6 @@ from kstrl.git import (
     repo_change_source,
 )
 from kstrl.inbox import InboxItem, ItemKind
-from kstrl.init_cmd import (
-    DEFAULT_PROMPT,
-    DEFAULT_PROMPT_VERSION,
-)
 from kstrl.intake_issue import BUG_REPORT_PROMPT, BUG_REPORT_PROMPT_VERSION, RemoteIssue
 from kstrl.knowledge import DISTILL_PROMPT, DISTILL_PROMPT_VERSION
 from kstrl.manifest import Component
@@ -144,6 +140,7 @@ from kstrl.owner_answers import (
 )
 from kstrl.review import ReviewMode
 from kstrl.review_prompt import REVIEWER_PROMPT, REVIEWER_PROMPT_VERSION
+from kstrl.scaffold_templates import DEFAULT_PROMPT, DEFAULT_PROMPT_VERSION
 from kstrl.security import SECURITY_PROMPT, SECURITY_PROMPT_VERSION, SecurityConfig, SecurityMode
 from kstrl.stack import STACK_PROMPT, STACK_PROMPT_VERSION, Stack
 from kstrl.ui import PlainUI

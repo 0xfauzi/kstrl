@@ -1,4 +1,4 @@
-"""Tables for the two understand instructions in ``kstrl/init_cmd.py``:
+"""Tables for the two understand instructions in ``kstrl/scaffold_templates.py``:
 ``DEFAULT_UNDERSTAND_PROMPT`` (``ks understand``) and
 ``DEFAULT_FEATURE_UNDERSTAND_PROMPT`` (``ks feature``), enrolled by #654
 slice 8.
@@ -23,16 +23,21 @@ has shipped, and ``tests/test_prompt_staleness.py`` pins which constant
 
 from __future__ import annotations
 
-from kstrl import init_cmd
+from kstrl.scaffold_templates import (
+    DEFAULT_FEATURE_UNDERSTAND_PROMPT,
+    DEFAULT_FEATURE_UNDERSTAND_PROMPT_VERSION,
+    DEFAULT_UNDERSTAND_PROMPT,
+    DEFAULT_UNDERSTAND_PROMPT_VERSION,
+)
 
 UNDERSTAND_PROMPTS: dict[str, str] = {
-    "DEFAULT_UNDERSTAND_PROMPT": init_cmd.DEFAULT_UNDERSTAND_PROMPT,
-    "DEFAULT_FEATURE_UNDERSTAND_PROMPT": init_cmd.DEFAULT_FEATURE_UNDERSTAND_PROMPT,
+    "DEFAULT_UNDERSTAND_PROMPT": DEFAULT_UNDERSTAND_PROMPT,
+    "DEFAULT_FEATURE_UNDERSTAND_PROMPT": DEFAULT_FEATURE_UNDERSTAND_PROMPT,
 }
 
 UNDERSTAND_VERSIONS: dict[str, str] = {
-    "DEFAULT_UNDERSTAND_PROMPT": init_cmd.DEFAULT_UNDERSTAND_PROMPT_VERSION,
-    "DEFAULT_FEATURE_UNDERSTAND_PROMPT": init_cmd.DEFAULT_FEATURE_UNDERSTAND_PROMPT_VERSION,
+    "DEFAULT_UNDERSTAND_PROMPT": DEFAULT_UNDERSTAND_PROMPT_VERSION,
+    "DEFAULT_FEATURE_UNDERSTAND_PROMPT": DEFAULT_FEATURE_UNDERSTAND_PROMPT_VERSION,
 }
 
 #: The pin. Nothing here computes a hash. 1.0.0 opens each series on the

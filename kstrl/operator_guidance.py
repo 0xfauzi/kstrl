@@ -143,7 +143,7 @@ def append_guidance_record(spec: OperatorFile, record: str) -> str:
         # Deferred: a module-level import here would make init_cmd and
         # this module import each other, the same reason
         # `operator_context.read_operator_file` defers `shipped_label`.
-        from kstrl.init_cmd import DEFAULT_MEMORY
+        from kstrl.scaffold_templates import DEFAULT_MEMORY
 
         body = DEFAULT_MEMORY
     except (OSError, ValueError) as exc:

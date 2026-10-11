@@ -88,6 +88,7 @@ from kstrl import (
     knowledge,
     review,
     review_prompt,
+    scaffold_templates,
     security,
 )
 from kstrl.decisions import SpecDecision, build_decisions_context
@@ -476,7 +477,7 @@ _ROLES: dict[str, _Role] = {
 #: sibling's production renderer does needs an explicit override row
 #: here, not silent reliance on this derivation.
 _HOME_MODULE: dict[str, ModuleType] = {name: mod for name, (mod, _render) in _RENDERERS.items()} | {
-    "DEFAULT_PROMPT": init_cmd,
+    "DEFAULT_PROMPT": scaffold_templates,
     "DEFAULT_UNDERSTAND_PROMPT": init_cmd,
     "DEFAULT_FEATURE_UNDERSTAND_PROMPT": init_cmd,
 }

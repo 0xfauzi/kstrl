@@ -18,13 +18,9 @@ import pytest
 from kstrl import init_cmd
 from kstrl.appendio import append_records
 from kstrl.cli import cli
-from kstrl.init_cmd import (
-    DEFAULT_MEMORY,
-    GITIGNORE_BLOCK_MARKER,
-    NEXT_STEPS,
-    run_init,
-)
+from kstrl.init_cmd import GITIGNORE_BLOCK_MARKER, NEXT_STEPS, run_init
 from kstrl.init_wizard import plan_scaffold
+from kstrl.scaffold_templates import DEFAULT_MEMORY
 from kstrl.ui.plain import PlainUI
 from kstrl.ui.rich_ui import RichUI
 

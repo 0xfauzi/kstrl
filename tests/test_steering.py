@@ -19,10 +19,10 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl.init_cmd import DEFAULT_MEMORY
 from kstrl.intake_gh import GhResult
 from kstrl.intake_issue import ProcessedLedger
 from kstrl.operator_context import GUIDANCE_HEADING
+from kstrl.scaffold_templates import DEFAULT_MEMORY
 from kstrl.serve import _NullObserver, serve_cycle
 from kstrl.workqueue import Queue
 from kstrl.workqueue_items import ItemSource, MergeDisposition, QueueConfig

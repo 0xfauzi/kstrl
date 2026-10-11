@@ -324,6 +324,8 @@ EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
     # one use site) = 10. The version constant adds nothing: the walk keys
     # on names ending in _PROMPT, not _VERSION.
     "review_claims.py": 10,
+    # N1 (#776): the three declarations that left init_cmd.py with their bodies.
+    "scaffold_templates.py": 3,
     "security.py": 2,
     # #696: STACK_PROMPT's declaration and its one use in
     # Stack.format_for_prompt. Enrolled in tests/test_prompt_versions.py.

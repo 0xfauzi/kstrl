@@ -28,8 +28,8 @@ from typing import Any
 from unittest.mock import patch
 
 from kstrl.feature_verify import resolve_feature_verify_config
-from kstrl.init_cmd import DEFAULT_PROMPT
 from kstrl.loop import LoopResult
+from kstrl.scaffold_templates import DEFAULT_PROMPT
 from kstrl.verify_model import VerifyConfig
 from tests.helpers.stack_confirmation import in_process_stack
 from tests.test_verify_command_contract import (
