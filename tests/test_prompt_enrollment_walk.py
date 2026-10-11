@@ -310,6 +310,8 @@ EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
     # #303: 2 pre-existing + 2 new fragments x 2 spellings each (the
     # declaration and its one use site) = 6. The version constant adds
     # nothing: the walk keys on names ending in _PROMPT, not _VERSION.
+    # #776 K2: DISTILL_PROMPT and its use moved to knowledge_distill.py,
+    # thus 6 - 2 = 4 stay in knowledge.py.
     "knowledge.py": 4,
     "knowledge_distill.py": 2,
     # #233: LAST_ITERATION_MEASUREMENT_PROMPT x 2 spellings (the
