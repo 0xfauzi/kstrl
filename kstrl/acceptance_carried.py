@@ -35,7 +35,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl import git
+from kstrl import git, git_base
 from kstrl.acceptance import (
     ACCEPTANCE_DIR,
     FAIL,
@@ -245,7 +245,7 @@ def carried_on_base(
     if not document["checks"]:
         return (), []
     try:
-        sha = git.resolve_base_sha(manifest.base_branch, root)
+        sha = git_base.resolve_base_sha(manifest.base_branch, root)
     except git.GitDiffError as exc:
         return (), [f"the base branch {manifest.base_branch} did not resolve: {exc}"]
     resolved = [(entry, resolve(root, entry)) for entry in document["checks"]]

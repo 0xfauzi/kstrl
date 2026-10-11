@@ -36,7 +36,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl import git
+from kstrl import git, git_base
 from kstrl.atomicio import atomic_write_json
 from kstrl.baseline import verify_digest
 from kstrl.contract import ContractCleanupError, _create_temp_worktree, _remove_temp_worktree
@@ -109,9 +109,9 @@ def measure_base_gates(
     start = time.monotonic()
     # Non-fatal, as before a component is cut (``factory._setup_worktree``):
     # offline runs read the current tracking ref, local-only repos the branch.
-    git.fetch_base_branch(base_branch, root_dir, timeout=60.0)
+    git_base.fetch_base_branch(base_branch, root_dir, timeout=60.0)
     try:
-        sha = git.resolve_base_sha(base_branch, root_dir)
+        sha = git_base.resolve_base_sha(base_branch, root_dir)
     except git.GitDiffError as exc:
         return BaseGates(
             base_branch,

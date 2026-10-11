@@ -95,17 +95,17 @@ def _fn_spawns(
     return [node for node, _origin in spawns if id(node) in owned_ids and text_mode(node) is True]
 
 
-def scan_git_source(source: str) -> tuple[dict[str, int], list[str]]:
+def scan_git_source(source: str, module: str = "kstrl.git") -> tuple[dict[str, int], list[str]]:
     """``(census, reported)`` for one module's source text.
 
     TEXT rather than a path so the planted shapes below exercise the same
     code the real sweep runs.
     """
     tree = parse(source)
-    table = bindings(tree, module="kstrl.git")
+    table = bindings(tree, module=module)
     census: dict[str, int] = {}
     reported: list[str] = []
-    spawns = list(resolved_calls(tree, SPAWN_TARGETS, module="kstrl.git"))
+    spawns = list(resolved_calls(tree, SPAWN_TARGETS, module=module))
     for fn in all_nodes(tree):
         if not isinstance(fn, ast.FunctionDef | ast.AsyncFunctionDef):
             continue
@@ -254,6 +254,14 @@ _PLANTED_WIDE_BUT_CONVERTING = _PLANTED_WITHOUT_HANDLER.replace(
 )
 
 
+def _git_adapter_files() -> list[Path]:
+    """``kstrl/git.py`` and every ``kstrl/git_*.py``: the git adapter is a
+    set of sibling modules (#776), and a walk of ``git.py`` alone passes with
+    nothing to examine once a reader moves out of it."""
+    root = Path(kstrl.__file__).parent
+    return [root / "git.py", *sorted(root.glob("git_*.py"))]
+
+
 class TestEveryStrictReaderConvertsADecodeFailure:
     """Closed by construction over the property that DEFINES a strict
     reader: a function in ``kstrl/git.py`` whose own body raises
@@ -264,33 +272,42 @@ class TestEveryStrictReaderConvertsADecodeFailure:
     def test_the_walk_reports_what_it_could_not_decide(self) -> None:
         """The census above is over every spawn in the file rather than
         over the ones the resolver happened to place."""
-        path = Path(kstrl.__file__).parent / "git.py"
-        tree = parsed(path)
+        files = _git_adapter_files()
+        assert [label(path) for path in files] == ["git.py", "git_base.py"]
+        for path in files:
+            tree = parsed(path)
 
-        found = calls_to(tree, SPAWN_TARGETS, where=label(path), module=module_name(path))
+            found = calls_to(tree, SPAWN_TARGETS, where=label(path), module=module_name(path))
 
-        assert found.undecided == ()
+            assert found.undecided == ()
 
     def test_the_subject_census_is_pinned(self) -> None:
-        path = Path(kstrl.__file__).parent / "git.py"
-        census, _reported = scan_git_source(path.read_text(encoding="utf-8"))
+        census = {
+            label(path): scan_git_source(path.read_text(encoding="utf-8"), module_name(path))[0]
+            for path in _git_adapter_files()
+        }
 
         assert census == {
-            "_committed_since": 1,
-            "get_changed_files": 2,
-            "get_diff_content": 1,
-            "get_diff_name_status": 1,
-            "get_diff_numstat": 1,
-            "get_untracked_files": 1,
-            "resolve_base_sha": 1,
-            # #696: what a [stack]'s checks left in the base worktree.
-            "status_entries": 1,
-            "tracked_files_at": 1,
+            "git.py": {
+                "_committed_since": 1,
+                "get_changed_files": 2,
+                "get_diff_content": 1,
+                "get_diff_name_status": 1,
+                "get_diff_numstat": 1,
+                "get_untracked_files": 1,
+                # #696: what a [stack]'s checks left in the base worktree.
+                "status_entries": 1,
+                "tracked_files_at": 1,
+            },
+            "git_base.py": {"resolve_base_sha": 1},
         }
 
     def test_every_subject_spawn_converts_a_decode_failure(self) -> None:
-        path = Path(kstrl.__file__).parent / "git.py"
-        _census, reported = scan_git_source(path.read_text(encoding="utf-8"))
+        reported = [
+            f"{label(path)}:{entry}"
+            for path in _git_adapter_files()
+            for entry in scan_git_source(path.read_text(encoding="utf-8"), module_name(path))[1]
+        ]
 
         assert reported == []
 
@@ -411,13 +428,13 @@ class TestGitDiffErrorHasOneHome:
         # 30: #696's status_entries raises it three more times, for a
         # timeout, an undecodable path and a non-zero exit. 25: #696 slice 9
         # deletes read_blob, which raised it five times.
-        assert census == {"git.py": 25}
+        assert census == {"git.py": 21, "git_base.py": 4}
 
     def test_no_importfrom_outside_git_py_binds_the_name(self) -> None:
         offenders = [
             f"{label(source_file)}:{node.lineno}"
             for source_file in package_sources()
-            if label(source_file) != "git.py"
+            if label(source_file) != "git.py" and not label(source_file).startswith("git_")
             for node in all_nodes(parse(source_file.read_text(encoding="utf-8")))
             if _binds_git_diff_error(node)
         ]

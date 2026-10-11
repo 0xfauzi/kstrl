@@ -36,7 +36,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl import git
+from kstrl import git, git_base
 from kstrl.config_numbers import check_numbers
 from kstrl.manifest import Manifest
 from kstrl.rung import Rung
@@ -178,7 +178,7 @@ def _create_temp_worktree(
     contract_base = root_dir / ".kstrl" / "contract"
     contract_base.mkdir(parents=True, exist_ok=True)
     worktree_path = contract_base / f"{label}-{secrets.token_hex(4)}"
-    base_ref = git.resolve_base_ref(base, root_dir, timeout)
+    base_ref = git_base.resolve_base_ref(base, root_dir, timeout)
     try:
         result = run_scrubbed(
             ["git", "worktree", "add", "--detach", str(worktree_path), base_ref],

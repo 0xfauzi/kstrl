@@ -22,7 +22,7 @@ from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
 from textual.widgets import Button, Footer, Input, Select, Switch
 
-from kstrl.git import detect_base_branch, resolve_base_branch
+from kstrl.git_base import detect_base_branch, resolve_base_branch
 from kstrl.launch import DecomposeLaunch, FactoryLaunch
 from kstrl.tui.widgets.context_bar import ContextBar
 from kstrl.tui.widgets.form import FormErrors, FormField
