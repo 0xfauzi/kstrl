@@ -32,7 +32,7 @@ from typing import Any
 
 import pytest
 
-from kstrl import calibration, calibration_baseline, git, git_base
+from kstrl import calibration, calibration_baseline, git, git_base, git_diff
 from kstrl.agents.proc import TIMEOUT_MESSAGE_PREFIX
 from kstrl.integration import integration_stories
 from kstrl.review import ReviewResult
@@ -101,7 +101,7 @@ def _reply(repo: Path, fails: Mapping[str, str]) -> dict[str, Any]:
     answered as an extra story, which ``integration_outcome`` reads as red.
     The diffstat is the one git measures, so the coverage check passes."""
     base = _root_commit(repo)
-    stat = git.get_diff_stat(base, repo, resolved=True)
+    stat = git_diff.get_diff_stat(base, repo, resolved=True)
     stories = integration_stories(base)
     known = {s.story_id for s in stories}
     entries = [
@@ -233,7 +233,7 @@ def test_the_repository_is_one_feature_commit_on_its_base(
     repo = materialize(fixture, tmp_path / "repo")
     assert repo.base_sha != repo.head_sha
     assert git_base.resolve_base_sha(repo.base_sha, repo.path) == repo.base_sha
-    assert git.get_diff_stat(repo.base_sha, repo.path, resolved=True).files > 0
+    assert git_diff.get_diff_stat(repo.base_sha, repo.path, resolved=True).files > 0
     for paths in fixture.components.values():
         for path in paths:
             assert (repo.path / path).is_file(), f"component file {path} is not in the tree"

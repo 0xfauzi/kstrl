@@ -15,7 +15,7 @@ that actually governs the decode this file is about, so the child reports
 that instead.
 
 WHY A REAL REPOSITORY AND NOT A STUB. The pair this issue is about is
-``git.get_diff_content`` and ``git.get_diff_name_status``, and what splits
+``git_diff.get_diff_content`` and ``git_diff.get_diff_name_status``, and what splits
 them is a git behaviour: ``core.quotepath`` escapes a non-ASCII path in a
 diff HEADER to backslash-octal (pure ASCII, decodes anywhere) while ``-z``
 turns quoting off and emits the raw utf-8 bytes. A stub that printed bytes
@@ -57,7 +57,7 @@ DRIVER = """
 import json, sys
 from pathlib import Path
 import kstrl
-from kstrl import git
+from kstrl import git_diff
 from kstrl.timeout import run_with_timeout
 
 repo = Path(sys.argv[1])
@@ -65,8 +65,8 @@ quoted_path = sys.argv[2]
 answer = {
     "utf8_mode": sys.flags.utf8_mode,
     "kstrl_file": kstrl.__file__,
-    "content_has_path": quoted_path in git.get_diff_content("main", repo),
-    "name_status": git.get_diff_name_status("main", repo, strict=True),
+    "content_has_path": quoted_path in git_diff.get_diff_content("main", repo),
+    "name_status": git_diff.get_diff_name_status("main", repo, strict=True),
     # codespell:ignore-next-line
     "printf": run_with_timeout(["printf", "caf\\\\303\\\\251"], timeout=30).stdout,
 }

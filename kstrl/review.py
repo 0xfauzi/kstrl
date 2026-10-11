@@ -10,7 +10,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl import git, git_base
+from kstrl import git_base, git_diff
 from kstrl.decompose import (
     AgentOutputTooLarge,
     _extract_json,
@@ -163,7 +163,7 @@ class ReviewResult:
     # output. None when it reported none. Compared against git's own
     # numstat by ``run_review``; see ``git.diffstat_disagreement`` for
     # what that comparison does and does not prove.
-    observed_diffstat: git.DiffStat | None = None
+    observed_diffstat: git_diff.DiffStat | None = None
     # #266: set when the reviewer's diffstat did not match git's - i.e.
     # the verdict was reached without the whole change in hand. Carries
     # the human-readable disagreement. Hard mode treats it as an
@@ -680,7 +680,7 @@ def parse_review_output(
         criteria=criteria,
         concerns=concerns,
         exhaustively_searched=exhaustively_searched,
-        observed_diffstat=git.parse_observed_diffstat(data.get("observedDiffstat")),
+        observed_diffstat=git_diff.parse_observed_diffstat(data.get("observedDiffstat")),
         overall_notes=overall_notes,
         raw_output=raw_output[:2000],
         dropped_concerns=dropped_concerns,
@@ -690,7 +690,7 @@ def parse_review_output(
 
 def apply_coverage_check(
     result: ReviewResult,
-    actual: git.DiffStat,
+    actual: git_diff.DiffStat,
     mode: ReviewMode,
 ) -> None:
     """#266: the anti-padding replacement, applied to *result* in place.
@@ -711,7 +711,7 @@ def apply_coverage_check(
     """
     if result.infrastructure_error:
         return
-    disagreement = git.diffstat_disagreement(result.observed_diffstat, actual)
+    disagreement = git_diff.diffstat_disagreement(result.observed_diffstat, actual)
     if disagreement is None:
         return
     result.diffstat_disagreement = disagreement
@@ -720,8 +720,8 @@ def apply_coverage_check(
             category="other",
             severity="advisory",
             location="",
-            explanation=git.coverage_marker_text("review", disagreement),
-            suggestion=git.COVERAGE_SUGGESTION,
+            explanation=git_diff.coverage_marker_text("review", disagreement),
+            suggestion=git_diff.COVERAGE_SUGGESTION,
         )
     )
     if mode != ReviewMode.HARD:
@@ -729,7 +729,7 @@ def apply_coverage_check(
     result.passed = False
     result.infrastructure_error = True
     result.overall_notes = (
-        git.coverage_notes_prefix("review", disagreement) + " " + result.overall_notes
+        git_diff.coverage_notes_prefix("review", disagreement) + " " + result.overall_notes
     ).strip()
 
 
@@ -782,7 +782,7 @@ def run_review(
         # Strict by construction (git.get_diff_stat): a failed
         # measurement raises into the handler below rather than folding
         # to a zero that would agree with a reviewer that read nothing.
-        actual_diffstat = git.get_diff_stat(base_sha, worktree_path, resolved=True)
+        actual_diffstat = git_diff.get_diff_stat(base_sha, worktree_path, resolved=True)
         prompt = build_review_prompt(
             prd_path,
             base_sha,

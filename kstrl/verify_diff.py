@@ -6,7 +6,7 @@ import time
 from collections.abc import Sequence
 from pathlib import Path
 
-from kstrl import git, git_base
+from kstrl import git, git_base, git_diff
 from kstrl.findings import Finding, finding_waiver
 from kstrl.guards import path_is_allowed
 from kstrl.policy import (
@@ -305,7 +305,7 @@ def check_diff_scope(
     # de-duplication is not worth moving it.
     effective = [*allowed_paths, *(harness_paths or ())]
     try:
-        changed = git.get_diff_names(base_branch, cwd)
+        changed = git_diff.get_diff_names(base_branch, cwd)
         # #435: name the ref the diff was actually judged against.
         # get_diff_names resolved it; saying "main" while measuring
         # origin/main sends the engineer to revert against the wrong tree.
@@ -446,7 +446,7 @@ def check_bad_patterns(
     # DECODE, and outside the try that left this blocking gate as a
     # traceback (PR #419 handoff 1).
     try:
-        records = git.get_diff_name_status(base_branch, cwd)
+        records = git_diff.get_diff_name_status(base_branch, cwd)
         changed = list(dict.fromkeys(path for _, path in records if path))
         # get_diff_name_status is LENIENT (returns [] on a git failure, not
         # only on a genuinely empty diff), but get_diff_content is not: it
@@ -458,7 +458,7 @@ def check_bad_patterns(
         added = (
             []
             if secrets_owned_by_envelope or not changed
-            else parse_added_lines(git.get_diff_content(base_branch, cwd, as_stored=True))
+            else parse_added_lines(git_diff.get_diff_content(base_branch, cwd, as_stored=True))
         )
         secret_hit_paths = frozenset(_scan_secrets(added, secret_patterns))
     except Exception as exc:
@@ -548,9 +548,9 @@ def check_policy_envelope(
     # would then satisfy every path and size rule vacuously. `as_stored`
     # (#695): every changed byte, so a file git treats as binary is read too.
     try:
-        diff_text = git.get_diff_content(base_branch, cwd, as_stored=True)
-        changed = git.get_diff_names(base_branch, cwd, strict=True)
-        numstat = git.get_diff_numstat(base_branch, cwd, strict=True)
+        diff_text = git_diff.get_diff_content(base_branch, cwd, as_stored=True)
+        changed = git_diff.get_diff_names(base_branch, cwd, strict=True)
+        numstat = git_diff.get_diff_numstat(base_branch, cwd, strict=True)
     except git.GitDiffError as exc:
         return CheckResult(
             name="policy_envelope",

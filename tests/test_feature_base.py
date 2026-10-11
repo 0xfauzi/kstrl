@@ -116,7 +116,7 @@ def _run(
 
     with (
         patch("kstrl.factory._run_component", side_effect=fake_component),
-        patch("kstrl.git.get_diff_content", return_value=""),
+        patch("kstrl.git_diff.get_diff_content", return_value=""),
         # A MERGE_PENDING component would otherwise be re-polled through gh.
         patch.object(ComponentPipeline, "repoll_merge_pending", return_value=None),
     ):

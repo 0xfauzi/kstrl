@@ -600,7 +600,7 @@ class TestPreflightComponentScope:
 
         with (
             patch("kstrl.factory._run_component", side_effect=fake_component),
-            patch("kstrl.git.get_diff_content", return_value=""),
+            patch("kstrl.git_diff.get_diff_content", return_value=""),
         ):
             result = run_factory(
                 _manifest([_component()]),
@@ -654,7 +654,7 @@ class TestStandaloneLoops:
 
         with (
             patch("kstrl.loop.run_loop", side_effect=fake_run_loop),
-            patch("kstrl.git.get_diff_content", return_value=""),
+            patch("kstrl.git_diff.get_diff_content", return_value=""),
         ):
             run_factory(
                 _manifest([_component()]),
