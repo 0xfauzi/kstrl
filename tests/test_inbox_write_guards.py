@@ -63,8 +63,8 @@ EXPECTED_CONSTRUCTIONS = (
     # #602: the L1 plan gate reads its item (_find) and records a decision
     # given at the prompt (_record).
     "plan_gate.py kstrl.inbox.Inbox",
-    "serve.py kstrl.inbox.Inbox",
     "serve_gates.py kstrl.inbox.Inbox",
+    "serve_settle.py kstrl.inbox.Inbox",
     # #696 slice 3: a [stack]'s confirmation is read (_latest_approval),
     # filed (file_stack_item) and decided at the ks factory prompt
     # (decide_at_prompt).
@@ -99,8 +99,8 @@ EXPECTED_CONSTRUCTION_COUNTS = {
     # exactly one Inbox(...) call left in the file.
     "pipeline_inbox.py": 1,
     "plan_gate.py": 2,
-    "serve.py": 1,
     "serve_gates.py": 1,
+    "serve_settle.py": 1,
     "stack.py": 3,
     "tui/operator_queue.py": 1,
     "tui/screens/inbox.py": 1,
@@ -149,7 +149,7 @@ EXPECTED_MUTATIONS: dict[str, Disposition] = {
     "plan_gate.py::_record::add": _GUARDED,
     "plan_gate.py::_record::approve": _GUARDED,
     "plan_gate.py::_record::reject": _GUARDED,
-    "serve.py::_file_inbox_item::add": _GUARDED,
+    "serve_settle.py::_file_inbox_item::add": _GUARDED,
     # #696: each propagates to a caller that refuses on it. unconfirmed_lines
     # catches everything file_stack_item raises; cli._stack_checkpoint
     # catches SURFACE_REJECTIONS (ControlStateError is a RuntimeError).
@@ -217,7 +217,7 @@ EXPECTED_CONFIG_LOADS: dict[str, Disposition] = {
     "decisions.py::open_escalation_item": _GUARDED,
     "decisions.py::resolve_escalation_items": _GUARDED,
     "factory.py::_open_health_breach_items": _GUARDED,
-    "serve.py::_file_inbox_item": _GUARDED,
+    "serve_settle.py::_file_inbox_item": _GUARDED,
     # #696 slice 3: a load the stack check cannot make is a refusal.
     "stack.py::_refusal": _GUARDED,
     "stack.py::file_stack_item": Disposition(

@@ -27,7 +27,7 @@ from kstrl.factory import run_factory
 
 if TYPE_CHECKING:
     from kstrl.config import KstrlConfig
-    from kstrl.factory import FactoryConfig
+    from kstrl.factory_config import FactoryConfig
     from kstrl.interaction import QueueInteractionChannel
     from kstrl.manifest import Manifest
     from kstrl.shutdown import StopController

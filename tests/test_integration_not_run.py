@@ -9,7 +9,7 @@ from unittest.mock import patch
 import pytest
 
 from kstrl.contract import ContractConfig, ContractMode
-from kstrl.factory import FactoryConfig
+from kstrl.factory_config import FactoryConfig
 from kstrl.integration_state import fresh_state, state_binding
 from kstrl.manifest import Manifest
 from kstrl.pipeline import ComponentPipeline

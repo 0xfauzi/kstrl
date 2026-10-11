@@ -58,7 +58,7 @@ from kstrl.verify_model import VerificationResult
 from kstrl.version import kstrl_version
 
 if TYPE_CHECKING:
-    from kstrl.factory import FactoryConfig
+    from kstrl.factory_config import FactoryConfig
     from kstrl.manifest import Manifest
     from kstrl.pipeline import ComponentPipeline
     from kstrl.shutdown import StopController
@@ -187,7 +187,7 @@ def _fix_refusal(run: IntegrationRun, state: dict[str, Any]) -> str:
 
 
 def _unreachable_reason(config: FactoryConfig, stop: StopController | None) -> str:
-    from kstrl.factory import review_enabled
+    from kstrl.factory_config import review_enabled
 
     if not config.integration_review:
         return "[factory] integration_review = false"

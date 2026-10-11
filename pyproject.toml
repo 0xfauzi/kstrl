@@ -132,7 +132,7 @@ ignore = []
 "kstrl/decompose_prompt.py" = ["E501"]
 "kstrl/review_prompt.py" = ["E501"]
 "kstrl/security.py" = ["E501"]
-"kstrl/knowledge.py" = ["E501"]
+"kstrl/knowledge_distill.py" = ["E501"]
 # The integration review's one-line-per-story template (#482): the
 # format is "id | title | criterion", one story per line, and reflowing
 # a criterion changes the prompt SHA-256 for the same reason review_prompt.py

@@ -21,7 +21,7 @@ from unittest.mock import patch
 import pytest
 
 from kstrl.autonomy import AutonomyState
-from kstrl.factory import FactoryConfig
+from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult
 from kstrl.manifest import Component
 from kstrl.policy import PolicyConfig

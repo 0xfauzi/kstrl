@@ -28,15 +28,11 @@ from unittest.mock import patch
 import pytest
 
 from kstrl.inbox import Inbox, InboxConfig, ItemKind
-from kstrl.serve import (
-    CycleResult,
-    _file_inbox_item,
-    _record_count_failure,
-    serve,
-)
+from kstrl.serve import serve
 from kstrl.serve_config import ServeConfig
 from kstrl.serve_github import STREAK_SCHEMA_VERSION, OpenPrCountStreak
 from kstrl.serve_outcome import RunOutcome
+from kstrl.serve_settle import CycleResult, _file_inbox_item, _record_count_failure
 from kstrl.statedir import CONTROL_PR_COUNT_STREAK, control_file
 from tests.helpers.fakegh import install_marker_gh as _install_marker_gh
 from tests.helpers.stack_confirmation import confirm_stack, write_stack

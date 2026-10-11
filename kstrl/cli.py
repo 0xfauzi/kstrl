@@ -76,11 +76,11 @@ from kstrl.config_report import normalize_ui_mode as _normalize_ui_mode
 from kstrl.decompose import SpecBlockerError, decompose_spec
 from kstrl.factory import (
     BaseRefusedError,
-    FactoryConfig,
     _report_preflight,
     base_check_before_architect,
     run_factory,
 )
+from kstrl.factory_config import FactoryConfig
 from kstrl.factory_lock import (
     FactoryLockHeldError,
     LeftoverAgentsError,
@@ -1533,7 +1533,7 @@ def _decide_parked_merge_if_parked(
             # `ks factory` always leaves through sys.exit with the run's own
             # code. Settle the queue item serve parked on this run (#464),
             # then exit with that code.
-            from kstrl.serve import settle_approval_run
+            from kstrl.serve_settle import settle_approval_run
             from kstrl.workqueue import Queue
             from kstrl.workqueue_items import QueueConfig
 

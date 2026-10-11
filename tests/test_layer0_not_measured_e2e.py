@@ -24,7 +24,8 @@ from pathlib import Path
 import pytest
 
 from kstrl.autonomy import AutonomyLevel, AutonomyState
-from kstrl.factory import FactoryConfig, run_factory
+from kstrl.factory import run_factory
+from kstrl.factory_config import FactoryConfig
 from kstrl.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.interaction import PromptRequest, PromptResponse
 from kstrl.manifest import Manifest

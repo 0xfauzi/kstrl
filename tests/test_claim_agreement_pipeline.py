@@ -25,7 +25,7 @@ from typing import Any
 
 import pytest
 
-from kstrl.factory import FactoryConfig, claim_gate_unreachable_warning
+from kstrl.factory_config import FactoryConfig, claim_gate_unreachable_warning
 from kstrl.findings import CLAIM_DISAGREEMENT_CATEGORY, Finding
 from kstrl.manifest import Component
 from kstrl.pipeline_transitions import Transition

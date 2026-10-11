@@ -26,7 +26,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.factory import FactoryConfig
+from kstrl.factory_config import FactoryConfig
 from kstrl.launch_record import run_limits
 from kstrl.manifest import ComponentStatus, Manifest
 from kstrl.timeout import TimeoutConfig

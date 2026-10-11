@@ -13,7 +13,7 @@ from kstrl.prd import PRD
 from kstrl.review import ReviewResult, ReviewVerdict, normalize_story_id
 
 if TYPE_CHECKING:
-    from kstrl.factory import FactoryConfig
+    from kstrl.factory_config import FactoryConfig
 
 
 def claim_disagreements(

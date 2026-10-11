@@ -211,7 +211,7 @@ def open_command_run(
     resolves the factory's ``progress_log_enabled`` (env + kstrl.toml).
     """
     if enabled is None:
-        from kstrl.factory import FactoryConfig
+        from kstrl.factory_config import FactoryConfig
 
         enabled = FactoryConfig.load(root_dir).progress_log_enabled
     rid = run_id or mint_run_id(kind)
