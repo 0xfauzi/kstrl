@@ -76,10 +76,10 @@ def test_the_journal_reader_is_shared_with_ks_status() -> None:
     src = Path(__file__).resolve().parent.parent / "kstrl"
     cli = (src / "cli_report.py").read_text(encoding="utf-8")
     reducer = (src / "reducer.py").read_text(encoding="utf-8")
-    evolution = (src / "evolution.py").read_text(encoding="utf-8")
+    journal_reads = (src / "journal_reads.py").read_text(encoding="utf-8")
     assert "read_progress_events(progress_log_path)" in cli
     assert "read_progress_events(v1_path)" in reducer
-    assert "read_progress_events(self.config.journal_path)" in evolution
+    assert "read_progress_events(self.config.journal_path)" in journal_reads
     observability = (src / "observability.py").read_text(encoding="utf-8")
     assert 'with open(path, encoding="utf-8") as f:' in observability
     assert "except (OSError, ValueError):" in observability
@@ -113,6 +113,7 @@ def test_experiments_tsv_is_written_with_the_encoding_it_is_read_with(tmp_path: 
     root = Path(__file__).resolve().parent.parent
     source = (root / "kstrl" / "evolution.py").read_text(encoding="utf-8")
     assert "append_records(self.config.experiments_path" in source
-    assert 'read_text(encoding="utf-8")' in source
+    reads = (root / "kstrl" / "journal_reads.py").read_text(encoding="utf-8")
+    assert 'read_text(encoding="utf-8")' in reads
     helper = (root / "kstrl" / "appendio.py").read_text(encoding="utf-8")
     assert 'payload.encode("utf-8")' in helper
