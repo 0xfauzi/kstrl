@@ -375,7 +375,7 @@ def carry_passed(
 ) -> str:
     """Add the kept checks of the ``merged`` components to the carried
     file, after Phase 3 passed on ``sha``; return why it was not written."""
-    from kstrl.factory import _has_merged
+    from kstrl.factory_worktrees import _has_merged
 
     plan, base, stack = config.acceptance_plan, config.acceptance_base, config.project_stack
     if plan is None or base is None or stack is None or not sha:

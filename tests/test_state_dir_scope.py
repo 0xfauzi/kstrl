@@ -400,8 +400,11 @@ _EXPECTED_STATE_DIR_SPELLINGS: dict[str, int] = {
     "decompose.py": 1,
     "doctor.py": 2,
     "events.py": 1,
-    "factory.py": 9,
+    # 9 until #776 F2 moved five spellings, with the worktree code, to
+    # factory_worktrees.py.
+    "factory.py": 4,
     "factory_lock.py": 2,
+    "factory_worktrees.py": 5,
     "integration_state.py": 1,
     "knowledge_facts.py": 2,
     "pipeline_attempt.py": 1,

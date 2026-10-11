@@ -91,8 +91,10 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     # #601's own review round found the run_level-is-None raise in
     # _human_rejections unreachable (the ladder is None only when
     # autonomy is disabled) and deleted it, so the census stays at 6.
-    "factory.py": 5,
+    # #776 F2 moved four of the five to factory_worktrees.py.
+    "factory.py": 1,
     "factory_lock.py": 1,
+    "factory_worktrees.py": 4,
     "git.py": 1,
     "inbox.py": 1,
     # IntakeError (the subclass). #776 I1 moved it out of intake_github.py.

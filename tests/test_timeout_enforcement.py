@@ -47,12 +47,11 @@ from kstrl.config import KstrlConfig
 from kstrl.factory import (
     _expired_futures,
     _next_backstop_wait,
-    _remove_stale_index_lock,
-    _setup_worktree,
     run_factory,
 )
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult
+from kstrl.factory_worktrees import _remove_stale_index_lock, _setup_worktree
 from kstrl.loop import run_loop
 from kstrl.manifest import Component, Manifest
 from kstrl.timeout import TimeoutConfig
