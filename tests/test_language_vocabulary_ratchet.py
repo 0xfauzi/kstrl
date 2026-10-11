@@ -189,7 +189,9 @@ class AllowedSite:
 
 #: Every row cites the "Out of scope" table of the #696 inventory.
 ALLOWLIST: tuple[AllowedSite, ...] = (
-    AllowedSite("serve.py", "sys.executable,", 1, "E28: the daemon starts -m kstrl factory"),
+    AllowedSite(
+        "serve_process.py", "sys.executable,", 1, "E28: the daemon starts -m kstrl factory"
+    ),
     AllowedSite(
         "serve_launchd.py",
         "python or sys.executable",
@@ -356,7 +358,7 @@ PINNED_HITS: dict[str, dict[str, int]] = {
     "runstate.py": {"mypy": 1},
     "scaffold_templates.py": {"package.json": 1, "ruff": 1},
     "scrubbed_run.py": {"python": 4},
-    "serve.py": {"python": 2},
+    "serve_process.py": {"python": 2},
     "verify.py": {"mypy": 2},
     "verify_commands.py": {"mypy": 2, "pytest": 1},
     "workqueue.py": {"python": 1},

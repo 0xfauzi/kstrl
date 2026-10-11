@@ -192,7 +192,7 @@ EXPECTED_PROCESS_MODULES: dict[str, tuple[str, ...]] = {
     # same for the syscalls. #642 slice 6: `fork`, the `--hold` mode's one
     # fork, whose parent leaves with the command's status.
     "agents/leash.py": ("Popen", "fork", "getpgrp", "killpg", "subprocess"),
-    "serve.py": ("Popen", "communicate", "subprocess"),
+    "serve_process.py": ("Popen", "communicate", "subprocess"),
     "scrubbed_run.py": ("Popen", "communicate", "subprocess"),
     # #776 V1: `subprocess.TimeoutExpired` is the one use left in `verify.py`.
     # #776 V3: that use moved to `verify_commands.py` with `check_stack_command`.
@@ -355,7 +355,7 @@ EXPECTED_SPAWNERS: dict[str, SpawnerRules] = {
     # #642: the leash starts the agent and waits on it. No disposal: the
     # agent is ended by its group's signals, never by the leash letting go.
     "agents/leash.py": SpawnerRules(1, 0, 0, 0),
-    "serve.py": SpawnerRules(1, 1, 1, 2),
+    "serve_process.py": SpawnerRules(1, 1, 1, 2),
     # #700 slice 3: the second Popen is `start_scrubbed`, which returns the
     # running child; `replay.py` is the one that lets it go. #642 slice 6:
     # the third disposal lets go of a leash that could not start `up`.

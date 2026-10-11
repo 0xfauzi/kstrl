@@ -514,7 +514,7 @@ def queue_resume(root: Path | None, ui: str, no_color: bool) -> None:
     Also restarts the poison streak at 0, so the next serve cycle does not
     pause the queue again on the poisons the operator has looked at.
     """
-    from kstrl.serve import ServeStateError, SpendLedger
+    from kstrl.serve_spend import ServeStateError, SpendLedger
     from kstrl.statedir import ControlStateError
     from kstrl.workqueue_items import ItemState
     from kstrl.workqueue_store import queue_lock

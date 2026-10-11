@@ -127,7 +127,7 @@ EXPECTED_UNDECIDED_REPLACE_CALLS: tuple[str, ...] = (
     "retry_plan.py name.replace",
     "scrubbed_run.py text.replace",
     "scrubbed_run.py text.replace('\\r\\n', '\\n').replace",
-    "serve.py (local + timedelta(days=1)).replace",
+    "serve_spend.py (local + timedelta(days=1)).replace",
     "statedir.py datetime.now(UTC).replace",
     "statedir.py datetime.now(UTC).replace(microsecond=0).isoformat().replace",
     "tui/app.py initial_screens_for_kind(kind, observe_only=False)",

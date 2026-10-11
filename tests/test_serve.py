@@ -48,40 +48,44 @@ from kstrl.manifest import (
 from kstrl.procgroup import safe_pgid
 from kstrl.reducer import ComponentState, RunState
 from kstrl.serve import (
-    GROUP_TERM_GRACE_SECONDS,
-    SPAWNED_RUN_KIND,
-    LaunchSpend,
-    RunSpend,
     ServeLockedError,
-    ServeStateError,
-    SpendLedger,
-    _group_liveness_for_reap,
     _NullObserver,
-    _unreaped_timeout_detail,
     check_budget,
     check_cost_coverage,
     check_inbox_cap,
     check_poison_breaker,
     consecutive_poison_count,
     factory_lock_held,
-    owned_run_spend,
-    process_group_alive,
-    reap_leases,
-    run_supervised,
     serve,
     serve_cycle,
     serve_lock,
-    terminate_process_group,
 )
-
-#: Captured at import, BEFORE the autouse _no_spend fixture patches
-#: kstrl.serve.read_run_spend. A test that imports the name in its body
-#: gets the stub instead of the function under test - which silently made
-#: the empty-run-id test pass no matter what the function did.
-from kstrl.serve import read_run_spend as REAL_READ_RUN_SPEND
 from kstrl.serve_config import ServeConfig
 from kstrl.serve_merge_gate import resolve_merge_gate
 from kstrl.serve_outcome import RunOutcome, Verdict, _pr_urls_from_manifest, classify_run
+from kstrl.serve_process import (
+    GROUP_TERM_GRACE_SECONDS,
+    _group_liveness_for_reap,
+    _unreaped_timeout_detail,
+    process_group_alive,
+    reap_leases,
+    run_supervised,
+    terminate_process_group,
+)
+from kstrl.serve_spend import (
+    SPAWNED_RUN_KIND,
+    LaunchSpend,
+    RunSpend,
+    ServeStateError,
+    SpendLedger,
+    owned_run_spend,
+)
+
+#: Captured at import, BEFORE the autouse _no_spend fixture patches
+#: kstrl.serve_spend.read_run_spend. A test that imports the name in its body
+#: gets the stub instead of the function under test - which silently made
+#: the empty-run-id test pass no matter what the function did.
+from kstrl.serve_spend import read_run_spend as REAL_READ_RUN_SPEND
 from kstrl.workqueue import Queue
 from kstrl.workqueue_items import ItemSource, ItemState, MergeDisposition, QueueConfig, QueueItem
 from tests.helpers import procs
@@ -268,7 +272,7 @@ def _no_spend(monkeypatch: pytest.MonkeyPatch):
     way of the classification tests.
     """
     monkeypatch.setattr(
-        "kstrl.serve.read_run_spend",
+        "kstrl.serve_spend.read_run_spend",
         lambda root, run_id: RunSpend(),
     )
 
@@ -1298,7 +1302,7 @@ class TestServeCycle:
         queue = _queue(tmp_path)
         _add(queue)
         with patch(
-            "kstrl.serve.read_run_spend",
+            "kstrl.serve_spend.read_run_spend",
             return_value=RunSpend(cost_usd=2.50, cost_calls=1, usage_calls=1),
         ):
             result = serve_cycle(tmp_path, runner=_stub_runner(RunOutcome(1)))
@@ -1762,7 +1766,7 @@ class TestProcessGroupSupervision:
         """
         fake = MagicMock()
         with (
-            patch("kstrl.serve.safe_pgid", wraps=safe_pgid) as guard,
+            patch("kstrl.serve_process.safe_pgid", wraps=safe_pgid) as guard,
             patch("kstrl.serve.os.killpg") as killpg,
         ):
             # A plausible group, so the pgid guard cannot be what rejects
@@ -1816,7 +1820,7 @@ class TestProcessGroupSupervision:
             seen.append(pgid)
             return real(process, pgid)  # type: ignore[arg-type]
 
-        with patch("kstrl.serve.terminate_process_group", side_effect=spy):
+        with patch("kstrl.serve_process.terminate_process_group", side_effect=spy):
             run_supervised(
                 ["sh", "-c", "sleep 30"],
                 cwd=tmp_path,
@@ -2355,7 +2359,7 @@ class TestRunOwnership:
         # A previous run's dir and spend already exist.
         _make_run_dir(tmp_path, "factory-OLD-000")
         with patch(
-            "kstrl.serve.read_run_spend",
+            "kstrl.serve_spend.read_run_spend",
             return_value=RunSpend(cost_usd=99.0, cost_calls=1, usage_calls=1),
         ):
             result = serve_cycle(
@@ -2417,7 +2421,7 @@ class TestRunOwnership:
             seen.append(run_id)
             return RunSpend(cost_usd=1.0, cost_calls=1, usage_calls=1)
 
-        with patch("kstrl.serve.read_run_spend", side_effect=fake_spend):
+        with patch("kstrl.serve_spend.read_run_spend", side_effect=fake_spend):
             serve_cycle(tmp_path, runner=_stub_runner(RunOutcome(0)))
         assert "factory-OLD-000" not in seen
         assert seen == ["factory-20260730-000000.000000-aaa"]
@@ -2478,7 +2482,7 @@ class TestRunOwnership:
             RunOutcome(0),
             extra_run_ids=("decompose-20260730-000001.000000-bbb",),
         )
-        with patch("kstrl.serve.read_run_spend", side_effect=fake_spend):
+        with patch("kstrl.serve_spend.read_run_spend", side_effect=fake_spend):
             serve_cycle(tmp_path, runner=runner)
 
         assert seen == ["factory-20260730-000000.000000-aaa"]
@@ -2545,7 +2549,7 @@ class TestRunOwnership:
                 architect_calls=1,
             )
 
-        with patch("kstrl.serve.read_run_spend", side_effect=fake_spend):
+        with patch("kstrl.serve_spend.read_run_spend", side_effect=fake_spend):
             serve_cycle(tmp_path, runner=_stub_runner(RunOutcome(0)))
 
         spend = SpendLedger(tmp_path).read()
@@ -2646,7 +2650,7 @@ class TestRunOwnership:
             RunOutcome(0),
             extra_run_ids=("decompose-20260730-000001.000000-bbb",),
         )
-        with patch("kstrl.serve.read_run_spend", side_effect=fake_spend):
+        with patch("kstrl.serve_spend.read_run_spend", side_effect=fake_spend):
             serve_cycle(tmp_path, runner=runner)
 
         spend = SpendLedger(tmp_path).read()
@@ -2683,7 +2687,7 @@ class TestRunOwnership:
             RunOutcome(0),
             extra_run_ids=("factory-20260730-000001.000000-ccc",),
         )
-        with patch("kstrl.serve.read_run_spend", side_effect=fake_spend):
+        with patch("kstrl.serve_spend.read_run_spend", side_effect=fake_spend):
             serve_cycle(tmp_path, runner=runner)
 
         spend = SpendLedger(tmp_path).read()
