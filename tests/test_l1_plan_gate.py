@@ -44,7 +44,7 @@ from kstrl.interaction import PromptKind, PromptRequest, PromptResponse
 from kstrl.manifest import Manifest
 from kstrl.review import ReviewResult
 from kstrl.security import SecurityConfig
-from kstrl.serve import check_parked_merges
+from kstrl.serve_gates import check_parked_merges
 from kstrl.serve_outcome import RunOutcome, classify_run
 from kstrl.ui.plain import PlainUI
 from kstrl.verify_model import VerifyConfig

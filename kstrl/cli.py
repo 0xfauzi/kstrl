@@ -2131,19 +2131,19 @@ def serve(
     Only infrastructure failures are retried, and only with positive
     evidence. Spec-level failures go to poison/ and wait for a human.
     """
-    from kstrl.serve import (
-        ServeLockedError,
+    from kstrl.serve import ServeLockedError
+    from kstrl.serve import serve as run_serve
+    from kstrl.serve_config import ServeConfig, ServeError
+    from kstrl.serve_gates import (
         check_budget,
         check_cost_coverage,
         check_inbox_cap,
-        check_open_pr_bound,
         check_parked_merges,
         check_poison_breaker,
         consecutive_poison_count,
         factory_lock_held,
     )
-    from kstrl.serve import serve as run_serve
-    from kstrl.serve_config import ServeConfig, ServeError
+    from kstrl.serve_github import check_open_pr_bound
     from kstrl.serve_launchd import REQUIRE_TIMEOUT_ENV
     from kstrl.serve_spend import SpendLedger
     from kstrl.workqueue import Queue, summarize

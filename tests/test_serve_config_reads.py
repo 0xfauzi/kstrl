@@ -39,8 +39,9 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl.serve import OpenPrCount, _NullObserver, serve, serve_cycle
+from kstrl.serve import _NullObserver, serve, serve_cycle
 from kstrl.serve_config import ServeConfig
+from kstrl.serve_github import OpenPrCount
 from kstrl.serve_outcome import RunOutcome
 from kstrl.stack import stack_toml
 from kstrl.workqueue import Queue
@@ -74,8 +75,10 @@ SERVE_SOURCES = sorted(KSTRL_PACKAGE.glob("serve*.py"))
 #: DELTA is the signal, and it moves for a shape layer 2 does not model
 #: as readily as for one it does.
 EXPECTED_LOAD_SPELLINGS = {
-    "serve.py": 11,
+    "serve.py": 5,
     "serve_config.py": 1,
+    "serve_gates.py": 2,
+    "serve_github.py": 4,
     "serve_merge_gate.py": 4,
     "serve_outcome.py": 2,
 }
@@ -478,7 +481,7 @@ def _serve_with_edit(
 
     with patch("kstrl.serve._load_pr_count_streak", edit_then_load):
         with patch(
-            "kstrl.serve.count_open_kstrl_prs",
+            "kstrl.serve_github.count_open_kstrl_prs",
             lambda cwd, limit=100: OpenPrCount(saturated=False),
         ):
             if cycles is None:

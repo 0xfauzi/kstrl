@@ -263,7 +263,7 @@ class Reason(StrEnum):
 #: ``atomicio``'s ``os.open`` with ``O_EXCL`` flags, which creates.
 ALLOWED_APPEND_OPENS: dict[str, tuple[Reason, str]] = {
     "factory_lock.py:_acquire_run_lock": (Reason.LOCK_FILE, "the run lock"),
-    "serve.py:factory_lock_held": (Reason.LOCK_FILE, "reads whether the run lock is held"),
+    "serve_gates.py:factory_lock_held": (Reason.LOCK_FILE, "reads whether the run lock is held"),
     "serve.py:serve_lock": (Reason.LOCK_FILE, "the daemon's own lock"),
     "statedir.py:control_lock": (Reason.LOCK_FILE, "the control-directory lock"),
     "replay.py:replay_lock": (Reason.LOCK_FILE, "the per-machine replay lock (#700 slice 3)"),
@@ -326,7 +326,8 @@ EXPECTED_APPEND_OPENS: dict[str, int] = {
     "pipeline_attempt.py: open('a')": 1,
     "pipeline_ledger.py: EvolutionJournal.open(self.root_dir)": 1,
     "replay.py: path.open('a+')": 1,
-    "serve.py: open('a+')": 2,
+    "serve.py: open('a+')": 1,
+    "serve_gates.py: open('a+')": 1,
     "statedir.py: open('a+')": 1,
     "tui/embed.py: open('a')": 1,
     "tui/runs.py: open('a+')": 1,

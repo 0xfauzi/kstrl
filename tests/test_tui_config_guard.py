@@ -116,8 +116,8 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     "rung.py": 1,
     # ChildOutputDecodeError, added by #416.
     "scrubbed_run.py": 1,
-    "serve.py": 4,
     "serve_config.py": 1,
+    "serve_github.py": 4,
     # SignalsError, R8.8 slice 1 / #155.
     "signals.py": 1,
     # One since #232: ControlLockedError and ControlUnavailableError now

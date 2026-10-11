@@ -225,8 +225,10 @@ EXPECTED_ENVELOPE_SECTIONS = frozenset(
 #: divided out of it (#776), so the walk reads every ``serve*.py`` and the
 #: pin is one total with one count for each file.
 EXPECTED_SERVE_SITES_BY_FILE = {
-    "serve.py": 8,
+    "serve.py": 5,
     "serve_config.py": 0,
+    "serve_gates.py": 1,
+    "serve_github.py": 2,
     "serve_launchd.py": 0,
     "serve_merge_gate.py": 3,
     "serve_outcome.py": 0,

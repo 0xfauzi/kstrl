@@ -292,7 +292,7 @@ class TestItFailsClosed:
 
 
 class TestTheDaemonNarratesARefusal:
-    """kstrl/serve.py::_run_intake (#188 simplify pass item 2): a refusal
+    """kstrl/serve_github.py::_run_intake (#188 simplify pass item 2): a refusal
     silently dropped by the daemon is a control nobody watching it run can
     see working."""
 
