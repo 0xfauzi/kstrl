@@ -73,7 +73,6 @@ from kstrl.calibration_score import (
     security_caught,
     security_false_positive,
 )
-from kstrl.decompose import SpecIssue, _parse_spec_issues
 from kstrl.decompose_prompt import build_decompose_prompt
 from kstrl.delimiters import generate_data_delimiter
 from kstrl.git_diff import get_diff_stat, pasted_change_source, repo_change_source
@@ -95,6 +94,7 @@ from kstrl.security import (
     _build_security_prompt,
     parse_security_output,
 )
+from kstrl.spec_issues import SpecIssue, _parse_spec_issues
 from tests.conftest import make_review_repo
 from tests.helpers.calibration_acceptance_fixture import (
     ACCEPTANCE_CLEAN_ROLE,
