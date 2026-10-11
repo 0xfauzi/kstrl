@@ -32,6 +32,7 @@ EXPECTED_SPEC_READS: dict[str, dict[str, int]] = {
         # The definition, and the read whose text the architect is given.
         "decompose.py::<module>": 1,
         "decompose.py::_decompose_spec_impl": 1,
+        "decompose_prompt.py::<module>": 1,
         # The import, and the one re-read, which compares the digest.
         "plan_gate.py::<module>": 1,
         "plan_gate.py::pinned_spec": 1,

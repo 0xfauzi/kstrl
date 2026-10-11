@@ -35,7 +35,7 @@ from kstrl.calibration_score import (
     refuse_unreadable,
     reuse_errors,
 )
-from kstrl.decompose import build_decompose_prompt
+from kstrl.decompose_prompt import build_decompose_prompt
 
 #: Root of every calibration fixture, security and reviewer fixtures
 #: included (#401 addendum B2). Lives here, not in tests/test_calibration.py,

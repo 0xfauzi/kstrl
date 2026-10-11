@@ -239,14 +239,14 @@ class TestTheLocalePinnedReads:
     machines. These six named none."""
 
     def test_the_spec_reader_names_utf8(self, tmp_path: Path) -> None:
-        from kstrl.decompose import load_spec_input
+        from kstrl.decompose_prompt import load_spec_input
 
         spec = tmp_path / "spec.md"
         spec.write_text("a café spec\n", encoding="utf-8")
         assert "café" in load_spec_input(spec)
 
     def test_the_speckit_directory_reader_names_utf8(self, tmp_path: Path) -> None:
-        from kstrl.decompose import load_spec_input
+        from kstrl.decompose_prompt import load_spec_input
 
         (tmp_path / "spec.md").write_text("café spec\n", encoding="utf-8")
         (tmp_path / "plan.md").write_text("café plan\n", encoding="utf-8")

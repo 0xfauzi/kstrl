@@ -273,7 +273,7 @@ EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
     "decisions.py": 2,
     # #199: +2 constants x 2 spellings each (ARCHITECT_REPO_SOURCE_PROMPT,
     # ARCHITECT_NO_REPO_SOURCE_PROMPT: each declared once and used once).
-    "decompose.py": 6,
+    "decompose_prompt.py": 6,
     # #303: 0 pre-existing + 7 new fragments x 2 spellings each (the
     # declaration and its one use site) = 14. The version constant adds
     # nothing: the walk keys on names ending in _PROMPT, not _VERSION.
