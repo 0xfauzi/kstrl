@@ -38,9 +38,11 @@ import pytest
 from kstrl.findings import Finding
 from kstrl.inbox import Inbox, InboxConfig, InboxItem
 from kstrl.manifest import Component, Manifest
-from kstrl.serve import SpendLedger, run_supervised, serve_cycle
+from kstrl.serve import serve_cycle
 from kstrl.serve_config import ServeConfig
 from kstrl.serve_outcome import Outcome, RunOutcome, classify_run
+from kstrl.serve_process import run_supervised
+from kstrl.serve_spend import SpendLedger
 from kstrl.workqueue import Queue
 from kstrl.workqueue_items import ItemSource, QueueConfig
 from tests.helpers import gitrepo

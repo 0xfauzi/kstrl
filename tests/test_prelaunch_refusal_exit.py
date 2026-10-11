@@ -18,8 +18,8 @@ from pathlib import Path
 import pytest
 
 from kstrl.manifest import Component, Manifest
-from kstrl.serve import run_supervised
 from kstrl.serve_outcome import RunOutcome, Verdict, classify_run
+from kstrl.serve_process import run_supervised
 from tests.helpers.gitrepo import git_in, set_identity
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
 from tests.test_cli_conventions import _child_env

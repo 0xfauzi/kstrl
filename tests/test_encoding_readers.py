@@ -177,8 +177,10 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     # occurrences, not deduplicated - is unmoved at 5 even though the
     # deduplicated spelling list below loses a row. #776 S3 moved
     # _read_manifest_json, with one of the five reads, to serve_outcome.py.
-    "serve.py": 4,
+    # #776 S4 moved SpendLedger.load, with one read, to serve_spend.py.
+    "serve.py": 3,
     "serve_outcome.py": 1,
+    "serve_spend.py": 1,
     "statedir.py": 1,
     "tui/embed.py": 1,
     # #433 F9: the bounded "rb" read of a review file, and the
@@ -305,8 +307,8 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "security.py prd_path.read_text(encoding='utf-8')",
     "serve.py open(lock_path, 'a+', encoding='utf-8')",
     "serve.py path.read_text(encoding='utf-8')",
-    "serve.py self.path.read_text(encoding='utf-8')",
     "serve_outcome.py path.read_text(encoding='utf-8')",
+    "serve_spend.py self.path.read_text(encoding='utf-8')",
     "statedir.py open(lock_path, 'a+', encoding='utf-8')",
     "tui/embed.py open(run_paths.root / 'orchestrator.log', 'a', buffering=1, encoding='",
     "tui/runs.py open(lock_path, 'a+', encoding='utf-8')",

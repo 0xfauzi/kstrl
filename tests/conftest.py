@@ -185,7 +185,7 @@ def short_waits(isolate_kstrl_state: Path, monkeypatch: pytest.MonkeyPatch) -> N
        with an environment derived from this one. A dataclass-level
        default was tried and reverted: the numeric-config census and the
        README generator read the shipped field default.
-    2. ``serve.GROUP_TERM_GRACE_SECONDS``: 15s before a serve-run process
+    2. ``serve_process.GROUP_TERM_GRACE_SECONDS``: 15s before a serve-run process
        group is escalated to SIGKILL (one test measured 15.5s -> 0.1s; it
        asserts the escalation happens and that it takes under the
        shipped grace, both of which still hold).
@@ -200,10 +200,10 @@ def short_waits(isolate_kstrl_state: Path, monkeypatch: pytest.MonkeyPatch) -> N
     ``sdk_runner`` child process, which an in-process patch cannot
     reach, so that lever needs an env knob and its own measurement.
     """
-    from kstrl import serve
+    from kstrl import serve_process
 
     monkeypatch.setenv("FACTORY_RETRY_DELAY", "0")
-    monkeypatch.setattr(serve, "GROUP_TERM_GRACE_SECONDS", 1.0)
+    monkeypatch.setattr(serve_process, "GROUP_TERM_GRACE_SECONDS", 1.0)
 
 
 def snapshot_kstrl_dir(kstrl_dir: Path) -> dict[str, str]:
