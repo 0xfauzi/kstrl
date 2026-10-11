@@ -12,7 +12,7 @@ from click.testing import CliRunner, Result
 from kstrl.cli import cli
 from kstrl.cli_loop import _run_structural_override_notices
 from kstrl.cli_report import _format_component_status
-from kstrl.factory import FactoryConfig
+from kstrl.factory_config import FactoryConfig
 from kstrl.git_base import BASE_BRANCH_CANDIDATES, detect_base_branch, resolve_base_branch
 from kstrl.init_cmd import gitignore_block
 from kstrl.manifest import Component, ComponentStatus, Manifest

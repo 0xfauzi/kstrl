@@ -67,7 +67,7 @@ from kstrl.timeout import limit_seconds
 from kstrl.waivers import approvals_at
 
 if TYPE_CHECKING:
-    from kstrl.factory import FactoryConfig
+    from kstrl.factory_config import FactoryConfig
     from kstrl.manifest import Component, Manifest
     from kstrl.pipeline import ComponentPipeline
     from kstrl.stack import Stack

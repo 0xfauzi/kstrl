@@ -123,7 +123,7 @@ def test_every_config_dataclass_field_is_read_by_some_code() -> None:
     which no code read and no key set. This census enumerates the fields
     of every config dataclass, so a field only a CLI flag sets is counted.
     """
-    from kstrl.factory import FactoryConfig
+    from kstrl.factory_config import FactoryConfig
 
     classes = config_classes()
     assert FactoryConfig in classes and len(classes) >= 23, [c.__name__ for c in classes]

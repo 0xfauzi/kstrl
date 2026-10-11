@@ -38,7 +38,7 @@ from kstrl.jsonread import read_json
 from kstrl.version import kstrl_version
 
 if TYPE_CHECKING:
-    from kstrl.factory import FactoryConfig
+    from kstrl.factory_config import FactoryConfig
     from kstrl.manifest import Manifest
     from kstrl.timeout import TimeoutConfig
 

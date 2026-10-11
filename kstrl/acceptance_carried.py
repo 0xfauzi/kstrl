@@ -64,7 +64,7 @@ from kstrl.timeout import limit_seconds
 
 if TYPE_CHECKING:
     from kstrl.contract import ContractConfig
-    from kstrl.factory import FactoryConfig
+    from kstrl.factory_config import FactoryConfig
     from kstrl.inbox import InboxConfig, InboxItem
     from kstrl.manifest import Manifest
     from kstrl.stack import Stack

@@ -81,7 +81,8 @@ from pathlib import Path
 from kstrl.agents import custom
 from kstrl.agents.base import UsageRecord
 from kstrl.config import KstrlConfig
-from kstrl.factory import FactoryConfig, run_factory
+from kstrl.factory import run_factory
+from kstrl.factory_config import FactoryConfig
 from kstrl.manifest import Manifest
 from kstrl.security import SecurityConfig
 from kstrl.ui.plain import PlainUI

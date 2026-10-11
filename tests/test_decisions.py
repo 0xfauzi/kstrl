@@ -252,7 +252,7 @@ def _one_component_manifest(project: str, spec_file: str) -> Any:
 
 def _factory_inputs(root: Path) -> tuple[Any, Any, Any]:
     from kstrl.config import KstrlConfig
-    from kstrl.factory import FactoryConfig
+    from kstrl.factory_config import FactoryConfig
     from kstrl.ui.plain import PlainUI
     from kstrl.verify_model import VerifyConfig
 

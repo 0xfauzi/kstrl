@@ -44,7 +44,8 @@ from unittest.mock import patch
 import pytest
 
 from kstrl.config import KstrlConfig
-from kstrl.factory import FactoryConfig, run_factory
+from kstrl.factory import run_factory
+from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult
 from kstrl.knowledge import build_knowledge_context, distill_facts, measure_fact_utilization
 from kstrl.knowledge_facts import Fact, KnowledgeConfig, _render_fact_md, read_facts, write_facts

@@ -23,7 +23,7 @@ from kstrl import event_catalog
 from kstrl import events as ev
 from kstrl.agents.base import UsageTotals
 from kstrl.config_report import build_config_report
-from kstrl.factory import FactoryConfig
+from kstrl.factory_config import FactoryConfig
 from kstrl.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.interaction import CheckpointContext, PromptKind, PromptRequest
 from kstrl.launch_record import run_limits, write_launch_record

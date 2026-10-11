@@ -38,7 +38,8 @@ import pytest
 
 from kstrl import event_catalog
 from kstrl import events as ev
-from kstrl.factory import FactoryConfig, run_factory
+from kstrl.factory import run_factory
+from kstrl.factory_config import FactoryConfig
 from kstrl.journal_rows import FINDINGS_SUPERSEDED_EVENT, read_attempt_iterations
 from kstrl.ui.plain import PlainUI
 from kstrl.verify_model import VerifyConfig
