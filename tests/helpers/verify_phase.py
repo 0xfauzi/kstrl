@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any
 from kstrl.config import KstrlConfig
 from kstrl.event_catalog import Event
 from kstrl.events import CallbackSink, EventBus, V1CompatSink
-from kstrl.factory import AdversarialAgentSelection
+from kstrl.factory_agents import AdversarialAgentSelection
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult, FactoryResult
 from kstrl.knowledge_facts import KnowledgeConfig
