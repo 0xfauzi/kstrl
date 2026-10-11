@@ -50,7 +50,8 @@ from kstrl.factory import run_factory
 from kstrl.factory_result import ComponentResult
 from kstrl.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.observability import NotifyConfig
-from kstrl.serve import ServeConfig, SpendLedger, serve_cycle
+from kstrl.serve import SpendLedger, serve_cycle
+from kstrl.serve_config import ServeConfig
 from kstrl.ui.plain import PlainUI
 from tests.helpers import astwalk
 from tests.helpers.demotion import (

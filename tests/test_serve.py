@@ -53,7 +53,6 @@ from kstrl.serve import (
     LaunchSpend,
     RunOutcome,
     RunSpend,
-    ServeConfig,
     ServeLockedError,
     ServeStateError,
     SpendLedger,
@@ -84,6 +83,7 @@ from kstrl.serve import (
 #: gets the stub instead of the function under test - which silently made
 #: the empty-run-id test pass no matter what the function did.
 from kstrl.serve import read_run_spend as REAL_READ_RUN_SPEND
+from kstrl.serve_config import ServeConfig
 from kstrl.serve_merge_gate import resolve_merge_gate
 from kstrl.workqueue import Queue
 from kstrl.workqueue_items import ItemSource, ItemState, MergeDisposition, QueueConfig, QueueItem
@@ -1324,7 +1324,7 @@ class TestServeCycle:
         _add(queue)
         calls: list[dict[str, object]] = []
         with patch("kstrl.serve.check_inbox_cap") as gate:
-            from kstrl.serve import Admission
+            from kstrl.serve_config import Admission
 
             gate.return_value = Admission(allowed=False, reason="inbox full")
             result = serve_cycle(

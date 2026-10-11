@@ -174,7 +174,6 @@ EXPECTED_UNDECIDED_CALLS: tuple[str, ...] = (
     "intake_github.py ProcessedLedger(root_dir).load",
     "intake_steering.py ProcessedLedger(root_dir).load",
     "serve.py OpenPrCountStreak.load",
-    "serve.py ServeConfig.load",
     "tui/app.py initial_screens_for_kind(kind, observe_only=False)",
     "tui/app.py initial_screens_for_kind(kind, observe_only=True)",
     "tui/screens/evolve.py self.query_one(ConfigProblemBanner).load",
