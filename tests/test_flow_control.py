@@ -37,9 +37,10 @@ from click.testing import CliRunner
 
 from kstrl.cli import cli
 from kstrl.inbox import Inbox, InboxConfig, ItemKind
-from kstrl.serve import CycleResult, serve, serve_cycle
+from kstrl.serve import serve, serve_cycle
 from kstrl.serve_config import Admission, ServeConfig, ServeError
 from kstrl.serve_outcome import RunOutcome
+from kstrl.serve_settle import CycleResult
 from kstrl.serve_spend import SpendLedger
 from kstrl.statedir import state_dir
 from kstrl.workqueue_items import ItemState

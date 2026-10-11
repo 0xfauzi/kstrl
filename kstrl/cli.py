@@ -504,7 +504,7 @@ def _decide_parked_merge_if_parked(
             # `ks factory` always leaves through sys.exit with the run's own
             # code. Settle the queue item serve parked on this run (#464),
             # then exit with that code.
-            from kstrl.serve import settle_approval_run
+            from kstrl.serve_settle import settle_approval_run
             from kstrl.workqueue import Queue
             from kstrl.workqueue_items import QueueConfig
 
