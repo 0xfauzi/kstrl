@@ -47,7 +47,7 @@ from kstrl.acceptance import (
     replay_base,
 )
 from kstrl.acceptance_design import build_design_prompt, design_component
-from kstrl.factory import FactoryConfig
+from kstrl.factory_config import FactoryConfig
 from kstrl.manifest import Component, Manifest
 from kstrl.stack import Stack
 from kstrl.ui.plain import PlainUI

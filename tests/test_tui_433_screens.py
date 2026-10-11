@@ -650,7 +650,7 @@ class TestOperatorQueue:
 
 class TestRetryScope:
     def _failed(self, tmp_path: Path) -> Path:
-        from kstrl.factory import FactoryConfig
+        from kstrl.factory_config import FactoryConfig
         from kstrl.launch_record import run_limits, write_launch_record
         from kstrl.timeout import TimeoutConfig
 

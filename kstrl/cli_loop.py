@@ -41,7 +41,8 @@ from kstrl.event_catalog import (
     RunPlan,
     RunStarted,
 )
-from kstrl.factory import FactoryConfig, run_factory
+from kstrl.factory import run_factory
+from kstrl.factory_config import FactoryConfig
 from kstrl.git_base import detect_base_branch
 from kstrl.init_cmd import run_init
 from kstrl.loop import run_loop

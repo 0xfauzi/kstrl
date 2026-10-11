@@ -36,7 +36,8 @@ from kstrl.contract import (
     run_contract_testing,
     run_tier_check,
 )
-from kstrl.factory import FactoryConfig, run_factory
+from kstrl.factory import run_factory
+from kstrl.factory_config import FactoryConfig
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.security import SecurityConfig
 from kstrl.timeout import TimeoutConfig

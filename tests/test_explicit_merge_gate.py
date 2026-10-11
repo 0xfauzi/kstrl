@@ -44,7 +44,8 @@ from kstrl.autonomy_config import pause_gate_for, resolved_flag_bundle
 from kstrl.config import ConfigError
 from kstrl.event_catalog import AutonomyLevelApplied, Event
 from kstrl.events import CallbackSink, EventBus
-from kstrl.factory import FactoryConfig, run_factory
+from kstrl.factory import run_factory
+from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult
 from kstrl.manifest import Manifest
 from kstrl.review import ReviewResult

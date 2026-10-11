@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from kstrl.config import KstrlConfig
-from kstrl.factory import FactoryConfig
+from kstrl.factory_config import FactoryConfig
 from kstrl.timeout import TimeoutConfig
 
 
