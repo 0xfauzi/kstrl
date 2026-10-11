@@ -226,7 +226,7 @@ def config_sections() -> list[ConfigSection]:
     from kstrl.release import ReleaseConfig
     from kstrl.sandbox import SandboxConfig
     from kstrl.security import SecurityConfig
-    from kstrl.serve import ServeConfig
+    from kstrl.serve_config import ServeConfig
     from kstrl.signals import SignalsConfig
     from kstrl.stack import StackConfig
     from kstrl.timeout import TimeoutConfig

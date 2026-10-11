@@ -224,7 +224,12 @@ EXPECTED_ENVELOPE_SECTIONS = frozenset(
 #: The daemon is ``kstrl/serve.py`` and the ``kstrl/serve_*.py`` modules
 #: divided out of it (#776), so the walk reads every ``serve*.py`` and the
 #: pin is one total with one count for each file.
-EXPECTED_SERVE_SITES_BY_FILE = {"serve.py": 8, "serve_merge_gate.py": 3}
+EXPECTED_SERVE_SITES_BY_FILE = {
+    "serve.py": 8,
+    "serve_config.py": 0,
+    "serve_launchd.py": 0,
+    "serve_merge_gate.py": 3,
+}
 EXPECTED_SERVE_SITES = sum(EXPECTED_SERVE_SITES_BY_FILE.values())
 
 _NEW_CONFIG_CLASS = """

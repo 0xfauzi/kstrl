@@ -37,17 +37,8 @@ from click.testing import CliRunner
 
 from kstrl.cli import cli
 from kstrl.inbox import Inbox, InboxConfig, ItemKind
-from kstrl.serve import (
-    Admission,
-    CycleResult,
-    RunOutcome,
-    ServeConfig,
-    ServeError,
-    SpendLedger,
-    serve,
-    serve_cycle,
-    state_dir,
-)
+from kstrl.serve import CycleResult, RunOutcome, SpendLedger, serve, serve_cycle, state_dir
+from kstrl.serve_config import Admission, ServeConfig, ServeError
 from kstrl.workqueue_items import ItemState
 from tests.helpers.fakegh import FAKE_GH_THIRD_CALL_WORKS as _FAKE_GH_THIRD_CALL_WORKS
 from tests.helpers.fakegh import install_fake_gh as _install_fake_gh

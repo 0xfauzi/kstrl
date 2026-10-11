@@ -149,7 +149,8 @@ from kstrl.retry_plan import (
 from kstrl.sandbox import SandboxConfig, warn_unconfined, with_stack_writable
 from kstrl.scaffold_templates import DEFAULT_FEATURE_UNDERSTAND
 from kstrl.security import _SEVERITY_ORDER, SecurityMode
-from kstrl.serve import ARCHITECT_RUN_KIND, LAUNCHD_MODES
+from kstrl.serve import ARCHITECT_RUN_KIND
+from kstrl.serve_launchd import LAUNCHD_MODES
 from kstrl.shutdown import StopController, install_signal_handlers
 from kstrl.stack import (
     STACK_KEY,
@@ -4665,9 +4666,6 @@ def serve(
     evidence. Spec-level failures go to poison/ and wait for a human.
     """
     from kstrl.serve import (
-        REQUIRE_TIMEOUT_ENV,
-        ServeConfig,
-        ServeError,
         ServeLockedError,
         SpendLedger,
         check_budget,
@@ -4680,6 +4678,8 @@ def serve(
         factory_lock_held,
     )
     from kstrl.serve import serve as run_serve
+    from kstrl.serve_config import ServeConfig, ServeError
+    from kstrl.serve_launchd import REQUIRE_TIMEOUT_ENV
     from kstrl.workqueue import Queue, summarize
     from kstrl.workqueue_items import QueueConfig
 
@@ -4690,7 +4690,7 @@ def serve(
         # Printed rather than installed: writing into ~/Library/LaunchAgents
         # and running launchctl are outward-facing acts an operator should
         # perform deliberately, and the docs walk through them.
-        from kstrl.serve import launchd_log_dir, render_launchd_plist
+        from kstrl.serve_launchd import launchd_log_dir, render_launchd_plist
 
         # launchd creates the log FILE but not its directory, and a
         # missing directory makes the job fail to spawn with nothing in

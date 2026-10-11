@@ -74,12 +74,8 @@ from unittest.mock import patch
 import click
 import pytest
 
-from kstrl.serve import (
-    RunOutcome,
-    ServeConfig,
-    serve_cycle,
-    subprocess_factory_runner,
-)
+from kstrl.serve import RunOutcome, serve_cycle, subprocess_factory_runner
+from kstrl.serve_config import ServeConfig
 from kstrl.workqueue import Queue
 from kstrl.workqueue_items import QueueConfig
 from tests.helpers import procs
