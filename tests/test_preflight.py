@@ -17,7 +17,6 @@ from typing import Any
 import pytest
 from click.testing import CliRunner
 
-import kstrl.cli as cli_mod
 import kstrl.cli_factory as cli_factory_mod
 import kstrl.cli_loop as cli_loop_mod
 import kstrl.cli_preflight as cli_preflight_mod
@@ -445,7 +444,7 @@ class TestFactoryPreflightWiring:
         manifest_file = tmp_path / "manifest.json"
         manifest_file.write_text("{}")  # click existence check only
         monkeypatch.setattr(
-            cli_mod.Manifest,
+            cli_factory_mod.Manifest,
             "load",
             classmethod(lambda cls, path: manifest),
         )
@@ -515,7 +514,7 @@ class TestFactoryPreflightWiring:
         manifest_file = tmp_path / "manifest.json"
         manifest_file.write_text("{}")
         monkeypatch.setattr(
-            cli_mod.Manifest,
+            cli_factory_mod.Manifest,
             "load",
             classmethod(lambda cls, path: manifest),
         )

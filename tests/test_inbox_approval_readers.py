@@ -73,7 +73,7 @@ RECORD_ONLY: dict[ItemKind, str] = {
 #: how many times. A new row is a new reader: name it in APPROVAL_READERS
 #: or NOT_AN_INBOX_READER before adding it here.
 EXPECTED_APPROVED_READS: dict[str, int] = {
-    "cli.py::_decide_parked_merge_if_parked": 1,
+    "cli_inbox.py::_decide_parked_merge_if_parked": 1,
     "factory.py::_emit_stack_confirmation": 1,
     "owner_answers.py::read_owner_answers": 1,
     "pipeline_delivery.py::<module>": 1,
@@ -96,7 +96,7 @@ NOT_AN_INBOX_READER: dict[str, str] = {
         'CheckpointResolved(decision="approved"): the event a run records for a stack '
         "confirmed_stack already confirmed, not a read of item.status"
     ),
-    "cli.py::_decide_parked_merge_if_parked": (
+    "cli_inbox.py::_decide_parked_merge_if_parked": (
         '{"approve": "approved", "reject": "rejected"}[action]: the past-tense verb '
         "for the log line, not a read of item.status"
     ),

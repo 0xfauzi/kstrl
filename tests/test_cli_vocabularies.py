@@ -72,15 +72,16 @@ EXPECTED_CHOICE_OPTIONS = 49
 
 #: Re-derived by running the Layer 2 census on this tree.
 EXPECTED_CHOICE_CALLS: dict[str, int] = {
-    "cli.py": 3,
     "cli_architect.py": 2,
     "cli_check.py": 2,
     "cli_factory_options.py": 5,
     "cli_feature.py": 1,
+    "cli_inbox.py": 1,
     "cli_learning.py": 3,
     "cli_loop.py": 3,
     "cli_queue.py": 2,
     "cli_report.py": 2,
+    "cli_serve.py": 2,
 }
 
 #: The options the naming rule finds on this tree. Re-derived by running

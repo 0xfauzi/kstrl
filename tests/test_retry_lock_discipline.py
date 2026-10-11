@@ -35,6 +35,7 @@ from click.testing import CliRunner
 import kstrl.cli as cli_mod
 import kstrl.cli_architect as cli_architect_mod
 import kstrl.cli_factory as cli_factory_mod
+import kstrl.cli_inbox as cli_inbox_mod
 import kstrl.cli_preflight as cli_preflight_mod
 from kstrl.inbox import Inbox, InboxConfig
 from kstrl.interaction import PromptRequest, PromptResponse
@@ -367,7 +368,7 @@ class TestKsRetryChangesNothingBeforeItsGates:
 
         monkeypatch.setattr(factory_mod, "_acquire_run_lock", counting_acquire)
         monkeypatch.setattr(factory_lock_mod, "_acquire_run_lock", counting_acquire)
-        monkeypatch.setattr(cli_mod, "_acquire_run_lock", counting_acquire)
+        monkeypatch.setattr(cli_inbox_mod, "_acquire_run_lock", counting_acquire)
         monkeypatch.setattr(cli_architect_mod, "_acquire_run_lock", counting_acquire)
         monkeypatch.setattr(cli_preflight_mod, "_acquire_run_lock", counting_acquire)
         agent = " ".join(
@@ -560,7 +561,7 @@ class TestApprovingAParkedMergeHoldsTheLockIntoTheDependentRun:
 
         monkeypatch.setattr(factory_mod, "_acquire_run_lock", counting_acquire)
         monkeypatch.setattr(factory_lock_mod, "_acquire_run_lock", counting_acquire)
-        monkeypatch.setattr(cli_mod, "_acquire_run_lock", counting_acquire)
+        monkeypatch.setattr(cli_inbox_mod, "_acquire_run_lock", counting_acquire)
         monkeypatch.setattr(cli_preflight_mod, "_acquire_run_lock", counting_acquire)
         for name in [k for k in os.environ if k.startswith("KSTRL_")]:
             monkeypatch.delenv(name)
