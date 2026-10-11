@@ -37,6 +37,7 @@ import pytest
 from click.testing import CliRunner, Result
 
 import kstrl.cli as cli_mod
+import kstrl.cli_feature as cli_feature_mod
 import kstrl.cli_seam as cli_seam_mod
 from kstrl.cli import cli
 from kstrl.config import STRING_KEYS, ConfigError, KstrlConfig, load_toml_document, toml_parse_scope
@@ -118,6 +119,7 @@ def _no_agents(monkeypatch: pytest.MonkeyPatch) -> list[str]:
         raise AssertionError("the architect was invoked after a rejected config")
 
     monkeypatch.setattr(cli_mod, "get_agent", fake_get_agent)
+    monkeypatch.setattr(cli_feature_mod, "get_agent", fake_get_agent)
     monkeypatch.setattr(cli_mod, "decompose_spec", fake_decompose_spec)
     return built
 

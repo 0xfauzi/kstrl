@@ -18,6 +18,7 @@ import pytest
 from click.testing import CliRunner
 
 import kstrl.cli as cli_mod
+import kstrl.cli_loop as cli_loop_mod
 import kstrl.cli_preflight as cli_preflight_mod
 from kstrl.agents import ClaudeSdkAgent
 from kstrl.agents.liveness import ProbeResult
@@ -40,7 +41,7 @@ def _stub_run_loop(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
         calls.append({"args": args, "kwargs": kwargs})
         return SimpleNamespace(completed=True, iterations=0, exit_code=0)
 
-    monkeypatch.setattr(cli_mod, "run_loop", fake_run_loop)
+    monkeypatch.setattr(cli_loop_mod, "run_loop", fake_run_loop)
     return calls
 
 
@@ -289,7 +290,7 @@ class TestRunPrdPreflight:
             calls.append({"args": args, "kwargs": kwargs})
             return FactoryResult()
 
-        monkeypatch.setattr(cli_mod, "run_factory", fake_run_factory)
+        monkeypatch.setattr(cli_loop_mod, "run_factory", fake_run_factory)
         return calls
 
     def _invoke_run(self, root: Path, marker: Path) -> Any:

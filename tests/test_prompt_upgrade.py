@@ -386,11 +386,11 @@ class TestFeatureChecksThePromptItActuallyRuns:
         return project
 
     def _invoke(self, project: Path, monkeypatch: pytest.MonkeyPatch) -> Result:
-        import kstrl.cli as cli_mod
+        import kstrl.cli_feature as cli_feature_mod
 
         # Stop after the preflight: the phases beyond it need a live
         # agent, and what is under test is which path was checked.
-        monkeypatch.setattr(cli_mod, "run_feature", lambda *a, **k: 0)
+        monkeypatch.setattr(cli_feature_mod, "run_feature", lambda *a, **k: 0)
         return CliRunner().invoke(
             cli,
             [

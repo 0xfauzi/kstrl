@@ -350,7 +350,7 @@ class TestManifestPathFidelity:
             captured["factory_config"] = args[1]
             return FactoryResult()
 
-        monkeypatch.setattr("kstrl.cli.run_factory", fake_run_factory)
+        monkeypatch.setattr("kstrl.cli_loop.run_factory", fake_run_factory)
         runner = CliRunner()
         result = runner.invoke(
             cli,

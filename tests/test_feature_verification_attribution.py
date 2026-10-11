@@ -269,7 +269,7 @@ class TestTheOperatorCanDecline:
     def test_the_flag_reaches_the_flow_from_the_command_line(self) -> None:
         """The wiring, not just the parameter: a flag the CLI does not
         expose is not an escape hatch."""
-        from kstrl.cli import feature
+        from kstrl.cli_feature import feature
 
         names = {p.name for p in feature.params}
         assert "no_verify" in names

@@ -317,7 +317,7 @@ EXPECTED_AGENT_CALLS: dict[str, int] = {
     "acceptance_design.py:_design_one": 1,
     "acceptance_design.py:design_component": 1,
     "agents/logging.py:LoggingAgent.run": 1,
-    "cli.py:_understand_core": 1,
+    "cli_loop.py:_understand_core": 1,
     "decompose.py:_decompose_spec_impl": 1,
     "decompose.py:collect_agent_output": 1,
     "factory.py:_run_component": 1,
@@ -352,7 +352,7 @@ CALLER_SCOPED: dict[str, str] = {
 
 EXPECTED_SCOPES: dict[str, int] = {
     "acceptance_design.py:_design_one": 1,
-    "cli.py:_understand_core": 1,
+    "cli_loop.py:_understand_core": 1,
     "decompose.py:_decompose_spec_impl": 1,
     "factory.py:_run_component": 1,
     "feature_cmd.py:run_feature": 3,
@@ -427,7 +427,7 @@ EXPECTED_BOUNDS: dict[str, tuple[str, str]] = {
     "acceptance_design.py:_design_one": ("timeout", "[factory] review_timeout_seconds"),
     "acceptance_design.py:design_component": ("timeout", "its caller's timeout"),
     "agents/logging.py:LoggingAgent.run": ("timeout", "its caller's timeout"),
-    "cli.py:_understand_core": ("timeouts", "[timeout] agent_iteration and component_total"),
+    "cli_loop.py:_understand_core": ("timeouts", "[timeout] agent_iteration and component_total"),
     "decompose.py:_decompose_spec_impl": ("timeout", "[factory] architect_timeout_seconds"),
     "decompose.py:collect_agent_output": ("timeout", "its caller's timeout"),
     "factory.py:_run_component": ("timeouts", "[timeout] agent_iteration and component_total"),

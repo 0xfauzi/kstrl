@@ -97,9 +97,11 @@ def _run_cli(args: list[str]) -> _PromptCapturingAgent:
     agent = _PromptCapturingAgent()
     runner = CliRunner()
     with (
-        patch("kstrl.cli.get_agent", return_value=agent),
+        patch("kstrl.cli_loop.get_agent", return_value=agent),
+        patch("kstrl.cli_feature.get_agent", return_value=agent),
         patch("kstrl.feature_cmd.get_agent", return_value=agent),
-        patch("kstrl.cli._check_agent_preflight"),
+        patch("kstrl.cli_loop._check_agent_preflight"),
+        patch("kstrl.cli_feature._check_agent_preflight"),
     ):
         runner.invoke(cli, args, catch_exceptions=False)
     return agent

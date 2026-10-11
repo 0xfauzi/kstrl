@@ -73,10 +73,10 @@ SPLAT = "<** splat: context_prefix cannot be read back>"
 FEATURE_SOURCE = "_feature_context_prefix(params, base_config, root_dir, ui)"
 
 #: Every place in ``kstrl/`` that spells ``run_loop``: its definition in
-#: ``loop.py``, the import plus one call in ``cli.py`` and ``factory.py``,
+#: ``loop.py``, the import plus one call in ``cli_loop.py`` and ``factory.py``,
 #: and the import plus three calls in ``feature_cmd.py``.
 EXPECTED_RUN_LOOP_SPELLINGS: dict[str, int] = {
-    "cli.py": 2,
+    "cli_loop.py": 2,
     "factory.py": 2,
     "feature_cmd.py": 4,
     "loop.py": 1,
@@ -86,7 +86,7 @@ EXPECTED_RUN_LOOP_SPELLINGS: dict[str, int] = {
 #: source text of its ``context_prefix`` keyword in line order. ``None``
 #: is a call that passes no prefix.
 EXPECTED_CONTEXT_SOURCES: dict[str, tuple[str | None, ...]] = {
-    "cli.py::_understand_core": (None,),
+    "cli_loop.py::_understand_core": (None,),
     "factory.py::_run_component": ("context_prefix",),
     "feature_cmd.py::run_feature": (FEATURE_SOURCE,) * 3,
 }
@@ -101,7 +101,7 @@ EXPECTED_UNDECIDED: dict[str, int] = {
 
 #: The call sites that pass no prefix, and why. Exactly the ``None`` rows.
 NO_CONTEXT_REASONS: dict[str, str] = {
-    "cli.py::_understand_core": (
+    "cli_loop.py::_understand_core": (
         "ks understand writes the codebase map; it is not an engineer loop and "
         "reads no operator context by decision (item 6 of #596)"
     ),
