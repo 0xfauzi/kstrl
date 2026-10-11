@@ -121,7 +121,7 @@ EXPECTED_UNDECIDED_REPLACE_CALLS: tuple[str, ...] = (
     "inbox.py parsed.replace",
     # #696: init_cmd.kstrl_toml_for, which seeded a detected toolchain's
     # commands into the scaffolded [verify], is gone with [verify] itself.
-    "knowledge.py raw_output[:200].replace",
+    "knowledge_distill.py raw_output[:200].replace",
     "observability.py datetime.strptime(ts, '%Y-%m-%dT%H:%M:%SZ').replace",
     # #526: `retry_plan._opt` spells a run limit as an option name, a str.replace.
     "retry_plan.py name.replace",

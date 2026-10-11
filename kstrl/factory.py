@@ -122,10 +122,10 @@ from kstrl.isolation import SETUP_ZONE, TEST_ZONE, prove_zones
 from kstrl.isolation import write_record as write_isolation_record
 from kstrl.knowledge import (
     current_run_id,
-    distill_facts,
     measure_fact_utilization,
     retrieve_knowledge_context,
 )
+from kstrl.knowledge_distill import distill_facts
 from kstrl.knowledge_facts import KnowledgeConfig
 from kstrl.launch_record import run_limits, write_launch_record
 from kstrl.linear import LinearConfig, build_linear_sink
