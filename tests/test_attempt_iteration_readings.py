@@ -9,7 +9,7 @@ writes a per-attempt journal row at the moment an attempt is superseded
 produced no ``Finding``. One real ``run_factory`` run (2 attempts x 3
 iterations, by construction) is the fixture: three tests read the journal
 and ``experiments.tsv`` it wrote, and one runs the strict reader
-(``kstrl/evolution.py``) over that journal and measures six. The in-memory
+(``kstrl/journal_rows.py``) over that journal and measures six. The in-memory
 reader refusals and the verdict clauses this file once held were removed;
 ``tests/test_retry_journal_rows.py`` drives ``ks evolve`` over a journal
 with each bad row.
