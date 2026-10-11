@@ -70,8 +70,8 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     # of each. 68: #700's git_write_paths adds one of each. 59: #776 G1 moves
     # ten of them to `git_base.py`. 51: #776 G2 moves eight of them to
     # `git_diff.py`, which adds its own `import subprocess` (9). 30: #776 G3
-    # moves twenty-two of them to `git_tree.py`, which adds its own
-    # `import subprocess`.
+    # moves twenty-one of them to `git_tree.py`, which adds its own
+    # `import subprocess` (22).
     "git.py": 30,
     "git_base.py": 10,
     "git_diff.py": 9,
