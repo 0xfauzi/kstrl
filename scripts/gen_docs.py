@@ -142,7 +142,7 @@ def _section_specs() -> list[SectionSpec]:
     from kstrl.feedforward import CodebaseScanConfig
     from kstrl.inbox import InboxConfig
     from kstrl.intake_gh import GitHubIntakeConfig
-    from kstrl.knowledge import KnowledgeConfig
+    from kstrl.knowledge_facts import KnowledgeConfig
     from kstrl.linear import LinearConfig
     from kstrl.observability import NotifyConfig
     from kstrl.policy import PolicyConfig

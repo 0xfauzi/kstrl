@@ -18,7 +18,7 @@ from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from kstrl.knowledge import Fact
+    from kstrl.knowledge_facts import Fact
     from kstrl.manifest import Manifest
     from kstrl.scope import ComponentScope, RunScope
 

@@ -74,7 +74,8 @@ from kstrl.interaction import (
     PromptRequest,
     UiInteractionChannel,
 )
-from kstrl.knowledge import KnowledgeConfig, retrieve_knowledge_context
+from kstrl.knowledge import retrieve_knowledge_context
+from kstrl.knowledge_facts import KnowledgeConfig
 from kstrl.loop import run_loop
 from kstrl.manifest import Component, Manifest
 from kstrl.sandbox import warn_unconfined

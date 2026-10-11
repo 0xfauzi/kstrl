@@ -40,7 +40,7 @@ from kstrl.evolution_config import EvolutionConfig
 from kstrl.factory import FactoryConfig, run_factory
 from kstrl.factory_result import ComponentResult, FactoryResult
 from kstrl.feedforward import CodebaseScanConfig
-from kstrl.knowledge import KnowledgeConfig
+from kstrl.knowledge_facts import KnowledgeConfig
 from kstrl.manifest import Component, Manifest
 from kstrl.review import ReviewResult
 from kstrl.security import SecurityConfig, SecurityMode

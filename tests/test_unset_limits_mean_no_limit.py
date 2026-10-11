@@ -41,7 +41,8 @@ from kstrl.config import KstrlConfig
 from kstrl.contract import ContractConfig, run_contract_testing
 from kstrl.factory import FactoryConfig, run_factory
 from kstrl.factory_result import ComponentResult
-from kstrl.knowledge import KnowledgeConfig, distill_facts
+from kstrl.knowledge import distill_facts
+from kstrl.knowledge_facts import KnowledgeConfig
 from kstrl.loop import COMPLETION_MARKER, LoopResult, run_loop
 from kstrl.manifest import Component, Manifest
 from kstrl.review import ReviewMode, run_review
