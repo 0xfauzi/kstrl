@@ -21,18 +21,20 @@ from typing import Any
 import pytest
 
 from kstrl.decompose import (
-    SPEC_ISSUE_APPLIES_COMPONENT,
-    SPEC_ISSUE_APPLIES_SPEC,
     SpecBlockerError,
-    SpecIssue,
     _routed_prd_issues,
     decompose_spec,
-    route_spec_issues,
 )
 from kstrl.knowledge_distill import _read_prd_text
 from kstrl.manifest import Manifest
 from kstrl.prd import _OPTIONAL_KEYS, PRD, PROMPT_EXCLUDED_KEYS, prd_text_for_prompt
 from kstrl.security import SecurityConfig, SecurityMode, run_security_review
+from kstrl.spec_issues import (
+    SPEC_ISSUE_APPLIES_COMPONENT,
+    SPEC_ISSUE_APPLIES_SPEC,
+    SpecIssue,
+    route_spec_issues,
+)
 from kstrl.statedir import plan_prd_path
 from kstrl.ui.plain import PlainUI
 from tests.conftest import make_review_repo

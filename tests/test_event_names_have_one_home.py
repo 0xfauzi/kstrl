@@ -189,9 +189,9 @@ EXPECTED_EVENT_NAME_SPELLINGS: dict[str, int] = {
     # appenders across six modules can write the row now, and appendio
     # is the module all six already import.
     "appendio.py": 1,
-    # The architect's own JSON key, twice (validation and _parse_spec_issues),
-    # plus the TUI artifact label emitted with ArtifactWritten.
-    "decompose.py": 3,
+    # The architect's own JSON key (validation), plus the TUI artifact label
+    # emitted with ArtifactWritten.
+    "decompose.py": 2,
     # The SPEC_ISSUES_EVENT declaration, plus the FINDINGS_SUPERSEDED_EVENT
     # declaration #233 added (kstrl/pipeline.py's own write now imports
     # the constant, so it folds to nothing here). Was 2 until #331 moved
@@ -200,6 +200,8 @@ EXPECTED_EVENT_NAME_SPELLINGS: dict[str, int] = {
     # dropped rather than staying put.
     # 3 since #482 declared INTEGRATION_RESULT_EVENT there.
     "journal_rows.py": 3,
+    # The architect's own JSON key in _parse_spec_issues, moved here with it (#776 D1).
+    "spec_issues.py": 1,
     # The TUI reading that artifact label back.
     "tui/screens/decompose.py": 1,
 }

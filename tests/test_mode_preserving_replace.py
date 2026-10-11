@@ -111,8 +111,6 @@ EXPECTED_UNDECIDED_REPLACE_CALLS: tuple[str, ...] = (
     "autonomy.py datetime.now(UTC).replace",
     "autonomy_transitions.py trigger.label.replace",
     "baseline_report.py ' '.join(text.split()).replace",
-    "decompose.py comp_id.replace",
-    "decompose.py comp_id.replace('-', ' ').replace",
     "doctor.py now.isoformat().replace",
     # #433 inc3: str.replace spelling a slug as words, here and in the four
     # tui/ rows below, except inbox.py's `moment`, a datetime's tzinfo.
@@ -128,6 +126,8 @@ EXPECTED_UNDECIDED_REPLACE_CALLS: tuple[str, ...] = (
     "scrubbed_run.py text.replace",
     "scrubbed_run.py text.replace('\\r\\n', '\\n').replace",
     "serve_spend.py (local + timedelta(days=1)).replace",
+    "spec_issues.py comp_id.replace",
+    "spec_issues.py comp_id.replace('-', ' ').replace",
     "statedir.py datetime.now(UTC).replace",
     "statedir.py datetime.now(UTC).replace(microsecond=0).isoformat().replace",
     "tui/app.py initial_screens_for_kind(kind, observe_only=False)",
