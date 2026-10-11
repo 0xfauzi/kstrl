@@ -34,7 +34,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl.cli import _understand_core
+from kstrl.cli_loop import _understand_core
 from kstrl.commandrun import CommandRun
 from kstrl.config import KstrlConfig, component_harness_paths
 from kstrl.decompose import _SCOPE_HAZARD_ADVICE
@@ -700,7 +700,7 @@ class TestStandaloneLoops:
             paths=None,
             run_root=tmp_path / ".kstrl" / "runs" / "run-test",
         )
-        with patch("kstrl.cli.run_loop", side_effect=fake_run_loop):
+        with patch("kstrl.cli_loop.run_loop", side_effect=fake_run_loop):
             _understand_core(
                 config,
                 cast(Any, None),
