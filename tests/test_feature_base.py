@@ -33,7 +33,8 @@ from kstrl.contract import (
     run_integrated_base_check,
 )
 from kstrl.decompose import spec_digest
-from kstrl.factory import ComponentResult, FactoryResult, run_factory
+from kstrl.factory import run_factory
+from kstrl.factory_result import ComponentResult, FactoryResult
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.pipeline import ComponentPipeline
 from kstrl.ui.plain import PlainUI

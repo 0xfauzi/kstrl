@@ -30,13 +30,8 @@ import pytest
 
 from kstrl.config import KstrlConfig
 from kstrl.decompose import decompose_spec
-from kstrl.factory import (
-    ComponentResult,
-    FactoryConfig,
-    FactoryResult,
-    _preflight_component_scope,
-    run_factory,
-)
+from kstrl.factory import FactoryConfig, _preflight_component_scope, run_factory
+from kstrl.factory_result import ComponentResult, FactoryResult
 from kstrl.git import get_diff_names
 from kstrl.manifest import Component, Manifest
 from kstrl.scope import RunScope

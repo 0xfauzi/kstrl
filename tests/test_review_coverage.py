@@ -36,7 +36,8 @@ import pytest
 
 from kstrl import git
 from kstrl.config import KstrlConfig
-from kstrl.factory import ComponentResult, FactoryConfig, run_factory
+from kstrl.factory import FactoryConfig, run_factory
+from kstrl.factory_result import ComponentResult
 from kstrl.manifest import Component, Manifest
 from kstrl.review import (
     ReviewMode,

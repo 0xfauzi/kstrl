@@ -25,7 +25,8 @@ from typing import Any
 
 import pytest
 
-from kstrl.factory import FactoryResult, run_factory
+from kstrl.factory import run_factory
+from kstrl.factory_result import FactoryResult
 from kstrl.manifest import Manifest
 from kstrl.security import SecurityConfig
 from kstrl.timeout import TimeoutConfig

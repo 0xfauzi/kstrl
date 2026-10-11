@@ -39,7 +39,8 @@ from kstrl import loop as loop_mod
 from kstrl.agents.base import UsageRecord, UsageTotals
 from kstrl.config import KstrlConfig
 from kstrl.contract import ContractConfig, run_contract_testing
-from kstrl.factory import ComponentResult, FactoryConfig, run_factory
+from kstrl.factory import FactoryConfig, run_factory
+from kstrl.factory_result import ComponentResult
 from kstrl.knowledge import KnowledgeConfig, distill_facts
 from kstrl.loop import COMPLETION_MARKER, LoopResult, run_loop
 from kstrl.manifest import Component, Manifest

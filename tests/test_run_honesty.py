@@ -32,7 +32,8 @@ from click.testing import CliRunner
 import kstrl.cli as cli_mod
 import kstrl.loop as loop_mod
 from kstrl.config import KstrlConfig
-from kstrl.factory import FactoryConfig, FactoryResult, run_factory
+from kstrl.factory import FactoryConfig, run_factory
+from kstrl.factory_result import FactoryResult
 from kstrl.init_cmd import DEFAULT_PROMPT
 from kstrl.loop import LoopResult
 from kstrl.manifest import Component, Manifest

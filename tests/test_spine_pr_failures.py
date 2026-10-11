@@ -29,7 +29,8 @@ from typing import Any
 
 import pytest
 
-from kstrl.factory import FactoryResult, run_factory
+from kstrl.factory import run_factory
+from kstrl.factory_result import FactoryResult
 from kstrl.inbox import Inbox, InboxConfig, InboxItem, ItemStatus
 from kstrl.manifest import ComponentStatus, Manifest
 from kstrl.ui.plain import PlainUI

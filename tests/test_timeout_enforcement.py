@@ -45,7 +45,6 @@ from kstrl.agents.custom import CustomAgent
 from kstrl.agents.proc import TIMEOUT_MESSAGE_PREFIX, kill_active_process_groups
 from kstrl.config import KstrlConfig
 from kstrl.factory import (
-    ComponentResult,
     FactoryConfig,
     _expired_futures,
     _next_backstop_wait,
@@ -53,6 +52,7 @@ from kstrl.factory import (
     _setup_worktree,
     run_factory,
 )
+from kstrl.factory_result import ComponentResult
 from kstrl.loop import run_loop
 from kstrl.manifest import Component, Manifest
 from kstrl.timeout import TimeoutConfig
@@ -1658,7 +1658,7 @@ class TestCliTimeoutFlags:
         from click.testing import CliRunner
 
         from kstrl.cli import cli
-        from kstrl.factory import FactoryResult
+        from kstrl.factory_result import FactoryResult
 
         manifest_path = self._write_manifest(tmp_path)
         runner = CliRunner()

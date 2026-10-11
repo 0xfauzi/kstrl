@@ -21,7 +21,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from kstrl.config import KstrlConfig
-from kstrl.factory import ComponentResult, FactoryConfig, run_factory
+from kstrl.factory import FactoryConfig, run_factory
+from kstrl.factory_result import ComponentResult
 from kstrl.manifest import Component, Manifest
 from kstrl.review import ReviewResult
 from kstrl.ui.plain import PlainUI
@@ -229,7 +230,7 @@ class TestE6HitlCheckpoint:
         failure, and `ks inbox approve` merges it later. Proceeding
         would defeat the gate in exactly the unattended case R8.2's
         L1/L2 forces the gate on for."""
-        from kstrl.factory import ComponentResult
+        from kstrl.factory_result import ComponentResult
         from kstrl.inbox import Inbox, InboxConfig, ItemKind
 
         scaffold = tmp_path / "scripts" / "kstrl"

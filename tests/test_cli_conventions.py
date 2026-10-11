@@ -370,7 +370,7 @@ FINDING_EXIT_SITES: dict[tuple[str, str], int] = {
     ("cli_learning.py", "recheck_cmd"): 1,  # a verdict the recheck disagrees with
     ("cli.py", "serve"): 1,  # work is waiting on a human
     ("doctor.py", "exit_code_for"): 1,  # `ks doctor`: not ready is a finding
-    ("factory.py", "resolve_exit_code"): 5,  # a failed, unmerged, parked or unscheduled run
+    ("factory_result.py", "resolve_exit_code"): 5,  # a failed, unmerged, parked or unscheduled run
     ("init_cmd.py", "run_init"): 2,  # `ks init`: the PRD it validated is invalid
     ("loop.py", "run_loop"): 5,  # an iteration ran and the loop ended short
     ("plan_gate.py", "_park_plan"): 1,  # an L1 plan parked for approval, nothing run (#602)

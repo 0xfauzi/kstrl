@@ -50,7 +50,8 @@ from kstrl.autonomy import (
 from kstrl.config import ConfigError
 from kstrl.event_catalog import AutonomyLevelApplied, Event
 from kstrl.events import CallbackSink, EventBus
-from kstrl.factory import ComponentResult, FactoryConfig, run_factory
+from kstrl.factory import FactoryConfig, run_factory
+from kstrl.factory_result import ComponentResult
 from kstrl.manifest import Manifest
 from kstrl.review import ReviewResult
 from kstrl.verify_model import CheckResult, VerificationResult, VerifyConfig

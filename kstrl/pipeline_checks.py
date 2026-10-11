@@ -22,7 +22,7 @@ from kstrl.verify_model import CheckResult, VerificationResult
 from kstrl.waivers import ApprovalSnapshot
 
 if TYPE_CHECKING:
-    from kstrl.factory import ComponentResult
+    from kstrl.factory_result import ComponentResult
 
 
 @dataclass(frozen=True)

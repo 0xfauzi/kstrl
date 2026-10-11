@@ -22,11 +22,8 @@ from pathlib import Path
 import pytest
 
 from kstrl.config import KstrlConfig
-from kstrl.factory import (
-    FactoryConfig,
-    FactoryResult,
-    run_factory,
-)
+from kstrl.factory import FactoryConfig, run_factory
+from kstrl.factory_result import FactoryResult
 from kstrl.findings import finding_model
 from kstrl.manifest import Component, Manifest
 from kstrl.observability import read_progress_events

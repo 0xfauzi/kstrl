@@ -35,7 +35,8 @@ import pytest
 from kstrl import event_catalog
 from kstrl import events as ev
 from kstrl.config import KstrlConfig
-from kstrl.factory import ComponentResult, FactoryConfig, run_factory
+from kstrl.factory import FactoryConfig, run_factory
+from kstrl.factory_result import ComponentResult
 from kstrl.findings import CLAIM_DISAGREEMENT_CATEGORY
 from kstrl.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.manifest import Component, Manifest

@@ -28,7 +28,8 @@ from unittest.mock import patch
 import pytest
 
 from kstrl.agents.proc import DeadlineStreamer, kill_active_process_groups
-from kstrl.factory import ComponentResult, run_factory
+from kstrl.factory import run_factory
+from kstrl.factory_result import ComponentResult
 from kstrl.shutdown import StopController
 from kstrl.tui.bridge import start_command_thread
 from kstrl.ui.plain import PlainUI

@@ -15,7 +15,7 @@ from kstrl.pipeline_attempt import AttemptRecorder
 from kstrl.pipeline_ledger import UsageLedger
 
 if TYPE_CHECKING:
-    from kstrl.factory import ComponentResult
+    from kstrl.factory_result import ComponentResult
 
 
 @dataclass(frozen=True)

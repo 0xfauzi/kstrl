@@ -23,7 +23,8 @@ import pytest
 from kstrl import config as _config_module
 from kstrl import config_toml as _toml_module
 from kstrl.config import KstrlConfig
-from kstrl.factory import FactoryConfig, FactoryResult, run_factory
+from kstrl.factory import FactoryConfig, run_factory
+from kstrl.factory_result import FactoryResult
 from kstrl.manifest import Component, Manifest
 from kstrl.pipeline import ComponentPipeline
 from kstrl.ui.plain import PlainUI

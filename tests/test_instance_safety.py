@@ -31,7 +31,8 @@ from click.testing import CliRunner
 
 from kstrl.cli import cli
 from kstrl.config import KstrlConfig
-from kstrl.factory import FactoryConfig, FactoryResult, run_factory
+from kstrl.factory import FactoryConfig, run_factory
+from kstrl.factory_result import FactoryResult
 from kstrl.manifest import Component, Manifest
 from kstrl.ui.plain import PlainUI
 from kstrl.verify_model import VerifyConfig

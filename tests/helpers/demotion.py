@@ -28,7 +28,8 @@ from typing import Any
 from kstrl import calibration
 from kstrl.autonomy import AutonomyConfig, AutonomyLevel
 from kstrl.events import EventBus
-from kstrl.factory import FactoryResult, _record_autonomy_outcome
+from kstrl.factory import _record_autonomy_outcome
+from kstrl.factory_result import FactoryResult
 from kstrl.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.ui.plain import PlainUI
 from tests.spine_utils import component, make_manifest

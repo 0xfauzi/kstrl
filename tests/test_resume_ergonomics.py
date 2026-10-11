@@ -19,12 +19,8 @@ from click.testing import CliRunner
 from kstrl.cli import cli
 from kstrl.config import KstrlConfig
 from kstrl.evolution import FINDINGS_SUPERSEDED_EVENT, EvolutionConfig
-from kstrl.factory import (
-    ComponentResult,
-    FactoryConfig,
-    FactoryResult,
-    run_factory,
-)
+from kstrl.factory import FactoryConfig, run_factory
+from kstrl.factory_result import ComponentResult, FactoryResult
 from kstrl.findings import (
     Finding,
     finding_attempt,

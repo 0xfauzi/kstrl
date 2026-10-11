@@ -107,8 +107,9 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     "decompose.py": 2,
     "events.py": 1,
     "evolution.py": 2,
-    "factory.py": 5,
+    "factory.py": 4,
     "factory_lock.py": 1,
+    "factory_result.py": 1,
     "feature_cmd.py": 2,
     # 1 since #696 slice 6: the module map's line count is the one read
     # left; the interface, graph and conventions readers are gone.
@@ -256,9 +257,9 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "factory.py open(lock_path, 'w', encoding='utf-8')",
     "factory.py open(log_path, 'a', buffering=1, encoding='utf-8', errors='replace')",
     "factory.py open(run_paths.engineer_log(component_id), 'a', buffering=1, encoding=",
-    "factory.py path.read_text(encoding='utf-8')",
     "factory_lock.py fp.read(64) on an open() handle",
     "factory_lock.py open(lock_path, 'a+', encoding='utf-8')",
+    "factory_result.py path.read_text(encoding='utf-8')",
     "feature_cmd.py open(latest_path, 'w', encoding='utf-8')",
     "feature_cmd.py open(repair_path, 'w', encoding='utf-8')",
     "feedforward.py path.read_text(encoding='utf-8', errors='replace')",

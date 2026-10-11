@@ -189,7 +189,7 @@ class TestReplay:
         real ``record_run`` appends onto it, so this measures the reader
         against bytes the writer actually produces.
         """
-        from kstrl.factory import FactoryResult
+        from kstrl.factory_result import FactoryResult
         from kstrl.manifest import Manifest
         from tests.helpers.journal import journal_at, tear
 
@@ -248,7 +248,8 @@ def _run_factory_with_autonomy(
 ) -> object:
     """Run the factory against a stored level; return the FactoryConfig."""
     from kstrl.config import KstrlConfig
-    from kstrl.factory import ComponentResult, FactoryConfig, run_factory
+    from kstrl.factory import FactoryConfig, run_factory
+    from kstrl.factory_result import ComponentResult
     from kstrl.manifest import Component, Manifest
     from kstrl.ui.plain import PlainUI
     from kstrl.verify_model import CheckResult, VerificationResult, VerifyConfig

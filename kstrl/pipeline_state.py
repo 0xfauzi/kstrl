@@ -31,7 +31,8 @@ from kstrl.worktree_sweep import WorktreeSweep
 
 if TYPE_CHECKING:
     from kstrl.config import KstrlConfig
-    from kstrl.factory import AdversarialAgentSelection, FactoryConfig, FactoryResult
+    from kstrl.factory import AdversarialAgentSelection, FactoryConfig
+    from kstrl.factory_result import FactoryResult
     from kstrl.knowledge import KnowledgeConfig
     from kstrl.pipeline_knowledge import FactUtilization
     from kstrl.ui.base import UI
