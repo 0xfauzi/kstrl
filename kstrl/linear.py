@@ -54,8 +54,8 @@ from kstrl.event_catalog import budget_halt_kind
 from kstrl.jsonread import read_json
 
 if TYPE_CHECKING:
-    from kstrl.decompose import SpecIssue
     from kstrl.manifest import Manifest
+    from kstrl.spec_issues import SpecIssue
 
 _VALID_AUTH_MODES = frozenset({"auto", "api_key", "oauth"})
 

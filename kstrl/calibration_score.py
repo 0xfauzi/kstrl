@@ -30,9 +30,9 @@ from collections.abc import Collection, Sequence
 from typing import Any
 
 from kstrl.decisions import enum_field_error, required_field_error
-from kstrl.decompose import _VALID_KINDS
 from kstrl.review import VALID_CONCERN_CATEGORIES, VALID_CONCERN_SEVERITIES, ReviewResult
 from kstrl.security import _SEVERITY_ORDER, VALID_CATEGORIES, SecurityResult
+from kstrl.spec_issues import _VALID_KINDS
 
 # Realistic mechanical-verification context. The old ``_VERIFICATION_STUB``
 # used check names the harness never emits ("tests", "lint"); the real
