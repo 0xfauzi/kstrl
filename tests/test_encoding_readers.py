@@ -24,7 +24,7 @@ measured census over 52 read-mode text decodes in ``kstrl/``:
         nothing escapes: not offenders under this rule
 
 A 21st site is not in that table because no census of READ CALLS can see
-it. ``factory.py``'s run lock reads the holder pid back out of an ``"a+"``
+it. ``factory_lock.py``'s run lock reads the holder pid back out of an ``"a+"``
 handle - ``fp.read(64)`` under ``except OSError`` - and the decode is at
 the read, not at the ``open``. ``encodingwalk._through_handles`` is the
 half of the walk that follows the handle, and that site is the only one
@@ -107,7 +107,8 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     "decompose.py": 2,
     "events.py": 1,
     "evolution.py": 2,
-    "factory.py": 6,
+    "factory.py": 5,
+    "factory_lock.py": 1,
     "feature_cmd.py": 2,
     # 1 since #696 slice 6: the module map's line count is the one read
     # left; the interface, graph and conventions readers are gone.
@@ -252,12 +253,12 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "decompose.py spec_path.read_text(encoding='utf-8')",
     "events.py open(path, encoding='utf-8', errors='replace')",
     "evolution.py self.config.experiments_path.read_text(encoding='utf-8')",
-    "factory.py fp.read(64) on an open() handle",
-    "factory.py open(lock_path, 'a+', encoding='utf-8')",
     "factory.py open(lock_path, 'w', encoding='utf-8')",
     "factory.py open(log_path, 'a', buffering=1, encoding='utf-8', errors='replace')",
     "factory.py open(run_paths.engineer_log(component_id), 'a', buffering=1, encoding=",
     "factory.py path.read_text(encoding='utf-8')",
+    "factory_lock.py fp.read(64) on an open() handle",
+    "factory_lock.py open(lock_path, 'a+', encoding='utf-8')",
     "feature_cmd.py open(latest_path, 'w', encoding='utf-8')",
     "feature_cmd.py open(repair_path, 'w', encoding='utf-8')",
     "feedforward.py path.read_text(encoding='utf-8', errors='replace')",
@@ -354,7 +355,7 @@ EXPECTED_UNDECIDED: tuple[str, ...] = (
     "cli.py f (the read is deferred to wherever this value is drained, "
     "which this walk cannot locate, so no handler can be credited with "
     "covering it)",
-    "factory.py fp (the read is deferred to wherever this value is drained, "
+    "factory_lock.py fp (the read is deferred to wherever this value is drained, "
     "which this walk cannot locate, so no handler can be credited with "
     "covering it)",
     # #632: `_dispatch_fixture` calls a runner through `_RUNNERS`, a callee

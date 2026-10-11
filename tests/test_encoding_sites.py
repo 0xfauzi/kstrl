@@ -451,7 +451,7 @@ class TestTheFactoryRunLockReadsItsHolderBack:
         a clean "another run holds this" refusal into a traceback."""
         pytest.importorskip("fcntl")
         tmp_path = isolate_kstrl_state
-        from kstrl.factory import FactoryLockHeldError, _acquire_run_lock
+        from kstrl.factory_lock import FactoryLockHeldError, _acquire_run_lock
         from kstrl.statedir import state_dir
         from kstrl.ui.plain import PlainUI
 

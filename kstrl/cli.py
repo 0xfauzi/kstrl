@@ -90,15 +90,17 @@ from kstrl.factory import (
     VALID_REVIEW_MODES,
     BaseRefusedError,
     FactoryConfig,
-    FactoryLockHeldError,
-    LeftoverAgentsError,
-    _acquire_run_lock,
     _cli_family,
     _report_preflight,
-    _RunLock,
     base_check_before_architect,
     base_refused_before_architect,
     run_factory,
+)
+from kstrl.factory_lock import (
+    FactoryLockHeldError,
+    LeftoverAgentsError,
+    _acquire_run_lock,
+    _RunLock,
 )
 from kstrl.feature_cmd import FeatureParams, run_feature
 from kstrl.git import (

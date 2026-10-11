@@ -208,9 +208,9 @@ class TestRunLockRelease:
         ``ks factory`` refusal below). Idempotent: releasing twice is not
         an error and the second call changes nothing further.
         """
-        import kstrl.factory as factory_mod
+        import kstrl.factory_lock as factory_lock_mod
 
-        lock = factory_mod._acquire_run_lock(tmp_path, PlainUI(no_color=True), force=False)
+        lock = factory_lock_mod._acquire_run_lock(tmp_path, PlainUI(no_color=True), force=False)
         assert lock.held is True
         assert lock.fp is not None
 
@@ -232,11 +232,11 @@ class TestRunLockRelease:
         assertion against that silently being trusted, not a case the
         CLI is meant to reach in ordinary use.
         """
-        import kstrl.factory as factory_mod
+        import kstrl.factory_lock as factory_lock_mod
         from kstrl.launch_record import option_argv
 
         root, _before = _failed_storage(tmp_path)
-        released = factory_mod._acquire_run_lock(root, PlainUI(no_color=True), force=False)
+        released = factory_lock_mod._acquire_run_lock(root, PlainUI(no_color=True), force=False)
         released.release()
 
         argv = option_argv(
@@ -347,19 +347,21 @@ class TestKsRetryChangesNothingBeforeItsGates:
         shows here as a free lock while the engineer runs.
         """
         import kstrl.factory as factory_mod
+        import kstrl.factory_lock as factory_lock_mod
 
         root, _before = _failed_storage(tmp_path)
         seen = tmp_path / "lock_seen_by_engineer.txt"
         engineer = tmp_path / "engineer.py"
         engineer.write_text(_LOCK_PROBING_ENGINEER, encoding="utf-8")
         acquired: list[Path] = []
-        real_acquire = factory_mod._acquire_run_lock
+        real_acquire = factory_lock_mod._acquire_run_lock
 
         def counting_acquire(root_dir: Path, ui: Any, force: bool) -> Any:
             acquired.append(root_dir)
             return real_acquire(root_dir, ui, force)
 
         monkeypatch.setattr(factory_mod, "_acquire_run_lock", counting_acquire)
+        monkeypatch.setattr(factory_lock_mod, "_acquire_run_lock", counting_acquire)
         monkeypatch.setattr(cli_mod, "_acquire_run_lock", counting_acquire)
         agent = " ".join(
             shlex.quote(part)
@@ -526,6 +528,7 @@ class TestApprovingAParkedMergeHoldsTheLockIntoTheDependentRun:
         probe.
         """
         import kstrl.factory as factory_mod
+        import kstrl.factory_lock as factory_lock_mod
 
         root, env, _reviewed = park._parked_run(tmp_path)
         item = park._park_item(root)
@@ -542,13 +545,14 @@ class TestApprovingAParkedMergeHoldsTheLockIntoTheDependentRun:
             )
         )
         acquired: list[Path] = []
-        real_acquire = factory_mod._acquire_run_lock
+        real_acquire = factory_lock_mod._acquire_run_lock
 
         def counting_acquire(root_dir: Path, ui: Any, force: bool) -> Any:
             acquired.append(root_dir)
             return real_acquire(root_dir, ui, force)
 
         monkeypatch.setattr(factory_mod, "_acquire_run_lock", counting_acquire)
+        monkeypatch.setattr(factory_lock_mod, "_acquire_run_lock", counting_acquire)
         monkeypatch.setattr(cli_mod, "_acquire_run_lock", counting_acquire)
         for name in [k for k in os.environ if k.startswith("KSTRL_")]:
             monkeypatch.delenv(name)
