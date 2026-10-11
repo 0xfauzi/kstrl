@@ -71,7 +71,13 @@ CHOICE_VOCABULARIES: dict[str, tuple[str, ...]] = {
 EXPECTED_CHOICE_OPTIONS = 49
 
 #: Re-derived by running the Layer 2 census on this tree.
-EXPECTED_CHOICE_CALLS: dict[str, int] = {"cli.py": 18, "cli_check.py": 2, "cli_learning.py": 3}
+EXPECTED_CHOICE_CALLS: dict[str, int] = {
+    "cli.py": 14,
+    "cli_check.py": 2,
+    "cli_learning.py": 3,
+    "cli_queue.py": 2,
+    "cli_report.py": 2,
+}
 
 #: The options the naming rule finds on this tree. Re-derived by running
 #: ``test_the_naming_rule_finds_the_known_flags``.

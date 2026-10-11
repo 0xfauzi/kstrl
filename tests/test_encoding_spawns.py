@@ -266,11 +266,14 @@ EXPECTED_BYTES_MODE_SPAWNS: dict[str, int] = {
 }
 
 
-#: Two calls this walk cannot fully decide, sorted and deduplicated to one
-#: row each. ``cli.py app.run`` is both of ``kstrl/cli.py``'s ``app.run()``
-#: calls: the resolver cannot type ``app``, so it is a candidate it cannot
-#: decide either way. Checked by hand: both are the Textual application's
-#: own ``run``. ``timeout.py subprocess.run`` is ``run_with_timeout``, which
+#: One call this walk cannot fully decide, sorted and deduplicated to one
+#: row each. ``kstrl/cli_report.py`` has two ``app.run()`` calls that the
+#: resolver cannot type. They were the row ``cli.py app.run`` while they were
+#: in ``kstrl/cli.py``, which names "subprocess" in a comment. The walk skips
+#: a module whose text has no "subprocess", so the row left with the move.
+#: ``astwalk`` and the timeout audit still pin ``cli_report.py app.run``.
+#: Checked by hand: both are the Textual application's own ``run``.
+#: ``timeout.py subprocess.run`` is ``run_with_timeout``, which
 #: names ``encoding="utf-8"`` explicitly AND forwards ``**kwargs`` to the
 #: same call (A1): the forwarded dict is opaque, so no explicit keyword on
 #: the call proves anything, and a caller could pass ``errors="replace"``
@@ -278,7 +281,6 @@ EXPECTED_BYTES_MODE_SPAWNS: dict[str, int] = {
 #: wrongly CLEARED, not bytes mode - the more severe of the two over-matches
 #: A1 closes; see the two probes below that cover both.
 EXPECTED_UNDECIDED_SPAWNS: tuple[str, ...] = (
-    "cli.py app.run",
     # #632: `_dispatch_fixture` calls a runner through `_RUNNERS`. Checked by
     # hand: the cli runner spawns through `run_scrubbed`, counted above, and
     # the file runner spawns nothing (#696 slice 8 deleted the function runner).
