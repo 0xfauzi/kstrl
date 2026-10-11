@@ -68,9 +68,11 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     # deletes stage_file, ignore_source and ignored_paths, two each. 64: #696
     # slice 9 deletes read_blob, two each. 66: #700's git_common_dir adds one
     # of each. 68: #700's git_write_paths adds one of each. 59: #776 G1 moves
-    # ten of them to `git_base.py`.
-    "git.py": 59,
+    # ten of them to `git_base.py`. 51: #776 G2 moves eight of them to
+    # `git_diff.py`, which adds its own `import subprocess` (9).
+    "git.py": 51,
     "git_base.py": 10,
+    "git_diff.py": 9,
     "intake_gh.py": 3,
     # #700: the import, and `TimeoutExpired` from `run_scrubbed`.
     "isolation.py": 2,
@@ -131,9 +133,11 @@ EXPECTED_TEXT_MODE_SPAWNS: dict[str, int] = {
     # 28: +1 for #696's `status_entries`. 25: #696 slice 6 deletes
     # `stage_file`, `ignore_source` and `ignored_paths`. 26: +1 for #700's
     # `git_common_dir`. 27: +1 for #700's `git_write_paths`. 24: #776 G1 moves
-    # three of them to `git_base.py`.
-    "git.py": 24,
+    # three of them to `git_base.py`. 21: #776 G2 moves three of them to
+    # `git_diff.py`.
+    "git.py": 21,
     "git_base.py": 3,
+    "git_diff.py": 3,
     "intake_gh.py": 1,
     "pr.py": 9,
     "pr_state.py": 2,
@@ -167,10 +171,7 @@ EXPECTED_CLEARED_SPAWNS: tuple[str, ...] = (
     "git.py subprocess.run(['git', 'config', '--get', 'remote.origin.url'], cwd=cw",
     "git.py subprocess.run(['git', 'diff', '--name-only', '--cached', '-z'], cwd=c",
     "git.py subprocess.run(['git', 'diff', '--name-only', '-z'], cwd=cwd, capture_",
-    "git.py subprocess.run(['git', 'diff', '--name-status', '-z', '-M', '-C', f'{b",
     "git.py subprocess.run(['git', 'diff', '--name-status', '-z', ref, '--'], cwd=",
-    "git.py subprocess.run(['git', 'diff', '--numstat', '-z', f'{base_ref}...HEAD'",
-    "git.py subprocess.run(['git', 'diff', f'{base_ref}...HEAD', '--'], cwd=cwd, c",
     "git.py subprocess.run(['git', 'ls-files', '--cached', '--others', '--exclude-",
     "git.py subprocess.run(['git', 'ls-files', '--others', '--exclude-standard', '",
     "git.py subprocess.run(['git', 'ls-tree', '-r', '--name-only', '-z', sha], cwd",
@@ -187,6 +188,9 @@ EXPECTED_CLEARED_SPAWNS: tuple[str, ...] = (
     "git_base.py subprocess.run(['git', 'for-each-ref', '--format=%(refname)%09%(symref",
     # codespell:ignore-next-line
     "git_base.py subprocess.run(['git', 'rev-parse', '--verify', '--quiet', f'{candidat",
+    "git_diff.py subprocess.run(['git', 'diff', '--name-status', '-z', '-M', '-C', f'{b",
+    "git_diff.py subprocess.run(['git', 'diff', '--numstat', '-z', f'{base_ref}...HEAD'",
+    "git_diff.py subprocess.run(['git', 'diff', f'{base_ref}...HEAD', '--'], cwd=cwd, c",
     "intake_gh.py subprocess.run(['gh', *args], cwd=str(cwd) if cwd else None, capture_o",
     "pr.py subprocess.run(['gh', 'auth', 'status'], capture_output=True, encoding",
     "pr.py subprocess.run(['gh', 'pr', 'close', str(pr_number), '--comment', 'Sup",
@@ -244,9 +248,10 @@ EXPECTED_BYTES_MODE_SPAWNS: dict[str, int] = {
     # 10 since #695: `_get_stored_diff` reads bytes and decodes them itself
     # with surrogateescape, so a binary file's bytes reach the secret rules.
     # 8 since #696 slice 9 deleted `read_blob`. 6: #776 G1 moves two of them
-    # to `git_base.py`.
-    "git.py": 6,
+    # to `git_base.py`. 5: #776 G2 moves one of them to `git_diff.py`.
+    "git.py": 5,
     "git_base.py": 2,
+    "git_diff.py": 1,
     "observability.py": 1,
     "retry_plan.py": 3,
     # 2: `_base_finding`'s `git show` (#414/#425), and #527's

@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
-from kstrl import git
+from kstrl import git_diff
 from kstrl.agents.base import UsageRecord
 from kstrl.config import KstrlConfig
 from kstrl.contract import ContractConfig, ContractMode
@@ -145,7 +145,7 @@ def merged_feature(
 def review_payload(root: Path, base: str) -> dict[str, Any]:
     """A reviewer reply that passes IC1 to IC5 with the PRD's exact criterion
     text, reporting the diffstat git measures for ``base...main``."""
-    stat = git.get_diff_stat(base, root, resolved=True)
+    stat = git_diff.get_diff_stat(base, root, resolved=True)
     return {
         "observedDiffstat": {
             "files": stat.files,

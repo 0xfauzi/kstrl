@@ -203,7 +203,8 @@ def test_the_baseline_s_identity_reads_fall_back_when_git_is_absent(
     all: the strict diff read is what `ks check` turns into exit 2, and it let
     the same error out.
     """
-    from kstrl.git import GitDiffError, get_diff_names, get_head_sha, get_origin_slug
+    from kstrl.git import GitDiffError, get_head_sha, get_origin_slug
+    from kstrl.git_diff import get_diff_names
 
     monkeypatch.setenv("PATH", str(tmp_path / "empty"))
 

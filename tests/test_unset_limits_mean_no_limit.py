@@ -502,7 +502,7 @@ def _factory_run(root: Path, config: FactoryConfig, usage: UsageTotals | None) -
     buffer = io.StringIO()
     with (
         patch("kstrl.factory._run_component", return_value=success),
-        patch("kstrl.git.get_diff_content", return_value=""),
+        patch("kstrl.git_diff.get_diff_content", return_value=""),
     ):
         result = run_factory(manifest, config, base, PlainUI(no_color=True, file=buffer), root)
     comp = manifest.get_component("comp-a")

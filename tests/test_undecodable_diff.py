@@ -26,7 +26,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import doctor, git, guards, loop, verify, verify_diff, verify_model
+from kstrl import doctor, git, git_diff, guards, loop, verify, verify_diff, verify_model
 from kstrl.breaker import compute_diff_hash
 from kstrl.config import KstrlConfig
 from kstrl.policy import PolicyConfig
@@ -161,7 +161,7 @@ def test_get_diff_content_refuses_a_diff_it_cannot_decode(tmp_path: Path) -> Non
     _commit_undecodable_content(repo)
 
     with pytest.raises(git.GitDiffError) as excinfo:
-        git.get_diff_content("main", repo)
+        git_diff.get_diff_content("main", repo)
 
     assert "not valid utf-8" in str(excinfo.value)
     assert "0xe9" in str(excinfo.value)
@@ -176,14 +176,14 @@ def test_get_diff_name_status_refuses_a_path_it_cannot_decode(tmp_path: Path) ->
     _commit_undecodable_path(repo)
 
     with pytest.raises(git.GitDiffError) as strict_info:
-        git.get_diff_name_status("main", repo, strict=True)
+        git_diff.get_diff_name_status("main", repo, strict=True)
     assert "0xe9" in str(strict_info.value)
     assert "position" in str(strict_info.value)
 
     # The lenient half: the LENIENT call must not return [], which would
     # assert that a diff known to carry changes carries none.
     with pytest.raises(git.GitDiffError):
-        git.get_diff_name_status("main", repo)
+        git_diff.get_diff_name_status("main", repo)
 
 
 # --- 3: get_diff_names ----------------------------------------------------
@@ -194,9 +194,9 @@ def test_get_diff_names_refuses_a_path_it_cannot_decode(tmp_path: Path) -> None:
     _commit_undecodable_path(repo)
 
     with pytest.raises(git.GitDiffError):
-        git.get_diff_names("main", repo, strict=True)
+        git_diff.get_diff_names("main", repo, strict=True)
     with pytest.raises(git.GitDiffError):
-        git.get_diff_names("main", repo)
+        git_diff.get_diff_names("main", repo)
 
 
 # --- 4/5: get_diff_numstat and its quotepath asymmetry --------------------
@@ -212,9 +212,9 @@ def test_get_diff_numstat_refuses_a_path_it_cannot_decode(tmp_path: Path) -> Non
     _commit_undecodable_path(repo)
 
     with pytest.raises(git.GitDiffError):
-        git.get_diff_numstat("main", repo, strict=True)
+        git_diff.get_diff_numstat("main", repo, strict=True)
     with pytest.raises(git.GitDiffError):
-        git.get_diff_numstat("main", repo)
+        git_diff.get_diff_numstat("main", repo)
 
 
 def test_quotepath_off_does_not_change_the_numstat_reader(tmp_path: Path) -> None:
@@ -228,7 +228,7 @@ def test_quotepath_off_does_not_change_the_numstat_reader(tmp_path: Path) -> Non
     _commit_undecodable_path(repo)
 
     with pytest.raises(git.GitDiffError):
-        git.get_diff_numstat("main", repo, strict=True)
+        git_diff.get_diff_numstat("main", repo, strict=True)
 
 
 # --- 6/7: the two gates that read the diff directly -----------------------

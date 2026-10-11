@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl import event_catalog, git
+from kstrl import event_catalog, git, git_diff
 from kstrl.atomicio import atomic_write_text
 from kstrl.context import ACCEPTANCE_PHASE, IterationContext
 from kstrl.findings import Finding
@@ -152,7 +152,7 @@ class MechanicalChecks(InboxDesk, AttemptRecorder):
         """
         head = git.branch_sha(comp.branch_name, self.root_dir) or ""
         try:
-            diff = git.get_diff_content(self.component_base(comp.id), wt_path, as_stored=True)
+            diff = git_diff.get_diff_content(self.component_base(comp.id), wt_path, as_stored=True)
         except git.GitDiffError as exc:
             self.ui.warn(
                 f"  {comp.id}: the judged diff could not be read, so no approval applies "
@@ -352,7 +352,7 @@ class MechanicalChecks(InboxDesk, AttemptRecorder):
         """
         base = self.component_base(comp.id)
         try:
-            shared_diff = git.get_diff_content(
+            shared_diff = git_diff.get_diff_content(
                 base,
                 wt_path,
             )

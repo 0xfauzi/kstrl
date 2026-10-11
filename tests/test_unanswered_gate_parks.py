@@ -103,7 +103,7 @@ PIPELINE_SOURCE = Path(__file__).resolve().parents[1] / "kstrl" / "pipeline_deli
 @pytest.fixture(autouse=True)
 def _no_real_diff(monkeypatch: pytest.MonkeyPatch) -> None:
     """tests/test_pipeline.py's stubs: no git diff, no real agent."""
-    monkeypatch.setattr("kstrl.git.get_diff_content", lambda *a, **k: "diff --git a b\n")
+    monkeypatch.setattr("kstrl.git_diff.get_diff_content", lambda *a, **k: "diff --git a b\n")
     monkeypatch.setattr("kstrl.agents.get_agent", lambda *a, **k: object())
 
 

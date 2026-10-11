@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from kstrl import git
+from kstrl import git_diff
 from kstrl.delimiters import generate_data_delimiter
 from kstrl.prd import PRD
 from kstrl.verify_model import VerificationResult
@@ -198,7 +198,7 @@ def build_review_prompt(
 
     return render_review_prompt(
         prd_content="\n".join(prd_lines),
-        change_source=git.repo_change_source(base_ref),
+        change_source=git_diff.repo_change_source(base_ref),
         verification_summary="\n".join(verify_lines),
         data_delimiter=generate_data_delimiter(),
     )

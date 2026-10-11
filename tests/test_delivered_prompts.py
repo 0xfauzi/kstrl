@@ -46,7 +46,7 @@ implicit:
   smaller than every limit, so raising or lowering one moves no digest.
   Covering a limit would need a fixture input larger than it.
 - For the security row, that ``security.py`` still calls
-  ``git.repo_change_source``: the block is passed in as an argument
+  ``git_diff.repo_change_source``: the block is passed in as an argument
   here, exactly as ``run_security_review`` passes it. That wiring is
   guarded end to end by
   ``test_prompt_versions.test_change_source_reaches_the_role``.
@@ -83,7 +83,7 @@ from kstrl import (
     acceptance_design,
     decompose,
     decompose_prompt,
-    git,
+    git_diff,
     init_cmd,
     integration,
     knowledge,
@@ -212,7 +212,7 @@ _DELIMITER_CONSUMERS: tuple[ModuleType, ...] = (
     review_prompt,
     security,
     knowledge,
-    git,
+    git_diff,
 )
 
 
@@ -446,7 +446,7 @@ _ROLES: dict[str, _Role] = {
         12020,
     ),
     "pasted-change-source": _Role(
-        lambda _p: git.pasted_change_source(_DIFF_TEXT)[0],
+        lambda _p: git_diff.pasted_change_source(_DIFF_TEXT)[0],
         frozenset({"PASTED_CHANGE_SOURCE_PROMPT"}),
         "e23bd60d3e43f6b8865ef93c73f24021dfd03bd023911a289ef9fdf15ebef9f4",
         865,
@@ -463,7 +463,9 @@ _ROLES: dict[str, _Role] = {
         # take the pasted-diff branch of the ``is None`` test instead of
         # the production one; the rendered text is identical either way
         # because ``security.generate_data_delimiter`` is pinned above.
-        lambda _p: security._build_security_prompt(_PRD_JSON, git.repo_change_source("BASE_SHA")),
+        lambda _p: security._build_security_prompt(
+            _PRD_JSON, git_diff.repo_change_source("BASE_SHA")
+        ),
         frozenset({"SECURITY_PROMPT", "REPO_CHANGE_SOURCE_PROMPT"}),
         "482a5c274011f9025f34d6896fd94de147ae5b02f42d5b6c387e3bbc8c928190",
         9381,
