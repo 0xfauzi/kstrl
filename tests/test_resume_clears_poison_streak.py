@@ -39,7 +39,7 @@ from tests.helpers.astwalk import (
 #: Every scope in ``kstrl/`` that spells ``resume``, with its count.
 RESUME_SITES = {
     # The operator's verb: the click command name and the Queue.resume call.
-    "kstrl/cli.py::queue_resume": 2,
+    "kstrl/cli_queue.py::queue_resume": 2,
     # Serve lifts a pause whose resume_after has passed. Only the daily
     # budget gate sets resume_after, so this never lifts a breaker pause.
     "kstrl/serve.py::serve_cycle": 1,
@@ -68,7 +68,7 @@ def test_every_path_that_lifts_the_pause_is_enrolled() -> None:
         message=(
             "A path that spells `resume` changed. A path that lifts the queue "
             "pause must also call SpendLedger.reset_poison_streak in the same "
-            "function, as kstrl/cli.py::queue_resume does, or the next serve "
+            "function, as kstrl/cli_queue.py::queue_resume does, or the next serve "
             "cycle pauses the queue again (#707). Classify it in RESUME_SITES."
         ),
     )
