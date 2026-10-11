@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from kstrl import git_base, git_diff
-from kstrl.decompose import (
+from kstrl.agent_output import (
     AgentOutputTooLarge,
     _extract_json,
     _select_agent_output,

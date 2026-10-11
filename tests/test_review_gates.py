@@ -178,7 +178,7 @@ class TestR11Coverage:
 
 class TestR12InfrastructurePaths:
     def _run(self, mode: ReviewMode, repo: ReviewRepo) -> ReviewResult:
-        from kstrl.decompose import AgentOutputTooLarge
+        from kstrl.agent_output import AgentOutputTooLarge
 
         prd_path = repo.path / "prd.json"
         _write_prd(prd_path, ["US-001"])

@@ -23,8 +23,8 @@ from pathlib import Path
 
 import pytest
 
+from kstrl.agent_output import _extract_json
 from kstrl.agents.claude_code import _parse_stream_event
-from kstrl.decompose import _extract_json
 from kstrl.events import parse_event_line
 from kstrl.inbox import Inbox, InboxConfig
 from kstrl.intake_github import parse_issue_list

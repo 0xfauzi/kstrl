@@ -12,7 +12,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl.decompose import (
+from kstrl.agent_output import (
     AgentOutputTooLarge,
     _extract_json,
     _select_agent_output,
