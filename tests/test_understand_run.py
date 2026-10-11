@@ -88,9 +88,9 @@ def _fake_run_loop(
 def _invoke_understand(tmp_path: Path, record: dict[str, Any]) -> Any:
     runner = CliRunner()
     with (
-        patch("kstrl.cli.get_agent", return_value=StubAgent()),
-        patch("kstrl.cli._check_agent_preflight"),
-        patch("kstrl.cli.run_loop", _fake_run_loop(record)),
+        patch("kstrl.cli_loop.get_agent", return_value=StubAgent()),
+        patch("kstrl.cli_loop._check_agent_preflight"),
+        patch("kstrl.cli_loop.run_loop", _fake_run_loop(record)),
     ):
         return runner.invoke(
             cli,
@@ -137,9 +137,9 @@ class TestUnderstandRun:
     def test_failed_loop_folds_as_failure(self, tmp_path: Path) -> None:
         runner = CliRunner()
         with (
-            patch("kstrl.cli.get_agent", return_value=StubAgent()),
-            patch("kstrl.cli._check_agent_preflight"),
-            patch("kstrl.cli.run_loop", _fake_run_loop({}, exit_code=1)),
+            patch("kstrl.cli_loop.get_agent", return_value=StubAgent()),
+            patch("kstrl.cli_loop._check_agent_preflight"),
+            patch("kstrl.cli_loop.run_loop", _fake_run_loop({}, exit_code=1)),
         ):
             result = runner.invoke(
                 cli,
@@ -158,10 +158,10 @@ class TestUnderstandRun:
         not complete the understand work."""
         runner = CliRunner()
         with (
-            patch("kstrl.cli.get_agent", return_value=StubAgent()),
-            patch("kstrl.cli._check_agent_preflight"),
+            patch("kstrl.cli_loop.get_agent", return_value=StubAgent()),
+            patch("kstrl.cli_loop._check_agent_preflight"),
             patch(
-                "kstrl.cli.run_loop",
+                "kstrl.cli_loop.run_loop",
                 _fake_run_loop({}, exit_code=0, completed=False),
             ),
         ):
@@ -184,9 +184,9 @@ class TestUnderstandRun:
 
         runner = CliRunner()
         with (
-            patch("kstrl.cli.get_agent", return_value=StubAgent()),
-            patch("kstrl.cli._check_agent_preflight"),
-            patch("kstrl.cli.run_loop", explode),
+            patch("kstrl.cli_loop.get_agent", return_value=StubAgent()),
+            patch("kstrl.cli_loop._check_agent_preflight"),
+            patch("kstrl.cli_loop.run_loop", explode),
         ):
             result = runner.invoke(
                 cli,
