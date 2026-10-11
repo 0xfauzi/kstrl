@@ -30,6 +30,7 @@ import pytest
 from click.testing import CliRunner
 
 import kstrl.cli as cli_mod
+import kstrl.cli_factory as cli_factory_mod
 import kstrl.cli_loop as cli_loop_mod
 import kstrl.loop as loop_mod
 from kstrl.config import KstrlConfig
@@ -335,7 +336,7 @@ class TestCliWiring:
             captured["base_config"] = base_config
             return FactoryResult()
 
-        monkeypatch.setattr(cli_mod, "run_factory", fake_run_factory)
+        monkeypatch.setattr(cli_factory_mod, "run_factory", fake_run_factory)
         monkeypatch.setattr(cli_loop_mod, "run_factory", fake_run_factory)
         return captured
 

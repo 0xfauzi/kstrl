@@ -1662,7 +1662,7 @@ class TestCliTimeoutFlags:
 
         manifest_path = self._write_manifest(tmp_path)
         runner = CliRunner()
-        with patch("kstrl.cli.run_factory") as mock_run:
+        with patch("kstrl.cli_factory.run_factory") as mock_run:
             mock_run.return_value = FactoryResult()
             result = runner.invoke(
                 cli,
