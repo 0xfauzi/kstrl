@@ -51,11 +51,11 @@ from kstrl.acceptance import (
     verdict_of,
     write_dir,
 )
+from kstrl.agent_output import _extract_json, _select_agent_output, collect_agent_output
 from kstrl.agents import get_agent
 from kstrl.agents.base import DESIGNER_ROLE, collect_usage
 from kstrl.agents.prompt_record import AgentCall, recording_prompts
 from kstrl.contract import ContractCleanupError, _create_temp_worktree, _remove_temp_worktree
-from kstrl.decompose import _extract_json, _select_agent_output, collect_agent_output
 from kstrl.delimiters import generate_data_delimiter
 from kstrl.inbox import ItemKind
 from kstrl.integration_phase import REVIEW_ASKS, _reask_refusal

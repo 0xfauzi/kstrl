@@ -316,10 +316,10 @@ def test_every_streamer_that_pipes_a_prompt_records_it_first() -> None:
 EXPECTED_AGENT_CALLS: dict[str, int] = {
     "acceptance_design.py:_design_one": 1,
     "acceptance_design.py:design_component": 1,
+    "agent_output.py:collect_agent_output": 1,
     "agents/logging.py:LoggingAgent.run": 1,
     "cli_loop.py:_understand_core": 1,
     "decompose.py:_decompose_spec_impl": 1,
-    "decompose.py:collect_agent_output": 1,
     "factory.py:_run_component": 1,
     "feature_cmd.py:run_feature": 3,
     "integration_phase.py:_review_round": 1,
@@ -339,8 +339,10 @@ EXPECTED_AGENT_CALLS: dict[str, int] = {
 #: lexically.
 CALLER_SCOPED: dict[str, str] = {
     "acceptance_design.py:design_component": "acceptance_design._design_one",
+    "agent_output.py:collect_agent_output": (
+        "the drain helper; review, security and distill call it"
+    ),
     "agents/logging.py:LoggingAgent.run": "a tee around the adapter it wraps; its caller's scope",
-    "decompose.py:collect_agent_output": "the drain helper; review, security and distill call it",
     "integration_phase.py:_run_reviewer": "integration_phase._review_round",
     "integration_phase.py:review_commit": "integration_phase._review_round, via _run_reviewer",
     "knowledge.py:distill_facts": "pipeline.ComponentPipeline._phase_distill",
@@ -426,10 +428,10 @@ def test_a_site_cleared_by_its_caller_has_its_callers_counted() -> None:
 EXPECTED_BOUNDS: dict[str, tuple[str, str]] = {
     "acceptance_design.py:_design_one": ("timeout", "[factory] review_timeout_seconds"),
     "acceptance_design.py:design_component": ("timeout", "its caller's timeout"),
+    "agent_output.py:collect_agent_output": ("timeout", "its caller's timeout"),
     "agents/logging.py:LoggingAgent.run": ("timeout", "its caller's timeout"),
     "cli_loop.py:_understand_core": ("timeouts", "[timeout] agent_iteration and component_total"),
     "decompose.py:_decompose_spec_impl": ("timeout", "[factory] architect_timeout_seconds"),
-    "decompose.py:collect_agent_output": ("timeout", "its caller's timeout"),
     "factory.py:_run_component": ("timeouts", "[timeout] agent_iteration and component_total"),
     "feature_cmd.py:run_feature": ("timeouts", "[timeout] agent_iteration and component_total"),
     "integration_phase.py:_review_round": ("timeout", "[factory] review_timeout_seconds"),

@@ -29,15 +29,15 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl.appendio import JOURNAL_REPAIR_EVENT, append_records
-from kstrl.atomicio import atomic_write_text
-from kstrl.config_numbers import check_numbers
-from kstrl.decompose import (
+from kstrl.agent_output import (
     AgentOutputTooLarge,
     _extract_json,
     _select_agent_output,
     collect_agent_output,
 )
+from kstrl.appendio import JOURNAL_REPAIR_EVENT, append_records
+from kstrl.atomicio import atomic_write_text
+from kstrl.config_numbers import check_numbers
 from kstrl.delimiters import generate_data_delimiter
 from kstrl.fact_scope import (
     FACT_TIERS,
