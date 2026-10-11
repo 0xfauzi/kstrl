@@ -19,7 +19,7 @@ from kstrl.evolution_config import EvolutionConfig
 from kstrl.factory_config import FactoryConfig
 from kstrl.feedforward import CodebaseScanConfig
 from kstrl.init_cmd import DEFAULT_KSTRL_TOML
-from kstrl.knowledge import KnowledgeConfig
+from kstrl.knowledge_facts import KnowledgeConfig
 from kstrl.sandbox import SandboxConfig
 from kstrl.verify_model import VerifyConfig
 

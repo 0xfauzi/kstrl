@@ -47,16 +47,8 @@ from kstrl.config import KstrlConfig
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult
-from kstrl.knowledge import (
-    Fact,
-    KnowledgeConfig,
-    _render_fact_md,
-    build_knowledge_context,
-    distill_facts,
-    measure_fact_utilization,
-    read_facts,
-    write_facts,
-)
+from kstrl.knowledge import build_knowledge_context, distill_facts, measure_fact_utilization
+from kstrl.knowledge_facts import Fact, KnowledgeConfig, _render_fact_md, read_facts, write_facts
 from kstrl.manifest import Component, Manifest
 from kstrl.ui.plain import PlainUI
 from kstrl.verify_model import VerifyConfig
