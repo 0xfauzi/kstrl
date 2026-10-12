@@ -361,14 +361,14 @@ FINDING_EXIT_SITES: dict[tuple[str, str], int] = {
     ("calibration.py", "main"): 1,  # `python -m kstrl.calibration`: a detection drop
     ("cli_check.py", "_check_baseline_report"): 1,  # `--fail-on-regression`: a regression
     ("cli_check.py", "_check_report"): 2,  # `ks check`: a check failed
-    ("cli.py", "ci_poll"): 1,  # a merge commit's CI failed or could not be read
+    ("cli_serve.py", "ci_poll"): 1,  # a merge commit's CI failed or could not be read
     ("cli_report.py", "config_show"): 2,  # a rejected section, reported
     ("cli_architect.py", "decompose"): 1,  # the architect's output could not be used
     ("cli_factory.py", "factory"): 1,  # the architect's output could not be used
     ("cli_learning.py", "health_cmd"): 1,  # a metric breached its control limits
     ("cli_queue.py", "queue_sync"): 1,  # an issue could not be synced
     ("cli_learning.py", "recheck_cmd"): 1,  # a verdict the recheck disagrees with
-    ("cli.py", "serve"): 1,  # work is waiting on a human
+    ("cli_serve.py", "serve"): 1,  # work is waiting on a human
     ("doctor.py", "exit_code_for"): 1,  # `ks doctor`: not ready is a finding
     ("factory_result.py", "resolve_exit_code"): 5,  # a failed, unmerged, parked or unscheduled run
     ("init_cmd.py", "run_init"): 2,  # `ks init`: the PRD it validated is invalid
