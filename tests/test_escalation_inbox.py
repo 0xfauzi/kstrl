@@ -415,7 +415,7 @@ EMITTER = "kstrl.decisions.open_escalation_item"
 #: how many times. A new row, or a count that moved, is a new decompose
 #: halt path: call ``decisions.open_escalation_item`` before it, then
 #: add the row here.
-EXPECTED_HALTS = {"decompose.py::_decompose_spec_impl": 1}
+EXPECTED_HALTS = {"decompose.py::_halt": 1}
 
 #: One control per disjunct of the net, and the two coverage outcomes.
 CONTROL_LOCAL = """

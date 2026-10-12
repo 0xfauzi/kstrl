@@ -9,7 +9,7 @@ import os
 import time
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NoReturn
 
 from kstrl.agent_output import (
     MAX_AGENT_OUTPUT_BYTES,
@@ -105,6 +105,8 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from kstrl.factory_lock import _RunLock
+    from kstrl.requirements import SpecRequirement
+    from kstrl.spec_issues import SpecIssue
     from kstrl.ui.base import UI
 
 
@@ -519,6 +521,231 @@ def _run_architect(
     return state.data, attempts_used
 
 
+def _audit_spec(
+    data: dict[str, Any],
+    *,
+    ui: UI,
+    emit: Callable[[Event], None],
+    rel_display: Callable[[Path], str],
+    root_dir: Path,
+    project_name: str,
+    spec_path: Path,
+    spec_source: str,
+    pin: str,
+    stack_pin: str,
+    answers: OwnerAnswers,
+    bus: EventBus | None,
+    run_started: float,
+) -> tuple[
+    list[SpecIssue], list[SpecDecision], tuple[SpecRequirement, ...], Callable[..., Path | None]
+]:
+    """Audit the architect's reply, persist the findings, and stop on an escalation.
+
+    Raises ``SpecBlockerError`` through ``_halt`` when the architect
+    escalated a question. Otherwise returns what the plan write needs.
+    """
+
+    # Surface AND persist red-team findings before doing any further
+    # work (R1.7): the artifact and journal event are written for halt,
+    # success, and clean-audit outcomes alike. If any issue is a
+    # blocker, halt before generating PRDs - the architect explicitly
+    # judged the spec un-decomposable.
+    emit(
+        PhaseStarted(
+            component=ARCHITECT_COMPONENT,
+            phase="audit",
+            attempt=1,
+        )
+    )
+    audit_start = time.monotonic()
+    spec_issues = _parse_spec_issues(data)
+    _surface_spec_issues(spec_issues, ui)
+    for issue in spec_issues:
+        emit(
+            SpecIssueRecorded(
+                severity=issue.severity,
+                kind=issue.kind,
+                summary=issue.summary,
+                location=issue.location,
+                suggestion=issue.suggestion,
+            )
+        )
+    # #260: the halt keys on the architect's own disposition, not on a
+    # severity label. Everything it decided, assumed or spiked rides
+    # along; only a question it refused to answer stops the run.
+    decisions = parse_decisions(data)
+    requirements = parse_requirements(data)
+    escalated = escalations(decisions)
+    _surface_spec_decisions(decisions, ui)
+
+    # The R1.7 artifacts are written FIRST, before any optional journal
+    # work. On the halt path they are the only durable record the
+    # operator gets, so nothing that can fail is allowed upstream of
+    # them: #260 briefly put a config load in front of this and a typo
+    # in an unrelated journal knob destroyed the findings of a paid run.
+    #
+    # One helper, called twice, so the two writes cannot drift on the
+    # policy they share: attempt, announce, emit, and on OSError be
+    # loud without masking. They stay two independent attempts because
+    # neither may take the other down, and after #260 they hold
+    # different halves of a halt.
+    write_artifact = functools.partial(
+        _write_decompose_artifact,
+        ui=ui,
+        emit=emit,
+        rel_display=rel_display,
+    )
+    artifact_path = write_artifact(
+        "spec_issues",
+        "spec audit",
+        lambda: persist_spec_issues(
+            spec_issues,
+            root_dir=root_dir,
+            project_name=project_name,
+            spec_file=spec_path.name,
+            halted=bool(escalated),
+        ),
+    )
+    # #260 round 2: the register is written on the HALT path here, and
+    # on the success path only after the manifest commits (below).
+    # Round 1 wrote it here unconditionally, so a decompose that halted
+    # or failed later left a fresh register beside an OLDER manifest,
+    # and the factory read it as that manifest's decisions. The halt
+    # copy is stamped ``halted`` and the factory refuses to bind one.
+    write_register = functools.partial(
+        write_artifact,
+        "decisions",
+        "architect decisions",
+    )
+    # #260: what this audit says about the previous one, read BEFORE
+    # this run is appended to the journal below - otherwise the
+    # "previous run" the report compares against would be this one.
+    journal = _spec_audit_journal(root_dir, ui)
+    # ONE read feeds both the trend and the accounting under it, so the
+    # two are computed over the same snapshot and cannot disagree
+    # because the file changed between two reads.
+    snapshot = _journal_snapshot(journal, project_name)
+    # #280: the trend is keyed on the project name, so a rename starts a
+    # fresh one and the runs before it drop out of view. Keying
+    # differently would be worse (the spec is edited every round, so a
+    # content hash never matches, and #260's own loop renamed the file
+    # too), so what is fixed is the silence rather than the key.
+    _surface_convergence(
+        _build_convergence(spec_issues, spec_path.name, snapshot.window),
+        _excluded_history(snapshot.audits, project_name, spec_path.name, snapshot.lookback),
+        project_name,
+        ui,
+    )
+    _record_spec_issues_event(
+        spec_issues,
+        journal=journal,
+        project_name=project_name,
+        spec_file=spec_path.name,
+        halted=bool(escalated),
+        ui=ui,
+    )
+    # #696 slice 7: on the halt path too, since a conflict with the [stack]
+    # kstrl.toml holds is one the architect escalates.
+    _file_stack_proposal(data, root_dir, stack_pin, spec_source, bus, ui)
+    emit(
+        PhaseCompleted(
+            component=ARCHITECT_COMPONENT,
+            phase="audit",
+            passed=not escalated,
+            detail=f"{len(escalated)} escalation(s)" if escalated else "",
+            duration_seconds=round(time.monotonic() - audit_start, 2),
+        )
+    )
+    if escalated:
+        _halt(
+            escalated,
+            decisions=decisions,
+            requirements=requirements,
+            write_register=write_register,
+            artifact_path=artifact_path,
+            ui=ui,
+            emit=emit,
+            rel_display=rel_display,
+            root_dir=root_dir,
+            project_name=project_name,
+            spec_path=spec_path,
+            spec_source=spec_source,
+            pin=pin,
+            answers=answers,
+            bus=bus,
+            run_started=run_started,
+        )
+    return spec_issues, decisions, requirements, write_register
+
+
+def _halt(
+    escalated: list[SpecDecision],
+    *,
+    decisions: list[SpecDecision],
+    requirements: tuple[SpecRequirement, ...],
+    write_register: Callable[..., Path | None],
+    artifact_path: Path | None,
+    ui: UI,
+    emit: Callable[[Event], None],
+    rel_display: Callable[[Path], str],
+    root_dir: Path,
+    project_name: str,
+    spec_path: Path,
+    spec_source: str,
+    pin: str,
+    answers: OwnerAnswers,
+    bus: EventBus | None,
+    run_started: float,
+) -> NoReturn:
+    """Write the halting register, open the escalation item and raise ``SpecBlockerError``."""
+    decisions_path = None
+
+    decisions_path = write_register(
+        lambda: write_decisions(
+            decisions,
+            root_dir=root_dir,
+            project_name=project_name,
+            spec_file=spec_path.name,
+            halted=True,
+            spec_digest=pin,
+            answered_items=answers.item_ids,
+            answers_digest=answers.digest,
+            requirements=requirements,
+        ),
+    )
+    open_escalation_item(
+        escalated,
+        root_dir,
+        project_name,
+        spec_source,
+        spec_digest=pin,
+        register_path=rel_display(decisions_path) if decisions_path is not None else "",
+        run_id=bus.run_id if bus is not None else "",
+        warn=ui.warn,
+        spec_path=spec_path,
+    )
+    # The run dir must read as FINISHED, not dead: the halt is the
+    # architect's judgment, delivered before the error propagates.
+    emit(
+        ComponentFailed(
+            component=ARCHITECT_COMPONENT,
+            error=f"spec halted: {len(escalated)} escalated question(s)",
+        )
+    )
+    emit(
+        RunCompleted(
+            completed=0,
+            failed=1,
+            duration_seconds=round(time.monotonic() - run_started, 2),
+        )
+    )
+    raise SpecBlockerError(
+        escalated,
+        artifact_path=artifact_path,
+        decisions_path=decisions_path,
+    )
+
+
 def _decompose_spec_impl(
     spec_path: Path,
     project_name: str,
@@ -660,163 +887,21 @@ def _decompose_spec_impl(
         emit=emit,
     )
 
-    # Surface AND persist red-team findings before doing any further
-    # work (R1.7): the artifact and journal event are written for halt,
-    # success, and clean-audit outcomes alike. If any issue is a
-    # blocker, halt before generating PRDs - the architect explicitly
-    # judged the spec un-decomposable.
-    emit(
-        PhaseStarted(
-            component=ARCHITECT_COMPONENT,
-            phase="audit",
-            attempt=1,
-        )
-    )
-    audit_start = time.monotonic()
-    spec_issues = _parse_spec_issues(data)
-    _surface_spec_issues(spec_issues, ui)
-    for issue in spec_issues:
-        emit(
-            SpecIssueRecorded(
-                severity=issue.severity,
-                kind=issue.kind,
-                summary=issue.summary,
-                location=issue.location,
-                suggestion=issue.suggestion,
-            )
-        )
-    # #260: the halt keys on the architect's own disposition, not on a
-    # severity label. Everything it decided, assumed or spiked rides
-    # along; only a question it refused to answer stops the run.
-    decisions = parse_decisions(data)
-    requirements = parse_requirements(data)
-    escalated = escalations(decisions)
-    _surface_spec_decisions(decisions, ui)
-
-    # The R1.7 artifacts are written FIRST, before any optional journal
-    # work. On the halt path they are the only durable record the
-    # operator gets, so nothing that can fail is allowed upstream of
-    # them: #260 briefly put a config load in front of this and a typo
-    # in an unrelated journal knob destroyed the findings of a paid run.
-    #
-    # One helper, called twice, so the two writes cannot drift on the
-    # policy they share: attempt, announce, emit, and on OSError be
-    # loud without masking. They stay two independent attempts because
-    # neither may take the other down, and after #260 they hold
-    # different halves of a halt.
-    write_artifact = functools.partial(
-        _write_decompose_artifact,
+    spec_issues, decisions, requirements, write_register = _audit_spec(
+        data,
         ui=ui,
         emit=emit,
         rel_display=rel_display,
-    )
-    artifact_path = write_artifact(
-        "spec_issues",
-        "spec audit",
-        lambda: persist_spec_issues(
-            spec_issues,
-            root_dir=root_dir,
-            project_name=project_name,
-            spec_file=spec_path.name,
-            halted=bool(escalated),
-        ),
-    )
-    # #260 round 2: the register is written on the HALT path here, and
-    # on the success path only after the manifest commits (below).
-    # Round 1 wrote it here unconditionally, so a decompose that halted
-    # or failed later left a fresh register beside an OLDER manifest,
-    # and the factory read it as that manifest's decisions. The halt
-    # copy is stamped ``halted`` and the factory refuses to bind one.
-    write_register = functools.partial(
-        write_artifact,
-        "decisions",
-        "architect decisions",
-    )
-    decisions_path = None
-    # #260: what this audit says about the previous one, read BEFORE
-    # this run is appended to the journal below - otherwise the
-    # "previous run" the report compares against would be this one.
-    journal = _spec_audit_journal(root_dir, ui)
-    # ONE read feeds both the trend and the accounting under it, so the
-    # two are computed over the same snapshot and cannot disagree
-    # because the file changed between two reads.
-    snapshot = _journal_snapshot(journal, project_name)
-    # #280: the trend is keyed on the project name, so a rename starts a
-    # fresh one and the runs before it drop out of view. Keying
-    # differently would be worse (the spec is edited every round, so a
-    # content hash never matches, and #260's own loop renamed the file
-    # too), so what is fixed is the silence rather than the key.
-    _surface_convergence(
-        _build_convergence(spec_issues, spec_path.name, snapshot.window),
-        _excluded_history(snapshot.audits, project_name, spec_path.name, snapshot.lookback),
-        project_name,
-        ui,
-    )
-    _record_spec_issues_event(
-        spec_issues,
-        journal=journal,
+        root_dir=root_dir,
         project_name=project_name,
-        spec_file=spec_path.name,
-        halted=bool(escalated),
-        ui=ui,
+        spec_path=spec_path,
+        spec_source=spec_source,
+        pin=pin,
+        stack_pin=stack_pin,
+        answers=answers,
+        bus=bus,
+        run_started=run_started,
     )
-    # #696 slice 7: on the halt path too, since a conflict with the [stack]
-    # kstrl.toml holds is one the architect escalates.
-    _file_stack_proposal(data, root_dir, stack_pin, spec_source, bus, ui)
-    emit(
-        PhaseCompleted(
-            component=ARCHITECT_COMPONENT,
-            phase="audit",
-            passed=not escalated,
-            detail=f"{len(escalated)} escalation(s)" if escalated else "",
-            duration_seconds=round(time.monotonic() - audit_start, 2),
-        )
-    )
-    if escalated:
-        decisions_path = write_register(
-            lambda: write_decisions(
-                decisions,
-                root_dir=root_dir,
-                project_name=project_name,
-                spec_file=spec_path.name,
-                halted=True,
-                spec_digest=pin,
-                answered_items=answers.item_ids,
-                answers_digest=answers.digest,
-                requirements=requirements,
-            ),
-        )
-        open_escalation_item(
-            escalated,
-            root_dir,
-            project_name,
-            spec_source,
-            spec_digest=pin,
-            register_path=rel_display(decisions_path) if decisions_path is not None else "",
-            run_id=bus.run_id if bus is not None else "",
-            warn=ui.warn,
-            spec_path=spec_path,
-        )
-        # The run dir must read as FINISHED, not dead: the halt is the
-        # architect's judgment, delivered before the error propagates.
-        emit(
-            ComponentFailed(
-                component=ARCHITECT_COMPONENT,
-                error=f"spec halted: {len(escalated)} escalated question(s)",
-            )
-        )
-        emit(
-            RunCompleted(
-                completed=0,
-                failed=1,
-                duration_seconds=round(time.monotonic() - run_started, 2),
-            )
-        )
-        raise SpecBlockerError(
-            escalated,
-            artifact_path=artifact_path,
-            decisions_path=decisions_path,
-        )
 
     # The forming DAG, the moment it is known (C5's board draws from
     # this - no manifest read needed). The architect row stays first.
