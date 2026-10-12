@@ -404,10 +404,12 @@ _EXPECTED_STATE_DIR_SPELLINGS: dict[str, int] = {
     # factory_worktrees.py.
     # 4 until #776 F7 moved two spellings, with the preflight code, to
     # factory_preflight.py.
-    "factory.py": 2,
+    # 2 until #776 B3F3 moved the cleanup of the pass worktrees, with one
+    # spelling, to factory_worktrees.py (5 before, 6 after).
+    "factory.py": 1,
     "factory_lock.py": 2,
     "factory_preflight.py": 2,
-    "factory_worktrees.py": 5,
+    "factory_worktrees.py": 6,
     "integration_state.py": 1,
     "knowledge_facts.py": 2,
     "pipeline_attempt.py": 1,

@@ -7,7 +7,7 @@ import os
 import time
 from collections.abc import Callable, Mapping
 from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wait
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -16,16 +16,12 @@ from kstrl.agents.proc import kill_active_process_groups
 from kstrl.breaker import BreakerConfig
 from kstrl.config import (
     KstrlConfig,
-    relative_to_root,
 )
 from kstrl.config_numbers import check_number
 from kstrl.contract import (
     ContractCleanupError,
     ContractMode,
     run_contract_testing,
-)
-from kstrl.decisions import (
-    build_decisions_context,
 )
 from kstrl.event_catalog import (
     AdversarialAgentSelected,
@@ -37,7 +33,6 @@ from kstrl.event_catalog import (
 )
 from kstrl.event_catalog import ContractResult as ContractResultEvent
 from kstrl.events import EventBus, EventSink, JsonlSink, RunPaths, V1CompatSink
-from kstrl.fact_scope import authored_paths, paths_by_component
 from kstrl.factory_acceptance import (
     _carry,
     _plan_gated,
@@ -61,6 +56,14 @@ from kstrl.factory_config import (
     claim_gate_unreachable_warning,
     merge_gate_unreachable_warning,
 )
+from kstrl.factory_launch import (
+    LaunchPlan,
+    _print_execution_header,
+    _refused_before_launch,
+    _resolve_max_parallel,
+    build_launch_plan,
+    submit_args,
+)
 from kstrl.factory_lock import FactoryLockHeldError, _acquire_run_lock, _RunLock
 from kstrl.factory_preflight import (
     _emit_stack_confirmation,
@@ -82,6 +85,7 @@ from kstrl.factory_worker import (
     _run_component,
 )
 from kstrl.factory_worktrees import (
+    _cleanup_pass_worktrees,
     _cleanup_worktree,
     _interrupted_run_branches,
     _recut_point,
@@ -94,12 +98,10 @@ from kstrl.interaction import InteractionChannel
 from kstrl.knowledge import (
     current_run_id,
     measure_fact_utilization,
-    retrieve_knowledge_context,
 )
 from kstrl.knowledge_distill import distill_facts
 from kstrl.knowledge_facts import KnowledgeConfig
 from kstrl.linear import LinearConfig, build_linear_sink
-from kstrl.loop_budget import LoopBudget
 from kstrl.manifest import (
     Component,
     ComponentStatus,
@@ -119,20 +121,17 @@ from kstrl.review import (
 from kstrl.runenvelope import RunEnvelope
 from kstrl.rung import release
 from kstrl.runstate import RunState
-from kstrl.sandbox import warn_unconfined, with_stack_writable
+from kstrl.sandbox import warn_unconfined
 from kstrl.scope import RunScope
 from kstrl.security import (
     run_security_review,
 )
 from kstrl.shutdown import StopController
-from kstrl.timeout import NO_LIMIT, TimeoutConfig, describe_limit_seconds
+from kstrl.timeout import TimeoutConfig
 from kstrl.ui.bridge import EventBridgeUI
 from kstrl.verify import run_mechanical_verification
-from kstrl.verify_diff import SCOPE_UNREADABLE_CHECK, scope_unreadable_error
+from kstrl.verify_model import VerifyConfig
 from kstrl.version import kstrl_version
-from kstrl.worktree_sweep import (
-    sweep_worktree,
-)
 
 if TYPE_CHECKING:
     from kstrl.ui.base import UI
@@ -195,109 +194,6 @@ def _wait_interruptible(
             return done, False
         if remaining is not None and remaining <= slice_seconds:
             return set(), False
-
-
-def _resolve_max_parallel(factory_config: FactoryConfig, ui: UI) -> int:
-    """Effective parallelism, and a warning for every setting it discards.
-
-    Extracted from ``_run_factory_locked`` (#292) so the decision has a
-    name and can be tested. It is also the decision that hid a fake test
-    for months: the spine SIGTERM test asked for ``max_parallel=2``,
-    silently got 1 and therefore ``_InlineExecutor``, and nothing said so.
-
-    Both discards are REPORTED, and only when they actually discard
-    something. The worktree branch used to fire unconditionally as an
-    info line that never named ``max_parallel``, so an operator who
-    configured 8 was never told the 8 was thrown away.
-    ``ui.kv("Max parallel", ...)`` prints the effective value, which
-    cannot distinguish "I asked for 1" from "I asked for 8 and lost it".
-    """
-    max_parallel = factory_config.max_parallel
-    if not factory_config.use_worktrees:
-        if max_parallel > 1:
-            ui.warn(
-                f"worktrees disabled: components cannot run in parallel; "
-                f"forcing max_parallel=1 (you configured {max_parallel})"
-            )
-        return 1
-    if factory_config.single_pr and max_parallel > 1:
-        # R0.5 (H-8): single_pr components all live on ONE branch, and a
-        # branch can only be checked out in one worktree at a time -
-        # parallel same-tier components would hard-fail on "already
-        # checked out". Sequential is the only layout that works.
-        ui.warn(
-            f"single_pr mode: components share one branch; forcing "
-            f"max_parallel=1 (you configured {max_parallel})"
-        )
-        return 1
-    return max_parallel
-
-
-def _refused_before_launch(
-    pipeline: ComponentPipeline,
-    comp: Component,
-    run_scope: RunScope,
-) -> bool:
-    """Every reason to fail a READY component instead of launching it.
-
-    Returns True when the component was transitioned without a launch,
-    which the caller counts so the scheduling loop re-derives its ready
-    set rather than stopping while schedulable siblings remain.
-
-    One function because the three refusals share a shape and a
-    contract - fail loudly, spend nothing, do not halt the run - and
-    because the scheduling loop is already far past the repo's
-    complexity gate, so a fourth inline branch is a refusal at commit
-    time. None of them halts: by this point siblings may have merged,
-    and discarding their work to punish one component is the worse
-    trade.
-    """
-    # R3.1 scheduling gate: a blown ceiling (tokens or cost) fails
-    # pending components loudly instead of launching an engineer loop
-    # that would only add spend.
-    if pipeline.budget_exceeded():
-        pipeline.fail_for_budget(comp, "scheduling")
-        return True
-    # R8 review: a loop that emits COMPLETE returns before its own
-    # budget check, so an adapter that finishes on its first silent call
-    # never halts itself - the ordinary success path for a custom
-    # agent_cmd. This gate is what stops the run handing out NEW work
-    # under a ceiling that can no longer fire. Halts only when EVERY
-    # configured ceiling is dead: a cost-reporting adapter still
-    # enforces max_cost_usd even though its token cap is beyond saving.
-    #
-    # Identity is derived inside fail_for_budget: nothing was BREACHED
-    # here, so the rule falls through to the dead ceilings and names
-    # only those actually configured.
-    unenforceable = pipeline.budget_unenforceable()
-    if unenforceable is not None:
-        pipeline.fail_for_budget(comp, "scheduling", reason=unenforceable)
-        return True
-    # #294: the LAST point before spend. The plan-time preflight refuses
-    # an unresolved scope before the run starts, but it only inspects
-    # components that are PENDING then, and the contract breaker resets
-    # a COMPLETED component to PENDING inside the scheduling loop, long
-    # after _run_preflights returned. Without this gate such a component
-    # runs a full engineer loop - up to max_iterations LLM calls - and
-    # only then does Phase 1 refuse it. Measured against the same
-    # dogfooding run _preflight_component_scope cites (14.49 dollars /
-    # 41 minutes for three attempts), Phase 1's FAIL alone still left
-    # roughly 4.83 dollars and 14 minutes on the table per reset.
-    #
-    # This also closes --no-verify, which returns from _phase_verify
-    # before the ungated check can run: a component with no trustworthy
-    # scope now never launches, so it cannot merge with the guard inert.
-    comp_scope = run_scope.for_component(comp.id)
-    if not comp_scope.is_trustworthy:
-        pipeline.fail(
-            comp,
-            scope_unreadable_error(f"Error: {comp_scope.error}"),
-            phase="scope",
-            check=SCOPE_UNREADABLE_CHECK,
-            signatures=[f"{SCOPE_UNREADABLE_CHECK}:no-trustworthy-scope"],
-        )
-        return True
-    return False
 
 
 def _abort_inflight(
@@ -381,6 +277,361 @@ def _expired_futures(
 ) -> list[Future[ComponentResult]]:
     """Running futures whose scheduler-backstop deadline has passed."""
     return [f for f in running if not f.done() and f in deadlines and now >= deadlines[f]]
+
+
+@dataclass(frozen=True)
+class _PassContext:
+    """The pass objects that the ``LaunchPlan`` does not hold, never copies of them.
+
+    The class is frozen so that a step cannot rebind a field. A step changes
+    the run through the objects that a field refers to (``factory_result``
+    and ``leaked_component_ids``). A copy of one of them would leave a green
+    suite and no effect (#193).
+    """
+
+    manifest_path: Path
+    bus: EventBus
+    stop: StopController | None
+    factory_result: FactoryResult
+    leaked_component_ids: set[str]
+    max_parallel: int
+    backstop_seconds: float
+    engineer_verify: VerifyConfig | None
+
+
+_FutureMap = dict[Future[ComponentResult], str]
+_DeadlineMap = dict[Future[ComponentResult], float]
+
+
+def _launch_component(plan: LaunchPlan, comp: Component) -> Path | None:
+    """Set up worktree for a component. Returns worktree path or None."""
+    try:
+        if plan.factory_config.use_worktrees:
+            fresh_from_base = comp.id in plan.run_state.fresh_base_retry_ids
+            plan.run_state.fresh_base_retry_ids.discard(comp.id)
+            wt_path = _setup_worktree(
+                comp.id,
+                comp.branch_name,
+                plan.manifest.base_branch,
+                plan.root_dir,
+                plan.run_id,
+                fresh_from_base=fresh_from_base,
+                recut_at=(
+                    _recut_point(plan.manifest, comp, plan.run_state.component_bases)
+                    if fresh_from_base
+                    else None
+                ),
+                ui=plan.ui,
+            )
+            # #543: registered before the merge below, so a merge that
+            # fails leaves a worktree the pass-end cleanup removes.
+            plan.run_state.worktree_paths[comp.id] = wt_path
+            _start_from_dependencies(
+                plan.manifest,
+                comp,
+                wt_path,
+                plan.run_state.component_bases,
+                fresh_from_base=fresh_from_base,
+            )
+        else:
+            wt_path = plan.root_dir
+        plan.run_state.worktree_paths[comp.id] = wt_path
+        return wt_path
+    except RuntimeError as exc:
+        plan.ui.err(f"  Worktree setup failed for '{comp.id}': {exc}")
+        # pipeline.fail covers the R3.2 notify + progress-log
+        # calls and stamps the R3.3 failure/evidence fields.
+        plan.pipeline.fail(
+            comp,
+            str(exc),
+            phase="provisioning",
+            check="worktree_setup",
+        )
+        return None
+
+
+def _new_executor(max_parallel: int) -> ProcessPoolExecutor | _InlineExecutor:
+    """The executor of one scheduling pass: a process pool, or the inline stand-in."""
+    executor: ProcessPoolExecutor | _InlineExecutor
+    if max_parallel <= 1:
+        executor = _InlineExecutor()
+    else:
+        executor = ProcessPoolExecutor(
+            max_workers=max_parallel,
+            initializer=_install_worker_signal_forwarding,
+        )
+    return executor
+
+
+def _fill_slots(
+    plan: LaunchPlan,
+    ctx: _PassContext,
+    executor: ProcessPoolExecutor | _InlineExecutor,
+    ready: list[Component],
+    running_futures: _FutureMap,
+    future_deadlines: _DeadlineMap,
+) -> int:
+    """Launch the ready components. Return how many changed state with no launch."""
+    # Components transitioned WITHOUT a launch this pass
+    # (budget gate, provisioning failure). When that happens
+    # and nothing is running, the loop must re-derive the
+    # ready set rather than stop - R3.1's scheduling gate
+    # promises to fail every remaining pending component
+    # loudly, and a provisioning failure must not strand
+    # still-schedulable siblings.
+    transitioned_without_launch = 0
+    for comp in ready:
+        # Budget ceilings and an untrustworthy plan-time
+        # scope: three conditions that fail the component
+        # loudly rather than spending an engineer loop on it.
+        if _refused_before_launch(plan.pipeline, comp, plan.pipeline.run_scope):
+            transitioned_without_launch += 1
+            continue
+        plan.pipeline.begin_attempt(comp)
+        plan.manifest.save(ctx.manifest_path)
+        ctx.bus.emit(ComponentStarted(component=comp.id))
+        plan.ui.info(f"  Starting: {comp.id}")
+
+        # #646: None too when ks retry kept the approved head,
+        # which engineer_worktree has just judged with no engineer.
+        wt_path = plan.pipeline.engineer_worktree(comp, _launch_component(plan, comp))
+        if wt_path is None:
+            transitioned_without_launch += 1
+            continue
+
+        # Provisioning succeeded: the engineer phase starts
+        # immediately before submission. process_result closes
+        # normal exits; fail_scheduler_backstop closes timeouts.
+        ctx.bus.emit(
+            PhaseStarted(
+                component=comp.id,
+                phase="engineer",
+                attempt=comp.retries + 1,
+            )
+        )
+        args = submit_args(plan, comp, wt_path)
+
+        # R8 (P2-c): the usage snapshot is attempt-scoped by
+        # deletion, and the deletion happens HERE - before
+        # the worker exists - so an attempt cancelled during
+        # pool startup cannot salvage its predecessor's
+        # tokens on top of the ones already on the meter.
+        if _clear_partial_usage(plan.usage_paths.engineer_usage(comp.id)):
+            plan.pipeline.mark_usage_salvage_safe(comp.id)
+        else:
+            # A snapshot we could not delete may still hold
+            # the PREVIOUS attempt's totals, which
+            # process_result already counted. Refuse disk
+            # salvage for this attempt rather than risk
+            # counting them twice - losing an aborted
+            # attempt's spend understates a total; salvaging
+            # a stale one corrupts it.
+            plan.pipeline.mark_usage_salvage_unsafe(comp.id)
+            plan.ui.warn(
+                f"  Could not retire the previous usage "
+                f"snapshot for {comp.id}; disk salvage is "
+                f"disabled for this attempt"
+            )
+        if isinstance(executor, _InlineExecutor):
+            # In-process worker: no fd redirection (it would
+            # hijack the parent terminal), and each transcript
+            # line mirrors to the parent UI so sequential runs
+            # keep live engineer output. functools.partial
+            # binds kstrl.factory._run_component AT SUBMIT
+            # TIME, so tests patching it still intercept.
+            # mypy cannot prove the unknown-length *args
+            # tuple stops before the kwargs; _submit_args
+            # ends at token_budget by construction.
+            task = functools.partial(
+                _run_component,
+                *args,
+                # Keyword, NOT appended to args: the tuple
+                # ends at token_budget by construction (see
+                # above) and a positional extra silently
+                # lands on redirect_output.
+                base_branch=plan.pipeline.component_base(comp.id),
+                verify_config=ctx.engineer_verify,
+                attempt=comp.retries + 1,
+                plan_id=comp.plan_id,
+                redirect_output=False,  # type: ignore[misc]
+                live_line=functools.partial(
+                    plan.ui.stream_line,
+                    "AI",
+                ),
+                stop_check=(ctx.stop.is_set if ctx.stop is not None else None),
+            )
+            future = executor.submit(task)
+        else:
+            # Bound through partial rather than passed as a
+            # submit() kwarg: Executor.submit types its own
+            # **kwargs, so a keyword meant for the worker
+            # reads as a duplicate of submit's. Picklable -
+            # _run_component is module-level and the base
+            # branch is a plain str.
+            future = executor.submit(
+                functools.partial(
+                    _run_component,
+                    *args,
+                    # Same unprovable-*args limitation the
+                    # inline branch annotates above.
+                    base_branch=plan.pipeline.component_base(comp.id),  # type: ignore[misc]
+                    verify_config=ctx.engineer_verify,
+                    attempt=comp.retries + 1,
+                    plan_id=comp.plan_id,
+                ),
+            )
+        running_futures[future] = comp.id
+        ctx.factory_result.scheduled.append(comp.id)
+        if ctx.backstop_seconds > 0:
+            future_deadlines[future] = time.monotonic() + ctx.backstop_seconds
+    return transitioned_without_launch
+
+
+def _await_next(
+    plan: LaunchPlan,
+    ctx: _PassContext,
+    executor: ProcessPoolExecutor | _InlineExecutor,
+    running_futures: _FutureMap,
+    future_deadlines: _DeadlineMap,
+) -> set[Future[ComponentResult]] | None:
+    """Wait for a completion. Return the done futures, or None when the run stopped."""
+    # Wait for the next completion, bounded by the nearest
+    # backstop deadline. The worker enforces its own timeouts
+    # (adapter kill + loop wall clock); this scheduler-side
+    # deadline is the last line of defense when a worker hangs
+    # outside those layers.
+    wait_timeout = _next_backstop_wait(
+        running_futures,
+        future_deadlines,
+        time.monotonic(),
+    )
+    done, stopped = _wait_interruptible(
+        set(running_futures),
+        wait_timeout,
+        ctx.stop,
+    )
+    if stopped:
+        assert ctx.stop is not None
+        _abort_inflight(
+            executor,
+            running_futures,
+            plan.pipeline,
+            plan.ui,
+            ctx.stop,
+        )
+        return None
+    return done
+
+
+def _collect_completion(
+    plan: LaunchPlan,
+    ctx: _PassContext,
+    running_futures: _FutureMap,
+    future_deadlines: _DeadlineMap,
+    done: set[Future[ComponentResult]],
+) -> None:
+    """Process one completed future."""
+    # Preserve pre-R0.1 semantics: process one completion
+    # per pass so freed slots are refilled promptly.
+    future = next(iter(done))
+    comp_id = running_futures.pop(future)
+    future_deadlines.pop(future, None)
+    try:
+        comp_result = future.result()
+    except Exception as exc:
+        comp_result = ComponentResult(
+            component_id=comp_id,
+            success=False,
+            error=str(exc),
+        )
+    plan.pipeline.process_result(comp_id, comp_result)
+
+
+def _fail_expired(
+    plan: LaunchPlan,
+    ctx: _PassContext,
+    running_futures: _FutureMap,
+    future_deadlines: _DeadlineMap,
+) -> None:
+    """Fail each running component that is past its backstop deadline."""
+    # Nothing completed inside the window: fail every
+    # component past its backstop deadline and keep going.
+    now = time.monotonic()
+    for future in _expired_futures(
+        running_futures,
+        future_deadlines,
+        now,
+    ):
+        comp_id = running_futures.pop(future)
+        future_deadlines.pop(future, None)
+        ctx.leaked_component_ids.add(comp_id)
+        plan.pipeline.fail_scheduler_backstop(comp_id, ctx.backstop_seconds)
+
+
+def _run_scheduling_pass(plan: LaunchPlan, ctx: _PassContext) -> None:
+    """Run ready components until nothing is PENDING-and-ready.
+
+    Called once per contract pass: a contract breaker reset to
+    PENDING after a failed contract phase re-enters scheduling via
+    the outer loop in run_factory (R0.3) - previously the reset
+    happened after the only scheduling loop had exited, so the
+    promised retry never ran.
+
+    ONE loop serves sequential and parallel scheduling (R7.3): the
+    launch protocol (budget gate -> begin_attempt -> provisioning ->
+    submit) appears exactly once. max_parallel <= 1 swaps the
+    process pool for _InlineExecutor, which runs the worker
+    synchronously in-process - the historical sequential behavior -
+    behind the identical submit/wait/result flow.
+
+    Manual executor lifecycle: on a backstop breach we must NOT wait
+    for the (possibly hung) worker at shutdown, which the
+    `with ProcessPoolExecutor(...)` form would do.
+    """
+    executor = _new_executor(ctx.max_parallel)
+    slots_cap = max(1, ctx.max_parallel)
+    running_futures: dict[Future[ComponentResult], str] = {}
+    future_deadlines: dict[Future[ComponentResult], float] = {}
+    try:
+        while True:
+            if ctx.stop is not None and ctx.stop.is_set():
+                _abort_inflight(
+                    executor,
+                    running_futures,
+                    plan.pipeline,
+                    plan.ui,
+                    ctx.stop,
+                )
+                return
+            ready = plan.manifest.get_ready_components()
+            slots = slots_cap - len(running_futures)
+            transitioned_without_launch = _fill_slots(
+                plan, ctx, executor, ready[:slots], running_futures, future_deadlines
+            )
+
+            if not running_futures:
+                if transitioned_without_launch:
+                    continue
+                break
+
+            done = _await_next(plan, ctx, executor, running_futures, future_deadlines)
+            if done is None:
+                return
+
+            if done:
+                _collect_completion(plan, ctx, running_futures, future_deadlines, done)
+                continue
+
+            _fail_expired(plan, ctx, running_futures, future_deadlines)
+    finally:
+        if ctx.leaked_component_ids:
+            plan.ui.warn(
+                "Shutting down worker pool without waiting: "
+                f"{len(ctx.leaked_component_ids)} worker(s) may still be running"
+            )
+            executor.shutdown(wait=False, cancel_futures=True)
+        else:
+            executor.shutdown(wait=True)
 
 
 def run_factory(
@@ -476,47 +727,6 @@ def run_factory(
         release((factory_config.setup_rung, factory_config.test_rung))
         factory_config.setup_rung = factory_config.test_rung = None
         run_lock.release()
-
-
-def _execution_limit_rows(
-    timeout_cfg: TimeoutConfig, factory_config: FactoryConfig
-) -> list[tuple[str, str]]:
-    """Every time and spend limit the Execution header states, set or not.
-
-    An unset limit is printed as "no limit" rather than left out (#467):
-    a missing line reads the same as a header written before the limit
-    existed.
-
-    R8 (measured): each ceiling states what it counts, before the run
-    spends anything. An operator set --max-cost-usd 25.0 on a run whose
-    cross-family reviewer reports tokens and no cost, and got a ceiling
-    that bounded the engineer alone; nothing had told them the ceiling is
-    denominated in REPORTED dollars. Nothing here names which roles will
-    be covered: no call has been made yet, so that would be a prediction.
-    The measured per-role figure follows as a `budget_coverage` event at
-    the first call that reports nothing.
-    """
-    tokens = factory_config.max_total_tokens
-    cost = factory_config.max_cost_usd
-    calls = factory_config.max_adversarial_calls
-    return [
-        ("Agent timeout", describe_limit_seconds(timeout_cfg.agent_iteration)),
-        ("Component timeout", describe_limit_seconds(timeout_cfg.component_total)),
-        (
-            "Token ceiling",
-            f"{tokens} total tokens (counts only calls whose agent reports a token count)"
-            if tokens > 0
-            else NO_LIMIT,
-        ),
-        (
-            "Cost ceiling",
-            f"${cost} (counts only calls whose agent reports a cost; roles whose "
-            "agent reports none are unpriced and unbounded by it)"
-            if cost > 0
-            else NO_LIMIT,
-        ),
-        ("Adversarial calls", str(calls) if calls > 0 else NO_LIMIT),
-    ]
 
 
 def _run_plan_event(manifest: Manifest, factory_config: FactoryConfig) -> RunPlan:
@@ -1132,499 +1342,42 @@ def _run_factory_locked(
     # scheduled, so an approval made mid-run changes nothing in it.
     pipeline.snapshot_waivers()
 
-    ui.section("Factory: Execution")
-    ui.kv("Max parallel", str(max_parallel))
-    ui.kv("Max retries", str(factory_config.max_retries))
-    ui.kv("Review mode", factory_config.review_mode)
-    contract_mode = (
-        factory_config.contract_config.mode if factory_config.contract_config else "skip"
+    _print_execution_header(ui, factory_config, max_parallel, timeout_cfg)
+
+    launch = build_launch_plan(
+        manifest,
+        root_dir,
+        run_id,
+        ui,
+        pipeline,
+        run_state,
+        factory_config,
+        base_config,
+        knowledge_config,
+        run_register,
+        timeout_cfg,
+        breaker_cfg,
+        run_envelope,
+        run_paths,
+        usage_paths,
     )
-    ui.kv("Contract check", contract_mode)
-    ui.kv("Worktree setup", factory_config.worktree_setup_summary())
-    for label, value in _execution_limit_rows(timeout_cfg, factory_config):
-        ui.kv(label, value)
-
-    def _path_relative_to_root(path: Path) -> str:
-        """Render `path` relative to root_dir for use inside per-component
-        worktrees. Falls back to the absolute path string when relativization
-        fails (e.g. a path on a different mount)."""
-        return relative_to_root(path, root_dir)
-
-    prompt_file_rel = _path_relative_to_root(base_config.prompt_file)
-    # The progress path is deliberately NOT hoisted out of the per-component
-    # loop: unless it was explicitly configured, each component derives its
-    # own next to its PRD so the engineer writes inside its allowedPaths
-    # (base_config.component_progress_file, called from _submit_args).
-    codebase_map_file_rel = _path_relative_to_root(base_config.codebase_map_file)
-    golden_patterns_file_rel = _path_relative_to_root(base_config.golden_patterns_file)
-    memory_file_rel = _path_relative_to_root(base_config.memory_file)
 
     _report_operator_files(base_config, root_dir, ui)
-
-    def _launch_component(comp: Component) -> Path | None:
-        """Set up worktree for a component. Returns worktree path or None."""
-        try:
-            if factory_config.use_worktrees:
-                fresh_from_base = comp.id in run_state.fresh_base_retry_ids
-                run_state.fresh_base_retry_ids.discard(comp.id)
-                wt_path = _setup_worktree(
-                    comp.id,
-                    comp.branch_name,
-                    manifest.base_branch,
-                    root_dir,
-                    run_id,
-                    fresh_from_base=fresh_from_base,
-                    recut_at=(
-                        _recut_point(manifest, comp, run_state.component_bases)
-                        if fresh_from_base
-                        else None
-                    ),
-                    ui=ui,
-                )
-                # #543: registered before the merge below, so a merge that
-                # fails leaves a worktree the pass-end cleanup removes.
-                run_state.worktree_paths[comp.id] = wt_path
-                _start_from_dependencies(
-                    manifest,
-                    comp,
-                    wt_path,
-                    run_state.component_bases,
-                    fresh_from_base=fresh_from_base,
-                )
-            else:
-                wt_path = root_dir
-            run_state.worktree_paths[comp.id] = wt_path
-            return wt_path
-        except RuntimeError as exc:
-            ui.err(f"  Worktree setup failed for '{comp.id}': {exc}")
-            # pipeline.fail covers the R3.2 notify + progress-log
-            # calls and stamps the R3.3 failure/evidence fields.
-            pipeline.fail(
-                comp,
-                str(exc),
-                phase="provisioning",
-                check="worktree_setup",
-            )
-            return None
-
-    # Build codebase scan config dict for serialization to worker processes
-    ff_config_dict: dict[str, Any] | None = None
-    if factory_config.codebase_scan_config and factory_config.codebase_scan_config.enabled:
-        fc = factory_config.codebase_scan_config
-        ff_config_dict = {
-            "enabled": fc.enabled,
-            "module_map": fc.module_map,
-            "max_context_tokens": fc.max_context_tokens,
-        }
-
-    def _submit_args(comp: Component, wt_path: Path) -> tuple[Any, ...]:
-        ctx_json = run_state.component_contexts.get(comp.id)
-        engineer_usage = pipeline.engineer_usage_totals()
-        scope = pipeline.run_scope.for_component(comp.id)
-
-        def _warn_knowledge_failure(exc: Exception, comp_id: str = comp.id) -> None:
-            # Non-fatal, but NOT a metrics detail: the engineer runs
-            # without any of its facts when this fires. That is a real
-            # degradation of the run, and it used to be a bare
-            # `except: pass` that said nothing (#191).
-            ui.warn(f"  Knowledge retrieval failed for {comp_id}: {exc}")
-
-        injected_knowledge = retrieve_knowledge_context(
-            manifest,
-            comp,
-            knowledge_config,
-            allowed_paths=authored_paths(scope),
-            dependency_paths=paths_by_component(manifest, pipeline.run_scope),
-            worktree=wt_path,
-            on_failure=_warn_knowledge_failure,
-        )
-        pipeline.record_injected_knowledge(comp.id, injected_knowledge)
-        knowledge_prefix = injected_knowledge or ""
-        return (
-            comp.id,
-            comp.prd_path,
-            str(wt_path),
-            str(root_dir),
-            prompt_file_rel,
-            base_config.agent_cmd,
-            base_config.model,
-            base_config.model_reasoning_effort,
-            base_config.agent_type,
-            base_config.sleep_seconds,
-            ctx_json,
-            ff_config_dict,
-            factory_config.worktree_setup_for_component(comp),
-            knowledge_prefix,
-            # #260: rides the same context-prefix path the distilled
-            # facts already ride, so the register reaches the engineer
-            # without a second delivery mechanism. Per component: its
-            # own decisions in full, the rest of the run summarised.
-            build_decisions_context(
-                run_register.decisions, comp.id, requirements=factory_config.requirements
-            ),
-            # Per-component, not run-wide: KstrlConfig.component_progress_file
-            # keeps the engineer's progress log inside allowedPaths.
-            base_config.component_progress_file(comp.prd_path, root_dir),
-            codebase_map_file_rel,
-            # R10.8 and R10.9: the worker joins each of these onto
-            # root_dir and nothing else. Sent as root-relative strings
-            # for the same reason the other path slots are: the worker
-            # is a separate process and gets paths, not a config object.
-            golden_patterns_file_rel,
-            memory_file_rel,
-            timeout_cfg.agent_iteration,
-            timeout_cfg.component_total,
-            # R2.3 (CRIT-8): forward the invoking config's loop settings;
-            # they were previously dropped here and _run_component ran a
-            # hardcoded 30 non-interactive iterations with no path guard.
-            base_config.max_iterations,
-            base_config.interactive,
-            # R8 review: the COMPONENT's allowedPaths, not the run-wide
-            # --allowed-paths flag. That flag is empty in every ordinary
-            # factory run, so `if config.allowed_paths` in the loop was
-            # False and guards.enforce_allowed_paths never ran: the
-            # in-loop guard existed and was inert. A scope violation was
-            # therefore only caught at Phase 1, AFTER the whole engineer
-            # loop had been paid for - measured at $12.93 for one such
-            # component, versus ~$2.50 for the single iteration it takes
-            # to catch it here.
-            #
-            # #269: the plan-time snapshot, resolved from root_dir
-            # before the first engineer call and the SAME object Phase 1
-            # is judged with. Read here rather than re-derived per
-            # submission, which is what makes a retry inherit the scope
-            # the run started with: this closure runs once per attempt,
-            # so a per-attempt re-read would let an agent that edited
-            # the PRD in attempt 1 widen its own guard for attempt 2
-            # (which, under use_worktrees=False, it can do to the file
-            # this used to read).
-            scope,
-            # R7.5: no-progress circuit breaker limits.
-            breaker_cfg.no_progress_iterations,
-            # R7.5: OS-level sandbox intent for the engineer's agent CLI.
-            run_envelope.sandbox.enabled,
-            run_envelope.sandbox.allow_network,
-            # #700: the paths the confirmed [stack] grants its commands.
-            with_stack_writable(
-                run_envelope.sandbox, root_dir, factory_config.project_stack
-            ).writable,
-            # R7.6: in-loop USD budget for the claude-sdk engineer.
-            base_config.agent_budget_usd,
-            # Chunk 6: worker event channel (None when progress logging
-            # is disabled - transcripts and events off together).
-            str(run_paths.root) if run_paths is not None else None,
-            # R8: accounting channel. Always set, precisely because the
-            # line above may be None (review finding P2-d).
-            str(usage_paths.root),
-            run_id,
-            # R8: run-level ceilings (tokens AND cost) + the spend
-            # recorded so far, snapshotted AT LAUNCH so the engineer loop
-            # can halt itself between iterations. With max_parallel > 1 a
-            # worker cannot see a concurrent sibling's spend, only what
-            # the parent had recorded when this worker started.
-            # prior_calls plus prior_token_calls/prior_cost_calls carry
-            # the ENGINEER's non-reporting call counts down so the
-            # unenforceable rule does not reset on every attempt and
-            # component (review finding P1-a), while staying blind to
-            # other roles' timeouts - those say nothing about whether the
-            # engineer's adapter reports tokens or cost. The two counters
-            # are separate because the two axes have separate coverage:
-            # codex reports tokens and no cost, claude can report cost
-            # with no usage dict. prior_total_tokens/prior_cost_usd stay
-            # run-wide: the overrun checks ask what the RUN has spent.
-            LoopBudget(
-                max_total_tokens=factory_config.max_total_tokens,
-                prior_total_tokens=pipeline.run_usage.total_tokens,
-                prior_known_calls=pipeline.run_usage.known_calls,
-                prior_calls=engineer_usage.calls,
-                prior_token_calls=engineer_usage.token_calls,
-                max_cost_usd=factory_config.max_cost_usd,
-                prior_cost_usd=pipeline.run_usage.cost_usd,
-                prior_cost_calls=engineer_usage.cost_calls,
-            ),
-        )
 
     # #261: run-invariant, so it is resolved once here rather than per
     # component. None when Phase 1 is off.
     engineer_verify = factory_config.engineer_verify_config()
 
-    def _run_scheduling_pass() -> None:
-        """Run ready components until nothing is PENDING-and-ready.
-
-        Called once per contract pass: a contract breaker reset to
-        PENDING after a failed contract phase re-enters scheduling via
-        the outer loop in run_factory (R0.3) - previously the reset
-        happened after the only scheduling loop had exited, so the
-        promised retry never ran.
-
-        ONE loop serves sequential and parallel scheduling (R7.3): the
-        launch protocol (budget gate -> begin_attempt -> provisioning ->
-        submit) appears exactly once. max_parallel <= 1 swaps the
-        process pool for _InlineExecutor, which runs the worker
-        synchronously in-process - the historical sequential behavior -
-        behind the identical submit/wait/result flow.
-
-        Manual executor lifecycle: on a backstop breach we must NOT wait
-        for the (possibly hung) worker at shutdown, which the
-        `with ProcessPoolExecutor(...)` form would do.
-        """
-        executor: ProcessPoolExecutor | _InlineExecutor
-        if max_parallel <= 1:
-            executor = _InlineExecutor()
-        else:
-            executor = ProcessPoolExecutor(
-                max_workers=max_parallel,
-                initializer=_install_worker_signal_forwarding,
-            )
-        slots_cap = max(1, max_parallel)
-        running_futures: dict[Future[ComponentResult], str] = {}
-        future_deadlines: dict[Future[ComponentResult], float] = {}
-        try:
-            while True:
-                if stop is not None and stop.is_set():
-                    _abort_inflight(
-                        executor,
-                        running_futures,
-                        pipeline,
-                        ui,
-                        stop,
-                    )
-                    return
-                ready = manifest.get_ready_components()
-                slots = slots_cap - len(running_futures)
-
-                # Components transitioned WITHOUT a launch this pass
-                # (budget gate, provisioning failure). When that happens
-                # and nothing is running, the loop must re-derive the
-                # ready set rather than stop - R3.1's scheduling gate
-                # promises to fail every remaining pending component
-                # loudly, and a provisioning failure must not strand
-                # still-schedulable siblings.
-                transitioned_without_launch = 0
-                for comp in ready[:slots]:
-                    # Budget ceilings and an untrustworthy plan-time
-                    # scope: three conditions that fail the component
-                    # loudly rather than spending an engineer loop on it.
-                    if _refused_before_launch(pipeline, comp, pipeline.run_scope):
-                        transitioned_without_launch += 1
-                        continue
-                    pipeline.begin_attempt(comp)
-                    manifest.save(manifest_path)
-                    bus.emit(ComponentStarted(component=comp.id))
-                    ui.info(f"  Starting: {comp.id}")
-
-                    # #646: None too when ks retry kept the approved head,
-                    # which engineer_worktree has just judged with no engineer.
-                    wt_path = pipeline.engineer_worktree(comp, _launch_component(comp))
-                    if wt_path is None:
-                        transitioned_without_launch += 1
-                        continue
-
-                    # Provisioning succeeded: the engineer phase starts
-                    # immediately before submission. process_result closes
-                    # normal exits; fail_scheduler_backstop closes timeouts.
-                    bus.emit(
-                        PhaseStarted(
-                            component=comp.id,
-                            phase="engineer",
-                            attempt=comp.retries + 1,
-                        )
-                    )
-                    args = _submit_args(comp, wt_path)
-
-                    # R8 (P2-c): the usage snapshot is attempt-scoped by
-                    # deletion, and the deletion happens HERE - before
-                    # the worker exists - so an attempt cancelled during
-                    # pool startup cannot salvage its predecessor's
-                    # tokens on top of the ones already on the meter.
-                    if _clear_partial_usage(usage_paths.engineer_usage(comp.id)):
-                        pipeline.mark_usage_salvage_safe(comp.id)
-                    else:
-                        # A snapshot we could not delete may still hold
-                        # the PREVIOUS attempt's totals, which
-                        # process_result already counted. Refuse disk
-                        # salvage for this attempt rather than risk
-                        # counting them twice - losing an aborted
-                        # attempt's spend understates a total; salvaging
-                        # a stale one corrupts it.
-                        pipeline.mark_usage_salvage_unsafe(comp.id)
-                        ui.warn(
-                            f"  Could not retire the previous usage "
-                            f"snapshot for {comp.id}; disk salvage is "
-                            f"disabled for this attempt"
-                        )
-                    if isinstance(executor, _InlineExecutor):
-                        # In-process worker: no fd redirection (it would
-                        # hijack the parent terminal), and each transcript
-                        # line mirrors to the parent UI so sequential runs
-                        # keep live engineer output. functools.partial
-                        # binds kstrl.factory._run_component AT SUBMIT
-                        # TIME, so tests patching it still intercept.
-                        # mypy cannot prove the unknown-length *args
-                        # tuple stops before the kwargs; _submit_args
-                        # ends at token_budget by construction.
-                        task = functools.partial(
-                            _run_component,
-                            *args,
-                            # Keyword, NOT appended to args: the tuple
-                            # ends at token_budget by construction (see
-                            # above) and a positional extra silently
-                            # lands on redirect_output.
-                            base_branch=pipeline.component_base(comp.id),
-                            verify_config=engineer_verify,
-                            attempt=comp.retries + 1,
-                            plan_id=comp.plan_id,
-                            redirect_output=False,  # type: ignore[misc]
-                            live_line=functools.partial(
-                                ui.stream_line,
-                                "AI",
-                            ),
-                            stop_check=(stop.is_set if stop is not None else None),
-                        )
-                        future = executor.submit(task)
-                    else:
-                        # Bound through partial rather than passed as a
-                        # submit() kwarg: Executor.submit types its own
-                        # **kwargs, so a keyword meant for the worker
-                        # reads as a duplicate of submit's. Picklable -
-                        # _run_component is module-level and the base
-                        # branch is a plain str.
-                        future = executor.submit(
-                            functools.partial(
-                                _run_component,
-                                *args,
-                                # Same unprovable-*args limitation the
-                                # inline branch annotates above.
-                                base_branch=pipeline.component_base(comp.id),  # type: ignore[misc]
-                                verify_config=engineer_verify,
-                                attempt=comp.retries + 1,
-                                plan_id=comp.plan_id,
-                            ),
-                        )
-                    running_futures[future] = comp.id
-                    factory_result.scheduled.append(comp.id)
-                    if backstop_seconds > 0:
-                        future_deadlines[future] = time.monotonic() + backstop_seconds
-
-                if not running_futures:
-                    if transitioned_without_launch:
-                        continue
-                    break
-
-                # Wait for the next completion, bounded by the nearest
-                # backstop deadline. The worker enforces its own timeouts
-                # (adapter kill + loop wall clock); this scheduler-side
-                # deadline is the last line of defense when a worker hangs
-                # outside those layers.
-                wait_timeout = _next_backstop_wait(
-                    running_futures,
-                    future_deadlines,
-                    time.monotonic(),
-                )
-                done, stopped = _wait_interruptible(
-                    set(running_futures),
-                    wait_timeout,
-                    stop,
-                )
-                if stopped:
-                    assert stop is not None
-                    _abort_inflight(
-                        executor,
-                        running_futures,
-                        pipeline,
-                        ui,
-                        stop,
-                    )
-                    return
-
-                if done:
-                    # Preserve pre-R0.1 semantics: process one completion
-                    # per pass so freed slots are refilled promptly.
-                    future = next(iter(done))
-                    comp_id = running_futures.pop(future)
-                    future_deadlines.pop(future, None)
-                    try:
-                        comp_result = future.result()
-                    except Exception as exc:
-                        comp_result = ComponentResult(
-                            component_id=comp_id,
-                            success=False,
-                            error=str(exc),
-                        )
-                    pipeline.process_result(comp_id, comp_result)
-                    continue
-
-                # Nothing completed inside the window: fail every
-                # component past its backstop deadline and keep going.
-                now = time.monotonic()
-                for future in _expired_futures(
-                    running_futures,
-                    future_deadlines,
-                    now,
-                ):
-                    comp_id = running_futures.pop(future)
-                    future_deadlines.pop(future, None)
-                    leaked_component_ids.add(comp_id)
-                    pipeline.fail_scheduler_backstop(comp_id, backstop_seconds)
-        finally:
-            if leaked_component_ids:
-                ui.warn(
-                    "Shutting down worker pool without waiting: "
-                    f"{len(leaked_component_ids)} worker(s) may still be running"
-                )
-                executor.shutdown(wait=False, cancel_futures=True)
-            else:
-                executor.shutdown(wait=True)
-
-    def _cleanup_pass_worktrees() -> None:
-        """Remove component worktrees left behind by a scheduling pass.
-
-        With ``keep_worktrees_on_failure`` (R3.3), a FAILED component's
-        worktree is kept and recorded as its evidence pointer instead of
-        removed, so the failure summary can point the operator at it.
-        """
-        if not factory_config.use_worktrees:
-            return
-        ui.section("Factory: Cleanup")
-        for comp_id in run_state.worktree_paths:
-            if comp_id in leaked_component_ids:
-                # A possibly-live worker still owns this worktree; removing
-                # it under the worker risks corrupting the main repo's
-                # worktree metadata.
-                ui.warn(f"  Keeping worktree for '{comp_id}' (leaked worker may still be running)")
-                continue
-            comp = manifest.get_component(comp_id)
-            if (
-                factory_config.keep_worktrees_on_failure
-                and comp is not None
-                and comp.status == ComponentStatus.FAILED.value
-            ):
-                comp.evidence_worktree = str(run_state.worktree_paths[comp_id])
-                ui.info(
-                    "  Keeping failed worktree for post-mortem: "
-                    f"{run_state.worktree_paths[comp_id]}"
-                )
-                pipeline.record_worktree_sweep(
-                    comp_id,
-                    sweep_worktree(run_state.worktree_paths[comp_id]),
-                    "cleanup",
-                )
-                continue
-            pipeline.record_worktree_sweep(
-                comp_id,
-                _cleanup_worktree(comp_id, root_dir, run_id),
-                "cleanup",
-            )
-        manifest.save(manifest_path)
-        # Drop the run's now-empty worktree dir; leaked workers' and
-        # failed components' kept worktrees leave it non-empty and it
-        # stays for the next run's prune pass (which preserves recorded
-        # evidence worktrees of still-FAILED components).
-        try:
-            os.rmdir(root_dir / ".kstrl" / "worktrees" / run_id)
-        except OSError:
-            pass
-        ui.ok("Worktrees cleaned up")
+    pass_ctx = _PassContext(
+        manifest_path=manifest_path,
+        bus=bus,
+        stop=stop,
+        factory_result=factory_result,
+        leaked_component_ids=leaked_component_ids,
+        max_parallel=max_parallel,
+        backstop_seconds=backstop_seconds,
+        engineer_verify=engineer_verify,
+    )
 
     # Per-component PRs are squash-merged into base as each component
     # completes, so at contract time tier re-merges would be content
@@ -1653,8 +1406,18 @@ def _run_factory_locked(
         stop,
     )
     for phase3_round in integration.rounds():
-        _run_scheduling_pass()
-        _cleanup_pass_worktrees()
+        _run_scheduling_pass(launch, pass_ctx)
+        _cleanup_pass_worktrees(
+            manifest,
+            manifest_path,
+            root_dir,
+            run_id,
+            factory_config,
+            ui,
+            run_state,
+            pipeline,
+            leaked_component_ids,
+        )
 
         if stop is not None and stop.is_set():
             ui.warn(f"  Run stopped: {stop.reason}")
