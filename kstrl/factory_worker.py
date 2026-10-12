@@ -31,7 +31,7 @@ from kstrl.factory_result import (
 )
 from kstrl.feedforward import CodebaseScanConfig, build_codebase_scan_context
 from kstrl.git_base import resolve_base_ref
-from kstrl.loop import LoopBudget
+from kstrl.loop_budget import LoopBudget
 from kstrl.operator_context import (
     GOLDEN_PATTERNS,
     MEMORY,

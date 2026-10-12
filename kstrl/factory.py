@@ -103,7 +103,7 @@ from kstrl.knowledge import (
 from kstrl.knowledge_distill import distill_facts
 from kstrl.knowledge_facts import KnowledgeConfig
 from kstrl.linear import LinearConfig, build_linear_sink
-from kstrl.loop import LoopBudget
+from kstrl.loop_budget import LoopBudget
 from kstrl.manifest import (
     Component,
     ComponentStatus,
