@@ -59,7 +59,8 @@ from kstrl.factory_result import (
 )
 from kstrl.factory_worker import _run_component
 from kstrl.inbox import Inbox, InboxConfig
-from kstrl.loop import COMPLETION_MARKER, LoopBudget, run_loop
+from kstrl.loop import COMPLETION_MARKER, run_loop
+from kstrl.loop_budget import LoopBudget
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.observability import ProgressLog
 from kstrl.security import SecurityConfig
@@ -3719,7 +3720,7 @@ class TestLoopHaltCarriesItsOwnIdentity:
     WHICH ceiling structurally instead of leaving the parent to guess."""
 
     def test_token_overrun(self) -> None:
-        from kstrl.loop import LoopBudget
+        from kstrl.loop_budget import LoopBudget
 
         verdict = LoopBudget(
             max_total_tokens=500,
@@ -3737,7 +3738,7 @@ class TestLoopHaltCarriesItsOwnIdentity:
         assert verdict.ceilings == ("max_total_tokens",)
 
     def test_cost_overrun(self) -> None:
-        from kstrl.loop import LoopBudget
+        from kstrl.loop_budget import LoopBudget
 
         verdict = LoopBudget(max_cost_usd=1.0).halt_verdict(
             UsageTotals(
@@ -3752,7 +3753,7 @@ class TestLoopHaltCarriesItsOwnIdentity:
         assert verdict.ceilings == ("max_cost_usd",)
 
     def test_unenforceable_names_every_dead_ceiling(self) -> None:
-        from kstrl.loop import LoopBudget
+        from kstrl.loop_budget import LoopBudget
 
         verdict = LoopBudget(
             max_total_tokens=500,
@@ -3765,7 +3766,7 @@ class TestLoopHaltCarriesItsOwnIdentity:
 
     def test_halt_reason_still_returns_the_prose(self) -> None:
         """Existing callers read the sentence; it must not change shape."""
-        from kstrl.loop import LoopBudget
+        from kstrl.loop_budget import LoopBudget
 
         budget = LoopBudget(max_total_tokens=500)
         usage = UsageTotals(
@@ -3781,7 +3782,7 @@ class TestLoopHaltCarriesItsOwnIdentity:
         assert reason is not None and reason.startswith("token budget exceeded")
 
     def test_no_halt_returns_none_from_both(self) -> None:
-        from kstrl.loop import LoopBudget
+        from kstrl.loop_budget import LoopBudget
 
         budget = LoopBudget(max_total_tokens=500)
         usage = UsageTotals(
