@@ -95,7 +95,7 @@ EXPECTED_MANIFEST_WRITE_SITES: dict[str, tuple[int, str]] = {
     # takes the lock itself. Not fixed in #597 (UI work deferred by the owner).
     "kstrl/tui/screens/retry.py::RetryScreen._confirm_retry prepare_retry": (1, UNGUARDED),
     # --- inside run_factory's lock ---
-    "kstrl/factory.py::_run_factory_locked save": (1, IN_RUN),
+    "kstrl/factory_run.py::_start_manifest save": (1, IN_RUN),
     "kstrl/factory.py::_fill_slots save": (1, IN_RUN),
     "kstrl/factory_worktrees.py::_cleanup_pass_worktrees save": (1, IN_RUN),
     "kstrl/factory_acceptance.py::_stamp_feature_base save": (1, IN_RUN),

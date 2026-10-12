@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from kstrl.acceptance import BaseReading, PinnedPlan
 from kstrl.acceptance_carried import Carried
@@ -45,6 +45,9 @@ from kstrl.stack import (
 from kstrl.timeout import TimeoutConfig
 from kstrl.verify_model import VerifyConfig
 from kstrl.worktree_setup import WorktreeSetup
+
+if TYPE_CHECKING:
+    from kstrl.ui.base import UI
 
 #: R10.3: the two settings [factory] claim_agreement accepts.
 VALID_CLAIM_AGREEMENT = ("advisory", "block")
@@ -698,3 +701,20 @@ def claim_gate_unreachable_warning(config: FactoryConfig) -> str | None:
             "or 'hard' to honour it."
         )
     return None
+
+
+def _warn_unreachable_gates(factory_config: FactoryConfig, ui: UI) -> None:
+    """Warn about a merge gate or a claim gate that the run cannot reach."""
+    # Issue #207 (review P1): checked AFTER autonomy resolution, because
+    # the L1/L2 bundle can flip pause_before_pr_merge on when no config
+    # flag ever set it - any earlier check misses that path and the gate
+    # would be reported ON while _phase_checkpoint stays unreachable.
+    gate_warning = merge_gate_unreachable_warning(factory_config)
+    if gate_warning is not None:
+        ui.warn(gate_warning)
+    # R10.3: same timing, same reason - the L1/L2 bundle forces
+    # review_mode to hard above, so a claim gate that looked
+    # unreachable before autonomy resolved may be reachable now.
+    claim_warning = claim_gate_unreachable_warning(factory_config)
+    if claim_warning is not None:
+        ui.warn(claim_warning)

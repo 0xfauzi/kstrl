@@ -25,6 +25,7 @@ from kstrl.autonomy_config import (
     resolved_flag_bundle,
 )
 from kstrl.autonomy_transitions import apply_demotion, save_ladder_state
+from kstrl.event_catalog import AutonomyLevelApplied
 from kstrl.events import EventBus
 from kstrl.factory_config import (
     FactoryConfig,
@@ -613,3 +614,30 @@ def _record_autonomy(ctx: RunContext) -> None:
             )
         except Exception as exc:  # noqa: BLE001 - never fail a run on bookkeeping
             ctx.ui.warn(f"Autonomy state update failed (non-fatal): {exc}")
+
+
+def _report_ladder(
+    ladder: _LadderOutcome,
+    factory_config: FactoryConfig,
+    bus: EventBus,
+    ui: UI,
+) -> None:
+    """Apply the bundle of the level to the config and tell the operator."""
+    factory_config.pause_before_pr_merge = ladder.bundle.pause_before_pr_merge
+    factory_config.review_mode = ladder.bundle.review_mode
+    bus.emit(
+        AutonomyLevelApplied(
+            level=int(ladder.level),
+            label=ladder.level.label,
+            flags=tuple(ladder.bundle.describe()),
+            overrides=tuple(ladder.clamps + ladder.overrides),
+        )
+    )
+    ui.kv("Autonomy", f"L{int(ladder.level)} - {ladder.level.label}")
+    for note in ladder.clamps:
+        ui.warn(f"  {note}")
+    # Each note carries its own verdict since #195: one of them
+    # reports a gate the run RETAINED, and a blanket "Manual override
+    # ignored" prefix would have contradicted it.
+    for note in ladder.overrides:
+        ui.warn(f"  {note}")

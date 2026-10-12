@@ -524,6 +524,13 @@ class TestCodebaseScanAndPrdPathEndToEnd:
         # The skip sentinel flowed through the real CLI stack.
         assert "Phase 1 SKIPPED" in result.output
 
+        # The bus of the CLI console is the bus of the run (#776 B3F4): each
+        # row of the run's events.jsonl carries the id of its run directory.
+        (events_file,) = (root / ".kstrl" / "runs").glob("*/events.jsonl")
+        rows = [json.loads(line) for line in events_file.read_text().splitlines() if line]
+        assert rows
+        assert {row["run_id"] for row in rows} == {events_file.parent.name}
+
     def test_rendered_prompt_and_check_prd_stories_agree(
         self,
         tmp_path: Path,

@@ -209,26 +209,25 @@ EXPECTED_FREE_READERS = frozenset(
     }
 )
 
-#: ``kstrl/factory.py`` resolves run-level config in exactly two scopes.
+#: ``kstrl/factory*.py`` resolves run-level config in exactly six scopes (#776 B3F4).
 #: ``_submit_args`` and every other per-component scope must not appear:
 #: the scheduler calls them once per component attempt, which is the
 #: same divergence the pipeline half is about. Nested scopes qualify
 #: through their owner, so a read planted in ``_submit_args`` reads
 #: ``_run_factory_locked._submit_args`` and is an offender.
 EXPECTED_FACTORY_SCOPES = frozenset(
-    {"_run_factory_locked", "_open_health_breach_items", "_journal_run"}
+    {"_resolve_envelope", "_announce_run", "_make_run_state", "_resolve_limits"}
+    | {"_open_health_breach_items", "_journal_run"}
 )
 #: 7 until the type closure enrolled ``RunEnvelope``; the eighth is
-#: ``RunEnvelope.resolve`` at the top of ``_run_factory_locked``, which
-#: is the run's one envelope resolution and the site the whole change is
-#: about being visible to the walk at last.
+#: ``RunEnvelope.resolve`` in ``_resolve_envelope``, the run's one envelope resolution.
 EXPECTED_FACTORY_SITES = 8
 #: Where those sites sit. ``_open_health_breach_items`` moved to
 #: ``kstrl/factory_autonomy.py`` (#776), so layer B walks every
 #: ``factory*.py`` under the one factory case. A glob and not a list, so a
 #: config read planted in a module divided out of ``factory.py`` is seen.
 EXPECTED_FACTORY_SITES_BY_FILE = {
-    "factory.py": 6,
+    "factory.py": 0,
     "factory_acceptance.py": 0,
     "factory_agents.py": 0,
     "factory_autonomy.py": 1,
@@ -237,7 +236,7 @@ EXPECTED_FACTORY_SITES_BY_FILE = {
     "factory_lock.py": 0,
     "factory_preflight.py": 0,
     "factory_result.py": 0,
-    "factory_run.py": 0,
+    "factory_run.py": 6,
     "factory_summary.py": 1,
     "factory_worker.py": 0,
     "factory_worktrees.py": 0,
