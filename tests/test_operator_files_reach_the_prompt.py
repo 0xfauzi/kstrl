@@ -158,7 +158,8 @@ EXPECTED_LOADER_SPELLINGS: dict[str, int] = {
 }
 
 #: Every place in ``kstrl/`` that spells ``context_prefix``: the
-#: parameter and its two uses in ``loop.py``; the local, the keyword and
+#: parameter of ``run_loop`` and the six more in ``loop.py`` that its
+#: division added (#776 B3); the local, the keyword and
 #: its value in ``factory_worker.py::_run_component``; and the keyword at each
 #: of the three ``run_loop`` calls in ``feature_cmd.py`` (#599). See
 #: :meth:`TestEveryRowReachesAPrompt.
@@ -166,7 +167,7 @@ EXPECTED_LOADER_SPELLINGS: dict[str, int] = {
 EXPECTED_PREFIX_SPELLINGS: dict[str, int] = {
     "factory_worker.py": 3,
     "feature_cmd.py": 3,
-    "loop.py": 3,
+    "loop.py": 7,
 }
 
 

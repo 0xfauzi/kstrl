@@ -372,7 +372,11 @@ FINDING_EXIT_SITES: dict[tuple[str, str], int] = {
     ("doctor.py", "exit_code_for"): 1,  # `ks doctor`: not ready is a finding
     ("factory_result.py", "resolve_exit_code"): 5,  # a failed, unmerged, parked or unscheduled run
     ("init_cmd.py", "run_init"): 2,  # `ks init`: the PRD it validated is invalid
-    ("loop.py", "run_loop"): 5,  # an iteration ran and the loop ended short
+    ("loop.py", "_breaker_verdict"): 1,  # an iteration ran and the breaker ended the loop
+    ("loop.py", "_budget_verdict"): 1,  # an iteration ran and the budget ended the loop
+    ("loop.py", "_guard_verdict"): 1,  # an iteration ran and the guard ended the loop
+    ("loop.py", "_max_iterations_result"): 1,  # all iterations ran and none completed
+    ("loop.py", "_wall_clock_verdict"): 1,  # an iteration ran and the wall clock ended the loop
     ("plan_gate.py", "_park_plan"): 1,  # an L1 plan parked for approval, nothing run (#602)
     ("tui/bridge.py", "CommandHandle"): 2,  # the command raised: the exit a traceback gets
 }

@@ -63,6 +63,10 @@ PROMPT_RECORD = KSTRL / "agents" / "prompt_record.py"
 #: this set CLEARS a site and must not match anything wider.
 NOT_AGENTS = frozenset({"subprocess", "asyncio", "app"})
 
+#: Functions of ``loop.py`` that hold the ``agent.run`` call of ``run_loop``
+#: after its division (#776 B3). Their only caller is ``run_loop``.
+RUN_LOOP_PHASES = frozenset({"_run_one_iteration"})
+
 #: Calls that hand a prompt towards an agent under a name other than ``run``.
 AGENT_ENTRIES = frozenset(
     {
@@ -326,7 +330,7 @@ EXPECTED_AGENT_CALLS: dict[str, int] = {
     "integration_phase.py:_run_reviewer": 1,
     "integration_phase.py:review_commit": 1,
     "knowledge_distill.py:distill_facts": 1,
-    "loop.py:run_loop": 1,
+    "loop.py:_run_one_iteration": 1,
     "pipeline_review.py:ReviewPhase._phase_review": 1,
     "pipeline_security.py:SecurityGate._phase_security": 1,
     "pipeline_knowledge.py:KnowledgePhase._phase_distill": 1,
@@ -346,7 +350,7 @@ CALLER_SCOPED: dict[str, str] = {
     "integration_phase.py:_run_reviewer": "integration_phase._review_round",
     "integration_phase.py:review_commit": "integration_phase._review_round, via _run_reviewer",
     "knowledge_distill.py:distill_facts": "pipeline.ComponentPipeline._phase_distill",
-    "loop.py:run_loop": "every run_loop caller, each scoped lexically",
+    "loop.py:_run_one_iteration": "every run_loop caller, each scoped lexically",
     "review.py:run_review": "pipeline_review._phase_review and integration_phase._review_round",
     "security.py:run_security_review": "pipeline_security.SecurityGate._phase_security",
 }
@@ -407,6 +411,22 @@ def test_every_agent_call_is_inside_a_recording_scope_or_names_the_caller_that_o
     assert len([s for s in census if s.scoped]) >= 6
 
 
+def _phase_callers_outside_run_loop() -> list[tuple[str, str]]:
+    """The functions other than ``run_loop`` that call a phase of it."""
+    funcs = [
+        (path.name, node)
+        for path in sorted(KSTRL.rglob("*.py"))
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+        if isinstance(node, ast.FunctionDef) and node.name != "run_loop"
+    ]
+    return [
+        (name, func.name)
+        for name, func in funcs
+        if {_callee(n) for n in ast.walk(func) if isinstance(n, ast.Call)}
+        & (RUN_LOOP_PHASES - {func.name})
+    ]
+
+
 def test_a_site_cleared_by_its_caller_has_its_callers_counted() -> None:
     """CALLER_SCOPED clears a site on the claim that its caller opens the
     scope. That claim is checked only if every call OF that function is
@@ -416,9 +436,12 @@ def test_a_site_cleared_by_its_caller_has_its_callers_counted() -> None:
     uncounted = sorted(
         key
         for key in CALLER_SCOPED
-        if key.rsplit(":", 1)[1].rsplit(".", 1)[-1] not in AGENT_ENTRIES | {"run"}
+        if key.rsplit(":", 1)[1].rsplit(".", 1)[-1] not in AGENT_ENTRIES | {"run"} | RUN_LOOP_PHASES
     )
     assert uncounted == []
+    # A phase of run_loop is cleared only while run_loop is its sole caller:
+    # run_loop is an agent entry, so its own callers are counted.
+    assert _phase_callers_outside_run_loop() == []
 
 
 # --- layer 3: the bound (#603) ----------------------------------------------
@@ -441,7 +464,10 @@ EXPECTED_BOUNDS: dict[str, tuple[str, str]] = {
     "integration_phase.py:_run_reviewer": ("timeout", "its caller's timeout"),
     "integration_phase.py:review_commit": ("timeout", "its caller's timeout"),
     "knowledge_distill.py:distill_facts": ("timeout", "[knowledge] distill_timeout_seconds"),
-    "loop.py:run_loop": ("timeout", "[timeout] agent_iteration, capped by component_total"),
+    "loop.py:_run_one_iteration": (
+        "timeout",
+        "[timeout] agent_iteration, capped by component_total",
+    ),
     "pipeline_review.py:ReviewPhase._phase_review": ("timeout", "[factory] review_timeout_seconds"),
     "pipeline_security.py:SecurityGate._phase_security": (
         "config",
