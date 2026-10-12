@@ -5,6 +5,7 @@ They are the L1 plan gate, the carried checks and the Phase 3 base.
 
 from __future__ import annotations
 
+import time
 from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
@@ -24,6 +25,7 @@ from kstrl.contract import (
 from kstrl.decisions import (
     DecisionRegister,
 )
+from kstrl.event_catalog import ComponentFailed
 from kstrl.factory_autonomy import _LadderOutcome
 from kstrl.factory_config import (
     FactoryConfig,
@@ -35,12 +37,19 @@ from kstrl.factory_worktrees import (
     _has_merged,
 )
 from kstrl.manifest import (
+    ComponentStatus,
     Manifest,
 )
 from kstrl.pipeline import ComponentPipeline
+from kstrl.pipeline_state import _iso_now
 from kstrl.plan_gate import run_plan_gate
 
 if TYPE_CHECKING:
+    from kstrl.events import EventBus
+    from kstrl.factory_result import FactoryResult
+    from kstrl.integration_phase import Phase3Round
+    from kstrl.observability import NotifyHooks
+    from kstrl.runstate import RunState
     from kstrl.ui.base import UI
 
 
@@ -206,3 +215,155 @@ def _resolve_round_base(manifest: Manifest, root_dir: Path, ui: UI) -> str:
     except git.GitDiffError as exc:
         ui.warn(f"  Phase 3 base unresolved: {exc}")
         return ""
+
+
+def _stop_reason(result: ContractResult) -> str:
+    """Why a failed tier's breaker is not retried: a failed held-out check
+    gets no retry (#700 decision 3); otherwise its retries are spent."""
+    return "a held-out check failed, no retry" if result.held_out else "retries exhausted"
+
+
+def _record_contract_event(
+    cr: ContractResult, root_dir: Path, ui: UI, run_id: str, manifest: Manifest
+) -> None:
+    """Append a contract_result event to the evolution journal.
+
+    Written for pass AND fail (R0.3): the journal is the audit trail
+    for every contract phase outcome, including intermediate failures
+    that a breaker retry later resolves. Non-fatal on I/O errors,
+    matching EvolutionJournal.record_run.
+    """
+    from kstrl.evolution import EvolutionJournal
+    from kstrl.journal_rows import JOURNAL_SCHEMA_VERSION
+
+    # R2.1: honor [evolution] in kstrl.toml + env, resolved against
+    # the factory root rather than whatever the process CWD is.
+    journal = EvolutionJournal.open(root_dir, warn=ui.warn)
+    if journal is None:
+        return
+    entry = {
+        "schema_version": JOURNAL_SCHEMA_VERSION,
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "run_id": run_id,
+        "project": manifest.project_name,
+        "component_id": cr.breaker or "",
+        "event_type": "contract_result",
+        "tier": cr.tier,
+        "passed": cr.passed,
+        "breaker": cr.breaker,
+        "components_tested": cr.components_tested,
+        "test_output": cr.test_output[:2000],
+        "duration_seconds": round(cr.duration_seconds, 2),
+    }
+    try:
+        journal.append_entries([entry])
+    except OSError as exc:
+        # Evolution recording is non-fatal, but never silent (R6.1).
+        ui.warn(f"  Evolution journal write failed (non-fatal): {exc}")
+
+
+def _reset_contract_breakers(
+    failures: list[ContractResult],
+    phase3_round: Phase3Round,
+    manifest: Manifest,
+    manifest_path: Path,
+    factory_config: FactoryConfig,
+    ui: UI,
+    pipeline: ComponentPipeline,
+    run_state: RunState,
+    factory_result: FactoryResult,
+) -> None:
+    """Send each retryable contract breaker back to PENDING (#776, B3)."""
+    # Reset retryable breakers to PENDING; the outer loop then
+    # re-enters scheduling so the promised retry actually runs.
+    for cr in failures:
+        if not cr.breaker:
+            continue
+        breaker = manifest.get_component(cr.breaker)
+        if breaker and breaker.retries < factory_config.max_retries and not cr.held_out:
+            # R3.3: the completed attempt's findings are superseded
+            # by the contract-triggered re-run; journal them before
+            # the retry increments the attempt counter.
+            pipeline.journal_superseded_findings(breaker)
+            breaker.retries += 1
+            breaker.status = ComponentStatus.PENDING.value
+            breaker.error = f"Contract test failed at tier {cr.tier}"
+            run_state.component_failure_signatures[cr.breaker] = [
+                f"contract:tier_{cr.tier}",
+            ]
+            # Remove from completed list
+            if cr.breaker in factory_result.completed:
+                factory_result.completed.remove(cr.breaker)
+            # The context write lives on the pipeline (#247): it is
+            # one of exactly two writers of the retry context and
+            # both must merge the attempt's phase readings, or a
+            # contract failure re-raises a review finding the
+            # reviewer already cleared. breaker.retries was
+            # incremented above and so names the attempt whose
+            # contract test failed; see record_contract_failure.
+            pipeline.record_contract_failure(
+                cr.breaker,
+                breaker.retries,
+                cr.test_output[:500],
+            )
+            manifest.save(manifest_path)
+            phase3_round.breaker_reset = True
+            ui.warn(f"  Contract breaker '{cr.breaker}' sent back for retry")
+
+
+def _record_contract_failures(
+    failures: list[ContractResult],
+    manifest: Manifest,
+    manifest_path: Path,
+    ui: UI,
+    pipeline: ComponentPipeline,
+    run_state: RunState,
+    factory_result: FactoryResult,
+    bus: EventBus,
+    notify: NotifyHooks,
+) -> None:
+    """Record each contract failure that has no retry left (#776, B3)."""
+    # Terminal contract failure: nothing left to retry. Record it in
+    # the run result so the summary shows it and the exit code is
+    # nonzero (previously this fell through silently and the run
+    # exited 0 with broken integrated code).
+    for cr in failures:
+        detail = (cr.test_output or "").strip()
+        summary_line = detail.splitlines()[-1][:200] if detail else ""
+        if cr.breaker:
+            breaker = manifest.get_component(cr.breaker)
+            if breaker is not None:
+                breaker.status = ComponentStatus.FAILED.value
+                breaker.error = f"Contract test failed at tier {cr.tier} ({_stop_reason(cr)})"
+                breaker.completed_at = _iso_now()
+                breaker.failed_phase = "contract"
+                breaker.failed_check = f"tier_{cr.tier}"
+                run_state.component_failure_signatures[cr.breaker] = [
+                    f"contract:tier_{cr.tier}",
+                ]
+            if cr.breaker in factory_result.completed:
+                factory_result.completed.remove(cr.breaker)
+            if cr.breaker not in factory_result.failed:
+                factory_result.failed.append(cr.breaker)
+            bus.emit(
+                ComponentFailed(
+                    component=cr.breaker,
+                    error=(f"Contract test failed at tier {cr.tier} ({_stop_reason(cr)})"),
+                )
+            )
+            notify.fire_first_failure(
+                cr.breaker,
+                f"Contract test failed at tier {cr.tier} ({_stop_reason(cr)})",
+            )
+            factory_result.contract_failures.append(
+                f"tier {cr.tier}: breaker '{cr.breaker}' ({_stop_reason(cr)}): {summary_line}"
+            )
+        else:
+            factory_result.contract_failures.append(
+                f"tier {cr.tier}: contract tests failed, no blame "
+                f"attributed (components: "
+                f"{', '.join(cr.components_tested)}): {summary_line}"
+            )
+        ui.err(f"  Contract failure recorded for tier {cr.tier}; run will exit nonzero")
+    _halt_carried(pipeline, failures)
+    manifest.save(manifest_path)

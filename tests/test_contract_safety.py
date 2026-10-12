@@ -341,6 +341,20 @@ class TestContractFailureExitsNonzero:
         assert events[-1]["passed"] is False
         assert events[-1]["breaker"] == "a"
 
+        # The terminal failure is also an event of the run. Without this
+        # assertion, a contract round that did not emit it left the suite
+        # green (#776 B3F2 plants).
+        run_events = [
+            json.loads(line)
+            for path in (root / ".kstrl" / "runs").glob("*/events.jsonl")
+            for line in path.read_text(encoding="utf-8").splitlines()
+        ]
+        assert [
+            event["data"]["error"]
+            for event in run_events
+            if event["event"] == "component_failed" and event["component"] == "a"
+        ] == ["Contract test failed at tier 0 (retries exhausted)"]
+
         # The user's checkout survived: no tracked changes, no merge state.
         assert _tracked_changes(root) == []
         assert not (root / ".git" / "MERGE_HEAD").exists()
