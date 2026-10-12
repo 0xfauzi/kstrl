@@ -25,7 +25,8 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.factory import _cleanup_worktree, _setup_worktree, run_factory
+from kstrl.factory import run_factory
+from kstrl.factory_worktrees import _cleanup_worktree, _setup_worktree
 from kstrl.ui.plain import PlainUI
 from tests.helpers import gitrepo, procs
 from tests.spine_utils import (
@@ -63,7 +64,7 @@ time.sleep(120)
 _SETUP_CHILD_SCRIPT = """
 import sys
 from pathlib import Path
-from kstrl.factory import _setup_worktree
+from kstrl.factory_worktrees import _setup_worktree
 from kstrl.ui.plain import PlainUI
 root = Path(sys.argv[1])
 Path(sys.argv[2]).write_text("ready")

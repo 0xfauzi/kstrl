@@ -217,7 +217,10 @@ EXPECTED_PROCESS_MODULES: dict[str, tuple[str, ...]] = {
     # inventory in that PR body records the verdict.
     # `multiprocessing` (#642) is `multiprocessing.parent_process()`, the
     # sentinel a pool worker waits on so it ends with its parent.
-    "factory.py": ("ProcessPoolExecutor", "kill", "multiprocessing", "subprocess", "terminate"),
+    "factory.py": ("ProcessPoolExecutor", "kill", "multiprocessing", "terminate"),
+    # #776 F2: the worktree code, with every `subprocess.run` of the old
+    # factory.py row, and nothing else.
+    "factory_worktrees.py": ("subprocess",),
     # `subprocess.run` behind a timeout, and nothing else.
     "agents/codex.py": ("DeadlineStreamer", "subprocess"),
     "breaker.py": ("subprocess",),

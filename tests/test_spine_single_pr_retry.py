@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import factory
+from kstrl import factory_worktrees
 from kstrl.timeout import TimeoutConfig
 from kstrl.ui.plain import PlainUI
 from tests.spine_utils import component, git, init_kstrl_repo, make_manifest
@@ -116,24 +116,24 @@ def test_a_failed_fresh_setup_leaves_the_shared_branch_where_it_was(tmp_path: Pa
     root = tmp_path / "repo"
     init_kstrl_repo(root, ("a", "c"))
     run_id = "run-566"
-    wt_a = factory._setup_worktree(
+    wt_a = factory_worktrees._setup_worktree(
         "a", SHARED_BRANCH, "main", root, run_id, ui=PlainUI(no_color=True)
     )
     (wt_a / "a.txt").write_text("a\n")
     git("add", "a.txt", cwd=wt_a)
     git("commit", "-q", "-m", "a", cwd=wt_a)
-    factory._cleanup_worktree("a", root, run_id)
-    wt_c = factory._setup_worktree(
+    factory_worktrees._cleanup_worktree("a", root, run_id)
+    wt_c = factory_worktrees._setup_worktree(
         "c", SHARED_BRANCH, "main", root, run_id, ui=PlainUI(no_color=True)
     )
     (wt_c / "c.txt").write_text("killed\n")
     git("add", "c.txt", cwd=wt_c)
     git("commit", "-q", "-m", "c-killed", cwd=wt_c)
     killed_tip = git("rev-parse", "HEAD", cwd=wt_c)
-    factory._cleanup_worktree("c", root, run_id)
+    factory_worktrees._cleanup_worktree("c", root, run_id)
 
     with pytest.raises(RuntimeError, match="Failed to create worktree for 'c'"):
-        factory._setup_worktree(
+        factory_worktrees._setup_worktree(
             "c",
             SHARED_BRANCH,
             "main",
@@ -155,9 +155,9 @@ def test_the_recut_point_is_the_recorded_start_in_single_pr_mode_only() -> None:
     comp.branch_name = SHARED_BRANCH
     manifest = make_manifest([comp])
 
-    assert factory._recut_point(manifest, comp, {"c": "abc123"}) is None
+    assert factory_worktrees._recut_point(manifest, comp, {"c": "abc123"}) is None
 
     manifest.single_pr = True
-    assert factory._recut_point(manifest, comp, {"c": "abc123"}) == "abc123"
+    assert factory_worktrees._recut_point(manifest, comp, {"c": "abc123"}) == "abc123"
     with pytest.raises(RuntimeError, match="no recorded start commit for 'c'"):
-        factory._recut_point(manifest, comp, {})
+        factory_worktrees._recut_point(manifest, comp, {})

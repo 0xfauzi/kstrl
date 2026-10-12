@@ -107,7 +107,7 @@ def measure_base_gates(
     ``digest``, the stack and the timeout), so the base is measured once.
     """
     start = time.monotonic()
-    # Non-fatal, as before a component is cut (``factory._setup_worktree``):
+    # Non-fatal, as before a component is cut (``factory_worktrees._setup_worktree``):
     # offline runs read the current tracking ref, local-only repos the branch.
     git_base.fetch_base_branch(base_branch, root_dir, timeout=60.0)
     try:
