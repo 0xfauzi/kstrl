@@ -81,7 +81,6 @@ EXPECTED_SPELLINGS: frozenset[tuple[str, str]] = frozenset(
         ("kstrl/pipeline_checks.py", "diff"),
         ("kstrl/pipeline.py", "engineer"),
         ("kstrl/pipeline_transitions.py", "engineer"),
-        ("kstrl/pipeline.py", "pr"),
         ("kstrl/pipeline_delivery.py", "review"),
         ("kstrl/pipeline_merge.py", "pr"),
         ("kstrl/pipeline_merge.py", "review"),
@@ -136,13 +135,11 @@ EXPECTED_SPELLINGS: frozenset[tuple[str, str]] = frozenset(
         # halted_run item of a bug report the base did not reproduce,
         # f"{NOT_REPRODUCED_KEY}{plan}:{sha}".
         ("kstrl/acceptance_design.py", "unreproduced"),
-        ("kstrl/pipeline.py", "halted"),
         ("kstrl/pipeline_transitions.py", "halted"),
         ("kstrl/pipeline_inbox.py", "halted"),
-        ("kstrl/pipeline.py", "merge"),
         ("kstrl/pipeline_merge.py", "halted"),
         ("kstrl/pipeline_merge.py", "merge"),
-        ("kstrl/pipeline.py", "policy"),
+        ("kstrl/pipeline_checks.py", "policy"),
         # #595: finding tags an inbox approval writes on a policy
         # finding. A tag is not a failure signature.
         ("kstrl/waivers.py", "waiver"),

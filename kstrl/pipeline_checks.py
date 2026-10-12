@@ -5,6 +5,7 @@ acceptance check and the diff.
 from __future__ import annotations
 
 import hashlib
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -12,13 +13,16 @@ from typing import TYPE_CHECKING, Any
 from kstrl import event_catalog, git, git_diff
 from kstrl.atomicio import atomic_write_text
 from kstrl.context import ACCEPTANCE_PHASE, IterationContext
-from kstrl.findings import Finding
+from kstrl.findings import POLICY_CATEGORY_PREFIX, Finding
+from kstrl.inbox import ItemKind
 from kstrl.manifest import Component
 from kstrl.pipeline_attempt import AttemptRecorder
 from kstrl.pipeline_inbox import InboxDesk
 from kstrl.pipeline_transitions import FailureAction, PhaseFailure
+from kstrl.rung import label_of
+from kstrl.statedir import pre_run_prd_path
 from kstrl.verify_diff import SCOPE_UNREADABLE_CHECK, scope_unreadable_error
-from kstrl.verify_model import CheckResult, VerificationResult
+from kstrl.verify_model import LAYER0_NOT_MEASURED, CheckResult, VerificationResult
 from kstrl.waivers import ApprovalSnapshot
 
 if TYPE_CHECKING:
@@ -394,3 +398,151 @@ class MechanicalChecks(InboxDesk, AttemptRecorder):
         # merge clean only when GitHub merged exactly this commit.
         comp.judged_sha = git.branch_sha(comp.branch_name, self.root_dir) or ""
         return DiffPhaseResult(diff=shared_diff)
+
+    def _phase_verify(
+        self,
+        comp: Component,
+        comp_result: ComponentResult,
+        wt_path: Path,
+    ) -> VerifyPhaseResult:
+        """Phase 1: mechanical verification (tests / typecheck / lint /
+        PRD stories / diff scope / bad patterns)."""
+        early = self._before_gates(comp, comp_result, wt_path)
+        if early is not None:
+            return early
+
+        verify_config = self.factory_config.resolved_verify_config()
+        self.ui.info(f"  Phase 1: mechanical verification for {comp.id}...")
+        verify_start = time.monotonic()
+        # #269: the run's plan-time snapshot, and no file read. Phase 1
+        # used to load the component PRD from the WORKTREE and take
+        # `allowedPaths` off it, while the in-loop guard deliberately
+        # read the copy at root_dir - so the two guards could enforce
+        # different allowlists on the same component in the same run,
+        # and Phase 1's was the one the agent could edit. Both now read
+        # RunScope, resolved once before the first engineer call.
+        scope = self.run_scope.for_component(comp.id)
+        # #646: the change this attempt is judged on, read once. An
+        # approval covers only the diff it was taken on, and an item filed
+        # below records the same pair.
+        change = self._judged_change(comp, wt_path)
+        # #192: the same rule as ``run_scope`` one line up, for the four
+        # config values below. They came off disk per component until
+        # the run's envelope was resolved once and injected, so a
+        # mid-run edit to kstrl.toml changed what a later component was
+        # held to without changing the hash the manifest records. The
+        # level is the CLAMPED one the factory resolved, not the raw
+        # stored level this used to read.
+        verification = self.hooks.run_mechanical_verification(
+            wt_path,
+            wt_path / comp.prd_path,
+            self.component_base(comp.id),
+            scope.allowed_paths,
+            verify_config,
+            allowed_paths_error=scope.error,
+            harness_paths=scope.harness_paths,
+            # The copy the run started with, for the defence in depth
+            # the snapshot does NOT provide: the stories and criteria
+            # Phase 1 still has to read from the live file
+            # (#269). Outside every worktree, so not agent-writable.
+            pre_run_prd_path=pre_run_prd_path(
+                self.root_dir, comp.id, comp.prd_path, plan_id=comp.plan_id
+            ),
+            policy_config=self.run_envelope.policy,
+            autonomy_level=self.run_envelope.autonomy_level,
+            # #595: the approvals snapshotted when the run started.
+            waivers=self._waivers_for(comp, change[1]),
+        )
+        verify_duration = time.monotonic() - verify_start
+        comp.verification_passed = verification.passed
+        # R8.1: mechanical checks that produce typed findings (today the
+        # policy envelope) get them into the component's finding stream, so
+        # a machine-made gate decision reaches the audit trail - PR body,
+        # journal, evolution - and not just the retry context. Recorded for
+        # passing checks too: a non-blocking advisory is still evidence.
+        check_findings = [finding for check in verification.checks for finding in check.findings]
+        if check_findings:
+            self._add_findings(comp, check_findings)
+            # R8.3: an envelope breach is the archetypal exception - a
+            # machine decision a human may want to approve once, or
+            # convert into a widened policy. Advisories stay out: they
+            # are recorded, not blocking, and the inbox is for decisions.
+            for finding in check_findings:
+                if (
+                    finding.category.startswith(POLICY_CATEGORY_PREFIX)
+                    and finding.severity != "advisory"
+                ):
+                    # #595 B2: the waiver_key is part of the dedupe key, not
+                    # just category, so a same-category repeat with
+                    # different evidence opens a second item instead of
+                    # overwriting the one the operator is about to read.
+                    # #646: so is the diff_sha, because the same text on a
+                    # different change is a change the operator never saw.
+                    evidence = self._waivable_evidence(comp, finding, change)
+                    self._inbox_add(
+                        ItemKind.POLICY_EXCEPTION,
+                        f"{comp.id}: {finding.category}",
+                        detail=finding.explanation,
+                        component=comp.id,
+                        dedupe_key=(
+                            f"policy:{comp.id}:{finding.category}:{evidence['waiver_key']}:"
+                            f"{evidence['diff_sha']}"
+                        ),
+                        evidence=evidence,
+                    )
+        # #696 decision 7: where Layer 0 ran, the pull request says nothing
+        # measured it, through R1.2's phase-skip callout (pr.py). Only on a
+        # pass, which is the only verification a pull request is built
+        # from: on a failure the event's not_measured carries the gap, and a
+        # finding would turn a failure with no evidence into one serve
+        # reports as judged on its merits (serve_outcome._merits_outcome).
+        if verification.passed and LAYER0_NOT_MEASURED in verification.not_measured:
+            self._record_phase_skip(comp, "adequacy", LAYER0_NOT_MEASURED.detail)
+        self.bus.emit(
+            event_catalog.VerificationResultEvent(
+                component=comp.id,
+                passed=verification.passed,
+                checks=tuple(c.name for c in verification.checks),
+                failures=tuple(c.message for c in verification.checks if not c.passed),
+                duration_seconds=round(verify_duration, 2),
+                not_measured=tuple(g.as_token() for g in verification.not_measured),
+                gate_logs=self._write_gate_logs(comp, verification),
+                isolation=label_of(verify_config.rung),
+            )
+        )
+
+        self._warn_not_measured(comp, verification)
+
+        if not verification.passed:
+            failing = [c for c in verification.checks if not c.passed]
+            self.ui.warn(f"  Phase 1 FAILED for {comp.id}: {', '.join(c.name for c in failing)}")
+            ctx = IterationContext.from_json(
+                comp_result.context_json or "{}",
+            )
+            ctx.add_verification_failure(
+                verification.as_context(),
+                attempt=comp.retries + 1,
+            )
+            # R6.1: one signature per failed check (#696 decision 5)
+            # into the journal instead of the flattened string.
+            from kstrl.failure_signatures import signatures_from_verification
+
+            action, error = _verify_routing(failing)
+            return VerifyPhaseResult(
+                ran=True,
+                verification=verification,
+                failure=PhaseFailure(
+                    action=action,
+                    error=error,
+                    phase="verify",
+                    check=", ".join(c.name for c in failing),
+                    context_json=ctx.to_json(),
+                    signatures=signatures_from_verification(
+                        verification.checks,
+                    ),
+                    failure_count=verification.failure_count,
+                ),
+            )
+
+        self.ui.ok(f"  Phase 1 passed for {comp.id}")
+        return VerifyPhaseResult(ran=True, verification=verification)

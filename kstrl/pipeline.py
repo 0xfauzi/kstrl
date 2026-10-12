@@ -34,22 +34,17 @@ for the same reason.
 
 from __future__ import annotations
 
-import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl import event_catalog, git, git_base
+from kstrl import event_catalog, git
 from kstrl.agents.base import (
     collect_usage,
 )
 from kstrl.agents.prompt_record import recording_prompts
 from kstrl.context import IterationContext, IterationRecord
 from kstrl.findings import (
-    POLICY_CATEGORY_PREFIX,
     Finding,
-)
-from kstrl.inbox import (
-    ItemKind,
 )
 from kstrl.manifest import (
     Component,
@@ -57,14 +52,10 @@ from kstrl.manifest import (
 )
 from kstrl.pipeline_checks import (
     MechanicalChecks,
-    VerifyPhaseResult,
-    _verify_routing,
 )
 from kstrl.pipeline_delivery import Delivery, PipelineOutcome
 from kstrl.pipeline_knowledge import KnowledgePhase
-from kstrl.pipeline_merge import PR_CLOSED_CHECK
 from kstrl.pipeline_security import SecurityGate
-from kstrl.pipeline_state import _iso_now
 from kstrl.pipeline_transitions import FailureAction, PhaseFailure
 from kstrl.pipeline_verdicts import ReviewPhaseResult
 from kstrl.prd import PRD
@@ -77,10 +68,8 @@ from kstrl.review_claims import (
     claim_retry_context,
     revert_unconfirmed_stories,
 )
-from kstrl.rung import label_of
-from kstrl.statedir import pre_run_prd_path
 from kstrl.timeout import limit_seconds
-from kstrl.verify_model import LAYER0_NOT_MEASURED, VerificationResult
+from kstrl.verify_model import VerificationResult
 from kstrl.waivers import (
     ApprovalSnapshot,
     approvals_on,
@@ -117,105 +106,6 @@ class ComponentPipeline(Delivery, KnowledgePhase, SecurityGate, MechanicalChecks
     # ------------------------------------------------------------------
     # Transitions (the single place component state moves)
     # ------------------------------------------------------------------
-
-    def repoll_merge_pending(self) -> None:
-        """R0.2 crash recovery: MERGE_PENDING is re-pollable, not failed.
-
-        A prior run initiated the merge but could not confirm it; check
-        the PR state again before scheduling so confirmed merges unblock
-        their dependents (MERGE_PENDING -> COMPLETED, or -> FAILED when
-        the PR was closed without merging)."""
-        merge_pending_comps = [
-            c for c in self.manifest.components if c.status == ComponentStatus.MERGE_PENDING.value
-        ]
-        if not merge_pending_comps:
-            return
-        from kstrl.pr import (
-            is_gh_available,
-            pr_number_from_url,
-            wait_for_merge,
-        )
-
-        if not self.factory_config.create_prs or not is_gh_available():
-            self.ui.warn(
-                f"  {len(merge_pending_comps)} component(s) are "
-                f"merge-pending but PR polling is unavailable (create_prs "
-                f"off or gh missing); their dependents stay blocked"
-            )
-        else:
-            for comp in merge_pending_comps:
-                pr_number = comp.pr_number or pr_number_from_url(comp.pr_url)
-                if not pr_number:
-                    self.ui.warn(f"  Cannot re-poll '{comp.id}': no PR number recorded")
-                    continue
-                self.ui.info(f"  Re-polling merge state for '{comp.id}' (PR #{pr_number})...")
-                merge_state = wait_for_merge(
-                    pr_number,
-                    self.root_dir,
-                    timeout=self.factory_config.merge_timeout,
-                )
-                if merge_state.state == "merged":
-                    git_base.fetch_base_branch(
-                        self.manifest.base_branch,
-                        self.root_dir,
-                    )
-                    self._record_merge(comp, merge_state.merge_sha, merge_state.head_sha)
-                    comp.status = ComponentStatus.COMPLETED.value
-                    comp.error = ""
-                    self.component_failure_signatures.pop(comp.id, None)
-                    comp.completed_at = _iso_now()
-                    self.factory_result.completed.append(comp.id)
-                    self.bus.emit(
-                        event_catalog.ComponentCompleted(
-                            component=comp.id,
-                            duration_seconds=comp.duration_seconds,
-                            iterations=comp.iteration_count,
-                        )
-                    )
-                    self.ui.ok(f"  PR #{pr_number} merged; '{comp.id}' completed")
-                    # The gate that parked this component is answered by
-                    # reality; leaving it open would hold a cap slot
-                    # forever and ask a human to decide something already
-                    # decided. So is every other item naming it (#438).
-                    self._inbox_resolve_component(comp.id, f"PR #{pr_number} merged")
-                elif merge_state.state == "closed":
-                    comp.status = ComponentStatus.FAILED.value
-                    comp.error = f"PR #{pr_number} closed without merge"
-                    comp.completed_at = _iso_now()
-                    # Not a merge decision any more - it is a halt.
-                    self._inbox_resolve(
-                        f"merge:{comp.id}",
-                        f"PR #{pr_number} closed without merging",
-                    )
-                    self._inbox_add(
-                        ItemKind.HALTED_RUN,
-                        f"{comp.id}: PR closed without merging",
-                        detail=comp.error,
-                        component=comp.id,
-                        dedupe_key=f"halted:{comp.id}:pr-closed",
-                        evidence={"pr_number": pr_number},
-                    )
-                    comp.failed_phase = "pr"
-                    comp.failed_check = PR_CLOSED_CHECK
-                    self.component_failure_signatures[comp.id] = [
-                        "pr:closed-without-merge",
-                    ]
-                    self._cascade_skip(comp.id)
-                    self.factory_result.failed.append(comp.id)
-                    self.bus.emit(
-                        event_catalog.ComponentFailed(
-                            component=comp.id,
-                            error=comp.error,
-                        )
-                    )
-                    self.notify.fire_first_failure(comp.id, comp.error)
-                    self.ui.err(f"  Failed: {comp.id}: {comp.error}")
-                else:
-                    self.ui.warn(
-                        f"  '{comp.id}' still awaiting merge of "
-                        f"PR #{pr_number}; dependents stay blocked"
-                    )
-        self.manifest.save(self.manifest_path)
 
     # ------------------------------------------------------------------
     # Phase chain
@@ -576,154 +466,6 @@ class ComponentPipeline(Delivery, KnowledgePhase, SecurityGate, MechanicalChecks
             security=security,
             distill=distill,
         )
-
-    def _phase_verify(
-        self,
-        comp: Component,
-        comp_result: ComponentResult,
-        wt_path: Path,
-    ) -> VerifyPhaseResult:
-        """Phase 1: mechanical verification (tests / typecheck / lint /
-        PRD stories / diff scope / bad patterns)."""
-        early = self._before_gates(comp, comp_result, wt_path)
-        if early is not None:
-            return early
-
-        verify_config = self.factory_config.resolved_verify_config()
-        self.ui.info(f"  Phase 1: mechanical verification for {comp.id}...")
-        verify_start = time.monotonic()
-        # #269: the run's plan-time snapshot, and no file read. Phase 1
-        # used to load the component PRD from the WORKTREE and take
-        # `allowedPaths` off it, while the in-loop guard deliberately
-        # read the copy at root_dir - so the two guards could enforce
-        # different allowlists on the same component in the same run,
-        # and Phase 1's was the one the agent could edit. Both now read
-        # RunScope, resolved once before the first engineer call.
-        scope = self.run_scope.for_component(comp.id)
-        # #646: the change this attempt is judged on, read once. An
-        # approval covers only the diff it was taken on, and an item filed
-        # below records the same pair.
-        change = self._judged_change(comp, wt_path)
-        # #192: the same rule as ``run_scope`` one line up, for the four
-        # config values below. They came off disk per component until
-        # the run's envelope was resolved once and injected, so a
-        # mid-run edit to kstrl.toml changed what a later component was
-        # held to without changing the hash the manifest records. The
-        # level is the CLAMPED one the factory resolved, not the raw
-        # stored level this used to read.
-        verification = self.hooks.run_mechanical_verification(
-            wt_path,
-            wt_path / comp.prd_path,
-            self.component_base(comp.id),
-            scope.allowed_paths,
-            verify_config,
-            allowed_paths_error=scope.error,
-            harness_paths=scope.harness_paths,
-            # The copy the run started with, for the defence in depth
-            # the snapshot does NOT provide: the stories and criteria
-            # Phase 1 still has to read from the live file
-            # (#269). Outside every worktree, so not agent-writable.
-            pre_run_prd_path=pre_run_prd_path(
-                self.root_dir, comp.id, comp.prd_path, plan_id=comp.plan_id
-            ),
-            policy_config=self.run_envelope.policy,
-            autonomy_level=self.run_envelope.autonomy_level,
-            # #595: the approvals snapshotted when the run started.
-            waivers=self._waivers_for(comp, change[1]),
-        )
-        verify_duration = time.monotonic() - verify_start
-        comp.verification_passed = verification.passed
-        # R8.1: mechanical checks that produce typed findings (today the
-        # policy envelope) get them into the component's finding stream, so
-        # a machine-made gate decision reaches the audit trail - PR body,
-        # journal, evolution - and not just the retry context. Recorded for
-        # passing checks too: a non-blocking advisory is still evidence.
-        check_findings = [finding for check in verification.checks for finding in check.findings]
-        if check_findings:
-            self._add_findings(comp, check_findings)
-            # R8.3: an envelope breach is the archetypal exception - a
-            # machine decision a human may want to approve once, or
-            # convert into a widened policy. Advisories stay out: they
-            # are recorded, not blocking, and the inbox is for decisions.
-            for finding in check_findings:
-                if (
-                    finding.category.startswith(POLICY_CATEGORY_PREFIX)
-                    and finding.severity != "advisory"
-                ):
-                    # #595 B2: the waiver_key is part of the dedupe key, not
-                    # just category, so a same-category repeat with
-                    # different evidence opens a second item instead of
-                    # overwriting the one the operator is about to read.
-                    # #646: so is the diff_sha, because the same text on a
-                    # different change is a change the operator never saw.
-                    evidence = self._waivable_evidence(comp, finding, change)
-                    self._inbox_add(
-                        ItemKind.POLICY_EXCEPTION,
-                        f"{comp.id}: {finding.category}",
-                        detail=finding.explanation,
-                        component=comp.id,
-                        dedupe_key=(
-                            f"policy:{comp.id}:{finding.category}:{evidence['waiver_key']}:"
-                            f"{evidence['diff_sha']}"
-                        ),
-                        evidence=evidence,
-                    )
-        # #696 decision 7: where Layer 0 ran, the pull request says nothing
-        # measured it, through R1.2's phase-skip callout (pr.py). Only on a
-        # pass, which is the only verification a pull request is built
-        # from: on a failure the event's not_measured carries the gap, and a
-        # finding would turn a failure with no evidence into one serve
-        # reports as judged on its merits (serve_outcome._merits_outcome).
-        if verification.passed and LAYER0_NOT_MEASURED in verification.not_measured:
-            self._record_phase_skip(comp, "adequacy", LAYER0_NOT_MEASURED.detail)
-        self.bus.emit(
-            event_catalog.VerificationResultEvent(
-                component=comp.id,
-                passed=verification.passed,
-                checks=tuple(c.name for c in verification.checks),
-                failures=tuple(c.message for c in verification.checks if not c.passed),
-                duration_seconds=round(verify_duration, 2),
-                not_measured=tuple(g.as_token() for g in verification.not_measured),
-                gate_logs=self._write_gate_logs(comp, verification),
-                isolation=label_of(verify_config.rung),
-            )
-        )
-
-        self._warn_not_measured(comp, verification)
-
-        if not verification.passed:
-            failing = [c for c in verification.checks if not c.passed]
-            self.ui.warn(f"  Phase 1 FAILED for {comp.id}: {', '.join(c.name for c in failing)}")
-            ctx = IterationContext.from_json(
-                comp_result.context_json or "{}",
-            )
-            ctx.add_verification_failure(
-                verification.as_context(),
-                attempt=comp.retries + 1,
-            )
-            # R6.1: one signature per failed check (#696 decision 5)
-            # into the journal instead of the flattened string.
-            from kstrl.failure_signatures import signatures_from_verification
-
-            action, error = _verify_routing(failing)
-            return VerifyPhaseResult(
-                ran=True,
-                verification=verification,
-                failure=PhaseFailure(
-                    action=action,
-                    error=error,
-                    phase="verify",
-                    check=", ".join(c.name for c in failing),
-                    context_json=ctx.to_json(),
-                    signatures=signatures_from_verification(
-                        verification.checks,
-                    ),
-                    failure_count=verification.failure_count,
-                ),
-            )
-
-        self.ui.ok(f"  Phase 1 passed for {comp.id}")
-        return VerifyPhaseResult(ran=True, verification=verification)
 
     def _phase_review(
         self,

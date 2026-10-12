@@ -607,7 +607,7 @@ EXPECTED_STATUS_SPELLINGS: dict[str, int] = {
     "observability.py::ProgressLog.factory_completed": 1,
     "pipeline_transitions.py::<module>": 2,
     "pipeline_transitions.py::Transitions.complete": 2,
-    "pipeline.py::ComponentPipeline.repoll_merge_pending": 1,
+    "pipeline_merge.py::MergeGate.repoll_merge_pending": 1,
     "pr_body.py::single_pr_body": 1,
     "reducer.py::apply": 1,
     "tui/run_status.py::<module>": 4,
@@ -625,7 +625,7 @@ COMPLETION_SITES = frozenset(
         # comp.status = COMPLETED, and the Transition.COMPLETED it returns.
         "pipeline_transitions.py::Transitions.complete",
         # A parked merge confirmed on re-poll.
-        "pipeline.py::ComponentPipeline.repoll_merge_pending",
+        "pipeline_merge.py::MergeGate.repoll_merge_pending",
     }
 )
 

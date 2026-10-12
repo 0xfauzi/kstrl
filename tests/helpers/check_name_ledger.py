@@ -74,8 +74,8 @@ BLIND_SITES: tuple[tuple[str, str, str, str], ...] = (
         "censused at their CheckResult call sites",
     ),
     (
-        "kstrl/pipeline.py",
-        "ComponentPipeline._phase_verify",
+        "kstrl/pipeline_checks.py",
+        "MechanicalChecks._phase_verify",
         "signatures_from_verification(verification.checks)",
         "composed at run time from the CheckResult names the gates built; "
         "those names are censused at their CheckResult call sites",

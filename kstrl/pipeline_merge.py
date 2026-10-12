@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from kstrl import event_catalog, git
+from kstrl import event_catalog, git, git_base
 from kstrl.acceptance_lines import pr_isolation
 from kstrl.context import IterationContext, IterationRecord
 from kstrl.inbox import (
@@ -423,3 +423,102 @@ class MergeGate(Transitions):
             disposition=PrDisposition.MERGED,
             pr_url=outcome.pr_url,
         )
+
+    def repoll_merge_pending(self) -> None:
+        """R0.2 crash recovery: MERGE_PENDING is re-pollable, not failed.
+
+        A prior run initiated the merge but could not confirm it; check
+        the PR state again before scheduling so confirmed merges unblock
+        their dependents (MERGE_PENDING -> COMPLETED, or -> FAILED when
+        the PR was closed without merging)."""
+        merge_pending_comps = [
+            c for c in self.manifest.components if c.status == ComponentStatus.MERGE_PENDING.value
+        ]
+        if not merge_pending_comps:
+            return
+        from kstrl.pr import (
+            is_gh_available,
+            pr_number_from_url,
+            wait_for_merge,
+        )
+
+        if not self.factory_config.create_prs or not is_gh_available():
+            self.ui.warn(
+                f"  {len(merge_pending_comps)} component(s) are "
+                f"merge-pending but PR polling is unavailable (create_prs "
+                f"off or gh missing); their dependents stay blocked"
+            )
+        else:
+            for comp in merge_pending_comps:
+                pr_number = comp.pr_number or pr_number_from_url(comp.pr_url)
+                if not pr_number:
+                    self.ui.warn(f"  Cannot re-poll '{comp.id}': no PR number recorded")
+                    continue
+                self.ui.info(f"  Re-polling merge state for '{comp.id}' (PR #{pr_number})...")
+                merge_state = wait_for_merge(
+                    pr_number,
+                    self.root_dir,
+                    timeout=self.factory_config.merge_timeout,
+                )
+                if merge_state.state == "merged":
+                    git_base.fetch_base_branch(
+                        self.manifest.base_branch,
+                        self.root_dir,
+                    )
+                    self._record_merge(comp, merge_state.merge_sha, merge_state.head_sha)
+                    comp.status = ComponentStatus.COMPLETED.value
+                    comp.error = ""
+                    self.component_failure_signatures.pop(comp.id, None)
+                    comp.completed_at = _iso_now()
+                    self.factory_result.completed.append(comp.id)
+                    self.bus.emit(
+                        event_catalog.ComponentCompleted(
+                            component=comp.id,
+                            duration_seconds=comp.duration_seconds,
+                            iterations=comp.iteration_count,
+                        )
+                    )
+                    self.ui.ok(f"  PR #{pr_number} merged; '{comp.id}' completed")
+                    # The gate that parked this component is answered by
+                    # reality; leaving it open would hold a cap slot
+                    # forever and ask a human to decide something already
+                    # decided. So is every other item naming it (#438).
+                    self._inbox_resolve_component(comp.id, f"PR #{pr_number} merged")
+                elif merge_state.state == "closed":
+                    comp.status = ComponentStatus.FAILED.value
+                    comp.error = f"PR #{pr_number} closed without merge"
+                    comp.completed_at = _iso_now()
+                    # Not a merge decision any more - it is a halt.
+                    self._inbox_resolve(
+                        f"merge:{comp.id}",
+                        f"PR #{pr_number} closed without merging",
+                    )
+                    self._inbox_add(
+                        ItemKind.HALTED_RUN,
+                        f"{comp.id}: PR closed without merging",
+                        detail=comp.error,
+                        component=comp.id,
+                        dedupe_key=f"halted:{comp.id}:pr-closed",
+                        evidence={"pr_number": pr_number},
+                    )
+                    comp.failed_phase = "pr"
+                    comp.failed_check = PR_CLOSED_CHECK
+                    self.component_failure_signatures[comp.id] = [
+                        "pr:closed-without-merge",
+                    ]
+                    self._cascade_skip(comp.id)
+                    self.factory_result.failed.append(comp.id)
+                    self.bus.emit(
+                        event_catalog.ComponentFailed(
+                            component=comp.id,
+                            error=comp.error,
+                        )
+                    )
+                    self.notify.fire_first_failure(comp.id, comp.error)
+                    self.ui.err(f"  Failed: {comp.id}: {comp.error}")
+                else:
+                    self.ui.warn(
+                        f"  '{comp.id}' still awaiting merge of "
+                        f"PR #{pr_number}; dependents stay blocked"
+                    )
+        self.manifest.save(self.manifest_path)
