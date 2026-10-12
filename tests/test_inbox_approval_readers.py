@@ -74,7 +74,7 @@ RECORD_ONLY: dict[ItemKind, str] = {
 #: or NOT_AN_INBOX_READER before adding it here.
 EXPECTED_APPROVED_READS: dict[str, int] = {
     "cli_inbox.py::_decide_parked_merge_if_parked": 1,
-    "factory.py::_emit_stack_confirmation": 1,
+    "factory_preflight.py::_emit_stack_confirmation": 1,
     "owner_answers.py::read_owner_answers": 1,
     "pipeline_delivery.py::<module>": 1,
     "pipeline_delivery.py::Delivery._checkpoint_refusal": 1,
@@ -92,7 +92,7 @@ EXPECTED_APPROVED_READS: dict[str, int] = {
 #: Rows of the census that read (or, for the module row, define) some
 #: other vocabulary's APPROVED.
 NOT_AN_INBOX_READER: dict[str, str] = {
-    "factory.py::_emit_stack_confirmation": (
+    "factory_preflight.py::_emit_stack_confirmation": (
         'CheckpointResolved(decision="approved"): the event a run records for a stack '
         "confirmed_stack already confirmed, not a read of item.status"
     ),

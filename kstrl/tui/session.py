@@ -286,7 +286,7 @@ def _prepare_decompose(
 
         def target() -> int:
             from kstrl.decompose import SpecBlockerError, decompose_spec
-            from kstrl.factory import BaseRefusedError, base_check_before_architect
+            from kstrl.factory_preflight import BaseRefusedError, base_check_before_architect
             from kstrl.owner_answers import OwnerAnswerError
 
             command_run = open_command_run(
