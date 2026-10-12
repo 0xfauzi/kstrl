@@ -161,7 +161,7 @@ class TestDecomposeRun:
             tmp_path,
             MockDecomposeAgent(MINOR_ISSUE_OUTPUT),
         )
-        state, _ = load_run_state(tmp_path)
+        state, events_path = load_run_state(tmp_path)
         assert state.kind == "decompose"
         assert state.finished
         # The forming DAG: architect first, then the manifest order.
@@ -171,10 +171,10 @@ class TestDecomposeRun:
         ]
         architect = state.components[ARCHITECT_COMPONENT]
         assert architect.status == "completed"
-        assert [p["phase"] for p in architect.phase_history] == [
-            "decompose",
-            "audit",
-        ]
+        assert [p["phase"] for p in architect.phase_history] == ["decompose", "audit"]
+        rows = [json.loads(line) for line in events_path.read_text().splitlines()]
+        started = [r["data"]["phase"] for r in rows if r["event"] == "phase_started"]
+        assert started == ["decompose", "audit"]
         assert all(p["passed"] for p in architect.phase_history)
         assert [a["label"] for a in state.artifacts] == [
             "spec_issues",
