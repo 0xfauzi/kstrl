@@ -101,6 +101,9 @@ def _first_feature(tmp_path: Path, root: Path, *, held_out: bool = False) -> Non
         root, h.FakeReviewer("{}"), acceptance_dir=str(plan), integration_review=False
     )
     assert result.exit_code == 0, out
+    # comp-b is a straggler: completed with no PR. The finish of the run
+    # makes its PR, and the result records the URL (#776 B3 plant).
+    assert result.pr_urls == ["https://github.com/o/r/pull/1"], out
 
 
 def _second_feature(tmp_path: Path, root: Path, *, merged: bool = True) -> None:
