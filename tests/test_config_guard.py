@@ -93,6 +93,11 @@ EXPECTED_SURFACE_CLASSES |= {
     # ``autonomy_config: AutonomyConfig`` as fields, the holder pattern.
     # It defines no methods, so it adds no site.
     "RunContext": frozenset(),
+    # #776 B3: ``_LoopRun`` declares ``config: KstrlConfig`` and
+    # ``timeouts: TimeoutConfig`` as fields, the holder pattern. It holds
+    # references that ``run_loop`` received, resolves none, and defines
+    # no methods, so it adds no site.
+    "_LoopRun": frozenset(),
     # #624: worktree_setup builds a WorktreeSetup from two of the config's
     # own fields and reads nothing from disk or the environment.
     # worktree_setup_for_component and worktree_setup_summary are the same

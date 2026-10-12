@@ -2185,7 +2185,7 @@ class TestSubprocessTimeoutAudit:
             "agents/logging.py self._agent.run",
             "cli_report.py app.run",
             "decompose.py agent.run",
-            "loop.py agent.run",
+            "loop.py run.agent.run",
             "tui/app.py initial_screens_for_kind(kind, observe_only=False)",
             "tui/app.py initial_screens_for_kind(kind, observe_only=True)",
             "tui/embed.py app.run",
