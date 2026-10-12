@@ -204,7 +204,7 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # #544: three `git commit` sites (`_seed`, `_commit_all` and the
     # deletion test), every one into a repository `_seed` put through
     # `tests.helpers.gitrepo.set_identity`.
-    "tests/test_loop.py": 2,
+    "tests/test_loop.py": 3,
     "tests/test_notify.py": 1,
     # #399 addendum A1: the real end-to-end unquote-round-trip test adds two
     # commits (a base commit, then the four tricky filenames) through
