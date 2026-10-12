@@ -61,7 +61,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 EXPECTED_STRING_FIELDS = 44
 
 #: Re-derived by running ``use_site_parses()`` on this tree.
-EXPECTED_USE_SITE_PARSES = {("kstrl/pipeline.py", "ReviewMode", "review_mode")}
+EXPECTED_USE_SITE_PARSES = {("kstrl/pipeline_review.py", "ReviewMode", "review_mode")}
 
 
 class _Colour(StrEnum):

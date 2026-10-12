@@ -327,7 +327,7 @@ EXPECTED_AGENT_CALLS: dict[str, int] = {
     "integration_phase.py:review_commit": 1,
     "knowledge_distill.py:distill_facts": 1,
     "loop.py:run_loop": 1,
-    "pipeline.py:ComponentPipeline._phase_review": 1,
+    "pipeline_review.py:ReviewPhase._phase_review": 1,
     "pipeline_security.py:SecurityGate._phase_security": 1,
     "pipeline_knowledge.py:KnowledgePhase._phase_distill": 1,
     "review.py:run_review": 1,
@@ -347,7 +347,7 @@ CALLER_SCOPED: dict[str, str] = {
     "integration_phase.py:review_commit": "integration_phase._review_round, via _run_reviewer",
     "knowledge_distill.py:distill_facts": "pipeline.ComponentPipeline._phase_distill",
     "loop.py:run_loop": "every run_loop caller, each scoped lexically",
-    "review.py:run_review": "pipeline._phase_review and integration_phase._review_round",
+    "review.py:run_review": "pipeline_review._phase_review and integration_phase._review_round",
     "security.py:run_security_review": "pipeline_security.SecurityGate._phase_security",
 }
 
@@ -359,7 +359,7 @@ EXPECTED_SCOPES: dict[str, int] = {
     "factory_worker.py:_run_component": 1,
     "feature_cmd.py:run_feature": 3,
     "integration_phase.py:_review_round": 1,
-    "pipeline.py:ComponentPipeline._phase_review": 1,
+    "pipeline_review.py:ReviewPhase._phase_review": 1,
     "pipeline_security.py:SecurityGate._phase_security": 1,
     "pipeline_knowledge.py:KnowledgePhase._phase_distill": 1,
 }
@@ -442,7 +442,7 @@ EXPECTED_BOUNDS: dict[str, tuple[str, str]] = {
     "integration_phase.py:review_commit": ("timeout", "its caller's timeout"),
     "knowledge_distill.py:distill_facts": ("timeout", "[knowledge] distill_timeout_seconds"),
     "loop.py:run_loop": ("timeout", "[timeout] agent_iteration, capped by component_total"),
-    "pipeline.py:ComponentPipeline._phase_review": ("timeout", "[factory] review_timeout_seconds"),
+    "pipeline_review.py:ReviewPhase._phase_review": ("timeout", "[factory] review_timeout_seconds"),
     "pipeline_security.py:SecurityGate._phase_security": (
         "config",
         "[security] timeout_seconds, read inside run_security_review",
