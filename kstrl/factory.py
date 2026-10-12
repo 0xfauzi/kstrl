@@ -22,7 +22,6 @@ from kstrl.config_numbers import check_number
 from kstrl.contract import (
     ContractCleanupError,
     ContractMode,
-    ContractResult,
     run_contract_testing,
 )
 from kstrl.decisions import (
@@ -31,7 +30,6 @@ from kstrl.decisions import (
 from kstrl.event_catalog import (
     AdversarialAgentSelected,
     AutonomyLevelApplied,
-    ComponentFailed,
     ComponentStarted,
     PhaseStarted,
     RunPlan,
@@ -42,9 +40,11 @@ from kstrl.events import EventBus, EventSink, JsonlSink, RunPaths, V1CompatSink
 from kstrl.fact_scope import authored_paths, paths_by_component
 from kstrl.factory_acceptance import (
     _carry,
-    _halt_carried,
     _plan_gated,
     _plan_of_kept_checks,
+    _record_contract_event,
+    _record_contract_failures,
+    _reset_contract_breakers,
     _resolve_round_base,
     _stamp_feature_base,
 )
@@ -89,7 +89,7 @@ from kstrl.factory_worktrees import (
     _start_from_dependencies,
 )
 from kstrl.integration_loop import IntegrationLoop
-from kstrl.integration_phase import IntegrationRun
+from kstrl.integration_phase import IntegrationRun, Phase3Round
 from kstrl.interaction import InteractionChannel
 from kstrl.knowledge import (
     current_run_id,
@@ -534,10 +534,94 @@ def _run_plan_event(manifest: Manifest, factory_config: FactoryConfig) -> RunPla
     )
 
 
-def _stop_reason(result: ContractResult) -> str:
-    """Why a failed tier's breaker is not retried: a failed held-out check
-    gets no retry (#700 decision 3); otherwise its retries are spent."""
-    return "a held-out check failed, no retry" if result.held_out else "retries exhausted"
+def _run_contract_round(
+    phase3_round: Phase3Round,
+    manifest: Manifest,
+    manifest_path: Path,
+    root_dir: Path,
+    factory_config: FactoryConfig,
+    ui: UI,
+    run_id: str,
+    pipeline: ComponentPipeline,
+    run_state: RunState,
+    factory_result: FactoryResult,
+    bus: EventBus,
+    notify: NotifyHooks,
+    components_merged: bool,
+) -> None:
+    """Do the contract tests of one integration round (#776, B3)."""
+    # PHASE 3: Contract testing
+    contract_config = factory_config.contract_config
+    if contract_config is None or contract_config.mode == ContractMode.SKIP.value:
+        return
+
+    # #481: one commit per round. The integrated check tests it and a
+    # later check of the same round must judge the same tree.
+    round_base_sha = _resolve_round_base(manifest, root_dir, ui)
+    phase3_round.base_sha = round_base_sha
+    try:
+        contract_results = run_contract_testing(
+            manifest,
+            root_dir,
+            replace(contract_config, rung=factory_config.test_rung),
+            ui,
+            components_merged=components_merged,
+            base_sha=round_base_sha,
+            setup=factory_config.worktree_setup(),
+            plan=_plan_of_kept_checks(factory_config),
+            carried=factory_config.acceptance_carried,
+        )
+    except ContractCleanupError as exc:
+        # A contract temp worktree survived removal. The user's
+        # checkout is untouched, but .kstrl/contract holds stale
+        # state - fail the run loudly instead of continuing.
+        ui.err(f"  Contract cleanup FAILED: {exc}")
+        factory_result.contract_failures.append(f"contract cleanup failed: {exc}")
+        return
+
+    phase3_round.record(contract_results)
+    for cr in contract_results:
+        bus.emit(
+            ContractResultEvent(
+                tier=cr.tier,
+                passed=cr.passed,
+                breaker=cr.breaker,
+                duration_seconds=round(cr.duration_seconds, 2),
+            )
+        )
+        _record_contract_event(cr, root_dir, ui, run_id, manifest)
+
+    failures = [cr for cr in contract_results if not cr.passed]
+    if not failures:
+        _carry(pipeline, contract_results)
+        return
+
+    _reset_contract_breakers(
+        failures,
+        phase3_round,
+        manifest,
+        manifest_path,
+        factory_config,
+        ui,
+        pipeline,
+        run_state,
+        factory_result,
+    )
+
+    if phase3_round.breaker_reset:
+        return
+
+    _record_contract_failures(
+        failures,
+        manifest,
+        manifest_path,
+        ui,
+        pipeline,
+        run_state,
+        factory_result,
+        bus,
+        notify,
+    )
 
 
 def _run_factory_locked(
@@ -1542,42 +1626,6 @@ def _run_factory_locked(
             pass
         ui.ok("Worktrees cleaned up")
 
-    def _record_contract_event(cr: ContractResult) -> None:
-        """Append a contract_result event to the evolution journal.
-
-        Written for pass AND fail (R0.3): the journal is the audit trail
-        for every contract phase outcome, including intermediate failures
-        that a breaker retry later resolves. Non-fatal on I/O errors,
-        matching EvolutionJournal.record_run.
-        """
-        from kstrl.evolution import EvolutionJournal
-        from kstrl.journal_rows import JOURNAL_SCHEMA_VERSION
-
-        # R2.1: honor [evolution] in kstrl.toml + env, resolved against
-        # the factory root rather than whatever the process CWD is.
-        journal = EvolutionJournal.open(root_dir, warn=ui.warn)
-        if journal is None:
-            return
-        entry = {
-            "schema_version": JOURNAL_SCHEMA_VERSION,
-            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "run_id": run_id,
-            "project": manifest.project_name,
-            "component_id": cr.breaker or "",
-            "event_type": "contract_result",
-            "tier": cr.tier,
-            "passed": cr.passed,
-            "breaker": cr.breaker,
-            "components_tested": cr.components_tested,
-            "test_output": cr.test_output[:2000],
-            "duration_seconds": round(cr.duration_seconds, 2),
-        }
-        try:
-            journal.append_entries([entry])
-        except OSError as exc:
-            # Evolution recording is non-fatal, but never silent (R6.1).
-            ui.warn(f"  Evolution journal write failed (non-fatal): {exc}")
-
     # Per-component PRs are squash-merged into base as each component
     # completes, so at contract time tier re-merges would be content
     # no-ops and blame attribution would be meaningless: the contract
@@ -1612,135 +1660,21 @@ def _run_factory_locked(
             ui.warn(f"  Run stopped: {stop.reason}")
             continue
 
-        # PHASE 3: Contract testing
-        contract_config = factory_config.contract_config
-        if contract_config is None or contract_config.mode == ContractMode.SKIP.value:
-            continue
-
-        # #481: one commit per round. The integrated check tests it and a
-        # later check of the same round must judge the same tree.
-        round_base_sha = _resolve_round_base(manifest, root_dir, ui)
-        phase3_round.base_sha = round_base_sha
-        try:
-            contract_results = run_contract_testing(
-                manifest,
-                root_dir,
-                replace(contract_config, rung=factory_config.test_rung),
-                ui,
-                components_merged=components_merged,
-                base_sha=round_base_sha,
-                setup=factory_config.worktree_setup(),
-                plan=_plan_of_kept_checks(factory_config),
-                carried=factory_config.acceptance_carried,
-            )
-        except ContractCleanupError as exc:
-            # A contract temp worktree survived removal. The user's
-            # checkout is untouched, but .kstrl/contract holds stale
-            # state - fail the run loudly instead of continuing.
-            ui.err(f"  Contract cleanup FAILED: {exc}")
-            factory_result.contract_failures.append(f"contract cleanup failed: {exc}")
-            continue
-
-        phase3_round.record(contract_results)
-        for cr in contract_results:
-            bus.emit(
-                ContractResultEvent(
-                    tier=cr.tier,
-                    passed=cr.passed,
-                    breaker=cr.breaker,
-                    duration_seconds=round(cr.duration_seconds, 2),
-                )
-            )
-            _record_contract_event(cr)
-
-        failures = [cr for cr in contract_results if not cr.passed]
-        if not failures:
-            _carry(pipeline, contract_results)
-            continue
-
-        # Reset retryable breakers to PENDING; the outer loop then
-        # re-enters scheduling so the promised retry actually runs.
-        for cr in failures:
-            if not cr.breaker:
-                continue
-            breaker = manifest.get_component(cr.breaker)
-            if breaker and breaker.retries < factory_config.max_retries and not cr.held_out:
-                # R3.3: the completed attempt's findings are superseded
-                # by the contract-triggered re-run; journal them before
-                # the retry increments the attempt counter.
-                pipeline.journal_superseded_findings(breaker)
-                breaker.retries += 1
-                breaker.status = ComponentStatus.PENDING.value
-                breaker.error = f"Contract test failed at tier {cr.tier}"
-                run_state.component_failure_signatures[cr.breaker] = [
-                    f"contract:tier_{cr.tier}",
-                ]
-                # Remove from completed list
-                if cr.breaker in factory_result.completed:
-                    factory_result.completed.remove(cr.breaker)
-                # The context write lives on the pipeline (#247): it is
-                # one of exactly two writers of the retry context and
-                # both must merge the attempt's phase readings, or a
-                # contract failure re-raises a review finding the
-                # reviewer already cleared. breaker.retries was
-                # incremented above and so names the attempt whose
-                # contract test failed; see record_contract_failure.
-                pipeline.record_contract_failure(
-                    cr.breaker,
-                    breaker.retries,
-                    cr.test_output[:500],
-                )
-                manifest.save(manifest_path)
-                phase3_round.breaker_reset = True
-                ui.warn(f"  Contract breaker '{cr.breaker}' sent back for retry")
-
-        if phase3_round.breaker_reset:
-            continue
-
-        # Terminal contract failure: nothing left to retry. Record it in
-        # the run result so the summary shows it and the exit code is
-        # nonzero (previously this fell through silently and the run
-        # exited 0 with broken integrated code).
-        for cr in failures:
-            detail = (cr.test_output or "").strip()
-            summary_line = detail.splitlines()[-1][:200] if detail else ""
-            if cr.breaker:
-                breaker = manifest.get_component(cr.breaker)
-                if breaker is not None:
-                    breaker.status = ComponentStatus.FAILED.value
-                    breaker.error = f"Contract test failed at tier {cr.tier} ({_stop_reason(cr)})"
-                    breaker.completed_at = _iso_now()
-                    breaker.failed_phase = "contract"
-                    breaker.failed_check = f"tier_{cr.tier}"
-                    run_state.component_failure_signatures[cr.breaker] = [
-                        f"contract:tier_{cr.tier}",
-                    ]
-                if cr.breaker in factory_result.completed:
-                    factory_result.completed.remove(cr.breaker)
-                if cr.breaker not in factory_result.failed:
-                    factory_result.failed.append(cr.breaker)
-                bus.emit(
-                    ComponentFailed(
-                        component=cr.breaker,
-                        error=(f"Contract test failed at tier {cr.tier} ({_stop_reason(cr)})"),
-                    )
-                )
-                notify.fire_first_failure(
-                    cr.breaker,
-                    f"Contract test failed at tier {cr.tier} ({_stop_reason(cr)})",
-                )
-                factory_result.contract_failures.append(
-                    f"tier {cr.tier}: breaker '{cr.breaker}' ({_stop_reason(cr)}): {summary_line}"
-                )
-            else:
-                factory_result.contract_failures.append(
-                    f"tier {cr.tier}: contract tests failed, no blame "
-                    f"attributed (components: "
-                    f"{', '.join(cr.components_tested)}): {summary_line}"
-                )
-            ui.err(f"  Contract failure recorded for tier {cr.tier}; run will exit nonzero")
-        _halt_carried(pipeline, failures)
-        manifest.save(manifest_path)
+        _run_contract_round(
+            phase3_round,
+            manifest,
+            manifest_path,
+            root_dir,
+            factory_config,
+            ui,
+            run_id,
+            pipeline,
+            run_state,
+            factory_result,
+            bus,
+            notify,
+            components_merged,
+        )
 
     # #482: the integration review ran after the last round, inside the
     # loop. #483: with integration_blocking on, a stop without a clean

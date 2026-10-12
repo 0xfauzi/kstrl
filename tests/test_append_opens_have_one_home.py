@@ -282,7 +282,7 @@ ALLOWED_APPEND_OPENS: dict[str, tuple[Reason, str]] = {
     "tui/embed.py:run_embedded": (Reason.TEXT_LOG, "the embedded run's log"),
     "tui/session.py:start_run_session": (Reason.TEXT_LOG, "the session log"),
     "atomicio.py:_create_temp": (Reason.NOT_AN_APPEND, "os.open with O_WRONLY|O_CREAT|O_EXCL"),
-    "factory.py:_run_factory_locked._record_contract_event": (
+    "factory_acceptance.py:_record_contract_event": (
         Reason.NOT_AN_APPEND,
         "EvolutionJournal.open(root_dir), a classmethod called open",
     ),
@@ -317,7 +317,7 @@ EXPECTED_APPEND_OPENS: dict[str, int] = {
     "appendio.py: open('a+b')": 1,
     "atomicio.py: os.open(os.O_WRONLY | os.O_CREAT | os.O_EXCL)": 1,
     "commandrun.py: open('a')": 1,
-    "factory.py: EvolutionJournal.open(root_dir)": 1,
+    "factory_acceptance.py: EvolutionJournal.open(root_dir)": 1,
     "factory_worker.py: open('a')": 2,
     "factory_lock.py: open('a+')": 1,
     # Two since #463: carry_interrupted_run is the second caller. Three

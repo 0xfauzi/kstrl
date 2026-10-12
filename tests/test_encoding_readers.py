@@ -107,7 +107,7 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     "decompose_prompt.py": 2,
     "events.py": 1,
     "evolution.py": 1,
-    "factory.py": 1,
+    "factory_acceptance.py": 1,
     "factory_lock.py": 1,
     "factory_result.py": 1,
     "factory_worker.py": 2,
@@ -396,7 +396,7 @@ EXPECTED_DECIDED_OUT: tuple[str, ...] = (
     # six appenders now share it.
     "appendio.py open",
     "atomicio.py os.open",
-    "factory.py EvolutionJournal.open",
+    "factory_acceptance.py EvolutionJournal.open",
     "pipeline_attempt.py EvolutionJournal.open",
     "pipeline_ledger.py EvolutionJournal.open",
     # #700 slice 3: the `up` log is opened "wb" and read back through

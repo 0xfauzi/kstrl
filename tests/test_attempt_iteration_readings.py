@@ -214,7 +214,7 @@ def owner_row(source_file: Path, node: ast.AST) -> str:
 #: for. Four sites at a98ff21, two of them in-run, plus the fifth this
 #: PR adds.
 EXPECTED_RETRIES_WRITE_SITES: dict[str, str] = {
-    "factory.py:_run_factory_locked": (
+    "factory_acceptance.py:_reset_contract_breakers": (
         "the contract-breaker retry; journal_superseded_findings(breaker) runs one line above it"
     ),
     "manifest.py:<module>": "the Component.retries field declaration",
@@ -235,7 +235,7 @@ EXPECTED_RETRIES_WRITE_SITES: dict[str, str] = {
 
 #: The two of those that advance an attempt inside a run.
 IN_RUN_RETRY_SITES = frozenset(
-    {"factory.py:_run_factory_locked", "pipeline_transitions.py:retry_or_fail"}
+    {"factory_acceptance.py:_reset_contract_breakers", "pipeline_transitions.py:retry_or_fail"}
 )
 
 #: Every ``self._end_attempt(`` call in kstrl/, same key shape. The
