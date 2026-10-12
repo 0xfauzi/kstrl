@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import http.server
 import io
 import json
+import threading
 from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import patch
@@ -17,6 +19,7 @@ from kstrl.reducer import load_run_state
 from kstrl.ui.plain import PlainUI
 from tests.helpers.before_spend import no_base_check
 from tests.helpers.prompt_calls import architect_call
+from tests.helpers.rootperms import skip_as_root
 from tests.helpers.stack_confirmation import PROPOSED_STACK
 from tests.test_decompose import VALID_DECOMPOSE_OUTPUT, MockDecomposeAgent
 
@@ -117,6 +120,7 @@ def _decompose(
     tmp_path: Path,
     agent: object,
     console: io.StringIO | None = None,
+    single_pr: bool = False,
 ) -> object:
     spec_file = _spec_root(tmp_path)
     ui = PlainUI(no_color=True, file=console if console is not None else io.StringIO())
@@ -133,7 +137,7 @@ def _decompose(
             spec_path=spec_file,
             project_name="test",
             base_branch="main",
-            single_pr=False,
+            single_pr=single_pr,
             agent=agent,  # type: ignore[arg-type]
             ui=ui,
             root_dir=tmp_path,
@@ -601,3 +605,189 @@ class TestUsageIsPerCallNotCumulative:
         state, _ = load_run_state(tmp_path / "b")
         assert state.usage_calls == 1
         assert state.cost_usd == pytest.approx(0.5)
+
+
+class _SizedFirstAttemptAgent:
+    """First attempt: ``kind`` "oversize" (over the byte cap) or "timeout" (a recorded kill)."""
+
+    name = "sized-first"
+
+    def __init__(self, kind: str) -> None:
+        self._kind = kind
+        self._calls = 0
+        self.final_message: str | None = None
+        self.usage_records: list[UsageRecord] = []
+        self.read_past_cap = False
+        self.prompts: list[str] = []
+
+    def run(
+        self, prompt: str, cwd: Path | None = None, timeout: float | None = None
+    ) -> Iterator[str]:
+        self._calls += 1
+        self.prompts.append(prompt)
+        if self._calls == 1:
+            if self._kind == "oversize":
+                yield "x" * 4096
+                self.read_past_cap = True
+                yield "never read"
+            else:
+                self.usage_records.append(UsageRecord(source="timeout"))
+                yield VALID_DECOMPOSE_OUTPUT
+            return
+        yield from VALID_DECOMPOSE_OUTPUT.splitlines()
+        self.final_message = VALID_DECOMPOSE_OUTPUT.splitlines()[-1]
+
+
+def _write_linear_config(root: Path, api_url: str = "", dry_run: bool = True) -> None:
+    url = f'api_url = "{api_url}"\nmin_request_interval = 0.0\n' if api_url else ""
+    body = f'[linear]\nenabled = true\nteam_id = "t"\ndry_run = {str(dry_run).lower()}\n{url}'
+    (root / "kstrl.toml").write_text(body)
+
+
+def _serve_linear(identifier: str | None, status: int = 200) -> http.server.HTTPServer:
+    """A Linear GraphQL stand-in whose created issues all carry ``identifier``."""
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_POST(self) -> None:  # noqa: N802
+            length = int(self.headers.get("Content-Length", "0"))
+            body = json.loads(self.rfile.read(length))
+            input_ = body.get("variables", {}).get("input", {})
+            if "projectCreate" in body["query"]:
+                data: dict[str, object] = {
+                    "projectCreate": {"success": True, "project": {"id": "proj-1"}}
+                }
+            else:
+                issue = {"id": input_.get("id", "i"), "identifier": identifier}
+                data = {"issueCreate": {"success": True, "issue": issue}}
+            payload = json.dumps({"data": data}).encode()
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server
+
+
+class TestDecomposeUncoveredBranches:
+    """Branches of ``_decompose_spec_impl`` that no other test operates (#776 G1)."""
+
+    def test_oversize_reply_is_one_failed_attempt(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("kstrl.decompose.MAX_AGENT_OUTPUT_BYTES", 2048)
+        console = io.StringIO()
+        agent = _SizedFirstAttemptAgent("oversize")
+        _decompose(tmp_path, agent, console)
+        assert "aborting this attempt" in console.getvalue()
+        assert agent.read_past_cap is False
+        assert "agent output exceeded size cap" in agent.prompts[1]
+        state, _ = load_run_state(tmp_path)
+        architect = state.components[ARCHITECT_COMPONENT]
+        decompose_phases = [p for p in architect.phase_history if p["phase"] == "decompose"]
+        assert [p["passed"] for p in decompose_phases] == [False, True]
+        assert architect.status == "completed"
+
+    def test_timed_out_reply_is_not_parsed(self, tmp_path: Path) -> None:
+        agent = _SizedFirstAttemptAgent("timeout")
+        _decompose(tmp_path, agent)
+        assert agent._calls == 2
+        assert "timed out" in agent.prompts[1]
+        state, _ = load_run_state(tmp_path)
+        architect = state.components[ARCHITECT_COMPONENT]
+        decompose_phases = [p for p in architect.phase_history if p["phase"] == "decompose"]
+        assert [p["passed"] for p in decompose_phases] == [False, True]
+
+    def test_linear_dry_run_names_the_branches_after_the_issues(self, tmp_path: Path) -> None:
+        _write_linear_config(tmp_path)
+        console = io.StringIO()
+        manifest = _decompose(tmp_path, MockDecomposeAgent(VALID_DECOMPOSE_OUTPUT), console)
+        assert "Linear project created with 2 component issue(s)" in console.getvalue()
+        branches = {c.id: c.branch_name for c in manifest.components}  # type: ignore[attr-defined]
+        assert branches == {
+            "database": "kstrl/factory/dry-1-database",
+            "api": "kstrl/factory/dry-2-api",
+        }
+
+    def test_linear_single_pr_warns_that_branches_are_not_linked(self, tmp_path: Path) -> None:
+        _write_linear_config(tmp_path)
+        console = io.StringIO()
+        _decompose(tmp_path, MockDecomposeAgent(VALID_DECOMPOSE_OUTPUT), console, single_pr=True)
+        assert (
+            "single_pr mode - branch names and PR bodies are not issue-linked" in console.getvalue()
+        )
+
+    def test_linear_identifier_that_breaks_branch_validation_keeps_default_branch(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        server = _serve_linear("BAD ID")
+        try:
+            monkeypatch.setenv("KSTRL_LINEAR_TOKEN", "lin_api_test")
+            _write_linear_config(
+                tmp_path, f"http://127.0.0.1:{server.server_address[1]}", dry_run=False
+            )
+            console = io.StringIO()
+            manifest = _decompose(tmp_path, MockDecomposeAgent(VALID_DECOMPOSE_OUTPUT), console)
+        finally:
+            server.shutdown()
+        assert "does not form a valid branch" in console.getvalue()
+        assert {c.id: c.branch_name for c in manifest.components} == {  # type: ignore[attr-defined]
+            "database": "kstrl/factory/database",
+            "api": "kstrl/factory/api",
+        }
+
+    def test_linear_project_failure_decomposes_without_linear(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        server = _serve_linear(None, status=500)
+        try:
+            monkeypatch.setenv("KSTRL_LINEAR_TOKEN", "lin_api_test")
+            _write_linear_config(
+                tmp_path, f"http://127.0.0.1:{server.server_address[1]}", dry_run=False
+            )
+            console = io.StringIO()
+            manifest = _decompose(tmp_path, MockDecomposeAgent(VALID_DECOMPOSE_OUTPUT), console)
+        finally:
+            server.shutdown()
+        assert "project creation failed, continuing without" in console.getvalue()
+        assert "Linear project created" not in console.getvalue()
+        assert len(manifest.components) == 2  # type: ignore[attr-defined]
+
+
+class TestDecomposeDagAndRollback:
+    def test_dependency_cycle_warns_but_writes_the_manifest(self, tmp_path: Path) -> None:
+        payload = json.loads(VALID_DECOMPOSE_OUTPUT)
+        payload["components"][0]["dependencies"] = ["api"]
+        console = io.StringIO()
+        manifest = _decompose(tmp_path, MockDecomposeAgent(json.dumps(payload)), console)
+        assert "DAG validation warnings:" in console.getvalue()
+        assert "cycle" in console.getvalue().lower()
+        assert (tmp_path / "scripts" / "kstrl" / "manifest.json").exists()
+        assert len(manifest.components) == 2  # type: ignore[attr-defined]
+
+    @skip_as_root
+    def test_rollback_that_cannot_remove_a_prd_still_raises_the_save_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        locked: list[Path] = []
+
+        def failing_save(self: object, path: Path) -> None:
+            for prd in tmp_path.rglob("prd.json"):
+                prd.parent.chmod(0o555)
+                locked.append(prd.parent)
+            raise OSError("manifest disk full")
+
+        monkeypatch.setattr("kstrl.decompose.Manifest.save", failing_save)
+        try:
+            with pytest.raises(OSError, match="manifest disk full"):
+                _decompose(tmp_path, MockDecomposeAgent(MINOR_ISSUE_OUTPUT))
+            assert locked
+            assert all((d / "prd.json").exists() for d in locked)
+        finally:
+            for d in locked:
+                d.chmod(0o755)

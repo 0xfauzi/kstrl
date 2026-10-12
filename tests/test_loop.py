@@ -228,6 +228,78 @@ class TestRunLoop:
         # Did not switch to feature/should-not-checkout
         assert current == "main"
 
+    def test_cwd_defaults_to_the_process_directory(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Without a cwd argument the agent runs in the process directory."""
+        kstrl_dir = tmp_path / "scripts" / "kstrl"
+        kstrl_dir.mkdir(parents=True)
+        (kstrl_dir / "prompt.md").write_text("hi")
+        (kstrl_dir / "prd.json").write_text('{"branchName": "test", "userStories": []}')
+        config = KstrlConfig(
+            max_iterations=1,
+            prompt_file=kstrl_dir / "prompt.md",
+            prd_file=kstrl_dir / "prd.json",
+            sleep_seconds=0,
+            kstrl_branch="",
+            kstrl_branch_explicit=True,
+        )
+        seen: list[Path | None] = []
+
+        class _CwdAgent(MockAgent):
+            def run(
+                self,
+                prompt: str,
+                cwd: Path | None = None,
+                timeout: float | None = None,
+            ) -> Iterator[str]:
+                seen.append(cwd)
+                yield from super().run(prompt, cwd, timeout)
+
+        monkeypatch.chdir(tmp_path)
+        result = run_loop(config, PlainUI(no_color=True), _CwdAgent([COMPLETION_MARKER]))
+        assert result.completed is True
+        assert len(seen) == 1 and seen[0] is not None
+        assert seen[0].resolve() == tmp_path.resolve()
+
+    def _git_project(self, tmp_path: Path, prd_json: str) -> KstrlConfig:
+        gitrepo.git_in(tmp_path, "init", "-q", "-b", "main")
+        gitrepo.set_identity(tmp_path)
+        (tmp_path / "stub").write_text("stub")
+        gitrepo.git_in(tmp_path, "add", "stub")
+        gitrepo.git_in(tmp_path, "commit", "-q", "-m", "init")
+        kstrl_dir = tmp_path / "scripts" / "kstrl"
+        kstrl_dir.mkdir(parents=True)
+        (kstrl_dir / "prompt.md").write_text("hi")
+        (kstrl_dir / "prd.json").write_text(prd_json)
+        return KstrlConfig(
+            max_iterations=1,
+            prompt_file=kstrl_dir / "prompt.md",
+            prd_file=kstrl_dir / "prd.json",
+            sleep_seconds=0,
+        )
+
+    def test_failed_branch_checkout_refuses_before_iteration_one(self, tmp_path: Path) -> None:
+        """A branch name that git rejects ends the run with exit code 2."""
+        config = self._git_project(tmp_path, '{"branchName": "x", "userStories": []}')
+        config.kstrl_branch = "bad..name"
+        config.kstrl_branch_explicit = True
+        agent = MockAgent([COMPLETION_MARKER])
+        result = run_loop(config, PlainUI(no_color=True), agent, tmp_path)
+        assert result.completed is False
+        assert result.exit_code == 2
+        assert result.iterations == 0
+        assert agent._final_message is None
+
+    def test_no_configured_branch_reports_it_and_runs(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """With no branch in config or PRD the loop says so and keeps the branch."""
+        config = self._git_project(tmp_path, '{"userStories": []}')
+        result = run_loop(config, PlainUI(no_color=True), MockAgent([COMPLETION_MARKER]), tmp_path)
+        assert result.completed is True
+        assert "Branch: no branch configured" in capsys.readouterr().err
+
     def test_inline_marker_does_not_trigger_completion(self, tmp_path: Path) -> None:
         """Inline marker should not end the loop."""
         kstrl_dir = tmp_path / "scripts" / "kstrl"
