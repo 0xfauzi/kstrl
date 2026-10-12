@@ -133,7 +133,7 @@ carries exactly the same guarantee and exactly the same gaps as
 `max_total_tokens` - it is not stronger for being denominated in dollars. Each
 is evaluated in two places:
 
-- **Between engineer iterations** (`kstrl/loop.py`, `LoopBudget.halt_reason`).
+- **Between engineer iterations** (`kstrl/loop_budget.py`, `LoopBudget.halt_reason`).
   The worker is launched with the ceilings plus the run's spend as of that
   moment, so the loop refuses to start another iteration once a total reaches
   its ceiling. This is the only check that fires while the spend is being
