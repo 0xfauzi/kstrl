@@ -536,6 +536,7 @@ class TestPhaseTranscripts:
 
 class TestWorkerChannel:
     def _worker_args(self, root: Path, events_dir: Path | None, agent_cmd: str) -> dict[str, Any]:
+        from kstrl.factory_worker import _run_component  # noqa: F401 - existence
 
         _setup_project(root, ["comp-a"])
         return dict(
