@@ -309,11 +309,28 @@ class TestRunEnd:
         manifest = _make_manifest([_component("comp-a")])
         manifest.single_pr = True
         with patch(
-            "kstrl.factory.create_single_pr",
+            "kstrl.factory_summary.create_single_pr",
             return_value=("kstrl/factory/test", "https://example.invalid/pr/1"),
         ):
             result, _ = _drive(tmp_path, manifest, _config(create_prs=True, single_pr=True))
         assert result.pr_urls == ["https://example.invalid/pr/1"]
+
+        # The other end branch, in the same test so that the test count
+        # stays (#776 L11): a component that is completed with no PR is a
+        # straggler, and the finish records the URL of the PR it makes.
+        # Without this, a finish that dropped the straggler PRs left the
+        # suite green (#776 B3F1 plants).
+        straggler = _component("comp-b")
+        straggler.status = ComponentStatus.COMPLETED.value
+        with patch(
+            "kstrl.factory_summary.create_prs_in_order",
+            return_value=[(0, "https://example.invalid/pr/2")],
+        ) as create:
+            result, _ = _drive(
+                tmp_path / "stragglers", _make_manifest([straggler]), _config(create_prs=True)
+            )
+        assert create.call_count == 1
+        assert result.pr_urls == ["https://example.invalid/pr/2"]
 
     @skip_as_root
     def test_an_autonomy_state_that_cannot_be_saved_does_not_fail_the_run(

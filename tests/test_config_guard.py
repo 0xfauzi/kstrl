@@ -89,6 +89,10 @@ EXPECTED_SURFACE_CLASSES: dict[str, frozenset[str]] = {
 EXPECTED_SURFACE_CLASSES |= {
     "EnvelopeResolution": frozenset(),
     "FeatureParams": frozenset(),
+    # #776 B3: ``RunContext`` declares ``run_envelope: RunEnvelope`` and
+    # ``autonomy_config: AutonomyConfig`` as fields, the holder pattern.
+    # It defines no methods, so it adds no site.
+    "RunContext": frozenset(),
     # #624: worktree_setup builds a WorktreeSetup from two of the config's
     # own fields and reads nothing from disk or the environment.
     # worktree_setup_for_component and worktree_setup_summary are the same
@@ -205,7 +209,9 @@ EXPECTED_FREE_READERS = frozenset(
 #: same divergence the pipeline half is about. Nested scopes qualify
 #: through their owner, so a read planted in ``_submit_args`` reads
 #: ``_run_factory_locked._submit_args`` and is an offender.
-EXPECTED_FACTORY_SCOPES = frozenset({"_run_factory_locked", "_open_health_breach_items"})
+EXPECTED_FACTORY_SCOPES = frozenset(
+    {"_run_factory_locked", "_open_health_breach_items", "_journal_run"}
+)
 #: 7 until the type closure enrolled ``RunEnvelope``; the eighth is
 #: ``RunEnvelope.resolve`` at the top of ``_run_factory_locked``, which
 #: is the run's one envelope resolution and the site the whole change is
@@ -216,7 +222,7 @@ EXPECTED_FACTORY_SITES = 8
 #: ``factory*.py`` under the one factory case. A glob and not a list, so a
 #: config read planted in a module divided out of ``factory.py`` is seen.
 EXPECTED_FACTORY_SITES_BY_FILE = {
-    "factory.py": 7,
+    "factory.py": 6,
     "factory_acceptance.py": 0,
     "factory_agents.py": 0,
     "factory_autonomy.py": 1,
@@ -224,6 +230,8 @@ EXPECTED_FACTORY_SITES_BY_FILE = {
     "factory_lock.py": 0,
     "factory_preflight.py": 0,
     "factory_result.py": 0,
+    "factory_run.py": 0,
+    "factory_summary.py": 1,
     "factory_worker.py": 0,
     "factory_worktrees.py": 0,
 }
