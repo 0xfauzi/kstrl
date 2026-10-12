@@ -23,7 +23,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from kstrl import factory
+from kstrl import factory_worker
 from kstrl.agents import prompt_record
 from kstrl.agents.base import (
     ARCHITECT_COMPONENT,
@@ -733,7 +733,7 @@ class TestTheSeam:
         """#567: a worker with no run id has no run to record under, so its
         call fails before the CLI spawns instead of going out unrecorded."""
         with pytest.raises(ValueError, match="has no run id"):
-            factory._engineer_call(tmp_path, "", "comp-a", 1)
+            factory_worker._engineer_call(tmp_path, "", "comp-a", 1)
 
     def test_an_unknown_agent_cli_is_refused(self, tmp_path: Path) -> None:
         with pytest.raises(ValueError, match="unknown agent_cli"):

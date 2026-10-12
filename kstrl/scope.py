@@ -129,7 +129,7 @@ class ComponentScope:
         False only for ``unresolved``. The one predicate, so the two
         consumers holding the object ask the same question rather than
         each re-deriving it from a different field: the preflight
-        refuses on it, and ``factory._worker_scope`` declines to hand
+        refuses on it, and ``factory_worker._worker_scope`` declines to hand
         the in-loop guard a list it does not have. An unconstrained
         snapshot IS trustworthy - "the architect authored no scope" is
         knowledge, and the historical no-constraint pass.

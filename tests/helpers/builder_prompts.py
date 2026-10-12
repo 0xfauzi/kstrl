@@ -46,7 +46,7 @@ from types import ModuleType
 
 from kstrl import (
     context,
-    factory,
+    factory_worker,
     init_cmd,
     iteration_prompt,
     knowledge,
@@ -81,7 +81,7 @@ _BUILDERS: tuple[tuple[ModuleType, str, tuple[str, ...]], ...] = (
         ("ACCEPTANCE_RETRY_PROMPT",),
     ),
     (
-        factory,
+        factory_worker,
         "IN_LOOP_SCOPE_VIOLATION_PROMPT_VERSION",
         ("IN_LOOP_SCOPE_VIOLATION_PROMPT",),
     ),

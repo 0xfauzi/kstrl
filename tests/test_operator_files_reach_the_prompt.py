@@ -4,7 +4,7 @@ R10.9 review round 1, should-fix 3. ``OperatorFileKind`` and ``_rows``
 each carried a sentence saying a new row reached the parent's notice,
 ``KstrlConfig.validate`` AND the worker's block "with no edit below this
 line". Two of the three are true. The third is not: ``_run_component``
-in ``kstrl/factory.py`` names each kind by hand, so a third row would be
+in ``kstrl/factory_worker.py`` names each kind by hand, so a third row would be
 validated, warned about on a typo, and injected into no prompt at all,
 with nothing in the suite failing. ``tests/test_operator_file_kinds.py``
 is parametrized over ``OPERATOR_FILES`` and reaches only the loader, and
@@ -87,7 +87,7 @@ LOADER = "kstrl.operator_context.load_operator_file"
 SPEC = "kstrl.operator_context.operator_file_spec"
 
 #: The module that owns the prompt order. One file, named once.
-WORKER = "factory.py"
+WORKER = "factory_worker.py"
 
 #: The function in it that builds the prompt, and the local it builds the
 #: prompt ORDER in. Both named once, so the guard's failure says which
@@ -107,7 +107,7 @@ ORDER_LOCAL = "parts"
 #:
 #: Each row is ``(anchor, what to do)``. The anchor is the identifier a
 #: reader can grep for, which is also what the docstring test looks up.
-#: Eight are in ``kstrl/factory.py``; the last is in
+#: Eight are in ``kstrl/factory_worker.py``; the last is in
 #: ``kstrl/feature_cmd.py`` (#599).
 WORKER_EDITS: tuple[tuple[str, str], ...] = (
     ("import", "the import of the kind constant"),
@@ -148,23 +148,23 @@ KIND_NAMES: dict[str, str] = {
 }
 
 #: Every place in ``kstrl/`` that spells the loader's name: its
-#: definition, ``factory.py``'s import, and one per injection site.
-#: ``factory.py`` is 3 because two of its three are the calls this guard
+#: definition, ``factory_worker.py``'s import, and one per injection site.
+#: ``factory_worker.py`` is 3 because two of its three are the calls this guard
 #: is about. A fourth would be a third operator file reaching a prompt,
 #: or the same file reaching one twice.
 EXPECTED_LOADER_SPELLINGS: dict[str, int] = {
-    "factory.py": 3,
+    "factory_worker.py": 3,
     "operator_context.py": 1,
 }
 
 #: Every place in ``kstrl/`` that spells ``context_prefix``: the
 #: parameter and its two uses in ``loop.py``; the local, the keyword and
-#: its value in ``factory.py::_run_component``; and the keyword at each
+#: its value in ``factory_worker.py::_run_component``; and the keyword at each
 #: of the three ``run_loop`` calls in ``feature_cmd.py`` (#599). See
 #: :meth:`TestEveryRowReachesAPrompt.
 #: test_every_module_that_names_context_prefix_is_known`.
 EXPECTED_PREFIX_SPELLINGS: dict[str, int] = {
-    "factory.py": 3,
+    "factory_worker.py": 3,
     "feature_cmd.py": 3,
     "loop.py": 3,
 }
@@ -202,7 +202,7 @@ def prompt_sites(tree: ast.Module, module: str) -> tuple[dict[str, int], tuple[s
 
 
 def worker_source() -> ast.Module:
-    """``kstrl/factory.py``, parsed."""
+    """``kstrl/factory_worker.py``, parsed."""
     return parsed(KSTRL_PACKAGE / WORKER)
 
 
@@ -436,7 +436,7 @@ class TestEveryRowReachesAPrompt:
         """Layer 2, and it is the LOADING half only.
 
         One ``load_operator_file`` call per declared kind in
-        ``kstrl/factory.py``, and no kind that is not declared. Kept
+        ``kstrl/factory_worker.py``, and no kind that is not declared. Kept
         beside layer 2b rather than replaced by it, because a row can
         skip either edit: this one fails when the call is missing, and
         layer 2b fails when the call is there and the block reaches no
@@ -509,7 +509,7 @@ class TestEveryRowReachesAPrompt:
             message=(
                 "The set of modules that name context_prefix changed. A new module "
                 "handing run_loop a prefix must build it with "
-                "factory.engineer_context_prefix and be enrolled in "
+                "factory_worker.engineer_context_prefix and be enrolled in "
                 "tests/test_run_loop_callers_state_context.py; README.md, "
                 "docs/env-vars.md, docs/runbook.md, ARCHITECTURE.md and CHANGELOG.md "
                 "say which commands read the operator files, so update them in the "
@@ -530,7 +530,7 @@ class TestEveryRowReachesAPrompt:
         )
 
         assert found.undecided == (), (
-            "a call in factory.py that could be the loader and could not be "
+            "a call in factory_worker.py that could be the loader and could not be "
             f"resolved. Undecided: {list(found.undecided)}"
         )
         assert len(found.seen) == len(OPERATOR_FILES)

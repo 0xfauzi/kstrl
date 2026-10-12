@@ -181,7 +181,7 @@ class OperatorFileKind:
     the ``[paths]`` key and the budget off the row.
 
     THE WORKER'S PROMPT BLOCK IS THE THIRD AND IT IS HAND-ORDERED, on
-    purpose. ``factory.engineer_context_prefix`` names each kind itself,
+    purpose. ``factory_worker.engineer_context_prefix`` names each kind itself,
     and a new row costs NINE hand edits, which is the list and not the
     number: the import of the kind constant, the
     ``engineer_context_prefix`` parameter carrying the configured path,
@@ -288,7 +288,7 @@ MEMORY = OperatorFileKind(
 )
 
 #: Declaration order, which is what :func:`_rows` walks. NOT the prompt
-#: order: ``factory.engineer_context_prefix`` owns that and pins it as one literal
+#: order: ``factory_worker.engineer_context_prefix`` owns that and pins it as one literal
 #: tuple, because where memory sits relative to the retry context is the
 #: mechanism R10.9 is (the operator's standing correction is read after
 #: the controller's output for this attempt, not before it).
@@ -642,7 +642,7 @@ def _rows(
     R10.9 added the memory row without changing either function.
 
     IT DOES NOT REACH THE ENGINEER'S PROMPT. That is
-    ``factory.engineer_context_prefix``, which names each kind by hand,
+    ``factory_worker.engineer_context_prefix``, which names each kind by hand,
     and a row costs NINE edits, one of them the entry in the ``parts``
     tuple that is the prompt order; :class:`OperatorFileKind` lists all nine and
     names the test that refuses a row which has not paid them. An earlier

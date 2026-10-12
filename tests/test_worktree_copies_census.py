@@ -52,7 +52,7 @@ FILE_DUPLICATING_NAMES = (
 #: the root checkout ``ks init`` runs in, and the other two rows are
 #: ``copy.deepcopy``. None of them writes into a component worktree.
 EXPECTED_FILE_DUPLICATING_SITES = {
-    "factory.py": 1,
+    "factory_worker.py": 1,
     "feature_cmd.py": 4,
     "init_cmd.py": 1,
     "retry_plan.py": 2,

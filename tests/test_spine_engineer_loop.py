@@ -26,7 +26,7 @@ from pathlib import Path
 import pytest
 
 from kstrl.context import IterationContext, IterationRecord
-from kstrl.factory import _run_component
+from kstrl.factory_worker import _run_component
 from kstrl.factory_worktrees import _setup_worktree
 from kstrl.init_cmd import run_init
 from kstrl.operator_context import MEMORY

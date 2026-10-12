@@ -39,7 +39,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl import factory as factory_mod
+from kstrl import factory_worker
 from kstrl.config import KstrlConfig
 from kstrl.events import RunPaths
 from kstrl.factory import run_factory
@@ -225,7 +225,7 @@ def _positional(
     and it is the positional half that has no names in it to get wrong.
     """
     args, kwargs = _submitted(root, max_parallel, progress_log_enabled)
-    signature = inspect.signature(factory_mod._run_component)
+    signature = inspect.signature(factory_worker._run_component)
     return dict(signature.bind_partial(*args).arguments), kwargs
 
 
@@ -373,7 +373,7 @@ class TestTheWholeSubmitTupleIsBound:
         root = _project(tmp_path)
 
         bound, kwargs = _positional(root, max_parallel)
-        signature = inspect.signature(factory_mod._run_component)
+        signature = inspect.signature(factory_worker._run_component)
 
         assert set(kwargs) == expected
         assert set(bound) | BY_KEYWORD == set(signature.parameters)

@@ -972,7 +972,7 @@ class TestEveryCallerDeclaresTheStateRoot:
         assert Counter(site.split(":", 1)[0] for site in undecided) == {
             "tui/app.py": 2,
         }, f"the walk could not decide these calls: {list(undecided)}"
-        assert callers == {"cli_loop.py": 1, "factory.py": 1, "feature_cmd.py": 3}
+        assert callers == {"cli_loop.py": 1, "factory_worker.py": 1, "feature_cmd.py": 3}
         assert declared == callers
 
     def test_the_run_loop_walk_resolves_a_name_rather_than_matching_it(self) -> None:

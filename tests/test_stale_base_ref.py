@@ -16,7 +16,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl import contract, factory, git_base, git_tree, guards, verify_diff
+from kstrl import contract, factory_worker, git_base, git_tree, guards, verify_diff
 from kstrl.config import KstrlConfig
 from kstrl.contract import ContractConfig, ContractMode
 from kstrl.loop import LoopResult
@@ -234,7 +234,7 @@ def test_the_in_loop_scope_message_names_the_ref_it_judged(fx: StaleBase) -> Non
         )
 
     with patch("kstrl.loop.run_loop", side_effect=fake_run_loop):
-        result = factory._run_component(
+        result = factory_worker._run_component(
             component_id="storage",
             prd_path_str=rel,
             worktree_path_str=str(fx.worktree),

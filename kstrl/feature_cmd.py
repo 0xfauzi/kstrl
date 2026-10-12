@@ -62,7 +62,7 @@ from kstrl.event_catalog import (
     RunPlan,
     RunStarted,
 )
-from kstrl.factory import _report_operator_files, engineer_context_prefix
+from kstrl.factory_worker import _report_operator_files, engineer_context_prefix
 from kstrl.feature_verify import (
     baseline_skip_reason,
     report_verification,

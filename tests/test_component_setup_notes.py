@@ -27,22 +27,22 @@ SCAN_BOOM = "  Codebase scan failed for comp-a: RuntimeError: boom"
 
 
 def test_keyboard_interrupt_is_not_turned_into_a_note(tmp_path: Path) -> None:
-    from kstrl.factory import _prepare_component_tree
+    from kstrl.factory_worker import _prepare_component_tree
 
     # The handler catches Exception: an operator's Ctrl-C during the scan
     # must stop the worker, not become a warning.
     with (
-        patch("kstrl.factory.build_codebase_scan_context", side_effect=KeyboardInterrupt),
+        patch("kstrl.factory_worker.build_codebase_scan_context", side_effect=KeyboardInterrupt),
         pytest.raises(KeyboardInterrupt),
     ):
         _prepare_component_tree(tmp_path, "comp-a", None, {"enabled": True})
 
 
 def test_scan_crash_is_a_note(tmp_path: Path) -> None:
-    from kstrl.factory import _prepare_component_tree
+    from kstrl.factory_worker import _prepare_component_tree
 
     with patch(
-        "kstrl.factory.build_codebase_scan_context",
+        "kstrl.factory_worker.build_codebase_scan_context",
         side_effect=RuntimeError("boom"),
     ):
         result = _prepare_component_tree(tmp_path, "comp-a", None, {"enabled": True})
@@ -50,7 +50,7 @@ def test_scan_crash_is_a_note(tmp_path: Path) -> None:
 
 
 def test_scan_config_that_cannot_be_built_is_a_note(tmp_path: Path) -> None:
-    from kstrl.factory import _prepare_component_tree
+    from kstrl.factory_worker import _prepare_component_tree
 
     # Unmocked: CodebaseScanConfig itself raises TypeError. This fails if the
     # config is built outside the try, or if the handler is narrowed to the
@@ -63,7 +63,7 @@ def test_scan_config_that_cannot_be_built_is_a_note(tmp_path: Path) -> None:
 
 
 def test_success_on_both_is_no_note(tmp_path: Path) -> None:
-    from kstrl.factory import _prepare_component_tree
+    from kstrl.factory_worker import _prepare_component_tree
 
     (tmp_path / "mod.py").write_text("def f() -> int:\n    return 1\n", encoding="utf-8")
     prefix, notes = _prepare_component_tree(
@@ -100,11 +100,11 @@ def _worker_args(root: Path, events_dir: Path | None) -> dict[str, Any]:
 
 
 def test_run_component_warns_each_setup_failure_in_engineer_jsonl(tmp_path: Path) -> None:
-    from kstrl.factory import _run_component
+    from kstrl.factory_worker import _run_component
 
     events_dir = tmp_path / ".kstrl" / "runs" / "run-w"
     with patch(
-        "kstrl.factory.build_codebase_scan_context",
+        "kstrl.factory_worker.build_codebase_scan_context",
         side_effect=RuntimeError("boom"),
     ):
         result = _run_component(**_worker_args(tmp_path, events_dir))
@@ -136,10 +136,10 @@ def test_run_component_warns_each_setup_failure_in_engineer_jsonl(tmp_path: Path
 
 
 def test_run_component_without_events_dir_warns_on_stderr(tmp_path: Path, capfd: Any) -> None:
-    from kstrl.factory import _run_component
+    from kstrl.factory_worker import _run_component
 
     with patch(
-        "kstrl.factory.build_codebase_scan_context",
+        "kstrl.factory_worker.build_codebase_scan_context",
         side_effect=RuntimeError("boom"),
     ):
         _run_component(**_worker_args(tmp_path, None))

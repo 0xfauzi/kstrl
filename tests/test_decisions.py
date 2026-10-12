@@ -157,7 +157,7 @@ class TestTheRegisterReachesTheEngineer:
         from types import SimpleNamespace
 
         import kstrl.agents as agents_mod
-        import kstrl.factory as factory_mod
+        import kstrl.factory_worker as factory_worker_mod
         import kstrl.loop as loop_mod
         from kstrl.loop import LoopResult
 
@@ -177,7 +177,7 @@ class TestTheRegisterReachesTheEngineer:
         (tmp_path / "scripts" / "kstrl" / "prd.json").write_text("{}", encoding="utf-8")
         (tmp_path / "scripts" / "kstrl" / "prompt.md").write_text("go", encoding="utf-8")
 
-        factory_mod._run_component(
+        factory_worker_mod._run_component(
             "comp-a",
             "scripts/kstrl/prd.json",
             str(tmp_path),
@@ -328,7 +328,7 @@ class TestTheSchedulerActuallyInjectsIt:
     """
 
     def test_the_block_reaches_the_worker_at_the_right_position(self, tmp_path: Path) -> None:
-        import kstrl.factory as factory_mod
+        import kstrl.factory_worker as factory_worker_mod
         from kstrl.decompose_prompt import spec_digest
         from kstrl.factory import run_factory
         from kstrl.factory_result import ComponentResult
@@ -353,7 +353,7 @@ class TestTheSchedulerActuallyInjectsIt:
             spec_digest=pin,
             halted=False,
         )
-        signature = inspect.signature(factory_mod._run_component)
+        signature = inspect.signature(factory_worker_mod._run_component)
         seen: dict[str, Any] = {}
 
         def capture(*args: Any, **kwargs: Any) -> ComponentResult:

@@ -273,8 +273,8 @@ ALLOWED_APPEND_OPENS: dict[str, tuple[Reason, str]] = {
     "workqueue_store.py:queue_lock": (Reason.LOCK_FILE, "the queue lock"),
     "agents/logging.py:LoggingAgent.run": (Reason.TEXT_LOG, "the agent transcript"),
     "commandrun.py:CommandRun.transcript_writer": (Reason.TEXT_LOG, "a command transcript"),
-    "factory.py:_redirect_worker_output": (Reason.TEXT_LOG, "a worker's stdout and stderr"),
-    "factory.py:_run_component": (Reason.TEXT_LOG, "the component's own log"),
+    "factory_worker.py:_redirect_worker_output": (Reason.TEXT_LOG, "a worker's stdout and stderr"),
+    "factory_worker.py:_run_component": (Reason.TEXT_LOG, "the component's own log"),
     "pipeline_attempt.py:AttemptRecorder._phase_transcript": (
         Reason.TEXT_LOG,
         "a phase transcript",
@@ -318,7 +318,7 @@ EXPECTED_APPEND_OPENS: dict[str, int] = {
     "atomicio.py: os.open(os.O_WRONLY | os.O_CREAT | os.O_EXCL)": 1,
     "commandrun.py: open('a')": 1,
     "factory.py: EvolutionJournal.open(root_dir)": 1,
-    "factory.py: open('a')": 2,
+    "factory_worker.py: open('a')": 2,
     "factory_lock.py: open('a+')": 1,
     # Two since #463: carry_interrupted_run is the second caller. Three
     # since #482: journal_integration_result is the third.
