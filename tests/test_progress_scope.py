@@ -37,7 +37,7 @@ import pytest
 
 from kstrl import git_tree
 from kstrl.config import KstrlConfig, component_progress_path, relative_to_root
-from kstrl.decompose import _generate_component_prd
+from kstrl.decompose_reply import _generate_component_prd
 from kstrl.events import EventBus, V1CompatSink
 from kstrl.factory import run_factory
 from kstrl.factory_agents import AdversarialAgentSelection
