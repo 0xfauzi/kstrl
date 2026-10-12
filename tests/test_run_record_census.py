@@ -140,9 +140,9 @@ EXPECTED_RUN_RECORD_SITES: dict[str, int] = {
     "evolution.py: EvolutionJournal.carry_superseded": 1,
     "experiments_tsv.py: <module>": 1,
     "factory.py: _run_factory_locked._record_contract_event": 1,
-    "factory.py: _record_health_breaches": 1,
+    "factory_autonomy.py: _record_health_breaches": 1,
     # #601: the policy demotion's evidence and the human-rejection demotion's.
-    "factory.py: _demote_once": 2,
+    "factory_autonomy.py: _demote_once": 2,
     "inbox.py: InboxItem.to_dict": 1,
     "integration_phase.py: _not_run": 1,
     "integration_phase.py: _review_evidence": 1,
@@ -199,8 +199,8 @@ NOT_STAMPED_HERE: dict[str, str] = {
     "factory.py: _run_factory_locked._record_contract_event": _JOURNAL,
     "pipeline_attempt.py: AttemptRecorder.journal_superseded_findings": _JOURNAL,
     "pipeline_attempt.py: AttemptRecorder.journal_integration_result": _JOURNAL,
-    "factory.py: _record_health_breaches": _DEMOTION,
-    "factory.py: _demote_once": _DEMOTION,
+    "factory_autonomy.py: _record_health_breaches": _DEMOTION,
+    "factory_autonomy.py: _demote_once": _DEMOTION,
     "inbox.py: InboxItem.to_dict": (
         "an operator inbox item that points at the run it came from; it is a "
         "work item with its own id, not a record of the run"

@@ -56,7 +56,7 @@ EXPECTED_CONSTRUCTIONS = (
     "calibration_ladder.py kstrl.inbox.Inbox",
     "cli_inbox.py kstrl.inbox.Inbox",
     "decisions.py kstrl.inbox.Inbox",
-    "factory.py kstrl.inbox.Inbox",
+    "factory_autonomy.py kstrl.inbox.Inbox",
     # #639 slice 4: read_owner_answers scans for the owner's answers; reads only.
     "owner_answers.py kstrl.inbox.Inbox",
     "pipeline_inbox.py kstrl.inbox.Inbox",
@@ -91,7 +91,7 @@ EXPECTED_CONSTRUCTION_COUNTS = {
     # #644 slice 2: was 2. +1: escalation_naming scans the inbox for the undecided
     # spec_escalation row that names a poisoned item. It reads; it mutates nothing.
     "decisions.py": 3,
-    "factory.py": 1,
+    "factory_autonomy.py": 1,
     "owner_answers.py": 1,
     # #595 (addendum): was 5, one construction per lazy-open site
     # (ComponentPipeline.snapshot_waivers's own +1 among them). All five
@@ -142,7 +142,7 @@ EXPECTED_MUTATIONS: dict[str, Disposition] = {
     "calibration_ladder.py::_open_drift_item::add": _GUARDED,
     "decisions.py::open_escalation_item::add": _GUARDED,
     "decisions.py::resolve_escalation_items::resolve": _GUARDED,
-    "factory.py::_open_health_breach_items::add": _GUARDED,
+    "factory_autonomy.py::_open_health_breach_items::add": _GUARDED,
     "pipeline_inbox.py::InboxDesk._inbox_add::add": _GUARDED,
     "pipeline_inbox.py::InboxDesk._inbox_resolve::resolve": _GUARDED,
     "pipeline_inbox.py::InboxDesk._inbox_resolve_component::resolve": _GUARDED,
@@ -216,7 +216,7 @@ EXPECTED_CONFIG_LOADS: dict[str, Disposition] = {
     "calibration_ladder.py::_open_drift_item": _GUARDED,
     "decisions.py::open_escalation_item": _GUARDED,
     "decisions.py::resolve_escalation_items": _GUARDED,
-    "factory.py::_open_health_breach_items": _GUARDED,
+    "factory_autonomy.py::_open_health_breach_items": _GUARDED,
     "serve_settle.py::_file_inbox_item": _GUARDED,
     # #696 slice 3: a load the stack check cannot make is a refusal.
     "stack.py::_refusal": _GUARDED,

@@ -211,6 +211,11 @@ EXPECTED_FACTORY_SCOPES = frozenset({"_run_factory_locked", "_open_health_breach
 #: is the run's one envelope resolution and the site the whole change is
 #: about being visible to the walk at last.
 EXPECTED_FACTORY_SITES = 8
+#: Where those sites sit. ``_open_health_breach_items`` moved to
+#: ``kstrl/factory_autonomy.py`` (#776), so layer B walks both files
+#: under the one factory case.
+EXPECTED_FACTORY_SITES_BY_FILE = {"factory.py": 7, "factory_autonomy.py": 1}
+FACTORY_MODULES = ("factory.py", "factory_autonomy.py")
 
 #: The sections ``RunEnvelope.resolve`` names, as the walk sees them.
 #: Pinned by REFERENCE, because the envelope hands each loader to
@@ -609,10 +614,14 @@ class TestTheRunReadsConfigOnlyBeforeItStarts:
         before layer B walked factory.py.
         """
         found = package_surface
-        sites = configwalk.read_sites(KSTRL_PACKAGE / "factory.py", found)
+        sites = [
+            site
+            for name in FACTORY_MODULES
+            for site in configwalk.read_sites(KSTRL_PACKAGE / name, found)
+        ]
         offenders = [site for site in sites if site.scope not in EXPECTED_FACTORY_SCOPES]
         assert offenders == [], (
-            "kstrl/factory.py resolves config outside its run-level "
+            "kstrl/factory.py and kstrl/factory_autonomy.py resolve config outside their run-level "
             f"scopes {sorted(EXPECTED_FACTORY_SCOPES)}. Offenders: {offenders}"
         )
 
@@ -638,6 +647,8 @@ class TestTheRunReadsConfigOnlyBeforeItStarts:
         paths = (
             sorted(KSTRL_PACKAGE.glob("serve*.py"))
             if module == "serve.py"
+            else [KSTRL_PACKAGE / name for name in FACTORY_MODULES]
+            if module == "factory.py"
             else [KSTRL_PACKAGE / module]
         )
         sites = [site for path in paths for site in configwalk.read_sites(path, found)]
@@ -645,6 +656,11 @@ class TestTheRunReadsConfigOnlyBeforeItStarts:
             by_file = {path.name: len(configwalk.read_sites(path, found)) for path in paths}
             assert by_file == EXPECTED_SERVE_SITES_BY_FILE, (
                 f"the config reads of the serve modules moved between files. Found {by_file}"
+            )
+        if module == "factory.py":
+            by_file = {path.name: len(configwalk.read_sites(path, found)) for path in paths}
+            assert by_file == EXPECTED_FACTORY_SITES_BY_FILE, (
+                f"the config reads of the factory modules moved between files. Found {by_file}"
             )
         assert len(sites) == expected, (
             f"the number of config reads in kstrl/{module} moved. If it "

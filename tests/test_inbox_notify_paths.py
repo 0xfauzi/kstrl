@@ -435,7 +435,7 @@ FILING_PATHS = {
     "autonomy_transitions.py::apply_demotion::add": "test_demotion_fires_the_inbox_hook",
     "calibration_ladder.py::_open_drift_item::add": "test_demotion_fires_the_inbox_hook",
     "decisions.py::open_escalation_item::add": "test_architect_escalation_fires_the_inbox_hook",
-    "factory.py::_open_health_breach_items::add": (
+    "factory_autonomy.py::_open_health_breach_items::add": (
         "test_health_breach_is_silent_and_its_demotion_is_pushed"
     ),
     "plan_gate.py::_record::add": (

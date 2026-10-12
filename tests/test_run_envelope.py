@@ -581,7 +581,7 @@ class TestTheLadderOutcomeIsReallyFrozen:
     """
 
     def test_the_ladder_builds_one_that_hashes_and_cannot_grow(self, tmp_path: Path) -> None:
-        from kstrl.factory import _resolve_ladder
+        from kstrl.factory_autonomy import _resolve_ladder
         from kstrl.runenvelope import RunEnvelope
 
         # A stored L4 over max_level = 1 is the clamp; review_mode "skip"
