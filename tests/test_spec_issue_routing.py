@@ -20,10 +20,8 @@ from typing import Any
 
 import pytest
 
-from kstrl.decompose import (
-    SpecBlockerError,
-    decompose_spec,
-)
+from kstrl.decompose import decompose_spec
+from kstrl.decompose_audit import SpecBlockerError
 from kstrl.decompose_reply import _routed_prd_issues
 from kstrl.knowledge_distill import _read_prd_text
 from kstrl.manifest import Manifest

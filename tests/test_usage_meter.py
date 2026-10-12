@@ -5510,7 +5510,7 @@ class TestFactoryHandsTheArchitectSpendToTheRun:
         from kstrl import cli_architect as cli_architect_mod
         from kstrl import cli_factory as cli_factory_mod
         from kstrl.decisions import SpecDecision
-        from kstrl.decompose import SpecBlockerError
+        from kstrl.decompose_audit import SpecBlockerError
 
         captured: dict[str, Any] = {}
         agent = SimpleNamespace(name="fake", usage_records=[])

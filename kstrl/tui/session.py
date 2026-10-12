@@ -285,7 +285,8 @@ def _prepare_decompose(
         del channel, stop  # decompose has no prompts; stop is v2 work
 
         def target() -> int:
-            from kstrl.decompose import SpecBlockerError, decompose_spec
+            from kstrl.decompose import decompose_spec
+            from kstrl.decompose_audit import SpecBlockerError
             from kstrl.factory_preflight import BaseRefusedError, base_check_before_architect
             from kstrl.owner_answers import OwnerAnswerError
 
