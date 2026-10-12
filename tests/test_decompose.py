@@ -32,7 +32,8 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl.decompose import SpecBlockerError, decompose_spec
+from kstrl.decompose import decompose_spec
+from kstrl.decompose_audit import SpecBlockerError
 from kstrl.evolution import EvolutionJournal
 from kstrl.evolution_config import EvolutionConfig
 from kstrl.journal_rows import SPEC_ISSUES_EVENT
@@ -618,7 +619,7 @@ class TestARegisterThatDidNotLandFailsTheDecompose:
         )
         with (
             patch(
-                "kstrl.decompose.write_decisions",
+                "kstrl.decompose_audit.write_decisions",
                 side_effect=OSError("no space left on device"),
             ),
             pytest.raises(SpecBlockerError) as exc_info,

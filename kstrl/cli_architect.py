@@ -26,7 +26,8 @@ from kstrl.commandrun import CommandRun, open_command_run
 from kstrl.config_numbers import LIMIT_FLOAT, LIMIT_INT
 from kstrl.config_report import UI_MODES
 from kstrl.config_report import normalize_ui_mode as _normalize_ui_mode
-from kstrl.decompose import SpecBlockerError, decompose_spec
+from kstrl.decompose import decompose_spec
+from kstrl.decompose_audit import SpecBlockerError
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_lock import _acquire_run_lock
 from kstrl.factory_preflight import (

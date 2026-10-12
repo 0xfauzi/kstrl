@@ -14,7 +14,8 @@ import pytest
 
 from kstrl.agents.base import ARCHITECT_COMPONENT, ARCHITECT_ROLE, UsageRecord
 from kstrl.commandrun import open_command_run
-from kstrl.decompose import SpecBlockerError, decompose_spec
+from kstrl.decompose import decompose_spec
+from kstrl.decompose_audit import SpecBlockerError
 from kstrl.reducer import load_run_state
 from kstrl.ui.plain import PlainUI
 from tests.helpers.before_spend import no_base_check
@@ -160,7 +161,6 @@ class TestDecomposeRun:
             tmp_path,
             MockDecomposeAgent(MINOR_ISSUE_OUTPUT),
         )
-
         state, _ = load_run_state(tmp_path)
         assert state.kind == "decompose"
         assert state.finished

@@ -190,7 +190,7 @@ EXPECTED_EVENT_NAME_SPELLINGS: dict[str, int] = {
     # is the module all six already import.
     "appendio.py": 1,
     # The TUI artifact label emitted with ArtifactWritten.
-    "decompose.py": 1,
+    "decompose_audit.py": 1,
     # The architect's own JSON key (validation).
     "decompose_reply.py": 1,
     # The SPEC_ISSUES_EVENT declaration, plus the FINDINGS_SUPERSEDED_EVENT
