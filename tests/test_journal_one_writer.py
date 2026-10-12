@@ -326,6 +326,12 @@ EXPECTED_JOURNAL_PATH_SITES: dict[str, int] = {
     "pipeline_attempt.py: self.journal_path": 3,
     "pipeline_state.py: self.journal_path": 1,
     "workqueue_store.py: self.journal_path": 2,
+    # Two READS of the run's event journal (``progress.jsonl``), not the
+    # evolution journal: the failure summary prints where a failed
+    # component's lines sit. They were the bare local ``journal_path`` in
+    # ``_run_factory_locked`` until #776 B3 moved the summary and the
+    # local became a field of the run context.
+    "factory_summary.py: ctx.journal_path": 2,
 }
 #: The ``health.py`` and ``cli.py`` rows above are READS, added by #151:
 #: R8.4 trending needs the journal for the infrastructure-error-rate

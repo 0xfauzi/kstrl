@@ -81,7 +81,10 @@ EXPECTED_SIGNATURE_CONTAINER_SITES: dict[tuple[str, str], int] = {
     ("kstrl/pipeline_transitions.py", "self.component_failure_signatures"): 2,
     ("kstrl/pipeline_attempt.py", "self.component_failure_signatures"): 4,
     ("kstrl/pipeline_state.py", "self.run_state.component_failure_signatures"): 1,
-    ("kstrl/factory.py", "run_state.component_failure_signatures"): 3,
+    ("kstrl/factory.py", "run_state.component_failure_signatures"): 2,
+    # The journal write moved to the finish steps (#776 B3), which reach
+    # the same mapping through the run context's reference.
+    ("kstrl/factory_summary.py", "ctx.run_state.component_failure_signatures"): 1,
     # The declaration, which is where the mapping now lives.
     ("kstrl/runstate.py", "component_failure_signatures"): 1,
     # The reader: record_run takes the mapping as an argument and writes

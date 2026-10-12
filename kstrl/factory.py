@@ -11,8 +11,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl.acceptance_lines import pr_isolation
-from kstrl.agents.base import UsageTotals, print_usage_rollup
+from kstrl.agents.base import UsageTotals
 from kstrl.agents.proc import kill_active_process_groups
 from kstrl.breaker import BreakerConfig
 from kstrl.config import (
@@ -35,7 +34,6 @@ from kstrl.event_catalog import (
     ComponentFailed,
     ComponentStarted,
     PhaseStarted,
-    RunCompleted,
     RunPlan,
     RunStarted,
 )
@@ -57,7 +55,7 @@ from kstrl.factory_agents import (
     _warn_unsandboxable_reviewers,
     resolve_adversarial_selection,
 )
-from kstrl.factory_autonomy import _record_autonomy_outcome, _resolve_ladder
+from kstrl.factory_autonomy import _resolve_ladder
 from kstrl.factory_config import (
     FactoryConfig,
     claim_gate_unreachable_warning,
@@ -74,12 +72,10 @@ from kstrl.factory_result import (
     ComponentResult,
     FactoryResult,
     _clear_partial_usage,
-    _ids_in_status,
-    _report_awaiting_approval,
     _salvage_aborted_usage,
-    resolve_exit_code,
-    run_is_clean,
 )
+from kstrl.factory_run import RunContext
+from kstrl.factory_summary import _finish_run
 from kstrl.factory_worker import (
     _install_worker_signal_forwarding,
     _report_operator_files,
@@ -93,7 +89,7 @@ from kstrl.factory_worktrees import (
     _start_from_dependencies,
 )
 from kstrl.integration_loop import IntegrationLoop
-from kstrl.integration_phase import IntegrationRun, report_integration
+from kstrl.integration_phase import IntegrationRun
 from kstrl.interaction import InteractionChannel
 from kstrl.knowledge import (
     current_run_id,
@@ -117,8 +113,6 @@ from kstrl.observability import (
 )
 from kstrl.pipeline import ComponentPipeline
 from kstrl.pipeline_state import PipelineHooks, _iso_now
-from kstrl.pr import create_prs_in_order, create_single_pr
-from kstrl.release import RELEASE_REF_RULE, ReleaseInputs, release_ref_from, release_withheld
 from kstrl.review import (
     run_review,
 )
@@ -1753,238 +1747,27 @@ def _run_factory_locked(
     # verdict is already in contract_failures.
     integration_record = integration.record
 
-    # Create PRs for any remaining components that weren't handled per-component
-    # (e.g. single-pr mode, or stragglers from parallel execution)
-    if factory_config.create_prs:
-        if factory_config.single_pr:
-            result = create_single_pr(
-                manifest,
-                root_dir,
-                ui,
-                isolation=pr_isolation(factory_config),
-                requirements=factory_config.requirements,
-            )
-            if result:
-                factory_result.pr_urls.append(result[1])
-            manifest.save(manifest_path)
-        else:
-            # Per-component PRs are created in _handle_result; only handle stragglers
-            remaining = [c for c in manifest.components if c.status == "completed" and not c.pr_url]
-            if remaining:
-                pr_results = create_prs_in_order(
-                    manifest,
-                    root_dir,
-                    ui,
-                    isolation=pr_isolation(factory_config),
-                    requirements=factory_config.requirements,
-                )
-                factory_result.pr_urls.extend(url for _, url in pr_results)
-                manifest.save(manifest_path)
-
-    # R0.2: collect components parked awaiting merge confirmation. Built
-    # from the manifest (not accumulated during the run) so it reflects
-    # the final state after any crash-recovery re-poll. Moved here, AHEAD
-    # of the release block below, so run_is_clean reads a populated
-    # factory_result.merge_pending rather than the permanent empty list
-    # it was rebuilt into seventeen lines below the release computation
-    # before #154's fix round (B11): nothing between this line and the
-    # old site mutates a component's status, so the move changes nothing
-    # else this function reports.
-    factory_result.merge_pending = _ids_in_status(manifest, ComponentStatus.MERGE_PENDING)
-    factory_result.awaiting_approval = _ids_in_status(manifest, ComponentStatus.AWAITING_APPROVAL)
-
-    # R8.7 slice 1 (#154): the run's release ref and the reason no
-    # release followed it. Nothing here starts anything; see
-    # kstrl/release.py for why the last rung cannot be configured open.
-    #
-    # run_is_clean is the SAME predicate resolve_exit_code's exit code
-    # is built from (#154 fix round, A1): before this, run_clean was a
-    # second, independent expression that missed the `stopped` and the
-    # #263 unfinished-components terms, so an operator-stopped run with
-    # one component merged and the rest PENDING recorded
-    # release_withheld="no_driver" (fully permitted) while
-    # resolve_exit_code returned 130 for the identical run.
-    stopped = stop is not None and stop.is_set()
-    release_ref = release_ref_from(manifest.components, since=run_started_at)
-    run_clean = run_is_clean(factory_result, manifest, stopped=stopped)
-    release_withheld_reason = release_withheld(
-        ReleaseInputs(
-            release_enabled=run_envelope.release.enabled,
-            environment=run_envelope.release.environment,
-            run_clean=run_clean,
-            stopped=stopped,
-            release_ref=release_ref,
-            policy_enabled=run_envelope.policy.enabled,
-            policy_deploy=run_envelope.policy.deploy,
-            ladder_deploy_permitted=(
-                ladder.bundle.deploy_permitted if ladder is not None else None
-            ),
+    return _finish_run(
+        RunContext(
+            manifest=manifest,
+            manifest_path=manifest_path,
+            factory_config=factory_config,
+            ui=ui,
+            root_dir=root_dir,
+            stop=stop,
+            run_id=run_id,
+            run_started_at=run_started_at,
+            factory_start=factory_start,
+            factory_result=factory_result,
+            run_state=run_state,
+            run_envelope=run_envelope,
+            autonomy_config=autonomy_config,
+            ladder=ladder,
+            bus=bus,
+            run_file_sinks=run_file_sinks,
+            journal_path=journal_path,
+            pipeline=pipeline,
+            notify=notify,
+            integration_record=integration_record,
         )
     )
-
-    # Summary
-    factory_duration = time.monotonic() - factory_start
-    bus.emit(
-        RunCompleted(
-            completed=len(factory_result.completed),
-            failed=len(factory_result.failed),
-            skipped=len(factory_result.skipped),
-            duration_seconds=round(factory_duration, 2),
-            release_ref=release_ref,
-            release_ref_rule=RELEASE_REF_RULE,
-            release_withheld=release_withheld_reason,
-        )
-    )
-    # Detach (not close) the console bus: post-run cli narration must
-    # not reopen the run's files. The file sinks themselves close.
-    for _sink in run_file_sinks:
-        bus.remove_sink(_sink)
-        _sink.close()
-
-    ui.section("Factory: Summary")
-    ui.kv("Completed", str(len(factory_result.completed)))
-    ui.kv("Failed", str(len(factory_result.failed)))
-    ui.kv("Skipped", str(len(factory_result.skipped)))
-    # R3.3 failure summary: per failed component, which gate fired and
-    # where the last attempt's evidence lives, so the run is diagnosable
-    # without reading raw JSON.
-    if factory_result.failed:
-        ui.subsection("Failure summary")
-        for failed_id in factory_result.failed:
-            failed_comp = manifest.get_component(failed_id)
-            if failed_comp is None:
-                continue
-            ui.err(
-                f"  {failed_id}: "
-                f"phase={failed_comp.failed_phase or 'unknown'} "
-                f"check={failed_comp.failed_check or 'unknown'} "
-                f"(attempt {failed_comp.retries + 1})"
-            )
-            if failed_comp.error:
-                ui.info(f"    error: {failed_comp.error[:160]}")
-            if failed_comp.evidence_worktree:
-                ui.info(f"    worktree: {failed_comp.evidence_worktree}")
-            elif factory_config.use_worktrees:
-                ui.info(
-                    "    worktree: removed (re-run with --keep-worktrees-on-failure to keep it)"
-                )
-            if failed_comp.evidence_debug_dir:
-                ui.info(f"    raw outputs: {failed_comp.evidence_debug_dir}")
-            if failed_comp.journal_offset_start >= 0 and journal_path is not None:
-                end = (
-                    str(failed_comp.journal_offset_end)
-                    if failed_comp.journal_offset_end >= 0
-                    else "end"
-                )
-                ui.info(
-                    f"    journal: {journal_path} bytes [{failed_comp.journal_offset_start}:{end}]"
-                )
-            ui.info(f"    retry with: ks retry {failed_id}")
-    if factory_result.contract_failures:
-        ui.kv("Contract failures", str(len(factory_result.contract_failures)))
-        for line in factory_result.contract_failures:
-            ui.err(f"  {line}")
-    report_integration(integration_record, ui)
-    if factory_result.merge_pending:
-        ui.kv("Merge pending", str(len(factory_result.merge_pending)))
-    _report_awaiting_approval(factory_result, ui)
-    ui.kv("Duration", f"{factory_duration:.0f}s")
-    # R3.1 usage rollup: per component, per phase, plus the run total.
-    print_usage_rollup(
-        ui,
-        pipeline.usage_meter,
-        pipeline.run_usage,
-        title="Usage rollup",
-    )
-    if pipeline.token_budget_exceeded():
-        ui.err(
-            f"TOKEN BUDGET EXCEEDED: {pipeline.run_usage.total_tokens} total tokens "
-            f"recorded >= max_total_tokens ({factory_config.max_total_tokens})"
-        )
-    if pipeline.cost_budget_exceeded():
-        ui.err(
-            f"COST BUDGET EXCEEDED: ${pipeline.run_usage.cost_usd:.6f} recorded "
-            f">= max_cost_usd (${factory_config.max_cost_usd})"
-        )
-    if factory_result.pr_urls:
-        ui.kv("PRs created", str(len(factory_result.pr_urls)))
-        for url in factory_result.pr_urls:
-            ui.info(f"  {url}")
-    if factory_result.merge_pending:
-        ui.warn(
-            "Some PR merges are unconfirmed; re-run the factory to "
-            "re-poll them: " + ", ".join(factory_result.merge_pending)
-        )
-
-    factory_result.exit_code = resolve_exit_code(
-        factory_result,
-        manifest,
-        ui,
-        stopped=stop is not None and stop.is_set(),
-    )
-
-    # R3.3: the run reached its terminal state; stamp the manifest so a
-    # resume (and Linear, later) can tell a finished run from a crash.
-    # Stamped BEFORE the completion notification so a hook that reads
-    # the manifest sees the terminal state.
-    manifest.completed_at = _iso_now()
-    manifest.save(manifest_path)
-
-    # R8.2: fold this run's outcome into the ladder. Without this the
-    # counters never move, promotion is unreachable except by --force,
-    # and the promised automatic demotion never fires - the state machine
-    # would be real but inert. Runs INSIDE the factory lock, before it is
-    # released, so two runs cannot interleave read-modify-write.
-    if ladder is not None:
-        try:
-            _record_autonomy_outcome(
-                root_dir=root_dir,
-                manifest=manifest,
-                factory_result=factory_result,
-                autonomy_config=autonomy_config,
-                run_level=ladder.level,
-                bus=bus,
-                run_id=run_id,
-                ui=ui,
-            )
-        except Exception as exc:  # noqa: BLE001 - never fail a run on bookkeeping
-            ui.warn(f"Autonomy state update failed (non-fatal): {exc}")
-
-    # R3.2: run-end notification. Fires on every run that reached the
-    # summary, whatever the outcome; early refusals (invalid DAG, held
-    # lock, stale branches) never notify because no work was started.
-    notify.fire_complete(
-        f"completed={len(factory_result.completed)} "
-        f"failed={len(factory_result.failed)} "
-        f"skipped={len(factory_result.skipped)} "
-        f"merge_pending={len(factory_result.merge_pending)} "
-        f"exit_code={factory_result.exit_code}"
-    )
-
-    # Record run to evolution journal
-    try:
-        from kstrl.evolution import EvolutionJournal
-        from kstrl.evolution_config import EvolutionConfig
-
-        evo_config = EvolutionConfig.load(root_dir)
-        if evo_config.enabled:
-            journal = EvolutionJournal(evo_config)
-            journal.record_run(
-                run_id,
-                manifest,
-                factory_result,
-                usage_by_component={
-                    comp_id: {phase: totals.to_dict() for phase, totals in phases.items()}
-                    for comp_id, phases in pipeline.usage_meter.items()
-                },
-                run_usage=pipeline.run_usage.to_dict(),
-                failure_signatures=run_state.component_failure_signatures,
-                fact_utilization={
-                    comp_id: util.to_dict() for comp_id, util in pipeline.fact_utilization.items()
-                },
-            )
-    except Exception as exc:
-        # Evolution recording is non-fatal, but never silent (R6.1).
-        ui.warn(f"Evolution journal recording failed (non-fatal): {exc}")
-
-    return factory_result
