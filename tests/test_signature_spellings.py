@@ -72,7 +72,7 @@ EXPECTED_SPELLINGS: frozenset[tuple[str, str]] = frozenset(
     {
         # --- journal signatures: these nine ARE check names, and every
         # one is enrolled in evolution._CATEGORY_BY_CHECK.
-        ("kstrl/factory.py", "contract"),
+        ("kstrl/factory_acceptance.py", "contract"),
         # #226: written as f"{ADVERSARIAL_BUDGET_CHECK}:{phase}", so the
         # head folds through the imported constant rather than a literal.
         ("kstrl/pipeline_verdicts.py", "adversarial_budget"),
@@ -213,7 +213,7 @@ class TestTheSignatureSpellingsAreInventoried:
         these four from the pin to make a red test go away, which is the
         one edit that would silently un-cover all four producers."""
         measured = signature_spellings()
-        assert ("kstrl/factory.py", "contract") in measured, "a direct assignment"
+        assert ("kstrl/factory_acceptance.py", "contract") in measured, "a direct assignment"
         assert ("kstrl/pipeline.py", "engineer") in measured, "a direct assignment"
         assert ("kstrl/pipeline_verdicts.py", "review") in measured, "a conditional expression"
         assert ("kstrl/factory.py", "scope_unreadable") in measured, "an f-string constant"
