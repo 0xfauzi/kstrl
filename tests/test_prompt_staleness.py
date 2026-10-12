@@ -342,7 +342,7 @@ EXPECTED_TEMPLATE_FILENAMES: dict[str, int] = {
     "cli_loop.py": 5,
     "cli_report.py": 1,
     "config.py": 4,
-    "factory.py": 3,
+    "factory_worker.py": 3,
     "init_cmd.py": 6,
     "init_wizard.py": 6,
     "launch.py": 1,

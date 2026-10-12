@@ -27,7 +27,7 @@ import pytest
 
 from kstrl import (
     context,
-    factory,
+    factory_worker,
     init_cmd,
     iteration_prompt,
     knowledge,
@@ -269,7 +269,7 @@ def _factory_guard(tmp: Path) -> str:
         _FACTORY_PRD_REL,
     )
     with patch("kstrl.loop.run_loop", side_effect=fake_run_loop):
-        result = factory._run_component(
+        result = factory_worker._run_component(
             component_id="c1",
             prd_path_str=_FACTORY_PRD_REL,
             worktree_path_str=str(root),
@@ -510,7 +510,7 @@ CALL_TIME_GUARDS: dict[str, tuple[ModuleType, str]] = {
     "SCOPE_UNREADABLE_EXPLANATION_PROMPT": (verify_diff, "scope_unreadable_cause"),
     "SCOPE_UNREADABLE_REMEDY_PROMPT": (verify_diff, "scope_unreadable_cause"),
     "POLICY_DIFF_UNREADABLE_PROMPT": (verify_diff, "policy_diff_unreadable"),
-    "IN_LOOP_SCOPE_VIOLATION_PROMPT": (factory, "factory_guard"),
+    "IN_LOOP_SCOPE_VIOLATION_PROMPT": (factory_worker, "factory_guard"),
     "KNOWLEDGE_CONTEXT_PROMPT": (knowledge, "knowledge_plain"),
     "KNOWLEDGE_OVERFLOW_PROMPT": (knowledge, "knowledge_overflow"),
     "CLAUDE_MD_OVERVIEW_PROMPT": (init_cmd, "claude_md"),

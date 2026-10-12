@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
-from kstrl import factory as factory_mod
+from kstrl import factory_worker
 from kstrl.config import KstrlConfig
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
@@ -40,7 +40,7 @@ from tests.helpers.stack_confirmation import in_process_stack
 
 #: Read before any test patches ``_run_component``: a patched name has
 #: the mock's ``(*args, **kwargs)`` signature, which binds nothing.
-_RUN_COMPONENT = inspect.signature(factory_mod._run_component)
+_RUN_COMPONENT = inspect.signature(factory_worker._run_component)
 
 
 def _fact(fact_id: str, owner: str, claim: str, evidence: list[str]) -> Fact:

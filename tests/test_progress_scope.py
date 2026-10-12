@@ -623,7 +623,7 @@ class TestFactoryWiring:
         """A direct caller that omits progress_file_str gets the
         in-scope path too: the safe path is the default, not an opt-in.
         """
-        from kstrl.factory import _run_component
+        from kstrl.factory_worker import _run_component
         from kstrl.loop import LoopResult
 
         _setup_project(tmp_path, [COMPONENT_ID])
@@ -1013,7 +1013,7 @@ def _worker_write_path(
     turns that into the ``KstrlConfig.progress_file`` the loop hands to
     the agent as ``$progress_path``.
     """
-    from kstrl.factory import _run_component
+    from kstrl.factory_worker import _run_component
     from kstrl.loop import LoopResult
 
     seen: list[KstrlConfig] = []
