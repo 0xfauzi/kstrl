@@ -22,7 +22,7 @@ from kstrl.agents.base import (
     UsageTotals,
     usage_coverage,
 )
-from kstrl.loop import UNENFORCEABLE_CALLS
+from kstrl.loop_budget import UNENFORCEABLE_CALLS
 from kstrl.manifest import Component, ComponentStatus
 from kstrl.pipeline_state import PipelineState
 
