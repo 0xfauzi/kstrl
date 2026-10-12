@@ -203,8 +203,8 @@ def _where(source: Path, node: ast.AST) -> str:
 #: ``pre_run_prd_path``. A new row is a new way to reach a planned copy
 #: that does not ask the manifest for the plan id.
 EXPECTED_PLAN_PRD_PATH_SPELLINGS = {
-    "decompose.py::<module>": 1,
-    "decompose.py::_decompose_spec_impl": 1,
+    "decompose_plan.py::<module>": 1,
+    "decompose_plan.py::_write_component_prds": 1,
     "decompose_reply.py::<module>": 1,
     "decompose_reply.py::_generate_component_prd": 1,
     "statedir.py::<module>": 1,

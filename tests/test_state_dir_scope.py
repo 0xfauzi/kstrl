@@ -608,8 +608,9 @@ class TestNothingTheLoopRunsWritesTheUncarvedEntries:
             "kstrl.intake_github",
             "kstrl.intake_issue",
             "kstrl.intake_steering",
-            # #545: the two writers of .kstrl/plan/.
+            # #545: the writers of .kstrl/plan/.
             "kstrl.decompose",
+            "kstrl.decompose_plan",
             "kstrl.decompose_reply",
             "kstrl.integration_fix",
         }
