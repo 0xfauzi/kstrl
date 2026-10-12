@@ -590,8 +590,8 @@ EXPECTED_UNCONFIRMED_SITES: dict[str, int] = {
     # #700 slice 3: the replay is filed on the confirmation item when the
     # stack is not confirmed; read only, never cleared.
     "doctor_measure.py": 1,
-    "factory.py": 2,
     "factory_config.py": 4,
+    "factory_preflight.py": 2,
     # #700 host fallback: with no prover the replay runs nothing for a stack
     # no person confirmed, because its commands would run on the host; read
     # only, never cleared.

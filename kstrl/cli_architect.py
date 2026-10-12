@@ -27,13 +27,13 @@ from kstrl.config_numbers import LIMIT_FLOAT, LIMIT_INT
 from kstrl.config_report import UI_MODES
 from kstrl.config_report import normalize_ui_mode as _normalize_ui_mode
 from kstrl.decompose import SpecBlockerError, decompose_spec
-from kstrl.factory import (
+from kstrl.factory_config import FactoryConfig
+from kstrl.factory_lock import _acquire_run_lock
+from kstrl.factory_preflight import (
     BaseRefusedError,
     _report_preflight,
     base_check_before_architect,
 )
-from kstrl.factory_config import FactoryConfig
-from kstrl.factory_lock import _acquire_run_lock
 from kstrl.git_base import resolve_base_branch
 from kstrl.interaction import PromptKind, PromptRequest, UiInteractionChannel
 from kstrl.launch_record import option_argv

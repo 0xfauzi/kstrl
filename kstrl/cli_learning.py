@@ -15,7 +15,7 @@ from kstrl.autonomy import DEMOTION_TRIGGER_LABELS
 from kstrl.cli_seam import _autonomy_ui, _console_ui, cli
 from kstrl.config_report import UI_MODES
 from kstrl.config_report import normalize_ui_mode as _normalize_ui_mode
-from kstrl.factory import _report_preflight
+from kstrl.factory_preflight import _report_preflight
 from kstrl.ui.base import UI
 
 if TYPE_CHECKING:

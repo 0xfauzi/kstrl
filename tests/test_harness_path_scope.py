@@ -40,12 +40,11 @@ from kstrl.config import KstrlConfig, component_harness_paths
 from kstrl.decompose_reply import _SCOPE_HAZARD_ADVICE
 from kstrl.events import EventBus
 from kstrl.factory import (
-    _SCOPE_HAZARD_REASONS,
-    _preflight_component_scope,
     _run_component,
     run_factory,
 )
 from kstrl.factory_config import FactoryConfig
+from kstrl.factory_preflight import _SCOPE_HAZARD_REASONS, _preflight_component_scope
 from kstrl.factory_result import ComponentResult
 from kstrl.guards import (
     ScopeHazard,
