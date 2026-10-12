@@ -278,7 +278,7 @@ def _merge_columns(manifest: Manifest, factory_result: FactoryResult) -> tuple[s
     ``_classify_merges`` is the one place this comparison is made, so the TSV
     agrees with what the live ladder counted.
     """
-    from kstrl.factory import _classify_merges
+    from kstrl.factory_autonomy import _classify_merges
 
     verdicts = _classify_merges(manifest, factory_result.merged)
     clean = sum(1 for v in verdicts.values() if v == "clean")

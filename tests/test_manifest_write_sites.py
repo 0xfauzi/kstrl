@@ -98,7 +98,7 @@ EXPECTED_MANIFEST_WRITE_SITES: dict[str, tuple[int, str]] = {
     "kstrl/factory.py::_run_factory_locked save": (6, IN_RUN),
     "kstrl/factory.py::_run_factory_locked._cleanup_pass_worktrees save": (1, IN_RUN),
     "kstrl/factory.py::_run_factory_locked._run_scheduling_pass save": (1, IN_RUN),
-    "kstrl/factory.py::_stamp_feature_base save": (1, IN_RUN),
+    "kstrl/factory_acceptance.py::_stamp_feature_base save": (1, IN_RUN),
     "kstrl/pipeline_merge.py::MergeGate._fail_pr_flow save": (1, IN_RUN),
     "kstrl/plan_gate.py::_settle save": (1, IN_RUN),
     "kstrl/pipeline_merge.py::MergeGate._park_awaiting_approval save": (1, IN_RUN),

@@ -108,7 +108,7 @@ EXPECTED_SPELLINGS: frozenset[tuple[str, str]] = frozenset(
         # comparison id is both baselines' timestamps, or a digest of the
         # failure lines when either file carries no timestamp.
         ("kstrl/calibration_ladder.py", "calibration"),
-        ("kstrl/factory.py", "health"),
+        ("kstrl/factory_autonomy.py", "health"),
         # #449: the inbox dedupe key for one spec's architect escalation,
         # "escalation:<project>:<spec file>". Same family as the two above.
         ("kstrl/decisions.py", "escalation"),

@@ -29,7 +29,7 @@ from kstrl import calibration
 from kstrl.autonomy import AutonomyLevel
 from kstrl.autonomy_config import AutonomyConfig
 from kstrl.events import EventBus
-from kstrl.factory import _record_autonomy_outcome
+from kstrl.factory_autonomy import _record_autonomy_outcome
 from kstrl.factory_result import FactoryResult
 from kstrl.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.ui.plain import PlainUI

@@ -54,7 +54,7 @@ def _file_breach(root: Path, run_id: str) -> None:
     warning on the run's UI. A lost write here would read as a lost
     occurrence, so the child turns a warning into a non-zero exit.
     """
-    from kstrl.factory import _open_health_breach_items
+    from kstrl.factory_autonomy import _open_health_breach_items
     from kstrl.health import HealthBreach
     from kstrl.ui.plain import PlainUI
 
