@@ -369,7 +369,7 @@ EXPECTED_COMPLETED_SITES: dict[str, int] = {
     # The two factory sites. Both must read the manifest's fields; see
     # test_factory_completion_events_read_the_manifest_fields.
     "pipeline_transitions.py:complete": 1,
-    "pipeline.py:repoll_merge_pending": 1,
+    "pipeline_merge.py:repoll_merge_pending": 1,
     # Runs with no manifest Component and no journal row, so the event is
     # the only record of the duration it carries.
     "cli_loop.py:_understand_core": 1,
@@ -484,7 +484,10 @@ class TestOneWriterPerField:
     def test_factory_completion_events_read_the_manifest_fields(self) -> None:
         checked = 0
         for source_file, node in _sites("ComponentCompleted"):
-            if label(source_file) not in ("pipeline.py", "pipeline_transitions.py"):
+            if label(source_file) not in (
+                "pipeline_merge.py",
+                "pipeline_transitions.py",
+            ):
                 continue
             kwargs = _keywords(node)
             where = f"{label(source_file)}:{node.lineno}"
