@@ -212,10 +212,22 @@ EXPECTED_FACTORY_SCOPES = frozenset({"_run_factory_locked", "_open_health_breach
 #: about being visible to the walk at last.
 EXPECTED_FACTORY_SITES = 8
 #: Where those sites sit. ``_open_health_breach_items`` moved to
-#: ``kstrl/factory_autonomy.py`` (#776), so layer B walks both files
-#: under the one factory case.
-EXPECTED_FACTORY_SITES_BY_FILE = {"factory.py": 7, "factory_autonomy.py": 1}
-FACTORY_MODULES = ("factory.py", "factory_autonomy.py")
+#: ``kstrl/factory_autonomy.py`` (#776), so layer B walks every
+#: ``factory*.py`` under the one factory case. A glob and not a list, so a
+#: config read planted in a module divided out of ``factory.py`` is seen.
+EXPECTED_FACTORY_SITES_BY_FILE = {
+    "factory.py": 7,
+    "factory_acceptance.py": 0,
+    "factory_agents.py": 0,
+    "factory_autonomy.py": 1,
+    "factory_config.py": 0,
+    "factory_lock.py": 0,
+    "factory_preflight.py": 0,
+    "factory_result.py": 0,
+    "factory_worker.py": 0,
+    "factory_worktrees.py": 0,
+}
+FACTORY_MODULES = tuple(path.name for path in sorted(KSTRL_PACKAGE.glob("factory*.py")))
 
 #: The sections ``RunEnvelope.resolve`` names, as the walk sees them.
 #: Pinned by REFERENCE, because the envelope hands each loader to
@@ -621,7 +633,7 @@ class TestTheRunReadsConfigOnlyBeforeItStarts:
         ]
         offenders = [site for site in sites if site.scope not in EXPECTED_FACTORY_SCOPES]
         assert offenders == [], (
-            "kstrl/factory.py and kstrl/factory_autonomy.py resolve config outside their run-level "
+            "the kstrl/factory*.py modules resolve config outside their run-level "
             f"scopes {sorted(EXPECTED_FACTORY_SCOPES)}. Offenders: {offenders}"
         )
 
