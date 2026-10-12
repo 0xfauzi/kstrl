@@ -218,6 +218,8 @@ class TestDecomposeRun:
         decompose_phases = [p for p in architect.phase_history if p["phase"] == "decompose"]
         assert [p["passed"] for p in decompose_phases] == [False, True]
         assert architect.attempt == 2
+        # ComponentCompleted gives the number of architect attempts (#776 B3D1).
+        assert architect.iteration == 2
         assert architect.status == "completed"
 
     def test_blocker_halt_finishes_the_run_before_raising(
