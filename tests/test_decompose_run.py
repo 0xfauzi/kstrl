@@ -476,6 +476,11 @@ class TestArchitectUsageIsPrinted:
         _decompose(tmp_path, MeteringAgent(MINOR_ISSUE_OUTPUT), console)
         assert "Architect usage" in console.getvalue()
         assert "0.5000" in console.getvalue()
+        # The summary of the written plan (two components, one story each).
+        # In the same test so that the test count stays (#776 L11): without
+        # it, a summary that lost its lines left the suite green (#776 B3D3 plants).
+        assert "Components:   2" in console.getvalue()
+        assert "Total stories: 2" in console.getvalue()
 
     def test_the_heading_is_not_the_factory_run_heading(
         self,
