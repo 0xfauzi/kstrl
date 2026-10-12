@@ -9,7 +9,7 @@ import os
 import time
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from kstrl.agent_output import (
     MAX_AGENT_OUTPUT_BYTES,
@@ -281,6 +281,244 @@ def _attempt_stopped(
     return None
 
 
+@dataclasses.dataclass
+class _AttemptState:
+    """What the architect attempts leave behind for the next one (#776).
+
+    ``data`` is the parsed reply of the attempt that passed, None until one
+    does. ``last_error`` is why the latest attempt failed, None after a pass.
+    """
+
+    data: Any = None
+    last_error: str | None = None
+
+
+def _stream_reply(
+    *,
+    agent: Agent,
+    retry_prompt: str,
+    prompt_call: AgentCall,
+    attempt: int,
+    root_dir: Path,
+    timeout: float | None,
+    ui: UI,
+    transcript: Callable[[str], None] | None,
+    attempt_failed: Callable[..., None],
+    phase_start: float,
+) -> tuple[list[str], bool, int]:
+    """Stream one architect reply: its lines, whether it was too large, the usage cursor."""
+    output_lines: list[str] = []
+    total_bytes = 0
+    too_large = False
+    cursor = usage_cursor(agent)
+    try:
+        with recording_prompts(_for_attempt(prompt_call, attempt)):
+            for line in agent.run(retry_prompt, cwd=root_dir, timeout=timeout):
+                output_lines.append(line)
+                ui.stream_line("AI", line)
+                if transcript is not None:
+                    transcript(line)
+                total_bytes += len(line) + 1
+                if total_bytes > MAX_AGENT_OUTPUT_BYTES:
+                    too_large = True
+                    ui.warn(
+                        "Decompose agent emitted "
+                        f">{MAX_AGENT_OUTPUT_BYTES // 1024 // 1024}MB; "
+                        "aborting this attempt."
+                    )
+                    break
+    except BaseException as exc:
+        attempt_failed(
+            f"{type(exc).__name__}: {exc}",
+            started_at=phase_start,
+        )
+        raise
+    return output_lines, too_large, cursor
+
+
+def _parse_reply(
+    *,
+    agent: Agent,
+    output_lines: list[str],
+    state: _AttemptState,
+    stack_pin: str,
+    project_name: str,
+    single_pr: bool,
+    ui: UI,
+    emit: Callable[[Event], None],
+    attempt_failed: Callable[..., None],
+    phase_start: float,
+) -> None:
+    """Read one architect reply and record it in ``state``, or record why not."""
+    try:
+        state.data = _extract_agent_json(agent, output_lines)
+    except ValueError as exc:
+        state.last_error = str(exc)
+        ui.warn(f"JSON extraction failed: {state.last_error}")
+        attempt_failed(state.last_error, started_at=phase_start)
+        return
+
+    validation_errors = _validate_decompose_output(state.data, has_stack=bool(stack_pin))
+    if validation_errors:
+        state.last_error = _retry_feedback(validation_errors)
+        ui.warn(f"Validation failed: {state.last_error}")
+        attempt_failed(state.last_error, started_at=phase_start)
+        state.data = None
+        return
+
+    prd_errors = _prd_schema_errors(state.data, project_name, single_pr)
+    if prd_errors:
+        state.last_error = _retry_feedback(prd_errors)
+        ui.warn(f"PRD validation failed: {state.last_error}")
+        attempt_failed(state.last_error, started_at=phase_start)
+        state.data = None
+        return
+
+    state.last_error = None
+    emit(
+        PhaseCompleted(
+            component=ARCHITECT_COMPONENT,
+            phase="decompose",
+            passed=True,
+            duration_seconds=round(time.monotonic() - phase_start, 2),
+        )
+    )
+
+
+def _architect_attempt(
+    *,
+    state: _AttemptState,
+    attempt: int,
+    max_retries: int,
+    prompt: str,
+    agent: Agent,
+    ui: UI,
+    root_dir: Path,
+    timeout: float | None,
+    transcript: Callable[[str], None] | None,
+    prompt_call: AgentCall,
+    stack_pin: str,
+    project_name: str,
+    single_pr: bool,
+    emit: Callable[[Event], None],
+) -> None:
+    """Make one architect call and leave its outcome in ``state``."""
+    ui.info(f"Decomposition attempt {attempt}/{max_retries}")
+    emit(
+        PhaseStarted(
+            component=ARCHITECT_COMPONENT,
+            phase="decompose",
+            attempt=attempt,
+        )
+    )
+    phase_start = time.monotonic()
+
+    def attempt_failed(detail: str, *, started_at: float) -> None:
+        emit(
+            PhaseCompleted(
+                component=ARCHITECT_COMPONENT,
+                phase="decompose",
+                passed=False,
+                detail=detail[:200],
+                duration_seconds=round(time.monotonic() - started_at, 2),
+            )
+        )
+
+    if state.last_error:
+        retry_prompt = (
+            f"{prompt}\n\n"
+            f"PREVIOUS ATTEMPT FAILED with error:\n{state.last_error}\n\n"
+            f"Please fix the error and output valid JSON."
+        )
+    else:
+        retry_prompt = prompt
+
+    output_lines, too_large, cursor = _stream_reply(
+        agent=agent,
+        retry_prompt=retry_prompt,
+        prompt_call=prompt_call,
+        attempt=attempt,
+        root_dir=root_dir,
+        timeout=timeout,
+        ui=ui,
+        transcript=transcript,
+        attempt_failed=attempt_failed,
+        phase_start=phase_start,
+    )
+
+    stopped = _attempt_stopped(agent, cursor, too_large=too_large, timeout=timeout)
+    if stopped is not None:
+        state.last_error = stopped
+        attempt_failed(state.last_error, started_at=phase_start)
+        return
+
+    _parse_reply(
+        agent=agent,
+        output_lines=output_lines,
+        state=state,
+        stack_pin=stack_pin,
+        project_name=project_name,
+        single_pr=single_pr,
+        ui=ui,
+        emit=emit,
+        attempt_failed=attempt_failed,
+        phase_start=phase_start,
+    )
+
+
+def _run_architect(
+    *,
+    prompt: str,
+    max_retries: int,
+    agent: Agent,
+    ui: UI,
+    root_dir: Path,
+    timeout: float | None,
+    transcript: Callable[[str], None] | None,
+    prompt_call: AgentCall,
+    stack_pin: str,
+    project_name: str,
+    single_pr: bool,
+    emit: Callable[[Event], None],
+) -> tuple[Any, int]:
+    """Run the architect attempts: the parsed reply that passed, and the attempts used.
+
+    Raises ValueError when no attempt within ``max_retries`` passes.
+    """
+    state = _AttemptState(data=None, last_error=None)
+    attempts_used = 0
+
+    for attempt in range(1, max_retries + 1):
+        attempts_used = attempt
+        _architect_attempt(
+            state=state,
+            attempt=attempt,
+            max_retries=max_retries,
+            prompt=prompt,
+            agent=agent,
+            ui=ui,
+            root_dir=root_dir,
+            timeout=timeout,
+            transcript=transcript,
+            prompt_call=prompt_call,
+            stack_pin=stack_pin,
+            project_name=project_name,
+            single_pr=single_pr,
+            emit=emit,
+        )
+        if state.last_error is None:
+            break
+
+    if state.data is None:
+        # No files were written in the retry loop, so terminal failure
+        # leaves no partial state behind (R1.8).
+        raise ValueError(
+            f"Failed to decompose spec after {max_retries} attempts. Last error: {state.last_error}"
+        )
+
+    return state.data, attempts_used
+
+
 def _decompose_spec_impl(
     spec_path: Path,
     project_name: str,
@@ -407,116 +645,20 @@ def _decompose_spec_impl(
     # #696 slice 7: the caller's last check before the first paid call
     # (`ks factory --spec` measures the base here, in this run).
     before_spend()
-    data = None
-    last_error: str | None = None
-    attempts_used = 0
-
-    for attempt in range(1, max_retries + 1):
-        attempts_used = attempt
-        ui.info(f"Decomposition attempt {attempt}/{max_retries}")
-        emit(
-            PhaseStarted(
-                component=ARCHITECT_COMPONENT,
-                phase="decompose",
-                attempt=attempt,
-            )
-        )
-        phase_start = time.monotonic()
-
-        def attempt_failed(detail: str, *, started_at: float) -> None:
-            emit(
-                PhaseCompleted(
-                    component=ARCHITECT_COMPONENT,
-                    phase="decompose",
-                    passed=False,
-                    detail=detail[:200],
-                    duration_seconds=round(time.monotonic() - started_at, 2),
-                )
-            )
-
-        if last_error:
-            retry_prompt = (
-                f"{prompt}\n\n"
-                f"PREVIOUS ATTEMPT FAILED with error:\n{last_error}\n\n"
-                f"Please fix the error and output valid JSON."
-            )
-        else:
-            retry_prompt = prompt
-
-        output_lines: list[str] = []
-        total_bytes = 0
-        too_large = False
-        cursor = usage_cursor(agent)
-        try:
-            with recording_prompts(_for_attempt(prompt_call, attempt)):
-                for line in agent.run(retry_prompt, cwd=root_dir, timeout=timeout):
-                    output_lines.append(line)
-                    ui.stream_line("AI", line)
-                    if transcript is not None:
-                        transcript(line)
-                    total_bytes += len(line) + 1
-                    if total_bytes > MAX_AGENT_OUTPUT_BYTES:
-                        too_large = True
-                        ui.warn(
-                            "Decompose agent emitted "
-                            f">{MAX_AGENT_OUTPUT_BYTES // 1024 // 1024}MB; "
-                            "aborting this attempt."
-                        )
-                        break
-        except BaseException as exc:
-            attempt_failed(
-                f"{type(exc).__name__}: {exc}",
-                started_at=phase_start,
-            )
-            raise
-
-        stopped = _attempt_stopped(agent, cursor, too_large=too_large, timeout=timeout)
-        if stopped is not None:
-            last_error = stopped
-            attempt_failed(last_error, started_at=phase_start)
-            continue
-
-        try:
-            data = _extract_agent_json(agent, output_lines)
-        except ValueError as exc:
-            last_error = str(exc)
-            ui.warn(f"JSON extraction failed: {last_error}")
-            attempt_failed(last_error, started_at=phase_start)
-            continue
-
-        validation_errors = _validate_decompose_output(data, has_stack=bool(stack_pin))
-        if validation_errors:
-            last_error = _retry_feedback(validation_errors)
-            ui.warn(f"Validation failed: {last_error}")
-            attempt_failed(last_error, started_at=phase_start)
-            data = None
-            continue
-
-        prd_errors = _prd_schema_errors(data, project_name, single_pr)
-        if prd_errors:
-            last_error = _retry_feedback(prd_errors)
-            ui.warn(f"PRD validation failed: {last_error}")
-            attempt_failed(last_error, started_at=phase_start)
-            data = None
-            continue
-
-        last_error = None
-        emit(
-            PhaseCompleted(
-                component=ARCHITECT_COMPONENT,
-                phase="decompose",
-                passed=True,
-                duration_seconds=round(time.monotonic() - phase_start, 2),
-            )
-        )
-        break
-
-    if data is None:
-        # No files were written in the retry loop, so terminal failure
-        # leaves no partial state behind (R1.8).
-        raise ValueError(
-            f"Failed to decompose spec after {max_retries} attempts. Last error: {last_error}"
-        )
+    data, attempts_used = _run_architect(
+        prompt=prompt,
+        max_retries=max_retries,
+        agent=agent,
+        ui=ui,
+        root_dir=root_dir,
+        timeout=timeout,
+        transcript=transcript,
+        prompt_call=prompt_call,
+        stack_pin=stack_pin,
+        project_name=project_name,
+        single_pr=single_pr,
+        emit=emit,
+    )
 
     # Surface AND persist red-team findings before doing any further
     # work (R1.7): the artifact and journal event are written for halt,
