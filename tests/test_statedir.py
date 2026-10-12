@@ -300,6 +300,17 @@ class TestLegacyHaltPaths:
             ".kstrl/queue/pause.json",
             ".kstrl/queue/github_processed.json",
             "**/kstrl/statedir.py",
+            # #776 L10: the verifier and the autonomy ladder were divided
+            # into modules. A diff that edits the moved code must halt as it
+            # did before the move, so each module is a member.
+            "**/kstrl/verify.py",
+            "**/kstrl/scrubbed_run.py",
+            "**/kstrl/verify_model.py",
+            "**/kstrl/verify_commands.py",
+            "**/kstrl/verify_diff.py",
+            "**/kstrl/autonomy.py",
+            "**/kstrl/autonomy_config.py",
+            "**/kstrl/autonomy_transitions.py",
         }
         for path in expected:
             assert path in ENFORCEMENT_MACHINERY_PATHS
