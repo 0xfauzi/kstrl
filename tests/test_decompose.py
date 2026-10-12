@@ -32,7 +32,8 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl.decompose import SpecBlockerError, decompose_spec
+from kstrl.decompose import decompose_spec
+from kstrl.decompose_audit import SpecBlockerError
 from kstrl.evolution import EvolutionJournal
 from kstrl.evolution_config import EvolutionConfig
 from kstrl.journal_rows import SPEC_ISSUES_EVENT
@@ -618,7 +619,7 @@ class TestARegisterThatDidNotLandFailsTheDecompose:
         )
         with (
             patch(
-                "kstrl.decompose.write_decisions",
+                "kstrl.decompose_audit.write_decisions",
                 side_effect=OSError("no space left on device"),
             ),
             pytest.raises(SpecBlockerError) as exc_info,
@@ -1001,13 +1002,13 @@ class TestPrdValidationInsideRetryLoop:
         """If writing component 2's PRD fails, component 1's already
         written PRD and the directories created for it are removed; the
         spec-issues audit artifact survives."""
-        import kstrl.decompose as decompose_mod
+        import kstrl.decompose_plan as decompose_plan_mod
 
         spec_file = tmp_path / "spec.md"
         spec_file.write_text("# Feature")
         (tmp_path / "scripts" / "kstrl").mkdir(parents=True)
 
-        real_generate = decompose_mod._generate_component_prd
+        real_generate = decompose_plan_mod._generate_component_prd
         calls: list[str] = []
 
         def flaky_generate(
@@ -1029,7 +1030,7 @@ class TestPrdValidationInsideRetryLoop:
                 plan_id=plan_id,
             )
 
-        monkeypatch.setattr(decompose_mod, "_generate_component_prd", flaky_generate)
+        monkeypatch.setattr(decompose_plan_mod, "_generate_component_prd", flaky_generate)
 
         agent = MockDecomposeAgent(VALID_DECOMPOSE_OUTPUT)
         with pytest.raises(OSError, match="disk full"):

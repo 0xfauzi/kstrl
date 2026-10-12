@@ -313,7 +313,7 @@ class TestDecomposeBlockerOutput:
         import kstrl.cli_architect as cli_architect_mod
         import kstrl.cli_factory as cli_factory_mod
         from kstrl.decisions import SpecDecision
-        from kstrl.decompose import SpecBlockerError
+        from kstrl.decompose_audit import SpecBlockerError
 
         spec_file = tmp_path / "spec.md"
         spec_file.write_text("# Vague spec")
@@ -606,7 +606,7 @@ def _halting_decompose(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
     import kstrl.cli_architect as cli_architect_mod
     import kstrl.cli_factory as cli_factory_mod
     from kstrl.decisions import SpecDecision
-    from kstrl.decompose import SpecBlockerError
+    from kstrl.decompose_audit import SpecBlockerError
 
     seen: dict[str, object] = {}
 

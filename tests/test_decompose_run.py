@@ -14,7 +14,8 @@ import pytest
 
 from kstrl.agents.base import ARCHITECT_COMPONENT, ARCHITECT_ROLE, UsageRecord
 from kstrl.commandrun import open_command_run
-from kstrl.decompose import SpecBlockerError, decompose_spec
+from kstrl.decompose import decompose_spec
+from kstrl.decompose_audit import SpecBlockerError
 from kstrl.reducer import load_run_state
 from kstrl.ui.plain import PlainUI
 from tests.helpers.before_spend import no_base_check
@@ -160,8 +161,7 @@ class TestDecomposeRun:
             tmp_path,
             MockDecomposeAgent(MINOR_ISSUE_OUTPUT),
         )
-
-        state, _ = load_run_state(tmp_path)
+        state, events_path = load_run_state(tmp_path)
         assert state.kind == "decompose"
         assert state.finished
         # The forming DAG: architect first, then the manifest order.
@@ -171,10 +171,10 @@ class TestDecomposeRun:
         ]
         architect = state.components[ARCHITECT_COMPONENT]
         assert architect.status == "completed"
-        assert [p["phase"] for p in architect.phase_history] == [
-            "decompose",
-            "audit",
-        ]
+        assert [p["phase"] for p in architect.phase_history] == ["decompose", "audit"]
+        rows = [json.loads(line) for line in events_path.read_text().splitlines()]
+        started = [r["data"]["phase"] for r in rows if r["event"] == "phase_started"]
+        assert started == ["decompose", "audit"]
         assert all(p["passed"] for p in architect.phase_history)
         assert [a["label"] for a in state.artifacts] == [
             "spec_issues",
@@ -476,6 +476,11 @@ class TestArchitectUsageIsPrinted:
         _decompose(tmp_path, MeteringAgent(MINOR_ISSUE_OUTPUT), console)
         assert "Architect usage" in console.getvalue()
         assert "0.5000" in console.getvalue()
+        # The summary of the written plan (two components, one story each).
+        # In the same test so that the test count stays (#776 L11): without
+        # it, a summary that lost its lines left the suite green (#776 B3D3 plants).
+        assert "Components:   2" in console.getvalue()
+        assert "Total stories: 2" in console.getvalue()
 
     def test_the_heading_is_not_the_factory_run_heading(
         self,

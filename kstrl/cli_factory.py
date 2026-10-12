@@ -37,7 +37,8 @@ from kstrl.cli_seam import _console_ui, _use_cli_value, cli
 from kstrl.commandrun import open_command_run
 from kstrl.config import KstrlConfig, reconcile_progress_config
 from kstrl.config_report import normalize_ui_mode as _normalize_ui_mode
-from kstrl.decompose import SpecBlockerError, decompose_spec
+from kstrl.decompose import decompose_spec
+from kstrl.decompose_audit import SpecBlockerError
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_lock import _RunLock

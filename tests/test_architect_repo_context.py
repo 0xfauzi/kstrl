@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import decompose, decompose_prompt
+from kstrl import decompose_audit, decompose_prompt
 from kstrl.decompose import decompose_spec
 from kstrl.decompose_prompt import build_decompose_prompt
 from kstrl.ui.plain import PlainUI
@@ -138,7 +138,7 @@ def _decompose_halting_and_capture(root: Path, spec: Path) -> tuple[str, str]:
         _single_component_output([_story()], spec_issues=[BLOCKER_ISSUE])
     )
     buffer = io.StringIO()
-    with pytest.raises(decompose.SpecBlockerError):
+    with pytest.raises(decompose_audit.SpecBlockerError):
         decompose_spec(
             spec_path=spec,
             project_name="test",

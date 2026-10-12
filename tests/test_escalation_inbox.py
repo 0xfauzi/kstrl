@@ -23,7 +23,8 @@ from typing import Any
 
 import pytest
 
-from kstrl.decompose import SpecBlockerError, decompose_spec
+from kstrl.decompose import decompose_spec
+from kstrl.decompose_audit import SpecBlockerError
 from kstrl.inbox import Inbox, InboxItem, ItemKind, ItemStatus
 from kstrl.manifest import Manifest
 from kstrl.statedir import ControlStateError
@@ -408,14 +409,14 @@ class TestInProcessFailures:
 
 # --- the census: every halt opens an item -----------------------------------
 
-HALT = "kstrl.decompose.SpecBlockerError"
+HALT = "kstrl.decompose_audit.SpecBlockerError"
 EMITTER = "kstrl.decisions.open_escalation_item"
 
 #: Every scope in ``kstrl/`` that constructs a ``SpecBlockerError``, and
 #: how many times. A new row, or a count that moved, is a new decompose
 #: halt path: call ``decisions.open_escalation_item`` before it, then
 #: add the row here.
-EXPECTED_HALTS = {"decompose.py::_halt": 1}
+EXPECTED_HALTS = {"decompose_audit.py::_halt": 1}
 
 #: One control per disjunct of the net, and the two coverage outcomes.
 CONTROL_LOCAL = """
@@ -427,7 +428,7 @@ def halt(escalated):
 """
 
 CONTROL_ALIAS = """
-from kstrl.decompose import SpecBlockerError as Halt
+from kstrl.decompose_audit import SpecBlockerError as Halt
 
 def halt(escalated):
     raise Halt(escalated)
@@ -435,7 +436,7 @@ def halt(escalated):
 
 CONTROL_WITH = """
 from kstrl.decisions import open_escalation_item
-from kstrl.decompose import SpecBlockerError
+from kstrl.decompose_audit import SpecBlockerError
 
 def halt(escalated):
     open_escalation_item(escalated)
@@ -444,7 +445,7 @@ def halt(escalated):
 
 CONTROL_AFTER = """
 from kstrl.decisions import open_escalation_item
-from kstrl.decompose import SpecBlockerError
+from kstrl.decompose_audit import SpecBlockerError
 
 def halt(escalated):
     error = SpecBlockerError(escalated)
@@ -454,7 +455,7 @@ def halt(escalated):
 
 CONTROL_NESTED = """
 from kstrl.decisions import open_escalation_item
-from kstrl.decompose import SpecBlockerError
+from kstrl.decompose_audit import SpecBlockerError
 
 def halt(escalated):
     def later():
