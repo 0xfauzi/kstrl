@@ -13,7 +13,6 @@ from typing import TYPE_CHECKING, Any
 
 from kstrl.agents.base import UsageTotals
 from kstrl.agents.proc import kill_active_process_groups
-from kstrl.breaker import BreakerConfig
 from kstrl.config import (
     KstrlConfig,
 )
@@ -24,15 +23,11 @@ from kstrl.contract import (
     run_contract_testing,
 )
 from kstrl.event_catalog import (
-    AdversarialAgentSelected,
-    AutonomyLevelApplied,
     ComponentStarted,
     PhaseStarted,
-    RunPlan,
-    RunStarted,
 )
 from kstrl.event_catalog import ContractResult as ContractResultEvent
-from kstrl.events import EventBus, EventSink, JsonlSink, RunPaths, V1CompatSink
+from kstrl.events import EventBus, RunPaths
 from kstrl.factory_acceptance import (
     _carry,
     _plan_gated,
@@ -41,34 +36,21 @@ from kstrl.factory_acceptance import (
     _record_contract_failures,
     _reset_contract_breakers,
     _resolve_round_base,
-    _stamp_feature_base,
 )
 from kstrl.factory_agents import (
     AdversarialAgentSelection,
-    _adversarial_phase_gates,
-    _engineer_sandbox,
-    _warn_unsandboxable_reviewers,
-    resolve_adversarial_selection,
+    _select_reviewers,
 )
-from kstrl.factory_autonomy import _resolve_ladder
 from kstrl.factory_config import (
     FactoryConfig,
-    claim_gate_unreachable_warning,
-    merge_gate_unreachable_warning,
 )
 from kstrl.factory_launch import (
     LaunchPlan,
-    _print_execution_header,
     _refused_before_launch,
-    _resolve_max_parallel,
-    build_launch_plan,
     submit_args,
 )
 from kstrl.factory_lock import FactoryLockHeldError, _acquire_run_lock, _RunLock
 from kstrl.factory_preflight import (
-    _emit_stack_confirmation,
-    _record_run_scope,
-    _report_preflight,
     _run_preflights,
 )
 from kstrl.factory_result import (
@@ -77,17 +59,24 @@ from kstrl.factory_result import (
     _clear_partial_usage,
     _salvage_aborted_usage,
 )
-from kstrl.factory_run import RunContext
+from kstrl.factory_run import (
+    RunContext,
+    _announce_run,
+    _make_run_state,
+    _open_run_sinks,
+    _resolve_envelope,
+    _resolve_limits,
+    _stage_launch,
+    _start_manifest,
+)
 from kstrl.factory_summary import _finish_run
 from kstrl.factory_worker import (
     _install_worker_signal_forwarding,
-    _report_operator_files,
     _run_component,
 )
 from kstrl.factory_worktrees import (
     _cleanup_pass_worktrees,
     _cleanup_worktree,
-    _interrupted_run_branches,
     _recut_point,
     _setup_worktree,
     _start_from_dependencies,
@@ -101,17 +90,12 @@ from kstrl.knowledge import (
 )
 from kstrl.knowledge_distill import distill_facts
 from kstrl.knowledge_facts import KnowledgeConfig
-from kstrl.linear import LinearConfig, build_linear_sink
 from kstrl.manifest import (
     Component,
-    ComponentStatus,
     Manifest,
 )
 from kstrl.observability import (
-    NotifyConfig,
     NotifyHooks,
-    NullProgressLog,
-    ProgressLog,
 )
 from kstrl.pipeline import ComponentPipeline
 from kstrl.pipeline_state import PipelineHooks, _iso_now
@@ -121,17 +105,14 @@ from kstrl.review import (
 from kstrl.runenvelope import RunEnvelope
 from kstrl.rung import release
 from kstrl.runstate import RunState
-from kstrl.sandbox import warn_unconfined
 from kstrl.scope import RunScope
 from kstrl.security import (
     run_security_review,
 )
 from kstrl.shutdown import StopController
-from kstrl.timeout import TimeoutConfig
 from kstrl.ui.bridge import EventBridgeUI
 from kstrl.verify import run_mechanical_verification
 from kstrl.verify_model import VerifyConfig
-from kstrl.version import kstrl_version
 
 if TYPE_CHECKING:
     from kstrl.ui.base import UI
@@ -729,21 +710,6 @@ def run_factory(
         run_lock.release()
 
 
-def _run_plan_event(manifest: Manifest, factory_config: FactoryConfig) -> RunPlan:
-    """The component DAG plus budget caps (chunk 4). Emitted at run start and
-    again when the integration loop appends a fix component (#483), because
-    the dashboard replaces its plan only on RunPlan."""
-    return RunPlan(
-        components=tuple(
-            {"id": c.id, "title": c.title, "deps": list(c.dependencies)}
-            for c in manifest.components
-        ),
-        max_total_tokens=factory_config.max_total_tokens,
-        max_adversarial_calls=factory_config.max_adversarial_calls,
-        max_cost_usd=factory_config.max_cost_usd,
-    )
-
-
 def _run_contract_round(
     phase3_round: Phase3Round,
     manifest: Manifest,
@@ -834,99 +800,8 @@ def _run_contract_round(
     )
 
 
-def _run_factory_locked(
-    manifest: Manifest,
-    factory_config: FactoryConfig,
-    base_config: KstrlConfig,
-    ui: UI,
-    root_dir: Path,
-    manifest_path: Path | None,
-    lock_held: bool,
-    interaction: InteractionChannel | None = None,
-    stop: StopController | None = None,
-    run_id_override: str | None = None,
-    notify_capture_output: bool = False,
-    architect_usage: UsageTotals | None = None,
-    architect_run_id: str = "",
-) -> FactoryResult:
-    """run_factory body; runs with the run-level lock resolved (held, or
-    explicitly degraded via --force-lock / no-fcntl platforms)."""
-    factory_start = time.monotonic()
-    # #154 fix round, A1b: this run's own start, wall-clock and in the
-    # same format as Component.completed_at, so release_ref_from can
-    # tell a merge THIS run produced from one a previous run left on
-    # the manifest. Captured before any component runs, so a merge
-    # this run confirms always has completed_at >= run_started_at.
-    run_started_at = _iso_now()
-    factory_result = FactoryResult()
-    # Stable run id shared by evolution journal and knowledge layer.
-    # current_run_id() carries microseconds plus a random nonce, so two
-    # factory invocations launched within the same UTC second neither
-    # collide on .kstrl/knowledge/<comp>/<run_id>/ directories nor
-    # order ambiguously (R1.6: same-second knowledge run dirs must sort
-    # by creation time, not by nonce).
-    # PR F needs the run dir known before the TUI starts: the caller
-    # may mint the id (format unchanged - knowledge.current_run_id).
-    run_id = run_id_override if run_id_override else current_run_id()
-
-    # #192: the run's config envelope, resolved ONCE, HERE, and injected
-    # into the pipeline, which never resolves one of its own.
-    # kstrl/runenvelope.py records the divergence that costs.
-    #
-    # Placed above the run directory's sinks deliberately, and that is
-    # the round-2 fix rather than the original placement. A section the
-    # entry preflight passed can be broken by the time this line runs -
-    # on `ks factory --spec` the architect spends 119 to 210 seconds
-    # between the two - and resolving seven sections in front of the run
-    # means seven that can reject. Rejecting HERE gives the operator the
-    # sentence and exit code 2 every other pre-spend refusal gives, and
-    # it happens before the run directory exists, so #257's invariant
-    # (nothing between the sinks and record_architect_usage returns
-    # early) is untouched.
-    #
-    # What it does to the money: a refusal here leaves no factory run, so
-    # the architect's spend is only in the decompose run it ran as (#567).
-    # `serve` charges that run to the launch whose process wrote it, the
-    # same path a spec blocker takes (#587).
-    resolved = RunEnvelope.resolve(
-        root_dir,
-        policy_override=factory_config.policy_config,
-    )
-    run_envelope = resolved.envelope
-    if run_envelope is None:
-        _report_preflight(
-            ui,
-            "the run configuration cannot be resolved",
-            list(resolved.problems),
-        )
-        factory_result.exit_code = 2
-        return factory_result
-    # Off the envelope rather than a second AutonomyConfig.load: the two
-    # reads were nine lines apart and cost two parses of the same file
-    # (measured 0.988ms, and a nested toml_parse_scope does not collapse
-    # them because the inner scope shadows the outer cache).
-    autonomy_config = run_envelope.autonomy
-    # R8.2: the level this run OPERATES at, resolved BEFORE the pipeline
-    # is constructed so the pipeline's envelope is the clamped one by
-    # construction rather than by a re-assignment 155 lines below it.
-    # Only the RESOLUTION is here; the bus event, the operator warnings
-    # and the FactoryConfig flag overrides stay at their original place
-    # below, where the sinks exist and the ordering against
-    # _adversarial_phase_gates is unchanged.
-    run_envelope, ladder = _resolve_ladder(run_envelope, factory_config, root_dir)
-
-    # Set up progress log. R3.2: defaults ON under .kstrl/ so a
-    # walk-away run always leaves an event trail `ks status` can
-    # join; [factory] progress_log_enabled = false (or env) opts out.
-    # Every event carries run_id so runs sharing the default file stay
-    # distinguishable.
-    # Dual-write (TUI rewrite chunk 3): typed schema-v2 events go to
-    # .kstrl/runs/<run_id>/events.jsonl via the EventBus; V1CompatSink
-    # delegates the v1-named subset to a real ProgressLog so the
-    # progress.jsonl byte format AND its attached ProgressSink
-    # observers (Linear, R7.4) stay untouched. progress_log_enabled =
-    # false suppresses BOTH files (symmetric opt-out).
-    progress_log: ProgressLog
+def _make_bus(ui: UI, run_id: str) -> EventBus:
+    """The event bus of the run: the bus of the UI bridge, or a private bus."""
     # Chunk 7: when the caller's UI is the event bridge (cli commands
     # via build_console), reuse ITS bus so the run's file sinks also
     # capture every imperative Log narration - the imperative call
@@ -937,169 +812,30 @@ def _run_factory_locked(
         bus.run_id = run_id
     else:
         bus = EventBus(run_id=run_id)
-    journal_path: Path | None = None
-    run_paths: RunPaths | None = None
-    run_file_sinks: list[EventSink] = []
-    # R8 (review finding P2-d): accounting storage is allocated for
-    # EVERY run, including progress_log_enabled = false. It used to be
-    # `run_paths`, which is gated on progress logging, so turning the
-    # observability opt-out on also deleted the only place a worker
-    # could publish its spend - a killed worker then recorded nothing
-    # and the run silently under-reported. Money is not observability:
-    # an opt-out may drop the narration, never the meter. This is the
-    # same directory as `run_paths` when progress logging is on; when it
-    # is off the run writes exactly one small JSON file per component
-    # attempt under .kstrl/runs/<run_id>/ and no events at all.
-    usage_paths = RunPaths.for_run(root_dir, run_id)
-    if not factory_config.progress_log_enabled:
-        progress_log = NullProgressLog()
-    else:
-        log_path = factory_config.progress_log_path or root_dir / ".kstrl" / "progress.jsonl"
-        progress_log = ProgressLog(log_path, run_id=run_id, warn=ui.warn)
-        journal_path = log_path
-        run_paths = RunPaths.for_run(root_dir, run_id)
-        run_file_sinks = [
-            JsonlSink(run_paths.events_file),
-            V1CompatSink(progress_log),
-        ]
-        for _sink in run_file_sinks:
-            bus.add_sink(_sink)
+    return bus
 
-    # R7.4: Linear sink - mirrors failure/budget events onto the issues
-    # the decompose hook mapped in the manifest. Observability only;
-    # build_linear_sink returns None (with a warning) rather than ever
-    # failing the run, and emit() isolates sink exceptions.
-    linear_sink = build_linear_sink(
-        manifest,
-        factory_config.linear_config or LinearConfig.load(root_dir),
-        run_id=run_id,
-        warn=ui.warn,
-    )
-    if linear_sink is not None:
-        progress_log.attach_sink(linear_sink)
 
-    # R3.2: notification hooks - each condition fires at most once per
-    # run, and hook failures only ever warn.
-    notify = NotifyHooks(
-        factory_config.notify_config or NotifyConfig.load(root_dir),
-        run_id=run_id,
-        project=manifest.project_name,
-        warn=ui.warn,
-        capture_output=notify_capture_output,
-    )
-
-    bus.emit(
-        RunStarted(
-            project=manifest.project_name,
-            components=len(manifest.components),
-            pid=os.getpid(),
-            architect_run_id=architect_run_id,
-        )
-    )
-    # Chunk 4: the component DAG + budget caps as one event, so a
-    # dashboard can draw the board without reading the manifest.
-    bus.emit(_run_plan_event(manifest, factory_config))
-    _emit_stack_confirmation(bus, factory_config.project_stack)
-
-    # R7.1: resolve which model family reviews this run's diffs ONCE so
-    # the choice is stable across components and the homogeneity warning
-    # prints once per run, not per component. Explicit config always
-    # wins; otherwise review/security default to the opposite family
-    # from the engineer when that CLI is available. The selection is an
-    # audit-trail event: same-family and cross-family runs must stay
-    # distinguishable in the progress log.
-    gates = _adversarial_phase_gates(factory_config, autonomy_config)
-    review_selection = resolve_adversarial_selection(
-        "review",
-        may_dispatch_adversarial=gates.may_dispatch,
-        explicit_cmd=factory_config.review_agent_cmd,
-        explicit_type=factory_config.review_agent_type,
-        explicit_model=factory_config.review_model,
-        # #498: the engineer's command, as security below and the
-        # --review-agent-cmd help both say. None auto-detected a real CLI.
-        fallback_cmd=base_config.agent_cmd,
-        fallback_type=base_config.agent_type,
-        fallback_model=None,
-        fallback_reasoning=None,
-        engineer_cmd=base_config.agent_cmd,
-        engineer_type=base_config.agent_type,
-    )
-    sec_cfg = factory_config.security_config
-    security_selection: AdversarialAgentSelection | None = resolve_adversarial_selection(
-        "security",
-        may_dispatch_adversarial=gates.may_dispatch,
-        explicit_cmd=sec_cfg.agent_cmd,
-        explicit_type=sec_cfg.agent_type,
-        explicit_model=sec_cfg.model,
-        fallback_cmd=base_config.agent_cmd,
-        fallback_type=base_config.agent_type,
-        fallback_model=base_config.model,
-        fallback_reasoning=base_config.model_reasoning_effort,
-        engineer_cmd=base_config.agent_cmd,
-        engineer_type=base_config.agent_type,
-    )
-    for _sel, _enabled in (
-        (review_selection, gates.review),
-        (security_selection, gates.security),
-    ):
-        if _sel is None or not _enabled:
-            continue
-        if _sel.warning:
-            ui.warn(f"  {_sel.warning}")
-        bus.emit(
-            AdversarialAgentSelected(
-                phase=_sel.phase,
-                agent_source=_sel.source,
-                identity=_sel.identity,
-                agent_type=_sel.agent_type,
-                model=_sel.model,
-                homogeneous=_sel.warning is not None,
-            )
-        )
-
-    if manifest_path is None:
-        manifest_path = root_dir / "scripts" / "kstrl" / "manifest.json"
-
-    # Load knowledge config once for the entire factory run, BEFORE the
-    # pipeline is constructed. Binding it at construction removes the
-    # late-binding accident where the old _handle_result closure read a
-    # name that was only assigned further down the function (R7.3).
-    knowledge_config = KnowledgeConfig.load(root_dir)
-
-    # #193: the mutable structures the scheduler below and the
-    # pipeline SHARE. Constructed once, here, and handed to the
-    # pipeline whole at the construction site below. Every field is
-    # an ALIAS and nothing may copy one, so everything from here on
-    # reads through `run_state.<field>`: a surviving local beside the
-    # struct is how one shared object silently becomes two.
-    # kstrl/runstate.py carries the measured evidence per field,
-    # including the one whose copy the whole suite missed.
-    #
-    # `factory_result` is the one field that also keeps a local name.
-    # It is built far above because the pre-flight refusal path
-    # returns it before this line is reached, so it cannot be created
-    # here. The local and `run_state.factory_result` are the same
-    # object and the suite does see them diverge: a fresh
-    # FactoryResult() here gives 11 failed / 176 passed on
-    # test_factory + test_pipeline + test_timeout_enforcement against
-    # a 187-passed control (#193).
-    run_state = RunState(factory_result=factory_result)
-    # Components abandoned by the scheduler backstop; their workers may
-    # still be alive, so their worktrees are never cleaned up here.
-    leaked_component_ids: set[str] = set()
-
-    # #269: every component's write scope, resolved HERE and nowhere
-    # else. Both guards read this one snapshot - the in-loop guard
-    # through _submit_args -> _run_component -> run_loop, and Phase 1
-    # through the pipeline below - so neither has to read a PRD to learn
-    # what a component may write, and the file the agent is allowed to
-    # edit stops being the file that decides what it may edit. Resolved
-    # before the pipeline exists and long before the scheduler can
-    # launch anything, which is what makes the value one the agent never
-    # had access to, with or without worktrees.
-    run_scope = RunScope.resolve(manifest, root_dir, base_config)
-    _record_run_scope(run_scope, bus, ui, manifest=manifest)
-
+def _build_pipeline(
+    manifest: Manifest,
+    manifest_path: Path,
+    factory_config: FactoryConfig,
+    base_config: KstrlConfig,
+    ui: UI,
+    root_dir: Path,
+    run_id: str,
+    bus: EventBus,
+    journal_path: Path | None,
+    run_paths: RunPaths | None,
+    interaction: InteractionChannel | None,
+    notify: NotifyHooks,
+    review_selection: AdversarialAgentSelection,
+    security_selection: AdversarialAgentSelection | None,
+    knowledge_config: KnowledgeConfig,
+    run_scope: RunScope,
+    run_envelope: RunEnvelope,
+    run_state: RunState,
+) -> ComponentPipeline:
+    """The pipeline of the run, with the hooks that this module resolves."""
     # R7.3: the per-component phase chain and every component state
     # transition live in ComponentPipeline. Hooks are resolved from this
     # module's globals HERE, at run start, so tests patching
@@ -1116,7 +852,7 @@ def _run_factory_locked(
     # the DAG check below rejects no longer does and discards that work,
     # and there is nothing here that can raise before
     # record_architect_usage.
-    pipeline = ComponentPipeline(
+    return ComponentPipeline(
         manifest=manifest,
         manifest_path=manifest_path,
         # LOAD-BEARING ALIAS, do not copy or freeze this argument.
@@ -1158,6 +894,93 @@ def _run_factory_locked(
         run_state=run_state,
     )
 
+
+def _run_factory_locked(
+    manifest: Manifest,
+    factory_config: FactoryConfig,
+    base_config: KstrlConfig,
+    ui: UI,
+    root_dir: Path,
+    manifest_path: Path | None,
+    lock_held: bool,
+    interaction: InteractionChannel | None = None,
+    stop: StopController | None = None,
+    run_id_override: str | None = None,
+    notify_capture_output: bool = False,
+    architect_usage: UsageTotals | None = None,
+    architect_run_id: str = "",
+) -> FactoryResult:
+    """run_factory body; runs with the run-level lock resolved (held, or
+    explicitly degraded via --force-lock / no-fcntl platforms)."""
+    factory_start = time.monotonic()
+    # #154 fix round, A1b: this run's own start, wall-clock and in the
+    # same format as Component.completed_at, so release_ref_from can
+    # tell a merge THIS run produced from one a previous run left on
+    # the manifest. Captured before any component runs, so a merge
+    # this run confirms always has completed_at >= run_started_at.
+    run_started_at = _iso_now()
+    factory_result = FactoryResult()
+    # Stable run id shared by evolution journal and knowledge layer.
+    # current_run_id() carries microseconds plus a random nonce, so two
+    # factory invocations launched within the same UTC second neither
+    # collide on .kstrl/knowledge/<comp>/<run_id>/ directories nor
+    # order ambiguously (R1.6: same-second knowledge run dirs must sort
+    # by creation time, not by nonce).
+    # PR F needs the run dir known before the TUI starts: the caller
+    # may mint the id (format unchanged - knowledge.current_run_id).
+    run_id = run_id_override if run_id_override else current_run_id()
+
+    opened = _resolve_envelope(root_dir, factory_config, ui, factory_result)
+    if opened is None:
+        return factory_result
+    run_envelope, autonomy_config, ladder = opened
+
+    bus = _make_bus(ui, run_id)
+    progress_log, journal_path, run_paths, run_file_sinks, usage_paths = _open_run_sinks(
+        factory_config, root_dir, run_id, ui, bus
+    )
+    notify = _announce_run(
+        manifest,
+        factory_config,
+        root_dir,
+        run_id,
+        ui,
+        bus,
+        progress_log,
+        notify_capture_output,
+        architect_run_id,
+    )
+    review_selection, security_selection = _select_reviewers(
+        factory_config, base_config, autonomy_config, ui, bus
+    )
+
+    if manifest_path is None:
+        manifest_path = root_dir / "scripts" / "kstrl" / "manifest.json"
+
+    knowledge_config, run_state, leaked_component_ids, run_scope = _make_run_state(
+        manifest, root_dir, base_config, ui, bus, factory_result
+    )
+    pipeline = _build_pipeline(
+        manifest,
+        manifest_path,
+        factory_config,
+        base_config,
+        ui,
+        root_dir,
+        run_id,
+        bus,
+        journal_path,
+        run_paths,
+        interaction,
+        notify,
+        review_selection,
+        security_selection,
+        knowledge_config,
+        run_scope,
+        run_envelope,
+        run_state,
+    )
+
     # #257: the architect's spend, incurred by the caller before this run
     # existed, enters the meter here - the first thing done to the
     # pipeline, and deliberately AHEAD of the DAG check below.
@@ -1182,131 +1005,30 @@ def _run_factory_locked(
     # rather than just after it.
     pipeline.record_architect_usage(architect_usage)
 
-    # Validate DAG
-    ui.section("Factory: Validating DAG")
-    dag_errors = manifest.validate_dag()
-    if dag_errors:
-        for err in dag_errors:
-            ui.err(f"  {err}")
-        # A refusal before any component runs: 2 under the #452 contract,
-        # which is also the code `ks serve` reads as a refusal (#531).
-        factory_result.exit_code = 2
+    interrupted_branches = _start_manifest(
+        manifest,
+        manifest_path,
+        root_dir,
+        ui,
+        pipeline,
+        run_id,
+        factory_config,
+        bus,
+        ladder,
+        factory_result,
+    )
+    if interrupted_branches is None:
         return factory_result
 
-    topo_order = manifest.topological_order()
-    ui.ok(f"DAG valid: {len(topo_order)} components in dependency order")
-
-    # #460: read BEFORE the reset below rewrites the statuses it keys on,
-    # and before _run_preflights prunes the worktree registrations it reads.
-    interrupted_branches = _interrupted_run_branches(manifest, root_dir)
-
-    # Crash recovery: reset intermediate states
-    for comp in manifest.components:
-        if comp.status in (
-            ComponentStatus.RUNNING.value,
-            ComponentStatus.VERIFYING.value,
-        ):
-            ui.info(f"  Resetting '{comp.id}' from {comp.status} to PENDING")
-            comp.status = ComponentStatus.PENDING.value
-
-    # #463: a run the manifest names that never reached its summary hands
-    # its attempts, readings and spend to this one. After the reset above,
-    # so the components this run will run again are PENDING; before the
-    # run id below is saved, so a resume that dies here leaves the manifest
-    # naming the run whose record it had not yet taken over.
-    pipeline.carry_interrupted_run()
-
-    # R3.3: persist which run owns this manifest state. completed_at is
-    # blanked while the run is in flight and stamped in the summary
-    # epilogue, so "did the last run finish?" is answerable from the
-    # manifest alone (and later, from Linear).
-    manifest.run_id = run_id
-    manifest.kstrl_version = kstrl_version()
-    manifest.completed_at = ""
-    # R8.2: apply this run's permissions from the autonomy level. The
-    # bundle is computed at run start and WINS over contradicting config,
-    # so a hand-edited flag cannot grant autonomy the ladder never
-    # awarded; contradictions are recorded rather than silently dropped.
-    # Opt-in: when [autonomy] is disabled the config's own flags stand.
-    #
-    # RESOLVED far above, before the pipeline was constructed, because
-    # the level clamps the envelope (autonomy_level) and the pipeline
-    # must hold the clamped one. What is left here is the reporting and
-    # the FactoryConfig overrides, which stay in this position for two
-    # orderings that are load-bearing: the bus and its sinks exist by
-    # now, and `_adversarial_phase_gates` above read the CONFIGURED
-    # review_mode rather than the bundle's, exactly as before.
-    if ladder is not None:
-        factory_config.pause_before_pr_merge = ladder.bundle.pause_before_pr_merge
-        factory_config.review_mode = ladder.bundle.review_mode
-        bus.emit(
-            AutonomyLevelApplied(
-                level=int(ladder.level),
-                label=ladder.level.label,
-                flags=tuple(ladder.bundle.describe()),
-                overrides=tuple(ladder.clamps + ladder.overrides),
-            )
-        )
-        ui.kv("Autonomy", f"L{int(ladder.level)} - {ladder.level.label}")
-        for note in ladder.clamps:
-            ui.warn(f"  {note}")
-        # Each note carries its own verdict since #195: one of them
-        # reports a gate the run RETAINED, and a blanket "Manual override
-        # ignored" prefix would have contradicted it.
-        for note in ladder.overrides:
-            ui.warn(f"  {note}")
-
-    # Issue #207 (review P1): checked AFTER autonomy resolution, because
-    # the L1/L2 bundle can flip pause_before_pr_merge on when no config
-    # flag ever set it - any earlier check misses that path and the gate
-    # would be reported ON while _phase_checkpoint stays unreachable.
-    gate_warning = merge_gate_unreachable_warning(factory_config)
-    if gate_warning is not None:
-        ui.warn(gate_warning)
-    # R10.3: same timing, same reason - the L1/L2 bundle forces
-    # review_mode to hard above, so a claim gate that looked
-    # unreachable before autonomy resolved may be reachable now.
-    claim_warning = claim_gate_unreachable_warning(factory_config)
-    if claim_warning is not None:
-        ui.warn(claim_warning)
-
-    # R8.1: the manifest is a self-contained audit record of what merge
-    # guardrails were in force for this run. #192: read back off the
-    # PIPELINE, not off a local, so the hash is taken from the object
-    # the pipeline will enforce and an edit that forgets the assignment
-    # above fails a test rather than diverging silently.
-    manifest.policy_hash = pipeline.run_envelope.policy_hash()
-    manifest.save(manifest_path)
-
-    # R0.2 crash recovery: MERGE_PENDING is re-pollable, not failed.
-    # Re-poll before scheduling so confirmed merges unblock dependents.
-    pipeline.repoll_merge_pending()
-
-    max_parallel = _resolve_max_parallel(factory_config, ui)
-
-    # R0.1: TimeoutConfig is the single source for the agent-iteration and
-    # component wall-clock limits. Enforcement layers: the adapters kill
-    # their subprocess group, run_loop aborts on the component wall clock,
-    # and the scheduler backstop below catches a worker that hangs outside
-    # both (e.g. a stuck scaffold or codebase scan step).
-    timeout_cfg = factory_config.timeout_config or TimeoutConfig.load(root_dir)
-    backstop_seconds = (
-        timeout_cfg.component_total + timeout_cfg.scheduler_backstop_margin
-        if timeout_cfg.component_total > 0
-        else 0.0
+    max_parallel, timeout_cfg, backstop_seconds, breaker_cfg = _resolve_limits(
+        factory_config,
+        base_config,
+        root_dir,
+        ui,
+        run_envelope,
+        review_selection,
+        security_selection,
     )
-
-    # R7.5: no-progress circuit breaker limits, forwarded into every
-    # engineer loop. It reads the diff only (#696 decision 10).
-    breaker_cfg = BreakerConfig.load(root_dir)
-
-    # R7.5: OS-level sandbox intent for the agent subprocesses, off the
-    # envelope (#192). An engineer with no sandbox (a custom agent command,
-    # or [sandbox] enabled = false) is a warning the run records in its
-    # events.jsonl, never a refusal (#700, owner decision 2026-10-09).
-    warn_unconfined(ui.warn, run_envelope.sandbox, {"engineer": base_config.agent_cmd})
-    _warn_unsandboxable_reviewers(ui, review_selection, security_selection)
-    factory_config.engineer_sandbox = _engineer_sandbox(run_envelope.sandbox, base_config)
 
     run_register = _plan_gated(
         _run_preflights(
@@ -1330,22 +1052,9 @@ def _run_factory_locked(
     if isinstance(run_register, int):
         factory_result.exit_code = run_register
         return factory_result
-    # #481: after the refusals (a refused run stamps nothing) and the
-    # worktree preflight's fetch, and before the merge decisions below,
-    # which can merge a component into the base.
-    _stamp_feature_base(manifest, manifest_path, root_dir, ui)
-    # #465: after every pre-spend refusal (a refused run must not have
-    # pushed or merged anything) and before anything is scheduled, so the
-    # dependents of an approved component are cut from a base that holds it.
-    pipeline.apply_merge_decisions()
-    # #595: after the merge decisions and before any engineer is
-    # scheduled, so an approval made mid-run changes nothing in it.
-    pipeline.snapshot_waivers()
-
-    _print_execution_header(ui, factory_config, max_parallel, timeout_cfg)
-
-    launch = build_launch_plan(
+    launch, engineer_verify = _stage_launch(
         manifest,
+        manifest_path,
         root_dir,
         run_id,
         ui,
@@ -1355,18 +1064,13 @@ def _run_factory_locked(
         base_config,
         knowledge_config,
         run_register,
+        max_parallel,
         timeout_cfg,
         breaker_cfg,
         run_envelope,
         run_paths,
         usage_paths,
     )
-
-    _report_operator_files(base_config, root_dir, ui)
-
-    # #261: run-invariant, so it is resolved once here rather than per
-    # component. None when Phase 1 is off.
-    engineer_verify = factory_config.engineer_verify_config()
 
     pass_ctx = _PassContext(
         manifest_path=manifest_path,

@@ -406,9 +406,11 @@ _EXPECTED_STATE_DIR_SPELLINGS: dict[str, int] = {
     # factory_preflight.py.
     # 2 until #776 B3F3 moved the cleanup of the pass worktrees, with one
     # spelling, to factory_worktrees.py (5 before, 6 after).
-    "factory.py": 1,
+    # 1 until #776 B3F4 moved the progress log spelling, with the start
+    # steps, to factory_run.py.
     "factory_lock.py": 2,
     "factory_preflight.py": 2,
+    "factory_run.py": 1,
     "factory_worktrees.py": 6,
     "integration_state.py": 1,
     "knowledge_facts.py": 2,

@@ -62,7 +62,7 @@ FLAG = "pause_before_pr_merge"
 #: one:
 #:
 #: - ``factory_config.py`` declares the field and loads it from toml and env.
-#: - ``factory.py`` resolves it against the ladder.
+#: - ``factory_autonomy.py`` resolves it against the ladder.
 #: - ``autonomy.py`` carries it on ``FlagBundle``.
 #: - ``autonomy_config.py`` decides it in ``pause_gate_for`` and rebuilds the
 #:   run's bundle around it in ``resolved_flag_bundle``.
@@ -79,8 +79,7 @@ EXPECTED_FLAG_SPELLINGS = {
     "autonomy_config.py": 5,
     "cli_factory.py": 7,
     "config_report.py": 1,
-    "factory.py": 2,
-    "factory_autonomy.py": 3,
+    "factory_autonomy.py": 5,
     "factory_config.py": 11,
     "pipeline_delivery.py": 1,
     "serve.py": 6,
@@ -97,11 +96,11 @@ EXPECTED_FLAG_SPELLINGS = {
 #: - ``factory_config.py::FactoryConfig.load`` twice, toml then env: both record
 #:   provenance, because the key's PRESENCE is the operator's act.
 #: - ``cli.py::factory``: the CLI flag, likewise.
-#: - ``factory.py::_run_factory_locked``: the ladder's own resolution,
+#: - ``factory_autonomy.py::_report_ladder``: the ladder's own resolution,
 #:   which reads provenance and must never add it.
 EXPECTED_FLAG_WRITES = {
     "cli_factory.py::factory": 1,
-    "factory.py::_run_factory_locked": 1,
+    "factory_autonomy.py::_report_ladder": 1,
     "factory_config.py::FactoryConfig.load": 2,
 }
 

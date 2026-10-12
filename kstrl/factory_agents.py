@@ -8,12 +8,14 @@ from typing import TYPE_CHECKING
 from kstrl.autonomy import AutonomyLevel, flag_bundle_for
 from kstrl.autonomy_config import AutonomyConfig
 from kstrl.config import KstrlConfig
+from kstrl.event_catalog import AdversarialAgentSelected
 from kstrl.factory_config import FactoryConfig, review_enabled, security_enabled
 from kstrl.review import ReviewMode
 from kstrl.sandbox import SandboxConfig
 
 if TYPE_CHECKING:
     from kstrl.agents.liveness import ProbeResult
+    from kstrl.events import EventBus
     from kstrl.ui.base import UI
 
 
@@ -397,3 +399,69 @@ def _engineer_sandbox(sandbox: SandboxConfig, base_config: KstrlConfig) -> str:
     if not sandbox.enabled or base_config.agent_cmd:
         return ""
     return _agent_identity(None, base_config.agent_type, None, ClaudeCodeAgent.is_available())
+
+
+def _select_reviewers(
+    factory_config: FactoryConfig,
+    base_config: KstrlConfig,
+    autonomy_config: AutonomyConfig,
+    ui: UI,
+    bus: EventBus,
+) -> tuple[AdversarialAgentSelection, AdversarialAgentSelection | None]:
+    """The review and security agent of the run, with the audit events."""
+    # R7.1: resolve which model family reviews this run's diffs ONCE so
+    # the choice is stable across components and the homogeneity warning
+    # prints once per run, not per component. Explicit config always
+    # wins; otherwise review/security default to the opposite family
+    # from the engineer when that CLI is available. The selection is an
+    # audit-trail event: same-family and cross-family runs must stay
+    # distinguishable in the progress log.
+    gates = _adversarial_phase_gates(factory_config, autonomy_config)
+    review_selection = resolve_adversarial_selection(
+        "review",
+        may_dispatch_adversarial=gates.may_dispatch,
+        explicit_cmd=factory_config.review_agent_cmd,
+        explicit_type=factory_config.review_agent_type,
+        explicit_model=factory_config.review_model,
+        # #498: the engineer's command, as security below and the
+        # --review-agent-cmd help both say. None auto-detected a real CLI.
+        fallback_cmd=base_config.agent_cmd,
+        fallback_type=base_config.agent_type,
+        fallback_model=None,
+        fallback_reasoning=None,
+        engineer_cmd=base_config.agent_cmd,
+        engineer_type=base_config.agent_type,
+    )
+    sec_cfg = factory_config.security_config
+    security_selection: AdversarialAgentSelection | None = resolve_adversarial_selection(
+        "security",
+        may_dispatch_adversarial=gates.may_dispatch,
+        explicit_cmd=sec_cfg.agent_cmd,
+        explicit_type=sec_cfg.agent_type,
+        explicit_model=sec_cfg.model,
+        fallback_cmd=base_config.agent_cmd,
+        fallback_type=base_config.agent_type,
+        fallback_model=base_config.model,
+        fallback_reasoning=base_config.model_reasoning_effort,
+        engineer_cmd=base_config.agent_cmd,
+        engineer_type=base_config.agent_type,
+    )
+    for _sel, _enabled in (
+        (review_selection, gates.review),
+        (security_selection, gates.security),
+    ):
+        if _sel is None or not _enabled:
+            continue
+        if _sel.warning:
+            ui.warn(f"  {_sel.warning}")
+        bus.emit(
+            AdversarialAgentSelected(
+                phase=_sel.phase,
+                agent_source=_sel.source,
+                identity=_sel.identity,
+                agent_type=_sel.agent_type,
+                model=_sel.model,
+                homogeneous=_sel.warning is not None,
+            )
+        )
+    return review_selection, security_selection
