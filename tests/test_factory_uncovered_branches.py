@@ -309,7 +309,7 @@ class TestRunEnd:
         manifest = _make_manifest([_component("comp-a")])
         manifest.single_pr = True
         with patch(
-            "kstrl.factory.create_single_pr",
+            "kstrl.factory_summary.create_single_pr",
             return_value=("kstrl/factory/test", "https://example.invalid/pr/1"),
         ):
             result, _ = _drive(tmp_path, manifest, _config(create_prs=True, single_pr=True))

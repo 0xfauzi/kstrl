@@ -42,6 +42,7 @@ from kstrl.runenvelope import RunEnvelope
 from kstrl.statedir import ControlStateError
 
 if TYPE_CHECKING:
+    from kstrl.factory_run import RunContext
     from kstrl.ui.base import UI
 
 
@@ -589,3 +590,26 @@ def _resolve_ladder(
     return clamped, _LadderOutcome(
         level=level, bundle=bundle, clamps=tuple(clamps), overrides=tuple(overrides)
     )
+
+
+def _record_autonomy(ctx: RunContext) -> None:
+    """Fold the run's outcome into the ladder, when the run has a ladder."""
+    # R8.2: fold this run's outcome into the ladder. Without this the
+    # counters never move, promotion is unreachable except by --force,
+    # and the promised automatic demotion never fires - the state machine
+    # would be real but inert. Runs INSIDE the factory lock, before it is
+    # released, so two runs cannot interleave read-modify-write.
+    if ctx.ladder is not None:
+        try:
+            _record_autonomy_outcome(
+                root_dir=ctx.root_dir,
+                manifest=ctx.manifest,
+                factory_result=ctx.factory_result,
+                autonomy_config=ctx.autonomy_config,
+                run_level=ctx.ladder.level,
+                bus=ctx.bus,
+                run_id=ctx.run_id,
+                ui=ctx.ui,
+            )
+        except Exception as exc:  # noqa: BLE001 - never fail a run on bookkeeping
+            ctx.ui.warn(f"Autonomy state update failed (non-fatal): {exc}")
