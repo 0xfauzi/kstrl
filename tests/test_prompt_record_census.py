@@ -319,7 +319,7 @@ EXPECTED_AGENT_CALLS: dict[str, int] = {
     "agent_output.py:collect_agent_output": 1,
     "agents/logging.py:LoggingAgent.run": 1,
     "cli_loop.py:_understand_core": 1,
-    "decompose.py:_decompose_spec_impl": 1,
+    "decompose.py:_stream_reply": 1,
     "factory_worker.py:_run_component": 1,
     "feature_cmd.py:run_feature": 3,
     "integration_phase.py:_review_round": 1,
@@ -355,7 +355,7 @@ CALLER_SCOPED: dict[str, str] = {
 EXPECTED_SCOPES: dict[str, int] = {
     "acceptance_design.py:_design_one": 1,
     "cli_loop.py:_understand_core": 1,
-    "decompose.py:_decompose_spec_impl": 1,
+    "decompose.py:_stream_reply": 1,
     "factory_worker.py:_run_component": 1,
     "feature_cmd.py:run_feature": 3,
     "integration_phase.py:_review_round": 1,
@@ -431,7 +431,7 @@ EXPECTED_BOUNDS: dict[str, tuple[str, str]] = {
     "agent_output.py:collect_agent_output": ("timeout", "its caller's timeout"),
     "agents/logging.py:LoggingAgent.run": ("timeout", "its caller's timeout"),
     "cli_loop.py:_understand_core": ("timeouts", "[timeout] agent_iteration and component_total"),
-    "decompose.py:_decompose_spec_impl": ("timeout", "[factory] architect_timeout_seconds"),
+    "decompose.py:_stream_reply": ("timeout", "[factory] architect_timeout_seconds"),
     "factory_worker.py:_run_component": (
         "timeouts",
         "[timeout] agent_iteration and component_total",
