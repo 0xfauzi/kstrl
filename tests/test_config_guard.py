@@ -94,10 +94,14 @@ EXPECTED_SURFACE_CLASSES |= {
     # It defines no methods, so it adds no site.
     "RunContext": frozenset(),
     # #776 B3: ``_LoopRun`` declares ``config: KstrlConfig`` and
-    # ``timeouts: TimeoutConfig`` as fields, the holder pattern. It holds
-    # references that ``run_loop`` received, resolves none, and defines
-    # no methods, so it adds no site.
+    # ``timeouts: TimeoutConfig`` as fields (holder pattern, no methods).
     "_LoopRun": frozenset(),
+    # #776 B3: ``LaunchPlan`` declares ``run_envelope``, ``breaker_cfg``,
+    # ``timeout_cfg``, ``knowledge_config`` and ``factory_config`` as
+    # fields, and ``_PassContext`` holds a ``LaunchPlan``. Both are the
+    # holder pattern, and neither defines a method, so neither adds a site.
+    "LaunchPlan": frozenset(),
+    "_PassContext": frozenset(),
     # #624: worktree_setup builds a WorktreeSetup from two of the config's
     # own fields and reads nothing from disk or the environment.
     # worktree_setup_for_component and worktree_setup_summary are the same
@@ -232,6 +236,7 @@ EXPECTED_FACTORY_SITES_BY_FILE = {
     "factory_agents.py": 0,
     "factory_autonomy.py": 1,
     "factory_config.py": 0,
+    "factory_launch.py": 0,
     "factory_lock.py": 0,
     "factory_preflight.py": 0,
     "factory_result.py": 0,

@@ -76,7 +76,7 @@ EXPECTED_SPELLINGS: frozenset[tuple[str, str]] = frozenset(
         # #226: written as f"{ADVERSARIAL_BUDGET_CHECK}:{phase}", so the
         # head folds through the imported constant rather than a literal.
         ("kstrl/pipeline_verdicts.py", "adversarial_budget"),
-        ("kstrl/factory.py", "scope_unreadable"),
+        ("kstrl/factory_launch.py", "scope_unreadable"),
         ("kstrl/pipeline_transitions.py", "aborted"),
         ("kstrl/pipeline_checks.py", "diff"),
         ("kstrl/pipeline.py", "engineer"),
@@ -216,7 +216,7 @@ class TestTheSignatureSpellingsAreInventoried:
         assert ("kstrl/factory_acceptance.py", "contract") in measured, "a direct assignment"
         assert ("kstrl/pipeline.py", "engineer") in measured, "a direct assignment"
         assert ("kstrl/pipeline_verdicts.py", "review") in measured, "a conditional expression"
-        assert ("kstrl/factory.py", "scope_unreadable") in measured, "an f-string constant"
+        assert ("kstrl/factory_launch.py", "scope_unreadable") in measured, "an f-string constant"
 
     def test_a_dynamic_tail_does_not_hide_the_check_name(self) -> None:
         """``f"contract:tier_{n}"`` is the fourth producer's actual
