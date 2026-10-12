@@ -416,7 +416,7 @@ NOT_A_PR_MERGED_BUILD: dict[str, str] = {
 EXPECTED_RECORDER_SPELLINGS: dict[str, int] = {
     "pipeline_merge.py::<module>": 1,
     "pipeline_merge.py::MergeGate._phase_pr": 1,
-    "pipeline.py::ComponentPipeline.repoll_merge_pending": 1,
+    "pipeline_merge.py::MergeGate.repoll_merge_pending": 1,
 }
 
 
