@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from collections.abc import Mapping
@@ -14,6 +15,9 @@ from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.worktree_sweep import WorktreeSweep, sweep_worktree, warn_sweep
 
 if TYPE_CHECKING:
+    from kstrl.factory_config import FactoryConfig
+    from kstrl.pipeline import ComponentPipeline
+    from kstrl.runstate import RunState
     from kstrl.ui.base import UI
 
 
@@ -620,3 +624,63 @@ def _has_merged(comp: Component) -> bool:
     if comp.status == ComponentStatus.MERGE_PENDING.value or comp.merge_sha:
         return True
     return comp.status == ComponentStatus.COMPLETED.value and bool(comp.pr_url)
+
+
+def _cleanup_pass_worktrees(
+    manifest: Manifest,
+    manifest_path: Path,
+    root_dir: Path,
+    run_id: str,
+    factory_config: FactoryConfig,
+    ui: UI,
+    run_state: RunState,
+    pipeline: ComponentPipeline,
+    leaked_component_ids: set[str],
+) -> None:
+    """Remove component worktrees left behind by a scheduling pass.
+
+    With ``keep_worktrees_on_failure`` (R3.3), a FAILED component's
+    worktree is kept and recorded as its evidence pointer instead of
+    removed, so the failure summary can point the operator at it.
+    """
+    if not factory_config.use_worktrees:
+        return
+    ui.section("Factory: Cleanup")
+    for comp_id in run_state.worktree_paths:
+        if comp_id in leaked_component_ids:
+            # A possibly-live worker still owns this worktree; removing
+            # it under the worker risks corrupting the main repo's
+            # worktree metadata.
+            ui.warn(f"  Keeping worktree for '{comp_id}' (leaked worker may still be running)")
+            continue
+        comp = manifest.get_component(comp_id)
+        if (
+            factory_config.keep_worktrees_on_failure
+            and comp is not None
+            and comp.status == ComponentStatus.FAILED.value
+        ):
+            comp.evidence_worktree = str(run_state.worktree_paths[comp_id])
+            ui.info(
+                f"  Keeping failed worktree for post-mortem: {run_state.worktree_paths[comp_id]}"
+            )
+            pipeline.record_worktree_sweep(
+                comp_id,
+                sweep_worktree(run_state.worktree_paths[comp_id]),
+                "cleanup",
+            )
+            continue
+        pipeline.record_worktree_sweep(
+            comp_id,
+            _cleanup_worktree(comp_id, root_dir, run_id),
+            "cleanup",
+        )
+    manifest.save(manifest_path)
+    # Drop the run's now-empty worktree dir; leaked workers' and
+    # failed components' kept worktrees leave it non-empty and it
+    # stays for the next run's prune pass (which preserves recorded
+    # evidence worktrees of still-FAILED components).
+    try:
+        os.rmdir(root_dir / ".kstrl" / "worktrees" / run_id)
+    except OSError:
+        pass
+    ui.ok("Worktrees cleaned up")
