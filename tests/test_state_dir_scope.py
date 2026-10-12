@@ -397,7 +397,7 @@ _EXPECTED_STATE_DIR_SPELLINGS: dict[str, int] = {
     "cli_learning.py": 1,
     "cli_report.py": 3,
     "contract.py": 1,
-    "decompose.py": 1,
+    "decompose_reply.py": 1,
     "doctor.py": 2,
     "events.py": 1,
     # 9 until #776 F2 moved five spellings, with the worktree code, to
@@ -607,6 +607,7 @@ class TestNothingTheLoopRunsWritesTheUncarvedEntries:
             "kstrl.intake_steering",
             # #545: the two writers of .kstrl/plan/.
             "kstrl.decompose",
+            "kstrl.decompose_reply",
             "kstrl.integration_fix",
         }
     )

@@ -130,6 +130,7 @@ ignore = []
 # bytes stable.
 "kstrl/decompose.py" = ["E501"]
 "kstrl/decompose_prompt.py" = ["E501"]
+"kstrl/decompose_reply.py" = ["E501"]
 "kstrl/review_prompt.py" = ["E501"]
 "kstrl/security.py" = ["E501"]
 "kstrl/knowledge_distill.py" = ["E501"]

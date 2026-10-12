@@ -37,7 +37,7 @@ import pytest
 from kstrl.cli_loop import _understand_core
 from kstrl.commandrun import CommandRun
 from kstrl.config import KstrlConfig, component_harness_paths
-from kstrl.decompose import _SCOPE_HAZARD_ADVICE
+from kstrl.decompose_reply import _SCOPE_HAZARD_ADVICE
 from kstrl.events import EventBus
 from kstrl.factory import (
     _SCOPE_HAZARD_REASONS,

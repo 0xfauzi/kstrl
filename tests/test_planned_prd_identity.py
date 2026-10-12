@@ -205,7 +205,8 @@ def _where(source: Path, node: ast.AST) -> str:
 EXPECTED_PLAN_PRD_PATH_SPELLINGS = {
     "decompose.py::<module>": 1,
     "decompose.py::_decompose_spec_impl": 1,
-    "decompose.py::_generate_component_prd": 1,
+    "decompose_reply.py::<module>": 1,
+    "decompose_reply.py::_generate_component_prd": 1,
     "statedir.py::<module>": 1,
     "statedir.py::pre_run_prd_path": 1,
 }
