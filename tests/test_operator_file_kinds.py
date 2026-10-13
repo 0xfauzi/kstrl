@@ -26,8 +26,8 @@ from typing import Literal, cast
 
 import pytest
 
-from kstrl.config import KstrlConfig
-from kstrl.config_keys import STRING_KEYS
+from kstrl.config.config import KstrlConfig
+from kstrl.config.config_keys import STRING_KEYS
 from kstrl.operator_context import (
     _KEPT,
     CUT_FLOOR,

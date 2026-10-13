@@ -12,7 +12,7 @@ from typing import IO, TYPE_CHECKING
 from kstrl.worktree_sweep import leftover_agents, leftover_lines
 
 if TYPE_CHECKING:
-    from kstrl.ui.base import UI
+    from kstrl.ui import UI
 
 
 class FactoryLockHeldError(RuntimeError):
@@ -101,7 +101,7 @@ def acquire_run_lock(root_dir: Path, ui: UI, force: bool) -> RunLock:
     to no exclusion with a warning. ``force=True`` proceeds past a held
     lock with a warning instead of raising FactoryLockHeldError.
     """
-    from kstrl.statedir import state_dir
+    from kstrl.io import state_dir
 
     lock_path = state_dir(root_dir) / "factory.lock"
     lock_path.parent.mkdir(parents=True, exist_ok=True)

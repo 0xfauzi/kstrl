@@ -16,7 +16,7 @@ from kstrl.sandbox import SandboxConfig
 if TYPE_CHECKING:
     from kstrl.agents.liveness import ProbeResult
     from kstrl.events import EventBus
-    from kstrl.ui.base import UI
+    from kstrl.ui import UI
 
 
 # R7.1: cross-model review rotation. Self-preference bias means a

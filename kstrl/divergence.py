@@ -124,8 +124,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
-from kstrl.config_numbers import check_numbers
-from kstrl.config_section import ConfigSection
+from kstrl.config import ConfigSection, check_numbers
 from kstrl.review import ReviewResult, ReviewVerdict, normalize_story_id
 
 #: Distinct, greppable prefix for the message, mirroring

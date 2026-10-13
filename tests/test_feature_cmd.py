@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
-from kstrl.config import KstrlConfig
+from kstrl.config.config import KstrlConfig
 from kstrl.feature_cmd import FeatureParams, run_feature
 from kstrl.interaction import (
     PromptRequest,

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from kstrl.agents.base import model_output_text
-from kstrl.jsonread import read_json
+from kstrl.io import read_json
 from kstrl.usage import timed_out_since, usage_cursor
 
 

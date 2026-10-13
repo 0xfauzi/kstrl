@@ -548,12 +548,12 @@ class TestTheExceptLadder:
         alone, with both TUI guard files green at 49 passed.
         """
         source = (
-            "from kstrl.config_resolve import SURFACE_REJECTIONS\n"
+            "from kstrl.config.config_resolve import SURFACE_REJECTIONS\n"
             "try:\n    pass\nexcept SURFACE_REJECTIONS:\n    pass\n"
         )
         clause = clauses(source)[0]
         assert clause.names == frozenset({"SURFACE_REJECTIONS"})
-        assert clause.origins == frozenset({"kstrl.config_resolve.SURFACE_REJECTIONS"})
+        assert clause.origins == frozenset({"kstrl.config.config_resolve.SURFACE_REJECTIONS"})
 
     def test_a_bare_name_bound_to_a_tuple_has_a_name_and_no_origin(self) -> None:
         """The mutation itself. Same spelling, no import, so a rule stated

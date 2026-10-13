@@ -28,7 +28,7 @@ single place that routes a phase failure into a transition. LLM- and
 subprocess-heavy phase functions are injected via ``PipelineHooks`` (the
 factory resolves them from its own module globals at run start, so the
 historical ``patch("kstrl.factory.run_review")`` seam keeps working),
-and ``kstrl.git`` functions are looked up on the module at call time
+and ``kstrl.git.git`` functions are looked up on the module at call time
 for the same reason.
 """
 
@@ -37,8 +37,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl import event_catalog, git
+from kstrl import event_catalog
 from kstrl.context import IterationContext, IterationRecord
+from kstrl.git import git
 from kstrl.manifest import (
     Component,
     ComponentStatus,

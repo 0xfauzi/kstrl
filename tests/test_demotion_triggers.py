@@ -32,10 +32,10 @@ from kstrl.autonomy import (
 )
 from kstrl.autonomy_config import AutonomyConfig
 from kstrl.autonomy_transitions import apply_demotion, commit_transition
-from kstrl.config import ConfigError
+from kstrl.config.config import ConfigError
 from kstrl.config_preflight import config_problem_lines
 from kstrl.inbox import ItemKind
-from kstrl.statedir import CONTROL_AUTONOMY, control_file
+from kstrl.io.statedir import CONTROL_AUTONOMY, control_file
 from tests.helpers.demotion import inbox_items, make_ui, write_config
 
 # ---------------------------------------------------------------------------

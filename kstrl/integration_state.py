@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from kstrl import events as ev
-from kstrl.atomicio import atomic_write_json
+from kstrl.git import kstrl_version
 from kstrl.integration import (
     FINDING_ID_PREFIX,
     FINDING_KINDS,
@@ -19,10 +19,9 @@ from kstrl.integration import (
     STATUS_OPEN,
     OpenedFinding,
 )
-from kstrl.jsonread import read_json
+from kstrl.io import atomic_write_json, read_json
 from kstrl.manifest import Component, Manifest
 from kstrl.requirements import enum_field_error, required_field_error
-from kstrl.version import kstrl_version
 
 STATE_SCHEMA_VERSION = 1
 FIX_COMPONENT_PREFIX = "integration-fix-"

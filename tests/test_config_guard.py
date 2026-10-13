@@ -494,7 +494,7 @@ class TestConfigSurface:
         """
         planted = tmp_path / "lambda_reader.py"
         planted.write_text(
-            "from kstrl.config import load_toml_section, resolve_config_file\n\n\n"
+            "from kstrl.config.config import load_toml_section, resolve_config_file\n\n\n"
             "def build(root):\n"
             '    return (lambda: load_toml_section(resolve_config_file(root), "x"))()\n',
             encoding="utf-8",
@@ -512,7 +512,7 @@ class TestConfigSurface:
         Layer 2 resolves a surface reference through
         ``astwalk.bindings``; layer 1 still matches a PRIMITIVE by bare
         ``Name`` only, so ``c.load_toml_section`` after ``import
-        kstrl.config as c`` enrols nothing and both the raw and the
+        kstrl.config.config as c`` enrols nothing and both the raw and the
         attributed census stay at zero together. Measured in ``kstrl/``
         today: 54 bare-name primitive calls, 0 in the attribute form, so
         this is latent. Under ``strict=True`` so that teaching layer 1
@@ -527,7 +527,7 @@ class TestConfigSurface:
 
         astwalk.blind_spot(
             probe,
-            "import kstrl.config as c\n\n\ndef build(root):\n"
+            "import kstrl.config.config as c\n\n\ndef build(root):\n"
             '    return c.load_toml_section(c.resolve_config_file(root), "x")\n',
         )
 
@@ -550,7 +550,7 @@ class TestConfigSurface:
 
         astwalk.blind_spot(
             probe,
-            "import kstrl.config as c\n\n\ndef build(root):\n"
+            "import kstrl.config.config as c\n\n\ndef build(root):\n"
             '    return getattr(c, "load_toml_document")(root)\n',
         )
 

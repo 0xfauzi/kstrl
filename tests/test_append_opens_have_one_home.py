@@ -3,7 +3,7 @@
 #312 found the torn-tail defect on the evolution journal and #331 found
 six more appenders with the same one: a crash leaves a tail with no
 newline, the next append concatenates onto it, and the tolerant reader
-drops BOTH lines. The fix is ``kstrl/appendio.py``, and the thing that
+drops BOTH lines. The fix is ``kstrl/io/appendio.py``, and the thing that
 keeps it a fix is that a NEW appender cannot quietly open a file in
 append mode and start writing records into it.
 
@@ -125,7 +125,7 @@ _MODE_AT_ONE = frozenset({"builtins", "io", "os"})
 #: The one home. A site whose innermost scope is this one is the module
 #: every other appender is routed through, so it is exempt by identity
 #: rather than by a row.
-THE_ONE_HOME = "appendio.py:open_for_append"
+THE_ONE_HOME = "io/appendio.py:open_for_append"
 
 
 def mode_of(node: ast.Call) -> ast.expr | None:
@@ -265,7 +265,7 @@ ALLOWED_APPEND_OPENS: dict[str, tuple[Reason, str]] = {
     "factory_lock.py:acquire_run_lock": (Reason.LOCK_FILE, "the run lock"),
     "serve_gates.py:factory_lock_held": (Reason.LOCK_FILE, "reads whether the run lock is held"),
     "serve.py:serve_lock": (Reason.LOCK_FILE, "the daemon's own lock"),
-    "statedir.py:control_lock": (Reason.LOCK_FILE, "the control-directory lock"),
+    "io/statedir.py:control_lock": (Reason.LOCK_FILE, "the control-directory lock"),
     "replay.py:replay_lock": (Reason.LOCK_FILE, "the per-machine replay lock (#700 slice 3)"),
     "workqueue_store.py:queue_lock": (Reason.LOCK_FILE, "the queue lock"),
     "agents/logging.py:LoggingAgent.run": (Reason.TEXT_LOG, "the agent transcript"),
@@ -276,7 +276,7 @@ ALLOWED_APPEND_OPENS: dict[str, tuple[Reason, str]] = {
         Reason.TEXT_LOG,
         "a phase transcript",
     ),
-    "atomicio.py:_create_temp": (Reason.NOT_AN_APPEND, "os.open with O_WRONLY|O_CREAT|O_EXCL"),
+    "io/atomicio.py:_create_temp": (Reason.NOT_AN_APPEND, "os.open with O_WRONLY|O_CREAT|O_EXCL"),
     "factory_acceptance.py:_record_contract_event": (
         Reason.NOT_AN_APPEND,
         "EvolutionJournal.open(root_dir), a classmethod called open",
@@ -309,8 +309,8 @@ ALLOWED_APPEND_OPENS: dict[str, tuple[Reason, str]] = {
 #: members and not four.
 EXPECTED_APPEND_OPENS: dict[str, int] = {
     "agents/logging.py: self._log_path.open('a')": 1,
-    "appendio.py: open('a+b')": 1,
-    "atomicio.py: os.open(os.O_WRONLY | os.O_CREAT | os.O_EXCL)": 1,
+    "io/appendio.py: open('a+b')": 1,
+    "io/atomicio.py: os.open(os.O_WRONLY | os.O_CREAT | os.O_EXCL)": 1,
     "commandrun.py: open('a')": 1,
     "factory_acceptance.py: EvolutionJournal.open(root_dir)": 1,
     "factory_worker.py: open('a')": 2,
@@ -323,7 +323,7 @@ EXPECTED_APPEND_OPENS: dict[str, int] = {
     "replay.py: path.open('a+')": 1,
     "serve.py: open('a+')": 1,
     "serve_gates.py: open('a+')": 1,
-    "statedir.py: open('a+')": 1,
+    "io/statedir.py: open('a+')": 1,
     "workqueue_store.py: open('a+')": 1,
 }
 
@@ -477,8 +477,8 @@ def routed_append_census() -> dict[str, int]:
 #: lands here rather than in layer 1, which is the hole this closes: it
 #: would otherwise get no exclusion and change no pinned inventory.
 EXPECTED_ROUTED_APPENDS: dict[str, int] = {
-    "appendio.py: appending(lock=lock)": 1,
-    "appendio.py: open_for_append(lock=default (False))": 1,
+    "io/appendio.py: appending(lock=lock)": 1,
+    "io/appendio.py: open_for_append(lock=default (False))": 1,
     "events.py: open_for_append(lock=default (False))": 1,
     "evolution.py: append_records(lock=True)": 1,
     "evolution.py: append_records(lock=default (False))": 1,
@@ -598,7 +598,7 @@ class TestEveryAppendOpenHasOneHome:
             ),
             message=(
                 "The set of append-mode opens in kstrl/ changed. If this is a new "
-                "writer of records, route it through kstrl.appendio.append_records: "
+                "writer of records, route it through kstrl.io.appendio.append_records: "
                 "an unguarded append concatenates onto an unterminated tail and the "
                 "tolerant reader then drops BOTH lines (#312, #331). If it is not, "
                 "add it to EXPECTED_APPEND_OPENS and give it a row in "
@@ -615,8 +615,8 @@ class TestEveryAppendOpenHasOneHome:
         ]
 
         assert offenders == [], (
-            "An append-mode open outside kstrl/appendio.py with no row. Route it "
-            "through kstrl.appendio.append_records, or add a row to "
+            "An append-mode open outside kstrl/io/appendio.py with no row. Route it "
+            "through kstrl.io.appendio.append_records, or add a row to "
             f"ALLOWED_APPEND_OPENS with a reason. Offenders: {offenders}"
         )
 
@@ -652,7 +652,7 @@ class TestEveryAppendOpenHasOneHome:
                 # the snippet, exactly as layer 1's `_o = open` row is.
             ),
             message=(
-                "The set of calls into kstrl.appendio changed. If this is a new "
+                "The set of calls into kstrl.io.appendio changed. If this is a new "
                 "writer of records, decide whether it needs lock=True: without it "
                 "two writers can cost each other records and the repair count "
                 "(#330). Then add the row here with the answer."

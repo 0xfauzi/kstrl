@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.config import ConfigError, KstrlConfig, load_toml_section
+from kstrl.config.config import ConfigError, KstrlConfig, load_toml_section
 from kstrl.config_preflight import collect_config_problems
 from tests.test_gen_docs import _load_gen_docs
 

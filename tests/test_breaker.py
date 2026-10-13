@@ -20,7 +20,7 @@ from kstrl.breaker import (
     NoProgressBreaker,
     compute_diff_hash,
 )
-from kstrl.config import KstrlConfig
+from kstrl.config.config import KstrlConfig
 from kstrl.factory_result import ComponentResult
 from kstrl.loop import run_loop
 from kstrl.manifest import ComponentStatus

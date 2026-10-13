@@ -35,7 +35,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
-from kstrl import git, git_base
 from kstrl.acceptance import (
     ACCEPTANCE_DIR,
     FAIL,
@@ -56,12 +55,11 @@ from kstrl.acceptance import (
     limits,
     verdict_of,
 )
-from kstrl.atomicio import atomic_write_json
-from kstrl.jsonread import read_json
+from kstrl.git import git, git_base
+from kstrl.io import atomic_write_json, control_dir, read_json
 from kstrl.replay import Replay, Stage, replay_stack
 from kstrl.rung import Rung
 from kstrl.stack import REPLAY_BOUNDARY_REFUSED
-from kstrl.statedir import control_dir
 from kstrl.timeout import limit_seconds
 
 if TYPE_CHECKING:
@@ -69,7 +67,7 @@ if TYPE_CHECKING:
     from kstrl.inbox import InboxConfig, InboxItem
     from kstrl.manifest import Manifest
     from kstrl.stack import Stack
-    from kstrl.ui.base import UI
+    from kstrl.ui import UI
 
 #: The file of carried checks, under the control directory's acceptance
 #: directory, and the evidence file of one run's base replay of them.

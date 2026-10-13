@@ -9,7 +9,7 @@ from kstrl.verify_commands import run_fast_checks
 from kstrl.verify_model import VerificationResult, VerifyConfig
 
 if TYPE_CHECKING:
-    from kstrl.ui.base import UI
+    from kstrl.ui import UI
 
 #: H3 (#233): the block that hands the next engineer iteration the
 #: failures ``[verify] fast_iteration_checks`` measured after this one.

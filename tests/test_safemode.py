@@ -289,7 +289,7 @@ class TestQueue:
         tmp_path: Path,
     ) -> None:
         """Fail-closed: a corrupt marker means paused, never running."""
-        from kstrl.statedir import CONTROL_PAUSE, control_file
+        from kstrl.io.statedir import CONTROL_PAUSE, control_file
 
         path = control_file(tmp_path, CONTROL_PAUSE)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -627,7 +627,7 @@ class TestRoundTwoFindings:
         """The control reader and the queue reader return the same refusal
         text, so it is printed once. kstrl moves nothing: the file stays
         and the detail names it and the command that moves it."""
-        from kstrl.statedir import CONTROL_PAUSE, control_file, legacy_control_paths
+        from kstrl.io.statedir import CONTROL_PAUSE, control_file, legacy_control_paths
 
         legacy = legacy_control_paths(tmp_path)[CONTROL_PAUSE]
         legacy.parent.mkdir(parents=True, exist_ok=True)

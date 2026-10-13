@@ -36,16 +36,16 @@ from kstrl.factory_result import (
 )
 from kstrl.findings import POLICY_CATEGORY_PREFIX
 from kstrl.inbox import Inbox, InboxConfig, ItemKind
+from kstrl.io import ControlStateError
 from kstrl.manifest import (
     Manifest,
 )
 from kstrl.pipeline_merge import HITL_REJECT_CHECK, PR_CLOSED_CHECK
 from kstrl.runenvelope import RunEnvelope
-from kstrl.statedir import ControlStateError
 
 if TYPE_CHECKING:
     from kstrl.factory_run import RunContext
-    from kstrl.ui.base import UI
+    from kstrl.ui import UI
 
 
 class _HealthBreach(Protocol):

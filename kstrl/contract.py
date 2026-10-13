@@ -35,9 +35,8 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl import git
-from kstrl.config_numbers import check_numbers
-from kstrl.config_section import ConfigSection
+from kstrl.config import ConfigSection, check_numbers
+from kstrl.git import git
 from kstrl.manifest import Manifest
 from kstrl.rung import Rung
 from kstrl.scrubbed_run import ChildOutputDecodeError, run_scrubbed
@@ -50,7 +49,7 @@ from kstrl.worktree_setup import NO_SETUP, WorktreeSetup
 if TYPE_CHECKING:
     from kstrl.acceptance import PinnedPlan
     from kstrl.acceptance_carried import Carried
-    from kstrl.ui.base import UI
+    from kstrl.ui import UI
 
 
 class ContractMode(StrEnum):

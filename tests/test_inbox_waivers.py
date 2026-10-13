@@ -35,8 +35,8 @@ import pytest
 from kstrl.decompose_prompt import spec_digest
 from kstrl.findings import Finding
 from kstrl.inbox import Inbox, InboxConfig, InboxItem, ItemKind
+from kstrl.io.statedir import plan_prd_path
 from kstrl.manifest import Component, Manifest
-from kstrl.statedir import plan_prd_path
 from tests.helpers import gitrepo
 from tests.helpers.executables import write_executable
 from tests.helpers.stack_confirmation import confirm_stack, write_stack

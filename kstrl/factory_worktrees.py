@@ -10,8 +10,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl import git
-from kstrl.git_base import fetch_base_branch, resolve_base_ref
+from kstrl.git import fetch_base_branch, git, resolve_base_ref
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.manifest_merge import has_merged
 from kstrl.worktree_sweep import WorktreeSweep, sweep_worktree, warn_sweep
@@ -20,7 +19,7 @@ if TYPE_CHECKING:
     from kstrl.factory_config import FactoryConfig
     from kstrl.pipeline import ComponentPipeline
     from kstrl.runstate import RunState
-    from kstrl.ui.base import UI
+    from kstrl.ui import UI
 
 
 def _remove_stale_index_lock(root_dir: Path, component_id: str) -> None:

@@ -29,7 +29,8 @@ from kstrl.factory_result import (
     write_partial_usage,
 )
 from kstrl.feedforward import CodebaseScanConfig, build_codebase_scan_context
-from kstrl.git_base import resolve_base_ref
+from kstrl.git import resolve_base_ref
+from kstrl.io import pre_run_prd_path
 from kstrl.loop_budget import LoopBudget
 from kstrl.operator_context import (
     GOLDEN_PATTERNS,
@@ -40,7 +41,6 @@ from kstrl.operator_context import (
 )
 from kstrl.sandbox import SandboxConfig
 from kstrl.scope import ComponentScope
-from kstrl.statedir import pre_run_prd_path
 from kstrl.timeout import TimeoutConfig
 from kstrl.usage import UsageTotals, collect_usage
 from kstrl.verify_model import VerifyConfig
@@ -51,7 +51,7 @@ from kstrl.worktree_sweep import (
 )
 
 if TYPE_CHECKING:
-    from kstrl.ui.base import UI
+    from kstrl.ui import UI
 
 
 #: H3 (#303): the in-loop guard-violation error _run_component builds when
@@ -334,8 +334,8 @@ def _run_component(
         get_agent,
     )
     from kstrl.loop import run_loop
+    from kstrl.ui import PlainUI
     from kstrl.ui.bridge import EventBridgeUI, NullPrompter
-    from kstrl.ui.plain import PlainUI
 
     start = time.monotonic()
     worktree_path = Path(worktree_path_str)

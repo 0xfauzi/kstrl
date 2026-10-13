@@ -13,7 +13,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
-from kstrl.appendio import JOURNAL_REPAIR_EVENT, REPAIR_DETAIL, append_records
 from kstrl.evolution_config import EvolutionConfig
 from kstrl.experiments_tsv import EXPERIMENTS_HEADER, ExperimentsDialect
 from kstrl.failure_signatures import (
@@ -22,12 +21,13 @@ from kstrl.failure_signatures import (
     signature_for_error,
     split_signature,
 )
+from kstrl.git import kstrl_version
+from kstrl.io import JOURNAL_REPAIR_EVENT, REPAIR_DETAIL, append_records
 from kstrl.journal_reads import JournalReads
 from kstrl.journal_rows import (
     FINDINGS_SUPERSEDED_EVENT,
     JOURNAL_SCHEMA_VERSION,
 )
-from kstrl.version import kstrl_version
 
 if TYPE_CHECKING:
     from kstrl.findings import Finding
@@ -63,7 +63,7 @@ logger = logging.getLogger("kstrl.evolution")
 # invent an outcome. It exists to be grepped: it is the only durable
 # trace that a crash tore the file.
 #
-# #331 moved the declaration to ``kstrl.appendio``, where the six
+# #331 moved the declaration to ``kstrl.io.appendio``, where the six
 # appenders that can write it can all reach it. The import above is
 # what binds the name in this module, for _repair_entry which writes
 # the row and get_repair_count which counts it.
@@ -666,7 +666,7 @@ class EvolutionJournal(JournalReads):
         #312: a crash mid-write leaves a tail with no newline, and an
         append onto that tail concatenates the two into one unparseable
         line, so the tolerant reader drops the NEW entry as well. The
-        mechanism and the repair now live in ``kstrl.appendio``, which
+        mechanism and the repair now live in ``kstrl.io.appendio``, which
         #331 hoisted them into when five more appenders were measured
         with the same defect; the ``"a+b"`` open, the probe, the single
         write and the encoding are all described there.

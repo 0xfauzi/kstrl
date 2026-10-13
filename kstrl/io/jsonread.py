@@ -1,6 +1,6 @@
 """Reading a JSON document: the parse, and its error taxonomy.
 
-#427. The sibling of ``kstrl.config_toml.load_toml_document``, one
+#427. The sibling of ``kstrl.config.config_toml.load_toml_document``, one
 parser over, and it exists for the same reason.
 
 ``json.loads`` raises for a family of bad input that is not enumerable

@@ -34,11 +34,12 @@ from kstrl.agents.prompt_record import (
     record_prompt,
     recording_prompts,
 )
-from kstrl.atomicio import atomic_write_json
 from kstrl.cli import cli
 from kstrl.events import RunPaths
+from kstrl.git.version import kstrl_version
 from kstrl.init_cmd import gitignore_block, run_init
-from kstrl.runid import run_kind
+from kstrl.io.atomicio import atomic_write_json
+from kstrl.io.runid import run_kind
 from kstrl.safemode import safe_mode_reasons
 from kstrl.ui.plain import PlainUI
 from kstrl.usage import (
@@ -47,7 +48,6 @@ from kstrl.usage import (
     INTEGRATION_COMPONENT,
     INTEGRATION_ROLE,
 )
-from kstrl.version import kstrl_version
 from tests.helpers import gitrepo
 from tests.helpers import integration_harness as h
 from tests.helpers.executables import write_executable

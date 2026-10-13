@@ -24,8 +24,7 @@ from kstrl.cli_preflight import (
 )
 from kstrl.cli_seam import _console_ui, _resolve_path, _resolve_root, _use_cli_value, cli
 from kstrl.commandrun import CommandRun, open_command_run
-from kstrl.config import KstrlConfig, parse_paths, resolve_config_file
-from kstrl.config_numbers import LIMIT_FLOAT, LIMIT_INT
+from kstrl.config import LIMIT_FLOAT, LIMIT_INT, KstrlConfig, parse_paths, resolve_config_file
 from kstrl.config_report import UI_MODES
 from kstrl.config_report import normalize_ui_mode as _normalize_ui_mode
 from kstrl.event_catalog import (
@@ -41,14 +40,14 @@ from kstrl.event_catalog import (
 )
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
-from kstrl.git_base import detect_base_branch
+from kstrl.git import detect_base_branch
 from kstrl.init_cmd import run_init
 from kstrl.loop import run_loop
 from kstrl.prd import PRD
 from kstrl.sandbox import SandboxConfig, warn_unconfined
 from kstrl.shutdown import StopController, install_signal_handlers
 from kstrl.timeout import TimeoutConfig
-from kstrl.ui.base import UI
+from kstrl.ui import UI
 
 # Issue #207: `ks run` forces these FactoryConfig fields because it is by
 # definition a local, single-component, no-PR invocation. When the resolved

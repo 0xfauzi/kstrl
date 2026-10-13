@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any, Final
 from kstrl.names import role_component_key
 
 if TYPE_CHECKING:
-    from kstrl.ui.base import UI
+    from kstrl.ui import UI
 
 logger = logging.getLogger(__name__)
 

@@ -481,7 +481,7 @@ class TestTheReadBytesExclusion:
         # shape, read and decode outside any try.
         "ci_state.py": 2,
         "cli_queue.py": 1,  # #644: queue_answer, read and decode guarded separately
-        "config_toml.py": 1,
+        "config/config_toml.py": 1,
         "baseline.py": 1,
         "inbox.py": 1,
         "integration_state.py": 1,  # #482: the launch_record.py shape
@@ -812,4 +812,4 @@ class TestTheGuardIsPointedAtSomething:
         assert len(package_sources()) > 100, "the corpus derivation is wrong"
 
     def test_the_package_root_is_the_real_one(self) -> None:
-        assert (KSTRL_PACKAGE / "config.py").is_file()
+        assert (KSTRL_PACKAGE / "config/config.py").is_file()

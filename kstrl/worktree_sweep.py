@@ -42,7 +42,7 @@ from kstrl.procgroup import pid_is_alive, read_group_members, signal_group
 from kstrl.scrubbed_run import ChildOutputDecodeError, run_scrubbed
 
 if TYPE_CHECKING:
-    from kstrl.ui.base import UI
+    from kstrl.ui import UI
 
 logger = logging.getLogger(__name__)
 

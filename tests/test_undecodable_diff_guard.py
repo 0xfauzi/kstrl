@@ -1,6 +1,6 @@
 """#416 Guard 1, split out of ``tests/test_undecodable_diff.py`` (#423).
 
-Pure static analysis: every test here parses ``kstrl/git.py`` or a planted
+Pure static analysis: every test here parses ``kstrl/git/git.py`` or a planted
 source string and asks whether a decode failure would be converted to
 ``GitDiffError``. None of it drives a real git subprocess, which is what
 lets it live apart from the real-repository behaviour tests in
@@ -8,7 +8,7 @@ lets it live apart from the real-repository behaviour tests in
 file under the repo's 800-line ratchet; nothing here changed behaviour.
 
 Closed by construction over the property that DEFINES a strict reader: a
-function in ``kstrl/git.py`` whose own body raises ``GitDiffError``. A new
+function in ``kstrl/git/git.py`` whose own body raises ``GitDiffError``. A new
 reader is in the subject the moment it raises, so there is no ledger to go
 stale.
 """
@@ -42,7 +42,7 @@ from tests.helpers.encodingspawn import SPAWN_TARGETS, text_mode
 #: The exact spelling only. The round-two review of #416 measured that the
 #: CPython-derived set (``BaseException``, ``Exception``, ``UnicodeDecodeError``,
 #: ``UnicodeError``, ``ValueError``) and this one narrow name give byte-identical
-#: censuses on the real ``kstrl/git.py`` (``{"get_diff_content": 1,
+#: censuses on the real ``kstrl/git/git.py`` (``{"get_diff_content": 1,
 #: "get_diff_name_status": 1, "get_diff_numstat": 1, "resolve_base_sha": 1}``,
 #: ``reported == []`` either way), so the wider set bought nothing but a
 #: clearing hole: ``except Exception: return []`` cleared under the derived
@@ -95,7 +95,7 @@ def _fn_spawns(
     return [node for node, _origin in spawns if id(node) in owned_ids and text_mode(node) is True]
 
 
-def scan_git_source(source: str, module: str = "kstrl.git") -> tuple[dict[str, int], list[str]]:
+def scan_git_source(source: str, module: str = "kstrl.git.git") -> tuple[dict[str, int], list[str]]:
     """``(census, reported)`` for one module's source text.
 
     TEXT rather than a path so the planted shapes below exercise the same
@@ -255,16 +255,16 @@ _PLANTED_WIDE_BUT_CONVERTING = _PLANTED_WITHOUT_HANDLER.replace(
 
 
 def _git_adapter_files() -> list[Path]:
-    """``kstrl/git.py`` and every ``kstrl/git_*.py``: the git adapter is a
+    """``kstrl/git/git.py`` and every ``kstrl/git/git_*.py``: the git adapter is a
     set of sibling modules (#776), and a walk of ``git.py`` alone passes with
     nothing to examine once a reader moves out of it."""
     root = Path(kstrl.__file__).parent
-    return [root / "git.py", *sorted(root.glob("git_*.py"))]
+    return [root / "git/git.py", *sorted((root / "git").glob("git_*.py"))]
 
 
 class TestEveryStrictReaderConvertsADecodeFailure:
     """Closed by construction over the property that DEFINES a strict
-    reader: a function in ``kstrl/git.py`` whose own body raises
+    reader: a function in ``kstrl/git/git.py`` whose own body raises
     ``GitDiffError``. Measured today: exactly four, one text-mode spawn
     each. A new reader is in the subject the moment it raises, so there is
     no ledger to go stale."""
@@ -274,10 +274,10 @@ class TestEveryStrictReaderConvertsADecodeFailure:
         over the ones the resolver happened to place."""
         files = _git_adapter_files()
         assert [label(path) for path in files] == [
-            "git.py",
-            "git_base.py",
-            "git_diff.py",
-            "git_tree.py",
+            "git/git.py",
+            "git/git_base.py",
+            "git/git_diff.py",
+            "git/git_tree.py",
         ]
         for path in files:
             tree = parsed(path)
@@ -293,14 +293,14 @@ class TestEveryStrictReaderConvertsADecodeFailure:
         }
 
         assert census == {
-            "git.py": {},
-            "git_base.py": {"resolve_base_sha": 1},
-            "git_diff.py": {
+            "git/git.py": {},
+            "git/git_base.py": {"resolve_base_sha": 1},
+            "git/git_diff.py": {
                 "get_diff_content": 1,
                 "get_diff_name_status": 1,
                 "get_diff_numstat": 1,
             },
-            "git_tree.py": {
+            "git/git_tree.py": {
                 "_committed_since": 1,
                 "get_changed_files": 2,
                 "get_untracked_files": 1,
@@ -415,7 +415,7 @@ def _binds_git_diff_error(node: ast.AST) -> TypeGuard[ast.ImportFrom]:
 
 
 class TestGitDiffErrorHasOneHome:
-    """Guard 1's closure is over ``kstrl/git.py`` and its subject predicate
+    """Guard 1's closure is over ``kstrl/git/git.py`` and its subject predicate
     keys on a bare ``ast.Name`` ``GitDiffError``. Neither fact was pinned
     before #416's round-two review: a raise elsewhere spelled
     ``git.GitDiffError(...)``, through an aliased import, or in another
@@ -436,13 +436,13 @@ class TestGitDiffErrorHasOneHome:
         # 30: #696's status_entries raises it three more times, for a
         # timeout, an undecodable path and a non-zero exit. 25: #696 slice 9
         # deletes read_blob, which raised it five times.
-        assert census == {"git_base.py": 4, "git_diff.py": 12, "git_tree.py": 9}
+        assert census == {"git/git_base.py": 4, "git/git_diff.py": 12, "git/git_tree.py": 9}
 
     def test_no_importfrom_outside_git_py_binds_the_name(self) -> None:
         offenders = [
             f"{label(source_file)}:{node.lineno}"
             for source_file in package_sources()
-            if label(source_file) != "git.py" and not label(source_file).startswith("git_")
+            if label(source_file) != "git/git.py" and not label(source_file).startswith("git/git_")
             for node in all_nodes(parse(source_file.read_text(encoding="utf-8")))
             if _binds_git_diff_error(node)
         ]
@@ -459,13 +459,13 @@ class TestGitDiffErrorHasOneHome:
             )
         ]
 
-        assert homes == ["git.py"]
+        assert homes == ["git/git.py"]
 
     def test_a_raise_of_the_name_in_another_module_is_reported(self) -> None:
         """The mutation: plant ``raise git.GitDiffError("x")`` in a source
         text and confirm the census sees it as a new file, rather than the
         walk silently ignoring it because it is not the bare ``Name``
-        spelling ``kstrl/git.py`` happens to use everywhere today."""
+        spelling ``kstrl/git/git.py`` happens to use everywhere today."""
         tree = parse('raise git.GitDiffError("x")\n')
         census: dict[str, int] = {}
         for node in all_nodes(tree):

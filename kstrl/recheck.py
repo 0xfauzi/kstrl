@@ -51,14 +51,14 @@ from kstrl.acceptance import (
     limits,
     plan_errors,
 )
-from kstrl.jsonread import read_json
+from kstrl.io import read_json
 from kstrl.replay import Replay, Stage, replay_stack
 from kstrl.rung import HOST_LABEL
 from kstrl.stack import REPLAY_BOUNDARY_REFUSED
 
 if TYPE_CHECKING:
     from kstrl.stack import Stack
-    from kstrl.ui.base import UI
+    from kstrl.ui import UI
 
 #: What a recheck says: why the record could not be rechecked (when this
 #: is not empty, nothing else is said), the lines to print, and whether

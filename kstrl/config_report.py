@@ -19,8 +19,7 @@ from dataclasses import fields as dataclass_fields
 from pathlib import Path
 from typing import Any
 
-from kstrl.config import KstrlConfig, load_toml_section, resolve_config_file
-from kstrl.config_resolve import scrubbed_environ
+from kstrl.config import KstrlConfig, load_toml_section, resolve_config_file, scrubbed_environ
 from kstrl.timeout import NO_LIMIT
 
 
@@ -58,20 +57,27 @@ def _string_key_rows(section: str) -> list[tuple[str, str]]:
     every gate green.
 
     The import is inside the function so the table is read at CALL time.
-    A module-level ``from kstrl.config_keys import STRING_KEYS`` snapshots
+    A module-level ``from kstrl.config.config_keys import STRING_KEYS`` snapshots
     the tuple this module was imported with, which is derived enough to be
     correct and not derived enough to be testable: the mutation in
     tests/test_string_keys_reach_every_surface.py cannot reach it.
 
     From ``config_keys``, which owns the table, rather than from
-    ``kstrl.config``, which re-exports it (R10.9 moved it out because
+    ``kstrl.config.config``, which re-exports it (R10.9 moved it out because
     ``config.py`` was at the 800-line ratchet). The two names are the
     same object and that file pins the identity, so this is the same
     table the overlays read.
-    """
-    from kstrl.config_keys import STRING_KEYS
 
-    return [(key, field_name) for sec, key, _env, field_name, _p in STRING_KEYS if sec == section]
+    The read goes through the module object (#863 M1). ``from kstrl.config
+    import STRING_KEYS`` reads the binding of the package interface, a
+    third name, and a rebind of ``config_keys.STRING_KEYS`` does not
+    reach it: the interface step made that change, and the tenth-row test
+    became red.
+    """
+    from kstrl.config import config_keys
+
+    rows = config_keys.STRING_KEYS
+    return [(key, field_name) for sec, key, _env, field_name, _p in rows if sec == section]
 
 
 def show_sections() -> list[tuple[str, list[tuple[str, str]]]]:
@@ -373,8 +379,7 @@ def build_config_report(
     The base config still raises, because a malformed document or a bad
     ``[run]`` value leaves nothing to render beside the failure.
     """
-    from kstrl.config import toml_parse_scope
-    from kstrl.config_resolve import SURFACE_REJECTIONS, raise_if_defect
+    from kstrl.config import SURFACE_REJECTIONS, raise_if_defect, toml_parse_scope
 
     toml_path = resolve_config_file(root_dir)
     phase_sections = _phase_sections()

@@ -133,8 +133,8 @@ def _all_field_names(cfg_cls: Any) -> list[str]:
 def _section_specs() -> list[SectionSpec]:
     from kstrl.autonomy_config import AutonomyConfig
     from kstrl.breaker import BreakerConfig
-    from kstrl.config import KstrlConfig
-    from kstrl.config_keys import STRING_KEYS
+    from kstrl.config.config import KstrlConfig
+    from kstrl.config.config_keys import STRING_KEYS
     from kstrl.contract import ContractConfig
     from kstrl.divergence import DivergenceConfig
     from kstrl.evolution_config import EvolutionConfig

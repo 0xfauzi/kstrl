@@ -30,7 +30,7 @@ exact text. What a prompt carries is already on disk in the project
 (``CLAUDE.md``, the PRD, the knowledge store, the operator's memory
 file), in the diff the reviewer reads, or in the transcript; the record
 lands under ``.kstrl/``, which ``ks init`` gitignores, with the mode
-every other ``.kstrl/`` file gets (``kstrl/atomicio.py`` has no mode
+every other ``.kstrl/`` file gets (``kstrl/io/atomicio.py`` has no mode
 parameter by design).
 """
 
@@ -43,8 +43,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from kstrl.atomicio import atomic_write_json
-from kstrl.version import kstrl_version
+from kstrl.git import kstrl_version
+from kstrl.io import atomic_write_json
 
 #: Bumped when a field changes meaning; the reader refuses any other value.
 RECORD_SCHEMA: Final = 1

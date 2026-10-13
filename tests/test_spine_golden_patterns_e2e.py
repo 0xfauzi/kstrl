@@ -128,14 +128,14 @@ class TestTheScaffoldGoesNowhereUntilItIsEdited:
     ) -> None:
         root = _initialised_project(tmp_path)
         (root / GOLDEN_REL).write_text(
-            "# Golden patterns\n\n## Follow these\n\n- atomic writes: see `kstrl/atomicio.py`\n",
+            "# Golden patterns\n\n## Follow these\n\n- atomic writes: see `kstrl/io/atomicio.py`\n",
             encoding="utf-8",
         )
 
         prompt = _captured_prompts(root, tmp_path / "prompt.txt", monkeypatch)
 
         assert "=== GOLDEN PATTERNS (operator-authored) KSTRL-DATA-" in prompt
-        assert "- atomic writes: see `kstrl/atomicio.py`" in prompt
+        assert "- atomic writes: see `kstrl/io/atomicio.py`" in prompt
 
     def test_one_appended_line_to_the_scaffold_is_sent(
         self,
@@ -146,12 +146,12 @@ class TestTheScaffoldGoesNowhereUntilItIsEdited:
         one bullet in. The digest changes, so the whole file goes."""
         root = _initialised_project(tmp_path)
         with (root / GOLDEN_REL).open("a", encoding="utf-8") as handle:
-            handle.write("- atomic writes: see `kstrl/atomicio.py`\n")
+            handle.write("- atomic writes: see `kstrl/io/atomicio.py`\n")
 
         prompt = _captured_prompts(root, tmp_path / "prompt.txt", monkeypatch)
 
         assert "=== GOLDEN PATTERNS (operator-authored) KSTRL-DATA-" in prompt
-        assert "- atomic writes: see `kstrl/atomicio.py`" in prompt
+        assert "- atomic writes: see `kstrl/io/atomicio.py`" in prompt
 
 
 class TestTheMemoryScaffoldGoesNowhereUntilItIsEdited:

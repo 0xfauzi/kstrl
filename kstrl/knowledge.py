@@ -27,7 +27,6 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl.appendio import JOURNAL_REPAIR_EVENT, append_records
 from kstrl.fact_scope import (
     FACT_TIERS,
     TIER_CORE,
@@ -36,6 +35,7 @@ from kstrl.fact_scope import (
     is_stale,
     tier_for,
 )
+from kstrl.io import JOURNAL_REPAIR_EVENT, append_records
 from kstrl.knowledge_facts import (
     Fact,
     KnowledgeConfig,
@@ -632,7 +632,7 @@ def current_run_id() -> str:
     """Construct a run id for the knowledge layer.
 
     Format: ``factory-YYYYMMDD-HHMMSS.ffffff-<nonce>`` (see
-    ``kstrl.runid`` - the shared minting home since run kinds landed).
+    ``kstrl.io.runid`` - the shared minting home since run kinds landed).
     The microsecond field makes same-second ids order deterministically
     by creation time instead of by the random nonce; the nonce still
     guards against collisions inside the same microsecond. Old-format
@@ -640,6 +640,6 @@ def current_run_id() -> str:
     evolution journal) sort before same-second new-format ids because
     ``-`` < ``.``.
     """
-    from kstrl.runid import mint_run_id
+    from kstrl.io import mint_run_id
 
     return mint_run_id("factory")

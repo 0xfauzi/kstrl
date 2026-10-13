@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 from kstrl.acceptance import FAIL, PASS, Check, ComponentPlan, PinnedPlan, verdict_of
 
 if TYPE_CHECKING:
-    from kstrl.ui.base import UI
+    from kstrl.ui import UI
 
 
 #: What the base reading says of a component when the base removed every

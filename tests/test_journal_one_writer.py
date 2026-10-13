@@ -426,13 +426,13 @@ class TestOneWriter:
             sources=package_sources(),
             sees=folds_containing(JOURNAL_FILENAME),
             expected={
-                "atomicio.py": 1,  # prose in the module docstring
+                "io/atomicio.py": 1,  # prose in the module docstring
                 "event_catalog.py": 1,  # prose in a docstring
                 "evolution_config.py": 1,  # the EvolutionConfig default
                 "init_cmd.py": 1,  # a commented example in the scaffolded kstrl.toml
                 "knowledge.py": 1,  # prose in the module docstring
                 "pipeline_knowledge.py": 1,  # prose in a docstring
-                "statedir.py": 1,  # the state-dir inventory, by name
+                "io/statedir.py": 1,  # the state-dir inventory, by name
             },
             control='target = root / ("evolution" + ".jsonl")\n',
             message=(

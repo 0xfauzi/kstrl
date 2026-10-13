@@ -12,7 +12,7 @@ import click
 from kstrl.cli_preflight import _reject_blank_project_name
 from kstrl.cli_seam import _actor, _autonomy_ui, cli
 from kstrl.config_report import UI_MODES
-from kstrl.ui.base import UI
+from kstrl.ui import UI
 from kstrl.workqueue_items import ItemState
 
 
@@ -514,8 +514,8 @@ def queue_resume(root: Path | None, ui: str, no_color: bool) -> None:
     Also restarts the poison streak at 0, so the next serve cycle does not
     pause the queue again on the poisons the operator has looked at.
     """
+    from kstrl.io import ControlStateError
     from kstrl.serve_spend import ServeStateError, SpendLedger
-    from kstrl.statedir import ControlStateError
     from kstrl.workqueue_items import ItemState
     from kstrl.workqueue_store import queue_lock
 

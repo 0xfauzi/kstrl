@@ -27,7 +27,7 @@ from kstrl.manifest import MERGE_GATE_PARK_KEY, ComponentStatus, Manifest
 from kstrl.plan_gate import PLAN_GATE_KEY, spec_pin_errors
 from kstrl.retry_plan import RESUME_REFUSAL, plan_resume, print_resume_plan
 from kstrl.stack import STACK_KEY, load_stack
-from kstrl.ui.base import UI
+from kstrl.ui import UI
 
 if TYPE_CHECKING:
     from kstrl.inbox import InboxItem
@@ -119,7 +119,7 @@ def _inbox_for(root: Path | None) -> tuple[Path, Any]:
     items wait in the tree, so every ``ks inbox`` command refuses by name.
     """
     from kstrl.inbox import Inbox, InboxConfig
-    from kstrl.statedir import CONTROL_INBOX, legacy_control_refusal, legacy_control_remaining
+    from kstrl.io import CONTROL_INBOX, legacy_control_refusal, legacy_control_remaining
 
     root_dir = (root or Path.cwd()).resolve()
     if CONTROL_INBOX in legacy_control_remaining(root_dir):

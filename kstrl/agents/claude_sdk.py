@@ -40,7 +40,7 @@ from typing import IO, Any
 
 from kstrl.agents.proc import DeadlineStreamer, timeout_message
 from kstrl.agents.prompt_record import record_prompt
-from kstrl.jsonread import read_json
+from kstrl.io import read_json
 from kstrl.sandbox import (
     SandboxConfig,
     claude_review_sandbox_settings,

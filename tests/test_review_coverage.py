@@ -34,11 +34,11 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl import git_base, git_diff
-from kstrl.config import KstrlConfig
+from kstrl.config.config import KstrlConfig
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult
+from kstrl.git import git_base, git_diff
 from kstrl.manifest import Component, Manifest
 from kstrl.review import (
     ReviewMode,

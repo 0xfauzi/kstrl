@@ -37,7 +37,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from kstrl.atomicio import atomic_write_json
 from kstrl.calibration_baseline import (
     REPORT_FORMAT_VERSION as REPORT_FORMAT_VERSION,
 )
@@ -51,6 +50,7 @@ from kstrl.calibration_baseline import (
     mean,
     role_detection_rate,
 )
+from kstrl.io import atomic_write_json
 
 # ---------------------------------------------------------------------------
 # Codified thresholds (R5.1) - the single source of truth for what counts as

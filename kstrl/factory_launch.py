@@ -34,7 +34,7 @@ if TYPE_CHECKING:
     from kstrl.runstate import RunState
     from kstrl.scope import RunScope
     from kstrl.timeout import TimeoutConfig
-    from kstrl.ui.base import UI
+    from kstrl.ui import UI
 
 
 @dataclass(frozen=True)

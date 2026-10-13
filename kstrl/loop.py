@@ -9,17 +9,19 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl import git, git_tree, guards, statedir
+from kstrl import guards
 from kstrl.agents.proc import TIMEOUT_MESSAGE_PREFIX
 from kstrl.breaker import BreakerConfig, NoProgressBreaker
 from kstrl.event_catalog import IterationCompleted, IterationStarted
 from kstrl.events import EventBus
+from kstrl.git import git, git_tree
 from kstrl.interaction import (
     InteractionChannel,
     PromptKind,
     PromptRequest,
     UiInteractionChannel,
 )
+from kstrl.io import statedir
 from kstrl.iteration_prompt import (
     assemble_prompt,
     build_project_context,
@@ -37,7 +39,7 @@ from kstrl.verify_model import VerifyConfig
 if TYPE_CHECKING:
     from kstrl.agents.base import Agent
     from kstrl.config import KstrlConfig
-    from kstrl.ui.base import UI
+    from kstrl.ui import UI
 
 logger = logging.getLogger(__name__)
 

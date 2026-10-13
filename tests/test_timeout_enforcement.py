@@ -43,7 +43,7 @@ from kstrl.agents.claude_sdk import ClaudeSdkAgent
 from kstrl.agents.codex import CodexAgent
 from kstrl.agents.custom import CustomAgent
 from kstrl.agents.proc import TIMEOUT_MESSAGE_PREFIX, kill_active_process_groups
-from kstrl.config import KstrlConfig
+from kstrl.config.config import KstrlConfig
 from kstrl.factory import (
     _expired_futures,
     _next_backstop_wait,

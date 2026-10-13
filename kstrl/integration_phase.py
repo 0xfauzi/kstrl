@@ -9,12 +9,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl import git, git_base, git_tree
 from kstrl.agents.prompt_record import AgentCall, recording_prompts
 from kstrl.contract import (
     ContractMode,
     ContractResult,
 )
+from kstrl.git import git, git_base, git_tree, kstrl_version
 from kstrl.integration import (
     STATUS_HANDOFF,
     ExpectedStory,
@@ -53,14 +53,13 @@ from kstrl.temp_worktree import ContractCleanupError, create_temp_worktree, remo
 from kstrl.timeout import limit_seconds
 from kstrl.usage import INTEGRATION_COMPONENT, INTEGRATION_ROLE, collect_usage
 from kstrl.verify_model import VerificationResult
-from kstrl.version import kstrl_version
 
 if TYPE_CHECKING:
     from kstrl.factory_config import FactoryConfig
     from kstrl.manifest import Manifest
     from kstrl.pipeline import ComponentPipeline
     from kstrl.shutdown import StopController
-    from kstrl.ui.base import UI
+    from kstrl.ui import UI
 
 GATE_NOTE = (
     "Record only: the integration verdict does not gate this run, so it cannot "

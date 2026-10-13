@@ -11,7 +11,7 @@ is a failed row: `ks factory` goes on in that case and Phase 1 judges each
 component, but an agent-ready verdict must rest on a reading.
 
 The branch is the one `ks factory --spec`, `ks decompose` and `ks check`
-use when none is named (:func:`kstrl.git.detect_base_branch`), so the base
+use when none is named (:func:`kstrl.git.git.detect_base_branch`), so the base
 this measures is the one the next plan is cut from.
 """
 
@@ -21,10 +21,10 @@ import dataclasses
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl import git_base
 from kstrl.base_gates import measure_base_gates, reading_document, refusal_lines, warning_lines
 from kstrl.doctor import STATUS_FAIL, STATUS_OK, STATUS_WARN, DoctorCheck, _not_evaluated
 from kstrl.factory_config import FactoryConfig
+from kstrl.git import git_base
 from kstrl.isolation import prove_zones
 from kstrl.replay import Replay, replay_stack
 from kstrl.rung import HostFallback, ProvenRung, Rung, release
@@ -39,7 +39,7 @@ from kstrl.timeout import limit_seconds
 from kstrl.verify_model import VerifyConfig
 
 if TYPE_CHECKING:
-    from kstrl.ui.base import UI
+    from kstrl.ui import UI
 
 #: The row's name in the report.
 CHECK_NAME = "base_gates"

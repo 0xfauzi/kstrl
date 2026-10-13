@@ -5,14 +5,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl import git, git_tree
 from kstrl.breaker import BreakerConfig
+from kstrl.git import git, git_tree
 from kstrl.timeout import TimeoutConfig, describe_limit_seconds
 
 if TYPE_CHECKING:
     from kstrl.agents.base import Agent
     from kstrl.config import KstrlConfig
-    from kstrl.ui.base import UI
+    from kstrl.ui import UI
 
 
 def capture_guard_baseline(

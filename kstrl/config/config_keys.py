@@ -1,12 +1,12 @@
 """The kstrl.toml keys that overlay a ``KstrlConfig`` field from a string.
 
-Its own module because it is the part of ``kstrl/config.py`` that GROWS:
+Its own module because it is the part of ``kstrl/config/config.py`` that GROWS:
 every new ``[paths]`` file is a row here, and ``config.py`` was one line
 under the 800-line pre-commit ratchet when R10.9 came to add its row.
 Measured: the field plus the row took it from 799 to 801 and
 ``scripts/precommit/file_length_ratchet.py`` returned ``CROSSED``.
 
-It imports nothing, so no cycle is possible. ``kstrl.config`` re-exports
+It imports nothing, so no cycle is possible. ``kstrl.config.config`` re-exports
 the name and the loaders read it from there; ``kstrl/config_report.py``
 and ``scripts/gen_docs.py`` read it from here, which is where the table
 lives. Both names are the SAME object and

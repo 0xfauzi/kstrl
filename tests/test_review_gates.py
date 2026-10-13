@@ -29,12 +29,12 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl.config import KstrlConfig
+from kstrl.config.config import KstrlConfig
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult, FactoryResult
-from kstrl.git import GitDiffError
-from kstrl.git_diff import get_diff_content
+from kstrl.git.git import GitDiffError
+from kstrl.git.git_diff import get_diff_content
 from kstrl.manifest import Component, Manifest
 from kstrl.pipeline import ComponentPipeline
 from kstrl.review import (
@@ -432,7 +432,7 @@ def _run_with_budget(
             "kstrl.factory.run_security_review",
             return_value=SecurityResult(passed=True, mode="hard"),
         ) as mock_security,
-        patch("kstrl.git_diff.get_diff_content", return_value=""),
+        patch("kstrl.git.git_diff.get_diff_content", return_value=""),
     ):
         result = run_factory(
             manifest,
@@ -470,7 +470,7 @@ class TestFactorySkipTraces:
                 "kstrl.factory._run_component",
                 return_value=success,
             ),
-            patch("kstrl.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             result = run_factory(
                 manifest,
@@ -526,7 +526,7 @@ class TestFactorySkipTraces:
                 "kstrl.factory.run_review",
                 return_value=passing,
             ),
-            patch("kstrl.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             run_factory(
                 manifest,
@@ -836,7 +836,7 @@ class TestFactorySkipTraces:
                 "kstrl.factory._run_component",
                 return_value=success,
             ),
-            patch("kstrl.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             run_factory(
                 manifest,
@@ -878,7 +878,7 @@ class TestFactoryReviewerCrash:
                 "kstrl.factory.run_review",
                 side_effect=fake_run_review,
             ),
-            patch("kstrl.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             result = run_factory(
                 manifest,
@@ -911,7 +911,7 @@ class TestFactoryReviewerCrash:
                 "kstrl.factory.run_review",
                 side_effect=RuntimeError("reviewer exploded"),
             ),
-            patch("kstrl.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             result = run_factory(
                 manifest,
@@ -949,7 +949,7 @@ class TestFactoryReviewerCrash:
                 "kstrl.factory.run_security_review",
                 side_effect=RuntimeError("security agent exploded"),
             ),
-            patch("kstrl.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             result = run_factory(
                 manifest,
@@ -1017,7 +1017,7 @@ class TestR13DiffErrors:
                 return_value=success,
             ),
             patch(
-                "kstrl.git_diff.get_diff_content",
+                "kstrl.git.git_diff.get_diff_content",
                 side_effect=GitDiffError("git diff exited 129"),
             ),
             patch("kstrl.factory.run_review") as mock_review,

@@ -1505,7 +1505,7 @@ PR carrying a reproducing test.
 
 Status: `[x]` - Shipped. Control-plane files resolve under
 `${XDG_STATE_HOME:-~/.local/state}/kstrl/<repo-id>/` via
-`kstrl/statedir.py` (`control_dir`,
+`kstrl/io/statedir.py` (`control_dir`,
 `control_lock`). Live copies of `autonomy.json`, `inbox.jsonl`,
 `spend.json`, `pause.json`, and `github_processed.json` leave the
 agent-reachable tree; locks, queue items, events, knowledge, and

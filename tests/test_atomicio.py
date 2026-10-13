@@ -6,7 +6,7 @@ functions we call: the defect was that the real bytes on the real disk
 came out 0600, so a mock cannot see it.
 
 Why the defects existed and why one helper owns them now is argued once,
-in ``kstrl/atomicio.py``'s module docstring, and deliberately not
+in ``kstrl/io/atomicio.py``'s module docstring, and deliberately not
 restated here.
 
 Related coverage elsewhere, so neither gets deleted as a duplicate:
@@ -32,8 +32,8 @@ from pathlib import Path
 
 import pytest
 
-import kstrl.atomicio
-from kstrl.atomicio import atomic_write_json, atomic_write_text
+import kstrl.io.atomicio
+from kstrl.io.atomicio import atomic_write_json, atomic_write_text
 from kstrl.scaffold_ledger import _atomic_replace
 from kstrl.workqueue_store import atomic_write
 from tests.helpers import astwalk
@@ -66,7 +66,7 @@ def run_under_c_locale(tmp_path: Path, body: str, *args: str) -> subprocess.Comp
     The child's stdout is ASCII too, so a caller that wants to see a
     non-ASCII value back must print ``ascii(value)``.
     """
-    repo_root = Path(kstrl.atomicio.__file__).parent.parent
+    repo_root = Path(kstrl.io.atomicio.__file__).parent.parent
     script = tmp_path / "under_c_locale.py"
     script.write_text(
         "import sys\n" + f"sys.path.insert(0, {ascii(str(repo_root))})\n" + body,
@@ -248,7 +248,7 @@ class TestEncodingIsPinnedNotInherited:
         result = run_under_c_locale(
             tmp_path,
             "from pathlib import Path\n"
-            "from kstrl.atomicio import atomic_write_text\n"
+            "from kstrl.io.atomicio import atomic_write_text\n"
             f"atomic_write_text(Path(sys.argv[1]), {ascii(NON_ASCII)})\n",
             str(target),
         )
@@ -329,7 +329,7 @@ class TestTheTempNameLoop:
         # third is fresh. A helper that opened without O_EXCL would
         # truncate somebody else's file instead of drawing again.
         names = iter(["aaaaaaaa", "aaaaaaaa", "bbbbbbbb"])
-        monkeypatch.setattr(kstrl.atomicio.secrets, "token_hex", lambda _n: next(names))
+        monkeypatch.setattr(kstrl.io.atomicio.secrets, "token_hex", lambda _n: next(names))
 
         target = tmp_path / "doc.txt"
         squatter = tmp_path / ".doc.txt-aaaaaaaa.tmp"
@@ -343,7 +343,7 @@ class TestTheTempNameLoop:
     def test_exhausting_every_name_raises_instead_of_looping_forever(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr(kstrl.atomicio.secrets, "token_hex", lambda _n: "collide")
+        monkeypatch.setattr(kstrl.io.atomicio.secrets, "token_hex", lambda _n: "collide")
         (tmp_path / ".doc.txt-collide.tmp").write_text("squatting", encoding="utf-8")
 
         with pytest.raises(FileExistsError, match="could not create a temp file"):
@@ -392,7 +392,7 @@ SPELLS_MKSTEMP = astwalk.spells("mkstemp")
 #: Every module in ``kstrl/`` that spells ``mkstemp``, and how many
 #: times. Empty, and meant to stay that way: a row here is a hand-rolled
 #: temp file, and the diff that adds one is where somebody says why
-#: ``kstrl.atomicio`` will not do.
+#: ``kstrl.io.atomicio`` will not do.
 EXPECTED_MKSTEMP_SPELLINGS: dict[str, int] = {}
 
 #: Calls this walk cannot name at all, because the AST holds no
@@ -482,7 +482,7 @@ class TestEveryCopyOfThePatternWasMigrated:
             control="import tempfile\nfd, path = tempfile.mkstemp(dir=str(target.parent))\n",
             message=(
                 "A module in kstrl/ names mkstemp. Route the write through "
-                "kstrl.atomicio instead: that is where the mode and encoding rules "
+                "kstrl.io.atomicio instead: that is where the mode and encoding rules "
                 "live, and a hand-rolled copy is how #291 came to have ten of them, "
                 "nine downgrading the mode."
             ),
@@ -496,7 +496,7 @@ class TestEveryCopyOfThePatternWasMigrated:
             undecided=EXPECTED_UNDECIDED_CALLS,
             message=(
                 "These still call mkstemp directly. Route the write through "
-                "kstrl.atomicio instead: that is where the mode and encoding rules "
+                "kstrl.io.atomicio instead: that is where the mode and encoding rules "
                 "live, and a hand-rolled copy is how #291 came to have ten of them, "
                 "nine downgrading the mode."
             ),
@@ -547,7 +547,7 @@ class TestTheMigrationNetCatchesWhatItClaims:
         assert self._spelled('import tempfile\ngetattr(tempfile, "mk" + "stemp")(dir=d)\n')
 
     def test_prose_naming_mkstemp_is_not_a_hit(self) -> None:
-        """Why the census tests EQUALITY: ``kstrl/atomicio.py``'s own
+        """Why the census tests EQUALITY: ``kstrl/io/atomicio.py``'s own
         docstring argues about mkstemp, and a substring search would need
         a suppression list that rots."""
         assert not self._spelled('"""Never hand-roll mkstemp plus os.replace."""\n')
@@ -679,7 +679,7 @@ class TestTheDescriptorIsOwnedBeforeAnythingCanFail:
     """#291 round two: a failing ``fchmod`` leaked the raw descriptor.
 
     Why the descriptor is handed to a context manager first is argued in
-    ``kstrl/atomicio.py``. These pin the count it was measured at, and
+    ``kstrl/io/atomicio.py``. These pin the count it was measured at, and
     the empty-temp property the reordering could have broken.
     """
 
@@ -696,7 +696,7 @@ class TestTheDescriptorIsOwnedBeforeAnythingCanFail:
         def refuse(fd: int, mode: int) -> None:
             raise PermissionError("fchmod not supported on this filesystem")
 
-        monkeypatch.setattr(kstrl.atomicio.os, "fchmod", refuse)
+        monkeypatch.setattr(kstrl.io.atomicio.os, "fchmod", refuse)
         before = self._open_fd_count()
         for _ in range(20):
             with pytest.raises(PermissionError):
@@ -719,13 +719,13 @@ class TestTheDescriptorIsOwnedBeforeAnythingCanFail:
         os.chmod(target, 0o600)
 
         sizes: list[int] = []
-        real_fchmod = kstrl.atomicio.os.fchmod
+        real_fchmod = kstrl.io.atomicio.os.fchmod
 
         def record(fd: int, mode: int) -> None:
             sizes.append(os.fstat(fd).st_size)
             real_fchmod(fd, mode)
 
-        monkeypatch.setattr(kstrl.atomicio.os, "fchmod", record)
+        monkeypatch.setattr(kstrl.io.atomicio.os, "fchmod", record)
         atomic_write_text(target, "brand new secret")
         monkeypatch.undo()
 

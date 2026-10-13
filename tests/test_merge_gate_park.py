@@ -303,7 +303,7 @@ class TestTheParkIsItsOwnOutcome:
         ([inbox] disabled OR UNWRITABLE) while the stack's earlier,
         already-approved item stays readable.
         """
-        from kstrl.statedir import CONTROL_INBOX, control_file
+        from kstrl.io.statedir import CONTROL_INBOX, control_file
 
         root = _repo(tmp_path)
         env = _env(tmp_path)

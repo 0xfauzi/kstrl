@@ -30,17 +30,16 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl import git, git_base, git_diff, git_tree, pr
-from kstrl.atomicio import atomic_write_json
-from kstrl.config import resolve_config_file
+from kstrl import pr
+from kstrl.config import SURFACE_REJECTIONS, raise_if_defect, resolve_config_file
 from kstrl.config_preflight import config_problem_lines
-from kstrl.config_resolve import SURFACE_REJECTIONS, raise_if_defect
+from kstrl.git import git, git_base, git_diff, git_tree
+from kstrl.io import STATE_DIR_NAME, atomic_write_json, state_dir
 from kstrl.policy import ENFORCEMENT_MACHINERY_PATHS, PolicyConfig, match_glob
 from kstrl.stack import NO_STACK, file_stack_item, legacy_proposal, stack_in_force
-from kstrl.statedir import STATE_DIR_NAME, state_dir
 
 if TYPE_CHECKING:
-    from kstrl.ui.base import UI
+    from kstrl.ui import UI
 
 #: Version of the `ks doctor --json` document. Its own number, not
 #: `CHECK_SCHEMA_VERSION`: the two documents answer different

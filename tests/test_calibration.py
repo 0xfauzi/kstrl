@@ -74,8 +74,8 @@ from kstrl.calibration_score import (
     security_false_positive,
 )
 from kstrl.decompose_prompt import build_decompose_prompt
-from kstrl.delimiters import generate_data_delimiter
-from kstrl.git_diff import get_diff_stat, pasted_change_source, repo_change_source
+from kstrl.git.git_diff import get_diff_stat, pasted_change_source, repo_change_source
+from kstrl.io.delimiters import generate_data_delimiter
 from kstrl.policy import parse_added_lines
 from kstrl.review import (
     VALID_CONCERN_CATEGORIES,

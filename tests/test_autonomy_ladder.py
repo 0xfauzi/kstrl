@@ -247,7 +247,7 @@ def _run_factory_with_autonomy(
     succeed: bool = True,
 ) -> object:
     """Run the factory against a stored level; return the FactoryConfig."""
-    from kstrl.config import KstrlConfig
+    from kstrl.config.config import KstrlConfig
     from kstrl.factory import run_factory
     from kstrl.factory_config import FactoryConfig
     from kstrl.factory_result import ComponentResult

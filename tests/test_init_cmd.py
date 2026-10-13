@@ -14,9 +14,9 @@ from pathlib import Path
 import pytest
 
 from kstrl import init_cmd
-from kstrl.appendio import append_records
 from kstrl.cli import cli
 from kstrl.init_cmd import GITIGNORE_BLOCK_MARKER, NEXT_STEPS, run_init
+from kstrl.io.appendio import append_records
 from kstrl.scaffold_templates import DEFAULT_MEMORY
 from kstrl.ui.plain import PlainUI
 from kstrl.ui.rich_ui import RichUI
@@ -223,7 +223,7 @@ class TestScaffoldContract:
         assert golden.exists()
         assert "## Follow these" in golden.read_text(encoding="utf-8")
 
-        edited = "# Golden patterns\n\n## Follow these\n\n- atomic writes: kstrl/atomicio.py\n"
+        edited = "# Golden patterns\n\n## Follow these\n\n- atomic writes: kstrl/io/atomicio.py\n"
         golden.write_text(edited, encoding="utf-8")
         code, _ = run_init_capturing(tmp_path)
 

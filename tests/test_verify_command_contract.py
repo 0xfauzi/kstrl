@@ -30,7 +30,7 @@ from unittest.mock import patch
 from click.testing import CliRunner
 
 from kstrl.cli import cli
-from kstrl.config import KstrlConfig
+from kstrl.config.config import KstrlConfig
 from kstrl.iteration_prompt import build_project_context
 from kstrl.loop import COMPLETION_MARKER, run_loop
 from kstrl.stack import STACK_PROMPT

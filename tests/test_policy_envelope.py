@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import git, git_diff
+from kstrl.git import git, git_diff
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.policy import PolicyConfig, parse_added_lines
 from kstrl.verify_diff import check_policy_envelope

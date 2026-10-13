@@ -15,7 +15,7 @@ from ``events.jsonl`` by ``ks status`` and replay.
 from __future__ import annotations
 
 from kstrl.event_catalog import Event, Log
-from kstrl.ui.base import UI
+from kstrl.ui import UI
 
 
 class UIBackedRenderer:

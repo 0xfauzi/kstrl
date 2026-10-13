@@ -46,7 +46,7 @@ transcript is on #700:
   workspace and outside it, so ``git commit`` failed in a kstrl worktree
   (``<root>/.git/worktrees/<id>/index.lock``) and in a plain checkout
   (``<root>/.git/index.lock``). With ``sandbox_workspace_write.writable_roots``
-  naming the paths of :func:`kstrl.git.git_write_paths`, and not a git dir,
+  naming the paths of :func:`kstrl.git.git.git_write_paths`, and not a git dir,
   the commit succeeded in both layouts, and a write to ``hooks``, ``config``
   or ``commondir`` stayed denied. A writable git dir lets a sandboxed
   command write a hook, or a ``commondir`` that points git at a config of
@@ -176,10 +176,9 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from kstrl.config_numbers import check_numbers
-from kstrl.config_section import ConfigSection
+from kstrl.config import ConfigSection, check_numbers
 from kstrl.git import git_write_paths
-from kstrl.jsonread import read_json
+from kstrl.io import read_json
 from kstrl.write_guard import GUARDED_TOOLS, HOOK_TIMEOUT_SECONDS, hook_command, ready_command
 
 if TYPE_CHECKING:

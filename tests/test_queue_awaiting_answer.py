@@ -31,7 +31,7 @@ from kstrl import events as ev
 from kstrl.cli import cli
 from kstrl.inbox import Inbox, InboxItem, ItemKind, ItemStatus
 from kstrl.intake_gh import GitHubIntakeConfig
-from kstrl.runid import mint_run_id, run_kind
+from kstrl.io.runid import mint_run_id, run_kind
 from kstrl.serve import serve_cycle
 from kstrl.serve_config import ServeConfig
 from kstrl.serve_outcome import RunOutcome, Verdict

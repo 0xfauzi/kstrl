@@ -49,7 +49,7 @@ from kstrl.usage import ARCHITECT_COMPONENT
 if TYPE_CHECKING:
     from kstrl.requirements import SpecRequirement
     from kstrl.spec_issues import SpecIssue
-    from kstrl.ui.base import UI
+    from kstrl.ui import UI
 
 
 class SpecBlockerError(Exception):

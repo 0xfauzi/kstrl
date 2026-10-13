@@ -40,15 +40,15 @@ from unittest.mock import patch
 import pytest
 
 from kstrl import factory_worker
-from kstrl.config import KstrlConfig
+from kstrl.config.config import KstrlConfig
 from kstrl.events import RunPaths
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult
+from kstrl.io.statedir import plan_prd_path
 from kstrl.manifest import Component, Manifest
 from kstrl.rung import HostFallback
 from kstrl.runstate import RunState
-from kstrl.statedir import plan_prd_path
 from kstrl.ui.plain import PlainUI
 from kstrl.verify_model import VerifyConfig
 from tests.helpers.stack_confirmation import in_process_stack
@@ -205,7 +205,7 @@ def _submitted(
         patch("kstrl.factory._run_component", side_effect=capture),
         patch("kstrl.factory.ProcessPoolExecutor", _CapturingPool),
         patch("kstrl.factory._setup_worktree", return_value=root),
-        patch("kstrl.git_diff.get_diff_content", return_value=""),
+        patch("kstrl.git.git_diff.get_diff_content", return_value=""),
     ):
         run_factory(_manifest(plan_id), factory_config, base, PlainUI(no_color=True), root)
     submitted = seen or _CapturingPool.seen

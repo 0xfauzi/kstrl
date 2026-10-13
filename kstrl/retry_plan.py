@@ -22,9 +22,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl import git
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_worktrees import _dependency_branches
+from kstrl.git import git
 from kstrl.launch_record import (
     REMOVED_OPTIONS,
     FlagValue,
@@ -44,7 +44,7 @@ if TYPE_CHECKING:
     import click
 
     from kstrl.manifest import Component, Manifest
-    from kstrl.ui.base import UI
+    from kstrl.ui import UI
 
 
 class RetryError(Exception):

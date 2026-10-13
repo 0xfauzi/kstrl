@@ -30,8 +30,8 @@ from kstrl.decompose_prompt import spec_digest
 from kstrl.factory_acceptance import _resolve_round_base as real_resolve_round_base
 from kstrl.factory_result import FactoryResult
 from kstrl.inbox import Inbox, InboxConfig, InboxItem, ItemKind
+from kstrl.io.statedir import control_dir
 from kstrl.manifest import Component, ComponentStatus, Manifest
-from kstrl.statedir import control_dir
 from kstrl.ui.base import UI
 from tests.helpers import integration_harness as h
 from tests.helpers.component_prd import PASSING_STORY, write_component_prd

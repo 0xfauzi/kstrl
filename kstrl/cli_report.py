@@ -14,6 +14,7 @@ from kstrl.cli_seam import _console_ui, _preflight_warn, cli
 from kstrl.config import KstrlConfig
 from kstrl.config_report import UI_MODES, build_config_report
 from kstrl.config_report import normalize_ui_mode as _normalize_ui_mode
+from kstrl.git import stamp_label
 from kstrl.manifest import COMPONENT_STATUS_VALUES, Manifest
 from kstrl.observability import format_age, latest_run_id, read_progress_events
 from kstrl.procgroup import pid_is_alive
@@ -25,8 +26,7 @@ from kstrl.reducer import (
     load_run_state,
     upconvert_v1,
 )
-from kstrl.ui.base import UI
-from kstrl.version import stamp_label
+from kstrl.ui import UI
 
 
 def _format_component_status(status: str | None) -> str:
@@ -157,8 +157,8 @@ def config_show(
             prd_default=root_dir / "scripts/kstrl/prd.json",
         )
 
+    from kstrl.config import SURFACE_REJECTIONS, raise_if_defect
     from kstrl.config_preflight import config_problem_lines
-    from kstrl.config_resolve import SURFACE_REJECTIONS, raise_if_defect
 
     try:
         report = build_config_report(root_dir, overlay=_overlay)

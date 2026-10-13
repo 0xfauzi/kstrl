@@ -1,7 +1,7 @@
 """#427: a JSON reader may not enumerate the exceptions ``json.loads`` raises.
 
 The rule: the only module in ``kstrl/`` that may call ``json.load`` or
-``json.loads`` is ``kstrl/jsonread.py``. Every other reader calls
+``json.loads`` is ``kstrl/io/jsonread.py``. Every other reader calls
 ``read_json`` or ``read_json_file``, which normalises everything the
 parser raises into ``json.JSONDecodeError`` or a subclass of it, so no
 site's exception handler had to change.
@@ -69,7 +69,7 @@ from tests.test_toml_readers import guarded_parses, handler_verdict
 
 JSON_MODULE = "json"
 JSON_PARSE_TARGETS = frozenset({"json.load", "json.loads"})
-OWNER = "jsonread.py"
+OWNER = "io/jsonread.py"
 
 
 #: Every expression in ``kstrl/`` that spells ``json``, per module.
@@ -105,7 +105,7 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     # display element is now JSON-encoded before it crosses the pipe, so
     # a multi-line element survives as one physical line). No new parse.
     "agents/sdk_runner.py": 5,
-    "atomicio.py": 2,
+    "io/atomicio.py": 2,
     "autonomy.py": 2,
     "calibration_baseline.py": 2,
     # #553: the import, one json.dumps for the ledger line, and the
@@ -129,7 +129,7 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     # #700: the import and one json.dumps of the nono policy; the canary's
     # report is read through read_json. No parse.
     "isolation.py": 2,
-    "jsonread.py": 4,
+    "io/jsonread.py": 4,
     "knowledge.py": 3,
     "knowledge_facts.py": 3,
     "linear.py": 5,
@@ -161,7 +161,7 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
 
 #: Every parse layer 2 resolves, keyed by module and origin, with line
 #: numbers dropped. One row: the owner's own parse.
-EXPECTED_JSON_PARSES: tuple[str, ...] = ("jsonread.py json.loads",)
+EXPECTED_JSON_PARSES: tuple[str, ...] = ("io/jsonread.py json.loads",)
 
 
 #: The fifteen ``.load``/parenless calls layer 2 cannot type, re-derived
@@ -170,7 +170,7 @@ EXPECTED_JSON_PARSES: tuple[str, ...] = ("jsonread.py json.loads",)
 #: being able to decide a call it used to decide. Line numbers dropped,
 #: which is what ``.without_line_numbers()`` does to the found side too.
 EXPECTED_UNDECIDED_CALLS: tuple[str, ...] = (
-    "config.py cls.load",
+    "config/config.py cls.load",
     "evolution_config.py cls.load",
     "intake_github.py ProcessedLedger(root_dir).load",
     "intake_steering.py ProcessedLedger(root_dir).load",
@@ -216,7 +216,7 @@ class TestTheWalkSeesWhatItClaimsTo:
         sites = calls_to(
             parse("from .json import loads\nloads(s)\n"),
             JSON_PARSE_TARGETS,
-            module="kstrl.config",
+            module="kstrl.config.config",
         )
 
         assert sites == Sites()
@@ -238,7 +238,7 @@ class TestTheWalkSeesWhatItClaimsTo:
         owner_source = next(s for s in package_sources() if label(s) == OWNER)
         tree = parsed(owner_source)
         sites = calls_to(
-            tree, JSON_PARSE_TARGETS, where=label(owner_source), module="kstrl.jsonread"
+            tree, JSON_PARSE_TARGETS, where=label(owner_source), module="kstrl.io.jsonread"
         )
 
         assert len(sites.seen) == 1, "the owner's own parse is the single-parse pin"
@@ -255,7 +255,7 @@ class TestNoJsonReaderEnumeratesItsExceptions:
             control="import json\njson.loads(s)\n",
             message=(
                 "The set of places that name the json module changed. A new JSON READ must go "
-                "through kstrl.jsonread: json.loads raises JSONDecodeError, plain ValueError "
+                "through kstrl.io.jsonread: json.loads raises JSONDecodeError, plain ValueError "
                 "(CPython's 4300-digit integer-string limit) AND RecursionError (a RuntimeError, "
                 "nested arrays), and the taxonomy is json's to extend. A new json.dumps is fine; "
                 "update the row in the same diff and say which it was."
@@ -275,8 +275,8 @@ class TestNoJsonReaderEnumeratesItsExceptions:
             seen=EXPECTED_JSON_PARSES,
             undecided=EXPECTED_UNDECIDED_CALLS,
             message=(
-                "The set of json parses in kstrl/ changed. kstrl.jsonread is the only module that "
-                "may call json.load or json.loads; every other reader calls read_json or "
+                "The set of json parses in kstrl/ changed. kstrl.io.jsonread is the only module "
+                "that may call json.load or json.loads; every other reader calls read_json or "
                 "read_json_file, which normalises everything the parse raises."
             ),
         )
@@ -296,7 +296,7 @@ class TestNoJsonReaderEnumeratesItsExceptions:
         """
         owner_source = next(s for s in package_sources() if label(s) == OWNER)
         tree = parsed(owner_source)
-        table = bindings(tree, module="kstrl.jsonread")
+        table = bindings(tree, module="kstrl.io.jsonread")
 
         guarded, _ = guarded_parses(tree, table, JSON_PARSE_TARGETS)
         assert guarded, "no try in the owner holds a resolved json parse"
@@ -308,7 +308,7 @@ class TestNoJsonReaderEnumeratesItsExceptions:
         assert not offenders, (
             f"{offenders[0]}. The owner must end on a bare `except Exception`, above which "
             "sits a pass-through `except json.JSONDecodeError: raise`, the way "
-            "kstrl.config_toml.load_toml_document does, and EVERY try around a resolved "
+            "kstrl.config.config_toml.load_toml_document does, and EVERY try around a resolved "
             "parse must satisfy this, not just the first one found."
         )
 
@@ -317,7 +317,7 @@ class TestTheOwnerNormalisesWhatTheParserRaises:
     """Behavioural, and the real control on the structural handler check."""
 
     def test_a_deeply_nested_document_is_a_json_decode_error(self) -> None:
-        from kstrl.jsonread import JsonDocumentError, read_json
+        from kstrl.io.jsonread import JsonDocumentError, read_json
 
         deeply_nested = "[" * 100000 + "]" * 100000
 
@@ -329,7 +329,7 @@ class TestTheOwnerNormalisesWhatTheParserRaises:
         assert isinstance(excinfo.value.__cause__, RecursionError)
 
     def test_an_overlong_integer_is_a_json_decode_error(self) -> None:
-        from kstrl.jsonread import JsonDocumentError, read_json
+        from kstrl.io.jsonread import JsonDocumentError, read_json
 
         with pytest.raises(json.JSONDecodeError) as excinfo:
             read_json("1" * 5000)
@@ -339,7 +339,7 @@ class TestTheOwnerNormalisesWhatTheParserRaises:
         assert "4300 digits" in str(excinfo.value)
 
     def test_a_plain_syntax_error_comes_out_unchanged(self) -> None:
-        from kstrl.jsonread import read_json
+        from kstrl.io.jsonread import read_json
 
         with pytest.raises(json.JSONDecodeError) as excinfo:
             read_json("{not json")
@@ -348,17 +348,17 @@ class TestTheOwnerNormalisesWhatTheParserRaises:
         assert "line 1 column 2 (char 1)" in str(excinfo.value)
 
     def test_the_wrapper_message_carries_no_fabricated_position(self) -> None:
-        from kstrl.jsonread import JsonDocumentError
+        from kstrl.io.jsonread import JsonDocumentError
 
         assert str(JsonDocumentError("boom")) == "boom"
 
     def test_bytes_and_str_both_parse(self) -> None:
-        from kstrl.jsonread import read_json
+        from kstrl.io.jsonread import read_json
 
         assert read_json('{"a": 1}') == read_json(b'{"a": 1}') == {"a": 1}
 
     def test_read_json_file_reads_the_handle_outside_the_guard(self, tmp_path: object) -> None:
-        from kstrl.jsonread import JsonDocumentError, read_json_file
+        from kstrl.io.jsonread import JsonDocumentError, read_json_file
 
         deeply_nested = "[" * 100000 + "]" * 100000
         path = tmp_path / "deep.json"  # type: ignore[attr-defined]
@@ -376,7 +376,7 @@ class TestTheOwnerNormalisesWhatTheParserRaises:
             read_json_file(_RaisesOSError())
 
     def test_a_keyboard_interrupt_is_not_relabelled(self) -> None:
-        from kstrl.jsonread import read_json_file
+        from kstrl.io.jsonread import read_json_file
 
         class _RaisesKeyboardInterrupt:
             def read(self) -> str:
@@ -389,7 +389,7 @@ class TestTheOwnerNormalisesWhatTheParserRaises:
         # Safe: round-trips an exception this test constructs itself, the
         # same pattern tests/test_phase_c_coverage.py's C8 test uses. No
         # untrusted data crosses pickle here.
-        from kstrl.jsonread import JsonDocumentError
+        from kstrl.io.jsonread import JsonDocumentError
 
         back = pickle.loads(pickle.dumps(JsonDocumentError("boom")))
 

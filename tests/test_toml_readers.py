@@ -74,7 +74,7 @@ ships with a suppression list is a guard that rots. This one keys on the
 CALL rather than on the handler, so its population is every tomllib parse
 in the package - one site as of #696 slice 6, compliant:
 
-    kstrl/config_toml.py  except Exception  (#318 round 3)
+    kstrl/config/config_toml.py  except Exception  (#318 round 3)
 
 `kstrl/toolchains.py`'s one parse, python_typecheck_default (moved from
 verify.py by #635), went with the command half #696 retired, and
@@ -355,7 +355,7 @@ def _scan_file(source: Path) -> Scan:
 #: handles the four unrelated exception families ``tomllib.load`` raises.
 EXPECTED_TOMLLIB_SPELLINGS: dict[str, int] = {
     # the import, the parse, and the TOMLDecodeError clause above it
-    "config_toml.py": 3,
+    "config/config_toml.py": 3,
     # #696 slice 6: feedforward.py's import and three parses went with the
     # codebase scan's conventions readers.
     # #696: python_typecheck_default (moved from verify.py by #635) is
@@ -365,7 +365,7 @@ EXPECTED_TOMLLIB_SPELLINGS: dict[str, int] = {
 
 #: Every parse layer 2 resolves, keyed by module and origin. One call in
 #: one module now: #696 retired toolchains.py's, and slice 6 feedforward.py's.
-EXPECTED_TOML_PARSES: tuple[str, ...] = ("config_toml.py: tomllib.loads",)
+EXPECTED_TOML_PARSES: tuple[str, ...] = ("config/config_toml.py: tomllib.loads",)
 
 
 # --------------------------------------------------------------------------
@@ -595,7 +595,7 @@ class TestTheWalkSeesWhatItClaimsTo:
         whole population is supposed to be real parses. The resolver
         keys on the dotted ORIGIN now, and a relative import resolves
         against the module's own package."""
-        scan = scan_source("from .tomllib import load\nload(fh)\n", module="kstrl.config")
+        scan = scan_source("from .tomllib import load\nload(fh)\n", module="kstrl.config.config")
 
         assert scan.guarded == ()
         assert scan.unguarded == ()

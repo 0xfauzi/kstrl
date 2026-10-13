@@ -98,8 +98,9 @@ class TestTheGuardDetects:
             "appendio.append_records(p, line, repair=r)\n",
             "open_for_append(p)\n",
             "with appending(p) as h:\n    h.write(line)\n",
-            'from kstrl.appendio import append_records as _ar\n_ar(p, line, repair="")\n',
-            "from kstrl.appendio import appending as _ap\nwith _ap(p) as h:\n    h.write(line)\n",
+            'from kstrl.io.appendio import append_records as _ar\n_ar(p, line, repair="")\n',
+            "from kstrl.io.appendio import appending as _ap\n"
+            "with _ap(p) as h:\n    h.write(line)\n",
             '_w = append_records\n_w(p, line, repair="")\n',
             '_w = append_records\n_v = _w\n_v(p, line, repair="")\n',
         ],

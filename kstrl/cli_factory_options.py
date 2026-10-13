@@ -10,7 +10,7 @@ import click
 
 from kstrl.cli_preflight import _AgentTypeChoice, _reject_blank_project_name
 from kstrl.cli_seam import _PROGRESS_LOG_HELP
-from kstrl.config_numbers import LIMIT_FLOAT, LIMIT_INT
+from kstrl.config import LIMIT_FLOAT, LIMIT_INT
 from kstrl.config_report import UI_MODES
 from kstrl.contract import ContractMode
 from kstrl.factory_config import VALID_REVIEW_MODES

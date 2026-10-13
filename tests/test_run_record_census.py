@@ -246,7 +246,7 @@ class TestEveryRunRecordCarriesTheVersion:
         assert unstamped_run_records() == sorted(NOT_STAMPED_HERE), (
             "A run record without a kstrl_version key, or an exemption for a site "
             "that is now stamped. Stamp the record with kstrl_version() from "
-            "kstrl/version.py, or give the site a reason in NOT_STAMPED_HERE."
+            "kstrl/git/version.py, or give the site a reason in NOT_STAMPED_HERE."
         )
 
 

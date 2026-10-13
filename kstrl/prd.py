@@ -8,8 +8,7 @@ from dataclasses import dataclass, fields, replace
 from pathlib import Path
 from typing import Any
 
-from kstrl.atomicio import atomic_write_json
-from kstrl.jsonread import read_json, read_json_file
+from kstrl.io import atomic_write_json, read_json, read_json_file
 
 
 @dataclass

@@ -40,7 +40,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from kstrl.atomicio import atomic_write_text
+from kstrl.io import atomic_write_text
 from kstrl.workqueue_items import (
     _LEGAL_TRANSITIONS,
     ALL_STATES,

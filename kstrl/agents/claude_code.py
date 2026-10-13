@@ -14,7 +14,7 @@ from typing import Any
 from kstrl.agents.base import TOOL_RESULT_PREFIX
 from kstrl.agents.proc import DeadlineStreamer, timeout_message
 from kstrl.agents.prompt_record import record_prompt
-from kstrl.jsonread import read_json
+from kstrl.io import read_json
 from kstrl.sandbox import (
     ClaudeRole,
     SandboxConfig,

@@ -21,7 +21,7 @@ from pathlib import Path
 import pytest
 
 from kstrl import scaffold_ledger
-from kstrl.config import KstrlConfig
+from kstrl.config.config import KstrlConfig
 from kstrl.operator_context import (
     CUT_FLOOR,
     GOLDEN_PATTERNS,
@@ -650,14 +650,14 @@ class TestAnUneditedScaffoldInjectsNothing:
         whole file that reaches the engineer, not the diff."""
         path = tmp_path / "golden-patterns.md"
         path.write_text(
-            DEFAULT_GOLDEN_PATTERNS + "\n- atomic writes: see `kstrl/atomicio.py`\n",
+            DEFAULT_GOLDEN_PATTERNS + "\n- atomic writes: see `kstrl/io/atomicio.py`\n",
             encoding="utf-8",
         )
 
         block = load_operator_file(golden(path, scaffold=GOLDEN_PATTERNS.scaffold))
 
         assert_delimited(block, GOLDEN_PATTERNS.header)
-        assert "- atomic writes: see `kstrl/atomicio.py`" in block
+        assert "- atomic writes: see `kstrl/io/atomicio.py`" in block
 
     def test_without_a_scaffold_name_nothing_is_suppressed(self, tmp_path: Path) -> None:
         """The suppression is per FILE, not global: an operator who

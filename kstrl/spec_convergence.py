@@ -12,7 +12,7 @@ from kstrl.journal_rows import entry_str
 from kstrl.spec_issues import _SEVERITY_ORDER, _VALID_SEVERITIES, SpecIssue, _issue_counts
 
 if TYPE_CHECKING:
-    from kstrl.ui.base import UI
+    from kstrl.ui import UI
 
 
 # ---------------------------------------------------------------------------

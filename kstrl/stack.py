@@ -53,9 +53,13 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
-from kstrl.config_numbers import check_numbers
-from kstrl.config_section import ConfigSection
-from kstrl.config_toml import ConfigError, load_toml_document, section_table
+from kstrl.config import (
+    ConfigError,
+    ConfigSection,
+    check_numbers,
+    load_toml_document,
+    section_table,
+)
 from kstrl.inbox import Inbox, InboxConfig, InboxItem, ItemKind, ItemStatus
 from kstrl.scrubbed_run import SECRET_NAME_FRAGMENTS
 

@@ -12,7 +12,7 @@ Two layers, because an environment variable reaches the code two ways:
    is what catches an unprefixed name such as ``MODEL`` or ``PROMPT_FILE``.
 
 Blind spot, stated: an unprefixed name read through a variable (the
-``STRING_KEYS`` table in ``kstrl/config_keys.py`` is the one case
+``STRING_KEYS`` table in ``kstrl/config/config_keys.py`` is the one case
 today, and its names are documented). Retired names
 (``config_keys.RETIRED_ENV_VARS``) are refused when set, so they are
 not settings and are not required here.
@@ -25,7 +25,7 @@ import re
 from collections.abc import Iterator
 from pathlib import Path
 
-from kstrl.config_keys import RETIRED_ENV_VARS
+from kstrl.config.config_keys import RETIRED_ENV_VARS
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 KSTRL_DIR = REPO_ROOT / "kstrl"
@@ -72,11 +72,29 @@ def literal_reads(source: str) -> Iterator[str]:
             yield key.value
 
 
+def _all_entries(tree: ast.AST) -> set[int]:
+    """The ids of the string constants in an ``__all__`` assignment.
+
+    A package ``__init__.py`` (#863) lists the Python names it re-exports,
+    and ``config.KSTRL_SECTION`` is a constant, not a variable. Only the
+    elements of ``__all__`` are left out: the same text anywhere else
+    still counts."""
+    out: set[int] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            if any(isinstance(t, ast.Name) and t.id == "__all__" for t in targets):
+                out |= {id(c) for c in ast.walk(node.value) if isinstance(c, ast.Constant)}
+    return out
+
+
 def kstrl_name_constants(source: str) -> Iterator[str]:
     """Layer 1: every string constant shaped like a kstrl variable."""
-    for node in ast.walk(ast.parse(source)):
+    tree = ast.parse(source)
+    skip = _all_entries(tree)
+    for node in ast.walk(tree):
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
-            if _KSTRL_NAME.match(node.value):
+            if _KSTRL_NAME.match(node.value) and id(node) not in skip:
                 yield node.value
 
 
@@ -114,6 +132,13 @@ def test_the_literal_read_layer_sees_every_read_shape() -> None:
 def test_the_name_layer_sees_a_constant_wherever_it_sits() -> None:
     source = "X = 'KSTRL_ZZ_TABLE'\ndef f(v: str = 'FACTORY_ZZ') -> None: ...\nY = 'kstrl_zz'\n"
     assert set(kstrl_name_constants(source)) == {"KSTRL_ZZ_TABLE", "FACTORY_ZZ"}
+
+
+def test_the_name_layer_skips_only_the_entries_of_all() -> None:
+    """An ``__all__`` entry is a Python name. The same text in a
+    different statement of the same file still counts."""
+    source = "__all__ = ['KSTRL_ZZ_NAME']\n__all__ += ['KSTRL_ZZ_MORE']\nX = 'KSTRL_ZZ_NAME'\n"
+    assert list(kstrl_name_constants(source)) == ["KSTRL_ZZ_NAME"]
 
 
 def test_the_walk_reaches_the_real_tree() -> None:

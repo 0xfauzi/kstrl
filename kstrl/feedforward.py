@@ -11,9 +11,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
-from kstrl import git_tree
-from kstrl.config_numbers import check_numbers
-from kstrl.config_section import ConfigSection
+from kstrl.config import ConfigSection, check_numbers
+from kstrl.git import git_tree
 
 # Max directories in module map to avoid bloat
 _MAX_MODULE_MAP_DIRS = 50

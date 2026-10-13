@@ -7,15 +7,15 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from kstrl.delimiters import generate_data_delimiter
-from kstrl.git import (
+from kstrl.git.git import (
     DEFAULT_TIMEOUT,
     GitDiffError,
     _parse_name_status_records,
     _undecodable_message,
     _unique_paths,
 )
-from kstrl.git_base import resolve_base_ref
+from kstrl.git.git_base import resolve_base_ref
+from kstrl.io import generate_data_delimiter
 
 
 def get_diff_names(

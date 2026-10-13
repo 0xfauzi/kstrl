@@ -1,6 +1,6 @@
 """#199: the architect reads the repository, it is not handed a paste.
 
-`kstrl/git.py` records the rule for the reviewer roles: they run with
+`kstrl/git/git.py` records the rule for the reviewer roles: they run with
 `cwd` set to the tree under review, so the change does not have to be
 pasted into their prompt, and pasting it is what forced a size cap and
 a fail-closed stop. `decompose_spec` calls `agent.run(prompt,

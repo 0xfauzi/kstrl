@@ -4,7 +4,7 @@ A LEAF module: it imports nothing from ``kstrl``, which is the point.
 The generator used to live in ``kstrl.decompose`` beside the first prompt
 that needed it, and every later consumer imported it from there. That was
 fine while the consumers were other prompt builders, and stopped being
-fine when ``kstrl.git`` needed it too (#266: ``pasted_change_source``
+fine when ``kstrl.git.git`` needed it too (#266: ``pasted_change_source``
 frames the diff it pastes, so it has to own the token). ``decompose``
 pulls in the manifest, the event bus, the guards and the Linear client;
 routing ``git`` through all of that to reach twelve lines of ``secrets``
@@ -23,7 +23,7 @@ import secrets
 # delimiter lines carrying a per-build random token, so injected text
 # inside the data cannot forge a section boundary or masquerade as
 # harness instructions. Shared by review / security / knowledge /
-# decompose and by the change-source builders in kstrl.git.
+# decompose and by the change-source builders in kstrl.git.git.
 _DATA_DELIMITER_PREFIX = "KSTRL-DATA"
 
 

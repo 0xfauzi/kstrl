@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from kstrl import git_diff
-from kstrl.delimiters import generate_data_delimiter
+from kstrl.git import git_diff
+from kstrl.io import generate_data_delimiter
 from kstrl.prd import PRD
 from kstrl.verify_model import VerificationResult
 

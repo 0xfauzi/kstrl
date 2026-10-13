@@ -77,10 +77,9 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from kstrl import git
-from kstrl.atomicio import atomic_write_json, atomic_write_text
 from kstrl.events import RunPaths
-from kstrl.jsonread import read_json
+from kstrl.git import git, kstrl_version
+from kstrl.io import atomic_write_json, atomic_write_text, control_dir, read_json, xdg_state_home
 from kstrl.rung import (
     ENV_PROGRAM,
     HOST_LABEL,
@@ -92,8 +91,6 @@ from kstrl.rung import (
     zone_dir,
 )
 from kstrl.scrubbed_run import ChildOutputDecodeError, run_scrubbed
-from kstrl.statedir import control_dir, xdg_state_home
-from kstrl.version import kstrl_version
 
 #: The environment variable naming the nono binary; PATH is searched
 #: when it is unset.

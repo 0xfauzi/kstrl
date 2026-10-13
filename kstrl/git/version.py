@@ -22,7 +22,7 @@ import functools
 from pathlib import Path
 
 from kstrl import __version__
-from kstrl.git import get_head_sha
+from kstrl.git.git import get_head_sha
 
 #: What a reader shows for a record that carries no stamp. A record
 #: written before #451 has none, and that is its age, not a defect.
@@ -43,7 +43,7 @@ def version_of_source(source_root: Path) -> str:
 @functools.cache
 def kstrl_version() -> str:
     """The stamp this process writes on every run record. Read once."""
-    return version_of_source(Path(__file__).resolve().parent.parent)
+    return version_of_source(Path(__file__).resolve().parents[2])
 
 
 def stamp_label(stamp: str) -> str:

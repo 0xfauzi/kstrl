@@ -22,7 +22,7 @@ from unittest.mock import patch
 from kstrl import event_catalog
 from kstrl import events as ev
 from kstrl.commandrun import CommandRun
-from kstrl.config import KstrlConfig
+from kstrl.config.config import KstrlConfig
 from kstrl.feature_cmd import FeatureParams, run_feature
 from kstrl.feature_verify import resolve_feature_verify_config
 from kstrl.loop import STOP_EXIT_CODE

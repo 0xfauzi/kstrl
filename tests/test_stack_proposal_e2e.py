@@ -32,9 +32,9 @@ import pytest
 
 from kstrl.inbox import Inbox, InboxConfig, InboxItem, ItemKind, ItemStatus
 from kstrl.init_cmd import gitignore_block
+from kstrl.io.statedir import plan_prd_path
 from kstrl.manifest import Manifest
 from kstrl.stack import load_stack
-from kstrl.statedir import plan_prd_path
 from tests.helpers.architect_payload import traced
 from tests.helpers.gitrepo import git_in, set_identity
 from tests.helpers.stack_confirmation import TEST_INSTRUCTIONS, confirm_stack, write_stack

@@ -14,8 +14,8 @@ from typing import TYPE_CHECKING, Any
 from kstrl.agents.proc import kill_active_process_groups
 from kstrl.config import (
     KstrlConfig,
+    check_number,
 )
-from kstrl.config_numbers import check_number
 from kstrl.event_catalog import (
     ComponentStarted,
     PhaseStarted,
@@ -104,7 +104,7 @@ from kstrl.verify import run_mechanical_verification
 from kstrl.verify_model import VerifyConfig
 
 if TYPE_CHECKING:
-    from kstrl.ui.base import UI
+    from kstrl.ui import UI
 
 
 class _InlineExecutor:

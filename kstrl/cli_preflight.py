@@ -30,7 +30,7 @@ from kstrl.factory_config import FactoryConfig
 from kstrl.factory_lock import RunLock, acquire_run_lock
 from kstrl.factory_preflight import base_refused_before_architect, report_preflight
 from kstrl.interaction import PromptKind, PromptRequest, UiInteractionChannel
-from kstrl.jsonread import read_json_file
+from kstrl.io import read_json_file
 from kstrl.prd import PRD
 from kstrl.scaffold_ledger import staleness_notice
 from kstrl.stack import (
@@ -42,7 +42,7 @@ from kstrl.stack import (
     decide_at_prompt,
     unconfirmed_lines,
 )
-from kstrl.ui.base import UI
+from kstrl.ui import UI
 
 if TYPE_CHECKING:
     pass
@@ -579,7 +579,7 @@ def _stack_checkpoint(root_dir: Path, ui_impl: UI, *, no_verify: bool) -> None:
     refuses, after filing the one stack_confirmation item ``ks inbox
     approve`` decides.
     """
-    from kstrl.config_resolve import SURFACE_REJECTIONS
+    from kstrl.config import SURFACE_REJECTIONS
 
     try:
         confirmed = confirmed_stack(root_dir)

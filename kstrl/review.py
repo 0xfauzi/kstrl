@@ -10,7 +10,6 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl import git_base, git_diff
 from kstrl.agent_output import (
     AgentOutputTooLarge,
     collect_agent_output,
@@ -22,13 +21,14 @@ from kstrl.findings import (
     dump_raw_debug,
     tag_finding_with_model,
 )
+from kstrl.git import git_base, git_diff
 from kstrl.prd import PRD
 from kstrl.review_prompt import build_review_prompt
 from kstrl.verify_model import VerificationResult
 
 if TYPE_CHECKING:
     from kstrl.agents.base import Agent
-    from kstrl.ui.base import UI
+    from kstrl.ui import UI
 
 
 class ReviewVerdict(StrEnum):

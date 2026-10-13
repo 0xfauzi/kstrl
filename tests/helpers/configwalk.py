@@ -68,7 +68,7 @@ partial and the bound-name shapes visible at all.
 
 DISCLOSED LIMIT, in three shapes and one depth. Layer 1 still matches a
 primitive by bare ``Name`` only, so ``c.load_toml_section`` after
-``import kstrl.config as c`` would not enrol its scope in the surface;
+``import kstrl.config.config as c`` would not enrol its scope in the surface;
 ``getattr(mod, "load_toml_document")(root)`` names the primitive as a
 STRING, which no name resolution reaches; and
 ``importlib.import_module("kstrl.policy").PolicyConfig.load(root)``
@@ -108,7 +108,7 @@ from tests.helpers.astwalk import all_nodes, bindings, label, own_nodes, parsed,
 from tests.helpers.astwalk.resolve import Bindings
 
 #: The three functions that reach the file: the two parsers in
-#: ``kstrl/config_toml.py`` and the resolver in ``kstrl/config.py``. Every
+#: ``kstrl/config/config_toml.py`` and the resolver in ``kstrl/config/config.py``. Every
 #: config dataclass's ``load`` bottoms out in one of them, which is what
 #: lets layer 1 enumerate no class names of its own.
 PARSE_PRIMITIVES = frozenset({"load_toml_section", "load_toml_document", "resolve_config_file"})

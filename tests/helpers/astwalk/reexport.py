@@ -85,7 +85,7 @@ def import_base(node: ast.ImportFrom, module: str, root: Path = REPO_ROOT) -> st
     IN A PACKAGE ``__init__.py`` the package is the module itself.
     ``module_name`` gives ``kstrl.io`` for ``kstrl/io/__init__.py``, and
     before #863 B4 ``from .statedir import x`` there resolved to
-    ``kstrl.statedir.x``, one level too high. Thus a ``module`` that is a
+    ``kstrl.io.statedir.x``, one level too high. Thus a ``module`` that is a
     package under ``root`` counts as its own ``__init__``.
     """
     if not node.level:

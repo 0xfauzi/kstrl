@@ -89,7 +89,7 @@ def test_the_safe_mode_worker_takes_the_lock_the_scrub_holds() -> None:
     assert "PolicyConfig.load" in safemode
     assert "QueueConfig.load" in safemode
     assert safemode.count("with environ_lock():") == 2
-    resolve = (src / "config_resolve.py").read_text(encoding="utf-8")
+    resolve = (src / "config/config_resolve.py").read_text(encoding="utf-8")
     assert "_ENVIRON_LOCK = threading.RLock()" in resolve
 
 

@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from kstrl.atomicio import atomic_write_text
+from kstrl.io import atomic_write_text
 
 if TYPE_CHECKING:
     from kstrl.operator_context import OperatorFile
@@ -130,7 +130,7 @@ def append_guidance_record(spec: OperatorFile, record: str) -> str:
     ``UnicodeDecodeError`` is a ``ValueError`` and escapes a fail-closed
     ``except OSError``.
 
-    Through :func:`kstrl.atomicio.atomic_write_text`, never a hand-rolled
+    Through :func:`kstrl.io.atomicio.atomic_write_text`, never a hand-rolled
     ``mkstemp`` + ``os.replace``: ``mkstemp`` creates 0600 and
     ``os.replace`` carries that onto the destination, which would
     silently retighten a git-tracked operator file.

@@ -10,9 +10,9 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from kstrl.inbox import UNDECIDED, Inbox, InboxError, InboxItem, ItemKind
+from kstrl.io import ControlStateError
 from kstrl.manifest import Component, park_dedupe_key
 from kstrl.pipeline_state import PipelineState
-from kstrl.statedir import ControlStateError
 from kstrl.waivers import ApprovalSnapshot, Waivers, WaiverScope, load_approvals
 
 

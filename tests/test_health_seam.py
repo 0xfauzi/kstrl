@@ -21,7 +21,7 @@ import pytest
 
 from kstrl.autonomy import AutonomyLevel, AutonomyState
 from kstrl.inbox import Inbox, ItemKind, Priority
-from kstrl.statedir import CONTROL_AUTONOMY, ControlUnavailableError, control_file
+from kstrl.io.statedir import CONTROL_AUTONOMY, ControlUnavailableError, control_file
 from tests.helpers.demotion import (
     BrokenHealthFinder,
     fake_health,

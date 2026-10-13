@@ -1,9 +1,9 @@
 """A closed-by-construction census of ``os.replace`` and ``shutil.move``
-call sites outside ``kstrl/atomicio.py`` (#152 simplify pass, Group C1).
+call sites outside ``kstrl/io/atomicio.py`` (#152 simplify pass, Group C1).
 
 The guard was added beside a mode-restore for the mutation driver's
 ``os.replace(bak, target)``, the first such site outside
-``kstrl/atomicio.py``; #696 slice 8 deleted that driver and its site.
+``kstrl/io/atomicio.py``; #696 slice 8 deleted that driver and its site.
 ``tests/test_atomicio.py`` keys its own guard on ``tempfile.mkstemp``, so a
 hand-rolled ``os.replace``/``shutil.move`` over an existing FILE is
 invisible to it. CLAUDE.md's rule (the most-repeated defect
@@ -16,7 +16,7 @@ passes - the direction a clearing guard must be narrow in
 (``tests/helpers/astwalk/__init__.py``, "thirteen of the sixteen migrated
 guards flag while three clear").
 
-Compliance, for a site outside ``kstrl/atomicio.py``, is not something
+Compliance, for a site outside ``kstrl/io/atomicio.py``, is not something
 this AST walk can prove on its own: "the destination's mode is captured
 before and restored after" is a RUNTIME property no static check can
 verify by reading the call site alone. What the walk CAN do, and does,
@@ -28,7 +28,7 @@ re-justified in this docstring rather than merely asserted.
 Three sites exist today (measured: ``uv run python3`` AST-walking
 ``kstrl/`` for ``os.replace``/``shutil.move`` calls, resolving import
 aliases the way ``tests/helpers/astwalk`` does): one inside
-``kstrl/atomicio.py`` itself (the canonical mode-preserving helper, exempt
+``kstrl/io/atomicio.py`` itself (the canonical mode-preserving helper, exempt
 by construction - it is the thing every OTHER writer in the package is
 supposed to route through), and two outside it:
 
@@ -43,7 +43,7 @@ supposed to route through), and two outside it:
   target_dir.exists(): raise QueueError(...)` guards it immediately above.
 
 SYMLINK IDENTITY is the other half of the property this file's subject
-shares with ``kstrl/atomicio.py`` (`os.replace` swaps the directory entry,
+shares with ``kstrl/io/atomicio.py`` (`os.replace` swaps the directory entry,
 so replacing over a symlinked destination turns it into a regular file),
 and does not arise at the two non-atomicio sites: each is a
 "destination never pre-exists" site, with nothing at the target path for
@@ -62,7 +62,7 @@ from tests.helpers import astwalk
 #: own ``mutate_file``/``run_mutation`` did exactly this, its defect C).
 REPLACE_TARGETS = ("os.replace", "shutil.move")
 
-#: Every site outside ``kstrl/atomicio.py`` today, keyed by module and
+#: Every site outside ``kstrl/io/atomicio.py`` today, keyed by module and
 #: expression (never by line - an edit above the site must not fail this
 #: pin for a reason that is not the guard's subject), with the one-line
 #: reason a human read into the module docstring above. A NEW site is not
@@ -103,6 +103,8 @@ EXPECTED_UNDECIDED_REPLACE_CALLS: tuple[str, ...] = (
     "doctor.py now.isoformat().replace",
     "inbox.py datetime.now(UTC).replace",
     "inbox.py parsed.replace",
+    "io/statedir.py datetime.now(UTC).replace",
+    "io/statedir.py datetime.now(UTC).replace(microsecond=0).isoformat().replace",
     # #696: init_cmd.kstrl_toml_for, which seeded a detected toolchain's
     # commands into the scaffolded [verify], is gone with [verify] itself.
     "knowledge_distill.py raw_output[:200].replace",
@@ -114,15 +116,13 @@ EXPECTED_UNDECIDED_REPLACE_CALLS: tuple[str, ...] = (
     "serve_spend.py (local + timedelta(days=1)).replace",
     "spec_issues.py comp_id.replace",
     "spec_issues.py comp_id.replace('-', ' ').replace",
-    "statedir.py datetime.now(UTC).replace",
-    "statedir.py datetime.now(UTC).replace(microsecond=0).isoformat().replace",
     "workqueue_items.py parsed.replace",
 )
 
 
 def _non_atomicio_replace_sites() -> astwalk.Sites:
     """Every ``os.replace``/``shutil.move`` call in ``kstrl/`` outside
-    ``kstrl/atomicio.py``, resolved the way ``tests/test_atomicio.py``'s
+    ``kstrl/io/atomicio.py``, resolved the way ``tests/test_atomicio.py``'s
     ``mkstemp`` census resolves ``tempfile.mkstemp`` - import aliases,
     rebinds, and attribute chains included - and everything it cannot
     resolve reported UNDECIDED rather than silently dropped.
@@ -178,9 +178,9 @@ class TestEveryReplaceSiteIsAccountedFor:
         known = frozenset(REPLACE_SITES)
         unexplained = found_keys - known
         assert unexplained == frozenset(), (
-            "a NEW os.replace/shutil.move site exists outside kstrl/atomicio.py "
+            "a NEW os.replace/shutil.move site exists outside kstrl/io/atomicio.py "
             f"and is not in REPLACE_SITES: {sorted(unexplained)}. Either move the "
-            "write through kstrl.atomicio, or add a mode capture/restore beside "
+            "write through kstrl.io.atomicio, or add a mode capture/restore beside "
             "it and record the reason as a new REPLACE_SITES row (never edit or "
             "drop an existing one - see CLAUDE.md's guard-census rule)."
         )
@@ -205,7 +205,7 @@ class TestEveryReplaceSiteIsAccountedFor:
         assert ast.unparse(resolved[0][0]) == "os.replace('a', 'b')"
 
     def test_atomicio_py_itself_is_excluded_from_the_census(self) -> None:
-        """`kstrl/atomicio.py`'s own `os.replace` is the canonical
+        """`kstrl/io/atomicio.py`'s own `os.replace` is the canonical
         mode-preserving helper every other writer routes through - it is
         not a fifth site to account for, it is the reason the other four
         do not all need to be atomicio.py themselves. Proven by re-running
@@ -215,6 +215,6 @@ class TestEveryReplaceSiteIsAccountedFor:
         atomicio = next(p for p in astwalk.package_sources() if p.name == "atomicio.py")
         tree = astwalk.parsed(atomicio)
         found = astwalk.calls_to(
-            tree, REPLACE_TARGETS, where=astwalk.label(atomicio), module="kstrl.atomicio"
+            tree, REPLACE_TARGETS, where=astwalk.label(atomicio), module="kstrl.io.atomicio"
         )
-        assert found.seen != (), "atomicio.py's own os.replace went undetected by the walk"
+        assert found.seen != (), "io/atomicio.py's own os.replace went undetected by the walk"

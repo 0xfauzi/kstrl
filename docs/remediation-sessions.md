@@ -112,7 +112,7 @@ Defects (verify line numbers against current code):
 - loop.py:154 calls agent.run(prompt, cwd) with no timeout; config.py:62-63 (agent_iteration_timeout, component_timeout) and the entire timeout.py module are parsed but never consumed; cli.py binds --agent-timeout/--component-timeout for `ks factory` and never uses them.
 - agents/codex.py:44-98 ignores its timeout parameter entirely and proc.wait() is unbounded; agents/claude_code.py:90-98 only checks the clock when a stdout line arrives, so a silently hung CLI blocks forever; agents/custom.py has the same class of problem.
 
-Scope: kstrl/agents/*.py, kstrl/loop.py, kstrl/timeout.py, kstrl/config.py, kstrl/factory.py (scheduler backstop only), kstrl/cli.py (wire the two dead flags), tests.
+Scope: kstrl/agents/*.py, kstrl/loop.py, kstrl/timeout.py, kstrl/config/config.py, kstrl/factory.py (scheduler backstop only), kstrl/cli.py (wire the two dead flags), tests.
 
 Requirements:
 1. All agent subprocesses launch with start_new_session=True. Read stdout on a reader thread with a deadline so a hang with NO output is detected. On breach: killpg(SIGTERM), grace period, then SIGKILL. All three adapters honor the timeout parameter. Bound codex proc.wait().
@@ -134,7 +134,7 @@ Read CLAUDE.md, then the "Shared rules" section of docs/remediation-sessions.md,
 
 Defects: decompose.py:384-390 and manifest.py:283-298 validate ids only as non-empty strings. An id like "../../repo" escapes .kstrl/worktrees/ and reaches `git worktree remove --force` at the escaped path (factory.py builds worktree_path = root/.kstrl/worktrees/<id>). Branch names reach `git push -u origin <branch>` and `git worktree add ... <branch>` with no leading-dash rejection and no `--` separators, so a crafted value becomes an argv option.
 
-Scope: kstrl/manifest.py, kstrl/decompose.py, kstrl/git.py, kstrl/pr.py, tests.
+Scope: kstrl/manifest.py, kstrl/decompose.py, kstrl/git/git.py, kstrl/pr.py, tests.
 
 Requirements:
 1. Component ids must match ^[a-z0-9][a-z0-9._-]{0,63}$ (no slashes, no dots-only segments). Enforce at manifest parse AND decompose validation, with actionable error messages (the decompose retry loop should be able to feed the error back).
@@ -212,7 +212,7 @@ Defects:
 - pr.py:149-152 runs `git pull origin <base>` with cwd=root_dir on WHATEVER branch the user has checked out: it mutates the operator's checkout and leaves local base stale (H-1).
 - Every pr.py subprocess except the merge-wait loop lacks a timeout.
 
-Scope: kstrl/pr.py, kstrl/factory.py (PR block + worktree base refs), kstrl/manifest.py (status enum), kstrl/git.py (diff base refs), tests.
+Scope: kstrl/pr.py, kstrl/factory.py (PR block + worktree base refs), kstrl/manifest.py (status enum), kstrl/git/git.py (diff base refs), tests.
 
 Requirements:
 1. pr.py returns a typed PrOutcome dataclass (pushed, pr_url, merged, merge_pending, error) instead of lossy tuples. Explicit timeouts on every gh/git call in the module.
@@ -345,7 +345,7 @@ Defects:
 - decompose._validate_decompose_output (decompose.py:414-434) validates allowedPaths entries only as non-empty strings. The DECOMPOSE_PROMPT promises the harness rejects entries like ".kstrl/" or repo-root manifests: it does not, so the constrained model can reopen its own guardrail (H-4). Read the EXCLUDE list stated inside DECOMPOSE_PROMPT (do not modify the prompt) and enforce exactly that list in the validator.
 - factory.py:554-558: PRD load/parse failure is swallowed into allowed_paths=None, which silently DISABLES the scope check (check_diff_scope returns passed=True on falsy allowed_paths).
 
-Scope: kstrl/git.py, kstrl/verify.py, kstrl/decompose.py (validator only), kstrl/factory.py (the swallow site), tests.
+Scope: kstrl/git/git.py, kstrl/verify.py, kstrl/decompose.py (validator only), kstrl/factory.py (the swallow site), tests.
 
 Requirements:
 1. get_diff_names uses --name-status -M (and -C if cheap); rename/copy SOURCES count as changed paths for scope purposes. Update all callers.
@@ -395,7 +395,7 @@ Defects:
 - git.py:261-271 head-truncates review diffs at 50KB. A rogue engineer can pad the first 50KB with benign churn and land the malicious hunk after the cut; both reviewers see a truncation notice but hard mode has no policy: the unreviewed tail merges (H-16).
 - The security reviewer still sees the engineer's Self-Critique block: only Phase 2 strips it (review.py:391 vs security.py:377), so the E2 anti-anchoring rationale is unapplied where it matters most.
 
-Scope: kstrl/git.py, kstrl/review.py, kstrl/security.py, kstrl/factory.py (chunk orchestration + budget), tests.
+Scope: kstrl/git/git.py, kstrl/review.py, kstrl/security.py, kstrl/factory.py (chunk orchestration + budget), tests.
 
 Requirements:
 1. Hard mode: a diff exceeding the cap is never partially reviewed silently. Chunk the diff on file boundaries into <=cap segments and run one review pass per chunk (each pass counts against max_adversarial_calls); merge results (any chunk failure fails; findings concatenate). If the budget cannot cover the chunks, the phase fails as infrastructure rather than passing partially.
@@ -420,7 +420,7 @@ Defects:
 - CodebaseScanConfig/EvolutionConfig/KnowledgeConfig lack from_env.
 - ks init does not scaffold kstrl.toml, so a fresh project has no discoverable config surface.
 
-Scope: kstrl/cli.py, kstrl/config.py, kstrl/factory.py (FactoryConfig.load keys), kstrl/verify.py, kstrl/security.py, kstrl/contract.py, kstrl/feedforward.py, kstrl/evolution.py, kstrl/knowledge.py (loaders/from_env only), kstrl/init_cmd.py (scaffold), tests.
+Scope: kstrl/cli.py, kstrl/config/config.py, kstrl/factory.py (FactoryConfig.load keys), kstrl/verify.py, kstrl/security.py, kstrl/contract.py, kstrl/feedforward.py, kstrl/evolution.py, kstrl/knowledge.py (loaders/from_env only), kstrl/init_cmd.py (scaffold), tests.
 
 Requirements:
 1. Resolution order everywhere: explicit CLI flag > env > kstrl.toml > dataclass default. Give click options default=None sentinels so "not passed" is distinguishable from "passed the default value"; apply flag overrides onto the loaded config.
@@ -641,7 +641,7 @@ Read CLAUDE.md, then the "Shared rules" section of docs/remediation-sessions.md,
 
 Context: the ProgressLog (observability.py) is a JSONL event bus (component_started/completed/failed/retrying, verification_result, review_result, contract_result) but is opt-in and unconsumed. There is no way to know a walk-away run's state without reading raw JSON, and no notification when it finishes or breaks.
 
-Scope: kstrl/observability.py, kstrl/cli.py (status command extension), kstrl/factory.py (default-on wiring + hook firing), kstrl/config.py or factory config ([notify] section), tests.
+Scope: kstrl/observability.py, kstrl/cli.py (status command extension), kstrl/factory.py (default-on wiring + hook firing), kstrl/config/config.py or factory config ([notify] section), tests.
 
 Requirements:
 1. ProgressLog defaults ON (path under .kstrl/), configurable off.
@@ -814,7 +814,7 @@ Read CLAUDE.md, then the "Shared rules" section of docs/remediation-sessions.md,
 
 Context: 2025-2026 research established self-preference bias and verifier homogenisation mechanistically: a same-family reviewer systematically misses the bug classes its family produces. The config already supports review_agent_cmd/review_model; nothing defaults to heterogeneity, warns about homogeneity, or records who reviewed whom.
 
-Scope: kstrl/factory.py, kstrl/config.py / factory config, kstrl/findings.py, kstrl/review.py, kstrl/security.py, kstrl/pr.py, docs/adversarial-design.md (limitation #1 update), tests.
+Scope: kstrl/factory.py, kstrl/config/config.py / factory config, kstrl/findings.py, kstrl/review.py, kstrl/security.py, kstrl/pr.py, docs/adversarial-design.md (limitation #1 update), tests.
 
 Requirements:
 1. When the decided second family's CLI is available, review and security default to it (engineer keeps the primary); explicit config always wins. When unavailable, print a homogeneity warning naming the risk.
@@ -836,7 +836,7 @@ Read CLAUDE.md, then the "Shared rules" section of docs/remediation-sessions.md,
 
 Context: fixtures.py (the independent behavioral oracle) is currently wired to NOTHING: run_mechanical_verification never calls check_fixtures, and PRD.validate_schema rejects the documented fixtures key. Two latent hazards block naive wiring: run_function_fixture imports and calls agent-written code IN the harness process (sys.path.insert + importlib) with the harness env (API keys); run_cli_fixture executes a PRD-supplied command with shell=True. The PRD is LLM-emitted: treat fixture definitions as untrusted.
 
-Scope: kstrl/fixtures.py, kstrl/verify.py, kstrl/prd.py, kstrl/factory.py (config plumbing), kstrl/config.py (FixturesConfig loader via the control plane), docs, tests.
+Scope: kstrl/fixtures.py, kstrl/verify.py, kstrl/prd.py, kstrl/factory.py (config plumbing), kstrl/config/config.py (FixturesConfig loader via the control plane), docs, tests.
 
 Requirements:
 1. Function fixtures execute in a SUBPROCESS (sys.executable with an argv-passed spec, JSON over stdout), using the wave-5 scrubbed-env helper, cwd=worktree, timeout, start_new_session. The harness process never imports agent code.

@@ -41,8 +41,8 @@ from typing import Any
 
 import pytest
 
-from kstrl.appendio import JOURNAL_REPAIR_EVENT
-from kstrl.version import kstrl_version
+from kstrl.git.version import kstrl_version
+from kstrl.io.appendio import JOURNAL_REPAIR_EVENT
 from tests.helpers.journal import tear
 
 fcntl = pytest.importorskip("fcntl", reason="flock is POSIX-only, as the helper says")
@@ -84,7 +84,7 @@ def _contend(path_str: str, who: str) -> None:
     payload, which no probe can help with and which nothing here claims
     to fix.
     """
-    from kstrl.appendio import appending
+    from kstrl.io.appendio import appending
 
     path = Path(path_str)
     journal = _journal(path)

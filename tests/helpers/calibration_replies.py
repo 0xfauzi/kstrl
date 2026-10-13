@@ -34,7 +34,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from kstrl.atomicio import atomic_write_json
+from kstrl.io.atomicio import atomic_write_json
 
 
 class _ThreadCalls(threading.local):

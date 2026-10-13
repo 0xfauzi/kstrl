@@ -23,7 +23,7 @@ from kstrl import ci_state
 from kstrl.ci_state import CiReading, CiState, read_ci_ledger
 from kstrl.cli import cli
 from kstrl.event_catalog import PrMerged
-from kstrl.statedir import CONTROL_CI_CHECKS, control_file, ensure_control_state
+from kstrl.io.statedir import CONTROL_CI_CHECKS, control_file, ensure_control_state
 from tests.helpers.fakegh import put_gh_on_path
 from tests.helpers.procs import run_serve_subprocess
 from tests.test_ci_state import (
@@ -37,7 +37,7 @@ from tests.test_ci_state import (
     _project,
 )
 
-#: A run id in the shape ``kstrl.runid`` writes, older than any real one.
+#: A run id in the shape ``kstrl.io.runid`` writes, older than any real one.
 EARLIER_RUN = "factory-20260901-000000.000000-aaaaaa"
 
 #: Bound on one ``ks serve --once`` against an empty queue; a failure

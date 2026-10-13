@@ -454,7 +454,7 @@ class TestFeatureChecksThePromptItActuallyRuns:
         only by luck."""
         from unittest.mock import patch
 
-        from kstrl.config import KstrlConfig
+        from kstrl.config.config import KstrlConfig
         from kstrl.feature_cmd import run_feature
         from kstrl.ui.plain import PlainUI
         from tests.test_feature_cmd import ScriptedChannel, StubAgent, _params

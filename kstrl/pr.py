@@ -10,14 +10,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from kstrl.git_base import fetch_base_branch
+from kstrl.git import fetch_base_branch, fetch_pr_state, pr_mergeable
 from kstrl.pr_body import component_pr_body, single_pr_body
-from kstrl.pr_state import fetch_pr_state, pr_mergeable
 
 if TYPE_CHECKING:
     from kstrl.manifest import Component, Manifest
     from kstrl.requirements import SpecRequirement
-    from kstrl.ui.base import UI
+    from kstrl.ui import UI
 
 # Explicit budgets for every subprocess in this module (R0.2): a hung
 # gh or git call previously blocked the factory scheduler forever.

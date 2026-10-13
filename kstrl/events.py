@@ -38,11 +38,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Any, Protocol
 
-from kstrl.appendio import (
-    REPAIR_DETAIL,
-    append_terminated,
-    open_for_append,
-)
 from kstrl.event_catalog import (
     _ENVELOPE_FIELDS,
     _REGISTRY,
@@ -67,9 +62,14 @@ from kstrl.event_catalog import (
     UnknownEvent,
     VerificationResultEvent,
 )
-from kstrl.jsonread import read_json
+from kstrl.git import kstrl_version
+from kstrl.io import (
+    REPAIR_DETAIL,
+    append_terminated,
+    open_for_append,
+    read_json,
+)
 from kstrl.observability import ProgressLog
-from kstrl.version import kstrl_version
 
 _FIELD_DEFAULTS: dict[str, dict[str, Any]] = {}
 

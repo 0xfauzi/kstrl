@@ -24,7 +24,6 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl import git, git_base
 from kstrl.contract import (
     ContractConfig,
     ContractMode,
@@ -35,6 +34,7 @@ from kstrl.contract import (
 from kstrl.decompose_prompt import spec_digest
 from kstrl.factory import run_factory
 from kstrl.factory_result import ComponentResult, FactoryResult
+from kstrl.git import git, git_base
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.pipeline import ComponentPipeline
 from kstrl.ui.plain import PlainUI
@@ -116,7 +116,7 @@ def _run(
 
     with (
         patch("kstrl.factory._run_component", side_effect=fake_component),
-        patch("kstrl.git_diff.get_diff_content", return_value=""),
+        patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         # A MERGE_PENDING component would otherwise be re-polled through gh.
         patch.object(ComponentPipeline, "repoll_merge_pending", return_value=None),
     ):
@@ -274,7 +274,7 @@ class TestTheStamp:
         _git_project(tmp_path, ["comp-a"])
 
         with (
-            patch("kstrl.git_base.resolve_base_sha", side_effect=RuntimeError("stamp defect")),
+            patch("kstrl.git.git_base.resolve_base_sha", side_effect=RuntimeError("stamp defect")),
             pytest.raises(RuntimeError, match="stamp defect"),
         ):
             _run(tmp_path, _make_manifest([_component("comp-a")]))

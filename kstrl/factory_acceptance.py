@@ -11,7 +11,6 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl import git, git_base
 from kstrl.acceptance import PinnedPlan, replay_base
 from kstrl.acceptance_carried import carried_on_base, carry_passed
 from kstrl.acceptance_design import (
@@ -36,6 +35,7 @@ from kstrl.factory_config import (
 from kstrl.factory_preflight import (
     report_preflight,
 )
+from kstrl.git import git, git_base
 from kstrl.manifest import (
     ComponentStatus,
     Manifest,
@@ -52,7 +52,7 @@ if TYPE_CHECKING:
     from kstrl.integration_phase import Phase3Round
     from kstrl.observability import NotifyHooks
     from kstrl.runstate import RunState
-    from kstrl.ui.base import UI
+    from kstrl.ui import UI
 
 
 def _plan_gated(

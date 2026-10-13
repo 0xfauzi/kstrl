@@ -31,8 +31,8 @@ from kstrl.agents.spawn_record import (
     spawn_record_path,
     write_spawn_record,
 )
+from kstrl.io.statedir import control_dir
 from kstrl.procgroup import pid_is_alive
-from kstrl.statedir import control_dir
 from tests.helpers import procs
 from tests.test_agent_dies_with_kstrl import START_FUSE_SECONDS, _factory_args, _ks
 from tests.test_agent_processes_outlive_run import COMPLETE, _env, _repo

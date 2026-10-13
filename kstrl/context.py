@@ -21,7 +21,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from kstrl.jsonread import read_json
+from kstrl.io import read_json
 from kstrl.waivers import ACCEPTANCE_PHASE
 
 # The phases run in this fixed order inside one attempt. The rank is

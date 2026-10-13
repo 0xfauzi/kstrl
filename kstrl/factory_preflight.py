@@ -64,7 +64,7 @@ from kstrl.timeout import TimeoutConfig
 from kstrl.verify_model import VerifyConfig
 
 if TYPE_CHECKING:
-    from kstrl.ui.base import UI
+    from kstrl.ui import UI
 
 
 _SCOPE_HAZARD_REASONS: dict[ScopeHazard, str] = {

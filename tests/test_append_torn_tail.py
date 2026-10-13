@@ -39,7 +39,7 @@ from typing import Any
 
 import pytest
 
-from kstrl.appendio import JOURNAL_REPAIR_EVENT
+from kstrl.io.appendio import JOURNAL_REPAIR_EVENT
 from tests.helpers.journal import lose_the_newline, tear
 from tests.helpers.rootperms import skip_as_root
 
@@ -380,7 +380,7 @@ class TestJsonlSinkSurvivesATornTail:
         tear it had already repaired. Counted by shadowing the module's
         ``open``, the same way the write-boundary test does.
         """
-        import kstrl.appendio as appendio_mod
+        import kstrl.io.appendio as appendio_mod
         from kstrl.events import JsonlSink
 
         path = tmp_path / "events.jsonl"

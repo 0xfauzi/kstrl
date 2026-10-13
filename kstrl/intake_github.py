@@ -73,7 +73,7 @@ from kstrl.intake_issue import (
     is_bug_report,
     spec_from_issue,
 )
-from kstrl.jsonread import read_json
+from kstrl.io import read_json
 from kstrl.workqueue import Queue
 from kstrl.workqueue_items import ItemSource, MergeDisposition, QueueError
 

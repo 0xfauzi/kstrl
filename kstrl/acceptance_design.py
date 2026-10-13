@@ -33,7 +33,6 @@ from collections.abc import Callable, Collection, Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl import git, git_base
 from kstrl.acceptance import (
     ACCEPTANCE_DIR,
     DESIGNER_FILE,
@@ -51,13 +50,13 @@ from kstrl.acceptance import (
 from kstrl.agent_output import collect_agent_output, extract_json, select_agent_output
 from kstrl.agents import get_agent
 from kstrl.agents.prompt_record import AgentCall, recording_prompts
-from kstrl.delimiters import generate_data_delimiter
+from kstrl.git import git, git_base
 from kstrl.inbox import ItemKind
 from kstrl.integration_phase import REVIEW_ASKS, _reask_refusal
+from kstrl.io import control_dir, generate_data_delimiter, pre_run_prd_path
 from kstrl.plan_gate import PlanUnreadableError, pinned_spec, plan_digest
 from kstrl.prd import PRD
 from kstrl.requirements import SpecRequirement, built_by
-from kstrl.statedir import control_dir, pre_run_prd_path
 from kstrl.temp_worktree import ContractCleanupError, create_temp_worktree, remove_temp_worktree
 from kstrl.timeout import limit_seconds
 from kstrl.usage import DESIGNER_ROLE, collect_usage

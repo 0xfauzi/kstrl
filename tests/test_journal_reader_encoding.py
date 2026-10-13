@@ -78,7 +78,7 @@ def test_experiments_tsv_is_written_with_the_encoding_it_is_read_with(tmp_path: 
     """Encoding is a two-sided contract (CLAUDE.md): naming utf-8 on the
     read while the write follows the locale just moves the failure.
 
-    #331 moved the write into ``kstrl.appendio``, so the pair is spelled
+    #331 moved the write into ``kstrl.io.appendio``, so the pair is spelled
     across two files now and both halves are asserted. The helper is the
     ONE place the bytes are encoded, which is what makes checking it
     here enough: evolution hands it ``str`` and names no codec.
@@ -88,5 +88,5 @@ def test_experiments_tsv_is_written_with_the_encoding_it_is_read_with(tmp_path: 
     assert "append_records(self.config.experiments_path" in source
     reads = (root / "kstrl" / "journal_reads.py").read_text(encoding="utf-8")
     assert 'read_text(encoding="utf-8")' in reads
-    helper = (root / "kstrl" / "appendio.py").read_text(encoding="utf-8")
+    helper = (root / "kstrl" / "io/appendio.py").read_text(encoding="utf-8")
     assert 'payload.encode("utf-8")' in helper

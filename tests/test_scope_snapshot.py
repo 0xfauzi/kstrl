@@ -39,7 +39,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl.config import KstrlConfig
+from kstrl.config.config import KstrlConfig
 from kstrl.event_catalog import ComponentScopeResolved, Event
 from kstrl.events import CallbackSink, EventBus
 from kstrl.factory import run_factory
@@ -107,7 +107,7 @@ def _run(
     with (
         patch("kstrl.loop.run_loop", side_effect=fake_run_loop),
         patch("kstrl.factory.run_mechanical_verification", side_effect=fake_verify),
-        patch("kstrl.git_diff.get_diff_content", return_value=""),
+        patch("kstrl.git.git_diff.get_diff_content", return_value=""),
     ):
         return run_factory(
             manifest or _manifest([_component()]),

@@ -37,7 +37,7 @@ from unittest.mock import patch
 
 from kstrl import event_catalog, factory
 from kstrl import events as ev
-from kstrl.config import KstrlConfig
+from kstrl.config.config import KstrlConfig
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult, FactoryResult
@@ -171,7 +171,7 @@ def _run_with_comp_a_reset_after_preflight(
         patch("kstrl.factory._run_preflights", side_effect=_preflights),
         patch("kstrl.factory._setup_worktree", side_effect=_setup),
         patch("kstrl.factory._run_component", side_effect=_worker),
-        patch("kstrl.git_diff.get_diff_content", return_value=""),
+        patch("kstrl.git.git_diff.get_diff_content", return_value=""),
     ):
         return run_factory(
             manifest,

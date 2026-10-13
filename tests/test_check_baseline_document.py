@@ -146,7 +146,7 @@ def test_the_project_identity_survives_a_worktree(tmp_path: Path) -> None:
     as its directory name and every later comparison in an ordinary checkout
     reports a mismatch that means nothing.
     """
-    from kstrl.git import get_origin_slug
+    from kstrl.git.git import get_origin_slug
     from tests.spine_utils import git as run_git
 
     repo = tmp_path / "some-issue-number"
@@ -163,7 +163,7 @@ def test_the_project_identity_survives_a_worktree(tmp_path: Path) -> None:
 def test_a_repository_with_no_remote_has_no_slug(tmp_path: Path) -> None:
     """The fallback's precondition. Without this the CLI's
     ``get_origin_slug(path) or path.name`` looks like belt over braces."""
-    from kstrl.git import get_origin_slug
+    from kstrl.git.git import get_origin_slug
     from tests.spine_utils import git as run_git
 
     repo = tmp_path / "local-only"
@@ -203,8 +203,8 @@ def test_the_baseline_s_identity_reads_fall_back_when_git_is_absent(
     all: the strict diff read is what `ks check` turns into exit 2, and it let
     the same error out.
     """
-    from kstrl.git import GitDiffError, get_head_sha, get_origin_slug
-    from kstrl.git_diff import get_diff_names
+    from kstrl.git.git import GitDiffError, get_head_sha, get_origin_slug
+    from kstrl.git.git_diff import get_diff_names
 
     monkeypatch.setenv("PATH", str(tmp_path / "empty"))
 
@@ -222,7 +222,7 @@ def test_the_identity_reads_still_answer_when_git_is_present(tmp_path: Path) -> 
     machine records a project identity of `path.name` for every baseline - the
     worktree-number defect the identity exists to prevent.
     """
-    from kstrl.git import get_head_sha, get_origin_slug
+    from kstrl.git.git import get_head_sha, get_origin_slug
     from tests.spine_utils import git as run_git
 
     repo = tmp_path / "present"

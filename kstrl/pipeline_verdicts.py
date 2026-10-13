@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl import event_catalog, git, git_diff
+from kstrl import event_catalog
 from kstrl.context import IterationContext
 from kstrl.divergence import (
     AttemptReading,
@@ -19,6 +19,7 @@ from kstrl.findings import (
     CLAIM_DISAGREEMENT_CATEGORY,
     Finding,
 )
+from kstrl.git import git, git_diff
 from kstrl.manifest import (
     ADVERSARIAL_BUDGET_CHECK,
     Component,
