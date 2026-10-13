@@ -2428,6 +2428,47 @@ class TestRunOwnership:
         assert "factory-OLD-000" not in seen
         assert seen == ["factory-20260730-000000.000000-aaa"]
 
+    def test_an_unreadable_run_spend_pauses_intake_and_admits_nothing(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """#863: the launch's run dir has no events.jsonl while progress.jsonl
+        names the run. Measured before: ``read_run_spend`` let
+        ``LegacyRunStreamError`` out and the cycle crashed. A spend the
+        daemon cannot read is charged as zero, so the queue must pause and
+        the next cycle must start nothing."""
+        from kstrl.observability import ProgressLog
+
+        monkeypatch.setattr("kstrl.serve_spend.read_run_spend", REAL_READ_RUN_SPEND)
+        run_id = "factory-20260730-000000.000000-aaa"
+        calls: list[str] = []
+
+        def runner(*, root_dir: Path, **_kwargs: object) -> RunOutcome:
+            calls.append(run_id)
+            (root_dir / ".kstrl" / "runs" / run_id).mkdir(parents=True, exist_ok=True)
+            ProgressLog(root_dir / ".kstrl" / "progress.jsonl", run_id=run_id).factory_started(
+                "p", 1
+            )
+            return RunOutcome(0)
+
+        queue = _queue(tmp_path)
+        _add(queue)
+        _add(queue)
+        result = serve_cycle(tmp_path, runner=runner)  # type: ignore[arg-type]
+
+        run_dir = str(tmp_path / ".kstrl" / "runs" / run_id)
+        assert run_dir in result.paused
+        assert "no readable events.jsonl" in result.paused
+        assert "old kstrl" not in result.paused
+        assert result.needs_human is True
+        pause = queue.pause_state()
+        assert pause.paused is True and run_dir in pause.reason
+
+        second = serve_cycle(tmp_path, runner=runner)  # type: ignore[arg-type]
+        assert second.skipped.startswith("paused:")
+        assert calls == [run_id]
+
     def test_read_run_spend_refuses_an_empty_run_id(
         self,
         tmp_path: Path,

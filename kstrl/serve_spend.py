@@ -370,6 +370,9 @@ class RunSpend:
     #: Calls the run recorded against the architect, read for one
     #: question only: see :attr:`unmetered_phases`.
     architect_calls: int = 0
+    #: Why the run's event stream could not be read, or "". The figures
+    #: above are then zeros, and the daemon pauses intake on them (#863).
+    unreadable: str = ""
 
     @property
     def uncovered_calls(self) -> int:
@@ -433,6 +436,8 @@ class LaunchSpend:
     cost_calls: int = 0
     usage_calls: int = 0
     unmetered_phases: tuple[str, ...] = ()
+    #: One sentence per run whose spend could not be read (#863).
+    unreadable: tuple[str, ...] = ()
 
     @classmethod
     def over(cls, spends: Sequence[RunSpend]) -> LaunchSpend:
@@ -451,6 +456,7 @@ class LaunchSpend:
             unmetered_phases=tuple(
                 sorted({phase for reading in readings for phase in reading.unmetered_phases})
             ),
+            unreadable=tuple(reading.unreadable for reading in readings if reading.unreadable),
         )
 
 
@@ -483,12 +489,23 @@ def read_run_spend(root_dir: Path, run_id: str) -> RunSpend:
     """
     if not run_id:
         return RunSpend()
-    from kstrl.reducer import load_run_state
+    from kstrl.reducer import LegacyRunStreamError, load_run_state
 
+    kstrl_dir = state_dir(root_dir)
+    run_dir = kstrl_dir / "runs" / run_id
     try:
         state, _source = load_run_state(root_dir, run_id)
-    except OSError:
-        return RunSpend()
+    except OSError as exc:
+        return RunSpend(unreadable=f"the event stream of {run_dir} cannot be read: {exc}")
+    except LegacyRunStreamError:
+        # #863: no readable events.jsonl, while progress.jsonl names the
+        # run. The cause is not known here, so none is stated.
+        return RunSpend(
+            unreadable=(
+                f"{run_dir} has no readable events.jsonl, and "
+                f"{kstrl_dir / 'progress.jsonl'} holds events of the run"
+            )
+        )
     architect = state.components.get(ARCHITECT_COMPONENT)
     return RunSpend(
         cost_usd=state.cost_usd,
@@ -588,16 +605,16 @@ def _architect_runs(
 def _opened_with(root_dir: Path, run_id: str) -> tuple[int, str]:
     """The pid and ``architect_run_id`` a run's ``factory_started`` recorded.
 
-    ``(0, "")`` for a run with no readable event stream, which
-    ``read_run_spend`` also reads as zero: such a decompose run is not
-    charged, and such a factory run carries no architect row, so the
-    architect is counted at most once either way.
+    ``(0, "")`` for a run with no readable event stream: such a decompose
+    run is not charged, and such a factory run carries no architect row,
+    so the architect is counted at most once either way. ``read_run_spend``
+    reports such a factory run as unreadable, and `ks serve` pauses on it.
     """
-    from kstrl.reducer import load_run_state
+    from kstrl.reducer import LegacyRunStreamError, load_run_state
 
     try:
         state, _source = load_run_state(root_dir, run_id)
-    except OSError:
+    except (OSError, LegacyRunStreamError):
         return 0, ""
     return state.pid, state.architect_run_id
 

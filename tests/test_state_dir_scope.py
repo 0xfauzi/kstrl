@@ -423,7 +423,7 @@ _EXPECTED_STATE_DIR_SPELLINGS: dict[str, int] = {
     "serve_gates.py": 3,
     "serve_launchd.py": 2,
     "serve_outcome.py": 2,
-    "serve_spend.py": 2,
+    "serve_spend.py": 3,  # +1 #863 A4: an unreadable run spend names the run dir
     "statedir.py": 6,  # +1 #545: plan_prd_path joins the plan directory; -2 #863 A4
     "tui/runs.py": 3,  # +1 #433: run_is_live lists the runs dir for the newest run
     "workqueue_store.py": 2,

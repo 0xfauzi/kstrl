@@ -323,6 +323,15 @@ def _charge_serve_for_approval_run(
 
     # The approval run is `ks factory` in this process.
     owned, spend = owned_run_spend(root_dir, runs_before, launch_pid=os.getpid())
+    if spend.unreadable:
+        # #863: the daily budget cannot count what it cannot read, so intake
+        # stops until an operator looks, as `ks serve` does for its own runs.
+        reason = "the spend of the approval run cannot be read: " + " Also: ".join(spend.unreadable)
+        ui_impl.err(reason)
+        from kstrl.workqueue_store import queue_lock
+
+        with queue_lock(root_dir, blocking=True):
+            _queue_for(root_dir)[1].pause(reason=reason, actor="ks inbox")
     try:
         day = SpendLedger(root_dir).charge(
             spend.cost_usd,
