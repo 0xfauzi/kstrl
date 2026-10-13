@@ -152,7 +152,7 @@ class TestReducerEventCensus:
         unaccounted = registered - handled - ignored
         assert not unaccounted, (
             f"event types the reducer neither folds nor lists as ignored: "
-            f"{sorted(unaccounted)}. Fold them in kstrl/reducer.py apply(), or add "
+            f"{sorted(unaccounted)}. Fold them in kstrl/events/reducer.py apply(), or add "
             f"them to DELIBERATELY_IGNORED with the reason they carry no component state."
         )
 

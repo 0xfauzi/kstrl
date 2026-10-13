@@ -66,7 +66,7 @@ def run_under_c_locale(tmp_path: Path, body: str, *args: str) -> subprocess.Comp
     The child's stdout is ASCII too, so a caller that wants to see a
     non-ASCII value back must print ``ascii(value)``.
     """
-    repo_root = Path(kstrl.io.atomicio.__file__).parent.parent
+    repo_root = Path(kstrl.io.atomicio.__file__).parents[2]
     script = tmp_path / "under_c_locale.py"
     script.write_text(
         "import sys\n" + f"sys.path.insert(0, {ascii(str(repo_root))})\n" + body,
