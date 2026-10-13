@@ -264,9 +264,13 @@ def _read_partial_usage(path: Path) -> UsageTotals | None:
     derived properties and are deliberately not read back.
 
     A snapshot without ``token_calls`` or ``cost_calls`` predates the
-    per-axis counts (R8). It is refused with a warning that names the
-    file, and nothing is recorded: reading it with the counts at 0 would
-    state a coverage that was never measured (#863).
+    per-axis counts (R8). A warning names the file, and the spend IS
+    recorded with each missing count at 0, so the run total reads as a
+    lower bound (#863). Dropping the snapshot would remove the worker's
+    spend from the meter, and a budget must not read money as zero. The
+    scheduler deletes the slot before each submission
+    (``_clear_partial_usage``), so only this kstrl's writer, which
+    always writes both counts, fills it.
     """
     try:
         data = read_json(path.read_text(encoding="utf-8"))
@@ -278,11 +282,11 @@ def _read_partial_usage(path: Path) -> UsageTotals | None:
     if missing:
         warnings.warn(
             f"usage snapshot {path} has no {' or '.join(missing)}, so it was written before "
-            "the per-axis counts existed; the spend of the killed worker is not recorded",
+            "the per-axis counts existed; the spend of the killed worker is recorded as a "
+            "lower bound",
             RuntimeWarning,
             stacklevel=2,
         )
-        return None
     totals = UsageTotals()
     int_fields = (
         "calls",

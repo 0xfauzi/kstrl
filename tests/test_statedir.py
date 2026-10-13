@@ -309,6 +309,37 @@ class TestLegacyHaltPaths:
 class TestReviewFailClosed:
     """Regressions for the adversarial review on PR #213."""
 
+    def test_an_in_tree_inbox_is_refused_by_ks_inbox_and_fails_the_gates_closed(
+        self,
+        repo: Path,
+    ) -> None:
+        """#863: kstrl no longer moves ``.kstrl/inbox.jsonl``. Measured before
+        this test: ``ks inbox ls`` printed "Inbox clear" with an open item in
+        the tree, and every gate read only the empty control-directory log."""
+        from click.testing import CliRunner
+
+        from kstrl.cli import cli
+        from kstrl.inbox import Inbox
+        from kstrl.statedir import CONTROL_INBOX
+
+        with patch("kstrl.statedir._origin_url", return_value=None):
+            legacy = legacy_control_paths(repo)[CONTROL_INBOX]
+            legacy.parent.mkdir(parents=True, exist_ok=True)
+            row = '{"schema_version":1,"id":"a1","kind":"halted_run","title":"t","status":"open"}\n'
+            legacy.write_text(row, encoding="utf-8")
+
+            for argv in (["inbox", "ls"], ["inbox", "show", "a1"]):
+                result = CliRunner().invoke(cli, [*argv, "--root", str(repo)])
+                assert result.exit_code == 2, result.output
+                assert ".kstrl/inbox.jsonl" in result.output
+                assert "mv " in result.output
+                assert "Inbox clear" not in result.output
+
+            assert Inbox(repo).scan().unreadable is True
+            # kstrl moved nothing.
+            assert legacy.read_text(encoding="utf-8") == row
+            assert not control_file(repo, CONTROL_INBOX).exists()
+
     def test_a_legacy_file_keeps_pause_and_spend_closed(
         self,
         repo: Path,

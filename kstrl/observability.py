@@ -174,7 +174,7 @@ class ProgressLog:
         Progress-log shaped, so the file stays one schema: ``ts``,
         ``event`` and the run it was found during. Carries NO
         ``component``, which is what keeps it out of every aggregate:
-        ``summarize_events`` records the timestamp and skips any event
+        the run fold (``reducer.apply``) makes no component state for an event
         without one, so a repair row cannot invent activity for a
         component that did nothing. ``latest_run_id`` is unaffected
         because the row names the run that is already the latest.

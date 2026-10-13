@@ -48,7 +48,13 @@ from kstrl.atomicio import atomic_write_text
 from kstrl.config_numbers import check_numbers
 from kstrl.jsonread import read_json
 from kstrl.observability import NotifyHooks
-from kstrl.statedir import CONTROL_INBOX, control_file, control_lock, ensure_control_state
+from kstrl.statedir import (
+    CONTROL_INBOX,
+    control_file,
+    control_lock,
+    ensure_control_state,
+    legacy_control_remaining,
+)
 
 INBOX_SCHEMA_VERSION = 1
 
@@ -409,14 +415,20 @@ class Inbox:
         the gate has no positive evidence the backlog is under the cap,
         so collapsing it to ``skipped=1`` would re-admit under any cap
         greater than one.
+
+        An in-tree ``.kstrl/inbox.jsonl`` that kstrl no longer moves (#863)
+        also makes the scan ``unreadable``: its items are not in this log,
+        so a gate that reads only this log would decide on part of the
+        backlog. ``ks inbox`` refuses by name (``cli_inbox._inbox_for``).
         """
         ensure_control_state(self.root_dir)
+        in_tree = CONTROL_INBOX in legacy_control_remaining(self.root_dir)
         try:
             exists = self.path.exists()
         except OSError:
             return InboxScan(unreadable=True)
         if not exists:
-            return InboxScan()
+            return InboxScan(unreadable=in_tree)
         try:
             raw = self.path.read_bytes()
         except OSError:
@@ -440,7 +452,7 @@ class Inbox:
                 records.append(record)
             else:
                 skipped += 1
-        return InboxScan(records=tuple(records), skipped_lines=skipped)
+        return InboxScan(records=tuple(records), skipped_lines=skipped, unreadable=in_tree)
 
     def _read_lines(self) -> list[dict[str, Any]]:
         return list(self.scan().records)

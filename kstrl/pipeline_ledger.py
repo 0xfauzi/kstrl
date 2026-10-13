@@ -377,7 +377,7 @@ class UsageLedger(PipelineState):
     def token_budget_unenforceable(self) -> str | None:
         """Why the TOKEN cap can no longer fire at all, or None.
 
-        The parent-side twin of :meth:`LoopBudget.halt_reason`'s
+        The parent-side twin of :meth:`LoopBudget.halt_verdict`'s
         unenforceable branch, and it exists because the in-loop check has
         a blind spot the loop cannot cover itself: a loop that emits
         COMPLETE returns BEFORE evaluating its budget, so an adapter that

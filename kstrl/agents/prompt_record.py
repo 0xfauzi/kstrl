@@ -52,8 +52,9 @@ RECORD_SCHEMA: Final = 1
 #: The adapter that piped the prompt, one spelling per adapter.
 AGENT_CLIS: Final = frozenset({"claude-code", "claude-sdk", "codex", "custom"})
 
-#: Every field a record carries, with its type: the writer's keys and the
-#: reader's checks come from this one mapping.
+#: Every field a record carries, with its type. kstrl has no reader of the
+#: records (#863); the reader in ``tests/helpers/prompt_records.py`` checks
+#: each record against this mapping.
 _FIELDS: Final[dict[str, type]] = {
     "schema": int,
     "run_id": str,

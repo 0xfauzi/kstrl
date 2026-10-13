@@ -2225,14 +2225,19 @@ class TestAbortedWorkerUsage:
         empty.write_text('{"calls": 0, "total_tokens": 0, "token_calls": 0, "cost_calls": 0}')
         assert _read_partial_usage(empty) is None  # nothing ran
 
-    def test_a_snapshot_without_the_per_axis_counts_is_refused_by_name(
+    def test_a_snapshot_without_the_per_axis_counts_is_named_and_kept_as_a_lower_bound(
         self, tmp_path: Path
     ) -> None:
         old = tmp_path / "engineer_usage.json"
-        old.write_text('{"calls": 2, "known_calls": 2, "total_tokens": 900}')
+        old.write_text('{"calls": 2, "known_calls": 2, "total_tokens": 900, "cost_usd": 0.5}')
         with pytest.warns(RuntimeWarning, match="engineer_usage.json") as seen:
-            assert _read_partial_usage(old) is None
+            totals = _read_partial_usage(old)
         assert "token_calls or cost_calls" in str(seen[0].message)
+        # The spend stays on the meter; the missing counts make it a lower bound.
+        assert totals is not None
+        assert (totals.calls, totals.total_tokens, totals.cost_usd) == (2, 900, 0.5)
+        assert (totals.token_calls, totals.cost_calls) == (0, 0)
+        assert totals.tokenless_calls == 2 and totals.costless_calls == 2
 
     def test_unwritable_snapshot_path_is_swallowed(self, tmp_path: Path) -> None:
         blocker = tmp_path / "blocker"

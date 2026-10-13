@@ -684,7 +684,8 @@ def _v2_run_dirs(root_dir: Path) -> list[Path]:
     """Run dirs that carry an event stream, oldest first (newest last).
 
     Tolerant by contract: ``load_run_state`` answers an unreadable
-    ``runs/`` with "no runs" and falls back to the v1 log. A caller that
+    ``runs/`` with "no runs", and then refuses a progress.jsonl that
+    holds the run (:class:`LegacyRunStreamError`). A caller that
     must distinguish "no runs" from "could not look" wants
     :func:`run_dirs_newest_first` instead.
     """
