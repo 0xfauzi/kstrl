@@ -41,7 +41,6 @@ from kstrl.waivers import ACCEPTANCE_PHASE
 # "acceptance" is the operator's acceptance checks on the head (#700
 # slice 6). They run once Phase 1 has passed and before the diff, for a
 # component its plan names, so they sit between the two.
-
 PHASE_RANK: dict[str, int] = {
     "engineer": 0,
     "verification": 1,

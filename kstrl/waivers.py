@@ -75,13 +75,13 @@ from kstrl.statedir import ControlStateError
 if TYPE_CHECKING:
     from kstrl.manifest import Component
 
-#: Bumped when the key's fields change. A stored key made under another
-#: version never equals a recomputed one, so every older approval is
-#: refused rather than reinterpreted.
 #: The phase name of the operator's acceptance checks (#700 slice 6). It lives
 #: here because ``kstrl.context`` ranks it and imports it from this module.
 ACCEPTANCE_PHASE = "acceptance"
 
+#: Bumped when the key's fields change. A stored key made under another
+#: version never equals a recomputed one, so every older approval is
+#: refused rather than reinterpreted.
 WAIVER_KEY_VERSION = 1
 
 #: The inbox kinds an approval of which waives a finding, each with the
