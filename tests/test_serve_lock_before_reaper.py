@@ -22,10 +22,10 @@ from pathlib import Path
 
 import pytest
 
+from kstrl.queue.workqueue import Queue
+from kstrl.queue.workqueue_items import ItemState, QueueConfig
 from kstrl.serve import serve
 from kstrl.serve_outcome import RunOutcome
-from kstrl.workqueue import Queue
-from kstrl.workqueue_items import ItemState, QueueConfig
 from tests.helpers import procs
 from tests.helpers.astwalk import (
     all_nodes,

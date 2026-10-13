@@ -138,7 +138,7 @@ ignore = []
 # init_cmd.py is full of triple-quoted CLAUDE.md / prompt template
 # strings used to scaffold user projects. Reflowing markdown inside
 # those strings changes the output users see; keep bytes stable.
-"kstrl/init_cmd.py" = ["E501"]
+"kstrl/project/init_cmd.py" = ["E501"]
 # Test files contain long literal expected strings (verification
 # output, JSON payloads). Reflowing would obscure the test intent.
 "tests/test_verify.py" = ["E501"]

@@ -41,7 +41,7 @@ from pathlib import Path
 from typing import Any
 
 from kstrl.io import atomic_write_text
-from kstrl.workqueue_items import (
+from kstrl.queue.workqueue_items import (
     _LEGAL_TRANSITIONS,
     ALL_STATES,
     ItemSource,
@@ -56,7 +56,7 @@ from kstrl.workqueue_items import (
     is_safe_component,
     mint_item_id,
 )
-from kstrl.workqueue_store import (
+from kstrl.queue.workqueue_store import (
     META_FILENAME,
     QueueStore,
     atomic_write,

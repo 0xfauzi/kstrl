@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from kstrl.queue import ItemSource, ItemState, Queue, QueueItem, queue_lock, short_item_id
 from kstrl.serve_config import ServeObserver
 from kstrl.serve_gates import check_parked_merges
 from kstrl.serve_github import OpenPrCountStreak
@@ -22,9 +23,6 @@ from kstrl.serve_outcome import (
 )
 from kstrl.serve_process import ReapResult
 from kstrl.serve_spend import SpendLedger
-from kstrl.workqueue import Queue
-from kstrl.workqueue_items import ItemSource, ItemState, QueueItem, short_item_id
-from kstrl.workqueue_store import queue_lock
 
 
 @dataclass
@@ -78,7 +76,7 @@ def _file_inbox_item(
     one rule #364 reconciled them onto.
     """
     try:
-        from kstrl.inbox import Inbox, InboxConfig, ItemKind
+        from kstrl.owner import Inbox, InboxConfig, ItemKind
 
         config = InboxConfig.load(root_dir)
         if not config.enabled:

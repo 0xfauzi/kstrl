@@ -28,7 +28,6 @@ import pytest
 from kstrl import (
     context,
     factory_worker,
-    init_cmd,
     iteration_prompt,
     knowledge,
     review_claims,
@@ -43,6 +42,7 @@ from kstrl.plan.findings import Finding
 from kstrl.plan.manifest import Component, Manifest
 from kstrl.plan.scope import ComponentScope
 from kstrl.policy import PolicyConfig
+from kstrl.project import init_cmd
 from kstrl.review import CriterionReview, ReviewResult, ReviewVerdict
 from tests.helpers.builder_prompts import BUILDER_PROMPTS
 from tests.helpers.component_prd import write_component_prd

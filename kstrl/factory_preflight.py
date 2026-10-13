@@ -51,7 +51,7 @@ from kstrl.plan import (
 )
 from kstrl.plan_gate import spec_pin_errors, stack_pin_errors
 from kstrl.proc import TimeoutConfig, refusal_of, release, sandbox_hint
-from kstrl.stack import (
+from kstrl.project import (
     NO_STACK,
     STACK_KIND,
     Stack,

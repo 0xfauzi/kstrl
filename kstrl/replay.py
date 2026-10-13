@@ -15,7 +15,7 @@ The stages run in order and the first one that fails ends the replay:
 
 kstrl never reads what ``up`` does: only its exit status and whether its
 group is gone afterwards. The stage a replay failed at is named in the
-vocabulary :mod:`kstrl.stack` owns (``REPLAY_*``), because a failure
+vocabulary :mod:`kstrl.project.stack` owns (``REPLAY_*``), because a failure
 keeps the stack from being confirmed. Below a proven rung nothing runs and
 the replay is ``boundary_refused``. On a platform with no prover every
 stage runs on the host and the record names the host fallback's label
@@ -61,7 +61,7 @@ from kstrl.proc import (
     signal_group,
     start_scrubbed,
 )
-from kstrl.stack import (
+from kstrl.project import (
     REPLAY_BASE_CONTRADICTION,
     REPLAY_BOUNDARY_REFUSED,
     REPLAY_CHECK_NOT_RUNNABLE,

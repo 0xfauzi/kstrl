@@ -1,6 +1,6 @@
 """R10.8: the loader for operator-authored context files, on one file.
 
-The unit under test is ``kstrl/operator_context.py``. What matters here
+The unit under test is ``kstrl/project/operator_context.py``. What matters here
 is what the ENGINEER ends up reading, so every assertion is against the
 returned block, not against a call record.
 
@@ -20,9 +20,9 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import scaffold_ledger
 from kstrl.config.config import KstrlConfig
-from kstrl.operator_context import (
+from kstrl.project import scaffold_ledger
+from kstrl.project.operator_context import (
     CUT_FLOOR,
     GOLDEN_PATTERNS,
     load_operator_file,
@@ -30,8 +30,8 @@ from kstrl.operator_context import (
     operator_file_spec,
     read_operator_file,
 )
-from kstrl.scaffold_ledger import SCAFFOLDED_TEMPLATES, shipped_label
-from kstrl.scaffold_templates import DEFAULT_GOLDEN_PATTERNS
+from kstrl.project.scaffold_ledger import SCAFFOLDED_TEMPLATES, shipped_label
+from kstrl.project.scaffold_templates import DEFAULT_GOLDEN_PATTERNS
 from tests.helpers.operatorfiles import assert_delimited, body_of, golden, split_block
 
 #: The exact line this block's delimiters used to be, before the token
@@ -62,7 +62,7 @@ class TestLoadOperatorFile:
         patterns. Only an UNREADABLE file is worth a warning; warning on
         absence would train the operator to ignore the warning that
         matters."""
-        with caplog.at_level(logging.WARNING, logger="kstrl.operator_context"):
+        with caplog.at_level(logging.WARNING, logger="kstrl.project.operator_context"):
             load_operator_file(golden(tmp_path / "golden-patterns.md"))
         assert caplog.records == []
 
@@ -171,7 +171,7 @@ class TestLoadOperatorFile:
         assert len(text) == 10_000
         path.write_text(text, encoding="utf-8")
 
-        with caplog.at_level(logging.WARNING, logger="kstrl.operator_context"):
+        with caplog.at_level(logging.WARNING, logger="kstrl.project.operator_context"):
             block = load_operator_file(golden(path))
 
         body = body_of(block)
@@ -224,7 +224,7 @@ class TestLoadOperatorFile:
         path.write_text("- a pattern\n", encoding="utf-8")
         path.chmod(0o000)
         try:
-            with caplog.at_level(logging.WARNING, logger="kstrl.operator_context"):
+            with caplog.at_level(logging.WARNING, logger="kstrl.project.operator_context"):
                 block = load_operator_file(golden(path))
         finally:
             path.chmod(0o644)
@@ -241,7 +241,7 @@ class TestLoadOperatorFile:
         path = tmp_path / "golden-patterns.md"
         path.mkdir()
 
-        with caplog.at_level(logging.WARNING, logger="kstrl.operator_context"):
+        with caplog.at_level(logging.WARNING, logger="kstrl.project.operator_context"):
             block = load_operator_file(golden(path))
 
         assert block == ""
@@ -258,7 +258,7 @@ class TestLoadOperatorFile:
         path = tmp_path / "golden-patterns.md"
         path.write_bytes(b"- pattern \xff\xfe\n")
 
-        with caplog.at_level(logging.WARNING, logger="kstrl.operator_context"):
+        with caplog.at_level(logging.WARNING, logger="kstrl.project.operator_context"):
             block = load_operator_file(golden(path))
 
         assert block == ""

@@ -30,7 +30,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.inbox import InboxItem
+from kstrl.owner.inbox import InboxItem
 from tests.helpers.gitrepo import git_in
 from tests.test_acceptance_design_e2e import (
     REFUSED_BASE,

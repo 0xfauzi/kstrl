@@ -39,13 +39,13 @@ from kstrl.factory import run_factory
 from kstrl.journal_rows import FINDINGS_SUPERSEDED_EVENT
 from kstrl.plan.manifest import Component, ComponentStatus, Manifest
 from kstrl.proc.shutdown import StopController
+from kstrl.queue.workqueue import Queue
+from kstrl.queue.workqueue_items import ItemSource, QueueConfig
 from kstrl.serve import serve_cycle
 from kstrl.serve_config import ServeConfig
 from kstrl.serve_spend import SpendLedger, read_run_spend
 from kstrl.ui.plain import PlainUI
 from kstrl.verify_model import VerifyConfig
-from kstrl.workqueue import Queue
-from kstrl.workqueue_items import ItemSource, QueueConfig
 from tests.helpers import procs
 from tests.helpers.stack_confirmation import in_process_stack
 from tests.spine_utils import (
@@ -86,7 +86,7 @@ from kstrl.factory_config import FactoryConfig
 from kstrl.plan.manifest import Manifest
 from kstrl.security import SecurityConfig
 from kstrl.ui.plain import PlainUI
-from kstrl.stack import CONFIRMED_IN_INBOX, Stack
+from kstrl.project.stack import CONFIRMED_IN_INBOX, Stack
 from kstrl.verify_model import VerifyConfig
 
 _stack = Stack(

@@ -74,12 +74,12 @@ from unittest.mock import patch
 import click
 import pytest
 
+from kstrl.queue.workqueue import Queue
+from kstrl.queue.workqueue_items import QueueConfig
 from kstrl.serve import serve_cycle
 from kstrl.serve_config import ServeConfig
 from kstrl.serve_outcome import RunOutcome
 from kstrl.serve_process import subprocess_factory_runner
-from kstrl.workqueue import Queue
-from kstrl.workqueue_items import QueueConfig
 from tests.helpers import procs
 from tests.helpers.executables import write_executable
 from tests.helpers.runners import recording_runner

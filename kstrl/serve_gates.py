@@ -10,6 +10,7 @@ from kstrl.io import (
     state_dir,
 )
 from kstrl.plan import ComponentStatus, Manifest
+from kstrl.queue import Queue, queue_lock
 from kstrl.serve_config import Admission, ServeConfig, ServeObserver
 from kstrl.serve_github import OpenPrCountStreak, check_open_pr_bound
 from kstrl.serve_spend import (
@@ -17,8 +18,6 @@ from kstrl.serve_spend import (
     SpendLedger,
     next_local_midnight,
 )
-from kstrl.workqueue import Queue
-from kstrl.workqueue_store import queue_lock
 
 if TYPE_CHECKING:
     pass
@@ -277,7 +276,7 @@ def check_inbox_cap(root_dir: Path) -> Admission:
     regardless of the configured cap - collapsing it to one skipped
     line would re-admit under any cap greater than one.
     """
-    from kstrl.inbox import Inbox, InboxConfig
+    from kstrl.owner import Inbox, InboxConfig
 
     try:
         config = InboxConfig.load(root_dir)
@@ -386,7 +385,7 @@ def _stack_wait(root_dir: Path) -> str | None:
     ``[stack]`` at all every run would refuse (slice 4), so the cycle waits
     for one; nothing is filed, because there is no text to confirm.
     """
-    from kstrl.stack import NO_STACK, StackRefused, confirmed_stack, unconfirmed_lines
+    from kstrl.project import NO_STACK, StackRefused, confirmed_stack, unconfirmed_lines
 
     try:
         if confirmed_stack(root_dir) is None:

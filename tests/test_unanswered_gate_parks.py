@@ -49,14 +49,14 @@ from kstrl.config.config import KstrlConfig
 from kstrl.events.event_catalog import CheckpointResolved, Event
 from kstrl.events.events import CallbackSink
 from kstrl.feature_cmd import run_feature
-from kstrl.inbox import Inbox, InboxConfig
-from kstrl.interaction import (
+from kstrl.loop import LoopResult, run_loop
+from kstrl.owner.inbox import Inbox, InboxConfig
+from kstrl.owner.interaction import (
     PromptKind,
     PromptRequest,
     PromptResponse,
     UiInteractionChannel,
 )
-from kstrl.loop import LoopResult, run_loop
 from kstrl.pipeline_delivery import CheckpointDecision, Delivery, PipelineOutcome
 from kstrl.pipeline_merge import PrDisposition, PrPhaseResult
 from kstrl.pipeline_transitions import Transition
@@ -418,7 +418,7 @@ EXPECTED_PROMPT_SITES = {
 
 #: The target `calls_to`/`resolved_calls` resolve against: the fully
 #: dotted origin `PromptRequest` imports from, everywhere in kstrl/.
-PROMPT_REQUEST_TARGET = frozenset({"kstrl.interaction.PromptRequest"})
+PROMPT_REQUEST_TARGET = frozenset({"kstrl.owner.interaction.PromptRequest"})
 
 #: `Sites.undecided` for the walk above, package-wide. Empty since #863 A1
 #: removed the two TUI calls of the result of a call. A call with no callee
@@ -430,14 +430,14 @@ EXPECTED_UNDECIDED_PROMPT_SITES: tuple[str, ...] = ()
 #: rather than by line (#645) and re-derived by RUNNING it rather than
 #: typed from a design document (reading a pin is not running a guard).
 EXPECTED_SEEN_PROMPT_SITES: tuple[str, ...] = (
-    "cli_architect.py::retry kstrl.interaction.PromptRequest",
-    "cli_factory.py::factory kstrl.interaction.PromptRequest",
-    "cli_preflight.py::_stack_checkpoint kstrl.interaction.PromptRequest",
-    "feature_cmd.py::run_feature kstrl.interaction.PromptRequest",
-    "guards.py::enforce_allowed_paths kstrl.interaction.PromptRequest",
-    "loop.py::_resolve_iteration_pause kstrl.interaction.PromptRequest",
-    "pipeline_delivery.py::Delivery._phase_checkpoint kstrl.interaction.PromptRequest",
-    "plan_gate.py::run_plan_gate kstrl.interaction.PromptRequest",
+    "cli_architect.py::retry kstrl.owner.interaction.PromptRequest",
+    "cli_factory.py::factory kstrl.owner.interaction.PromptRequest",
+    "cli_preflight.py::_stack_checkpoint kstrl.owner.interaction.PromptRequest",
+    "feature_cmd.py::run_feature kstrl.owner.interaction.PromptRequest",
+    "guards.py::enforce_allowed_paths kstrl.owner.interaction.PromptRequest",
+    "loop.py::_resolve_iteration_pause kstrl.owner.interaction.PromptRequest",
+    "pipeline_delivery.py::Delivery._phase_checkpoint kstrl.owner.interaction.PromptRequest",
+    "plan_gate.py::run_plan_gate kstrl.owner.interaction.PromptRequest",
 )
 
 
@@ -450,9 +450,9 @@ def _prompt_request_sites() -> tuple[Counter[str], Sites]:
     table rather than a bare name match, so a call reached through a
     rebound name (`_Ask = PromptRequest; _Ask(...)`), an attribute bound
     to it (`self.mk = PromptRequest; self.mk()`), or
-    `getattr(kstrl.interaction, "PromptRequest")(...)` is caught the
+    `getattr(kstrl.owner.interaction, "PromptRequest")(...)` is caught the
     same as a direct spelling - and an aliased import
-    (`from kstrl.interaction import PromptRequest as P`) resolves
+    (`from kstrl.owner.interaction import PromptRequest as P`) resolves
     through the same table, so it needs no separate refusal. The four
     helpers this replaces (`_refuse_an_aliased_import`, `_called_name`,
     `_count_prompt_calls`, `_prompt_sites`) matched only the spelled
@@ -515,7 +515,7 @@ class TestTheDisclosedLimit:
     def test_a_prompt_copied_through_dataclasses_replace_is_missed(self) -> None:
         source = (
             "import dataclasses\n"
-            "from kstrl.interaction import PromptRequest\n"
+            "from kstrl.owner.interaction import PromptRequest\n"
             "def f(req: PromptRequest) -> PromptRequest:\n"
             "    return dataclasses.replace(req, default=1)\n"
         )

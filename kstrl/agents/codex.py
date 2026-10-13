@@ -12,13 +12,13 @@ from pathlib import Path
 
 from kstrl.agents.base import TOOL_RESULT_PREFIX
 from kstrl.agents.prompt_record import record_prompt
-from kstrl.events import UsageRecord
-from kstrl.proc import DeadlineStreamer, timeout_message
-from kstrl.sandbox import (
+from kstrl.agents.sandbox import (
     SandboxConfig,
     codex_review_sandbox_args,
     codex_sandbox_args,
 )
+from kstrl.events import UsageRecord
+from kstrl.proc import DeadlineStreamer, timeout_message
 
 # Measured against codex CLI 0.134.0 (R3.1): plain `codex exec` output
 # ends with a two-line trailer - a line reading "tokens used" followed by
@@ -111,7 +111,7 @@ class CodexAgent:
             sandbox: OS-level sandbox intent (R7.5); mapped to
                 ``--sandbox workspace-write`` plus the network-access
                 config override (measured against codex 0.134.0 - see
-                kstrl.sandbox)
+                kstrl.agents.sandbox)
             read_only: #266 - the agent may read the tree and must not
                 write it (the reviewer roles). Maps to ``--sandbox
                 read-only`` and OVERRIDES ``sandbox``: read-only is

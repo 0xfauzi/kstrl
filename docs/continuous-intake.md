@@ -900,7 +900,7 @@ window. A factory run at 10-20 minutes does not.
   interval firing stops at `serve_lock` before the reaper and exits 2
   (§5, pinned by `tests/test_serve_lock_before_reaper.py`). On resume,
   the run writes its result through `Queue.transition` in
-  `kstrl/workqueue.py`, which does not read the lease. Thus a lease that
+  `kstrl/queue/workqueue.py`, which does not read the lease. Thus a lease that
   lapsed during the suspend does not stop the result.
   `tests/test_serve_lock_before_reaper.py::TestARunWhoseLeaseLapsedWhileItRanStillFinishes`
   pins this step with a lease that lapses while a stub run waits, not

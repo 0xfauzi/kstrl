@@ -20,10 +20,10 @@ import pytest
 from click.testing import CliRunner, Result
 
 from kstrl.cli import cli
+from kstrl.queue.workqueue import Queue
+from kstrl.queue.workqueue_items import ItemState, MergeDisposition, QueueConfig
 from kstrl.serve_outcome import RunOutcome
 from kstrl.serve_spend import RunSpend, SpendLedger
-from kstrl.workqueue import Queue
-from kstrl.workqueue_items import ItemState, MergeDisposition, QueueConfig
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
 
 
@@ -289,9 +289,9 @@ class TestShownIds:
     ) -> None:
         """Both items are minted in the same microsecond, so only the nonce tells them apart."""
         moment = datetime(2026, 10, 4, 18, 0, 0, tzinfo=UTC)
-        monkeypatch.setattr("kstrl.workqueue._utc_now", lambda: moment)
-        monkeypatch.setattr("kstrl.workqueue_items._utc_now", lambda: moment)
-        monkeypatch.setattr("kstrl.workqueue_store._utc_now", lambda: moment)
+        monkeypatch.setattr("kstrl.queue.workqueue._utc_now", lambda: moment)
+        monkeypatch.setattr("kstrl.queue.workqueue_items._utc_now", lambda: moment)
+        monkeypatch.setattr("kstrl.queue.workqueue_store._utc_now", lambda: moment)
         for name in ("a", "b"):
             spec = tmp_path / f"{name}.md"
             spec.write_text(f"# {name}\n\nDo {name}.\n", encoding="utf-8")
@@ -319,7 +319,7 @@ class TestShownIds:
     ) -> None:
         """`q-202610` is item b's prefix and item a's short form; neither is picked."""
         minted = iter(["q-20261101-120000.000000-202610", "q-20261004-120000.000000-abcdef"])
-        monkeypatch.setattr("kstrl.workqueue.mint_item_id", lambda: next(minted))
+        monkeypatch.setattr("kstrl.queue.workqueue.mint_item_id", lambda: next(minted))
         for name in ("a", "b"):
             spec = tmp_path / f"{name}.md"
             spec.write_text(f"# {name}\n\nDo {name}.\n", encoding="utf-8")
@@ -337,7 +337,7 @@ class TestShownIds:
     ) -> None:
         """`q-` and the id's last six characters name the item; `q-` and fewer name nothing."""
         monkeypatch.setattr(
-            "kstrl.workqueue.mint_item_id", lambda: "q-20261101-120000.000000-a1b2c3"
+            "kstrl.queue.workqueue.mint_item_id", lambda: "q-20261101-120000.000000-a1b2c3"
         )
         spec = tmp_path / "a.md"
         spec.write_text("# a\n\nDo a.\n", encoding="utf-8")
@@ -479,7 +479,7 @@ class TestRm:
         _invoke(["queue", "add", str(spec_file)], tmp_path)
         item = _queue(tmp_path).items()[0]
         with patch(
-            "kstrl.workqueue.shutil.rmtree",
+            "kstrl.queue.workqueue.shutil.rmtree",
             side_effect=PermissionError("read-only"),
         ):
             result = _invoke(["queue", "rm", item.item_id, "--yes"], tmp_path)
@@ -743,7 +743,7 @@ class TestQueueSync:
     ) -> None:
         """#187 F12: QueueLockedError escaped as an uncaught traceback."""
         pytest.importorskip("fcntl")
-        from kstrl.workqueue_store import queue_lock
+        from kstrl.queue.workqueue_store import queue_lock
 
         self._toml(tmp_path)
         with queue_lock(tmp_path):

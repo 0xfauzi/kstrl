@@ -39,15 +39,15 @@ from pathlib import Path
 from typing import IO, Any
 
 from kstrl.agents.prompt_record import record_prompt
-from kstrl.events import UsageRecord
-from kstrl.io import read_json
-from kstrl.proc import DeadlineStreamer, timeout_message
-from kstrl.sandbox import (
+from kstrl.agents.sandbox import (
     SandboxConfig,
     claude_review_sandbox_settings,
     claude_sandbox_drops_skip_permissions,
     claude_sandbox_settings,
 )
+from kstrl.events import UsageRecord
+from kstrl.io import read_json
+from kstrl.proc import DeadlineStreamer, timeout_message
 
 logger = logging.getLogger(__name__)
 

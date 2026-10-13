@@ -29,7 +29,7 @@ from kstrl.factory_worktrees import _setup_worktree
 from kstrl.loop import COMPLETION_MARKER, run_loop
 from kstrl.proc.proc import TIMEOUT_MESSAGE_PREFIX
 from kstrl.proc.timeout import TimeoutConfig
-from kstrl.stack import stack_toml
+from kstrl.project.stack import stack_toml
 from kstrl.ui.plain import PlainUI
 from kstrl.verify_model import VerifyConfig
 from tests.helpers.stack_confirmation import confirm_stack, in_process_stack, write_stack

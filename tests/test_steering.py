@@ -21,11 +21,11 @@ import pytest
 
 from kstrl.intake_gh import GhResult
 from kstrl.intake_issue import ProcessedLedger
-from kstrl.operator_context import GUIDANCE_HEADING
-from kstrl.scaffold_templates import DEFAULT_MEMORY
+from kstrl.project.operator_context import GUIDANCE_HEADING
+from kstrl.project.scaffold_templates import DEFAULT_MEMORY
+from kstrl.queue.workqueue import Queue
+from kstrl.queue.workqueue_items import ItemSource, MergeDisposition, QueueConfig
 from kstrl.serve import _NullObserver, serve_cycle
-from kstrl.workqueue import Queue
-from kstrl.workqueue_items import ItemSource, MergeDisposition, QueueConfig
 from tests.helpers.fakegh import GhRouter, marked, unmarked
 from tests.helpers.runners import recording_runner
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
@@ -189,7 +189,7 @@ def _finished_item_recording(root: Path, url: str, *, design_acceptance: bool = 
     """A queue holding one DONE item whose `pr_urls` carries `url`.
 
     `Queue.finish_ok` is a transition to DONE and `_LEGAL_TRANSITIONS`
-    (`kstrl/workqueue.py:170`) allows DONE only from RUNNING, so
+    (`kstrl/queue/workqueue.py:170`) allows DONE only from RUNNING, so
     `finish_ok` on a freshly added item raises
     `QueueError: illegal queue transition queued -> done`. The
     lease/start/finish chain is the idiom the rest of the suite uses

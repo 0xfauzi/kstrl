@@ -20,8 +20,8 @@ from typing import Any
 import pytest
 
 from kstrl.autonomy import AutonomyLevel, AutonomyState
-from kstrl.inbox import Inbox, ItemKind, Priority
 from kstrl.io.statedir import CONTROL_AUTONOMY, ControlUnavailableError, control_file
+from kstrl.owner.inbox import Inbox, ItemKind, Priority
 from tests.helpers.demotion import (
     BrokenHealthFinder,
     fake_health,

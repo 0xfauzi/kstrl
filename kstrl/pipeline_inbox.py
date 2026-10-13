@@ -9,11 +9,20 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from kstrl.inbox import UNDECIDED, Inbox, InboxError, InboxItem, ItemKind
 from kstrl.io import ControlStateError
+from kstrl.owner import (
+    UNDECIDED,
+    ApprovalSnapshot,
+    Inbox,
+    InboxError,
+    InboxItem,
+    ItemKind,
+    Waivers,
+    WaiverScope,
+    load_approvals,
+)
 from kstrl.pipeline_state import PipelineState
 from kstrl.plan import Component, park_dedupe_key
-from kstrl.waivers import ApprovalSnapshot, Waivers, WaiverScope, load_approvals
 
 
 class InboxDesk(PipelineState):

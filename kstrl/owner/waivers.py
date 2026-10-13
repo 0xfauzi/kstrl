@@ -64,8 +64,8 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl.inbox import Inbox, InboxConfig, InboxError, InboxItem, ItemKind, ItemStatus
 from kstrl.io import ControlStateError
+from kstrl.owner.inbox import Inbox, InboxConfig, InboxError, InboxItem, ItemKind, ItemStatus
 from kstrl.plan import (
     POLICY_CATEGORY_PREFIX,
     WAIVER_TAG_PREFIX,

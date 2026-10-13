@@ -143,7 +143,7 @@ EXPECTED_RUN_RECORD_SITES: dict[str, int] = {
     "factory_autonomy.py: _record_health_breaches": 1,
     # #601: the policy demotion's evidence and the human-rejection demotion's.
     "factory_autonomy.py: _demote_once": 2,
-    "inbox.py: InboxItem.to_dict": 1,
+    "owner/inbox.py: InboxItem.to_dict": 1,
     "integration_phase.py: _not_run": 1,
     "integration_phase.py: _review_evidence": 1,
     "integration_state.py: _history": 1,
@@ -161,9 +161,9 @@ EXPECTED_RUN_RECORD_SITES: dict[str, int] = {
     "pipeline_attempt.py: AttemptRecorder.journal_superseded_findings": 1,
     "events/reducer.py: upconvert_v1": 1,
     "serve_outcome.py: _red_base_outcome": 1,  # #654 slice 3b: the red base's evidence
-    "workqueue.py: Queue.await_answer": 1,
-    "workqueue.py: Queue.await_approval": 1,
-    "workqueue.py: Queue.relink_run": 1,
+    "queue/workqueue.py: Queue.await_answer": 1,
+    "queue/workqueue.py: Queue.await_approval": 1,
+    "queue/workqueue.py: Queue.relink_run": 1,
 }
 
 _JOURNAL = (
@@ -201,7 +201,7 @@ NOT_STAMPED_HERE: dict[str, str] = {
     "pipeline_attempt.py: AttemptRecorder.journal_integration_result": _JOURNAL,
     "factory_autonomy.py: _record_health_breaches": _DEMOTION,
     "factory_autonomy.py: _demote_once": _DEMOTION,
-    "inbox.py: InboxItem.to_dict": (
+    "owner/inbox.py: InboxItem.to_dict": (
         "an operator inbox item that points at the run it came from; it is a "
         "work item with its own id, not a record of the run"
     ),
@@ -215,9 +215,9 @@ NOT_STAMPED_HERE: dict[str, str] = {
     ),
     "events/observability.py: ProgressLog.emit": _V1,
     "events/observability.py: ProgressLog._repair_event": _V1,
-    "workqueue.py: Queue.await_answer": _QUEUE_ESCALATION,
-    "workqueue.py: Queue.await_approval": _QUEUE_LINK,
-    "workqueue.py: Queue.relink_run": _QUEUE_LINK,
+    "queue/workqueue.py: Queue.await_answer": _QUEUE_ESCALATION,
+    "queue/workqueue.py: Queue.await_approval": _QUEUE_LINK,
+    "queue/workqueue.py: Queue.relink_run": _QUEUE_LINK,
 }
 
 

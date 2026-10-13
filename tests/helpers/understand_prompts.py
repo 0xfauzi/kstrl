@@ -1,4 +1,4 @@
-"""Tables for the two understand instructions in ``kstrl/scaffold_templates.py``:
+"""Tables for the two understand instructions in ``kstrl/project/scaffold_templates.py``:
 ``DEFAULT_UNDERSTAND_PROMPT`` (``ks understand``) and
 ``DEFAULT_FEATURE_UNDERSTAND_PROMPT`` (``ks feature``), enrolled by #654
 slice 8.
@@ -23,7 +23,7 @@ has shipped, and ``tests/test_prompt_staleness.py`` pins which constant
 
 from __future__ import annotations
 
-from kstrl.scaffold_templates import (
+from kstrl.project.scaffold_templates import (
     DEFAULT_FEATURE_UNDERSTAND_PROMPT,
     DEFAULT_FEATURE_UNDERSTAND_PROMPT_VERSION,
     DEFAULT_UNDERSTAND_PROMPT,

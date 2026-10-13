@@ -31,8 +31,8 @@ import kstrl.cli as cli_mod
 import kstrl.evolution as evolution_mod
 from kstrl.evolution_config import EvolutionConfig
 from kstrl.factory_config import FactoryConfig
-from kstrl.feedforward import CodebaseScanConfig
 from kstrl.knowledge_facts import KnowledgeConfig
+from kstrl.project.feedforward import CodebaseScanConfig
 from kstrl.verify_model import VerifyConfig
 
 # The harness moved to tests/helpers/factorycli.py on #195, when

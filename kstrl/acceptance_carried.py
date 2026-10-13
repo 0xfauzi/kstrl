@@ -58,14 +58,14 @@ from kstrl.acceptance import (
 from kstrl.git import git, git_base
 from kstrl.io import atomic_write_json, control_dir, read_json
 from kstrl.proc import Rung, limit_seconds
+from kstrl.project import REPLAY_BOUNDARY_REFUSED
 from kstrl.replay import Replay, Stage, replay_stack
-from kstrl.stack import REPLAY_BOUNDARY_REFUSED
 
 if TYPE_CHECKING:
     from kstrl.contract import ContractConfig
-    from kstrl.inbox import InboxConfig, InboxItem
+    from kstrl.owner import InboxConfig, InboxItem
     from kstrl.plan import Manifest
-    from kstrl.stack import Stack
+    from kstrl.project import Stack
     from kstrl.ui import UI
 
 #: The file of carried checks, under the control directory's acceptance
@@ -230,7 +230,7 @@ def carried_on_base(
     and why the run must not start. ``halt(entry, where, detail)``
     files the inbox item of a check that did not pass; ``where`` names
     the commit."""
-    from kstrl.waivers import approvals_at
+    from kstrl.owner import approvals_at
 
     stack = config.project_stack
     document, errors = read_carried(root)

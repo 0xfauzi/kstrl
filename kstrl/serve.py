@@ -62,6 +62,16 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from kstrl.io import run_kind
+from kstrl.queue import (
+    Queue,
+    QueueBudgetExhausted,
+    QueueConfig,
+    QueueError,
+    QueueItem,
+    queue_lock,
+    queue_root,
+    short_item_id,
+)
 from kstrl.serve_config import ServeConfig, ServeError, ServeObserver
 from kstrl.serve_gates import (
     _pause_queue,
@@ -113,15 +123,6 @@ from kstrl.serve_spend import (
     owned_run_spend,
     run_dir_names,
 )
-from kstrl.workqueue import Queue
-from kstrl.workqueue_items import (
-    QueueBudgetExhausted,
-    QueueConfig,
-    QueueError,
-    QueueItem,
-    short_item_id,
-)
-from kstrl.workqueue_store import queue_lock, queue_root
 
 if TYPE_CHECKING:
     pass

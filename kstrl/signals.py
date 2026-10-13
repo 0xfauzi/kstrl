@@ -5,7 +5,7 @@ issue against an append-only ledger in the XDG control directory, and
 writes a verdict: ``new_issue``, ``repeat`` or ``recurrence``, each
 carrying a ``would_enqueue`` / ``would_watch`` / ``would_notify``
 disposition. Nothing here queues anything: ``SignalsConfig`` has no
-``enqueue`` field, this module imports nothing from ``kstrl.workqueue``,
+``enqueue`` field, this module imports nothing from ``kstrl.queue.workqueue``,
 and no code path here writes to the inbox or to ``events.jsonl``.
 
 Two reasons put the boundary there. First, the spend a queued item

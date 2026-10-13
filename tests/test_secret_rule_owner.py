@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from kstrl.inbox import ItemKind
+from kstrl.owner.inbox import ItemKind
 from kstrl.plan.manifest import Manifest
 from tests.test_inbox_waivers import (
     ONE_SECRET,

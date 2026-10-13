@@ -43,9 +43,9 @@ from kstrl.events.usage import (
     INTEGRATION_ROLE,
 )
 from kstrl.git.version import kstrl_version
-from kstrl.init_cmd import gitignore_block, run_init
 from kstrl.io.atomicio import atomic_write_json
 from kstrl.io.runid import run_kind
+from kstrl.project.init_cmd import gitignore_block, run_init
 from kstrl.safemode import safe_mode_reasons
 from kstrl.ui.plain import PlainUI
 from tests.helpers import gitrepo

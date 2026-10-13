@@ -35,8 +35,8 @@ import kstrl.cli_preflight as cli_preflight_mod
 from kstrl.config.config import KstrlConfig
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
-from kstrl.interaction import PromptRequest, PromptResponse
 from kstrl.launch_record import run_limits
+from kstrl.owner.interaction import PromptRequest, PromptResponse
 from kstrl.plan.manifest import ComponentStatus, Manifest
 from kstrl.proc.timeout import TimeoutConfig
 from kstrl.ui.plain import PlainUI

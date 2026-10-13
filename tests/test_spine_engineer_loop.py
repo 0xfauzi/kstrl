@@ -28,9 +28,9 @@ import pytest
 from kstrl.context import IterationContext, IterationRecord
 from kstrl.factory_worker import _run_component
 from kstrl.factory_worktrees import _setup_worktree
-from kstrl.init_cmd import run_init
-from kstrl.operator_context import MEMORY
-from kstrl.scaffold_templates import DEFAULT_GOLDEN_PATTERNS, DEFAULT_MEMORY
+from kstrl.project.init_cmd import run_init
+from kstrl.project.operator_context import MEMORY
+from kstrl.project.scaffold_templates import DEFAULT_GOLDEN_PATTERNS, DEFAULT_MEMORY
 from kstrl.ui.plain import PlainUI
 from tests.spine_utils import COMPLETE_LINE, git, init_kstrl_repo
 

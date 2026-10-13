@@ -37,8 +37,8 @@ import kstrl.cli_architect as cli_architect_mod
 import kstrl.cli_factory as cli_factory_mod
 import kstrl.cli_inbox as cli_inbox_mod
 import kstrl.cli_preflight as cli_preflight_mod
-from kstrl.inbox import Inbox, InboxConfig
-from kstrl.interaction import PromptRequest, PromptResponse
+from kstrl.owner.inbox import Inbox, InboxConfig
+from kstrl.owner.interaction import PromptRequest, PromptResponse
 from kstrl.plan.manifest import Manifest
 from kstrl.ui.plain import PlainUI
 from tests import test_merge_gate_park as park

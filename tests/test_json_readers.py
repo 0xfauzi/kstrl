@@ -84,7 +84,7 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     # #700 slice 7: the import and one json.dumps (the designed plan and its
     # designer.json). It reads no JSON: the reply goes through extract_json.
     "acceptance_design.py": 2,
-    "agent_output.py": 4,
+    "agents/agent_output.py": 4,
     # #598: was 4 (import, one json.dumps in _format_tool_use, two
     # json.JSONDecodeError catches - _extract_result_text and
     # _parse_stream_event). +1: a third json.JSONDecodeError catch, in
@@ -121,8 +121,8 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     "feature_cmd.py": 3,
     # #632: the import, json.dumps for the canonical form, and the
     # json.JSONDecodeError it catches from read_json. No parse.
-    "inbox.py": 3,
-    "init_cmd.py": 3,
+    "owner/inbox.py": 3,
+    "project/init_cmd.py": 3,
     "intake_gh.py": 2,
     "intake_github.py": 5,
     "intake_issue.py": 3,
@@ -141,7 +141,7 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     "plan/prd.py": 2,
     # #700: one more json.dumps, the codex writable_roots override. No parse.
     # 5 since #803: a json.dumps of the settings with the login.
-    "sandbox.py": 5,
+    "agents/sandbox.py": 5,
     "serve_outcome.py": 3,
     "serve_spend.py": 3,
     "signals.py": 3,
@@ -150,12 +150,12 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     # field it writes (instructions, setup, env, writable, readable,
     # browser, up, and one name/command pair per check). No parse: the
     # table is read through load_toml_document.
-    "stack.py": 11,
+    "project/stack.py": 11,
     # #595: the import and one json.dumps, the canonical JSON the waiver
     # key hashes. No parse.
-    "waivers.py": 2,
-    "workqueue.py": 2,
-    "workqueue_store.py": 8,
+    "owner/waivers.py": 2,
+    "queue/workqueue.py": 2,
+    "queue/workqueue_store.py": 8,
 }
 
 

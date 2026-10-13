@@ -27,11 +27,11 @@ import pytest
 
 from kstrl.cli import cli
 from kstrl.intake_issue import BUG_REPORT_PROMPT
+from kstrl.queue.workqueue import Queue
+from kstrl.queue.workqueue_items import QueueConfig
+from kstrl.queue.workqueue_store import META_FILENAME
 from kstrl.serve import serve_cycle
 from kstrl.serve_config import ServeConfig
-from kstrl.workqueue import Queue
-from kstrl.workqueue_items import QueueConfig
-from kstrl.workqueue_store import META_FILENAME
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
 from tests.test_intake_github import _GhStub, _issue, _issue_payload
 from tests.test_serve_seam import _enable_github_intake, _install_stub_interpreter

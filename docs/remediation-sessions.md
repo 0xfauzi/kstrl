@@ -420,7 +420,7 @@ Defects:
 - CodebaseScanConfig/EvolutionConfig/KnowledgeConfig lack from_env.
 - ks init does not scaffold kstrl.toml, so a fresh project has no discoverable config surface.
 
-Scope: kstrl/cli.py, kstrl/config/config.py, kstrl/factory.py (FactoryConfig.load keys), kstrl/verify.py, kstrl/security.py, kstrl/contract.py, kstrl/feedforward.py, kstrl/evolution.py, kstrl/knowledge.py (loaders/from_env only), kstrl/init_cmd.py (scaffold), tests.
+Scope: kstrl/cli.py, kstrl/config/config.py, kstrl/factory.py (FactoryConfig.load keys), kstrl/verify.py, kstrl/security.py, kstrl/contract.py, kstrl/project/feedforward.py, kstrl/evolution.py, kstrl/knowledge.py (loaders/from_env only), kstrl/project/init_cmd.py (scaffold), tests.
 
 Requirements:
 1. Resolution order everywhere: explicit CLI flag > env > kstrl.toml > dataclass default. Give click options default=None sentinels so "not passed" is distinguishable from "passed the default value"; apply flag overrides onto the loaded config.
@@ -471,7 +471,7 @@ Defects:
 - Codebase scan never runs under `ks factory`: cli builds FactoryConfig without codebase_scan_config, so ff_config_dict stays None (H-10).
 - The prd-path contract is broken: a comment (factory.py:259-261) claims the prompt template uses $prd_path substituted by loop.py, but NO shipped template contains $prd_path; decomposed component PRDs live at scripts/kstrl/feature/<id>/prd.json while the default prompt points at scripts/kstrl/prd.json, so the agent reads the wrong file while check_prd_stories reads the right one (H-11).
 
-Scope: kstrl/factory.py, kstrl/cli.py, kstrl/loop.py, kstrl/init_cmd.py (DEFAULT_PROMPT + scaffold), tests/test_prompt_versions.py (snapshot only, per the exception), tests.
+Scope: kstrl/factory.py, kstrl/cli.py, kstrl/loop.py, kstrl/project/init_cmd.py (DEFAULT_PROMPT + scaffold), tests/test_prompt_versions.py (snapshot only, per the exception), tests.
 
 Requirements:
 1. Forward max_iterations, interactive, allowed_paths through _submit_args into _run_component; delete the hardcoded 30.

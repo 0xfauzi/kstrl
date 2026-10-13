@@ -24,11 +24,10 @@ from kstrl.proc import (
     signal_group,
     signal_probe_alive,
 )
+from kstrl.queue import ItemState, Queue
 from kstrl.serve_config import ServeObserver
 from kstrl.serve_outcome import RunOutcome
 from kstrl.serve_spend import _iso, _utc_now
-from kstrl.workqueue import Queue
-from kstrl.workqueue_items import ItemState
 
 #: Retry backoff: ``base * 2 ** (attempts - 1)``, capped. Not tunable by
 #: config on purpose - the cap is a safety floor on how fast an item can

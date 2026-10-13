@@ -60,7 +60,7 @@ from typing import Any
 import pytest
 
 from kstrl import calibration, calibration_baseline
-from kstrl.agent_output import extract_agent_json, select_agent_output
+from kstrl.agents.agent_output import extract_agent_json, select_agent_output
 from kstrl.calibration_score import (
     _acceptable_categories,
     allowed_paths_errors,

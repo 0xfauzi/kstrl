@@ -40,6 +40,11 @@ from typing import TYPE_CHECKING
 from kstrl.context import IterationContext, IterationRecord
 from kstrl.events import event_catalog
 from kstrl.git import git
+from kstrl.owner import (
+    ApprovalSnapshot,
+    approvals_on,
+    overrides_on,
+)
 from kstrl.pipeline_checks import (
     MechanicalChecks,
 )
@@ -52,11 +57,6 @@ from kstrl.plan import (
     ComponentStatus,
 )
 from kstrl.proc import sweep_findings
-from kstrl.waivers import (
-    ApprovalSnapshot,
-    approvals_on,
-    overrides_on,
-)
 
 if TYPE_CHECKING:
     from kstrl.factory_result import ComponentResult

@@ -35,7 +35,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.inbox import Inbox, InboxConfig, InboxItem, ItemStatus
+from kstrl.owner.inbox import Inbox, InboxConfig, InboxItem, ItemStatus
 
 pytest.importorskip("fcntl", reason="control_lock is flock, which is POSIX-only")
 

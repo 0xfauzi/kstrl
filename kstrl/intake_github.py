@@ -74,8 +74,7 @@ from kstrl.intake_issue import (
     spec_from_issue,
 )
 from kstrl.io import read_json
-from kstrl.workqueue import Queue
-from kstrl.workqueue_items import ItemSource, MergeDisposition, QueueError
+from kstrl.queue import ItemSource, MergeDisposition, Queue, QueueError
 
 #: Poll paging. The window GROWS until the admission cap can be filled or
 #: the inbox is exhausted, because skipped issues do not consume the cap

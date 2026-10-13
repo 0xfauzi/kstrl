@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from kstrl.inbox import Inbox, InboxConfig, ItemKind
+from kstrl.owner.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.plan.manifest import Manifest
 from kstrl.plan_gate import plan_dedupe_key, plan_digest
 

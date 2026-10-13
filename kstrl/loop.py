@@ -13,12 +13,6 @@ from kstrl import guards
 from kstrl.breaker import BreakerConfig, NoProgressBreaker
 from kstrl.events import EventBus, IterationCompleted, IterationStarted, UsageTotals, collect_usage
 from kstrl.git import git, git_tree
-from kstrl.interaction import (
-    InteractionChannel,
-    PromptKind,
-    PromptRequest,
-    UiInteractionChannel,
-)
 from kstrl.io import statedir
 from kstrl.iteration_prompt import (
     assemble_prompt,
@@ -29,12 +23,18 @@ from kstrl.iteration_prompt import (
 )
 from kstrl.loop_budget import LoopBudget
 from kstrl.loop_setup import capture_guard_baseline, print_startup
+from kstrl.owner import (
+    InteractionChannel,
+    PromptKind,
+    PromptRequest,
+    UiInteractionChannel,
+)
 from kstrl.plan import PRD
 from kstrl.proc import TIMEOUT_MESSAGE_PREFIX, TimeoutConfig
 from kstrl.verify_model import VerifyConfig
 
 if TYPE_CHECKING:
-    from kstrl.agents.base import Agent
+    from kstrl.agents import Agent
     from kstrl.config import KstrlConfig
     from kstrl.ui import UI
 
@@ -214,7 +214,7 @@ def _prompt_body(
     if config.prompt_file.exists():
         raw_prompt = config.prompt_file.read_text(encoding="utf-8")
     else:
-        from kstrl.scaffold_templates import DEFAULT_PROMPT
+        from kstrl.project import DEFAULT_PROMPT
 
         ui.warn(
             f"Prompt file not found at {config.prompt_file}; "

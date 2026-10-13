@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from kstrl.decisions import _escalation_key
-from kstrl.inbox import Inbox, InboxItem, ItemKind, ItemStatus
+from kstrl.owner import Inbox, InboxItem, ItemKind, ItemStatus
 
 
 class OwnerAnswerError(RuntimeError):

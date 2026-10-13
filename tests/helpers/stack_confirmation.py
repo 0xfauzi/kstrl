@@ -20,8 +20,8 @@ from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
 
-from kstrl.inbox import Inbox, InboxConfig
-from kstrl.stack import CONFIRMED_IN_INBOX, Stack, file_stack_item, load_stack, stack_toml
+from kstrl.owner.inbox import Inbox, InboxConfig
+from kstrl.project.stack import CONFIRMED_IN_INBOX, Stack, file_stack_item, load_stack, stack_toml
 
 #: What a test that is not about verification runs Phase 1 with: three checks
 #: that exit 0. It replaces the retired ``test_command="true"``,

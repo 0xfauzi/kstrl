@@ -62,7 +62,7 @@ ENFORCEMENT_MACHINERY_PATHS: tuple[str, ...] = (
     "**/kstrl/autonomy_config.py",
     "**/kstrl/autonomy_transitions.py",
     "**/kstrl/io/statedir.py",
-    "**/kstrl/waivers.py",  # #595: turns an approved item into a waiver
+    "**/kstrl/owner/waivers.py",  # #595: turns an approved item into a waiver
     # R8.2 / R8.9 control-plane state. Live copies live under XDG
     # (outside the tree); these legacy in-tree paths stay in the halt
     # set so a diff cannot recreate agent-editable control files.

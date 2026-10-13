@@ -23,6 +23,7 @@ from kstrl.plan import (
     requirements_payload_errors,
     validate_component_id,
 )
+from kstrl.project import file_stack_item, stack_errors, stack_from_table, stack_toml
 from kstrl.spec_issues import (
     _VALID_SEVERITIES,
     SPEC_ISSUE_APPLIES_COMPONENT,
@@ -30,7 +31,6 @@ from kstrl.spec_issues import (
     _parse_spec_issues,
     route_spec_issues,
 )
-from kstrl.stack import file_stack_item, stack_errors, stack_from_table, stack_toml
 
 if TYPE_CHECKING:
     from kstrl.ui import UI

@@ -78,7 +78,7 @@ in the package - one site as of #696 slice 6, compliant:
 
 `kstrl/toolchains.py`'s one parse, python_typecheck_default (moved from
 verify.py by #635), went with the command half #696 retired, and
-`kstrl/feedforward.py`'s three went with the scan's conventions readers
+`kstrl/project/feedforward.py`'s three went with the scan's conventions readers
 (#696 slice 6).
 
 WHAT THIS GUARD SEES, STATED HONESTLY

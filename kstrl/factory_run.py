@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from kstrl.agents import warn_unconfined
 from kstrl.breaker import BreakerConfig
 from kstrl.events import (
     EventBus,
@@ -55,7 +56,6 @@ from kstrl.plan import ComponentStatus, RunScope
 from kstrl.proc import TimeoutConfig
 from kstrl.runenvelope import RunEnvelope
 from kstrl.runstate import RunState
-from kstrl.sandbox import warn_unconfined
 
 if TYPE_CHECKING:
     from kstrl.autonomy_config import AutonomyConfig

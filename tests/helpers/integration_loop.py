@@ -23,9 +23,9 @@ from kstrl.events.usage import UsageRecord
 from kstrl.factory import run_factory
 from kstrl.factory_result import ComponentResult, FactoryResult
 from kstrl.git import git_diff
-from kstrl.inbox import Inbox, InboxConfig, InboxItem, ItemKind
 from kstrl.integration_fix import fix_prd_rel
 from kstrl.io.statedir import plan_prd_path
+from kstrl.owner.inbox import Inbox, InboxConfig, InboxItem, ItemKind
 from kstrl.pipeline import ComponentPipeline
 from kstrl.plan.manifest import Component, ComponentStatus, Manifest
 from kstrl.plan.prd import PRD

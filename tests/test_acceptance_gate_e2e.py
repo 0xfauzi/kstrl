@@ -31,7 +31,7 @@ from pathlib import Path
 
 from kstrl.acceptance import HEAD_RUNS
 from kstrl.context import ACCEPTANCE_RETRY_PROMPT
-from kstrl.inbox import Inbox, InboxConfig, InboxItem, ItemKind
+from kstrl.owner.inbox import Inbox, InboxConfig, InboxItem, ItemKind
 from kstrl.plan.manifest import Manifest
 from tests.helpers.executables import write_executable
 from tests.helpers.gitrepo import git_in

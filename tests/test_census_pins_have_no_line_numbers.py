@@ -1,6 +1,6 @@
 """No census in tests/ pins a kstrl call site by line number (#645).
 
-A pin such as ``"cli.py:3164 kstrl.interaction.PromptRequest"`` fails when an
+A pin such as ``"cli.py:3164 kstrl.owner.interaction.PromptRequest"`` fails when an
 unrelated edit lands above the site, and the fix is to type the new number in
 without reading the row. Two censuses were re-pinned that way on main for line
 shifts alone, with no site added, moved to another function or removed. They
@@ -125,8 +125,8 @@ class TestNoCensusPinsALineNumber:
         too, so the same function must flag these planted pins, one per
         scope an assignment can sit in, and clear the scoped form."""
         source = (
-            'EXPECTED = ("cli.py:3164 kstrl.interaction.PromptRequest",)\n'
-            'SCOPED = ("cli.py::factory kstrl.interaction.PromptRequest",)\n'
+            'EXPECTED = ("cli.py:3164 kstrl.owner.interaction.PromptRequest",)\n'
+            'SCOPED = ("cli.py::factory kstrl.owner.interaction.PromptRequest",)\n'
             'UNREAL = ("no_such_module.py:12 x",)\n'
             "class TestX:\n"
             '    PINS: tuple[str, ...] = ("kstrl/linear.py:320 urlopen",)\n'
@@ -160,7 +160,7 @@ class TestTheDisclosedLimits:
         [
             'def test_z():\n    astwalk.Sites((), ("fixtures.py:111 _RUNNERS[kind]",))\n',
             'EXPECTED = (("cli.py", 3164),)\n',
-            'EXPECTED = ("retry.py:395 kstrl.interaction.PromptRequest",)\n',
+            'EXPECTED = ("retry.py:395 kstrl.owner.interaction.PromptRequest",)\n',
         ],
         ids=["row-passed-as-call-data", "line-held-as-an-int", "bare-basename-of-a-nested-module"],
     )

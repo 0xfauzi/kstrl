@@ -33,8 +33,8 @@ from pathlib import Path
 import pytest
 
 from kstrl.decompose_prompt import spec_digest
-from kstrl.inbox import Inbox, InboxConfig, InboxItem, ItemKind
 from kstrl.io.statedir import plan_prd_path
+from kstrl.owner.inbox import Inbox, InboxConfig, InboxItem, ItemKind
 from kstrl.plan.findings import Finding
 from kstrl.plan.manifest import Component, Manifest
 from tests.helpers import gitrepo
@@ -117,7 +117,7 @@ class Scenario:
 
 
 #: One scenario per waivable kind. test_every_waivable_kind_has_a_scenario
-#: fails when kstrl/waivers.py gains a kind this table does not name.
+#: fails when kstrl/owner/waivers.py gains a kind this table does not name.
 SCENARIOS: dict[ItemKind, Scenario] = {
     ItemKind.POLICY_EXCEPTION: Scenario(POLICY_TOML, DENIED, "policy_"),
 }
@@ -298,7 +298,7 @@ def _verification_failures(root: Path) -> list[str]:
 
 
 def test_every_waivable_kind_has_a_scenario() -> None:
-    from kstrl.waivers import WAIVABLE
+    from kstrl.owner.waivers import WAIVABLE
 
     assert set(WAIVABLE) == set(SCENARIOS)
     assert {kind: s.category_prefix for kind, s in SCENARIOS.items()} == WAIVABLE
@@ -575,7 +575,7 @@ def test_an_approval_made_during_a_run_waits_for_the_next_run(tmp_path: Path) ->
     """
     approve_open = (
         f'"{sys.executable}" -c "import sys; from pathlib import Path; '
-        "from kstrl.inbox import Inbox, InboxConfig; "
+        "from kstrl.owner.inbox import Inbox, InboxConfig; "
         "box = Inbox(Path(sys.argv[1]), InboxConfig()); "
         "[box.approve(i.id, actor='engineer') for i in box.open_items() "
         'if str(i.kind) == \'policy_exception\']" "$WAIVER_TEST_ROOT"'

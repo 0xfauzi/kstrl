@@ -5,7 +5,7 @@ with the sandbox on or off (#700, #803).
 End to end: the real ``ks`` with a stub ``claude`` that records the argv of
 each call. The helpers are the ones of tests/test_sandbox_engineer_e2e.py.
 The static guard at the end fails when a claude spawn in ``kstrl/`` does not
-take its flags from ``kstrl.sandbox.claude_session_argv`` or
+take its flags from ``kstrl.agents.sandbox.claude_session_argv`` or
 ``claude_session_flags``.
 """
 

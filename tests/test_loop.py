@@ -116,7 +116,7 @@ class TestRunLoop:
         not been ``ks init``'d, even though the harness ships its
         own engineer prompt that should be used as the default.
         """
-        from kstrl.scaffold_templates import DEFAULT_PROMPT
+        from kstrl.project.scaffold_templates import DEFAULT_PROMPT
 
         captured_prompts: list[str] = []
 

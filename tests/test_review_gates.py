@@ -178,7 +178,7 @@ class TestR11Coverage:
 
 class TestR12InfrastructurePaths:
     def _run(self, mode: ReviewMode, repo: ReviewRepo) -> ReviewResult:
-        from kstrl.agent_output import AgentOutputTooLarge
+        from kstrl.agents.agent_output import AgentOutputTooLarge
 
         prd_path = repo.path / "prd.json"
         _write_prd(prd_path, ["US-001"])
@@ -793,7 +793,7 @@ class TestFactorySkipTraces:
     ) -> None:
         """The number five doc sites quote, counted rather than restated.
 
-        `kstrl.toml.example`, `kstrl/init_cmd.py`, `scripts/gen_docs.py`
+        `kstrl.toml.example`, `kstrl/project/init_cmd.py`, `scripts/gen_docs.py`
         (and the README it generates), `docs/runbook.md` and the
         CHANGELOG all tell an operator to budget 3 calls per component.
         That is a property of the call sites of

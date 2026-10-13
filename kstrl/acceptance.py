@@ -67,17 +67,17 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 from kstrl.git import git, git_base
 from kstrl.io import atomic_write_json, control_dir, read_json
+from kstrl.owner import covering_override
 from kstrl.plan import validate_component_id
 from kstrl.proc import HOST_LABEL, ProvenRung, Rung, limit_seconds, zone_dir
+from kstrl.project import REPLAY_BOUNDARY_REFUSED
 from kstrl.replay import Replay, Stage, _ran, replay_stack
-from kstrl.stack import REPLAY_BOUNDARY_REFUSED
 from kstrl.verify_commands import SHELL_COULD_NOT_RUN
-from kstrl.waivers import covering_override
 
 if TYPE_CHECKING:
-    from kstrl.inbox import InboxItem
+    from kstrl.owner import InboxItem
     from kstrl.plan import Manifest
-    from kstrl.stack import Stack
+    from kstrl.project import Stack
     from kstrl.ui import UI
     from kstrl.verify_model import VerifyConfig
 

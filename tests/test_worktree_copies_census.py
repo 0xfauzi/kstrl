@@ -54,7 +54,7 @@ FILE_DUPLICATING_NAMES = (
 EXPECTED_FILE_DUPLICATING_SITES = {
     "factory_worker.py": 1,
     "feature_cmd.py": 4,
-    "init_cmd.py": 1,
+    "project/init_cmd.py": 1,
     "retry_plan.py": 2,
 }
 

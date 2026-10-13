@@ -5,7 +5,7 @@ transitions between them, the item ids, and the dataclasses that are
 written to ``meta.json`` and to the journal: ``QueueItem``,
 ``QueueConfig``, ``PauseState`` and ``JournalEntry``. It does no file
 access. The directory layout, the lock and the transitions are in
-``kstrl.workqueue``.
+``kstrl.queue.workqueue``.
 """
 
 from __future__ import annotations

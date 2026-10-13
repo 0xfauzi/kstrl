@@ -47,14 +47,19 @@ from kstrl.acceptance import (
     verdict_of,
     write_dir,
 )
-from kstrl.agent_output import collect_agent_output, extract_json, select_agent_output
-from kstrl.agents import get_agent
-from kstrl.agents.prompt_record import AgentCall, recording_prompts
+from kstrl.agents import (
+    AgentCall,
+    collect_agent_output,
+    extract_json,
+    get_agent,
+    recording_prompts,
+    select_agent_output,
+)
 from kstrl.events import DESIGNER_ROLE, collect_usage
 from kstrl.git import git, git_base
-from kstrl.inbox import ItemKind
 from kstrl.integration_phase import REVIEW_ASKS, _reask_refusal
 from kstrl.io import control_dir, generate_data_delimiter, pre_run_prd_path
+from kstrl.owner import ItemKind, approvals_at
 from kstrl.plan import PRD, SpecRequirement, built_by
 from kstrl.plan_gate import PlanUnreadableError, pinned_spec, plan_digest
 from kstrl.proc import (
@@ -63,13 +68,12 @@ from kstrl.proc import (
     limit_seconds,
     remove_temp_worktree,
 )
-from kstrl.waivers import approvals_at
 
 if TYPE_CHECKING:
     from kstrl.factory_config import FactoryConfig
     from kstrl.pipeline import ComponentPipeline
     from kstrl.plan import Component, Manifest
-    from kstrl.stack import Stack
+    from kstrl.project import Stack
 
 #: How many times one component's designer may be asked.
 DESIGN_ASKS = REVIEW_ASKS

@@ -182,7 +182,7 @@ from kstrl.io import read_json
 from kstrl.write_guard import GUARDED_TOOLS, HOOK_TIMEOUT_SECONDS, hook_command, ready_command
 
 if TYPE_CHECKING:
-    from kstrl.stack import Stack
+    from kstrl.project import Stack
 
 # Tool allow rules for the claude no-network mode: without
 # --dangerously-skip-permissions these tools are permission-gated in
@@ -301,7 +301,7 @@ def with_stack_writable(
     writes a tool cache in the home directory fails without them). An
     unconfirmed stack grants nothing.
     """
-    from kstrl.stack import stack_paths
+    from kstrl.project import stack_paths
 
     if stack is None or stack.unconfirmed or not stack.writable:
         return config

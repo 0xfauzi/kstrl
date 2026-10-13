@@ -39,7 +39,7 @@ import pytest
 
 from kstrl.events.reducer import ComponentState, RunState
 from kstrl.events.usage import ARCHITECT_COMPONENT, ARCHITECT_ROLE
-from kstrl.inbox import Inbox, InboxConfig, ItemKind
+from kstrl.owner.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.plan.findings import Finding
 from kstrl.plan.manifest import (
     Component,
@@ -47,6 +47,14 @@ from kstrl.plan.manifest import (
     Manifest,
 )
 from kstrl.proc.procgroup import safe_pgid
+from kstrl.queue.workqueue import Queue
+from kstrl.queue.workqueue_items import (
+    ItemSource,
+    ItemState,
+    MergeDisposition,
+    QueueConfig,
+    QueueItem,
+)
 from kstrl.serve import (
     ServeLockedError,
     _NullObserver,
@@ -87,8 +95,6 @@ from kstrl.serve_spend import (
 #: gets the stub instead of the function under test - which silently made
 #: the empty-run-id test pass no matter what the function did.
 from kstrl.serve_spend import read_run_spend as REAL_READ_RUN_SPEND
-from kstrl.workqueue import Queue
-from kstrl.workqueue_items import ItemSource, ItemState, MergeDisposition, QueueConfig, QueueItem
 from tests.helpers import procs
 from tests.helpers.procs import process_group_alive
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
@@ -1041,7 +1047,7 @@ class TestServeLock:
     def test_it_is_distinct_from_the_queue_mutex(self, tmp_path: Path) -> None:
         """`ks queue ls` must keep working while the daemon runs."""
         pytest.importorskip("fcntl")
-        from kstrl.workqueue_store import queue_lock
+        from kstrl.queue.workqueue_store import queue_lock
 
         with serve_lock(tmp_path):
             with queue_lock(tmp_path):
@@ -1049,8 +1055,8 @@ class TestServeLock:
 
     def test_it_records_the_holder_pid(self, tmp_path: Path) -> None:
         pytest.importorskip("fcntl")
+        from kstrl.queue.workqueue_store import queue_root
         from kstrl.serve import SERVE_LOCK_FILENAME
-        from kstrl.workqueue_store import queue_root
 
         with serve_lock(tmp_path):
             content = (queue_root(tmp_path) / SERVE_LOCK_FILENAME).read_text()
@@ -1316,7 +1322,7 @@ class TestServeCycle:
         _add(queue)
         result = serve_cycle(tmp_path, runner=_stub_runner(RunOutcome(1)))
         assert any(result.inbox_items)
-        from kstrl.inbox import Inbox, InboxConfig
+        from kstrl.owner.inbox import Inbox, InboxConfig
 
         items = Inbox(tmp_path, InboxConfig.load(tmp_path)).open_items()
         assert any("poisoned" in item.title for item in items)
@@ -2926,7 +2932,7 @@ class TestNeedsHuman:
         assert result.needs_human
         # The pre-flight guard is what files this; the gate handler does
         # not, so asserting it pins the earlier check specifically.
-        from kstrl.inbox import Inbox, InboxConfig
+        from kstrl.owner.inbox import Inbox, InboxConfig
 
         titles = [i.title for i in Inbox(tmp_path, InboxConfig.load(tmp_path)).items()]
         assert any("unreadable spend ledger" in t for t in titles)

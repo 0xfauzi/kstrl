@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from kstrl.operator_context import GUIDANCE_HEADING
+from kstrl.project.operator_context import GUIDANCE_HEADING
 
 DEFAULT_PROMPT_VERSION = "1.6.0"
 

@@ -42,8 +42,8 @@ from kstrl.events import (
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.git import resolve_base_branch
-from kstrl.interaction import PromptKind, PromptRequest, UiInteractionChannel
 from kstrl.launch_record import replayable_flags
+from kstrl.owner import PromptKind, PromptRequest, UiInteractionChannel
 from kstrl.owner_answers import OwnerAnswerError
 from kstrl.plan import Manifest
 from kstrl.proc import (
@@ -267,7 +267,7 @@ def factory(
         # sentinels so "not passed" is distinguishable from "passed the
         # default value", and an explicitly-passed flag is applied on top.
         from kstrl.contract import ContractConfig
-        from kstrl.feedforward import CodebaseScanConfig
+        from kstrl.project import CodebaseScanConfig
         from kstrl.security import SecurityConfig
         from kstrl.verify_model import VerifyConfig
 

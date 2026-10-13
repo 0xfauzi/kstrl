@@ -27,14 +27,14 @@ from kstrl.factory_config import FactoryConfig
 from kstrl.git import git_base
 from kstrl.isolation import prove_zones
 from kstrl.proc import HostFallback, ProvenRung, Rung, limit_seconds, release
-from kstrl.replay import Replay, replay_stack
-from kstrl.stack import (
+from kstrl.project import (
     REPLAY_BOUNDARY_REFUSED,
     Stack,
     file_stack_item,
     replay_refuses,
     stack_in_force,
 )
+from kstrl.replay import Replay, replay_stack
 from kstrl.verify_model import VerifyConfig
 
 if TYPE_CHECKING:
@@ -127,7 +127,7 @@ def measure_replay(
     inside the proven rung, in a throwaway worktree, and its record is the
     evidence a person confirms the stack on. It is filed on the stack's
     confirmation item when the stack is not confirmed, and when it failed
-    (:func:`kstrl.stack.replay_refuses`), so a stack whose replay failed
+    (:func:`kstrl.project.stack.replay_refuses`), so a stack whose replay failed
     is never confirmed. A refused boundary warns, as the isolation row
     does; any other failure fails the row."""
     if any(check.name == "kstrl_config" and check.status == STATUS_FAIL for check in checks):

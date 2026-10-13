@@ -39,8 +39,8 @@ from kstrl.autonomy import AutonomyState
 from kstrl.config.config import KstrlConfig
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
-from kstrl.inbox import Inbox, InboxConfig, InboxItem
-from kstrl.interaction import PromptKind, PromptRequest, PromptResponse
+from kstrl.owner.inbox import Inbox, InboxConfig, InboxItem
+from kstrl.owner.interaction import PromptKind, PromptRequest, PromptResponse
 from kstrl.plan.manifest import Manifest
 from kstrl.review import ReviewResult
 from kstrl.security import SecurityConfig

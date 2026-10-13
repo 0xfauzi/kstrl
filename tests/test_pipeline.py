@@ -31,9 +31,9 @@ from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult, FactoryResult
 from kstrl.failure_signatures import category_for_check
 from kstrl.git import git
-from kstrl.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.knowledge import measure_fact_utilization
 from kstrl.knowledge_facts import Fact, KnowledgeConfig
+from kstrl.owner.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.pipeline import ComponentPipeline
 from kstrl.pipeline_delivery import CheckpointDecision
 from kstrl.pipeline_knowledge import FactUtilization

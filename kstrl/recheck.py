@@ -53,11 +53,11 @@ from kstrl.acceptance import (
 )
 from kstrl.io import read_json
 from kstrl.proc import HOST_LABEL
+from kstrl.project import REPLAY_BOUNDARY_REFUSED
 from kstrl.replay import Replay, Stage, replay_stack
-from kstrl.stack import REPLAY_BOUNDARY_REFUSED
 
 if TYPE_CHECKING:
-    from kstrl.stack import Stack
+    from kstrl.project import Stack
     from kstrl.ui import UI
 
 #: What a recheck says: why the record could not be rechecked (when this

@@ -29,10 +29,10 @@ import pytest
 from click.testing import CliRunner, Result
 
 from kstrl.cli import cli
-from kstrl.inbox import Inbox, InboxConfig, InboxItem, ItemKind
+from kstrl.owner.inbox import Inbox, InboxConfig, InboxItem, ItemKind
+from kstrl.queue.workqueue import Queue
+from kstrl.queue.workqueue_items import ItemState, QueueConfig, QueueItem
 from kstrl.serve_spend import SpendLedger
-from kstrl.workqueue import Queue
-from kstrl.workqueue_items import ItemState, QueueConfig, QueueItem
 from tests.helpers.gitrepo import git_in
 from tests.helpers.stack_confirmation import confirm_stack
 from tests.test_isolation_rung import runs_a_stack

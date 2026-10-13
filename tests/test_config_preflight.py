@@ -52,9 +52,9 @@ from kstrl.contract import ContractConfig
 from kstrl.evolution_config import EvolutionConfig
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import FactoryResult
-from kstrl.feedforward import CodebaseScanConfig
+from kstrl.project.feedforward import CodebaseScanConfig
+from kstrl.project.stack import stack_toml
 from kstrl.security import SecurityConfig, SecurityMode
-from kstrl.stack import stack_toml
 from kstrl.verify_model import VerifyConfig
 from tests.conftest import REPO_ROOT
 from tests.helpers import astwalk

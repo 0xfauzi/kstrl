@@ -14,8 +14,14 @@ from typing import TYPE_CHECKING, Any
 import click
 from click.core import ParameterSource
 
-from kstrl.agents import ClaudeCodeAgent, ClaudeSdkAgent, CodexAgent
-from kstrl.agents.liveness import CLAUDE_FAMILY, PROBE_ENV_VAR, probe_family
+from kstrl.agents import (
+    CLAUDE_FAMILY,
+    PROBE_ENV_VAR,
+    ClaudeCodeAgent,
+    ClaudeSdkAgent,
+    CodexAgent,
+    probe_family,
+)
 from kstrl.cli_seam import _actor, _resolve_path, _use_cli_value
 from kstrl.config import (
     AGENT_TYPE_ALIASES,
@@ -28,18 +34,18 @@ from kstrl.config_report import normalize_ui_mode as _normalize_ui_mode
 from kstrl.factory_agents import cli_family
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_preflight import base_refused_before_architect, report_preflight
-from kstrl.interaction import PromptKind, PromptRequest, UiInteractionChannel
 from kstrl.io import read_json_file
+from kstrl.owner import PromptKind, PromptRequest, UiInteractionChannel
 from kstrl.plan import PRD
 from kstrl.proc import RunLock, acquire_run_lock
-from kstrl.scaffold_ledger import staleness_notice
-from kstrl.stack import (
+from kstrl.project import (
     NO_STACK,
     STACK_OPTIONS,
     Stack,
     StackRefused,
     confirmed_stack,
     decide_at_prompt,
+    staleness_notice,
     unconfirmed_lines,
 )
 from kstrl.ui import UI

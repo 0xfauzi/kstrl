@@ -71,7 +71,7 @@ MODEL_TAG_PREFIX = "model:"
 
 # #595: a blocking policy finding an approved inbox item
 # covers exactly is kept, re-emitted as advisory and tagged with the
-# approving item's id. kstrl/waivers.py writes it; kstrl/verify.py's
+# approving item's id. kstrl/owner/waivers.py writes it; kstrl/verify.py's
 # _after_waivers (through finding_waiver below) and the PR body read it.
 WAIVER_TAG_PREFIX = "waiver:"
 

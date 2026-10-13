@@ -21,7 +21,7 @@ from kstrl.io.statedir import (
     normalize_remote_url,
     repo_id,
 )
-from kstrl.workqueue import Queue
+from kstrl.queue.workqueue import Queue
 
 
 @pytest.fixture(autouse=True)
@@ -150,7 +150,7 @@ class TestMigration:
 
     def test_ensure_then_consumers_use_xdg(self, repo: Path) -> None:
         from kstrl.autonomy import AutonomyState
-        from kstrl.inbox import Inbox
+        from kstrl.owner.inbox import Inbox
 
         xdg = Path(os.environ["XDG_STATE_HOME"])
         with patch("kstrl.io.statedir._origin_url", return_value=None):
@@ -197,7 +197,7 @@ class TestPauseFailClosed:
         with patch("kstrl.io.statedir._origin_url", return_value=None):
             ensure_control_state(repo)
             monkeypatch.setattr(
-                "kstrl.workqueue_store.control_untrusted_reason",
+                "kstrl.queue.workqueue_store.control_untrusted_reason",
                 lambda _root: "control state directory inaccessible",
             )
             queue = Queue(repo)
@@ -336,8 +336,8 @@ class TestReviewFailClosed:
         from click.testing import CliRunner
 
         from kstrl.cli import cli
-        from kstrl.inbox import Inbox
         from kstrl.io.statedir import CONTROL_INBOX
+        from kstrl.owner.inbox import Inbox
 
         with patch("kstrl.io.statedir._origin_url", return_value=None):
             legacy = legacy_control_paths(repo)[CONTROL_INBOX]

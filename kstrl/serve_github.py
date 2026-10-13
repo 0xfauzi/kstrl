@@ -21,9 +21,8 @@ from kstrl.io import (
 )
 from kstrl.pr import GH_TIMEOUT
 from kstrl.pr_body import PR_FOOTER_MARKER
+from kstrl.queue import Queue, queue_lock
 from kstrl.serve_config import Admission, ServeConfig, ServeObserver
-from kstrl.workqueue import Queue
-from kstrl.workqueue_store import queue_lock
 
 if TYPE_CHECKING:
     from kstrl.intake_gh import GitHubIntakeConfig

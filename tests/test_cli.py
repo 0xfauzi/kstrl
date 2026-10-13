@@ -14,8 +14,8 @@ from kstrl.cli_loop import _run_structural_override_notices
 from kstrl.cli_report import _format_component_status
 from kstrl.factory_config import FactoryConfig
 from kstrl.git.git_base import BASE_BRANCH_CANDIDATES, detect_base_branch, resolve_base_branch
-from kstrl.init_cmd import gitignore_block
 from kstrl.plan.manifest import Component, ComponentStatus, Manifest
+from kstrl.project.init_cmd import gitignore_block
 from tests.helpers import gitrepo
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
 from tests.spine_utils import git as spine_git
@@ -400,7 +400,7 @@ class TestInboxRetryManifestLoad:
 
     @staticmethod
     def _project(tmp_path: Path, status: str) -> str:
-        from kstrl.inbox import Inbox, InboxConfig, ItemKind
+        from kstrl.owner.inbox import Inbox, InboxConfig, ItemKind
 
         scaffold = tmp_path / "scripts" / "kstrl"
         scaffold.mkdir(parents=True)

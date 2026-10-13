@@ -8,7 +8,7 @@ from pathlib import Path
 
 import click
 
-from kstrl.agents import get_agent
+from kstrl.agents import SandboxConfig, get_agent, with_stack_writable
 from kstrl.cli_preflight import _check_agent_preflight, _check_prompt_preflight
 from kstrl.cli_seam import _console_ui, _resolve_path, _resolve_root, _use_cli_value, cli
 from kstrl.commandrun import open_command_run
@@ -17,9 +17,7 @@ from kstrl.config_report import UI_MODES
 from kstrl.config_report import normalize_ui_mode as _normalize_ui_mode
 from kstrl.feature_cmd import FeatureParams, run_feature
 from kstrl.plan import PRD
-from kstrl.sandbox import SandboxConfig, with_stack_writable
-from kstrl.scaffold_templates import DEFAULT_FEATURE_UNDERSTAND
-from kstrl.stack import stack_in_force
+from kstrl.project import DEFAULT_FEATURE_UNDERSTAND, stack_in_force
 
 
 def _derive_feature_name(prd_path: Path, root: Path) -> str:

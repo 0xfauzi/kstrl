@@ -5,16 +5,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from kstrl.agents import SandboxConfig
 from kstrl.autonomy import AutonomyLevel, flag_bundle_for
 from kstrl.autonomy_config import AutonomyConfig
 from kstrl.config import KstrlConfig
 from kstrl.events import AdversarialAgentSelected
 from kstrl.factory_config import FactoryConfig, review_enabled, security_enabled
 from kstrl.review import ReviewMode
-from kstrl.sandbox import SandboxConfig
 
 if TYPE_CHECKING:
-    from kstrl.agents.liveness import ProbeResult
+    from kstrl.agents import ProbeResult
     from kstrl.events import EventBus
     from kstrl.ui import UI
 
@@ -201,7 +201,7 @@ def _resolve_cross_family(
     installed = codex_available if cross_type == "codex" else claude_available
     if not installed:
         return None
-    from kstrl.agents.liveness import UNPROBED, probe_family
+    from kstrl.agents import UNPROBED, probe_family
 
     return probe_family(cross_type) if may_dispatch_adversarial else UNPROBED
 

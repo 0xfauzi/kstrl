@@ -7,15 +7,15 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
+from kstrl.agents.sandbox import SandboxConfig
 from kstrl.config.config import KstrlConfig
 from kstrl.feature_cmd import FeatureParams, run_feature
-from kstrl.interaction import (
+from kstrl.loop import LoopResult
+from kstrl.owner.interaction import (
     PromptRequest,
     PromptResponse,
 )
-from kstrl.loop import LoopResult
 from kstrl.plan.prd import PRD, UserStory
-from kstrl.sandbox import SandboxConfig
 from kstrl.ui.plain import PlainUI
 from tests.helpers.prompt_calls import offline_run
 from tests.helpers.stack_confirmation import confirm_stack, write_stack

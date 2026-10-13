@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl.agents.prompt_record import AgentCall, recording_prompts
+from kstrl.agents import AgentCall, recording_prompts
 from kstrl.contract import (
     ContractMode,
     ContractResult,

@@ -60,7 +60,7 @@ from kstrl.config import (
     load_toml_document,
     section_table,
 )
-from kstrl.inbox import Inbox, InboxConfig, InboxItem, ItemKind, ItemStatus
+from kstrl.owner import Inbox, InboxConfig, InboxItem, ItemKind, ItemStatus
 from kstrl.proc import SECRET_NAME_FRAGMENTS
 
 #: The four keys of ``[stack]``. Every one is required.
@@ -506,7 +506,7 @@ def _refusal(root_dir: Path, stack: Stack) -> tuple[str, str]:
     directory under the repository a ControlStateError) means the
     confirmation cannot be checked, which is a refusal, never a traceback
     and never an empty read. Not ``config_resolve.SURFACE_REJECTIONS``:
-    importing that module from here makes every importer of kstrl.stack
+    importing that module from here makes every importer of kstrl.project.stack
     reach the queue (tests/test_state_dir_scope.py).
     """
     try:

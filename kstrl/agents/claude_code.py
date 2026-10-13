@@ -13,10 +13,7 @@ from typing import Any
 
 from kstrl.agents.base import TOOL_RESULT_PREFIX
 from kstrl.agents.prompt_record import record_prompt
-from kstrl.events import UsageRecord
-from kstrl.io import read_json
-from kstrl.proc import DeadlineStreamer, timeout_message
-from kstrl.sandbox import (
+from kstrl.agents.sandbox import (
     ClaudeRole,
     SandboxConfig,
     claude_review_sandbox_settings,
@@ -25,6 +22,9 @@ from kstrl.sandbox import (
     claude_session_argv,
     claude_session_env,
 )
+from kstrl.events import UsageRecord
+from kstrl.io import read_json
+from kstrl.proc import DeadlineStreamer, timeout_message
 from kstrl.write_guard import SessionGate
 
 logger = logging.getLogger(__name__)
@@ -60,12 +60,12 @@ class ClaudeCodeAgent:
             effort: Reasoning effort level (low, medium, high, max)
             sandbox: OS-level sandbox intent (R7.5); passed to the CLI
                 via --settings (claude 2.1.x has no dedicated flag,
-                measured - see kstrl.sandbox)
+                measured - see kstrl.agents.sandbox)
             read_only: #266 - the agent may read the tree and must not
                 write it (the reviewer roles). OVERRIDES ``sandbox``;
                 enforced at the permission layer here rather than the
                 OS layer, which is why it also drops
-                ``--dangerously-skip-permissions`` (see kstrl.sandbox
+                ``--dangerously-skip-permissions`` (see kstrl.agents.sandbox
                 for the measurement).
         """
         self._model = model
@@ -95,7 +95,7 @@ class ClaudeCodeAgent:
         decision: claude's sandbox scoping and the #266 read-only rules
         are BOTH enforced at the permission layer, and skip-permissions
         is exactly what turns that layer off (measured - see
-        kstrl.sandbox). A method rather than two branches inside
+        kstrl.agents.sandbox). A method rather than two branches inside
         ``run``, which is already the most complex function here.
         """
         if self._read_only:
@@ -110,7 +110,7 @@ class ClaudeCodeAgent:
 
         R7.5: the no-network sandbox mode must NOT skip permissions -
         claude's domain allowlist is a permission-layer gate, and skipping
-        auto-approves every domain (measured; see kstrl.sandbox). File tools
+        auto-approves every domain (measured; see kstrl.agents.sandbox). File tools
         are re-allowed via the settings JSON instead. The settings of a
         sandboxed engineer carry the write guard, and the gate stops a
         session in which claude does not run it (#700). Each session gets

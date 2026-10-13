@@ -14,7 +14,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TextIO
 
-from kstrl.agents.prompt_record import AgentCall, recording_prompts
+from kstrl.agents import AgentCall, SandboxConfig, recording_prompts
 from kstrl.breaker import BreakerConfig
 from kstrl.commandrun import start_heartbeat as _start_heartbeat
 from kstrl.config import (
@@ -27,17 +27,9 @@ from kstrl.factory_result import (
     ComponentResult,
     write_partial_usage,
 )
-from kstrl.feedforward import CodebaseScanConfig, build_codebase_scan_context
 from kstrl.git import resolve_base_ref
 from kstrl.io import pre_run_prd_path
 from kstrl.loop_budget import LoopBudget
-from kstrl.operator_context import (
-    GOLDEN_PATTERNS,
-    MEMORY,
-    load_operator_file,
-    operator_file_notices,
-    operator_file_spec,
-)
 from kstrl.plan import ComponentScope
 from kstrl.proc import (
     TimeoutConfig,
@@ -46,7 +38,15 @@ from kstrl.proc import (
     kill_active_process_groups,
     sweep_worktree,
 )
-from kstrl.sandbox import SandboxConfig
+from kstrl.project import (
+    GOLDEN_PATTERNS,
+    MEMORY,
+    CodebaseScanConfig,
+    build_codebase_scan_context,
+    load_operator_file,
+    operator_file_notices,
+    operator_file_spec,
+)
 from kstrl.verify_model import VerifyConfig
 
 if TYPE_CHECKING:

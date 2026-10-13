@@ -22,7 +22,6 @@ from kstrl.contract import (
 from kstrl.events import (
     NotifyConfig,
 )
-from kstrl.feedforward import CodebaseScanConfig
 from kstrl.launch_record import FlagValue
 from kstrl.linear import LinearConfig
 from kstrl.plan import (
@@ -31,16 +30,17 @@ from kstrl.plan import (
 )
 from kstrl.policy import PolicyConfig
 from kstrl.proc import Rung, TimeoutConfig, WorktreeSetup
+from kstrl.project import (
+    CodebaseScanConfig,
+    Stack,
+    stack_in_force,
+)
 from kstrl.review import (
     ReviewMode,
 )
 from kstrl.security import (
     SecurityConfig,
     SecurityMode,
-)
-from kstrl.stack import (
-    Stack,
-    stack_in_force,
 )
 from kstrl.verify_model import VerifyConfig
 

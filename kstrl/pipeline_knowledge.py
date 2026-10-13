@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl.agents.prompt_record import recording_prompts
+from kstrl.agents import recording_prompts
 from kstrl.events import collect_usage, event_catalog
 from kstrl.git import git, git_diff
 from kstrl.pipeline_attempt import AttemptRecorder

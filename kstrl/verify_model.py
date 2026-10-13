@@ -11,7 +11,7 @@ from typing import Any
 from kstrl.config import ConfigSection, check_numbers
 from kstrl.plan import Finding
 from kstrl.proc import Rung
-from kstrl.stack import Stack, stack_in_force
+from kstrl.project import Stack, stack_in_force
 
 
 @dataclass

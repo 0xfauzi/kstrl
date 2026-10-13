@@ -379,7 +379,7 @@ class TestFactoryFiresHooks:
     ) -> None:
         """R8.3 + review #5: a failing run raises inbox items, but with
         on_inbox_item unset (the default) nothing extra is pushed."""
-        from kstrl.inbox import Inbox, InboxConfig
+        from kstrl.owner.inbox import Inbox, InboxConfig
 
         root = _setup_plain_project(tmp_path)
         inbox_count = tmp_path / "inbox-count.txt"

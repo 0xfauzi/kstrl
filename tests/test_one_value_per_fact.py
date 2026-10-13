@@ -38,7 +38,7 @@ from kstrl.events import events as ev
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult
-from kstrl.inbox import Inbox, InboxConfig, ItemKind
+from kstrl.owner.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.plan.findings import CLAIM_DISAGREEMENT_CATEGORY
 from kstrl.plan.manifest import Component, Manifest
 from kstrl.review import CriterionReview, ReviewConcern, ReviewResult

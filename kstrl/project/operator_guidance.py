@@ -1,6 +1,6 @@
 """Writing the memory file's ``## Guidance`` section (R10.10, #231).
 
-Split out of ``kstrl/operator_context.py`` (#231's simplify pass, B1)
+Split out of ``kstrl/project/operator_context.py`` (#231's simplify pass, B1)
 when that module crossed the 800-line ratchet: the format and the
 truncation rule both belong to the module that owns the READER, but the
 WRITE path - refusing a malformed ``/memory`` text, inserting a record
@@ -14,7 +14,7 @@ the two modules' tests apart too.
 into ``operator_context`` and ``init_cmd`` rather than each spelling the
 literal a second time.
 
-No runtime dependency on ``kstrl.operator_context``: ``OperatorFile``
+No runtime dependency on ``kstrl.project.operator_context``: ``OperatorFile``
 appears only in a type annotation, made lazy by ``from __future__ import
 annotations``, so ``operator_context`` can import this module at load
 time with nothing importing back.
@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING
 from kstrl.io import atomic_write_text
 
 if TYPE_CHECKING:
-    from kstrl.operator_context import OperatorFile
+    from kstrl.project.operator_context import OperatorFile
 
 #: R10.10 (#231). The heading `/memory` appends new entries under, and
 #: the last heading `init_cmd.DEFAULT_MEMORY` ships (that module
@@ -143,7 +143,7 @@ def append_guidance_record(spec: OperatorFile, record: str) -> str:
         # Deferred: a module-level import here would make init_cmd and
         # this module import each other, the same reason
         # `operator_context.read_operator_file` defers `shipped_label`.
-        from kstrl.scaffold_templates import DEFAULT_MEMORY
+        from kstrl.project.scaffold_templates import DEFAULT_MEMORY
 
         body = DEFAULT_MEMORY
     except (OSError, ValueError) as exc:

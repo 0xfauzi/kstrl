@@ -49,7 +49,7 @@ from kstrl.config.config import KstrlConfig
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult, FactoryResult
-from kstrl.inbox import Inbox, InboxConfig, InboxItem, ItemKind, ItemStatus
+from kstrl.owner.inbox import Inbox, InboxConfig, InboxItem, ItemKind, ItemStatus
 from kstrl.plan.manifest import Component, ComponentStatus, Manifest
 from kstrl.pr import MergeConfirmation
 from kstrl.retry_plan import prepare_retry
@@ -283,7 +283,7 @@ class TestACompletedComponentClosesItsItems:
         manifest_path = _project(tmp_path)
         item = _halted(tmp_path, manifest_path)
         out = io.StringIO()
-        with patch("kstrl.inbox.Inbox.resolve", side_effect=OSError("disk full")):
+        with patch("kstrl.owner.inbox.Inbox.resolve", side_effect=OSError("disk full")):
             _ks_retry(tmp_path, manifest_path, out=out)
         assert _completed(manifest_path)
         still = Inbox(tmp_path, InboxConfig()).get(item.id)
@@ -610,7 +610,7 @@ EXPECTED_STATUS_SPELLINGS: dict[str, int] = {
     "pipeline_merge.py::MergeGate.repoll_merge_pending": 1,
     "pr_body.py::single_pr_body": 1,
     "events/reducer.py::apply": 1,
-    "workqueue.py::Queue.finish_ok": 1,
+    "queue/workqueue.py::Queue.finish_ok": 1,
 }
 
 #: The rows above where a manifest component's status becomes COMPLETED.
@@ -640,7 +640,7 @@ NOT_A_COMPLETION: dict[str, str] = {
     "events/reducer.py::apply": (
         "the reducer's view of a ComponentCompleted event, not the manifest"
     ),
-    "workqueue.py::Queue.finish_ok": "a work-queue item's finish reason",
+    "queue/workqueue.py::Queue.finish_ok": "a work-queue item's finish reason",
 }
 
 

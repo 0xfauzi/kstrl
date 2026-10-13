@@ -23,11 +23,11 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.agent_output import extract_json
+from kstrl.agents.agent_output import extract_json
 from kstrl.agents.claude_code import _parse_stream_event
 from kstrl.events.events import parse_event_line
-from kstrl.inbox import Inbox, InboxConfig
 from kstrl.intake_github import parse_issue_list
+from kstrl.owner.inbox import Inbox, InboxConfig
 from kstrl.plan.manifest import Manifest
 from tests.helpers.astwalk import REPO_ROOT
 

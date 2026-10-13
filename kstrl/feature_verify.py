@@ -27,7 +27,7 @@ from kstrl.events import Event, VerificationResultEvent
 from kstrl.git import git
 from kstrl.loop import STOP_EXIT_CODE, LoopResult, determine_branch
 from kstrl.proc import HOST_LABEL
-from kstrl.stack import NO_STACK, StackRefused, confirmed_stack, unconfirmed_lines
+from kstrl.project import NO_STACK, StackRefused, confirmed_stack, unconfirmed_lines
 from kstrl.verify import (
     DIFF_DEPENDENT_CHECKS,
     narrow_to_undiffed,

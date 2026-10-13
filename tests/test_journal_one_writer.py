@@ -325,7 +325,7 @@ EXPECTED_JOURNAL_PATH_SITES: dict[str, int] = {
     "health.py: config.journal_path": 1,
     "pipeline_attempt.py: self.journal_path": 3,
     "pipeline_state.py: self.journal_path": 1,
-    "workqueue_store.py: self.journal_path": 2,
+    "queue/workqueue_store.py: self.journal_path": 2,
     # Two READS of the run's event journal (``progress.jsonl``), not the
     # evolution journal: the failure summary prints where a failed
     # component's lines sit. They were the bare local ``journal_path`` in
@@ -429,7 +429,7 @@ class TestOneWriter:
                 "io/atomicio.py": 1,  # prose in the module docstring
                 "events/event_catalog.py": 1,  # prose in a docstring
                 "evolution_config.py": 1,  # the EvolutionConfig default
-                "init_cmd.py": 1,  # a commented example in the scaffolded kstrl.toml
+                "project/init_cmd.py": 1,  # a commented example in the scaffolded kstrl.toml
                 "knowledge.py": 1,  # prose in the module docstring
                 "pipeline_knowledge.py": 1,  # prose in a docstring
                 "io/statedir.py": 1,  # the state-dir inventory, by name

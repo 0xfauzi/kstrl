@@ -16,13 +16,12 @@ from kstrl.context import IterationContext
 from kstrl.divergence import convergence_message, failure_counts_not_converging
 from kstrl.events import CEILING_AXES, event_catalog
 from kstrl.git import git
-from kstrl.inbox import ItemKind
+from kstrl.owner import ACCEPTANCE_PHASE, ItemKind
 from kstrl.pipeline_attempt import AttemptRecorder
 from kstrl.pipeline_inbox import InboxDesk
 from kstrl.pipeline_ledger import UsageLedger
 from kstrl.pipeline_state import iso_now
 from kstrl.plan import Component, ComponentStatus, Finding
-from kstrl.waivers import ACCEPTANCE_PHASE
 
 
 class Transition(Enum):

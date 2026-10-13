@@ -9,8 +9,8 @@ from kstrl.agents.claude_code import ClaudeCodeAgent
 from kstrl.agents.claude_sdk import ClaudeSdkAgent
 from kstrl.agents.codex import CodexAgent
 from kstrl.agents.custom import CustomAgent
+from kstrl.agents.sandbox import SandboxConfig
 from kstrl.config import VALID_AGENT_TYPES, canonical_agent_type
-from kstrl.sandbox import SandboxConfig
 
 
 class UnknownAgentTypeError(ValueError):

@@ -30,7 +30,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.init_cmd import gitignore_block
+from kstrl.project.init_cmd import gitignore_block
 from tests.helpers import gitrepo, procs
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
 from tests.test_isolation_rung import needs_nono

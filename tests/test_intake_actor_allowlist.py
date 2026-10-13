@@ -26,9 +26,9 @@ import pytest
 from kstrl.intake_gh import GhResult, GitHubIntakeConfig
 from kstrl.intake_github import SyncResult, sync
 from kstrl.intake_issue import Authorization, authorization_refusal
+from kstrl.queue.workqueue import Queue
+from kstrl.queue.workqueue_items import QueueConfig
 from kstrl.serve import _NullObserver, serve_cycle
-from kstrl.workqueue import Queue
-from kstrl.workqueue_items import QueueConfig
 from tests.helpers.runners import recording_runner
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
 from tests.test_intake_github import (

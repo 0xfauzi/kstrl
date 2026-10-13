@@ -29,8 +29,8 @@ import pytest
 from kstrl.intake_gh import GhResult, GitHubIntakeConfig
 from kstrl.intake_github import SyncResult, sync, verify_authorization
 from kstrl.intake_issue import ProcessedLedger
-from kstrl.workqueue import Queue
-from kstrl.workqueue_items import ItemSource, ItemState, MergeDisposition, QueueConfig
+from kstrl.queue.workqueue import Queue
+from kstrl.queue.workqueue_items import ItemSource, ItemState, MergeDisposition, QueueConfig
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
 
 REPO = "0xfauzi/claude-skills"
@@ -1040,10 +1040,10 @@ class TestServeDrivesRemoteLabels:
         tmp_path: Path,
     ) -> None:
         """#187 F10: two gh calls must not block every queue transition."""
+        from kstrl.queue.workqueue_items import QueueLockedError
+        from kstrl.queue.workqueue_store import queue_lock
         from kstrl.serve import serve_cycle
         from kstrl.serve_spend import RunSpend
-        from kstrl.workqueue_items import QueueLockedError
-        from kstrl.workqueue_store import queue_lock
 
         self._remote_item(tmp_path)
         held: list[bool] = []
@@ -1264,11 +1264,11 @@ class TestIntakeLockDiscipline:
         self,
         tmp_path: Path,
     ) -> None:
+        from kstrl.queue.workqueue_items import QueueLockedError
+        from kstrl.queue.workqueue_store import queue_lock
         from kstrl.serve import serve_cycle
         from kstrl.serve_outcome import RunOutcome
         from kstrl.serve_spend import RunSpend
-        from kstrl.workqueue_items import QueueLockedError
-        from kstrl.workqueue_store import queue_lock
 
         (tmp_path / "kstrl.toml").write_text(f'[intake_github]\nenabled = true\nrepo = "{REPO}"\n')
         _queue(tmp_path).ensure_dirs()
@@ -1301,12 +1301,12 @@ class TestIntakeLockDiscipline:
         with no guard at all the mutex is free everywhere, so that test
         passes even harder. This asserts the other half.
         """
+        from kstrl.queue.workqueue import Queue as _Queue
+        from kstrl.queue.workqueue_items import QueueLockedError
+        from kstrl.queue.workqueue_store import queue_lock
         from kstrl.serve import serve_cycle
         from kstrl.serve_outcome import RunOutcome
         from kstrl.serve_spend import RunSpend
-        from kstrl.workqueue import Queue as _Queue
-        from kstrl.workqueue_items import QueueLockedError
-        from kstrl.workqueue_store import queue_lock
 
         (tmp_path / "kstrl.toml").write_text(f'[intake_github]\nenabled = true\nrepo = "{REPO}"\n')
         _queue(tmp_path).ensure_dirs()

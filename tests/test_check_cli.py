@@ -16,7 +16,7 @@ import pytest
 from click.testing import CliRunner, Result
 
 from kstrl.cli import cli
-from kstrl.stack import stack_toml
+from kstrl.project.stack import stack_toml
 from tests.conftest import snapshot_kstrl_dir
 from tests.helpers import gitrepo
 from tests.helpers.stack_confirmation import confirm_stack, in_process_stack

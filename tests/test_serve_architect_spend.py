@@ -32,13 +32,13 @@ from kstrl.events import event_catalog
 from kstrl.events import events as ev
 from kstrl.events.reducer import load_run_state
 from kstrl.io.runid import mint_run_id, run_kind
+from kstrl.queue.workqueue import Queue
+from kstrl.queue.workqueue_items import QueueConfig
 from kstrl.serve import serve_cycle
 from kstrl.serve_config import ServeConfig
 from kstrl.serve_outcome import RunOutcome
 from kstrl.serve_process import subprocess_factory_runner
 from kstrl.serve_spend import SPAWNED_RUN_KIND, SpendLedger
-from kstrl.workqueue import Queue
-from kstrl.workqueue_items import QueueConfig
 from tests.helpers import procs
 from tests.helpers.executables import write_executable
 from tests.helpers.stack_confirmation import confirm_stack, write_stack

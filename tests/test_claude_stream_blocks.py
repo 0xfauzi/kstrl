@@ -30,16 +30,16 @@ from typing import Any
 
 import pytest
 
-from kstrl.agent_output import extract_agent_json, extract_json, select_agent_output
+from kstrl.agents.agent_output import extract_agent_json, extract_json, select_agent_output
 from kstrl.agents.base import TOOL_RESULT_PREFIX, model_output_text
 from kstrl.agents.claude_code import ClaudeCodeAgent, _parse_stream_event
 from kstrl.agents.claude_sdk import ClaudeSdkAgent
 from kstrl.agents.logging import LoggingAgent
+from kstrl.agents.sandbox import SandboxConfig
 from kstrl.config.config import KstrlConfig
 from kstrl.events.usage import UsageRecord
 from kstrl.loop import COMPLETION_MARKER, run_loop
 from kstrl.proc.timeout import TimeoutConfig
-from kstrl.sandbox import SandboxConfig
 from kstrl.ui.plain import PlainUI
 from tests.helpers.executables import put_on_path, write_executable
 

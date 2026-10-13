@@ -23,8 +23,8 @@ from kstrl.autonomy import AutonomyLevel, AutonomyState
 from kstrl.calibration import compare_baselines
 from kstrl.calibration_baseline import load_baseline
 from kstrl.calibration_ladder import LADDER_DISABLED_LINE
-from kstrl.inbox import Inbox, ItemKind
 from kstrl.io.statedir import ControlUnavailableError
+from kstrl.owner.inbox import Inbox, ItemKind
 from tests.helpers.bad_toml import TOML_PARSE_FAULTS
 from tests.helpers.demotion import (
     ARCHITECT_MISSED_IN_OLD,

@@ -3,7 +3,7 @@
 ``tests/test_operator_context.py`` is the loader on ONE file, and its
 cases carry #229's two review rounds. This file is the other half of the
 argument R10.9 rests on: the memory file is not a second loader, it is a
-second :class:`~kstrl.operator_context.OperatorFileKind` row, so every
+second :class:`~kstrl.project.operator_context.OperatorFileKind` row, so every
 behaviour those rounds forced holds for it by construction.
 
 That is a claim, so it is checked. Every case below is parametrized over
@@ -28,7 +28,7 @@ import pytest
 
 from kstrl.config.config import KstrlConfig
 from kstrl.config.config_keys import STRING_KEYS
-from kstrl.operator_context import (
+from kstrl.project.operator_context import (
     _KEPT,
     CUT_FLOOR,
     GOLDEN_PATTERNS,
@@ -39,8 +39,8 @@ from kstrl.operator_context import (
     operator_file_notices,
     read_operator_file,
 )
-from kstrl.scaffold_ledger import SCAFFOLDED_TEMPLATES
-from kstrl.scaffold_templates import DEFAULT_GOLDEN_PATTERNS, DEFAULT_MEMORY
+from kstrl.project.scaffold_ledger import SCAFFOLDED_TEMPLATES
+from kstrl.project.scaffold_templates import DEFAULT_GOLDEN_PATTERNS, DEFAULT_MEMORY
 from tests.helpers.operatorfiles import (
     SHIPPED_BODIES,
     assert_delimited,
@@ -76,7 +76,7 @@ class TestEveryKindBehavesTheSame:
         tmp_path: Path,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        with caplog.at_level(logging.WARNING, logger="kstrl.operator_context"):
+        with caplog.at_level(logging.WARNING, logger="kstrl.project.operator_context"):
             assert load_operator_file(spec_for(kind, tmp_path / kind.scaffold)) == ""
         assert caplog.records == []
 
@@ -156,7 +156,7 @@ class TestEveryKindBehavesTheSame:
         text = ("x" * 19 + "\n") * lines
         path.write_text(text, encoding="utf-8")
 
-        with caplog.at_level(logging.WARNING, logger="kstrl.operator_context"):
+        with caplog.at_level(logging.WARNING, logger="kstrl.project.operator_context"):
             block = load_operator_file(spec_for(kind, path))
 
         body = body_of(block)

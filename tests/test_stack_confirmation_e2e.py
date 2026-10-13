@@ -33,11 +33,11 @@ import pytest
 from click.testing import CliRunner, Result
 
 from kstrl.cli import cli
-from kstrl.inbox import Inbox, InboxConfig, InboxItem, ItemKind, ItemStatus
+from kstrl.owner.inbox import Inbox, InboxConfig, InboxItem, ItemKind, ItemStatus
 from kstrl.plan.manifest import Manifest
-from kstrl.stack import load_stack
-from kstrl.workqueue import Queue
-from kstrl.workqueue_items import ItemState, QueueConfig
+from kstrl.project.stack import load_stack
+from kstrl.queue.workqueue import Queue
+from kstrl.queue.workqueue_items import ItemState, QueueConfig
 from tests.helpers import astwalk
 from tests.helpers.plan_approval import approve_plan
 from tests.helpers.stack_confirmation import confirm_stack
@@ -598,8 +598,8 @@ EXPECTED_UNCONFIRMED_SITES: dict[str, int] = {
     "replay.py": 2,
     # #700: an unconfirmed stack grants the engineer's sandbox no writable
     # path (``with_stack_writable``); read only, never cleared.
-    "sandbox.py": 1,
-    "stack.py": 5,
+    "agents/sandbox.py": 1,
+    "project/stack.py": 5,
     "verify_commands.py": 2,
 }
 

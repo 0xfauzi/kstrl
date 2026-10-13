@@ -142,7 +142,7 @@ def test_ks_health_exit_code_and_report(
 def test_the_factory_seam_opens_an_inbox_item_from_the_real_module(tmp_path: Path) -> None:
     """No monkeypatching of ``sys.modules``: #232's seam meets #151's module."""
     from kstrl.autonomy import AutonomyLevel, AutonomyState
-    from kstrl.inbox import ItemKind
+    from kstrl.owner.inbox import ItemKind
     from tests.helpers.demotion import inbox_items, run_outcome, write_config
 
     write_history(tmp_path, DRIFT12)

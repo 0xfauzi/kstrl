@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl.agents.prompt_record import recording_prompts
+from kstrl.agents import recording_prompts
 from kstrl.context import IterationContext
 from kstrl.events import collect_usage, event_catalog
 from kstrl.pipeline_ledger import UsageLedger

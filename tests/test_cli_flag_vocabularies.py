@@ -37,7 +37,7 @@ from kstrl.agents import ClaudeCodeAgent, ClaudeSdkAgent, CodexAgent
 from kstrl.cli import cli
 from kstrl.config.config import canonical_agent_type
 from kstrl.config_preflight import collect_config_problems
-from kstrl.workqueue_items import ItemState
+from kstrl.queue.workqueue_items import ItemState
 from tests.helpers.closed_vocabulary import BAD_VALUE, CLOSED, FLAG_FIELDS
 
 #: What each command prints once every option given has parsed.

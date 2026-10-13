@@ -433,7 +433,7 @@ _EXPECTED_STATE_DIR_SPELLINGS: dict[str, int] = {
     "io/__init__.py": 2,
     "io/statedir.py": 6,  # +1 #545: plan_prd_path joins the plan directory; -2 #863 A4
     "proc/temp_worktree.py": 1,
-    "workqueue_store.py": 2,
+    "queue/workqueue_store.py": 2,
 }
 
 
@@ -630,8 +630,8 @@ class TestNothingTheLoopRunsWritesTheUncarvedEntries:
     #: writer, and the GitHub intake that admits work.
     WRITERS = frozenset(
         {
-            "kstrl.workqueue",
-            "kstrl.workqueue_store",
+            "kstrl.queue.workqueue",
+            "kstrl.queue.workqueue_store",
             "kstrl.serve",
             "kstrl.cli",
             "kstrl.cli_seam",
@@ -699,7 +699,7 @@ class TestSignalsCannotReachTheQueue:
         passes vacuously if ``kstrl.signals`` ever stops resolving to a
         real file - a rename, or a stale name typed here - because
         ``_import_closure`` on a name with no file behind it returns just
-        that one-element set, and ``"kstrl.workqueue" not in {itself}``
+        that one-element set, and ``"kstrl.queue.workqueue" not in {itself}``
         is trivially true whatever the renamed module actually imports."""
         closure = _import_closure("kstrl.signals")
         assert "kstrl.io.statedir" in closure, (
@@ -708,8 +708,8 @@ class TestSignalsCannotReachTheQueue:
             "pass on any import kstrl.signals actually has."
         )
         # #776 W2: the queue is two modules. Signals can reach the store
-        # (queue_root, the pause marker, the journal) with no edge to kstrl.workqueue.
-        assert closure.isdisjoint({"kstrl.workqueue", "kstrl.workqueue_store"}), (
+        # (queue_root, the pause marker, the journal) with no edge to kstrl.queue.workqueue.
+        assert closure.isdisjoint({"kstrl.queue.workqueue", "kstrl.queue.workqueue_store"}), (
             "slice 1 of R8.8 observes and does not spend. An import edge here "
             "is how that stops being true. If the enqueue slice is landing, "
             "delete this class in the same diff that adds the ladder replay to "
@@ -717,11 +717,11 @@ class TestSignalsCannotReachTheQueue:
         )
 
     def test_the_queue_does_not_import_signals(self) -> None:
-        closure = _import_closure("kstrl.workqueue")
+        closure = _import_closure("kstrl.queue.workqueue")
         assert "kstrl.io.statedir" in closure, (
-            "kstrl.workqueue's import closure holds only itself, which means "
+            "kstrl.queue.workqueue's import closure holds only itself, which means "
             "the name below resolved to no file. This assertion would then "
-            "pass on any import kstrl.workqueue actually has."
+            "pass on any import kstrl.queue.workqueue actually has."
         )
         assert "kstrl.signals" not in closure, (
             "slice 1 of R8.8 observes and does not spend. An import edge here "

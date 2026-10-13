@@ -42,8 +42,8 @@ from kstrl import baseline
 from kstrl.autonomy import DEMOTION_TRIGGER_LABELS
 from kstrl.cli import cli
 from kstrl.config_report import UI_MODES
+from kstrl.queue.workqueue_items import ItemState
 from kstrl.serve_launchd import LAUNCHD_MODES
-from kstrl.workqueue_items import ItemState
 from tests.helpers.astwalk import (
     all_nodes,
     assert_census,

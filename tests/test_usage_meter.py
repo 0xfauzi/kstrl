@@ -58,9 +58,9 @@ from kstrl.factory_result import (
     write_partial_usage,
 )
 from kstrl.factory_worker import _run_component
-from kstrl.inbox import Inbox, InboxConfig
 from kstrl.loop import COMPLETION_MARKER, run_loop
 from kstrl.loop_budget import LoopBudget
+from kstrl.owner.inbox import Inbox, InboxConfig
 from kstrl.plan.manifest import Component, ComponentStatus, Manifest
 from kstrl.proc.factory_lock import FactoryLockHeldError
 from kstrl.proc.shutdown import StopController
@@ -5165,7 +5165,7 @@ class TestEveryConfiguredCeilingRecordsItsCoverage:
         self,
         tmp_path: Path,
     ) -> None:
-        from kstrl.inbox import Inbox, InboxConfig
+        from kstrl.owner.inbox import Inbox, InboxConfig
 
         root, _ = self._dual_cap_run(tmp_path)
         items = [

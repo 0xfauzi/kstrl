@@ -115,13 +115,13 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     "feature_cmd.py": 2,
     # 1 since #696 slice 6: the module map's line count is the one read
     # left; the interface, graph and conventions readers are gone.
-    "feedforward.py": 1,
-    "inbox.py": 1,
+    "project/feedforward.py": 1,
+    "owner/inbox.py": 1,
     # 3 until #352 routed ``_ensure_gitignore``'s append through
     # ``appendio``, which encodes once for every appender. The two left
     # are both reads: the PRD file and ``_read_text_or_none``. N2 (#776)
     # moved ``_read_text_or_none`` to ``scaffold_ledger.py``.
-    "init_cmd.py": 1,
+    "project/init_cmd.py": 1,
     # Back to 1 (the ledger's own read) since #231's simplify pass (B1):
     # the memory-file read `_append_guidance` added moved to
     # `operator_context.append_guidance_record`, which is the module
@@ -145,10 +145,10 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     # `operator_guidance.py`, when this module crossed the 800-line
     # ratchet and that write path split out (the addendum's simplify
     # pass).
-    "operator_context.py": 1,
+    "project/operator_context.py": 1,
     # The `append_guidance_record` read, moved from `operator_context.py`
     # in the same split.
-    "operator_guidance.py": 1,
+    "project/operator_guidance.py": 1,
     # 3 until #463 added carry_interrupted_run's journal open; 5 since #482
     # added journal_integration_result's journal open. #776 divided the 5
     # between the layer modules: the attempt record has 3 (the phase
@@ -165,8 +165,8 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     # a text read; layer 2 below excludes it for exactly that reason).
     "replay.py": 2,
     # #803: the login of the claude user settings.
-    "sandbox.py": 1,
-    "scaffold_ledger.py": 1,
+    "agents/sandbox.py": 1,
+    "project/scaffold_ledger.py": 1,
     "security.py": 1,
     # Five reads, and five reads only. Round 1 of #228 spelled the gh
     # flag as two argv tokens, so the bare literal "open" landed here and
@@ -200,8 +200,8 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     # source and check_patch_coverage's report: the self-critique
     # progress log is the one left.
     "verify.py": 1,
-    "workqueue.py": 1,
-    "workqueue_store.py": 5,
+    "queue/workqueue.py": 1,
+    "queue/workqueue_store.py": 5,
 }
 
 
@@ -239,6 +239,8 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "acceptance_record.py progress.read_text(encoding='utf-8')",
     "agents/codex.py last_msg_file.read_text(encoding='utf-8')",
     "agents/logging.py self._log_path.open('a', encoding='utf-8')",
+    # #803: the claude user settings, utf-8, with ValueError caught beside OSError.
+    "agents/sandbox.py path.read_text(encoding='utf-8')",
     "autonomy.py path.read_text(encoding='utf-8')",
     # Two rows became one in #331. ``load_runs`` held a utf-8 handle open
     # and ran ``csv.DictReader`` over it, which the walk had to clear as
@@ -264,8 +266,6 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "factory_worktrees.py open(lock_path, 'w', encoding='utf-8')",
     "feature_cmd.py open(latest_path, 'w', encoding='utf-8')",
     "feature_cmd.py open(repair_path, 'w', encoding='utf-8')",
-    "feedforward.py path.read_text(encoding='utf-8', errors='replace')",
-    "init_cmd.py open(prd_file, encoding='utf-8')",
     # ``init_cmd.py path.open('a', encoding='utf-8')`` was here until
     # #352. The read is DELETED, not unseen: ``_ensure_gitignore``'s
     # append goes through ``appendio.append_records`` now, so the utf-8
@@ -282,26 +282,32 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "knowledge_distill.py prd_path.read_text(encoding='utf-8')",
     "knowledge_facts.py path.read_text(encoding='utf-8')",
     "loop.py config.prompt_file.read_text(encoding='utf-8')",
-    "operator_context.py spec.path.read_text(encoding='utf-8')",
-    # `append_guidance_record`'s read, same spelling as the row above
-    # because both read an `OperatorFile.path`, moved to
-    # `operator_guidance.py` when that write path split out of
-    # `operator_context.py` under the 800-line ratchet.
-    "operator_guidance.py spec.path.read_text(encoding='utf-8')",
     "pipeline_attempt.py open(path, 'a', buffering=1, encoding='utf-8')",
     "pipeline_knowledge.py progress_path.read_text(encoding='utf-8')",
     "plan/manifest.py open(path, encoding='utf-8')",
     "plan/prd.py open(path, encoding='utf-8')",
     "proc/factory_lock.py fp.read(64) on an open() handle",
     "proc/factory_lock.py open(lock_path, 'a+', encoding='utf-8')",
+    "project/feedforward.py path.read_text(encoding='utf-8', errors='replace')",
+    "project/init_cmd.py open(prd_file, encoding='utf-8')",
+    "project/operator_context.py spec.path.read_text(encoding='utf-8')",
+    # `append_guidance_record`'s read, same spelling as the row above
+    # because both read an `OperatorFile.path`, moved to
+    # `operator_guidance.py` when that write path split out of
+    # `operator_context.py` under the 800-line ratchet.
+    "project/operator_guidance.py spec.path.read_text(encoding='utf-8')",
+    "project/scaffold_ledger.py path.read_text(encoding='utf-8')",
+    "queue/workqueue.py spec_source.read_text(encoding='utf-8')",
+    "queue/workqueue_store.py meta_path.read_text(encoding='utf-8')",
+    "queue/workqueue_store.py open(lock_path, 'a+', encoding='utf-8')",
+    "queue/workqueue_store.py self.journal_path.read_text(encoding='utf-8')",
+    "queue/workqueue_store.py self.pause_path.read_text(encoding='utf-8')",
+    "queue/workqueue_store.py self.spec_path(item).read_text(encoding='utf-8')",
     # #700 slice 5: an acceptance record and its index.json, utf-8, with
     # ValueError caught beside OSError.
     "recheck.py path.read_text(encoding='utf-8')",
     # #700 slice 3: the per-machine replay lock.
     "replay.py path.open('a+', encoding='utf-8')",
-    # #803: the claude user settings, utf-8, with ValueError caught beside OSError.
-    "sandbox.py path.read_text(encoding='utf-8')",
-    "scaffold_ledger.py path.read_text(encoding='utf-8')",
     "security.py prd_path.read_text(encoding='utf-8')",
     "serve.py open(lock_path, 'a+', encoding='utf-8')",
     "serve_gates.py open(lock_path, 'a+', encoding='utf-8')",
@@ -309,12 +315,6 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "serve_outcome.py path.read_text(encoding='utf-8')",
     "serve_spend.py self.path.read_text(encoding='utf-8')",
     "verify.py progress_path.read_text(encoding='utf-8')",
-    "workqueue.py spec_source.read_text(encoding='utf-8')",
-    "workqueue_store.py meta_path.read_text(encoding='utf-8')",
-    "workqueue_store.py open(lock_path, 'a+', encoding='utf-8')",
-    "workqueue_store.py self.journal_path.read_text(encoding='utf-8')",
-    "workqueue_store.py self.pause_path.read_text(encoding='utf-8')",
-    "workqueue_store.py self.spec_path(item).read_text(encoding='utf-8')",
 )
 
 
@@ -357,11 +357,6 @@ EXPECTED_UNDECIDED: tuple[str, ...] = (
     "cli_preflight.py f (the read is deferred to wherever this value is drained, "
     "which this walk cannot locate, so no handler can be credited with "
     "covering it)",
-    # #632: `_dispatch_fixture` calls a runner through `_RUNNERS`, a callee
-    # with no name. Checked by hand: the one runner that reads a file is
-    "init_cmd.py f (the read is deferred to wherever this value is drained, "
-    "which this walk cannot locate, so no handler can be credited with "
-    "covering it)",
     "plan/manifest.py f (the read is deferred to wherever this value is drained, "
     "which this walk cannot locate, so no handler can be credited with "
     "covering it)",
@@ -369,6 +364,11 @@ EXPECTED_UNDECIDED: tuple[str, ...] = (
     "which this walk cannot locate, so no handler can be credited with "
     "covering it)",
     "proc/factory_lock.py fp (the read is deferred to wherever this value is drained, "
+    "which this walk cannot locate, so no handler can be credited with "
+    "covering it)",
+    # #632: `_dispatch_fixture` calls a runner through `_RUNNERS`, a callee
+    # with no name. Checked by hand: the one runner that reads a file is
+    "project/init_cmd.py f (the read is deferred to wherever this value is drained, "
     "which this walk cannot locate, so no handler can be credited with "
     "covering it)",
 )

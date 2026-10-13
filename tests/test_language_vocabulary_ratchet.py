@@ -349,7 +349,7 @@ PINNED_HITS: dict[str, dict[str, int]] = {
     "io/jsonread.py": {"pytest": 1},
     "plan/manifest.py": {"python": 1},
     "plan/names.py": {"mypy": 1},
-    "operator_context.py": {"python": 1, "ruff": 1},
+    "project/operator_context.py": {"python": 1, "ruff": 1},
     "pipeline_checks.py": {"python": 1},
     "pipeline_knowledge.py": {"mypy": 1},
     "pipeline_review.py": {"python": 1},
@@ -357,12 +357,12 @@ PINNED_HITS: dict[str, dict[str, int]] = {
     "proc/procdispose.py": {"python": 8},
     "proc/procgroup.py": {"python": 1},
     "runstate.py": {"mypy": 1},
-    "scaffold_templates.py": {"package.json": 1, "ruff": 1},
+    "project/scaffold_templates.py": {"package.json": 1, "ruff": 1},
     "proc/scrubbed_run.py": {"python": 4},
     "serve_process.py": {"python": 2},
     "verify.py": {"mypy": 2},
     "verify_commands.py": {"mypy": 2, "pytest": 1},
-    "workqueue.py": {"python": 1},
+    "queue/workqueue.py": {"python": 1},
     "proc/worktree_setup.py": {"node": 2},
 }
 

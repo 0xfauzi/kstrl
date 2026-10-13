@@ -1,6 +1,6 @@
 """What every toolchain surface says today, pinned before #635 moves it.
 
-#635 replaces the language tables in ``kstrl/init_cmd.py`` and the gate
+#635 replaces the language tables in ``kstrl/project/init_cmd.py`` and the gate
 defaults in ``kstrl/verify.py`` with one record per ecosystem, and its
 acceptance is that nothing a Python project sees changes. This file is
 that acceptance, captured at the commit before the move (7404b803): it

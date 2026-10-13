@@ -7,7 +7,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl.agents.prompt_record import recording_prompts
+from kstrl.agents import recording_prompts
 from kstrl.events import collect_usage, event_catalog
 from kstrl.pipeline_ledger import UsageLedger
 from kstrl.pipeline_transitions import FailureAction, PhaseFailure

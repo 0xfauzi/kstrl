@@ -366,7 +366,7 @@ FINDING_EXIT_SITES: dict[tuple[str, str], int] = {
     ("cli_serve.py", "serve"): 1,  # work is waiting on a human
     ("doctor.py", "exit_code_for"): 1,  # `ks doctor`: not ready is a finding
     ("factory_result.py", "resolve_exit_code"): 5,  # a failed, unmerged, parked or unscheduled run
-    ("init_cmd.py", "run_init"): 2,  # `ks init`: the PRD it validated is invalid
+    ("project/init_cmd.py", "run_init"): 2,  # `ks init`: the PRD it validated is invalid
     ("loop.py", "_breaker_verdict"): 1,  # an iteration ran and the breaker ended the loop
     ("loop.py", "_budget_verdict"): 1,  # an iteration ran and the budget ended the loop
     ("loop.py", "_guard_verdict"): 1,  # an iteration ran and the guard ended the loop

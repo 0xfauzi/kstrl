@@ -287,7 +287,7 @@ EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
     # nothing: the walk keys on names ending in _PROMPT, not _VERSION.
     # #626: +1 notice constant x 2 spellings = 14.
     # #696 slice 6: -6 notice constants x 2 spellings = 2.
-    "feedforward.py": 2,
+    "project/feedforward.py": 2,
     "git/git_diff.py": 4,
     # #654 slice 7: BUG_REPORT_PROMPT's declaration and its one use in
     # spec_from_issue.
@@ -299,7 +299,7 @@ EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
     # its one row in _LANGUAGE_STANDARDS or _LANGUAGE_ANTIPATTERNS) = 52.
     # #696 slice 6: -17 fragments x 2 spellings (14 language bodies, the two
     # section headings and the principles body) = 18.
-    "init_cmd.py": 12,
+    "project/init_cmd.py": 12,
     # #482: INTEGRATION_CRITERIA_PROMPT, and #483: INTEGRATION_CARRIED_PROMPT;
     # 2 prompts x 2 spellings (each declaration and its one use) = 4. The
     # version constants add nothing: the walk keys on names ending in _PROMPT.
@@ -319,6 +319,9 @@ EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
     "iteration_prompt.py": 2,
     # 2 spellings of DEFAULT_PROMPT (the import and its use in run_loop).
     "loop.py": 2,
+    # #863 M3: the import and the ``__all__`` row of DEFAULT_PROMPT in the
+    # package interface, which ``loop.py`` imports it through.
+    "project/__init__.py": 2,
     # #639 slice 4: OWNER_ANSWER_PROMPT's declaration and its one use in
     # render_owner_answer.
     "owner_answers.py": 2,
@@ -329,13 +332,13 @@ EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
     "review_claims.py": 10,
     # N2 (#776): the six ledger rows that left init_cmd.py name their six
     # constants here; init_cmd.py keeps its own uses and the imports.
-    "scaffold_ledger.py": 9,
+    "project/scaffold_ledger.py": 9,
     # N1 (#776): the three declarations that left init_cmd.py with their bodies.
-    "scaffold_templates.py": 3,
+    "project/scaffold_templates.py": 3,
     "security.py": 2,
     # #696: STACK_PROMPT's declaration and its one use in
     # Stack.format_for_prompt. Enrolled in tests/test_prompt_versions.py.
-    "stack.py": 2,
+    "project/stack.py": 2,
     # #303: 2 pre-existing + 10 new fragments x 2 spellings each (the
     # declaration and its one use site) = 22, less VERIFY_COMMANDS_PROMPT's
     # two (#696 slice 4 retired it) = 20. The *_PROMPT_VERSION constants

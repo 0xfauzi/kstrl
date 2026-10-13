@@ -27,7 +27,7 @@ import pytest
 from click.testing import CliRunner
 
 from kstrl.cli import cli
-from kstrl.init_cmd import run_init
+from kstrl.project.init_cmd import run_init
 from kstrl.ui.plain import PlainUI
 from tests.helpers import gitrepo
 from tests.spine_utils import git
