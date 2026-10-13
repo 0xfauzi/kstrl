@@ -15,7 +15,7 @@ from kstrl.autonomy import DEMOTION_TRIGGER_LABELS
 from kstrl.cli_seam import _autonomy_ui, _console_ui, cli
 from kstrl.config_report import UI_MODES
 from kstrl.config_report import normalize_ui_mode as _normalize_ui_mode
-from kstrl.factory_preflight import _report_preflight
+from kstrl.factory_preflight import report_preflight
 from kstrl.journal_rows import LegacyJournalRowError
 from kstrl.ui.base import UI
 
@@ -708,7 +708,7 @@ def recheck_cmd(record: Path, root: Path | None, ui: str, no_color: bool) -> Non
     config = FactoryConfig.load(root_dir)
     config.verify_config = VerifyConfig.load(root_dir)
     refused, lines, agrees = recheck(root_dir, record.resolve(), config, ui_impl)
-    if _report_preflight(ui_impl, "the acceptance record cannot be rechecked", refused):
+    if report_preflight(ui_impl, "the acceptance record cannot be rechecked", refused):
         sys.exit(2)
     for line in lines:
         ui_impl.info(line)

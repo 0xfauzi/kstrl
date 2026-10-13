@@ -87,8 +87,8 @@ from kstrl.rung import (
     PROVER_PLATFORMS,
     ProvenRung,
     Rung,
-    _nono_argv,
     host_fallback,
+    nono_argv,
     zone_dir,
 )
 from kstrl.scrubbed_run import ChildOutputDecodeError, run_scrubbed
@@ -399,7 +399,7 @@ def _canary_verdicts(
 def _probe(nono: str, policy_path: Path, layout: _Layout, argv: Sequence[str]) -> _Ran:
     """One extra nono spawn outside the canary process: the missing-
     command and SIGTERM positive controls, each its own invocation."""
-    return _run_bounded(_nono_argv(nono, policy_path, layout.zone, list(argv), []), layout.zone)
+    return _run_bounded(nono_argv(nono, policy_path, layout.zone, list(argv), []), layout.zone)
 
 
 def _run_canaries(nono: str, policy_path: Path, layout: _Layout, zone: str) -> dict[str, str]:
@@ -416,7 +416,7 @@ def _run_canaries(nono: str, policy_path: Path, layout: _Layout, zone: str) -> d
     try:
         sandboxed = _outcomes(
             _run_bounded(
-                _nono_argv(nono, policy_path, layout.zone, canary, assignments), layout.zone
+                nono_argv(nono, policy_path, layout.zone, canary, assignments), layout.zone
             ),
             names,
         )

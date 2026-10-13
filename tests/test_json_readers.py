@@ -82,7 +82,7 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     # check entry's digest). Its reads go through read_json.
     "acceptance.py": 3,
     # #700 slice 7: the import and one json.dumps (the designed plan and its
-    # designer.json). It reads no JSON: the reply goes through _extract_json.
+    # designer.json). It reads no JSON: the reply goes through extract_json.
     "acceptance_design.py": 2,
     "agent_output.py": 4,
     # #598: was 4 (import, one json.dumps in _format_tool_use, two

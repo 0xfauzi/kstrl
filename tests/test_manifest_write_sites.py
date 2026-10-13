@@ -31,7 +31,7 @@ OLD census unchanged (the site being counted is ``reset_for_retry`` and
 ``save``, not the lock call itself), so a hand-written label was the
 whole guard. ``test_every_takes_lock_site_is_preceded_by_its_lock_call``
 walks the site's own enclosing scope for a lexical reference to
-``_acquire_run_lock``, ``_inbox_run_lock`` or ``held_or_acquired_run_lock``
+``acquire_run_lock``, ``_inbox_run_lock`` or ``held_or_acquired_run_lock``
 (the acquire-or-use-the-caller's-lock wrapper `_decompose_spec_impl`
 calls) at an earlier line, so deleting the lock call turns the label
 into a lie the walk can see.
@@ -72,7 +72,7 @@ WRITE_NAMES = frozenset({"save", "reset_for_retry", "prepare_retry"})
 
 #: What a ``TAKES_LOCK`` site's enclosing scope must reference, lexically
 #: before the site's own line, or the label is unverified (#597).
-_LOCK_CALL_NAMES = frozenset({"_acquire_run_lock", "_inbox_run_lock", "held_or_acquired_run_lock"})
+_LOCK_CALL_NAMES = frozenset({"acquire_run_lock", "_inbox_run_lock", "held_or_acquired_run_lock"})
 
 IN_RUN = "in-run"  # inside run_factory's lock: _run_factory_locked and what it drives
 TAKES_LOCK = "takes-lock"  # takes the run lock before its first change (#597)
@@ -278,7 +278,7 @@ def test_every_takes_lock_site_is_preceded_by_its_lock_call() -> None:
     census unchanged (the counted references are ``reset_for_retry`` and
     ``save``, not the lock call), so the hand-written label was the whole
     guard. This walks each labelled site's own enclosing scope for a
-    lexical reference to ``_acquire_run_lock``, ``_inbox_run_lock`` or
+    lexical reference to ``acquire_run_lock``, ``_inbox_run_lock`` or
     ``held_or_acquired_run_lock`` at an earlier line, so deleting the
     lock call turns the label into something this test can see is false.
     """

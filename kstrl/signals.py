@@ -57,7 +57,7 @@ from typing import Any
 
 from kstrl.appendio import append_records
 from kstrl.atomicio import atomic_write_text
-from kstrl.config import _parse_bool, load_toml_section, resolve_config_file
+from kstrl.config import load_toml_section, parse_bool, resolve_config_file
 from kstrl.config_numbers import check_numbers
 from kstrl.jsonread import read_json
 from kstrl.statedir import CONTROL_SIGNALS, control_file, ensure_control_state
@@ -139,7 +139,7 @@ class SignalsConfig:
         defaults = cls()
         enabled = os.environ.get("KSTRL_SIGNALS_ENABLED")
         return cls(
-            enabled=defaults.enabled if enabled is None else _parse_bool(enabled),
+            enabled=defaults.enabled if enabled is None else parse_bool(enabled),
             product=os.environ.get("KSTRL_SIGNALS_PRODUCT", defaults.product),
             base_url=os.environ.get("KSTRL_SIGNALS_BASE_URL", defaults.base_url),
             project_id=os.environ.get("KSTRL_SIGNALS_PROJECT_ID", defaults.project_id),
@@ -187,7 +187,7 @@ def _overlay_toml_section(config: SignalsConfig, section: dict[str, Any]) -> Non
 
 def _overlay_env(config: SignalsConfig) -> None:
     if "KSTRL_SIGNALS_ENABLED" in os.environ:
-        config.enabled = _parse_bool(os.environ["KSTRL_SIGNALS_ENABLED"])
+        config.enabled = parse_bool(os.environ["KSTRL_SIGNALS_ENABLED"])
     if "KSTRL_SIGNALS_PRODUCT" in os.environ:
         config.product = os.environ["KSTRL_SIGNALS_PRODUCT"]
     if "KSTRL_SIGNALS_BASE_URL" in os.environ:

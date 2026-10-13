@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Literal
 
 from kstrl.git_base import fetch_base_branch
 from kstrl.pr_body import component_pr_body, single_pr_body
-from kstrl.pr_state import _pr_mergeable, _pr_state
+from kstrl.pr_state import fetch_pr_state, pr_mergeable
 
 if TYPE_CHECKING:
     from kstrl.manifest import Component, Manifest
@@ -240,7 +240,7 @@ def wait_for_merge(
     """
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        view = _pr_state(pr_number, cwd)
+        view = fetch_pr_state(pr_number, cwd)
         if view is not None and view.state == "MERGED":
             return MergeConfirmation(
                 state="merged", merge_sha=view.merge_sha, head_sha=view.head_sha
@@ -296,7 +296,7 @@ def _merge_and_wait(
         # cleanup failed post-merge and gh reported failure while the PR
         # sat MERGED on GitHub). R0.2 gates completion on the merge
         # OUTCOME, so consult the PR state before declaring failure.
-        view = _pr_state(pr_number, cwd)
+        view = fetch_pr_state(pr_number, cwd)
         if view is not None and view.state == "MERGED":
             ui.warn(
                 f"  gh pr merge #{pr_number} reported an error "
@@ -310,7 +310,7 @@ def _merge_and_wait(
         # merge failure - conflicts route to the re-run doctrine
         # instead of a terminal failure. Only GitHub's own CONFLICTING
         # verdict counts; UNKNOWN/None fall through to normal failure.
-        if _pr_mergeable(pr_number, cwd) == "CONFLICTING":
+        if pr_mergeable(pr_number, cwd) == "CONFLICTING":
             return PrOutcome(
                 pushed=True,
                 pr_number=pr_number,
@@ -369,7 +369,7 @@ def _merge_and_wait(
 
     # R7.5: an --auto merge queued on a conflicting PR never lands;
     # without this check it would park as MERGE_PENDING forever.
-    if _pr_mergeable(pr_number, cwd) == "CONFLICTING":
+    if pr_mergeable(pr_number, cwd) == "CONFLICTING":
         ui.warn(f"  PR #{pr_number} is CONFLICTING with {base_branch}")
         return PrOutcome(
             pushed=True,
@@ -430,7 +430,7 @@ def push_create_and_merge_pr(
                 ),
             )
         ui.info(f"  {component.id}: PR already exists ({component.pr_url})")
-        view = _pr_state(pr_number, cwd)
+        view = fetch_pr_state(pr_number, cwd)
         if view is not None and view.state == "MERGED":
             return PrOutcome(
                 pushed=True,

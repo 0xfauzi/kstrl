@@ -56,6 +56,7 @@ from typing import Any
 from kstrl.config_numbers import check_numbers
 from kstrl.config_toml import ConfigError, load_toml_document, section_table
 from kstrl.inbox import Inbox, InboxConfig, InboxItem, ItemKind, ItemStatus
+from kstrl.scrubbed_run import SECRET_NAME_FRAGMENTS
 
 #: The four keys of ``[stack]``. Every one is required.
 STACK_KEYS: tuple[str, ...] = ("instructions", "setup", "checks", "env")
@@ -113,17 +114,6 @@ def replay_decides(replay: dict[str, Any]) -> bool:
     failed = str(replay.get("failed", ""))
     return replay_refuses(failed) or not (failed or replay.get("error"))
 
-
-#: A name that holds any of these is never passed to a command, whoever
-#: declared it (#696 decision 11). ``verify.scrubbed_subprocess_env`` drops
-#: the same names; one tuple, so the refusal and the scrub cannot disagree.
-SECRET_NAME_FRAGMENTS: tuple[str, ...] = (
-    "API_KEY",
-    "SECRET",
-    "TOKEN",
-    "PASSWORD",
-    "CREDENTIAL",
-)
 
 #: kstrl's own variables: kstrl sets the ones a command needs itself, so a
 #: stack may not pass one through.

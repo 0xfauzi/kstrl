@@ -50,7 +50,7 @@ is that fixture's `runs[n - 1]` in the baseline (a negative fixture has no
 the run's record (`caught` or `false_positive`, `error`, `detail`), `run`, and
 `calls`: one entry per agent call with the `streamed` lines and the
 `final_message`. The text a matcher scored is one of the two, chosen by
-`kstrl.decompose._select_agent_output`. Read one with
+`kstrl.decompose.select_agent_output`. Read one with
 `jq -r '.calls[0].final_message' <file>`.
 
 A run's reply is written before the run is recorded. A run with no reply to

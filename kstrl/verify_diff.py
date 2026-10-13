@@ -107,7 +107,7 @@ SCOPE_UNREADABLE_CHECK = "scope_unreadable"
 
 #: Opening words of the failure recorded when a component is refused for
 #: an unreadable scope. Load bearing twice over, so it is a constant
-#: rather than a literal: ``evolution._classify_check`` matches on it to
+#: rather than a literal: ``evolution.classify_check`` matches on it to
 #: recover the check name from a manifest written by an earlier process,
 #: and it is what an operator sees first in the inbox, the notification
 #: and ``comp.error``.

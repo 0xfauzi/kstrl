@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from kstrl import git
 from kstrl.git_base import fetch_base_branch, resolve_base_ref
 from kstrl.manifest import Component, ComponentStatus, Manifest
+from kstrl.manifest_merge import has_merged
 from kstrl.worktree_sweep import WorktreeSweep, sweep_worktree, warn_sweep
 
 if TYPE_CHECKING:
@@ -198,7 +199,7 @@ def _setup_worktree(
 def _dependency_branches(manifest: Manifest, comp: Component) -> list[str]:
     """The branches of ``comp``'s dependencies whose code is not in the base (#543).
 
-    A dependency that merged (``_has_merged``) is already in the base the
+    A dependency that merged (``has_merged``) is already in the base the
     worktree is cut from, which is how per-component PR mode gives a
     dependent its dependency's code. Under ``create_prs=False``, or with
     no gh, a COMPLETED dependency's code exists only on its own branch.
@@ -208,7 +209,7 @@ def _dependency_branches(manifest: Manifest, comp: Component) -> list[str]:
     branches: list[str] = []
     for dep_id in comp.dependencies:
         dep = manifest.get_component(dep_id)
-        if dep is None or _has_merged(dep) or dep.branch_name in (comp.branch_name, *branches):
+        if dep is None or has_merged(dep) or dep.branch_name in (comp.branch_name, *branches):
             continue
         branches.append(dep.branch_name)
     return branches
@@ -617,20 +618,6 @@ def _preflight_component_branches(
                 f"not be deleted: {deleted.stderr.strip()}"
             )
     return errors
-
-
-def _has_merged(comp: Component) -> bool:
-    """Whether ``comp``'s change has reached the base branch, or may have.
-
-    MERGE_PENDING counts: its merge was initiated and may have landed. A
-    recorded merge commit counts. So does a COMPLETED component with a
-    PR, because once a PR exists COMPLETED requires a confirmed merge
-    (R0.2) and ``merge_sha`` may be empty for a merged PR. A COMPLETED
-    component with no PR (``create_prs=False``, or no gh) merged nothing.
-    """
-    if comp.status == ComponentStatus.MERGE_PENDING.value or comp.merge_sha:
-        return True
-    return comp.status == ComponentStatus.COMPLETED.value and bool(comp.pr_url)
 
 
 def _cleanup_pass_worktrees(

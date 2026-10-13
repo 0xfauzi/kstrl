@@ -241,7 +241,7 @@ class EnvelopeResolution:
     envelope and at least one line naming a section and the input to
     fix. Returned as a pair rather than raised so ``run_factory`` can
     refuse the way its sibling pre-spend checks refuse - a sentence and
-    exit 2 through ``_report_preflight`` - instead of handing the
+    exit 2 through ``report_preflight`` - instead of handing the
     operator a traceback (#260 round 3 drew the same line for the
     architect decision register).
     """

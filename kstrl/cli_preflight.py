@@ -14,22 +14,21 @@ from typing import TYPE_CHECKING, Any
 import click
 from click.core import ParameterSource
 
-from kstrl.agents import (
-    AGENT_TYPE_ALIASES,
-    VALID_AGENT_TYPES,
-    ClaudeCodeAgent,
-    ClaudeSdkAgent,
-    CodexAgent,
-    canonical_agent_type,
-)
+from kstrl.agents import ClaudeCodeAgent, ClaudeSdkAgent, CodexAgent
 from kstrl.agents.liveness import CLAUDE_FAMILY, PROBE_ENV_VAR, probe_family
 from kstrl.cli_seam import _actor, _resolve_path, _use_cli_value
-from kstrl.config import KstrlConfig, _parse_paths
+from kstrl.config import (
+    AGENT_TYPE_ALIASES,
+    VALID_AGENT_TYPES,
+    KstrlConfig,
+    canonical_agent_type,
+    parse_paths,
+)
 from kstrl.config_report import normalize_ui_mode as _normalize_ui_mode
-from kstrl.factory_agents import _cli_family
+from kstrl.factory_agents import cli_family
 from kstrl.factory_config import FactoryConfig
-from kstrl.factory_lock import _acquire_run_lock, _RunLock
-from kstrl.factory_preflight import _report_preflight, base_refused_before_architect
+from kstrl.factory_lock import RunLock, acquire_run_lock
+from kstrl.factory_preflight import base_refused_before_architect, report_preflight
 from kstrl.interaction import PromptKind, PromptRequest, UiInteractionChannel
 from kstrl.jsonread import read_json_file
 from kstrl.prd import PRD
@@ -57,7 +56,7 @@ _HANDED_RUN_LOCK = "kstrl.handed_run_lock"
 
 def _resolve_factory_run_lock(
     ctx: click.Context, root_dir: Path, ui_impl: UI, force_lock: bool
-) -> _RunLock:
+) -> RunLock:
     """The lock `ks factory` runs under: handed in by a caller, or newly acquired (#597).
 
     `ks retry` and `ks inbox approve` on a parked merge take the lock
@@ -73,9 +72,9 @@ def _resolve_factory_run_lock(
     cognitive-complexity ratchet.
     """
     handed = ctx.meta.get(_HANDED_RUN_LOCK)
-    if handed is not None and (not isinstance(handed, _RunLock) or handed.released):
+    if handed is not None and (not isinstance(handed, RunLock) or handed.released):
         raise RuntimeError(f"a released run lock was handed to `ks factory`: {handed!r}")
-    return handed or _acquire_run_lock(root_dir, ui_impl, force=force_lock)
+    return handed or acquire_run_lock(root_dir, ui_impl, force=force_lock)
 
 
 def _agent_settings(
@@ -252,14 +251,14 @@ def _probe_target_family(agent_cmd: str | None, canonical: str | None) -> str | 
     None means there is no CLI turn to probe. ``claude-sdk`` is the
     Claude FAMILY reached over the SDK transport rather than through the
     ``claude`` binary, so that carve-out is the only fact stated here;
-    everything else defers to ``_cli_family``, the mirror of
+    everything else defers to ``cli_family``, the mirror of
     ``get_agent``'s dispatch that the R7.1 rotation already depends on
     (a custom command returns None there, and the auto-detect preference
     order stays stated once).
     """
     if canonical == "claude-sdk":
         return None
-    return _cli_family(agent_cmd, canonical, ClaudeCodeAgent.is_available())
+    return cli_family(agent_cmd, canonical, ClaudeCodeAgent.is_available())
 
 
 def _check_agent_preflight(config: KstrlConfig, ui_impl: UI) -> None:
@@ -418,7 +417,7 @@ def _apply_cli_overrides(
         config.interactive = ctx.params["interactive"]
         overridden.add("interactive")
     if passed("allowed_paths"):
-        config.allowed_paths = _parse_paths(ctx.params["allowed_paths"])
+        config.allowed_paths = parse_paths(ctx.params["allowed_paths"])
         overridden.add("allowed_paths")
     if passed("branch"):
         config.kstrl_branch = ctx.params["branch"]
@@ -588,7 +587,7 @@ def _stack_checkpoint(root_dir: Path, ui_impl: UI, *, no_verify: bool) -> None:
         stack = refused.stack
     else:
         if confirmed is None and not no_verify:
-            _report_preflight(ui_impl, "kstrl.toml has no [stack]", [NO_STACK])
+            report_preflight(ui_impl, "kstrl.toml has no [stack]", [NO_STACK])
             sys.exit(2)
         return
     channel = UiInteractionChannel(ui_impl)
@@ -604,14 +603,14 @@ def _stack_checkpoint(root_dir: Path, ui_impl: UI, *, no_verify: bool) -> None:
         try:
             said = decide_at_prompt(root_dir, stack, confirm=response.choice == 0, actor=_actor())
         except SURFACE_REJECTIONS as exc:
-            _report_preflight(ui_impl, "the stack decision could not be recorded", [str(exc)])
+            report_preflight(ui_impl, "the stack decision could not be recorded", [str(exc)])
             sys.exit(2)
         if response.choice == 0:
             ui_impl.ok(f"  Stack confirmed: {said}")
             return
-        _report_preflight(ui_impl, "the [stack] in kstrl.toml was rejected", [said])
+        report_preflight(ui_impl, "the [stack] in kstrl.toml was rejected", [said])
         sys.exit(2)
-    _report_preflight(
+    report_preflight(
         ui_impl, "the [stack] in kstrl.toml is not confirmed", unconfirmed_lines(root_dir, stack)
     )
     sys.exit(2)

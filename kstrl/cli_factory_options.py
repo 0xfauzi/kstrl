@@ -14,7 +14,7 @@ from kstrl.config_numbers import LIMIT_FLOAT, LIMIT_INT
 from kstrl.config_report import UI_MODES
 from kstrl.contract import ContractMode
 from kstrl.factory_config import VALID_REVIEW_MODES
-from kstrl.security import _SEVERITY_ORDER, SecurityMode
+from kstrl.security import SEVERITY_ORDER, SecurityMode
 
 _FACTORY_OPTIONS: tuple[Callable[[Callable[..., Any]], Callable[..., Any]], ...] = (
     click.option(
@@ -138,7 +138,7 @@ _FACTORY_OPTIONS: tuple[Callable[[Callable[..., Any]], Callable[..., Any]], ...]
     ),
     click.option(
         "--security-fail-threshold",
-        type=click.Choice(list(_SEVERITY_ORDER)),
+        type=click.Choice(list(SEVERITY_ORDER)),
         default=None,
         help="In hard mode, findings at or above this severity block "
         "(default: high - critical+high fail)",

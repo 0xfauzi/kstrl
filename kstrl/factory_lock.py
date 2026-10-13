@@ -54,7 +54,7 @@ def _refuse_leftover_agents(root_dir: Path, fp: IO[str]) -> None:
 
 
 @dataclass
-class _RunLock:
+class RunLock:
     """Handle for the run-level factory lock.
 
     ``held=True`` means we hold an exclusive flock for the whole run and
@@ -88,7 +88,7 @@ class _RunLock:
         self.released = True
 
 
-def _acquire_run_lock(root_dir: Path, ui: UI, force: bool) -> _RunLock:
+def acquire_run_lock(root_dir: Path, ui: UI, force: bool) -> RunLock:
     """Take the run-level flock on ``.kstrl/factory.lock`` (R0.5, H-7).
 
     Held for the entire run so a second ``ks factory`` / ``ks run``
@@ -112,7 +112,7 @@ def _acquire_run_lock(root_dir: Path, ui: UI, force: bool) -> _RunLock:
             "Run-level factory lock unavailable on this platform (no "
             "fcntl); concurrent invocations on this root are not excluded"
         )
-        return _RunLock(fp=None, held=False)
+        return RunLock(fp=None, held=False)
 
     # "a+" so a refused attempt can read the holder's pid without
     # truncating it.
@@ -145,7 +145,7 @@ def _acquire_run_lock(root_dir: Path, ui: UI, force: bool) -> _RunLock:
                 f"{holder_note}; concurrent runs can corrupt each "
                 f"other's worktrees and manifest"
             )
-            return _RunLock(fp=None, held=False)
+            return RunLock(fp=None, held=False)
         raise FactoryLockHeldError(
             f"Another kstrl invocation{holder_note} holds {lock_path}; "
             f"refusing to start a second factory run on this root. "
@@ -163,13 +163,13 @@ def _acquire_run_lock(root_dir: Path, ui: UI, force: bool) -> _RunLock:
         fp.flush()
     except OSError:
         pass
-    return _RunLock(fp=fp, held=True)
+    return RunLock(fp=fp, held=True)
 
 
 @contextmanager
 def held_or_acquired_run_lock(
-    run_lock: _RunLock | None, root_dir: Path, ui: UI, force: bool
-) -> Iterator[_RunLock]:
+    run_lock: RunLock | None, root_dir: Path, ui: UI, force: bool
+) -> Iterator[RunLock]:
     """Use ``run_lock`` if the caller already holds one; acquire and release our own otherwise.
 
     `ks factory --spec` takes the lock before it calls ``decompose_spec``
@@ -179,7 +179,7 @@ def held_or_acquired_run_lock(
     acquires and releases around exactly the block it wraps.
     """
     owns = run_lock is None
-    lock = run_lock if run_lock is not None else _acquire_run_lock(root_dir, ui, force=force)
+    lock = run_lock if run_lock is not None else acquire_run_lock(root_dir, ui, force=force)
     try:
         yield lock
     finally:

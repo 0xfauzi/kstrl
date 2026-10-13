@@ -235,9 +235,6 @@ EXPECTED_GIT_ARGVS: dict[str, int] = {
     "breaker.py git status --porcelain -uall -z": 1,
     "config_report.py git ?": 1,
     "contract.py git merge --abort": 1,
-    "contract.py git worktree add --detach ? ?": 1,
-    "contract.py git worktree prune": 1,
-    "contract.py git worktree remove --force ?": 1,
     "doctor.py git check-ignore -q -- ?": 1,
     "factory_worktrees.py git branch -D ?": 1,
     "factory_worktrees.py git merge-base --is-ancestor ? ?": 1,
@@ -288,6 +285,9 @@ EXPECTED_GIT_ARGVS: dict[str, int] = {
     "retry_plan.py git worktree prune": 1,
     "retry_plan.py git worktree remove --force ?": 1,
     "statedir.py git -C ? remote get-url origin": 1,
+    "temp_worktree.py git worktree add --detach ? ?": 1,
+    "temp_worktree.py git worktree prune": 1,
+    "temp_worktree.py git worktree remove --force ?": 1,
     # #425 (PR #425, merged into this branch as 982f726). Not
     # path-printing, so layer 2 correctly leaves it out of
     # EXPECTED_WITH_Z / EXPECTED_WITHOUT_Z / EXPECTED_UNDECIDED: `git

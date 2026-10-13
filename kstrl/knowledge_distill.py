@@ -14,9 +14,9 @@ from typing import TYPE_CHECKING, Any
 
 from kstrl.agent_output import (
     AgentOutputTooLarge,
-    _extract_json,
-    _select_agent_output,
     collect_agent_output,
+    extract_json,
+    select_agent_output,
 )
 from kstrl.delimiters import generate_data_delimiter
 from kstrl.fact_scope import evidence_cites_existing_path
@@ -199,7 +199,7 @@ def _parse_distill_output(raw_output: str) -> DistillReply:
     Never repairs the reply: a repaired reply is a different answer.
     """
     try:
-        data = _extract_json(raw_output)
+        data = extract_json(raw_output)
     except ValueError as exc:
         return DistillReply(facts=[], error=str(exc))
     if not isinstance(data, dict):
@@ -299,7 +299,7 @@ def distill_facts(
     # parses (codex/claude path), else use streamed (CustomAgent or any
     # agent that emits multi-line JSON without populating final_message
     # with the full response).
-    raw_output = _select_agent_output(agent, output_lines)
+    raw_output = select_agent_output(agent, output_lines)
     final_message = getattr(agent, "final_message", None)
 
     debug_dir = knowledge_root / component.id / _DEBUG_DIR_NAME / run_id

@@ -39,7 +39,7 @@ if TYPE_CHECKING:
     from kstrl.ui.base import UI
 
 
-def _iso_now() -> str:
+def iso_now() -> str:
     """Current UTC time as ISO 8601, matching the manifest timestamps."""
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
@@ -321,7 +321,7 @@ class PipelineState:
         passed since #193: the factory computed the identical
         ``RunPaths.for_run(root_dir, run_id)``, handed it in, and read it
         straight back off the object at ``factory.py``'s
-        ``_salvage_aborted_usage``. Nothing inside this class ever read
+        ``salvage_aborted_usage``. Nothing inside this class ever read
         the stored attribute. The old parameter was ``RunPaths | None``
         and the None case existed only for callers that did not pass it,
         so it is gone with the parameter.

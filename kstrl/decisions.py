@@ -39,7 +39,7 @@ template.
 from __future__ import annotations
 
 import time
-from collections.abc import Callable, Collection, Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -47,6 +47,7 @@ from typing import TYPE_CHECKING, Any
 from kstrl.atomicio import atomic_write_json
 from kstrl.inbox import UNDECIDED, Inbox, InboxConfig, InboxItem, ItemKind
 from kstrl.jsonread import read_json
+from kstrl.requirements import enum_field_error, required_field_error
 from kstrl.workqueue_items import QueueError
 from kstrl.workqueue_store import queue_item_for_spec
 
@@ -264,41 +265,6 @@ def bind_register(
 def _clean(value: Any) -> str:
     """A raw JSON field as a stripped string, or "" for anything else."""
     return value.strip() if isinstance(value, str) else ""
-
-
-def required_field_error(prefix: str, name: str, value: Any) -> str | None:
-    """One required string field, or the reason it is not one.
-
-    Shared with ``decompose._spec_issue_errors``: the two raw validators
-    that guard the #260 join must word an identical fault identically,
-    or a retry sees two vocabularies for one mistake.
-    """
-    if not isinstance(value, str):
-        return f"{prefix}.{name}: must be a string, got {type(value).__name__}"
-    if not value.strip():
-        return f"{prefix}.{name}: must not be empty"
-    return None
-
-
-def enum_field_error(
-    prefix: str,
-    name: str,
-    value: Any,
-    valid: Collection[str],
-) -> str | None:
-    """One required field constrained to a fixed vocabulary.
-
-    The message names the whole vocabulary and says the match is exact,
-    because "is not one of" without the list sends a retry guessing. F1
-    was a capitalised ``disposition``; the round-2 /simplify pass found
-    the same hole one field over, in a spec issue's ``severity``, so
-    this is the one place both are now checked.
-    """
-    if not isinstance(value, str):
-        return f"{prefix}.{name}: must be a string, got {type(value).__name__}"
-    if value not in valid:
-        return f"{prefix}.{name}: {value!r} is not one of {sorted(valid)} (match is case-exact)"
-    return None
 
 
 def decision_entry_errors(index: int, entry: Any) -> list[str]:

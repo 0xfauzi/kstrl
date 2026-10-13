@@ -60,7 +60,7 @@ from typing import Any
 import pytest
 
 from kstrl import calibration, calibration_baseline
-from kstrl.agent_output import _extract_agent_json, _select_agent_output
+from kstrl.agent_output import extract_agent_json, select_agent_output
 from kstrl.agents.proc import TIMEOUT_MESSAGE_PREFIX
 from kstrl.calibration_score import (
     _acceptable_categories,
@@ -1139,7 +1139,7 @@ def _security_run_once(
         output = _collect(agent, prompt, cwd)
     except Exception as exc:  # noqa: BLE001
         raise _AgentUnavailable(str(exc)) from exc
-    raw = _select_agent_output(agent, output)
+    raw = select_agent_output(agent, output)
     return parse_security_output(raw, SecurityMode.ADVISORY.value)
 
 
@@ -1303,7 +1303,7 @@ def _reviewer_run_once(
         output = _collect(agent, prompt, cwd)
     except Exception as exc:  # noqa: BLE001
         raise _AgentUnavailable(str(exc)) from exc
-    raw = _select_agent_output(agent, output)
+    raw = select_agent_output(agent, output)
     return parse_review_output(raw)
 
 
@@ -1437,7 +1437,7 @@ def test_architect_role_flags_vague_spec(
         except Exception as exc:  # noqa: BLE001
             raise _AgentUnavailable(str(exc)) from exc
         try:
-            data = _extract_agent_json(agent, output)
+            data = extract_agent_json(agent, output)
         except ValueError as exc:
             # Unparseable output is a completed behavioral miss, not
             # an infrastructure error.
@@ -1503,7 +1503,7 @@ def test_architect_emits_sensible_allowed_paths(
         except Exception as exc:  # noqa: BLE001
             raise _AgentUnavailable(str(exc)) from exc
         try:
-            data = _extract_agent_json(agent, output)
+            data = extract_agent_json(agent, output)
         except ValueError as exc:
             return False, f"json parse: {exc}"
         return architect_allowed_paths_caught(
@@ -1560,7 +1560,7 @@ def test_architect_reuses_what_the_repository_already_has(
         except Exception as exc:  # noqa: BLE001
             raise _AgentUnavailable(str(exc)) from exc
         try:
-            data = _extract_agent_json(agent, output)
+            data = extract_agent_json(agent, output)
         except ValueError as exc:
             return False, f"json parse: {exc}"
         return reuse_caught(data, arm, fixture.must_reuse)

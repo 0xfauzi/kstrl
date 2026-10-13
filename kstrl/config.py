@@ -27,14 +27,14 @@ from kstrl.config_toml import section_table as section_table
 from kstrl.config_toml import toml_parse_scope as toml_parse_scope
 
 
-def _parse_bool(value: str | None) -> bool:
+def parse_bool(value: str | None) -> bool:
     """Parse boolean from environment variable."""
     if value is None:
         return False
     return bool(re.match(r"^(1|true|yes)$", value.lower()))
 
 
-def _parse_paths(value: str | None) -> list[str]:
+def parse_paths(value: str | None) -> list[str]:
     """Parse comma-separated paths, trimming whitespace."""
     if not value:
         return []
@@ -520,18 +520,44 @@ def resolve_config_file(root_dir: Path) -> Path:
     return root_dir / CONFIG_FILE_NAME
 
 
+#: The one agent-type vocabulary, shared with the CLI preflight. Two
+#: layers previously disagreed: the CLI accepted "claude" as an alias for
+#: "claude-code", while get_agent did not and fell through to the codex
+#: fallback, so a programmatic caller passing the DOCUMENTED spelling got
+#: a different model than the CLI would have chosen. One table, one
+#: vocabulary.
+AGENT_TYPE_ALIASES: dict[str, str] = {
+    "": "auto",
+    "auto": "auto",
+    "claude": "claude-code",
+    "claude-code": "claude-code",
+    "claude-sdk": "claude-sdk",
+    "codex": "codex",
+    "custom": "custom",
+}
+
+
+#: Accepted spellings for ``[agent] type``.
+VALID_AGENT_TYPES: tuple[str, ...] = tuple(sorted(name for name in AGENT_TYPE_ALIASES if name))
+
+
+def canonical_agent_type(agent_type: str | None) -> str | None:
+    """Canonical spelling for a configured type, or None if unknown."""
+    if agent_type is None:
+        return None
+    return AGENT_TYPE_ALIASES.get(agent_type.strip().lower())
+
+
 def validate_agent_type(value: str | None, source: str) -> None:
     """Reject an agent type no adapter answers to, where it is read (#562).
 
-    The vocabulary is ``kstrl.agents.AGENT_TYPE_ALIASES``, the table
-    ``get_agent``, ``_cli_family`` and the CLI agent preflight all
+    The vocabulary is ``AGENT_TYPE_ALIASES``, the table
+    ``get_agent``, ``cli_family`` and the CLI agent preflight all
     canonicalise through, so load and use cannot disagree. None (unset)
     passes: it means auto-detect. Before #562 an unknown value was
     refused only where an agent was built, and not at all when a custom
     command was set, which made the typo invisible.
     """
-    from kstrl.agents import VALID_AGENT_TYPES, canonical_agent_type
-
     if value is None or canonical_agent_type(value) is not None:
         return
     raise ValueError(
@@ -626,14 +652,14 @@ def _apply_env_overrides(config: KstrlConfig, root_dir: Path) -> None:
     if "SLEEP_SECONDS" in os.environ:
         config.sleep_seconds = float(os.environ["SLEEP_SECONDS"])
     if "INTERACTIVE" in os.environ:
-        config.interactive = _parse_bool(os.environ.get("INTERACTIVE"))
+        config.interactive = parse_bool(os.environ.get("INTERACTIVE"))
     if "ALLOWED_PATHS" in os.environ:
-        config.allowed_paths = _parse_paths(os.environ.get("ALLOWED_PATHS"))
+        config.allowed_paths = parse_paths(os.environ.get("ALLOWED_PATHS"))
     if "KSTRL_BRANCH" in os.environ:
         config.kstrl_branch = os.environ["KSTRL_BRANCH"]
         config.kstrl_branch_explicit = True
     if "KSTRL_AUTO_CHECKOUT" in os.environ:
-        config.auto_checkout = _parse_bool(os.environ.get("KSTRL_AUTO_CHECKOUT"))
+        config.auto_checkout = parse_bool(os.environ.get("KSTRL_AUTO_CHECKOUT"))
     budget = os.environ.get("KSTRL_AGENT_BUDGET_USD", "")
     if (ceiling := _budget_usd(budget, "KSTRL_AGENT_BUDGET_USD")) is not None:
         config.agent_budget_usd = ceiling
@@ -642,4 +668,4 @@ def _apply_env_overrides(config: KstrlConfig, root_dir: Path) -> None:
     if "NO_COLOR" in os.environ:
         config.no_color = True
     if "KSTRL_ASCII" in os.environ:
-        config.ascii_only = _parse_bool(os.environ.get("KSTRL_ASCII"))
+        config.ascii_only = parse_bool(os.environ.get("KSTRL_ASCII"))

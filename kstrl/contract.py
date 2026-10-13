@@ -5,7 +5,7 @@ All tier merging happens in a throwaway worktree created with
 user's checkout (R0.3 / CRIT-6). The recovery path on any failure is
 ``git merge --abort`` in the temp worktree followed by
 ``git worktree remove --force``; if the worktree survives removal a
-:class:`ContractCleanupError` is raised so the run fails loudly instead
+:class:`kstrl.temp_worktree.ContractCleanupError` is raised so the run fails loudly instead
 of silently leaving stale state behind.
 
 Blame attribution (bisection) honesty:
@@ -27,7 +27,6 @@ Blame attribution (bisection) honesty:
 from __future__ import annotations
 
 import os
-import secrets
 import subprocess
 import time
 from collections.abc import Mapping, Sequence
@@ -36,16 +35,16 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl import git, git_base
+from kstrl import git
 from kstrl.config_numbers import check_numbers
 from kstrl.manifest import Manifest
 from kstrl.rung import Rung
 from kstrl.scrubbed_run import ChildOutputDecodeError, run_scrubbed
 from kstrl.stack import NO_STACK, Stack, stack_in_force
+from kstrl.temp_worktree import create_temp_worktree, remove_temp_worktree
 from kstrl.timeout import limit_seconds
 from kstrl.verify_commands import check_stack_command
 from kstrl.worktree_setup import NO_SETUP, WorktreeSetup
-from kstrl.worktree_sweep import sweep_worktree, warn_sweep
 
 if TYPE_CHECKING:
     from kstrl.acceptance import PinnedPlan
@@ -57,16 +56,6 @@ class ContractMode(StrEnum):
     TIER = "tier"
     FINAL = "final"
     SKIP = "skip"
-
-
-class ContractCleanupError(RuntimeError):
-    """A contract temp worktree could not be removed.
-
-    Raised so the factory fails loudly: a surviving temp worktree means
-    ``.kstrl/contract/`` holds stale state and git's worktree metadata
-    still references it, which would make every later contract pass
-    (and possibly component worktree setup) fail in confusing ways.
-    """
 
 
 @dataclass
@@ -154,46 +143,6 @@ def compute_tiers(manifest: Manifest) -> list[list[str]]:
     return manifest.compute_tiers()
 
 
-def _create_temp_worktree(
-    base: str,
-    root_dir: Path,
-    label: str,
-    timeout: float = 60.0,
-) -> tuple[Path | None, str]:
-    """Create a detached throwaway worktree at ``base``.
-
-    Returns ``(path, "")`` on success or ``(None, error)`` on failure.
-    Detached HEAD means merges move only the temp worktree's HEAD; no
-    branch is created and the user's checkout is never touched.
-
-    The base is resolved through :func:`git.resolve_base_ref`, here
-    rather than at the three call sites, so every contract checkout
-    (bisection, the tier check, the integrated check) asks one question.
-    A bare base name cuts from the operator's local branch, which a
-    squash merge on GitHub leaves behind; #435 recorded a tier-1 contract
-    check failing in 0.75s with ``Installed 28 packages in 23ms`` as the
-    whole of its evidence, because the tree it checked out had no tests
-    in it at all.
-    """
-    contract_base = root_dir / ".kstrl" / "contract"
-    contract_base.mkdir(parents=True, exist_ok=True)
-    worktree_path = contract_base / f"{label}-{secrets.token_hex(4)}"
-    base_ref = git_base.resolve_base_ref(base, root_dir, timeout)
-    try:
-        result = run_scrubbed(
-            ["git", "worktree", "add", "--detach", str(worktree_path), base_ref],
-            cwd=root_dir,
-            timeout=timeout,
-        )
-    except subprocess.TimeoutExpired:
-        return None, f"git worktree add timed out after {timeout}s"
-    except ChildOutputDecodeError as exc:
-        return None, f"git worktree add output could not be decoded: {exc}"
-    if result.returncode != 0:
-        return None, result.stderr.strip() or result.stdout.strip()
-    return worktree_path, ""
-
-
 def _abort_merge(worktree_path: Path, timeout: float = 30.0) -> None:
     """Abort any in-flight merge in the temp worktree.
 
@@ -211,66 +160,6 @@ def _abort_merge(worktree_path: Path, timeout: float = 30.0) -> None:
         # removal below is forced; neither a hung abort nor one
         # whose output cannot be decoded may block it
         pass
-
-
-def _remove_temp_worktree(
-    worktree_path: Path,
-    root_dir: Path,
-    ui: UI,
-    phase: str,
-    timeout: float = 60.0,
-) -> None:
-    """Remove a contract temp worktree, asserting the removal succeeded.
-
-    First kills every process still running in it and warns on ``ui``
-    naming each one under ``phase`` (#528): the project's test command and
-    the integration reviewer's shell both run here, and a process either of
-    them starts in a session of its own outlives the call that started it.
-
-    Raises :class:`ContractCleanupError` when the worktree directory
-    survives the forced removal - the one case where silent continuation
-    would leave the repo's worktree metadata pointing at stale state.
-    """
-    warn_sweep(sweep_worktree(worktree_path), ui, phase)
-    try:
-        result = run_scrubbed(
-            ["git", "worktree", "remove", "--force", str(worktree_path)],
-            cwd=root_dir,
-            timeout=timeout,
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise ContractCleanupError(
-            f"git worktree remove timed out after {timeout}s for "
-            f"{worktree_path}; remove it manually with "
-            f"'git worktree remove --force {worktree_path}'"
-        ) from exc
-    except ChildOutputDecodeError as exc:
-        raise ContractCleanupError(
-            f"git worktree remove output could not be decoded for "
-            f"{worktree_path} ({exc}); check it and remove it manually with "
-            f"'git worktree remove --force {worktree_path}'"
-        ) from exc
-    if worktree_path.exists():
-        raise ContractCleanupError(
-            f"Contract temp worktree {worktree_path} survived removal "
-            f"(git: {result.stderr.strip() or result.stdout.strip()}); "
-            f"remove it manually with "
-            f"'git worktree remove --force {worktree_path}'"
-        )
-    if result.returncode != 0:
-        # Directory is gone but git may still track it; prune metadata.
-        try:
-            run_scrubbed(
-                ["git", "worktree", "prune"],
-                cwd=root_dir,
-                timeout=timeout,
-            )
-        except ChildOutputDecodeError:
-            # This spawn's result was never read: the directory is already
-            # gone and the prune is best-effort metadata tidying. A decode
-            # failure carries nothing the caller acts on, for the same reason
-            # _abort_merge's timeout does not block removal.
-            pass
 
 
 #: Phase 3's evidence when no ``[stack]`` names a check to run (#696 slice
@@ -350,7 +239,7 @@ def bisect_breaker(
     Returns:
         Component ID of the breaker, or None if unclear.
     """
-    worktree_path, _error = _create_temp_worktree(
+    worktree_path, _error = create_temp_worktree(
         base_branch,
         root_dir,
         "bisect",
@@ -380,7 +269,7 @@ def bisect_breaker(
         return None
     finally:
         _abort_merge(worktree_path)
-        _remove_temp_worktree(worktree_path, root_dir, ui, "contract")
+        remove_temp_worktree(worktree_path, root_dir, ui, "contract")
 
 
 def _ids_of(manifest: Manifest, branches: Sequence[str]) -> list[str]:
@@ -427,7 +316,7 @@ def run_tier_check(
         f"({', '.join(c for c, _ in tier_branches)})"
     )
 
-    worktree_path, error = _create_temp_worktree(
+    worktree_path, error = create_temp_worktree(
         manifest.base_branch,
         root_dir,
         f"tier{tier_index}",
@@ -497,11 +386,11 @@ def run_tier_check(
 
     finally:
         # Recovery path: abort any in-flight merge, then remove the temp
-        # worktree. _remove_temp_worktree raises ContractCleanupError if
+        # worktree. remove_temp_worktree raises ContractCleanupError if
         # the worktree survives - fail loudly, never leave a conflicted
         # checkout behind.
         _abort_merge(worktree_path)
-        _remove_temp_worktree(worktree_path, root_dir, ui, "contract")
+        remove_temp_worktree(worktree_path, root_dir, ui, "contract")
 
     # Bisect to find breaker (fresh temp worktree of its own)
     breaker = bisect_breaker(
@@ -579,7 +468,7 @@ def run_integrated_base_check(
         f"({', '.join(component_ids)})"
     )
 
-    worktree_path, error = _create_temp_worktree(
+    worktree_path, error = create_temp_worktree(
         base_sha,
         root_dir,
         "integrated",
@@ -604,7 +493,7 @@ def run_integrated_base_check(
                 worktree_path, config, root_dir, ui, plan, component_ids, carried
             )
     finally:
-        _remove_temp_worktree(worktree_path, root_dir, ui, "contract")
+        remove_temp_worktree(worktree_path, root_dir, ui, "contract")
 
     if passed:
         ui.ok("  Integrated check: contract tests passed")

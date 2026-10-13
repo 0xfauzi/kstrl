@@ -182,12 +182,12 @@ def resolve_exit_code(
     return 1
 
 
-def _ids_in_status(manifest: Manifest, status: ComponentStatus) -> list[str]:
+def ids_in_status(manifest: Manifest, status: ComponentStatus) -> list[str]:
     """The ids of the components in ``status``, in manifest order."""
     return [c.id for c in manifest.components if c.status == status.value]
 
 
-def _report_awaiting_approval(factory_result: FactoryResult, ui: UI) -> None:
+def report_awaiting_approval(factory_result: FactoryResult, ui: UI) -> None:
     """Name the components the merge gate parked, and what moves them (#465)."""
     if not factory_result.awaiting_approval:
         return
@@ -235,7 +235,7 @@ def _report_nothing_scheduled(
     ui.info(advice)
 
 
-def _write_partial_usage(path: Path, totals: UsageTotals) -> None:
+def write_partial_usage(path: Path, totals: UsageTotals) -> None:
     """Publish the engineer loop's usage-so-far, atomically (R8).
 
     The worker owns its UsageRecords in memory; the abort path
@@ -269,7 +269,7 @@ def _read_partial_usage(path: Path) -> UsageTotals | None:
     lower bound (#863). Dropping the snapshot would remove the worker's
     spend from the meter, and a budget must not read money as zero. The
     scheduler deletes the slot before each submission
-    (``_clear_partial_usage``), so only this kstrl's writer, which
+    (``clear_partial_usage``), so only this kstrl's writer, which
     always writes both counts, fills it.
     """
     try:
@@ -312,7 +312,7 @@ def _read_partial_usage(path: Path) -> UsageTotals | None:
     return totals
 
 
-def _clear_partial_usage(path: Path) -> bool:
+def clear_partial_usage(path: Path) -> bool:
     """Retire the previous attempt's usage snapshot (R8 review, P2-c).
 
     The snapshot is keyed by run + component only, and a normal result
@@ -347,7 +347,7 @@ def _clear_partial_usage(path: Path) -> bool:
     return True
 
 
-def _salvage_aborted_usage(
+def salvage_aborted_usage(
     future: Future[ComponentResult],
     comp_id: str,
     pipeline: ComponentPipeline,
@@ -375,7 +375,7 @@ def _salvage_aborted_usage(
       reported to anyone before the kill.
 
     The snapshot is attempt-scoped by the scheduler, which deletes it
-    immediately before every submission (``_clear_partial_usage``). That
+    immediately before every submission (``clear_partial_usage``). That
     is what makes this route safe: without it a completed attempt left
     its file behind and a later attempt aborted before its own first
     iteration boundary salvaged the PREVIOUS attempt's tokens on top of

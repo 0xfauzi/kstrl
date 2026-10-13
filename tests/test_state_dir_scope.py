@@ -396,7 +396,6 @@ _EXPECTED_STATE_DIR_SPELLINGS: dict[str, int] = {
     "cli_learning.py": 1,
     # 2: -1 for #863 A1, which deleted `ks dash` and its join to the runs directory.
     "cli_report.py": 2,
-    "contract.py": 1,
     "decompose_reply.py": 1,
     "doctor.py": 2,
     "events.py": 1,
@@ -427,6 +426,7 @@ _EXPECTED_STATE_DIR_SPELLINGS: dict[str, int] = {
     "serve_outcome.py": 2,
     "serve_spend.py": 3,  # +1 #863 A4: an unreadable run spend names the run dir
     "statedir.py": 6,  # +1 #545: plan_prd_path joins the plan directory; -2 #863 A4
+    "temp_worktree.py": 1,
     "workqueue_store.py": 2,
 }
 

@@ -12,7 +12,7 @@ from kstrl.agents.base import model_output_text, timed_out_since, usage_cursor
 from kstrl.jsonread import read_json
 
 
-def _extract_json(text: str) -> Any:
+def extract_json(text: str) -> Any:
     """Extract JSON from text, handling optional code fences."""
     # Try direct parse first
     stripped = text.strip()
@@ -120,13 +120,13 @@ def collect_agent_output(
     return output_lines
 
 
-def _select_agent_output(agent: Any, output_lines: list[str]) -> str:
+def select_agent_output(agent: Any, output_lines: list[str]) -> str:
     """Return the best text candidate for JSON extraction from a finished
     agent run.
 
     Returns :attr:`agent.final_message` if it contains parseable JSON;
     otherwise returns the joined streamed output. This shields callers
-    that pass the result through :func:`_extract_json` (e.g. via a
+    that pass the result through :func:`extract_json` (e.g. via a
     domain-specific parser) from codex's prompt-echo behavior.
     """
     streamed = model_output_text(agent, output_lines)
@@ -135,19 +135,19 @@ def _select_agent_output(agent: Any, output_lines: list[str]) -> str:
         return streamed
     final_str = str(final)
     try:
-        _extract_json(final_str)
+        extract_json(final_str)
     except ValueError:
         return streamed
     return final_str
 
 
-def _extract_agent_json(agent: Any, output_lines: list[str]) -> Any:
+def extract_agent_json(agent: Any, output_lines: list[str]) -> Any:
     """Extract JSON from a completed agent run, trying agent.final_message
     first and falling back to the streamed output.
 
     Codex CLI (and other agents that echo the input prompt back) include
     the JSON schema example inside their stdout, which can trip the
-    first-brace heuristic in :func:`_extract_json`. ``agent.final_message``
+    first-brace heuristic in :func:`extract_json`. ``agent.final_message``
     is populated by codex via ``--output-last-message`` and by
     ClaudeCodeAgent from its result event, and contains only the model's
     actual reply. Preferring it sidesteps the echoed-prompt problem.
@@ -170,7 +170,7 @@ def _extract_agent_json(agent: Any, output_lines: list[str]) -> Any:
     last_error: ValueError | None = None
     for candidate in candidates:
         try:
-            return _extract_json(candidate)
+            return extract_json(candidate)
         except ValueError as exc:
             last_error = exc
 

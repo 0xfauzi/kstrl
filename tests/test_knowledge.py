@@ -1042,7 +1042,7 @@ class TestDistillFacts:
         tmp_path: Path,
     ) -> None:
         """When the agent echoes the prompt back (as codex does), the streamed
-        output contains the JSON schema example. _extract_json's first-brace
+        output contains the JSON schema example. extract_json's first-brace
         heuristic would latch onto the schema's example fact (with the literal
         scope string "handler|adapter|...") and reject it during coercion.
         distill_facts must prefer agent.final_message when set."""

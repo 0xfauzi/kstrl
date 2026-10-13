@@ -14,7 +14,6 @@ from kstrl.agents.spawn_record import new_nonce
 from kstrl.procdispose import drain_or_abandon, reap_or_abandon
 from kstrl.procgroup import signal_process_tree
 from kstrl.rung import Rung
-from kstrl.stack import SECRET_NAME_FRAGMENTS
 
 # R2.6 env scrub: verification subprocesses execute agent-authored code
 # (the project's tests, linters run over agent files, CLI fixtures), so
@@ -36,6 +35,18 @@ SCRUB_ENV_ALLOWED_NAMES: frozenset[str] = frozenset(
     }
 )
 SCRUB_ENV_ALLOWED_PREFIXES: tuple[str, ...] = ("LC_",)
+
+#: A name that holds any of these is never passed to a command, whoever
+#: declared it (#696 decision 11). ``verify.scrubbed_subprocess_env`` drops
+#: the same names; one tuple, so the refusal and the scrub cannot disagree.
+SECRET_NAME_FRAGMENTS: tuple[str, ...] = (
+    "API_KEY",
+    "SECRET",
+    "TOKEN",
+    "PASSWORD",
+    "CREDENTIAL",
+)
+
 
 # Belt over the allowlist's braces: no name containing one of these
 # fragments passes, whoever admitted it. The same tuple ``[stack] env`` is
@@ -91,12 +102,12 @@ class ChildOutputDecodeError(RuntimeError):
     type, as it answers for a timeout: the check ran, measured nothing, and
     fails closed. The two exceptions, measured rather than asserted away
     (#416's simplify review): ``contract._abort_merge`` and the prune call in
-    ``contract._remove_temp_worktree``, whose results were never read and
+    ``temp_worktree.remove_temp_worktree``, whose results were never read and
     which swallow it so cleanup is not blocked. kstrl does not weaken the
     decode with ``errors=`` to make it go away (#409).
 
     ``stdout`` and ``stderr`` carry what the child printed, rendered by
-    :func:`_readable`, so a gate that fails here still leaves its output
+    :func:`readable_text`, so a gate that fails here still leaves its output
     for the operator (#527). They are evidence only: no verdict reads them.
     """
 
@@ -116,7 +127,7 @@ def _translated(text: str) -> str:
     return text.replace("\r\n", "\n").replace("\r", "\n")
 
 
-def _readable(data: bytes | str | None) -> str:
+def readable_text(data: bytes | str | None) -> str:
     """A child's output as text the operator can read, whatever it holds (#527).
 
     A byte that is not valid utf-8 is written as a ``\\xNN`` escape rather
@@ -278,8 +289,8 @@ def run_scrubbed(
         raise subprocess.TimeoutExpired(
             cmd,
             expired.timeout,
-            output=_readable(drained_stdout),
-            stderr=_readable(drained_stderr),
+            output=readable_text(drained_stdout),
+            stderr=readable_text(drained_stderr),
         ) from None
     except BaseException:
         # The rule `procgroup._read_ps` already states and this module
@@ -308,8 +319,8 @@ def run_scrubbed(
         raise ChildOutputDecodeError(
             f"the command produced bytes that are not valid utf-8, so its "
             f"output could not be read: {exc}",
-            stdout=_readable(raw_stdout),
-            stderr=_readable(raw_stderr),
+            stdout=readable_text(raw_stdout),
+            stderr=readable_text(raw_stderr),
         ) from exc
     return subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
 

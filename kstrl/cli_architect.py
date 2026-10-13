@@ -29,11 +29,11 @@ from kstrl.config_report import normalize_ui_mode as _normalize_ui_mode
 from kstrl.decompose import decompose_spec
 from kstrl.decompose_audit import SpecBlockerError
 from kstrl.factory_config import FactoryConfig
-from kstrl.factory_lock import _acquire_run_lock
+from kstrl.factory_lock import acquire_run_lock
 from kstrl.factory_preflight import (
     BaseRefusedError,
-    _report_preflight,
     base_check_before_architect,
+    report_preflight,
 )
 from kstrl.git_base import resolve_base_branch
 from kstrl.interaction import PromptKind, PromptRequest, UiInteractionChannel
@@ -396,7 +396,7 @@ def retry(
         },
     )
     if plan is None:
-        _report_preflight(ui_impl, RESUME_REFUSAL, problems)
+        report_preflight(ui_impl, RESUME_REFUSAL, problems)
         sys.exit(2)
 
     print_retry_plan(ui_impl, preview, manifest_file)
@@ -415,7 +415,7 @@ def retry(
         if response.choice != 0:  # None when nobody answered (#647)
             sys.exit(0)
 
-    run_lock = _acquire_run_lock(root_dir, ui_impl, force=force_lock)
+    run_lock = acquire_run_lock(root_dir, ui_impl, force=force_lock)
     try:
         # Re-read under the lock: a run may have saved while the question was open.
         manifest = _load_manifest_or_exit(manifest_file, ui_impl)

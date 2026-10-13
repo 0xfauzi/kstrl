@@ -11,7 +11,7 @@ The stages run in order and the first one that fails ends the replay:
 3. every check in the test zone, in the stack's order;
 4. the ``up`` process group is stopped by the group id recorded when it
    started, then the worktree is removed
-   (:func:`kstrl.contract._remove_temp_worktree`).
+   (:func:`kstrl.temp_worktree.remove_temp_worktree`).
 
 kstrl never reads what ``up`` does: only its exit status and whether its
 group is gone afterwards. The stage a replay failed at is named in the
@@ -43,14 +43,13 @@ from typing import TYPE_CHECKING
 
 from kstrl import git, git_base
 from kstrl.atomicio import atomic_write_text
-from kstrl.contract import ContractCleanupError, _create_temp_worktree, _remove_temp_worktree
 from kstrl.isolation import SETUP_ZONE, TEST_ZONE, prove_zones
 from kstrl.procdispose import reap_or_abandon
 from kstrl.procgroup import read_group_liveness, signal_group
 from kstrl.rung import HostFallback, Rung, refusal_of, release, sandbox_hint
 from kstrl.scrubbed_run import (
     ChildOutputDecodeError,
-    _readable,
+    readable_text,
     run_scrubbed,
     start_scrubbed,
 )
@@ -65,6 +64,7 @@ from kstrl.stack import (
     stack_paths,
 )
 from kstrl.statedir import CONTROL_APP_NAME, xdg_state_home
+from kstrl.temp_worktree import ContractCleanupError, create_temp_worktree, remove_temp_worktree
 from kstrl.verify_commands import SHELL_COULD_NOT_RUN
 
 if TYPE_CHECKING:
@@ -200,7 +200,7 @@ def _replay_in_worktree(
     except git.GitDiffError as exc:
         record.error = f"the base branch {record.base_branch} did not resolve: {exc}"
         return
-    worktree, checkout_error = _create_temp_worktree(record.base_sha, root, WORKTREE_LABEL)
+    worktree, checkout_error = create_temp_worktree(record.base_sha, root, WORKTREE_LABEL)
     if worktree is None:
         record.error = f"the base {record.base_sha[:12]} was not checked out: {checkout_error}"
         return
@@ -209,7 +209,7 @@ def _replay_in_worktree(
         _replay_in_rungs(root, stack, worktree, scratch, record, limits, probe)
     finally:
         try:
-            _remove_temp_worktree(worktree, root, ui, WORKTREE_LABEL)
+            remove_temp_worktree(worktree, root, ui, WORKTREE_LABEL)
         except ContractCleanupError as exc:
             record.error = record.error or f"the replay worktree survived: {exc}"
         shutil.rmtree(scratch, ignore_errors=True)
@@ -346,7 +346,7 @@ def _ran(
             extra_env=extra_env,
         )
     except subprocess.TimeoutExpired as expired:
-        output = _readable(expired.stdout) + _readable(expired.stderr)
+        output = readable_text(expired.stdout) + readable_text(expired.stderr)
         code, stopped, given = None, f"timed out after {limit}s", "timeout"
     except ChildOutputDecodeError as exc:
         output, code, stopped, given = (
@@ -386,7 +386,7 @@ def _ready(
         failed, stopped = REPLAY_UP_TIMEOUT, f"was not ready after {limit}s"
     else:
         failed, stopped = ("" if code == 0 else f"{REPLAY_UP_FAILED}:{code}"), ""
-    tail = _tail(_readable(log.read_bytes()))
+    tail = _tail(readable_text(log.read_bytes()))
     return Stage("up", command, code, stopped, round(time.monotonic() - began, 3), tail, failed)
 
 

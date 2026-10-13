@@ -12,7 +12,7 @@ from kstrl.agents import get_agent
 from kstrl.cli_preflight import _check_agent_preflight, _check_prompt_preflight
 from kstrl.cli_seam import _console_ui, _resolve_path, _resolve_root, _use_cli_value, cli
 from kstrl.commandrun import open_command_run
-from kstrl.config import KstrlConfig, _parse_paths
+from kstrl.config import KstrlConfig, parse_paths
 from kstrl.config_numbers import LIMIT_FLOAT, LIMIT_INT
 from kstrl.config_report import UI_MODES
 from kstrl.config_report import normalize_ui_mode as _normalize_ui_mode
@@ -346,7 +346,7 @@ def feature(
         repair_agent_cmd=repair_agent_cmd,
         branch_override=branch if _use_cli_value(ctx, "branch") else None,
         allowed_paths_override=(
-            _parse_paths(implementation_allowed_paths)
+            parse_paths(implementation_allowed_paths)
             if _use_cli_value(ctx, "implementation_allowed_paths")
             else None
         ),

@@ -11,20 +11,22 @@ from kstrl.decisions import (
     DISPOSITION_ESCALATED,
     SpecDecision,
     decisions_payload_errors,
-    enum_field_error,
     escalations,
     parse_decisions,
-    required_field_error,
 )
 from kstrl.events import EventBus
 from kstrl.guards import ScopeHazard, scope_entry_hazard
 from kstrl.names import validate_component_id
 from kstrl.prd import PRD
-from kstrl.requirements import requirements_payload_errors
+from kstrl.requirements import (
+    enum_field_error,
+    required_field_error,
+    requirements_payload_errors,
+)
 from kstrl.spec_issues import (
-    _VALID_KINDS,
     _VALID_SEVERITIES,
     SPEC_ISSUE_APPLIES_COMPONENT,
+    VALID_KINDS,
     _parse_spec_issues,
     route_spec_issues,
 )
@@ -140,7 +142,7 @@ def _spec_issue_errors(data: dict[str, Any]) -> tuple[list[str], dict[str, str]]
             error
             for error in (
                 enum_field_error(prefix, "severity", entry.get("severity"), _VALID_SEVERITIES),
-                enum_field_error(prefix, "kind", entry.get("kind"), _VALID_KINDS),
+                enum_field_error(prefix, "kind", entry.get("kind"), VALID_KINDS),
                 required_field_error(prefix, "summary", entry.get("summary")),
             )
             if error is not None

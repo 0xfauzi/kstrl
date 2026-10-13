@@ -216,7 +216,7 @@ class TestRunLockRelease:
         """
         import kstrl.factory_lock as factory_lock_mod
 
-        lock = factory_lock_mod._acquire_run_lock(tmp_path, PlainUI(no_color=True), force=False)
+        lock = factory_lock_mod.acquire_run_lock(tmp_path, PlainUI(no_color=True), force=False)
         assert lock.held is True
         assert lock.fp is not None
 
@@ -242,7 +242,7 @@ class TestRunLockRelease:
         from kstrl.launch_record import option_argv
 
         root, _before = _failed_storage(tmp_path)
-        released = factory_lock_mod._acquire_run_lock(root, PlainUI(no_color=True), force=False)
+        released = factory_lock_mod.acquire_run_lock(root, PlainUI(no_color=True), force=False)
         released.release()
 
         argv = option_argv(
@@ -359,17 +359,17 @@ class TestKsRetryChangesNothingBeforeItsGates:
         engineer = tmp_path / "engineer.py"
         engineer.write_text(_LOCK_PROBING_ENGINEER, encoding="utf-8")
         acquired: list[Path] = []
-        real_acquire = factory_lock_mod._acquire_run_lock
+        real_acquire = factory_lock_mod.acquire_run_lock
 
         def counting_acquire(root_dir: Path, ui: Any, force: bool) -> Any:
             acquired.append(root_dir)
             return real_acquire(root_dir, ui, force)
 
-        monkeypatch.setattr(factory_mod, "_acquire_run_lock", counting_acquire)
-        monkeypatch.setattr(factory_lock_mod, "_acquire_run_lock", counting_acquire)
-        monkeypatch.setattr(cli_inbox_mod, "_acquire_run_lock", counting_acquire)
-        monkeypatch.setattr(cli_architect_mod, "_acquire_run_lock", counting_acquire)
-        monkeypatch.setattr(cli_preflight_mod, "_acquire_run_lock", counting_acquire)
+        monkeypatch.setattr(factory_mod, "acquire_run_lock", counting_acquire)
+        monkeypatch.setattr(factory_lock_mod, "acquire_run_lock", counting_acquire)
+        monkeypatch.setattr(cli_inbox_mod, "acquire_run_lock", counting_acquire)
+        monkeypatch.setattr(cli_architect_mod, "acquire_run_lock", counting_acquire)
+        monkeypatch.setattr(cli_preflight_mod, "acquire_run_lock", counting_acquire)
         agent = " ".join(
             shlex.quote(part)
             for part in (
@@ -422,14 +422,14 @@ class TestKsRetryChangesNothingBeforeItsGates:
     ) -> None:
         """`ks retry --force-lock` under a held lock runs, rather than crashing on a handed lock.
 
-        `_acquire_run_lock(force=True)` on a held lock returns
-        ``_RunLock(fp=None, held=False)``, the same shape the no-fcntl
+        `acquire_run_lock(force=True)` on a held lock returns
+        ``RunLock(fp=None, held=False)``, the same shape the no-fcntl
         degrade returns: both are legitimate to hand to `ks factory`.
         Checking ``fp is not None`` in ``_resolve_factory_run_lock``
         could not tell either of those apart from a lock whose own
         ``release()`` had already run, so a forced retry against a held
         lock raised ``AssertionError: a released run lock was handed to
-        `ks factory`: _RunLock(fp=None, held=False)`` after it had
+        `ks factory`: RunLock(fp=None, held=False)`` after it had
         already reset the manifest and deleted the failed branch.
         """
         root, _before = _failed_storage(tmp_path)
@@ -552,16 +552,16 @@ class TestApprovingAParkedMergeHoldsTheLockIntoTheDependentRun:
             )
         )
         acquired: list[Path] = []
-        real_acquire = factory_lock_mod._acquire_run_lock
+        real_acquire = factory_lock_mod.acquire_run_lock
 
         def counting_acquire(root_dir: Path, ui: Any, force: bool) -> Any:
             acquired.append(root_dir)
             return real_acquire(root_dir, ui, force)
 
-        monkeypatch.setattr(factory_mod, "_acquire_run_lock", counting_acquire)
-        monkeypatch.setattr(factory_lock_mod, "_acquire_run_lock", counting_acquire)
-        monkeypatch.setattr(cli_inbox_mod, "_acquire_run_lock", counting_acquire)
-        monkeypatch.setattr(cli_preflight_mod, "_acquire_run_lock", counting_acquire)
+        monkeypatch.setattr(factory_mod, "acquire_run_lock", counting_acquire)
+        monkeypatch.setattr(factory_lock_mod, "acquire_run_lock", counting_acquire)
+        monkeypatch.setattr(cli_inbox_mod, "acquire_run_lock", counting_acquire)
+        monkeypatch.setattr(cli_preflight_mod, "acquire_run_lock", counting_acquire)
         for name in [k for k in os.environ if k.startswith("KSTRL_")]:
             monkeypatch.delenv(name)
         probe_env = dict(env)

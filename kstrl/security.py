@@ -26,9 +26,9 @@ from typing import TYPE_CHECKING
 from kstrl import git_base, git_diff
 from kstrl.agent_output import (
     AgentOutputTooLarge,
-    _extract_json,
-    _select_agent_output,
     collect_agent_output,
+    extract_json,
+    select_agent_output,
 )
 from kstrl.config import validate_agent_type
 from kstrl.config_numbers import check_numbers
@@ -81,9 +81,9 @@ VALID_CATEGORIES = frozenset(SECURITY_CATEGORY_MAP.keys())
 # parser and the fail count read one vocabulary (#524). The calibration
 # scorer and the ``--security-fail-threshold`` choices read it too, and
 # tests/test_security_severity_one_home.py fails on a second copy (#550).
-_SEVERITY_ORDER = {"critical": 3, "high": 2, "medium": 1, "low": 0}
+SEVERITY_ORDER = {"critical": 3, "high": 2, "medium": 1, "low": 0}
 
-VALID_SEVERITIES = frozenset(_SEVERITY_ORDER)
+VALID_SEVERITIES = frozenset(SEVERITY_ORDER)
 
 
 def category_owasp(category: str) -> str:
@@ -221,14 +221,14 @@ class SecurityResult:
         """The severities that fail this result, by the rule ``fail_count``
         uses. The journal's failure signatures read it, so the categories
         journaled are the ones that failed the gate (#524)."""
-        return frozenset(s for s in _SEVERITY_ORDER if self._fails(s))
+        return frozenset(s for s in SEVERITY_ORDER if self._fails(s))
 
     def _fails(self, severity: str) -> bool:
         # Indexed, never .get with a default rank: an unknown severity or
         # threshold is an error, not a rank.
         if self.mode != SecurityMode.HARD.value:
             return False
-        return _SEVERITY_ORDER[severity] >= _SEVERITY_ORDER[self.fail_threshold]
+        return SEVERITY_ORDER[severity] >= SEVERITY_ORDER[self.fail_threshold]
 
     @property
     def advisory_count(self) -> int:
@@ -574,7 +574,7 @@ def parse_security_output(
         )
 
     try:
-        data = _extract_json(raw_output)
+        data = extract_json(raw_output)
     except ValueError:
         return _infra(
             "Failed to parse security reviewer output as JSON",
@@ -742,7 +742,7 @@ def run_security_review(
             fail_threshold=config.fail_threshold,
         )
 
-    raw_output = _select_agent_output(agent, output_lines)
+    raw_output = select_agent_output(agent, output_lines)
     result = parse_security_output(raw_output, mode, debug_dir=debug_dir)
     result.reviewer_model = reviewer_model
     result.fail_threshold = config.fail_threshold

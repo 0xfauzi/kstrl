@@ -20,7 +20,7 @@ from kstrl.manifest import (
     Component,
     ComponentStatus,
 )
-from kstrl.pipeline_state import _iso_now
+from kstrl.pipeline_state import iso_now
 from kstrl.pipeline_transitions import Transition, Transitions
 
 if TYPE_CHECKING:
@@ -224,7 +224,7 @@ class MergeGate(Transitions):
         (#601) - no default, every caller states which it observed."""
         comp.status = ComponentStatus.FAILED.value
         comp.error = error
-        comp.completed_at = _iso_now()
+        comp.completed_at = iso_now()
         comp.failed_phase = "pr"
         comp.failed_check = check
         # Spelled out with keywords, and read that way. #339: this
@@ -469,7 +469,7 @@ class MergeGate(Transitions):
                     comp.status = ComponentStatus.COMPLETED.value
                     comp.error = ""
                     self.component_failure_signatures.pop(comp.id, None)
-                    comp.completed_at = _iso_now()
+                    comp.completed_at = iso_now()
                     self.factory_result.completed.append(comp.id)
                     self.bus.emit(
                         event_catalog.ComponentCompleted(
@@ -487,7 +487,7 @@ class MergeGate(Transitions):
                 elif merge_state.state == "closed":
                     comp.status = ComponentStatus.FAILED.value
                     comp.error = f"PR #{pr_number} closed without merge"
-                    comp.completed_at = _iso_now()
+                    comp.completed_at = iso_now()
                     # Not a merge decision any more - it is a halt.
                     self._inbox_resolve(
                         f"merge:{comp.id}",

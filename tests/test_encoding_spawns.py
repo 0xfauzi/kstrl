@@ -55,7 +55,9 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     "breaker.py": 3,
     # #696: 4, the import and three TimeoutExpired clauses; down from 5
     # when a fourth clause served the retired [contract] test_command.
-    "contract.py": 4,
+    # #863 B1: the temp worktree functions moved to temp_worktree.py; each
+    # module now holds its own `import subprocess`, so the total is +1.
+    "contract.py": 2,
     # 3: #696 slice 8 deleted check_test_root's `git ls-files -z` spawn.
     "doctor.py": 3,
     # 14: #624 moved the scaffold's `subprocess.run` out to `worktree_setup.py`.
@@ -92,6 +94,7 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     "scrubbed_run.py": 15,
     "serve_process.py": 8,
     "statedir.py": 3,
+    "temp_worktree.py": 3,
     "timeout.py": 3,
     # 25: `_base_finding`'s `git show` (#414/#425); `git merge-base` moved to `git.py` in #435.
     # 26: #632, `run_scrubbed`'s `subprocess.PIPE` for a stdin it was given.
@@ -261,7 +264,7 @@ EXPECTED_BYTES_MODE_SPAWNS: dict[str, int] = {
     # so a gate whose output is not utf-8 can still write its log.
     # `tests/test_undecodable_child_output.py` pins the strictness.
     # #700 slice 3: +1, `start_scrubbed`, whose output goes to a log file and
-    # is read back through `_readable` as evidence only. #696 slice 8: -1,
+    # is read back through `readable_text` as evidence only. #696 slice 8: -1,
     # `_base_finding` went with the rules that read one language's files.
     # #776 V1: both spawns moved here from `verify.py`.
     "scrubbed_run.py": 2,

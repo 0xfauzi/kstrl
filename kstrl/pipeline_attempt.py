@@ -17,7 +17,7 @@ from kstrl.agents.prompt_record import AgentCall
 from kstrl.context import IterationContext
 from kstrl.findings import Finding, finding_model, tag_finding_with_attempt
 from kstrl.manifest import Component, ComponentStatus
-from kstrl.pipeline_state import PipelineState, _iso_now
+from kstrl.pipeline_state import PipelineState, iso_now
 from kstrl.worktree_sweep import WorktreeSweep, sweep_findings
 
 
@@ -166,7 +166,7 @@ class AttemptRecorder(PipelineState):
         comp.journal_offset_start = self._journal_offset()
         comp.journal_offset_end = -1
         comp.status = ComponentStatus.RUNNING.value
-        comp.started_at = _iso_now()
+        comp.started_at = iso_now()
         self.component_failure_signatures.pop(comp.id, None)
         # #247: the readings describe the attempt in flight, so the
         # attempt boundary is where they are cleared. Anything the
@@ -214,7 +214,7 @@ class AttemptRecorder(PipelineState):
             return
         entry = {
             "schema_version": JOURNAL_SCHEMA_VERSION,
-            "timestamp": _iso_now(),
+            "timestamp": iso_now(),
             "run_id": self.run_id,
             "project": self.manifest.project_name,
             "component_id": "",
@@ -265,7 +265,7 @@ class AttemptRecorder(PipelineState):
             return
         entry = {
             "schema_version": JOURNAL_SCHEMA_VERSION,
-            "timestamp": _iso_now(),
+            "timestamp": iso_now(),
             "run_id": self.run_id,
             "project": self.manifest.project_name,
             "component_id": comp.id,
