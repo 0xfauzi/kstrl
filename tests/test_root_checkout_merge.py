@@ -38,7 +38,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.manifest import Manifest
+from kstrl.plan.manifest import Manifest
 from tests.helpers.gitrepo import git_in, set_identity
 from tests.helpers.procs import kill_group
 from tests.helpers.stack_confirmation import confirm_stack, write_stack

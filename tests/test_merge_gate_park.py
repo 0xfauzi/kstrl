@@ -35,9 +35,9 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.findings import Finding
 from kstrl.inbox import Inbox, InboxConfig, InboxItem
-from kstrl.manifest import Component, Manifest
+from kstrl.plan.findings import Finding
+from kstrl.plan.manifest import Component, Manifest
 from kstrl.serve import serve_cycle
 from kstrl.serve_config import ServeConfig
 from kstrl.serve_outcome import Outcome, RunOutcome, classify_run

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from kstrl.manifest import Component, ComponentStatus
+from kstrl.plan.manifest import Component, ComponentStatus
 
 
 def has_merged(comp: Component) -> bool:

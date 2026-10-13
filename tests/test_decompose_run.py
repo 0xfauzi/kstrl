@@ -15,9 +15,9 @@ import pytest
 from kstrl.commandrun import open_command_run
 from kstrl.decompose import decompose_spec
 from kstrl.decompose_audit import SpecBlockerError
-from kstrl.reducer import load_run_state
+from kstrl.events.reducer import load_run_state
+from kstrl.events.usage import ARCHITECT_COMPONENT, ARCHITECT_ROLE, UsageRecord
 from kstrl.ui.plain import PlainUI
-from kstrl.usage import ARCHITECT_COMPONENT, ARCHITECT_ROLE, UsageRecord
 from tests.helpers.before_spend import no_base_check
 from tests.helpers.prompt_calls import architect_call
 from tests.helpers.rootperms import skip_as_root

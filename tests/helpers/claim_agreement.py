@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from kstrl.manifest import Component
-from kstrl.prd import PRD, UserStory
+from kstrl.plan.manifest import Component
+from kstrl.plan.prd import PRD, UserStory
 from kstrl.review import CriterionReview, ReviewResult
 
 

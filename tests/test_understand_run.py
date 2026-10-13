@@ -10,11 +10,11 @@ from unittest.mock import patch
 import pytest
 from click.testing import CliRunner
 
-from kstrl import event_catalog
 from kstrl.cli import cli
+from kstrl.events import event_catalog
+from kstrl.events.reducer import load_run_state
 from kstrl.io.runid import run_kind
 from kstrl.loop import LoopResult
-from kstrl.reducer import load_run_state
 
 
 class StubAgent:

@@ -46,7 +46,7 @@ from kstrl.knowledge_facts import (
 )
 
 if TYPE_CHECKING:
-    from kstrl.manifest import Component, Manifest
+    from kstrl.plan import Component, Manifest
 
 
 # ---------------------------------------------------------------------------

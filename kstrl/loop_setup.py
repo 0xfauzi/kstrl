@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 from kstrl.breaker import BreakerConfig
 from kstrl.git import git, git_tree
-from kstrl.timeout import TimeoutConfig, describe_limit_seconds
+from kstrl.proc import TimeoutConfig, describe_limit_seconds
 
 if TYPE_CHECKING:
     from kstrl.agents.base import Agent

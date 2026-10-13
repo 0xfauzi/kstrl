@@ -14,8 +14,8 @@ from pathlib import Path
 from click.testing import CliRunner
 
 from kstrl.cli import cli
-from kstrl.manifest import Component, Manifest
-from kstrl.observability import ProgressLog
+from kstrl.events.observability import ProgressLog
+from kstrl.plan.manifest import Component, Manifest
 
 
 def _synthetic_manifest() -> Manifest:
@@ -295,8 +295,8 @@ class TestStatusV2Layout:
         run_id: str = "factory-20260720-000005.000000-t",
         checkpoint_open: bool = False,
     ) -> None:
-        from kstrl import event_catalog
-        from kstrl import events as ev
+        from kstrl.events import event_catalog
+        from kstrl.events import events as ev
 
         paths = ev.RunPaths.for_run(root, run_id)
         bus = ev.EventBus(ev.JsonlSink(paths.events_file), run_id=run_id)
@@ -440,8 +440,8 @@ class TestStatusPerAxisCoverage:
     """
 
     def _write_run(self, root: Path, run_id: str) -> None:
-        from kstrl import event_catalog
-        from kstrl import events as ev
+        from kstrl.events import event_catalog
+        from kstrl.events import events as ev
 
         paths = ev.RunPaths.for_run(root, run_id)
         bus = ev.EventBus(ev.JsonlSink(paths.events_file), run_id=run_id)

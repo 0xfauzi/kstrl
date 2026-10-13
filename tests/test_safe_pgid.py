@@ -1,7 +1,7 @@
 """#308: the signal guard, tested once in the module that owns it.
 
 `procgroup.safe_pgid` is the one copy of a rule `serve._safe_pgid`,
-`verify._signal_process_group` and `agents.proc._signal_group` each wrote
+`verify._signal_process_group` and `proc.proc._signal_group` each wrote
 out for themselves. Its rationale, and what was measured about the three
 copies before they were merged, is in its own docstring. Two positive
 controls remain here: `_may_signal_group` accepts this process's real
@@ -31,8 +31,8 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import procgroup
-from kstrl.procgroup import (
+from kstrl.proc import procgroup
+from kstrl.proc.procgroup import (
     _may_signal_group,
 )
 from tests.helpers import procs
@@ -105,7 +105,7 @@ _TARGET = "os.getpgid"
 
 #: The one file allowed to derive a group id: the module that owns the
 #: guard every other caller has to route through.
-_OWNER = "procgroup.py"
+_OWNER = "proc/procgroup.py"
 
 
 def _sites(source: str) -> Sites:

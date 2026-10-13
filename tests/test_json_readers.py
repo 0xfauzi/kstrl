@@ -116,7 +116,7 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     "cli_preflight.py": 2,
     "context.py": 2,
     "baseline.py": 2,
-    "event_catalog.py": 2,
+    "events/event_catalog.py": 2,
     "evolution.py": 2,
     "feature_cmd.py": 3,
     # #632: the import, json.dumps for the canonical form, and the
@@ -133,12 +133,12 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     "knowledge.py": 3,
     "knowledge_facts.py": 3,
     "linear.py": 5,
-    "observability.py": 4,
+    "events/observability.py": 4,
     # #602: the import and one json.dumps, the plan digest's canonical
     # form. No parse: the PRDs are read through PRD.load.
     "plan_gate.py": 2,
     "policy.py": 2,
-    "prd.py": 2,
+    "plan/prd.py": 2,
     # #700: one more json.dumps, the codex writable_roots override. No parse.
     # 5 since #803: a json.dumps of the settings with the login.
     "sandbox.py": 5,

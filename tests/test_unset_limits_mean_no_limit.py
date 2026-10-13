@@ -37,6 +37,7 @@ import pytest
 from kstrl import loop as loop_mod
 from kstrl.config.config import KstrlConfig
 from kstrl.contract import ContractConfig, run_contract_testing
+from kstrl.events.usage import UsageRecord, UsageTotals
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult
@@ -44,15 +45,14 @@ from kstrl.git import git_base
 from kstrl.knowledge_distill import distill_facts
 from kstrl.knowledge_facts import KnowledgeConfig
 from kstrl.loop import COMPLETION_MARKER, LoopResult, run_loop
-from kstrl.manifest import Component, Manifest
+from kstrl.plan.manifest import Component, Manifest
+from kstrl.proc.timeout import TimeoutConfig
 from kstrl.review import ReviewMode, run_review
 from kstrl.security import SecurityConfig, SecurityMode, run_security_review
 from kstrl.serve_config import ServeConfig
 from kstrl.serve_gates import check_budget
 from kstrl.serve_spend import SpendLedger
-from kstrl.timeout import TimeoutConfig
 from kstrl.ui.plain import PlainUI
-from kstrl.usage import UsageRecord, UsageTotals
 from kstrl.verify import run_mechanical_verification
 from kstrl.verify_model import CheckResult, VerificationResult, VerifyConfig
 from tests.conftest import make_review_repo

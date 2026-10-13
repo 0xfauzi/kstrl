@@ -30,9 +30,9 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.agents.proc import DEFAULT_TERM_GRACE_SECONDS
 from kstrl.loop import STOP_EXIT_CODE
-from kstrl.manifest import Manifest
+from kstrl.plan.manifest import Manifest
+from kstrl.proc.proc import DEFAULT_TERM_GRACE_SECONDS
 from tests.helpers import procs
 from tests.test_agent_dies_with_kstrl import (
     AGENT_BOUND_SECONDS,

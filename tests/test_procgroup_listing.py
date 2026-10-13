@@ -2,9 +2,9 @@
 
 Split out of ``tests/test_procgroup.py``, which was one line under the
 800-line file-length ratchet. The division is by subject module:
-``kstrl/procgroup_listing.py`` owns the spawn, the bound on it and the
+``kstrl/proc/procgroup_listing.py`` owns the spawn, the bound on it and the
 parse of its output, and everything here is about one of those three.
-What ``kstrl/procgroup.py`` makes of a reading - live, gone, or unknown -
+What ``kstrl/proc/procgroup.py`` makes of a reading - live, gone, or unknown -
 stayed next door.
 
 The state matching is table-driven against synthetic ``ps`` output, and
@@ -23,8 +23,8 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import procdispose
-from kstrl.procgroup import (
+from kstrl.proc import procdispose
+from kstrl.proc.procgroup import (
     PS_KILL_GRACE_SECONDS,
     PS_TIMEOUT_SECONDS,
     GroupLiveness,
@@ -92,7 +92,7 @@ class TestThePsCallIsBounded:
 
     Then #309 showed that pinning the kwarg does not establish that the
     kwarg BOUNDS anything: it was passed, and a ``ps`` that could not be
-    killed hung the call anyway, for the reasons the ``kstrl.procgroup``
+    killed hung the call anyway, for the reasons the ``kstrl.proc.procgroup``
     module docstring sets out. So the class now measures the clock as
     well as the kwargs, against a child that refuses to die.
     """
@@ -125,8 +125,8 @@ class TestThePsCallIsBounded:
         does after ``kill()``, and the one ``Popen.__exit__`` does after
         it. Both are gone; that is what the clock here is measuring.
         """
-        monkeypatch.setattr("kstrl.procgroup_listing.PS_TIMEOUT_SECONDS", 0.05)
-        monkeypatch.setattr("kstrl.procgroup_listing.PS_KILL_GRACE_SECONDS", 0.05)
+        monkeypatch.setattr("kstrl.proc.procgroup_listing.PS_TIMEOUT_SECONDS", 0.05)
+        monkeypatch.setattr("kstrl.proc.procgroup_listing.PS_KILL_GRACE_SECONDS", 0.05)
         calls = procs.unkillable_ps(monkeypatch)
 
         started = time.monotonic()
@@ -153,8 +153,8 @@ class TestThePsCallIsBounded:
         below; this used to claim `subprocess._active` collects it, which
         round 2 measured false under warnings-as-errors.
         """
-        monkeypatch.setattr("kstrl.procgroup_listing.PS_TIMEOUT_SECONDS", 0.01)
-        monkeypatch.setattr("kstrl.procgroup_listing.PS_KILL_GRACE_SECONDS", 0.02)
+        monkeypatch.setattr("kstrl.proc.procgroup_listing.PS_TIMEOUT_SECONDS", 0.01)
+        monkeypatch.setattr("kstrl.proc.procgroup_listing.PS_KILL_GRACE_SECONDS", 0.02)
         calls = procs.unkillable_ps(monkeypatch)
 
         read_group_liveness(4242)
@@ -218,13 +218,13 @@ class TestThePsCallIsBounded:
         Both halves of C1 are here: that an uncollected child is kept at
         all, and that keeping it is not itself a leak. Why
         ``Popen.__del__`` could not be trusted to do the keeping, with the
-        measurement, is in the ``kstrl.procgroup`` module docstring.
+        measurement, is in the ``kstrl.proc.procgroup`` module docstring.
         """
-        monkeypatch.setattr("kstrl.procgroup_listing.PS_ARGV", ("sleep", "30"))
-        monkeypatch.setattr("kstrl.procgroup_listing.PS_TIMEOUT_SECONDS", 0.05)
-        monkeypatch.setattr("kstrl.procgroup_listing.PS_KILL_GRACE_SECONDS", 0.05)
+        monkeypatch.setattr("kstrl.proc.procgroup_listing.PS_ARGV", ("sleep", "30"))
+        monkeypatch.setattr("kstrl.proc.procgroup_listing.PS_TIMEOUT_SECONDS", 0.05)
+        monkeypatch.setattr("kstrl.proc.procgroup_listing.PS_KILL_GRACE_SECONDS", 0.05)
         # Nothing may be killed, so the child is genuinely abandoned alive.
-        monkeypatch.setattr("kstrl.procgroup_listing.subprocess.Popen.kill", lambda self: None)
+        monkeypatch.setattr("kstrl.proc.procgroup_listing.subprocess.Popen.kill", lambda self: None)
         read_group_liveness(4242)
         registered = list(procdispose._ABANDONED)
         assert len(registered) == 1
@@ -233,7 +233,7 @@ class TestThePsCallIsBounded:
         child.terminate()
         child.wait(timeout=10)
         # The next read sweeps it, which is the whole contract.
-        monkeypatch.setattr("kstrl.procgroup_listing.PS_ARGV", ("true",))
+        monkeypatch.setattr("kstrl.proc.procgroup_listing.PS_ARGV", ("true",))
         read_group_liveness(4242)
         assert procdispose._ABANDONED == [], "a dead child must leave the register"
 
@@ -251,8 +251,8 @@ class TestThePsCallIsBounded:
         fd_dir = Path("/dev/fd")
         if not fd_dir.is_dir():
             pytest.skip("no /dev/fd on this platform")
-        monkeypatch.setattr("kstrl.procgroup_listing.PS_ARGV", ("sleep", "30"))
-        monkeypatch.setattr("kstrl.procgroup_listing.PS_TIMEOUT_SECONDS", 0.05)
+        monkeypatch.setattr("kstrl.proc.procgroup_listing.PS_ARGV", ("sleep", "30"))
+        monkeypatch.setattr("kstrl.proc.procgroup_listing.PS_TIMEOUT_SECONDS", 0.05)
 
         before = len(os.listdir(fd_dir))
         liveness = read_group_liveness(4242)
@@ -335,12 +335,12 @@ _SPAWN_TARGETS = frozenset(
 )
 
 #: The roots this net walks, and so the reach of the claim
-#: ``kstrl/procgroup.py`` makes. Code outside them is outside the net.
+#: ``kstrl/proc/procgroup.py`` makes. Code outside them is outside the net.
 #: ``astwalk``'s two corpora ARE these two roots.
 _SCANNED_ROOTS = ("kstrl", "tests")
 
 #: The one file allowed to shell out to ``ps``.
-_PS_OWNER = "kstrl/procgroup_listing.py"
+_PS_OWNER = "kstrl/proc/procgroup_listing.py"
 
 
 def _leading_command(folded: str | None) -> str | None:
@@ -433,13 +433,13 @@ EXPECTED_PS_COMMAND_SPELLINGS: dict[str, int] = {
     # measurement, not by assumption.
     #
     # `PS_ARGV` left this file when #209 round 3 split the `ps` call and
-    # its parse into `kstrl/procgroup_listing.py` for the 800-line
+    # its parse into `kstrl/proc/procgroup_listing.py` for the 800-line
     # ratchet. What stays is the five refusal messages, which are
     # diagnostic sentences beginning with the word - the case this
     # census's own message says to add a row for, not a second place
     # that shells out to `ps`.
-    "procgroup.py": 5,
-    "procgroup_listing.py": 1,  # PS_ARGV itself, and the one call site
+    "proc/procgroup.py": 5,
+    "proc/procgroup_listing.py": 1,  # PS_ARGV itself, and the one call site
     # The skip reason for a `ps` filtered to one uid. #209 round 3 moved
     # it here from `tests/test_serve_process_tree.py` (a mark) and
     # `tests/test_shutdown.py` (an in-body skip), which is why both of
@@ -458,7 +458,7 @@ EXPECTED_PS_COMMAND_SPELLINGS: dict[str, int] = {
 
 
 class TestOnlyOneModuleShellsOutToPs:
-    """``kstrl/procgroup.py`` and ``tests/helpers/procs.py`` both argue
+    """``kstrl/proc/procgroup.py`` and ``tests/helpers/procs.py`` both argue
     that two copies of one ``ps`` parse with slightly different failure
     handling is how the suite's answer and the daemon's drift apart. That
     argument was true and unenforced: nothing stopped a third copy. The

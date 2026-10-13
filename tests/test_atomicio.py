@@ -637,7 +637,7 @@ class TestTheReadSideNamesTheSameEncoding:
         result = self._probe(
             tmp_path,
             "from pathlib import Path\n"
-            "from kstrl.manifest import Manifest\n"
+            "from kstrl.plan.manifest import Manifest\n"
             "m = Manifest.load(Path(sys.argv[1]) / 'manifest.json')\n"
             "print(ascii(m.components[0].description))\n",
         )
@@ -667,7 +667,7 @@ class TestTheReadSideNamesTheSameEncoding:
         result = self._probe(
             tmp_path,
             "from pathlib import Path\n"
-            "from kstrl.prd import PRD\n"
+            "from kstrl.plan.prd import PRD\n"
             "p = PRD.load(Path(sys.argv[1]) / 'prd.json')\n"
             "print(ascii(p.user_stories[0].title))\n",
         )

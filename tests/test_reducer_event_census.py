@@ -5,11 +5,11 @@ of every factory run, and never folded, so a component a run carried
 from an earlier run rendered as pending. Nothing failed, because nothing
 required the reducer to decide what that event means.
 
-This census closes the set. ``kstrl.event_catalog._REGISTRY`` is every event
+This census closes the set. ``kstrl.events.event_catalog._REGISTRY`` is every event
 type the stream can carry. The reducer's handled set is read from its
 source: every ``isinstance(event, <alias>.<Class>)`` in the module-level
-``apply()`` function of ``kstrl/reducer.py``, where ``<alias>`` is the
-name ``kstrl.event_catalog`` is imported as. A type in neither set fails, so a
+``apply()`` function of ``kstrl/events/reducer.py``, where ``<alias>`` is the
+name ``kstrl.events.event_catalog`` is imported as. A type in neither set fails, so a
 new event is a decision somebody writes down rather than a silent drop.
 
 "Folded" means named in an ``isinstance`` check in the test of an ``if``
@@ -40,7 +40,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from kstrl import event_catalog, reducer
+from kstrl.events import event_catalog, reducer
 
 #: Registered event types the reducer deliberately does not fold, each
 #: with the reason. None of them changes a component's status.
@@ -68,13 +68,15 @@ DELIBERATELY_IGNORED: dict[str, str] = {
 
 
 def _events_alias(tree: ast.Module) -> str:
-    """The name ``kstrl.event_catalog`` is bound to in the reducer module."""
+    """The name ``kstrl.events.event_catalog`` is bound to in the reducer module."""
     for node in tree.body:
-        if isinstance(node, ast.ImportFrom) and node.module == "kstrl":
+        if isinstance(node, ast.ImportFrom) and node.module == "kstrl.events":
             for alias in node.names:
                 if alias.name == "event_catalog":
                     return alias.asname or alias.name
-    raise AssertionError("kstrl/reducer.py no longer imports kstrl.event_catalog as a module")
+    raise AssertionError(
+        "kstrl/events/reducer.py no longer imports kstrl.events.event_catalog as a module"
+    )
 
 
 def _apply_function(tree: ast.Module) -> ast.FunctionDef:
@@ -86,7 +88,9 @@ def _apply_function(tree: ast.Module) -> ast.FunctionDef:
     """
     fns = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "apply"]
     if len(fns) != 1:
-        raise AssertionError("kstrl/reducer.py no longer defines exactly one module-level apply()")
+        raise AssertionError(
+            "kstrl/events/reducer.py no longer defines exactly one module-level apply()"
+        )
     return fns[0]
 
 

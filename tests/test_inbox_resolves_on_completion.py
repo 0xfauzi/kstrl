@@ -50,7 +50,7 @@ from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult, FactoryResult
 from kstrl.inbox import Inbox, InboxConfig, InboxItem, ItemKind, ItemStatus
-from kstrl.manifest import Component, ComponentStatus, Manifest
+from kstrl.plan.manifest import Component, ComponentStatus, Manifest
 from kstrl.pr import MergeConfirmation
 from kstrl.retry_plan import prepare_retry
 from kstrl.review import ReviewResult
@@ -602,14 +602,14 @@ EXPECTED_STATUS_SPELLINGS: dict[str, int] = {
     "cli_learning.py::evolve": 1,
     "context.py::IterationContext.format_for_prompt": 1,
     "experiments_tsv.py::<module>": 1,
-    "manifest.py::<module>": 2,
-    "manifest.py::Manifest.reset_for_retry": 1,
-    "observability.py::ProgressLog.factory_completed": 1,
+    "plan/manifest.py::<module>": 2,
+    "plan/manifest.py::Manifest.reset_for_retry": 1,
+    "events/observability.py::ProgressLog.factory_completed": 1,
     "pipeline_transitions.py::<module>": 2,
     "pipeline_transitions.py::Transitions.complete": 2,
     "pipeline_merge.py::MergeGate.repoll_merge_pending": 1,
     "pr_body.py::single_pr_body": 1,
-    "reducer.py::apply": 1,
+    "events/reducer.py::apply": 1,
     "workqueue.py::Queue.finish_ok": 1,
 }
 
@@ -630,12 +630,16 @@ NOT_A_COMPLETION: dict[str, str] = {
     "cli_learning.py::evolve": "prints the 'completed' count column of a trend row",
     "context.py::IterationContext.format_for_prompt": "a label in the engineer's retry context",
     "experiments_tsv.py::<module>": "the name of the 'completed' trend column",
-    "manifest.py::<module>": "the ComponentStatus.COMPLETED declaration, name and value",
-    "manifest.py::Manifest.reset_for_retry": "builds the set a dependency's status is compared to",
-    "observability.py::ProgressLog.factory_completed": "the count key of a progress event",
+    "plan/manifest.py::<module>": "the ComponentStatus.COMPLETED declaration, name and value",
+    "plan/manifest.py::Manifest.reset_for_retry": (
+        "builds the set a dependency's status is compared to"
+    ),
+    "events/observability.py::ProgressLog.factory_completed": "the count key of a progress event",
     "pipeline_transitions.py::<module>": "the Transition.COMPLETED declaration, name and value",
     "pr_body.py::single_pr_body": "a status label in the single-PR body",
-    "reducer.py::apply": "the reducer's view of a ComponentCompleted event, not the manifest",
+    "events/reducer.py::apply": (
+        "the reducer's view of a ComponentCompleted event, not the manifest"
+    ),
     "workqueue.py::Queue.finish_ok": "a work-queue item's finish reason",
 }
 

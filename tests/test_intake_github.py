@@ -826,8 +826,8 @@ class TestServeDrivesRemoteLabels:
 
     def test_a_retry_reports_failed_not_running(self, tmp_path: Path) -> None:
         """A queued retry is not running; the label must say so."""
-        from kstrl.findings import Finding
-        from kstrl.manifest import Component, ComponentStatus, Manifest
+        from kstrl.plan.findings import Finding
+        from kstrl.plan.manifest import Component, ComponentStatus, Manifest
 
         self._remote_item(tmp_path, max_attempts=3)
         comp = Component("comp-a", "A", "", [], "a.json", "b/a")
@@ -945,7 +945,7 @@ class TestServeDrivesRemoteLabels:
         manifest holds a component the merge gate parked is labelled
         ``kstrl:awaiting_approval`` and the comment names ``ks inbox
         approve`` rather than claiming a PR is waiting."""
-        from kstrl.manifest import Component, ComponentStatus, Manifest
+        from kstrl.plan.manifest import Component, ComponentStatus, Manifest
         from kstrl.serve import serve_cycle
         from kstrl.serve_outcome import RunOutcome
         from kstrl.serve_spend import RunSpend

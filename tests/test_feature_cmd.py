@@ -14,7 +14,7 @@ from kstrl.interaction import (
     PromptResponse,
 )
 from kstrl.loop import LoopResult
-from kstrl.prd import PRD, UserStory
+from kstrl.plan.prd import PRD, UserStory
 from kstrl.sandbox import SandboxConfig
 from kstrl.ui.plain import PlainUI
 from tests.helpers.prompt_calls import offline_run

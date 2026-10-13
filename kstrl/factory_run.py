@@ -14,8 +14,19 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from kstrl.breaker import BreakerConfig
-from kstrl.event_catalog import RunPlan, RunStarted
-from kstrl.events import EventBus, EventSink, JsonlSink, RunPaths, V1CompatSink
+from kstrl.events import (
+    EventBus,
+    EventSink,
+    JsonlSink,
+    NotifyConfig,
+    NotifyHooks,
+    NullProgressLog,
+    ProgressLog,
+    RunPaths,
+    RunPlan,
+    RunStarted,
+    V1CompatSink,
+)
 from kstrl.factory_acceptance import _stamp_feature_base
 from kstrl.factory_agents import (
     AdversarialAgentSelection,
@@ -40,18 +51,11 @@ from kstrl.factory_worktrees import _interrupted_run_branches
 from kstrl.git import kstrl_version
 from kstrl.knowledge_facts import KnowledgeConfig
 from kstrl.linear import LinearConfig, build_linear_sink
-from kstrl.manifest import ComponentStatus
-from kstrl.observability import (
-    NotifyConfig,
-    NotifyHooks,
-    NullProgressLog,
-    ProgressLog,
-)
+from kstrl.plan import ComponentStatus, RunScope
+from kstrl.proc import TimeoutConfig
 from kstrl.runenvelope import RunEnvelope
 from kstrl.runstate import RunState
 from kstrl.sandbox import warn_unconfined
-from kstrl.scope import RunScope
-from kstrl.timeout import TimeoutConfig
 
 if TYPE_CHECKING:
     from kstrl.autonomy_config import AutonomyConfig
@@ -60,9 +64,9 @@ if TYPE_CHECKING:
     from kstrl.factory_autonomy import _LadderOutcome
     from kstrl.factory_result import FactoryResult
     from kstrl.integration_phase import IntegrationRecord
-    from kstrl.manifest import Manifest
     from kstrl.pipeline import ComponentPipeline
-    from kstrl.shutdown import StopController
+    from kstrl.plan import Manifest
+    from kstrl.proc import StopController
     from kstrl.ui import UI
     from kstrl.verify_model import VerifyConfig
 

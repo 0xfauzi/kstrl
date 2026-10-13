@@ -191,8 +191,8 @@ def _report_for_run(run_dir: Path) -> tuple[list[SafeModeReason], bool]:
     right for the caller's look-back, since a run we could not read has
     not answered the question either.
     """
-    from kstrl import event_catalog
-    from kstrl import events as ev
+    from kstrl.events import event_catalog
+    from kstrl.events import events as ev
 
     events_path = run_dir / "events.jsonl"
     try:
@@ -259,8 +259,8 @@ def _report_for_run(run_dir: Path) -> tuple[list[SafeModeReason], bool]:
 
 
 def _adversarial_reasons(root_dir: Path) -> list[SafeModeReason]:
+    from kstrl.events import run_dirs_newest_first
     from kstrl.io import run_kind
-    from kstrl.reducer import run_dirs_newest_first
 
     # Only a factory run drives the phase chain, so only a factory run
     # can skip an adversarial gate. Without this filter a `ks decompose`

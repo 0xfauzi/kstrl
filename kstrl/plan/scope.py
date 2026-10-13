@@ -52,14 +52,14 @@ from typing import TYPE_CHECKING, Literal
 
 from kstrl.config import relative_to_root
 from kstrl.io import pre_run_prd_path
-from kstrl.prd import PRD
+from kstrl.plan.prd import PRD
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
     from pathlib import Path
 
     from kstrl.config import KstrlConfig
-    from kstrl.manifest import Component, Manifest
+    from kstrl.plan.manifest import Component, Manifest
 
 #: Where a component's AUTHORED scope came from. Recorded on every
 #: snapshot so a scope decision is auditable after the run, which a

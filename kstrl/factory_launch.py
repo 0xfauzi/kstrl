@@ -17,8 +17,8 @@ from kstrl.decisions import build_decisions_context
 from kstrl.fact_scope import authored_paths, paths_by_component
 from kstrl.knowledge import retrieve_knowledge_context
 from kstrl.loop_budget import LoopBudget
+from kstrl.proc import NO_LIMIT, describe_limit_seconds
 from kstrl.sandbox import with_stack_writable
-from kstrl.timeout import NO_LIMIT, describe_limit_seconds
 from kstrl.verify_diff import SCOPE_UNREADABLE_CHECK, scope_unreadable_error
 
 if TYPE_CHECKING:
@@ -28,12 +28,11 @@ if TYPE_CHECKING:
     from kstrl.events import RunPaths
     from kstrl.factory_config import FactoryConfig
     from kstrl.knowledge_facts import KnowledgeConfig
-    from kstrl.manifest import Component, Manifest
     from kstrl.pipeline import ComponentPipeline
+    from kstrl.plan import Component, Manifest, RunScope
+    from kstrl.proc import TimeoutConfig
     from kstrl.runenvelope import RunEnvelope
     from kstrl.runstate import RunState
-    from kstrl.scope import RunScope
-    from kstrl.timeout import TimeoutConfig
     from kstrl.ui import UI
 
 

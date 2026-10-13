@@ -1,12 +1,12 @@
 """A child process is created, signalled and let go of in ONE place.
 
-``kstrl.procgroup`` is that place. Five defects of this class have been
+``kstrl.proc.procgroup`` is that place. Five defects of this class have been
 found one at a time, and each one's investigation found the next: #308
 (the safe-pgid guard written out three times), #298 (a zombie read as
 running), #309 (an unkillable ``ps`` with no bound on it), #326 (a killed
 child abandoned with no register and no close, at three sites), #329 (a
 caller-supplied pgid signalled with no guard at all). Naming the next
-site in a docstring did not stop it: ``kstrl/procgroup.py`` said "THIS
+site in a docstring did not stop it: ``kstrl/proc/procgroup.py`` said "THIS
 FIXES ONE SITE, NOT THE CLASS" and listed the other three, and they were
 still there four PRs later. A rule with no mechanism is not a plan.
 
@@ -137,7 +137,7 @@ from tests.test_journal_one_writer import label, package_sources, parsed
 #: a kill. They are two files because one was 871 lines and the
 #: 800-line ratchet is a real bound, and because reading a group and
 #: abandoning a child are two jobs; they are one home.
-PROCESS_HOME = frozenset({"procgroup.py", "procdispose.py"})
+PROCESS_HOME = frozenset({"proc/procgroup.py", "proc/procdispose.py"})
 
 
 #: Every module in ``kstrl/`` that spells a process primitive, and which
@@ -157,13 +157,13 @@ EXPECTED_PROCESS_MODULES: dict[str, tuple[str, ...]] = {
     # signal; `procdispose` lets go of what survives. `DeadlineStreamer`
     # is prose in both: the docstrings name the one caller whose disposal
     # is `reap_or_abandon` rather than `drain_or_abandon`, and
-    # `spelled_tokens` splits `agents.proc.DeadlineStreamer` on the dot.
+    # `spelled_tokens` splits `proc.proc.DeadlineStreamer` on the dot.
     # These two rows are the ONLY places in `kstrl/` where the dotted
     # split changes the inventory, and they are pinned rather than
     # special-cased, because an exception list is how a net starts
     # having a hand-tuned hole.
-    "procdispose.py": ("DeadlineStreamer", "Popen", "communicate", "kill", "subprocess"),
-    "procgroup.py": (
+    "proc/procdispose.py": ("DeadlineStreamer", "Popen", "communicate", "kill", "subprocess"),
+    "proc/procgroup.py": (
         "DeadlineStreamer",
         "Popen",
         "getpgid",
@@ -180,20 +180,23 @@ EXPECTED_PROCESS_MODULES: dict[str, tuple[str, ...]] = {
     # `procgroup.py` keeps its own because both words still appear there
     # in prose and in a type annotation. Re-derived by running this
     # census at every step, never by editing the literal.
-    "procgroup_listing.py": ("Popen", "communicate", "subprocess"),
+    "proc/procgroup_listing.py": ("Popen", "communicate", "subprocess"),
+    # #863 M2: the package interface re-exports `DeadlineStreamer` (the
+    # import and the __all__ entry). It names the class and starts nothing.
+    "proc/__init__.py": ("DeadlineStreamer",),
     # The four modules that construct a Popen. `killpg` and `kill` are
     # gone from all three non-home ones as of this PR; a token coming
     # back is a hand-rolled copy of a `procgroup` routine.
-    "agents/proc.py": ("DeadlineStreamer", "Popen", "kill", "subprocess"),
+    "proc/proc.py": ("DeadlineStreamer", "Popen", "kill", "subprocess"),
     # #642: the leash every agent runs under. It runs by path as
-    # `python -I -S`, so it cannot import `kstrl.procgroup`, and its one
+    # `python -I -S`, so it cannot import `kstrl.proc.procgroup`, and its one
     # signal is `killpg(0, ...)`: pgid 0 is its own group, which it refuses
     # to start unless it leads. The rows in EXPECTED_BARE_SYSCALLS say the
     # same for the syscalls. #642 slice 6: `fork`, the `--hold` mode's one
     # fork, whose parent leaves with the command's status.
-    "agents/leash.py": ("Popen", "fork", "getpgrp", "killpg", "subprocess"),
+    "proc/leash.py": ("Popen", "fork", "getpgrp", "killpg", "subprocess"),
     "serve_process.py": ("Popen", "communicate", "subprocess"),
-    "scrubbed_run.py": ("Popen", "communicate", "subprocess"),
+    "proc/scrubbed_run.py": ("Popen", "communicate", "subprocess"),
     # #776 V1: `subprocess.TimeoutExpired` is the one use left in `verify.py`.
     # #776 V3: that use moved to `verify_commands.py` with `check_stack_command`.
     "verify_commands.py": ("subprocess",),
@@ -230,7 +233,7 @@ EXPECTED_PROCESS_MODULES: dict[str, tuple[str, ...]] = {
     "contract.py": ("subprocess",),
     # doctor.py (#198) runs two short git commands and waits for each
     # with a timeout; it creates, signals, waits on or abandons no
-    # process group, so there is nothing here for `kstrl.procgroup` to
+    # process group, so there is nothing here for `kstrl.proc.procgroup` to
     # own.
     "doctor.py": ("subprocess",),
     "git/git.py": ("subprocess",),
@@ -240,24 +243,24 @@ EXPECTED_PROCESS_MODULES: dict[str, tuple[str, ...]] = {
     "intake_gh.py": ("subprocess",),
     # #700: `TimeoutExpired` from `run_scrubbed`, which owns the process group.
     "isolation.py": ("subprocess",),
-    "observability.py": ("subprocess",),
+    "events/observability.py": ("subprocess",),
     "pr.py": ("subprocess",),
     # The `gh pr view` reads moved here from `pr.py` for the 800-line
     # ratchet (#154); `pr.py` still pushes, creates and merges.
     "git/pr_state.py": ("subprocess",),
     "retry_plan.py": ("subprocess",),
     "io/statedir.py": ("subprocess",),
-    "temp_worktree.py": ("subprocess",),
+    "proc/temp_worktree.py": ("subprocess",),
     # #433: `SubprocessError`, caught from `retry_plan._failed_branch_probe`
     # (the retry scope preview). It creates no child itself.
     # #461: `subprocess.TimeoutExpired`, caught from `verify.run_scrubbed`,
     # which is what runs the `lsof` census. The module creates no child
     # itself and signals groups only through `procgroup.signal_group`.
-    "worktree_sweep.py": ("subprocess",),
+    "proc/worktree_sweep.py": ("subprocess",),
     # #624: `subprocess.TimeoutExpired`, caught from `verify.run_scrubbed`,
     # which runs the worktree setup in a process group of its own and kills
     # the group on timeout. The module creates no child itself.
-    "worktree_setup.py": ("subprocess",),
+    "proc/worktree_setup.py": ("subprocess",),
     # The word, not the call: `actor: str = "system"`.
     "autonomy.py": ("system",),
     "inbox.py": ("system",),
@@ -268,14 +271,14 @@ EXPECTED_PROCESS_MODULES: dict[str, tuple[str, ...]] = {
 
 
 #: Bare process syscalls outside :data:`PROCESS_HOME`, each argued, with
-#: the line numbers taken off. ONE module. ``agents/leash.py`` runs by path
-#: as ``python -I -S`` (#642), so it cannot import ``kstrl.procgroup``: its
+#: the line numbers taken off. ONE module. ``proc/leash.py`` runs by path
+#: as ``python -I -S`` (#642), so it cannot import ``kstrl.proc.procgroup``: its
 #: ``getpgrp`` is the check that it leads its own group, and its two
 #: ``killpg`` calls take pgid 0, which is that group and never kstrl's.
 #: #642 slice 6 adds the ``--hold`` mode's ``fork``, whose child stays in
 #: the group, and a second ``getpgrp``, the group that child reads.
 EXPECTED_BARE_SYSCALLS: dict[str, tuple[str, ...]] = {
-    "agents/leash.py": (
+    "proc/leash.py": (
         "fork(os.fork ...)",
         "getpgrp(os.getpgrp ...)",
         "getpgrp(os.getpgrp ...)",
@@ -310,7 +313,7 @@ class SpawnerRules:
     communicate_calls: int
     #: ``except BaseException:`` disposal clauses.
     #:
-    #: ``agents/proc.py`` was a zero here, argued as structural rather
+    #: ``proc/proc.py`` was a zero here, argued as structural rather
     #: than an exemption: its ``Popen`` outlives the function that made
     #: it, is read by two threads, and is let go of from wherever the
     #: caller decides, so there is no single ``try`` around a collection
@@ -350,19 +353,19 @@ EXPECTED_SPAWNERS: dict[str, SpawnerRules] = {
     # columns by being absent, which is what this table's own docstring
     # says an absent module means. All four numbers below were read off
     # this census run against the split tree.
-    "procgroup_listing.py": SpawnerRules(1, 1, 1, 1),
-    "procdispose.py": SpawnerRules(0, 1, 0, 0),
+    "proc/procgroup_listing.py": SpawnerRules(1, 1, 1, 1),
+    "proc/procdispose.py": SpawnerRules(0, 1, 0, 0),
     # 3 disposals (#642): the third lets go of a leash that reported it
     # could not start the agent.
-    "agents/proc.py": SpawnerRules(1, 0, 1, 3),
+    "proc/proc.py": SpawnerRules(1, 0, 1, 3),
     # #642: the leash starts the agent and waits on it. No disposal: the
     # agent is ended by its group's signals, never by the leash letting go.
-    "agents/leash.py": SpawnerRules(1, 0, 0, 0),
+    "proc/leash.py": SpawnerRules(1, 0, 0, 0),
     "serve_process.py": SpawnerRules(1, 1, 1, 2),
     # #700 slice 3: the second Popen is `start_scrubbed`, which returns the
     # running child; `replay.py` is the one that lets it go. #642 slice 6:
     # the third disposal lets go of a leash that could not start `up`.
-    "scrubbed_run.py": SpawnerRules(2, 1, 1, 3),
+    "proc/scrubbed_run.py": SpawnerRules(2, 1, 1, 3),
     "replay.py": SpawnerRules(0, 0, 0, 1),
 }
 
@@ -443,7 +446,7 @@ class TestProcessLifecycleHasOneHome:
         assert built == EXPECTED_PROCESS_MODULES, (
             "The set of modules that spell a process primitive changed. If this is "
             "new code that creates, signals, waits on or abandons a child, call "
-            "kstrl.procgroup instead: safe_pgid and signal_group decide whether a "
+            "kstrl.proc.procgroup instead: safe_pgid and signal_group decide whether a "
             "signal may be sent, signal_process_tree sends it, and drain_or_abandon "
             "or reap_or_abandon lets go of what survives. If the word is not the "
             f"call, add the row with a reason. Found: {built}"
@@ -458,7 +461,7 @@ class TestProcessLifecycleHasOneHome:
             if (hits := bare_syscall_calls(tree) + os_syscall_calls(tree, os_module_names(tree)))
         }
         assert found == EXPECTED_BARE_SYSCALLS, (
-            "A process syscall is issued outside kstrl/procgroup.py. That module is "
+            "A process syscall is issued outside kstrl/proc/procgroup.py. That module is "
             "where the pid and pgid guards live, and #329 is what a copy outside "
             "them costs: killpg(0, sig) broadcasts to the caller's whole group and "
             "killpg to our own group takes the daemon down. Call "

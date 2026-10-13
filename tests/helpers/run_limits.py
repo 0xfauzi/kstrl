@@ -13,7 +13,7 @@ from collections.abc import Collection
 
 from kstrl.factory_config import FactoryConfig
 from kstrl.launch_record import run_limits
-from kstrl.timeout import TimeoutConfig
+from kstrl.proc.timeout import TimeoutConfig
 
 
 def limit_names() -> list[str]:

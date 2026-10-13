@@ -16,12 +16,12 @@ from kstrl.decisions import (
 from kstrl.events import EventBus
 from kstrl.guards import ScopeHazard, scope_entry_hazard
 from kstrl.io import atomic_write_json, plan_prd_path
-from kstrl.names import validate_component_id
-from kstrl.prd import PRD
-from kstrl.requirements import (
+from kstrl.plan import (
+    PRD,
     enum_field_error,
     required_field_error,
     requirements_payload_errors,
+    validate_component_id,
 )
 from kstrl.spec_issues import (
     _VALID_SEVERITIES,

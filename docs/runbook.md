@@ -529,7 +529,7 @@ cannot run (`lsof` missing, or listing nothing), the finding or the
 warning says so instead of reporting a clean worktree.
 
 When the kstrl process itself dies (#642). Every agent runs under a small
-leash process, `kstrl/agents/leash.py`, which leads the agent's process
+leash process, `kstrl/proc/leash.py`, which leads the agent's process
 group and holds one end of a pipe to the kstrl process that started it.
 However that process ends (SIGKILL, an OOM kill, a crash), the kernel
 closes its end of the pipe, and the leash sends

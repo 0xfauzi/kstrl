@@ -331,7 +331,7 @@ class TestTheWalkAgainstTheRealPackage:
 
         KEYED BY MODULE, and the line number came off after a measurement
         rather than a preference. Merged against the open PR that rewrites
-        ``kstrl/procgroup.py``, this row failed on ``:284`` becoming
+        ``kstrl/proc/procgroup.py``, this row failed on ``:284`` becoming
         ``:270`` and nothing else: a textually clean merge, two branches
         independently green, one red tree, and the diff that caused it was
         not about this walk at all. The claim here is that there is exactly
@@ -340,7 +340,7 @@ class TestTheWalkAgainstTheRealPackage:
         """
         found = package_calls(frozenset({TARGET})).without_line_numbers()
 
-        assert found.seen == ("procgroup.py os.getpgid",)
+        assert found.seen == ("proc/procgroup.py os.getpgid",)
 
     def test_the_spawn_sweep_reproduces_the_timeout_audit_count(self) -> None:
         """72 spawn sites, plus ten expressions this walk will not pretend
@@ -379,8 +379,8 @@ class TestTheWalkAgainstTheRealPackage:
         #624 removes one, so 76.
         The removed one is the scaffold command's ``subprocess.run`` in
         ``factory._prepare_component_tree``, now a ``run_scrubbed`` call in
-        ``kstrl/worktree_setup.py``.
-        #642 adds one: the ``subprocess.Popen`` in ``kstrl/agents/leash.py``
+        ``kstrl/proc/worktree_setup.py``.
+        #642 adds one: the ``subprocess.Popen`` in ``kstrl/proc/leash.py``
         that starts the agent under its leash. #630 adds two: ``git.read_blob``'s
         ``git ls-tree`` and ``git cat-file``, reading a lockfile at a revision.
         Both carry a timeout. So 79. #695 adds one more: ``git._get_stored_diff``'s

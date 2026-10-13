@@ -101,6 +101,7 @@ EXPECTED_UNDECIDED_REPLACE_CALLS: tuple[str, ...] = (
     "autonomy_transitions.py trigger.label.replace",
     "baseline_report.py ' '.join(text.split()).replace",
     "doctor.py now.isoformat().replace",
+    "events/observability.py datetime.strptime(ts, '%Y-%m-%dT%H:%M:%SZ').replace",
     "inbox.py datetime.now(UTC).replace",
     "inbox.py parsed.replace",
     "io/statedir.py datetime.now(UTC).replace",
@@ -108,11 +109,10 @@ EXPECTED_UNDECIDED_REPLACE_CALLS: tuple[str, ...] = (
     # #696: init_cmd.kstrl_toml_for, which seeded a detected toolchain's
     # commands into the scaffolded [verify], is gone with [verify] itself.
     "knowledge_distill.py raw_output[:200].replace",
-    "observability.py datetime.strptime(ts, '%Y-%m-%dT%H:%M:%SZ').replace",
+    "proc/scrubbed_run.py text.replace",
+    "proc/scrubbed_run.py text.replace('\\r\\n', '\\n').replace",
     # #526: `retry_plan._opt` spells a run limit as an option name, a str.replace.
     "retry_plan.py name.replace",
-    "scrubbed_run.py text.replace",
-    "scrubbed_run.py text.replace('\\r\\n', '\\n').replace",
     "serve_spend.py (local + timedelta(days=1)).replace",
     "spec_issues.py comp_id.replace",
     "spec_issues.py comp_id.replace('-', ' ').replace",

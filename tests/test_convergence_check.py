@@ -18,8 +18,8 @@ import pytest
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult
 from kstrl.journal_rows import FINDINGS_SUPERSEDED_EVENT
-from kstrl.manifest import Component, ComponentStatus
 from kstrl.pipeline_transitions import Transition
+from kstrl.plan.manifest import Component, ComponentStatus
 from kstrl.review import ReviewConcern, ReviewResult
 from kstrl.security import SecurityConfig, SecurityFinding, SecurityResult
 from kstrl.verify_model import CheckResult, VerificationResult

@@ -304,7 +304,7 @@ class KstrlConfig:
     # adapter (per-turn, inside the agent loop). None = no ceiling.
     agent_budget_usd: float | None = None
 
-    # Timeouts live in kstrl.timeout.TimeoutConfig (the single source
+    # Timeouts live in kstrl.proc.timeout.TimeoutConfig (the single source
     # for agent_iteration / component_total; R0.1). KstrlConfig used to
     # duplicate them as dead fields - deliberately deleted, do not re-add.
 

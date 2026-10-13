@@ -25,21 +25,20 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl import event_catalog
 from kstrl.acceptance import pinned_digest
 from kstrl.decompose_prompt import load_spec_input, spec_digest
+from kstrl.events import NotifyConfig, NotifyHooks, event_catalog
 from kstrl.inbox import UNDECIDED, Inbox, InboxError, InboxItem, ItemKind, ItemStatus
 from kstrl.interaction import PromptKind, PromptRequest
 from kstrl.io import ControlStateError, pre_run_prd_path
-from kstrl.observability import NotifyConfig, NotifyHooks
 from kstrl.pipeline_state import iso_now
-from kstrl.prd import PRD
+from kstrl.plan import PRD
 from kstrl.workqueue_store import relocated_spec
 
 if TYPE_CHECKING:
     from kstrl.autonomy import FlagBundle
-    from kstrl.manifest import Manifest
     from kstrl.pipeline import ComponentPipeline
+    from kstrl.plan import Manifest
     from kstrl.stack import Stack
 
 #: The inbox dedupe-key prefix of a plan_gate item. ``kstrl/cli.py``

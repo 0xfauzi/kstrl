@@ -26,8 +26,8 @@ from kstrl.config.config import KstrlConfig
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import FactoryResult
-from kstrl.manifest import Component, Manifest
 from kstrl.pipeline import ComponentPipeline
+from kstrl.plan.manifest import Component, Manifest
 from kstrl.ui.plain import PlainUI
 from tests.helpers import gitrepo
 from tests.helpers.component_prd import PASSING_STORY, write_component_prd

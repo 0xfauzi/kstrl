@@ -476,7 +476,7 @@ def isolate_abandoned_children() -> Generator[None, None, None]:
     Only ours is reset. CPython's ``subprocess._active`` is process-wide
     interpreter state that every ``Popen`` sweeps, and it drains itself.
     """
-    from kstrl import procdispose
+    from kstrl.proc import procdispose
 
     saved = procdispose._ABANDONED[:]
     procdispose._ABANDONED.clear()

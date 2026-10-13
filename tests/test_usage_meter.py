@@ -36,10 +36,19 @@ from kstrl.agents.claude_code import ClaudeCodeAgent, _usage_from_result_event
 from kstrl.agents.codex import CodexAgent
 from kstrl.agents.custom import CustomAgent
 from kstrl.config.config import KstrlConfig
-from kstrl.events import RunPaths
+from kstrl.events.events import RunPaths
+from kstrl.events.observability import ProgressLog
+from kstrl.events.usage import (
+    ARCHITECT_COMPONENT,
+    ARCHITECT_ROLE,
+    UsageRecord,
+    UsageTotals,
+    collect_usage,
+    format_usage_rollup,
+    usage_cursor,
+)
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
-from kstrl.factory_lock import FactoryLockHeldError
 from kstrl.factory_result import (
     ComponentResult,
     FactoryResult,
@@ -52,20 +61,11 @@ from kstrl.factory_worker import _run_component
 from kstrl.inbox import Inbox, InboxConfig
 from kstrl.loop import COMPLETION_MARKER, run_loop
 from kstrl.loop_budget import LoopBudget
-from kstrl.manifest import Component, ComponentStatus, Manifest
-from kstrl.observability import ProgressLog
+from kstrl.plan.manifest import Component, ComponentStatus, Manifest
+from kstrl.proc.factory_lock import FactoryLockHeldError
+from kstrl.proc.shutdown import StopController
 from kstrl.security import SecurityConfig
-from kstrl.shutdown import StopController
 from kstrl.ui.plain import PlainUI
-from kstrl.usage import (
-    ARCHITECT_COMPONENT,
-    ARCHITECT_ROLE,
-    UsageRecord,
-    UsageTotals,
-    collect_usage,
-    format_usage_rollup,
-    usage_cursor,
-)
 from kstrl.verify_model import VerifyConfig
 from tests.helpers.stack_confirmation import confirm_stack, in_process_stack, write_stack
 
@@ -3549,7 +3549,7 @@ class TestCostCeilingConfigValidation:
         from kstrl.config.config_numbers import BudgetConfigError
         from kstrl.factory import run_factory
         from kstrl.factory_config import FactoryConfig
-        from kstrl.manifest import Component, Manifest
+        from kstrl.plan.manifest import Component, Manifest
         from kstrl.ui.plain import PlainUI
 
         config = FactoryConfig(max_cost_usd=float("nan"))
@@ -3827,8 +3827,8 @@ class TestBudgetHaltRendersHonestly:
 
     @staticmethod
     def _render(event: Any) -> tuple[str, str]:
+        from kstrl.events.reducer import ComponentState, RunState, apply
         from kstrl.linear import LinearSink
-        from kstrl.reducer import ComponentState, RunState, apply
 
         state = RunState(run_id="r")
         state.components["comp-a"] = ComponentState(component_id="comp-a")
@@ -3843,7 +3843,7 @@ class TestBudgetHaltRendersHonestly:
         return state.components["comp-a"].error, str(body)
 
     def test_breach_states_the_true_comparison(self) -> None:
-        from kstrl import event_catalog
+        from kstrl.events import event_catalog
 
         reducer, linear = self._render(
             event_catalog.BudgetExceeded(
@@ -3862,7 +3862,7 @@ class TestBudgetHaltRendersHonestly:
         assert "cost" not in reducer
 
     def test_unenforceable_claims_no_threshold(self) -> None:
-        from kstrl import event_catalog
+        from kstrl.events import event_catalog
 
         reducer, linear = self._render(
             event_catalog.BudgetExceeded(
@@ -3888,7 +3888,7 @@ class TestBudgetHaltRendersHonestly:
             assert "max_cost_usd" in surface
 
     def test_a_disabled_ceiling_is_never_blamed(self) -> None:
-        from kstrl import event_catalog
+        from kstrl.events import event_catalog
 
         reducer, linear = self._render(
             event_catalog.BudgetExceeded(
@@ -3910,7 +3910,7 @@ class TestBudgetHaltRendersHonestly:
         """events.jsonl is append-only: a payload written before #180
         carries only `ceiling`. Every surface reports it unreadable and
         none reads it as a cost or token halt."""
-        from kstrl import event_catalog
+        from kstrl.events import event_catalog
 
         reducer, linear = self._render(
             event_catalog.BudgetExceeded(
@@ -3926,8 +3926,8 @@ class TestBudgetHaltRendersHonestly:
         assert "unreadable" in linear
 
     def test_the_structured_fields_survive_a_json_round_trip(self) -> None:
-        import kstrl.events as ev
-        from kstrl import event_catalog
+        import kstrl.events.events as ev
+        from kstrl.events import event_catalog
 
         event = event_catalog.BudgetExceeded(
             component="comp-a",
@@ -3955,7 +3955,7 @@ class TestBudgetHaltRendersHonestly:
         ceilings: tuple[str, ...],
         expected: str,
     ) -> None:
-        from kstrl.event_catalog import budget_halt_kind
+        from kstrl.events.event_catalog import budget_halt_kind
 
         assert budget_halt_kind(condition, ceilings) == expected
 
@@ -4210,7 +4210,7 @@ class TestTokenCeilingRejectsUnboundingValues:
         from kstrl.config.config_numbers import BudgetConfigError
         from kstrl.factory import run_factory
         from kstrl.factory_config import FactoryConfig
-        from kstrl.manifest import Component, Manifest
+        from kstrl.plan.manifest import Component, Manifest
         from kstrl.ui.plain import PlainUI
 
         config = FactoryConfig(max_total_tokens=-5)
@@ -4339,7 +4339,7 @@ class TestUsageCoverage:
     """The coverage fold: the middle term between enforceable and dead."""
 
     def test_the_measured_run_is_partial_and_names_the_role(self) -> None:
-        from kstrl.usage import usage_coverage
+        from kstrl.events.usage import usage_coverage
 
         meter, _ = _measured_meter()
         coverage = usage_coverage(meter, axis="cost", ceiling="max_cost_usd")
@@ -4355,7 +4355,7 @@ class TestUsageCoverage:
     def test_the_token_axis_of_the_same_run_is_complete(self) -> None:
         """Both axes are folded by the same code and must not be
         conflated: this run's TOKEN coverage was perfect."""
-        from kstrl.usage import usage_coverage
+        from kstrl.events.usage import usage_coverage
 
         meter, _ = _measured_meter()
         coverage = usage_coverage(meter, axis="token")
@@ -4366,7 +4366,7 @@ class TestUsageCoverage:
         """The uncovered magnitude stays in TOKENS. Converting it to
         dollars would need a price table this repo does not have; a
         fabricated cost in an audit trail is worse than a missing one."""
-        from kstrl.usage import usage_coverage
+        from kstrl.events.usage import usage_coverage
 
         meter, _ = _measured_meter()
         note = usage_coverage(
@@ -4388,7 +4388,7 @@ class TestUsageCoverage:
         """A role where SOME calls reported a cost cannot say which of
         its tokens were unpriced - the aggregate does not carry that -
         so no token figure is claimed for it."""
-        from kstrl.usage import usage_coverage
+        from kstrl.events.usage import usage_coverage
 
         meter = {
             "comp-a": {
@@ -4408,7 +4408,7 @@ class TestUsageCoverage:
         assert "1,000" not in coverage.note()
 
     def test_full_coverage_says_nothing(self) -> None:
-        from kstrl.usage import usage_coverage
+        from kstrl.events.usage import usage_coverage
 
         meter = {
             "comp-a": {
@@ -4427,7 +4427,7 @@ class TestUsageCoverage:
         assert coverage.note() == ""
 
     def test_an_empty_axis_is_labelled_empty_not_partial(self) -> None:
-        from kstrl.usage import usage_coverage
+        from kstrl.events.usage import usage_coverage
 
         meter = {
             "comp-a": {
@@ -4446,7 +4446,7 @@ class TestUsageCoverage:
         assert "EMPTY" in coverage.note()
 
     def test_an_empty_meter_reports_nothing(self) -> None:
-        from kstrl.usage import usage_coverage
+        from kstrl.events.usage import usage_coverage
 
         coverage = usage_coverage({}, axis="cost", ceiling="max_cost_usd")
         assert coverage.calls == 0
@@ -4455,7 +4455,7 @@ class TestUsageCoverage:
 
     def test_an_unknown_axis_degrades_instead_of_raising(self) -> None:
         """Accounting must never gate a run (R3.1 requirement 4)."""
-        from kstrl.usage import usage_coverage
+        from kstrl.events.usage import usage_coverage
 
         meter, _ = _measured_meter()
         coverage = usage_coverage(meter, axis="bananas")
@@ -4463,7 +4463,7 @@ class TestUsageCoverage:
         assert coverage.calls == 13
 
     def test_roles_fold_across_components(self) -> None:
-        from kstrl.usage import usage_coverage
+        from kstrl.events.usage import usage_coverage
 
         meter, _ = _measured_meter()
         coverage = usage_coverage(meter, axis="cost", ceiling="max_cost_usd")

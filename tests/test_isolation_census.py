@@ -89,7 +89,7 @@ def test_only_one_place_builds_a_nono_command_line() -> None:
     assert_census(
         sources=package_sources(),
         sees=_builds_a_nono_argv,
-        expected={"rung.py:nono_argv": 1},
+        expected={"proc/rung.py:nono_argv": 1},
         control="argv = [nono, 'wrap', '-s', '-p', str(policy), '--', *argv]\n",
         message=(
             "A second nono command line is built outside rung.nono_argv. The "
@@ -175,7 +175,7 @@ def test_start_scrubbed_runs_its_command_only_inside_a_proven_rung() -> None:
     fallback) with no default and no None, and its one ``Popen`` spawns what
     ``_in_rung`` built from it: a command that outlives the call runs on the
     host only under the explicit fallback of a platform with no prover."""
-    (verify_source,) = [path for path in package_sources() if label(path) == "scrubbed_run.py"]
+    (verify_source,) = [path for path in package_sources() if label(path) == "proc/scrubbed_run.py"]
     (function,) = [
         node
         for node in all_nodes(parsed(verify_source))
@@ -285,7 +285,7 @@ def test_only_host_fallback_constructs_a_fallback() -> None:
     assert_census(
         sources=package_sources(),
         sees=_calls("HostFallback"),
-        expected={"rung.py:host_fallback": 1},
+        expected={"proc/rung.py:host_fallback": 1},
         control="fallback = rung.HostFallback('linux', 'label')\n",
         message=(
             "A HostFallback is built outside rung.host_fallback. Build it there: "
@@ -303,9 +303,9 @@ def test_the_fallback_label_and_the_platform_seam_have_one_reader() -> None:
     "KSTRL_ISOLATION_PLATFORM")``) is seen as well as one that names
     ``PLATFORM_ENV``."""
     pins = {
-        "HOST_FALLBACK_LABEL": {"rung.py:<module>": 1, "rung.py:host_fallback": 1},
-        "PLATFORM_ENV": {"rung.py:<module>": 1, "rung.py:host_fallback": 1},
-        "KSTRL_ISOLATION_PLATFORM": {"rung.py:<module>": 1},
+        "HOST_FALLBACK_LABEL": {"proc/rung.py:<module>": 1, "proc/rung.py:host_fallback": 1},
+        "PLATFORM_ENV": {"proc/rung.py:<module>": 1, "proc/rung.py:host_fallback": 1},
+        "KSTRL_ISOLATION_PLATFORM": {"proc/rung.py:<module>": 1},
     }
     for name, expected in pins.items():
         assert_census(

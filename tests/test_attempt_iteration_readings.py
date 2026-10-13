@@ -36,8 +36,8 @@ from typing import Any
 
 import pytest
 
-from kstrl import event_catalog
-from kstrl import events as ev
+from kstrl.events import event_catalog
+from kstrl.events import events as ev
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.journal_rows import FINDINGS_SUPERSEDED_EVENT, read_attempt_iterations
@@ -217,8 +217,8 @@ EXPECTED_RETRIES_WRITE_SITES: dict[str, str] = {
     "factory_acceptance.py:_reset_contract_breakers": (
         "the contract-breaker retry; journal_superseded_findings(breaker) runs one line above it"
     ),
-    "manifest.py:<module>": "the Component.retries field declaration",
-    "manifest.py:reset_for_retry": (
+    "plan/manifest.py:<module>": "the Component.retries field declaration",
+    "plan/manifest.py:reset_for_retry": (
         "the --reset path; zeroes the counter rather than advancing an attempt"
     ),
     "pipeline_transitions.py:retry_or_fail": (

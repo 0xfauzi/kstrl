@@ -46,8 +46,8 @@ from typing import Any
 import pytest
 
 from kstrl.config.config import KstrlConfig
-from kstrl.event_catalog import CheckpointResolved, Event
-from kstrl.events import CallbackSink
+from kstrl.events.event_catalog import CheckpointResolved, Event
+from kstrl.events.events import CallbackSink
 from kstrl.feature_cmd import run_feature
 from kstrl.inbox import Inbox, InboxConfig
 from kstrl.interaction import (

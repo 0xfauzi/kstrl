@@ -1,7 +1,7 @@
 """Renderers: project the event stream back onto a terminal surface.
 
 Chunk 7 of the TUI rewrite. :class:`UIBackedRenderer` is the exact
-inverse of :class:`~kstrl.ui.bridge.EventBridgeUI`'s method-to-event
+inverse of :class:`~kstrl.events.bridge.EventBridgeUI`'s method-to-event
 mapping, so a bridge -> bus -> renderer round trip produces terminal
 bytes IDENTICAL to calling the concrete UI directly - the
 no-regression proof for the ~390 imperative call sites.
@@ -14,7 +14,7 @@ from ``events.jsonl`` by ``ks status`` and replay.
 
 from __future__ import annotations
 
-from kstrl.event_catalog import Event, Log
+from kstrl.events.event_catalog import Event, Log
 from kstrl.ui import UI
 
 

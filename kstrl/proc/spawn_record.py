@@ -1,6 +1,6 @@
 """The record of an agent process group, kept while kstrl owns it (#642).
 
-The leash (``kstrl/agents/leash.py``) ends an agent's group when the
+The leash (``kstrl/proc/leash.py``) ends an agent's group when the
 kstrl process that owns it dies. If the leash is killed in the same
 moment, nothing is left to end the group, and the agent keeps running
 with no kstrl process that knows about it. This record is how the next

@@ -7,7 +7,7 @@ reads ``time.monotonic()`` (``mach_absolute_time()`` on macOS) and not a
 wall clock. A deadline moved to ``time.time()`` would kill a resumed run for
 the seconds it was asleep, and no behaviour test notices, because no test
 can suspend the machine: measured on 2026-10-09, moving
-``kstrl/agents/proc.py::DeadlineStreamer`` to ``time.time()`` left 247 tests
+``kstrl/proc/proc.py::DeadlineStreamer`` to ``time.time()`` left 247 tests
 in nine agent and process suites green.
 
 WHAT IT PINS. Every call to a wall clock in the modules that hold the run
@@ -33,8 +33,8 @@ from tests.helpers import astwalk
 #: Measured on 2026-10-09: the backstop moved to ``time.time()`` at all three
 #: of its reads left ``tests/test_timeout_enforcement.py`` green (78 passed).
 RUN_DEADLINE_MODULES = (
-    "agents/proc.py",
-    "agents/leash.py",
+    "proc/proc.py",
+    "proc/leash.py",
     "agents/liveness.py",
     "factory.py",
     "factory_worker.py",

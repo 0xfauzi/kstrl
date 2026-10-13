@@ -17,7 +17,7 @@ component's scope once, before the first engineer call, and hands the
 same snapshot to both guards, so an edit to that field changes nothing
 and refusing one could only ever be a false positive - which, being a
 Phase 1 failure, strands the component. The comparison is gone rather
-than relaxed; ``kstrl.scope`` records the measured history behind that.
+than relaxed; ``kstrl.plan.scope`` records the measured history behind that.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from typing import Any
 
 import pytest
 
-from kstrl.prd import UserStory
+from kstrl.plan.prd import UserStory
 from kstrl.verify import check_prd_stories, run_mechanical_verification
 from kstrl.verify_model import VerifyConfig
 from tests.helpers.stack_confirmation import in_process_stack

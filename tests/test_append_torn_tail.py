@@ -63,7 +63,7 @@ class TestProgressLogSurvivesATornTail:
     """
 
     def emit_three(self, tmp_path: Path) -> Any:
-        from kstrl.observability import ProgressLog
+        from kstrl.events.observability import ProgressLog
 
         log = ProgressLog(tmp_path / "progress.jsonl", run_id="r1")
         log.emit("alpha", component_id="c1")
@@ -71,7 +71,7 @@ class TestProgressLogSurvivesATornTail:
 
     def test_the_entry_after_a_torn_fragment_survives(self, tmp_path: Path) -> None:
         """Without the repair: ``['alpha']``, and beta is gone with the fragment."""
-        from kstrl.observability import read_progress_events
+        from kstrl.events.observability import read_progress_events
 
         log = self.emit_three(tmp_path)
         tear(log.path)
@@ -89,7 +89,7 @@ class TestProgressLogSurvivesATornTail:
     ) -> None:
         """Two records are at stake here, not one. Measured before the fix:
         ``['a1', 'a2']`` where three had been written and a fourth followed."""
-        from kstrl.observability import read_progress_events
+        from kstrl.events.observability import read_progress_events
 
         log = self.emit_three(tmp_path)
         log.emit("a2", component_id="c1")
@@ -125,8 +125,8 @@ class TestProgressLogSurvivesATornTail:
         that did nothing. Measured through the real reader rather than
         argued from the schema.
         """
-        from kstrl import reducer
-        from kstrl.observability import latest_run_id, read_progress_events
+        from kstrl.events import reducer
+        from kstrl.events.observability import latest_run_id, read_progress_events
 
         log = self.emit_three(tmp_path)
         tear(log.path)
@@ -145,7 +145,7 @@ class TestProgressLogSurvivesATornTail:
         torn journal onto the issue for whatever component happened to
         be running.
         """
-        from kstrl.observability import ProgressLog
+        from kstrl.events.observability import ProgressLog
 
         seen: list[dict[str, Any]] = []
 
@@ -167,7 +167,7 @@ class TestProgressLogSurvivesATornTail:
         The row is the durable trace and this is the live one; #312's
         argument for both applies unchanged here.
         """
-        from kstrl.observability import ProgressLog
+        from kstrl.events.observability import ProgressLog
 
         warnings: list[str] = []
         log = ProgressLog(
@@ -192,8 +192,8 @@ class TestProgressLogSurvivesATornTail:
         Measured before the fix: the component stays ``running``,
         because ``component_completed`` was the row the tear swallowed.
         """
-        from kstrl.observability import ProgressLog, read_progress_events
-        from kstrl.reducer import fold, upconvert_v1
+        from kstrl.events.observability import ProgressLog, read_progress_events
+        from kstrl.events.reducer import fold, upconvert_v1
 
         log = ProgressLog(tmp_path / ".kstrl" / "progress.jsonl", run_id="r1")
         log.emit("factory_started")
@@ -324,17 +324,17 @@ class TestJsonlSinkSurvivesATornTail:
     """
 
     def sink_at(self, path: Path) -> Any:
-        from kstrl.events import JsonlSink
+        from kstrl.events.events import JsonlSink
 
         return JsonlSink(path)
 
     def emit(self, sink: Any, component: str) -> None:
-        from kstrl.event_catalog import ComponentStarted
+        from kstrl.events.event_catalog import ComponentStarted
 
         sink.emit(ComponentStarted(component=component))
 
     def names_in(self, path: Path) -> list[str]:
-        from kstrl.events import read_events
+        from kstrl.events.events import read_events
 
         return [e.type for e in read_events(path)]
 
@@ -381,7 +381,7 @@ class TestJsonlSinkSurvivesATornTail:
         ``open``, the same way the write-boundary test does.
         """
         import kstrl.io.appendio as appendio_mod
-        from kstrl.events import JsonlSink
+        from kstrl.events.events import JsonlSink
 
         path = tmp_path / "events.jsonl"
         opens: list[str] = []
@@ -423,7 +423,7 @@ class TestJsonlSinkSurvivesATornTail:
         which is the shape of an ``ENOSPC`` on the write or an ``EIO``
         on the probe's own read.
         """
-        import kstrl.events as events_mod
+        import kstrl.events.events as events_mod
 
         path = tmp_path / "events.jsonl"
         path.write_bytes(b'{"event":"x"')  # a torn tail the first emit must repair
@@ -473,7 +473,7 @@ class TestJsonlSinkSurvivesATornTail:
         was already bound when it raised. The K1 defect re-entered
         through the one line the K1 fix did not move.
         """
-        import kstrl.events as events_mod
+        import kstrl.events.events as events_mod
 
         path = tmp_path / "events.jsonl"
         path.write_bytes(b'{"event":"x"')  # a torn tail the first emit must repair
@@ -530,8 +530,8 @@ class TestJsonlSinkSurvivesATornTail:
         which is the wrong thing to tell an operator about a row this
         build wrote on purpose.
         """
-        from kstrl.events import read_events
-        from kstrl.reducer import fold
+        from kstrl.events.events import read_events
+        from kstrl.events.reducer import fold
 
         path = tmp_path / "events.jsonl"
         sink = self.sink_at(path)

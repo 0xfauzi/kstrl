@@ -11,8 +11,8 @@ import pytest
 
 from kstrl.decisions import write_decisions
 from kstrl.decompose_prompt import spec_digest
-from kstrl.prd import PRD
-from kstrl.requirements import SpecRequirement
+from kstrl.plan.prd import PRD
+from kstrl.plan.requirements import SpecRequirement
 from tests.helpers import integration_harness as h
 from tests.helpers import integration_loop as lp
 

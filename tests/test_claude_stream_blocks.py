@@ -36,11 +36,11 @@ from kstrl.agents.claude_code import ClaudeCodeAgent, _parse_stream_event
 from kstrl.agents.claude_sdk import ClaudeSdkAgent
 from kstrl.agents.logging import LoggingAgent
 from kstrl.config.config import KstrlConfig
+from kstrl.events.usage import UsageRecord
 from kstrl.loop import COMPLETION_MARKER, run_loop
+from kstrl.proc.timeout import TimeoutConfig
 from kstrl.sandbox import SandboxConfig
-from kstrl.timeout import TimeoutConfig
 from kstrl.ui.plain import PlainUI
-from kstrl.usage import UsageRecord
 from tests.helpers.executables import put_on_path, write_executable
 
 FIXTURE = Path(__file__).parent / "fixtures" / "claude_stream" / "blocks.jsonl"

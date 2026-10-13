@@ -26,7 +26,7 @@ from typing import Any
 import pytest
 
 from kstrl.io.statedir import pre_run_prd_path
-from kstrl.manifest import Component, Manifest
+from kstrl.plan.manifest import Component, Manifest
 from tests.helpers.astwalk import (
     assert_census,
     blind_spot,

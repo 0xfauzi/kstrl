@@ -35,8 +35,8 @@ from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult, FactoryResult
 from kstrl.git.git import GitDiffError
 from kstrl.git.git_diff import get_diff_content
-from kstrl.manifest import Component, Manifest
 from kstrl.pipeline import ComponentPipeline
+from kstrl.plan.manifest import Component, Manifest
 from kstrl.review import (
     ReviewMode,
     ReviewResult,

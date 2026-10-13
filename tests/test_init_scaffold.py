@@ -260,8 +260,8 @@ class TestInitScaffold:
     def test_uncommented_scaffold_loads_through_every_loader(self, tmp_path: Path) -> None:
         from kstrl.config.config import KstrlConfig
         from kstrl.contract import ContractConfig
+        from kstrl.proc.timeout import TimeoutConfig
         from kstrl.security import SecurityConfig
-        from kstrl.timeout import TimeoutConfig
 
         (tmp_path / "kstrl.toml").write_text(_uncomment_scaffold(DEFAULT_KSTRL_TOML))
         KstrlConfig.load(tmp_path)

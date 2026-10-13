@@ -89,6 +89,7 @@ from kstrl.config import (
 )
 from kstrl.contract import CONTRACT_SECTION
 from kstrl.divergence import DIVERGENCE_SECTION
+from kstrl.events import NOTIFY_SECTION
 from kstrl.evolution_config import EVOLUTION_SECTION
 from kstrl.factory_config import FACTORY_SECTION
 from kstrl.feedforward import CODEBASE_SCAN_SECTION
@@ -96,15 +97,14 @@ from kstrl.inbox import INBOX_SECTION
 from kstrl.intake_gh import INTAKE_GITHUB_SECTION
 from kstrl.knowledge_facts import KNOWLEDGE_SECTION
 from kstrl.linear import LINEAR_SECTION
-from kstrl.observability import NOTIFY_SECTION
 from kstrl.policy import POLICY_SECTION
+from kstrl.proc import TIMEOUT_SECTION
 from kstrl.release import RELEASE_CONFIG_SECTION
 from kstrl.sandbox import SANDBOX_SECTION
 from kstrl.security import SECURITY_SECTION
 from kstrl.serve_config import SERVE_SECTION
 from kstrl.signals import SIGNALS_SECTION
 from kstrl.stack import STACK_SECTION, StackError
-from kstrl.timeout import TIMEOUT_SECTION
 from kstrl.verify_model import VERIFY_SECTION
 from kstrl.workqueue_items import QUEUE_SECTION
 

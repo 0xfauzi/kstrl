@@ -220,6 +220,8 @@ EXPECTED_FACTORY_SITES = 8
 #: ``kstrl/factory_autonomy.py`` (#776), so layer B walks every
 #: ``factory*.py`` under the one factory case. A glob and not a list, so a
 #: config read planted in a module divided out of ``factory.py`` is seen.
+#: The glob is recursive and the key is the path relative to ``kstrl/``,
+#: because #863 M2 moved ``factory_lock.py`` into ``kstrl/proc/``.
 EXPECTED_FACTORY_SITES_BY_FILE = {
     "factory.py": 0,
     "factory_acceptance.py": 0,
@@ -227,7 +229,7 @@ EXPECTED_FACTORY_SITES_BY_FILE = {
     "factory_autonomy.py": 1,
     "factory_config.py": 0,
     "factory_launch.py": 0,
-    "factory_lock.py": 0,
+    "proc/factory_lock.py": 0,
     "factory_preflight.py": 0,
     "factory_result.py": 0,
     "factory_run.py": 6,
@@ -235,7 +237,10 @@ EXPECTED_FACTORY_SITES_BY_FILE = {
     "factory_worker.py": 0,
     "factory_worktrees.py": 0,
 }
-FACTORY_MODULES = tuple(path.name for path in sorted(KSTRL_PACKAGE.glob("factory*.py")))
+FACTORY_MODULES = tuple(
+    path.relative_to(KSTRL_PACKAGE).as_posix()
+    for path in sorted(KSTRL_PACKAGE.rglob("factory*.py"))
+)
 
 #: The sections ``RunEnvelope.resolve`` names, as the walk sees them.
 #: Pinned by REFERENCE, because the envelope hands each section constant to
@@ -676,7 +681,10 @@ class TestTheRunReadsConfigOnlyBeforeItStarts:
                 f"the config reads of the serve modules moved between files. Found {by_file}"
             )
         if module == "factory.py":
-            by_file = {path.name: len(configwalk.read_sites(path, found)) for path in paths}
+            by_file = {
+                path.relative_to(KSTRL_PACKAGE).as_posix(): len(configwalk.read_sites(path, found))
+                for path in paths
+            }
             assert by_file == EXPECTED_FACTORY_SITES_BY_FILE, (
                 f"the config reads of the factory modules moved between files. Found {by_file}"
             )

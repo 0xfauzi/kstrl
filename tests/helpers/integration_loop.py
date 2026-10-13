@@ -19,20 +19,20 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
+from kstrl.events.usage import UsageRecord
 from kstrl.factory import run_factory
 from kstrl.factory_result import ComponentResult, FactoryResult
 from kstrl.git import git_diff
 from kstrl.inbox import Inbox, InboxConfig, InboxItem, ItemKind
 from kstrl.integration_fix import fix_prd_rel
 from kstrl.io.statedir import plan_prd_path
-from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.pipeline import ComponentPipeline
+from kstrl.plan.manifest import Component, ComponentStatus, Manifest
+from kstrl.plan.prd import PRD
 from kstrl.pr import PrOutcome
-from kstrl.prd import PRD
 from kstrl.review import ReviewMode, ReviewResult
 from kstrl.review import run_review as real_run_review
 from kstrl.ui.plain import PlainUI
-from kstrl.usage import UsageRecord
 from tests.helpers import integration_harness as h
 from tests.helpers.component_prd import PASSING_STORY, write_component_prd
 

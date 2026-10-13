@@ -98,9 +98,9 @@ from kstrl.init_cmd import run_init
 from kstrl.intake_issue import RemoteIssue, spec_from_issue
 from kstrl.knowledge_facts import KnowledgeConfig
 from kstrl.loop import COMPLETION_MARKER
-from kstrl.manifest import Component
 from kstrl.owner_answers import read_owner_answers
-from kstrl.requirements import SpecRequirement
+from kstrl.plan.manifest import Component
+from kstrl.plan.requirements import SpecRequirement
 from kstrl.stack import Stack
 from kstrl.ui.plain import PlainUI
 from kstrl.verify_model import CheckResult, VerificationResult, VerifyConfig

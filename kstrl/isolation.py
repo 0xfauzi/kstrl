@@ -14,9 +14,9 @@ Where a rung is used (slice 2). ``ks factory`` under a ``[stack]``
 proves both zones once per run with :func:`prove_zones`, in the policy
 its commands then run in, and refuses below a proven rung: the setup
 runs in the setup zone and every check in the test zone, through
-:meth:`kstrl.rung.ProvenRung.command`, and the records carry the test
+:meth:`kstrl.proc.rung.ProvenRung.command`, and the records carry the test
 zone's label. Without a ``[stack]`` nothing is proven and every command
-runs on the host under :data:`~kstrl.rung.HOST_LABEL`. ``ks doctor
+runs on the host under :data:`~kstrl.proc.rung.HOST_LABEL`. ``ks doctor
 --measure`` proves the two zones with no stack paths and only reports.
 
 The verdict rules. A canary is contained only when its operation failed
@@ -54,7 +54,7 @@ Two measured limits, both recorded rather than probed:
 No prover exists off macOS: on Linux nono's Landlock rules filter TCP
 by port and not by host, so it cannot express a localhost-only test zone
 (G7, measurement M2). There :func:`prove_zones` proves nothing and hands
-back the host fallback (:func:`kstrl.rung.host_fallback`) for both zones,
+back the host fallback (:func:`kstrl.proc.rung.host_fallback`) for both zones,
 whose one label every record carries (owner decision 2026-10-05, #700).
 :func:`prove_rung` itself still refuses off macOS, read off the real
 platform, so nono never runs unmeasured there.
@@ -80,17 +80,18 @@ from typing import Any
 from kstrl.events import RunPaths
 from kstrl.git import git, kstrl_version
 from kstrl.io import atomic_write_json, atomic_write_text, control_dir, read_json, xdg_state_home
-from kstrl.rung import (
+from kstrl.proc import (
     ENV_PROGRAM,
     HOST_LABEL,
     PROVER_PLATFORMS,
+    ChildOutputDecodeError,
     ProvenRung,
     Rung,
     host_fallback,
     nono_argv,
+    run_scrubbed,
     zone_dir,
 )
-from kstrl.scrubbed_run import ChildOutputDecodeError, run_scrubbed
 
 #: The environment variable naming the nono binary; PATH is searched
 #: when it is unset.
@@ -595,7 +596,7 @@ def prove_zones(
     root: Path, writable: Sequence[Path], readable: Sequence[Path], browser: bool
 ) -> dict[str, Rung]:
     """Both zones for one run, each proven in a scratch directory of its
-    own that the caller removes through :func:`kstrl.rung.release`, and
+    own that the caller removes through :func:`kstrl.proc.rung.release`, and
     with the control directory denied to both (#700 slice 2). On a
     platform with no prover, the host fallback for both and nothing
     proven (owner decision 2026-10-05).

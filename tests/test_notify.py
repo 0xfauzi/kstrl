@@ -23,16 +23,16 @@ from unittest.mock import patch
 import pytest
 
 from kstrl.config.config import KstrlConfig
-from kstrl.factory import run_factory
-from kstrl.factory_config import FactoryConfig
-from kstrl.factory_result import ComponentResult
-from kstrl.manifest import Component, ComponentStatus, Manifest
-from kstrl.observability import (
+from kstrl.events.observability import (
     NotifyConfig,
     NotifyHooks,
     latest_run_id,
     read_progress_events,
 )
+from kstrl.factory import run_factory
+from kstrl.factory_config import FactoryConfig
+from kstrl.factory_result import ComponentResult
+from kstrl.plan.manifest import Component, ComponentStatus, Manifest
 from kstrl.security import SecurityConfig
 from kstrl.ui.plain import PlainUI
 from tests.helpers import gitrepo

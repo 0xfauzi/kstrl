@@ -32,10 +32,17 @@ from pathlib import Path
 from typing import TYPE_CHECKING, TextIO
 
 from kstrl.agents.prompt_record import AgentCall
-from kstrl.event_catalog import Event, Log, WorkerHeartbeat
-from kstrl.events import EventBus, EventSink, JsonlSink, RunPaths
+from kstrl.events import (
+    Event,
+    EventBridgeUI,
+    EventBus,
+    EventSink,
+    JsonlSink,
+    Log,
+    RunPaths,
+    WorkerHeartbeat,
+)
 from kstrl.io import mint_run_id
-from kstrl.ui.bridge import EventBridgeUI
 
 if TYPE_CHECKING:
     from kstrl.ui import UI

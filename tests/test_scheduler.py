@@ -23,13 +23,13 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
-from kstrl import event_catalog
-from kstrl import events as ev
 from kstrl.config.config import KstrlConfig
+from kstrl.events import event_catalog
+from kstrl.events import events as ev
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult
-from kstrl.manifest import Component, ComponentStatus, Manifest
+from kstrl.plan.manifest import Component, ComponentStatus, Manifest
 from kstrl.ui.plain import PlainUI
 from kstrl.verify_model import VerifyConfig
 from tests.helpers import gitrepo

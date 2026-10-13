@@ -29,9 +29,9 @@ from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult, FactoryResult
 from kstrl.git import git_base, git_diff
-from kstrl.manifest import Component, ComponentStatus, Manifest
+from kstrl.plan.manifest import Component, ComponentStatus, Manifest
 from kstrl.pr import PrOutcome, push_create_and_merge_pr, wait_for_merge
-from kstrl.rung import HOST_LABEL
+from kstrl.proc.rung import HOST_LABEL
 from kstrl.ui.plain import PlainUI
 from kstrl.verify_model import VerifyConfig
 from tests.helpers import gitrepo

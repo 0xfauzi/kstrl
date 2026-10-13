@@ -33,7 +33,7 @@ from kstrl.acceptance_design import ACCEPTANCE_PROMPT_VERSION
 from kstrl.decisions import write_decisions
 from kstrl.decompose_prompt import spec_digest
 from kstrl.io.statedir import control_dir
-from kstrl.requirements import SpecRequirement
+from kstrl.plan.requirements import SpecRequirement
 from tests.helpers.executables import write_executable
 from tests.helpers.gitrepo import git_in
 from tests.test_acceptance_e2e import (

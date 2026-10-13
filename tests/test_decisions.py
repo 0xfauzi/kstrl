@@ -229,7 +229,7 @@ def _factory_project(tmp_path: Path, component_id: str) -> Path:
 
 
 def _one_component_manifest(project: str, spec_file: str) -> Any:
-    from kstrl.manifest import Component, Manifest
+    from kstrl.plan.manifest import Component, Manifest
 
     return Manifest(
         version="1",
@@ -306,7 +306,7 @@ class TestAManifestWithNoSpecBindsNothing:
 
     def test_the_real_from_prd_manifest_is_the_shape_this_protects(self, tmp_path: Path) -> None:
         """The premise, taken from the constructor rather than assumed."""
-        from kstrl.manifest import Manifest
+        from kstrl.plan.manifest import Manifest
 
         prd = tmp_path / "prd.json"
         prd.write_text("{}", encoding="utf-8")

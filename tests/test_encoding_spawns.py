@@ -47,8 +47,8 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     "agents/codex.py": 4,
     # #642: the leash's import, its `Popen` and the `Popen[bytes]` annotation.
     # #642 slice 6: +1, the `Popen[bytes]` annotation of `_hold`.
-    "agents/leash.py": 4,
-    "agents/proc.py": 7,
+    "proc/leash.py": 4,
+    "proc/proc.py": 7,
     # #696: 3, the import, one subprocess.run and one TimeoutExpired clause;
     # down from 4 when the retired [factory] worktree_setup_command path
     # held a second TimeoutExpired clause of its own.
@@ -82,19 +82,19 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     "intake_gh.py": 3,
     # #700: the import, and `TimeoutExpired` from `run_scrubbed`.
     "isolation.py": 2,
-    "observability.py": 5,
+    "events/observability.py": 5,
     "pr.py": 18,
     "git/pr_state.py": 5,
-    "procdispose.py": 10,
-    "procgroup.py": 4,
-    "procgroup_listing.py": 6,
+    "proc/procdispose.py": 10,
+    "proc/procgroup.py": 4,
+    "proc/procgroup_listing.py": 6,
     "retry_plan.py": 5,
     # 15: #776 V1 moved `run_scrubbed` and `start_scrubbed` here from
     # `verify.py`, with their `subprocess` spellings (see `verify.py` below).
-    "scrubbed_run.py": 15,
+    "proc/scrubbed_run.py": 15,
     "serve_process.py": 8,
     "io/statedir.py": 3,
-    "temp_worktree.py": 3,
+    "proc/temp_worktree.py": 3,
     # 25: `_base_finding`'s `git show` (#414/#425); `git merge-base` moved to `git.py` in #435.
     # 26: #632, `run_scrubbed`'s `subprocess.PIPE` for a stdin it was given.
     # 27: #696, `check_stack_command`'s `subprocess.TimeoutExpired`.
@@ -111,8 +111,8 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     # which holds 15 (measured by running this census). #776 V3: the 2
     # moved on to `verify_commands.py`, and `verify.py` holds none.
     "verify_commands.py": 2,
-    "worktree_setup.py": 2,  # #624: the import, and `TimeoutExpired` from `run_scrubbed`
-    "worktree_sweep.py": 2,  # #461: the import, and `TimeoutExpired` from `run_scrubbed`
+    "proc/worktree_setup.py": 2,  # #624: the import, and `TimeoutExpired` from `run_scrubbed`
+    "proc/worktree_sweep.py": 2,  # #461: the import, and `TimeoutExpired` from `run_scrubbed`
 }
 
 
@@ -121,7 +121,7 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
 #: never between text mode and bytes mode.
 EXPECTED_TEXT_MODE_SPAWNS: dict[str, int] = {
     "agents/codex.py": 1,
-    "agents/proc.py": 1,
+    "proc/proc.py": 1,
     "breaker.py": 1,
     # 5: #566 moved the fresh-retry reset from a bytes-mode `git branch -D`
     # to a text-mode `git worktree add -B`. #776 F2 moves them to
@@ -143,7 +143,7 @@ EXPECTED_TEXT_MODE_SPAWNS: dict[str, int] = {
     "intake_gh.py": 1,
     "pr.py": 9,
     "git/pr_state.py": 2,
-    "procgroup_listing.py": 1,
+    "proc/procgroup_listing.py": 1,
     "retry_plan.py": 1,
     "serve_process.py": 1,
     "io/statedir.py": 1,
@@ -156,7 +156,6 @@ EXPECTED_TEXT_MODE_SPAWNS: dict[str, int] = {
 #: spawn being deleted.
 EXPECTED_CLEARED_SPAWNS: tuple[str, ...] = (
     "agents/codex.py subprocess.run(['codex', 'exec', '--help'], check=False, stdout=subpro",
-    "agents/proc.py subprocess.Popen(leash_command(argv, lifeline=lifeline_read, status=st",
     "breaker.py subprocess.run(['git', *args], cwd=cwd, capture_output=True, encoding=",
     # codespell:ignore-next-line
     "factory_worktrees.py subprocess.run(['git', 'branch', '-D', branch], cwd=root_dir, capture_",
@@ -200,6 +199,7 @@ EXPECTED_CLEARED_SPAWNS: tuple[str, ...] = (
     "pr.py subprocess.run(['gh', 'pr', 'merge', str(pr_number), f'--{method}'], c",
     "pr.py subprocess.run(['git', 'push', '--delete', '--', 'origin', branch], cw",
     "pr.py subprocess.run(['git', 'push', '-u', '--', 'origin', branch], cwd=cwd,",
+    "proc/proc.py subprocess.Popen(leash_command(argv, lifeline=lifeline_read, status=st",
     "retry_plan.py subprocess.run(['git', 'branch', '-D', failed_branch], cwd=root_dir, c",
     "serve_process.py subprocess.Popen(command, cwd=str(cwd), env=env, stdout=subprocess.PIP",
 )
@@ -213,7 +213,8 @@ EXPECTED_CLEARED_SPAWNS: tuple[str, ...] = (
 #: SECOND row arriving here is the dangerous direction: it means ``errors=``
 #: was used to quiet a site rather than to name a considered exception.
 EXPECTED_LENIENT_SPAWNS: tuple[str, ...] = (
-    "procgroup_listing.py subprocess.Popen(PS_ARGV, stdout=subprocess.PIPE, stderr=subprocess.PI",
+    "proc/procgroup_listing.py subprocess.Popen(PS_ARGV, stdout=subprocess.PIPE, "
+    "stderr=subprocess.PI",
 )
 
 
@@ -231,7 +232,7 @@ EXPECTED_LENIENT_SPAWNS: tuple[str, ...] = (
 EXPECTED_BYTES_MODE_SPAWNS: dict[str, int] = {
     # #642: the leash starts the agent on the pipes it inherited and reads
     # none of them, so there is nothing for it to decode.
-    "agents/leash.py": 1,
+    "proc/leash.py": 1,
     "doctor.py": 1,
     # 7: #566 deleted the fresh-retry `git branch -D branch_name`, which
     # took no encoding; its replacement decodes as utf-8. #624 moved the
@@ -252,7 +253,7 @@ EXPECTED_BYTES_MODE_SPAWNS: dict[str, int] = {
     "git/git_base.py": 2,
     "git/git_diff.py": 1,
     "git/git_tree.py": 4,
-    "observability.py": 1,
+    "events/observability.py": 1,
     "retry_plan.py": 3,
     # 2: `_base_finding`'s `git show` (#414/#425), and #527's
     # `run_scrubbed`, which reads bytes and decodes them itself, strictly,
@@ -262,7 +263,7 @@ EXPECTED_BYTES_MODE_SPAWNS: dict[str, int] = {
     # is read back through `readable_text` as evidence only. #696 slice 8: -1,
     # `_base_finding` went with the rules that read one language's files.
     # #776 V1: both spawns moved here from `verify.py`.
-    "scrubbed_run.py": 2,
+    "proc/scrubbed_run.py": 2,
 }
 
 
@@ -394,7 +395,7 @@ class TestEverySpawnDecodeNamesUtf8:
     def test_a_spawn_naming_encoding_and_forwarding_kwargs_is_undecided_not_cleared(
         self,
     ) -> None:
-        """A1, the shape once live in ``kstrl/timeout.py``: ``**fwd`` is opaque,
+        """A1, the shape once live in ``kstrl/proc/timeout.py``: ``**fwd`` is opaque,
         so the explicit ``encoding="utf-8"`` beside it proves nothing - the
         dict could carry an ``errors=`` this walk never sees. Measured
         against the pre-fix walk: this shape was wrongly CLEARED.

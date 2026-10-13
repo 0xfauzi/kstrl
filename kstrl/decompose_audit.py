@@ -18,18 +18,19 @@ from kstrl.decisions import (
 from kstrl.decompose_reply import (
     _file_stack_proposal,
 )
-from kstrl.event_catalog import (
+from kstrl.events import (
+    ARCHITECT_COMPONENT,
     ArtifactWritten,
     ComponentFailed,
     Event,
+    EventBus,
     PhaseCompleted,
     PhaseStarted,
     RunCompleted,
     SpecIssueRecorded,
 )
-from kstrl.events import EventBus
 from kstrl.owner_answers import OwnerAnswers
-from kstrl.requirements import parse_requirements
+from kstrl.plan import parse_requirements
 from kstrl.spec_convergence import (
     _build_convergence,
     _excluded_history,
@@ -44,10 +45,9 @@ from kstrl.spec_issues import (
     _surface_spec_issues,
     persist_spec_issues,
 )
-from kstrl.usage import ARCHITECT_COMPONENT
 
 if TYPE_CHECKING:
-    from kstrl.requirements import SpecRequirement
+    from kstrl.plan import SpecRequirement
     from kstrl.spec_issues import SpecIssue
     from kstrl.ui import UI
 

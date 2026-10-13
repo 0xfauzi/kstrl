@@ -26,10 +26,10 @@ from typing import Any
 import pytest
 
 from kstrl.factory_config import FactoryConfig, claim_gate_unreachable_warning
-from kstrl.findings import CLAIM_DISAGREEMENT_CATEGORY, Finding
-from kstrl.manifest import Component
 from kstrl.pipeline_transitions import Transition
-from kstrl.prd import PRD
+from kstrl.plan.findings import CLAIM_DISAGREEMENT_CATEGORY, Finding
+from kstrl.plan.manifest import Component
+from kstrl.plan.prd import PRD
 from kstrl.review import ReviewResult
 from tests.helpers.claim_agreement import _criterion, _prd, _review, _story, _write_prd
 from tests.helpers.replay import failing_run

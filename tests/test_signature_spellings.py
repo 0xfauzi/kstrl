@@ -116,13 +116,13 @@ EXPECTED_SPELLINGS: frozenset[tuple[str, str]] = frozenset(
         ("kstrl/stack.py", "stack"),
         # Finding metadata: CWE and OWASP ids, and the keys a finding
         # serialises its own fields under.
-        ("kstrl/findings.py", "attempt"),
-        ("kstrl/findings.py", "category"),
-        ("kstrl/findings.py", "cwe"),
-        ("kstrl/findings.py", "model"),
-        ("kstrl/findings.py", "owasp"),
-        ("kstrl/findings.py", "phase"),
-        ("kstrl/findings.py", "policy"),
+        ("kstrl/plan/findings.py", "attempt"),
+        ("kstrl/plan/findings.py", "category"),
+        ("kstrl/plan/findings.py", "cwe"),
+        ("kstrl/plan/findings.py", "model"),
+        ("kstrl/plan/findings.py", "owasp"),
+        ("kstrl/plan/findings.py", "phase"),
+        ("kstrl/plan/findings.py", "policy"),
         # A GitHub label namespace.
         ("kstrl/intake_gh.py", "kstrl"),
         # Inbox dedupe keys and the budget label, all keyed the same way

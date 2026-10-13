@@ -12,9 +12,10 @@ from pathlib import Path
 from typing import Any
 
 from kstrl.agents.base import TOOL_RESULT_PREFIX
-from kstrl.agents.proc import DeadlineStreamer, timeout_message
 from kstrl.agents.prompt_record import record_prompt
+from kstrl.events import UsageRecord
 from kstrl.io import read_json
+from kstrl.proc import DeadlineStreamer, timeout_message
 from kstrl.sandbox import (
     ClaudeRole,
     SandboxConfig,
@@ -24,7 +25,6 @@ from kstrl.sandbox import (
     claude_session_argv,
     claude_session_env,
 )
-from kstrl.usage import UsageRecord
 from kstrl.write_guard import SessionGate
 
 logger = logging.getLogger(__name__)

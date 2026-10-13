@@ -12,13 +12,12 @@ from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 
-from kstrl import event_catalog
 from kstrl.agents.prompt_record import AgentCall
 from kstrl.context import IterationContext
-from kstrl.findings import Finding, finding_model, tag_finding_with_attempt
-from kstrl.manifest import Component, ComponentStatus
+from kstrl.events import event_catalog
 from kstrl.pipeline_state import PipelineState, iso_now
-from kstrl.worktree_sweep import WorktreeSweep, sweep_findings
+from kstrl.plan import Component, ComponentStatus, Finding, finding_model, tag_finding_with_attempt
+from kstrl.proc import WorktreeSweep, sweep_findings
 
 
 class AttemptRecorder(PipelineState):

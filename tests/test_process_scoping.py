@@ -496,7 +496,7 @@ class TestTheLivenessHelperCannotPassByMeasuringNothing:
     Why absence is only reportable by a call that proved it can see
     something is argued in ``tests/helpers/procs.py``. These pin it.
 
-    The reading moved to ``kstrl.procgroup`` in #298, so the ``ps``
+    The reading moved to ``kstrl.proc.procgroup`` in #298, so the ``ps``
     double is ``procs.fake_ps``. What is under test here is still the
     helper's POLICY: a test that cannot see must fail. The daemon on
     the same reading degrades instead, which ``tests/test_serve.py``

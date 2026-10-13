@@ -23,7 +23,7 @@ import pytest
 
 from kstrl.config_preflight import collect_config_problems, config_problem_lines
 from kstrl.config_report import build_config_report
-from kstrl.timeout import TimeoutConfig
+from kstrl.proc.timeout import TimeoutConfig
 from tests.helpers import astwalk
 
 #: A malformed document, as opposed to a bad value inside a good one.

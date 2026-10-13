@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from kstrl.usage import UsageTotals
+from kstrl.events import UsageTotals
 
 # How many NON-REPORTING agent calls the RUN must accumulate before an
 # enabled ceiling is declared unenforceable (see LoopBudget.halt_verdict).

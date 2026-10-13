@@ -26,9 +26,9 @@ from pathlib import Path
 
 from rich.text import Text
 
-from kstrl import event_catalog
-from kstrl.manifest import Component, ComponentStatus
-from kstrl.reducer import fold, load_run_state
+from kstrl.events import event_catalog
+from kstrl.events.reducer import fold, load_run_state
+from kstrl.plan.manifest import Component, ComponentStatus
 from tests.test_harness_path_scope import COMPONENT_ID, _component, _manifest, _setup_project
 from tests.test_scope_snapshot import _run, _Seams
 

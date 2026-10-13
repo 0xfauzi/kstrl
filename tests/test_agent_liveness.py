@@ -15,7 +15,8 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.agents import liveness, proc
+from kstrl.agents import liveness
+from kstrl.proc import proc
 
 #: The real subprocess seam, captured at import time - tests/conftest.py
 #: replaces the module attribute per test so nothing can reach a CLI by

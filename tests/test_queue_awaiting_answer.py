@@ -26,9 +26,9 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner, Result
 
-from kstrl import event_catalog
-from kstrl import events as ev
 from kstrl.cli import cli
+from kstrl.events import event_catalog
+from kstrl.events import events as ev
 from kstrl.inbox import Inbox, InboxItem, ItemKind, ItemStatus
 from kstrl.intake_gh import GitHubIntakeConfig
 from kstrl.io.runid import mint_run_id, run_kind

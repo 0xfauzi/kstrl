@@ -42,7 +42,7 @@ from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult, FactoryResult
 from kstrl.feedforward import CodebaseScanConfig
 from kstrl.knowledge_facts import KnowledgeConfig
-from kstrl.manifest import Component, Manifest
+from kstrl.plan.manifest import Component, Manifest
 from kstrl.review import ReviewResult
 from kstrl.security import SecurityConfig, SecurityMode
 from kstrl.ui.plain import PlainUI

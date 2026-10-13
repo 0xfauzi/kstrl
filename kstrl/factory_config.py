@@ -19,21 +19,21 @@ from kstrl.config import ConfigSection, check_number, check_numbers
 from kstrl.contract import (
     ContractConfig,
 )
+from kstrl.events import (
+    NotifyConfig,
+)
 from kstrl.feedforward import CodebaseScanConfig
 from kstrl.launch_record import FlagValue
 from kstrl.linear import LinearConfig
-from kstrl.manifest import (
+from kstrl.plan import (
     Component,
-)
-from kstrl.observability import (
-    NotifyConfig,
+    SpecRequirement,
 )
 from kstrl.policy import PolicyConfig
-from kstrl.requirements import SpecRequirement
+from kstrl.proc import Rung, TimeoutConfig, WorktreeSetup
 from kstrl.review import (
     ReviewMode,
 )
-from kstrl.rung import Rung
 from kstrl.security import (
     SecurityConfig,
     SecurityMode,
@@ -42,9 +42,7 @@ from kstrl.stack import (
     Stack,
     stack_in_force,
 )
-from kstrl.timeout import TimeoutConfig
 from kstrl.verify_model import VerifyConfig
-from kstrl.worktree_setup import WorktreeSetup
 
 if TYPE_CHECKING:
     from kstrl.ui import UI
@@ -236,7 +234,7 @@ class FactoryConfig:
     # journal records on every superseded attempt.
     convergence_attempts: int = 0
     # #624: the time limit of the command that gives a kstrl worktree its
-    # own dependencies (see kstrl/worktree_setup.py), in seconds, 0 = no
+    # own dependencies (see kstrl/proc/worktree_setup.py), in seconds, 0 = no
     # limit (#467). The command is the [stack]'s ``setup`` (#696).
     worktree_setup_timeout: float = 0.0
     # #696: the project's [stack], read by ``load``. Its ``setup`` is the

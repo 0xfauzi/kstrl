@@ -1,6 +1,6 @@
 """The ``ps`` read and its parse: bytes in, :class:`_Listing` out.
 
-Split out of ``kstrl/procgroup.py`` by #209 round 3. That file sat at
+Split out of ``kstrl/proc/procgroup.py`` by #209 round 3. That file sat at
 exactly 800 lines, which is the repo's per-file ratchet, and round 2 of
 the review asked for three more paragraphs of recorded reasoning. The
 alternative was deleting reasoning to fit, so the cut was taken instead.
@@ -9,14 +9,14 @@ WHERE THE CUT IS. This module turns a listing into the four facts
 :class:`_Listing` carries and knows nothing about what they mean. What
 they mean about a process group - the refusal table, the kernel
 cross-check, the two public reads and their consequences - stays in
-``kstrl.procgroup``, which imports every name below, so the module that
+``kstrl.proc.procgroup``, which imports every name below, so the module that
 owned them still exports them and no caller moved.
 
 WHAT IS NOT HERE, deliberately, and why this file is not the place to
 look for it. Why there is exactly ONE ``ps`` parse in this tree, why
 absence needs a control, what each of ``PS_ARGV``'s three columns is
 load-bearing for, and what the two deadlines below do and do not bound
-are all argued at length in ``kstrl.procgroup``'s module docstring.
+are all argued at length in ``kstrl.proc.procgroup``'s module docstring.
 Every reader of this file arrives from there. Repeating any of it here
 is how two statements of one rule start to disagree, which is the defect
 class the module next door exists to write down.
@@ -30,9 +30,9 @@ failure handling until the daemon's answer and the suite's stop agreeing
 points here, because here is where the call is.
 
 ONE THING MOVED THAT A TEST CAN SEE: a test patching the ``ps`` argv or
-either deadline must patch ``kstrl.procgroup_listing``, because that is
+either deadline must patch ``kstrl.proc.procgroup_listing``, because that is
 where :func:`_read_ps` reads them from. Measured when this file was cut:
-the four bounded-call tests patched ``kstrl.procgroup.PS_ARGV``, the
+the four bounded-call tests patched ``kstrl.proc.procgroup.PS_ARGV``, the
 patch reached a re-exported binding nothing reads, and all four went RED
 rather than quietly green. Red is not guaranteed for the next such test,
 which is why this paragraph is here.
@@ -43,7 +43,7 @@ from __future__ import annotations
 import subprocess
 from dataclasses import dataclass
 
-from kstrl.procdispose import drain_or_abandon, reap_abandoned
+from kstrl.proc.procdispose import drain_or_abandon, reap_abandoned
 
 #: The four columns the questions need and no more. ``pid`` is there for
 #: the completeness control, not for identifying anything. ``command``
@@ -52,7 +52,7 @@ from kstrl.procdispose import drain_or_abandon, reap_abandoned
 #: that is read here so the tree keeps one ``ps`` call. It is the LAST
 #: column because it holds spaces, and ``-ww`` keeps a long one whole
 #: (``ps`` honours ``COLUMNS`` even when piped). Why each is load-bearing
-#: and what it costs is argued in ``kstrl.procgroup``'s module docstring,
+#: and what it costs is argued in ``kstrl.proc.procgroup``'s module docstring,
 #: which is where this file's own docstring sends you.
 PS_ARGV = ("ps", "-A", "-ww", "-o", "pid=,pgid=,stat=,command=")
 
@@ -82,7 +82,7 @@ def _read_ps() -> subprocess.CompletedProcess[str]:
     outside both, because ``Popen.__init__`` blocks on an ``os.read`` of
     the exec error pipe that takes no timeout. Measured with a 3.0s stall
     injected there and both constants at 0.05: 3.011s.
-    ``kstrl.procgroup``'s module docstring has the rest, in its "WHAT
+    ``kstrl.proc.procgroup``'s module docstring has the rest, in its "WHAT
     THAT BOUND DOES NOT COVER" section, including why that residual is
     not new.
 
@@ -185,7 +185,7 @@ def _read_listing(stdout: str, pgid: int) -> _Listing:
     unreaped zombie as alive; a genuinely empty group still reaps,
     because the kernel answers ESRCH without consulting the listing at
     all. That failure direction is over-reporting alive, which
-    ``kstrl.procgroup``'s module docstring already declares as the
+    ``kstrl.proc.procgroup``'s module docstring already declares as the
     fallback's ONLY error, and it is VISIBLE: the item is poisoned and set ``needs_human``. The
     other direction, a listing that answered anyway and called a running
     group gone, is silent, and silence is #186 F1 itself. Round 1 of

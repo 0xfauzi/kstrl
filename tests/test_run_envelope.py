@@ -23,7 +23,7 @@ import pytest
 from kstrl.autonomy import AutonomyState
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult
-from kstrl.manifest import Component
+from kstrl.plan.manifest import Component
 from kstrl.policy import PolicyConfig
 from kstrl.verify_model import VerificationResult
 from tests.helpers.run_config import BEFORE, MALFORMED, count_toml_parses, drive_run, empty_run

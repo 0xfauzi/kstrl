@@ -32,7 +32,7 @@ from kstrl.knowledge import (
     build_knowledge_context,
 )
 from kstrl.knowledge_facts import Fact, KnowledgeConfig, write_facts
-from kstrl.manifest import Component, Manifest
+from kstrl.plan.manifest import Component, Manifest
 from kstrl.ui.plain import PlainUI
 from kstrl.verify_model import VerifyConfig
 from tests.helpers.component_prd import write_component_prd

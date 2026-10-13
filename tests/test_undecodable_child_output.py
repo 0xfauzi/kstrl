@@ -1,5 +1,5 @@
 """#416: a verification child's bytes are decoded as utf-8 by
-``kstrl.scrubbed_run.run_scrubbed``, and a child whose output it cannot decode is
+``kstrl.proc.scrubbed_run.run_scrubbed``, and a child whose output it cannot decode is
 now a named error every call site answers for, rather than a bare
 ``UnicodeDecodeError`` (a ``ValueError``) escaping as a traceback.
 
@@ -20,7 +20,7 @@ import pytest
 
 from kstrl import contract
 from kstrl.contract import ContractConfig
-from kstrl.scrubbed_run import ChildOutputDecodeError, run_scrubbed
+from kstrl.proc.scrubbed_run import ChildOutputDecodeError, run_scrubbed
 from kstrl.ui.plain import PlainUI
 from kstrl.verify_commands import check_stack_command
 from tests.helpers.astwalk import (
@@ -106,7 +106,7 @@ _ACCEPTED = frozenset({"ChildOutputDecodeError"})
 #: with this target finds only the sites outside ``verify.py``; the sites
 #: inside call the bare local name, which the resolver does not place. The
 #: union with the bare-name walk below is built in ``_run_scrubbed_calls``.
-_RESOLVED_TARGET = frozenset({"kstrl.scrubbed_run.run_scrubbed"})
+_RESOLVED_TARGET = frozenset({"kstrl.proc.scrubbed_run.run_scrubbed"})
 
 
 def _not_a_bare_reraise(handler: ast.ExceptHandler) -> bool:
@@ -319,7 +319,7 @@ def test_the_walk_reports_what_it_could_not_decide() -> None:
     # lint) deleted with the Python defaults.
     # #696 slice 8: 1, the dead-code, mutation, coverage and adequacy
     # drivers deleted; check_stack_command's run is the one left.
-    # #776 V1: 0. verify.py imports run_scrubbed from kstrl.scrubbed_run, so the
+    # #776 V1: 0. verify.py imports run_scrubbed from kstrl.proc.scrubbed_run, so the
     # resolver now places its one call; no bare-name call is left undecided.
     assert counts == {}
 
@@ -339,10 +339,10 @@ def test_the_call_site_census_is_pinned() -> None:
         # #696: +1, check_stack_command.
         # #696 slice 4: -3, the per-gate runners.
         # #696 slice 8: -8, the dead-code, mutation and coverage drivers.
-        "temp_worktree.py": 3,
+        "proc/temp_worktree.py": 3,
         "verify_commands.py": 1,
-        "worktree_setup.py": 1,
-        "worktree_sweep.py": 1,
+        "proc/worktree_setup.py": 1,
+        "proc/worktree_sweep.py": 1,
     }
 
 
@@ -422,22 +422,22 @@ def test_the_disposition_census_is_pinned() -> None:
         "isolation.py:returns": 1,
         # #700 slice 3: the replay names the stage `undecodable` and reads on.
         "replay.py:converts": 1,
-        "temp_worktree.py:raises": 1,
-        "temp_worktree.py:returns": 1,
-        "temp_worktree.py:swallows": 1,
+        "proc/temp_worktree.py:raises": 1,
+        "proc/temp_worktree.py:returns": 1,
+        "proc/temp_worktree.py:swallows": 1,
         # #696: check_stack_command returns an unmeasured failing row. #696
         # slice 8 removed the other seven returns and the mutation-report
         # reader's convert with the drivers that held them.
         "verify_commands.py:returns": 1,
-        "worktree_setup.py:returns": 1,
-        "worktree_sweep.py:returns": 1,
+        "proc/worktree_setup.py:returns": 1,
+        "proc/worktree_sweep.py:returns": 1,
     }
 
 
 def _offending_class(where: str, node: ast.AST) -> str | None:
     if not isinstance(node, ast.ClassDef) or node.name != "ChildOutputDecodeError":
         return None
-    if where == "scrubbed_run.py":
+    if where == "proc/scrubbed_run.py":
         return None
     return f"{where}:{node.lineno} class"
 
@@ -445,7 +445,7 @@ def _offending_class(where: str, node: ast.AST) -> str | None:
 def _offending_binding(where: str, module: str, tree: ast.Module) -> list[str]:
     """Every binding of ``ChildOutputDecodeError`` in one module that is
     not its ``ClassDef`` in ``scrubbed_run.py`` or a resolved origin of
-    ``kstrl.scrubbed_run.ChildOutputDecodeError``.
+    ``kstrl.proc.scrubbed_run.ChildOutputDecodeError``.
 
     Built on ``astwalk.bindings`` rather than hand-rolled per shape
     (#416's reuse review): the walk this replaced checked only
@@ -462,7 +462,7 @@ def _offending_binding(where: str, module: str, tree: ast.Module) -> list[str]:
             found.append(hit)
     table = bindings(tree, module=module)
     origin = table.origins.get("ChildOutputDecodeError")
-    if origin is not None and origin != "kstrl.scrubbed_run.ChildOutputDecodeError":
+    if origin is not None and origin != "kstrl.proc.scrubbed_run.ChildOutputDecodeError":
         found.append(f"{where}: bound to {origin}")
     return found
 
@@ -470,7 +470,7 @@ def _offending_binding(where: str, module: str, tree: ast.Module) -> list[str]:
 def test_the_error_name_has_one_home() -> None:
     """Every binding of the name ``ChildOutputDecodeError`` in ``kstrl/``
     is either its ``ClassDef`` in ``scrubbed_run.py`` or resolves to
-    ``kstrl.scrubbed_run.ChildOutputDecodeError``. A name is not an identity
+    ``kstrl.proc.scrubbed_run.ChildOutputDecodeError``. A name is not an identity
     (#324 round 2)."""
     offenders: list[str] = []
     for source_file in package_sources():

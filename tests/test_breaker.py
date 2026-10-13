@@ -21,10 +21,10 @@ from kstrl.breaker import (
     compute_diff_hash,
 )
 from kstrl.config.config import KstrlConfig
+from kstrl.events.observability import read_progress_events
 from kstrl.factory_result import ComponentResult
 from kstrl.loop import run_loop
-from kstrl.manifest import ComponentStatus
-from kstrl.observability import read_progress_events
+from kstrl.plan.manifest import ComponentStatus
 from kstrl.ui.plain import PlainUI
 from tests.helpers import gitrepo
 

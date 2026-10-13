@@ -16,7 +16,7 @@ consequently CANNOT meet the R0.1 timeout battery.
 
 So the SDK runs one level down: ``run()`` spawns
 ``python -m kstrl.agents.sdk_runner`` through the R0.1-proven
-:class:`~kstrl.agents.proc.DeadlineStreamer` (``start_new_session=True``).
+:class:`~kstrl.proc.proc.DeadlineStreamer` (``start_new_session=True``).
 The runner drives the SDK; the claude CLI and its tool processes are
 grandchildren inside the runner's session, so a deadline breach
 group-kills the entire tree with the same measured machinery every
@@ -38,16 +38,16 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import IO, Any
 
-from kstrl.agents.proc import DeadlineStreamer, timeout_message
 from kstrl.agents.prompt_record import record_prompt
+from kstrl.events import UsageRecord
 from kstrl.io import read_json
+from kstrl.proc import DeadlineStreamer, timeout_message
 from kstrl.sandbox import (
     SandboxConfig,
     claude_review_sandbox_settings,
     claude_sandbox_drops_skip_permissions,
     claude_sandbox_settings,
 )
-from kstrl.usage import UsageRecord
 
 logger = logging.getLogger(__name__)
 

@@ -24,10 +24,10 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
-from kstrl.agents.proc import DeadlineStreamer, kill_active_process_groups
 from kstrl.factory import run_factory
 from kstrl.factory_result import ComponentResult
-from kstrl.shutdown import StopController
+from kstrl.proc.proc import DeadlineStreamer, kill_active_process_groups
+from kstrl.proc.shutdown import StopController
 from kstrl.ui.plain import PlainUI
 from tests.helpers.procs import (
     NEEDS_A_READABLE_PS,
@@ -383,7 +383,7 @@ class TestTheOrphanCheckIsScopedToItsOwnGroup:
         which counts a zombie as alive by design, so the assertion below
         would fail pointing at kstrl rather than at the environment.
         """
-        from kstrl.procgroup import signal_probe_alive
+        from kstrl.proc.procgroup import signal_probe_alive
         from tests.helpers.procs import process_group_alive
 
         parent = subprocess.Popen(

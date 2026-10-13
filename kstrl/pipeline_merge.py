@@ -8,21 +8,21 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from kstrl import event_catalog
 from kstrl.acceptance_lines import pr_isolation
 from kstrl.context import IterationContext, IterationRecord
+from kstrl.events import event_catalog
 from kstrl.git import git, git_base
 from kstrl.inbox import (
     InboxItem,
     ItemKind,
     ItemStatus,
 )
-from kstrl.manifest import (
+from kstrl.pipeline_state import iso_now
+from kstrl.pipeline_transitions import Transition, Transitions
+from kstrl.plan import (
     Component,
     ComponentStatus,
 )
-from kstrl.pipeline_state import iso_now
-from kstrl.pipeline_transitions import Transition, Transitions
 
 if TYPE_CHECKING:
     from kstrl.factory_result import ComponentResult

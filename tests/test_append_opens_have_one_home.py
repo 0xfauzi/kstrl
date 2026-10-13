@@ -262,7 +262,7 @@ class Reason(StrEnum):
 #: classmethod that happens to be called ``open``, and one is
 #: ``atomicio``'s ``os.open`` with ``O_EXCL`` flags, which creates.
 ALLOWED_APPEND_OPENS: dict[str, tuple[Reason, str]] = {
-    "factory_lock.py:acquire_run_lock": (Reason.LOCK_FILE, "the run lock"),
+    "proc/factory_lock.py:acquire_run_lock": (Reason.LOCK_FILE, "the run lock"),
     "serve_gates.py:factory_lock_held": (Reason.LOCK_FILE, "reads whether the run lock is held"),
     "serve.py:serve_lock": (Reason.LOCK_FILE, "the daemon's own lock"),
     "io/statedir.py:control_lock": (Reason.LOCK_FILE, "the control-directory lock"),
@@ -314,7 +314,7 @@ EXPECTED_APPEND_OPENS: dict[str, int] = {
     "commandrun.py: open('a')": 1,
     "factory_acceptance.py: EvolutionJournal.open(root_dir)": 1,
     "factory_worker.py: open('a')": 2,
-    "factory_lock.py: open('a+')": 1,
+    "proc/factory_lock.py: open('a+')": 1,
     # Two since #463: carry_interrupted_run is the second caller. Three
     # since #482: journal_integration_result is the third.
     "pipeline_attempt.py: EvolutionJournal.open(self.root_dir)": 2,
@@ -479,7 +479,7 @@ def routed_append_census() -> dict[str, int]:
 EXPECTED_ROUTED_APPENDS: dict[str, int] = {
     "io/appendio.py: appending(lock=lock)": 1,
     "io/appendio.py: open_for_append(lock=default (False))": 1,
-    "events.py: open_for_append(lock=default (False))": 1,
+    "events/events.py: open_for_append(lock=default (False))": 1,
     "evolution.py: append_records(lock=True)": 1,
     "evolution.py: append_records(lock=default (False))": 1,
     "signals.py: append_records(lock=True)": 1,
@@ -489,7 +489,7 @@ EXPECTED_ROUTED_APPENDS: dict[str, int] = {
     "inbox.py: append_records(lock=default (False))": 1,
     "init_cmd.py: append_records(lock=default (False))": 1,
     "knowledge.py: append_records(lock=default (False))": 1,
-    "observability.py: append_records(lock=default (False))": 1,
+    "events/observability.py: append_records(lock=default (False))": 1,
     "workqueue_store.py: append_records(lock=default (False))": 1,
 }
 

@@ -10,8 +10,9 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import distill_readiness, event_catalog
-from kstrl import events as ev
+from kstrl import distill_readiness
+from kstrl.events import event_catalog
+from kstrl.events import events as ev
 
 OLDER = "factory-20260101-120000.000000-aaaaaa"
 NEWER = "factory-20260201-120000.000000-bbbbbb"

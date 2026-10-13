@@ -31,7 +31,7 @@ from tests.test_process_lifecycle import EXPECTED_PROCESS_MODULES
 
 
 def _process_module_label(dotted: str) -> str:
-    """``kstrl.agents.proc`` -> ``agents/proc.py``, the key format
+    """``kstrl.proc.proc`` -> ``proc/proc.py``, the key format
     ``EXPECTED_PROCESS_MODULES`` uses (``tests/helpers/astwalk/corpus.py::label``,
     read relative to ``kstrl/``)."""
     return dotted.removeprefix("kstrl.").replace(".", "/") + ".py"
@@ -189,7 +189,7 @@ class TestReleaseModuleContainment:
         is vacuously empty (#324's own recorded failure mode), not
         because release.py is actually clean."""
         source = KSTRL_PACKAGE / "release.py"
-        assert "kstrl.manifest" in _kstrl_imports(source, top_level_only=False)
+        assert "kstrl.plan.manifest" in _kstrl_imports(source, top_level_only=False)
         # release.py imports the config package interface (#863 M1). The
         # walk goes to the modules that hold the names. If it stops at the
         # package, it is blind.

@@ -13,9 +13,9 @@ from __future__ import annotations
 import io
 from pathlib import Path
 
-from kstrl import events as ev
-from kstrl.render import UIBackedRenderer
-from kstrl.ui.bridge import EventBridgeUI
+from kstrl.events import events as ev
+from kstrl.events.bridge import EventBridgeUI
+from kstrl.events.render import UIBackedRenderer
 from kstrl.ui.plain import PlainUI
 
 # (method, args) covering all 14 protocol methods' render paths.

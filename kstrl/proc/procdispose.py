@@ -1,6 +1,6 @@
 """Letting go of a child the kill could not collect.
 
-Split out of ``kstrl/procgroup.py``, whose subject is whether a group
+Split out of ``kstrl/proc/procgroup.py``, whose subject is whether a group
 still holds anything RUNNING. Reading a group and letting go of a child
 are two jobs, and the file-length ratchet is what said so out loud: the
 sweep for #326 and #329 took that module from 596 lines to 871.
@@ -9,7 +9,7 @@ THE CLASS THIS MODULE IS THE HOME OF (#326, #329). ``procgroup`` used to
 end its abandonment section with "THIS FIXES ONE SITE, NOT THE CLASS" and
 name the other three, and naming them did not stop them being found one
 at a time four PRs later. ``verify.run_scrubbed``,
-``serve.run_supervised`` and ``agents.proc.DeadlineStreamer.kill`` each
+``serve.run_supervised`` and ``proc.proc.DeadlineStreamer.kill`` each
 killed a child and gave up on it with no register and no close.
 ``tests/test_process_lifecycle.py`` is what stops a fourth landing
 outside these two functions.
@@ -50,7 +50,7 @@ TWO DISPOSALS AND NOT ONE, because the difference is measured. A pipe end
 can only be closed by code that is not racing another thread on the same
 object: with a reader thread blocked on stdout, a ``close`` from a second
 thread had not returned after 3.005s, and the same holds for a stdin
-whose writer is blocked on a full pipe. ``agents.proc.DeadlineStreamer``
+whose writer is blocked on a full pipe. ``proc.proc.DeadlineStreamer``
 runs exactly that way, so its disposal is :func:`reap_or_abandon`, which
 waits and registers and closes nothing, and its threads close their own
 ends in a ``finally``. The three callers that own their pipes outright
@@ -83,7 +83,7 @@ instance of each still open after the three named sites were fixed.
   and closing it costs a nested handler at all three sites.
 * A child owned by a GENERATOR the caller can walk away from. Every agent
   adapter's ``run`` is one, and ``decompose.collect_agent_output``
-  abandons it mid-yield today. ``agents.proc.DeadlineStreamer.close`` is
+  abandons it mid-yield today. ``proc.proc.DeadlineStreamer.close`` is
   the disposal, reached from a ``finally`` in the generator, and its
   docstring carries why kill and not wait.
 
@@ -175,7 +175,7 @@ def reap_or_abandon(
     """Kill the child, wait under a deadline, then LET GO. CLOSES NO PIPE.
 
     The disposal for a caller whose pipes belong to OTHER THREADS, which
-    is ``agents.proc.DeadlineStreamer``: a reader thread iterates stdout
+    is ``proc.proc.DeadlineStreamer``: a reader thread iterates stdout
     and a writer thread owns stdin. Closing a pipe from here would not be
     a tidier version of :func:`drain_or_abandon`, it would be a hang.
 
@@ -273,7 +273,7 @@ def close_quietly(pipe: IO[Any] | None) -> None:
     an unbounded ``queue.get()`` for the rest of the run.
 
     ONE helper rather than the two this class of change first grew, one
-    here with the narrow enumeration and one in ``agents.proc`` with the
+    here with the narrow enumeration and one in ``proc.proc`` with the
     wide one. The narrow copy was on the disposal path, inside the
     ``finally`` whose entire job is to run when something unexpected
     happened.

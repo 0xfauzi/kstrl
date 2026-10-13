@@ -20,18 +20,18 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
-from kstrl import event_catalog, reducer
-from kstrl import events as ev
 from kstrl.config.config import KstrlConfig
+from kstrl.events import event_catalog, reducer
+from kstrl.events import events as ev
+from kstrl.events.observability import (
+    read_progress_events,
+)
+from kstrl.events.usage import UsageRecord, UsageTotals
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult
-from kstrl.manifest import Component, Manifest
-from kstrl.observability import (
-    read_progress_events,
-)
+from kstrl.plan.manifest import Component, Manifest
 from kstrl.ui.plain import PlainUI
-from kstrl.usage import UsageRecord, UsageTotals
 from kstrl.verify_model import VerifyConfig
 from tests.helpers.stack_confirmation import in_process_stack
 

@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, TYPE_CHECKING
 
-from kstrl.worktree_sweep import leftover_agents, leftover_lines
+from kstrl.proc.worktree_sweep import leftover_agents, leftover_lines
 
 if TYPE_CHECKING:
     from kstrl.ui import UI

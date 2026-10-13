@@ -11,9 +11,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from kstrl.git import fetch_base_branch, git, resolve_base_ref
-from kstrl.manifest import Component, ComponentStatus, Manifest
-from kstrl.manifest_merge import has_merged
-from kstrl.worktree_sweep import WorktreeSweep, sweep_worktree, warn_sweep
+from kstrl.plan import Component, ComponentStatus, Manifest, has_merged
+from kstrl.proc import WorktreeSweep, sweep_worktree, warn_sweep
 
 if TYPE_CHECKING:
     from kstrl.factory_config import FactoryConfig

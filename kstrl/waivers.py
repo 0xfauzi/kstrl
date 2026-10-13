@@ -64,16 +64,16 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl.findings import (
+from kstrl.inbox import Inbox, InboxConfig, InboxError, InboxItem, ItemKind, ItemStatus
+from kstrl.io import ControlStateError
+from kstrl.plan import (
     POLICY_CATEGORY_PREFIX,
     WAIVER_TAG_PREFIX,
     Finding,
 )
-from kstrl.inbox import Inbox, InboxConfig, InboxError, InboxItem, ItemKind, ItemStatus
-from kstrl.io import ControlStateError
 
 if TYPE_CHECKING:
-    from kstrl.manifest import Component
+    from kstrl.plan import Component
 
 #: The phase name of the operator's acceptance checks (#700 slice 6). It lives
 #: here because ``kstrl.context`` ranks it and imports it from this module.

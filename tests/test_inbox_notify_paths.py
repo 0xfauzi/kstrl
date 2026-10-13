@@ -46,10 +46,10 @@ from unittest.mock import patch
 import pytest
 
 from kstrl.autonomy import AutonomyLevel, AutonomyState
+from kstrl.events.observability import NotifyConfig
 from kstrl.factory import run_factory
 from kstrl.factory_result import ComponentResult
 from kstrl.inbox import Inbox, InboxConfig, ItemKind
-from kstrl.observability import NotifyConfig
 from kstrl.serve import serve_cycle
 from kstrl.serve_config import ServeConfig
 from kstrl.serve_spend import SpendLedger
@@ -319,7 +319,7 @@ def test_a_hook_that_raises_keeps_the_item(
         """No builtin category: only ``except Exception`` catches it."""
 
     with patch(
-        "kstrl.observability.NotifyHooks.fire_inbox_item",
+        "kstrl.events.observability.NotifyHooks.fire_inbox_item",
         side_effect=Unforeseen("unforeseen"),
     ):
         ids = _poll(tmp_path)

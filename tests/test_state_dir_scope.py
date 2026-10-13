@@ -400,7 +400,7 @@ _EXPECTED_STATE_DIR_SPELLINGS: dict[str, int] = {
     "cli_report.py": 2,
     "decompose_reply.py": 1,
     "doctor.py": 2,
-    "events.py": 1,
+    "events/events.py": 1,
     # 9 until #776 F2 moved five spellings, with the worktree code, to
     # factory_worktrees.py.
     # 4 until #776 F7 moved two spellings, with the preflight code, to
@@ -409,14 +409,15 @@ _EXPECTED_STATE_DIR_SPELLINGS: dict[str, int] = {
     # spelling, to factory_worktrees.py (5 before, 6 after).
     # 1 until #776 B3F4 moved the progress log spelling, with the start
     # steps, to factory_run.py.
-    "factory_lock.py": 2,
+    "proc/factory_lock.py": 2,
     "factory_preflight.py": 2,
     "factory_run.py": 1,
     "factory_worktrees.py": 6,
     "integration_state.py": 1,
     "knowledge_facts.py": 2,
     "pipeline_attempt.py": 1,
-    "reducer.py": 4,  # +1 #863 A4: the refusal of a progress.jsonl-only run names the state dir
+    # +1 #863 A4: the refusal of a progress.jsonl-only run names the state dir.
+    "events/reducer.py": 4,
     # serve.py had 6, +1 for #464 (the progress log for cost evidence). #776 S2
     # moved the launchd code, with two spellings, to serve_launchd.py.
     # #776 S3 moved classify_run and its helpers, with two spellings, to
@@ -431,7 +432,7 @@ _EXPECTED_STATE_DIR_SPELLINGS: dict[str, int] = {
     # the __all__ entry). Neither one joins a path.
     "io/__init__.py": 2,
     "io/statedir.py": 6,  # +1 #545: plan_prd_path joins the plan directory; -2 #863 A4
-    "temp_worktree.py": 1,
+    "proc/temp_worktree.py": 1,
     "workqueue_store.py": 2,
 }
 

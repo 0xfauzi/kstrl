@@ -23,11 +23,11 @@ from typing import Any
 
 import pytest
 
-from kstrl.events import JsonlSink
+from kstrl.events.events import JsonlSink
 from kstrl.factory_result import ComponentResult
-from kstrl.manifest import Component
 from kstrl.pipeline import ComponentPipeline
 from kstrl.pipeline_checks import VerifyPhaseResult
+from kstrl.plan.manifest import Component
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import run_mechanical_verification
 from kstrl.verify_commands import GATE_OUTPUT_MAX_CHARS

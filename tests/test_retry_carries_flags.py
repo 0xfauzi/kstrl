@@ -37,8 +37,8 @@ from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.interaction import PromptRequest, PromptResponse
 from kstrl.launch_record import run_limits
-from kstrl.manifest import ComponentStatus, Manifest
-from kstrl.timeout import TimeoutConfig
+from kstrl.plan.manifest import ComponentStatus, Manifest
+from kstrl.proc.timeout import TimeoutConfig
 from kstrl.ui.plain import PlainUI
 from tests.helpers import gitrepo
 from tests.helpers.run_limits import every_limit_argv, limit_option

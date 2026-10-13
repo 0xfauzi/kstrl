@@ -35,15 +35,14 @@ from kstrl.launch_record import (
     read_launch_record,
     run_limits,
 )
-from kstrl.manifest import ComponentStatus
-from kstrl.timeout import NO_LIMIT, TimeoutConfig
+from kstrl.plan import ComponentStatus
+from kstrl.proc import NO_LIMIT, TimeoutConfig, sweep_worktree, warn_sweep
 from kstrl.waivers import approvals_at, approved_head
-from kstrl.worktree_sweep import sweep_worktree, warn_sweep
 
 if TYPE_CHECKING:
     import click
 
-    from kstrl.manifest import Component, Manifest
+    from kstrl.plan import Component, Manifest
     from kstrl.ui import UI
 
 

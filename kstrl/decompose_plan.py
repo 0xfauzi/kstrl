@@ -12,7 +12,7 @@ from kstrl.decompose_reply import (
     _prd_summary_line,
     _routed_prd_issues,
 )
-from kstrl.event_catalog import ArtifactWritten, Event
+from kstrl.events import ArtifactWritten, Event
 from kstrl.io import mint_run_id, plan_prd_path
 from kstrl.linear import (
     DecomposeSync,
@@ -21,15 +21,15 @@ from kstrl.linear import (
     linear_branch_name,
     sync_decompose,
 )
-from kstrl.manifest import (
+from kstrl.plan import (
     Component,
     ComponentStatus,
     Manifest,
+    validate_branch_name,
 )
-from kstrl.names import validate_branch_name
 
 if TYPE_CHECKING:
-    from kstrl.factory_lock import RunLock
+    from kstrl.proc import RunLock
     from kstrl.spec_issues import SpecIssue
     from kstrl.ui import UI
 
@@ -270,7 +270,7 @@ def _write_plan(
         # decompose` has no caller's lock and takes its own here. Either
         # way a held lock raises FactoryLockHeldError inside the cleanup
         # scope, so a refused decompose leaves no PRDs behind.
-        from kstrl.factory_lock import held_or_acquired_run_lock
+        from kstrl.proc import held_or_acquired_run_lock
 
         with held_or_acquired_run_lock(run_lock, root_dir, ui, force_lock):
             manifest.save(manifest_path)

@@ -16,8 +16,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from kstrl.procdispose import drain_or_abandon
-from kstrl.procgroup import (
+from kstrl.proc import (
+    drain_or_abandon,
     pid_is_alive,
     read_group_liveness,
     safe_pgid,
@@ -55,7 +55,7 @@ def _pid_alive(pid: int, host: str) -> bool:
     so the TTL remains the only signal there rather than us reaping work
     that may be in flight elsewhere.
 
-    The probe itself is :func:`kstrl.procgroup.pid_is_alive`. It was a
+    The probe itself is :func:`kstrl.proc.procgroup.pid_is_alive`. It was a
     fourth hand-rolled copy of the same shape - a pid guard written
     inline, next to a raw signal - which is the arrangement #308 removed
     for groups and #329 found still standing for bare ids. What stays
@@ -504,7 +504,7 @@ def _group_liveness_for_reap(pgid: int) -> tuple[bool, str]:
     A zombie does not count. It has already died and is only waiting to
     be reaped, so a caller asking "may a factory still be writing to this
     repo" is answered No by it, and a signal probe answers Yes (#298; the
-    reasoning and the measurements are in ``kstrl.procgroup``).
+    reasoning and the measurements are in ``kstrl.proc.procgroup``).
 
     FAIL DIRECTION when ``ps`` cannot be trusted: fall back to the signal
     probe. That is nearly the pre-#298 behaviour: #309 round 1 fixed the

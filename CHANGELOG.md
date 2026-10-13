@@ -545,7 +545,7 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   spawned, and with caffeinate one more - so a change in caffeinate
   fails a test instead of silently leaving the machine unable to
   idle-sleep after a timed-out run. The membership reading that test
-  needs is `kstrl.procgroup.read_group_members`, sharing the one `ps`
+  needs is `kstrl.proc.procgroup.read_group_members`, sharing the one `ps`
   call, the one parse and now one refusal table with the liveness read.
   Both reads refuse the same five listings and differ only in the
   consequence each reports: a count taken from a listing that may have

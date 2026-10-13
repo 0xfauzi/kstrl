@@ -16,7 +16,7 @@ from kstrl.config import LIMIT_FLOAT, LIMIT_INT, KstrlConfig, parse_paths
 from kstrl.config_report import UI_MODES
 from kstrl.config_report import normalize_ui_mode as _normalize_ui_mode
 from kstrl.feature_cmd import FeatureParams, run_feature
-from kstrl.prd import PRD
+from kstrl.plan import PRD
 from kstrl.sandbox import SandboxConfig, with_stack_writable
 from kstrl.scaffold_templates import DEFAULT_FEATURE_UNDERSTAND
 from kstrl.stack import stack_in_force

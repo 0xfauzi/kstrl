@@ -132,7 +132,7 @@ of 37s against the 25s an operator reads off ``GROUP_TERM_GRACE_SECONDS``
 plus the SIGKILL leg. Both numbers are finite, which is the change; the
 overshoot is worth knowing before anyone tunes either constant.
 
-The ``ps`` CALL and its parse live in ``kstrl.procgroup_listing``, cut
+The ``ps`` CALL and its parse live in ``kstrl.proc.procgroup_listing``, cut
 out of this file by #209 round 3 for the 800-line ratchet and imported
 back above, so every name this module exported still resolves here. That
 is where the uniqueness claim is written and where the net that enforces
@@ -152,12 +152,12 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-# Re-exported, not merely used: ``kstrl.procgroup_listing`` was cut out
+# Re-exported, not merely used: ``kstrl.proc.procgroup_listing`` was cut out
 # of this file by #209 round 3 for the 800-line ratchet, and every name
 # it holds was public-by-position here first. Importing them back keeps
-# ``from kstrl.procgroup import PS_ARGV`` working, which nine call sites
+# ``from kstrl.proc.procgroup import PS_ARGV`` working, which nine call sites
 # and two static censuses depend on.
-from kstrl.procgroup_listing import (
+from kstrl.proc.procgroup_listing import (
     PS_ARGV,
     PS_KILL_GRACE_SECONDS,
     PS_TIMEOUT_SECONDS,
@@ -170,7 +170,7 @@ from kstrl.procgroup_listing import (
 #: with no reader left in this file, and an undeclared re-export reads
 #: as a stale import. Public names only; the private ones the split
 #: moved are imported for use, not for re-export, and a test reaching
-#: for one of those should name ``kstrl.procgroup_listing``.
+#: for one of those should name ``kstrl.proc.procgroup_listing``.
 __all__ = [
     "PS_ARGV",
     "PS_KILL_GRACE_SECONDS",
@@ -249,7 +249,7 @@ class GroupMembers:
 
     It lives here, sharing one ``ps`` call, one parse and one refusal
     table with the liveness read, because the reading has exactly one
-    call site in this tree and it is in ``kstrl.procgroup_listing``: two
+    call site in this tree and it is in ``kstrl.proc.procgroup_listing``: two
     copies drift on failure handling, and
     ``tests/test_procgroup_listing.py`` fails on a second one.
 
@@ -277,7 +277,7 @@ def _may_signal_group(pgid: int) -> bool:
     """Whether ``killpg(pgid, ...)`` is safe to issue at all.
 
     ``killpg(1, sig)`` is ``kill(-1, sig)``: every process this user owns.
-    ``serve``, ``verify`` and ``agents.proc`` each used to carry a copy of
+    ``serve``, ``verify`` and ``proc.proc`` each used to carry a copy of
     this rule; #308 moved it here and they now reach it through
     :func:`safe_pgid`. This stays a function of its own because the pgid
     entry points below take an id from anywhere, so nothing enforces that
@@ -327,7 +327,7 @@ def safe_pgid(process: subprocess.Popen[Any]) -> int | None:
     """A child's process-group id, or None when group-signalling is unsafe.
 
     The single copy of the guard ``serve._safe_pgid``,
-    ``verify._signal_process_group`` and ``agents.proc._signal_group``
+    ``verify._signal_process_group`` and ``proc.proc._signal_group``
     used to write out three times (#308). Driven over one matrix of pid,
     ``getpgid`` and ``killpg`` outcomes before the move, the three agreed
     on which pgid was safe for every input; they differed only in the
@@ -438,7 +438,7 @@ def signal_process_tree(process: subprocess.Popen[Any], sig: signal.Signals) -> 
     """Signal a child's whole group, falling back to the direct child.
 
     The single copy of a routine ``verify._signal_process_group`` and
-    ``agents.proc.DeadlineStreamer._signal_group`` wrote out twice,
+    ``proc.proc.DeadlineStreamer._signal_group`` wrote out twice,
     identically, after #308 had already lifted the guard half of it here.
     Lifting the guard and leaving the routine behind is what let the
     ``os.killpg`` call itself stay in three modules, which is the thing

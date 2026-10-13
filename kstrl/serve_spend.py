@@ -11,6 +11,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Final
 
+from kstrl.events import ARCHITECT_COMPONENT, ARCHITECT_ROLE
 from kstrl.io import (
     CONTROL_SPEND,
     control_file,
@@ -22,7 +23,6 @@ from kstrl.io import (
     state_dir,
 )
 from kstrl.serve_config import ServeError
-from kstrl.usage import ARCHITECT_COMPONENT, ARCHITECT_ROLE
 
 
 def _utc_now() -> datetime:
@@ -484,7 +484,7 @@ def read_run_spend(root_dir: Path, run_id: str) -> RunSpend:
     """
     if not run_id:
         return RunSpend()
-    from kstrl.reducer import LegacyRunStreamError, load_run_state
+    from kstrl.events import LegacyRunStreamError, load_run_state
 
     kstrl_dir = state_dir(root_dir)
     run_dir = kstrl_dir / "runs" / run_id
@@ -603,7 +603,7 @@ def _opened_with(root_dir: Path, run_id: str) -> tuple[int, str]:
     so the architect is counted at most once either way. ``read_run_spend``
     reports such a factory run as unreadable, and `ks serve` pauses on it.
     """
-    from kstrl.reducer import LegacyRunStreamError, load_run_state
+    from kstrl.events import LegacyRunStreamError, load_run_state
 
     try:
         state, _source = load_run_state(root_dir, run_id)

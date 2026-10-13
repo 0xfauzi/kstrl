@@ -8,10 +8,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from kstrl.events import UsageTotals
 from kstrl.io import atomic_write_json, read_json
-from kstrl.manifest import COMPONENT_STATUS_VALUES, ComponentStatus, Manifest
-from kstrl.usage import UsageTotals
-from kstrl.worktree_sweep import WorktreeSweep
+from kstrl.plan import COMPONENT_STATUS_VALUES, ComponentStatus, Manifest
+from kstrl.proc import WorktreeSweep
 
 if TYPE_CHECKING:
     from kstrl.pipeline import ComponentPipeline

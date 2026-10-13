@@ -27,6 +27,9 @@ _ = _Anything()
 # names the command-module imports so ruff F401 sees a reader
 _.COMMAND_MODULES
 
+# the import system reads the __path__ of the package that the leash makes (kstrl/proc/leash.py)
+_.__path__
+
 # click.Group reads command_class by name
 _.command_class
 
@@ -109,7 +112,7 @@ _.utilization
 # record field: set at construction; writer at kstrl/pr.py:315 to 375, no reader in kstrl
 _.pushed
 
-# RunState counter: written by the reducer; writer at kstrl/reducer.py:383, no reader in kstrl
+# RunState counter: written by the reducer at kstrl/events/reducer.py:383, no reader in kstrl
 _.unknown_events
 
 # Replay record field: written during the replay; writer at kstrl/replay.py:180, no reader in kstrl

@@ -13,8 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from kstrl.contract import ContractResult
-from kstrl.prd import PRD, UserStory
-from kstrl.requirements import KIND_NON_GOAL, KIND_REQUIREMENT, SpecRequirement
+from kstrl.plan import KIND_NON_GOAL, KIND_REQUIREMENT, PRD, SpecRequirement, UserStory
 from kstrl.review import (
     CriterionReview,
     ReviewConcern,
@@ -73,7 +72,7 @@ INTEGRATION_NON_GOAL_PROMPT = (
 FINDING_ID_PREFIX = "IF-"
 
 #: The id of the story that judges a requirement or a non-goal (#639 slice
-#: 3): the requirement's own id, which ``kstrl.requirements`` makes "R-<n>".
+#: 3): the requirement's own id, which ``kstrl.plan.requirements`` makes "R-<n>".
 REQUIREMENT_ID_PREFIX = "R-"
 
 #: The criterion about the decision register. A fail here is a register

@@ -24,7 +24,7 @@ from pathlib import Path
 import pytest
 
 from kstrl.factory import run_factory
-from kstrl.manifest import ComponentStatus
+from kstrl.plan.manifest import ComponentStatus
 from kstrl.ui.plain import PlainUI
 from kstrl.verify_model import VerifyConfig
 from tests.helpers.stack_confirmation import in_process_stack

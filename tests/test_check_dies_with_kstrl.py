@@ -10,7 +10,7 @@ rung the command is the very process kstrl started, in the session kstrl
 gave it.
 
 The fix: ``run_scrubbed`` starts the command under
-``kstrl/agents/leash.py``, as every agent is started, so the command's
+``kstrl/proc/leash.py``, as every agent is started, so the command's
 group ends when kstrl's end of the lifeline closes. Under a rung the
 leash starts nono, never the reverse.
 
@@ -27,7 +27,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from kstrl.procgroup import pid_is_alive
+from kstrl.proc.procgroup import pid_is_alive
 from tests import test_stack_e2e as stack_e2e
 from tests.helpers import procs
 from tests.helpers.executables import write_executable

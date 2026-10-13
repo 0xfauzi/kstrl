@@ -21,9 +21,9 @@ import random
 from pathlib import Path
 from typing import Any
 
-from kstrl import event_catalog
-from kstrl import events as ev
-from kstrl.observability import ProgressLog, read_progress_events
+from kstrl.events import event_catalog
+from kstrl.events import events as ev
+from kstrl.events.observability import ProgressLog, read_progress_events
 
 
 def _sample_events() -> list[event_catalog.Event]:
@@ -482,7 +482,7 @@ class TestBothSinksCarryTheSameBudgetHalt:
         tmp_path: Path,
         event: event_catalog.BudgetExceeded,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
-        from kstrl.observability import ProgressLog
+        from kstrl.events.observability import ProgressLog
 
         durable_path = tmp_path / "events.jsonl"
         progress_path = tmp_path / "progress.jsonl"
@@ -583,7 +583,7 @@ class TestBothSinksCarryTheSameBudgetHalt:
         """The same generic guard for the new run-scoped event."""
         import dataclasses
 
-        from kstrl.observability import ProgressLog
+        from kstrl.events.observability import ProgressLog
 
         event = event_catalog.BudgetCoverage(
             ceiling="max_cost_usd",

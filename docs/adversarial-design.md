@@ -23,7 +23,7 @@ Calibration is the truth signal. The `tests/test_calibration.py` suite (Phase D 
 
 ## Findings model (E3)
 
-Every finding produced by Phase 2 (`ReviewResult`) or Phase 2.5 (`SecurityResult`) is converted into a typed `Finding` (`kstrl/findings.py`) before landing on `Component.findings: list[Finding]`. **Consumers**: `pr.py` renders findings into the PR body via `render_findings_markdown` (the legacy `review_findings` string is a fallback for legacy manifests); `evolution.py::record_run` serializes `findings` + a `findings_summary` aggregator into the journal.
+Every finding produced by Phase 2 (`ReviewResult`) or Phase 2.5 (`SecurityResult`) is converted into a typed `Finding` (`kstrl/plan/findings.py`) before landing on `Component.findings: list[Finding]`. **Consumers**: `pr.py` renders findings into the PR body via `render_findings_markdown` (the legacy `review_findings` string is a fallback for legacy manifests); `evolution.py::record_run` serializes `findings` + a `findings_summary` aggregator into the journal.
 
 The fields are:
 

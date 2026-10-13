@@ -26,7 +26,7 @@ from pathlib import Path
 import pytest
 
 from kstrl.inbox import ItemKind
-from kstrl.manifest import Manifest
+from kstrl.plan.manifest import Manifest
 from tests.helpers import gitrepo
 from tests.test_inbox_waiver_change import DEP, DEP_BRANCH, SIZE_TOML, _sha
 from tests.test_inbox_waivers import (

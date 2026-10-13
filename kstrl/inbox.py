@@ -44,6 +44,7 @@ from pathlib import Path
 from typing import Any
 
 from kstrl.config import ConfigSection, check_numbers
+from kstrl.events import NotifyHooks
 from kstrl.io import (
     CONTROL_INBOX,
     append_records,
@@ -53,7 +54,6 @@ from kstrl.io import (
     legacy_control_remaining,
     read_json,
 )
-from kstrl.observability import NotifyHooks
 
 INBOX_SCHEMA_VERSION = 1
 

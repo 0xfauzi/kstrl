@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from kstrl.autonomy import AutonomyLevel, flag_bundle_for
 from kstrl.autonomy_config import AutonomyConfig
 from kstrl.config import KstrlConfig
-from kstrl.event_catalog import AdversarialAgentSelected
+from kstrl.events import AdversarialAgentSelected
 from kstrl.factory_config import FactoryConfig, review_enabled, security_enabled
 from kstrl.review import ReviewMode
 from kstrl.sandbox import SandboxConfig

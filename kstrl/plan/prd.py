@@ -364,7 +364,7 @@ class PRD:
         comparison is gone rather than relaxed: the scope both guards
         enforce is resolved before the run starts, so editing this field
         changes nothing and refusing an edit to it could only ever be a
-        false positive. ``kstrl.scope`` records why.
+        false positive. ``kstrl.plan.scope`` records why.
 
         ``specIssues`` is not compared either (#260), and the honest
         statement of that is stronger than "safe to edit": this field

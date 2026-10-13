@@ -63,9 +63,9 @@ from functools import partial
 from pathlib import Path
 from typing import Any
 
-from kstrl.agents.proc import DeadlineStreamer
 from kstrl.config import parse_bool
 from kstrl.io import read_json
+from kstrl.proc import DeadlineStreamer
 from kstrl.sandbox import claude_session_argv, claude_session_env
 
 #: Default ON; ``KSTRL_AGENT_PROBE=0`` restores the pre-#262 behaviour of

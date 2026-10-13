@@ -21,10 +21,10 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 from kstrl.acceptance import FAIL, PASS, RECORD_FILE, Check, HeadOutcome, evidence_dir
 from kstrl.io import read_json
-from kstrl.rung import HOST_LABEL, label_of
+from kstrl.proc import HOST_LABEL, label_of
 
 if TYPE_CHECKING:
-    from kstrl.rung import Rung
+    from kstrl.proc import Rung
 
 #: Under the header of a record whose checks a model wrote (#700 slice 7).
 DESIGNED_LINE = "- the verification designer wrote these checks"

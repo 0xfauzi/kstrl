@@ -2,7 +2,7 @@
 
 Split from ``tests/test_procgroup.py`` because that file was at 796 of
 the 800-line ratchet, not because the subject is separate: this is
-``kstrl/procgroup.py``, and everything the module's docstring says about
+``kstrl/proc/procgroup.py``, and everything the module's docstring says about
 there being ONE ``ps`` parse in this tree applies here. The parse table
 itself lives with ``tests/test_procgroup_listing.py``.
 
@@ -25,8 +25,8 @@ import subprocess
 
 import pytest
 
-from kstrl import procgroup
-from kstrl.procgroup import (
+from kstrl.proc import procgroup
+from kstrl.proc.procgroup import (
     GroupMembers,
     read_group_liveness,
     read_group_members,
@@ -91,7 +91,7 @@ class TestAnEmptyAnswerIsOnlyGivenForAGroupTheKernelAgreesIsEmpty:
         It is the ONE test here that reads the real listing, so it is the
         one that needs the environment guard: under a `hidepid` mount or
         a container `ps` that omits pid 1 the read refuses, correctly,
-        and this would go red pointing at `kstrl/procgroup.py` for an
+        and this would go red pointing at `kstrl/proc/procgroup.py` for an
         environment that cannot be measured (#209 round 2, S5)."""
         members = read_group_members(os.getpgrp())
         assert members.pids is not None, members.reason
@@ -120,7 +120,7 @@ class TestTheSuiteSkipPredicateCanActuallyFire:
     under a ``ps`` filtered to one uid our own processes are precisely
     the ones still visible. So it was True by construction everywhere,
     while ``read_group_members`` refused the same listing and raised
-    through ``on_spawn``. A red test in ``kstrl/procgroup.py``'s name for
+    through ``on_spawn``. A red test in ``kstrl/proc/procgroup.py``'s name for
     an environment that cannot be measured is what the guard exists to
     prevent, and it was pointing the other way.
 

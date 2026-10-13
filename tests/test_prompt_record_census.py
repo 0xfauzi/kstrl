@@ -5,8 +5,9 @@ known offenders.
 
 LAYER 1, THE SEAM. Every ``DeadlineStreamer`` built anywhere in ``kstrl/``
 is counted per function, and so is every raw process spawn inside
-``kstrl/agents/``. A construction that pipes a prompt must be preceded, in
-the same function, by exactly one ``record_prompt`` call. A new adapter,
+``kstrl/agents/`` and the three agent process modules of ``kstrl/proc/``.
+A construction that pipes a prompt must be preceded, in the same function,
+by exactly one ``record_prompt`` call. A new adapter,
 or a new spawn in an existing one, is an unexplained census delta.
 
 LAYER 2, THE IDENTITY. ``record_prompt`` writes only inside a
@@ -57,6 +58,11 @@ RECORDER = "record_prompt"
 SCOPE = "recording_prompts"
 IDENTITY = "AgentCall"
 PROMPT_RECORD = KSTRL / "agents" / "prompt_record.py"
+#: The raw spawns are counted in ``kstrl/agents/`` and in the three modules
+#: of the agent process that #863 M2 moved from ``agents/`` to ``proc/``:
+#: ``DeadlineStreamer`` and the leash start the agent. The other ``proc/``
+#: modules start ``git``, ``ps`` and the checks, which are not agent calls.
+AGENT_PROCESS_MODULES = frozenset({"proc/proc.py", "proc/leash.py", "proc/spawn_record.py"})
 
 #: ``.run(...)`` receivers that are not agents: the stdlib process runner
 #: and the event loop runner. Exact names only, because this set CLEARS a
@@ -219,7 +225,7 @@ def sites(source: str, rel: str, producers: frozenset[str] | None = None) -> lis
     """
     tree = ast.parse(source)
     known = identity_producers([tree]) if producers is None else producers
-    in_agents = rel.startswith("agents/")
+    in_agents = rel.startswith("agents/") or rel in AGENT_PROCESS_MODULES
     found: list[Site] = []
     stack: list[tuple[ast.AST, tuple[str, ...], bool]] = [(tree, (), False)]
     while stack:
@@ -271,8 +277,8 @@ EXPECTED_RAW_SPAWNS: dict[str, int] = {
     "agents/codex.py:CodexAgent._codex_supports_output_last_message": 1,
     # #642: the leash starts the agent `DeadlineStreamer` was handed, whose
     # prompt the adapter recorded before it built the streamer.
-    "agents/leash.py:main": 1,
-    "agents/proc.py:DeadlineStreamer.__init__": 1,
+    "proc/leash.py:main": 1,
+    "proc/proc.py:DeadlineStreamer.__init__": 1,
 }
 
 #: Streamer constructions that pipe no agent-call prompt, with the reason.
@@ -709,7 +715,9 @@ def test_blind_spot_a_timeout_name_bound_to_none() -> None:
     assert _bound("def f(agent, p):\n    t = None\n    agent.run(p, timeout=t)\n") != []
 
 
-@pytest.mark.xfail(strict=True, reason="raw spawns are counted inside kstrl/agents/ only")
+@pytest.mark.xfail(
+    strict=True, reason="raw spawns are counted in kstrl/agents/ and the agent process"
+)
 def test_blind_spot_raw_agent_spawn_outside_the_adapters() -> None:
     source = "import subprocess\ndef f(p):\n    subprocess.Popen(['claude', '--print'])\n"
     assert _one(source, "elsewhere.py") != []

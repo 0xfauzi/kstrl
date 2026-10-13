@@ -132,12 +132,12 @@ from kstrl.git.git_diff import (
 from kstrl.inbox import InboxItem, ItemKind
 from kstrl.intake_issue import BUG_REPORT_PROMPT, BUG_REPORT_PROMPT_VERSION, RemoteIssue
 from kstrl.knowledge_distill import DISTILL_PROMPT, DISTILL_PROMPT_VERSION
-from kstrl.manifest import Component
 from kstrl.owner_answers import (
     OWNER_ANSWER_PROMPT,
     OWNER_ANSWER_PROMPT_VERSION,
     render_owner_answer,
 )
+from kstrl.plan.manifest import Component
 from kstrl.review import ReviewMode
 from kstrl.review_prompt import REVIEWER_PROMPT, REVIEWER_PROMPT_VERSION
 from kstrl.scaffold_templates import DEFAULT_PROMPT, DEFAULT_PROMPT_VERSION

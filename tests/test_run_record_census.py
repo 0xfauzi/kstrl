@@ -132,9 +132,9 @@ EXPECTED_RUN_RECORD_SITES: dict[str, int] = {
     "agents/prompt_record.py: record_prompt": 1,  # #532: one prompt record per agent call
     "autonomy_transitions.py: commit_transition": 1,
     "base_gates.py: write_record": 1,  # #654: the base branch's gate reading
-    "event_catalog.py: <module>": 1,
-    "event_catalog.py: Event.to_dict": 1,
-    "events.py: _envelope_kwargs": 1,
+    "events/event_catalog.py: <module>": 1,
+    "events/event_catalog.py: Event.to_dict": 1,
+    "events/events.py: _envelope_kwargs": 1,
     "evolution.py: _role_usage_entries": 1,
     "evolution.py: EvolutionJournal.record_run": 1,
     "evolution.py: EvolutionJournal.carry_superseded": 1,
@@ -150,16 +150,16 @@ EXPECTED_RUN_RECORD_SITES: dict[str, int] = {
     "integration_state.py: add_stop": 1,
     "isolation.py: write_record": 1,  # #700 slice 2: the rungs a run's commands ran in
     "launch_record.py: write_launch_record": 1,
-    "manifest.py: Manifest.save": 1,
+    "plan/manifest.py: Manifest.save": 1,
     # The tuple of string-typed top-level keys the schema check walks. A
     # vocabulary rather than a record, and it names kstrlVersion too.
     # Moved out of Manifest.validate_schema by #639.
-    "manifest_keys.py: <module>": 1,
-    "observability.py: ProgressLog.emit": 1,
-    "observability.py: ProgressLog._repair_event": 1,
+    "plan/manifest_keys.py: <module>": 1,
+    "events/observability.py: ProgressLog.emit": 1,
+    "events/observability.py: ProgressLog._repair_event": 1,
     "pipeline_attempt.py: AttemptRecorder.journal_integration_result": 1,
     "pipeline_attempt.py: AttemptRecorder.journal_superseded_findings": 1,
-    "reducer.py: upconvert_v1": 1,
+    "events/reducer.py: upconvert_v1": 1,
     "serve_outcome.py: _red_base_outcome": 1,  # #654 slice 3b: the red base's evidence
     "workqueue.py: Queue.await_answer": 1,
     "workqueue.py: Queue.await_approval": 1,
@@ -205,7 +205,7 @@ NOT_STAMPED_HERE: dict[str, str] = {
         "an operator inbox item that points at the run it came from; it is a "
         "work item with its own id, not a record of the run"
     ),
-    "reducer.py: upconvert_v1": (
+    "events/reducer.py: upconvert_v1": (
         "read side: lifts a v1 line that was already written into an event for the fold"
     ),
     "serve_outcome.py: _red_base_outcome": (
@@ -213,8 +213,8 @@ NOT_STAMPED_HERE: dict[str, str] = {
         "halted_run inbox item (InboxItem.to_dict, exempt above); a pointer "
         "to that run, not a record of it"
     ),
-    "observability.py: ProgressLog.emit": _V1,
-    "observability.py: ProgressLog._repair_event": _V1,
+    "events/observability.py: ProgressLog.emit": _V1,
+    "events/observability.py: ProgressLog._repair_event": _V1,
     "workqueue.py: Queue.await_answer": _QUEUE_ESCALATION,
     "workqueue.py: Queue.await_approval": _QUEUE_LINK,
     "workqueue.py: Queue.relink_run": _QUEUE_LINK,

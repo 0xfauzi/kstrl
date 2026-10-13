@@ -18,7 +18,7 @@ from typing import Any
 
 from kstrl.integration_state import FIX_COMPONENT_PREFIX
 from kstrl.io import pre_run_prd_path
-from kstrl.manifest import Manifest
+from kstrl.plan import Manifest
 
 _FEATURE_DIR = "scripts/kstrl/feature"
 #: kstrl's own files. A finding that cites one is handed off for that reason.

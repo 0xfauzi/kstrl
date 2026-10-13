@@ -37,13 +37,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl import event_catalog
 from kstrl.context import IterationContext, IterationRecord
+from kstrl.events import event_catalog
 from kstrl.git import git
-from kstrl.manifest import (
-    Component,
-    ComponentStatus,
-)
 from kstrl.pipeline_checks import (
     MechanicalChecks,
 )
@@ -51,12 +47,16 @@ from kstrl.pipeline_delivery import Delivery, PipelineOutcome
 from kstrl.pipeline_knowledge import KnowledgePhase
 from kstrl.pipeline_review import ReviewPhase
 from kstrl.pipeline_security import SecurityGate
+from kstrl.plan import (
+    Component,
+    ComponentStatus,
+)
+from kstrl.proc import sweep_findings
 from kstrl.waivers import (
     ApprovalSnapshot,
     approvals_on,
     overrides_on,
 )
-from kstrl.worktree_sweep import sweep_findings
 
 if TYPE_CHECKING:
     from kstrl.factory_result import ComponentResult

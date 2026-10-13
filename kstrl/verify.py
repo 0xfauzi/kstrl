@@ -10,11 +10,11 @@ from pathlib import Path
 from typing import Protocol
 
 from kstrl.config import component_progress_path
+from kstrl.plan import PRD
 from kstrl.policy import (
     DEFAULT_SECRET_PATTERNS,
     PolicyConfig,
 )
-from kstrl.prd import PRD
 from kstrl.verify_commands import _command_gates
 from kstrl.verify_diff import _scope_checks, check_bad_patterns, check_policy_envelope
 from kstrl.verify_model import (
@@ -250,7 +250,7 @@ def _tamper_changes(prd: PRD, pre_run_prd_path: Path | None) -> list[str]:
 
     Defence in depth for #264's carve-out, kept deliberately after #269
     made the SCOPE half of this comparison unnecessary. The plan-time
-    snapshot (``kstrl.scope``) settles what a component may write, so an
+    snapshot (``kstrl.plan.scope``) settles what a component may write, so an
     ``allowedPaths`` the agent edits is inert and is no longer compared:
     see that module for why comparing a value the agent can rewrite is
     the weaker answer.

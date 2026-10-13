@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from kstrl.reducer import load_run_state
+from kstrl.events.reducer import load_run_state
 from tests.helpers.fake_run import FakeRunSpec, write_fake_run
 
 # Chronological order oldest->newest; whole-name lexicographic order

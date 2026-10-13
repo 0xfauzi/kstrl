@@ -15,16 +15,16 @@ from kstrl.cli_queue import _queue_for
 from kstrl.cli_seam import _actor, _autonomy_ui, _load_manifest_or_exit, cli
 from kstrl.cli_serve import _ServeUiObserver
 from kstrl.config_report import UI_MODES
-from kstrl.factory_lock import (
+from kstrl.factory_preflight import report_preflight
+from kstrl.launch_record import option_argv
+from kstrl.plan import MERGE_GATE_PARK_KEY, ComponentStatus, Manifest
+from kstrl.plan_gate import PLAN_GATE_KEY, spec_pin_errors
+from kstrl.proc import (
     FactoryLockHeldError,
     LeftoverAgentsError,
     RunLock,
     acquire_run_lock,
 )
-from kstrl.factory_preflight import report_preflight
-from kstrl.launch_record import option_argv
-from kstrl.manifest import MERGE_GATE_PARK_KEY, ComponentStatus, Manifest
-from kstrl.plan_gate import PLAN_GATE_KEY, spec_pin_errors
 from kstrl.retry_plan import RESUME_REFUSAL, plan_resume, print_resume_plan
 from kstrl.stack import STACK_KEY, load_stack
 from kstrl.ui import UI

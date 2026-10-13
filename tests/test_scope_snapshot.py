@@ -3,7 +3,7 @@
 #264 put kstrl's own files inside every component's effective scope, and
 #268 made the component PRD agent-writable as a consequence, then
 defended it by COMPARING the worktree copy against the pre-run one. That
-comparison had a cost of its own, which ``kstrl.scope`` records.
+comparison had a cost of its own, which ``kstrl.plan.scope`` records.
 
 The answer here is structural instead. ``scope.RunScope`` resolves every
 component's scope from the pre-run tree before the first engineer call,
@@ -40,14 +40,14 @@ from unittest.mock import patch
 import pytest
 
 from kstrl.config.config import KstrlConfig
-from kstrl.event_catalog import ComponentScopeResolved, Event
-from kstrl.events import CallbackSink, EventBus
+from kstrl.events.event_catalog import ComponentScopeResolved, Event
+from kstrl.events.events import CallbackSink, EventBus
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_preflight import _record_run_scope
 from kstrl.loop import LoopResult
-from kstrl.manifest import Component, Manifest
-from kstrl.scope import ComponentScope, RunScope
+from kstrl.plan.manifest import Component, Manifest
+from kstrl.plan.scope import ComponentScope, RunScope
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import run_mechanical_verification
 from kstrl.verify_model import CheckResult, VerificationResult, VerifyConfig

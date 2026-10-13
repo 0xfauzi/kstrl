@@ -32,15 +32,15 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl import event_catalog
-from kstrl import events as ev
 from kstrl.config.config import KstrlConfig
+from kstrl.events import event_catalog
+from kstrl.events import events as ev
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult
-from kstrl.findings import CLAIM_DISAGREEMENT_CATEGORY
 from kstrl.inbox import Inbox, InboxConfig, ItemKind
-from kstrl.manifest import Component, Manifest
+from kstrl.plan.findings import CLAIM_DISAGREEMENT_CATEGORY
+from kstrl.plan.manifest import Component, Manifest
 from kstrl.review import CriterionReview, ReviewConcern, ReviewResult
 from kstrl.security import SecurityConfig, SecurityFinding, SecurityResult
 from kstrl.ui.plain import PlainUI
@@ -392,11 +392,11 @@ EXPECTED_REVIEW_RESULT_SITES: dict[str, int] = {
 #: is not seen; ``Manifest.load`` builds the field that way from disk.
 EXPECTED_DURATION_WRITE_SITES: dict[str, int] = {
     "pipeline_attempt.py:_end_attempt": 1,  # the fact: the attempt's wall-clock time
-    "manifest.py:reset_for_retry": 1,  # the --reset path zeroes it
+    "plan/manifest.py:reset_for_retry": 1,  # the --reset path zeroes it
     "review.py:run_review": 3,  # ReviewResult's own timing
     "security.py:run_security_review": 1,  # SecurityResult's own timing
-    "usage.py:add_record": 1,  # usage totals, not a component
-    "usage.py:merge": 1,  # usage totals, not a component
+    "events/usage.py:add_record": 1,  # usage totals, not a component
+    "events/usage.py:merge": 1,  # usage totals, not a component
 }
 
 

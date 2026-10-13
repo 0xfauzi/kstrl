@@ -28,7 +28,7 @@ from typing import Any
 from kstrl import calibration
 from kstrl.autonomy import AutonomyLevel
 from kstrl.autonomy_config import AutonomyConfig
-from kstrl.events import EventBus
+from kstrl.events.events import EventBus
 from kstrl.factory_autonomy import _record_autonomy_outcome
 from kstrl.factory_result import FactoryResult
 from kstrl.inbox import Inbox, InboxConfig, ItemKind

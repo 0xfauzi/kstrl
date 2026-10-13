@@ -14,7 +14,6 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TextIO
 
-from kstrl.agents.proc import kill_active_process_groups
 from kstrl.agents.prompt_record import AgentCall, recording_prompts
 from kstrl.breaker import BreakerConfig
 from kstrl.commandrun import start_heartbeat as _start_heartbeat
@@ -23,7 +22,7 @@ from kstrl.config import (
     component_progress_path,
 )
 from kstrl.context import IterationContext
-from kstrl.events import EventBus, JsonlSink, RunPaths
+from kstrl.events import EventBus, JsonlSink, RunPaths, UsageTotals, collect_usage
 from kstrl.factory_result import (
     ComponentResult,
     write_partial_usage,
@@ -39,16 +38,16 @@ from kstrl.operator_context import (
     operator_file_notices,
     operator_file_spec,
 )
-from kstrl.sandbox import SandboxConfig
-from kstrl.scope import ComponentScope
-from kstrl.timeout import TimeoutConfig
-from kstrl.usage import UsageTotals, collect_usage
-from kstrl.verify_model import VerifyConfig
-from kstrl.worktree_setup import WorktreeSetup
-from kstrl.worktree_sweep import (
+from kstrl.plan import ComponentScope
+from kstrl.proc import (
+    TimeoutConfig,
+    WorktreeSetup,
     WorktreeSweep,
+    kill_active_process_groups,
     sweep_worktree,
 )
+from kstrl.sandbox import SandboxConfig
+from kstrl.verify_model import VerifyConfig
 
 if TYPE_CHECKING:
     from kstrl.ui import UI
@@ -333,9 +332,9 @@ def _run_component(
     from kstrl.agents import (
         get_agent,
     )
+    from kstrl.events import EventBridgeUI, NullPrompter
     from kstrl.loop import run_loop
     from kstrl.ui import PlainUI
-    from kstrl.ui.bridge import EventBridgeUI, NullPrompter
 
     start = time.monotonic()
     worktree_path = Path(worktree_path_str)

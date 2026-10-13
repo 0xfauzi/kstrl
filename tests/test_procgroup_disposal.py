@@ -1,7 +1,7 @@
 """The five names #326 and #329 gave one home, tested on behaviour.
 
 ``tests/test_process_lifecycle.py`` is a STATIC guard: it asserts that
-nothing outside ``kstrl/procgroup.py`` spells a process primitive. That
+nothing outside ``kstrl/proc/procgroup.py`` spells a process primitive. That
 says nothing at all about whether the primitives inside it work, and a
 guard that only pins placement would let the home itself be gutted with
 CI green. This file is the other half.
@@ -35,12 +35,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from kstrl import procdispose, procgroup
-from kstrl.agents import proc as proc_module
 from kstrl.agents.custom import CustomAgent
-from kstrl.agents.proc import DeadlineStreamer
-from kstrl.procdispose import close_quietly, drain_or_abandon, reap_or_abandon
-from kstrl.procgroup import (
+from kstrl.proc import proc as proc_module
+from kstrl.proc import procdispose, procgroup
+from kstrl.proc.proc import DeadlineStreamer
+from kstrl.proc.procdispose import close_quietly, drain_or_abandon, reap_or_abandon
+from kstrl.proc.procgroup import (
     GroupSignal,
     pid_is_alive,
     signal_group,
@@ -259,7 +259,7 @@ class TestPidIsAlive:
 
 @posix_only
 class TestSignalProcessTreeDegrades:
-    """The routine ``verify`` and ``agents.proc`` each wrote out (#329)."""
+    """The routine ``verify`` and ``proc.proc`` each wrote out (#329)."""
 
     def test_a_real_tree_dies_by_its_group(self, tmp_path: Path) -> None:
         process, _pid, pgid = _spawn_group(tmp_path)
@@ -299,7 +299,7 @@ class TestTheTwoDisposals:
     The difference is measured rather than stylistic and the measurement
     is on ``reap_or_abandon``'s docstring: with a reader thread blocked
     on stdout, a ``close`` from a second thread had not returned after
-    3.005s. ``agents.proc.DeadlineStreamer`` runs exactly that way, so a
+    3.005s. ``proc.proc.DeadlineStreamer`` runs exactly that way, so a
     disposal that closed for it would be a hang and not a tidier drain.
     """
 

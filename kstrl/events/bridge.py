@@ -3,8 +3,8 @@
 Chunk 5 of the TUI rewrite. The old ``UI`` protocol is an imperative
 line logger with ~390 call sites; rewriting them all at once is not a
 reviewable change. This bridge implements the protocol's 14 methods by
-emitting :class:`~kstrl.event_catalog.Log` events on an
-:class:`~kstrl.events.EventBus` instead of printing - the call sites
+emitting :class:`~kstrl.events.event_catalog.Log` events on an
+:class:`~kstrl.events.events.EventBus` instead of printing - the call sites
 keep compiling unchanged while every line they narrate becomes part of
 the replayable event stream. A renderer (chunk 7) projects the events
 back onto a concrete UI implementation, byte-identically.
@@ -25,8 +25,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Protocol
 
-from kstrl.event_catalog import Log
-from kstrl.events import EventBus
+from kstrl.events.event_catalog import Log
+from kstrl.events.events import EventBus
 
 DEFAULT_TRANSCRIPT_TAGS = frozenset({"AI"})
 

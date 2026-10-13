@@ -30,11 +30,10 @@ from kstrl.agent_output import (
     select_agent_output,
 )
 from kstrl.config import ConfigSection, check_numbers, validate_agent_type
-from kstrl.findings import Finding, dump_raw_debug, tag_finding_with_model
 from kstrl.git import git_base, git_diff
 from kstrl.io import generate_data_delimiter
-from kstrl.prd import prd_text_for_prompt
-from kstrl.timeout import limit_seconds
+from kstrl.plan import Finding, dump_raw_debug, prd_text_for_prompt, tag_finding_with_model
+from kstrl.proc import limit_seconds
 
 if TYPE_CHECKING:
     from kstrl.agents.base import Agent
@@ -559,7 +558,7 @@ def parse_security_output(
     """Parse structured JSON from the security reviewer agent.
 
     ``debug_dir`` enables a full raw-output dump on parse failure via
-    :func:`kstrl.findings.dump_raw_debug` (R1.2); the result's
+    :func:`kstrl.plan.findings.dump_raw_debug` (R1.2); the result's
     ``raw_output`` field stays truncated to 2000 chars.
     """
 

@@ -19,7 +19,7 @@ from pathlib import Path
 from types import ModuleType
 
 from kstrl import integration
-from kstrl.requirements import SpecRequirement
+from kstrl.plan.requirements import SpecRequirement
 
 INTEGRATION_PROMPTS: dict[str, str] = {
     "INTEGRATION_CRITERIA_PROMPT": integration.INTEGRATION_CRITERIA_PROMPT,

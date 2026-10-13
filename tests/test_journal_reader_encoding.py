@@ -64,12 +64,12 @@ def test_the_journal_reader_is_shared_with_ks_status() -> None:
     """
     src = Path(__file__).resolve().parent.parent / "kstrl"
     cli = (src / "cli_report.py").read_text(encoding="utf-8")
-    reducer = (src / "reducer.py").read_text(encoding="utf-8")
+    reducer = (src / "events/reducer.py").read_text(encoding="utf-8")
     journal_reads = (src / "journal_reads.py").read_text(encoding="utf-8")
     assert "read_progress_events(progress_log_path)" in cli
     assert "read_progress_events(v1_path)" in reducer
     assert "read_progress_events(self.config.journal_path)" in journal_reads
-    observability = (src / "observability.py").read_text(encoding="utf-8")
+    observability = (src / "events/observability.py").read_text(encoding="utf-8")
     assert 'with open(path, encoding="utf-8") as f:' in observability
     assert "except (OSError, ValueError):" in observability
 

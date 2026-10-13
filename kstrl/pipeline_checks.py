@@ -10,17 +10,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl import event_catalog
 from kstrl.context import IterationContext
-from kstrl.findings import POLICY_CATEGORY_PREFIX, Finding
+from kstrl.events import event_catalog
 from kstrl.git import git, git_diff
 from kstrl.inbox import ItemKind
 from kstrl.io import atomic_write_text, pre_run_prd_path
-from kstrl.manifest import Component
 from kstrl.pipeline_attempt import AttemptRecorder
 from kstrl.pipeline_inbox import InboxDesk
 from kstrl.pipeline_transitions import FailureAction, PhaseFailure
-from kstrl.rung import label_of
+from kstrl.plan import POLICY_CATEGORY_PREFIX, Component, Finding
+from kstrl.proc import label_of
 from kstrl.verify_diff import SCOPE_UNREADABLE_CHECK, scope_unreadable_error
 from kstrl.verify_model import LAYER0_NOT_MEASURED, CheckResult, VerificationResult
 from kstrl.waivers import ACCEPTANCE_PHASE, ApprovalSnapshot

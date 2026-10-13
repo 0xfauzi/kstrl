@@ -35,7 +35,7 @@ from kstrl.integration_state import (
 )
 
 if TYPE_CHECKING:
-    from kstrl.shutdown import StopController
+    from kstrl.proc import StopController
 
 
 class IntegrationLoop:

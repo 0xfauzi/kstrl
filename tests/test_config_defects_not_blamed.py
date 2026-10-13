@@ -70,7 +70,7 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     # autonomy is disabled) and deleted it, so the census stays at 6.
     # #776 F2 moved four of the five to factory_worktrees.py.
     "factory.py": 1,
-    "factory_lock.py": 1,
+    "proc/factory_lock.py": 1,
     "factory_worktrees.py": 4,
     "git/git.py": 1,
     "inbox.py": 1,
@@ -92,9 +92,9 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     # intake_gh.py rather than here.
     # #700 slice 2: ProvenRung.command raises a bare RuntimeError when a
     # refused rung, or one with no policy, reaches a command.
-    "rung.py": 1,
+    "proc/rung.py": 1,
     # ChildOutputDecodeError, added by #416.
-    "scrubbed_run.py": 1,
+    "proc/scrubbed_run.py": 1,
     "serve_config.py": 1,
     "serve_github.py": 4,
     # SignalsError, R8.8 slice 1 / #155.
@@ -105,7 +105,7 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     # raise_if_defect still treats them as operator input, and the walk
     # below follows them by subclass rather than by spelling.
     "io/statedir.py": 1,
-    "temp_worktree.py": 1,
+    "proc/temp_worktree.py": 1,
     "workqueue_items.py": 1,
 }
 

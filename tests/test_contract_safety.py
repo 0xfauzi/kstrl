@@ -26,7 +26,6 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import temp_worktree
 from kstrl.config.config import KstrlConfig
 from kstrl.contract import (
     ContractConfig,
@@ -37,10 +36,11 @@ from kstrl.contract import (
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.git import git_base
-from kstrl.manifest import Component, ComponentStatus, Manifest
+from kstrl.plan.manifest import Component, ComponentStatus, Manifest
+from kstrl.proc import temp_worktree
+from kstrl.proc.temp_worktree import ContractCleanupError
+from kstrl.proc.timeout import TimeoutConfig
 from kstrl.security import SecurityConfig
-from kstrl.temp_worktree import ContractCleanupError
-from kstrl.timeout import TimeoutConfig
 from kstrl.ui.plain import PlainUI
 from kstrl.verify_model import VerifyConfig
 from tests.helpers import gitrepo

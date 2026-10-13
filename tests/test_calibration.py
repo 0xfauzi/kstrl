@@ -61,7 +61,6 @@ import pytest
 
 from kstrl import calibration, calibration_baseline
 from kstrl.agent_output import extract_agent_json, select_agent_output
-from kstrl.agents.proc import TIMEOUT_MESSAGE_PREFIX
 from kstrl.calibration_score import (
     _acceptable_categories,
     allowed_paths_errors,
@@ -77,6 +76,7 @@ from kstrl.decompose_prompt import build_decompose_prompt
 from kstrl.git.git_diff import get_diff_stat, pasted_change_source, repo_change_source
 from kstrl.io.delimiters import generate_data_delimiter
 from kstrl.policy import parse_added_lines
+from kstrl.proc.proc import TIMEOUT_MESSAGE_PREFIX
 from kstrl.review import (
     VALID_CONCERN_CATEGORIES,
     CriterionReview,

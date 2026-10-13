@@ -30,7 +30,7 @@ from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult
 from kstrl.knowledge_facts import Fact, write_facts
-from kstrl.manifest import Component, ComponentStatus, Manifest
+from kstrl.plan.manifest import Component, ComponentStatus, Manifest
 from kstrl.ui.plain import PlainUI
 from kstrl.verify_model import VerifyConfig
 from tests.helpers.component_prd import write_component_prd
