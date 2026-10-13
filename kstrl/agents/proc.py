@@ -31,8 +31,10 @@ lock-taking command, and ``ks status``, read what is left
 
 from __future__ import annotations
 
+import errno
 import os
 import queue
+import shutil
 import signal
 import subprocess
 import sys
@@ -183,7 +185,8 @@ class DeadlineStreamer:
     the bytes of, an agent line (#727).
 
     ``env`` is added to the environment of kstrl for the child, and wins over
-    it (the login of the operator for a claude session, #803).
+    it (the login of the operator for a claude session, #803). The PATH of
+    kstrl, not a PATH in ``env``, finds the program.
     """
 
     def __init__(
@@ -209,6 +212,14 @@ class DeadlineStreamer:
         argv = [cmd] if isinstance(cmd, str) else list(cmd)
         if shell:
             argv = ["/bin/sh", "-c", *argv]
+        if env and os.sep not in argv[0]:
+            # The PATH of kstrl finds the program, not a PATH in ``env``: the
+            # claude user settings can set PATH, and it chose a different
+            # ``claude`` from the one that kstrl found (measured, #803).
+            program = shutil.which(argv[0])
+            if program is None:
+                raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), argv[0])
+            argv[0] = program
         nonce = new_nonce()
         # Before the spawn, so a record that has nowhere to go stops the
         # agent starting rather than leaving it running unrecorded.

@@ -399,7 +399,10 @@ ClaudeRole = Literal["writer", "reader", "probe"]
 #: measured). A subagent (Task) gets the same tools, and the write guard
 #: examines its file tools (measured). Skill offers the skills of the target
 #: repository's ``.claude/skills`` and the skills built into claude, and no user
-#: or plugin skill (measured). The tools that act outside the sandbox, outside
+#: or plugin skill (measured). The hooks of a skill run outside the sandbox, as
+#: the hooks of the repository's ``.claude/settings.json`` do, and the write
+#: guard and the sandbox stop the engineer from writing ``.claude``, so only the
+#: repository supplies them (measured). The tools that act outside the sandbox, outside
 #: the worktree or after the run (CronCreate, RemoteTrigger, Workflow,
 #: EnterWorktree, PushNotification, SendMessage and others) are not named, so
 #: they are off. LSP is not named: its language servers come from plugins,
@@ -465,7 +468,9 @@ def claude_login() -> ClaudeLogin:
 
     A missing or unreadable file, or a key of an incorrect type, gives no
     login: claude itself ignores settings that it cannot read in ``--print``
-    mode, and the liveness probe then reports the failed login.
+    mode, and the liveness probe then reports the failed login. An ``env``
+    entry that no process environment can hold is dropped
+    (:func:`_env_name`, :func:`_spawnable`).
     """
     path = claude_config_dir() / "settings.json"
     try:
@@ -480,10 +485,57 @@ def claude_login() -> ClaudeLogin:
         return ClaudeLogin()
     helper = document.get("apiKeyHelper")
     env = document.get("env")
+    values = {k: _env_text(v) for k, v in env.items()} if isinstance(env, dict) else {}
     return ClaudeLogin(
-        api_key_helper=helper if isinstance(helper, str) and helper else None,
-        env={k: v for k, v in env.items() if isinstance(v, str)} if isinstance(env, dict) else {},
+        api_key_helper=helper if isinstance(helper, str) and _spawnable(helper) else None,
+        env={k: v for k, v in values.items() if v is not None and _env_name(k) and _spawnable(v)},
     )
+
+
+def _env_text(value: object) -> str | None:
+    """An ``env`` value as claude puts it in the environment, or None.
+
+    claude puts a number, a boolean and null in the environment as text
+    (measured: ``5`` gave ``5``, ``true`` gave ``true``, ``null`` gave
+    ``null``). An object or a list gives None: claude gave ``[object
+    Object]``, which no login uses.
+    """
+    if isinstance(value, str):
+        return value
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if value is None:
+        return "null"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        return str(int(value)) if value.is_integer() else repr(value)
+    return None
+
+
+def _env_name(name: str) -> bool:
+    """True when ``name`` can be the name of an environment variable.
+
+    claude dropped an entry whose name was empty or had a ``=`` (measured),
+    and a spawn with such a name raises ``ValueError``."""
+    return bool(name) and "=" not in name and _spawnable(name)
+
+
+def _spawnable(text: str) -> bool:
+    """True when ``text`` can go in the argv or the environment of a process.
+
+    A NUL character or a lone surrogate makes the spawn raise ``ValueError``
+    (measured), which stopped the session. claude dropped an entry with a NUL
+    (measured), and kstrl drops the entry, so the session starts and the
+    liveness probe reports a login that the drop removed.
+    """
+    if "\0" in text:
+        return False
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
 
 
 def claude_session_env() -> dict[str, str]:

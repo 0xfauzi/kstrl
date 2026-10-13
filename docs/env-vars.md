@@ -318,9 +318,13 @@ plugins, skills or CLAUDE.md of the operator. From the claude user settings
 only the login: the `apiKeyHelper` goes in the `--settings` of the session,
 and each `env` entry goes in the environment of the session. An `env` entry
 is not put in the argv, because `ps` shows the argv and kstrl records it on
-disk. A different user key, for example `model`, does not apply: set the
-model in `kstrl.toml`. A writer gets Bash, Edit, Glob, Grep, Monitor,
-NotebookEdit, Read, Skill, Task, TaskCreate, TaskGet, TaskList, TaskStop,
+disk. As claude does, kstrl puts a number or a boolean in the environment as
+text. kstrl drops an entry that no environment can hold: an empty name, a name
+with `=`, or a NUL character. A `PATH` entry applies in the session, but the
+PATH of `ks` finds the `claude` program. The Bash of each role sees the `env`
+entries, as it did before #865, when claude read the file itself. A different
+user key, for example `model`, does not apply: set the model in `kstrl.toml`.
+A writer gets Bash, Edit, Glob, Grep, Monitor, NotebookEdit, Read, Skill, Task, TaskCreate, TaskGet, TaskList, TaskStop,
 TaskUpdate and Write, plus WebFetch and WebSearch when the network is open. A
 reviewer gets Bash, Glob, Grep and Read. The liveness probe gets no tool. A
 tool that a later claude adds is off until kstrl names it.

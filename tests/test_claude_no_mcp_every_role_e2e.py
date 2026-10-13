@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -60,7 +61,7 @@ def _login_claude(path: Path, out: Path) -> Path:
     return write_executable(
         path,
         f"#!/bin/sh\nprintf '%s\\n' \"$@\" -- >> '{argv}'\n"
-        f"printf '%s\\n' \"${{KSTRL_E2E_LOGIN:-none}}\" >> '{out}'\n"
+        f"printf '%s\\n' \"${{KSTRL_E2E_LOGIN:-none}} ${{KSTRL_E2E_NUMBER:-none}}\" >> '{out}'\n"
         "cat >/dev/null\necho '<promise>COMPLETE</promise>'\n",
     )
 
@@ -99,7 +100,22 @@ def test_every_claude_session_kstrl_starts_gets_strict_mcp_config(
     ``--settings`` and the env key in its environment, and no other key."""
     config = tmp_path / "operator-claude"
     config.mkdir()
-    (config / "settings.json").write_text(json.dumps(_USER_SETTINGS), encoding="utf-8")
+    # A PATH there must not choose the claude that kstrl starts, an entry that
+    # no environment can hold must not stop the session, and a number goes in
+    # as text, as claude does (measured, #803).
+    other = tmp_path / "operator-bin"
+    other.mkdir()
+    shadow = tmp_path / "shadow.out"
+    write_executable(other / "claude", f"#!/bin/sh\necho ran >> '{shadow}'\n")
+    env = {
+        **_USER_SETTINGS["env"],
+        "PATH": f"{other}{os.pathsep}{os.environ['PATH']}",
+        "KSTRL_E2E_NUMBER": 5,
+        "KSTRL_E2E=BAD": "x",
+        "KSTRL_E2E_NUL": "a\0b",
+    }
+    user_settings = {**_USER_SETTINGS, "env": env}
+    (config / "settings.json").write_text(json.dumps(user_settings), encoding="utf-8")
     login = tmp_path / "login.out"
     ran = _ks(
         tmp_path,
@@ -124,6 +140,7 @@ def test_every_claude_session_kstrl_starts_gets_strict_mcp_config(
             settings = json.loads(_value(call, "--settings") or "{}")
             assert settings["sandbox"]["autoAllowBashIfSandboxed"] is False, (call, ran)
     _assert_login_only(runs, login, ran)
+    assert not shadow.exists(), ran
     if argv is _ROLES[0][1]:
         # The engineer, and at least one reviewer, which has no write guard.
         assert len(runs) >= 2, (runs, ran)
@@ -140,7 +157,8 @@ def _assert_login_only(runs: list[list[str]], login: Path, ran: str) -> None:
         for leak in (_ENV_KEY, "operator-user-hook", "operator-allowed", "operator-plugin"):
             assert leak not in text, (leak, call, ran)
         assert "operator-model" not in text, (call, ran)
-    assert login.read_text(encoding="utf-8").splitlines() == [_ENV_KEY] * len(runs), ran
+    lines = login.read_text(encoding="utf-8").splitlines()
+    assert lines == [f"{_ENV_KEY} 5"] * len(runs), ran
 
 
 # ---------------------------------------------------------------------------
