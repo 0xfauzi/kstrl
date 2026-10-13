@@ -121,6 +121,32 @@ Measured on 2026-10-10 with claude 2.1.291 and haiku:
   servers (plugin, claude.ai and project sources) and 101 MCP tools, and the
   command of a stdio server in the worktree's ``.mcp.json`` ran. With the
   flag: no server, no MCP tool, and the command did not run.
+
+Measured on 2026-10-13 with claude 2.1.296, claude-agent-sdk 0.2.161 and
+haiku (#803; the transcript is on the PR):
+
+- A headless engineer session with kstrl's flags had 26 tools, among them
+  CronCreate, ScheduleWakeup, RemoteTrigger, Workflow, EnterWorktree,
+  PushNotification and SendMessage, and the claude-sdk session had 30. It
+  also loaded 11 user plugins, the user CLAUDE.md and the user hooks: on one
+  Write, two user PreToolUse and three user PostToolUse hooks ran.
+- ``--tools A,B`` left only the named built-in tools, with
+  ``--dangerously-skip-permissions`` too, and dropped a name that claude does
+  not know with no error. ``--disallowedTools`` removed only the named tools,
+  and ``--allowedTools`` removed none. A subagent got the same tools as its
+  session, and the PreToolUse hook blocked its Write outside the worktree. A
+  Monitor command ran in the sandbox.
+- ``--setting-sources project`` stopped a user hook (a marker file stayed
+  absent), the user plugins and the user CLAUDE.md, and kept the project
+  CLAUDE.md and the hooks of ``--settings``. An empty value also stopped the
+  project CLAUDE.md. A worktree ``.claude/settings.json`` with
+  ``"disableAllHooks": true`` was still read, and ``"disableAllHooks": false``
+  in ``--settings`` still kept the guard on. The claude-sdk in-process hook
+  blocked the same Write with that project setting.
+- A reviewer's sandboxed Bash wrote the worktree (``echo z > file``), because
+  ``sandbox.autoAllowBashIfSandboxed`` defaults to true and the git allow
+  rules were not consulted. With false, the git verbs ran and the write was
+  refused.
 """
 
 from __future__ import annotations
@@ -130,7 +156,7 @@ import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from kstrl.config_numbers import check_numbers
 from kstrl.git import git_write_paths
@@ -343,14 +369,97 @@ def claude_sandbox_settings(
     return json.dumps(settings)
 
 
-#: Added to the argv of every claude session kstrl starts, in every role and
-#: with the sandbox on or off. With no ``--mcp-config``, the session loads no
-#: MCP server. Without it, a headless session loaded the operator's plugin
-#: servers, the claude.ai connectors and a server in the worktree's
-#: ``.mcp.json`` (measured, claude 2.1.291: 37 servers, 101 MCP tools; with
-#: the flag: none). No kstrl role needs an MCP tool, and the write guard does
-#: not see an MCP tool that writes a file.
-NO_MCP_ARGV: tuple[str, ...] = ("--strict-mcp-config",)
+#: The role of a claude session, which sets its tools (#803). A ``writer``
+#: changes the tree (the engineer, and each other role that is not read-only),
+#: a ``reader`` is read-only (#266), and the ``probe`` of
+#: :mod:`kstrl.agents.liveness` needs no tool.
+ClaudeRole = Literal["writer", "reader", "probe"]
+
+#: The tools of a writer. Each one acts only inside the session: its writes go
+#: through the file tools that the write guard examines, or through a command
+#: in the claude sandbox (Bash, and Monitor, measured). A subagent (Task) gets
+#: the same tools, and the write guard examines its file tools (measured). The
+#: tools that act outside the sandbox, outside the worktree or after the run
+#: (CronCreate, RemoteTrigger, Workflow, EnterWorktree, PushNotification,
+#: SendMessage and others) are not named, so they are off.
+CLAUDE_WRITER_TOOLS: tuple[str, ...] = (
+    "Bash",
+    "Edit",
+    "Glob",
+    "Grep",
+    "Monitor",
+    "NotebookEdit",
+    "Read",
+    "Task",
+    "TaskCreate",
+    "TaskGet",
+    "TaskList",
+    "TaskStop",
+    "TaskUpdate",
+    "Write",
+)
+#: Added to the writer's tools when outbound network is open.
+CLAUDE_WEB_TOOLS: tuple[str, ...] = ("WebFetch", "WebSearch")
+#: The tools of a reader. Its permission rules let Bash run only the git verbs
+#: of :data:`CLAUDE_REVIEW_GIT_COMMANDS`.
+CLAUDE_READER_TOOLS: tuple[str, ...] = ("Bash", "Glob", "Grep", "Read")
+#: The setting files a claude session reads, as well as the ``--settings`` of
+#: kstrl. ``project`` keeps the CLAUDE.md and the settings of the target
+#: repository, and it stops the user's settings, hooks, plugins and CLAUDE.md
+#: (measured, claude 2.1.296). An empty value also stops the project's
+#: CLAUDE.md (measured).
+CLAUDE_SETTING_SOURCES = "project"
+
+
+def claude_tools(role: ClaudeRole, *, network: bool) -> tuple[str, ...]:
+    """The tools that a claude session in ``role`` gets.
+
+    ``network`` is False when the sandbox denies outbound network: the
+    writer then gets no web tool.
+    """
+    if role == "probe":
+        return ()
+    if role == "reader":
+        return CLAUDE_READER_TOOLS
+    return (*CLAUDE_WRITER_TOOLS, *(CLAUDE_WEB_TOOLS if network else ()))
+
+
+def claude_session_flags(role: ClaudeRole, *, network: bool) -> dict[str, str | None]:
+    """The flags of every claude session kstrl starts, as ``{flag: value}``.
+
+    The one definition of the restriction (#803). The claude-code adapter and
+    the liveness probe take it as argv (:func:`claude_session_argv`), and the
+    claude-sdk runner as ``ClaudeAgentOptions.extra_args``, which the SDK
+    turns into the same argv. ``tests/test_claude_no_mcp_every_role_e2e.py``
+    fails when a claude spawn does not carry it.
+
+    - ``--strict-mcp-config`` with no ``--mcp-config``: no MCP server. Without
+      it, a headless session loaded the operator's plugin servers, the
+      claude.ai connectors and a server in the worktree's ``.mcp.json``
+      (measured, claude 2.1.291: 37 servers, 101 MCP tools). The write guard
+      does not see an MCP tool that writes a file.
+    - ``--tools``: only the built-in tools of :func:`claude_tools`. A tool
+      that a later claude adds is off until kstrl names it. The list holds
+      with ``--dangerously-skip-permissions``, and a name that claude does
+      not know is dropped (measured, claude 2.1.296).
+    - ``--setting-sources``: :data:`CLAUDE_SETTING_SOURCES`, so that the
+      operator's user-level hooks do not run in the session (measured).
+    """
+    return {
+        "strict-mcp-config": None,
+        "setting-sources": CLAUDE_SETTING_SOURCES,
+        "tools": ",".join(claude_tools(role, network=network)),
+    }
+
+
+def claude_session_argv(role: ClaudeRole, *, network: bool) -> list[str]:
+    """:func:`claude_session_flags` as ``claude`` argv."""
+    argv: list[str] = []
+    for flag, value in claude_session_flags(role, network=network).items():
+        argv.append(f"--{flag}")
+        if value is not None:
+            argv.append(value)
+    return argv
 
 
 def claude_sandbox_args(config: SandboxConfig | None, workspace: Path | None = None) -> list[str]:
@@ -358,8 +467,8 @@ def claude_sandbox_args(config: SandboxConfig | None, workspace: Path | None = N
 
     Thin argv wrapper over :func:`claude_sandbox_settings`. With
     ``workspace`` (the engineer), the settings carry the write guard. The
-    argv has no MCP flag: the claude adapter adds ``NO_MCP_ARGV`` to every
-    claude session, in every role (#700).
+    argv has no session flag: the claude adapter adds
+    :func:`claude_session_argv` to every claude session, in every role.
     """
     settings = claude_sandbox_settings(config, workspace)
     if settings is None:
@@ -416,6 +525,11 @@ def claude_sandbox_drops_skip_permissions(
 #
 # Also measured: "MultiEdit" is not a known tool name in claude 2.1.251
 # (the CLI warns "matches no known tool"), so it is absent below.
+#
+# Measured again on 2026-10-13 (claude 2.1.296, #803): the same payload let a
+# sandboxed ``echo z > file`` write the worktree, because a sandboxed command
+# runs with no permission rule by default. The payload now also sets
+# ``sandbox.autoAllowBashIfSandboxed`` to false, and the write was refused.
 
 #: Read-only git verbs the reviewer is allowed to shell out to. Scoped
 #: to plumbing that cannot mutate a repository: no ``add``, ``commit``,
@@ -493,6 +607,15 @@ def claude_review_sandbox_settings(config: SandboxConfig | None = None) -> str:
     # mode points the wrong way. Replacing means the reviewer holds
     # exactly the rules named below, and a tool added to the engineer's
     # list in future is excluded here until somebody considers it.
+    # claude 2.1.296 runs a sandboxed Bash command with no permission rule
+    # (``autoAllowBashIfSandboxed`` is true by default), so the git verbs
+    # below were not consulted and ``echo z > file`` wrote the worktree.
+    # With false, the git verbs ran and the write was refused (measured, #803).
+    sandbox = settings.get("sandbox")
+    settings["sandbox"] = {
+        **(sandbox if isinstance(sandbox, dict) else {}),
+        "autoAllowBashIfSandboxed": False,
+    }
     settings["permissions"] = {
         "deny": list(CLAUDE_REVIEW_DENY_TOOLS),
         "allow": [

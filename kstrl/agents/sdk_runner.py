@@ -11,6 +11,7 @@ Contract (stdin): ONE JSON document::
 
     {"prompt": str, "model": str|null, "effort": str|null,
      "settings": str|null, "bypass_permissions": bool,
+     "role": "writer"|"reader", "network": bool,
      "max_budget_usd": float|null, "workspace_guard": bool,
      "cwd": str|null, "cli_path": str|null}
 
@@ -41,6 +42,7 @@ from typing import Any
 
 from kstrl.agents.claude_sdk import DISPLAY_PREFIX, RESULT_PREFIX, USAGE_PREFIX
 from kstrl.jsonread import read_json
+from kstrl.sandbox import ClaudeRole, claude_session_flags
 from kstrl.write_guard import GUARDED_TOOLS, real_roots, refusal
 
 # Runner exit codes (informational; the adapter keys on output lines).
@@ -166,6 +168,12 @@ def _emit_result_message(message: Any) -> None:
     )
 
 
+def _role(config: dict[str, Any]) -> ClaudeRole:
+    """The role in ``config``. Any value but ``writer`` is a reader, the
+    narrower tool set."""
+    return "writer" if config.get("role") == "writer" else "reader"
+
+
 async def _drive(config: dict[str, Any], sdk: Any) -> int:
     """Stream one SDK query, rendering messages as display lines."""
     workspace = _workspace_root(config)
@@ -182,10 +190,11 @@ async def _drive(config: dict[str, Any], sdk: Any) -> int:
         "settings": config.get("settings") or None,
         "max_budget_usd": config.get("max_budget_usd"),
         "cli_path": config.get("cli_path") or None,
-        # No MCP server from the operator's plugins, connectors or the
-        # worktree .mcp.json. extra_args exists in all SDK versions that kstrl
-        # supports, so the flag does not depend on a newer option (#700).
-        "extra_args": {"strict-mcp-config": None},
+        # The flags of every claude session (#700, #803): no MCP server, only
+        # the tools of the role, and no user-level setting. extra_args exists
+        # in all SDK versions that kstrl supports, so the flags do not depend
+        # on a newer option.
+        "extra_args": claude_session_flags(_role(config), network=config.get("network") is True),
     }
     # Mirror of the CLI adapter's R7.5 invocation shape: skip-permissions
     # unless the no-network sandbox requires the permission layer.

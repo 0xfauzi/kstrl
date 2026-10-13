@@ -39,7 +39,10 @@ where it is implemented:
 
 The isolation in (1) is deliberately PROJECT scope only. A user-level
 fault must still participate, because a malformed ``~/.codex/hooks.json``
-is the motivating case. The trade that buys: a project hook or MCP
+is the motivating case. The claude probe is the exception: it gets the
+flags of every claude role (:func:`kstrl.sandbox.claude_session_argv`),
+which read no user-level setting (#803), so a user-level claude fault
+cannot reach a role and must not condemn the CLI. The trade that buys: a project hook or MCP
 server that hangs the real CLI passes the probe and then fails every
 review. That false positive is the accepted side of "false negatives are
 the failure mode", not an oversight.
@@ -63,7 +66,7 @@ from typing import Any
 from kstrl.agents.proc import DeadlineStreamer
 from kstrl.config import _parse_bool
 from kstrl.jsonread import read_json
-from kstrl.sandbox import NO_MCP_ARGV
+from kstrl.sandbox import claude_session_argv
 
 #: Default ON; ``KSTRL_AGENT_PROBE=0`` restores the pre-#262 behaviour of
 #: trusting PATH. Read straight from the environment rather than from a
@@ -215,7 +218,13 @@ def _stream(cmd: list[str]) -> tuple[list[str], bool]:
 
 def _probe_claude(model: str | None) -> ProbeResult:
     """One turn; live unless the result envelope says ``is_error``."""
-    cmd = ["claude", "--print", "--output-format", "json", *NO_MCP_ARGV]
+    cmd = [
+        "claude",
+        "--print",
+        "--output-format",
+        "json",
+        *claude_session_argv("probe", network=False),
+    ]
     if model is not None:
         cmd.extend(["--model", model])
     lines, timed_out = _stream(cmd)
