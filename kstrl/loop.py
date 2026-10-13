@@ -29,8 +29,9 @@ from kstrl.iteration_prompt import (
     measurement_block,
 )
 from kstrl.loop_budget import LoopBudget
+from kstrl.loop_setup import capture_guard_baseline, print_startup
 from kstrl.prd import PRD
-from kstrl.timeout import TimeoutConfig, describe_limit_seconds
+from kstrl.timeout import TimeoutConfig
 from kstrl.verify_model import VerifyConfig
 
 if TYPE_CHECKING:
@@ -96,25 +97,31 @@ class LoopResult:
     guard_violations: tuple[str, ...] = ()
 
 
-def _guard_baseline(
-    cwd: Path | None,
-    base_ref: str | None,
-    ui: UI,
-) -> git_tree.WorkspaceBaseline | None:
-    """The before-picture the allowed-paths guard compares against, or None
-    when it could not be read (the caller refuses before any spend)."""
-    try:
-        baseline = git_tree.capture_workspace_baseline(cwd, base_ref=base_ref)
-    except git.GitDiffError as exc:
-        ui.err(f"Guard baseline could not be taken: {exc}")
-        return None
-    if baseline.dirty:
-        ui.info(
-            f"Guard baseline: HEAD {baseline.head or '<unborn>'}, "
-            f"{len(baseline.dirty)} pre-existing uncommitted "
-            "file(s) excluded from enforcement"
-        )
-    return baseline
+@dataclass(frozen=True)
+class _LoopRun:
+    """The values of one run that do not change between iterations. Each
+    field is a reference to the object that ``run_loop`` made or received,
+    never a copy, so a later write through one is seen through the other."""
+
+    config: KstrlConfig
+    ui: UI
+    agent: Agent
+    cwd: Path
+    bus: EventBus | None
+    timeouts: TimeoutConfig
+    is_repo: bool
+    channel: InteractionChannel
+    guard_ignored: list[str]
+    guard_baseline: git_tree.WorkspaceBaseline | None
+    budget: LoopBudget | None
+    breaker: NoProgressBreaker
+    component_budget: float
+    loop_start: float
+    iteration_durations: list[float]
+    context_prefix: str | None
+    body: str
+    verify_config: VerifyConfig | None
+    on_iteration_usage: Callable[[UsageTotals], None] | None
 
 
 def _resolve_iteration_pause(
@@ -165,6 +172,428 @@ def _resolve_iteration_pause(
             usage=collect_usage(agent),
         )
     return None
+
+
+def _with_defaults(
+    cwd: Path | None,
+    timeouts: TimeoutConfig | None,
+    breaker_config: BreakerConfig | None,
+) -> tuple[Path, TimeoutConfig, BreakerConfig]:
+    """The working directory, timeouts and breaker limits of a run, each
+    taken from the caller or else from the environment."""
+    if cwd is None:
+        cwd = Path.cwd()
+    if timeouts is None:
+        timeouts = TimeoutConfig.from_env()
+    if breaker_config is None:
+        breaker_config = BreakerConfig.from_env()
+    return cwd, timeouts, breaker_config
+
+
+def _prompt_body(
+    config: KstrlConfig,
+    ui: UI,
+    cwd: Path,
+    context_prefix: str | None,
+    verify_config: VerifyConfig | None,
+    context_root: Path | None,
+) -> tuple[str, str]:
+    """The prompt body (template plus project context) and the first
+    iteration's prompt, which is the body behind the retry context."""
+    # Resolve the prompt template. If the explicit prompt file does not
+    # exist, fall back to the H3-protected DEFAULT_PROMPT from
+    # init_cmd.py. This makes ``ks factory`` runnable on a project
+    # that has not been ``ks init``'d -- the engineer prompt is part
+    # of the harness contract and should not require user setup.
+    #
+    # The fallback is announced explicitly so the operator can tell
+    # "we used the default" from "we used your customized prompt at
+    # scripts/kstrl/prompt.md", which matters when reading the
+    # iteration log later.
+    from string import Template
+
+    if config.prompt_file.exists():
+        raw_prompt = config.prompt_file.read_text(encoding="utf-8")
+    else:
+        from kstrl.scaffold_templates import DEFAULT_PROMPT
+
+        ui.warn(
+            f"Prompt file not found at {config.prompt_file}; "
+            "falling back to harness DEFAULT_PROMPT (run `ks init` "
+            "to scaffold a customizable copy)."
+        )
+        raw_prompt = DEFAULT_PROMPT
+    # $progress_path must be CONCRETE: the agent is told to append to it.
+    # config.progress_file is None until someone configures one (R8
+    # review finding 2), so the standalone loop materializes the
+    # historical repo-root default here. A factory worker arrives with an
+    # already-resolved per-component path and gets it back untouched.
+    prompt = Template(raw_prompt).safe_substitute(
+        prd_path=str(config.prd_file),
+        progress_path=str(config.resolved_progress_file(cwd)),
+        codebase_map_path=str(config.codebase_map_file),
+    )
+
+    project_context = build_project_context(cwd, ui, verify_config, context_root=context_root)
+    if project_context:
+        prompt = project_context + "\n\n---\n\n" + prompt
+
+    # The retry context goes in front of the body; from iteration 2 on the
+    # last iteration's measurement goes between them (#233).
+    body = prompt
+    prompt = assemble_prompt(context_prefix, "", body)
+    return body, prompt
+
+
+def _checkout_branch(config: KstrlConfig, ui: UI, cwd: Path, is_repo: bool) -> LoopResult | None:
+    """Check out the branch of the run, or return the refusal result when
+    the checkout fails. None means that the run goes on."""
+    if not is_repo:
+        ui.warn("Not a git repository")
+    elif not config.auto_checkout:
+        ui.info("Branch: auto_checkout disabled; using current branch")
+    else:
+        branch, source = determine_branch(config)
+        if branch:
+            if not git.checkout_branch(branch, ui, cwd, source):
+                ui.err(f"Failed to checkout branch: {branch}")
+                # A refusal before iteration 1 exits 2 (#452, #531).
+                return LoopResult(completed=False, iterations=0, exit_code=2)
+        elif branch == "":
+            ui.info("Branch: KSTRL_BRANCH is set but empty; skipping branch checkout")
+        else:
+            ui.info("Branch: no branch configured")
+    return None
+
+
+def _guard_setup(
+    config: KstrlConfig,
+    ui: UI,
+    cwd: Path,
+    is_repo: bool,
+    guard_ignored_paths: list[str] | None,
+    guard_state_root: Path | None,
+    guard_base_ref: str | None,
+) -> tuple[git_tree.WorkspaceBaseline | None, list[str]] | LoopResult:
+    """The guard baseline and the ignored paths of the run, or the refusal
+    result when the baseline could not be taken."""
+    guard_baseline: git_tree.WorkspaceBaseline | None = None
+    # The complete set the guard must not count: the caller's
+    # per-invocation harness files (#264) and kstrl's own state
+    # directory (#274). Both are loop-invariant, so this is assembled
+    # once here rather than rebuilt every iteration.
+    #
+    # The state carve-out supersedes the `.kstrl/runs/<run_id>/` entry
+    # this loop used to derive from the bus. `.kstrl/runs/` covers it
+    # wherever kstrl actually writes it, and it is now absent inside a
+    # component worktree, which is a TIGHTENING: the run journal is
+    # never written there, so that entry could only ever have hidden a
+    # `.kstrl/runs/<run_id>/` path the AGENT wrote.
+    guard_ignored: list[str] = []
+    if config.allowed_paths and is_repo:
+        guard_ignored = [
+            *(guard_ignored_paths or ()),
+            *statedir.state_dir_carve_out(cwd, guard_state_root),
+        ]
+        ui.info(f"Enforcing ALLOWED_PATHS={','.join(config.allowed_paths)}")
+        # R8 review finding 4: the guard's question is "what did THIS
+        # agent change", and only a before-picture can answer it. Taken
+        # once, here, BEFORE the first iteration and after the harness
+        # has finished staging its own files into the worktree: what is
+        # already dirty now belongs to the operator or the harness, and
+        # everything the agent does from here - committed or not - is
+        # attributable to the agent.
+        guard_baseline = capture_guard_baseline(cwd, guard_base_ref, ui)
+        if guard_baseline is None:
+            # A refusal before iteration 1 exits 2 (#452, #531).
+            return LoopResult(completed=False, iterations=0, exit_code=2)
+    else:
+        ui.info("ALLOWED_PATHS is empty; enforcement disabled")
+    return guard_baseline, guard_ignored
+
+
+def _iteration_timeout(
+    timeouts: TimeoutConfig, component_budget: float, iter_start: float, loop_start: float
+) -> float | None:
+    """The time limit of one agent run."""
+    # Bound the iteration by the per-iteration limit AND the remaining
+    # component budget, so one iteration cannot blow far past the
+    # component wall clock (the adapters kill the agent's process
+    # group when the passed timeout expires).
+    iteration_timeout: float | None = (
+        timeouts.agent_iteration if timeouts.agent_iteration > 0 else None
+    )
+    if component_budget > 0:
+        remaining = component_budget - (iter_start - loop_start)
+        iteration_timeout = (
+            min(iteration_timeout, remaining) if iteration_timeout is not None else remaining
+        )
+    return iteration_timeout
+
+
+def _publish_usage(
+    agent: Agent, on_iteration_usage: Callable[[UsageTotals], None] | None
+) -> UsageTotals:
+    """The usage snapshot of one iteration, handed to the caller's callback."""
+    # One usage snapshot per iteration, taken before any early
+    # return below so a timed-out or guard-failing iteration is
+    # accounted for too. Published first (durability), then used for
+    # the budget decision.
+    loop_usage = collect_usage(agent)
+    if on_iteration_usage is not None:
+        try:
+            on_iteration_usage(loop_usage)
+        except Exception as exc:  # noqa: BLE001 - accounting never gates
+            logger.warning("Failed to publish iteration usage: %s", exc)
+    return loop_usage
+
+
+def _run_one_iteration(
+    run: _LoopRun, iteration: int, prompt: str, timed_out_iterations: int
+) -> tuple[str, bool, UsageTotals, int]:
+    """One agent run: the next prompt, whether the completion marker was
+    seen, the usage so far and the count of timed-out iterations."""
+    run.ui.section(f"Iteration {iteration} / {run.config.max_iterations}")
+    iter_start = time.monotonic()
+    if run.bus is not None:
+        run.bus.emit(
+            IterationStarted(
+                iteration=iteration,
+                max_iterations=run.config.max_iterations,
+            )
+        )
+
+    iteration_timeout = _iteration_timeout(
+        run.timeouts, run.component_budget, iter_start, run.loop_start
+    )
+
+    # Run agent
+    completion_seen = False
+    iteration_timed_out = False
+    fast_checks_failed: tuple[str, ...] = ()
+    try:
+        for line in run.agent.run(prompt, run.cwd, timeout=iteration_timeout):
+            if line.strip() == COMPLETION_MARKER:
+                completion_seen = True
+            if line.startswith(TIMEOUT_MESSAGE_PREFIX):
+                iteration_timed_out = True
+            run.ui.stream_line("AI", line)
+
+        final_message = run.agent.final_message
+        if not completion_seen and final_message:
+            completion_seen = any(
+                line.strip() == COMPLETION_MARKER for line in final_message.splitlines()
+            )
+        # #233: measure the tree this iteration left and rebuild the
+        # next prompt around the reading. Inside the timed block, so
+        # the checks' cost is part of the iteration's wall clock.
+        reading = fast_iteration_reading(
+            run.verify_config,
+            run.cwd,
+            run.ui,
+            completed=completion_seen,
+            timed_out=iteration_timed_out,
+        )
+        fast_checks_failed = failed_fast_checks(reading)
+        prompt = assemble_prompt(run.context_prefix, measurement_block(reading), run.body)
+    finally:
+        iter_duration = time.monotonic() - iter_start
+        run.iteration_durations.append(iter_duration)
+        if run.bus is not None:
+            run.bus.emit(
+                IterationCompleted(
+                    iteration=iteration,
+                    duration_seconds=round(iter_duration, 2),
+                    completed=completion_seen,
+                    timed_out=iteration_timed_out,
+                    fast_checks_failed=fast_checks_failed,
+                )
+            )
+
+    loop_usage = _publish_usage(run.agent, run.on_iteration_usage)
+
+    if iteration_timed_out:
+        timed_out_iterations += 1
+        run.ui.warn(
+            f"Iteration {iteration} hit the agent iteration timeout "
+            f"({iteration_timeout}s); the agent process group was killed"
+        )
+    return prompt, completion_seen, loop_usage, timed_out_iterations
+
+
+def _guard_verdict(run: _LoopRun, iteration: int, timed_out_iterations: int) -> LoopResult | None:
+    """The result that ends the run when the allowed paths guard fails."""
+    # Enforce ALLOWED_PATHS BEFORE honoring the completion marker
+    # (R0.4): an agent that edits out-of-scope files and emits
+    # COMPLETE in the same iteration must not bypass enforcement.
+    # When enforcement fails the iteration is treated as failed even
+    # if the marker was seen.
+    if run.config.allowed_paths and run.is_repo:
+        ok, violations = guards.enforce_allowed_paths(
+            run.config,
+            run.ui,
+            run.cwd,
+            interaction=run.channel,
+            ignored_paths=run.guard_ignored,
+            baseline=run.guard_baseline,
+        )
+        if not ok:
+            return LoopResult(
+                completed=False,
+                iterations=iteration,
+                exit_code=1,
+                duration_seconds=time.monotonic() - run.loop_start,
+                iteration_durations=run.iteration_durations,
+                timed_out_iterations=timed_out_iterations,
+                usage=collect_usage(run.agent),
+                guard_violations=tuple(violations),
+            )
+    return None
+
+
+def _budget_verdict(
+    run: _LoopRun, iteration: int, timed_out_iterations: int, loop_usage: UsageTotals
+) -> LoopResult | None:
+    """The result that ends the run when the run-level budget is spent."""
+    # R8 run-level budget: the ONLY in-loop enforcement point for
+    # [factory] max_total_tokens and [factory] max_cost_usd. Checked
+    # here - after the completion return, before the breaker's stall
+    # probe - so a blown ceiling never pays for another agent call or
+    # another breaker test command. This bounds overshoot to the work
+    # already in flight (about one iteration per running worker); it
+    # cannot interrupt a call mid-flight. See LoopBudget.
+    if run.budget is not None:
+        halt = run.budget.halt_verdict(loop_usage)
+        if halt is not None:
+            run.ui.err(halt.reason)
+            return LoopResult(
+                completed=False,
+                iterations=iteration,
+                exit_code=1,
+                duration_seconds=time.monotonic() - run.loop_start,
+                iteration_durations=run.iteration_durations,
+                timed_out_iterations=timed_out_iterations,
+                usage=loop_usage,
+                budget_halt_reason=halt.reason,
+                budget_halt_condition=halt.condition,
+                budget_halt_ceilings=halt.ceilings,
+            )
+    return None
+
+
+def _breaker_verdict(run: _LoopRun, iteration: int, timed_out_iterations: int) -> LoopResult | None:
+    """The result that ends the run when the no-progress breaker trips."""
+    # R7.5 no-progress circuit breaker: the iteration finished
+    # without completing AND without changing the tree or the test
+    # outcome. After N consecutive such iterations, halt loudly -
+    # every further iteration would re-run the same prompt against
+    # the same state.
+    if run.breaker.record_iteration():
+        halt_message = run.breaker.halt_message()
+        run.ui.err(halt_message)
+        return LoopResult(
+            completed=False,
+            iterations=iteration,
+            exit_code=1,
+            duration_seconds=time.monotonic() - run.loop_start,
+            iteration_durations=run.iteration_durations,
+            timed_out_iterations=timed_out_iterations,
+            usage=collect_usage(run.agent),
+            no_progress=True,
+        )
+    return None
+
+
+def _wall_clock_verdict(
+    run: _LoopRun, iteration: int, timed_out_iterations: int
+) -> LoopResult | None:
+    """The result that ends the run when the component wall clock is spent."""
+    # Component wall clock: abort cleanly rather than start work that
+    # is already past its budget. This is the "which limit fired"
+    # signal for the factory (timeout_limit="component").
+    elapsed = time.monotonic() - run.loop_start
+    if run.component_budget > 0 and elapsed >= run.component_budget:
+        run.ui.err(
+            f"Component timeout: {run.component_budget}s wall clock exceeded "
+            f"after {iteration} iteration(s); aborting loop"
+        )
+        return LoopResult(
+            completed=False,
+            iterations=iteration,
+            exit_code=1,
+            duration_seconds=elapsed,
+            iteration_durations=run.iteration_durations,
+            timeout_limit="component",
+            timed_out_iterations=timed_out_iterations,
+            usage=collect_usage(run.agent),
+        )
+    return None
+
+
+def _iteration_verdict(
+    run: _LoopRun,
+    iteration: int,
+    timed_out_iterations: int,
+    completion_seen: bool,
+    loop_usage: UsageTotals,
+) -> LoopResult | None:
+    """The result that ends the run after one iteration, or None when the
+    run goes on to the next iteration."""
+    if (guard_result := _guard_verdict(run, iteration, timed_out_iterations)) is not None:
+        return guard_result
+
+    # Check for completion
+    if completion_seen:
+        run.ui.ok("Done")
+        total_duration = time.monotonic() - run.loop_start
+        return LoopResult(
+            completed=True,
+            iterations=iteration,
+            exit_code=0,
+            duration_seconds=total_duration,
+            iteration_durations=run.iteration_durations,
+            timed_out_iterations=timed_out_iterations,
+            usage=collect_usage(run.agent),
+        )
+
+    if (
+        budget_result := _budget_verdict(run, iteration, timed_out_iterations, loop_usage)
+    ) is not None:
+        return budget_result
+
+    if (breaker_result := _breaker_verdict(run, iteration, timed_out_iterations)) is not None:
+        return breaker_result
+
+    if (clock_result := _wall_clock_verdict(run, iteration, timed_out_iterations)) is not None:
+        return clock_result
+
+    # Interactive pause (PR A: through the interaction seam)
+    pause_result = _resolve_iteration_pause(run.ui, run.channel, run.config, iteration, run.agent)
+    if pause_result is not None:
+        return pause_result
+    return None
+
+
+def _max_iterations_result(run: _LoopRun, timed_out_iterations: int) -> LoopResult:
+    """The result of a run that used all its iterations."""
+    # Max iterations reached
+    if timed_out_iterations:
+        run.ui.warn(
+            f"Max iterations reached (no {COMPLETION_MARKER} seen; "
+            f"{timed_out_iterations} iteration(s) hit the agent timeout)"
+        )
+    else:
+        run.ui.warn(f"Max iterations reached (no {COMPLETION_MARKER} seen)")
+    total_duration = time.monotonic() - run.loop_start
+    return LoopResult(
+        completed=False,
+        iterations=run.config.max_iterations,
+        exit_code=1,
+        duration_seconds=total_duration,
+        iteration_durations=run.iteration_durations,
+        timed_out_iterations=timed_out_iterations,
+        usage=collect_usage(run.agent),
+    )
 
 
 def run_loop(
@@ -227,82 +656,11 @@ def run_loop(
     Returns:
         LoopResult with completion status and exit code
     """
-    if cwd is None:
-        cwd = Path.cwd()
-    if timeouts is None:
-        timeouts = TimeoutConfig.from_env()
-    if breaker_config is None:
-        breaker_config = BreakerConfig.from_env()
+    cwd, timeouts, breaker_config = _with_defaults(cwd, timeouts, breaker_config)
 
-    ui.startup_art()
+    print_startup(config, ui, agent, cwd, timeouts, breaker_config)
 
-    # Display title
-    ui.title("kstrl")
-
-    # Display startup info
-    ui.section("Startup")
-    ui.kv("Root", str(cwd))
-    ui.kv("Prompt", str(config.prompt_file))
-    ui.kv("PRD", str(config.prd_file))
-    ui.kv("Agent", agent.name)
-    ui.kv("Max iterations", str(config.max_iterations))
-    ui.kv("Sleep", f"{config.sleep_seconds}s")
-    ui.kv("Interactive", "yes" if config.interactive else "no")
-    allowed_paths = ", ".join(config.allowed_paths) if config.allowed_paths else "<disabled>"
-    ui.kv("Allowed paths", allowed_paths)
-    ui.kv("Reasoning", config.model_reasoning_effort or "<default>")
-    ui.kv("UI", config.ui_mode)
-    ui.kv("Agent timeout", describe_limit_seconds(timeouts.agent_iteration))
-    ui.kv("Component timeout", describe_limit_seconds(timeouts.component_total))
-    ui.kv(
-        "No-progress breaker",
-        f"{breaker_config.no_progress_iterations} iterations"
-        if breaker_config.no_progress_iterations > 0
-        else "<disabled>",
-    )
-
-    # Resolve the prompt template. If the explicit prompt file does not
-    # exist, fall back to the H3-protected DEFAULT_PROMPT from
-    # init_cmd.py. This makes ``ks factory`` runnable on a project
-    # that has not been ``ks init``'d -- the engineer prompt is part
-    # of the harness contract and should not require user setup.
-    #
-    # The fallback is announced explicitly so the operator can tell
-    # "we used the default" from "we used your customized prompt at
-    # scripts/kstrl/prompt.md", which matters when reading the
-    # iteration log later.
-    from string import Template
-
-    if config.prompt_file.exists():
-        raw_prompt = config.prompt_file.read_text(encoding="utf-8")
-    else:
-        from kstrl.scaffold_templates import DEFAULT_PROMPT
-
-        ui.warn(
-            f"Prompt file not found at {config.prompt_file}; "
-            "falling back to harness DEFAULT_PROMPT (run `ks init` "
-            "to scaffold a customizable copy)."
-        )
-        raw_prompt = DEFAULT_PROMPT
-    # $progress_path must be CONCRETE: the agent is told to append to it.
-    # config.progress_file is None until someone configures one (R8
-    # review finding 2), so the standalone loop materializes the
-    # historical repo-root default here. A factory worker arrives with an
-    # already-resolved per-component path and gets it back untouched.
-    prompt = Template(raw_prompt).safe_substitute(
-        prd_path=str(config.prd_file),
-        progress_path=str(config.resolved_progress_file(cwd)),
-        codebase_map_path=str(config.codebase_map_file),
-    )
-
-    project_context = build_project_context(cwd, ui, verify_config, context_root=context_root)
-    if project_context:
-        prompt = project_context + "\n\n---\n\n" + prompt
-
-    # The retry context goes in front of the body; from iteration 2 on the
-    # last iteration's measurement goes between them (#233).
-    body = prompt
-    prompt = assemble_prompt(context_prefix, "", body)
+    body, prompt = _prompt_body(config, ui, cwd, context_prefix, verify_config, context_root)
 
     # Preflight
     ui.section("Preflight")
@@ -311,56 +669,19 @@ def run_loop(
     ui.subsection("Git / Branch")
     is_repo = git.is_git_repo(cwd)
 
-    if not is_repo:
-        ui.warn("Not a git repository")
-    elif not config.auto_checkout:
-        ui.info("Branch: auto_checkout disabled; using current branch")
-    else:
-        branch, source = determine_branch(config)
-        if branch:
-            if not git.checkout_branch(branch, ui, cwd, source):
-                ui.err(f"Failed to checkout branch: {branch}")
-                # A refusal before iteration 1 exits 2 (#452, #531).
-                return LoopResult(completed=False, iterations=0, exit_code=2)
-        elif branch == "":
-            ui.info("Branch: KSTRL_BRANCH is set but empty; skipping branch checkout")
-        else:
-            ui.info("Branch: no branch configured")
+    if (refusal := _checkout_branch(config, ui, cwd, is_repo)) is not None:
+        return refusal
 
     # Guardrails info
     ui.subsection("Guardrails")
-    guard_baseline: git_tree.WorkspaceBaseline | None = None
-    # The complete set the guard must not count: the caller's
-    # per-invocation harness files (#264) and kstrl's own state
-    # directory (#274). Both are loop-invariant, so this is assembled
-    # once here rather than rebuilt every iteration.
-    #
-    # The state carve-out supersedes the `.kstrl/runs/<run_id>/` entry
-    # this loop used to derive from the bus. `.kstrl/runs/` covers it
-    # wherever kstrl actually writes it, and it is now absent inside a
-    # component worktree, which is a TIGHTENING: the run journal is
-    # never written there, so that entry could only ever have hidden a
-    # `.kstrl/runs/<run_id>/` path the AGENT wrote.
-    guard_ignored: list[str] = []
-    if config.allowed_paths and is_repo:
-        guard_ignored = [
-            *(guard_ignored_paths or ()),
-            *statedir.state_dir_carve_out(cwd, guard_state_root),
-        ]
-        ui.info(f"Enforcing ALLOWED_PATHS={','.join(config.allowed_paths)}")
-        # R8 review finding 4: the guard's question is "what did THIS
-        # agent change", and only a before-picture can answer it. Taken
-        # once, here, BEFORE the first iteration and after the harness
-        # has finished staging its own files into the worktree: what is
-        # already dirty now belongs to the operator or the harness, and
-        # everything the agent does from here - committed or not - is
-        # attributable to the agent.
-        guard_baseline = _guard_baseline(cwd, guard_base_ref, ui)
-        if guard_baseline is None:
-            # A refusal before iteration 1 exits 2 (#452, #531).
-            return LoopResult(completed=False, iterations=0, exit_code=2)
-    else:
-        ui.info("ALLOWED_PATHS is empty; enforcement disabled")
+    if isinstance(
+        guard_setup := _guard_setup(
+            config, ui, cwd, is_repo, guard_ignored_paths, guard_state_root, guard_base_ref
+        ),
+        LoopResult,
+    ):
+        return guard_setup
+    guard_baseline, guard_ignored = guard_setup
 
     # PR A: one interaction channel for the whole loop (guards + pause).
     channel: InteractionChannel = (
@@ -376,6 +697,27 @@ def run_loop(
     # Inert outside a git repo (nothing to fingerprint) - stated loudly
     # rather than silently.
     breaker = NoProgressBreaker(cwd, breaker_config)
+    run = _LoopRun(
+        config=config,
+        ui=ui,
+        agent=agent,
+        cwd=cwd,
+        bus=bus,
+        timeouts=timeouts,
+        is_repo=is_repo,
+        channel=channel,
+        guard_ignored=guard_ignored,
+        guard_baseline=guard_baseline,
+        budget=budget,
+        breaker=breaker,
+        component_budget=component_budget,
+        loop_start=loop_start,
+        iteration_durations=iteration_durations,
+        context_prefix=context_prefix,
+        body=body,
+        verify_config=verify_config,
+        on_iteration_usage=on_iteration_usage,
+    )
     if breaker_config.no_progress_iterations > 0 and not breaker.enabled:
         ui.warn("No-progress breaker disabled: working directory is not a usable git repository")
 
@@ -391,216 +733,22 @@ def run_loop(
                 timed_out_iterations=timed_out_iterations,
                 usage=collect_usage(agent),
             )
-        ui.section(f"Iteration {iteration} / {config.max_iterations}")
-        iter_start = time.monotonic()
-        if bus is not None:
-            bus.emit(
-                IterationStarted(
-                    iteration=iteration,
-                    max_iterations=config.max_iterations,
-                )
-            )
-
-        # Bound the iteration by the per-iteration limit AND the remaining
-        # component budget, so one iteration cannot blow far past the
-        # component wall clock (the adapters kill the agent's process
-        # group when the passed timeout expires).
-        iteration_timeout: float | None = (
-            timeouts.agent_iteration if timeouts.agent_iteration > 0 else None
+        prompt, completion_seen, loop_usage, timed_out_iterations = _run_one_iteration(
+            run, iteration, prompt, timed_out_iterations
         )
-        if component_budget > 0:
-            remaining = component_budget - (iter_start - loop_start)
-            iteration_timeout = (
-                min(iteration_timeout, remaining) if iteration_timeout is not None else remaining
+
+        if (
+            verdict := _iteration_verdict(
+                run, iteration, timed_out_iterations, completion_seen, loop_usage
             )
-
-        # Run agent
-        completion_seen = False
-        iteration_timed_out = False
-        fast_checks_failed: tuple[str, ...] = ()
-        try:
-            for line in agent.run(prompt, cwd, timeout=iteration_timeout):
-                if line.strip() == COMPLETION_MARKER:
-                    completion_seen = True
-                if line.startswith(TIMEOUT_MESSAGE_PREFIX):
-                    iteration_timed_out = True
-                ui.stream_line("AI", line)
-
-            final_message = agent.final_message
-            if not completion_seen and final_message:
-                completion_seen = any(
-                    line.strip() == COMPLETION_MARKER for line in final_message.splitlines()
-                )
-            # #233: measure the tree this iteration left and rebuild the
-            # next prompt around the reading. Inside the timed block, so
-            # the checks' cost is part of the iteration's wall clock.
-            reading = fast_iteration_reading(
-                verify_config, cwd, ui, completed=completion_seen, timed_out=iteration_timed_out
-            )
-            fast_checks_failed = failed_fast_checks(reading)
-            prompt = assemble_prompt(context_prefix, measurement_block(reading), body)
-        finally:
-            iter_duration = time.monotonic() - iter_start
-            iteration_durations.append(iter_duration)
-            if bus is not None:
-                bus.emit(
-                    IterationCompleted(
-                        iteration=iteration,
-                        duration_seconds=round(iter_duration, 2),
-                        completed=completion_seen,
-                        timed_out=iteration_timed_out,
-                        fast_checks_failed=fast_checks_failed,
-                    )
-                )
-
-        # One usage snapshot per iteration, taken before any early
-        # return below so a timed-out or guard-failing iteration is
-        # accounted for too. Published first (durability), then used for
-        # the budget decision.
-        loop_usage = collect_usage(agent)
-        if on_iteration_usage is not None:
-            try:
-                on_iteration_usage(loop_usage)
-            except Exception as exc:  # noqa: BLE001 - accounting never gates
-                logger.warning("Failed to publish iteration usage: %s", exc)
-
-        if iteration_timed_out:
-            timed_out_iterations += 1
-            ui.warn(
-                f"Iteration {iteration} hit the agent iteration timeout "
-                f"({iteration_timeout}s); the agent process group was killed"
-            )
-
-        # Enforce ALLOWED_PATHS BEFORE honoring the completion marker
-        # (R0.4): an agent that edits out-of-scope files and emits
-        # COMPLETE in the same iteration must not bypass enforcement.
-        # When enforcement fails the iteration is treated as failed even
-        # if the marker was seen.
-        if config.allowed_paths and is_repo:
-            ok, violations = guards.enforce_allowed_paths(
-                config,
-                ui,
-                cwd,
-                interaction=channel,
-                ignored_paths=guard_ignored,
-                baseline=guard_baseline,
-            )
-            if not ok:
-                return LoopResult(
-                    completed=False,
-                    iterations=iteration,
-                    exit_code=1,
-                    duration_seconds=time.monotonic() - loop_start,
-                    iteration_durations=iteration_durations,
-                    timed_out_iterations=timed_out_iterations,
-                    usage=collect_usage(agent),
-                    guard_violations=tuple(violations),
-                )
-
-        # Check for completion
-        if completion_seen:
-            ui.ok("Done")
-            total_duration = time.monotonic() - loop_start
-            return LoopResult(
-                completed=True,
-                iterations=iteration,
-                exit_code=0,
-                duration_seconds=total_duration,
-                iteration_durations=iteration_durations,
-                timed_out_iterations=timed_out_iterations,
-                usage=collect_usage(agent),
-            )
-
-        # R8 run-level budget: the ONLY in-loop enforcement point for
-        # [factory] max_total_tokens and [factory] max_cost_usd. Checked
-        # here - after the completion return, before the breaker's stall
-        # probe - so a blown ceiling never pays for another agent call or
-        # another breaker test command. This bounds overshoot to the work
-        # already in flight (about one iteration per running worker); it
-        # cannot interrupt a call mid-flight. See LoopBudget.
-        if budget is not None:
-            halt = budget.halt_verdict(loop_usage)
-            if halt is not None:
-                ui.err(halt.reason)
-                return LoopResult(
-                    completed=False,
-                    iterations=iteration,
-                    exit_code=1,
-                    duration_seconds=time.monotonic() - loop_start,
-                    iteration_durations=iteration_durations,
-                    timed_out_iterations=timed_out_iterations,
-                    usage=loop_usage,
-                    budget_halt_reason=halt.reason,
-                    budget_halt_condition=halt.condition,
-                    budget_halt_ceilings=halt.ceilings,
-                )
-
-        # R7.5 no-progress circuit breaker: the iteration finished
-        # without completing AND without changing the tree or the test
-        # outcome. After N consecutive such iterations, halt loudly -
-        # every further iteration would re-run the same prompt against
-        # the same state.
-        if breaker.record_iteration():
-            halt_message = breaker.halt_message()
-            ui.err(halt_message)
-            return LoopResult(
-                completed=False,
-                iterations=iteration,
-                exit_code=1,
-                duration_seconds=time.monotonic() - loop_start,
-                iteration_durations=iteration_durations,
-                timed_out_iterations=timed_out_iterations,
-                usage=collect_usage(agent),
-                no_progress=True,
-            )
-
-        # Component wall clock: abort cleanly rather than start work that
-        # is already past its budget. This is the "which limit fired"
-        # signal for the factory (timeout_limit="component").
-        elapsed = time.monotonic() - loop_start
-        if component_budget > 0 and elapsed >= component_budget:
-            ui.err(
-                f"Component timeout: {component_budget}s wall clock exceeded "
-                f"after {iteration} iteration(s); aborting loop"
-            )
-            return LoopResult(
-                completed=False,
-                iterations=iteration,
-                exit_code=1,
-                duration_seconds=elapsed,
-                iteration_durations=iteration_durations,
-                timeout_limit="component",
-                timed_out_iterations=timed_out_iterations,
-                usage=collect_usage(agent),
-            )
-
-        # Interactive pause (PR A: through the interaction seam)
-        pause_result = _resolve_iteration_pause(ui, channel, config, iteration, agent)
-        if pause_result is not None:
-            return pause_result
+        ) is not None:
+            return verdict
 
         # Sleep before next iteration (except on last)
         if iteration < config.max_iterations:
             time.sleep(config.sleep_seconds)
 
-    # Max iterations reached
-    if timed_out_iterations:
-        ui.warn(
-            f"Max iterations reached (no {COMPLETION_MARKER} seen; "
-            f"{timed_out_iterations} iteration(s) hit the agent timeout)"
-        )
-    else:
-        ui.warn(f"Max iterations reached (no {COMPLETION_MARKER} seen)")
-    total_duration = time.monotonic() - loop_start
-    return LoopResult(
-        completed=False,
-        iterations=config.max_iterations,
-        exit_code=1,
-        duration_seconds=total_duration,
-        iteration_durations=iteration_durations,
-        timed_out_iterations=timed_out_iterations,
-        usage=collect_usage(agent),
-    )
+    return _max_iterations_result(run, timed_out_iterations)
 
 
 def determine_branch(config: KstrlConfig) -> tuple[str | None, str | None]:

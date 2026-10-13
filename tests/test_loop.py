@@ -45,7 +45,7 @@ class MockAgent:
 class TestRunLoop:
     """Tests for run_loop."""
 
-    def test_completes_on_marker(self, tmp_path: Path) -> None:
+    def test_completes_on_marker(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
         """Loop exits with code 0 when completion marker found."""
         # Setup
         kstrl_dir = tmp_path / "scripts" / "kstrl"
@@ -71,8 +71,11 @@ class TestRunLoop:
         assert result.completed is True
         assert result.exit_code == 0
         assert result.iterations == 1
+        assert "OK: Done" in capsys.readouterr().err
 
-    def test_max_iterations_without_completion(self, tmp_path: Path) -> None:
+    def test_max_iterations_without_completion(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         """Loop exits with code 1 when max iterations reached."""
         kstrl_dir = tmp_path / "scripts" / "kstrl"
         kstrl_dir.mkdir(parents=True)
@@ -95,6 +98,10 @@ class TestRunLoop:
         assert result.completed is False
         assert result.exit_code == 1
         assert result.iterations == 3
+        assert len(result.iteration_durations) == 3
+        assert (
+            f"WARN: Max iterations reached (no {COMPLETION_MARKER} seen)" in capsys.readouterr().err
+        )
 
     def test_missing_prompt_file_falls_back_to_default(
         self,
@@ -403,6 +410,7 @@ class TestGuardsRunBeforeCompletion:
     def test_out_of_scope_edit_plus_complete_fails_noninteractive(
         self,
         tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
     ) -> None:
         """Non-interactive: enforcement fires and the COMPLETE marker is
         NOT honored -- the loop reports failure, not success."""
@@ -414,6 +422,7 @@ class TestGuardsRunBeforeCompletion:
         assert result.completed is False
         assert result.exit_code == 1
         assert result.iterations == 1
+        assert "Enforcing ALLOWED_PATHS=src/" in capsys.readouterr().err
 
     def test_active_run_state_does_not_trip_scope_guard(
         self,

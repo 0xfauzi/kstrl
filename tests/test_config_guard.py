@@ -93,6 +93,9 @@ EXPECTED_SURFACE_CLASSES |= {
     # ``autonomy_config: AutonomyConfig`` as fields, the holder pattern.
     # It defines no methods, so it adds no site.
     "RunContext": frozenset(),
+    # #776 B3: ``_LoopRun`` declares ``config: KstrlConfig`` and
+    # ``timeouts: TimeoutConfig`` as fields (holder pattern, no methods).
+    "_LoopRun": frozenset(),
     # #776 B3: ``LaunchPlan`` declares ``run_envelope``, ``breaker_cfg``,
     # ``timeout_cfg``, ``knowledge_config`` and ``factory_config`` as
     # fields, and ``_PassContext`` holds a ``LaunchPlan``. Both are the

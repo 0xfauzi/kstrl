@@ -14,7 +14,12 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.breaker import BreakerConfig, NoProgressBreaker, compute_diff_hash
+from kstrl.breaker import (
+    NO_PROGRESS_MESSAGE_PREFIX,
+    BreakerConfig,
+    NoProgressBreaker,
+    compute_diff_hash,
+)
 from kstrl.config import KstrlConfig
 from kstrl.factory_result import ComponentResult
 from kstrl.loop import run_loop
@@ -194,7 +199,9 @@ def _loop_config(root: Path, max_iterations: int) -> KstrlConfig:
 
 
 class TestRunLoopBreakerIntegration:
-    def test_stalled_agent_trips_breaker(self, tmp_path: Path) -> None:
+    def test_stalled_agent_trips_breaker(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         """An agent that changes nothing trips after N iterations."""
         _init_repo(tmp_path)
         config = _loop_config(tmp_path, max_iterations=10)
@@ -210,6 +217,10 @@ class TestRunLoopBreakerIntegration:
         assert result.completed is False
         assert result.exit_code == 1
         assert result.iterations == 3
+        assert (
+            f"ERROR: {NO_PROGRESS_MESSAGE_PREFIX}: 3 consecutive iteration(s) produced an "
+            "unchanged diff hash; halting component instead of burning further iterations"
+        ) in capsys.readouterr().err
 
     def test_identical_diff_agent_trips_breaker(self, tmp_path: Path) -> None:
         """An agent that rewrites the SAME content every iteration

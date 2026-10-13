@@ -1354,6 +1354,7 @@ class TestInLoopTokenBudget:
     def test_halt_happens_between_iterations_not_at_max_iterations(
         self,
         tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
     ) -> None:
         """The loop must stop ITSELF: 300 tokens/iteration against a 500
         cap means iteration 3 never starts, even though max_iterations
@@ -1372,6 +1373,7 @@ class TestInLoopTokenBudget:
         assert "token budget exceeded" in result.budget_halt_reason
         assert "600" in result.budget_halt_reason
         assert result.usage.total_tokens == 600
+        assert f"ERROR: {result.budget_halt_reason}" in capsys.readouterr().err
 
     def test_spend_from_earlier_components_counts(self, tmp_path: Path) -> None:
         """The cap is run-level: a worker launched with 450 tokens
