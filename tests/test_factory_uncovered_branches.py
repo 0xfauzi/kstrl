@@ -22,12 +22,12 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl.autonomy import AutonomyState
+from kstrl.architect.linear import LinearConfig
 from kstrl.contract import ContractConfig, ContractMode, ContractResult
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult, FactoryResult
-from kstrl.linear import LinearConfig
+from kstrl.learning.autonomy import AutonomyState
 from kstrl.plan.manifest import ComponentStatus, Manifest
 from kstrl.ui.plain import PlainUI
 from tests.helpers.plan_approval import approve_plan
@@ -207,7 +207,7 @@ class TestContractPhase:
             return [ContractResult(passed=True, tier=0, components_tested=["comp-a"])]
 
         with patch(
-            "kstrl.evolution.EvolutionJournal.append_entries",
+            "kstrl.learning.evolution.EvolutionJournal.append_entries",
             side_effect=OSError("journal disk full"),
         ):
             result, narration = _drive(

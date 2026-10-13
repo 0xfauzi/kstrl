@@ -251,7 +251,7 @@ class UsageLedger(PipelineState):
         if not carrying:
             return
         from kstrl.events import read_run_dir
-        from kstrl.evolution import EvolutionJournal
+        from kstrl.learning import EvolutionJournal
 
         events = read_run_dir(ev.RunPaths.for_run(self.root_dir, prior).root)
         spent = _usage_by_component_phase(events)

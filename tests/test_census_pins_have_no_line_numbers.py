@@ -129,10 +129,10 @@ class TestNoCensusPinsALineNumber:
             'SCOPED = ("cli.py::factory kstrl.owner.interaction.PromptRequest",)\n'
             'UNREAL = ("no_such_module.py:12 x",)\n'
             "class TestX:\n"
-            '    PINS: tuple[str, ...] = ("kstrl/linear.py:320 urlopen",)\n'
+            '    PINS: tuple[str, ...] = ("kstrl/architect/linear.py:320 urlopen",)\n'
             "def test_y():\n"
             '    ROWS = {"cli_report.py:390": 1}\n'
-            '    SITES += (f"verify.py:112 {x}",)\n'
+            '    SITES += (f"verify/verify.py:112 {x}",)\n'
             'WRAPPED = ["at [kstrl/signals.py:556]"]\n'
             '_PRIVATE = ("pipeline.py:1 x",)\n'
             "def setup(cls):\n"
@@ -141,9 +141,9 @@ class TestNoCensusPinsALineNumber:
         assert sorted(line_number_pins(parse(source))) == [
             "ATTR loop.py:2",
             "EXPECTED cli.py:3164",
-            "PINS kstrl/linear.py:320",
+            "PINS kstrl/architect/linear.py:320",
             "ROWS cli_report.py:390",
-            "SITES verify.py:112",
+            "SITES verify/verify.py:112",
             "WRAPPED kstrl/signals.py:556",
             "_PRIVATE pipeline.py:1",
         ]

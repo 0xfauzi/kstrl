@@ -132,20 +132,19 @@ def _all_field_names(cfg_cls: Any) -> list[str]:
 
 def _section_specs() -> list[SectionSpec]:
     from kstrl.agents.sandbox import SandboxConfig
-    from kstrl.autonomy_config import AutonomyConfig
+    from kstrl.architect.linear import LinearConfig
     from kstrl.breaker import BreakerConfig
     from kstrl.config.config import KstrlConfig
     from kstrl.config.config_keys import STRING_KEYS
     from kstrl.contract import ContractConfig
     from kstrl.divergence import DivergenceConfig
     from kstrl.events.observability import NotifyConfig
-    from kstrl.evolution_config import EvolutionConfig
     from kstrl.factory_config import FactoryConfig
     from kstrl.intake_gh import GitHubIntakeConfig
-    from kstrl.knowledge_facts import KnowledgeConfig
-    from kstrl.linear import LinearConfig
+    from kstrl.knowledge.knowledge_facts import KnowledgeConfig
+    from kstrl.learning.autonomy_config import AutonomyConfig
+    from kstrl.learning.evolution_config import EvolutionConfig
     from kstrl.owner.inbox import InboxConfig
-    from kstrl.policy import PolicyConfig
     from kstrl.proc.timeout import TimeoutConfig
     from kstrl.project.feedforward import CodebaseScanConfig
     from kstrl.queue.workqueue_items import QueueConfig
@@ -153,7 +152,8 @@ def _section_specs() -> list[SectionSpec]:
     from kstrl.security import SecurityConfig
     from kstrl.serve_config import ServeConfig
     from kstrl.signals import SignalsConfig
-    from kstrl.verify_model import VerifyConfig
+    from kstrl.verify.policy import PolicyConfig
+    from kstrl.verify.verify_model import VerifyConfig
 
     def kstrl_loader(root: Path) -> Any:
         return KstrlConfig.load(root_dir=root)

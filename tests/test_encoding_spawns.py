@@ -110,7 +110,7 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     # moved `run_scrubbed` and `start_scrubbed` to `scrubbed_run.py`,
     # which holds 15 (measured by running this census). #776 V3: the 2
     # moved on to `verify_commands.py`, and `verify.py` holds none.
-    "verify_commands.py": 2,
+    "verify/verify_commands.py": 2,
     "proc/worktree_setup.py": 2,  # #624: the import, and `TimeoutExpired` from `run_scrubbed`
     "proc/worktree_sweep.py": 2,  # #461: the import, and `TimeoutExpired` from `run_scrubbed`
 }

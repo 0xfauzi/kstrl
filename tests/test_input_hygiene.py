@@ -25,7 +25,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.decompose import decompose_spec
+from kstrl.architect.decompose import decompose_spec
 from kstrl.git.git import merge_branch
 from kstrl.git.git_diff import get_diff_names
 from kstrl.pr import push_branch

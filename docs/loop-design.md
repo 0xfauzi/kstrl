@@ -455,7 +455,7 @@ frame it is written in.
 **Name the new surfaces for what they are.** Where section 5 adds code it takes
 control-loop names, because new names are free and existing ones are not:
 `ks check` for the standalone sensor command, a safe-mode predicate, a dampener
-baseline, and `kstrl/health.py` for R8.4, which the roadmap already calls that.
+baseline, and `kstrl/learning/health.py` for R8.4, which the roadmap already calls that.
 
 **Rename nothing that exists.** If a rename later proves worth it, the
 established pattern is rename-with-read-alias, precedent at `CLAUDE.md:95`

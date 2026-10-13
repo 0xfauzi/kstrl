@@ -325,7 +325,7 @@ class TestPipelineWiring:
         tmp_path: Path,
     ) -> None:
         """#226 round 2. The seventh row of the census in
-        ``kstrl/evolution.py`` above ``_CATEGORY_BY_CHECK``, asserted
+        ``kstrl/learning/evolution.py`` above ``_CATEGORY_BY_CHECK``, asserted
         here so the disclosure fails if it stops being true.
 
         The repository answers "did this run say anything about the

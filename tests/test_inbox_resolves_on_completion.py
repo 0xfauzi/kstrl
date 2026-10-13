@@ -55,7 +55,7 @@ from kstrl.pr import MergeConfirmation
 from kstrl.retry_plan import prepare_retry
 from kstrl.review import ReviewResult
 from kstrl.ui.plain import PlainUI
-from kstrl.verify_model import CheckResult, VerificationResult, VerifyConfig
+from kstrl.verify.verify_model import CheckResult, VerificationResult, VerifyConfig
 from tests.helpers import astwalk, gitrepo
 from tests.helpers.component_prd import write_component_prd
 from tests.helpers.stack_confirmation import in_process_stack
@@ -598,10 +598,10 @@ def completion_census() -> dict[str, int]:
 #: that moved, is a place the status may now be written: classify it
 #: below before adding it here.
 EXPECTED_STATUS_SPELLINGS: dict[str, int] = {
-    "autonomy_replay.py::load_runs": 1,
+    "learning/autonomy_replay.py::load_runs": 1,
     "cli_learning.py::evolve": 1,
     "context.py::IterationContext.format_for_prompt": 1,
-    "experiments_tsv.py::<module>": 1,
+    "learning/experiments_tsv.py::<module>": 1,
     "plan/manifest.py::<module>": 2,
     "plan/manifest.py::Manifest.reset_for_retry": 1,
     "events/observability.py::ProgressLog.factory_completed": 1,
@@ -626,10 +626,10 @@ COMPLETION_SITES = frozenset(
 
 #: Every other row, and why it is not a component becoming COMPLETED.
 NOT_A_COMPLETION: dict[str, str] = {
-    "autonomy_replay.py::load_runs": "reads the 'completed' count column of a trend row",
+    "learning/autonomy_replay.py::load_runs": "reads the 'completed' count column of a trend row",
     "cli_learning.py::evolve": "prints the 'completed' count column of a trend row",
     "context.py::IterationContext.format_for_prompt": "a label in the engineer's retry context",
-    "experiments_tsv.py::<module>": "the name of the 'completed' trend column",
+    "learning/experiments_tsv.py::<module>": "the name of the 'completed' trend column",
     "plan/manifest.py::<module>": "the ComponentStatus.COMPLETED declaration, name and value",
     "plan/manifest.py::Manifest.reset_for_retry": (
         "builds the set a dependency's status is compared to"

@@ -18,9 +18,9 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
+from kstrl.architect.decompose_prompt import spec_digest
 from kstrl.config.config import KstrlConfig
 from kstrl.contract import ContractConfig, ContractMode
-from kstrl.decompose_prompt import spec_digest
 from kstrl.events.usage import UsageRecord
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
@@ -31,7 +31,7 @@ from kstrl.pipeline import ComponentPipeline
 from kstrl.plan.manifest import Component, ComponentStatus, Manifest
 from kstrl.security import SecurityConfig
 from kstrl.ui.plain import PlainUI
-from kstrl.verify_model import VerifyConfig
+from kstrl.verify.verify_model import VerifyConfig
 from tests.helpers.component_prd import PASSING_STORY, write_component_prd
 from tests.helpers.gitrepo import git_in, set_identity
 from tests.helpers.stack_confirmation import in_process_stack

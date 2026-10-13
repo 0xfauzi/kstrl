@@ -20,7 +20,7 @@ from kstrl.review_claims import (
     claim_retry_context,
     revert_unconfirmed_stories,
 )
-from kstrl.verify_model import VerificationResult
+from kstrl.verify import VerificationResult
 
 if TYPE_CHECKING:
     from kstrl.factory_result import ComponentResult

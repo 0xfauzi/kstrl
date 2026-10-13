@@ -16,8 +16,8 @@ session-wide ambient identity restores exactly the masking that caused
 #357: every repository would commit whether or not it went through
 `set_identity`, so no test would depend on the repository carrying its own
 identity and there is nowhere left for a guard to stand. `HOME` is in fact
-ON `kstrl.verify.scrubbed_subprocess_env`'s allowlist and does reach the
-commit `kstrl/verify.py` makes for the dead-code cleanup: pointing `HOME`
+ON `kstrl.verify.verify.scrubbed_subprocess_env`'s allowlist and does reach the
+commit `kstrl/verify/verify.py` makes for the dead-code cleanup: pointing `HOME`
 at a config that carries an identity makes that commit succeed, measured
 directly. Repository configuration reaches every caller too, including a
 worktree, which shares its repository's config, without masking anything:

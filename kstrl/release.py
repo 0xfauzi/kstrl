@@ -6,7 +6,7 @@ are held by guards rather than by prose. ``tests/test_release_gate.py``
 walks this module's import CLOSURE and asserts none of it is a key of
 ``tests/test_process_lifecycle.py::EXPECTED_PROCESS_MODULES`` (#154 fix
 round, A2: a per-file spelling walk cleared a plant that reached a
-spawner through ``kstrl.verify`` one import away, so the guard now
+spawner through ``kstrl.verify.verify`` one import away, so the guard now
 follows the reachability rather than the spelling), and separately runs
 ``ReleaseConfig.load`` under an environment that raises on every read
 (A2 again: a text check for ``os.environ``/``os.getenv`` cleared a

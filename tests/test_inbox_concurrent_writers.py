@@ -55,7 +55,7 @@ def _file_breach(root: Path, run_id: str) -> None:
     occurrence, so the child turns a warning into a non-zero exit.
     """
     from kstrl.factory_autonomy import _open_health_breach_items
-    from kstrl.health import HealthBreach
+    from kstrl.learning.health import HealthBreach
     from kstrl.ui.plain import PlainUI
 
     out = io.StringIO()

@@ -42,7 +42,7 @@ class TestAutonomyReplayNamesAnUnreadableFile:
         ``experiment_rows`` refuses on the ``ValueError`` path now, which
         is the path this handler already takes.
         """
-        from kstrl.experiments_tsv import EXPERIMENTS_HEADER
+        from kstrl.learning.experiments_tsv import EXPERIMENTS_HEADER
 
         width = len(EXPERIMENTS_HEADER.split("\t"))
         fields = ["run-1", "2026-01-01T00:00:00", "x" * 200_000] + ["0"] * (width - 3)

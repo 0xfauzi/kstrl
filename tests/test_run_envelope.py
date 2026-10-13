@@ -20,12 +20,12 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl.autonomy import AutonomyState
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult
+from kstrl.learning.autonomy import AutonomyState
 from kstrl.plan.manifest import Component
-from kstrl.policy import PolicyConfig
-from kstrl.verify_model import VerificationResult
+from kstrl.verify.policy import PolicyConfig
+from kstrl.verify.verify_model import VerificationResult
 from tests.helpers.run_config import BEFORE, MALFORMED, count_toml_parses, drive_run, empty_run
 from tests.helpers.stack_confirmation import in_process_stack
 from tests.helpers.verify_phase import component
@@ -310,7 +310,7 @@ class TestTheLadderStateIsReadOnce:
     def test_a_ladder_on_run_loads_the_state_once(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from kstrl import autonomy as autonomy_module
+        from kstrl.learning import autonomy as autonomy_module
 
         original = autonomy_module.AutonomyState.load
         calls = 0
@@ -363,7 +363,7 @@ class TestTheLadderStateIsReadOnce:
         field is ``AutonomyState | None`` now and ``_resolve_ladder``
         returns before it would need one.
         """
-        from kstrl import autonomy as autonomy_module
+        from kstrl.learning import autonomy as autonomy_module
 
         original = autonomy_module.AutonomyState.load
         calls = 0

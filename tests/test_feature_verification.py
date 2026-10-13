@@ -26,12 +26,12 @@ from kstrl.events import events as ev
 from kstrl.feature_cmd import FeatureParams, run_feature
 from kstrl.feature_verify import resolve_feature_verify_config
 from kstrl.loop import STOP_EXIT_CODE
-from kstrl.verify import (
+from kstrl.verify.verify import (
     DIFF_DEPENDENT_CHECKS,
     run_mechanical_verification,
     run_undiffed_verification,
 )
-from kstrl.verify_model import CheckResult, VerificationResult, VerifyConfig
+from kstrl.verify.verify_model import CheckResult, VerificationResult, VerifyConfig
 from tests.helpers import gitrepo
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
 from tests.test_feature_cmd import (

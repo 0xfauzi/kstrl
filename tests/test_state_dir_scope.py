@@ -47,10 +47,8 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl import guards
 from kstrl.config.config import KstrlConfig
 from kstrl.git import git_tree
-from kstrl.guards import check_violations, path_is_allowed
 from kstrl.io import statedir
 from kstrl.io.statedir import (
     STATE_FILES,
@@ -60,7 +58,9 @@ from kstrl.io.statedir import (
 )
 from kstrl.loop import COMPLETION_MARKER, run_loop
 from kstrl.ui.plain import PlainUI
-from kstrl.verify_diff import _diff_scope_details, check_diff_scope
+from kstrl.verify import guards
+from kstrl.verify.guards import check_violations, path_is_allowed
+from kstrl.verify.verify_diff import _diff_scope_details, check_diff_scope
 from tests.helpers import astwalk, gitrepo
 from tests.helpers.astwalk.reexport import import_base
 from tests.test_loop import MockAgent
@@ -398,7 +398,7 @@ _EXPECTED_STATE_DIR_SPELLINGS: dict[str, int] = {
     "cli_learning.py": 1,
     # 2: -1 for #863 A1, which deleted `ks dash` and its join to the runs directory.
     "cli_report.py": 2,
-    "decompose_reply.py": 1,
+    "architect/decompose_reply.py": 1,
     "doctor.py": 2,
     "events/events.py": 1,
     # 9 until #776 F2 moved five spellings, with the worktree code, to
@@ -414,7 +414,7 @@ _EXPECTED_STATE_DIR_SPELLINGS: dict[str, int] = {
     "factory_run.py": 1,
     "factory_worktrees.py": 6,
     "integration_state.py": 1,
-    "knowledge_facts.py": 2,
+    "knowledge/knowledge_facts.py": 2,
     "pipeline_attempt.py": 1,
     # +1 #863 A4: the refusal of a progress.jsonl-only run names the state dir.
     "events/reducer.py": 4,
@@ -636,14 +636,14 @@ class TestNothingTheLoopRunsWritesTheUncarvedEntries:
             "kstrl.cli",
             "kstrl.cli_seam",
             "kstrl.cli_queue",
-            "kstrl.evolution",
+            "kstrl.learning.evolution",
             "kstrl.intake_github",
             "kstrl.intake_issue",
             "kstrl.intake_steering",
             # #545: the writers of .kstrl/plan/.
-            "kstrl.decompose",
-            "kstrl.decompose_plan",
-            "kstrl.decompose_reply",
+            "kstrl.architect.decompose",
+            "kstrl.architect.decompose_plan",
+            "kstrl.architect.decompose_reply",
             "kstrl.integration_fix",
         }
     )
@@ -661,7 +661,7 @@ class TestNothingTheLoopRunsWritesTheUncarvedEntries:
         """Without this the assertion above could be passing because the
         closure is empty, which would make it a test of nothing."""
         closure = _import_closure("kstrl.loop")
-        assert "kstrl.guards" in closure
+        assert "kstrl.verify.guards" in closure
         assert "kstrl.io.statedir" in closure
         assert _import_closure("kstrl.serve") & self.WRITERS
 

@@ -36,17 +36,17 @@ import pytest
 
 from kstrl.config.config import KstrlConfig
 from kstrl.contract import ContractConfig, ContractMode
-from kstrl.evolution_config import EvolutionConfig
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult, FactoryResult
-from kstrl.knowledge_facts import KnowledgeConfig
+from kstrl.knowledge.knowledge_facts import KnowledgeConfig
+from kstrl.learning.evolution_config import EvolutionConfig
 from kstrl.plan.manifest import Component, Manifest
 from kstrl.project.feedforward import CodebaseScanConfig
 from kstrl.review import ReviewResult
 from kstrl.security import SecurityConfig, SecurityMode
 from kstrl.ui.plain import PlainUI
-from kstrl.verify_model import VerifyConfig
+from kstrl.verify.verify_model import VerifyConfig
 from tests import spine_utils
 from tests.helpers.stack_confirmation import in_process_stack
 

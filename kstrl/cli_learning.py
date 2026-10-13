@@ -11,20 +11,16 @@ from typing import TYPE_CHECKING, Any
 
 import click
 
-from kstrl.autonomy import DEMOTION_TRIGGER_LABELS
 from kstrl.cli_seam import _autonomy_ui, _console_ui, cli
 from kstrl.config_report import UI_MODES
 from kstrl.config_report import normalize_ui_mode as _normalize_ui_mode
 from kstrl.factory_preflight import report_preflight
-from kstrl.journal_rows import LegacyJournalRowError
+from kstrl.learning import DEMOTION_TRIGGER_LABELS, LegacyJournalRowError
 from kstrl.ui import UI
 
 if TYPE_CHECKING:
-    from kstrl.autonomy import AutonomyState
-    from kstrl.autonomy_replay import RunRecord
-    from kstrl.evolution import EvolutionJournal
-    from kstrl.evolution_config import EvolutionConfig
-    from kstrl.failure_signatures import FailurePattern, PatternRouting
+    from kstrl.learning import AutonomyState, EvolutionConfig, EvolutionJournal, RunRecord
+    from kstrl.verify import FailurePattern, PatternRouting
 
 
 def _echo_journal_repairs(journal: EvolutionJournal, ui_impl: UI) -> None:
@@ -122,9 +118,8 @@ def evolve(
     the learning-readiness numbers. Nothing is written.
     Use --status to see experiment trends.
     """
-    from kstrl.evolution import EvolutionJournal
-    from kstrl.evolution_config import EvolutionConfig
-    from kstrl.failure_signatures import route_patterns
+    from kstrl.learning import EvolutionConfig, EvolutionJournal
+    from kstrl.verify import route_patterns
 
     root_dir = root.resolve() if root else Path.cwd()
     force_rich = os.environ.get("KSTRL_UI_FORCE_RICH") == "1"
@@ -258,7 +253,7 @@ def _echo_pattern_routing(routing: PatternRouting, ui_impl: UI) -> None:
     bucket, and the first time a row of that table is wrong the operator
     sees it in this output.
     """
-    from kstrl.failure_signatures import UNENROLLED_CATEGORY, category_for_check
+    from kstrl.verify import UNENROLLED_CATEGORY, category_for_check
 
     if routing.lessons:
         ui_impl.section(
@@ -308,9 +303,9 @@ def _echo_learning_readiness(
     ``patterns`` is passed in rather than re-read. The caller has
     already computed it from the same journal, and a second read is a
     second answer to one question. The lines themselves are built by
-    ``kstrl.evolve_report``, so that the text has one home (#433 F12).
+    ``kstrl.learning.evolve_report``, so that the text has one home (#433 F12).
     """
-    from kstrl.evolve_report import readiness_lines
+    from kstrl.learning import readiness_lines
 
     ui_impl.section("Learning readiness")
     for line in readiness_lines(journal, evo_config, patterns, root_dir):
@@ -372,10 +367,14 @@ def _report_autonomy_since(
 @_autonomy_no_color_option
 def autonomy_status(root: Path | None, ui: str, no_color: bool) -> None:
     """Show the current level, its flag bundle, and what promotion needs."""
-    from kstrl.autonomy import AutonomyState, flag_bundle_for
-    from kstrl.autonomy_config import AutonomyConfig, resolve_runtime_level
-    from kstrl.autonomy_transitions import entry_signal_blockers
-    from kstrl.policy import PolicyConfig
+    from kstrl.learning import (
+        AutonomyConfig,
+        AutonomyState,
+        entry_signal_blockers,
+        flag_bundle_for,
+        resolve_runtime_level,
+    )
+    from kstrl.verify import PolicyConfig
 
     root_dir = (root or Path.cwd()).resolve()
     ui_impl = _autonomy_ui(ui, no_color)
@@ -462,10 +461,12 @@ def autonomy_promote(
     no_color: bool,
 ) -> None:
     """Raise the autonomy level by one. Requires a human ack."""
-    from kstrl.autonomy import AutonomyError, AutonomyLevel, AutonomyState
-    from kstrl.autonomy_config import control_relocation_error
-    from kstrl.autonomy_transitions import (
+    from kstrl.learning import (
+        AutonomyError,
+        AutonomyLevel,
+        AutonomyState,
         commit_transition,
+        control_relocation_error,
         entry_signal_blockers,
         promotion_authority_error,
     )
@@ -525,8 +526,7 @@ def autonomy_demote(
     no_color: bool,
 ) -> None:
     """Drop the autonomy level by one and start the cool-down."""
-    from kstrl.autonomy import AutonomyState, DemotionTrigger
-    from kstrl.autonomy_transitions import commit_transition
+    from kstrl.learning import AutonomyState, DemotionTrigger, commit_transition
 
     root_dir = (root or Path.cwd()).resolve()
     ui_impl = _autonomy_ui(ui, no_color)
@@ -554,7 +554,7 @@ def autonomy_demote(
 @_autonomy_no_color_option
 def autonomy_history(root: Path | None, ui: str, no_color: bool) -> None:
     """Show every recorded level transition."""
-    from kstrl.autonomy import AutonomyState
+    from kstrl.learning import AutonomyState
 
     root_dir = (root or Path.cwd()).resolve()
     ui_impl = _autonomy_ui(ui, no_color)
@@ -587,8 +587,7 @@ def _load_history_or_exit(
     the config too, not just the runs, is what lets a caller reach
     ``journal_path`` without a second ``kstrl.toml`` read.
     """
-    from kstrl.autonomy_replay import load_runs
-    from kstrl.evolution_config import EvolutionConfig
+    from kstrl.learning import EvolutionConfig, load_runs
 
     try:
         config = EvolutionConfig.load(root_dir)
@@ -638,8 +637,7 @@ def autonomy_replay_cmd(
     would-have-fired breaches and never demotes, so a candidate rule set is
     scored against real history before it is allowed to revoke a level.
     """
-    from kstrl.autonomy_replay import replay
-    from kstrl.health import breach_lines, readings_from
+    from kstrl.learning import breach_lines, readings_from, replay
 
     root_dir = (root or Path.cwd()).resolve()
     ui_impl = _autonomy_ui(ui, no_color)
@@ -668,7 +666,7 @@ def health_cmd(root: Path | None, ui: str, no_color: bool) -> None:
     means the recorded history could not be read, and the line above it
     names the cause.
     """
-    from kstrl.health import health_report, readings_from
+    from kstrl.learning import health_report, readings_from
 
     root_dir = (root or Path.cwd()).resolve()
     ui_impl = _autonomy_ui(ui, no_color)
@@ -701,7 +699,7 @@ def recheck_cmd(record: Path, root: Path | None, ui: str, no_color: bool) -> Non
     """
     from kstrl.factory_config import FactoryConfig
     from kstrl.recheck import recheck
-    from kstrl.verify_model import VerifyConfig
+    from kstrl.verify import VerifyConfig
 
     root_dir = (root or Path.cwd()).resolve()
     ui_impl = _autonomy_ui(ui, no_color)

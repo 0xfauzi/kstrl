@@ -71,7 +71,7 @@ from kstrl.project import (
     Stack,
     stack_paths,
 )
-from kstrl.verify_commands import SHELL_COULD_NOT_RUN
+from kstrl.verify import SHELL_COULD_NOT_RUN
 
 if TYPE_CHECKING:
     from kstrl.ui import UI

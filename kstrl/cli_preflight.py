@@ -529,7 +529,7 @@ def _collect_evolution_notes(
     argument for eventually making the architect's spend durable where
     it is earned rather than plugging exits one at a time.
     """
-    from kstrl.evolution_config import EvolutionConfig
+    from kstrl.learning import EvolutionConfig
 
     config = EvolutionConfig.load_or_none(root_dir, warn=ui_impl.warn)
     if config is None:
@@ -558,7 +558,7 @@ def _measure_base_before_architect(
     architect's run (``run_id``); the factory run reuses the reading.
     ``--no-verify`` measures nothing, here as in the run.
     """
-    from kstrl.verify_model import VerifyConfig
+    from kstrl.verify import VerifyConfig
 
     if no_verify:
         return

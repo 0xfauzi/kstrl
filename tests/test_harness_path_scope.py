@@ -35,27 +35,27 @@ from unittest.mock import patch
 import pytest
 
 from kstrl.agents.sandbox import SandboxConfig
+from kstrl.architect.decompose_reply import _SCOPE_HAZARD_ADVICE
 from kstrl.cli_loop import _understand_core
 from kstrl.commandrun import CommandRun
 from kstrl.config.config import KstrlConfig, component_harness_paths
-from kstrl.decompose_reply import _SCOPE_HAZARD_ADVICE
 from kstrl.events.events import EventBus
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_preflight import _SCOPE_HAZARD_REASONS, _preflight_component_scope
 from kstrl.factory_result import ComponentResult
 from kstrl.factory_worker import _run_component
-from kstrl.guards import (
+from kstrl.loop import LoopResult
+from kstrl.plan.manifest import Component, Manifest
+from kstrl.plan.scope import ComponentScope, RunScope
+from kstrl.ui.plain import PlainUI
+from kstrl.verify.guards import (
     ScopeHazard,
     check_violations,
     path_is_allowed,
     scope_entry_hazard,
 )
-from kstrl.loop import LoopResult
-from kstrl.plan.manifest import Component, Manifest
-from kstrl.plan.scope import ComponentScope, RunScope
-from kstrl.ui.plain import PlainUI
-from kstrl.verify_diff import check_diff_scope
+from kstrl.verify.verify_diff import check_diff_scope
 from tests.helpers import gitrepo
 from tests.helpers.component_prd import write_component_prd
 from tests.helpers.stack_confirmation import in_process_stack

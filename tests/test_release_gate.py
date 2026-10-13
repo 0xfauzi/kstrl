@@ -8,7 +8,7 @@ import CLOSURE against the ``EXPECTED_PROCESS_MODULES`` census
 under an environment that raises on every read, and a third test proves the
 walk is not vacuously empty. Both replaced, in the #154 fix round (A2), a
 per-file spelling walk and a substring check that a plant routed through
-another module (``from kstrl.verify import run_scrubbed``, an environment
+another module (``from kstrl.verify.verify import run_scrubbed``, an environment
 door opened through another module's ``from_env``) defeated.
 
 The ``release_withheld`` reason table and the ``release_ref_from`` ordering
@@ -88,7 +88,7 @@ def _reachable_process_modules(root_module: str) -> set[str]:
     The root module (``kstrl.release`` itself) is walked WHOLE, deferred
     imports included: an import anywhere in this file, even inside a
     method, is this file reaching for it, and the plant that defeated
-    the old per-file spelling check (``from kstrl.verify import
+    the old per-file spelling check (``from kstrl.verify.verify import
     run_scrubbed``) is a module-level import in a driver added to this
     file. Every module reached FROM there is walked at its TOP LEVEL
     only, deliberately not transitively-deferred: ``kstrl.config.config``
@@ -167,7 +167,7 @@ class _EnvironThatRefusesReads:
 class TestReleaseModuleContainment:
     def test_the_release_module_reaches_no_spawning_module(self) -> None:
         """T11 (#154 fix round, A2). Replaces a per-file spelling walk,
-        which a plant defeated: ``from kstrl.verify import
+        which a plant defeated: ``from kstrl.verify.verify import
         run_scrubbed`` inside ``kstrl/release.py`` spells no process
         primitive ITSELF, so the old check
         (``process_primitive_spellings``) cleared it. This runs the

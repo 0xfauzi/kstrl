@@ -28,7 +28,7 @@ from pathlib import Path
 import pytest
 
 from kstrl import calibration, calibration_baseline
-from kstrl.decompose_prompt import ARCHITECT_REPO_SOURCE_PROMPT
+from kstrl.architect.decompose_prompt import ARCHITECT_REPO_SOURCE_PROMPT
 from tests.helpers.astwalk import REPO_ROOT, TESTS_DIR, parsed
 from tests.helpers.calibration_repo_fixture import (
     REPO_DIR_SUFFIX,
@@ -278,7 +278,7 @@ def test_naming_the_module_in_a_component_field_is_named(
 
 @pytest.mark.parametrize("fixture", FIXTURE_PARAMS)
 def test_a_halted_run_is_labelled_as_a_halt(fixture: RepoSpecFixture) -> None:
-    """``components: []`` is a halt (kstrl/decompose.py lines 1010-1023),
+    """``components: []`` is a halt (kstrl/architect/decompose.py lines 1010-1023),
     not a silent miss, and the detail says so (#401 addendum A3). The
     caught value still follows the same sign as silence: the module is
     not named either way.

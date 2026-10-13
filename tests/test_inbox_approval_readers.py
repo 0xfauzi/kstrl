@@ -47,7 +47,7 @@ APPROVAL_READERS: dict[ItemKind, tuple[str, ...]] = {
     ItemKind.STACK_CONFIRMATION: ("project/stack.py::_latest_approval",),
     # #639 slice 4: an approval's comment is the owner's answer, which the
     # next decompose of that spec appends to the architect's input.
-    ItemKind.SPEC_ESCALATION: ("owner_answers.py::read_owner_answers",),
+    ItemKind.SPEC_ESCALATION: ("architect/owner_answers.py::read_owner_answers",),
     # #700 decision 14: an approved halt of the acceptance checks lets ks
     # retry merge over the checks it names on the commit it names. #466: an
     # approved halt of a carried check retires that check. Every other
@@ -75,7 +75,7 @@ RECORD_ONLY: dict[ItemKind, str] = {
 EXPECTED_APPROVED_READS: dict[str, int] = {
     "cli_inbox.py::_decide_parked_merge_if_parked": 1,
     "factory_preflight.py::_emit_stack_confirmation": 1,
-    "owner_answers.py::read_owner_answers": 1,
+    "architect/owner_answers.py::read_owner_answers": 1,
     "pipeline_delivery.py::<module>": 1,
     "pipeline_delivery.py::Delivery._checkpoint_refusal": 1,
     "pipeline_delivery.py::Delivery._phase_checkpoint": 1,

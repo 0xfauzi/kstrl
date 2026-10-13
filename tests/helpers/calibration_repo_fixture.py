@@ -29,13 +29,13 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from kstrl.architect.decompose_prompt import build_decompose_prompt
 from kstrl.calibration_score import (
     FixtureMetaError,
     check_fixture_meta,
     refuse_unreadable,
     reuse_errors,
 )
-from kstrl.decompose_prompt import build_decompose_prompt
 
 #: Root of every calibration fixture, security and reviewer fixtures
 #: included (#401 addendum B2). Lives here, not in tests/test_calibration.py,
@@ -336,7 +336,7 @@ def _without_rejected_options(decompose_output: Any) -> Any:
     REJECTED option removed (#401 addendum A2).
 
     ``decisions[].alternative`` is the option the architect did NOT take
-    (kstrl/decompose.py near line 200) and ``spec_issues[].suggestion`` is
+    (kstrl/architect/decompose.py near line 200) and ``spec_issues[].suggestion`` is
     a proposed resolution the architect raised, not one it acted on.
     Searching either lets naming the existing module as the option it
     rejected score as reuse on the ``repo_present`` arm, which is the
@@ -353,7 +353,7 @@ def _without_rejected_options(decompose_output: Any) -> Any:
 
 def _is_halted(decompose_output: Any) -> bool:
     """A halt is ``components`` missing or an empty list, paired with an
-    escalated decision (kstrl/decompose.py lines 1010-1023). Only the
+    escalated decision (kstrl/architect/decompose.py lines 1010-1023). Only the
     ``components`` shape is checked here (#401 addendum A3): the detail
     string says which shape the run was, rather than folding a halt and
     a silent miss into the same "did not name it" message.

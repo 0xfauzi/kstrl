@@ -1,6 +1,6 @@
 """Widget 5 of docs/lessons/pr-221.html: how the factory earns and loses autonomy.
 
-The rule is kstrl/autonomy.py on the merge commit: ``AutonomyState.promote``
+The rule is kstrl/learning/autonomy.py on the merge commit: ``AutonomyState.promote``
 (needs an actor, an ack, and no blockers), ``demote`` (one level, cool-down
 of DEMOTION_COOLDOWN_RUNS, counters reset, no-op at L1), the counters,
 ``promotion_blockers``, ``flag_bundle_for``, ``resolve_runtime_level`` (the
@@ -11,7 +11,7 @@ recorded, never honoured).
 Issue #232 (R10.11) adds two triggers that fire from outside a run: a
 calibration regression always opens an inbox item and demotes only when
 ``demote_on_calibration_regression`` is true; a health breach likewise, once
-kstrl/health.py exists (R8.4 #151).
+kstrl/learning/health.py exists (R8.4 #151).
 
 Every threshold constant is copied from autonomy.py:107-124 and is, in that
 file's own words, an unmeasured placeholder. The widget teaches the shape of

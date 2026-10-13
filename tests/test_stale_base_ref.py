@@ -16,7 +16,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl import contract, factory_worker, guards, verify_diff
+from kstrl import contract, factory_worker
 from kstrl.config.config import KstrlConfig
 from kstrl.contract import ContractConfig, ContractMode
 from kstrl.git import git_base, git_tree
@@ -24,6 +24,7 @@ from kstrl.loop import LoopResult
 from kstrl.plan.manifest import Manifest
 from kstrl.plan.scope import ComponentScope
 from kstrl.ui.plain import PlainUI
+from kstrl.verify import guards, verify_diff
 from tests.helpers.component_prd import write_component_prd
 from tests.helpers.gitrepo import git_in, set_identity
 from tests.helpers.stack_confirmation import in_process_stack

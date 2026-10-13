@@ -1,4 +1,4 @@
-"""Read the dependency-scope telemetry log that ``kstrl.knowledge`` writes.
+"""Read the dependency-scope telemetry log that ``kstrl.knowledge.knowledge`` writes.
 
 No kstrl code reads the log (#863), so its reader lives with the tests.
 """
@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from kstrl.io.jsonread import read_json
-from kstrl.knowledge import _E8_TELEMETRY_RELATIVE_PATH
+from kstrl.knowledge.knowledge import _E8_TELEMETRY_RELATIVE_PATH
 
 
 def read_dependency_scope_telemetry(knowledge_root: Path) -> list[dict[str, Any]]:

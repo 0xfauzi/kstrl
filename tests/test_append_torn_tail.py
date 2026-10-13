@@ -701,12 +701,12 @@ class TestKnowledgeTelemetrySurvivesATornTail:
     """
 
     def record(self, root: Path, component_id: str) -> None:
-        from kstrl.knowledge import record_dependency_scope_gap
+        from kstrl.knowledge.knowledge import record_dependency_scope_gap
 
         record_dependency_scope_gap(component_id, 1, 1, root)
 
     def telemetry_path(self, root: Path) -> Path:
-        from kstrl.knowledge import _E8_TELEMETRY_RELATIVE_PATH
+        from kstrl.knowledge.knowledge import _E8_TELEMETRY_RELATIVE_PATH
 
         return root / _E8_TELEMETRY_RELATIVE_PATH
 

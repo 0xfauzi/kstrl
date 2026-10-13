@@ -39,17 +39,17 @@ import pytest
 from click.testing import CliRunner
 
 import kstrl.cli as cli_mod
-from kstrl.autonomy import AutonomyLevel, AutonomyState, FlagBundle, flag_bundle_for
-from kstrl.autonomy_config import pause_gate_for, resolved_flag_bundle
 from kstrl.config.config import ConfigError
 from kstrl.events.event_catalog import AutonomyLevelApplied, Event
 from kstrl.events.events import CallbackSink, EventBus
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult
+from kstrl.learning.autonomy import AutonomyLevel, AutonomyState, FlagBundle, flag_bundle_for
+from kstrl.learning.autonomy_config import pause_gate_for, resolved_flag_bundle
 from kstrl.plan.manifest import Manifest
 from kstrl.review import ReviewResult
-from kstrl.verify_model import CheckResult, VerificationResult, VerifyConfig
+from kstrl.verify.verify_model import CheckResult, VerificationResult, VerifyConfig
 from tests.conftest import git_in
 from tests.helpers import gitrepo
 from tests.helpers.component_prd import write_component_prd

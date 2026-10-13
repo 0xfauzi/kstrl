@@ -22,9 +22,9 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import verify_diff
 from kstrl.git import git_diff
-from kstrl.policy import PolicyConfig, diff_header_path
+from kstrl.verify import verify_diff
+from kstrl.verify.policy import PolicyConfig, diff_header_path
 from tests.conftest import make_review_repo
 from tests.helpers import gitrepo
 from tests.helpers.astwalk import (
@@ -136,9 +136,9 @@ def test_diff_header_path_matches_a_real_diff_for_every_header_shape(
 #: from a diff at all; #639 slice 5 moved them out of pr.py with the two
 #: PR body writers.
 EXPECTED_DIFF_HEADER_LITERALS = {
-    "knowledge.py": 1,
-    "knowledge_facts.py": 1,
-    "policy.py": 2,
+    "knowledge/knowledge.py": 1,
+    "knowledge/knowledge_facts.py": 1,
+    "verify/policy.py": 2,
     "pr_body.py": 2,
 }
 
@@ -182,7 +182,7 @@ def test_the_diff_header_literals_in_the_package_are_pinned() -> None:
 #: Re-derived by running the walk: policy.py's two are the def and the
 #: one call in parse_added_lines (#696 slice 8 removed adequacy.py's
 #: three with its diff reader).
-EXPECTED_DIFF_HEADER_PATH_CALLERS = {"policy.py": 2}
+EXPECTED_DIFF_HEADER_PATH_CALLERS = {"verify/policy.py": 2}
 
 
 def test_every_header_path_reader_still_delegates() -> None:

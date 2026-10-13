@@ -215,7 +215,7 @@ result from a genuine `2/6`.
 Per-tier counts can sum to **less** than the totals: a claim under a
 heading the knowledge module did not write counts in the total but is
 attributed to no tier, rather than being silently credited to a real
-one. `kstrl/knowledge.py` shares its section-title constants between
+one. `kstrl/knowledge/knowledge.py` shares its section-title constants between
 the renderer and the tier parser precisely so the two cannot drift and
 mis-bin claims while still summing correctly.
 

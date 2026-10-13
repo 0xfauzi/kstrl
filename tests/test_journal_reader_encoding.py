@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from kstrl.evolution_config import EvolutionConfig
+from kstrl.learning.evolution_config import EvolutionConfig
 
 
 def test_a_non_utf8_experiments_file_does_not_raise_out_of_the_reader(
@@ -24,7 +24,7 @@ def test_a_non_utf8_experiments_file_does_not_raise_out_of_the_reader(
     OSError` in get_experiment_trends and raised out of on_mount two
     lines after the config banner. CLAUDE.md names this rule verbatim.
     """
-    from kstrl.evolution import EvolutionJournal
+    from kstrl.learning.evolution import EvolutionJournal
 
     kstrl_dir = tmp_path / ".kstrl"
     kstrl_dir.mkdir()
@@ -43,7 +43,7 @@ def test_a_non_utf8_journal_does_not_raise_out_of_the_reader(tmp_path: Path) -> 
     straight out of the reader, with the two sibling readers
     already fixed. "Both" was three.
     """
-    from kstrl.evolution import EvolutionJournal
+    from kstrl.learning.evolution import EvolutionJournal
 
     kstrl_dir = tmp_path / ".kstrl"
     kstrl_dir.mkdir()
@@ -65,7 +65,7 @@ def test_the_journal_reader_is_shared_with_ks_status() -> None:
     src = Path(__file__).resolve().parent.parent / "kstrl"
     cli = (src / "cli_report.py").read_text(encoding="utf-8")
     reducer = (src / "events/reducer.py").read_text(encoding="utf-8")
-    journal_reads = (src / "journal_reads.py").read_text(encoding="utf-8")
+    journal_reads = (src / "learning/journal_reads.py").read_text(encoding="utf-8")
     assert "read_progress_events(progress_log_path)" in cli
     assert "read_progress_events(v1_path)" in reducer
     assert "read_progress_events(self.config.journal_path)" in journal_reads
@@ -84,9 +84,9 @@ def test_experiments_tsv_is_written_with_the_encoding_it_is_read_with(tmp_path: 
     here enough: evolution hands it ``str`` and names no codec.
     """
     root = Path(__file__).resolve().parent.parent
-    source = (root / "kstrl" / "evolution.py").read_text(encoding="utf-8")
+    source = (root / "kstrl" / "learning/evolution.py").read_text(encoding="utf-8")
     assert "append_records(self.config.experiments_path" in source
-    reads = (root / "kstrl" / "journal_reads.py").read_text(encoding="utf-8")
+    reads = (root / "kstrl" / "learning/journal_reads.py").read_text(encoding="utf-8")
     assert 'read_text(encoding="utf-8")' in reads
     helper = (root / "kstrl" / "io/appendio.py").read_text(encoding="utf-8")
     assert 'payload.encode("utf-8")' in helper

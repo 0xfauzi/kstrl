@@ -352,7 +352,7 @@ def test_plain_output_is_coloured_only_on_a_terminal_without_no_color(
 #: exits 2. A new literal 1 in any shape ``_exit_census`` follows fails
 #: this census, in whichever module it lands (#531).
 FINDING_EXIT_SITES: dict[tuple[str, str], int] = {
-    ("baseline.py", "exit_code_for"): 1,  # `--fail-on-regression`: a regression
+    ("verify/baseline.py", "exit_code_for"): 1,  # `--fail-on-regression`: a regression
     ("calibration.py", "main"): 1,  # `python -m kstrl.calibration`: a detection drop
     ("cli_check.py", "_check_baseline_report"): 1,  # `--fail-on-regression`: a regression
     ("cli_check.py", "_check_report"): 2,  # `ks check`: a check failed

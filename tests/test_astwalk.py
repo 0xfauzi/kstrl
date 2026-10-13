@@ -431,7 +431,7 @@ class TestTheWalkAgainstTheRealPackage:
                     # say so.
                     "agents/agent_output.py agent.run",
                     "agents/logging.py self._agent.run",
-                    "decompose.py agent.run",
+                    "architect/decompose.py agent.run",
                     "loop.py run.agent.run",
                 ]
             )

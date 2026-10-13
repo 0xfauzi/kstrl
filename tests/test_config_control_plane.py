@@ -28,12 +28,12 @@ import pytest
 from click.testing import CliRunner
 
 import kstrl.cli as cli_mod
-import kstrl.evolution as evolution_mod
-from kstrl.evolution_config import EvolutionConfig
+import kstrl.learning as learning_pkg
 from kstrl.factory_config import FactoryConfig
-from kstrl.knowledge_facts import KnowledgeConfig
+from kstrl.knowledge.knowledge_facts import KnowledgeConfig
+from kstrl.learning.evolution_config import EvolutionConfig
 from kstrl.project.feedforward import CodebaseScanConfig
-from kstrl.verify_model import VerifyConfig
+from kstrl.verify.verify_model import VerifyConfig
 
 # The harness moved to tests/helpers/factorycli.py on #195, when
 # tests/test_explicit_merge_gate.py needed the same three pieces to prove
@@ -303,12 +303,15 @@ class TestEvolveCommandTomlRoundTrip:
         box: dict[str, Any] = {}
 
         # Subclasses the real journal so a second call does not AttributeError (#327 F7).
-        class FakeJournal(evolution_mod.EvolutionJournal):
+        class FakeJournal(learning_pkg.EvolutionJournal):
             def __init__(self, config: EvolutionConfig) -> None:
                 super().__init__(config)
                 box["config"] = config
 
-        monkeypatch.setattr(evolution_mod, "EvolutionJournal", FakeJournal)
+        # ``ks evolve`` imports the journal in a function from the
+        # ``kstrl.learning`` interface (#863 M4), thus the patch replaces the
+        # binding of the package.
+        monkeypatch.setattr(learning_pkg, "EvolutionJournal", FakeJournal)
         runner = CliRunner()
         result = runner.invoke(
             cli_mod.cli,

@@ -45,10 +45,10 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl.autonomy import AutonomyLevel, AutonomyState
 from kstrl.events.observability import NotifyConfig
 from kstrl.factory import run_factory
 from kstrl.factory_result import ComponentResult
+from kstrl.learning.autonomy import AutonomyLevel, AutonomyState
 from kstrl.owner.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.serve import serve_cycle
 from kstrl.serve_config import ServeConfig
@@ -136,7 +136,7 @@ def test_health_breach_is_silent_and_its_demotion_is_pushed(
     """The factory's health seam files a breach (silent) and a demotion (pushed)."""
     lines = tmp_path / "hook.txt"
     _hook_into(monkeypatch, lines)
-    monkeypatch.setitem(sys.modules, "kstrl.health", fake_health(make_breach()))
+    monkeypatch.setitem(sys.modules, "kstrl.learning.health", fake_health(make_breach()))
     write_config(tmp_path, demote_on_health=True)
     AutonomyState(level=int(AutonomyLevel.L3_ENVELOPED_AUTO)).save(tmp_path)
 
@@ -432,9 +432,11 @@ def test_an_unconfirmed_stack_pages_once_however_often_it_is_refused(tmp_path: P
 #: ``tests/test_inbox_write_guards.py`` keys it, mapped to the test in
 #: this module that drives it through a real entry point.
 FILING_PATHS = {
-    "autonomy_transitions.py::apply_demotion::add": "test_demotion_fires_the_inbox_hook",
+    "learning/autonomy_transitions.py::apply_demotion::add": "test_demotion_fires_the_inbox_hook",
     "calibration_ladder.py::_open_drift_item::add": "test_demotion_fires_the_inbox_hook",
-    "decisions.py::open_escalation_item::add": "test_architect_escalation_fires_the_inbox_hook",
+    "architect/decisions.py::open_escalation_item::add": (
+        "test_architect_escalation_fires_the_inbox_hook"
+    ),
     "factory_autonomy.py::_open_health_breach_items::add": (
         "test_health_breach_is_silent_and_its_demotion_is_pushed"
     ),

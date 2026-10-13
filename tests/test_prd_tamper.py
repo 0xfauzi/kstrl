@@ -29,8 +29,8 @@ from typing import Any
 import pytest
 
 from kstrl.plan.prd import UserStory
-from kstrl.verify import check_prd_stories, run_mechanical_verification
-from kstrl.verify_model import VerifyConfig
+from kstrl.verify.verify import check_prd_stories, run_mechanical_verification
+from kstrl.verify.verify_model import VerifyConfig
 from tests.helpers.stack_confirmation import in_process_stack
 from tests.test_harness_path_scope import (
     AUTHORED,

@@ -75,8 +75,8 @@ FLAG = "pause_before_pr_merge"
 #: - ``config_report.py`` and ``pipeline_delivery.py`` READ the resolved value;
 #:   neither is a source.
 EXPECTED_FLAG_SPELLINGS = {
-    "autonomy.py": 6,
-    "autonomy_config.py": 5,
+    "learning/autonomy.py": 6,
+    "learning/autonomy_config.py": 5,
     "cli_factory.py": 7,
     "config_report.py": 1,
     "factory_autonomy.py": 5,

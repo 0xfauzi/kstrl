@@ -17,9 +17,9 @@ from __future__ import annotations
 from collections.abc import Sequence
 from pathlib import Path
 
-from kstrl.autonomy_replay import RunRecord
-from kstrl.evolution_config import EvolutionConfig
-from kstrl.experiments_tsv import EXPERIMENTS_HEADER
+from kstrl.learning.autonomy_replay import RunRecord
+from kstrl.learning.evolution_config import EvolutionConfig
+from kstrl.learning.experiments_tsv import EXPERIMENTS_HEADER
 
 #: A run_id containing an invalid utf-8 byte: the reachable "unreadable
 #: history" fixture (the mode-0200 half needs a permission the superuser

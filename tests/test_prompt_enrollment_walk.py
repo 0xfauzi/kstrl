@@ -270,10 +270,10 @@ EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
     "cli_seam.py": 2,  # _ROOT_FROM_PROMPT, which is a set of command names
     # #332 landed while this migration was in flight: the version
     # constant and the body of DECISIONS_CONTEXT_PROMPT, both enrolled.
-    "decisions.py": 2,
+    "architect/decisions.py": 2,
     # #199: +2 constants x 2 spellings each (ARCHITECT_REPO_SOURCE_PROMPT,
     # ARCHITECT_NO_REPO_SOURCE_PROMPT: each declared once and used once).
-    "decompose_prompt.py": 6,
+    "architect/decompose_prompt.py": 6,
     # #303: 0 pre-existing + 7 new fragments x 2 spellings each (the
     # declaration and its one use site) = 14. The version constant adds
     # nothing: the walk keys on names ending in _PROMPT, not _VERSION.
@@ -312,8 +312,8 @@ EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
     # nothing: the walk keys on names ending in _PROMPT, not _VERSION.
     # #776 K2: DISTILL_PROMPT and its use moved to knowledge_distill.py,
     # thus 6 - 2 = 4 stay in knowledge.py.
-    "knowledge.py": 4,
-    "knowledge_distill.py": 2,
+    "knowledge/knowledge.py": 4,
+    "knowledge/knowledge_distill.py": 2,
     # #233: LAST_ITERATION_MEASUREMENT_PROMPT x 2 spellings (the
     # declaration and its one use in measurement_block) = 2.
     "iteration_prompt.py": 2,
@@ -324,7 +324,7 @@ EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
     "project/__init__.py": 2,
     # #639 slice 4: OWNER_ANSWER_PROMPT's declaration and its one use in
     # render_owner_answer.
-    "owner_answers.py": 2,
+    "architect/owner_answers.py": 2,
     "review_prompt.py": 2,
     # #303: 5 new fragments x 2 spellings each (the declaration and its
     # one use site) = 10. The version constant adds nothing: the walk keys
@@ -343,10 +343,10 @@ EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
     # declaration and its one use site) = 22, less VERIFY_COMMANDS_PROMPT's
     # two (#696 slice 4 retired it) = 20. The *_PROMPT_VERSION constants
     # add nothing: the walk keys on names ending in _PROMPT.
-    "verify.py": 4,
+    "verify/verify.py": 4,
     # #776 V3: the 8 diff-scope, scope-unreadable and policy-envelope
     # prompts, 2 spellings each, moved here with their version constants.
-    "verify_diff.py": 16,
+    "verify/verify_diff.py": 16,
 }
 
 

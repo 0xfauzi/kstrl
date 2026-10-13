@@ -28,12 +28,13 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import knowledge_distill, knowledge_facts, verify, verify_diff
-from kstrl.autonomy import AutonomyState
 from kstrl.calibration_baseline import load_baseline
 from kstrl.intake_issue import ProcessedLedger
+from kstrl.knowledge import knowledge_distill, knowledge_facts
+from kstrl.learning.autonomy import AutonomyState
 from kstrl.queue.workqueue import Queue
 from kstrl.serve_spend import ServeStateError, SpendLedger
+from kstrl.verify import verify, verify_diff
 from tests.helpers import gitrepo
 from tests.helpers.localeenv import NO_UTF8_DEFAULT
 from tests.helpers.localeenv import ascii_child_env as _ascii_child_env
@@ -235,14 +236,14 @@ class TestTheLocalePinnedReads:
     machines. These six named none."""
 
     def test_the_spec_reader_names_utf8(self, tmp_path: Path) -> None:
-        from kstrl.decompose_prompt import load_spec_input
+        from kstrl.architect.decompose_prompt import load_spec_input
 
         spec = tmp_path / "spec.md"
         spec.write_text("a café spec\n", encoding="utf-8")
         assert "café" in load_spec_input(spec)
 
     def test_the_speckit_directory_reader_names_utf8(self, tmp_path: Path) -> None:
-        from kstrl.decompose_prompt import load_spec_input
+        from kstrl.architect.decompose_prompt import load_spec_input
 
         (tmp_path / "spec.md").write_text("café spec\n", encoding="utf-8")
         (tmp_path / "plan.md").write_text("café plan\n", encoding="utf-8")

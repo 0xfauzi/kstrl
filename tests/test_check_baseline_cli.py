@@ -16,11 +16,11 @@ from typing import Any
 import pytest
 from click.testing import CliRunner, Result
 
-from kstrl import baseline_report
-from kstrl.baseline import RETIRED_CHECKS
 from kstrl.cli import cli
 from kstrl.cli_check import CHECK_SCHEMA_VERSION
-from kstrl.failure_signatures import signature_for_error
+from kstrl.verify import baseline_report
+from kstrl.verify.baseline import RETIRED_CHECKS
+from kstrl.verify.failure_signatures import signature_for_error
 from tests.helpers.check_baseline import BASELINE_DOC
 from tests.helpers.stack_confirmation import confirm_stack
 from tests.spine_utils import git
@@ -47,7 +47,7 @@ _E501_FINDING = "x.py:1:1: E501 line too long\n"
 #: Since the flag day (#696 decision 6) a stack check is an opaque command:
 #: kstrl no longer parses its output for a linter code, so every signature
 #: falls back to a slug of the whole "`<command>` exited <n>" message
-#: (``kstrl.evolution.signature_for_error``), derived here rather than
+#: (``kstrl.learning.evolution.signature_for_error``), derived here rather than
 #: typed by hand so it tracks the real algorithm, not a guess at its output.
 _LINT_FAIL_SIGNATURE = signature_for_error("stack:lint", f"`{_LINT_FAIL_COMMAND}` exited 1")
 _LINT_FROM_FILE_SIGNATURE = signature_for_error(
@@ -232,8 +232,9 @@ def test_the_baseline_is_settled_before_the_checks_run(
 
     Telling an operator who forgot ``--force`` after five minutes rather than
     a tenth of a second is a latency they feel. ``check`` imports
-    ``run_mechanical_verification`` inside the function body, so the patch
-    goes on the module it resolves from.
+    ``run_mechanical_verification`` inside the function body from the
+    ``kstrl.verify`` interface, so the patch goes on the binding of the
+    package (#863 M4).
     """
     root = _make_repo(tmp_path)
     if args == ("--write-baseline",):

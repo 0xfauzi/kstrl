@@ -17,12 +17,12 @@ import pytest
 
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult
-from kstrl.journal_rows import FINDINGS_SUPERSEDED_EVENT
+from kstrl.learning.journal_rows import FINDINGS_SUPERSEDED_EVENT
 from kstrl.pipeline_transitions import Transition
 from kstrl.plan.manifest import Component, ComponentStatus
 from kstrl.review import ReviewConcern, ReviewResult
 from kstrl.security import SecurityConfig, SecurityFinding, SecurityResult
-from kstrl.verify_model import CheckResult, VerificationResult
+from kstrl.verify.verify_model import CheckResult, VerificationResult
 from tests.test_pipeline import _factory_config, _make_pipeline, _selection
 
 

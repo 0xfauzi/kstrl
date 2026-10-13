@@ -35,10 +35,10 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import guards
 from kstrl.breaker import BreakerConfig, NoProgressBreaker
 from kstrl.git import git_diff, git_tree
 from kstrl.ui import PlainUI
+from kstrl.verify import guards
 from tests.helpers import gitrepo
 from tests.helpers.astwalk import (
     all_nodes,

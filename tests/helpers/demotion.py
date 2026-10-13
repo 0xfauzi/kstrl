@@ -2,7 +2,7 @@
 
 Three test modules drive the same two seams - the calibration compare
 command and the factory's health call - so the baselines, the config
-writer, the inbox reader and the fake ``kstrl.health`` live here rather
+writer, the inbox reader and the fake ``kstrl.learning.health`` live here rather
 than being copied three ways. The split itself is the 800-line ratchet:
 one file carrying the applier, the compare emitter, the health seam and
 the config surface crossed it, and a file that long has more than one
@@ -26,11 +26,11 @@ from types import ModuleType
 from typing import Any
 
 from kstrl import calibration
-from kstrl.autonomy import AutonomyLevel
-from kstrl.autonomy_config import AutonomyConfig
 from kstrl.events.events import EventBus
 from kstrl.factory_autonomy import _record_autonomy_outcome
 from kstrl.factory_result import FactoryResult
+from kstrl.learning.autonomy import AutonomyLevel
+from kstrl.learning.autonomy_config import AutonomyConfig
 from kstrl.owner.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.ui.plain import PlainUI
 from tests.spine_utils import component, make_manifest
@@ -181,14 +181,14 @@ def make_breach(
 
 
 def fake_health(*breaches: object, with_function: bool = True) -> ModuleType:
-    module = ModuleType("kstrl.health")
+    module = ModuleType("kstrl.learning.health")
     if with_function:
         module.health_breaches = lambda root_dir: list(breaches)  # type: ignore[attr-defined]
     return module
 
 
 class _BrokenHealthLoader(Loader):
-    """A ``kstrl.health`` that exists and dies on its own dependency."""
+    """A ``kstrl.learning.health`` that exists and dies on its own dependency."""
 
     def create_module(self, spec: ModuleSpec) -> ModuleType | None:
         return None
@@ -202,7 +202,7 @@ class BrokenHealthFinder(MetaPathFinder):
 
     Through ``sys.meta_path`` rather than by patching
     ``importlib.import_module``, so what the guard sees is what a real
-    ``kstrl/health.py`` importing a missing dependency would raise.
+    ``kstrl/learning/health.py`` importing a missing dependency would raise.
     """
 
     def find_spec(
@@ -211,7 +211,7 @@ class BrokenHealthFinder(MetaPathFinder):
         path: Sequence[str] | None = None,
         target: ModuleType | None = None,
     ) -> ModuleSpec | None:
-        if fullname != "kstrl.health":
+        if fullname != "kstrl.learning.health":
             return None
         return spec_from_loader(fullname, _BrokenHealthLoader())
 

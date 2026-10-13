@@ -62,13 +62,12 @@ from pathlib import Path
 from typing import TypeVar
 
 from kstrl.agents import SANDBOX_SECTION, SandboxConfig
-from kstrl.autonomy import AutonomyState
-from kstrl.autonomy_config import AUTONOMY_SECTION, AutonomyConfig
 from kstrl.config import ConfigError, ConfigSection, resolve_or_report, toml_parse_scope
 from kstrl.divergence import DIVERGENCE_SECTION, DivergenceConfig
+from kstrl.learning import AUTONOMY_SECTION, AutonomyConfig, AutonomyState
 from kstrl.owner import INBOX_SECTION, InboxConfig
-from kstrl.policy import POLICY_SECTION, PolicyConfig
 from kstrl.release import RELEASE_CONFIG_SECTION, ReleaseConfig
+from kstrl.verify import POLICY_SECTION, PolicyConfig
 
 T = TypeVar("T")
 

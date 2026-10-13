@@ -8,14 +8,14 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.verify import (
+from kstrl.verify.verify import (
     MechanicalVerification,
     check_prd_stories,
     check_self_critique,
     run_mechanical_verification,
 )
-from kstrl.verify_diff import check_bad_patterns
-from kstrl.verify_model import VerifyConfig
+from kstrl.verify.verify_diff import check_bad_patterns
+from kstrl.verify.verify_model import VerifyConfig
 from tests.conftest import make_review_repo
 from tests.helpers.stack_confirmation import in_process_stack
 

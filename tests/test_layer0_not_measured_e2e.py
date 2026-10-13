@@ -23,15 +23,15 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.autonomy import AutonomyLevel, AutonomyState
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
+from kstrl.learning.autonomy import AutonomyLevel, AutonomyState
 from kstrl.owner.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.owner.interaction import PromptRequest, PromptResponse
 from kstrl.plan.manifest import Manifest
 from kstrl.review import CriterionReview, ReviewResult
 from kstrl.ui.plain import PlainUI
-from kstrl.verify_model import VerifyConfig
+from kstrl.verify.verify_model import VerifyConfig
 from tests.helpers.executables import write_executable
 from tests.helpers.plan_approval import approve_plan
 from tests.helpers.stack_confirmation import in_process_stack

@@ -234,7 +234,7 @@ The scaffold script runs before the agent and can:
 - Generate a "FIX:" line using pattern matching on common error types (no LLM needed for common cases)
 
 **Files to modify**:
-- `kstrl/verify.py`: Each `check_*` function returns structured `CheckResult` with parsed details instead of raw output lines
+- `kstrl/verify/verify.py`: Each `check_*` function returns structured `CheckResult` with parsed details instead of raw output lines
 - `kstrl/context.py`: `format_for_prompt` uses structured data to generate targeted fix suggestions
 - New: `kstrl/parsers.py` for pytest, mypy, ruff output parsing
 
@@ -312,7 +312,7 @@ Inspired by AutoResearchClaw's evolution directory. A structured JSONL file that
 }
 ```
 
-**New file**: `kstrl/evolution.py`
+**New file**: `kstrl/learning/evolution.py`
 
 **Key functions**:
 ```python
@@ -452,7 +452,7 @@ lookback_runs = 10             # how many past runs to analyze
 - `file`: File content assertions after execution
 
 **New file**: `kstrl/fixtures.py`
-**Modified file**: `kstrl/verify.py` (add `check_fixtures`)
+**Modified file**: `kstrl/verify/verify.py` (add `check_fixtures`)
 **Modified file**: `kstrl/plan/prd.py` (add optional `fixtures` field)
 
 #### 3.5.2 Snapshot regression

@@ -33,7 +33,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from kstrl.journal_rows import SPEC_ISSUES_EVENT
+from kstrl.learning.journal_rows import SPEC_ISSUES_EVENT
 from tests.test_event_names_have_one_home import (
     event_name_spellings,
     literal_event_names,
@@ -276,7 +276,7 @@ class TestLayerOneCatchesWhatLayerTwoCannot:
     narrowed; asserting only the first would pass on a net that had been
     switched off.
 
-    Every one of these was planted into ``kstrl/evolution.py`` on its own
+    Every one of these was planted into ``kstrl/learning/evolution.py`` on its own
     and measured: layer 2 green, layer 1 red.
     """
 

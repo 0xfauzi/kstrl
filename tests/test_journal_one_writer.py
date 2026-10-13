@@ -229,13 +229,18 @@ def alias_sweep(nodes: list[ast.AST], exempt: set[int], names: set[str]) -> set[
     return found
 
 
-def journal_writes_outside_append_entries(source_file: Path) -> list[str]:
-    """Every write to the evolution journal in one file, bar the sanctioned one."""
+def journal_writes_outside_append_entries(source_file: Path, root: Path | None = None) -> list[str]:
+    """Every write to the evolution journal in one file, bar the sanctioned one.
+
+    ``root`` is the directory that the label is relative to (``kstrl/`` when
+    it is not given). A snippet test gives its ``tmp_path``, thus a snippet at
+    ``learning/evolution.py`` gets the label of the sanctioned module (#863 M4).
+    """
     tree = parsed(source_file)
     nodes = list(ast.walk(tree))
     exempt = (
         declared_in(tree, "EvolutionJournal", "append_entries")
-        if label(source_file) == "evolution.py"
+        if label(source_file, root) == "learning/evolution.py"
         else set()
     )
     names = journal_aliases(nodes, exempt)
@@ -249,7 +254,7 @@ def journal_writes_outside_append_entries(source_file: Path) -> list[str]:
             continue
         rendered = ast.unparse(target)
         if mentions_journal(rendered, names) or reaches_journal_dynamically(target):
-            found.append(f"{label(source_file)}:{node.lineno}: writes to {rendered}")
+            found.append(f"{label(source_file, root)}:{node.lineno}: writes to {rendered}")
     return found
 
 
@@ -305,7 +310,7 @@ def journal_path_escapes(source_file: Path) -> list[str]:
 #: ``EvolutionJournal.get_spec_audits`` now, and that method's docstring
 #: is where the reason lives.
 EXPECTED_JOURNAL_PATH_SITES: dict[str, int] = {
-    "evolution_config.py: config.journal_path": 5,
+    "learning/evolution_config.py: config.journal_path": 5,
     # Four, not three, and TWO ROWS LEFT to make it four (#352 round 2,
     # N4). ``cli.py: journal.config.journal_path`` and
     # ``tui/screens/evolve.py: journal.config.journal_path`` were each a
@@ -319,10 +324,11 @@ EXPECTED_JOURNAL_PATH_SITES: dict[str, int] = {
     # Five, not four, since #233: ``iteration_criterion_lines`` renders
     # the operator-facing #233 block, following this same precedent, so
     # the path is read here rather than escaping into ``cli.py``.
-    "evolution.py: self.config.journal_path": 2,
-    "journal_reads.py: self.config.journal_path": 4,  # +1 #863: the v1-row refusal names the file
+    "learning/evolution.py: self.config.journal_path": 2,
+    # +1 #863: the v1-row refusal names the file
+    "learning/journal_reads.py: self.config.journal_path": 4,
     "cli_learning.py: config.journal_path": 2,
-    "health.py: config.journal_path": 1,
+    "learning/health.py: config.journal_path": 1,
     "pipeline_attempt.py: self.journal_path": 3,
     "pipeline_state.py: self.journal_path": 1,
     "queue/workqueue_store.py: self.journal_path": 2,
@@ -337,7 +343,7 @@ EXPECTED_JOURNAL_PATH_SITES: dict[str, int] = {
 #: R8.4 trending needs the journal for the infrastructure-error-rate
 #: series (``readings_from`` calls
 #: ``read_progress_events(journal_path)``). Neither appends;
-#: ``kstrl/health.py`` performs no file I/O of its own and goes through
+#: ``kstrl/learning/health.py`` performs no file I/O of its own and goes through
 #: the same tolerant reader ``EvolutionJournal`` uses. ``health.py``'s
 #: count moved from 1 to 2 and ``cli.py`` gained a fresh row in #151's
 #: simplify pass: ``health_breaches`` and ``health_status`` each obtain
@@ -428,9 +434,9 @@ class TestOneWriter:
             expected={
                 "io/atomicio.py": 1,  # prose in the module docstring
                 "events/event_catalog.py": 1,  # prose in a docstring
-                "evolution_config.py": 1,  # the EvolutionConfig default
+                "learning/evolution_config.py": 1,  # the EvolutionConfig default
                 "project/init_cmd.py": 1,  # a commented example in the scaffolded kstrl.toml
-                "knowledge.py": 1,  # prose in the module docstring
+                "knowledge/knowledge.py": 1,  # prose in the module docstring
                 "pipeline_knowledge.py": 1,  # prose in a docstring
                 "io/statedir.py": 1,  # the state-dir inventory, by name
             },

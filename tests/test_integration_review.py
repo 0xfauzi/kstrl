@@ -9,15 +9,15 @@ from unittest.mock import patch
 
 import pytest
 
+from kstrl.architect.decisions import write_decisions
+from kstrl.architect.decompose_prompt import spec_digest
 from kstrl.contract import ContractConfig, ContractMode
-from kstrl.decisions import write_decisions
-from kstrl.decompose_prompt import spec_digest
 from kstrl.integration import (
     INTEGRATION_NON_GOAL_PROMPT,
     INTEGRATION_REQUIREMENT_PROMPT,
     integration_stories,
 )
-from kstrl.journal_rows import INTEGRATION_RESULT_EVENT
+from kstrl.learning.journal_rows import INTEGRATION_RESULT_EVENT
 from kstrl.pipeline import ComponentPipeline
 from kstrl.plan.manifest import Manifest
 from kstrl.plan.requirements import SpecRequirement

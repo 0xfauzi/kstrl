@@ -856,7 +856,7 @@ class TestMergeGate:
         which ``run_factory`` now keeps at every level, so refusing the
         item would refuse work that will in fact be gated.
         """
-        from kstrl.autonomy import AutonomyLevel, AutonomyState
+        from kstrl.learning.autonomy import AutonomyLevel, AutonomyState
 
         (tmp_path / "kstrl.toml").write_text(
             "[autonomy]\nenabled = true\n[policy]\nenabled = true\n",
@@ -2551,7 +2551,7 @@ class TestRunOwnership:
         exists to catch, so pin the third leg.
         """
         from kstrl.io.runid import run_kind
-        from kstrl.knowledge import current_run_id
+        from kstrl.knowledge.knowledge import current_run_id
 
         assert run_kind(current_run_id()) == SPAWNED_RUN_KIND
 

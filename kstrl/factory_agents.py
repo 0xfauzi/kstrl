@@ -6,11 +6,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from kstrl.agents import SandboxConfig
-from kstrl.autonomy import AutonomyLevel, flag_bundle_for
-from kstrl.autonomy_config import AutonomyConfig
 from kstrl.config import KstrlConfig
 from kstrl.events import AdversarialAgentSelected
 from kstrl.factory_config import FactoryConfig, review_enabled, security_enabled
+from kstrl.learning import AutonomyConfig, AutonomyLevel, flag_bundle_for
 from kstrl.review import ReviewMode
 
 if TYPE_CHECKING:

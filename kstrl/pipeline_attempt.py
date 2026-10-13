@@ -205,8 +205,11 @@ class AttemptRecorder(PipelineState):
         gates: bool = False,
     ) -> None:
         """Journal one integration review round (#482). Non-fatal, never silent."""
-        from kstrl.evolution import EvolutionJournal
-        from kstrl.journal_rows import INTEGRATION_RESULT_EVENT, JOURNAL_SCHEMA_VERSION
+        from kstrl.learning import (
+            INTEGRATION_RESULT_EVENT,
+            JOURNAL_SCHEMA_VERSION,
+            EvolutionJournal,
+        )
 
         journal = EvolutionJournal.open(self.root_dir, warn=self.ui.warn)
         if journal is None:
@@ -256,8 +259,11 @@ class AttemptRecorder(PipelineState):
         is the same expression ``PhaseStarted`` uses at
         ``factory.py:4225``: one definition of the attempt number.
         """
-        from kstrl.evolution import EvolutionJournal
-        from kstrl.journal_rows import FINDINGS_SUPERSEDED_EVENT, JOURNAL_SCHEMA_VERSION
+        from kstrl.learning import (
+            FINDINGS_SUPERSEDED_EVENT,
+            JOURNAL_SCHEMA_VERSION,
+            EvolutionJournal,
+        )
 
         journal = EvolutionJournal.open(self.root_dir, warn=self.ui.warn)
         if journal is None:
@@ -299,7 +305,7 @@ class AttemptRecorder(PipelineState):
         re-deriving a degenerate slug from the flattened error string.
         Sites that pass no signatures fall back to a slug of the
         error text under the failing phase."""
-        from kstrl.failure_signatures import signature_for_error
+        from kstrl.verify import signature_for_error
 
         if signatures:
             self.component_failure_signatures[comp.id] = list(signatures)

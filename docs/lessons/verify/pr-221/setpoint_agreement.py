@@ -1,6 +1,6 @@
 """Widget 1 of docs/lessons/pr-221.html: who is allowed to say a story is done.
 
-Old rule: ``check_prd_stories`` (kstrl/verify.py:526) passes a story when the
+Old rule: ``check_prd_stories`` (kstrl/verify/verify.py:526) passes a story when the
 engineer wrote ``passes: true`` and fails the component in Phase 1 when any
 story is still false. It never consults the reviewer.
 

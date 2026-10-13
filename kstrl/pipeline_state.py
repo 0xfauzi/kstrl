@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     from kstrl.factory_agents import AdversarialAgentSelection
     from kstrl.factory_config import FactoryConfig
     from kstrl.factory_result import FactoryResult
-    from kstrl.knowledge_facts import KnowledgeConfig
+    from kstrl.knowledge import KnowledgeConfig
     from kstrl.pipeline_knowledge import FactUtilization
     from kstrl.ui import UI
 

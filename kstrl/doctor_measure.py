@@ -1,7 +1,7 @@
 """`ks doctor --measure`: Tier B, the base branch's own gates (#654).
 
 Runs the reading `ks factory` takes before any engineer is called
-(:func:`kstrl.base_gates.measure_base_gates`: Phase 1's [stack] checks in a
+(:func:`kstrl.verify.base_gates.measure_base_gates`: Phase 1's [stack] checks in a
 throwaway worktree of the base commit) and turns it into
 one more doctor row. A gate that measurably fails there is a failed row, so
 the verdict is not-ready exactly where `ks factory` would refuse. A gate that
@@ -21,7 +21,6 @@ import dataclasses
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl.base_gates import measure_base_gates, reading_document, refusal_lines, warning_lines
 from kstrl.doctor import STATUS_FAIL, STATUS_OK, STATUS_WARN, DoctorCheck, _not_evaluated
 from kstrl.factory_config import FactoryConfig
 from kstrl.git import git_base
@@ -35,7 +34,13 @@ from kstrl.project import (
     stack_in_force,
 )
 from kstrl.replay import Replay, replay_stack
-from kstrl.verify_model import VerifyConfig
+from kstrl.verify import (
+    VerifyConfig,
+    measure_base_gates,
+    reading_document,
+    refusal_lines,
+    warning_lines,
+)
 
 if TYPE_CHECKING:
     from kstrl.ui import UI

@@ -59,7 +59,7 @@ jobs:
     # Round 1 of review set this to 40 with a comment that said three gates may
     # each spend the budget, which is 90 minutes: the premise and the number
     # disagreed, and the test underneath pinned ONE gate's budget so it stayed
-    # green. It now counts the spenders out of kstrl/verify.py, so a seventh one
+    # green. It now counts the spenders out of kstrl/verify/verify.py, so a seventh one
     # fails here rather than on a runner.
     timeout-minutes: 190
     steps:

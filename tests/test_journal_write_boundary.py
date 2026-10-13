@@ -115,7 +115,7 @@ def recording(
     ``open`` for every other path so ``record_run``'s experiments.tsv
     behaves normally. ``kstrl.io.appendio`` since #331: the single
     ``"a+b"`` open moved to ``appendio.open_for_append`` when six
-    appenders started sharing it, so patching ``kstrl.evolution``'s
+    appenders started sharing it, so patching ``kstrl.learning.evolution``'s
     global would now record nothing and the two assertions below would
     both read an empty list.
 
