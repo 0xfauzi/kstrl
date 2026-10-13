@@ -79,7 +79,7 @@ _DRIVER = """
 import sys
 from pathlib import Path
 from kstrl.agents import custom
-from kstrl.agents.base import UsageRecord
+from kstrl.usage import UsageRecord
 from kstrl.config import KstrlConfig
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
