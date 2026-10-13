@@ -297,8 +297,20 @@ def _check_agent_preflight(config: KstrlConfig, ui_impl: UI) -> None:
     ui_impl.info(
         f"Check {cli_name}'s authentication, quota and config. The run "
         f"continues, but every {cli_name} call is likely to fail. "
-        f"Set {PROBE_ENV_VAR}=0 to skip this check."
+        f"Set {PROBE_ENV_VAR}=0 to skip this check.{_USER_SETTINGS_HINT.get(family, '')}"
     )
+
+
+#: The end of the hint of a failed probe, per CLI family. A claude login that works
+#: in the operator's terminal can fail in kstrl, because kstrl starts claude
+#: with --setting-sources project and so does not read its user settings (#803).
+_USER_SETTINGS_HINT = {
+    CLAUDE_FAMILY: (
+        " kstrl starts claude with --setting-sources project, so an apiKeyHelper "
+        "or env in ~/.claude/settings.json does not apply. Set the provider in "
+        "the environment of ks."
+    ),
+}
 
 
 def _check_prd_preflight(prd_file: Path, ui_impl: UI) -> None:

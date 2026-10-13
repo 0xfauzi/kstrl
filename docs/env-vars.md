@@ -309,6 +309,18 @@ claude.ai connectors, and a server in the `.mcp.json` of the worktree. The
 command of that server operated with no sandbox. No kstrl role needs an MCP
 tool.
 
+Each claude session also gets `--setting-sources project` and `--tools` with
+the tools of its role (#803). The session reads the settings and the CLAUDE.md
+of the target repository, and it does not read the user settings, hooks,
+plugins or CLAUDE.md of the operator. Thus a `model`, `env` or `apiKeyHelper`
+in `~/.claude/settings.json` does not apply to a kstrl session. Set the model
+in `kstrl.toml` and the provider in the environment of `ks`. A writer gets
+Bash, Edit, Glob, Grep, Monitor, NotebookEdit, Read, Task, TaskCreate,
+TaskGet, TaskList, TaskStop, TaskUpdate and Write, plus WebFetch and WebSearch
+when the network is open. A reviewer gets Bash, Glob, Grep and Read. The
+liveness probe gets no tool. A tool that a later claude adds is off until
+kstrl names it.
+
 A SessionStart hook in the same settings prints a marker when the guard can
 start. If the marker is not before the `init` record of the session, kstrl
 stops the engineer before its first tool call and prints the cause. A
