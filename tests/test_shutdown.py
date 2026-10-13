@@ -263,9 +263,10 @@ class TestLoopStopCheck:
             no_color=True,
         )
         (tmp_path / "prompt.md").write_text("p")
+        out = io.StringIO()
         result = run_loop(
             config,
-            PlainUI(no_color=True, file=io.StringIO()),
+            PlainUI(no_color=True, file=out),
             agent,
             tmp_path,
             stop_check=stop_after_first,
@@ -273,6 +274,7 @@ class TestLoopStopCheck:
         assert agent.runs == 1
         assert result.exit_code == 130
         assert result.completed is False
+        assert "Stop requested; ending loop before next iteration" in out.getvalue()
 
 
 # ---------------------------------------------------------------------------

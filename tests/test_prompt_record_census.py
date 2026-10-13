@@ -411,20 +411,44 @@ def test_every_agent_call_is_inside_a_recording_scope_or_names_the_caller_that_o
     assert len([s for s in census if s.scoped]) >= 6
 
 
+def _scope_owners(tree: ast.AST) -> dict[int, str]:
+    """The innermost ``def`` or ``class`` name of each node below ``tree``.
+    ``ast.walk`` is breadth first, so an inner scope writes after an outer
+    one."""
+    owners: dict[int, str] = {}
+    for scope in ast.walk(tree):
+        if isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            owners.update({id(n): scope.name for n in ast.walk(scope) if n is not scope})
+    return owners
+
+
+def _spelled(node: ast.AST) -> str | None:
+    """The name that a name, an attribute or an import alias spells."""
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    if isinstance(node, ast.alias):
+        return node.name.rsplit(".", 1)[-1]
+    return None
+
+
 def _phase_callers_outside_run_loop() -> list[tuple[str, str]]:
-    """The functions other than ``run_loop`` that call a phase of it."""
-    funcs = [
-        (path.name, node)
-        for path in sorted(KSTRL.rglob("*.py"))
-        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
-        if isinstance(node, ast.FunctionDef) and node.name != "run_loop"
-    ]
-    return [
-        (name, func.name)
-        for name, func in funcs
-        if {_callee(n) for n in ast.walk(func) if isinstance(n, ast.Call)}
-        & (RUN_LOOP_PHASES - {func.name})
-    ]
+    """Each spelling of a phase of ``run_loop`` other than its one call in
+    ``loop.py::run_loop``. The walk counts every name, attribute and import
+    alias in any scope (module, class, ``def``, ``async def``, lambda), not
+    only a call from a ``def``, so a second caller or a callback flags."""
+    found: Counter[tuple[str, str]] = Counter()
+    for path in sorted(KSTRL.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        owners = _scope_owners(tree)
+        found.update(
+            (path.name, owners.get(id(node), "<module>"))
+            for node in ast.walk(tree)
+            if _spelled(node) in RUN_LOOP_PHASES
+        )
+    found -= Counter({("loop.py", "run_loop"): len(RUN_LOOP_PHASES)})
+    return sorted(found.elements())
 
 
 def test_a_site_cleared_by_its_caller_has_its_callers_counted() -> None:
