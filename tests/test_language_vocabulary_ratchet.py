@@ -334,7 +334,6 @@ PINNED_HITS: dict[str, dict[str, int]] = {
     "cli_check.py": {"ruff": 4, "vulture": 1},
     "cli_loop.py": {"python": 1},
     "config.py": {"mypy": 1},
-    "config_preflight.py": {"python": 1},
     "config_report.py": {"python": 1},
     "config_resolve.py": {"pyproject": 1, "python": 1, "ruff": 1},
     "config_toml.py": {"pyproject": 1, "python": 4},
