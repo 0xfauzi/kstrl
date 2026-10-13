@@ -18,10 +18,11 @@ from kstrl.jsonread import read_json
 from kstrl.sandbox import (
     ClaudeRole,
     SandboxConfig,
-    claude_review_sandbox_args,
-    claude_sandbox_args,
+    claude_review_sandbox_settings,
     claude_sandbox_drops_skip_permissions,
+    claude_sandbox_settings,
     claude_session_argv,
+    claude_session_env,
 )
 from kstrl.write_guard import SessionGate
 
@@ -87,8 +88,8 @@ class ClaudeCodeAgent:
         """Check if claude CLI is available."""
         return shutil.which("claude") is not None
 
-    def _permission_argv(self, cwd: Path | None) -> tuple[bool, list[str]]:
-        """``(pass --dangerously-skip-permissions, settings argv)``.
+    def _permission_argv(self, cwd: Path | None) -> tuple[bool, str | None]:
+        """``(pass --dangerously-skip-permissions, settings JSON of the role)``.
 
         Both halves of the posture in one place, because they are one
         decision: claude's sandbox scoping and the #266 read-only rules
@@ -98,10 +99,10 @@ class ClaudeCodeAgent:
         ``run``, which is already the most complex function here.
         """
         if self._read_only:
-            return False, claude_review_sandbox_args(self._sandbox)
+            return False, claude_review_sandbox_settings(self._sandbox)
         return (
             not claude_sandbox_drops_skip_permissions(self._sandbox),
-            claude_sandbox_args(self._sandbox, Path(os.path.realpath(cwd or Path.cwd()))),
+            claude_sandbox_settings(self._sandbox, Path(os.path.realpath(cwd or Path.cwd()))),
         )
 
     def _command(self, cwd: Path | None) -> tuple[list[str], SessionGate | None]:
@@ -117,23 +118,22 @@ class ClaudeCodeAgent:
         """
         role: ClaudeRole = "reader" if self._read_only else "writer"
         network = not claude_sandbox_drops_skip_permissions(self._sandbox)
+        skip_permissions, settings = self._permission_argv(cwd)
         cmd = [
             "claude",
             "--print",
             "--output-format",
             "stream-json",
             "--verbose",
-            *claude_session_argv(role, network=network),
+            *claude_session_argv(role, network=network, settings=settings),
         ]
-        skip_permissions, sandbox_argv = self._permission_argv(cwd)
         if skip_permissions:
             cmd.append("--dangerously-skip-permissions")
         if self._model:
             cmd.extend(["--model", self._model])
         if self._effort:
             cmd.extend(["--effort", self._effort])
-        cmd.extend(sandbox_argv)
-        gate = SessionGate() if sandbox_argv and not self._read_only else None
+        gate = SessionGate() if settings is not None and not self._read_only else None
         return cmd, gate
 
     def run(
@@ -167,6 +167,7 @@ class ClaudeCodeAgent:
                 stdin_text=prompt,
                 timeout=timeout,
                 root_dir=self._root_dir,
+                env=claude_session_env(),
             )
         except FileNotFoundError:
             self._usage_records.append(UsageRecord(source="unavailable"))

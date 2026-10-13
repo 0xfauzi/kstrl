@@ -18,6 +18,7 @@ from pathlib import Path
 import pytest
 
 import kstrl
+from tests.helpers.executables import write_executable
 from tests.test_sandbox_engineer_e2e import (
     _FACTORY,
     _UNDERSTAND,
@@ -33,9 +34,37 @@ _FLAG = "--strict-mcp-config"
 #: Spelled out rather than imported, so that a change to the tools of a role
 #: must change this test too. The writer's network is open by default (#700).
 _WRITER_TOOLS = (
-    "Bash,Edit,Glob,Grep,Monitor,NotebookEdit,Read,Task,TaskCreate,TaskGet,"
+    "Bash,Edit,Glob,Grep,Monitor,NotebookEdit,Read,Skill,Task,TaskCreate,TaskGet,"
     "TaskList,TaskStop,TaskUpdate,Write,WebFetch,WebSearch"
 )
+
+#: The claude user settings of the test operator: a login (an apiKeyHelper and
+#: an env key) and keys that kstrl must not copy (#803).
+_HELPER = "/opt/operator/bin/claude-key-helper"
+_ENV_KEY = "sk-ant-operator-env-key"
+_USER_SETTINGS = {
+    "apiKeyHelper": _HELPER,
+    "env": {"KSTRL_E2E_LOGIN": _ENV_KEY},
+    "hooks": {"PreToolUse": [{"hooks": [{"type": "command", "command": "operator-user-hook"}]}]},
+    "permissions": {"allow": ["Bash(operator-allowed:*)"]},
+    "enabledPlugins": {"operator-plugin@market": True},
+    "model": "operator-model",
+}
+
+
+def _login_claude(path: Path, out: Path) -> Path:
+    """A ``claude`` that records its argv like the stub of
+    tests/test_sandbox_engineer_e2e.py, and the ``KSTRL_E2E_LOGIN`` of its
+    environment in ``out``, one line a call."""
+    argv = path.with_suffix(".argv")
+    return write_executable(
+        path,
+        f"#!/bin/sh\nprintf '%s\\n' \"$@\" -- >> '{argv}'\n"
+        f"printf '%s\\n' \"${{KSTRL_E2E_LOGIN:-none}}\" >> '{out}'\n"
+        "cat >/dev/null\necho '<promise>COMPLETE</promise>'\n",
+    )
+
+
 _READER_TOOLS = "Bash,Glob,Grep,Read"
 
 #: (id, ks argv). The factory with both review gates on runs the engineer, the
@@ -63,8 +92,24 @@ def test_every_claude_session_kstrl_starts_gets_strict_mcp_config(
     them CronCreate, RemoteTrigger, Workflow and EnterWorktree, and it read the
     operator's user settings, so the operator's hooks ran in it (measured). Now
     each session gets ``--setting-sources project`` and ``--tools`` with the
-    tools of its role, and a reader's sandboxed Bash needs a permission rule."""
-    ran = _ks(tmp_path, CLAUDE_TOML + sandbox, argv, {}, clis=("claude",))
+    tools of its role, and a reader's sandboxed Bash needs a permission rule.
+    RED before the #803 follow-up: an apiKeyHelper or an env key in the user
+    settings did not reach the session ("Not logged in", measured), and the
+    writer had no Skill tool. Now each session gets the apiKeyHelper in its
+    ``--settings`` and the env key in its environment, and no other key."""
+    config = tmp_path / "operator-claude"
+    config.mkdir()
+    (config / "settings.json").write_text(json.dumps(_USER_SETTINGS), encoding="utf-8")
+    login = tmp_path / "login.out"
+    ran = _ks(
+        tmp_path,
+        CLAUDE_TOML + sandbox,
+        argv,
+        {"CLAUDE_CONFIG_DIR": str(config)},
+        clis=("claude",),
+        claude_out=login,
+        claude_stub=_login_claude,
+    )
     runs = _runs(tmp_path, "bin/claude")
     assert runs, ran
     missing = [call for call in runs if _FLAG not in call]
@@ -78,10 +123,24 @@ def test_every_claude_session_kstrl_starts_gets_strict_mcp_config(
         if _value(call, "--tools") == _READER_TOOLS:
             settings = json.loads(_value(call, "--settings") or "{}")
             assert settings["sandbox"]["autoAllowBashIfSandboxed"] is False, (call, ran)
+    _assert_login_only(runs, login, ran)
     if argv is _ROLES[0][1]:
         # The engineer, and at least one reviewer, which has no write guard.
         assert len(runs) >= 2, (runs, ran)
         assert _READER_TOOLS in tools, (tools, ran)
+
+
+def _assert_login_only(runs: list[list[str]], login: Path, ran: str) -> None:
+    """Each call got the operator's login and no other user setting."""
+    for call in runs:
+        settings = json.loads(_value(call, "--settings") or "{}")
+        assert settings.get("apiKeyHelper") == _HELPER, (call, ran)
+        assert call.count("--settings") == 1, (call, ran)
+        text = "\n".join(call)
+        for leak in (_ENV_KEY, "operator-user-hook", "operator-allowed", "operator-plugin"):
+            assert leak not in text, (leak, call, ran)
+        assert "operator-model" not in text, (call, ran)
+    assert login.read_text(encoding="utf-8").splitlines() == [_ENV_KEY] * len(runs), ran
 
 
 # ---------------------------------------------------------------------------
@@ -160,25 +219,53 @@ def _is_sdk_session_call(node: ast.AST) -> bool:
     return False
 
 
-def _sets_session_extra_args(scope: ast.AST) -> bool:
-    """Whether ``scope`` sets ``extra_args`` to a ``claude_session_flags`` call,
-    as a dict key or as a keyword."""
+def _assignments(scope: ast.AST, name: str) -> list[ast.AST]:
+    """Each value that ``scope`` gives to ``name``, as a dict key or as a
+    keyword of a call. The keywords of a call of the session functions are
+    their own arguments, not options, so they are not counted."""
+    values: list[ast.AST] = []
     for node in ast.walk(scope):
         if isinstance(node, ast.Dict):
-            for key, value in zip(node.keys, node.values, strict=True):
-                if (
-                    isinstance(key, ast.Constant)
-                    and key.value == "extra_args"
-                    and _is_call_to(value, "claude_session_flags")
-                ):
-                    return True
-        if (
-            isinstance(node, ast.keyword)
-            and node.arg == "extra_args"
-            and _is_call_to(node.value, "claude_session_flags")
+            values.extend(
+                value
+                for key, value in zip(node.keys, node.values, strict=True)
+                if isinstance(key, ast.Constant) and key.value == name
+            )
+        if isinstance(node, ast.Call) and not any(
+            _is_call_to(node, own) for own in ("claude_session_flags", "claude_session_argv")
         ):
-            return True
-    return False
+            values.extend(kw.value for kw in node.keywords if kw.arg == name)
+    return values
+
+
+def _sdk_offence(scope: ast.AST | None) -> str | None:
+    """The offence of the scope of a ``ClaudeAgentOptions``, or None.
+
+    ``extra_args`` must be a ``claude_session_flags`` call and ``env`` a
+    ``claude_session_env`` call (#803). ``settings``, when it is set, must be
+    None: claude reads only the last ``--settings`` flag (measured), and the
+    SDK writes ``settings`` before ``extra_args``, so a second JSON there
+    would be lost or would drop the login."""
+    if scope is None:
+        return "ClaudeAgentOptions outside a function"
+    if not any(_is_call_to(v, "claude_session_flags") for v in _assignments(scope, "extra_args")):
+        return "no extra_args=claude_session_flags(...)"
+    if not any(_is_call_to(v, "claude_session_env") for v in _assignments(scope, "env")):
+        return "no env=claude_session_env()"
+    if any(
+        not (isinstance(v, ast.Constant) and v.value is None)
+        for v in _assignments(scope, "settings")
+    ):
+        return "settings is not None: the session flags carry the settings"
+    return None
+
+
+def _module_env_offence(tree: ast.AST) -> str | None:
+    """A module that spawns claude must pass ``env=claude_session_env()`` to a
+    call, so that the session gets the operator's login (#803)."""
+    if any(_is_call_to(v, "claude_session_env") for v in _assignments(tree, "env")):
+        return None
+    return "a claude spawn in a module with no env=claude_session_env()"
 
 
 def _nodes_with_scope(tree: ast.AST) -> list[tuple[ast.AST, ast.AST | None]]:
@@ -227,9 +314,28 @@ def _classify_sdk(node: ast.AST, scope: ast.AST | None) -> tuple[str | None, str
         carries = any(keyword.arg == "options" for keyword in node.keywords)
         return "sdk_call", None if carries else "SDK session call without options"
     if _names_sdk_options(node):
-        carries = scope is not None and _sets_session_extra_args(scope)
-        return "sdk", None if carries else "no extra_args=claude_session_flags(...)"
+        return "sdk", _sdk_offence(scope)
     return None, None
+
+
+def _file_sites(rel: str, tree: ast.AST) -> tuple[list[tuple[str, str]], list[str]]:
+    """``(sites, offenders)`` of one parsed file: each site is ``(rel, kind)``."""
+    nodes = _nodes_with_scope(tree)
+    heads = {
+        id(node.elts[0])
+        for node, _ in nodes
+        if isinstance(node, (ast.List, ast.Tuple)) and _is_spawn(node)
+    }
+    env_offence = _module_env_offence(tree) if heads else None
+    offenders = [f"{rel}: {env_offence}"] if env_offence is not None else []
+    sites: list[tuple[str, str]] = []
+    for node, scope in nodes:
+        kind, offence = _classify(node, scope, heads)
+        if kind is not None:
+            sites.append((rel, kind))
+        if offence is not None:
+            offenders.append(f"{rel}:{getattr(node, 'lineno', 0)}: {offence}")
+    return sites, offenders
 
 
 def claude_sites(root: Path) -> tuple[dict[tuple[str, str], int], list[str]]:
@@ -238,18 +344,10 @@ def claude_sites(root: Path) -> tuple[dict[tuple[str, str], int], list[str]]:
     offenders: list[str] = []
     for path in sorted(root.rglob("*.py")):
         rel = path.relative_to(root).as_posix()
-        nodes = _nodes_with_scope(ast.parse(path.read_text(encoding="utf-8")))
-        heads = {
-            id(node.elts[0])
-            for node, _ in nodes
-            if isinstance(node, (ast.List, ast.Tuple)) and _is_spawn(node)
-        }
-        for node, scope in nodes:
-            kind, offence = _classify(node, scope, heads)
-            if kind is not None:
-                census[(rel, kind)] = census.get((rel, kind), 0) + 1
-            if offence is not None:
-                offenders.append(f"{rel}:{getattr(node, 'lineno', 0)}: {offence}")
+        sites, found = _file_sites(rel, ast.parse(path.read_text(encoding="utf-8")))
+        for site in sites:
+            census[site] = census.get(site, 0) + 1
+        offenders.extend(found)
     return census, offenders
 
 
@@ -258,8 +356,8 @@ def test_each_claude_spawn_in_kstrl_carries_the_session_flags() -> None:
     assert census == EXPECTED_CLAUDE_SITES, (
         "the census of claude spawns in kstrl/ changed. Classify each new site: an "
         "argv that starts with 'claude' must hold *claude_session_argv(...), and a "
-        "ClaudeAgentOptions must get extra_args=claude_session_flags(...), and an SDK "
-        "session call must get options.",
+        "ClaudeAgentOptions must get extra_args=claude_session_flags(...) and "
+        "env=claude_session_env(), and an SDK session call must get options.",
         census,
     )
     assert not offenders, offenders
@@ -279,12 +377,24 @@ def test_the_static_guard_flags_a_spawn_without_the_session_flags(tmp_path: Path
         "        pass\n",
         encoding="utf-8",
     )
+    (tmp_path / "bad_env.py").write_text(
+        "def a():\n"
+        "    return ['claude', *claude_session_argv('probe', network=False, settings=None)]\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "bad_settings.py").write_text(
+        "def b(sdk):\n"
+        "    kw = {'extra_args': claude_session_flags('writer', network=True, settings=None)}\n"
+        "    return sdk.ClaudeAgentOptions(env=claude_session_env(), settings='{}', **kw)\n",
+        encoding="utf-8",
+    )
     (tmp_path / "good.py").write_text(
         "def a():\n"
-        "    return ['claude', *claude_session_argv('probe', network=False)]\n"
+        "    cmd = ['claude', *claude_session_argv('probe', network=False, settings=None)]\n"
+        "    return run(cmd, env=claude_session_env())\n"
         "def b(sdk):\n"
-        "    kw = {'extra_args': claude_session_flags('writer', network=True)}\n"
-        "    return sdk.ClaudeAgentOptions(**kw)\n"
+        "    kw = {'extra_args': claude_session_flags('writer', network=True, settings=None)}\n"
+        "    return sdk.ClaudeAgentOptions(env=claude_session_env(), settings=None, **kw)\n"
         "async def d(sdk, options):\n"
         "    async for m in sdk.query(prompt='x', options=options):\n"
         "        pass\n"
@@ -298,8 +408,16 @@ def test_the_static_guard_flags_a_spawn_without_the_session_flags(tmp_path: Path
         ("bad.py", "sdk"): 1,
         ("bad.py", "other"): 1,
         ("bad.py", "sdk_call"): 1,
+        ("bad_env.py", "spawn"): 1,
+        ("bad_settings.py", "sdk"): 1,
         ("good.py", "spawn"): 1,
         ("good.py", "sdk"): 1,
         ("good.py", "sdk_call"): 1,
     }, census
-    assert [line.split(":")[0] for line in offenders] == ["bad.py"] * 3, offenders
+    # bad.py: the argv, its module's env, the SDK options and the SDK call.
+    # bad_env.py: its module's env. bad_settings.py: the settings of the SDK.
+    assert [line.split(":")[0] for line in offenders] == [
+        *(["bad.py"] * 4),
+        "bad_env.py",
+        "bad_settings.py",
+    ], offenders

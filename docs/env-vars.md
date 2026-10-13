@@ -310,16 +310,20 @@ command of that server operated with no sandbox. No kstrl role needs an MCP
 tool.
 
 Each claude session also gets `--setting-sources project` and `--tools` with
-the tools of its role (#803). The session reads the settings and the CLAUDE.md
-of the target repository, and it does not read the user settings, hooks,
-plugins or CLAUDE.md of the operator. Thus a `model`, `env` or `apiKeyHelper`
-in `~/.claude/settings.json` does not apply to a kstrl session. Set the model
-in `kstrl.toml` and the provider in the environment of `ks`. A writer gets
-Bash, Edit, Glob, Grep, Monitor, NotebookEdit, Read, Task, TaskCreate,
-TaskGet, TaskList, TaskStop, TaskUpdate and Write, plus WebFetch and WebSearch
-when the network is open. A reviewer gets Bash, Glob, Grep and Read. The
-liveness probe gets no tool. A tool that a later claude adds is off until
-kstrl names it.
+the tools of its role (#803). The session reads the settings, the CLAUDE.md
+and the skills of the target repository, and it does not read the user hooks,
+plugins, skills or CLAUDE.md of the operator. From the claude user settings
+(`settings.json` in the directory that `CLAUDE_CONFIG_DIR` names, or
+`~/.claude/settings.json`), kstrl takes
+only the login: the `apiKeyHelper` goes in the `--settings` of the session,
+and each `env` entry goes in the environment of the session. An `env` entry
+is not put in the argv, because `ps` shows the argv and kstrl records it on
+disk. A different user key, for example `model`, does not apply: set the
+model in `kstrl.toml`. A writer gets Bash, Edit, Glob, Grep, Monitor,
+NotebookEdit, Read, Skill, Task, TaskCreate, TaskGet, TaskList, TaskStop,
+TaskUpdate and Write, plus WebFetch and WebSearch when the network is open. A
+reviewer gets Bash, Glob, Grep and Read. The liveness probe gets no tool. A
+tool that a later claude adds is off until kstrl names it.
 
 A SessionStart hook in the same settings prints a marker when the guard can
 start. If the marker is not before the `init` record of the session, kstrl

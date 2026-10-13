@@ -39,7 +39,7 @@ import sys
 import threading
 import time
 import weakref
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import IO
 
@@ -181,6 +181,9 @@ class DeadlineStreamer:
     the lines this class yields. An adapter whose child frames every agent
     line passes a file instead, so a diagnostic cannot land in, or between
     the bytes of, an agent line (#727).
+
+    ``env`` is added to the environment of kstrl for the child, and wins over
+    it (the login of the operator for a claude session, #803).
     """
 
     def __init__(
@@ -194,6 +197,7 @@ class DeadlineStreamer:
         term_grace: float = DEFAULT_TERM_GRACE_SECONDS,
         root_dir: Path | None = None,
         stderr: int | IO[bytes] = subprocess.STDOUT,
+        env: Mapping[str, str] | None = None,
     ) -> None:
         self.timed_out = False
         self._disposed = False
@@ -225,6 +229,7 @@ class DeadlineStreamer:
                 stderr=stderr,
                 encoding="utf-8",
                 cwd=cwd,
+                env={**os.environ, **env} if env else None,
                 start_new_session=True,
                 pass_fds=(lifeline_read, status_write),
             )

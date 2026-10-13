@@ -303,12 +303,15 @@ def _check_agent_preflight(config: KstrlConfig, ui_impl: UI) -> None:
 
 #: The end of the hint of a failed probe, per CLI family. A claude login that works
 #: in the operator's terminal can fail in kstrl, because kstrl starts claude
-#: with --setting-sources project and so does not read its user settings (#803).
+#: with --setting-sources project and takes only the apiKeyHelper and the env
+#: of its user settings (#803).
 _USER_SETTINGS_HINT = {
     CLAUDE_FAMILY: (
-        " kstrl starts claude with --setting-sources project, so an apiKeyHelper "
-        "or env in ~/.claude/settings.json does not apply. Set the provider in "
-        "the environment of ks."
+        " kstrl starts claude with --setting-sources project and takes only the "
+        "apiKeyHelper and the env of the claude user settings "
+        "($CLAUDE_CONFIG_DIR/settings.json, or ~/.claude/settings.json), so a "
+        "different login key there does not apply. Set the provider in the "
+        "environment of ks."
     ),
 }
 
