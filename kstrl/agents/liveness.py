@@ -66,7 +66,7 @@ from typing import Any
 from kstrl.agents.proc import DeadlineStreamer
 from kstrl.config import _parse_bool
 from kstrl.jsonread import read_json
-from kstrl.sandbox import claude_session_argv
+from kstrl.sandbox import claude_session_argv, claude_session_env
 
 #: Default ON; ``KSTRL_AGENT_PROBE=0`` restores the pre-#262 behaviour of
 #: trusting PATH. Read straight from the environment rather than from a
@@ -178,8 +178,10 @@ def _attempt(probe: Callable[[], ProbeResult]) -> ProbeResult:
         return _dead(f"probe could not start: {exc}")
 
 
-def _stream(cmd: list[str]) -> tuple[list[str], bool]:
+def _stream(cmd: list[str], env: dict[str, str] | None = None) -> tuple[list[str], bool]:
     """Run one probe command in a scratch directory; ``(lines, timed_out)``.
+
+    ``env`` is added to the environment of the probe command.
 
     The single subprocess seam every probe goes through, so a test
     replaces one function and the suite cannot reach a real CLI.
@@ -198,6 +200,7 @@ def _stream(cmd: list[str]) -> tuple[list[str], bool]:
             cwd=Path(scratch),
             stdin_text="ping",
             timeout=PROBE_TIMEOUT_SECONDS,
+            env=env,
         )
         try:
             # Not a generator, so this is the narrower half of the same
@@ -223,11 +226,11 @@ def _probe_claude(model: str | None) -> ProbeResult:
         "--print",
         "--output-format",
         "json",
-        *claude_session_argv("probe", network=False),
+        *claude_session_argv("probe", network=False, settings=None),
     ]
     if model is not None:
         cmd.extend(["--model", model])
-    lines, timed_out = _stream(cmd)
+    lines, timed_out = _stream(cmd, env=claude_session_env())
     if timed_out:
         return _TIMED_OUT
     payload = _last_result_event(lines)

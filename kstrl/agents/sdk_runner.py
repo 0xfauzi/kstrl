@@ -42,7 +42,7 @@ from typing import Any
 
 from kstrl.agents.claude_sdk import DISPLAY_PREFIX, RESULT_PREFIX, USAGE_PREFIX
 from kstrl.jsonread import read_json
-from kstrl.sandbox import ClaudeRole, claude_session_flags
+from kstrl.sandbox import ClaudeRole, claude_session_env, claude_session_flags
 from kstrl.write_guard import GUARDED_TOOLS, real_roots, refusal
 
 # Runner exit codes (informational; the adapter keys on output lines).
@@ -187,14 +187,21 @@ async def _drive(config: dict[str, Any], sdk: Any) -> int:
         # (measured: _build_command passes --system-prompt ""). Engineer
         # parity with the CLI adapter requires the claude_code preset.
         "system_prompt": {"type": "preset", "preset": "claude_code"},
-        "settings": config.get("settings") or None,
+        # The settings JSON rides extra_args with the login (#803): claude
+        # reads only the last --settings flag (measured).
+        "settings": None,
+        "env": claude_session_env(),
         "max_budget_usd": config.get("max_budget_usd"),
         "cli_path": config.get("cli_path") or None,
         # The flags of every claude session (#700, #803): no MCP server, only
         # the tools of the role, and no user-level setting. extra_args exists
         # in all SDK versions that kstrl supports, so the flags do not depend
         # on a newer option.
-        "extra_args": claude_session_flags(_role(config), network=config.get("network") is True),
+        "extra_args": claude_session_flags(
+            _role(config),
+            network=config.get("network") is True,
+            settings=config.get("settings") or None,
+        ),
     }
     # Mirror of the CLI adapter's R7.5 invocation shape: skip-permissions
     # unless the no-network sandbox requires the permission layer.

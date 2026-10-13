@@ -598,9 +598,9 @@ class TestAgentLivenessPreflight:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """#803: claude gets --setting-sources project, so an apiKeyHelper or an
-        env in ~/.claude/settings.json does not apply (measured: "Not logged
-        in"). The warning names that cause."""
+        """#803: claude gets --setting-sources project, and kstrl takes only the
+        apiKeyHelper and the env of the user settings, so a different login
+        key there does not apply. The warning names that cause."""
         _availability(monkeypatch, claude=True, codex=False)
         self._probe(monkeypatch, ProbeResult(live=False, detail="Not logged in"))
         _stub_run_loop(monkeypatch)
@@ -614,7 +614,7 @@ class TestAgentLivenessPreflight:
 
         assert result.exit_code == 0, result.output
         assert "claude is installed but cannot run a turn: Not logged in" in result.output
-        assert "~/.claude/settings.json does not apply" in result.output
+        assert "takes only the apiKeyHelper and the env" in result.output
 
     def test_live_engineer_cli_says_nothing(
         self,
