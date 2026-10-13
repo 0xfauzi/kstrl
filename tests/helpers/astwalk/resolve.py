@@ -9,10 +9,12 @@ from __future__ import annotations
 import ast
 from collections.abc import Iterable, Mapping, MutableMapping, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from weakref import WeakKeyDictionary
 
-from tests.helpers.astwalk.corpus import all_nodes, folded_str
+from tests.helpers.astwalk.corpus import REPO_ROOT, all_nodes, folded_str
 from tests.helpers.astwalk.net import Sites
+from tests.helpers.astwalk.reexport import defining_origin, import_base
 
 # --- name resolution ------------------------------------------------------
 
@@ -99,6 +101,9 @@ class Bindings:
 
     origins: Mapping[str, str] = field(default_factory=dict)
     attributes: Mapping[str, str] = field(default_factory=dict)
+    #: The checkout whose package ``__init__.py`` files a re-export is
+    #: followed through (#863 B4). A test gives a temporary tree.
+    root: Path = REPO_ROOT
 
     def origin_of(self, node: ast.AST) -> Origin | None:
         """The dotted origin this expression refers to, and how it was got.
@@ -106,7 +111,29 @@ class Bindings:
         The full answer. Longest known prefix wins, then the RECEIVER of
         an attribute, then ``getattr``, and only then the bare-name
         over-match, which is the one step that guesses.
+
+        THEN THE RE-EXPORTS (#863 B4). ``from kstrl.io import X`` names
+        the package, and a guard keys on the module that defines ``X``.
+        :func:`~.reexport.defining_origin` follows each package
+        ``__init__.py`` to that module, and a step it cannot prove makes
+        the answer ``guessed``.
         """
+        written = self._as_written(node)
+        if written is None:
+            return None
+        found, guessed = defining_origin(written.dotted, self.root)
+        return Origin(found, written.guessed or guessed)
+
+    def settled(self, node: ast.AST) -> str | None:
+        """The origin to STORE for a binding: the defining module when a
+        re-export is provable, else the spelling as written. A stored
+        best guess would come back as proven on the next lookup, and a
+        spelling as written gives the same guess again."""
+        written = self._as_written(node)
+        return None if written is None else settle(written.dotted, self.root)
+
+    def _as_written(self, node: ast.AST) -> Origin | None:
+        """:meth:`origin_of` before the re-exports are followed."""
         path = dotted(node)
         if path is not None:
             through = self._through_prefix(path)
@@ -156,7 +183,7 @@ class Bindings:
         broad. See :func:`_classify_call` for the rule that keeps the
         pins and closes the three.
         """
-        base = self.origin_of(node.value)
+        base = self._as_written(node.value)
         if base is not None:
             return base.through(node.attr)
         if node.attr in self.attributes:
@@ -176,12 +203,18 @@ class Bindings:
             return None
         if not isinstance(node.func, ast.Name) or len(node.args) < 2:
             return None
-        base = self.resolve(node.args[0])
+        base = self._as_written(node.args[0])
         attr = folded_str(node.args[1])
-        return f"{base}.{attr}" if base is not None and attr is not None else None
+        return f"{base.dotted}.{attr}" if base is not None and attr is not None else None
 
 
-def bindings(tree: ast.Module, *, module: str = "") -> Bindings:
+def settle(path: str, root: Path = REPO_ROOT) -> str:
+    """``path`` through its re-exports when that is provable, else as written."""
+    found, guessed = defining_origin(path, root)
+    return path if guessed else found
+
+
+def bindings(tree: ast.Module, *, module: str = "", root: Path | None = None) -> Bindings:
     """Resolve every name in one module, to a fixed point.
 
     Covers what #324 records eleven guards getting wrong in six different
@@ -211,20 +244,26 @@ def bindings(tree: ast.Module, *, module: str = "") -> Bindings:
     imports. Left empty they resolve to a leading-dot origin that cannot
     collide with an absolute one, so the answer is useless rather than
     silently wrong.
+
+    ``root`` is the checkout whose package ``__init__.py`` files a
+    re-export is followed through, the repository when left out. An
+    import stores the defining module when the re-export is provable,
+    so a guard that reads ``origins`` directly gets it too.
     """
+    base = REPO_ROOT if root is None else root
     per_module = _BINDINGS.setdefault(tree, {})
-    hit = per_module.get(module)
+    hit = per_module.get((module, base))
     if hit is not None:
         return hit
     walked = all_nodes(tree)
     origins: dict[str, str] = {}
     for node in walked:
-        _absorb_import(node, origins, module)
-    table = _Table(origins, {}, set(), _class_body_names(tree))
+        _absorb_import(node, origins, module, base)
+    table = _Table(origins, {}, set(), _class_body_names(tree), base)
     while _rebind_sweep(walked, table):
         continue
-    built = Bindings(origins, table.attributes)
-    per_module[module] = built
+    built = Bindings(origins, table.attributes, base)
+    per_module[(module, base)] = built
     return built
 
 
@@ -238,7 +277,7 @@ def bindings(tree: ast.Module, *, module: str = "") -> Bindings:
 #: reachable only through this dict, 71 MB of a 420 MB peak. A weak key
 #: gives the same identity safety, because a dead tree takes its row with
 #: it rather than leaving an id to be reused.
-_BINDINGS: MutableMapping[ast.Module, dict[str, Bindings]] = WeakKeyDictionary()
+_BINDINGS: MutableMapping[ast.Module, dict[tuple[str, Path], Bindings]] = WeakKeyDictionary()
 
 
 @dataclass(frozen=True)
@@ -257,9 +296,10 @@ class _Table:
     #: construction the moment a later sweep resolves the name.
     unresolved: set[str]
     class_names: frozenset[str]
+    root: Path = REPO_ROOT
 
     def resolver(self) -> Bindings:
-        return Bindings(self.origins, self.attributes)
+        return Bindings(self.origins, self.attributes, self.root)
 
 
 def _class_body_names(tree: ast.Module) -> frozenset[str]:
@@ -279,34 +319,19 @@ def _class_body_names(tree: ast.Module) -> frozenset[str]:
     return frozenset(found)
 
 
-def _absorb_import(node: ast.AST, origins: dict[str, str], module: str) -> None:
-    """One ``import`` or ``from ... import``, into the origins table."""
+def _absorb_import(node: ast.AST, origins: dict[str, str], module: str, root: Path) -> None:
+    """One ``import`` or ``from ... import``, into the origins table.
+
+    The relative-level rule is :func:`~.reexport.import_base`, which the
+    re-export walk shares."""
     if isinstance(node, ast.Import):
         for alias in node.names:
             local = alias.asname or alias.name.split(".")[0]
-            origins.setdefault(local, alias.name if alias.asname else local)
+            origins.setdefault(local, settle(alias.name, root) if alias.asname else local)
     elif isinstance(node, ast.ImportFrom):
-        base = _import_base(node, module)
+        base = import_base(node, module, root)
         for alias in node.names:
-            origins.setdefault(alias.asname or alias.name, f"{base}.{alias.name}")
-
-
-def _import_base(node: ast.ImportFrom, module: str) -> str:
-    """The module a ``from ... import`` reads from, relative levels and all.
-
-    ``ImportFrom.level`` is the field #324 records three guards dropping.
-    Dropped, ``from .os import getpgid`` resolves to the stdlib ``os``, a
-    false positive, and ``from .config_report import f`` to a module that
-    can never match a package-qualified key, a false NEGATIVE and the
-    direction that matters. ``from . import x`` has no module at all and
-    one of them discarded it outright.
-    """
-    if not node.level:
-        return node.module or ""
-    package = ".".join(module.split(".")[: -node.level]) if module else "." * node.level
-    if not node.module:
-        return package
-    return f"{package}{node.module}" if package.endswith(".") else f"{package}.{node.module}"
+            origins.setdefault(alias.asname or alias.name, settle(f"{base}.{alias.name}", root))
 
 
 def _rebind_sweep(nodes: Sequence[ast.AST], table: _Table) -> bool:
@@ -327,7 +352,7 @@ def _bind_one(target: str, value: ast.expr, table: _Table, resolver: Bindings) -
     """One target. True if this call learned something new about it."""
     if target in table.origins:
         return False
-    origin = resolver.resolve(value)
+    origin = resolver.settled(value)
     if origin is None:
         if target in table.unresolved:
             return False
@@ -384,6 +409,7 @@ def calls_to(
     where: str = "",
     module: str = "",
     owner: Mapping[int, str] | None = None,
+    root: Path | None = None,
 ) -> Sites:
     """Every call in one module that resolves to a target, and every call
     that could be one and could not be decided.
@@ -420,7 +446,7 @@ def calls_to(
     """
     wanted = frozenset(targets)
     leaves = {target.rsplit(".", 1)[-1] for target in wanted}
-    table = bindings(tree, module=module)
+    table = bindings(tree, module=module, root=root)
     leaves |= _bound_target_leaves(tree, table, wanted)
     seen: list[str] = []
     undecided: list[str] = []

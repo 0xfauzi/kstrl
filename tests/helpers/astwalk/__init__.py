@@ -92,6 +92,7 @@ from tests.helpers.astwalk.net import (
     folds_to,
     spells,
 )
+from tests.helpers.astwalk.reexport import defining_origin
 from tests.helpers.astwalk.resolve import (
     Bindings,
     Origin,
@@ -135,6 +136,7 @@ __all__ = [
     "catches_everything",
     "census",
     "declared_in",
+    "defining_origin",
     "dotted",
     "folded_str",
     "folds_containing",

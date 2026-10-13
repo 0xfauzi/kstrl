@@ -564,8 +564,16 @@ def _import_closure(module: str) -> set[str]:
     codebase uses to break cycles (``loop.py`` defers ``init_cmd``). A
     static closure over-approximates what actually runs, the safe
     direction here: the claim checked is that a writer is NOT reachable.
-    A name with no file behind it, the package itself or a function
-    reached through a ``from ... import``, is a dead end not an error.
+    A name with no file behind it, a function reached through a
+    ``from ... import``, is a dead end not an error.
+
+    A PACKAGE IS ITS ``__init__.py``, and each parent package is in the
+    closure (#863 B4). ``from kstrl.io import x`` and ``from
+    kstrl.io.statedir import x`` both execute ``kstrl/io/__init__.py``,
+    which imports each module of the interface. Before B4 this walk read
+    only ``<name>.py``, so a package was a dead end, the parents were
+    not walked, and an edge through an ``__init__.py`` was dropped in
+    silence. For THIS guard a dropped edge passes vacuously.
     """
     seen: set[str] = set()
     pending = [module]
@@ -575,9 +583,11 @@ def _import_closure(module: str) -> set[str]:
             continue
         seen.add(name)
         parts = name.split(".")[1:]
-        source = astwalk.KSTRL_PACKAGE.joinpath(*parts).with_suffix(".py") if parts else None
-        if source is not None and source.is_file():
-            pending.extend(_imported_names(source))
+        pending.extend(".".join(name.split(".")[:cut]) for cut in range(1, len(parts) + 1))
+        base = astwalk.KSTRL_PACKAGE.joinpath(*parts)
+        for source in (base.with_suffix(".py") if parts else None, base / "__init__.py"):
+            if source is not None and source.is_file():
+                pending.extend(_imported_names(source))
     return seen
 
 
@@ -636,6 +646,14 @@ class TestNothingTheLoopRunsWritesTheUncarvedEntries:
         assert "kstrl.guards" in closure
         assert "kstrl.statedir" in closure
         assert _import_closure("kstrl.serve") & self.WRITERS
+
+    def test_the_closure_walks_a_package_init_and_each_parent(self) -> None:
+        """#863 B4. ``kstrl.agents.base`` executes ``kstrl/agents/__init__.py``
+        first, and that file imports ``kstrl.agents.codex``. Before B4 the
+        walk read only ``<name>.py``: the package was a dead end and the
+        parent was not walked, thus both edges were dropped."""
+        closure = _import_closure("kstrl.agents.base")
+        assert {"kstrl.agents", "kstrl.agents.codex"} <= closure
 
 
 class TestSignalsCannotReachTheQueue:
