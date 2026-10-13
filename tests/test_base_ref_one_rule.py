@@ -140,7 +140,6 @@ EXPECTED_REF_OPERAND_ARGVS: dict[str, int] = {
     "git_base.py git rev-parse --verify --quiet f'refs/remotes/origin/{base_branch}'": 1,
     "git_base.py git fetch -- origin base_branch": 1,
     "git.py git rev-parse --is-inside-work-tree": 1,
-    "git.py git rev-parse --show-toplevel": 1,
     "git.py git rev-parse --git-common-dir": 1,
     "git.py git rev-parse --path-format=absolute --git-dir --git-common-dir": 1,
     "git.py git show-ref --verify --quiet f'refs/heads/{branch}'": 1,

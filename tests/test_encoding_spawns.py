@@ -73,7 +73,7 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     # `git_diff.py`, which adds its own `import subprocess` (9). 30: #776 G3
     # moves twenty-one of them to `git_tree.py`, which adds its own
     # `import subprocess` (22).
-    "git.py": 30,
+    "git.py": 28,
     "git_base.py": 10,
     "git_diff.py": 9,
     "git_tree.py": 22,
@@ -135,7 +135,7 @@ EXPECTED_TEXT_MODE_SPAWNS: dict[str, int] = {
     # `git_common_dir`. 27: +1 for #700's `git_write_paths`. 24: #776 G1 moves
     # three of them to `git_base.py`. 21: #776 G2 moves three of them to
     # `git_diff.py`. 14: #776 G3 moves seven of them to `git_tree.py`.
-    "git.py": 14,
+    "git.py": 13,
     "git_base.py": 3,
     "git_diff.py": 3,
     "git_tree.py": 7,
@@ -174,7 +174,6 @@ EXPECTED_CLEARED_SPAWNS: tuple[str, ...] = (
     "git.py subprocess.run(['git', 'rev-parse', '--git-common-dir'], cwd=cwd, capt",
     "git.py subprocess.run(['git', 'rev-parse', '--is-inside-work-tree'], cwd=path",
     "git.py subprocess.run(['git', 'rev-parse', '--path-format=absolute', '--git-d",
-    "git.py subprocess.run(['git', 'rev-parse', '--show-toplevel'], cwd=path, capt",
     "git.py subprocess.run(['git', 'rev-parse', '--verify', '--quiet', 'HEAD'], cw",
     "git.py subprocess.run(['git', 'rev-parse', '--verify', '--quiet', f'refs/head",
     "git_base.py subprocess.run(['git', 'fetch', '--', 'origin', base_branch], cwd=cwd,",

@@ -352,7 +352,7 @@ _FILE_SUFFIXES = frozenset(
 
 
 def module_paths(text: str) -> list[str]:
-    """Every Python module path in ``text``, such as `adequacy.is_test_path`.
+    """Every Python module path in ``text``, such as `verify.run_mechanical_verification`.
 
     ``kstrl/stack.py`` means `"stack"` is itself a genuine module name, so
     the TOML table ``[stack.checks]`` the #696 flag day's refusal text
@@ -390,8 +390,8 @@ def _non_docstring_strings(tree: ast.AST) -> list[str]:
 
 def test_the_module_path_matcher_tells_a_module_from_a_file() -> None:
     """The control for both tests below."""
-    assert module_paths("see adequacy.is_test_path, and kstrl.pr pushes") == [
-        "adequacy.is_test_path",
+    assert module_paths("see verify.run_mechanical_verification, and kstrl.pr pushes") == [
+        "verify.run_mechanical_verification",
         "kstrl.pr",
     ]
     assert module_paths("kstrl.toml resolves; wrote .kstrl/doctor/report.json") == []

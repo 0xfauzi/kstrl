@@ -275,7 +275,6 @@ EXPECTED_GIT_ARGVS: dict[str, int] = {
     "git_tree.py git restore ? --staged --worktree -- ?": 1,
     "git.py git rev-parse --abbrev-ref HEAD": 1,
     "git.py git rev-parse --is-inside-work-tree": 1,
-    "git.py git rev-parse --show-toplevel": 1,
     "git.py git rev-parse --git-common-dir": 1,
     "git.py git rev-parse --path-format=absolute --git-dir --git-common-dir": 1,
     "git.py git rev-parse --verify --quiet ?": 1,

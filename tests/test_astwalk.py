@@ -417,7 +417,7 @@ class TestTheWalkAgainstTheRealPackage:
             }
         )
         found = package_calls(spawns)
-        assert len(found.seen) == 75
+        assert len(found.seen) == 74
         assert found.without_line_numbers().undecided == tuple(
             sorted(
                 [

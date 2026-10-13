@@ -109,8 +109,6 @@ EXPECTED_UNDECIDED_REPLACE_CALLS: tuple[str, ...] = (
     "autonomy_transitions.py trigger.label.replace",
     "baseline_report.py ' '.join(text.split()).replace",
     "doctor.py now.isoformat().replace",
-    # #433 inc3: str.replace spelling a slug as words.
-    "evolve_report.py name.replace",
     "inbox.py datetime.now(UTC).replace",
     "inbox.py parsed.replace",
     # #696: init_cmd.kstrl_toml_for, which seeded a detected toolchain's

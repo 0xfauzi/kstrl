@@ -121,7 +121,7 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     "feature_cmd.py": 3,
     # #632: the import, json.dumps for the canonical form, and the
     # json.JSONDecodeError it catches from read_json. No parse.
-    "inbox.py": 4,
+    "inbox.py": 3,
     "init_cmd.py": 3,
     "intake_gh.py": 2,
     "intake_github.py": 5,
