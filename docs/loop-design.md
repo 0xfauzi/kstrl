@@ -175,7 +175,7 @@ loop 2, the scheduler for loop 3, and the autonomy ladder
 accumulated evidence.
 
 **Actuator.** The engineer agent behind the `Agent` protocol
-(`agents/base.py:458`).
+(`agents/base.py`).
 
 **Disturbances.** Model non-determinism between identical calls; git and GitHub
 transport failures; the base branch moving under a component; and upstream

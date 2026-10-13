@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING
 import click
 
 from kstrl.agents import get_agent
-from kstrl.agents.base import ARCHITECT_COMPONENT, ARCHITECT_ROLE
 from kstrl.cli_factory import factory
 from kstrl.cli_preflight import (
     _HANDED_RUN_LOCK,
@@ -51,6 +50,7 @@ from kstrl.retry_plan import (
 )
 from kstrl.timeout import limit_seconds
 from kstrl.ui.base import UI
+from kstrl.usage import ARCHITECT_COMPONENT, ARCHITECT_ROLE
 
 if TYPE_CHECKING:
     pass

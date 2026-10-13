@@ -14,7 +14,7 @@ from pathlib import Path
 
 from kstrl import event_catalog
 from kstrl import events as ev
-from kstrl.agents.base import ARCHITECT_COMPONENT
+from kstrl.usage import ARCHITECT_COMPONENT
 
 DEFAULT_RUN_ID = "factory-20260720-120000.000000-fake"
 

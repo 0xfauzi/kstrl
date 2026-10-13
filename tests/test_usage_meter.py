@@ -32,15 +32,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from kstrl.agents.base import (
-    ARCHITECT_COMPONENT,
-    ARCHITECT_ROLE,
-    UsageRecord,
-    UsageTotals,
-    collect_usage,
-    format_usage_rollup,
-    usage_cursor,
-)
 from kstrl.agents.claude_code import ClaudeCodeAgent, _usage_from_result_event
 from kstrl.agents.codex import CodexAgent
 from kstrl.agents.custom import CustomAgent
@@ -66,6 +57,15 @@ from kstrl.observability import ProgressLog
 from kstrl.security import SecurityConfig
 from kstrl.shutdown import StopController
 from kstrl.ui.plain import PlainUI
+from kstrl.usage import (
+    ARCHITECT_COMPONENT,
+    ARCHITECT_ROLE,
+    UsageRecord,
+    UsageTotals,
+    collect_usage,
+    format_usage_rollup,
+    usage_cursor,
+)
 from kstrl.verify_model import VerifyConfig
 from tests.helpers.stack_confirmation import confirm_stack, in_process_stack, write_stack
 
@@ -4339,7 +4339,7 @@ class TestUsageCoverage:
     """The coverage fold: the middle term between enforceable and dead."""
 
     def test_the_measured_run_is_partial_and_names_the_role(self) -> None:
-        from kstrl.agents.base import usage_coverage
+        from kstrl.usage import usage_coverage
 
         meter, _ = _measured_meter()
         coverage = usage_coverage(meter, axis="cost", ceiling="max_cost_usd")
@@ -4355,7 +4355,7 @@ class TestUsageCoverage:
     def test_the_token_axis_of_the_same_run_is_complete(self) -> None:
         """Both axes are folded by the same code and must not be
         conflated: this run's TOKEN coverage was perfect."""
-        from kstrl.agents.base import usage_coverage
+        from kstrl.usage import usage_coverage
 
         meter, _ = _measured_meter()
         coverage = usage_coverage(meter, axis="token")
@@ -4366,7 +4366,7 @@ class TestUsageCoverage:
         """The uncovered magnitude stays in TOKENS. Converting it to
         dollars would need a price table this repo does not have; a
         fabricated cost in an audit trail is worse than a missing one."""
-        from kstrl.agents.base import usage_coverage
+        from kstrl.usage import usage_coverage
 
         meter, _ = _measured_meter()
         note = usage_coverage(
@@ -4388,7 +4388,7 @@ class TestUsageCoverage:
         """A role where SOME calls reported a cost cannot say which of
         its tokens were unpriced - the aggregate does not carry that -
         so no token figure is claimed for it."""
-        from kstrl.agents.base import usage_coverage
+        from kstrl.usage import usage_coverage
 
         meter = {
             "comp-a": {
@@ -4408,7 +4408,7 @@ class TestUsageCoverage:
         assert "1,000" not in coverage.note()
 
     def test_full_coverage_says_nothing(self) -> None:
-        from kstrl.agents.base import usage_coverage
+        from kstrl.usage import usage_coverage
 
         meter = {
             "comp-a": {
@@ -4427,7 +4427,7 @@ class TestUsageCoverage:
         assert coverage.note() == ""
 
     def test_an_empty_axis_is_labelled_empty_not_partial(self) -> None:
-        from kstrl.agents.base import usage_coverage
+        from kstrl.usage import usage_coverage
 
         meter = {
             "comp-a": {
@@ -4446,7 +4446,7 @@ class TestUsageCoverage:
         assert "EMPTY" in coverage.note()
 
     def test_an_empty_meter_reports_nothing(self) -> None:
-        from kstrl.agents.base import usage_coverage
+        from kstrl.usage import usage_coverage
 
         coverage = usage_coverage({}, axis="cost", ceiling="max_cost_usd")
         assert coverage.calls == 0
@@ -4455,7 +4455,7 @@ class TestUsageCoverage:
 
     def test_an_unknown_axis_degrades_instead_of_raising(self) -> None:
         """Accounting must never gate a run (R3.1 requirement 4)."""
-        from kstrl.agents.base import usage_coverage
+        from kstrl.usage import usage_coverage
 
         meter, _ = _measured_meter()
         coverage = usage_coverage(meter, axis="bananas")
@@ -4463,7 +4463,7 @@ class TestUsageCoverage:
         assert coverage.calls == 13
 
     def test_roles_fold_across_components(self) -> None:
-        from kstrl.agents.base import usage_coverage
+        from kstrl.usage import usage_coverage
 
         meter, _ = _measured_meter()
         coverage = usage_coverage(meter, axis="cost", ceiling="max_cost_usd")

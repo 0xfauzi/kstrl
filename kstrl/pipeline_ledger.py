@@ -11,7 +11,10 @@ from collections.abc import Sequence
 
 from kstrl import event_catalog
 from kstrl import events as ev
-from kstrl.agents.base import (
+from kstrl.loop_budget import UNENFORCEABLE_CALLS
+from kstrl.manifest import Component, ComponentStatus
+from kstrl.pipeline_state import PipelineState
+from kstrl.usage import (
     ARCHITECT_COMPONENT,
     ARCHITECT_ROLE,
     CEILING_AXES,
@@ -22,9 +25,6 @@ from kstrl.agents.base import (
     UsageTotals,
     usage_coverage,
 )
-from kstrl.loop_budget import UNENFORCEABLE_CALLS
-from kstrl.manifest import Component, ComponentStatus
-from kstrl.pipeline_state import PipelineState
 
 #: How a retry this run carried from an interrupted run is marked (#463).
 CARRIED_REASON_PREFIX = "carried from run "

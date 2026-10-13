@@ -13,13 +13,6 @@ from typing import TYPE_CHECKING
 import click
 
 from kstrl.agents import get_agent
-from kstrl.agents.base import (
-    ARCHITECT_COMPONENT,
-    ARCHITECT_ROLE,
-    UsageTotals,
-    collect_usage,
-    usage_cursor,
-)
 from kstrl.cli_factory_options import factory_options
 from kstrl.cli_preflight import (
     _agent_preflight,
@@ -50,6 +43,13 @@ from kstrl.owner_answers import OwnerAnswerError
 from kstrl.serve_spend import ARCHITECT_RUN_KIND
 from kstrl.shutdown import StopController, install_signal_handlers
 from kstrl.timeout import TimeoutConfig, limit_seconds
+from kstrl.usage import (
+    ARCHITECT_COMPONENT,
+    ARCHITECT_ROLE,
+    UsageTotals,
+    collect_usage,
+    usage_cursor,
+)
 
 if TYPE_CHECKING:
     # Annotation only, and the cheapest available: with

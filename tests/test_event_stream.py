@@ -22,7 +22,6 @@ from unittest.mock import patch
 
 from kstrl import event_catalog, reducer
 from kstrl import events as ev
-from kstrl.agents.base import UsageRecord, UsageTotals
 from kstrl.config import KstrlConfig
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
@@ -32,6 +31,7 @@ from kstrl.observability import (
     read_progress_events,
 )
 from kstrl.ui.plain import PlainUI
+from kstrl.usage import UsageRecord, UsageTotals
 from kstrl.verify_model import VerifyConfig
 from tests.helpers.stack_confirmation import in_process_stack
 

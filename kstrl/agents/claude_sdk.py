@@ -38,7 +38,6 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import IO, Any
 
-from kstrl.agents.base import UsageRecord
 from kstrl.agents.proc import DeadlineStreamer, timeout_message
 from kstrl.agents.prompt_record import record_prompt
 from kstrl.jsonread import read_json
@@ -48,6 +47,7 @@ from kstrl.sandbox import (
     claude_sandbox_drops_skip_permissions,
     claude_sandbox_settings,
 )
+from kstrl.usage import UsageRecord
 
 logger = logging.getLogger(__name__)
 
