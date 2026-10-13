@@ -9,7 +9,7 @@ Two layers, because an environment variable reaches the code two ways:
    ``REQUIRE_TIMEOUT_ENV``. Over-matching here costs a doc row.
 2. By LITERAL READ. The first argument of ``os.environ.get``,
    ``os.getenv``, ``os.environ[...]`` and ``... in os.environ``, which
-   is what catches an unprefixed name such as ``MODEL`` or ``GUM_FORCE``.
+   is what catches an unprefixed name such as ``MODEL`` or ``PROMPT_FILE``.
 
 Blind spot, stated: an unprefixed name read through a variable (the
 ``STRING_KEYS`` table in ``kstrl/config_keys.py`` is the one case

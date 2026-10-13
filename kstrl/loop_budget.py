@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from kstrl.agents.base import UsageTotals
 
 # How many NON-REPORTING agent calls the RUN must accumulate before an
-# enabled ceiling is declared unenforceable (see LoopBudget.halt_reason).
+# enabled ceiling is declared unenforceable (see LoopBudget.halt_verdict).
 # Applied PER CEILING: tokenless calls condemn the token ceiling,
 # costless calls condemn the cost ceiling. A judgment call, not a
 # measurement: one silent call is an incident (the claude adapter records
@@ -106,7 +106,7 @@ class LoopBudget:
       running in parallel is invisible until they report back to the
       parent. With ``max_parallel = N`` the overshoot scales with N.
     - Unreported spend. Every figure here is a CLI self-report; see
-      :meth:`halt_reason` for how unknown usage is treated.
+      :meth:`halt_verdict` for how unknown usage is treated.
     - Loops that COMPLETE. The completion return fires before this check
       is evaluated, so an adapter that finishes on its first silent call
       never halts itself - the ordinary success path for a custom
@@ -129,7 +129,7 @@ class LoopBudget:
     #: Reporting calls (token OR cost) the run had made before this
     #: worker launched. Provenance only - it says whether the run's
     #: prior total is a real figure or an artefact of a silent adapter -
-    #: and NOT part of any decision; see :meth:`halt_reason`.
+    #: and NOT part of any decision; see :meth:`halt_verdict`.
     prior_known_calls: int = 0
     #: ENGINEER-loop calls the run had made before this worker launched,
     #: and how many reported a TOKEN figure. Their difference is the
@@ -327,13 +327,3 @@ class LoopBudget:
             "; ".join(clauses)
             + ("; halting rather than spending under a cap that cannot fire (R8)"),
         )
-
-    def halt_reason(self, loop_usage: UsageTotals) -> str | None:
-        """The prose half of :meth:`halt_verdict`, or None.
-
-        Kept because the sentence is what the operator reads; callers
-        that need to ACT on the halt want the verdict instead, so the
-        condition and the ceiling identities do not have to be recovered
-        by parsing this string."""
-        verdict = self.halt_verdict(loop_usage)
-        return None if verdict is None else verdict.reason

@@ -75,7 +75,13 @@ from kstrl.config import (
     resolve_config_file,
     toml_parse_scope,
 )
-from kstrl.config_keys import RETIRED_ENV_VARS, RETIRED_KEYS, RETIRED_SECTIONS
+from kstrl.config_keys import (
+    RETIRED_ENV_VALUES,
+    RETIRED_ENV_VARS,
+    RETIRED_KEYS,
+    RETIRED_SECTIONS,
+    RETIRED_VALUES,
+)
 from kstrl.config_report import environ_lock, scrubbed_environ
 from kstrl.config_toml import RecordedTable, record_reads
 from kstrl.stack import StackError
@@ -406,6 +412,24 @@ def unread_name_problems(
     return problems
 
 
+def retired_value_problems(document: Mapping[str, Any], toml_path: Path) -> list[str]:
+    """Every retired VALUE of a kstrl.toml key or environment variable in play."""
+    problems: list[str] = []
+    for (section, key, value), why in RETIRED_VALUES.items():
+        table = document.get(section)
+        if isinstance(table, Mapping) and str(table.get(key)).strip().lower() == value:
+            problems.append(
+                f"{toml_path} names [{section}] {key} = {value!r}, which was {why}. "
+                "kstrl will not guess."
+            )
+    for (name, value), why in sorted(RETIRED_ENV_VALUES.items()):
+        if os.environ.get(name, "").strip().lower() == value:
+            problems.append(
+                f"the environment sets {name}={value}, which was {why}. kstrl will not guess."
+            )
+    return problems
+
+
 def retired_name_problems(document: Mapping[str, Any], toml_path: Path) -> list[str]:
     """Every retired kstrl.toml name and environment variable in play.
 
@@ -429,6 +453,7 @@ def retired_name_problems(document: Mapping[str, Any], toml_path: Path) -> list[
             problems.append(
                 f"{toml_path} names [{section}] {key}, which was {why}. kstrl will not guess."
             )
+    problems.extend(retired_value_problems(document, toml_path))
     for old, why in sorted(RETIRED_ENV_VARS.items()):
         if old in os.environ:
             problems.append(f"the environment sets {old}, which was {why}. kstrl will not guess.")

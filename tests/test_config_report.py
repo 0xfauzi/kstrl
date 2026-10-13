@@ -116,7 +116,6 @@ class TestBuildConfigReport:
 
 class TestNormalizeUiMode:
     def test_cases(self) -> None:
-        assert normalize_ui_mode("gum") == "rich"
         assert normalize_ui_mode("off") == "plain"
         assert normalize_ui_mode("0") == "plain"
         assert normalize_ui_mode("") == "auto"

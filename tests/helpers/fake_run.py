@@ -102,8 +102,8 @@ def _emit_run(root: Path, spec: FakeRunSpec, run_id: str) -> Iterator[None]:
         # reported BOTH figures, so token_calls == cost_calls ==
         # known_calls. Emitted explicitly because a payload with
         # known_calls > 0 and both axis counters at 0 is the signature
-        # of a pre-R8 log, and the reducer reads it as "coverage not
-        # measured" - which is not what this fixture means.
+        # of a pre-R8 log, and the reducer reads it as a lower bound - which
+        # is not what this fixture means.
         known = spec.iterations - 1 if spec.include_unreported_usage else spec.iterations
         bus.emit(
             event_catalog.ComponentUsage(

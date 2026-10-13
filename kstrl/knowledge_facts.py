@@ -159,18 +159,9 @@ VALID_SCOPES = frozenset({"handler", "adapter", "schema", "contract", "invariant
 #   confirm the claim against test output, not just review verdicts.
 # - "asserted" is the bottom of the scale; the LLM stated the claim
 #   but no review or test confirmed it.
-# "verified" is kept as a backward-compat alias so old fact files on
-# disk continue to load. New facts should use review_passed.
-VALID_CONFIDENCES = frozenset(
-    {
-        "review_passed",
-        "test_verified",
-        "asserted",
-        "verified",
-    }
-)
-# Map legacy values to the canonical name on read.
-_CONFIDENCE_ALIASES: dict[str, str] = {"verified": "review_passed"}
+# "verified" is not a value (#863): a fact file with it is rejected on
+# read with a warning that names the file and the value.
+VALID_CONFIDENCES = frozenset({"review_passed", "test_verified", "asserted"})
 
 
 @dataclass
@@ -271,10 +262,7 @@ def _parse_fact_md(content: str) -> Fact:
         created_run_id=str(meta.get("created_run_id", "")),
         scope=str(meta.get("scope", "")),
         evidence=[str(e) for e in evidence_raw if isinstance(e, str)],
-        confidence=_CONFIDENCE_ALIASES.get(
-            str(meta.get("confidence", "asserted")),
-            str(meta.get("confidence", "asserted")),
-        ),
+        confidence=str(meta.get("confidence", "asserted")),
         tags=[str(t) for t in tags_raw if isinstance(t, str)],
         claim=claim,
     )

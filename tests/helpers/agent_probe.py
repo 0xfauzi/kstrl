@@ -46,8 +46,13 @@ def stub_probe(
 
     monkeypatch.setenv(liveness.PROBE_ENV_VAR, "1")
     monkeypatch.setattr(liveness, "_stream", fake_stream)
-    liveness.reset_probe_cache()
+    reset_probe_cache()
     return seen
+
+
+def reset_probe_cache() -> None:
+    """Forget every cached probe result."""
+    liveness._CACHE.clear()
 
 
 def set_cli_availability(

@@ -118,16 +118,19 @@ def test_a_saved_record_prints_its_own_since(
     assert output.count(DISABLED_NOTE) == (0 if enabled else 1), output
 
 
-def test_a_legacy_in_tree_record_prints_its_own_since(repo: Path) -> None:
+def test_a_legacy_in_tree_record_is_refused_by_name_with_its_move_command(repo: Path) -> None:
     assert AutonomyState(since=SAVED_SINCE).save(repo) is None
     legacy = legacy_control_paths(repo)[CONTROL_AUTONOMY]
     legacy.parent.mkdir(parents=True, exist_ok=True)
     AutonomyState.path_for(repo).replace(legacy)
-    with pytest.warns(DeprecationWarning, match="relocated control file"):
-        output = _status(repo)
-    assert _since(output) == SAVED_SINCE
-    assert AutonomyState.path_for(repo).exists()
-    assert not legacy.exists()
+    with pytest.warns(RuntimeWarning, match="no longer moves"):
+        state = AutonomyState.load(repo)
+    assert state.degraded_reason is not None
+    assert str(legacy) in state.degraded_reason
+    assert f"mv {legacy} {AutonomyState.path_for(repo)}" in state.degraded_reason
+    # Nothing moved, and the empty control directory is not read as a first run.
+    assert legacy.exists()
+    assert not AutonomyState.path_for(repo).exists()
 
 
 def test_a_record_load_discarded_prints_a_dash(repo: Path, ticking_clock: None) -> None:

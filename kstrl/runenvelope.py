@@ -52,7 +52,7 @@ needs it and loading it twice costs a measured 17.2 ms and ensures the
 control state twice. It is carried only when ``[autonomy] enabled``:
 with the ladder off, which is the default, nothing reads the state and
 the field is ``None``, so a project that never opted in reads no
-``.kstrl/autonomy.json`` and runs no control-directory migration.
+``.kstrl/autonomy.json`` and creates no control directory.
 """
 
 from __future__ import annotations
@@ -99,7 +99,7 @@ class RunEnvelope:
     #: enabled`` is false, which is the DEFAULT: nothing on that path
     #: consumes the state, and round 2 of #192 loaded it anyway, which
     #: bought the rare path 17.2 ms by charging the common one the same
-    #: amount plus a control-directory migration and a warning about a
+    #: amount plus a control-directory creation and a warning about a
     #: ladder the run does not use.
     autonomy_state: AutonomyState | None
     #: The level the run OPERATES at, after ``resolve_runtime_level``

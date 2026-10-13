@@ -34,7 +34,7 @@ class TestOpenCommandRun:
             enabled=True,
             heartbeat=False,
         )
-        assert run.recording
+        assert run.paths is not None
         assert run_kind(run.run_id) == "understand"
         run.bus.emit(event_catalog.RunStarted(project="p", components=1))
         run.close()
@@ -50,7 +50,7 @@ class TestOpenCommandRun:
             "understand",
             enabled=False,
         )
-        assert not run.recording
+        assert run.paths is None
         run.bus.emit(event_catalog.RunStarted(project="p"))
         assert run.transcript_path("understand") is None
         assert run.transcript_writer("understand") is None
@@ -66,7 +66,7 @@ class TestOpenCommandRun:
             tmp_path,
             "decompose",
         )
-        assert not run.recording
+        assert run.paths is None
         run.close()
 
     def test_bridge_ui_bus_is_reused_and_restored(

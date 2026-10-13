@@ -19,6 +19,7 @@ import pytest
 from click.testing import CliRunner
 
 from kstrl.cli import cli
+from kstrl.health import HealthBreach, health_readings, health_report
 from tests.helpers.journal import component_result, journal_at
 from tests.helpers.replay import UNDECODABLE_TSV, run_record, write_runs
 
@@ -27,6 +28,11 @@ DRIFT12 = FLAT9 + (0.90, 0.92, 0.95)
 DRIFT12_LINE = (
     "  - retry_rate: 1 point beyond 3 sigma (value 0.9500 beyond limit 0.1471 over 12 run(s))"
 )
+
+
+def health_status(root: Path) -> tuple[str, list[HealthBreach]]:
+    """The ``ks health`` report text and breaches, from one read of ``root``."""
+    return health_report(health_readings(root))
 
 
 def write_history(
@@ -191,7 +197,7 @@ def test_replay_and_health_agree_when_experiments_path_moves(tmp_path: Path) -> 
     """``[evolution] experiments_path`` must move BOTH report halves of
     ``ks autonomy replay``, not just its health-breach half.
 
-    Before #151's simplify pass, ``replay_file`` resolved its default
+    Before #151's simplify pass, the replay resolved its default
     through ``DEFAULT_EXPERIMENTS_PATH`` while ``health_breaches``
     (called by the SAME command, for the second half of its own report)
     resolved through ``EvolutionConfig.load``: moving the file in
@@ -292,35 +298,29 @@ def test_ewma_smooths_towards_the_new_level() -> None:
 
 
 def test_cost_per_merged_component_drops_runs_with_no_recorded_cost(tmp_path: Path) -> None:
-    import kstrl.health
-
     write_history(tmp_path, (0.1,) * 12, cost="")
-    summary, breaches = kstrl.health.health_status(tmp_path)
+    summary, breaches = health_status(tmp_path)
 
     assert breaches == []
     assert "n=0" in metric_line(summary, "cost_per_merged_component")
 
 
 def test_an_infra_aborted_run_is_not_in_the_series(tmp_path: Path) -> None:
-    import kstrl.health
-
     write_history(
         tmp_path,
         (0.10, 0.12, 0.09, 0.11, 0.10, 0.13, 0.08, 0.10, 0.11, 0.95, 0.95, 0.95),
         common_failures=("",) * 9 + ("pr:push-of-x-failed",) * 3,
     )
-    summary, breaches = kstrl.health.health_status(tmp_path)
+    summary, breaches = health_status(tmp_path)
 
     assert breaches == []
     assert "n=9" in metric_line(summary, "retry_rate")
 
 
 def test_the_infrastructure_error_rate_comes_from_the_journal(tmp_path: Path) -> None:
-    import kstrl.health
-
     write_history(tmp_path, (0.1,) * 12)
     write_journal(tmp_path, [0, 1, 0, 1, 0, 0, 1, 0, 1, 5, 5, 5])
-    summary, breaches = kstrl.health.health_status(tmp_path)
+    summary, breaches = health_status(tmp_path)
 
     matching = [b for b in breaches if b.metric == "infrastructure_error_rate"]
     assert len(matching) == 1
@@ -334,7 +334,7 @@ def test_the_infrastructure_error_rate_comes_from_the_journal(tmp_path: Path) ->
 def test_ks_health_reports_the_journal_series(tmp_path: Path) -> None:
     """Drives the journal-derived series through the real CLI, not ``health_status``.
 
-    The five UNIT-3 tests above all call ``kstrl.health.health_status``
+    The five UNIT-3 tests above all call ``health_status``
     directly. #387's blocker 1 found that no production code called it any
     more: ``ks health`` (``kstrl/cli.py::health_cmd``) had its own second
     copy of the render/breach logic, reachable through the private names
@@ -356,11 +356,9 @@ def test_ks_health_reports_the_journal_series(tmp_path: Path) -> None:
 
 
 def test_a_component_entry_without_a_findings_summary_drops_its_run(tmp_path: Path) -> None:
-    import kstrl.health
-
     write_history(tmp_path, (0.1,) * 12)
     write_journal(tmp_path, [None, 1, 0, 1, 0, 0, 1, 0, 1, 5, 5, 5])
-    summary, breaches = kstrl.health.health_status(tmp_path)
+    summary, breaches = health_status(tmp_path)
 
     assert "n=11" in metric_line(summary, "infrastructure_error_rate")
     matching = [b for b in breaches if b.metric == "infrastructure_error_rate"]
@@ -378,11 +376,9 @@ def test_a_boolean_infrastructure_errors_count_drops_its_run(tmp_path: Path) -> 
     green, because none of them used a bool value, so the exclusion had
     no test actually depending on it.
     """
-    import kstrl.health
-
     write_history(tmp_path, (0.1,) * 12)
     write_journal(tmp_path, [True, 1, 0, 1, 0, 0, 1, 0, 1, 5, 5, 5])
-    summary, breaches = kstrl.health.health_status(tmp_path)
+    summary, breaches = health_status(tmp_path)
 
     assert "n=11" in metric_line(summary, "infrastructure_error_rate")
 

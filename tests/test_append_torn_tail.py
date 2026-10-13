@@ -114,31 +114,28 @@ class TestProgressLogSurvivesATornTail:
         assert b"\n\n" not in after
         assert JOURNAL_REPAIR_EVENT.encode() not in after
 
-    def test_the_repair_row_is_invisible_to_the_status_summary(
+    def test_the_repair_row_is_invisible_to_the_status_fold(
         self,
         tmp_path: Path,
     ) -> None:
-        """It carries no ``component``, so ``summarize_events`` skips it.
+        """It carries no ``component``, so the run fold skips it.
 
-        A repair row that named a component would invent an activity
-        row for it, and ``ks status`` would report a phase for a
-        component that did nothing. Measured through the real reader
-        rather than argued from the schema.
+        A repair row that named a component would invent a state row
+        for it, and ``ks status`` would report a phase for a component
+        that did nothing. Measured through the real reader rather than
+        argued from the schema.
         """
-        from kstrl.observability import (
-            latest_run_id,
-            read_progress_events,
-            summarize_events,
-        )
+        from kstrl import reducer
+        from kstrl.observability import latest_run_id, read_progress_events
 
         log = self.emit_three(tmp_path)
         tear(log.path)
-        log.emit("beta", component_id="c1")
+        log.component_started("c1")
         events = read_progress_events(log.path)
 
-        activity = summarize_events(events)
-        assert set(activity.components) == {"c1"}
-        assert activity.components["c1"].last_event == "beta"
+        state = reducer.fold(reducer.upconvert_v1(e) for e in events)
+        assert set(state.components) == {"c1"}
+        assert state.components["c1"].last_event == "component_started"
         assert latest_run_id(events) == "r1"
 
     def test_the_repair_row_does_not_reach_the_sinks(self, tmp_path: Path) -> None:
@@ -195,8 +192,8 @@ class TestProgressLogSurvivesATornTail:
         Measured before the fix: the component stays ``running``,
         because ``component_completed`` was the row the tear swallowed.
         """
-        from kstrl.observability import ProgressLog
-        from kstrl.reducer import load_run_state
+        from kstrl.observability import ProgressLog, read_progress_events
+        from kstrl.reducer import fold, upconvert_v1
 
         log = ProgressLog(tmp_path / ".kstrl" / "progress.jsonl", run_id="r1")
         log.emit("factory_started")
@@ -204,7 +201,7 @@ class TestProgressLogSurvivesATornTail:
         tear(log.path)
         log.component_completed("c1", 1.0, 1)
 
-        state, _source = load_run_state(tmp_path, run_id="r1")
+        state = fold((upconvert_v1(e) for e in read_progress_events(log.path)), run_id="r1")
         assert {cid: c.status for cid, c in state.components.items()} == {"c1": "completed"}
 
 
@@ -714,7 +711,7 @@ class TestKnowledgeTelemetrySurvivesATornTail:
         return root / _E8_TELEMETRY_RELATIVE_PATH
 
     def read(self, root: Path) -> list[str]:
-        from kstrl.knowledge import read_dependency_scope_telemetry
+        from tests.helpers.knowledge_telemetry import read_dependency_scope_telemetry
 
         return [
             str(e.get("component_id"))
@@ -753,7 +750,7 @@ class TestKnowledgeTelemetrySurvivesATornTail:
         without one counts towards no gap and can invent no withheld
         fact.
         """
-        from kstrl.knowledge import read_dependency_scope_telemetry
+        from tests.helpers.knowledge_telemetry import read_dependency_scope_telemetry
 
         self.record(tmp_path, "alpha")
         tear(self.telemetry_path(tmp_path))

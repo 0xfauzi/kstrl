@@ -260,7 +260,7 @@ def distill_facts(
     parse (#495); the pipeline puts it on the ``DistillResult`` event.
 
     ``review_passed`` controls the confidence ceiling: ``True`` allows
-    "verified", ``None`` (skip mode) and ``False`` (shouldn't happen but
+    "review_passed", ``None`` (skip mode) and ``False`` (shouldn't happen but
     handled defensively) cap at "asserted".
     """
     if not config.enabled:
@@ -341,7 +341,7 @@ def distill_facts(
     if review_passed is not True:
         facts = [
             replace(f, confidence="asserted")
-            if f.confidence in {"review_passed", "test_verified", "verified"}
+            if f.confidence in {"review_passed", "test_verified"}
             else f
             for f in facts
         ]

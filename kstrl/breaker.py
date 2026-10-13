@@ -215,10 +215,6 @@ class NoProgressBreaker:
         could not be computed (not a git repo)."""
         return self._enabled and self._prev_fingerprint is not None
 
-    @property
-    def stall_count(self) -> int:
-        return self._stall_count
-
     def record_iteration(self) -> bool:
         """Fold one completed (non-COMPLETE) iteration into the streak.
 

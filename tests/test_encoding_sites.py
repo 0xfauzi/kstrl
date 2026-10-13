@@ -28,7 +28,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import knowledge, knowledge_distill, knowledge_facts, verify, verify_diff
+from kstrl import knowledge_distill, knowledge_facts, verify, verify_diff
 from kstrl.autonomy import AutonomyState
 from kstrl.calibration_baseline import load_baseline
 from kstrl.intake_issue import ProcessedLedger
@@ -163,10 +163,6 @@ class TestTheDegradingReadersDegrade:
     def test_knowledge_prd_text_says_which_fault_it_hit(self, tmp_path: Path) -> None:
         prd = _write_bad(tmp_path / "prd.json")
         assert knowledge_distill._read_prd_text(prd) == "(PRD is not valid UTF-8)"
-
-    def test_knowledge_telemetry_degrades_to_empty(self, tmp_path: Path) -> None:
-        _write_bad(tmp_path / knowledge._E8_TELEMETRY_RELATIVE_PATH)
-        assert knowledge.read_dependency_scope_telemetry(tmp_path) == []
 
     def test_autonomy_state_degrades_to_level_one_and_says_why(
         self, isolate_kstrl_state: Path

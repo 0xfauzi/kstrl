@@ -246,11 +246,9 @@ EXPECTED_GIT_ARGVS: dict[str, int] = {
     "factory_worktrees.py git worktree add ? ?": 1,
     "factory_worktrees.py git worktree list --porcelain -z": 1,
     "factory_worktrees.py git worktree prune": 1,
-    "factory_worktrees.py git worktree remove --force ?": 4,
-    "git.py git branch ? -- ?": 1,
+    "factory_worktrees.py git worktree remove --force ?": 3,
     "git.py git checkout -b ?": 1,
-    "git.py git checkout -b ? ? --": 1,
-    "git.py git checkout ? --": 2,
+    "git.py git checkout ? --": 1,
     "git.py git config --get remote.origin.url": 1,
     "git_tree.py git diff --name-only --cached -z": 1,
     "git_tree.py git diff --name-only -z": 1,
@@ -518,4 +516,3 @@ class TestTheGuardsThatConsumeThem:
 
         assert breaker.enabled is True
         assert breaker.record_iteration() is False
-        assert breaker.stall_count == 0

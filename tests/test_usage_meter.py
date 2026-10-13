@@ -777,6 +777,12 @@ def _factory_config(tmp_path: Path, **overrides: Any) -> FactoryConfig:
     return FactoryConfig(**defaults)
 
 
+def _halt_reason(budget: LoopBudget, usage: UsageTotals) -> str | None:
+    """The prose of the budget's halt verdict, or None when there is none."""
+    verdict = budget.halt_verdict(usage)
+    return None if verdict is None else verdict.reason
+
+
 def _engineer_usage(total: int, cost: float = 0.0) -> UsageTotals:
     totals = UsageTotals()
     totals.add_record(
@@ -1678,7 +1684,7 @@ class TestInLoopTokenBudget:
             prior_calls=20,
             prior_token_calls=0,
         )
-        assert budget.halt_reason(UsageTotals()) is None
+        assert _halt_reason(budget, UsageTotals()) is None
 
     def test_a_tokenless_call_after_an_earlier_one_halts_immediately(
         self,
@@ -2216,8 +2222,22 @@ class TestAbortedWorkerUsage:
         listy.write_text("[1, 2]")
         assert _read_partial_usage(listy) is None
         empty = tmp_path / "empty.json"
-        empty.write_text('{"calls": 0, "total_tokens": 0}')
+        empty.write_text('{"calls": 0, "total_tokens": 0, "token_calls": 0, "cost_calls": 0}')
         assert _read_partial_usage(empty) is None  # nothing ran
+
+    def test_a_snapshot_without_the_per_axis_counts_is_named_and_kept_as_a_lower_bound(
+        self, tmp_path: Path
+    ) -> None:
+        old = tmp_path / "engineer_usage.json"
+        old.write_text('{"calls": 2, "known_calls": 2, "total_tokens": 900, "cost_usd": 0.5}')
+        with pytest.warns(RuntimeWarning, match="engineer_usage.json") as seen:
+            totals = _read_partial_usage(old)
+        assert "token_calls or cost_calls" in str(seen[0].message)
+        # The spend stays on the meter; the missing counts make it a lower bound.
+        assert totals is not None
+        assert (totals.calls, totals.total_tokens, totals.cost_usd) == (2, 900, 0.5)
+        assert (totals.token_calls, totals.cost_calls) == (0, 0)
+        assert totals.tokenless_calls == 2 and totals.costless_calls == 2
 
     def test_unwritable_snapshot_path_is_swallowed(self, tmp_path: Path) -> None:
         blocker = tmp_path / "blocker"
@@ -2641,7 +2661,8 @@ class TestUnenforceableHaltIsEngineerScoped:
             prior_token_calls=4,
         )
         assert (
-            budget.halt_reason(
+            _halt_reason(
+                budget,
                 UsageTotals(calls=1, known_calls=0, token_calls=0, total_tokens=0),
             )
             is None
@@ -2657,7 +2678,8 @@ class TestUnenforceableHaltIsEngineerScoped:
             prior_calls=1,
             prior_token_calls=0,
         )
-        reason = budget.halt_reason(
+        reason = _halt_reason(
+            budget,
             UsageTotals(calls=1, known_calls=0, token_calls=0, total_tokens=0),
         )
         assert reason is not None
@@ -2676,7 +2698,8 @@ class TestUnenforceableHaltIsEngineerScoped:
             prior_calls=2,
             prior_token_calls=0,
         )
-        reason = budget.halt_reason(
+        reason = _halt_reason(
+            budget,
             UsageTotals(calls=1, known_calls=0, token_calls=0, total_tokens=0),
         )
         assert reason is not None
@@ -3072,12 +3095,13 @@ class TestInLoopCostBudget:
             prior_calls=20,
             prior_cost_calls=0,
         )
-        assert budget.halt_reason(UsageTotals()) is None
+        assert _halt_reason(budget, UsageTotals()) is None
 
     def test_no_ceiling_configured_is_always_none(self) -> None:
         budget = LoopBudget(prior_calls=20, prior_cost_calls=0)
         assert (
-            budget.halt_reason(
+            _halt_reason(
+                budget,
                 UsageTotals(calls=5, known_calls=0),
             )
             is None
@@ -3777,7 +3801,7 @@ class TestLoopHaltCarriesItsOwnIdentity:
             token_calls=2,
             total_tokens=600,
         )
-        reason = budget.halt_reason(usage)
+        reason = _halt_reason(budget, usage)
         verdict = budget.halt_verdict(usage)
         assert verdict is not None
         assert reason == verdict.reason
@@ -3794,7 +3818,7 @@ class TestLoopHaltCarriesItsOwnIdentity:
             total_tokens=10,
         )
         assert budget.halt_verdict(usage) is None
-        assert budget.halt_reason(usage) is None
+        assert _halt_reason(budget, usage) is None
 
 
 class TestBudgetHaltRendersHonestly:
@@ -3882,9 +3906,10 @@ class TestBudgetHaltRendersHonestly:
             assert "max_total_tokens" not in surface
             assert "max_cost_usd" in surface
 
-    def test_legacy_payloads_still_decode(self) -> None:
-        """events.jsonl is append-only: payloads written before this
-        change carry only `ceiling` and must keep their old reading."""
+    def test_a_payload_with_no_ceilings_is_unreadable(self) -> None:
+        """events.jsonl is append-only: a payload written before #180
+        carries only `ceiling`. Every surface reports it unreadable and
+        none reads it as a cost or token halt."""
         from kstrl import event_catalog
 
         reducer, linear = self._render(
@@ -3897,8 +3922,8 @@ class TestBudgetHaltRendersHonestly:
                 ceiling="max_cost_usd",
             )
         )
-        assert reducer == "cost budget exceeded: $9.000000 >= $8.0"
-        assert "cost budget exceeded" in linear
+        assert "unreadable" in reducer
+        assert "unreadable" in linear
 
     def test_the_structured_fields_survive_a_json_round_trip(self) -> None:
         import kstrl.events as ev
@@ -3915,26 +3940,24 @@ class TestBudgetHaltRendersHonestly:
         assert back.condition == "unenforceable"
 
     @pytest.mark.parametrize(
-        ("condition", "ceilings", "legacy", "expected"),
+        ("condition", "ceilings", "expected"),
         [
-            ("breached", ("max_total_tokens",), "", "token"),
-            ("breached", ("max_cost_usd",), "", "cost"),
-            ("unenforceable", ("max_cost_usd",), "", "unenforceable"),
-            ("unenforceable", ("max_total_tokens", "max_cost_usd"), "", "unenforceable"),
-            ("", (), "max_cost_usd", "cost"),
-            ("", (), "", "token"),
+            ("breached", ("max_total_tokens",), "token"),
+            ("breached", ("max_cost_usd",), "cost"),
+            ("unenforceable", ("max_cost_usd",), "unenforceable"),
+            ("unenforceable", ("max_total_tokens", "max_cost_usd"), "unenforceable"),
+            ("", (), "unreadable"),
         ],
     )
     def test_one_classifier_for_every_surface(
         self,
         condition: str,
         ceilings: tuple[str, ...],
-        legacy: str,
         expected: str,
     ) -> None:
         from kstrl.event_catalog import budget_halt_kind
 
-        assert budget_halt_kind(condition, ceilings, legacy) == expected
+        assert budget_halt_kind(condition, ceilings) == expected
 
 
 class TestBudgetConfigErrorReachesTheOperator:
@@ -4325,7 +4348,7 @@ class TestUsageCoverage:
         assert coverage.uncovered_calls == 5
         assert coverage.partial is True
         assert coverage.complete is False
-        assert coverage.empty is False
+        assert coverage.covered_calls > 0
         assert coverage.uncovered_roles == ("review",)
         assert coverage.uncovered_tokens == 193_633
 
@@ -4418,7 +4441,7 @@ class TestUsageCoverage:
             }
         }
         coverage = usage_coverage(meter, axis="cost", ceiling="max_cost_usd")
-        assert coverage.empty is True
+        assert coverage.calls > 0 and coverage.covered_calls == 0
         assert coverage.partial is False
         assert "EMPTY" in coverage.note()
 
@@ -4511,26 +4534,6 @@ class TestPipelineCeilingCoverage:
             )
             is None
         )
-
-    def test_notes_are_emitted_only_for_ceilings_that_fall_short(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        from kstrl.pipeline import ComponentPipeline
-
-        pipeline = self._pipeline(
-            tmp_path,
-            max_cost_usd=25.0,
-            max_total_tokens=30_000_000,
-        )
-        notes = ComponentPipeline.coverage_notes(
-            pipeline,
-            ("max_total_tokens", "max_cost_usd"),
-        )
-        # The token ceiling covered every call on this run; only the
-        # cost one has anything to disclose.
-        assert len(notes) == 1
-        assert "max_cost_usd bounds only those" in notes[0]
 
 
 class TestRollupReportsPerAxisCoverage:

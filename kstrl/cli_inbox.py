@@ -112,9 +112,19 @@ _inbox_no_color_option = click.option(
 
 
 def _inbox_for(root: Path | None) -> tuple[Path, Any]:
+    """The inbox of ``root``, or exit 2 while an in-tree inbox log remains (#863).
+
+    kstrl no longer moves ``.kstrl/inbox.jsonl`` to the control directory.
+    Reading only the control directory would list an empty inbox while the
+    items wait in the tree, so every ``ks inbox`` command refuses by name.
+    """
     from kstrl.inbox import Inbox, InboxConfig
+    from kstrl.statedir import CONTROL_INBOX, legacy_control_refusal, legacy_control_remaining
 
     root_dir = (root or Path.cwd()).resolve()
+    if CONTROL_INBOX in legacy_control_remaining(root_dir):
+        click.echo(f"ERROR: {legacy_control_refusal(root_dir, (CONTROL_INBOX,))}", err=True)
+        sys.exit(2)
     return root_dir, Inbox(root_dir, InboxConfig.load(root_dir))
 
 
@@ -313,6 +323,15 @@ def _charge_serve_for_approval_run(
 
     # The approval run is `ks factory` in this process.
     owned, spend = owned_run_spend(root_dir, runs_before, launch_pid=os.getpid())
+    if spend.unreadable:
+        # #863: the daily budget cannot count what it cannot read, so intake
+        # stops until an operator looks, as `ks serve` does for its own runs.
+        reason = "the spend of the approval run cannot be read: " + " Also: ".join(spend.unreadable)
+        ui_impl.err(reason)
+        from kstrl.workqueue_store import queue_lock
+
+        with queue_lock(root_dir, blocking=True):
+            _queue_for(root_dir)[1].pause(reason=reason, actor="ks inbox")
     try:
         day = SpendLedger(root_dir).charge(
             spend.cost_usd,

@@ -79,7 +79,7 @@ class LoopResult:
     no_progress: bool = False
     # R8: non-empty when a run-level ceiling (max_total_tokens or
     # max_cost_usd) halted the loop between iterations. The string is the
-    # human-readable reason (see LoopBudget.halt_reason) and becomes the
+    # human-readable reason (see LoopBudget.halt_verdict) and becomes the
     # component's error, so the audit trail records WHICH ceiling and
     # WHICH condition fired.
     budget_halt_reason: str = ""

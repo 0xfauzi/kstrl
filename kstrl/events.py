@@ -371,9 +371,9 @@ class V1CompatSink:
     v1 ``ProgressLog.verification_result`` signature has neither, and
     widening it would change the progress.jsonl line format this sink
     exists to hold still. So a v1 reader sees an ADVISORY report and a
-    GATE verdict as the same row: ``summarize_events`` cannot tell them
-    apart, and ``_phase_for_event`` reports the component in phase
-    "verify", a phase `ks feature` does not have.
+    GATE verdict as the same row: the v1 fold cannot tell them
+    apart, and reports the component in phase "verify", a phase
+    `ks feature` does not have.
 
     ``not_measured`` (#306) is dropped here for the same reason, and a
     v1 reader is not told which enabled check measured nothing.

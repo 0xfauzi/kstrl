@@ -208,7 +208,7 @@ def readings_from(runs: Sequence[RunRecord], journal_path: Path) -> list[MetricR
     """The rule arithmetic over an ALREADY LOADED run population.
 
     The one entry point every caller funnels through: ``health_breaches``
-    and ``health_status`` load their own runs and then call this;
+    loads its own runs and then calls this;
     ``ks autonomy replay`` loads runs once for its own replay report and
     hands the same population here, rather than reading the file a
     second time (#151's simplify pass).
@@ -226,7 +226,7 @@ def health_readings(root_dir: Path, experiments: Path | None = None) -> list[Met
     """Load this project's recorded history once and score it.
 
     The one read every caller that starts from a root goes through:
-    ``health_breaches``, ``health_status`` and the ladder's L3 entry
+    ``health_breaches`` and the ladder's L3 entry
     criterion (``autonomy.entry_signal_blockers``, #643). Raises what
     ``EvolutionConfig.load`` and ``load_runs`` raise; an unreadable
     history is the caller's refusal, never an empty read.
@@ -291,15 +291,10 @@ def health_report(readings: Sequence[MetricReading]) -> tuple[str, list[HealthBr
     already computed.
 
     The one place that turns a ``readings_from(...)`` result into the
-    rendered report: ``ks health`` (``kstrl/cli.py::health_cmd``) and
-    ``health_status`` both funnel through here, so there is exactly one
+    rendered report: ``ks health`` (``kstrl/cli.py::health_cmd``) funnels
+    through here, so there is exactly one
     caller of ``_render`` and ``_breaches`` and neither is reached from
     outside this module (#151, #387).
     """
     breaches = _breaches(readings)
     return _render(readings, breaches), breaches
-
-
-def health_status(root_dir: Path) -> tuple[str, list[HealthBreach]]:
-    """The plain-text ``ks health`` report and its breach list, from ONE read."""
-    return health_report(health_readings(root_dir))

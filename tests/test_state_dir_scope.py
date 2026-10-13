@@ -75,7 +75,6 @@ AUTHORED = ["src/", "tests/"]
 STATE_ARTIFACTS = (
     ".kstrl/autonomy.json",
     ".kstrl/contract/merge-ab12/README.md",
-    ".kstrl/control_relocated",
     ".kstrl/debug/run-1/comp-a/prompt.txt",
     ".kstrl/evolution.jsonl",
     ".kstrl/experiments.tsv",
@@ -136,7 +135,6 @@ class TestStateDirCarveOut:
     def test_it_names_the_entries_kstrl_creates(self) -> None:
         assert state_dir_carve_out(PROJECT, PROJECT) == [
             ".kstrl/contract/",
-            ".kstrl/control_relocated",
             ".kstrl/debug/",
             ".kstrl/doctor/",
             ".kstrl/evolution.jsonl",
@@ -416,7 +414,7 @@ _EXPECTED_STATE_DIR_SPELLINGS: dict[str, int] = {
     "integration_state.py": 1,
     "knowledge_facts.py": 2,
     "pipeline_attempt.py": 1,
-    "reducer.py": 3,
+    "reducer.py": 4,  # +1 #863 A4: the refusal of a progress.jsonl-only run names the state dir
     # serve.py had 6, +1 for #464 (the progress log for cost evidence). #776 S2
     # moved the launchd code, with two spellings, to serve_launchd.py.
     # #776 S3 moved classify_run and its helpers, with two spellings, to
@@ -426,8 +424,8 @@ _EXPECTED_STATE_DIR_SPELLINGS: dict[str, int] = {
     "serve_gates.py": 3,
     "serve_launchd.py": 2,
     "serve_outcome.py": 2,
-    "serve_spend.py": 2,
-    "statedir.py": 8,  # +1 #545: plan_prd_path joins the plan directory
+    "serve_spend.py": 3,  # +1 #863 A4: an unreadable run spend names the run dir
+    "statedir.py": 6,  # +1 #545: plan_prd_path joins the plan directory; -2 #863 A4
     "temp_worktree.py": 1,
     "workqueue_store.py": 2,
 }

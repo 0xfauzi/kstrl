@@ -37,7 +37,6 @@ from kstrl.autonomy import (
     AutonomyState,
     DemotionTrigger,
 )
-from kstrl.evolution_config import EvolutionConfig
 from kstrl.experiments_tsv import experiment_rows
 from kstrl.failure_signatures import INFRASTRUCTURE_CHECKS
 from kstrl.verify_diff import SCOPE_UNREADABLE_CHECK
@@ -442,19 +441,3 @@ def replay(runs: list[RunRecord]) -> ReplayReport:
             )
     report.final_level = state.level
     return report
-
-
-def replay_file(path: Path | None = None, root_dir: Path | None = None) -> ReplayReport:
-    """Replay from an experiments.tsv path.
-
-    The default path is ``EvolutionConfig.load(root_dir).experiments_path``
-    (``<root>/.kstrl/experiments.tsv`` unless ``[evolution]
-    experiments_path`` moves it): the same rule :func:`kstrl.health.health_breaches`
-    resolves against, so the two report halves ``ks autonomy replay``
-    renders agree about which file they read (#151's simplify pass;
-    before it, this function's own default ignored the config key that
-    the health half already honored).
-    """
-    if path is None:
-        path = EvolutionConfig.load(root_dir).experiments_path
-    return replay(load_runs(path))

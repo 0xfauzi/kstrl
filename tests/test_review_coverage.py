@@ -58,6 +58,7 @@ from kstrl.security import (
 from kstrl.ui.plain import PlainUI
 from kstrl.verify_model import CheckResult, VerificationResult, VerifyConfig
 from tests.conftest import ReviewRepo, git_in, make_review_repo
+from tests.helpers.diffstat import diffstat_payload
 from tests.helpers.recording_agent import RecordingAgent
 from tests.helpers.stack_confirmation import in_process_stack
 
@@ -510,7 +511,7 @@ class TestCoverageAttestation:
         pinned = git_diff.get_diff_stat(pinned_sha, repo, resolved=True)
         reply = json.dumps(
             {
-                "observedDiffstat": pinned.as_payload(),
+                "observedDiffstat": diffstat_payload(pinned),
                 "stories": [
                     {
                         "storyId": "US-001",

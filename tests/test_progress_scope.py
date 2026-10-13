@@ -445,7 +445,6 @@ class TestExplicitConfigurationWins:
     def test_unset_config_is_the_none_sentinel(self, tmp_path: Path) -> None:
         assert KstrlConfig.load(tmp_path).progress_file is None
         assert KstrlConfig.from_env(tmp_path).progress_file is None
-        assert KstrlConfig.from_toml(tmp_path / "kstrl.toml").progress_file is None
 
 
 class TestProgrammaticallySetProgressFileIsHonored:
