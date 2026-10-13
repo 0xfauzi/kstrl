@@ -59,7 +59,7 @@ EXPECTED_SITES: dict[str, int] = {
     "cli_loop.py:understand open_command_run": 1,
     "cli_loop.py:understand._target open_command_run": 1,
     "decompose.py:_decompose_spec_impl RunStarted": 1,
-    "factory.py:_run_factory_locked RunStarted": 1,
+    "factory_run.py:_announce_run RunStarted": 1,
     "feature_cmd.py:run_feature RunStarted": 1,
     "tui/session.py:_prepare_decompose.build.target open_command_run": 1,
 }
