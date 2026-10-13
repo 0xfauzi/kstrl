@@ -31,7 +31,6 @@ from kstrl.agents.base import UsageTotals
 # question this threshold asks is whether the ENGINEER's adapter reports
 # tokens, so only engineer calls are evidence about it.
 UNENFORCEABLE_CALLS = 2
-_UNENFORCEABLE_CALLS = UNENFORCEABLE_CALLS  # back-compat alias
 
 
 @dataclass(frozen=True)
@@ -209,7 +208,7 @@ class LoopBudget:
                the two axes are now tracked separately.
 
            (b) CALL THRESHOLD, counted across the run's ENGINEER loops:
-               the engineer has now made ``_UNENFORCEABLE_CALLS`` calls
+               the engineer has now made ``UNENFORCEABLE_CALLS`` calls
                that did not report that figure (``prior_calls -
                prior_token_calls`` / ``prior_calls - prior_cost_calls``
                plus this loop's own). This is the "have we seen enough to
@@ -292,7 +291,7 @@ class LoopBudget:
         if self.token_enabled:
             prior_tokenless = max(0, self.prior_calls - self.prior_token_calls)
             run_tokenless = prior_tokenless + loop_usage.tokenless_calls
-            if loop_usage.token_calls == 0 and run_tokenless >= _UNENFORCEABLE_CALLS:
+            if loop_usage.token_calls == 0 and run_tokenless >= UNENFORCEABLE_CALLS:
                 clauses.append(
                     f"token budget unenforceable: none of this loop's "
                     f"{loop_usage.calls} agent call(s) reported a token "
@@ -308,7 +307,7 @@ class LoopBudget:
         if self.cost_enabled:
             prior_costless = max(0, self.prior_calls - self.prior_cost_calls)
             run_costless = prior_costless + loop_usage.costless_calls
-            if loop_usage.cost_calls == 0 and run_costless >= _UNENFORCEABLE_CALLS:
+            if loop_usage.cost_calls == 0 and run_costless >= UNENFORCEABLE_CALLS:
                 clauses.append(
                     f"cost budget unenforceable: none of this loop's "
                     f"{loop_usage.calls} agent call(s) reported a cost, and "
