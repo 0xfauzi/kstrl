@@ -1,7 +1,7 @@
 """R8.4 (#151): factory health trending, advisory only.
 
 The seam #232 shipped (``kstrl/factory.py::_record_health_breaches``) has
-read a module named ``kstrl.health`` since it landed, and nothing supplied
+read a module named ``kstrl.learning.health`` since it landed, and nothing supplied
 it. This file drives the rule arithmetic on synthetic series, the two
 report surfaces (``ks health`` and ``ks autonomy replay``), and the real
 factory seam end to end, with no monkeypatching of ``sys.modules`` for the
@@ -19,7 +19,7 @@ import pytest
 from click.testing import CliRunner
 
 from kstrl.cli import cli
-from kstrl.health import HealthBreach, health_readings, health_report
+from kstrl.learning.health import HealthBreach, health_readings, health_report
 from tests.helpers.journal import component_result, journal_at
 from tests.helpers.replay import UNDECODABLE_TSV, run_record, write_runs
 
@@ -141,7 +141,7 @@ def test_ks_health_exit_code_and_report(
 
 def test_the_factory_seam_opens_an_inbox_item_from_the_real_module(tmp_path: Path) -> None:
     """No monkeypatching of ``sys.modules``: #232's seam meets #151's module."""
-    from kstrl.autonomy import AutonomyLevel, AutonomyState
+    from kstrl.learning.autonomy import AutonomyLevel, AutonomyState
     from kstrl.owner.inbox import ItemKind
     from tests.helpers.demotion import inbox_items, run_outcome, write_config
 
@@ -161,7 +161,7 @@ def test_the_factory_seam_opens_an_inbox_item_from_the_real_module(tmp_path: Pat
 
 
 def test_autonomy_replay_reports_health_breaches_without_mutating(tmp_path: Path) -> None:
-    from kstrl.autonomy import AutonomyLevel, AutonomyState
+    from kstrl.learning.autonomy import AutonomyLevel, AutonomyState
 
     write_history(tmp_path, DRIFT12)
     AutonomyState(level=int(AutonomyLevel.L3_ENVELOPED_AUTO)).save(tmp_path)
@@ -278,7 +278,7 @@ def test_the_rules_on_synthetic_series(
     expected_limit: float | None,
     expected_window: int | None,
 ) -> None:
-    from kstrl.health import _reading
+    from kstrl.learning.health import _reading
 
     reading = _reading("m", values)
     if expected_rule is None:
@@ -292,7 +292,7 @@ def test_the_rules_on_synthetic_series(
 
 
 def test_ewma_smooths_towards_the_new_level() -> None:
-    from kstrl.health import ewma
+    from kstrl.learning.health import ewma
 
     assert ewma((1.0, 1.0, 1.0), start=0.0) == pytest.approx(0.488)
 

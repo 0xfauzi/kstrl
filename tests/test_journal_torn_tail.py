@@ -36,10 +36,10 @@ from pathlib import Path
 import pytest
 
 from kstrl.events.observability import read_progress_events
-from kstrl.experiments_tsv import EXPERIMENTS_HEADER
 from kstrl.git.version import kstrl_version
 from kstrl.io.appendio import JOURNAL_REPAIR_EVENT, handle_ends_without_newline
-from kstrl.journal_rows import SPEC_ISSUES_EVENT
+from kstrl.learning.experiments_tsv import EXPERIMENTS_HEADER
+from kstrl.learning.journal_rows import SPEC_ISSUES_EVENT
 from tests.helpers.journal import (
     DANGLING_UTF8,
     TORN_FRAGMENT,
@@ -119,8 +119,8 @@ class TestTheEntryAfterATear:
         ``append_entries``, which is what makes "the one writer of the
         journal's line format" true rather than asserted.
         """
-        from kstrl.autonomy import AutonomyState, Transition
-        from kstrl.autonomy_transitions import commit_transition
+        from kstrl.learning.autonomy import AutonomyState, Transition
+        from kstrl.learning.autonomy_transitions import commit_transition
 
         journal = journal_at(tmp_path)
         journal.append_entries([audit("alpha")])
@@ -488,7 +488,7 @@ class TestTheTearIsVisible:
         journal.append_entries([audit("alpha")])
         tear(journal.config.journal_path)
 
-        with caplog.at_level(logging.WARNING, "kstrl.evolution"):
+        with caplog.at_level(logging.WARNING, "kstrl.learning.evolution"):
             journal.append_entries([audit("beta")])
 
         assert any("did not end in a newline" in record.message for record in caplog.records)

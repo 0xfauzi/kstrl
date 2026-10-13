@@ -4,7 +4,7 @@ now a named error every call site answers for, rather than a bare
 ``UnicodeDecodeError`` (a ``ValueError``) escaping as a traceback.
 
 On main this file fails at import with ``ImportError: cannot import name
-'ChildOutputDecodeError' from 'kstrl.verify'``. That is this file's RED
+'ChildOutputDecodeError' from 'kstrl.verify.verify'``. That is this file's RED
 state.
 """
 
@@ -22,7 +22,7 @@ from kstrl import contract
 from kstrl.contract import ContractConfig
 from kstrl.proc.scrubbed_run import ChildOutputDecodeError, run_scrubbed
 from kstrl.ui.plain import PlainUI
-from kstrl.verify_commands import check_stack_command
+from kstrl.verify.verify_commands import check_stack_command
 from tests.helpers.astwalk import (
     Bindings,
     all_nodes,
@@ -340,7 +340,7 @@ def test_the_call_site_census_is_pinned() -> None:
         # #696 slice 4: -3, the per-gate runners.
         # #696 slice 8: -8, the dead-code, mutation and coverage drivers.
         "proc/temp_worktree.py": 3,
-        "verify_commands.py": 1,
+        "verify/verify_commands.py": 1,
         "proc/worktree_setup.py": 1,
         "proc/worktree_sweep.py": 1,
     }
@@ -428,7 +428,7 @@ def test_the_disposition_census_is_pinned() -> None:
         # #696: check_stack_command returns an unmeasured failing row. #696
         # slice 8 removed the other seven returns and the mutation-report
         # reader's convert with the drivers that held them.
-        "verify_commands.py:returns": 1,
+        "verify/verify_commands.py:returns": 1,
         "proc/worktree_setup.py:returns": 1,
         "proc/worktree_sweep.py:returns": 1,
     }

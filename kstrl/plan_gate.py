@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from kstrl.acceptance import pinned_digest
-from kstrl.decompose_prompt import load_spec_input, spec_digest
+from kstrl.architect import load_spec_input, spec_digest
 from kstrl.events import NotifyConfig, NotifyHooks, event_catalog
 from kstrl.io import ControlStateError, pre_run_prd_path
 from kstrl.owner import (
@@ -44,7 +44,7 @@ from kstrl.plan import PRD
 from kstrl.queue import relocated_spec
 
 if TYPE_CHECKING:
-    from kstrl.autonomy import FlagBundle
+    from kstrl.learning import FlagBundle
     from kstrl.pipeline import ComponentPipeline
     from kstrl.plan import Manifest
     from kstrl.project import Stack

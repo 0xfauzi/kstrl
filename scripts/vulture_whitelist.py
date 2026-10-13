@@ -87,10 +87,10 @@ _.elapsed_seconds
 # event field: serialised into events.jsonl
 _.facts_written
 
-# record field: writer at kstrl/journal_reads.py:95
+# record field: writer at kstrl/learning/journal_reads.py:95
 _.total_components
 
-# record field: writer at kstrl/journal_reads.py:96
+# record field: writer at kstrl/learning/journal_reads.py:96
 _.affected_components
 
 # PlannedIssue field: passed positionally at the two plan_sync sites: writer at

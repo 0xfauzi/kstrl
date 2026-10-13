@@ -11,22 +11,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
-from kstrl.autonomy import (
-    AutonomyLevel,
-    AutonomyState,
-    DemotionTrigger,
-    FlagBundle,
-    flag_bundle_for,
-)
-from kstrl.autonomy_config import (
-    AutonomyConfig,
-    manual_override_notes,
-    resolve_runtime_level,
-    resolved_flag_bundle,
-)
-from kstrl.autonomy_transitions import apply_demotion, save_ladder_state
 from kstrl.events import AutonomyLevelApplied, EventBus
-from kstrl.evolution import classify_merges
 from kstrl.factory_config import (
     FactoryConfig,
 )
@@ -34,6 +19,20 @@ from kstrl.factory_result import (
     FactoryResult,
 )
 from kstrl.io import ControlStateError
+from kstrl.learning import (
+    AutonomyConfig,
+    AutonomyLevel,
+    AutonomyState,
+    DemotionTrigger,
+    FlagBundle,
+    apply_demotion,
+    classify_merges,
+    flag_bundle_for,
+    manual_override_notes,
+    resolve_runtime_level,
+    resolved_flag_bundle,
+    save_ladder_state,
+)
 from kstrl.owner import Inbox, InboxConfig, ItemKind
 from kstrl.pipeline_merge import HITL_REJECT_CHECK, PR_CLOSED_CHECK
 from kstrl.plan import (
@@ -50,7 +49,7 @@ if TYPE_CHECKING:
 class _HealthBreach(Protocol):
     """The R8.4 breach record this seam reads and #151 will supply.
 
-    Structural rather than imported: ``kstrl/health.py`` does not exist
+    Structural rather than imported: ``kstrl/learning/health.py`` does not exist
     yet, so the factory must not take a hard dependency on it. These five
     attributes are the whole contract between #232 and #151; anything
     else the eventual dataclass carries is invisible here.
@@ -181,14 +180,14 @@ def _record_health_breaches(
 ) -> None:
     """Open an inbox item per R8.4 control-limit breach, and maybe demote.
 
-    Inert until ``kstrl/health.py`` exists (#151). The import guard
+    Inert until ``kstrl/learning/health.py`` exists (#151). The import guard
     swallows exactly one thing: THAT module not being importable at all,
-    which is what ``exc.name != "kstrl.health"`` decides. A
-    ``kstrl.health`` that exists and fails on a dependency the operator
+    which is what ``exc.name != "kstrl.learning.health"`` decides. A
+    ``kstrl.learning.health`` that exists and fails on a dependency the operator
     has not installed raises ``ModuleNotFoundError`` naming that
     dependency, and must reach the caller's "Autonomy state update
     failed" warning rather than read as "#151 has not landed". A
-    ``kstrl.health`` that exists and has renamed ``health_breaches``
+    ``kstrl.learning.health`` that exists and has renamed ``health_breaches``
     raises ``AttributeError`` and must do the same, so the attribute
     lookup is INSIDE the guarded block where widening the clause can
     swallow it and a test can see that it did. A seam that disarms itself
@@ -217,10 +216,10 @@ def _record_health_breaches(
     them goes wrong.
     """
     try:
-        health = importlib.import_module("kstrl.health")
+        health = importlib.import_module("kstrl.learning.health")
         breaches_of = health.health_breaches
     except ModuleNotFoundError as exc:
-        if exc.name != "kstrl.health":
+        if exc.name != "kstrl.learning.health":
             raise
         return
     # OUTSIDE the guard on purpose: a ModuleNotFoundError raised by
@@ -413,7 +412,7 @@ def _record_autonomy_outcome(
       level is not warranted.
     - **Health breaches** (R8.4, seam only until #151): control-limit
       breaches over run metrics, opened as inbox items on every path and
-      demoting only under an explicit switch. Read from ``kstrl.health``
+      demoting only under an explicit switch. Read from ``kstrl.learning.health``
       if that module exists; see ``_record_health_breaches``.
 
     Automatic demotion happens here rather than mid-run: demoting while

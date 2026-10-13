@@ -47,7 +47,7 @@ from kstrl.project import (
     operator_file_notices,
     operator_file_spec,
 )
-from kstrl.verify_model import VerifyConfig
+from kstrl.verify import VerifyConfig
 
 if TYPE_CHECKING:
     from kstrl.ui import UI

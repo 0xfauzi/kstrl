@@ -130,15 +130,15 @@ def unstamped_run_records() -> list[str]:
 EXPECTED_RUN_RECORD_SITES: dict[str, int] = {
     "agents/prompt_record.py: <module>": 1,  # #532: the field table the writer and reader share
     "agents/prompt_record.py: record_prompt": 1,  # #532: one prompt record per agent call
-    "autonomy_transitions.py: commit_transition": 1,
-    "base_gates.py: write_record": 1,  # #654: the base branch's gate reading
+    "learning/autonomy_transitions.py: commit_transition": 1,
+    "verify/base_gates.py: write_record": 1,  # #654: the base branch's gate reading
     "events/event_catalog.py: <module>": 1,
     "events/event_catalog.py: Event.to_dict": 1,
     "events/events.py: _envelope_kwargs": 1,
-    "evolution.py: _role_usage_entries": 1,
-    "evolution.py: EvolutionJournal.record_run": 1,
-    "evolution.py: EvolutionJournal.carry_superseded": 1,
-    "experiments_tsv.py: <module>": 1,
+    "learning/evolution.py: _role_usage_entries": 1,
+    "learning/evolution.py: EvolutionJournal.record_run": 1,
+    "learning/evolution.py: EvolutionJournal.carry_superseded": 1,
+    "learning/experiments_tsv.py: <module>": 1,
     "factory_acceptance.py: _record_contract_event": 1,
     "factory_autonomy.py: _record_health_breaches": 1,
     # #601: the policy demotion's evidence and the human-rejection demotion's.
@@ -192,10 +192,10 @@ _QUEUE_ESCALATION = (
 #: Layer 2. Each row is a run-record site that is not stamped at the
 #: container, and why.
 NOT_STAMPED_HERE: dict[str, str] = {
-    "autonomy_transitions.py: commit_transition": _JOURNAL,
-    "evolution.py: _role_usage_entries": _JOURNAL,
-    "evolution.py: EvolutionJournal.record_run": _JOURNAL,
-    "evolution.py: EvolutionJournal.carry_superseded": _JOURNAL,
+    "learning/autonomy_transitions.py: commit_transition": _JOURNAL,
+    "learning/evolution.py: _role_usage_entries": _JOURNAL,
+    "learning/evolution.py: EvolutionJournal.record_run": _JOURNAL,
+    "learning/evolution.py: EvolutionJournal.carry_superseded": _JOURNAL,
     "factory_acceptance.py: _record_contract_event": _JOURNAL,
     "pipeline_attempt.py: AttemptRecorder.journal_superseded_findings": _JOURNAL,
     "pipeline_attempt.py: AttemptRecorder.journal_integration_result": _JOURNAL,

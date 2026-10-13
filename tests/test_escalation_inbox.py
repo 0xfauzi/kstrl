@@ -1,6 +1,6 @@
 """An architect escalation that halts decompose opens an inbox item (#449).
 
-Before #449 the halt path in ``kstrl/decompose.py`` never referenced the
+Before #449 the halt path in ``kstrl/architect/decompose.py`` never referenced the
 inbox, so the one halt that is by definition waiting on the owner was the
 one that did not reach the surface the owner reads. These tests drive
 the real CLI as subprocesses (``python -m kstrl``) with a stub architect
@@ -23,8 +23,8 @@ from typing import Any
 
 import pytest
 
-from kstrl.decompose import decompose_spec
-from kstrl.decompose_audit import SpecBlockerError
+from kstrl.architect.decompose import decompose_spec
+from kstrl.architect.decompose_audit import SpecBlockerError
 from kstrl.io.statedir import ControlStateError
 from kstrl.owner.inbox import Inbox, InboxItem, ItemKind, ItemStatus
 from kstrl.plan.manifest import Manifest
@@ -409,14 +409,14 @@ class TestInProcessFailures:
 
 # --- the census: every halt opens an item -----------------------------------
 
-HALT = "kstrl.decompose_audit.SpecBlockerError"
-EMITTER = "kstrl.decisions.open_escalation_item"
+HALT = "kstrl.architect.decompose_audit.SpecBlockerError"
+EMITTER = "kstrl.architect.decisions.open_escalation_item"
 
 #: Every scope in ``kstrl/`` that constructs a ``SpecBlockerError``, and
 #: how many times. A new row, or a count that moved, is a new decompose
 #: halt path: call ``decisions.open_escalation_item`` before it, then
 #: add the row here.
-EXPECTED_HALTS = {"decompose_audit.py::_halt": 1}
+EXPECTED_HALTS = {"architect/decompose_audit.py::_halt": 1}
 
 #: One control per disjunct of the net, and the two coverage outcomes.
 CONTROL_LOCAL = """
@@ -428,15 +428,15 @@ def halt(escalated):
 """
 
 CONTROL_ALIAS = """
-from kstrl.decompose_audit import SpecBlockerError as Halt
+from kstrl.architect.decompose_audit import SpecBlockerError as Halt
 
 def halt(escalated):
     raise Halt(escalated)
 """
 
 CONTROL_WITH = """
-from kstrl.decisions import open_escalation_item
-from kstrl.decompose_audit import SpecBlockerError
+from kstrl.architect.decisions import open_escalation_item
+from kstrl.architect.decompose_audit import SpecBlockerError
 
 def halt(escalated):
     open_escalation_item(escalated)
@@ -444,8 +444,8 @@ def halt(escalated):
 """
 
 CONTROL_AFTER = """
-from kstrl.decisions import open_escalation_item
-from kstrl.decompose_audit import SpecBlockerError
+from kstrl.architect.decisions import open_escalation_item
+from kstrl.architect.decompose_audit import SpecBlockerError
 
 def halt(escalated):
     error = SpecBlockerError(escalated)
@@ -454,8 +454,8 @@ def halt(escalated):
 """
 
 CONTROL_NESTED = """
-from kstrl.decisions import open_escalation_item
-from kstrl.decompose_audit import SpecBlockerError
+from kstrl.architect.decisions import open_escalation_item
+from kstrl.architect.decompose_audit import SpecBlockerError
 
 def halt(escalated):
     def later():

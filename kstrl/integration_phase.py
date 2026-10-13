@@ -55,7 +55,7 @@ from kstrl.proc import (
     remove_temp_worktree,
 )
 from kstrl.review import ReviewMode, ReviewResult
-from kstrl.verify_model import VerificationResult
+from kstrl.verify import VerificationResult
 
 if TYPE_CHECKING:
     from kstrl.factory_config import FactoryConfig

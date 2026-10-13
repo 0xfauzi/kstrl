@@ -66,7 +66,7 @@ be measured on real runs, which is what advisory mode is for.
 Which way the identity heuristic fails
 --------------------------------------
 The size half is exact: ``git diff --numstat``, counted through
-:func:`kstrl.policy.count_diff_size` so it agrees with the R8.1 size
+:func:`kstrl.verify.policy.count_diff_size` so it agrees with the R8.1 size
 caps.
 
 The retirement half is a heuristic, because a finding's identity has to

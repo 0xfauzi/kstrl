@@ -39,8 +39,8 @@ from kstrl.proc.scrubbed_run import (
     scrubbed_subprocess_env,
 )
 from kstrl.ui.plain import PlainUI
-from kstrl.verify_commands import check_stack_command
-from kstrl.verify_model import VerifyConfig
+from kstrl.verify.verify_commands import check_stack_command
+from kstrl.verify.verify_model import VerifyConfig
 from tests.helpers import procs
 from tests.helpers.stack_confirmation import in_process_stack
 

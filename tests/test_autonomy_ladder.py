@@ -28,15 +28,15 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl.autonomy import (
+from kstrl.learning.autonomy import (
     DEMOTION_COOLDOWN_RUNS,
     MIN_DECISIVE_RUNS,
     AutonomyLevel,
     AutonomyState,
     DemotionTrigger,
 )
-from kstrl.autonomy_config import AutonomyConfig
-from kstrl.autonomy_replay import load_runs, replay
+from kstrl.learning.autonomy_config import AutonomyConfig
+from kstrl.learning.autonomy_replay import load_runs, replay
 from tests.helpers import gitrepo
 from tests.helpers.component_prd import write_component_prd
 from tests.helpers.plan_approval import approve_plan
@@ -253,7 +253,7 @@ def _run_factory_with_autonomy(
     from kstrl.factory_result import ComponentResult
     from kstrl.plan.manifest import Component, Manifest
     from kstrl.ui.plain import PlainUI
-    from kstrl.verify_model import CheckResult, VerificationResult, VerifyConfig
+    from kstrl.verify.verify_model import CheckResult, VerificationResult, VerifyConfig
 
     _init_git_repo(tmp_path)
     kstrl_dir = tmp_path / "scripts" / "kstrl"
@@ -415,7 +415,7 @@ class TestEnvelopeCeiling:
         self,
         tmp_path: Path,
     ) -> None:
-        from kstrl.autonomy_config import resolve_runtime_level
+        from kstrl.learning.autonomy_config import resolve_runtime_level
 
         state = AutonomyState(level=int(AutonomyLevel.L3_ENVELOPED_AUTO))
         level, notes = resolve_runtime_level(
@@ -431,7 +431,7 @@ class TestEnvelopeCeiling:
         self,
         tmp_path: Path,
     ) -> None:
-        from kstrl.autonomy_config import resolve_runtime_level
+        from kstrl.learning.autonomy_config import resolve_runtime_level
 
         state = AutonomyState(level=int(AutonomyLevel.L4_DEPLOY))
         level, _ = resolve_runtime_level(
@@ -443,7 +443,7 @@ class TestEnvelopeCeiling:
         assert level is AutonomyLevel.L2_GATED_MERGE
 
     def test_l3_allowed_with_envelope(self, tmp_path: Path) -> None:
-        from kstrl.autonomy_config import resolve_runtime_level
+        from kstrl.learning.autonomy_config import resolve_runtime_level
 
         state = AutonomyState(level=int(AutonomyLevel.L3_ENVELOPED_AUTO))
         level, notes = resolve_runtime_level(
@@ -456,7 +456,7 @@ class TestEnvelopeCeiling:
         assert notes == []
 
     def test_lowest_ceiling_wins(self, tmp_path: Path) -> None:
-        from kstrl.autonomy_config import resolve_runtime_level
+        from kstrl.learning.autonomy_config import resolve_runtime_level
 
         state = AutonomyState(level=int(AutonomyLevel.L4_DEPLOY))
         level, notes = resolve_runtime_level(
@@ -563,7 +563,7 @@ class TestTransitionAudit:
     """Every committed transition reaches the durable audit stream."""
 
     def test_commit_transition_writes_journal(self, tmp_path: Path) -> None:
-        from kstrl.autonomy_transitions import commit_transition
+        from kstrl.learning.autonomy_transitions import commit_transition
 
         state = _eligible_state()
         record = state.promote(actor="human", ack="reviewed", signal_blockers=())
@@ -579,9 +579,9 @@ class TestTransitionAudit:
         self,
         tmp_path: Path,
     ) -> None:
-        from kstrl.autonomy_transitions import commit_transition
         from kstrl.events.event_catalog import AutonomyTransition
         from kstrl.events.events import EventBus
+        from kstrl.learning.autonomy_transitions import commit_transition
 
         seen: list[object] = []
 
@@ -603,13 +603,13 @@ class TestTransitionAudit:
         """Losing the log must never strand the ladder unsaved.
 
         A real failure on a real path (a directory where the journal
-        file should be) rather than a patched ``kstrl.autonomy.open``,
+        file should be) rather than a patched ``kstrl.learning.autonomy.open``,
         which stopped intercepting anything when #312 moved the write
         into ``EvolutionJournal.append_entries``. A patched builtin pins
         WHERE the code writes, which is not what this test is about.
         """
-        from kstrl.autonomy_transitions import commit_transition
-        from kstrl.evolution_config import EvolutionConfig
+        from kstrl.learning.autonomy_transitions import commit_transition
+        from kstrl.learning.evolution_config import EvolutionConfig
 
         journal_path = EvolutionConfig.load(tmp_path).journal_path
         journal_path.parent.mkdir(parents=True, exist_ok=True)
@@ -632,7 +632,7 @@ class TestTransitionAudit:
         saved and unjournaled - exactly the drift this function exists
         to prevent.
         """
-        from kstrl.autonomy_transitions import commit_transition
+        from kstrl.learning.autonomy_transitions import commit_transition
 
         (tmp_path / "kstrl.toml").write_text("[evolution\nenabled = true\n")
         state = _eligible_state()

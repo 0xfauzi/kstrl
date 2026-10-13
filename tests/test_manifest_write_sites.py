@@ -87,7 +87,7 @@ EXPECTED_MANIFEST_WRITE_SITES: dict[str, tuple[int, str]] = {
     "kstrl/cli_architect.py::retry prepare_retry": (1, TAKES_LOCK),
     "kstrl/cli_inbox.py::inbox_retry reset_for_retry": (1, TAKES_LOCK),
     "kstrl/cli_inbox.py::inbox_retry save": (1, TAKES_LOCK),
-    "kstrl/decompose_plan.py::_write_plan save": (1, TAKES_LOCK),
+    "kstrl/architect/decompose_plan.py::_write_plan save": (1, TAKES_LOCK),
     "kstrl/retry_plan.py::prepare_retry reset_for_retry": (1, CALLER_HOLDS),
     "kstrl/retry_plan.py::prepare_retry save": (1, CALLER_HOLDS),
     "kstrl/retry_plan.py::preview_retry reset_for_retry": (1, COPY),
@@ -116,8 +116,14 @@ EXPECTED_MANIFEST_WRITE_SITES: dict[str, tuple[int, str]] = {
     "kstrl/pipeline.py::ComponentPipeline._judge_attempt save": (1, IN_RUN),
     "kstrl/pipeline_transitions.py::Transitions.retry_or_fail save": (1, IN_RUN),
     # --- a ``save`` that is not a manifest's ---
-    "kstrl/autonomy_transitions.py::commit_transition save": (1, NOT_A_MANIFEST),  # ladder state
-    "kstrl/autonomy_transitions.py::save_ladder_state save": (1, NOT_A_MANIFEST),  # ladder state
+    "kstrl/learning/autonomy_transitions.py::commit_transition save": (
+        1,
+        NOT_A_MANIFEST,
+    ),  # ladder state
+    "kstrl/learning/autonomy_transitions.py::save_ladder_state save": (
+        1,
+        NOT_A_MANIFEST,
+    ),  # ladder state
     "kstrl/integration.py::write_integration_prd save": (1, NOT_A_MANIFEST),  # PRD
     "kstrl/pipeline_review.py::ReviewPhase._phase_review save": (1, NOT_A_MANIFEST),  # PRD
     "kstrl/serve_github.py::_save_pr_count_streak save": (1, NOT_A_MANIFEST),  # serve streak

@@ -16,9 +16,9 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import decompose_audit, decompose_prompt
-from kstrl.decompose import decompose_spec
-from kstrl.decompose_prompt import build_decompose_prompt
+from kstrl.architect import decompose_audit, decompose_prompt
+from kstrl.architect.decompose import decompose_spec
+from kstrl.architect.decompose_prompt import build_decompose_prompt
 from kstrl.ui.plain import PlainUI
 from tests.helpers.before_spend import no_base_check
 from tests.helpers.prompt_calls import architect_call
@@ -199,7 +199,7 @@ def test_a_malformed_kstrl_toml_still_reaches_the_architect(tmp_path: Path) -> N
     """#199 blocker fix: the config load ahead of the halt path is tolerant.
 
     `_decompose_spec_impl` loads KstrlConfig BEFORE the halt path that
-    writes scripts/kstrl/spec-issues.json (kstrl/decompose.py:1499's
+    writes scripts/kstrl/spec-issues.json (kstrl/architect/decompose.py:1499's
     EvolutionConfig.load_or_none is the same shape one call downstream).
     A malformed kstrl.toml must not raise ConfigError out of that load
     and abort decompose_spec before the halt path ever runs; it must
@@ -212,7 +212,7 @@ def test_a_malformed_kstrl_toml_still_reaches_the_architect(tmp_path: Path) -> N
     `_decompose_and_capture`'s normal VALID_DECOMPOSE_OUTPUT, and
     deliberately so, not as a simplification: a decompose that runs to
     a clean, non-halting completion proceeds past the halt path into
-    `LinearConfig.load(root_dir)` (kstrl/decompose.py, right before the
+    `LinearConfig.load(root_dir)` (kstrl/architect/decompose.py, right before the
     Linear sync section), which re-parses the SAME malformed
     kstrl.toml, unguarded, and raises `ConfigError` there instead - a
     real, separate, pre-existing call site this blocker fix does not

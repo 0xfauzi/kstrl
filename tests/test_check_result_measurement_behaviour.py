@@ -27,16 +27,16 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import baseline
-from kstrl.policy import PolicyConfig
-from kstrl.verify import check_prd_stories, check_self_critique
-from kstrl.verify_diff import (
+from kstrl.verify import baseline
+from kstrl.verify.policy import PolicyConfig
+from kstrl.verify.verify import check_prd_stories, check_self_critique
+from kstrl.verify.verify_diff import (
     check_bad_patterns,
     check_diff_scope,
     check_policy_envelope,
     check_scope_unreadable,
 )
-from kstrl.verify_model import LAYER0_NOT_MEASURED, VerificationResult
+from kstrl.verify.verify_model import LAYER0_NOT_MEASURED, VerificationResult
 from tests.helpers import gitrepo
 from tests.helpers.measurement import assert_measured, assert_unmeasured
 

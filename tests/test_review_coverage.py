@@ -56,7 +56,7 @@ from kstrl.security import (
     run_security_review,
 )
 from kstrl.ui.plain import PlainUI
-from kstrl.verify_model import CheckResult, VerificationResult, VerifyConfig
+from kstrl.verify.verify_model import CheckResult, VerificationResult, VerifyConfig
 from tests.conftest import ReviewRepo, git_in, make_review_repo
 from tests.helpers.diffstat import DEFAULT_PROMPT_DIFF_CHAR_LIMIT, diffstat_payload
 from tests.helpers.recording_agent import RecordingAgent

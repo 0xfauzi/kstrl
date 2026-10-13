@@ -27,7 +27,7 @@ from kstrl.factory_result import ComponentResult
 from kstrl.plan.manifest import Component, Manifest
 from kstrl.review import ReviewResult
 from kstrl.ui.plain import PlainUI
-from kstrl.verify_model import VerifyConfig
+from kstrl.verify.verify_model import VerifyConfig
 from tests.helpers.stack_confirmation import in_process_stack
 
 # ---------------------------------------------------------------------------

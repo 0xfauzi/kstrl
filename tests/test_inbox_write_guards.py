@@ -52,16 +52,16 @@ MUTATORS = frozenset({"add", "approve", "reject", "resolve", "snooze"})
 #: A new one is an unexplained delta: adding a row here is how you say
 #: you have decided what the new site catches.
 EXPECTED_CONSTRUCTIONS = (
-    "autonomy_transitions.py kstrl.owner.inbox.Inbox",
+    "architect/decisions.py kstrl.owner.inbox.Inbox",
+    # #639 slice 4: read_owner_answers scans for the owner's answers; reads only.
+    "architect/owner_answers.py kstrl.owner.inbox.Inbox",
     "calibration_ladder.py kstrl.owner.inbox.Inbox",
     "cli_inbox.py kstrl.owner.inbox.Inbox",
-    "decisions.py kstrl.owner.inbox.Inbox",
     "factory_autonomy.py kstrl.owner.inbox.Inbox",
+    "learning/autonomy_transitions.py kstrl.owner.inbox.Inbox",
     # #646: ks retry reads the approvals (approvals_at) to decide whether
     # it keeps the failed head. It scans and reads; it mutates nothing.
     "owner/waivers.py kstrl.owner.inbox.Inbox",
-    # #639 slice 4: read_owner_answers scans for the owner's answers; reads only.
-    "owner_answers.py kstrl.owner.inbox.Inbox",
     "pipeline_inbox.py kstrl.owner.inbox.Inbox",
     # #602: the L1 plan gate reads its item (_find) and records a decision
     # given at the prompt (_record).
@@ -80,14 +80,14 @@ EXPECTED_CONSTRUCTIONS = (
 EXPECTED_CONSTRUCTION_COUNTS = {
     # #643: was 1 (apply_demotion). +1: _calibration_blockers scans the
     # inbox for an undecided calibration_drift item. It reads; it mutates nothing.
-    "autonomy_transitions.py": 2,
+    "learning/autonomy_transitions.py": 2,
     "calibration_ladder.py": 1,
     "cli_inbox.py": 1,
     # #644 slice 2: was 2. +1: escalation_naming scans the inbox for the undecided
     # spec_escalation row that names a poisoned item. It reads; it mutates nothing.
-    "decisions.py": 3,
+    "architect/decisions.py": 3,
     "factory_autonomy.py": 1,
-    "owner_answers.py": 1,
+    "architect/owner_answers.py": 1,
     # #595 (addendum): was 5, one construction per lazy-open site
     # (ComponentPipeline.snapshot_waivers's own +1 among them). All five
     # sites now build through ComponentPipeline._open_inbox, so there is
@@ -128,10 +128,10 @@ _GUARDED = Disposition(guarded=True)
 #: Keyed ``module::scope::method`` so an edit above the site cannot break
 #: the pin.
 EXPECTED_MUTATIONS: dict[str, Disposition] = {
-    "autonomy_transitions.py::apply_demotion::add": _GUARDED,
+    "learning/autonomy_transitions.py::apply_demotion::add": _GUARDED,
     "calibration_ladder.py::_open_drift_item::add": _GUARDED,
-    "decisions.py::open_escalation_item::add": _GUARDED,
-    "decisions.py::resolve_escalation_items::resolve": _GUARDED,
+    "architect/decisions.py::open_escalation_item::add": _GUARDED,
+    "architect/decisions.py::resolve_escalation_items::resolve": _GUARDED,
     "factory_autonomy.py::_open_health_breach_items::add": _GUARDED,
     "pipeline_inbox.py::InboxDesk._inbox_add::add": _GUARDED,
     "pipeline_inbox.py::InboxDesk._inbox_resolve::resolve": _GUARDED,
@@ -200,11 +200,11 @@ EXPECTED_MUTATIONS: dict[str, Disposition] = {
 #: shrinking this table.
 EXPECTED_CONFIG_LOADS: dict[str, Disposition] = {
     # #643: the L2 entry criterion; a load it cannot make is a blocker.
-    "autonomy_transitions.py::_calibration_blockers": _GUARDED,
-    "autonomy_transitions.py::apply_demotion": _GUARDED,
+    "learning/autonomy_transitions.py::_calibration_blockers": _GUARDED,
+    "learning/autonomy_transitions.py::apply_demotion": _GUARDED,
     "calibration_ladder.py::_open_drift_item": _GUARDED,
-    "decisions.py::open_escalation_item": _GUARDED,
-    "decisions.py::resolve_escalation_items": _GUARDED,
+    "architect/decisions.py::open_escalation_item": _GUARDED,
+    "architect/decisions.py::resolve_escalation_items": _GUARDED,
     "factory_autonomy.py::_open_health_breach_items": _GUARDED,
     "serve_settle.py::_file_inbox_item": _GUARDED,
     # #696 slice 3: a load the stack check cannot make is a refusal.

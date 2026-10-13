@@ -55,7 +55,7 @@ EXPECTED_SITES: dict[str, int] = {
     "cli_factory.py:factory open_command_run": 1,
     "cli_feature.py:feature open_command_run": 1,
     "cli_loop.py:understand open_command_run": 1,
-    "decompose.py:_decompose_spec_impl RunStarted": 1,
+    "architect/decompose.py:_decompose_spec_impl RunStarted": 1,
     "factory_run.py:_announce_run RunStarted": 1,
     "feature_cmd.py:run_feature RunStarted": 1,
 }

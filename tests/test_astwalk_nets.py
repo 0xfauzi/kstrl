@@ -701,7 +701,7 @@ class TestTheCorpusIsTheOneEveryGuardMeant:
         """Ten guards derived this path for themselves. If it ever
         resolves wrong every one of them globs nothing and passes green
         forever, which is the cheapest possible vacuous guard."""
-        assert (astwalk.KSTRL_PACKAGE / "evolution.py").is_file()
+        assert (astwalk.KSTRL_PACKAGE / "learning/evolution.py").is_file()
         assert len(astwalk.package_sources()) > 100
 
     def test_the_test_suite_is_too(self) -> None:
@@ -746,7 +746,10 @@ class TestTheCorpusIsTheOneEveryGuardMeant:
     def test_a_label_distinguishes_two_files_of_the_same_basename(self) -> None:
         """``base.py`` occurs twice in ``kstrl/``, and a message naming a
         file the reader cannot find is worse than no message."""
-        assert astwalk.label(astwalk.KSTRL_PACKAGE / "decompose.py") == "decompose.py"
+        assert (
+            astwalk.label(astwalk.KSTRL_PACKAGE / "architect/decompose.py")
+            == "architect/decompose.py"
+        )
         assert astwalk.label(astwalk.KSTRL_PACKAGE / "agents" / "base.py") == "agents/base.py"
         assert astwalk.label(astwalk.KSTRL_PACKAGE / "ui" / "base.py") == "ui/base.py"
 

@@ -30,11 +30,12 @@ from kstrl.proc import HOST_LABEL
 from kstrl.project import NO_STACK, StackRefused, confirmed_stack, unconfirmed_lines
 from kstrl.verify import (
     DIFF_DEPENDENT_CHECKS,
+    VerificationResult,
+    VerifyConfig,
     narrow_to_undiffed,
     run_undiffed_verification,
     self_critique_progress_path,
 )
-from kstrl.verify_model import VerificationResult, VerifyConfig
 
 if TYPE_CHECKING:
     from kstrl.config import KstrlConfig

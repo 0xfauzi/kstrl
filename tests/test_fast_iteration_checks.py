@@ -31,7 +31,7 @@ from kstrl.proc.proc import TIMEOUT_MESSAGE_PREFIX
 from kstrl.proc.timeout import TimeoutConfig
 from kstrl.project.stack import stack_toml
 from kstrl.ui.plain import PlainUI
-from kstrl.verify_model import VerifyConfig
+from kstrl.verify.verify_model import VerifyConfig
 from tests.helpers.stack_confirmation import confirm_stack, in_process_stack, write_stack
 from tests.spine_utils import init_kstrl_repo
 
@@ -385,7 +385,7 @@ def test_env_overrides_toml_and_empty_env_turns_it_off(
     ]
     monkeypatch.setenv("KSTRL_VERIFY_FAST_ITERATION_CHECKS", "")
     # The toml value is still validated on its own names even though the
-    # env overrides it to [] (kstrl/verify.py::VerifyConfig.load, unchanged
+    # env overrides it to [] (kstrl/verify/verify.py::VerifyConfig.load, unchanged
     # by #696), so the [stack] naming "linter" is still needed here.
     assert (
         _load(tmp_path, 'fast_iteration_checks = ["linter"]\n', checks=_BOTH).fast_iteration_checks

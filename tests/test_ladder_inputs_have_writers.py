@@ -6,7 +6,7 @@ default and no caller ever passed the argument, so the value True was
 unreachable and every merge counted as clean. ``HUMAN_REJECTED_AUTO_MERGE``
 had no automatic writer, so the demotion it names never fired.
 
-The inputs are read from ``kstrl/autonomy.py`` at test time: every
+The inputs are read from ``kstrl/learning/autonomy.py`` at test time: every
 parameter of every ``AutonomyState.record_*`` method, and every
 ``DemotionTrigger`` member. ``EXPECTED_LADDER_INPUTS`` pins that set, so a
 new input fails here by name until someone decides what writes it.
@@ -29,7 +29,7 @@ Rules 2 and 3 CLEAR an input when they find a site, so they are narrow: a
 name in the trigger position (``demote(chosen, ...)``) clears nothing, and
 neither does a call reached through an alias or ``**kwargs``. ``apply_demotion``
 is a free function, matched by MODULE RESOLUTION
-(``kstrl.autonomy_transitions.apply_demotion``) rather than by its leaf name, so a local
+(``kstrl.learning.autonomy_transitions.apply_demotion``) rather than by its leaf name, so a local
 function also called ``apply_demotion`` cannot clear an input it never
 writes (measured: a no-op shadow of that name cleared every trigger before
 this). ``.demote`` is a bound method whose receiver this walker cannot
@@ -47,7 +47,7 @@ from __future__ import annotations
 import ast
 import inspect
 
-from kstrl.autonomy import AutonomyState, DemotionTrigger
+from kstrl.learning.autonomy import AutonomyState, DemotionTrigger
 from tests.helpers.astwalk import (
     all_nodes,
     calls_to,
@@ -156,7 +156,7 @@ def _literal_trigger(node: ast.expr) -> str | None:
 
 #: The one free function in the trigger position: matched by module
 #: resolution (see :func:`literal_trigger_writers`), never by leaf name.
-_APPLY_DEMOTION = "kstrl.autonomy_transitions.apply_demotion"
+_APPLY_DEMOTION = "kstrl.learning.autonomy_transitions.apply_demotion"
 
 
 def _trigger_names(node: ast.Call, callee: str) -> list[str]:
@@ -255,7 +255,7 @@ class TestEveryLadderInputHasAWriter:
 #: to ``_APPLY_DEMOTION`` (measured: it lands in ``calls_to``'s undecided
 #: half), which would make ``test_literal_writers_clear_every_input`` pass
 #: for the wrong reason - a walker that cannot see the import either way.
-_APPLY_DEMOTION_IMPORT = "from kstrl.autonomy_transitions import apply_demotion\n"
+_APPLY_DEMOTION_IMPORT = "from kstrl.learning.autonomy_transitions import apply_demotion\n"
 
 
 class TestTheWalkerDetects:
@@ -301,4 +301,4 @@ class TestTheWalkerDetects:
 
 def test_the_corpus_is_the_package() -> None:
     labels = {where for where, _tree, _module in _production_trees()}
-    assert "factory.py" in labels and "autonomy.py" not in labels, sorted(labels)[:5]
+    assert "factory.py" in labels and "learning/autonomy.py" not in labels, sorted(labels)[:5]

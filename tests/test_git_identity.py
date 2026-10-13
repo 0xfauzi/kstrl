@@ -375,7 +375,7 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # `run_scrubbed`'s rendered command STARTS WITH or what a mocked
     # call log CONTAINS, plus a docstring paragraph. Nothing here spawns
     # git; the one real commit `run_scrubbed` makes belongs to
-    # `kstrl/verify.py`, which is production code and out of this census.
+    # `kstrl/verify/verify.py`, which is production code and out of this census.
     # #399 added TestCheckBadPatterns and the bytecode-destination test as
     # real-repository tests, briefly raising this row to 11 through this
     # file's own `_repo`/`_commit`. #399's simplify pass on #405 (C1) moved

@@ -255,8 +255,7 @@ def _journal_run(ctx: RunContext) -> None:
     """Record the run in the evolution journal."""
     # Record run to evolution journal
     try:
-        from kstrl.evolution import EvolutionJournal
-        from kstrl.evolution_config import EvolutionConfig
+        from kstrl.learning import EvolutionConfig, EvolutionJournal
 
         evo_config = EvolutionConfig.load(ctx.root_dir)
         if evo_config.enabled:

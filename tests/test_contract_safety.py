@@ -42,7 +42,7 @@ from kstrl.proc.temp_worktree import ContractCleanupError
 from kstrl.proc.timeout import TimeoutConfig
 from kstrl.security import SecurityConfig
 from kstrl.ui.plain import PlainUI
-from kstrl.verify_model import VerifyConfig
+from kstrl.verify.verify_model import VerifyConfig
 from tests.helpers import gitrepo
 from tests.helpers.stack_confirmation import in_process_stack
 

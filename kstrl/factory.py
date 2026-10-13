@@ -74,11 +74,11 @@ from kstrl.factory_worktrees import (
 from kstrl.integration_loop import IntegrationLoop
 from kstrl.integration_phase import IntegrationRun
 from kstrl.knowledge import (
+    KnowledgeConfig,
     current_run_id,
+    distill_facts,
     measure_fact_utilization,
 )
-from kstrl.knowledge_distill import distill_facts
-from kstrl.knowledge_facts import KnowledgeConfig
 from kstrl.owner import InteractionChannel
 from kstrl.pipeline import ComponentPipeline
 from kstrl.pipeline_state import PipelineHooks, iso_now
@@ -103,8 +103,7 @@ from kstrl.runstate import RunState
 from kstrl.security import (
     run_security_review,
 )
-from kstrl.verify import run_mechanical_verification
-from kstrl.verify_model import VerifyConfig
+from kstrl.verify import VerifyConfig, run_mechanical_verification
 
 if TYPE_CHECKING:
     from kstrl.ui import UI

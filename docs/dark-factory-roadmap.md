@@ -209,7 +209,7 @@ before the first unattended serve on any newly onboarded repo.
 
 ## R8.1 Policy envelope (M) - [#148](https://github.com/0xfauzi/kstrl/issues/148)
 
-Status: `[x]` - Shipped in `kstrl/policy.py` + `kstrl/licensing.py` +
+Status: `[x]` - Shipped in `kstrl/verify/policy.py` + `kstrl/licensing.py` +
 `check_policy_envelope`: `paths_deny`, size caps (lockfiles excluded),
 `deps_allow_new`, `secret_patterns`, the non-overridable
 enforcement-machinery halt, **license gating** (`license_allow` /
@@ -222,7 +222,7 @@ closed before merge, recorded here because each was a real enforcement
 bypass rather than a style note:
 
 1. The non-overridable halt covered CI and the config file but NOT
-   verifier code, so `evaluate_policy(["kstrl/verify.py"], ...,
+   verifier code, so `evaluate_policy(["kstrl/verify/verify.py"], ...,
    paths_deny=[])` passed - an agent could rewrite the checker instead of
    the rules. `ENFORCEMENT_MACHINERY_PATHS` now covers the Phase 1
    enforcement surface (`verify.py`, `policy.py`, `licensing.py`,
@@ -260,7 +260,7 @@ blocks; an unresolvable license BLOCKS by default per correction 3 above
 (`license_unresolved = "advisory"` is the explicit opt-out for repos that
 prefer not to hold a merge hostage to a cache/network miss).
 Classification (deny-wins, compound-SPDX atom tokenizing) is pure in
-`kstrl.policy`. (This paragraph originally said unresolved was advisory,
+`kstrl.verify.policy`. (This paragraph originally said unresolved was advisory,
 contradicting correction 3 fifteen lines up; fixed 2026-08-03 to match
 the code, where `"block"` is the default.)
 
@@ -310,7 +310,7 @@ policy hash lands in the manifest; enforcement-machinery halt is tested;
 
 ## R8.2 Autonomy ladder (M) - [#149](https://github.com/0xfauzi/kstrl/issues/149)
 
-Status: `[x]` - Shipped in `kstrl/autonomy.py` + `kstrl/autonomy_replay.py`
+Status: `[x]` - Shipped in `kstrl/learning/autonomy.py` + `kstrl/learning/autonomy_replay.py`
 + `ks autonomy` (status/promote/demote/history/replay). Levels derive the
 flag bundle at run start (`run_factory`), promotion requires a recorded
 human ack, demotion is automatic with a cool-down, and every transition
@@ -323,7 +323,7 @@ defaults - it forces the merge gate on. R8.4 will enrich the demotion
 triggers with health-metric breaches; the `HEALTH_BREACH` trigger already
 exists for it to fire, and since
 [#232](https://github.com/0xfauzi/kstrl/issues/232) so do the inbox kind,
-the config key and the call site, so R8.4 supplies `kstrl/health.py` and
+the config key and the call site, so R8.4 supplies `kstrl/learning/health.py` and
 nothing else.
 
 **Review corrections (PR #174).** Seven findings, five of them P1, all
@@ -345,7 +345,7 @@ closed before merge. Four were substantive holes rather than polish:
    definition.
 3. **Promotion authority was a string.** `--actor human --ack x --force`
    from an agent satisfied every check. Promotion now requires a
-   controlling TTY, and `.kstrl/autonomy.json` + `kstrl/autonomy.py` were
+   controlling TTY, and `.kstrl/autonomy.json` + `kstrl/learning/autonomy.py` were
    added to the R8.1 enforcement-machinery halt set to close the
    write-the-file-directly path.
 4. **Transitions never reached the audit streams.** `AutonomyTransition`
@@ -413,7 +413,7 @@ re-promotion locked for 10 decisive runs after a demotion. Every demotion
 emits an inbox item carrying the triggering evidence.
 
 **Entry signals (#643).** Three criteria in the table are not ladder counters, and
-`kstrl/autonomy.py::entry_signal_blockers` reads each one for `ks autonomy status` and
+`kstrl/learning/autonomy.py::entry_signal_blockers` reads each one for `ks autonomy status` and
 `ks autonomy promote`. L2 "calibration compare green" means no undecided (open or snoozed)
 `calibration_drift` inbox item. That item is the only record a
 `python -m kstrl.calibration compare --root` regression leaves in a project, so the criterion is
@@ -558,7 +558,7 @@ the two stages rather than an implied one.
 ([#232](https://github.com/0xfauzi/kstrl/issues/232)). `ItemKind.HEALTH_BREACH`,
 the `[autonomy] demote_on_health_breach` key (default false) and the call site
 in `factory._record_health_breaches` are in place. They read
-`kstrl.health.health_breaches(root_dir)` when that module exists and are inert
+`kstrl.learning.health.health_breaches(root_dir)` when that module exists and are inert
 while it does not, so stage 2 is this module plus the recorded replay rather
 than a second round of wiring. `ks autonomy replay` stays the advisory mode for
 these rules: it reports what would have fired and never mutates ladder state, so

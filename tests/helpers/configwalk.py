@@ -58,7 +58,7 @@ attributed+0 and 0 offenders. :func:`scopes_with_lambdas` is the fix and
 NAMES ARE RESOLVED, NOT SPELLED. Layer 2 resolves a surface reference
 through ``astwalk.bindings`` rather than by matching the text, so
 ``PolicyConfig.load``, ``mod.PolicyConfig.load`` after ``import
-kstrl.policy as mod``, ``PC.load`` after ``import ... as PC``,
+kstrl.verify.policy as mod``, ``PC.load`` after ``import ... as PC``,
 ``getattr(PolicyConfig, "load")``, ``partial(PolicyConfig.load, root)``
 and ``f = PolicyConfig.load`` are all the same site. It counts
 REFERENCES rather than calls, which over-matches: ``config_sections()``
@@ -71,7 +71,7 @@ primitive by bare ``Name`` only, so ``c.load_toml_section`` after
 ``import kstrl.config.config as c`` would not enrol its scope in the surface;
 ``getattr(mod, "load_toml_document")(root)`` names the primitive as a
 STRING, which no name resolution reaches; and
-``importlib.import_module("kstrl.policy").PolicyConfig.load(root)``
+``importlib.import_module("kstrl.verify.policy").PolicyConfig.load(root)``
 builds the receiver at run time, so layer 2 has no name to resolve
 either. Measured in ``kstrl/`` today: 54 bare-name primitive calls, 0 in
 the attribute form, 0 in either dynamic form, so all three are latent
@@ -403,7 +403,7 @@ def _section_reference(
 
     Resolved the way :func:`_candidates` resolves: the spelled name, the
     attribute, and the last part of the import origin, so ``PS`` after
-    ``from kstrl.policy import POLICY_SECTION as PS`` is the same site.
+    ``from kstrl.verify.policy import POLICY_SECTION as PS`` is the same site.
     A store (the definition ``POLICY_SECTION = ...`` itself) is not one.
     """
     if isinstance(node, ast.Name) and not isinstance(node.ctx, ast.Load):
@@ -444,7 +444,7 @@ def _candidates(node: ast.AST, binds: Bindings) -> list[tuple[str, str]]:
     BOTH spellings are offered and the caller keeps whichever names a
     surface class, rather than the first that parses. Trying the literal
     one and stopping there is what an earlier draft did, and it lost
-    ``PC.load`` after ``from kstrl.policy import PolicyConfig as PC``:
+    ``PC.load`` after ``from kstrl.verify.policy import PolicyConfig as PC``:
     the literal read gives ``PC``, which is not a config class, and the
     walk never asked the resolver.
     """

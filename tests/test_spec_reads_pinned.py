@@ -1,7 +1,7 @@
 """#639 owner decision 11: every read of a planned spec goes through the pin.
 
 A plan pins the sha256 of the spec text the architect read
-(``kstrl.decompose.load_spec_input``). After decompose, the only reader of
+(``kstrl.architect.decompose.load_spec_input``). After decompose, the only reader of
 that spec is ``kstrl.plan_gate.pinned_spec``: it reads the spec again and
 returns the text only when its digest is the pinned one, so no role can be
 handed a spec that changed after the plan was made. Before this guard,
@@ -30,10 +30,13 @@ from tests.helpers.astwalk.scope import scope_of
 EXPECTED_SPEC_READS: dict[str, dict[str, int]] = {
     "load_spec_input": {
         # The import, and the read whose text the architect is given.
-        "decompose.py::<module>": 1,
-        "decompose.py::_decompose_spec_impl": 1,
+        "architect/decompose.py::<module>": 1,
+        "architect/decompose.py::_decompose_spec_impl": 1,
         # The definition.
-        "decompose_prompt.py::<module>": 1,
+        "architect/decompose_prompt.py::<module>": 1,
+        # #863 M4: the import and the ``__all__`` row of the package
+        # interface, which ``plan_gate.py`` imports the reader through.
+        "architect/__init__.py::<module>": 2,
         # The import, and the one re-read, which compares the digest.
         "plan_gate.py::<module>": 1,
         "plan_gate.py::pinned_spec": 1,

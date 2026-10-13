@@ -119,7 +119,7 @@ def reconcile_progress_paths(
 class ProgressReaderConfig(Protocol):
     """The one field ``reconcile_progress_config`` needs from a
     ``VerifyConfig``. Declared structurally so this module does not
-    import kstrl.verify, which imports this one."""
+    import kstrl.verify.verify, which imports this one."""
 
     progress_file_path: str | None
 

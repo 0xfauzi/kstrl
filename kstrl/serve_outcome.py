@@ -354,7 +354,7 @@ def _red_base_outcome(root_dir: Path, owned_run_ids: Sequence[str]) -> Outcome |
     record. So a missing, unreadable or malformed record is no evidence, and
     ``refused`` must be the JSON ``true``, not merely truthy.
     """
-    from kstrl.base_gates import base_gates_path
+    from kstrl.verify import base_gates_path
 
     for run_id in owned_run_ids:
         if not run_id:

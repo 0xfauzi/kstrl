@@ -23,10 +23,10 @@ from __future__ import annotations
 import inspect
 from pathlib import Path
 
-from kstrl import policy
-from kstrl.verify import run_mechanical_verification
-from kstrl.verify_diff import check_bad_patterns
-from kstrl.verify_model import VerifyConfig
+from kstrl.verify import policy
+from kstrl.verify.verify import run_mechanical_verification
+from kstrl.verify.verify_diff import check_bad_patterns
+from kstrl.verify.verify_model import VerifyConfig
 from tests.conftest import make_review_repo
 from tests.helpers.stack_confirmation import in_process_stack
 
@@ -165,7 +165,7 @@ def test_the_default_secret_patterns_are_the_envelopes_own_list() -> None:
     (not just by this identity check): editing ``DEFAULT_SECRET_PATTERNS``
     to add a sixth pattern and re-running ``check_bad_patterns`` against a
     branch that adds a matching string blocks it, with no edit anywhere in
-    ``kstrl/verify.py``.
+    ``kstrl/verify/verify.py``.
     """
     default = inspect.signature(check_bad_patterns).parameters["secret_patterns"].default
     assert default is policy.DEFAULT_SECRET_PATTERNS

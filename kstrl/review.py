@@ -24,7 +24,7 @@ from kstrl.plan import (
     tag_finding_with_model,
 )
 from kstrl.review_prompt import build_review_prompt
-from kstrl.verify_model import VerificationResult
+from kstrl.verify import VerificationResult
 
 if TYPE_CHECKING:
     from kstrl.agents import Agent

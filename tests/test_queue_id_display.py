@@ -85,7 +85,7 @@ EXPECTED_ITEM_ID_CUTS: dict[str, int] = {
     "serve.py: item.item_id.split('-')": 1,
     # #639 slice 4: the inbox ids (uuid4 hex) of the owner answers decompose
     # read, which `ks inbox` resolves by prefix. Not a queue id.
-    "decompose.py: item_id[:8]": 1,
+    "architect/decompose.py: item_id[:8]": 1,
     # Inbox approval ids (uuid4 hex), which `ks inbox` resolves by prefix.
     "owner/waivers.py: match.item_id[:8]": 1,
     "owner/waivers.py: other.item_id[:8]": 1,

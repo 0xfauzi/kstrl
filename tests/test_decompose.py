@@ -32,12 +32,12 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl.decompose import decompose_spec
-from kstrl.decompose_audit import SpecBlockerError
-from kstrl.evolution import EvolutionJournal
-from kstrl.evolution_config import EvolutionConfig
+from kstrl.architect.decompose import decompose_spec
+from kstrl.architect.decompose_audit import SpecBlockerError
 from kstrl.io.statedir import plan_prd_path
-from kstrl.journal_rows import SPEC_ISSUES_EVENT
+from kstrl.learning.evolution import EvolutionJournal
+from kstrl.learning.evolution_config import EvolutionConfig
+from kstrl.learning.journal_rows import SPEC_ISSUES_EVENT
 from kstrl.plan.prd import PRD
 from kstrl.ui.plain import PlainUI
 from tests.helpers.architect_payload import traced
@@ -567,7 +567,7 @@ class TestARegisterThatDidNotLandFailsTheDecompose:
         (tmp_path / "scripts" / "kstrl").mkdir(parents=True)
         with (
             patch(
-                "kstrl.decompose.write_decisions",
+                "kstrl.architect.decompose.write_decisions",
                 side_effect=OSError("no space left on device"),
             ),
             pytest.raises(OSError, match="no space left on device"),
@@ -619,7 +619,7 @@ class TestARegisterThatDidNotLandFailsTheDecompose:
         )
         with (
             patch(
-                "kstrl.decompose_audit.write_decisions",
+                "kstrl.architect.decompose_audit.write_decisions",
                 side_effect=OSError("no space left on device"),
             ),
             pytest.raises(SpecBlockerError) as exc_info,
@@ -1002,7 +1002,7 @@ class TestPrdValidationInsideRetryLoop:
         """If writing component 2's PRD fails, component 1's already
         written PRD and the directories created for it are removed; the
         spec-issues audit artifact survives."""
-        import kstrl.decompose_plan as decompose_plan_mod
+        import kstrl.architect.decompose_plan as decompose_plan_mod
 
         spec_file = tmp_path / "spec.md"
         spec_file.write_text("# Feature")
@@ -1590,12 +1590,12 @@ class TestSpecConvergenceThroughDecompose:
         nothing that can fail belongs upstream of it. An error the guard
         does not catch still leaves the artifact on disk.
         """
-        import kstrl.evolution_config
+        import kstrl.learning.evolution_config
 
         def _explode(root_dir: Path | None = None) -> None:
             raise RuntimeError("journal config exploded")
 
-        monkeypatch.setattr(kstrl.evolution_config.EvolutionConfig, "load", _explode)
+        monkeypatch.setattr(kstrl.learning.evolution_config.EvolutionConfig, "load", _explode)
 
         spec_file = tmp_path / "spec.md"
         spec_file.write_text("# Spec")

@@ -31,7 +31,7 @@ from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult
 from kstrl.plan.manifest import Component, ComponentStatus, Manifest
 from kstrl.ui.plain import PlainUI
-from kstrl.verify_model import VerifyConfig
+from kstrl.verify.verify_model import VerifyConfig
 from tests.helpers import gitrepo
 from tests.helpers.component_prd import PASSING_STORY, write_component_prd
 from tests.helpers.stack_confirmation import in_process_stack

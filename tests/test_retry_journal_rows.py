@@ -26,14 +26,14 @@ from typing import Any
 
 import pytest
 
-from kstrl.autonomy_replay import load_runs
-from kstrl.evolution_config import EvolutionConfig
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
-from kstrl.health import readings_from
+from kstrl.learning.autonomy_replay import load_runs
+from kstrl.learning.evolution_config import EvolutionConfig
+from kstrl.learning.health import readings_from
 from kstrl.plan.manifest import ComponentStatus, Manifest
 from kstrl.ui.plain import PlainUI
-from kstrl.verify_model import VerifyConfig
+from kstrl.verify.verify_model import VerifyConfig
 from tests import spine_utils
 from tests.helpers import gitrepo
 from tests.helpers.stack_confirmation import in_process_stack
@@ -301,7 +301,7 @@ def test_health_infra_rate_on_the_432_journal_reads_no_carried_row(tmp_path: Pat
 def test_the_carried_rows_of_the_432_journal_are_the_seven_copies() -> None:
     """The copies the issue lists, and what is left per run is exactly what
     that run's experiments.tsv row says it completed, failed or skipped."""
-    from kstrl.journal_rows import (
+    from kstrl.learning.journal_rows import (
         carried_result_indices,  # new in #447; red, not a collection error
     )
 
@@ -383,7 +383,7 @@ def test_ks_evolve_drops_a_row_only_when_it_is_pre_447_and_repeats_the_previous_
 
 def test_ks_evolve_a_row_missing_a_carried_field_breaks_the_copy_chain(tmp_path: Path) -> None:
     """B3: r2 is missing ``duration_seconds`` (one of :data:`_CARRIED_FIELDS`
-    on kstrl/evolution.py), so it is never itself a copy, AND it must break
+    on kstrl/learning/evolution.py), so it is never itself a copy, AND it must break
     the chain for r3: ``carried_result_indices`` pops the component's stored
     state on a row with a missing field, the same as it does for a v3 row.
     Without that pop, r3 would repeat r1's state through the stale entry

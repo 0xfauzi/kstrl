@@ -80,30 +80,23 @@ from types import ModuleType
 import pytest
 
 import kstrl.project
-from kstrl import (
-    acceptance_design,
-    decompose,
-    decompose_prompt,
-    integration,
-    knowledge_distill,
-    review,
-    review_prompt,
-    security,
-)
-from kstrl.decisions import SpecDecision, build_decisions_context
+from kstrl import acceptance_design, integration, review, review_prompt, security
+from kstrl.architect import decompose, decompose_prompt
+from kstrl.architect.decisions import SpecDecision, build_decisions_context
+from kstrl.architect.owner_answers import read_owner_answers
 from kstrl.git import git_diff
 from kstrl.intake_issue import RemoteIssue, spec_from_issue
-from kstrl.knowledge_facts import KnowledgeConfig
+from kstrl.knowledge import knowledge_distill
+from kstrl.knowledge.knowledge_facts import KnowledgeConfig
 from kstrl.loop import COMPLETION_MARKER
 from kstrl.owner.inbox import Inbox, InboxItem, ItemKind, ItemStatus
-from kstrl.owner_answers import read_owner_answers
 from kstrl.plan.manifest import Component
 from kstrl.plan.requirements import SpecRequirement
 from kstrl.project import init_cmd
 from kstrl.project.init_cmd import run_init
 from kstrl.project.stack import Stack
 from kstrl.ui.plain import PlainUI
-from kstrl.verify_model import CheckResult, VerificationResult, VerifyConfig
+from kstrl.verify.verify_model import CheckResult, VerificationResult, VerifyConfig
 from tests.helpers.before_spend import no_base_check
 from tests.helpers.builder_prompts import BUILDER_RENDER_EXEMPT
 from tests.helpers.component_prd import write_component_prd

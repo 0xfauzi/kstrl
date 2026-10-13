@@ -20,7 +20,7 @@ request until somebody chooses that.
 A signature is `"<check>:<code>"`, one per failed check: `stack:lint:<slug>`,
 where the slug is made from kstrl's own message for the check ("`<command>`
 exited <n>", digits stripped). It comes from
-`kstrl.evolution.signature_counts_from_verification`, the same function the
+`kstrl.learning.evolution.signature_counts_from_verification`, the same function the
 evolution journal records failures with, so the baseline and the journal cannot
 disagree about what a failure is called.
 
@@ -254,13 +254,13 @@ for brownfield repositories, which is what the rest of this page is about.
      full, so at 1800 seconds a stack of three checks needs 90 minutes plus
      install. The example keeps 190, sized for the six spenders kstrl had
      before #696 slice 8 removed the dead-code and patch coverage runs. This number has been wrong before; re-derive it
-     rather than trust it, by walking `kstrl/verify.py` for every call that
+     rather than trust it, by walking `kstrl/verify/verify.py` for every call that
      hands it `config.subprocess_timeout`:
 
      ```
      uv run python3 -c "
      import ast, pathlib
-     src = pathlib.Path('kstrl/verify.py').read_text()
+     src = pathlib.Path('kstrl/verify/verify.py').read_text()
      calls = [a for n in ast.walk(ast.parse(src)) if isinstance(n, ast.Call)
               for a in [*n.args, *(k.value for k in n.keywords)]
               if isinstance(a, ast.Attribute) and a.attr == 'subprocess_timeout']

@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 import click
 
 from kstrl.agents import get_agent
+from kstrl.architect import OwnerAnswerError, SpecBlockerError, decompose_spec
 from kstrl.cli_factory_options import factory_options
 from kstrl.cli_preflight import (
     _agent_preflight,
@@ -30,8 +31,6 @@ from kstrl.cli_seam import _console_ui, _use_cli_value, cli
 from kstrl.commandrun import open_command_run
 from kstrl.config import KstrlConfig, reconcile_progress_config
 from kstrl.config_report import normalize_ui_mode as _normalize_ui_mode
-from kstrl.decompose import decompose_spec
-from kstrl.decompose_audit import SpecBlockerError
 from kstrl.events import (
     ARCHITECT_COMPONENT,
     ARCHITECT_ROLE,
@@ -44,7 +43,6 @@ from kstrl.factory_config import FactoryConfig
 from kstrl.git import resolve_base_branch
 from kstrl.launch_record import replayable_flags
 from kstrl.owner import PromptKind, PromptRequest, UiInteractionChannel
-from kstrl.owner_answers import OwnerAnswerError
 from kstrl.plan import Manifest
 from kstrl.proc import (
     RunLock,
@@ -59,10 +57,10 @@ if TYPE_CHECKING:
     # Annotation only, and the cheapest available: with
     # `from __future__ import annotations` above, _check_document's
     # signature is a string at run time and this block never executes.
-    # Not a deferral - line 104 already imports kstrl.verify at module
+    # Not a deferral - line 104 already imports kstrl.verify.verify at module
     # scope, so it is on `ks --help`'s import path either way (measured
     # here at 5.2ms of cli.py's 84.7ms cumulative).
-    from kstrl.verify_model import VerifyConfig
+    from kstrl.verify import VerifyConfig
 
 
 @cli.command()
@@ -269,7 +267,7 @@ def factory(
         from kstrl.contract import ContractConfig
         from kstrl.project import CodebaseScanConfig
         from kstrl.security import SecurityConfig
-        from kstrl.verify_model import VerifyConfig
+        from kstrl.verify import VerifyConfig
 
         toml_notes: list[str] = []
 

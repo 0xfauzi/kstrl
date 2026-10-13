@@ -12,9 +12,9 @@ from unittest.mock import patch
 
 import pytest
 
+from kstrl.architect.decompose import decompose_spec
+from kstrl.architect.decompose_audit import SpecBlockerError
 from kstrl.commandrun import open_command_run
-from kstrl.decompose import decompose_spec
-from kstrl.decompose_audit import SpecBlockerError
 from kstrl.events.reducer import load_run_state
 from kstrl.events.usage import ARCHITECT_COMPONENT, ARCHITECT_ROLE, UsageRecord
 from kstrl.ui.plain import PlainUI
@@ -267,7 +267,7 @@ class TestDecomposeRun:
     ) -> None:
         with (
             patch(
-                "kstrl.decompose.Manifest.save",
+                "kstrl.architect.decompose.Manifest.save",
                 side_effect=OSError("manifest disk full"),
             ),
             pytest.raises(OSError, match="manifest disk full"),
@@ -687,7 +687,7 @@ class TestDecomposeUncoveredBranches:
     def test_oversize_reply_is_one_failed_attempt(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr("kstrl.decompose.MAX_AGENT_OUTPUT_BYTES", 2048)
+        monkeypatch.setattr("kstrl.architect.decompose.MAX_AGENT_OUTPUT_BYTES", 2048)
         console = io.StringIO()
         agent = _SizedFirstAttemptAgent("oversize")
         _decompose(tmp_path, agent, console)
@@ -789,7 +789,7 @@ class TestDecomposeDagAndRollback:
                 locked.append(prd.parent)
             raise OSError("manifest disk full")
 
-        monkeypatch.setattr("kstrl.decompose.Manifest.save", failing_save)
+        monkeypatch.setattr("kstrl.architect.decompose.Manifest.save", failing_save)
         try:
             with pytest.raises(OSError, match="manifest disk full"):
                 _decompose(tmp_path, MockDecomposeAgent(MINOR_ISSUE_OUTPUT))

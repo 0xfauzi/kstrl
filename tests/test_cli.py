@@ -327,8 +327,8 @@ class TestDecomposeBlockerOutput:
     def test_prints_artifact_path_on_halt(self, tmp_path: Path, monkeypatch) -> None:
         import kstrl.cli_architect as cli_architect_mod
         import kstrl.cli_factory as cli_factory_mod
-        from kstrl.decisions import SpecDecision
-        from kstrl.decompose_audit import SpecBlockerError
+        from kstrl.architect.decisions import SpecDecision
+        from kstrl.architect.decompose_audit import SpecBlockerError
 
         spec_file = tmp_path / "spec.md"
         spec_file.write_text("# Vague spec")
@@ -619,8 +619,8 @@ def _halting_decompose(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
     """
     import kstrl.cli_architect as cli_architect_mod
     import kstrl.cli_factory as cli_factory_mod
-    from kstrl.decisions import SpecDecision
-    from kstrl.decompose_audit import SpecBlockerError
+    from kstrl.architect.decisions import SpecDecision
+    from kstrl.architect.decompose_audit import SpecBlockerError
 
     seen: dict[str, object] = {}
 

@@ -42,8 +42,8 @@ from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult
 from kstrl.git import git_base
-from kstrl.knowledge_distill import distill_facts
-from kstrl.knowledge_facts import KnowledgeConfig
+from kstrl.knowledge.knowledge_distill import distill_facts
+from kstrl.knowledge.knowledge_facts import KnowledgeConfig
 from kstrl.loop import COMPLETION_MARKER, LoopResult, run_loop
 from kstrl.plan.manifest import Component, Manifest
 from kstrl.proc.timeout import TimeoutConfig
@@ -53,8 +53,8 @@ from kstrl.serve_config import ServeConfig
 from kstrl.serve_gates import check_budget
 from kstrl.serve_spend import SpendLedger
 from kstrl.ui.plain import PlainUI
-from kstrl.verify import run_mechanical_verification
-from kstrl.verify_model import CheckResult, VerificationResult, VerifyConfig
+from kstrl.verify.verify import run_mechanical_verification
+from kstrl.verify.verify_model import CheckResult, VerificationResult, VerifyConfig
 from tests.conftest import make_review_repo
 from tests.helpers.stack_confirmation import confirm_stack, in_process_stack
 

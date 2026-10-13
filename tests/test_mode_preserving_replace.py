@@ -97,16 +97,17 @@ REPLACE_SITES: dict[str, str] = {
 #: an unresolvable receiver - read it before assuming the former.
 EXPECTED_UNDECIDED_REPLACE_CALLS: tuple[str, ...] = (
     "agents/codex.py text.replace",
-    "autonomy.py datetime.now(UTC).replace",
-    "autonomy_transitions.py trigger.label.replace",
-    "baseline_report.py ' '.join(text.split()).replace",
+    "architect/spec_issues.py comp_id.replace",
+    "architect/spec_issues.py comp_id.replace('-', ' ').replace",
     "doctor.py now.isoformat().replace",
     "events/observability.py datetime.strptime(ts, '%Y-%m-%dT%H:%M:%SZ').replace",
     "io/statedir.py datetime.now(UTC).replace",
     "io/statedir.py datetime.now(UTC).replace(microsecond=0).isoformat().replace",
     # #696: init_cmd.kstrl_toml_for, which seeded a detected toolchain's
     # commands into the scaffolded [verify], is gone with [verify] itself.
-    "knowledge_distill.py raw_output[:200].replace",
+    "knowledge/knowledge_distill.py raw_output[:200].replace",
+    "learning/autonomy.py datetime.now(UTC).replace",
+    "learning/autonomy_transitions.py trigger.label.replace",
     "owner/inbox.py datetime.now(UTC).replace",
     "owner/inbox.py parsed.replace",
     "proc/scrubbed_run.py text.replace",
@@ -115,8 +116,7 @@ EXPECTED_UNDECIDED_REPLACE_CALLS: tuple[str, ...] = (
     # #526: `retry_plan._opt` spells a run limit as an option name, a str.replace.
     "retry_plan.py name.replace",
     "serve_spend.py (local + timedelta(days=1)).replace",
-    "spec_issues.py comp_id.replace",
-    "spec_issues.py comp_id.replace('-', ' ').replace",
+    "verify/baseline_report.py ' '.join(text.split()).replace",
 )
 
 

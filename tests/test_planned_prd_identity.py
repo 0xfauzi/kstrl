@@ -201,10 +201,10 @@ def _where(source: Path, node: ast.AST) -> str:
 #: ``pre_run_prd_path``. A new row is a new way to reach a planned copy
 #: that does not ask the manifest for the plan id.
 EXPECTED_PLAN_PRD_PATH_SPELLINGS = {
-    "decompose_plan.py::<module>": 1,
-    "decompose_plan.py::_write_component_prds": 1,
-    "decompose_reply.py::<module>": 1,
-    "decompose_reply.py::_generate_component_prd": 1,
+    "architect/decompose_plan.py::<module>": 1,
+    "architect/decompose_plan.py::_write_component_prds": 1,
+    "architect/decompose_reply.py::<module>": 1,
+    "architect/decompose_reply.py::_generate_component_prd": 1,
     # #863 M1: the package interface re-exports the name (the import and
     # the __all__ entry). It is the same function, not a new reader.
     "io/__init__.py::<module>": 2,

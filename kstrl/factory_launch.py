@@ -13,21 +13,20 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from kstrl.agents import with_stack_writable
+from kstrl.architect import build_decisions_context
 from kstrl.config import relative_to_root
-from kstrl.decisions import build_decisions_context
-from kstrl.fact_scope import authored_paths, paths_by_component
-from kstrl.knowledge import retrieve_knowledge_context
+from kstrl.knowledge import authored_paths, paths_by_component, retrieve_knowledge_context
 from kstrl.loop_budget import LoopBudget
 from kstrl.proc import NO_LIMIT, describe_limit_seconds
-from kstrl.verify_diff import SCOPE_UNREADABLE_CHECK, scope_unreadable_error
+from kstrl.verify import SCOPE_UNREADABLE_CHECK, scope_unreadable_error
 
 if TYPE_CHECKING:
+    from kstrl.architect import DecisionRegister
     from kstrl.breaker import BreakerConfig
     from kstrl.config import KstrlConfig
-    from kstrl.decisions import DecisionRegister
     from kstrl.events import RunPaths
     from kstrl.factory_config import FactoryConfig
-    from kstrl.knowledge_facts import KnowledgeConfig
+    from kstrl.knowledge import KnowledgeConfig
     from kstrl.pipeline import ComponentPipeline
     from kstrl.plan import Component, Manifest, RunScope
     from kstrl.proc import TimeoutConfig

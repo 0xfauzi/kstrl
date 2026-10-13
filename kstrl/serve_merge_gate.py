@@ -216,9 +216,8 @@ def resolve_merge_gate(item: QueueItem, root_dir: Path) -> MergeGate:
     ladder is enabled: the checkpoint is unreachable for a config reason,
     not a level reason.
     """
-    from kstrl.autonomy import AutonomyState, flag_bundle_for
-    from kstrl.autonomy_config import AutonomyConfig, resolve_runtime_level
-    from kstrl.policy import PolicyConfig
+    from kstrl.learning import AutonomyConfig, AutonomyState, flag_bundle_for, resolve_runtime_level
+    from kstrl.verify import PolicyConfig
 
     wants_gate = item.merge_disposition is MergeDisposition.STOP_AT_PR
 

@@ -33,7 +33,7 @@ from kstrl.plan.manifest import Component, Manifest
 from kstrl.project.scaffold_templates import DEFAULT_PROMPT
 from kstrl.security import SecurityConfig
 from kstrl.ui.plain import PlainUI
-from kstrl.verify_model import VerifyConfig
+from kstrl.verify.verify_model import VerifyConfig
 from tests.helpers import gitrepo
 from tests.helpers.stack_confirmation import in_process_stack
 

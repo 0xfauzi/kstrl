@@ -15,8 +15,8 @@ from pathlib import Path
 from click.testing import CliRunner
 
 import kstrl.cli as cli_mod
-from kstrl.experiments_tsv import EXPERIMENTS_HEADER
-from kstrl.journal_rows import FINDINGS_SUPERSEDED_EVENT
+from kstrl.learning.experiments_tsv import EXPERIMENTS_HEADER
+from kstrl.learning.journal_rows import FINDINGS_SUPERSEDED_EVENT
 
 
 def _write_experiments_tsv(tmp_path: Path, rows: list[dict[str, str]]) -> None:

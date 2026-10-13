@@ -28,7 +28,7 @@ import pytest
 
 from kstrl.config.config_resolve import raise_if_defect, resolve_or_report
 from kstrl.config_preflight import collect_config_problems
-from kstrl.evolution_config import EVOLUTION_SECTION
+from kstrl.learning.evolution_config import EVOLUTION_SECTION
 from tests.helpers import astwalk
 
 BAD_KNOB = '[evolution]\nlookback_runs = "many"\n'
@@ -53,13 +53,13 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     "acceptance_design.py": 2,
     # AgentOutputTooLarge, and AgentTimedOut since #603.
     "agents/agent_output.py": 2,
-    "autonomy.py": 1,
+    "learning/autonomy.py": 1,
     # One bare raise: `_resolve_factory_run_lock` refuses a handed
     # `RunLock` whose own `release()` has already run (#597 fix round).
     "cli_preflight.py": 1,
     "config/config_resolve.py": 2,  # the rule itself, and its docstring
     # DecisionRegisterError, added by #332.
-    "decisions.py": 1,
+    "architect/decisions.py": 1,
     # #632: each refuses to import a table whose rows disagree, a bare raise.
     # One subclass, four bare raises. #543 added two: a dependency branch
     # that will not merge into a dependent's worktree, and a HEAD that
@@ -82,7 +82,7 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     # #776 I2 moved it out of intake_github.py.
     "intake_steering.py": 1,
     # OwnerAnswerError (#639 slice 4).
-    "owner_answers.py": 1,
+    "architect/owner_answers.py": 1,
     "pr.py": 4,  # no subclass: four bare raises
     # One bare raise, plus four from the R10.7 open-PR bound (#228), all
     # in count_open_kstrl_prs: a failed gh result, the two bad-payload
@@ -230,12 +230,12 @@ class TestSharedGuard:
         would blame the operator's file and eat the traceback. This is
         the same line EvolutionConfig.load_or_none draws.
         """
-        import kstrl.evolution_config
+        import kstrl.learning.evolution_config
 
         def _explode(root_dir: Path | None = None) -> None:
             raise RuntimeError("journal config exploded")
 
-        monkeypatch.setattr(kstrl.evolution_config.EvolutionConfig, "load", _explode)
+        monkeypatch.setattr(kstrl.learning.evolution_config.EvolutionConfig, "load", _explode)
         with pytest.raises(RuntimeError, match="journal config exploded"):
             resolve_or_report(EVOLUTION_SECTION, tmp_path, blame_env=False)
 
@@ -264,12 +264,12 @@ class TestSharedGuard:
         eaten. RecursionError is the one that hurts: a cycle in the
         config graph would have been rendered as their broken file.
         """
-        import kstrl.evolution_config
+        import kstrl.learning.evolution_config
 
         def _explode(root_dir: Path | None = None) -> None:
             raise defect
 
-        monkeypatch.setattr(kstrl.evolution_config.EvolutionConfig, "load", _explode)
+        monkeypatch.setattr(kstrl.learning.evolution_config.EvolutionConfig, "load", _explode)
         with pytest.raises(type(defect)):
             resolve_or_report(EVOLUTION_SECTION, tmp_path, blame_env=False)
 

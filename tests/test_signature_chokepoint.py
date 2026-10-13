@@ -89,7 +89,7 @@ EXPECTED_SIGNATURE_CONTAINER_SITES: dict[tuple[str, str], int] = {
     ("kstrl/runstate.py", "component_failure_signatures"): 1,
     # The reader: record_run takes the mapping as an argument and writes
     # each component's list into the journal entry.
-    ("kstrl/evolution.py", "failure_signatures"): 4,
+    ("kstrl/learning/evolution.py", "failure_signatures"): 4,
 }
 
 

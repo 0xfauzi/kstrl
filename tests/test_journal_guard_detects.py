@@ -44,8 +44,9 @@ class TestTheGuardDetects:
 
     def offenders(self, tmp_path: Path, source: str, name: str = "other.py") -> list[str]:
         path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(source, encoding="utf-8")
-        return journal_writes_outside_append_entries(path)
+        return journal_writes_outside_append_entries(path, tmp_path)
 
     def test_the_seed_tracks_the_attribute_name(self, tmp_path: Path) -> None:
         """Layer 2 has one seed, and it used to be a literal.
@@ -232,7 +233,7 @@ class TestTheGuardDetects:
         what break if it changes, and a shared helper's own test cannot
         say which caller a change costs.
         """
-        assert label(KSTRL_PACKAGE / "decompose.py") == "decompose.py"
+        assert label(KSTRL_PACKAGE / "architect/decompose.py") == "architect/decompose.py"
         assert label(KSTRL_PACKAGE / "agents" / "base.py") == str(Path("agents") / "base.py")
 
     def test_an_unrelated_file_is_left_alone(self, tmp_path: Path) -> None:
@@ -248,7 +249,7 @@ class TestTheGuardDetects:
             '        with open(path, "a+b") as handle:\n'
             "            handle.write(b'{}')\n"
         )
-        assert self.offenders(tmp_path, source, name="evolution.py") == []
+        assert self.offenders(tmp_path, source, name="learning/evolution.py") == []
 
     def test_the_exemption_is_the_class_method_and_nothing_else(
         self,
@@ -260,8 +261,8 @@ class TestTheGuardDetects:
             "    def append_entries(rows):\n"
             '        open(self.config.journal_path, "a")\n'
         )
-        assert self.offenders(tmp_path, nested, name="evolution.py") == [
-            "evolution.py:3: writes to self.config.journal_path"
+        assert self.offenders(tmp_path, nested, name="learning/evolution.py") == [
+            "learning/evolution.py:3: writes to self.config.journal_path"
         ]
 
         elsewhere = (
@@ -269,8 +270,8 @@ class TestTheGuardDetects:
             "    def append_entries(self, config):\n"
             '        open(config.journal_path, "a")\n'
         )
-        assert self.offenders(tmp_path, elsewhere, name="evolution.py") == [
-            "evolution.py:3: writes to config.journal_path"
+        assert self.offenders(tmp_path, elsewhere, name="learning/evolution.py") == [
+            "learning/evolution.py:3: writes to config.journal_path"
         ]
 
     def test_the_exemption_does_not_apply_in_another_module(self, tmp_path: Path) -> None:
@@ -279,6 +280,6 @@ class TestTheGuardDetects:
             "    def append_entries(self, entries):\n"
             '        open(self.config.journal_path, "a")\n'
         )
-        assert self.offenders(tmp_path, source, name="autonomy.py") == [
-            "autonomy.py:3: writes to self.config.journal_path"
+        assert self.offenders(tmp_path, source, name="learning/autonomy.py") == [
+            "learning/autonomy.py:3: writes to self.config.journal_path"
         ]

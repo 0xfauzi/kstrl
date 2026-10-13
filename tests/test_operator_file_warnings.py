@@ -35,7 +35,7 @@ from kstrl.project import operator_context
 from kstrl.project.operator_context import GOLDEN_PATTERNS, MEMORY
 from kstrl.project.scaffold_templates import DEFAULT_GOLDEN_PATTERNS
 from kstrl.ui.plain import PlainUI
-from kstrl.verify_model import VerifyConfig
+from kstrl.verify.verify_model import VerifyConfig
 from tests.helpers.stack_confirmation import in_process_stack
 
 GOLDEN_REL = "scripts/kstrl/golden-patterns.md"

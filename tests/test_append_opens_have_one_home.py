@@ -480,15 +480,15 @@ EXPECTED_ROUTED_APPENDS: dict[str, int] = {
     "io/appendio.py: appending(lock=lock)": 1,
     "io/appendio.py: open_for_append(lock=default (False))": 1,
     "events/events.py: open_for_append(lock=default (False))": 1,
-    "evolution.py: append_records(lock=True)": 1,
-    "evolution.py: append_records(lock=default (False))": 1,
+    "learning/evolution.py: append_records(lock=True)": 1,
+    "learning/evolution.py: append_records(lock=default (False))": 1,
     "signals.py: append_records(lock=True)": 1,
     # #553: the CI ledger, for the signal ledger's reason: a scheduled
     # `ks ci poll` and an operator's can interleave.
     "ci_state.py: append_records(lock=True)": 1,
     "owner/inbox.py: append_records(lock=default (False))": 1,
     "project/init_cmd.py: append_records(lock=default (False))": 1,
-    "knowledge.py: append_records(lock=default (False))": 1,
+    "knowledge/knowledge.py: append_records(lock=default (False))": 1,
     "events/observability.py: append_records(lock=default (False))": 1,
     "queue/workqueue_store.py: append_records(lock=default (False))": 1,
 }

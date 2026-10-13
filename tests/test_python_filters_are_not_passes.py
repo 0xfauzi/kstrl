@@ -178,14 +178,14 @@ _TOOL_CONTROLS = (
 EXPECTED_TOOL_LITERALS: dict[str, tuple[int, str]] = {
     # #696 slice 8: the retired check name dead_code_ruff, which a baseline
     # written before the retirement carries (baseline.RETIRED_CHECKS).
-    "baseline.py": (1, "a retired check's name the comparison must recognise"),
+    "verify/baseline.py": (1, "a retired check's name the comparison must recognise"),
     # #696: contract.py's and doctor.py's rows are gone outright. Both
     # named a retired per-tool command default (contract.py's exit-5
     # message was about [verify] test_suite; doctor.py's was the
     # `uv run` default warning for an unset [verify] key). #696 slice 8
     # removed adequacy.py's, cli.py's, feature_verify.py's, init_cmd.py's
     # and verify.py's rows with the checks that ran a Python tool.
-    "failure_signatures.py": (4, "classify_check's keywords for Phase 1 check names"),
+    "verify/failure_signatures.py": (4, "classify_check's keywords for Phase 1 check names"),
 }
 
 

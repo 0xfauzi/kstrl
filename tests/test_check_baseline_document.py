@@ -24,7 +24,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import baseline
+from kstrl.verify import baseline
 from tests.helpers import gitrepo
 from tests.helpers.check_baseline import _baseline
 
