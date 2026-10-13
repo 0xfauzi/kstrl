@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from kstrl.config_numbers import check_numbers
+from kstrl.config_section import ConfigSection
 from kstrl.manifest import Component
 
 RELEASE_SECTION = "release"
@@ -88,6 +89,9 @@ class ReleaseConfig:
             str(section["environment"]) if "environment" in section else defaults.environment
         )
         return check_numbers(cls(enabled=enabled, environment=environment))
+
+
+RELEASE_CONFIG_SECTION = ConfigSection(("release",), ReleaseConfig)
 
 
 @dataclass(frozen=True)

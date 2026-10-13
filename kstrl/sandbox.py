@@ -177,6 +177,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 from kstrl.config_numbers import check_numbers
+from kstrl.config_section import ConfigSection
 from kstrl.git import git_write_paths
 from kstrl.jsonread import read_json
 from kstrl.write_guard import GUARDED_TOOLS, HOOK_TIMEOUT_SECONDS, hook_command, ready_command
@@ -261,6 +262,9 @@ class SandboxConfig:
         if "KSTRL_SANDBOX_ALLOW_NETWORK" in os.environ:
             allow_network = parse_bool(os.environ.get("KSTRL_SANDBOX_ALLOW_NETWORK"))
         return check_numbers(cls(enabled=enabled, allow_network=allow_network))
+
+
+SANDBOX_SECTION = ConfigSection(("sandbox",), SandboxConfig)
 
 
 def warn_unconfined(

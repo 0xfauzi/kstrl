@@ -16,6 +16,7 @@ from kstrl.base_gates import (
     BaseGates,
 )
 from kstrl.config_numbers import check_number, check_numbers
+from kstrl.config_section import ConfigSection
 from kstrl.contract import (
     ContractConfig,
 )
@@ -602,6 +603,9 @@ class FactoryConfig:
         # [stack] raises (the entry check's unread-name report).
         config.project_stack = stack_in_force(root_dir)
         return check_numbers(config)
+
+
+FACTORY_SECTION = ConfigSection(("factory",), FactoryConfig)
 
 
 def _validate_convergence_attempts(value: object, source: str) -> int:

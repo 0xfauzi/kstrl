@@ -30,6 +30,7 @@ from dataclasses import dataclass, field, fields
 from pathlib import Path
 
 from kstrl.config_numbers import SIGNED, check_numbers
+from kstrl.config_section import ConfigSection
 
 # Enforcement-machinery paths: every lever an agent could pull to weaken
 # the envelope itself. Issue #148 names three surfaces and all three are
@@ -567,3 +568,6 @@ class PolicyConfig:
         payload = {f.name: getattr(self, f.name) for f in fields(self)}
         blob = json.dumps(payload, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+POLICY_SECTION = ConfigSection(("policy",), PolicyConfig)

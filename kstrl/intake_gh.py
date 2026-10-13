@@ -12,6 +12,7 @@ from typing import Any
 
 from kstrl.config import parse_paths
 from kstrl.config_numbers import SIGNED, check_numbers
+from kstrl.config_section import ConfigSection
 from kstrl.jsonread import read_json
 from kstrl.workqueue_items import ItemSource, QueueItem
 
@@ -265,6 +266,9 @@ class GitHubIntakeConfig:
             if var in os.environ:
                 values[name] = cast(os.environ[var])
         return check_numbers(cls(**values))
+
+
+INTAKE_GITHUB_SECTION = ConfigSection(("intake_github",), GitHubIntakeConfig)
 
 
 def apply_state_label(

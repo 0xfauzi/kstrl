@@ -178,7 +178,7 @@ def load_toml_document(path: Path) -> dict[str, Any]:
     permutation leaves the file byte-identical and a same-second rewrite
     is otherwise served from a stale ``.pyc``.
 
-    See ``config_preflight.SURFACE_REJECTIONS`` for the two callers that
+    See ``config_resolve.SURFACE_REJECTIONS`` for the two callers that
     depend on telling an unreadable file from an unparseable one.
     """
     scope = _PARSE_SCOPE.get()
@@ -187,7 +187,7 @@ def load_toml_document(path: Path) -> dict[str, Any]:
     # ALL the I/O happens here, OUTSIDE the guard, so that nothing the
     # guard catches can be an I/O fault. That is what lets the catch-all
     # be as wide as it is without lying: it cannot reach an ``OSError``
-    # that ``config_preflight.SURFACE_REJECTIONS`` needs to stay raw,
+    # that ``config_resolve.SURFACE_REJECTIONS`` needs to stay raw,
     # and it cannot reach ``open``'s own ``ValueError("embedded null
     # byte")`` on ``Path("bad\\x00path.toml")``, which an earlier draft
     # relabelled "could not be parsed as TOML" for a file it had never

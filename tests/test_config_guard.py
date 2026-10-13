@@ -238,8 +238,8 @@ EXPECTED_FACTORY_SITES_BY_FILE = {
 FACTORY_MODULES = tuple(path.name for path in sorted(KSTRL_PACKAGE.glob("factory*.py")))
 
 #: The sections ``RunEnvelope.resolve`` names, as the walk sees them.
-#: Pinned by REFERENCE, because the envelope hands each loader to
-#: ``config_preflight.resolve_or_report`` rather than calling it, and a
+#: Pinned by REFERENCE, because the envelope hands each section constant to
+#: ``config_resolve.resolve_or_report`` rather than calling it, and a
 #: guard that looks for calls sees none of them -
 #: ``tests/test_inbox_write_guards.py``'s config-load inventory is one
 #: such guard and says so. Dropping a section from the envelope puts it
