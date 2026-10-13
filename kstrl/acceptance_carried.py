@@ -33,7 +33,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 from kstrl import git, git_base
 from kstrl.acceptance import (
@@ -42,8 +42,10 @@ from kstrl.acceptance import (
     HEAD_RUNS,
     PASS,
     PLAN_FILE,
+    BaseReading,
     Check,
     ComponentPlan,
+    LimitsFields,
     PinnedPlan,
     _no_log,
     _parsed,
@@ -64,7 +66,6 @@ from kstrl.timeout import limit_seconds
 
 if TYPE_CHECKING:
     from kstrl.contract import ContractConfig
-    from kstrl.factory_config import FactoryConfig
     from kstrl.inbox import InboxConfig, InboxItem
     from kstrl.manifest import Manifest
     from kstrl.stack import Stack
@@ -221,7 +222,7 @@ def _all(probes: Sequence[Callable[[Path, Rung], None]]) -> Callable[[Path, Rung
 
 def carried_on_base(
     root: Path,
-    config: FactoryConfig,
+    config: CarriedFields,
     manifest: Manifest,
     run_id: str,
     ui: UI,
@@ -365,9 +366,22 @@ def _write_base(
     return ""
 
 
+class CarriedFields(LimitsFields, Protocol):
+    """The settings of the run config that carrying a passed check reads."""
+
+    @property
+    def acceptance_plan(self) -> PinnedPlan | None: ...
+
+    @property
+    def acceptance_base(self) -> BaseReading | None: ...
+
+    @property
+    def project_stack(self) -> Stack | None: ...
+
+
 def carry_passed(
     root: Path,
-    config: FactoryConfig,
+    config: CarriedFields,
     manifest: Manifest,
     merged: Sequence[str],
     sha: str,

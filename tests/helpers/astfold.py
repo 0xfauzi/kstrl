@@ -101,7 +101,7 @@ def _string_bindings(node: ast.stmt) -> dict[str, str]:
     Handles the annotated form as well as the plain one. #339 review
     measured what that is worth today and the honest answer is nothing:
     ``kstrl/`` has three module-level annotated string constants
-    (``agents/base.ARCHITECT_ROLE``, ``names.ROLE_KEY_PREFIX``,
+    (``usage.ARCHITECT_ROLE``, ``names.ROLE_KEY_PREFIX``,
     ``serve.SPAWNED_RUN_KIND``) and none is a check name, so deleting
     the branch leaves the census identical. An earlier version of this
     docstring claimed ``gateparse`` needed it; ``gateparse`` declares

@@ -8,11 +8,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from kstrl import event_catalog, git, git_diff
-from kstrl.agents.base import collect_usage
 from kstrl.agents.prompt_record import recording_prompts
 from kstrl.manifest import Component
 from kstrl.pipeline_attempt import AttemptRecorder
 from kstrl.pipeline_ledger import UsageLedger
+from kstrl.usage import collect_usage
 
 if TYPE_CHECKING:
     from kstrl.factory_result import ComponentResult

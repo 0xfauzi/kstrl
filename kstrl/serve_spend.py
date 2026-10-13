@@ -11,7 +11,6 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Final
 
-from kstrl.agents.base import ARCHITECT_COMPONENT, ARCHITECT_ROLE
 from kstrl.jsonread import read_json
 from kstrl.runid import run_kind
 from kstrl.serve_config import ServeError
@@ -23,6 +22,7 @@ from kstrl.statedir import (
     ensure_control_state,
     state_dir,
 )
+from kstrl.usage import ARCHITECT_COMPONENT, ARCHITECT_ROLE
 
 
 def _utc_now() -> datetime:

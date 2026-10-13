@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from kstrl import git, git_base, git_tree
-from kstrl.agents.base import INTEGRATION_COMPONENT, INTEGRATION_ROLE, collect_usage
 from kstrl.agents.prompt_record import AgentCall, recording_prompts
 from kstrl.contract import (
     ContractMode,
@@ -52,6 +51,7 @@ from kstrl.requirements import SpecRequirement
 from kstrl.review import ReviewMode, ReviewResult
 from kstrl.temp_worktree import ContractCleanupError, create_temp_worktree, remove_temp_worktree
 from kstrl.timeout import limit_seconds
+from kstrl.usage import INTEGRATION_COMPONENT, INTEGRATION_ROLE, collect_usage
 from kstrl.verify_model import VerificationResult
 from kstrl.version import kstrl_version
 

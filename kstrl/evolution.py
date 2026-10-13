@@ -8,10 +8,10 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 from kstrl.appendio import JOURNAL_REPAIR_EVENT, REPAIR_DETAIL, append_records
 from kstrl.evolution_config import EvolutionConfig
@@ -30,9 +30,28 @@ from kstrl.journal_rows import (
 from kstrl.version import kstrl_version
 
 if TYPE_CHECKING:
-    from kstrl.factory_result import FactoryResult
     from kstrl.findings import Finding
     from kstrl.manifest import Component, Manifest
+
+
+class RunOutcome(Protocol):
+    """The fields of a factory result that the journal reads."""
+
+    @property
+    def completed(self) -> Sequence[str]: ...
+
+    @property
+    def failed(self) -> Sequence[str]: ...
+
+    @property
+    def skipped(self) -> Sequence[str]: ...
+
+    @property
+    def scheduled(self) -> Sequence[str]: ...
+
+    @property
+    def merged(self) -> dict[str, str]: ...
+
 
 logger = logging.getLogger("kstrl.evolution")
 
@@ -154,7 +173,7 @@ def _summarize_findings(findings: list[Finding]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-def _components_this_run(manifest: Manifest, factory_result: FactoryResult) -> list[Component]:
+def _components_this_run(manifest: Manifest, factory_result: RunOutcome) -> list[Component]:
     """The manifest components this run touched, in manifest order (#447).
 
     ``scheduled`` is every component handed to the executor, which covers
@@ -295,7 +314,7 @@ def classify_merges(manifest: Manifest, merged: dict[str, str]) -> dict[str, str
     return result
 
 
-def _merge_columns(manifest: Manifest, factory_result: FactoryResult) -> tuple[str, str]:
+def _merge_columns(manifest: Manifest, factory_result: RunOutcome) -> tuple[str, str]:
     """The experiments.tsv ``merged``/``clean_merged`` columns for one run (#601).
 
     ``merged`` counts only merges this run confirmed (``factory_result.merged``),
@@ -345,7 +364,7 @@ class EvolutionJournal(JournalReads):
         self,
         run_id: str,
         manifest: Manifest,
-        factory_result: FactoryResult,
+        factory_result: RunOutcome,
         usage_by_component: dict[str, dict[str, dict[str, Any]]] | None = None,
         run_usage: dict[str, Any] | None = None,
         failure_signatures: dict[str, list[str]] | None = None,

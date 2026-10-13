@@ -8,9 +8,6 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NoReturn
 
-from kstrl.agents.base import (
-    ARCHITECT_COMPONENT,
-)
 from kstrl.decisions import (
     SpecDecision,
     escalations,
@@ -47,6 +44,7 @@ from kstrl.spec_issues import (
     _surface_spec_issues,
     persist_spec_issues,
 )
+from kstrl.usage import ARCHITECT_COMPONENT
 
 if TYPE_CHECKING:
     from kstrl.requirements import SpecRequirement

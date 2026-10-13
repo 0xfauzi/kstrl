@@ -11,11 +11,11 @@ from __future__ import annotations
 import io
 from pathlib import Path
 
-from kstrl.agents.base import ARCHITECT_COMPONENT, ARCHITECT_ROLE
 from kstrl.agents.prompt_record import AgentCall
 from kstrl.commandrun import CommandRun, open_command_run
 from kstrl.events import RunPaths
 from kstrl.ui.plain import PlainUI
+from kstrl.usage import ARCHITECT_COMPONENT, ARCHITECT_ROLE
 
 TEST_RUN_ID = "test-run"
 

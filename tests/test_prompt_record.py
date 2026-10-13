@@ -25,12 +25,6 @@ from click.testing import CliRunner
 
 from kstrl import factory_worker
 from kstrl.agents import prompt_record
-from kstrl.agents.base import (
-    ARCHITECT_COMPONENT,
-    ARCHITECT_ROLE,
-    INTEGRATION_COMPONENT,
-    INTEGRATION_ROLE,
-)
 from kstrl.agents.claude_code import ClaudeCodeAgent
 from kstrl.agents.claude_sdk import ClaudeSdkAgent
 from kstrl.agents.codex import CodexAgent
@@ -47,6 +41,12 @@ from kstrl.init_cmd import gitignore_block, run_init
 from kstrl.runid import run_kind
 from kstrl.safemode import safe_mode_reasons
 from kstrl.ui.plain import PlainUI
+from kstrl.usage import (
+    ARCHITECT_COMPONENT,
+    ARCHITECT_ROLE,
+    INTEGRATION_COMPONENT,
+    INTEGRATION_ROLE,
+)
 from kstrl.version import kstrl_version
 from tests.helpers import gitrepo
 from tests.helpers import integration_harness as h

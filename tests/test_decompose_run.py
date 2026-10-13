@@ -12,12 +12,12 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl.agents.base import ARCHITECT_COMPONENT, ARCHITECT_ROLE, UsageRecord
 from kstrl.commandrun import open_command_run
 from kstrl.decompose import decompose_spec
 from kstrl.decompose_audit import SpecBlockerError
 from kstrl.reducer import load_run_state
 from kstrl.ui.plain import PlainUI
+from kstrl.usage import ARCHITECT_COMPONENT, ARCHITECT_ROLE, UsageRecord
 from tests.helpers.before_spend import no_base_check
 from tests.helpers.prompt_calls import architect_call
 from tests.helpers.rootperms import skip_as_root

@@ -395,8 +395,8 @@ EXPECTED_DURATION_WRITE_SITES: dict[str, int] = {
     "manifest.py:reset_for_retry": 1,  # the --reset path zeroes it
     "review.py:run_review": 3,  # ReviewResult's own timing
     "security.py:run_security_review": 1,  # SecurityResult's own timing
-    "agents/base.py:add_record": 1,  # usage totals, not a component
-    "agents/base.py:merge": 1,  # usage totals, not a component
+    "usage.py:add_record": 1,  # usage totals, not a component
+    "usage.py:merge": 1,  # usage totals, not a component
 }
 
 

@@ -5,7 +5,6 @@ from __future__ import annotations
 import time
 
 from kstrl.acceptance_lines import pr_isolation
-from kstrl.agents.base import print_usage_rollup
 from kstrl.event_catalog import RunCompleted
 from kstrl.factory_autonomy import _record_autonomy
 from kstrl.factory_result import (
@@ -21,6 +20,7 @@ from kstrl.manifest import ComponentStatus
 from kstrl.pipeline_state import iso_now
 from kstrl.pr import create_prs_in_order, create_single_pr
 from kstrl.release import RELEASE_REF_RULE, ReleaseInputs, release_ref_from, release_withheld
+from kstrl.usage import print_usage_rollup
 
 
 def _finish_run(ctx: RunContext) -> FactoryResult:

@@ -7,9 +7,9 @@ import time
 from collections.abc import Iterator
 from pathlib import Path
 
-from kstrl.agents.base import UsageRecord
 from kstrl.agents.proc import DeadlineStreamer, timeout_message
 from kstrl.agents.prompt_record import record_prompt
+from kstrl.usage import UsageRecord
 
 
 class CustomAgent:

@@ -37,7 +37,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from kstrl.agents.base import ARCHITECT_COMPONENT, ARCHITECT_ROLE
 from kstrl.findings import Finding
 from kstrl.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.manifest import (
@@ -87,6 +86,7 @@ from kstrl.serve_spend import (
 #: gets the stub instead of the function under test - which silently made
 #: the empty-run-id test pass no matter what the function did.
 from kstrl.serve_spend import read_run_spend as REAL_READ_RUN_SPEND
+from kstrl.usage import ARCHITECT_COMPONENT, ARCHITECT_ROLE
 from kstrl.workqueue import Queue
 from kstrl.workqueue_items import ItemSource, ItemState, MergeDisposition, QueueConfig, QueueItem
 from tests.helpers import procs

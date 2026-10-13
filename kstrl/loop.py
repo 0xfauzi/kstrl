@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from kstrl import git, git_tree, guards, statedir
-from kstrl.agents.base import UsageTotals, collect_usage
 from kstrl.agents.proc import TIMEOUT_MESSAGE_PREFIX
 from kstrl.breaker import BreakerConfig, NoProgressBreaker
 from kstrl.event_catalog import IterationCompleted, IterationStarted
@@ -32,6 +31,7 @@ from kstrl.loop_budget import LoopBudget
 from kstrl.loop_setup import capture_guard_baseline, print_startup
 from kstrl.prd import PRD
 from kstrl.timeout import TimeoutConfig
+from kstrl.usage import UsageTotals, collect_usage
 from kstrl.verify_model import VerifyConfig
 
 if TYPE_CHECKING:

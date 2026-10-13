@@ -15,15 +15,7 @@ from kstrl.agent_output import (
     extract_agent_json,
     timed_out_message,
 )
-from kstrl.agents.base import (
-    ARCHITECT_COMPONENT,
-    ARCHITECT_ROLE,
-    Agent,
-    collect_usage,
-    print_usage_rollup,
-    timed_out_since,
-    usage_cursor,
-)
+from kstrl.agents.base import Agent
 from kstrl.agents.prompt_record import AgentCall, recording_prompts
 from kstrl.config import KstrlConfig, relative_to_root
 from kstrl.decisions import (
@@ -71,6 +63,14 @@ from kstrl.manifest import (
 from kstrl.owner_answers import OwnerAnswers, read_owner_answers
 from kstrl.stack import (
     stack_text_digest,
+)
+from kstrl.usage import (
+    ARCHITECT_COMPONENT,
+    ARCHITECT_ROLE,
+    collect_usage,
+    print_usage_rollup,
+    timed_out_since,
+    usage_cursor,
 )
 
 logger = logging.getLogger(__name__)
