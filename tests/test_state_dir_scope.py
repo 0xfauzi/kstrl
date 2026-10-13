@@ -60,6 +60,7 @@ from kstrl.statedir import (
 from kstrl.ui.plain import PlainUI
 from kstrl.verify_diff import _diff_scope_details, check_diff_scope
 from tests.helpers import astwalk, gitrepo
+from tests.helpers.astwalk.reexport import import_base
 from tests.test_loop import MockAgent
 
 PROJECT = Path("/project")
@@ -539,6 +540,12 @@ def _imported_names(source_file: Path) -> set[str]:
     ``bindings`` keeps the FIRST binding of a name and a module
     importing one name twice would lose the second edge. ``ast.Import``
     is read off the node: an absolute import is written out in full.
+
+    THE MODULE AFTER ``from`` IS AN EDGE TOO (#863 B4). ``bindings``
+    stores the DEFINING module of a re-export, thus ``from kstrl.agents
+    import Path`` gives ``pathlib.Path`` and no ``kstrl`` name. But the
+    import executes ``kstrl/agents/__init__.py``, and that file imports
+    each agent module. Without the base, that edge is dropped.
     """
     package = astwalk.KSTRL_PACKAGE.name
     module = astwalk.module_name(source_file)
@@ -547,14 +554,21 @@ def _imported_names(source_file: Path) -> set[str]:
         if isinstance(node, ast.Import):
             found.update(a.name for a in node.names if a.name.startswith(package))
         elif isinstance(node, ast.ImportFrom):
-            table = astwalk.bindings(astwalk.parse(ast.unparse(node)), module=module)
-            found.update(
-                part
-                for origin in table.origins.values()
-                if origin.startswith(package)
-                for part in (origin, origin.rsplit(".", 1)[0])
-            )
+            found.update(_from_edges(node, module, package))
     return found
+
+
+def _from_edges(node: ast.ImportFrom, module: str, package: str) -> set[str]:
+    """The ``kstrl.*`` names one ``from ... import`` reaches: the module
+    after ``from``, and each origin with its parent."""
+    table = astwalk.bindings(astwalk.parse(ast.unparse(node)), module=module)
+    names = {import_base(node, module), *table.origins.values()}
+    return {
+        part
+        for name in names
+        if name.startswith(package)
+        for part in (name, name.rsplit(".", 1)[0])
+    }
 
 
 def _import_closure(module: str) -> set[str]:
@@ -654,6 +668,17 @@ class TestNothingTheLoopRunsWritesTheUncarvedEntries:
         parent was not walked, thus both edges were dropped."""
         closure = _import_closure("kstrl.agents.base")
         assert {"kstrl.agents", "kstrl.agents.codex"} <= closure
+
+    def test_a_re_export_from_outside_the_package_keeps_the_package_edge(
+        self, tmp_path: Path
+    ) -> None:
+        """#863 B4. ``kstrl/agents/__init__.py`` re-exports ``pathlib.Path``,
+        thus ``bindings`` gives ``pathlib.Path`` and no ``kstrl`` name. The
+        import still executes the ``__init__.py``. Without the base of the
+        ``from``, the closure held only the module itself."""
+        source = tmp_path / "importer.py"
+        source.write_text("from kstrl.agents import Path\n", encoding="utf-8")
+        assert "kstrl.agents" in _imported_names(source)
 
 
 class TestSignalsCannotReachTheQueue:

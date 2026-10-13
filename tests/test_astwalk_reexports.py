@@ -140,6 +140,8 @@ class TestAProvableReExportIsFollowed:
 GUESSED_INITS = {
     "a star import": "from app.io.statedir import *\n",
     "a module __getattr__": PROVEN + "def __getattr__(name):\n    raise AttributeError(name)\n",
+    "a module __getattr__ bound by an assignment": PROVEN + "__getattr__ = lambda name: None\n",
+    "a module __getattr__ bound by an import": PROVEN + "from app.lib import __getattr__\n",
     "a globals() call": PROVEN + "globals()['ControlStateError'] = 1\n",
     "a binding in an if": "import sys\nif sys:\n    " + PROVEN,
     "a binding in a try": "try:\n    "

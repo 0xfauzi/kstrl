@@ -275,11 +275,21 @@ def _is_dynamic(tree: ast.Module) -> bool:
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "__getattr__":
             return True
+        if _binds_getattr(node):
+            return True
         if isinstance(node, ast.Call) and _leaf(node.func) in _DYNAMIC_CALLS:
             return True
         if isinstance(node, ast.Attribute) and node.attr == "modules":
             return True
     return False
+
+
+def _binds_getattr(node: ast.AST) -> bool:
+    """A module ``__getattr__`` that is not a ``def``: an assignment
+    (``__getattr__ = lambda name: ...``), a tuple target, or an import."""
+    if isinstance(node, ast.Name):
+        return node.id == "__getattr__" and isinstance(node.ctx, ast.Store)
+    return isinstance(node, ast.alias) and (node.asname or node.name) == "__getattr__"
 
 
 def _leaf(callee: ast.expr) -> str | None:
