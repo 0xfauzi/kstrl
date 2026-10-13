@@ -26,7 +26,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.config_preflight import collect_config_problems, load_or_report
+from kstrl.config_preflight import collect_config_problems
 from kstrl.config_resolve import raise_if_defect, resolve_or_report
 from kstrl.evolution_config import EVOLUTION_SECTION
 from tests.helpers import astwalk
@@ -216,28 +216,6 @@ class TestSharedGuard:
         assert problem is None
         assert config is not None
         assert config.lookback_runs == 3
-
-    def test_an_unenrolled_loader_is_a_defect_not_a_message(self, tmp_path: Path) -> None:
-        """The label comes from config_sections(), so a screen cannot
-        invent a section the entry check does not know.
-
-        Raised on the FAILURE path only: the lookup moved into the
-        except branch because `config_sections()` costs a measured
-        6.2 ms on its first call and the happy path never needs a
-        label. An unenrolled loader that resolves cleanly has nothing
-        to mislabel.
-        """
-
-        def _rejecting_unenrolled_loader(_root: Path) -> int:
-            raise ValueError("nope")
-
-        with pytest.raises(LookupError):
-            load_or_report(_rejecting_unenrolled_loader, tmp_path, blame_env=False)
-
-        def _clean_unenrolled_loader(_root: Path) -> int:
-            return 1
-
-        assert load_or_report(_clean_unenrolled_loader, tmp_path, blame_env=False) == (1, None)
 
     def test_a_bare_runtimeerror_is_re_raised_not_blamed_on_the_operator(
         self,

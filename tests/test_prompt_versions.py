@@ -154,6 +154,7 @@ from tests.helpers.builder_prompts import (
     BUILDER_VERSIONS,
 )
 from tests.helpers.component_prd import write_component_prd
+from tests.helpers.diffstat import DEFAULT_PROMPT_DIFF_CHAR_LIMIT
 from tests.helpers.feedforward_prompts import (
     NOTICE_PROMPTS,
     NOTICE_RENDERERS,
@@ -513,14 +514,12 @@ _MARKER_TAIL = "<<<H3-RENDER-GUARD-END>>>"
 #: found all nine guards green: the marker never reached the cap, so
 #: truncation was invisible to a test whose comment claimed it caught
 #: truncation. A renderer reintroducing a size cap ships a clipped role
-#: prompt, and ``git_diff.truncate_diff_for_prompt`` already exists and is
-#: used at other paste sites, so this is a live shape rather than a
-#: hypothetical one.
+#: prompt, which is a live shape rather than a hypothetical one.
 #:
 #: The honest limit: this catches any cap at or below the marker length.
 #: A renderer that capped ABOVE it would still pass, and no fixed marker
 #: can close that.
-_ORPHAN_MARKER = _MARKER_HEAD + "." * (git_diff.DEFAULT_PROMPT_DIFF_CHAR_LIMIT + 1) + _MARKER_TAIL
+_ORPHAN_MARKER = _MARKER_HEAD + "." * (DEFAULT_PROMPT_DIFF_CHAR_LIMIT + 1) + _MARKER_TAIL
 
 
 def _decisions_context_render(_tmp_path: Path) -> str:

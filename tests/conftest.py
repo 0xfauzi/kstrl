@@ -285,40 +285,6 @@ def guard_repo_kstrl_state() -> Generator[None, None, None]:
 
 
 @pytest.fixture
-def temp_project(tmp_path: Path) -> Generator[Path, None, None]:
-    """Create a temporary project directory with kstrl structure."""
-    kstrl_dir = tmp_path / "scripts" / "kstrl"
-    kstrl_dir.mkdir(parents=True)
-
-    # Create minimal prompt.md
-    (kstrl_dir / "prompt.md").write_text("Test prompt\n")
-
-    # Create minimal prd.json
-    (kstrl_dir / "prd.json").write_text('{"branchName": "test-branch", "userStories": []}\n')
-
-    # Save current directory
-    original_dir = os.getcwd()
-    os.chdir(tmp_path)
-
-    yield tmp_path
-
-    # Restore directory
-    os.chdir(original_dir)
-
-
-@pytest.fixture
-def clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Clear kstrl-related environment variables.
-
-    Covers the legacy single-loop names plus the FACTORY_*/KSTRL_* config
-    families. The autouse ``isolate_kstrl_state`` fixture already clears
-    these for every test; this fixture remains for tests that want to
-    state the dependency explicitly.
-    """
-    _clear_kstrl_env(monkeypatch)
-
-
-@pytest.fixture
 def no_open_prs(monkeypatch: pytest.MonkeyPatch) -> None:
     """Hold the R10.7 open-PR bound open for a whole module.
 

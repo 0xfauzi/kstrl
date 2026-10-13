@@ -615,7 +615,6 @@ def run_factory(
     interaction: InteractionChannel | None = None,
     stop: StopController | None = None,
     run_id: str | None = None,
-    notify_capture_output: bool = False,
     architect_usage: UsageTotals | None = None,
     architect_run_id: str = "",
     run_lock: RunLock | None = None,
@@ -689,7 +688,6 @@ def run_factory(
             interaction=interaction,
             stop=stop,
             run_id_override=run_id,
-            notify_capture_output=notify_capture_output,
             architect_usage=architect_usage,
             architect_run_id=architect_run_id,
         )
@@ -805,7 +803,6 @@ def _run_factory_locked(
     interaction: InteractionChannel | None = None,
     stop: StopController | None = None,
     run_id_override: str | None = None,
-    notify_capture_output: bool = False,
     architect_usage: UsageTotals | None = None,
     architect_run_id: str = "",
 ) -> FactoryResult:
@@ -846,7 +843,6 @@ def _run_factory_locked(
         ui,
         bus,
         progress_log,
-        notify_capture_output,
         architect_run_id,
     )
     review_selection, security_selection = select_reviewers(

@@ -42,17 +42,6 @@ REASON_POLICY_DEPLOY_FALSE = "policy_deploy_false"
 REASON_LADDER_WITHHELD = "ladder_withheld"
 REASON_NO_DRIVER = "no_driver"
 
-RELEASE_WITHHELD_REASONS: tuple[str, ...] = (
-    REASON_RELEASE_DISABLED,
-    REASON_ENVIRONMENT_UNSET,
-    REASON_RUN_STOPPED,
-    REASON_RUN_NOT_CLEAN,
-    REASON_REF_UNRECORDED,
-    REASON_POLICY_DISABLED,
-    REASON_POLICY_DEPLOY_FALSE,
-    REASON_LADDER_WITHHELD,
-    REASON_NO_DRIVER,
-)
 
 #: One constant, referenced by ``factory.py`` and by the tests; never a
 #: literal at two sites.

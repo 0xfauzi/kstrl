@@ -248,8 +248,7 @@ EXPECTED_PROCESS_MODULES: dict[str, tuple[str, ...]] = {
     "retry_plan.py": ("subprocess",),
     "statedir.py": ("subprocess",),
     "temp_worktree.py": ("subprocess",),
-    "timeout.py": ("subprocess",),
-    # #433: `SubprocessError`, caught from `retry_plan.failed_branch_probe`
+    # #433: `SubprocessError`, caught from `retry_plan._failed_branch_probe`
     # (the retry scope preview). It creates no child itself.
     # #461: `subprocess.TimeoutExpired`, caught from `verify.run_scrubbed`,
     # which is what runs the `lsof` census. The module creates no child

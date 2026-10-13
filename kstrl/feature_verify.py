@@ -266,7 +266,6 @@ def report_verification(
     phase: str,
     *,
     loop_result: LoopResult | None = None,
-    stop_check: Callable[[], bool] | None = None,
     skip_reason: str | None = None,
     baseline_failing: frozenset[str] = frozenset(),
 ) -> frozenset[str]:
@@ -300,7 +299,7 @@ def report_verification(
 
     ``loop_result`` carries the exit-path rule, and both halves of it are
     refusals. ``None`` means the pre-implement BASELINE, which is not
-    about a loop and is subject only to the stop check.
+    about a loop and is subject to no exit-path rule.
 
     ``iterations == 0`` is a loop that never called the agent (a failed
     branch checkout, a stop before iteration 1). Every early return
@@ -310,12 +309,8 @@ def report_verification(
     over work that was never attempted is noise.
 
     ``exit_code == 130`` is the operator pressing stop between
-    iterations. ``stop_check`` is the same refusal one iteration earlier:
-    ``run_loop`` returns that code only from its top-of-iteration probe
-    (#288 review), so a stop pressed DURING the final iteration comes
-    back as an ordinary exit 0 and the flag is still set here. Either
-    way, making somebody who pressed stop wait out a test suite is the
-    opposite of what they asked for: measured on this repo, 246s.
+    iterations. Making somebody who pressed stop wait out a test suite
+    is the opposite of what they asked for: measured on this repo, 246s.
 
     A stop pressed during the measurement itself is NOT cancellable. It
     is bounded by ``3 x [verify] subprocess_timeout`` when that is set,
@@ -340,8 +335,6 @@ def report_verification(
     if loop_result is not None and (
         loop_result.iterations == 0 or loop_result.exit_code == STOP_EXIT_CODE
     ):
-        return baseline_failing
-    if stop_check is not None and stop_check():
         return baseline_failing
     if verify_config is None:
         # ``--no-verify``, the same sentinel `ks run` and `ks factory`

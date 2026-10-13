@@ -15,7 +15,7 @@ from kstrl.config import KstrlConfig
 from kstrl.config_report import UI_MODES, build_config_report
 from kstrl.config_report import normalize_ui_mode as _normalize_ui_mode
 from kstrl.manifest import COMPONENT_STATUS_VALUES, Manifest
-from kstrl.observability import event_age_seconds, format_age, latest_run_id, read_progress_events
+from kstrl.observability import format_age, latest_run_id, read_progress_events
 from kstrl.procgroup import pid_is_alive
 from kstrl.reducer import (
     ComponentState,
@@ -207,14 +207,6 @@ def config_show(
         sys.exit(1)
 
     sys.exit(0)
-
-
-def _age_label(ts: str) -> str:
-    """ "5m ago" for an event timestamp, or "" when unparseable."""
-    age = event_age_seconds(ts)
-    if age is None:
-        return ""
-    return f"{format_age(age)} ago"
 
 
 def _age_label_epoch(ts: float) -> str:

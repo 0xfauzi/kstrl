@@ -82,17 +82,6 @@ class TestSubstrate:
         assert box.get(item.id[:8]) is not None
         assert box.get("nope") is None
 
-    def test_compact_preserves_state_and_shrinks_log(self, tmp_path: Path) -> None:
-        box = _box(tmp_path)
-        first = box.add(ItemKind.HALTED_RUN, "a", dedupe_key="a")
-        box.add(ItemKind.MERGE_GATE, "b", dedupe_key="b")
-        box.approve(first.id, actor="h")
-        before = len(box.path.read_text().strip().splitlines())
-        kept = box.compact()
-        after = len(box.path.read_text().strip().splitlines())
-        assert kept == 2 and after == 2 and after < before
-        assert box.get(first.id).status is ItemStatus.APPROVED  # type: ignore[union-attr]
-
 
 class TestDedupe:
     def test_repeat_while_open_bumps_occurrences(self, tmp_path: Path) -> None:

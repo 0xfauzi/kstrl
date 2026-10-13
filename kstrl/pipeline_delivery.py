@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
-from kstrl import event_catalog, git_diff
+from kstrl import event_catalog
 from kstrl.context import IterationContext
 from kstrl.inbox import (
     ItemKind,
@@ -34,10 +34,6 @@ from kstrl.worktree_sweep import sweep_findings
 
 if TYPE_CHECKING:
     from kstrl.factory_result import ComponentResult
-
-# PR A: the E6 checkpoint shows a real diff excerpt, not just the
-# review summary string. Bounded so a huge diff cannot flood the prompt.
-CHECKPOINT_DIFF_CHAR_LIMIT = 20_000
 
 #: The merge-gate park's inbox item text, which ``ks inbox show`` prints as it
 #: is. What the shell commands do is the shell's (#433 H7, K1).
@@ -121,7 +117,6 @@ class Delivery(MergeGate):
         if self.factory_config.create_prs and not self.factory_config.single_pr:
             checkpoint = self._phase_checkpoint(
                 comp,
-                diff_text=diff.diff,
                 review=review,
             )
             refusal = self._checkpoint_refusal(
@@ -346,13 +341,11 @@ class Delivery(MergeGate):
         self,
         comp: Component,
         *,
-        diff_text: str,
         review: ReviewPhaseResult,
     ) -> CheckpointDecision:
         """E6: human-in-the-loop checkpoint. When opt-in, prompt
-        before pushing+merging so a human can inspect the diff,
-        the review findings, and the security findings before
-        the PR goes through. Reject is terminal (R2.6): it marks
+        before pushing+merging so a human can inspect the review
+        findings before the PR goes through. Reject is terminal (R2.6): it marks
         the component FAILED and cascade-skips dependents with no
         retry and no re-prompt - routing it through the retry
         loop would re-run the full agent+review cycle and ask the
@@ -389,14 +382,7 @@ class Delivery(MergeGate):
             component_id=comp.id,
             checkpoint=CheckpointContext(
                 component_id=comp.id,
-                diff_excerpt=git_diff.truncate_diff_for_prompt(
-                    diff_text,
-                    CHECKPOINT_DIFF_CHAR_LIMIT,
-                )
-                if diff_text
-                else "",
                 review_findings=tuple(f for f in comp.findings if f.phase == "review"),
-                security_findings=tuple(f for f in comp.findings if f.phase == "security"),
                 usage=self.usage_totals_for(comp.id),
                 branch=comp.branch_name,
             ),

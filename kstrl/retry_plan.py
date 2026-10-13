@@ -175,7 +175,7 @@ def print_retry_plan(ui: UI, preview: RetryPreview, manifest_file: Path) -> None
         ui.kv("Branch", f"regenerated: {preview.kept_reason}")
 
 
-def failed_branch_probe(root_dir: Path, branch: str) -> int:
+def _failed_branch_probe(root_dir: Path, branch: str) -> int:
     """The exit code of ``git rev-parse --verify --quiet refs/heads/<branch>``.
 
     :func:`prepare_retry` deletes the failed branch only when this is 0.
@@ -251,7 +251,7 @@ def prepare_retry(
             "judges this commit again with no engineer; any change it makes is asked again."
         )
     elif failed_branch and not manifest.single_pr:
-        if failed_branch_probe(root_dir, failed_branch) == 0:
+        if _failed_branch_probe(root_dir, failed_branch) == 0:
             deleted = subprocess.run(
                 ["git", "branch", "-D", failed_branch],
                 cwd=root_dir,
@@ -452,13 +452,6 @@ def plan_resume(
         flags=tuple(flags.items()),
     )
     return plan, [], ()
-
-
-def limits_line(plan: ResumePlan) -> str:
-    """Every run limit the retry runs under, on one line, spelled as the
-    options that set them (#526)."""
-    set_ = [f"{_opt(name)} {value:g}" for name, value in plan.limits if value > 0]
-    return ", ".join(set_) if set_ else "no run limit"
 
 
 def not_replayed(plan: ResumePlan) -> tuple[str, ...]:

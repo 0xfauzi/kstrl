@@ -123,7 +123,7 @@ Every adversarial decision writes a record: review/security findings go to PR bo
 - **A mutation result that did not delete `__pycache__` first is not a result.** CPython invalidates bytecode on `(mtime_seconds, size)`, so two edits of the same size inside one second reuse stale bytecode and report a FALSE PASS. Every mutation measurement runs as `find . -name __pycache__ -type d -exec rm -rf {} + ; PYTHONDONTWRITEBYTECODE=1 uv run pytest ...`. This has produced a wrong answer in this repo more than once.
 - Shared AST-walking machinery for static guards lives in `tests/helpers/astwalk/` (#324), not hand-rolled per guard. Measure the fit before adopting it rather than assuming it: a lane that costed the migration for PR #341 found most of its helpers had no astwalk equivalent, several needing a parent map astwalk does not keep, being strictly top-down (`grep -rn parent tests/helpers/astwalk/` finds only `Path.parent`). `Bindings.attributes` marks an origin it inferred as `guessed`, and a `guessed` origin must not be enough to CLEAR.
 - Cross-module JSON extraction from agent output reuses `agent_output.extract_json` + `agent_output.select_agent_output`.
-- The review and security reviewers do NOT receive a diff: they run with `cwd` set to the worktree and are told to run git themselves (#266). Paste sites that remain (HITL checkpoint excerpt, knowledge distiller) truncate through `git_diff.truncate_diff_for_prompt`.
+- The review and security reviewers do NOT receive a diff: they run with `cwd` set to the worktree and are told to run git themselves (#266). The one paste site that remains, the knowledge distiller, cuts the diff at a literal 50,000 characters of its own.
 
 ### Gotchas
 

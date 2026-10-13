@@ -18,7 +18,7 @@ owner's and is open; a ledger is the artifact both answers read.
 Bugsink 2.6.0, run locally and captured (``tests/fixtures/signals/``),
 serves ``/api/canonical/0/issues/?project=<id>`` with fifteen fields per
 issue and 404s on both Sentry-shaped read paths. So there is one
-adapter, named for its tracker: ``fetch_bugsink`` / ``normalise_bugsink``.
+adapter, named for its tracker: ``_fetch_bugsink_text`` / ``normalise_bugsink``.
 ``Signal.tracker`` records the literal ``"bugsink"``; there is no
 ``tracker`` config key, because a key with exactly one legal value can
 never differ from its default and so can never satisfy
@@ -107,7 +107,7 @@ class SignalsConfig:
     exit 2 when it is false (#155 fix round A1; #452).
 
     ``token_env`` is the NAME of the environment variable holding the
-    tracker's bearer token, read at call time by ``fetch_bugsink`` - the
+    tracker's bearer token, read at call time by ``_fetch_bugsink_text`` - the
     same shape ``LinearConfig.token_env`` uses and for the same reason:
     ``kstrl.toml`` is a tracked file gitleaks scans, so there is no
     ``token`` field here at all.
@@ -520,11 +520,6 @@ def read_page_text(path: Path) -> str:
     return raw.decode("utf-8")
 
 
-def read_page_file(path: Path) -> Any:
-    """A captured or replayed tracker page, parsed."""
-    return read_json(read_page_text(path))
-
-
 def write_capture(path: Path, text: str) -> None:
     """Write a fetched page's raw text to ``path``, for later replay."""
     atomic_write_text(path, text)
@@ -565,14 +560,6 @@ def _fetch_bugsink_text(config: SignalsConfig) -> str:
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         raise SignalsError(f"signals: transport failure: {exc}") from exc
     return raw.decode("utf-8")
-
-
-def fetch_bugsink(config: SignalsConfig) -> list[dict[str, Any]]:
-    """One page of Bugsink's canonical issue list. Never returns ``[]``
-    for a failure - every transport or shape failure is a
-    :class:`SignalsError`, because the product of this slice is a count."""
-    text = _fetch_bugsink_text(config)
-    return _rows_from_document(read_json(text))
 
 
 # --- poll: fan-out, classify, append, report ------------------------------

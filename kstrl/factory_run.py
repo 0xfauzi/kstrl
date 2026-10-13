@@ -232,7 +232,6 @@ def _announce_run(
     ui: UI,
     bus: EventBus,
     progress_log: ProgressLog,
-    notify_capture_output: bool,
     architect_run_id: str,
 ) -> NotifyHooks:
     """Attach the Linear sink, make the notify hooks and emit the start events."""
@@ -256,7 +255,6 @@ def _announce_run(
         run_id=run_id,
         project=manifest.project_name,
         warn=ui.warn,
-        capture_output=notify_capture_output,
     )
 
     bus.emit(

@@ -56,7 +56,7 @@ row of ``TOML_PARSE_FAULTS`` across every command), and at the seam as the
 ``TOML_PARSE_FAULTS`` crossed with ``["status"]`` in
 ``test_config_preflight.py`` - which is why the seam test below covers
 only direction (b) rather than restating that cell. Direction (b)
-lives at :func:`load_or_report` in ``test_tui_config_guard.py``
+lives in ``test_config_defects_not_blamed.py``
 (``test_every_runtimeerror_kstrl_did_not_define_is_re_raised``) and
 raises a CONSTRUCTED ``RecursionError``, so no stack is ever
 exhausted.

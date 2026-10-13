@@ -2545,9 +2545,8 @@ class TestRunOwnership:
         exists to catch, so pin the third leg.
         """
         from kstrl.knowledge import current_run_id
-        from kstrl.runid import KNOWN_KINDS, run_kind
+        from kstrl.runid import run_kind
 
-        assert SPAWNED_RUN_KIND in KNOWN_KINDS
         assert run_kind(current_run_id()) == SPAWNED_RUN_KIND
 
     def test_an_architect_that_reached_no_run_dir_is_named_unmetered(

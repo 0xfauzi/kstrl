@@ -170,7 +170,7 @@ def section_detail(
     effect, so naming the file's key would send the operator to a line
     that changing does not help. ``blame_env`` False skips that question
     entirely rather than answering it unsafely; the caller that passes
-    False says why (``config_preflight.load_or_report``).
+    False says why (``RunEnvelope.resolve``).
     """
     message = str(exc)
     # Two statements, not one expression: the environment-then-file

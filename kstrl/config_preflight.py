@@ -65,7 +65,7 @@ from __future__ import annotations
 import os
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any
 
 from kstrl.autonomy_config import AUTONOMY_SECTION
 from kstrl.breaker import BREAKER_SECTION
@@ -81,7 +81,6 @@ from kstrl.config_resolve import (
     REJECTIONS,
     SURFACE_REJECTIONS,
     raise_if_defect,
-    resolve_or_report,
     section_detail,
 )
 from kstrl.config_section import ConfigSection
@@ -106,8 +105,6 @@ from kstrl.stack import STACK_SECTION, StackError
 from kstrl.timeout import TIMEOUT_SECTION
 from kstrl.verify_model import VERIFY_SECTION
 from kstrl.workqueue_items import QUEUE_SECTION
-
-T = TypeVar("T")
 
 
 def config_sections() -> list[ConfigSection[Any]]:
@@ -364,64 +361,3 @@ def config_problem_lines(
     except SURFACE_REJECTIONS as exc:
         raise_if_defect(exc)
         return [str(exc)]
-
-
-def load_or_report(
-    loader: Callable[[Path], T],
-    root_dir: Path,
-    *,
-    blame_env: bool,
-) -> tuple[T | None, str | None]:
-    """One section, resolved, or the line this module would have printed.
-
-    Exactly one of the pair is ever None. For a surface that loads a
-    section AFTER command entry and so has no seam in front of it to fail
-    on its behalf. The message is produced by the same ``section_detail`` the
-    entry check uses, so the same broken file reads the same way on both
-    surfaces; ``tests/test_config_defects_not_blamed.py`` pins the two
-    strings equal rather than trusting that.
-
-    ``blame_env`` is required rather than defaulted because getting it
-    wrong is not a cosmetic mistake. Naming the offending variable means
-    measuring it (``config_resolve``), and measuring it means clearing
-    ``os.environ``, which is PROCESS-WIDE. At command entry nothing else
-    of ours is running; on a screen a launched run may be on another
-    thread, spawning subprocesses that inherit the environment. Pass
-    False there and the line keeps everything except the variable's
-    name. ``RunEnvelope`` passes False.
-
-    Wider than :data:`REJECTIONS` by ``OSError``: see
-    :data:`SURFACE_REJECTIONS`.
-    """
-    # Scoped per call, never across calls: a screen's refresh action
-    # exists to see the file as it is NOW (see ``toml_parse_scope``).
-    with toml_parse_scope():
-        try:
-            return loader(root_dir), None
-        except SURFACE_REJECTIONS as exc:
-            # Looked up HERE, not before the try: only the failure path
-            # needs a label. An unenrolled loader still raises
-            # LookupError, on the path that would have had to name it,
-            # and a RuntimeError kstrl did not define is raised again
-            # first. The registry entry then reports the rejection.
-            raise_if_defect(exc)
-            return resolve_or_report(_section_for(loader), root_dir, blame_env=blame_env)
-
-
-def _section_for(loader: Callable[[Path], Any]) -> ConfigSection[Any]:
-    """The registry entry for ``loader``.
-
-    A caller passes the loader rather than a section name so that it
-    cannot label itself with a section the entry check does not know,
-    and so that the label and the blame helpers come from the one table
-    :func:`config_sections` already keeps complete.
-
-    Compared with ``==``, not ``is``: ``EvolutionConfig.load`` is a bound
-    classmethod and Python builds a fresh object on every attribute
-    access, so ``is`` is False even for the same method, while ``==``
-    compares ``__func__`` and ``__self__``.
-    """
-    for section in config_sections():
-        if section.loader == loader:
-            return section
-    raise LookupError(f"{loader!r} is not a loader config_sections() names")

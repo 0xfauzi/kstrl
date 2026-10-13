@@ -61,8 +61,8 @@ THE ``**kwargs`` ROW is here because a walk that clears
 was never handed enough information to answer: the dict merged in at the
 call site can hold ``encoding=``, ``errors=`` or ``text=`` this walk never
 sees, so no explicit keyword on the same call describes the site's real
-behaviour either. ``kstrl/timeout.py``'s ``run_with_timeout`` is the live
-instance: it names ``encoding="utf-8"`` explicitly and ALSO forwards
+behaviour either. ``kstrl/timeout.py``'s ``run_with_timeout`` (removed by #863
+A2) was the live instance: it names ``encoding="utf-8"`` explicitly and ALSO forwards
 ``**kwargs`` to the same call, so a caller passing ``errors="replace"``
 through those kwargs would silently un-strict a site this walk would
 otherwise have called clear.

@@ -482,29 +482,6 @@ class LinearClient:
             raise
         return self._issue_ref(data, "issueCreate")
 
-    def update_issue(self, issue_id: str, title: str, description: str) -> IssueRef:
-        """Update an existing issue's title and description."""
-        query = (
-            "mutation IssueUpdate($id: String!, $input: IssueUpdateInput!) {"
-            " issueUpdate(id: $id, input: $input) {"
-            " success issue { id identifier } } }"
-        )
-        variables = {
-            "id": issue_id,
-            "input": {
-                "title": title[:_MAX_TITLE_CHARS],
-                "description": description,
-            },
-        }
-        dry_data = {
-            "issueUpdate": {
-                "success": True,
-                "issue": {"id": issue_id, "identifier": "DRY-UPDATED"},
-            }
-        }
-        data = self.execute("issueUpdate", query, variables, dry_data)
-        return self._issue_ref(data, "issueUpdate")
-
     def get_issue(self, issue_id: str) -> IssueRef | None:
         """Fetch an issue by UUID; None when absent or on any failure.
 
@@ -685,42 +662,6 @@ def sync_decompose(
             warn(f"linear: triage issue for spec finding failed: {exc}")
 
     return sync
-
-
-def resync_components(
-    manifest: Manifest,
-    components: list[dict[str, Any]],
-    config: LinearConfig,
-    client: LinearClient,
-    warn: Callable[[str], None],
-) -> None:
-    """Push updated titles/stories to issues a manifest already maps.
-
-    The UPDATE half of the idempotency contract: when a manifest
-    component already carries a Linear issue id, a re-sync must mutate
-    that issue in place, never create a sibling. Never raises.
-    """
-    by_id = {str(c.get("id", "")): c for c in components}
-    for comp in manifest.components:
-        if not comp.linear_issue_id:
-            continue
-        comp_data = by_id.get(comp.id)
-        if comp_data is None:
-            continue
-        external_key = f"{manifest.linear_sync_key}:{comp.id}"
-        description = str(comp_data.get("description", comp.description))
-        checklist = _story_checklist(comp_data)
-        if checklist:
-            description = f"{description}\n\n{checklist}"
-        description += _external_key_footer(external_key)
-        try:
-            client.update_issue(
-                comp.linear_issue_id,
-                title=str(comp_data.get("title", comp.title)),
-                description=description,
-            )
-        except LinearError as exc:
-            warn(f"linear: update of issue for '{comp.id}' failed: {exc}")
 
 
 # -- progress sink -----------------------------------------------------

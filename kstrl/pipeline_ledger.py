@@ -96,13 +96,6 @@ class UsageLedger(PipelineState):
     def adversarial_budget_consume(self) -> None:
         self._adversarial_calls += 1
 
-    def adversarial_budget_remaining(self) -> int | None:
-        """Calls left in the budget, or None when unbounded."""
-        cap = self.factory_config.max_adversarial_calls
-        if cap <= 0:
-            return None
-        return max(0, cap - self._adversarial_calls)
-
     def _record_usage(
         self,
         comp_id: str,

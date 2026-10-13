@@ -41,8 +41,3 @@ from __future__ import annotations
 from pathlib import Path
 
 TOOL_OUTPUT_DIR = Path(__file__).resolve().parent.parent / "tool_output"
-
-
-def tool_output(name: str) -> str:
-    """Captured output of one tool run, by file name."""
-    return (TOOL_OUTPUT_DIR / name).read_text(encoding="utf-8")

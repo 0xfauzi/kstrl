@@ -16,11 +16,10 @@ import io
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from kstrl.config import KstrlConfig
-from kstrl.event_catalog import Event
-from kstrl.events import CallbackSink, EventBus, V1CompatSink
+from kstrl.events import EventBus, V1CompatSink
 from kstrl.factory_agents import AdversarialAgentSelection
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult, FactoryResult
@@ -28,9 +27,7 @@ from kstrl.knowledge_facts import KnowledgeConfig
 from kstrl.manifest import Component, Manifest
 from kstrl.observability import NotifyConfig, NotifyHooks, ProgressLog
 from kstrl.pipeline import ComponentPipeline
-from kstrl.pipeline_checks import VerifyPhaseResult
 from kstrl.pipeline_state import PipelineHooks
-from kstrl.pipeline_transitions import FailureAction
 from kstrl.policy import PolicyConfig
 from kstrl.review import ReviewResult
 from kstrl.runenvelope import RunEnvelope
@@ -42,9 +39,6 @@ from kstrl.verify import run_mechanical_verification
 from kstrl.verify_model import VerificationResult, VerifyConfig
 from kstrl.worktree_sweep import WorktreeSweep
 from tests.helpers.stack_confirmation import in_process_stack
-
-if TYPE_CHECKING:
-    from kstrl.verify_model import CheckResult
 
 #: Only the gates that cost nothing: three ``true`` commands, no PRD, no
 #: pattern scan. Everything else in Phase 1 defaults off.
@@ -170,58 +164,6 @@ def _pipeline(
             worktree_paths={c.id: root for c in comps},
         ),
     )
-
-
-def phase_verify_action(root: Path, failing: list[CheckResult]) -> tuple[FailureAction, str]:
-    """``(action, error)`` the REAL ``_phase_verify`` routes to.
-
-    Drives ``ComponentPipeline._phase_verify`` rather than re-deriving
-    the condition in the test: a test that reimplements the branch it
-    checks passes when the branch is deleted. Through
-    :func:`phase_verify_surfaces`, so the shape of that call - which
-    ``ComponentResult`` fields Phase 1 needs - is written once in this
-    file and not twice.
-    """
-    surfaces = phase_verify_surfaces(root, VerificationResult(passed=False, checks=failing))
-    assert surfaces.result.failure is not None
-    return surfaces.result.failure.action, surfaces.result.failure.error
-
-
-@dataclass(frozen=True)
-class PhaseVerifySurfaces:
-    """Everything one ``_phase_verify`` call left behind.
-
-    ``phase_verify_action`` answers "what did Phase 1 route to".
-    This answers "what did an operator and an event consumer see",
-    which is the question #306's not-measured sidecar exists for.
-    """
-
-    result: VerifyPhaseResult
-    narration: str
-    events: list[Event]
-
-
-def phase_verify_surfaces(
-    root: Path,
-    verification: VerificationResult,
-) -> PhaseVerifySurfaces:
-    """Drive the REAL ``_phase_verify`` over ``verification``.
-
-    The hook is stubbed to return ``verification`` unchanged, so the
-    aggregation is not re-run here; what is exercised is everything
-    Phase 1 does with the object afterwards.
-    """
-    comp = component()
-    narration = io.StringIO()
-    events: list[Event] = []
-    pipeline = _pipeline(root, comp, verification, ui=PlainUI(no_color=True, file=narration))
-    pipeline.bus.add_sink(CallbackSink(events.append))
-    result = pipeline._phase_verify(
-        comp,
-        ComponentResult(comp.id, success=True, iterations=1, duration_seconds=1.0),
-        root,
-    )
-    return PhaseVerifySurfaces(result, narration.getvalue(), events)
 
 
 @dataclass(frozen=True)

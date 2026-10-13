@@ -1,9 +1,7 @@
 # kstrl Environment Variables Reference
 
-> Rename note (2026-07-20): ``KSTRL_*`` is the primary namespace. The
-> legacy ``KSTRL_*`` spelling of every variable below is honored for one
-> release with a DeprecationWarning (see ``kstrl/envcompat.py``). Bare
-> ``FACTORY_*`` names remain accepted for the factory family.
+> ``KSTRL_*`` is the namespace. Bare ``FACTORY_*`` names are accepted for
+> the factory family.
 
 Every config dataclass has a `from_env()` classmethod that reads env vars, and a `load(root_dir)` classmethod that overlays env on top of `kstrl.toml` (env wins). This doc enumerates every variable the harness consults.
 

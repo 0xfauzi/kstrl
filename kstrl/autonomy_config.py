@@ -178,15 +178,6 @@ class AutonomyConfig:
 AUTONOMY_SECTION = ConfigSection(("autonomy",), AutonomyConfig)
 
 
-def effective_level(state: AutonomyState, config: AutonomyConfig) -> AutonomyLevel:
-    """The level actually in force: stored level clamped by ``max_level``.
-
-    Clamping here (rather than rewriting state) keeps the earned level
-    intact when an operator temporarily lowers the ceiling.
-    """
-    return AutonomyLevel(min(state.level, config.max_level))
-
-
 def envelope_ceiling(policy_enabled: bool) -> AutonomyLevel:
     """The highest level defensible given the R8.1 envelope's state.
 

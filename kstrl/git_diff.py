@@ -139,11 +139,6 @@ def get_diff_name_status(
     return []
 
 
-def _parse_name_status_z(output: str) -> list[str]:
-    """Flat, deduped path list from `git diff --name-status -z` output."""
-    return _unique_paths(path for _, path in _parse_name_status_records(output))
-
-
 def _get_stored_diff(base_ref: str, cwd: Path | None, timeout: float) -> str:
     """The diff of the bytes git stores for every changed file (#695).
 
@@ -604,32 +599,3 @@ def get_diff_stat(
     return diffstat_from_numstat(
         get_diff_numstat(base_branch, cwd, timeout, strict=True, resolved=resolved),
     )
-
-
-# House budget for diff content injected into LLM prompts, and the
-# default of :func:`truncate_diff_for_prompt`.
-#
-# #266 removed its last enforcing caller: the review and security
-# prompts no longer carry a diff at all, because they read the worktree
-# they already run in. The two paste sites that remain both name their
-# own number - the HITL checkpoint passes CHECKPOINT_DIFF_CHAR_LIMIT
-# (20,000) and the knowledge distiller cuts at a literal 50,000 of its
-# own - so nothing in kstrl/ reads this value today. It is kept as the
-# documented house limit and as the function's default rather than
-# deleted, so a future paste site has one number to adopt instead of
-# inventing a third.
-DEFAULT_PROMPT_DIFF_CHAR_LIMIT = 50_000
-
-
-def truncate_diff_for_prompt(
-    diff_content: str,
-    limit: int = DEFAULT_PROMPT_DIFF_CHAR_LIMIT,
-) -> str:
-    """Truncate a diff string for inclusion in an LLM prompt.
-
-    Appends a single trailing line noting the truncation so the reviewer
-    knows it isn't seeing the full diff.
-    """
-    if len(diff_content) <= limit:
-        return diff_content
-    return diff_content[:limit] + f"\n... (diff truncated at {limit // 1000}KB)"

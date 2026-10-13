@@ -131,24 +131,3 @@ TOML_PARSE_FAULTS = [
     )
     for name, body, fragment, skip in _FAULTS
 ]
-
-#: ``(name, bytes, fragment)`` for the faults that RUN on this
-#: interpreter, for the one test that has to compare across all of them
-#: in a single body rather than through parametrize.
-ACTIVE_FAULTS: list[tuple[str, bytes, str]] = [
-    (name, body, fragment) for name, body, fragment, skip in _FAULTS if skip is None
-]
-
-#: Every fragment any handler can produce.
-#:
-#: This is what makes a fault's message assertable EXCLUSIVELY - "says
-#: its own fragment and none of the others" - rather than only
-#: inclusively. The distinction is the whole ordering guarantee: move the
-#: broad handler above the specific ones and each message still contains
-#: SOMETHING, so an inclusive assertion is only caught on the wrong
-#: fragment, and an assertion merely that the messages differ catches
-#: nothing at all. (It cannot: every message interpolates the file path,
-#: and the faults are written to different paths. A first cut asserted
-#: exactly that and was vacuous - it passed with all handlers collapsed
-#: into one.)
-ALL_FRAGMENTS: frozenset[str] = frozenset(frag for _, _, frag, _ in _FAULTS)

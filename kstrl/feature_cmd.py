@@ -36,7 +36,6 @@ import copy
 import json
 import os
 import time
-from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -308,7 +307,6 @@ def run_feature(
     *,
     interaction: InteractionChannel | None = None,
     run: CommandRun,
-    stop_check: Callable[[], bool] | None = None,
 ) -> int:
     """Understand -> review gate -> implement -> repair loop.
 
@@ -317,7 +315,7 @@ def run_feature(
     projected onto the pseudo-component <feature_name> (phases
     understand / implement / repair-N; the gate as a checkpoint pair)
     and is who every phase's prompt is recorded for, so it is required
-    (#567); ``stop_check`` threads into every run_loop.
+    (#567).
     """
     # #700: a role with no sandbox is a warning in the run's events.jsonl.
     # The repair agent falls back to the engineer's command, which the
@@ -417,7 +415,6 @@ def run_feature(
                 breaker_config=breaker_config,
                 bus=bus,
                 interaction=interaction,
-                stop_check=stop_check,
                 guard_state_root=root_dir,
             )
     except Exception as exc:
@@ -562,7 +559,6 @@ def run_feature(
         root_dir,
         verify_config,
         "baseline",
-        stop_check=stop_check,
         skip_reason=baseline_skip_reason(run_config, root_dir),
     )
 
@@ -582,7 +578,6 @@ def run_feature(
                 breaker_config=breaker_config,
                 bus=bus,
                 interaction=interaction,
-                stop_check=stop_check,
                 guard_state_root=root_dir,
                 verify_config=verify_config,
             )
@@ -617,7 +612,6 @@ def run_feature(
         verify_config,
         "implement",
         loop_result=result,
-        stop_check=stop_check,
         baseline_failing=baseline_failing,
     )
     implementation_completed = result.completed and result.exit_code == 0
@@ -710,7 +704,6 @@ def run_feature(
                     breaker_config=breaker_config,
                     bus=bus,
                     interaction=interaction,
-                    stop_check=stop_check,
                     guard_state_root=root_dir,
                     verify_config=verify_config,
                 )
@@ -736,7 +729,6 @@ def run_feature(
             verify_config,
             f"repair-{attempt}",
             loop_result=repair_result,
-            stop_check=stop_check,
             baseline_failing=baseline_failing,
         )
         repair_completed = repair_result.completed and repair_result.exit_code == 0

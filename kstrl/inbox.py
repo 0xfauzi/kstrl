@@ -44,7 +44,6 @@ from pathlib import Path
 from typing import Any
 
 from kstrl.appendio import append_records
-from kstrl.atomicio import atomic_write_text
 from kstrl.config_numbers import check_numbers
 from kstrl.config_section import ConfigSection
 from kstrl.jsonread import read_json
@@ -394,8 +393,7 @@ class Inbox:
     """Append-only store over the XDG control-dir inbox log.
 
     Reads fold the log into current items; writes append one line. No
-    method rewrites history - ``compact`` exists but writes a fresh file
-    from the folded state and is never called implicitly.
+    method rewrites history.
     """
 
     def __init__(self, root_dir: Path, config: InboxConfig | None = None) -> None:
@@ -736,32 +734,6 @@ class Inbox:
         """
         cap = self.config.open_item_cap
         return cap > 0 and len(self.open_items()) >= cap
-
-    def compact(self) -> int:
-        """Rewrite the log as one line per item from the folded state.
-
-        Never called implicitly - history is the audit trail. Returns the
-        number of items retained. Atomic, through the one helper that
-        owns that pattern (#291).
-        """
-        ensure_control_state(self.root_dir)
-        path = self.path
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with control_lock(self.root_dir):
-            items = self.items()
-            atomic_write_text(
-                path,
-                "".join(
-                    json.dumps(
-                        {"schema_version": INBOX_SCHEMA_VERSION, **item.to_dict()},
-                        separators=(",", ":"),
-                        default=str,
-                    )
-                    + "\n"
-                    for item in items
-                ),
-            )
-        return len(items)
 
 
 def summarize(items: Sequence[InboxItem]) -> str:

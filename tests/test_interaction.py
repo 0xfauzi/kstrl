@@ -41,7 +41,7 @@ from tests.test_unanswered_gate_parks import EXPECTED_UNDECIDED_PROMPT_SITES
 
 class TestCheckpointContext:
     def test_pipeline_builds_full_context(self, tmp_path: Path) -> None:
-        """The E6 request carries diff/findings/usage - not just the
+        """The E6 request carries findings/usage - not just the
         review summary string (verified through a recording channel)."""
         from unittest.mock import patch
 
@@ -106,7 +106,6 @@ class TestCheckpointContext:
         assert req.component_id == "comp-a"
         ctx = req.checkpoint
         assert isinstance(ctx, CheckpointContext)
-        assert "+real diff" in ctx.diff_excerpt
         assert ctx.usage is not None
         assert ctx.usage.total_tokens == 1234
         assert ctx.branch == "kstrl/factory/comp-a"

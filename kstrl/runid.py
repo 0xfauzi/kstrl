@@ -14,10 +14,6 @@ which stays lexicographically chronological.
 
 from __future__ import annotations
 
-from typing import Final
-
-KNOWN_KINDS: Final = ("factory", "decompose", "feature", "understand")
-
 
 def mint_run_id(kind: str = "factory") -> str:
     import secrets

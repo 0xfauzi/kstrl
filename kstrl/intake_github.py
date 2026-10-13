@@ -83,8 +83,6 @@ from kstrl.workqueue_items import ItemSource, MergeDisposition, QueueError
 POLL_PAGE_SIZE = 30
 MAX_POLL_PAGES = 4
 MAX_POLL_LIMIT = 200
-#: Breadth to gather relative to the cap before stopping.
-POLL_OVERSCAN = 4
 
 
 def parse_issue_list(payload: str) -> tuple[list[RemoteIssue], str]:
@@ -378,10 +376,6 @@ class PlannedIssue:
     decision: Decision
     reason: str = ""
     authorization: Authorization | None = None
-
-    @property
-    def source_ref_for(self) -> str:
-        return ""
 
 
 def plan_sync(

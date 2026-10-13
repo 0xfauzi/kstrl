@@ -451,7 +451,7 @@ def gitignore_block() -> str:
 def _gitignore_state(root: Path) -> tuple[ScaffoldAction, str | None]:
     """What init would do to ``root``/.gitignore, and the text it read.
 
-    One decision for the write below and for ``gitignore_plan``. "keep" covers both "the block is already there" and
+    One decision for the write below. "keep" covers both "the block is already there" and
     "the file cannot be read as text", because init leaves both alone;
     the second is the one where the text comes back None.
     """
@@ -462,11 +462,6 @@ def _gitignore_state(root: Path) -> tuple[ScaffoldAction, str | None]:
     if existing is None or GITIGNORE_BLOCK_MARKER in existing:
         return "keep", existing
     return "append", existing
-
-
-def gitignore_plan(root: Path) -> ScaffoldAction:
-    """The scaffold preview's half of :func:`_gitignore_state`."""
-    return _gitignore_state(root)[0]
 
 
 def _ensure_gitignore(root: Path, ui: UI) -> None:
