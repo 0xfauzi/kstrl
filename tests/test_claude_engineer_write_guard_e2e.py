@@ -149,6 +149,7 @@ if not os.path.exists({str(out)!r}):
         event = {{"tool_name": tool, "tool_input": {{key: raw}}, "cwd": cwd}}
         lines.append(label + "=" + hook(tool, json.dumps(event)))
     lines.append("unparsable=" + hook("Write", "not json"))
+    lines.append("not-an-object=" + hook("Write", "[]"))
     empty = json.dumps({{"tool_name": "Write", "tool_input": {{}}}})
     lines.append("no-path=" + hook("Write", empty))
     away = {{"tool_name": "Write", "tool_input": {{"file_path": "escaped.txt"}},
@@ -189,7 +190,13 @@ def test_a_claude_engineer_s_file_tools_cannot_write_outside_the_worktree_and_st
     assert out.exists(), ran
     got = dict(line.split("=", 1) for line in out.read_text(encoding="utf-8").splitlines())
     want = {label: str(code) for label, _, _, code in _TARGETS}
-    want |= {"unparsable": "2", "no-path": "2", "cwd-outside": "2", "stalled": "2"}
+    want |= {
+        "unparsable": "2",
+        "not-an-object": "2",
+        "no-path": "2",
+        "cwd-outside": "2",
+        "stalled": "2",
+    }
     want |= {"hook-timeout": "600", "on-failure": "block"}
     assert got == want, ran
     assert not (tmp_path / "outside" / "escaped.txt").exists()
