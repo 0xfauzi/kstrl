@@ -9,7 +9,7 @@ from rich.console import Console
 from rich.prompt import Prompt
 from rich.text import Text
 
-from kstrl.ui import animated_art
+from kstrl.ui.animated_art import brand_mark
 
 if TYPE_CHECKING:
     from typing import TextIO
@@ -124,7 +124,7 @@ class RichUI:
         if not self._animations_enabled():
             return
         self.console.print(
-            Text(animated_art.brand_mark(), style="bold"),
+            Text(brand_mark(), style="bold"),
             justify="center",
         )
 
