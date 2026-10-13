@@ -25,12 +25,12 @@ shows up as an unexplained census delta rather than silence, and the
 per-site reason a human already read into :data:`REPLACE_SITES` is
 re-justified in this docstring rather than merely asserted.
 
-Four sites exist today (measured: ``uv run python3`` AST-walking
+Three sites exist today (measured: ``uv run python3`` AST-walking
 ``kstrl/`` for ``os.replace``/``shutil.move`` calls, resolving import
 aliases the way ``tests/helpers/astwalk`` does): one inside
 ``kstrl/atomicio.py`` itself (the canonical mode-preserving helper, exempt
 by construction - it is the thing every OTHER writer in the package is
-supposed to route through), and three outside it:
+supposed to route through), and two outside it:
 
 - ``kstrl/workqueue.py::WorkQueue.enqueue`` - ``os.replace(str(staging),
   str(directory))``. The destination NEVER pre-exists: `directory.exists()`
@@ -41,15 +41,11 @@ supposed to route through), and three outside it:
 - ``kstrl/workqueue.py::WorkQueue.transition`` (approximate name) -
   ``os.replace(str(source_dir), str(target_dir))``. Same shape: `if
   target_dir.exists(): raise QueueError(...)` guards it immediately above.
-- ``kstrl/statedir.py::_move_control_file`` - ``os.replace(src, dst)``.
-  Its own single caller, ``migrate_control_state``, checks ``dst_present``
-  and ``continue``s BEFORE calling this function at all, so ``dst`` never
-  pre-exists at the point this line runs either.
 
 SYMLINK IDENTITY is the other half of the property this file's subject
 shares with ``kstrl/atomicio.py`` (`os.replace` swaps the directory entry,
 so replacing over a symlinked destination turns it into a regular file),
-and does not arise at the three non-atomicio sites: each is a
+and does not arise at the two non-atomicio sites: each is a
 "destination never pre-exists" site, with nothing at the target path for
 `os.replace` to swap out from under.
 """
@@ -81,10 +77,6 @@ REPLACE_SITES: dict[str, str] = {
     "workqueue.py os.replace(str(source_dir), str(target_dir))": (
         "destination never pre-exists: `if target_dir.exists(): raise "
         "QueueError(...)` guards immediately above"
-    ),
-    "statedir.py os.replace(src, dst)": (
-        "destination never pre-exists: migrate_control_state checks "
-        "dst_present and `continue`s before calling this function at all"
     ),
 }
 

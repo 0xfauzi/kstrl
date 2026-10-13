@@ -68,7 +68,7 @@ CLI_MODULE = "cli.py"
 #: returns are exit codes too, so a function that moves keeps its census.
 CLI_SIBLING_PREFIX = "cli_"
 
-UI_CHOICES = ("auto", "rich", "plain", "gum")
+UI_CHOICES = ("auto", "rich", "plain")
 
 #: Leaf commands that take neither `--ui` nor `--no-color`, and why.
 UI_OPTION_EXEMPT: dict[tuple[str, ...], str] = {

@@ -224,7 +224,7 @@ class SpendLedger:
         if untrusted is not None:
             raise ServeStateError(
                 f"refusing to read the daemon spend ledger: {untrusted}. "
-                "Fix the control-state location or finish migrating "
+                "Fix the control-state location or move the "
                 "legacy `.kstrl/` control files before spending."
             )
         stamp = today or _local_today()

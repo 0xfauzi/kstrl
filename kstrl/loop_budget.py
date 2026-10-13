@@ -327,13 +327,3 @@ class LoopBudget:
             "; ".join(clauses)
             + ("; halting rather than spending under a cap that cannot fire (R8)"),
         )
-
-    def halt_reason(self, loop_usage: UsageTotals) -> str | None:
-        """The prose half of :meth:`halt_verdict`, or None.
-
-        Kept because the sentence is what the operator reads; callers
-        that need to ACT on the halt want the verdict instead, so the
-        condition and the ceiling identities do not have to be recovered
-        by parsing this string."""
-        verdict = self.halt_verdict(loop_usage)
-        return None if verdict is None else verdict.reason

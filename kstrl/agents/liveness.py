@@ -118,11 +118,6 @@ _TIMED_OUT = ProbeResult(live=False, detail=_TIMEOUT_DETAIL)
 _CACHE: dict[str, ProbeResult] = {}
 
 
-def reset_probe_cache() -> None:
-    """Forget every cached probe result (tests; long-lived processes)."""
-    _CACHE.clear()
-
-
 def probing_enabled() -> bool:
     """Whether liveness probing runs at all."""
     return _parse_bool(os.environ.get(PROBE_ENV_VAR, "1"))

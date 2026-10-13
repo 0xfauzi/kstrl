@@ -685,13 +685,11 @@ the queue as paused, because a factory that can edit its own budget
 ledger is not bounded by it.
 
 The detail line is the reason verbatim: `XDG_STATE_HOME` resolving under
-the repository, legacy in-tree control files left behind by a partial
-migration, a control file that is a symlink or resolves outside the
+the repository, legacy in-tree control files (kstrl names each one with its `mv` command), a control file that is a symlink or resolves outside the
 control directory, or a control directory that cannot be created or
 listed at all.
 
-To recover, point `XDG_STATE_HOME` outside the repository and finish the
-migration. See "Control plane (R8.9)" under
+To recover, point `XDG_STATE_HOME` outside the repository and move each named legacy file with the command in the message. See "Control plane (R8.9)" under
 [Where to find things](#where-to-find-things) for the exact layout, and
 note that L3+ autonomy refuses to run at all while this is unresolved.
 
@@ -829,7 +827,7 @@ not carry an order.
 - Distillation debug dumps: `.kstrl/knowledge/<comp>/<run>/_distill_raw.txt` (on failure)
 - Control plane (R8.9): `${XDG_STATE_HOME:-~/.local/state}/kstrl/<repo-id>/`
   (`autonomy.json`, `inbox.jsonl`, `spend.json`, `pause.json`,
-  `github_processed.json`). Marker `.kstrl/control_relocated` records where
-  legacy in-tree files were moved. L3+ autonomy refuses to proceed while
+  `github_processed.json`). kstrl does not move legacy in-tree files: it
+  refuses while one exists. L3+ autonomy refuses to proceed while
   control state still resolves under the repo.
 - Phase F sample real-world run log: `docs/phase-f-run-log.md`

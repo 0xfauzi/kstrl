@@ -407,7 +407,9 @@ class TestTheWalkAgainstTheRealPackage:
         carries a timeout. So 75. #700 adds one more: ``git.git_write_paths``'s
         ``git rev-parse --path-format=absolute --git-dir --git-common-dir``,
         the git paths a codex engineer writes when it commits. It carries a timeout.
-        So 76.
+        So 76. #863 A4 deletes four: the three git branch functions
+        (``create_branch_from``, ``delete_branch``, ``checkout_existing``) and
+        the sweep of a pre-R0.5 flat worktree. So 72.
         """
         spawns = frozenset(
             {
@@ -419,7 +421,7 @@ class TestTheWalkAgainstTheRealPackage:
             }
         )
         found = package_calls(spawns)
-        assert len(found.seen) == 76
+        assert len(found.seen) == 72
         assert found.without_line_numbers().undecided == tuple(
             sorted(
                 [

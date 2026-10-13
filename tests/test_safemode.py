@@ -37,7 +37,7 @@ def make_control_dir_untrusted(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Point XDG_STATE_HOME inside the repo, the documented untrusted case."""
-    from kstrl.statedir import clear_xdg_state_home_cache
+    from tests.helpers.xdg import clear_xdg_state_home_cache
 
     nested = root / "nested-xdg"
     nested.mkdir(parents=True, exist_ok=True)
@@ -620,15 +620,14 @@ class TestRoundTwoFindings:
         assert [r.source for r in reasons] == ["queue", "adversarial_skipped"]
         assert reasons[1].recovery == RECOVERY["adversarial_skipped"]
 
-    def test_legacy_control_files_are_migrated_before_any_reader(
+    def test_a_legacy_control_file_is_reported_once_with_its_move_command(
         self,
         tmp_path: Path,
     ) -> None:
-        """The control reader reported leftover legacy files as
-        untrusted, then the queue reader migrated them away through its
-        own ensure_control_state - leaving a reason whose recovery target
-        no longer existed by the time it was printed."""
-        from kstrl.statedir import CONTROL_PAUSE, legacy_control_paths
+        """The control reader and the queue reader return the same refusal
+        text, so it is printed once. kstrl moves nothing: the file stays
+        and the detail names it and the command that moves it."""
+        from kstrl.statedir import CONTROL_PAUSE, control_file, legacy_control_paths
 
         legacy = legacy_control_paths(tmp_path)[CONTROL_PAUSE]
         legacy.parent.mkdir(parents=True, exist_ok=True)
@@ -637,15 +636,12 @@ class TestRoundTwoFindings:
             encoding="utf-8",
         )
 
-        # statedir.py's migration warns DeprecationWarning (R8.9: the
-        # legacy in-tree path is no longer written), which this test's
-        # subject deliberately provokes rather than avoids.
-        with pytest.warns(DeprecationWarning):
-            reasons = safe_mode_reasons(tmp_path)
+        reasons = safe_mode_reasons(tmp_path)
 
-        assert not legacy.exists()  # migrated before any reader ran
-        assert [r.source for r in reasons] == ["queue"]
-        assert reasons[0].detail == "legacy pause"
+        assert legacy.exists()  # kstrl moved nothing
+        assert len(reasons) == 1
+        assert str(legacy) in reasons[0].detail
+        assert f"mv {legacy} {control_file(tmp_path, CONTROL_PAUSE)}" in reasons[0].detail
 
 
 class TestComposition:

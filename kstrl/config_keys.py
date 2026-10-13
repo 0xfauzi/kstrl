@@ -194,4 +194,19 @@ RETIRED_ENV_VARS: dict[str, str] = {
     "KSTRL_FIXTURES_TIMEOUT": _RETIRED_FIXTURES,
     "KSTRL_LEARNING_CONTRIBUTE": _RETIRED_PLAYBOOK,
     "KSTRL_LEARNING_CONSUME": _RETIRED_PLAYBOOK,
+    "GUM_FORCE": "renamed to KSTRL_UI_FORCE_RICH",
+}
+
+_RETIRED_GUM = "removed: the gum renderer no longer exists; use auto, rich or plain"
+
+#: (section, key, value) retired as a VALUE, mapped to why: the refusal reads
+#: "names [section] key = 'value', which was <this>". Without the row the
+#: value reads silently as ``auto`` (``normalize_ui_mode``).
+RETIRED_VALUES: dict[tuple[str, str, str], str] = {
+    ("ui", "ui_mode", "gum"): _RETIRED_GUM,
+}
+
+#: (environment variable, value) retired as a VALUE, mapped to why.
+RETIRED_ENV_VALUES: dict[tuple[str, str], str] = {
+    ("KSTRL_UI", "gum"): _RETIRED_GUM,
 }

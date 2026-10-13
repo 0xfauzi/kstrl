@@ -10,14 +10,13 @@ from kstrl.evolution_config import EvolutionConfig
 from kstrl.experiments_tsv import experiment_rows
 from kstrl.failure_signatures import (
     FailurePattern,
-    _classify_check,
-    _normalize_error,
     category_for_check,
     split_signature,
 )
 from kstrl.journal_rows import (
     SPEC_ISSUES_EVENT,
     IterationReading,
+    LegacyJournalRowError,
     _refused,
     _signature_rows,
     entry_str,
@@ -28,83 +27,13 @@ from kstrl.journal_rows import (
 from kstrl.observability import read_progress_events
 
 if TYPE_CHECKING:
-    from kstrl.manifest import Component, Manifest
+    pass
 
 logger = logging.getLogger("kstrl.evolution")
 
 
 class JournalReads:
     config: EvolutionConfig
-
-    # ------------------------------------------------------------------
-    # extract_failure_patterns (single run)
-    # ------------------------------------------------------------------
-
-    def extract_failure_patterns(
-        self,
-        manifest: Manifest,
-        min_frequency: int = 2,
-        signatures_by_component: dict[str, list[str]] | None = None,
-    ) -> list[FailurePattern]:
-        """Extract recurring failure patterns from a single run.
-
-        Looks at failed/retried components to find common failure
-        signatures, grouped by the full "<check>:<code>" signature.
-        ``signatures_by_component`` carries the factory's structured
-        signatures (R6.1); components absent from it fall back to
-        classifying their flattened error string.
-        """
-        from kstrl.manifest import ComponentStatus
-
-        signatures_by_component = signatures_by_component or {}
-
-        # Collect components that failed or were retried.
-        troubled: list[Component] = [
-            c
-            for c in manifest.components
-            if c.status == ComponentStatus.FAILED.value or c.retries > 0
-        ]
-
-        if not troubled:
-            return []
-
-        # Group by full signature string.
-        groups: dict[str, list[str]] = {}
-        for comp in troubled:
-            if not comp.error:
-                continue
-            sigs = list(signatures_by_component.get(comp.id) or [])
-            if not sigs:
-                legacy_check = _classify_check(comp.error)
-                legacy_sig = _normalize_error(comp.error)
-                if not legacy_sig:
-                    continue
-                sigs = [f"{legacy_check}:{legacy_sig}"]
-            for sig in sigs:
-                groups.setdefault(sig, []).append(comp.id)
-
-        total = len(manifest.components)
-        patterns: list[FailurePattern] = []
-        for full_sig, comp_ids in groups.items():
-            if len(comp_ids) < min_frequency:
-                continue
-            check_name, code = split_signature(full_sig)
-            patterns.append(
-                FailurePattern(
-                    description=(
-                        f"{check_name} failure '{code}' in {len(comp_ids)}/{total} components"
-                    ),
-                    frequency=len(comp_ids),
-                    total_components=total,
-                    affected_components=comp_ids,
-                    check_name=check_name,
-                    error_signature=code,
-                    category=category_for_check(check_name),
-                )
-            )
-
-        patterns.sort(key=lambda p: p.frequency, reverse=True)
-        return patterns
 
     # ------------------------------------------------------------------
     # get_cross_run_patterns
@@ -118,9 +47,8 @@ class JournalReads:
 
         Reads the journal, groups entries by their structured failure
         signatures ("<check>:<code>", R6.1), and returns patterns that
-        appear in >= min_pattern_frequency distinct runs. Legacy v1
-        entries without ``failure_signatures`` fall back to composing
-        the signature from their check_name/error_signature fields.
+        appear in >= min_pattern_frequency distinct runs. A v1 entry
+        without ``failure_signatures`` raises LegacyJournalRowError.
 
         Since #496 the rows counted include every attempt a retry
         superseded (:func:`_signature_rows`). ``frequency`` is a count of
@@ -137,7 +65,11 @@ class JournalReads:
         sig_runs: dict[str, set[str]] = {}
         sig_components: dict[str, list[str]] = {}
         on_a_final_attempt: set[str] = set()
-        for run_id, comp_id, sigs, superseded in _signature_rows(entries):
+        try:
+            rows = list(_signature_rows(entries))
+        except LegacyJournalRowError as exc:
+            raise LegacyJournalRowError(f"{self.config.journal_path}: {exc}") from exc
+        for run_id, comp_id, sigs, superseded in rows:
             runs.add(run_id)
             for sig in sigs:
                 sig_runs.setdefault(sig, set()).add(run_id)

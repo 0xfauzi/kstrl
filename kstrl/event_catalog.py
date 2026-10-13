@@ -256,8 +256,8 @@ class BudgetExceeded(Event):
     the latter reported ``token budget exceeded: 0 >= 500`` on runs whose
     totals never moved. ``ceilings`` holds one or many identities; the
     unenforceable halt legitimately names both, which no single-value
-    field could express. ``ceiling`` stays as the joined legacy string so
-    payloads written before this change still decode.
+    field could express. ``ceiling`` stays as the joined string; readers
+    use ``ceilings`` and refuse a payload that has none.
 
     R8 (measured): ``coverage`` records, per named ceiling, how many of
     the run's metered calls that ceiling actually counted and which roles
@@ -307,29 +307,26 @@ class BudgetCoverage(Event):
     detail: str = ""
 
 
-def budget_halt_kind(
-    condition: str,
-    ceilings: Sequence[str],
-    ceiling: str = "",
-) -> str:
+def budget_halt_kind(condition: str, ceilings: Sequence[str]) -> str:
     """Classify a :class:`BudgetExceeded` payload: the ONE vocabulary.
 
-    Returns ``"unenforceable"``, ``"cost"`` or ``"token"``. Every surface
+    Returns ``"unenforceable"``, ``"cost"``, ``"token"`` or ``"unreadable"``. Every surface
     that renders a budget halt classifies through here rather than
     re-testing ``ceiling == "max_cost_usd"`` locally: those local tests
     were what silently reclassified the multi-ceiling unenforceable halt
     as a token breach in both the reducer and the Linear sink, and a
     third copy of the rule is how a mislabel becomes a divergence.
 
-    Legacy payloads carry only the joined ``ceiling`` string and no
-    condition; for them the single-value test is still the only reading
-    available, and it was correct for everything written back then.
+    A payload that names no ceilings and is not "unenforceable" was
+    written before #180 and carries only the joined ``ceiling`` string.
+    It is ``"unreadable"``: reading it as a token halt would state a
+    cause that nothing recorded (#863).
     """
     if condition == "unenforceable":
         return "unenforceable"
-    if ceilings:
-        return "cost" if tuple(ceilings) == ("max_cost_usd",) else "token"
-    return "cost" if ceiling == "max_cost_usd" else "token"
+    if not ceilings:
+        return "unreadable"
+    return "cost" if tuple(ceilings) == ("max_cost_usd",) else "token"
 
 
 @dataclass(frozen=True, kw_only=True)

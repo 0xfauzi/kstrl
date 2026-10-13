@@ -14,10 +14,9 @@ Two entry points:
   (a property the tests enforce by splitting streams at random offsets).
 
 v1 compatibility: :func:`upconvert_v1` lifts a ``progress.jsonl``
-envelope dict into a typed event so the same reducer serves both
-layouts. Phase is authoritative when ``phase_started`` events exist and
-falls back to the v1 inference heuristic (ported from
-``observability._phase_for_event``) otherwise.
+envelope dict into a typed event, for a log named on purpose with
+``ks status --progress-log``. Phase is authoritative when ``phase_started`` events exist and
+falls back to the v1 inference heuristic otherwise.
 """
 
 from __future__ import annotations
@@ -31,7 +30,7 @@ from kstrl import event_catalog
 from kstrl import events as ev
 from kstrl.agents.base import CEILING_AXES
 from kstrl.manifest import COMPONENT_STATUS_VALUES, ComponentStatus
-from kstrl.observability import latest_run_id, parse_event_ts, read_progress_events
+from kstrl.observability import parse_event_ts, read_progress_events
 
 # Bounded so a security-heavy run cannot bloat the state.
 MAX_RECENT_FINDINGS = 50
@@ -77,7 +76,6 @@ class ComponentState:
     # when cost_calls < usage_calls.
     token_calls: int = 0
     cost_calls: int = 0
-    coverage_unknown_calls: int = 0
     total_tokens: int = 0
     cost_usd: float = 0.0
     findings_count: int = 0
@@ -111,7 +109,7 @@ class ComponentState:
     @property
     def tokens_are_lower_bound(self) -> bool:
         """This component's ``total_tokens`` omits a call's spend."""
-        return (self.usage_calls - self.coverage_unknown_calls - self.token_calls) > 0
+        return (self.usage_calls - self.token_calls) > 0
 
     @property
     def cost_is_lower_bound(self) -> bool:
@@ -121,7 +119,7 @@ class ComponentState:
         reported cost and whose reviewer reported only tokens has an
         exact token total and a partial cost one.
         """
-        return (self.usage_calls - self.coverage_unknown_calls - self.cost_calls) > 0
+        return (self.usage_calls - self.cost_calls) > 0
 
 
 @dataclass(frozen=True)
@@ -175,13 +173,6 @@ class RunState:
     # is blind to the case.
     token_calls: int = 0
     cost_calls: int = 0
-    #: Calls from a usage payload written before the per-axis fields
-    #: existed. ``known_calls > 0`` with both axis counts at 0 is
-    #: impossible in a post-R8 payload (a known call reported tokens or
-    #: cost), so it identifies a legacy one. Those calls are coverage-
-    #: UNKNOWN, not coverage-MISSING: claiming a gap that was never
-    #: measured is the same class of false statement as hiding one.
-    coverage_unknown_calls: int = 0
     total_tokens: int = 0
     cost_usd: float = 0.0
     # Budget caps from run_plan (0 = unbounded/unknown).
@@ -225,15 +216,14 @@ class RunState:
         tailing dashboard has folded; the arithmetic works on runs with
         no configured ceiling, where no announcement is ever emitted.
 
-        Coverage-unknown calls (legacy payloads) are excluded from both
-        sides of the arithmetic, so an old run dir renders exactly as it
-        did before rather than growing a lower-bound marker nobody
-        measured.
+        A usage payload from before the per-axis fields existed reports
+        known calls and zero on both axes. It counts as uncovered here,
+        so the total reads as a lower bound (#863).
         """
         gap = self.coverage_gaps.get(axis)
         if gap is not None and gap.uncovered_calls > 0:
             return True
-        uncovered = self.usage_calls - self.coverage_unknown_calls - covered_calls
+        uncovered = self.usage_calls - covered_calls
         return uncovered > 0
 
     @property
@@ -254,7 +244,7 @@ class RunState:
 
 
 def _infer_phase(event: event_catalog.Event) -> str | None:
-    """v1 fallback, ported from observability._phase_for_event."""
+    """The v1 inference heuristic: the phase an event implies."""
     if isinstance(event, event_catalog.ComponentStarted):
         return "engineer"
     if isinstance(event, event_catalog.ComponentUsage):
@@ -300,12 +290,17 @@ def _budget_halt_error(event: event_catalog.BudgetExceeded) -> str:
     ``ceiling`` and decode to "", in which case the token wording is the
     only honest reading.
     """
-    kind = event_catalog.budget_halt_kind(event.condition, event.ceilings, event.ceiling)
+    kind = event_catalog.budget_halt_kind(event.condition, event.ceilings)
+    if kind == "unreadable":
+        return (
+            "budget halt unreadable: the record names no ceilings, so it was written "
+            "before #180 and its cause is not known"
+        )
     if kind == "unenforceable":
         # No threshold was crossed, so there is no ">=" to state.
         # The old wording claimed one and printed the untouched
         # totals as evidence for it (review finding on #180).
-        named = ", ".join(event.ceilings) or event.ceiling or "budget"
+        named = ", ".join(event.ceilings)
         return f"budget ceiling unenforceable ({named}): no configured ceiling can still fire"
     if kind == "cost":
         return f"cost budget exceeded: ${event.cost_usd:.6f} >= ${event.max_cost_usd}"
@@ -578,13 +573,6 @@ def apply(state: RunState, event: event_catalog.Event) -> None:  # noqa: C901 - 
         comp.cost_calls += event.cost_calls
         state.token_calls += event.token_calls
         state.cost_calls += event.cost_calls
-        legacy = event.known_calls > 0 and event.token_calls == 0 and event.cost_calls == 0
-        if legacy:
-            # See RunState.coverage_unknown_calls: a known call always
-            # reported tokens or cost, so this shape can only be a
-            # payload written before the axis fields existed.
-            comp.coverage_unknown_calls += event.known_calls
-            state.coverage_unknown_calls += event.known_calls
     elif isinstance(event, event_catalog.FindingRecorded):
         comp.findings_count += 1
         comp.recent_findings.append(
@@ -635,12 +623,13 @@ def apply(state: RunState, event: event_catalog.Event) -> None:  # noqa: C901 - 
 def fold(events: Iterable[event_catalog.Event], run_id: str = "") -> RunState:
     """Pure fold: fresh RunState from an event iterable.
 
-    ``run_id`` non-empty filters to that run's events (events with an
-    empty run_id always pass - pre-R3.2 v1 logs carry none).
+    ``run_id`` non-empty filters to that run's events. An event with no
+    run_id belongs to no run and is left out (#863): measured, no event
+    in the 23 run directories on the owner's machine lacks one.
     """
     state = RunState(run_id=run_id)
     for event in events:
-        if run_id and event.run_id and event.run_id != run_id:
+        if run_id and event.run_id != run_id:
             continue
         apply(state, event)
     return state
@@ -769,19 +758,21 @@ def run_dirs_newest_first(root_dir: Path) -> list[Path]:
     )
 
 
+class LegacyRunStreamError(ValueError):
+    """Run events exist only in the expired progress.jsonl-only layout."""
+
+
 def load_run_state(
     root_dir: Path,
     run_id: str = "",
 ) -> tuple[RunState, Path | None]:
     """Reconstruct run state from disk.
 
-    Resolution order:
-    1. ``.kstrl/runs/<run_id>/`` (or the newest run dir when ``run_id``
-       is empty) - the v2 layout, workers' engineer.jsonl merged in.
-    2. ``.kstrl/progress.jsonl`` up-converted - the v1 fallback.
-
-    Returns ``(state, source_path)``; ``source_path`` is None when no
-    stream exists (state is then empty).
+    Reads ``.kstrl/runs/<run_id>/`` (or the newest run dir when
+    ``run_id`` is empty), workers' engineer.jsonl merged in. Returns
+    ``(state, source_path)``; ``source_path`` is None when no stream
+    exists. A ``.kstrl/progress.jsonl`` that holds events of the run (of any
+    run, with no ``run_id``) and has no run dir raises :class:`LegacyRunStreamError`.
     """
     run_dirs = _v2_run_dirs(root_dir)
     if run_id:
@@ -791,10 +782,16 @@ def load_run_state(
         events = read_run_dir(run_dir)
         return fold(events, run_id=run_id), run_dir / "events.jsonl"
 
-    v1_path = root_dir / ".kstrl" / "progress.jsonl"
-    raw = read_progress_events(v1_path)
-    if not raw:
-        return RunState(run_id=run_id), None
-    rid = run_id or latest_run_id(raw)
-    typed = [upconvert_v1(e) for e in raw]
-    return fold(typed, run_id=rid), v1_path
+    from kstrl.statedir import state_dir
+
+    state = state_dir(root_dir)
+    v1_path = state / "progress.jsonl"
+    if any(e.get("run_id") == run_id if run_id else True for e in read_progress_events(v1_path)):
+        raise LegacyRunStreamError(
+            f"{v1_path} holds events of {run_id or 'a run'} but {state / 'runs'} "
+            "has no run directory with an events.jsonl for it, so the run was recorded by a "
+            "kstrl that wrote only progress.jsonl, and kstrl no longer reads it for a run "
+            "of its own. Read the file on purpose with: ks status --progress-log "
+            f"{v1_path}"
+        )
+    return RunState(run_id=run_id), None

@@ -320,7 +320,7 @@ EXPECTED_JOURNAL_PATH_SITES: dict[str, int] = {
     # the operator-facing #233 block, following this same precedent, so
     # the path is read here rather than escaping into ``cli.py``.
     "evolution.py: self.config.journal_path": 2,
-    "journal_reads.py: self.config.journal_path": 3,
+    "journal_reads.py: self.config.journal_path": 4,  # +1 #863: the v1-row refusal names the file
     "cli_learning.py: config.journal_path": 2,
     "health.py: config.journal_path": 1,
     "pipeline_attempt.py: self.journal_path": 3,

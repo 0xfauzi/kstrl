@@ -184,22 +184,15 @@ def test_the_contract_check_kills_and_names_what_its_test_command_left(
         _kill(pidfile)
 
 
-@pytest.mark.parametrize("layout", ["run-dir", "flat"])
-def test_the_next_run_kills_and_names_what_a_stale_worktree_held(
-    tmp_path: Path, layout: str
-) -> None:
+def test_the_next_run_kills_and_names_what_a_stale_worktree_held(tmp_path: Path) -> None:
     """A previous run that was killed leaves its worktrees, and whatever its
     agents' tools left running in them. The next run's prune removes the
     directories; the processes go first (#461) and a warning names each
-    (#642). ``flat`` is the pre-R0.5 layout, a worktree directly under
-    ``.kstrl/worktrees/``, which the prune recognises by the ``.git`` file
-    inside it. The two layouts are the prune's two sweeps."""
+    (#642)."""
     root = _repo(tmp_path)
     worktrees = root / ".kstrl" / "worktrees"
-    stale = worktrees / "factory-old" / COMP if layout == "run-dir" else worktrees / "comp-old"
+    stale = worktrees / "factory-old" / COMP
     stale.mkdir(parents=True)
-    if layout == "flat":
-        (stale / ".git").write_text("gitdir: /nonexistent\n", encoding="utf-8")
     child = _deaf_sleep_in(stale)
     proc = _factory(root, COMPLETE, "1")
     try:

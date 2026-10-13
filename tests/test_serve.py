@@ -69,7 +69,6 @@ from kstrl.serve_process import (
     GROUP_TERM_GRACE_SECONDS,
     _group_liveness_for_reap,
     _unreaped_timeout_detail,
-    process_group_alive,
     reap_leases,
     run_supervised,
     terminate_process_group,
@@ -91,6 +90,7 @@ from kstrl.serve_spend import read_run_spend as REAL_READ_RUN_SPEND
 from kstrl.workqueue import Queue
 from kstrl.workqueue_items import ItemSource, ItemState, MergeDisposition, QueueConfig, QueueItem
 from tests.helpers import procs
+from tests.helpers.procs import process_group_alive
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
 
 # --------------------------------------------------------------------------

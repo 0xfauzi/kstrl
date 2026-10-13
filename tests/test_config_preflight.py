@@ -1186,7 +1186,7 @@ unknown_field = "ignored"
 foo = "bar"
 """,
         )
-        config = KstrlConfig.from_toml(toml_path, tmp_path)
+        config = KstrlConfig.load(tmp_path)
         assert config.agent_type == "claude"
         problems = collect_config_problems(tmp_path, lambda _message: None)
         assert len(problems) == 2, problems
@@ -1239,7 +1239,6 @@ model = "sonnet"
         _write_toml(toml_path, f'\n[{section}]\n{toml_key} = ""\n')
         assert getattr(KstrlConfig.load(tmp_path), field_name) == unset
         assert getattr(KstrlConfig.from_env(tmp_path), field_name) == unset
-        assert getattr(KstrlConfig.from_toml(toml_path, tmp_path), field_name) == unset
 
         toml_value, env_value = _VALID_STRING_VALUES.get(field_name, ("from-toml", "from-env"))
         _write_toml(toml_path, f'\n[{section}]\n{toml_key} = "{toml_value}"\n')

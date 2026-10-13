@@ -37,9 +37,6 @@ from kstrl.agents.codex import CodexAgent
 from kstrl.agents.custom import CustomAgent
 from kstrl.agents.prompt_record import (
     AgentCall,
-    PromptRecord,
-    PromptRecordError,
-    read_prompt_records,
     record_prompt,
     recording_prompts,
 )
@@ -54,6 +51,7 @@ from kstrl.version import kstrl_version
 from tests.helpers import gitrepo
 from tests.helpers import integration_harness as h
 from tests.helpers.executables import write_executable
+from tests.helpers.prompt_records import PromptRecord, read_prompt_records
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
 from tests.spine_utils import git
 
@@ -703,18 +701,6 @@ class TestTheSeam:
             (3, "third"),
         ]
 
-    def test_records_are_returned_in_call_order_past_nine_calls(self, tmp_path: Path) -> None:
-        """An engineer attempt makes one call per iteration, and file names sort
-        c1, c10, c11, ..., c2, so the reader must order by the number."""
-        call = _call(tmp_path)
-        with recording_prompts(call):
-            for n in range(1, 12):
-                record_prompt(f"prompt {n}", agent_cli="custom")
-
-        records = read_prompt_records(call.run_root, run_id="factory-x", component="comp-a")
-
-        assert [(r.call, r.prompt) for r in records] == [(n, f"prompt {n}") for n in range(1, 12)]
-
     def test_outside_a_scope_nothing_is_written(self, tmp_path: Path) -> None:
         list(CustomAgent("cat > /dev/null; echo ok").run("p", cwd=tmp_path, timeout=30))
 
@@ -738,61 +724,3 @@ class TestTheSeam:
     def test_an_unknown_agent_cli_is_refused(self, tmp_path: Path) -> None:
         with pytest.raises(ValueError, match="unknown agent_cli"):
             record_prompt("p", agent_cli="claude")
-
-
-class TestTheReaderRefusesWhatIsNotItsOwn:
-    def _written(self, tmp_path: Path) -> Path:
-        with recording_prompts(_call(tmp_path)):
-            path = record_prompt("the prompt", agent_cli="custom")
-        assert path is not None
-        return path
-
-    def test_another_run_s_record_is_refused(self, tmp_path: Path) -> None:
-        path = self._written(tmp_path)
-        run_root = path.parents[2]
-        with pytest.raises(PromptRecordError, match="not run 'factory-y'"):
-            read_prompt_records(run_root, run_id="factory-y", component="comp-a")
-
-    def test_a_record_filed_under_another_component_is_refused(self, tmp_path: Path) -> None:
-        path = self._written(tmp_path)
-        run_root = path.parents[2]
-        moved = run_root / "prompts" / "comp-b" / path.name
-        moved.parent.mkdir(parents=True)
-        path.rename(moved)
-        with pytest.raises(PromptRecordError, match="component 'comp-a'"):
-            read_prompt_records(run_root, run_id="factory-x", component="comp-b")
-
-    @pytest.mark.parametrize(
-        "mutation",
-        [
-            ("drop", "prompt", None),
-            ("set", "attempt", True),
-            ("set", "attempt", "2"),
-            ("set", "schema", 2),
-            ("set", "agent_cli", "gpt"),
-            ("set", "call", 7),
-        ],
-        ids=["no-prompt", "bool-attempt", "string-attempt", "schema-2", "unknown-cli", "renamed"],
-    )
-    def test_a_malformed_record_is_refused(
-        self, tmp_path: Path, mutation: tuple[str, str, object]
-    ) -> None:
-        path = self._written(tmp_path)
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        action, field, value = mutation
-        if action == "drop":
-            del payload[field]
-        else:
-            payload[field] = value
-        path.write_text(json.dumps(payload), encoding="utf-8")
-        with pytest.raises(PromptRecordError):
-            read_prompt_records(path.parents[2], run_id="factory-x", component="comp-a")
-
-    def test_a_file_that_is_not_json_is_refused(self, tmp_path: Path) -> None:
-        path = self._written(tmp_path)
-        path.write_text("{not json", encoding="utf-8")
-        with pytest.raises(PromptRecordError, match="not a JSON document"):
-            read_prompt_records(path.parents[2], run_id="factory-x", component="comp-a")
-
-    def test_a_component_with_no_calls_has_no_records(self, tmp_path: Path) -> None:
-        assert read_prompt_records(tmp_path, run_id="factory-x", component="comp-a") == []

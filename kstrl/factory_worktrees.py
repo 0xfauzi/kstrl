@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shlex
 import shutil
 import subprocess
 from collections.abc import Mapping
@@ -335,19 +336,35 @@ def _evidence_worktrees_to_keep(manifest: Manifest) -> set[str]:
     return keep
 
 
+def _flat_worktree_refusals(worktree_root: Path, run_id: str) -> list[str]:
+    """One refusal per pre-R0.5 flat worktree under ``worktree_root``."""
+    return [
+        f"{entry} is a worktree directly under {worktree_root}, the layout before R0.5, "
+        "and kstrl no longer sweeps it. Remove it, then start the run again: "
+        f"git worktree remove --force {shlex.quote(str(entry))}"
+        for entry in sorted(worktree_root.iterdir())
+        if entry.name != run_id and entry.is_dir() and (entry / ".git").exists()
+    ]
+
+
 def _prune_stale_worktrees(
     root_dir: Path,
     run_id: str,
     ui: UI,
     keep: set[str] | None = None,
-) -> None:
+) -> list[str]:
     """Remove worktrees left behind by previous (crashed/aborted) runs.
+
+    Returns one refusal per flat-layout entry (see below) and removes
+    nothing when it returns any.
 
     Only called when the run-level flock is genuinely held: any prior
     holder has exited (flock dies with its process), so everything under
     ``.kstrl/worktrees/`` that is not ours - other runs' ``<run_id>/``
-    dirs, and pre-R0.5 flat-layout ``<component_id>/`` worktrees - is
-    orphaned and safe to remove. Includes worktrees kept for leaked
+    dirs - is orphaned and safe to remove. A pre-R0.5 flat-layout
+    ``<component_id>/`` worktree is NOT swept (#863): the run dir branch
+    would delete its files without ``git worktree remove``. It is refused
+    by name, and the operator removes it. Includes worktrees kept for leaked
     workers (R0.1): their owning run is gone, so by the next invocation
     they are stale state, matching the pre-R0.5 force-remove behavior.
 
@@ -371,48 +388,37 @@ def _prune_stale_worktrees(
 
     worktree_root = root_dir / ".kstrl" / "worktrees"
     if not worktree_root.exists():
-        return
+        return []
+    flat = _flat_worktree_refusals(worktree_root, run_id)
+    if flat:
+        return flat
     removed = 0
     kept = 0
     for entry in sorted(worktree_root.iterdir()):
         if entry.name == run_id or not entry.is_dir():
             continue  # our own run dir, or a per-component .lock file
-        if (entry / ".git").exists():
-            # Pre-R0.5 flat layout: the entry itself is a worktree.
-            if _kept(entry):
-                kept += 1
-                continue
-            warn_sweep(sweep_worktree(entry), ui, "stale worktree")
-            subprocess.run(
-                ["git", "worktree", "remove", "--force", str(entry)],
-                cwd=root_dir,
-                capture_output=True,
-                timeout=30,
-            )
-            removed += 1
-        else:
-            # <run_id>/ dir from a previous run: remove each component
-            # worktree inside it.
-            entry_kept = 0
-            for wt in sorted(entry.iterdir()):
-                if wt.is_dir():
-                    if _kept(wt):
-                        entry_kept += 1
-                        continue
-                    warn_sweep(sweep_worktree(wt), ui, "stale worktree")
-                    subprocess.run(
-                        ["git", "worktree", "remove", "--force", str(wt)],
-                        cwd=root_dir,
-                        capture_output=True,
-                        timeout=30,
-                    )
-                    # Whatever git could not remove goes with the dir.
-                    shutil.rmtree(wt, ignore_errors=True)
-                    removed += 1
-            kept += entry_kept
-            if entry_kept:
-                # Evidence lives inside: keep the run dir itself.
-                continue
+        # <run_id>/ dir from a previous run: remove each component
+        # worktree inside it.
+        entry_kept = 0
+        for wt in sorted(entry.iterdir()):
+            if wt.is_dir():
+                if _kept(wt):
+                    entry_kept += 1
+                    continue
+                warn_sweep(sweep_worktree(wt), ui, "stale worktree")
+                subprocess.run(
+                    ["git", "worktree", "remove", "--force", str(wt)],
+                    cwd=root_dir,
+                    capture_output=True,
+                    timeout=30,
+                )
+                # Whatever git could not remove goes with the dir.
+                shutil.rmtree(wt, ignore_errors=True)
+                removed += 1
+        kept += entry_kept
+        if entry_kept:
+            # Evidence lives inside: keep the run dir itself.
+            continue
         # Whatever git could not remove (or non-worktree debris) goes
         # with the dir; `git worktree prune` below drops any metadata
         # orphaned by this.
@@ -430,6 +436,7 @@ def _prune_stale_worktrees(
             f"  Preserved {kept} evidence worktree(s) of failed "
             f"components (keep_worktrees_on_failure)"
         )
+    return []
 
 
 def _worktree_records(listing: str) -> dict[str, tuple[str, str]]:

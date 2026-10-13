@@ -65,6 +65,8 @@ from kstrl.statedir import (
     control_file,
     control_lock,
     ensure_control_state,
+    legacy_control_refusal,
+    legacy_control_remaining,
 )
 
 if TYPE_CHECKING:
@@ -359,6 +361,23 @@ class AutonomyState:
         return control_file(root_dir, CONTROL_AUTONOMY)
 
     @classmethod
+    def _first_run(cls, root_dir: Path, path: Path) -> AutonomyState:
+        """The state for a control directory with no record.
+
+        An in-tree record that kstrl no longer moves is NOT a first run:
+        reading the empty control directory as one would drop an earned
+        level without a word (#863).
+        """
+        if CONTROL_AUTONOMY not in legacy_control_remaining(root_dir):
+            return cls()
+        return cls(
+            degraded_reason=_warn_rejected_state(
+                path,
+                legacy_control_refusal(root_dir, (CONTROL_AUTONOMY,)),
+            ),
+        )
+
+    @classmethod
     def load(cls, root_dir: Path) -> AutonomyState:
         """Read state, failing CLOSED to L1 on anything unrecognizable.
 
@@ -383,7 +402,7 @@ class AutonomyState:
         ensure_control_state(root_dir)
         path = cls.path_for(root_dir)
         if not path.exists():
-            return cls()
+            return cls._first_run(root_dir, path)
         try:
             data = read_json(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:

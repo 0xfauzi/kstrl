@@ -4,10 +4,10 @@
 v1 ``progress.jsonl`` through ``ProgressLog`` under ``tmp_path`` and reads
 them back through ``load_run_state`` and ``run_dirs_newest_first``: v2
 wins over v1, the newest run directory is picked, an explicit run id is
-honoured, a torn tail is skipped and a read error is not swallowed. Two
-more tests fold a real ``progress.jsonl`` through ``upconvert_v1``: the
-state agrees with ``summarize_events``, and ``budget_coverage`` reaches
-the same state through the v1 path (#181 parity). The in-memory lifecycle,
+honoured, a torn tail is skipped and a read error is not swallowed. One
+test folds a real ``progress.jsonl`` through ``upconvert_v1``:
+``budget_coverage`` reaches the same state through the v1 path (#181 parity).
+The in-memory lifecycle,
 decompose-vocabulary, fold/apply-equivalence and per-axis coverage folds
 were removed; ``tests/test_carried_component_state.py`` and
 ``tests/test_run_record_version.py`` reduce a real ``events.jsonl``.
@@ -17,61 +17,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
 
 import pytest
 
 from kstrl import event_catalog, reducer
 from kstrl import events as ev
-from kstrl.observability import ProgressLog, read_progress_events, summarize_events
-
-
-class TestV1Upconversion:
-    def _v1_events(self, path: Path) -> list[dict[str, Any]]:
-        log = ProgressLog(path, run_id="run-9")
-        log.factory_started("proj", 2)
-        log.component_started("a")
-        log.component_usage(
-            "a",
-            "engineer",
-            {
-                "calls": 2,
-                "known_calls": 1,
-                "unreported_calls": 1,
-                "input_tokens": 10,
-                "output_tokens": 5,
-                "cache_read_tokens": 0,
-                "cache_creation_tokens": 0,
-                "total_tokens": 15,
-                "cost_usd": 0.05,
-                "duration_seconds": 3.0,
-            },
-        )
-        log.verification_result("a", True, ["tests"], [], 2.0)
-        log.review_result("a", True, "standard", 0, 1, 30.0)
-        log.component_retrying("a", 2, "flaky")
-        log.component_completed("a", 100.0, 4)
-        log.component_started("b")
-        log.component_failed("b", "boom")
-        log.factory_completed(1, 1, 0, 200.0)
-        return read_progress_events(path)
-
-    def test_equivalence_with_summarize_events(self, tmp_path: Path) -> None:
-        raw = self._v1_events(tmp_path / "progress.jsonl")
-        activity = summarize_events(raw, "run-9")
-        state = reducer.fold([reducer.upconvert_v1(e) for e in raw], run_id="run-9")
-
-        assert state.finished is activity.finished
-        assert set(state.components) == set(activity.components)
-        for cid, comp_activity in activity.components.items():
-            comp = state.components[cid]
-            assert comp.phase == comp_activity.phase, cid
-            assert comp.attempt == comp_activity.attempt, cid
-            assert comp.usage_calls == comp_activity.usage_calls, cid
-            assert comp.unreported_calls == comp_activity.unreported_calls, cid
-            assert comp.total_tokens == comp_activity.total_tokens, cid
-            assert comp.cost_usd == comp_activity.cost_usd, cid
-            assert comp.last_event == comp_activity.last_event, cid
+from kstrl.observability import ProgressLog, read_progress_events
 
 
 class TestLoadRunState:
@@ -104,12 +55,16 @@ class TestLoadRunState:
         # worker events merged in
         assert state.components["a"].iteration == 1
 
-    def test_v1_only(self, tmp_path: Path) -> None:
+    def test_v1_only_is_refused_by_name(self, tmp_path: Path) -> None:
         self._write_v1(tmp_path, "run-v1", "v1proj")
-        state, source = reducer.load_run_state(tmp_path)
-        assert source is not None and source.name == "progress.jsonl"
-        assert state.project == "v1proj"
-        assert "z" in state.components
+        with pytest.raises(reducer.LegacyRunStreamError, match="progress.jsonl") as raised:
+            reducer.load_run_state(tmp_path)
+        assert "--progress-log" in str(raised.value)
+        with pytest.raises(reducer.LegacyRunStreamError):
+            reducer.load_run_state(tmp_path, "run-v1")
+        # Another run id is not in the log: no stream, and no refusal.
+        state, source = reducer.load_run_state(tmp_path, "run-other")
+        assert source is None and state.components == {}
 
     def test_both_v2_wins(self, tmp_path: Path) -> None:
         self._write_v1(tmp_path, "run-v1", "v1proj")

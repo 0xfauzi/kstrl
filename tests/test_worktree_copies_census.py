@@ -47,16 +47,15 @@ FILE_DUPLICATING_NAMES = (
 )
 
 #: One site in ``factory.py``: the component PRD seed in ``_run_component``,
-#: which the branch commits on purpose. ``statedir.py`` moves a control
-#: file across devices, ``init_cmd.py`` links AGENTS.md to CLAUDE.md in
-#: the root checkout ``ks init`` runs in, and the other two rows are
+#: which the branch commits on purpose. ``init_cmd.py`` links AGENTS.md
+#: to CLAUDE.md in the root checkout ``ks init`` runs in, and the other
+#: rows are
 #: ``copy.deepcopy``. None of them writes into a component worktree.
 EXPECTED_FILE_DUPLICATING_SITES = {
     "factory_worker.py": 1,
     "feature_cmd.py": 4,
     "init_cmd.py": 1,
     "retry_plan.py": 2,
-    "statedir.py": 1,
 }
 
 

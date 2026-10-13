@@ -25,7 +25,7 @@ import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from kstrl.appendio import JOURNAL_REPAIR_EVENT, append_records
 from kstrl.fact_scope import (
@@ -36,7 +36,6 @@ from kstrl.fact_scope import (
     is_stale,
     tier_for,
 )
-from kstrl.jsonread import read_json
 from kstrl.knowledge_facts import (
     Fact,
     KnowledgeConfig,
@@ -66,7 +65,7 @@ def _sort_for_packing(facts: list[Fact]) -> list[Fact]:
     by_recency = sorted(facts, key=lambda f: f.created_run_id, reverse=True)
     # Sort: test_verified first, then review_passed, then asserted.
     # Higher confidence packs first so the budget keeps the strongest.
-    _rank = {"test_verified": 0, "review_passed": 1, "verified": 1, "asserted": 2}
+    _rank = {"test_verified": 0, "review_passed": 1, "asserted": 2}
     by_recency.sort(key=lambda f: _rank.get(f.confidence, 3))
     return by_recency
 
@@ -422,14 +421,14 @@ def record_dependency_scope_gap(
     #331: through ``appendio``, which repairs an unterminated tail
     before appending onto it. Without that, a crash mid-write cost the
     NEXT row as well as the torn one, measured through
-    :func:`read_dependency_scope_telemetry`: ``['alpha']`` where alpha
+    a reader of the log: ``['alpha']`` where alpha
     and beta were both recorded, and ``['a1']`` where a2 had lost only
     its newline and a3 was appended onto it.
 
     A repair ROW rather than a bare pad, because nothing counts these
     rows against anything. The inbox takes a pad because its unreadable
-    lines are charged to an admission cap; this reader has no production
-    consumer at all, so a row costs nothing and is the durable trace
+    lines are charged to an admission cap; nothing in kstrl
+    reads the log, so a row costs nothing and is the durable trace
     that a write here was interrupted.
 
     No lock. ``build_knowledge_context`` is the only caller and runs in
@@ -465,35 +464,6 @@ def record_dependency_scope_gap(
         )
     except OSError:
         pass
-
-
-def read_dependency_scope_telemetry(knowledge_root: Path) -> list[dict[str, Any]]:
-    """Read the JSONL log produced by
-    :func:`record_dependency_scope_gap`. Returns ``[]`` when the file
-    does not exist or cannot be parsed.
-
-    ONE clause for the open failure and the decode failure, because this
-    telemetry reader reports to nobody: both answers are ``[]`` and no
-    caller can tell them apart, so two handlers would be a distinction
-    with no observer. Sites that DO say something get their own message;
-    see :func:`read_facts` above.
-    """
-    target = knowledge_root / _E8_TELEMETRY_RELATIVE_PATH
-    if not target.is_file():
-        return []
-    out: list[dict[str, Any]] = []
-    try:
-        for line in target.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                out.append(read_json(line))
-            except json.JSONDecodeError:
-                continue
-    except (OSError, UnicodeDecodeError):
-        return []
-    return out
 
 
 def _telemetry_timestamp() -> str:

@@ -113,17 +113,15 @@ def show_sections() -> list[tuple[str, list[tuple[str, str]]]]:
     ]
 
 
-#: The values every ``--ui`` flag accepts (#565). "gum" is the retired
-#: renderer's name and reads as rich. ``[ui] ui_mode`` and ``KSTRL_UI``
-#: are not refused at load: :func:`normalize_ui_mode` also reads "off",
-#: "no" and "0" as plain and any other value as auto.
-UI_MODES: tuple[str, ...] = ("auto", "rich", "plain", "gum")
+#: The values every ``--ui`` flag accepts (#565). The retired "gum" value
+#: of ``[ui] ui_mode`` and ``KSTRL_UI`` is refused at load
+#: (``config_keys.RETIRED_VALUES``). :func:`normalize_ui_mode` also reads
+#: "off", "no" and "0" as plain and any other value as auto.
+UI_MODES: tuple[str, ...] = ("auto", "rich", "plain")
 
 
 def normalize_ui_mode(value: str) -> str:
     normalized = (value or "auto").strip().lower()
-    if normalized == "gum":
-        return "rich"
     if normalized in {"plain", "off", "no", "0"}:
         return "plain"
     if normalized not in UI_MODES:

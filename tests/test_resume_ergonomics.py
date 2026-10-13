@@ -24,7 +24,6 @@ from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult, FactoryResult
 from kstrl.findings import (
     Finding,
-    finding_attempt,
     tag_finding_with_attempt,
 )
 from kstrl.journal_rows import FINDINGS_SUPERSEDED_EVENT
@@ -166,12 +165,19 @@ def _journal_events(root: Path) -> list[dict[str, object]]:
 # ---------------------------------------------------------------------------
 
 
+def finding_attempt(finding: Finding) -> int | None:
+    """The attempt a finding is tagged with, read off its ``attempt:N`` tag."""
+    for tag in finding.tags:
+        if tag.startswith("attempt:"):
+            return int(tag.removeprefix("attempt:"))
+    return None
+
+
 class TestAttemptTagging:
     def test_tag_and_parse_round_trip(self) -> None:
         f = Finding.phase_skipped("review", "skipped")
         tagged = tag_finding_with_attempt(f, 3)
         assert "attempt:3" in tagged.tags
-        assert finding_attempt(tagged) == 3
 
     def test_tagging_is_idempotent(self) -> None:
         f = tag_finding_with_attempt(
@@ -180,10 +186,7 @@ class TestAttemptTagging:
         )
         retagged = tag_finding_with_attempt(f, 2)
         assert retagged.tags == f.tags
-        assert finding_attempt(retagged) == 1
-
-    def test_untagged_finding_has_no_attempt(self) -> None:
-        assert finding_attempt(Finding.phase_skipped("x", "y")) is None
+        assert "attempt:1" in retagged.tags
 
 
 # ---------------------------------------------------------------------------

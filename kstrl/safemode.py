@@ -28,9 +28,9 @@ Two things worth being exact about.
 **"Read-only" here means with respect to factory decisions, not with
 respect to the filesystem.** ``Queue.pause_state`` and
 ``AutonomyState.load`` both call ``statedir.ensure_control_state``, which
-creates the XDG control directory and migrates any legacy in-tree control
-files. Every control-plane read in kstrl does that; this one is not
-special, and claiming it writes nothing would be false.
+creates the XDG control directory. A legacy in-tree control file is
+reported as untrusted and is not moved. Every control-plane read in kstrl
+does that; this one is not special, and claiming it writes nothing would be false.
 
 **Absence of evidence is not evidence of absence.** Every reader here
 had to be written so that "I could not look" is distinguishable from
@@ -325,11 +325,8 @@ def safe_mode_reasons(root_dir: Path) -> list[SafeModeReason]:
     an exactly duplicated ``detail`` is dropped.
     """
     try:
-        # Migrate FIRST, so every reader below sees the same control
-        # state. Without this the control reader reports leftover legacy
-        # files as untrusted and the queue reader then migrates them
-        # through its own ensure_control_state, leaving a reason whose
-        # recovery target no longer exists by the time it is printed.
+        # Create the control directory FIRST, so every reader below sees
+        # the same control state.
         from kstrl.statedir import ensure_control_state
 
         ensure_control_state(root_dir)

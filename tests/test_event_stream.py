@@ -29,9 +29,7 @@ from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult
 from kstrl.manifest import Component, Manifest
 from kstrl.observability import (
-    latest_run_id,
     read_progress_events,
-    summarize_events,
 )
 from kstrl.ui.plain import PlainUI
 from kstrl.verify_model import VerifyConfig
@@ -227,20 +225,6 @@ class TestDualWrite:
                 assert v2_data.get(v2_key) == value, (
                     f"{v1_event['event']}.{key}: v1={value!r} v2={v2_data.get(v2_key)!r}"
                 )
-
-    def test_fold_agrees_with_summarize_events(self, tmp_path: Path) -> None:
-        root = _run_stub_factory(tmp_path, ["comp-a", "comp-b"])
-        raw_v1 = read_progress_events(root / "progress.jsonl")
-        activity = summarize_events(raw_v1, latest_run_id(raw_v1))
-        state = reducer.fold(ev.read_events(_events_file(root)))
-
-        assert state.finished is activity.finished
-        assert set(state.components) == set(activity.components)
-        for cid, comp_activity in activity.components.items():
-            comp = state.components[cid]
-            assert comp.phase == comp_activity.phase, cid
-            assert comp.usage_calls == comp_activity.usage_calls, cid
-            assert comp.total_tokens == comp_activity.total_tokens, cid
 
     def test_a_default_run_records_an_empty_ref_and_release_disabled(self, tmp_path: Path) -> None:
         """R8.7 slice 1 (#154). No kstrl.toml, so [release] is off: the

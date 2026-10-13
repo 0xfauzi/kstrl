@@ -17,7 +17,14 @@ from kstrl.config_report import normalize_ui_mode as _normalize_ui_mode
 from kstrl.manifest import COMPONENT_STATUS_VALUES, Manifest
 from kstrl.observability import event_age_seconds, format_age, latest_run_id, read_progress_events
 from kstrl.procgroup import pid_is_alive
-from kstrl.reducer import ComponentState, RunState, fold, load_run_state, upconvert_v1
+from kstrl.reducer import (
+    ComponentState,
+    LegacyRunStreamError,
+    RunState,
+    fold,
+    load_run_state,
+    upconvert_v1,
+)
 from kstrl.ui.base import UI
 from kstrl.version import stamp_label
 
@@ -559,6 +566,36 @@ def dash(root: Path | None, run_id: str | None, poll: float) -> None:
     _sys.exit(code or 0)
 
 
+def _load_report_state(
+    root_dir: Path, manifest: Manifest, progress_log_path: Path | None
+) -> tuple[RunState | None, Path | None]:
+    """Chunk 8: the versioned reader.
+
+    An explicit --progress-log pins the v1 arm on that file.
+    Otherwise the reducer resolves the newest v2 run dir (preferring
+    the manifest's recorded run when it still exists on disk) and
+    refuses a progress.jsonl-only layout (LegacyRunStreamError).
+    """
+    if progress_log_path is not None:
+        raw = read_progress_events(progress_log_path)
+        if not raw:
+            return None, None
+        rid = latest_run_id(raw)
+        return (
+            fold((upconvert_v1(e) for e in raw), run_id=rid),
+            progress_log_path,
+        )
+    state, source = load_run_state(root_dir, manifest.run_id or "")
+    if manifest.run_id and (source is None or not state.started_ts):
+        # The recorded run left no stream (dir pruned, or a v1 log
+        # that predates it): fall back to the newest stream rather
+        # than rendering nothing.
+        state, source = load_run_state(root_dir)
+    if source is None:
+        return None, None
+    return state, source
+
+
 @cli.command()
 @click.option(
     "--root",
@@ -577,7 +614,7 @@ def dash(root: Path | None, run_id: str | None, poll: float) -> None:
     "progress_log_path",
     type=click.Path(path_type=Path),
     help="Progress log to join onto the manifest (default: the newest run under "
-    "<root>/.kstrl/runs/, falling back to <root>/.kstrl/progress.jsonl)",
+    "<root>/.kstrl/runs/)",
 )
 @click.option(
     "--watch",
@@ -634,7 +671,7 @@ def status(
     import time as _time
 
     root_dir = root.resolve() if root else Path.cwd()
-    force_rich = os.environ.get("GUM_FORCE") == "1"
+    force_rich = os.environ.get("KSTRL_UI_FORCE_RICH") == "1"
     ui_impl = _console_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich)
 
     use_tui = (
@@ -684,33 +721,6 @@ def status(
             root_dir / "scripts" / "kstrl" / "run-manifest.json",
         ]
 
-    def _load_state(manifest: Manifest) -> tuple[RunState | None, Path | None]:
-        """Chunk 8: the versioned reader.
-
-        An explicit --progress-log pins the v1 arm on that file.
-        Otherwise the reducer resolves the newest v2 run dir (preferring
-        the manifest's recorded run when it still exists on disk) and
-        falls back to v1 progress.jsonl up-conversion.
-        """
-        if progress_log_path is not None:
-            raw = read_progress_events(progress_log_path)
-            if not raw:
-                return None, None
-            rid = latest_run_id(raw)
-            return (
-                fold((upconvert_v1(e) for e in raw), run_id=rid),
-                progress_log_path,
-            )
-        state, source = load_run_state(root_dir, manifest.run_id or "")
-        if manifest.run_id and (source is None or not state.started_ts):
-            # The recorded run left no stream (dir pruned, or a v1 log
-            # that predates it): fall back to the newest stream rather
-            # than rendering nothing.
-            state, source = load_run_state(root_dir)
-        if source is None:
-            return None, None
-        return state, source
-
     def _load_and_render() -> int:
         manifest_file = next((p for p in candidates if p.exists()), None)
         if manifest_file is None:
@@ -735,7 +745,11 @@ def status(
             _render_safe_mode(ui_impl, root_dir)
             return 2
 
-        state, source_path = _load_state(manifest)
+        try:
+            state, source_path = _load_report_state(root_dir, manifest, progress_log_path)
+        except LegacyRunStreamError as exc:
+            ui_impl.err(str(exc))
+            return 2
         _render_status(
             manifest,
             manifest_file,

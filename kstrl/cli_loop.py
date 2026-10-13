@@ -242,7 +242,7 @@ def run(
 
     config.ui_mode = _normalize_ui_mode(config.ui_mode)
 
-    force_rich = os.environ.get("GUM_FORCE") == "1"
+    force_rich = os.environ.get("KSTRL_UI_FORCE_RICH") == "1"
     ui_impl = _console_ui(
         config.ui_mode,
         config.no_color,
@@ -366,7 +366,7 @@ def init(directory: Path, ui: str, no_color: bool, upgrade_prompts: bool) -> Non
 
     DIRECTORY is the target project directory (default: current directory).
     """
-    force_rich = os.environ.get("GUM_FORCE") == "1"
+    force_rich = os.environ.get("KSTRL_UI_FORCE_RICH") == "1"
     ui_impl = _console_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich)
     exit_code = run_init(directory, ui_impl, upgrade_prompts=upgrade_prompts)
     sys.exit(exit_code)
@@ -546,7 +546,7 @@ def understand(
 
     config.ui_mode = _normalize_ui_mode(config.ui_mode)
 
-    force_rich = os.environ.get("GUM_FORCE") == "1"
+    force_rich = os.environ.get("KSTRL_UI_FORCE_RICH") == "1"
     ui_impl = _console_ui(
         config.ui_mode,
         config.no_color,

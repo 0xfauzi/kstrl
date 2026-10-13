@@ -60,7 +60,7 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     "doctor.py": 3,
     # 14: #624 moved the scaffold's `subprocess.run` out to `worktree_setup.py`.
     # #776 F2 moves all of them to `factory_worktrees.py`.
-    "factory_worktrees.py": 14,
+    "factory_worktrees.py": 13,
     # 64: 58 after #435, +2 for #465's `branch_sha`, +2 for #459's `ignored_paths`,
     # +2 for #500's `tracked_files_at`, +2 for #626's `listed_files`.
     # 70: #630's git.read_blob adds two subprocess.run and two
@@ -73,7 +73,7 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     # `git_diff.py`, which adds its own `import subprocess` (9). 30: #776 G3
     # moves twenty-one of them to `git_tree.py`, which adds its own
     # `import subprocess` (22).
-    "git.py": 30,
+    "git.py": 24,
     "git_base.py": 10,
     "git_diff.py": 9,
     "git_tree.py": 22,
@@ -140,7 +140,9 @@ EXPECTED_TEXT_MODE_SPAWNS: dict[str, int] = {
     # `git_common_dir`. 27: +1 for #700's `git_write_paths`. 24: #776 G1 moves
     # three of them to `git_base.py`. 21: #776 G2 moves three of them to
     # `git_diff.py`. 14: #776 G3 moves seven of them to `git_tree.py`.
-    "git.py": 14,
+    # 11: #863 A4 deletes `create_branch_from`, `delete_branch` and
+    # `checkout_existing`.
+    "git.py": 11,
     "git_base.py": 3,
     "git_diff.py": 3,
     "git_tree.py": 7,
@@ -170,9 +172,7 @@ EXPECTED_CLEARED_SPAWNS: tuple[str, ...] = (
     "factory_worktrees.py subprocess.run(['git', 'worktree', 'add', str(worktree_path), branch_n",
     "factory_worktrees.py subprocess.run(['git', 'worktree', 'list', '--porcelain', '-z'], cwd=r",
     # codespell:ignore-next-line
-    "git.py subprocess.run(['git', 'branch', flag, '--', branch_name], cwd=cwd, ca",
     "git.py subprocess.run(['git', 'checkout', '-b', branch], cwd=cwd, capture_out",
-    "git.py subprocess.run(['git', 'checkout', '-b', branch_name, base, '--'], cwd",
     "git.py subprocess.run(['git', 'checkout', branch, '--'], cwd=cwd, capture_out",
     "git.py subprocess.run(['git', 'config', '--get', 'remote.origin.url'], cwd=cw",
     "git.py subprocess.run(['git', 'merge', '--no-edit', '--', branch], cwd=cwd, c",
@@ -245,8 +245,9 @@ EXPECTED_BYTES_MODE_SPAWNS: dict[str, int] = {
     # 7: #566 deleted the fresh-retry `git branch -D branch_name`, which
     # took no encoding; its replacement decodes as utf-8. #624 moved the
     # scaffold's bytes-mode `subprocess.run` to `run_scrubbed`, which
-    # decodes strictly. #776 F2 moves them to `factory_worktrees.py`.
-    "factory_worktrees.py": 7,
+    # decodes strictly. #776 F2 moves them to `factory_worktrees.py`. 6:
+    # #863 A4 deletes the sweep of a pre-R0.5 flat worktree.
+    "factory_worktrees.py": 6,
     # 7: `merge_base_ref`'s `git merge-base` stdout, hoisted here from
     # `verify.py` by the #435 fix-round, still decoded by hand. 9 since
     # #630: `read_blob`'s `git ls-tree` and `git cat-file` read bytes on

@@ -445,15 +445,6 @@ class Inbox:
     def _read_lines(self) -> list[dict[str, Any]]:
         return list(self.scan().records)
 
-    def unparseable_line_count(self) -> int:
-        """Nonempty log lines the display fold would skip (#190).
-
-        Prefer ``scan()`` when open and unparseable counts must come from
-        the same snapshot (the serve admission gate). This helper remains
-        for callers that only need the skip side.
-        """
-        return self.scan().unparseable_count()
-
     def _folded(self) -> list[InboxItem]:
         """Latest state per id, in the order the ids first appeared.
 

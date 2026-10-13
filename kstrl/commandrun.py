@@ -121,10 +121,6 @@ class CommandRun:
     _restore_run_id: str | None = None
     _restore_component: str | None = None
 
-    @property
-    def recording(self) -> bool:
-        return self.paths is not None
-
     def agent_call(self, component: str, role: str, attempt: int = 1) -> AgentCall:
         """Who this run's agent prompts are recorded for (#532).
 

@@ -16,6 +16,7 @@ from kstrl.cli_seam import _autonomy_ui, _console_ui, cli
 from kstrl.config_report import UI_MODES
 from kstrl.config_report import normalize_ui_mode as _normalize_ui_mode
 from kstrl.factory_preflight import _report_preflight
+from kstrl.journal_rows import LegacyJournalRowError
 from kstrl.ui.base import UI
 
 if TYPE_CHECKING:
@@ -132,7 +133,7 @@ def evolve(
     from kstrl.failure_signatures import route_patterns
 
     root_dir = root.resolve() if root else Path.cwd()
-    force_rich = os.environ.get("GUM_FORCE") == "1"
+    force_rich = os.environ.get("KSTRL_UI_FORCE_RICH") == "1"
     ui_impl = _console_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich)
 
     # R2.1: honor [evolution] in kstrl.toml + env, anchored to --root.
@@ -177,7 +178,11 @@ def evolve(
         sys.exit(0)
 
     ui_impl.section("Evolution: Analyzing Runs")
-    patterns = journal.get_cross_run_patterns(lookback_runs=evo_config.lookback_runs)
+    try:
+        patterns = journal.get_cross_run_patterns(lookback_runs=evo_config.lookback_runs)
+    except LegacyJournalRowError as exc:
+        ui_impl.err(str(exc))
+        sys.exit(2)
     routing = route_patterns(patterns)
     _report_patterns_and_readiness(journal, evo_config, patterns, routing, ui_impl, root_dir)
     _echo_retired_proposals_dir(root_dir, ui_impl)

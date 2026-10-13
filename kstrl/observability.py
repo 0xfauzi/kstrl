@@ -7,7 +7,7 @@ import os
 import subprocess
 import time
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
@@ -505,109 +505,6 @@ def latest_run_id(events: list[dict[str, Any]]) -> str:
         if isinstance(run_id, str) and run_id:
             return run_id
     return ""
-
-
-def _phase_for_event(event: dict[str, Any]) -> str | None:
-    """Map an event to the phase it implies; None keeps the prior phase."""
-    etype = event.get("event")
-    data = event.get("data") or {}
-    if etype == "component_started":
-        return "engineer"
-    if etype == "component_usage":
-        phase = data.get("phase")
-        return str(phase) if phase else None
-    if etype == "verification_result":
-        return "verify"
-    if etype == "review_result":
-        mode = str(data.get("mode") or "")
-        return "security" if mode.startswith("security") else "review"
-    if etype == "component_retrying":
-        return "retrying"
-    if etype == "component_failed":
-        return "failed"
-    if etype == "component_completed":
-        return "done"
-    if etype == "budget_exceeded":
-        return "budget-halt"
-    return None
-
-
-@dataclass
-class ComponentActivity:
-    """Per-component view derived from one run's progress-log events."""
-
-    component_id: str
-    phase: str = ""
-    attempt: int = 0
-    last_event: str = ""
-    last_event_ts: str = ""
-    usage_calls: int = 0
-    unreported_calls: int = 0
-    total_tokens: int = 0
-    cost_usd: float = 0.0
-
-
-@dataclass
-class RunActivity:
-    """One factory run's progress-log events, joined per component."""
-
-    run_id: str = ""
-    started_ts: str = ""
-    last_event_ts: str = ""
-    finished: bool = False
-    components: dict[str, ComponentActivity] = field(default_factory=dict)
-
-
-def _as_int_field(data: dict[str, Any], key: str) -> int:
-    value = data.get(key)
-    return value if isinstance(value, int) and not isinstance(value, bool) else 0
-
-
-def summarize_events(
-    events: list[dict[str, Any]],
-    run_id: str = "",
-) -> RunActivity:
-    """Fold progress-log events into a per-component activity summary.
-
-    ``run_id`` non-empty filters to that run's events; empty includes
-    everything (pre-R3.2 logs have no run_id to filter on).
-    """
-    activity = RunActivity(run_id=run_id)
-    for event in events:
-        if run_id and event.get("run_id") != run_id:
-            continue
-        ts = str(event.get("ts") or "")
-        etype = str(event.get("event") or "")
-        if not activity.started_ts:
-            activity.started_ts = ts
-        activity.last_event_ts = ts
-        if etype == "factory_completed":
-            activity.finished = True
-        comp_id = event.get("component")
-        if not isinstance(comp_id, str) or not comp_id:
-            continue
-        comp = activity.components.setdefault(
-            comp_id,
-            ComponentActivity(component_id=comp_id),
-        )
-        comp.last_event = etype
-        comp.last_event_ts = ts
-        phase = _phase_for_event(event)
-        if phase:
-            comp.phase = phase
-        data = event.get("data") or {}
-        if not isinstance(data, dict):
-            continue
-        if etype == "component_retrying":
-            comp.attempt = max(comp.attempt, _as_int_field(data, "attempt"))
-        elif etype == "component_usage":
-            comp.usage_calls += _as_int_field(data, "calls")
-            comp.unreported_calls += _as_int_field(data, "unreported_calls")
-            comp.total_tokens += _as_int_field(data, "total_tokens")
-            cost = data.get("cost_usd")
-            if isinstance(cost, (int, float)) and not isinstance(cost, bool):
-                comp.cost_usd += float(cost)
-    return activity
 
 
 @dataclass

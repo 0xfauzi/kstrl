@@ -624,12 +624,14 @@ def _run_preflights(
     if not factory_config.use_worktrees:
         return run_register
     if lock_held:
-        _prune_stale_worktrees(
+        flat_worktrees = _prune_stale_worktrees(
             root_dir,
             run_id,
             ui,
             keep=_evidence_worktrees_to_keep(manifest),
         )
+        if _report_preflight(ui, "flat worktrees from before R0.5 found", flat_worktrees):
+            return None
     else:
         ui.warn(
             "  Run lock not held; skipping stale-worktree cleanup "

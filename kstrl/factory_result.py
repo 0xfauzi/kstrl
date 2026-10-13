@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from concurrent.futures import Future
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -262,18 +263,25 @@ def _read_partial_usage(path: Path) -> UsageTotals | None:
     ``unreported_calls``, ``tokenless_calls`` and ``costless_calls`` are
     derived properties and are deliberately not read back.
 
-    Backward compatible on read: ``token_calls`` (added in R8 after the
-    review) and ``cost_calls`` (added with the cost ceiling) are optional
-    and default to 0 when the payload predates them. That under-reports
-    coverage rather than inventing it, and the file is rewritten at the
-    next iteration boundary anyway - it is a per-run, per-attempt scratch
-    file, never a long-lived record.
+    A snapshot without ``token_calls`` or ``cost_calls`` predates the
+    per-axis counts (R8). It is refused with a warning that names the
+    file, and nothing is recorded: reading it with the counts at 0 would
+    state a coverage that was never measured (#863).
     """
     try:
         data = read_json(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
     if not isinstance(data, dict):
+        return None
+    missing = [name for name in ("token_calls", "cost_calls") if name not in data]
+    if missing:
+        warnings.warn(
+            f"usage snapshot {path} has no {' or '.join(missing)}, so it was written before "
+            "the per-axis counts existed; the spend of the killed worker is not recorded",
+            RuntimeWarning,
+            stacklevel=2,
+        )
         return None
     totals = UsageTotals()
     int_fields = (

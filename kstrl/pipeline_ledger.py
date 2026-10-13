@@ -473,22 +473,6 @@ class UsageLedger(PipelineState):
             return None
         return usage_coverage(self.usage_meter, axis=axis, ceiling=ceiling)
 
-    def coverage_notes(self, ceilings: Sequence[str]) -> list[str]:
-        """Operator sentences for the named ceilings that fall short.
-
-        Empty when every named ceiling counted every call, so a
-        fully-covered halt reads exactly as it did before.
-        """
-        notes: list[str] = []
-        for ceiling in ceilings:
-            coverage = self.ceiling_coverage(ceiling)
-            if coverage is None:
-                continue
-            note = coverage.note()
-            if note:
-                notes.append(note)
-        return notes
-
     def unenforceable_ceilings(self) -> list[str]:
         """Configured ceilings that can no longer fire, by config key.
 
