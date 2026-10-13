@@ -218,6 +218,9 @@ def _env(
     assert shutil.which("git", path=env["PATH"]), env["PATH"]
     env["KSTRL_AGENT_PROBE"] = "0"
     env["KSTRL_KNOWLEDGE_ENABLED"] = "0"
+    # kstrl reads the login of the claude user settings (#803): an empty
+    # config directory, so that no test reads the operator's own.
+    env["CLAUDE_CONFIG_DIR"] = str(tmp_path / "claude-config")
     env.update(extra)
     return env
 

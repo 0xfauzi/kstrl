@@ -147,6 +147,24 @@ haiku (#803; the transcript is on the PR):
   ``sandbox.autoAllowBashIfSandboxed`` defaults to true and the git allow
   rules were not consulted. With false, the git verbs ran and the write was
   refused.
+
+Measured again on 2026-10-13 with the same versions (#803 follow-up), with a
+scratch ``CLAUDE_CONFIG_DIR`` and a local server that recorded the key of each
+API request:
+
+- With ``--setting-sources project``, an ``apiKeyHelper`` or an
+  ``ANTHROPIC_API_KEY`` in the ``env`` of the user settings gave "Not logged
+  in". The helper in the ``--settings`` JSON, and the env key in the process
+  environment or in the ``--settings`` JSON, each sent its key, and a user
+  hook in the same file did not run. claude read only the last of two
+  ``--settings`` flags. Both adapters, writer and reader, sent the key.
+- With Skill named, the model loaded a skill of the worktree's
+  ``.claude/skills`` with no pointer in the prompt. No user or plugin skill
+  was offered, only the skills built into claude. The shell line of a skill
+  ran in the sandbox ("Operation not permitted" for ``$HOME``), and its
+  ``allowed-tools`` added no tool.
+- ToolSearch found no removed tool, and with it claude deferred 9 of the 17
+  tools. LSP named in ``--tools`` gave no LSP tool with no plugin.
 """
 
 from __future__ import annotations
@@ -377,11 +395,21 @@ ClaudeRole = Literal["writer", "reader", "probe"]
 
 #: The tools of a writer. Each one acts only inside the session: its writes go
 #: through the file tools that the write guard examines, or through a command
-#: in the claude sandbox (Bash, and Monitor, measured). A subagent (Task) gets
-#: the same tools, and the write guard examines its file tools (measured). The
-#: tools that act outside the sandbox, outside the worktree or after the run
-#: (CronCreate, RemoteTrigger, Workflow, EnterWorktree, PushNotification,
-#: SendMessage and others) are not named, so they are off.
+#: in the claude sandbox (Bash, Monitor, and the shell lines of a skill,
+#: measured). A subagent (Task) gets the same tools, and the write guard
+#: examines its file tools (measured). Skill offers the skills of the target
+#: repository's ``.claude/skills`` and the skills built into claude, and no user
+#: or plugin skill (measured). The hooks of a skill run outside the sandbox, as
+#: the hooks of the repository's ``.claude/settings.json`` do, and the write
+#: guard and the sandbox stop the engineer from writing ``.claude``, so only the
+#: repository supplies them (measured). The tools that act outside the sandbox, outside
+#: the worktree or after the run (CronCreate, RemoteTrigger, Workflow,
+#: EnterWorktree, PushNotification, SendMessage and others) are not named, so
+#: they are off. LSP is not named: its language servers come from plugins,
+#: which the setting sources keep off, and claude gave no LSP tool when it was
+#: named (measured). ToolSearch is not named: with no MCP server it finds only
+#: these tools, and with it claude deferred 9 of them behind a search call
+#: (measured).
 CLAUDE_WRITER_TOOLS: tuple[str, ...] = (
     "Bash",
     "Edit",
@@ -390,6 +418,7 @@ CLAUDE_WRITER_TOOLS: tuple[str, ...] = (
     "Monitor",
     "NotebookEdit",
     "Read",
+    "Skill",
     "Task",
     "TaskCreate",
     "TaskGet",
@@ -401,14 +430,124 @@ CLAUDE_WRITER_TOOLS: tuple[str, ...] = (
 #: Added to the writer's tools when outbound network is open.
 CLAUDE_WEB_TOOLS: tuple[str, ...] = ("WebFetch", "WebSearch")
 #: The tools of a reader. Its permission rules let Bash run only the git verbs
-#: of :data:`CLAUDE_REVIEW_GIT_COMMANDS`.
+#: of :data:`CLAUDE_REVIEW_GIT_COMMANDS`. No Skill: no reader prompt refers to
+#: a skill, and a skill can name ``allowed-tools``, which are permission rules,
+#: the layer that keeps a reader read-only.
 CLAUDE_READER_TOOLS: tuple[str, ...] = ("Bash", "Glob", "Grep", "Read")
 #: The setting files a claude session reads, as well as the ``--settings`` of
-#: kstrl. ``project`` keeps the CLAUDE.md and the settings of the target
-#: repository, and it stops the user's settings, hooks, plugins and CLAUDE.md
-#: (measured, claude 2.1.296). An empty value also stops the project's
-#: CLAUDE.md (measured).
+#: kstrl. ``project`` keeps the CLAUDE.md, the skills and the settings of the
+#: target repository, and it stops the user's settings, hooks, plugins and
+#: CLAUDE.md (measured, claude 2.1.296). An empty value also stops the
+#: project's CLAUDE.md (measured).
 CLAUDE_SETTING_SOURCES = "project"
+
+
+@dataclass(frozen=True)
+class ClaudeLogin:
+    """The login of the operator, from the claude user settings (#803).
+
+    ``--setting-sources project`` stops the user settings, so an operator who
+    logs in with an ``apiKeyHelper`` or an ``env`` key there got "Not logged
+    in" (measured). kstrl reads these two keys of the same file and nothing
+    else: no hook, plugin, permission or other key.
+    """
+
+    api_key_helper: str | None = None
+    env: Mapping[str, str] = field(default_factory=dict)
+
+
+def claude_config_dir() -> Path:
+    """The directory of the user settings that claude reads:
+    ``$CLAUDE_CONFIG_DIR``, or ``~/.claude`` when it is not set."""
+    config_dir = os.environ.get("CLAUDE_CONFIG_DIR")
+    return Path(config_dir) if config_dir else Path.home() / ".claude"
+
+
+def claude_login() -> ClaudeLogin:
+    """The ``apiKeyHelper`` and the ``env`` of the claude user settings.
+
+    A missing or unreadable file, or a key of an incorrect type, gives no
+    login: claude itself ignores settings that it cannot read in ``--print``
+    mode, and the liveness probe then reports the failed login. An ``env``
+    entry that no process environment can hold is dropped
+    (:func:`_env_name`, :func:`_spawnable`).
+    """
+    path = claude_config_dir() / "settings.json"
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except (OSError, ValueError):
+        return ClaudeLogin()
+    try:
+        document = read_json(raw)
+    except ValueError:
+        return ClaudeLogin()
+    if not isinstance(document, dict):
+        return ClaudeLogin()
+    helper = document.get("apiKeyHelper")
+    env = document.get("env")
+    values = {k: _env_text(v) for k, v in env.items()} if isinstance(env, dict) else {}
+    return ClaudeLogin(
+        api_key_helper=helper if isinstance(helper, str) and _spawnable(helper) else None,
+        env={k: v for k, v in values.items() if v is not None and _env_name(k) and _spawnable(v)},
+    )
+
+
+def _env_text(value: object) -> str | None:
+    """An ``env`` value as claude puts it in the environment, or None.
+
+    claude puts a number, a boolean and null in the environment as text
+    (measured: ``5`` gave ``5``, ``true`` gave ``true``, ``null`` gave
+    ``null``). An object or a list gives None: claude gave ``[object
+    Object]``, which no login uses.
+    """
+    if isinstance(value, str):
+        return value
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if value is None:
+        return "null"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        return str(int(value)) if value.is_integer() else repr(value)
+    return None
+
+
+def _env_name(name: str) -> bool:
+    """True when ``name`` can be the name of an environment variable.
+
+    claude dropped an entry whose name was empty or had a ``=`` (measured),
+    and a spawn with such a name raises ``ValueError``."""
+    return bool(name) and "=" not in name and _spawnable(name)
+
+
+def _spawnable(text: str) -> bool:
+    """True when ``text`` can go in the argv or the environment of a process.
+
+    A NUL character or a lone surrogate makes the spawn raise ``ValueError``
+    (measured), which stopped the session. claude dropped an entry with a NUL
+    (measured), and kstrl drops the entry, so the session starts and the
+    liveness probe reports a login that the drop removed.
+    """
+    if "\0" in text:
+        return False
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
+def claude_session_env() -> dict[str, str]:
+    """The environment that kstrl adds to each claude session it starts.
+
+    The ``env`` of the operator's user settings, which claude applies when it
+    reads that file (measured: an ``ANTHROPIC_API_KEY`` there logged in, and
+    the same key in the process environment logged in the same way). It goes
+    in the environment and not in ``--settings``, because kstrl records the
+    argv of each agent process on disk and ``ps`` shows it to each user.
+    """
+    return dict(claude_login().env)
 
 
 def claude_tools(role: ClaudeRole, *, network: bool) -> tuple[str, ...]:
@@ -424,7 +563,21 @@ def claude_tools(role: ClaudeRole, *, network: bool) -> tuple[str, ...]:
     return (*CLAUDE_WRITER_TOOLS, *(CLAUDE_WEB_TOOLS if network else ()))
 
 
-def claude_session_flags(role: ClaudeRole, *, network: bool) -> dict[str, str | None]:
+def _with_login(settings: str | None) -> str | None:
+    """``settings`` with the operator's ``apiKeyHelper``, or None when both
+    are absent. claude reads only the last ``--settings`` flag (measured), so
+    the helper must be in the one JSON that kstrl passes."""
+    helper = claude_login().api_key_helper
+    if helper is None:
+        return settings
+    merged: dict[str, object] = read_json(settings) if settings else {}
+    merged["apiKeyHelper"] = helper
+    return json.dumps(merged)
+
+
+def claude_session_flags(
+    role: ClaudeRole, *, network: bool, settings: str | None
+) -> dict[str, str | None]:
     """The flags of every claude session kstrl starts, as ``{flag: value}``.
 
     The one definition of the restriction (#803). The claude-code adapter and
@@ -444,36 +597,29 @@ def claude_session_flags(role: ClaudeRole, *, network: bool) -> dict[str, str | 
       not know is dropped (measured, claude 2.1.296).
     - ``--setting-sources``: :data:`CLAUDE_SETTING_SOURCES`, so that the
       operator's user-level hooks do not run in the session (measured).
+    - ``--settings``: ``settings`` (the sandbox or reviewer JSON of the role)
+      with the operator's ``apiKeyHelper``, when there is one of the two.
+      The ``env`` of the login is :func:`claude_session_env`.
     """
-    return {
+    flags: dict[str, str | None] = {
         "strict-mcp-config": None,
         "setting-sources": CLAUDE_SETTING_SOURCES,
         "tools": ",".join(claude_tools(role, network=network)),
     }
+    merged = _with_login(settings)
+    if merged is not None:
+        flags["settings"] = merged
+    return flags
 
 
-def claude_session_argv(role: ClaudeRole, *, network: bool) -> list[str]:
+def claude_session_argv(role: ClaudeRole, *, network: bool, settings: str | None) -> list[str]:
     """:func:`claude_session_flags` as ``claude`` argv."""
     argv: list[str] = []
-    for flag, value in claude_session_flags(role, network=network).items():
+    for flag, value in claude_session_flags(role, network=network, settings=settings).items():
         argv.append(f"--{flag}")
         if value is not None:
             argv.append(value)
     return argv
-
-
-def claude_sandbox_args(config: SandboxConfig | None, workspace: Path | None = None) -> list[str]:
-    """``claude --print`` argv fragment for the operator's sandbox intent.
-
-    Thin argv wrapper over :func:`claude_sandbox_settings`. With
-    ``workspace`` (the engineer), the settings carry the write guard. The
-    argv has no session flag: the claude adapter adds
-    :func:`claude_session_argv` to every claude session, in every role.
-    """
-    settings = claude_sandbox_settings(config, workspace)
-    if settings is None:
-        return []
-    return ["--settings", settings]
 
 
 def claude_sandbox_drops_skip_permissions(
@@ -624,8 +770,3 @@ def claude_review_sandbox_settings(config: SandboxConfig | None = None) -> str:
         ],
     }
     return json.dumps(settings)
-
-
-def claude_review_sandbox_args(config: SandboxConfig | None = None) -> list[str]:
-    """``claude --print`` argv fragment for a read-only reviewer."""
-    return ["--settings", claude_review_sandbox_settings(config)]
