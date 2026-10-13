@@ -95,19 +95,24 @@ def test_every_claude_session_kstrl_starts_gets_strict_mcp_config(
 # new site. A spawn is a constant that is the first item of a list or tuple
 # display: that display must also hold ``*claude_session_argv(...)``. Each
 # ``ClaudeAgentOptions`` must be in a function that sets ``extra_args`` to a
-# call of ``claude_session_flags``.
+# call of ``claude_session_flags``. Each SDK session call (``query`` that is
+# not ``self.query``, and ``ClaudeSDKClient``) is counted too and must get
+# ``options``: with no options, the SDK starts claude with none of the flags,
+# and no ``ClaudeAgentOptions`` name is in the source.
 
 _KSTRL = Path(kstrl.__file__).parent
 
 #: (file relative to kstrl/, kind) -> count. ``spawn`` is an argv display that
 #: starts with ``claude``, ``other`` is each other constant (an alias, a
-#: message, ``shutil.which``), ``sdk`` is a ``ClaudeAgentOptions`` name.
+#: message, ``shutil.which``), ``sdk`` is a ``ClaudeAgentOptions`` name, and
+#: ``sdk_call`` is an SDK session call.
 EXPECTED_CLAUDE_SITES = {
     ("agents/__init__.py", "other"): 1,
     ("agents/claude_code.py", "other"): 1,
     ("agents/claude_code.py", "spawn"): 1,
     ("agents/liveness.py", "spawn"): 1,
     ("agents/sdk_runner.py", "sdk"): 1,
+    ("agents/sdk_runner.py", "sdk_call"): 1,
     ("cli_preflight.py", "other"): 1,
 }
 
@@ -135,6 +140,24 @@ def _names_sdk_options(node: ast.AST) -> bool:
     return (isinstance(node, ast.Name) and node.id == "ClaudeAgentOptions") or (
         isinstance(node, ast.Attribute) and node.attr == "ClaudeAgentOptions"
     )
+
+
+def _is_sdk_session_call(node: ast.AST) -> bool:
+    """A call of ``query`` (not ``self.query``, a Textual query) or of
+    ``ClaudeSDKClient``, by name or as an attribute."""
+    if not isinstance(node, ast.Call):
+        return False
+    func = node.func
+    if isinstance(func, ast.Name):
+        return func.id in ("query", "ClaudeSDKClient")
+    if isinstance(func, ast.Attribute):
+        if func.attr == "ClaudeSDKClient":
+            return True
+        receiver = func.value
+        return func.attr == "query" and not (
+            isinstance(receiver, ast.Name) and receiver.id == "self"
+        )
+    return False
 
 
 def _sets_session_extra_args(scope: ast.AST) -> bool:
@@ -194,6 +217,15 @@ def _classify(
         return "spawn", None if carries else "argv without claude_session_argv"
     if _claude_constant(node):
         return (None if id(node) in heads else "other"), None
+    return _classify_sdk(node, scope)
+
+
+def _classify_sdk(node: ast.AST, scope: ast.AST | None) -> tuple[str | None, str | None]:
+    """``(kind, offence)`` of one node for the two SDK kinds."""
+    if _is_sdk_session_call(node):
+        assert isinstance(node, ast.Call)
+        carries = any(keyword.arg == "options" for keyword in node.keywords)
+        return "sdk_call", None if carries else "SDK session call without options"
     if _names_sdk_options(node):
         carries = scope is not None and _sets_session_extra_args(scope)
         return "sdk", None if carries else "no extra_args=claude_session_flags(...)"
@@ -226,7 +258,8 @@ def test_each_claude_spawn_in_kstrl_carries_the_session_flags() -> None:
     assert census == EXPECTED_CLAUDE_SITES, (
         "the census of claude spawns in kstrl/ changed. Classify each new site: an "
         "argv that starts with 'claude' must hold *claude_session_argv(...), and a "
-        "ClaudeAgentOptions must get extra_args=claude_session_flags(...).",
+        "ClaudeAgentOptions must get extra_args=claude_session_flags(...), and an SDK "
+        "session call must get options.",
         census,
     )
     assert not offenders, offenders
@@ -240,7 +273,10 @@ def test_the_static_guard_flags_a_spawn_without_the_session_flags(tmp_path: Path
         "    return ['claude', '--print']\n"
         "def b(sdk):\n"
         "    return sdk.ClaudeAgentOptions(extra_args={'strict-mcp-config': None})\n"
-        "c = 'claude --print'\n",
+        "c = 'claude --print'\n"
+        "async def d(sdk):\n"
+        "    async for m in sdk.query(prompt='x'):\n"
+        "        pass\n",
         encoding="utf-8",
     )
     (tmp_path / "good.py").write_text(
@@ -248,7 +284,12 @@ def test_the_static_guard_flags_a_spawn_without_the_session_flags(tmp_path: Path
         "    return ['claude', *claude_session_argv('probe', network=False)]\n"
         "def b(sdk):\n"
         "    kw = {'extra_args': claude_session_flags('writer', network=True)}\n"
-        "    return sdk.ClaudeAgentOptions(**kw)\n",
+        "    return sdk.ClaudeAgentOptions(**kw)\n"
+        "async def d(sdk, options):\n"
+        "    async for m in sdk.query(prompt='x', options=options):\n"
+        "        pass\n"
+        "def e(self):\n"
+        "    return self.query('#id')\n",
         encoding="utf-8",
     )
     census, offenders = claude_sites(tmp_path)
@@ -256,7 +297,9 @@ def test_the_static_guard_flags_a_spawn_without_the_session_flags(tmp_path: Path
         ("bad.py", "spawn"): 1,
         ("bad.py", "sdk"): 1,
         ("bad.py", "other"): 1,
+        ("bad.py", "sdk_call"): 1,
         ("good.py", "spawn"): 1,
         ("good.py", "sdk"): 1,
+        ("good.py", "sdk_call"): 1,
     }, census
-    assert [line.split(":")[0] for line in offenders] == ["bad.py", "bad.py"], offenders
+    assert [line.split(":")[0] for line in offenders] == ["bad.py"] * 3, offenders
