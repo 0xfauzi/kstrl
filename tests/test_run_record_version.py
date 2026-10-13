@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pytest
 
+import kstrl
 from kstrl import __version__
 from kstrl.evolution import EvolutionJournal
 from kstrl.evolution_config import EvolutionConfig
@@ -181,6 +182,10 @@ class TestTheStampHasOneSource:
         assert proc.returncode == 0, proc.stderr
         assert proc.stdout.strip() == kstrl_version()
         assert project_head[:12] not in proc.stdout
+        # #863 M1 moved version.py to kstrl/git/. The stamp comes from the
+        # directory above the kstrl package, not from kstrl/ or kstrl/git/.
+        source_root = Path(kstrl.__file__).resolve().parent.parent
+        assert proc.stdout.strip() == version_of_source(source_root)
 
 
 class TestAReaderOfAnUnstampedRecord:
