@@ -382,7 +382,7 @@ class TestC4ContractBreaker:
                 side_effect=[success_a, success_b, success_a],
             ) as mock_run,
             patch(
-                "kstrl.factory.run_contract_testing",
+                "kstrl.factory_acceptance.run_contract_testing",
                 side_effect=fake_contract,
             ),
             patch("kstrl.git_diff.get_diff_content", return_value=""),

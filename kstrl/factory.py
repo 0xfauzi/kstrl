@@ -7,7 +7,7 @@ import os
 import time
 from collections.abc import Callable, Mapping
 from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wait
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -17,25 +17,14 @@ from kstrl.config import (
     KstrlConfig,
 )
 from kstrl.config_numbers import check_number
-from kstrl.contract import (
-    ContractCleanupError,
-    ContractMode,
-    run_contract_testing,
-)
 from kstrl.event_catalog import (
     ComponentStarted,
     PhaseStarted,
 )
-from kstrl.event_catalog import ContractResult as ContractResultEvent
 from kstrl.events import EventBus, RunPaths
 from kstrl.factory_acceptance import (
-    _carry,
     _plan_gated,
-    _plan_of_kept_checks,
-    _record_contract_event,
-    _record_contract_failures,
-    _reset_contract_breakers,
-    _resolve_round_base,
+    _run_contract_round,
 )
 from kstrl.factory_agents import (
     AdversarialAgentSelection,
@@ -82,7 +71,7 @@ from kstrl.factory_worktrees import (
     _start_from_dependencies,
 )
 from kstrl.integration_loop import IntegrationLoop
-from kstrl.integration_phase import IntegrationRun, Phase3Round
+from kstrl.integration_phase import IntegrationRun
 from kstrl.interaction import InteractionChannel
 from kstrl.knowledge import (
     current_run_id,
@@ -708,96 +697,6 @@ def run_factory(
         release((factory_config.setup_rung, factory_config.test_rung))
         factory_config.setup_rung = factory_config.test_rung = None
         run_lock.release()
-
-
-def _run_contract_round(
-    phase3_round: Phase3Round,
-    manifest: Manifest,
-    manifest_path: Path,
-    root_dir: Path,
-    factory_config: FactoryConfig,
-    ui: UI,
-    run_id: str,
-    pipeline: ComponentPipeline,
-    run_state: RunState,
-    factory_result: FactoryResult,
-    bus: EventBus,
-    notify: NotifyHooks,
-    components_merged: bool,
-) -> None:
-    """Do the contract tests of one integration round (#776, B3)."""
-    # PHASE 3: Contract testing
-    contract_config = factory_config.contract_config
-    if contract_config is None or contract_config.mode == ContractMode.SKIP.value:
-        return
-
-    # #481: one commit per round. The integrated check tests it and a
-    # later check of the same round must judge the same tree.
-    round_base_sha = _resolve_round_base(manifest, root_dir, ui)
-    phase3_round.base_sha = round_base_sha
-    try:
-        contract_results = run_contract_testing(
-            manifest,
-            root_dir,
-            replace(contract_config, rung=factory_config.test_rung),
-            ui,
-            components_merged=components_merged,
-            base_sha=round_base_sha,
-            setup=factory_config.worktree_setup(),
-            plan=_plan_of_kept_checks(factory_config),
-            carried=factory_config.acceptance_carried,
-        )
-    except ContractCleanupError as exc:
-        # A contract temp worktree survived removal. The user's
-        # checkout is untouched, but .kstrl/contract holds stale
-        # state - fail the run loudly instead of continuing.
-        ui.err(f"  Contract cleanup FAILED: {exc}")
-        factory_result.contract_failures.append(f"contract cleanup failed: {exc}")
-        return
-
-    phase3_round.record(contract_results)
-    for cr in contract_results:
-        bus.emit(
-            ContractResultEvent(
-                tier=cr.tier,
-                passed=cr.passed,
-                breaker=cr.breaker,
-                duration_seconds=round(cr.duration_seconds, 2),
-            )
-        )
-        _record_contract_event(cr, root_dir, ui, run_id, manifest)
-
-    failures = [cr for cr in contract_results if not cr.passed]
-    if not failures:
-        _carry(pipeline, contract_results)
-        return
-
-    _reset_contract_breakers(
-        failures,
-        phase3_round,
-        manifest,
-        manifest_path,
-        factory_config,
-        ui,
-        pipeline,
-        run_state,
-        factory_result,
-    )
-
-    if phase3_round.breaker_reset:
-        return
-
-    _record_contract_failures(
-        failures,
-        manifest,
-        manifest_path,
-        ui,
-        pipeline,
-        run_state,
-        factory_result,
-        bus,
-        notify,
-    )
 
 
 def _make_bus(ui: UI, run_id: str) -> EventBus:

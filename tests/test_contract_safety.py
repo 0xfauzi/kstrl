@@ -658,7 +658,7 @@ class TestCleanupFailsLoudly:
         )
 
         with patch(
-            "kstrl.factory.run_contract_testing",
+            "kstrl.factory_acceptance.run_contract_testing",
             side_effect=ContractCleanupError("worktree survived removal"),
         ):
             result = run_factory(

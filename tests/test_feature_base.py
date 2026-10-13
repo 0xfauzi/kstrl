@@ -387,7 +387,7 @@ class TestThePinnedCommit:
                 return [ContractResult(False, 0, ["comp-a"], breaker="comp-a", test_output="x")]
             return [ContractResult(True, 0, ["comp-a"])]
 
-        with patch("kstrl.factory.run_contract_testing", side_effect=fake_contract):
+        with patch("kstrl.factory_acceptance.run_contract_testing", side_effect=fake_contract):
             result, _output = _run(
                 tmp_path,
                 _make_manifest([_component("comp-a")]),
@@ -439,7 +439,7 @@ class TestThePinnedCommit:
             pinned.append(base_sha)
             return [ContractResult(True, 0, ["comp-a"])]
 
-        with patch("kstrl.factory.run_contract_testing", side_effect=fake_contract):
+        with patch("kstrl.factory_acceptance.run_contract_testing", side_effect=fake_contract):
             _result, output = _run(
                 tmp_path,
                 _make_manifest([_component("comp-a")]),
