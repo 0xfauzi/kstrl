@@ -71,7 +71,7 @@ Captured for the H2 check on the REVIEWER_PROMPT / SECURITY_PROMPT
 1.2.0 change. Its `architect_allowed_paths` figure of 0.00 is an
 ARTIFACT, not a detection result: the fixture's forbidden-path check
 used a substring match, and the kstrl rename (#122/#124/#172) changed
-the forbidden entry from `ralph_py/` to `kstrl/`, which is a substring
+the forbidden entry from the old package directory to `kstrl/`, which is a substring
 of `scripts/kstrl/feature/<id>/` - the one subtree DECOMPOSE_PROMPT
 instructs the architect to include. The architect emitted the same
 paths the 20260720 baseline recorded as gate-clean; the checker had

@@ -67,8 +67,8 @@ class ScaffoldedTemplate:
 
 
 # Harvested from this repository's full history by hashing the constant
-# at every commit that changed it (including the pre-rename `ralph`
-# era, whose bodies could still be sitting in a migrated checkout).
+# at every commit that changed it, including the commits before the
+# rename to kstrl, whose bodies can still be on disk in a checkout.
 SCAFFOLDED_TEMPLATES: tuple[ScaffoldedTemplate, ...] = (
     ScaffoldedTemplate(
         filename="prompt.md",

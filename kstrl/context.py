@@ -91,32 +91,6 @@ SKIPPABLE_PHASES: frozenset[str] = frozenset({"review", "security"})
 #: before entries existed. Their real age is unknown.
 LEGACY_ATTEMPT = 0
 
-#: Which phases feed each backward-compatible string view.
-#:
-#: The views group by check phase, which is close to but not identical
-#: to the list each text landed in before R10.2. Two texts moved,
-#: because ranking them by which check ran mattered more than the
-#: grouping of a shim: the in-loop diff-scope guard (verification ->
-#: engineer, so review_findings) and the unsplittable diff (review ->
-#: diff, so verification_failures). Nothing in kstrl reads these; the
-#: E6 checkpoint screen reads CheckpointContext.review_findings, a
-#: different type. They exist so the pre-R10.2 shape still reads back.
-_VIEW_PHASES: dict[str, tuple[str, ...]] = {
-    "review_findings": ("engineer", "review", "security", "pr"),
-    "verification_failures": ("verification", "diff"),
-    "contract_failures": ("contract",),
-}
-
-#: Phase assigned to each legacy list when reading pre-R10.2 JSON. The
-#: three lists cannot distinguish engineer/review/security, so
-#: review_findings collapses to "review"; the attempt is unknown either
-#: way, which is what actually decides where those entries render.
-_LEGACY_LIST_PHASE: dict[str, str] = {
-    "review_findings": "review",
-    "verification_failures": "verification",
-    "contract_failures": "contract",
-}
-
 
 def _require_known_phase(phase: str) -> None:
     """One definition of a phase name this object will accept.
@@ -137,8 +111,8 @@ class IterationRecord:
     ``iteration`` is the engineer loop's own iteration counter, which is
     not the attempt number: one attempt runs many iterations. ``attempt``
     carries the attempt number so the history renders honestly; it is
-    ``LEGACY_ATTEMPT`` on records deserialised from pre-R10.2 JSON, and
-    the renderer then falls back to the record's position.
+    ``LEGACY_ATTEMPT`` on a record that carries no attempt, and the
+    renderer then falls back to the record's position.
     """
 
     iteration: int
@@ -267,24 +241,6 @@ class IterationContext:
     entries: list[FailureEntry] = field(default_factory=list)
     readings: set[PhaseReading] = field(default_factory=set)
 
-    # Backward-compatible read-only views. Nothing in kstrl/ reads these
-    # any more, but they keep the shape the pre-R10.2 object exposed.
-    @property
-    def review_findings(self) -> list[str]:
-        return self._texts("review_findings")
-
-    @property
-    def verification_failures(self) -> list[str]:
-        return self._texts("verification_failures")
-
-    @property
-    def contract_failures(self) -> list[str]:
-        return self._texts("contract_failures")
-
-    def _texts(self, view: str) -> list[str]:
-        phases = _VIEW_PHASES[view]
-        return [e.text for e in self.entries if e.phase in phases]
-
     def add_iteration(self, record: IterationRecord) -> None:
         self.records.append(record)
 
@@ -368,8 +324,8 @@ class IterationContext:
     def _latest_attempt(self) -> int:
         """The latest attempt any evidence came from.
 
-        Failure entries and records both carry the attempt. Records
-        deserialised from pre-R10.2 JSON do not, so their count is the
+        Failure entries and records both carry the attempt. A record
+        with no attempt does not, so the record count is the
         floor: at most one record is appended per attempt.
         """
         return max(
@@ -577,8 +533,7 @@ class IterationContext:
 
     @classmethod
     def from_json(cls, data: str) -> IterationContext:
-        """Deserialize from JSON string, in either the current shape or the
-        pre-R10.2 shape (three undated string lists)."""
+        """Deserialize from the JSON string that ``to_json`` wrote."""
         if not data or data == "{}":
             return cls()
         parsed = read_json(data)
@@ -610,24 +565,19 @@ class IterationContext:
                 reading_data["phase"],
                 attempt=reading_data["attempt"],
             )
-        if "entries" in parsed:
-            for entry_data in parsed["entries"]:
-                ctx.entries.append(
-                    FailureEntry(
-                        attempt=entry_data["attempt"],
-                        phase=entry_data["phase"],
-                        text=entry_data["text"],
-                        infrastructure=entry_data.get("infrastructure", False),
-                    )
+        # The shape before R10.2 had three string lists and no "entries".
+        # kstrl no longer reads it (#863). It is refused, because an empty
+        # read would drop the failures of the earlier attempts silently.
+        expired = {"review_findings", "verification_failures", "contract_failures"}
+        if "entries" not in parsed and expired & parsed.keys():
+            raise ValueError("iteration context has the shape before R10.2 (#863)")
+        for entry_data in parsed.get("entries", []):
+            ctx.entries.append(
+                FailureEntry(
+                    attempt=entry_data["attempt"],
+                    phase=entry_data["phase"],
+                    text=entry_data["text"],
+                    infrastructure=entry_data.get("infrastructure", False),
                 )
-            return ctx
-        for list_name, phase in _LEGACY_LIST_PHASE.items():
-            for text in parsed.get(list_name, []):
-                ctx.entries.append(
-                    FailureEntry(
-                        attempt=LEGACY_ATTEMPT,
-                        phase=phase,
-                        text=text,
-                    )
-                )
+            )
         return ctx
