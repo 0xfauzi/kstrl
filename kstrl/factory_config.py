@@ -391,7 +391,7 @@ class FactoryConfig:
     @classmethod
     def from_env(cls) -> FactoryConfig:
         """Load factory config from environment variables."""
-        from kstrl.config import _parse_bool
+        from kstrl.config import parse_bool
 
         return cls(
             max_parallel=int(os.environ.get("FACTORY_MAX_PARALLEL", "4")),
@@ -415,22 +415,20 @@ class FactoryConfig:
                 float(os.environ.get("KSTRL_FACTORY_MAX_COST_USD", "0")),
                 "KSTRL_FACTORY_MAX_COST_USD",
             ),
-            pause_before_pr_merge=_parse_bool(
-                os.environ.get("KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE")
-            ),
+            pause_before_pr_merge=parse_bool(os.environ.get("KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE")),
             explicit_fields=(
                 frozenset({"pause_before_pr_merge"})
                 if "KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE" in os.environ
                 else frozenset()
             ),
-            progress_log_enabled=_parse_bool(
+            progress_log_enabled=parse_bool(
                 os.environ.get("KSTRL_FACTORY_PROGRESS_LOG_ENABLED", "1")
             ),
-            keep_worktrees_on_failure=_parse_bool(
+            keep_worktrees_on_failure=parse_bool(
                 os.environ.get("KSTRL_FACTORY_KEEP_WORKTREES_ON_FAILURE")
             ),
-            integration_review=_parse_bool(os.environ.get("KSTRL_FACTORY_INTEGRATION_REVIEW", "1")),
-            integration_blocking=_parse_bool(os.environ.get("KSTRL_FACTORY_INTEGRATION_BLOCKING")),
+            integration_review=parse_bool(os.environ.get("KSTRL_FACTORY_INTEGRATION_REVIEW", "1")),
+            integration_blocking=parse_bool(os.environ.get("KSTRL_FACTORY_INTEGRATION_BLOCKING")),
             convergence_attempts=_validate_convergence_attempts(
                 _env_int(os.environ.get("KSTRL_FACTORY_CONVERGENCE_ATTEMPTS", "0")),
                 "KSTRL_FACTORY_CONVERGENCE_ATTEMPTS",
@@ -460,7 +458,7 @@ class FactoryConfig:
         Reads the ``[factory]`` section from ``<root_dir>/kstrl.toml`` if
         present, then overlays any matching env vars on top.
         """
-        from kstrl.config import _parse_bool, load_toml_section, resolve_config_file
+        from kstrl.config import load_toml_section, parse_bool, resolve_config_file
 
         if root_dir is None:
             root_dir = Path.cwd()
@@ -568,22 +566,22 @@ class FactoryConfig:
                 float(os.environ["KSTRL_FACTORY_MAX_COST_USD"]), "KSTRL_FACTORY_MAX_COST_USD"
             )
         if "KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE" in os.environ:
-            config.pause_before_pr_merge = _parse_bool(
+            config.pause_before_pr_merge = parse_bool(
                 os.environ["KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE"]
             )
             config.explicit_fields |= {"pause_before_pr_merge"}
         if "KSTRL_FACTORY_PROGRESS_LOG_ENABLED" in os.environ:
-            config.progress_log_enabled = _parse_bool(
+            config.progress_log_enabled = parse_bool(
                 os.environ["KSTRL_FACTORY_PROGRESS_LOG_ENABLED"]
             )
         if "KSTRL_FACTORY_KEEP_WORKTREES_ON_FAILURE" in os.environ:
-            config.keep_worktrees_on_failure = _parse_bool(
+            config.keep_worktrees_on_failure = parse_bool(
                 os.environ["KSTRL_FACTORY_KEEP_WORKTREES_ON_FAILURE"]
             )
-        config.integration_review = _parse_bool(
+        config.integration_review = parse_bool(
             os.environ.get("KSTRL_FACTORY_INTEGRATION_REVIEW", str(config.integration_review))
         )
-        config.integration_blocking = _parse_bool(
+        config.integration_blocking = parse_bool(
             os.environ.get("KSTRL_FACTORY_INTEGRATION_BLOCKING", str(config.integration_blocking))
         )
         config.convergence_attempts = _validate_convergence_attempts(
@@ -703,7 +701,7 @@ def claim_gate_unreachable_warning(config: FactoryConfig) -> str | None:
     return None
 
 
-def _warn_unreachable_gates(factory_config: FactoryConfig, ui: UI) -> None:
+def warn_unreachable_gates(factory_config: FactoryConfig, ui: UI) -> None:
     """Warn about a merge gate or a claim gate that the run cannot reach."""
     # Issue #207 (review P1): checked AFTER autonomy resolution, because
     # the L1/L2 bundle can flip pause_before_pr_merge on when no config

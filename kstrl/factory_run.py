@@ -19,11 +19,11 @@ from kstrl.events import EventBus, EventSink, JsonlSink, RunPaths, V1CompatSink
 from kstrl.factory_acceptance import _stamp_feature_base
 from kstrl.factory_agents import (
     AdversarialAgentSelection,
-    _engineer_sandbox,
-    _warn_unsandboxable_reviewers,
+    resolve_engineer_sandbox,
+    warn_unsandboxable_reviewers,
 )
 from kstrl.factory_autonomy import _report_ladder, _resolve_ladder
-from kstrl.factory_config import FactoryConfig, _warn_unreachable_gates
+from kstrl.factory_config import FactoryConfig, warn_unreachable_gates
 from kstrl.factory_launch import (
     LaunchPlan,
     _print_execution_header,
@@ -33,9 +33,9 @@ from kstrl.factory_launch import (
 from kstrl.factory_preflight import (
     _emit_stack_confirmation,
     _record_run_scope,
-    _report_preflight,
+    report_preflight,
 )
-from kstrl.factory_worker import _report_operator_files
+from kstrl.factory_worker import report_operator_files
 from kstrl.factory_worktrees import _interrupted_run_branches
 from kstrl.knowledge_facts import KnowledgeConfig
 from kstrl.linear import LinearConfig, build_linear_sink
@@ -151,7 +151,7 @@ def _resolve_envelope(
     )
     run_envelope = resolved.envelope
     if run_envelope is None:
-        _report_preflight(
+        report_preflight(
             ui,
             "the run configuration cannot be resolved",
             list(resolved.problems),
@@ -419,7 +419,7 @@ def _start_manifest(
     if ladder is not None:
         _report_ladder(ladder, factory_config, bus, ui)
 
-    _warn_unreachable_gates(factory_config, ui)
+    warn_unreachable_gates(factory_config, ui)
 
     # R8.1: the manifest is a self-contained audit record of what merge
     # guardrails were in force for this run. #192: read back off the
@@ -469,8 +469,8 @@ def _resolve_limits(
     # or [sandbox] enabled = false) is a warning the run records in its
     # events.jsonl, never a refusal (#700, owner decision 2026-10-09).
     warn_unconfined(ui.warn, run_envelope.sandbox, {"engineer": base_config.agent_cmd})
-    _warn_unsandboxable_reviewers(ui, review_selection, security_selection)
-    factory_config.engineer_sandbox = _engineer_sandbox(run_envelope.sandbox, base_config)
+    warn_unsandboxable_reviewers(ui, review_selection, security_selection)
+    factory_config.engineer_sandbox = resolve_engineer_sandbox(run_envelope.sandbox, base_config)
     return max_parallel, timeout_cfg, backstop_seconds, breaker_cfg
 
 
@@ -526,7 +526,7 @@ def _stage_launch(
         usage_paths,
     )
 
-    _report_operator_files(base_config, root_dir, ui)
+    report_operator_files(base_config, root_dir, ui)
 
     # #261: run-invariant, so it is resolved once here rather than per
     # component. None when Phase 1 is off.

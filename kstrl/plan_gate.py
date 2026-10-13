@@ -31,7 +31,7 @@ from kstrl.decompose_prompt import load_spec_input, spec_digest
 from kstrl.inbox import UNDECIDED, Inbox, InboxError, InboxItem, ItemKind, ItemStatus
 from kstrl.interaction import PromptKind, PromptRequest
 from kstrl.observability import NotifyConfig, NotifyHooks
-from kstrl.pipeline_state import _iso_now
+from kstrl.pipeline_state import iso_now
 from kstrl.prd import PRD
 from kstrl.statedir import ControlStateError, pre_run_prd_path
 from kstrl.workqueue_store import relocated_spec
@@ -331,7 +331,7 @@ def _settle(pipeline: ComponentPipeline, awaiting: str, decision: str, decided_b
     manifest = pipeline.manifest
     manifest.plan_awaiting_approval = awaiting
     if decision != "approved":
-        manifest.completed_at = _iso_now()
+        manifest.completed_at = iso_now()
     manifest.save(pipeline.manifest_path)
     pipeline.bus.emit(
         event_catalog.CheckpointResolved(kind=PLAN_KIND, decision=decision, decided_by=decided_by)

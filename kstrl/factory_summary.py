@@ -10,15 +10,15 @@ from kstrl.event_catalog import RunCompleted
 from kstrl.factory_autonomy import _record_autonomy
 from kstrl.factory_result import (
     FactoryResult,
-    _ids_in_status,
-    _report_awaiting_approval,
+    ids_in_status,
+    report_awaiting_approval,
     resolve_exit_code,
     run_is_clean,
 )
 from kstrl.factory_run import RunContext
 from kstrl.integration_phase import report_integration
 from kstrl.manifest import ComponentStatus
-from kstrl.pipeline_state import _iso_now
+from kstrl.pipeline_state import iso_now
 from kstrl.pr import create_prs_in_order, create_single_pr
 from kstrl.release import RELEASE_REF_RULE, ReleaseInputs, release_ref_from, release_withheld
 
@@ -38,8 +38,8 @@ def _finish_run(ctx: RunContext) -> FactoryResult:
     # before #154's fix round (B11): nothing between this line and the
     # old site mutates a component's status, so the move changes nothing
     # else this function reports.
-    ctx.factory_result.merge_pending = _ids_in_status(ctx.manifest, ComponentStatus.MERGE_PENDING)
-    ctx.factory_result.awaiting_approval = _ids_in_status(
+    ctx.factory_result.merge_pending = ids_in_status(ctx.manifest, ComponentStatus.MERGE_PENDING)
+    ctx.factory_result.awaiting_approval = ids_in_status(
         ctx.manifest, ComponentStatus.AWAITING_APPROVAL
     )
 
@@ -77,7 +77,7 @@ def _finish_run(ctx: RunContext) -> FactoryResult:
     # resume (and Linear, later) can tell a finished run from a crash.
     # Stamped BEFORE the completion notification so a hook that reads
     # the manifest sees the terminal state.
-    ctx.manifest.completed_at = _iso_now()
+    ctx.manifest.completed_at = iso_now()
     ctx.manifest.save(ctx.manifest_path)
 
     _record_autonomy(ctx)
@@ -188,7 +188,7 @@ def _print_summary(ctx: RunContext, factory_duration: float) -> None:
     report_integration(ctx.integration_record, ctx.ui)
     if ctx.factory_result.merge_pending:
         ctx.ui.kv("Merge pending", str(len(ctx.factory_result.merge_pending)))
-    _report_awaiting_approval(ctx.factory_result, ctx.ui)
+    report_awaiting_approval(ctx.factory_result, ctx.ui)
     ctx.ui.kv("Duration", f"{factory_duration:.0f}s")
     # R3.1 usage rollup: per component, per phase, plus the run total.
     print_usage_rollup(

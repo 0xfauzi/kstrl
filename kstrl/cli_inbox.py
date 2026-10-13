@@ -18,10 +18,10 @@ from kstrl.config_report import UI_MODES
 from kstrl.factory_lock import (
     FactoryLockHeldError,
     LeftoverAgentsError,
-    _acquire_run_lock,
-    _RunLock,
+    RunLock,
+    acquire_run_lock,
 )
-from kstrl.factory_preflight import _report_preflight
+from kstrl.factory_preflight import report_preflight
 from kstrl.launch_record import option_argv
 from kstrl.manifest import MERGE_GATE_PARK_KEY, ComponentStatus, Manifest
 from kstrl.plan_gate import PLAN_GATE_KEY, spec_pin_errors
@@ -33,7 +33,7 @@ if TYPE_CHECKING:
     from kstrl.inbox import InboxItem
 
 
-def _inbox_run_lock(root_dir: Path, ui_impl: UI, *, not_done: str, then: str) -> _RunLock:
+def _inbox_run_lock(root_dir: Path, ui_impl: UI, *, not_done: str, then: str) -> RunLock:
     """The run lock, taken before an inbox command changes anything, or exit 2 (#597).
 
     A live factory run saves its whole in-memory manifest, so a requeue
@@ -46,7 +46,7 @@ def _inbox_run_lock(root_dir: Path, ui_impl: UI, *, not_done: str, then: str) ->
     so the refusal names only waiting.
     """
     try:
-        return _acquire_run_lock(root_dir, ui_impl, force=False)
+        return acquire_run_lock(root_dir, ui_impl, force=False)
     except LeftoverAgentsError as exc:
         ui_impl.err(f"{not_done}: {exc}")
         sys.exit(2)
@@ -412,7 +412,7 @@ def _decide_parked_merge_if_parked(
         if not_parked:
             ui_impl.err(not_parked)
             sys.exit(2)
-        if _report_preflight(
+        if report_preflight(
             ui_impl,
             f"{item.id[:8]}: nothing was approved: the plan does not match the spec it "
             "was made from",
@@ -429,7 +429,7 @@ def _decide_parked_merge_if_parked(
             keep_worktrees_on_failure=False,
         )
         if plan is None:
-            _report_preflight(ui_impl, RESUME_REFUSAL, problems)
+            report_preflight(ui_impl, RESUME_REFUSAL, problems)
             sys.exit(2)
         serve_parked = _serve_parked(root_dir, manifest.run_id, ui_impl)
         try:

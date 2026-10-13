@@ -64,7 +64,6 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl.context import ACCEPTANCE_PHASE
 from kstrl.findings import (
     POLICY_CATEGORY_PREFIX,
     WAIVER_TAG_PREFIX,
@@ -79,6 +78,10 @@ if TYPE_CHECKING:
 #: Bumped when the key's fields change. A stored key made under another
 #: version never equals a recomputed one, so every older approval is
 #: refused rather than reinterpreted.
+#: The phase name of the operator's acceptance checks (#700 slice 6). It lives
+#: here because ``kstrl.context`` ranks it and imports it from this module.
+ACCEPTANCE_PHASE = "acceptance"
+
 WAIVER_KEY_VERSION = 1
 
 #: The inbox kinds an approval of which waives a finding, each with the

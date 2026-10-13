@@ -26,7 +26,7 @@ from kstrl.cli_preflight import (
 )
 from kstrl.cli_seam import _console_ui, _resolve_path, _resolve_root, _use_cli_value, cli
 from kstrl.commandrun import CommandRun, open_command_run
-from kstrl.config import KstrlConfig, _parse_paths, resolve_config_file
+from kstrl.config import KstrlConfig, parse_paths, resolve_config_file
 from kstrl.config_numbers import LIMIT_FLOAT, LIMIT_INT
 from kstrl.config_report import UI_MODES
 from kstrl.config_report import normalize_ui_mode as _normalize_ui_mode
@@ -503,7 +503,7 @@ def understand(
     if _use_cli_value(ctx, "interactive"):
         config.interactive = interactive
     if _use_cli_value(ctx, "allowed_paths"):
-        config.allowed_paths = _parse_paths(allowed_paths)
+        config.allowed_paths = parse_paths(allowed_paths)
     if _use_cli_value(ctx, "branch"):
         config.kstrl_branch = branch
         config.kstrl_branch_explicit = True

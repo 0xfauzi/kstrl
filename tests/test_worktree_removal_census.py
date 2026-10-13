@@ -10,7 +10,7 @@ LAYER 1, the net, is :func:`astwalk.assert_census` over every expression in
 ``kstrl/`` that folds to exactly ``"remove"`` or to a string containing
 ``"worktree remove"``. It enumerates no node types, so any spelling of a
 removal, an argv list, a tuple passed to a wrapper, or a shell string, moves
-a module's count. The prose hits in ``contract.py`` are its error messages,
+a module's count. The prose hits in ``temp_worktree.py`` are its error messages,
 which tell the operator the manual command.
 
 LAYER 2, :func:`removal_sites`, reads every argv whose ``"remove"`` follows
@@ -45,22 +45,24 @@ def _spells_a_removal(node: ast.AST) -> bool:
     return folded is not None and (folded == "remove" or "worktree remove" in folded)
 
 
-#: Every module spelling a removal, and how many times. contract.py is one
-#: argv and six prose pieces of its manual-removal messages.
+#: Every module spelling a removal, and how many times. temp_worktree.py is one
+#: argv and five prose pieces of its manual-removal messages; contract.py
+#: has one more prose piece.
 EXPECTED_REMOVAL_SPELLINGS = {
-    "contract.py": 7,
+    "contract.py": 1,
     "factory_worktrees.py": 4,
     "retry_plan.py": 1,
+    "temp_worktree.py": 6,
 }
 
 #: Every removal argv in kstrl/, by scope, and whether it is swept.
 EXPECTED_REMOVAL_SITES = (
-    "contract.py::_remove_temp_worktree swept",
     "factory_worktrees.py::_cleanup_worktree swept",
     "factory_worktrees.py::_prune_stale_worktrees swept",
     "factory_worktrees.py::_prune_stale_worktrees swept",
     "factory_worktrees.py::_setup_worktree swept",
     "retry_plan.py::prepare_retry swept",
+    "temp_worktree.py::remove_temp_worktree swept",
 )
 
 SWEPT = """\
@@ -227,7 +229,7 @@ def _sites(source: str) -> astwalk.Sites:
     return removal_sites(astwalk.parse(source), "planted.py", "planted")
 
 
-#: The shape of ``contract._remove_temp_worktree``: the sweep, then the
+#: The shape of ``temp_worktree.remove_temp_worktree``: the sweep, then the
 #: removal inside a ``try`` that follows it.
 SWEPT_THEN_TRY = """\
 import subprocess

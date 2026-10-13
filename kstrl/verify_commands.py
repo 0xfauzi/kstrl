@@ -9,7 +9,7 @@ from pathlib import Path
 
 from kstrl.failure_excerpt import failure_excerpt
 from kstrl.rung import Rung
-from kstrl.scrubbed_run import ChildOutputDecodeError, _readable, run_scrubbed
+from kstrl.scrubbed_run import ChildOutputDecodeError, readable_text, run_scrubbed
 from kstrl.stack import NO_STACK, Stack
 from kstrl.timeout import limit_seconds
 from kstrl.verify_model import (
@@ -59,7 +59,7 @@ def _output_before_stop(stdout: bytes | str | None, stderr: bytes | str | None) 
     lines it printed, so these two exits keep the output the exception
     carries rather than returning a message alone.
     """
-    return bounded_gate_output((_readable(stdout) + _readable(stderr)).strip())
+    return bounded_gate_output((readable_text(stdout) + readable_text(stderr)).strip())
 
 
 def run_fast_checks(worktree_path: Path, config: VerifyConfig) -> VerificationResult:

@@ -20,7 +20,41 @@ from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from kstrl.decisions import enum_field_error, required_field_error
+
+def required_field_error(prefix: str, name: str, value: Any) -> str | None:
+    """One required string field, or the reason it is not one.
+
+    Shared with ``decompose._spec_issue_errors``: the two raw validators
+    that guard the #260 join must word an identical fault identically,
+    or a retry sees two vocabularies for one mistake.
+    """
+    if not isinstance(value, str):
+        return f"{prefix}.{name}: must be a string, got {type(value).__name__}"
+    if not value.strip():
+        return f"{prefix}.{name}: must not be empty"
+    return None
+
+
+def enum_field_error(
+    prefix: str,
+    name: str,
+    value: Any,
+    valid: Collection[str],
+) -> str | None:
+    """One required field constrained to a fixed vocabulary.
+
+    The message names the whole vocabulary and says the match is exact,
+    because "is not one of" without the list sends a retry guessing. F1
+    was a capitalised ``disposition``; the round-2 /simplify pass found
+    the same hole one field over, in a spec issue's ``severity``, so
+    this is the one place both are now checked.
+    """
+    if not isinstance(value, str):
+        return f"{prefix}.{name}: must be a string, got {type(value).__name__}"
+    if value not in valid:
+        return f"{prefix}.{name}: {value!r} is not one of {sorted(valid)} (match is case-exact)"
+    return None
+
 
 KIND_REQUIREMENT = "requirement"
 KIND_NON_GOAL = "non_goal"

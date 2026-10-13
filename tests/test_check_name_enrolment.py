@@ -78,7 +78,7 @@ where the string-folding lives so there is one copy of it rather than
 two that can be widened apart.
 
 What the walk CANNOT see, stated rather than left as a silent gap:
-``evolution._classify_check`` RETURNS ``verification`` and ``unknown``
+``evolution.classify_check`` RETURNS ``verification`` and ``unknown``
 for a legacy flattened error string, so no call site anywhere carries
 them. They are enrolled today, and :data:`ENROLLED_BUT_INVISIBLE` plus
 :meth:`TestEveryCheckNameIsEnrolled.test_the_walk_covers_every_enrolled_name_but_these`
@@ -179,10 +179,10 @@ SIGNATURE_CONTAINER_SUFFIX = "failure_signatures"
 #: invisible. Anything else in the table must be reachable by the walk,
 #: or the walk has gone blind and says nothing (#324).
 ENROLLED_BUT_INVISIBLE = {
-    # _classify_check RETURNS these for a legacy flattened error string.
+    # classify_check RETURNS these for a legacy flattened error string.
     # They are never arguments, so no call site carries them.
-    "verification": "returned by _classify_check, never passed to a call",
-    "unknown": "returned by _classify_check, never passed to a call",
+    "verification": "returned by classify_check, never passed to a call",
+    "unknown": "returned by classify_check, never passed to a call",
     # #696 flag day: the three fixed per-tool check names retired with
     # the [verify]/[contract] command keys. Nothing in kstrl/ spells them
     # any more - a [stack] check's row name is composed at runtime from

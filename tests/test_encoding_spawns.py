@@ -260,7 +260,7 @@ EXPECTED_BYTES_MODE_SPAWNS: dict[str, int] = {
     # so a gate whose output is not utf-8 can still write its log.
     # `tests/test_undecodable_child_output.py` pins the strictness.
     # #700 slice 3: +1, `start_scrubbed`, whose output goes to a log file and
-    # is read back through `_readable` as evidence only. #696 slice 8: -1,
+    # is read back through `readable_text` as evidence only. #696 slice 8: -1,
     # `_base_finding` went with the rules that read one language's files.
     # #776 V1: both spawns moved here from `verify.py`.
     "scrubbed_run.py": 2,

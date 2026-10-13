@@ -30,7 +30,7 @@ from kstrl.runid import mint_run_id
 from kstrl.statedir import plan_prd_path
 
 if TYPE_CHECKING:
-    from kstrl.factory_lock import _RunLock
+    from kstrl.factory_lock import RunLock
     from kstrl.spec_issues import SpecIssue
     from kstrl.ui.base import UI
 
@@ -200,7 +200,7 @@ def _write_plan(
     spec_source: str,
     pin: str,
     stack_pin: str,
-    run_lock: _RunLock | None,
+    run_lock: RunLock | None,
     force_lock: bool,
     commit_register: Callable[[], object],
 ) -> tuple[Manifest, Path, list[Path]]:

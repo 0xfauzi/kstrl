@@ -51,7 +51,7 @@ _LINENO_RE = re.compile(r"(?::\d+:?\d*|line \d+|col(?:umn)? \d+)", re.IGNORECASE
 _QUOTED_NAME_RE = re.compile(r"['\"][\w.]+['\"]")
 
 
-def _normalize_error(error: str) -> str:
+def normalize_error(error: str) -> str:
     """Normalize an error string into a stable signature.
 
     - Keeps linter rule codes as-is (e.g. S608, E501).
@@ -89,7 +89,7 @@ def _normalize_error(error: str) -> str:
     return slug[:80] if slug else "unknown"
 
 
-def _classify_check(error: str) -> str:
+def classify_check(error: str) -> str:
     """Return the check name inferred from the error text.
 
     The legacy fallback, used wherever a component has no in-memory
@@ -262,7 +262,7 @@ _CATEGORY_BY_CHECK = {
     # #315: these two rows state "iteration" explicitly, and since #496
     # they are the only way a name reaches it: the fallback for a name
     # the table does not carry is UNENROLLED_CATEGORY. "unknown" is what
-    # _classify_check returns when it cannot recognise a legacy error
+    # classify_check returns when it cannot recognise a legacy error
     # string: not the engineer's fault so much as nobody's, and inventing
     # a category for "we could not tell" would be a worse answer than
     # the one this table has always given.
@@ -299,7 +299,7 @@ def signature_slug(text: str) -> str:
     """Stable low-cardinality slug for a failure message.
 
     Strips file paths, line/column numbers, quoted names, and standalone
-    counts, then slugifies the first line. Unlike ``_normalize_error``
+    counts, then slugifies the first line. Unlike ``normalize_error``
     this never extracts linter codes and never keeps varying counts."""
     if not text:
         return ""

@@ -10,9 +10,9 @@ from kstrl.evolution_config import EvolutionConfig
 from kstrl.experiments_tsv import experiment_rows
 from kstrl.failure_signatures import (
     FailurePattern,
-    _classify_check,
-    _normalize_error,
     category_for_check,
+    classify_check,
+    normalize_error,
     split_signature,
 )
 from kstrl.journal_rows import (
@@ -75,8 +75,8 @@ class JournalReads:
                 continue
             sigs = list(signatures_by_component.get(comp.id) or [])
             if not sigs:
-                legacy_check = _classify_check(comp.error)
-                legacy_sig = _normalize_error(comp.error)
+                legacy_check = classify_check(comp.error)
+                legacy_sig = normalize_error(comp.error)
                 if not legacy_sig:
                     continue
                 sigs = [f"{legacy_check}:{legacy_sig}"]

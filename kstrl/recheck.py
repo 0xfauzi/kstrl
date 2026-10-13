@@ -169,7 +169,7 @@ def _saved_plan(
 def _names_its_checks(plan: PinnedPlan, comp: str, ran: list[str], removed: list[str]) -> bool:
     """Whether the record names each check of its plan's ``comp`` once: as
     run on the head, or as removed on the base, which only a plan the
-    verification designer wrote does (:func:`kstrl.acceptance_design.kept_on_base`)."""
+    verification designer wrote does (:func:`kstrl.acceptance_base.kept_on_base`)."""
     planned = sorted(check.id for check in plan.components[comp].checks)
     return sorted(ran + removed) == planned and (plan.designed or not removed)
 

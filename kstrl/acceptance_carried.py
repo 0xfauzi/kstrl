@@ -375,7 +375,7 @@ def carry_passed(
 ) -> str:
     """Add the kept checks of the ``merged`` components to the carried
     file, after Phase 3 passed on ``sha``; return why it was not written."""
-    from kstrl.factory_worktrees import _has_merged
+    from kstrl.manifest_merge import has_merged
 
     plan, base, stack = config.acceptance_plan, config.acceptance_base, config.project_stack
     if plan is None or base is None or stack is None or not sha:
@@ -387,7 +387,7 @@ def carry_passed(
     added = 0
     for comp_id in merged:
         comp = manifest.get_component(comp_id)
-        if comp is None or not _has_merged(comp) or comp_id not in base.kept:
+        if comp is None or not has_merged(comp) or comp_id not in base.kept:
             continue
         for check in base.kept[comp_id].checks:
             if (plan.digest, comp_id, check.id) in seen:

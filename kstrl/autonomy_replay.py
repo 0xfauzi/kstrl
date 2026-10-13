@@ -77,7 +77,7 @@ from kstrl.verify_diff import SCOPE_UNREADABLE_CHECK
 #: the tree in 606cbb1, the commit that created this tuple, and no call
 #: site produces them. #339 re-measured it four ways and got the same
 #: answer: none of the three appears in `kstrl/` as a signature prefix,
-#: none is in `_CATEGORY_BY_CHECK`, none is in `_classify_check`'s range,
+#: none is in `_CATEGORY_BY_CHECK`, none is in `classify_check`'s range,
 #: and none is producible by any of the four check-name producers
 #: `tests/test_check_name_enrolment.py` enumerates.
 #:

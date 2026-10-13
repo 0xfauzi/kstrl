@@ -167,7 +167,7 @@ def _glob_to_regex(pattern: str) -> str:
     return "^" + "".join(out) + "$"
 
 
-def _match_glob(path: str, patterns: Sequence[str]) -> str | None:
+def match_glob(path: str, patterns: Sequence[str]) -> str | None:
     """Return the first pattern matching ``path``, else None."""
     for pattern in patterns:
         if re.match(_glob_to_regex(pattern), path):
@@ -344,7 +344,7 @@ def evaluate_policy(
     # 1. Enforcement-machinery halt (non-overridable, reported first).
     # The configurable extras can only ADD to the hardcoded set.
     machinery_patterns = list(ENFORCEMENT_MACHINERY_PATHS) + list(config.enforcement_paths_extra)
-    machinery = [f for f in changed_files if _match_glob(f, machinery_patterns)]
+    machinery = [f for f in changed_files if match_glob(f, machinery_patterns)]
     machinery_hit = bool(machinery)
     if machinery_hit:
         violations.append(
@@ -370,7 +370,7 @@ def evaluate_policy(
     for path in changed_files:
         if path in machinery_set:
             continue
-        pattern = _match_glob(path, config.paths_deny)
+        pattern = match_glob(path, config.paths_deny)
         if pattern:
             deny_hits.append(f"{path} (deny '{pattern}')")
     if deny_hits:

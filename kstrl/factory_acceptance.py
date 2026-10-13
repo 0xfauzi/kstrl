@@ -20,7 +20,6 @@ from kstrl.acceptance_design import (
     unreproduced,
 )
 from kstrl.contract import (
-    ContractCleanupError,
     ContractMode,
     ContractResult,
     run_contract_testing,
@@ -35,18 +34,17 @@ from kstrl.factory_config import (
     FactoryConfig,
 )
 from kstrl.factory_preflight import (
-    _report_preflight,
-)
-from kstrl.factory_worktrees import (
-    _has_merged,
+    report_preflight,
 )
 from kstrl.manifest import (
     ComponentStatus,
     Manifest,
 )
+from kstrl.manifest_merge import has_merged
 from kstrl.pipeline import ComponentPipeline
-from kstrl.pipeline_state import _iso_now
+from kstrl.pipeline_state import iso_now
 from kstrl.plan_gate import run_plan_gate
+from kstrl.temp_worktree import ContractCleanupError
 
 if TYPE_CHECKING:
     from kstrl.events import EventBus
@@ -92,7 +90,7 @@ def _refused_carried(pipeline: ComponentPipeline) -> bool:
         pipeline.record_carried_halt,
         pipeline.inbox_config,
     )
-    return _report_preflight(
+    return report_preflight(
         pipeline.ui, "an earlier feature's acceptance check does not hold on the base", errors
     )
 
@@ -106,7 +104,7 @@ def _refused_acceptance_design(pipeline: ComponentPipeline) -> bool:
     if not config.design_acceptance or config.acceptance_plan is not None:
         return False
     config.acceptance_plan, errors = design_plan(pipeline)
-    return _report_preflight(pipeline.ui, "the verification designer wrote no usable plan", errors)
+    return report_preflight(pipeline.ui, "the verification designer wrote no usable plan", errors)
 
 
 def _refused_acceptance_base(pipeline: ComponentPipeline) -> bool:
@@ -126,9 +124,9 @@ def _refused_acceptance_base(pipeline: ComponentPipeline) -> bool:
             f"A model wrote these checks. Delete {plan.source} and run again to ask the "
             "verification designer for new ones, which the plan gate then asks about."
         )
-    if _report_preflight(pipeline.ui, "the acceptance checks do not hold on the base", errors):
+    if report_preflight(pipeline.ui, "the acceptance checks do not hold on the base", errors):
         return True
-    if _report_preflight(
+    if report_preflight(
         pipeline.ui, NOT_REPRODUCED, unreproduced(pipeline, plan, config.acceptance_base)
     ):
         return True
@@ -149,7 +147,7 @@ def _stamp_feature_base(manifest: Manifest, manifest_path: Path, root_dir: Path,
     """
     if manifest.feature_base_sha:
         return
-    if any(_has_merged(c) for c in manifest.components):
+    if any(has_merged(c) for c in manifest.components):
         ui.warn(
             "  Feature base unknown: a component merged before any run recorded "
             "where this feature started"
@@ -339,7 +337,7 @@ def _record_contract_failures(
             if breaker is not None:
                 breaker.status = ComponentStatus.FAILED.value
                 breaker.error = f"Contract test failed at tier {cr.tier} ({_stop_reason(cr)})"
-                breaker.completed_at = _iso_now()
+                breaker.completed_at = iso_now()
                 breaker.failed_phase = "contract"
                 breaker.failed_check = f"tier_{cr.tier}"
                 run_state.component_failure_signatures[cr.breaker] = [

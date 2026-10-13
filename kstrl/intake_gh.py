@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from kstrl.config import _parse_paths
+from kstrl.config import parse_paths
 from kstrl.config_numbers import SIGNED, check_numbers
 from kstrl.jsonread import read_json
 from kstrl.workqueue_items import ItemSource, QueueItem
@@ -193,7 +193,7 @@ class GitHubIntakeConfig:
             comment_on_result=(defaults.comment_on_result if comment is None else comment == "1"),
             dry_run=defaults.dry_run if dry is None else dry == "1",
             timeout_seconds=(defaults.timeout_seconds if timeout is None else float(timeout)),
-            allowed_actors=(defaults.allowed_actors if actors is None else _parse_paths(actors)),
+            allowed_actors=(defaults.allowed_actors if actors is None else parse_paths(actors)),
             steer_enabled=defaults.steer_enabled if steer is None else steer == "1",
         )
 
@@ -258,7 +258,7 @@ class GitHubIntakeConfig:
             ),
             "KSTRL_INTAKE_GITHUB_DRY_RUN": ("dry_run", lambda v: v == "1"),
             "KSTRL_INTAKE_GITHUB_TIMEOUT": ("timeout_seconds", float),
-            "KSTRL_INTAKE_GITHUB_ALLOWED_ACTORS": ("allowed_actors", _parse_paths),
+            "KSTRL_INTAKE_GITHUB_ALLOWED_ACTORS": ("allowed_actors", parse_paths),
             "KSTRL_INTAKE_GITHUB_STEER_ENABLED": ("steer_enabled", lambda v: v == "1"),
         }
         for var, (name, cast) in env_map.items():

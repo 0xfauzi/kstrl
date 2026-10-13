@@ -10,7 +10,6 @@ from typing import Any
 
 from kstrl import events as ev
 from kstrl.atomicio import atomic_write_json
-from kstrl.decisions import enum_field_error, required_field_error
 from kstrl.integration import (
     FINDING_ID_PREFIX,
     FINDING_KINDS,
@@ -22,6 +21,7 @@ from kstrl.integration import (
 )
 from kstrl.jsonread import read_json
 from kstrl.manifest import Component, Manifest
+from kstrl.requirements import enum_field_error, required_field_error
 from kstrl.version import kstrl_version
 
 STATE_SCHEMA_VERSION = 1

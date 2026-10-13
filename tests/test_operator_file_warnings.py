@@ -260,7 +260,7 @@ class TestTheNoticeReachesTheOperatorExactlyOnce:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Should-fix 5: ``_report_operator_files`` used to print the
+        """Should-fix 5: ``report_operator_files`` used to print the
         literal ``Golden patterns:`` in front of every message, so
         R10.9's memory file would have announced itself under the
         golden-patterns name the day its row landed.
@@ -305,7 +305,7 @@ class TestTheNoticeReachesTheOperatorExactlyOnce:
 class TestTwoFilesAreTwoSubjects:
     """R10.9 is the case #229's should-fix 5 was fixed for.
 
-    ``_report_operator_files`` used to print the literal
+    ``report_operator_files`` used to print the literal
     ``Golden patterns:`` in front of every message, which would have
     announced the memory file under the golden-patterns name the day its
     row landed. Nothing exercised two rows at once until now, so the fix

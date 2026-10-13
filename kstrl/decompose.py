@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 from kstrl.agent_output import (
     MAX_AGENT_OUTPUT_BYTES,
-    _extract_agent_json,
+    extract_agent_json,
     timed_out_message,
 )
 from kstrl.agents.base import (
@@ -76,7 +76,7 @@ from kstrl.stack import (
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from kstrl.factory_lock import _RunLock
+    from kstrl.factory_lock import RunLock
     from kstrl.ui.base import UI
 
 
@@ -234,7 +234,7 @@ def _parse_reply(
 ) -> None:
     """Read one architect reply and record it in ``state``, or record why not."""
     try:
-        state.data = _extract_agent_json(agent, output_lines)
+        state.data = extract_agent_json(agent, output_lines)
     except ValueError as exc:
         state.last_error = str(exc)
         ui.warn(f"JSON extraction failed: {state.last_error}")
@@ -416,7 +416,7 @@ def _decompose_spec_impl(
     transcript: Callable[[str], None] | None = None,
     prompt_call: AgentCall,
     force_lock: bool = False,
-    run_lock: _RunLock | None = None,
+    run_lock: RunLock | None = None,
     timeout: float | None,
     before_spend: Callable[[], object],
 ) -> Manifest:
@@ -442,7 +442,7 @@ def _decompose_spec_impl(
         prompt_call: Who the architect's prompt is recorded for (#532),
             with each attempt's number put in. Required (#567): every
             caller is inside a run, and the run is what the record names.
-        force_lock: Passed to ``_acquire_run_lock`` when this call takes
+        force_lock: Passed to ``acquire_run_lock`` when this call takes
             its own lock (``run_lock`` is None); ignored otherwise, since
             a caller that already holds one decided ``force`` itself.
         run_lock: A lock the caller already holds (#597), e.g. `ks
@@ -680,7 +680,7 @@ def decompose_spec(
     transcript: Callable[[str], None] | None = None,
     prompt_call: AgentCall,
     force_lock: bool = False,
-    run_lock: _RunLock | None = None,
+    run_lock: RunLock | None = None,
     timeout: float | None,
     before_spend: Callable[[], object],
 ) -> Manifest:

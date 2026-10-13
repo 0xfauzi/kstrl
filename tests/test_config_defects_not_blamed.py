@@ -58,7 +58,7 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     "agent_output.py": 2,
     "autonomy.py": 1,
     # One bare raise: `_resolve_factory_run_lock` refuses a handed
-    # `_RunLock` whose own `release()` has already run (#597 fix round).
+    # `RunLock` whose own `release()` has already run (#597 fix round).
     "cli_preflight.py": 1,
     "config_preflight.py": 2,  # the rule itself, and its docstring
     "contract.py": 1,

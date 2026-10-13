@@ -100,7 +100,7 @@ class TestAMalformedMidRunEditDoesNotAbortTheRun:
         assert outcome.pipelines[0].run_envelope.policy.max_files_changed == 5
 
 
-#: The headline ``_report_preflight`` prints above the per-section
+#: The headline ``report_preflight`` prints above the per-section
 #: lines. Matched here so a test can ask what was printed UNDER it
 #: rather than whether the whole narration is non-empty, which every
 #: run's masthead would satisfy.
@@ -108,7 +108,7 @@ _REFUSAL_HEADLINE = "Refusing to run: the run configuration cannot be resolved"
 
 
 def _refusal_reasons(narration: str) -> list[str]:
-    """The indented lines ``_report_preflight`` printed under its headline.
+    """The indented lines ``report_preflight`` printed under its headline.
 
     ``PlainUI.err`` prefixes every line with ``ERROR:``, so the indent
     that distinguishes a reason from the next thing the run says is
@@ -172,7 +172,7 @@ class TestAMalformedSectionIsARefusalAndNotATraceback:
         reasons = _refusal_reasons(outcome.narration)
         assert reasons, (
             "exit code 2 with nothing printed under the headline. An "
-            "operator cannot act on that, and `_report_preflight` "
+            "operator cannot act on that, and `report_preflight` "
             f"returns False on an empty list. Narration: {outcome.narration!r}"
         )
         assert section in outcome.narration
@@ -181,12 +181,12 @@ class TestAMalformedSectionIsARefusalAndNotATraceback:
     def test_a_loader_returning_none_without_raising_still_prints_a_reason(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """The silence `_report_preflight` cannot report.
+        """The silence `report_preflight` cannot report.
 
         `resolve_or_report` is documented to return a value or a line and
         never neither, and nothing enforced it. A loader that returned
         None without raising gave `RunEnvelope.resolve` a None section
-        with an empty `problems`, `_report_preflight` printed nothing and
+        with an empty `problems`, `report_preflight` printed nothing and
         returned False, and `run_factory` set exit code 2 anyway. No
         loader in kstrl/ does this, which is why it needs a test rather
         than an argument.

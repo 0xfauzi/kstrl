@@ -451,16 +451,16 @@ class TestTheFactoryRunLockReadsItsHolderBack:
         a clean "another run holds this" refusal into a traceback."""
         pytest.importorskip("fcntl")
         tmp_path = isolate_kstrl_state
-        from kstrl.factory_lock import FactoryLockHeldError, _acquire_run_lock
+        from kstrl.factory_lock import FactoryLockHeldError, acquire_run_lock
         from kstrl.statedir import state_dir
         from kstrl.ui.plain import PlainUI
 
         ui = PlainUI()
-        first = _acquire_run_lock(tmp_path, ui=ui, force=False)
+        first = acquire_run_lock(tmp_path, ui=ui, force=False)
         try:
             (state_dir(tmp_path) / "factory.lock").write_bytes(b"\xe9\xe9\xe9\n")
             with pytest.raises(FactoryLockHeldError) as caught:
-                _acquire_run_lock(tmp_path, ui=ui, force=False)
+                acquire_run_lock(tmp_path, ui=ui, force=False)
             assert "refusing to start a second factory run" in str(caught.value)
         finally:
             first.release()

@@ -386,7 +386,7 @@ EXPECTED_DECIDED_OUT: tuple[str, ...] = (
     "pipeline_attempt.py EvolutionJournal.open",
     "pipeline_ledger.py EvolutionJournal.open",
     # #700 slice 3: the `up` log is opened "wb" and read back through
-    # `_readable`, which decodes with errors="replace". Binary, so no
+    # `readable_text`, which decodes with errors="replace". Binary, so no
     # codec applies at the open.
     "replay.py log.open",
 )

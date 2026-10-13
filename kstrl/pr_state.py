@@ -42,7 +42,7 @@ class PrView:
     head_sha: str = ""
 
 
-def _pr_state(pr_number: int, cwd: Path) -> PrView | None:
+def fetch_pr_state(pr_number: int, cwd: Path) -> PrView | None:
     """Fetch a PR's state and merge commit via gh.
 
     Returns ``None`` when the state could not be determined (gh error,
@@ -77,7 +77,7 @@ def _pr_state(pr_number: int, cwd: Path) -> PrView | None:
     return PrView(state=state, merge_sha=sha, head_sha=head_sha) if state else None
 
 
-def _pr_mergeable(pr_number: int, cwd: Path) -> str | None:
+def pr_mergeable(pr_number: int, cwd: Path) -> str | None:
     """Fetch GitHub's mergeability verdict for a PR: "MERGEABLE",
     "CONFLICTING", or "UNKNOWN" (still computing). None when it could
     not be determined (gh error, timeout, bad JSON) - callers must

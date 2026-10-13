@@ -1,7 +1,7 @@
 """A fixture meta no matcher can read is refused, never scored (#564).
 
 The calibration matchers used to read a fixture's matcher block with a
-default: ``_SEVERITY_ORDER.get(threshold, 0)`` ranked a mistyped
+default: ``SEVERITY_ORDER.get(threshold, 0)`` ranked a mistyped
 ``severity_at_least`` 0, so every finding met it and the planted-bug
 fixture scored as caught whatever the reviewer reported. A misspelt
 ``evidence_path_contains`` switched the path gate off the same way, and a

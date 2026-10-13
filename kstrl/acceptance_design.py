@@ -30,7 +30,6 @@ import hashlib
 import json
 import re
 from collections.abc import Callable, Collection, Mapping, Sequence
-from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -43,19 +42,16 @@ from kstrl.acceptance import (
     PLAN_FILE,
     TREE_ENV,
     BaseReading,
-    Check,
-    ComponentPlan,
     PinnedPlan,
     pin_plan,
     plan_errors,
     verdict_of,
     write_dir,
 )
-from kstrl.agent_output import _extract_json, _select_agent_output, collect_agent_output
+from kstrl.agent_output import collect_agent_output, extract_json, select_agent_output
 from kstrl.agents import get_agent
 from kstrl.agents.base import DESIGNER_ROLE, collect_usage
 from kstrl.agents.prompt_record import AgentCall, recording_prompts
-from kstrl.contract import ContractCleanupError, _create_temp_worktree, _remove_temp_worktree
 from kstrl.delimiters import generate_data_delimiter
 from kstrl.inbox import ItemKind
 from kstrl.integration_phase import REVIEW_ASKS, _reask_refusal
@@ -63,6 +59,7 @@ from kstrl.plan_gate import PlanUnreadableError, pinned_spec, plan_digest
 from kstrl.prd import PRD
 from kstrl.requirements import SpecRequirement, built_by
 from kstrl.statedir import control_dir, pre_run_prd_path
+from kstrl.temp_worktree import ContractCleanupError, create_temp_worktree, remove_temp_worktree
 from kstrl.timeout import limit_seconds
 from kstrl.waivers import approvals_at
 
@@ -71,7 +68,6 @@ if TYPE_CHECKING:
     from kstrl.manifest import Component, Manifest
     from kstrl.pipeline import ComponentPipeline
     from kstrl.stack import Stack
-    from kstrl.ui.base import UI
 
 #: How many times one component's designer may be asked.
 DESIGN_ASKS = REVIEW_ASKS
@@ -94,10 +90,6 @@ BUG_NEEDS_PLAN = (
 #: the dedupe-key prefix of its inbox item (#700, owner decision of 2026-10-09).
 NOT_REPRODUCED = "the bug report was not reproduced on the base"
 NOT_REPRODUCED_KEY = "unreproduced:"
-
-#: What the base reading says of a component when the base removed every
-#: check the verification designer wrote for it (:func:`kept_on_base`).
-NO_DESIGNED_CHECK = "no designed acceptance check"
 
 #: H3 and H2: the verification designer's role prompt. Its calibration
 #: roles are ``acceptance`` and ``acceptance_clean``, scored by execution on
@@ -251,7 +243,7 @@ def design_component(
             return None, ask - 1, [*errors, f"ask {ask} was not made: {refusal}"]
         try:
             lines = collect_agent_output(agent, prompt, cwd=cwd, timeout=timeout)
-            entry: Any = _extract_json(_select_agent_output(agent, lines))
+            entry: Any = extract_json(select_agent_output(agent, lines))
         except (OSError, RuntimeError, ValueError) as exc:
             errors.append(f"ask {ask}: {exc}")
             continue
@@ -371,7 +363,7 @@ def _design_one(
         for criterion in story.acceptance_criteria
     ]
     built = built_by(pipeline.factory_config.requirements, {story.id for story in prd.user_stories})
-    worktree, error = _create_temp_worktree(base, root, DESIGNER_ROLE)
+    worktree, error = create_temp_worktree(base, root, DESIGNER_ROLE)
     if worktree is None:
         return None, 0, [f"the base {base[:12]} was not checked out: {error}"]
     selection = pipeline.review_selection
@@ -410,69 +402,9 @@ def _design_one(
         if agent is not None:
             pipeline.record_designer_usage(comp.id, collect_usage(agent))
         try:
-            _remove_temp_worktree(worktree, root, pipeline.ui, DESIGNER_ROLE)
+            remove_temp_worktree(worktree, root, pipeline.ui, DESIGNER_ROLE)
         except ContractCleanupError as exc:
             pipeline.ui.warn(f"  {exc}")
-
-
-def kept_on_base(
-    plan: PinnedPlan, exits: Mapping[str, Mapping[str, int | None]], ui: UI
-) -> tuple[dict[str, ComponentPlan], dict[str, str]]:
-    """The checks each head runs, by component, and :data:`NO_DESIGNED_CHECK`
-    for each component left with none. An operator's plan is kept whole:
-    the base refuses a contradicted check of an operator, who must know
-    that it is weak. Of a plan the designer wrote, the checks
-    :func:`_removed_on_base` names are removed."""
-    if not plan.designed:
-        return dict(plan.components), {}
-    kept: dict[str, ComponentPlan] = {}
-    said: dict[str, str] = {}
-    for comp, part in plan.components.items():
-        removed = _removed_on_base(comp, part, exits[comp], ui)
-        checks = tuple(check for check in part.checks if check.id not in removed)
-        if checks:
-            kept[comp] = replace(part, checks=checks)
-        else:
-            said[comp] = NO_DESIGNED_CHECK
-            ui.warn(f"  {comp}: {NO_DESIGNED_CHECK}")
-    return kept, said
-
-
-def _removed_on_base(
-    comp: str, part: ComponentPlan, exits: Mapping[str, int | None], ui: UI
-) -> set[str]:
-    """The ids of the designed checks of ``comp`` that the base removes, each
-    one said with :func:`_why_removed`."""
-    verdicts = {check.id: verdict_of(exits[check.id]) for check in part.checks}
-    holds = any(c.on_base == "fails" and verdicts[c.id] == FAIL for c in part.checks)
-    removed: set[str] = set()
-    for check in part.checks:
-        why = _why_removed(check, verdicts[check.id], exits[check.id], holds)
-        if why:
-            removed.add(check.id)
-            ui.warn(f"  {comp}: the designed check {check.id} {why}: it is removed")
-    return removed
-
-
-def _why_removed(check: Check, verdict: str, code: int | None, holds: bool) -> str:
-    """Why the base removes a designed check, or "" to keep it. A check with
-    ``onBase: fails`` that passes on the base cannot tell the change from no
-    change (owner decision of 2026-10-06 on #700). A check with ``onBase:
-    passes`` that fails on the base, or cannot run there, cannot measure
-    kept behaviour on this base (owner decision of 2026-10-09). The second
-    kind is removed only when its component ``holds`` a check that fails on
-    the base as it says; otherwise it stays, and the base refuses the plan
-    through it."""
-    if check.on_base == "fails" and verdict == PASS:
-        return f"passes on the base (exit {code}), so it cannot tell the change from no change"
-    if check.on_base == "passes" and verdict != PASS and holds:
-        did = "fails" if verdict == FAIL else "could not run"
-        said = "no exit" if code is None else f"exit {code}"
-        return (
-            f"{did} on the base ({said}), where it says it passes, "
-            "so it cannot measure kept behaviour on this base"
-        )
-    return ""
 
 
 def unreproduced(

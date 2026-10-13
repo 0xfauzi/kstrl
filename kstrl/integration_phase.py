@@ -13,11 +13,8 @@ from kstrl import git, git_base, git_tree
 from kstrl.agents.base import INTEGRATION_COMPONENT, INTEGRATION_ROLE, collect_usage
 from kstrl.agents.prompt_record import AgentCall, recording_prompts
 from kstrl.contract import (
-    ContractCleanupError,
     ContractMode,
     ContractResult,
-    _create_temp_worktree,
-    _remove_temp_worktree,
 )
 from kstrl.integration import (
     STATUS_HANDOFF,
@@ -53,6 +50,7 @@ from kstrl.integration_state import (
 from kstrl.manifest import ComponentStatus
 from kstrl.requirements import SpecRequirement
 from kstrl.review import ReviewMode, ReviewResult
+from kstrl.temp_worktree import ContractCleanupError, create_temp_worktree, remove_temp_worktree
 from kstrl.timeout import limit_seconds
 from kstrl.verify_model import VerificationResult
 from kstrl.version import kstrl_version
@@ -260,7 +258,7 @@ def _review_round(run: IntegrationRun, state: dict[str, Any], pin: _Pin) -> Inte
         *requirement_stories(run.requirements),
     )
     run.pipeline.adversarial_budget_consume()
-    worktree, error = _create_temp_worktree(pin.sha, run.root_dir, "integration")
+    worktree, error = create_temp_worktree(pin.sha, run.root_dir, "integration")
     if worktree is None:
         result = _infra(f"the integration worktree could not be created: {error}")
         outcome = integration_outcome(pin.test_result, result, stories, tracked=tracked)
@@ -405,7 +403,7 @@ def _infra(notes: str) -> ReviewResult:
 
 def _remove(worktree: Path, root: Path, ui: UI) -> str:
     try:
-        _remove_temp_worktree(worktree, root, ui, "integration")
+        remove_temp_worktree(worktree, root, ui, "integration")
     except ContractCleanupError as exc:
         return str(exc)
     return ""

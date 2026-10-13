@@ -34,7 +34,7 @@ from kstrl import git, git_base, git_diff, git_tree, pr
 from kstrl.atomicio import atomic_write_json
 from kstrl.config import resolve_config_file
 from kstrl.config_preflight import SURFACE_REJECTIONS, config_problem_lines, raise_if_defect
-from kstrl.policy import ENFORCEMENT_MACHINERY_PATHS, PolicyConfig, _match_glob
+from kstrl.policy import ENFORCEMENT_MACHINERY_PATHS, PolicyConfig, match_glob
 from kstrl.stack import NO_STACK, file_stack_item, legacy_proposal, stack_in_force
 from kstrl.statedir import STATE_DIR_NAME, state_dir
 
@@ -420,7 +420,7 @@ def check_protected_paths(root: Path) -> _CheckResult:
         *ENFORCEMENT_MACHINERY_PATHS,
         *config.enforcement_paths_extra,
     ]
-    # Both spellings, measured: `_match_glob(".github/workflows",
+    # Both spellings, measured: `match_glob(".github/workflows",
     # DEFAULT_PATHS_DENY + ENFORCEMENT_MACHINERY_PATHS)` is None while
     # `".github/workflows/probe"` matches `.github/workflows/**`, and a
     # file candidate such as `Dockerfile` can only match under its own
@@ -429,8 +429,8 @@ def check_protected_paths(root: Path) -> _CheckResult:
     uncovered = [
         candidate
         for candidate in present
-        if _match_glob(candidate, patterns) is None
-        and _match_glob(f"{candidate}/probe", patterns) is None
+        if match_glob(candidate, patterns) is None
+        and match_glob(f"{candidate}/probe", patterns) is None
     ]
     if uncovered:
         suggestions = ", ".join(f'"{candidate}/**"' for candidate in uncovered)

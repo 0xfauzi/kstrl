@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from kstrl.jsonread import read_json
+from kstrl.waivers import ACCEPTANCE_PHASE
 
 # The phases run in this fixed order inside one attempt. The rank is
 # what lets the renderer tell "this check ran again in the latest
@@ -40,7 +41,6 @@ from kstrl.jsonread import read_json
 # "acceptance" is the operator's acceptance checks on the head (#700
 # slice 6). They run once Phase 1 has passed and before the diff, for a
 # component its plan names, so they sit between the two.
-ACCEPTANCE_PHASE = "acceptance"
 
 PHASE_RANK: dict[str, int] = {
     "engineer": 0,

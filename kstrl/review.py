@@ -13,9 +13,9 @@ from typing import TYPE_CHECKING
 from kstrl import git_base, git_diff
 from kstrl.agent_output import (
     AgentOutputTooLarge,
-    _extract_json,
-    _select_agent_output,
     collect_agent_output,
+    extract_json,
+    select_agent_output,
 )
 from kstrl.findings import (
     Finding,
@@ -464,7 +464,7 @@ def _nothing_to_discard(
     Two layers, both required. The TEXT layer reads the whole reply, parsed
     or not: every "verdict" or "severity" in it must be a JSON string field
     whose value is pass or advisory. It exists because the parsed object can
-    be part of the reply only (``_extract_json`` takes the first fenced block
+    be part of the reply only (``extract_json`` takes the first fenced block
     or the first balanced braces), and because a reply that did not parse can
     still state a fail: the kept 131430 int-d2 run-3 reply is invalid JSON
     holding ``"verdict": "fail"`` on the planted story. The OBJECT layer reads
@@ -554,11 +554,11 @@ def parse_review_output(
         )
 
     try:
-        data = _extract_json(raw_output)
+        data = extract_json(raw_output)
     except ValueError:
         return _infra("Failed to parse reviewer output as JSON", "no_json", None)
 
-    # R1.2: _extract_json returns whatever json.loads produced - null,
+    # R1.2: extract_json returns whatever json.loads produced - null,
     # a list, a bare string. Anything but an object would crash the
     # .get() calls below with AttributeError.
     if not isinstance(data, dict):
@@ -827,7 +827,7 @@ def run_review(
         result.duration_seconds = time.monotonic() - start
         return result
 
-    raw_output = _select_agent_output(agent, output_lines)
+    raw_output = select_agent_output(agent, output_lines)
     result = parse_review_output(
         raw_output,
         expected_story_ids,

@@ -27,7 +27,7 @@ made by the slice 3 replay (:func:`kstrl.replay.replay_stack`): setup,
   (:func:`replay_base`). A check the plan says fails on the base must fail
   there, and one it says passes must pass: either contradiction refuses
   the run, unless the designer wrote the check, which is then removed as
-  :func:`kstrl.acceptance_design.kept_on_base` says. A check that did not run
+  :func:`kstrl.acceptance_base.kept_on_base` says. A check that did not run
   refuses, except in a component the plan marks ``createsApp``, recorded as
   :data:`BASE_NOT_RUNNABLE` (decision 11).
 - On each component's head, after Phase 1 passed (:func:`judge_head`).
@@ -530,7 +530,7 @@ def replay_base(
 ) -> tuple[BaseReading | None, list[str]]:
     """Replay every check of the plan once on the base; or why the run must
     not start. The reading is written to the run directory either way."""
-    from kstrl.acceptance_design import kept_on_base
+    from kstrl.acceptance_base import kept_on_base
 
     try:
         sha = git_base.resolve_base_sha(base_branch, root)
