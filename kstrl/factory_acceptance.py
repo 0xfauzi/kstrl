@@ -20,12 +20,16 @@ from kstrl.acceptance_design import (
     unreproduced,
 )
 from kstrl.contract import (
+    ContractCleanupError,
+    ContractMode,
     ContractResult,
+    run_contract_testing,
 )
 from kstrl.decisions import (
     DecisionRegister,
 )
 from kstrl.event_catalog import ComponentFailed
+from kstrl.event_catalog import ContractResult as ContractResultEvent
 from kstrl.factory_autonomy import _LadderOutcome
 from kstrl.factory_config import (
     FactoryConfig,
@@ -367,3 +371,93 @@ def _record_contract_failures(
         ui.err(f"  Contract failure recorded for tier {cr.tier}; run will exit nonzero")
     _halt_carried(pipeline, failures)
     manifest.save(manifest_path)
+
+
+def _run_contract_round(
+    phase3_round: Phase3Round,
+    manifest: Manifest,
+    manifest_path: Path,
+    root_dir: Path,
+    factory_config: FactoryConfig,
+    ui: UI,
+    run_id: str,
+    pipeline: ComponentPipeline,
+    run_state: RunState,
+    factory_result: FactoryResult,
+    bus: EventBus,
+    notify: NotifyHooks,
+    components_merged: bool,
+) -> None:
+    """Do the contract tests of one integration round (#776, B3)."""
+    # PHASE 3: Contract testing
+    contract_config = factory_config.contract_config
+    if contract_config is None or contract_config.mode == ContractMode.SKIP.value:
+        return
+
+    # #481: one commit per round. The integrated check tests it and a
+    # later check of the same round must judge the same tree.
+    round_base_sha = _resolve_round_base(manifest, root_dir, ui)
+    phase3_round.base_sha = round_base_sha
+    try:
+        contract_results = run_contract_testing(
+            manifest,
+            root_dir,
+            replace(contract_config, rung=factory_config.test_rung),
+            ui,
+            components_merged=components_merged,
+            base_sha=round_base_sha,
+            setup=factory_config.worktree_setup(),
+            plan=_plan_of_kept_checks(factory_config),
+            carried=factory_config.acceptance_carried,
+        )
+    except ContractCleanupError as exc:
+        # A contract temp worktree survived removal. The user's
+        # checkout is untouched, but .kstrl/contract holds stale
+        # state - fail the run loudly instead of continuing.
+        ui.err(f"  Contract cleanup FAILED: {exc}")
+        factory_result.contract_failures.append(f"contract cleanup failed: {exc}")
+        return
+
+    phase3_round.record(contract_results)
+    for cr in contract_results:
+        bus.emit(
+            ContractResultEvent(
+                tier=cr.tier,
+                passed=cr.passed,
+                breaker=cr.breaker,
+                duration_seconds=round(cr.duration_seconds, 2),
+            )
+        )
+        _record_contract_event(cr, root_dir, ui, run_id, manifest)
+
+    failures = [cr for cr in contract_results if not cr.passed]
+    if not failures:
+        _carry(pipeline, contract_results)
+        return
+
+    _reset_contract_breakers(
+        failures,
+        phase3_round,
+        manifest,
+        manifest_path,
+        factory_config,
+        ui,
+        pipeline,
+        run_state,
+        factory_result,
+    )
+
+    if phase3_round.breaker_reset:
+        return
+
+    _record_contract_failures(
+        failures,
+        manifest,
+        manifest_path,
+        ui,
+        pipeline,
+        run_state,
+        factory_result,
+        bus,
+        notify,
+    )

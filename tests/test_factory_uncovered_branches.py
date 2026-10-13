@@ -83,7 +83,7 @@ def _drive(
         patch("kstrl.git_diff.get_diff_content", return_value=""),
     ]
     if contract is not None:
-        stubs.append(patch("kstrl.factory.run_contract_testing", side_effect=contract))
+        stubs.append(patch("kstrl.factory_acceptance.run_contract_testing", side_effect=contract))
     with contextlib.ExitStack() as stack:
         for stub in stubs:
             stack.enter_context(stub)
