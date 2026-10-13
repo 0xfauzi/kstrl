@@ -58,10 +58,9 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     "agent_output.py": 2,
     "autonomy.py": 1,
     # One bare raise: `_resolve_factory_run_lock` refuses a handed
-    # `_RunLock` whose own `release()` has already run (#597 fix round).
+    # `RunLock` whose own `release()` has already run (#597 fix round).
     "cli_preflight.py": 1,
     "config_preflight.py": 2,  # the rule itself, and its docstring
-    "contract.py": 1,
     # DecisionRegisterError, added by #332.
     "decisions.py": 1,
     # #632: each refuses to import a table whose rows disagree, a bare raise.
@@ -109,6 +108,7 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     # raise_if_defect still treats them as operator input, and the walk
     # below follows them by subclass rather than by spelling.
     "statedir.py": 1,
+    "temp_worktree.py": 1,
     "workqueue_items.py": 1,
 }
 

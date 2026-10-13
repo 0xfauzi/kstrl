@@ -363,11 +363,6 @@ class CeilingCoverage:
         """Some calls reported it and some did not - the measured case."""
         return self.covered_calls > 0 and self.uncovered_calls > 0
 
-    @property
-    def empty(self) -> bool:
-        """Calls were made and not one reported this axis's figure."""
-        return self.calls > 0 and self.covered_calls == 0
-
     def note(self) -> str:
         """The operator sentence, or "" when there is nothing to report.
 

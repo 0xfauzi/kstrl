@@ -23,9 +23,6 @@ def get_ui(
     import sys
 
     normalized = (mode or "auto").strip().lower()
-    if normalized == "gum":
-        normalized = "rich"
-
     if normalized in {"plain", "off", "no", "0"}:
         return PlainUI(no_color=no_color, ascii_only=ascii_only)
 

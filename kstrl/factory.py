@@ -28,7 +28,7 @@ from kstrl.factory_acceptance import (
 )
 from kstrl.factory_agents import (
     AdversarialAgentSelection,
-    _select_reviewers,
+    select_reviewers,
 )
 from kstrl.factory_config import (
     FactoryConfig,
@@ -38,15 +38,15 @@ from kstrl.factory_launch import (
     _refused_before_launch,
     submit_args,
 )
-from kstrl.factory_lock import FactoryLockHeldError, _acquire_run_lock, _RunLock
+from kstrl.factory_lock import FactoryLockHeldError, RunLock, acquire_run_lock
 from kstrl.factory_preflight import (
     _run_preflights,
 )
 from kstrl.factory_result import (
     ComponentResult,
     FactoryResult,
-    _clear_partial_usage,
-    _salvage_aborted_usage,
+    clear_partial_usage,
+    salvage_aborted_usage,
 )
 from kstrl.factory_run import (
     RunContext,
@@ -87,7 +87,7 @@ from kstrl.observability import (
     NotifyHooks,
 )
 from kstrl.pipeline import ComponentPipeline
-from kstrl.pipeline_state import PipelineHooks, _iso_now
+from kstrl.pipeline_state import PipelineHooks, iso_now
 from kstrl.review import (
     run_review,
 )
@@ -219,7 +219,7 @@ def _abort_inflight(
         if killed:
             ui.warn(f"  Terminated {killed} in-flight agent process group(s)")
     for future, comp_id in list(running_futures.items()):
-        _salvage_aborted_usage(future, comp_id, pipeline)
+        salvage_aborted_usage(future, comp_id, pipeline)
         pipeline.fail_aborted(comp_id, stop.reason)
         running_futures.pop(future, None)
     ui.warn(f"  Aborted in-flight work: {stop.reason}")
@@ -386,7 +386,7 @@ def _fill_slots(
         # the worker exists - so an attempt cancelled during
         # pool startup cannot salvage its predecessor's
         # tokens on top of the ones already on the meter.
-        if _clear_partial_usage(plan.usage_paths.engineer_usage(comp.id)):
+        if clear_partial_usage(plan.usage_paths.engineer_usage(comp.id)):
             plan.pipeline.mark_usage_salvage_safe(comp.id)
         else:
             # A snapshot we could not delete may still hold
@@ -617,7 +617,7 @@ def run_factory(
     run_id: str | None = None,
     architect_usage: UsageTotals | None = None,
     architect_run_id: str = "",
-    run_lock: _RunLock | None = None,
+    run_lock: RunLock | None = None,
 ) -> FactoryResult:
     """Run the factory orchestrator with 3-phase verification.
 
@@ -666,7 +666,7 @@ def run_factory(
 
     if run_lock is None:
         try:
-            run_lock = _acquire_run_lock(
+            run_lock = acquire_run_lock(
                 root_dir,
                 ui,
                 force=factory_config.force_lock,
@@ -814,7 +814,7 @@ def _run_factory_locked(
     # tell a merge THIS run produced from one a previous run left on
     # the manifest. Captured before any component runs, so a merge
     # this run confirms always has completed_at >= run_started_at.
-    run_started_at = _iso_now()
+    run_started_at = iso_now()
     factory_result = FactoryResult()
     # Stable run id shared by evolution journal and knowledge layer.
     # current_run_id() carries microseconds plus a random nonce, so two
@@ -845,7 +845,7 @@ def _run_factory_locked(
         progress_log,
         architect_run_id,
     )
-    review_selection, security_selection = _select_reviewers(
+    review_selection, security_selection = select_reviewers(
         factory_config, base_config, autonomy_config, ui, bus
     )
 

@@ -55,12 +55,14 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     "breaker.py": 3,
     # #696: 4, the import and three TimeoutExpired clauses; down from 5
     # when a fourth clause served the retired [contract] test_command.
-    "contract.py": 4,
+    # #863 B1: the temp worktree functions moved to temp_worktree.py; each
+    # module now holds its own `import subprocess`, so the total is +1.
+    "contract.py": 2,
     # 3: #696 slice 8 deleted check_test_root's `git ls-files -z` spawn.
     "doctor.py": 3,
     # 14: #624 moved the scaffold's `subprocess.run` out to `worktree_setup.py`.
     # #776 F2 moves all of them to `factory_worktrees.py`.
-    "factory_worktrees.py": 14,
+    "factory_worktrees.py": 13,
     # 64: 58 after #435, +2 for #465's `branch_sha`, +2 for #459's `ignored_paths`,
     # +2 for #500's `tracked_files_at`, +2 for #626's `listed_files`.
     # 70: #630's git.read_blob adds two subprocess.run and two
@@ -73,7 +75,7 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     # `git_diff.py`, which adds its own `import subprocess` (9). 30: #776 G3
     # moves twenty-one of them to `git_tree.py`, which adds its own
     # `import subprocess` (22).
-    "git.py": 28,
+    "git.py": 22,
     "git_base.py": 10,
     "git_diff.py": 9,
     "git_tree.py": 22,
@@ -92,6 +94,7 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     "scrubbed_run.py": 15,
     "serve_process.py": 8,
     "statedir.py": 3,
+    "temp_worktree.py": 3,
     "timeout.py": 3,
     # 25: `_base_finding`'s `git show` (#414/#425); `git merge-base` moved to `git.py` in #435.
     # 26: #632, `run_scrubbed`'s `subprocess.PIPE` for a stdin it was given.
@@ -135,7 +138,9 @@ EXPECTED_TEXT_MODE_SPAWNS: dict[str, int] = {
     # `git_common_dir`. 27: +1 for #700's `git_write_paths`. 24: #776 G1 moves
     # three of them to `git_base.py`. 21: #776 G2 moves three of them to
     # `git_diff.py`. 14: #776 G3 moves seven of them to `git_tree.py`.
-    "git.py": 13,
+    # 11: #863 A4 deletes `create_branch_from`, `delete_branch` and
+    # `checkout_existing`.
+    "git.py": 10,
     "git_base.py": 3,
     "git_diff.py": 3,
     "git_tree.py": 7,
@@ -164,9 +169,7 @@ EXPECTED_CLEARED_SPAWNS: tuple[str, ...] = (
     "factory_worktrees.py subprocess.run(['git', 'worktree', 'add', str(worktree_path), branch_n",
     "factory_worktrees.py subprocess.run(['git', 'worktree', 'list', '--porcelain', '-z'], cwd=r",
     # codespell:ignore-next-line
-    "git.py subprocess.run(['git', 'branch', flag, '--', branch_name], cwd=cwd, ca",
     "git.py subprocess.run(['git', 'checkout', '-b', branch], cwd=cwd, capture_out",
-    "git.py subprocess.run(['git', 'checkout', '-b', branch_name, base, '--'], cwd",
     "git.py subprocess.run(['git', 'checkout', branch, '--'], cwd=cwd, capture_out",
     "git.py subprocess.run(['git', 'config', '--get', 'remote.origin.url'], cwd=cw",
     "git.py subprocess.run(['git', 'merge', '--no-edit', '--', branch], cwd=cwd, c",
@@ -237,8 +240,9 @@ EXPECTED_BYTES_MODE_SPAWNS: dict[str, int] = {
     # 7: #566 deleted the fresh-retry `git branch -D branch_name`, which
     # took no encoding; its replacement decodes as utf-8. #624 moved the
     # scaffold's bytes-mode `subprocess.run` to `run_scrubbed`, which
-    # decodes strictly. #776 F2 moves them to `factory_worktrees.py`.
-    "factory_worktrees.py": 7,
+    # decodes strictly. #776 F2 moves them to `factory_worktrees.py`. 6:
+    # #863 A4 deletes the sweep of a pre-R0.5 flat worktree.
+    "factory_worktrees.py": 6,
     # 7: `merge_base_ref`'s `git merge-base` stdout, hoisted here from
     # `verify.py` by the #435 fix-round, still decoded by hand. 9 since
     # #630: `read_blob`'s `git ls-tree` and `git cat-file` read bytes on
@@ -259,7 +263,7 @@ EXPECTED_BYTES_MODE_SPAWNS: dict[str, int] = {
     # so a gate whose output is not utf-8 can still write its log.
     # `tests/test_undecodable_child_output.py` pins the strictness.
     # #700 slice 3: +1, `start_scrubbed`, whose output goes to a log file and
-    # is read back through `_readable` as evidence only. #696 slice 8: -1,
+    # is read back through `readable_text` as evidence only. #696 slice 8: -1,
     # `_base_finding` went with the rules that read one language's files.
     # #776 V1: both spawns moved here from `verify.py`.
     "scrubbed_run.py": 2,

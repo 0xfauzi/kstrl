@@ -52,7 +52,7 @@ class SpecIssue:
 # different UI emitter and a label that is not the severity name.
 _SEVERITY_ORDER = ("blocker", "major", "minor")
 _VALID_SEVERITIES = frozenset(_SEVERITY_ORDER)
-_VALID_KINDS = frozenset(
+VALID_KINDS = frozenset(
     {
         "ambiguity",
         "missing_detail",
@@ -86,7 +86,7 @@ def _parse_spec_issues(data: Any) -> list[SpecIssue]:
         summary = str(entry.get("summary", "")).strip()
         if severity not in _VALID_SEVERITIES:
             continue
-        if kind not in _VALID_KINDS:
+        if kind not in VALID_KINDS:
             continue
         if not summary:
             continue

@@ -11,7 +11,7 @@ on an escalated blocker and the continuation on a closed issue, a
 register write that cannot land failing the decompose while the halt
 path still halts (#260 round 3), and the Spec Convergence report as the
 operator meets it across runs, renames and projects (#280, #314). The
-``_extract_json`` / ``_validate_decompose_output`` rules are carried by
+``extract_json`` / ``_validate_decompose_output`` rules are carried by
 ``tests/test_decompose_run.py``, where a stub architect emits each bad
 shape.
 

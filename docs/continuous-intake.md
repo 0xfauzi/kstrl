@@ -48,8 +48,8 @@ original afterwards cannot change what runs. Locks (`queue.lock`,
 `serve.lock`) stay beside the queue. The pause marker and spend ledger do
 **not**: under R8.9 they live in the XDG control directory
 (`${XDG_STATE_HOME:-~/.local/state}/kstrl/<repo-id>/`) so a worktree agent
-cannot edit them. First use migrates any legacy in-tree copies and writes
-`.kstrl/control_relocated` pointing at the new location. Clones that share
+cannot edit them. kstrl moves no legacy in-tree copy: it refuses while one exists, and the
+message names the file and the `mv` command. Clones that share
 the same `origin` remote share one control dir: do not run two `ks serve`
 daemons against that ledger at once.
 
@@ -917,10 +917,7 @@ The limits of this decision:
   not (#203). The result above is the same in both cases: a run that
   starts in a dark wake completes before the sleep, or suspends and
   resumes.
-- *The controlled run was not done.* `scripts/dark_wake_caffeinate_experiment.sh`
-  stays for an owner who wants a measurement. If its `-i` leg prints
-  branch A on a machine, the header is not correct for that machine:
-  write the verdict and the `pmset` lines here.
+- *The controlled run was not done.* No tool for it ships with kstrl.
 
 **NOT verified:**
 
@@ -936,18 +933,6 @@ The limits of this decision:
   kept, so a run cut short before its eighth cycle is not ruled out
   either. **Neither explanation is written here, because neither was
   measured.**
-
-  `scripts/sleep_poll_experiment.sh` settles it and costs no LLM spend:
-  the scratch queue is empty, so every cycle is a gate check. It captures
-  what the 2026-08-03 run did not: the exit code and the `cycles:` line
-  (an exit-0 run that prints one prints exactly N), and the suspended
-  seconds summed from `pmset -g log` inside its own window, so a run
-  with no suspend is reported as void. Only the one poll in flight when
-  the lid closes is affected, so it defaults to 2 cycles at a 300s poll
-  and the margin is that poll's remaining seconds. If awake time is at
-  or above (N-1) polls, the poll counts awake time only and a suspend
-  pauses it; if below, suspend seconds were credited against it. Write
-  the number and the branch here and delete this bullet.
 
 - **Automated coverage of a real factory run.** Still true, and still
   deliberate: a suite that spawned real runs would cost dollars per

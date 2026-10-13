@@ -1,6 +1,6 @@
 """The security severity ranking has one definition (#550).
 
-``kstrl.security._SEVERITY_ORDER`` ranks critical, high, medium and low.
+``kstrl.security.SEVERITY_ORDER`` ranks critical, high, medium and low.
 Phase 2.5's verdict, its fail count and the journal read it (#524). The
 calibration scorer kept its own copy, so an edit to one ranking would
 leave the scorer grading against the other with no message, and the
@@ -20,7 +20,7 @@ Two layers:
 ``tests/`` is not walked. A test's literal list of severities is an
 oracle that is independent of the code on purpose
 (``tests/test_security_fail_count.py::ALL_FOUR`` pins counts 1 to 4
-against it); deriving it from ``_SEVERITY_ORDER`` would make the test
+against it); deriving it from ``SEVERITY_ORDER`` would make the test
 agree with whatever the code says.
 """
 
@@ -122,7 +122,7 @@ def test_the_security_severity_ranking_has_one_home() -> None:
         control=SHAPES,
         message=(
             "A collection literal in kstrl/ names at least three of the four security severities. "
-            "Read kstrl.security._SEVERITY_ORDER instead of copying it (#550)."
+            "Read kstrl.security.SEVERITY_ORDER instead of copying it (#550)."
         ),
     )
 
@@ -191,7 +191,7 @@ def test_the_scorer_detects_by_the_gates_ranking(monkeypatch: pytest.MonkeyPatch
     assert not _gate_fails(result, "high")
     assert security_caught(result, requirement)[0] is False
 
-    monkeypatch.setitem(security._SEVERITY_ORDER, "medium", 2)
+    monkeypatch.setitem(security.SEVERITY_ORDER, "medium", 2)
 
     assert _gate_fails(result, "high")
     assert security_caught(result, requirement)[0] is True
@@ -209,7 +209,7 @@ def test_the_scorer_flags_false_positives_by_the_gates_ranking(
     assert not _gate_fails(result, "medium")
     assert security_false_positive(result, requirement)[0] is False
 
-    monkeypatch.setitem(security._SEVERITY_ORDER, "low", 1)
+    monkeypatch.setitem(security.SEVERITY_ORDER, "low", 1)
 
     assert _gate_fails(result, "medium")
     assert security_false_positive(result, requirement)[0] is True

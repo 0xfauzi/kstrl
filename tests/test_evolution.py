@@ -195,52 +195,6 @@ class TestRecordRun:
 
 
 # ---------------------------------------------------------------------------
-# extract_failure_patterns
-# ---------------------------------------------------------------------------
-
-
-class TestExtractFailurePatterns:
-    def test_extract_failure_patterns(self) -> None:
-        config = EvolutionConfig()
-        journal = EvolutionJournal(config)
-
-        manifest = _make_manifest(
-            [
-                _make_component(
-                    "a",
-                    status=ComponentStatus.FAILED.value,
-                    error="ruff: S608 violation",
-                    retries=1,
-                ),
-                _make_component(
-                    "b",
-                    status=ComponentStatus.FAILED.value,
-                    error="ruff: S608 violation",
-                    retries=2,
-                ),
-                _make_component("c", status=ComponentStatus.COMPLETED.value),
-            ]
-        )
-
-        patterns = journal.extract_failure_patterns(manifest, min_frequency=2)
-        assert len(patterns) >= 1
-        # Both a and b share the S608 signature
-        assert any("S608" in p.error_signature for p in patterns)
-        assert any(p.frequency >= 2 for p in patterns)
-
-    def test_extract_failure_patterns_no_failures(self) -> None:
-        config = EvolutionConfig()
-        journal = EvolutionJournal(config)
-        manifest = _make_manifest(
-            [
-                _make_component("a", status=ComponentStatus.COMPLETED.value),
-            ]
-        )
-        patterns = journal.extract_failure_patterns(manifest)
-        assert patterns == []
-
-
-# ---------------------------------------------------------------------------
 # get_experiment_trends
 # ---------------------------------------------------------------------------
 

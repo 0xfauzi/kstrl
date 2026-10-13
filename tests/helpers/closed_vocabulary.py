@@ -30,7 +30,7 @@ import typing
 from dataclasses import dataclass
 from typing import Literal
 
-from kstrl.agents import VALID_AGENT_TYPES
+from kstrl.config import VALID_AGENT_TYPES
 from kstrl.config_preflight import config_sections
 from kstrl.contract import ContractMode
 from kstrl.divergence import DivergenceMode

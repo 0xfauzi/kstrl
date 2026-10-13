@@ -320,7 +320,7 @@ EXPECTED_SHA_SPELLINGS: dict[str, int] = {
     "pr.py::push_create_and_merge_pr": 1,
     "pr.py::wait_for_merge": 1,
     "pr_state.py::<module>": 1,
-    "pr_state.py::_pr_state": 1,
+    "pr_state.py::fetch_pr_state": 1,
     "reducer.py::<module>": 1,
     "reducer.py::apply": 1,
 }
@@ -337,7 +337,7 @@ NOT_A_MERGE_RECORD: dict[str, str] = {
     "pr.py::push_create_and_merge_pr": "hands GitHub's commit for an existing PR to the caller",
     "pr.py::wait_for_merge": "hands GitHub's commit to the caller on MergeConfirmation",
     "pr_state.py::<module>": "the PrView field declaration",
-    "pr_state.py::_pr_state": "the commit gh reported",
+    "pr_state.py::fetch_pr_state": "the commit gh reported",
     "reducer.py::<module>": "the reducer's ComponentState.merge_sha field declaration",
     "reducer.py::apply": "folds a pr_merged event into the reducer's view, not the manifest",
 }

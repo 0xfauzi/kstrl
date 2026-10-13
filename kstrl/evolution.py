@@ -17,8 +17,8 @@ from kstrl.appendio import JOURNAL_REPAIR_EVENT, REPAIR_DETAIL, append_records
 from kstrl.evolution_config import EvolutionConfig
 from kstrl.experiments_tsv import EXPERIMENTS_HEADER, ExperimentsDialect
 from kstrl.failure_signatures import (
-    _classify_check,
-    _normalize_error,
+    classify_check,
+    normalize_error,
     signature_for_error,
     split_signature,
 )
@@ -267,20 +267,44 @@ def _role_usage_entries(
     ]
 
 
+def classify_merges(manifest: Manifest, merged: dict[str, str]) -> dict[str, str]:
+    """One verdict per merged component id: ``"clean"``, ``"edited"`` or ``"head unknown"``.
+
+    A merge is clean only when the PR head GitHub merged is the commit
+    the diff phase judged (``Component.judged_sha``). A commit pushed to
+    the PR, or made in the worktree while the checkpoint prompt was open,
+    makes them differ. When either commit is unknown the merge counts as
+    edited: a promotion input must not be satisfied by what kstrl could
+    not observe (#601).
+
+    Pure (no state mutation) so the journal writer of ``kstrl.evolution`` can
+    call it to size the ``merged``/``clean_merged`` TSV columns from the
+    same classification the live ladder uses, rather than a second
+    definition of "clean" that could drift from this one.
+    """
+    judged = {comp.id: comp.judged_sha for comp in manifest.components}
+    result: dict[str, str] = {}
+    for comp_id, head_sha in merged.items():
+        judged_sha = judged.get(comp_id, "")
+        if not judged_sha or not head_sha:
+            result[comp_id] = "head unknown"
+        elif judged_sha == head_sha:
+            result[comp_id] = "clean"
+        else:
+            result[comp_id] = "edited"
+    return result
+
+
 def _merge_columns(manifest: Manifest, factory_result: FactoryResult) -> tuple[str, str]:
     """The experiments.tsv ``merged``/``clean_merged`` columns for one run (#601).
 
     ``merged`` counts only merges this run confirmed (``factory_result.merged``),
     never ``completed`` - a part completed with no PR merged nothing.
     ``clean_merged`` is the subset whose PR head GitHub reported equals the
-    commit the diff phase judged. Deferred import: ``kstrl.factory`` imports
-    this module lazily for the same reason (avoids a module-load cycle), and
-    ``_classify_merges`` is the one place this comparison is made, so the TSV
-    agrees with what the live ladder counted.
+    commit the diff phase judged. ``classify_merges`` is the one place this
+    comparison is made, so the TSV agrees with what the live ladder counted.
     """
-    from kstrl.factory_autonomy import _classify_merges
-
-    verdicts = _classify_merges(manifest, factory_result.merged)
+    verdicts = classify_merges(manifest, factory_result.merged)
     clean = sum(1 for v in verdicts.values() if v == "clean")
     return str(len(verdicts)), str(clean)
 
@@ -393,8 +417,8 @@ class EvolutionJournal(JournalReads):
                 comp_signatures = list(failure_signatures.get(comp.id) or [])
                 if not comp_signatures:
                     # Legacy fallback: classify the flattened string.
-                    legacy_check = _classify_check(comp.error)
-                    legacy_sig = _normalize_error(comp.error)
+                    legacy_check = classify_check(comp.error)
+                    legacy_sig = normalize_error(comp.error)
                     if legacy_sig:
                         comp_signatures = [f"{legacy_check}:{legacy_sig}"]
                 if comp_signatures:
@@ -485,7 +509,7 @@ class EvolutionJournal(JournalReads):
                 continue
             sigs = list(failure_signatures.get(comp.id) or [])
             if not sigs:
-                sigs = [signature_for_error(_classify_check(comp.error), comp.error)]
+                sigs = [signature_for_error(classify_check(comp.error), comp.error)]
             for sig in sigs:
                 failure_sigs[sig] = failure_sigs.get(sig, 0) + 1
         common_failure = max(failure_sigs, key=failure_sigs.get, default="") if failure_sigs else ""  # type: ignore[arg-type]

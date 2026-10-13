@@ -230,13 +230,13 @@ class SandboxConfig:
     @classmethod
     def from_env(cls) -> SandboxConfig:
         """Load sandbox config from environment variables only."""
-        from kstrl.config import _parse_bool
+        from kstrl.config import parse_bool
 
         enabled = os.environ.get("KSTRL_SANDBOX_ENABLED")
         network = os.environ.get("KSTRL_SANDBOX_ALLOW_NETWORK")
         return cls(
-            enabled=cls.enabled if enabled is None else _parse_bool(enabled),
-            allow_network=cls.allow_network if network is None else _parse_bool(network),
+            enabled=cls.enabled if enabled is None else parse_bool(enabled),
+            allow_network=cls.allow_network if network is None else parse_bool(network),
         )
 
     @classmethod
@@ -245,7 +245,7 @@ class SandboxConfig:
 
         Reads the ``[sandbox]`` section from ``<root_dir>/kstrl.toml``.
         """
-        from kstrl.config import _parse_bool, load_toml_section, resolve_config_file
+        from kstrl.config import load_toml_section, parse_bool, resolve_config_file
 
         if root_dir is None:
             root_dir = Path.cwd()
@@ -257,9 +257,9 @@ class SandboxConfig:
         if "allow_network" in section:
             allow_network = bool(section["allow_network"])
         if "KSTRL_SANDBOX_ENABLED" in os.environ:
-            enabled = _parse_bool(os.environ.get("KSTRL_SANDBOX_ENABLED"))
+            enabled = parse_bool(os.environ.get("KSTRL_SANDBOX_ENABLED"))
         if "KSTRL_SANDBOX_ALLOW_NETWORK" in os.environ:
-            allow_network = _parse_bool(os.environ.get("KSTRL_SANDBOX_ALLOW_NETWORK"))
+            allow_network = parse_bool(os.environ.get("KSTRL_SANDBOX_ALLOW_NETWORK"))
         return check_numbers(cls(enabled=enabled, allow_network=allow_network))
 
 

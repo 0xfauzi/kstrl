@@ -47,6 +47,13 @@ import pytest
 from kstrl import procgroup
 from kstrl.agents.spawn_record import read_spawn_records
 from kstrl.procgroup import pid_is_alive, read_group_liveness, read_group_members
+from kstrl.serve_process import _group_liveness_for_reap
+
+
+def process_group_alive(pgid: int) -> bool:
+    """Whether any RUNNING process remains in ``pgid`` (the bool of the reap check)."""
+    alive, _ = _group_liveness_for_reap(pgid)
+    return alive
 
 
 def read_pid(pidfile: Path, timeout: float = 5.0) -> int:

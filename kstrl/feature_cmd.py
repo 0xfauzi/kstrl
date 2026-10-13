@@ -60,7 +60,7 @@ from kstrl.event_catalog import (
     RunPlan,
     RunStarted,
 )
-from kstrl.factory_worker import _report_operator_files, engineer_context_prefix
+from kstrl.factory_worker import engineer_context_prefix, report_operator_files
 from kstrl.feature_verify import (
     baseline_skip_reason,
     report_verification,
@@ -374,7 +374,7 @@ def run_feature(
     # #599: the operator's files are reported once per run, as the factory
     # reports them; every loop below then reads them through the same
     # assembly the factory engineer does.
-    _report_operator_files(base_config, root_dir, ui)
+    report_operator_files(base_config, root_dir, ui)
 
     # Feature understanding phase
     understand_config = copy.deepcopy(base_config)

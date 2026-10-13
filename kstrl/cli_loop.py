@@ -24,7 +24,7 @@ from kstrl.cli_preflight import (
 )
 from kstrl.cli_seam import _console_ui, _resolve_path, _resolve_root, _use_cli_value, cli
 from kstrl.commandrun import CommandRun, open_command_run
-from kstrl.config import KstrlConfig, _parse_paths, resolve_config_file
+from kstrl.config import KstrlConfig, parse_paths, resolve_config_file
 from kstrl.config_numbers import LIMIT_FLOAT, LIMIT_INT
 from kstrl.config_report import UI_MODES
 from kstrl.config_report import normalize_ui_mode as _normalize_ui_mode
@@ -236,7 +236,7 @@ def run(
 
     config.ui_mode = _normalize_ui_mode(config.ui_mode)
 
-    force_rich = os.environ.get("GUM_FORCE") == "1"
+    force_rich = os.environ.get("KSTRL_UI_FORCE_RICH") == "1"
     ui_impl = _console_ui(
         config.ui_mode,
         config.no_color,
@@ -360,7 +360,7 @@ def init(directory: Path, ui: str, no_color: bool, upgrade_prompts: bool) -> Non
 
     DIRECTORY is the target project directory (default: current directory).
     """
-    force_rich = os.environ.get("GUM_FORCE") == "1"
+    force_rich = os.environ.get("KSTRL_UI_FORCE_RICH") == "1"
     ui_impl = _console_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich)
     exit_code = run_init(directory, ui_impl, upgrade_prompts=upgrade_prompts)
     sys.exit(exit_code)
@@ -497,7 +497,7 @@ def understand(
     if _use_cli_value(ctx, "interactive"):
         config.interactive = interactive
     if _use_cli_value(ctx, "allowed_paths"):
-        config.allowed_paths = _parse_paths(allowed_paths)
+        config.allowed_paths = parse_paths(allowed_paths)
     if _use_cli_value(ctx, "branch"):
         config.kstrl_branch = branch
         config.kstrl_branch_explicit = True
@@ -532,7 +532,7 @@ def understand(
 
     config.ui_mode = _normalize_ui_mode(config.ui_mode)
 
-    force_rich = os.environ.get("GUM_FORCE") == "1"
+    force_rich = os.environ.get("KSTRL_UI_FORCE_RICH") == "1"
     ui_impl = _console_ui(
         config.ui_mode,
         config.no_color,

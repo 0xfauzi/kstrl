@@ -97,6 +97,42 @@ def _file_inbox_item(
         return ""
 
 
+def _pause_on_unreadable_spend(
+    root_dir: Path,
+    queue: Queue,
+    unreadable: tuple[str, ...],
+    obs: ServeObserver,
+    result: CycleResult,
+) -> None:
+    """Pause intake when the spend of a launch cannot be read (#863).
+
+    The ledger is charged zero for such a run, so the daily budget can no
+    longer fire on what it spent. The pause holds until an operator
+    resumes, and the inbox item names each run directory and the cause.
+    """
+    if not unreadable:
+        return
+    from kstrl.serve_config import Admission
+    from kstrl.serve_gates import _pause_queue
+
+    detail = (
+        "the spend of this launch cannot be read, so the daily budget cannot count it: "
+        + " Also: ".join(unreadable)
+    )
+    result.paused = _pause_queue(queue, Admission(allowed=False, reason=detail), obs, root_dir)
+    result.needs_human = True
+    result.inbox_items += (
+        _file_inbox_item(
+            root_dir,
+            kind_name="budget_overrun",
+            title="Continuous intake paused: unreadable run spend",
+            detail=detail,
+            dedupe_key=f"serve-spend:{detail}",
+            evidence={"unreadable": list(unreadable)},
+        ),
+    )
+
+
 def _poison_for_merge_gate(
     queue: Queue,
     ledger: SpendLedger,

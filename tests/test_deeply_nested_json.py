@@ -23,7 +23,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.agent_output import _extract_json
+from kstrl.agent_output import extract_json
 from kstrl.agents.claude_code import _parse_stream_event
 from kstrl.events import parse_event_line
 from kstrl.inbox import Inbox, InboxConfig
@@ -73,7 +73,7 @@ def test_a_deeply_nested_stream_line_reaches_the_ui_as_text() -> None:
 
 def test_a_deeply_nested_agent_payload_is_no_valid_json_found() -> None:
     with pytest.raises(ValueError, match="No valid JSON found in output"):
-        _extract_json(DEEPLY_NESTED)
+        extract_json(DEEPLY_NESTED)
 
 
 def test_a_deeply_nested_gh_payload_is_an_error_string_not_a_crash() -> None:

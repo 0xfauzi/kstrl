@@ -41,7 +41,7 @@ from kstrl.decompose import decompose_spec
 from kstrl.decompose_audit import SpecBlockerError
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
-from kstrl.factory_lock import _RunLock
+from kstrl.factory_lock import RunLock
 from kstrl.git_base import resolve_base_branch
 from kstrl.interaction import PromptKind, PromptRequest, UiInteractionChannel
 from kstrl.launch_record import replayable_flags
@@ -118,7 +118,7 @@ def factory(
 
     root_dir = root.resolve() if root else Path.cwd()
 
-    force_rich = os.environ.get("GUM_FORCE") == "1"
+    force_rich = os.environ.get("KSTRL_UI_FORCE_RICH") == "1"
     ui_impl = _console_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich)
 
     effective_cmd, effective_model, effective_reasoning, effective_type = _agent_settings(
@@ -173,7 +173,7 @@ def factory(
     # --spec, and holds it across the confirmation below (cli.py:3132,
     # lane #594's own lines). See ``_resolve_factory_run_lock`` for the
     # handed-vs-acquired resolution.
-    run_lock: _RunLock = _resolve_factory_run_lock(ctx, root_dir, ui_impl, force_lock)
+    run_lock: RunLock = _resolve_factory_run_lock(ctx, root_dir, ui_impl, force_lock)
 
     try:
         architect_usage = UsageTotals()
@@ -487,7 +487,7 @@ def factory(
         # R2.4 mirror for the factory path (measured 2026-07-20 on the first
         # real factory run): without this, a toml alias like type = "claude"
         # reaches get_agent RAW in every engineer worker and silently falls
-        # through to the codex default - and _cli_family misreads the
+        # through to the codex default - and cli_family misreads the
         # engineer family, inverting the R7.1 reviewer rotation.
         _check_agent_preflight(base_config, ui_impl)
 

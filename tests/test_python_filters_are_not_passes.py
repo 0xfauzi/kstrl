@@ -185,7 +185,7 @@ EXPECTED_TOOL_LITERALS: dict[str, tuple[int, str]] = {
     # `uv run` default warning for an unset [verify] key). #696 slice 8
     # removed adequacy.py's, cli.py's, feature_verify.py's, init_cmd.py's
     # and verify.py's rows with the checks that ran a Python tool.
-    "failure_signatures.py": (4, "_classify_check's keywords for Phase 1 check names"),
+    "failure_signatures.py": (4, "classify_check's keywords for Phase 1 check names"),
 }
 
 

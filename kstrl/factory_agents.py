@@ -32,7 +32,7 @@ _CROSS_FAMILY_TYPE: dict[str, str] = {
 }
 
 
-def _cli_family(
+def cli_family(
     agent_cmd: str | None,
     agent_type: str | None,
     claude_available: bool,
@@ -59,11 +59,8 @@ def _cli_family(
     cannot construct an agent must not first be assigned a family.
     """
     # Imported here, matching this module's lazy-agent-import pattern.
-    from kstrl.agents import (
-        VALID_AGENT_TYPES,
-        UnknownAgentTypeError,
-        canonical_agent_type,
-    )
+    from kstrl.agents import UnknownAgentTypeError
+    from kstrl.config import VALID_AGENT_TYPES, canonical_agent_type
 
     if agent_cmd:
         return None
@@ -105,7 +102,7 @@ def _agent_identity(
     if agent_type == "claude-sdk":
         label = "claude-sdk"
     else:
-        label = _cli_family(agent_cmd, agent_type, claude_available) or "unknown"
+        label = cli_family(agent_cmd, agent_type, claude_available) or "unknown"
     if model:
         return f"{label} ({model})"
     return label
@@ -186,7 +183,7 @@ def _resolve_cross_family(
     but dead must still be recorded as a claude engineer, because
     ``get_agent`` will construct it from PATH regardless. Mixing
     liveness in there would invert the rotation while the audit trail
-    claimed it held - the exact failure ``_cli_family`` warns about.
+    claimed it held - the exact failure ``cli_family`` warns about.
 
     The probe sits behind the installed check, so a machine with one CLI
     pays nothing and only the family this run would actually dispatch to
@@ -323,7 +320,7 @@ def resolve_adversarial_selection(
             identity=_agent_identity(cmd, agent_type, model, claude_available),
         )
 
-    engineer_family = _cli_family(engineer_cmd, engineer_type, claude_available)
+    engineer_family = cli_family(engineer_cmd, engineer_type, claude_available)
     cross_type = _CROSS_FAMILY_TYPE.get(engineer_family) if engineer_family else None
     cross = _resolve_cross_family(
         cross_type,
@@ -360,7 +357,7 @@ def resolve_adversarial_selection(
     )
 
 
-def _warn_unsandboxable_reviewers(
+def warn_unsandboxable_reviewers(
     ui: UI,
     review_selection: AdversarialAgentSelection | None,
     security_selection: AdversarialAgentSelection | None,
@@ -388,7 +385,7 @@ def _warn_unsandboxable_reviewers(
             )
 
 
-def _engineer_sandbox(sandbox: SandboxConfig, base_config: KstrlConfig) -> str:
+def resolve_engineer_sandbox(sandbox: SandboxConfig, base_config: KstrlConfig) -> str:
     """The harness whose sandbox confines the engineer, or "" (#700).
 
     The adapter ``get_agent`` picks for the engineer, by the same rule
@@ -401,7 +398,7 @@ def _engineer_sandbox(sandbox: SandboxConfig, base_config: KstrlConfig) -> str:
     return _agent_identity(None, base_config.agent_type, None, ClaudeCodeAgent.is_available())
 
 
-def _select_reviewers(
+def select_reviewers(
     factory_config: FactoryConfig,
     base_config: KstrlConfig,
     autonomy_config: AutonomyConfig,

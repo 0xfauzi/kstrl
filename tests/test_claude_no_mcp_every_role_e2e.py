@@ -184,13 +184,13 @@ _KSTRL = Path(kstrl.__file__).parent
 #: message, ``shutil.which``), ``sdk`` is a ``ClaudeAgentOptions`` name, and
 #: ``sdk_call`` is an SDK session call.
 EXPECTED_CLAUDE_SITES = {
-    ("agents/__init__.py", "other"): 1,
     ("agents/claude_code.py", "other"): 1,
     ("agents/claude_code.py", "spawn"): 1,
     ("agents/liveness.py", "spawn"): 1,
     ("agents/sdk_runner.py", "sdk"): 1,
     ("agents/sdk_runner.py", "sdk_call"): 1,
     ("cli_preflight.py", "other"): 1,
+    ("config.py", "other"): 1,
 }
 
 _FUNCTIONS = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)

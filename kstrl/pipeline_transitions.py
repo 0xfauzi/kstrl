@@ -14,7 +14,7 @@ from typing import Any
 
 from kstrl import event_catalog, git
 from kstrl.agents.base import CEILING_AXES
-from kstrl.context import ACCEPTANCE_PHASE, IterationContext
+from kstrl.context import IterationContext
 from kstrl.divergence import convergence_message, failure_counts_not_converging
 from kstrl.findings import Finding
 from kstrl.inbox import ItemKind
@@ -22,7 +22,8 @@ from kstrl.manifest import Component, ComponentStatus
 from kstrl.pipeline_attempt import AttemptRecorder
 from kstrl.pipeline_inbox import InboxDesk
 from kstrl.pipeline_ledger import UsageLedger
-from kstrl.pipeline_state import _iso_now
+from kstrl.pipeline_state import iso_now
+from kstrl.waivers import ACCEPTANCE_PHASE
 
 
 class Transition(Enum):
@@ -264,7 +265,7 @@ class Transitions(InboxDesk, AttemptRecorder, UsageLedger):
         self._record_failure_signatures(comp, phase, error, signatures)
         comp.status = ComponentStatus.FAILED.value
         comp.error = error
-        comp.completed_at = _iso_now()
+        comp.completed_at = iso_now()
         comp.failed_phase = phase
         comp.failed_check = check
         self._end_attempt(comp)
@@ -316,7 +317,7 @@ class Transitions(InboxDesk, AttemptRecorder, UsageLedger):
         specifically the engineer loop's in-loop halt on unreportable
         usage, where ``run_usage`` shows no breach and stating one would
         put a false number in the audit trail. That string is produced by
-        :meth:`LoopBudget.halt_reason`, which names its own ceiling.
+        :meth:`LoopBudget.halt_verdict`, which names its own ceiling.
         Every other side effect is identical wherever the breach is
         caught.
 
@@ -469,7 +470,7 @@ class Transitions(InboxDesk, AttemptRecorder, UsageLedger):
         comp.status = ComponentStatus.COMPLETED.value
         comp.error = ""
         self.component_failure_signatures.pop(comp.id, None)
-        comp.completed_at = _iso_now()
+        comp.completed_at = iso_now()
         self._end_attempt(comp)
         self.factory_result.completed.append(comp.id)
         self.bus.emit(
@@ -502,7 +503,7 @@ class Transitions(InboxDesk, AttemptRecorder, UsageLedger):
         if timed_out_comp is not None:
             timed_out_comp.status = ComponentStatus.FAILED.value
             timed_out_comp.error = "component timeout"
-            timed_out_comp.completed_at = _iso_now()
+            timed_out_comp.completed_at = iso_now()
             timed_out_comp.failed_phase = "engineer"
             timed_out_comp.failed_check = "scheduler_backstop"
             self.component_failure_signatures[comp_id] = [

@@ -16,7 +16,7 @@ passes the decisions block into the engineer's context prefix, the
 scheduler hands ``run_factory``'s worker the rendered block at the right
 positional slot (a mutation guard: deleting the injection from
 ``_submit_args`` left every round-1 test passing), and a register that
-belongs to another project stops the run through ``_report_preflight``
+belongs to another project stops the run through ``report_preflight``
 with exit code 2 before any worker starts (F3 end to end).
 """
 
@@ -378,7 +378,7 @@ class TestTheSchedulerActuallyInjectsIt:
         """F3 end to end. Project A's register, project B's manifest,
         both with a component called comp-a.
 
-        Round 3: the refusal goes through ``_report_preflight`` and exit
+        Round 3: the refusal goes through ``report_preflight`` and exit
         code 2, the same way the scope and stale-branch refusals do. The
         round-2 shape let ``DecisionRegisterError`` out of
         ``run_factory``, and measured, that reached the operator as a

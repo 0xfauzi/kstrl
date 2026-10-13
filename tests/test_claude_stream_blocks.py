@@ -30,7 +30,7 @@ from typing import Any
 
 import pytest
 
-from kstrl.agent_output import _extract_agent_json, _extract_json, _select_agent_output
+from kstrl.agent_output import extract_agent_json, extract_json, select_agent_output
 from kstrl.agents.base import TOOL_RESULT_PREFIX, UsageRecord, model_output_text
 from kstrl.agents.claude_code import ClaudeCodeAgent, _parse_stream_event
 from kstrl.agents.claude_sdk import ClaudeSdkAgent
@@ -492,7 +492,7 @@ def test_select_agent_output_ignores_tool_results(
 ) -> None:
     agent, lines = _run_cli(tmp_path, monkeypatch, _reviewer_stream())
 
-    assert _extract_json(_select_agent_output(agent, lines)) == VERDICT
+    assert extract_json(select_agent_output(agent, lines)) == VERDICT
 
 
 def test_extract_agent_json_ignores_tool_results(
@@ -500,7 +500,7 @@ def test_extract_agent_json_ignores_tool_results(
 ) -> None:
     agent, lines = _run_cli(tmp_path, monkeypatch, _reviewer_stream())
 
-    assert _extract_agent_json(agent, lines) == VERDICT
+    assert extract_agent_json(agent, lines) == VERDICT
 
 
 def test_logging_agent_delegates_marks_tool_output(

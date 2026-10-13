@@ -174,10 +174,9 @@ class OperatorFileKind:
     """One operator-authored file, declared once and read in two places.
 
     Everything that differs between two such files sits on this row, and
-    it reaches two of the three surfaces with no further edit: the
-    parent's once-per-run notice (:func:`operator_file_notices`) and
-    ``KstrlConfig.validate`` (:func:`configured_path_errors`) both walk
-    :data:`OPERATOR_FILES` through :func:`_rows` and take the subject,
+    it reaches the parent's once-per-run notice
+    (:func:`operator_file_notices`) with no further edit: it walks
+    :data:`OPERATOR_FILES` through :func:`_rows` and takes the subject,
     the ``[paths]`` key and the budget off the row.
 
     THE WORKER'S PROMPT BLOCK IS THE THIRD AND IT IS HAND-ORDERED, on
@@ -635,11 +634,10 @@ def _rows(
     """Every operator-authored file, paired with its anchored default.
 
     One loop over :data:`OPERATOR_FILES`, so a row added there reaches
-    the two surfaces below this line with no edit: the parent's notice
-    (:func:`operator_file_notices`) and ``KstrlConfig.validate``
-    (:func:`configured_path_errors`). Both take the subject and the
+    the notice below this line with no edit: the parent's notice
+    (:func:`operator_file_notices`) takes the subject and the
     ``[paths]`` key off the row rather than spelling either one, and
-    R10.9 added the memory row without changing either function.
+    R10.9 added the memory row without changing the function.
 
     IT DOES NOT REACH THE ENGINEER'S PROMPT. That is
     ``factory_worker.engineer_context_prefix``, which names each kind by hand,
@@ -721,23 +719,6 @@ def operator_file_notices(
         if message is not None:
             notices.append((spec.subject, message))
     return notices
-
-
-def configured_path_errors(config: KstrlConfig, anchored: KstrlConfig, root: Path) -> list[str]:
-    """Every operator-file ``[paths]`` row of ``config`` that names nothing.
-
-    ``KstrlConfig.validate``'s half of :func:`operator_file_notices`. A
-    value that names no file is a configuration ERROR; a file that is
-    there but unreadable or over budget is a warning the run reports and
-    not something ``validate`` can call an error. Both halves ask
-    :func:`_missing_message`, so there is one definition of the rule and
-    one wording of the message.
-    """
-    return [
-        message
-        for spec, default in _rows(config, anchored, root)
-        if (message := _missing_message(spec, default, read_operator_file(spec).absent)) is not None
-    ]
 
 
 def load_operator_file(spec: OperatorFile) -> str:

@@ -1,4 +1,4 @@
-"""R8.9 control-state relocation: statedir, migration, L3 gate."""
+"""R8.9 control-state relocation: statedir, legacy refusal, L3 gate."""
 
 from __future__ import annotations
 
@@ -18,17 +18,15 @@ from kstrl.statedir import (
     control_is_external,
     ensure_control_state,
     legacy_control_paths,
-    migrate_control_state,
     normalize_remote_url,
     repo_id,
-    state_dir,
 )
 from kstrl.workqueue import Queue
 
 
 @pytest.fixture(autouse=True)
 def _clear_xdg_cache() -> None:
-    from kstrl.statedir import clear_xdg_state_home_cache
+    from tests.helpers.xdg import clear_xdg_state_home_cache
 
     clear_xdg_state_home_cache()
     yield
@@ -108,36 +106,28 @@ class TestControlDir:
 
 
 class TestMigration:
-    def test_moves_legacy_files_once(self, repo: Path) -> None:
+    def test_a_legacy_file_is_refused_by_name_with_the_move_command(self, repo: Path) -> None:
+        from kstrl.statedir import control_untrusted_reason
+
         with patch("kstrl.statedir._origin_url", return_value=None):
             legacy = legacy_control_paths(repo)
             for name, path in legacy.items():
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(f"legacy-{name}\n", encoding="utf-8")
-
-            with pytest.warns(DeprecationWarning, match="relocated control file"):
-                moved = migrate_control_state(repo)
-            # Everything that HAS a former in-tree location moves, which
-            # is what the migration is over. A post-R8.9 control file
-            # (pr_count_streak.json, #228) never lived in the tree, so it
-            # has no legacy path and nothing to migrate; asserting
-            # against CONTROL_FILENAMES here would demand a former
-            # location be invented for it.
-            assert set(moved) == set(legacy)
+            # Every control file that HAS a former in-tree location is
+            # named. A post-R8.9 control file has none.
             assert set(legacy) < set(CONTROL_FILENAMES)
 
-            for name in legacy:
-                assert not legacy[name].exists()
-                target = control_file(repo, name)
-                assert target.read_text(encoding="utf-8") == f"legacy-{name}\n"
+            ensure_control_state(repo)
+            reason = control_untrusted_reason(repo)
 
-            marker = state_dir(repo) / "control_relocated"
-            assert marker.exists()
-            payload = json.loads(marker.read_text(encoding="utf-8"))
-            assert payload["control_dir"] == str(control_dir(repo))
-
-            # Second call is a no-op.
-            assert migrate_control_state(repo) == []
+            assert reason is not None
+            for name, path in legacy.items():
+                assert str(path) in reason
+                assert f"mv {path} {control_file(repo, name)}" in reason
+                # kstrl moved nothing: the file stays where the operator left it.
+                assert path.read_text(encoding="utf-8") == f"legacy-{name}\n"
+                assert not control_file(repo, name).exists()
 
     def test_a_post_migration_control_file_has_no_legacy_location(
         self,
@@ -319,7 +309,38 @@ class TestLegacyHaltPaths:
 class TestReviewFailClosed:
     """Regressions for the adversarial review on PR #213."""
 
-    def test_failed_migrate_keeps_pause_and_spend_closed(
+    def test_an_in_tree_inbox_is_refused_by_ks_inbox_and_fails_the_gates_closed(
+        self,
+        repo: Path,
+    ) -> None:
+        """#863: kstrl no longer moves ``.kstrl/inbox.jsonl``. Measured before
+        this test: ``ks inbox ls`` printed "Inbox clear" with an open item in
+        the tree, and every gate read only the empty control-directory log."""
+        from click.testing import CliRunner
+
+        from kstrl.cli import cli
+        from kstrl.inbox import Inbox
+        from kstrl.statedir import CONTROL_INBOX
+
+        with patch("kstrl.statedir._origin_url", return_value=None):
+            legacy = legacy_control_paths(repo)[CONTROL_INBOX]
+            legacy.parent.mkdir(parents=True, exist_ok=True)
+            row = '{"schema_version":1,"id":"a1","kind":"halted_run","title":"t","status":"open"}\n'
+            legacy.write_text(row, encoding="utf-8")
+
+            for argv in (["inbox", "ls"], ["inbox", "show", "a1"]):
+                result = CliRunner().invoke(cli, [*argv, "--root", str(repo)])
+                assert result.exit_code == 2, result.output
+                assert ".kstrl/inbox.jsonl" in result.output
+                assert "mv " in result.output
+                assert "Inbox clear" not in result.output
+
+            assert Inbox(repo).scan().unreadable is True
+            # kstrl moved nothing.
+            assert legacy.read_text(encoding="utf-8") == row
+            assert not control_file(repo, CONTROL_INBOX).exists()
+
+    def test_a_legacy_file_keeps_pause_and_spend_closed(
         self,
         repo: Path,
     ) -> None:
@@ -351,18 +372,14 @@ class TestReviewFailClosed:
                 encoding="utf-8",
             )
 
-            with patch(
-                "kstrl.statedir._move_control_file",
-                side_effect=OSError(18, "Cross-device link"),
-            ):
-                ensure_control_state(repo)
-                assert legacy[CONTROL_PAUSE].exists()
-                assert legacy[CONTROL_SPEND].exists()
-                queue = Queue(repo)
-                assert queue.pause_state().paused is True
-                assert "legacy" in queue.pause_state().reason
-                with pytest.raises(ServeStateError, match="legacy"):
-                    SpendLedger(repo).read_state("2099-01-01")
+            ensure_control_state(repo)
+            assert legacy[CONTROL_PAUSE].exists()
+            assert legacy[CONTROL_SPEND].exists()
+            queue = Queue(repo)
+            assert queue.pause_state().paused is True
+            assert "in-tree" in queue.pause_state().reason
+            with pytest.raises(ServeStateError, match="in-tree"):
+                SpendLedger(repo).read_state("2099-01-01")
 
     def test_relative_xdg_survives_chdir(
         self,
@@ -370,7 +387,7 @@ class TestReviewFailClosed:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from kstrl.statedir import clear_xdg_state_home_cache
+        from tests.helpers.xdg import clear_xdg_state_home_cache
 
         rel = Path("rel-xdg-state")
         monkeypatch.chdir(tmp_path)
@@ -435,10 +452,9 @@ class TestReviewFailClosed:
                 ),
                 encoding="utf-8",
             )
-            with pytest.warns(UserWarning, match="dual-state"):
-                migrate_control_state(repo)
+            ensure_control_state(repo)
             assert Queue(repo).pause_state().paused is True
-            with pytest.raises(ServeStateError, match="legacy"):
+            with pytest.raises(ServeStateError, match="in-tree"):
                 SpendLedger(repo).read_state("2099-01-01")
 
     def test_symlink_control_file_not_external(self, repo: Path) -> None:
@@ -470,32 +486,3 @@ class TestReviewFailClosed:
             with pytest.raises(ControlUnavailableError):
                 with control_lock(repo):
                     pass
-
-    def test_exdev_migrate_succeeds_via_copy(
-        self,
-        repo: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        from kstrl.statedir import CONTROL_PAUSE, control_file
-
-        with patch("kstrl.statedir._origin_url", return_value=None):
-            legacy = legacy_control_paths(repo)
-            legacy[CONTROL_PAUSE].parent.mkdir(parents=True, exist_ok=True)
-            legacy[CONTROL_PAUSE].write_text(
-                json.dumps({"paused": True, "reason": "x", "since": ""}),
-                encoding="utf-8",
-            )
-
-            real_replace = os.replace
-
-            def replace_exdev(src: str | os.PathLike[str], dst: str | os.PathLike[str]) -> None:
-                raise OSError(18, "Cross-device link")
-
-            monkeypatch.setattr(os, "replace", replace_exdev)
-            with pytest.warns(DeprecationWarning, match="relocated"):
-                moved = migrate_control_state(repo)
-            assert CONTROL_PAUSE in moved
-            assert not legacy[CONTROL_PAUSE].exists()
-            assert control_file(repo, CONTROL_PAUSE).exists()
-            # restore for other tests in-process (monkeypatch undoes)
-            _ = real_replace

@@ -50,8 +50,7 @@ CLAIM_DISAGREEMENT_CATEGORY = "claim_disagreement"
 
 #: The name this category shipped under before #395. Records already on
 #: disk and in merged pull requests carry it, so a reader still resolves
-#: it; new code writes only the new name. Same shape as
-#: ``knowledge._CONFIDENCE_ALIASES`` ("verified" -> "review_passed").
+#: it; new code writes only the new name.
 _CATEGORY_ALIASES: dict[str, str] = {
     "setpoint_disagreement": CLAIM_DISAGREEMENT_CATEGORY,
 }
@@ -345,18 +344,6 @@ def finding_model(finding: Finding) -> str | None:
     for tag in finding.tags:
         if tag.startswith(MODEL_TAG_PREFIX):
             return tag[len(MODEL_TAG_PREFIX) :] or None
-    return None
-
-
-def finding_attempt(finding: Finding) -> int | None:
-    """The attempt number a finding was recorded on, or None for
-    findings that predate the R3.3 attempt tagging."""
-    for tag in finding.tags:
-        if tag.startswith(ATTEMPT_TAG_PREFIX):
-            try:
-                return int(tag[len(ATTEMPT_TAG_PREFIX) :])
-            except ValueError:
-                return None
     return None
 
 

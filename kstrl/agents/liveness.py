@@ -64,7 +64,7 @@ from pathlib import Path
 from typing import Any
 
 from kstrl.agents.proc import DeadlineStreamer
-from kstrl.config import _parse_bool
+from kstrl.config import parse_bool
 from kstrl.jsonread import read_json
 from kstrl.sandbox import claude_session_argv, claude_session_env
 
@@ -118,14 +118,9 @@ _TIMED_OUT = ProbeResult(live=False, detail=_TIMEOUT_DETAIL)
 _CACHE: dict[str, ProbeResult] = {}
 
 
-def reset_probe_cache() -> None:
-    """Forget every cached probe result (tests; long-lived processes)."""
-    _CACHE.clear()
-
-
 def probing_enabled() -> bool:
     """Whether liveness probing runs at all."""
-    return _parse_bool(os.environ.get(PROBE_ENV_VAR, "1"))
+    return parse_bool(os.environ.get(PROBE_ENV_VAR, "1"))
 
 
 def probe_family(family: str) -> ProbeResult:

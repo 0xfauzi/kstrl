@@ -135,7 +135,6 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     "isolation.py": 2,
     "iteration_prompt.py": 1,
     "journal_reads.py": 1,
-    "knowledge.py": 1,
     "knowledge_distill.py": 1,
     "knowledge_facts.py": 1,
     "loop.py": 1,
@@ -279,7 +278,6 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "isolation.py dot_git.read_text(encoding='utf-8')",
     "iteration_prompt.py claude_md_path.read_text(encoding='utf-8')",
     "journal_reads.py self.config.experiments_path.read_text(encoding='utf-8')",
-    "knowledge.py target.read_text(encoding='utf-8')",
     "knowledge_distill.py prd_path.read_text(encoding='utf-8')",
     "knowledge_facts.py path.read_text(encoding='utf-8')",
     "loop.py config.prompt_file.read_text(encoding='utf-8')",
@@ -386,7 +384,7 @@ EXPECTED_DECIDED_OUT: tuple[str, ...] = (
     "pipeline_attempt.py EvolutionJournal.open",
     "pipeline_ledger.py EvolutionJournal.open",
     # #700 slice 3: the `up` log is opened "wb" and read back through
-    # `_readable`, which decodes with errors="replace". Binary, so no
+    # `readable_text`, which decodes with errors="replace". Binary, so no
     # codec applies at the open.
     "replay.py log.open",
 )

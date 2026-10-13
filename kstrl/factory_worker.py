@@ -27,7 +27,7 @@ from kstrl.context import IterationContext
 from kstrl.events import EventBus, JsonlSink, RunPaths
 from kstrl.factory_result import (
     ComponentResult,
-    _write_partial_usage,
+    write_partial_usage,
 )
 from kstrl.feedforward import CodebaseScanConfig, build_codebase_scan_context
 from kstrl.git_base import resolve_base_ref
@@ -194,7 +194,7 @@ def engineer_context_prefix(
     return "\n\n".join(parts) if parts else None
 
 
-def _report_operator_files(base_config: KstrlConfig, root_dir: Path, ui: UI) -> None:
+def report_operator_files(base_config: KstrlConfig, root_dir: Path, ui: UI) -> None:
     """Print each ``(subject, message)`` the operator's files produce, once.
 
     The subject comes off the ROW, not off this function. It used to be
@@ -521,7 +521,7 @@ def _run_component(
             component_id,
         )
         on_iteration_usage = functools.partial(
-            _write_partial_usage,
+            write_partial_usage,
             usage_path,
         )
 

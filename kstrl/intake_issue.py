@@ -124,14 +124,6 @@ class ProcessedLedger:
         self._entries[source_ref] = {"item_id": item_id, "first_seen": when}
         self._write()
 
-    def forget(self, source_ref: str) -> bool:
-        """Drop an entry so the issue can be admitted again."""
-        if source_ref not in self._entries:
-            return False
-        del self._entries[source_ref]
-        self._write()
-        return True
-
     def entries(self) -> dict[str, dict[str, Any]]:
         return dict(self._entries)
 

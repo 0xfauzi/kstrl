@@ -27,6 +27,7 @@ import pytest
 from kstrl.config import STRING_KEYS
 from kstrl.git_diff import DiffStat, get_diff_stat
 from tests.helpers import gitrepo
+from tests.helpers.diffstat import diffstat_payload
 
 #: Re-exported so this module's existing callers do not have to move; the
 #: one git runner every fixture in this file uses now lives beside the
@@ -79,6 +80,7 @@ _LEGACY_ENV_VARS: tuple[str, ...] = (
     "KSTRL_BRANCH",
     "KSTRL_UI",
     "GUM_FORCE",
+    "KSTRL_UI_FORCE_RICH",
     "NO_COLOR",
     "KSTRL_ASCII",
     "KSTRL_AUTO_CHECKOUT",
@@ -128,7 +130,7 @@ def isolate_kstrl_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path
     xdg = tmp_path.parent / f"{tmp_path.name}.xdg-state"
     xdg.mkdir(exist_ok=True)
     monkeypatch.setenv("XDG_STATE_HOME", str(xdg))
-    from kstrl.statedir import clear_xdg_state_home_cache
+    from tests.helpers.xdg import clear_xdg_state_home_cache
 
     clear_xdg_state_home_cache()
     return tmp_path
@@ -164,7 +166,9 @@ def forbid_agent_cli_spend(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setenv(liveness.PROBE_ENV_VAR, "0")
     monkeypatch.setattr(liveness, "_stream", _forbidden)
-    liveness.reset_probe_cache()
+    from tests.helpers.agent_probe import reset_probe_cache
+
+    reset_probe_cache()
 
 
 @pytest.fixture(autouse=True)
@@ -331,7 +335,7 @@ class ReviewRepo:
     def review_json(self, **overrides: object) -> str:
         """A reviewer reply whose diffstat matches this repo's."""
         payload: dict[str, object] = {
-            "observedDiffstat": self.stat.as_payload(),
+            "observedDiffstat": diffstat_payload(self.stat),
             "stories": [
                 {
                     "storyId": "US-001",
@@ -356,7 +360,7 @@ class ReviewRepo:
     def security_json(self, **overrides: object) -> str:
         """A security reply whose diffstat matches this repo's."""
         payload: dict[str, object] = {
-            "observedDiffstat": self.stat.as_payload(),
+            "observedDiffstat": diffstat_payload(self.stat),
             "findings": [],
             "exhaustively_searched": True,
             "overallNotes": "",
@@ -453,7 +457,7 @@ def with_observed_diffstat(raw_output: str, repo: ReviewRepo) -> str:
     ``test_review_payload.py``.
     """
     payload = json.loads(raw_output)
-    payload["observedDiffstat"] = repo.stat.as_payload()
+    payload["observedDiffstat"] = diffstat_payload(repo.stat)
     return json.dumps(payload)
 
 

@@ -65,6 +65,29 @@ def test_a_retired_env_var_is_refused_by_name(
     assert "will not guess" in problems[0]
 
 
+def test_the_retired_gum_ui_mode_is_refused_in_the_toml_file(tmp_path: Path) -> None:
+    (tmp_path / "kstrl.toml").write_text('[ui]\nui_mode = "gum"\n')
+
+    problems = collect_config_problems(tmp_path, warn=lambda _m: None)
+
+    assert len(problems) == 1
+    assert "kstrl.toml" in problems[0]
+    assert "gum" in problems[0]
+    assert "will not guess" in problems[0]
+
+
+def test_the_retired_gum_ui_mode_is_refused_in_the_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("KSTRL_UI", "gum")
+
+    problems = collect_config_problems(tmp_path, warn=lambda _m: None)
+
+    assert len(problems) == 1
+    assert "KSTRL_UI" in problems[0]
+    assert "will not guess" in problems[0]
+
+
 # Parametrized off the production table itself (kstrl/config_keys.py),
 # not a hand-typed copy of it: a hand-typed tuple stops growing the day
 # someone forgets to update it alongside a new retired row, which is

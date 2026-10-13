@@ -465,7 +465,7 @@ class TestC6ConcurrentFactory:
     while it is live, a second invocation on the same root must be
     refused with exit code 2 (wave-3 R0.5 semantics: the run-level
     ``.kstrl/factory.lock`` flock refuses, it does not queue). Deleting
-    the flock from _acquire_run_lock makes the second invocation proceed
+    the flock from acquire_run_lock makes the second invocation proceed
     instead, so this test fails without it.
 
     flock exclusion applies between two separate open()s of the lock

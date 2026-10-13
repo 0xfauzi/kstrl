@@ -35,7 +35,6 @@ from kstrl.operator_context import (
     MEMORY,
     OPERATOR_FILES,
     OperatorFileKind,
-    configured_path_errors,
     load_operator_file,
     operator_file_notices,
     read_operator_file,
@@ -325,11 +324,9 @@ class TestEveryKindBehavesTheSame:
         setattr(config, kind.field, typo)
 
         notices = operator_file_notices(config, anchored, tmp_path)
-        errors = configured_path_errors(config, anchored, tmp_path)
 
         expected = f"[paths] {kind.key} is set to {typo}, which does not exist"
         assert notices == [(kind.subject, expected)]
-        assert errors == [expected]
 
 
 class TestTheTableTiesToTheOtherTables:

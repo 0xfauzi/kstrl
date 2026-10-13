@@ -548,17 +548,6 @@ def _group_liveness_for_reap(pgid: int) -> tuple[bool, str]:
     )
 
 
-def process_group_alive(pgid: int) -> bool:
-    """Whether any RUNNING process remains in ``pgid``.
-
-    The bool half of ``_group_liveness_for_reap``, which is where the
-    reasoning lives. Callers that record why an answer was degraded want
-    that function instead.
-    """
-    alive, _ = _group_liveness_for_reap(pgid)
-    return alive
-
-
 def _report_reap_degrade(obs: ServeObserver, outcome: RunOutcome) -> None:
     """Say out loud when the reap check could not measure.
 

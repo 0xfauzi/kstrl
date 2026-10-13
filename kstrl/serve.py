@@ -95,6 +95,7 @@ from kstrl.serve_process import (
 from kstrl.serve_settle import (
     CycleResult,
     _file_inbox_item,
+    _pause_on_unreadable_spend,
     _poison_for_merge_gate,
     _record_count_failure,
     _report_merge_gate_refusal,
@@ -496,15 +497,13 @@ def serve_cycle(
         )
         return result
 
-    # 7. Charge the spend before deciding anything, so a classification
-    #    bug cannot also lose the accounting. NEW run dirs are not enough
-    #    to go on; `owned_run_spend` says why.
+    # 7. Charge the spend before deciding anything, so a classification bug
+    #    cannot also lose the accounting. `owned_run_spend` says which dirs.
     owned_runs, owned = owned_run_spend(
         root_dir, runs_before, launch_pid=spawned[-1] if spawned else None
     )
-    total = owned.cost_usd
-    covered_calls = owned.cost_calls
-    total_calls = owned.usage_calls
+    _pause_on_unreadable_spend(root_dir, queue, owned.unreadable, obs, result)
+    total, covered_calls, total_calls = owned.cost_usd, owned.cost_calls, owned.usage_calls
 
     charged = ledger.charge(
         total,

@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 from kstrl import event_catalog, git, git_diff
 from kstrl.atomicio import atomic_write_text
-from kstrl.context import ACCEPTANCE_PHASE, IterationContext
+from kstrl.context import IterationContext
 from kstrl.findings import POLICY_CATEGORY_PREFIX, Finding
 from kstrl.inbox import ItemKind
 from kstrl.manifest import Component
@@ -23,7 +23,7 @@ from kstrl.rung import label_of
 from kstrl.statedir import pre_run_prd_path
 from kstrl.verify_diff import SCOPE_UNREADABLE_CHECK, scope_unreadable_error
 from kstrl.verify_model import LAYER0_NOT_MEASURED, CheckResult, VerificationResult
-from kstrl.waivers import ApprovalSnapshot
+from kstrl.waivers import ACCEPTANCE_PHASE, ApprovalSnapshot
 
 if TYPE_CHECKING:
     from kstrl.factory_result import ComponentResult

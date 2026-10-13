@@ -39,9 +39,9 @@ from typing import TYPE_CHECKING, Any
 from kstrl import git, git_base, git_tree
 from kstrl.atomicio import atomic_write_json
 from kstrl.baseline import verify_digest
-from kstrl.contract import ContractCleanupError, _create_temp_worktree, _remove_temp_worktree
 from kstrl.events import RunPaths
 from kstrl.rung import HOST_LABEL, label_of
+from kstrl.temp_worktree import ContractCleanupError, create_temp_worktree, remove_temp_worktree
 from kstrl.verify_commands import run_fast_checks
 from kstrl.verify_model import CheckResult, VerificationResult, VerifyConfig, gate_names
 from kstrl.version import kstrl_version
@@ -131,7 +131,7 @@ def measure_base_gates(
     ):
         ui.info(f"  The base {sha[:12]} was measured before the architect ran; that reading holds.")
         return measured
-    worktree, checkout_error = _create_temp_worktree(sha, root_dir, WORKTREE_LABEL)
+    worktree, checkout_error = create_temp_worktree(sha, root_dir, WORKTREE_LABEL)
     if worktree is None:
         return BaseGates(
             base_branch,
@@ -180,7 +180,7 @@ def _left_behind(worktree: Path) -> tuple[str, ...]:
 def _discard(worktree: Path, root_dir: Path, ui: UI) -> str:
     """Delete the throwaway worktree; "" on success, else why it survived."""
     try:
-        _remove_temp_worktree(worktree, root_dir, ui, WORKTREE_LABEL)
+        remove_temp_worktree(worktree, root_dir, ui, WORKTREE_LABEL)
     except ContractCleanupError as exc:
         return f"the throwaway worktree of the base survived: {exc}"
     return ""

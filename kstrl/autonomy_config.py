@@ -16,6 +16,7 @@ from kstrl.autonomy import AutonomyError, AutonomyLevel, AutonomyState, FlagBund
 from kstrl.config_numbers import check_numbers
 from kstrl.statedir import (
     control_is_external,
+    control_untrusted_reason,
     ensure_control_state,
 )
 
@@ -236,12 +237,12 @@ def control_relocation_error(
     if int(target_level) < int(AutonomyLevel.L3_ENVELOPED_AUTO):
         return None
     ensure_control_state(root_dir)
-    if control_is_external(root_dir):
+    reason = control_untrusted_reason(root_dir)
+    if reason is None:
         return None
     return (
         "L3+ requires control state outside the agent-reachable tree "
-        "(R8.9). Finish migrating leftover `.kstrl/` control files, or "
-        "point XDG_STATE_HOME outside the repo, then retry."
+        f"(R8.9): {reason}. Correct it, or point XDG_STATE_HOME outside the repo, then retry."
     )
 
 

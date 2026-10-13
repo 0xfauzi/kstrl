@@ -374,19 +374,6 @@ class DiffStat:
         """One-line human/prompt rendering, e.g. ``3 files, +120/-4``."""
         return f"{self.files} files, +{self.insertions}/-{self.deletions}"
 
-    def as_payload(self) -> dict[str, int]:
-        """The wire shape the reviewer prompts ask for.
-
-        One place for the three key names, because they are a contract
-        between the prompt schema, :func:`parse_observed_diffstat`, and
-        every fixture that fakes a reply.
-        """
-        return {
-            "files": self.files,
-            "insertions": self.insertions,
-            "deletions": self.deletions,
-        }
-
 
 def parse_observed_diffstat(value: object) -> DiffStat | None:
     """#266: a reviewer's reported diffstat, or None if it reported none.

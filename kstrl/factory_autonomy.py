@@ -27,6 +27,7 @@ from kstrl.autonomy_config import (
 from kstrl.autonomy_transitions import apply_demotion, save_ladder_state
 from kstrl.event_catalog import AutonomyLevelApplied
 from kstrl.events import EventBus
+from kstrl.evolution import classify_merges
 from kstrl.factory_config import (
     FactoryConfig,
 )
@@ -271,39 +272,11 @@ def _record_health_breaches(
 HUMAN_REJECTION_CHECKS = (HITL_REJECT_CHECK, PR_CLOSED_CHECK)
 
 
-def _classify_merges(manifest: Manifest, merged: dict[str, str]) -> dict[str, str]:
-    """One verdict per merged component id: ``"clean"``, ``"edited"`` or ``"head unknown"``.
-
-    A merge is clean only when the PR head GitHub merged is the commit
-    the diff phase judged (``Component.judged_sha``). A commit pushed to
-    the PR, or made in the worktree while the checkpoint prompt was open,
-    makes them differ. When either commit is unknown the merge counts as
-    edited: a promotion input must not be satisfied by what kstrl could
-    not observe (#601).
-
-    Pure (no state mutation) so ``kstrl.evolution``'s journal writer can
-    call it to size the ``merged``/``clean_merged`` TSV columns from the
-    same classification the live ladder uses, rather than a second
-    definition of "clean" that could drift from this one.
-    """
-    judged = {comp.id: comp.judged_sha for comp in manifest.components}
-    result: dict[str, str] = {}
-    for comp_id, head_sha in merged.items():
-        judged_sha = judged.get(comp_id, "")
-        if not judged_sha or not head_sha:
-            result[comp_id] = "head unknown"
-        elif judged_sha == head_sha:
-            result[comp_id] = "clean"
-        else:
-            result[comp_id] = "edited"
-    return result
-
-
 def _record_merges(
     state: AutonomyState, manifest: Manifest, merged: dict[str, str]
 ) -> dict[str, list[str]]:
     """Count each merge this run confirmed; return the parts by verdict."""
-    by_id = _classify_merges(manifest, merged)
+    by_id = classify_merges(manifest, merged)
     verdicts: dict[str, list[str]] = {"clean": [], "edited": [], "head unknown": []}
     for comp_id, verdict in by_id.items():
         state.record_merged_component(human_edited=verdict != "clean")

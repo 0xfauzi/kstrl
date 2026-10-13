@@ -37,7 +37,6 @@ from kstrl.autonomy import (
     AutonomyState,
     DemotionTrigger,
 )
-from kstrl.evolution_config import EvolutionConfig
 from kstrl.experiments_tsv import experiment_rows
 from kstrl.failure_signatures import INFRASTRUCTURE_CHECKS
 from kstrl.verify_diff import SCOPE_UNREADABLE_CHECK
@@ -77,7 +76,7 @@ from kstrl.verify_diff import SCOPE_UNREADABLE_CHECK
 #: the tree in 606cbb1, the commit that created this tuple, and no call
 #: site produces them. #339 re-measured it four ways and got the same
 #: answer: none of the three appears in `kstrl/` as a signature prefix,
-#: none is in `_CATEGORY_BY_CHECK`, none is in `_classify_check`'s range,
+#: none is in `_CATEGORY_BY_CHECK`, none is in `classify_check`'s range,
 #: and none is producible by any of the four check-name producers
 #: `tests/test_check_name_enrolment.py` enumerates.
 #:
@@ -442,19 +441,3 @@ def replay(runs: list[RunRecord]) -> ReplayReport:
             )
     report.final_level = state.level
     return report
-
-
-def replay_file(path: Path | None = None, root_dir: Path | None = None) -> ReplayReport:
-    """Replay from an experiments.tsv path.
-
-    The default path is ``EvolutionConfig.load(root_dir).experiments_path``
-    (``<root>/.kstrl/experiments.tsv`` unless ``[evolution]
-    experiments_path`` moves it): the same rule :func:`kstrl.health.health_breaches`
-    resolves against, so the two report halves ``ks autonomy replay``
-    renders agree about which file they read (#151's simplify pass;
-    before it, this function's own default ignored the config key that
-    the health half already honored).
-    """
-    if path is None:
-        path = EvolutionConfig.load(root_dir).experiments_path
-    return replay(load_runs(path))

@@ -241,7 +241,7 @@ def _record_run_scope(
     )
 
 
-def _report_preflight(ui: UI, headline: str, errors: list[str]) -> bool:
+def report_preflight(ui: UI, headline: str, errors: list[str]) -> bool:
     """Print a refusal and say whether one happened."""
     if not errors:
         return False
@@ -416,11 +416,11 @@ def _refused_rung_or_base(
     """Prove the rung, then measure the base gates inside it (#700 slice 2,
     #654); True when either refused. The base gates never run below a
     proven rung under a [stack]."""
-    return _report_preflight(
+    return report_preflight(
         ui,
         "the isolation rung is not proven",
         _preflight_rungs(root_dir, factory_config, run_id, ui),
-    ) or _report_preflight(
+    ) or report_preflight(
         ui,
         "the base branch fails a gate Phase 1 runs, or its reading cannot be recorded",
         _preflight_base_gates(base_branch, root_dir, factory_config, run_id, ui),
@@ -594,7 +594,7 @@ def _run_preflights(
     # so a run that cannot leave one must not start (CLAUDE.md, artifact
     # identity: a failed write of an artifact a later phase reads is the
     # writing phase's failure).
-    if _report_preflight(
+    if report_preflight(
         ui,
         "the run's launch record cannot be written",
         write_launch_record(
@@ -607,13 +607,13 @@ def _run_preflights(
     ):
         return None
     register_errors, run_register = _preflight_decision_register(manifest, root_dir)
-    if _report_preflight(ui, "the architect decision register cannot bind", register_errors):
+    if report_preflight(ui, "the architect decision register cannot bind", register_errors):
         return None
     factory_config.requirements = run_register.requirements
     headline, pin_errors = _preflight_pins(manifest, root_dir, factory_config, run_id)
-    if _report_preflight(ui, headline, pin_errors):
+    if report_preflight(ui, headline, pin_errors):
         return None
-    if _report_preflight(
+    if report_preflight(
         ui,
         "components cannot pass the scope check",
         _preflight_component_scope(manifest, run_scope),
@@ -624,18 +624,20 @@ def _run_preflights(
     if not factory_config.use_worktrees:
         return run_register
     if lock_held:
-        _prune_stale_worktrees(
+        flat_worktrees = _prune_stale_worktrees(
             root_dir,
             run_id,
             ui,
             keep=_evidence_worktrees_to_keep(manifest),
         )
+        if report_preflight(ui, "flat worktrees from before R0.5 found", flat_worktrees):
+            return None
     else:
         ui.warn(
             "  Run lock not held; skipping stale-worktree cleanup "
             "(another live invocation may own them)"
         )
-    if _report_preflight(
+    if report_preflight(
         ui,
         "stale component branches found",
         _preflight_component_branches(manifest, root_dir, ui, interrupted_branches),

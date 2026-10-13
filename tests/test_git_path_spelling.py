@@ -235,9 +235,6 @@ EXPECTED_GIT_ARGVS: dict[str, int] = {
     "breaker.py git status --porcelain -uall -z": 1,
     "config_report.py git ?": 1,
     "contract.py git merge --abort": 1,
-    "contract.py git worktree add --detach ? ?": 1,
-    "contract.py git worktree prune": 1,
-    "contract.py git worktree remove --force ?": 1,
     "doctor.py git check-ignore -q -- ?": 1,
     "factory_worktrees.py git branch -D ?": 1,
     "factory_worktrees.py git merge-base --is-ancestor ? ?": 1,
@@ -249,11 +246,9 @@ EXPECTED_GIT_ARGVS: dict[str, int] = {
     "factory_worktrees.py git worktree add ? ?": 1,
     "factory_worktrees.py git worktree list --porcelain -z": 1,
     "factory_worktrees.py git worktree prune": 1,
-    "factory_worktrees.py git worktree remove --force ?": 4,
-    "git.py git branch ? -- ?": 1,
+    "factory_worktrees.py git worktree remove --force ?": 3,
     "git.py git checkout -b ?": 1,
-    "git.py git checkout -b ? ? --": 1,
-    "git.py git checkout ? --": 2,
+    "git.py git checkout ? --": 1,
     "git.py git config --get remote.origin.url": 1,
     "git_tree.py git diff --name-only --cached -z": 1,
     "git_tree.py git diff --name-only -z": 1,
@@ -289,6 +284,9 @@ EXPECTED_GIT_ARGVS: dict[str, int] = {
     "retry_plan.py git worktree prune": 1,
     "retry_plan.py git worktree remove --force ?": 1,
     "statedir.py git -C ? remote get-url origin": 1,
+    "temp_worktree.py git worktree add --detach ? ?": 1,
+    "temp_worktree.py git worktree prune": 1,
+    "temp_worktree.py git worktree remove --force ?": 1,
     # #425 (PR #425, merged into this branch as 982f726). Not
     # path-printing, so layer 2 correctly leaves it out of
     # EXPECTED_WITH_Z / EXPECTED_WITHOUT_Z / EXPECTED_UNDECIDED: `git
@@ -517,4 +515,3 @@ class TestTheGuardsThatConsumeThem:
 
         assert breaker.enabled is True
         assert breaker.record_iteration() is False
-        assert breaker.stall_count == 0

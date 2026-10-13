@@ -7,13 +7,11 @@ from kstrl.agents.claude_code import ClaudeCodeAgent
 from kstrl.agents.claude_sdk import ClaudeSdkAgent
 from kstrl.agents.codex import CodexAgent
 from kstrl.agents.custom import CustomAgent
+from kstrl.config import VALID_AGENT_TYPES, canonical_agent_type
 from kstrl.sandbox import SandboxConfig
 
 __all__ = [
-    "AGENT_TYPE_ALIASES",
     "UnknownAgentTypeError",
-    "VALID_AGENT_TYPES",
-    "canonical_agent_type",
     "Agent",
     "ClaudeCodeAgent",
     "ClaudeSdkAgent",
@@ -32,33 +30,6 @@ class UnknownAgentTypeError(ValueError):
     operator believed they were running Claude. A typo changed which
     model wrote the code and nothing said so.
     """
-
-
-#: The one agent-type vocabulary, shared with the CLI preflight. Two
-#: layers previously disagreed: the CLI accepted "claude" as an alias for
-#: "claude-code", while get_agent did not and fell through to the codex
-#: fallback, so a programmatic caller passing the DOCUMENTED spelling got
-#: a different model than the CLI would have chosen. One table, one
-#: vocabulary.
-AGENT_TYPE_ALIASES: dict[str, str] = {
-    "": "auto",
-    "auto": "auto",
-    "claude": "claude-code",
-    "claude-code": "claude-code",
-    "claude-sdk": "claude-sdk",
-    "codex": "codex",
-    "custom": "custom",
-}
-
-#: Accepted spellings for ``[agent] type``.
-VALID_AGENT_TYPES: tuple[str, ...] = tuple(sorted(name for name in AGENT_TYPE_ALIASES if name))
-
-
-def canonical_agent_type(agent_type: str | None) -> str | None:
-    """Canonical spelling for a configured type, or None if unknown."""
-    if agent_type is None:
-        return None
-    return AGENT_TYPE_ALIASES.get(agent_type.strip().lower())
 
 
 def get_agent(

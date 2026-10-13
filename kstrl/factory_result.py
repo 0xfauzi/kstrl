@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from concurrent.futures import Future
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -181,12 +182,12 @@ def resolve_exit_code(
     return 1
 
 
-def _ids_in_status(manifest: Manifest, status: ComponentStatus) -> list[str]:
+def ids_in_status(manifest: Manifest, status: ComponentStatus) -> list[str]:
     """The ids of the components in ``status``, in manifest order."""
     return [c.id for c in manifest.components if c.status == status.value]
 
 
-def _report_awaiting_approval(factory_result: FactoryResult, ui: UI) -> None:
+def report_awaiting_approval(factory_result: FactoryResult, ui: UI) -> None:
     """Name the components the merge gate parked, and what moves them (#465)."""
     if not factory_result.awaiting_approval:
         return
@@ -234,7 +235,7 @@ def _report_nothing_scheduled(
     ui.info(advice)
 
 
-def _write_partial_usage(path: Path, totals: UsageTotals) -> None:
+def write_partial_usage(path: Path, totals: UsageTotals) -> None:
     """Publish the engineer loop's usage-so-far, atomically (R8).
 
     The worker owns its UsageRecords in memory; the abort path
@@ -262,12 +263,14 @@ def _read_partial_usage(path: Path) -> UsageTotals | None:
     ``unreported_calls``, ``tokenless_calls`` and ``costless_calls`` are
     derived properties and are deliberately not read back.
 
-    Backward compatible on read: ``token_calls`` (added in R8 after the
-    review) and ``cost_calls`` (added with the cost ceiling) are optional
-    and default to 0 when the payload predates them. That under-reports
-    coverage rather than inventing it, and the file is rewritten at the
-    next iteration boundary anyway - it is a per-run, per-attempt scratch
-    file, never a long-lived record.
+    A snapshot without ``token_calls`` or ``cost_calls`` predates the
+    per-axis counts (R8). A warning names the file, and the spend IS
+    recorded with each missing count at 0, so the run total reads as a
+    lower bound (#863). Dropping the snapshot would remove the worker's
+    spend from the meter, and a budget must not read money as zero. The
+    scheduler deletes the slot before each submission
+    (``clear_partial_usage``), so only this kstrl's writer, which
+    always writes both counts, fills it.
     """
     try:
         data = read_json(path.read_text(encoding="utf-8"))
@@ -275,6 +278,15 @@ def _read_partial_usage(path: Path) -> UsageTotals | None:
         return None
     if not isinstance(data, dict):
         return None
+    missing = [name for name in ("token_calls", "cost_calls") if name not in data]
+    if missing:
+        warnings.warn(
+            f"usage snapshot {path} has no {' or '.join(missing)}, so it was written before "
+            "the per-axis counts existed; the spend of the killed worker is recorded as a "
+            "lower bound",
+            RuntimeWarning,
+            stacklevel=2,
+        )
     totals = UsageTotals()
     int_fields = (
         "calls",
@@ -300,7 +312,7 @@ def _read_partial_usage(path: Path) -> UsageTotals | None:
     return totals
 
 
-def _clear_partial_usage(path: Path) -> bool:
+def clear_partial_usage(path: Path) -> bool:
     """Retire the previous attempt's usage snapshot (R8 review, P2-c).
 
     The snapshot is keyed by run + component only, and a normal result
@@ -335,7 +347,7 @@ def _clear_partial_usage(path: Path) -> bool:
     return True
 
 
-def _salvage_aborted_usage(
+def salvage_aborted_usage(
     future: Future[ComponentResult],
     comp_id: str,
     pipeline: ComponentPipeline,
@@ -363,7 +375,7 @@ def _salvage_aborted_usage(
       reported to anyone before the kill.
 
     The snapshot is attempt-scoped by the scheduler, which deletes it
-    immediately before every submission (``_clear_partial_usage``). That
+    immediately before every submission (``clear_partial_usage``). That
     is what makes this route safe: without it a completed attempt left
     its file behind and a later attempt aborted before its own first
     iteration boundary salvaged the PREVIOUS attempt's tokens on top of

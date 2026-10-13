@@ -7,7 +7,7 @@ rung to run a command inside it: one module each way would be an import
 cycle. Nothing here imports from kstrl.
 
 Only :func:`kstrl.isolation.prove_rung` constructs a :class:`ProvenRung`
-(``tests/test_isolation_census.py``), and :func:`_nono_argv` is the only
+(``tests/test_isolation_census.py``), and :func:`nono_argv` is the only
 place a nono command line is built, so a command runs in exactly the
 policy and the nono invocation the canaries ran in.
 
@@ -89,7 +89,7 @@ class ProvenRung:
         the host while its result claims a rung."""
         if self.refusal or not self.policy_path:
             raise RuntimeError(f"no proven rung to run in: {self.refusal or 'no policy'}")
-        return _nono_argv(
+        return nono_argv(
             self.backend, Path(self.policy_path), zone_dir(Path(self.scratch)), argv, assignments
         )
 
@@ -163,7 +163,7 @@ def release(rungs: Iterable[Rung | None]) -> None:
             shutil.rmtree(rung.scratch, ignore_errors=True)
 
 
-def _nono_argv(
+def nono_argv(
     nono: str, policy_path: Path, scratch: Path, argv: Sequence[str], assignments: Sequence[str]
 ) -> list[str]:
     """The one place a nono command line is built. nono's own state goes

@@ -82,7 +82,7 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     # check entry's digest). Its reads go through read_json.
     "acceptance.py": 3,
     # #700 slice 7: the import and one json.dumps (the designed plan and its
-    # designer.json). It reads no JSON: the reply goes through _extract_json.
+    # designer.json). It reads no JSON: the reply goes through extract_json.
     "acceptance_design.py": 2,
     "agent_output.py": 4,
     # #598: was 4 (import, one json.dumps in _format_tool_use, two
@@ -130,7 +130,7 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     # report is read through read_json. No parse.
     "isolation.py": 2,
     "jsonread.py": 4,
-    "knowledge.py": 4,
+    "knowledge.py": 3,
     "knowledge_facts.py": 3,
     "linear.py": 5,
     "observability.py": 4,
@@ -151,7 +151,6 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     # browser, up, and one name/command pair per check). No parse: the
     # table is read through load_toml_document.
     "stack.py": 11,
-    "statedir.py": 2,
     # #595: the import and one json.dumps, the canonical JSON the waiver
     # key hashes. No parse.
     "waivers.py": 2,

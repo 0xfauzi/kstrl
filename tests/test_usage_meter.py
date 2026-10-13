@@ -52,10 +52,10 @@ from kstrl.factory_lock import FactoryLockHeldError
 from kstrl.factory_result import (
     ComponentResult,
     FactoryResult,
-    _clear_partial_usage,
     _read_partial_usage,
-    _salvage_aborted_usage,
-    _write_partial_usage,
+    clear_partial_usage,
+    salvage_aborted_usage,
+    write_partial_usage,
 )
 from kstrl.factory_worker import _run_component
 from kstrl.inbox import Inbox, InboxConfig
@@ -775,6 +775,12 @@ def _factory_config(tmp_path: Path, **overrides: Any) -> FactoryConfig:
     )
     defaults.update(overrides)
     return FactoryConfig(**defaults)
+
+
+def _halt_reason(budget: LoopBudget, usage: UsageTotals) -> str | None:
+    """The prose of the budget's halt verdict, or None when there is none."""
+    verdict = budget.halt_verdict(usage)
+    return None if verdict is None else verdict.reason
 
 
 def _engineer_usage(total: int, cost: float = 0.0) -> UsageTotals:
@@ -1678,7 +1684,7 @@ class TestInLoopTokenBudget:
             prior_calls=20,
             prior_token_calls=0,
         )
-        assert budget.halt_reason(UsageTotals()) is None
+        assert _halt_reason(budget, UsageTotals()) is None
 
     def test_a_tokenless_call_after_an_earlier_one_halts_immediately(
         self,
@@ -2146,7 +2152,7 @@ def _pending_executor(
     ``use_worktrees=False``, which forces ``max_parallel=1``, which
     selects ``_InlineExecutor`` - and that executor runs the worker
     synchronously inside ``submit()``. By the time a stop is observed
-    the future is therefore already done, and ``_salvage_aborted_usage``
+    the future is therefore already done, and ``salvage_aborted_usage``
     takes the already-delivered route. Every test of the DISK route has
     to inject a genuinely pending future at the executor seam, or it
     passes with the snapshot write/read entirely broken.
@@ -2202,7 +2208,7 @@ class TestAbortedWorkerUsage:
     def test_snapshot_roundtrips(self, tmp_path: Path) -> None:
         totals = _engineer_usage(1234, cost=0.5)
         path = tmp_path / "engineer_usage.json"
-        _write_partial_usage(path, totals)
+        write_partial_usage(path, totals)
         back = _read_partial_usage(path)
         assert back is not None
         assert back.to_dict() == totals.to_dict()
@@ -2216,30 +2222,44 @@ class TestAbortedWorkerUsage:
         listy.write_text("[1, 2]")
         assert _read_partial_usage(listy) is None
         empty = tmp_path / "empty.json"
-        empty.write_text('{"calls": 0, "total_tokens": 0}')
+        empty.write_text('{"calls": 0, "total_tokens": 0, "token_calls": 0, "cost_calls": 0}')
         assert _read_partial_usage(empty) is None  # nothing ran
+
+    def test_a_snapshot_without_the_per_axis_counts_is_named_and_kept_as_a_lower_bound(
+        self, tmp_path: Path
+    ) -> None:
+        old = tmp_path / "engineer_usage.json"
+        old.write_text('{"calls": 2, "known_calls": 2, "total_tokens": 900, "cost_usd": 0.5}')
+        with pytest.warns(RuntimeWarning, match="engineer_usage.json") as seen:
+            totals = _read_partial_usage(old)
+        assert "token_calls or cost_calls" in str(seen[0].message)
+        # The spend stays on the meter; the missing counts make it a lower bound.
+        assert totals is not None
+        assert (totals.calls, totals.total_tokens, totals.cost_usd) == (2, 900, 0.5)
+        assert (totals.token_calls, totals.cost_calls) == (0, 0)
+        assert totals.tokenless_calls == 2 and totals.costless_calls == 2
 
     def test_unwritable_snapshot_path_is_swallowed(self, tmp_path: Path) -> None:
         blocker = tmp_path / "blocker"
         blocker.write_text("not a directory")
-        _write_partial_usage(blocker / "sub" / "usage.json", _engineer_usage(1))
+        write_partial_usage(blocker / "sub" / "usage.json", _engineer_usage(1))
 
     def test_clearing_a_snapshot_is_idempotent(self, tmp_path: Path) -> None:
         """The scheduler clears before every submission, including the
         first, when there is nothing to clear."""
         path = tmp_path / "engineer_usage.json"
-        _clear_partial_usage(path)  # absent: no error
-        _write_partial_usage(path, _engineer_usage(700))
-        _clear_partial_usage(path)
+        clear_partial_usage(path)  # absent: no error
+        write_partial_usage(path, _engineer_usage(700))
+        clear_partial_usage(path)
         assert _read_partial_usage(path) is None
-        _clear_partial_usage(tmp_path)  # a directory: swallowed
+        clear_partial_usage(tmp_path)  # a directory: swallowed
 
     def test_killed_worker_spend_recovered_from_the_snapshot(
         self,
         tmp_path: Path,
     ) -> None:
         usage_paths = RunPaths(root=tmp_path)
-        _write_partial_usage(
+        write_partial_usage(
             usage_paths.engineer_usage("comp-a"),
             _engineer_usage(700),
         )
@@ -2247,7 +2267,7 @@ class TestAbortedWorkerUsage:
         pipeline.usage_paths = usage_paths
         future: Future[ComponentResult] = Future()  # never completes
 
-        _salvage_aborted_usage(future, "comp-a", pipeline)
+        salvage_aborted_usage(future, "comp-a", pipeline)
 
         pipeline.record_engineer_usage.assert_called_once()
         comp_id, totals = pipeline.record_engineer_usage.call_args[0]
@@ -2261,7 +2281,7 @@ class TestAbortedWorkerUsage:
         """No double counting: a future that DID deliver is
         authoritative and the (staler) snapshot is ignored."""
         usage_paths = RunPaths(root=tmp_path)
-        _write_partial_usage(
+        write_partial_usage(
             usage_paths.engineer_usage("comp-a"),
             _engineer_usage(700),
         )
@@ -2276,7 +2296,7 @@ class TestAbortedWorkerUsage:
             )
         )
 
-        _salvage_aborted_usage(future, "comp-a", pipeline)
+        salvage_aborted_usage(future, "comp-a", pipeline)
 
         pipeline.record_engineer_usage.assert_called_once()
         assert pipeline.record_engineer_usage.call_args[0][1].total_tokens == 900
@@ -2287,7 +2307,7 @@ class TestAbortedWorkerUsage:
         future: Future[ComponentResult] = Future()
         future.set_exception(RuntimeError("worker died"))
 
-        _salvage_aborted_usage(future, "comp-a", pipeline)
+        salvage_aborted_usage(future, "comp-a", pipeline)
 
         pipeline.record_engineer_usage.assert_not_called()
 
@@ -2305,7 +2325,7 @@ class TestAbortedWorkerUsage:
         snapshot is never read. It passed with snapshot write/read
         entirely broken. The disk route is covered by the pending-future
         tests below; both routes need their own test because they are
-        mutually exclusive branches of ``_salvage_aborted_usage``.
+        mutually exclusive branches of ``salvage_aborted_usage``.
         """
         root = _setup_project(tmp_path, ["comp-a"])
         manifest = _make_manifest([_component("comp-a")])
@@ -2352,7 +2372,7 @@ class TestAbortedWorkerUsage:
         The future is still PENDING when the stop lands - the worker was
         killed mid-loop - so the only surviving record of its spend is
         the snapshot it published at its last iteration boundary. Break
-        ``_write_partial_usage`` or ``_read_partial_usage`` and this
+        ``write_partial_usage`` or ``_read_partial_usage`` and this
         test fails; the pre-existing abort test does not.
         """
         root = _setup_project(tmp_path, ["comp-a"])
@@ -2360,7 +2380,7 @@ class TestAbortedWorkerUsage:
         stop = StopController()
 
         def worker_published_then_died(args: tuple[Any, ...]) -> None:
-            _write_partial_usage(
+            write_partial_usage(
                 RunPaths(root=_usage_dir_from_args(args)).engineer_usage("comp-a"),
                 _engineer_usage(700),
             )
@@ -2417,7 +2437,7 @@ class TestAbortedWorkerUsage:
         def fake_run_component(*args: Any, **kwargs: Any) -> ComponentResult:
             # Attempt 1: a real worker publishing its boundary snapshot,
             # then failing organically with the same spend on the result.
-            _write_partial_usage(
+            write_partial_usage(
                 RunPaths(root=_usage_dir_from_args(args)).engineer_usage("comp-a"),
                 _engineer_usage(700),
             )
@@ -2476,7 +2496,7 @@ class TestAbortedWorkerUsage:
 
         def worker_published_then_died(args: tuple[Any, ...]) -> None:
             usage_dir = _usage_dir_from_args(args)
-            _write_partial_usage(
+            write_partial_usage(
                 RunPaths(root=usage_dir).engineer_usage("comp-a"),
                 _engineer_usage(700),
             )
@@ -2641,7 +2661,8 @@ class TestUnenforceableHaltIsEngineerScoped:
             prior_token_calls=4,
         )
         assert (
-            budget.halt_reason(
+            _halt_reason(
+                budget,
                 UsageTotals(calls=1, known_calls=0, token_calls=0, total_tokens=0),
             )
             is None
@@ -2657,7 +2678,8 @@ class TestUnenforceableHaltIsEngineerScoped:
             prior_calls=1,
             prior_token_calls=0,
         )
-        reason = budget.halt_reason(
+        reason = _halt_reason(
+            budget,
             UsageTotals(calls=1, known_calls=0, token_calls=0, total_tokens=0),
         )
         assert reason is not None
@@ -2676,7 +2698,8 @@ class TestUnenforceableHaltIsEngineerScoped:
             prior_calls=2,
             prior_token_calls=0,
         )
-        reason = budget.halt_reason(
+        reason = _halt_reason(
+            budget,
             UsageTotals(calls=1, known_calls=0, token_calls=0, total_tokens=0),
         )
         assert reason is not None
@@ -3072,12 +3095,13 @@ class TestInLoopCostBudget:
             prior_calls=20,
             prior_cost_calls=0,
         )
-        assert budget.halt_reason(UsageTotals()) is None
+        assert _halt_reason(budget, UsageTotals()) is None
 
     def test_no_ceiling_configured_is_always_none(self) -> None:
         budget = LoopBudget(prior_calls=20, prior_cost_calls=0)
         assert (
-            budget.halt_reason(
+            _halt_reason(
+                budget,
                 UsageTotals(calls=5, known_calls=0),
             )
             is None
@@ -3401,19 +3425,19 @@ class TestCostCeilingEndToEnd:
 class TestFailedSnapshotDeletionInvalidates:
     """Deletion IS the attempt-scoping invariant.
 
-    Review regression on 22e99b4: `_clear_partial_usage` swallowed every
+    Review regression on 22e99b4: `clear_partial_usage` swallowed every
     OSError, so a snapshot that could not be deleted stayed addressable
     as the current attempt and was salvaged again on top of the totals
     `process_result` had already recorded.
     """
 
     def test_missing_file_is_the_clean_case(self, tmp_path: Path) -> None:
-        assert _clear_partial_usage(tmp_path / "nope.json") is True
+        assert clear_partial_usage(tmp_path / "nope.json") is True
 
     def test_successful_delete_reports_clean(self, tmp_path: Path) -> None:
         target = tmp_path / "usage.json"
         target.write_text("{}")
-        assert _clear_partial_usage(target) is True
+        assert clear_partial_usage(target) is True
         assert not target.exists()
 
     def test_failed_delete_reports_unsafe(self, tmp_path: Path) -> None:
@@ -3424,7 +3448,7 @@ class TestFailedSnapshotDeletionInvalidates:
             "unlink",
             side_effect=PermissionError("read-only"),
         ):
-            assert _clear_partial_usage(target) is False
+            assert clear_partial_usage(target) is False
         assert target.exists()  # still there, hence unsafe
 
     def test_unsafe_attempt_refuses_disk_salvage(self, tmp_path: Path) -> None:
@@ -3446,19 +3470,19 @@ class TestFailedSnapshotDeletionInvalidates:
 
         snapshot = pipeline.usage_paths.engineer_usage("comp-a")
         snapshot.parent.mkdir(parents=True, exist_ok=True)
-        _write_partial_usage(
+        write_partial_usage(
             snapshot,
             UsageTotals(calls=1, known_calls=1, token_calls=1, total_tokens=700),
         )
 
         pending: Future[Any] = Future()  # never completes
         ComponentPipeline.mark_usage_salvage_unsafe(pipeline, "comp-a")
-        _salvage_aborted_usage(pending, "comp-a", pipeline)
+        salvage_aborted_usage(pending, "comp-a", pipeline)
         assert recorded == [], "a stale snapshot must not be salvaged"
 
         # And the safe path still salvages, so the guard is not a blanket off.
         ComponentPipeline.mark_usage_salvage_safe(pipeline, "comp-a")
-        _salvage_aborted_usage(pending, "comp-a", pipeline)
+        salvage_aborted_usage(pending, "comp-a", pipeline)
         assert [t.total_tokens for t in recorded] == [700]
 
 
@@ -3777,7 +3801,7 @@ class TestLoopHaltCarriesItsOwnIdentity:
             token_calls=2,
             total_tokens=600,
         )
-        reason = budget.halt_reason(usage)
+        reason = _halt_reason(budget, usage)
         verdict = budget.halt_verdict(usage)
         assert verdict is not None
         assert reason == verdict.reason
@@ -3794,7 +3818,7 @@ class TestLoopHaltCarriesItsOwnIdentity:
             total_tokens=10,
         )
         assert budget.halt_verdict(usage) is None
-        assert budget.halt_reason(usage) is None
+        assert _halt_reason(budget, usage) is None
 
 
 class TestBudgetHaltRendersHonestly:
@@ -3882,9 +3906,10 @@ class TestBudgetHaltRendersHonestly:
             assert "max_total_tokens" not in surface
             assert "max_cost_usd" in surface
 
-    def test_legacy_payloads_still_decode(self) -> None:
-        """events.jsonl is append-only: payloads written before this
-        change carry only `ceiling` and must keep their old reading."""
+    def test_a_payload_with_no_ceilings_is_unreadable(self) -> None:
+        """events.jsonl is append-only: a payload written before #180
+        carries only `ceiling`. Every surface reports it unreadable and
+        none reads it as a cost or token halt."""
         from kstrl import event_catalog
 
         reducer, linear = self._render(
@@ -3897,8 +3922,8 @@ class TestBudgetHaltRendersHonestly:
                 ceiling="max_cost_usd",
             )
         )
-        assert reducer == "cost budget exceeded: $9.000000 >= $8.0"
-        assert "cost budget exceeded" in linear
+        assert "unreadable" in reducer
+        assert "unreadable" in linear
 
     def test_the_structured_fields_survive_a_json_round_trip(self) -> None:
         import kstrl.events as ev
@@ -3915,26 +3940,24 @@ class TestBudgetHaltRendersHonestly:
         assert back.condition == "unenforceable"
 
     @pytest.mark.parametrize(
-        ("condition", "ceilings", "legacy", "expected"),
+        ("condition", "ceilings", "expected"),
         [
-            ("breached", ("max_total_tokens",), "", "token"),
-            ("breached", ("max_cost_usd",), "", "cost"),
-            ("unenforceable", ("max_cost_usd",), "", "unenforceable"),
-            ("unenforceable", ("max_total_tokens", "max_cost_usd"), "", "unenforceable"),
-            ("", (), "max_cost_usd", "cost"),
-            ("", (), "", "token"),
+            ("breached", ("max_total_tokens",), "token"),
+            ("breached", ("max_cost_usd",), "cost"),
+            ("unenforceable", ("max_cost_usd",), "unenforceable"),
+            ("unenforceable", ("max_total_tokens", "max_cost_usd"), "unenforceable"),
+            ("", (), "unreadable"),
         ],
     )
     def test_one_classifier_for_every_surface(
         self,
         condition: str,
         ceilings: tuple[str, ...],
-        legacy: str,
         expected: str,
     ) -> None:
         from kstrl.event_catalog import budget_halt_kind
 
-        assert budget_halt_kind(condition, ceilings, legacy) == expected
+        assert budget_halt_kind(condition, ceilings) == expected
 
 
 class TestBudgetConfigErrorReachesTheOperator:
@@ -4325,7 +4348,7 @@ class TestUsageCoverage:
         assert coverage.uncovered_calls == 5
         assert coverage.partial is True
         assert coverage.complete is False
-        assert coverage.empty is False
+        assert coverage.covered_calls > 0
         assert coverage.uncovered_roles == ("review",)
         assert coverage.uncovered_tokens == 193_633
 
@@ -4418,7 +4441,7 @@ class TestUsageCoverage:
             }
         }
         coverage = usage_coverage(meter, axis="cost", ceiling="max_cost_usd")
-        assert coverage.empty is True
+        assert coverage.calls > 0 and coverage.covered_calls == 0
         assert coverage.partial is False
         assert "EMPTY" in coverage.note()
 
@@ -4511,26 +4534,6 @@ class TestPipelineCeilingCoverage:
             )
             is None
         )
-
-    def test_notes_are_emitted_only_for_ceilings_that_fall_short(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        from kstrl.pipeline import ComponentPipeline
-
-        pipeline = self._pipeline(
-            tmp_path,
-            max_cost_usd=25.0,
-            max_total_tokens=30_000_000,
-        )
-        notes = ComponentPipeline.coverage_notes(
-            pipeline,
-            ("max_total_tokens", "max_cost_usd"),
-        )
-        # The token ceiling covered every call on this run; only the
-        # cost one has anything to disclose.
-        assert len(notes) == 1
-        assert "max_cost_usd bounds only those" in notes[0]
 
 
 class TestRollupReportsPerAxisCoverage:
@@ -5727,7 +5730,7 @@ class TestNothingBetweenTheRunDirAndTheMeterCanLoseTheSpend:
         manifest = _make_manifest([_component("comp-a")])
 
         with patch(
-            "kstrl.factory._acquire_run_lock",
+            "kstrl.factory.acquire_run_lock",
             side_effect=FactoryLockHeldError("held by another run"),
         ):
             result = self._run(root, manifest)

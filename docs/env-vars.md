@@ -52,7 +52,7 @@ to run and tell you which section, key and value to fix.
 | `KSTRL_UI` | str | auto | `auto\|rich\|plain` |
 | `NO_COLOR` | bool flag | false | Disables colors |
 | `KSTRL_ASCII` | bool | false | ASCII-only UI |
-| `GUM_FORCE` | bool (`1`) | unset | Legacy name: `1` makes `--ui auto` use the rich renderer even when stderr is not a terminal |
+| `KSTRL_UI_FORCE_RICH` | bool (`1`) | unset | `1` makes `--ui auto` use the rich renderer even when stderr is not a terminal |
 | `XDG_STATE_HOME` | path | `~/.local/state` | Base for R8.9 control state (`$XDG_STATE_HOME/kstrl/<repo-id>/`: autonomy, inbox, spend, pause, GitHub processed ledger). Must stay outside the repo tree for L3+ |
 
 ## TimeoutConfig (`[timeout]`)

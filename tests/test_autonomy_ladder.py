@@ -5,7 +5,7 @@ tmp_path files, including the missing/corrupt/out-of-range fallbacks to
 L1 and the "no flags in the saved payload" contract. Config loading
 (`TestConfig`) covers `AutonomyConfig.load` reading a real `kstrl.toml`
 and an env override. Threshold replay (`TestReplay`) covers
-`replay_file`/`load_runs` against real experiment files: a missing
+`replay`/`load_runs` against real experiment files: a missing
 file, an undecodable one, a torn row from a crash mid-write (#331), and
 a loaded run feeding back through `replay` without mutating stored
 state. Envelope-ceiling clamping (`TestEnvelopeCeiling`) drives
@@ -36,7 +36,7 @@ from kstrl.autonomy import (
     DemotionTrigger,
 )
 from kstrl.autonomy_config import AutonomyConfig
-from kstrl.autonomy_replay import load_runs, replay, replay_file
+from kstrl.autonomy_replay import load_runs, replay
 from tests.helpers import gitrepo
 from tests.helpers.component_prd import write_component_prd
 from tests.helpers.plan_approval import approve_plan
@@ -117,7 +117,7 @@ class TestConfig:
 # --------------------------------------------------------------------------
 class TestReplay:
     def test_missing_experiments_file_is_not_an_error(self, tmp_path: Path) -> None:
-        report = replay_file(tmp_path / "nope.tsv")
+        report = replay(load_runs(tmp_path / "nope.tsv"))
         assert report.total_runs == 0
         assert report.sufficient_data is False
 
@@ -146,7 +146,7 @@ class TestReplay:
     def test_replay_never_mutates_stored_state(self, tmp_path: Path) -> None:
         # Reading a replay is a report, never a transition.
         AutonomyState(level=int(AutonomyLevel.L2_GATED_MERGE)).save(tmp_path)
-        replay_file(tmp_path / "nope.tsv", tmp_path)
+        replay(load_runs(tmp_path / "nope.tsv"))
         assert AutonomyState.load(tmp_path).level == int(AutonomyLevel.L2_GATED_MERGE)
 
     def test_loads_real_tsv_shape(self, tmp_path: Path) -> None:

@@ -524,7 +524,7 @@ class TestBuildKnowledgeContext:
         direct scope, c's context omits a's facts from the full-text
         tier; telemetry records ``excluded_dep_count=1,
         withheld_fact_count=2``."""
-        from kstrl.knowledge import read_dependency_scope_telemetry
+        from tests.helpers.knowledge_telemetry import read_dependency_scope_telemetry
 
         knowledge_root = tmp_path / "knowledge"
         manifest = _make_manifest(
@@ -575,7 +575,7 @@ class TestBuildKnowledgeContext:
         """When direct deps == transitive deps (single-tier graph),
         nothing is excluded and no telemetry event is written. The
         absence of events is the healthy state."""
-        from kstrl.knowledge import read_dependency_scope_telemetry
+        from tests.helpers.knowledge_telemetry import read_dependency_scope_telemetry
 
         knowledge_root = tmp_path / "knowledge"
         manifest = _make_manifest(
@@ -608,7 +608,7 @@ class TestBuildKnowledgeContext:
     ) -> None:
         """When dependency_scope=transitive, no facts are excluded and
         the telemetry stays empty even on a deep chain."""
-        from kstrl.knowledge import read_dependency_scope_telemetry
+        from tests.helpers.knowledge_telemetry import read_dependency_scope_telemetry
 
         knowledge_root = tmp_path / "knowledge"
         manifest = _make_manifest(
@@ -723,6 +723,17 @@ class TestEvidenceFieldDefense:
             facts = read_facts(tmp_path, "comp-a")
         assert facts == []
 
+    def test_the_retired_verified_confidence_is_rejected_by_name_at_read(
+        self, tmp_path: Path
+    ) -> None:
+        """ "verified" was the confidence before review_passed (#122). A file
+        that still carries it is rejected with the file and the value (#863),
+        not read as review_passed."""
+        self._write_raw_fact(tmp_path, _make_fact(confidence="verified"))
+        with pytest.warns(RuntimeWarning, match=r"fact-001\.md: unknown confidence 'verified'"):
+            facts = read_facts(tmp_path, "comp-a")
+        assert facts == []
+
     def test_injection_in_claim_rejected_at_read(self, tmp_path: Path) -> None:
         self._write_raw_fact(
             tmp_path,
@@ -797,7 +808,7 @@ class TestDistillFacts:
                             {
                                 "id": "fact-001",
                                 "scope": "handler",
-                                "confidence": "verified",
+                                "confidence": "review_passed",
                                 "evidence": ["src/handler.py:10-25"],
                                 "claim": "Handler validates input.",
                                 "tags": [],
@@ -825,7 +836,7 @@ class TestDistillFacts:
         assert status == "wrote 1 of 1 facts"
         facts = read_facts(knowledge_root, "comp-a")
         assert len(facts) == 1
-        # Legacy "verified" string is aliased to "review_passed" on read (E5).
+        # A written fact keeps the review_passed value the agent gave.
         assert facts[0].confidence == "review_passed"
 
     def test_invalid_json_nonfatal(self, tmp_path: Path) -> None:
@@ -999,7 +1010,7 @@ class TestDistillFacts:
                             {
                                 "id": "fact-001",
                                 "scope": "handler",
-                                "confidence": "verified",  # agent claims verified
+                                "confidence": "review_passed",  # agent claims review_passed
                                 "evidence": ["a.py:1"],
                                 "claim": "x",
                             }
@@ -1031,7 +1042,7 @@ class TestDistillFacts:
         tmp_path: Path,
     ) -> None:
         """When the agent echoes the prompt back (as codex does), the streamed
-        output contains the JSON schema example. _extract_json's first-brace
+        output contains the JSON schema example. extract_json's first-brace
         heuristic would latch onto the schema's example fact (with the literal
         scope string "handler|adapter|...") and reject it during coercion.
         distill_facts must prefer agent.final_message when set."""
@@ -1047,7 +1058,7 @@ prompt echoed back: schema is
     {
       "id": "fact-001",
       "scope": "handler|adapter|schema|contract|invariant|gotcha",
-      "confidence": "verified|asserted",
+      "confidence": "review_passed|asserted",
       "evidence": ["path/to/file.py:42-58"],
       "tags": ["x"],
       "claim": "example"
@@ -1062,7 +1073,7 @@ prompt echoed back: schema is
                     {
                         "id": "fact-001",
                         "scope": "handler",
-                        "confidence": "verified",
+                        "confidence": "review_passed",
                         "evidence": ["src/x.py:1-2"],
                         "claim": "real fact from final_message",
                         "tags": [],
@@ -1129,7 +1140,7 @@ prompt echoed back: schema is
                     {
                         "id": "fact-001",
                         "scope": "handler",
-                        "confidence": "verified",
+                        "confidence": "review_passed",
                         "evidence": ["src/x.py:1"],
                         "claim": "valid claim from streamed output",
                         "tags": [],

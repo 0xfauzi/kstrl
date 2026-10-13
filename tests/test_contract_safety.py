@@ -26,11 +26,9 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import contract as contract_mod
-from kstrl import git_base
+from kstrl import git_base, temp_worktree
 from kstrl.config import KstrlConfig
 from kstrl.contract import (
-    ContractCleanupError,
     ContractConfig,
     ContractMode,
     run_contract_testing,
@@ -40,6 +38,7 @@ from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.security import SecurityConfig
+from kstrl.temp_worktree import ContractCleanupError
 from kstrl.timeout import TimeoutConfig
 from kstrl.ui.plain import PlainUI
 from kstrl.verify_model import VerifyConfig
@@ -592,14 +591,14 @@ class TestCleanupFailsLoudly:
     ) -> None:
         root = tmp_path / "repo"
         _init_repo(root)
-        worktree_path, error = contract_mod._create_temp_worktree(
+        worktree_path, error = temp_worktree.create_temp_worktree(
             "main",
             root,
             "cleanup-test",
         )
         assert worktree_path is not None, error
 
-        real_run = contract_mod.run_scrubbed
+        real_run = temp_worktree.run_scrubbed
 
         def failing_remove(cmd: list[str], **kwargs: object) -> object:
             if cmd[:3] == ["git", "worktree", "remove"]:
@@ -611,15 +610,15 @@ class TestCleanupFailsLoudly:
                 )
             return real_run(cmd, **kwargs)  # type: ignore[arg-type]
 
-        monkeypatch.setattr(contract_mod, "run_scrubbed", failing_remove)
+        monkeypatch.setattr(temp_worktree, "run_scrubbed", failing_remove)
         with pytest.raises(ContractCleanupError, match="survived removal"):
-            contract_mod._remove_temp_worktree(
+            temp_worktree.remove_temp_worktree(
                 worktree_path, root, PlainUI(no_color=True), "contract"
             )
         monkeypatch.undo()
 
         # Real removal still works afterwards.
-        contract_mod._remove_temp_worktree(worktree_path, root, PlainUI(no_color=True), "contract")
+        temp_worktree.remove_temp_worktree(worktree_path, root, PlainUI(no_color=True), "contract")
         assert not worktree_path.exists()
 
     def test_factory_converts_cleanup_error_to_nonzero_exit(

@@ -9,7 +9,7 @@ reach them through that import.
 The only edits made by the move are type parameters (``dict`` became
 ``dict[str, Any]``) that ``mypy --strict`` requires of ``kstrl/``.
 Since then, #550 replaced the scorer's copy of the severity ranking with
-``security._SEVERITY_ORDER``, the ranking the Phase 2.5 gate reads.
+``security.SEVERITY_ORDER``, the ranking the Phase 2.5 gate reads.
 
 #564: every field a matcher reads from a fixture meta is read here first,
 against the vocabulary the matcher compares it with, and a field that
@@ -29,10 +29,10 @@ from __future__ import annotations
 from collections.abc import Collection, Sequence
 from typing import Any
 
-from kstrl.decisions import enum_field_error, required_field_error
+from kstrl.requirements import enum_field_error, required_field_error
 from kstrl.review import VALID_CONCERN_CATEGORIES, VALID_CONCERN_SEVERITIES, ReviewResult
-from kstrl.security import _SEVERITY_ORDER, VALID_CATEGORIES, SecurityResult
-from kstrl.spec_issues import _VALID_KINDS
+from kstrl.security import SEVERITY_ORDER, VALID_CATEGORIES, SecurityResult
+from kstrl.spec_issues import VALID_KINDS
 
 # Realistic mechanical-verification context. The old ``_VERIFICATION_STUB``
 # used check names the harness never emits ("tests", "lint"); the real
@@ -71,7 +71,7 @@ def render_verification(meta: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-# Severity ordering: security._SEVERITY_ORDER, the one the gate reads (#550)
+# Severity ordering: security.SEVERITY_ORDER, the one the gate reads (#550)
 
 
 def _meets_severity(actual: str, threshold: str) -> bool:
@@ -79,7 +79,7 @@ def _meets_severity(actual: str, threshold: str) -> bool:
     # the ranking, so it is looked up without a default (#564).
     # ``actual`` is the role's reply: the parser drops a finding whose
     # severity is outside the ranking, and one built by hand ranks 0.
-    return _SEVERITY_ORDER.get(actual, 0) >= _SEVERITY_ORDER[threshold]
+    return SEVERITY_ORDER.get(actual, 0) >= SEVERITY_ORDER[threshold]
 
 
 # ---------------------------------------------------------------------------
@@ -205,11 +205,11 @@ def _flag_errors(
 
 
 def security_detect_errors(prefix: str, block: Any) -> list[str]:
-    return _detect_errors(prefix, block, VALID_CATEGORIES, _SEVERITY_ORDER)
+    return _detect_errors(prefix, block, VALID_CATEGORIES, SEVERITY_ORDER)
 
 
 def security_flag_errors(prefix: str, block: Any) -> list[str]:
-    return _flag_errors(prefix, block, VALID_CATEGORIES, _SEVERITY_ORDER)
+    return _flag_errors(prefix, block, VALID_CATEGORIES, SEVERITY_ORDER)
 
 
 def reviewer_detect_errors(prefix: str, block: Any) -> list[str]:
@@ -230,7 +230,7 @@ def architect_detect_errors(prefix: str, block: Any) -> list[str]:
     found = [
         _count_error(prefix, "spec_issues_min", block["spec_issues_min"]),
         *_list_errors(
-            prefix, "must_include_kind", block["must_include_kind"], _VALID_KINDS, empty_ok=True
+            prefix, "must_include_kind", block["must_include_kind"], VALID_KINDS, empty_ok=True
         ),
         _bool_error(prefix, "blocker_or_major", block["blocker_or_major"]),
     ]
