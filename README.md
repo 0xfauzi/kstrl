@@ -359,7 +359,7 @@ fast_iteration_checks = []     # gates run after each unfinished engineer iterat
 # Phase 1 policy envelope (R8.1; opt-in)
 [policy]
 enabled = false                                                                                                                                               # enforce the [policy] envelope in Phase 1 (opt-in)
-paths_deny = [".github/workflows/**", "kstrl.toml", "ralph.toml", ".kstrl/**", "**/*.pem", "**/.env*"]                                                        # globs no change may touch (gitignore-style **)
+paths_deny = [".github/workflows/**", "kstrl.toml", ".kstrl/**", "**/*.pem", "**/.env*"]                                                                      # globs no change may touch (gitignore-style **)
 max_files_changed = 40                                                                                                                                        # max files in a change; negative disables
 max_lines_changed = 1500                                                                                                                                      # max added+removed lines; negative disables
 secret_patterns = ["AKIA[0-9A-Z]{16}", "-----BEGIN (?:RSA |EC )?PRIVATE KEY-----", "sk-[a-zA-Z0-9]{20,}", "ghp_[a-zA-Z0-9]{36}", "xox[bpoas]-[a-zA-Z0-9-]+"]  # regexes flagged in added diff lines

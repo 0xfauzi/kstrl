@@ -153,7 +153,6 @@ def _reject_blank_project_name(
 # One vocabulary, defined next to the adapters it selects (R8 review):
 # the CLI and get_agent previously kept separate tables and disagreed
 # about "claude".
-_AGENT_TYPE_ALIASES = AGENT_TYPE_ALIASES
 
 
 class _AgentTypeChoice(click.Choice[str]):
@@ -197,7 +196,7 @@ def _agent_preflight(
         return agent_type, None, None
 
     normalized = (agent_type or "auto").strip().lower()
-    canonical = _AGENT_TYPE_ALIASES.get(normalized)
+    canonical = AGENT_TYPE_ALIASES.get(normalized)
 
     if canonical is None:
         return (

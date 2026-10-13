@@ -554,7 +554,7 @@ def _is_within(entry: str, forbidden_dir: str) -> bool:
     """Is ``entry`` the forbidden directory, or inside it?
 
     Path-prefix, NOT substring. The substring form was correct while the
-    harness package was ``ralph_py/``, because that string never occurs
+    forbidden entry was the old package directory, because that string never occurs
     inside a legitimate path. The kstrl rename (#122/#124/#172) changed
     the forbidden entry to ``kstrl/``, which IS a substring of
     ``scripts/kstrl/feature/<id>/`` - the one feature subtree
