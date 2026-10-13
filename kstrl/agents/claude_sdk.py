@@ -167,16 +167,7 @@ class ClaudeSdkAgent:
             "prompt": prompt,
             "model": self._model,
             "effort": self._effort,
-            "settings": (
-                claude_review_sandbox_settings(self._sandbox)
-                if self._read_only
-                else claude_sandbox_settings(self._sandbox)
-            ),
-            # #266: never bypass permissions for a read-only reviewer;
-            # the read-only restrictions ARE permission rules.
-            "bypass_permissions": (
-                not self._read_only and not claude_sandbox_drops_skip_permissions(self._sandbox)
-            ),
+            **self._posture(),
             "max_budget_usd": self._max_budget_usd,
             "workspace_guard": self._workspace_guard,
             # The roots of the write guard are the same as the claude-code
@@ -245,6 +236,22 @@ class ClaudeSdkAgent:
             result_text = result_payload.get("result")
             if isinstance(result_text, str) and result_text:
                 self._final_message = result_text
+
+    def _posture(self) -> dict[str, Any]:
+        """The runner config keys of the role: settings, permissions, tools."""
+        network = not claude_sandbox_drops_skip_permissions(self._sandbox)
+        if self._read_only:
+            # #266: never bypass permissions for a read-only reviewer; the
+            # read-only restrictions ARE permission rules.
+            settings = claude_review_sandbox_settings(self._sandbox)
+            return {"settings": settings, "bypass_permissions": False, "role": "reader"}
+        return {
+            "settings": claude_sandbox_settings(self._sandbox),
+            "bypass_permissions": network,
+            # #803: the runner gives the session the tools of this role.
+            "role": "writer",
+            "network": network,
+        }
 
     @property
     def final_message(self) -> str | None:

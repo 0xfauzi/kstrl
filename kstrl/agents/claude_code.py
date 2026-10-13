@@ -16,11 +16,12 @@ from kstrl.agents.proc import DeadlineStreamer, timeout_message
 from kstrl.agents.prompt_record import record_prompt
 from kstrl.jsonread import read_json
 from kstrl.sandbox import (
-    NO_MCP_ARGV,
+    ClaudeRole,
     SandboxConfig,
     claude_review_sandbox_args,
     claude_sandbox_args,
     claude_sandbox_drops_skip_permissions,
+    claude_session_argv,
 )
 from kstrl.write_guard import SessionGate
 
@@ -111,10 +112,19 @@ class ClaudeCodeAgent:
         auto-approves every domain (measured; see kstrl.sandbox). File tools
         are re-allowed via the settings JSON instead. The settings of a
         sandboxed engineer carry the write guard, and the gate stops a
-        session in which claude does not run it (#700).
+        session in which claude does not run it (#700). Each session gets
+        only the tools of its role and no user-level setting (#803).
         """
-        cmd = ["claude", "--print", "--output-format", "stream-json", "--verbose"]
-        cmd.extend(NO_MCP_ARGV)
+        role: ClaudeRole = "reader" if self._read_only else "writer"
+        network = not claude_sandbox_drops_skip_permissions(self._sandbox)
+        cmd = [
+            "claude",
+            "--print",
+            "--output-format",
+            "stream-json",
+            "--verbose",
+            *claude_session_argv(role, network=network),
+        ]
         skip_permissions, sandbox_argv = self._permission_argv(cwd)
         if skip_permissions:
             cmd.append("--dangerously-skip-permissions")
