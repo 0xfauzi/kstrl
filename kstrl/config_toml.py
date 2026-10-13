@@ -134,8 +134,7 @@ def load_toml_document(path: Path) -> dict[str, Any]:
     render the message.
 
     Provenance follows (#323): the parse runs 9 to 16 frames deep under
-    ``ks status``, 13 on the Textual event loop's own callbacks (one TUI
-    parse inherits its caller's stack), so a ``RecursionError`` here is
+    ``ks status``, so a ``RecursionError`` here is
     the document's. Not by construction: measured, a CALLER with 5 or 6
     of 1000 frames left gets a valid file called unparseable, and IS the
     runaway. ``raise_if_defect`` has the rest.

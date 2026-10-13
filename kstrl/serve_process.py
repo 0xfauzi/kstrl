@@ -257,7 +257,6 @@ def subprocess_factory_runner(
         "--root",
         str(root_dir),
         "--yes",
-        "--no-tui",
         "--ui",
         "plain",
         "--no-color",
@@ -270,7 +269,6 @@ def subprocess_factory_runner(
         # report must be reproduced on the base (#700).
         command += ["--design-acceptance", "--bug-report"]
     env = dict(os.environ)
-    env["KSTRL_NO_TUI"] = "1"
 
     return run_supervised(
         command,

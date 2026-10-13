@@ -180,7 +180,6 @@ def launchd_plist_dict(
         "WorkingDirectory": str(root),
         "EnvironmentVariables": {
             "PATH": ":".join(deduped),
-            "KSTRL_NO_TUI": "1",
         },
         "RunAtLoad": True,
         "ThrottleInterval": LAUNCHD_THROTTLE_SECONDS,

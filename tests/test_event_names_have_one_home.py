@@ -204,7 +204,6 @@ EXPECTED_EVENT_NAME_SPELLINGS: dict[str, int] = {
     # The architect's own JSON key in _parse_spec_issues, moved here with it (#776 D1).
     "spec_issues.py": 1,
     # The TUI reading that artifact label back.
-    "tui/screens/decompose.py": 1,
 }
 
 

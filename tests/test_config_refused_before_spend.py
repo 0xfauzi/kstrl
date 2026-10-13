@@ -100,7 +100,6 @@ def _env(tmp_path: Path, extra: dict[str, str]) -> dict[str, str]:
     )
     env["AGENT_CMD"] = str(stub)
     env["KSTRL_AGENT_PROBE"] = "0"
-    env["KSTRL_NO_TUI"] = "1"
     env.update(extra)
     return env
 

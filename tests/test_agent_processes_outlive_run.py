@@ -53,7 +53,6 @@ FLAGS = (
     "--ui",
     "plain",
     "--no-color",
-    "--no-tui",
     "--max-retries",
     "0",
     "--no-prs",
@@ -128,7 +127,6 @@ def _env(agent: str, path_prefix: Path | None = None) -> dict[str, str]:
     }
     env["AGENT_CMD"] = agent
     env["KSTRL_KNOWLEDGE_ENABLED"] = "0"
-    env["KSTRL_NO_TUI"] = "1"
     if path_prefix is not None:
         env["PATH"] = f"{path_prefix}{os.pathsep}{env.get('PATH', '')}"
     return env

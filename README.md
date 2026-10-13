@@ -60,7 +60,7 @@ It is the standalone entry point to the checks the factory runs in Phase 1, so a
 The measurement is read-only: it runs against your live checkout, so it never edits, stages, commits or leaves bytecode behind, and it exits 2 rather than reporting a pass when git cannot produce the diff against `--base`.
 `ks check --write-baseline` records those measurements to `scripts/kstrl/baseline.json` and `ks check --compare-baseline` reports what a branch added to it - new failure signatures, signatures whose count rose, signatures the branch fixed, and any check that measured on the baseline and has stopped measuring here. That is the baseline: it stops concurrent work undoing the loop's progress while the loop runs. It is advisory (exit 0 either way) until you pass `--fail-on-regression`. How to adopt it and how to graduate to blocking: [docs/baseline.md](docs/baseline.md).
 
-Every long-running command opens its live dashboard on a terminal automatically (`--no-tui` opts out), and bare `ks` opens a home shell with a run browser and command launcher; `ks dash` attaches a read-only view to any run - in flight or finished - from another terminal, and `ks status` prints the same state for scripts and CI (and opens the dashboard when you run it interactively).
+Every long-running command prints plain output, and `ks status` prints the state of any run - in flight or finished - from another terminal or from a script. Bare `ks` prints the command list and exits 2.
 
 You need at least one AI coding agent CLI:
 
@@ -138,27 +138,13 @@ export KSTRL_LINEAR_TOKEN="lin_api_..."
 
 The mirror is observability-only by design: every Linear failure warns and degrades, and nothing in the pipeline ever fails because Linear did. Setup, per-team automation settings, and rate-limit behavior: [docs/linear-integration.md](docs/linear-integration.md).
 
-## The TUI - the whole surface, not just the factory
+## The run record
 
-The long-running kstrl surface is available through a terminal UI. Bare `ks` opens the home shell: project identity, a browser over every recorded run of every kind (with folded outcome/token/cost summaries and honest `·` cells while they compute), and a command launcher - factory and decompose launch from forms right there, retry picks a failed component off the manifest, and config, evolve, and the init wizard open as full screens. Non-TTY invocations are byte-identical to before (`ks` prints help, exit 2); `KSTRL_NO_TUI=1` opts out everywhere.
+Every long-running command (`ks factory`, `ks run`, `ks retry`, `ks understand`, `ks feature`, `ks decompose`) prints plain output and records a replayable event stream. `ks status` reads that stream for a run in flight or a finished run.
 
-<img src="docs/img/tui-home.svg" alt="kstrl home shell: project masthead, run browser across kinds, command launcher" width="100%">
+With `pause_before_pr_merge` enabled, the E6 human checkpoint asks on the terminal when a terminal is attached: approve, reject (fails the component and skips dependents) or retry (consumes a retry). When no terminal is attached, or the prompt gets no answer, the component parks and kstrl files a `merge_gate` item in the inbox. `ks inbox approve <id>` resolves the item and the merge goes through.
 
-Every long-running command (`ks factory`, `ks run`, `ks retry`, `ks understand`, `ks feature`, `ks decompose`) records a replayable event stream and opens its embedded dashboard on a terminal; plain output remains the default for non-TTY use. The screenshots are real, captured from a live toy-project factory run.
-
-The overview board shows every component's status, authoritative phase, attempt, last-event age, and spend - here with `auth-core` and `api-routes` running in parallel workers while `ui-shell` waits on its dependency:
-
-<img src="docs/img/tui-overview.svg" alt="kstrl dashboard overview: component board with statuses, phases and cost meter" width="100%">
-
-`enter` drills into a component: phase timeline with verdicts, the typed findings stream with reviewing-model attribution, the live engineer transcript, and evidence paths.
-
-With `pause_before_pr_merge` enabled, the E6 human checkpoint opens as a real inspection surface - the diff excerpt, both finding streams, and what the attempt cost - instead of a y/n prompt. `a` approves, `r` rejects (fails the component and skips dependents), `t` consumes a retry, `escape` leaves it pending while you look around the dashboard:
-
-<img src="docs/img/tui-checkpoint.svg" alt="kstrl E6 checkpoint modal: diff, findings and spend before approving the PR" width="100%">
-
-Keys: `enter` detail, `escape` back, `f` follow transcript, `c` reopen a checkpoint, `q` quit (graceful stop when embedded; a second `q` escalates).
-
-The TUI is a view, never the record: every run appends typed, schema-versioned events to `.kstrl/runs/<run_id>/events.jsonl`, which is why attaching mid-run, replaying a finished run, and surviving a dashboard crash all work by construction ([details](ARCHITECTURE.md#the-event-stream-substrate)). Cost figures are CLI self-reports: any unreported call renders a `+` marker and the total becomes a lower bound - the dashboard never turns an honest number into a false one.
+Every run appends typed, schema-versioned events to `.kstrl/runs/<run_id>/events.jsonl`, which is why replaying a finished run and reading a run from another terminal work by construction ([details](ARCHITECTURE.md#the-event-stream-substrate)). Cost figures are CLI self-reports: any unreported call renders a `+` marker and the total becomes a lower bound - kstrl never turns an honest number into a false one.
 
 ## Acceptance checks - behavioral verification you control
 
@@ -206,7 +192,7 @@ You can, and for small tasks you should. kstrl is for when you want to:
 
 - **Define success criteria before starting** - acceptance criteria, path restrictions - not just "make it work"
 - **Walk away** - kstrl runs unattended with structured verification, not just a completion marker
-- **Watch it without babysitting it** - a live dashboard over a replayable event log; attach, detach, or inspect after the fact
+- **Watch it without babysitting it** - a replayable event log; read it with `ks status` while the run is in flight or after the fact
 - **Give the agent context** - codebase scan injection means fewer wasted iterations discovering the codebase
 - **Get focused retries** - each failing check's own output around the locations it names
 - **Build multiple components in parallel** - factory mode with worktree isolation and contract testing
@@ -227,7 +213,6 @@ ks autonomy status              Show the current level, its flag bundle, and wha
 ks check                        Run the mechanical checks against a tree and print the measurement.
 ks ci poll                      Read the CI state of every recorded merge commit and record it.
 ks config show                  Print the fully resolved config with the source of each value.
-ks dash                         Live dashboard over a factory run (observe-only).
 ks decompose                    Decompose a spec into components and generate PRDs.
 ks doctor                       Assess whether this repository is ready to point kstrl at.
 ks evolve                       Analyze factory runs and report recurring failure patterns.

@@ -172,7 +172,6 @@ def _run_feature(
         fake.write_text(f"#!/bin/sh\necho {name} >> {tmp_path / 'paid.txt'}\nexit 1\n")
         fake.chmod(0o755)
     monkeypatch.setenv("PATH", f"{bindir}{os.pathsep}{os.environ['PATH']}")
-    monkeypatch.setenv("KSTRL_NO_TUI", "1")
 
     capture = tmp_path / "prompts"
     capture.mkdir()
@@ -200,7 +199,6 @@ def _run_feature(
             PRD_REL,
             "--implementation-auto-run",
             "--no-verify",
-            "--no-tui",
             "--branch",
             "",
             "--understand-iterations",

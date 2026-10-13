@@ -434,7 +434,7 @@ def test_the_terminal_and_the_pr_body_show_the_same_lines(tmp_path: Path, kind: 
             "factory",
             *("--manifest", str(root / "scripts" / "kstrl" / "manifest.json")),
             *("--root", str(root), *engineer, "--acceptance", str(plan)),
-            *("--no-tui", "--yes", "--ui", "plain", "--no-color"),
+            *("--yes", "--ui", "plain", "--no-color"),
             *("--max-retries", "0", "--max-parallel", "1"),
             *("--review-mode", "skip", "--security-mode", "skip", "--contract-check", "skip"),
         ],

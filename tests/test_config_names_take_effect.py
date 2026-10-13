@@ -27,7 +27,6 @@ REFUSED = "configuration rejected before anything was started"
 def _ks(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
     """``ks <args>`` in ``root``, with no KSTRL_ variable inherited."""
     env = {k: v for k, v in os.environ.items() if not k.startswith("KSTRL_")}
-    env["KSTRL_NO_TUI"] = "1"
     return subprocess.run(
         [sys.executable, "-m", "kstrl", *args],
         cwd=root,

@@ -744,20 +744,22 @@ class TestTheCorpusIsTheOneEveryGuardMeant:
         assert astwalk.test_sources.__test__ is False  # type: ignore[attr-defined]
 
     def test_a_label_distinguishes_two_files_of_the_same_basename(self) -> None:
-        """Ten basenames occur twice in ``kstrl/``, and a message naming a
+        """``base.py`` occurs twice in ``kstrl/``, and a message naming a
         file the reader cannot find is worse than no message."""
         assert astwalk.label(astwalk.KSTRL_PACKAGE / "decompose.py") == "decompose.py"
-        nested = astwalk.KSTRL_PACKAGE / "tui" / "screens" / "decompose.py"
-        assert astwalk.label(nested) == "tui/screens/decompose.py"
+        assert astwalk.label(astwalk.KSTRL_PACKAGE / "agents" / "base.py") == "agents/base.py"
+        assert astwalk.label(astwalk.KSTRL_PACKAGE / "ui" / "base.py") == "ui/base.py"
 
     def test_a_module_name_is_what_a_relative_import_resolves_against(self) -> None:
-        assert astwalk.module_name(astwalk.KSTRL_PACKAGE / "tui" / "home.py") == "kstrl.tui.home"
+        assert (
+            astwalk.module_name(astwalk.KSTRL_PACKAGE / "agents" / "base.py") == "kstrl.agents.base"
+        )
 
     def test_a_package_init_names_the_package(self) -> None:
         """``from . import x`` inside a package's own ``__init__`` has to
         land on the package, not one level below it."""
-        init = astwalk.KSTRL_PACKAGE / "tui" / "__init__.py"
-        assert astwalk.module_name(init) == "kstrl.tui"
+        init = astwalk.KSTRL_PACKAGE / "agents" / "__init__.py"
+        assert astwalk.module_name(init) == "kstrl.agents"
 
     def test_the_parse_cache_is_keyed_on_the_text(self) -> None:
         """Several guards rewrite one ``other.py`` more than once inside a

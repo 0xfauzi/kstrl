@@ -28,21 +28,14 @@ import os
 import secrets
 import subprocess
 from pathlib import Path
-from typing import cast
-
-from textual.widgets import DataTable, Static
 
 from kstrl.acceptance import HEAD_RUNS
 from kstrl.context import ACCEPTANCE_RETRY_PROMPT
 from kstrl.inbox import Inbox, InboxConfig, InboxItem, ItemKind
 from kstrl.manifest import Manifest
-from kstrl.tui.screens.inbox import InboxScreen
 from tests.helpers.executables import write_executable
 from tests.helpers.gitrepo import git_in
-from tests.helpers.rendered import flat
-from tests.helpers.settle import mounted, settled
 from tests.helpers.stack_confirmation import confirm_stack
-from tests.helpers.tui_screens import home_app
 from tests.test_acceptance_e2e import (
     COMP,
     CORRECT,
@@ -201,112 +194,6 @@ def test_a_check_that_passes_its_first_head_run_and_fails_a_later_one_halts(
     assert _acceptance_events(root) == [(False, False)], run.out
     (item,) = _halts(root)
     assert item.evidence["check"] == "late", item.evidence
-
-
-@runs_a_stack
-async def test_a_held_out_failure_halts_and_an_approval_merges_over_it(tmp_path: Path) -> None:
-    """The engineer special-cases the visible name, so the held-out check
-    fails and the component halts with no retry. The TUI's inbox says what
-    approving that open halt does. Approving it, then ``ks retry``, keeps
-    that commit, judges it again with no engineer and merges it: the PR
-    body names the approval, who gave it and when."""
-    root = _repo(tmp_path, _stack({"tests": "true"}), confirm=False)
-    origin = tmp_path / "origin.git"
-    git_in(tmp_path, "init", "-q", "--bare", str(origin))
-    git_in(root, "remote", "add", "origin", str(origin))
-    confirm_stack(root)
-    _with_greet(root)
-    git_in(root, "push", "-q", "-u", "origin", "main")
-    bindir = tmp_path / "bin"
-    bindir.mkdir()
-    write_executable(bindir / "gh", FAKE_GH)
-    body = tmp_path / "pr-body.md"
-    env = {
-        "PATH": f"{bindir}{os.pathsep}{os.environ['PATH']}",
-        "GH_BODY": str(body),
-        "GH_HEAD": str(tmp_path / "pr-head"),
-    }
-    hidden = f"Grace{secrets.token_hex(4)}"
-    plan = _plan(
-        tmp_path,
-        [
-            _check("greets-ada", ["/bin/sh", "check.sh", "Ada"]),
-            _check("greets-hidden", ["/bin/sh", "check.sh", hidden], held_out=True),
-        ],
-    )
-    calls = tmp_path / "engineer.calls"
-    stub = write_executable(
-        tmp_path / "engineer.sh",
-        f"#!/bin/sh\necho call >> '{calls}'\ncat > /dev/null\n{SPECIAL_CASED}\n"
-        "echo '<promise>COMPLETE</promise>'\n",
-    )
-    manifest = str(root / "scripts" / "kstrl" / "manifest.json")
-    code, out = _spawn(
-        [
-            "factory",
-            *("--manifest", manifest, "--root", str(root), "--agent-cmd", str(stub)),
-            *("--acceptance", str(plan), "--no-tui", "--yes", "--ui", "plain", "--no-color"),
-            *("--max-retries", "1", "--max-parallel", "1"),
-            *("--review-mode", "skip", "--security-mode", "skip"),
-            *("--contract-check", "skip"),
-        ],
-        root,
-        env,
-    )
-
-    assert code == 1, out
-    assert len(calls.read_text(encoding="utf-8").splitlines()) == 1, out
-    assert _status(root) == ("failed", "acceptance"), out
-    assert not body.exists(), out
-    assert _acceptance_events(root) == [(False, False)], out
-    (item,) = _halts(root)
-    assert item.evidence["check"] == "greets-hidden", item.evidence
-    assert item.evidence["head_sha"] == _tip(root), item.evidence
-    assert hidden not in item.detail + item.title, item.detail
-    app = home_app(root)
-    async with app.run_test(size=(120, 36)) as pilot:
-        await mounted(pilot, lambda: app.screen, "#home-runs")
-        app.push_screen(InboxScreen())
-        screen = app.screen
-        assert isinstance(screen, InboxScreen)
-        detail = cast(Static, await mounted(pilot, lambda: screen, "#inbox-detail"))
-        await settled(pilot, lambda: bool(screen._items), what="the inbox screen to read the log")
-        row = [i.id for i in screen._items].index(item.id)
-        screen.query_one("#inbox-table", DataTable).move_cursor(row=row)
-        await settled(
-            pilot,
-            lambda: f"id {item.id[:8]}" in flat(detail) and "what each choice does" in flat(detail),
-            what="the halt's choices",
-        )
-        offered = " ".join(flat(detail).split())
-    assert "merges over the failing acceptance checks greets-hidden" in offered, offered
-    assert "no kstrl step reads" not in offered, offered
-
-    code, said = _spawn(
-        ["inbox", "approve", item.id, "--root", str(root), "--ui", "plain", "--no-color"],
-        root,
-        env,
-    )
-    assert code == 0, said
-    assert "merges over the failing acceptance checks greets-hidden" in said, said
-    (approved,) = _halts(root)
-    code, out = _spawn(
-        ["retry", COMP, "--yes", "--root", str(root), "--ui", "plain", "--no-color"], root, env
-    )
-
-    assert code == 0, out
-    assert len(calls.read_text(encoding="utf-8").splitlines()) == 1, out
-    assert _status(root)[0] == "completed", out
-    kept = (
-        f"ks retry kept commit {item.evidence['head_sha'][:12]}, which inbox approval {item.id[:8]}"
-    )
-    assert kept in out, out
-    merged = (
-        f"- merged over the failing checks greets-hidden by inbox approval {item.id[:8]} "
-        f"({approved.decided_by} at {approved.decided_at})"
-    )
-    assert merged in out, out
-    assert merged in body.read_text(encoding="utf-8").splitlines(), body.read_text("utf-8")
 
 
 @runs_a_stack

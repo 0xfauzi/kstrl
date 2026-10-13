@@ -39,7 +39,7 @@ def _manifest_file(root: Path) -> Path:
 
 def _status(root: Path) -> str:
     proc = subprocess.run(
-        [sys.executable, "-m", "kstrl", "status", "--no-tui", "--ui", "plain", "--root", str(root)],
+        [sys.executable, "-m", "kstrl", "status", "--ui", "plain", "--root", str(root)],
         capture_output=True,
         text=True,
         timeout=120,

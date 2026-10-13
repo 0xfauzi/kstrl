@@ -85,7 +85,6 @@ def _decompose(root: Path, agent: Path) -> Manifest:
         str(agent),
         "--ui",
         "plain",
-        "--no-tui",
     )
     assert run.returncode == 0, run.stdout
     return Manifest.load(root / MANIFEST)
@@ -113,7 +112,6 @@ def _factory(root: Path, agent: Path, manifest: Path) -> tuple[int, str]:
         "0",
         "--ui",
         "plain",
-        "--no-tui",
         "-y",
     )
     return run.returncode, run.stdout
@@ -219,9 +217,6 @@ EXPECTED_PLAN_LITERALS = {
     "plan_gate.py::<module>": 1,
     "statedir.py::<module>": 2,
     "statedir.py::plan_prd_path": 1,
-    "tui/screens/decompose.py::plan_title": 1,
-    "tui/screens/decompose.py::DecomposeScreen.compose": 1,
-    "tui/screens/init_wizard.py::InitWizardScreen.compose": 1,
 }
 
 

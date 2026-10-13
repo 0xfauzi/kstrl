@@ -490,7 +490,6 @@ class TestFactorySpecRecordsTheArchitect:
                 "plain",
                 "--no-color",
                 "--yes",
-                "--no-tui",
                 *extra,
             ],
         )

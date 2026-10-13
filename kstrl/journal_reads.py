@@ -293,9 +293,7 @@ class JournalReads:
         kstrl writes (CLAUDE.md): ``UnicodeDecodeError`` IS a
         ``ValueError`` and escapes a fail-closed ``except OSError``.
         Measured before this line: a single non-utf-8 byte in
-        experiments.tsv raised straight out of ``EvolveScreen.on_mount``
-        two lines after the #289 config banner, which is that issue's
-        own crash from that issue's own screen.
+        experiments.tsv raised straight out of the reader.
 
         The PARSE is guarded separately, and differently (#352 round 2).
         A read failure here is silent because a missing file is the
@@ -304,9 +302,8 @@ class JournalReads:
         three things. A parse refusal is not one of those three: it can
         only come from a file that exists and decoded, so it is an
         incident and it is logged with the path and the cause. The
-        return stays ``[]`` rather than propagating, because this is
-        called from ``EvolveScreen.reload`` on the Textual event loop,
-        where a raise is the #289 crash again.
+        return stays ``[]`` rather than propagating, because a raise here
+        would take down the caller that only wanted the rows.
         """
         try:
             text = self.config.experiments_path.read_text(encoding="utf-8")
@@ -398,7 +395,7 @@ class JournalReads:
         """The operator-facing sentence about this journal's repairs, or None.
 
         ONE HOME for prose two surfaces render (#352 round 2, N4).
-        ``cli._echo_journal_repairs`` and ``EvolveScreen._show_repairs``
+        ``cli._echo_journal_repairs`` and a second surface
         each held their own copy and each said the wording was
         deliberately the same on both, with nothing keeping it so. That
         is the same argument this PR made for hoisting

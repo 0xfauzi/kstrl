@@ -326,10 +326,7 @@ EXPECTED_GETPGID_SPELLINGS: dict[str, int] = {_OWNER: 2}
 #:
 #: Pinning them is the difference between a guard that says "I did not
 #: look at these" and one that does not mention them.
-EXPECTED_UNDECIDED_SITES: tuple[str, ...] = (
-    "tui/app.py: initial_screens_for_kind(kind, observe_only=False)",
-    "tui/app.py: initial_screens_for_kind(kind, observe_only=True)",
-)
+EXPECTED_UNDECIDED_SITES: tuple[str, ...] = ()
 
 
 class TestNoCallerCarriesItsOwnCopy:

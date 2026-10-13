@@ -181,7 +181,6 @@ EXPECTED_REF_OPERAND_ARGVS: dict[str, int] = {
     "retry_plan.py git rev-parse --verify --quiet f'refs/heads/{branch}'": 1,
     "retry_plan.py git branch -D failed_branch": 1,
     "statedir.py git -C str(root_dir) remote get-url origin": 1,
-    "tui/screens/home.py git rev-parse --abbrev-ref HEAD": 1,
 }
 
 #: DERIVED BY RUNNING, same procedure as above. After #435's fix:

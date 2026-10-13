@@ -233,9 +233,7 @@ class TestTheGuardDetects:
         say which caller a change costs.
         """
         assert label(KSTRL_PACKAGE / "decompose.py") == "decompose.py"
-        assert label(KSTRL_PACKAGE / "tui" / "screens" / "decompose.py") == str(
-            Path("tui") / "screens" / "decompose.py"
-        )
+        assert label(KSTRL_PACKAGE / "agents" / "base.py") == str(Path("agents") / "base.py")
 
     def test_an_unrelated_file_is_left_alone(self, tmp_path: Path) -> None:
         """The false-positive side. Without this, "flag everything" passes."""

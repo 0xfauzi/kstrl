@@ -28,7 +28,6 @@ from __future__ import annotations
 import ast
 import json
 import os
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -567,7 +566,6 @@ class TestTheRootIsTheOneTheCommandWillUse:
 SEAM_COMMANDS: list[tuple[list[str], int]] = [
     (["autonomy", "status"], 2),
     (["ci", "poll"], 2),
-    (["dash"], 2),
     (DECOMPOSE_ARGS, 2),
     (["evolve"], 2),
     (FACTORY_ARGS, 2),
@@ -816,79 +814,6 @@ class TestTheCommandsThatMustSurviveABrokenConfig:
 
         assert result.exit_code == 2
         assert "[verify]" in result.output
-
-
-class TestTheHomeShellIsNotAFifthExemption:
-    """Bare `ks` on a TTY runs the GROUP callback, so
-    ``_KstrlCommand.invoke`` never fires for it. That made the home shell
-    an undocumented fifth exemption, and the most expensive one: the TUI
-    launches runs IN-PROCESS (``tui/session.py`` calls ``run_factory``
-    and ``decompose_spec`` directly), so a bad ``[linear]`` value paid
-    for the architect and then aborted. The original #272 defect, on the
-    path a user reaches by typing `ks`.
-
-    ``ks doctor`` (#198) made the documented exempt list five, so the
-    shell would now be a sixth; the name is kept because it records
-    the #272 defect rather than a live count.
-    """
-
-    @staticmethod
-    def _bare_ks(
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-        toml: str,
-    ) -> tuple[int, list[Path]]:
-        import kstrl.tui.home as home_mod
-
-        (tmp_path / "kstrl.toml").write_text(toml)
-        monkeypatch.chdir(tmp_path)
-        monkeypatch.delenv("KSTRL_NO_TUI", raising=False)
-        opened: list[Path] = []
-
-        def _fake_home_shell(root: Path) -> int:
-            opened.append(root)
-            return 0
-
-        monkeypatch.setattr(home_mod, "run_home_shell", _fake_home_shell)
-        # The live streams, so the refusal is still visible to capsys.
-        # Replacing them wholesale would swallow the message this branch
-        # exists to print.
-        monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
-        monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
-
-        try:
-            cli.main([], standalone_mode=False)
-        except SystemExit as exc:
-            return int(exc.code or 0), opened
-        return 0, opened
-
-    def test_a_rejected_section_stops_the_shell_before_it_opens(
-        self,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        code, opened = self._bare_ks(
-            tmp_path,
-            monkeypatch,
-            '[linear]\ntimeout_seconds = "soon"\n',
-        )
-
-        assert opened == []
-        assert code == 2
-        # And the operator is told which section, not just refused.
-        assert "[linear]" in capsys.readouterr().err
-
-    def test_a_usable_config_still_opens_the_shell(
-        self,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """The guard must not cost the entry point it protects."""
-        code, opened = self._bare_ks(tmp_path, monkeypatch, "[factory]\nmax_parallel = 2\n")
-
-        assert opened == [Path.cwd()]
-        assert code == 0
 
 
 class TestConfigShowIsTheSurfaceThatAlwaysWorks:

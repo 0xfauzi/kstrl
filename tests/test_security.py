@@ -432,7 +432,7 @@ def test_a_default_run_asks_the_security_reviewer_and_lists_the_new_dependency(
             "factory",
             *("--manifest", str(root / "scripts" / "kstrl" / "manifest.json")),
             *("--root", str(root), "--agent-cmd", str(agent)),
-            *("--no-tui", "--yes", "--ui", "plain", "--no-color"),
+            *("--yes", "--ui", "plain", "--no-color"),
             *("--max-retries", "0", "--max-parallel", "1"),
             *("--review-mode", "skip", "--contract-check", "skip"),
         ],

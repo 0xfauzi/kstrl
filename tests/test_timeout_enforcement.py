@@ -2159,10 +2159,9 @@ class TestSubprocessTimeoutAudit:
         cleanliness. ``astwalk.calls_to`` partitions instead, and this
         pins the half that is not an answer.
 
-        Eleven rows once the line numbers come off, none of them a
+        Rows once the line numbers come off, none of them a
         subprocess. Four are dispatch tables with no identifier for the
-        walk to compare, three are a Textual ``App.run`` on a local, and
-        four are an agent adapter reached through a parameter or an
+        walk to compare, and four are an agent adapter reached through a parameter or an
         attribute. Keyed by module and expression, because a line number
         here churns on any edit above the site and none of those diffs is
         this test's subject. Adding a row is not
@@ -2183,13 +2182,8 @@ class TestSubprocessTimeoutAudit:
         assert list(rows) == [
             "agent_output.py agent.run",
             "agents/logging.py self._agent.run",
-            "cli_report.py app.run",
             "decompose.py agent.run",
             "loop.py run.agent.run",
-            "tui/app.py initial_screens_for_kind(kind, observe_only=False)",
-            "tui/app.py initial_screens_for_kind(kind, observe_only=True)",
-            "tui/embed.py app.run",
-            "tui/home.py app.run",
         ], (
             "the set of spawn-shaped calls this walk cannot decide changed. A new "
             "row is a call the audit above is silent about, so say why it cannot be "

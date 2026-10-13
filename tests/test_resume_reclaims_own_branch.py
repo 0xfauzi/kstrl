@@ -51,7 +51,6 @@ FLAGS = (
     "--ui",
     "plain",
     "--no-color",
-    "--no-tui",
     "--max-parallel",
     "1",
     "--max-retries",
@@ -193,7 +192,6 @@ def _env(agent: str) -> dict[str, str]:
     }
     env["AGENT_CMD"] = agent
     env["KSTRL_KNOWLEDGE_ENABLED"] = "0"
-    env["KSTRL_NO_TUI"] = "1"
     return env
 
 

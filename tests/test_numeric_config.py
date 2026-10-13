@@ -129,7 +129,6 @@ EXPECTED_LIMIT_PARAMETERS = {
 NOT_LIMITS: dict[tuple[str, str], str] = {
     ("config show", "max_iterations"): "shown, not run: the command spends nothing",
     ("config show", "sleep"): "shown, not run: the command spends nothing",
-    ("dash", "poll"): "a screen refresh interval; the command spends nothing",
     ("inbox snooze", "hours"): "an inbox item's snooze; the command spends nothing",
     ("queue add", "priority"): "an ordering, where a negative value means something",
     ("queue priority", "priority"): "an ordering, where a negative value means something",

@@ -39,10 +39,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.ci_state import recorded_merges
 from kstrl.manifest import Manifest
-from kstrl.reducer import load_run_state
-from kstrl.tui.delivery import Merge, merges_of
 from tests.helpers import astwalk, gitrepo
 from tests.helpers.executables import write_executable
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
@@ -177,7 +174,6 @@ def _factory(
     env["SHA_42"] = sha_42
     env["AGENT_CMD"] = ENGINEER
     env["KSTRL_KNOWLEDGE_ENABLED"] = "0"
-    env["KSTRL_NO_TUI"] = "1"
     return subprocess.run(
         [
             sys.executable,
@@ -232,32 +228,6 @@ def _manifest_merges(root: Path) -> list[tuple[str, int | None, str, str]]:
 
 
 class TestARepolledMergeIsInTheStream:
-    def test_both_paths_record_the_same_merge_in_the_manifest_and_the_stream(
-        self, tmp_path: Path
-    ) -> None:
-        """`http` merged while no run was going; the restarted run re-polls
-        it, then runs `cmds` and merges its PR itself. Both merges are
-        pr_merged events whose fields are the manifest's, and the readers
-        of the stream list both."""
-        root = _repo(tmp_path, [_parked(), _component(CMDS, [HTTP])])
-
-        proc = _factory(tmp_path, root, SHA_41)
-        out = proc.stdout + proc.stderr
-
-        assert proc.returncode == 0, out
-        expected = [(CMDS, 42, URL_42, SHA_42), (HTTP, 41, URL_41, SHA_41)]
-        assert _manifest_merges(root) == expected
-        rows = _run_rows(root)
-        assert _merged_rows(rows) == expected
-        # The merge is recorded before the component is reported completed,
-        # the order the path that merged cmds has always used.
-        http_events = [row["event"] for row in rows if row.get("component") == HTTP]
-        assert http_events.index("pr_merged") < http_events.index("component_completed")
-        # The TUI delivery section and the CI refresh read the stream.
-        state, _source = load_run_state(root)
-        assert merges_of(state) == (Merge(HTTP, 41, SHA_41), Merge(CMDS, 42, SHA_42))
-        assert recorded_merges(root, None) == ((HTTP, SHA_41), (CMDS, SHA_42))
-
     def test_a_merge_github_published_no_commit_for_says_so_in_both_records(
         self, tmp_path: Path
     ) -> None:
@@ -288,24 +258,6 @@ class TestARepolledMergeIsInTheStream:
         assert proc.returncode == 0, out
         assert _manifest_merges(root) == [(CMDS, 42, URL_42, "")]
         assert _merged_rows(_run_rows(root)) == [(CMDS, 42, URL_42, "")]
-
-    def test_a_parked_pr_known_only_by_its_url_is_recorded_by_its_number(
-        self, tmp_path: Path
-    ) -> None:
-        """The manifest holds `http`'s PR URL and no PR number. The re-poll
-        reads the number from the URL, and the pr_merged event carries that
-        number rather than 0, so the delivery section names PR #41."""
-        parked = _parked()
-        del parked["prNumber"]
-        root = _repo(tmp_path, [parked])
-
-        proc = _factory(tmp_path, root, SHA_41)
-        out = proc.stdout + proc.stderr
-
-        assert proc.returncode == 0, out
-        assert _merged_rows(_run_rows(root)) == [(HTTP, 41, URL_41, SHA_41)]
-        state, _source = load_run_state(root)
-        assert merges_of(state) == (Merge(HTTP, 41, SHA_41),)
 
 
 # --- census: every place that records a merge ------------------------------
@@ -371,7 +323,6 @@ EXPECTED_SHA_SPELLINGS: dict[str, int] = {
     "pr_state.py::_pr_state": 1,
     "reducer.py::<module>": 1,
     "reducer.py::apply": 1,
-    "tui/delivery.py::<module>": 1,
 }
 
 #: Every other row, and why it is not kstrl recording a merge.
@@ -389,7 +340,6 @@ NOT_A_MERGE_RECORD: dict[str, str] = {
     "pr_state.py::_pr_state": "the commit gh reported",
     "reducer.py::<module>": "the TUI's ComponentState.merge_sha field declaration",
     "reducer.py::apply": "folds a pr_merged event into the TUI's view, not the manifest",
-    "tui/delivery.py::<module>": "the delivery section's Merge.merge_sha field declaration",
 }
 
 #: Every scope in ``kstrl/`` that spells ``PrMerged``, and how many times.
@@ -399,7 +349,6 @@ EXPECTED_PR_MERGED_SPELLINGS: dict[str, int] = {
     "event_catalog.py::<module>": 1,
     RECORDER: 1,
     "reducer.py::apply": 1,
-    "tui/widgets/activity.py::humanize": 1,
 }
 
 #: Every row above except the recorder, and why it builds no event.
@@ -408,7 +357,6 @@ NOT_A_PR_MERGED_BUILD: dict[str, str] = {
     "ci_state.py::_merges_in_run": "selects pr_merged rows with isinstance",
     "event_catalog.py::<module>": "the class declaration",
     "reducer.py::apply": "folds the event with isinstance",
-    "tui/widgets/activity.py::humanize": "describes the event with isinstance",
 }
 
 #: Every scope that spells ``_record_merge``: the definition, and the two

@@ -134,7 +134,6 @@ def _env(knowledge: bool = False) -> dict[str, str]:
     }
     env["PATH"] = _path_without_agent_clis()
     env["KSTRL_AGENT_PROBE"] = "0"
-    env["KSTRL_NO_TUI"] = "1"
     env["KSTRL_KNOWLEDGE_ENABLED"] = "1" if knowledge else "0"
     if nono:
         env["KSTRL_NONO"] = nono
@@ -271,7 +270,6 @@ def _factory(
         "--ui",
         "plain",
         "--no-color",
-        "--no-tui",
         "--no-prs",
         "--max-parallel",
         "1",
@@ -458,7 +456,6 @@ def _architect(tmp_path: Path, script: str, *command: str) -> tuple[int, str]:
         "demo",
         "--root",
         str(root),
-        "--no-tui",
         "--ui",
         "plain",
         "--no-color",
@@ -497,37 +494,6 @@ def test_an_architect_attempt_after_a_timed_out_one_is_read_normally(tmp_path: P
     assert (tmp_path / "calls.log").read_text(encoding="utf-8").count("call") == 3, out
     (last_error,) = [line for line in out.splitlines() if "Last error:" in line]
     assert "timed out" not in last_error, out
-    _stubs_died(tmp_path, "hang")
-
-
-#: The home shell's decompose form launches through ``start_run_session``,
-#: which runs the architect on a worker thread of the TUI's own process.
-#: Driven in a subprocess, so a missing bound fails at the test's bound.
-TUI_DRIVER = """\
-import sys
-from pathlib import Path
-from kstrl.launch import DecomposeLaunch
-from kstrl.tui.session import start_run_session
-root = Path(sys.argv[1])
-session = start_run_session(DecomposeLaunch(spec_path=root / "spec.md", project_name="demo"), root)
-try:
-    session.handle.join()
-finally:
-    session.close()
-print((session.run_dir / "events.jsonl").read_text(encoding="utf-8"))
-sys.exit(session.handle.exit_code)
-"""
-
-
-def test_a_hung_architect_launched_from_the_tui_ends_with_a_recorded_timeout(
-    tmp_path: Path,
-) -> None:
-    root = _architect_repo(tmp_path, HANG)
-
-    code, out = _run([sys.executable, "-c", TUI_DRIVER, str(root)], root, _env())
-
-    assert code != 0, out
-    assert f"Last error: the agent {TIMED_OUT_SILENT}" in out
     _stubs_died(tmp_path, "hang")
 
 

@@ -89,7 +89,7 @@ def _record(root: Path, *readings: CiReading) -> None:
 def _status(root: Path) -> Result:
     return CliRunner().invoke(
         cli,
-        ["status", "--root", str(root), "--ui", "plain", "--no-tui", "--no-color"],
+        ["status", "--root", str(root), "--ui", "plain", "--no-color"],
         catch_exceptions=False,
     )
 

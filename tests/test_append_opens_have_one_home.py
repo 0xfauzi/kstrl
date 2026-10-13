@@ -269,7 +269,6 @@ ALLOWED_APPEND_OPENS: dict[str, tuple[Reason, str]] = {
     "replay.py:replay_lock": (Reason.LOCK_FILE, "the per-machine replay lock (#700 slice 3)"),
     # #433 M1: the probe moved out of factory_lock_held so the ks serve
     # daemon's lock is probed by the same code.
-    "tui/runs.py:lock_held": (Reason.LOCK_FILE, "the TUI's copy of the same read"),
     "workqueue_store.py:queue_lock": (Reason.LOCK_FILE, "the queue lock"),
     "agents/logging.py:LoggingAgent.run": (Reason.TEXT_LOG, "the agent transcript"),
     "commandrun.py:CommandRun.transcript_writer": (Reason.TEXT_LOG, "a command transcript"),
@@ -279,8 +278,6 @@ ALLOWED_APPEND_OPENS: dict[str, tuple[Reason, str]] = {
         Reason.TEXT_LOG,
         "a phase transcript",
     ),
-    "tui/embed.py:run_embedded": (Reason.TEXT_LOG, "the embedded run's log"),
-    "tui/session.py:start_run_session": (Reason.TEXT_LOG, "the session log"),
     "atomicio.py:_create_temp": (Reason.NOT_AN_APPEND, "os.open with O_WRONLY|O_CREAT|O_EXCL"),
     "factory_acceptance.py:_record_contract_event": (
         Reason.NOT_AN_APPEND,
@@ -329,9 +326,6 @@ EXPECTED_APPEND_OPENS: dict[str, int] = {
     "serve.py: open('a+')": 1,
     "serve_gates.py: open('a+')": 1,
     "statedir.py: open('a+')": 1,
-    "tui/embed.py: open('a')": 1,
-    "tui/runs.py: open('a+')": 1,
-    "tui/session.py: open('a')": 1,
     "workqueue_store.py: open('a+')": 1,
 }
 

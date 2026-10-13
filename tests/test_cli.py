@@ -69,6 +69,21 @@ class TestCliHelp:
         assert __version__ in result.output
 
 
+class TestBareInvocation:
+    """Bare `ks` prints help and exits 2 on every stream (the TUI home shell is gone)."""
+
+    def test_prints_help_and_exits_2(self) -> None:
+        result = CliRunner().invoke(cli, [])
+        assert result.exit_code == 2
+        assert "Usage:" in result.output
+        assert "Commands:" in result.output
+
+    def test_help_flag_exits_0(self) -> None:
+        result = CliRunner().invoke(cli, ["--help"])
+        assert result.exit_code == 0
+        assert "Usage:" in result.output
+
+
 class TestCliValidation:
     """Tests for CLI argument validation."""
 

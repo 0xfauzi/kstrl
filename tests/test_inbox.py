@@ -31,7 +31,6 @@ from kstrl.inbox import (
 )
 from tests.helpers import gitrepo
 from tests.helpers.component_prd import write_component_prd
-from tests.helpers.settle import drained, mounted
 from tests.helpers.stack_confirmation import in_process_stack
 
 
@@ -678,57 +677,6 @@ class TestSummaries:
 # --------------------------------------------------------------------------
 # TUI screen
 # --------------------------------------------------------------------------
-class TestInboxScreen:
-    def test_screen_imports_and_registers(self) -> None:
-        from kstrl.tui.screens.home import HOME_COMMANDS
-        from kstrl.tui.screens.inbox import InboxScreen, priority_marker
-
-        assert InboxScreen is not None
-        assert any(c.command_id == "inbox" for c in HOME_COMMANDS), [
-            c.command_id for c in HOME_COMMANDS
-        ]
-        assert priority_marker("high").plain == "!"
-
-    @pytest.mark.asyncio
-    async def test_screen_renders_and_approves(self, tmp_path: Path) -> None:
-        from textual.app import App, ComposeResult
-
-        from kstrl.tui.screens.inbox import InboxScreen
-
-        box = _box(tmp_path)
-        box.add(
-            ItemKind.POLICY_EXCEPTION,
-            "comp-a: denied path",
-            component="comp-a",
-            dedupe_key="p1",
-        )
-
-        class _Harness(App[None]):
-            def compose(self) -> ComposeResult:
-                yield from ()
-
-        app = _Harness()
-        async with app.run_test() as pilot:
-            await app.push_screen(InboxScreen(tmp_path))
-            await mounted(pilot, lambda: app.screen, "#inbox-table")
-            screen = app.screen
-            assert isinstance(screen, InboxScreen)
-            # The table is queryable as soon as compose mounts it, which
-            # is BEFORE the screen's own on_mount reads the log.
-            # Draining the screen observes that on_mount ran without
-            # asserting what it found.
-            await drained(
-                pilot,
-                screen,
-                what="the inbox screen's on_mount to read the log",
-            )
-            assert len(screen._items) == 1
-            # No wait after this one: action_approve is a direct call
-            # that appends the decision to the log before it returns, so
-            # the assertion below reads a file on disk rather than
-            # anything the app still has to settle.
-            screen.action_approve()
-        assert Inbox(tmp_path, InboxConfig()).open_items() == []
 
 
 # --------------------------------------------------------------------------

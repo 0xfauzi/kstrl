@@ -105,7 +105,6 @@ FACTORY_FLAGS = (
     "--ui",
     "plain",
     "--no-color",
-    "--no-tui",
     "--max-parallel",
     "1",
     "--max-retries",
@@ -213,7 +212,6 @@ def _env(tmp_path: Path) -> dict[str, str]:
     env["ENGINEER_LOG"] = str(tmp_path / "engineer.log")
     env["AGENT_CMD"] = ENGINEER
     env["KSTRL_KNOWLEDGE_ENABLED"] = "0"
-    env["KSTRL_NO_TUI"] = "1"
     return env
 
 

@@ -167,20 +167,12 @@ EXPECTED_SURFACE_ROUNDS = 2
 #: #192 split the scope-owning wrapper off the resolution: the wrapper
 #: no longer calls a primitive itself, so it is no longer surface.
 #:
-#: That swap NARROWED the walk as a side effect, which is worth naming
-#: because a production refactor quietly shrinking a static walk is the
-#: class CLAUDE.md logs eleven instances of. Measured by running this
-#: walk against the code before the split: exactly one site left,
-#: ``tui/widgets/config_problem.py::ConfigProblemBanner.load``, because
-#: it calls ``load_or_report`` and that name is no longer surface. It is
-#: latent for layer B, whose three modules call ``load_or_report``
-#: nowhere; the TUI's own config guard is
-#: ``tests/test_tui_config_guard.py``.
+#: ``tests/test_config_defects_not_blamed.py`` pins what ``resolve_or_report``
+#: reports and what it raises again.
 EXPECTED_FREE_READERS = frozenset(
     {
         "_apply_toml_overrides",
         "_blamed_toml_value",
-        "_masthead",
         "build_config_report",
         # doctor.check_kstrl_config (#198) reads the config to REPORT on
         # it, never to resolve a run from it, so it does not belong in

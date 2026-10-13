@@ -52,7 +52,6 @@ EXPECTED_SITES = {
     "security.py": 1,
     # A display style per severity for BOTH vocabularies (security's four
     # and review's fail/advisory). It ranks nothing.
-    "tui/widgets/findings_table.py": 1,
 }
 
 # One source per shape the census must see. They are the census's

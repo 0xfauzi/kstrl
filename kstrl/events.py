@@ -1,8 +1,8 @@
-"""Schema-v2 typed event model for kstrl runs (TUI rewrite, stage 1).
+"""Schema-v2 typed event model for kstrl runs.
 
 The filesystem is the event bus: the orchestrator and its workers append
 one JSON object per line to files under ``.kstrl/runs/<run_id>/`` and
-every surface (plain line output, the Textual TUI, ``ks status``) is
+every surface (plain line output, ``ks status``) is
 a projection of that stream. The vocabulary (the :class:`Event`
 dataclasses) is in :mod:`kstrl.event_catalog`. This module owns the sinks
 that write them, the tolerant reader that parses them back, and the

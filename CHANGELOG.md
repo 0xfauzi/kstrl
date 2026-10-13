@@ -316,6 +316,16 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Removed
 
+- The terminal UI (the Textual dashboard, #863). `ks dash`, the `--tui` and
+  `--no-tui` options of `ks status`, `ks factory`, `ks decompose`,
+  `ks understand` and `ks feature`, and the `KSTRL_NO_TUI`
+  variable are gone. Bare `ks` prints the command list and exits 2 on a
+  terminal, as it already did on a pipe. The `textual` and
+  `pytest-textual-snapshot` dependencies are gone. A launch record that
+  carries `tui` is retried with the option left out. With
+  `pause_before_pr_merge` the E6 checkpoint asks on the terminal, and parks
+  in the inbox (`ks inbox approve`) when no terminal answers.
+
 - `ks factory --verify-command` (#539). It was stored in
   `FactoryConfig.verify_command` and no code read it, so the command it named
   never ran. Phase 1 runs `--test-command`, `--typecheck-command` and

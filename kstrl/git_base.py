@@ -21,8 +21,7 @@ BASE_BRANCH_CANDIDATES = ("main", "master", "trunk", "develop")
 # callers surface it as one.
 BASE_BRANCH_FALLBACK = "main"
 
-# Local plumbing, called on the way into a command and on the Textual
-# event loop when the decompose launch form composes.
+# Local plumbing, called on the way into a command.
 _BASE_BRANCH_PROBE_TIMEOUT = 5.0
 
 _ORIGIN_REF_PREFIX = "refs/remotes/origin/"

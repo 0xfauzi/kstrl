@@ -82,7 +82,7 @@ _FACTORY = (
     "skip",
 )
 _RUN = ("run", "1", "--root", "{root}", "--ui", "plain", "--no-verify", "--branch", "")
-_UNDERSTAND = ("understand", "1", "--root", "{root}", "--ui", "plain", "--no-tui")
+_UNDERSTAND = ("understand", "1", "--root", "{root}", "--ui", "plain")
 _FEATURE = (
     "feature",
     "--root",
@@ -91,7 +91,6 @@ _FEATURE = (
     "{root}/scripts/kstrl/prd.json",
     "--ui",
     "plain",
-    "--no-tui",
     "--no-verify",
     "--implementation-auto-run",
     "--understand-iterations",
@@ -219,7 +218,6 @@ def _env(
     assert shutil.which("git", path=env["PATH"]), env["PATH"]
     env["KSTRL_AGENT_PROBE"] = "0"
     env["KSTRL_KNOWLEDGE_ENABLED"] = "0"
-    env["KSTRL_NO_TUI"] = "1"
     env.update(extra)
     return env
 

@@ -72,8 +72,6 @@ EXPECTED_CONSTRUCTIONS = (
     # #433: home's needs-you rows list open items. It scans and reads;
     # it mutates nothing. Moved from tui/home_data.py, whose counter it
     # replaced.
-    "tui/operator_queue.py kstrl.inbox.Inbox",
-    "tui/screens/inbox.py kstrl.inbox.Inbox",
     # #646: ks retry reads the approvals (approvals_at) to decide whether
     # it keeps the failed head. It scans and reads; it mutates nothing.
     "waivers.py kstrl.inbox.Inbox",
@@ -102,18 +100,13 @@ EXPECTED_CONSTRUCTION_COUNTS = {
     "serve_gates.py": 1,
     "serve_settle.py": 1,
     "stack.py": 3,
-    "tui/operator_queue.py": 1,
-    "tui/screens/inbox.py": 1,
     "waivers.py": 1,
 }
 
 #: Calls whose callee has no identifier at all, which ``calls_to`` treats
 #: as a candidate for every target set. Neither is an inbox, and both are
 #: pinned rather than filtered so a third one has to be looked at.
-EXPECTED_UNDECIDED = (
-    "tui/app.py initial_screens_for_kind(kind, observe_only=False)",
-    "tui/app.py initial_screens_for_kind(kind, observe_only=True)",
-)
+EXPECTED_UNDECIDED = ()
 
 
 @dataclass(frozen=True)
@@ -156,9 +149,6 @@ EXPECTED_MUTATIONS: dict[str, Disposition] = {
     "stack.py::file_stack_item::add": Disposition(guarded=False, reason="the caller refuses"),
     "stack.py::decide_at_prompt::approve": Disposition(guarded=False, reason="as ::add"),
     "stack.py::decide_at_prompt::reject": Disposition(guarded=False, reason="as ::add"),
-    "tui/screens/inbox.py::InboxScreen._decide::approve": _GUARDED,
-    "tui/screens/inbox.py::InboxScreen._decide::reject": _GUARDED,
-    "tui/screens/inbox.py::InboxScreen._decide::snooze": _GUARDED,
     "cli_inbox.py::_decide_and_report::approve": Disposition(
         guarded=False,
         reason=(
@@ -232,7 +222,6 @@ EXPECTED_CONFIG_LOADS: dict[str, Disposition] = {
         reason="cli._stack_checkpoint catches SURFACE_REJECTIONS, TypeError among them",
     ),
     # #433: home's needs-you rows; a load it cannot make renders no count.
-    "tui/operator_queue.py::_open_inbox_items": _GUARDED,
     # #646: ks retry's read of the approvals; a load it cannot make keeps nothing.
     "waivers.py::approvals_at": _GUARDED,
     "serve_gates.py::check_inbox_cap": Disposition(
@@ -631,9 +620,6 @@ UNCONDITIONAL_DECISIONS: dict[str, str] = {
     "plan_gate.py::_record::reject": "the operator answered the plan checkpoint prompt",
     "stack.py::decide_at_prompt::approve": "the operator answered the stack checkpoint prompt",
     "stack.py::decide_at_prompt::reject": "the operator answered the stack checkpoint prompt",
-    "tui/screens/inbox.py::InboxScreen._decide::approve": "the operator pressed approve",
-    "tui/screens/inbox.py::InboxScreen._decide::reject": "the operator chose a reason",
-    "tui/screens/inbox.py::InboxScreen._decide::snooze": "the operator pressed snooze",
 }
 
 CONTROL_DECISION = """

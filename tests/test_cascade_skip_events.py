@@ -130,7 +130,7 @@ class TestACascadeSkipIsRecordedOnTheStream:
         assert state.components[DEPENDENT_ID].error == f"dependency '{COMPONENT_ID}' failed"
 
         proc = subprocess.run(
-            [sys.executable, "-m", "kstrl", "status", "--no-tui", "--root", str(tmp_path)],
+            [sys.executable, "-m", "kstrl", "status", "--root", str(tmp_path)],
             capture_output=True,
             text=True,
             timeout=120,

@@ -10,7 +10,6 @@ import pytest
 
 from kstrl.config import KstrlConfig
 from kstrl.events import EventBus
-from kstrl.interaction import InteractionChannel, QueueInteractionChannel
 from kstrl.loop import COMPLETION_MARKER, run_loop
 from kstrl.ui.plain import PlainUI
 from tests.helpers import gitrepo
@@ -493,42 +492,33 @@ class TestGuardsRunBeforeCompletion:
         assert result.completed is True
         assert result.exit_code == 0
 
-    @pytest.mark.parametrize("nobody", ["terminal-eof", "terminal-ctrl-c", "tui-detached"])
+    @pytest.mark.parametrize("nobody", ["terminal-eof", "terminal-ctrl-c"])
     def test_an_unanswered_guard_prompt_quits_and_keeps_the_file(
         self, tmp_path: Path, nobody: str
     ) -> None:
         """#647: the guard's options are Quit, Revert and continue,
         Continue anyway. Nobody answering must quit, leaving the file for
         the operator to judge: not reverted, and not continued past.
-        Driven through the real producers of an unanswered response: the
-        terminal channel over an interrupted prompt, and the embedded
-        channel whose TUI detaches while the prompt waits."""
-        interrupt = {"terminal-eof": EOFError, "terminal-ctrl-c": KeyboardInterrupt}.get(nobody)
+        Driven through the real producer of an unanswered response: the
+        terminal channel over an interrupted prompt."""
+        interrupt = {"terminal-eof": EOFError, "terminal-ctrl-c": KeyboardInterrupt}[nobody]
 
         class _InterruptedUI(PlainUI):
             def can_prompt(self) -> bool:
                 return True
 
             def choose(self, header: str, options: list[str], default: int = 0) -> int:
-                assert interrupt is not None
                 raise interrupt
 
         config = self._git_repo(tmp_path)
         config.interactive = True
         rogue = tmp_path / "rogue.py"
         log = io.StringIO()
-        channel: InteractionChannel | None = None
-        if interrupt is None:
-            queue = QueueInteractionChannel()
-            queue.attach(lambda req: queue.detach())
-            channel = queue
-
         result = run_loop(
             config,
             _InterruptedUI(no_color=True, file=log),
             _RogueWriterAgent(rogue),
             tmp_path,
-            interaction=channel,
         )
 
         assert (result.completed, result.exit_code, result.iterations) == (False, 1, 1), (

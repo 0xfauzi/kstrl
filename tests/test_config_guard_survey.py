@@ -18,22 +18,13 @@ entry check's own defect list.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import cast
 
 import pytest
-from textual.widgets import DataTable
 
 from kstrl.config_preflight import collect_config_problems, config_problem_lines
 from kstrl.config_report import build_config_report
-from kstrl.launch import FactoryLaunch
 from kstrl.timeout import TimeoutConfig
-from kstrl.tui.config_guard import env_scrub_is_safe
-from kstrl.tui.screens.init_wizard import _detected_text
-from kstrl.tui.session import LaunchError, start_run_session
 from tests.helpers import astwalk
-from tests.helpers.settle import mounted, settled
-from tests.helpers.tui_screens import home_app
-from tests.spine_utils import make_manifest
 
 #: A malformed document, as opposed to a bad value inside a good one.
 BAD_DOCUMENT = "[evolution\nlookback_runs = 5\n"
@@ -52,35 +43,6 @@ def test_the_array_case_really_is_a_typeerror(tmp_path: Path) -> None:
     with pytest.raises(TypeError):
         TimeoutConfig.load(tmp_path)
     assert not isinstance(TypeError(), ValueError)
-
-
-def test_a_launched_run_reports_the_array_instead_of_raising(tmp_path: Path) -> None:
-    """``kstrl/tui/session.py`` assembles seven sections at launch.
-
-    Its guard was ``(OSError, ValueError)``, so this file escaped as a
-    TypeError and took the shell down. Reachable only by editing
-    kstrl.toml with the shell already open: the entry check would have
-    refused to open it otherwise.
-    """
-    manifest_dir = tmp_path / "scripts" / "kstrl"
-    manifest_dir.mkdir(parents=True)
-    make_manifest([]).save(manifest_dir / "manifest.json")
-    (tmp_path / "kstrl.toml").write_text(ARRAY_FOR_A_NUMBER, encoding="utf-8")
-
-    with pytest.raises(LaunchError, match="failed to load configuration"):
-        start_run_session(FactoryLaunch(), tmp_path)
-
-
-def test_the_init_wizard_reports_the_array_instead_of_raising(tmp_path: Path) -> None:
-    """The wizard is the screen an operator opens to repair a scaffold.
-
-    Its guard was one exception narrower than the entry check too.
-    """
-    (tmp_path / "kstrl.toml").write_text(
-        '[verify]\nself_critique_min_bullets = ["3"]\n',
-        encoding="utf-8",
-    )
-    assert "kstrl.toml is unreadable" in _detected_text(tmp_path).plain
 
 
 def test_build_config_report_raises_what_its_tui_callers_now_catch(tmp_path: Path) -> None:
@@ -113,59 +75,6 @@ def test_ks_config_show_names_the_section_instead_of_a_traceback(tmp_path: Path)
     assert "[run]" in result.output
 
 
-def test_the_env_scrub_predicate_sees_both_launched_run_handles() -> None:
-    """Round 1 finding 3, and the correction round 2 made to finding 2.
-
-    An embedded orchestrator hangs off a different attribute than a
-    home-launched session, so a predicate that reads only run_context
-    is not a guard, it is a lie with a docstring. Both handles are read.
-
-    The app's own 5-second safe-mode worker is NOT one of them, and the
-    reason is the difference between refusal and serialization: a
-    launched run spawns subprocesses that inherit the environment at
-    exec and cannot wait on a lock, so the scrub must be refused while
-    one is live; the safe-mode worker is our own bounded thread and can
-    simply take the lock. Round 1 put it in the refusal condition
-    instead, and the measured cost was that the flag is set for 51 to
-    84 ms of every 5 s tick on an empty project, which made the config
-    screen's refresh and the banner's env blame intermittent on a
-    machine with no run at all.
-    """
-
-    class _Handle:
-        def __init__(self, done: bool) -> None:
-            self._done = done
-
-        def done(self) -> bool:
-            return self._done
-
-    class _Ctx:
-        def __init__(self, handle: object | None) -> None:
-            self.handle = handle
-
-    class _App:
-        def __init__(
-            self,
-            ctx: object | None = None,
-            orchestrator: object | None = None,
-            safe_mode: bool = False,
-        ) -> None:
-            self.run_context = ctx
-            self.orchestrator = orchestrator
-            self._safe_mode_running = safe_mode
-
-    assert env_scrub_is_safe(_App()) is True
-    assert env_scrub_is_safe(_App(ctx=_Ctx(_Handle(True)))) is True
-    assert env_scrub_is_safe(_App(ctx=_Ctx(_Handle(False)))) is False
-    # Finding 3: EMBEDDED mode keeps the live handle here, not on
-    # run_context, whose handle stays None (RunContext.observe).
-    assert env_scrub_is_safe(_App(orchestrator=_Handle(False))) is False
-    assert env_scrub_is_safe(_App(orchestrator=_Handle(True))) is True
-    # Round 2 findings 3 and 4: the app's own safe-mode worker is
-    # serialized against the scrub, not refused around it.
-    assert env_scrub_is_safe(_App(safe_mode=True)) is True
-
-
 def test_the_safe_mode_worker_takes_the_lock_the_scrub_holds() -> None:
     """The mechanism that replaced round 1's refusal clause.
 
@@ -184,63 +93,18 @@ def test_the_safe_mode_worker_takes_the_lock_the_scrub_holds() -> None:
     assert safemode.count("with environ_lock():") == 2
     report = (src / "config_report.py").read_text(encoding="utf-8")
     assert "_ENVIRON_LOCK = threading.RLock()" in report
-    app = (src / "tui" / "app.py").read_text(encoding="utf-8")
-    assert "SAFE_MODE_INTERVAL_SECONDS" in app
-    assert "self._safe_mode_running = True" in app
 
 
-async def test_the_config_screen_refresh_reports_the_seam_wording(tmp_path: Path) -> None:
-    """Finding 8.
-
-    This is the screen an operator opens to look at configuration, so
-    "int() argument must be a string ... not 'list'" with no section,
-    key or value is the one place that answer is least useful. The
-    notify now carries collect_config_problems' lines, which is the
-    same traversal `ks config show` prints.
-    """
-    from kstrl.tui.screens.config import ConfigScreen
-
-    (tmp_path / "kstrl.toml").write_text(ARRAY_FOR_A_RUN_NUMBER, encoding="utf-8")
-    app = home_app(tmp_path)
-    notices: list[str] = []
-    async with app.run_test(size=(140, 40)) as pilot:
-        # The app installs its home screen from its own on_mount, so a
-        # screen pushed before that lands under it and never becomes
-        # active. Then ConfigScreen.on_mount adds the columns and
-        # renders the report in one synchronous call, so a table with
-        # columns is a screen that has finished loading.
-        await mounted(pilot, lambda: app.screen, "#home-commands")
-        app.push_screen(ConfigScreen())
-        table = await mounted(pilot, lambda: app.screen, "#config-table")
-        await settled(
-            pilot,
-            lambda: cast(DataTable, table).columns,
-            what="the config screen's on_mount to fill the table",
-        )
-        screen = app.screen
-        assert isinstance(screen, ConfigScreen)
-        app.notify = lambda message, **kw: notices.append(str(message))  # type: ignore[method-assign,assignment]
-        # action_refresh notifies from inside the call, so `notices`
-        # is already final when it returns.
-        screen.action_refresh()
-    assert notices, "refresh reported nothing"
-    assert any("[run]" in n for n in notices), notices
-
-
-def test_the_config_screen_and_ks_config_show_share_one_problem_reporter() -> None:
+def test_ks_config_show_has_one_problem_reporter() -> None:
     """Round-two review, finding 10.
 
-    The screen carried its own ``_problem_lines`` next to the CLI's
-    ``_problems``: same traversal, same fallback, two copies, and they
-    had already drifted on the empty case. One function now, and the
-    only thing either caller supplies is where warnings go.
+    ``ks config show`` carried its own ``_problems`` next to a second
+    surface's ``_problem_lines``: same traversal, same fallback, two
+    copies, and they had already drifted on the empty case. One function
+    now, and the only thing a caller supplies is where warnings go.
     """
-    src = astwalk.KSTRL_PACKAGE
-    screen = (src / "tui" / "screens" / "config.py").read_text(encoding="utf-8")
-    cli = (src / "cli_report.py").read_text(encoding="utf-8")
-    assert "def _problem_lines" not in screen
+    cli = (astwalk.KSTRL_PACKAGE / "cli_report.py").read_text(encoding="utf-8")
     assert "def _problems()" not in cli
-    assert "config_problem_lines(root_dir, warn=" in screen
     assert "config_problem_lines(root_dir, warn=" in cli
 
 

@@ -1,7 +1,7 @@
 """Pure reducer: fold schema-v2 events into a renderable RunState.
 
-Chunk 2 of the TUI rewrite. Every surface (plain lines, ``kstrl
-status``, the Textual dashboard) renders from :class:`RunState`, which
+Every surface (plain lines, ``kstrl
+status``) renders from :class:`RunState`, which
 is produced ONLY by folding events - never by ad-hoc file peeking. The
 manifest remains the authoritative snapshot for DAG/PR/evidence joins;
 this module owns the temporal view.

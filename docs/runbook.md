@@ -498,28 +498,12 @@ Arguments in the wrong order are refused rather than acted on: `compare <newer> 
 
 With the ladder off it prints `autonomy ladder disabled; regression recorded in the report only`, followed by the root it consulted, so a mistyped `--root` (a directory with no `kstrl.toml` loads as "disabled") does not read as "the ladder is off". The exit code is unchanged either way (0 pass, 1 regression). Exit 2 now also covers a `kstrl.toml` that will not load OR cannot be read on a regression, because "the config is broken" must not read as "the ladder is off"; a passing comparison never consults the ladder, so it never refuses on the config. Anything that fails after the config resolves (the inbox write, the demotion itself) is reported on stderr and leaves the exit code alone: the regression is the measurement's answer, and the bookkeeping does not get to change it.
 
-## The dashboard (TUI)
+## Stopping a run
 
-`ks factory` on a terminal runs the embedded dashboard by default
-(`--no-tui`, `--ui plain`, or `KSTRL_NO_TUI=1` opt out; automatic
-selection uses plain output for non-TTY stdio, while explicit `--tui`
-requires a terminal). `ks dash` attaches a read-only
-dashboard to a live run from another terminal, or replays a finished
-one (`--run-id` takes a unique prefix; newest run is the default).
-
-Keys: `enter` opens a component's detail (phase timeline, findings,
-live transcript, evidence paths), `escape` returns, `f` toggles
-transcript follow, `c` reopens a pending E6 checkpoint, `q` quits.
-
-Quit semantics differ by mode. In `ks dash`, `q` detaches
-immediately - the run is not yours to stop. Embedded, `q` asks first:
-confirming group-kills in-flight agents, runs the worktree cleanup
-pass, flushes the manifest, and exits 130; a second `q` (or second
-Ctrl-C) force-kills. This is also what Ctrl-C now does in plain mode -
-the pre-TUI behavior (skipped cleanup, orphaned agents) was a bug,
-fixed in the same rewrite. Until #642 the confirm only set a flag, and
-without worktrees the agent ran on until its iteration ended; every stop
-request now ends the agents itself. A closed terminal (SIGHUP) is a stop
+`ks factory` prints plain output. Ctrl-C asks for a graceful stop: kstrl
+group-kills in-flight agents, runs the worktree cleanup pass, flushes the
+manifest and exits 130. A second Ctrl-C force-kills. Every stop request
+ends the agents itself (#642). A closed terminal (SIGHUP) is a stop
 too: the run records the abort, flushes the manifest and exits (with
 130, or 120 when the closed terminal makes the last write fail). A run
 started under `nohup` ignores the hangup and keeps running.
@@ -606,20 +590,16 @@ progress.jsonl carry the killed run's retries and attempt readings. A
 resume whose carried spend already meets `--max-cost-usd` halts before
 the next call.
 
-The E6 checkpoint modal shows the diff excerpt, review + security
-findings, and the attempt's spend; approve/reject/retry with
-`a`/`r`/`t`, or `escape` to leave it pending (the run stays blocked -
-that is what a checkpoint is - and the banner points back at it).
+The E6 checkpoint asks on the terminal when one is attached: approve,
+reject or retry. When no terminal is attached, or the prompt gets no
+answer, the component parks and kstrl files a `merge_gate` item in the
+inbox. `ks inbox approve <id>` resolves it and the merge goes through.
 
-Tradeoff to know: in embedded mode, notify hooks run with their
-output captured (a hook writing to the terminal would corrupt the
-alt screen - measured in the Stage 0 spike), so a `printf '\a'`
-terminal bell only rings in plain mode. Everything the dashboard
-shows also exists on disk: `.kstrl/runs/<run_id>/events.jsonl`
+Everything a run shows also exists on disk: `.kstrl/runs/<run_id>/events.jsonl`
 (schema-v2 event stream), `components/<id>/engineer.log` (agent
 transcripts), `components/<id>/{review,security,distill}.log` (phase
-transcripts), and `orchestrator.log` (embedded-mode narration). When
-a run breaks, those files are the record; the TUI is only a view.
+transcripts). When a run
+breaks, those files are the record.
 
 ## Safe mode
 
@@ -630,36 +610,6 @@ separately, and asking about it costs nothing.
 Two surfaces print it. `ks status` prints `safe mode: nominal` or
 `safe mode: <n> reason(s)` followed by one line per reason, and
 `ks serve --dry-run` prints the same block above its admission gates.
-
-The dashboard shows it too. On a terminal `ks status` opens the
-dashboard rather than the plain report whenever a run directory exists,
-so `f2` opens a safe-mode panel from any screen, and a warning banner
-appears under the run masthead the moment a signal goes degraded, naming
-the sources.
-
-A function key rather than a letter, and a priority binding rather than
-an ordinary one. Neither is cosmetic. Textual's text inputs consume
-printable keys before application bindings, so a letter key would
-silently type itself into the launch, config, decompose and init fields;
-and an ordinary application binding never reaches a system modal such as
-the command palette. The argument below only holds if the key always
-works.
-
-The banner is hidden while everything is clear, and `f2` is what makes
-that safe: the panel distinguishes the three states the banner cannot,
-telling "not checked yet" apart from "checked and clear" apart from a
-list of reasons. So an absent banner never has to carry a meaning on its
-own. On the home screen, where there is room, a chip in the masthead
-carries the same three states at a glance.
-
-The run masthead has no chip, and that was measured rather than chosen:
-at 120 columns the run header wants 41 cells and the cost meter 79, so
-the topbar is already over-subscribed and anything added there costs the
-run its own state label.
-
-The dashboard re-checks every few seconds on a background thread, not on
-its event poll: the predicate reads a run's whole event stream, and doing
-that at the poll rate would stutter the display.
 
 Safe mode itself refuses nothing. Each signal below already refuses
 where refusing is right, and the predicate only reads them, so leaving

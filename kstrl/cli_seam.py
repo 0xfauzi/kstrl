@@ -137,7 +137,7 @@ def _timestamp() -> str:
 # property #272 removed, smuggled back in under a name.
 #
 # Bare `ks` is NOT on this list and is not a command: its callback
-# belongs to the group, so it preflights explicitly (see `cli`).
+# belongs to the group and prints help, so it reads no configuration.
 #
 # Keyed by the TOP-LEVEL command name (see `_KstrlCommand._top_level_name`),
 # so `ks config show` is covered by "config" while a later `ks queue init`
@@ -328,27 +328,7 @@ def cli(ctx: click.Context) -> None:
     checks agree. Every run is recorded; boundary decisions come to you."""
     if ctx.invoked_subcommand is not None:
         return
-    # Bare `ks` on a TTY opens the home shell (D1 user decision);
-    # everywhere else stays byte-identical to click's no-args behavior
-    # (help on stdout, exit 2) - the pipe/CI contract.
-    if sys.stdout.isatty() and sys.stdin.isatty() and os.environ.get("KSTRL_NO_TUI") != "1":
-        from kstrl.config_preflight import preflight_config
-        from kstrl.tui.home import run_home_shell
-
-        # The home shell is an ENTRY POINT, not a command: this callback
-        # belongs to the group, so `_KstrlCommand.invoke` never runs for
-        # it. Without this line it was a fifth exemption that nobody
-        # declared, and the most expensive one, because the shell
-        # launches runs IN-PROCESS (`tui/session.py` calls run_factory
-        # and decompose_spec directly). A bad [linear] value would have
-        # paid for the architect and then aborted: the original #272
-        # defect, on the path a user reaches by typing `ks`.
-        #
-        # Bound once: the point of the check is that the root it
-        # validates is the root the shell opens.
-        root_dir = Path.cwd()
-        preflight_config(root_dir, warn=_preflight_warn)
-        ctx.exit(run_home_shell(root_dir))
+    # Bare `ks` prints help on stdout and exits 2, on a terminal and on a pipe.
     click.echo(ctx.get_help())
     ctx.exit(2)
 
