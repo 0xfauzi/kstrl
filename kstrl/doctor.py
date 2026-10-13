@@ -33,7 +33,8 @@ from typing import TYPE_CHECKING, Any
 from kstrl import git, git_base, git_diff, git_tree, pr
 from kstrl.atomicio import atomic_write_json
 from kstrl.config import resolve_config_file
-from kstrl.config_preflight import SURFACE_REJECTIONS, config_problem_lines, raise_if_defect
+from kstrl.config_preflight import config_problem_lines
+from kstrl.config_resolve import SURFACE_REJECTIONS, raise_if_defect
 from kstrl.policy import ENFORCEMENT_MACHINERY_PATHS, PolicyConfig, match_glob
 from kstrl.stack import NO_STACK, file_stack_item, legacy_proposal, stack_in_force
 from kstrl.statedir import STATE_DIR_NAME, state_dir

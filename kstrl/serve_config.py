@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Protocol
 
 from kstrl.config_numbers import check_numbers
+from kstrl.config_section import ConfigSection
 
 
 class ServeError(RuntimeError):
@@ -147,6 +148,9 @@ class ServeConfig:
                 max_open_prs=open_prs,
             )
         )
+
+
+SERVE_SECTION = ConfigSection(("serve",), ServeConfig)
 
 
 class ServeObserver(Protocol):

@@ -579,7 +579,7 @@ def _stack_checkpoint(root_dir: Path, ui_impl: UI, *, no_verify: bool) -> None:
     refuses, after filing the one stack_confirmation item ``ks inbox
     approve`` decides.
     """
-    from kstrl.config_preflight import SURFACE_REJECTIONS
+    from kstrl.config_resolve import SURFACE_REJECTIONS
 
     try:
         confirmed = confirmed_stack(root_dir)

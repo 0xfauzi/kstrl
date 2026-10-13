@@ -57,20 +57,20 @@ the field is ``None``, so a project that never opted in reads no
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TypeVar
 
 from kstrl.autonomy import AutonomyState
-from kstrl.autonomy_config import AutonomyConfig
+from kstrl.autonomy_config import AUTONOMY_SECTION, AutonomyConfig
 from kstrl.config import ConfigError, toml_parse_scope
-from kstrl.config_preflight import resolve_or_report
-from kstrl.divergence import DivergenceConfig
-from kstrl.inbox import InboxConfig
-from kstrl.policy import PolicyConfig
-from kstrl.release import ReleaseConfig
-from kstrl.sandbox import SandboxConfig
+from kstrl.config_resolve import resolve_or_report
+from kstrl.config_section import ConfigSection
+from kstrl.divergence import DIVERGENCE_SECTION, DivergenceConfig
+from kstrl.inbox import INBOX_SECTION, InboxConfig
+from kstrl.policy import POLICY_SECTION, PolicyConfig
+from kstrl.release import RELEASE_CONFIG_SECTION, ReleaseConfig
+from kstrl.sandbox import SANDBOX_SECTION, SandboxConfig
 
 T = TypeVar("T")
 
@@ -126,7 +126,7 @@ class RunEnvelope:
 
         One document parse for all six sections: the whole group is
         inside a single :func:`toml_parse_scope`, and each section goes
-        through ``config_preflight.resolve_or_report`` rather than
+        through ``config_resolve.resolve_or_report`` rather than
         ``load_or_report`` because a NESTED scope replaces the outer
         cache instead of inheriting it, so the per-call variant would
         cost one parse per section.
@@ -147,12 +147,12 @@ class RunEnvelope:
         """
         problems: list[str] = []
         with toml_parse_scope():
-            policy = policy_override or _resolved(PolicyConfig.load, root_dir, problems)
-            autonomy = _resolved(AutonomyConfig.load, root_dir, problems)
-            sandbox = _resolved(SandboxConfig.load, root_dir, problems)
-            inbox = _resolved(InboxConfig.load, root_dir, problems)
-            divergence = _resolved(DivergenceConfig.load, root_dir, problems)
-            release = _resolved(ReleaseConfig.load, root_dir, problems)
+            policy = policy_override or _resolved(POLICY_SECTION, root_dir, problems)
+            autonomy = _resolved(AUTONOMY_SECTION, root_dir, problems)
+            sandbox = _resolved(SANDBOX_SECTION, root_dir, problems)
+            inbox = _resolved(INBOX_SECTION, root_dir, problems)
+            divergence = _resolved(DIVERGENCE_SECTION, root_dir, problems)
+            release = _resolved(RELEASE_CONFIG_SECTION, root_dir, problems)
         if (
             policy is None
             or autonomy is None
@@ -250,7 +250,7 @@ class EnvelopeResolution:
     problems: tuple[str, ...]
 
 
-def _resolved(loader: Callable[[Path], T], root_dir: Path, problems: list[str]) -> T | None:
+def _resolved(section: ConfigSection[T], root_dir: Path, problems: list[str]) -> T | None:
     """One section, appending its rejection line rather than raising.
 
     The line is GUARANTEED, and that is the point of doing it here
@@ -262,11 +262,11 @@ def _resolved(loader: Callable[[Path], T], root_dir: Path, problems: list[str]) 
     nothing printed. No loader in ``kstrl/`` does that today; this is
     what keeps the silence impossible rather than unlikely.
     """
-    value, problem = resolve_or_report(loader, root_dir, blame_env=False)
+    value, problem = resolve_or_report(section, root_dir, blame_env=False)
     if problem is not None:
         problems.append(problem)
     elif value is None:
-        name = getattr(loader, "__qualname__", repr(loader))
+        name = getattr(section.loader, "__qualname__", repr(section.loader))
         problems.append(
             f"{name} resolved to no configuration and reported no problem. "
             "That is a defect in kstrl rather than in kstrl.toml."

@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from kstrl.config_numbers import check_numbers
+from kstrl.config_section import ConfigSection
 
 QUEUE_SCHEMA_VERSION = 1
 
@@ -482,6 +483,9 @@ class QueueConfig:
                 lease_ttl_seconds=lease_ttl_seconds,
             )
         )
+
+
+QUEUE_SECTION = ConfigSection(("queue",), QueueConfig)
 
 
 @dataclass(frozen=True)

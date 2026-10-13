@@ -17,6 +17,7 @@ from typing import Any
 
 from kstrl.atomicio import atomic_write_text
 from kstrl.config_numbers import check_numbers
+from kstrl.config_section import ConfigSection
 from kstrl.jsonread import read_json
 
 # ---------------------------------------------------------------------------
@@ -108,6 +109,9 @@ class KnowledgeConfig:
         config.knowledge_root = root_dir / ".kstrl" / "knowledge"
         _apply_knowledge_env_overrides(config)
         return config
+
+
+KNOWLEDGE_SECTION = ConfigSection(("knowledge",), KnowledgeConfig)
 
 
 def _apply_knowledge_env_overrides(config: KnowledgeConfig) -> None:

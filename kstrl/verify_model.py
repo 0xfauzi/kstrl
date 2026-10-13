@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from kstrl.config_numbers import check_numbers
+from kstrl.config_section import ConfigSection
 from kstrl.findings import Finding
 from kstrl.rung import Rung
 from kstrl.stack import Stack, stack_in_force
@@ -385,3 +386,6 @@ class VerifyConfig:
             config.fast_iteration_checks, source, gate_names(config)
         )
         return check_numbers(config)
+
+
+VERIFY_SECTION = ConfigSection(("verify",), VerifyConfig)

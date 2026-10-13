@@ -117,7 +117,7 @@ def _control_dir_reasons(root_dir: Path) -> list[SafeModeReason]:
 def _autonomy_reasons(root_dir: Path) -> list[SafeModeReason]:
     from kstrl.autonomy import AutonomyState
     from kstrl.autonomy_config import AutonomyConfig, resolve_runtime_level
-    from kstrl.config_report import environ_lock
+    from kstrl.config_resolve import environ_lock
     from kstrl.policy import PolicyConfig
 
     # These loaders read KSTRL_AUTONOMY_* and KSTRL_POLICY_*. A thread
@@ -162,7 +162,7 @@ def _autonomy_reasons(root_dir: Path) -> list[SafeModeReason]:
 
 
 def _queue_reasons(root_dir: Path) -> list[SafeModeReason]:
-    from kstrl.config_report import environ_lock
+    from kstrl.config_resolve import environ_lock
     from kstrl.workqueue import Queue
     from kstrl.workqueue_items import QueueConfig
 

@@ -125,6 +125,7 @@ from enum import StrEnum
 from pathlib import Path
 
 from kstrl.config_numbers import check_numbers
+from kstrl.config_section import ConfigSection
 from kstrl.review import ReviewResult, ReviewVerdict, normalize_story_id
 
 #: Distinct, greppable prefix for the message, mirroring
@@ -247,6 +248,9 @@ class DivergenceConfig:
         if "KSTRL_DIVERGENCE_GROWTH_STEPS" in os.environ:
             growth_steps = int(os.environ["KSTRL_DIVERGENCE_GROWTH_STEPS"])
         return check_numbers(cls(mode=mode, growth_steps=growth_steps))
+
+
+DIVERGENCE_SECTION = ConfigSection(("divergence",), DivergenceConfig)
 
 
 @dataclass(frozen=True)

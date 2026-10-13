@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from kstrl.config_numbers import check_numbers
+from kstrl.config_section import ConfigSection
 
 # ---------------------------------------------------------------------------
 # Data structures
@@ -97,12 +98,12 @@ class EvolutionConfig:
         guard somebody wrote around a call.
 
         ``TypeError`` was added when #272 gave the same section an entry
-        check: ``config_preflight.REJECTIONS`` treats it as operator
+        check: ``config_resolve.REJECTIONS`` treats it as operator
         input, and two lists that disagree would degrade the same value
         at startup and then raise on it mid-run.
 
         It is deliberately NOT
-        ``config_preflight.SURFACE_REJECTIONS``, which is this tuple
+        ``config_resolve.SURFACE_REJECTIONS``, which is this tuple
         plus ``RuntimeError``. #289 tried importing that instead, on
         the reasoning above, and
         ``test_decompose.py::test_the_artifact_is_written_before_any_journal_work``
@@ -130,6 +131,9 @@ class EvolutionConfig:
         except (ValueError, TypeError, OSError) as exc:
             warn(f"Evolution config unreadable, skipping journal: {exc}")
             return None
+
+
+EVOLUTION_SECTION = ConfigSection(("evolution",), EvolutionConfig, fatal=False)
 
 
 def _apply_env_overrides(config: EvolutionConfig, root_dir: Path) -> None:
