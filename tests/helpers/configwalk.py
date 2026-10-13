@@ -13,7 +13,7 @@ extend. That is the closed-by-construction shape
 
 WHY THE FIXED POINT, AND WHY OVER TYPES. Round 2 of #192 stopped at the
 first rule and the review measured what that cost: ``RunEnvelope``
-reaches ``kstrl.toml`` through ``config_preflight.resolve_or_report``
+reaches ``kstrl.toml`` through ``config_resolve.resolve_or_report``
 and seven section loaders rather than through a bare primitive call of
 its own, so the envelope was not surface, so ``run_envelope =
 run_envelope or RunEnvelope.load(root_dir)`` planted in
@@ -101,7 +101,7 @@ from __future__ import annotations
 
 import ast
 from collections.abc import Iterable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from tests.helpers.astwalk import all_nodes, bindings, label, own_nodes, parsed, scopes
@@ -143,6 +143,12 @@ class Surface:
     attributed: int
     raw: int
     rounds: int = 0
+    #: Constant name to the config class it names, for every module-level
+    #: ``NAME = ConfigSection((...), Cls)`` in the corpus (#863 C11). A
+    #: scope that passes ``POLICY_SECTION`` reads ``PolicyConfig.load``
+    #: just as one that spells the loader, so layer 2 reports it as that.
+    #: Discovered by the assignment shape, never listed by name.
+    sections: dict[str, str] = field(default_factory=dict)
 
 
 def scopes_with_lambdas(tree: ast.Module) -> list[tuple[ast.AST, str]]:
@@ -205,7 +211,7 @@ def surface(sources: Iterable[Path]) -> Surface:
     than over calls.
     """
     trees = [parsed(source_file) for source_file in sources]
-    found = _direct_readers(trees)
+    found = replace(_direct_readers(trees), sections=_section_constants(trees))
     rounds = 0
     while True:
         grown = _holders_of(trees, found)
@@ -213,6 +219,46 @@ def surface(sources: Iterable[Path]) -> Surface:
             return replace(found, rounds=rounds)
         found = grown
         rounds += 1
+
+
+def _section_constants(trees: list[ast.Module]) -> dict[str, str]:
+    """``{NAME: Cls}`` for every ``NAME = ConfigSection(sections, Cls, ...)``.
+
+    A flagging walk, so the shape is matched loosely: any assignment, at
+    any depth, of a call of ``ConfigSection`` whose second argument is a
+    name or an attribute. A constant that is built in a way this does not
+    match is not a site, which is the skip direction; the census in
+    ``tests/test_config_preflight.py`` counts the constants against the
+    config classes, so a constant this walk missed shows there.
+    """
+    found: dict[str, str] = {}
+    for tree in trees:
+        for node in all_nodes(tree):
+            owner = _section_owner(node)
+            if owner is not None:
+                found.update({t.id: owner for t in _assigned_names(node)})
+    return found
+
+
+def _tail(node: ast.expr) -> str:
+    """The last identifier of a name or an attribute, else the empty string."""
+    return node.id if isinstance(node, ast.Name) else getattr(node, "attr", "")
+
+
+def _section_owner(node: ast.AST) -> str | None:
+    """The class a ``NAME = ConfigSection(sections, Cls, ...)`` statement names."""
+    if not (isinstance(node, ast.Assign) and isinstance(node.value, ast.Call)):
+        return None
+    call = node.value
+    if _tail(call.func) != "ConfigSection" or len(call.args) < 2:
+        return None
+    return _tail(call.args[1]) or None
+
+
+def _assigned_names(node: ast.AST) -> list[ast.Name]:
+    """The plain names an assignment binds."""
+    targets = node.targets if isinstance(node, ast.Assign) else []
+    return [t for t in targets if isinstance(t, ast.Name)]
 
 
 def _direct_readers(trees: list[ast.Module]) -> Surface:
@@ -342,7 +388,34 @@ def _target(node: ast.AST, found: Surface, qualified: str, binds: Bindings) -> s
             # definition of the read, not a second one.
             return None if qualified in found.free or _is_surface(qualified, found) else name
     if isinstance(node, ast.Attribute | ast.Call):
-        return _surface_reference(node, found, binds)
+        reference = _surface_reference(node, found, binds)
+        if reference is not None:
+            return reference
+    if isinstance(node, ast.Name | ast.Attribute):
+        return _section_reference(node, found, binds)
+    return None
+
+
+def _section_reference(
+    node: ast.Name | ast.Attribute, found: Surface, binds: Bindings
+) -> str | None:
+    """``Cls.load`` for a reference to a ``ConfigSection`` constant of ``Cls``.
+
+    Resolved the way :func:`_candidates` resolves: the spelled name, the
+    attribute, and the last part of the import origin, so ``PS`` after
+    ``from kstrl.policy import POLICY_SECTION as PS`` is the same site.
+    A store (the definition ``POLICY_SECTION = ...`` itself) is not one.
+    """
+    if isinstance(node, ast.Name) and not isinstance(node.ctx, ast.Load):
+        return None
+    names = [node.id if isinstance(node, ast.Name) else node.attr]
+    origin = binds.origin_of(node)
+    if origin is not None:
+        names.append(origin.dotted.split(".")[-1])
+    for name in names:
+        owner = found.sections.get(name)
+        if owner is not None and "load" in found.classes.get(owner, frozenset()):
+            return f"{owner}.load"
     return None
 
 

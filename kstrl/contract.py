@@ -37,6 +37,7 @@ from typing import TYPE_CHECKING
 
 from kstrl import git
 from kstrl.config_numbers import check_numbers
+from kstrl.config_section import ConfigSection
 from kstrl.manifest import Manifest
 from kstrl.rung import Rung
 from kstrl.scrubbed_run import ChildOutputDecodeError, run_scrubbed
@@ -130,6 +131,9 @@ class ContractConfig:
         config.__post_init__()
         config.project_stack = stack_in_force(root_dir)
         return check_numbers(config)
+
+
+CONTRACT_SECTION = ConfigSection(("contract",), ContractConfig)
 
 
 def compute_tiers(manifest: Manifest) -> list[list[str]]:

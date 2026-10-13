@@ -13,6 +13,7 @@ from pathlib import Path, PurePosixPath
 
 from kstrl import git_tree
 from kstrl.config_numbers import check_numbers
+from kstrl.config_section import ConfigSection
 
 # Max directories in module map to avoid bloat
 _MAX_MODULE_MAP_DIRS = 50
@@ -66,6 +67,9 @@ class CodebaseScanConfig:
             config.max_context_tokens = int(section["max_context_tokens"])
         _apply_env_overrides(config)
         return check_numbers(config)
+
+
+CODEBASE_SCAN_SECTION = ConfigSection(("codebase_scan",), CodebaseScanConfig)
 
 
 _ENV_MAP: dict[str, tuple[str, type]] = {

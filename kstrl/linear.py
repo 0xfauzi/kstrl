@@ -50,6 +50,7 @@ from typing import TYPE_CHECKING, Any
 
 from kstrl.config import load_toml_section, parse_bool, resolve_config_file
 from kstrl.config_numbers import check_numbers
+from kstrl.config_section import ConfigSection
 from kstrl.event_catalog import budget_halt_kind
 from kstrl.jsonread import read_json
 
@@ -176,6 +177,9 @@ class LinearConfig:
         # Re-validate after assignment - typos in env or TOML must surface
         config.__post_init__()
         return check_numbers(config)
+
+
+LINEAR_SECTION = ConfigSection(("linear",), LinearConfig)
 
 
 def deterministic_uuid(key: str) -> str:
