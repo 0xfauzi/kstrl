@@ -599,16 +599,3 @@ def get_diff_stat(
     return diffstat_from_numstat(
         get_diff_numstat(base_branch, cwd, timeout, strict=True, resolved=resolved),
     )
-
-
-# House budget for diff content injected into LLM prompts.
-#
-# #266 removed its last enforcing caller: the review and security
-# prompts no longer carry a diff at all, because they read the worktree
-# they already run in. The one paste site that remains, the knowledge
-# distiller, cuts at a literal 50,000 of its own, so nothing in kstrl/
-# reads this value today. The tests read it (``test_review_coverage``
-# and the render guard in ``test_prompt_versions``) as the size a
-# prompt must stay under. #863 removed ``truncate_diff_for_prompt``,
-# which had no caller.
-DEFAULT_PROMPT_DIFF_CHAR_LIMIT = 50_000

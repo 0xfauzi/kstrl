@@ -58,7 +58,7 @@ from kstrl.security import (
 from kstrl.ui.plain import PlainUI
 from kstrl.verify_model import CheckResult, VerificationResult, VerifyConfig
 from tests.conftest import ReviewRepo, git_in, make_review_repo
-from tests.helpers.diffstat import diffstat_payload
+from tests.helpers.diffstat import DEFAULT_PROMPT_DIFF_CHAR_LIMIT, diffstat_payload
 from tests.helpers.recording_agent import RecordingAgent
 from tests.helpers.stack_confirmation import in_process_stack
 
@@ -149,7 +149,7 @@ class TestReviewerReceivesNoDiffOnARealWorktree:
             {"tests/test_big.py": _ONE_HUNK_OVER_THE_OLD_CAP},
         )
         raw = git_diff.get_diff_content(repo.base_branch, repo.path)
-        assert len(raw) > git_diff.DEFAULT_PROMPT_DIFF_CHAR_LIMIT
+        assert len(raw) > DEFAULT_PROMPT_DIFF_CHAR_LIMIT
         assert raw.count("\n@@ ") + raw.startswith("@@ ") == 1
 
         agent = RecordingAgent(repo.review_json())
@@ -165,7 +165,7 @@ class TestReviewerReceivesNoDiffOnARealWorktree:
         assert result.passed is True
         assert result.infrastructure_error is False
         assert agent.calls == 1
-        assert len(agent.prompts[0]) < git_diff.DEFAULT_PROMPT_DIFF_CHAR_LIMIT
+        assert len(agent.prompts[0]) < DEFAULT_PROMPT_DIFF_CHAR_LIMIT
 
     def test_the_agent_is_run_inside_the_worktree(
         self,

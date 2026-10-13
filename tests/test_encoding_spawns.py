@@ -95,7 +95,6 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     "serve_process.py": 8,
     "statedir.py": 3,
     "temp_worktree.py": 3,
-    "timeout.py": 3,
     # 25: `_base_finding`'s `git show` (#414/#425); `git merge-base` moved to `git.py` in #435.
     # 26: #632, `run_scrubbed`'s `subprocess.PIPE` for a stdin it was given.
     # 27: #696, `check_stack_command`'s `subprocess.TimeoutExpired`.
@@ -120,9 +119,6 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
 #: How many TEXT-MODE spawns each module holds. Unchanged by replacing ``text=True,``
 #: with ``encoding="utf-8",``, which moves a site between ``clear`` and ``reported``,
 #: never between text mode and bytes mode.
-#: ``timeout.py`` is NOT a row here: its one text-mode-looking call also
-#: forwards ``**kwargs`` (A1, #409's simplify pass), so it is undecided
-#: rather than counted as text mode at all - see ``EXPECTED_UNDECIDED_SPAWNS``.
 EXPECTED_TEXT_MODE_SPAWNS: dict[str, int] = {
     "agents/codex.py": 1,
     "agents/proc.py": 1,
@@ -270,20 +266,11 @@ EXPECTED_BYTES_MODE_SPAWNS: dict[str, int] = {
 }
 
 
-#: One call this walk cannot fully decide, sorted and deduplicated to one
-#: row each. ``timeout.py subprocess.run`` is ``run_with_timeout``, which
-#: names ``encoding="utf-8"`` explicitly AND forwards ``**kwargs`` to the
-#: same call (A1): the forwarded dict is opaque, so no explicit keyword on
-#: the call proves anything, and a caller could pass ``errors="replace"``
-#: through it. Measured against the walk before A1: this exact shape was
-#: wrongly CLEARED, not bytes mode - the more severe of the two over-matches
-#: A1 closes; see the two probes below that cover both.
-EXPECTED_UNDECIDED_SPAWNS: tuple[str, ...] = (
-    # #632: `_dispatch_fixture` calls a runner through `_RUNNERS`. Checked by
-    # hand: the cli runner spawns through `run_scrubbed`, counted above, and
-    # the file runner spawns nothing (#696 slice 8 deleted the function runner).
-    "timeout.py subprocess.run",
-)
+#: Calls this walk cannot fully decide, one row each. None is left in kstrl/:
+#: the one row, ``timeout.py subprocess.run`` (``run_with_timeout``, #863 A2),
+#: was removed with its function, which only tests called. The control that
+#: the walk still reports an undecided shape is the two probes below.
+EXPECTED_UNDECIDED_SPAWNS: tuple[str, ...] = ()
 
 
 class TestEverySpawnDecodeNamesUtf8:
@@ -313,8 +300,8 @@ class TestEverySpawnDecodeNamesUtf8:
         forbids: it passes when the walk is right AND when the walk has
         been switched off. Its controls are the three planted-shape probes
         below, which run ``scan_spawn_source`` directly and assert it DOES
-        report, plus ``undecided=EXPECTED_UNDECIDED_SPAWNS`` itself, a
-        non-empty claim that a gutted walk also fails.
+        report, and the two A1 probes that assert it reports an undecided
+        shape.
         """
         assert_sites(
             reported_spawns(spawn_scan()).without_line_numbers(),
@@ -407,7 +394,7 @@ class TestEverySpawnDecodeNamesUtf8:
     def test_a_spawn_naming_encoding_and_forwarding_kwargs_is_undecided_not_cleared(
         self,
     ) -> None:
-        """A1, the shape live in ``kstrl/timeout.py``: ``**fwd`` is opaque,
+        """A1, the shape once live in ``kstrl/timeout.py``: ``**fwd`` is opaque,
         so the explicit ``encoding="utf-8"`` beside it proves nothing - the
         dict could carry an ``errors=`` this walk never sees. Measured
         against the pre-fix walk: this shape was wrongly CLEARED.

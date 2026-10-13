@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import os
-import subprocess
 from dataclasses import dataclass, fields
 from pathlib import Path
-from typing import Any
 
 from kstrl.config_numbers import check_numbers
 
@@ -97,27 +95,3 @@ def _apply_env_overrides(config: TimeoutConfig) -> None:
     for field_name, env_var in _ENV_VARS.items():
         if env_var in os.environ:
             setattr(config, field_name, float(os.environ[env_var]))
-
-
-def run_with_timeout(
-    cmd: list[str] | str,
-    timeout: float,
-    cwd: Path | None = None,
-    shell: bool = False,
-    input_text: str | None = None,
-    **kwargs: Any,
-) -> subprocess.CompletedProcess[str]:
-    """Run a subprocess with a timeout.
-
-    On timeout, subprocess.TimeoutExpired is raised.
-    """
-    return subprocess.run(
-        cmd,
-        cwd=cwd,
-        shell=shell,
-        input=input_text,
-        capture_output=True,
-        encoding="utf-8",
-        timeout=timeout,
-        **kwargs,
-    )

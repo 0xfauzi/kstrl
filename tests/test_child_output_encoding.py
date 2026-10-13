@@ -58,7 +58,6 @@ import json, sys
 from pathlib import Path
 import kstrl
 from kstrl import git_diff
-from kstrl.timeout import run_with_timeout
 
 repo = Path(sys.argv[1])
 quoted_path = sys.argv[2]
@@ -67,8 +66,6 @@ answer = {
     "kstrl_file": kstrl.__file__,
     "content_has_path": quoted_path in git_diff.get_diff_content("main", repo),
     "name_status": git_diff.get_diff_name_status("main", repo, strict=True),
-    # codespell:ignore-next-line
-    "printf": run_with_timeout(["printf", "caf\\\\303\\\\251"], timeout=30).stdout,
 }
 sys.stdout.buffer.write(json.dumps(answer, ensure_ascii=True).encode("ascii"))
 """
@@ -138,4 +135,3 @@ def test_a_child_writing_an_accented_byte_decodes_under_a_c_locale(
     )
     assert answer["content_has_path"] is True
     assert answer["name_status"] == [["A", "café.py"]]
-    assert answer["printf"] == "café"
