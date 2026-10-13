@@ -141,7 +141,8 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     "policy.py": 2,
     "prd.py": 2,
     # #700: one more json.dumps, the codex writable_roots override. No parse.
-    "sandbox.py": 4,
+    # 5 since #803: a json.dumps of the settings with the login.
+    "sandbox.py": 5,
     "serve_outcome.py": 3,
     "serve_spend.py": 3,
     "signals.py": 3,

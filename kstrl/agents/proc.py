@@ -31,15 +31,17 @@ lock-taking command, and ``ks status``, read what is left
 
 from __future__ import annotations
 
+import errno
 import os
 import queue
+import shutil
 import signal
 import subprocess
 import sys
 import threading
 import time
 import weakref
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import IO
 
@@ -181,6 +183,10 @@ class DeadlineStreamer:
     the lines this class yields. An adapter whose child frames every agent
     line passes a file instead, so a diagnostic cannot land in, or between
     the bytes of, an agent line (#727).
+
+    ``env`` is added to the environment of kstrl for the child, and wins over
+    it (the login of the operator for a claude session, #803). The PATH of
+    kstrl, not a PATH in ``env``, finds the program.
     """
 
     def __init__(
@@ -194,6 +200,7 @@ class DeadlineStreamer:
         term_grace: float = DEFAULT_TERM_GRACE_SECONDS,
         root_dir: Path | None = None,
         stderr: int | IO[bytes] = subprocess.STDOUT,
+        env: Mapping[str, str] | None = None,
     ) -> None:
         self.timed_out = False
         self._disposed = False
@@ -205,6 +212,14 @@ class DeadlineStreamer:
         argv = [cmd] if isinstance(cmd, str) else list(cmd)
         if shell:
             argv = ["/bin/sh", "-c", *argv]
+        if env and os.sep not in argv[0]:
+            # The PATH of kstrl finds the program, not a PATH in ``env``: the
+            # claude user settings can set PATH, and it chose a different
+            # ``claude`` from the one that kstrl found (measured, #803).
+            program = shutil.which(argv[0])
+            if program is None:
+                raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), argv[0])
+            argv[0] = program
         nonce = new_nonce()
         # Before the spawn, so a record that has nowhere to go stops the
         # agent starting rather than leaving it running unrecorded.
@@ -225,6 +240,7 @@ class DeadlineStreamer:
                 stderr=stderr,
                 encoding="utf-8",
                 cwd=cwd,
+                env={**os.environ, **env} if env else None,
                 start_new_session=True,
                 pass_fds=(lifeline_read, status_write),
             )

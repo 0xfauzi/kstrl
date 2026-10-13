@@ -165,6 +165,8 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     # and the `up` log's `log.open('wb')` (bytes mode, so it is not itself
     # a text read; layer 2 below excludes it for exactly that reason).
     "replay.py": 2,
+    # #803: the login of the claude user settings.
+    "sandbox.py": 1,
     "scaffold_ledger.py": 1,
     "security.py": 1,
     # Five reads, and five reads only. Round 1 of #228 spelled the gh
@@ -310,6 +312,8 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "recheck.py path.read_text(encoding='utf-8')",
     # #700 slice 3: the per-machine replay lock.
     "replay.py path.open('a+', encoding='utf-8')",
+    # #803: the claude user settings, utf-8, with ValueError caught beside OSError.
+    "sandbox.py path.read_text(encoding='utf-8')",
     "scaffold_ledger.py path.read_text(encoding='utf-8')",
     "security.py prd_path.read_text(encoding='utf-8')",
     "serve.py open(lock_path, 'a+', encoding='utf-8')",
