@@ -7,6 +7,7 @@ from dataclasses import dataclass, fields
 from pathlib import Path
 
 from kstrl.config_numbers import check_numbers
+from kstrl.config_section import ConfigSection
 
 # Field name -> environment variable, shared by from_env and load so the
 # two surfaces cannot drift.
@@ -87,6 +88,9 @@ class TimeoutConfig:
                 setattr(config, f.name, float(section[f.name]))
         _apply_env_overrides(config)
         return check_numbers(config)
+
+
+TIMEOUT_SECTION = ConfigSection(("timeout",), TimeoutConfig)
 
 
 def _apply_env_overrides(config: TimeoutConfig) -> None:

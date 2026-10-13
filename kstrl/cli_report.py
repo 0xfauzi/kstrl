@@ -157,11 +157,8 @@ def config_show(
             prd_default=root_dir / "scripts/kstrl/prd.json",
         )
 
-    from kstrl.config_preflight import (
-        SURFACE_REJECTIONS,
-        config_problem_lines,
-        raise_if_defect,
-    )
+    from kstrl.config_preflight import config_problem_lines
+    from kstrl.config_resolve import SURFACE_REJECTIONS, raise_if_defect
 
     try:
         report = build_config_report(root_dir, overlay=_overlay)

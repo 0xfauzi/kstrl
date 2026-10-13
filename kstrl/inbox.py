@@ -45,6 +45,7 @@ from typing import Any
 
 from kstrl.appendio import append_records
 from kstrl.config_numbers import check_numbers
+from kstrl.config_section import ConfigSection
 from kstrl.jsonread import read_json
 from kstrl.observability import NotifyHooks
 from kstrl.statedir import (
@@ -349,6 +350,9 @@ class InboxConfig:
                 notify_action_required=notify_action_required,
             )
         )
+
+
+INBOX_SECTION = ConfigSection(("inbox",), InboxConfig)
 
 
 @dataclass(frozen=True)

@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 from kstrl.autonomy import AutonomyError, AutonomyLevel, AutonomyState, FlagBundle
 from kstrl.config_numbers import check_numbers
+from kstrl.config_section import ConfigSection
 from kstrl.statedir import (
     control_is_external,
     control_untrusted_reason,
@@ -172,6 +173,9 @@ class AutonomyConfig:
             raise AutonomyError(
                 f"invalid max_level {self.max_level}; expected one of {sorted(valid)}"
             )
+
+
+AUTONOMY_SECTION = ConfigSection(("autonomy",), AutonomyConfig)
 
 
 def envelope_ceiling(policy_enabled: bool) -> AutonomyLevel:

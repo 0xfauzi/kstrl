@@ -15,6 +15,7 @@ from typing import Protocol
 # by tests/test_string_keys_reach_every_surface.py.
 from kstrl.config_keys import STRING_KEYS as STRING_KEYS
 from kstrl.config_numbers import check_numbers
+from kstrl.config_section import ConfigSection
 
 # Re-exported from kstrl/config_toml.py, where reading kstrl.toml lives
 # (#366). The ``as`` spelling is what makes this a re-export under mypy
@@ -505,6 +506,9 @@ class KstrlConfig:
         if self.progress_file.is_absolute():
             return self.progress_file
         return root_dir / self.progress_file
+
+
+KSTRL_SECTION = ConfigSection(("agent", "run", "paths", "git", "ui"), KstrlConfig)
 
 
 CONFIG_FILE_NAME = "kstrl.toml"

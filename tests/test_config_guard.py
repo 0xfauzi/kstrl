@@ -33,7 +33,7 @@ from pathlib import Path
 import pytest
 
 from kstrl import runenvelope
-from kstrl.config_preflight import _section_for
+from kstrl.config_preflight import config_sections
 from tests.helpers import astwalk, configwalk
 from tests.helpers.astwalk import KSTRL_PACKAGE, package_sources
 
@@ -238,8 +238,8 @@ EXPECTED_FACTORY_SITES_BY_FILE = {
 FACTORY_MODULES = tuple(path.name for path in sorted(KSTRL_PACKAGE.glob("factory*.py")))
 
 #: The sections ``RunEnvelope.resolve`` names, as the walk sees them.
-#: Pinned by REFERENCE, because the envelope hands each loader to
-#: ``config_preflight.resolve_or_report`` rather than calling it, and a
+#: Pinned by REFERENCE, because the envelope hands each section constant to
+#: ``config_resolve.resolve_or_report`` rather than calling it, and a
 #: guard that looks for calls sees none of them -
 #: ``tests/test_inbox_write_guards.py``'s config-load inventory is one
 #: such guard and says so. Dropping a section from the envelope puts it
@@ -607,18 +607,16 @@ class TestTheRunReadsConfigOnlyBeforeItStarts:
             f"constructor that cannot report a bad one (#192). Found {sorted(named)}"
         )
         # Every one of them must ALSO be a loader `config_sections()`
-        # names, because that is what gives a rejected section its
-        # label. `_section_for` raises LookupError for a loader the
-        # registry does not hold, and LookupError is outside
-        # `SURFACE_REJECTIONS`, so it escapes `resolve_or_report`,
-        # escapes `RunEnvelope.resolve` and reproduces blocker 1 - a
-        # traceback out of run_factory - for the next section added to
-        # the envelope and not to the registry. Latent today, and this
-        # is what keeps it latent.
+        # names, with a toml section, so that the entry check resolves
+        # the same section before the command body and a rejection of
+        # it has a label. Compared with `==`, not `is`: a bound
+        # classmethod is a fresh object on each attribute access.
+        registry = config_sections()
         for target in sorted(EXPECTED_ENVELOPE_SECTIONS):
             class_name, method = target.split(".")
             loader = getattr(getattr(runenvelope, class_name), method)
-            assert _section_for(loader).sections, (
+            entries = [section for section in registry if section.loader == loader]
+            assert len(entries) == 1 and entries[0].sections, (
                 f"{target} resolves to a registry entry naming no toml "
                 "section, so a rejection of it would have no label."
             )

@@ -60,7 +60,8 @@ from kstrl.config_numbers import (
     check_numbers,
     refuse_non_finite,
 )
-from kstrl.config_preflight import ConfigSection, collect_config_problems, config_sections
+from kstrl.config_preflight import collect_config_problems, config_sections
+from kstrl.config_section import ConfigSection
 from tests.helpers.numeric_config import (
     class_name,
     env_number_doors,
@@ -503,7 +504,7 @@ class TestEveryNumericEnvironmentVariable:
 
         doors = env_number_doors(
             ["KSTRL_PROBE_583_S", "KSTRL_PROBE_583_L"],
-            [ConfigSection(("probe",), _Probe.load)],
+            [ConfigSection(("probe",), _Probe)],
             Path(str(tmp_path)),
         )
         assert [(var, f.name) for var, _, f in doors] == [("KSTRL_PROBE_583_S", "seconds")]
@@ -565,7 +566,7 @@ class TestBlindSpots:
                 return cls(seconds=3600 * float(os.environ.get("KSTRL_PROBE_583", "0")))
 
         doors = env_number_doors(
-            ["KSTRL_PROBE_583"], [ConfigSection(("probe",), _Scaled.load)], Path(str(tmp_path))
+            ["KSTRL_PROBE_583"], [ConfigSection(("probe",), _Scaled)], Path(str(tmp_path))
         )
         assert [(var, f.name) for var, _, f in doors] == [("KSTRL_PROBE_583", "seconds")]
 

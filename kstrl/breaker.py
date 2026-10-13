@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from kstrl.config_numbers import check_numbers
+from kstrl.config_section import ConfigSection
 
 # Distinct, greppable error prefix. loop.py builds its halt message with
 # it and the factory routes on the typed LoopResult/ComponentResult flag
@@ -78,6 +79,9 @@ class BreakerConfig:
         if "KSTRL_BREAKER_ITERATIONS" in os.environ:
             no_progress_iterations = int(os.environ["KSTRL_BREAKER_ITERATIONS"])
         return check_numbers(cls(no_progress_iterations=no_progress_iterations))
+
+
+BREAKER_SECTION = ConfigSection(("breaker",), BreakerConfig)
 
 
 def _git(args: list[str], cwd: Path) -> str | None:

@@ -185,7 +185,7 @@ EXPECTED_MUTATIONS: dict[str, Disposition] = {
 #: raises on a TOML date or array.
 #: NOT IN THIS TABLE, and stated rather than left as an absence: the
 #: factory's run envelope resolves ``[inbox]`` by handing
-#: ``InboxConfig.load`` to ``config_preflight.resolve_or_report`` as a
+#: ``InboxConfig.load`` to ``config_resolve.resolve_or_report`` as a
 #: VALUE, so there is no call for this walk to find and no enclosing
 #: ``try`` for it to read. The disposition is made one frame away and it
 #: is not guarded here: ``resolve_or_report`` catches the ``TypeError``

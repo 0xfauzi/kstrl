@@ -14,6 +14,7 @@ from typing import Any, Protocol
 
 from kstrl.appendio import JOURNAL_REPAIR_EVENT, REPAIR_DETAIL, append_records
 from kstrl.config_numbers import check_numbers
+from kstrl.config_section import ConfigSection
 from kstrl.jsonread import read_json
 
 
@@ -536,6 +537,9 @@ class NotifyConfig:
             config.hook_timeout = float(section["hook_timeout"])
         _apply_notify_env(config)
         return check_numbers(config)
+
+
+NOTIFY_SECTION = ConfigSection(("notify",), NotifyConfig)
 
 
 def _apply_notify_env(config: NotifyConfig) -> None:

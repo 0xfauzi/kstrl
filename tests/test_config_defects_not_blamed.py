@@ -1,6 +1,6 @@
 """The config entry points name a broken config and never blame it for a kstrl defect.
 
-``config_preflight.resolve_or_report`` returns a loaded section or the line
+``config_resolve.resolve_or_report`` returns a loaded section or the line
 the entry check would have printed for it. This file pins the line it
 draws, and the census that keeps that line derived from ``kstrl/``:
 
@@ -26,12 +26,9 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.config_preflight import (
-    collect_config_problems,
-    raise_if_defect,
-    resolve_or_report,
-)
-from kstrl.evolution_config import EvolutionConfig
+from kstrl.config_preflight import collect_config_problems
+from kstrl.config_resolve import raise_if_defect, resolve_or_report
+from kstrl.evolution_config import EVOLUTION_SECTION
 from tests.helpers import astwalk
 
 BAD_KNOB = '[evolution]\nlookback_runs = "many"\n'
@@ -60,7 +57,7 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     # One bare raise: `_resolve_factory_run_lock` refuses a handed
     # `RunLock` whose own `release()` has already run (#597 fix round).
     "cli_preflight.py": 1,
-    "config_preflight.py": 2,  # the rule itself, and its docstring
+    "config_resolve.py": 2,  # the rule itself, and its docstring
     # DecisionRegisterError, added by #332.
     "decisions.py": 1,
     # #632: each refuses to import a table whose rows disagree, a bare raise.
@@ -184,7 +181,7 @@ class TestSharedGuard:
             required=frozenset({"evolution"}),
         )
         _config, from_screen = resolve_or_report(
-            EvolutionConfig.load,
+            EVOLUTION_SECTION,
             tmp_path,
             blame_env=True,
         )
@@ -203,44 +200,22 @@ class TestSharedGuard:
         run corrupted. Everything else in the line survives.
         """
         monkeypatch.setenv("KSTRL_EVOLUTION_LOOKBACK_RUNS", "lots")
-        _config, problem = resolve_or_report(EvolutionConfig.load, tmp_path, blame_env=False)
+        _config, problem = resolve_or_report(EVOLUTION_SECTION, tmp_path, blame_env=False)
         assert problem is not None
         assert "[evolution]" in problem
         assert "invalid literal for int() with base 10: 'lots'" in problem
         assert "set by" not in problem
 
-        _again, blamed = resolve_or_report(EvolutionConfig.load, tmp_path, blame_env=True)
+        _again, blamed = resolve_or_report(EVOLUTION_SECTION, tmp_path, blame_env=True)
         assert blamed is not None
         assert "set by KSTRL_EVOLUTION_LOOKBACK_RUNS=lots" in blamed
 
     def test_a_clean_config_returns_the_object_and_no_problem(self, tmp_path: Path) -> None:
         (tmp_path / "kstrl.toml").write_text("[evolution]\nlookback_runs = 3\n", encoding="utf-8")
-        config, problem = resolve_or_report(EvolutionConfig.load, tmp_path, blame_env=True)
+        config, problem = resolve_or_report(EVOLUTION_SECTION, tmp_path, blame_env=True)
         assert problem is None
         assert config is not None
         assert config.lookback_runs == 3
-
-    def test_an_unenrolled_loader_is_a_defect_not_a_message(self, tmp_path: Path) -> None:
-        """The label comes from config_sections(), so a screen cannot
-        invent a section the entry check does not know.
-
-        Raised on the FAILURE path only: the lookup moved into the
-        except branch because `config_sections()` costs a measured
-        6.2 ms on its first call and the happy path never needs a
-        label. An unenrolled loader that resolves cleanly has nothing
-        to mislabel.
-        """
-
-        def _rejecting_unenrolled_loader(_root: Path) -> int:
-            raise ValueError("nope")
-
-        with pytest.raises(LookupError):
-            resolve_or_report(_rejecting_unenrolled_loader, tmp_path, blame_env=False)
-
-        def _clean_unenrolled_loader(_root: Path) -> int:
-            return 1
-
-        assert resolve_or_report(_clean_unenrolled_loader, tmp_path, blame_env=False) == (1, None)
 
     def test_a_bare_runtimeerror_is_re_raised_not_blamed_on_the_operator(
         self,
@@ -262,7 +237,7 @@ class TestSharedGuard:
 
         monkeypatch.setattr(kstrl.evolution_config.EvolutionConfig, "load", _explode)
         with pytest.raises(RuntimeError, match="journal config exploded"):
-            resolve_or_report(EvolutionConfig.load, tmp_path, blame_env=False)
+            resolve_or_report(EVOLUTION_SECTION, tmp_path, blame_env=False)
 
     @pytest.mark.parametrize(
         "defect",
@@ -296,7 +271,7 @@ class TestSharedGuard:
 
         monkeypatch.setattr(kstrl.evolution_config.EvolutionConfig, "load", _explode)
         with pytest.raises(type(defect)):
-            resolve_or_report(EvolutionConfig.load, tmp_path, blame_env=False)
+            resolve_or_report(EVOLUTION_SECTION, tmp_path, blame_env=False)
 
     def test_the_domain_rule_is_derived_from_kstrl_not_listed(self) -> None:
         """No ledger to go stale.
@@ -385,13 +360,13 @@ class TestSharedGuard:
     def test_a_domain_runtimeerror_is_still_reported(self, tmp_path: Path) -> None:
         """The other side of the same line: ServeError and friends are
         operator input and must still reach the banner."""
-        from kstrl.serve_config import ServeConfig
+        from kstrl.serve_config import SERVE_SECTION
 
         (tmp_path / "kstrl.toml").write_text(
             "[serve]\nmax_consecutive_poison = 0\n",
             encoding="utf-8",
         )
-        _config, problem = resolve_or_report(ServeConfig.load, tmp_path, blame_env=False)
+        _config, problem = resolve_or_report(SERVE_SECTION, tmp_path, blame_env=False)
         assert problem is not None
         assert "[serve]" in problem
 
@@ -408,7 +383,7 @@ class TestSharedGuard:
         toml.chmod(0o000)
         try:
             _config, problem = resolve_or_report(
-                EvolutionConfig.load,
+                EVOLUTION_SECTION,
                 tmp_path,
                 blame_env=False,
             )

@@ -54,6 +54,7 @@ from pathlib import Path
 from typing import Any
 
 from kstrl.config_numbers import check_numbers
+from kstrl.config_section import ConfigSection
 from kstrl.config_toml import ConfigError, load_toml_document, section_table
 from kstrl.inbox import Inbox, InboxConfig, InboxItem, ItemKind, ItemStatus
 from kstrl.scrubbed_run import SECRET_NAME_FRAGMENTS
@@ -500,7 +501,7 @@ def _refusal(root_dir: Path, stack: Stack) -> tuple[str, str]:
     inbox log raises (a TOML date cast to int is a TypeError, a control
     directory under the repository a ControlStateError) means the
     confirmation cannot be checked, which is a refusal, never a traceback
-    and never an empty read. Not ``config_preflight.SURFACE_REJECTIONS``:
+    and never an empty read. Not ``config_resolve.SURFACE_REJECTIONS``:
     importing that module from here makes every importer of kstrl.stack
     reach the queue (tests/test_state_dir_scope.py).
     """
@@ -787,3 +788,6 @@ class StackConfig:
     def load(cls, root_dir: Path | None = None) -> StackConfig:
         load_stack(Path.cwd() if root_dir is None else root_dir)
         return check_numbers(cls())
+
+
+STACK_SECTION = ConfigSection(("stack",), StackConfig)

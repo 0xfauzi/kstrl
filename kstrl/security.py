@@ -32,6 +32,7 @@ from kstrl.agent_output import (
 )
 from kstrl.config import validate_agent_type
 from kstrl.config_numbers import check_numbers
+from kstrl.config_section import ConfigSection
 from kstrl.delimiters import generate_data_delimiter
 from kstrl.findings import Finding, dump_raw_debug, tag_finding_with_model
 from kstrl.prd import prd_text_for_prompt
@@ -364,6 +365,9 @@ class SecurityConfig:
         # Re-validate after assignment - typos in env or TOML must surface
         config.__post_init__()
         return check_numbers(config)
+
+
+SECURITY_SECTION = ConfigSection(("security",), SecurityConfig)
 
 
 SECURITY_PROMPT_VERSION = "2.1.0"
