@@ -109,10 +109,19 @@ source = ["kstrl"]
 relative_files = true
 # The TUI tests are disabled (#777), because the owner will delete the TUI.
 # Thus kstrl/tui/ is not measured, and the ratchet measures the other code.
-omit = ["kstrl/tui/*"]
+omit = ["*/kstrl/tui/*"]
+# pytest-cov 7 no longer measures a subprocess by itself. This setting makes
+# coverage start in each child process that the tests start, such as the write
+# guard that claude runs as a hook (#803). Only a test run sets the variable
+# that the child reads, so the production command is unchanged.
+patch = ["subprocess"]
 
 [tool.coverage.report]
 precision = 2
+# A relative pattern of [run] omit is made absolute from the current directory,
+# and a child process starts in another directory. The report omits kstrl/tui
+# too, so no child data can bring those files back.
+omit = ["kstrl/tui/*"]
 
 [tool.ruff]
 line-length = 100
