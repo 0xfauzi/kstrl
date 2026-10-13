@@ -119,11 +119,9 @@ def _start_lock_holder(root: Path) -> subprocess.Popen[str]:
 def _run_serve_once(root: Path) -> subprocess.CompletedProcess[str]:
     """The real CLI, as its own process, against `root`.
 
-    No HOME/XDG_STATE_HOME/KSTRL_NO_TUI env override here: the autouse
+    No HOME/XDG_STATE_HOME env override here: the autouse
     `isolate_kstrl_state` fixture already points XDG_STATE_HOME at a
-    sibling of `tmp_path`, HOME is read only when it is unset, and
-    KSTRL_NO_TUI is gated on a tty a subprocess spawned under pytest
-    does not have.
+    sibling of `tmp_path`, and HOME is read only when it is unset.
     """
     return procs.run_serve_subprocess(root, "--once", fuse=_CHILD_TIMEOUT_SECONDS)
 

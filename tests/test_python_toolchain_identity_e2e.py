@@ -213,7 +213,6 @@ def _env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("NO_COLOR", "1")
     monkeypatch.setenv("COLUMNS", "80")
     monkeypatch.setenv("PYTHONIOENCODING", "utf-8")
-    monkeypatch.setenv("KSTRL_NO_TUI", "1")
     monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
     monkeypatch.setenv("PYTHONDONTWRITEBYTECODE", "1")
     return log
@@ -294,7 +293,6 @@ def _decompose_before_init(root: Path, tmp_path: Path) -> dict[str, Any]:
         "--ui",
         "plain",
         "--no-color",
-        "--no-tui",
     )
     return {
         "exit": rc,
@@ -377,7 +375,6 @@ def _factory(root: Path, tmp_path: Path, log: Path) -> dict[str, Any]:
         "0",
         "--ui",
         "plain",
-        "--no-tui",
         "-y",
     )
     if not dump.is_file():

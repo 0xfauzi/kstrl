@@ -119,3 +119,19 @@ class TestTheRetryCommandPrintsWhatItLeavesOut:
             r"\s*Manifest:",
             out,
         ), out
+
+
+def test_the_branch_probe_asks_for_a_branch_not_any_ref(tmp_path: Path) -> None:
+    """Plant P4: without ``refs/heads/`` a TAG named like the failed
+    branch answers 0, and prepare_retry would run ``git branch -D``
+    on a branch that does not exist."""
+    from kstrl.retry_plan import failed_branch_probe
+    from tests.helpers.gitrepo import git_in, set_identity
+
+    git_in(tmp_path, "init", "-q", "-b", "main")
+    set_identity(tmp_path)
+    git_in(tmp_path, "commit", "-q", "--allow-empty", "-m", "base")
+    git_in(tmp_path, "tag", "kstrl/api")
+    assert failed_branch_probe(tmp_path, "kstrl/api") != 0
+    git_in(tmp_path, "branch", "kstrl/web")
+    assert failed_branch_probe(tmp_path, "kstrl/web") == 0

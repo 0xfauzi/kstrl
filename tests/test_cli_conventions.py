@@ -72,10 +72,6 @@ UI_CHOICES = ("auto", "rich", "plain", "gum")
 
 #: Leaf commands that take neither `--ui` nor `--no-color`, and why.
 UI_OPTION_EXEMPT: dict[tuple[str, ...], str] = {
-    ("dash",): (
-        "a full-screen Textual app: there is no line renderer to choose, "
-        "and Textual honours NO_COLOR itself"
-    ),
     ("doctor",): (
         "its report is unstyled text on stdout, so there is no colour to "
         "turn off, and --json is its machine form"
@@ -93,7 +89,6 @@ EMPTY_REPO_EXITS: tuple[tuple[tuple[str, ...], tuple[str, ...], int, str], ...] 
     (("check",), (), 2, "git cannot produce a diff in a repo with no commits"),
     (("ci", "poll"), (), 2, "no manifest: nothing has run here"),
     (("config", "show"), (), 0, "every value resolves to its default"),
-    (("dash",), (), 2, "needs a terminal"),
     (("decompose",), (), 2, "usage: --spec is required"),
     (("doctor",), (), 1, "not-ready is a finding"),
     (("evolve",), (), 0, "no failure patterns yet"),
@@ -265,7 +260,7 @@ def _child_env() -> dict[str, str]:
     child with the probe on could spawn a real agent CLI and bill it."""
     env = {k: v for k, v in os.environ.items() if not k.startswith(("KSTRL_", "FACTORY_"))}
     env.pop("NO_COLOR", None)
-    env.update(KSTRL_NO_TUI="1", KSTRL_AGENT_PROBE="0")
+    env.update(KSTRL_AGENT_PROBE="0")
     return env
 
 
@@ -378,16 +373,14 @@ FINDING_EXIT_SITES: dict[tuple[str, str], int] = {
     ("loop.py", "_max_iterations_result"): 1,  # all iterations ran and none completed
     ("loop.py", "_wall_clock_verdict"): 1,  # an iteration ran and the wall clock ended the loop
     ("plan_gate.py", "_park_plan"): 1,  # an L1 plan parked for approval, nothing run (#602)
-    ("tui/bridge.py", "CommandHandle"): 2,  # the command raised: the exit a traceback gets
 }
 
 #: Callee names the census does not follow, and why. Following one would
 #: census every function in kstrl/ that shares the name.
 NOT_FOLLOWED: dict[str, str] = {
     "run": (
-        "Textual's App.run returns what the app's own exit() was given, and "
-        "those calls are in the census. A kstrl function named `run` that "
-        "returns an exit code is the disclosed blind spot below."
+        "an agent, a process and a loop each have a `run`. A kstrl function "
+        "named `run` that returns an exit code is the disclosed blind spot below."
     ),
 }
 
@@ -401,18 +394,13 @@ EXIT_CODE_FUNCTIONS: frozenset[str] = frozenset(
         "_load_and_render",
         "_park_plan",
         "_plan_gated",
-        "_plain_fallback",
-        "_target",
         "_understand_core",
         "exit_code",
         "exit_code_for",
         "main",
         "report_to_ladder",
         "resolve_exit_code",
-        "run_embedded",
-        "run_factory_embedded",
         "run_feature",
-        "run_home_shell",
         "run_init",
         "run_plan_gate",
         "wait",
@@ -423,11 +411,6 @@ EXIT_CODE_FUNCTIONS: frozenset[str] = frozenset(
 #: by site, with how many. A new one fails here, so a value the walk
 #: cannot read is a row somebody explains rather than a gap.
 UNRESOLVED_EXIT_VALUES: dict[tuple[str, str], int] = {
-    # The command thread's own return, read back out of result_box: the
-    # container blind spot below.
-    ("tui/bridge.py", "CommandHandle"): 1,
-    # A message carrying the init subprocess's code, whatever it was.
-    ("tui/screens/init_wizard.py", "WizardDone"): 1,
     # #602: the preflights' bound decision register, returned when the run goes on.
     # It never becomes an exit code: the caller exits only on an int.
     ("factory_acceptance.py", "_plan_gated"): 1,
@@ -477,8 +460,7 @@ def _assigned(node: ast.AST) -> tuple[list[ast.expr], ast.expr | None]:
 
 
 #: Calls whose first argument, or click's ``code=`` keyword, is a process
-#: exit code: ``sys.exit``, ``ctx.exit``, Textual's ``App.exit``,
-#: ``os._exit`` and ``SystemExit``.
+#: exit code: ``sys.exit``, ``ctx.exit``, ``os._exit`` and ``SystemExit``.
 EXIT_CALLS = frozenset({"exit", "_exit", "SystemExit"})
 
 

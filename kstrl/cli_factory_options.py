@@ -273,13 +273,6 @@ _FACTORY_OPTIONS: tuple[Callable[[Callable[..., Any]], Callable[..., Any]], ...]
         is_flag=True,
         help="Disable colors",
     ),
-    click.option(
-        "--tui/--no-tui",
-        "tui",
-        default=None,
-        help="Embedded dashboard (default: auto - on when stdin/stdout are "
-        "TTYs and --ui is not plain; KSTRL_NO_TUI=1 forces off)",
-    ),
 )
 
 

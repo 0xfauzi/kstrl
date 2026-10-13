@@ -111,7 +111,7 @@ REJECTIONS = (ValueError, TypeError, RuntimeError)
 #: of it, and a ``chmod`` between two refreshes raises ``OSError``
 #: straight out of ``load_toml_section``. Second, a reader may open a
 #: file that is not kstrl.toml at all: the stack's inbox is one, read by
-#: ``init_wizard._detected_text`` through ``stack.stack_in_force``.
+#: ``stack.stack_in_force``.
 SURFACE_REJECTIONS = (*REJECTIONS, OSError)
 
 
@@ -138,7 +138,7 @@ def raise_if_defect(exc: BaseException) -> None:
     every one of them is a condition we chose to raise, while
     ``builtins`` and any dependency's ``RuntimeError`` is not something
     we modelled and so not something we can honestly blame a file for.
-    ``tests/test_tui_config_guard.py`` pins both halves.
+    ``tests/test_config_defects_not_blamed.py`` pins both halves.
 
     ``RecursionError`` is the one that needs an argument rather than a
     rule, and the argument is layering rather than inspection (#323). A
@@ -448,12 +448,10 @@ def config_problem_lines(
     parse error and nothing else, because no section could be resolved
     behind it.
 
-    Split out because ``ks config show`` and the TUI config screen are
-    the two surfaces whose whole job is explaining a broken config, and
-    they were carrying a copy of this each. The copies had already
-    drifted in their handling of the empty case; a third surface would
-    have made it three. Callers supply their own ``warn`` because one
-    prints to stderr and the other must stay silent on a screen.
+    Split out because two surfaces explained a broken config, and each
+    carried a copy of this. The copies had already drifted in their
+    handling of the empty case. ``ks config show`` and ``ks doctor``
+    call it now. Each caller supplies its own ``warn``.
     """
     try:
         return collect_config_problems(root_dir, warn=warn)
@@ -470,13 +468,12 @@ def load_or_report(
 ) -> tuple[T | None, str | None]:
     """One section, resolved, or the line this module would have printed.
 
-    Exactly one of the pair is ever None. For a long-lived surface that
-    loads a section AFTER command entry - a TUI screen the home shell
-    opens - and so has no seam in front of it to fail on its behalf.
-    The message is produced by the same ``_detail`` the entry check
-    uses, so the same broken file reads the same way on both surfaces,
-    which is what #289 was about; ``tests/test_tui_config_guard.py``
-    pins the two strings equal rather than trusting that.
+    Exactly one of the pair is ever None. For a surface that loads a
+    section AFTER command entry and so has no seam in front of it to fail
+    on its behalf. The message is produced by the same ``_detail`` the
+    entry check uses, so the same broken file reads the same way on both
+    surfaces; ``tests/test_config_defects_not_blamed.py`` pins the two
+    strings equal rather than trusting that.
 
     ``blame_env`` is required rather than defaulted because getting it
     wrong is not a cosmetic mistake. Naming the offending variable means
@@ -485,7 +482,7 @@ def load_or_report(
     of ours is running; on a screen a launched run may be on another
     thread, spawning subprocesses that inherit the environment. Pass
     False there and the line keeps everything except the variable's
-    name. ``kstrl.tui.config_guard`` is where that decision is made.
+    name. ``RunEnvelope`` passes False.
 
     Wider than :data:`REJECTIONS` by ``OSError``: see
     :data:`SURFACE_REJECTIONS`.
@@ -523,10 +520,7 @@ def resolve_or_report(
         raise_if_defect(exc)
         # Looked up HERE, not before the try: `_section_for` calls
         # `config_sections()`, whose 22 deferred imports cost a
-        # measured 6.2 ms on their first call in a process that has
-        # imported kstrl.tui.app, and that first call otherwise
-        # lands on the Textual event loop inside on_mount even when
-        # kstrl.toml is perfectly valid (4.7 us warm). Only the
+        # measured 6.2 ms on their first call (4.7 us warm). Only the
         # failure path needs a label, so only it pays. An
         # unenrolled loader still raises LookupError, on the path
         # that would have had to name it.

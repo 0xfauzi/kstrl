@@ -198,9 +198,6 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # ENGINEER, both into `tests.spine_utils.init_kstrl_repo`'s repository,
     # which went through `tests.helpers.gitrepo.set_identity`.
     "tests/test_layer0_not_measured_e2e.py": 2,
-    # #696 slice 7: the home-shell red-base test commits its [stack] into a
-    # repository `_git_repo_on` put through set_identity.
-    "tests/test_launch_session.py": 2,
     # #544: three `git commit` sites (`_seed`, `_commit_all` and the
     # deletion test), every one into a repository `_seed` put through
     # `tests.helpers.gitrepo.set_identity`.
@@ -268,6 +265,10 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_merge_has_one_recorder.py": 1,
     "tests/test_resume_reclaims_own_branch.py": 5,
     "tests/test_retry_carries_flags.py": 1,
+    # PR #552 verifier: one base commit, into the repository the branch-probe
+    # test builds with `git_in` and `set_identity` before committing (moved from
+    # test_tui_433_verify552.py with the TUI, #863 A1).
+    "tests/test_retry_plan.py": 1,
     # #498: one base commit, into the repository `_repo` builds through
     # `tests.helpers.gitrepo.git_in` / `set_identity`.
     "tests/test_review_agent_fallback.py": 2,
@@ -366,9 +367,6 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # commits its throwaway repo through `tests.helpers.gitrepo.git_in` /
     # `set_identity` before running the real `ks run` CLI against it.
     "tests/test_timeout_enforcement.py": 4,
-    # PR #552 verifier: one base commit, into the repository the branch-probe
-    # test builds with `git_in` and `set_identity` before committing.
-    "tests/test_tui_433_verify552.py": 1,
     # #622: one base commit, into the repository this file's own `_repo`
     # builds, which calls `tests.helpers.gitrepo.set_identity` right after
     # `git init`.

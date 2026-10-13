@@ -27,7 +27,6 @@ from click.testing import CliRunner, Result
 
 from kstrl import init_cmd, scaffold_ledger
 from kstrl.cli import cli
-from kstrl.init_wizard import plan_scaffold
 from kstrl.scaffold_ledger import ScaffoldedTemplate, classify_scaffolded_path, staleness_notice
 from kstrl.scaffold_templates import DEFAULT_PROMPT, DEFAULT_PROMPT_VERSION
 from tests.helpers import gitrepo
@@ -401,7 +400,6 @@ class TestFeatureChecksThePromptItActuallyRuns:
                 "scripts/kstrl/feature/demo/prd.json",
                 "--agent-cmd",
                 "true",
-                "--no-tui",
                 "--ui",
                 "plain",
                 "--no-color",
@@ -481,33 +479,6 @@ class TestFeatureChecksThePromptItActuallyRuns:
                 run=offline_run(tmp_path, "feature"),
             )
         assert params.prompt_file in seen
-
-
-class TestTheWizardPreviewDoesNotSayEverythingIsFine:
-    """`ks init`'s TUI preview reports an existing prompt.md as
-    "exists - kept". That action is honest (the wizard's own run_init
-    call does leave it alone) but on its own it reads as "your scaffold
-    is fine", which is the belief #286 exists to correct, on the surface
-    most likely to be read that way.
-    """
-
-    def test_a_stale_prompt_carries_its_shipped_label(
-        self, tmp_path: Path, synthetic_ledger: ScaffoldedTemplate
-    ) -> None:
-        _prompt_at(tmp_path, OLD_BODY)
-        entry = next(e for e in plan_scaffold(tmp_path) if e.path.name == "prompt.md")
-        assert entry.action == "keep"
-        assert entry.stale_label == "9.0.0"
-
-    def test_nothing_else_carries_a_label(self, tmp_path: Path) -> None:
-        """Same rule as the run-time warning: no claim we cannot prove.
-        A current scaffold, an edited prompt and an absent one all say
-        nothing, and the classifier's own answers for those three are
-        pinned in TestClassification."""
-        run_init_capturing(tmp_path)
-        _prompt_at(tmp_path, DEFAULT_PROMPT + "\nmine\n")
-        for entry in plan_scaffold(tmp_path):
-            assert entry.stale_label is None
 
 
 class TestOperatorActuallySeesIt:

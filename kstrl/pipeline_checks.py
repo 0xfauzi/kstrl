@@ -117,8 +117,8 @@ class MechanicalChecks(InboxDesk, AttemptRecorder):
         One file per failed test / typecheck / lint gate, including one
         that timed out or printed bytes that are not utf-8 (#527), at
         ``.kstrl/debug/<run>/<component>/attempt-<n>/<check>.log``: the
-        directory the failure summary, ``ks status`` and the TUI retry
-        screen already name as the component's raw outputs, split by
+        directory the failure summary and ``ks status`` already name
+        as the component's raw outputs, split by
         attempt so a retry does not overwrite the evidence of the attempt
         before it. A write that fails is said out loud and left out of
         the returned paths, so the event never names a file that is not

@@ -85,7 +85,6 @@ def _decompose(root: Path, agent: Path) -> Manifest:
         str(agent),
         "--ui",
         "plain",
-        "--no-tui",
     )
     assert run.returncode == 0, run.stdout
     return Manifest.load(root / MANIFEST)
@@ -113,7 +112,6 @@ def _factory(root: Path, agent: Path, manifest: Path) -> tuple[int, str]:
         "0",
         "--ui",
         "plain",
-        "--no-tui",
         "-y",
     )
     return run.returncode, run.stdout
@@ -213,15 +211,12 @@ EXPECTED_PLAN_PRD_PATH_SPELLINGS = {
 
 #: Every expression in ``kstrl/`` folding to the directory name ``plan``:
 #: ``STATE_SUBDIRS``, ``STATE_NOT_CARVED``, the join in ``plan_prd_path``,
-#: and three TUI titles that are not paths.
+#: and the plan gate's event kind, which is not a path.
 EXPECTED_PLAN_LITERALS = {
     # #602: PLAN_KIND, the plan gate's checkpoint event kind. Not a path.
     "plan_gate.py::<module>": 1,
     "statedir.py::<module>": 2,
     "statedir.py::plan_prd_path": 1,
-    "tui/screens/decompose.py::plan_title": 1,
-    "tui/screens/decompose.py::DecomposeScreen.compose": 1,
-    "tui/screens/init_wizard.py::InitWizardScreen.compose": 1,
 }
 
 

@@ -129,7 +129,6 @@ EXPECTED_LIMIT_PARAMETERS = {
 NOT_LIMITS: dict[tuple[str, str], str] = {
     ("config show", "max_iterations"): "shown, not run: the command spends nothing",
     ("config show", "sleep"): "shown, not run: the command spends nothing",
-    ("dash", "poll"): "a screen refresh interval; the command spends nothing",
     ("inbox snooze", "hours"): "an inbox item's snooze; the command spends nothing",
     ("queue add", "priority"): "an ordering, where a negative value means something",
     ("queue priority", "priority"): "an ordering, where a negative value means something",
@@ -583,8 +582,8 @@ class TestBlindSpots:
 
 
 class TestTheConfigReportSurvivesARefusedSection:
-    """The TUI home and config screens call ``build_config_report`` with no
-    entry check in front of it. A section refused for a ``nan`` must read as
+    """``ks config show`` calls ``build_config_report`` on a section the
+    entry check can refuse. A section refused for a ``nan`` must read as
     unresolved, like a section refused for any other reason, and must not
     take the whole report down (#571)."""
 

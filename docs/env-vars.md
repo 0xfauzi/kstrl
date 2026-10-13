@@ -52,7 +52,6 @@ to run and tell you which section, key and value to fix.
 | `KSTRL_AGENT_BUDGET_USD` | float | unset | In-loop USD budget ceiling; enforced per turn by the `claude-sdk` adapter only (R7.6). Empty or `0` means no ceiling; a value that is not a number, or is negative or not finite, is refused before the command starts (#583) |
 | `KSTRL_AGENT_PROBE` | bool | true | Liveness-probe the agent CLI before any spend (#262): one trivial turn per model family per process, in a scratch directory so no project config participates. `0` skips it and restores the pre-#262 behaviour of trusting PATH. **Env only** - deliberately no `kstrl.toml` key, because the cross-family probe runs where no config object is in scope. Measured per attempt: claude 4.2s / $0.025 with `--model haiku`, 4.1s / $0.149 for the fallback attempt that drops `--model` (only run when the first fails); codex 6.1s and no cost reported. `ks understand` and `ks feature` probe one family; `ks run`, `ks factory` and `ks retry` probe up to two, and skip the second entirely when no adversarial phase can dispatch. `ks serve` runs a fresh `ks factory` per queue item, so set this to `0` there if the per-item toll matters |
 | `KSTRL_UI` | str | auto | `auto\|rich\|plain` |
-| `KSTRL_NO_TUI` | bool | unset | `1` disables the embedded factory dashboard (plain output) |
 | `NO_COLOR` | bool flag | false | Disables colors |
 | `KSTRL_ASCII` | bool | false | ASCII-only UI |
 | `GUM_FORCE` | bool (`1`) | unset | Legacy name: `1` makes `--ui auto` use the rich renderer even when stderr is not a terminal |

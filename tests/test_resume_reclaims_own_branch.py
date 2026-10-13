@@ -19,7 +19,7 @@ The interrupt is SIGKILL, not SIGINT. The issue's operator pressed Ctrl-C,
 and what the resume reads is the state that left: the component RUNNING
 and its worktree registered. Measured on this tree (lane 465
 measurements.md), one SIGINT to the run's process group did not stop a
-`ks factory --no-tui --ui plain` run within 120 s and left exactly that
+`ks factory --ui plain` run within 120 s and left exactly that
 state after the SIGKILL that followed, so a SIGINT test would end in a
 SIGKILL anyway and wait two minutes to get there. SIGKILL reaches the
 same state without the wait. Real CLI in a subprocess, real git, a shell
@@ -51,7 +51,6 @@ FLAGS = (
     "--ui",
     "plain",
     "--no-color",
-    "--no-tui",
     "--max-parallel",
     "1",
     "--max-retries",
@@ -193,7 +192,6 @@ def _env(agent: str) -> dict[str, str]:
     }
     env["AGENT_CMD"] = agent
     env["KSTRL_KNOWLEDGE_ENABLED"] = "0"
-    env["KSTRL_NO_TUI"] = "1"
     return env
 
 

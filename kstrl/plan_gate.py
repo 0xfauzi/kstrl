@@ -48,7 +48,7 @@ if TYPE_CHECKING:
 PLAN_GATE_KEY = "plan-gate:"
 
 #: The options the plan checkpoint offers. The default is the last one:
-#: an accidental Enter or a detached TUI costs a wait, never an
+#: an accidental Enter costs a wait, never an
 #: unapproved run.
 PLAN_OPTIONS = ("Approve the plan", "Reject the plan", "Decide later in the inbox")
 

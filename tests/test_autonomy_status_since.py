@@ -144,7 +144,7 @@ def test_a_record_load_discarded_prints_a_dash(repo: Path, ticking_clock: None) 
 
 def test_the_real_cli_on_a_fresh_repo_prints_a_dash_and_the_note(repo: Path) -> None:
     env = {k: v for k, v in os.environ.items() if not k.startswith(("KSTRL_", "FACTORY_"))}
-    env.update(KSTRL_NO_TUI="1", KSTRL_AGENT_PROBE="0")
+    env.update(KSTRL_AGENT_PROBE="0")
     proc = subprocess.run(
         [sys.executable, "-m", "kstrl", "autonomy", "status", "--ui", "plain"],
         cwd=repo,
@@ -163,7 +163,7 @@ def test_the_real_cli_on_a_fresh_repo_prints_a_dash_and_the_note(repo: Path) -> 
 
 def test_the_note_is_the_line_after_since_on_the_same_stream(repo: Path) -> None:
     env = {k: v for k, v in os.environ.items() if not k.startswith(("KSTRL_", "FACTORY_"))}
-    env.update(KSTRL_NO_TUI="1", KSTRL_AGENT_PROBE="0")
+    env.update(KSTRL_AGENT_PROBE="0")
     proc = subprocess.run(
         [sys.executable, "-m", "kstrl", "autonomy", "status", "--ui", "plain"],
         cwd=repo,

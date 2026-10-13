@@ -607,7 +607,7 @@ def _run_steering(
 
     Returns None, so steering failures reach the observer and NOT
     `CycleResult.sync_errors`. Deliberate: `sync_errors` is the remote
-    INTAKE's field, read by the CLI and the TUI as "what the issue
+    INTAKE's field, read by the CLI as "what the issue
     adapter could not admit", and folding a comment-poll failure into it
     would make a steering outage read as an intake outage. Adding a
     `CycleResult` field instead would mean editing `serve_cycle`'s body,

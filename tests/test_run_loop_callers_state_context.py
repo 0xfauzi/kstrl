@@ -95,9 +95,7 @@ EXPECTED_CONTEXT_SOURCES: dict[str, tuple[str | None, ...]] = {
 #: no identifier (``TABLE[key](...)``, ``helper(...)(...)``), which
 #: ``calls_to`` reports as a candidate for every target; none of them is
 #: a ``run_loop`` call.
-EXPECTED_UNDECIDED: dict[str, int] = {
-    "tui/app.py": 2,
-}
+EXPECTED_UNDECIDED: dict[str, int] = {}
 
 #: The call sites that pass no prefix, and why. Exactly the ``None`` rows.
 NO_CONTEXT_REASONS: dict[str, str] = {

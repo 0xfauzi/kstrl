@@ -139,7 +139,7 @@ def _child_env(env: dict[str, str] | None) -> dict[str, str]:
         for k, v in os.environ.items()
         if not k.startswith(("KSTRL_", "FACTORY_")) and k not in ("AGENT_CMD", "MODEL")
     }
-    child_env.update(KSTRL_AGENT_PROBE="0", KSTRL_NO_TUI="1", KSTRL_KNOWLEDGE_ENABLED="0")
+    child_env.update(KSTRL_AGENT_PROBE="0", KSTRL_KNOWLEDGE_ENABLED="0")
     child_env.update(env or {})
     return child_env
 
@@ -249,7 +249,7 @@ def _factory(
         *(PY, "-m", "kstrl", "factory"),
         *("--manifest", str(root / "scripts" / "kstrl" / "manifest.json")),
         *("--root", str(root), "--agent-cmd", str(stub)),
-        *("--no-tui", "--yes", "--ui", "plain", "--no-color", "--no-prs"),
+        *("--yes", "--ui", "plain", "--no-color", "--no-prs"),
         *("--max-retries", "0", "--max-parallel", "1"),
         *("--review-mode", "skip", "--security-mode", "skip"),
         *("--contract-check", "skip"),

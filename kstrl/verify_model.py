@@ -197,7 +197,7 @@ class VerificationResult:
         ``max_detail_lines`` caps the details PER CHECK and appends a
         line saying how many were dropped, so a truncation is never
         silent. `ks feature` needs that too, and for a different reason:
-        under the embedded TUI every one of these lines becomes a
+        every one of these lines becomes a
         ``Log`` event on the run bus, and a failing check's details are
         the excerpt :func:`kstrl.failure_excerpt.failure_excerpt` keeps,
         up to 80 lines. A run of failing checks is hundreds of events

@@ -471,9 +471,8 @@ def read_progress_events(path: Path) -> list[dict[str, Any]]:
     same reason: kstrl writes this file as utf-8 through ``atomicio``,
     so a reader that leaves the codec to the locale decodes it wrongly
     under ``LC_ALL=C``, and ``UnicodeDecodeError`` is a ``ValueError``,
-    which walks straight out of a fail-closed ``except OSError``. Two
-    callers meet that: ``ks status``, and ``EvolutionJournal`` on the
-    TUI evolve screen, where it reached the Textual event loop (#289).
+    which walks straight out of a fail-closed ``except OSError``. Callers meet that
+    in ``ks status`` and in ``EvolutionJournal`` (#289).
     """
     if not path.exists():
         return []
@@ -709,7 +708,7 @@ class NotifyHooks:
         self._project = project
         self._warn = warn or (lambda _msg: None)
         self._fired: set[str] = set()
-        # PR F: when a TUI owns the terminal, hook output must not
+        # PR F: with capture_output set, hook output does not
         # reach the inherited fds (measured alt-screen corruption in
         # the Stage 0 spike). Default False keeps terminal bells
         # working for plain-mode users.

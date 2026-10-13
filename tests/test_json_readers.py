@@ -123,7 +123,6 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     # json.JSONDecodeError it catches from read_json. No parse.
     "inbox.py": 4,
     "init_cmd.py": 3,
-    "init_wizard.py": 2,
     "intake_gh.py": 2,
     "intake_github.py": 5,
     "intake_issue.py": 3,
@@ -177,10 +176,6 @@ EXPECTED_UNDECIDED_CALLS: tuple[str, ...] = (
     "intake_github.py ProcessedLedger(root_dir).load",
     "intake_steering.py ProcessedLedger(root_dir).load",
     "serve_github.py OpenPrCountStreak.load",
-    "tui/app.py initial_screens_for_kind(kind, observe_only=False)",
-    "tui/app.py initial_screens_for_kind(kind, observe_only=True)",
-    "tui/screens/evolve.py self.query_one(ConfigProblemBanner).load",
-    "tui/screens/inbox.py self.query_one(ConfigProblemBanner).load",
 )
 
 

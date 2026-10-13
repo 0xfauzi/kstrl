@@ -9,8 +9,7 @@ the pre-extraction command; #288 has since added calls to
 
 The review gate goes through the interaction seam: the terminal wires
 UiInteractionChannel (unchanged semantics incl. the non-TTY
-"Interactive review required" refusal); the embedded TUI (C3) passes
-its queue channel so the gate opens as a modal.
+"Interactive review required" refusal).
 
 #288: once before the implement loop and after every engineer loop that
 actually called the agent, the flow calls

@@ -36,11 +36,11 @@ if TYPE_CHECKING:
     from kstrl.factory_result import ComponentResult
 
 # PR A: the E6 checkpoint shows a real diff excerpt, not just the
-# review summary string. Bounded so a huge diff cannot flood the modal.
+# review summary string. Bounded so a huge diff cannot flood the prompt.
 CHECKPOINT_DIFF_CHAR_LIMIT = 20_000
 
-#: The merge-gate park's inbox item text, which ``ks inbox show`` and the TUI
-#: inbox print as it is; what the shell commands do is the shell's (#433 H7, K1).
+#: The merge-gate park's inbox item text, which ``ks inbox show`` prints as it
+#: is. What the shell commands do is the shell's (#433 H7, K1).
 PARK_DETAIL = (
     "Merge approval is required and no prompt was available to ask for it, so "
     "nothing was pushed and no PR was opened. The branch holds the reviewed "
@@ -407,7 +407,7 @@ class Delivery(MergeGate):
             response = self.interaction.request(request)
             # #594: only an answered Approve merges. No `.get` default: a
             # choice outside the three options is not an answer, and an
-            # unanswered request (a TUI that detached, an interrupted
+            # unanswered request (an interrupted
             # terminal prompt) is not consent. Both park below, through
             # the same code as the non-interactive gate.
             decision = (

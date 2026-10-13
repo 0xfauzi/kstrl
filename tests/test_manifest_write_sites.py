@@ -91,9 +91,6 @@ EXPECTED_MANIFEST_WRITE_SITES: dict[str, tuple[int, str]] = {
     "kstrl/retry_plan.py::prepare_retry reset_for_retry": (1, CALLER_HOLDS),
     "kstrl/retry_plan.py::prepare_retry save": (1, CALLER_HOLDS),
     "kstrl/retry_plan.py::preview_retry reset_for_retry": (1, COPY),
-    # The TUI retry screen resets and saves, then launches a factory that
-    # takes the lock itself. Not fixed in #597 (UI work deferred by the owner).
-    "kstrl/tui/screens/retry.py::RetryScreen._confirm_retry prepare_retry": (1, UNGUARDED),
     # --- inside run_factory's lock ---
     "kstrl/factory_run.py::_start_manifest save": (1, IN_RUN),
     "kstrl/factory.py::_fill_slots save": (1, IN_RUN),
@@ -268,9 +265,10 @@ def test_the_walk_sees_every_shape_of_reference() -> None:
     }
 
 
-def test_the_only_unguarded_site_is_the_disclosed_tui_retry() -> None:
+def test_no_site_is_unguarded() -> None:
+    """The TUI retry screen was the one disclosed unguarded site (#597); it went with the TUI."""
     unguarded = {s for s, (_, d) in EXPECTED_MANIFEST_WRITE_SITES.items() if d == UNGUARDED}
-    assert unguarded == {"kstrl/tui/screens/retry.py::RetryScreen._confirm_retry prepare_retry"}
+    assert unguarded == set()
 
 
 def test_every_takes_lock_site_is_preceded_by_its_lock_call() -> None:

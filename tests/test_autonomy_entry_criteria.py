@@ -115,7 +115,7 @@ def _blockers(status_output: str) -> list[str]:
 def _promote(root: Path, *extra: str) -> tuple[int, str]:
     """Run the real ``ks autonomy promote`` with a pseudo-terminal on stdin and stdout."""
     env = {k: v for k, v in os.environ.items() if not k.startswith(("KSTRL_", "FACTORY_"))}
-    env.update(KSTRL_NO_TUI="1", KSTRL_AGENT_PROBE="0")
+    env.update(KSTRL_AGENT_PROBE="0")
     command = [sys.executable, "-m", "kstrl", "autonomy", "promote", "--actor", "owner"]
     command += ["--ack", "evidence read", "--root", str(root), "--ui", "plain", "--no-color"]
     master, slave = pty.openpty()

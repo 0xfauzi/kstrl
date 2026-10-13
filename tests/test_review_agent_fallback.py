@@ -107,7 +107,6 @@ def _factory(
     env.update(extra_env or {})
     env["KSTRL_AGENT_PROBE"] = "0"
     env["KSTRL_KNOWLEDGE_ENABLED"] = "0"
-    env["KSTRL_NO_TUI"] = "1"
     # The sealed PATH has no nono, and this test is about the review agent:
     # the [stack] runs on the host, as on a platform with no prover.
     env["KSTRL_ISOLATION_PLATFORM"] = "linux"
@@ -119,7 +118,6 @@ def _factory(
             "factory",
             "--manifest",
             str(root / "scripts" / "kstrl" / "manifest.json"),
-            "--no-tui",
             "--no-prs",
             "--review-mode",
             "hard",
@@ -257,7 +255,6 @@ def test_decompose_runs_the_kstrl_toml_agent_command_with_no_agent_cli(
     }
     env["PATH"] = _path_without_agent_clis()
     env["KSTRL_AGENT_PROBE"] = "0"
-    env["KSTRL_NO_TUI"] = "1"
 
     result = subprocess.run(
         [
@@ -271,7 +268,6 @@ def test_decompose_runs_the_kstrl_toml_agent_command_with_no_agent_cli(
             "demo",
             "--root",
             str(root),
-            "--no-tui",
             "--ui",
             "plain",
             "--no-color",

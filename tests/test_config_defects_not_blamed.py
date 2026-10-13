@@ -1,22 +1,18 @@
-"""#289: a home-shell screen must name a broken config, not raise on it.
+"""The config entry points name a broken config and never blame it for a kstrl defect.
 
-The measurement this file replaces a claim with: on 5abbc91, pushing
-``EvolveScreen`` at a project whose kstrl.toml holds
-``[evolution] lookback_runs = "many"`` raised
+``config_preflight.resolve_or_report`` returns a loaded section or the line
+the entry check would have printed for it. This file pins the line it
+draws, and the census that keeps that line derived from ``kstrl/``:
 
-    ValueError: invalid literal for int() with base 10: 'many'
+- a ``RuntimeError`` that kstrl defines is operator input and is reported;
+- a ``RuntimeError`` that kstrl did not define (a bare one, a
+  ``NotImplementedError``, a ``RecursionError``) is a defect in kstrl and
+  is raised again with its traceback, never blamed on the operator's file;
+- the rule is derived from the package by walking it, so no list goes stale.
 
-out of ``EvolveScreen.on_mount`` -> ``reload`` ->
-``_load_patterns_and_trends`` -> ``EvolutionConfig.load``, which in a
-real shell is an unhandled exception in a message handler and takes the
-app down. ``ks evolve --root <same dir>`` printed one named line and
-exited 1 for the same file. ``InboxScreen`` had the same shape on a
-malformed document.
-
-The screens are reachable because the entry check DEGRADES
-``[evolution]``: it warns and lets the shell open (measured - see
-``test_the_shell_opens_on_the_value_that_crashes_the_screen``), and the
-evolve screen is the screen that section is about.
+The file was ``test_tui_config_guard.py`` until the TUI went (#863 A1).
+Its screen tests went with the TUI. The tests that remain call
+``resolve_or_report``, which ``RunEnvelope`` still calls.
 """
 
 from __future__ import annotations
@@ -26,32 +22,17 @@ import importlib
 import os
 import stat
 import sys
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, cast
 
 import pytest
-from textual.app import App, ComposeResult
-from textual.pilot import Pilot
-from textual.screen import Screen
-from textual.widgets import DataTable, Static
 
-from kstrl.config import ConfigError
 from kstrl.config_preflight import (
     collect_config_problems,
-    load_or_report,
-    preflight_config,
     raise_if_defect,
+    resolve_or_report,
 )
 from kstrl.evolution_config import EvolutionConfig
-from kstrl.inbox import Inbox, InboxConfig, ItemKind
-from kstrl.tui.config_guard import env_scrub_is_safe
-from kstrl.tui.screens.inbox import InboxScreen
-from kstrl.tui.widgets.config_problem import ConfigProblemBanner
 from tests.helpers import astwalk
-from tests.helpers.settle import mounted, settled
-from tests.helpers.tui_screens import evolve_screen
 
 BAD_KNOB = '[evolution]\nlookback_runs = "many"\n'
 BAD_DOCUMENT = "[evolution\nlookback_runs = 5\n"
@@ -193,200 +174,6 @@ def _kstrl_domain_errors() -> list[type[BaseException]]:
     return list(seen.values())
 
 
-class _Harness(App[None]):
-    """A bare app: no run_context, so the env sweep is allowed."""
-
-    def compose(self) -> ComposeResult:
-        yield from ()
-
-
-def _banner_text(screen: Screen[Any]) -> str:
-    return str(screen.query_one(ConfigProblemBanner).render())
-
-
-@asynccontextmanager
-async def _inbox(tmp_path: Path) -> AsyncIterator[tuple[InboxScreen, Pilot[None]]]:
-    """The inbox screen open on ``tmp_path``.
-
-    This screen mounts its table directly, with no tab panes to wait
-    for, so there is one condition rather than the evolve screen's
-    three: its own on_mount adds the four columns and THEN calls
-    ``action_refresh``, in one synchronous call. A poll runs only
-    between messages, so a table that has columns is a screen whose
-    on_mount has returned - the list and the config-problem banner are
-    both drawn. It is weaker than anything a caller asserts: it says
-    the screen finished loading, not what it loaded.
-    """
-    app = _Harness()
-    async with app.run_test() as pilot:
-        await app.push_screen(InboxScreen(tmp_path))
-        table = await mounted(pilot, lambda: app.screen, "#inbox-table")
-        await settled(
-            pilot,
-            lambda: cast(DataTable, table).columns,
-            what="the inbox screen's on_mount to draw the list",
-        )
-        screen = app.screen
-        assert isinstance(screen, InboxScreen)
-        yield screen, pilot
-
-
-# --------------------------------------------------------------------------
-# Why the screen is reachable at all
-# --------------------------------------------------------------------------
-def test_the_shell_opens_on_the_value_that_crashes_the_screen(tmp_path: Path) -> None:
-    """The entry check warns for [evolution] and lets the shell open.
-
-    This is the whole reason #289 is not covered by #272: the seam ran,
-    and classified this section as degrading.
-    """
-    (tmp_path / "kstrl.toml").write_text(BAD_KNOB, encoding="utf-8")
-    warnings: list[str] = []
-    preflight_config(tmp_path, warn=warnings.append)
-    assert len(warnings) == 1
-    assert "[evolution]" in warnings[0]
-    assert "continuing without it" in warnings[0]
-
-
-def test_ks_evolve_still_stops_on_the_same_file(tmp_path: Path) -> None:
-    """The command that IS the journal keeps its fatal classification."""
-    (tmp_path / "kstrl.toml").write_text(BAD_KNOB, encoding="utf-8")
-    with pytest.raises(ConfigError) as caught:
-        preflight_config(tmp_path, warn=lambda _m: None, required=frozenset({"evolution"}))
-    assert "[evolution]" in str(caught.value)
-
-
-# --------------------------------------------------------------------------
-# The evolve screen
-# --------------------------------------------------------------------------
-class TestEvolveScreen:
-    async def test_a_bad_knob_is_named_instead_of_raised(self, tmp_path: Path) -> None:
-        (tmp_path / "kstrl.toml").write_text(BAD_KNOB, encoding="utf-8")
-        async with evolve_screen(tmp_path) as (screen, _pilot):
-            text = _banner_text(screen)
-            assert "configuration unreadable" in text
-            # The section name survives: it is bracketed, and Rich reads
-            # a bracketed token as markup and deletes it, so this pins
-            # the banner rendering a Text rather than a str.
-            assert "[evolution]" in text
-            assert "invalid literal for int() with base 10: 'many'" in text
-            assert "lookback_runs" in text
-            assert screen.query_one(ConfigProblemBanner).display is True
-
-    async def test_the_tables_are_empty_and_the_emptiness_is_explained(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """Not a silent degrade: no rows, and a line saying why."""
-        (tmp_path / "kstrl.toml").write_text(BAD_KNOB, encoding="utf-8")
-        async with evolve_screen(tmp_path) as (screen, _pilot):
-            assert screen.query_one("#patterns-table", DataTable).row_count == 0
-            assert screen.query_one("#trends-table", DataTable).row_count == 0
-            assert "[evolution]" in _banner_text(screen)
-
-    async def test_a_malformed_document_is_named_too(self, tmp_path: Path) -> None:
-        (tmp_path / "kstrl.toml").write_text(BAD_DOCUMENT, encoding="utf-8")
-        async with evolve_screen(tmp_path) as (screen, _pilot):
-            text = _banner_text(screen)
-            assert "Invalid TOML" in text
-            assert "line 1" in text
-
-    async def test_the_environment_variable_is_named_when_it_is_the_cause(
-        self,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        monkeypatch.setenv("KSTRL_EVOLUTION_LOOKBACK_RUNS", "lots")
-        async with evolve_screen(tmp_path) as (screen, _pilot):
-            assert "set by KSTRL_EVOLUTION_LOOKBACK_RUNS=lots" in _banner_text(screen)
-
-    async def test_the_banner_is_hidden_on_a_config_that_resolves(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        (tmp_path / "kstrl.toml").write_text(GOOD_KNOB, encoding="utf-8")
-        async with evolve_screen(tmp_path) as (screen, _pilot):
-            assert screen.query_one(ConfigProblemBanner).display is False
-            assert screen.query_one(ConfigProblemBanner).problem is None
-
-    async def test_reload_clears_the_banner_once_the_file_is_repaired(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        toml = tmp_path / "kstrl.toml"
-        toml.write_text(BAD_KNOB, encoding="utf-8")
-        async with evolve_screen(tmp_path) as (screen, _pilot):
-            assert screen.query_one(ConfigProblemBanner).display is True
-            toml.write_text(GOOD_KNOB, encoding="utf-8")
-            # action_reload is a direct call and reload is synchronous
-            # all the way down to the banner's own `show`, so the
-            # display below is already final when it returns.
-            screen.action_reload()
-            assert screen.query_one(ConfigProblemBanner).display is False
-
-
-# --------------------------------------------------------------------------
-# The inbox screen: the same shape, found by the survey #289 asked for
-# --------------------------------------------------------------------------
-class TestInboxScreen:
-    async def test_a_malformed_document_is_named_instead_of_raised(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        (tmp_path / "kstrl.toml").write_text(BAD_DOCUMENT, encoding="utf-8")
-        async with _inbox(tmp_path) as (screen, _pilot):
-            text = _banner_text(screen)
-            assert "configuration unreadable" in text
-            assert "[inbox]" in text
-            assert "Invalid TOML" in text
-
-    async def test_it_never_claims_the_inbox_is_clear(self, tmp_path: Path) -> None:
-        """An item IS waiting; the config is what cannot be read.
-
-        "Inbox clear: nothing is waiting on you." from an empty list
-        that only means the config failed is the silent degrade #289
-        rules out, and here it would be false as well as silent.
-        """
-        Inbox(tmp_path, InboxConfig()).add(
-            ItemKind.POLICY_EXCEPTION,
-            "comp-a: denied path",
-            component="comp-a",
-            dedupe_key="p1",
-        )
-        (tmp_path / "kstrl.toml").write_text(BAD_DOCUMENT, encoding="utf-8")
-        async with _inbox(tmp_path) as (screen, _pilot):
-            assert screen._items == []
-            detail = str(screen.query_one("#inbox-detail", Static).render())
-            assert "Inbox clear" not in detail
-
-    async def test_a_decision_taken_after_the_file_broke_redraws(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """The list was drawn from a good file; the file then broke."""
-        Inbox(tmp_path, InboxConfig()).add(
-            ItemKind.POLICY_EXCEPTION,
-            "comp-a: denied path",
-            component="comp-a",
-            dedupe_key="p1",
-        )
-        async with _inbox(tmp_path) as (screen, _pilot):
-            assert len(screen._items) == 1
-            (tmp_path / "kstrl.toml").write_text(BAD_DOCUMENT, encoding="utf-8")
-            # action_approve is a direct call and _decide is
-            # synchronous through to the redraw, so the list and the
-            # banner below are already final when it returns.
-            screen.action_approve()
-            assert screen._items == []
-            assert "Invalid TOML" in _banner_text(screen)
-            # The decision did NOT land: refusing is the honest answer
-            # when the file that configures the log will not parse.
-            assert len(Inbox(tmp_path, InboxConfig()).open_items()) == 1
-
-
-# --------------------------------------------------------------------------
-# The shared pattern
-# --------------------------------------------------------------------------
 class TestSharedGuard:
     def test_the_screen_says_exactly_what_the_command_says(self, tmp_path: Path) -> None:
         """The point of #289: one file, one wording, two surfaces."""
@@ -396,7 +183,7 @@ class TestSharedGuard:
             warn=lambda _m: None,
             required=frozenset({"evolution"}),
         )
-        _config, from_screen = load_or_report(
+        _config, from_screen = resolve_or_report(
             EvolutionConfig.load,
             tmp_path,
             blame_env=True,
@@ -416,41 +203,19 @@ class TestSharedGuard:
         run corrupted. Everything else in the line survives.
         """
         monkeypatch.setenv("KSTRL_EVOLUTION_LOOKBACK_RUNS", "lots")
-        _config, problem = load_or_report(EvolutionConfig.load, tmp_path, blame_env=False)
+        _config, problem = resolve_or_report(EvolutionConfig.load, tmp_path, blame_env=False)
         assert problem is not None
         assert "[evolution]" in problem
         assert "invalid literal for int() with base 10: 'lots'" in problem
         assert "set by" not in problem
 
-        _again, blamed = load_or_report(EvolutionConfig.load, tmp_path, blame_env=True)
+        _again, blamed = resolve_or_report(EvolutionConfig.load, tmp_path, blame_env=True)
         assert blamed is not None
         assert "set by KSTRL_EVOLUTION_LOOKBACK_RUNS=lots" in blamed
 
-    def test_env_scrub_is_safe_reads_the_launched_session(self) -> None:
-        class _Handle:
-            def __init__(self, done: bool) -> None:
-                self._done = done
-
-            def done(self) -> bool:
-                return self._done
-
-        class _Ctx:
-            def __init__(self, handle: object | None) -> None:
-                self.handle = handle
-
-        class _App:
-            def __init__(self, ctx: object | None) -> None:
-                self.run_context = ctx
-
-        assert env_scrub_is_safe(object()) is True  # no attribute at all
-        assert env_scrub_is_safe(_App(None)) is True
-        assert env_scrub_is_safe(_App(_Ctx(None))) is True
-        assert env_scrub_is_safe(_App(_Ctx(_Handle(True)))) is True
-        assert env_scrub_is_safe(_App(_Ctx(_Handle(False)))) is False
-
     def test_a_clean_config_returns_the_object_and_no_problem(self, tmp_path: Path) -> None:
         (tmp_path / "kstrl.toml").write_text("[evolution]\nlookback_runs = 3\n", encoding="utf-8")
-        config, problem = load_or_report(EvolutionConfig.load, tmp_path, blame_env=True)
+        config, problem = resolve_or_report(EvolutionConfig.load, tmp_path, blame_env=True)
         assert problem is None
         assert config is not None
         assert config.lookback_runs == 3
@@ -470,12 +235,12 @@ class TestSharedGuard:
             raise ValueError("nope")
 
         with pytest.raises(LookupError):
-            load_or_report(_rejecting_unenrolled_loader, tmp_path, blame_env=False)
+            resolve_or_report(_rejecting_unenrolled_loader, tmp_path, blame_env=False)
 
         def _clean_unenrolled_loader(_root: Path) -> int:
             return 1
 
-        assert load_or_report(_clean_unenrolled_loader, tmp_path, blame_env=False) == (1, None)
+        assert resolve_or_report(_clean_unenrolled_loader, tmp_path, blame_env=False) == (1, None)
 
     def test_a_bare_runtimeerror_is_re_raised_not_blamed_on_the_operator(
         self,
@@ -497,7 +262,7 @@ class TestSharedGuard:
 
         monkeypatch.setattr(kstrl.evolution_config.EvolutionConfig, "load", _explode)
         with pytest.raises(RuntimeError, match="journal config exploded"):
-            load_or_report(EvolutionConfig.load, tmp_path, blame_env=False)
+            resolve_or_report(EvolutionConfig.load, tmp_path, blame_env=False)
 
     @pytest.mark.parametrize(
         "defect",
@@ -531,7 +296,7 @@ class TestSharedGuard:
 
         monkeypatch.setattr(kstrl.evolution_config.EvolutionConfig, "load", _explode)
         with pytest.raises(type(defect)):
-            load_or_report(EvolutionConfig.load, tmp_path, blame_env=False)
+            resolve_or_report(EvolutionConfig.load, tmp_path, blame_env=False)
 
     def test_the_domain_rule_is_derived_from_kstrl_not_listed(self) -> None:
         """No ledger to go stale.
@@ -626,7 +391,7 @@ class TestSharedGuard:
             "[serve]\nmax_consecutive_poison = 0\n",
             encoding="utf-8",
         )
-        _config, problem = load_or_report(ServeConfig.load, tmp_path, blame_env=False)
+        _config, problem = resolve_or_report(ServeConfig.load, tmp_path, blame_env=False)
         assert problem is not None
         assert "[serve]" in problem
 
@@ -642,7 +407,7 @@ class TestSharedGuard:
         toml.write_text(GOOD_KNOB, encoding="utf-8")
         toml.chmod(0o000)
         try:
-            _config, problem = load_or_report(
+            _config, problem = resolve_or_report(
                 EvolutionConfig.load,
                 tmp_path,
                 blame_env=False,

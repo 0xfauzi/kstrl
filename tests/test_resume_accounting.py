@@ -298,7 +298,7 @@ def test_a_killed_runs_attempts_readings_and_spend_go_to_the_run_that_resumes_it
         for phase in row["usage"].values()
     )
     assert journal_cost == pytest.approx(0.75)
-    status = _ks_text(root, "status", "--no-tui", "--manifest", str(manifest_path))
+    status = _ks_text(root, "status", "--manifest", str(manifest_path))
     assert "$0.7500" in next(line for line in status.splitlines() if "Run usage" in line)
     # progress.jsonl counts the retry the manifest counts, under this run.
     retrying = [

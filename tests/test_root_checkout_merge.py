@@ -106,7 +106,7 @@ def _run(root: Path, *args: str, timeout: float = 240.0) -> subprocess.Completed
     """``python -m kstrl <args>`` in its own process group, stdout and
     stderr merged. The group is killed on timeout, so an agent the run
     spawned cannot outlive the bound."""
-    env = {**os.environ, "KSTRL_NO_TUI": "1", "KSTRL_KNOWLEDGE_ENABLED": "0"}
+    env = {**os.environ, "KSTRL_KNOWLEDGE_ENABLED": "0"}
     proc = subprocess.Popen(
         [sys.executable, "-m", "kstrl", *args],
         cwd=root,
@@ -255,7 +255,6 @@ def _factory(
         "0",
         "--ui",
         "plain",
-        "--no-tui",
         "-y",
     )
 

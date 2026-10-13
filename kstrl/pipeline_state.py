@@ -161,8 +161,7 @@ class PipelineState:
         self.bus = bus
         self.journal_path = journal_path
         self.run_paths = run_paths
-        # PR A: the interaction seam. Defaults to today's terminal
-        # behavior; embedded mode (PR F) injects a QueueInteractionChannel.
+        # The interaction seam. Defaults to the terminal channel.
         self.interaction: InteractionChannel = (
             interaction if interaction is not None else UiInteractionChannel(ui)
         )

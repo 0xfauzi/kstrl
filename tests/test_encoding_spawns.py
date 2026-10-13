@@ -93,11 +93,6 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     "serve_process.py": 8,
     "statedir.py": 3,
     "timeout.py": 3,
-    # #433: the import and SubprocessError; the probe itself is
-    # retry_plan.failed_branch_probe, the one prepare_retry makes.
-    "tui/retry_scope.py": 2,
-    "tui/screens/home.py": 3,
-    "tui/screens/retry.py": 2,
     # 25: `_base_finding`'s `git show` (#414/#425); `git merge-base` moved to `git.py` in #435.
     # 26: #632, `run_scrubbed`'s `subprocess.PIPE` for a stdin it was given.
     # 27: #696, `check_stack_command`'s `subprocess.TimeoutExpired`.
@@ -151,7 +146,6 @@ EXPECTED_TEXT_MODE_SPAWNS: dict[str, int] = {
     "retry_plan.py": 1,
     "serve_process.py": 1,
     "statedir.py": 1,
-    "tui/screens/home.py": 1,
 }
 
 
@@ -210,7 +204,6 @@ EXPECTED_CLEARED_SPAWNS: tuple[str, ...] = (
     "retry_plan.py subprocess.run(['git', 'branch', '-D', failed_branch], cwd=root_dir, c",
     "serve_process.py subprocess.Popen(command, cwd=str(cwd), env=env, stdout=subprocess.PIP",
     "statedir.py subprocess.run(['git', '-C', str(root_dir), 'remote', 'get-url', 'orig",
-    "tui/screens/home.py subprocess.run(['git', 'rev-parse', '--abbrev-ref', 'HEAD'], cwd=root_",
 )
 
 
@@ -275,13 +268,7 @@ EXPECTED_BYTES_MODE_SPAWNS: dict[str, int] = {
 
 
 #: One call this walk cannot fully decide, sorted and deduplicated to one
-#: row each. ``kstrl/cli_report.py`` has two ``app.run()`` calls that the
-#: resolver cannot type. They were the row ``cli.py app.run`` while they were
-#: in ``kstrl/cli.py``, which names "subprocess" in a comment. The walk skips
-#: a module whose text has no "subprocess", so the row left with the move.
-#: ``astwalk`` and the timeout audit still pin ``cli_report.py app.run``.
-#: Checked by hand: both are the Textual application's own ``run``.
-#: ``timeout.py subprocess.run`` is ``run_with_timeout``, which
+#: row each. ``timeout.py subprocess.run`` is ``run_with_timeout``, which
 #: names ``encoding="utf-8"`` explicitly AND forwards ``**kwargs`` to the
 #: same call (A1): the forwarded dict is opaque, so no explicit keyword on
 #: the call proves anything, and a caller could pass ``errors="replace"``

@@ -103,7 +103,7 @@ class RunContext:
 def _run_plan_event(manifest: Manifest, factory_config: FactoryConfig) -> RunPlan:
     """The component DAG plus budget caps (chunk 4). Emitted at run start and
     again when the integration loop appends a fix component (#483), because
-    the dashboard replaces its plan only on RunPlan."""
+    a reader replaces its plan only on RunPlan."""
     return RunPlan(
         components=tuple(
             {"id": c.id, "title": c.title, "deps": list(c.dependencies)}

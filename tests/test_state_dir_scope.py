@@ -396,7 +396,8 @@ _EXPECTED_STATE_DIR_SPELLINGS: dict[str, int] = {
     # and kept one join to the proposals directory for the notice about it.
     "cli_feature.py": 1,
     "cli_learning.py": 1,
-    "cli_report.py": 3,
+    # 2: -1 for #863 A1, which deleted `ks dash` and its join to the runs directory.
+    "cli_report.py": 2,
     "contract.py": 1,
     "decompose_reply.py": 1,
     "doctor.py": 2,
@@ -428,7 +429,6 @@ _EXPECTED_STATE_DIR_SPELLINGS: dict[str, int] = {
     "serve_outcome.py": 2,
     "serve_spend.py": 2,
     "statedir.py": 8,  # +1 #545: plan_prd_path joins the plan directory
-    "tui/runs.py": 3,  # +1 #433: run_is_live lists the runs dir for the newest run
     "workqueue_store.py": 2,
 }
 
@@ -1017,9 +1017,9 @@ class TestEveryCallerDeclaresTheStateRoot:
                 callers[source_file.name] = callers.get(source_file.name, 0) + 1
                 if any(kw.arg == "guard_state_root" for kw in node.keywords):
                     declared[source_file.name] = declared.get(source_file.name, 0) + 1
-        assert Counter(site.split(":", 1)[0] for site in undecided) == {
-            "tui/app.py": 2,
-        }, f"the walk could not decide these calls: {list(undecided)}"
+        assert Counter(site.split(":", 1)[0] for site in undecided) == {}, (
+            f"the walk could not decide these calls: {list(undecided)}"
+        )
         assert callers == {"cli_loop.py": 1, "factory_worker.py": 1, "feature_cmd.py": 3}
         assert declared == callers
 

@@ -1,9 +1,8 @@
-"""TUI surface C3: the feature flow as an event-stream run."""
+"""The feature flow as an event-stream run."""
 
 from __future__ import annotations
 
 import io
-import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -14,15 +13,9 @@ import pytest
 from kstrl.commandrun import open_command_run
 from kstrl.config import KstrlConfig
 from kstrl.feature_cmd import run_feature
-from kstrl.interaction import QueueInteractionChannel
 from kstrl.loop import LoopResult
 from kstrl.reducer import load_run_state
-from kstrl.shutdown import StopController
-from kstrl.tui.app import KstrlTuiApp, Mode
-from kstrl.tui.bridge import start_command_thread
-from kstrl.tui.screens.options import OptionsModal
 from kstrl.ui.plain import PlainUI
-from tests.helpers.settle import settled
 from tests.test_feature_cmd import ScriptedChannel, StubAgent, _params
 
 
@@ -293,94 +286,3 @@ class TestFeatureRunRecording:
         assert recorded.replace(str(tmp_path / "a"), "ROOT") == (
             plain.replace(str(tmp_path / "b"), "ROOT")
         )
-
-
-class TestFeatureEmbeddedGate:
-    async def test_gate_opens_options_modal_and_unblocks(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """The real run_feature blocks on its gate through the queue
-        channel; the options modal answers it and the flow finishes."""
-        params = _params(tmp_path, repair_max_runs=0)
-        channel = QueueInteractionChannel()
-        stop = StopController()
-        ui = PlainUI(no_color=True, file=io.StringIO())
-        command_run = open_command_run(
-            ui,
-            tmp_path,
-            "feature",
-            component="demo",
-            enabled=True,
-            heartbeat=False,
-        )
-
-        base_stub = _loop_results_with_agent(0, 0)
-
-        def waiting_stub(*args: Any, **kwargs: Any) -> LoopResult:
-            # The instant stub would reach the gate before the app
-            # attaches the channel (a real understand phase is minutes
-            # long); wait like the A3 fake worker does.
-            deadline = time.monotonic() + 5
-            while not channel.can_prompt() and time.monotonic() < deadline:
-                time.sleep(0.01)
-            return base_stub(*args, **kwargs)
-
-        patches = (patch("kstrl.feature_cmd.run_loop", waiting_stub),)
-        for p in patches:
-            p.start()
-        try:
-            handle = start_command_thread(
-                lambda: run_feature(
-                    params,
-                    KstrlConfig(),
-                    StubAgent(),
-                    ui,
-                    tmp_path,
-                    interaction=channel,
-                    run=command_run,
-                    stop_check=stop.is_set,
-                ),
-                stop=stop,
-            )
-            app = KstrlTuiApp(
-                run_dir=command_run.paths.root,  # type: ignore[union-attr]
-                root_dir=tmp_path,
-                mode=Mode.EMBEDDED,
-                poll_interval=0.05,
-                channel=channel,
-                orchestrator=handle,
-            )
-            async with app.run_test(size=(120, 40)) as pilot:
-                await settled(
-                    pilot,
-                    lambda: isinstance(app.screen, OptionsModal),
-                    what="the gate to open the options modal",
-                )
-                assert "confirm implementation start" in (app.screen.request.header)
-                await pilot.press("1")
-                await settled(
-                    pilot,
-                    lambda: handle.done(),
-                    what="the answered gate to let the feature flow finish",
-                )
-                # _check_orchestrator runs on a 0.5s interval and calls
-                # App.exit, which is what sets return_value; the old
-                # 0.6s pause was a guess at that interval. "Recorded at
-                # all" is weaker than the assertion that it is 0.
-                await settled(
-                    pilot,
-                    lambda: app.return_value is not None,
-                    what="the app to record the orchestrator's exit code",
-                )
-            assert app.return_value == 0
-            assert handle.exit_code == 0
-        finally:
-            for p in patches:
-                p.stop()
-            command_run.close()
-
-        state, _ = load_run_state(tmp_path)
-        comp = state.components["demo"]
-        assert comp.checkpoint_open == ""
-        assert comp.status == "completed"

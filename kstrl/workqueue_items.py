@@ -192,8 +192,7 @@ def short_item_id(item_id: str) -> str:
     """``q-20260923-205005.895694-793181`` -> ``q-793181``.
 
     The form a one-line surface shows where the full id does not fit:
-    the TUI's active row and run header, and the titles of the inbox
-    items serve files. :meth:`Queue.get` accepts it, so every
+    the titles of the inbox items serve files. :meth:`Queue.get` accepts it, so every
     ``ks queue`` command takes what those surfaces show (#706). Every
     other surface prints the full id.
     """

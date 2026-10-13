@@ -1,13 +1,13 @@
 """Retry planning and preparation (extracted from cli.retry, B1).
 
 ``preview_retry`` answers "what WOULD a retry do" without touching
-anything - the retry screen renders it in its confirm modal.
+anything. ``ks retry`` shows it before its confirm.
 ``prepare_retry`` is the real mutation: reset statuses, remove the
 failed attempt's worktree and branch, save the manifest; the "Retry
 plan" section it used to print is now :func:`print_retry_plan`'s (#597),
 called by each caller first, so the two calls together narrate what
 ``prepare_retry`` alone used to. The only behavior change from the
-original command is RetryError instead of sys.exit so a TUI caller can
+original command is RetryError instead of sys.exit, so a caller can
 surface the failure without the process dying.
 """
 
@@ -178,10 +178,8 @@ def print_retry_plan(ui: UI, preview: RetryPreview, manifest_file: Path) -> None
 def failed_branch_probe(root_dir: Path, branch: str) -> int:
     """The exit code of ``git rev-parse --verify --quiet refs/heads/<branch>``.
 
-    :func:`prepare_retry` deletes the failed branch only when this is 0,
-    and the TUI's retry scope preview (#433) calls this same probe, so
-    the preview cannot describe a different test than the one the retry
-    makes. OSError and a timeout propagate, as they always did here.
+    :func:`prepare_retry` deletes the failed branch only when this is 0.
+    OSError and a timeout propagate, as they always did here.
     """
     return subprocess.run(
         ["git", "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}"],
@@ -206,9 +204,7 @@ def prepare_retry(
     reset_for_retry; a branch-delete failure raises RetryError after
     narrating the manual fix. `ks retry` holds the run lock (#597) before
     calling this and has already printed :func:`print_retry_plan`, so
-    this narrates only what it removes; the TUI retry screen calls this
-    without holding it (disclosed, UI work deferred - the only
-    ``unguarded`` row in ``tests/test_manifest_write_sites.py``).
+    this narrates only what it removes.
 
     The return value matches ``preview_retry``'s on the same manifest and
     is otherwise unused by either caller; it exists so
@@ -324,7 +320,7 @@ def _opt(name: str) -> str:
 class UnkeptLimit:
     """A run limit a retry refuses to drop (#526), as data (#433 G1).
 
-    The TUI names the options and the command that can carry them from
+    A caller names the options and the command that can carry them from
     this, never from the refusal's wording.
     """
 
@@ -460,15 +456,14 @@ def plan_resume(
 
 def limits_line(plan: ResumePlan) -> str:
     """Every run limit the retry runs under, on one line, spelled as the
-    options that set them (#526), so the TUI states what the CLI prints."""
+    options that set them (#526)."""
     set_ = [f"{_opt(name)} {value:g}" for name, value in plan.limits if value > 0]
     return ", ".join(set_) if set_ else "no run limit"
 
 
 def not_replayed(plan: ResumePlan) -> tuple[str, ...]:
     """``--option is no longer an option. Why.`` for each recorded flag the
-    retry leaves out (#539): what ``print_resume_plan`` prints, so the TUI
-    says the same (#433)."""
+    retry leaves out (#539): what ``print_resume_plan`` prints (#433)."""
     return tuple(
         f"{_opt(name)} is no longer an option. {REMOVED_OPTIONS[name]}" for name in plan.dropped
     )

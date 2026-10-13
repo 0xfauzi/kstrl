@@ -1,22 +1,17 @@
 """The interaction seam: every blocking prompt as a typed request.
 
-Stage 3 PR A of the TUI rewrite. The harness has exactly seven places
-that block on a human (E6 checkpoint, guards, iteration pause, feature
-gate, factory/retry confirms, evolve apply). Each becomes a
-:class:`PromptRequest` sent through an :class:`InteractionChannel`:
+The harness has exactly seven places that block on a human (E6 checkpoint,
+guards, iteration pause, feature gate, factory/retry confirms, evolve apply).
+Each becomes a :class:`PromptRequest` sent through an :class:`InteractionChannel`.
 
-- :class:`UiInteractionChannel` reproduces today's terminal behavior
-  exactly (``ui.choose`` under a ``can_prompt`` guard) - the plain-mode
-  degradation path.
-- :class:`QueueInteractionChannel` is the thread-safe bridge for
-  embedded mode (PR F): the orchestrator thread blocks on a
-  ``threading.Event`` while the Textual UI answers via
-  ``resolve``; ``detach``/``cancel_all`` release pending prompts
-  unanswered so a dead TUI can never hang a run.
+:class:`UiInteractionChannel` asks on the terminal (``ui.choose`` under a
+``can_prompt`` guard). It is the only channel. A run with no terminal
+gets no answer, and the E6 merge gate then parks the component and files
+a ``merge_gate`` inbox item that ``ks inbox approve`` resolves.
 
 ``PromptResponse.choice`` is ``None`` exactly when nobody answered: no
-one was there to ask, the resolver detached, the prompt was interrupted,
-or the answer was out of range. It never carries the prompt's default,
+one was there to ask, the prompt was interrupted, or the answer was out
+of range. It never carries the prompt's default,
 which is Start or Approve at most prompts, so a reader that tests the
 choice alone cannot read "nobody answered" as consent (#647).
 ``PromptResponse.answered`` is derived from it, never stored beside it.
@@ -24,9 +19,7 @@ choice alone cannot read "nobody answered" as consent (#647).
 
 from __future__ import annotations
 
-import threading
 import uuid
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import TYPE_CHECKING, Protocol
@@ -119,80 +112,3 @@ class UiInteractionChannel:
         if isinstance(choice, bool) or not 0 <= choice < len(req.options):
             return PromptResponse(request_id=req.request_id, choice=None)
         return PromptResponse(request_id=req.request_id, choice=choice)
-
-
-class _Pending:
-    def __init__(self, request: PromptRequest) -> None:
-        self.request = request
-        self.event = threading.Event()
-        self.choice: int | None = None
-
-
-class QueueInteractionChannel:
-    """Thread-safe request/response bridge (embedded mode, PR F).
-
-    The requesting thread blocks in :meth:`request` until a resolver
-    answers via :meth:`resolve` or the channel is detached/cancelled.
-    ``attach`` registers the resolver notification callback (the TUI's
-    ``call_from_thread`` entry point - the only orchestrator-to-UI
-    crossing, per the spike's G4 validation).
-    """
-
-    def __init__(self) -> None:
-        self._lock = threading.Lock()
-        self._pending: dict[str, _Pending] = {}
-        self._on_request: Callable[[PromptRequest], None] | None = None
-
-    def attach(self, on_request: Callable[[PromptRequest], None]) -> None:
-        with self._lock:
-            self._on_request = on_request
-
-    def detach(self) -> None:
-        """Subsequent requests come back unanswered (``choice=None``);
-        pending ones are released unanswered."""
-        with self._lock:
-            self._on_request = None
-        self.cancel_all()
-
-    def can_prompt(self) -> bool:
-        with self._lock:
-            return self._on_request is not None
-
-    def request(self, req: PromptRequest) -> PromptResponse:
-        with self._lock:
-            notify = self._on_request
-            if notify is None:
-                return PromptResponse(request_id=req.request_id, choice=None)
-            pending = _Pending(req)
-            self._pending[req.request_id] = pending
-        try:
-            notify(req)
-        except Exception:  # noqa: BLE001 - a dying UI must not hang the run
-            with self._lock:
-                self._pending.pop(req.request_id, None)
-            return PromptResponse(request_id=req.request_id, choice=None)
-        pending.event.wait()
-        with self._lock:
-            self._pending.pop(req.request_id, None)
-        # None when cancel_all released the waiter without an answer.
-        return PromptResponse(request_id=req.request_id, choice=pending.choice)
-
-    def resolve(self, request_id: str, choice: int) -> bool:
-        """Answer one pending request; False when it is unknown (already
-        cancelled, double-answered, never existed, or out of range)."""
-        with self._lock:
-            pending = self._pending.get(request_id)
-            if pending is None or pending.event.is_set():
-                return False
-            if isinstance(choice, bool) or choice < 0 or choice >= len(pending.request.options):
-                return False
-            pending.choice = choice
-            pending.event.set()
-            return True
-
-    def cancel_all(self) -> None:
-        """Release every waiter unanswered (``choice=None``)."""
-        with self._lock:
-            waiters = list(self._pending.values())
-        for pending in waiters:
-            pending.event.set()

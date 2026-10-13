@@ -302,10 +302,10 @@ class TestTheRealRunnerRunsItsArgvAsAChild:
         the captured output the classifier reads."""
         _, ran = _exec_real_runner(tmp_path, monkeypatch)
         assert "--yes" in ran.argv
-        assert "--no-tui" in ran.argv
+        assert "--no-tui" not in ran.argv
         assert "--no-color" in ran.argv
         assert ran.value_of("--ui") == "plain"
-        assert ran.kstrl_env.get("KSTRL_NO_TUI") == "1"
+        assert "KSTRL_NO_TUI" not in ran.kstrl_env
 
     @pytest.mark.parametrize(
         ("gate_on", "expected", "forbidden"),

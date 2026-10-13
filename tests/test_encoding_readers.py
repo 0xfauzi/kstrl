@@ -122,7 +122,6 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     # are both reads: the PRD file and ``_read_text_or_none``. N2 (#776)
     # moved ``_read_text_or_none`` to ``scaffold_ledger.py``.
     "init_cmd.py": 1,
-    "init_wizard.py": 1,
     # Back to 1 (the ledger's own read) since #231's simplify pass (B1):
     # the memory-file read `_append_guidance` added moved to
     # `operator_context.append_guidance_record`, which is the module
@@ -193,18 +192,6 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     "serve_outcome.py": 1,
     "serve_spend.py": 1,
     "statedir.py": 1,
-    "tui/embed.py": 1,
-    # #433 F9: the bounded "rb" read of a review file, and the
-    # disposition word OPEN = "open", which is not a read.
-    "tui/integration_view.py": 2,
-    "tui/runs.py": 2,
-    # #433 M1: the pid ks serve writes into its lock file.
-    "tui/serve_view.py": 1,
-    "tui/session.py": 1,
-    "tui/tail.py": 2,
-    # #433 F7: the failed gate's stored output, read as bytes and decoded
-    # with errors="replace", so no locale codec is involved.
-    "tui/widgets/component_detail.py": 1,
     # 4 since #414: the bad-patterns scan's read_text is gone (it reads
     # bytes now, so py_compile does its own PEP 263 decoding). 3 since
     # #696: scrub_stale_verify_commands's CLAUDE.md read is gone with the
@@ -285,7 +272,6 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     # append goes through ``appendio.append_records`` now, so the utf-8
     # it used to name is the one ``append_terminated`` encodes with, and
     # the ``appendio.py`` row below is where that contract is counted.
-    "init_wizard.py toml_path.read_text(encoding='utf-8')",
     "intake_issue.py self.path.read_text(encoding='utf-8')",
     # #700, the security review of #770: the `.git` file of the root and the
     # back link it names, utf-8, with ValueError caught beside OSError.
@@ -324,10 +310,6 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "serve_outcome.py path.read_text(encoding='utf-8')",
     "serve_spend.py self.path.read_text(encoding='utf-8')",
     "statedir.py open(lock_path, 'a+', encoding='utf-8')",
-    "tui/embed.py open(run_paths.root / 'orchestrator.log', 'a', buffering=1, encoding='",
-    "tui/runs.py open(lock_path, 'a+', encoding='utf-8')",
-    "tui/serve_view.py path.read_text(encoding='utf-8', errors='replace')",
-    "tui/session.py open(run_paths.root / 'orchestrator.log', 'a', buffering=1, encoding='",
     "verify.py progress_path.read_text(encoding='utf-8')",
     "workqueue.py spec_source.read_text(encoding='utf-8')",
     "workqueue_store.py meta_path.read_text(encoding='utf-8')",
@@ -407,14 +389,6 @@ EXPECTED_DECIDED_OUT: tuple[str, ...] = (
     # `_readable`, which decodes with errors="replace". Binary, so no
     # codec applies at the open.
     "replay.py log.open",
-    # #433 F9: a review file is read "rb" under a size bound and parsed
-    # by jsonread, which decodes. Binary, so no codec applies.
-    "tui/integration_view.py open",
-    "tui/runs.py open",
-    "tui/tail.py open",
-    # #433 F7: gate_log_excerpt opens the gate log "rb" to read its tail
-    # and decodes with errors="replace". Binary, so no codec applies.
-    "tui/widgets/component_detail.py open",
 )
 
 

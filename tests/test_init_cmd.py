@@ -1,8 +1,6 @@
 """Direct tests for ``run_init`` - the scaffold `ks init` writes.
 
-Nothing exercised ``run_init`` itself before this file: the wizard tests
-cover ``plan_scaffold`` and the agent-settings write, and the TUI screen
-test patches ``run_init`` out. Both issues fixed here (#201 .gitignore,
+Both issues fixed here (#201 .gitignore,
 #256 next steps) are properties of what init WRITES and PRINTS, so they
 are tested against the real function with a real UI.
 """
@@ -19,7 +17,6 @@ from kstrl import init_cmd
 from kstrl.appendio import append_records
 from kstrl.cli import cli
 from kstrl.init_cmd import GITIGNORE_BLOCK_MARKER, NEXT_STEPS, run_init
-from kstrl.init_wizard import plan_scaffold
 from kstrl.scaffold_templates import DEFAULT_MEMORY
 from kstrl.ui.plain import PlainUI
 from kstrl.ui.rich_ui import RichUI
@@ -215,14 +212,6 @@ class TestUnreadableGitignore:
 
 
 class TestScaffoldContract:
-    def test_plan_scaffold_lists_exactly_what_run_init_writes(self, tmp_path: Path) -> None:
-        """The wizard preview and the write cannot drift apart silently."""
-        code, _ = run_init_capturing(tmp_path)
-
-        assert code == 0
-        written = {p for p in tmp_path.rglob("*") if p.is_file()}
-        assert written == {entry.path for entry in plan_scaffold(tmp_path)}
-
     def test_ks_init_scaffolds_golden_patterns(self, tmp_path: Path) -> None:
         """R10.8. The file is scaffolded once and then belongs to the
         operator: a second init must not revert what they wrote into it."""
@@ -264,14 +253,6 @@ class TestScaffoldContract:
 
         assert code == 0
         assert memory.read_text(encoding="utf-8") == edited
-
-    def test_plan_stops_calling_gitignore_an_append_once_init_ran(self, tmp_path: Path) -> None:
-        (tmp_path / ".gitignore").write_text("secrets.env\n")
-
-        run_init_capturing(tmp_path)
-
-        planned = {e.path.name: e for e in plan_scaffold(tmp_path)}
-        assert planned[".gitignore"].action == "keep"
 
     def test_every_command_named_in_next_steps_is_real(self) -> None:
         """The block is the first thing a new user reads; a renamed

@@ -98,7 +98,7 @@ NON_WAIVABLE_CATEGORIES = frozenset({f"{POLICY_CATEGORY_PREFIX}enforcement_machi
 
 WAIVER_REFUSED_TAG_PREFIX = "waiver_refused:"
 
-#: What rejecting a waivable item does, for the CLI and the TUI.
+#: What rejecting a waivable item does, for the CLI.
 REJECTION_EFFECT = (
     "records the rejection with your reason. No waiver: the next run fails on this "
     "finding as before."
@@ -404,8 +404,8 @@ def _evidence_refusal(item: InboxItem) -> str:
 
     Scope-free: everything :func:`_refusal` can decide without a run to
     check the key against. :func:`approval_effect` uses exactly this half
-    - the shell and the TUI have no scope, only the item - so what they
-    print and what the gate does are the same check, not two.
+    - the shell has no scope, only the item - so what it
+    prints and what the gate does are the same check, not two.
     """
     tag = f"approval {item.id[:8]}"
     evidence = item.evidence
@@ -541,7 +541,7 @@ def approval_effect(item: InboxItem) -> str | None:
     """What approving ``item`` does, or None for a kind no step waives.
 
     #595 B3: the same check as the gate's, ``_evidence_refusal`` - this
-    function adds no checks of its own, so the shell and the TUI cannot
+    function adds no checks of its own, so the shell cannot
     say "waives" about evidence the gate itself would refuse.
     """
     if _acceptance_halt(item):

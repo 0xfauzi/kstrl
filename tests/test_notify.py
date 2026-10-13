@@ -17,6 +17,7 @@ import json
 import os
 import subprocess
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -623,3 +624,40 @@ def test_progress_log_survives_manifest_json_shape(tmp_path: Path) -> None:
     raw = (root / ".kstrl" / "progress.jsonl").read_text().splitlines()
     for line in raw:
         assert isinstance(json.loads(line), dict)
+
+
+class TestNotifyCapture:
+    def test_captured_hook_writes_nothing_to_terminal(
+        self,
+        capfd: Any,
+    ) -> None:
+        hooks = NotifyHooks(
+            NotifyConfig(on_complete="echo HOOK-NOISE"),
+            run_id="r",
+            project="p",
+            capture_output=True,
+        )
+        hooks.fire_complete("done")
+        out, err = capfd.readouterr()
+        assert "HOOK-NOISE" not in out
+        assert "HOOK-NOISE" not in err
+
+    def test_default_keeps_terminal_bell_path(self, capfd: Any) -> None:
+        hooks = NotifyHooks(
+            NotifyConfig(on_complete="echo HOOK-RINGS"),
+            run_id="r",
+            project="p",
+        )
+        hooks.fire_complete("done")
+        out, _ = capfd.readouterr()
+        assert "HOOK-RINGS" in out
+
+    def test_subprocess_module_is_what_fire_uses(self) -> None:
+        # Guard against the sink accidentally applying to DEVNULL stdin
+        # only; the spike measured fd-level leakage, so stdout/stderr
+        # must be the captured pair.
+        import inspect
+
+        src = inspect.getsource(NotifyHooks._fire)
+        assert "stdout=sink" in src and "stderr=sink" in src
+        assert subprocess.DEVNULL  # imported, used above

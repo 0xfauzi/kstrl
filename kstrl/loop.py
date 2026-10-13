@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 COMPLETION_MARKER = "<promise>COMPLETE</promise>"
 
 #: The exit code a loop returns when ``stop_check`` asked it to stop:
-#: the shell's 128 + SIGINT, so an operator's Ctrl-C and a TUI stop
+#: the shell's 128 + SIGINT, so an operator's Ctrl-C and a stop
 #: request read the same downstream. Named because a caller has to be
 #: able to tell "the operator stopped this" from "it failed" - #288's
 #: verification report refuses to run a test suite on the way out of a

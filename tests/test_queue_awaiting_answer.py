@@ -433,7 +433,6 @@ class TestControls:
                 "--root",
                 str(root),
                 "--yes",
-                "--no-tui",
                 "--ui",
                 "plain",
                 "--no-color",

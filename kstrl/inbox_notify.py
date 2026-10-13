@@ -20,10 +20,9 @@ pipeline does), which keeps once-per-kind-per-run and that caller's
 running inside or outside a factory run: an autonomy demotion or a
 health breach raised while a run is active does not hold that run's
 hooks and still falls through here. Every other path gets hooks built
-from ``[notify]`` with ``capture_output=True``: the decompose that
-raises an escalation can run inside the TUI process, and hook output on
-inherited fds corrupts the alternate screen, so a path that does not
-know who owns the terminal must not write to it.
+from ``[notify]`` with ``capture_output=True``: a path that does not
+know who owns the terminal must not write to it. The TUI that #863
+removed was the owner that made this necessary.
 """
 
 from __future__ import annotations

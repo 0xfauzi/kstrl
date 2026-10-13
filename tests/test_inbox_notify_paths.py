@@ -347,7 +347,7 @@ def test_the_hook_in_kstrl_toml_fires_after_the_item_is_on_disk(tmp_path: Path) 
 def test_a_hook_run_outside_a_run_writes_nothing_to_the_terminal(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
-    """The fallback hook discards its output: a TUI may own the terminal."""
+    """The fallback hook discards its output."""
     ran = tmp_path / "ran.txt"
     monkeypatch.setenv(
         "KSTRL_NOTIFY_ON_INBOX_ITEM",

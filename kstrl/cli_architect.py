@@ -123,13 +123,6 @@ if TYPE_CHECKING:
     is_flag=True,
     help="Disable colors",
 )
-@click.option(
-    "--tui/--no-tui",
-    "tui",
-    default=None,
-    help="Embedded dashboard (default: auto - on when stdin/stdout are "
-    "TTYs and --ui is not plain; KSTRL_NO_TUI=1 forces off)",
-)
 def decompose(
     spec: Path,
     root: Path | None,
@@ -143,7 +136,6 @@ def decompose(
     agent_type: str,
     ui: str,
     no_color: bool,
-    tui: bool | None,
 ) -> None:
     """Decompose a spec into components and generate PRDs."""
     from kstrl.verify_model import VerifyConfig
@@ -225,53 +217,6 @@ def decompose(
         except ValueError as exc:
             core_ui.err(str(exc))
             return 1
-
-    use_tui = (
-        tui
-        if tui is not None
-        else (
-            sys.stdout.isatty()
-            and sys.stdin.isatty()
-            and os.environ.get("KSTRL_NO_TUI") != "1"
-            and _normalize_ui_mode(ui) != "plain"
-        )
-    )
-    if use_tui:
-        if not (sys.stdout.isatty() and sys.stdin.isatty()):
-            click.echo(
-                "--tui requires an interactive terminal; use --no-tui "
-                "for non-interactive execution.",
-                err=True,
-            )
-            sys.exit(2)
-        from kstrl.runid import mint_run_id
-        from kstrl.tui.dispatch import initial_screens_for_kind
-        from kstrl.tui.embed import EmbeddedContext, run_embedded
-
-        def _target(embed_ctx: EmbeddedContext) -> int:
-            command_run = open_command_run(
-                embed_ctx.ui,
-                root_dir,
-                "decompose",
-                component=ARCHITECT_COMPONENT,
-                run_id=embed_ctx.run_id,
-            )
-            try:
-                return _decompose_core(embed_ctx.ui, command_run)
-            finally:
-                command_run.close()
-
-        sys.exit(
-            run_embedded(
-                _target,
-                root_dir=root_dir,
-                run_id=mint_run_id("decompose"),
-                screen_factory=initial_screens_for_kind(
-                    "decompose",
-                    observe_only=False,
-                ),
-            )
-        )
 
     command_run = open_command_run(
         ui_impl,
@@ -497,7 +442,6 @@ def retry(
                 "manifest_path": str(manifest_file),
                 "root": str(root_dir),
                 "yes": True,
-                "tui": False,
                 "ui": ui,
                 "no_color": no_color,
                 "progress_log": str(progress_log) if progress_log is not None else None,

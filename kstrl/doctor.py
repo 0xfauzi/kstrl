@@ -238,7 +238,7 @@ def check_kstrl_config(root: Path) -> _CheckResult:
     is exempt from that seam and reports the same problems as a
     finding instead of a refusal, through
     `config_preflight.config_problem_lines`, the helper already split
-    out for `ks config show` and the TUI config screen so a third copy
+    out for `ks config show` so a second copy
     of "what is wrong with this configuration" is not written here. A
     document that will not parse folds into that one line; this check
     keeps no narrower idea of a parse failure than that helper does.

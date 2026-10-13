@@ -95,7 +95,7 @@ def _child_env(env: dict[str, str] | None = None) -> dict[str, str]:
         for k, v in os.environ.items()
         if not k.startswith(("KSTRL_", "FACTORY_")) and k not in ("AGENT_CMD", "MODEL")
     }
-    child_env.update(KSTRL_AGENT_PROBE="0", KSTRL_NO_TUI="1", KSTRL_KNOWLEDGE_ENABLED="0")
+    child_env.update(KSTRL_AGENT_PROBE="0", KSTRL_KNOWLEDGE_ENABLED="0")
     if NONO:
         # #700 slice 2: `ks factory` under a [stack] runs every command in a
         # rung proven through this nono, and refuses without one.
@@ -216,7 +216,7 @@ def _factory(
             "factory",
             *("--manifest", str(root / "scripts" / "kstrl" / "manifest.json")),
             *("--root", str(root), "--agent-cmd", str(stub)),
-            *("--no-tui", "--yes", "--ui", "plain", "--no-color", "--no-prs"),
+            *("--yes", "--ui", "plain", "--no-color", "--no-prs"),
             *("--max-retries", "0", "--max-parallel", "1"),
             *("--review-mode", "skip", "--security-mode", "skip"),
             *("--contract-check", contract),

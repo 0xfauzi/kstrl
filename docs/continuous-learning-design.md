@@ -24,7 +24,7 @@ Status: closed (see the section above); proposed before that. Supersedes the `ks
 [spec-harness-engineering.md](spec-harness-engineering.md) section 3.4. #217
 shipped the router and the disclosure described in this document's section 3.
 #507 (Slice 1 of the #217 plan) deleted the generator and its consumers:
-`propose_improvements`, `ks evolve --apply`, the TUI proposals tab and the
+`propose_improvements`, `ks evolve --apply`, the proposals view and the
 CLAUDE.md apply path. The router's `lessons` bucket is printed as candidate
 lessons and nothing writes it. Sections 1 to 3 are
 the audit as it was written, before that deletion.
@@ -124,8 +124,8 @@ Measured facts, verified locally on 2026-08-13 against gepa 0.1.4:
 | Multi-objective | `objective_scores`, `frontier_type="objective"` |
 | Audit trail | `run_dir`, `candidates`, `parents`, `total_metric_calls` |
 
-Zero transitive dependencies matters. kstrl core runs on rich, click, and
-textual by deliberate choice (`pyproject.toml:33`). GEPA fits as an optional
+Zero transitive dependencies matters. kstrl core runs on rich and click
+by deliberate choice (`pyproject.toml`). GEPA fits as an optional
 extra without weight.
 
 The controls map onto kstrl policy line for line. `max_metric_calls` is the
