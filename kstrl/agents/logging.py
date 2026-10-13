@@ -9,7 +9,8 @@ from __future__ import annotations
 from collections.abc import Iterator
 from pathlib import Path
 
-from kstrl.agents.base import Agent, UsageRecord
+from kstrl.agents.base import Agent
+from kstrl.usage import UsageRecord
 
 
 class LoggingAgent:

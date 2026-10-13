@@ -31,7 +31,7 @@ from typing import Any
 import pytest
 
 from kstrl.agent_output import extract_agent_json, extract_json, select_agent_output
-from kstrl.agents.base import TOOL_RESULT_PREFIX, UsageRecord, model_output_text
+from kstrl.agents.base import TOOL_RESULT_PREFIX, model_output_text
 from kstrl.agents.claude_code import ClaudeCodeAgent, _parse_stream_event
 from kstrl.agents.claude_sdk import ClaudeSdkAgent
 from kstrl.agents.logging import LoggingAgent
@@ -40,13 +40,13 @@ from kstrl.loop import COMPLETION_MARKER, run_loop
 from kstrl.sandbox import SandboxConfig
 from kstrl.timeout import TimeoutConfig
 from kstrl.ui.plain import PlainUI
+from kstrl.usage import UsageRecord
 from tests.helpers.executables import put_on_path, write_executable
 
 FIXTURE = Path(__file__).parent / "fixtures" / "claude_stream" / "blocks.jsonl"
 
 #: ``(event type, block type)`` -> what the adapter does with it. ``"<str>"``
-#: means ``message.content`` is a string; ``None`` means the event has no
-#: content list.
+#: means ``message.content`` is a string; ``None``: the event has no content list.
 DISPOSITION: dict[tuple[str, str | None], str] = {
     ("assistant", "text"): "render",
     ("assistant", "tool_use"): "render",

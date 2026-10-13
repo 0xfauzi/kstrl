@@ -32,7 +32,6 @@ from typing import Any
 import pytest
 
 from kstrl.agents import custom
-from kstrl.agents.base import UsageRecord
 from kstrl.evolution import EvolutionJournal
 from kstrl.evolution_config import EvolutionConfig
 from kstrl.factory import run_factory
@@ -43,6 +42,7 @@ from kstrl.serve_config import ServeConfig
 from kstrl.serve_spend import SpendLedger, read_run_spend
 from kstrl.shutdown import StopController
 from kstrl.ui.plain import PlainUI
+from kstrl.usage import UsageRecord
 from kstrl.verify_model import VerifyConfig
 from kstrl.workqueue import Queue
 from kstrl.workqueue_items import ItemSource, QueueConfig

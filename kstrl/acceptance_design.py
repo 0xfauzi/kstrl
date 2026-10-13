@@ -50,7 +50,6 @@ from kstrl.acceptance import (
 )
 from kstrl.agent_output import collect_agent_output, extract_json, select_agent_output
 from kstrl.agents import get_agent
-from kstrl.agents.base import DESIGNER_ROLE, collect_usage
 from kstrl.agents.prompt_record import AgentCall, recording_prompts
 from kstrl.delimiters import generate_data_delimiter
 from kstrl.inbox import ItemKind
@@ -61,6 +60,7 @@ from kstrl.requirements import SpecRequirement, built_by
 from kstrl.statedir import control_dir, pre_run_prd_path
 from kstrl.temp_worktree import ContractCleanupError, create_temp_worktree, remove_temp_worktree
 from kstrl.timeout import limit_seconds
+from kstrl.usage import DESIGNER_ROLE, collect_usage
 from kstrl.waivers import approvals_at
 
 if TYPE_CHECKING:

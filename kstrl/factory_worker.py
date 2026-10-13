@@ -14,7 +14,6 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TextIO
 
-from kstrl.agents.base import UsageTotals, collect_usage
 from kstrl.agents.proc import kill_active_process_groups
 from kstrl.agents.prompt_record import AgentCall, recording_prompts
 from kstrl.breaker import BreakerConfig
@@ -43,6 +42,7 @@ from kstrl.sandbox import SandboxConfig
 from kstrl.scope import ComponentScope
 from kstrl.statedir import pre_run_prd_path
 from kstrl.timeout import TimeoutConfig
+from kstrl.usage import UsageTotals, collect_usage
 from kstrl.verify_model import VerifyConfig
 from kstrl.worktree_setup import WorktreeSetup
 from kstrl.worktree_sweep import (

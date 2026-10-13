@@ -17,14 +17,14 @@ from __future__ import annotations
 import shlex
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 from kstrl.acceptance import FAIL, PASS, RECORD_FILE, Check, HeadOutcome, evidence_dir
 from kstrl.jsonread import read_json
 from kstrl.rung import HOST_LABEL, label_of
 
 if TYPE_CHECKING:
-    from kstrl.factory_config import FactoryConfig
+    from kstrl.rung import Rung
 
 #: Under the header of a record whose checks a model wrote (#700 slice 7).
 DESIGNED_LINE = "- the verification designer wrote these checks"
@@ -46,7 +46,17 @@ def engineer_line(harness: str) -> str:
     return "- the engineer ran with no sandbox"
 
 
-def pr_isolation(config: FactoryConfig) -> str:
+class IsolationFields(Protocol):
+    """The settings of the run config that the isolation text reads."""
+
+    @property
+    def test_rung(self) -> Rung | None: ...
+
+    @property
+    def engineer_sandbox(self) -> str: ...
+
+
+def pr_isolation(config: IsolationFields) -> str:
     """A PR body's ``## Isolation`` text: the label the checks ran under,
     then :func:`engineer_line`."""
     return f"{label_of(config.test_rung)}\n{engineer_line(config.engineer_sandbox)}"

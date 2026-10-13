@@ -397,7 +397,7 @@ def _init_git_repo(root: Path) -> None:
 
 
 def _usage(total: int, cost: float = 0.0) -> object:
-    from kstrl.agents.base import UsageRecord, UsageTotals
+    from kstrl.usage import UsageRecord, UsageTotals
 
     totals = UsageTotals()
     totals.add_record(

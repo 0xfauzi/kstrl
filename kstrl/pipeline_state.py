@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from kstrl import events as ev
-from kstrl.agents.base import UsageTotals
 from kstrl.divergence import AttemptReading
 from kstrl.inbox import Inbox
 from kstrl.interaction import InteractionChannel, UiInteractionChannel
@@ -25,6 +24,7 @@ from kstrl.runenvelope import RunEnvelope
 from kstrl.runstate import RunState
 from kstrl.scope import RunScope
 from kstrl.security import SecurityResult
+from kstrl.usage import UsageTotals
 from kstrl.verify import MechanicalVerification
 from kstrl.waivers import ApprovalSnapshot
 from kstrl.worktree_sweep import WorktreeSweep

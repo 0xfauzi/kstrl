@@ -63,7 +63,7 @@ import tempfile
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 from kstrl import git, git_base
 from kstrl.atomicio import atomic_write_json
@@ -78,11 +78,11 @@ from kstrl.verify_commands import SHELL_COULD_NOT_RUN
 from kstrl.waivers import covering_override
 
 if TYPE_CHECKING:
-    from kstrl.factory_config import FactoryConfig
     from kstrl.inbox import InboxItem
     from kstrl.manifest import Manifest
     from kstrl.stack import Stack
     from kstrl.ui.base import UI
+    from kstrl.verify_model import VerifyConfig
 
 #: The one file a plan directory must hold.
 PLAN_FILE = "plan.json"
@@ -443,7 +443,32 @@ def _write_files(into: Path, files: Files) -> None:
         target.chmod(0o755 if executable else 0o644)
 
 
-def limits(config: FactoryConfig) -> tuple[float | None, float | None]:
+class LimitsFields(Protocol):
+    """The two settings of the run config that :func:`limits` reads."""
+
+    @property
+    def worktree_setup_timeout(self) -> float: ...
+
+    def resolved_verify_config(self) -> VerifyConfig: ...
+
+
+class AcceptanceFields(LimitsFields, Protocol):
+    """The settings of the run config that the base reading and the record read."""
+
+    @property
+    def acceptance_plan(self) -> PinnedPlan | None: ...
+
+    @property
+    def acceptance_base(self) -> BaseReading | None: ...
+
+    @property
+    def project_stack(self) -> Stack | None: ...
+
+    @property
+    def engineer_sandbox(self) -> str: ...
+
+
+def limits(config: LimitsFields) -> tuple[float | None, float | None]:
     """The setup limit and the per-command limit a replay runs under: the
     ones the worktree setup and Phase 1 run under."""
     return (
@@ -525,7 +550,7 @@ def replay_base(
     plan: PinnedPlan,
     base_branch: str,
     run_id: str,
-    config: FactoryConfig,
+    config: LimitsFields,
     ui: UI,
 ) -> tuple[BaseReading | None, list[str]]:
     """Replay every check of the plan once on the base; or why the run must
@@ -652,7 +677,7 @@ def _write_base(
 
 def judge_head(
     root: Path,
-    config: FactoryConfig,
+    config: AcceptanceFields,
     comp_id: str,
     head_sha: str,
     *,

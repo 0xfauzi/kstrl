@@ -36,7 +36,6 @@ import pytest
 
 from kstrl import git_base
 from kstrl import loop as loop_mod
-from kstrl.agents.base import UsageRecord, UsageTotals
 from kstrl.config import KstrlConfig
 from kstrl.contract import ContractConfig, run_contract_testing
 from kstrl.factory import run_factory
@@ -53,6 +52,7 @@ from kstrl.serve_gates import check_budget
 from kstrl.serve_spend import SpendLedger
 from kstrl.timeout import TimeoutConfig
 from kstrl.ui.plain import PlainUI
+from kstrl.usage import UsageRecord, UsageTotals
 from kstrl.verify import run_mechanical_verification
 from kstrl.verify_model import CheckResult, VerificationResult, VerifyConfig
 from tests.conftest import make_review_repo

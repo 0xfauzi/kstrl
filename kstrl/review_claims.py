@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import Protocol
 
 from kstrl.findings import (
     CLAIM_DISAGREEMENT_CATEGORY,
@@ -12,8 +12,12 @@ from kstrl.findings import (
 from kstrl.prd import PRD
 from kstrl.review import ReviewResult, ReviewVerdict, normalize_story_id
 
-if TYPE_CHECKING:
-    from kstrl.factory_config import FactoryConfig
+
+class ClaimFields(Protocol):
+    """The setting of the run config that :func:`claim_blocks` reads."""
+
+    @property
+    def claim_agreement(self) -> str: ...
 
 
 def claim_disagreements(
@@ -241,7 +245,7 @@ def revert_unconfirmed_stories(
     return reverted
 
 
-def claim_blocks(config: FactoryConfig, autonomy_level: int) -> bool:
+def claim_blocks(config: ClaimFields, autonomy_level: int) -> bool:
     """Whether a claim disagreement should FAIL the component.
 
     The config can opt in early (``[factory] claim_agreement = "block"``

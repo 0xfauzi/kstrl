@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from kstrl import event_catalog
-from kstrl.agents.base import collect_usage
 from kstrl.agents.prompt_record import recording_prompts
 from kstrl.findings import Finding
 from kstrl.manifest import Component
@@ -23,6 +22,7 @@ from kstrl.review_claims import (
     revert_unconfirmed_stories,
 )
 from kstrl.timeout import limit_seconds
+from kstrl.usage import collect_usage
 from kstrl.verify_model import VerificationResult
 
 if TYPE_CHECKING:

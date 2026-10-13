@@ -28,9 +28,9 @@ from typing import Any
 
 from kstrl import event_catalog
 from kstrl import events as ev
-from kstrl.agents.base import CEILING_AXES
 from kstrl.manifest import COMPONENT_STATUS_VALUES, ComponentStatus
 from kstrl.observability import parse_event_ts, read_progress_events
+from kstrl.usage import CEILING_AXES
 
 # Bounded so a security-heavy run cannot bloat the state.
 MAX_RECENT_FINDINGS = 50

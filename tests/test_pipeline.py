@@ -20,7 +20,6 @@ from typing import Any
 import pytest
 
 from kstrl import event_catalog, git
-from kstrl.agents.base import UsageRecord, UsageTotals
 from kstrl.config import KstrlConfig
 from kstrl.context import IterationContext
 from kstrl.event_catalog import Event, PhaseCompleted
@@ -48,6 +47,7 @@ from kstrl.runstate import RunState
 from kstrl.scope import RunScope
 from kstrl.security import SecurityConfig, SecurityResult
 from kstrl.ui.plain import PlainUI
+from kstrl.usage import UsageRecord, UsageTotals
 from kstrl.verify_model import CheckResult, VerificationResult, VerifyConfig
 from kstrl.worktree_sweep import WorktreeSweep
 from tests.helpers.context_sweeps import CURRENT, NOT_REMEASURED, RESOLVED, section

@@ -10,7 +10,7 @@ import time
 from collections.abc import Iterator
 from pathlib import Path
 
-from kstrl.agents.base import TOOL_RESULT_PREFIX, UsageRecord
+from kstrl.agents.base import TOOL_RESULT_PREFIX
 from kstrl.agents.proc import DeadlineStreamer, timeout_message
 from kstrl.agents.prompt_record import record_prompt
 from kstrl.sandbox import (
@@ -18,6 +18,7 @@ from kstrl.sandbox import (
     codex_review_sandbox_args,
     codex_sandbox_args,
 )
+from kstrl.usage import UsageRecord
 
 # Measured against codex CLI 0.134.0 (R3.1): plain `codex exec` output
 # ends with a two-line trailer - a line reading "tokens used" followed by

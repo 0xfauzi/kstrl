@@ -11,7 +11,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl.agents.base import UsageTotals
 from kstrl.agents.proc import kill_active_process_groups
 from kstrl.config import (
     KstrlConfig,
@@ -100,6 +99,7 @@ from kstrl.security import (
 )
 from kstrl.shutdown import StopController
 from kstrl.ui.bridge import EventBridgeUI
+from kstrl.usage import UsageTotals
 from kstrl.verify import run_mechanical_verification
 from kstrl.verify_model import VerifyConfig
 
