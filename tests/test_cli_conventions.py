@@ -379,9 +379,8 @@ FINDING_EXIT_SITES: dict[tuple[str, str], int] = {
 #: census every function in kstrl/ that shares the name.
 NOT_FOLLOWED: dict[str, str] = {
     "run": (
-        "Textual's App.run returns what the app's own exit() was given, and "
-        "those calls are in the census. A kstrl function named `run` that "
-        "returns an exit code is the disclosed blind spot below."
+        "an agent, a process and a loop each have a `run`. A kstrl function "
+        "named `run` that returns an exit code is the disclosed blind spot below."
     ),
 }
 
@@ -461,8 +460,7 @@ def _assigned(node: ast.AST) -> tuple[list[ast.expr], ast.expr | None]:
 
 
 #: Calls whose first argument, or click's ``code=`` keyword, is a process
-#: exit code: ``sys.exit``, ``ctx.exit``, Textual's ``App.exit``,
-#: ``os._exit`` and ``SystemExit``.
+#: exit code: ``sys.exit``, ``ctx.exit``, ``os._exit`` and ``SystemExit``.
 EXIT_CALLS = frozenset({"exit", "_exit", "SystemExit"})
 
 

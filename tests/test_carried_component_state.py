@@ -4,17 +4,16 @@ A ``ks retry cli`` run schedules one component. The other components
 were completed or failed by earlier runs, and the only event this run
 writes for them is ``component_scope_resolved``. Before #448 the reducer
 had no case for that event and ``ComponentState.status`` defaults to
-``pending``, so ``ks dash`` showed three merged components as never
-started under a finished run while ``ks status --no-tui`` (which reads
+``pending``, so the dashboard showed three merged components as never
+started under a finished run while ``ks status`` (which reads
 the manifest) said all four were completed.
 
 The fix records the manifest status on the scope event the run already
 emits, and the reducer folds it. These tests drive the real
 ``run_factory``, then read the run back through the surfaces that
-report it: the reducer, the plain ``ks status --no-tui`` report (the
-control, which reads the manifest), the real dashboard app, and the
-home screen's per-run row, which must keep counting only what the run
-did.
+report it: the reducer and the plain ``ks status`` report (the
+control, which reads the manifest). The dashboard and home screen tests
+went with the TUI (#863 A1).
 """
 
 from __future__ import annotations
@@ -92,7 +91,7 @@ class TestTheRunRecordsWhatItCarried:
         assert state.components[COMPONENT_ID].status == "completed"
 
     def test_the_plain_status_report_agrees(self, tmp_path: Path) -> None:
-        """The control: ``ks status --no-tui`` reads the manifest, and
+        """The control: ``ks status`` reads the manifest, and
         was already right. The reducer test above is only evidence if
         the two surfaces are reading the same run."""
         _run_with_carried_components(tmp_path)

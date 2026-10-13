@@ -131,7 +131,7 @@ class CoverageGap:
     Folded from :class:`events.BudgetCoverage`, which is run-scoped: the
     gap belongs to the run's adapters, not to whichever component
     happened to expose it. ``uncovered_tokens`` stays a TOKEN count on
-    this surface too - the dashboard has no price table either, and a
+    this surface too: this state has no price table either, and a
     dollar figure invented for display is still an invented figure.
     """
 
@@ -147,7 +147,7 @@ class CoverageGap:
 
 @dataclass
 class RunState:
-    """Run-level temporal state; the TUI's single source of truth."""
+    """Run-level temporal state, folded from the run's events."""
 
     run_id: str = ""
     project: str = ""
@@ -412,7 +412,7 @@ def apply(state: RunState, event: event_catalog.Event) -> None:  # noqa: C901 - 
         return
     if isinstance(event, event_catalog.RunCompleted):
         state.finished = True
-        state.release_ref = event.release_ref  # #442; read by the TUI's delivery row
+        state.release_ref = event.release_ref  # #442
         state.release_withheld = event.release_withheld
         return
     if isinstance(event, event_catalog.RunPlan):
@@ -572,7 +572,7 @@ def apply(state: RunState, event: event_catalog.Event) -> None:  # noqa: C901 - 
         state.total_tokens += event.total_tokens
         state.cost_usd += event.cost_usd
         # Per-axis coverage (R8 review finding 1): dropping these left
-        # the dashboard unable to tell a measured total from one that
+        # a reader of the state unable to tell a measured total from one that
         # counts a subset of the run's roles.
         comp.token_calls += event.token_calls
         comp.cost_calls += event.cost_calls

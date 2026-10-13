@@ -2609,8 +2609,8 @@ class TestPhaseReadingsRetireSkippableFindings:
 
         THE MODE SWITCH BETWEEN THE ATTEMPTS IS A TEST SHORTCUT, and it
         is not a route production can take. Every write of
-        ``factory_config.review_mode`` in ``kstrl/`` is CLI, config or
-        TUI parse time, or the autonomy bundle in
+        ``factory_config.review_mode`` in ``kstrl/`` is CLI or config
+        parse time, or the autonomy bundle in
         ``factory._run_factory_locked``, which lands before the first
         component is submitted; ``pipeline.py``'s two are locals of
         ``_phase_review``. So the mode is fixed for the life of a run

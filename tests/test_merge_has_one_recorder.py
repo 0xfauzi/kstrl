@@ -14,7 +14,7 @@ Two layers.
 
 The BEHAVIOUR layer drives the real ``ks factory`` in a subprocess over
 a saved manifest, with a stub ``gh`` on PATH, and reads the run back
-through the manifest, the run's ``events.jsonl``, the TUI's
+through the manifest, the run's ``events.jsonl``, the reducer's
 ``load_run_state`` and ``merges_of``, and ``ci_state.recorded_merges``
 given no manifest.
 
@@ -338,8 +338,8 @@ NOT_A_MERGE_RECORD: dict[str, str] = {
     "pr.py::wait_for_merge": "hands GitHub's commit to the caller on MergeConfirmation",
     "pr_state.py::<module>": "the PrView field declaration",
     "pr_state.py::_pr_state": "the commit gh reported",
-    "reducer.py::<module>": "the TUI's ComponentState.merge_sha field declaration",
-    "reducer.py::apply": "folds a pr_merged event into the TUI's view, not the manifest",
+    "reducer.py::<module>": "the reducer's ComponentState.merge_sha field declaration",
+    "reducer.py::apply": "folds a pr_merged event into the reducer's view, not the manifest",
 }
 
 #: Every scope in ``kstrl/`` that spells ``PrMerged``, and how many times.

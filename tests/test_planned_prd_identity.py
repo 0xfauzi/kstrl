@@ -211,7 +211,7 @@ EXPECTED_PLAN_PRD_PATH_SPELLINGS = {
 
 #: Every expression in ``kstrl/`` folding to the directory name ``plan``:
 #: ``STATE_SUBDIRS``, ``STATE_NOT_CARVED``, the join in ``plan_prd_path``,
-#: and three TUI titles that are not paths.
+#: and the plan gate's event kind, which is not a path.
 EXPECTED_PLAN_LITERALS = {
     # #602: PLAN_KIND, the plan gate's checkpoint event kind. Not a path.
     "plan_gate.py::<module>": 1,

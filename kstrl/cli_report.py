@@ -1,4 +1,4 @@
-"""Commands that report state: ks status, ks dash, ks config show and the plan listing."""
+"""Commands that report state: ks status, ks config show and the plan listing."""
 
 from __future__ import annotations
 

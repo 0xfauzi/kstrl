@@ -905,8 +905,8 @@ class TestTheSeamCannotBeBypassedByDeclaration:
 
     def test_only_the_root_group_runs_without_a_subcommand(self) -> None:
         """``invoke_without_command`` means the GROUP callback does work,
-        and a group callback is not a ``_KstrlCommand``. The root one is
-        the home shell, which preflights explicitly; a second such group
+        and a group callback is not a ``_KstrlCommand``. The root one
+        prints help and reads no configuration; a second such group
         would silently reintroduce #272."""
         groups = [path for path, command in self._walk(cli) if isinstance(command, click.Group)]
 
@@ -976,9 +976,8 @@ class TestTheParseScope:
 
     def test_the_scope_does_not_outlive_its_block(self, tmp_path: Path) -> None:
         """The half that keeps this honest. A process-wide snapshot
-        would freeze the file for surfaces built to re-read it: the TUI
-        config screen's refresh action, and `ks serve` re-reading per
-        queue item."""
+        would freeze the file for a surface built to re-read it: `ks serve`
+        re-reads it per queue item."""
         toml_path = tmp_path / "kstrl.toml"
         toml_path.write_text("[factory]\nmax_parallel = 2\n")
 

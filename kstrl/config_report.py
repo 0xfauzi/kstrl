@@ -1,16 +1,14 @@
 """Resolved-config reporting: (section, key, value, source) rows.
 
-Extracted from ``cli.config_show`` (TUI surface B1) so the plain
-command and the config screen render the SAME dataset. This module is
-click-free on purpose; presentation (click.echo lines, DataTable rows)
-stays with the callers.
+Extracted from ``cli.config_show`` (TUI surface B1). This module is
+click-free on purpose: presentation (the click.echo lines) stays with
+the caller.
 
 Source detection for env is behavioral: a value is tagged (env) when
 removing the environment changes it. That requires temporarily
 clearing ``os.environ`` - a PROCESS-WIDE side effect. Never call
 ``build_config_report`` while another thread is running a live
-command; the TUI computes its report before app.run() and refreshes
-only when no session is active.
+command.
 """
 
 from __future__ import annotations
@@ -158,9 +156,7 @@ def environ_lock() -> Iterator[None]:
 
     Take it around a block that MUTATES the environment, and around a
     read of ``KSTRL_*`` on any thread that could run beside one. It
-    cannot help against a subprocess inheriting the environment, which
-    is why a launched run is still a refusal in
-    ``tui.config_guard.env_scrub_is_safe`` rather than a wait.
+    cannot help against a subprocess inheriting the environment.
     """
     with _ENVIRON_LOCK:
         yield
@@ -452,11 +448,9 @@ def build_config_report(
         It is the SURFACE set, not the entry set, because this function
         has both kinds of caller. The entry check reads kstrl.toml once
         itself and turns an unreadable file into a ConfigError before
-        any loader runs; the TUI config screen's refresh action calls
-        this minutes later with no such pass in front of it, so a chmod
-        or an unreadable pyproject.toml between two refreshes arrives
-        here as a bare OSError. `except REJECTIONS` let that kill the
-        whole report on the one screen whose job is showing config.
+        any loader runs. A caller with no such pass in front of it, or a
+        chmod after that pass, gives a bare OSError here. `except
+        REJECTIONS` let that kill the whole report.
         """
         try:
             return loader(root_dir)
@@ -470,9 +464,8 @@ def build_config_report(
     # One parse of kstrl.toml for the whole report. Without this the
     # loader calls and section reads below lex the same bytes 32 times:
     # counted, and measured on the shipped 21 KB kstrl.toml.example at
-    # 13.34 ms against 0.82 ms with it. The TUI config screen pays that
-    # again on every refresh. Per call, so that screen's
-    # re-read-on-demand keeps seeing the file as it is now.
+    # 13.34 ms against 0.82 ms with it. Per call, so that each report
+    # sees the file as it is now.
     with toml_parse_scope():
         resolved_base = KstrlConfig.load(root_dir)
         phase_resolved = {name: _resolve(loader) for name, loader in phase_sections}

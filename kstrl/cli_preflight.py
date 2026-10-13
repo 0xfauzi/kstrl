@@ -351,8 +351,8 @@ def _check_prd_preflight(prd_file: Path, ui_impl: UI) -> None:
 def _check_prompt_preflight(path: Path | None, ui_impl: UI) -> None:
     """Tell the OPERATOR when a prompt file is an older kstrl template (#286).
 
-    Here, in the parent process, on the console UI, and BEFORE the TUI
-    branch of every command that has one. That placement is the whole
+    Here, in the parent process, on the console UI, and BEFORE the
+    command body. That placement is the whole
     point of this function existing rather than the check living in
     ``run_loop`` beside the read: on a factory run ``run_loop`` executes
     in a pool worker whose UI writes to that component's engineer.jsonl,

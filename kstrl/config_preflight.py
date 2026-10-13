@@ -448,12 +448,10 @@ def config_problem_lines(
     parse error and nothing else, because no section could be resolved
     behind it.
 
-    Split out because ``ks config show`` and the TUI config screen are
-    the two surfaces whose whole job is explaining a broken config, and
-    they were carrying a copy of this each. The copies had already
-    drifted in their handling of the empty case; a third surface would
-    have made it three. Callers supply their own ``warn`` because one
-    prints to stderr and the other must stay silent on a screen.
+    Split out because two surfaces explained a broken config, and each
+    carried a copy of this. The copies had already drifted in their
+    handling of the empty case. ``ks config show`` and ``ks doctor``
+    call it now. Each caller supplies its own ``warn``.
     """
     try:
         return collect_config_problems(root_dir, warn=warn)

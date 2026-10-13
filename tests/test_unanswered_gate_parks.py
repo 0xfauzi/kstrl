@@ -420,12 +420,10 @@ EXPECTED_PROMPT_SITES = {
 #: dotted origin `PromptRequest` imports from, everywhere in kstrl/.
 PROMPT_REQUEST_TARGET = frozenset({"kstrl.interaction.PromptRequest"})
 
-#: `Sites.undecided` for the walk above, package-wide. Not specific to
-#: this target - `test_network_timeouts.py` pins the identical five rows
-#: for `urllib.request.urlopen` - because neither callee has a name the
-#: AST can spell: `_RUNNERS[key](...)` is a subscript, and
-#: `initial_screens_for_kind(...)()` calls the RESULT of a call, so its
-#: own callee is an `ast.Call`, not a `Name` or `Attribute`.
+#: `Sites.undecided` for the walk above, package-wide. Empty since #863 A1
+#: removed the two TUI calls of the result of a call. A call with no callee
+#: name the AST can spell (a subscript or the result of a call) adds a row.
+#: `EXPECTED_SEEN_PROMPT_SITES` below is the control that the walk still sees.
 EXPECTED_UNDECIDED_PROMPT_SITES: tuple[str, ...] = ()
 
 #: `Sites.seen` for the walk above, keyed by module and enclosing scope

@@ -149,8 +149,8 @@ def test_blind_spot_a_ranking_as_an_enum() -> None:
     raises=AssertionError,
     reason=(
         "blind spot: a copy that leaves out the lowest severity and relies on "
-        ".get(x, 0) names three of the four. Lowering the census to three "
-        "flags tui/screens/init_wizard.py's REASONING_LEVELS, which is not a ranking"
+        ".get(x, 0) names three of the four. A census of three flagged the TUI's "
+        "REASONING_LEVELS, which is not a ranking, until #863 A1 removed it"
     ),
 )
 def test_blind_spot_a_ranking_missing_its_zero_rank() -> None:

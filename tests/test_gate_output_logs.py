@@ -120,8 +120,8 @@ def test_a_failing_test_gate_leaves_a_log_naming_the_failing_test(tmp_path: Path
     """The issue's acceptance: the log holds the failing test's name, and
     the event names the log. The failure then goes through the pipeline's
     own routing, which stamps the directory holding the log onto the
-    component: the path the failure summary, ``ks status`` and the TUI
-    retry screen print as the component's raw outputs."""
+    component: the path the failure summary and ``ks status``
+    print as the component's raw outputs."""
     project = _project(tmp_path)
     comp = component()
     run = _Run(

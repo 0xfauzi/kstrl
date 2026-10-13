@@ -584,9 +584,8 @@ class TestDetectBaseBranch:
         assert detect_base_branch(root) == "master"
 
     def test_detection_is_one_git_subprocess(self, tmp_path: Path) -> None:
-        # It runs on the Textual event loop when the decompose launch
-        # form composes, so the call count is the ceiling on how long
-        # the UI can freeze. One call, one timeout.
+        # Each command that defaults its base branch calls it before it
+        # starts. One call, one timeout.
         root = _repo_on(tmp_path, "release-2.0")  # the worst case: no candidate hits
 
         with patch("kstrl.git_base.subprocess.run", wraps=subprocess.run) as run:

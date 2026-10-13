@@ -319,7 +319,8 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 - The terminal UI (the Textual dashboard, #863). `ks dash`, the `--tui` and
   `--no-tui` options of `ks status`, `ks factory`, `ks decompose`,
   `ks understand` and `ks feature`, and the `KSTRL_NO_TUI`
-  variable are gone. Bare `ks` prints the command list and exits 2 on a
+  variable are gone. kstrl refuses a set `KSTRL_NO_TUI` by name, and a plist
+  from `ks serve --print-plist` before #863 sets it. Bare `ks` prints the command list and exits 2 on a
   terminal, as it already did on a pipe. The `textual` and
   `pytest-textual-snapshot` dependencies are gone. A launch record that
   carries `tui` is retried with the option left out. With

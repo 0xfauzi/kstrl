@@ -220,20 +220,15 @@ def _names_sdk_options(node: ast.AST) -> bool:
 
 
 def _is_sdk_session_call(node: ast.AST) -> bool:
-    """A call of ``query`` (not ``self.query``, a Textual query) or of
-    ``ClaudeSDKClient``, by name or as an attribute."""
+    """A call of ``query`` or of ``ClaudeSDKClient``, by name or as an
+    attribute. ``self.query`` was a Textual query and went with the TUI."""
     if not isinstance(node, ast.Call):
         return False
     func = node.func
     if isinstance(func, ast.Name):
         return func.id in ("query", "ClaudeSDKClient")
     if isinstance(func, ast.Attribute):
-        if func.attr == "ClaudeSDKClient":
-            return True
-        receiver = func.value
-        return func.attr == "query" and not (
-            isinstance(receiver, ast.Name) and receiver.id == "self"
-        )
+        return func.attr in ("query", "ClaudeSDKClient")
     return False
 
 
@@ -415,9 +410,7 @@ def test_the_static_guard_flags_a_spawn_without_the_session_flags(tmp_path: Path
         "    return sdk.ClaudeAgentOptions(env=claude_session_env(), settings=None, **kw)\n"
         "async def d(sdk, options):\n"
         "    async for m in sdk.query(prompt='x', options=options):\n"
-        "        pass\n"
-        "def e(self):\n"
-        "    return self.query('#id')\n",
+        "        pass\n",
         encoding="utf-8",
     )
     census, offenders = claude_sites(tmp_path)

@@ -303,8 +303,7 @@ def _echo_learning_readiness(
     ``patterns`` is passed in rather than re-read. The caller has
     already computed it from the same journal, and a second read is a
     second answer to one question. The lines themselves are built by
-    ``kstrl.evolve_report`` so the TUI's evolve screen shows the same
-    text (#433 F12).
+    ``kstrl.evolve_report``, so that the text has one home (#433 F12).
     """
     from kstrl.evolve_report import readiness_lines
 

@@ -406,8 +406,7 @@ class JournalReads:
         reason: a healthy journal that prints "0 repairs" every time
         teaches an operator to skip the line that matters. Deciding it
         here also keeps the file read ONCE. What stays per-surface is
-        the prefix, two spaces for the CLI and an alert glyph for the
-        TUI, and the widget or stream it goes to.
+        the prefix and the stream it goes to.
         """
         repairs = self.get_repair_count()
         if not repairs:
@@ -426,8 +425,7 @@ class JournalReads:
         The read surface for ``JOURNAL_REPAIR_EVENT`` (#327 round 1,
         F5). Writing the row was only half of "if it's worth deciding,
         it's worth recording": a row no command reports is reachable
-        only by an operator who already suspects the problem, and the
-        logger warning goes to orchestrator.log under the TUI. ``ks
+        only by an operator who already suspects the problem. ``ks
         evolve --status`` prints this when it is non-zero.
 
         Counts rows, not incidents. Residual 4 of

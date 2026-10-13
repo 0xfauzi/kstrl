@@ -2159,10 +2159,9 @@ class TestSubprocessTimeoutAudit:
         cleanliness. ``astwalk.calls_to`` partitions instead, and this
         pins the half that is not an answer.
 
-        Rows once the line numbers come off, none of them a
-        subprocess. Four are dispatch tables with no identifier for the
-        walk to compare, and four are an agent adapter reached through a parameter or an
-        attribute. Keyed by module and expression, because a line number
+        Four rows once the line numbers come off, none of them a
+        subprocess: each is an agent adapter reached through a parameter
+        or an attribute. Keyed by module and expression, because a line number
         here churns on any edit above the site and none of those diffs is
         this test's subject. Adding a row is not
         forbidden, it is the point: the diff that adds one is where

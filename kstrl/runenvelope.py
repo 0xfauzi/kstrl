@@ -134,7 +134,7 @@ class RunEnvelope:
         ``blame_env`` is False, and the reason is specific rather than
         conservative. Naming an environment variable means clearing
         ``os.environ`` process-wide, and by the time a run reaches here
-        the caller may be a TUI worker thread. It also cannot lose
+        the caller may not be the only thread. It also cannot lose
         anything: the entry preflight already resolved every one of
         these sections with ``blame_env=True`` before the command body
         ran, and the environment of a running process does not change

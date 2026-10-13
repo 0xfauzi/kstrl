@@ -192,11 +192,6 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     "serve_outcome.py": 1,
     "serve_spend.py": 1,
     "statedir.py": 1,
-    # #433 F9: the bounded "rb" read of a review file, and the
-    # disposition word OPEN = "open", which is not a read.
-    # #433 M1: the pid ks serve writes into its lock file.
-    # #433 F7: the failed gate's stored output, read as bytes and decoded
-    # with errors="replace", so no locale codec is involved.
     # 4 since #414: the bad-patterns scan's read_text is gone (it reads
     # bytes now, so py_compile does its own PEP 263 decoding). 3 since
     # #696: scrub_stale_verify_commands's CLAUDE.md read is gone with the
@@ -394,10 +389,6 @@ EXPECTED_DECIDED_OUT: tuple[str, ...] = (
     # `_readable`, which decodes with errors="replace". Binary, so no
     # codec applies at the open.
     "replay.py log.open",
-    # #433 F9: a review file is read "rb" under a size bound and parsed
-    # by jsonread, which decodes. Binary, so no codec applies.
-    # #433 F7: gate_log_excerpt opens the gate log "rb" to read its tail
-    # and decodes with errors="replace". Binary, so no codec applies.
 )
 
 

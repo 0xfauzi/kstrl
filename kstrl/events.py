@@ -528,7 +528,7 @@ class EventBus:
 
     ``run_id``/``component``/``source`` defaults fill empty envelope
     fields; ``seq`` is per-bus monotonic; ``ts`` is wall-clock at emit
-    (the TUI's last-event-age depends on this being wall time).
+    (the reducer's ``last_event_ts`` depends on this being wall time).
     """
 
     def __init__(

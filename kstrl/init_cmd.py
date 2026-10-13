@@ -258,8 +258,7 @@ DEFAULT_KSTRL_TOML = """\
 # steer_enabled = false            # true = act on /memory and /iterate PR comments
 """
 
-# What `ks init` does to a scaffolded file. The TUI wizard's preview
-# renders these, so the vocabulary belongs beside the code that decides.
+# What `ks init` does to a scaffolded file.
 ScaffoldAction = Literal["create", "keep", "append"]
 
 
@@ -452,9 +451,7 @@ def gitignore_block() -> str:
 def _gitignore_state(root: Path) -> tuple[ScaffoldAction, str | None]:
     """What init would do to ``root``/.gitignore, and the text it read.
 
-    One decision with two consumers - the write below and the TUI
-    wizard's preview - so the preview cannot describe a write that would
-    not happen. "keep" covers both "the block is already there" and
+    One decision for the write below and for ``gitignore_plan``. "keep" covers both "the block is already there" and
     "the file cannot be read as text", because init leaves both alone;
     the second is the one where the text comes back None.
     """

@@ -15,9 +15,9 @@ row; each pinned row below says why it is not a queue id shown to an
 operator.
 
 WHAT IT DOES NOT SEE: an id copied into a name that is not ``item_id``
-first, as the TUI's ``ActiveRow.label`` is. That is disclosed below as a
-strict xfail rather than left unstated, and the TUI's own end-to-end test
-in ``tests/test_tui_433_inc5.py`` covers that row.
+first. That is disclosed below as a strict xfail rather than left
+unstated. The TUI's ``ActiveRow.label`` was the one such row, and it went
+with the TUI (#863 A1).
 
 The last test drives ``ks serve --once`` and types the ids it printed and
 filed back into ``ks queue show``.
@@ -158,7 +158,7 @@ def test_a_poisoned_item_is_named_by_ids_queue_show_accepts(
     named = [title.split()[2].rstrip(":") for title in titles if title.startswith("Queue item ")]
     assert named, titles
     # The title carries the short form: the full id cut the title's reason in
-    # the TUI's needs-you row at 80 columns.
+    # a row of 80 columns.
     assert f"Queue item {short_item_id(poisoned.item_id)} poisoned" in titles, titles
     for shown in named:
         show = _invoke(["queue", "show", shown], tmp_path)

@@ -9,7 +9,7 @@ carries: a working directory inside the worktree. The attempt's end, and
 every removal of a worktree, kill the group of each process found there
 and record it as an ``orphan_process`` finding.
 
-The same PR fixes one SIGINT to ``ks factory --no-tui --ui plain``. With
+The same PR fixes one SIGINT to ``ks factory --ui plain``. With
 one worker the agent runs on the main thread, so the stop the signal
 requested waited for the agent's iteration to end (120 s measured). With a
 pool, the workers took the terminal's SIGINT as a KeyboardInterrupt, the

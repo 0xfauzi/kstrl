@@ -582,8 +582,8 @@ class TestBlindSpots:
 
 
 class TestTheConfigReportSurvivesARefusedSection:
-    """The TUI home and config screens call ``build_config_report`` with no
-    entry check in front of it. A section refused for a ``nan`` must read as
+    """``ks config show`` calls ``build_config_report`` on a section the
+    entry check can refuse. A section refused for a ``nan`` must read as
     unresolved, like a section refused for any other reason, and must not
     take the whole report down (#571)."""
 

@@ -635,7 +635,7 @@ NOT_A_COMPLETION: dict[str, str] = {
     "observability.py::ProgressLog.factory_completed": "the count key of a progress event",
     "pipeline_transitions.py::<module>": "the Transition.COMPLETED declaration, name and value",
     "pr_body.py::single_pr_body": "a status label in the single-PR body",
-    "reducer.py::apply": "the TUI's view of a ComponentCompleted event, not the manifest",
+    "reducer.py::apply": "the reducer's view of a ComponentCompleted event, not the manifest",
     "workqueue.py::Queue.finish_ok": "a work-queue item's finish reason",
 }
 

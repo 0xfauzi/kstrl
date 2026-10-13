@@ -3,7 +3,7 @@
 ``manifest.cascade_skip`` marks a failed component's transitive
 dependents SKIPPED in the manifest, but the run wrote no event for it.
 So a dependent skipped by THIS run read as pending on the board (which
-folds only this run's events), while ``ks status --no-tui`` (which
+folds only this run's events), while ``ks status`` (which
 reads the manifest) said skipped. Same defect class as #448 itself: an
 event the reducer needs was never written.
 
@@ -12,8 +12,8 @@ The fix is one helper, ``ComponentPipeline._cascade_skip``, that calls
 returns. The four call sites in ``kstrl/pipeline_transitions.py`` route through it.
 
 Two things are pinned here: an end-to-end run where a dependent is
-skipped, read back through the reducer and through ``ks status
---no-tui`` in agreement; and a structural census, so a fifth call site
+skipped, read back through the reducer and through ``ks status``
+in agreement; and a structural census, so a fifth call site
 that skips the manifest without saying so on the stream fails red
 instead of passing quietly, the way the original defect did.
 """

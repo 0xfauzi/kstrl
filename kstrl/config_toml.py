@@ -25,7 +25,7 @@ class ConfigError(ValueError):
     A ``ValueError`` SUBCLASS, deliberately: every loader in this package
     has always raised ``ValueError`` for a rejected value, and several
     callers catch exactly that on purpose (``ks config show``,
-    ``EvolutionConfig.load_or_none``, the TUI config screen). Narrowing
+    ``EvolutionConfig.load_or_none``). Narrowing
     the type would silently step outside those guards. What the subclass
     adds is a name the CLI can catch at its entry seam and render as an
     ``error:`` line, the way ``BudgetConfigError`` (also a ValueError)
@@ -68,11 +68,9 @@ def toml_parse_scope() -> Iterator[None]:
 
     SCOPED, not process-wide, and the distinction is the whole design.
     A process-wide snapshot would freeze the file for the life of the
-    process, which two surfaces would be wrong about: the TUI config
-    screen has a refresh action whose job is to re-read the file on
-    demand (``tui/screens/config.py``), and ``ks serve`` is a long-lived
+    process, which ``ks serve`` would be wrong about: it is a long-lived
     daemon that re-reads config per queue item. Inside a block that runs
-    for under a millisecond there is no window for either, and no
+    for under a millisecond there is no window for that, and no
     caller outside one sees any change at all.
 
     Nothing in this package mutates what ``load_toml_section`` returns,
@@ -164,8 +162,7 @@ def load_toml_document(path: Path) -> dict[str, Any]:
     the line and column, and the catch-all interpolates ``{exc}``
     identically, so it would lose nothing diagnostic. What keeps it is
     narrower and duller: "Invalid TOML" is a message contract, asserted
-    at thirteen sites across five test files including the TUI banner an
-    operator reads. It stays for compatibility, not because it tells
+    on nine lines across four test files. It stays for compatibility, not because it tells
     anyone more.
 
     Order is load-bearing, and only because of the catch-all.

@@ -154,7 +154,7 @@ def _emit_run(root: Path, spec: FakeRunSpec, run_id: str) -> Iterator[None]:
                 )
             )
             yield
-            # Left OPEN deliberately: dash renders the pending banner.
+            # Left OPEN deliberately: the checkpoint stays pending.
         else:
             bus.emit(
                 event_catalog.PrCreated(

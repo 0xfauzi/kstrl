@@ -45,13 +45,11 @@ def test_the_array_case_really_is_a_typeerror(tmp_path: Path) -> None:
     assert not isinstance(TypeError(), ValueError)
 
 
-def test_build_config_report_raises_what_its_tui_callers_now_catch(tmp_path: Path) -> None:
-    """Both TUI readers of the report caught only ValueError.
+def test_build_config_report_raises_what_its_callers_catch(tmp_path: Path) -> None:
+    """The two TUI readers of the report caught only ValueError.
 
-    The config screen's refresh action is the live one: it exists to
-    re-read a file the operator has just edited, so it is the surface
-    that meets a broken document with the shell already open. The walk
-    below is what stops a third reader repeating it.
+    They went with the TUI (#863 A1). The walk below is what stops a
+    new reader repeating it.
     """
     (tmp_path / "kstrl.toml").write_text(ARRAY_FOR_A_RUN_NUMBER, encoding="utf-8")
     with pytest.raises(TypeError):
@@ -112,10 +110,10 @@ def test_the_entry_check_does_not_list_our_own_defect_as_a_config_problem(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """The seam all three reporting surfaces route through.
+    """The seam both reporting surfaces route through.
 
-    ``ks config show``, the TUI config screen and the entry check
-    itself all reach ``collect_config_problems``, so a RuntimeError
+    ``ks config show`` and the entry check itself both reach
+    ``collect_config_problems``, so a RuntimeError
     kstrl never defined being listed there as the operator's broken
     file is the same defect as findings 2 and 6, one call deeper and
     reachable from all of them.

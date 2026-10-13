@@ -43,7 +43,7 @@ def label(source_file: Path, root: Path | None = None) -> str:
 
 
 def module_name(source_file: Path) -> str:
-    """``kstrl/tui/session.py`` -> ``kstrl.tui.session``.
+    """``kstrl/agents/base.py`` -> ``kstrl.agents.base``.
 
     What a relative import resolves against. ``__init__.py`` is stripped
     so ``from . import x`` inside a package's own ``__init__`` lands on

@@ -12,8 +12,8 @@ block with two deliberate differences:
   both.
 - A stream filter keeps full agent output OUT of events.jsonl: those
   bytes are teed to the per-component transcript file instead (the
-  spike's lean-stream rule - flooding the event stream starves the
-  TUI input loop).
+  spike's lean-stream rule: in that spike, a flooded event stream
+  starved the input loop).
 
 Gating matches the factory exactly: ``[factory] progress_log_enabled``
 (env or kstrl.toml) turns recording off, in which case the bus still

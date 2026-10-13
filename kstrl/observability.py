@@ -708,7 +708,7 @@ class NotifyHooks:
         self._project = project
         self._warn = warn or (lambda _msg: None)
         self._fired: set[str] = set()
-        # PR F: when a TUI owns the terminal, hook output must not
+        # PR F: with capture_output set, hook output does not
         # reach the inherited fds (measured alt-screen corruption in
         # the Stage 0 spike). Default False keeps terminal bells
         # working for plain-mode users.

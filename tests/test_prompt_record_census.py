@@ -58,10 +58,11 @@ SCOPE = "recording_prompts"
 IDENTITY = "AgentCall"
 PROMPT_RECORD = KSTRL / "agents" / "prompt_record.py"
 
-#: ``.run(...)`` receivers that are not agents: the stdlib process runner,
-#: the event loop runner, and the Textual app. Exact names only, because
-#: this set CLEARS a site and must not match anything wider.
-NOT_AGENTS = frozenset({"subprocess", "asyncio", "app"})
+#: ``.run(...)`` receivers that are not agents: the stdlib process runner
+#: and the event loop runner. Exact names only, because this set CLEARS a
+#: site and must not match anything wider. ``app`` (the Textual app) went
+#: with the TUI (#863 A1).
+NOT_AGENTS = frozenset({"subprocess", "asyncio"})
 
 #: Functions of ``loop.py`` that hold the ``agent.run`` call of ``run_loop``
 #: after its division (#776 B3). Their only caller is ``run_loop``.

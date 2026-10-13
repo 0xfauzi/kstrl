@@ -35,7 +35,7 @@ class UIBackedRenderer:
 
     def handle(self, event: Event) -> None:  # noqa: C901 - flat dispatch
         if not isinstance(event, Log):
-            return  # semantic events: the dashboard's job, not ours
+            return  # semantic events: not rendered here
         ui = self.ui
         kind = event.kind
         if kind == "line":

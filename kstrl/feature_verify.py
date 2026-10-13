@@ -155,8 +155,8 @@ def baseline_skip_reason(run_config: KstrlConfig, root_dir: Path) -> str | None:
 
 
 #: Detail lines printed per failing check. A failing gate's details are
-#: every parsed failure plus a source-context snippet, and under the
-#: embedded TUI each printed line is one Log event on the run bus, up to
+#: every parsed failure plus a source-context snippet, and each
+#: printed line is one Log event on the run bus, up to
 #: ``2 + repair_max_runs`` times a run. Twelve shows a couple of
 #: failures in full and then says how many were dropped; the complete
 #: output is in the command's own log, and `ks check` prints all of it.
@@ -173,9 +173,8 @@ def _announce_verification(
     """Say what is about to run, BEFORE it runs, and what will not.
 
     The gates capture their output, so the terminal is otherwise dead for
-    as long as the project's test suite takes - measured on this repo at
-    246s - on a thread this module's docstring says must be able to host
-    the TUI. Naming the commands first also lets an operator who does not
+    as long as the project's test suite takes (measured on this repo at
+    246s). Naming the commands first also lets an operator who does not
     want to wait recognise what they are waiting for.
 
     ``progress_path`` is ``verify.self_critique_progress_path``'s answer,

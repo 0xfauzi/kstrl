@@ -69,9 +69,6 @@ EXPECTED_CONSTRUCTIONS = (
     # filed (file_stack_item) and decided at the ks factory prompt
     # (decide_at_prompt).
     "stack.py kstrl.inbox.Inbox",
-    # #433: home's needs-you rows list open items. It scans and reads;
-    # it mutates nothing. Moved from tui/home_data.py, whose counter it
-    # replaced.
     # #646: ks retry reads the approvals (approvals_at) to decide whether
     # it keeps the failed head. It scans and reads; it mutates nothing.
     "waivers.py kstrl.inbox.Inbox",
