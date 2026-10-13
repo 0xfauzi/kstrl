@@ -35,11 +35,6 @@ starting points for any report:
 - **Agent sandbox** - what worktree isolation does and does not bound (shell
   reads/writes, network): module docstring in `kstrl/sandbox.py` and the
   `[sandbox]` keys in [`docs/env-vars.md`](docs/env-vars.md).
-- **Fixtures sandbox** - PRD-declared fixtures are LLM-emitted and treated as
-  untrusted input; commands run without a shell in a scrubbed environment,
-  functions run in a sandboxed subprocess, paths cannot escape the worktree.
-  See `kstrl/fixtures.py` and
-  [`ARCHITECTURE.md`](ARCHITECTURE.md#the-fixtures-sandbox).
 - **Known limitations** - correlated-failure risk, self-reported flags treated
   as hints not signals, and the trusted fact-injection prompt: the "Known
   limitations" section of

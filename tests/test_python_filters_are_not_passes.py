@@ -99,17 +99,7 @@ def _scope_row(source_file: Path, node: ast.AST) -> str:
 #: is EMPTY. DERIVED BY RUNNING THIS FILE, never by editing it to match: a
 #: moved count is read off the failure's ``Found:`` dict, and the reason is
 #: written by whoever added the row.
-EXPECTED_SELECTOR_SITES: dict[str, tuple[int, str]] = {
-    "adequacy.py: <module>": (
-        2,
-        "TEST_PATH_RE's own definition, its pattern and its name; the one reader is "
-        "is_test_path's caller, integration_fix (#696 decision 6 removes it)",
-    ),
-    "adequacy.py: is_test_path": (
-        1,
-        "a predicate over one path; each caller reports its own empty",
-    ),
-}
+EXPECTED_SELECTOR_SITES: dict[str, tuple[int, str]] = {}
 
 
 def test_every_python_selection_is_enrolled_with_its_empty_case() -> None:

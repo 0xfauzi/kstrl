@@ -80,7 +80,6 @@ class ComponentState:
     coverage_unknown_calls: int = 0
     total_tokens: int = 0
     cost_usd: float = 0.0
-    findings_count: int = 0
     recent_findings: list[dict[str, Any]] = field(default_factory=list)
     # Completed-phase history for the detail screen's timeline:
     # {"phase", "passed", "detail", "duration_seconds", "attempt"}.
@@ -89,9 +88,6 @@ class ComponentState:
     pr_number: int = 0
     pr_state: str = ""  # "" | created | merge_pending | merged
     merge_sha: str = ""  # pr_merged.merge_sha (#442); "" when none recorded (#433 M3)
-    #: The latest worker_heartbeat's pid, the process running the agent
-    #: (#433 M2); 0 when no heartbeat was written.
-    heartbeat_pid: int = 0
     checkpoint_open: str = ""  # kind of the unresolved checkpoint_requested
     error: str = ""
     #: True while the only event this run has written for the component
@@ -203,9 +199,6 @@ class RunState:
     #: and the indented detail lines that follow it (#433 F4). A run that
     #: stopped without a finish record usually said why here first.
     error_block: list[str] = field(default_factory=list)
-    #: factory_completed: the commit the merges produced, and why no release (#442).
-    release_ref: str = ""
-    release_withheld: str = ""
 
     @property
     def kind(self) -> str:
@@ -412,8 +405,6 @@ def apply(state: RunState, event: event_catalog.Event) -> None:  # noqa: C901 - 
         return
     if isinstance(event, event_catalog.RunCompleted):
         state.finished = True
-        state.release_ref = event.release_ref  # #442
-        state.release_withheld = event.release_withheld
         return
     if isinstance(event, event_catalog.RunPlan):
         state.max_total_tokens = event.max_total_tokens
@@ -561,7 +552,6 @@ def apply(state: RunState, event: event_catalog.Event) -> None:  # noqa: C901 - 
         comp.max_iterations = event.max_iterations
     elif isinstance(event, event_catalog.WorkerHeartbeat):
         comp.last_heartbeat_ts = max(comp.last_heartbeat_ts, event.ts)
-        comp.heartbeat_pid = event.pid
     elif isinstance(event, event_catalog.ComponentUsage):
         comp.usage_calls += event.calls
         comp.unreported_calls += event.unreported_calls
@@ -586,7 +576,6 @@ def apply(state: RunState, event: event_catalog.Event) -> None:  # noqa: C901 - 
             comp.coverage_unknown_calls += event.known_calls
             state.coverage_unknown_calls += event.known_calls
     elif isinstance(event, event_catalog.FindingRecorded):
-        comp.findings_count += 1
         comp.recent_findings.append(
             {
                 "phase": event.phase,

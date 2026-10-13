@@ -25,7 +25,7 @@ from kstrl.commandrun import CommandRun
 from kstrl.config import KstrlConfig
 from kstrl.feature_cmd import FeatureParams, run_feature
 from kstrl.feature_verify import resolve_feature_verify_config
-from kstrl.loop import STOP_EXIT_CODE, LoopResult
+from kstrl.loop import STOP_EXIT_CODE
 from kstrl.verify import (
     DIFF_DEPENDENT_CHECKS,
     run_mechanical_verification,
@@ -106,7 +106,6 @@ def _drive(
     params: FeatureParams | None = None,
     channel: ScriptedChannel | None = None,
     loop: Any = None,
-    stop_check: Any = None,
 ) -> tuple[int, list[event_catalog.Event], str]:
     """Run the flow, returning (exit code, emitted events, UI text)."""
     ui, stream = _ui()
@@ -130,7 +129,6 @@ def _drive(
             tmp_path,
             interaction=channel,
             run=run,
-            stop_check=stop_check,
         )
     return code, captured, stream.getvalue()
 
@@ -525,34 +523,6 @@ class TestExitPathRule:
         _write_kstrl_toml(tmp_path, failing="lint")
         _, captured, _ = _drive(tmp_path, codes=(0, STOP_EXIT_CODE))
         assert [e.phase for e in _verifications(captured)] == ["baseline"]
-
-    def test_no_report_when_a_stop_arrived_during_the_final_iteration(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """#288 review finding 2. ``run_loop`` returns STOP_EXIT_CODE only
-        from its top-of-iteration probe, so a stop pressed DURING the last
-        iteration comes back as an ordinary completed exit 0 and the
-        exit-code guard never fires. The stop flag is still set, and that
-        is what has to be consulted."""
-        _write_kstrl_toml(tmp_path, failing="lint")
-        calls: list[int] = []
-        stopped = [False]
-
-        def fake(config: Any, ui: Any, agent: Any, *args: Any, **kwargs: Any) -> LoopResult:
-            calls.append(1)
-            if len(calls) == 2:  # during the implement loop, not before it
-                stopped[0] = True
-            return LoopResult(completed=True, iterations=1, exit_code=0)
-
-        _, captured, text = _drive(
-            tmp_path,
-            loop=fake,
-            stop_check=lambda: stopped[0],
-        )
-        # The baseline ran (nothing was stopped yet); nothing after it did.
-        assert [e.phase for e in _verifications(captured)] == ["baseline"]
-        assert "Verification report (implement)" not in text
 
     def test_every_repair_attempt_reports_and_says_which(self, tmp_path: Path) -> None:
         """One report per engineer loop, each naming its own loop. Without

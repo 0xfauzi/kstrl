@@ -460,7 +460,7 @@ def config_problem_lines(
         return [str(exc)]
 
 
-def load_or_report(
+def resolve_or_report(
     loader: Callable[[Path], T],
     root_dir: Path,
     *,
@@ -468,46 +468,12 @@ def load_or_report(
 ) -> tuple[T | None, str | None]:
     """One section, resolved, or the line this module would have printed.
 
-    Exactly one of the pair is ever None. For a surface that loads a
-    section AFTER command entry and so has no seam in front of it to fail
-    on its behalf. The message is produced by the same ``_detail`` the
-    entry check uses, so the same broken file reads the same way on both
-    surfaces; ``tests/test_config_defects_not_blamed.py`` pins the two
-    strings equal rather than trusting that.
-
-    ``blame_env`` is required rather than defaulted because getting it
-    wrong is not a cosmetic mistake. Naming the offending variable means
-    measuring it (``_blamed_env_var``), and measuring it means clearing
-    ``os.environ``, which is PROCESS-WIDE. At command entry nothing else
-    of ours is running; on a screen a launched run may be on another
-    thread, spawning subprocesses that inherit the environment. Pass
-    False there and the line keeps everything except the variable's
-    name. ``RunEnvelope`` passes False.
-
-    Wider than :data:`REJECTIONS` by ``OSError``: see
-    :data:`SURFACE_REJECTIONS`.
-    """
-    # Scoped per call, never across calls: a screen's refresh action
-    # exists to see the file as it is NOW (see ``toml_parse_scope``).
-    with toml_parse_scope():
-        return resolve_or_report(loader, root_dir, blame_env=blame_env)
-
-
-def resolve_or_report(
-    loader: Callable[[Path], T],
-    root_dir: Path,
-    *,
-    blame_env: bool,
-) -> tuple[T | None, str | None]:
-    """:func:`load_or_report` for a caller that already owns a scope.
-
-    Split out rather than duplicated because a NESTED
-    ``toml_parse_scope`` does not inherit the outer cache, it replaces
-    it: a caller resolving several sections inside one scope pays one
-    parse per section by going through :func:`load_or_report`, which is
-    the cost ``RunEnvelope.load`` exists to remove (#192). One
-    definition of what a rejected section reads like, two entry points
-    differing only in who owns the scope.
+    Exactly one of the pair is ever None. The caller owns the
+    ``toml_parse_scope``: a NESTED scope does not inherit the outer
+    cache, it replaces it, so a caller resolving several sections
+    inside one scope pays one parse per section only if each section
+    opens its own scope. ``RunEnvelope.load`` resolves all its sections
+    inside one scope for that reason (#192).
     """
     try:
         return loader(root_dir), None
@@ -567,7 +533,7 @@ def _detail(
     effect, so naming the file's key would send the operator to a line
     that changing does not help. ``blame_env`` False skips that question
     entirely rather than answering it unsafely; the caller that passes
-    False says why (:func:`load_or_report`).
+    False says why (:func:`resolve_or_report`).
     """
     message = str(exc)
     # Two statements, not one expression: the environment-then-file

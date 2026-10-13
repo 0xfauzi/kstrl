@@ -44,9 +44,7 @@ class CheckpointContext:
     summary string the old prompt showed."""
 
     component_id: str
-    diff_excerpt: str = ""
     review_findings: tuple[Finding, ...] = ()
-    security_findings: tuple[Finding, ...] = ()
     usage: UsageTotals | None = None
     branch: str = ""
 

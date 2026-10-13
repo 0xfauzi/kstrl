@@ -335,9 +335,8 @@ _SPAWN_TARGETS = frozenset(
 )
 
 #: The roots this net walks, and so the reach of the claim
-#: ``kstrl/procgroup.py`` makes. ``spike/`` is deliberately outside: its
-#: throwaway scripts call ``ps`` today, and covering them would mean
-#: failing on evidence. ``astwalk``'s two corpora ARE these two roots.
+#: ``kstrl/procgroup.py`` makes. Code outside them is outside the net.
+#: ``astwalk``'s two corpora ARE these two roots.
 _SCANNED_ROOTS = ("kstrl", "tests")
 
 #: The one file allowed to shell out to ``ps``.
@@ -524,8 +523,8 @@ class TestOnlyOneModuleShellsOutToPs:
 
     def test_the_claim_names_the_roots_the_net_actually_walks(self) -> None:
         """A mechanism cited for a claim it does not cover is worse than
-        none. `spike/` calls ps and is outside the net, so the module's
-        docstring must say "kstrl/ or tests/", not "the tree"."""
+        none. Code outside `kstrl/` and `tests/` is outside the net, so the
+        module's docstring must say "kstrl/ or tests/", not "the tree"."""
         text = (astwalk.REPO_ROOT / _PS_OWNER).read_text(encoding="utf-8")
         claim = "only place in ``kstrl/`` or ``tests/``"
         assert claim in text, f"{_PS_OWNER} must scope its uniqueness claim to {_SCANNED_ROOTS}"

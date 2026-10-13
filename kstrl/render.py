@@ -14,17 +14,8 @@ from ``events.jsonl`` by ``ks status`` and replay.
 
 from __future__ import annotations
 
-from typing import Protocol
-
 from kstrl.event_catalog import Event, Log
 from kstrl.ui.base import UI
-from kstrl.ui.plain import PlainUI
-
-
-class Renderer(Protocol):
-    """Consumes stamped events; renders (or ignores) each."""
-
-    def handle(self, event: Event) -> None: ...
 
 
 class UIBackedRenderer:
@@ -66,11 +57,3 @@ class UIBackedRenderer:
         else:
             # Forward-compat: an unknown Log kind still surfaces its text.
             ui.info(event.text)
-
-
-def plain_renderer(
-    no_color: bool = False,
-    ascii_only: bool = False,
-) -> UIBackedRenderer:
-    """The CI/pipe/non-TTY surface: line output via PlainUI."""
-    return UIBackedRenderer(PlainUI(no_color=no_color, ascii_only=ascii_only))

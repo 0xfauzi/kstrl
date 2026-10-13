@@ -16,13 +16,14 @@ the operator already deferred this one.
 
 A caller that holds a run-scoped ``NotifyHooks`` passes it (only the
 pipeline does), which keeps once-per-kind-per-run and that caller's
-``capture_output``. This is a distinction between CALLERS, not between
-running inside or outside a factory run: an autonomy demotion or a
-health breach raised while a run is active does not hold that run's
-hooks and still falls through here. Every other path gets hooks built
-from ``[notify]`` with ``capture_output=True``: a path that does not
-know who owns the terminal must not write to it. The TUI that #863
-removed was the owner that made this necessary.
+``capture_output``, which the pipeline leaves False. This is a
+distinction between CALLERS, not between running inside or outside a
+factory run: an autonomy demotion or a health breach raised while a
+run is active does not hold that run's hooks and still falls through
+here. Every other path gets hooks built from ``[notify]`` with
+``capture_output=True``: a path that does not know who owns the
+terminal must not write to it. The TUI that #863 removed was the owner
+that made this necessary.
 """
 
 from __future__ import annotations

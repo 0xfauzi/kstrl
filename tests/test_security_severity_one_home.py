@@ -12,7 +12,7 @@ Two layers:
   scorer both move, driving the real parser on a reply and the saved
   fixture's own requirement. The CLI test reads ``ks factory --help``.
 - The census walks every collection literal in ``kstrl/`` and counts
-  those whose string members include all four severities. A new copy
+  those whose string members include at least three of the four severities. A new copy
   shows up as a census delta. The census is closed over collection
   literals; the shapes it cannot see are recorded below as strict
   xfails, so a widening that starts seeing them fails loudly.
@@ -43,7 +43,7 @@ from tests.helpers.astwalk import all_nodes, assert_census, blind_spot, package_
 FIXTURES = Path(__file__).resolve().parent / "adversarial_fixtures"
 SEVERITIES = frozenset({"critical", "high", "medium", "low"})
 
-# Every module in kstrl/ that holds a collection literal naming all four
+# Every module in kstrl/ that holds a collection literal naming at least three of the four
 # severities, and how many, keyed as ``astwalk.label`` names it (relative
 # to kstrl/). Re-derive by running the census, never by editing this
 # literal.
@@ -65,6 +65,7 @@ SHAPES = (
     'VALID = frozenset({"critical", "high", "medium", "low"})',
     "_R = dict(critical=3, high=2, medium=1, low=0)",
     '_R = dict([("critical", 3), ("high", 2), ("medium", 1), ("low", 0)])',
+    '_R = {"critical": 3, "high": 2, "medium": 1}',
     'def f():\n    return {"critical": 3, "high": 2, "medium": 1, "low": 0}',
 )
 
@@ -96,12 +97,20 @@ def _members(node: ast.AST) -> set[str]:
     return {text for item in items if (text := _string(item)) is not None}
 
 
+#: Three of four, not all four: a copy that leaves out the lowest severity
+#: and relies on ``.get(x, 0)`` names three. Measured on the tree after #863
+#: A1: with this threshold the census still finds the one ranking in
+#: ``security.py`` and nothing else in ``kstrl/``. Before A1 it also flagged
+#: the TUI's ``REASONING_LEVELS``, which is not a ranking.
+MIN_SEVERITIES_NAMED = 3
+
+
 def _names_every_severity(node: ast.AST) -> bool:
-    return SEVERITIES <= _members(node)
+    return len(SEVERITIES & _members(node)) >= MIN_SEVERITIES_NAMED
 
 
 def _ranking_sites(source: str) -> int:
-    """How many collection literals in ``source`` name all four severities."""
+    """How many collection literals in ``source`` name at least three of the four severities."""
     return sum(1 for node in all_nodes(parse(source)) if _names_every_severity(node))
 
 
@@ -112,7 +121,7 @@ def test_the_security_severity_ranking_has_one_home() -> None:
         expected=EXPECTED_SITES,
         control=SHAPES,
         message=(
-            "A collection literal in kstrl/ names all four security severities. "
+            "A collection literal in kstrl/ names at least three of the four security severities. "
             "Read kstrl.security._SEVERITY_ORDER instead of copying it (#550)."
         ),
     )
@@ -142,19 +151,6 @@ def test_blind_spot_a_ranking_as_an_enum() -> None:
         _ranking_sites,
         "class Sev(IntEnum):\n    critical = 3\n    high = 2\n    medium = 1\n    low = 0\n",
     )
-
-
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason=(
-        "blind spot: a copy that leaves out the lowest severity and relies on "
-        ".get(x, 0) names three of the four. A census of three flagged the TUI's "
-        "REASONING_LEVELS, which is not a ranking, until #863 A1 removed it"
-    ),
-)
-def test_blind_spot_a_ranking_missing_its_zero_rank() -> None:
-    blind_spot(_ranking_sites, '_R = {"critical": 3, "high": 2, "medium": 1}')
 
 
 def _meta(family: str, name: str) -> dict[str, object]:

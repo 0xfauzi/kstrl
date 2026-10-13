@@ -117,6 +117,8 @@ select = ["E", "F", "I", "UP", "B"]
 ignore = []
 
 [tool.ruff.lint.per-file-ignores]
+# An attribute access on `_` is how a vulture whitelist names a used item.
+"scripts/vulture_whitelist.py" = ["B018"]
 # Long lines in these files live inside triple-quoted LLM prompt
 # bodies. Reformatting them changes the prompt SHA-256 (H3 protects
 # against silent prompt drift) and would force a version bump for
@@ -157,10 +159,18 @@ files = ["kstrl"]
 [tool.vulture]
 # vulture exits 2 with no paths, which reads as a broken hook rather than a
 # finding, so this section is what makes the pre-commit hook usable at all.
-# min_confidence 80 keeps it to findings worth reading; a reviewed whitelist.py
-# goes in paths once one exists.
-min_confidence = 80
-paths = ['kstrl']
+# min_confidence 60 is the level at which vulture reports an unused function,
+# method, class, attribute or variable (80 and above report only unreachable
+# code and unused imports, so the hook found no dead code until #863 A2).
+# Every item that is a measured false positive, or is read only by a test, is
+# named in scripts/vulture_whitelist.py with its cause. Add a new entry there
+# only after `git grep -nw NAME` shows a reader that vulture cannot see.
+min_confidence = 60
+paths = ['kstrl', 'scripts/vulture_whitelist.py']
+# A click command is registered by its decorator and has no caller.
+ignore_decorators = ["@*.command", "@*.group"]
+# *_PROMPT_VERSION is read by name from tests/test_prompt_versions.py (H3).
+ignore_names = ["cancel_futures", "*_PROMPT_VERSION"]
 # cancel_futures is a false positive, not dead code. _InlineExecutor.shutdown
 # duck-types concurrent.futures.Executor.shutdown, whose signature is
 # (wait=True, *, cancel_futures=False). factory.py calls
@@ -169,7 +179,6 @@ paths = ['kstrl']
 # has nothing to shut down, so the name is never read - measured: deleting the
 # parameter turns those two calls into
 # "TypeError: shutdown() got an unexpected keyword argument 'cancel_futures'".
-ignore_names = ["cancel_futures"]
 
 [tool.codespell]
 # All verified false positives, not typos. critcial is a deliberately invalid

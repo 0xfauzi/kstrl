@@ -46,7 +46,7 @@ CONTROL_ERROR = "kstrl.statedir.ControlStateError"
 #: Every method of ``Inbox`` that appends and therefore takes the control
 #: lock. ``_decide`` is the shared body behind four of them,
 #: so they are enumerated by their public spellings.
-MUTATORS = frozenset({"add", "approve", "compact", "reject", "resolve", "snooze"})
+MUTATORS = frozenset({"add", "approve", "reject", "resolve", "snooze"})
 
 #: Every place ``kstrl/`` constructs an ``Inbox``, line numbers dropped.
 #: A new one is an unexplained delta: adding a row here is how you say
@@ -678,7 +678,6 @@ EXPECTED_LOG_WRITES = {
     "Inbox._append_unlocked::append_records": 1,
     "Inbox._decide::_append_unlocked": 1,
     "Inbox.add::_append_unlocked": 2,
-    "Inbox.compact::atomic_write_text": 1,
 }
 
 CONTROL_STALE_WRITER = """

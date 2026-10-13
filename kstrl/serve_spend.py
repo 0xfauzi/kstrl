@@ -99,11 +99,6 @@ class DailySpend:
         return max(0, self.total_calls - self.covered_calls)
 
     @property
-    def has_any_coverage(self) -> bool:
-        """Whether ANY call reported cost. False = the cap cannot fire."""
-        return self.covered_calls > 0
-
-    @property
     def lower_bound(self) -> bool:
         """Whether the real spend exceeds ``spent_usd`` by an unmeasured amount."""
         return self.uncovered_calls > 0 or bool(self.unmetered_phases)

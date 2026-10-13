@@ -305,16 +305,13 @@ class TestExitCodes:
 
 
 class TestControlPropagation:
-    def test_interaction_and_stop_reach_every_loop(self, tmp_path: Path) -> None:
+    def test_interaction_reaches_every_loop(self, tmp_path: Path) -> None:
         ui, _ = _ui()
         params = _params(tmp_path, repair_max_runs=1)
         params.implementation_auto_run = True
         channel = ScriptedChannel(0)
 
-        def stop_check() -> bool:
-            return False
-
-        seen: list[tuple[Any, Any]] = []
+        seen: list[Any] = []
         results = iter(
             (
                 LoopResult(completed=True, iterations=1, exit_code=0),
@@ -324,7 +321,7 @@ class TestControlPropagation:
         )
 
         def record(*args: Any, **kwargs: Any) -> LoopResult:
-            seen.append((kwargs.get("interaction"), kwargs.get("stop_check")))
+            seen.append(kwargs.get("interaction"))
             return next(results)
 
         with (
@@ -338,8 +335,7 @@ class TestControlPropagation:
                 ui,
                 tmp_path,
                 interaction=channel,
-                stop_check=stop_check,
                 run=offline_run(tmp_path, "feature"),
             )
         assert code == 0
-        assert seen == [(channel, stop_check)] * 3
+        assert seen == [channel] * 3

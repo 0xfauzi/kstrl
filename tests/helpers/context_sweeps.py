@@ -9,11 +9,6 @@ headings are the ones ``IterationContext.format_for_prompt`` writes
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from itertools import product
-
-from kstrl.context import PHASE_RANK, FailureEntry, IterationContext
-
 CURRENT = "## Current failures"
 NOT_REMEASURED = "## Not re-measured"
 RESOLVED = "## Resolved or superseded"
@@ -40,28 +35,3 @@ def section(text: str, heading: str) -> str:
     if not capturing:
         return ""
     return "\n".join(body).strip()
-
-
-def build_sweep_context(sequence: tuple[str, ...], legacy: bool) -> IterationContext:
-    """One failure per attempt, in the order ``sequence`` names.
-
-    Shared so that a corpus built with readings added and the control
-    corpus are the same convention: two copies could drift, and the
-    control would then be a different corpus from the one under test.
-    """
-    ctx = IterationContext()
-    if legacy:
-        ctx.entries.append(FailureEntry(0, "review", "legacy"))
-    for attempt, phase in enumerate(sequence, start=1):
-        ctx.add_review_finding(
-            f"{phase}-{attempt}",
-            attempt=attempt,
-            phase=phase,
-        )
-    return ctx
-
-
-def sweep_sequences() -> Iterator[tuple[str, ...]]:
-    """Every phase sequence of one to four attempts."""
-    for length in range(1, 5):
-        yield from product(PHASE_RANK, repeat=length)

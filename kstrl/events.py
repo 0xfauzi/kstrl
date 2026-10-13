@@ -207,14 +207,6 @@ class EventSink(Protocol):
     def close(self) -> None: ...
 
 
-class NullSink:
-    def emit(self, event: Event) -> None:  # noqa: ARG002 - protocol
-        return
-
-    def close(self) -> None:
-        return
-
-
 class CallbackSink:
     """Wraps a callable; used for same-thread renderers and inline tees."""
 

@@ -323,7 +323,6 @@ def census() -> dict[str, Counter[str]]:
 #: Re-derived by running this file on the #696 slice 8 and slice 10 tree; never typed in by hand.
 PINNED_HITS: dict[str, dict[str, int]] = {
     "__main__.py": {"python": 1},
-    "adequacy.py": {"go": 1, "jest": 1, "python": 5, "ruby": 2, "vitest": 1},
     "agents/leash.py": {"python": 1},
     "agents/liveness.py": {"npm": 1},
     "agents/logging.py": {"python": 3},

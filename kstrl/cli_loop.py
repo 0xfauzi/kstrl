@@ -7,9 +7,7 @@ from __future__ import annotations
 import os
 import sys
 import time
-from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import click
 
@@ -51,10 +49,6 @@ from kstrl.sandbox import SandboxConfig, warn_unconfined
 from kstrl.shutdown import StopController, install_signal_handlers
 from kstrl.timeout import TimeoutConfig
 from kstrl.ui.base import UI
-
-if TYPE_CHECKING:
-    from kstrl.interaction import InteractionChannel
-
 
 # Issue #207: `ks run` forces these FactoryConfig fields because it is by
 # definition a local, single-component, no-PR invocation. When the resolved
@@ -593,8 +587,6 @@ def _understand_core(
     *,
     run: CommandRun,
     sandbox: SandboxConfig,
-    interaction: InteractionChannel | None = None,
-    stop_check: Callable[[], bool] | None = None,
 ) -> int:
     """The understand loop as an event-stream run (surface C1).
 
@@ -641,8 +633,6 @@ def _understand_core(
                 timeouts=TimeoutConfig.load(root_dir),
                 breaker_config=BreakerConfig.load(root_dir),
                 bus=bus,
-                interaction=interaction,
-                stop_check=stop_check,
                 guard_ignored_paths=understand_harness_paths,
                 guard_state_root=root_dir,
             )

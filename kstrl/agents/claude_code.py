@@ -73,7 +73,6 @@ class ClaudeCodeAgent:
         self._read_only = read_only
         self._root_dir = root_dir
         self._final_message: str | None = None
-        self._saw_result: bool = False
         self._usage_records: list[UsageRecord] = []
 
     @property
@@ -150,7 +149,6 @@ class ClaudeCodeAgent:
         its process group is killed and a timeout error line is yielded last.
         """
         self._final_message = None
-        self._saw_result = False
         assistant_text: list[str] = []
         started = time.monotonic()
         result_event_line: str | None = None
@@ -188,7 +186,6 @@ class ClaudeCodeAgent:
                 # Check for result event (final output, process should exit soon)
                 result_text = _extract_result_text(raw_line)
                 if result_text is not None:
-                    self._saw_result = True
                     self._final_message = result_text
                     # The same event carries the usage/cost self-report
                     # (measured against claude CLI 2.1.214; see base.py).

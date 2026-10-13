@@ -126,10 +126,9 @@ class RunEnvelope:
 
         One document parse for all six sections: the whole group is
         inside a single :func:`toml_parse_scope`, and each section goes
-        through ``config_preflight.resolve_or_report`` rather than
-        ``load_or_report`` because a NESTED scope replaces the outer
-        cache instead of inheriting it, so the per-call variant would
-        cost one parse per section.
+        through ``config_preflight.resolve_or_report``, because a NESTED
+        scope replaces the outer cache instead of inheriting it, so a
+        scope per section would cost one parse per section.
 
         ``blame_env`` is False, and the reason is specific rather than
         conservative. Naming an environment variable means clearing

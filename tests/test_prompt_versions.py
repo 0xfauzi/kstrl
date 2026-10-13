@@ -513,9 +513,7 @@ _MARKER_TAIL = "<<<H3-RENDER-GUARD-END>>>"
 #: found all nine guards green: the marker never reached the cap, so
 #: truncation was invisible to a test whose comment claimed it caught
 #: truncation. A renderer reintroducing a size cap ships a clipped role
-#: prompt, and ``git_diff.truncate_diff_for_prompt`` already exists and is
-#: used at other paste sites, so this is a live shape rather than a
-#: hypothetical one.
+#: prompt, which is a live shape rather than a hypothetical one.
 #:
 #: The honest limit: this catches any cap at or below the marker length.
 #: A renderer that capped ABOVE it would still pass, and no fixed marker

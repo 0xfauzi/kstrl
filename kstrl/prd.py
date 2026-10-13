@@ -407,13 +407,6 @@ class PRD:
                     changes.append(f"rewrote {', '.join(moved)} on story {story_id}")
         return changes
 
-    def get_next_story(self) -> UserStory | None:
-        """Get the highest-priority failing story."""
-        failing = [s for s in self.user_stories if not s.passes]
-        if not failing:
-            return None
-        return min(failing, key=lambda s: s.priority)
-
     def save(self, path: Path) -> None:
         """Save PRD back to JSON file.
 

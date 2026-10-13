@@ -98,11 +98,6 @@ NON_WAIVABLE_CATEGORIES = frozenset({f"{POLICY_CATEGORY_PREFIX}enforcement_machi
 
 WAIVER_REFUSED_TAG_PREFIX = "waiver_refused:"
 
-#: What rejecting a waivable item does, for the CLI.
-REJECTION_EFFECT = (
-    "records the rejection with your reason. No waiver: the next run fails on this "
-    "finding as before."
-)
 
 _HEX64 = re.compile(r"[0-9a-f]{64}")
 

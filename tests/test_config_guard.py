@@ -164,8 +164,8 @@ EXPECTED_SURFACE_ROUNDS = 2
 #: The readers that own no class. ``load_toml_section`` is the primitive
 #: one layer up from the file; ``run`` is the ``ks run`` command body.
 #: ``resolve_or_report`` replaced ``load_or_report`` in this set when
-#: #192 split the scope-owning wrapper off the resolution: the wrapper
-#: no longer calls a primitive itself, so it is no longer surface.
+#: #192 split the scope-owning wrapper off the resolution; the wrapper
+#: itself was removed later (#863).
 #:
 #: ``tests/test_config_defects_not_blamed.py`` pins what ``resolve_or_report``
 #: reports and what it raises again.

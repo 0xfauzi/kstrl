@@ -45,16 +45,6 @@ def parse_event_ts(ts: str) -> datetime | None:
         return None
 
 
-def event_age_seconds(ts: str, now: datetime | None = None) -> float | None:
-    """Seconds between an event ``ts`` and ``now``. None on bad input."""
-    parsed = parse_event_ts(ts)
-    if parsed is None:
-        return None
-    if now is None:
-        now = datetime.now(UTC)
-    return (now - parsed).total_seconds()
-
-
 def format_age(seconds: float) -> str:
     """Render an age in seconds as a compact human string."""
     seconds = max(0.0, seconds)
@@ -65,19 +55,6 @@ def format_age(seconds: float) -> str:
     if seconds < 86400:
         return f"{int(seconds // 3600)}h{int(seconds % 3600 // 60):02d}m"
     return f"{seconds / 86400:.1f}d"
-
-
-@dataclass
-class ComponentTiming:
-    """Timing data for a single component."""
-
-    component_id: str
-    started_at: str = ""
-    completed_at: str = ""
-    duration_seconds: float = 0.0
-    iteration_count: int = 0
-    verification_duration: float = 0.0
-    review_duration: float = 0.0
 
 
 class ProgressLog:

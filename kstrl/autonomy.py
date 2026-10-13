@@ -350,9 +350,6 @@ class AutonomyState:
     def autonomy_level(self) -> AutonomyLevel:
         return AutonomyLevel(self.level)
 
-    def flag_bundle(self) -> FlagBundle:
-        return flag_bundle_for(self.autonomy_level)
-
     # -- persistence -------------------------------------------------------
     @classmethod
     def path_for(cls, root_dir: Path) -> Path:

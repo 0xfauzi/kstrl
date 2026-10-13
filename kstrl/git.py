@@ -29,23 +29,6 @@ def is_git_repo(path: Path | None = None, timeout: float = DEFAULT_TIMEOUT) -> b
         return False
 
 
-def get_repo_root(path: Path | None = None, timeout: float = DEFAULT_TIMEOUT) -> Path | None:
-    """Get the root directory of the git repository."""
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            cwd=path,
-            capture_output=True,
-            encoding="utf-8",
-            timeout=timeout,
-        )
-        if result.returncode == 0:
-            return Path(result.stdout.strip())
-    except (subprocess.TimeoutExpired, Exception):
-        pass
-    return None
-
-
 #: The variables that point git at a repository other than the one it
 #: finds from its working directory. :func:`git_common_dir` removes them
 #: (#700, the security review of #765): both zones of the rung read the
