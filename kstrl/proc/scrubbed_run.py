@@ -9,11 +9,11 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import IO
 
-from kstrl.agents.proc import leash_command, leash_start_error
-from kstrl.agents.spawn_record import new_nonce
-from kstrl.procdispose import drain_or_abandon, reap_or_abandon
-from kstrl.procgroup import signal_process_tree
-from kstrl.rung import Rung
+from kstrl.proc.proc import leash_command, leash_start_error
+from kstrl.proc.procdispose import drain_or_abandon, reap_or_abandon
+from kstrl.proc.procgroup import signal_process_tree
+from kstrl.proc.rung import Rung
+from kstrl.proc.spawn_record import new_nonce
 
 # R2.6 env scrub: verification subprocesses execute agent-authored code
 # (the project's tests, linters run over agent files, CLI fixtures), so
@@ -77,14 +77,14 @@ _SCRUB_TERM_GRACE_SECONDS = 5.0
 def _signal_process_group(proc: subprocess.Popen[bytes], sig: signal.Signals) -> None:
     """Signal the child's whole process group, direct-child fallback.
 
-    A one-line forward to :func:`kstrl.procgroup.signal_process_tree`,
+    A one-line forward to :func:`kstrl.proc.procgroup.signal_process_tree`,
     kept as a name because ``tests/test_hitl_env_scrub.py`` pins this
     module's timeout behaviour through it and because the name says what
     the verification path is doing at the point it does it.
 
     #308 lifted the pid/pgid GUARD out of here and left the routine
     around it, so ``os.killpg`` itself stayed spelled in this module and
-    in ``agents.proc`` as well as in ``procgroup``. #329 is what that
+    in ``proc.proc`` as well as in ``procgroup``. #329 is what that
     costs: three spellings is how a fourth arrives unguarded. The whole
     routine now has one home.
     """
@@ -157,7 +157,7 @@ def run_scrubbed(
 ) -> subprocess.CompletedProcess[str]:
     """Run a verification subprocess: scrubbed env, own process group, leashed.
 
-    The command runs under ``kstrl/agents/leash.py``, as every agent does
+    The command runs under ``kstrl/proc/leash.py``, as every agent does
     (#642 slice 5): the leash leads the command's process group and ends
     it, SIGTERM, the grace, SIGKILL, once this process has gone however
     it went, SIGKILL included, because the one write end of its lifeline
@@ -176,7 +176,7 @@ def run_scrubbed(
     ``/bin/sh -c cmd``, the shell ``shell=True`` would have used, and every
     declared name and ``extra_env`` value set again inside the rung,
     because nono strips some variables from the environment it passes on.
-    A :class:`~kstrl.rung.HostFallback` runs that same ``/bin/sh -c cmd``
+    A :class:`~kstrl.proc.rung.HostFallback` runs that same ``/bin/sh -c cmd``
     on the host (a platform with no prover). None, the default, runs on
     the host exactly as before.
 
@@ -204,7 +204,7 @@ def run_scrubbed(
 
     ``timeout=None`` waits with no deadline: that is what a work limit the
     operator did not set means (#467). Callers turn a configured value into
-    one with :func:`kstrl.timeout.limit_seconds`, because ``timeout=0``
+    one with :func:`kstrl.proc.timeout.limit_seconds`, because ``timeout=0``
     would mean "already expired" here.
 
     Raises :class:`subprocess.TimeoutExpired` after the group is dead so
@@ -349,7 +349,7 @@ def start_scrubbed(
     on the host only under the explicit host fallback of a platform with
     no prover. The child leads a new session, so its pid is the
     group id; the caller waits on it, records that id, and stops the group
-    through :mod:`kstrl.procgroup` (``kstrl.replay``).
+    through :mod:`kstrl.proc.procgroup` (``kstrl.replay``).
 
     The child is the leash in its ``--hold`` mode (#642 slice 6): it exits
     with ``cmd``'s status when ``cmd`` exits, as ``cmd`` would have, and a

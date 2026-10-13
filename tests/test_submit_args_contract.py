@@ -41,13 +41,13 @@ import pytest
 
 from kstrl import factory_worker
 from kstrl.config.config import KstrlConfig
-from kstrl.events import RunPaths
+from kstrl.events.events import RunPaths
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult
 from kstrl.io.statedir import plan_prd_path
-from kstrl.manifest import Component, Manifest
-from kstrl.rung import HostFallback
+from kstrl.plan.manifest import Component, Manifest
+from kstrl.proc.rung import HostFallback
 from kstrl.runstate import RunState
 from kstrl.ui.plain import PlainUI
 from kstrl.verify_model import VerifyConfig

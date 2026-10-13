@@ -20,9 +20,9 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import event_catalog, reducer
-from kstrl import events as ev
-from kstrl.observability import ProgressLog, read_progress_events
+from kstrl.events import event_catalog, reducer
+from kstrl.events import events as ev
+from kstrl.events.observability import ProgressLog, read_progress_events
 
 
 class TestLoadRunState:

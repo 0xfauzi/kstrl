@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from kstrl.findings import (
+from kstrl.plan import (
     CLAIM_DISAGREEMENT_CATEGORY,
+    PRD,
     Finding,
     tag_finding_with_model,
 )
-from kstrl.prd import PRD
 from kstrl.review import ReviewResult, ReviewVerdict, normalize_story_id
 
 

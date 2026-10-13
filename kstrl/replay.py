@@ -6,12 +6,12 @@ of the isolation rung, with the stack's own commands and nothing else.
 The stages run in order and the first one that fails ends the replay:
 
 1. ``setup`` in the setup zone;
-2. ``up`` in the test zone, through :func:`kstrl.scrubbed_run.start_scrubbed`:
+2. ``up`` in the test zone, through :func:`kstrl.proc.scrubbed_run.start_scrubbed`:
    ready means it exited 0, and a timeout is never ready;
 3. every check in the test zone, in the stack's order;
 4. the ``up`` process group is stopped by the group id recorded when it
    started, then the worktree is removed
-   (:func:`kstrl.temp_worktree.remove_temp_worktree`).
+   (:func:`kstrl.proc.temp_worktree.remove_temp_worktree`).
 
 kstrl never reads what ``up`` does: only its exit status and whether its
 group is gone afterwards. The stage a replay failed at is named in the
@@ -44,13 +44,21 @@ from typing import TYPE_CHECKING
 from kstrl.git import git, git_base
 from kstrl.io import CONTROL_APP_NAME, atomic_write_text, xdg_state_home
 from kstrl.isolation import SETUP_ZONE, TEST_ZONE, prove_zones
-from kstrl.procdispose import reap_or_abandon
-from kstrl.procgroup import read_group_liveness, signal_group
-from kstrl.rung import HostFallback, Rung, refusal_of, release, sandbox_hint
-from kstrl.scrubbed_run import (
+from kstrl.proc import (
     ChildOutputDecodeError,
+    ContractCleanupError,
+    HostFallback,
+    Rung,
+    create_temp_worktree,
+    read_group_liveness,
     readable_text,
+    reap_or_abandon,
+    refusal_of,
+    release,
+    remove_temp_worktree,
     run_scrubbed,
+    sandbox_hint,
+    signal_group,
     start_scrubbed,
 )
 from kstrl.stack import (
@@ -63,7 +71,6 @@ from kstrl.stack import (
     Stack,
     stack_paths,
 )
-from kstrl.temp_worktree import ContractCleanupError, create_temp_worktree, remove_temp_worktree
 from kstrl.verify_commands import SHELL_COULD_NOT_RUN
 
 if TYPE_CHECKING:
@@ -131,7 +138,7 @@ class Replay:
     detail: str = ""
     error: str = ""
     seconds: float = 0.0
-    #: The sandbox hint (:func:`kstrl.rung.sandbox_hint`) for the failed
+    #: The sandbox hint (:func:`kstrl.proc.rung.sandbox_hint`) for the failed
     #: stage, "" when no stage failed or it ran in no sandbox. Kept out of
     #: ``detail``, which other phases hand on to a model.
     sandbox: str = ""

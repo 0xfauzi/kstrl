@@ -45,7 +45,7 @@ from kstrl.agents import get_agent
 from kstrl.agents.logging import LoggingAgent
 from kstrl.agents.prompt_record import recording_prompts
 from kstrl.breaker import BreakerConfig
-from kstrl.event_catalog import (
+from kstrl.events import (
     ArtifactWritten,
     CheckpointRequested,
     CheckpointResolved,
@@ -75,15 +75,15 @@ from kstrl.interaction import (
 from kstrl.knowledge import retrieve_knowledge_context
 from kstrl.knowledge_facts import KnowledgeConfig
 from kstrl.loop import run_loop
-from kstrl.manifest import Component, Manifest
+from kstrl.plan import Component, Manifest
+from kstrl.proc import TimeoutConfig
 from kstrl.sandbox import warn_unconfined
-from kstrl.timeout import TimeoutConfig
 
 if TYPE_CHECKING:
     from kstrl.agents.base import Agent
     from kstrl.commandrun import CommandRun
     from kstrl.config import KstrlConfig
-    from kstrl.prd import PRD
+    from kstrl.plan import PRD
     from kstrl.sandbox import SandboxConfig
     from kstrl.ui import UI
 

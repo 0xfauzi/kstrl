@@ -36,7 +36,7 @@ import sys
 import time
 from pathlib import Path
 
-from kstrl.manifest import Manifest
+from kstrl.plan.manifest import Manifest
 from tests.helpers import gitrepo, procs
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
 

@@ -32,8 +32,8 @@ from kstrl.config.config import KstrlConfig
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult
-from kstrl.manifest import Component, ComponentStatus, Manifest
-from kstrl.scrubbed_run import (
+from kstrl.plan.manifest import Component, ComponentStatus, Manifest
+from kstrl.proc.scrubbed_run import (
     _signal_process_group,
     run_scrubbed,
     scrubbed_subprocess_env,
@@ -388,7 +388,7 @@ class TestTheVerifySignalGuardRoutesThroughProcgroup:
 
     The class above proves the group kill WORKS on a real tree. What was
     never covered is the half that decides whether to attempt it. serve
-    had two tests for its copy of that rule and agents.proc had three;
+    had two tests for its copy of that rule and proc.proc had three;
     this copy had none, so nothing in the suite would have noticed the
     guard being deleted until `killpg(1, sig)` took the machine down.
 

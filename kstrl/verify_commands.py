@@ -8,10 +8,8 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from kstrl.failure_excerpt import failure_excerpt
-from kstrl.rung import Rung
-from kstrl.scrubbed_run import ChildOutputDecodeError, readable_text, run_scrubbed
+from kstrl.proc import ChildOutputDecodeError, Rung, limit_seconds, readable_text, run_scrubbed
 from kstrl.stack import NO_STACK, Stack
-from kstrl.timeout import limit_seconds
 from kstrl.verify_model import (
     CheckResult,
     NotMeasured,

@@ -37,15 +37,16 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from kstrl.findings import Finding
+from kstrl.events.reducer import ComponentState, RunState
+from kstrl.events.usage import ARCHITECT_COMPONENT, ARCHITECT_ROLE
 from kstrl.inbox import Inbox, InboxConfig, ItemKind
-from kstrl.manifest import (
+from kstrl.plan.findings import Finding
+from kstrl.plan.manifest import (
     Component,
     ComponentStatus,
     Manifest,
 )
-from kstrl.procgroup import safe_pgid
-from kstrl.reducer import ComponentState, RunState
+from kstrl.proc.procgroup import safe_pgid
 from kstrl.serve import (
     ServeLockedError,
     _NullObserver,
@@ -86,7 +87,6 @@ from kstrl.serve_spend import (
 #: gets the stub instead of the function under test - which silently made
 #: the empty-run-id test pass no matter what the function did.
 from kstrl.serve_spend import read_run_spend as REAL_READ_RUN_SPEND
-from kstrl.usage import ARCHITECT_COMPONENT, ARCHITECT_ROLE
 from kstrl.workqueue import Queue
 from kstrl.workqueue_items import ItemSource, ItemState, MergeDisposition, QueueConfig, QueueItem
 from tests.helpers import procs
@@ -209,7 +209,7 @@ def _spend_with_component_keyed(tmp_path: Path, key: str) -> RunSpend:
         cost_calls=1,
         cost_usd=2.0,
     )
-    with patch("kstrl.reducer.load_run_state") as load:
+    with patch("kstrl.events.load_run_state") as load:
         load.return_value = (state, None)
         return REAL_READ_RUN_SPEND(tmp_path, "factory-abc")
 
@@ -1886,7 +1886,7 @@ class TestProcessGroupSupervision:
             # signal 0 is a liveness PROBE, not a kill; counting it would
             # let "never signal the group" pass, since a probe runs
             # either way. The filter is NOT redundant now the probe lives
-            # in kstrl.procgroup: `os` is one shared module object, so
+            # in kstrl.proc.procgroup: `os` is one shared module object, so
             # patching kstrl.serve.os.killpg patches procgroup's too.
             # Measured - under this patch, procgroup.signal_probe_alive(4242)
             # records calls == [(4242, 0)]. Drop the filter and on any run
@@ -2079,7 +2079,7 @@ class TestGroupLivenessDegradesRatherThanGuessing:
         def broken(pgid: int, sig: int) -> None:
             raise OSError(5, "Input/output error")
 
-        monkeypatch.setattr("kstrl.procgroup.os.killpg", broken)
+        monkeypatch.setattr("kstrl.proc.procgroup.os.killpg", broken)
         alive, degraded = _group_liveness_for_reap(os.getpgrp())
         assert alive is True, "an unexplained error must never read as reaped"
         assert degraded, "and the operator has to be told the answer was degraded"
@@ -2127,7 +2127,7 @@ class TestGroupLivenessDegradesRatherThanGuessing:
             calls.append(sig)
 
         procs.fake_ps(monkeypatch, stdout=f"1 1 Ss\n50 {os.getpgrp()} Ss\n")
-        monkeypatch.setattr("kstrl.procgroup.os.killpg", recording_killpg)
+        monkeypatch.setattr("kstrl.proc.procgroup.os.killpg", recording_killpg)
         assert process_group_alive(os.getpgrp()) is True
         assert calls == [], "a listing that shows a runner settles it on its own"
 
@@ -2438,7 +2438,7 @@ class TestRunOwnership:
         ``LegacyRunStreamError`` out and the cycle crashed. A spend the
         daemon cannot read is charged as zero, so the queue must pause and
         the next cycle must start nothing."""
-        from kstrl.observability import ProgressLog
+        from kstrl.events.observability import ProgressLog
 
         monkeypatch.setattr("kstrl.serve_spend.read_run_spend", REAL_READ_RUN_SPEND)
         run_id = "factory-20260730-000000.000000-aaa"
@@ -2478,7 +2478,7 @@ class TestRunOwnership:
         Asserts the reducer is never CONSULTED, not merely that the result
         is zero: on an empty repo it would be zero either way.
         """
-        with patch("kstrl.reducer.load_run_state") as load:
+        with patch("kstrl.events.load_run_state") as load:
             assert REAL_READ_RUN_SPEND(tmp_path, "") == RunSpend()
             assert load.call_count == 0, "must not read another run"
 
@@ -2489,7 +2489,7 @@ class TestRunOwnership:
         only the three fields this function read at the time silently
         became wrong the moment it read a fourth (#257 piece B).
         """
-        with patch("kstrl.reducer.load_run_state") as load:
+        with patch("kstrl.events.load_run_state") as load:
             load.return_value = (
                 RunState(cost_usd=1.25, cost_calls=2, usage_calls=3),
                 None,
@@ -2972,8 +2972,8 @@ class TestBudgetHaltIsNotRetryableInfrastructure:
     @staticmethod
     def _budget_run(root: Path, run_id: str = "factory-budget") -> None:
         """Write a run dir whose stream carries a real BudgetExceeded."""
-        from kstrl import event_catalog
-        from kstrl.events import JsonlSink, RunPaths
+        from kstrl.events import event_catalog
+        from kstrl.events.events import JsonlSink, RunPaths
 
         paths = RunPaths.for_run(root, run_id)
         sink = JsonlSink(paths.events_file)
@@ -3010,7 +3010,7 @@ class TestBudgetHaltIsNotRetryableInfrastructure:
         tmp_path: Path,
     ) -> None:
         """A finding whose text merely mentions a budget is not a halt."""
-        from kstrl.findings import Finding
+        from kstrl.plan.findings import Finding
 
         path = tmp_path / "m.json"
         misleading = Finding.infrastructure_error(
@@ -3065,8 +3065,8 @@ class TestBudgetHaltPrecedence:
         condition: str = "breached",
         ceilings: tuple[str, ...] = ("max_total_tokens",),
     ) -> None:
-        from kstrl import event_catalog
-        from kstrl.events import JsonlSink, RunPaths
+        from kstrl.events import event_catalog
+        from kstrl.events.events import JsonlSink, RunPaths
 
         paths = RunPaths.for_run(root, run_id)
         JsonlSink(paths.events_file).emit(

@@ -14,18 +14,20 @@ from kstrl.cli_seam import _console_ui, _preflight_warn, cli
 from kstrl.config import KstrlConfig
 from kstrl.config_report import UI_MODES, build_config_report
 from kstrl.config_report import normalize_ui_mode as _normalize_ui_mode
-from kstrl.git import stamp_label
-from kstrl.manifest import COMPONENT_STATUS_VALUES, Manifest
-from kstrl.observability import format_age, latest_run_id, read_progress_events
-from kstrl.procgroup import pid_is_alive
-from kstrl.reducer import (
+from kstrl.events import (
     ComponentState,
     LegacyRunStreamError,
     RunState,
     fold,
+    format_age,
+    latest_run_id,
     load_run_state,
+    read_progress_events,
     upconvert_v1,
 )
+from kstrl.git import stamp_label
+from kstrl.plan import COMPONENT_STATUS_VALUES, Manifest
+from kstrl.proc import pid_is_alive
 from kstrl.ui import UI
 
 
@@ -286,7 +288,7 @@ def _render_leftover_agents(ui_impl: UI, root_dir: Path) -> None:
     Report only: `ks status` takes no lock and refuses nothing. The
     lock-taking commands refuse on the same reading.
     """
-    from kstrl.worktree_sweep import leftover_agents, leftover_lines
+    from kstrl.proc import leftover_agents, leftover_lines
 
     sweep = leftover_agents(root_dir)
     if not (sweep.survivors or sweep.error):

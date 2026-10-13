@@ -15,7 +15,7 @@ from kstrl.cli_report import _format_component_status
 from kstrl.factory_config import FactoryConfig
 from kstrl.git.git_base import BASE_BRANCH_CANDIDATES, detect_base_branch, resolve_base_branch
 from kstrl.init_cmd import gitignore_block
-from kstrl.manifest import Component, ComponentStatus, Manifest
+from kstrl.plan.manifest import Component, ComponentStatus, Manifest
 from tests.helpers import gitrepo
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
 from tests.spine_utils import git as spine_git

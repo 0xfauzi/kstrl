@@ -28,7 +28,7 @@ from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.interaction import PromptRequest, PromptResponse
-from kstrl.manifest import Manifest
+from kstrl.plan.manifest import Manifest
 from kstrl.review import CriterionReview, ReviewResult
 from kstrl.ui.plain import PlainUI
 from kstrl.verify_model import VerifyConfig

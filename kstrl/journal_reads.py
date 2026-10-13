@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from kstrl.events import read_progress_events
 from kstrl.evolution_config import EvolutionConfig
 from kstrl.experiments_tsv import experiment_rows
 from kstrl.failure_signatures import (
@@ -24,7 +25,6 @@ from kstrl.journal_rows import (
     read_attempt_iterations,
     without_carried_results,
 )
-from kstrl.observability import read_progress_events
 
 if TYPE_CHECKING:
     pass

@@ -42,7 +42,7 @@ class ConfigError(ValueError):
 #: specific handlers' messages, which is how the handler order is
 #: pinned. A reworded literal restated in a test would make those
 #: assertions vacuously true rather than failing, so the test imports
-#: this. Same reason ``agents.proc.TIMEOUT_MESSAGE_PREFIX`` is a
+#: this. Same reason ``proc.proc.TIMEOUT_MESSAGE_PREFIX`` is a
 #: constant the tests import rather than a string they repeat.
 UNPARSEABLE_TOML_MESSAGE = "could not be parsed as TOML"
 

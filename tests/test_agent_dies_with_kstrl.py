@@ -7,7 +7,7 @@ processes it started kept running (measured: alive 15 s after a SIGKILL
 of ``ks factory``, 8 s after a SIGHUP). A pool worker whose parent alone
 was killed kept running too, and kept starting agents.
 
-The fix: each agent runs under ``kstrl/agents/leash.py``, which ends the
+The fix: each agent runs under ``kstrl/proc/leash.py``, which ends the
 agent's process group when kstrl's end of a pipe closes, and a pool
 worker ends when its parent does.
 
@@ -30,11 +30,11 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.agents.leash import NOT_A_GROUP_LEADER
-from kstrl.agents.proc import DEFAULT_TERM_GRACE_SECONDS, LEASH_PATH
 from kstrl.factory import run_factory
-from kstrl.procgroup import pid_is_alive
-from kstrl.timeout import TimeoutConfig
+from kstrl.proc.leash import NOT_A_GROUP_LEADER
+from kstrl.proc.proc import DEFAULT_TERM_GRACE_SECONDS, LEASH_PATH
+from kstrl.proc.procgroup import pid_is_alive
+from kstrl.proc.timeout import TimeoutConfig
 from kstrl.ui.plain import PlainUI
 from tests import spine_utils
 from tests.helpers import gitrepo, procs
@@ -604,8 +604,8 @@ def test_a_leash_that_cannot_read_its_group_waits_out_the_grace(tmp_path: Path) 
 
 def test_a_leash_that_cannot_import_its_reading_still_waits_and_kills(tmp_path: Path) -> None:
     """The leash run by path, as ``DeadlineStreamer`` runs it, but from a
-    copy with no ``kstrl`` two directories above it, so its one kstrl
-    import fails. A reading it cannot make must keep it waiting the whole
+    copy with no kstrl module beside it, so its one kstrl import
+    fails. A reading it cannot make must keep it waiting the whole
     grace, and the failure must not end it before the SIGKILL: the
     grandchild, which ignores SIGTERM, is alive at every look inside the
     grace and gone within ``GRANDCHILD_BOUND_SECONDS`` (#708)."""

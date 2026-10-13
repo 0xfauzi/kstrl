@@ -9,12 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from kstrl import event_catalog
-from kstrl import events as ev
-from kstrl.loop_budget import UNENFORCEABLE_CALLS
-from kstrl.manifest import Component, ComponentStatus
-from kstrl.pipeline_state import PipelineState
-from kstrl.usage import (
+from kstrl.events import (
     ARCHITECT_COMPONENT,
     ARCHITECT_ROLE,
     CEILING_AXES,
@@ -23,8 +18,13 @@ from kstrl.usage import (
     INTEGRATION_ROLE,
     CeilingCoverage,
     UsageTotals,
+    event_catalog,
     usage_coverage,
 )
+from kstrl.events import events as ev
+from kstrl.loop_budget import UNENFORCEABLE_CALLS
+from kstrl.pipeline_state import PipelineState
+from kstrl.plan import Component, ComponentStatus
 
 #: How a retry this run carried from an interrupted run is marked (#463).
 CARRIED_REASON_PREFIX = "carried from run "
@@ -250,8 +250,8 @@ class UsageLedger(PipelineState):
         owed = _take_over_attempts(self.manifest.components, carrying=carrying)
         if not carrying:
             return
+        from kstrl.events import read_run_dir
         from kstrl.evolution import EvolutionJournal
-        from kstrl.reducer import read_run_dir
 
         events = read_run_dir(ev.RunPaths.for_run(self.root_dir, prior).root)
         spent = _usage_by_component_phase(events)

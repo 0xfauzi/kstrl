@@ -22,10 +22,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from kstrl.events import CallbackSink, EventBus
-from kstrl.render import UIBackedRenderer
+from kstrl.events.bridge import EventBridgeUI
+from kstrl.events.events import CallbackSink, EventBus
+from kstrl.events.render import UIBackedRenderer
 from kstrl.ui import UI, get_ui
-from kstrl.ui.bridge import EventBridgeUI
 
 
 @dataclass

@@ -35,11 +35,11 @@ from pathlib import Path
 
 import pytest
 
+from kstrl.events.observability import read_progress_events
 from kstrl.experiments_tsv import EXPERIMENTS_HEADER
 from kstrl.git.version import kstrl_version
 from kstrl.io.appendio import JOURNAL_REPAIR_EVENT, handle_ends_without_newline
 from kstrl.journal_rows import SPEC_ISSUES_EVENT
-from kstrl.observability import read_progress_events
 from tests.helpers.journal import (
     DANGLING_UTF8,
     TORN_FRAGMENT,

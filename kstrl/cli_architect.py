@@ -27,8 +27,8 @@ from kstrl.config_report import UI_MODES
 from kstrl.config_report import normalize_ui_mode as _normalize_ui_mode
 from kstrl.decompose import decompose_spec
 from kstrl.decompose_audit import SpecBlockerError
+from kstrl.events import ARCHITECT_COMPONENT, ARCHITECT_ROLE
 from kstrl.factory_config import FactoryConfig
-from kstrl.factory_lock import acquire_run_lock
 from kstrl.factory_preflight import (
     BaseRefusedError,
     base_check_before_architect,
@@ -38,6 +38,7 @@ from kstrl.git import resolve_base_branch
 from kstrl.interaction import PromptKind, PromptRequest, UiInteractionChannel
 from kstrl.launch_record import option_argv
 from kstrl.owner_answers import OwnerAnswerError
+from kstrl.proc import acquire_run_lock, limit_seconds
 from kstrl.retry_plan import (
     RESUME_REFUSAL,
     RetryError,
@@ -48,9 +49,7 @@ from kstrl.retry_plan import (
     print_retry_plan,
     retry_confirm_header,
 )
-from kstrl.timeout import limit_seconds
 from kstrl.ui import UI
-from kstrl.usage import ARCHITECT_COMPONENT, ARCHITECT_ROLE
 
 if TYPE_CHECKING:
     pass

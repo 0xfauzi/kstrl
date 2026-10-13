@@ -55,11 +55,11 @@ from kstrl.config import (
     parse_bool,
     resolve_config_file,
 )
-from kstrl.event_catalog import budget_halt_kind
+from kstrl.events import budget_halt_kind
 from kstrl.io import read_json
 
 if TYPE_CHECKING:
-    from kstrl.manifest import Manifest
+    from kstrl.plan import Manifest
     from kstrl.spec_issues import SpecIssue
 
 _VALID_AUTH_MODES = frozenset({"auto", "api_key", "oauth"})

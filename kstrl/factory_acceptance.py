@@ -26,8 +26,8 @@ from kstrl.contract import (
 from kstrl.decisions import (
     DecisionRegister,
 )
-from kstrl.event_catalog import ComponentFailed
-from kstrl.event_catalog import ContractResult as ContractResultEvent
+from kstrl.events import ComponentFailed
+from kstrl.events import ContractResult as ContractResultEvent
 from kstrl.factory_autonomy import _LadderOutcome
 from kstrl.factory_config import (
     FactoryConfig,
@@ -36,21 +36,20 @@ from kstrl.factory_preflight import (
     report_preflight,
 )
 from kstrl.git import git, git_base
-from kstrl.manifest import (
-    ComponentStatus,
-    Manifest,
-)
-from kstrl.manifest_merge import has_merged
 from kstrl.pipeline import ComponentPipeline
 from kstrl.pipeline_state import iso_now
+from kstrl.plan import (
+    ComponentStatus,
+    Manifest,
+    has_merged,
+)
 from kstrl.plan_gate import run_plan_gate
-from kstrl.temp_worktree import ContractCleanupError
+from kstrl.proc import ContractCleanupError
 
 if TYPE_CHECKING:
-    from kstrl.events import EventBus
+    from kstrl.events import EventBus, NotifyHooks
     from kstrl.factory_result import FactoryResult
     from kstrl.integration_phase import Phase3Round
-    from kstrl.observability import NotifyHooks
     from kstrl.runstate import RunState
     from kstrl.ui import UI
 

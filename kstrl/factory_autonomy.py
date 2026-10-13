@@ -25,8 +25,7 @@ from kstrl.autonomy_config import (
     resolved_flag_bundle,
 )
 from kstrl.autonomy_transitions import apply_demotion, save_ladder_state
-from kstrl.event_catalog import AutonomyLevelApplied
-from kstrl.events import EventBus
+from kstrl.events import AutonomyLevelApplied, EventBus
 from kstrl.evolution import classify_merges
 from kstrl.factory_config import (
     FactoryConfig,
@@ -34,13 +33,13 @@ from kstrl.factory_config import (
 from kstrl.factory_result import (
     FactoryResult,
 )
-from kstrl.findings import POLICY_CATEGORY_PREFIX
 from kstrl.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.io import ControlStateError
-from kstrl.manifest import (
+from kstrl.pipeline_merge import HITL_REJECT_CHECK, PR_CLOSED_CHECK
+from kstrl.plan import (
+    POLICY_CATEGORY_PREFIX,
     Manifest,
 )
-from kstrl.pipeline_merge import HITL_REJECT_CHECK, PR_CLOSED_CHECK
 from kstrl.runenvelope import RunEnvelope
 
 if TYPE_CHECKING:

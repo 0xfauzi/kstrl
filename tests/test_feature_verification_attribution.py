@@ -23,7 +23,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from kstrl import event_catalog
+from kstrl.events import event_catalog
 from kstrl.feature_verify import baseline_skip_reason
 from kstrl.loop import LoopResult
 from kstrl.verify_model import VerifyConfig

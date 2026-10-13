@@ -24,7 +24,7 @@ from kstrl.config.config import KstrlConfig
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult
-from kstrl.manifest import Component, Manifest
+from kstrl.plan.manifest import Component, Manifest
 from kstrl.ui.plain import PlainUI
 from kstrl.verify_model import VerifyConfig
 from tests.helpers.distill_replies import BROKEN_REPLY, EMPTY_REPLY, VALID_REPLY

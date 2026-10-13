@@ -36,8 +36,8 @@ from kstrl.factory_preflight import _preflight_component_scope
 from kstrl.factory_result import ComponentResult, FactoryResult
 from kstrl.git.git_diff import get_diff_names
 from kstrl.io.statedir import pre_run_prd_path
-from kstrl.manifest import Component, Manifest
-from kstrl.scope import RunScope
+from kstrl.plan.manifest import Component, Manifest
+from kstrl.plan.scope import RunScope
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import run_mechanical_verification
 from kstrl.verify_diff import _scope_checks, check_diff_scope

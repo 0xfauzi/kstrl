@@ -37,13 +37,13 @@ from kstrl import (
     verify_model,
 )
 from kstrl.context import LEGACY_ATTEMPT, IterationContext, IterationRecord
-from kstrl.findings import Finding
 from kstrl.knowledge_facts import KnowledgeConfig, write_facts
 from kstrl.loop import LoopResult
-from kstrl.manifest import Component, Manifest
+from kstrl.plan.findings import Finding
+from kstrl.plan.manifest import Component, Manifest
+from kstrl.plan.scope import ComponentScope
 from kstrl.policy import PolicyConfig
 from kstrl.review import CriterionReview, ReviewResult, ReviewVerdict
-from kstrl.scope import ComponentScope
 from tests.helpers.builder_prompts import BUILDER_PROMPTS
 from tests.helpers.component_prd import write_component_prd
 from tests.test_knowledge import _make_fact

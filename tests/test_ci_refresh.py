@@ -22,7 +22,7 @@ from click.testing import CliRunner, Result
 from kstrl import ci_state
 from kstrl.ci_state import CiReading, CiState, read_ci_ledger
 from kstrl.cli import cli
-from kstrl.event_catalog import PrMerged
+from kstrl.events.event_catalog import PrMerged
 from kstrl.io.statedir import CONTROL_CI_CHECKS, control_file, ensure_control_state
 from tests.helpers.fakegh import put_gh_on_path
 from tests.helpers.procs import run_serve_subprocess

@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
-from kstrl import event_catalog
 from kstrl.context import IterationContext
+from kstrl.events import event_catalog
 from kstrl.inbox import (
     ItemKind,
 )
@@ -16,10 +16,6 @@ from kstrl.interaction import (
     PromptKind,
     PromptRequest,
     PromptResponse,
-)
-from kstrl.manifest import (
-    Component,
-    park_dedupe_key,
 )
 from kstrl.pipeline_checks import (
     DiffPhaseResult,
@@ -30,7 +26,11 @@ from kstrl.pipeline_merge import HITL_REJECT_CHECK, MergeGate, PrDisposition, Pr
 from kstrl.pipeline_security import SecurityPhaseResult
 from kstrl.pipeline_transitions import Transition
 from kstrl.pipeline_verdicts import ReviewPhaseResult
-from kstrl.worktree_sweep import sweep_findings
+from kstrl.plan import (
+    Component,
+    park_dedupe_key,
+)
+from kstrl.proc import sweep_findings
 
 if TYPE_CHECKING:
     from kstrl.factory_result import ComponentResult

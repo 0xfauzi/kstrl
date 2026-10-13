@@ -46,12 +46,12 @@ from typing import TYPE_CHECKING, Any
 
 from kstrl.inbox import UNDECIDED, Inbox, InboxConfig, InboxItem, ItemKind
 from kstrl.io import atomic_write_json, read_json
-from kstrl.requirements import enum_field_error, required_field_error
+from kstrl.plan import enum_field_error, required_field_error
 from kstrl.workqueue_items import QueueError
 from kstrl.workqueue_store import queue_item_for_spec
 
 if TYPE_CHECKING:
-    from kstrl.requirements import SpecRequirement
+    from kstrl.plan import SpecRequirement
 
 # Relative location of the persisted register. Next to manifest.json and
 # spec-issues.json so one directory holds every decompose output.
@@ -444,8 +444,8 @@ def read_decisions(root_dir: Path) -> DecisionRegister:
     # answers "output must be a JSON object" for anything that is not a
     # dict, and a second wording for one fault is a second thing to keep
     # in step.
-    # Imported here: kstrl.requirements imports this module's field checks.
-    from kstrl.requirements import parse_requirements, requirements_payload_errors
+    # Imported here: kstrl.plan.requirements imports this module's field checks.
+    from kstrl.plan import parse_requirements, requirements_payload_errors
 
     # The story join is skipped: the register holds no stories to join.
     entry_errors = decisions_payload_errors(raw) or requirements_payload_errors(raw, None)

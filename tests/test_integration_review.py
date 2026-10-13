@@ -18,9 +18,9 @@ from kstrl.integration import (
     integration_stories,
 )
 from kstrl.journal_rows import INTEGRATION_RESULT_EVENT
-from kstrl.manifest import Manifest
 from kstrl.pipeline import ComponentPipeline
-from kstrl.requirements import SpecRequirement
+from kstrl.plan.manifest import Manifest
+from kstrl.plan.requirements import SpecRequirement
 from tests.helpers import integration_harness as h
 from tests.helpers.stack_confirmation import in_process_stack
 

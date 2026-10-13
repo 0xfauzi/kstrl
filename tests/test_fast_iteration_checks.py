@@ -19,17 +19,17 @@ from typing import Any
 import pytest
 from click.testing import CliRunner
 
-from kstrl.agents.proc import TIMEOUT_MESSAGE_PREFIX
 from kstrl.breaker import BreakerConfig
 from kstrl.cli import cli
 from kstrl.config.config import KstrlConfig
-from kstrl.event_catalog import IterationCompleted
-from kstrl.events import EventBus, JsonlSink, read_events
+from kstrl.events.event_catalog import IterationCompleted
+from kstrl.events.events import EventBus, JsonlSink, read_events
 from kstrl.factory_worker import _run_component
 from kstrl.factory_worktrees import _setup_worktree
 from kstrl.loop import COMPLETION_MARKER, run_loop
+from kstrl.proc.proc import TIMEOUT_MESSAGE_PREFIX
+from kstrl.proc.timeout import TimeoutConfig
 from kstrl.stack import stack_toml
-from kstrl.timeout import TimeoutConfig
 from kstrl.ui.plain import PlainUI
 from kstrl.verify_model import VerifyConfig
 from tests.helpers.stack_confirmation import confirm_stack, in_process_stack, write_stack

@@ -886,8 +886,8 @@ window. A factory run at 10-20 minutes does not.
   and a run is not killed on resume for the time that it was suspended.
   This closes the #204 dependency that branch B had.
 - *The other deadlines of a run use the same clock.* The agent stream
-  deadline (`kstrl/agents/proc.py::DeadlineStreamer`), the group
-  termination grace (`kstrl/serve.py`, `kstrl/agents/leash.py`), the
+  deadline (`kstrl/proc/proc.py::DeadlineStreamer`), the group
+  termination grace (`kstrl/serve.py`, `kstrl/proc/leash.py`), the
   liveness probe (`kstrl/agents/liveness.py`) and the `subprocess`
   timeouts read `time.monotonic()`. In `kstrl/`, `grep` finds
   `time.time()` only in event time stamps and age labels, not in a

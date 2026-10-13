@@ -10,10 +10,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from kstrl import guards
-from kstrl.agents.proc import TIMEOUT_MESSAGE_PREFIX
 from kstrl.breaker import BreakerConfig, NoProgressBreaker
-from kstrl.event_catalog import IterationCompleted, IterationStarted
-from kstrl.events import EventBus
+from kstrl.events import EventBus, IterationCompleted, IterationStarted, UsageTotals, collect_usage
 from kstrl.git import git, git_tree
 from kstrl.interaction import (
     InteractionChannel,
@@ -31,9 +29,8 @@ from kstrl.iteration_prompt import (
 )
 from kstrl.loop_budget import LoopBudget
 from kstrl.loop_setup import capture_guard_baseline, print_startup
-from kstrl.prd import PRD
-from kstrl.timeout import TimeoutConfig
-from kstrl.usage import UsageTotals, collect_usage
+from kstrl.plan import PRD
+from kstrl.proc import TIMEOUT_MESSAGE_PREFIX, TimeoutConfig
 from kstrl.verify_model import VerifyConfig
 
 if TYPE_CHECKING:

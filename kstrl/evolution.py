@@ -30,8 +30,7 @@ from kstrl.journal_rows import (
 )
 
 if TYPE_CHECKING:
-    from kstrl.findings import Finding
-    from kstrl.manifest import Component, Manifest
+    from kstrl.plan import Component, Finding, Manifest
 
 
 class RunOutcome(Protocol):
@@ -403,7 +402,7 @@ class EvolutionJournal(JournalReads):
         fact-utilization gate un-evidenceable. Only ``measured=True``
         entries are evidence.
         """
-        from kstrl.manifest import ComponentStatus
+        from kstrl.plan import ComponentStatus
 
         timestamp = _timestamp_now()
         usage_by_component = usage_by_component or {}

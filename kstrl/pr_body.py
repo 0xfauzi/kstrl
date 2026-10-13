@@ -8,18 +8,17 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from kstrl.acceptance_lines import pr_section
-from kstrl.findings import (
+from kstrl.io import pre_run_prd_path
+from kstrl.plan import (
     CLAIM_DISAGREEMENT_CATEGORY,
+    PRD,
+    built_by,
     finding_waiver,
     render_findings_markdown,
 )
-from kstrl.io import pre_run_prd_path
-from kstrl.prd import PRD
-from kstrl.requirements import built_by
 
 if TYPE_CHECKING:
-    from kstrl.manifest import Component, Manifest
-    from kstrl.requirements import SpecRequirement
+    from kstrl.plan import Component, Manifest, SpecRequirement
 
 #: The line every PR body kstrl writes ends with. Hoisted to a constant
 #: so the readers that identify a kstrl-authored PR by it - the R10.7

@@ -29,7 +29,7 @@ from __future__ import annotations
 from collections.abc import Collection, Sequence
 from typing import Any
 
-from kstrl.requirements import enum_field_error, required_field_error
+from kstrl.plan import enum_field_error, required_field_error
 from kstrl.review import VALID_CONCERN_CATEGORIES, VALID_CONCERN_SEVERITIES, ReviewResult
 from kstrl.security import SEVERITY_ORDER, VALID_CATEGORIES, SecurityResult
 from kstrl.spec_issues import VALID_KINDS

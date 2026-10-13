@@ -6,9 +6,9 @@ import time
 from collections.abc import Sequence
 from pathlib import Path
 
-from kstrl.findings import Finding, finding_waiver
 from kstrl.git import git, git_base, git_diff
 from kstrl.guards import path_is_allowed
+from kstrl.plan import Finding, finding_waiver
 from kstrl.policy import (
     DEFAULT_SECRET_PATTERNS,
     PolicyConfig,

@@ -84,7 +84,7 @@ _NEEDS_CAFFEINATE = procs.NEEDS_CAFFEINATE
 #: list pid 1 - a ``hidepid`` mount, a container - the read under
 #: ``procs.group_member_pids`` refuses, correctly, and raises through
 #: ``on_spawn``; the red test then reads as a defect in
-#: ``kstrl/procgroup.py`` rather than as an environment that cannot be
+#: ``kstrl/proc/procgroup.py`` rather than as an environment that cannot be
 #: measured.
 _NEEDS_A_READABLE_PS = procs.NEEDS_A_READABLE_PS
 
@@ -207,7 +207,7 @@ class TestTheRunGroupMembership:
     """What `subprocess_factory_runner` actually puts in a run's group.
 
     WHAT THIS DOES NOT READ, said here rather than discovered later: the
-    members' command lines. ``kstrl/procgroup.py`` is the only place in
+    members' command lines. ``kstrl/proc/procgroup.py`` is the only place in
     ``kstrl/`` or ``tests/`` allowed to shell out to ``ps`` - two copies
     of one parse drift on failure handling - and its listing asks for
     ``pid=,pgid=,stat=`` deliberately, because adding command lines

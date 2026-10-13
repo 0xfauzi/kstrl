@@ -21,16 +21,16 @@ from unittest.mock import patch
 from kstrl.config.config import KstrlConfig
 from kstrl.contract import ContractConfig, ContractMode
 from kstrl.decompose_prompt import spec_digest
+from kstrl.events.usage import UsageRecord
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import FactoryResult
 from kstrl.git import git_diff
 from kstrl.integration import integration_stories
-from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.pipeline import ComponentPipeline
+from kstrl.plan.manifest import Component, ComponentStatus, Manifest
 from kstrl.security import SecurityConfig
 from kstrl.ui.plain import PlainUI
-from kstrl.usage import UsageRecord
 from kstrl.verify_model import VerifyConfig
 from tests.helpers.component_prd import PASSING_STORY, write_component_prd
 from tests.helpers.gitrepo import git_in, set_identity

@@ -14,8 +14,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from kstrl.git import git_base
-from kstrl.scrubbed_run import ChildOutputDecodeError, run_scrubbed
-from kstrl.worktree_sweep import sweep_worktree, warn_sweep
+from kstrl.proc.scrubbed_run import ChildOutputDecodeError, run_scrubbed
+from kstrl.proc.worktree_sweep import sweep_worktree, warn_sweep
 
 if TYPE_CHECKING:
     from kstrl.ui import UI

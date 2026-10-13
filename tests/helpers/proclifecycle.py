@@ -208,7 +208,7 @@ def spelled_tokens(node: ast.AST) -> Iterator[str]:
     silenced. Over the 129 modules of ``kstrl/`` the split changes the
     inventory in TWO places: ``procdispose.py`` and ``procgroup.py`` each
     gain ``DeadlineStreamer`` from docstrings that write
-    ``agents.proc.DeadlineStreamer``. Both rows are pinned in
+    ``proc.proc.DeadlineStreamer``. Both rows are pinned in
     ``EXPECTED_PROCESS_MODULES`` with the reason on them rather than
     special-cased out, because an exception list is how a net starts
     having a hand-tuned hole.
@@ -223,7 +223,7 @@ def spelled_tokens(node: ast.AST) -> Iterator[str]:
 
     Prose is mostly safe for a reason worth stating: a docstring is ONE
     string, so splitting a sentence on ``.`` yields sentence fragments
-    and rarely a bare vocabulary word. ``agents.proc.DeadlineStreamer``
+    and rarely a bare vocabulary word. ``proc.proc.DeadlineStreamer``
     is the case where it does, and it is a dotted PATH inside prose
     rather than a sentence.
     """

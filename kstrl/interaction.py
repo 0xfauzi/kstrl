@@ -25,9 +25,9 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
-    from kstrl.findings import Finding
+    from kstrl.events import UsageTotals
+    from kstrl.plan import Finding
     from kstrl.ui import UI
-    from kstrl.usage import UsageTotals
 
 
 class PromptKind(StrEnum):

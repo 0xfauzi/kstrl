@@ -44,9 +44,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from kstrl import procgroup
-from kstrl.agents.spawn_record import read_spawn_records
-from kstrl.procgroup import pid_is_alive, read_group_liveness, read_group_members
+from kstrl.proc import procgroup
+from kstrl.proc.procgroup import pid_is_alive, read_group_liveness, read_group_members
+from kstrl.proc.spawn_record import read_spawn_records
 from kstrl.serve_process import _group_liveness_for_reap
 
 
@@ -183,13 +183,13 @@ def group_member_pids(pgid: int) -> list[int]:
     ``tests/test_procgroup_listing.py`` fails on any second ``ps`` in ``kstrl/``
     or ``tests/``, because two copies of one parse drift on failure
     handling until the daemon's answer and the suite's stop agreeing.
-    The reading lives in :func:`kstrl.procgroup.read_group_members`.
+    The reading lives in :func:`kstrl.proc.procgroup.read_group_members`.
 
     POLICY, and it is the opposite of the daemon's, exactly as
     :func:`group_has_live_member`'s is: an unreadable listing RAISES here
     rather than degrading to a number. Why a count is the reading with
     the most to lose from a partial view is argued once, in
-    :func:`kstrl.procgroup.read_group_members`, and not repeated here.
+    :func:`kstrl.proc.procgroup.read_group_members`, and not repeated here.
     """
     members = read_group_members(pgid)
     if members.pids is None:
@@ -201,7 +201,7 @@ def group_has_live_member(pgid: int) -> bool:
     """Whether any non-zombie process is still in process group ``pgid``.
 
     The reading, and the evidence for why it is not ``os.killpg(pgid, 0)``
-    and why absence needs a control, lives in ``kstrl.procgroup``. #298
+    and why absence needs a control, lives in ``kstrl.proc.procgroup``. #298
     centralised it: two copies of one ``ps`` parse with slightly
     different failure handling is how the suite's answer and the daemon's
     drift apart.
@@ -262,7 +262,7 @@ def fake_ps(
     stderr: str = "",
     raises: Callable[[], BaseException] | None = None,
 ) -> list[PsCall]:
-    """Answer ``kstrl.procgroup``'s ``ps`` with this. Returns the call log.
+    """Answer ``kstrl.proc.procgroup``'s ``ps`` with this. Returns the call log.
 
     ``raises`` is a FACTORY rather than an instance. A module-level
     exception object re-raised by every parametrized case accumulates a
@@ -425,7 +425,7 @@ def _patch_ps_popen(
     exists to prevent.
 
     The seam is ``Popen`` rather than ``run`` because #309 moved the read
-    off ``run``; the module docstring of ``kstrl.procgroup`` says why.
+    off ``run``; the module docstring of ``kstrl.proc.procgroup`` says why.
     """
     real_popen = subprocess.Popen
     calls: list[PsCall] = []
@@ -445,7 +445,7 @@ def _patch_ps_popen(
 
 
 def ps_is_readable() -> bool:
-    """Whether `kstrl.procgroup` can actually measure on this machine.
+    """Whether `kstrl.proc.procgroup` can actually measure on this machine.
 
     A test that asserts on `process_group_alive`, or that takes a group
     census, needs this: where `ps` is absent or filtered the production

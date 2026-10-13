@@ -25,9 +25,9 @@ from typing import Any
 
 import pytest
 
+from kstrl.events.observability import ProgressLog
 from kstrl.linear import LinearConfig, build_linear_sink
-from kstrl.manifest import ComponentStatus, Manifest
-from kstrl.observability import ProgressLog
+from kstrl.plan.manifest import ComponentStatus, Manifest
 from tests.spine_utils import component, make_manifest
 
 TEAM_ID = "540e2302-e91c-42a7-92d7-e2f274bbf298"

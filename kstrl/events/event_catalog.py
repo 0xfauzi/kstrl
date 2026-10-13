@@ -2,7 +2,7 @@
 
 This module owns the :class:`Event` base class, its type registry, the
 envelope fields, and the registered event dataclasses. The sinks, the
-tolerant reader and the run-directory layout are in :mod:`kstrl.events`.
+tolerant reader and the run-directory layout are in :mod:`kstrl.events.events`.
 """
 
 from __future__ import annotations
@@ -189,7 +189,7 @@ class VerificationResultEvent(Event):
     #: empty, so payloads already on disk decode unchanged.
     not_measured: tuple[str, ...] = ()
     #: #700: the isolation the commands ran under, as the emitter states
-    #: it: a rung's label, or ``kstrl.rung.HOST_LABEL``. Empty when the emitter
+    #: it: a rung's label, or ``kstrl.proc.rung.HOST_LABEL``. Empty when the emitter
     #: ran no command, and on every payload written before #700.
     isolation: str = ""
     #: #462: the absolute path of each file holding a failed gate's

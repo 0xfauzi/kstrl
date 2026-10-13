@@ -1,6 +1,6 @@
 """How many distiller replies did not parse, over recent runs (#495).
 
-The one reader of :attr:`kstrl.event_catalog.DistillResult.parse_failed`.
+The one reader of :attr:`kstrl.events.event_catalog.DistillResult.parse_failed`.
 ``ks evolve`` prints the line this module builds under "Learning
 readiness", beside the fact-utilization numbers, because a distill whose
 reply did not parse wrote no facts for a reason that is not "nothing to
@@ -17,8 +17,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from kstrl import event_catalog
-from kstrl.reducer import read_run_dir, run_dirs_newest_first
+from kstrl.events import event_catalog, read_run_dir, run_dirs_newest_first
 
 
 def distill_parse_failure_line(root_dir: Path, lookback_runs: int) -> str:
@@ -28,7 +27,7 @@ def distill_parse_failure_line(root_dir: Path, lookback_runs: int) -> str:
     An unreadable ``.kstrl/runs/`` is reported as not counted, never as
     zero: a zero here is a measurement, and a directory that could not
     be listed measured nothing. A single unreadable ``events.jsonl`` is
-    read as empty by :func:`kstrl.events.read_events` and so drops out
+    read as empty by :func:`kstrl.events.events.read_events` and so drops out
     of BOTH counts; the denominator shows it.
     """
     try:

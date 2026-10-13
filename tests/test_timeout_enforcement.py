@@ -42,7 +42,6 @@ from kstrl.agents.claude_code import ClaudeCodeAgent
 from kstrl.agents.claude_sdk import ClaudeSdkAgent
 from kstrl.agents.codex import CodexAgent
 from kstrl.agents.custom import CustomAgent
-from kstrl.agents.proc import TIMEOUT_MESSAGE_PREFIX, kill_active_process_groups
 from kstrl.config.config import KstrlConfig
 from kstrl.factory import (
     _expired_futures,
@@ -53,8 +52,9 @@ from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult
 from kstrl.factory_worktrees import _remove_stale_index_lock, _setup_worktree
 from kstrl.loop import run_loop
-from kstrl.manifest import Component, Manifest
-from kstrl.timeout import TimeoutConfig
+from kstrl.plan.manifest import Component, Manifest
+from kstrl.proc.proc import TIMEOUT_MESSAGE_PREFIX, kill_active_process_groups
+from kstrl.proc.timeout import TimeoutConfig
 from kstrl.ui.plain import PlainUI
 from tests.helpers import astwalk, gitrepo, procs
 from tests.helpers.procs import read_pid
@@ -1001,7 +1001,7 @@ class TestSignalGroupSafety:
     def _streamer_with_fake_proc(self, pid: object) -> tuple[object, object]:
         from unittest.mock import MagicMock, patch
 
-        from kstrl.agents.proc import DeadlineStreamer
+        from kstrl.proc.proc import DeadlineStreamer
 
         fake_proc = MagicMock()
         fake_proc.pid = pid
@@ -1879,8 +1879,8 @@ class TestSubprocessTimeoutAudit:
     that implement their own deadline management, each covered by the
     runtime kill tests in this file's suite or their own:
 
-    - kstrl/agents/proc.py: reader-thread deadline + group kill (R0.1)
-    - kstrl/scrubbed_run.py: run_scrubbed communicate(timeout) + group kill
+    - kstrl/proc/proc.py: reader-thread deadline + group kill (R0.1)
+    - kstrl/proc/scrubbed_run.py: run_scrubbed communicate(timeout) + group kill
       (R2.6)
     - kstrl/serve_process.py: subprocess_factory_runner communicate(timeout) +
       group kill (R8.6). Popen is REQUIRED here rather than incidental:
@@ -1892,9 +1892,9 @@ class TestSubprocessTimeoutAudit:
       and the factory a grandchild; #209 measured the tree and it is
       not. The direct child is the factory, and the descendants survive
       a direct-child kill with caffeinate on and off alike.
-    - kstrl/procgroup_listing.py: two bounded communicate(timeout) calls
+    - kstrl/proc/procgroup_listing.py: two bounded communicate(timeout) calls
       around a kill, then the child is abandoned (#309). Split out of
-      kstrl/procgroup.py by #209 round 3; the argument is next door. Popen is REQUIRED here
+      kstrl/proc/procgroup.py by #209 round 3; the argument is next door. Popen is REQUIRED here
       too, and for a different reason: subprocess.run's timeout handler
       waits on the killed child with NO deadline and Popen.__exit__ waits
       again, so `timeout=` cannot bound a ps that will not die. Measured
@@ -1939,21 +1939,21 @@ class TestSubprocessTimeoutAudit:
     SPAWN_TARGETS = frozenset(f"subprocess.{name}" for name in SPAWN_FUNCS)
 
     #: Modules allowed to CONSTRUCT a ``subprocess.Popen``.
-    #: ``kstrl/procgroup_listing.py`` REPLACED ``kstrl/procgroup.py``
+    #: ``kstrl/proc/procgroup_listing.py`` REPLACED ``kstrl/proc/procgroup.py``
     #: here when #209 round 3 split the ``ps`` spawn out for the 800-line
     #: ratchet, taking ``_read_ps`` and its two deadlines with it. That is
     #: the SAME move that produced the instance-eleven miss recorded on
-    #: :data:`CHILD_WAIT_SCOPE` below - ``kstrl/procdispose.py`` split out
+    #: :data:`CHILD_WAIT_SCOPE` below - ``kstrl/proc/procdispose.py`` split out
     #: of the same module and landing on neither list. What caught it this
     #: time is the per-file anti-vacuity check: leaving the old name here
     #: as well fails with "these deadline-managed modules show no wait
     #: sites at all", so a stale entry cannot be carried quietly.
     POPEN_ALLOWLIST = frozenset(
         {
-            "kstrl/agents/leash.py",
-            "kstrl/agents/proc.py",
-            "kstrl/procgroup_listing.py",
-            "kstrl/scrubbed_run.py",
+            "kstrl/proc/leash.py",
+            "kstrl/proc/proc.py",
+            "kstrl/proc/procgroup_listing.py",
+            "kstrl/proc/scrubbed_run.py",
             "kstrl/serve_process.py",
         }
     )
@@ -1963,7 +1963,7 @@ class TestSubprocessTimeoutAudit:
     #: answer different questions: who may make a child, and who may wait
     #: on one. Conflating them is what let this scope go blind.
     #:
-    #: MEASURED, and this is the instructive part. ``kstrl/procdispose.py``
+    #: MEASURED, and this is the instructive part. ``kstrl/proc/procdispose.py``
     #: was split out of ``procgroup`` and landed on neither list, so the
     #: number of waits this gate could SEE went from 11 to 7 while the
     #: tree still had 9. The anti-vacuity check below is per file and
@@ -1976,7 +1976,7 @@ class TestSubprocessTimeoutAudit:
     #: whose own docstring says it is why the function exists.
     #: ``kstrl/replay.py`` (#700 slice 3) waits on the ``up`` that
     #: ``scrubbed_run.start_scrubbed`` started and lets it go.
-    CHILD_WAIT_SCOPE = POPEN_ALLOWLIST | {"kstrl/procdispose.py", "kstrl/replay.py"}
+    CHILD_WAIT_SCOPE = POPEN_ALLOWLIST | {"kstrl/proc/procdispose.py", "kstrl/replay.py"}
 
     #: Waits in :data:`CHILD_WAIT_SCOPE` that have no deadline and are argued
     #: rather than bounded, as ``module finding`` with the line number taken
@@ -1985,7 +1985,7 @@ class TestSubprocessTimeoutAudit:
     #: kstrl lives, and by the leash's SIGKILL of its own group, which ends
     #: the waiting thread with it, once kstrl is gone. A second unbounded
     #: wait in the leash, or one anywhere else, is a count this does not pin.
-    ARGUED_UNBOUNDED_WAITS: tuple[str, ...] = ("kstrl/agents/leash.py .wait() names no timeout=",)
+    ARGUED_UNBOUNDED_WAITS: tuple[str, ...] = ("kstrl/proc/leash.py .wait() names no timeout=",)
 
     @classmethod
     def _spawn_sites(cls, tree: ast.Module, module: str = "") -> list[tuple[ast.Call, str]]:
@@ -2214,7 +2214,7 @@ class TestSubprocessTimeoutAudit:
         Scoped to CHILD_WAIT_SCOPE because ``.wait(...)`` outside
         them is overwhelmingly ``threading.Event.wait``, whose unbounded
         form is legitimate and common (``kstrl/commandrun.py``,
-        ``kstrl/interaction.py``, ``kstrl/shutdown.py``). Inside them it
+        ``kstrl/interaction.py``, ``kstrl/proc/shutdown.py``). Inside them it
         is a child process, and there it must always name a deadline.
 
         The wait half is a receiver-name check, so it catches ``x.wait()``

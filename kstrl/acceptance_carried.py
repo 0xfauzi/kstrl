@@ -57,15 +57,14 @@ from kstrl.acceptance import (
 )
 from kstrl.git import git, git_base
 from kstrl.io import atomic_write_json, control_dir, read_json
+from kstrl.proc import Rung, limit_seconds
 from kstrl.replay import Replay, Stage, replay_stack
-from kstrl.rung import Rung
 from kstrl.stack import REPLAY_BOUNDARY_REFUSED
-from kstrl.timeout import limit_seconds
 
 if TYPE_CHECKING:
     from kstrl.contract import ContractConfig
     from kstrl.inbox import InboxConfig, InboxItem
-    from kstrl.manifest import Manifest
+    from kstrl.plan import Manifest
     from kstrl.stack import Stack
     from kstrl.ui import UI
 
@@ -387,7 +386,7 @@ def carry_passed(
 ) -> str:
     """Add the kept checks of the ``merged`` components to the carried
     file, after Phase 3 passed on ``sha``; return why it was not written."""
-    from kstrl.manifest_merge import has_merged
+    from kstrl.plan import has_merged
 
     plan, base, stack = config.acceptance_plan, config.acceptance_base, config.project_stack
     if plan is None or base is None or stack is None or not sha:

@@ -414,7 +414,7 @@ class TestFactoryPreflightWiring:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from kstrl.manifest import Component, Manifest
+        from kstrl.plan.manifest import Component, Manifest
 
         _availability(monkeypatch, claude=True, codex=True)
         root = tmp_path / "proj"
@@ -492,7 +492,7 @@ class TestFactoryPreflightWiring:
         _scaffold(root)
         (root / "kstrl.toml").write_text('[agent]\ntype = "clade"\n')
 
-        from kstrl.manifest import Component, Manifest
+        from kstrl.plan.manifest import Component, Manifest
 
         manifest = Manifest(
             version="1",

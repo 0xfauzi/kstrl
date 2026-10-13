@@ -277,7 +277,7 @@ def _required_count(path: Path, fixture_id: str, entry: Mapping[str, Any], key: 
 
 def _required_str(path: Path, index: int, entry: Mapping[str, Any], key: str) -> str:
     """One required, non-empty string field, indexed like every other
-    indexed validator in the repo (``kstrl.requirements.required_field_error``
+    indexed validator in the repo (``kstrl.plan.requirements.required_field_error``
     is the sibling shape for a RETURNED message rather than a raise).
 
     ``str(...)`` used to coerce first, so a JSON ``null`` role or

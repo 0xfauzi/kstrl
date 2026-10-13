@@ -36,7 +36,7 @@ from kstrl.evolution_config import EvolutionConfig
 from kstrl.factory import run_factory
 from kstrl.inbox import Inbox, InboxConfig
 from kstrl.interaction import PromptKind, PromptRequest, PromptResponse
-from kstrl.manifest import Manifest
+from kstrl.plan.manifest import Manifest
 from kstrl.review import CriterionReview, ReviewResult
 from kstrl.ui.plain import PlainUI
 from tests.helpers.executables import write_executable

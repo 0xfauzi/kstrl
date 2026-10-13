@@ -50,7 +50,7 @@ from kstrl.factory_result import ComponentResult
 from kstrl.knowledge import build_knowledge_context, measure_fact_utilization
 from kstrl.knowledge_distill import distill_facts
 from kstrl.knowledge_facts import Fact, KnowledgeConfig, _render_fact_md, read_facts, write_facts
-from kstrl.manifest import Component, Manifest
+from kstrl.plan.manifest import Component, Manifest
 from kstrl.ui.plain import PlainUI
 from kstrl.verify_model import VerifyConfig
 from tests.helpers.distill_replies import BROKEN_REPLY, EMPTY_REPLY

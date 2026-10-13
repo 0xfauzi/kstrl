@@ -14,8 +14,7 @@ from kstrl.git import fetch_base_branch, fetch_pr_state, pr_mergeable
 from kstrl.pr_body import component_pr_body, single_pr_body
 
 if TYPE_CHECKING:
-    from kstrl.manifest import Component, Manifest
-    from kstrl.requirements import SpecRequirement
+    from kstrl.plan import Component, Manifest, SpecRequirement
     from kstrl.ui import UI
 
 # Explicit budgets for every subprocess in this module (R0.2): a hung

@@ -17,7 +17,7 @@ import json
 from pathlib import Path
 
 from kstrl.inbox import ItemKind
-from kstrl.manifest import Manifest
+from kstrl.plan.manifest import Manifest
 from tests.test_inbox_waivers import (
     ONE_SECRET,
     SECRET_TOML,

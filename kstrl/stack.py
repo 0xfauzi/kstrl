@@ -61,7 +61,7 @@ from kstrl.config import (
     section_table,
 )
 from kstrl.inbox import Inbox, InboxConfig, InboxItem, ItemKind, ItemStatus
-from kstrl.scrubbed_run import SECRET_NAME_FRAGMENTS
+from kstrl.proc import SECRET_NAME_FRAGMENTS
 
 #: The four keys of ``[stack]``. Every one is required.
 STACK_KEYS: tuple[str, ...] = ("instructions", "setup", "checks", "env")
@@ -694,7 +694,7 @@ def file_stack_item(
     does not hold it yet, so the item carries the table to paste, and
     ``ks inbox approve`` refuses it until kstrl.toml holds that exact text.
     """
-    from kstrl.observability import NotifyConfig, NotifyHooks
+    from kstrl.events import NotifyConfig, NotifyHooks
 
     config = InboxConfig.load(root_dir)
     if not config.enabled:

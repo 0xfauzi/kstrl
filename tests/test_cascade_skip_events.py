@@ -25,10 +25,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+import kstrl
 import tests.test_scope_snapshot as scope_snapshot
-from kstrl import reducer
-from kstrl.manifest import Component
-from kstrl.reducer import load_run_state
+from kstrl.events.reducer import load_run_state
+from kstrl.plan.manifest import Component
 from tests.test_harness_path_scope import (
     AUTHORED,
     COMPONENT_ID,
@@ -182,7 +182,7 @@ def _is_cascade_skip_call(node: ast.AST) -> bool:
 def _cascade_skip_call_sites() -> list[tuple[str, str]]:
     """Every call to something named ``cascade_skip`` in ``kstrl/``, paired
     with the function it sits in."""
-    kstrl_dir = Path(reducer.__file__).parent
+    kstrl_dir = Path(kstrl.__file__).parent
     sites: list[tuple[str, str]] = []
     for path in sorted(kstrl_dir.rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"))

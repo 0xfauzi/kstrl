@@ -1,7 +1,7 @@
-"""#298: what ``kstrl/procgroup.py`` makes of a real process group.
+"""#298: what ``kstrl/proc/procgroup.py`` makes of a real process group.
 
 Three answers and no fourth: live, gone, or unknown. The reading itself
-and the parse of it belong to ``kstrl/procgroup_listing.py`` and are
+and the parse of it belong to ``kstrl/proc/procgroup_listing.py`` and are
 tested in ``tests/test_procgroup_listing.py``, which #366 split out of
 this file for the 800-line ratchet. What remains here runs against the
 caller's own group and against a pgid no group holds
@@ -17,7 +17,7 @@ import os
 import threading
 import time
 
-from kstrl.procgroup import (
+from kstrl.proc.procgroup import (
     GroupLiveness,
     _kernel_says_group_is_empty,
     pid_is_alive,

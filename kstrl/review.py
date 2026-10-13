@@ -16,13 +16,13 @@ from kstrl.agent_output import (
     extract_json,
     select_agent_output,
 )
-from kstrl.findings import (
+from kstrl.git import git_base, git_diff
+from kstrl.plan import (
+    PRD,
     Finding,
     dump_raw_debug,
     tag_finding_with_model,
 )
-from kstrl.git import git_base, git_diff
-from kstrl.prd import PRD
 from kstrl.review_prompt import build_review_prompt
 from kstrl.verify_model import VerificationResult
 
@@ -535,7 +535,7 @@ def parse_review_output(
     ``None`` skips the check for callers that have no PRD.
 
     ``debug_dir`` enables a full raw-output dump on parse failure via
-    :func:`kstrl.findings.dump_raw_debug`; the result's
+    :func:`kstrl.plan.findings.dump_raw_debug`; the result's
     ``raw_output`` field stays truncated to 2000 chars to bound
     manifest/journal size.
     """

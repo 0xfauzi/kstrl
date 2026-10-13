@@ -40,6 +40,7 @@ xfail.
 from __future__ import annotations
 
 import ast
+import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import cache
@@ -69,7 +70,28 @@ class _Init:
 
 def is_package(module: str, root: Path = REPO_ROOT) -> bool:
     """True when ``module`` is a directory with an ``__init__.py`` under ``root``."""
-    return bool(module) and root.joinpath(*module.split(".")).joinpath("__init__.py").is_file()
+    return bool(module) and _exact_file(root, [*module.split("."), "__init__.py"])
+
+
+def _exact_file(root: Path, parts: list[str]) -> bool:
+    """True when ``root/parts...`` is a file, each part with the same case.
+
+    A case-insensitive file system (the default on macOS) finds
+    ``kstrl/plan/Manifest.py`` for ``kstrl/plan/manifest.py``. Python
+    imports a module only by its exact case. Without this rule the walk
+    read the class ``Manifest`` in ``kstrl.plan`` as a submodule that the
+    ``__init__.py`` also binds, and thus as a guess (#863 M2).
+    """
+    current = root
+    for part in parts:
+        try:
+            names = os.listdir(current)
+        except OSError:
+            return False
+        if part not in names:
+            return False
+        current = current / part
+    return current.is_file()
 
 
 def import_base(node: ast.ImportFrom, module: str, root: Path = REPO_ROOT) -> str:
@@ -143,8 +165,10 @@ def _follow(path: str, root: Path, visited: frozenset[tuple[str, str]]) -> tuple
 
 
 def _is_submodule(root: Path, package: str, name: str) -> bool:
-    directory = root.joinpath(*package.split("."))
-    return (directory / f"{name}.py").is_file() or (directory / name / "__init__.py").is_file()
+    parts = package.split(".")
+    return _exact_file(root, [*parts, f"{name}.py"]) or _exact_file(
+        root, [*parts, name, "__init__.py"]
+    )
 
 
 def _binding(init: _Init, name: str) -> tuple[str | None, bool]:

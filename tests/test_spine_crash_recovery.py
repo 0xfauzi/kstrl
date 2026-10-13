@@ -37,7 +37,7 @@ from pathlib import Path
 import pytest
 
 from kstrl.factory import run_factory
-from kstrl.manifest import ComponentStatus, Manifest
+from kstrl.plan.manifest import ComponentStatus, Manifest
 from kstrl.ui.plain import PlainUI
 from tests.helpers import procs
 from tests.spine_utils import (
@@ -64,7 +64,7 @@ from pathlib import Path
 from kstrl.config.config import KstrlConfig
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
-from kstrl.manifest import Manifest
+from kstrl.plan.manifest import Manifest
 from kstrl.ui.plain import PlainUI
 from kstrl.stack import CONFIRMED_IN_INBOX, Stack
 from kstrl.verify_model import VerifyConfig

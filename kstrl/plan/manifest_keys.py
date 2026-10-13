@@ -1,6 +1,6 @@
 """The manifest's key vocabulary, the plan id rule (#568) and the spec pin rule (#639).
 
-Split out of ``kstrl/manifest.py`` when #568 took that file past the
+Split out of ``kstrl/plan/manifest.py`` when #568 took that file past the
 800-line ratchet, and again when #639 did. ``Manifest.validate_schema``
 refuses a component with a key outside the two component sets, so a new
 field is added here or every manifest carrying it is refused.
@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from kstrl.names import COMPONENT_ID_PATTERN, validate_branch_name, validate_component_id
+from kstrl.plan.names import COMPONENT_ID_PATTERN, validate_branch_name, validate_component_id
 
 MANIFEST_REQUIRED_KEYS = frozenset(
     {"version", "specFile", "projectName", "baseBranch", "singlePr", "components"}

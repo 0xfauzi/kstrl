@@ -40,11 +40,16 @@ from kstrl.baseline import verify_digest
 from kstrl.events import RunPaths
 from kstrl.git import git, git_base, git_tree, kstrl_version
 from kstrl.io import atomic_write_json
-from kstrl.rung import HOST_LABEL, label_of
-from kstrl.temp_worktree import ContractCleanupError, create_temp_worktree, remove_temp_worktree
+from kstrl.proc import (
+    HOST_LABEL,
+    ContractCleanupError,
+    WorktreeSetup,
+    create_temp_worktree,
+    label_of,
+    remove_temp_worktree,
+)
 from kstrl.verify_commands import run_fast_checks
 from kstrl.verify_model import CheckResult, VerificationResult, VerifyConfig, gate_names
-from kstrl.worktree_setup import WorktreeSetup
 
 if TYPE_CHECKING:
     from kstrl.ui import UI

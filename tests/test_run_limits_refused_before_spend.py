@@ -28,8 +28,8 @@ import pytest
 
 from kstrl.factory_config import FactoryConfig
 from kstrl.launch_record import run_limits
-from kstrl.manifest import ComponentStatus, Manifest
-from kstrl.timeout import TimeoutConfig
+from kstrl.plan.manifest import ComponentStatus, Manifest
+from kstrl.proc.timeout import TimeoutConfig
 from tests.helpers import gitrepo
 from tests.helpers.executables import write_executable
 from tests.helpers.procs import kill_group

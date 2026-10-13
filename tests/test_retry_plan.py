@@ -19,7 +19,7 @@ import kstrl.cli as cli_mod
 import kstrl.cli_architect as cli_architect_mod
 import kstrl.cli_factory as cli_factory_mod
 import kstrl.cli_preflight as cli_preflight_mod
-from kstrl.manifest import Component, ComponentStatus, Manifest
+from kstrl.plan.manifest import Component, ComponentStatus, Manifest
 from tests.helpers.run_limits import every_limit_argv
 from tests.test_retry_carries_flags import _RecordingChannel
 

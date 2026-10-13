@@ -4,7 +4,7 @@ The filesystem is the event bus: the orchestrator and its workers append
 one JSON object per line to files under ``.kstrl/runs/<run_id>/`` and
 every surface (plain line output, ``ks status``) is
 a projection of that stream. The vocabulary (the :class:`Event`
-dataclasses) is in :mod:`kstrl.event_catalog`. This module owns the sinks
+dataclasses) is in :mod:`kstrl.events.event_catalog`. This module owns the sinks
 that write them, the tolerant reader that parses them back, and the
 run-directory layout.
 
@@ -23,7 +23,7 @@ line parses to ``None``. Sinks are observability, never control flow:
 
 Naming note: v1 compatibility (``.kstrl/progress.jsonl``) is provided by
 :class:`V1CompatSink`, which delegates to a real
-:class:`~kstrl.observability.ProgressLog` so its file format AND its
+:class:`~kstrl.events.observability.ProgressLog` so its file format AND its
 attached ``ProgressSink`` observers (e.g. the Linear sink, R7.4) keep
 working unchanged.
 """
@@ -38,7 +38,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Any, Protocol
 
-from kstrl.event_catalog import (
+from kstrl.events.event_catalog import (
     _ENVELOPE_FIELDS,
     _REGISTRY,
     AdversarialAgentSelected,
@@ -62,6 +62,7 @@ from kstrl.event_catalog import (
     UnknownEvent,
     VerificationResultEvent,
 )
+from kstrl.events.observability import ProgressLog
 from kstrl.git import kstrl_version
 from kstrl.io import (
     REPAIR_DETAIL,
@@ -69,7 +70,6 @@ from kstrl.io import (
     open_for_append,
     read_json,
 )
-from kstrl.observability import ProgressLog
 
 _FIELD_DEFAULTS: dict[str, dict[str, Any]] = {}
 

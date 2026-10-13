@@ -5,7 +5,7 @@ All tier merging happens in a throwaway worktree created with
 user's checkout (R0.3 / CRIT-6). The recovery path on any failure is
 ``git merge --abort`` in the temp worktree followed by
 ``git worktree remove --force``; if the worktree survives removal a
-:class:`kstrl.temp_worktree.ContractCleanupError` is raised so the run fails loudly instead
+:class:`kstrl.proc.temp_worktree.ContractCleanupError` is raised so the run fails loudly instead
 of silently leaving stale state behind.
 
 Blame attribution (bisection) honesty:
@@ -37,14 +37,19 @@ from typing import TYPE_CHECKING
 
 from kstrl.config import ConfigSection, check_numbers
 from kstrl.git import git
-from kstrl.manifest import Manifest
-from kstrl.rung import Rung
-from kstrl.scrubbed_run import ChildOutputDecodeError, run_scrubbed
+from kstrl.plan import Manifest
+from kstrl.proc import (
+    NO_SETUP,
+    ChildOutputDecodeError,
+    Rung,
+    WorktreeSetup,
+    create_temp_worktree,
+    limit_seconds,
+    remove_temp_worktree,
+    run_scrubbed,
+)
 from kstrl.stack import NO_STACK, Stack, stack_in_force
-from kstrl.temp_worktree import create_temp_worktree, remove_temp_worktree
-from kstrl.timeout import limit_seconds
 from kstrl.verify_commands import check_stack_command
-from kstrl.worktree_setup import NO_SETUP, WorktreeSetup
 
 if TYPE_CHECKING:
     from kstrl.acceptance import PinnedPlan

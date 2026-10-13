@@ -105,10 +105,10 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     "commandrun.py": 1,
     "decisions.py": 1,
     "decompose_prompt.py": 2,
-    "events.py": 1,
+    "events/events.py": 1,
     "evolution.py": 1,
     "factory_acceptance.py": 1,
-    "factory_lock.py": 1,
+    "proc/factory_lock.py": 1,
     "factory_result.py": 1,
     "factory_worker.py": 2,
     "factory_worktrees.py": 1,
@@ -138,8 +138,8 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     "knowledge_distill.py": 1,
     "knowledge_facts.py": 1,
     "loop.py": 1,
-    "manifest.py": 1,
-    "observability.py": 1,
+    "plan/manifest.py": 1,
+    "events/observability.py": 1,
     # Back to 1 (the existing `read_operator_file` read): the
     # `append_guidance_record` read #231 B1 added here moved again, to
     # `operator_guidance.py`, when this module crossed the 800-line
@@ -156,7 +156,7 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     "pipeline_attempt.py": 3,
     "pipeline_knowledge.py": 1,
     "pipeline_ledger.py": 1,
-    "prd.py": 1,
+    "plan/prd.py": 1,
     # #700 slice 5: `ks recheck` reads a record and its index.json back.
     "recheck.py": 1,
     # #700 slice 3: layer 1 counts every `open(...)`/`read_text(...)` call
@@ -255,9 +255,9 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "decisions.py path.read_text(encoding='utf-8')",
     "decompose_prompt.py (spec_path / name).read_text(encoding='utf-8')",
     "decompose_prompt.py spec_path.read_text(encoding='utf-8')",
-    "events.py open(path, encoding='utf-8', errors='replace')",
-    "factory_lock.py fp.read(64) on an open() handle",
-    "factory_lock.py open(lock_path, 'a+', encoding='utf-8')",
+    "events/events.py open(path, encoding='utf-8', errors='replace')",
+    "events/observability.py for line in f on an open() handle",
+    "events/observability.py open(path, encoding='utf-8')",
     "factory_result.py path.read_text(encoding='utf-8')",
     "factory_worker.py open(log_path, 'a', buffering=1, encoding='utf-8', errors='replace')",
     "factory_worker.py open(run_paths.engineer_log(component_id), 'a', buffering=1, encoding=",
@@ -282,9 +282,6 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "knowledge_distill.py prd_path.read_text(encoding='utf-8')",
     "knowledge_facts.py path.read_text(encoding='utf-8')",
     "loop.py config.prompt_file.read_text(encoding='utf-8')",
-    "manifest.py open(path, encoding='utf-8')",
-    "observability.py for line in f on an open() handle",
-    "observability.py open(path, encoding='utf-8')",
     "operator_context.py spec.path.read_text(encoding='utf-8')",
     # `append_guidance_record`'s read, same spelling as the row above
     # because both read an `OperatorFile.path`, moved to
@@ -293,7 +290,10 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "operator_guidance.py spec.path.read_text(encoding='utf-8')",
     "pipeline_attempt.py open(path, 'a', buffering=1, encoding='utf-8')",
     "pipeline_knowledge.py progress_path.read_text(encoding='utf-8')",
-    "prd.py open(path, encoding='utf-8')",
+    "plan/manifest.py open(path, encoding='utf-8')",
+    "plan/prd.py open(path, encoding='utf-8')",
+    "proc/factory_lock.py fp.read(64) on an open() handle",
+    "proc/factory_lock.py open(lock_path, 'a+', encoding='utf-8')",
     # #700 slice 5: an acceptance record and its index.json, utf-8, with
     # ValueError caught beside OSError.
     "recheck.py path.read_text(encoding='utf-8')",
@@ -357,18 +357,18 @@ EXPECTED_UNDECIDED: tuple[str, ...] = (
     "cli_preflight.py f (the read is deferred to wherever this value is drained, "
     "which this walk cannot locate, so no handler can be credited with "
     "covering it)",
-    "factory_lock.py fp (the read is deferred to wherever this value is drained, "
-    "which this walk cannot locate, so no handler can be credited with "
-    "covering it)",
     # #632: `_dispatch_fixture` calls a runner through `_RUNNERS`, a callee
     # with no name. Checked by hand: the one runner that reads a file is
     "init_cmd.py f (the read is deferred to wherever this value is drained, "
     "which this walk cannot locate, so no handler can be credited with "
     "covering it)",
-    "manifest.py f (the read is deferred to wherever this value is drained, "
+    "plan/manifest.py f (the read is deferred to wherever this value is drained, "
     "which this walk cannot locate, so no handler can be credited with "
     "covering it)",
-    "prd.py f (the read is deferred to wherever this value is drained, "
+    "plan/prd.py f (the read is deferred to wherever this value is drained, "
+    "which this walk cannot locate, so no handler can be credited with "
+    "covering it)",
+    "proc/factory_lock.py fp (the read is deferred to wherever this value is drained, "
     "which this walk cannot locate, so no handler can be credited with "
     "covering it)",
 )

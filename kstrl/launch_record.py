@@ -38,8 +38,8 @@ from kstrl.io import atomic_write_json, read_json
 
 if TYPE_CHECKING:
     from kstrl.factory_config import FactoryConfig
-    from kstrl.manifest import Manifest
-    from kstrl.timeout import TimeoutConfig
+    from kstrl.plan import Manifest
+    from kstrl.proc import TimeoutConfig
 
 FlagValue = str | int | float | bool
 

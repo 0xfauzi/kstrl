@@ -215,7 +215,7 @@ class TestAssertCensusWillNotPinAnEmptyNet:
         astwalk.assert_census(
             sources=astwalk.package_sources(),
             sees=astwalk.spells("getpgid"),
-            expected={"procgroup.py": 2},
+            expected={"proc/procgroup.py": 2},
             control="import os\nos.getpgid(1)\n",
             message="the places kstrl derives a process group changed.",
         )
@@ -296,7 +296,7 @@ class TestAssertCensusWillNotPinAnEmptyNet:
         astwalk.assert_census(
             sources=(path for path in astwalk.package_sources()),
             sees=astwalk.spells("getpgid"),
-            expected={"procgroup.py": 2},
+            expected={"proc/procgroup.py": 2},
             control="import os\nos.getpgid(1)\n",
             message="unused",
         )
@@ -351,7 +351,7 @@ class TestAssertCensusWillNotPinAnEmptyNet:
             sees=lambda node: astwalk.spells("getpgid")(node) or astwalk.spells("rglob")(node),
             # #700 slice 4: acceptance.py's evidence-index rglob, same site
             # as the control above.
-            expected={"procgroup.py": 2, "acceptance.py": 1},
+            expected={"proc/procgroup.py": 2, "acceptance.py": 1},
             control=(
                 "import os\nos.getpgid(1)\n",
                 'import kstrl.feedforward\nroot.rglob("*.py")\n',
@@ -416,7 +416,7 @@ class TestAssertCensusWillNotPinAnEmptyNet:
 
     def test_modules_with_no_hits_are_left_out(self) -> None:
         built = astwalk.census(astwalk.package_sources(), astwalk.spells("getpgid"))
-        assert built == {"procgroup.py": 2}
+        assert built == {"proc/procgroup.py": 2}
 
 
 # --- scope ----------------------------------------------------------------

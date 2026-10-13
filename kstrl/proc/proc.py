@@ -14,7 +14,7 @@ POSIX-first like the rest of the codebase: on platforms without
 #642: every one of those cleanups runs inside the kstrl process that owns
 the agent, so a SIGKILL, an OOM kill or a closed terminal ran none of them
 and a silent agent kept running. The child this class starts is therefore
-not the agent but ``kstrl/agents/leash.py``, which leads the group, starts
+not the agent but ``kstrl/proc/leash.py``, which leads the group, starts
 the agent inside it, and holds the read end of a pipe whose one write end
 stays here. However this process ends, the kernel closes that write end,
 the leash reads EOF, and it ends the group: SIGTERM, the grace, SIGKILL.
@@ -23,7 +23,7 @@ the leash reads EOF, and it ends the group: SIGTERM, the grace, SIGKILL.
 
 If the leash is killed with kstrl, nothing ends the group. So a streamer
 given the project's ``root_dir`` records the group, with a nonce the leash
-carries in its argv, in ``kstrl/agents/spawn_record.py``'s directory once
+carries in its argv, in ``kstrl/proc/spawn_record.py``'s directory once
 the agent has started, and ``_settle`` removes the record. The next
 lock-taking command, and ``ks status``, read what is left
 (``worktree_sweep.leftover_agents``).
@@ -45,15 +45,15 @@ from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import IO
 
-from kstrl.agents.spawn_record import (
+from kstrl.proc.procdispose import close_quietly, reap_or_abandon
+from kstrl.proc.procgroup import safe_pgid, signal_group, signal_process_tree
+from kstrl.proc.spawn_record import (
     SpawnRecord,
     forget_spawn_record,
     new_nonce,
     spawn_record_path,
     write_spawn_record,
 )
-from kstrl.procdispose import close_quietly, reap_or_abandon
-from kstrl.procgroup import safe_pgid, signal_group, signal_process_tree
 
 # Every adapter yields this line when its subprocess is killed on deadline
 # breach. loop.py matches on the prefix to count timed-out iterations; it is
@@ -438,7 +438,7 @@ class DeadlineStreamer:
         by the id read at spawn, which stays valid after the direct child
         is reaped.
 
-        The last leg is :func:`kstrl.procdispose.reap_or_abandon` rather
+        The last leg is :func:`kstrl.proc.procdispose.reap_or_abandon` rather
         than a third bare ``wait`` (#326). An unreapable child - stuck in
         uninterruptible IO, or with a grandchild outside the group
         holding the pipes - used to be dropped here with nothing left
@@ -507,11 +507,11 @@ class DeadlineStreamer:
     def _signal_group(self, sig: signal.Signals) -> None:
         """Signal the group, degrading to the direct child.
 
-        The group is the one :func:`kstrl.procgroup.safe_pgid` read at
-        spawn, sent through :func:`kstrl.procgroup.signal_group`, which
+        The group is the one :func:`kstrl.proc.procgroup.safe_pgid` read at
+        spawn, sent through :func:`kstrl.proc.procgroup.signal_group`, which
         refuses the same pgids ``safe_pgid`` does. When there is no such
         id, or the group is gone or refused, this forwards to
-        :func:`kstrl.procgroup.signal_process_tree`, kept as a method
+        :func:`kstrl.proc.procgroup.signal_process_tree`, kept as a method
         because ``tests/test_timeout_enforcement.py`` pins the guard
         through it. #308 lifted the pid/pgid guard into ``procgroup`` and
         left the routine here and in ``verify``, so ``os.killpg`` stayed

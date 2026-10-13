@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from kstrl.config import KstrlConfig, load_toml_section, resolve_config_file, scrubbed_environ
-from kstrl.timeout import NO_LIMIT
+from kstrl.proc import NO_LIMIT
 
 
 @dataclass(frozen=True)

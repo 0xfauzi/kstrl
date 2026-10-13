@@ -47,8 +47,8 @@ import pytest
 from kstrl.decompose_prompt import load_spec_input
 from kstrl.inbox import Inbox, InboxItem, ItemKind, ItemStatus
 from kstrl.init_cmd import gitignore_block
-from kstrl.manifest import Manifest
 from kstrl.owner_answers import render_owner_answer
+from kstrl.plan.manifest import Manifest
 from tests.helpers import gitrepo
 from tests.helpers.plan_approval import approve_plan
 from tests.helpers.stack_confirmation import confirm_stack, write_stack

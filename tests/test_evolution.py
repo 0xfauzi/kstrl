@@ -18,7 +18,7 @@ from kstrl.failure_signatures import (
     split_signature,
 )
 from kstrl.journal_rows import JOURNAL_SCHEMA_VERSION, SPEC_ISSUES_EVENT
-from kstrl.manifest import Component, ComponentStatus, Manifest
+from kstrl.plan.manifest import Component, ComponentStatus, Manifest
 from tests.helpers.journal import audit, journal_at
 
 
@@ -139,7 +139,7 @@ class TestRecordRun:
         Component.findings alongside the existing scalars, and include
         a findings_summary for fast aggregation. This is what makes the
         typed Finding stream actually load-bearing."""
-        from kstrl.findings import Finding
+        from kstrl.plan.findings import Finding
 
         journal_path = tmp_path / "evolution.jsonl"
         experiments_path = tmp_path / "experiments.tsv"
@@ -341,7 +341,7 @@ class TestSignatureHelpers:
         assert "outside-allowed-scope" in code
 
     def test_signatures_from_findings(self) -> None:
-        from kstrl.findings import Finding
+        from kstrl.plan.findings import Finding
 
         findings = [
             Finding.from_review_concern(
@@ -362,7 +362,7 @@ class TestSignatureHelpers:
         ]
 
     def test_signatures_from_findings_infrastructure(self) -> None:
-        from kstrl.findings import Finding
+        from kstrl.plan.findings import Finding
 
         findings = [Finding.infrastructure_error("review", "crashed")]
         assert signatures_from_findings("review", findings) == [
@@ -657,7 +657,7 @@ class TestEvolutionIntegration:
     signature and a nonzero concern hit rate."""
 
     def _failed_component(self, comp_id: str) -> Component:
-        from kstrl.findings import Finding
+        from kstrl.plan.findings import Finding
 
         comp = _make_component(
             comp_id,

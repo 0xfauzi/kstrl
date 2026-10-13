@@ -14,6 +14,7 @@ from kstrl.contract import (
     ContractMode,
     ContractResult,
 )
+from kstrl.events import INTEGRATION_COMPONENT, INTEGRATION_ROLE, collect_usage
 from kstrl.git import git, git_base, git_tree, kstrl_version
 from kstrl.integration import (
     STATUS_HANDOFF,
@@ -46,19 +47,21 @@ from kstrl.integration_state import (
     write_evidence,
     write_state,
 )
-from kstrl.manifest import ComponentStatus
-from kstrl.requirements import SpecRequirement
+from kstrl.plan import ComponentStatus, SpecRequirement
+from kstrl.proc import (
+    ContractCleanupError,
+    create_temp_worktree,
+    limit_seconds,
+    remove_temp_worktree,
+)
 from kstrl.review import ReviewMode, ReviewResult
-from kstrl.temp_worktree import ContractCleanupError, create_temp_worktree, remove_temp_worktree
-from kstrl.timeout import limit_seconds
-from kstrl.usage import INTEGRATION_COMPONENT, INTEGRATION_ROLE, collect_usage
 from kstrl.verify_model import VerificationResult
 
 if TYPE_CHECKING:
     from kstrl.factory_config import FactoryConfig
-    from kstrl.manifest import Manifest
     from kstrl.pipeline import ComponentPipeline
-    from kstrl.shutdown import StopController
+    from kstrl.plan import Manifest
+    from kstrl.proc import StopController
     from kstrl.ui import UI
 
 GATE_NOTE = (

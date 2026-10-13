@@ -8,11 +8,11 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from kstrl.manifest import ADVERSARIAL_BUDGET_CHECK
+from kstrl.plan import ADVERSARIAL_BUDGET_CHECK
 from kstrl.verify_diff import SCOPE_UNREADABLE_CHECK, SCOPE_UNREADABLE_ERROR_PREFIX
 
 if TYPE_CHECKING:
-    from kstrl.findings import Finding
+    from kstrl.plan import Finding
     from kstrl.verify_model import CheckResult
 
 
@@ -157,7 +157,7 @@ _DIGIT_RUN_RE = re.compile(r"\d+")
 # category column said so: a verdict about an agent that could not have
 # prevented any of them.
 #
-# NOT Finding.category's "infrastructure_error" (kstrl/findings.py),
+# NOT Finding.category's "infrastructure_error" (kstrl/plan/findings.py),
 # which marks one ROLE RUN that failed to execute inside an otherwise
 # healthy component. Different taxonomy, different consumer,
 # deliberately different spelling so a grep for either does not silently

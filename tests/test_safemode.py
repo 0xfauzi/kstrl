@@ -15,9 +15,9 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import event_catalog
-from kstrl import events as ev
 from kstrl.autonomy import AutonomyLevel, AutonomyState
+from kstrl.events import event_catalog
+from kstrl.events import events as ev
 from kstrl.safemode import RECOVERY, safe_mode_reasons
 from kstrl.workqueue import Queue
 from kstrl.workqueue_items import QueueConfig

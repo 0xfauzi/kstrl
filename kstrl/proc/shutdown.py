@@ -20,7 +20,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from types import FrameType
 
-from kstrl.agents.proc import kill_active_process_groups
+from kstrl.proc.proc import kill_active_process_groups
 
 
 @dataclass

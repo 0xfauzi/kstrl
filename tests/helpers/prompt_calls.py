@@ -13,9 +13,9 @@ from pathlib import Path
 
 from kstrl.agents.prompt_record import AgentCall
 from kstrl.commandrun import CommandRun, open_command_run
-from kstrl.events import RunPaths
+from kstrl.events.events import RunPaths
+from kstrl.events.usage import ARCHITECT_COMPONENT, ARCHITECT_ROLE
 from kstrl.ui.plain import PlainUI
-from kstrl.usage import ARCHITECT_COMPONENT, ARCHITECT_ROLE
 
 TEST_RUN_ID = "test-run"
 

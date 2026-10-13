@@ -32,17 +32,17 @@ from typing import Any
 import pytest
 
 from kstrl.agents import custom
+from kstrl.events.usage import UsageRecord
 from kstrl.evolution import EvolutionJournal
 from kstrl.evolution_config import EvolutionConfig
 from kstrl.factory import run_factory
 from kstrl.journal_rows import FINDINGS_SUPERSEDED_EVENT
-from kstrl.manifest import Component, ComponentStatus, Manifest
+from kstrl.plan.manifest import Component, ComponentStatus, Manifest
+from kstrl.proc.shutdown import StopController
 from kstrl.serve import serve_cycle
 from kstrl.serve_config import ServeConfig
 from kstrl.serve_spend import SpendLedger, read_run_spend
-from kstrl.shutdown import StopController
 from kstrl.ui.plain import PlainUI
-from kstrl.usage import UsageRecord
 from kstrl.verify_model import VerifyConfig
 from kstrl.workqueue import Queue
 from kstrl.workqueue_items import ItemSource, QueueConfig
@@ -79,11 +79,11 @@ _DRIVER = """
 import sys
 from pathlib import Path
 from kstrl.agents import custom
-from kstrl.usage import UsageRecord
+from kstrl.events.usage import UsageRecord
 from kstrl.config.config import KstrlConfig
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
-from kstrl.manifest import Manifest
+from kstrl.plan.manifest import Manifest
 from kstrl.security import SecurityConfig
 from kstrl.ui.plain import PlainUI
 from kstrl.stack import CONFIRMED_IN_INBOX, Stack

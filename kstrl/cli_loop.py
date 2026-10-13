@@ -27,7 +27,7 @@ from kstrl.commandrun import CommandRun, open_command_run
 from kstrl.config import LIMIT_FLOAT, LIMIT_INT, KstrlConfig, parse_paths, resolve_config_file
 from kstrl.config_report import UI_MODES
 from kstrl.config_report import normalize_ui_mode as _normalize_ui_mode
-from kstrl.event_catalog import (
+from kstrl.events import (
     ArtifactWritten,
     ComponentCompleted,
     ComponentFailed,
@@ -43,10 +43,9 @@ from kstrl.factory_config import FactoryConfig
 from kstrl.git import detect_base_branch
 from kstrl.init_cmd import run_init
 from kstrl.loop import run_loop
-from kstrl.prd import PRD
+from kstrl.plan import PRD
+from kstrl.proc import StopController, TimeoutConfig, install_signal_handlers
 from kstrl.sandbox import SandboxConfig, warn_unconfined
-from kstrl.shutdown import StopController, install_signal_handlers
-from kstrl.timeout import TimeoutConfig
 from kstrl.ui import UI
 
 # Issue #207: `ks run` forces these FactoryConfig fields because it is by
@@ -256,7 +255,7 @@ def run(
     # Single-component factory invocation
     from kstrl.config import load_toml_section
     from kstrl.feedforward import CodebaseScanConfig
-    from kstrl.manifest import Manifest
+    from kstrl.plan import Manifest
     from kstrl.security import SecurityConfig
     from kstrl.verify_model import VerifyConfig
 

@@ -19,25 +19,25 @@ from pathlib import Path
 from typing import Any
 
 from kstrl.config.config import KstrlConfig
-from kstrl.events import EventBus, V1CompatSink
+from kstrl.events.events import EventBus, V1CompatSink
+from kstrl.events.observability import NotifyConfig, NotifyHooks, ProgressLog
 from kstrl.factory_agents import AdversarialAgentSelection
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult, FactoryResult
 from kstrl.knowledge_facts import KnowledgeConfig
-from kstrl.manifest import Component, Manifest
-from kstrl.observability import NotifyConfig, NotifyHooks, ProgressLog
 from kstrl.pipeline import ComponentPipeline
 from kstrl.pipeline_state import PipelineHooks
+from kstrl.plan.manifest import Component, Manifest
+from kstrl.plan.scope import RunScope
 from kstrl.policy import PolicyConfig
+from kstrl.proc.worktree_sweep import WorktreeSweep
 from kstrl.review import ReviewResult
 from kstrl.runenvelope import RunEnvelope
 from kstrl.runstate import RunState
-from kstrl.scope import RunScope
 from kstrl.security import SecurityResult
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import run_mechanical_verification
 from kstrl.verify_model import VerificationResult, VerifyConfig
-from kstrl.worktree_sweep import WorktreeSweep
 from tests.helpers.stack_confirmation import in_process_stack
 
 #: Only the gates that cost nothing: three ``true`` commands, no PRD, no

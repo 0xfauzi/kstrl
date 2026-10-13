@@ -43,7 +43,7 @@ table) and requires each one to be ``TAKES_LOCK`` or the one disclosed
 new caller stops taking the lock.
 
 Disclosed blind spot: a manifest file written without ``Manifest.save``
-(only ``kstrl/manifest.py`` writes one today) is not a reference this
+(only ``kstrl/plan/manifest.py`` writes one today) is not a reference this
 walk can see.
 """
 

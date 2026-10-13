@@ -6,7 +6,7 @@ from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Final, Protocol
 
-from kstrl.usage import UsageRecord
+from kstrl.events import UsageRecord
 
 #: Every line ClaudeCodeAgent or ClaudeSdkAgent yields for a tool's OUTPUT
 #: starts with this (#598), and so does every line CodexAgent yields from

@@ -6,7 +6,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Any
 
-from kstrl.manifest import ComponentStatus
+from kstrl.plan import ComponentStatus
 
 # R6.4: journal entries carry an explicit schema version so future
 # format migrations are detectable. Version 2 = structured failure

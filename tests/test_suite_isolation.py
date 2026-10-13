@@ -25,7 +25,7 @@ from kstrl.evolution import EvolutionJournal
 from kstrl.evolution_config import EvolutionConfig
 from kstrl.factory_result import FactoryResult
 from kstrl.knowledge_facts import Fact, KnowledgeConfig, write_facts
-from kstrl.manifest import Component, ComponentStatus, Manifest
+from kstrl.plan.manifest import Component, ComponentStatus, Manifest
 from tests.conftest import (
     KSTRL_ENV_PREFIXES,
     REPO_ROOT,

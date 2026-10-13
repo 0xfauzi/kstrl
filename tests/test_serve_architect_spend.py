@@ -27,11 +27,11 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from kstrl import event_catalog
-from kstrl import events as ev
 from kstrl.cli import cli
+from kstrl.events import event_catalog
+from kstrl.events import events as ev
+from kstrl.events.reducer import load_run_state
 from kstrl.io.runid import mint_run_id, run_kind
-from kstrl.reducer import load_run_state
 from kstrl.serve import serve_cycle
 from kstrl.serve_config import ServeConfig
 from kstrl.serve_outcome import RunOutcome

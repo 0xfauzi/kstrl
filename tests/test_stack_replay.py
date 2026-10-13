@@ -30,9 +30,9 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from kstrl.procgroup import pid_is_alive, read_group_liveness
+from kstrl.proc.procgroup import pid_is_alive, read_group_liveness
+from kstrl.proc.scrubbed_run import _SCRUB_TERM_GRACE_SECONDS
 from kstrl.replay import STOP_GRACE_SECONDS
-from kstrl.scrubbed_run import _SCRUB_TERM_GRACE_SECONDS
 from kstrl.stack import load_stack
 from tests.helpers.procs import kill_group, read_pid, wait_for_pid_to_die
 from tests.test_isolation_rung import needs_nono, on_macos, runs_a_stack

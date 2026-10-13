@@ -71,7 +71,7 @@ ks run 25
 **Files to modify**:
 - `kstrl/cli.py`: Rewrite `run` command to build manifest and call `run_factory`
 - `kstrl/factory.py`: Support `use_worktrees=False` with `max_parallel=1` (already works, just needs testing)
-- `kstrl/manifest.py`: Add `Manifest.from_prd(prd_path, branch)` class method for single-component manifests
+- `kstrl/plan/manifest.py`: Add `Manifest.from_prd(prd_path, branch)` class method for single-component manifests
 
 **Risks**:
 - Users relying on `ks run` completing faster because it skips verification. Mitigation: `--no-verify` flag.
@@ -453,7 +453,7 @@ lookback_runs = 10             # how many past runs to analyze
 
 **New file**: `kstrl/fixtures.py`
 **Modified file**: `kstrl/verify.py` (add `check_fixtures`)
-**Modified file**: `kstrl/prd.py` (add optional `fixtures` field)
+**Modified file**: `kstrl/plan/prd.py` (add optional `fixtures` field)
 
 #### 3.5.2 Snapshot regression
 

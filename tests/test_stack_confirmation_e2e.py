@@ -34,7 +34,7 @@ from click.testing import CliRunner, Result
 
 from kstrl.cli import cli
 from kstrl.inbox import Inbox, InboxConfig, InboxItem, ItemKind, ItemStatus
-from kstrl.manifest import Manifest
+from kstrl.plan.manifest import Manifest
 from kstrl.stack import load_stack
 from kstrl.workqueue import Queue
 from kstrl.workqueue_items import ItemState, QueueConfig

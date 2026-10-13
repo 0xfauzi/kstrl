@@ -11,16 +11,19 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl.agents.proc import kill_active_process_groups
 from kstrl.config import (
     KstrlConfig,
     check_number,
 )
-from kstrl.event_catalog import (
+from kstrl.events import (
     ComponentStarted,
+    EventBridgeUI,
+    EventBus,
+    NotifyHooks,
     PhaseStarted,
+    RunPaths,
+    UsageTotals,
 )
-from kstrl.events import EventBus, RunPaths
 from kstrl.factory_acceptance import (
     _plan_gated,
     _run_contract_round,
@@ -37,7 +40,6 @@ from kstrl.factory_launch import (
     _refused_before_launch,
     submit_args,
 )
-from kstrl.factory_lock import FactoryLockHeldError, RunLock, acquire_run_lock
 from kstrl.factory_preflight import (
     _run_preflights,
 )
@@ -78,28 +80,29 @@ from kstrl.knowledge import (
 )
 from kstrl.knowledge_distill import distill_facts
 from kstrl.knowledge_facts import KnowledgeConfig
-from kstrl.manifest import (
-    Component,
-    Manifest,
-)
-from kstrl.observability import (
-    NotifyHooks,
-)
 from kstrl.pipeline import ComponentPipeline
 from kstrl.pipeline_state import PipelineHooks, iso_now
+from kstrl.plan import (
+    Component,
+    Manifest,
+    RunScope,
+)
+from kstrl.proc import (
+    FactoryLockHeldError,
+    RunLock,
+    StopController,
+    acquire_run_lock,
+    kill_active_process_groups,
+    release,
+)
 from kstrl.review import (
     run_review,
 )
 from kstrl.runenvelope import RunEnvelope
-from kstrl.rung import release
 from kstrl.runstate import RunState
-from kstrl.scope import RunScope
 from kstrl.security import (
     run_security_review,
 )
-from kstrl.shutdown import StopController
-from kstrl.ui.bridge import EventBridgeUI
-from kstrl.usage import UsageTotals
 from kstrl.verify import run_mechanical_verification
 from kstrl.verify_model import VerifyConfig
 

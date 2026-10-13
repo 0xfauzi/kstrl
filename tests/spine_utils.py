@@ -16,7 +16,7 @@ from pathlib import Path
 
 from kstrl.config.config import KstrlConfig
 from kstrl.factory_config import FactoryConfig
-from kstrl.manifest import Component, Manifest
+from kstrl.plan.manifest import Component, Manifest
 from kstrl.security import SecurityConfig
 from kstrl.verify_model import VerifyConfig
 from tests.helpers import gitrepo

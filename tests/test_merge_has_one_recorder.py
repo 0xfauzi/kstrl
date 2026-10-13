@@ -39,7 +39,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.manifest import Manifest
+from kstrl.plan.manifest import Manifest
 from tests.helpers import astwalk, gitrepo
 from tests.helpers.executables import write_executable
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
@@ -309,11 +309,11 @@ RECORDER = "pipeline_merge.py::MergeGate._record_merge"
 #: that moved, may be a new place a merge is recorded: route it through
 #: ``_record_merge`` or classify it in NOT_A_MERGE_RECORD.
 EXPECTED_SHA_SPELLINGS: dict[str, int] = {
-    "event_catalog.py::<module>": 1,
-    "manifest.py::<module>": 1,
-    "manifest.py::Manifest.load": 2,
-    "manifest.py::Manifest.save": 1,
-    "manifest_keys.py::<module>": 1,
+    "events/event_catalog.py::<module>": 1,
+    "plan/manifest.py::<module>": 1,
+    "plan/manifest.py::Manifest.load": 2,
+    "plan/manifest.py::Manifest.save": 1,
+    "plan/manifest_keys.py::<module>": 1,
     RECORDER: 3,
     "pr.py::<module>": 2,
     "pr.py::_merge_and_wait": 1,
@@ -321,42 +321,46 @@ EXPECTED_SHA_SPELLINGS: dict[str, int] = {
     "pr.py::wait_for_merge": 1,
     "git/pr_state.py::<module>": 1,
     "git/pr_state.py::fetch_pr_state": 1,
-    "reducer.py::<module>": 1,
-    "reducer.py::apply": 1,
+    "events/reducer.py::<module>": 1,
+    "events/reducer.py::apply": 1,
 }
 
 #: Every other row, and why it is not kstrl recording a merge.
 NOT_A_MERGE_RECORD: dict[str, str] = {
-    "event_catalog.py::<module>": "the PrMerged.merge_sha field declaration",
-    "manifest.py::<module>": "the Component.merge_sha field declaration",
-    "manifest.py::Manifest.load": "reads back the mergeSha the recorder saved",
-    "manifest.py::Manifest.save": "serialises Component.merge_sha as mergeSha",
-    "manifest_keys.py::<module>": "the list of keys a manifest component may hold",
+    "events/event_catalog.py::<module>": "the PrMerged.merge_sha field declaration",
+    "plan/manifest.py::<module>": "the Component.merge_sha field declaration",
+    "plan/manifest.py::Manifest.load": "reads back the mergeSha the recorder saved",
+    "plan/manifest.py::Manifest.save": "serialises Component.merge_sha as mergeSha",
+    "plan/manifest_keys.py::<module>": "the list of keys a manifest component may hold",
     "pr.py::<module>": "the MergeConfirmation and PrOutcome field declarations",
     "pr.py::_merge_and_wait": "hands GitHub's commit to the caller on PrOutcome",
     "pr.py::push_create_and_merge_pr": "hands GitHub's commit for an existing PR to the caller",
     "pr.py::wait_for_merge": "hands GitHub's commit to the caller on MergeConfirmation",
     "git/pr_state.py::<module>": "the PrView field declaration",
     "git/pr_state.py::fetch_pr_state": "the commit gh reported",
-    "reducer.py::<module>": "the reducer's ComponentState.merge_sha field declaration",
-    "reducer.py::apply": "folds a pr_merged event into the reducer's view, not the manifest",
+    "events/reducer.py::<module>": "the reducer's ComponentState.merge_sha field declaration",
+    "events/reducer.py::apply": "folds a pr_merged event into the reducer's view, not the manifest",
 }
 
 #: Every scope in ``kstrl/`` that spells ``PrMerged``, and how many times.
 EXPECTED_PR_MERGED_SPELLINGS: dict[str, int] = {
     "ci_state.py::<module>": 1,
     "ci_state.py::_merges_in_run": 1,
-    "event_catalog.py::<module>": 1,
+    # #863 M2: the package interface re-exports the class (the import and
+    # the __all__ entry).
+    "events/__init__.py::<module>": 2,
+    "events/event_catalog.py::<module>": 1,
     RECORDER: 1,
-    "reducer.py::apply": 1,
+    "events/reducer.py::apply": 1,
 }
 
 #: Every row above except the recorder, and why it builds no event.
 NOT_A_PR_MERGED_BUILD: dict[str, str] = {
     "ci_state.py::<module>": "imports the class to select on it",
     "ci_state.py::_merges_in_run": "selects pr_merged rows with isinstance",
-    "event_catalog.py::<module>": "the class declaration",
-    "reducer.py::apply": "folds the event with isinstance",
+    "events/__init__.py::<module>": "the package interface re-exports the class",
+    "events/event_catalog.py::<module>": "the class declaration",
+    "events/reducer.py::apply": "folds the event with isinstance",
 }
 
 #: Every scope that spells ``_record_merge``: the definition, and the two

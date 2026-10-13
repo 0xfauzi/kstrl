@@ -29,12 +29,12 @@ from kstrl.knowledge_facts import (
     read_facts,
     write_facts,
 )
-from kstrl.prd import prd_text_for_prompt
-from kstrl.timeout import limit_seconds
+from kstrl.plan import prd_text_for_prompt
+from kstrl.proc import limit_seconds
 
 if TYPE_CHECKING:
     from kstrl.agents.base import Agent
-    from kstrl.manifest import Component
+    from kstrl.plan import Component
 
 
 # ---------------------------------------------------------------------------

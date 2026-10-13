@@ -37,8 +37,8 @@ from typing import IO, Any
 import pytest
 
 import kstrl.io.appendio as appendio_mod
+from kstrl.events.observability import read_progress_events
 from kstrl.io.appendio import JOURNAL_REPAIR_EVENT
-from kstrl.observability import read_progress_events
 from tests.helpers.journal import TORN_FRAGMENT, audit, journal_at, tear
 
 

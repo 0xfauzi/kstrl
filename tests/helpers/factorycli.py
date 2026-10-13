@@ -25,7 +25,7 @@ import kstrl.cli_factory as cli_factory_mod
 import kstrl.cli_loop as cli_loop_mod
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import FactoryResult
-from kstrl.manifest import Component, Manifest
+from kstrl.plan.manifest import Component, Manifest
 
 
 def capture_run_factory(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:

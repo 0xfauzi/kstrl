@@ -58,6 +58,7 @@ import subprocess
 import sys
 import threading
 import time
+import types
 from pathlib import Path
 
 #: Exit status when the leash does not lead its own process group.
@@ -154,12 +155,22 @@ def _others_in_group() -> bool:
     leash then waits the whole grace, as it did before #708. The group is
     read by ``getpgrp``, not by the leash's pid: under ``--hold`` the leash
     that fires may be the forked child, which does not lead the group.
+
+    The leash names the ``kstrl.proc`` package itself, as a module with
+    only a path (#863 M2). The interface of the package imports the
+    whole package, and with it a package that ``-S`` keeps off the
+    path, so the import failed and each leash waited the whole grace. The
+    reading needs only ``procgroup``, ``procgroup_listing`` and
+    ``procdispose``, which are beside the leash and import only the
+    standard library. Thus the leash does not put the repository on the
+    path.
     """
     try:
-        root = str(Path(__file__).resolve().parents[2])
-        if root not in sys.path:
-            sys.path.append(root)
-        from kstrl.procgroup import pid_is_alive, read_group_members
+        if "kstrl.proc" not in sys.modules:
+            package = types.ModuleType("kstrl.proc")
+            package.__path__ = [str(Path(__file__).resolve().parent)]
+            sys.modules["kstrl.proc"] = package
+        from kstrl.proc.procgroup import pid_is_alive, read_group_members
 
         pids = read_group_members(os.getpgrp()).pids
         return pids is None or any(pid != os.getpid() and pid_is_alive(pid) for pid in pids)

@@ -39,7 +39,7 @@ import kstrl.cli_inbox as cli_inbox_mod
 import kstrl.cli_preflight as cli_preflight_mod
 from kstrl.inbox import Inbox, InboxConfig
 from kstrl.interaction import PromptRequest, PromptResponse
-from kstrl.manifest import Manifest
+from kstrl.plan.manifest import Manifest
 from kstrl.ui.plain import PlainUI
 from tests import test_merge_gate_park as park
 from tests.helpers.procs import kill_group, wait_for_line
@@ -214,7 +214,7 @@ class TestRunLockRelease:
         ``ks factory`` refusal below). Idempotent: releasing twice is not
         an error and the second call changes nothing further.
         """
-        import kstrl.factory_lock as factory_lock_mod
+        import kstrl.proc.factory_lock as factory_lock_mod
 
         lock = factory_lock_mod.acquire_run_lock(tmp_path, PlainUI(no_color=True), force=False)
         assert lock.held is True
@@ -238,7 +238,7 @@ class TestRunLockRelease:
         assertion against that silently being trusted, not a case the
         CLI is meant to reach in ordinary use.
         """
-        import kstrl.factory_lock as factory_lock_mod
+        import kstrl.proc.factory_lock as factory_lock_mod
         from kstrl.launch_record import option_argv
 
         root, _before = _failed_storage(tmp_path)
@@ -352,7 +352,7 @@ class TestKsRetryChangesNothingBeforeItsGates:
         shows here as a free lock while the engineer runs.
         """
         import kstrl.factory as factory_mod
-        import kstrl.factory_lock as factory_lock_mod
+        import kstrl.proc.factory_lock as factory_lock_mod
 
         root, _before = _failed_storage(tmp_path)
         seen = tmp_path / "lock_seen_by_engineer.txt"
@@ -535,7 +535,7 @@ class TestApprovingAParkedMergeHoldsTheLockIntoTheDependentRun:
         probe.
         """
         import kstrl.factory as factory_mod
-        import kstrl.factory_lock as factory_lock_mod
+        import kstrl.proc.factory_lock as factory_lock_mod
 
         root, env, _reviewed = park._parked_run(tmp_path)
         item = park._park_item(root)

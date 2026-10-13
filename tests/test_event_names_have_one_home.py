@@ -334,7 +334,7 @@ def _assignment_hits(node: ast.Assign | ast.AnnAssign, event_name: str) -> list[
     on ``SPEC_ISSUES_KEY = "spec_issues"``, which is the obvious next
     cleanup of the architect's own JSON vocabulary in ``decompose.py``,
     with a message telling the author to import the JOURNAL's constant.
-    It would also fail on ``kstrl/events.py`` lines 343 and 646, which
+    It would also fail on ``kstrl/events/events.py`` lines 343 and 646, which
     are the event STREAM's discriminator, the moment the enrolment
     follow-up this file commits to reaches ``contract_result`` and
     ``autonomy_transition``. A guard that fails the follow-up it exists

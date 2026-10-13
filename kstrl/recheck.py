@@ -52,8 +52,8 @@ from kstrl.acceptance import (
     plan_errors,
 )
 from kstrl.io import read_json
+from kstrl.proc import HOST_LABEL
 from kstrl.replay import Replay, Stage, replay_stack
-from kstrl.rung import HOST_LABEL
 from kstrl.stack import REPLAY_BOUNDARY_REFUSED
 
 if TYPE_CHECKING:

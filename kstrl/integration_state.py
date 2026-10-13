@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from kstrl import events as ev
+from kstrl.events import events as ev
 from kstrl.git import kstrl_version
 from kstrl.integration import (
     FINDING_ID_PREFIX,
@@ -20,8 +20,7 @@ from kstrl.integration import (
     OpenedFinding,
 )
 from kstrl.io import atomic_write_json, read_json
-from kstrl.manifest import Component, Manifest
-from kstrl.requirements import enum_field_error, required_field_error
+from kstrl.plan import Component, Manifest, enum_field_error, required_field_error
 
 STATE_SCHEMA_VERSION = 1
 FIX_COMPONENT_PREFIX = "integration-fix-"

@@ -34,10 +34,10 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.findings import Finding
 from kstrl.loop import STOP_EXIT_CODE
-from kstrl.manifest import Manifest
-from kstrl.worktree_sweep import ORPHAN_CATEGORY, sweep_worktree
+from kstrl.plan.findings import Finding
+from kstrl.plan.manifest import Manifest
+from kstrl.proc.worktree_sweep import ORPHAN_CATEGORY, sweep_worktree
 from tests.helpers import gitrepo, procs
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
 
@@ -390,7 +390,7 @@ def test_a_census_that_cannot_start_is_reported_not_read_as_empty(
     that whole directory off PATH."""
     worktree = tmp_path / "wt"
     child = _deaf_sleep_in(worktree)
-    monkeypatch.setattr("kstrl.worktree_sweep.LSOF_ARGV", ["kstrl-no-such-command-461"])
+    monkeypatch.setattr("kstrl.proc.worktree_sweep.LSOF_ARGV", ["kstrl-no-such-command-461"])
     try:
         sweep = sweep_worktree(worktree)
         assert sweep.survivors == ()

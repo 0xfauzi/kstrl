@@ -16,10 +16,10 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl import event_catalog
-from kstrl import events as ev
+from kstrl.events import event_catalog
+from kstrl.events import events as ev
 from kstrl.feedforward import CodebaseScanConfig, build_codebase_scan_context
-from kstrl.worktree_setup import WorktreeSetup
+from kstrl.proc.worktree_setup import WorktreeSetup
 from tests.test_event_stream import _setup_project
 
 SETUP_EXIT_3 = "  Worktree setup failed for comp-a: worktree setup `exit 3` exited 3"

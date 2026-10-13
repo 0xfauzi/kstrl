@@ -9,8 +9,8 @@ from pathlib import Path
 from typing import Any
 
 from kstrl.config import ConfigSection, check_numbers
-from kstrl.findings import Finding
-from kstrl.rung import Rung
+from kstrl.plan import Finding
+from kstrl.proc import Rung
 from kstrl.stack import Stack, stack_in_force
 
 

@@ -35,8 +35,8 @@ from kstrl.decompose_prompt import spec_digest
 from kstrl.factory import run_factory
 from kstrl.factory_result import ComponentResult, FactoryResult
 from kstrl.git import git, git_base
-from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.pipeline import ComponentPipeline
+from kstrl.plan.manifest import Component, ComponentStatus, Manifest
 from kstrl.ui.plain import PlainUI
 from tests.helpers.gitrepo import git_in, set_identity
 from tests.helpers.stack_confirmation import in_process_stack

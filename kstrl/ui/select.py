@@ -18,7 +18,7 @@ def get_ui(
     """Get appropriate UI implementation based on mode and environment.
 
     Deprecated for cli commands (TUI rewrite chunk 7): new command code
-    should use ``kstrl.output.build_console()``, which wraps this
+    should use ``kstrl.events.output.build_console()``, which wraps this
     same resolution in the event-native console. This stays for tests
     and embedders that want a bare concrete UI.
     """

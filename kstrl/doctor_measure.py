@@ -26,8 +26,8 @@ from kstrl.doctor import STATUS_FAIL, STATUS_OK, STATUS_WARN, DoctorCheck, _not_
 from kstrl.factory_config import FactoryConfig
 from kstrl.git import git_base
 from kstrl.isolation import prove_zones
+from kstrl.proc import HostFallback, ProvenRung, Rung, limit_seconds, release
 from kstrl.replay import Replay, replay_stack
-from kstrl.rung import HostFallback, ProvenRung, Rung, release
 from kstrl.stack import (
     REPLAY_BOUNDARY_REFUSED,
     Stack,
@@ -35,7 +35,6 @@ from kstrl.stack import (
     replay_refuses,
     stack_in_force,
 )
-from kstrl.timeout import limit_seconds
 from kstrl.verify_model import VerifyConfig
 
 if TYPE_CHECKING:

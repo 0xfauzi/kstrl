@@ -33,9 +33,9 @@ from typing import Any
 import pytest
 
 from kstrl import calibration, calibration_baseline
-from kstrl.agents.proc import TIMEOUT_MESSAGE_PREFIX
 from kstrl.git import git_base, git_diff, git_tree
 from kstrl.integration import integration_stories
+from kstrl.proc.proc import TIMEOUT_MESSAGE_PREFIX
 from kstrl.review import ReviewResult
 from tests import test_calibration
 from tests.helpers.calibration_integration_fixture import (

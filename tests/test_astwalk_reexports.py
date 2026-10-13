@@ -126,6 +126,25 @@ class TestAProvableReExportIsFollowed:
         found = _origin(root, "from app.io import statedir\n", "statedir.ControlStateError")
         assert found == astwalk.Origin(STATEDIR)
 
+    def test_a_name_with_the_letters_of_a_submodule_is_not_that_submodule(
+        self, tmp_path: Path
+    ) -> None:
+        """``kstrl.plan`` re-exports the class ``Manifest`` from its module
+        ``manifest.py``. A case-insensitive file system finds ``Manifest.py``
+        too, and the walk read the class as a submodule that the
+        ``__init__.py`` also binds: a guess (#863 M2). Python imports a
+        module only by its exact case, and so does the walk."""
+        root = _tree(
+            tmp_path,
+            {
+                "app/__init__.py": "",
+                "app/plan/__init__.py": "from app.plan.manifest import Manifest\n",
+                "app/plan/manifest.py": "class Manifest:\n    pass\n",
+            },
+        )
+        found = _origin(root, "from app.plan import Manifest\n", "Manifest.load")
+        assert found == astwalk.Origin("app.plan.manifest.Manifest.load")
+
     def test_a_relative_import_inside_an_init_walked_as_a_module(self, tmp_path: Path) -> None:
         """A guard that walks the ``__init__.py`` itself gives the package
         name (``module_name`` strips ``__init__``). Before B4 that put

@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from kstrl.config import ConfigSection, check_numbers
-from kstrl.manifest import Component
+from kstrl.plan import Component
 
 RELEASE_SECTION = "release"
 

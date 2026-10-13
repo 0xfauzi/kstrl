@@ -190,7 +190,7 @@ class TestReplay:
         against bytes the writer actually produces.
         """
         from kstrl.factory_result import FactoryResult
-        from kstrl.manifest import Manifest
+        from kstrl.plan.manifest import Manifest
         from tests.helpers.journal import journal_at, tear
 
         journal = journal_at(tmp_path)
@@ -251,7 +251,7 @@ def _run_factory_with_autonomy(
     from kstrl.factory import run_factory
     from kstrl.factory_config import FactoryConfig
     from kstrl.factory_result import ComponentResult
-    from kstrl.manifest import Component, Manifest
+    from kstrl.plan.manifest import Component, Manifest
     from kstrl.ui.plain import PlainUI
     from kstrl.verify_model import CheckResult, VerificationResult, VerifyConfig
 
@@ -517,7 +517,7 @@ class TestRunOutcomesReachState:
         assert AutonomyState.load(tmp_path).decisive_runs_at_level == 0
 
     def test_policy_violation_demotes_and_journals(self, tmp_path: Path) -> None:
-        from kstrl.findings import Finding
+        from kstrl.plan.findings import Finding
 
         violation = Finding.policy_violation(
             category="paths_deny",
@@ -541,7 +541,7 @@ class TestRunOutcomesReachState:
         assert '"direction":"demote"' in journal
 
     def test_advisory_finding_does_not_demote(self, tmp_path: Path) -> None:
-        from kstrl.findings import Finding
+        from kstrl.plan.findings import Finding
 
         advisory = Finding.policy_violation(
             category="max_lines_changed",
@@ -580,8 +580,8 @@ class TestTransitionAudit:
         tmp_path: Path,
     ) -> None:
         from kstrl.autonomy_transitions import commit_transition
-        from kstrl.event_catalog import AutonomyTransition
-        from kstrl.events import EventBus
+        from kstrl.events.event_catalog import AutonomyTransition
+        from kstrl.events.events import EventBus
 
         seen: list[object] = []
 

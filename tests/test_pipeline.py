@@ -19,38 +19,38 @@ from typing import Any
 
 import pytest
 
-from kstrl import event_catalog
 from kstrl.config.config import KstrlConfig
 from kstrl.context import IterationContext
-from kstrl.event_catalog import Event, PhaseCompleted
-from kstrl.events import CallbackSink, EventBus, V1CompatSink
+from kstrl.events import event_catalog
+from kstrl.events.event_catalog import Event, PhaseCompleted
+from kstrl.events.events import CallbackSink, EventBus, V1CompatSink
+from kstrl.events.observability import NotifyConfig, NotifyHooks, ProgressLog
+from kstrl.events.usage import UsageRecord, UsageTotals
 from kstrl.factory_agents import AdversarialAgentSelection
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult, FactoryResult
 from kstrl.failure_signatures import category_for_check
-from kstrl.findings import Finding
 from kstrl.git import git
 from kstrl.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.knowledge import measure_fact_utilization
 from kstrl.knowledge_facts import Fact, KnowledgeConfig
-from kstrl.manifest import Component, ComponentStatus, Manifest
-from kstrl.observability import NotifyConfig, NotifyHooks, ProgressLog
 from kstrl.pipeline import ComponentPipeline
 from kstrl.pipeline_delivery import CheckpointDecision
 from kstrl.pipeline_knowledge import FactUtilization
 from kstrl.pipeline_merge import PrDisposition
 from kstrl.pipeline_state import PipelineHooks
 from kstrl.pipeline_transitions import Transition
+from kstrl.plan.findings import Finding
+from kstrl.plan.manifest import Component, ComponentStatus, Manifest
+from kstrl.plan.scope import RunScope
 from kstrl.pr import MergeConfirmation, PrOutcome
+from kstrl.proc.worktree_sweep import WorktreeSweep
 from kstrl.review import ReviewConcern, ReviewResult
 from kstrl.runenvelope import RunEnvelope
 from kstrl.runstate import RunState
-from kstrl.scope import RunScope
 from kstrl.security import SecurityConfig, SecurityResult
 from kstrl.ui.plain import PlainUI
-from kstrl.usage import UsageRecord, UsageTotals
 from kstrl.verify_model import CheckResult, VerificationResult, VerifyConfig
-from kstrl.worktree_sweep import WorktreeSweep
 from tests.helpers.context_sweeps import CURRENT, NOT_REMEASURED, RESOLVED, section
 
 

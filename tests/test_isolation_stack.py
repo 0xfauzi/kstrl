@@ -16,7 +16,7 @@ Where no prover exists for the platform (today Linux, gap G7) a run under
 a stack runs its commands on the host, and every record of it carries one
 label naming the platform (owner decision 2026-10-05). Those tests name
 the platform through ``KSTRL_ISOLATION_PLATFORM``, the seam the platform
-decision reads (:func:`kstrl.rung.host_fallback`), so they run on macOS
+decision reads (:func:`kstrl.proc.rung.host_fallback`), so they run on macOS
 and on Linux alike; on Linux the seam names the real platform.
 
 What a check does is observed on the host: a file it wrote or did not

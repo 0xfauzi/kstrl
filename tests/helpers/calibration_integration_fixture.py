@@ -32,7 +32,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from kstrl.agents.proc import TIMEOUT_MESSAGE_PREFIX
 from kstrl.git import git_tree
 from kstrl.integration import (
     ExpectedStory,
@@ -43,6 +42,7 @@ from kstrl.integration import (
     scope_locations,
 )
 from kstrl.integration_phase import review_commit
+from kstrl.proc.proc import TIMEOUT_MESSAGE_PREFIX
 from kstrl.review import ReviewResult, normalize_story_id, run_review
 from kstrl.ui.plain import PlainUI
 from tests.helpers.calibration_replies import keep_call

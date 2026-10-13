@@ -32,24 +32,28 @@ from kstrl.config import KstrlConfig, reconcile_progress_config
 from kstrl.config_report import normalize_ui_mode as _normalize_ui_mode
 from kstrl.decompose import decompose_spec
 from kstrl.decompose_audit import SpecBlockerError
-from kstrl.factory import run_factory
-from kstrl.factory_config import FactoryConfig
-from kstrl.factory_lock import RunLock
-from kstrl.git import resolve_base_branch
-from kstrl.interaction import PromptKind, PromptRequest, UiInteractionChannel
-from kstrl.launch_record import replayable_flags
-from kstrl.manifest import Manifest
-from kstrl.owner_answers import OwnerAnswerError
-from kstrl.serve_spend import ARCHITECT_RUN_KIND
-from kstrl.shutdown import StopController, install_signal_handlers
-from kstrl.timeout import TimeoutConfig, limit_seconds
-from kstrl.usage import (
+from kstrl.events import (
     ARCHITECT_COMPONENT,
     ARCHITECT_ROLE,
     UsageTotals,
     collect_usage,
     usage_cursor,
 )
+from kstrl.factory import run_factory
+from kstrl.factory_config import FactoryConfig
+from kstrl.git import resolve_base_branch
+from kstrl.interaction import PromptKind, PromptRequest, UiInteractionChannel
+from kstrl.launch_record import replayable_flags
+from kstrl.owner_answers import OwnerAnswerError
+from kstrl.plan import Manifest
+from kstrl.proc import (
+    RunLock,
+    StopController,
+    TimeoutConfig,
+    install_signal_handlers,
+    limit_seconds,
+)
+from kstrl.serve_spend import ARCHITECT_RUN_KIND
 
 if TYPE_CHECKING:
     # Annotation only, and the cheapest available: with

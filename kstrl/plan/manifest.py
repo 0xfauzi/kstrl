@@ -10,9 +10,9 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-from kstrl.findings import Finding
 from kstrl.io import atomic_write_json, read_json_file
-from kstrl.manifest_keys import (
+from kstrl.plan.findings import Finding
+from kstrl.plan.manifest_keys import (
     COMPONENT_OPTIONAL_KEYS,
     COMPONENT_REQUIRED_KEYS,
     MANIFEST_REQUIRED_KEYS,
@@ -20,7 +20,7 @@ from kstrl.manifest_keys import (
     plan_id_errors,
     rejudge_sha_errors,
 )
-from kstrl.names import validate_branch_name, validate_component_id
+from kstrl.plan.names import validate_branch_name, validate_component_id
 
 #: ``Component.failed_check`` for a component a hard-mode adversarial
 #: phase refused because ``max_adversarial_calls`` was already spent

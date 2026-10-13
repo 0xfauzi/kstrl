@@ -38,10 +38,10 @@ from click.testing import CliRunner, Result
 
 from kstrl.cli import cli
 from kstrl.contract import ContractConfig, ContractMode
-from kstrl.event_catalog import Log
-from kstrl.events import read_events
+from kstrl.events.event_catalog import Log
+from kstrl.events.events import read_events
 from kstrl.factory_result import FactoryResult
-from kstrl.manifest import ComponentStatus
+from kstrl.plan.manifest import ComponentStatus
 from tests.helpers import gitrepo, procs
 from tests.helpers import integration_harness as harness
 from tests.helpers.run_limits import every_limit_argv
@@ -372,7 +372,7 @@ def test_ks_retry_says_when_the_census_could_not_run(
     leash (#642 slice 5) still raises what a direct start would have."""
     root = tmp_path
     evidence = _failed_attempt_with_evidence(root)
-    monkeypatch.setattr("kstrl.worktree_sweep.LSOF_ARGV", ["kstrl-no-such-command-528"])
+    monkeypatch.setattr("kstrl.proc.worktree_sweep.LSOF_ARGV", ["kstrl-no-such-command-528"])
     result = _ks_retry(root, monkeypatch)
     assert result.exit_code == 0, result.output
     assert not evidence.exists(), "precondition: the retry removed the evidence worktree"

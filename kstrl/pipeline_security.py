@@ -6,17 +6,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl import event_catalog
 from kstrl.agents.prompt_record import recording_prompts
 from kstrl.context import IterationContext
-from kstrl.manifest import (
-    Component,
-)
+from kstrl.events import collect_usage, event_catalog
 from kstrl.pipeline_ledger import UsageLedger
 from kstrl.pipeline_transitions import FailureAction, PhaseFailure
 from kstrl.pipeline_verdicts import ReviewVerdicts, _gate_failure_count, _produced_a_reading
+from kstrl.plan import (
+    Component,
+)
 from kstrl.security import SecurityConfig, SecurityMode, SecurityResult
-from kstrl.usage import collect_usage
 
 if TYPE_CHECKING:
     from kstrl.factory_result import ComponentResult

@@ -17,7 +17,6 @@ from unittest.mock import patch
 import pytest
 
 from kstrl.autonomy import AutonomyLevel, AutonomyState
-from kstrl.findings import Finding
 from kstrl.inbox import (
     Inbox,
     InboxConfig,
@@ -29,6 +28,7 @@ from kstrl.inbox import (
     notifiable,
     summarize,
 )
+from kstrl.plan.findings import Finding
 from tests.helpers import gitrepo
 from tests.helpers.component_prd import write_component_prd
 from tests.helpers.stack_confirmation import in_process_stack
@@ -386,7 +386,7 @@ def _init_git_repo(root: Path) -> None:
 
 
 def _usage(total: int, cost: float = 0.0) -> object:
-    from kstrl.usage import UsageRecord, UsageTotals
+    from kstrl.events.usage import UsageRecord, UsageTotals
 
     totals = UsageTotals()
     totals.add_record(
@@ -420,7 +420,7 @@ def _run_factory(
     from kstrl.factory import run_factory
     from kstrl.factory_config import FactoryConfig
     from kstrl.factory_result import ComponentResult
-    from kstrl.manifest import Component, Manifest
+    from kstrl.plan.manifest import Component, Manifest
     from kstrl.review import ReviewResult
     from kstrl.ui.plain import PlainUI
     from kstrl.verify_model import CheckResult, VerificationResult, VerifyConfig
@@ -617,7 +617,7 @@ class TestEmittersFireDuringRuns:
 
 class TestInboxRetryRoundTrip:
     def test_retry_resets_the_component_to_pending(self, tmp_path: Path) -> None:
-        from kstrl.manifest import Component, ComponentStatus, Manifest
+        from kstrl.plan.manifest import Component, ComponentStatus, Manifest
 
         manifest_path = tmp_path / "scripts" / "kstrl" / "manifest.json"
         manifest_path.parent.mkdir(parents=True)
@@ -786,7 +786,7 @@ class TestNotifyWiring:
         """Review #5: the knob had no consumer. It has one now, but it
         must NOT borrow on_first_failure - a failing component already
         fires that hook and raises an item for the same event."""
-        from kstrl.observability import NotifyConfig, NotifyHooks
+        from kstrl.events.observability import NotifyConfig, NotifyHooks
 
         marker = tmp_path / "fired.txt"
         cmd = f"echo \"$KSTRL_NOTIFY_EVENT\" >> '{marker}'"
@@ -798,7 +798,7 @@ class TestNotifyWiring:
         self,
         tmp_path: Path,
     ) -> None:
-        from kstrl.observability import NotifyConfig, NotifyHooks
+        from kstrl.events.observability import NotifyConfig, NotifyHooks
 
         marker = tmp_path / "fired.txt"
         cmd = f"echo \"$KSTRL_NOTIFY_EVENT $KSTRL_NOTIFY_COMPONENT\" >> '{marker}'"

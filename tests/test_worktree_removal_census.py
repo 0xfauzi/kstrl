@@ -15,7 +15,7 @@ which tell the operator the manual command.
 
 LAYER 2, :func:`removal_sites`, reads every argv whose ``"remove"`` follows
 ``"worktree"`` and CLEARS the site only when the same scope calls
-``kstrl.worktree_sweep.sweep_worktree`` on the same path in a simple
+``kstrl.proc.worktree_sweep.sweep_worktree`` on the same path in a simple
 statement that runs on every path to the removal: earlier in the same
 statement list, or in a list enclosing it. A sweep inside a branch the
 removal is outside does not clear. Resolution goes through
@@ -37,7 +37,7 @@ import pytest
 
 from tests.helpers import astwalk
 
-SWEEP = "kstrl.worktree_sweep.sweep_worktree"
+SWEEP = "kstrl.proc.worktree_sweep.sweep_worktree"
 
 
 def _spells_a_removal(node: ast.AST) -> bool:
@@ -52,7 +52,7 @@ EXPECTED_REMOVAL_SPELLINGS = {
     "contract.py": 1,
     "factory_worktrees.py": 5,  # #863 A4: the flat-worktree refusal message names the command
     "retry_plan.py": 1,
-    "temp_worktree.py": 6,
+    "proc/temp_worktree.py": 6,
 }
 
 #: Every removal argv in kstrl/, by scope, and whether it is swept.
@@ -60,13 +60,13 @@ EXPECTED_REMOVAL_SITES = (
     "factory_worktrees.py::_cleanup_worktree swept",
     "factory_worktrees.py::_prune_stale_worktrees swept",
     "factory_worktrees.py::_setup_worktree swept",
+    "proc/temp_worktree.py::remove_temp_worktree swept",
     "retry_plan.py::prepare_retry swept",
-    "temp_worktree.py::remove_temp_worktree swept",
 )
 
 SWEPT = """\
 import subprocess
-from kstrl.worktree_sweep import sweep_worktree
+from kstrl.proc.worktree_sweep import sweep_worktree
 def remove(path):
     sweep_worktree(path)
     subprocess.run(["git", "worktree", "remove", "--force", str(path)])
@@ -84,7 +84,7 @@ def test_every_removal_spelling_is_counted() -> None:
         ],
         message=(
             "A module's count of 'remove' spellings moved. A new git worktree "
-            "removal must call kstrl.worktree_sweep.sweep_worktree on the same "
+            "removal must call kstrl.proc.worktree_sweep.sweep_worktree on the same "
             "path first, in the same function, and be added to "
             "EXPECTED_REMOVAL_SITES; re-derive this pin by running it."
         ),
@@ -217,7 +217,7 @@ def test_every_worktree_removal_is_swept_first() -> None:
         undecided=(),
         message=(
             "A git worktree removal is UNSWEPT or new. Call "
-            "kstrl.worktree_sweep.sweep_worktree(path) earlier in the same "
+            "kstrl.proc.worktree_sweep.sweep_worktree(path) earlier in the same "
             "function, on the same path, so a process left in the worktree is "
             "killed and named before the worktree goes (#528)."
         ),
@@ -232,7 +232,7 @@ def _sites(source: str) -> astwalk.Sites:
 #: removal inside a ``try`` that follows it.
 SWEPT_THEN_TRY = """\
 import subprocess
-from kstrl.worktree_sweep import sweep_worktree
+from kstrl.proc.worktree_sweep import sweep_worktree
 def remove(path):
     sweep_worktree(path)
     try:
@@ -253,7 +253,9 @@ def test_the_sweep_clears_a_removal_that_follows_it(source: str) -> None:
         SWEPT.replace("    sweep_worktree(path)\n", ""),
         SWEPT.replace("    sweep_worktree(path)\n", "    sweep_worktree(other)\n"),
         SWEPT.replace("    sweep_worktree(path)\n", "") + "    sweep_worktree(path)\n",
-        SWEPT.replace("from kstrl.worktree_sweep import sweep_worktree", "sweep_worktree = print"),
+        SWEPT.replace(
+            "from kstrl.proc.worktree_sweep import sweep_worktree", "sweep_worktree = print"
+        ),
         SWEPT.replace("    sweep_worktree(path)\n", "    if path:\n        sweep_worktree(path)\n"),
     ],
     ids=["no-sweep", "another-path", "sweep-after", "not-the-sweep", "sweep-in-a-branch"],

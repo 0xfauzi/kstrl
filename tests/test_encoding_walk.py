@@ -475,7 +475,7 @@ class TestTheReadBytesExclusion:
         "acceptance_record.py": 1,
         # #466: the carried file, read as bytes and decoded by read_json.
         "acceptance_carried.py": 1,
-        "agents/spawn_record.py": 1,  # #642: the baseline.py shape, I/O outside the guard
+        "proc/spawn_record.py": 1,  # #642: the baseline.py shape, I/O outside the guard
         "breaker.py": 1,
         # #553 the ledger, #570 each run's events.jsonl: the signals.py
         # shape, read and decode outside any try.

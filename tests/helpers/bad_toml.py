@@ -97,7 +97,7 @@ DEEP_NEST_TOML = b"a = " + b"[" * _NEST_DEPTH + b"]" * _NEST_DEPTH + b"\n"
 #: through the CLI, which is half of how the handler order is pinned -
 #: and an absence assertion
 #: against a stale literal passes vacuously instead of failing. Same
-#: reason ``agents.proc.TIMEOUT_MESSAGE_PREFIX`` is imported by its tests
+#: reason ``proc.proc.TIMEOUT_MESSAGE_PREFIX`` is imported by its tests
 #: rather than repeated in them.
 BROAD_FRAGMENT = UNPARSEABLE_TOML_MESSAGE
 

@@ -30,8 +30,8 @@ from __future__ import annotations
 
 import sys
 
+from kstrl.events import NotifyConfig, NotifyHooks
 from kstrl.inbox import Inbox, InboxItem, notifiable
-from kstrl.observability import NotifyConfig, NotifyHooks
 
 
 def _warn_stderr(message: str) -> None:

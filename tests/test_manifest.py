@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.manifest import Component, ComponentStatus, Manifest
+from kstrl.plan.manifest import Component, ComponentStatus, Manifest
 
 
 def _minimal_manifest_data(

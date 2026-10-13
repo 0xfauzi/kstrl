@@ -2,7 +2,7 @@
 
 An engineer agent's shell tool starts each command in a process group of
 its own. kstrl ends an agent by signalling the agent's group
-(``kstrl.agents.proc``), so those commands are outside what it signals: a
+(``kstrl.proc.proc``), so those commands are outside what it signals: a
 test server the engineer started kept its port and ran code from a
 deleted worktree for an hour after the run that spawned it ended.
 
@@ -36,10 +36,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl.agents.spawn_record import SpawnRecord, forget_spawn_record, read_spawn_records
-from kstrl.findings import Finding
-from kstrl.procgroup import pid_is_alive, read_group_members, signal_group
-from kstrl.scrubbed_run import ChildOutputDecodeError, run_scrubbed
+from kstrl.plan import Finding
+from kstrl.proc.procgroup import pid_is_alive, read_group_members, signal_group
+from kstrl.proc.scrubbed_run import ChildOutputDecodeError, run_scrubbed
+from kstrl.proc.spawn_record import SpawnRecord, forget_spawn_record, read_spawn_records
 
 if TYPE_CHECKING:
     from kstrl.ui import UI

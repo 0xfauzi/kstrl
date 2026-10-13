@@ -21,8 +21,8 @@ from kstrl.config.config import KstrlConfig
 from kstrl.contract import ContractConfig, ContractMode
 from kstrl.git import git_base, git_tree
 from kstrl.loop import LoopResult
-from kstrl.manifest import Manifest
-from kstrl.scope import ComponentScope
+from kstrl.plan.manifest import Manifest
+from kstrl.plan.scope import ComponentScope
 from kstrl.ui.plain import PlainUI
 from tests.helpers.component_prd import write_component_prd
 from tests.helpers.gitrepo import git_in, set_identity

@@ -44,39 +44,37 @@ from kstrl.decompose_reply import (
     _retry_feedback,
     _validate_decompose_output,
 )
-from kstrl.event_catalog import (
+from kstrl.events import (
+    ARCHITECT_COMPONENT,
+    ARCHITECT_ROLE,
     ComponentCompleted,
     ComponentFailed,
     ComponentStarted,
     ComponentUsage,
     Event,
+    EventBus,
     PhaseCompleted,
     PhaseStarted,
     RunCompleted,
     RunPlan,
     RunStarted,
-)
-from kstrl.events import EventBus
-from kstrl.manifest import (
-    Manifest,
-)
-from kstrl.owner_answers import OwnerAnswers, read_owner_answers
-from kstrl.stack import (
-    stack_text_digest,
-)
-from kstrl.usage import (
-    ARCHITECT_COMPONENT,
-    ARCHITECT_ROLE,
     collect_usage,
     print_usage_rollup,
     timed_out_since,
     usage_cursor,
 )
+from kstrl.owner_answers import OwnerAnswers, read_owner_answers
+from kstrl.plan import (
+    Manifest,
+)
+from kstrl.stack import (
+    stack_text_digest,
+)
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from kstrl.factory_lock import RunLock
+    from kstrl.proc import RunLock
     from kstrl.ui import UI
 
 

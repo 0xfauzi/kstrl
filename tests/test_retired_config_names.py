@@ -24,7 +24,7 @@ import pytest
 from kstrl.config.config_keys import RETIRED_ENV_VARS as _PRODUCTION_RETIRED_ENV_VARS
 from kstrl.config_preflight import collect_config_problems
 from kstrl.factory_config import FactoryConfig
-from kstrl.findings import CLAIM_DISAGREEMENT_CATEGORY, Finding
+from kstrl.plan.findings import CLAIM_DISAGREEMENT_CATEGORY, Finding
 
 
 def test_a_retired_toml_section_is_refused_by_name(tmp_path: Path) -> None:
@@ -543,7 +543,7 @@ ALLOWED: dict[tuple[str, str], int] = {
     ("kstrl/config/config_keys.py", "setpoint"): 2,
     # The one data value with a read-side alias: the old finding category,
     # named once so Finding.from_dict can recognise and translate it.
-    ("kstrl/findings.py", "setpoint"): 1,
+    ("kstrl/plan/findings.py", "setpoint"): 1,
     # MARKDOWN_MARKER's value must not change (records already posted to
     # open PRs match on it); every other mention of it is a quote of that
     # same literal, in the module that defines it, the workflow example

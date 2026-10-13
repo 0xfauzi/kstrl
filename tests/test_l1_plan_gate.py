@@ -41,7 +41,7 @@ from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.inbox import Inbox, InboxConfig, InboxItem
 from kstrl.interaction import PromptKind, PromptRequest, PromptResponse
-from kstrl.manifest import Manifest
+from kstrl.plan.manifest import Manifest
 from kstrl.review import ReviewResult
 from kstrl.security import SecurityConfig
 from kstrl.serve_gates import check_parked_merges

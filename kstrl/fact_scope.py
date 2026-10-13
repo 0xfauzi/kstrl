@@ -19,8 +19,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from kstrl.knowledge_facts import Fact
-    from kstrl.manifest import Manifest
-    from kstrl.scope import ComponentScope, RunScope
+    from kstrl.plan import ComponentScope, Manifest, RunScope
 
 # The three prefix tiers, named once. ``knowledge._tier_for_section``
 # decodes a rendered heading back to one of these, and ``tier_for``

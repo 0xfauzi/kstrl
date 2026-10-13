@@ -220,8 +220,8 @@ class TestServeOnce:
         the old filter excluded it and `ks serve --once` exited 0 on work
         that was waiting for a human.
         """
-        from kstrl.findings import Finding
-        from kstrl.manifest import Component, ComponentStatus, Manifest
+        from kstrl.plan.findings import Finding
+        from kstrl.plan.manifest import Component, ComponentStatus, Manifest
 
         _invoke(
             ["queue", "add", str(spec_file), "--max-attempts", "1"],

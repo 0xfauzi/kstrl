@@ -380,7 +380,7 @@ def test_the_capture_harness_names_each_progress_key_once() -> None:
     that is the file the writer had drifted into. A census over all of
     ``tests/`` would also pin further hits in this module alone, which
     deliberately fabricates malformed documents for the reader to refuse.
-    ``kstrl/observability.py`` also spells ``run_complete`` as an unrelated
+    ``kstrl/events/observability.py`` also spells ``run_complete`` as an unrelated
     notify-event name, which is a second reason the walk is one file wide.
     """
     harness_source = [REPO_ROOT / "tests" / "test_calibration.py"]

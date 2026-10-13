@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from kstrl.io import read_json, state_dir
-from kstrl.manifest import ADVERSARIAL_BUDGET_CHECK, Component, ComponentStatus, Manifest
+from kstrl.plan import ADVERSARIAL_BUDGET_CHECK, Component, ComponentStatus, Manifest
 from kstrl.serve_config import ServeObserver
 
 #: Substrings the factory prints on two of its exit-2 refusals.
@@ -153,8 +153,7 @@ def budget_halt_reason(root_dir: Path, owned_run_ids: Sequence[str]) -> str:
     Read from the typed ``BudgetExceeded`` event rather than by matching
     the finding's prose, so this cannot drift when the wording changes.
     """
-    from kstrl import event_catalog
-    from kstrl.reducer import read_run_dir
+    from kstrl.events import event_catalog, read_run_dir
 
     for run_id in owned_run_ids:
         if not run_id:

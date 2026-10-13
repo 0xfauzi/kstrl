@@ -27,11 +27,11 @@ from kstrl.decisions import (
     bind_register,
     read_decisions,
 )
-from kstrl.event_catalog import (
+from kstrl.events import (
     CheckpointResolved,
     ComponentScopeResolved,
+    EventBus,
 )
-from kstrl.events import EventBus
 from kstrl.factory_config import (
     FactoryConfig,
 )
@@ -44,13 +44,13 @@ from kstrl.guards import ScopeHazard, scope_entry_hazard
 from kstrl.isolation import SETUP_ZONE, TEST_ZONE, prove_zones
 from kstrl.isolation import write_record as write_isolation_record
 from kstrl.launch_record import run_limits, write_launch_record
-from kstrl.manifest import (
+from kstrl.plan import (
     ComponentStatus,
     Manifest,
+    RunScope,
 )
 from kstrl.plan_gate import spec_pin_errors, stack_pin_errors
-from kstrl.rung import refusal_of, release, sandbox_hint
-from kstrl.scope import RunScope
+from kstrl.proc import TimeoutConfig, refusal_of, release, sandbox_hint
 from kstrl.stack import (
     NO_STACK,
     STACK_KIND,
@@ -60,7 +60,6 @@ from kstrl.stack import (
     stack_paths,
     unconfirmed_lines,
 )
-from kstrl.timeout import TimeoutConfig
 from kstrl.verify_model import VerifyConfig
 
 if TYPE_CHECKING:
