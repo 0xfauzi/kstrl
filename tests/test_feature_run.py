@@ -11,7 +11,7 @@ from unittest.mock import patch
 import pytest
 
 from kstrl.commandrun import open_command_run
-from kstrl.config import KstrlConfig
+from kstrl.config.config import KstrlConfig
 from kstrl.feature_cmd import run_feature
 from kstrl.loop import LoopResult
 from kstrl.reducer import load_run_state

@@ -12,9 +12,9 @@ from click.testing import CliRunner
 
 from kstrl import event_catalog
 from kstrl.cli import cli
+from kstrl.io.runid import run_kind
 from kstrl.loop import LoopResult
 from kstrl.reducer import load_run_state
-from kstrl.runid import run_kind
 
 
 class StubAgent:

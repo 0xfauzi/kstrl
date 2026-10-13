@@ -61,7 +61,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl.runid import run_kind
+from kstrl.io import run_kind
 from kstrl.serve_config import ServeConfig, ServeError, ServeObserver
 from kstrl.serve_gates import (
     _pause_queue,

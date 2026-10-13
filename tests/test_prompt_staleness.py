@@ -326,7 +326,7 @@ _SCAFFOLD_WRITER = "_create_if_missing"
 #: 3, ``factory.py`` 1 to 2, ``init_cmd.py`` 8 to 10, ``init_wizard.py``
 #: 4 to 5, ``operator_context.py`` 1 to 2. ``cli.py`` and ``launch.py``
 #: did not move: neither points an operator at this file. The new
-#: ``kstrl/config_keys.py`` contributes nothing, which is why it was the
+#: ``kstrl/config/config_keys.py`` contributes nothing, which is why it was the
 #: part of ``config.py`` chosen to move out under the length ratchet.
 #: Re-derived by RUNNING the walk, never by editing this literal.
 #:
@@ -341,7 +341,7 @@ EXPECTED_TEMPLATE_FILENAMES: dict[str, int] = {
     "cli_feature.py": 4,
     "cli_loop.py": 5,
     "cli_report.py": 1,
-    "config.py": 4,
+    "config/config.py": 4,
     "factory_worker.py": 3,
     "init_cmd.py": 6,
     "operator_context.py": 2,

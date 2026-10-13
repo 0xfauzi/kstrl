@@ -21,7 +21,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.config import KstrlConfig
+from kstrl.config.config import KstrlConfig
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import FactoryResult

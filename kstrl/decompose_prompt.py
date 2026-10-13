@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-from kstrl.delimiters import generate_data_delimiter
+from kstrl.io import generate_data_delimiter
 
 DECOMPOSE_PROMPT_VERSION = "5.0.0"
 

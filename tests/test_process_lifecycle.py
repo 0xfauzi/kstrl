@@ -233,10 +233,10 @@ EXPECTED_PROCESS_MODULES: dict[str, tuple[str, ...]] = {
     # process group, so there is nothing here for `kstrl.procgroup` to
     # own.
     "doctor.py": ("subprocess",),
-    "git.py": ("subprocess",),
-    "git_base.py": ("subprocess",),
-    "git_diff.py": ("subprocess",),
-    "git_tree.py": ("subprocess",),
+    "git/git.py": ("subprocess",),
+    "git/git_base.py": ("subprocess",),
+    "git/git_diff.py": ("subprocess",),
+    "git/git_tree.py": ("subprocess",),
     "intake_gh.py": ("subprocess",),
     # #700: `TimeoutExpired` from `run_scrubbed`, which owns the process group.
     "isolation.py": ("subprocess",),
@@ -244,9 +244,9 @@ EXPECTED_PROCESS_MODULES: dict[str, tuple[str, ...]] = {
     "pr.py": ("subprocess",),
     # The `gh pr view` reads moved here from `pr.py` for the 800-line
     # ratchet (#154); `pr.py` still pushes, creates and merges.
-    "pr_state.py": ("subprocess",),
+    "git/pr_state.py": ("subprocess",),
     "retry_plan.py": ("subprocess",),
-    "statedir.py": ("subprocess",),
+    "io/statedir.py": ("subprocess",),
     "temp_worktree.py": ("subprocess",),
     # #433: `SubprocessError`, caught from `retry_plan._failed_branch_probe`
     # (the retry scope preview). It creates no child itself.

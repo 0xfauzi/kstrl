@@ -34,7 +34,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl.config import KstrlConfig
+from kstrl.config.config import KstrlConfig
 from kstrl.contract import ContractConfig, ContractMode
 from kstrl.evolution_config import EvolutionConfig
 from kstrl.factory import run_factory
@@ -241,7 +241,7 @@ class TestC2ReviewRetry:
                 "kstrl.factory.run_review",
                 side_effect=fake_run_review,
             ),
-            patch("kstrl.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             result = run_factory(
                 manifest,
@@ -297,7 +297,7 @@ class TestC3SecurityRetry:
                 "kstrl.factory.run_security_review",
                 side_effect=fake_run_security,
             ),
-            patch("kstrl.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             result = run_factory(
                 manifest,
@@ -385,7 +385,7 @@ class TestC4ContractBreaker:
                 "kstrl.factory_acceptance.run_contract_testing",
                 side_effect=fake_contract,
             ),
-            patch("kstrl.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             result = run_factory(
                 manifest,
@@ -436,7 +436,7 @@ class TestC5SinglePrMode:
                 return_value=(0, "skipped", False),
             ) as mock_distill,
             patch(
-                "kstrl.git_diff.get_diff_content",
+                "kstrl.git.git_diff.get_diff_content",
                 return_value="",
             ),
         ):

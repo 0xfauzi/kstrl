@@ -37,6 +37,7 @@ from kstrl.factory_preflight import (
 )
 from kstrl.factory_worker import report_operator_files
 from kstrl.factory_worktrees import _interrupted_run_branches
+from kstrl.git import kstrl_version
 from kstrl.knowledge_facts import KnowledgeConfig
 from kstrl.linear import LinearConfig, build_linear_sink
 from kstrl.manifest import ComponentStatus
@@ -51,7 +52,6 @@ from kstrl.runstate import RunState
 from kstrl.sandbox import warn_unconfined
 from kstrl.scope import RunScope
 from kstrl.timeout import TimeoutConfig
-from kstrl.version import kstrl_version
 
 if TYPE_CHECKING:
     from kstrl.autonomy_config import AutonomyConfig
@@ -63,7 +63,7 @@ if TYPE_CHECKING:
     from kstrl.manifest import Manifest
     from kstrl.pipeline import ComponentPipeline
     from kstrl.shutdown import StopController
-    from kstrl.ui.base import UI
+    from kstrl.ui import UI
     from kstrl.verify_model import VerifyConfig
 
 

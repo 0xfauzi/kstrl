@@ -75,16 +75,16 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     # `git_diff.py`, which adds its own `import subprocess` (9). 30: #776 G3
     # moves twenty-one of them to `git_tree.py`, which adds its own
     # `import subprocess` (22).
-    "git.py": 22,
-    "git_base.py": 10,
-    "git_diff.py": 9,
-    "git_tree.py": 22,
+    "git/git.py": 22,
+    "git/git_base.py": 10,
+    "git/git_diff.py": 9,
+    "git/git_tree.py": 22,
     "intake_gh.py": 3,
     # #700: the import, and `TimeoutExpired` from `run_scrubbed`.
     "isolation.py": 2,
     "observability.py": 5,
     "pr.py": 18,
-    "pr_state.py": 5,
+    "git/pr_state.py": 5,
     "procdispose.py": 10,
     "procgroup.py": 4,
     "procgroup_listing.py": 6,
@@ -93,7 +93,7 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     # `verify.py`, with their `subprocess` spellings (see `verify.py` below).
     "scrubbed_run.py": 15,
     "serve_process.py": 8,
-    "statedir.py": 3,
+    "io/statedir.py": 3,
     "temp_worktree.py": 3,
     # 25: `_base_finding`'s `git show` (#414/#425); `git merge-base` moved to `git.py` in #435.
     # 26: #632, `run_scrubbed`'s `subprocess.PIPE` for a stdin it was given.
@@ -136,17 +136,17 @@ EXPECTED_TEXT_MODE_SPAWNS: dict[str, int] = {
     # `git_diff.py`. 14: #776 G3 moves seven of them to `git_tree.py`.
     # 11: #863 A4 deletes `create_branch_from`, `delete_branch` and
     # `checkout_existing`.
-    "git.py": 10,
-    "git_base.py": 3,
-    "git_diff.py": 3,
-    "git_tree.py": 7,
+    "git/git.py": 10,
+    "git/git_base.py": 3,
+    "git/git_diff.py": 3,
+    "git/git_tree.py": 7,
     "intake_gh.py": 1,
     "pr.py": 9,
-    "pr_state.py": 2,
+    "git/pr_state.py": 2,
     "procgroup_listing.py": 1,
     "retry_plan.py": 1,
     "serve_process.py": 1,
-    "statedir.py": 1,
+    "io/statedir.py": 1,
 }
 
 
@@ -165,31 +165,34 @@ EXPECTED_CLEARED_SPAWNS: tuple[str, ...] = (
     "factory_worktrees.py subprocess.run(['git', 'worktree', 'add', str(worktree_path), branch_n",
     "factory_worktrees.py subprocess.run(['git', 'worktree', 'list', '--porcelain', '-z'], cwd=r",
     # codespell:ignore-next-line
-    "git.py subprocess.run(['git', 'checkout', '-b', branch], cwd=cwd, capture_out",
-    "git.py subprocess.run(['git', 'checkout', branch, '--'], cwd=cwd, capture_out",
-    "git.py subprocess.run(['git', 'config', '--get', 'remote.origin.url'], cwd=cw",
-    "git.py subprocess.run(['git', 'merge', '--no-edit', '--', branch], cwd=cwd, c",
-    "git.py subprocess.run(['git', 'rev-parse', '--abbrev-ref', 'HEAD'], cwd=cwd,",
-    "git.py subprocess.run(['git', 'rev-parse', '--git-common-dir'], cwd=cwd, capt",
-    "git.py subprocess.run(['git', 'rev-parse', '--is-inside-work-tree'], cwd=path",
-    "git.py subprocess.run(['git', 'rev-parse', '--path-format=absolute', '--git-d",
-    "git.py subprocess.run(['git', 'rev-parse', '--verify', '--quiet', 'HEAD'], cw",
-    "git.py subprocess.run(['git', 'rev-parse', '--verify', '--quiet', f'refs/head",
-    "git_base.py subprocess.run(['git', 'fetch', '--', 'origin', base_branch], cwd=cwd,",
-    "git_base.py subprocess.run(['git', 'for-each-ref', '--format=%(refname)%09%(symref",
+    "git/git.py subprocess.run(['git', 'checkout', '-b', branch], cwd=cwd, capture_out",
+    "git/git.py subprocess.run(['git', 'checkout', branch, '--'], cwd=cwd, capture_out",
+    "git/git.py subprocess.run(['git', 'config', '--get', 'remote.origin.url'], cwd=cw",
+    "git/git.py subprocess.run(['git', 'merge', '--no-edit', '--', branch], cwd=cwd, c",
+    "git/git.py subprocess.run(['git', 'rev-parse', '--abbrev-ref', 'HEAD'], cwd=cwd,",
+    "git/git.py subprocess.run(['git', 'rev-parse', '--git-common-dir'], cwd=cwd, capt",
+    "git/git.py subprocess.run(['git', 'rev-parse', '--is-inside-work-tree'], cwd=path",
+    "git/git.py subprocess.run(['git', 'rev-parse', '--path-format=absolute', '--git-d",
+    "git/git.py subprocess.run(['git', 'rev-parse', '--verify', '--quiet', 'HEAD'], cw",
+    "git/git.py subprocess.run(['git', 'rev-parse', '--verify', '--quiet', f'refs/head",
+    "git/git_base.py subprocess.run(['git', 'fetch', '--', 'origin', base_branch], cwd=cwd,",
+    "git/git_base.py subprocess.run(['git', 'for-each-ref', '--format=%(refname)%09%(symref",
     # codespell:ignore-next-line
-    "git_base.py subprocess.run(['git', 'rev-parse', '--verify', '--quiet', f'{candidat",
-    "git_diff.py subprocess.run(['git', 'diff', '--name-status', '-z', '-M', '-C', f'{b",
-    "git_diff.py subprocess.run(['git', 'diff', '--numstat', '-z', f'{base_ref}...HEAD'",
-    "git_diff.py subprocess.run(['git', 'diff', f'{base_ref}...HEAD', '--'], cwd=cwd, c",
-    "git_tree.py subprocess.run(['git', 'diff', '--name-only', '--cached', '-z'], cwd=c",
-    "git_tree.py subprocess.run(['git', 'diff', '--name-only', '-z'], cwd=cwd, capture_",
-    "git_tree.py subprocess.run(['git', 'diff', '--name-status', '-z', ref, '--'], cwd=",
-    "git_tree.py subprocess.run(['git', 'ls-files', '--cached', '--others', '--exclude-",
-    "git_tree.py subprocess.run(['git', 'ls-files', '--others', '--exclude-standard', '",
-    "git_tree.py subprocess.run(['git', 'ls-tree', '-r', '--name-only', '-z', sha], cwd",
-    "git_tree.py subprocess.run(['git', 'status', '--porcelain', '--untracked-files=all",
+    "git/git_base.py subprocess.run(['git', 'rev-parse', '--verify', '--quiet', f'{candidat",
+    "git/git_diff.py subprocess.run(['git', 'diff', '--name-status', '-z', '-M', '-C', f'{b",
+    "git/git_diff.py subprocess.run(['git', 'diff', '--numstat', '-z', f'{base_ref}...HEAD'",
+    "git/git_diff.py subprocess.run(['git', 'diff', f'{base_ref}...HEAD', '--'], cwd=cwd, c",
+    "git/git_tree.py subprocess.run(['git', 'diff', '--name-only', '--cached', '-z'], cwd=c",
+    "git/git_tree.py subprocess.run(['git', 'diff', '--name-only', '-z'], cwd=cwd, capture_",
+    "git/git_tree.py subprocess.run(['git', 'diff', '--name-status', '-z', ref, '--'], cwd=",
+    "git/git_tree.py subprocess.run(['git', 'ls-files', '--cached', '--others', '--exclude-",
+    "git/git_tree.py subprocess.run(['git', 'ls-files', '--others', '--exclude-standard', '",
+    "git/git_tree.py subprocess.run(['git', 'ls-tree', '-r', '--name-only', '-z', sha], cwd",
+    "git/git_tree.py subprocess.run(['git', 'status', '--porcelain', '--untracked-files=all",
+    "git/pr_state.py subprocess.run(['gh', 'pr', 'view', str(pr_number), '--json', 'mergeab",
+    "git/pr_state.py subprocess.run(['gh', 'pr', 'view', str(pr_number), '--json', 'state,m",
     "intake_gh.py subprocess.run(['gh', *args], cwd=str(cwd) if cwd else None, capture_o",
+    "io/statedir.py subprocess.run(['git', '-C', str(root_dir), 'remote', 'get-url', 'orig",
     "pr.py subprocess.run(['gh', 'auth', 'status'], capture_output=True, encoding",
     "pr.py subprocess.run(['gh', 'pr', 'close', str(pr_number), '--comment', 'Sup",
     "pr.py subprocess.run(['gh', 'pr', 'create', '--title', title, '--body', body",
@@ -197,11 +200,8 @@ EXPECTED_CLEARED_SPAWNS: tuple[str, ...] = (
     "pr.py subprocess.run(['gh', 'pr', 'merge', str(pr_number), f'--{method}'], c",
     "pr.py subprocess.run(['git', 'push', '--delete', '--', 'origin', branch], cw",
     "pr.py subprocess.run(['git', 'push', '-u', '--', 'origin', branch], cwd=cwd,",
-    "pr_state.py subprocess.run(['gh', 'pr', 'view', str(pr_number), '--json', 'mergeab",
-    "pr_state.py subprocess.run(['gh', 'pr', 'view', str(pr_number), '--json', 'state,m",
     "retry_plan.py subprocess.run(['git', 'branch', '-D', failed_branch], cwd=root_dir, c",
     "serve_process.py subprocess.Popen(command, cwd=str(cwd), env=env, stdout=subprocess.PIP",
-    "statedir.py subprocess.run(['git', '-C', str(root_dir), 'remote', 'get-url', 'orig",
 )
 
 
@@ -248,10 +248,10 @@ EXPECTED_BYTES_MODE_SPAWNS: dict[str, int] = {
     # 8 since #696 slice 9 deleted `read_blob`. 6: #776 G1 moves two of them
     # to `git_base.py`. 5: #776 G2 moves one of them to `git_diff.py`. 1: #776
     # G3 moves four of them to `git_tree.py`.
-    "git.py": 1,
-    "git_base.py": 2,
-    "git_diff.py": 1,
-    "git_tree.py": 4,
+    "git/git.py": 1,
+    "git/git_base.py": 2,
+    "git/git_diff.py": 1,
+    "git/git_tree.py": 4,
     "observability.py": 1,
     "retry_plan.py": 3,
     # 2: `_base_finding`'s `git show` (#414/#425), and #527's

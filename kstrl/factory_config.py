@@ -15,8 +15,7 @@ from kstrl.autonomy_config import (
 from kstrl.base_gates import (
     BaseGates,
 )
-from kstrl.config_numbers import check_number, check_numbers
-from kstrl.config_section import ConfigSection
+from kstrl.config import ConfigSection, check_number, check_numbers
 from kstrl.contract import (
     ContractConfig,
 )
@@ -48,7 +47,7 @@ from kstrl.verify_model import VerifyConfig
 from kstrl.worktree_setup import WorktreeSetup
 
 if TYPE_CHECKING:
-    from kstrl.ui.base import UI
+    from kstrl.ui import UI
 
 #: R10.3: the two settings [factory] claim_agreement accepts.
 VALID_CLAIM_AGREEMENT = ("advisory", "block")

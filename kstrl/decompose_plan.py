@@ -13,6 +13,7 @@ from kstrl.decompose_reply import (
     _routed_prd_issues,
 )
 from kstrl.event_catalog import ArtifactWritten, Event
+from kstrl.io import mint_run_id, plan_prd_path
 from kstrl.linear import (
     DecomposeSync,
     LinearClient,
@@ -26,13 +27,11 @@ from kstrl.manifest import (
     Manifest,
 )
 from kstrl.names import validate_branch_name
-from kstrl.runid import mint_run_id
-from kstrl.statedir import plan_prd_path
 
 if TYPE_CHECKING:
     from kstrl.factory_lock import RunLock
     from kstrl.spec_issues import SpecIssue
-    from kstrl.ui.base import UI
+    from kstrl.ui import UI
 
 
 def _sync_linear(

@@ -312,24 +312,24 @@ class TestGoldenPatternsReachTheEngineer:
             tmp_path,
             lambda root, wt: _write(
                 root / GOLDEN_REL,
-                DEFAULT_GOLDEN_PATTERNS + "\n- atomic writes: see `kstrl/atomicio.py`\n",
+                DEFAULT_GOLDEN_PATTERNS + "\n- atomic writes: see `kstrl/io/atomicio.py`\n",
             ),
         )
 
         assert GOLDEN_MARKER in prompt
-        assert "- atomic writes: see `kstrl/atomicio.py`" in prompt
+        assert "- atomic writes: see `kstrl/io/atomicio.py`" in prompt
 
     def test_golden_block_between_knowledge_and_codebase_scan(self, tmp_path: Path) -> None:
         prompt = _prompt_after_run(
             tmp_path,
             lambda root, wt: _write(
                 root / GOLDEN_REL,
-                "# Golden patterns\n\n- atomic writes: see `kstrl/atomicio.py`\n",
+                "# Golden patterns\n\n- atomic writes: see `kstrl/io/atomicio.py`\n",
             ),
         )
 
         assert GOLDEN_MARKER in prompt
-        assert "- atomic writes: see `kstrl/atomicio.py`" in prompt
+        assert "- atomic writes: see `kstrl/io/atomicio.py`" in prompt
         assert (
             prompt.index(KNOWLEDGE_MARKER)
             < prompt.index(GOLDEN_MARKER)

@@ -20,7 +20,7 @@ from typing import Any
 from unittest.mock import patch
 
 from kstrl import factory_worker
-from kstrl.config import KstrlConfig
+from kstrl.config.config import KstrlConfig
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult
@@ -343,7 +343,7 @@ def _run_factory_capturing(
     )
     with (
         patch("kstrl.factory._run_component", side_effect=capture),
-        patch("kstrl.git_diff.get_diff_content", return_value=""),
+        patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         patch("kstrl.factory.distill_facts", return_value=(0, "none", False)),
     ):
         run_factory(_manifest(*components), factory_config, base, PlainUI(no_color=True), root)

@@ -28,7 +28,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from kstrl.config import KstrlConfig
+from kstrl.config.config import KstrlConfig
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult
@@ -164,7 +164,7 @@ class TestHitlCheckpoint:
                 "kstrl.pr.is_gh_available",
                 return_value=False,
             ),
-            patch("kstrl.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             result = run_factory(
                 manifest,
@@ -201,7 +201,7 @@ class TestHitlCheckpoint:
                 "kstrl.pr.is_gh_available",
                 return_value=False,
             ),
-            patch("kstrl.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             result = run_factory(
                 manifest,
@@ -233,7 +233,7 @@ class TestHitlCheckpoint:
                 "kstrl.pr.is_gh_available",
                 return_value=False,
             ),
-            patch("kstrl.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             result = run_factory(
                 manifest,

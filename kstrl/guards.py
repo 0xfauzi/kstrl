@@ -6,20 +6,20 @@ import re
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Literal
 
-from kstrl import git, git_tree
+from kstrl.git import git, git_tree
 from kstrl.interaction import (
     InteractionChannel,
     PromptKind,
     PromptRequest,
     UiInteractionChannel,
 )
-from kstrl.statedir import STATE_DIR_NAME
+from kstrl.io import STATE_DIR_NAME
 
 if TYPE_CHECKING:
     from pathlib import Path
 
     from kstrl.config import KstrlConfig
-    from kstrl.ui.base import UI
+    from kstrl.ui import UI
 
 
 #: A repo-relative path inside kstrl's own state directory. Matched

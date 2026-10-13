@@ -24,9 +24,8 @@ from dataclasses import dataclass
 
 from kstrl.events import CallbackSink, EventBus
 from kstrl.render import UIBackedRenderer
-from kstrl.ui.base import UI
+from kstrl.ui import UI, get_ui
 from kstrl.ui.bridge import EventBridgeUI
-from kstrl.ui.select import get_ui
 
 
 @dataclass

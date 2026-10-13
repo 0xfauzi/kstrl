@@ -19,8 +19,8 @@ from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import Any, TypeVar
 
-from kstrl.config import load_toml_section, resolve_config_file
-from kstrl.config_section import ConfigSection
+from kstrl.config.config import load_toml_section, resolve_config_file
+from kstrl.config.config_section import ConfigSection
 
 T = TypeVar("T")
 

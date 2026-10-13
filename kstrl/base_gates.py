@@ -36,19 +36,18 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl import git, git_base, git_tree
-from kstrl.atomicio import atomic_write_json
 from kstrl.baseline import verify_digest
 from kstrl.events import RunPaths
+from kstrl.git import git, git_base, git_tree, kstrl_version
+from kstrl.io import atomic_write_json
 from kstrl.rung import HOST_LABEL, label_of
 from kstrl.temp_worktree import ContractCleanupError, create_temp_worktree, remove_temp_worktree
 from kstrl.verify_commands import run_fast_checks
 from kstrl.verify_model import CheckResult, VerificationResult, VerifyConfig, gate_names
-from kstrl.version import kstrl_version
 from kstrl.worktree_setup import WorktreeSetup
 
 if TYPE_CHECKING:
-    from kstrl.ui.base import UI
+    from kstrl.ui import UI
 
 #: The record's file name inside a run directory, beside ``launch.json``.
 BASE_GATES_FILE = "base-gates.json"

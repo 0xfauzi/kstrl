@@ -80,7 +80,7 @@ import sys
 from pathlib import Path
 from kstrl.agents import custom
 from kstrl.usage import UsageRecord
-from kstrl.config import KstrlConfig
+from kstrl.config.config import KstrlConfig
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.manifest import Manifest

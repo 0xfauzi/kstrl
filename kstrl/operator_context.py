@@ -53,7 +53,7 @@ where they can see the diff, rather than a store kstrl keeps out of
 sight.
 
 FORGERY. The block's delimiter lines carry a per-build random token from
-``kstrl.delimiters`` (S4). A fixed marker is forgeable by the very
+``kstrl.io.delimiters`` (S4). A fixed marker is forgeable by the very
 content it wraps: measured in review round 1, a file containing the line
 ``=== END GOLDEN PATTERNS (operator-authored) ===`` produced a block
 with two closing delimiters and content sitting outside the first one,
@@ -87,7 +87,7 @@ from pathlib import Path
 from typing import Literal
 
 from kstrl.config import KstrlConfig, relative_to_root
-from kstrl.delimiters import generate_data_delimiter
+from kstrl.io import generate_data_delimiter
 from kstrl.operator_guidance import GUIDANCE_HEADING as GUIDANCE_HEADING
 from kstrl.operator_guidance import MAX_MEMORY_CHARS as MAX_MEMORY_CHARS
 from kstrl.operator_guidance import _heading_span

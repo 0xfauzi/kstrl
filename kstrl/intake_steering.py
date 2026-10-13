@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 from kstrl import intake_gh
 from kstrl.intake_gh import GitHubIntakeConfig, _gh_comment, _utc_now_iso
 from kstrl.intake_issue import ProcessedLedger, _actor_allowed
-from kstrl.jsonread import read_json
+from kstrl.io import read_json
 from kstrl.workqueue import Queue
 from kstrl.workqueue_items import ItemSource, MergeDisposition, QueueError, QueueItem
 

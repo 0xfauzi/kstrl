@@ -24,11 +24,11 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl import git_base, git_diff
-from kstrl.config import KstrlConfig
+from kstrl.config.config import KstrlConfig
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult, FactoryResult
+from kstrl.git import git_base, git_diff
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.pr import PrOutcome, push_create_and_merge_pr, wait_for_merge
 from kstrl.rung import HOST_LABEL

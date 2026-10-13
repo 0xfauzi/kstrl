@@ -22,7 +22,8 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import git_diff, verify_diff
+from kstrl import verify_diff
+from kstrl.git import git_diff
 from kstrl.policy import PolicyConfig, diff_header_path
 from tests.conftest import make_review_repo
 from tests.helpers import gitrepo

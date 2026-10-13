@@ -57,7 +57,7 @@ DRIVER = """
 import json, sys
 from pathlib import Path
 import kstrl
-from kstrl import git_diff
+from kstrl.git import git_diff
 
 repo = Path(sys.argv[1])
 quoted_path = sys.argv[2]

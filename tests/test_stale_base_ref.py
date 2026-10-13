@@ -16,9 +16,10 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl import contract, factory_worker, git_base, git_tree, guards, verify_diff
-from kstrl.config import KstrlConfig
+from kstrl import contract, factory_worker, guards, verify_diff
+from kstrl.config.config import KstrlConfig
 from kstrl.contract import ContractConfig, ContractMode
+from kstrl.git import git_base, git_tree
 from kstrl.loop import LoopResult
 from kstrl.manifest import Manifest
 from kstrl.scope import ComponentScope
@@ -140,7 +141,7 @@ def test_the_baseline_agrees_with_the_merge_base(fx: StaleBase) -> None:
 
 
 def test_there_is_one_resolver() -> None:
-    import kstrl.git as git_mod
+    import kstrl.git.git as git_mod
 
     assert not hasattr(git_mod, "resolve_ref")
     assert git_base.base_ref_candidates("main") == ("origin/main", "main")

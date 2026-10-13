@@ -5,7 +5,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from kstrl.git import DEFAULT_TIMEOUT, GitDiffError, _undecodable_message
+from kstrl.git.git import DEFAULT_TIMEOUT, GitDiffError, _undecodable_message
 
 # Network fetches get a longer budget than local plumbing calls.
 FETCH_TIMEOUT = 120.0
@@ -241,7 +241,7 @@ def merge_base_ref(
 ) -> str:
     """The commit ``{base_label}...HEAD`` actually diffs against, or ``""``.
 
-    Hoisted from ``verify._merge_base_ref`` (#425) to ``kstrl/git.py`` so
+    Hoisted from ``verify._merge_base_ref`` (#425) to ``kstrl/git/git.py`` so
     it has the one owner every consumer that measures ``{ref}...HEAD``
     can share (#435 review, finding A0): both
     :func:`get_diff_name_status` and :func:`get_diff_content` spell their

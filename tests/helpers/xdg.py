@@ -1,8 +1,8 @@
-"""Reset the cached ``XDG_STATE_HOME`` resolution of ``kstrl.statedir``."""
+"""Reset the cached ``XDG_STATE_HOME`` resolution of ``kstrl.io.statedir``."""
 
 from __future__ import annotations
 
-from kstrl import statedir
+from kstrl.io import statedir
 
 
 def clear_xdg_state_home_cache() -> None:

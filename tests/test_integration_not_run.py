@@ -234,7 +234,7 @@ def test_integration_review_loads_from_toml_and_env(
     (tmp_path / "kstrl.toml").write_text(
         '[factory]\nintegration_review = "false"\n', encoding="utf-8"
     )
-    from kstrl.config import ConfigError
+    from kstrl.config.config import ConfigError
 
     with pytest.raises(ConfigError):
         FactoryConfig.load(tmp_path)

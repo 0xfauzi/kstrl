@@ -22,7 +22,7 @@ from kstrl.cli_preflight import (
 )
 from kstrl.cli_seam import _PROGRESS_LOG_HELP, _console_ui, _load_manifest_or_exit, cli
 from kstrl.commandrun import CommandRun, open_command_run
-from kstrl.config_numbers import LIMIT_FLOAT, LIMIT_INT
+from kstrl.config import LIMIT_FLOAT, LIMIT_INT
 from kstrl.config_report import UI_MODES
 from kstrl.config_report import normalize_ui_mode as _normalize_ui_mode
 from kstrl.decompose import decompose_spec
@@ -34,7 +34,7 @@ from kstrl.factory_preflight import (
     base_check_before_architect,
     report_preflight,
 )
-from kstrl.git_base import resolve_base_branch
+from kstrl.git import resolve_base_branch
 from kstrl.interaction import PromptKind, PromptRequest, UiInteractionChannel
 from kstrl.launch_record import option_argv
 from kstrl.owner_answers import OwnerAnswerError
@@ -49,7 +49,7 @@ from kstrl.retry_plan import (
     retry_confirm_header,
 )
 from kstrl.timeout import limit_seconds
-from kstrl.ui.base import UI
+from kstrl.ui import UI
 from kstrl.usage import ARCHITECT_COMPONENT, ARCHITECT_ROLE
 
 if TYPE_CHECKING:

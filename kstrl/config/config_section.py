@@ -4,7 +4,7 @@ The module that owns a section declares a :class:`ConfigSection` constant
 beside its loader. ``config_preflight.config_sections`` lists the
 constants, and ``config_resolve.resolve_or_report`` takes one. The
 dataclass is here, in a module with no kstrl import, so that
-``kstrl.config`` can declare the constant of ``KstrlConfig`` without a
+``kstrl.config.config`` can declare the constant of ``KstrlConfig`` without a
 cycle.
 """
 

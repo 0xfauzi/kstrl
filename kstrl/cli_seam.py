@@ -15,13 +15,12 @@ import click
 from click.core import ParameterSource
 
 from kstrl import __version__
-from kstrl.config import ConfigError
-from kstrl.config_numbers import BudgetConfigError
+from kstrl.config import BudgetConfigError, ConfigError
 from kstrl.config_report import normalize_ui_mode as _normalize_ui_mode
 from kstrl.factory_lock import FactoryLockHeldError
 from kstrl.manifest import Manifest
 from kstrl.output import build_console
-from kstrl.ui.base import UI
+from kstrl.ui import UI
 
 
 def _load_manifest_or_exit(path: Path, ui: UI) -> Manifest:

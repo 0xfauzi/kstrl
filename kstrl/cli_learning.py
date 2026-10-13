@@ -17,7 +17,7 @@ from kstrl.config_report import UI_MODES
 from kstrl.config_report import normalize_ui_mode as _normalize_ui_mode
 from kstrl.factory_preflight import report_preflight
 from kstrl.journal_rows import LegacyJournalRowError
-from kstrl.ui.base import UI
+from kstrl.ui import UI
 
 if TYPE_CHECKING:
     from kstrl.autonomy import AutonomyState

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, NamedTuple
 
-from kstrl.atomicio import atomic_write_text
+from kstrl.io import atomic_write_text
 from kstrl.scaffold_templates import (
     DEFAULT_CODEBASE_MAP,
     DEFAULT_FEATURE_UNDERSTAND_PROMPT,
@@ -18,7 +18,7 @@ from kstrl.scaffold_templates import (
 )
 
 if TYPE_CHECKING:
-    from kstrl.ui.base import UI
+    from kstrl.ui import UI
 
 # ---------------------------------------------------------------------------
 # #286 / H3b: telling an operator their scaffolded prompt is an older

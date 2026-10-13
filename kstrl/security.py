@@ -23,24 +23,22 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl import git_base, git_diff
 from kstrl.agent_output import (
     AgentOutputTooLarge,
     collect_agent_output,
     extract_json,
     select_agent_output,
 )
-from kstrl.config import validate_agent_type
-from kstrl.config_numbers import check_numbers
-from kstrl.config_section import ConfigSection
-from kstrl.delimiters import generate_data_delimiter
+from kstrl.config import ConfigSection, check_numbers, validate_agent_type
 from kstrl.findings import Finding, dump_raw_debug, tag_finding_with_model
+from kstrl.git import git_base, git_diff
+from kstrl.io import generate_data_delimiter
 from kstrl.prd import prd_text_for_prompt
 from kstrl.timeout import limit_seconds
 
 if TYPE_CHECKING:
     from kstrl.agents.base import Agent
-    from kstrl.ui.base import UI
+    from kstrl.ui import UI
 
 
 class SecurityMode(StrEnum):

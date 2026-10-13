@@ -47,16 +47,18 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl import git_tree, guards, statedir
-from kstrl.config import KstrlConfig
+from kstrl import guards
+from kstrl.config.config import KstrlConfig
+from kstrl.git import git_tree
 from kstrl.guards import check_violations, path_is_allowed
-from kstrl.loop import COMPLETION_MARKER, run_loop
-from kstrl.statedir import (
+from kstrl.io import statedir
+from kstrl.io.statedir import (
     STATE_FILES,
     STATE_NOT_CARVED,
     STATE_SUBDIRS,
     state_dir_carve_out,
 )
+from kstrl.loop import COMPLETION_MARKER, run_loop
 from kstrl.ui.plain import PlainUI
 from kstrl.verify_diff import _diff_scope_details, check_diff_scope
 from tests.helpers import astwalk, gitrepo
@@ -425,7 +427,10 @@ _EXPECTED_STATE_DIR_SPELLINGS: dict[str, int] = {
     "serve_launchd.py": 2,
     "serve_outcome.py": 2,
     "serve_spend.py": 3,  # +1 #863 A4: an unreadable run spend names the run dir
-    "statedir.py": 6,  # +1 #545: plan_prd_path joins the plan directory; -2 #863 A4
+    # #863 M1: the package interface re-exports state_dir (the import and
+    # the __all__ entry). Neither one joins a path.
+    "io/__init__.py": 2,
+    "io/statedir.py": 6,  # +1 #545: plan_prd_path joins the plan directory; -2 #863 A4
     "temp_worktree.py": 1,
     "workqueue_store.py": 2,
 }
@@ -656,7 +661,7 @@ class TestNothingTheLoopRunsWritesTheUncarvedEntries:
         closure is empty, which would make it a test of nothing."""
         closure = _import_closure("kstrl.loop")
         assert "kstrl.guards" in closure
-        assert "kstrl.statedir" in closure
+        assert "kstrl.io.statedir" in closure
         assert _import_closure("kstrl.serve") & self.WRITERS
 
     def test_the_closure_walks_a_package_init_and_each_parent(self) -> None:
@@ -693,7 +698,7 @@ class TestSignalsCannotReachTheQueue:
         that one-element set, and ``"kstrl.workqueue" not in {itself}``
         is trivially true whatever the renamed module actually imports."""
         closure = _import_closure("kstrl.signals")
-        assert "kstrl.statedir" in closure, (
+        assert "kstrl.io.statedir" in closure, (
             "kstrl.signals's import closure holds only itself, which means "
             "the name below resolved to no file. This assertion would then "
             "pass on any import kstrl.signals actually has."
@@ -709,7 +714,7 @@ class TestSignalsCannotReachTheQueue:
 
     def test_the_queue_does_not_import_signals(self) -> None:
         closure = _import_closure("kstrl.workqueue")
-        assert "kstrl.statedir" in closure, (
+        assert "kstrl.io.statedir" in closure, (
             "kstrl.workqueue's import closure holds only itself, which means "
             "the name below resolved to no file. This assertion would then "
             "pass on any import kstrl.workqueue actually has."

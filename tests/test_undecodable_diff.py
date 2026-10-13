@@ -7,11 +7,11 @@ used to make ``UnicodeDecodeError`` (a ``ValueError``) pass straight through
 ``except git.GitDiffError`` and crash two blocking gates and the mechanical
 verifier with a raw traceback instead of a verdict. This file drives the real
 git subprocess against a real temporary repository, through the real reader
-functions in ``kstrl/git.py`` and the real gates in ``kstrl/verify.py``, and
+functions in ``kstrl/git/git.py`` and the real gates in ``kstrl/verify.py``, and
 proves the failure is now a fail-closed ``CheckResult``/``GitDiffError``
 rather than an escaped exception.
 
-The static-analysis guard over every strict reader in ``kstrl/git.py``
+The static-analysis guard over every strict reader in ``kstrl/git/git.py``
 lives in ``tests/test_undecodable_diff_guard.py`` (#423): it was split out
 of this file to keep this one under the repo's 800-line ratchet. Nothing
 about the guard's behaviour changed in the split.
@@ -26,9 +26,10 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import doctor, git, git_diff, git_tree, guards, loop, verify, verify_diff, verify_model
+from kstrl import doctor, guards, loop, verify, verify_diff, verify_model
 from kstrl.breaker import compute_diff_hash
-from kstrl.config import KstrlConfig
+from kstrl.config.config import KstrlConfig
+from kstrl.git import git, git_diff, git_tree
 from kstrl.policy import PolicyConfig
 from kstrl.ui import PlainUI
 from tests.helpers import gitrepo

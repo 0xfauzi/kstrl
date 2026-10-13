@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
 from kstrl.acceptance import FAIL, PASS, RECORD_FILE, Check, HeadOutcome, evidence_dir
-from kstrl.jsonread import read_json
+from kstrl.io import read_json
 from kstrl.rung import HOST_LABEL, label_of
 
 if TYPE_CHECKING:

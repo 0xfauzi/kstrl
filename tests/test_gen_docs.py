@@ -89,7 +89,7 @@ class TestConfigProbing:
     def test_documented_dead_key_fails_generation(self, gen_docs: ModuleType) -> None:
         """A documented toml key the loader ignores must break generation,
         not silently ship wrong docs."""
-        from kstrl.config import KstrlConfig
+        from kstrl.config.config import KstrlConfig
 
         spec = gen_docs.SectionSpec(
             section="agent",

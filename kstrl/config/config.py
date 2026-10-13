@@ -10,22 +10,22 @@ from pathlib import Path
 from typing import Protocol
 
 # Re-exported: the loaders below read it from this module's namespace,
-# and it is defined in kstrl/config_keys.py because it is the part of
+# and it is defined in kstrl/config/config_keys.py because it is the part of
 # this file that grows a row per new [paths] file. Same object, pinned
 # by tests/test_string_keys_reach_every_surface.py.
-from kstrl.config_keys import STRING_KEYS as STRING_KEYS
-from kstrl.config_numbers import check_numbers
-from kstrl.config_section import ConfigSection
+from kstrl.config.config_keys import STRING_KEYS as STRING_KEYS
+from kstrl.config.config_numbers import check_numbers
+from kstrl.config.config_section import ConfigSection
 
-# Re-exported from kstrl/config_toml.py, where reading kstrl.toml lives
+# Re-exported from kstrl/config/config_toml.py, where reading kstrl.toml lives
 # (#366). The ``as`` spelling is what makes this a re-export under mypy
 # --strict rather than a private import.
-from kstrl.config_toml import UNPARSEABLE_TOML_MESSAGE as UNPARSEABLE_TOML_MESSAGE
-from kstrl.config_toml import ConfigError as ConfigError
-from kstrl.config_toml import load_toml_document as load_toml_document
-from kstrl.config_toml import load_toml_section as load_toml_section
-from kstrl.config_toml import section_table as section_table
-from kstrl.config_toml import toml_parse_scope as toml_parse_scope
+from kstrl.config.config_toml import UNPARSEABLE_TOML_MESSAGE as UNPARSEABLE_TOML_MESSAGE
+from kstrl.config.config_toml import ConfigError as ConfigError
+from kstrl.config.config_toml import load_toml_document as load_toml_document
+from kstrl.config.config_toml import load_toml_section as load_toml_section
+from kstrl.config.config_toml import section_table as section_table
+from kstrl.config.config_toml import toml_parse_scope as toml_parse_scope
 
 
 def parse_bool(value: str | None) -> bool:
@@ -369,7 +369,7 @@ class KstrlConfig:
         Which exceptions that means is stated here rather than at a call
         site, because it is a fact about :meth:`load`, the same way
         :meth:`EvolutionConfig.load_or_none` states its own taxonomy
-        rather than its caller's. ``ConfigError`` (``kstrl.config_toml``,
+        rather than its caller's. ``ConfigError`` (``kstrl.config.config_toml``,
         a ``ValueError`` subclass) is the operator-input case:
         malformed TOML, non-UTF-8 bytes, or anything else
         ``load_toml_document``'s parse raises, all funnelled through one

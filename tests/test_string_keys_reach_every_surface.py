@@ -19,16 +19,16 @@ gate green.
 The test is the mutation. It adds an eleventh row at run time and asserts
 it appears on both surfaces with no other edit.
 
-R10.9 moved the table into ``kstrl/config_keys.py`` because
-``kstrl/config.py`` was one line under the 800-line ratchet and could not
-take another ``[paths]`` row. ``kstrl.config`` re-exports the name and
+R10.9 moved the table into ``kstrl/config/config_keys.py`` because
+``kstrl/config/config.py`` was one line under the 800-line ratchet and could not
+take another ``[paths]`` row. ``kstrl.config.config`` re-exports the name and
 the three loaders read it from there; the two documentation surfaces read
 it from ``config_keys``, which is what the mutation below patches.
 
 WHAT THE MUTATION DOES AND DOES NOT REACH, measured rather than assumed.
-``from kstrl.config_keys import STRING_KEYS`` binds a SECOND name, so
+``from kstrl.config.config_keys import STRING_KEYS`` binds a SECOND name, so
 ``monkeypatch.setattr(config_keys, ...)`` rebinds one and leaves
-``kstrl.config``'s binding alone: after the patch ``config_keys`` has
+``kstrl.config.config``'s binding alone: after the patch ``config_keys`` has
 eleven rows and ``config`` still has ten. The two documentation surfaces
 are what this file is about (S8 is the finding that a tenth row dropped
 out of ``ks config`` and the generated README), and they import at call
@@ -54,9 +54,10 @@ from types import ModuleType
 
 import pytest
 
-from kstrl import config as config_mod
-from kstrl import config_keys, config_report
-from kstrl.config_keys import STRING_KEYS
+from kstrl import config_report
+from kstrl.config import config as config_mod
+from kstrl.config import config_keys
+from kstrl.config.config_keys import STRING_KEYS
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -131,7 +132,7 @@ class TestATenthRowNeedsNoHandEdit:
 
 class TestTheTwoNamesAreOneTable:
     def test_the_re_export_is_the_same_object(self) -> None:
-        """``kstrl.config_keys`` owns the table and ``kstrl.config``
+        """``kstrl.config.config_keys`` owns the table and ``kstrl.config.config``
         re-exports it. IDENTITY, not equality: the loaders read one name
         and the two documentation surfaces read the other, and identity
         is the only thing that makes them the same table rather than two

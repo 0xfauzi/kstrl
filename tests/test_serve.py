@@ -2544,8 +2544,8 @@ class TestRunOwnership:
         forever. Silent under-billing is exactly what max_daily_spend
         exists to catch, so pin the third leg.
         """
+        from kstrl.io.runid import run_kind
         from kstrl.knowledge import current_run_id
-        from kstrl.runid import run_kind
 
         assert run_kind(current_run_id()) == SPAWNED_RUN_KIND
 

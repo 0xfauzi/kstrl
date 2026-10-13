@@ -6,7 +6,6 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl.atomicio import atomic_write_json
 from kstrl.decisions import (
     DISPOSITION_ESCALATED,
     SpecDecision,
@@ -16,6 +15,7 @@ from kstrl.decisions import (
 )
 from kstrl.events import EventBus
 from kstrl.guards import ScopeHazard, scope_entry_hazard
+from kstrl.io import atomic_write_json, plan_prd_path
 from kstrl.names import validate_component_id
 from kstrl.prd import PRD
 from kstrl.requirements import (
@@ -31,10 +31,9 @@ from kstrl.spec_issues import (
     route_spec_issues,
 )
 from kstrl.stack import file_stack_item, stack_errors, stack_from_table, stack_toml
-from kstrl.statedir import plan_prd_path
 
 if TYPE_CHECKING:
-    from kstrl.ui.base import UI
+    from kstrl.ui import UI
 
 
 # R1.5 / H-4: DECOMPOSE_PROMPT rule #12 promises the harness rejects

@@ -12,10 +12,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
 
-from kstrl.appendio import JOURNAL_REPAIR_EVENT, REPAIR_DETAIL, append_records
-from kstrl.config_numbers import check_numbers
-from kstrl.config_section import ConfigSection
-from kstrl.jsonread import read_json
+from kstrl.config import ConfigSection, check_numbers
+from kstrl.io import JOURNAL_REPAIR_EVENT, REPAIR_DETAIL, append_records, read_json
 
 
 class ProgressSink(Protocol):

@@ -52,16 +52,16 @@ import click
 import pytest
 
 from kstrl.cli import cli
-from kstrl.config_keys import RETIRED_ENV_VARS
-from kstrl.config_numbers import (
+from kstrl.config.config_keys import RETIRED_ENV_VARS
+from kstrl.config.config_numbers import (
     SIGNED,
     BudgetConfigError,
     LimitNumber,
     check_numbers,
     refuse_non_finite,
 )
+from kstrl.config.config_section import ConfigSection
 from kstrl.config_preflight import collect_config_problems, config_sections
-from kstrl.config_section import ConfigSection
 from tests.helpers.numeric_config import (
     class_name,
     env_number_doors,
@@ -633,7 +633,7 @@ class TestTheTomlDoorLooksInsideTablesAndArrays:
     ) -> None:
         from pathlib import Path
 
-        from kstrl.config_toml import section_table
+        from kstrl.config.config_toml import section_table
 
         document = {"timeout": {"probe": value}}
         with pytest.raises(BudgetConfigError) as caught:
@@ -643,7 +643,7 @@ class TestTheTomlDoorLooksInsideTablesAndArrays:
     def test_nested_finite_values_and_strings_pass(self, tmp_path: object) -> None:
         from pathlib import Path
 
-        from kstrl.config_toml import section_table
+        from kstrl.config.config_toml import section_table
 
         document = {"timeout": {"probe": {"inner": [1.0, -2.0, "nan"]}}}
         table = section_table(document, "timeout", Path(str(tmp_path)) / "kstrl.toml")

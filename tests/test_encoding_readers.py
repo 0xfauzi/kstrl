@@ -94,8 +94,8 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     "agents/codex.py": 1,
     "agents/logging.py": 1,
     # The "a+b" append open, moved here from evolution.py by #331.
-    "appendio.py": 1,
-    "atomicio.py": 1,
+    "io/appendio.py": 1,
+    "io/atomicio.py": 1,
     "autonomy.py": 1,
     "autonomy_replay.py": 1,
     # 1 since #406's ``_read_document`` dedup, which the baseline reader
@@ -190,7 +190,7 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     "serve_github.py": 1,
     "serve_outcome.py": 1,
     "serve_spend.py": 1,
-    "statedir.py": 1,
+    "io/statedir.py": 1,
     # 4 since #414: the bad-patterns scan's read_text is gone (it reads
     # bytes now, so py_compile does its own PEP 263 decoding). 3 since
     # #696: scrub_stale_verify_commands's CLAUDE.md read is gone with the
@@ -272,6 +272,7 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     # it used to name is the one ``append_terminated`` encodes with, and
     # the ``appendio.py`` row below is where that contract is counted.
     "intake_issue.py self.path.read_text(encoding='utf-8')",
+    "io/statedir.py open(lock_path, 'a+', encoding='utf-8')",
     # #700, the security review of #770: the `.git` file of the root and the
     # back link it names, utf-8, with ValueError caught beside OSError.
     "isolation.py (entry / 'gitdir').read_text(encoding='utf-8')",
@@ -307,7 +308,6 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "serve_github.py path.read_text(encoding='utf-8')",
     "serve_outcome.py path.read_text(encoding='utf-8')",
     "serve_spend.py self.path.read_text(encoding='utf-8')",
-    "statedir.py open(lock_path, 'a+', encoding='utf-8')",
     "verify.py progress_path.read_text(encoding='utf-8')",
     "workqueue.py spec_source.read_text(encoding='utf-8')",
     "workqueue_store.py meta_path.read_text(encoding='utf-8')",
@@ -375,12 +375,12 @@ EXPECTED_UNDECIDED: tuple[str, ...] = (
 
 
 EXPECTED_DECIDED_OUT: tuple[str, ...] = (
+    "factory_acceptance.py EvolutionJournal.open",
     # The journal's "a+b" probe-and-append. Binary, so no codec applies;
     # #331 moved it from evolution.py to appendio.open_for_append, where
     # six appenders now share it.
-    "appendio.py open",
-    "atomicio.py os.open",
-    "factory_acceptance.py EvolutionJournal.open",
+    "io/appendio.py open",
+    "io/atomicio.py os.open",
     "pipeline_attempt.py EvolutionJournal.open",
     "pipeline_ledger.py EvolutionJournal.open",
     # #700 slice 3: the `up` log is opened "wb" and read back through

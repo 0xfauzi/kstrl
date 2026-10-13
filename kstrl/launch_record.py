@@ -32,10 +32,9 @@ from typing import TYPE_CHECKING
 import click
 from click.core import ParameterSource
 
-from kstrl.atomicio import atomic_write_json
 from kstrl.events import RunPaths
-from kstrl.jsonread import read_json
-from kstrl.version import kstrl_version
+from kstrl.git import kstrl_version
+from kstrl.io import atomic_write_json, read_json
 
 if TYPE_CHECKING:
     from kstrl.factory_config import FactoryConfig

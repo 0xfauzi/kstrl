@@ -1,8 +1,8 @@
 """Reading ``kstrl.toml``: the parse, its error taxonomy, and the scope
 that parses one file once.
 
-Split out of ``kstrl/config.py`` by #366 for the 800-line file-length
-ratchet; nothing here changed in the move. ``kstrl.config`` re-exports
+Split out of ``kstrl/config/config.py`` by #366 for the 800-line file-length
+ratchet; nothing here changed in the move. ``kstrl.config.config`` re-exports
 every name below, and every production caller still imports them from
 there.
 """
@@ -16,7 +16,7 @@ from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
-from kstrl.config_numbers import refuse_non_finite
+from kstrl.config.config_numbers import refuse_non_finite
 
 
 class ConfigError(ValueError):

@@ -85,7 +85,7 @@ if TYPE_CHECKING:
     from kstrl.config import KstrlConfig
     from kstrl.prd import PRD
     from kstrl.sandbox import SandboxConfig
-    from kstrl.ui.base import UI
+    from kstrl.ui import UI
 
 
 def _timestamp() -> str:

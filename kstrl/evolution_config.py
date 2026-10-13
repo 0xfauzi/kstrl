@@ -7,8 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from kstrl.config_numbers import check_numbers
-from kstrl.config_section import ConfigSection
+from kstrl.config import ConfigSection, check_numbers
 
 # ---------------------------------------------------------------------------
 # Data structures

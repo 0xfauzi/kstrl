@@ -40,7 +40,13 @@ import kstrl.cli_factory as cli_factory_mod
 import kstrl.cli_feature as cli_feature_mod
 import kstrl.cli_seam as cli_seam_mod
 from kstrl.cli import cli
-from kstrl.config import STRING_KEYS, ConfigError, KstrlConfig, load_toml_document, toml_parse_scope
+from kstrl.config.config import (
+    STRING_KEYS,
+    ConfigError,
+    KstrlConfig,
+    load_toml_document,
+    toml_parse_scope,
+)
 from kstrl.config_preflight import collect_config_problems, config_sections, preflight_config
 from kstrl.contract import ContractConfig
 from kstrl.evolution_config import EvolutionConfig
@@ -131,7 +137,7 @@ def _no_agents(monkeypatch: pytest.MonkeyPatch) -> list[str]:
 #: with no loader at all. A class whose ``load`` a decorator or a base
 #: supplies lands here too, which is how the shape layer 2 cannot read
 #: still fails loudly instead of passing as "no loader".
-EXPECTED_LOADERLESS_CONFIGS: dict[str, int] = {"config.py": 1}
+EXPECTED_LOADERLESS_CONFIGS: dict[str, int] = {"config/config.py": 1}
 
 
 def _supplies_load(item: ast.stmt) -> bool:

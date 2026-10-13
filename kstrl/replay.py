@@ -41,8 +41,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl import git, git_base
-from kstrl.atomicio import atomic_write_text
+from kstrl.git import git, git_base
+from kstrl.io import CONTROL_APP_NAME, atomic_write_text, xdg_state_home
 from kstrl.isolation import SETUP_ZONE, TEST_ZONE, prove_zones
 from kstrl.procdispose import reap_or_abandon
 from kstrl.procgroup import read_group_liveness, signal_group
@@ -63,12 +63,11 @@ from kstrl.stack import (
     Stack,
     stack_paths,
 )
-from kstrl.statedir import CONTROL_APP_NAME, xdg_state_home
 from kstrl.temp_worktree import ContractCleanupError, create_temp_worktree, remove_temp_worktree
 from kstrl.verify_commands import SHELL_COULD_NOT_RUN
 
 if TYPE_CHECKING:
-    from kstrl.ui.base import UI
+    from kstrl.ui import UI
 
 #: The label of the throwaway worktree, under ``.kstrl/contract/``.
 WORKTREE_LABEL = "replay"

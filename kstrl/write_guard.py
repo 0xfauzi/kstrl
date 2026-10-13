@@ -17,7 +17,7 @@ fails, blocks the tool (measured).
 
 ``-I`` keeps the worktree, which is the hook's working directory, off
 ``sys.path``, so a ``kstrl`` package that the engineer writes there is not
-the one that runs. The import is stdlib plus :mod:`kstrl.jsonread`, because
+the one that runs. The import is stdlib plus :mod:`kstrl.io.jsonread`, because
 the hook starts once for each file tool call.
 
 claude lets a tool run when its hook times out (measured with claude
@@ -59,7 +59,7 @@ import sys
 from collections.abc import Iterable
 from pathlib import Path
 
-from kstrl.jsonread import read_json
+from kstrl.io.jsonread import read_json
 
 #: The file tools whose target path the guard checks. Bash is absent: the
 #: claude sandbox confines it at the OS level (measured).

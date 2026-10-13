@@ -17,7 +17,7 @@ import pytest
 from click.testing import CliRunner
 
 from kstrl.cli import cli
-from kstrl.config import KstrlConfig
+from kstrl.config.config import KstrlConfig
 from kstrl.evolution_config import EvolutionConfig
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
@@ -357,7 +357,7 @@ class TestRunMetadataPersistence:
                 "kstrl.factory._run_component",
                 return_value=success,
             ),
-            patch("kstrl.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             result = run_factory(
                 manifest,
@@ -450,7 +450,7 @@ class TestPerAttemptFindings:
                 "kstrl.factory.run_review",
                 side_effect=[failing_review, passing_review],
             ),
-            patch("kstrl.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             result = run_factory(
                 manifest,

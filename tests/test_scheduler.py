@@ -25,7 +25,7 @@ from unittest.mock import patch
 
 from kstrl import event_catalog
 from kstrl import events as ev
-from kstrl.config import KstrlConfig
+from kstrl.config.config import KstrlConfig
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult
@@ -160,7 +160,7 @@ class TestUnifiedSchedulingLoop:
                 return_value=success_b,
             ),
             patch(
-                "kstrl.git_diff.get_diff_content",
+                "kstrl.git.git_diff.get_diff_content",
                 return_value="",
             ),
         ):

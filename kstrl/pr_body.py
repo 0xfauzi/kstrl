@@ -13,9 +13,9 @@ from kstrl.findings import (
     finding_waiver,
     render_findings_markdown,
 )
+from kstrl.io import pre_run_prd_path
 from kstrl.prd import PRD
 from kstrl.requirements import built_by
-from kstrl.statedir import pre_run_prd_path
 
 if TYPE_CHECKING:
     from kstrl.manifest import Component, Manifest

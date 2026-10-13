@@ -20,9 +20,9 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl import config as _config_module
-from kstrl import config_toml as _toml_module
-from kstrl.config import KstrlConfig
+from kstrl.config import config as _config_module
+from kstrl.config import config_toml as _toml_module
+from kstrl.config.config import KstrlConfig
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import FactoryResult
@@ -45,9 +45,9 @@ def count_toml_parses(monkeypatch: pytest.MonkeyPatch) -> TomlParseCounts:
     """Count document loads and ``tomllib`` parses for the rest of the test.
 
     ``load_toml_document`` is bound in two namespaces since #366 split the
-    reader into ``kstrl/config_toml.py``: ``load_toml_section`` resolves it
-    there, and ``kstrl.config._apply_toml_overrides`` resolves it in
-    ``kstrl.config``. Both are patched so a count that reaches either path
+    reader into ``kstrl/config/config_toml.py``: ``load_toml_section`` resolves it
+    there, and ``kstrl.config.config._apply_toml_overrides`` resolves it in
+    ``kstrl.config.config``. Both are patched so a count that reaches either path
     is a count, not a silent under-count. ``tomllib.loads`` is looked up at
     call time on the module object, so patching the module is enough.
     """

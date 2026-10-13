@@ -8,7 +8,7 @@ import pytest
 from click.testing import CliRunner
 
 from kstrl.cli import cli
-from kstrl.config import KstrlConfig
+from kstrl.config.config import KstrlConfig
 from kstrl.config_report import (
     ConfigRow,
     build_config_report,

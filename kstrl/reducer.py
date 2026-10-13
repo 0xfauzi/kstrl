@@ -195,7 +195,7 @@ class RunState:
     def kind(self) -> str:
         """Command kind from the run-id prefix; kind-agnostic folds
         never set it, and pre-kinds ids default to factory."""
-        from kstrl.runid import run_kind
+        from kstrl.io import run_kind
 
         return run_kind(self.run_id) or "factory"
 
@@ -678,7 +678,7 @@ def _v2_run_dirs(root_dir: Path) -> list[Path]:
     must distinguish "no runs" from "could not look" wants
     :func:`run_dirs_newest_first` instead.
     """
-    from kstrl.runid import run_sort_key
+    from kstrl.io import run_sort_key
 
     try:
         return sorted(
@@ -711,7 +711,7 @@ def _run_dirs_unsorted(root_dir: Path) -> list[Path]:
     directories exist. Raises on an unreadable ``runs/``; a missing one
     is not an error, it is "no runs".
     """
-    from kstrl.statedir import state_dir
+    from kstrl.io import state_dir
 
     runs_root = state_dir(root_dir) / "runs"
     if not runs_root.exists():
@@ -739,7 +739,7 @@ def run_dirs_newest_first(root_dir: Path) -> list[Path]:
     :data:`MAX_RECENT_FINDINGS` and would lose a skip behind a noisy
     component.
     """
-    from kstrl.runid import run_sort_key
+    from kstrl.io import run_sort_key
 
     return sorted(
         _run_dirs_unsorted(root_dir),
@@ -772,7 +772,7 @@ def load_run_state(
         events = read_run_dir(run_dir)
         return fold(events, run_id=run_id), run_dir / "events.jsonl"
 
-    from kstrl.statedir import state_dir
+    from kstrl.io import state_dir
 
     state = state_dir(root_dir)
     v1_path = state / "progress.jsonl"

@@ -10,9 +10,8 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-from kstrl.atomicio import atomic_write_json
 from kstrl.findings import Finding
-from kstrl.jsonread import read_json_file
+from kstrl.io import atomic_write_json, read_json_file
 from kstrl.manifest_keys import (
     COMPONENT_OPTIONAL_KEYS,
     COMPONENT_REQUIRED_KEYS,
@@ -463,7 +462,7 @@ class Manifest:
             data["acceptanceDigest"] = self.acceptance_digest
         path.parent.mkdir(parents=True, exist_ok=True)
         # Atomic, and keeps the mode the operator gave this git-tracked
-        # file; see kstrl.atomicio (#291).
+        # file; see kstrl.io.atomicio (#291).
         atomic_write_json(path, data)
 
     @classmethod

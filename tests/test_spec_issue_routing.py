@@ -23,6 +23,7 @@ import pytest
 from kstrl.decompose import decompose_spec
 from kstrl.decompose_audit import SpecBlockerError
 from kstrl.decompose_reply import _routed_prd_issues
+from kstrl.io.statedir import plan_prd_path
 from kstrl.knowledge_distill import _read_prd_text
 from kstrl.manifest import Manifest
 from kstrl.prd import _OPTIONAL_KEYS, PRD, PROMPT_EXCLUDED_KEYS, prd_text_for_prompt
@@ -33,7 +34,6 @@ from kstrl.spec_issues import (
     SpecIssue,
     route_spec_issues,
 )
-from kstrl.statedir import plan_prd_path
 from kstrl.ui.plain import PlainUI
 from tests.conftest import make_review_repo
 from tests.helpers.architect_payload import traced

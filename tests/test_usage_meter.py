@@ -35,7 +35,7 @@ import pytest
 from kstrl.agents.claude_code import ClaudeCodeAgent, _usage_from_result_event
 from kstrl.agents.codex import CodexAgent
 from kstrl.agents.custom import CustomAgent
-from kstrl.config import KstrlConfig
+from kstrl.config.config import KstrlConfig
 from kstrl.events import RunPaths
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
@@ -881,7 +881,7 @@ class TestFactoryUsageAggregation:
                 "kstrl.factory._run_component",
                 return_value=success,
             ),
-            patch("kstrl.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             result = run_factory(
                 manifest,
@@ -951,7 +951,7 @@ class TestFactoryUsageAggregation:
                 return_value=success,
             ),
             patch(
-                "kstrl.git_diff.get_diff_content",
+                "kstrl.git.git_diff.get_diff_content",
                 return_value="",
             ),
             patch(
@@ -1020,7 +1020,7 @@ class TestFactoryUsageAggregation:
                 return_value=success,
             ),
             patch(
-                "kstrl.git_diff.get_diff_content",
+                "kstrl.git.git_diff.get_diff_content",
                 return_value="",
             ),
             patch(
@@ -1071,7 +1071,7 @@ class TestFactoryUsageAggregation:
                 "kstrl.factory._run_component",
                 return_value=success,
             ),
-            patch("kstrl.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             result = run_factory(
                 manifest,
@@ -1112,7 +1112,7 @@ class TestFactoryUsageAggregation:
                 "kstrl.factory._run_component",
                 return_value=success,
             ),
-            patch("kstrl.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             run_factory(
                 manifest,
@@ -1155,7 +1155,7 @@ class TestTokenBudgetHalt:
                 "kstrl.factory._run_component",
                 side_effect=fake_run_component,
             ),
-            patch("kstrl.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             result = run_factory(
                 manifest,
@@ -1215,7 +1215,7 @@ class TestTokenBudgetHalt:
                 "kstrl.factory._run_component",
                 return_value=success,
             ),
-            patch("kstrl.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             result = run_factory(
                 manifest,
@@ -1248,7 +1248,7 @@ class TestTokenBudgetHalt:
                 "kstrl.factory._run_component",
                 return_value=success,
             ),
-            patch("kstrl.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             result = run_factory(
                 manifest,
@@ -1917,7 +1917,7 @@ class TestSchedulerHandsDownTheBudget:
                 "kstrl.factory._run_component",
                 side_effect=fake_run_component,
             ),
-            patch("kstrl.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             run_factory(
                 manifest,
@@ -1979,7 +1979,7 @@ class TestSchedulerHandsDownTheBudget:
                 "kstrl.factory._run_component",
                 side_effect=fake_run_component,
             ),
-            patch("kstrl.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             run_factory(
                 manifest,
@@ -2009,7 +2009,7 @@ class TestSchedulerHandsDownTheBudget:
                 "kstrl.factory._run_component",
                 side_effect=fake_run_component,
             ),
-            patch("kstrl.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             run_factory(
                 manifest,
@@ -2059,7 +2059,7 @@ class TestInLoopHaltAuditState:
                 "kstrl.factory._run_component",
                 return_value=halted,
             ),
-            patch("kstrl.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             result = run_factory(
                 manifest,
@@ -2126,7 +2126,7 @@ class TestInLoopHaltAuditState:
                 "kstrl.factory._run_component",
                 side_effect=fake_run_component,
             ),
-            patch("kstrl.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             run_factory(
                 manifest,
@@ -2346,7 +2346,7 @@ class TestAbortedWorkerUsage:
                 "kstrl.factory._run_component",
                 side_effect=slow_component,
             ),
-            patch("kstrl.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             result = run_factory(
                 manifest,
@@ -2395,7 +2395,7 @@ class TestAbortedWorkerUsage:
                 "kstrl.factory._run_component",
                 side_effect=AssertionError("the worker never returned"),
             ),
-            patch("kstrl.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             result = run_factory(
                 manifest,
@@ -2459,7 +2459,7 @@ class TestAbortedWorkerUsage:
                 "kstrl.factory._run_component",
                 side_effect=fake_run_component,
             ),
-            patch("kstrl.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             run_factory(
                 manifest,
@@ -2511,7 +2511,7 @@ class TestAbortedWorkerUsage:
                 "kstrl.factory._run_component",
                 side_effect=AssertionError("the worker never returned"),
             ),
-            patch("kstrl.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             run_factory(
                 manifest,
@@ -3304,7 +3304,7 @@ class TestCostCeilingEndToEnd:
                 "kstrl.factory._run_component",
                 side_effect=fake_run_component,
             ),
-            patch("kstrl.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             result = run_factory(
                 manifest,
@@ -3357,7 +3357,7 @@ class TestCostCeilingEndToEnd:
                 "kstrl.factory._run_component",
                 return_value=success,
             ),
-            patch("kstrl.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             run_factory(
                 manifest,
@@ -3403,7 +3403,7 @@ class TestCostCeilingEndToEnd:
                 "kstrl.factory._run_component",
                 side_effect=fake_run_component,
             ),
-            patch("kstrl.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             run_factory(
                 manifest,
@@ -3504,7 +3504,7 @@ class TestCostCeilingConfigValidation:
         tmp_path: Path,
         bad: str,
     ) -> None:
-        from kstrl.config_numbers import BudgetConfigError
+        from kstrl.config.config_numbers import BudgetConfigError
         from kstrl.factory_config import FactoryConfig
 
         (tmp_path / "kstrl.toml").write_text(f"[factory]\nmax_cost_usd = {bad}\n")
@@ -3517,7 +3517,7 @@ class TestCostCeilingConfigValidation:
         monkeypatch: pytest.MonkeyPatch,
         bad: str,
     ) -> None:
-        from kstrl.config_numbers import BudgetConfigError
+        from kstrl.config.config_numbers import BudgetConfigError
         from kstrl.factory_config import FactoryConfig
 
         monkeypatch.setenv("KSTRL_FACTORY_MAX_COST_USD", bad)
@@ -3545,8 +3545,8 @@ class TestCostCeilingConfigValidation:
         FactoryConfig can be built directly (tests, embedders, the SDK
         path), bypassing every config-path validator.
         """
-        from kstrl.config import KstrlConfig
-        from kstrl.config_numbers import BudgetConfigError
+        from kstrl.config.config import KstrlConfig
+        from kstrl.config.config_numbers import BudgetConfigError
         from kstrl.factory import run_factory
         from kstrl.factory_config import FactoryConfig
         from kstrl.manifest import Component, Manifest
@@ -4019,7 +4019,7 @@ class TestBudgetConfigErrorReachesTheOperator:
         from click.testing import CliRunner
 
         from kstrl.cli import cli
-        from kstrl.config_numbers import BudgetConfigError
+        from kstrl.config.config_numbers import BudgetConfigError
 
         (tmp_path / "kstrl.toml").write_text(f"[factory]\nmax_cost_usd = {toml_value}\n")
         (tmp_path / "m.json").write_text(json.dumps(self._manifest()))
@@ -4172,7 +4172,7 @@ class TestTokenCeilingRejectsUnboundingValues:
     """
 
     def test_negative_toml_value_is_rejected(self, tmp_path: Path) -> None:
-        from kstrl.config_numbers import BudgetConfigError
+        from kstrl.config.config_numbers import BudgetConfigError
         from kstrl.factory_config import FactoryConfig
 
         (tmp_path / "kstrl.toml").write_text("[factory]\nmax_total_tokens = -5\n")
@@ -4183,7 +4183,7 @@ class TestTokenCeilingRejectsUnboundingValues:
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from kstrl.config_numbers import BudgetConfigError
+        from kstrl.config.config_numbers import BudgetConfigError
         from kstrl.factory_config import FactoryConfig
 
         monkeypatch.setenv("KSTRL_FACTORY_MAX_TOTAL_TOKENS", "-5")
@@ -4206,8 +4206,8 @@ class TestTokenCeilingRejectsUnboundingValues:
         self,
         tmp_path: Path,
     ) -> None:
-        from kstrl.config import KstrlConfig
-        from kstrl.config_numbers import BudgetConfigError
+        from kstrl.config.config import KstrlConfig
+        from kstrl.config.config_numbers import BudgetConfigError
         from kstrl.factory import run_factory
         from kstrl.factory_config import FactoryConfig
         from kstrl.manifest import Component, Manifest
@@ -4812,7 +4812,7 @@ class TestCoverageReachesTheAuditTrail:
                 side_effect=fake_run_component,
             ),
             patch(
-                "kstrl.git_diff.get_diff_content",
+                "kstrl.git.git_diff.get_diff_content",
                 return_value="",
             ),
             patch(
@@ -4963,7 +4963,7 @@ class TestCoverageReachesTheAuditTrail:
                 "kstrl.factory._run_component",
                 return_value=success,
             ),
-            patch("kstrl.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             run_factory(
                 manifest,
@@ -5012,7 +5012,7 @@ class TestCeilingScopeIsStatedUpFront:
                 "kstrl.factory._run_component",
                 return_value=success,
             ),
-            patch("kstrl.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             run_factory(
                 manifest,
@@ -5111,7 +5111,7 @@ class TestEveryConfiguredCeilingRecordsItsCoverage:
                 side_effect=fake_run_component,
             ),
             patch(
-                "kstrl.git_diff.get_diff_content",
+                "kstrl.git.git_diff.get_diff_content",
                 return_value="",
             ),
             patch(
@@ -5205,7 +5205,7 @@ class TestEveryConfiguredCeilingRecordsItsCoverage:
                 "kstrl.factory._run_component",
                 return_value=success,
             ),
-            patch("kstrl.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             run_factory(
                 manifest,
@@ -5272,7 +5272,7 @@ def _run_with_architect_spend(
 
     with (
         patch("kstrl.factory._run_component", side_effect=fake_run_component),
-        patch("kstrl.git_diff.get_diff_content", return_value=""),
+        patch("kstrl.git.git_diff.get_diff_content", return_value=""),
     ):
         result = run_factory(
             manifest,
@@ -5672,7 +5672,7 @@ class TestNothingBetweenTheRunDirAndTheMeterCanLoseTheSpend:
 
     @staticmethod
     def _run(root: Path, manifest: Manifest, manifest_path: Path | None = None) -> Any:
-        with patch("kstrl.git_diff.get_diff_content", return_value=""):
+        with patch("kstrl.git.git_diff.get_diff_content", return_value=""):
             return run_factory(
                 manifest,
                 _factory_config(root),

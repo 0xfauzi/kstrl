@@ -34,7 +34,7 @@ import pytest
 
 from kstrl import event_catalog
 from kstrl import events as ev
-from kstrl.config import KstrlConfig
+from kstrl.config.config import KstrlConfig
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult
@@ -135,7 +135,7 @@ def _run(
         patch("kstrl.factory.run_mechanical_verification", return_value=passing),
         patch("kstrl.factory.run_review", return_value=review),
         patch("kstrl.factory.run_security_review", return_value=security),
-        patch("kstrl.git_diff.get_diff_content", return_value="diff --git a b\n"),
+        patch("kstrl.git.git_diff.get_diff_content", return_value="diff --git a b\n"),
         patch("kstrl.pr.is_gh_available", return_value=False),
     ):
         run_factory(

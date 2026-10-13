@@ -45,7 +45,7 @@ from typing import Any
 
 import pytest
 
-from kstrl.config import KstrlConfig
+from kstrl.config.config import KstrlConfig
 from kstrl.event_catalog import CheckpointResolved, Event
 from kstrl.events import CallbackSink
 from kstrl.feature_cmd import run_feature
@@ -100,7 +100,7 @@ PIPELINE_SOURCE = Path(__file__).resolve().parents[1] / "kstrl" / "pipeline_deli
 @pytest.fixture(autouse=True)
 def _no_real_diff(monkeypatch: pytest.MonkeyPatch) -> None:
     """tests/test_pipeline.py's stubs: no git diff, no real agent."""
-    monkeypatch.setattr("kstrl.git_diff.get_diff_content", lambda *a, **k: "diff --git a b\n")
+    monkeypatch.setattr("kstrl.git.git_diff.get_diff_content", lambda *a, **k: "diff --git a b\n")
     monkeypatch.setattr("kstrl.agents.get_agent", lambda *a, **k: object())
 
 

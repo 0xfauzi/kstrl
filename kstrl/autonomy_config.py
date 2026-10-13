@@ -13,9 +13,8 @@ from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
 
 from kstrl.autonomy import AutonomyError, AutonomyLevel, AutonomyState, FlagBundle
-from kstrl.config_numbers import check_numbers
-from kstrl.config_section import ConfigSection
-from kstrl.statedir import (
+from kstrl.config import ConfigSection, check_numbers
+from kstrl.io import (
     control_is_external,
     control_untrusted_reason,
     ensure_control_state,

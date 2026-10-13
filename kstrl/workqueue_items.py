@@ -18,8 +18,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-from kstrl.config_numbers import check_numbers
-from kstrl.config_section import ConfigSection
+from kstrl.config import ConfigSection, check_numbers
 
 QUEUE_SCHEMA_VERSION = 1
 
@@ -180,7 +179,7 @@ def _parse_iso(value: str) -> datetime | None:
 def mint_item_id() -> str:
     """``q-YYYYMMDD-HHMMSS.ffffff-<nonce>``.
 
-    Shaped like :func:`kstrl.runid.mint_run_id` and for the same reason:
+    Shaped like :func:`kstrl.io.runid.mint_run_id` and for the same reason:
     the microsecond stamp makes same-second ids order deterministically
     by creation time, which is what gives the queue FIFO ordering within
     a priority band, and the nonce guards same-microsecond collisions.

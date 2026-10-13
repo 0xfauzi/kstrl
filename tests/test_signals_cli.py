@@ -19,10 +19,10 @@ from typing import Any
 from click.testing import CliRunner
 
 from kstrl.cli import cli
-from kstrl.jsonread import read_json
+from kstrl.io.jsonread import read_json
+from kstrl.io.statedir import CONTROL_SIGNALS, control_file
 from kstrl.signals import poll as signals_poll
 from kstrl.signals import read_ledger
-from kstrl.statedir import CONTROL_SIGNALS, control_file
 
 FIXTURE = Path(__file__).parent / "fixtures" / "signals" / "bugsink-issues-canonical.json"
 
@@ -320,7 +320,7 @@ class TestAnIncompleteLedgerLineIsARefusalWithACountNeverATraceback:
     the bad line bricked both ``poll`` and ``ls`` permanently."""
 
     def _seed_incomplete_ledger_line(self, root: Path) -> None:
-        from kstrl.statedir import ensure_control_state
+        from kstrl.io.statedir import ensure_control_state
 
         ensure_control_state(root)
         path = control_file(root, CONTROL_SIGNALS)

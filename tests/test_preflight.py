@@ -24,7 +24,7 @@ from kstrl.agents import ClaudeSdkAgent
 from kstrl.agents.liveness import ProbeResult
 from kstrl.cli import cli
 from kstrl.cli_preflight import _agent_preflight
-from kstrl.config import KstrlConfig
+from kstrl.config.config import KstrlConfig
 from kstrl.factory_result import FactoryResult
 from kstrl.ui.plain import PlainUI
 from tests.helpers.agent_probe import set_cli_availability

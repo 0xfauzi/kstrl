@@ -17,8 +17,7 @@ from kstrl import baseline, baseline_report
 from kstrl.cli_seam import _console_ui, _preflight_warn, cli
 from kstrl.config_report import UI_MODES
 from kstrl.config_report import normalize_ui_mode as _normalize_ui_mode
-from kstrl.git import get_head_sha, get_origin_slug
-from kstrl.git_base import resolve_base_branch
+from kstrl.git import get_head_sha, get_origin_slug, resolve_base_branch
 from kstrl.stack import NO_STACK
 
 if TYPE_CHECKING:
@@ -494,8 +493,8 @@ def check(
     if _check_needs_diff(verify_cfg, policy_cfg):
         # Ask git the same question once, strictly, before any check
         # runs. Cannot-measure is exit 2; it is never a pass.
-        from kstrl import git as _git
-        from kstrl import git_diff as _git_diff
+        from kstrl.git import git as _git
+        from kstrl.git import git_diff as _git_diff
 
         try:
             _git_diff.get_diff_names(base, path, strict=True)
@@ -556,7 +555,7 @@ def doctor(root: Path | None, as_json: bool, measure: bool) -> None:
     one), 2 when it cannot run (an unusable --root).
     """
     from kstrl import doctor as doctor_mod
-    from kstrl.ui.plain import PlainUI
+    from kstrl.ui import PlainUI
 
     root_dir = (root or Path.cwd()).resolve()
     if not root_dir.is_dir():

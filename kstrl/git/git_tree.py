@@ -6,7 +6,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from kstrl.git import (
+from kstrl.git.git import (
     DEFAULT_TIMEOUT,
     GitDiffError,
     _nul_paths,
@@ -15,7 +15,7 @@ from kstrl.git import (
     _unique_paths,
     get_head_sha,
 )
-from kstrl.git_base import merge_base_ref, resolve_base_ref
+from kstrl.git.git_base import merge_base_ref, resolve_base_ref
 
 
 def get_changed_files(

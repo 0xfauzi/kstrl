@@ -13,7 +13,7 @@ LAYER 2 pins every string expression in ``kstrl/`` whose literal skeleton
 STARTS WITH ``origin/`` or ``refs/remotes/origin/``. Precedence between
 the remote-tracking ref and the local one can only be written by spelling
 ``origin/<something>``, so a second precedence rule cannot be added
-without adding a row here. ``kstrl/git.py::resolve_ref`` was exactly such
+without adding a row here. ``kstrl/git/git.py::resolve_ref`` was exactly such
 a row before this change.
 
 The skeleton is folded with ``tests.helpers.astfold.fold``, not a
@@ -21,7 +21,7 @@ hand-rolled template renderer: an earlier version of this layer stopped
 at an ``ast.Name``, so a rule spelled with the module constant
 (``f"{_ORIGIN_REF_PREFIX}{ref}"`` or ``_ORIGIN_REF_PREFIX + ref``)
 contributed no row - only the literal ``f"origin/{ref}"`` did, and
-``kstrl/git.py`` writes its own precedence rule with the constant
+``kstrl/git/git.py`` writes its own precedence rule with the constant
 (``_BASE_BRANCH_REFS``). ``fold`` resolves an unambiguous module-level
 string constant by name (its ``own`` argument is ``{}`` here, so
 resolution falls through to the package-wide pool), which is what makes
@@ -107,7 +107,7 @@ def _origin_row(source_file: Path, node: ast.AST) -> str:
 #: one in the argv), and one ``git.py`` row drops from 2 to 1 (the
 #: deleted ``resolve_ref`` took one of its two identical spawns with it).
 #: After the #435 fix-round's A0 (hoisting ``verify._merge_base_ref`` into
-#: ``kstrl/git.py`` as the one owner of the merge-base anchor): the
+#: ``kstrl/git/git.py`` as the one owner of the merge-base anchor): the
 #: ``git merge-base base_label HEAD`` row moves from ``verify.py`` to
 #: ``git.py``, count unchanged. #696 slice 6 deleted ``git.stage_file``,
 #: ``git.ignore_source`` and ``git.ignored_paths``, and their three rows.
@@ -134,40 +134,40 @@ EXPECTED_REF_OPERAND_ARGVS: dict[str, int] = {
     "factory_worktrees.py git worktree add str(worktree_path) branch_name": 1,
     "factory_worktrees.py git branch -D branch": 1,
     "factory_worktrees.py git worktree remove --force str(wt)": 1,
-    "git_base.py git for-each-ref --format=%(refname)%09%(symref) "
+    "git/git_base.py git for-each-ref --format=%(refname)%09%(symref) "
     "_ORIGIN_HEAD_REF *_BASE_BRANCH_REFS": 1,
-    "git_base.py git rev-parse --verify --quiet f'refs/remotes/origin/{base_branch}'": 1,
-    "git_base.py git fetch -- origin base_branch": 1,
-    "git.py git rev-parse --is-inside-work-tree": 1,
-    "git.py git rev-parse --git-common-dir": 1,
-    "git.py git rev-parse --path-format=absolute --git-dir --git-common-dir": 1,
-    "git.py git show-ref --verify --quiet f'refs/heads/{branch}'": 1,
-    "git.py git rev-parse --abbrev-ref HEAD": 1,
-    "git_tree.py git diff --name-only -z": 1,
-    "git_tree.py git diff --name-only --cached -z": 1,
-    "git_tree.py git ls-files --others --exclude-standard -z": 1,
-    "git_tree.py git ls-files --cached --others --exclude-standard -z": 1,
-    "git_tree.py git ls-tree -r --name-only -z sha": 1,
+    "git/git_base.py git rev-parse --verify --quiet f'refs/remotes/origin/{base_branch}'": 1,
+    "git/git_base.py git fetch -- origin base_branch": 1,
+    "git/git.py git rev-parse --is-inside-work-tree": 1,
+    "git/git.py git rev-parse --git-common-dir": 1,
+    "git/git.py git rev-parse --path-format=absolute --git-dir --git-common-dir": 1,
+    "git/git.py git show-ref --verify --quiet f'refs/heads/{branch}'": 1,
+    "git/git.py git rev-parse --abbrev-ref HEAD": 1,
+    "git/git_tree.py git diff --name-only -z": 1,
+    "git/git_tree.py git diff --name-only --cached -z": 1,
+    "git/git_tree.py git ls-files --others --exclude-standard -z": 1,
+    "git/git_tree.py git ls-files --cached --others --exclude-standard -z": 1,
+    "git/git_tree.py git ls-tree -r --name-only -z sha": 1,
     # #696: git_tree.status_entries, what a [stack]'s checks left in a worktree.
-    "git_tree.py git status --porcelain --untracked-files=all -z": 1,
-    "git.py git rev-parse --verify --quiet HEAD": 1,
-    "git.py git rev-parse --verify --quiet f'refs/heads/{branch}'": 1,
-    "git.py git config --get remote.origin.url": 1,
-    "git_tree.py git diff --name-status -z ref --": 1,
-    "git_tree.py git restore f'--source={ref}' --staged --worktree -- file": 1,
-    "git_tree.py git rm --cached --ignore-unmatch -q -- file": 1,
-    "git_tree.py git restore --staged --worktree -- file": 1,
-    "git_tree.py git ls-files --error-unmatch -- file": 1,
-    "git_diff.py git diff --name-status -z -M -C f'{base_ref}...HEAD' --": 1,
-    "git_diff.py git diff f'{base_ref}...HEAD' --": 1,
-    "git_diff.py git diff --text --no-textconv --no-ext-diff --no-color --dst-prefix=b/ "
+    "git/git_tree.py git status --porcelain --untracked-files=all -z": 1,
+    "git/git.py git rev-parse --verify --quiet HEAD": 1,
+    "git/git.py git rev-parse --verify --quiet f'refs/heads/{branch}'": 1,
+    "git/git.py git config --get remote.origin.url": 1,
+    "git/git_tree.py git diff --name-status -z ref --": 1,
+    "git/git_tree.py git restore f'--source={ref}' --staged --worktree -- file": 1,
+    "git/git_tree.py git rm --cached --ignore-unmatch -q -- file": 1,
+    "git/git_tree.py git restore --staged --worktree -- file": 1,
+    "git/git_tree.py git ls-files --error-unmatch -- file": 1,
+    "git/git_diff.py git diff --name-status -z -M -C f'{base_ref}...HEAD' --": 1,
+    "git/git_diff.py git diff f'{base_ref}...HEAD' --": 1,
+    "git/git_diff.py git diff --text --no-textconv --no-ext-diff --no-color --dst-prefix=b/ "
     "f'{base_ref}...HEAD' --": 1,
-    "git_diff.py git diff --numstat -z f'{base_ref}...HEAD' --": 1,
-    "git.py git merge --no-edit -- branch": 1,
-    "git_base.py git merge-base base_label HEAD": 1,
-    "git.py git checkout branch --": 1,
-    "git.py git checkout -b branch": 1,
-    "git_base.py git rev-parse --verify --quiet f'{candidate}^{{commit}}'": 1,
+    "git/git_diff.py git diff --numstat -z f'{base_ref}...HEAD' --": 1,
+    "git/git.py git merge --no-edit -- branch": 1,
+    "git/git_base.py git merge-base base_label HEAD": 1,
+    "git/git.py git checkout branch --": 1,
+    "git/git.py git checkout -b branch": 1,
+    "git/git_base.py git rev-parse --verify --quiet f'{candidate}^{{commit}}'": 1,
     "pr.py git push -u -- origin branch": 1,
     "pr.py git push --delete -- origin branch": 2,
     "retry_plan.py git worktree remove --force evidence_worktree": 1,
@@ -175,7 +175,7 @@ EXPECTED_REF_OPERAND_ARGVS: dict[str, int] = {
     # #433: the probe moved into _failed_branch_probe. Its parameter is `branch`.
     "retry_plan.py git rev-parse --verify --quiet f'refs/heads/{branch}'": 1,
     "retry_plan.py git branch -D failed_branch": 1,
-    "statedir.py git -C str(root_dir) remote get-url origin": 1,
+    "io/statedir.py git -C str(root_dir) remote get-url origin": 1,
 }
 
 #: DERIVED BY RUNNING, same procedure as above. After #435's fix:
@@ -195,14 +195,14 @@ EXPECTED_REF_OPERAND_ARGVS: dict[str, int] = {
 #: already is. Measured: a strict superset of the previous four rows,
 #: none lost.
 EXPECTED_ORIGIN_SPELLINGS: dict[str, int] = {
-    "git_base.py 'refs/remotes/origin/'": 2,
-    "git_base.py 'origin/'": 4,
-    "git_base.py f'origin/{base_branch}'": 2,
-    "git_base.py f'refs/remotes/origin/{base_branch}'": 1,
-    "git_base.py _ORIGIN_REF_PREFIX": 5,
-    "git_base.py f'{_ORIGIN_REF_PREFIX}HEAD'": 1,
-    "git_base.py f'{_ORIGIN_REF_PREFIX}{name}'": 1,
-    "git_base.py {_ORIGIN_REF_PREFIX}": 2,
+    "git/git_base.py 'refs/remotes/origin/'": 2,
+    "git/git_base.py 'origin/'": 4,
+    "git/git_base.py f'origin/{base_branch}'": 2,
+    "git/git_base.py f'refs/remotes/origin/{base_branch}'": 1,
+    "git/git_base.py _ORIGIN_REF_PREFIX": 5,
+    "git/git_base.py f'{_ORIGIN_REF_PREFIX}HEAD'": 1,
+    "git/git_base.py f'{_ORIGIN_REF_PREFIX}{name}'": 1,
+    "git/git_base.py {_ORIGIN_REF_PREFIX}": 2,
 }
 
 
@@ -261,7 +261,7 @@ def test_a_second_precedence_rule_is_a_new_row() -> None:
 
 def test_a_second_precedence_rule_spelled_with_the_module_constant_is_a_new_row() -> None:
     """The shape ``_template`` missed entirely (#435 fix-round finding A):
-    the identical rule, spelled the way ``kstrl/git.py`` spells every
+    the identical rule, spelled the way ``kstrl/git/git.py`` spells every
     other remote-tracking ref, with the module constant rather than the
     literal. Plant P12 is this shape re-added to ``resolve_ref``."""
     planted = parse('for candidate in (ref, f"{_ORIGIN_REF_PREFIX}{ref}"):\n    pass\n')

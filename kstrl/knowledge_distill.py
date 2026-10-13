@@ -18,8 +18,8 @@ from kstrl.agent_output import (
     extract_json,
     select_agent_output,
 )
-from kstrl.delimiters import generate_data_delimiter
 from kstrl.fact_scope import evidence_cites_existing_path
+from kstrl.io import generate_data_delimiter
 from kstrl.knowledge_facts import (
     _DEBUG_DIR_NAME,
     Fact,

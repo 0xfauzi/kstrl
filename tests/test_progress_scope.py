@@ -35,14 +35,14 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl import git_tree
-from kstrl.config import KstrlConfig, component_progress_path, relative_to_root
+from kstrl.config.config import KstrlConfig, component_progress_path, relative_to_root
 from kstrl.decompose_reply import _generate_component_prd
 from kstrl.events import EventBus, V1CompatSink
 from kstrl.factory import run_factory
 from kstrl.factory_agents import AdversarialAgentSelection
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult, FactoryResult
+from kstrl.git import git_tree
 from kstrl.guards import enforce_allowed_paths, path_is_allowed
 from kstrl.interaction import PromptRequest, PromptResponse
 from kstrl.knowledge_facts import KnowledgeConfig
@@ -512,7 +512,7 @@ class TestProgrammaticallySetProgressFileIsHonored:
                 "kstrl.factory._run_component",
                 side_effect=fake_component,
             ),
-            patch("kstrl.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             run_factory(
                 _manifest([_component()]),
@@ -588,7 +588,7 @@ class TestFactoryWiring:
                 "kstrl.factory._run_component",
                 side_effect=fake_component,
             ),
-            patch("kstrl.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             run_factory(
                 _manifest([_component()]),
@@ -841,7 +841,7 @@ class TestInLoopGuardSeesTheComponentScope:
         self,
         tmp_path: Path,
     ) -> None:
-        from kstrl.config import KstrlConfig
+        from kstrl.config.config import KstrlConfig
 
         prd_rel = "scripts/kstrl/feature/comp-a/prd.json"
         prd = tmp_path / prd_rel
@@ -868,7 +868,7 @@ class TestInLoopGuardSeesTheComponentScope:
         tmp_path: Path,
     ) -> None:
         """The exact production condition: no --allowed-paths flag."""
-        from kstrl.config import KstrlConfig
+        from kstrl.config.config import KstrlConfig
 
         prd_rel = "scripts/kstrl/feature/comp-a/prd.json"
         prd = tmp_path / prd_rel
@@ -891,7 +891,7 @@ class TestInLoopGuardSeesTheComponentScope:
         self,
         tmp_path: Path,
     ) -> None:
-        from kstrl.config import KstrlConfig
+        from kstrl.config.config import KstrlConfig
 
         prd_rel = "scripts/kstrl/feature/comp-a/prd.json"
         prd = tmp_path / prd_rel
@@ -924,7 +924,7 @@ class TestInLoopGuardSeesTheComponentScope:
         thing that fails the component: with no authored list it simply
         does not fire, exactly as before.
         """
-        from kstrl.config import KstrlConfig
+        from kstrl.config.config import KstrlConfig
         from kstrl.verify_diff import check_scope_unreadable
 
         comp = self._component("scripts/kstrl/feature/comp-a/prd.json")
@@ -975,14 +975,14 @@ class TestProgressWriterAndReaderAgree:
         reader: str | None,
         expected: tuple[str | None, str | None],
     ) -> None:
-        from kstrl.config import reconcile_progress_paths
+        from kstrl.config.config import reconcile_progress_paths
 
         assert reconcile_progress_paths(writer, reader) == expected
 
     def test_two_explicit_paths_are_left_alone(self) -> None:
         """An operator who named two paths meant two paths; the caller
         warns rather than silently overriding one."""
-        from kstrl.config import reconcile_progress_paths
+        from kstrl.config.config import reconcile_progress_paths
 
         assert reconcile_progress_paths("a/p.txt", "b/p.txt") == (
             "a/p.txt",
@@ -1088,7 +1088,7 @@ class TestWriterAndReaderResolveToTheSameFILE:
 
     def _reconciled(self, root: Path) -> tuple[KstrlConfig, VerifyConfig]:
         """The factory command's wiring, verbatim."""
-        from kstrl.config import reconcile_progress_config
+        from kstrl.config.config import reconcile_progress_config
 
         base_config = KstrlConfig.load(root)
         v_config = VerifyConfig.load(root)
@@ -1172,7 +1172,7 @@ class TestWriterAndReaderResolveToTheSameFILE:
             '[paths]\nprogress = "docs/writer.md"\n'
             '[verify]\nprogress_file_path = "docs/reader.md"\n',
         )
-        from kstrl.config import reconcile_progress_config
+        from kstrl.config.config import reconcile_progress_config
 
         base_config = KstrlConfig.load(root)
         v_config = VerifyConfig.load(root)

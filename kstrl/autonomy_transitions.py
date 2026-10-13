@@ -13,14 +13,14 @@ import warnings
 from typing import TYPE_CHECKING, Any
 
 from kstrl.autonomy import MIN_DECISIVE_RUNS, AutonomyLevel, AutonomyState
-from kstrl.statedir import ControlStateError
+from kstrl.io import ControlStateError
 
 if TYPE_CHECKING:
     from pathlib import Path
 
     from kstrl.autonomy import DemotionTrigger, Transition
     from kstrl.events import EventBus
-    from kstrl.ui.base import UI
+    from kstrl.ui import UI
 
 #: The L4 entry criterion nothing can read yet (#643). A deploy target
 #: belongs to the release stage, #154, which is deferred, so the criterion

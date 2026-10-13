@@ -70,7 +70,7 @@ from kstrl.findings import (
     Finding,
 )
 from kstrl.inbox import Inbox, InboxConfig, InboxError, InboxItem, ItemKind, ItemStatus
-from kstrl.statedir import ControlStateError
+from kstrl.io import ControlStateError
 
 if TYPE_CHECKING:
     from kstrl.manifest import Component

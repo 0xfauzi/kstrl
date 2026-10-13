@@ -28,7 +28,7 @@ from click.testing import CliRunner
 import kstrl.autonomy as autonomy_module
 from kstrl.autonomy import AutonomyState
 from kstrl.cli import cli
-from kstrl.statedir import CONTROL_AUTONOMY, legacy_control_paths
+from kstrl.io.statedir import CONTROL_AUTONOMY, legacy_control_paths
 from tests.helpers.gitrepo import git_in
 
 DISABLED_NOTE = "Evidence is not recorded while [autonomy] enabled = false."

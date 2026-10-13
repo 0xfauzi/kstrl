@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from kstrl.agents.prompt_record import _FIELDS, AGENT_CLIS, RECORD_SCHEMA, prompts_dir
-from kstrl.jsonread import read_json
+from kstrl.io.jsonread import read_json
 
 
 @dataclass(frozen=True)

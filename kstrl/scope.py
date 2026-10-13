@@ -51,8 +51,8 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Literal
 
 from kstrl.config import relative_to_root
+from kstrl.io import pre_run_prd_path
 from kstrl.prd import PRD
-from kstrl.statedir import pre_run_prd_path
 
 if TYPE_CHECKING:
     from collections.abc import Mapping

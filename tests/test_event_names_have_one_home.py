@@ -1,7 +1,7 @@
 """An enrolled event name is spelled once, in the module that owns it.
 
 That module is ``kstrl/evolution.py`` for ``spec_issues`` and
-``kstrl/appendio.py`` for ``journal_repair``, which is where the pin
+``kstrl/io/appendio.py`` for ``journal_repair``, which is where the pin
 rows below put them. The scope of the claim is the
 row, not the word: ``tests/`` holds 46 spellings both layers
 deliberately leave alone, 44 of ``spec_issues`` and 2 of
@@ -74,7 +74,7 @@ import ast
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
-from kstrl.appendio import JOURNAL_REPAIR_EVENT
+from kstrl.io.appendio import JOURNAL_REPAIR_EVENT
 from kstrl.journal_rows import (
     FINDINGS_SUPERSEDED_EVENT,
     INTEGRATION_RESULT_EVENT,
@@ -188,7 +188,7 @@ EXPECTED_EVENT_NAME_SPELLINGS: dict[str, int] = {
     # The JOURNAL_REPAIR_EVENT declaration. Its home since #331: six
     # appenders across six modules can write the row now, and appendio
     # is the module all six already import.
-    "appendio.py": 1,
+    "io/appendio.py": 1,
     # The artifact label emitted with ArtifactWritten.
     "decompose_audit.py": 1,
     # The architect's own JSON key (validation).

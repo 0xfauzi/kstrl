@@ -45,7 +45,7 @@ BUILDERS = frozenset(
 
 #: Modules whose reads only report a value (``ks config show`` and the
 #: entry check). Labels as ``astwalk.label`` gives them.
-REPORTERS = frozenset({"config_report.py", "config_preflight.py", "config_resolve.py"})
+REPORTERS = frozenset({"config_report.py", "config_preflight.py", "config/config_resolve.py"})
 
 #: Keys a loader sets that nothing reads yet, each with its reason. The
 #: census must equal this exactly, so the row fails the day its reader

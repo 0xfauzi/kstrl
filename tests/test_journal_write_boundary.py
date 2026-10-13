@@ -36,8 +36,8 @@ from typing import IO, Any
 
 import pytest
 
-import kstrl.appendio as appendio_mod
-from kstrl.appendio import JOURNAL_REPAIR_EVENT
+import kstrl.io.appendio as appendio_mod
+from kstrl.io.appendio import JOURNAL_REPAIR_EVENT
 from kstrl.observability import read_progress_events
 from tests.helpers.journal import TORN_FRAGMENT, audit, journal_at, tear
 
@@ -111,9 +111,9 @@ def recording(
     """Count opens of ``path`` and writes through them, in ``evolution``.
 
     Shadows the module's global ``open`` rather than the builtin, so
-    nothing outside ``kstrl.appendio`` is affected, and calls the real
+    nothing outside ``kstrl.io.appendio`` is affected, and calls the real
     ``open`` for every other path so ``record_run``'s experiments.tsv
-    behaves normally. ``kstrl.appendio`` since #331: the single
+    behaves normally. ``kstrl.io.appendio`` since #331: the single
     ``"a+b"`` open moved to ``appendio.open_for_append`` when six
     appenders started sharing it, so patching ``kstrl.evolution``'s
     global would now record nothing and the two assertions below would

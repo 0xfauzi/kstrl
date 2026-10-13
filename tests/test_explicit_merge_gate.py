@@ -41,7 +41,7 @@ from click.testing import CliRunner
 import kstrl.cli as cli_mod
 from kstrl.autonomy import AutonomyLevel, AutonomyState, FlagBundle, flag_bundle_for
 from kstrl.autonomy_config import pause_gate_for, resolved_flag_bundle
-from kstrl.config import ConfigError
+from kstrl.config.config import ConfigError
 from kstrl.event_catalog import AutonomyLevelApplied, Event
 from kstrl.events import CallbackSink, EventBus
 from kstrl.factory import run_factory

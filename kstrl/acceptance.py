@@ -65,14 +65,12 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
-from kstrl import git, git_base
-from kstrl.atomicio import atomic_write_json
-from kstrl.jsonread import read_json
+from kstrl.git import git, git_base
+from kstrl.io import atomic_write_json, control_dir, read_json
 from kstrl.names import validate_component_id
 from kstrl.replay import Replay, Stage, _ran, replay_stack
 from kstrl.rung import HOST_LABEL, ProvenRung, Rung, zone_dir
 from kstrl.stack import REPLAY_BOUNDARY_REFUSED
-from kstrl.statedir import control_dir
 from kstrl.timeout import limit_seconds
 from kstrl.verify_commands import SHELL_COULD_NOT_RUN
 from kstrl.waivers import covering_override
@@ -81,7 +79,7 @@ if TYPE_CHECKING:
     from kstrl.inbox import InboxItem
     from kstrl.manifest import Manifest
     from kstrl.stack import Stack
-    from kstrl.ui.base import UI
+    from kstrl.ui import UI
     from kstrl.verify_model import VerifyConfig
 
 #: The one file a plan directory must hold.

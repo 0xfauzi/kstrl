@@ -6,8 +6,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from kstrl.io import state_dir
 from kstrl.serve_config import ServeError
-from kstrl.statedir import state_dir
 
 #: Reverse-DNS label prefix. The per-root suffix keeps two checkouts from
 #: fighting over one launchd job.

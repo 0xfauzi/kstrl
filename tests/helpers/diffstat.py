@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from kstrl.git_diff import DiffStat
+from kstrl.git.git_diff import DiffStat
 
 #: House budget for diff content that a prompt carries (#266 removed its last
-#: enforcing caller; #863 A2 moved it here from ``kstrl/git_diff.py``, where
+#: enforcing caller; #863 A2 moved it here from ``kstrl/git/git_diff.py``, where
 #: only these tests read it). The size a prompt must stay under.
 DEFAULT_PROMPT_DIFF_CHAR_LIMIT = 50_000
 

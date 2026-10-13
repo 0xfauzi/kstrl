@@ -7,9 +7,8 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from kstrl import git
-from kstrl.appendio import append_records
-from kstrl.jsonread import read_json_file
+from kstrl.git import git
+from kstrl.io import append_records, read_json_file
 from kstrl.prd import PRD
 from kstrl.scaffold_ledger import (
     _read_text_or_none,
@@ -26,7 +25,7 @@ from kstrl.scaffold_templates import (
 )
 
 if TYPE_CHECKING:
-    from kstrl.ui.base import UI
+    from kstrl.ui import UI
 
 # Default file contents
 DEFAULT_PRD = {

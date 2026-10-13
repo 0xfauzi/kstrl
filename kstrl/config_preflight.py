@@ -69,22 +69,24 @@ from typing import Any
 
 from kstrl.autonomy_config import AUTONOMY_SECTION
 from kstrl.breaker import BREAKER_SECTION
-from kstrl.config import KSTRL_SECTION, ConfigError, resolve_config_file, toml_parse_scope
-from kstrl.config_keys import (
+from kstrl.config import (
+    KSTRL_SECTION,
+    REJECTIONS,
     RETIRED_ENV_VALUES,
     RETIRED_ENV_VARS,
     RETIRED_KEYS,
     RETIRED_SECTIONS,
     RETIRED_VALUES,
-)
-from kstrl.config_resolve import (
-    REJECTIONS,
     SURFACE_REJECTIONS,
+    ConfigError,
+    ConfigSection,
+    RecordedTable,
     raise_if_defect,
+    record_reads,
+    resolve_config_file,
     section_detail,
+    toml_parse_scope,
 )
-from kstrl.config_section import ConfigSection
-from kstrl.config_toml import RecordedTable, record_reads
 from kstrl.contract import CONTRACT_SECTION
 from kstrl.divergence import DIVERGENCE_SECTION
 from kstrl.evolution_config import EVOLUTION_SECTION

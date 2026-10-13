@@ -63,9 +63,7 @@ from typing import TypeVar
 
 from kstrl.autonomy import AutonomyState
 from kstrl.autonomy_config import AUTONOMY_SECTION, AutonomyConfig
-from kstrl.config import ConfigError, toml_parse_scope
-from kstrl.config_resolve import resolve_or_report
-from kstrl.config_section import ConfigSection
+from kstrl.config import ConfigError, ConfigSection, resolve_or_report, toml_parse_scope
 from kstrl.divergence import DIVERGENCE_SECTION, DivergenceConfig
 from kstrl.inbox import INBOX_SECTION, InboxConfig
 from kstrl.policy import POLICY_SECTION, PolicyConfig

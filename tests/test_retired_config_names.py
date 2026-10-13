@@ -21,7 +21,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.config_keys import RETIRED_ENV_VARS as _PRODUCTION_RETIRED_ENV_VARS
+from kstrl.config.config_keys import RETIRED_ENV_VARS as _PRODUCTION_RETIRED_ENV_VARS
 from kstrl.config_preflight import collect_config_problems
 from kstrl.factory_config import FactoryConfig
 from kstrl.findings import CLAIM_DISAGREEMENT_CATEGORY, Finding
@@ -88,7 +88,7 @@ def test_the_retired_gum_ui_mode_is_refused_in_the_environment(
     assert "will not guess" in problems[0]
 
 
-# Parametrized off the production table itself (kstrl/config_keys.py),
+# Parametrized off the production table itself (kstrl/config/config_keys.py),
 # not a hand-typed copy of it: a hand-typed tuple stops growing the day
 # someone forgets to update it alongside a new retired row, which is
 # exactly the guard-goes-blind shape CLAUDE.md names. A new row in
@@ -535,12 +535,12 @@ SKIP_FILES = {
 # walk below and reading its report; never hand-adjust a count.
 ALLOWED: dict[tuple[str, str], int] = {
     # The one place production code still spells a retired name: the table
-    # RETIRED_SECTIONS/RETIRED_KEYS/RETIRED_ENV_VARS in kstrl/config_keys.py,
+    # RETIRED_SECTIONS/RETIRED_KEYS/RETIRED_ENV_VARS in kstrl/config/config_keys.py,
     # which must keep the old spelling as data or it cannot recognise it to
     # refuse it. (This file's own T1-T5 fixtures do the same; that file is
     # skipped above rather than allowlisted line by line.)
-    ("kstrl/config_keys.py", "feedforward"): 7,
-    ("kstrl/config_keys.py", "setpoint"): 2,
+    ("kstrl/config/config_keys.py", "feedforward"): 7,
+    ("kstrl/config/config_keys.py", "setpoint"): 2,
     # The one data value with a read-side alias: the old finding category,
     # named once so Finding.from_dict can recognise and translate it.
     ("kstrl/findings.py", "setpoint"): 1,

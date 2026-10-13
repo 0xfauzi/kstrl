@@ -18,7 +18,7 @@ from kstrl.cli_report import _render_safe_mode
 from kstrl.cli_seam import _autonomy_ui, _load_manifest_or_exit, cli
 from kstrl.config_report import UI_MODES
 from kstrl.serve_launchd import LAUNCHD_MODES
-from kstrl.ui.base import UI
+from kstrl.ui import UI
 
 
 @cli.group(name="signals")
@@ -109,8 +109,8 @@ def signals_poll(
 @_signals_no_color_option
 def signals_ls(root: Path | None, ui: str, no_color: bool) -> None:
     """Print the signal ledger, oldest first."""
+    from kstrl.io import CONTROL_SIGNALS, control_file
     from kstrl.signals import read_ledger
-    from kstrl.statedir import CONTROL_SIGNALS, control_file
 
     root_dir = (root or Path.cwd()).resolve()
     ui_impl = _autonomy_ui(ui, no_color)

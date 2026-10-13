@@ -46,7 +46,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from kstrl.jsonread import read_json
+from kstrl.io import read_json
 
 #: What ``load_baseline`` puts in ``Baseline.timestamp`` when the file
 #: carries no ``timestamp`` key. A FILL-IN, not an identity: every such

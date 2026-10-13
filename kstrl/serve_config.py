@@ -9,8 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from kstrl.config_numbers import check_numbers
-from kstrl.config_section import ConfigSection
+from kstrl.config import ConfigSection, check_numbers
 
 
 class ServeError(RuntimeError):

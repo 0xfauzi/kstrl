@@ -36,9 +36,9 @@ from kstrl.decompose import decompose_spec
 from kstrl.decompose_audit import SpecBlockerError
 from kstrl.evolution import EvolutionJournal
 from kstrl.evolution_config import EvolutionConfig
+from kstrl.io.statedir import plan_prd_path
 from kstrl.journal_rows import SPEC_ISSUES_EVENT
 from kstrl.prd import PRD
-from kstrl.statedir import plan_prd_path
 from kstrl.ui.plain import PlainUI
 from tests.helpers.architect_payload import traced
 from tests.helpers.before_spend import no_base_check

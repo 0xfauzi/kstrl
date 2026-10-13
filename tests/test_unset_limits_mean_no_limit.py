@@ -34,13 +34,13 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl import git_base
 from kstrl import loop as loop_mod
-from kstrl.config import KstrlConfig
+from kstrl.config.config import KstrlConfig
 from kstrl.contract import ContractConfig, run_contract_testing
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult
+from kstrl.git import git_base
 from kstrl.knowledge_distill import distill_facts
 from kstrl.knowledge_facts import KnowledgeConfig
 from kstrl.loop import COMPLETION_MARKER, LoopResult, run_loop
@@ -505,7 +505,7 @@ def _factory_run(root: Path, config: FactoryConfig, usage: UsageTotals | None) -
     buffer = io.StringIO()
     with (
         patch("kstrl.factory._run_component", return_value=success),
-        patch("kstrl.git_diff.get_diff_content", return_value=""),
+        patch("kstrl.git.git_diff.get_diff_content", return_value=""),
     ):
         result = run_factory(manifest, config, base, PlainUI(no_color=True, file=buffer), root)
     comp = manifest.get_component("comp-a")

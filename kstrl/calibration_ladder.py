@@ -38,8 +38,8 @@ from kstrl.autonomy_config import AutonomyConfig
 from kstrl.autonomy_transitions import apply_demotion
 from kstrl.calibration_baseline import UNKNOWN_TIMESTAMP
 from kstrl.inbox import Inbox, InboxConfig, ItemKind
-from kstrl.statedir import ControlStateError
-from kstrl.ui.plain import PlainUI
+from kstrl.io import ControlStateError
+from kstrl.ui import PlainUI
 
 if TYPE_CHECKING:
     from pathlib import Path

@@ -1,4 +1,4 @@
-A ring shows a part's iterations: one segment per iteration, up to the part's limit (kstrl's `[run] max_iterations`, default 10, `kstrl/config.py`). Finished iterations are `text-3`, the running one `work`, the rest `selected`. The count sits beside it (`8/10`).
+A ring shows a part's iterations: one segment per iteration, up to the part's limit (kstrl's `[run] max_iterations`, default 10, `kstrl/config/config.py`). Finished iterations are `text-3`, the running one `work`, the rest `selected`. The count sits beside it (`8/10`).
 
 **Markup**: drawn by the helper (`ring(done, total, size, stroke, running, label)`): a track, a done arc and a running arc, cut into segments by a mask. With a `label` the ring is `role="img"` and says "Iteration 8 of up to 10"; without one it is hidden from assistive technology and the count beside it says the same.
 

@@ -8,8 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from kstrl.config_numbers import check_numbers
-from kstrl.config_section import ConfigSection
+from kstrl.config import ConfigSection, check_numbers
 from kstrl.findings import Finding
 from kstrl.rung import Rung
 from kstrl.stack import Stack, stack_in_force

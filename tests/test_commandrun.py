@@ -9,7 +9,7 @@ from typing import Any
 from kstrl import event_catalog
 from kstrl import events as ev
 from kstrl.commandrun import CommandRun, open_command_run
-from kstrl.runid import run_kind
+from kstrl.io.runid import run_kind
 from kstrl.ui.bridge import EventBridgeUI, NullPrompter
 from kstrl.ui.plain import PlainUI
 

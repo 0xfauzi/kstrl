@@ -36,7 +36,7 @@ What this file protects against:
    assignment at any nesting depth whose name ends in ``_PROMPT`` and
    whose right-hand side is a string or f-string. It is therefore blind
    to a body never bound to such a name, which is how two reviewer-facing
-   blocks in ``kstrl/git.py`` shipped unversioned until #299. Hoisting
+   blocks in ``kstrl/git/git.py`` shipped unversioned until #299. Hoisting
    such text to an enrolled constant is the rule; see H3-NOTE for what
    that leaves uncovered.
 
@@ -97,7 +97,6 @@ from kstrl import (
     acceptance_design,
     decisions,
     decompose_prompt,
-    git_diff,
     intake_issue,
     knowledge_distill,
     owner_answers,
@@ -121,7 +120,8 @@ from kstrl.decompose_prompt import (
     DECOMPOSE_PROMPT,
     DECOMPOSE_PROMPT_VERSION,
 )
-from kstrl.git_diff import (
+from kstrl.git import git_diff
+from kstrl.git.git_diff import (
     PASTED_CHANGE_SOURCE_PROMPT,
     PASTED_CHANGE_SOURCE_PROMPT_VERSION,
     REPO_CHANGE_SOURCE_PROMPT,
@@ -269,7 +269,7 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     ),
     # 1.0.0 (#199): opens the series. Never shipped before this PR. Same
     # split, and the same reason, as REPO_CHANGE_SOURCE_PROMPT /
-    # PASTED_CHANGE_SOURCE_PROMPT in kstrl/git.py: the architect runs
+    # PASTED_CHANGE_SOURCE_PROMPT in kstrl/git/git.py: the architect runs
     # with cwd=root_dir, so it is told to read the tree rather than
     # handed a paste.
     "ARCHITECT_REPO_SOURCE_PROMPT": (
@@ -668,7 +668,7 @@ def test_the_real_enrolled_body_renders(name: str, tmp_path: Path) -> None:
     This also carries the cost of #299's own change. Both change-source
     bodies were f-strings before it and are ``.format()`` templates
     after, which demotes an unbalanced or stray brace from a SyntaxError
-    at ``import kstrl.git`` to a KeyError or ValueError at call time. A
+    at ``import kstrl.git.git`` to a KeyError or ValueError at call time. A
     prompt body asking for JSON output is exactly where a stray brace
     appears. This test is what puts that error back in the suite."""
     _module, render = _RENDERERS[name]

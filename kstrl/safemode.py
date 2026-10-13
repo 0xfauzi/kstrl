@@ -108,7 +108,7 @@ def _reason(source: str, detail: str) -> SafeModeReason:
 
 
 def _control_dir_reasons(root_dir: Path) -> list[SafeModeReason]:
-    from kstrl.statedir import control_untrusted_reason
+    from kstrl.io import control_untrusted_reason
 
     untrusted = control_untrusted_reason(root_dir)
     return [_reason("control_dir", untrusted)] if untrusted else []
@@ -117,7 +117,7 @@ def _control_dir_reasons(root_dir: Path) -> list[SafeModeReason]:
 def _autonomy_reasons(root_dir: Path) -> list[SafeModeReason]:
     from kstrl.autonomy import AutonomyState
     from kstrl.autonomy_config import AutonomyConfig, resolve_runtime_level
-    from kstrl.config_resolve import environ_lock
+    from kstrl.config import environ_lock
     from kstrl.policy import PolicyConfig
 
     # These loaders read KSTRL_AUTONOMY_* and KSTRL_POLICY_*. A thread
@@ -162,7 +162,7 @@ def _autonomy_reasons(root_dir: Path) -> list[SafeModeReason]:
 
 
 def _queue_reasons(root_dir: Path) -> list[SafeModeReason]:
-    from kstrl.config_resolve import environ_lock
+    from kstrl.config import environ_lock
     from kstrl.workqueue import Queue
     from kstrl.workqueue_items import QueueConfig
 
@@ -259,8 +259,8 @@ def _report_for_run(run_dir: Path) -> tuple[list[SafeModeReason], bool]:
 
 
 def _adversarial_reasons(root_dir: Path) -> list[SafeModeReason]:
+    from kstrl.io import run_kind
     from kstrl.reducer import run_dirs_newest_first
-    from kstrl.runid import run_kind
 
     # Only a factory run drives the phase chain, so only a factory run
     # can skip an adversarial gate. Without this filter a `ks decompose`
@@ -326,7 +326,7 @@ def safe_mode_reasons(root_dir: Path) -> list[SafeModeReason]:
     try:
         # Create the control directory FIRST, so every reader below sees
         # the same control state.
-        from kstrl.statedir import ensure_control_state
+        from kstrl.io import ensure_control_state
 
         ensure_control_state(root_dir)
     except OSError:

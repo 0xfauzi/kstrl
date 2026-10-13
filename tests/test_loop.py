@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.config import KstrlConfig
+from kstrl.config.config import KstrlConfig
 from kstrl.events import EventBus
 from kstrl.loop import COMPLETION_MARKER, run_loop
 from kstrl.ui.plain import PlainUI

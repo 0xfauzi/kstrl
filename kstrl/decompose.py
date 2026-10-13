@@ -77,7 +77,7 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from kstrl.factory_lock import RunLock
-    from kstrl.ui.base import UI
+    from kstrl.ui import UI
 
 
 def _report_architect_usage(

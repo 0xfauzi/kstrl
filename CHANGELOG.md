@@ -658,7 +658,7 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   telemetry lost the row after it. A tail that lost only its terminator
   is worse than a fragment, because the append destroys a whole record
   as well as the new one: measured, two records for one interrupted
-  write. Every appender now writes through `kstrl/appendio.py`, which
+  write. Every appender now writes through `kstrl/io/appendio.py`, which
   probes the tail through the same file description it appends with and
   repairs it in one write.
 

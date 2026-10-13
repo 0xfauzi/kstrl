@@ -35,7 +35,7 @@ from kstrl.decompose_audit import SpecBlockerError
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_lock import RunLock
-from kstrl.git_base import resolve_base_branch
+from kstrl.git import resolve_base_branch
 from kstrl.interaction import PromptKind, PromptRequest, UiInteractionChannel
 from kstrl.launch_record import replayable_flags
 from kstrl.manifest import Manifest

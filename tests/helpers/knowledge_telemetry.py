@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from kstrl.jsonread import read_json
+from kstrl.io.jsonread import read_json
 from kstrl.knowledge import _E8_TELEMETRY_RELATIVE_PATH
 
 

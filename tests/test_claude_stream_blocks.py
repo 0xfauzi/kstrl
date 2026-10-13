@@ -35,7 +35,7 @@ from kstrl.agents.base import TOOL_RESULT_PREFIX, model_output_text
 from kstrl.agents.claude_code import ClaudeCodeAgent, _parse_stream_event
 from kstrl.agents.claude_sdk import ClaudeSdkAgent
 from kstrl.agents.logging import LoggingAgent
-from kstrl.config import KstrlConfig
+from kstrl.config.config import KstrlConfig
 from kstrl.loop import COMPLETION_MARKER, run_loop
 from kstrl.sandbox import SandboxConfig
 from kstrl.timeout import TimeoutConfig

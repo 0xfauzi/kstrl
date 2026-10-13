@@ -34,7 +34,7 @@ from typing import Any
 import pytest
 
 from kstrl.acceptance import BASE_NOT_RUNNABLE, HEAD_RUNS
-from kstrl.statedir import control_dir
+from kstrl.io.statedir import control_dir
 from tests.helpers.executables import write_executable
 from tests.helpers.gitrepo import git_in
 from tests.helpers.stack_confirmation import confirm_stack

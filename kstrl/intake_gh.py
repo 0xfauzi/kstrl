@@ -10,10 +10,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from kstrl.config import parse_paths
-from kstrl.config_numbers import SIGNED, check_numbers
-from kstrl.config_section import ConfigSection
-from kstrl.jsonread import read_json
+from kstrl.config import SIGNED, ConfigSection, check_numbers, parse_paths
+from kstrl.io import read_json
 from kstrl.workqueue_items import ItemSource, QueueItem
 
 

@@ -41,7 +41,7 @@ from tests.helpers import astwalk
 
 INBOX = "kstrl.inbox.Inbox"
 INBOX_CONFIG_LOAD = "kstrl.inbox.InboxConfig.load"
-CONTROL_ERROR = "kstrl.statedir.ControlStateError"
+CONTROL_ERROR = "kstrl.io.statedir.ControlStateError"
 
 #: Every method of ``Inbox`` that appends and therefore takes the control
 #: lock. ``_decide`` is the shared body behind four of them,
@@ -556,7 +556,7 @@ class TestTheTwoWaysASiteClears:
     def _site(handler: str) -> tuple[ast.AST, ast.Call, astwalk.Bindings]:
         source = (
             "from kstrl.inbox import Inbox, InboxConfig\n"
-            "from kstrl.statedir import ControlStateError\n"
+            "from kstrl.io.statedir import ControlStateError\n"
             "def emit(root):\n"
             "    try:\n"
             "        box = Inbox(root, InboxConfig.load(root))\n"

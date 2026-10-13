@@ -26,8 +26,8 @@ import pytest
 from kstrl.decompose import decompose_spec
 from kstrl.decompose_audit import SpecBlockerError
 from kstrl.inbox import Inbox, InboxItem, ItemKind, ItemStatus
+from kstrl.io.statedir import ControlStateError
 from kstrl.manifest import Manifest
-from kstrl.statedir import ControlStateError
 from kstrl.ui.plain import PlainUI
 from tests.helpers import astwalk
 from tests.helpers.before_spend import no_base_check

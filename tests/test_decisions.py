@@ -251,7 +251,7 @@ def _one_component_manifest(project: str, spec_file: str) -> Any:
 
 
 def _factory_inputs(root: Path) -> tuple[Any, Any, Any]:
-    from kstrl.config import KstrlConfig
+    from kstrl.config.config import KstrlConfig
     from kstrl.factory_config import FactoryConfig
     from kstrl.ui.plain import PlainUI
     from kstrl.verify_model import VerifyConfig
@@ -365,7 +365,7 @@ class TestTheSchedulerActuallyInjectsIt:
         config, base, ui = _factory_inputs(root)
         with (
             patch("kstrl.factory._run_component", side_effect=capture),
-            patch("kstrl.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             run_factory(manifest, config, base, ui, root)
 
@@ -417,7 +417,7 @@ class TestTheSchedulerActuallyInjectsIt:
 
         with (
             patch("kstrl.factory._run_component", side_effect=capture),
-            patch("kstrl.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             result = run_factory(manifest, config, base, ui, root)
         assert result.exit_code == 2

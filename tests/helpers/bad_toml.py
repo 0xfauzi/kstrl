@@ -29,7 +29,7 @@ import sys
 
 import pytest
 
-from kstrl.config import UNPARSEABLE_TOML_MESSAGE
+from kstrl.config.config import UNPARSEABLE_TOML_MESSAGE
 
 #: Syntactically broken: an unterminated table header. Raises
 #: ``tomllib.TOMLDecodeError``, which carries a line and column.

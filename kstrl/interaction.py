@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
     from kstrl.findings import Finding
-    from kstrl.ui.base import UI
+    from kstrl.ui import UI
     from kstrl.usage import UsageTotals
 
 

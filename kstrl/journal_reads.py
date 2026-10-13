@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from kstrl.appendio import JOURNAL_REPAIR_EVENT
 from kstrl.evolution_config import EvolutionConfig
 from kstrl.experiments_tsv import experiment_rows
 from kstrl.failure_signatures import (
@@ -13,6 +12,7 @@ from kstrl.failure_signatures import (
     category_for_check,
     split_signature,
 )
+from kstrl.io import JOURNAL_REPAIR_EVENT
 from kstrl.journal_rows import (
     SPEC_ISSUES_EVENT,
     IterationReading,

@@ -13,7 +13,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, Final
 
-from kstrl.appendio import JOURNAL_REPAIR_EVENT
+from kstrl.io import JOURNAL_REPAIR_EVENT
 
 SCHEMA_VERSION: Final = 2
 

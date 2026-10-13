@@ -25,8 +25,8 @@ from typing import Any
 
 import pytest
 
+from kstrl.io.statedir import pre_run_prd_path
 from kstrl.manifest import Component, Manifest
-from kstrl.statedir import pre_run_prd_path
 from tests.helpers.astwalk import (
     assert_census,
     blind_spot,
@@ -205,8 +205,11 @@ EXPECTED_PLAN_PRD_PATH_SPELLINGS = {
     "decompose_plan.py::_write_component_prds": 1,
     "decompose_reply.py::<module>": 1,
     "decompose_reply.py::_generate_component_prd": 1,
-    "statedir.py::<module>": 1,
-    "statedir.py::pre_run_prd_path": 1,
+    # #863 M1: the package interface re-exports the name (the import and
+    # the __all__ entry). It is the same function, not a new reader.
+    "io/__init__.py::<module>": 2,
+    "io/statedir.py::<module>": 1,
+    "io/statedir.py::pre_run_prd_path": 1,
 }
 
 #: Every expression in ``kstrl/`` folding to the directory name ``plan``:
@@ -215,8 +218,8 @@ EXPECTED_PLAN_PRD_PATH_SPELLINGS = {
 EXPECTED_PLAN_LITERALS = {
     # #602: PLAN_KIND, the plan gate's checkpoint event kind. Not a path.
     "plan_gate.py::<module>": 1,
-    "statedir.py::<module>": 2,
-    "statedir.py::plan_prd_path": 1,
+    "io/statedir.py::<module>": 2,
+    "io/statedir.py::plan_prd_path": 1,
 }
 
 
@@ -225,7 +228,7 @@ def test_only_pre_run_prd_path_and_the_writers_name_the_planned_copy() -> None:
         sources=package_sources(),
         sees=spells("plan_prd_path"),
         expected=EXPECTED_PLAN_PRD_PATH_SPELLINGS,
-        control="from kstrl.statedir import plan_prd_path\nplan_prd_path(r, c, plan_id=p)\n",
+        control="from kstrl.io.statedir import plan_prd_path\nplan_prd_path(r, c, plan_id=p)\n",
         message=(
             "a new module or function names plan_prd_path. Read the planned copy "
             "through statedir.pre_run_prd_path, which takes the component's plan id."

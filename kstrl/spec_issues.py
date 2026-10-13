@@ -10,14 +10,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl.atomicio import atomic_write_json
 from kstrl.decisions import DISPOSITION_ESCALATED, DISPOSITION_ORDER, SpecDecision
 from kstrl.evolution import EvolutionJournal
 from kstrl.evolution_config import EvolutionConfig
+from kstrl.io import atomic_write_json
 from kstrl.journal_rows import SPEC_ISSUES_EVENT
 
 if TYPE_CHECKING:
-    from kstrl.ui.base import UI
+    from kstrl.ui import UI
 
 
 # What ``appliesTo`` says about a routed spec finding (#260). The

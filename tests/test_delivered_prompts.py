@@ -83,7 +83,6 @@ from kstrl import (
     acceptance_design,
     decompose,
     decompose_prompt,
-    git_diff,
     init_cmd,
     integration,
     knowledge_distill,
@@ -93,6 +92,7 @@ from kstrl import (
     security,
 )
 from kstrl.decisions import SpecDecision, build_decisions_context
+from kstrl.git import git_diff
 from kstrl.inbox import Inbox, InboxItem, ItemKind, ItemStatus
 from kstrl.init_cmd import run_init
 from kstrl.intake_issue import RemoteIssue, spec_from_issue
@@ -206,7 +206,7 @@ _REQUIREMENTS = (
 
 #: Every module that reads ``generate_data_delimiter`` at prompt-build
 #: time. Each imported the NAME, so the binding to replace is the one in
-#: the consuming module, not the one in ``kstrl.delimiters``.
+#: the consuming module, not the one in ``kstrl.io.delimiters``.
 _DELIMITER_CONSUMERS: tuple[ModuleType, ...] = (
     acceptance_design,
     decompose_prompt,

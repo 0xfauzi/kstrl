@@ -35,8 +35,9 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import git_diff, git_tree, guards
+from kstrl import guards
 from kstrl.breaker import BreakerConfig, NoProgressBreaker
+from kstrl.git import git_diff, git_tree
 from kstrl.ui import PlainUI
 from tests.helpers import gitrepo
 from tests.helpers.astwalk import (
@@ -185,15 +186,15 @@ def package_argvs() -> list[Argv]:
 EXPECTED_WITH_Z: tuple[str, ...] = (
     "breaker.py git status --porcelain -uall -z",
     "factory_worktrees.py git worktree list --porcelain -z",
-    "git_diff.py git diff --name-status -z -M -C ? --",
-    "git_diff.py git diff --numstat -z ? --",
-    "git_tree.py git diff --name-only --cached -z",
-    "git_tree.py git diff --name-only -z",
-    "git_tree.py git diff --name-status -z ? --",
-    "git_tree.py git ls-files --cached --others --exclude-standard -z",
-    "git_tree.py git ls-files --others --exclude-standard -z",
-    "git_tree.py git ls-tree -r --name-only -z ?",
-    "git_tree.py git status --porcelain --untracked-files=all -z",
+    "git/git_diff.py git diff --name-status -z -M -C ? --",
+    "git/git_diff.py git diff --numstat -z ? --",
+    "git/git_tree.py git diff --name-only --cached -z",
+    "git/git_tree.py git diff --name-only -z",
+    "git/git_tree.py git diff --name-status -z ? --",
+    "git/git_tree.py git ls-files --cached --others --exclude-standard -z",
+    "git/git_tree.py git ls-files --others --exclude-standard -z",
+    "git/git_tree.py git ls-tree -r --name-only -z ?",
+    "git/git_tree.py git status --porcelain --untracked-files=all -z",
 )
 
 EXPECTED_WITHOUT_Z: tuple[str, ...] = (
@@ -206,16 +207,16 @@ EXPECTED_WITHOUT_Z: tuple[str, ...] = (
     "doctor.py git check-ignore -q -- ?",
     # get_diff_content(as_stored=True) (#695): a unified diff, like the row
     # below, with every changed byte in it; the same reason holds.
-    "git_diff.py git diff --text --no-textconv --no-ext-diff --no-color --dst-prefix=b/ ? --",
+    "git/git_diff.py git diff --text --no-textconv --no-ext-diff --no-color --dst-prefix=b/ ? --",
     # get_diff_content: a unified diff cannot be NUL-separated. Measured,
     # `git diff -z HEAD` still C-quotes a non-ASCII header path (café.py
     # renders as a quoted octal escape); the headers are unquoted
     # downstream by policy.unquote_diff_path, pinned by
     # tests/test_diff_path_quoting.py.
-    "git_diff.py git diff ? --",
+    "git/git_diff.py git diff ? --",
     # git_tree.is_file_tracked names no encoding= on this spawn, so it runs in
     # BYTES mode and reads only result.returncode == 0. No path decoded.
-    "git_tree.py git ls-files --error-unmatch -- ?",
+    "git/git_tree.py git ls-files --error-unmatch -- ?",
 )
 
 EXPECTED_UNDECIDED: tuple[str, ...] = (
@@ -225,7 +226,7 @@ EXPECTED_UNDECIDED: tuple[str, ...] = (
     # Carries *_BASE_BRANCH_REFS, so it is splat-undecided. It prints REF
     # names, not paths, but the splat is what puts it here and the splat
     # is what is pinned.
-    "git_base.py git for-each-ref --format=%(refname)%09%(symref) ? ?",
+    "git/git_base.py git for-each-ref --format=%(refname)%09%(symref) ? ?",
 )
 
 EXPECTED_GIT_ARGVS: dict[str, int] = {
@@ -247,43 +248,43 @@ EXPECTED_GIT_ARGVS: dict[str, int] = {
     "factory_worktrees.py git worktree list --porcelain -z": 1,
     "factory_worktrees.py git worktree prune": 1,
     "factory_worktrees.py git worktree remove --force ?": 3,
-    "git.py git checkout -b ?": 1,
-    "git.py git checkout ? --": 1,
-    "git.py git config --get remote.origin.url": 1,
-    "git_tree.py git diff --name-only --cached -z": 1,
-    "git_tree.py git diff --name-only -z": 1,
-    "git_diff.py git diff --name-status -z -M -C ? --": 1,
-    "git_tree.py git diff --name-status -z ? --": 1,
-    "git_diff.py git diff --numstat -z ? --": 1,
-    "git_diff.py git diff ? --": 1,
-    "git_diff.py git diff --text --no-textconv --no-ext-diff --no-color --dst-prefix=b/ ? --": 1,
-    "git_base.py git fetch -- origin ?": 1,
-    "git_base.py git for-each-ref --format=%(refname)%09%(symref) ? ?": 1,
-    "git_tree.py git ls-files --cached --others --exclude-standard -z": 1,
-    "git_tree.py git ls-files --error-unmatch -- ?": 1,
-    "git_tree.py git ls-files --others --exclude-standard -z": 1,
-    "git_tree.py git ls-tree -r --name-only -z ?": 1,
+    "git/git.py git checkout -b ?": 1,
+    "git/git.py git checkout ? --": 1,
+    "git/git.py git config --get remote.origin.url": 1,
+    "git/git_tree.py git diff --name-only --cached -z": 1,
+    "git/git_tree.py git diff --name-only -z": 1,
+    "git/git_diff.py git diff --name-status -z -M -C ? --": 1,
+    "git/git_tree.py git diff --name-status -z ? --": 1,
+    "git/git_diff.py git diff --numstat -z ? --": 1,
+    "git/git_diff.py git diff ? --": 1,
+    "git/git_diff.py git diff --text --no-textconv --no-ext-diff --no-color --dst-prefix=b/ ? --": 1,  # noqa: E501
+    "git/git_base.py git fetch -- origin ?": 1,
+    "git/git_base.py git for-each-ref --format=%(refname)%09%(symref) ? ?": 1,
+    "git/git_tree.py git ls-files --cached --others --exclude-standard -z": 1,
+    "git/git_tree.py git ls-files --error-unmatch -- ?": 1,
+    "git/git_tree.py git ls-files --others --exclude-standard -z": 1,
+    "git/git_tree.py git ls-tree -r --name-only -z ?": 1,
     # #696: git_tree.status_entries, what a [stack]'s checks left in a worktree.
-    "git_tree.py git status --porcelain --untracked-files=all -z": 1,
-    "git.py git merge --no-edit -- ?": 1,
-    "git_tree.py git restore --staged --worktree -- ?": 1,
-    "git_tree.py git restore ? --staged --worktree -- ?": 1,
-    "git.py git rev-parse --abbrev-ref HEAD": 1,
-    "git.py git rev-parse --is-inside-work-tree": 1,
-    "git.py git rev-parse --git-common-dir": 1,
-    "git.py git rev-parse --path-format=absolute --git-dir --git-common-dir": 1,
-    "git.py git rev-parse --verify --quiet ?": 1,
-    "git_base.py git rev-parse --verify --quiet ?": 2,
-    "git.py git rev-parse --verify --quiet HEAD": 1,
-    "git_tree.py git rm --cached --ignore-unmatch -q -- ?": 1,
-    "git.py git show-ref --verify --quiet ?": 1,
+    "git/git_tree.py git status --porcelain --untracked-files=all -z": 1,
+    "git/git.py git merge --no-edit -- ?": 1,
+    "git/git_tree.py git restore --staged --worktree -- ?": 1,
+    "git/git_tree.py git restore ? --staged --worktree -- ?": 1,
+    "git/git.py git rev-parse --abbrev-ref HEAD": 1,
+    "git/git.py git rev-parse --is-inside-work-tree": 1,
+    "git/git.py git rev-parse --git-common-dir": 1,
+    "git/git.py git rev-parse --path-format=absolute --git-dir --git-common-dir": 1,
+    "git/git.py git rev-parse --verify --quiet ?": 1,
+    "git/git_base.py git rev-parse --verify --quiet ?": 2,
+    "git/git.py git rev-parse --verify --quiet HEAD": 1,
+    "git/git_tree.py git rm --cached --ignore-unmatch -q -- ?": 1,
+    "git/git.py git show-ref --verify --quiet ?": 1,
     "pr.py git push --delete -- origin ?": 2,
     "pr.py git push -u -- origin ?": 1,
     "retry_plan.py git branch -D ?": 1,
     "retry_plan.py git rev-parse --verify --quiet ?": 1,
     "retry_plan.py git worktree prune": 1,
     "retry_plan.py git worktree remove --force ?": 1,
-    "statedir.py git -C ? remote get-url origin": 1,
+    "io/statedir.py git -C ? remote get-url origin": 1,
     "temp_worktree.py git worktree add --detach ? ?": 1,
     "temp_worktree.py git worktree prune": 1,
     "temp_worktree.py git worktree remove --force ?": 1,
@@ -292,9 +293,9 @@ EXPECTED_GIT_ARGVS: dict[str, int] = {
     # EXPECTED_WITH_Z / EXPECTED_WITHOUT_Z / EXPECTED_UNDECIDED: `git
     # merge-base <ref> HEAD` prints a commit sha, not a path.
     # #435 fix-round (A0) hoisted the merge-base spawn from `verify.py`
-    # into `kstrl/git.py` as the one owner of the merge-base anchor: the
+    # into `kstrl/git/git.py` as the one owner of the merge-base anchor: the
     # row moves module, count unchanged.
-    "git_base.py git merge-base ? HEAD": 1,
+    "git/git_base.py git merge-base ? HEAD": 1,
 }
 
 

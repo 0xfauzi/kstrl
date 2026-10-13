@@ -61,7 +61,7 @@ defects, each verified against this repository.
 against `root_dir` (`kstrl/evolution.py:288`). `KnowledgeConfig.knowledge_root`
 resolves to `root_dir/.kstrl/knowledge` (`kstrl/knowledge.py:72`). The R8.9 XDG
 relocation keys the control directory by `repo_id(root_dir)`
-(`kstrl/statedir.py:329`), so it moved the silo without removing it.
+(`kstrl/io/statedir.py:329`), so it moved the silo without removing it.
 
 Nothing kstrl learns in one project can reach another project. This is the
 capability the product claims and the capability that does not exist.
@@ -265,7 +265,7 @@ Next factory run, any project
 ```
 
 Store location: a `global` scope sibling to the existing per-repo control
-directory. `kstrl/statedir.py` already provides `xdg_state_home()`, so this
+directory. `kstrl/io/statedir.py` already provides `xdg_state_home()`, so this
 extends an existing mechanism rather than adding one.
 
 Lesson record fields: `id`, `claim`, `evidence` (run ids and failure

@@ -53,15 +53,19 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-from kstrl.appendio import append_records
 from kstrl.event_catalog import PrMerged
 from kstrl.events import parse_event_line
+from kstrl.git import GH_POLL_TIMEOUT
 from kstrl.intake_gh import run_gh
-from kstrl.jsonread import read_json
+from kstrl.io import (
+    CONTROL_CI_CHECKS,
+    append_records,
+    control_file,
+    ensure_control_state,
+    read_json,
+)
 from kstrl.manifest import Manifest
-from kstrl.pr_state import GH_POLL_TIMEOUT
 from kstrl.reducer import run_dirs_newest_first
-from kstrl.statedir import CONTROL_CI_CHECKS, control_file, ensure_control_state
 
 #: Every reason is clipped to this many characters before it reaches the
 #: ledger: a bound on the ledger's size, not a sanitiser.

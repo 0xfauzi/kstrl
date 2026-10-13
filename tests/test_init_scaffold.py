@@ -258,7 +258,7 @@ class TestInitScaffold:
         assert collect_config_problems(tmp_path, lambda _message: None) == []
 
     def test_uncommented_scaffold_loads_through_every_loader(self, tmp_path: Path) -> None:
-        from kstrl.config import KstrlConfig
+        from kstrl.config.config import KstrlConfig
         from kstrl.contract import ContractConfig
         from kstrl.security import SecurityConfig
         from kstrl.timeout import TimeoutConfig

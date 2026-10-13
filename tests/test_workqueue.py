@@ -805,14 +805,14 @@ class TestJournal:
     ) -> None:
         """The directory is the truth; the journal is the narration.
 
-        ``kstrl.appendio.open`` since #331: the journal's open moved
+        ``kstrl.io.appendio.open`` since #331: the journal's open moved
         there when six appenders started sharing it, so patching
         ``kstrl.workqueue``'s global would now intercept nothing and
         this test would assert that a SUCCESSFUL write warns.
         """
         queue = _queue(tmp_path)
         item = _add(queue)
-        with patch("kstrl.appendio.open", side_effect=OSError("read-only")):
+        with patch("kstrl.io.appendio.open", side_effect=OSError("read-only")):
             with pytest.warns(RuntimeWarning, match="journal append failed"):
                 moved = queue.lease(item)
         assert moved.state is ItemState.LEASED

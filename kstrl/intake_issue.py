@@ -12,12 +12,12 @@ from pathlib import Path
 from typing import Any
 
 from kstrl.intake_gh import GitHubIntakeConfig
-from kstrl.jsonread import read_json
-from kstrl.statedir import (
+from kstrl.io import (
     CONTROL_GITHUB_PROCESSED,
     control_file,
     control_lock,
     ensure_control_state,
+    read_json,
 )
 
 #: Cap on the spec text built from an issue. Generous for a real spec,

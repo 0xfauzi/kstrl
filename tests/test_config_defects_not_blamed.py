@@ -26,8 +26,8 @@ from pathlib import Path
 
 import pytest
 
+from kstrl.config.config_resolve import raise_if_defect, resolve_or_report
 from kstrl.config_preflight import collect_config_problems
-from kstrl.config_resolve import raise_if_defect, resolve_or_report
 from kstrl.evolution_config import EVOLUTION_SECTION
 from tests.helpers import astwalk
 
@@ -57,7 +57,7 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     # One bare raise: `_resolve_factory_run_lock` refuses a handed
     # `RunLock` whose own `release()` has already run (#597 fix round).
     "cli_preflight.py": 1,
-    "config_resolve.py": 2,  # the rule itself, and its docstring
+    "config/config_resolve.py": 2,  # the rule itself, and its docstring
     # DecisionRegisterError, added by #332.
     "decisions.py": 1,
     # #632: each refuses to import a table whose rows disagree, a bare raise.
@@ -72,7 +72,7 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     "factory.py": 1,
     "factory_lock.py": 1,
     "factory_worktrees.py": 4,
-    "git.py": 1,
+    "git/git.py": 1,
     "inbox.py": 1,
     # IntakeError (the subclass). #776 I1 moved it out of intake_github.py.
     "intake_gh.py": 1,
@@ -104,7 +104,7 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     # the module that spells RuntimeError. They are still kstrl's, so
     # raise_if_defect still treats them as operator input, and the walk
     # below follows them by subclass rather than by spelling.
-    "statedir.py": 1,
+    "io/statedir.py": 1,
     "temp_worktree.py": 1,
     "workqueue_items.py": 1,
 }

@@ -8,15 +8,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl.atomicio import atomic_write_json
-from kstrl.jsonread import read_json
+from kstrl.io import atomic_write_json, read_json
 from kstrl.manifest import COMPONENT_STATUS_VALUES, ComponentStatus, Manifest
 from kstrl.usage import UsageTotals
 from kstrl.worktree_sweep import WorktreeSweep
 
 if TYPE_CHECKING:
     from kstrl.pipeline import ComponentPipeline
-    from kstrl.ui.base import UI
+    from kstrl.ui import UI
 
 
 @dataclass

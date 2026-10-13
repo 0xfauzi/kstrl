@@ -19,7 +19,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from kstrl.jsonread import read_json
+from kstrl.io import read_json
 
 # Explicit budget for every gh poll in this module (R0.2): a hung gh
 # call previously blocked the factory scheduler forever.

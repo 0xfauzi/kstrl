@@ -5,6 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from kstrl.io import (
+    state_dir,
+)
 from kstrl.manifest import ComponentStatus, Manifest
 from kstrl.observability import read_progress_events
 from kstrl.serve_config import Admission, ServeConfig, ServeObserver
@@ -13,9 +16,6 @@ from kstrl.serve_spend import (
     DailySpend,
     SpendLedger,
     next_local_midnight,
-)
-from kstrl.statedir import (
-    state_dir,
 )
 from kstrl.workqueue import Queue
 from kstrl.workqueue_store import queue_lock

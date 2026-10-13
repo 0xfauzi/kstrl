@@ -82,7 +82,7 @@ class TestFactoryShutdown:
                 "kstrl.factory._run_component",
                 side_effect=fake_component,
             ),
-            patch("kstrl.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             result = run_factory(
                 manifest,
@@ -121,7 +121,7 @@ class TestFactoryShutdown:
                 "kstrl.factory._run_component",
                 side_effect=fake_component,
             ),
-            patch("kstrl.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             run_factory(
                 manifest,
@@ -166,7 +166,7 @@ class TestFactoryShutdown:
                 "kstrl.factory._run_component",
                 side_effect=slow_component,
             ),
-            patch("kstrl.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             result = run_factory(
                 manifest,
@@ -197,7 +197,7 @@ class TestFactoryShutdown:
                 "kstrl.factory._run_component",
                 return_value=result,
             ),
-            patch("kstrl.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             run_factory(
                 manifest,
@@ -214,7 +214,7 @@ class TestFactoryShutdown:
 
 class TestLoopStopCheck:
     def test_stop_between_iterations(self, tmp_path: Path) -> None:
-        from kstrl.config import KstrlConfig
+        from kstrl.config.config import KstrlConfig
         from kstrl.loop import run_loop
 
         class CountingAgent:

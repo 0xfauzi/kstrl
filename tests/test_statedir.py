@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl.statedir import (
+from kstrl.io.statedir import (
     CONTROL_AUTONOMY,
     CONTROL_FILENAMES,
     control_dir,
@@ -72,12 +72,12 @@ class TestNormalizeRemoteUrl:
 class TestRepoId:
     def test_same_origin_forms_share_id(self, repo: Path) -> None:
         with patch(
-            "kstrl.statedir._origin_url",
+            "kstrl.io.statedir._origin_url",
             return_value="https://github.com/acme/widget.git",
         ):
             a = repo_id(repo)
         with patch(
-            "kstrl.statedir._origin_url",
+            "kstrl.io.statedir._origin_url",
             return_value="git@github.com:acme/widget.git",
         ):
             b = repo_id(repo)
@@ -85,7 +85,7 @@ class TestRepoId:
         assert a.startswith("widget-")
 
     def test_path_fallback_when_no_origin(self, repo: Path) -> None:
-        with patch("kstrl.statedir._origin_url", return_value=None):
+        with patch("kstrl.io.statedir._origin_url", return_value=None):
             first = repo_id(repo)
             second = repo_id(repo)
         assert first == second
@@ -95,7 +95,7 @@ class TestRepoId:
 class TestControlDir:
     def test_honors_xdg_state_home(self, repo: Path) -> None:
         xdg = Path(os.environ["XDG_STATE_HOME"]).resolve()
-        with patch("kstrl.statedir._origin_url", return_value=None):
+        with patch("kstrl.io.statedir._origin_url", return_value=None):
             target = control_dir(repo)
         assert target.is_relative_to(xdg)
         assert target.parent.name == "kstrl"
@@ -107,9 +107,9 @@ class TestControlDir:
 
 class TestMigration:
     def test_a_legacy_file_is_refused_by_name_with_the_move_command(self, repo: Path) -> None:
-        from kstrl.statedir import control_untrusted_reason
+        from kstrl.io.statedir import control_untrusted_reason
 
-        with patch("kstrl.statedir._origin_url", return_value=None):
+        with patch("kstrl.io.statedir._origin_url", return_value=None):
             legacy = legacy_control_paths(repo)
             for name, path in legacy.items():
                 path.parent.mkdir(parents=True, exist_ok=True)
@@ -140,10 +140,10 @@ class TestMigration:
         checks for symlinks - without acquiring a former in-tree path that
         ``legacy_control_remaining`` would then look for forever.
         """
-        from kstrl.statedir import CONTROL_PR_COUNT_STREAK
+        from kstrl.io.statedir import CONTROL_PR_COUNT_STREAK
 
         assert CONTROL_PR_COUNT_STREAK in CONTROL_FILENAMES
-        with patch("kstrl.statedir._origin_url", return_value=None):
+        with patch("kstrl.io.statedir._origin_url", return_value=None):
             assert CONTROL_PR_COUNT_STREAK not in legacy_control_paths(repo)
             path = control_file(repo, CONTROL_PR_COUNT_STREAK)
             assert path.parent == control_dir(repo)
@@ -153,7 +153,7 @@ class TestMigration:
         from kstrl.inbox import Inbox
 
         xdg = Path(os.environ["XDG_STATE_HOME"])
-        with patch("kstrl.statedir._origin_url", return_value=None):
+        with patch("kstrl.io.statedir._origin_url", return_value=None):
             ensure_control_state(repo)
             AutonomyState(level=2).save(repo)
             assert AutonomyState.path_for(repo).is_relative_to(xdg)
@@ -163,12 +163,12 @@ class TestMigration:
 
 class TestControlIsExternal:
     def test_true_after_clean_ensure(self, repo: Path) -> None:
-        with patch("kstrl.statedir._origin_url", return_value=None):
+        with patch("kstrl.io.statedir._origin_url", return_value=None):
             ensure_control_state(repo)
             assert control_is_external(repo) is True
 
     def test_false_while_legacy_remains(self, repo: Path) -> None:
-        with patch("kstrl.statedir._origin_url", return_value=None):
+        with patch("kstrl.io.statedir._origin_url", return_value=None):
             ensure_control_state(repo)
             leftover = legacy_control_paths(repo)[CONTROL_AUTONOMY]
             leftover.parent.mkdir(parents=True, exist_ok=True)
@@ -183,7 +183,7 @@ class TestControlIsExternal:
         nested = repo / "nested-xdg"
         nested.mkdir()
         monkeypatch.setenv("XDG_STATE_HOME", str(nested))
-        with patch("kstrl.statedir._origin_url", return_value=None):
+        with patch("kstrl.io.statedir._origin_url", return_value=None):
             ensure_control_state(repo)
             assert control_is_external(repo) is False
 
@@ -194,7 +194,7 @@ class TestPauseFailClosed:
         repo: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        with patch("kstrl.statedir._origin_url", return_value=None):
+        with patch("kstrl.io.statedir._origin_url", return_value=None):
             ensure_control_state(repo)
             monkeypatch.setattr(
                 "kstrl.workqueue_store.control_untrusted_reason",
@@ -206,7 +206,7 @@ class TestPauseFailClosed:
             assert "inaccessible" in state.reason
 
     def test_missing_pause_marker_is_running(self, repo: Path) -> None:
-        with patch("kstrl.statedir._origin_url", return_value=None):
+        with patch("kstrl.io.statedir._origin_url", return_value=None):
             ensure_control_state(repo)
             assert control_dir_accessible(repo)
             queue = Queue(repo)
@@ -225,7 +225,7 @@ class TestAutonomyL3Gate:
         nested = repo / "nested-xdg"
         nested.mkdir()
         monkeypatch.setenv("XDG_STATE_HOME", str(nested))
-        with patch("kstrl.statedir._origin_url", return_value=None):
+        with patch("kstrl.io.statedir._origin_url", return_value=None):
             state = AutonomyState(level=int(AutonomyLevel.L3_ENVELOPED_AUTO))
             level, notes = resolve_runtime_level(
                 state,
@@ -247,7 +247,7 @@ class TestAutonomyL3Gate:
         nested = repo / "nested-xdg"
         nested.mkdir()
         monkeypatch.setenv("XDG_STATE_HOME", str(nested))
-        with patch("kstrl.statedir._origin_url", return_value=None):
+        with patch("kstrl.io.statedir._origin_url", return_value=None):
             err = control_relocation_error(
                 repo,
                 target_level=AutonomyLevel.L3_ENVELOPED_AUTO,
@@ -266,7 +266,7 @@ class TestAutonomyL3Gate:
         from kstrl.autonomy import AutonomyLevel, AutonomyState
         from kstrl.autonomy_config import AutonomyConfig, resolve_runtime_level
 
-        with patch("kstrl.statedir._origin_url", return_value=None):
+        with patch("kstrl.io.statedir._origin_url", return_value=None):
             ensure_control_state(repo)
             state = AutonomyState(level=int(AutonomyLevel.L3_ENVELOPED_AUTO))
             level, notes = resolve_runtime_level(
@@ -289,7 +289,7 @@ class TestLegacyHaltPaths:
             ".kstrl/queue/spend.json",
             ".kstrl/queue/pause.json",
             ".kstrl/queue/github_processed.json",
-            "**/kstrl/statedir.py",
+            "**/kstrl/io/statedir.py",
             # #776 L10: the verifier and the autonomy ladder were divided
             # into modules. A diff that edits the moved code must halt as it
             # did before the move, so each module is a member.
@@ -304,6 +304,23 @@ class TestLegacyHaltPaths:
         }
         for path in expected:
             assert path in ENFORCEMENT_MACHINERY_PATHS
+
+    def test_each_kstrl_machinery_path_names_a_file_of_this_tree(self) -> None:
+        """#863 moves modules into packages. A ``**/kstrl/`` row that names
+        the old path of a moved module matches no file, so the halt for that
+        file stops with no message. The test above compares strings only, and
+        a codemod that rewrites both sides keeps it green. This test reads
+        the tree: each row must name a file that exists, and that file must
+        match its own row."""
+        from kstrl.policy import ENFORCEMENT_MACHINERY_PATHS, match_glob
+
+        root = Path(__file__).resolve().parent.parent
+        rows = [row for row in ENFORCEMENT_MACHINERY_PATHS if row.startswith("**/kstrl/")]
+        assert rows, "no **/kstrl/ row: the walk below examines nothing"
+        for row in rows:
+            rel = row.removeprefix("**/")
+            assert (root / rel).is_file(), f"{row} names no file of this tree"
+            assert match_glob(rel, ENFORCEMENT_MACHINERY_PATHS) == row
 
 
 class TestReviewFailClosed:
@@ -320,9 +337,9 @@ class TestReviewFailClosed:
 
         from kstrl.cli import cli
         from kstrl.inbox import Inbox
-        from kstrl.statedir import CONTROL_INBOX
+        from kstrl.io.statedir import CONTROL_INBOX
 
-        with patch("kstrl.statedir._origin_url", return_value=None):
+        with patch("kstrl.io.statedir._origin_url", return_value=None):
             legacy = legacy_control_paths(repo)[CONTROL_INBOX]
             legacy.parent.mkdir(parents=True, exist_ok=True)
             row = '{"schema_version":1,"id":"a1","kind":"halted_run","title":"t","status":"open"}\n'
@@ -344,10 +361,10 @@ class TestReviewFailClosed:
         self,
         repo: Path,
     ) -> None:
+        from kstrl.io.statedir import CONTROL_PAUSE, CONTROL_SPEND
         from kstrl.serve_spend import ServeStateError, SpendLedger
-        from kstrl.statedir import CONTROL_PAUSE, CONTROL_SPEND
 
-        with patch("kstrl.statedir._origin_url", return_value=None):
+        with patch("kstrl.io.statedir._origin_url", return_value=None):
             legacy = legacy_control_paths(repo)
             legacy[CONTROL_PAUSE].parent.mkdir(parents=True, exist_ok=True)
             legacy[CONTROL_PAUSE].write_text(
@@ -393,7 +410,7 @@ class TestReviewFailClosed:
         monkeypatch.chdir(tmp_path)
         monkeypatch.setenv("XDG_STATE_HOME", str(rel))
         clear_xdg_state_home_cache()
-        with patch("kstrl.statedir._origin_url", return_value=None):
+        with patch("kstrl.io.statedir._origin_url", return_value=None):
             queue = Queue(repo)
             queue.pause(reason="budget")
             assert queue.is_paused()
@@ -403,10 +420,10 @@ class TestReviewFailClosed:
             assert queue.is_paused()
 
     def test_dual_state_fail_closes_pause_and_spend(self, repo: Path) -> None:
+        from kstrl.io.statedir import CONTROL_PAUSE, CONTROL_SPEND, control_file
         from kstrl.serve_spend import ServeStateError, SpendLedger
-        from kstrl.statedir import CONTROL_PAUSE, CONTROL_SPEND, control_file
 
-        with patch("kstrl.statedir._origin_url", return_value=None):
+        with patch("kstrl.io.statedir._origin_url", return_value=None):
             ensure_control_state(repo)
             control_file(repo, CONTROL_PAUSE).write_text(
                 json.dumps({"paused": False, "reason": "", "since": ""}),
@@ -458,9 +475,9 @@ class TestReviewFailClosed:
                 SpendLedger(repo).read_state("2099-01-01")
 
     def test_symlink_control_file_not_external(self, repo: Path) -> None:
-        from kstrl.statedir import CONTROL_AUTONOMY, control_file
+        from kstrl.io.statedir import CONTROL_AUTONOMY, control_file
 
-        with patch("kstrl.statedir._origin_url", return_value=None):
+        with patch("kstrl.io.statedir._origin_url", return_value=None):
             ensure_control_state(repo)
             target = repo / "evil-autonomy.json"
             target.write_text("{}\n", encoding="utf-8")
@@ -474,9 +491,9 @@ class TestReviewFailClosed:
         repo: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from kstrl.statedir import ControlUnavailableError, control_lock
+        from kstrl.io.statedir import ControlUnavailableError, control_lock
 
-        with patch("kstrl.statedir._origin_url", return_value=None):
+        with patch("kstrl.io.statedir._origin_url", return_value=None):
             ensure_control_state(repo)
 
             def boom(self: Path, *args: object, **kwargs: object) -> None:

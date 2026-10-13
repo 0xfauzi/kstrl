@@ -32,8 +32,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from kstrl import git_tree
 from kstrl.agents.proc import TIMEOUT_MESSAGE_PREFIX
+from kstrl.git import git_tree
 from kstrl.integration import (
     ExpectedStory,
     IntegrationOutcome,

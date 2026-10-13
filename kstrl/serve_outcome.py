@@ -9,10 +9,9 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any, Protocol
 
-from kstrl.jsonread import read_json
+from kstrl.io import read_json, state_dir
 from kstrl.manifest import ADVERSARIAL_BUDGET_CHECK, Component, ComponentStatus, Manifest
 from kstrl.serve_config import ServeObserver
-from kstrl.statedir import state_dir
 
 #: Substrings the factory prints on two of its exit-2 refusals.
 #: Matching output is EVIDENCE; a pre-launch lock probe is inference and

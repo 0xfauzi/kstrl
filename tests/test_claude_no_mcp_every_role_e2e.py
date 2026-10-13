@@ -190,7 +190,7 @@ EXPECTED_CLAUDE_SITES = {
     ("agents/sdk_runner.py", "sdk"): 1,
     ("agents/sdk_runner.py", "sdk_call"): 1,
     ("cli_preflight.py", "other"): 1,
-    ("config.py", "other"): 1,
+    ("config/config.py", "other"): 1,
 }
 
 _FUNCTIONS = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)

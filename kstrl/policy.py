@@ -29,8 +29,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 
-from kstrl.config_numbers import SIGNED, check_numbers
-from kstrl.config_section import ConfigSection
+from kstrl.config import SIGNED, ConfigSection, check_numbers
 
 # Enforcement-machinery paths: every lever an agent could pull to weaken
 # the envelope itself. Issue #148 names three surfaces and all three are
@@ -62,7 +61,7 @@ ENFORCEMENT_MACHINERY_PATHS: tuple[str, ...] = (
     "**/kstrl/autonomy.py",
     "**/kstrl/autonomy_config.py",
     "**/kstrl/autonomy_transitions.py",
-    "**/kstrl/statedir.py",
+    "**/kstrl/io/statedir.py",
     "**/kstrl/waivers.py",  # #595: turns an approved item into a waiver
     # R8.2 / R8.9 control-plane state. Live copies live under XDG
     # (outside the tree); these legacy in-tree paths stay in the halt

@@ -24,7 +24,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.config import STRING_KEYS
+from kstrl.config.config import STRING_KEYS
 from tests.helpers import gitrepo
 from tests.helpers.closed_vocabulary import BAD_VALUE, CLOSED, ClosedField
 from tests.helpers.executables import write_executable

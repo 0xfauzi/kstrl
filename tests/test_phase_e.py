@@ -20,7 +20,7 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
-from kstrl.config import KstrlConfig
+from kstrl.config.config import KstrlConfig
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult
@@ -128,7 +128,7 @@ class TestE4BudgetCap:
                 return_value=passing_review,
             ) as mock_review,
             patch(
-                "kstrl.git_diff.get_diff_content",
+                "kstrl.git.git_diff.get_diff_content",
                 return_value="",
             ),
         ):
@@ -202,7 +202,7 @@ class TestE4BudgetCap:
                 return_value=passing_review,
             ) as mock_review,
             patch(
-                "kstrl.git_diff.get_diff_content",
+                "kstrl.git.git_diff.get_diff_content",
                 return_value="",
             ),
         ):
@@ -310,7 +310,7 @@ class TestE6HitlCheckpoint:
                 "kstrl.pr.is_gh_available",
                 return_value=False,
             ),
-            patch("kstrl.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             result = run_factory(
                 manifest,

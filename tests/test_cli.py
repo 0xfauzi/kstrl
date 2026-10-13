@@ -13,7 +13,7 @@ from kstrl.cli import cli
 from kstrl.cli_loop import _run_structural_override_notices
 from kstrl.cli_report import _format_component_status
 from kstrl.factory_config import FactoryConfig
-from kstrl.git_base import BASE_BRANCH_CANDIDATES, detect_base_branch, resolve_base_branch
+from kstrl.git.git_base import BASE_BRANCH_CANDIDATES, detect_base_branch, resolve_base_branch
 from kstrl.init_cmd import gitignore_block
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from tests.helpers import gitrepo
@@ -588,7 +588,7 @@ class TestDetectBaseBranch:
         # starts. One call, one timeout.
         root = _repo_on(tmp_path, "release-2.0")  # the worst case: no candidate hits
 
-        with patch("kstrl.git_base.subprocess.run", wraps=subprocess.run) as run:
+        with patch("kstrl.git.git_base.subprocess.run", wraps=subprocess.run) as run:
             assert detect_base_branch(root) == "main"
 
         assert run.call_count == 1

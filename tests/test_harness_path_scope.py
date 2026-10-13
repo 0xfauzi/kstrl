@@ -36,7 +36,7 @@ import pytest
 
 from kstrl.cli_loop import _understand_core
 from kstrl.commandrun import CommandRun
-from kstrl.config import KstrlConfig, component_harness_paths
+from kstrl.config.config import KstrlConfig, component_harness_paths
 from kstrl.decompose_reply import _SCOPE_HAZARD_ADVICE
 from kstrl.events import EventBus
 from kstrl.factory import run_factory
@@ -597,7 +597,7 @@ class TestPreflightComponentScope:
 
         with (
             patch("kstrl.factory._run_component", side_effect=fake_component),
-            patch("kstrl.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             result = run_factory(
                 _manifest([_component()]),
@@ -651,7 +651,7 @@ class TestStandaloneLoops:
 
         with (
             patch("kstrl.loop.run_loop", side_effect=fake_run_loop),
-            patch("kstrl.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             run_factory(
                 _manifest([_component()]),
