@@ -166,7 +166,7 @@ def budget_halt_reason(root_dir: Path, owned_run_ids: Sequence[str]) -> str:
             continue
         for event in events:
             if isinstance(event, event_catalog.BudgetExceeded):
-                named = ", ".join(event.ceilings) or event.ceiling or "budget"
+                named = ", ".join(event.ceilings)
                 # BudgetExceeded also carries condition="unenforceable",
                 # where NO threshold was crossed - the ceiling simply
                 # cannot fire because nothing reports that axis. Telling
@@ -174,26 +174,32 @@ def budget_halt_reason(root_dir: Path, owned_run_ids: Sequence[str]) -> str:
                 # breach that never happened (#197 M2). Routed through the
                 # shared classifier so this cannot drift from the reducer's
                 # and the Linear sink's reading of the same payload.
-                kind = event_catalog.budget_halt_kind(
-                    event.condition,
-                    event.ceilings,
-                    event.ceiling,
-                )
-                if kind == "unenforceable":
-                    return (
-                        f"the run halted in {run_id} because no configured "
-                        f"ceiling ({named}) can still fire: no metered call "
-                        "reported that axis, so the cap could never stop the "
-                        "spend. Fix the coverage or the configuration - "
-                        "raising a limit would change nothing"
-                    )
-                return (
-                    f"the run halted on a configured ceiling ({named}) in "
-                    f"{run_id}: raising the ceiling or narrowing the spec is "
-                    "a human decision, and retrying would re-run the same "
-                    "work against the same limit at a higher cost"
-                )
+                kind = event_catalog.budget_halt_kind(event.condition, event.ceilings)
+                return _budget_halt_sentence(run_id, kind, named)
     return ""
+
+
+def _budget_halt_sentence(run_id: str, kind: str, named: str) -> str:
+    """The sentence for one budget halt, by the shared classifier's ``kind``."""
+    if kind == "unreadable":
+        return (
+            f"the run halted in {run_id} on a budget record that names no "
+            "ceilings (written before #180), so the cause cannot be read"
+        )
+    if kind == "unenforceable":
+        return (
+            f"the run halted in {run_id} because no configured "
+            f"ceiling ({named}) can still fire: no metered call "
+            "reported that axis, so the cap could never stop the "
+            "spend. Fix the coverage or the configuration - "
+            "raising a limit would change nothing"
+        )
+    return (
+        f"the run halted on a configured ceiling ({named}) in "
+        f"{run_id}: raising the ceiling or narrowing the spec is "
+        "a human decision, and retrying would re-run the same "
+        "work against the same limit at a higher cost"
+    )
 
 
 def _infra_casualty(component: Any) -> bool:

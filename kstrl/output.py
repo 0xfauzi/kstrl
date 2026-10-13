@@ -1,8 +1,8 @@
 """Console assembly: the event-native replacement for get_ui().
 
 Chunk 7 of the TUI rewrite. ``build_console`` replicates ``get_ui``'s
-mode/tty resolution (including the vestigial "gum" alias and
-GUM_FORCE) to pick the concrete UI, then wires:
+mode/tty resolution (including
+KSTRL_UI_FORCE_RICH) to pick the concrete UI, then wires:
 
     call sites -> EventBridgeUI -> EventBus -> CallbackSink
                                        |            |

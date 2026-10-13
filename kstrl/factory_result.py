@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from concurrent.futures import Future
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -262,12 +263,14 @@ def _read_partial_usage(path: Path) -> UsageTotals | None:
     ``unreported_calls``, ``tokenless_calls`` and ``costless_calls`` are
     derived properties and are deliberately not read back.
 
-    Backward compatible on read: ``token_calls`` (added in R8 after the
-    review) and ``cost_calls`` (added with the cost ceiling) are optional
-    and default to 0 when the payload predates them. That under-reports
-    coverage rather than inventing it, and the file is rewritten at the
-    next iteration boundary anyway - it is a per-run, per-attempt scratch
-    file, never a long-lived record.
+    A snapshot without ``token_calls`` or ``cost_calls`` predates the
+    per-axis counts (R8). A warning names the file, and the spend IS
+    recorded with each missing count at 0, so the run total reads as a
+    lower bound (#863). Dropping the snapshot would remove the worker's
+    spend from the meter, and a budget must not read money as zero. The
+    scheduler deletes the slot before each submission
+    (``_clear_partial_usage``), so only this kstrl's writer, which
+    always writes both counts, fills it.
     """
     try:
         data = read_json(path.read_text(encoding="utf-8"))
@@ -275,6 +278,15 @@ def _read_partial_usage(path: Path) -> UsageTotals | None:
         return None
     if not isinstance(data, dict):
         return None
+    missing = [name for name in ("token_calls", "cost_calls") if name not in data]
+    if missing:
+        warnings.warn(
+            f"usage snapshot {path} has no {' or '.join(missing)}, so it was written before "
+            "the per-axis counts existed; the spend of the killed worker is recorded as a "
+            "lower bound",
+            RuntimeWarning,
+            stacklevel=2,
+        )
     totals = UsageTotals()
     int_fields = (
         "calls",

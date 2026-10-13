@@ -144,7 +144,7 @@ def decompose(
 
     root_dir = root.resolve() if root else Path.cwd()
 
-    force_rich = os.environ.get("GUM_FORCE") == "1"
+    force_rich = os.environ.get("KSTRL_UI_FORCE_RICH") == "1"
     ui_impl = _console_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich)
 
     effective_cmd, effective_model, effective_reasoning, effective_type = _agent_settings(
@@ -361,7 +361,7 @@ def retry(
     again with no engineer. The plan says which, and why.
     """
     root_dir = root.resolve() if root else Path.cwd()
-    force_rich = os.environ.get("GUM_FORCE") == "1"
+    force_rich = os.environ.get("KSTRL_UI_FORCE_RICH") == "1"
     ui_impl = _console_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich)
 
     manifest_file = (

@@ -199,15 +199,6 @@ class TestProcessedLedger:
         ledger.path.write_text("{corrupt")
         assert not ProcessedLedger(tmp_path).load().contains(f"{REPO}#1")
 
-    def test_forget_allows_readmission(self, tmp_path: Path) -> None:
-        ledger = ProcessedLedger(tmp_path).load()
-        ledger.record(f"{REPO}#1", item_id="q-1", when="t")
-        assert ledger.forget(f"{REPO}#1")
-        assert not ledger.contains(f"{REPO}#1")
-
-    def test_forget_of_an_unknown_ref_is_false(self, tmp_path: Path) -> None:
-        assert not ProcessedLedger(tmp_path).load().forget("nope#1")
-
 
 # --------------------------------------------------------------------------
 # sync

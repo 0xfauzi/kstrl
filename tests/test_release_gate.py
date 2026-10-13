@@ -70,7 +70,7 @@ def _reachable_process_modules(root_module: str) -> set[str]:
     (which ``ReleaseConfig.load`` genuinely imports) has an unrelated
     FUNCTION-scoped import, nowhere near ``load_toml_section`` or
     ``resolve_config_file``, that eventually reaches ``kstrl.git``
-    (``configured_path_errors`` -> ``scaffold_ledger.shipped_label`` ->
+    (``operator_file_notices`` -> ``scaffold_ledger.shipped_label`` ->
     ``from kstrl import git``) - a real edge, but one release.py's own
     call path never crosses, and following it flags a census entry no
     change in this PR touches. Measured on the shipped tree: this

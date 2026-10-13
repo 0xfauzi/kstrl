@@ -785,19 +785,18 @@ class LinearSink:
         if event_type == "budget_exceeded":
             # R8: name the ceiling that tripped, through the shared
             # classifier so this surface reads the payload exactly as
-            # the reducer does. Payloads written before the cost ceiling
-            # landed carry no "ceiling" key, and the token wording is
-            # then the only honest reading.
+            # the reducer does. A payload with no "ceilings" is unreadable.
             ceilings = data.get("ceilings") or ()
-            kind = budget_halt_kind(
-                str(data.get("condition", "")),
-                ceilings,
-                str(data.get("ceiling", "")),
-            )
+            kind = budget_halt_kind(str(data.get("condition", "")), ceilings)
+            if kind == "unreadable":
+                return (
+                    f"ks run `{self._run_id}`: run budget halt unreadable - the record "
+                    "names no ceilings (written before #180)."
+                )
             if kind == "unenforceable":
                 # Nothing was exceeded here; reporting a ratio would
                 # point the operator at numbers that never moved.
-                named = ", ".join(ceilings) or data.get("ceiling") or "budget"
+                named = ", ".join(ceilings)
                 return (
                     f"ks run `{self._run_id}`: run budget ceiling "
                     f"unenforceable ({named}) - no configured ceiling can "

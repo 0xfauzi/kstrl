@@ -206,7 +206,7 @@ def feature(
     base_config.ui_mode = _normalize_ui_mode(base_config.ui_mode)
 
     # Check codex availability
-    force_rich = os.environ.get("GUM_FORCE") == "1"
+    force_rich = os.environ.get("KSTRL_UI_FORCE_RICH") == "1"
     ui_impl = _console_ui(
         base_config.ui_mode,
         base_config.no_color,

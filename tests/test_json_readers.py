@@ -130,7 +130,7 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     # report is read through read_json. No parse.
     "isolation.py": 2,
     "jsonread.py": 4,
-    "knowledge.py": 4,
+    "knowledge.py": 3,
     "knowledge_facts.py": 3,
     "linear.py": 5,
     "observability.py": 4,
@@ -151,7 +151,6 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     # browser, up, and one name/command pair per check). No parse: the
     # table is read through load_toml_document.
     "stack.py": 11,
-    "statedir.py": 2,
     # #595: the import and one json.dumps, the canonical JSON the waiver
     # key hashes. No parse.
     "waivers.py": 2,

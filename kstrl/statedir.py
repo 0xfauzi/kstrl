@@ -20,12 +20,10 @@ R8.9 / #194.
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 import re
-import shutil
+import shlex
 import subprocess
-import warnings
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -36,7 +34,6 @@ from urllib.parse import urlsplit
 STATE_DIR_NAME = ".kstrl"
 CONTROL_APP_NAME = "kstrl"
 CONTROL_LOCK_FILENAME = "control.lock"
-CONTROL_RELOCATED_MARKER = "control_relocated"
 
 #: Flat filenames under the XDG control directory (not nested under queue/).
 CONTROL_AUTONOMY = "autonomy.json"
@@ -143,7 +140,6 @@ STATE_SUBDIRS: tuple[str, ...] = (
 #: them here. The other three legacy control files live under ``queue/``
 #: and are covered by that subtree.
 STATE_FILES: tuple[str, ...] = (
-    CONTROL_RELOCATED_MARKER,
     "evolution.jsonl",
     "experiments.tsv",
     "factory.lock",
@@ -445,13 +441,6 @@ def xdg_state_home() -> Path:
     return resolved
 
 
-def clear_xdg_state_home_cache() -> None:
-    """Test helper: drop the cached ``XDG_STATE_HOME`` resolution."""
-    global _resolved_xdg_home, _resolved_xdg_raw
-    _resolved_xdg_home = None
-    _resolved_xdg_raw = None
-
-
 def control_dir(root_dir: Path) -> Path:
     """XDG control directory for ``root_dir`` (outside the agent tree)."""
     return xdg_state_home() / CONTROL_APP_NAME / repo_id(root_dir)
@@ -495,8 +484,8 @@ def _is_under(path: Path, root: Path) -> bool:
 def legacy_control_remaining(root_dir: Path) -> tuple[str, ...]:
     """Filenames still present at legacy in-tree locations.
 
-    Any leftover means migration is incomplete or dual-state: live XDG
-    readers must fail closed rather than treat missing XDG as first-run.
+    kstrl moves none of them (#863). Any leftover makes live XDG readers
+    fail closed rather than treat a missing XDG file as a first run.
     """
     remaining: list[str] = []
     for name, path in legacy_control_paths(root_dir).items():
@@ -506,6 +495,28 @@ def legacy_control_remaining(root_dir: Path) -> tuple[str, ...]:
         except OSError:
             remaining.append(name)
     return tuple(remaining)
+
+
+def legacy_control_refusal(root_dir: Path, remaining: tuple[str, ...]) -> str:
+    """The refusal for in-tree control files: each file, the cause, the move command.
+
+    kstrl no longer moves these files (#863). Reading the empty XDG
+    directory as a first run would ignore a ``pause.json`` or a spend
+    ledger, and a run could spend money after a pause. So the command
+    stops, and the operator moves each file.
+    """
+    paths = legacy_control_paths(root_dir)
+    target_root = control_dir(root_dir)
+    moves = "; ".join(
+        f"mv {shlex.quote(str(paths[name]))} {shlex.quote(str(target_root / name))}"
+        for name in remaining
+    )
+    names = ", ".join(str(paths[name]) for name in remaining)
+    return (
+        f"in-tree control file(s) {names} exist, and kstrl no longer moves them to the "
+        "control directory. Refuse to treat the empty control directory as a first run. "
+        f"Move each file (compare it with the target first if the target exists): {moves}"
+    )
 
 
 def _control_files_compromised(root_dir: Path) -> str | None:
@@ -556,10 +567,7 @@ def control_untrusted_reason(root_dir: Path) -> str | None:
         return f"control directory unresolvable: {exc}"
     remaining = legacy_control_remaining(root_dir)
     if remaining:
-        return (
-            "legacy in-tree control files remain after migration "
-            f"({', '.join(remaining)}); refuse to treat empty XDG as first-run"
-        )
+        return legacy_control_refusal(root_dir, remaining)
     compromised = _control_files_compromised(root_dir)
     if compromised is not None:
         return compromised
@@ -577,101 +585,13 @@ def control_is_external(root_dir: Path) -> bool:
     return control_untrusted_reason(root_dir) is None
 
 
-def _write_relocated_marker(root_dir: Path, *, moved: list[str]) -> None:
-    marker = state_dir(root_dir) / CONTROL_RELOCATED_MARKER
-    try:
-        state_dir(root_dir).mkdir(parents=True, exist_ok=True)
-        payload = {
-            "repo_id": repo_id(root_dir),
-            "control_dir": str(control_dir(root_dir)),
-            "migrated_at": _utc_now_iso(),
-            "moved": moved,
-        }
-        marker.write_text(
-            json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
-            encoding="utf-8",
-        )
-    except OSError:
-        # Marker is operator convenience, not load-bearing.
-        pass
-
-
-def _move_control_file(src: Path, dst: Path) -> None:
-    """Move ``src`` to ``dst``, including across devices (EXDEV)."""
-    try:
-        os.replace(src, dst)
-        return
-    except OSError:
-        pass
-    # Cross-device or other replace failure: copy then unlink. If unlink
-    # fails, legacy remains and consumers fail closed via
-    # ``legacy_control_remaining``.
-    shutil.copy2(src, dst)
-    src.unlink()
-
-
-def migrate_control_state(root_dir: Path) -> list[str]:
-    """Move legacy in-tree control files into the XDG control dir once.
-
-    Returns the list of filenames moved. When both XDG and legacy copies
-    exist (dual-state), the legacy file is left in place so
-    ``legacy_control_remaining`` keeps pause/spend fail-closed until an
-    operator reconciles. Idempotent when only XDG exists.
-    """
-    if not control_dir_accessible(root_dir):
-        return []
-    target_root = control_dir(root_dir)
-    moved: list[str] = []
-    # Over the files that HAVE a former in-tree location, not over every
-    # control filename: a post-R8.9 file has nothing to migrate, and
-    # indexing it out of the legacy map would be a KeyError.
-    for name, src in legacy_control_paths(root_dir).items():
-        dst = target_root / name
-        try:
-            src_present = src.exists() or src.is_symlink()
-            dst_present = dst.exists() or dst.is_symlink()
-        except OSError:
-            continue
-        if not src_present:
-            continue
-        if dst_present:
-            # Dual-state: do not silently prefer XDG. Leave legacy so
-            # fail-closed readers refuse until the leftover is removed.
-            warnings.warn(
-                f"kstrl: dual-state control file {name}: both {src} and "
-                f"{dst} exist; leaving legacy in place so pause/spend "
-                "fail closed until reconciled (R8.9)",
-                stacklevel=2,
-            )
-            continue
-        try:
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            _move_control_file(src, dst)
-        except OSError as exc:
-            warnings.warn(
-                f"kstrl: failed to migrate control file {src} -> {dst}: {exc}",
-                stacklevel=2,
-            )
-            continue
-        moved.append(name)
-        warnings.warn(
-            f"kstrl: relocated control file {name} from {src} to {dst} "
-            "(R8.9; legacy in-tree path is no longer written)",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-    if moved:
-        _write_relocated_marker(root_dir, moved=moved)
-    return moved
-
-
 def ensure_control_state(root_dir: Path) -> Path:
-    """Ensure the XDG control dir exists and migrate any legacy files.
+    """Ensure the XDG control dir exists.
 
-    Call at the start of every control read/write path so CLI and daemon
-    both migrate before touching state.
+    Call at the start of every control read/write path. kstrl moves no
+    in-tree control file: :func:`control_untrusted_reason` refuses while
+    one remains, and names the command that moves it.
     """
-    migrate_control_state(root_dir)
     target = control_dir(root_dir)
     try:
         target.mkdir(parents=True, exist_ok=True)

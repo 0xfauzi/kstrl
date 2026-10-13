@@ -1505,7 +1505,7 @@ PR carrying a reproducing test.
 
 Status: `[x]` - Shipped. Control-plane files resolve under
 `${XDG_STATE_HOME:-~/.local/state}/kstrl/<repo-id>/` via
-`kstrl/statedir.py` (`control_dir`, `migrate_control_state`,
+`kstrl/statedir.py` (`control_dir`,
 `control_lock`). Live copies of `autonomy.json`, `inbox.jsonl`,
 `spend.json`, `pause.json`, and `github_processed.json` leave the
 agent-reachable tree; locks, queue items, events, knowledge, and
@@ -1518,15 +1518,14 @@ one daily spend ledger). No origin → hash of the resolved absolute path
 against a shared-origin ledger concurrently without holding
 `control.lock`.
 
-**Migration.** First control read/write moves any legacy in-tree files
-into XDG with a `DeprecationWarning` and writes
-`.kstrl/control_relocated` for operators. Legacy paths remain in
+**Migration.** Removed by #863: kstrl moves no legacy in-tree file. It
+refuses while one exists, and the message names each file and the `mv`
+command that moves it. Legacy paths remain in
 `ENFORCEMENT_MACHINERY_PATHS` so a diff recreating them still halts.
 
 **L3+ gate.** `resolve_runtime_level` and `ks autonomy promote` refuse
 L3+ while control state is not external (``XDG_STATE_HOME`` under the
-repo, inaccessible control dir, or leftover legacy files after a failed
-migrate). Fail-closed pause: inaccessible control dir reads as PAUSED.
+repo, inaccessible control dir, or leftover legacy in-tree files). Fail-closed pause: inaccessible control dir reads as PAUSED.
 
 Depends on: none; BLOCKS enabling `[autonomy]` at L3+ and unattended
 `ks serve` with the ladder enabled until control state is external.

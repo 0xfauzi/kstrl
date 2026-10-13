@@ -26,12 +26,7 @@ from pathlib import Path
 import pytest
 
 from kstrl.decompose import decompose_spec
-from kstrl.git import (
-    checkout_existing,
-    create_branch_from,
-    delete_branch,
-    merge_branch,
-)
+from kstrl.git import merge_branch
 from kstrl.git_diff import get_diff_names
 from kstrl.pr import push_branch
 from kstrl.ui.plain import PlainUI
@@ -227,30 +222,6 @@ class TestGitArgvSeparators:
         git_repo_with_origin: Path,
     ) -> None:
         assert merge_branch("-evil", cwd=git_repo_with_origin) is False
-
-    def test_delete_branch_legitimate(self, git_repo_with_origin: Path) -> None:
-        repo = git_repo_with_origin
-        subprocess.run(["git", "branch", "-q", "doomed"], cwd=repo, check=True)
-        assert delete_branch("doomed", cwd=repo, force=True) is True
-
-    def test_delete_branch_option_shape_fails_closed(
-        self,
-        git_repo_with_origin: Path,
-    ) -> None:
-        assert delete_branch("-evil", cwd=git_repo_with_origin, force=True) is False
-
-    def test_checkout_and_create_branch_from(
-        self,
-        git_repo_with_origin: Path,
-    ) -> None:
-        repo = git_repo_with_origin
-        assert create_branch_from("kstrl/factory/api", "main", cwd=repo) is True
-        assert checkout_existing("main", cwd=repo) is True
-
-    # NOTE: no fail-closed test for checkout_existing("-q"): for git
-    # checkout the ref precedes "--", so an option-shaped value is still
-    # parsed as an option ("git checkout -q --" exits 0, measured on git
-    # 2.47.1). The defense for checkout is validate_branch_name upstream.
 
     def test_get_diff_names_with_range(self, git_repo_with_origin: Path) -> None:
         repo = git_repo_with_origin

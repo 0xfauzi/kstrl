@@ -334,16 +334,6 @@ class KstrlConfig:
         return config
 
     @classmethod
-    def from_toml(cls, toml_path: Path, root_dir: Path | None = None) -> KstrlConfig:
-        """Load configuration from a kstrl.toml file (no env overlay)."""
-        if root_dir is None:
-            root_dir = toml_path.parent if toml_path.is_absolute() else Path.cwd()
-        config = cls.anchored(root_dir)
-        if toml_path.exists():
-            _apply_toml_overrides(config, toml_path, root_dir)
-        return config
-
-    @classmethod
     def load(
         cls,
         root_dir: Path | None = None,
@@ -515,22 +505,6 @@ class KstrlConfig:
         if self.progress_file.is_absolute():
             return self.progress_file
         return root_dir / self.progress_file
-
-    def validate(self, root_dir: Path | None = None) -> list[str]:
-        """Validate configuration, returning list of errors. ``root_dir``
-        separates an explicitly set optional path from the anchored default,
-        so that check is skipped without one. Measured: nothing in ``kstrl/``
-        calls it, so the REACHABLE copy of that rule is run_factory's warning."""
-        from kstrl.operator_context import configured_path_errors
-
-        errors: list[str] = []
-        if self.max_iterations < 0:
-            errors.append(f"MAX_ITERATIONS must be non-negative (got: {self.max_iterations})")
-        if not self.prompt_file.exists():
-            errors.append(f"Prompt file not found: {self.prompt_file}")
-        if root_dir is None:
-            return errors
-        return errors + configured_path_errors(self, KstrlConfig.anchored(root_dir), root_dir)
 
 
 CONFIG_FILE_NAME = "kstrl.toml"

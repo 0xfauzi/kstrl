@@ -405,7 +405,9 @@ class TestTheWalkAgainstTheRealPackage:
         ``git rev-parse --path-format=absolute --git-dir --git-common-dir``,
         the git paths a codex engineer writes when it commits. It carries a timeout.
         So 76. #863 A1 removes the TUI, and with it ``ks dash`` and the status
-        dashboard: one site fewer, so 75.
+        dashboard: one site fewer, so 75. #863 A4 deletes four: the three git
+        branch functions (``create_branch_from``, ``delete_branch``,
+        ``checkout_existing``) and the sweep of a pre-R0.5 flat worktree. So 71.
         """
         spawns = frozenset(
             {
@@ -417,7 +419,7 @@ class TestTheWalkAgainstTheRealPackage:
             }
         )
         found = package_calls(spawns)
-        assert len(found.seen) == 75
+        assert len(found.seen) == 71
         assert found.without_line_numbers().undecided == tuple(
             sorted(
                 [

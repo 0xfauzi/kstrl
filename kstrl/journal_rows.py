@@ -189,18 +189,26 @@ def without_carried_results(entries: list[dict[str, Any]]) -> list[dict[str, Any
     return [entry for index, entry in enumerate(entries) if index not in carried]
 
 
+class LegacyJournalRowError(ValueError):
+    """A journal row from before ``failure_signatures`` (R6.1)."""
+
+
 def _row_signatures(entry: dict[str, Any]) -> list[str]:
     """The ``"<check>:<code>"`` signatures one journal row records.
 
-    A v1 row with no ``failure_signatures`` composes one from its legacy
-    ``check_name`` and ``error_signature`` fields.
+    A v1 row has an ``error_signature`` and no ``failure_signatures``.
+    It is refused, not composed into a signature (#863): the writer since
+    R6.1 records both fields together, so the pair is a row that no
+    current writer produced.
     """
     sigs = entry.get("failure_signatures") or []
-    if not sigs:
-        legacy_sig = entry.get("error_signature", "")
-        if not legacy_sig:
-            return []
-        sigs = [f"{entry.get('check_name') or 'unknown'}:{legacy_sig}"]
+    if not sigs and entry.get("error_signature", ""):
+        raise LegacyJournalRowError(
+            f"the row of component {entry.get('component_id', '?')!r} in run "
+            f"{entry.get('run_id', '?')!r} has an error_signature and no "
+            "failure_signatures, so it was written before R6.1 and kstrl no "
+            "longer reads it. Move the file aside to start a new journal"
+        )
     return [sig for sig in sigs if isinstance(sig, str) and sig]
 
 

@@ -132,7 +132,6 @@ EXPECTED_REF_OPERAND_ARGVS: dict[str, int] = {
     "factory_worktrees.py git worktree add -B branch_name str(worktree_path) "
     "recut_at or base_ref": 1,
     "factory_worktrees.py git worktree add str(worktree_path) branch_name": 1,
-    "factory_worktrees.py git worktree remove --force str(entry)": 1,
     "factory_worktrees.py git branch -D branch": 1,
     "factory_worktrees.py git worktree remove --force str(wt)": 1,
     "git_base.py git for-each-ref --format=%(refname)%09%(symref) "
@@ -167,9 +166,7 @@ EXPECTED_REF_OPERAND_ARGVS: dict[str, int] = {
     "git_diff.py git diff --numstat -z f'{base_ref}...HEAD' --": 1,
     "git.py git merge --no-edit -- branch": 1,
     "git_base.py git merge-base base_label HEAD": 1,
-    "git.py git checkout -b branch_name base --": 1,
-    "git.py git branch flag -- branch_name": 1,
-    "git.py git checkout branch --": 2,
+    "git.py git checkout branch --": 1,
     "git.py git checkout -b branch": 1,
     "git_base.py git rev-parse --verify --quiet f'{candidate}^{{commit}}'": 1,
     "pr.py git push -u -- origin branch": 1,

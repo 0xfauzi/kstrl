@@ -316,7 +316,7 @@ class Transitions(InboxDesk, AttemptRecorder, UsageLedger):
         specifically the engineer loop's in-loop halt on unreportable
         usage, where ``run_usage`` shows no breach and stating one would
         put a false number in the audit trail. That string is produced by
-        :meth:`LoopBudget.halt_reason`, which names its own ceiling.
+        :meth:`LoopBudget.halt_verdict`, which names its own ceiling.
         Every other side effect is identical wherever the breach is
         caught.
 

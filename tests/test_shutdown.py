@@ -384,7 +384,7 @@ class TestTheOrphanCheckIsScopedToItsOwnGroup:
         would fail pointing at kstrl rather than at the environment.
         """
         from kstrl.procgroup import signal_probe_alive
-        from kstrl.serve_process import process_group_alive
+        from tests.helpers.procs import process_group_alive
 
         parent = subprocess.Popen(
             [

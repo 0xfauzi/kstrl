@@ -516,14 +516,40 @@ class TestStaleBranchPolicy:
 
 
 class TestStaleWorktreePrune:
+    def test_a_pre_r0_5_flat_worktree_refuses_the_run_by_name(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """A worktree directly under .kstrl/worktrees/ is the layout before
+        R0.5. kstrl no longer sweeps it: the run is refused with the path and
+        the removal command, and the worktree is left untouched."""
+        root = tmp_path / "repo"
+        _init_repo(root)
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
+        legacy_wt = root / ".kstrl" / "worktrees" / "legacy-comp"
+        _git("worktree", "add", str(legacy_wt), "-b", "tmp/legacy", "main", cwd=root)
+
+        manifest = _manifest()
+        result = _run(root, manifest=manifest)
+
+        assert result.exit_code == 2
+        assert result.completed == []
+        assert (legacy_wt / ".git").exists()
+        text = capsys.readouterr().err
+        assert str(legacy_wt) in text
+        assert "git worktree remove --force" in text
+
     def test_stale_worktrees_pruned_at_start(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Worktrees from crashed runs - run-scoped dirs from other run
-        ids AND pre-R0.5 flat-layout dirs - are removed when the run lock
-        is held; the completed run leaves no worktree dirs behind."""
+        ids - are removed when the run lock is held; the completed run
+        leaves no worktree dirs behind."""
         root = tmp_path / "repo"
         _init_repo(root)
         monkeypatch.chdir(tmp_path)
@@ -531,7 +557,6 @@ class TestStaleWorktreePrune:
 
         worktree_root = root / ".kstrl" / "worktrees"
         old_run_wt = worktree_root / "20250101-000000-000000-dead" / "comp-x"
-        legacy_wt = worktree_root / "legacy-comp"
         _git(
             "worktree",
             "add",
@@ -541,21 +566,11 @@ class TestStaleWorktreePrune:
             "main",
             cwd=root,
         )
-        _git(
-            "worktree",
-            "add",
-            str(legacy_wt),
-            "-b",
-            "tmp/legacy",
-            "main",
-            cwd=root,
-        )
 
         result = _run(root)
 
         assert result.completed == ["comp-a"]
         assert not old_run_wt.exists()
-        assert not legacy_wt.exists()
         # The completed run's own worktree dir is gone too; only lock
         # files may remain at the top level.
         leftovers = (

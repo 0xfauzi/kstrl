@@ -65,6 +65,31 @@ def _invoke(root: Path) -> Result:
     return CliRunner().invoke(cli, ["evolve", "--root", str(root), "--ui", "plain", "--no-color"])
 
 
+def test_a_v1_journal_row_stops_ks_evolve_by_name(tmp_path: Path) -> None:
+    """A row with an error_signature and no failure_signatures predates R6.1.
+    ks evolve refuses it with the file and the cause; it does not compose a
+    signature from the legacy fields (#863)."""
+    row = {
+        "schema_version": 1,
+        "run_id": "run-1",
+        "component_id": "comp-a",
+        "event_type": "component_result",
+        "status": "failed",
+        "error": "failed",
+        "check_name": "linter",
+        "error_signature": "S608",
+    }
+    path = tmp_path / ".kstrl" / "evolution.jsonl"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps(row) + "\n", encoding="utf-8")
+
+    result = _invoke(tmp_path)
+
+    assert result.exit_code == 2, result.output
+    assert str(path) in result.output
+    assert "before R6.1" in result.output
+
+
 #: The categories a recurring failure can teach a lesson in, written out
 #: here rather than imported from kstrl.evolution, so a change to the
 #: router's own set is a red test and not a silent agreement (#507, P1.1).

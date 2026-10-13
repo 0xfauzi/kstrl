@@ -334,7 +334,7 @@ def cli(ctx: click.Context) -> None:
 
 
 def _autonomy_ui(ui: str, no_color: bool) -> UI:
-    force_rich = os.environ.get("GUM_FORCE") == "1"
+    force_rich = os.environ.get("KSTRL_UI_FORCE_RICH") == "1"
     return _console_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich)
 
 

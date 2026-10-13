@@ -25,7 +25,6 @@ from kstrl.config import KstrlConfig
 from kstrl.operator_context import (
     CUT_FLOOR,
     GOLDEN_PATTERNS,
-    configured_path_errors,
     load_operator_file,
     operator_file_notices,
     operator_file_spec,
@@ -345,16 +344,12 @@ class TestNothingOnThisPathStatsOutsideTheGuard:
         config.golden_patterns_file = locked / "g.md"
         try:
             notices = operator_file_notices(config, KstrlConfig.anchored(tmp_path), tmp_path)
-            errors = configured_path_errors(config, KstrlConfig.anchored(tmp_path), tmp_path)
         finally:
             locked.chmod(0o755)
 
         assert len(notices) == 1
         assert notices[0][0] == GOLDEN_PATTERNS.subject
         assert "could not read" in notices[0][1]
-        # `validate` reports configuration errors, and a file that is
-        # there but unreadable is not one: it is the run's warning.
-        assert errors == []
 
 
 class TestTheCutStillDeliversTheBudget:
@@ -726,7 +721,7 @@ class TestMisconfiguredPath:
         anchored = KstrlConfig.anchored(tmp_path)
         assert not anchored.golden_patterns_file.exists()
 
-        assert configured_path_errors(anchored, anchored, tmp_path) == []
+        assert operator_file_notices(anchored, anchored, tmp_path) == []
 
     def test_a_misspelled_explicit_path_is_named(self, tmp_path: Path) -> None:
         anchored = KstrlConfig.anchored(tmp_path)
@@ -734,9 +729,14 @@ class TestMisconfiguredPath:
         typo = tmp_path / "scripts" / "kstrl" / "gloden-patterns.md"
         config.golden_patterns_file = typo
 
-        errors = configured_path_errors(config, anchored, tmp_path)
+        notices = operator_file_notices(config, anchored, tmp_path)
 
-        assert errors == [f"[paths] golden_patterns is set to {typo}, which does not exist"]
+        assert notices == [
+            (
+                GOLDEN_PATTERNS.subject,
+                f"[paths] golden_patterns is set to {typo}, which does not exist",
+            )
+        ]
 
     def test_an_explicit_path_that_exists_is_silent(self, tmp_path: Path) -> None:
         anchored = KstrlConfig.anchored(tmp_path)
@@ -745,24 +745,7 @@ class TestMisconfiguredPath:
         mine.write_text("- a pattern\n", encoding="utf-8")
         config.golden_patterns_file = mine
 
-        assert configured_path_errors(config, anchored, tmp_path) == []
-
-    def test_validate_reports_it_when_given_a_root(self, tmp_path: Path) -> None:
-        config = KstrlConfig.anchored(tmp_path)
-        config.prompt_file.parent.mkdir(parents=True)
-        config.prompt_file.write_text("prompt\n", encoding="utf-8")
-        config.golden_patterns_file = tmp_path / "scripts" / "kstrl" / "gloden-patterns.md"
-
-        assert config.validate(tmp_path) == [
-            f"[paths] golden_patterns is set to {config.golden_patterns_file}, which does not exist"
-        ]
-
-    def test_validate_is_silent_for_the_default_absent(self, tmp_path: Path) -> None:
-        config = KstrlConfig.anchored(tmp_path)
-        config.prompt_file.parent.mkdir(parents=True)
-        config.prompt_file.write_text("prompt\n", encoding="utf-8")
-
-        assert config.validate(tmp_path) == []
+        assert operator_file_notices(config, anchored, tmp_path) == []
 
     def test_an_unanchored_default_is_still_the_default(self, tmp_path: Path) -> None:
         """The comparison happens in ONE path domain, and this is the case
@@ -778,7 +761,6 @@ class TestMisconfiguredPath:
         unanchored = KstrlConfig()
         assert not unanchored.golden_patterns_file.is_absolute()
 
-        assert configured_path_errors(unanchored, KstrlConfig.anchored(tmp_path), tmp_path) == []
         assert operator_file_notices(unanchored, KstrlConfig.anchored(tmp_path), tmp_path) == []
 
     def test_the_notice_carries_the_row_s_own_subject(self, tmp_path: Path) -> None:

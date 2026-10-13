@@ -174,9 +174,9 @@ class TestStatusProgressLogJoin:
         _synthetic_manifest().save(
             tmp_path / "scripts" / "kstrl" / "manifest.json",
         )
-        _write_progress_log(tmp_path)
+        log = _write_progress_log(tmp_path)
 
-        exit_code, output = _invoke_status("--root", str(tmp_path))
+        exit_code, output = _invoke_status("--root", str(tmp_path), "--progress-log", str(log))
 
         assert exit_code == 0
         assert "run-2" in output
@@ -196,9 +196,9 @@ class TestStatusProgressLogJoin:
         _synthetic_manifest().save(
             tmp_path / "scripts" / "kstrl" / "manifest.json",
         )
-        _write_progress_log(tmp_path)
+        log = _write_progress_log(tmp_path)
 
-        _, output = _invoke_status("--root", str(tmp_path))
+        _, output = _invoke_status("--root", str(tmp_path), "--progress-log", str(log))
 
         assert "run-1" not in output
         assert "stale failure from run-1" not in output
@@ -207,13 +207,13 @@ class TestStatusProgressLogJoin:
         _synthetic_manifest().save(
             tmp_path / "scripts" / "kstrl" / "manifest.json",
         )
-        _write_progress_log(tmp_path)
+        log = _write_progress_log(tmp_path)
         worktree = tmp_path / ".kstrl" / "worktrees" / "run-2" / "comp-a"
         debug_dir = tmp_path / ".kstrl" / "debug" / "run-2" / "comp-b"
         worktree.mkdir(parents=True)
         debug_dir.mkdir(parents=True)
 
-        _, output = _invoke_status("--root", str(tmp_path))
+        _, output = _invoke_status("--root", str(tmp_path), "--progress-log", str(log))
 
         assert str(worktree) in output
         assert str(debug_dir) in output
@@ -229,18 +229,30 @@ class TestStatusProgressLogJoin:
         _synthetic_manifest().save(
             tmp_path / "scripts" / "kstrl" / "manifest.json",
         )
-        log_path = _write_progress_log(tmp_path)
+        log = _write_progress_log(tmp_path)
 
-        _, output = _invoke_status("--root", str(tmp_path))
+        _, output = _invoke_status("--root", str(tmp_path), "--progress-log", str(log))
         assert "in flight" in output
 
-        ProgressLog(log_path, run_id="run-2").factory_completed(
+        ProgressLog(log, run_id="run-2").factory_completed(
             completed=2,
             failed=0,
             skipped=0,
         )
-        _, output = _invoke_status("--root", str(tmp_path))
+        _, output = _invoke_status("--root", str(tmp_path), "--progress-log", str(log))
         assert "finished" in output
+
+    def test_a_progress_log_alone_is_refused_without_the_flag(self, tmp_path: Path) -> None:
+        _synthetic_manifest().save(
+            tmp_path / "scripts" / "kstrl" / "manifest.json",
+        )
+        log = _write_progress_log(tmp_path)
+
+        exit_code, output = _invoke_status("--root", str(tmp_path))
+
+        assert exit_code == 2
+        assert str(log) in output
+        assert "--progress-log" in output
 
     def test_explicit_progress_log_flag(self, tmp_path: Path) -> None:
         _synthetic_manifest().save(
