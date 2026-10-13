@@ -565,6 +565,12 @@ class IterationContext:
                 reading_data["phase"],
                 attempt=reading_data["attempt"],
             )
+        # The shape before R10.2 had three string lists and no "entries".
+        # kstrl no longer reads it (#863). It is refused, because an empty
+        # read would drop the failures of the earlier attempts silently.
+        expired = {"review_findings", "verification_failures", "contract_failures"}
+        if "entries" not in parsed and expired & parsed.keys():
+            raise ValueError("iteration context has the shape before R10.2 (#863)")
         for entry_data in parsed.get("entries", []):
             ctx.entries.append(
                 FailureEntry(
