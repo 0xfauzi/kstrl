@@ -46,9 +46,8 @@ from kstrl.config_numbers import SIGNED, check_numbers
 ENFORCEMENT_MACHINERY_PATHS: tuple[str, ...] = (
     # CI that runs the gates
     ".github/workflows/**",
-    # the policy file itself (both spellings)
+    # the policy file itself
     "kstrl.toml",
-    "ralph.toml",
     # verifier code: the Phase 1 mechanical enforcement surface. The
     # leading `**/` matches zero or more directories, so these cover both
     # `kstrl/verify.py` at the repo root and a nested/vendored checkout.
@@ -84,7 +83,6 @@ ENFORCEMENT_MACHINERY_PATHS: tuple[str, ...] = (
 DEFAULT_PATHS_DENY: tuple[str, ...] = (
     ".github/workflows/**",
     "kstrl.toml",
-    "ralph.toml",
     ".kstrl/**",
     "**/*.pem",
     "**/.env*",

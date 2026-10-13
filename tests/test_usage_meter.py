@@ -1462,7 +1462,7 @@ class TestInLoopTokenBudget:
             budget=LoopBudget(max_total_tokens=500),
         )
         assert result.completed is False
-        assert result.iterations == 2  # _UNENFORCEABLE_CALLS
+        assert result.iterations == 2  # UNENFORCEABLE_CALLS
         assert "unenforceable" in result.budget_halt_reason
         assert result.usage.total_tokens == 0
         assert result.usage.unreported_calls == 2
@@ -1565,7 +1565,7 @@ class TestInLoopTokenBudget:
                 prior_token_calls=1,
             ),
         )
-        assert result.iterations == 2  # halts at _UNENFORCEABLE_CALLS
+        assert result.iterations == 2  # halts at UNENFORCEABLE_CALLS
         assert "unenforceable" in result.budget_halt_reason
         assert not result.completed
 
@@ -1635,7 +1635,7 @@ class TestInLoopTokenBudget:
 
         Reproduced by the reviewer: with ``max_iterations = 1`` (or a
         retry that dies after one call) no single loop ever reached
-        ``_UNENFORCEABLE_CALLS``, so three sequential one-iteration
+        ``UNENFORCEABLE_CALLS``, so three sequential one-iteration
         loops reached calls=3 / token_calls=0 / total_tokens=0 with
         every ``budget_halt_reason`` empty. The cap was decorative
         whenever work was split into short loops.
