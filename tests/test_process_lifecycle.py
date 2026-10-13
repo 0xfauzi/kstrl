@@ -247,6 +247,7 @@ EXPECTED_PROCESS_MODULES: dict[str, tuple[str, ...]] = {
     "pr_state.py": ("subprocess",),
     "retry_plan.py": ("subprocess",),
     "statedir.py": ("subprocess",),
+    "temp_worktree.py": ("subprocess",),
     "timeout.py": ("subprocess",),
     # #433: `SubprocessError`, caught from `retry_plan.failed_branch_probe`
     # (the retry scope preview). It creates no child itself.

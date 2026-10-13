@@ -55,7 +55,9 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     "breaker.py": 3,
     # #696: 4, the import and three TimeoutExpired clauses; down from 5
     # when a fourth clause served the retired [contract] test_command.
-    "contract.py": 4,
+    # #863 B1: the temp worktree functions moved to temp_worktree.py; each
+    # module now holds its own `import subprocess`, so the total is +1.
+    "contract.py": 2,
     # 3: #696 slice 8 deleted check_test_root's `git ls-files -z` spawn.
     "doctor.py": 3,
     # 14: #624 moved the scaffold's `subprocess.run` out to `worktree_setup.py`.
@@ -92,6 +94,7 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     "scrubbed_run.py": 15,
     "serve_process.py": 8,
     "statedir.py": 3,
+    "temp_worktree.py": 3,
     "timeout.py": 3,
     # 25: `_base_finding`'s `git show` (#414/#425); `git merge-base` moved to `git.py` in #435.
     # 26: #632, `run_scrubbed`'s `subprocess.PIPE` for a stdin it was given.
