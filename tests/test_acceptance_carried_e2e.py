@@ -29,8 +29,8 @@ import pytest
 from kstrl.decompose_prompt import spec_digest
 from kstrl.factory_acceptance import _resolve_round_base as real_resolve_round_base
 from kstrl.factory_result import FactoryResult
-from kstrl.inbox import Inbox, InboxConfig, InboxItem, ItemKind
 from kstrl.io.statedir import control_dir
+from kstrl.owner.inbox import Inbox, InboxConfig, InboxItem, ItemKind
 from kstrl.plan.manifest import Component, ComponentStatus, Manifest
 from kstrl.ui.base import UI
 from tests.helpers import integration_harness as h

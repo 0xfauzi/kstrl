@@ -36,7 +36,7 @@ from kstrl.config_preflight import config_problem_lines
 from kstrl.git import git, git_base, git_diff, git_tree
 from kstrl.io import STATE_DIR_NAME, atomic_write_json, state_dir
 from kstrl.policy import ENFORCEMENT_MACHINERY_PATHS, PolicyConfig, match_glob
-from kstrl.stack import NO_STACK, file_stack_item, legacy_proposal, stack_in_force
+from kstrl.project import NO_STACK, file_stack_item, legacy_proposal, stack_in_force
 
 if TYPE_CHECKING:
     from kstrl.ui import UI

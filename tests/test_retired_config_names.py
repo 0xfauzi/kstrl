@@ -444,7 +444,7 @@ def test_an_old_finding_record_still_resolves() -> None:
 # "_sense", "SENSE_", ...) without also flagging ordinary English "sense"
 # ("this makes sense"), which the plain word would.
 #
-# The module kstrl/feedforward.py keeps its path (#395 measured that three
+# The module kstrl/project/feedforward.py keeps its path (#395 measured that three
 # pre-commit ratchets refuse the git-mv), so "feedforward" is not one of
 # the six retired words. It gets its own, narrower check: a line naming it
 # must spell it as a module path or a test/prompt-fixture name, not as the
@@ -469,8 +469,8 @@ SENSE_PATTERN = re.compile(
 )
 
 FEEDFORWARD_ALLOWED = (
-    "kstrl.feedforward",
-    # "kstrl/feedforward.py" is deliberately not a separate entry here: it
+    "kstrl.project.feedforward",
+    # "kstrl/project/feedforward.py" is deliberately not a separate entry here: it
     # is a strict superset-match of "feedforward.py" below (any line
     # containing the former also contains the latter), so it was dead -
     # measured by removing it and finding zero lines it alone allowed.
@@ -571,7 +571,7 @@ ALLOWED: dict[tuple[str, str], int] = {
     ("kstrl/review_claims.py", "set-point"): 1,
     ("tests/test_builder_prompts.py", "set-point"): 1,
     ("tests/test_claim_agreement_pipeline.py", "set-point"): 1,
-    # Bare references to the ``kstrl.feedforward`` module Decision 1 keeps
+    # Bare references to the ``kstrl.project.feedforward`` module Decision 1 keeps
     # at its path: attribute access and monkeypatch targets that
     # FEEDFORWARD_ALLOWED's path-shaped substrings do not match.
     # 16: #626 enrolled a seventh notice, its renderer and its table row.

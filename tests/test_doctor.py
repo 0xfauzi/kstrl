@@ -29,7 +29,7 @@ from click.testing import CliRunner, Result
 import kstrl
 from kstrl import doctor
 from kstrl.cli import cli
-from kstrl.init_cmd import gitignore_block
+from kstrl.project.init_cmd import gitignore_block
 from tests.helpers.fakegh import put_gh_on_path
 from tests.helpers.gitrepo import git_in, set_identity
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
@@ -354,7 +354,7 @@ _FILE_SUFFIXES = frozenset(
 def module_paths(text: str) -> list[str]:
     """Every Python module path in ``text``, such as `verify.run_mechanical_verification`.
 
-    ``kstrl/stack.py`` means `"stack"` is itself a genuine module name, so
+    ``kstrl/project/stack.py`` means `"stack"` is itself a genuine module name, so
     the TOML table ``[stack.checks]`` the #696 flag day's refusal text
     names matches the same pattern by coincidence. That occurrence is
     bracketed on both sides (TOML notation an operator reads literally,

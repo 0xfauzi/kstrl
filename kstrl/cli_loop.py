@@ -11,10 +11,14 @@ from pathlib import Path
 
 import click
 
-from kstrl.agents import get_agent
-from kstrl.agents.base import Agent
-from kstrl.agents.logging import LoggingAgent
-from kstrl.agents.prompt_record import recording_prompts
+from kstrl.agents import (
+    Agent,
+    LoggingAgent,
+    SandboxConfig,
+    get_agent,
+    recording_prompts,
+    warn_unconfined,
+)
 from kstrl.breaker import BreakerConfig
 from kstrl.cli_preflight import (
     _apply_cli_overrides,
@@ -41,11 +45,10 @@ from kstrl.events import (
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.git import detect_base_branch
-from kstrl.init_cmd import run_init
 from kstrl.loop import run_loop
 from kstrl.plan import PRD
 from kstrl.proc import StopController, TimeoutConfig, install_signal_handlers
-from kstrl.sandbox import SandboxConfig, warn_unconfined
+from kstrl.project import run_init
 from kstrl.ui import UI
 
 # Issue #207: `ks run` forces these FactoryConfig fields because it is by
@@ -254,8 +257,8 @@ def run(
 
     # Single-component factory invocation
     from kstrl.config import load_toml_section
-    from kstrl.feedforward import CodebaseScanConfig
     from kstrl.plan import Manifest
+    from kstrl.project import CodebaseScanConfig
     from kstrl.security import SecurityConfig
     from kstrl.verify_model import VerifyConfig
 
@@ -476,7 +479,7 @@ def understand(
     # Create codebase_map.md if missing
     codebase_map = kstrl_dir / "codebase_map.md"
     if not codebase_map.exists():
-        from kstrl.scaffold_templates import DEFAULT_CODEBASE_MAP
+        from kstrl.project import DEFAULT_CODEBASE_MAP
 
         codebase_map.parent.mkdir(parents=True, exist_ok=True)
         codebase_map.write_text(DEFAULT_CODEBASE_MAP)

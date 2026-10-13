@@ -2179,7 +2179,7 @@ class TestSubprocessTimeoutAudit:
 
         rows = astwalk.Sites((), tuple(undecided)).without_line_numbers().undecided
         assert list(rows) == [
-            "agent_output.py agent.run",
+            "agents/agent_output.py agent.run",
             "agents/logging.py self._agent.run",
             "decompose.py agent.run",
             "loop.py run.agent.run",
@@ -2214,7 +2214,7 @@ class TestSubprocessTimeoutAudit:
         Scoped to CHILD_WAIT_SCOPE because ``.wait(...)`` outside
         them is overwhelmingly ``threading.Event.wait``, whose unbounded
         form is legitimate and common (``kstrl/commandrun.py``,
-        ``kstrl/interaction.py``, ``kstrl/proc/shutdown.py``). Inside them it
+        ``kstrl/owner/interaction.py``, ``kstrl/proc/shutdown.py``). Inside them it
         is a child process, and there it must always name a deadline.
 
         The wait half is a receiver-name check, so it catches ``x.wait()``

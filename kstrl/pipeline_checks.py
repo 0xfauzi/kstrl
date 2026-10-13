@@ -13,8 +13,8 @@ from typing import TYPE_CHECKING, Any
 from kstrl.context import IterationContext
 from kstrl.events import event_catalog
 from kstrl.git import git, git_diff
-from kstrl.inbox import ItemKind
 from kstrl.io import atomic_write_text, pre_run_prd_path
+from kstrl.owner import ACCEPTANCE_PHASE, ApprovalSnapshot, ItemKind
 from kstrl.pipeline_attempt import AttemptRecorder
 from kstrl.pipeline_inbox import InboxDesk
 from kstrl.pipeline_transitions import FailureAction, PhaseFailure
@@ -22,7 +22,6 @@ from kstrl.plan import POLICY_CATEGORY_PREFIX, Component, Finding
 from kstrl.proc import label_of
 from kstrl.verify_diff import SCOPE_UNREADABLE_CHECK, scope_unreadable_error
 from kstrl.verify_model import LAYER0_NOT_MEASURED, CheckResult, VerificationResult
-from kstrl.waivers import ACCEPTANCE_PHASE, ApprovalSnapshot
 
 if TYPE_CHECKING:
     from kstrl.factory_result import ComponentResult
@@ -201,7 +200,7 @@ class MechanicalChecks(InboxDesk, AttemptRecorder):
         slice 10a); any other check that did not pass goes to the
         engineer's retry. An approved halt on this head that names every
         failing check passes it (decision 14,
-        :func:`kstrl.waivers.covering_override`). The stop lines of a
+        :func:`kstrl.owner.waivers.covering_override`). The stop lines of a
         designed plan go into the text of the halt and of the last
         attempt's failure only: a retry's reason stays one short line.
         """

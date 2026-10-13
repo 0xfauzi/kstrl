@@ -32,13 +32,13 @@ aliases the way ``tests/helpers/astwalk`` does): one inside
 by construction - it is the thing every OTHER writer in the package is
 supposed to route through), and two outside it:
 
-- ``kstrl/workqueue.py::WorkQueue.enqueue`` - ``os.replace(str(staging),
+- ``kstrl/queue/workqueue.py::WorkQueue.enqueue`` - ``os.replace(str(staging),
   str(directory))``. The destination NEVER pre-exists: `directory.exists()`
   is checked and refused (``raise QueueError``) immediately above, before
   ``staging`` is even built, so there is no prior mode for this replace to
   overwrite. No capture/restore is needed because there is nothing to
   restore.
-- ``kstrl/workqueue.py::WorkQueue.transition`` (approximate name) -
+- ``kstrl/queue/workqueue.py::WorkQueue.transition`` (approximate name) -
   ``os.replace(str(source_dir), str(target_dir))``. Same shape: `if
   target_dir.exists(): raise QueueError(...)` guards it immediately above.
 
@@ -70,11 +70,11 @@ REPLACE_TARGETS = ("os.replace", "shutil.move")
 #: FLAGS it rather than silently passing - the direction a clearing guard
 #: must fail in.
 REPLACE_SITES: dict[str, str] = {
-    "workqueue.py os.replace(str(staging), str(directory))": (
+    "queue/workqueue.py os.replace(str(staging), str(directory))": (
         "destination never pre-exists: `if directory.exists(): raise "
         "QueueError(...)` guards immediately above"
     ),
-    "workqueue.py os.replace(str(source_dir), str(target_dir))": (
+    "queue/workqueue.py os.replace(str(source_dir), str(target_dir))": (
         "destination never pre-exists: `if target_dir.exists(): raise "
         "QueueError(...)` guards immediately above"
     ),
@@ -102,21 +102,21 @@ EXPECTED_UNDECIDED_REPLACE_CALLS: tuple[str, ...] = (
     "baseline_report.py ' '.join(text.split()).replace",
     "doctor.py now.isoformat().replace",
     "events/observability.py datetime.strptime(ts, '%Y-%m-%dT%H:%M:%SZ').replace",
-    "inbox.py datetime.now(UTC).replace",
-    "inbox.py parsed.replace",
     "io/statedir.py datetime.now(UTC).replace",
     "io/statedir.py datetime.now(UTC).replace(microsecond=0).isoformat().replace",
     # #696: init_cmd.kstrl_toml_for, which seeded a detected toolchain's
     # commands into the scaffolded [verify], is gone with [verify] itself.
     "knowledge_distill.py raw_output[:200].replace",
+    "owner/inbox.py datetime.now(UTC).replace",
+    "owner/inbox.py parsed.replace",
     "proc/scrubbed_run.py text.replace",
     "proc/scrubbed_run.py text.replace('\\r\\n', '\\n').replace",
+    "queue/workqueue_items.py parsed.replace",
     # #526: `retry_plan._opt` spells a run limit as an option name, a str.replace.
     "retry_plan.py name.replace",
     "serve_spend.py (local + timedelta(days=1)).replace",
     "spec_issues.py comp_id.replace",
     "spec_issues.py comp_id.replace('-', ' ').replace",
-    "workqueue_items.py parsed.replace",
 )
 
 

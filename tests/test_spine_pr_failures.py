@@ -31,7 +31,7 @@ import pytest
 
 from kstrl.factory import run_factory
 from kstrl.factory_result import FactoryResult
-from kstrl.inbox import Inbox, InboxConfig, InboxItem, ItemStatus
+from kstrl.owner.inbox import Inbox, InboxConfig, InboxItem, ItemStatus
 from kstrl.plan.manifest import ComponentStatus, Manifest
 from kstrl.ui.plain import PlainUI
 from tests.spine_utils import (

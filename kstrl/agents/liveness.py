@@ -40,7 +40,7 @@ where it is implemented:
 The isolation in (1) is deliberately PROJECT scope only. A user-level
 fault must still participate, because a malformed ``~/.codex/hooks.json``
 is the motivating case. The claude probe is the exception: it gets the
-flags of every claude role (:func:`kstrl.sandbox.claude_session_argv`),
+flags of every claude role (:func:`kstrl.agents.sandbox.claude_session_argv`),
 which read no user-level setting (#803), so a user-level claude fault
 cannot reach a role and must not condemn the CLI. The trade that buys: a project hook or MCP
 server that hangs the real CLI passes the probe and then fails every
@@ -63,10 +63,10 @@ from functools import partial
 from pathlib import Path
 from typing import Any
 
+from kstrl.agents.sandbox import claude_session_argv, claude_session_env
 from kstrl.config import parse_bool
 from kstrl.io import read_json
 from kstrl.proc import DeadlineStreamer
-from kstrl.sandbox import claude_session_argv, claude_session_env
 
 #: Default ON; ``KSTRL_AGENT_PROBE=0`` restores the pre-#262 behaviour of
 #: trusting PATH. Read straight from the environment rather than from a

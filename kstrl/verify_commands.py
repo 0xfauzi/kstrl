@@ -9,7 +9,7 @@ from pathlib import Path
 
 from kstrl.failure_excerpt import failure_excerpt
 from kstrl.proc import ChildOutputDecodeError, Rung, limit_seconds, readable_text, run_scrubbed
-from kstrl.stack import NO_STACK, Stack
+from kstrl.project import NO_STACK, Stack
 from kstrl.verify_model import (
     CheckResult,
     NotMeasured,

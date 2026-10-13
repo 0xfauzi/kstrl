@@ -191,7 +191,7 @@ class TestAMalformedSectionIsARefusalAndNotATraceback:
         loader in kstrl/ does this, which is why it needs a test rather
         than an argument.
         """
-        from kstrl.inbox import InboxConfig
+        from kstrl.owner.inbox import InboxConfig
 
         (tmp_path / "kstrl.toml").write_text(BEFORE.format(autonomy="false"))
 

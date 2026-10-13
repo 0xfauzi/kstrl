@@ -62,7 +62,7 @@ def _calibration_blockers(root_dir: Path) -> list[str]:
     and an unparseable inbox line could be one, so it blocks too.
     """
     from kstrl.autonomy_config import AutonomyConfig
-    from kstrl.inbox import UNDECIDED, Inbox, InboxConfig, ItemKind
+    from kstrl.owner import UNDECIDED, Inbox, InboxConfig, ItemKind
 
     try:
         ladder_enabled = AutonomyConfig.load(root_dir).enabled
@@ -287,7 +287,7 @@ def apply_demotion(
     # ``commit_transition`` above: the ladder state machine is imported
     # by config and safe-mode code that has no business pulling the
     # inbox in with it.
-    from kstrl.inbox import Inbox, InboxConfig, ItemKind
+    from kstrl.owner import Inbox, InboxConfig, ItemKind
 
     if state is None:
         state = AutonomyState.load(root_dir)

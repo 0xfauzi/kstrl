@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from kstrl.feedforward import CodebaseScanConfig, build_codebase_scan_context, build_module_map
+from kstrl.project.feedforward import (
+    CodebaseScanConfig,
+    build_codebase_scan_context,
+    build_module_map,
+)
 
 # ---------------------------------------------------------------------------
 # build_module_map

@@ -21,13 +21,13 @@ import pytest
 from click.testing import CliRunner, Result
 
 import kstrl.cli_queue as cli_queue_mod
-import kstrl.workqueue as workqueue_mod
+import kstrl.queue.workqueue as workqueue_mod
 from kstrl.cli import cli
+from kstrl.queue.workqueue import Queue
+from kstrl.queue.workqueue_items import ItemState, QueueConfig, QueueItem
+from kstrl.queue.workqueue_store import queue_root
 from kstrl.serve_outcome import RunOutcome
 from kstrl.serve_spend import RunSpend
-from kstrl.workqueue import Queue
-from kstrl.workqueue_items import ItemState, QueueConfig, QueueItem
-from kstrl.workqueue_store import queue_root
 from tests.helpers.procs import kill_group, wait_for_line
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
 

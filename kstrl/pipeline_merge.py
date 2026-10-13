@@ -12,7 +12,7 @@ from kstrl.acceptance_lines import pr_isolation
 from kstrl.context import IterationContext, IterationRecord
 from kstrl.events import event_catalog
 from kstrl.git import git, git_base
-from kstrl.inbox import (
+from kstrl.owner import (
     InboxItem,
     ItemKind,
     ItemStatus,

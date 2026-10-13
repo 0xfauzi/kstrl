@@ -33,7 +33,7 @@ important. The following are documented in the codebase and are the right
 starting points for any report:
 
 - **Agent sandbox** - what worktree isolation does and does not bound (shell
-  reads/writes, network): module docstring in `kstrl/sandbox.py` and the
+  reads/writes, network): module docstring in `kstrl/agents/sandbox.py` and the
   `[sandbox]` keys in [`docs/env-vars.md`](docs/env-vars.md).
 - **Known limitations** - correlated-failure risk, self-reported flags treated
   as hints not signals, and the trusted fact-injection prompt: the "Known

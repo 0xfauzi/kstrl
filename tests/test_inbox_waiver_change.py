@@ -24,7 +24,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.inbox import Inbox, InboxConfig, ItemKind
+from kstrl.owner.inbox import Inbox, InboxConfig, ItemKind
 from tests.helpers import gitrepo
 from tests.test_inbox_waivers import (
     BRANCH,

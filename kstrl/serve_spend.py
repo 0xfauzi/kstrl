@@ -270,7 +270,7 @@ class SpendLedger:
 
     def _write_unlocked(self, state: ServeState) -> None:
         """Atomic rewrite; caller must already hold ``control_lock``."""
-        from kstrl.workqueue_store import atomic_write
+        from kstrl.queue import atomic_write
 
         path = self.path
         path.parent.mkdir(parents=True, exist_ok=True)

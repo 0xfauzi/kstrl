@@ -12,7 +12,7 @@ from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 
-from kstrl.agents.prompt_record import AgentCall
+from kstrl.agents import AgentCall
 from kstrl.context import IterationContext
 from kstrl.events import event_catalog
 from kstrl.pipeline_state import PipelineState, iso_now

@@ -23,9 +23,9 @@ import pytest
 from click.testing import CliRunner
 
 from kstrl.cli import cli
-from kstrl.inbox import Inbox, InboxConfig, InboxItem, ItemKind, ItemStatus
-from kstrl.workqueue import Queue
-from kstrl.workqueue_items import ItemState, QueueConfig
+from kstrl.owner.inbox import Inbox, InboxConfig, InboxItem, ItemKind, ItemStatus
+from kstrl.queue.workqueue import Queue
+from kstrl.queue.workqueue_items import ItemState, QueueConfig
 from tests.helpers.gitrepo import git_in
 from tests.test_isolation_rung import needs_nono
 from tests.test_prompt_record import _spec_project

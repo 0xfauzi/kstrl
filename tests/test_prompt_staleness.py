@@ -39,15 +39,15 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import init_cmd, scaffold_ledger
-from kstrl.scaffold_ledger import (
+from kstrl.project import init_cmd, scaffold_ledger
+from kstrl.project.scaffold_ledger import (
     SCAFFOLDED_TEMPLATES,
     ScaffoldedTemplate,
     classify_scaffold,
     classify_scaffolded_path,
     staleness_notice,
 )
-from kstrl.scaffold_templates import DEFAULT_PROMPT, DEFAULT_PROMPT_VERSION
+from kstrl.project.scaffold_templates import DEFAULT_PROMPT, DEFAULT_PROMPT_VERSION
 from tests.helpers import astwalk
 from tests.test_init_cmd import run_init_capturing
 
@@ -260,7 +260,7 @@ _RECORDED_HISTORY: dict[str, tuple[tuple[str, str], ...]] = {
         ("8146096422efcb9b4196b76711fc44c80e2c7b5b920771f8a1eddcb4ba5a81c8", "2026-09-07"),
     ),
     # #199. Ledgered for the first time: the same three digests as the
-    # row this mirrors in kstrl/scaffold_ledger.py, re-derived from the
+    # row this mirrors in kstrl/project/scaffold_ledger.py, re-derived from the
     # ancestor commits of main.
     "codebase_map.md": (
         ("48ede9d3d9ce78ebcc0e0b2b7e030cc3be3e58894627a875a4c29420b541126a", "2026-01-14"),
@@ -343,10 +343,10 @@ EXPECTED_TEMPLATE_FILENAMES: dict[str, int] = {
     "cli_report.py": 1,
     "config/config.py": 4,
     "factory_worker.py": 3,
-    "init_cmd.py": 6,
-    "operator_context.py": 2,
+    "project/init_cmd.py": 6,
+    "project/operator_context.py": 2,
     # N2 (#776): the six ledger rows left init_cmd.py for this module.
-    "scaffold_ledger.py": 6,
+    "project/scaffold_ledger.py": 6,
 }
 
 
@@ -398,7 +398,7 @@ def _writes_a_scaffold(node: ast.Call, table: astwalk.Bindings) -> bool:
     """Is this call ``_create_if_missing``, however the callee is spelled?
 
     The bare name, ``init_cmd._create_if_missing``, and the import alias
-    ``from kstrl.init_cmd import _create_if_missing as _cim``, which the
+    ``from kstrl.project.init_cmd import _create_if_missing as _cim``, which the
     resolver decides and a name match cannot. A LOCAL rebind of the
     function object stays a miss; layer 1 is what still counts the
     filename such a call writes.
@@ -481,7 +481,7 @@ class TestLedgerIntegrity:
             assert template.history[: len(recorded)] == recorded, (
                 f"{template.constant_name}'s recorded history changed. A "
                 "new body is an APPEND: add a row at the end here and in "
-                "kstrl/scaffold_ledger.py, and leave every earlier row exactly "
+                "kstrl/project/scaffold_ledger.py, and leave every earlier row exactly "
                 "as it is. Editing or dropping one destroys the only "
                 "record that can recognise a copy already on an "
                 "operator's disk."
@@ -581,7 +581,7 @@ class TestTheScaffoldWalkCatchesWhatItClaims:
     def test_a_writer_renamed_on_import_is_found(self) -> None:
         """The alias the disclosure used to call theoretical."""
         body = (
-            "from kstrl.init_cmd import _create_if_missing as _cim\n"
+            "from kstrl.project.init_cmd import _create_if_missing as _cim\n"
             '_cim(kstrl_dir / "x_prompt.md", DEFAULT_X_PROMPT, ui)\n'
         )
         assert self._found(body) == {("x_prompt.md", "DEFAULT_X_PROMPT")}
@@ -653,7 +653,7 @@ class TestTheScaffoldWalkCatchesWhatItClaims:
         2 counting the writer, and a rebound writer leaves layer 1
         counting the filename. Their CONJUNCTION is neither, and it was
         pinned by neither. Measured: a fourth un-enrolled scaffolded
-        template planted in ``kstrl/init_cmd.py`` with both residuals
+        template planted in ``kstrl/project/init_cmd.py`` with both residuals
         present gives 26 passed and 2 xfailed, #286 reproduced with the
         guard green.
 
@@ -678,11 +678,11 @@ def test_engineer_prompt_bump_reaches_existing_projects() -> None:
     DEFAULT_PROMPT moves without a matching row, in the same file the
     person doing the bump is already editing. The deeper invariants live
     in this file."""
-    from kstrl.scaffold_ledger import SCAFFOLDED_TEMPLATES
+    from kstrl.project.scaffold_ledger import SCAFFOLDED_TEMPLATES
 
     template = next(t for t in SCAFFOLDED_TEMPLATES if t.filename == "prompt.md")
     assert template.history[-1] == (_sha256(DEFAULT_PROMPT), DEFAULT_PROMPT_VERSION), (
-        "SCAFFOLDED_TEMPLATES in kstrl/scaffold_ledger.py does not end with the "
+        "SCAFFOLDED_TEMPLATES in kstrl/project/scaffold_ledger.py does not end with the "
         "engineer prompt this harness ships. APPEND "
         f"({_sha256(DEFAULT_PROMPT)!r}, {DEFAULT_PROMPT_VERSION!r}) to its "
         "history and keep every older row."

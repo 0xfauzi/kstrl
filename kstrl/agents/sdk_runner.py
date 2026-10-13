@@ -41,8 +41,8 @@ from pathlib import Path
 from typing import Any
 
 from kstrl.agents.claude_sdk import DISPLAY_PREFIX, RESULT_PREFIX, USAGE_PREFIX
+from kstrl.agents.sandbox import ClaudeRole, claude_session_env, claude_session_flags
 from kstrl.io import read_json
-from kstrl.sandbox import ClaudeRole, claude_session_env, claude_session_flags
 from kstrl.write_guard import GUARDED_TOOLS, real_roots, refusal
 
 # Runner exit codes (informational; the adapter keys on output lines).

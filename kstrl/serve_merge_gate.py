@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from kstrl.workqueue_items import MergeDisposition, QueueItem
+from kstrl.queue import MergeDisposition, QueueItem
 
 # ---------------------------------------------------------------------------
 # Merge disposition - the human gate must survive continuous intake

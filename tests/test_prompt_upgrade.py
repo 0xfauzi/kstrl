@@ -25,10 +25,14 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner, Result
 
-from kstrl import init_cmd, scaffold_ledger
 from kstrl.cli import cli
-from kstrl.scaffold_ledger import ScaffoldedTemplate, classify_scaffolded_path, staleness_notice
-from kstrl.scaffold_templates import DEFAULT_PROMPT, DEFAULT_PROMPT_VERSION
+from kstrl.project import init_cmd, scaffold_ledger
+from kstrl.project.scaffold_ledger import (
+    ScaffoldedTemplate,
+    classify_scaffolded_path,
+    staleness_notice,
+)
+from kstrl.project.scaffold_templates import DEFAULT_PROMPT, DEFAULT_PROMPT_VERSION
 from tests.helpers import gitrepo
 from tests.helpers.prompt_calls import offline_run
 from tests.spine_utils import git as spine_git

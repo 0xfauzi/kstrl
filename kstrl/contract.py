@@ -48,7 +48,7 @@ from kstrl.proc import (
     remove_temp_worktree,
     run_scrubbed,
 )
-from kstrl.stack import NO_STACK, Stack, stack_in_force
+from kstrl.project import NO_STACK, Stack, stack_in_force
 from kstrl.verify_commands import check_stack_command
 
 if TYPE_CHECKING:

@@ -10,7 +10,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl.agent_output import (
+from kstrl.agents import (
     AgentOutputTooLarge,
     collect_agent_output,
     extract_json,
@@ -27,7 +27,7 @@ from kstrl.review_prompt import build_review_prompt
 from kstrl.verify_model import VerificationResult
 
 if TYPE_CHECKING:
-    from kstrl.agents.base import Agent
+    from kstrl.agents import Agent
     from kstrl.ui import UI
 
 

@@ -113,7 +113,7 @@ EXPECTED_SPELLINGS: frozenset[tuple[str, str]] = frozenset(
         ("kstrl/decisions.py", "escalation"),
         # #696 slice 3: the stack_confirmation inbox dedupe key,
         # "stack:<digest>" (stack.STACK_KEY). Same family as the three above.
-        ("kstrl/stack.py", "stack"),
+        ("kstrl/project/stack.py", "stack"),
         # Finding metadata: CWE and OWASP ids, and the keys a finding
         # serialises its own fields under.
         ("kstrl/plan/findings.py", "attempt"),
@@ -142,8 +142,8 @@ EXPECTED_SPELLINGS: frozenset[tuple[str, str]] = frozenset(
         ("kstrl/pipeline_checks.py", "policy"),
         # #595: finding tags an inbox approval writes on a policy
         # finding. A tag is not a failure signature.
-        ("kstrl/waivers.py", "waiver"),
-        ("kstrl/waivers.py", "waiver_refused"),
+        ("kstrl/owner/waivers.py", "waiver"),
+        ("kstrl/owner/waivers.py", "waiver_refused"),
         # #700 slice 3: a replay stage's name ("check:<name>", written as
         # f"check:{name}") and the two cannot-run stages that carry an exit
         # ("setup_failed:<exit>", "up_failed:<exit>"). These are the doctor

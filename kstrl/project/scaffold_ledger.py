@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal, NamedTuple
 
 from kstrl.io import atomic_write_text
-from kstrl.scaffold_templates import (
+from kstrl.project.scaffold_templates import (
     DEFAULT_CODEBASE_MAP,
     DEFAULT_FEATURE_UNDERSTAND_PROMPT,
     DEFAULT_GOLDEN_PATTERNS,
@@ -438,7 +438,7 @@ def _atomic_replace(target: Path, content: str) -> None:
     The write is ``atomicio.atomic_write_text``, which since #291 is the
     one owner of the mode and encoding rules this used to spell out for
     itself. ``atomicio`` is a stdlib-only leaf, so importing it here does
-    NOT put ``kstrl.workqueue`` in ``kstrl.loop``'s static import
+    NOT put ``kstrl.queue.workqueue`` in ``kstrl.loop``'s static import
     closure via loop's deferred ``init_cmd`` import, which is what #274's
     ``tests/test_state_dir_scope.py`` refuses and what kept this copy
     hand-rolled until now.
@@ -506,7 +506,7 @@ def _upgrade_scaffolded_templates(root: Path, ui: UI) -> None:
                 "    Either you edited it or it came from a build outside "
                 "this history, and nothing here can tell those apart. "
                 f"Diff it against {state.template.constant_name} in "
-                "kstrl/init_cmd.py yourself."
+                "kstrl/project/init_cmd.py yourself."
             )
         else:  # absent: the scaffold pass below writes it
             ui.info(f"  {name} is missing; the scaffold below creates it")

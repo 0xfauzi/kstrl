@@ -26,14 +26,14 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl import operator_context
 from kstrl.config.config import KstrlConfig
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult
-from kstrl.operator_context import GOLDEN_PATTERNS, MEMORY
 from kstrl.plan.manifest import Component, Manifest
-from kstrl.scaffold_templates import DEFAULT_GOLDEN_PATTERNS
+from kstrl.project import operator_context
+from kstrl.project.operator_context import GOLDEN_PATTERNS, MEMORY
+from kstrl.project.scaffold_templates import DEFAULT_GOLDEN_PATTERNS
 from kstrl.ui.plain import PlainUI
 from kstrl.verify_model import VerifyConfig
 from tests.helpers.stack_confirmation import in_process_stack

@@ -2,7 +2,7 @@
 
 This module holds the queue paths, the lock, the scan of the state
 directories, the journal, the pause marker, and ``atomic_write``. The life
-of an item (``add`` and each transition) is in ``kstrl.workqueue``.
+of an item (``add`` and each transition) is in ``kstrl.queue.workqueue``.
 
 **Layout.** Each state is a directory under ``.kstrl/queue/``; each item
 is a DIRECTORY holding its spec file plus ``meta.json``::
@@ -57,7 +57,7 @@ from kstrl.io import (
     read_json,
     state_dir,
 )
-from kstrl.workqueue_items import (
+from kstrl.queue.workqueue_items import (
     ALL_STATES,
     ItemState,
     JournalEntry,
@@ -204,7 +204,7 @@ def queue_item_for_spec(root_dir: Path, spec_path: Path) -> str | None:
 class QueueStore:
     """The queue on disk: paths, scan, journal and pause marker.
 
-    ``kstrl.workqueue.Queue`` adds the life of an item on top of it.
+    ``kstrl.queue.workqueue.Queue`` adds the life of an item on top of it.
     """
 
     def __init__(self, root_dir: Path, config: QueueConfig | None = None) -> None:

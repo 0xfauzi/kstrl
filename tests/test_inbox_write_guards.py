@@ -39,8 +39,8 @@ import pytest
 
 from tests.helpers import astwalk
 
-INBOX = "kstrl.inbox.Inbox"
-INBOX_CONFIG_LOAD = "kstrl.inbox.InboxConfig.load"
+INBOX = "kstrl.owner.inbox.Inbox"
+INBOX_CONFIG_LOAD = "kstrl.owner.inbox.InboxConfig.load"
 CONTROL_ERROR = "kstrl.io.statedir.ControlStateError"
 
 #: Every method of ``Inbox`` that appends and therefore takes the control
@@ -52,26 +52,26 @@ MUTATORS = frozenset({"add", "approve", "reject", "resolve", "snooze"})
 #: A new one is an unexplained delta: adding a row here is how you say
 #: you have decided what the new site catches.
 EXPECTED_CONSTRUCTIONS = (
-    "autonomy_transitions.py kstrl.inbox.Inbox",
-    "calibration_ladder.py kstrl.inbox.Inbox",
-    "cli_inbox.py kstrl.inbox.Inbox",
-    "decisions.py kstrl.inbox.Inbox",
-    "factory_autonomy.py kstrl.inbox.Inbox",
+    "autonomy_transitions.py kstrl.owner.inbox.Inbox",
+    "calibration_ladder.py kstrl.owner.inbox.Inbox",
+    "cli_inbox.py kstrl.owner.inbox.Inbox",
+    "decisions.py kstrl.owner.inbox.Inbox",
+    "factory_autonomy.py kstrl.owner.inbox.Inbox",
+    # #646: ks retry reads the approvals (approvals_at) to decide whether
+    # it keeps the failed head. It scans and reads; it mutates nothing.
+    "owner/waivers.py kstrl.owner.inbox.Inbox",
     # #639 slice 4: read_owner_answers scans for the owner's answers; reads only.
-    "owner_answers.py kstrl.inbox.Inbox",
-    "pipeline_inbox.py kstrl.inbox.Inbox",
+    "owner_answers.py kstrl.owner.inbox.Inbox",
+    "pipeline_inbox.py kstrl.owner.inbox.Inbox",
     # #602: the L1 plan gate reads its item (_find) and records a decision
     # given at the prompt (_record).
-    "plan_gate.py kstrl.inbox.Inbox",
-    "serve_gates.py kstrl.inbox.Inbox",
-    "serve_settle.py kstrl.inbox.Inbox",
+    "plan_gate.py kstrl.owner.inbox.Inbox",
     # #696 slice 3: a [stack]'s confirmation is read (_latest_approval),
     # filed (file_stack_item) and decided at the ks factory prompt
     # (decide_at_prompt).
-    "stack.py kstrl.inbox.Inbox",
-    # #646: ks retry reads the approvals (approvals_at) to decide whether
-    # it keeps the failed head. It scans and reads; it mutates nothing.
-    "waivers.py kstrl.inbox.Inbox",
+    "project/stack.py kstrl.owner.inbox.Inbox",
+    "serve_gates.py kstrl.owner.inbox.Inbox",
+    "serve_settle.py kstrl.owner.inbox.Inbox",
 )
 
 #: The same census BY COUNT. ``without_line_numbers`` deduplicates, so the tuple above cannot
@@ -96,8 +96,8 @@ EXPECTED_CONSTRUCTION_COUNTS = {
     "plan_gate.py": 2,
     "serve_gates.py": 1,
     "serve_settle.py": 1,
-    "stack.py": 3,
-    "waivers.py": 1,
+    "project/stack.py": 3,
+    "owner/waivers.py": 1,
 }
 
 #: Calls whose callee has no identifier at all, which ``calls_to`` treats
@@ -143,9 +143,11 @@ EXPECTED_MUTATIONS: dict[str, Disposition] = {
     # #696: each propagates to a caller that refuses on it. unconfirmed_lines
     # catches everything file_stack_item raises; cli._stack_checkpoint
     # catches SURFACE_REJECTIONS (ControlStateError is a RuntimeError).
-    "stack.py::file_stack_item::add": Disposition(guarded=False, reason="the caller refuses"),
-    "stack.py::decide_at_prompt::approve": Disposition(guarded=False, reason="as ::add"),
-    "stack.py::decide_at_prompt::reject": Disposition(guarded=False, reason="as ::add"),
+    "project/stack.py::file_stack_item::add": Disposition(
+        guarded=False, reason="the caller refuses"
+    ),
+    "project/stack.py::decide_at_prompt::approve": Disposition(guarded=False, reason="as ::add"),
+    "project/stack.py::decide_at_prompt::reject": Disposition(guarded=False, reason="as ::add"),
     "cli_inbox.py::_decide_and_report::approve": Disposition(
         guarded=False,
         reason=(
@@ -206,21 +208,21 @@ EXPECTED_CONFIG_LOADS: dict[str, Disposition] = {
     "factory_autonomy.py::_open_health_breach_items": _GUARDED,
     "serve_settle.py::_file_inbox_item": _GUARDED,
     # #696 slice 3: a load the stack check cannot make is a refusal.
-    "stack.py::_refusal": _GUARDED,
-    "stack.py::file_stack_item": Disposition(
+    "project/stack.py::_refusal": _GUARDED,
+    "project/stack.py::file_stack_item": Disposition(
         guarded=False,
         reason=(
             "every caller refuses on what it raises: unconfirmed_lines catches "
             "everything, and decide_at_prompt's caller catches TypeError"
         ),
     ),
-    "stack.py::decide_at_prompt": Disposition(
+    "project/stack.py::decide_at_prompt": Disposition(
         guarded=False,
         reason="cli._stack_checkpoint catches SURFACE_REJECTIONS, TypeError among them",
     ),
     # #433: home's needs-you rows; a load it cannot make renders no count.
     # #646: ks retry's read of the approvals; a load it cannot make keeps nothing.
-    "waivers.py::approvals_at": _GUARDED,
+    "owner/waivers.py::approvals_at": _GUARDED,
     "serve_gates.py::check_inbox_cap": Disposition(
         guarded=False,
         reason=(
@@ -410,7 +412,7 @@ def _all_rows(subject: str) -> dict[str, tuple[ast.Call, ast.AST, astwalk.Bindin
 
 
 CONTROL_MUTATION = """
-from kstrl.inbox import Inbox, InboxConfig
+from kstrl.owner.inbox import Inbox, InboxConfig
 
 def emit(root):
     box = Inbox(root, InboxConfig.load(root))
@@ -555,7 +557,7 @@ class TestTheTwoWaysASiteClears:
     @staticmethod
     def _site(handler: str) -> tuple[ast.AST, ast.Call, astwalk.Bindings]:
         source = (
-            "from kstrl.inbox import Inbox, InboxConfig\n"
+            "from kstrl.owner.inbox import Inbox, InboxConfig\n"
             "from kstrl.io.statedir import ControlStateError\n"
             "def emit(root):\n"
             "    try:\n"
@@ -615,12 +617,16 @@ UNCONDITIONAL_DECISIONS: dict[str, str] = {
     "cli_inbox.py::inbox_retry::resolve": "the operator typed ks inbox retry",
     "plan_gate.py::_record::approve": "the operator answered the plan checkpoint prompt",
     "plan_gate.py::_record::reject": "the operator answered the plan checkpoint prompt",
-    "stack.py::decide_at_prompt::approve": "the operator answered the stack checkpoint prompt",
-    "stack.py::decide_at_prompt::reject": "the operator answered the stack checkpoint prompt",
+    "project/stack.py::decide_at_prompt::approve": (
+        "the operator answered the stack checkpoint prompt"
+    ),
+    "project/stack.py::decide_at_prompt::reject": (
+        "the operator answered the stack checkpoint prompt"
+    ),
 }
 
 CONTROL_DECISION = """
-from kstrl.inbox import UNDECIDED, Inbox
+from kstrl.owner.inbox import UNDECIDED, Inbox
 
 def emit(root, item):
     box = Inbox(root)
@@ -665,7 +671,7 @@ class TestAnAutomatedDecisionKeepsTheOperatorsAnswer:
         assert _unconditional(_mutation_calls(scratch)) == {"scratch.py::emit::resolve"}
 
 
-#: Calls in ``kstrl/inbox.py`` that write the log, per scope and callee.
+#: Calls in ``kstrl/owner/inbox.py`` that write the log, per scope and callee.
 #: Not seen: a write through a callee not named here (``path.write_text``,
 #: ``open(..., "w")``); every append open in the package is pinned by
 #: ``tests/test_append_opens_have_one_home.py``.
@@ -754,12 +760,12 @@ def _log_writers(tree: ast.Module) -> dict[str, tuple[ast.AST, int]]:
 
 class TestTheInboxFoldsAndWritesInOneHold:
     def test_the_log_writes_are_pinned(self) -> None:
-        tree = astwalk.parsed(astwalk.KSTRL_PACKAGE / "inbox.py")
+        tree = astwalk.parsed(astwalk.KSTRL_PACKAGE / "owner/inbox.py")
         counts = {key: count for key, (_scope, count) in _log_writers(tree).items()}
         assert counts == EXPECTED_LOG_WRITES, counts
 
     def test_every_writer_reads_and_writes_inside_one_lock_hold(self) -> None:
-        tree = astwalk.parsed(astwalk.KSTRL_PACKAGE / "inbox.py")
+        tree = astwalk.parsed(astwalk.KSTRL_PACKAGE / "owner/inbox.py")
         loose = {
             key: _outside_one_hold(scope)
             for key, (scope, _count) in _log_writers(tree).items()

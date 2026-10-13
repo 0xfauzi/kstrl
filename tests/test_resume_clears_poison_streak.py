@@ -44,12 +44,12 @@ RESUME_SITES = {
     # budget gate sets resume_after, so this never lifts a breaker pause.
     "kstrl/serve.py::serve_cycle": 1,
     # The definition of Queue.resume.
-    "kstrl/workqueue_store.py::<module>": 1,
+    "kstrl/queue/workqueue_store.py::<module>": 1,
 }
 
 #: The rows above that cannot lift a pause the poison breaker set.
 NOT_AN_OPERATOR_RESUME = frozenset(
-    {"kstrl/serve.py::serve_cycle", "kstrl/workqueue_store.py::<module>"}
+    {"kstrl/serve.py::serve_cycle", "kstrl/queue/workqueue_store.py::<module>"}
 )
 
 

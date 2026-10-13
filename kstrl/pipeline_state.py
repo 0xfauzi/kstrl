@@ -16,8 +16,7 @@ from typing import TYPE_CHECKING
 from kstrl.divergence import AttemptReading
 from kstrl.events import NotifyHooks, UsageTotals
 from kstrl.events import events as ev
-from kstrl.inbox import Inbox
-from kstrl.interaction import InteractionChannel, UiInteractionChannel
+from kstrl.owner import ApprovalSnapshot, Inbox, InteractionChannel, UiInteractionChannel
 from kstrl.plan import Manifest, RunScope
 from kstrl.proc import WorktreeSweep
 from kstrl.review import ReviewResult
@@ -25,7 +24,6 @@ from kstrl.runenvelope import RunEnvelope
 from kstrl.runstate import RunState
 from kstrl.security import SecurityResult
 from kstrl.verify import MechanicalVerification
-from kstrl.waivers import ApprovalSnapshot
 
 if TYPE_CHECKING:
     from kstrl.config import KstrlConfig

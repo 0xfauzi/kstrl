@@ -8,11 +8,9 @@ from typing import TYPE_CHECKING, Any
 
 from kstrl.context import IterationContext
 from kstrl.events import event_catalog
-from kstrl.inbox import (
-    ItemKind,
-)
-from kstrl.interaction import (
+from kstrl.owner import (
     CheckpointContext,
+    ItemKind,
     PromptKind,
     PromptRequest,
     PromptResponse,

@@ -12,8 +12,8 @@ import click
 from kstrl.cli_preflight import _reject_blank_project_name
 from kstrl.cli_seam import _actor, _autonomy_ui, cli
 from kstrl.config_report import UI_MODES
+from kstrl.queue import ItemState
 from kstrl.ui import UI
-from kstrl.workqueue_items import ItemState
 
 
 @cli.group(name="queue")
@@ -45,8 +45,7 @@ _queue_no_color_option = click.option(
 
 
 def _queue_for(root: Path | None) -> tuple[Path, Any]:
-    from kstrl.workqueue import Queue
-    from kstrl.workqueue_items import QueueConfig
+    from kstrl.queue import Queue, QueueConfig
 
     root_dir = (root or Path.cwd()).resolve()
     return root_dir, Queue(root_dir, QueueConfig.load(root_dir))
@@ -54,7 +53,7 @@ def _queue_for(root: Path | None) -> tuple[Path, Any]:
 
 def _resolve_queue_item(queue: Any, item_id: str, ui_impl: UI) -> Any:
     """Look up one item or exit; an ambiguous prefix is an error."""
-    from kstrl.workqueue_items import QueueError
+    from kstrl.queue import QueueError
 
     try:
         item = queue.get(item_id)
@@ -111,8 +110,7 @@ def queue_add(
     The spec is COPIED into the item, so editing or deleting the
     original afterwards cannot change what eventually runs.
     """
-    from kstrl.workqueue_items import MergeDisposition, QueueError
-    from kstrl.workqueue_store import queue_lock
+    from kstrl.queue import MergeDisposition, QueueError, queue_lock
 
     root_dir, queue = _queue_for(root)
     ui_impl = _autonomy_ui(ui, no_color)
@@ -161,8 +159,7 @@ def queue_ls(
     no_color: bool,
 ) -> None:
     """List queue items in run order."""
-    from kstrl.workqueue import summarize
-    from kstrl.workqueue_items import ItemState
+    from kstrl.queue import ItemState, summarize
 
     _root_dir, queue = _queue_for(root)
     ui_impl = _autonomy_ui(ui, no_color)
@@ -252,7 +249,7 @@ def queue_show(
 
 def _retry_refusal(item: Any) -> str:
     """Why `ks queue retry` refuses ``item``, naming the command that does apply."""
-    from kstrl.workqueue_items import ItemState
+    from kstrl.queue import ItemState
 
     refusal = f"{item.item_id} is {item.state}; only failed or poisoned items can be retried"
     if item.state is ItemState.AWAITING_ANSWER:
@@ -294,8 +291,7 @@ def queue_answer(
     not changed, as `ks queue retry` does not change it.
     """
     from kstrl.decisions import escalation_naming
-    from kstrl.workqueue_items import ItemState, QueueError
-    from kstrl.workqueue_store import queue_lock
+    from kstrl.queue import ItemState, QueueError, queue_lock
 
     root_dir, queue = _queue_for(root)
     ui_impl = _autonomy_ui(ui, no_color)
@@ -365,8 +361,7 @@ def queue_retry(
     it poisoned straight back without spending anything, which looks
     like the command silently failed.
     """
-    from kstrl.workqueue_items import ItemState, QueueError
-    from kstrl.workqueue_store import queue_lock
+    from kstrl.queue import ItemState, QueueError, queue_lock
 
     root_dir, queue = _queue_for(root)
     ui_impl = _autonomy_ui(ui, no_color)
@@ -419,8 +414,7 @@ def queue_priority(
     Only a queued item can change: every other state is refused by name
     and nothing is written. The change is a row in `ks queue show`.
     """
-    from kstrl.workqueue_items import QueueError
-    from kstrl.workqueue_store import queue_lock
+    from kstrl.queue import QueueError, queue_lock
 
     root_dir, queue = _queue_for(root)
     ui_impl = _autonomy_ui(ui, no_color)
@@ -452,8 +446,7 @@ def queue_rm(
     no_color: bool,
 ) -> None:
     """Delete an item and its spec."""
-    from kstrl.workqueue_items import QueueError
-    from kstrl.workqueue_store import queue_lock
+    from kstrl.queue import QueueError, queue_lock
 
     root_dir, queue = _queue_for(root)
     ui_impl = _autonomy_ui(ui, no_color)
@@ -492,7 +485,7 @@ def queue_pause(
     Does not touch anything already running - a pause is an admission
     gate, not a kill switch.
     """
-    from kstrl.workqueue_store import queue_lock
+    from kstrl.queue import queue_lock
 
     root_dir, queue = _queue_for(root)
     ui_impl = _autonomy_ui(ui, no_color)
@@ -515,9 +508,8 @@ def queue_resume(root: Path | None, ui: str, no_color: bool) -> None:
     pause the queue again on the poisons the operator has looked at.
     """
     from kstrl.io import ControlStateError
+    from kstrl.queue import ItemState, queue_lock
     from kstrl.serve_spend import ServeStateError, SpendLedger
-    from kstrl.workqueue_items import ItemState
-    from kstrl.workqueue_store import queue_lock
 
     root_dir, queue = _queue_for(root)
     ui_impl = _autonomy_ui(ui, no_color)
@@ -570,8 +562,7 @@ def queue_sync(
     """
     from kstrl.intake_gh import GitHubIntakeConfig, IntakeError
     from kstrl.intake_github import sync as run_sync
-    from kstrl.workqueue_items import QueueError, QueueLockedError
-    from kstrl.workqueue_store import queue_lock
+    from kstrl.queue import QueueError, QueueLockedError, queue_lock
 
     root_dir, queue = _queue_for(root)
     ui_impl = _autonomy_ui(ui, no_color)

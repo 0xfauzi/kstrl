@@ -433,7 +433,7 @@ _EXPECTED_STATE_DIR_SPELLINGS: dict[str, int] = {
     "io/__init__.py": 2,
     "io/statedir.py": 6,  # +1 #545: plan_prd_path joins the plan directory; -2 #863 A4
     "proc/temp_worktree.py": 1,
-    "workqueue_store.py": 2,
+    "queue/workqueue_store.py": 2,
 }
 
 
@@ -630,8 +630,8 @@ class TestNothingTheLoopRunsWritesTheUncarvedEntries:
     #: writer, and the GitHub intake that admits work.
     WRITERS = frozenset(
         {
-            "kstrl.workqueue",
-            "kstrl.workqueue_store",
+            "kstrl.queue.workqueue",
+            "kstrl.queue.workqueue_store",
             "kstrl.serve",
             "kstrl.cli",
             "kstrl.cli_seam",
@@ -676,12 +676,15 @@ class TestNothingTheLoopRunsWritesTheUncarvedEntries:
     def test_a_re_export_from_outside_the_package_keeps_the_package_edge(
         self, tmp_path: Path
     ) -> None:
-        """#863 B4. ``kstrl/agents/__init__.py`` re-exports ``pathlib.Path``,
-        thus ``bindings`` gives ``pathlib.Path`` and no ``kstrl`` name. The
-        import still executes the ``__init__.py``. Without the base of the
-        ``from``, the closure held only the module itself."""
+        """#863 B4. ``kstrl/agents/__init__.py`` binds ``annotations`` from
+        ``__future__``, thus ``bindings`` gives ``__future__.annotations``
+        and no ``kstrl`` name. The import still executes the
+        ``__init__.py``. Without the base of the ``from``, the closure held
+        only the module itself. (Before #863 M3 the name was ``Path``, a
+        re-export of ``pathlib.Path`` that M3 removed: ``bindings`` then
+        gave ``kstrl.agents.Path``, and the test was green without the edge.)"""
         source = tmp_path / "importer.py"
-        source.write_text("from kstrl.agents import Path\n", encoding="utf-8")
+        source.write_text("from kstrl.agents import annotations\n", encoding="utf-8")
         assert "kstrl.agents" in _imported_names(source)
 
 
@@ -696,7 +699,7 @@ class TestSignalsCannotReachTheQueue:
         passes vacuously if ``kstrl.signals`` ever stops resolving to a
         real file - a rename, or a stale name typed here - because
         ``_import_closure`` on a name with no file behind it returns just
-        that one-element set, and ``"kstrl.workqueue" not in {itself}``
+        that one-element set, and ``"kstrl.queue.workqueue" not in {itself}``
         is trivially true whatever the renamed module actually imports."""
         closure = _import_closure("kstrl.signals")
         assert "kstrl.io.statedir" in closure, (
@@ -705,8 +708,8 @@ class TestSignalsCannotReachTheQueue:
             "pass on any import kstrl.signals actually has."
         )
         # #776 W2: the queue is two modules. Signals can reach the store
-        # (queue_root, the pause marker, the journal) with no edge to kstrl.workqueue.
-        assert closure.isdisjoint({"kstrl.workqueue", "kstrl.workqueue_store"}), (
+        # (queue_root, the pause marker, the journal) with no edge to kstrl.queue.workqueue.
+        assert closure.isdisjoint({"kstrl.queue.workqueue", "kstrl.queue.workqueue_store"}), (
             "slice 1 of R8.8 observes and does not spend. An import edge here "
             "is how that stops being true. If the enqueue slice is landing, "
             "delete this class in the same diff that adds the ladder replay to "
@@ -714,11 +717,11 @@ class TestSignalsCannotReachTheQueue:
         )
 
     def test_the_queue_does_not_import_signals(self) -> None:
-        closure = _import_closure("kstrl.workqueue")
+        closure = _import_closure("kstrl.queue.workqueue")
         assert "kstrl.io.statedir" in closure, (
-            "kstrl.workqueue's import closure holds only itself, which means "
+            "kstrl.queue.workqueue's import closure holds only itself, which means "
             "the name below resolved to no file. This assertion would then "
-            "pass on any import kstrl.workqueue actually has."
+            "pass on any import kstrl.queue.workqueue actually has."
         )
         assert "kstrl.signals" not in closure, (
             "slice 1 of R8.8 observes and does not spend. An import edge here "

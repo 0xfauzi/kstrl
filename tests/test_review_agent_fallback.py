@@ -36,7 +36,7 @@ import pytest
 
 import kstrl.cli_factory as cli_factory_mod
 import kstrl.cli_preflight as cli_preflight_mod
-from kstrl.init_cmd import gitignore_block
+from kstrl.project.init_cmd import gitignore_block
 from tests.helpers import gitrepo
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
 

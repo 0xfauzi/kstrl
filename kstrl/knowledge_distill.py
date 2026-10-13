@@ -12,7 +12,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl.agent_output import (
+from kstrl.agents import (
     AgentOutputTooLarge,
     collect_agent_output,
     extract_json,
@@ -33,7 +33,7 @@ from kstrl.plan import prd_text_for_prompt
 from kstrl.proc import limit_seconds
 
 if TYPE_CHECKING:
-    from kstrl.agents.base import Agent
+    from kstrl.agents import Agent
     from kstrl.plan import Component
 
 

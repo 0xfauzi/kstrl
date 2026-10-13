@@ -7,13 +7,13 @@ from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Literal
 
 from kstrl.git import git, git_tree
-from kstrl.interaction import (
+from kstrl.io import STATE_DIR_NAME
+from kstrl.owner import (
     InteractionChannel,
     PromptKind,
     PromptRequest,
     UiInteractionChannel,
 )
-from kstrl.io import STATE_DIR_NAME
 
 if TYPE_CHECKING:
     from pathlib import Path

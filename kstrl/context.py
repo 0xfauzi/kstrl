@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from kstrl.io import read_json
-from kstrl.waivers import ACCEPTANCE_PHASE
+from kstrl.owner import ACCEPTANCE_PHASE
 
 # The phases run in this fixed order inside one attempt. The rank is
 # what lets the renderer tell "this check ran again in the latest

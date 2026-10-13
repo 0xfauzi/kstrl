@@ -45,9 +45,9 @@ from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult, FactoryResult
 from kstrl.git import git_tree
 from kstrl.guards import enforce_allowed_paths, path_is_allowed
-from kstrl.interaction import PromptRequest, PromptResponse
 from kstrl.knowledge_facts import KnowledgeConfig
 from kstrl.loop import run_loop
+from kstrl.owner.interaction import PromptRequest, PromptResponse
 from kstrl.pipeline import ComponentPipeline
 from kstrl.pipeline_state import PipelineHooks
 from kstrl.plan.manifest import Component, Manifest

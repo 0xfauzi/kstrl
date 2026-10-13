@@ -37,8 +37,8 @@ from kstrl.autonomy import AutonomyError, AutonomyState, DemotionTrigger
 from kstrl.autonomy_config import AutonomyConfig
 from kstrl.autonomy_transitions import apply_demotion
 from kstrl.calibration_baseline import UNKNOWN_TIMESTAMP
-from kstrl.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.io import ControlStateError
+from kstrl.owner import Inbox, InboxConfig, ItemKind
 from kstrl.ui import PlainUI
 
 if TYPE_CHECKING:

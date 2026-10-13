@@ -14,13 +14,13 @@ import re
 from dataclasses import replace
 from pathlib import Path
 
-from kstrl.operator_context import (
+from kstrl.project.operator_context import (
     GOLDEN_PATTERNS,
     OperatorFile,
     OperatorFileKind,
     operator_file_spec,
 )
-from kstrl.scaffold_ledger import SCAFFOLDED_TEMPLATES
+from kstrl.project.scaffold_ledger import SCAFFOLDED_TEMPLATES
 
 #: The delimiter lines carry a per-build random token (S4), so a test
 #: matches the fixed part and asserts the token is there rather than
@@ -43,7 +43,7 @@ def spec_for(
     """A spec built through ``operator_file_spec``, with two knobs varied.
 
     Through the production builder and not through a literal, so a field
-    added to :class:`~kstrl.operator_context.OperatorFile` reaches these
+    added to :class:`~kstrl.project.operator_context.OperatorFile` reaches these
     cases the same way it reaches the factory, and so a case parametrized
     over ``OPERATOR_FILES`` exercises the row rather than a copy of it.
 

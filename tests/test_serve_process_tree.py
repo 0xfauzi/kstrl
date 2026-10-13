@@ -56,11 +56,11 @@ from pathlib import Path
 import pytest
 
 from kstrl import serve as serve_module
+from kstrl.queue.workqueue import Queue
+from kstrl.queue.workqueue_items import ItemState, QueueConfig
 from kstrl.serve import ServeLockedError, serve, serve_lock
 from kstrl.serve_outcome import RunOutcome
 from kstrl.serve_process import caffeinate_prefix, run_supervised
-from kstrl.workqueue import Queue
-from kstrl.workqueue_items import ItemState, QueueConfig
 from tests.helpers import procs
 
 # BOTH MARKS BELOW ARE ALIASES OF ``tests/helpers/procs``, not copies.

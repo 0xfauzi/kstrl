@@ -10,7 +10,7 @@ from kstrl.git import git, git_tree
 from kstrl.proc import TimeoutConfig, describe_limit_seconds
 
 if TYPE_CHECKING:
-    from kstrl.agents.base import Agent
+    from kstrl.agents import Agent
     from kstrl.config import KstrlConfig
     from kstrl.ui import UI
 

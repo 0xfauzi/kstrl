@@ -232,7 +232,7 @@ class TestE6HitlCheckpoint:
         would defeat the gate in exactly the unattended case R8.2's
         L1/L2 forces the gate on for."""
         from kstrl.factory_result import ComponentResult
-        from kstrl.inbox import Inbox, InboxConfig, ItemKind
+        from kstrl.owner.inbox import Inbox, InboxConfig, ItemKind
 
         scaffold = tmp_path / "scripts" / "kstrl"
         scaffold.mkdir(parents=True)

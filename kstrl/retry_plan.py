@@ -35,9 +35,9 @@ from kstrl.launch_record import (
     read_launch_record,
     run_limits,
 )
+from kstrl.owner import approvals_at, approved_head
 from kstrl.plan import ComponentStatus
 from kstrl.proc import NO_LIMIT, TimeoutConfig, sweep_worktree, warn_sweep
-from kstrl.waivers import approvals_at, approved_head
 
 if TYPE_CHECKING:
     import click
@@ -112,7 +112,7 @@ def kept_head(manifest: Manifest, comp: Component | None, root_dir: Path) -> tup
     """Whether the retry keeps ``comp``'s failed head, from the project's git and inbox (#646).
 
     Must be read BEFORE ``reset_for_retry``, which clears the failure
-    fields :func:`kstrl.waivers.approved_head` reads. A component judged
+    fields :func:`kstrl.owner.waivers.approved_head` reads. A component judged
     against code that is not in the base branch is never kept (owner
     decision 4a): its kept head would be judged against a different base.
     """

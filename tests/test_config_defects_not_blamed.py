@@ -52,7 +52,7 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     # RuntimeError) and one around starting it. Caught, never subclassed.
     "acceptance_design.py": 2,
     # AgentOutputTooLarge, and AgentTimedOut since #603.
-    "agent_output.py": 2,
+    "agents/agent_output.py": 2,
     "autonomy.py": 1,
     # One bare raise: `_resolve_factory_run_lock` refuses a handed
     # `RunLock` whose own `release()` has already run (#597 fix round).
@@ -73,7 +73,7 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     "proc/factory_lock.py": 1,
     "factory_worktrees.py": 4,
     "git/git.py": 1,
-    "inbox.py": 1,
+    "owner/inbox.py": 1,
     # IntakeError (the subclass). #776 I1 moved it out of intake_github.py.
     "intake_gh.py": 1,
     # A bare raise in `_run_command` when a `SteerCommand` reaches no
@@ -106,7 +106,7 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     # below follows them by subclass rather than by spelling.
     "io/statedir.py": 1,
     "proc/temp_worktree.py": 1,
-    "workqueue_items.py": 1,
+    "queue/workqueue_items.py": 1,
 }
 
 

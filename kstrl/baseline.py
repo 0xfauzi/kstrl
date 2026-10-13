@@ -52,7 +52,7 @@ from typing import Any, NoReturn
 
 from kstrl.failure_signatures import signature_counts_from_verification, split_signature
 from kstrl.io import atomic_write_json, read_json
-from kstrl.stack import Stack
+from kstrl.project import Stack
 from kstrl.verify_model import CheckResult, VerificationResult
 
 #: Version of the BASELINE document, which is not the version of the

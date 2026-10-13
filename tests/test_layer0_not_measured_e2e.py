@@ -26,8 +26,8 @@ import pytest
 from kstrl.autonomy import AutonomyLevel, AutonomyState
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
-from kstrl.inbox import Inbox, InboxConfig, ItemKind
-from kstrl.interaction import PromptRequest, PromptResponse
+from kstrl.owner.inbox import Inbox, InboxConfig, ItemKind
+from kstrl.owner.interaction import PromptRequest, PromptResponse
 from kstrl.plan.manifest import Manifest
 from kstrl.review import CriterionReview, ReviewResult
 from kstrl.ui.plain import PlainUI

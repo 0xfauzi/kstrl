@@ -79,29 +79,29 @@ from types import ModuleType
 
 import pytest
 
+import kstrl.project
 from kstrl import (
     acceptance_design,
     decompose,
     decompose_prompt,
-    init_cmd,
     integration,
     knowledge_distill,
     review,
     review_prompt,
-    scaffold_templates,
     security,
 )
 from kstrl.decisions import SpecDecision, build_decisions_context
 from kstrl.git import git_diff
-from kstrl.inbox import Inbox, InboxItem, ItemKind, ItemStatus
-from kstrl.init_cmd import run_init
 from kstrl.intake_issue import RemoteIssue, spec_from_issue
 from kstrl.knowledge_facts import KnowledgeConfig
 from kstrl.loop import COMPLETION_MARKER
+from kstrl.owner.inbox import Inbox, InboxItem, ItemKind, ItemStatus
 from kstrl.owner_answers import read_owner_answers
 from kstrl.plan.manifest import Component
 from kstrl.plan.requirements import SpecRequirement
-from kstrl.stack import Stack
+from kstrl.project import init_cmd
+from kstrl.project.init_cmd import run_init
+from kstrl.project.stack import Stack
 from kstrl.ui.plain import PlainUI
 from kstrl.verify_model import CheckResult, VerificationResult, VerifyConfig
 from tests.helpers.before_spend import no_base_check
@@ -479,9 +479,11 @@ _ROLES: dict[str, _Role] = {
 #: there (``_RENDER_EXEMPT``), so it is added explicitly. A delivered
 #: renderer that reads a constant through a DIFFERENT binding than the
 #: sibling's production renderer does needs an explicit override row
-#: here, not silent reliance on this derivation.
+#: here, not silent reliance on this derivation. ``loop.py`` reads
+#: ``DEFAULT_PROMPT`` in a function from the ``kstrl.project`` interface
+#: (#863), thus the binding to replace is the one of the package.
 _HOME_MODULE: dict[str, ModuleType] = {name: mod for name, (mod, _render) in _RENDERERS.items()} | {
-    "DEFAULT_PROMPT": scaffold_templates,
+    "DEFAULT_PROMPT": kstrl.project,
     "DEFAULT_UNDERSTAND_PROMPT": init_cmd,
     "DEFAULT_FEATURE_UNDERSTAND_PROMPT": init_cmd,
 }

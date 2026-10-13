@@ -124,7 +124,7 @@ api -> db (imports: User, get_session)
 - `ruff.toml` / `pyproject.toml` / `.editorconfig` for convention extraction
 - Git diff against base branch for "what's already changed" context
 
-**New file**: `kstrl/feedforward.py`
+**New file**: `kstrl/project/feedforward.py`
 
 **Key function**:
 ```python

@@ -8,6 +8,7 @@ from pathlib import Path
 
 from kstrl.git import git, git_base, git_diff
 from kstrl.guards import path_is_allowed
+from kstrl.owner import Waivers, apply_waivers, waiver_note
 from kstrl.plan import Finding, finding_waiver
 from kstrl.policy import (
     DEFAULT_SECRET_PATTERNS,
@@ -20,7 +21,6 @@ from kstrl.policy import (
 from kstrl.verify_model import (
     CheckResult,
 )
-from kstrl.waivers import Waivers, apply_waivers, waiver_note
 
 #: What the two diff-driven checks report when the diff handed them nothing.
 #:

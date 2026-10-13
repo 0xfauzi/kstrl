@@ -215,12 +215,12 @@ class TestQueueJournalSurvivesATornTail:
     """
 
     def queue_at(self, tmp_path: Path) -> Any:
-        from kstrl.workqueue import Queue
+        from kstrl.queue.workqueue import Queue
 
         return Queue(tmp_path / "queue")
 
     def add(self, queue: Any, item_id: str) -> None:
-        from kstrl.workqueue_items import JournalEntry
+        from kstrl.queue.workqueue_items import JournalEntry
 
         queue._journal(
             JournalEntry(
@@ -609,12 +609,12 @@ class TestInboxSurvivesATornTail:
     """
 
     def inbox_at(self, root: Path) -> Any:
-        from kstrl.inbox import Inbox
+        from kstrl.owner.inbox import Inbox
 
         return Inbox(root)
 
     def add(self, inbox: Any, title: str) -> None:
-        from kstrl.inbox import ItemKind
+        from kstrl.owner.inbox import ItemKind
 
         inbox.add(ItemKind.HALTED_RUN, title, dedupe_key=title)
 

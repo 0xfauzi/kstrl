@@ -30,8 +30,8 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl.workqueue import Queue, summarize
-from kstrl.workqueue_items import (
+from kstrl.queue.workqueue import Queue, summarize
+from kstrl.queue.workqueue_items import (
     ItemSource,
     ItemState,
     MergeDisposition,
@@ -42,7 +42,7 @@ from kstrl.workqueue_items import (
     QueueLockedError,
     is_safe_component,
 )
-from kstrl.workqueue_store import queue_lock
+from kstrl.queue.workqueue_store import queue_lock
 
 
 def _queue(root: Path, **config: object) -> Queue:
@@ -95,7 +95,7 @@ class TestAdd:
     ) -> None:
         queue = _queue(tmp_path)
         with patch(
-            "kstrl.workqueue.atomic_write",
+            "kstrl.queue.workqueue.atomic_write",
             side_effect=OSError("disk full"),
         ):
             with pytest.raises(OSError):
@@ -211,7 +211,7 @@ class TestAttemptCharging:
                 raise OSError("crash mid-transition")
             real_replace(src, dst)  # type: ignore[arg-type]
 
-        with patch("kstrl.workqueue.os.replace", side_effect=die_on_directory_move):
+        with patch("kstrl.queue.workqueue.os.replace", side_effect=die_on_directory_move):
             with pytest.raises(OSError):
                 queue.start(item)
 
@@ -238,7 +238,7 @@ class TestAttemptCharging:
                 raise OSError("crash mid-transition")
             real_replace(src, dst)  # type: ignore[arg-type]
 
-        with patch("kstrl.workqueue.os.replace", side_effect=die_on_directory_move):
+        with patch("kstrl.queue.workqueue.os.replace", side_effect=die_on_directory_move):
             with pytest.raises(OSError):
                 queue.start(item)
 
@@ -481,8 +481,8 @@ class TestStagingIsNeverScanned:
                 raise OSError("SIGKILL mid-publish")
             real_replace(src, dst)  # type: ignore[arg-type]
 
-        with patch("kstrl.workqueue.os.replace", side_effect=die_on_publish):
-            with patch("kstrl.workqueue.shutil.rmtree"):  # no cleanup on kill
+        with patch("kstrl.queue.workqueue.os.replace", side_effect=die_on_publish):
+            with patch("kstrl.queue.workqueue.shutil.rmtree"):  # no cleanup on kill
                 with pytest.raises(OSError):
                     _add(queue, title="ghost")
 
@@ -678,7 +678,7 @@ class TestRemoval:
         queue = _queue(tmp_path)
         item = _add(queue)
         with patch(
-            "kstrl.workqueue.shutil.rmtree",
+            "kstrl.queue.workqueue.shutil.rmtree",
             side_effect=PermissionError("read-only"),
         ):
             with pytest.raises(OSError):
@@ -696,7 +696,7 @@ class TestRemoval:
         """Even a no-op rmtree must not produce a `removed` record."""
         queue = _queue(tmp_path)
         item = _add(queue)
-        with patch("kstrl.workqueue.shutil.rmtree", return_value=None):
+        with patch("kstrl.queue.workqueue.shutil.rmtree", return_value=None):
             with pytest.raises(QueueError, match="still exists"):
                 queue.remove(item)
         assert not any(e["to"] == "removed" for e in queue.journal_entries(item.item_id))
@@ -807,7 +807,7 @@ class TestJournal:
 
         ``kstrl.io.appendio.open`` since #331: the journal's open moved
         there when six appenders started sharing it, so patching
-        ``kstrl.workqueue``'s global would now intercept nothing and
+        ``kstrl.queue.workqueue``'s global would now intercept nothing and
         this test would assert that a SUCCESSFUL write warns.
         """
         queue = _queue(tmp_path)
@@ -857,7 +857,7 @@ class TestLock:
         tmp_path: Path,
     ) -> None:
         """Listing the queue must not block on a running factory."""
-        from kstrl.workqueue_store import LOCK_FILENAME, queue_root
+        from kstrl.queue.workqueue_store import LOCK_FILENAME, queue_root
 
         with queue_lock(tmp_path):
             pass

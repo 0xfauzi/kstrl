@@ -41,9 +41,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl.agents import get_agent
-from kstrl.agents.logging import LoggingAgent
-from kstrl.agents.prompt_record import recording_prompts
+from kstrl.agents import LoggingAgent, get_agent, recording_prompts, warn_unconfined
 from kstrl.breaker import BreakerConfig
 from kstrl.events import (
     ArtifactWritten,
@@ -66,25 +64,23 @@ from kstrl.feature_verify import (
     report_verification,
     resolve_feature_verify_config,
 )
-from kstrl.interaction import (
+from kstrl.knowledge import retrieve_knowledge_context
+from kstrl.knowledge_facts import KnowledgeConfig
+from kstrl.loop import run_loop
+from kstrl.owner import (
     InteractionChannel,
     PromptKind,
     PromptRequest,
     UiInteractionChannel,
 )
-from kstrl.knowledge import retrieve_knowledge_context
-from kstrl.knowledge_facts import KnowledgeConfig
-from kstrl.loop import run_loop
 from kstrl.plan import Component, Manifest
 from kstrl.proc import TimeoutConfig
-from kstrl.sandbox import warn_unconfined
 
 if TYPE_CHECKING:
-    from kstrl.agents.base import Agent
+    from kstrl.agents import Agent, SandboxConfig
     from kstrl.commandrun import CommandRun
     from kstrl.config import KstrlConfig
     from kstrl.plan import PRD
-    from kstrl.sandbox import SandboxConfig
     from kstrl.ui import UI
 
 

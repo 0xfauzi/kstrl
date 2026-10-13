@@ -88,18 +88,18 @@ from typing import Literal
 
 from kstrl.config import KstrlConfig, relative_to_root
 from kstrl.io import generate_data_delimiter
-from kstrl.operator_guidance import GUIDANCE_HEADING as GUIDANCE_HEADING
-from kstrl.operator_guidance import MAX_MEMORY_CHARS as MAX_MEMORY_CHARS
-from kstrl.operator_guidance import _heading_span
-from kstrl.operator_guidance import append_guidance_record as append_guidance_record
-from kstrl.operator_guidance import insert_under_guidance as insert_under_guidance
-from kstrl.operator_guidance import memory_text_refusal as memory_text_refusal
+from kstrl.project.operator_guidance import GUIDANCE_HEADING as GUIDANCE_HEADING
+from kstrl.project.operator_guidance import MAX_MEMORY_CHARS as MAX_MEMORY_CHARS
+from kstrl.project.operator_guidance import _heading_span
+from kstrl.project.operator_guidance import append_guidance_record as append_guidance_record
+from kstrl.project.operator_guidance import insert_under_guidance as insert_under_guidance
+from kstrl.project.operator_guidance import memory_text_refusal as memory_text_refusal
 
 logger = logging.getLogger(__name__)
 
 # `GUIDANCE_HEADING`, `MAX_MEMORY_CHARS`, `_heading_span`,
 # `memory_text_refusal`, `insert_under_guidance` and
-# `append_guidance_record` live in `kstrl.operator_guidance` (#231's
+# `append_guidance_record` live in `kstrl.project.operator_guidance` (#231's
 # simplify pass, B1, moved them there when this module crossed the
 # 800-line ratchet) and are re-exported here: this module is still the
 # one place every OTHER reader imports the memory-file vocabulary from
@@ -239,7 +239,7 @@ class OperatorFileKind:
     keep: Literal["head", "tail"]
     #: The scaffolded filename whose digest history says "kstrl wrote
     #: this, the operator has not filled it in yet". Matches a
-    #: ``SCAFFOLDED_TEMPLATES`` row in ``kstrl/scaffold_ledger.py``.
+    #: ``SCAFFOLDED_TEMPLATES`` row in ``kstrl/project/scaffold_ledger.py``.
     scaffold: str
     #: R10.10 (#231). ``None`` for every row but memory. When set, a
     #: ``"tail"`` cut keeps the newest content of THIS heading's
@@ -493,10 +493,10 @@ def read_operator_file(spec: OperatorFile) -> OperatorText:
     if not text.strip():
         return OperatorText("", None, None, absent=False)
     # Deferred: a module-level import here would make this module import
-    # `kstrl.scaffold_ledger`, which imports `kstrl.scaffold_templates`,
+    # `kstrl.project.scaffold_ledger`, which imports `kstrl.project.scaffold_templates`,
     # which imports THIS module for `GUIDANCE_HEADING` (#231 B1). One of
     # the two has to be local, and this is the branch that needs it.
-    from kstrl.scaffold_ledger import shipped_label
+    from kstrl.project.scaffold_ledger import shipped_label
 
     if spec.scaffold is not None and (
         shipped_label(spec.scaffold, text, ignore_trailing_newlines=True) is not None
@@ -746,6 +746,6 @@ def load_operator_file(spec: OperatorFile) -> str:
 
 # R10.10 (#231): the memory-file WRITE path -
 # `memory_text_refusal`/`insert_under_guidance`/`append_guidance_record`
-# - lives in `kstrl.operator_guidance` and is re-exported above, split
+# - lives in `kstrl.project.operator_guidance` and is re-exported above, split
 # out (#231's simplify pass, B1) when this module crossed the 800-line
 # ratchet. The reader stays here; the writer's own docstrings are there.

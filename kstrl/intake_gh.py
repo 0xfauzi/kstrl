@@ -12,7 +12,7 @@ from typing import Any
 
 from kstrl.config import SIGNED, ConfigSection, check_numbers, parse_paths
 from kstrl.io import read_json
-from kstrl.workqueue_items import ItemSource, QueueItem
+from kstrl.queue import ItemSource, QueueItem
 
 
 class IntakeError(RuntimeError):

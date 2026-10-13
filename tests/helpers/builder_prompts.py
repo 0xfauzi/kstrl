@@ -47,13 +47,13 @@ from types import ModuleType
 from kstrl import (
     context,
     factory_worker,
-    init_cmd,
     iteration_prompt,
     knowledge,
     review_claims,
     verify,
     verify_diff,
 )
+from kstrl.project import init_cmd
 
 #: Eleven rows: (module, the name of that module's shared version constant,
 #: the fragment names it assembles). This is the one place a fragment is

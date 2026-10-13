@@ -16,11 +16,10 @@ from kstrl import intake_gh
 from kstrl.intake_gh import GitHubIntakeConfig, _gh_comment, _utc_now_iso
 from kstrl.intake_issue import ProcessedLedger, _actor_allowed
 from kstrl.io import read_json
-from kstrl.workqueue import Queue
-from kstrl.workqueue_items import ItemSource, MergeDisposition, QueueError, QueueItem
+from kstrl.queue import ItemSource, MergeDisposition, Queue, QueueError, QueueItem
 
 if TYPE_CHECKING:
-    from kstrl.operator_context import OperatorFile
+    from kstrl.project import OperatorFile
 
 #: R10.10. The two steering commands, spelled as the first whitespace
 #: token of a comment body. A token match rather than the `"/memory "`
@@ -303,7 +302,7 @@ def _memory_spec(root_dir: Path) -> OperatorFile:
     pass (B4).
     """
     from kstrl.config import KstrlConfig
-    from kstrl.operator_context import MEMORY, operator_file_spec
+    from kstrl.project import MEMORY, operator_file_spec
 
     return operator_file_spec(MEMORY, root_dir, KstrlConfig.load(root_dir).memory_file)
 
@@ -333,7 +332,7 @@ def _record_memory(
     append succeeded, the branch `_iterate_outcome` continues past to
     requeue; `_memory_outcome` returns `outcome` either way.
     """
-    from kstrl.operator_context import append_guidance_record, memory_text_refusal
+    from kstrl.project import append_guidance_record, memory_text_refusal
 
     refusal = memory_text_refusal(cmd.text)
     if refusal:

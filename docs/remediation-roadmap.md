@@ -831,7 +831,7 @@ by an integration test with a synthetic-but-realistic journal).
   - OS-level sandboxing for agent subprocesses: pass Claude Code sandbox
     settings (network/write scoping) through the adapter; document the codex
     equivalent; worktree isolation stops being the only boundary.
-    DONE: `kstrl/sandbox.py` (`[sandbox]` config, measured CLI
+    DONE: `kstrl/agents/sandbox.py` (`[sandbox]` config, measured CLI
     mappings for claude 2.1.215 / codex 0.134.0), `tests/test_sandbox.py`.
   - Merge-conflict doctrine: on conflict, re-run the component against the
     fresh merged base instead of rebasing agent output. DONE:

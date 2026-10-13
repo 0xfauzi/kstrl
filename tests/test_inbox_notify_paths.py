@@ -5,7 +5,7 @@ pipeline's ``_inbox_add``. The architect's escalation, an autonomy
 demotion and everything ``ks serve`` files opened items that
 ``notifiable()`` selects and pushed nothing. The firing now lives in
 ``Inbox.add`` itself, on the branch that opens a new item, through
-``kstrl.inbox_notify.push_opened_item``.
+``kstrl.owner.inbox_notify.push_opened_item``.
 
 Each behavioural test drives a real entry point (``ks decompose`` as a
 subprocess, ``python -m kstrl.calibration compare`` in process, the
@@ -49,7 +49,7 @@ from kstrl.autonomy import AutonomyLevel, AutonomyState
 from kstrl.events.observability import NotifyConfig
 from kstrl.factory import run_factory
 from kstrl.factory_result import ComponentResult
-from kstrl.inbox import Inbox, InboxConfig, ItemKind
+from kstrl.owner.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.serve import serve_cycle
 from kstrl.serve_config import ServeConfig
 from kstrl.serve_spend import SpendLedger
@@ -233,7 +233,7 @@ def test_a_hook_that_files_an_item_runs_after_the_add_releases_the_lock(
     run inside the hold is killed at the timeout and files nothing.
     """
     script = (
-        "import sys; from pathlib import Path; from kstrl.inbox import Inbox, ItemKind; "
+        "import sys; from pathlib import Path; from kstrl.owner.inbox import Inbox, ItemKind; "
         "Inbox(Path(sys.argv[1])).add(ItemKind.HEALTH_BREACH, 'filed by the hook', "
         "dedupe_key='hook')"
     )
@@ -447,7 +447,7 @@ FILING_PATHS = {
     "serve_settle.py::_file_inbox_item::add": (
         "test_serve_filing_fires_the_inbox_hook_once_per_opened_item"
     ),
-    "stack.py::file_stack_item::add": (
+    "project/stack.py::file_stack_item::add": (
         "test_an_unconfirmed_stack_pages_once_however_often_it_is_refused"
     ),
 }
@@ -460,7 +460,7 @@ def test_every_inbox_add_site_is_driven_by_a_path_test() -> None:
     assert all(callable(getattr(module, name, None)) for name in FILING_PATHS.values())
 
 
-INBOX_ITEM = "kstrl.inbox.InboxItem"
+INBOX_ITEM = "kstrl.owner.inbox.InboxItem"
 
 #: Two disjuncts, one control each: a local shadow (the bare leaf name,
 #: which needs no resolution) and an aliased import or a rebind (which
@@ -475,14 +475,14 @@ def build():
 """
 
 CONTROL_ALIAS_ITEM = """
-from kstrl.inbox import InboxItem as Item
+from kstrl.owner.inbox import InboxItem as Item
 
 def build():
     return Item(id="x")
 """
 
 CONTROL_REBIND_ITEM = """
-from kstrl.inbox import InboxItem
+from kstrl.owner.inbox import InboxItem
 
 Make = InboxItem
 
@@ -532,7 +532,7 @@ def test_items_are_opened_only_in_inbox_add() -> None:
         tree = astwalk.parsed(source)
         for qualified, _ in _inbox_item_sites(tree, astwalk.module_name(source)):
             found.add(f"{astwalk.label(source)}::{qualified}")
-    assert found == {"inbox.py::Inbox.add"}
+    assert found == {"owner/inbox.py::Inbox.add"}
 
 
 @pytest.mark.parametrize(

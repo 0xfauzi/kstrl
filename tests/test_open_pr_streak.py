@@ -27,8 +27,8 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.io.statedir import CONTROL_PR_COUNT_STREAK, control_file
+from kstrl.owner.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.serve import serve
 from kstrl.serve_config import ServeConfig
 from kstrl.serve_github import STREAK_SCHEMA_VERSION, OpenPrCountStreak
@@ -240,7 +240,7 @@ class TestTheWriteSwallowsTheWholeSurface:
 
     def test_a_runtime_error_from_the_write_still_returns_empty(self, tmp_path: Path) -> None:
         (tmp_path / "kstrl.toml").write_text("[inbox]\nenabled = true\n", encoding="utf-8")
-        with patch("kstrl.inbox.Inbox.add", side_effect=RuntimeError("control lock busy")):
+        with patch("kstrl.owner.inbox.Inbox.add", side_effect=RuntimeError("control lock busy")):
             got = _file_inbox_item(
                 tmp_path,
                 kind_name="halted_run",

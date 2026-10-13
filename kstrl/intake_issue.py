@@ -145,7 +145,7 @@ class ProcessedLedger:
         self._write()
 
     def _write(self) -> None:
-        from kstrl.workqueue_store import atomic_write
+        from kstrl.queue import atomic_write
 
         ensure_control_state(self.root_dir)
         path = self.path

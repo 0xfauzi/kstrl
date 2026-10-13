@@ -32,8 +32,8 @@ from kstrl import knowledge_distill, knowledge_facts, verify, verify_diff
 from kstrl.autonomy import AutonomyState
 from kstrl.calibration_baseline import load_baseline
 from kstrl.intake_issue import ProcessedLedger
+from kstrl.queue.workqueue import Queue
 from kstrl.serve_spend import ServeStateError, SpendLedger
-from kstrl.workqueue import Queue
 from tests.helpers import gitrepo
 from tests.helpers.localeenv import NO_UTF8_DEFAULT
 from tests.helpers.localeenv import ascii_child_env as _ascii_child_env

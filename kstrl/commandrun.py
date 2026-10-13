@@ -31,7 +31,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, TextIO
 
-from kstrl.agents.prompt_record import AgentCall
+from kstrl.agents import AgentCall
 from kstrl.events import (
     Event,
     EventBridgeUI,

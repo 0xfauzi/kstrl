@@ -623,7 +623,7 @@ class Inbox:
                 last_seen_at=_iso(now),
             )
             self._append_unlocked(item)
-        from kstrl.inbox_notify import push_opened_item
+        from kstrl.owner.inbox_notify import push_opened_item
 
         push_opened_item(self, item, notify, existing)
         return item

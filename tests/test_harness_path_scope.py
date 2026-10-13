@@ -34,6 +34,7 @@ from unittest.mock import patch
 
 import pytest
 
+from kstrl.agents.sandbox import SandboxConfig
 from kstrl.cli_loop import _understand_core
 from kstrl.commandrun import CommandRun
 from kstrl.config.config import KstrlConfig, component_harness_paths
@@ -53,7 +54,6 @@ from kstrl.guards import (
 from kstrl.loop import LoopResult
 from kstrl.plan.manifest import Component, Manifest
 from kstrl.plan.scope import ComponentScope, RunScope
-from kstrl.sandbox import SandboxConfig
 from kstrl.ui.plain import PlainUI
 from kstrl.verify_diff import check_diff_scope
 from tests.helpers import gitrepo

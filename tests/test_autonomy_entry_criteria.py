@@ -30,7 +30,7 @@ from click.testing import CliRunner
 from kstrl import calibration
 from kstrl.autonomy import AutonomyLevel, AutonomyState
 from kstrl.cli import cli
-from kstrl.inbox import Inbox, InboxConfig, ItemKind
+from kstrl.owner.inbox import Inbox, InboxConfig, ItemKind
 from tests.helpers.demotion import MISSED_IN_NEW, baseline_pair
 from tests.helpers.gitrepo import git_in
 from tests.helpers.journal import component_result, journal_at

@@ -253,6 +253,7 @@ def serve(
     Only infrastructure failures are retried, and only with positive
     evidence. Spec-level failures go to poison/ and wait for a human.
     """
+    from kstrl.queue import Queue, QueueConfig, summarize
     from kstrl.serve import ServeLockedError
     from kstrl.serve import serve as run_serve
     from kstrl.serve_config import ServeConfig, ServeError
@@ -268,8 +269,6 @@ def serve(
     from kstrl.serve_github import check_open_pr_bound
     from kstrl.serve_launchd import REQUIRE_TIMEOUT_ENV
     from kstrl.serve_spend import SpendLedger
-    from kstrl.workqueue import Queue, summarize
-    from kstrl.workqueue_items import QueueConfig
 
     root_dir = (root or Path.cwd()).resolve()
     ui_impl = _autonomy_ui(ui, no_color)

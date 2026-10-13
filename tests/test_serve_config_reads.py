@@ -39,13 +39,13 @@ from unittest.mock import patch
 
 import pytest
 
+from kstrl.project.stack import stack_toml
+from kstrl.queue.workqueue import Queue
+from kstrl.queue.workqueue_items import ItemState, MergeDisposition, QueueConfig
 from kstrl.serve import _NullObserver, serve, serve_cycle
 from kstrl.serve_config import ServeConfig
 from kstrl.serve_github import OpenPrCount
 from kstrl.serve_outcome import RunOutcome
-from kstrl.stack import stack_toml
-from kstrl.workqueue import Queue
-from kstrl.workqueue_items import ItemState, MergeDisposition, QueueConfig
 from tests.helpers.astwalk import (
     KSTRL_PACKAGE,
     all_nodes,

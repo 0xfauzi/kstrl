@@ -41,8 +41,8 @@ from click.testing import CliRunner, Result
 
 from kstrl.cli import cli
 from kstrl.cli_preflight import _reject_blank_project_name
-from kstrl.workqueue import Queue
-from kstrl.workqueue_items import QueueConfig
+from kstrl.queue.workqueue import Queue
+from kstrl.queue.workqueue_items import QueueConfig
 
 #: Every command path in the Click tree that takes a project name.
 #: Pinned rather than counted alone so a walk that stops recursing

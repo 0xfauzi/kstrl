@@ -267,7 +267,7 @@ ALLOWED_APPEND_OPENS: dict[str, tuple[Reason, str]] = {
     "serve.py:serve_lock": (Reason.LOCK_FILE, "the daemon's own lock"),
     "io/statedir.py:control_lock": (Reason.LOCK_FILE, "the control-directory lock"),
     "replay.py:replay_lock": (Reason.LOCK_FILE, "the per-machine replay lock (#700 slice 3)"),
-    "workqueue_store.py:queue_lock": (Reason.LOCK_FILE, "the queue lock"),
+    "queue/workqueue_store.py:queue_lock": (Reason.LOCK_FILE, "the queue lock"),
     "agents/logging.py:LoggingAgent.run": (Reason.TEXT_LOG, "the agent transcript"),
     "commandrun.py:CommandRun.transcript_writer": (Reason.TEXT_LOG, "a command transcript"),
     "factory_worker.py:_redirect_worker_output": (Reason.TEXT_LOG, "a worker's stdout and stderr"),
@@ -324,7 +324,7 @@ EXPECTED_APPEND_OPENS: dict[str, int] = {
     "serve.py: open('a+')": 1,
     "serve_gates.py: open('a+')": 1,
     "io/statedir.py: open('a+')": 1,
-    "workqueue_store.py: open('a+')": 1,
+    "queue/workqueue_store.py: open('a+')": 1,
 }
 
 
@@ -486,11 +486,11 @@ EXPECTED_ROUTED_APPENDS: dict[str, int] = {
     # #553: the CI ledger, for the signal ledger's reason: a scheduled
     # `ks ci poll` and an operator's can interleave.
     "ci_state.py: append_records(lock=True)": 1,
-    "inbox.py: append_records(lock=default (False))": 1,
-    "init_cmd.py: append_records(lock=default (False))": 1,
+    "owner/inbox.py: append_records(lock=default (False))": 1,
+    "project/init_cmd.py: append_records(lock=default (False))": 1,
     "knowledge.py: append_records(lock=default (False))": 1,
     "events/observability.py: append_records(lock=default (False))": 1,
-    "workqueue_store.py: append_records(lock=default (False))": 1,
+    "queue/workqueue_store.py: append_records(lock=default (False))": 1,
 }
 
 

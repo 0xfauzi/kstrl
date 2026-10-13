@@ -62,8 +62,8 @@ from __future__ import annotations
 
 import ast
 
-from kstrl import operator_context
-from kstrl.operator_context import OPERATOR_FILES, OperatorFileKind
+from kstrl.project import operator_context
+from kstrl.project.operator_context import OPERATOR_FILES, OperatorFileKind
 from tests.helpers.astwalk import (
     KSTRL_PACKAGE,
     Bindings,
@@ -83,8 +83,8 @@ from tests.helpers.astwalk import (
 
 #: The two functions a block has to come through. Dotted from the module
 #: that defines them, which is how ``astwalk`` resolves an import.
-LOADER = "kstrl.operator_context.load_operator_file"
-SPEC = "kstrl.operator_context.operator_file_spec"
+LOADER = "kstrl.project.operator_context.load_operator_file"
+SPEC = "kstrl.project.operator_context.operator_file_spec"
 
 #: The module that owns the prompt order. One file, named once.
 WORKER = "factory_worker.py"
@@ -103,7 +103,7 @@ ORDER_LOCAL = "parts"
 #: had been correct when it was written. So the number is never typed:
 #: ``len(WORKER_EDITS)`` is what the messages carry, and
 #: ``test_the_docstrings_list_every_edit_this_guard_counts`` ties the
-#: prose in ``kstrl/operator_context.py`` to this tuple.
+#: prose in ``kstrl/project/operator_context.py`` to this tuple.
 #:
 #: Each row is ``(anchor, what to do)``. The anchor is the identifier a
 #: reader can grep for, which is also what the docstring test looks up.
@@ -138,7 +138,7 @@ EDIT_COUNT_WORD: str = {4: "four", 5: "five", 6: "six", 7: "seven", 8: "eight", 
 EDITS_SENTENCE = "; ".join(what for _anchor, what in WORKER_EDITS)
 
 #: Module-level constant name -> the ``[paths]`` key it declares, DERIVED
-#: from ``kstrl.operator_context`` rather than listed. A row added under
+#: from ``kstrl.project.operator_context`` rather than listed. A row added under
 #: a new constant name is covered the moment it is bound; a hand list
 #: would be closed only over the names somebody remembered.
 KIND_NAMES: dict[str, str] = {
@@ -154,7 +154,10 @@ KIND_NAMES: dict[str, str] = {
 #: or the same file reaching one twice.
 EXPECTED_LOADER_SPELLINGS: dict[str, int] = {
     "factory_worker.py": 3,
-    "operator_context.py": 1,
+    "project/operator_context.py": 1,
+    # #863 M3: the import and the ``__all__`` row of the package interface,
+    # which ``factory_worker.py`` imports the loader through.
+    "project/__init__.py": 2,
 }
 
 #: Every place in ``kstrl/`` that spells ``context_prefix``: the
@@ -303,11 +306,12 @@ def delivered_kinds(
 #: Source built to make the extractor answer. One decidable call and one
 #: that is not, so both halves of layer 2 are proved rather than assumed.
 DECIDABLE = (
-    "from kstrl.operator_context import GOLDEN_PATTERNS, load_operator_file, operator_file_spec\n"
+    "from kstrl.project.operator_context import GOLDEN_PATTERNS, load_operator_file, "
+    "operator_file_spec\n"
     "block = load_operator_file(operator_file_spec(GOLDEN_PATTERNS, root_dir, configured))\n"
 )
 UNDECIDABLE = (
-    "from kstrl.operator_context import load_operator_file\n"
+    "from kstrl.project.operator_context import load_operator_file\n"
     "block = load_operator_file(spec_somebody_built_elsewhere)\n"
 )
 
@@ -315,8 +319,8 @@ UNDECIDABLE = (
 #: the prompt-order literal, one block in it that is not an operator file
 #: at all.
 _LOADS = (
-    "from kstrl.operator_context import GOLDEN_PATTERNS, MEMORY\n"
-    "from kstrl.operator_context import load_operator_file, operator_file_spec\n"
+    "from kstrl.project.operator_context import GOLDEN_PATTERNS, MEMORY\n"
+    "from kstrl.project.operator_context import load_operator_file, operator_file_spec\n"
     f"def {WORKER_SCOPE}(root_dir, configured):\n"
     "    golden = load_operator_file(operator_file_spec(GOLDEN_PATTERNS, root_dir, configured))\n"
     "    memory = load_operator_file(operator_file_spec(MEMORY, root_dir, configured))\n"

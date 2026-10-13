@@ -483,7 +483,7 @@ class TestTheReadBytesExclusion:
         "cli_queue.py": 1,  # #644: queue_answer, read and decode guarded separately
         "config/config_toml.py": 1,
         "baseline.py": 1,
-        "inbox.py": 1,
+        "owner/inbox.py": 1,
         "integration_state.py": 1,  # #482: the launch_record.py shape
         "launch_record.py": 1,  # #436: the baseline.py shape, I/O outside the guard
         # #700 slice 3: `_ready` reads the `up` log's bytes back as the
@@ -497,7 +497,7 @@ class TestTheReadBytesExclusion:
         # read fed choosing a per-tool command, not detection.
         # verify.py's `_content_finding` read (#414) is gone too: #696
         # slice 8 removed the empty-file and syntax-error rules it served.
-        "workqueue.py": 1,  # #644: Queue.answer hashes the spec, never decodes it
+        "queue/workqueue.py": 1,  # #644: Queue.answer hashes the spec, never decodes it
     }
 
     def test_the_read_bytes_sites_are_the_ten_measured(self) -> None:

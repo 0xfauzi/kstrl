@@ -73,13 +73,13 @@ from kstrl.factory_worktrees import (
 )
 from kstrl.integration_loop import IntegrationLoop
 from kstrl.integration_phase import IntegrationRun
-from kstrl.interaction import InteractionChannel
 from kstrl.knowledge import (
     current_run_id,
     measure_fact_utilization,
 )
 from kstrl.knowledge_distill import distill_facts
 from kstrl.knowledge_facts import KnowledgeConfig
+from kstrl.owner import InteractionChannel
 from kstrl.pipeline import ComponentPipeline
 from kstrl.pipeline_state import PipelineHooks, iso_now
 from kstrl.plan import (

@@ -35,8 +35,8 @@ from kstrl.factory_preflight import (
     report_preflight,
 )
 from kstrl.git import resolve_base_branch
-from kstrl.interaction import PromptKind, PromptRequest, UiInteractionChannel
 from kstrl.launch_record import option_argv
+from kstrl.owner import PromptKind, PromptRequest, UiInteractionChannel
 from kstrl.owner_answers import OwnerAnswerError
 from kstrl.proc import acquire_run_lock, limit_seconds
 from kstrl.retry_plan import (

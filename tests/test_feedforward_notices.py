@@ -64,7 +64,7 @@ def _is_notice(node: ast.AST) -> bool:
 #: `_format_function_signature`, whose bare "(" was the one row.
 _NOT_A_NOTICE: dict[str, int] = {}
 
-#: Every notice template `kstrl/feedforward.py` can put in front of the
+#: Every notice template `kstrl/project/feedforward.py` can put in front of the
 #: engineer, keyed by the template itself rather than by module. Closed by
 #: construction: the expected set is READ OFF the enrolled constants, so a
 #: sixth notice written as a bare f-string is a row with no constant behind
@@ -86,7 +86,7 @@ def test_every_notice_the_engineer_reads_is_enrolled() -> None:
     the mechanism that was missing.
     """
     astwalk.assert_census(
-        sources=[astwalk.KSTRL_PACKAGE / "feedforward.py"],
+        sources=[astwalk.KSTRL_PACKAGE / "project/feedforward.py"],
         sees=_is_notice,
         key=lambda _source, node: _notice_template(node) or "",
         expected=EXPECTED_NOTICES,
@@ -98,7 +98,7 @@ def test_every_notice_the_engineer_reads_is_enrolled() -> None:
             'X = "(none: " + "already said)"\n',
         ),
         message=(
-            "the set of parenthesised notices kstrl/feedforward.py can put in "
+            "the set of parenthesised notices kstrl/project/feedforward.py can put in "
             "front of the engineer changed. Every one of them is prompt text: "
             "hoist it to a *_PROMPT constant, enrol it in "
             "tests/helpers/feedforward_prompts.py (body, snapshot, renderer) "

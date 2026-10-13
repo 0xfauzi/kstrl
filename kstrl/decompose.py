@@ -10,13 +10,14 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl.agent_output import (
+from kstrl.agents import (
     MAX_AGENT_OUTPUT_BYTES,
+    Agent,
+    AgentCall,
     extract_agent_json,
+    recording_prompts,
     timed_out_message,
 )
-from kstrl.agents.base import Agent
-from kstrl.agents.prompt_record import AgentCall, recording_prompts
 from kstrl.config import KstrlConfig, relative_to_root
 from kstrl.decisions import (
     resolve_escalation_items,
@@ -67,7 +68,7 @@ from kstrl.owner_answers import OwnerAnswers, read_owner_answers
 from kstrl.plan import (
     Manifest,
 )
-from kstrl.stack import (
+from kstrl.project import (
     stack_text_digest,
 )
 

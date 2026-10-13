@@ -12,13 +12,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from kstrl.agents import with_stack_writable
 from kstrl.config import relative_to_root
 from kstrl.decisions import build_decisions_context
 from kstrl.fact_scope import authored_paths, paths_by_component
 from kstrl.knowledge import retrieve_knowledge_context
 from kstrl.loop_budget import LoopBudget
 from kstrl.proc import NO_LIMIT, describe_limit_seconds
-from kstrl.sandbox import with_stack_writable
 from kstrl.verify_diff import SCOPE_UNREADABLE_CHECK, scope_unreadable_error
 
 if TYPE_CHECKING:

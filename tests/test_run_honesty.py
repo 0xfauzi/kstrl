@@ -39,7 +39,7 @@ from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import FactoryResult
 from kstrl.loop import LoopResult
 from kstrl.plan.manifest import Component, Manifest
-from kstrl.scaffold_templates import DEFAULT_PROMPT
+from kstrl.project.scaffold_templates import DEFAULT_PROMPT
 from kstrl.security import SecurityConfig
 from kstrl.ui.plain import PlainUI
 from kstrl.verify_model import VerifyConfig
@@ -48,7 +48,7 @@ from tests.helpers.stack_confirmation import confirm_stack, in_process_stack, wr
 
 COMPLETE_LINE = "echo '<promise>COMPLETE</promise>'"
 COMP_PRD_PATH = "scripts/kstrl/feature/comp-a/prd.json"
-# Header emitted by kstrl.feedforward.build_codebase_scan_context; asserting on it
+# Header emitted by kstrl.project.feedforward.build_codebase_scan_context; asserting on it
 # proves Phase 0 context reached the engineer prompt.
 CODEBASE_SCAN_HEADER = "=== CODEBASE CONTEXT (auto-generated) ==="
 

@@ -17,7 +17,7 @@ from unittest.mock import patch
 import pytest
 
 from kstrl.autonomy import AutonomyLevel, AutonomyState
-from kstrl.inbox import (
+from kstrl.owner.inbox import (
     Inbox,
     InboxConfig,
     InboxError,
@@ -602,7 +602,7 @@ class TestEmittersFireDuringRuns:
         from kstrl.verify_model import CheckResult, VerificationResult
 
         with patch(
-            "kstrl.inbox.Inbox.add",
+            "kstrl.owner.inbox.Inbox.add",
             side_effect=OSError("disk full"),
         ):
             _run_factory(

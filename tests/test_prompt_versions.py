@@ -103,7 +103,6 @@ from kstrl import (
     review,
     review_prompt,
     security,
-    stack,
 )
 from kstrl.acceptance_design import ACCEPTANCE_PROMPT, ACCEPTANCE_PROMPT_VERSION
 from kstrl.decisions import (
@@ -129,20 +128,21 @@ from kstrl.git.git_diff import (
     pasted_change_source,
     repo_change_source,
 )
-from kstrl.inbox import InboxItem, ItemKind
 from kstrl.intake_issue import BUG_REPORT_PROMPT, BUG_REPORT_PROMPT_VERSION, RemoteIssue
 from kstrl.knowledge_distill import DISTILL_PROMPT, DISTILL_PROMPT_VERSION
+from kstrl.owner.inbox import InboxItem, ItemKind
 from kstrl.owner_answers import (
     OWNER_ANSWER_PROMPT,
     OWNER_ANSWER_PROMPT_VERSION,
     render_owner_answer,
 )
 from kstrl.plan.manifest import Component
+from kstrl.project import stack
+from kstrl.project.scaffold_templates import DEFAULT_PROMPT, DEFAULT_PROMPT_VERSION
+from kstrl.project.stack import STACK_PROMPT, STACK_PROMPT_VERSION, Stack
 from kstrl.review import ReviewMode
 from kstrl.review_prompt import REVIEWER_PROMPT, REVIEWER_PROMPT_VERSION
-from kstrl.scaffold_templates import DEFAULT_PROMPT, DEFAULT_PROMPT_VERSION
 from kstrl.security import SECURITY_PROMPT, SECURITY_PROMPT_VERSION, SecurityConfig, SecurityMode
-from kstrl.stack import STACK_PROMPT, STACK_PROMPT_VERSION, Stack
 from kstrl.ui import PlainUI
 from kstrl.verify_model import VerificationResult
 from tests.conftest import make_review_repo
@@ -447,7 +447,7 @@ def _drift_message(name: str, expected: tuple[str, str], actual: tuple[str, str]
     if name == "DEFAULT_PROMPT":
         parts.append(
             "  4. APPEND the new (hash, version) row to the prompt.md entry of "
-            "SCAFFOLDED_TEMPLATES in kstrl/scaffold_ledger.py, keeping every older "
+            "SCAFFOLDED_TEMPLATES in kstrl/project/scaffold_ledger.py, keeping every older "
             "row (#286). Without it the bump reaches no already-initialised "
             "project and nothing can tell an operator their prompt.md is "
             "behind.\n"

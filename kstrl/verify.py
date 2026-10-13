@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Protocol
 
 from kstrl.config import component_progress_path
+from kstrl.owner import Waivers
 from kstrl.plan import PRD
 from kstrl.policy import (
     DEFAULT_SECRET_PATTERNS,
@@ -25,7 +26,6 @@ from kstrl.verify_model import (
     VerifyConfig,
     gate_names,
 )
-from kstrl.waivers import Waivers
 
 # Engineer prompt mandates the EXACT heading `## Self-Critique`.
 # Accept also `- **Self-Critique:**` (common bullet-in-list form) and

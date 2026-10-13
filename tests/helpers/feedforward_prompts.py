@@ -1,4 +1,4 @@
-"""Tables for the engineer-facing notice in ``kstrl/feedforward.py``:
+"""Tables for the engineer-facing notice in ``kstrl/project/feedforward.py``:
 ``SECTION_FAILED_PROMPT``, enrolled by #428.
 
 Everything ``build_codebase_scan_context`` returns is pasted into the engineer
@@ -36,7 +36,7 @@ from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
 
-from kstrl import feedforward
+from kstrl.project import feedforward
 
 #: One row, read the way ``builder_prompts._BUILDERS`` is read: the module,
 #: the name of its shared version constant, and the names it covers.

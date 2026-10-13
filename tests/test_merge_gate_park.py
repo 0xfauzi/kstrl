@@ -35,16 +35,16 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.inbox import Inbox, InboxConfig, InboxItem
+from kstrl.owner.inbox import Inbox, InboxConfig, InboxItem
 from kstrl.plan.findings import Finding
 from kstrl.plan.manifest import Component, Manifest
+from kstrl.queue.workqueue import Queue
+from kstrl.queue.workqueue_items import ItemSource, QueueConfig
 from kstrl.serve import serve_cycle
 from kstrl.serve_config import ServeConfig
 from kstrl.serve_outcome import Outcome, RunOutcome, classify_run
 from kstrl.serve_process import run_supervised
 from kstrl.serve_spend import SpendLedger
-from kstrl.workqueue import Queue
-from kstrl.workqueue_items import ItemSource, QueueConfig
 from tests.helpers import gitrepo
 from tests.helpers.executables import write_executable
 from tests.helpers.stack_confirmation import confirm_stack, write_stack

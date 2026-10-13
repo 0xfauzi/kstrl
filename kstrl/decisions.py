@@ -44,11 +44,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl.inbox import UNDECIDED, Inbox, InboxConfig, InboxItem, ItemKind
 from kstrl.io import atomic_write_json, read_json
+from kstrl.owner import UNDECIDED, Inbox, InboxConfig, InboxItem, ItemKind
 from kstrl.plan import enum_field_error, required_field_error
-from kstrl.workqueue_items import QueueError
-from kstrl.workqueue_store import queue_item_for_spec
+from kstrl.queue import QueueError, queue_item_for_spec
 
 if TYPE_CHECKING:
     from kstrl.plan import SpecRequirement

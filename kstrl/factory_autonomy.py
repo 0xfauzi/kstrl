@@ -33,8 +33,8 @@ from kstrl.factory_config import (
 from kstrl.factory_result import (
     FactoryResult,
 )
-from kstrl.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.io import ControlStateError
+from kstrl.owner import Inbox, InboxConfig, ItemKind
 from kstrl.pipeline_merge import HITL_REJECT_CHECK, PR_CLOSED_CHECK
 from kstrl.plan import (
     POLICY_CATEGORY_PREFIX,

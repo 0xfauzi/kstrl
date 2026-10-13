@@ -10,12 +10,12 @@ from typing import TYPE_CHECKING, Literal
 from kstrl.git import git
 from kstrl.io import append_records, read_json_file
 from kstrl.plan import PRD
-from kstrl.scaffold_ledger import (
+from kstrl.project.scaffold_ledger import (
     _read_text_or_none,
     _upgrade_scaffolded_templates,
     staleness_notice,
 )
-from kstrl.scaffold_templates import (
+from kstrl.project.scaffold_templates import (
     DEFAULT_CODEBASE_MAP,
     DEFAULT_FEATURE_UNDERSTAND_PROMPT,
     DEFAULT_GOLDEN_PATTERNS,

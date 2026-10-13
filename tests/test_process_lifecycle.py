@@ -263,7 +263,7 @@ EXPECTED_PROCESS_MODULES: dict[str, tuple[str, ...]] = {
     "proc/worktree_setup.py": ("subprocess",),
     # The word, not the call: `actor: str = "system"`.
     "autonomy.py": ("system",),
-    "inbox.py": ("system",),
+    "owner/inbox.py": ("system",),
     # The word, not the call: `"system"` is the type of a claude stream-json
     # event that `SessionGate` reads (#700).
     "write_guard.py": ("system",),

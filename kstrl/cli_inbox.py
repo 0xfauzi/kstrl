@@ -25,12 +25,12 @@ from kstrl.proc import (
     RunLock,
     acquire_run_lock,
 )
+from kstrl.project import STACK_KEY, load_stack
 from kstrl.retry_plan import RESUME_REFUSAL, plan_resume, print_resume_plan
-from kstrl.stack import STACK_KEY, load_stack
 from kstrl.ui import UI
 
 if TYPE_CHECKING:
-    from kstrl.inbox import InboxItem
+    from kstrl.owner import InboxItem
 
 
 def _inbox_run_lock(root_dir: Path, ui_impl: UI, *, not_done: str, then: str) -> RunLock:
@@ -118,8 +118,8 @@ def _inbox_for(root: Path | None) -> tuple[Path, Any]:
     Reading only the control directory would list an empty inbox while the
     items wait in the tree, so every ``ks inbox`` command refuses by name.
     """
-    from kstrl.inbox import Inbox, InboxConfig
     from kstrl.io import CONTROL_INBOX, legacy_control_refusal, legacy_control_remaining
+    from kstrl.owner import Inbox, InboxConfig
 
     root_dir = (root or Path.cwd()).resolve()
     if CONTROL_INBOX in legacy_control_remaining(root_dir):
@@ -140,7 +140,7 @@ def inbox_ls(
     no_color: bool,
 ) -> None:
     """List items awaiting a decision."""
-    from kstrl.inbox import summarize
+    from kstrl.owner import summarize
 
     _root_dir, box = _inbox_for(root)
     ui_impl = _autonomy_ui(ui, no_color)
@@ -220,8 +220,7 @@ def _decide_and_report(
     comment: str = "",
     hours: float | None = None,
 ) -> None:
-    from kstrl.inbox import InboxError
-    from kstrl.waivers import approval_effect
+    from kstrl.owner import InboxError, approval_effect
 
     _root_dir, box = _inbox_for(root)
     ui_impl = _autonomy_ui(ui, no_color)
@@ -304,7 +303,7 @@ def _serve_parked(root_dir: Path, run_id: str, ui_impl: UI) -> bool:
     read is a refusal before the decision is recorded, because answering
     "no" would leave the approval run's spend out of the daemon's total.
     """
-    from kstrl.workqueue_items import ItemState, QueueError
+    from kstrl.queue import ItemState, QueueError
 
     try:
         _root, queue = _queue_for(root_dir)
@@ -328,7 +327,7 @@ def _charge_serve_for_approval_run(
         # stops until an operator looks, as `ks serve` does for its own runs.
         reason = "the spend of the approval run cannot be read: " + " Also: ".join(spend.unreadable)
         ui_impl.err(reason)
-        from kstrl.workqueue_store import queue_lock
+        from kstrl.queue import queue_lock
 
         with queue_lock(root_dir, blocking=True):
             _queue_for(root_dir)[1].pause(reason=reason, actor="ks inbox")
@@ -406,7 +405,7 @@ def _decide_parked_merge_if_parked(
     before the manifest is read and handed to the run, so a live run's
     lock is a refusal here rather than after the decision (#597, #596).
     """
-    from kstrl.inbox import InboxError
+    from kstrl.owner import InboxError
 
     root_dir, box = _inbox_for(root)
     item = box.get(item_id)
@@ -485,9 +484,8 @@ def _decide_parked_merge_if_parked(
             # `ks factory` always leaves through sys.exit with the run's own
             # code. Settle the queue item serve parked on this run (#464),
             # then exit with that code.
+            from kstrl.queue import Queue, QueueConfig
             from kstrl.serve_settle import settle_approval_run
-            from kstrl.workqueue import Queue
-            from kstrl.workqueue_items import QueueConfig
 
             settle_approval_run(
                 root_dir,

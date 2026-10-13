@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.interaction import (
+from kstrl.owner.interaction import (
     CheckpointContext,
     PromptKind,
     PromptRequest,
@@ -117,16 +117,16 @@ class TestCheckpointContext:
 #: core prompts (#647). A new producer, or one that passes the default
 #: again, changes this table. Re-derived by running the walk.
 EXPECTED_RESPONSE_CHOICES = {
-    "interaction.py::UiInteractionChannel.request": ["None", "None", "None", "choice"],
+    "owner/interaction.py::UiInteractionChannel.request": ["None", "None", "None", "choice"],
 }
 
-PROMPT_RESPONSE_TARGET = frozenset({"kstrl.interaction.PromptResponse"})
+PROMPT_RESPONSE_TARGET = frozenset({"kstrl.owner.interaction.PromptResponse"})
 
 #: The module that defines the class calls it by a bare name, which
 #: astwalk does not bind (a `class` statement is not a binding), so the
 #: walk reports those calls undecided and a rebind of that name in
 #: neither half. The census reads that module through its own alias table.
-DEFINING_MODULE = "interaction.py"
+DEFINING_MODULE = "owner/interaction.py"
 
 
 def _choice_passed(call: ast.Call) -> str:
@@ -202,7 +202,7 @@ class TestAnUnansweredResponseCarriesNoChoice:
     def test_a_response_copied_through_dataclasses_replace_is_missed(self) -> None:
         source = (
             "import dataclasses\n"
-            "from kstrl.interaction import PromptResponse\n"
+            "from kstrl.owner.interaction import PromptResponse\n"
             "def f(r: PromptResponse, d: int) -> PromptResponse:\n"
             "    return dataclasses.replace(r, choice=d)\n"
         )

@@ -23,7 +23,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl.agent_output import (
+from kstrl.agents import (
     AgentOutputTooLarge,
     collect_agent_output,
     extract_json,
@@ -36,7 +36,7 @@ from kstrl.plan import Finding, dump_raw_debug, prd_text_for_prompt, tag_finding
 from kstrl.proc import limit_seconds
 
 if TYPE_CHECKING:
-    from kstrl.agents.base import Agent
+    from kstrl.agents import Agent
     from kstrl.ui import UI
 
 
