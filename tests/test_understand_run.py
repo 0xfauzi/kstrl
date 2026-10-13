@@ -1,4 +1,4 @@
-"""TUI surface C1: `ks understand` as an event-stream run."""
+"""`ks understand` as an event-stream run."""
 
 from __future__ import annotations
 
@@ -15,11 +15,6 @@ from kstrl.cli import cli
 from kstrl.loop import LoopResult
 from kstrl.reducer import load_run_state
 from kstrl.runid import run_kind
-from kstrl.tui.app import KstrlTuiApp, Mode
-from kstrl.tui.screens.component import ComponentScreen
-from kstrl.tui.screens.overview import OverviewScreen
-from tests.helpers.fake_run import write_fake_understand_run
-from tests.helpers.settle import mounted, settled
 
 
 class StubAgent:
@@ -223,37 +218,3 @@ class TestUnderstandRun:
         monkeypatch.setenv("KSTRL_FACTORY_PROGRESS_LOG_ENABLED", "0")
         off = _invoke_understand(tmp_path, {})
         assert on.output == off.output
-
-
-class TestUnderstandDashboard:
-    async def test_component_screen_renders_understand_run(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        run_dir = write_fake_understand_run(tmp_path)
-        app = KstrlTuiApp(
-            run_dir=run_dir,
-            root_dir=tmp_path,
-            mode=Mode.DASH,
-            poll_interval=0.05,
-            screen_factory=lambda: [
-                OverviewScreen(observe_only=True),
-                ComponentScreen("understand"),
-            ],
-        )
-        async with app.run_test(size=(120, 40)) as pilot:
-            # The app folds the stream in its own on_mount and the
-            # component screen paints from that fold. Waiting for the
-            # component to exist at all is weaker than the status
-            # assertion below, which keeps its own failure message.
-            await settled(
-                pilot,
-                lambda: "understand" in app.store.state.components,
-                what="the understand component to fold out of the event stream",
-            )
-            transcript = await mounted(pilot, lambda: app.screen, "#transcript")
-            assert isinstance(app.screen, ComponentScreen)
-            comp = app.store.state.components["understand"]
-            assert comp.status == "completed"
-            assert comp.phase_history
-            assert transcript is not None

@@ -344,8 +344,6 @@ EXPECTED_TEMPLATE_FILENAMES: dict[str, int] = {
     "config.py": 4,
     "factory_worker.py": 3,
     "init_cmd.py": 6,
-    "init_wizard.py": 6,
-    "launch.py": 1,
     "operator_context.py": 2,
     # N2 (#776): the six ledger rows left init_cmd.py for this module.
     "scaffold_ledger.py": 6,

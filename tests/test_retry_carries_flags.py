@@ -125,7 +125,6 @@ def _env(**extra: str) -> dict[str, str]:
     }
     env["AGENT_CMD"] = "echo '<promise>COMPLETE</promise>'"
     env["KSTRL_KNOWLEDGE_ENABLED"] = "0"
-    env["KSTRL_NO_TUI"] = "1"
     env.update(extra)
     return env
 
@@ -159,7 +158,7 @@ def _factory(
     root: Path, *flags: str, env: dict[str, str] | None = None
 ) -> subprocess.CompletedProcess[str]:
     manifest = root / "scripts" / "kstrl" / "manifest.json"
-    return _ks(root, "factory", "--manifest", str(manifest), "--no-tui", *flags, env=env)
+    return _ks(root, "factory", "--manifest", str(manifest), *flags, env=env)
 
 
 def _manifest(root: Path) -> Manifest:

@@ -351,8 +351,8 @@ def _check_prd_preflight(prd_file: Path, ui_impl: UI) -> None:
 def _check_prompt_preflight(path: Path | None, ui_impl: UI) -> None:
     """Tell the OPERATOR when a prompt file is an older kstrl template (#286).
 
-    Here, in the parent process, on the console UI, and BEFORE the TUI
-    branch of every command that has one. That placement is the whole
+    Here, in the parent process, on the console UI, and BEFORE the
+    command body. That placement is the whole
     point of this function existing rather than the check living in
     ``run_loop`` beside the read: on a factory run ``run_loop`` executes
     in a pool worker whose UI writes to that component's engineer.jsonl,
@@ -365,18 +365,10 @@ def _check_prompt_preflight(path: Path | None, ui_impl: UI) -> None:
 
     Two limits, stated rather than papered over.
 
-    Under the default interactive ``ks factory`` the dashboard
-    deliberately drops ``Log`` events, so this lands on the plain
-    terminal before Textual takes the screen and is in scrollback again
-    when it exits. Putting it in the feed would mean a typed event,
-    which is the right shape for something DISCOVERED mid-run and the
-    wrong shape for a start-up fact about a file on disk.
-
-    The home shell's own factory launch (``tui/session._prepare_factory``)
-    is not covered, because it has no non-fatal notice channel: its only
-    pre-run signal is ``LaunchError``, and a stale prompt is advisory,
-    not fatal. Giving the launcher an advisory channel is UI work that
-    would also carry every other factory advisory it currently swallows.
+    This lands on the plain terminal. Putting it in the feed would mean
+    a typed event, which is the right shape for something DISCOVERED
+    mid-run and the wrong shape for a start-up fact about a file on
+    disk.
 
     ``ks init`` is the surface that both reports this and fixes it, and
     it is reachable from every path.

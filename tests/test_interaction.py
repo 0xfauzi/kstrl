@@ -118,7 +118,6 @@ class TestCheckpointContext:
 #: core prompts (#647). A new producer, or one that passes the default
 #: again, changes this table. Re-derived by running the walk.
 EXPECTED_RESPONSE_CHOICES = {
-    "interaction.py::QueueInteractionChannel.request": ["None", "None", "pending.choice"],
     "interaction.py::UiInteractionChannel.request": ["None", "None", "None", "choice"],
 }
 

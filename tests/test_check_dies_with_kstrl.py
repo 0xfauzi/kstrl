@@ -110,7 +110,7 @@ def _factory_argv(tmp_path: Path, root: Path) -> list[str]:
         "factory",
         *("--manifest", str(root / "scripts" / "kstrl" / "manifest.json")),
         *("--root", str(root), "--agent-cmd", str(engineer)),
-        *("--no-tui", "--yes", "--ui", "plain", "--no-color", "--no-prs"),
+        *("--yes", "--ui", "plain", "--no-color", "--no-prs"),
         *("--max-retries", "0", "--max-parallel", "1"),
         *("--review-mode", "skip", "--contract-check", "skip"),
     ]

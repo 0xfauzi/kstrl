@@ -1,8 +1,8 @@
 """A gate that was asked and not answered is not consent (#594).
 
 The defect: with ``pause_before_pr_merge`` on, ``_phase_checkpoint`` returned ``NOT_PROMPTED``
-when the channel said it could prompt and the request then came back unanswered (a TUI that
-detached mid-prompt), and mapped any choice outside the three options to ``APPROVED``.
+when the channel said it could prompt and the request then came back unanswered (a channel that
+went away mid-prompt), and mapped any choice outside the three options to ``APPROVED``.
 ``process_result`` special-cased ``REJECTED``, ``PARKED`` and ``RETRY`` by name and let
 anything else - including that stray ``NOT_PROMPTED`` - reach ``_phase_pr``, which pushes,
 opens and merges. ``PlainUI.choose`` made it reachable from a terminal: end of input or Ctrl-C
@@ -20,12 +20,12 @@ into an out-of-range index itself. ``process_result`` now allow-lists ``APPROVED
 and ``NOT_PROMPTED`` (gate off) as the only decisions that reach ``_phase_pr``; anything else
 parks or refuses and is logged. ``ks factory`` starts only on an answered Start.
 
-Five layers: the pipeline driven through ``process_result`` with each way an answer can go
+Four layers: the pipeline driven through ``process_result`` with each way an answer can go
 missing, plus the allow-list at the consumer; a package-wide census of every ``PromptRequest``
 construction and its enrolled unanswered path, plus a census of every return
-``_phase_checkpoint`` itself names; the real ``run_embedded`` with a TUI that dies or exits
-while the gate waits; the real ``ks`` CLI on a pseudo-terminal that is the child's controlling
-terminal, answered with end of input; and the feature review gate, answered the same way.
+``_phase_checkpoint`` itself names; the real ``ks`` CLI on a pseudo-terminal that is the child's
+controlling terminal, answered with end of input; and the feature review gate, answered the
+same way.
 """
 
 from __future__ import annotations
@@ -38,7 +38,6 @@ import select
 import signal
 import subprocess
 import sys
-import threading
 import time
 from collections import Counter
 from pathlib import Path
@@ -55,14 +54,12 @@ from kstrl.interaction import (
     PromptKind,
     PromptRequest,
     PromptResponse,
-    QueueInteractionChannel,
     UiInteractionChannel,
 )
 from kstrl.loop import LoopResult, run_loop
 from kstrl.pipeline_delivery import CheckpointDecision, Delivery, PipelineOutcome
 from kstrl.pipeline_merge import PrDisposition, PrPhaseResult
 from kstrl.pipeline_transitions import Transition
-from kstrl.tui import embed
 from kstrl.ui.plain import PlainUI
 from kstrl.ui.rich_ui import RichUI
 from tests.helpers.astwalk import (
@@ -208,14 +205,6 @@ class TestAnUnansweredGateParks:
         gate = _Gate(tmp_path, interaction=_FakeChannel(answered=True, choice=7))
         _assert_parked(gate, gate.run())
         assert "choice=7" in gate.log.getvalue(), gate.log.getvalue()
-
-    def test_a_queue_channel_detached_while_the_gate_waits_parks(self, tmp_path: Path) -> None:
-        channel = QueueInteractionChannel()
-        # The resolver goes away while the request is pending, which is
-        # what embed.py's detach does to a waiting prompt.
-        channel.attach(lambda req: channel.detach())
-        gate = _Gate(tmp_path, interaction=channel)
-        _assert_parked(gate, gate.run())
 
     @pytest.mark.parametrize("interrupt", [EOFError, KeyboardInterrupt])
     def test_an_interrupted_plain_prompt_parks(
@@ -425,24 +414,17 @@ EXPECTED_PROMPT_SITES = {
     "loop.py::_resolve_iteration_pause": "stops the run, same as Quit, when nobody answers",
     "pipeline_delivery.py::Delivery._phase_checkpoint": "parks for the inbox (#594)",
     "plan_gate.py::run_plan_gate": "parks the plan for the inbox (#602)",
-    "tui/screens/inbox.py::InboxScreen.action_reject": "a dismissed modal decides nothing",
-    "tui/screens/retry.py::RetryScreen.on_scope_read": "a dismissed modal starts nothing",
 }
 
 #: The target `calls_to`/`resolved_calls` resolve against: the fully
 #: dotted origin `PromptRequest` imports from, everywhere in kstrl/.
 PROMPT_REQUEST_TARGET = frozenset({"kstrl.interaction.PromptRequest"})
 
-#: `Sites.undecided` for the walk above, package-wide. Not specific to
-#: this target - `test_network_timeouts.py` pins the identical five rows
-#: for `urllib.request.urlopen` - because neither callee has a name the
-#: AST can spell: `_RUNNERS[key](...)` is a subscript, and
-#: `initial_screens_for_kind(...)()` calls the RESULT of a call, so its
-#: own callee is an `ast.Call`, not a `Name` or `Attribute`.
-EXPECTED_UNDECIDED_PROMPT_SITES: tuple[str, ...] = (
-    "tui/app.py::KstrlTuiApp.launch initial_screens_for_kind(kind, observe_only=False)",
-    "tui/app.py::KstrlTuiApp.open_run initial_screens_for_kind(kind, observe_only=True)",
-)
+#: `Sites.undecided` for the walk above, package-wide. Empty since #863 A1
+#: removed the two TUI calls of the result of a call. A call with no callee
+#: name the AST can spell (a subscript or the result of a call) adds a row.
+#: `EXPECTED_SEEN_PROMPT_SITES` below is the control that the walk still sees.
+EXPECTED_UNDECIDED_PROMPT_SITES: tuple[str, ...] = ()
 
 #: `Sites.seen` for the walk above, keyed by module and enclosing scope
 #: rather than by line (#645) and re-derived by RUNNING it rather than
@@ -456,8 +438,6 @@ EXPECTED_SEEN_PROMPT_SITES: tuple[str, ...] = (
     "loop.py::_resolve_iteration_pause kstrl.interaction.PromptRequest",
     "pipeline_delivery.py::Delivery._phase_checkpoint kstrl.interaction.PromptRequest",
     "plan_gate.py::run_plan_gate kstrl.interaction.PromptRequest",
-    "tui/screens/inbox.py::InboxScreen.action_reject kstrl.interaction.PromptRequest",
-    "tui/screens/retry.py::RetryScreen.on_scope_read kstrl.interaction.PromptRequest",
 )
 
 
@@ -540,59 +520,6 @@ class TestTheDisclosedLimit:
             "    return dataclasses.replace(req, default=1)\n"
         )
         blind_spot(_prompt_request_seen, source)
-
-
-class _StandInApp:
-    """Replaces KstrlTuiApp in run_embedded: attaches the channel as the
-    real app's on_mount does, waits until the gate is asking, then dies
-    (``crash``) or exits with the forced-quit code 130."""
-
-    crash = True
-
-    def __init__(self, **kwargs: Any) -> None:
-        self.channel: QueueInteractionChannel = kwargs["channel"]
-
-    def run(self) -> int:
-        asking = threading.Event()
-        self.channel.attach(lambda req: asking.set())
-        assert asking.wait(timeout=30), "the gate never asked"
-        if self.crash:
-            raise RuntimeError("the TUI died")
-        return 130
-
-
-class _ExitingApp(_StandInApp):
-    crash = False
-
-
-class TestAnEmbeddedRunParksWhenTheTuiGoesAway:
-    @pytest.mark.parametrize("app", [_StandInApp, _ExitingApp], ids=["tui-crash", "tui-exit"])
-    def test_the_gate_waiting_when_the_tui_goes_parks(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, app: type[_StandInApp]
-    ) -> None:
-        monkeypatch.setattr(embed, "KstrlTuiApp", app)
-        gates: list[_Gate] = []
-        outcomes: list[PipelineOutcome] = []
-
-        def _target(ctx: embed.EmbeddedContext) -> int:
-            # The real app attaches in on_mount; a gate reached before that
-            # parks as non-interactive and never asks. Wait for the attach
-            # so this drives the detach-while-asking path, not that one.
-            deadline = time.monotonic() + 30
-            while not ctx.channel.can_prompt() and time.monotonic() < deadline:
-                time.sleep(0.01)
-            assert ctx.channel.can_prompt(), "the stand-in app never attached"
-            gate = _Gate(tmp_path / "project", interaction=ctx.channel)
-            gates.append(gate)
-            outcomes.append(gate.run())
-            return 0
-
-        code = embed.run_embedded(
-            _target, root_dir=tmp_path, run_id="factory-20260927-embed594", poll_interval=0.05
-        )
-        assert code == (0 if app.crash else 130)
-        assert len(outcomes) == 1
-        _assert_parked(gates[0], outcomes[0])
 
 
 # --- the real CLI on a pseudo-terminal ---------------------------------------

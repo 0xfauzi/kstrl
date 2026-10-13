@@ -288,7 +288,6 @@ EXPECTED_GIT_ARGVS: dict[str, int] = {
     "retry_plan.py git worktree prune": 1,
     "retry_plan.py git worktree remove --force ?": 1,
     "statedir.py git -C ? remote get-url origin": 1,
-    "tui/screens/home.py git rev-parse --abbrev-ref HEAD": 1,
     # #425 (PR #425, merged into this branch as 982f726). Not
     # path-printing, so layer 2 correctly leaves it out of
     # EXPECTED_WITH_Z / EXPECTED_WITHOUT_Z / EXPECTED_UNDECIDED: `git

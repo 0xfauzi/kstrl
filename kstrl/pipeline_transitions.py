@@ -77,7 +77,7 @@ class Transitions(InboxDesk, AttemptRecorder, UsageLedger):
         ``manifest.cascade_skip`` only marks the manifest. Before this,
         the run wrote no event for a dependent it skipped, so the board
         (which folds only this run's events) showed it as pending while
-        ``ks status --no-tui`` (which reads the manifest) said skipped.
+        ``ks status`` (which reads the manifest) said skipped.
         This is the one place in ``kstrl/`` that may call
         ``manifest.cascade_skip`` directly; a census in
         ``tests/test_cascade_skip_events.py`` requires that every other

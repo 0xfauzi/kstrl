@@ -467,7 +467,6 @@ def _decide_parked_merge_if_parked(
                 "manifest_path": str(manifest_file),
                 "root": str(root_dir),
                 "yes": True,
-                "tui": False,
                 "ui": ui,
                 "no_color": no_color,
             },

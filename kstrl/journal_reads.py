@@ -225,9 +225,7 @@ class JournalReads:
         kstrl writes (CLAUDE.md): ``UnicodeDecodeError`` IS a
         ``ValueError`` and escapes a fail-closed ``except OSError``.
         Measured before this line: a single non-utf-8 byte in
-        experiments.tsv raised straight out of ``EvolveScreen.on_mount``
-        two lines after the #289 config banner, which is that issue's
-        own crash from that issue's own screen.
+        experiments.tsv raised straight out of the reader.
 
         The PARSE is guarded separately, and differently (#352 round 2).
         A read failure here is silent because a missing file is the
@@ -236,9 +234,8 @@ class JournalReads:
         three things. A parse refusal is not one of those three: it can
         only come from a file that exists and decoded, so it is an
         incident and it is logged with the path and the cause. The
-        return stays ``[]`` rather than propagating, because this is
-        called from ``EvolveScreen.reload`` on the Textual event loop,
-        where a raise is the #289 crash again.
+        return stays ``[]`` rather than propagating, because a raise here
+        would take down the caller that only wanted the rows.
         """
         try:
             text = self.config.experiments_path.read_text(encoding="utf-8")
@@ -330,7 +327,7 @@ class JournalReads:
         """The operator-facing sentence about this journal's repairs, or None.
 
         ONE HOME for prose two surfaces render (#352 round 2, N4).
-        ``cli._echo_journal_repairs`` and ``EvolveScreen._show_repairs``
+        ``cli._echo_journal_repairs`` and a second surface
         each held their own copy and each said the wording was
         deliberately the same on both, with nothing keeping it so. That
         is the same argument this PR made for hoisting
@@ -341,8 +338,7 @@ class JournalReads:
         reason: a healthy journal that prints "0 repairs" every time
         teaches an operator to skip the line that matters. Deciding it
         here also keeps the file read ONCE. What stays per-surface is
-        the prefix, two spaces for the CLI and an alert glyph for the
-        TUI, and the widget or stream it goes to.
+        the prefix and the stream it goes to.
         """
         repairs = self.get_repair_count()
         if not repairs:
@@ -361,8 +357,7 @@ class JournalReads:
         The read surface for ``JOURNAL_REPAIR_EVENT`` (#327 round 1,
         F5). Writing the row was only half of "if it's worth deciding,
         it's worth recording": a row no command reports is reachable
-        only by an operator who already suspects the problem, and the
-        logger warning goes to orchestrator.log under the TUI. ``ks
+        only by an operator who already suspects the problem. ``ks
         evolve --status`` prints this when it is non-zero.
 
         Counts rows, not incidents. Residual 4 of

@@ -36,7 +36,7 @@ made it.
 
 `<id>` is the full id `ks queue ls` prints, any unique prefix of it, or the
 short form `q-<nonce>` (`q-` followed by the id's last six characters) that
-the TUI and the titles of the inbox items `ks serve` files show. Text that
+the titles of the inbox items `ks serve` files show. Text that
 matches more than one item, as a prefix or as a short form, is refused and
 the matching ids are listed.
 
@@ -942,7 +942,7 @@ The limits of this decision:
   Narrowed since (#205, `tests/test_serve_seam.py`): the *launch* half no
   longer depends on that hand check. `subprocess_factory_runner` is now
   executed for real against a stub interpreter - only `sys.executable` is
-  replaced, so the argv, the cwd, the `KSTRL_NO_TUI` env, the caffeinate
+  replaced, so the argv, the cwd, the caffeinate
   wrapping, the process-group spawn and the `RunOutcome` mapping are all
   shipping code - and the argv it builds is then parsed by the real
   `ks factory` Click command, so a flag renamed on either side fails a

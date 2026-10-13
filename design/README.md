@@ -1,10 +1,8 @@
 # design/ - the kstrl app design system
 
 A design system for a graphical kstrl app: the operator's window onto factory runs (the map from Factory to Step,
-the command window, approvals, the pages beside the map). No such app exists yet. kstrl's UIs today are the Rich
-console output in `kstrl/ui` and the Textual dashboard in `kstrl/tui`, whose visual rules are in `/DESIGN.md` and
-whose tokens are `kstrl/tui/theme.py`. Those rules are for a terminal and stay as they are; this directory is for
-the graphical app and does not change them.
+the command window, approvals, the pages beside the map). No such app exists yet. kstrl's UI today is the Rich
+console output in `kstrl/ui`. This directory is for the graphical app and does not change it.
 
 The system is published as a Design System artifact at https://claude.ai/artifact/5d4LkaTZBHTrxmyKMCCqNX
 (private to its owner). `system/project/` is byte for byte what that artifact serves, version 44.

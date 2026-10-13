@@ -43,7 +43,7 @@ class StopController:
         the TUI's confirmed stop set a flag and the agent ran on (measured:
         alive 15 s after ``y``, and the run never exited). Every request
         now starts the kill, on a daemon thread, because ``kill`` can wait
-        out the whole grace and the caller may be the TUI's event loop.
+        out the whole grace.
         Pool workers hold no agent in this process, so this is a no-op
         for them; their agents end through ``_abort_inflight``.
         """

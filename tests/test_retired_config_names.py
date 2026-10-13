@@ -116,7 +116,7 @@ def test_a_retired_name_stops_the_command_before_its_body(tmp_path: Path) -> Non
         capture_output=True,
         text=True,
         timeout=120,
-        env={**os.environ, "KSTRL_NO_TUI": "1"},
+        env={**os.environ},
     )
 
     # The CLI configuration seam (_KstrlGroup.invoke) exits 2 for a
@@ -141,7 +141,7 @@ def test_a_retired_codebase_scan_key_stops_the_command_by_name(tmp_path: Path, k
         capture_output=True,
         text=True,
         timeout=120,
-        env={**os.environ, "KSTRL_NO_TUI": "1"},
+        env={**os.environ},
     )
 
     assert proc.returncode == 2, proc.stdout + proc.stderr
@@ -173,7 +173,7 @@ def test_a_retired_codebase_scan_env_var_stops_the_command_by_name(
         capture_output=True,
         text=True,
         timeout=120,
-        env={**os.environ, "KSTRL_NO_TUI": "1", name: "1"},
+        env={**os.environ, name: "1"},
     )
 
     assert proc.returncode == 2, proc.stdout + proc.stderr
@@ -207,7 +207,7 @@ def test_a_retired_adequacy_or_tool_check_env_var_stops_the_command_by_name(
         capture_output=True,
         text=True,
         timeout=120,
-        env={**os.environ, "KSTRL_NO_TUI": "1", name: "1"},
+        env={**os.environ, name: "1"},
     )
 
     assert proc.returncode == 2, proc.stdout + proc.stderr
@@ -240,7 +240,7 @@ def test_a_retired_dependency_policy_key_stops_the_command_by_name(
         capture_output=True,
         text=True,
         timeout=120,
-        env={**os.environ, "KSTRL_NO_TUI": "1"},
+        env={**os.environ},
     )
 
     assert proc.returncode == 2, proc.stdout + proc.stderr
@@ -264,7 +264,7 @@ def test_a_retired_dependency_policy_env_var_stops_the_command_by_name(
         capture_output=True,
         text=True,
         timeout=120,
-        env={**os.environ, "KSTRL_NO_TUI": "1", name: "1"},
+        env={**os.environ, name: "1"},
     )
 
     assert proc.returncode == 2, proc.stdout + proc.stderr
@@ -281,7 +281,7 @@ def test_a_retired_integration_fix_bound_stops_the_command_by_name(
     retired. A kstrl.toml or an environment that still sets it is refused
     by name before the command body runs. The names are typed here, not
     read from RETIRED_KEYS or RETIRED_ENV_VARS."""
-    env = {**os.environ, "KSTRL_NO_TUI": "1"}
+    env = {**os.environ}
     if form == "toml":
         (tmp_path / "kstrl.toml").write_text("[factory]\nintegration_max_rounds = 2\n")
         named = "[factory] integration_max_rounds"
@@ -324,7 +324,7 @@ def test_a_retired_fixtures_key_stops_the_command_by_name(
         capture_output=True,
         text=True,
         timeout=120,
-        env={**os.environ, "KSTRL_NO_TUI": "1"},
+        env={**os.environ},
     )
 
     assert proc.returncode == 2, proc.stdout + proc.stderr
@@ -351,7 +351,7 @@ def test_a_retired_fixtures_env_var_stops_the_command_by_name(tmp_path: Path, na
         capture_output=True,
         text=True,
         timeout=120,
-        env={**os.environ, "KSTRL_NO_TUI": "1", name: "1"},
+        env={**os.environ, name: "1"},
     )
 
     assert proc.returncode == 2, proc.stdout + proc.stderr
@@ -384,7 +384,7 @@ def test_a_retired_learning_key_stops_the_command_by_name(
         capture_output=True,
         text=True,
         timeout=120,
-        env={**os.environ, "KSTRL_NO_TUI": "1"},
+        env={**os.environ},
     )
 
     assert proc.returncode == 2, proc.stdout + proc.stderr
@@ -409,7 +409,7 @@ def test_a_retired_learning_env_var_stops_the_command_by_name(
         capture_output=True,
         text=True,
         timeout=120,
-        env={**os.environ, "KSTRL_NO_TUI": "1", name: value},
+        env={**os.environ, name: value},
     )
 
     assert proc.returncode == 2, proc.stdout + proc.stderr

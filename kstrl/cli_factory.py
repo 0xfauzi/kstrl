@@ -64,7 +64,6 @@ if TYPE_CHECKING:
 @cli.command()
 @factory_options
 def factory(
-    tui: bool | None,
     spec: Path | None,
     manifest_path: Path | None,
     root: Path | None,
@@ -197,7 +196,7 @@ def factory(
             # rests on an invariant about who else touched this agent.
             usage_before = usage_cursor(agent)
             # #567: the architect runs as a decompose run of its own, the way
-            # `ks decompose` and the dashboard's decompose launch run it, so
+            # `ks decompose` runs it, so
             # its prompt records, events and transcript have a run to live
             # in. Not the factory's run: that directory would exist for the
             # whole architect call with no event stream, and a factory-kind
@@ -520,42 +519,6 @@ def factory(
         # R0.5 (H-15): state saves back to the file it was loaded from.
         # --manifest /custom.json persists to /custom.json; --spec runs keep
         # the default scripts/kstrl/manifest.json that decompose wrote.
-        use_tui = (
-            tui
-            if tui is not None
-            else (
-                sys.stdout.isatty()
-                and sys.stdin.isatty()
-                and os.environ.get("KSTRL_NO_TUI") != "1"
-                and _normalize_ui_mode(ui) != "plain"
-            )
-        )
-        if use_tui:
-            if not (sys.stdout.isatty() and sys.stdin.isatty()):
-                click.echo(
-                    "--tui requires an interactive terminal; use --no-tui "
-                    "for non-interactive execution.",
-                    err=True,
-                )
-                sys.exit(2)
-            # PR F: embedded dashboard. The pre-execution confirm already
-            # happened on the plain terminal (plan decision: no
-            # modal-before-app); everything from here renders in Textual.
-            from kstrl.tui.embed import run_factory_embedded
-
-            sys.exit(
-                run_factory_embedded(
-                    manifest,
-                    factory_config,
-                    base_config,
-                    root_dir,
-                    manifest_path,
-                    architect_usage=architect_usage,
-                    architect_run_id=architect_run_id,
-                    run_lock=run_lock,
-                )
-            )
-
         stop = StopController()
         uninstall = install_signal_handlers(stop)
         try:

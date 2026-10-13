@@ -49,10 +49,7 @@ EXPECTED_SEEN: tuple[str, ...] = (
     "signals.py::_fetch_bugsink_text urllib.request.urlopen",
 )
 
-EXPECTED_UNDECIDED: tuple[str, ...] = (
-    "tui/app.py::KstrlTuiApp.launch initial_screens_for_kind(kind, observe_only=False)",
-    "tui/app.py::KstrlTuiApp.open_run initial_screens_for_kind(kind, observe_only=True)",
-)
+EXPECTED_UNDECIDED: tuple[str, ...] = ()
 
 
 def _missing_timeout(source: str, module: str = "") -> list[str]:

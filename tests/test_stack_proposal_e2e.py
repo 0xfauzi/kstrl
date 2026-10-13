@@ -96,7 +96,6 @@ def run_ks(
     gh.chmod(0o755)
     child_env = {
         **os.environ,
-        "KSTRL_NO_TUI": "1",
         "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
         **(env or {}),
     }
@@ -169,7 +168,7 @@ def _decompose(root: Path, agent: str) -> subprocess.CompletedProcess[str]:
         root,
         "decompose",
         *("--spec", str(root / "spec.md"), "--project-name", "demo", "--root", str(root)),
-        *("--agent-cmd", agent, "--ui", "plain", "--no-color", "--no-tui"),
+        *("--agent-cmd", agent, "--ui", "plain", "--no-color"),
     )
 
 
@@ -218,7 +217,7 @@ def test_a_proposal_that_cannot_be_filed_is_printed_and_the_plan_stands(
         root,
         "decompose",
         *("--spec", str(root / "spec.md"), "--project-name", "demo", "--root", str(root)),
-        *("--agent-cmd", agent, "--ui", "plain", "--no-color", "--no-tui"),
+        *("--agent-cmd", agent, "--ui", "plain", "--no-color"),
         env={"KSTRL_INBOX_ENABLED": "0"},
     )
 
@@ -376,7 +375,7 @@ def test_ks_factory_spec_no_verify_pays_the_architect_without_measuring_the_base
         root,
         "factory",
         *("--spec", str(root / "spec.md"), "--project-name", "demo", "--root", str(root)),
-        *("--agent-cmd", agent, "--yes", "--no-tui", "--ui", "plain", "--no-color"),
+        *("--agent-cmd", agent, "--yes", "--ui", "plain", "--no-color"),
         *("--no-prs", "--no-verify"),
     )
 
@@ -450,7 +449,7 @@ def test_ks_factory_spec_measures_the_base_before_the_architect(tmp_path: Path, 
         [
             "factory",
             *("--spec", str(root / "spec.md"), "--project-name", "demo", "--root", str(root)),
-            *("--agent-cmd", agent, "--yes", "--no-tui", "--ui", "plain", "--no-color"),
+            *("--agent-cmd", agent, "--yes", "--ui", "plain", "--no-color"),
             *("--no-prs", "--max-retries", "0", "--review-mode", "skip"),
             *("--contract-check", "skip"),
         ],

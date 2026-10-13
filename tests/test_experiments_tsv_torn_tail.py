@@ -28,7 +28,7 @@ from tests.helpers.journal import lose_the_newline, tear
 
 
 class TestExperimentsTsvSurvivesATornTail:
-    """``record_run``'s TSV row, read by ``ks evolve --status`` and the TUI.
+    """``record_run``'s TSV row, read by ``ks evolve --status``.
 
     The worst of the seven, and the only one whose reader RENDERS the
     corruption instead of dropping it: ``csv.DictReader`` split the
@@ -279,7 +279,7 @@ class TestTheReaderUsesTheDialectTheWriterWrites:
         tmp_path: Path,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """``EvolveScreen.reload`` calls this on the Textual event loop.
+        """``ks evolve --status`` reads the table through this.
 
         ``[]`` here already means three things (no runs, a header that
         does not match, every row malformed), so a fourth silent meaning

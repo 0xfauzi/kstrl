@@ -294,7 +294,7 @@ class TestLayerOneCatchesWhatLayerTwoCannot:
 
         ``{"spec_issues": handler}`` is indistinguishable from the
         architect's own JSON vocabulary, whose natural shape is a dict
-        keyed by exactly that word, and from the TUI's artifact label.
+        keyed by exactly that word, and from the artifact label.
         Layer 2 flagging it would put the matcher in the way of code that
         has nothing to do with the journal, and a guard in the way gets
         silenced. Layer 1 counts it, where a row with a reason is the

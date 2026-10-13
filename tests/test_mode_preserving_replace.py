@@ -90,11 +90,8 @@ REPLACE_SITES: dict[str, str] = {
 #: to the AST until the receiver is known - measured: 21 of these are
 #: plain `.replace(...)` calls on a string or a datetime, none of them
 #: anywhere near a filesystem path), and a callee with NO identifier at
-#: all (`TABLE[key](...)`, `initial_screens_for_kind(...)`), which is a
-#: candidate for EVERY target set because there is nothing in the AST to
-#: compare - the same two `tui/app.py` sites
-#: `tests/test_atomicio.py::EXPECTED_UNDECIDED_CALLS` already discloses
-#: for `tempfile.mkstemp`. A NEW entry here is either a call this walk
+#: all (`TABLE[key](...)`), which is a candidate for EVERY target set
+#: because there is nothing in the AST to compare. A NEW entry here is either a call this walk
 #: needs help resolving (make it resolvable, or add a reason and enrol
 #: it) or a genuine fifth `os.replace`/`shutil.move` site hiding behind
 #: an unresolvable receiver - read it before assuming the former.
@@ -104,8 +101,7 @@ EXPECTED_UNDECIDED_REPLACE_CALLS: tuple[str, ...] = (
     "autonomy_transitions.py trigger.label.replace",
     "baseline_report.py ' '.join(text.split()).replace",
     "doctor.py now.isoformat().replace",
-    # #433 inc3: str.replace spelling a slug as words, here and in the four
-    # tui/ rows below, except inbox.py's `moment`, a datetime's tzinfo.
+    # #433 inc3: str.replace spelling a slug as words.
     "evolve_report.py name.replace",
     "inbox.py datetime.now(UTC).replace",
     "inbox.py parsed.replace",
@@ -122,15 +118,6 @@ EXPECTED_UNDECIDED_REPLACE_CALLS: tuple[str, ...] = (
     "spec_issues.py comp_id.replace('-', ' ').replace",
     "statedir.py datetime.now(UTC).replace",
     "statedir.py datetime.now(UTC).replace(microsecond=0).isoformat().replace",
-    "tui/app.py initial_screens_for_kind(kind, observe_only=False)",
-    "tui/app.py initial_screens_for_kind(kind, observe_only=True)",
-    # #433 inc4: the ledger's own timestamp parse, a datetime's tzinfo,
-    # same shape as observability.py's and inbox.py's `moment` above.
-    "tui/delivery.py datetime.strptime(observed_at, '%Y-%m-%dT%H:%M:%SZ').replace",
-    "tui/inbox_consequences.py str(kind).replace",
-    "tui/screens/decompose.py key.replace",
-    "tui/screens/inbox.py key.replace",
-    "tui/screens/inbox.py moment.replace",
     "workqueue_items.py parsed.replace",
 )
 

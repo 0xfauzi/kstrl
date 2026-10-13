@@ -710,10 +710,10 @@ class TestTheReportDoesNotDistortTheRunRecord:
     def test_failure_details_are_capped_and_the_truncation_is_stated(self) -> None:
         """#288 review finding 8, at the renderer.
 
-        Under the embedded TUI every printed line is one Log event on the
-        run bus. Measured: a 40-finding ruff run against files that exist
-        renders 81 detail lines from ONE check (10 shown findings, each
-        with a 7-line source snippet, plus the "and 30 more" line). The
+        On the run bus every printed line is one Log event. Measured: a
+        40-finding ruff run against files that exist renders 81 detail
+        lines from ONE check (10 shown findings, each with a 7-line source
+        snippet, plus the "and 30 more" line). The
         truncation must be stated, because a report that quietly shows 12
         of 200 lines is one you would act on wrongly.
         """

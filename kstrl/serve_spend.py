@@ -551,9 +551,7 @@ def owned_run_spend(
     the decompose class completely, but it does NOT make the remaining
     attribution exact. ``.kstrl/factory.lock`` excludes concurrent
     factory EXECUTION, not concurrent factory DIRS - ``--force-lock``
-    runs a second factory by design, and the embedded dashboard mkdirs
-    its run dir in ``run_embedded`` before ``run_factory`` takes the
-    lock. A foreign factory-kind dir can still land in the window. That
+    runs a second factory by design. A foreign factory-kind dir can still land in the window. That
     hole predates #257 and is unchanged by it; what #257 changed, and
     this restores, is that decompose dirs now carry real money.
 

@@ -250,9 +250,6 @@ EXPECTED_PROCESS_MODULES: dict[str, tuple[str, ...]] = {
     "timeout.py": ("subprocess",),
     # #433: `SubprocessError`, caught from `retry_plan.failed_branch_probe`
     # (the retry scope preview). It creates no child itself.
-    "tui/retry_scope.py": ("subprocess",),
-    "tui/screens/home.py": ("subprocess",),
-    "tui/screens/retry.py": ("subprocess",),
     # #461: `subprocess.TimeoutExpired`, caught from `verify.run_scrubbed`,
     # which is what runs the `lsof` census. The module creates no child
     # itself and signals groups only through `procgroup.signal_group`.

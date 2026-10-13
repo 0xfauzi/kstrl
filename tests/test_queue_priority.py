@@ -228,7 +228,7 @@ def test_an_item_serve_leases_after_the_lookup_is_refused_and_not_copied(
 def _child_env() -> dict[str, str]:
     """The test's environment minus any kstrl setting an operator exported."""
     env = {k: v for k, v in os.environ.items() if not k.startswith(("KSTRL_", "FACTORY_"))}
-    env.update(USER=ACTOR, KSTRL_NO_TUI="1", KSTRL_AGENT_PROBE="0")
+    env.update(USER=ACTOR, KSTRL_AGENT_PROBE="0")
     return env
 
 

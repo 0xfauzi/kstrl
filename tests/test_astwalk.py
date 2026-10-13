@@ -80,14 +80,14 @@ class TestEveryImportForm:
         that branch removed every other test in this file still passes.
         """
         source = "from .config_report import build_config_report\n"
-        got = origin_of(source, "build_config_report", module="kstrl.tui.home")
-        assert got == "kstrl.tui.config_report.build_config_report"
+        got = origin_of(source, "build_config_report", module="kstrl.agents.base")
+        assert got == "kstrl.agents.config_report.build_config_report"
 
     def test_a_bare_relative_import(self) -> None:
         """``from . import x`` has no ``module`` at all, and one guard's
         ``and node.module`` guard discarded the whole statement."""
-        got = origin_of("from . import evolution\n", "evolution", module="kstrl.tui.home")
-        assert got == "kstrl.tui.evolution"
+        got = origin_of("from . import evolution\n", "evolution", module="kstrl.agents.base")
+        assert got == "kstrl.agents.evolution"
 
     def test_a_relative_import_with_no_module_name_given(self) -> None:
         """Left without a module the origin is useless rather than wrong.
@@ -295,10 +295,7 @@ class TestAssertSitesWillNotTakeHalfAnAnswer:
 #: Keyed by module and expression, not by line: rebasing this branch onto
 #: a moved main failed this pin four times on line numbers alone, and none
 #: of those diffs was about a dispatch table.
-OPAQUE_CALLEES = (
-    "tui/app.py initial_screens_for_kind(kind, observe_only=False)",
-    "tui/app.py initial_screens_for_kind(kind, observe_only=True)",
-)
+OPAQUE_CALLEES = ()
 
 
 def package_calls(targets: frozenset[str]) -> astwalk.Sites:
@@ -407,9 +404,10 @@ class TestTheWalkAgainstTheRealPackage:
         carries a timeout. So 75. #700 adds one more: ``git.git_write_paths``'s
         ``git rev-parse --path-format=absolute --git-dir --git-common-dir``,
         the git paths a codex engineer writes when it commits. It carries a timeout.
-        So 76. #863 A4 deletes four: the three git branch functions
-        (``create_branch_from``, ``delete_branch``, ``checkout_existing``) and
-        the sweep of a pre-R0.5 flat worktree. So 72.
+        So 76. #863 A1 removes the TUI, and with it ``ks dash`` and the status
+        dashboard: one site fewer, so 75. #863 A4 deletes four: the three git
+        branch functions (``create_branch_from``, ``delete_branch``,
+        ``checkout_existing``) and the sweep of a pre-R0.5 flat worktree. So 71.
         """
         spawns = frozenset(
             {
@@ -421,15 +419,11 @@ class TestTheWalkAgainstTheRealPackage:
             }
         )
         found = package_calls(spawns)
-        assert len(found.seen) == 72
+        assert len(found.seen) == 71
         assert found.without_line_numbers().undecided == tuple(
             sorted(
                 [
                     *OPAQUE_CALLEES,
-                    # A Textual App bound to a local.
-                    "cli_report.py app.run",
-                    "tui/embed.py app.run",
-                    "tui/home.py app.run",
                     # An agent adapter reached through a parameter or an
                     # attribute. Not a subprocess, and the walk cannot
                     # say so.

@@ -21,8 +21,7 @@ BASE_BRANCH_CANDIDATES = ("main", "master", "trunk", "develop")
 # callers surface it as one.
 BASE_BRANCH_FALLBACK = "main"
 
-# Local plumbing, called on the way into a command and on the Textual
-# event loop when the decompose launch form composes.
+# Local plumbing, called on the way into a command.
 _BASE_BRANCH_PROBE_TIMEOUT = 5.0
 
 _ORIGIN_REF_PREFIX = "refs/remotes/origin/"
@@ -43,8 +42,7 @@ def detect_base_branch(cwd: Path) -> str:
     """Base branch of the repo at ``cwd``, asked of the repo itself (#259).
 
     Used by ``ks run`` (manifest base), ``ks decompose`` and
-    ``ks factory`` (worktree base), ``ks check`` (diff base) and the TUI
-    launch forms.
+    ``ks factory`` (worktree base) and ``ks check`` (diff base).
 
     The ladder, and what each rung fails on:
 
@@ -151,8 +149,7 @@ def resolve_base_branch(base_branch: str | None, cwd: Path) -> str:
 
     One spelling for the "the flag wins, otherwise ask the repo" rule
     every entry point needs: the two CLI commands that take
-    ``--base-branch``, ``ks check``'s ``--base``, and the TUI launch
-    form's branch field (#259).
+    ``--base-branch`` and ``ks check``'s ``--base`` (#259).
     """
     return base_branch or detect_base_branch(cwd)
 

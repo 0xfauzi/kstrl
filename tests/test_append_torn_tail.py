@@ -187,7 +187,7 @@ class TestProgressLogSurvivesATornTail:
         self,
         tmp_path: Path,
     ) -> None:
-        """The cost in the reducer, which is what the TUI renders.
+        """The cost in the reducer, which ``ks status`` reads.
 
         Measured before the fix: the component stays ``running``,
         because ``component_completed`` was the row the tear swallowed.
@@ -310,7 +310,7 @@ class TestQueueJournalSurvivesATornTail:
 
 
 class TestJsonlSinkSurvivesATornTail:
-    """``events.JsonlSink``, the v2 event log the reducer and TUI read.
+    """``events.JsonlSink``, the v2 event log the reducer reads.
 
     The only appender of the six that holds its handle open across a
     whole run, which is what ``handle_ends_without_newline`` taking a

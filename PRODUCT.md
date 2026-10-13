@@ -2,8 +2,8 @@
 
 ## Register
 
-product - the design serves the task. kstrl's visual surfaces (the
-Textual dashboard, `ks dash`, plain CLI output) are operator tools:
+product - the design serves the task. kstrl's visual surface (plain CLI
+output) is an operator tool:
 the user is mid-task, watching an autonomous factory build software.
 
 ## Who uses it
@@ -29,7 +29,6 @@ novelty.
 
 ## Anti-references
 
-- Stock-Textual demo look (default blue chrome, default footer).
 - Dashboard-as-brochure: big hero numbers, gradient chrome, decorative
   motion.
 - DOS-era heavy borders and rainbow button rows.

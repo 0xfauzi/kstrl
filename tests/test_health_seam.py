@@ -270,7 +270,7 @@ class TestHealthSeam:
 
         ``Inbox.add`` refreshed ``detail`` and left ``evidence``, so the
         prose reported the latest observation and the structured half -
-        the one ``ks inbox`` and the TUI render - reported the first.
+        the one ``ks inbox`` renders - reported the first.
         """
         monkeypatch.setitem(sys.modules, "kstrl.health", fake_health(make_breach()))
         write_config(tmp_path)

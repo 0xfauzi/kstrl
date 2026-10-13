@@ -585,8 +585,8 @@ class Inbox:
 
         A repeat refreshes ``detail`` AND ``evidence`` together. They are
         two descriptions of the same observation, and refreshing only the
-        prose left the structured half - the half ``ks inbox`` and the
-        TUI render, and the durable one - reporting the first occurrence
+        prose left the structured half - the half ``ks inbox``
+        renders, and the durable one - reporting the first occurrence
         while the text reported the latest. Measured on a health-breach
         item: ``detail`` said value 0.9 over 20 runs while ``evidence``
         still said 0.4 over 8. ``title`` is deliberately NOT refreshed:

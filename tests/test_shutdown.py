@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import io
 import json
-import multiprocessing
 import os
 import signal
 import subprocess
@@ -25,19 +24,14 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
-import pytest
-
 from kstrl.agents.proc import DeadlineStreamer, kill_active_process_groups
 from kstrl.factory import run_factory
 from kstrl.factory_result import ComponentResult
 from kstrl.shutdown import StopController
-from kstrl.tui.bridge import start_command_thread
 from kstrl.ui.plain import PlainUI
-from tests import spine_utils
 from tests.helpers.procs import (
     NEEDS_A_READABLE_PS,
     kill_group,
-    read_pid,
     wait_for_group_to_die,
 )
 from tests.test_event_stream import (
@@ -306,141 +300,6 @@ AGENT_SLEEP_SECONDS = 600
 #: two orders of margin, and it exists so a regression of that promptness
 #: FAILS instead of hanging CI for ten minutes on `sleep 600`.
 RUN_FACTORY_BOUND_SECONDS = 120
-
-
-@pytest.mark.spine
-class TestWorkerSigterm:
-    def test_pool_worker_sigterm_kills_agent_group(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """A REAL pool worker running a sleeping agent: SIGTERM to the
-        worker must kill the agent's process group (no orphans).
-
-        "REAL pool worker" is asserted, not assumed. The version this
-        replaces asked for `max_parallel=2` and silently got
-        `_InlineExecutor`, because `test_event_stream._factory_config`
-        defaults to `use_worktrees=False` and `run_factory` forces
-        `max_parallel=1` when worktrees are off. So there was no worker,
-        nothing was SIGTERMed, and the class name and this docstring were
-        both wrong. The inline executor also runs the component in the
-        CALLING thread, which is why the stop could not be observed until
-        the agent had already exited on its own.
-
-        The spine harness is used instead, because a real pool needs a
-        real git repository to make worktrees in, and `use_worktrees=True`
-        is what stops `max_parallel` being forced back to 1. It is
-        reached through the `spine_utils` module rather than by importing
-        its builders, because this file also imports the same five
-        builders from `test_event_stream` under a leading underscore, and
-        the pair that differ only by that underscore differ exactly in
-        `use_worktrees`.
-        """
-        root = tmp_path / "repo"
-        spine_utils.init_kstrl_repo(root, ("comp-a",))
-        manifest = spine_utils.make_manifest([spine_utils.component("comp-a")])
-
-        # The agent reports its pid and then becomes the sleep. `$$` is
-        # its own, kept across `exec`. Its parent is the leash that
-        # `DeadlineStreamer` starts (#642), which leads the group, so the
-        # group is read with getpgid and the evidence that a pool worker
-        # ran it is this process's live multiprocessing children.
-        agent_pidfile = tmp_path / "agent.pid"
-        base = spine_utils.base_config(
-            root,
-            agent_cmd=f"echo $$ > {agent_pidfile}; exec sleep {AGENT_SLEEP_SECONDS}",
-        )
-        config = spine_utils.factory_config(max_parallel=2)
-        stop = StopController()
-        # Children this process already had, so a leftover from an earlier
-        # test cannot stand in for a pool worker below.
-        earlier = {child.pid for child in multiprocessing.active_children()}
-
-        # `start_command_thread` is how the TUI runs a command core off
-        # the main thread, and it boxes an exception instead of losing it
-        # to the threading excepthook. Reused rather than hand-rolled so
-        # a `run_factory` that RAISES is reported as itself.
-        handle = start_command_thread(
-            lambda: (
-                run_factory(
-                    manifest,
-                    config,
-                    base,
-                    PlainUI(no_color=True, file=io.StringIO()),
-                    root,
-                    stop=stop,
-                ).exit_code
-            ),
-            stop=stop,
-            name="sigterm-spine-test",
-        )
-
-        agent_pgid: int | None = None
-        workers: list[int] = []
-        try:
-            try:
-                # Read on THIS thread while the agent is alive: after the
-                # shutdown there is no process left to ask.
-                agent_pgid = os.getpgid(read_pid(agent_pidfile, timeout=60.0))
-                workers = [
-                    child.pid
-                    for child in multiprocessing.active_children()
-                    if child.pid not in earlier
-                ]
-            finally:
-                # Requested even when the agent never appeared, so a miss
-                # surfaces as the explicit assertion below rather than as
-                # run_factory blocking for the full sleep.
-                stop.request("sigterm spine test")
-
-            handle.join(RUN_FACTORY_BOUND_SECONDS)
-            assert handle.done(), (
-                f"run_factory did not return within {RUN_FACTORY_BOUND_SECONDS}s "
-                f"of the stop being requested; it is waiting for the agent to "
-                f"finish rather than aborting it"
-            )
-            assert not handle.error_box, f"run_factory raised: {handle.error_box[0]!r}"
-            assert handle.exit_code == 130
-
-            # An agent that never started cannot leave an orphan either,
-            # so without this the test could pass having observed nothing.
-            assert agent_pgid is not None, "never observed the agent subprocess start"
-
-            # The precondition the old version silently lost. If the agent
-            # was spawned by THIS process there was no worker to SIGTERM,
-            # and everything below would be measuring the inline path.
-            assert workers, (
-                "no pool worker was alive while the agent ran, so the agent was "
-                "spawned by the test process itself, so no "
-                "pool worker exists and this test is not exercising the "
-                "SIGTERM forwarding it claims to; check that use_worktrees "
-                "is on and max_parallel survived to the executor choice"
-            )
-
-            # The invariant that makes a group-scoped assertion safe to
-            # make at all: killing our own group would kill the harness,
-            # the footgun agents/proc.py::_signal_group documents. The
-            # worker shares our group, being a plain fork, which is also
-            # why the cleanup below never touches the WORKER's group.
-            assert agent_pgid != os.getpgrp()
-
-            assert wait_for_group_to_die(agent_pgid), (
-                f"agent subprocess orphaned: process group {agent_pgid} still "
-                f"has a live member after the worker was told to stop"
-            )
-        finally:
-            # `sleep 600` outliving a failed run would poison every later
-            # run on this machine, which is the #292 failure mode itself.
-            # Rediscovered here rather than assumed, because the paths
-            # that skip the read above are exactly the ones that leave it
-            # running.
-            if agent_pgid is None:
-                try:
-                    agent_pgid = os.getpgid(read_pid(agent_pidfile, timeout=1.0))
-                except (AssertionError, ProcessLookupError):
-                    agent_pgid = None
-            if agent_pgid is not None:
-                kill_group(agent_pgid)
 
 
 class TestTheOrphanCheckIsScopedToItsOwnGroup:

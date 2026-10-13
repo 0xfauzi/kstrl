@@ -152,7 +152,7 @@ RETIRED_KEYS: dict[tuple[str, str], str] = {
     ("learning", "consume"): _RETIRED_PLAYBOOK,
 }
 
-#: Environment variables retired by #217, #395, #696 and #700, mapped to what replaced
+#: Environment variables retired by #217, #395, #696, #700 and #863, mapped to what replaced
 #: each: the refusal reads "sets NAME, which was <this>".
 RETIRED_ENV_VARS: dict[str, str] = {
     "KSTRL_FACTORY_SETPOINT_AGREEMENT": "renamed to KSTRL_FACTORY_CLAIM_AGREEMENT",
@@ -195,6 +195,11 @@ RETIRED_ENV_VARS: dict[str, str] = {
     "KSTRL_LEARNING_CONTRIBUTE": _RETIRED_PLAYBOOK,
     "KSTRL_LEARNING_CONSUME": _RETIRED_PLAYBOOK,
     "GUM_FORCE": "renamed to KSTRL_UI_FORCE_RICH",
+    "KSTRL_NO_TUI": (
+        "retired: kstrl has no terminal dashboard (#863) and each command prints plain "
+        "output. Remove it. A plist from ks serve --print-plist before #863 sets it: "
+        "print the plist again"
+    ),
 }
 
 _RETIRED_GUM = "removed: the gum renderer no longer exists; use auto, rich or plain"

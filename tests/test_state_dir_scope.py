@@ -60,6 +60,7 @@ from kstrl.statedir import (
 from kstrl.ui.plain import PlainUI
 from kstrl.verify_diff import _diff_scope_details, check_diff_scope
 from tests.helpers import astwalk, gitrepo
+from tests.helpers.astwalk.reexport import import_base
 from tests.test_loop import MockAgent
 
 PROJECT = Path("/project")
@@ -393,7 +394,8 @@ _EXPECTED_STATE_DIR_SPELLINGS: dict[str, int] = {
     # and kept one join to the proposals directory for the notice about it.
     "cli_feature.py": 1,
     "cli_learning.py": 1,
-    "cli_report.py": 3,
+    # 2: -1 for #863 A1, which deleted `ks dash` and its join to the runs directory.
+    "cli_report.py": 2,
     "contract.py": 1,
     "decompose_reply.py": 1,
     "doctor.py": 2,
@@ -425,7 +427,6 @@ _EXPECTED_STATE_DIR_SPELLINGS: dict[str, int] = {
     "serve_outcome.py": 2,
     "serve_spend.py": 3,  # +1 #863 A4: an unreadable run spend names the run dir
     "statedir.py": 6,  # +1 #545: plan_prd_path joins the plan directory; -2 #863 A4
-    "tui/runs.py": 3,  # +1 #433: run_is_live lists the runs dir for the newest run
     "workqueue_store.py": 2,
 }
 
@@ -537,6 +538,12 @@ def _imported_names(source_file: Path) -> set[str]:
     ``bindings`` keeps the FIRST binding of a name and a module
     importing one name twice would lose the second edge. ``ast.Import``
     is read off the node: an absolute import is written out in full.
+
+    THE MODULE AFTER ``from`` IS AN EDGE TOO (#863 B4). ``bindings``
+    stores the DEFINING module of a re-export, thus ``from kstrl.agents
+    import Path`` gives ``pathlib.Path`` and no ``kstrl`` name. But the
+    import executes ``kstrl/agents/__init__.py``, and that file imports
+    each agent module. Without the base, that edge is dropped.
     """
     package = astwalk.KSTRL_PACKAGE.name
     module = astwalk.module_name(source_file)
@@ -545,14 +552,21 @@ def _imported_names(source_file: Path) -> set[str]:
         if isinstance(node, ast.Import):
             found.update(a.name for a in node.names if a.name.startswith(package))
         elif isinstance(node, ast.ImportFrom):
-            table = astwalk.bindings(astwalk.parse(ast.unparse(node)), module=module)
-            found.update(
-                part
-                for origin in table.origins.values()
-                if origin.startswith(package)
-                for part in (origin, origin.rsplit(".", 1)[0])
-            )
+            found.update(_from_edges(node, module, package))
     return found
+
+
+def _from_edges(node: ast.ImportFrom, module: str, package: str) -> set[str]:
+    """The ``kstrl.*`` names one ``from ... import`` reaches: the module
+    after ``from``, and each origin with its parent."""
+    table = astwalk.bindings(astwalk.parse(ast.unparse(node)), module=module)
+    names = {import_base(node, module), *table.origins.values()}
+    return {
+        part
+        for name in names
+        if name.startswith(package)
+        for part in (name, name.rsplit(".", 1)[0])
+    }
 
 
 def _import_closure(module: str) -> set[str]:
@@ -562,8 +576,16 @@ def _import_closure(module: str) -> set[str]:
     codebase uses to break cycles (``loop.py`` defers ``init_cmd``). A
     static closure over-approximates what actually runs, the safe
     direction here: the claim checked is that a writer is NOT reachable.
-    A name with no file behind it, the package itself or a function
-    reached through a ``from ... import``, is a dead end not an error.
+    A name with no file behind it, a function reached through a
+    ``from ... import``, is a dead end not an error.
+
+    A PACKAGE IS ITS ``__init__.py``, and each parent package is in the
+    closure (#863 B4). ``from kstrl.io import x`` and ``from
+    kstrl.io.statedir import x`` both execute ``kstrl/io/__init__.py``,
+    which imports each module of the interface. Before B4 this walk read
+    only ``<name>.py``, so a package was a dead end, the parents were
+    not walked, and an edge through an ``__init__.py`` was dropped in
+    silence. For THIS guard a dropped edge passes vacuously.
     """
     seen: set[str] = set()
     pending = [module]
@@ -573,9 +595,11 @@ def _import_closure(module: str) -> set[str]:
             continue
         seen.add(name)
         parts = name.split(".")[1:]
-        source = astwalk.KSTRL_PACKAGE.joinpath(*parts).with_suffix(".py") if parts else None
-        if source is not None and source.is_file():
-            pending.extend(_imported_names(source))
+        pending.extend(".".join(name.split(".")[:cut]) for cut in range(1, len(parts) + 1))
+        base = astwalk.KSTRL_PACKAGE.joinpath(*parts)
+        for source in (base.with_suffix(".py") if parts else None, base / "__init__.py"):
+            if source is not None and source.is_file():
+                pending.extend(_imported_names(source))
     return seen
 
 
@@ -634,6 +658,25 @@ class TestNothingTheLoopRunsWritesTheUncarvedEntries:
         assert "kstrl.guards" in closure
         assert "kstrl.statedir" in closure
         assert _import_closure("kstrl.serve") & self.WRITERS
+
+    def test_the_closure_walks_a_package_init_and_each_parent(self) -> None:
+        """#863 B4. ``kstrl.agents.base`` executes ``kstrl/agents/__init__.py``
+        first, and that file imports ``kstrl.agents.codex``. Before B4 the
+        walk read only ``<name>.py``: the package was a dead end and the
+        parent was not walked, thus both edges were dropped."""
+        closure = _import_closure("kstrl.agents.base")
+        assert {"kstrl.agents", "kstrl.agents.codex"} <= closure
+
+    def test_a_re_export_from_outside_the_package_keeps_the_package_edge(
+        self, tmp_path: Path
+    ) -> None:
+        """#863 B4. ``kstrl/agents/__init__.py`` re-exports ``pathlib.Path``,
+        thus ``bindings`` gives ``pathlib.Path`` and no ``kstrl`` name. The
+        import still executes the ``__init__.py``. Without the base of the
+        ``from``, the closure held only the module itself."""
+        source = tmp_path / "importer.py"
+        source.write_text("from kstrl.agents import Path\n", encoding="utf-8")
+        assert "kstrl.agents" in _imported_names(source)
 
 
 class TestSignalsCannotReachTheQueue:
@@ -972,9 +1015,9 @@ class TestEveryCallerDeclaresTheStateRoot:
                 callers[source_file.name] = callers.get(source_file.name, 0) + 1
                 if any(kw.arg == "guard_state_root" for kw in node.keywords):
                     declared[source_file.name] = declared.get(source_file.name, 0) + 1
-        assert Counter(site.split(":", 1)[0] for site in undecided) == {
-            "tui/app.py": 2,
-        }, f"the walk could not decide these calls: {list(undecided)}"
+        assert Counter(site.split(":", 1)[0] for site in undecided) == {}, (
+            f"the walk could not decide these calls: {list(undecided)}"
+        )
         assert callers == {"cli_loop.py": 1, "factory_worker.py": 1, "feature_cmd.py": 3}
         assert declared == callers
 

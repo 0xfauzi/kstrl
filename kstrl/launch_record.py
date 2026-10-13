@@ -60,7 +60,6 @@ NOT_REPLAYED: dict[str, str] = {
     "progress_log": "a path of one invocation; retry takes its own --progress-log",
     "force_lock": "overrides another run's lock once; never carried to a later run",
     "yes": "retry asks its own confirmation and takes its own --yes",
-    "tui": "retry runs on the terminal it was started from",
     "ui": "display only; retry takes its own --ui",
     "no_color": "display only; retry takes its own --no-color",
 }
@@ -84,6 +83,8 @@ REMOVED_OPTIONS: dict[str, str] = {
     "dead_code_command": "kstrl runs no dead-code tool; add the check you want to [stack.checks].",
     "mutation_testing": "kstrl runs no mutation tool; add the check you want to [stack.checks].",
     "mutation_threshold": "kstrl runs no mutation tool; add the check you want to [stack.checks].",
+    # #863 A1: the terminal dashboard (TUI) was removed.
+    "tui": "The terminal dashboard was removed; every run prints plain output.",
 }
 
 #: Why a record cannot be used, in one line with no path (#433 H4).

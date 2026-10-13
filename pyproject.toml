@@ -33,11 +33,6 @@ classifiers = [
 dependencies = [
     "rich>=15.0.0",
     "click>=8.4.2",
-    # TUI rewrite PR D: the dashboard engine. Pinned <9; 8.2.8 verified
-    # against locked rich 15.x during the Textual 8 migration (the 6.0.0
-    # Static.renderable -> content rename and 6-8 render changes were
-    # absorbed there). Bumped from the earlier <6 pin.
-    "textual>=8.2.8,<9",
 ]
 
 # R7.6: the claude-sdk agent adapter is opt-in because the SDK carries a
@@ -64,14 +59,12 @@ kstrl = "kstrl.cli:main"
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
-    "pytest-asyncio>=1.4.0",
     "pytest-cov>=6.0.0",
     "ruff>=0.16.1",
     "mypy>=2.3.0",
     # The sdk extra is part of the dev set so the R7.6 unit tests and
     # mypy always exercise the adapter+runner.
     "claude-agent-sdk>=0.2.128,<0.3",
-    "pytest-textual-snapshot>=1.0.0",
     "pytest-xdist>=3.6.1",
     "pytest-split>=0.11.0",
     "pyyaml>=6.0.3",
@@ -86,7 +79,6 @@ packages = ["kstrl"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-asyncio_mode = "auto"
 markers = [
     "spine: real-git spine tier (R4.2) - unmocked worktree/PR/lock paths; deselect with -m 'not spine' to keep the fast tier fast",
 ]
@@ -107,9 +99,6 @@ filterwarnings = [
 [tool.coverage.run]
 source = ["kstrl"]
 relative_files = true
-# The TUI tests are disabled (#777), because the owner will delete the TUI.
-# Thus kstrl/tui/ is not measured, and the ratchet measures the other code.
-omit = ["*/kstrl/tui/*"]
 # pytest-cov 7 no longer measures a subprocess by itself. This setting makes
 # coverage start in each child process that the tests start, such as the write
 # guard that claude runs as a hook (#803). Only a test run sets the variable
@@ -118,10 +107,6 @@ patch = ["subprocess"]
 
 [tool.coverage.report]
 precision = 2
-# A relative pattern of [run] omit is made absolute from the current directory,
-# and a child process starts in another directory. The report omits kstrl/tui
-# too, so no child data can bring those files back.
-omit = ["kstrl/tui/*"]
 
 [tool.ruff]
 line-length = 100

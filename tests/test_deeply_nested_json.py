@@ -29,7 +29,6 @@ from kstrl.events import parse_event_line
 from kstrl.inbox import Inbox, InboxConfig
 from kstrl.intake_github import parse_issue_list
 from kstrl.manifest import Manifest
-from kstrl.tui.tail import JsonlTailer
 from tests.helpers.astwalk import REPO_ROOT
 
 #: Deeper than any recursion limit a caller could have left. json's C
@@ -83,24 +82,6 @@ def test_a_deeply_nested_gh_payload_is_an_error_string_not_a_crash() -> None:
     assert issues == []
     assert "could not parse `gh issue list` output" in error
     assert "RecursionError" in error
-
-
-def test_a_deeply_nested_event_line_is_skipped_and_the_tail_continues(tmp_path: Path) -> None:
-    path = tmp_path / "events.jsonl"
-    path.write_text(DEEPLY_NESTED + "\n", encoding="utf-8")
-    tailer = JsonlTailer(path)
-
-    first = tailer.poll()
-
-    assert first.events == []
-    assert first.truncated is False
-
-    with open(path, "a", encoding="utf-8") as handle:
-        handle.write('{"event": "run_started", "ts": "2026-01-01T00:00:00Z"}\n')
-
-    second = tailer.poll()
-
-    assert len(second.events) == 1
 
 
 def test_the_event_line_parser_returns_none_for_a_deeply_nested_line() -> None:

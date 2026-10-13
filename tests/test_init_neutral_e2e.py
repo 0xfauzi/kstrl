@@ -39,7 +39,6 @@ SEEDS: dict[str, tuple[dict[str, str], dict[str, str]]] = {
 def ks_init(root: Path) -> subprocess.CompletedProcess[str]:
     """`python -m kstrl init . --ui plain --no-color` in ``root``, output merged."""
     env = {k: v for k, v in os.environ.items() if not k.startswith(("KSTRL_", "FACTORY_"))}
-    env["KSTRL_NO_TUI"] = "1"
     env["NO_COLOR"] = "1"
     env["COLUMNS"] = "80"
     return subprocess.run(

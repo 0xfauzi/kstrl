@@ -183,7 +183,6 @@ def _in_process_factory(*extra: str) -> Callable[..., RunOutcome]:
                 "--root",
                 str(root_dir),
                 "--yes",
-                "--no-tui",
                 "--ui",
                 "plain",
                 "--no-color",
@@ -269,7 +268,6 @@ class TestAHaltedArchitectIsCharged:
                     "--ui",
                     "plain",
                     "--no-color",
-                    "--no-tui",
                 ],
                 cwd=root,
                 capture_output=True,
@@ -360,7 +358,7 @@ class TestARunThatCarriesItsArchitect:
         (architect_run,) = _runs(root)["decompose"]
 
         status = CliRunner().invoke(
-            cli, ["status", "--root", str(root), "--no-tui", "--ui", "plain", "--no-color"]
+            cli, ["status", "--root", str(root), "--ui", "plain", "--no-color"]
         )
 
         assert status.exit_code == 0, status.output

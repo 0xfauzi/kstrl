@@ -440,13 +440,6 @@ def init(directory: Path, ui: str, no_color: bool, upgrade_prompts: bool) -> Non
     is_flag=True,
     help="Use ASCII characters only",
 )
-@click.option(
-    "--tui/--no-tui",
-    "tui",
-    default=None,
-    help="Embedded dashboard (default: auto - on when stdin/stdout are "
-    "TTYs and --ui is not plain; KSTRL_NO_TUI=1 forces off)",
-)
 def understand(
     max_iterations: int,
     root: Path | None,
@@ -462,7 +455,6 @@ def understand(
     ui: str,
     no_color: bool,
     ascii: bool,
-    tui: bool | None,
 ) -> None:
     """Run codebase understanding loop (read-only mode).
 
@@ -573,63 +565,6 @@ def understand(
         root_dir=root_dir,
     )
 
-    use_tui = (
-        tui
-        if tui is not None
-        else (
-            sys.stdout.isatty()
-            and sys.stdin.isatty()
-            and os.environ.get("KSTRL_NO_TUI") != "1"
-            and config.ui_mode != "plain"
-        )
-    )
-    if use_tui:
-        if not (sys.stdout.isatty() and sys.stdin.isatty()):
-            click.echo(
-                "--tui requires an interactive terminal; use --no-tui "
-                "for non-interactive execution.",
-                err=True,
-            )
-            sys.exit(2)
-        from kstrl.runid import mint_run_id
-        from kstrl.tui.embed import EmbeddedContext, run_embedded
-        from kstrl.tui.screens.component import ComponentScreen
-        from kstrl.tui.screens.overview import OverviewScreen
-
-        def _target(embed_ctx: EmbeddedContext) -> int:
-            command_run = open_command_run(
-                embed_ctx.ui,
-                root_dir,
-                "understand",
-                component="understand",
-                run_id=embed_ctx.run_id,
-            )
-            try:
-                return _understand_core(
-                    config,
-                    agent,
-                    root_dir,
-                    embed_ctx.ui,
-                    run=command_run,
-                    sandbox=sandbox_cfg,
-                    interaction=embed_ctx.channel,
-                    stop_check=embed_ctx.stop.is_set,
-                )
-            finally:
-                command_run.close()
-
-        sys.exit(
-            run_embedded(
-                _target,
-                root_dir=root_dir,
-                run_id=mint_run_id("understand"),
-                screen_factory=lambda: [
-                    OverviewScreen(observe_only=False),
-                    ComponentScreen("understand"),
-                ],
-            )
-        )
-
     command_run = open_command_run(
         ui_impl,
         root_dir,
@@ -661,12 +596,12 @@ def _understand_core(
     interaction: InteractionChannel | None = None,
     stop_check: Callable[[], bool] | None = None,
 ) -> int:
-    """The understand loop as an event-stream run (TUI surface C1).
+    """The understand loop as an event-stream run (surface C1).
 
     The reducer projects the work onto the pseudo-component
     "understand": one plan row, one phase, the loop's iterations. When
-    recording, the agent is wrapped so its transcript lands where the
-    dashboard's transcript pane tails. An understand agent with no
+    recording, the agent is wrapped so its transcript lands where
+    ``ks status`` and replay read it. An understand agent with no
     sandbox is a warning in the run's events.jsonl (#700).
     """
     warn_unconfined(ui_impl.warn, sandbox, {"understand agent": config.agent_cmd})

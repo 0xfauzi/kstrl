@@ -8,8 +8,8 @@ no-regression proof for the ~390 imperative call sites.
 
 Semantic events (phase brackets, PR lifecycle, usage, ...) render
 NOTHING here by design: while the imperative Log narration coexists
-with them, rendering both would double-print. The Textual dashboard is
-the surface that renders semantic events.
+with them, rendering both would double-print. The semantic events are read
+from ``events.jsonl`` by ``ks status`` and replay.
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ class UIBackedRenderer:
 
     def handle(self, event: Event) -> None:  # noqa: C901 - flat dispatch
         if not isinstance(event, Log):
-            return  # semantic events: the dashboard's job, not ours
+            return  # semantic events: not rendered here
         ui = self.ui
         kind = event.kind
         if kind == "line":

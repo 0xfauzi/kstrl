@@ -134,13 +134,6 @@ def _derive_feature_name(prd_path: Path, root: Path) -> str:
     is_flag=True,
     help="Skip the advisory verification reports (raw loops, no post-checks)",
 )
-@click.option(
-    "--tui/--no-tui",
-    "tui",
-    default=None,
-    help="Embedded dashboard (default: auto - on when stdin/stdout are "
-    "TTYs and --ui is not plain; KSTRL_NO_TUI=1 forces off)",
-)
 def feature(
     root: Path | None,
     prd: str | None,
@@ -161,7 +154,6 @@ def feature(
     no_color: bool,
     ascii: bool,
     no_verify: bool,
-    tui: bool | None,
 ) -> None:
     """Run feature understanding, then implementation.
 
@@ -360,63 +352,6 @@ def feature(
         ),
         sandbox=sandbox_cfg,
     )
-
-    use_tui = (
-        tui
-        if tui is not None
-        else (
-            sys.stdout.isatty()
-            and sys.stdin.isatty()
-            and os.environ.get("KSTRL_NO_TUI") != "1"
-            and base_config.ui_mode != "plain"
-        )
-    )
-    if use_tui:
-        if not (sys.stdout.isatty() and sys.stdin.isatty()):
-            click.echo(
-                "--tui requires an interactive terminal; use --no-tui "
-                "for non-interactive execution.",
-                err=True,
-            )
-            sys.exit(2)
-        from kstrl.runid import mint_run_id
-        from kstrl.tui.embed import EmbeddedContext, run_embedded
-        from kstrl.tui.screens.component import ComponentScreen
-        from kstrl.tui.screens.overview import OverviewScreen
-
-        def _target(embed_ctx: EmbeddedContext) -> int:
-            command_run = open_command_run(
-                embed_ctx.ui,
-                root_dir,
-                "feature",
-                component=feature_name,
-                run_id=embed_ctx.run_id,
-            )
-            try:
-                return run_feature(
-                    params,
-                    base_config,
-                    agent,
-                    embed_ctx.ui,
-                    root_dir,
-                    interaction=embed_ctx.channel,
-                    run=command_run,
-                    stop_check=embed_ctx.stop.is_set,
-                )
-            finally:
-                command_run.close()
-
-        sys.exit(
-            run_embedded(
-                _target,
-                root_dir=root_dir,
-                run_id=mint_run_id("feature"),
-                screen_factory=lambda: [
-                    OverviewScreen(observe_only=False),
-                    ComponentScreen(feature_name),
-                ],
-            )
-        )
 
     command_run = open_command_run(
         ui_impl,

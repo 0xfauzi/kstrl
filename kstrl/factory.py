@@ -825,7 +825,7 @@ def _run_factory_locked(
     # collide on .kstrl/knowledge/<comp>/<run_id>/ directories nor
     # order ambiguously (R1.6: same-second knowledge run dirs must sort
     # by creation time, not by nonce).
-    # PR F needs the run dir known before the TUI starts: the caller
+    # PR F: the caller can know the run dir before the run starts, so it
     # may mint the id (format unchanged - knowledge.current_run_id).
     run_id = run_id_override if run_id_override else current_run_id()
 

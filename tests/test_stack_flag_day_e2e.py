@@ -65,20 +65,20 @@ def _args(command: str, root: Path, stub: Path) -> list[str]:
         "factory": [
             "factory",
             *("--manifest", str(root / "scripts" / "kstrl" / "manifest.json")),
-            *("--agent-cmd", str(stub), "--no-tui", "--yes", "--no-prs"),
+            *("--agent-cmd", str(stub), "--yes", "--no-prs"),
             *("--review-mode", "skip", "--contract-check", "skip"),
         ],
         "run": ["run", "1", "--prd", prd, "--agent-cmd", str(stub), "--sleep", "0", "--branch", ""],
         "feature": [
             "feature",
             *("--prd", prd, "--agent-cmd", str(stub)),
-            *("--no-tui", "--implementation-auto-run", "--understand-iterations", "1"),
+            *("--implementation-auto-run", "--understand-iterations", "1"),
         ],
         "check": ["check"],
         "spec": [
             "factory",
             *("--spec", str(root / "spec.md"), "--project-name", "demo"),
-            *("--agent-cmd", str(stub), "--no-tui", "--yes", "--no-prs"),
+            *("--agent-cmd", str(stub), "--yes", "--no-prs"),
         ],
     }[command] + ["--root", str(root), "--ui", "plain"]
 

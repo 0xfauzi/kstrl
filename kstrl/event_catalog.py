@@ -414,7 +414,7 @@ class AdversarialAgentSelected(Event):
 
 
 # ---------------------------------------------------------------------------
-# v2-only events (dropped by V1CompatSink; the TUI/reducer's real signal)
+# v2-only events (dropped by V1CompatSink, the reducer's real signal)
 # ---------------------------------------------------------------------------
 
 

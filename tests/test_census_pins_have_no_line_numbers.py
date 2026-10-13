@@ -18,7 +18,7 @@ row passed as DATA to a call, such as the ``astwalk.Sites(...)`` fixtures in
 ``tests/test_astwalk.py``: test input for a parser, not a census pin. (2) A
 line held as an int beside its path, ``("cli.py", 3164)``: a count dict has the
 same shape. (3) A path that does not name a kstrl file as written or under
-``kstrl/``, such as the bare basename ``retry.py`` of ``tui/screens/retry.py``:
+``kstrl/``, such as the bare basename ``base.py`` of ``agents/base.py``:
 without that check the guard flags 15 fixture strings in tests/ such as
 ``src/handler.py:42``. The census pins write the path ``label()`` gives, which
 this guard does read.
@@ -131,7 +131,7 @@ class TestNoCensusPinsALineNumber:
             "class TestX:\n"
             '    PINS: tuple[str, ...] = ("kstrl/linear.py:320 urlopen",)\n'
             "def test_y():\n"
-            '    ROWS = {"tui/app.py:390": 1}\n'
+            '    ROWS = {"cli_report.py:390": 1}\n'
             '    SITES += (f"verify.py:112 {x}",)\n'
             'WRAPPED = ["at [kstrl/signals.py:556]"]\n'
             '_PRIVATE = ("pipeline.py:1 x",)\n'
@@ -142,7 +142,7 @@ class TestNoCensusPinsALineNumber:
             "ATTR loop.py:2",
             "EXPECTED cli.py:3164",
             "PINS kstrl/linear.py:320",
-            "ROWS tui/app.py:390",
+            "ROWS cli_report.py:390",
             "SITES verify.py:112",
             "WRAPPED kstrl/signals.py:556",
             "_PRIVATE pipeline.py:1",

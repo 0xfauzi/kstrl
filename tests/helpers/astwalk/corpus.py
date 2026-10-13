@@ -28,8 +28,8 @@ TESTS_DIR = REPO_ROOT / "tests"
 def label(source_file: Path, root: Path | None = None) -> str:
     """How a file is named in an inventory key and in a failure message.
 
-    Not ``source_file.name``: ten basenames occur twice in ``kstrl/``,
-    once at the top level and once under ``tui/screens/``, and a message
+    Not ``source_file.name``: ``base.py`` occurs twice in ``kstrl/``
+    (``agents/base.py`` and ``ui/base.py``), and a message
     naming a file the reader cannot find is worse than none. Falls back
     to the repo-relative path, then to the basename, so a snippet written
     to a ``tmp_path`` still labels itself.
@@ -43,11 +43,14 @@ def label(source_file: Path, root: Path | None = None) -> str:
 
 
 def module_name(source_file: Path) -> str:
-    """``kstrl/tui/session.py`` -> ``kstrl.tui.session``.
+    """``kstrl/agents/base.py`` -> ``kstrl.agents.base``.
 
-    What a relative import resolves against. ``__init__.py`` is stripped
-    so ``from . import x`` inside a package's own ``__init__`` lands on
-    the package rather than one level below it.
+    What a relative import resolves against, and what
+    ``importlib.import_module`` takes, thus ``__init__.py`` is stripped.
+    A relative import inside a package's own ``__init__`` still lands on
+    the package, because :func:`~.reexport.import_base` counts a module
+    that is a package as its own ``__init__``. Before #863 B4 the strip
+    put ``from . import x`` there one level too high.
     """
     try:
         relative = source_file.resolve().relative_to(REPO_ROOT)

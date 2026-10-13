@@ -8,8 +8,7 @@ Companion docs:
   adversarial taxonomy, design invariants, and known limitations
 - [docs/env-vars.md](docs/env-vars.md) - every environment variable
 - [docs/runbook.md](docs/runbook.md) - operator failure recovery
-- [DESIGN.md](DESIGN.md) / [PRODUCT.md](PRODUCT.md) - the TUI visual system
-  and product principles
+- [PRODUCT.md](PRODUCT.md) - product principles
 - [docs/linear-integration.md](docs/linear-integration.md) - the optional
   Linear mirror
 
@@ -200,10 +199,10 @@ the component exists, the demotion it would trigger is not wired yet.
 
 Events in, views out: the pipeline and the scheduler emit typed events, the
 bus fans them out to the reducer, the legacy log and the tracker mirror, and
-the reducer drives the dashboard and `ks status`. No view feeds back into
+the reducer drives `ks status`. No view feeds back into
 control flow.
 
-The TUI is a view, never the record. Every run - factory, decompose,
+A view is never the record. Every run - factory, decompose,
 feature, understand - appends typed, schema-versioned events to
 `.kstrl/runs/<run_id>/events.jsonl` (run ids are kind-prefixed:
 `factory-…`, `decompose-…`), per-component transcripts and events to
@@ -211,9 +210,9 @@ feature, understand - appends typed, schema-versioned events to
 to `components/<id>/{review,security,distill}.log`. Non-factory commands
 project their work onto a pseudo-component (`architect`, the feature
 name, `understand`) so the same board, reducer, and replay machinery
-serve every kind. `ks dash` and the embedded views tail the same files -
-which is why attaching mid-run, replaying a finished run, and surviving a
-dashboard crash all work by construction. Recording obeys the
+serve every kind. `ks status` reads the same files -
+which is why reading a run mid-run and replaying a finished run work by
+construction. Recording obeys the
 `[factory] progress_log_enabled` switch everywhere, and the legacy
 `.kstrl/progress.jsonl` keeps being written byte-compatibly by factory
 runs for existing consumers.
@@ -250,12 +249,8 @@ its own, and each did so without a shared name.
 
 `kstrl/safemode.py` gives them one. `safe_mode_reasons(root_dir)` reads
 all four and returns a list of `SafeModeReason` (source, detail,
-recovery anchor); empty means nominal. Three surfaces read it: the plain
-`ks status` report, `ks serve --dry-run`, and the dashboard, where `f2`
-opens a panel from any screen, a banner appears under the run masthead
-when a signal degrades, and the home masthead carries a chip. The
-dashboard evaluates it on a slow background thread rather than on its
-event poll, because the predicate reads a run's whole event stream.
+recovery anchor); empty means nominal. Two surfaces read it: the plain
+`ks status` report and `ks serve --dry-run`.
 
 The predicate changes no behaviour. It adds no gate, no pause and no
 halt, and it never refuses anything, because every signal it reads

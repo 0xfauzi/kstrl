@@ -120,9 +120,8 @@ def _autonomy_reasons(root_dir: Path) -> list[SafeModeReason]:
     from kstrl.config_report import environ_lock
     from kstrl.policy import PolicyConfig
 
-    # These loaders read KSTRL_AUTONOMY_* and KSTRL_POLICY_*, and this
-    # function runs on a worker thread every 5 seconds in every TUI
-    # mode. A surface blanking os.environ to work out which variable
+    # These loaders read KSTRL_AUTONOMY_* and KSTRL_POLICY_*. A thread
+    # blanking os.environ to work out which variable
     # broke a config would otherwise make this read the DEFAULT ladder
     # and report a degraded factory as nominal, which is the silent
     # wrong answer the safe-mode chip exists to prevent (#289).

@@ -45,13 +45,7 @@ def _echo_journal_repairs(journal: EvolutionJournal, ui_impl: UI) -> None:
     all: a healthy journal that prints "0 repairs" every time teaches an
     operator to skip the line that matters.
 
-    Only ``ks evolve --status`` calls it, and that is still true after
-    #333: the evolve TUI screen reports repairs now, through
-    ``EvolveScreen._show_repairs``, which asks the journal for itself
-    because ``get_repair_count`` is click-free and on the journal. This
-    helper writes through ``UI`` in the click module and cannot be
-    reused as is, so the two are one measurement rendered twice rather
-    than two measurements. The wording is one string now, on the journal
+    Only ``ks evolve --status`` calls it. The wording is one string, on the journal
     (``repair_summary``): saying it was deliberately the same on both
     was a claim with nothing keeping it (#352 round 2, N4). What is
     still per-surface is the prefix and the decision to show anything.
@@ -314,8 +308,7 @@ def _echo_learning_readiness(
     ``patterns`` is passed in rather than re-read. The caller has
     already computed it from the same journal, and a second read is a
     second answer to one question. The lines themselves are built by
-    ``kstrl.evolve_report`` so the TUI's evolve screen shows the same
-    text (#433 F12).
+    ``kstrl.evolve_report``, so that the text has one home (#433 F12).
     """
     from kstrl.evolve_report import readiness_lines
 

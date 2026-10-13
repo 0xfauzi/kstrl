@@ -29,23 +29,17 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
 
 import pytest
-from textual.widgets import DataTable, Static
 
 from kstrl.decompose_prompt import spec_digest
 from kstrl.findings import Finding
 from kstrl.inbox import Inbox, InboxConfig, InboxItem, ItemKind
 from kstrl.manifest import Component, Manifest
 from kstrl.statedir import plan_prd_path
-from kstrl.tui.screens.inbox import InboxScreen
 from tests.helpers import gitrepo
 from tests.helpers.executables import write_executable
-from tests.helpers.rendered import flat
-from tests.helpers.settle import mounted, settled
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
-from tests.helpers.tui_screens import home_app
 
 COMP = "comp"
 BRANCH = f"kstrl/factory/{COMP}"
@@ -79,7 +73,6 @@ FACTORY_FLAGS = (
     "--ui",
     "plain",
     "--no-color",
-    "--no-tui",
     "--max-parallel",
     "1",
     "--review-mode",
@@ -203,7 +196,6 @@ def _env(tmp_path: Path, engineer: str) -> dict[str, str]:
     env["GH_HEAD"] = str(tmp_path / "gh.head")
     env["AGENT_CMD"] = engineer
     env["KSTRL_KNOWLEDGE_ENABLED"] = "0"
-    env["KSTRL_NO_TUI"] = "1"
     return env
 
 
@@ -573,32 +565,6 @@ def test_a_torn_inbox_line_means_nothing_runs_and_no_approval_is_applied(tmp_pat
     assert "Refusing to run: the [stack] in kstrl.toml is not confirmed" in out, out
     assert "the inbox is unreadable" in out, out
     assert _gated(root, "policy_") == [], "the refused retry ran no gate"
-
-
-async def test_the_inbox_screen_says_what_approve_and_reject_do(tmp_path: Path) -> None:
-    """The TUI's choice list takes its approve and reject sentences from the
-    same function ``ks inbox approve`` prints, for an item the real run filed."""
-    root, _env_unused = _failed_run(tmp_path, POLICY_TOML, DENIED)
-    (item,) = _open(root, ItemKind.POLICY_EXCEPTION)
-    app = home_app(root)
-    async with app.run_test(size=(120, 36)) as pilot:
-        await mounted(pilot, lambda: app.screen, "#home-runs")
-        app.push_screen(InboxScreen())
-        screen = app.screen
-        assert isinstance(screen, InboxScreen)
-        detail = cast(Static, await mounted(pilot, lambda: screen, "#inbox-detail"))
-        await settled(pilot, lambda: bool(screen._items), what="the inbox screen to read the log")
-        row = [i.id for i in screen._items].index(item.id)
-        screen.query_one("#inbox-table", DataTable).move_cursor(row=row)
-        await settled(
-            pilot,
-            lambda: f"id {item.id[:8]}" in flat(detail) and "what each choice does" in flat(detail),
-            what="the policy item's choices",
-        )
-        text = " ".join(flat(detail).split())
-    assert "waives this one finding" in text, text
-    assert "No waiver: the next run fails on this finding as before." in text, text
-    assert "no kstrl step reads" not in text, text
 
 
 def test_an_approval_made_during_a_run_waits_for_the_next_run(tmp_path: Path) -> None:

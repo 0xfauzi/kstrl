@@ -1,8 +1,7 @@
-"""Synthetic run-directory fixture for tailer and Pilot tests (PR C).
+"""Synthetic run-directory fixture.
 
-The spike's generator (spike/tui0/fake_run.py) promoted onto the REAL
-event classes, so fixtures exercise production serialization. Two
-modes: ``write_fake_run`` writes a complete run at once (static
+Built on the REAL event classes, so fixtures exercise production
+serialization. Two modes: ``write_fake_run`` writes a complete run at once (static
 states); ``stream_fake_run`` yields after each write so tailer and
 live-update tests can step the run forward between polls.
 """
@@ -155,7 +154,7 @@ def _emit_run(root: Path, spec: FakeRunSpec, run_id: str) -> Iterator[None]:
                 )
             )
             yield
-            # Left OPEN deliberately: dash renders the pending banner.
+            # Left OPEN deliberately: the checkpoint stays pending.
         else:
             bus.emit(
                 event_catalog.PrCreated(

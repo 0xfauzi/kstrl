@@ -131,7 +131,7 @@ def _factory_on_a_terminal(tmp_path: Path, root: Path, answer: str, env: dict[st
             "factory",
             *("--manifest", str(root / "scripts" / "kstrl" / "manifest.json")),
             *("--root", str(root), "--agent-cmd", str(stub)),
-            *("--no-tui", "--yes", "--ui", "plain", "--no-color", "--no-prs"),
+            *("--yes", "--ui", "plain", "--no-color", "--no-prs"),
             *("--max-retries", "0", "--max-parallel", "1"),
             *("--review-mode", "skip", "--security-mode", "skip"),
             *("--contract-check", "skip"),
@@ -193,7 +193,7 @@ def test_an_unconfirmed_stack_refuses_before_the_architect_and_files_one_item(
         root,
         "factory",
         *("--spec", str(root / "spec.md"), "--project-name", "demo"),
-        *("--agent-cmd", str(architect), "--no-tui", "--yes", "--ui", "plain", "--no-color"),
+        *("--agent-cmd", str(architect), "--yes", "--ui", "plain", "--no-color"),
     )
     again = _factory(tmp_path, root)
 
@@ -551,7 +551,7 @@ def test_no_entry_runs_a_command_of_an_unconfirmed_stack(
     args: dict[str, list[str]] = {
         "factory": [
             *("--manifest", str(root / "scripts" / "kstrl" / "manifest.json")),
-            *("--agent-cmd", str(stub), "--no-tui", "--yes", "--no-prs"),
+            *("--agent-cmd", str(stub), "--yes", "--no-prs"),
         ],
         "run": [
             "1",
@@ -562,7 +562,7 @@ def test_no_entry_runs_a_command_of_an_unconfirmed_stack(
         "doctor": [],
         "feature": [
             *("--prd", "scripts/kstrl/feature/greeter/prd.json", "--agent-cmd", str(stub)),
-            *("--no-tui", "--implementation-auto-run", "--understand-iterations", "1"),
+            *("--implementation-auto-run", "--understand-iterations", "1"),
         ],
     }
 

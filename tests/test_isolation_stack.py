@@ -700,7 +700,7 @@ def test_with_no_prover_a_stack_run_runs_on_the_host_and_every_record_says_so(
             "factory",
             *("--manifest", str(root / "scripts" / "kstrl" / "manifest.json")),
             *("--root", str(root), "--agent-cmd", str(engineer)),
-            *("--no-tui", "--yes", "--ui", "plain", "--no-color"),
+            *("--yes", "--ui", "plain", "--no-color"),
             *("--max-retries", "0", "--max-parallel", "1"),
             *("--review-mode", "skip", "--security-mode", "skip"),
             *("--contract-check", "skip"),

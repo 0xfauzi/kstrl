@@ -105,7 +105,6 @@ FACTORY_FLAGS = (
     "--ui",
     "plain",
     "--no-color",
-    "--no-tui",
     "--max-parallel",
     "1",
     "--max-retries",
@@ -213,7 +212,6 @@ def _env(tmp_path: Path) -> dict[str, str]:
     env["ENGINEER_LOG"] = str(tmp_path / "engineer.log")
     env["AGENT_CMD"] = ENGINEER
     env["KSTRL_KNOWLEDGE_ENABLED"] = "0"
-    env["KSTRL_NO_TUI"] = "1"
     return env
 
 
@@ -287,7 +285,7 @@ class TestTheParkIsItsOwnOutcome:
         item = _park_item(root)
         assert item.component == HTTP
         assert item.evidence.get("head_sha") == reviewed
-        # #433 H7: the TUI inbox shows this text as it is.
+        # #433 H7: ``ks inbox show`` prints this text as it is.
         assert "pause_before_pr_merge" not in item.detail and "`" not in item.detail, item.detail
         assert _engineer_ran(tmp_path) == [HTTP]
         # The gate withheld the push and the PR; nothing reached GitHub.

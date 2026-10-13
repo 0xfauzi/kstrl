@@ -189,7 +189,7 @@ EXPECTED_EVENT_NAME_SPELLINGS: dict[str, int] = {
     # appenders across six modules can write the row now, and appendio
     # is the module all six already import.
     "appendio.py": 1,
-    # The TUI artifact label emitted with ArtifactWritten.
+    # The artifact label emitted with ArtifactWritten.
     "decompose_audit.py": 1,
     # The architect's own JSON key (validation).
     "decompose_reply.py": 1,
@@ -203,8 +203,6 @@ EXPECTED_EVENT_NAME_SPELLINGS: dict[str, int] = {
     "journal_rows.py": 3,
     # The architect's own JSON key in _parse_spec_issues, moved here with it (#776 D1).
     "spec_issues.py": 1,
-    # The TUI reading that artifact label back.
-    "tui/screens/decompose.py": 1,
 }
 
 
@@ -239,7 +237,7 @@ def literal_event_names(
     layer's job is to say which line and which direction.
 
     Deliberately NOT "the string appears in this file". ``spec_issues``
-    is also the architect's own JSON key and the TUI's artifact label, so
+    is also the architect's own JSON key and the artifact label, so
     ``DECOMPOSE_PROMPT`` spells it in prose and ``_parse_spec_issues``
     reads ``data.get("spec_issues")`` off the agent's output. Those are
     other vocabularies that happen to share a word, and flagging them
@@ -641,7 +639,7 @@ class TestJournalEventNamesHaveOneHome:
                 "The set of places that spell an enrolled journal event name "
                 "changed. If this is a journal row being written or selected, "
                 "import the constant its own module declares for it. If it is the "
-                "architect's JSON key or the TUI's artifact label, which share the "
+                "architect's JSON key or the artifact label, which share the "
                 "word, add the row with a reason."
             ),
         )

@@ -1,8 +1,8 @@
 """The learning-readiness numbers, as lines, for every surface that shows them.
 
 ``ks evolve`` printed these four lines and the TUI's evolve screen showed
-none of them (#433 F12). One function builds the text so the two cannot
-drift: the CLI prints each line, the screen shows the same lines.
+none of them (#433 F12). One function builds the text, and the CLI
+prints each line.
 
 The numbers gate the unbuilt phases of #217. Sections 5.2 and 7 of
 docs/continuous-learning-design.md say the attribution thresholds must be

@@ -48,9 +48,8 @@ lets the kernel subtract the umask, which is what gives a new file the
 same mode a plain write would have given it. The alternative,
 ``os.umask(0)`` followed by restoring it, is a process-wide mutation with
 a window in it: ``workqueue.atomic_write`` is called from factory worker
-threads and the serve daemon, and ``init_cmd`` runs inside the Textual
-wizard, so that window is a real race in this codebase and not a
-theoretical one. Asking the kernel to apply the umask costs nothing and
+threads and the serve daemon, so that window is a real race in this
+codebase and not a theoretical one. Asking the kernel to apply the umask costs nothing and
 has no window, which is also why this rolls its own O_EXCL name loop
 instead of calling ``mkstemp``: ``mkstemp`` hard-codes the 0600 this
 module exists to stop.

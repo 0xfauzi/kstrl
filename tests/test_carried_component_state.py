@@ -4,17 +4,16 @@ A ``ks retry cli`` run schedules one component. The other components
 were completed or failed by earlier runs, and the only event this run
 writes for them is ``component_scope_resolved``. Before #448 the reducer
 had no case for that event and ``ComponentState.status`` defaults to
-``pending``, so ``ks dash`` showed three merged components as never
-started under a finished run while ``ks status --no-tui`` (which reads
+``pending``, so the dashboard showed three merged components as never
+started under a finished run while ``ks status`` (which reads
 the manifest) said all four were completed.
 
 The fix records the manifest status on the scope event the run already
 emits, and the reducer folds it. These tests drive the real
 ``run_factory``, then read the run back through the surfaces that
-report it: the reducer, the plain ``ks status --no-tui`` report (the
-control, which reads the manifest), the real dashboard app, and the
-home screen's per-run row, which must keep counting only what the run
-did.
+report it: the reducer and the plain ``ks status`` report (the
+control, which reads the manifest). The dashboard and home screen tests
+went with the TUI (#863 A1).
 """
 
 from __future__ import annotations
@@ -30,11 +29,6 @@ from rich.text import Text
 from kstrl import event_catalog
 from kstrl.manifest import Component, ComponentStatus
 from kstrl.reducer import fold, load_run_state
-from kstrl.tui.app import KstrlTuiApp, Mode
-from kstrl.tui.home_data import summarize_state
-from kstrl.tui.runs import RunRef
-from kstrl.tui.widgets.component_table import ComponentTable
-from tests.helpers.settle import drained, mounted, settled
 from tests.test_harness_path_scope import COMPONENT_ID, _component, _manifest, _setup_project
 from tests.test_scope_snapshot import _run, _Seams
 
@@ -97,12 +91,12 @@ class TestTheRunRecordsWhatItCarried:
         assert state.components[COMPONENT_ID].status == "completed"
 
     def test_the_plain_status_report_agrees(self, tmp_path: Path) -> None:
-        """The control: ``ks status --no-tui`` reads the manifest, and
+        """The control: ``ks status`` reads the manifest, and
         was already right. The reducer test above is only evidence if
         the two surfaces are reading the same run."""
         _run_with_carried_components(tmp_path)
         proc = subprocess.run(
-            [sys.executable, "-m", "kstrl", "status", "--no-tui", "--root", str(tmp_path)],
+            [sys.executable, "-m", "kstrl", "status", "--root", str(tmp_path)],
             capture_output=True,
             text=True,
             timeout=120,
@@ -134,50 +128,6 @@ class TestTheRunRecordsWhatItCarried:
             FAILED_EARLIER: "failed",
             COMPONENT_ID: "pending",
         }
-
-    async def test_the_dashboard_renders_carried_components(self, tmp_path: Path) -> None:
-        events_file = _run_with_carried_components(tmp_path)
-        app = KstrlTuiApp(
-            run_dir=events_file.parent,
-            root_dir=tmp_path,
-            mode=Mode.DASH,
-            poll_interval=0.05,
-        )
-        async with app.run_test(size=(140, 40)) as pilot:
-            table = await mounted(pilot, lambda: app.screen, ComponentTable)
-            await settled(
-                pilot,
-                lambda: table.row_count == 3,
-                what="the component table to render the run's three rows",
-            )
-            await drained(pilot, app.screen, what="the folded state to reach the table")
-            assert _cell_text(table.get_row(DONE_EARLIER)[2]) == "completed"
-            assert _cell_text(table.get_row(FAILED_EARLIER)[2]) == "failed"
-            assert _cell_text(table.get_row(COMPONENT_ID)[2]) == "completed"
-
-    def test_the_run_list_counts_only_what_the_run_did(self, tmp_path: Path) -> None:
-        """The home screen's run row is a per-run count, like the
-        factory's own summary: this run completed one component and
-        failed none. The carried failure stays on the board and out of
-        the row, or a successful retry would be listed as a failed run."""
-        events_file = _run_with_carried_components(tmp_path)
-        state, _source = load_run_state(tmp_path)
-        ref = RunRef(
-            run_id=state.run_id,
-            run_dir=events_file.parent,
-            events_path=events_file,
-            mtime=0.0,
-            completed=True,
-        )
-
-        summary = summarize_state(ref, state)
-
-        assert (summary.outcome, summary.components_done, summary.components_failed) == (
-            "done",
-            1,
-            0,
-        )
-        assert summary.components_total == 3
 
 
 class TestRunStartStatusFold:
@@ -244,38 +194,3 @@ class TestALogWrittenBeforeTheFix:
             "http-api": "unknown",
             "cli": "completed",
         }
-
-
-class TestARunThatFinishesACarriedComponent:
-    """A component can start a run carried and be finished by the run
-    without a ``component_started``: ``pipeline.repoll_merge_pending``
-    re-polls a MERGE_PENDING component before scheduling and emits
-    ``component_completed`` when its PR has merged. The run completed
-    it, so the run row counts it."""
-
-    def test_a_merge_the_run_confirms_counts_as_done(self, tmp_path: Path) -> None:
-        state = fold(
-            [
-                event_catalog.ComponentScopeResolved(
-                    component="c", manifest_status="merge_pending"
-                ),
-                event_catalog.ComponentCompleted(component="c", iterations=1),
-                event_catalog.RunCompleted(),
-            ],
-            run_id="run-c",
-        )
-        ref = RunRef(
-            run_id="run-c",
-            run_dir=tmp_path,
-            events_path=tmp_path / "events.jsonl",
-            mtime=0.0,
-            completed=True,
-        )
-
-        summary = summarize_state(ref, state)
-
-        assert (summary.outcome, summary.components_done, summary.components_failed) == (
-            "done",
-            1,
-            0,
-        )

@@ -117,7 +117,6 @@ class TestSpecFactoryHoldsTheLockThroughDecomposeIntoTheRun:
             "--agent-cmd",
             agent,
             "--yes",
-            "--no-tui",
             "--max-parallel",
             "1",
             "--max-retries",

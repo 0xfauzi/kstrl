@@ -1,4 +1,4 @@
-"""Commands that report state: ks status, ks dash, ks config show and the plan listing."""
+"""Commands that report state: ks status, ks config show and the plan listing."""
 
 from __future__ import annotations
 
@@ -496,76 +496,6 @@ def _render_ci(ui_impl: UI, root_dir: Path | None, manifest: Manifest) -> None:
         ui_impl.kv("  ledger", f"{ledger.dropped} line(s) could not be read")
 
 
-@cli.command()
-@click.option(
-    "--root",
-    type=click.Path(path_type=Path),
-    help="Project root path (defaults to current directory)",
-)
-@click.option(
-    "--run-id",
-    "run_id",
-    help="Run to observe (unique prefix ok; default: newest run)",
-)
-@click.option(
-    "--poll",
-    type=click.FloatRange(min=0, min_open=True),
-    default=0.2,
-    help="Tail poll interval in seconds (default: 0.2, spike-measured)",
-)
-def dash(root: Path | None, run_id: str | None, poll: float) -> None:
-    """Live dashboard over a factory run (observe-only).
-
-    Tails .kstrl/runs/<run_id>/ - a run in flight in another terminal,
-    or a finished one (post-mortem replay works by construction). This
-    command never writes to the run; E6 checkpoints are answered where
-    the factory runs.
-    """
-    import sys as _sys
-
-    root_dir = root.resolve() if root else Path.cwd()
-    if not (_sys.stdout.isatty() and _sys.stdin.isatty()):
-        click.echo(
-            "ks dash needs a terminal; use `ks status` for non-interactive output.",
-            err=True,
-        )
-        _sys.exit(2)
-
-    from kstrl.tui.runs import find_run, latest_run
-
-    ref = find_run(root_dir, run_id) if run_id else latest_run(root_dir)
-    if ref is None:
-        click.echo(
-            f"No run found under {root_dir / '.kstrl' / 'runs'}"
-            + (f" matching '{run_id}'" if run_id else "")
-            + ". Run `ks factory` first, or check --root.",
-            err=True,
-        )
-        _sys.exit(2)
-
-    from kstrl.tui.app import KstrlTuiApp, Mode
-    from kstrl.tui.dispatch import initial_screens_for_kind
-
-    app = KstrlTuiApp(
-        run_dir=ref.run_dir,
-        root_dir=root_dir,
-        mode=Mode.DASH,
-        poll_interval=poll,
-        screen_factory=initial_screens_for_kind(
-            ref.kind,
-            observe_only=True,
-        ),
-    )
-    try:
-        code = app.run()
-    finally:
-        # Spike finding 2: belt-and-braces terminal restore for any
-        # exit path Textual could not clean up after.
-        _sys.stdout.write("\x1b[?1049l\x1b[?25h\x1b[0m")
-        _sys.stdout.flush()
-    _sys.exit(code or 0)
-
-
 def _load_report_state(
     root_dir: Path, manifest: Manifest, progress_log_path: Path | None
 ) -> tuple[RunState | None, Path | None]:
@@ -638,14 +568,6 @@ def _load_report_state(
     is_flag=True,
     help="Disable colors",
 )
-@click.option(
-    "--tui/--no-tui",
-    "tui",
-    default=None,
-    help="Open the dashboard for the newest run (default: auto - on "
-    "when stdin/stdout are TTYs, --ui is not plain, and --watch "
-    "is not set; KSTRL_NO_TUI=1 forces off)",
-)
 def status(
     root: Path | None,
     manifest_path: Path | None,
@@ -654,13 +576,8 @@ def status(
     interval: float,
     ui: str,
     no_color: bool,
-    tui: bool | None,
 ) -> None:
     """Show per-component status from the manifest + progress log.
-
-    On a TTY this opens the dashboard for the newest run of any kind
-    (post-mortem or live); the plain text report remains the contract
-    for pipes/CI, --no-tui, --watch, and KSTRL_NO_TUI=1.
 
     R3.2 (plain report): joins the factory manifest with the
     ProgressLog (default .kstrl/progress.jsonl): per component status,
@@ -673,43 +590,6 @@ def status(
     root_dir = root.resolve() if root else Path.cwd()
     force_rich = os.environ.get("KSTRL_UI_FORCE_RICH") == "1"
     ui_impl = _console_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich)
-
-    use_tui = (
-        tui
-        if tui is not None
-        else (
-            sys.stdout.isatty()
-            and sys.stdin.isatty()
-            and os.environ.get("KSTRL_NO_TUI") != "1"
-            and _normalize_ui_mode(ui) != "plain"
-            and not watch
-        )
-    )
-    if use_tui:
-        from kstrl.tui.runs import latest_run
-
-        ref = latest_run(root_dir)
-        if ref is not None:
-            from kstrl.tui.app import KstrlTuiApp, Mode
-            from kstrl.tui.dispatch import initial_screens_for_kind
-
-            app = KstrlTuiApp(
-                run_dir=ref.run_dir,
-                root_dir=root_dir,
-                mode=Mode.DASH,
-                screen_factory=initial_screens_for_kind(
-                    ref.kind,
-                    observe_only=True,
-                ),
-            )
-            try:
-                code = app.run()
-            finally:
-                sys.stdout.write("\x1b[?1049l\x1b[?25h\x1b[0m")
-                sys.stdout.flush()
-            sys.exit(code or 0)
-        # No run dirs yet: fall through to the plain report, whose
-        # missing-manifest guidance is the useful answer here.
 
     if manifest_path is not None:
         candidates = [manifest_path]
@@ -758,9 +638,6 @@ def status(
             source_path=source_path,
             root_dir=root_dir,
         )
-        if source_path is not None and source_path.name == "events.jsonl" and not watch:
-            ui_impl.info("")
-            ui_impl.info("Dashboard: ks dash")
         return 0
 
     if not watch:

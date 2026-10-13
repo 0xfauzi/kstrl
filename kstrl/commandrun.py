@@ -2,7 +2,7 @@
 
 ``open_command_run`` gives decompose/feature/understand the same disk
 contract the factory has - ``.kstrl/runs/<run_id>/events.jsonl`` plus
-per-component transcripts - so the dashboard, home shell, and replay
+per-component transcripts - so ``ks status`` and replay
 work identically for every kind. It mirrors the factory's sink-attach
 block with two deliberate differences:
 
@@ -12,8 +12,8 @@ block with two deliberate differences:
   both.
 - A stream filter keeps full agent output OUT of events.jsonl: those
   bytes are teed to the per-component transcript file instead (the
-  spike's lean-stream rule - flooding the event stream starves the
-  TUI input loop).
+  spike's lean-stream rule: in that spike, a flooded event stream
+  starved the input loop).
 
 Gating matches the factory exactly: ``[factory] progress_log_enabled``
 (env or kstrl.toml) turns recording off, in which case the bus still
@@ -146,7 +146,7 @@ class CommandRun:
         component_id: str,
     ) -> Callable[[str], None] | None:
         """Line-buffered appender onto the component's transcript file
-        (the file the dashboard's transcript pane tails); None when
+        (the file replay reads); None when
         recording is disabled. The handle closes with the run."""
         path = self.transcript_path(component_id)
         if path is None:
