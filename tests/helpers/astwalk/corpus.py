@@ -45,9 +45,12 @@ def label(source_file: Path, root: Path | None = None) -> str:
 def module_name(source_file: Path) -> str:
     """``kstrl/agents/base.py`` -> ``kstrl.agents.base``.
 
-    What a relative import resolves against. ``__init__.py`` is stripped
-    so ``from . import x`` inside a package's own ``__init__`` lands on
-    the package rather than one level below it.
+    What a relative import resolves against, and what
+    ``importlib.import_module`` takes, thus ``__init__.py`` is stripped.
+    A relative import inside a package's own ``__init__`` still lands on
+    the package, because :func:`~.reexport.import_base` counts a module
+    that is a package as its own ``__init__``. Before #863 B4 the strip
+    put ``from . import x`` there one level too high.
     """
     try:
         relative = source_file.resolve().relative_to(REPO_ROOT)
