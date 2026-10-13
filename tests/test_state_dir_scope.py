@@ -676,12 +676,15 @@ class TestNothingTheLoopRunsWritesTheUncarvedEntries:
     def test_a_re_export_from_outside_the_package_keeps_the_package_edge(
         self, tmp_path: Path
     ) -> None:
-        """#863 B4. ``kstrl/agents/__init__.py`` re-exports ``pathlib.Path``,
-        thus ``bindings`` gives ``pathlib.Path`` and no ``kstrl`` name. The
-        import still executes the ``__init__.py``. Without the base of the
-        ``from``, the closure held only the module itself."""
+        """#863 B4. ``kstrl/agents/__init__.py`` binds ``annotations`` from
+        ``__future__``, thus ``bindings`` gives ``__future__.annotations``
+        and no ``kstrl`` name. The import still executes the
+        ``__init__.py``. Without the base of the ``from``, the closure held
+        only the module itself. (Before #863 M3 the name was ``Path``, a
+        re-export of ``pathlib.Path`` that M3 removed: ``bindings`` then
+        gave ``kstrl.agents.Path``, and the test was green without the edge.)"""
         source = tmp_path / "importer.py"
-        source.write_text("from kstrl.agents import Path\n", encoding="utf-8")
+        source.write_text("from kstrl.agents import annotations\n", encoding="utf-8")
         assert "kstrl.agents" in _imported_names(source)
 
 
