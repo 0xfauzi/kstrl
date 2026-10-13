@@ -39,9 +39,9 @@ class PromptKind(StrEnum):
 
 @dataclass(frozen=True)
 class CheckpointContext:
-    """Everything a human needs to judge an E6 checkpoint: the diff,
-    both finding streams, and the spend so far - not just the review
-    summary string the old prompt showed."""
+    """What a human judges an E6 checkpoint on: the review findings,
+    the spend so far and the branch - not just the review summary
+    string the old prompt showed."""
 
     component_id: str
     review_findings: tuple[Finding, ...] = ()

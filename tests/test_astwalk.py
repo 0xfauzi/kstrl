@@ -408,7 +408,8 @@ class TestTheWalkAgainstTheRealPackage:
         dashboard: one site fewer, so 75. #863 A4 deletes four: the three git
         branch functions (``create_branch_from``, ``delete_branch``,
         ``checkout_existing``) and the sweep of a pre-R0.5 flat worktree. So 71.
-        #863 A2 removes ``timeout.run_with_timeout``, which only a test called: 70.
+        #863 A2 removes two: ``timeout.run_with_timeout``, which only a test
+        called, and ``git.get_repo_root``, which nothing called. So 69.
         """
         spawns = frozenset(
             {
