@@ -53,6 +53,7 @@ from tests.helpers.astwalk import (
     bindings,
     blind_spot,
     catches_everything,
+    module_name,
     parse,
     parsed,
     scope_of,
@@ -186,7 +187,7 @@ def scan_loads(tree: ast.Module, *, module: str = "") -> LoadScan:
 
 
 def _serve_scan() -> LoadScan:
-    scans = [scan_loads(parsed(path), module=f"kstrl.{path.stem}") for path in SERVE_SOURCES]
+    scans = [scan_loads(parsed(path), module=module_name(path)) for path in SERVE_SOURCES]
     return LoadScan(
         config=tuple(site for scan in scans for site in scan.config),
         other=tuple(sorted(receiver for scan in scans for receiver in scan.other)),

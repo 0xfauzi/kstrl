@@ -64,9 +64,10 @@ from tests.helpers.fakegh import put_gh_on_path
 from tests.helpers.gitrepo import git_in
 
 CLI_MODULE = "cli/cli.py"
-#: The modules cut out of cli.py are siblings named `cli_<topic>.py` (#776). Their
-#: returns are exit codes too, so a function that moves keeps its census.
-CLI_SIBLING_PREFIX = "cli_"
+#: The modules cut out of cli.py are siblings named `cli/cli_<topic>.py` (#776). Their
+#: returns are exit codes too, so a function that moves keeps its census. The
+#: prefix is a label relative to kstrl/, as CLI_MODULE is (#863 M7).
+CLI_SIBLING_PREFIX = "cli/cli_"
 
 UI_CHOICES = ("auto", "rich", "plain")
 
@@ -594,7 +595,7 @@ def _count_site(
 def _exit_census(modules: dict[str, ast.Module]) -> _ExitCensus:
     """Every literal 1 that reaches an exit code, following each value into
     the functions it comes from until no new one turns up. Every return in
-    kstrl/cli/cli.py and kstrl/cli_*.py is counted as an exit code, as before #531."""
+    kstrl/cli/cli.py and kstrl/cli/cli_*.py is counted as an exit code, as before #531."""
     census = _ExitCensus()
     counted: set[int] = set()
     for key, top, tree in _sites(modules):
@@ -644,14 +645,14 @@ def test_the_census_sees_every_shape_of_exit_one() -> None:
     census = _exit_census(
         {
             CLI_MODULE: parse(cli_source),
-            "cli_sibling.py": parse(cli_source),
+            "cli/cli_sibling.py": parse(cli_source),
             "other.py": parse(other_source),
         }
     )
     assert census.ones == Counter(
         {
             **dict.fromkeys([(CLI_MODULE, n) for n in "abCefhkm"], 1),
-            **dict.fromkeys([("cli_sibling.py", n) for n in "abCefhkm"], 1),
+            **dict.fromkeys([("cli/cli_sibling.py", n) for n in "abCefhkm"], 1),
             **dict.fromkeys([("other.py", n) for n in ("refuse", "launch", "decide")], 1),
             ("other.py", "helper"): 1,
             ("other.py", "Handle"): 1,

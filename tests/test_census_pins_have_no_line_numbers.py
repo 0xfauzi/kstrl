@@ -159,7 +159,7 @@ class TestTheDisclosedLimits:
         "source",
         [
             'def test_z():\n    astwalk.Sites((), ("fixtures.py:111 _RUNNERS[kind]",))\n',
-            'EXPECTED = (("cli.py", 3164),)\n',
+            'EXPECTED = (("cli/cli.py", 3164),)\n',
             'EXPECTED = ("retry.py:395 kstrl.owner.interaction.PromptRequest",)\n',
         ],
         ids=["row-passed-as-call-data", "line-held-as-an-int", "bare-basename-of-a-nested-module"],
