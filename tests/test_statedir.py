@@ -332,7 +332,37 @@ def _import_targets(node: ast.ImportFrom, package: list[str]) -> set[str]:
     else:
         parts = (node.module or "").split(".")
     stem = "/".join(parts)
-    return {f"{stem}.py", f"{stem}/__init__.py", *(f"{stem}/{a.name}.py" for a in node.names)}
+    subs = [f"{stem}/{a.name}{tail}" for a in node.names for tail in (".py", "/__init__.py")]
+    return {f"{stem}.py", f"{stem}/__init__.py", *subs}
+
+
+def _binds_no_name(node: ast.stmt) -> bool:
+    """True for a docstring, or ``__all__`` / ``__version__`` bound to string constants."""
+    if isinstance(node, ast.Expr):
+        return isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)
+    if not (isinstance(node, ast.Assign) and len(node.targets) == 1):
+        return False
+    target, value = node.targets[0], node.value
+    if not (isinstance(target, ast.Name) and target.id in {"__all__", "__version__"}):
+        return False
+    items = value.elts if isinstance(value, (ast.List, ast.Tuple)) else [value]
+    return all(isinstance(i, ast.Constant) and isinstance(i.value, str) for i in items)
+
+
+def unread_bindings(root: Path) -> list[str]:
+    """The top-level statements of an ``__init__.py`` that the walk cannot read.
+
+    ``required_init_rows`` follows ``from ... import`` only. An ``import``
+    statement, an assignment, a ``def __getattr__`` or an ``if`` can bind a
+    machinery name too, so each one is red until the walk can read it.
+    """
+    found: list[str] = []
+    for init in sorted((root / "kstrl").rglob("__init__.py")):
+        rel = init.relative_to(root).as_posix()
+        for node in ast.parse(init.read_text(encoding="utf-8")).body:
+            if not isinstance(node, ast.ImportFrom) and not _binds_no_name(node):
+                found.append(f"{rel}:{node.lineno}: {ast.unparse(node)[:60]}")
+    return found
 
 
 def required_init_rows(root: Path, rows: tuple[str, ...]) -> set[str]:
@@ -378,6 +408,33 @@ class TestMachineryPackageInits:
         assert required, "no __init__.py found that re-exports machinery: the walk is blind"
         missing = sorted(r for r in required if f"**/{r}" not in ENFORCEMENT_MACHINERY_PATHS)
         assert missing == [], f"no ENFORCEMENT_MACHINERY_PATHS row for {missing}"
+
+    def test_each_init_binds_names_by_import_from_only(self) -> None:
+        """#863: the walk reads ``from ... import`` only, so any other binding is red."""
+        root = Path(__file__).resolve().parent.parent
+        assert unread_bindings(root) == [], "the walk cannot read these bindings"
+
+    def test_the_walks_read_the_control(self, tmp_path: Path) -> None:
+        """A control: each shape that can bind a name is flagged or followed."""
+        probe = tmp_path / "kstrl" / "queue" / "__init__.py"
+        probe.parent.mkdir(parents=True)
+        lines = [
+            '"""Doc."""',
+            "from __future__ import annotations",
+            "from kstrl import io",
+            "import kstrl.verify.policy as policy",
+            "check_policy_envelope = policy",
+            "def __getattr__(name: str) -> object: ...",
+            "__all__ = ['io']",
+        ]
+        probe.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        (tmp_path / "kstrl" / "io").mkdir()
+        io_init = tmp_path / "kstrl" / "io" / "__init__.py"
+        io_init.write_text("from kstrl.io.statedir import control_dir\n", encoding="utf-8")
+        flagged = [row.split(":")[1] for row in unread_bindings(tmp_path)]
+        assert flagged == ["4", "5", "6"]
+        required = required_init_rows(tmp_path, ("**/kstrl/io/statedir.py",))
+        assert required == {"kstrl/io/__init__.py", "kstrl/queue/__init__.py"}
 
 
 class TestReviewFailClosed:
