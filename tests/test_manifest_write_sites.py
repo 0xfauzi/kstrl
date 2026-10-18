@@ -88,33 +88,33 @@ EXPECTED_MANIFEST_WRITE_SITES: dict[str, tuple[int, str]] = {
     "kstrl/cli_inbox.py::inbox_retry reset_for_retry": (1, TAKES_LOCK),
     "kstrl/cli_inbox.py::inbox_retry save": (1, TAKES_LOCK),
     "kstrl/architect/decompose_plan.py::_write_plan save": (1, TAKES_LOCK),
-    "kstrl/retry_plan.py::prepare_retry reset_for_retry": (1, CALLER_HOLDS),
-    "kstrl/retry_plan.py::prepare_retry save": (1, CALLER_HOLDS),
-    "kstrl/retry_plan.py::preview_retry reset_for_retry": (1, COPY),
+    "kstrl/factory/retry_plan.py::prepare_retry reset_for_retry": (1, CALLER_HOLDS),
+    "kstrl/factory/retry_plan.py::prepare_retry save": (1, CALLER_HOLDS),
+    "kstrl/factory/retry_plan.py::preview_retry reset_for_retry": (1, COPY),
     # --- inside run_factory's lock ---
-    "kstrl/factory_run.py::_start_manifest save": (1, IN_RUN),
-    "kstrl/factory.py::_fill_slots save": (1, IN_RUN),
-    "kstrl/factory_worktrees.py::_cleanup_pass_worktrees save": (1, IN_RUN),
-    "kstrl/factory_acceptance.py::_stamp_feature_base save": (1, IN_RUN),
-    "kstrl/factory_acceptance.py::_reset_contract_breakers save": (1, IN_RUN),
-    "kstrl/factory_acceptance.py::_record_contract_failures save": (1, IN_RUN),
-    "kstrl/factory_summary.py::_finish_run save": (1, IN_RUN),
-    "kstrl/factory_summary.py::_create_single_pr save": (1, IN_RUN),
-    "kstrl/factory_summary.py::_create_straggler_prs save": (1, IN_RUN),
-    "kstrl/pipeline_merge.py::MergeGate._fail_pr_flow save": (1, IN_RUN),
-    "kstrl/plan_gate.py::_settle save": (1, IN_RUN),
-    "kstrl/pipeline_merge.py::MergeGate._park_awaiting_approval save": (1, IN_RUN),
-    "kstrl/pipeline_merge.py::MergeGate._park_merge_pending save": (1, IN_RUN),
-    "kstrl/pipeline_merge.py::MergeGate._phase_pr save": (1, IN_RUN),
-    "kstrl/pipeline_merge.py::MergeGate._record_merge save": (1, IN_RUN),
-    "kstrl/pipeline_merge.py::MergeGate.repoll_merge_pending save": (1, IN_RUN),
-    "kstrl/pipeline_transitions.py::Transitions.complete save": (1, IN_RUN),
-    "kstrl/pipeline_transitions.py::Transitions.fail save": (1, IN_RUN),
-    "kstrl/pipeline_transitions.py::Transitions.fail_scheduler_backstop save": (1, IN_RUN),
+    "kstrl/factory/factory_run.py::_start_manifest save": (1, IN_RUN),
+    "kstrl/factory/factory.py::_fill_slots save": (1, IN_RUN),
+    "kstrl/factory/factory_worktrees.py::_cleanup_pass_worktrees save": (1, IN_RUN),
+    "kstrl/factory/factory_acceptance.py::_stamp_feature_base save": (1, IN_RUN),
+    "kstrl/factory/factory_acceptance.py::_reset_contract_breakers save": (1, IN_RUN),
+    "kstrl/factory/factory_acceptance.py::_record_contract_failures save": (1, IN_RUN),
+    "kstrl/factory/factory_summary.py::_finish_run save": (1, IN_RUN),
+    "kstrl/factory/factory_summary.py::_create_single_pr save": (1, IN_RUN),
+    "kstrl/factory/factory_summary.py::_create_straggler_prs save": (1, IN_RUN),
+    "kstrl/pipeline/pipeline_merge.py::MergeGate._fail_pr_flow save": (1, IN_RUN),
+    "kstrl/factory/plan_gate.py::_settle save": (1, IN_RUN),
+    "kstrl/pipeline/pipeline_merge.py::MergeGate._park_awaiting_approval save": (1, IN_RUN),
+    "kstrl/pipeline/pipeline_merge.py::MergeGate._park_merge_pending save": (1, IN_RUN),
+    "kstrl/pipeline/pipeline_merge.py::MergeGate._phase_pr save": (1, IN_RUN),
+    "kstrl/pipeline/pipeline_merge.py::MergeGate._record_merge save": (1, IN_RUN),
+    "kstrl/pipeline/pipeline_merge.py::MergeGate.repoll_merge_pending save": (1, IN_RUN),
+    "kstrl/pipeline/pipeline_transitions.py::Transitions.complete save": (1, IN_RUN),
+    "kstrl/pipeline/pipeline_transitions.py::Transitions.fail save": (1, IN_RUN),
+    "kstrl/pipeline/pipeline_transitions.py::Transitions.fail_scheduler_backstop save": (1, IN_RUN),
     # #646: the gates after the engineer moved out of process_result, so
     # ks retry's kept head is judged by the same code with no engineer.
-    "kstrl/pipeline.py::ComponentPipeline._judge_attempt save": (1, IN_RUN),
-    "kstrl/pipeline_transitions.py::Transitions.retry_or_fail save": (1, IN_RUN),
+    "kstrl/pipeline/pipeline.py::ComponentPipeline._judge_attempt save": (1, IN_RUN),
+    "kstrl/pipeline/pipeline_transitions.py::Transitions.retry_or_fail save": (1, IN_RUN),
     # --- a ``save`` that is not a manifest's ---
     "kstrl/learning/autonomy_transitions.py::commit_transition save": (
         1,
@@ -125,7 +125,7 @@ EXPECTED_MANIFEST_WRITE_SITES: dict[str, tuple[int, str]] = {
         NOT_A_MANIFEST,
     ),  # ladder state
     "kstrl/review/integration.py::write_integration_prd save": (1, NOT_A_MANIFEST),  # PRD
-    "kstrl/pipeline_review.py::ReviewPhase._phase_review save": (1, NOT_A_MANIFEST),  # PRD
+    "kstrl/pipeline/pipeline_review.py::ReviewPhase._phase_review save": (1, NOT_A_MANIFEST),  # PRD
     "kstrl/serve_github.py::_save_pr_count_streak save": (1, NOT_A_MANIFEST),  # serve streak
 }
 
@@ -238,8 +238,8 @@ def test_the_census_predicate_is_not_switched_off() -> None:
 def test_the_walk_sees_every_shape_of_reference() -> None:
     """Positive control: a walk that stops seeing a shape fails here, not silently."""
     source = (
-        "from kstrl.retry_plan import prepare_retry\n"
-        "import kstrl.retry_plan as rp\n"
+        "from kstrl.factory.retry_plan import prepare_retry\n"
+        "import kstrl.factory.retry_plan as rp\n"
         "class Screen:\n"
         "    def confirm(self, m, p):\n"
         "        m.save(p)\n"

@@ -2,7 +2,7 @@
 
 Pure data: nothing here runs git or an agent. The one writer is the PRD
 file the reviewer is handed. The factory-facing half is
-``kstrl/integration_phase.py``.
+``kstrl/factory/integration_phase.py``.
 """
 
 from __future__ import annotations

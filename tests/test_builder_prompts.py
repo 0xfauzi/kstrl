@@ -25,12 +25,13 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl import context, factory_worker
-from kstrl.context import LEGACY_ATTEMPT, IterationContext, IterationRecord
+from kstrl.factory import factory_worker
 from kstrl.knowledge import knowledge
 from kstrl.knowledge.knowledge_facts import KnowledgeConfig, write_facts
 from kstrl.loop import iteration_prompt
 from kstrl.loop.loop import LoopResult
+from kstrl.pipeline import context
+from kstrl.pipeline.context import LEGACY_ATTEMPT, IterationContext, IterationRecord
 from kstrl.plan.findings import Finding
 from kstrl.plan.manifest import Component, Manifest
 from kstrl.plan.scope import ComponentScope

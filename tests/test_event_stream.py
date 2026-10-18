@@ -27,9 +27,9 @@ from kstrl.events.observability import (
     read_progress_events,
 )
 from kstrl.events.usage import UsageRecord, UsageTotals
-from kstrl.factory import run_factory
-from kstrl.factory_config import FactoryConfig
-from kstrl.factory_result import ComponentResult
+from kstrl.factory.factory import run_factory
+from kstrl.pipeline.factory_config import FactoryConfig
+from kstrl.pipeline.factory_result import ComponentResult
 from kstrl.plan.manifest import Component, Manifest
 from kstrl.ui.plain import PlainUI
 from kstrl.verify.verify_model import VerifyConfig
@@ -154,7 +154,7 @@ def _run_stub_factory(root: Path, comp_ids: list[str], success: bool = True) -> 
 
     with (
         patch(
-            "kstrl.factory._run_component",
+            "kstrl.factory.factory._run_component",
             side_effect=fake_component,
         ),
         patch("kstrl.git.git_diff.get_diff_content", return_value=""),
@@ -269,7 +269,7 @@ class TestDualWrite:
         )
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 return_value=result,
             ),
             patch("kstrl.git.git_diff.get_diff_content", return_value=""),
@@ -402,12 +402,12 @@ class TestSemanticEvents:
         )
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 return_value=result,
             ),
             patch("kstrl.git.git_diff.get_diff_content", return_value=""),
             patch(
-                "kstrl.pr.is_gh_available",
+                "kstrl.pipeline.pr.is_gh_available",
                 return_value=False,
             ),
         ):
@@ -459,12 +459,12 @@ class TestPhaseTranscripts:
 
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 return_value=result,
             ),
             patch("kstrl.git.git_diff.get_diff_content", return_value="+x\n"),
             patch(
-                "kstrl.factory.run_review",
+                "kstrl.factory.factory.run_review",
                 side_effect=fake_review,
             ),
         ):
@@ -520,7 +520,7 @@ class TestPhaseTranscripts:
 
 class TestWorkerChannel:
     def _worker_args(self, root: Path, events_dir: Path | None, agent_cmd: str) -> dict[str, Any]:
-        from kstrl.factory_worker import _run_component  # noqa: F401 - existence
+        from kstrl.factory.factory_worker import _run_component  # noqa: F401 - existence
 
         _setup_project(root, ["comp-a"])
         return dict(
@@ -545,7 +545,7 @@ class TestWorkerChannel:
         tmp_path: Path,
         capfd: Any,
     ) -> None:
-        from kstrl.factory_worker import _run_component
+        from kstrl.factory.factory_worker import _run_component
 
         events_dir = tmp_path / ".kstrl" / "runs" / "run-w"
         result = _run_component(
@@ -580,7 +580,7 @@ class TestWorkerChannel:
         tmp_path: Path,
         capfd: Any,
     ) -> None:
-        from kstrl.factory_worker import _run_component
+        from kstrl.factory.factory_worker import _run_component
 
         _run_component(
             **self._worker_args(
@@ -593,14 +593,14 @@ class TestWorkerChannel:
         assert "legacy-line" in err  # PlainUI on stderr, as before
 
     def test_setup_failure_does_not_start_heartbeat(self, tmp_path: Path) -> None:
-        from kstrl.factory_worker import _run_component
+        from kstrl.factory.factory_worker import _run_component
 
         with (
             patch(
                 "kstrl.agents.get_agent",
                 side_effect=RuntimeError("no agent"),
             ),
-            patch("kstrl.factory_worker._start_heartbeat") as start_heartbeat,
+            patch("kstrl.factory.factory_worker._start_heartbeat") as start_heartbeat,
         ):
             try:
                 _run_component(
@@ -617,7 +617,7 @@ class TestWorkerChannel:
         start_heartbeat.assert_not_called()
 
     def test_agent_crash_closes_iteration_event(self, tmp_path: Path) -> None:
-        from kstrl.factory_worker import _run_component
+        from kstrl.factory.factory_worker import _run_component
 
         class CrashingAgent:
             usage_records: list[Any] = []
@@ -653,7 +653,7 @@ class TestWorkerChannel:
     def test_heartbeat_thread_emits(self) -> None:
         import time as _time
 
-        from kstrl.factory_worker import _start_heartbeat
+        from kstrl.factory.factory_worker import _start_heartbeat
 
         captured: list[event_catalog.Event] = []
         bus = ev.EventBus(

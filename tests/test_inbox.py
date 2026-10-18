@@ -417,9 +417,9 @@ def _run_factory(
     pause_before_pr_merge: bool = False,
 ) -> None:
     from kstrl.config.config import KstrlConfig
-    from kstrl.factory import run_factory
-    from kstrl.factory_config import FactoryConfig
-    from kstrl.factory_result import ComponentResult
+    from kstrl.factory.factory import run_factory
+    from kstrl.pipeline.factory_config import FactoryConfig
+    from kstrl.pipeline.factory_result import ComponentResult
     from kstrl.plan.manifest import Component, Manifest
     from kstrl.review.review import ReviewResult
     from kstrl.ui.plain import PlainUI
@@ -494,15 +494,15 @@ def _run_factory(
     )
     with (
         patch(
-            "kstrl.factory._run_component",
+            "kstrl.factory.factory._run_component",
             return_value=component_result,
         ),
-        patch("kstrl.factory.run_mechanical_verification", return_value=result),
+        patch("kstrl.factory.factory.run_mechanical_verification", return_value=result),
         patch(
-            "kstrl.factory.run_review",
+            "kstrl.factory.factory.run_review",
             return_value=ReviewResult(passed=True, mode="hard"),
         ),
-        patch("kstrl.pr.is_gh_available", return_value=False),
+        patch("kstrl.pipeline.pr.is_gh_available", return_value=False),
     ):
         run_factory(manifest, config, base, PlainUI(no_color=True), tmp_path)
 
@@ -820,7 +820,7 @@ class TestMergeGateIsTheHumanGate:
     """The gate is the pre-merge checkpoint, not the post-merge timeout."""
 
     def test_parked_decision_exists(self) -> None:
-        from kstrl.pipeline_delivery import CheckpointDecision
+        from kstrl.pipeline.pipeline_delivery import CheckpointDecision
 
         assert CheckpointDecision.PARKED.value == "parked"
 

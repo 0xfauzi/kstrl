@@ -1,0 +1,478 @@
+"""Retry planning and preparation (extracted from cli.retry, B1).
+
+``preview_retry`` answers "what WOULD a retry do" without touching
+anything. ``ks retry`` shows it before its confirm.
+``prepare_retry`` is the real mutation: reset statuses, remove the
+failed attempt's worktree and branch, save the manifest; the "Retry
+plan" section it used to print is now :func:`print_retry_plan`'s (#597),
+called by each caller first, so the two calls together narrate what
+``prepare_retry`` alone used to. The only behavior change from the
+original command is RetryError instead of sys.exit, so a caller can
+surface the failure without the process dying.
+"""
+
+from __future__ import annotations
+
+import copy
+import shlex
+import shutil
+import subprocess
+from collections.abc import Collection, Mapping
+from dataclasses import dataclass
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+from kstrl.factory.factory_worktrees import _dependency_branches
+from kstrl.git import git
+from kstrl.owner import approvals_at, approved_head
+from kstrl.pipeline import (
+    REMOVED_OPTIONS,
+    FactoryConfig,
+    FlagValue,
+    LaunchRecord,
+    LaunchRecordError,
+    flags_argv,
+    launch_record_path,
+    read_launch_record,
+    run_limits,
+)
+from kstrl.plan import ComponentStatus
+from kstrl.proc import NO_LIMIT, TimeoutConfig, sweep_worktree, warn_sweep
+
+if TYPE_CHECKING:
+    import click
+
+    from kstrl.plan import Component, Manifest
+    from kstrl.ui import UI
+
+
+class RetryError(Exception):
+    """A retry preparation step failed after narrating the details."""
+
+
+@dataclass(frozen=True)
+class RetryPreview:
+    component_id: str
+    reset_dependents: list[str]
+    evidence_worktree: str
+    failed_branch: str
+    single_pr: bool
+    #: What stays FAILED or SKIPPED after the reset, one line each (#485).
+    not_in_retry: list[str]
+    #: The commit the retry keeps and judges again with no engineer, "" when
+    #: the branch is regenerated (#646).
+    kept_head: str
+    #: Why it is kept or regenerated; "" when the caller read no project.
+    kept_reason: str
+
+
+def _failed_dependencies(manifest: Manifest, component_id: str) -> list[str]:
+    """Every FAILED component among *component_id*'s transitive dependencies."""
+    seen: set[str] = set()
+    stack = [component_id]
+    while stack:
+        comp = manifest.get_component(stack.pop())
+        for dep in comp.dependencies if comp is not None else []:
+            if dep not in seen:
+                seen.add(dep)
+                stack.append(dep)
+    return [
+        c.id
+        for c in manifest.components
+        if c.id in seen and c.status == ComponentStatus.FAILED.value
+    ]
+
+
+def _not_in_retry(manifest: Manifest) -> list[str]:
+    """The FAILED and SKIPPED components a retry leaves out, in manifest order (#485).
+
+    Read AFTER ``reset_for_retry``: the retried component and every
+    dependent it reset are PENDING by then, so neither can be listed.
+    """
+    retryable = set(manifest.retryable_component_ids())
+    lines: list[str] = []
+    for comp in manifest.components:
+        if comp.id in retryable:
+            lines.append(f"{comp.id}: FAILED; retry it after this run with ks retry {comp.id}")
+        elif comp.status == ComponentStatus.SKIPPED.value:
+            waits = _failed_dependencies(manifest, comp.id)
+            lines.append(
+                f"{comp.id}: SKIPPED; waits on {', '.join(waits) or 'no FAILED component'}"
+            )
+    return lines
+
+
+def _print_not_in_retry(ui: UI, not_in_retry: list[str]) -> None:
+    """One `Not in this retry` row per component the retry leaves out, or `(none)`."""
+    for line in not_in_retry or ["(none)"]:
+        ui.kv("Not in this retry", line)
+
+
+def kept_head(manifest: Manifest, comp: Component | None, root_dir: Path) -> tuple[str, str]:
+    """Whether the retry keeps ``comp``'s failed head, from the project's git and inbox (#646).
+
+    Must be read BEFORE ``reset_for_retry``, which clears the failure
+    fields :func:`kstrl.owner.waivers.approved_head` reads. A component judged
+    against code that is not in the base branch is never kept (owner
+    decision 4a): its kept head would be judged against a different base.
+    """
+    if comp is None or comp.status != ComponentStatus.FAILED.value:
+        return "", ""
+    if manifest.single_pr:
+        return "", "single_pr: the shared branch carries other components' commits"
+    dependencies = _dependency_branches(manifest, comp)
+    if dependencies:
+        return "", f"it was judged with unmerged dependency code from {', '.join(dependencies)}"
+    tip = git.branch_sha(comp.branch_name, root_dir) or ""
+    return approved_head(approvals_at(root_dir), comp, tip)
+
+
+def preview_retry(manifest: Manifest, component_id: str, *, root_dir: Path | None) -> RetryPreview:
+    """Non-mutating preview: runs reset_for_retry on a deep copy.
+
+    Raises ValueError exactly as reset_for_retry does (unknown
+    component, component not failed). ``root_dir`` is the project whose
+    branch and inbox decide whether the failed head is kept; None reads
+    neither, for a caller that only asks whether the retry is refused.
+    """
+    comp = manifest.get_component(component_id)
+    scratch = copy.deepcopy(manifest)
+    reset_dependents = scratch.reset_for_retry(component_id)
+    kept, reason = kept_head(manifest, comp, root_dir) if root_dir is not None else ("", "")
+    return RetryPreview(
+        component_id=component_id,
+        reset_dependents=reset_dependents,
+        evidence_worktree=comp.evidence_worktree if comp else "",
+        failed_branch=comp.branch_name if comp else "",
+        single_pr=manifest.single_pr,
+        not_in_retry=_not_in_retry(scratch),
+        kept_head=kept,
+        kept_reason=reason,
+    )
+
+
+def print_retry_plan(ui: UI, preview: RetryPreview, manifest_file: Path) -> None:
+    """The ``Retry plan`` section, printed from a preview (#597).
+
+    ``ks retry`` prints it before its confirmation, and before it takes the
+    run lock, so it is read from :func:`preview_retry`'s copy: nothing may
+    change until the operator has answered and the lock is held.
+    """
+    ui.section("Retry plan")
+    ui.kv("Component", preview.component_id)
+    ui.kv(
+        "Cascade-skipped dependents reset",
+        ", ".join(preview.reset_dependents) if preview.reset_dependents else "(none)",
+    )
+    _print_not_in_retry(ui, preview.not_in_retry)
+    ui.kv("Manifest", str(manifest_file))
+    if preview.kept_head:
+        ui.kv(
+            "Branch", f"kept at {preview.kept_head[:12]}; no engineer runs: {preview.kept_reason}"
+        )
+    elif preview.kept_reason:
+        ui.kv("Branch", f"regenerated: {preview.kept_reason}")
+
+
+def _failed_branch_probe(root_dir: Path, branch: str) -> int:
+    """The exit code of ``git rev-parse --verify --quiet refs/heads/<branch>``.
+
+    :func:`prepare_retry` deletes the failed branch only when this is 0.
+    OSError and a timeout propagate, as they always did here.
+    """
+    return subprocess.run(
+        ["git", "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}"],
+        cwd=root_dir,
+        capture_output=True,
+        timeout=30,
+    ).returncode
+
+
+def prepare_retry(
+    manifest: Manifest,
+    component_id: str,
+    manifest_file: Path,
+    root_dir: Path,
+    ui: UI,
+) -> RetryPreview:
+    """Mutate the manifest for a retry and clean up the failed attempt.
+
+    Reset statuses, remove the kept evidence worktree, delete the failed
+    branch (never in single_pr mode - the shared branch carries completed
+    components' commits), save. ValueError propagates from
+    reset_for_retry; a branch-delete failure raises RetryError after
+    narrating the manual fix. `ks retry` holds the run lock (#597) before
+    calling this and has already printed :func:`print_retry_plan`, so
+    this narrates only what it removes.
+
+    The return value matches ``preview_retry``'s on the same manifest and
+    is otherwise unused by either caller; it exists so
+    ``test_preview_and_prepare_return_the_same_list`` can assert the two
+    agree.
+    """
+    comp = manifest.get_component(component_id)
+    evidence_worktree = comp.evidence_worktree if comp else ""
+    failed_branch = comp.branch_name if comp else ""
+    # #646: before the reset, which clears the failure this decides on.
+    kept, kept_reason = kept_head(manifest, comp, root_dir)
+
+    reset_dependents = manifest.reset_for_retry(component_id)
+    not_in_retry = _not_in_retry(manifest)
+
+    # The failed attempt's worktree and branch are superseded by the
+    # fresh attempt; remove them so provisioning and the stale-branch
+    # preflight start clean. In single_pr mode every component shares
+    # one branch carrying completed components' commits - never delete
+    # it here. #528: what still runs in the evidence worktree (a server
+    # started while looking at the failure) is killed and named first.
+    if evidence_worktree and Path(evidence_worktree).exists():
+        warn_sweep(sweep_worktree(Path(evidence_worktree)), ui, "retry")
+        subprocess.run(
+            ["git", "worktree", "remove", "--force", evidence_worktree],
+            cwd=root_dir,
+            capture_output=True,
+            timeout=30,
+        )
+        shutil.rmtree(evidence_worktree, ignore_errors=True)
+        subprocess.run(
+            ["git", "worktree", "prune"],
+            cwd=root_dir,
+            capture_output=True,
+            timeout=30,
+        )
+        ui.info(f"Removed the failed attempt's evidence worktree: {evidence_worktree}")
+    if kept and comp is not None:
+        # The factory's branch preflight lets this one branch through, and
+        # its scheduler judges this commit with no engineer, once.
+        comp.rejudge_sha = kept
+        ui.info(
+            f"Kept branch '{failed_branch}' at {kept[:12]}: {kept_reason}. The retry "
+            "judges this commit again with no engineer; any change it makes is asked again."
+        )
+    elif failed_branch and not manifest.single_pr:
+        if _failed_branch_probe(root_dir, failed_branch) == 0:
+            deleted = subprocess.run(
+                ["git", "branch", "-D", failed_branch],
+                cwd=root_dir,
+                capture_output=True,
+                encoding="utf-8",
+                timeout=30,
+            )
+            if deleted.returncode == 0:
+                ui.info(
+                    f"Deleted branch '{failed_branch}' from the failed "
+                    f"attempt; the retry recreates it from "
+                    f"'{manifest.base_branch}'"
+                )
+            else:
+                ui.err(f"Could not delete branch '{failed_branch}': {deleted.stderr.strip()}")
+                ui.info(
+                    "Delete it manually (git branch -D "
+                    f"{failed_branch}) and re-run; the factory refuses "
+                    "to silently reuse stale branches (R0.5)."
+                )
+                raise RetryError(f"could not delete branch '{failed_branch}'")
+    elif manifest.single_pr:
+        ui.warn(
+            "single_pr mode: the shared branch is left in place; if the "
+            "run is refused at branch preflight, resolve it manually"
+        )
+
+    manifest.save(manifest_file)
+    return RetryPreview(
+        component_id=component_id,
+        reset_dependents=reset_dependents,
+        evidence_worktree=evidence_worktree,
+        failed_branch=failed_branch,
+        single_pr=manifest.single_pr,
+        not_in_retry=not_in_retry,
+        kept_head=kept,
+        kept_reason=kept_reason,
+    )
+
+
+def retry_confirm_header(preview: RetryPreview) -> str:
+    """The confirmation question, naming every component the retry re-enters (#436)."""
+    if not preview.reset_dependents:
+        return f"Re-enter the factory to retry '{preview.component_id}'?"
+    dependents = ", ".join(f"'{cid}'" for cid in preview.reset_dependents)
+    return (
+        f"Re-enter the factory to retry '{preview.component_id}' "
+        f"and the dependents it reset: {dependents}?"
+    )
+
+
+#: The headline every refusal from :func:`plan_resume` prints under.
+RESUME_REFUSAL = "the retry cannot carry over the configuration of the run it resumes"
+
+_LIMIT_REMEDY = (
+    "pass each option named above to the retry: a value to keep that limit, or 0 to run without it"
+)
+
+
+def _opt(name: str) -> str:
+    """The `ks factory` / `ks retry` option spelling of a run limit."""
+    return "--" + name.replace("_", "-")
+
+
+@dataclass(frozen=True)
+class UnkeptLimit:
+    """A run limit a retry refuses to drop (#526), as data (#433 G1).
+
+    A caller names the options and the command that can carry them from
+    this, never from the refusal's wording.
+    """
+
+    #: The ``run_limits`` key, e.g. ``max_total_tokens``.
+    name: str
+    #: What the resumed run ran under; None when its launch record does not say.
+    ran_under: float | None
+
+    @property
+    def option(self) -> str:
+        return _opt(self.name)
+
+
+@dataclass(frozen=True)
+class ResumePlan:
+    """What a retry re-enters `ks factory` with (#436)."""
+
+    #: The run the manifest names, "" when it names none.
+    run_id: str
+    #: Whether that run left a launch record whose flags are replayed.
+    carried: bool
+    #: The replayed flags plus the retry's own, as `ks factory` options.
+    argv: tuple[str, ...]
+    #: Every run limit the retry runs under, by option name (#526).
+    limits: tuple[tuple[str, float], ...]
+    max_parallel: int
+    #: Recorded flags left out because `ks factory` no longer has them (#539).
+    dropped: tuple[str, ...]
+    #: The flags ``argv`` spells, by name, so a caller that cannot pass an
+    #: argv can tell which flags it would drop (#433 H5).
+    flags: tuple[tuple[str, FlagValue], ...] = ()
+
+
+def _unkept_limits(
+    record: LaunchRecord | None,
+    resolved: Mapping[str, float],
+    stated: Collection[str],
+) -> tuple[UnkeptLimit, ...]:
+    """The run limits the retry would drop, or () when it may run.
+
+    A limit the retry states on its own command line, or resolves above 0,
+    is kept. Otherwise the retry refuses when the run it resumes ran under
+    that limit, or when the record does not say (no record, or a record
+    written before the limit was recorded). One rule for every entry of
+    ``run_limits``, so a limit added there is covered here unedited (#526).
+    """
+    ran_under = dict(record.limits) if record is not None else {}
+    unkept: list[UnkeptLimit] = []
+    for name in {**ran_under, **resolved}:
+        if name in stated or resolved.get(name, 0) > 0:
+            continue
+        if name not in ran_under:
+            unkept.append(UnkeptLimit(name, None))
+        elif ran_under[name] > 0:
+            unkept.append(UnkeptLimit(name, ran_under[name]))
+    return tuple(unkept)
+
+
+def _ceiling_problems(run_id: str, unkept: tuple[UnkeptLimit, ...]) -> list[str]:
+    """Why the retry must refuse over its run limits, one line per limit."""
+    problems = [
+        f"{limit.option}: run {run_id or '(none)'} left no launch record of this "
+        "limit, so the value it ran under is unknown, and the environment and "
+        "kstrl.toml set none"
+        if limit.ran_under is None
+        else f"{limit.option}: run {run_id} ran under {limit.option} {limit.ran_under}, and "
+        "this retry resolves none: the limit came from the environment or "
+        "kstrl.toml, which no longer set it"
+        for limit in unkept
+    ]
+    return [*problems, _LIMIT_REMEDY] if problems else []
+
+
+def plan_resume(
+    root_dir: Path,
+    manifest: Manifest,
+    manifest_file: Path,
+    command: click.Command,
+    *,
+    max_cost_usd: float | None,
+    max_parallel: int | None,
+    keep_worktrees_on_failure: bool,
+    limits: Mapping[str, float | None] | None = None,
+) -> tuple[ResumePlan | None, list[str], tuple[UnkeptLimit, ...]]:
+    """The flags a retry replays and the limits it runs under, or why it refuses.
+
+    Changes nothing, so a refusal leaves the manifest, branch and worktree
+    exactly as the failed run left them. The retry's own options win over
+    the recorded ones, the same way a flag wins over env and kstrl.toml.
+    ``limits`` holds the retry's own values for the run limits other than
+    the cost ceiling, by option name; None is "not given". The third
+    element is the limits a refusal names, as data (#433 G1).
+    """
+    overrides: dict[str, FlagValue] = {
+        name: value
+        for name, value in (
+            ("max_cost_usd", max_cost_usd),
+            ("max_parallel", max_parallel),
+            ("keep_worktrees_on_failure", keep_worktrees_on_failure or None),
+            *(limits or {}).items(),
+        )
+        if value is not None
+    }
+    try:
+        record = read_launch_record(root_dir, manifest, manifest_file)
+        recorded = dict(record.flags) if record is not None else {}
+        dropped = tuple(name for name in recorded if name in REMOVED_OPTIONS)
+        flags = {name: value for name, value in recorded.items() if name not in REMOVED_OPTIONS}
+        flags.update(overrides)
+        argv = flags_argv(command, flags)
+    except LaunchRecordError as exc:
+        path = launch_record_path(root_dir, manifest.run_id)
+        return None, [str(exc), f"delete {path} to retry without the recorded flags"], ()
+    loaded = FactoryConfig.load(root_dir)
+    resolved = {
+        name: float(flags.get(name, value))
+        for name, value in run_limits(loaded, TimeoutConfig.load(root_dir)).items()
+    }
+    unkept = _unkept_limits(record, resolved, overrides.keys())
+    if unkept:
+        return None, _ceiling_problems(manifest.run_id, unkept), unkept
+    plan = ResumePlan(
+        run_id=manifest.run_id,
+        carried=record is not None,
+        argv=tuple(argv),
+        limits=tuple(resolved.items()),
+        max_parallel=int(flags.get("max_parallel", loaded.max_parallel)),
+        dropped=dropped,
+        flags=tuple(flags.items()),
+    )
+    return plan, [], ()
+
+
+def not_replayed(plan: ResumePlan) -> tuple[str, ...]:
+    """``--option is no longer an option. Why.`` for each recorded flag the
+    retry leaves out (#539): what ``print_resume_plan`` prints (#433)."""
+    return tuple(
+        f"{_opt(name)} is no longer an option. {REMOVED_OPTIONS[name]}" for name in plan.dropped
+    )
+
+
+def print_resume_plan(ui: UI, plan: ResumePlan) -> None:
+    """Say, before the confirmation and before any spend, what the retry runs under."""
+    if plan.carried:
+        shown = shlex.join(plan.argv) if plan.argv else "(none were passed)"
+        ui.info(f"Resuming with the flags of run {plan.run_id}: {shown}")
+    else:
+        ui.warn(
+            f"No launch record for run {plan.run_id or '(none)'}: "
+            "the flags of the run being resumed are not carried over"
+        )
+    for line in not_replayed(plan):
+        ui.warn(f"Not replayed from run {plan.run_id}: {line}")
+    for name, value in plan.limits:
+        ui.kv(_opt(name), str(value) if value > 0 else NO_LIMIT)
+    ui.kv("Max parallel", str(plan.max_parallel))

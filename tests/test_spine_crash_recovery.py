@@ -36,7 +36,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.factory import run_factory
+from kstrl.factory.factory import run_factory
 from kstrl.plan.manifest import ComponentStatus, Manifest
 from kstrl.ui.plain import PlainUI
 from tests.helpers import procs
@@ -62,8 +62,8 @@ _DRIVER_SCRIPT = """
 import sys
 from pathlib import Path
 from kstrl.config.config import KstrlConfig
-from kstrl.factory import run_factory
-from kstrl.factory_config import FactoryConfig
+from kstrl.factory.factory import run_factory
+from kstrl.pipeline.factory_config import FactoryConfig
 from kstrl.plan.manifest import Manifest
 from kstrl.ui.plain import PlainUI
 from kstrl.project.stack import CONFIRMED_IN_INBOX, Stack

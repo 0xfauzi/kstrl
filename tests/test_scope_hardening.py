@@ -30,12 +30,12 @@ import pytest
 
 from kstrl.architect.decompose import decompose_spec
 from kstrl.config.config import KstrlConfig
-from kstrl.factory import run_factory
-from kstrl.factory_config import FactoryConfig
-from kstrl.factory_preflight import _preflight_component_scope
-from kstrl.factory_result import ComponentResult, FactoryResult
+from kstrl.factory.factory import run_factory
+from kstrl.factory.factory_preflight import _preflight_component_scope
 from kstrl.git.git_diff import get_diff_names
 from kstrl.io.statedir import pre_run_prd_path
+from kstrl.pipeline.factory_config import FactoryConfig
+from kstrl.pipeline.factory_result import ComponentResult, FactoryResult
 from kstrl.plan.manifest import Component, Manifest
 from kstrl.plan.scope import RunScope
 from kstrl.ui.plain import PlainUI
@@ -463,8 +463,8 @@ class TestFactoryScopeSiteFailsClosed:
             return VerificationResult(passed=True, checks=[])
 
         with (
-            patch("kstrl.factory._run_component", side_effect=spy_component),
-            patch("kstrl.factory.run_mechanical_verification", side_effect=spy_rmv),
+            patch("kstrl.factory.factory._run_component", side_effect=spy_component),
+            patch("kstrl.factory.factory.run_mechanical_verification", side_effect=spy_rmv),
         ):
             result = run_factory(
                 manifest,
@@ -549,9 +549,9 @@ class TestFactoryScopeSiteFailsClosed:
 
         success = ComponentResult("comp-a", success=True, iterations=1)
         with (
-            patch("kstrl.factory._run_component", return_value=success),
+            patch("kstrl.factory.factory._run_component", return_value=success),
             patch(
-                "kstrl.factory.run_mechanical_verification",
+                "kstrl.factory.factory.run_mechanical_verification",
                 side_effect=spy_rmv,
             ),
         ):

@@ -194,7 +194,7 @@ EXPECTED_EVENT_NAME_SPELLINGS: dict[str, int] = {
     # The architect's own JSON key (validation).
     "architect/decompose_reply.py": 1,
     # The SPEC_ISSUES_EVENT declaration, plus the FINDINGS_SUPERSEDED_EVENT
-    # declaration #233 added (kstrl/pipeline.py's own write now imports
+    # declaration #233 added (kstrl/pipeline/pipeline.py's own write now imports
     # the constant, so it folds to nothing here). Was 2 until #331 moved
     # JOURNAL_REPAIR_EVENT to appendio.py; evolution.py imports it now,
     # and an imported Name folds to nothing, which is why the count

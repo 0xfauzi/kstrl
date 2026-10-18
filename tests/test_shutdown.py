@@ -24,8 +24,8 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
-from kstrl.factory import run_factory
-from kstrl.factory_result import ComponentResult
+from kstrl.factory.factory import run_factory
+from kstrl.pipeline.factory_result import ComponentResult
 from kstrl.proc.proc import DeadlineStreamer, kill_active_process_groups
 from kstrl.proc.shutdown import StopController
 from kstrl.ui.plain import PlainUI
@@ -79,7 +79,7 @@ class TestFactoryShutdown:
 
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 side_effect=fake_component,
             ),
             patch("kstrl.git.git_diff.get_diff_content", return_value=""),
@@ -100,7 +100,7 @@ class TestFactoryShutdown:
         """The A1 fix guards the PREDICATE (run_is_clean reads `stopped`),
         but nothing else in the suite drove a real pre-set stop through the
         release block that reads `stopped` off the wiring at the call site
-        (kstrl/factory.py: `stopped = stop is not None and stop.is_set()`).
+        (kstrl/factory/factory.py: `stopped = stop is not None and stop.is_set()`).
         If that line stops reading the real stop (for example, hardcoded to
         False), run_is_clean never sees the stop, and the recorded reason
         silently changes from "run_stopped" to whatever the unfinished
@@ -118,7 +118,7 @@ class TestFactoryShutdown:
 
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 side_effect=fake_component,
             ),
             patch("kstrl.git.git_diff.get_diff_content", return_value=""),
@@ -163,7 +163,7 @@ class TestFactoryShutdown:
         buf = io.StringIO()
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 side_effect=slow_component,
             ),
             patch("kstrl.git.git_diff.get_diff_content", return_value=""),
@@ -194,7 +194,7 @@ class TestFactoryShutdown:
         result = ComponentResult("comp-a", success=True, iterations=1)
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 return_value=result,
             ),
             patch("kstrl.git.git_diff.get_diff_content", return_value=""),

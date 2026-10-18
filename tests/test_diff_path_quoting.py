@@ -139,7 +139,7 @@ EXPECTED_DIFF_HEADER_LITERALS = {
     "knowledge/knowledge.py": 1,
     "knowledge/knowledge_facts.py": 1,
     "verify/policy.py": 2,
-    "pr_body.py": 2,
+    "pipeline/pr_body.py": 2,
 }
 
 

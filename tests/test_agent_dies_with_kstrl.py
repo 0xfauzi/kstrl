@@ -30,7 +30,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.factory import run_factory
+from kstrl.factory.factory import run_factory
 from kstrl.proc.leash import NOT_A_GROUP_LEADER
 from kstrl.proc.proc import DEFAULT_TERM_GRACE_SECONDS, LEASH_PATH
 from kstrl.proc.procgroup import pid_is_alive

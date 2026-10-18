@@ -15,7 +15,7 @@ import textwrap
 from pathlib import Path
 
 from kstrl.config.config import KstrlConfig
-from kstrl.factory_config import FactoryConfig
+from kstrl.pipeline.factory_config import FactoryConfig
 from kstrl.plan.manifest import Component, Manifest
 from kstrl.review.security import SecurityConfig
 from kstrl.verify.verify_model import VerifyConfig

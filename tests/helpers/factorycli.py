@@ -23,8 +23,8 @@ from click.testing import CliRunner
 import kstrl.cli as cli_mod
 import kstrl.cli_factory as cli_factory_mod
 import kstrl.cli_loop as cli_loop_mod
-from kstrl.factory_config import FactoryConfig
-from kstrl.factory_result import FactoryResult
+from kstrl.pipeline.factory_config import FactoryConfig
+from kstrl.pipeline.factory_result import FactoryResult
 from kstrl.plan.manifest import Component, Manifest
 
 

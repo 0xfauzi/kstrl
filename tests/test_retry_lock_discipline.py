@@ -239,7 +239,7 @@ class TestRunLockRelease:
         CLI is meant to reach in ordinary use.
         """
         import kstrl.proc.factory_lock as factory_lock_mod
-        from kstrl.launch_record import option_argv
+        from kstrl.pipeline.launch_record import option_argv
 
         root, _before = _failed_storage(tmp_path)
         released = factory_lock_mod.acquire_run_lock(root, PlainUI(no_color=True), force=False)
@@ -351,7 +351,7 @@ class TestKsRetryChangesNothingBeforeItsGates:
         on a lock it has already released runs with no lock at all: that
         shows here as a free lock while the engineer runs.
         """
-        import kstrl.factory as factory_mod
+        import kstrl.factory.factory as factory_mod
         import kstrl.proc.factory_lock as factory_lock_mod
 
         root, _before = _failed_storage(tmp_path)
@@ -534,7 +534,7 @@ class TestApprovingAParkedMergeHoldsTheLockIntoTheDependentRun:
         the dependent, is what actually runs one, so its engineer is the
         probe.
         """
-        import kstrl.factory as factory_mod
+        import kstrl.factory.factory as factory_mod
         import kstrl.proc.factory_lock as factory_lock_mod
 
         root, env, _reviewed = park._parked_run(tmp_path)

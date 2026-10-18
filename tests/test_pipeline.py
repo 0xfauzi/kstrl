@@ -20,34 +20,34 @@ from typing import Any
 import pytest
 
 from kstrl.config.config import KstrlConfig
-from kstrl.context import IterationContext
 from kstrl.events import event_catalog
 from kstrl.events.event_catalog import Event, PhaseCompleted
 from kstrl.events.events import CallbackSink, EventBus, V1CompatSink
 from kstrl.events.observability import NotifyConfig, NotifyHooks, ProgressLog
 from kstrl.events.usage import UsageRecord, UsageTotals
-from kstrl.factory_agents import AdversarialAgentSelection
-from kstrl.factory_config import FactoryConfig
-from kstrl.factory_result import ComponentResult, FactoryResult
 from kstrl.git import git
 from kstrl.knowledge.knowledge import measure_fact_utilization
 from kstrl.knowledge.knowledge_facts import Fact, KnowledgeConfig
 from kstrl.owner.inbox import Inbox, InboxConfig, ItemKind
-from kstrl.pipeline import ComponentPipeline
-from kstrl.pipeline_delivery import CheckpointDecision
-from kstrl.pipeline_knowledge import FactUtilization
-from kstrl.pipeline_merge import PrDisposition
-from kstrl.pipeline_state import PipelineHooks
-from kstrl.pipeline_transitions import Transition
+from kstrl.pipeline.context import IterationContext
+from kstrl.pipeline.factory_agents import AdversarialAgentSelection
+from kstrl.pipeline.factory_config import FactoryConfig
+from kstrl.pipeline.factory_result import ComponentResult, FactoryResult
+from kstrl.pipeline.pipeline import ComponentPipeline
+from kstrl.pipeline.pipeline_delivery import CheckpointDecision
+from kstrl.pipeline.pipeline_knowledge import FactUtilization
+from kstrl.pipeline.pipeline_merge import PrDisposition
+from kstrl.pipeline.pipeline_state import PipelineHooks
+from kstrl.pipeline.pipeline_transitions import Transition
+from kstrl.pipeline.pr import MergeConfirmation, PrOutcome
+from kstrl.pipeline.runenvelope import RunEnvelope
+from kstrl.pipeline.runstate import RunState
 from kstrl.plan.findings import Finding
 from kstrl.plan.manifest import Component, ComponentStatus, Manifest
 from kstrl.plan.scope import RunScope
-from kstrl.pr import MergeConfirmation, PrOutcome
 from kstrl.proc.worktree_sweep import WorktreeSweep
 from kstrl.review.review import ReviewConcern, ReviewResult
 from kstrl.review.security import SecurityConfig, SecurityResult
-from kstrl.runenvelope import RunEnvelope
-from kstrl.runstate import RunState
 from kstrl.ui.plain import PlainUI
 from kstrl.verify.failure_signatures import category_for_check
 from kstrl.verify.verify_model import CheckResult, VerificationResult, VerifyConfig
@@ -1077,9 +1077,9 @@ class TestCheckpointAndPrTransitions:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.setattr("kstrl.pr.is_gh_available", lambda: True)
+        monkeypatch.setattr("kstrl.pipeline.pr.is_gh_available", lambda: True)
         monkeypatch.setattr(
-            "kstrl.pr.push_create_and_merge_pr",
+            "kstrl.pipeline.pr.push_create_and_merge_pr",
             lambda *a, **k: PrOutcome(
                 pushed=True,
                 pr_number=7,
@@ -1114,9 +1114,9 @@ class TestCheckpointAndPrTransitions:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.setattr("kstrl.pr.is_gh_available", lambda: True)
+        monkeypatch.setattr("kstrl.pipeline.pr.is_gh_available", lambda: True)
         monkeypatch.setattr(
-            "kstrl.pr.push_create_and_merge_pr",
+            "kstrl.pipeline.pr.push_create_and_merge_pr",
             lambda *a, **k: PrOutcome(
                 pushed=False,
                 merged=False,
@@ -1146,9 +1146,9 @@ class TestCheckpointAndPrTransitions:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.setattr("kstrl.pr.is_gh_available", lambda: True)
+        monkeypatch.setattr("kstrl.pipeline.pr.is_gh_available", lambda: True)
         monkeypatch.setattr(
-            "kstrl.pr.push_create_and_merge_pr",
+            "kstrl.pipeline.pr.push_create_and_merge_pr",
             lambda *a, **k: PrOutcome(
                 pushed=True,
                 pr_number=8,
@@ -1177,7 +1177,7 @@ class TestCheckpointAndPrTransitions:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.setattr("kstrl.pr.is_gh_available", lambda: False)
+        monkeypatch.setattr("kstrl.pipeline.pr.is_gh_available", lambda: False)
         pipeline, manifest, result, _ = _make_pipeline(
             tmp_path,
             config=self._pr_config(),
@@ -1216,9 +1216,9 @@ class TestMergeConflictDoctrine:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.setattr("kstrl.pr.is_gh_available", lambda: True)
+        monkeypatch.setattr("kstrl.pipeline.pr.is_gh_available", lambda: True)
         monkeypatch.setattr(
-            "kstrl.pr.push_create_and_merge_pr",
+            "kstrl.pipeline.pr.push_create_and_merge_pr",
             lambda *a, **k: self._conflict_outcome(),
         )
         closed: list[tuple[int, str]] = []
@@ -1227,7 +1227,7 @@ class TestMergeConflictDoctrine:
             closed.append((pr_number, branch))
             return None
 
-        monkeypatch.setattr("kstrl.pr.close_pr_for_rerun", fake_close)
+        monkeypatch.setattr("kstrl.pipeline.pr.close_pr_for_rerun", fake_close)
         pipeline, manifest, result, _ = _make_pipeline(
             tmp_path,
             config=self._pr_config(max_retries=1, use_worktrees=True),
@@ -1265,13 +1265,13 @@ class TestMergeConflictDoctrine:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.setattr("kstrl.pr.is_gh_available", lambda: True)
+        monkeypatch.setattr("kstrl.pipeline.pr.is_gh_available", lambda: True)
         monkeypatch.setattr(
-            "kstrl.pr.push_create_and_merge_pr",
+            "kstrl.pipeline.pr.push_create_and_merge_pr",
             lambda *a, **k: self._conflict_outcome(),
         )
         monkeypatch.setattr(
-            "kstrl.pr.close_pr_for_rerun",
+            "kstrl.pipeline.pr.close_pr_for_rerun",
             lambda *a: None,
         )
         pipeline, manifest, result, _ = _make_pipeline(
@@ -1295,13 +1295,13 @@ class TestMergeConflictDoctrine:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.setattr("kstrl.pr.is_gh_available", lambda: True)
+        monkeypatch.setattr("kstrl.pipeline.pr.is_gh_available", lambda: True)
         monkeypatch.setattr(
-            "kstrl.pr.push_create_and_merge_pr",
+            "kstrl.pipeline.pr.push_create_and_merge_pr",
             lambda *a, **k: self._conflict_outcome(),
         )
         monkeypatch.setattr(
-            "kstrl.pr.close_pr_for_rerun",
+            "kstrl.pipeline.pr.close_pr_for_rerun",
             lambda *a: "gh pr close #7 failed",
         )
         pipeline, manifest, _, _ = _make_pipeline(
@@ -1353,9 +1353,9 @@ class TestMergePendingRepoll:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.setattr("kstrl.pr.is_gh_available", lambda: True)
+        monkeypatch.setattr("kstrl.pipeline.pr.is_gh_available", lambda: True)
         monkeypatch.setattr(
-            "kstrl.pr.wait_for_merge",
+            "kstrl.pipeline.pr.wait_for_merge",
             lambda *a, **k: MergeConfirmation(state="merged"),
         )
         monkeypatch.setattr(
@@ -1378,9 +1378,9 @@ class TestMergePendingRepoll:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.setattr("kstrl.pr.is_gh_available", lambda: True)
+        monkeypatch.setattr("kstrl.pipeline.pr.is_gh_available", lambda: True)
         monkeypatch.setattr(
-            "kstrl.pr.wait_for_merge",
+            "kstrl.pipeline.pr.wait_for_merge",
             lambda *a, **k: MergeConfirmation(state="closed"),
         )
         pipeline, manifest, result = self._parked(tmp_path)
@@ -1403,9 +1403,9 @@ class TestMergePendingRepoll:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.setattr("kstrl.pr.is_gh_available", lambda: True)
+        monkeypatch.setattr("kstrl.pipeline.pr.is_gh_available", lambda: True)
         monkeypatch.setattr(
-            "kstrl.pr.wait_for_merge",
+            "kstrl.pipeline.pr.wait_for_merge",
             lambda *a, **k: MergeConfirmation(state="pending"),
         )
         pipeline, manifest, result = self._parked(tmp_path)
@@ -1466,7 +1466,7 @@ class TestDistillPlacement:
         after the review gates and BEFORE the PR step, so the distilled
         diff is the component's true delta."""
         calls: list[str] = []
-        monkeypatch.setattr("kstrl.pr.is_gh_available", lambda: True)
+        monkeypatch.setattr("kstrl.pipeline.pr.is_gh_available", lambda: True)
 
         def _pr(*args: Any, **kwargs: Any) -> PrOutcome:
             calls.append("pr")
@@ -1477,7 +1477,7 @@ class TestDistillPlacement:
                 merged=True,
             )
 
-        monkeypatch.setattr("kstrl.pr.push_create_and_merge_pr", _pr)
+        monkeypatch.setattr("kstrl.pipeline.pr.push_create_and_merge_pr", _pr)
         pipeline, manifest, _, _ = _make_pipeline(
             tmp_path,
             config=_factory_config(create_prs=True),
@@ -2818,7 +2818,7 @@ class TestRunStateIsAliasedNotCopied:
                 setattr(pipeline, name, None)
 
     def test_the_container_is_keyword_only_and_not_frozen(self) -> None:
-        """The two rules in kstrl/runstate.py that nothing else asserts.
+        """The two rules in kstrl/pipeline/runstate.py that nothing else asserts.
 
         kw_only because three fields are dicts and two of those are
         ``dict[str, ...]``-shaped, so mypy --strict accepts a positional

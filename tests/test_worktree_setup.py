@@ -27,9 +27,9 @@ import pytest
 
 from kstrl.acceptance.contract import ContractConfig, ContractMode
 from kstrl.config.config import KstrlConfig
-from kstrl.factory import run_factory
-from kstrl.factory_config import FactoryConfig
-from kstrl.factory_result import FactoryResult
+from kstrl.factory.factory import run_factory
+from kstrl.pipeline.factory_config import FactoryConfig
+from kstrl.pipeline.factory_result import FactoryResult
 from kstrl.plan.manifest import Component, ComponentStatus, Manifest
 from kstrl.proc.timeout import TimeoutConfig
 from kstrl.ui.plain import PlainUI

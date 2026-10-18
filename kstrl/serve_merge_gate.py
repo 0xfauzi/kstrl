@@ -152,7 +152,7 @@ def _merge_gate(
     of config fields the predicate reads so a fourth arm cannot make this
     sentence wrong in silence.
     """
-    from kstrl.factory_config import FactoryConfig, merge_gate_unreachable_warning
+    from kstrl.pipeline import FactoryConfig, merge_gate_unreachable_warning
 
     if not pause_before_pr_merge:
         return MergeGate(pause_before_pr_merge=False, notes=notes)

@@ -39,24 +39,24 @@ from kstrl.architect.decompose_reply import _generate_component_prd
 from kstrl.config.config import KstrlConfig, component_progress_path, relative_to_root
 from kstrl.events.events import EventBus, V1CompatSink
 from kstrl.events.observability import NotifyConfig, NotifyHooks, ProgressLog
-from kstrl.factory import run_factory
-from kstrl.factory_agents import AdversarialAgentSelection
-from kstrl.factory_config import FactoryConfig
-from kstrl.factory_result import ComponentResult, FactoryResult
+from kstrl.factory.factory import run_factory
 from kstrl.git import git_tree
 from kstrl.knowledge.knowledge_facts import KnowledgeConfig
 from kstrl.loop.loop import run_loop
 from kstrl.owner.interaction import PromptRequest, PromptResponse
-from kstrl.pipeline import ComponentPipeline
-from kstrl.pipeline_state import PipelineHooks
+from kstrl.pipeline.factory_agents import AdversarialAgentSelection
+from kstrl.pipeline.factory_config import FactoryConfig
+from kstrl.pipeline.factory_result import ComponentResult, FactoryResult
+from kstrl.pipeline.pipeline import ComponentPipeline
+from kstrl.pipeline.pipeline_state import PipelineHooks
+from kstrl.pipeline.runenvelope import RunEnvelope
+from kstrl.pipeline.runstate import RunState
 from kstrl.plan.manifest import Component, Manifest
 from kstrl.plan.prd import PRD
 from kstrl.plan.scope import ComponentScope, RunScope
 from kstrl.proc.worktree_sweep import WorktreeSweep
 from kstrl.review.review import ReviewResult
 from kstrl.review.security import SecurityResult
-from kstrl.runenvelope import RunEnvelope
-from kstrl.runstate import RunState
 from kstrl.ui.plain import PlainUI
 from kstrl.verify.guards import enforce_allowed_paths, path_is_allowed
 from kstrl.verify.verify import run_mechanical_verification
@@ -509,7 +509,7 @@ class TestProgrammaticallySetProgressFileIsHonored:
 
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 side_effect=fake_component,
             ),
             patch("kstrl.git.git_diff.get_diff_content", return_value=""),
@@ -585,7 +585,7 @@ class TestFactoryWiring:
 
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 side_effect=fake_component,
             ),
             patch("kstrl.git.git_diff.get_diff_content", return_value=""),
@@ -622,7 +622,7 @@ class TestFactoryWiring:
         """A direct caller that omits progress_file_str gets the
         in-scope path too: the safe path is the default, not an opt-in.
         """
-        from kstrl.factory_worker import _run_component
+        from kstrl.factory.factory_worker import _run_component
         from kstrl.loop.loop import LoopResult
 
         _setup_project(tmp_path, [COMPONENT_ID])
@@ -1012,7 +1012,7 @@ def _worker_write_path(
     turns that into the ``KstrlConfig.progress_file`` the loop hands to
     the agent as ``$progress_path``.
     """
-    from kstrl.factory_worker import _run_component
+    from kstrl.factory.factory_worker import _run_component
     from kstrl.loop.loop import LoopResult
 
     seen: list[KstrlConfig] = []

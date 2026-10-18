@@ -67,8 +67,8 @@ from tests.test_check_name_enrolment import SIGNATURE_CONTAINER_SUFFIX
 EXPECTED_SIGNATURE_CONTAINER_SITES: dict[tuple[str, str], int] = {
     # The recorder itself, and its three callers: fail, retry_or_fail
     # and _fail_pr_flow.
-    ("kstrl/pipeline_merge.py", "self._record_failure_signatures"): 1,
-    ("kstrl/pipeline_transitions.py", "self._record_failure_signatures"): 2,
+    ("kstrl/pipeline/pipeline_merge.py", "self._record_failure_signatures"): 1,
+    ("kstrl/pipeline/pipeline_transitions.py", "self._record_failure_signatures"): 2,
     # The mapping, under every spelling it is reached by. #193 moved it
     # into RunState: the pipeline's ``self.component_failure_signatures``
     # is now a read-only property over ``self.run_state...``, which is
@@ -77,16 +77,16 @@ EXPECTED_SIGNATURE_CONTAINER_SITES: dict[tuple[str, str], int] = {
     # rather than through a local of its own. The chokepoint itself is
     # unchanged: a check name still reaches the journal through this one
     # mapping or it does not reach it at all.
-    ("kstrl/pipeline_merge.py", "self.component_failure_signatures"): 2,
-    ("kstrl/pipeline_transitions.py", "self.component_failure_signatures"): 2,
-    ("kstrl/pipeline_attempt.py", "self.component_failure_signatures"): 4,
-    ("kstrl/pipeline_state.py", "self.run_state.component_failure_signatures"): 1,
-    ("kstrl/factory_acceptance.py", "run_state.component_failure_signatures"): 2,
+    ("kstrl/pipeline/pipeline_merge.py", "self.component_failure_signatures"): 2,
+    ("kstrl/pipeline/pipeline_transitions.py", "self.component_failure_signatures"): 2,
+    ("kstrl/pipeline/pipeline_attempt.py", "self.component_failure_signatures"): 4,
+    ("kstrl/pipeline/pipeline_state.py", "self.run_state.component_failure_signatures"): 1,
+    ("kstrl/factory/factory_acceptance.py", "run_state.component_failure_signatures"): 2,
     # The journal write moved to the finish steps (#776 B3), which reach
     # the same mapping through the run context's reference.
-    ("kstrl/factory_summary.py", "ctx.run_state.component_failure_signatures"): 1,
+    ("kstrl/factory/factory_summary.py", "ctx.run_state.component_failure_signatures"): 1,
     # The declaration, which is where the mapping now lives.
-    ("kstrl/runstate.py", "component_failure_signatures"): 1,
+    ("kstrl/pipeline/runstate.py", "component_failure_signatures"): 1,
     # The reader: record_run takes the mapping as an argument and writes
     # each component's list into the journal entry.
     ("kstrl/learning/evolution.py", "failure_signatures"): 4,
@@ -152,7 +152,10 @@ class TestTheChokepointIsInventoried:
         entry points and ``_fail_pr_flow``."""
         callers = sum(
             EXPECTED_SIGNATURE_CONTAINER_SITES[(module, "self._record_failure_signatures")]
-            for module in ("kstrl/pipeline_merge.py", "kstrl/pipeline_transitions.py")
+            for module in (
+                "kstrl/pipeline/pipeline_merge.py",
+                "kstrl/pipeline/pipeline_transitions.py",
+            )
         )
         assert callers == 3, (
             "the failure-signature recorder has a different number of "

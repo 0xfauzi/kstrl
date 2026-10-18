@@ -42,10 +42,10 @@ import pytest
 from kstrl.config.config import KstrlConfig
 from kstrl.events.event_catalog import ComponentScopeResolved, Event
 from kstrl.events.events import CallbackSink, EventBus
-from kstrl.factory import run_factory
-from kstrl.factory_config import FactoryConfig
-from kstrl.factory_preflight import _record_run_scope
+from kstrl.factory.factory import run_factory
+from kstrl.factory.factory_preflight import _record_run_scope
 from kstrl.loop.loop import LoopResult
+from kstrl.pipeline.factory_config import FactoryConfig
 from kstrl.plan.manifest import Component, Manifest
 from kstrl.plan.scope import ComponentScope, RunScope
 from kstrl.ui.plain import PlainUI
@@ -106,7 +106,7 @@ def _run(
 
     with (
         patch("kstrl.loop.run_loop", side_effect=fake_run_loop),
-        patch("kstrl.factory.run_mechanical_verification", side_effect=fake_verify),
+        patch("kstrl.factory.factory.run_mechanical_verification", side_effect=fake_verify),
         patch("kstrl.git.git_diff.get_diff_content", return_value=""),
     ):
         return run_factory(

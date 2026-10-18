@@ -301,4 +301,6 @@ class TestTheWalkerDetects:
 
 def test_the_corpus_is_the_package() -> None:
     labels = {where for where, _tree, _module in _production_trees()}
-    assert "factory.py" in labels and "learning/autonomy.py" not in labels, sorted(labels)[:5]
+    assert "factory/factory.py" in labels and "learning/autonomy.py" not in labels, sorted(labels)[
+        :5
+    ]

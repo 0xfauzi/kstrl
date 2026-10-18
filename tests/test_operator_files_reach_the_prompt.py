@@ -4,7 +4,7 @@ R10.9 review round 1, should-fix 3. ``OperatorFileKind`` and ``_rows``
 each carried a sentence saying a new row reached the parent's notice,
 ``KstrlConfig.validate`` AND the worker's block "with no edit below this
 line". Two of the three are true. The third is not: ``_run_component``
-in ``kstrl/factory_worker.py`` names each kind by hand, so a third row would be
+in ``kstrl/factory/factory_worker.py`` names each kind by hand, so a third row would be
 validated, warned about on a typo, and injected into no prompt at all,
 with nothing in the suite failing. ``tests/test_operator_file_kinds.py``
 is parametrized over ``OPERATOR_FILES`` and reaches only the loader, and
@@ -87,7 +87,9 @@ LOADER = "kstrl.project.operator_context.load_operator_file"
 SPEC = "kstrl.project.operator_context.operator_file_spec"
 
 #: The module that owns the prompt order. One file, named once.
-WORKER = "factory_worker.py"
+WORKER = "factory/factory_worker.py"
+#: Its dotted name, which the walk uses to resolve a relative import.
+WORKER_MODULE = "kstrl." + WORKER.removesuffix(".py").replace("/", ".")
 
 #: The function in it that builds the prompt, and the local it builds the
 #: prompt ORDER in. Both named once, so the guard's failure says which
@@ -107,7 +109,7 @@ ORDER_LOCAL = "parts"
 #:
 #: Each row is ``(anchor, what to do)``. The anchor is the identifier a
 #: reader can grep for, which is also what the docstring test looks up.
-#: Eight are in ``kstrl/factory_worker.py``; the last is in
+#: Eight are in ``kstrl/factory/factory_worker.py``; the last is in
 #: ``kstrl/feature_cmd.py`` (#599).
 WORKER_EDITS: tuple[tuple[str, str], ...] = (
     ("import", "the import of the kind constant"),
@@ -153,7 +155,7 @@ KIND_NAMES: dict[str, str] = {
 #: is about. A fourth would be a third operator file reaching a prompt,
 #: or the same file reaching one twice.
 EXPECTED_LOADER_SPELLINGS: dict[str, int] = {
-    "factory_worker.py": 3,
+    "factory/factory_worker.py": 3,
     "project/operator_context.py": 1,
     # #863 M3: the import and the ``__all__`` row of the package interface,
     # which ``factory_worker.py`` imports the loader through.
@@ -168,7 +170,7 @@ EXPECTED_LOADER_SPELLINGS: dict[str, int] = {
 #: :meth:`TestEveryRowReachesAPrompt.
 #: test_every_module_that_names_context_prefix_is_known`.
 EXPECTED_PREFIX_SPELLINGS: dict[str, int] = {
-    "factory_worker.py": 3,
+    "factory/factory_worker.py": 3,
     "feature_cmd.py": 3,
     "loop/loop.py": 8,
 }
@@ -206,7 +208,7 @@ def prompt_sites(tree: ast.Module, module: str) -> tuple[dict[str, int], tuple[s
 
 
 def worker_source() -> ast.Module:
-    """``kstrl/factory_worker.py``, parsed."""
+    """``kstrl/factory/factory_worker.py``, parsed."""
     return parsed(KSTRL_PACKAGE / WORKER)
 
 
@@ -441,7 +443,7 @@ class TestEveryRowReachesAPrompt:
         """Layer 2, and it is the LOADING half only.
 
         One ``load_operator_file`` call per declared kind in
-        ``kstrl/factory_worker.py``, and no kind that is not declared. Kept
+        ``kstrl/factory/factory_worker.py``, and no kind that is not declared. Kept
         beside layer 2b rather than replaced by it, because a row can
         skip either edit: this one fails when the call is missing, and
         layer 2b fails when the call is there and the block reaches no
@@ -452,7 +454,7 @@ class TestEveryRowReachesAPrompt:
         not bought its edits fails here or next door, naming the key that
         is missing.
         """
-        counts, unresolved = prompt_sites(worker_source(), f"kstrl.{WORKER[:-3]}")
+        counts, unresolved = prompt_sites(worker_source(), WORKER_MODULE)
 
         assert unresolved == (), (
             f"a load_operator_file call in {WORKER} whose kind this guard could not "
@@ -478,7 +480,7 @@ class TestEveryRowReachesAPrompt:
         once, and the two rows that exist today are held only by spine
         tests that name them by hand, which a third row would not have.
         """
-        counts, unresolved = delivered_kinds(worker_source(), f"kstrl.{WORKER[:-3]}")
+        counts, unresolved = delivered_kinds(worker_source(), WORKER_MODULE)
 
         assert unresolved == (), (
             f"this guard could not read the prompt order in {WORKER}::{WORKER_SCOPE} "
@@ -531,7 +533,7 @@ class TestEveryRowReachesAPrompt:
             worker_source(),
             {LOADER},
             where=label(KSTRL_PACKAGE / WORKER),
-            module=f"kstrl.{WORKER[:-3]}",
+            module=WORKER_MODULE,
         )
 
         assert found.undecided == (), (

@@ -27,9 +27,9 @@ from unittest.mock import patch
 import pytest
 
 from kstrl.config.config import KstrlConfig
-from kstrl.factory import run_factory
-from kstrl.factory_config import FactoryConfig
-from kstrl.factory_result import ComponentResult
+from kstrl.factory.factory import run_factory
+from kstrl.pipeline.factory_config import FactoryConfig
+from kstrl.pipeline.factory_result import ComponentResult
 from kstrl.plan.manifest import Component, Manifest
 from kstrl.project import operator_context
 from kstrl.project.operator_context import GOLDEN_PATTERNS, MEMORY
@@ -141,7 +141,7 @@ def _run(
         return ComponentResult(str(args[0]), success=True, iterations=1)
 
     with (
-        patch("kstrl.factory._run_component", side_effect=done),
+        patch("kstrl.factory.factory._run_component", side_effect=done),
         patch("kstrl.git.git_diff.get_diff_content", return_value=""),
     ):
         run_factory(_manifest(component_ids), factory_config, base, ui, root)

@@ -446,8 +446,8 @@ EXPECTED_MEASUREMENT_READS: dict[str, int] = {
     "learning/journal_rows.py: iteration_criterion_verdict: r.measured": 1,
     "learning/journal_reads.py: JournalReads.iteration_criterion_lines: reading.measured": 1,
     # Not CheckResult.measured. FactUtilization's own field, R8.
-    "pipeline_knowledge.py: FactUtilization.to_dict: self.measured": 1,
-    "pipeline_knowledge.py: KnowledgePhase._store_fact_utilization: util.measured": 2,
+    "pipeline/pipeline_knowledge.py: FactUtilization.to_dict: self.measured": 1,
+    "pipeline/pipeline_knowledge.py: KnowledgePhase._store_fact_utilization: util.measured": 2,
 }
 
 

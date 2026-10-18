@@ -46,10 +46,10 @@ from unittest.mock import patch
 import pytest
 
 from kstrl.events.observability import NotifyConfig
-from kstrl.factory import run_factory
-from kstrl.factory_result import ComponentResult
+from kstrl.factory.factory import run_factory
 from kstrl.learning.autonomy import AutonomyLevel, AutonomyState
 from kstrl.owner.inbox import Inbox, InboxConfig, ItemKind
+from kstrl.pipeline.factory_result import ComponentResult
 from kstrl.serve import serve_cycle
 from kstrl.serve_config import ServeConfig
 from kstrl.serve_spend import SpendLedger
@@ -260,7 +260,7 @@ def test_pipeline_fires_once_per_kind_and_not_on_a_repeat(tmp_path: Path) -> Non
         return ComponentResult(component_id, success=False, error="boom")
 
     for expected_occurrences in (1, 2):
-        with patch("kstrl.factory._run_component", side_effect=fake_run):
+        with patch("kstrl.factory.factory._run_component", side_effect=fake_run):
             run_factory(
                 _two_component_manifest(),
                 config,
@@ -439,13 +439,13 @@ FILING_PATHS = {
     "architect/decisions.py::open_escalation_item::add": (
         "test_architect_escalation_fires_the_inbox_hook"
     ),
-    "factory_autonomy.py::_open_health_breach_items::add": (
+    "factory/factory_autonomy.py::_open_health_breach_items::add": (
         "test_health_breach_is_silent_and_its_demotion_is_pushed"
     ),
-    "plan_gate.py::_record::add": (
+    "factory/plan_gate.py::_record::add": (
         "test_a_plan_decided_at_the_prompt_pages_nobody_and_a_parked_one_pages_once"
     ),
-    "pipeline_inbox.py::InboxDesk._inbox_add::add": (
+    "pipeline/pipeline_inbox.py::InboxDesk._inbox_add::add": (
         "test_pipeline_fires_once_per_kind_and_not_on_a_repeat"
     ),
     "serve_settle.py::_file_inbox_item::add": (

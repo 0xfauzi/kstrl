@@ -28,7 +28,7 @@ import pytest
 from kstrl.architect.decompose import decompose_spec
 from kstrl.git.git import merge_branch
 from kstrl.git.git_diff import get_diff_names
-from kstrl.pr import push_branch
+from kstrl.pipeline.pr import push_branch
 from kstrl.ui.plain import PlainUI
 from tests.helpers import gitrepo
 from tests.helpers.before_spend import no_base_check

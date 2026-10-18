@@ -39,16 +39,16 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl import factory_worker
 from kstrl.config.config import KstrlConfig
 from kstrl.events.events import RunPaths
-from kstrl.factory import run_factory
-from kstrl.factory_config import FactoryConfig
-from kstrl.factory_result import ComponentResult
+from kstrl.factory import factory_worker
+from kstrl.factory.factory import run_factory
 from kstrl.io.statedir import plan_prd_path
+from kstrl.pipeline.factory_config import FactoryConfig
+from kstrl.pipeline.factory_result import ComponentResult
+from kstrl.pipeline.runstate import RunState
 from kstrl.plan.manifest import Component, Manifest
 from kstrl.proc.rung import HostFallback
-from kstrl.runstate import RunState
 from kstrl.ui.plain import PlainUI
 from kstrl.verify.verify_model import VerifyConfig
 from tests.helpers.stack_confirmation import in_process_stack
@@ -202,9 +202,9 @@ def _submitted(
 
     _CapturingPool.seen = {}
     with (
-        patch("kstrl.factory._run_component", side_effect=capture),
-        patch("kstrl.factory.ProcessPoolExecutor", _CapturingPool),
-        patch("kstrl.factory._setup_worktree", return_value=root),
+        patch("kstrl.factory.factory._run_component", side_effect=capture),
+        patch("kstrl.factory.factory.ProcessPoolExecutor", _CapturingPool),
+        patch("kstrl.factory.factory._setup_worktree", return_value=root),
         patch("kstrl.git.git_diff.get_diff_content", return_value=""),
     ):
         run_factory(_manifest(plan_id), factory_config, base, PlainUI(no_color=True), root)

@@ -23,11 +23,11 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.factory import run_factory
-from kstrl.factory_config import FactoryConfig
+from kstrl.factory.factory import run_factory
 from kstrl.learning.autonomy import AutonomyLevel, AutonomyState
 from kstrl.owner.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.owner.interaction import PromptRequest, PromptResponse
+from kstrl.pipeline.factory_config import FactoryConfig
 from kstrl.plan.manifest import Manifest
 from kstrl.review.review import CriterionReview, ReviewResult
 from kstrl.ui.plain import PlainUI
@@ -103,7 +103,7 @@ def _stubs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GH_BODY", str(tmp_path / "pr-body.md"))
     monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
     monkeypatch.delenv("KSTRL_AUTONOMY_ENABLED", raising=False)
-    monkeypatch.setattr("kstrl.factory.run_review", lambda *a, **k: PASS)
+    monkeypatch.setattr("kstrl.factory.factory.run_review", lambda *a, **k: PASS)
 
 
 def _factory(

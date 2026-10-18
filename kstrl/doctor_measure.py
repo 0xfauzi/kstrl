@@ -23,8 +23,8 @@ from typing import TYPE_CHECKING, Any
 
 from kstrl.acceptance import Replay, prove_zones, replay_stack
 from kstrl.doctor import STATUS_FAIL, STATUS_OK, STATUS_WARN, DoctorCheck, _not_evaluated
-from kstrl.factory_config import FactoryConfig
 from kstrl.git import git_base
+from kstrl.pipeline import FactoryConfig
 from kstrl.proc import HostFallback, ProvenRung, Rung, limit_seconds, release
 from kstrl.project import (
     REPLAY_BOUNDARY_REFUSED,

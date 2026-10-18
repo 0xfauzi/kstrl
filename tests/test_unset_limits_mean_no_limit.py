@@ -37,14 +37,14 @@ import pytest
 from kstrl.acceptance.contract import ContractConfig, run_contract_testing
 from kstrl.config.config import KstrlConfig
 from kstrl.events.usage import UsageRecord, UsageTotals
-from kstrl.factory import run_factory
-from kstrl.factory_config import FactoryConfig
-from kstrl.factory_result import ComponentResult
+from kstrl.factory.factory import run_factory
 from kstrl.git import git_base
 from kstrl.knowledge.knowledge_distill import distill_facts
 from kstrl.knowledge.knowledge_facts import KnowledgeConfig
 from kstrl.loop import loop as loop_mod
 from kstrl.loop.loop import COMPLETION_MARKER, LoopResult, run_loop
+from kstrl.pipeline.factory_config import FactoryConfig
+from kstrl.pipeline.factory_result import ComponentResult
 from kstrl.plan.manifest import Component, Manifest
 from kstrl.proc.timeout import TimeoutConfig
 from kstrl.review.review import ReviewMode, run_review
@@ -504,7 +504,7 @@ def _factory_run(root: Path, config: FactoryConfig, usage: UsageTotals | None) -
     success = ComponentResult("comp-a", success=True, iterations=1, usage=usage or UsageTotals())
     buffer = io.StringIO()
     with (
-        patch("kstrl.factory._run_component", return_value=success),
+        patch("kstrl.factory.factory._run_component", return_value=success),
         patch("kstrl.git.git_diff.get_diff_content", return_value=""),
     ):
         result = run_factory(manifest, config, base, PlainUI(no_color=True, file=buffer), root)

@@ -70,7 +70,7 @@ ks run 25
 
 **Files to modify**:
 - `kstrl/cli.py`: Rewrite `run` command to build manifest and call `run_factory`
-- `kstrl/factory.py`: Support `use_worktrees=False` with `max_parallel=1` (already works, just needs testing)
+- `kstrl/factory/factory.py`: Support `use_worktrees=False` with `max_parallel=1` (already works, just needs testing)
 - `kstrl/plan/manifest.py`: Add `Manifest.from_prd(prd_path, branch)` class method for single-component manifests
 
 **Risks**:
@@ -235,7 +235,7 @@ The scaffold script runs before the agent and can:
 
 **Files to modify**:
 - `kstrl/verify/verify.py`: Each `check_*` function returns structured `CheckResult` with parsed details instead of raw output lines
-- `kstrl/context.py`: `format_for_prompt` uses structured data to generate targeted fix suggestions
+- `kstrl/pipeline/context.py`: `format_for_prompt` uses structured data to generate targeted fix suggestions
 - New: `kstrl/parsers.py` for pytest, mypy, ruff output parsing
 
 **Configuration** (`kstrl.toml`):

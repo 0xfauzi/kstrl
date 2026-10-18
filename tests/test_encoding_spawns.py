@@ -62,7 +62,7 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     "doctor.py": 3,
     # 14: #624 moved the scaffold's `subprocess.run` out to `worktree_setup.py`.
     # #776 F2 moves all of them to `factory_worktrees.py`.
-    "factory_worktrees.py": 13,
+    "factory/factory_worktrees.py": 13,
     # 64: 58 after #435, +2 for #465's `branch_sha`, +2 for #459's `ignored_paths`,
     # +2 for #500's `tracked_files_at`, +2 for #626's `listed_files`.
     # 70: #630's git.read_blob adds two subprocess.run and two
@@ -83,12 +83,12 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     # #700: the import, and `TimeoutExpired` from `run_scrubbed`.
     "acceptance/isolation.py": 2,
     "events/observability.py": 5,
-    "pr.py": 18,
+    "pipeline/pr.py": 18,
     "git/pr_state.py": 5,
     "proc/procdispose.py": 10,
     "proc/procgroup.py": 4,
     "proc/procgroup_listing.py": 6,
-    "retry_plan.py": 5,
+    "factory/retry_plan.py": 5,
     # 15: #776 V1 moved `run_scrubbed` and `start_scrubbed` here from
     # `verify.py`, with their `subprocess` spellings (see `verify.py` below).
     "proc/scrubbed_run.py": 15,
@@ -126,7 +126,7 @@ EXPECTED_TEXT_MODE_SPAWNS: dict[str, int] = {
     # 5: #566 moved the fresh-retry reset from a bytes-mode `git branch -D`
     # to a text-mode `git worktree add -B`. #776 F2 moves them to
     # `factory_worktrees.py`.
-    "factory_worktrees.py": 5,
+    "factory/factory_worktrees.py": 5,
     # 26: 23 after #435, +1 for #465's `branch_sha`, +1 for #459's `ignored_paths`,
     # +1 for #500's `tracked_files_at`, +1 for #626's `listed_files`.
     # 28: +1 for #696's `status_entries`. 25: #696 slice 6 deletes
@@ -141,10 +141,10 @@ EXPECTED_TEXT_MODE_SPAWNS: dict[str, int] = {
     "git/git_diff.py": 3,
     "git/git_tree.py": 7,
     "intake_gh.py": 1,
-    "pr.py": 9,
+    "pipeline/pr.py": 9,
     "git/pr_state.py": 2,
     "proc/procgroup_listing.py": 1,
-    "retry_plan.py": 1,
+    "factory/retry_plan.py": 1,
     "serve_process.py": 1,
     "io/statedir.py": 1,
 }
@@ -157,11 +157,12 @@ EXPECTED_TEXT_MODE_SPAWNS: dict[str, int] = {
 EXPECTED_CLEARED_SPAWNS: tuple[str, ...] = (
     "agents/codex.py subprocess.run(['codex', 'exec', '--help'], check=False, stdout=subpro",
     # codespell:ignore-next-line
-    "factory_worktrees.py subprocess.run(['git', 'branch', '-D', branch], cwd=root_dir, capture_",
-    "factory_worktrees.py subprocess.run(['git', 'worktree', 'add', '-B', branch_name, str(workt",
-    "factory_worktrees.py subprocess.run(['git', 'worktree', 'add', str(worktree_path), '-b', br",
-    "factory_worktrees.py subprocess.run(['git', 'worktree', 'add', str(worktree_path), branch_n",
-    "factory_worktrees.py subprocess.run(['git', 'worktree', 'list', '--porcelain', '-z'], cwd=r",
+    "factory/factory_worktrees.py subprocess.run(['git', 'branch', '-D', branch], cwd=root_dir, capture_",  # noqa: E501
+    "factory/factory_worktrees.py subprocess.run(['git', 'worktree', 'add', '-B', branch_name, str(workt",  # noqa: E501
+    "factory/factory_worktrees.py subprocess.run(['git', 'worktree', 'add', str(worktree_path), '-b', br",  # noqa: E501
+    "factory/factory_worktrees.py subprocess.run(['git', 'worktree', 'add', str(worktree_path), branch_n",  # noqa: E501
+    "factory/factory_worktrees.py subprocess.run(['git', 'worktree', 'list', '--porcelain', '-z'], cwd=r",  # noqa: E501
+    "factory/retry_plan.py subprocess.run(['git', 'branch', '-D', failed_branch], cwd=root_dir, c",
     # codespell:ignore-next-line
     "git/git.py subprocess.run(['git', 'checkout', '-b', branch], cwd=cwd, capture_out",
     "git/git.py subprocess.run(['git', 'checkout', branch, '--'], cwd=cwd, capture_out",
@@ -192,15 +193,14 @@ EXPECTED_CLEARED_SPAWNS: tuple[str, ...] = (
     "intake_gh.py subprocess.run(['gh', *args], cwd=str(cwd) if cwd else None, capture_o",
     "io/statedir.py subprocess.run(['git', '-C', str(root_dir), 'remote', 'get-url', 'orig",
     "loop/breaker.py subprocess.run(['git', *args], cwd=cwd, capture_output=True, encoding=",
-    "pr.py subprocess.run(['gh', 'auth', 'status'], capture_output=True, encoding",
-    "pr.py subprocess.run(['gh', 'pr', 'close', str(pr_number), '--comment', 'Sup",
-    "pr.py subprocess.run(['gh', 'pr', 'create', '--title', title, '--body', body",
-    "pr.py subprocess.run(['gh', 'pr', 'merge', str(pr_number), f'--{method}', '-",
-    "pr.py subprocess.run(['gh', 'pr', 'merge', str(pr_number), f'--{method}'], c",
-    "pr.py subprocess.run(['git', 'push', '--delete', '--', 'origin', branch], cw",
-    "pr.py subprocess.run(['git', 'push', '-u', '--', 'origin', branch], cwd=cwd,",
+    "pipeline/pr.py subprocess.run(['gh', 'auth', 'status'], capture_output=True, encoding",
+    "pipeline/pr.py subprocess.run(['gh', 'pr', 'close', str(pr_number), '--comment', 'Sup",
+    "pipeline/pr.py subprocess.run(['gh', 'pr', 'create', '--title', title, '--body', body",
+    "pipeline/pr.py subprocess.run(['gh', 'pr', 'merge', str(pr_number), f'--{method}', '-",
+    "pipeline/pr.py subprocess.run(['gh', 'pr', 'merge', str(pr_number), f'--{method}'], c",
+    "pipeline/pr.py subprocess.run(['git', 'push', '--delete', '--', 'origin', branch], cw",
+    "pipeline/pr.py subprocess.run(['git', 'push', '-u', '--', 'origin', branch], cwd=cwd,",
     "proc/proc.py subprocess.Popen(leash_command(argv, lifeline=lifeline_read, status=st",
-    "retry_plan.py subprocess.run(['git', 'branch', '-D', failed_branch], cwd=root_dir, c",
     "serve_process.py subprocess.Popen(command, cwd=str(cwd), env=env, stdout=subprocess.PIP",
 )
 
@@ -239,7 +239,7 @@ EXPECTED_BYTES_MODE_SPAWNS: dict[str, int] = {
     # scaffold's bytes-mode `subprocess.run` to `run_scrubbed`, which
     # decodes strictly. #776 F2 moves them to `factory_worktrees.py`. 6:
     # #863 A4 deletes the sweep of a pre-R0.5 flat worktree.
-    "factory_worktrees.py": 6,
+    "factory/factory_worktrees.py": 6,
     # 7: `merge_base_ref`'s `git merge-base` stdout, hoisted here from
     # `verify.py` by the #435 fix-round, still decoded by hand. 9 since
     # #630: `read_blob`'s `git ls-tree` and `git cat-file` read bytes on
@@ -254,7 +254,7 @@ EXPECTED_BYTES_MODE_SPAWNS: dict[str, int] = {
     "git/git_diff.py": 1,
     "git/git_tree.py": 4,
     "events/observability.py": 1,
-    "retry_plan.py": 3,
+    "factory/retry_plan.py": 3,
     # 2: `_base_finding`'s `git show` (#414/#425), and #527's
     # `run_scrubbed`, which reads bytes and decodes them itself, strictly,
     # so a gate whose output is not utf-8 can still write its log.

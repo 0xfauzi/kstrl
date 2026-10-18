@@ -33,10 +33,10 @@ import kstrl.cli_architect as cli_architect_mod
 import kstrl.cli_factory as cli_factory_mod
 import kstrl.cli_preflight as cli_preflight_mod
 from kstrl.config.config import KstrlConfig
-from kstrl.factory import run_factory
-from kstrl.factory_config import FactoryConfig
-from kstrl.launch_record import run_limits
+from kstrl.factory.factory import run_factory
 from kstrl.owner.interaction import PromptRequest, PromptResponse
+from kstrl.pipeline.factory_config import FactoryConfig
+from kstrl.pipeline.launch_record import run_limits
 from kstrl.plan.manifest import ComponentStatus, Manifest
 from kstrl.proc.timeout import TimeoutConfig
 from kstrl.ui.plain import PlainUI
@@ -379,7 +379,7 @@ class TestTheRecordIsTheRunsOwn:
             raise AssertionError("a component started")
 
         # Never reach an engineer, on this tree or on one without the fix.
-        monkeypatch.setattr("kstrl.factory._run_component", started)
+        monkeypatch.setattr("kstrl.factory.factory._run_component", started)
         base = KstrlConfig.load(root)
         base.agent_cmd = "false"
         buffer = io.StringIO()
@@ -442,7 +442,7 @@ def test_the_confirmation_names_every_component_the_retry_reenters(
 
 def test_retry_flags_are_pinned_against_factory() -> None:
     """Every `ks factory` option is accepted by retry, replayed, or listed as never replayed."""
-    from kstrl.launch_record import NOT_REPLAYED, REMOVED_OPTIONS
+    from kstrl.pipeline.launch_record import NOT_REPLAYED, REMOVED_OPTIONS
 
     factory = {p.name: p for p in cli_mod.cli.commands["factory"].params}
     retry = {p.name: p for p in cli_mod.cli.commands["retry"].params}
@@ -488,7 +488,7 @@ def test_retry_flags_are_pinned_against_factory() -> None:
             f"`ks factory` has --{name.replace('_', '-')}, which `ks retry` neither "
             "replays nor lists as never replayed: add it to `replayed` in this test "
             "(the launch record carries it) or to NOT_REPLAYED in "
-            "kstrl/launch_record.py with a reason"
+            "kstrl/pipeline/launch_record.py with a reason"
         )
         assert not (name in replayed and name in NOT_REPLAYED), name
     for name in set(replayed) | set(NOT_REPLAYED):

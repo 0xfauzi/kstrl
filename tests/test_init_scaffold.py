@@ -16,9 +16,9 @@ from click.testing import CliRunner
 
 import kstrl.cli as cli_mod
 from kstrl.agents.sandbox import SandboxConfig
-from kstrl.factory_config import FactoryConfig
 from kstrl.knowledge.knowledge_facts import KnowledgeConfig
 from kstrl.learning.evolution_config import EvolutionConfig
+from kstrl.pipeline.factory_config import FactoryConfig
 from kstrl.project.feedforward import CodebaseScanConfig
 from kstrl.project.init_cmd import DEFAULT_KSTRL_TOML
 from kstrl.verify.verify_model import VerifyConfig

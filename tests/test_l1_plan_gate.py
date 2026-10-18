@@ -36,11 +36,11 @@ from unittest.mock import patch
 import pytest
 
 from kstrl.config.config import KstrlConfig
-from kstrl.factory import run_factory
-from kstrl.factory_config import FactoryConfig
+from kstrl.factory.factory import run_factory
 from kstrl.learning.autonomy import AutonomyState
 from kstrl.owner.inbox import Inbox, InboxConfig, InboxItem
 from kstrl.owner.interaction import PromptKind, PromptRequest, PromptResponse
+from kstrl.pipeline.factory_config import FactoryConfig
 from kstrl.plan.manifest import Manifest
 from kstrl.review.review import ReviewResult
 from kstrl.review.security import SecurityConfig
@@ -348,7 +348,9 @@ def _in_process(root: Path, channel: _Channel, monkeypatch: pytest.MonkeyPatch) 
         no_color=True,
     )
     out = io.StringIO()
-    with patch("kstrl.factory.run_review", return_value=ReviewResult(passed=True, mode="hard")):
+    with patch(
+        "kstrl.factory.factory.run_review", return_value=ReviewResult(passed=True, mode="hard")
+    ):
         result = run_factory(
             Manifest.load(_manifest_path(root)),
             config,

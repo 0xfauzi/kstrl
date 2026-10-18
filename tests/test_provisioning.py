@@ -27,8 +27,8 @@ from pathlib import Path
 import pytest
 
 from kstrl.config.config import KstrlConfig
-from kstrl.factory import run_factory
-from kstrl.factory_config import FactoryConfig
+from kstrl.factory.factory import run_factory
+from kstrl.pipeline.factory_config import FactoryConfig
 from kstrl.plan.manifest import Component, Manifest
 from kstrl.project.scaffold_templates import DEFAULT_PROMPT
 from kstrl.review.security import SecurityConfig

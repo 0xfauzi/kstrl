@@ -15,10 +15,10 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.factory_config import FactoryConfig
-from kstrl.factory_result import ComponentResult
 from kstrl.learning.journal_rows import FINDINGS_SUPERSEDED_EVENT
-from kstrl.pipeline_transitions import Transition
+from kstrl.pipeline.factory_config import FactoryConfig
+from kstrl.pipeline.factory_result import ComponentResult
+from kstrl.pipeline.pipeline_transitions import Transition
 from kstrl.plan.manifest import Component, ComponentStatus
 from kstrl.review.review import ReviewConcern, ReviewResult
 from kstrl.review.security import SecurityConfig, SecurityFinding, SecurityResult

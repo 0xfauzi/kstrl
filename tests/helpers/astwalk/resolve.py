@@ -92,7 +92,7 @@ class Bindings:
     adds a name on the sweep that cannot resolve it and never removes it
     when a later sweep can. On ``import os; b = a; a = os`` it said ``b``
     was opaque while ``origins`` said ``b`` was ``os``; two real modules,
-    ``kstrl/loop/loop.py`` and ``kstrl/pipeline.py``, were in both at once. A
+    ``kstrl/loop/loop.py`` and ``kstrl/pipeline/pipeline.py``, were in both at once. A
     public field named as a mechanism, with no reader and a wrong answer,
     is documentation. What actually makes an unfollowable name loud is
     :func:`calls_to`'s rule that unresolved is undecided, and

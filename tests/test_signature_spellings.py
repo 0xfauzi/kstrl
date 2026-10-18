@@ -72,20 +72,20 @@ EXPECTED_SPELLINGS: frozenset[tuple[str, str]] = frozenset(
     {
         # --- journal signatures: these nine ARE check names, and every
         # one is enrolled in evolution._CATEGORY_BY_CHECK.
-        ("kstrl/factory_acceptance.py", "contract"),
+        ("kstrl/factory/factory_acceptance.py", "contract"),
         # #226: written as f"{ADVERSARIAL_BUDGET_CHECK}:{phase}", so the
         # head folds through the imported constant rather than a literal.
-        ("kstrl/pipeline_verdicts.py", "adversarial_budget"),
-        ("kstrl/factory_launch.py", "scope_unreadable"),
-        ("kstrl/pipeline_transitions.py", "aborted"),
-        ("kstrl/pipeline_checks.py", "diff"),
-        ("kstrl/pipeline.py", "engineer"),
-        ("kstrl/pipeline_transitions.py", "engineer"),
-        ("kstrl/pipeline_delivery.py", "review"),
-        ("kstrl/pipeline_merge.py", "pr"),
-        ("kstrl/pipeline_merge.py", "review"),
-        ("kstrl/pipeline_verdicts.py", "review"),
-        ("kstrl/pipeline_transitions.py", "token_budget"),
+        ("kstrl/pipeline/pipeline_verdicts.py", "adversarial_budget"),
+        ("kstrl/factory/factory_launch.py", "scope_unreadable"),
+        ("kstrl/pipeline/pipeline_transitions.py", "aborted"),
+        ("kstrl/pipeline/pipeline_checks.py", "diff"),
+        ("kstrl/pipeline/pipeline.py", "engineer"),
+        ("kstrl/pipeline/pipeline_transitions.py", "engineer"),
+        ("kstrl/pipeline/pipeline_delivery.py", "review"),
+        ("kstrl/pipeline/pipeline_merge.py", "pr"),
+        ("kstrl/pipeline/pipeline_merge.py", "review"),
+        ("kstrl/pipeline/pipeline_verdicts.py", "review"),
+        ("kstrl/pipeline/pipeline_transitions.py", "token_budget"),
         # #696: f"stack:{name}", the row of a [stack] check (verify.check_stack_command).
         ("kstrl/verify/verify_commands.py", "stack"),
         # --- other vocabularies that share the shape. None of these
@@ -93,8 +93,8 @@ EXPECTED_SPELLINGS: frozenset[tuple[str, str]] = frozenset(
         # them would make the category table unreadable as the list of
         # names the journal files.
         # Divergence's own reasons for a trip.
-        ("kstrl/divergence.py", "concern"),
-        ("kstrl/divergence.py", "criterion"),
+        ("kstrl/pipeline/divergence.py", "concern"),
+        ("kstrl/pipeline/divergence.py", "criterion"),
         # An autonomy demotion record, not a component failure. It moved
         # out of factory.py in #232, when the demotion-apply block became
         # autonomy.apply_demotion; this row moving is the guard doing the
@@ -107,7 +107,7 @@ EXPECTED_SPELLINGS: frozenset[tuple[str, str]] = frozenset(
         # comparison id is both baselines' timestamps, or a digest of the
         # failure lines when either file carries no timestamp.
         ("kstrl/calibration/calibration_ladder.py", "calibration"),
-        ("kstrl/factory_autonomy.py", "health"),
+        ("kstrl/factory/factory_autonomy.py", "health"),
         # #449: the inbox dedupe key for one spec's architect escalation,
         # "escalation:<project>:<spec file>". Same family as the two above.
         ("kstrl/architect/decisions.py", "escalation"),
@@ -127,19 +127,19 @@ EXPECTED_SPELLINGS: frozenset[tuple[str, str]] = frozenset(
         ("kstrl/intake_gh.py", "kstrl"),
         # Inbox dedupe keys and the budget label, all keyed the same way
         # and none of them a failure signature.
-        ("kstrl/pipeline_transitions.py", "budget"),
+        ("kstrl/pipeline/pipeline_transitions.py", "budget"),
         # #466: the dedupe key of a carried check's halted_run item,
         # f"carried:{plan}:{comp}:{check}".
-        ("kstrl/pipeline_inbox.py", "carried"),
+        ("kstrl/pipeline/pipeline_inbox.py", "carried"),
         # #700, owner decision of 2026-10-09: the dedupe key of the
         # halted_run item of a bug report the base did not reproduce,
         # f"{NOT_REPRODUCED_KEY}{plan}:{sha}".
-        ("kstrl/acceptance_design.py", "unreproduced"),
-        ("kstrl/pipeline_transitions.py", "halted"),
-        ("kstrl/pipeline_inbox.py", "halted"),
-        ("kstrl/pipeline_merge.py", "halted"),
-        ("kstrl/pipeline_merge.py", "merge"),
-        ("kstrl/pipeline_checks.py", "policy"),
+        ("kstrl/factory/acceptance_design.py", "unreproduced"),
+        ("kstrl/pipeline/pipeline_transitions.py", "halted"),
+        ("kstrl/pipeline/pipeline_inbox.py", "halted"),
+        ("kstrl/pipeline/pipeline_merge.py", "halted"),
+        ("kstrl/pipeline/pipeline_merge.py", "merge"),
+        ("kstrl/pipeline/pipeline_checks.py", "policy"),
         # #595: finding tags an inbox approval writes on a policy
         # finding. A tag is not a failure signature.
         ("kstrl/owner/waivers.py", "waiver"),
@@ -213,10 +213,16 @@ class TestTheSignatureSpellingsAreInventoried:
         these four from the pin to make a red test go away, which is the
         one edit that would silently un-cover all four producers."""
         measured = signature_spellings()
-        assert ("kstrl/factory_acceptance.py", "contract") in measured, "a direct assignment"
-        assert ("kstrl/pipeline.py", "engineer") in measured, "a direct assignment"
-        assert ("kstrl/pipeline_verdicts.py", "review") in measured, "a conditional expression"
-        assert ("kstrl/factory_launch.py", "scope_unreadable") in measured, "an f-string constant"
+        assert ("kstrl/factory/factory_acceptance.py", "contract") in measured, (
+            "a direct assignment"
+        )
+        assert ("kstrl/pipeline/pipeline.py", "engineer") in measured, "a direct assignment"
+        assert ("kstrl/pipeline/pipeline_verdicts.py", "review") in measured, (
+            "a conditional expression"
+        )
+        assert ("kstrl/factory/factory_launch.py", "scope_unreadable") in measured, (
+            "an f-string constant"
+        )
 
     def test_a_dynamic_tail_does_not_hide_the_check_name(self) -> None:
         """``f"contract:tier_{n}"`` is the fourth producer's actual

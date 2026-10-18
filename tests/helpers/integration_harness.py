@@ -22,11 +22,11 @@ from kstrl.acceptance.contract import ContractConfig, ContractMode
 from kstrl.architect.decompose_prompt import spec_digest
 from kstrl.config.config import KstrlConfig
 from kstrl.events.usage import UsageRecord
-from kstrl.factory import run_factory
-from kstrl.factory_config import FactoryConfig
-from kstrl.factory_result import FactoryResult
+from kstrl.factory.factory import run_factory
 from kstrl.git import git_diff
-from kstrl.pipeline import ComponentPipeline
+from kstrl.pipeline.factory_config import FactoryConfig
+from kstrl.pipeline.factory_result import FactoryResult
+from kstrl.pipeline.pipeline import ComponentPipeline
 from kstrl.plan.manifest import Component, ComponentStatus, Manifest
 from kstrl.review.integration import integration_stories
 from kstrl.review.security import SecurityConfig
@@ -272,7 +272,7 @@ def run_factory_over(
     out = io.StringIO()
     with (
         patch(
-            "kstrl.factory._run_component",
+            "kstrl.factory.factory._run_component",
             side_effect=AssertionError("no component may run: every component is merged"),
         ),
         patch.object(ComponentPipeline, "repoll_merge_pending", return_value=None),

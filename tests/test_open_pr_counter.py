@@ -5,7 +5,7 @@ gates on. What remains here is the end-to-end path through a real
 subprocess (PATH lookup, process, stdout, decode, filter) and the
 static guards on the footer marker the counter matches: the marker is
 spelled once in ``kstrl/``, its literal is pinned, and both writers in
-``kstrl/pr_body.py`` append it last so the ``endswith`` anchor holds.
+``kstrl/pipeline/pr_body.py`` append it last so the ``endswith`` anchor holds.
 `tests/test_flow_control.py` holds what the daemon does with the
 answer, including the counter's refusal shapes through `serve_cycle`.
 """
@@ -16,8 +16,8 @@ from pathlib import Path
 
 import pytest
 
-import kstrl.pr_body
-from kstrl.pr_body import PR_FOOTER_MARKER
+import kstrl.pipeline.pr_body
+from kstrl.pipeline.pr_body import PR_FOOTER_MARKER
 from kstrl.serve_github import count_open_kstrl_prs
 from tests.helpers.astwalk import assert_census, folds_to, package_sources
 from tests.helpers.fakegh import install_fake_gh as _install_fake_gh
@@ -59,18 +59,18 @@ class TestMarkerIsAnchoredAtTheEnd:
     def test_the_other_writer_joins_immediately_after_the_footer(self) -> None:
         """`create_single_pr` pushes a branch, so it is read statically.
 
-        Both marker appends in `kstrl/pr_body.py` must be the LAST line added
+        Both marker appends in `kstrl/pipeline/pr_body.py` must be the LAST line added
         before the join that produces the body. A source check rather
         than a behavioural one because the only way to reach that writer
         is a real `git push`.
         """
-        lines = Path(kstrl.pr_body.__file__).read_text(encoding="utf-8").splitlines()
+        lines = Path(kstrl.pipeline.pr_body.__file__).read_text(encoding="utf-8").splitlines()
         followers = [
             next(follower for follower in lines[index + 1 :] if follower.strip())
             for index, line in enumerate(lines)
             if line.strip() == "lines.append(PR_FOOTER_MARKER)"
         ]
-        assert len(followers) == 2, "expected two footer sites in kstrl/pr_body.py"
+        assert len(followers) == 2, "expected two footer sites in kstrl/pipeline/pr_body.py"
         assert all('"\\n".join(lines)' in follower for follower in followers), (
             "A kstrl PR body must END with PR_FOOTER_MARKER: the open-PR "
             "bound matches the footer with endswith, so anything appended "
@@ -88,7 +88,7 @@ class TestMarkerIsAnchoredAtTheEnd:
 #: hoist exists to prevent - a reader in another module reaches for the
 #: nearest spelling, and a footer reword then makes the bound count zero
 #: while every test stays green.
-EXPECTED_MARKER_SPELLINGS: dict[str, int] = {"pr_body.py": 1}
+EXPECTED_MARKER_SPELLINGS: dict[str, int] = {"pipeline/pr_body.py": 1}
 
 
 class TestFooterMarker:
@@ -107,7 +107,7 @@ class TestFooterMarker:
             message=(
                 "The set of places spelling the kstrl PR footer changed. A "
                 "reader identifying a kstrl-authored PR must import "
-                "PR_FOOTER_MARKER from kstrl.pr_body, not repeat the literal: the "
+                "PR_FOOTER_MARKER from kstrl.pipeline.pr_body, not repeat the literal: the "
                 "open-PR bound counts bodies containing it, so a second "
                 "spelling that drifts makes the count silently zero."
             ),
@@ -130,5 +130,5 @@ class TestFooterMarker:
         the constant. The census above cannot say this - deleting a
         footer site leaves the spelling count at 1 - and "you wrote the
         footer without the constant" is the wrong message for it."""
-        source = Path(kstrl.pr_body.__file__).read_text(encoding="utf-8")
+        source = Path(kstrl.pipeline.pr_body.__file__).read_text(encoding="utf-8")
         assert source.count("lines.append(PR_FOOTER_MARKER)") == 2

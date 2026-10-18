@@ -485,7 +485,7 @@ class TestTheReadBytesExclusion:
         "verify/baseline.py": 1,
         "owner/inbox.py": 1,
         "review/integration_state.py": 1,  # #482: the launch_record.py shape
-        "launch_record.py": 1,  # #436: the baseline.py shape, I/O outside the guard
+        "pipeline/launch_record.py": 1,  # #436: the baseline.py shape, I/O outside the guard
         # #700 slice 3: `_ready` reads the `up` log's bytes back as the
         # stage's tail, outside any try (the signals.py shape).
         "acceptance/replay.py": 1,

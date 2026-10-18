@@ -32,10 +32,10 @@ from kstrl.acceptance.contract import (
     run_integrated_base_check,
 )
 from kstrl.architect.decompose_prompt import spec_digest
-from kstrl.factory import run_factory
-from kstrl.factory_result import ComponentResult, FactoryResult
+from kstrl.factory.factory import run_factory
 from kstrl.git import git, git_base
-from kstrl.pipeline import ComponentPipeline
+from kstrl.pipeline.factory_result import ComponentResult, FactoryResult
+from kstrl.pipeline.pipeline import ComponentPipeline
 from kstrl.plan.manifest import Component, ComponentStatus, Manifest
 from kstrl.ui.plain import PlainUI
 from tests.helpers.gitrepo import git_in, set_identity
@@ -115,7 +115,7 @@ def _run(
         )
 
     with (
-        patch("kstrl.factory._run_component", side_effect=fake_component),
+        patch("kstrl.factory.factory._run_component", side_effect=fake_component),
         patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         # A MERGE_PENDING component would otherwise be re-polled through gh.
         patch.object(ComponentPipeline, "repoll_merge_pending", return_value=None),
@@ -387,7 +387,9 @@ class TestThePinnedCommit:
                 return [ContractResult(False, 0, ["comp-a"], breaker="comp-a", test_output="x")]
             return [ContractResult(True, 0, ["comp-a"])]
 
-        with patch("kstrl.factory_acceptance.run_contract_testing", side_effect=fake_contract):
+        with patch(
+            "kstrl.factory.factory_acceptance.run_contract_testing", side_effect=fake_contract
+        ):
             result, _output = _run(
                 tmp_path,
                 _make_manifest([_component("comp-a")]),
@@ -439,7 +441,9 @@ class TestThePinnedCommit:
             pinned.append(base_sha)
             return [ContractResult(True, 0, ["comp-a"])]
 
-        with patch("kstrl.factory_acceptance.run_contract_testing", side_effect=fake_contract):
+        with patch(
+            "kstrl.factory.factory_acceptance.run_contract_testing", side_effect=fake_contract
+        ):
             _result, output = _run(
                 tmp_path,
                 _make_manifest([_component("comp-a")]),

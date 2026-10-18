@@ -134,7 +134,7 @@ class TestNoCensusPinsALineNumber:
             '    ROWS = {"cli_report.py:390": 1}\n'
             '    SITES += (f"verify/verify.py:112 {x}",)\n'
             'WRAPPED = ["at [kstrl/signals.py:556]"]\n'
-            '_PRIVATE = ("pipeline.py:1 x",)\n'
+            '_PRIVATE = ("pipeline/pipeline.py:1 x",)\n'
             "def setup(cls):\n"
             '    cls.ATTR = ("loop/loop.py:2 x",)\n'
         )
@@ -145,7 +145,7 @@ class TestNoCensusPinsALineNumber:
             "ROWS cli_report.py:390",
             "SITES verify/verify.py:112",
             "WRAPPED kstrl/signals.py:556",
-            "_PRIVATE pipeline.py:1",
+            "_PRIVATE pipeline/pipeline.py:1",
         ]
 
 

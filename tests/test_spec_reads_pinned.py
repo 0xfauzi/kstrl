@@ -2,7 +2,7 @@
 
 A plan pins the sha256 of the spec text the architect read
 (``kstrl.architect.decompose.load_spec_input``). After decompose, the only reader of
-that spec is ``kstrl.plan_gate.pinned_spec``: it reads the spec again and
+that spec is ``kstrl.factory.plan_gate.pinned_spec``: it reads the spec again and
 returns the text only when its digest is the pinned one, so no role can be
 handed a spec that changed after the plan was made. Before this guard,
 ``acceptance_design.design_plan`` called ``load_spec_input`` itself and
@@ -38,13 +38,13 @@ EXPECTED_SPEC_READS: dict[str, dict[str, int]] = {
         # interface, which ``plan_gate.py`` imports the reader through.
         "architect/__init__.py::<module>": 2,
         # The import, and the one re-read, which compares the digest.
-        "plan_gate.py::<module>": 1,
-        "plan_gate.py::pinned_spec": 1,
+        "factory/plan_gate.py::<module>": 1,
+        "factory/plan_gate.py::pinned_spec": 1,
     },
     "spec_location": {
         # The definition, and the one re-read that resolves the path.
-        "plan_gate.py::<module>": 1,
-        "plan_gate.py::pinned_spec": 1,
+        "factory/plan_gate.py::<module>": 1,
+        "factory/plan_gate.py::pinned_spec": 1,
     },
 }
 
@@ -68,7 +68,7 @@ def test_every_spec_read_after_decompose_goes_through_the_pin(reader: str) -> No
         ),
         message=(
             f"The places that name {reader} changed. After decompose, a "
-            "spec is read only through kstrl.plan_gate.pinned_spec, which "
+            "spec is read only through kstrl.factory.plan_gate.pinned_spec, which "
             "returns the text only when its digest is the one the plan pins "
             "(#639 decision 11). Call pinned_spec instead of reading the spec."
         ),

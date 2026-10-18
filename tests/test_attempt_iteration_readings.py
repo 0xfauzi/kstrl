@@ -38,9 +38,9 @@ import pytest
 
 from kstrl.events import event_catalog
 from kstrl.events import events as ev
-from kstrl.factory import run_factory
-from kstrl.factory_config import FactoryConfig
+from kstrl.factory.factory import run_factory
 from kstrl.learning.journal_rows import FINDINGS_SUPERSEDED_EVENT, read_attempt_iterations
+from kstrl.pipeline.factory_config import FactoryConfig
 from kstrl.ui.plain import PlainUI
 from kstrl.verify.verify_model import VerifyConfig
 from tests.helpers import gitrepo
@@ -214,14 +214,14 @@ def owner_row(source_file: Path, node: ast.AST) -> str:
 #: for. Four sites at a98ff21, two of them in-run, plus the fifth this
 #: PR adds.
 EXPECTED_RETRIES_WRITE_SITES: dict[str, str] = {
-    "factory_acceptance.py:_reset_contract_breakers": (
+    "factory/factory_acceptance.py:_reset_contract_breakers": (
         "the contract-breaker retry; journal_superseded_findings(breaker) runs one line above it"
     ),
     "plan/manifest.py:<module>": "the Component.retries field declaration",
     "plan/manifest.py:reset_for_retry": (
         "the --reset path; zeroes the counter rather than advancing an attempt"
     ),
-    "pipeline_transitions.py:retry_or_fail": (
+    "pipeline/pipeline_transitions.py:retry_or_fail": (
         "the scheduled retry; journal_superseded_findings(comp) runs four lines above it"
     ),
     "learning/journal_rows.py:_component_attempt_readings": (
@@ -235,7 +235,10 @@ EXPECTED_RETRIES_WRITE_SITES: dict[str, str] = {
 
 #: The two of those that advance an attempt inside a run.
 IN_RUN_RETRY_SITES = frozenset(
-    {"factory_acceptance.py:_reset_contract_breakers", "pipeline_transitions.py:retry_or_fail"}
+    {
+        "factory/factory_acceptance.py:_reset_contract_breakers",
+        "pipeline/pipeline_transitions.py:retry_or_fail",
+    }
 )
 
 #: Every ``self._end_attempt(`` call in kstrl/, same key shape. The
@@ -245,15 +248,15 @@ IN_RUN_RETRY_SITES = frozenset(
 #: discover: four of these end a component for good, so no further
 #: attempt number is ever produced for it.
 EXPECTED_END_ATTEMPT_SITES: dict[str, str] = {
-    "pipeline_transitions.py:retry_or_fail": "a retry; the reading is journalled first",
-    "pipeline_transitions.py:fail": "terminal; the reading reaches component_result",
-    "pipeline_transitions.py:complete": "terminal; the reading reaches component_result",
-    "pipeline_merge.py:_park_merge_pending": "terminal; the reading reaches component_result",
-    "pipeline_merge.py:_fail_pr_flow": "terminal; the reading reaches component_result",
-    "pipeline_merge.py:_park_awaiting_approval": (
+    "pipeline/pipeline_transitions.py:retry_or_fail": "a retry; the reading is journalled first",
+    "pipeline/pipeline_transitions.py:fail": "terminal; the reading reaches component_result",
+    "pipeline/pipeline_transitions.py:complete": "terminal; the reading reaches component_result",
+    "pipeline/pipeline_merge.py:_park_merge_pending": "terminal; the reading reaches component_result",  # noqa: E501
+    "pipeline/pipeline_merge.py:_fail_pr_flow": "terminal; the reading reaches component_result",
+    "pipeline/pipeline_merge.py:_park_awaiting_approval": (
         "terminal for this run; the reading reaches component_result"
     ),
-    "pipeline_transitions.py:fail_scheduler_backstop": (
+    "pipeline/pipeline_transitions.py:fail_scheduler_backstop": (
         "terminal, and the disclosed blind spot: process_result never ran "
         "for this attempt, so iteration_count is stale or 0. See "
         "TestDisclosedBlindSpots."
@@ -449,8 +452,9 @@ class TestDisclosedBlindSpots:
     @pytest.mark.xfail(
         strict=True,
         reason=(
-            "Disclosed blind spot: fail_scheduler_backstop (kstrl/pipeline_transitions.py) "
-            "ends an attempt for which process_result never ran, so "
+            "Disclosed blind spot: fail_scheduler_backstop "
+            "(kstrl/pipeline/pipeline_transitions.py) ends an attempt for which "
+            "process_result never ran, so "
             "comp.iteration_count still holds the PREVIOUS attempt's value, or 0. "
             "The reading is unknowable there, not zero, and nothing records that. "
             "A fix zeroes it or marks it unmeasured; this test then XPASSes and "

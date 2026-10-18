@@ -8,7 +8,7 @@ change), ``heads/<name>/`` (each laid over the base as its own commit:
 operator wrote that tells every planted head from the correct one.
 
 A run asks the designer through
-:func:`kstrl.acceptance_design.design_component` (the call the factory
+:func:`kstrl.factory.acceptance_design.design_component` (the call the factory
 makes) in a repository that holds the base commit and nothing else
 (:func:`base_checkout`), so no branch or commit of a head is in the
 repository it reads. It then materialises the fixture with every head as a second
@@ -46,8 +46,8 @@ from kstrl.acceptance.acceptance import (
     pin_plan,
     replay_base,
 )
-from kstrl.acceptance_design import build_design_prompt, design_component
-from kstrl.factory_config import FactoryConfig
+from kstrl.factory.acceptance_design import build_design_prompt, design_component
+from kstrl.pipeline.factory_config import FactoryConfig
 from kstrl.plan.manifest import Component, Manifest
 from kstrl.project.stack import Stack
 from kstrl.ui.plain import PlainUI

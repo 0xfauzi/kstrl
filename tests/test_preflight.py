@@ -25,7 +25,7 @@ from kstrl.agents.liveness import ProbeResult
 from kstrl.cli import cli
 from kstrl.cli_preflight import _agent_preflight
 from kstrl.config.config import KstrlConfig
-from kstrl.factory_result import FactoryResult
+from kstrl.pipeline.factory_result import FactoryResult
 from kstrl.ui.plain import PlainUI
 from tests.helpers.agent_probe import set_cli_availability
 from tests.helpers.stack_confirmation import confirm_stack, write_stack

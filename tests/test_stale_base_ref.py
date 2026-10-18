@@ -16,10 +16,10 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl import factory_worker
 from kstrl.acceptance import contract
 from kstrl.acceptance.contract import ContractConfig, ContractMode
 from kstrl.config.config import KstrlConfig
+from kstrl.factory import factory_worker
 from kstrl.git import git_base, git_tree
 from kstrl.loop.loop import LoopResult
 from kstrl.plan.manifest import Manifest

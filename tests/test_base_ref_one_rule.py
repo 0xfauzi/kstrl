@@ -122,18 +122,18 @@ EXPECTED_REF_OPERAND_ARGVS: dict[str, int] = {
     "proc/temp_worktree.py git worktree remove --force str(worktree_path)": 1,
     "proc/temp_worktree.py git worktree prune": 1,
     "doctor.py git check-ignore -q -- probe": 1,
-    "factory_worktrees.py git worktree remove --force str(worktree_path)": 2,
-    "factory_worktrees.py git worktree add str(worktree_path) -b branch_name base_ref": 1,
-    "factory_worktrees.py git worktree prune": 1,
-    "factory_worktrees.py git worktree list --porcelain -z": 1,
-    "factory_worktrees.py git rev-parse --verify --quiet f'refs/heads/{branch}'": 1,
-    "factory_worktrees.py git merge-base --is-ancestor branch base_ref": 1,
+    "factory/factory_worktrees.py git worktree remove --force str(worktree_path)": 2,
+    "factory/factory_worktrees.py git worktree add str(worktree_path) -b branch_name base_ref": 1,
+    "factory/factory_worktrees.py git worktree prune": 1,
+    "factory/factory_worktrees.py git worktree list --porcelain -z": 1,
+    "factory/factory_worktrees.py git rev-parse --verify --quiet f'refs/heads/{branch}'": 1,
+    "factory/factory_worktrees.py git merge-base --is-ancestor branch base_ref": 1,
     # #566: `git branch -D branch_name` became this reset in one command.
-    "factory_worktrees.py git worktree add -B branch_name str(worktree_path) "
+    "factory/factory_worktrees.py git worktree add -B branch_name str(worktree_path) "
     "recut_at or base_ref": 1,
-    "factory_worktrees.py git worktree add str(worktree_path) branch_name": 1,
-    "factory_worktrees.py git branch -D branch": 1,
-    "factory_worktrees.py git worktree remove --force str(wt)": 1,
+    "factory/factory_worktrees.py git worktree add str(worktree_path) branch_name": 1,
+    "factory/factory_worktrees.py git branch -D branch": 1,
+    "factory/factory_worktrees.py git worktree remove --force str(wt)": 1,
     "git/git_base.py git for-each-ref --format=%(refname)%09%(symref) "
     "_ORIGIN_HEAD_REF *_BASE_BRANCH_REFS": 1,
     "git/git_base.py git rev-parse --verify --quiet f'refs/remotes/origin/{base_branch}'": 1,
@@ -168,13 +168,13 @@ EXPECTED_REF_OPERAND_ARGVS: dict[str, int] = {
     "git/git.py git checkout branch --": 1,
     "git/git.py git checkout -b branch": 1,
     "git/git_base.py git rev-parse --verify --quiet f'{candidate}^{{commit}}'": 1,
-    "pr.py git push -u -- origin branch": 1,
-    "pr.py git push --delete -- origin branch": 2,
-    "retry_plan.py git worktree remove --force evidence_worktree": 1,
-    "retry_plan.py git worktree prune": 1,
+    "pipeline/pr.py git push -u -- origin branch": 1,
+    "pipeline/pr.py git push --delete -- origin branch": 2,
+    "factory/retry_plan.py git worktree remove --force evidence_worktree": 1,
+    "factory/retry_plan.py git worktree prune": 1,
     # #433: the probe moved into _failed_branch_probe. Its parameter is `branch`.
-    "retry_plan.py git rev-parse --verify --quiet f'refs/heads/{branch}'": 1,
-    "retry_plan.py git branch -D failed_branch": 1,
+    "factory/retry_plan.py git rev-parse --verify --quiet f'refs/heads/{branch}'": 1,
+    "factory/retry_plan.py git branch -D failed_branch": 1,
     "io/statedir.py git -C str(root_dir) remote get-url origin": 1,
 }
 

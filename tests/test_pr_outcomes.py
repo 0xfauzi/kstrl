@@ -25,12 +25,12 @@ from unittest.mock import patch
 import pytest
 
 from kstrl.config.config import KstrlConfig
-from kstrl.factory import run_factory
-from kstrl.factory_config import FactoryConfig
-from kstrl.factory_result import ComponentResult, FactoryResult
+from kstrl.factory.factory import run_factory
 from kstrl.git import git_base, git_diff
+from kstrl.pipeline.factory_config import FactoryConfig
+from kstrl.pipeline.factory_result import ComponentResult, FactoryResult
+from kstrl.pipeline.pr import PrOutcome, push_create_and_merge_pr, wait_for_merge
 from kstrl.plan.manifest import Component, ComponentStatus, Manifest
-from kstrl.pr import PrOutcome, push_create_and_merge_pr, wait_for_merge
 from kstrl.proc.rung import HOST_LABEL
 from kstrl.ui.plain import PlainUI
 from kstrl.verify.verify_model import VerifyConfig
@@ -268,7 +268,7 @@ def _run(
         calls.append(component_id)
         return ComponentResult(component_id, success=True, iterations=1)
 
-    with patch("kstrl.factory._run_component", side_effect=fake_run):
+    with patch("kstrl.factory.factory._run_component", side_effect=fake_run):
         result = run_factory(
             manifest,
             config or _factory_config(),
@@ -649,7 +649,7 @@ class TestPrOutcomeDataclass:
         """--delete-branch is the measured hazard: its local-branch
         deletion fails inside a component worktree and gh reports the
         whole (successful) merge as failed. It must never come back."""
-        from kstrl import pr as pr_module
+        from kstrl.pipeline import pr as pr_module
 
         seen: list[list[str]] = []
 

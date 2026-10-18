@@ -19,8 +19,7 @@ from kstrl.io import (
     ensure_control_state,
     read_json,
 )
-from kstrl.pr import GH_TIMEOUT
-from kstrl.pr_body import PR_FOOTER_MARKER
+from kstrl.pipeline import GH_TIMEOUT, PR_FOOTER_MARKER
 from kstrl.queue import Queue, queue_lock
 from kstrl.serve_config import Admission, ServeConfig, ServeObserver
 
@@ -82,7 +81,7 @@ def count_open_kstrl_prs(cwd: Path, *, limit: int = 100) -> OpenPrCount:
     count unmoved.
 
     Anchored at the END of the body rather than matched anywhere in it.
-    Both writers in ``kstrl/pr.py`` append the marker as the final line
+    Both writers in ``kstrl/pipeline/pr.py`` append the marker as the final line
     (``tests/test_flow_control.py`` pins that through the real writer),
     so the anchor costs no true positive and rejects every PR that
     merely quotes the footer in prose - a body discussing the constant,
@@ -408,7 +407,7 @@ def check_open_pr_bound(
         return Admission(allowed=True, reason="open-PR bound disabled")
     count_fn = counter if counter is not None else count_open_kstrl_prs
     try:
-        from kstrl.factory_config import FactoryConfig
+        from kstrl.pipeline import FactoryConfig
 
         if not FactoryConfig.load(root_dir).create_prs:
             tally.record_conclusive()

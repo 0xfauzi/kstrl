@@ -21,9 +21,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 from kstrl.config.config import KstrlConfig
-from kstrl.factory import run_factory
-from kstrl.factory_config import FactoryConfig
-from kstrl.factory_result import ComponentResult
+from kstrl.factory.factory import run_factory
+from kstrl.pipeline.factory_config import FactoryConfig
+from kstrl.pipeline.factory_result import ComponentResult
 from kstrl.plan.manifest import Component, Manifest
 from kstrl.review.review import ReviewResult
 from kstrl.ui.plain import PlainUI
@@ -120,11 +120,11 @@ class TestE4BudgetCap:
         passing_review = ReviewResult(passed=True, mode="hard")
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 return_value=success,
             ),
             patch(
-                "kstrl.factory.run_review",
+                "kstrl.factory.factory.run_review",
                 return_value=passing_review,
             ) as mock_review,
             patch(
@@ -194,11 +194,11 @@ class TestE4BudgetCap:
         passing_review = ReviewResult(passed=True, mode="hard")
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 return_value=success,
             ),
             patch(
-                "kstrl.factory.run_review",
+                "kstrl.factory.factory.run_review",
                 return_value=passing_review,
             ) as mock_review,
             patch(
@@ -231,8 +231,8 @@ class TestE6HitlCheckpoint:
         failure, and `ks inbox approve` merges it later. Proceeding
         would defeat the gate in exactly the unattended case R8.2's
         L1/L2 forces the gate on for."""
-        from kstrl.factory_result import ComponentResult
         from kstrl.owner.inbox import Inbox, InboxConfig, ItemKind
+        from kstrl.pipeline.factory_result import ComponentResult
 
         scaffold = tmp_path / "scripts" / "kstrl"
         scaffold.mkdir(parents=True)
@@ -303,11 +303,11 @@ class TestE6HitlCheckpoint:
         success = ComponentResult("comp-a", success=True, iterations=1)
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 return_value=success,
             ),
             patch(
-                "kstrl.pr.is_gh_available",
+                "kstrl.pipeline.pr.is_gh_available",
                 return_value=False,
             ),
             patch("kstrl.git.git_diff.get_diff_content", return_value=""),

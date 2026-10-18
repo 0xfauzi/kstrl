@@ -42,11 +42,11 @@ import kstrl.cli as cli_mod
 from kstrl.config.config import ConfigError
 from kstrl.events.event_catalog import AutonomyLevelApplied, Event
 from kstrl.events.events import CallbackSink, EventBus
-from kstrl.factory import run_factory
-from kstrl.factory_config import FactoryConfig
-from kstrl.factory_result import ComponentResult
+from kstrl.factory.factory import run_factory
 from kstrl.learning.autonomy import AutonomyLevel, AutonomyState, FlagBundle, flag_bundle_for
 from kstrl.learning.autonomy_config import pause_gate_for, resolved_flag_bundle
+from kstrl.pipeline.factory_config import FactoryConfig
+from kstrl.pipeline.factory_result import ComponentResult
 from kstrl.plan.manifest import Manifest
 from kstrl.review.review import ReviewResult
 from kstrl.verify.verify_model import CheckResult, VerificationResult, VerifyConfig
@@ -274,13 +274,15 @@ def _run(root: Path, config: FactoryConfig) -> tuple[list[Event], str]:
 
     verification = VerificationResult(passed=True, checks=[CheckResult("diff_scope", True, "ok")])
     with (
-        patch("kstrl.factory.EventBus", _bus),
+        patch("kstrl.factory.factory.EventBus", _bus),
         patch(
-            "kstrl.factory._run_component",
+            "kstrl.factory.factory._run_component",
             return_value=ComponentResult("comp-a", success=True, iterations=1),
         ),
-        patch("kstrl.factory.run_mechanical_verification", return_value=verification),
-        patch("kstrl.factory.run_review", return_value=ReviewResult(passed=True, mode="hard")),
+        patch("kstrl.factory.factory.run_mechanical_verification", return_value=verification),
+        patch(
+            "kstrl.factory.factory.run_review", return_value=ReviewResult(passed=True, mode="hard")
+        ),
     ):
         run_factory(_manifest(), config, base, ui, root)
     return events, sink.getvalue()

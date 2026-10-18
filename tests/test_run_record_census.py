@@ -139,17 +139,17 @@ EXPECTED_RUN_RECORD_SITES: dict[str, int] = {
     "learning/evolution.py: EvolutionJournal.record_run": 1,
     "learning/evolution.py: EvolutionJournal.carry_superseded": 1,
     "learning/experiments_tsv.py: <module>": 1,
-    "factory_acceptance.py: _record_contract_event": 1,
-    "factory_autonomy.py: _record_health_breaches": 1,
+    "factory/factory_acceptance.py: _record_contract_event": 1,
+    "factory/factory_autonomy.py: _record_health_breaches": 1,
     # #601: the policy demotion's evidence and the human-rejection demotion's.
-    "factory_autonomy.py: _demote_once": 2,
+    "factory/factory_autonomy.py: _demote_once": 2,
     "owner/inbox.py: InboxItem.to_dict": 1,
-    "integration_phase.py: _not_run": 1,
-    "integration_phase.py: _review_evidence": 1,
+    "factory/integration_phase.py: _not_run": 1,
+    "factory/integration_phase.py: _review_evidence": 1,
     "review/integration_state.py: _history": 1,
     "review/integration_state.py: add_stop": 1,
     "acceptance/isolation.py: write_record": 1,  # #700 slice 2: the rungs a run's commands ran in
-    "launch_record.py: write_launch_record": 1,
+    "pipeline/launch_record.py: write_launch_record": 1,
     "plan/manifest.py: Manifest.save": 1,
     # The tuple of string-typed top-level keys the schema check walks. A
     # vocabulary rather than a record, and it names kstrlVersion too.
@@ -157,8 +157,8 @@ EXPECTED_RUN_RECORD_SITES: dict[str, int] = {
     "plan/manifest_keys.py: <module>": 1,
     "events/observability.py: ProgressLog.emit": 1,
     "events/observability.py: ProgressLog._repair_event": 1,
-    "pipeline_attempt.py: AttemptRecorder.journal_integration_result": 1,
-    "pipeline_attempt.py: AttemptRecorder.journal_superseded_findings": 1,
+    "pipeline/pipeline_attempt.py: AttemptRecorder.journal_integration_result": 1,
+    "pipeline/pipeline_attempt.py: AttemptRecorder.journal_superseded_findings": 1,
     "events/reducer.py: upconvert_v1": 1,
     "serve_outcome.py: _red_base_outcome": 1,  # #654 slice 3b: the red base's evidence
     "queue/workqueue.py: Queue.await_answer": 1,
@@ -196,11 +196,11 @@ NOT_STAMPED_HERE: dict[str, str] = {
     "learning/evolution.py: _role_usage_entries": _JOURNAL,
     "learning/evolution.py: EvolutionJournal.record_run": _JOURNAL,
     "learning/evolution.py: EvolutionJournal.carry_superseded": _JOURNAL,
-    "factory_acceptance.py: _record_contract_event": _JOURNAL,
-    "pipeline_attempt.py: AttemptRecorder.journal_superseded_findings": _JOURNAL,
-    "pipeline_attempt.py: AttemptRecorder.journal_integration_result": _JOURNAL,
-    "factory_autonomy.py: _record_health_breaches": _DEMOTION,
-    "factory_autonomy.py: _demote_once": _DEMOTION,
+    "factory/factory_acceptance.py: _record_contract_event": _JOURNAL,
+    "pipeline/pipeline_attempt.py: AttemptRecorder.journal_superseded_findings": _JOURNAL,
+    "pipeline/pipeline_attempt.py: AttemptRecorder.journal_integration_result": _JOURNAL,
+    "factory/factory_autonomy.py: _record_health_breaches": _DEMOTION,
+    "factory/factory_autonomy.py: _demote_once": _DEMOTION,
     "owner/inbox.py: InboxItem.to_dict": (
         "an operator inbox item that points at the run it came from; it is a "
         "work item with its own id, not a record of the run"

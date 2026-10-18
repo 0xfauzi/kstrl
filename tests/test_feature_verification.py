@@ -19,10 +19,10 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
-from kstrl.commandrun import CommandRun
 from kstrl.config.config import KstrlConfig
 from kstrl.events import event_catalog
 from kstrl.events import events as ev
+from kstrl.factory.commandrun import CommandRun
 from kstrl.feature_cmd import FeatureParams, run_feature
 from kstrl.feature_verify import resolve_feature_verify_config
 from kstrl.loop.loop import STOP_EXIT_CODE

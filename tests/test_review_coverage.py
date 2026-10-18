@@ -35,10 +35,10 @@ from unittest.mock import patch
 import pytest
 
 from kstrl.config.config import KstrlConfig
-from kstrl.factory import run_factory
-from kstrl.factory_config import FactoryConfig
-from kstrl.factory_result import ComponentResult
+from kstrl.factory.factory import run_factory
 from kstrl.git import git_base, git_diff
+from kstrl.pipeline.factory_config import FactoryConfig
+from kstrl.pipeline.factory_result import ComponentResult
 from kstrl.plan.manifest import Component, Manifest
 from kstrl.review.review import (
     ReviewMode,
@@ -614,7 +614,7 @@ class TestReviewerPhasesAreReadOnly:
 
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 return_value=ComponentResult("comp-a", success=True, iterations=1),
             ),
             patch("kstrl.agents.get_agent", side_effect=fake_get_agent),
@@ -655,7 +655,7 @@ class TestBudgetAccounting:
 
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 side_effect=lambda comp_id, *a, **k: ComponentResult(
                     comp_id, success=True, iterations=1
                 ),
@@ -698,7 +698,7 @@ class TestAFactoryConfigThatNamesNoSecurityConfig:
 
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 return_value=ComponentResult("comp-a", success=True, iterations=1),
             ),
             patch("kstrl.agents.get_agent", return_value=agent),

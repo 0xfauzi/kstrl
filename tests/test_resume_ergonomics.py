@@ -18,11 +18,11 @@ from click.testing import CliRunner
 
 from kstrl.cli import cli
 from kstrl.config.config import KstrlConfig
-from kstrl.factory import run_factory
-from kstrl.factory_config import FactoryConfig
-from kstrl.factory_result import ComponentResult, FactoryResult
+from kstrl.factory.factory import run_factory
 from kstrl.learning.evolution_config import EvolutionConfig
 from kstrl.learning.journal_rows import FINDINGS_SUPERSEDED_EVENT
+from kstrl.pipeline.factory_config import FactoryConfig
+from kstrl.pipeline.factory_result import ComponentResult, FactoryResult
 from kstrl.plan.findings import (
     Finding,
     tag_finding_with_attempt,
@@ -354,7 +354,7 @@ class TestRunMetadataPersistence:
         success = ComponentResult("comp-a", success=True, iterations=1)
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 return_value=success,
             ),
             patch("kstrl.git.git_diff.get_diff_content", return_value=""),
@@ -387,7 +387,7 @@ class TestRunMetadataPersistence:
             error="agent died",
         )
         with patch(
-            "kstrl.factory._run_component",
+            "kstrl.factory.factory._run_component",
             return_value=failure,
         ):
             result = run_factory(
@@ -443,11 +443,11 @@ class TestPerAttemptFindings:
         passing_review = ReviewResult(passed=True, mode="hard")
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 return_value=success,
             ),
             patch(
-                "kstrl.factory.run_review",
+                "kstrl.factory.factory.run_review",
                 side_effect=[failing_review, passing_review],
             ),
             patch("kstrl.git.git_diff.get_diff_content", return_value=""),
@@ -527,7 +527,7 @@ class TestKeepWorktreesOnFailure:
             error="agent died",
         )
         with patch(
-            "kstrl.factory._run_component",
+            "kstrl.factory.factory._run_component",
             return_value=failure,
         ):
             result = run_factory(
@@ -598,7 +598,7 @@ class TestKeepWorktreesOnFailure:
         # not prune the recorded evidence worktree.
         config = _factory_config(use_worktrees=True)
         with patch(
-            "kstrl.factory._run_component",
+            "kstrl.factory.factory._run_component",
             side_effect=AssertionError("nothing should be scheduled"),
         ):
             run_factory(

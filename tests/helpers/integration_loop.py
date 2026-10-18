@@ -20,15 +20,15 @@ from typing import Any
 from unittest.mock import patch
 
 from kstrl.events.usage import UsageRecord
-from kstrl.factory import run_factory
-from kstrl.factory_result import ComponentResult, FactoryResult
+from kstrl.factory.factory import run_factory
 from kstrl.git import git_diff
 from kstrl.io.statedir import plan_prd_path
 from kstrl.owner.inbox import Inbox, InboxConfig, InboxItem, ItemKind
-from kstrl.pipeline import ComponentPipeline
+from kstrl.pipeline.factory_result import ComponentResult, FactoryResult
+from kstrl.pipeline.pipeline import ComponentPipeline
+from kstrl.pipeline.pr import PrOutcome
 from kstrl.plan.manifest import Component, ComponentStatus, Manifest
 from kstrl.plan.prd import PRD
-from kstrl.pr import PrOutcome
 from kstrl.review.integration_fix import fix_prd_rel
 from kstrl.review.review import ReviewMode, ReviewResult
 from kstrl.review.review import run_review as real_run_review
@@ -170,12 +170,12 @@ def run_loop(root: Path, rig: Rig, **overrides: Any) -> tuple[FactoryResult, str
     out = io.StringIO()
     config = {"integration_blocking": True, **overrides}
     with (
-        patch("kstrl.factory._run_component", side_effect=rig.component),
-        patch("kstrl.factory.run_review", side_effect=rig.review),
+        patch("kstrl.factory.factory._run_component", side_effect=rig.component),
+        patch("kstrl.factory.factory.run_review", side_effect=rig.review),
         patch.object(ComponentPipeline, "repoll_merge_pending", return_value=None),
         patch("kstrl.agents.get_agent", return_value=rig.reviewer),
-        patch("kstrl.pr.is_gh_available", return_value=True),
-        patch("kstrl.pr.push_create_and_merge_pr", side_effect=rig.pr),
+        patch("kstrl.pipeline.pr.is_gh_available", return_value=True),
+        patch("kstrl.pipeline.pr.push_create_and_merge_pr", side_effect=rig.pr),
     ):
         result = run_factory(
             Manifest.load(h.manifest_file(root)),

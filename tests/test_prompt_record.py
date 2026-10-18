@@ -23,7 +23,6 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from kstrl import factory_worker
 from kstrl.agents import prompt_record
 from kstrl.agents.claude_code import ClaudeCodeAgent
 from kstrl.agents.claude_sdk import ClaudeSdkAgent
@@ -42,6 +41,7 @@ from kstrl.events.usage import (
     INTEGRATION_COMPONENT,
     INTEGRATION_ROLE,
 )
+from kstrl.factory import factory_worker
 from kstrl.git.version import kstrl_version
 from kstrl.io.atomicio import atomic_write_json
 from kstrl.io.runid import run_kind

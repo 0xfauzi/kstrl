@@ -57,7 +57,7 @@ from kstrl.events import (
     RunPlan,
     RunStarted,
 )
-from kstrl.factory_worker import engineer_context_prefix, report_operator_files
+from kstrl.factory import engineer_context_prefix, report_operator_files
 from kstrl.feature_verify import (
     baseline_skip_reason,
     report_verification,
@@ -76,8 +76,8 @@ from kstrl.proc import TimeoutConfig
 
 if TYPE_CHECKING:
     from kstrl.agents import Agent, SandboxConfig
-    from kstrl.commandrun import CommandRun
     from kstrl.config import KstrlConfig
+    from kstrl.factory import CommandRun
     from kstrl.plan import PRD
     from kstrl.ui import UI
 

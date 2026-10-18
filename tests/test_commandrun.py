@@ -6,10 +6,10 @@ import json
 from pathlib import Path
 from typing import Any
 
-from kstrl.commandrun import CommandRun, open_command_run
 from kstrl.events import event_catalog
 from kstrl.events import events as ev
 from kstrl.events.bridge import EventBridgeUI, NullPrompter
+from kstrl.factory.commandrun import CommandRun, open_command_run
 from kstrl.io.runid import run_kind
 from kstrl.ui.plain import PlainUI
 

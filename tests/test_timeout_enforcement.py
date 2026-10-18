@@ -36,22 +36,22 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl import factory as factory_mod
 from kstrl.agents.base import TOOL_RESULT_PREFIX, Agent
 from kstrl.agents.claude_code import ClaudeCodeAgent
 from kstrl.agents.claude_sdk import ClaudeSdkAgent
 from kstrl.agents.codex import CodexAgent
 from kstrl.agents.custom import CustomAgent
 from kstrl.config.config import KstrlConfig
-from kstrl.factory import (
+from kstrl.factory import factory as factory_mod
+from kstrl.factory.factory import (
     _expired_futures,
     _next_backstop_wait,
     run_factory,
 )
-from kstrl.factory_config import FactoryConfig
-from kstrl.factory_result import ComponentResult
-from kstrl.factory_worktrees import _remove_stale_index_lock, _setup_worktree
+from kstrl.factory.factory_worktrees import _remove_stale_index_lock, _setup_worktree
 from kstrl.loop.loop import run_loop
+from kstrl.pipeline.factory_config import FactoryConfig
+from kstrl.pipeline.factory_result import ComponentResult
 from kstrl.plan.manifest import Component, Manifest
 from kstrl.proc.proc import TIMEOUT_MESSAGE_PREFIX, kill_active_process_groups
 from kstrl.proc.timeout import TimeoutConfig
@@ -1657,7 +1657,7 @@ class TestCliTimeoutFlags:
         from click.testing import CliRunner
 
         from kstrl.cli import cli
-        from kstrl.factory_result import FactoryResult
+        from kstrl.pipeline.factory_result import FactoryResult
 
         manifest_path = self._write_manifest(tmp_path)
         runner = CliRunner()
@@ -2213,7 +2213,7 @@ class TestSubprocessTimeoutAudit:
 
         Scoped to CHILD_WAIT_SCOPE because ``.wait(...)`` outside
         them is overwhelmingly ``threading.Event.wait``, whose unbounded
-        form is legitimate and common (``kstrl/commandrun.py``,
+        form is legitimate and common (``kstrl/factory/commandrun.py``,
         ``kstrl/owner/interaction.py``, ``kstrl/proc/shutdown.py``). Inside them it
         is a child process, and there it must always name a deadline.
 
@@ -2410,7 +2410,7 @@ class TestFreshBaseRetryReachesTheScheduler:
         monkeypatch.setattr(factory_mod, "_setup_worktree", _spy)
 
         killed = ComponentResult("a", success=False, error="agent timeout after 30s")
-        with patch("kstrl.factory._run_component", return_value=killed):
+        with patch("kstrl.factory.factory._run_component", return_value=killed):
             result = run_factory(manifest, config, base, PlainUI(no_color=True), tmp_path)
 
         assert "a" in result.failed

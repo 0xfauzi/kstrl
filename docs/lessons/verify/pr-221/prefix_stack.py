@@ -1,6 +1,6 @@
 """Widget 6 of docs/lessons/pr-221.html: the order the agent's context is assembled.
 
-Today (kstrl/factory.py:1439-1450) the worker joins ``parts`` in this order:
+Today (kstrl/factory/factory.py:1439-1450) the worker joins ``parts`` in this order:
 knowledge prefix, feedforward prefix, retry context. ``run_loop``
 (kstrl/loop/loop.py:529-541) then prepends CLAUDE.md, headed "# Project Context
 (from CLAUDE.md)", to the templated prompt, and prepends the whole context

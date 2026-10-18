@@ -93,8 +93,7 @@ from types import ModuleType
 
 import pytest
 
-from kstrl import acceptance_design, intake_issue
-from kstrl.acceptance_design import ACCEPTANCE_PROMPT, ACCEPTANCE_PROMPT_VERSION
+from kstrl import intake_issue
 from kstrl.architect import decisions, decompose_prompt, owner_answers
 from kstrl.architect.decisions import (
     DECISIONS_CONTEXT_PROMPT,
@@ -115,6 +114,8 @@ from kstrl.architect.owner_answers import (
     OWNER_ANSWER_PROMPT_VERSION,
     render_owner_answer,
 )
+from kstrl.factory import acceptance_design
+from kstrl.factory.acceptance_design import ACCEPTANCE_PROMPT, ACCEPTANCE_PROMPT_VERSION
 from kstrl.git import git_diff
 from kstrl.git.git_diff import (
     PASTED_CHANGE_SOURCE_PROMPT,

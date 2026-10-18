@@ -44,9 +44,7 @@ from unittest.mock import patch
 import pytest
 
 from kstrl.config.config import KstrlConfig
-from kstrl.factory import run_factory
-from kstrl.factory_config import FactoryConfig
-from kstrl.factory_result import ComponentResult
+from kstrl.factory.factory import run_factory
 from kstrl.knowledge.knowledge import build_knowledge_context, measure_fact_utilization
 from kstrl.knowledge.knowledge_distill import distill_facts
 from kstrl.knowledge.knowledge_facts import (
@@ -56,6 +54,8 @@ from kstrl.knowledge.knowledge_facts import (
     read_facts,
     write_facts,
 )
+from kstrl.pipeline.factory_config import FactoryConfig
+from kstrl.pipeline.factory_result import ComponentResult
 from kstrl.plan.manifest import Component, Manifest
 from kstrl.ui.plain import PlainUI
 from kstrl.verify.verify_model import VerifyConfig
@@ -1588,11 +1588,11 @@ class TestFactoryDistillIntegration:
 
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 return_value=success,
             ),
             patch(
-                "kstrl.factory.distill_facts",
+                "kstrl.factory.factory.distill_facts",
                 return_value=(2, "ok", False),
             ) as mock_distill,
             patch(
@@ -1627,11 +1627,11 @@ class TestFactoryDistillIntegration:
 
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 return_value=fail,
             ),
             patch(
-                "kstrl.factory.distill_facts",
+                "kstrl.factory.factory.distill_facts",
                 return_value=(0, "skipped", False),
             ) as mock_distill,
         ):
@@ -1670,11 +1670,11 @@ class TestFactoryDistillIntegration:
 
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 return_value=success,
             ),
             patch(
-                "kstrl.factory.distill_facts",
+                "kstrl.factory.factory.distill_facts",
                 return_value=(0, "disabled", False),
             ) as mock_distill,
             patch(
@@ -1718,11 +1718,11 @@ class TestFactoryDistillIntegration:
 
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 return_value=success,
             ),
             patch(
-                "kstrl.factory.distill_facts",
+                "kstrl.factory.factory.distill_facts",
                 return_value=(0, "ok", False),
             ) as mock_distill,
             patch(
@@ -1768,11 +1768,11 @@ class TestFactoryDistillIntegration:
 
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 return_value=success,
             ),
             patch(
-                "kstrl.factory.distill_facts",
+                "kstrl.factory.factory.distill_facts",
                 return_value=(1, "ok", False),
             ) as mock_distill,
             patch(

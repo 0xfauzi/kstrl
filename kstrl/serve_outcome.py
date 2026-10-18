@@ -15,7 +15,7 @@ from kstrl.serve_config import ServeObserver
 
 #: Substrings the factory prints on two of its exit-2 refusals.
 #: Matching output is EVIDENCE; a pre-launch lock probe is inference and
-#: races (#186 F6). Both come from kstrl/factory.py and kstrl/cli.py. A
+#: races (#186 F6). Both come from kstrl/factory/factory.py and kstrl/cli.py. A
 #: third refusal, a red base (#654), is read from the record the run
 #: wrote, never from output: see ``_red_base_outcome``.
 _LOCK_REFUSAL_MARKER = "--force-lock"

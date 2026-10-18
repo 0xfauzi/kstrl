@@ -57,9 +57,9 @@ from kstrl.owner.interaction import (
     PromptResponse,
     UiInteractionChannel,
 )
-from kstrl.pipeline_delivery import CheckpointDecision, Delivery, PipelineOutcome
-from kstrl.pipeline_merge import PrDisposition, PrPhaseResult
-from kstrl.pipeline_transitions import Transition
+from kstrl.pipeline.pipeline_delivery import CheckpointDecision, Delivery, PipelineOutcome
+from kstrl.pipeline.pipeline_merge import PrDisposition, PrPhaseResult
+from kstrl.pipeline.pipeline_transitions import Transition
 from kstrl.ui.plain import PlainUI
 from kstrl.ui.rich_ui import RichUI
 from tests.helpers.astwalk import (
@@ -94,7 +94,7 @@ from tests.test_merge_gate_park import (
 )
 from tests.test_pipeline import _ChoiceUI, _factory_config, _make_pipeline, _success
 
-PIPELINE_SOURCE = Path(__file__).resolve().parents[1] / "kstrl" / "pipeline_delivery.py"
+PIPELINE_SOURCE = Path(__file__).resolve().parents[1] / "kstrl" / "pipeline/pipeline_delivery.py"
 
 
 @pytest.fixture(autouse=True)
@@ -412,8 +412,8 @@ EXPECTED_PROMPT_SITES = {
     "feature_cmd.py::run_feature": "refuses: quit to amend",
     "verify/guards.py::enforce_allowed_paths": "quits",
     "loop/loop.py::_resolve_iteration_pause": "stops the run, same as Quit, when nobody answers",
-    "pipeline_delivery.py::Delivery._phase_checkpoint": "parks for the inbox (#594)",
-    "plan_gate.py::run_plan_gate": "parks the plan for the inbox (#602)",
+    "pipeline/pipeline_delivery.py::Delivery._phase_checkpoint": "parks for the inbox (#594)",
+    "factory/plan_gate.py::run_plan_gate": "parks the plan for the inbox (#602)",
 }
 
 #: The target `calls_to`/`resolved_calls` resolve against: the fully
@@ -433,10 +433,10 @@ EXPECTED_SEEN_PROMPT_SITES: tuple[str, ...] = (
     "cli_architect.py::retry kstrl.owner.interaction.PromptRequest",
     "cli_factory.py::factory kstrl.owner.interaction.PromptRequest",
     "cli_preflight.py::_stack_checkpoint kstrl.owner.interaction.PromptRequest",
+    "factory/plan_gate.py::run_plan_gate kstrl.owner.interaction.PromptRequest",
     "feature_cmd.py::run_feature kstrl.owner.interaction.PromptRequest",
     "loop/loop.py::_resolve_iteration_pause kstrl.owner.interaction.PromptRequest",
-    "pipeline_delivery.py::Delivery._phase_checkpoint kstrl.owner.interaction.PromptRequest",
-    "plan_gate.py::run_plan_gate kstrl.owner.interaction.PromptRequest",
+    "pipeline/pipeline_delivery.py::Delivery._phase_checkpoint kstrl.owner.interaction.PromptRequest",  # noqa: E501
     "verify/guards.py::enforce_allowed_paths kstrl.owner.interaction.PromptRequest",
 )
 

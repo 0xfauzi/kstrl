@@ -52,10 +52,10 @@ FILE_DUPLICATING_NAMES = (
 #: rows are
 #: ``copy.deepcopy``. None of them writes into a component worktree.
 EXPECTED_FILE_DUPLICATING_SITES = {
-    "factory_worker.py": 1,
+    "factory/factory_worker.py": 1,
     "feature_cmd.py": 4,
     "project/init_cmd.py": 1,
-    "retry_plan.py": 2,
+    "factory/retry_plan.py": 2,
 }
 
 

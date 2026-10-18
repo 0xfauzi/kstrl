@@ -23,7 +23,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.factory import run_factory
+from kstrl.factory.factory import run_factory
 from kstrl.plan.manifest import ComponentStatus
 from kstrl.ui.plain import PlainUI
 from kstrl.verify.verify_model import VerifyConfig

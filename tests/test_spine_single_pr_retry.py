@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import factory_worktrees
+from kstrl.factory import factory_worktrees
 from kstrl.proc.timeout import TimeoutConfig
 from kstrl.ui.plain import PlainUI
 from tests.spine_utils import component, git, init_kstrl_repo, make_manifest

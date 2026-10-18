@@ -1,6 +1,6 @@
 """R8.4 (#151): factory health trending, advisory only.
 
-The seam #232 shipped (``kstrl/factory.py::_record_health_breaches``) has
+The seam #232 shipped (``kstrl/factory/factory.py::_record_health_breaches``) has
 read a module named ``kstrl.learning.health`` since it landed, and nothing supplied
 it. This file drives the rule arithmetic on synthetic series, the two
 report surfaces (``ks health`` and ``ks autonomy replay``), and the real

@@ -20,11 +20,11 @@ import pytest
 import kstrl
 from kstrl import __version__
 from kstrl.git.version import UNSTAMPED, kstrl_version, version_of_source
-from kstrl.launch_record import read_launch_record
 from kstrl.learning.evolution import EvolutionJournal
 from kstrl.learning.evolution_config import EvolutionConfig
 from kstrl.learning.experiments_tsv import EXPERIMENTS_HEADER, experiment_rows
 from kstrl.learning.journal_rows import SPEC_ISSUES_EVENT
+from kstrl.pipeline.launch_record import read_launch_record
 from kstrl.plan.manifest import Manifest
 from tests.helpers.gitrepo import git_in, set_identity
 from tests.test_event_stream import _events_file, _run_stub_factory

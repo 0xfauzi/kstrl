@@ -423,7 +423,7 @@ breach blocks, and so does a metric that fewer than 8 decisive runs record. L4 "
 is not checked, because the release stage (#154) is not built, so it blocks. `--force` overrides all
 three and records them in the transition's `forced_over_blockers`.
 
-**L1 plan approval (#602).** Enforced in `kstrl/plan_gate.py::run_plan_gate`, called from
+**L1 plan approval (#602).** Enforced in `kstrl/factory/plan_gate.py::run_plan_gate`, called from
 `run_factory` after every pre-spend refusal and before anything is pushed, merged or scheduled. At L1
 it asks through the interaction channel; only an answered approval runs the plan. Anything else parks
 it as a `plan_gate` inbox item bound to a SHA-256 of the plan, and `ks inbox approve` or

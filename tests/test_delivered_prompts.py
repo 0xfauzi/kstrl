@@ -80,10 +80,10 @@ from types import ModuleType
 import pytest
 
 import kstrl.project
-from kstrl import acceptance_design
 from kstrl.architect import decompose, decompose_prompt
 from kstrl.architect.decisions import SpecDecision, build_decisions_context
 from kstrl.architect.owner_answers import read_owner_answers
+from kstrl.factory import acceptance_design
 from kstrl.git import git_diff
 from kstrl.intake_issue import RemoteIssue, spec_from_issue
 from kstrl.knowledge import knowledge_distill

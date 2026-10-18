@@ -27,10 +27,10 @@ from unittest.mock import patch
 import pytest
 
 from kstrl.architect.decompose_prompt import spec_digest
-from kstrl.factory_acceptance import _resolve_round_base as real_resolve_round_base
-from kstrl.factory_result import FactoryResult
+from kstrl.factory.factory_acceptance import _resolve_round_base as real_resolve_round_base
 from kstrl.io.statedir import control_dir
 from kstrl.owner.inbox import Inbox, InboxConfig, InboxItem, ItemKind
+from kstrl.pipeline.factory_result import FactoryResult
 from kstrl.plan.manifest import Component, ComponentStatus, Manifest
 from kstrl.ui.base import UI
 from tests.helpers import integration_harness as h
@@ -147,7 +147,7 @@ def _run_second(
             h.commit_file(root_dir, h.API, BROKEN_API)
         return real_resolve_round_base(manifest, root_dir, ui)
 
-    with patch("kstrl.factory_acceptance._resolve_round_base", side_effect=resolve):
+    with patch("kstrl.factory.factory_acceptance._resolve_round_base", side_effect=resolve):
         return h.run_factory_over(
             root,
             h.FakeReviewer("{}"),
@@ -397,7 +397,7 @@ def test_a_carry_that_cannot_be_written_fails_the_run(tmp_path: Path) -> None:
         return real_resolve_round_base(manifest, root_dir, ui)
 
     try:
-        with patch("kstrl.factory_acceptance._resolve_round_base", side_effect=resolve):
+        with patch("kstrl.factory.factory_acceptance._resolve_round_base", side_effect=resolve):
             result, out = h.run_factory_over(
                 root, h.FakeReviewer("{}"), acceptance_dir=str(plan), integration_review=False
             )
