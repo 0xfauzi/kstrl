@@ -190,6 +190,12 @@ class AllowedSite:
 #: Every row cites the "Out of scope" table of the #696 inventory.
 ALLOWLIST: tuple[AllowedSite, ...] = (
     AllowedSite(
+        "verify/policy.py",
+        '__init__.py",',
+        5,
+        "#863: the machinery rows that name kstrl's own package init files",
+    ),
+    AllowedSite(
         "serve_process.py", "sys.executable,", 1, "E28: the daemon starts -m kstrl factory"
     ),
     AllowedSite(

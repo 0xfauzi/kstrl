@@ -510,6 +510,31 @@ def test_an_approval_of_the_enforcement_machinery_halt_is_refused(tmp_path: Path
     assert (finding.severity, f"waiver_refused:{item.id}" in finding.tags) == ("critical", True)
 
 
+#: #863: each package `__init__.py` that re-exports a name of a machinery module.
+MACHINERY_INITS = ("verify", "proc", "learning", "io", "owner")
+
+
+@pytest.mark.parametrize("package", MACHINERY_INITS)
+def test_an_engineer_edit_of_a_machinery_package_init_halts_the_run(
+    tmp_path: Path, package: str
+) -> None:
+    """#863: code reads machinery through the package binding, so the edit halts."""
+    engineer = _engineer(
+        f"mkdir -p kstrl/{package} && printf '# edited\\n' >> kstrl/{package}/__init__.py"
+    )
+    root, _env_ = _failed_run(tmp_path, POLICY_TOML, engineer)
+    findings = [f for f in _gated(root, "policy_") if f.category == "policy_enforcement_machinery"]
+    assert [f.severity for f in findings] == ["critical"], _component(root).findings
+
+
+def test_an_engineer_edit_of_a_non_machinery_file_completes(tmp_path: Path) -> None:
+    root = _repo(tmp_path, POLICY_TOML)
+    engineer = _engineer("mkdir -p kstrl/other && printf '# edited\\n' >> kstrl/other/__init__.py")
+    code, out = _factory(root, _env(tmp_path, engineer))
+    assert code == 0, out
+    assert _component(root).status == "completed", out
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [("projectName", "another"), ("specFile", "another.md"), ("planId", "another")],

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import os
 from pathlib import Path
@@ -321,6 +322,62 @@ class TestLegacyHaltPaths:
             rel = row.removeprefix("**/")
             assert (root / rel).is_file(), f"{row} names no file of this tree"
             assert match_glob(rel, ENFORCEMENT_MACHINERY_PATHS) == row
+
+
+def _import_targets(node: ast.ImportFrom, package: list[str]) -> set[str]:
+    """The file paths that ``from ... import ...`` can read: the module, or a submodule."""
+    if node.level:
+        base = package[: len(package) - node.level + 1]
+        parts = [*base, *(node.module.split(".") if node.module else [])]
+    else:
+        parts = (node.module or "").split(".")
+    stem = "/".join(parts)
+    return {f"{stem}.py", f"{stem}/__init__.py", *(f"{stem}/{a.name}.py" for a in node.names)}
+
+
+def required_init_rows(root: Path, rows: tuple[str, ...]) -> set[str]:
+    """The ``__init__.py`` paths that re-export a name of a listed module.
+
+    Closed by construction: it reads every ``__init__.py`` under
+    ``root/kstrl`` and follows ``from kstrl.a.b import name`` (a name or a
+    submodule) to the module it reads, repeating until no row is added, so a
+    chain through a second ``__init__.py`` counts. A relative import counts.
+    """
+    listed = {
+        row.removeprefix("**/")
+        for row in rows
+        if row.startswith("**/kstrl/") and not row.endswith("/__init__.py")
+    }
+    required: set[str] = set()
+    inits = sorted((root / "kstrl").rglob("__init__.py"))
+    trees = {
+        i.relative_to(root).as_posix(): ast.parse(i.read_text(encoding="utf-8")) for i in inits
+    }
+    changed = True
+    while changed:
+        changed = False
+        for rel, tree in trees.items():
+            package = rel.removesuffix("/__init__.py").split("/")
+            nodes = [n for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)]
+            if rel not in required and any(_import_targets(n, package) & listed for n in nodes):
+                listed.add(rel)
+                required.add(rel)
+                changed = True
+    return required
+
+
+class TestMachineryPackageInits:
+    def test_each_init_that_reexports_machinery_has_a_row(self) -> None:
+        """#863: a package binding is a way to read a machinery function, so
+        an ``__init__.py`` that re-exports one is machinery. The required set
+        comes from the code; a new re-export with no row is red."""
+        from kstrl.verify.policy import ENFORCEMENT_MACHINERY_PATHS
+
+        root = Path(__file__).resolve().parent.parent
+        required = required_init_rows(root, ENFORCEMENT_MACHINERY_PATHS)
+        assert required, "no __init__.py found that re-exports machinery: the walk is blind"
+        missing = sorted(r for r in required if f"**/{r}" not in ENFORCEMENT_MACHINERY_PATHS)
+        assert missing == [], f"no ENFORCEMENT_MACHINERY_PATHS row for {missing}"
 
 
 class TestReviewFailClosed:

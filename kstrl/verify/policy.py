@@ -63,6 +63,17 @@ ENFORCEMENT_MACHINERY_PATHS: tuple[str, ...] = (
     "**/kstrl/learning/autonomy_transitions.py",
     "**/kstrl/io/statedir.py",
     "**/kstrl/owner/waivers.py",  # #595: turns an approved item into a waiver
+    # #863: code in another package reads a machinery name through its
+    # package binding (`from kstrl.verify import check_policy_envelope`), so
+    # an edit of the init file can bind the name to a different
+    # function. Each package init file that re-exports a name of a module
+    # above is machinery itself. tests/test_statedir.py computes this set
+    # from the code and is red when a row is missing.
+    "**/kstrl/verify/__init__.py",
+    "**/kstrl/proc/__init__.py",
+    "**/kstrl/learning/__init__.py",
+    "**/kstrl/io/__init__.py",
+    "**/kstrl/owner/__init__.py",
     # R8.2 / R8.9 control-plane state. Live copies live under XDG
     # (outside the tree); these legacy in-tree paths stay in the halt
     # set so a diff cannot recreate agent-editable control files.
