@@ -88,6 +88,8 @@ SPEC = "kstrl.project.operator_context.operator_file_spec"
 
 #: The module that owns the prompt order. One file, named once.
 WORKER = "factory/factory_worker.py"
+#: Its dotted name, which the walk uses to resolve a relative import.
+WORKER_MODULE = "kstrl." + WORKER.removesuffix(".py").replace("/", ".")
 
 #: The function in it that builds the prompt, and the local it builds the
 #: prompt ORDER in. Both named once, so the guard's failure says which
@@ -452,7 +454,7 @@ class TestEveryRowReachesAPrompt:
         not bought its edits fails here or next door, naming the key that
         is missing.
         """
-        counts, unresolved = prompt_sites(worker_source(), f"kstrl.{WORKER[:-3]}")
+        counts, unresolved = prompt_sites(worker_source(), WORKER_MODULE)
 
         assert unresolved == (), (
             f"a load_operator_file call in {WORKER} whose kind this guard could not "
@@ -478,7 +480,7 @@ class TestEveryRowReachesAPrompt:
         once, and the two rows that exist today are held only by spine
         tests that name them by hand, which a third row would not have.
         """
-        counts, unresolved = delivered_kinds(worker_source(), f"kstrl.{WORKER[:-3]}")
+        counts, unresolved = delivered_kinds(worker_source(), WORKER_MODULE)
 
         assert unresolved == (), (
             f"this guard could not read the prompt order in {WORKER}::{WORKER_SCOPE} "
@@ -531,7 +533,7 @@ class TestEveryRowReachesAPrompt:
             worker_source(),
             {LOADER},
             where=label(KSTRL_PACKAGE / WORKER),
-            module=f"kstrl.{WORKER[:-3]}",
+            module=WORKER_MODULE,
         )
 
         assert found.undecided == (), (

@@ -178,7 +178,7 @@ class TestReleaseModuleContainment:
         """
         spawning = _reachable_process_modules("kstrl.pipeline.release")
         assert spawning == set(), (
-            f"kstrl.release reaches {sorted(spawning)}, which spell a process "
+            f"kstrl.pipeline.release reaches {sorted(spawning)}, which spell a process "
             "primitive (EXPECTED_PROCESS_MODULES). Slice 1 has no driver; the "
             "driver slice must add its own row there rather than let one in "
             "through another module's import."
