@@ -19,13 +19,13 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl.intake_gh import GhResult
-from kstrl.intake_issue import ProcessedLedger
 from kstrl.project.operator_context import GUIDANCE_HEADING
 from kstrl.project.scaffold_templates import DEFAULT_MEMORY
 from kstrl.queue.workqueue import Queue
 from kstrl.queue.workqueue_items import ItemSource, MergeDisposition, QueueConfig
-from kstrl.serve import _NullObserver, serve_cycle
+from kstrl.serve.intake_gh import GhResult
+from kstrl.serve.intake_issue import ProcessedLedger
+from kstrl.serve.serve import _NullObserver, serve_cycle
 from tests.helpers.fakegh import GhRouter, marked, unmarked
 from tests.helpers.runners import recording_runner
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
@@ -176,7 +176,7 @@ def _setup(
 def _cycle(root: Path, gh: _SteerGh) -> _NullObserver:
     """One real serve cycle against a stubbed gh. Returns the observer."""
     obs = _NullObserver()
-    with patch("kstrl.intake_gh.run_gh", gh):
+    with patch("kstrl.serve.intake_gh.run_gh", gh):
         serve_cycle(root, runner=recording_runner([]), observer=obs)
     return obs
 
@@ -555,7 +555,7 @@ def test_the_command_set_is_exactly_the_handler_keys() -> None:
     """The structural control for plant P3. `_STEER_COMMANDS` must be
     exactly the handler keys, not a superset or a subset of them.
     """
-    from kstrl.intake_steering import _STEER_COMMANDS, _STEER_HANDLERS
+    from kstrl.serve.intake_steering import _STEER_COMMANDS, _STEER_HANDLERS
 
     assert set(_STEER_COMMANDS) == set(_STEER_HANDLERS)
 

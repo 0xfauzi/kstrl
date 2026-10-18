@@ -24,7 +24,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner, Result
 
-from kstrl.cli import cli
+from kstrl.cli.cli import cli
 from kstrl.learning.evolution import EvolutionJournal
 from kstrl.learning.evolution_config import EvolutionConfig
 from kstrl.learning.journal_rows import FINDINGS_SUPERSEDED_EVENT

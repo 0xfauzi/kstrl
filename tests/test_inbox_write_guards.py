@@ -56,7 +56,7 @@ EXPECTED_CONSTRUCTIONS = (
     # #639 slice 4: read_owner_answers scans for the owner's answers; reads only.
     "architect/owner_answers.py kstrl.owner.inbox.Inbox",
     "calibration/calibration_ladder.py kstrl.owner.inbox.Inbox",
-    "cli_inbox.py kstrl.owner.inbox.Inbox",
+    "cli/cli_inbox.py kstrl.owner.inbox.Inbox",
     "factory/factory_autonomy.py kstrl.owner.inbox.Inbox",
     # #602: the L1 plan gate reads its item (_find) and records a decision
     # given at the prompt (_record).
@@ -70,8 +70,8 @@ EXPECTED_CONSTRUCTIONS = (
     # filed (file_stack_item) and decided at the ks factory prompt
     # (decide_at_prompt).
     "project/stack.py kstrl.owner.inbox.Inbox",
-    "serve_gates.py kstrl.owner.inbox.Inbox",
-    "serve_settle.py kstrl.owner.inbox.Inbox",
+    "serve/serve_gates.py kstrl.owner.inbox.Inbox",
+    "serve/serve_settle.py kstrl.owner.inbox.Inbox",
 )
 
 #: The same census BY COUNT. ``without_line_numbers`` deduplicates, so the tuple above cannot
@@ -82,7 +82,7 @@ EXPECTED_CONSTRUCTION_COUNTS = {
     # inbox for an undecided calibration_drift item. It reads; it mutates nothing.
     "learning/autonomy_transitions.py": 2,
     "calibration/calibration_ladder.py": 1,
-    "cli_inbox.py": 1,
+    "cli/cli_inbox.py": 1,
     # #644 slice 2: was 2. +1: escalation_naming scans the inbox for the undecided
     # spec_escalation row that names a poisoned item. It reads; it mutates nothing.
     "architect/decisions.py": 3,
@@ -94,8 +94,8 @@ EXPECTED_CONSTRUCTION_COUNTS = {
     # exactly one Inbox(...) call left in the file.
     "pipeline/pipeline_inbox.py": 1,
     "factory/plan_gate.py": 2,
-    "serve_gates.py": 1,
-    "serve_settle.py": 1,
+    "serve/serve_gates.py": 1,
+    "serve/serve_settle.py": 1,
     "project/stack.py": 3,
     "owner/waivers.py": 1,
 }
@@ -139,7 +139,7 @@ EXPECTED_MUTATIONS: dict[str, Disposition] = {
     "factory/plan_gate.py::_record::add": _GUARDED,
     "factory/plan_gate.py::_record::approve": _GUARDED,
     "factory/plan_gate.py::_record::reject": _GUARDED,
-    "serve_settle.py::_file_inbox_item::add": _GUARDED,
+    "serve/serve_settle.py::_file_inbox_item::add": _GUARDED,
     # #696: each propagates to a caller that refuses on it. unconfirmed_lines
     # catches everything file_stack_item raises; cli._stack_checkpoint
     # catches SURFACE_REJECTIONS (ControlStateError is a RuntimeError).
@@ -148,7 +148,7 @@ EXPECTED_MUTATIONS: dict[str, Disposition] = {
     ),
     "project/stack.py::decide_at_prompt::approve": Disposition(guarded=False, reason="as ::add"),
     "project/stack.py::decide_at_prompt::reject": Disposition(guarded=False, reason="as ::add"),
-    "cli_inbox.py::_decide_and_report::approve": Disposition(
+    "cli/cli_inbox.py::_decide_and_report::approve": Disposition(
         guarded=False,
         reason=(
             "an operator typed this command and is watching it; a control "
@@ -157,22 +157,22 @@ EXPECTED_MUTATIONS: dict[str, Disposition] = {
             "already happened"
         ),
     ),
-    "cli_inbox.py::_decide_and_report::reject": Disposition(
+    "cli/cli_inbox.py::_decide_and_report::reject": Disposition(
         guarded=False, reason="as _decide_and_report::approve"
     ),
-    "cli_inbox.py::_decide_and_report::snooze": Disposition(
+    "cli/cli_inbox.py::_decide_and_report::snooze": Disposition(
         guarded=False, reason="as _decide_and_report::approve"
     ),
-    "cli_inbox.py::_decide_and_report::resolve": Disposition(
+    "cli/cli_inbox.py::_decide_and_report::resolve": Disposition(
         guarded=False, reason="as _decide_and_report::approve"
     ),
-    "cli_inbox.py::_decide_parked_merge_if_parked::approve": Disposition(
+    "cli/cli_inbox.py::_decide_parked_merge_if_parked::approve": Disposition(
         guarded=False, reason="as _decide_and_report::approve"
     ),
-    "cli_inbox.py::_decide_parked_merge_if_parked::reject": Disposition(
+    "cli/cli_inbox.py::_decide_parked_merge_if_parked::reject": Disposition(
         guarded=False, reason="as _decide_and_report::approve"
     ),
-    "cli_inbox.py::inbox_retry::resolve": Disposition(
+    "cli/cli_inbox.py::inbox_retry::resolve": Disposition(
         guarded=False,
         reason=(
             "the manifest reset above it has already been saved, but this "
@@ -206,7 +206,7 @@ EXPECTED_CONFIG_LOADS: dict[str, Disposition] = {
     "architect/decisions.py::open_escalation_item": _GUARDED,
     "architect/decisions.py::resolve_escalation_items": _GUARDED,
     "factory/factory_autonomy.py::_open_health_breach_items": _GUARDED,
-    "serve_settle.py::_file_inbox_item": _GUARDED,
+    "serve/serve_settle.py::_file_inbox_item": _GUARDED,
     # #696 slice 3: a load the stack check cannot make is a refusal.
     "project/stack.py::_refusal": _GUARDED,
     "project/stack.py::file_stack_item": Disposition(
@@ -223,7 +223,7 @@ EXPECTED_CONFIG_LOADS: dict[str, Disposition] = {
     # #433: home's needs-you rows; a load it cannot make renders no count.
     # #646: ks retry's read of the approvals; a load it cannot make keeps nothing.
     "owner/waivers.py::approvals_at": _GUARDED,
-    "serve_gates.py::check_inbox_cap": Disposition(
+    "serve/serve_gates.py::check_inbox_cap": Disposition(
         guarded=False,
         reason=(
             "a read-only admission gate. [inbox] is a preflight section, so "
@@ -232,7 +232,7 @@ EXPECTED_CONFIG_LOADS: dict[str, Disposition] = {
             "its own cap must refuse rather than admit"
         ),
     ),
-    "cli_inbox.py::_inbox_for": Disposition(
+    "cli/cli_inbox.py::_inbox_for": Disposition(
         guarded=False,
         reason=(
             "an operator command in the foreground, and the preflight has "
@@ -608,13 +608,17 @@ DECIDERS = frozenset({"approve", "reject", "resolve", "snooze"})
 #: caller read the item survives (#648). A new unconditional decision
 #: fails until someone adds its row here with the reason.
 UNCONDITIONAL_DECISIONS: dict[str, str] = {
-    "cli_inbox.py::_decide_and_report::approve": "the operator typed ks inbox approve",
-    "cli_inbox.py::_decide_and_report::reject": "the operator typed ks inbox reject",
-    "cli_inbox.py::_decide_and_report::snooze": "the operator typed ks inbox snooze",
-    "cli_inbox.py::_decide_and_report::resolve": "the operator typed the command",
-    "cli_inbox.py::_decide_parked_merge_if_parked::approve": "the operator typed ks inbox approve",
-    "cli_inbox.py::_decide_parked_merge_if_parked::reject": "the operator typed ks inbox reject",
-    "cli_inbox.py::inbox_retry::resolve": "the operator typed ks inbox retry",
+    "cli/cli_inbox.py::_decide_and_report::approve": "the operator typed ks inbox approve",
+    "cli/cli_inbox.py::_decide_and_report::reject": "the operator typed ks inbox reject",
+    "cli/cli_inbox.py::_decide_and_report::snooze": "the operator typed ks inbox snooze",
+    "cli/cli_inbox.py::_decide_and_report::resolve": "the operator typed the command",
+    "cli/cli_inbox.py::_decide_parked_merge_if_parked::approve": (
+        "the operator typed ks inbox approve"
+    ),
+    "cli/cli_inbox.py::_decide_parked_merge_if_parked::reject": (
+        "the operator typed ks inbox reject"
+    ),
+    "cli/cli_inbox.py::inbox_retry::resolve": "the operator typed ks inbox retry",
     "factory/plan_gate.py::_record::approve": "the operator answered the plan checkpoint prompt",
     "factory/plan_gate.py::_record::reject": "the operator answered the plan checkpoint prompt",
     "project/stack.py::decide_at_prompt::approve": (

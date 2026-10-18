@@ -29,7 +29,7 @@ from typing import Any
 import pytest
 from click.testing import CliRunner
 
-from kstrl.cli import cli
+from kstrl.cli.cli import cli
 from kstrl.config.config import KstrlConfig
 from kstrl.factory.factory import run_factory
 from kstrl.pipeline.factory_config import FactoryConfig
@@ -351,7 +351,7 @@ class TestManifestPathFidelity:
             captured["factory_config"] = args[1]
             return FactoryResult()
 
-        monkeypatch.setattr("kstrl.cli_loop.run_factory", fake_run_factory)
+        monkeypatch.setattr("kstrl.cli.cli_loop.run_factory", fake_run_factory)
         runner = CliRunner()
         result = runner.invoke(
             cli,
@@ -394,7 +394,7 @@ class TestManifestPathFidelity:
             captured["factory_config"] = args[1]
             return FactoryResult()
 
-        monkeypatch.setattr("kstrl.cli_factory.run_factory", fake_run_factory)
+        monkeypatch.setattr("kstrl.cli.cli_factory.run_factory", fake_run_factory)
         runner = CliRunner()
         result = runner.invoke(
             cli,

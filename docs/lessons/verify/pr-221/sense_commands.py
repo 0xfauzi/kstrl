@@ -88,7 +88,7 @@ def main() -> None:
     if (repo / "kstrl").is_dir():
         hits = live_callers(repo)
         print(f"live grep, call sites of run_mechanical_verification( under kstrl/: {hits}")
-        in_cli = [h for h in hits if h.startswith("kstrl/cli.py")]
+        in_cli = [h for h in hits if h.startswith("kstrl/cli/cli.py")]
         print(
             "claim: on this tree no command calls the sensor directly ->",
             "holds" if not in_cli else f"fails ({in_cli})",

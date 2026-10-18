@@ -10,7 +10,7 @@ from pathlib import Path
 
 from click.testing import CliRunner
 
-from kstrl.cli import cli
+from kstrl.cli.cli import cli
 
 
 class TestAutonomyReplayNamesAnUnreadableFile:

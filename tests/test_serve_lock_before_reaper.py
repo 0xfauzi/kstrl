@@ -24,8 +24,8 @@ import pytest
 
 from kstrl.queue.workqueue import Queue
 from kstrl.queue.workqueue_items import ItemState, QueueConfig
-from kstrl.serve import serve
-from kstrl.serve_outcome import RunOutcome
+from kstrl.serve.serve import serve
+from kstrl.serve.serve_outcome import RunOutcome
 from tests.helpers import procs
 from tests.helpers.astwalk import (
     all_nodes,
@@ -52,7 +52,7 @@ _CHILD_TIMEOUT_SECONDS = 120.0
 _HOLDER = """
 import sys, time
 from pathlib import Path
-from kstrl.serve import serve_lock
+from kstrl.serve.serve import serve_lock
 with serve_lock(Path(sys.argv[1])):
     print("LOCKED", flush=True)
     time.sleep(float(sys.argv[2]))
@@ -64,7 +64,7 @@ _PROBE = """
 import sys
 import time
 from pathlib import Path
-from kstrl.serve import ServeLockedError, serve_lock
+from kstrl.serve.serve import ServeLockedError, serve_lock
 try:
     with serve_lock(Path(sys.argv[1])):
         print("free", flush=True)

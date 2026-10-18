@@ -37,7 +37,7 @@ import pytest
 from click.testing import CliRunner, Result
 
 from kstrl.acceptance.contract import ContractConfig, ContractMode
-from kstrl.cli import cli
+from kstrl.cli.cli import cli
 from kstrl.events.event_catalog import Log
 from kstrl.events.events import read_events
 from kstrl.pipeline.factory_result import FactoryResult
@@ -329,8 +329,10 @@ def _failed_attempt_with_evidence(root: Path) -> Path:
 def _ks_retry(root: Path, monkeypatch: pytest.MonkeyPatch) -> Result:
     """The real ``ks retry`` with the factory it re-enters replaced: the
     removal happens before it."""
-    monkeypatch.setattr("kstrl.cli_factory.run_factory", lambda *a, **k: FactoryResult(exit_code=0))
-    monkeypatch.setattr("kstrl.cli_factory._check_agent_preflight", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "kstrl.cli.cli_factory.run_factory", lambda *a, **k: FactoryResult(exit_code=0)
+    )
+    monkeypatch.setattr("kstrl.cli.cli_factory._check_agent_preflight", lambda *a, **k: None)
     monkeypatch.setenv("AGENT_CMD", "echo hi")
     # No launch record: state every run limit, or the retry refuses (#526).
     return CliRunner().invoke(

@@ -35,12 +35,13 @@ import click
 import pytest
 from click.testing import CliRunner, Result
 
-import kstrl.cli_architect as cli_architect_mod
-import kstrl.cli_factory as cli_factory_mod
-import kstrl.cli_feature as cli_feature_mod
-import kstrl.cli_seam as cli_seam_mod
+import kstrl.cli.cli_architect as cli_architect_mod
+import kstrl.cli.cli_factory as cli_factory_mod
+import kstrl.cli.cli_feature as cli_feature_mod
+import kstrl.cli.cli_seam as cli_seam_mod
 from kstrl.acceptance.contract import ContractConfig
-from kstrl.cli import cli
+from kstrl.cli.cli import cli
+from kstrl.cli.config_preflight import collect_config_problems, config_sections, preflight_config
 from kstrl.config.config import (
     STRING_KEYS,
     ConfigError,
@@ -48,7 +49,6 @@ from kstrl.config.config import (
     load_toml_document,
     toml_parse_scope,
 )
-from kstrl.config_preflight import collect_config_problems, config_sections, preflight_config
 from kstrl.learning.evolution_config import EvolutionConfig
 from kstrl.pipeline.factory_config import FactoryConfig
 from kstrl.pipeline.factory_result import FactoryResult

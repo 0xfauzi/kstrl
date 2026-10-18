@@ -394,12 +394,12 @@ _PACKAGE_ENTRIES: set[str] | None = None
 _EXPECTED_STATE_DIR_SPELLINGS: dict[str, int] = {
     # 5: -1 for #507, which deleted the proposal generator and --apply
     # and kept one join to the proposals directory for the notice about it.
-    "cli_feature.py": 1,
-    "cli_learning.py": 1,
+    "cli/cli_feature.py": 1,
+    "cli/cli_learning.py": 1,
     # 2: -1 for #863 A1, which deleted `ks dash` and its join to the runs directory.
-    "cli_report.py": 2,
+    "cli/cli_report.py": 2,
     "architect/decompose_reply.py": 1,
-    "doctor.py": 2,
+    "cli/doctor.py": 2,
     "events/events.py": 1,
     # 9 until #776 F2 moved five spellings, with the worktree code, to
     # factory_worktrees.py.
@@ -424,10 +424,10 @@ _EXPECTED_STATE_DIR_SPELLINGS: dict[str, int] = {
     # serve_outcome.py. #776 S4 moved the spend ledger, with two spellings, to
     # serve_spend.py. #776 S5 moved the three spellings of serve.py to
     # serve_gates.py.
-    "serve_gates.py": 3,
-    "serve_launchd.py": 2,
-    "serve_outcome.py": 2,
-    "serve_spend.py": 3,  # +1 #863 A4: an unreadable run spend names the run dir
+    "serve/serve_gates.py": 3,
+    "serve/serve_launchd.py": 2,
+    "serve/serve_outcome.py": 2,
+    "serve/serve_spend.py": 3,  # +1 #863 A4: an unreadable run spend names the run dir
     # #863 M1: the package interface re-exports state_dir (the import and
     # the __all__ entry). Neither one joins a path.
     "io/__init__.py": 2,
@@ -575,7 +575,7 @@ def _from_edges(node: ast.ImportFrom, module: str, package: str) -> set[str]:
     }
 
 
-def _import_closure(module: str) -> set[str]:
+def _import_closure(module: str, *, start_parents: bool = True) -> set[str]:
     """Every ``kstrl.*`` module reachable from ``module`` by import.
 
     Static, and deliberately includes function-level imports, which this
@@ -592,6 +592,14 @@ def _import_closure(module: str) -> set[str]:
     only ``<name>.py``, so a package was a dead end, the parents were
     not walked, and an edge through an ``__init__.py`` was dropped in
     silence. For THIS guard a dropped edge passes vacuously.
+
+    ``start_parents=False`` walks the import statements of ``module``
+    without the ``__init__.py`` of its own packages (#863 M7). Each
+    module that the walk reaches after that still gets its parents. The
+    signals guard below needs this: ``kstrl.serve.signals`` is in the
+    package of the daemon that drains the queue, and that package
+    ``__init__.py`` imports ``kstrl.serve.serve``. An import that signals
+    writes itself, also ``from kstrl.serve import x``, is still walked.
     """
     seen: set[str] = set()
     pending = [module]
@@ -601,7 +609,8 @@ def _import_closure(module: str) -> set[str]:
             continue
         seen.add(name)
         parts = name.split(".")[1:]
-        pending.extend(".".join(name.split(".")[:cut]) for cut in range(1, len(parts) + 1))
+        if start_parents or name != module:
+            pending.extend(".".join(name.split(".")[:cut]) for cut in range(1, len(parts) + 1))
         base = astwalk.KSTRL_PACKAGE.joinpath(*parts)
         for source in (base.with_suffix(".py") if parts else None, base / "__init__.py"):
             if source is not None and source.is_file():
@@ -632,14 +641,14 @@ class TestNothingTheLoopRunsWritesTheUncarvedEntries:
         {
             "kstrl.queue.workqueue",
             "kstrl.queue.workqueue_store",
-            "kstrl.serve",
-            "kstrl.cli",
-            "kstrl.cli_seam",
-            "kstrl.cli_queue",
+            "kstrl.serve.serve",
+            "kstrl.cli.cli",
+            "kstrl.cli.cli_seam",
+            "kstrl.cli.cli_queue",
             "kstrl.learning.evolution",
-            "kstrl.intake_github",
-            "kstrl.intake_issue",
-            "kstrl.intake_steering",
+            "kstrl.serve.intake_github",
+            "kstrl.serve.intake_issue",
+            "kstrl.serve.intake_steering",
             # #545: the writers of .kstrl/plan/.
             "kstrl.architect.decompose",
             "kstrl.architect.decompose_plan",
@@ -663,7 +672,7 @@ class TestNothingTheLoopRunsWritesTheUncarvedEntries:
         closure = _import_closure("kstrl.loop.loop")
         assert "kstrl.verify.guards" in closure
         assert "kstrl.io.statedir" in closure
-        assert _import_closure("kstrl.serve") & self.WRITERS
+        assert _import_closure("kstrl.serve.serve") & self.WRITERS
 
     def test_the_closure_walks_a_package_init_and_each_parent(self) -> None:
         """#863 B4. ``kstrl.agents.base`` executes ``kstrl/agents/__init__.py``
@@ -696,16 +705,20 @@ class TestSignalsCannotReachTheQueue:
 
     def test_signals_does_not_import_the_queue(self) -> None:
         """#155 fix round A2: without the control below, this assertion
-        passes vacuously if ``kstrl.signals`` ever stops resolving to a
+        passes vacuously if ``kstrl.serve.signals`` ever stops resolving to a
         real file - a rename, or a stale name typed here - because
         ``_import_closure`` on a name with no file behind it returns just
         that one-element set, and ``"kstrl.queue.workqueue" not in {itself}``
         is trivially true whatever the renamed module actually imports."""
-        closure = _import_closure("kstrl.signals")
+        # The imports that signals writes, not the __init__.py of the
+        # serve package it is in: that package also holds the daemon that
+        # drains the queue (#863 M7). An import of kstrl.serve that
+        # signals writes is walked, with the serve __init__.py.
+        closure = _import_closure("kstrl.serve.signals", start_parents=False)
         assert "kstrl.io.statedir" in closure, (
-            "kstrl.signals's import closure holds only itself, which means "
+            "kstrl.serve.signals's import closure holds only itself, which means "
             "the name below resolved to no file. This assertion would then "
-            "pass on any import kstrl.signals actually has."
+            "pass on any import kstrl.serve.signals actually has."
         )
         # #776 W2: the queue is two modules. Signals can reach the store
         # (queue_root, the pause marker, the journal) with no edge to kstrl.queue.workqueue.
@@ -723,7 +736,7 @@ class TestSignalsCannotReachTheQueue:
             "the name below resolved to no file. This assertion would then "
             "pass on any import kstrl.queue.workqueue actually has."
         )
-        assert "kstrl.signals" not in closure, (
+        assert "kstrl.serve.signals" not in closure, (
             "slice 1 of R8.8 observes and does not spend. An import edge here "
             "is how that stops being true. If the enqueue slice is landing, "
             "delete this class in the same diff that adds the ladder replay to "

@@ -1255,7 +1255,7 @@ class TestShippedConfigsKeepTheProgressLogInScope:
     ) -> None:
         """`ks config show` reported <root>/scripts/kstrl/progress.txt as
         the effective default - the obsolete path, presented as fact."""
-        from kstrl.config_report import build_config_report
+        from kstrl.cli.config_report import build_config_report
 
         report = build_config_report(tmp_path)
         rows = [r for r in report.rows if r.section == "paths" and r.key == "progress"]
@@ -1269,7 +1269,7 @@ class TestShippedConfigsKeepTheProgressLogInScope:
         tmp_path: Path,
     ) -> None:
         """The unset rendering must not swallow a real setting."""
-        from kstrl.config_report import build_config_report
+        from kstrl.cli.config_report import build_config_report
 
         (tmp_path / "kstrl.toml").write_text(f'[paths]\nprogress = "{_CUSTOM_PROGRESS}"\n')
         report = build_config_report(tmp_path)

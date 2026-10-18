@@ -33,8 +33,8 @@ from typing import Literal
 
 import pytest
 
+from kstrl.cli.config_preflight import collect_config_problems, config_sections
 from kstrl.config.config import canonical_agent_type
-from kstrl.config_preflight import collect_config_problems, config_sections
 from tests.helpers.closed_vocabulary import (
     BAD_VALUE,
     CLOSED,

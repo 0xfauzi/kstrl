@@ -449,7 +449,7 @@ class TestReviewFailClosed:
         the tree, and every gate read only the empty control-directory log."""
         from click.testing import CliRunner
 
-        from kstrl.cli import cli
+        from kstrl.cli.cli import cli
         from kstrl.io.statedir import CONTROL_INBOX
         from kstrl.owner.inbox import Inbox
 
@@ -476,7 +476,7 @@ class TestReviewFailClosed:
         repo: Path,
     ) -> None:
         from kstrl.io.statedir import CONTROL_PAUSE, CONTROL_SPEND
-        from kstrl.serve_spend import ServeStateError, SpendLedger
+        from kstrl.serve.serve_spend import ServeStateError, SpendLedger
 
         with patch("kstrl.io.statedir._origin_url", return_value=None):
             legacy = legacy_control_paths(repo)
@@ -535,7 +535,7 @@ class TestReviewFailClosed:
 
     def test_dual_state_fail_closes_pause_and_spend(self, repo: Path) -> None:
         from kstrl.io.statedir import CONTROL_PAUSE, CONTROL_SPEND, control_file
-        from kstrl.serve_spend import ServeStateError, SpendLedger
+        from kstrl.serve.serve_spend import ServeStateError, SpendLedger
 
         with patch("kstrl.io.statedir._origin_url", return_value=None):
             ensure_control_state(repo)

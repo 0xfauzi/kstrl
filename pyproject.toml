@@ -53,8 +53,8 @@ Changelog = "https://github.com/0xfauzi/kstrl/blob/main/CHANGELOG.md"
 Issues = "https://github.com/0xfauzi/kstrl/issues"
 
 [project.scripts]
-ks = "kstrl.cli:main"
-kstrl = "kstrl.cli:main"
+ks = "kstrl.cli.cli:main"
+kstrl = "kstrl.cli.cli:main"
 
 [dependency-groups]
 dev = [

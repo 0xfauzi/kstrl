@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from kstrl.cli import cli
+from kstrl.cli.cli import cli
 from kstrl.learning.health import HealthBreach, health_readings, health_report
 from tests.helpers.journal import component_result, journal_at
 from tests.helpers.replay import UNDECODABLE_TSV, run_record, write_runs
@@ -336,7 +336,7 @@ def test_ks_health_reports_the_journal_series(tmp_path: Path) -> None:
 
     The five UNIT-3 tests above all call ``health_status``
     directly. #387's blocker 1 found that no production code called it any
-    more: ``ks health`` (``kstrl/cli.py::health_cmd``) had its own second
+    more: ``ks health`` (``kstrl/cli/cli.py::health_cmd``) had its own second
     copy of the render/breach logic, reachable through the private names
     ``_breaches`` and ``_render``, so the CLI path these tests were meant
     to stand in for was untested. This test closes that gap by going

@@ -19,12 +19,12 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
+from kstrl.cli.feature_cmd import FeatureParams, run_feature
+from kstrl.cli.feature_verify import resolve_feature_verify_config
 from kstrl.config.config import KstrlConfig
 from kstrl.events import event_catalog
 from kstrl.events import events as ev
 from kstrl.factory.commandrun import CommandRun
-from kstrl.feature_cmd import FeatureParams, run_feature
-from kstrl.feature_verify import resolve_feature_verify_config
 from kstrl.loop.loop import STOP_EXIT_CODE
 from kstrl.verify.verify import (
     DIFF_DEPENDENT_CHECKS,
@@ -118,8 +118,10 @@ def _drive(
         run_root=tmp_path / ".kstrl" / "runs" / "test-run",
     )
     with (
-        patch("kstrl.feature_cmd.run_loop", loop or _loop_results(*codes, iterations=iterations)),
-        patch("kstrl.feature_cmd.get_agent", return_value=StubAgent()),
+        patch(
+            "kstrl.cli.feature_cmd.run_loop", loop or _loop_results(*codes, iterations=iterations)
+        ),
+        patch("kstrl.cli.feature_cmd.get_agent", return_value=StubAgent()),
     ):
         code = run_feature(
             params if params is not None else _feature_params(tmp_path),
@@ -550,7 +552,7 @@ class TestTheReportCannotKillTheRun:
         def boom(*args: Any, **kwargs: Any) -> VerificationResult:
             raise OSError(24, "Too many open files")
 
-        with patch("kstrl.feature_verify.run_undiffed_verification", boom):
+        with patch("kstrl.cli.feature_verify.run_undiffed_verification", boom):
             code, captured, text = _drive(tmp_path)
 
         assert code == 0
@@ -580,7 +582,7 @@ class TestTheReportCannotKillTheRun:
         def boom(*args: Any, **kwargs: Any) -> Any:
             raise UnicodeDecodeError("utf-8", b"\x80", 0, 1, "invalid start byte")
 
-        with patch("kstrl.feature_verify._running_commands", boom):
+        with patch("kstrl.cli.feature_verify._running_commands", boom):
             code, captured, text = _drive(tmp_path)
 
         assert code == 0
@@ -600,7 +602,7 @@ class TestTheReportCannotKillTheRun:
         def boom(*args: Any, **kwargs: Any) -> VerificationResult:
             raise OSError(24, "Too many open files")
 
-        with patch("kstrl.feature_verify.run_undiffed_verification", boom):
+        with patch("kstrl.cli.feature_verify.run_undiffed_verification", boom):
             _, captured, _ = _drive(tmp_path)
 
         assert any(
@@ -625,7 +627,7 @@ class TestTheReportDoesNotDistortTheRunRecord:
         """
         _write_kstrl_toml(tmp_path)
         with patch(
-            "kstrl.feature_verify.run_undiffed_verification",
+            "kstrl.cli.feature_verify.run_undiffed_verification",
             _slow_verification(),
         ):
             _, captured, _ = _drive(tmp_path)

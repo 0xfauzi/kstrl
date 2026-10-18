@@ -178,7 +178,7 @@ class Bindings:
         cleared an unguarded config load onto the Textual event loop
         (49 passed, 2 xfailed, main 1 failed), ``class _P342Meter: Popen
         = os.getcwd`` cleared a ``with x.Popen(argv)`` in
-        ``kstrl/serve.py`` (68 passed, main 1 failed), and a class-body
+        ``kstrl/serve/serve.py`` (68 passed, main 1 failed), and a class-body
         binding of ``builtins.Exception`` made a foreign handler read as
         broad. See :func:`_classify_call` for the rule that keeps the
         pins and closes the three.

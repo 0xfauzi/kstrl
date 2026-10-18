@@ -27,8 +27,8 @@ import pytest
 from click.testing import CliRunner, Result
 
 import kstrl
-from kstrl import doctor
-from kstrl.cli import cli
+from kstrl.cli import doctor
+from kstrl.cli.cli import cli
 from kstrl.project.init_cmd import gitignore_block
 from tests.helpers.fakegh import put_gh_on_path
 from tests.helpers.gitrepo import git_in, set_identity
@@ -41,7 +41,7 @@ GH_OK = "#!/bin/sh\nexit 0\n"
 GH_UNAUTHENTICATED = "#!/bin/sh\nexit 1\n"
 
 #: The eight rows the report carries, in order. The test's own
-#: literal, not a constant imported from `kstrl.doctor`: each name is
+#: literal, not a constant imported from `kstrl.cli.doctor`: each name is
 #: written once in production, inside its own check function, and a
 #: comparison against a second copy the module also owns would pass
 #: whenever both copies moved together.

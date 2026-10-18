@@ -25,7 +25,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner, Result
 
-from kstrl.cli import cli
+from kstrl.cli.cli import cli
 from kstrl.project import init_cmd, scaffold_ledger
 from kstrl.project.scaffold_ledger import (
     ScaffoldedTemplate,
@@ -389,7 +389,7 @@ class TestFeatureChecksThePromptItActuallyRuns:
         return project
 
     def _invoke(self, project: Path, monkeypatch: pytest.MonkeyPatch) -> Result:
-        import kstrl.cli_feature as cli_feature_mod
+        import kstrl.cli.cli_feature as cli_feature_mod
 
         # Stop after the preflight: the phases beyond it need a live
         # agent, and what is under test is which path was checked.
@@ -458,8 +458,8 @@ class TestFeatureChecksThePromptItActuallyRuns:
         only by luck."""
         from unittest.mock import patch
 
+        from kstrl.cli.feature_cmd import run_feature
         from kstrl.config.config import KstrlConfig
-        from kstrl.feature_cmd import run_feature
         from kstrl.ui.plain import PlainUI
         from tests.test_feature_cmd import ScriptedChannel, StubAgent, _params
 
@@ -472,7 +472,7 @@ class TestFeatureChecksThePromptItActuallyRuns:
             return LoopResult(completed=True, iterations=1, exit_code=0)
 
         params = _params(tmp_path)
-        with patch("kstrl.feature_cmd.run_loop", record):
+        with patch("kstrl.cli.feature_cmd.run_loop", record):
             run_feature(
                 params,
                 KstrlConfig(),

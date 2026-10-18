@@ -26,8 +26,8 @@ from pathlib import Path
 
 import pytest
 
+from kstrl.cli.config_preflight import collect_config_problems
 from kstrl.config.config_resolve import raise_if_defect, resolve_or_report
-from kstrl.config_preflight import collect_config_problems
 from kstrl.learning.evolution_config import EVOLUTION_SECTION
 from tests.helpers import astwalk
 
@@ -56,7 +56,7 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     "learning/autonomy.py": 1,
     # One bare raise: `_resolve_factory_run_lock` refuses a handed
     # `RunLock` whose own `release()` has already run (#597 fix round).
-    "cli_preflight.py": 1,
+    "cli/cli_preflight.py": 1,
     "config/config_resolve.py": 2,  # the rule itself, and its docstring
     # DecisionRegisterError, added by #332.
     "architect/decisions.py": 1,
@@ -75,12 +75,12 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     "git/git.py": 1,
     "owner/inbox.py": 1,
     # IntakeError (the subclass). #776 I1 moved it out of intake_github.py.
-    "intake_gh.py": 1,
+    "serve/intake_gh.py": 1,
     # A bare raise in `_run_command` when a `SteerCommand` reaches no
     # handler in `_STEER_HANDLERS` - the closed-by-construction guard's
     # unreachable branch (A3), which is operator-unreachable but still counted.
     # #776 I2 moved it out of intake_github.py.
-    "intake_steering.py": 1,
+    "serve/intake_steering.py": 1,
     # OwnerAnswerError (#639 slice 4).
     "architect/owner_answers.py": 1,
     "pipeline/pr.py": 4,  # no subclass: four bare raises
@@ -95,10 +95,10 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     "proc/rung.py": 1,
     # ChildOutputDecodeError, added by #416.
     "proc/scrubbed_run.py": 1,
-    "serve_config.py": 1,
-    "serve_github.py": 4,
+    "serve/serve_config.py": 1,
+    "serve/serve_github.py": 4,
     # SignalsError, R8.8 slice 1 / #155.
-    "signals.py": 1,
+    "serve/signals.py": 1,
     # One since #232: ControlLockedError and ControlUnavailableError now
     # derive from a shared ControlStateError, which is the only class in
     # the module that spells RuntimeError. They are still kstrl's, so
@@ -354,13 +354,13 @@ class TestSharedGuard:
         """
         astwalk.blind_spot(
             lambda source: _domain_subclass_names(astwalk.parse(source), "kstrl.made_up"),
-            "from kstrl.serve import ServeError\nclass Deeper(ServeError):\n    pass\n",
+            "from kstrl.serve.serve import ServeError\nclass Deeper(ServeError):\n    pass\n",
         )
 
     def test_a_domain_runtimeerror_is_still_reported(self, tmp_path: Path) -> None:
         """The other side of the same line: ServeError and friends are
         operator input and must still reach the banner."""
-        from kstrl.serve_config import SERVE_SECTION
+        from kstrl.serve.serve_config import SERVE_SECTION
 
         (tmp_path / "kstrl.toml").write_text(
             "[serve]\nmax_consecutive_poison = 0\n",

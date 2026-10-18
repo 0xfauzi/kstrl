@@ -479,8 +479,8 @@ class TestTheReadBytesExclusion:
         "loop/breaker.py": 1,
         # #553 the ledger, #570 each run's events.jsonl: the signals.py
         # shape, read and decode outside any try.
-        "ci_state.py": 2,
-        "cli_queue.py": 1,  # #644: queue_answer, read and decode guarded separately
+        "serve/ci_state.py": 2,
+        "cli/cli_queue.py": 1,  # #644: queue_answer, read and decode guarded separately
         "config/config_toml.py": 1,
         "verify/baseline.py": 1,
         "owner/inbox.py": 1,
@@ -489,8 +489,8 @@ class TestTheReadBytesExclusion:
         # #700 slice 3: `_ready` reads the `up` log's bytes back as the
         # stage's tail, outside any try (the signals.py shape).
         "acceptance/replay.py": 1,
-        "safemode.py": 1,
-        "signals.py": 2,
+        "cli/safemode.py": 1,
+        "serve/signals.py": 2,
         # toolchains.py's pyproject.read_bytes() (#635) is gone: #696
         # flag day slice 4 removed the command half of toolchain
         # detection, kstrl.toolchains's own docstring says so, and that

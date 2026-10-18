@@ -251,7 +251,7 @@ class TestTheRepairIsReportable:
         """`ks evolve --status` against a real root, through the real CLI."""
         from click.testing import CliRunner
 
-        import kstrl.cli as cli_mod
+        import kstrl.cli.cli as cli_mod
 
         result = CliRunner().invoke(
             cli_mod.cli,

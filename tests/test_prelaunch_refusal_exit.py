@@ -1,7 +1,7 @@
 """A refusal before any work starts exits 2, wherever kstrl decides it (#531).
 
 The #452 contract is 0 ok, 1 a finding, 2 could not do what was asked.
-These refusals are decided outside ``kstrl/cli.py`` (in ``kstrl/factory/factory.py``
+These refusals are decided outside ``kstrl/cli/cli.py`` (in ``kstrl/factory/factory.py``
 and ``kstrl/loop/loop.py``), so each is driven through the real ``ks`` entry
 point in a child process, run by ``ks serve``'s own supervised runner, and
 judged by the exit code and output that child produced. The static census
@@ -18,8 +18,8 @@ from pathlib import Path
 import pytest
 
 from kstrl.plan.manifest import Component, Manifest
-from kstrl.serve_outcome import RunOutcome, Verdict, classify_run
-from kstrl.serve_process import run_supervised
+from kstrl.serve.serve_outcome import RunOutcome, Verdict, classify_run
+from kstrl.serve.serve_process import run_supervised
 from tests.helpers.gitrepo import git_in, set_identity
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
 from tests.test_cli_conventions import _child_env

@@ -24,7 +24,7 @@ Blind spots, pinned by strict xfails. A copy bound to a name first and
 then passed to ``Choice`` is not a display, and Layer 1 compares values,
 so the copy passes both layers while it still agrees. A ``Choice``
 subclass that hands a display to ``super().__init__`` is not a ``Choice``
-call (``_AgentTypeChoice`` in ``kstrl/cli.py`` passes a constant, and
+call (``_AgentTypeChoice`` in ``kstrl/cli/cli.py`` passes a constant, and
 Layer 1 compares its choices). An option that sets a CLOSED field under a
 name the naming rule does not derive (``--contract-check`` sets
 ``[contract] mode``) is found only if someone writes its row.
@@ -38,11 +38,11 @@ from collections.abc import Iterator
 import click
 import pytest
 
-from kstrl.cli import cli
-from kstrl.config_report import UI_MODES
+from kstrl.cli.cli import cli
+from kstrl.cli.config_report import UI_MODES
 from kstrl.learning.autonomy import DEMOTION_TRIGGER_LABELS
 from kstrl.queue.workqueue_items import ItemState
-from kstrl.serve_launchd import LAUNCHD_MODES
+from kstrl.serve.serve_launchd import LAUNCHD_MODES
 from kstrl.verify import baseline
 from tests.helpers.astwalk import (
     all_nodes,
@@ -72,16 +72,16 @@ EXPECTED_CHOICE_OPTIONS = 49
 
 #: Re-derived by running the Layer 2 census on this tree.
 EXPECTED_CHOICE_CALLS: dict[str, int] = {
-    "cli_architect.py": 2,
-    "cli_check.py": 2,
-    "cli_factory_options.py": 5,
-    "cli_feature.py": 1,
-    "cli_inbox.py": 1,
-    "cli_learning.py": 3,
-    "cli_loop.py": 3,
-    "cli_queue.py": 2,
-    "cli_report.py": 2,
-    "cli_serve.py": 2,
+    "cli/cli_architect.py": 2,
+    "cli/cli_check.py": 2,
+    "cli/cli_factory_options.py": 5,
+    "cli/cli_feature.py": 1,
+    "cli/cli_inbox.py": 1,
+    "cli/cli_learning.py": 3,
+    "cli/cli_loop.py": 3,
+    "cli/cli_queue.py": 2,
+    "cli/cli_report.py": 2,
+    "cli/cli_serve.py": 2,
 }
 
 #: The options the naming rule finds on this tree. Re-derived by running

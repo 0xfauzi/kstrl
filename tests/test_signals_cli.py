@@ -18,11 +18,11 @@ from typing import Any
 
 from click.testing import CliRunner
 
-from kstrl.cli import cli
+from kstrl.cli.cli import cli
 from kstrl.io.jsonread import read_json
 from kstrl.io.statedir import CONTROL_SIGNALS, control_file
-from kstrl.signals import poll as signals_poll
-from kstrl.signals import read_ledger
+from kstrl.serve.signals import poll as signals_poll
+from kstrl.serve.signals import read_ledger
 
 FIXTURE = Path(__file__).parent / "fixtures" / "signals" / "bugsink-issues-canonical.json"
 
@@ -173,7 +173,7 @@ class TestPollEndToEnd:
         """Calls ``poll()`` directly (still the CLI's own function, still
         driven off a real captured page) so the wall clock can be forced
         a day ahead - a knob the CLI itself does not expose."""
-        from kstrl.signals import SignalsConfig
+        from kstrl.serve.signals import SignalsConfig
 
         root = tmp_path / "project"
         root.mkdir()

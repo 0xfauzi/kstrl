@@ -7,13 +7,13 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from kstrl.cli import cli
-from kstrl.config.config import KstrlConfig
-from kstrl.config_report import (
+from kstrl.cli.cli import cli
+from kstrl.cli.config_report import (
     ConfigRow,
     build_config_report,
     normalize_ui_mode,
 )
+from kstrl.config.config import KstrlConfig
 
 
 def _row(report_rows: tuple[ConfigRow, ...], section: str, key: str) -> ConfigRow:

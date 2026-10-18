@@ -49,7 +49,7 @@ from kstrl.review.security import (
     SecurityResult,
     parse_security_output,
 )
-from kstrl.serve_outcome import RunOutcome, Verdict, classify_run
+from kstrl.serve.serve_outcome import RunOutcome, Verdict, classify_run
 from kstrl.ui.plain import PlainUI
 from kstrl.verify.verify_model import CheckResult, VerificationResult, VerifyConfig
 from tests.conftest import ReviewRepo

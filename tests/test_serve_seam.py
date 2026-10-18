@@ -76,10 +76,10 @@ import pytest
 
 from kstrl.queue.workqueue import Queue
 from kstrl.queue.workqueue_items import QueueConfig
-from kstrl.serve import serve_cycle
-from kstrl.serve_config import ServeConfig
-from kstrl.serve_outcome import RunOutcome
-from kstrl.serve_process import subprocess_factory_runner
+from kstrl.serve.serve import serve_cycle
+from kstrl.serve.serve_config import ServeConfig
+from kstrl.serve.serve_outcome import RunOutcome
+from kstrl.serve.serve_process import subprocess_factory_runner
 from tests.helpers import procs
 from tests.helpers.executables import write_executable
 from tests.helpers.runners import recording_runner
@@ -521,7 +521,7 @@ class TestTheArgvIsAcceptedByTheRealCli:
 
     @staticmethod
     def _parse(argv: tuple[str, ...]) -> click.Context:
-        from kstrl.cli import cli
+        from kstrl.cli.cli import cli
 
         # argv is "-m kstrl factory ..."; drop the module invocation.
         assert argv[:2] == ("-m", "kstrl")
@@ -732,7 +732,7 @@ class TestRemoteWorkSurvivesTheSeam:
             )
         )
         calls: list[dict[str, Any]] = []
-        with patch("kstrl.intake_gh.run_gh", gh):
+        with patch("kstrl.serve.intake_gh.run_gh", gh):
             serve_cycle(tmp_path, runner=recording_runner(calls))
 
         assert len(calls) == 1
@@ -754,7 +754,7 @@ class TestRemoteWorkSurvivesTheSeam:
         confirm_stack(tmp_path)
         gh = _GhStub(issues=_issue_payload(_issue(4)))
         calls: list[dict[str, Any]] = []
-        with patch("kstrl.intake_gh.run_gh", gh):
+        with patch("kstrl.serve.intake_gh.run_gh", gh):
             serve_cycle(tmp_path, runner=recording_runner(calls))
 
         assert len(calls) == 1

@@ -22,7 +22,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from kstrl.cli import cli
+from kstrl.cli.cli import cli
 from kstrl.owner.inbox import Inbox, InboxConfig, InboxItem, ItemKind, ItemStatus
 from kstrl.queue.workqueue import Queue
 from kstrl.queue.workqueue_items import ItemState, QueueConfig

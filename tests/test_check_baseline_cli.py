@@ -16,8 +16,8 @@ from typing import Any
 import pytest
 from click.testing import CliRunner, Result
 
-from kstrl.cli import cli
-from kstrl.cli_check import CHECK_SCHEMA_VERSION
+from kstrl.cli.cli import cli
+from kstrl.cli.cli_check import CHECK_SCHEMA_VERSION
 from kstrl.verify import baseline_report
 from kstrl.verify.baseline import RETIRED_CHECKS
 from kstrl.verify.failure_signatures import signature_for_error

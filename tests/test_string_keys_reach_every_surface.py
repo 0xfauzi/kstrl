@@ -54,7 +54,7 @@ from types import ModuleType
 
 import pytest
 
-from kstrl import config_report
+from kstrl.cli import config_report
 from kstrl.config import config as config_mod
 from kstrl.config import config_keys
 from kstrl.config.config_keys import STRING_KEYS

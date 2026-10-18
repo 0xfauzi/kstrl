@@ -291,7 +291,7 @@ def health_report(readings: Sequence[MetricReading]) -> tuple[str, list[HealthBr
     already computed.
 
     The one place that turns a ``readings_from(...)`` result into the
-    rendered report: ``ks health`` (``kstrl/cli.py::health_cmd``) funnels
+    rendered report: ``ks health`` (``kstrl/cli/cli.py::health_cmd``) funnels
     through here, so there is exactly one
     caller of ``_render`` and ``_breaches`` and neither is reached from
     outside this module (#151, #387).

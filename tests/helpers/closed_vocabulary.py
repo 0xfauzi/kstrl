@@ -32,8 +32,8 @@ from typing import Literal
 
 from kstrl.acceptance.contract import ContractMode
 from kstrl.architect.linear import _VALID_AUTH_MODES
+from kstrl.cli.config_preflight import config_sections
 from kstrl.config.config import VALID_AGENT_TYPES
-from kstrl.config_preflight import config_sections
 from kstrl.knowledge.knowledge_facts import _VALID_DEPENDENCY_SCOPES
 from kstrl.pipeline.divergence import DivergenceMode
 from kstrl.pipeline.factory_config import VALID_CLAIM_AGREEMENT

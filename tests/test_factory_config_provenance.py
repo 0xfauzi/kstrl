@@ -77,15 +77,15 @@ FLAG = "pause_before_pr_merge"
 EXPECTED_FLAG_SPELLINGS = {
     "learning/autonomy.py": 6,
     "learning/autonomy_config.py": 5,
-    "cli_factory.py": 7,
-    "config_report.py": 1,
+    "cli/cli_factory.py": 7,
+    "cli/config_report.py": 1,
     "factory/factory_autonomy.py": 5,
     "pipeline/factory_config.py": 11,
     "pipeline/pipeline_delivery.py": 1,
-    "serve.py": 6,
-    "serve_merge_gate.py": 14,
-    "serve_outcome.py": 1,
-    "serve_process.py": 2,
+    "serve/serve.py": 6,
+    "serve/serve_merge_gate.py": 14,
+    "serve/serve_outcome.py": 1,
+    "serve/serve_process.py": 2,
 }
 
 #: Layer 2. Every ``<something>.pause_before_pr_merge = ...`` in
@@ -99,7 +99,7 @@ EXPECTED_FLAG_SPELLINGS = {
 #: - ``factory_autonomy.py::_report_ladder``: the ladder's own resolution,
 #:   which reads provenance and must never add it.
 EXPECTED_FLAG_WRITES = {
-    "cli_factory.py::factory": 1,
+    "cli/cli_factory.py::factory": 1,
     "factory/factory_autonomy.py::_report_ladder": 1,
     "pipeline/factory_config.py::FactoryConfig.load": 2,
 }

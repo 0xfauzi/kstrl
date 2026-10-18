@@ -8,8 +8,8 @@ from typing import Any
 from unittest.mock import patch
 
 from kstrl.agents.sandbox import SandboxConfig
+from kstrl.cli.feature_cmd import FeatureParams, run_feature
 from kstrl.config.config import KstrlConfig
-from kstrl.feature_cmd import FeatureParams, run_feature
 from kstrl.loop.loop import LoopResult
 from kstrl.owner.interaction import (
     PromptRequest,
@@ -152,7 +152,7 @@ class TestReviewGate:
     def test_quit_to_amend_exits_zero(self, tmp_path: Path) -> None:
         ui, stream = _ui()
         channel = ScriptedChannel(choice=1)
-        with patch("kstrl.feature_cmd.run_loop", _loop_results(0)):
+        with patch("kstrl.cli.feature_cmd.run_loop", _loop_results(0)):
             code = run_feature(
                 _params(tmp_path),
                 KstrlConfig(),
@@ -175,7 +175,7 @@ class TestReviewGate:
         tmp_path: Path,
     ) -> None:
         ui, stream = _ui()
-        with patch("kstrl.feature_cmd.run_loop", _loop_results(0)):
+        with patch("kstrl.cli.feature_cmd.run_loop", _loop_results(0)):
             code = run_feature(
                 _params(tmp_path),
                 KstrlConfig(),
@@ -193,7 +193,7 @@ class TestReviewGate:
         params = _params(tmp_path)
         params.implementation_auto_run = True
         channel = ScriptedChannel(0)
-        with patch("kstrl.feature_cmd.run_loop", _loop_results(0, 0)):
+        with patch("kstrl.cli.feature_cmd.run_loop", _loop_results(0, 0)):
             code = run_feature(
                 params,
                 KstrlConfig(),
@@ -211,7 +211,7 @@ class TestReviewGate:
 class TestExitCodes:
     def test_failed_understand_short_circuits(self, tmp_path: Path) -> None:
         ui, _ = _ui()
-        with patch("kstrl.feature_cmd.run_loop", _loop_results(3)):
+        with patch("kstrl.cli.feature_cmd.run_loop", _loop_results(3)):
             code = run_feature(
                 _params(tmp_path),
                 KstrlConfig(),
@@ -233,7 +233,7 @@ class TestExitCodes:
             calls += 1
             return LoopResult(completed=False, iterations=1, exit_code=0)
 
-        with patch("kstrl.feature_cmd.run_loop", incomplete):
+        with patch("kstrl.cli.feature_cmd.run_loop", incomplete):
             code = run_feature(
                 _params(tmp_path),
                 KstrlConfig(),
@@ -249,7 +249,7 @@ class TestExitCodes:
 
     def test_empty_prd_skips_implementation(self, tmp_path: Path) -> None:
         ui, stream = _ui()
-        with patch("kstrl.feature_cmd.run_loop", _loop_results(0)):
+        with patch("kstrl.cli.feature_cmd.run_loop", _loop_results(0)):
             code = run_feature(
                 _params(tmp_path, stories=0),
                 KstrlConfig(),
@@ -268,8 +268,8 @@ class TestExitCodes:
         ui, _ = _ui()
         params = _params(tmp_path, repair_max_runs=2)
         with (
-            patch("kstrl.feature_cmd.run_loop", _loop_results(0, 1, 0)),
-            patch("kstrl.feature_cmd.get_agent", return_value=StubAgent()),
+            patch("kstrl.cli.feature_cmd.run_loop", _loop_results(0, 1, 0)),
+            patch("kstrl.cli.feature_cmd.get_agent", return_value=StubAgent()),
         ):
             code = run_feature(
                 params,
@@ -289,8 +289,8 @@ class TestExitCodes:
         ui, _ = _ui()
         params = _params(tmp_path, repair_max_runs=2)
         with (
-            patch("kstrl.feature_cmd.run_loop", _loop_results(0, 1, 1, 4)),
-            patch("kstrl.feature_cmd.get_agent", return_value=StubAgent()),
+            patch("kstrl.cli.feature_cmd.run_loop", _loop_results(0, 1, 1, 4)),
+            patch("kstrl.cli.feature_cmd.get_agent", return_value=StubAgent()),
         ):
             code = run_feature(
                 params,
@@ -325,8 +325,8 @@ class TestControlPropagation:
             return next(results)
 
         with (
-            patch("kstrl.feature_cmd.run_loop", record),
-            patch("kstrl.feature_cmd.get_agent", return_value=StubAgent()),
+            patch("kstrl.cli.feature_cmd.run_loop", record),
+            patch("kstrl.cli.feature_cmd.get_agent", return_value=StubAgent()),
         ):
             code = run_feature(
                 params,

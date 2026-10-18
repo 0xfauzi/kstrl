@@ -19,7 +19,7 @@ from typing import Any
 import pytest
 from click.testing import CliRunner
 
-from kstrl.cli import cli
+from kstrl.cli.cli import cli
 from kstrl.config.config import KstrlConfig
 from kstrl.events.event_catalog import IterationCompleted
 from kstrl.events.events import EventBus, JsonlSink, read_events

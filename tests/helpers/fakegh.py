@@ -18,8 +18,8 @@ from subprocess import CompletedProcess
 
 import pytest
 
-from kstrl.intake_gh import GhResult
 from kstrl.pipeline.pr_body import PR_FOOTER_MARKER
+from kstrl.serve.intake_gh import GhResult
 from tests.helpers.executables import write_executable
 
 #: Emits whatever JSON the test put in FAKE_GH_JSON. The real

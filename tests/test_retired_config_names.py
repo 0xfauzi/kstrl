@@ -21,8 +21,8 @@ from pathlib import Path
 
 import pytest
 
+from kstrl.cli.config_preflight import collect_config_problems
 from kstrl.config.config_keys import RETIRED_ENV_VARS as _PRODUCTION_RETIRED_ENV_VARS
-from kstrl.config_preflight import collect_config_problems
 from kstrl.pipeline.factory_config import FactoryConfig
 from kstrl.plan.findings import CLAIM_DISAGREEMENT_CATEGORY, Finding
 
@@ -561,7 +561,7 @@ ALLOWED: dict[tuple[str, str], int] = {
     # document used before this PR's schema bump - the old name is the
     # fact being recorded, not a live spelling.
     ("kstrl/verify/baseline.py", "sense"): 1,
-    ("kstrl/cli_check.py", "dampener"): 2,
+    ("kstrl/cli/cli_check.py", "dampener"): 2,
     # "Set-point disagreement" is a live user-facing string inside
     # REVIEWER_PROMPT-adjacent code (claim_retry_context). The prompt BODY
     # is kept byte-identical under Decision 3, so rewording this string

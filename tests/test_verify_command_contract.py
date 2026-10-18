@@ -29,7 +29,7 @@ from unittest.mock import patch
 
 from click.testing import CliRunner
 
-from kstrl.cli import cli
+from kstrl.cli.cli import cli
 from kstrl.config.config import KstrlConfig
 from kstrl.loop.iteration_prompt import build_project_context
 from kstrl.loop.loop import COMPLETION_MARKER, run_loop
@@ -97,11 +97,11 @@ def _run_cli(args: list[str]) -> _PromptCapturingAgent:
     agent = _PromptCapturingAgent()
     runner = CliRunner()
     with (
-        patch("kstrl.cli_loop.get_agent", return_value=agent),
-        patch("kstrl.cli_feature.get_agent", return_value=agent),
-        patch("kstrl.feature_cmd.get_agent", return_value=agent),
-        patch("kstrl.cli_loop._check_agent_preflight"),
-        patch("kstrl.cli_feature._check_agent_preflight"),
+        patch("kstrl.cli.cli_loop.get_agent", return_value=agent),
+        patch("kstrl.cli.cli_feature.get_agent", return_value=agent),
+        patch("kstrl.cli.feature_cmd.get_agent", return_value=agent),
+        patch("kstrl.cli.cli_loop._check_agent_preflight"),
+        patch("kstrl.cli.cli_feature._check_agent_preflight"),
     ):
         runner.invoke(cli, args, catch_exceptions=False)
     return agent

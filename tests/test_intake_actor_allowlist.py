@@ -23,12 +23,12 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl.intake_gh import GhResult, GitHubIntakeConfig
-from kstrl.intake_github import SyncResult, sync
-from kstrl.intake_issue import Authorization, authorization_refusal
 from kstrl.queue.workqueue import Queue
 from kstrl.queue.workqueue_items import QueueConfig
-from kstrl.serve import _NullObserver, serve_cycle
+from kstrl.serve.intake_gh import GhResult, GitHubIntakeConfig
+from kstrl.serve.intake_github import SyncResult, sync
+from kstrl.serve.intake_issue import Authorization, authorization_refusal
+from kstrl.serve.serve import _NullObserver, serve_cycle
 from tests.helpers.runners import recording_runner
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
 from tests.test_intake_github import (
@@ -68,7 +68,7 @@ def _toml(root: Path, *, allowed: str | None = '["0xfauzi"]') -> None:
 def _cycle(root: Path, gh: _GhStub) -> tuple[list[dict[str, Any]], Any]:
     """One real serve cycle against a stubbed gh. Returns (runner calls, result)."""
     calls: list[dict[str, Any]] = []
-    with patch("kstrl.intake_gh.run_gh", gh):
+    with patch("kstrl.serve.intake_gh.run_gh", gh):
         result = serve_cycle(root, runner=recording_runner(calls))
     return calls, result
 
@@ -77,7 +77,7 @@ def _sync(root: Path, gh: _GhStub) -> SyncResult:
     """The decision alone, without the daemon composition ``_cycle`` above
     already proves."""
     queue = Queue(root, QueueConfig())
-    with patch("kstrl.intake_gh.run_gh", gh):
+    with patch("kstrl.serve.intake_gh.run_gh", gh):
         return sync(queue, GitHubIntakeConfig.load(root), root)
 
 
@@ -153,7 +153,7 @@ class TestWhoMayAuthorizeSpend:
 
 
 class TestTheLatestTriggerEventWins:
-    """``kstrl/intake_github.py:709`` keys authorization to the LATEST
+    """``kstrl/serve/intake_github.py:709`` keys authorization to the LATEST
     trigger-label event, not the first. Until now nothing pinned that
     choice: earliest-wins left the whole suite green (#188 simplify pass
     item 1)."""
@@ -214,7 +214,7 @@ class TestTheLatestTriggerEventWins:
         calls, result = _cycle(tmp_path, gh)
         assert calls == [], "a later bot re-application inherited an earlier authorization"
         assert result.synced == ()
-        with patch("kstrl.intake_gh.run_gh", gh):
+        with patch("kstrl.serve.intake_gh.run_gh", gh):
             cli_result = _invoke(["queue", "sync"], tmp_path)
         assert BOT in cli_result.output
 
@@ -292,7 +292,7 @@ class TestItFailsClosed:
 
 
 class TestTheDaemonNarratesARefusal:
-    """kstrl/serve_github.py::_run_intake (#188 simplify pass item 2): a refusal
+    """kstrl/serve/serve_github.py::_run_intake (#188 simplify pass item 2): a refusal
     silently dropped by the daemon is a control nobody watching it run can
     see working."""
 
@@ -300,7 +300,7 @@ class TestTheDaemonNarratesARefusal:
         _toml(tmp_path)
         gh = _GhStub(issues=_issue_payload(_issue(7)), auth=_auth_payload(actor=BOT))
         obs = _NullObserver()
-        with patch("kstrl.intake_gh.run_gh", gh):
+        with patch("kstrl.serve.intake_gh.run_gh", gh):
             serve_cycle(tmp_path, runner=recording_runner([]), observer=obs)
         warns = [line for line in obs.lines if "intake refused" in line]
         assert len(warns) == 1, obs.lines
@@ -311,7 +311,7 @@ class TestTheDaemonNarratesARefusal:
         _toml(tmp_path, allowed=None)
         gh = _GhStub(issues=_issue_payload(_issue(7)), auth=_auth_payload(actor=BOT))
         obs = _NullObserver()
-        with patch("kstrl.intake_gh.run_gh", gh):
+        with patch("kstrl.serve.intake_gh.run_gh", gh):
             serve_cycle(tmp_path, runner=recording_runner([]), observer=obs)
         assert not any("intake refused" in line for line in obs.lines)
 
@@ -323,12 +323,12 @@ class TestTheOperatorCanFindOutWhy:
     def test_queue_sync_names_the_actor_and_the_allowlist(self, tmp_path: Path) -> None:
         _toml(tmp_path)
         gh = _GhStub(issues=_issue_payload(_issue(7)), auth=_auth_payload(actor=BOT))
-        with patch("kstrl.intake_gh.run_gh", gh):
+        with patch("kstrl.serve.intake_gh.run_gh", gh):
             result = _invoke(["queue", "sync"], tmp_path)
         assert result.exit_code == 0, result.output
         assert "refuse_unauthorized" in result.output
         assert BOT in result.output
-        # The printed allowlist itself (kstrl/cli.py's own kv line:
+        # The printed allowlist itself (kstrl/cli/cli.py's own kv line:
         # "allowed_actors: 0xfauzi"), not its incidental mention inside the
         # refusal reason ("allowed_actors (0xfauzi)") - the two render
         # differently, and only the kv line's own spelling proves it.
@@ -338,7 +338,7 @@ class TestTheOperatorCanFindOutWhy:
     def test_serve_dry_run_names_the_actor(self, tmp_path: Path) -> None:
         _toml(tmp_path)
         gh = _GhStub(issues=_issue_payload(_issue(7)), auth=_auth_payload(actor=BOT))
-        with patch("kstrl.intake_gh.run_gh", gh):
+        with patch("kstrl.serve.intake_gh.run_gh", gh):
             result = _invoke(["serve", "--dry-run"], tmp_path)
         assert f"skip {REPO}#7:" in result.output, result.output
         assert BOT in result.output

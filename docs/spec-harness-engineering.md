@@ -69,7 +69,7 @@ ks run 25
 - `ks run --legacy` invokes `run_loop()` directly as an escape hatch during migration
 
 **Files to modify**:
-- `kstrl/cli.py`: Rewrite `run` command to build manifest and call `run_factory`
+- `kstrl/cli/cli.py`: Rewrite `run` command to build manifest and call `run_factory`
 - `kstrl/factory/factory.py`: Support `use_worktrees=False` with `max_parallel=1` (already works, just needs testing)
 - `kstrl/plan/manifest.py`: Add `Manifest.from_prd(prd_path, branch)` class method for single-component manifests
 

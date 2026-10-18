@@ -35,7 +35,7 @@ import pytest
 from click.testing import CliRunner
 
 from kstrl.calibration.calibration_score import security_caught, security_false_positive
-from kstrl.cli import cli
+from kstrl.cli.cli import cli
 from kstrl.review import security
 from kstrl.review.security import SecurityMode, SecurityResult, parse_security_output
 from tests.helpers.astwalk import all_nodes, assert_census, blind_spot, package_sources, parse

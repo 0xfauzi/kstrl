@@ -125,26 +125,26 @@ class TestNoCensusPinsALineNumber:
         too, so the same function must flag these planted pins, one per
         scope an assignment can sit in, and clear the scoped form."""
         source = (
-            'EXPECTED = ("cli.py:3164 kstrl.owner.interaction.PromptRequest",)\n'
+            'EXPECTED = ("cli/cli.py:3164 kstrl.owner.interaction.PromptRequest",)\n'
             'SCOPED = ("cli.py::factory kstrl.owner.interaction.PromptRequest",)\n'
             'UNREAL = ("no_such_module.py:12 x",)\n'
             "class TestX:\n"
             '    PINS: tuple[str, ...] = ("kstrl/architect/linear.py:320 urlopen",)\n'
             "def test_y():\n"
-            '    ROWS = {"cli_report.py:390": 1}\n'
+            '    ROWS = {"cli/cli_report.py:390": 1}\n'
             '    SITES += (f"verify/verify.py:112 {x}",)\n'
-            'WRAPPED = ["at [kstrl/signals.py:556]"]\n'
+            'WRAPPED = ["at [kstrl/serve/signals.py:556]"]\n'
             '_PRIVATE = ("pipeline/pipeline.py:1 x",)\n'
             "def setup(cls):\n"
             '    cls.ATTR = ("loop/loop.py:2 x",)\n'
         )
         assert sorted(line_number_pins(parse(source))) == [
             "ATTR loop/loop.py:2",
-            "EXPECTED cli.py:3164",
+            "EXPECTED cli/cli.py:3164",
             "PINS kstrl/architect/linear.py:320",
-            "ROWS cli_report.py:390",
+            "ROWS cli/cli_report.py:390",
             "SITES verify/verify.py:112",
-            "WRAPPED kstrl/signals.py:556",
+            "WRAPPED kstrl/serve/signals.py:556",
             "_PRIVATE pipeline/pipeline.py:1",
         ]
 
@@ -159,7 +159,7 @@ class TestTheDisclosedLimits:
         "source",
         [
             'def test_z():\n    astwalk.Sites((), ("fixtures.py:111 _RUNNERS[kind]",))\n',
-            'EXPECTED = (("cli.py", 3164),)\n',
+            'EXPECTED = (("cli/cli.py", 3164),)\n',
             'EXPECTED = ("retry.py:395 kstrl.owner.interaction.PromptRequest",)\n',
         ],
         ids=["row-passed-as-call-data", "line-held-as-an-int", "bare-basename-of-a-nested-module"],

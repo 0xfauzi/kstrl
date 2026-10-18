@@ -99,7 +99,7 @@ EXPECTED_UNDECIDED_REPLACE_CALLS: tuple[str, ...] = (
     "agents/codex.py text.replace",
     "architect/spec_issues.py comp_id.replace",
     "architect/spec_issues.py comp_id.replace('-', ' ').replace",
-    "doctor.py now.isoformat().replace",
+    "cli/doctor.py now.isoformat().replace",
     "events/observability.py datetime.strptime(ts, '%Y-%m-%dT%H:%M:%SZ').replace",
     # #526: `retry_plan._opt` spells a run limit as an option name, a str.replace.
     "factory/retry_plan.py name.replace",
@@ -115,7 +115,7 @@ EXPECTED_UNDECIDED_REPLACE_CALLS: tuple[str, ...] = (
     "proc/scrubbed_run.py text.replace",
     "proc/scrubbed_run.py text.replace('\\r\\n', '\\n').replace",
     "queue/workqueue_items.py parsed.replace",
-    "serve_spend.py (local + timedelta(days=1)).replace",
+    "serve/serve_spend.py (local + timedelta(days=1)).replace",
     "verify/baseline_report.py ' '.join(text.split()).replace",
 )
 

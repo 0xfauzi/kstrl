@@ -29,9 +29,9 @@ from typing import Any
 import pytest
 from click.testing import CliRunner
 
-import kstrl.cli as cli_mod
-import kstrl.cli_factory as cli_factory_mod
-import kstrl.cli_loop as cli_loop_mod
+import kstrl.cli.cli as cli_mod
+import kstrl.cli.cli_factory as cli_factory_mod
+import kstrl.cli.cli_loop as cli_loop_mod
 import kstrl.loop as loop_mod
 from kstrl.config.config import KstrlConfig
 from kstrl.factory.factory import run_factory

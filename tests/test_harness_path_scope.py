@@ -36,7 +36,7 @@ import pytest
 
 from kstrl.agents.sandbox import SandboxConfig
 from kstrl.architect.decompose_reply import _SCOPE_HAZARD_ADVICE
-from kstrl.cli_loop import _understand_core
+from kstrl.cli.cli_loop import _understand_core
 from kstrl.config.config import KstrlConfig, component_harness_paths
 from kstrl.events.events import EventBus
 from kstrl.factory.commandrun import CommandRun
@@ -697,7 +697,7 @@ class TestStandaloneLoops:
             paths=None,
             run_root=tmp_path / ".kstrl" / "runs" / "run-test",
         )
-        with patch("kstrl.cli_loop.run_loop", side_effect=fake_run_loop):
+        with patch("kstrl.cli.cli_loop.run_loop", side_effect=fake_run_loop):
             _understand_core(
                 config,
                 cast(Any, None),

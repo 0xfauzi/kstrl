@@ -31,7 +31,7 @@ from typing import Any
 import pytest
 from click.testing import CliRunner
 
-from kstrl.cli import cli
+from kstrl.cli.cli import cli
 from tests.helpers.executables import write_executable
 from tests.helpers.gitrepo import git_in, set_identity
 from tests.helpers.procs import kill_group

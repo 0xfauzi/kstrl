@@ -26,7 +26,7 @@ import pytest
 from click.testing import CliRunner
 
 import kstrl.learning.autonomy as autonomy_module
-from kstrl.cli import cli
+from kstrl.cli.cli import cli
 from kstrl.io.statedir import CONTROL_AUTONOMY, legacy_control_paths
 from kstrl.learning.autonomy import AutonomyState
 from tests.helpers.gitrepo import git_in

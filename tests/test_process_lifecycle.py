@@ -195,7 +195,7 @@ EXPECTED_PROCESS_MODULES: dict[str, tuple[str, ...]] = {
     # same for the syscalls. #642 slice 6: `fork`, the `--hold` mode's one
     # fork, whose parent leaves with the command's status.
     "proc/leash.py": ("Popen", "fork", "getpgrp", "killpg", "subprocess"),
-    "serve_process.py": ("Popen", "communicate", "subprocess"),
+    "serve/serve_process.py": ("Popen", "communicate", "subprocess"),
     "proc/scrubbed_run.py": ("Popen", "communicate", "subprocess"),
     # #776 V1: `subprocess.TimeoutExpired` is the one use left in `verify.py`.
     # #776 V3: that use moved to `verify_commands.py` with `check_stack_command`.
@@ -235,12 +235,12 @@ EXPECTED_PROCESS_MODULES: dict[str, tuple[str, ...]] = {
     # with a timeout; it creates, signals, waits on or abandons no
     # process group, so there is nothing here for `kstrl.proc.procgroup` to
     # own.
-    "doctor.py": ("subprocess",),
+    "cli/doctor.py": ("subprocess",),
     "git/git.py": ("subprocess",),
     "git/git_base.py": ("subprocess",),
     "git/git_diff.py": ("subprocess",),
     "git/git_tree.py": ("subprocess",),
-    "intake_gh.py": ("subprocess",),
+    "serve/intake_gh.py": ("subprocess",),
     # #700: `TimeoutExpired` from `run_scrubbed`, which owns the process group.
     "acceptance/isolation.py": ("subprocess",),
     "events/observability.py": ("subprocess",),
@@ -361,7 +361,7 @@ EXPECTED_SPAWNERS: dict[str, SpawnerRules] = {
     # #642: the leash starts the agent and waits on it. No disposal: the
     # agent is ended by its group's signals, never by the leash letting go.
     "proc/leash.py": SpawnerRules(1, 0, 0, 0),
-    "serve_process.py": SpawnerRules(1, 1, 1, 2),
+    "serve/serve_process.py": SpawnerRules(1, 1, 1, 2),
     # #700 slice 3: the second Popen is `start_scrubbed`, which returns the
     # running child; `replay.py` is the one that lets it go. #642 slice 6:
     # the third disposal lets go of a leash that could not start `up`.

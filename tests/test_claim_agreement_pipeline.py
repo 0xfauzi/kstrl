@@ -524,7 +524,7 @@ class TestConfig:
         operator where a setting came from. A field missing from
         from_env is announced as "from kstrl.toml" when it came from the
         environment, in the one place they look to find out."""
-        from kstrl.cli_preflight import _collect_toml_notes
+        from kstrl.cli.cli_preflight import _collect_toml_notes
 
         monkeypatch.setenv("KSTRL_FACTORY_CLAIM_AGREEMENT", "block")
         notes: list[str] = []

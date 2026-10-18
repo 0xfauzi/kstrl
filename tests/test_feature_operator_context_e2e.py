@@ -30,7 +30,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from kstrl.cli import cli
+from kstrl.cli.cli import cli
 from kstrl.knowledge.knowledge import retrieve_knowledge_context
 from kstrl.knowledge.knowledge_facts import Fact, KnowledgeConfig, write_facts
 from kstrl.plan.manifest import Component, Manifest

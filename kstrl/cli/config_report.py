@@ -1,0 +1,468 @@
+"""Resolved-config reporting: (section, key, value, source) rows.
+
+Extracted from ``cli.config_show`` (TUI surface B1). This module is
+click-free on purpose: presentation (the click.echo lines) stays with
+the caller.
+
+Source detection for env is behavioral: a value is tagged (env) when
+removing the environment changes it. That requires temporarily
+clearing ``os.environ`` - a PROCESS-WIDE side effect. Never call
+``build_config_report`` while another thread is running a live
+command.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from dataclasses import fields as dataclass_fields
+from pathlib import Path
+from typing import Any
+
+from kstrl.config import KstrlConfig, load_toml_section, resolve_config_file, scrubbed_environ
+from kstrl.proc import NO_LIMIT
+
+
+@dataclass(frozen=True)
+class ConfigRow:
+    section: str
+    key: str
+    value: str  # pre-formatted via format_config_value
+    source: str  # flag | env | toml | default | [verify]
+    #: The value as the config screen shows it (``operator_value``). Not
+    #: compared: it is a rendering of ``value``, not a second fact.
+    shown: str = field(default="", compare=False)
+
+
+@dataclass(frozen=True)
+class ConfigReport:
+    root_dir: Path
+    toml_path: Path
+    toml_exists: bool
+    rows: tuple[ConfigRow, ...]
+    #: Sections whose loader rejected the configuration, so no row could
+    #: be built for them. The report is still returned: see
+    #: :func:`build_config_report`.
+    unresolved: tuple[str, ...] = ()
+
+
+def _string_key_rows(section: str) -> list[tuple[str, str]]:
+    """``(toml key, field)`` for one section, from ``config_keys.STRING_KEYS``.
+
+    Derived rather than hand-copied (review round 1, S8). Every string
+    key already declares its section, key and field in one table; a
+    second hand-maintained copy here is a row that can go missing, and
+    nothing tied the two: a tenth ``STRING_KEYS`` row used to drop
+    silently out of ``ks config`` and out of the generated README with
+    every gate green.
+
+    The import is inside the function so the table is read at CALL time.
+    A module-level ``from kstrl.config.config_keys import STRING_KEYS`` snapshots
+    the tuple this module was imported with, which is derived enough to be
+    correct and not derived enough to be testable: the mutation in
+    tests/test_string_keys_reach_every_surface.py cannot reach it.
+
+    From ``config_keys``, which owns the table, rather than from
+    ``kstrl.config.config``, which re-exports it (R10.9 moved it out because
+    ``config.py`` was at the 800-line ratchet). The two names are the
+    same object and that file pins the identity, so this is the same
+    table the overlays read.
+
+    The read goes through the module object (#863 M1). ``from kstrl.config
+    import STRING_KEYS`` reads the binding of the package interface, a
+    third name, and a rebind of ``config_keys.STRING_KEYS`` does not
+    reach it: the interface step made that change, and the tenth-row test
+    became red.
+    """
+    from kstrl.config import config_keys
+
+    rows = config_keys.STRING_KEYS
+    return [(key, field_name) for sec, key, _env, field_name, _p in rows if sec == section]
+
+
+def show_sections() -> list[tuple[str, list[tuple[str, str]]]]:
+    """(toml section, [(toml key, KstrlConfig field)]) - the documented
+    kstrl.toml surface for the base config. The string-key rows come from
+    ``STRING_KEYS``; the rest are keys that table does not describe (a
+    list, ints, floats, a float-or-None and bools, and the two UI fields
+    with no toml key of their own)."""
+    return [
+        ("agent", [*_string_key_rows("agent"), ("budget_usd", "agent_budget_usd")]),
+        (
+            "run",
+            [
+                ("max_iterations", "max_iterations"),
+                ("sleep_seconds", "sleep_seconds"),
+                ("interactive", "interactive"),
+            ],
+        ),
+        ("paths", [*_string_key_rows("paths"), ("allowed", "allowed_paths")]),
+        (
+            "git",
+            [
+                ("branch", "kstrl_branch"),
+                ("auto_checkout", "auto_checkout"),
+            ],
+        ),
+        (
+            "ui",
+            [
+                ("ascii", "ascii_only"),
+                ("ui_mode", "ui_mode"),
+                ("no_color", "no_color"),
+            ],
+        ),
+    ]
+
+
+#: The values every ``--ui`` flag accepts (#565). The retired "gum" value
+#: of ``[ui] ui_mode`` and ``KSTRL_UI`` is refused at load
+#: (``config_keys.RETIRED_VALUES``). :func:`normalize_ui_mode` also reads
+#: "off", "no" and "0" as plain and any other value as auto.
+UI_MODES: tuple[str, ...] = ("auto", "rich", "plain")
+
+
+def normalize_ui_mode(value: str) -> str:
+    normalized = (value or "auto").strip().lower()
+    if normalized in {"plain", "off", "no", "0"}:
+        return "plain"
+    if normalized not in UI_MODES:
+        return "auto"
+    return normalized
+
+
+# Rows whose None means something more specific than "no value", and
+# where printing bare None (or, worse, a materialized default) would
+# misreport what a run will do. R8 review finding 1: `ks config show`
+# printed <root>/scripts/kstrl/progress.txt as the effective progress
+# path, which is exactly the out-of-scope location the factory no longer
+# uses - an operator copying it into kstrl.toml would recreate the
+# defect the sentinel removed.
+UNSET_RENDERINGS: dict[tuple[str, str], str] = {
+    ("paths", "progress"): "<unset: each component writes beside its own PRD>",
+    # None is no ceiling: `_budget_usd` reads both "" and 0 as None.
+    ("agent", "budget_usd"): NO_LIMIT,
+}
+
+# Every time and spend limit in the report. At 0 or below each one means
+# no limit, and the row says so rather than printing 0.0 (#467). The hang
+# guard ([factory] merge_timeout) is not here: 0 does not mean "no limit"
+# for it.
+NO_LIMIT_KEYS: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("factory", "max_adversarial_calls"),
+        ("factory", "max_total_tokens"),
+        ("factory", "max_cost_usd"),
+        ("factory", "worktree_setup_timeout"),
+        ("factory", "review_timeout_seconds"),
+        ("factory", "architect_timeout_seconds"),
+        ("serve", "daily_budget_usd"),
+        ("serve", "factory_timeout_seconds"),
+        ("serve", "max_open_prs"),
+        ("verify", "subprocess_timeout"),
+        ("security", "timeout_seconds"),
+        ("contract", "timeout"),
+        ("knowledge", "distill_timeout_seconds"),
+        ("timeout", "agent_iteration"),
+        ("timeout", "component_total"),
+    }
+)
+
+
+def format_config_value(value: Any) -> str:
+    if isinstance(value, Path):
+        return str(value)
+    return repr(value)
+
+
+def format_row_value(section: str, key: str, value: Any) -> str:
+    """``format_config_value`` plus the per-row unset renderings."""
+    if value is None and (section, key) in UNSET_RENDERINGS:
+        return UNSET_RENDERINGS[(section, key)]
+    if (section, key) in NO_LIMIT_KEYS and value <= 0:
+        return NO_LIMIT
+    return format_config_value(value)
+
+
+def operator_value(section: str, key: str, value: Any) -> str:
+    """The value as the config screen shows it: never a Python repr (#433 G4).
+
+    ``ks config show`` keeps ``format_row_value``'s reprs, which paste into
+    kstrl.toml; the screen says ``unset``, ``yes``, ``no``, ``none``.
+    """
+    if value is None and (section, key) in UNSET_RENDERINGS:
+        return UNSET_RENDERINGS[(section, key)]
+    if (section, key) in NO_LIMIT_KEYS and value <= 0:
+        return NO_LIMIT
+    return _plain(value)
+
+
+def _plain(value: Any) -> str:
+    if value is None:
+        return "unset"
+    if isinstance(value, bool):
+        return "yes" if value else "no"
+    if isinstance(value, str):
+        return value or "empty"
+    if isinstance(value, list | tuple | set | frozenset):
+        return ", ".join(_plain(item) for item in value) or "none"
+    return str(value)
+
+
+def kstrl_config_defaults(root_dir: Path) -> KstrlConfig:
+    """Built-in KstrlConfig defaults with paths anchored like load()."""
+    return KstrlConfig.anchored(root_dir)
+
+
+#: The sections whose dataclass holds fields that are not kstrl.toml keys
+#: (nested configs, paths and flags ``FactoryConfig.load`` fills from other
+#: sections, ``KnowledgeConfig.knowledge_root``), with the keys they read.
+#: Every other section's keys are its dataclass fields minus the provenance
+#: ones, the rule scripts/gen_docs.py documents them by. The census in
+#: tests/test_config_show.py fails when the report and the documented set
+#: differ, so a key added to either list alone goes red.
+_LISTED_KNOBS: dict[str, tuple[str, ...]] = {
+    "factory": (
+        "max_parallel",
+        "max_retries",
+        "retry_delay",
+        "use_worktrees",
+        "single_pr",
+        "create_prs",
+        "review_mode",
+        "review_timeout_seconds",
+        "architect_timeout_seconds",
+        "claim_agreement",
+        "merge_timeout",
+        "max_adversarial_calls",
+        "max_total_tokens",
+        "max_cost_usd",
+        "pause_before_pr_merge",
+        "progress_log_enabled",
+        "keep_worktrees_on_failure",
+        "integration_review",
+        "integration_blocking",
+        "convergence_attempts",
+        "worktree_setup_timeout",
+    ),
+    "knowledge": (
+        "enabled",
+        "max_core_tokens",
+        "max_dependency_tokens",
+        "max_sibling_tokens",
+        "distill_timeout_seconds",
+        "distill_model",
+        "max_facts_per_distill",
+        "dependency_scope",
+    ),
+}
+
+
+def _knob_fields(section: str, config: Any) -> list[str]:
+    """The kstrl.toml keys of one resolved phase section, in field order.
+
+    Derived from the dataclass unless the section is in ``_LISTED_KNOBS``.
+    A hand-typed list per section is how this report came to omit twelve
+    sections and 53 documented keys (#649): the ``verify`` list had
+    already gone stale once when #258 added keys. A field declared
+    ``metadata={"provenance": True}`` records where a value came from and
+    has no toml key (``EvolutionConfig.retired_keys``, #217).
+    """
+    listed = _LISTED_KNOBS.get(section)
+    if listed is not None:
+        return list(listed)
+    return [f.name for f in dataclass_fields(config) if not f.metadata.get("provenance")]
+
+
+def _phase_sections() -> list[tuple[str, Any]]:
+    """(section, loader) for every kstrl.toml section outside ``show_sections``.
+
+    Both the sections and their loaders come from
+    ``config_preflight.config_sections()``, the one registry of section
+    to loader, kept complete by an AST test in
+    tests/test_config_preflight.py. A section registered there is
+    rendered here with no edit to this module. Loaders import lazily;
+    the report is not on any hot path.
+    """
+    from kstrl.cli.config_preflight import config_sections
+
+    base = {name for name, _ in show_sections()}
+    return [
+        (name, entry.loader)
+        for entry in config_sections()
+        for name in entry.sections
+        if name not in base
+    ]
+
+
+def _base_sources(
+    resolved: KstrlConfig, noenv: KstrlConfig, defaults: KstrlConfig
+) -> dict[str, str]:
+    """Per-field source for KstrlConfig, computed BEFORE the flag overlay.
+
+    A flag replaces whatever source the value had, so it has to be
+    applied after this, not folded into it.
+    """
+    sources: dict[str, str] = {}
+    for f in dataclass_fields(KstrlConfig):
+        if getattr(resolved, f.name) != getattr(noenv, f.name):
+            sources[f.name] = "env"
+        elif getattr(noenv, f.name) != getattr(defaults, f.name):
+            sources[f.name] = "toml"
+        else:
+            sources[f.name] = "default"
+    return sources
+
+
+def _base_rows(resolved: KstrlConfig, sources: dict[str, str]) -> list[ConfigRow]:
+    """Rows for the sections KstrlConfig fans out over."""
+    return [
+        ConfigRow(
+            section=section,
+            key=toml_key,
+            value=format_row_value(section, toml_key, getattr(resolved, field_name)),
+            source=sources[field_name],
+            shown=operator_value(section, toml_key, getattr(resolved, field_name)),
+        )
+        for section, keys in show_sections()
+        for toml_key, field_name in keys
+    ]
+
+
+def _phase_rows(
+    section: str,
+    resolved: Any,
+    noenv: Any,
+    toml_keys: set[str],
+) -> list[ConfigRow]:
+    """Rows for one phase config, each tagged with where its value came from."""
+    rows: list[ConfigRow] = []
+    for field_name in _knob_fields(section, resolved):
+        value = getattr(resolved, field_name)
+        if value != getattr(noenv, field_name):
+            source = "env"
+        elif field_name in toml_keys:
+            source = "toml"
+        else:
+            source = "default"
+        rows.append(
+            ConfigRow(
+                section=section,
+                key=field_name,
+                value=format_row_value(section, field_name, value),
+                source=source,
+                shown=operator_value(section, field_name, value),
+            )
+        )
+    return rows
+
+
+def build_config_report(
+    root_dir: Path,
+    *,
+    overlay: Callable[[KstrlConfig], set[str]] | None = None,
+) -> ConfigReport:
+    """Resolve every documented config value with its source.
+
+    ``overlay`` is the CLI's flag layer: it mutates the resolved
+    KstrlConfig and returns the field names it overrode (tagged
+    ``flag``).
+
+    A PHASE section whose loader rejects the config costs that section's
+    rows and is named in ``unresolved``; it does not cost the report.
+    One typo used to abort the whole thing before a single row printed,
+    which made ``ks config show`` the LEAST informative surface in the
+    CLI at the exact moment it is the one an operator opens: every other
+    command named the section, the key and the value, and this one said
+    ``error: could not convert string to float: 'many'``.
+
+    The base config still raises, because a malformed document or a bad
+    ``[run]`` value leaves nothing to render beside the failure.
+    """
+    from kstrl.config import SURFACE_REJECTIONS, raise_if_defect, toml_parse_scope
+
+    toml_path = resolve_config_file(root_dir)
+    phase_sections = _phase_sections()
+
+    def _resolve(loader: Any) -> Any:
+        """The section, or None when it rejects the configuration.
+
+        The rejection set is IMPORTED, not restated: it has already
+        widened twice, and a local copy that missed the third widening
+        would let the new exception escape and kill the whole report
+        before a single row printed, which is the defect this tolerance
+        was added to remove. WHY a section was rejected is
+        ``config_preflight``'s job to report; None here means only "no
+        row can be built from this".
+
+        It is the SURFACE set, not the entry set, because this function
+        has both kinds of caller. The entry check reads kstrl.toml once
+        itself and turns an unreadable file into a ConfigError before
+        any loader runs. A caller with no such pass in front of it, or a
+        chmod after that pass, gives a bare OSError here. `except
+        REJECTIONS` let that kill the whole report.
+        """
+        try:
+            return loader(root_dir)
+        except SURFACE_REJECTIONS as exc:
+            # A RuntimeError kstrl never defined is our bug, and
+            # returning None for it would silently drop a whole section
+            # from a report the operator is reading to find the truth.
+            raise_if_defect(exc)
+            return None
+
+    # One parse of kstrl.toml for the whole report. Without this the
+    # loader calls and section reads below lex the same bytes 32 times:
+    # counted, and measured on the shipped 21 KB kstrl.toml.example at
+    # 13.34 ms against 0.82 ms with it. Per call, so that each report
+    # sees the file as it is now.
+    with toml_parse_scope():
+        resolved_base = KstrlConfig.load(root_dir)
+        phase_resolved = {name: _resolve(loader) for name, loader in phase_sections}
+        with scrubbed_environ():
+            noenv_base = KstrlConfig.load(root_dir)
+            phase_noenv = {name: _resolve(loader) for name, loader in phase_sections}
+        # Derived rather than accumulated: a loader never returns None, so
+        # the two passes ARE the record of which sections failed, and the
+        # skip below cannot drift from the reason for it.
+        unresolved = tuple(
+            name
+            for name, _ in phase_sections
+            if phase_resolved[name] is None or phase_noenv[name] is None
+        )
+        # Resolved sections only: a rejected one renders no rows, and its
+        # table can be the reason it was rejected (#571: a nan in it).
+        phase_toml_keys = {
+            name: set(load_toml_section(toml_path, name).keys())
+            for name, _ in phase_sections
+            if name not in unresolved
+        }
+
+    defaults_base = kstrl_config_defaults(root_dir)
+
+    base_sources = _base_sources(resolved_base, noenv_base, defaults_base)
+    if overlay is not None:
+        for name in overlay(resolved_base):
+            base_sources[name] = "flag"
+    resolved_base.ui_mode = normalize_ui_mode(resolved_base.ui_mode)
+
+    rows = _base_rows(resolved_base, base_sources)
+    for section, _ in phase_sections:
+        if section in unresolved:
+            continue
+        rows.extend(
+            _phase_rows(
+                section,
+                phase_resolved[section],
+                phase_noenv[section],
+                phase_toml_keys[section],
+            )
+        )
+
+    return ConfigReport(
+        root_dir=root_dir,
+        toml_path=toml_path,
+        toml_exists=toml_path.exists(),
+        rows=tuple(rows),
+        unresolved=unresolved,
+    )

@@ -47,7 +47,7 @@ import pytest
 from kstrl.proc import procgroup
 from kstrl.proc.procgroup import pid_is_alive, read_group_liveness, read_group_members
 from kstrl.proc.spawn_record import read_spawn_records
-from kstrl.serve_process import _group_liveness_for_reap
+from kstrl.serve.serve_process import _group_liveness_for_reap
 
 
 def process_group_alive(pgid: int) -> bool:

@@ -29,11 +29,11 @@ import pytest
 
 from kstrl.io.statedir import CONTROL_PR_COUNT_STREAK, control_file
 from kstrl.owner.inbox import Inbox, InboxConfig, ItemKind
-from kstrl.serve import serve
-from kstrl.serve_config import ServeConfig
-from kstrl.serve_github import STREAK_SCHEMA_VERSION, OpenPrCountStreak
-from kstrl.serve_outcome import RunOutcome
-from kstrl.serve_settle import CycleResult, _file_inbox_item, _record_count_failure
+from kstrl.serve.serve import serve
+from kstrl.serve.serve_config import ServeConfig
+from kstrl.serve.serve_github import STREAK_SCHEMA_VERSION, OpenPrCountStreak
+from kstrl.serve.serve_outcome import RunOutcome
+from kstrl.serve.serve_settle import CycleResult, _file_inbox_item, _record_count_failure
 from tests.helpers.fakegh import install_marker_gh as _install_marker_gh
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
 from tests.test_serve import _add, _queue, _stub_runner

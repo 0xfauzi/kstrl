@@ -40,11 +40,11 @@ from kstrl.plan.findings import Finding
 from kstrl.plan.manifest import Component, Manifest
 from kstrl.queue.workqueue import Queue
 from kstrl.queue.workqueue_items import ItemSource, QueueConfig
-from kstrl.serve import serve_cycle
-from kstrl.serve_config import ServeConfig
-from kstrl.serve_outcome import Outcome, RunOutcome, classify_run
-from kstrl.serve_process import run_supervised
-from kstrl.serve_spend import SpendLedger
+from kstrl.serve.serve import serve_cycle
+from kstrl.serve.serve_config import ServeConfig
+from kstrl.serve.serve_outcome import Outcome, RunOutcome, classify_run
+from kstrl.serve.serve_process import run_supervised
+from kstrl.serve.serve_spend import SpendLedger
 from tests.helpers import gitrepo
 from tests.helpers.executables import write_executable
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
@@ -324,7 +324,7 @@ class TestTheParkIsItsOwnOutcome:
         assert _status(root, CMDS) == "skipped", out
         # serve is not wedged behind it, and does not call it a spec failure.
         # Imported here so the module still collects on a tree without it (red first).
-        from kstrl.serve_gates import check_parked_merges
+        from kstrl.serve.serve_gates import check_parked_merges
 
         assert check_parked_merges(root).allowed
         verdict = classify_run(

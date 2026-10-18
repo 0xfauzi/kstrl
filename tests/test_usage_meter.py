@@ -4018,7 +4018,7 @@ class TestBudgetConfigErrorReachesTheOperator:
         monkeypatch.setenv("PATH", "")
         from click.testing import CliRunner
 
-        from kstrl.cli import cli
+        from kstrl.cli.cli import cli
         from kstrl.config.config_numbers import BudgetConfigError
 
         (tmp_path / "kstrl.toml").write_text(f"[factory]\nmax_cost_usd = {toml_value}\n")
@@ -4042,7 +4042,7 @@ class TestBudgetConfigErrorReachesTheOperator:
         monkeypatch.setenv("PATH", "")
         from click.testing import CliRunner
 
-        from kstrl.cli import cli
+        from kstrl.cli.cli import cli
 
         (tmp_path / "kstrl.toml").write_text("[factory]\nmax_cost_usd = 0\n")
         (tmp_path / "m.json").write_text(json.dumps(self._manifest()))
@@ -4110,7 +4110,7 @@ class TestCeilingsAreCheckedBeforeAnythingSpends:
     ) -> None:
         from click.testing import CliRunner
 
-        from kstrl.cli import cli
+        from kstrl.cli.cli import cli
 
         script, marker = self._fake_agent(tmp_path)
         (tmp_path / "kstrl.toml").write_text(f"[factory]\nmax_cost_usd = {toml_value}\n")
@@ -4133,7 +4133,7 @@ class TestCeilingsAreCheckedBeforeAnythingSpends:
         ordinary run."""
         from click.testing import CliRunner
 
-        from kstrl.cli import cli
+        from kstrl.cli.cli import cli
 
         script, marker = self._fake_agent(tmp_path)
         (tmp_path / "kstrl.toml").write_text(
@@ -5473,7 +5473,7 @@ def _invoke_factory_cli(
     """
     from click.testing import CliRunner
 
-    from kstrl.cli import cli
+    from kstrl.cli.cli import cli
 
     root = Path.cwd()
     (root / "s.md").write_text("# spec\n")
@@ -5512,10 +5512,10 @@ class TestFactoryHandsTheArchitectSpendToTheRun:
         exercises the capture rather than a value handed straight
         through.
         """
-        from kstrl import cli_architect as cli_architect_mod
-        from kstrl import cli_factory as cli_factory_mod
         from kstrl.architect.decisions import SpecDecision
         from kstrl.architect.decompose_audit import SpecBlockerError
+        from kstrl.cli import cli_architect as cli_architect_mod
+        from kstrl.cli import cli_factory as cli_factory_mod
 
         captured: dict[str, Any] = {}
         agent = SimpleNamespace(name="fake", usage_records=[])
@@ -5900,7 +5900,7 @@ class TestNoConfigLoadStandsBetweenTheMoneyAndTheRun:
     @staticmethod
     def _captured_run(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         """Stop at the factory boundary and record whether we got there."""
-        from kstrl import cli_factory as cli_factory_mod
+        from kstrl.cli import cli_factory as cli_factory_mod
 
         captured: dict[str, Any] = {}
 

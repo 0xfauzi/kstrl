@@ -99,7 +99,7 @@ class NotMeasured:
         """The ``events.jsonl`` rendering: ``"<check>:<reason>"``.
 
         Here rather than in the emitters because there are two of them,
-        in :mod:`kstrl.pipeline.pipeline` and :mod:`kstrl.feature_verify`, and a
+        in :mod:`kstrl.pipeline.pipeline` and :mod:`kstrl.cli.feature_verify`, and a
         format spelled twice is one an edit can change in one place
         only. Same ``<check>:<code>`` shape
         :func:`kstrl.learning.evolution.split_signature` already reads, so a

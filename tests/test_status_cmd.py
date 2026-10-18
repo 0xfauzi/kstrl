@@ -13,7 +13,7 @@ from pathlib import Path
 
 from click.testing import CliRunner
 
-from kstrl.cli import cli
+from kstrl.cli.cli import cli
 from kstrl.events.observability import ProgressLog
 from kstrl.plan.manifest import Component, Manifest
 

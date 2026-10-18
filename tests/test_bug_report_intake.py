@@ -25,13 +25,13 @@ from unittest.mock import patch
 import click
 import pytest
 
-from kstrl.cli import cli
-from kstrl.intake_issue import BUG_REPORT_PROMPT
+from kstrl.cli.cli import cli
 from kstrl.queue.workqueue import Queue
 from kstrl.queue.workqueue_items import QueueConfig
 from kstrl.queue.workqueue_store import META_FILENAME
-from kstrl.serve import serve_cycle
-from kstrl.serve_config import ServeConfig
+from kstrl.serve.intake_issue import BUG_REPORT_PROMPT
+from kstrl.serve.serve import serve_cycle
+from kstrl.serve.serve_config import ServeConfig
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
 from tests.test_intake_github import _GhStub, _issue, _issue_payload
 from tests.test_serve_seam import _enable_github_intake, _install_stub_interpreter
@@ -59,7 +59,7 @@ def _launch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, labels: list[str]) 
     record = _install_stub_interpreter(tmp_path, monkeypatch)
     issue = _issue(9, title="Crash on empty input", body=BODY)
     issue["labels"] = [{"name": "kstrl:queued"}, *({"name": name} for name in labels)]
-    with patch("kstrl.intake_gh.run_gh", _GhStub(issues=_issue_payload(issue))):
+    with patch("kstrl.serve.intake_gh.run_gh", _GhStub(issues=_issue_payload(issue))):
         serve_cycle(tmp_path, config=ServeConfig(caffeinate=False, factory_timeout_seconds=60.0))
     assert record.exists(), "the cycle launched no factory"
     raw: dict[str, object] = json.loads(record.read_text(encoding="utf-8"))

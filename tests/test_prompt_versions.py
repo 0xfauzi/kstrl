@@ -93,7 +93,6 @@ from types import ModuleType
 
 import pytest
 
-from kstrl import intake_issue
 from kstrl.architect import decisions, decompose_prompt, owner_answers
 from kstrl.architect.decisions import (
     DECISIONS_CONTEXT_PROMPT,
@@ -125,7 +124,6 @@ from kstrl.git.git_diff import (
     pasted_change_source,
     repo_change_source,
 )
-from kstrl.intake_issue import BUG_REPORT_PROMPT, BUG_REPORT_PROMPT_VERSION, RemoteIssue
 from kstrl.knowledge import knowledge_distill
 from kstrl.knowledge.knowledge_distill import DISTILL_PROMPT, DISTILL_PROMPT_VERSION
 from kstrl.owner.inbox import InboxItem, ItemKind
@@ -142,6 +140,8 @@ from kstrl.review.security import (
     SecurityConfig,
     SecurityMode,
 )
+from kstrl.serve import intake_issue
+from kstrl.serve.intake_issue import BUG_REPORT_PROMPT, BUG_REPORT_PROMPT_VERSION, RemoteIssue
 from kstrl.ui import PlainUI
 from kstrl.verify.verify_model import VerificationResult
 from tests.conftest import make_review_repo

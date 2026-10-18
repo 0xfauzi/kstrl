@@ -38,7 +38,7 @@ from unittest.mock import patch
 import pytest
 from click.testing import CliRunner
 
-import kstrl.cli as cli_mod
+import kstrl.cli.cli as cli_mod
 from kstrl.config.config import ConfigError
 from kstrl.events.event_catalog import AutonomyLevelApplied, Event
 from kstrl.events.events import CallbackSink, EventBus

@@ -49,7 +49,7 @@ if TYPE_CHECKING:
     from kstrl.plan import Manifest
     from kstrl.project import Stack
 
-#: The inbox dedupe-key prefix of a plan_gate item. ``kstrl/cli.py``
+#: The inbox dedupe-key prefix of a plan_gate item. ``kstrl/cli/cli.py``
 #: recognises a plan park by it when `ks inbox approve` or `ks inbox
 #: reject` is given one.
 PLAN_GATE_KEY = "plan-gate:"

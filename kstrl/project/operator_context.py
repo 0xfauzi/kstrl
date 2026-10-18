@@ -29,7 +29,7 @@ with no filter and a header asserting the operator wrote it.
 The residual, stated rather than implied: four shapes hand the agent
 the repo root as its working tree, and in all four an agent there can
 edit this file. ``ks run`` forces ``use_worktrees=False``
-(``kstrl/cli.py``); so does ``ks factory --no-worktrees``; so does
+(``kstrl/cli/cli.py``); so does ``ks factory --no-worktrees``; so does
 ``[factory] use_worktrees = false`` in ``kstrl.toml``; and
 ``feature_cmd.run_feature`` runs every ``ks feature`` loop with the repo
 root as ``cwd``, so its understand or implement loop can write the file

@@ -23,8 +23,8 @@ from pathlib import Path
 
 import pytest
 
+from kstrl.cli.config_preflight import config_problem_lines
 from kstrl.config.config import ConfigError
-from kstrl.config_preflight import config_problem_lines
 from kstrl.io.statedir import CONTROL_AUTONOMY, control_file
 from kstrl.learning.autonomy import (
     DEMOTION_COOLDOWN_RUNS,

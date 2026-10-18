@@ -35,15 +35,15 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from kstrl.cli import cli
+from kstrl.cli.cli import cli
 from kstrl.io.statedir import state_dir
 from kstrl.owner.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.queue.workqueue_items import ItemState
-from kstrl.serve import serve, serve_cycle
-from kstrl.serve_config import Admission, ServeConfig, ServeError
-from kstrl.serve_outcome import RunOutcome
-from kstrl.serve_settle import CycleResult
-from kstrl.serve_spend import SpendLedger
+from kstrl.serve.serve import serve, serve_cycle
+from kstrl.serve.serve_config import Admission, ServeConfig, ServeError
+from kstrl.serve.serve_outcome import RunOutcome
+from kstrl.serve.serve_settle import CycleResult
+from kstrl.serve.serve_spend import SpendLedger
 from tests.helpers.fakegh import FAKE_GH_THIRD_CALL_WORKS as _FAKE_GH_THIRD_CALL_WORKS
 from tests.helpers.fakegh import install_fake_gh as _install_fake_gh
 from tests.helpers.fakegh import install_marker_gh as _install_marker_gh
@@ -228,7 +228,7 @@ class TestEmptyRefusalIsStillARefusal:
         _add(_queue(tmp_path))
         calls: list[dict[str, object]] = []
         monkeypatch.setattr(
-            "kstrl.serve_gates.check_inbox_cap",
+            "kstrl.serve.serve_gates.check_inbox_cap",
             lambda root: Admission(allowed=False, reason=""),
         )
 

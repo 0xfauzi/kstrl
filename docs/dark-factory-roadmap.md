@@ -469,9 +469,9 @@ demotion_notice while the ladder drops L3 -> L2.
 
 **A collision this cap does not have yet, recorded before it happens.**
 `[inbox] open_item_cap` (50, `kstrl/owner/inbox.py:272`) gates queue admission at
-`kstrl/serve.py:3329`: every open inbox item, whatever raised it, counts
+`kstrl/serve/serve.py:3329`: every open inbox item, whatever raised it, counts
 against the same fifty-item ceiling. R8.8 slice 1 (`ks signals poll`,
-`kstrl/signals.py`) does not write to the inbox and so does not trip this
+`kstrl/serve/signals.py`) does not write to the inbox and so does not trip this
 today - its ledger is a separate append-only file in the XDG control
 directory. The moment a later R8.8 slice routes a runtime signal into the
 inbox, the factory's own exceptions and every built product's runtime
@@ -836,14 +836,14 @@ Status: `[x]` - Shipped across PRs #185, #186, #187, #189. Operator guide:
 [docs/continuous-intake.md](continuous-intake.md).
 
 All four slices landed: `kstrl/queue/workqueue.py` + `ks queue` (#185),
-`kstrl/serve.py` + `ks serve` (#186), `kstrl/intake_github.py` +
+`kstrl/serve/serve.py` + `ks serve` (#186), `kstrl/serve/intake_github.py` +
 `ks queue sync` (#187), and launchd packaging + the operator guide (#189). Shipped so far:
 `kstrl/queue/workqueue.py` (maildir queue, `os.replace` transitions, flock
 mutex, pid/ttl leases, journal, pause marker) with the `ks queue
-add/ls/show/retry/rm/pause/resume` verbs, and `kstrl/serve.py`
+add/ls/show/retry/rm/pause/resume` verbs, and `kstrl/serve/serve.py`
 (`ks serve [--once] [--dry-run]`, lease reaper, retry classifier, daily
 spend ledger, poison breaker, `caffeinate -i`), and
-`kstrl/intake_github.py` + `ks queue sync` (label polling, processed-ids
+`kstrl/serve/intake_github.py` + `ks queue sync` (label polling, processed-ids
 ledger, label/comment writeback). The launchd plist and its docs are PR 4.
 
 **Inbox cap wiring (recorded 2026-08-03).** The R8.3 promise that serve
@@ -1427,7 +1427,7 @@ fetches one Bugsink project's issue list and classifies each issue against
 its own append-only ledger in the XDG control directory - `new_issue` /
 `repeat` / `recurrence`, each carrying a `would_enqueue` / `would_watch` /
 `would_notify` label. Nothing acts on the label: `SignalsConfig` has no
-`enqueue` field, `kstrl/signals.py` imports nothing from `kstrl.queue.workqueue`
+`enqueue` field, `kstrl/serve/signals.py` imports nothing from `kstrl.queue.workqueue`
 (checked both directions, `tests/test_state_dir_scope.py::TestSignalsCannotReachTheQueue`),
 and no code path writes to the inbox or to `events.jsonl`. Deliberately left out: any release identity or
 distinct-user count (the polled endpoint carries neither - recovering

@@ -51,7 +51,8 @@ from typing import Any
 import click
 import pytest
 
-from kstrl.cli import cli
+from kstrl.cli.cli import cli
+from kstrl.cli.config_preflight import collect_config_problems, config_sections
 from kstrl.config.config_keys import RETIRED_ENV_VARS
 from kstrl.config.config_numbers import (
     SIGNED,
@@ -61,7 +62,6 @@ from kstrl.config.config_numbers import (
     refuse_non_finite,
 )
 from kstrl.config.config_section import ConfigSection
-from kstrl.config_preflight import collect_config_problems, config_sections
 from tests.helpers.numeric_config import (
     class_name,
     env_number_doors,
@@ -601,7 +601,7 @@ class TestTheConfigReportSurvivesARefusedSection:
     ) -> None:
         from pathlib import Path
 
-        from kstrl.config_report import build_config_report
+        from kstrl.cli.config_report import build_config_report
 
         root = Path(str(tmp_path))
         (root / "kstrl.toml").write_text(toml, encoding="utf-8")

@@ -13,7 +13,7 @@ So this file runs the real ``run_init``, the real ``ks run`` command
 group, and a real agent subprocess whose whole job is to write its stdin
 to a file. Nothing here is mocked. ``ks run`` forces
 ``use_worktrees=False`` and ``create_prs=False``
-(``kstrl/cli.py``), which is why one temp repo is enough.
+(``kstrl/cli/cli.py``), which is why one temp repo is enough.
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from kstrl.cli import cli
+from kstrl.cli.cli import cli
 from kstrl.project.init_cmd import run_init
 from kstrl.ui.plain import PlainUI
 from tests.helpers import gitrepo

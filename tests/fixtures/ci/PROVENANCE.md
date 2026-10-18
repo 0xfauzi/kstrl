@@ -5,7 +5,7 @@ Captured 2026-09-26 by lane 553 (verify-and-plan) with gh 2.73.0 against
 
     gh api graphql -F owner='{owner}' -F repo='{repo}' -f oid=<sha> -f query="$CI_QUERY"
 
-where `$CI_QUERY` is `kstrl.ci_state.CI_QUERY`. Each file is gh's stdout
+where `$CI_QUERY` is `kstrl.serve.ci_state.CI_QUERY`. Each file is gh's stdout
 byte for byte plus the trailing newline end-of-file-fixer adds.
 
 | file | commit | what GitHub reported |
@@ -30,7 +30,7 @@ Captured 2026-09-26 by lane 570 (verify-and-plan) with gh 2.73.0 against
 
     gh api graphql --paginate --slurp -F owner='{owner}' -F repo='{repo}' -f oid=b057de21b57bb8543db8bb0b2e1569e0a98e84e5 -f query="$Q"
 
-where `$Q` is `kstrl.ci_state.CI_QUERY` with `first: 100` replaced by
+where `$Q` is `kstrl.serve.ci_state.CI_QUERY` with `first: 100` replaced by
 `first: 3`, so the seven checks of b057de2 come back as three pages
 (3, 3, 1 nodes; `hasNextPage` true, true, false). It is gh's stdout byte
 for byte plus the trailing newline end-of-file-fixer adds. It proves

@@ -15,7 +15,7 @@ from typing import Any
 import pytest
 from click.testing import CliRunner, Result
 
-from kstrl.cli import cli
+from kstrl.cli.cli import cli
 from kstrl.project.stack import stack_toml
 from tests.conftest import snapshot_kstrl_dir
 from tests.helpers import gitrepo

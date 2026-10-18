@@ -21,9 +21,9 @@ import typing
 from collections.abc import Iterable
 from pathlib import Path
 
+from kstrl.cli.config_preflight import config_sections
 from kstrl.config.config_resolve import REJECTIONS
 from kstrl.config.config_section import ConfigSection
-from kstrl.config_preflight import config_sections
 
 #: (class, field) -> (section, key), where the key is not the field name
 #: in the class's one section.

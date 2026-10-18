@@ -203,7 +203,7 @@ def short_waits(isolate_kstrl_state: Path, monkeypatch: pytest.MonkeyPatch) -> N
     ``sdk_runner`` child process, which an in-process patch cannot
     reach, so that lever needs an env knob and its own measurement.
     """
-    from kstrl import serve_process
+    from kstrl.serve import serve_process
 
     monkeypatch.setenv("FACTORY_RETRY_DELAY", "0")
     monkeypatch.setattr(serve_process, "GROUP_TERM_GRACE_SECONDS", 1.0)
@@ -299,10 +299,10 @@ def no_open_prs(monkeypatch: pytest.MonkeyPatch) -> None:
     NOT autouse: ``tests/test_flow_control.py`` asserts the bound's real
     behaviour, including the counter, and must not be stubbed out.
     """
-    from kstrl.serve_github import OpenPrCount
+    from kstrl.serve.serve_github import OpenPrCount
 
     monkeypatch.setattr(
-        "kstrl.serve_github.count_open_kstrl_prs",
+        "kstrl.serve.serve_github.count_open_kstrl_prs",
         lambda root: OpenPrCount(saturated=False),
     )
 

@@ -59,7 +59,7 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     # module now holds its own `import subprocess`, so the total is +1.
     "acceptance/contract.py": 2,
     # 3: #696 slice 8 deleted check_test_root's `git ls-files -z` spawn.
-    "doctor.py": 3,
+    "cli/doctor.py": 3,
     # 14: #624 moved the scaffold's `subprocess.run` out to `worktree_setup.py`.
     # #776 F2 moves all of them to `factory_worktrees.py`.
     "factory/factory_worktrees.py": 13,
@@ -79,7 +79,7 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     "git/git_base.py": 10,
     "git/git_diff.py": 9,
     "git/git_tree.py": 22,
-    "intake_gh.py": 3,
+    "serve/intake_gh.py": 3,
     # #700: the import, and `TimeoutExpired` from `run_scrubbed`.
     "acceptance/isolation.py": 2,
     "events/observability.py": 5,
@@ -92,7 +92,7 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     # 15: #776 V1 moved `run_scrubbed` and `start_scrubbed` here from
     # `verify.py`, with their `subprocess` spellings (see `verify.py` below).
     "proc/scrubbed_run.py": 15,
-    "serve_process.py": 8,
+    "serve/serve_process.py": 8,
     "io/statedir.py": 3,
     "proc/temp_worktree.py": 3,
     # 25: `_base_finding`'s `git show` (#414/#425); `git merge-base` moved to `git.py` in #435.
@@ -140,12 +140,12 @@ EXPECTED_TEXT_MODE_SPAWNS: dict[str, int] = {
     "git/git_base.py": 3,
     "git/git_diff.py": 3,
     "git/git_tree.py": 7,
-    "intake_gh.py": 1,
+    "serve/intake_gh.py": 1,
     "pipeline/pr.py": 9,
     "git/pr_state.py": 2,
     "proc/procgroup_listing.py": 1,
     "factory/retry_plan.py": 1,
-    "serve_process.py": 1,
+    "serve/serve_process.py": 1,
     "io/statedir.py": 1,
 }
 
@@ -190,7 +190,6 @@ EXPECTED_CLEARED_SPAWNS: tuple[str, ...] = (
     "git/git_tree.py subprocess.run(['git', 'status', '--porcelain', '--untracked-files=all",
     "git/pr_state.py subprocess.run(['gh', 'pr', 'view', str(pr_number), '--json', 'mergeab",
     "git/pr_state.py subprocess.run(['gh', 'pr', 'view', str(pr_number), '--json', 'state,m",
-    "intake_gh.py subprocess.run(['gh', *args], cwd=str(cwd) if cwd else None, capture_o",
     "io/statedir.py subprocess.run(['git', '-C', str(root_dir), 'remote', 'get-url', 'orig",
     "loop/breaker.py subprocess.run(['git', *args], cwd=cwd, capture_output=True, encoding=",
     "pipeline/pr.py subprocess.run(['gh', 'auth', 'status'], capture_output=True, encoding",
@@ -201,7 +200,8 @@ EXPECTED_CLEARED_SPAWNS: tuple[str, ...] = (
     "pipeline/pr.py subprocess.run(['git', 'push', '--delete', '--', 'origin', branch], cw",
     "pipeline/pr.py subprocess.run(['git', 'push', '-u', '--', 'origin', branch], cwd=cwd,",
     "proc/proc.py subprocess.Popen(leash_command(argv, lifeline=lifeline_read, status=st",
-    "serve_process.py subprocess.Popen(command, cwd=str(cwd), env=env, stdout=subprocess.PIP",
+    "serve/intake_gh.py subprocess.run(['gh', *args], cwd=str(cwd) if cwd else None, capture_o",
+    "serve/serve_process.py subprocess.Popen(command, cwd=str(cwd), env=env, stdout=subprocess.PIP",
 )
 
 
@@ -233,7 +233,7 @@ EXPECTED_BYTES_MODE_SPAWNS: dict[str, int] = {
     # #642: the leash starts the agent on the pipes it inherited and reads
     # none of them, so there is nothing for it to decode.
     "proc/leash.py": 1,
-    "doctor.py": 1,
+    "cli/doctor.py": 1,
     # 7: #566 deleted the fresh-retry `git branch -D branch_name`, which
     # took no encoding; its replacement decodes as utf-8. #624 moved the
     # scaffold's bytes-mode `subprocess.run` to `run_scrubbed`, which

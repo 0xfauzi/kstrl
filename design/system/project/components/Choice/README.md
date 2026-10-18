@@ -10,6 +10,6 @@ A choice is one of a few decisions in a list, each with its keys and, under it, 
 
 **Measured**: chosen title `you` on `you-tint` 5.24:1 (day) and 6.26:1 (night); a chosen destructive title `fail` on `you-tint` 4.77:1 and 5.31:1; consequences `text-2` on `you-tint` 6.75:1 and 6.57:1.
 
-**Consequences are kstrl's**, not paraphrase. At the in-run checkpoint Approve pushes the branch and merges its PR; a merge that `ks serve` parked is decided in the inbox, and `ks inbox approve` starts the run that merges it (`kstrl/cli.py`, `inbox_approve`). Retry uses one of the part's retries and does not pass your words on. Reject fails the part and skips its dependents.
+**Consequences are kstrl's**, not paraphrase. At the in-run checkpoint Approve pushes the branch and merges its PR; a merge that `ks serve` parked is decided in the inbox, and `ks inbox approve` starts the run that merges it (`kstrl/cli/cli.py`, `inbox_approve`). Retry uses one of the part's retries and does not pass your words on. Reject fails the part and skips its dependents.
 
 **Don't**: offer a decision without its consequence; truncate a consequence; show the chosen state in anything but `you`.

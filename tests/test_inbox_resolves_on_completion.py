@@ -44,7 +44,7 @@ from unittest.mock import patch
 import pytest
 from click.testing import CliRunner
 
-from kstrl.cli import cli
+from kstrl.cli.cli import cli
 from kstrl.config.config import KstrlConfig
 from kstrl.factory.factory import run_factory
 from kstrl.factory.retry_plan import prepare_retry
@@ -601,7 +601,7 @@ def completion_census() -> dict[str, int]:
 #: below before adding it here.
 EXPECTED_STATUS_SPELLINGS: dict[str, int] = {
     "learning/autonomy_replay.py::load_runs": 1,
-    "cli_learning.py::evolve": 1,
+    "cli/cli_learning.py::evolve": 1,
     "pipeline/context.py::IterationContext.format_for_prompt": 1,
     "learning/experiments_tsv.py::<module>": 1,
     "plan/manifest.py::<module>": 2,
@@ -629,7 +629,7 @@ COMPLETION_SITES = frozenset(
 #: Every other row, and why it is not a component becoming COMPLETED.
 NOT_A_COMPLETION: dict[str, str] = {
     "learning/autonomy_replay.py::load_runs": "reads the 'completed' count column of a trend row",
-    "cli_learning.py::evolve": "prints the 'completed' count column of a trend row",
+    "cli/cli_learning.py::evolve": "prints the 'completed' count column of a trend row",
     "pipeline/context.py::IterationContext.format_for_prompt": "a label in the engineer's retry context",  # noqa: E501
     "learning/experiments_tsv.py::<module>": "the name of the 'completed' trend column",
     "plan/manifest.py::<module>": "the ComponentStatus.COMPLETED declaration, name and value",

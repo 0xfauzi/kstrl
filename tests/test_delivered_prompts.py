@@ -85,7 +85,6 @@ from kstrl.architect.decisions import SpecDecision, build_decisions_context
 from kstrl.architect.owner_answers import read_owner_answers
 from kstrl.factory import acceptance_design
 from kstrl.git import git_diff
-from kstrl.intake_issue import RemoteIssue, spec_from_issue
 from kstrl.knowledge import knowledge_distill
 from kstrl.knowledge.knowledge_facts import KnowledgeConfig
 from kstrl.loop.loop import COMPLETION_MARKER
@@ -96,6 +95,7 @@ from kstrl.project import init_cmd
 from kstrl.project.init_cmd import run_init
 from kstrl.project.stack import Stack
 from kstrl.review import integration, review, review_prompt, security
+from kstrl.serve.intake_issue import RemoteIssue, spec_from_issue
 from kstrl.ui.plain import PlainUI
 from kstrl.verify.verify_model import CheckResult, VerificationResult, VerifyConfig
 from tests.helpers.before_spend import no_base_check

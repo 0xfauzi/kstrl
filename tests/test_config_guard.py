@@ -13,11 +13,11 @@ pins the number of call sites it found beside it: ``assert offenders ==
 been switched off, which is the same shape as the defect.
 
 ``kstrl/pipeline/pipeline.py`` is the module whose count is zero, so it cannot be
-its own control; ``kstrl/factory/factory.py`` and ``kstrl/serve.py`` are walked
+its own control; ``kstrl/factory/factory.py`` and ``kstrl/serve/serve.py`` are walked
 in the same call and their counts are not zero.
 
 Out of scope by construction, and stated rather than left implicit:
-``kstrl/serve.py`` re-reads config per poll and per queue item. The
+``kstrl/serve/serve.py`` re-reads config per poll and per queue item. The
 daemon admits and the ``ks factory`` CHILD enforces, and that child
 records its own hash from its own resolution in its own process, so the
 unit of "one config resolution" is the ``ks factory`` process rather
@@ -32,7 +32,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.config_preflight import config_sections
+from kstrl.cli.config_preflight import config_sections
 from kstrl.pipeline import runenvelope
 from tests.helpers import astwalk, configwalk
 from tests.helpers.astwalk import KSTRL_PACKAGE, package_sources
@@ -261,7 +261,7 @@ EXPECTED_ENVELOPE_SECTIONS = frozenset(
     }
 )
 
-#: ``kstrl/serve.py`` is outside the run envelope by construction (the
+#: ``kstrl/serve/serve.py`` is outside the run envelope by construction (the
 #: daemon admits, the ``ks factory`` child enforces and records its own
 #: hash). Pinned by EQUALITY rather than ``>=``: the number is the
 #: control for the walk, and a daemon read that disappeared is worth the
@@ -274,20 +274,20 @@ EXPECTED_ENVELOPE_SECTIONS = frozenset(
 #: and were written for different subjects, this one for reads DURING a
 #: run and that one for reads that may not escape the poll loop.
 #:
-#: The daemon is ``kstrl/serve.py`` and the ``kstrl/serve_*.py`` modules
+#: The daemon is ``kstrl/serve/serve.py`` and the ``kstrl/serve_*.py`` modules
 #: divided out of it (#776), so the walk reads every ``serve*.py`` and the
 #: pin is one total with one count for each file.
 EXPECTED_SERVE_SITES_BY_FILE = {
-    "serve.py": 3,
-    "serve_config.py": 0,
-    "serve_gates.py": 1,
-    "serve_github.py": 2,
-    "serve_launchd.py": 0,
-    "serve_merge_gate.py": 3,
-    "serve_outcome.py": 0,
-    "serve_process.py": 0,
-    "serve_settle.py": 2,
-    "serve_spend.py": 0,
+    "serve/serve.py": 3,
+    "serve/serve_config.py": 0,
+    "serve/serve_gates.py": 1,
+    "serve/serve_github.py": 2,
+    "serve/serve_launchd.py": 0,
+    "serve/serve_merge_gate.py": 3,
+    "serve/serve_outcome.py": 0,
+    "serve/serve_process.py": 0,
+    "serve/serve_settle.py": 2,
+    "serve/serve_spend.py": 0,
 }
 EXPECTED_SERVE_SITES = sum(EXPECTED_SERVE_SITES_BY_FILE.values())
 
@@ -562,7 +562,7 @@ class TestConfigSurface:
 
 class TestTheRunReadsConfigOnlyBeforeItStarts:
     """Layer B. Scoped to the three modules a run's config can be read
-    from, which is why a per-poll read in ``kstrl/serve.py`` is outside
+    from, which is why a per-poll read in ``kstrl/serve/serve.py`` is outside
     the offender rule by construction rather than by an exemption
     somebody has to remember."""
 
@@ -652,7 +652,7 @@ class TestTheRunReadsConfigOnlyBeforeItStarts:
         ("module", "expected"),
         [
             ("factory/factory.py", EXPECTED_FACTORY_SITES),
-            ("serve.py", EXPECTED_SERVE_SITES),
+            ("serve/serve.py", EXPECTED_SERVE_SITES),
         ],
     )
     def test_the_site_count_is_pinned(
@@ -668,15 +668,18 @@ class TestTheRunReadsConfigOnlyBeforeItStarts:
         """
         found = package_surface
         paths = (
-            sorted(KSTRL_PACKAGE.glob("serve*.py"))
-            if module == "serve.py"
+            sorted((KSTRL_PACKAGE / "serve").glob("serve*.py"))
+            if module == "serve/serve.py"
             else [KSTRL_PACKAGE / name for name in FACTORY_MODULES]
             if module == "factory/factory.py"
             else [KSTRL_PACKAGE / module]
         )
         sites = [site for path in paths for site in configwalk.read_sites(path, found)]
-        if module == "serve.py":
-            by_file = {path.name: len(configwalk.read_sites(path, found)) for path in paths}
+        if module == "serve/serve.py":
+            by_file = {
+                path.relative_to(KSTRL_PACKAGE).as_posix(): len(configwalk.read_sites(path, found))
+                for path in paths
+            }
             assert by_file == EXPECTED_SERVE_SITES_BY_FILE, (
                 f"the config reads of the serve modules moved between files. Found {by_file}"
             )

@@ -196,23 +196,25 @@ ALLOWLIST: tuple[AllowedSite, ...] = (
         "#863: the machinery rows that name kstrl's own package init files",
     ),
     AllowedSite(
-        "serve_process.py", "sys.executable,", 1, "E28: the daemon starts -m kstrl factory"
+        "serve/serve_process.py", "sys.executable,", 1, "E28: the daemon starts -m kstrl factory"
     ),
     AllowedSite(
-        "serve_launchd.py",
+        "serve/serve_launchd.py",
         "python or sys.executable",
         1,
         "E27: the launchd job starts -m kstrl serve under kstrl's own interpreter",
     ),
     AllowedSite(
-        "serve_launchd.py",
+        "serve/serve_launchd.py",
         'python: str = ""',
         2,
         "E27: the launchd plist's override for kstrl's own interpreter",
     ),
-    AllowedSite("serve_launchd.py", "python=python", 1, "E27: the same override passed through"),
     AllowedSite(
-        "cli_preflight.py", "uv sync --extra sdk", 1, "E29: how to install kstrl's own extra"
+        "serve/serve_launchd.py", "python=python", 1, "E27: the same override passed through"
+    ),
+    AllowedSite(
+        "cli/cli_preflight.py", "uv sync --extra sdk", 1, "E29: how to install kstrl's own extra"
     ),
     AllowedSite("agents/sdk_runner.py", "uv sync --extra sdk", 1, "E29: kstrl's own extra"),
     AllowedSite(
@@ -341,15 +343,15 @@ PINNED_HITS: dict[str, dict[str, int]] = {
     "learning/autonomy.py": {"python": 1},
     "verify/baseline.py": {"mypy": 1, "python": 1},
     "calibration/calibration_score.py": {"mypy": 1},
-    "cli_check.py": {"ruff": 4, "vulture": 1},
-    "cli_loop.py": {"python": 1},
+    "cli/cli_check.py": {"ruff": 4, "vulture": 1},
+    "cli/cli_loop.py": {"python": 1},
     "config/config.py": {"mypy": 1},
-    "config_report.py": {"python": 1},
+    "cli/config_report.py": {"python": 1},
     "config/config_resolve.py": {"pyproject": 1, "python": 1, "ruff": 1},
     "config/config_toml.py": {"pyproject": 1, "python": 4},
     "pipeline/context.py": {"python": 1},
     "architect/decisions.py": {"python": 1},
-    "doctor_measure.py": {"pytest": 1},
+    "cli/doctor_measure.py": {"pytest": 1},
     "factory/factory.py": {"mypy": 1},
     "factory/factory_autonomy.py": {"mypy": 4, "uv": 2},
     "pipeline/factory_config.py": {"pip": 1},
@@ -369,7 +371,7 @@ PINNED_HITS: dict[str, dict[str, int]] = {
     "pipeline/runstate.py": {"mypy": 1},
     "project/scaffold_templates.py": {"package.json": 1, "ruff": 1},
     "proc/scrubbed_run.py": {"python": 4},
-    "serve_process.py": {"python": 2},
+    "serve/serve_process.py": {"python": 2},
     "verify/verify.py": {"mypy": 2},
     "verify/verify_commands.py": {"mypy": 2, "pytest": 1},
     "queue/workqueue.py": {"python": 1},

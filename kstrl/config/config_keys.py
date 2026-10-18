@@ -7,7 +7,7 @@ Measured: the field plus the row took it from 799 to 801 and
 ``scripts/precommit/file_length_ratchet.py`` returned ``CROSSED``.
 
 It imports nothing, so no cycle is possible. ``kstrl.config.config`` re-exports
-the name and the loaders read it from there; ``kstrl/config_report.py``
+the name and the loaders read it from there; ``kstrl/cli/config_report.py``
 and ``scripts/gen_docs.py`` read it from here, which is where the table
 lives. Both names are the SAME object and
 ``tests/test_string_keys_reach_every_surface.py`` pins that identity, so

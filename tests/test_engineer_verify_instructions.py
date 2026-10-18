@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
-from kstrl.feature_verify import resolve_feature_verify_config
+from kstrl.cli.feature_verify import resolve_feature_verify_config
 from kstrl.loop.loop import LoopResult
 from kstrl.project.scaffold_templates import DEFAULT_PROMPT
 from kstrl.verify.verify_model import VerifyConfig
@@ -104,7 +104,7 @@ class TestTheEngineerPromptOnEachPath:
 
         # feature_cmd binds the name at import (from kstrl.loop.loop import
         # run_loop), so patching kstrl.loop.loop.run_loop would miss it.
-        with patch("kstrl.feature_cmd.run_loop", side_effect=fake_run_loop):
+        with patch("kstrl.cli.feature_cmd.run_loop", side_effect=fake_run_loop):
             _run_cli(_feature_cli_args(tmp_path, auto_run=True))
         assert len(seen) == 2, f"expected understand + implement, got {len(seen)}"
         assert seen[0] is None

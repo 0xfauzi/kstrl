@@ -382,7 +382,7 @@ def baseline_from_result(
     ``generated_at``, ``base_ref``, ``project`` and ``digest`` are injected
     rather than read here so the document is a pure function of the run for
     tests. ``check_schema_version`` is passed in from
-    :data:`kstrl.cli.CHECK_SCHEMA_VERSION` rather than imported, because the
+    :data:`kstrl.cli.cli_check.CHECK_SCHEMA_VERSION` rather than imported, because the
     CLI imports this module.
     """
     measured, reasons = _measured_and_unmeasured(result)

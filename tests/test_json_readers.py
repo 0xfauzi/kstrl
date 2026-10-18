@@ -110,22 +110,22 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     "calibration/calibration_baseline.py": 2,
     # #553: the import, one json.dumps for the ledger line, and the
     # json.JSONDecodeError it catches from read_json twice. No parse.
-    "ci_state.py": 4,
-    "cli_check.py": 5,
-    "cli_inbox.py": 1,
-    "cli_preflight.py": 2,
+    "serve/ci_state.py": 4,
+    "cli/cli_check.py": 5,
+    "cli/cli_inbox.py": 1,
+    "cli/cli_preflight.py": 2,
     "pipeline/context.py": 2,
     "verify/baseline.py": 2,
     "events/event_catalog.py": 2,
     "learning/evolution.py": 2,
-    "feature_cmd.py": 3,
+    "cli/feature_cmd.py": 3,
     # #632: the import, json.dumps for the canonical form, and the
     # json.JSONDecodeError it catches from read_json. No parse.
     "owner/inbox.py": 3,
     "project/init_cmd.py": 3,
-    "intake_gh.py": 2,
-    "intake_github.py": 5,
-    "intake_issue.py": 3,
+    "serve/intake_gh.py": 2,
+    "serve/intake_github.py": 5,
+    "serve/intake_issue.py": 3,
     # #700: the import and one json.dumps of the nono policy; the canary's
     # report is read through read_json. No parse.
     "acceptance/isolation.py": 2,
@@ -142,9 +142,9 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     # #700: one more json.dumps, the codex writable_roots override. No parse.
     # 5 since #803: a json.dumps of the settings with the login.
     "agents/sandbox.py": 5,
-    "serve_outcome.py": 3,
-    "serve_spend.py": 3,
-    "signals.py": 3,
+    "serve/serve_outcome.py": 3,
+    "serve/serve_spend.py": 3,
+    "serve/signals.py": 3,
     # #696: the import, one json.dumps for the stack digest's canonical
     # form, and nine more inside stack_toml - a TOML-safe literal per
     # field it writes (instructions, setup, env, writable, readable,
@@ -171,10 +171,10 @@ EXPECTED_JSON_PARSES: tuple[str, ...] = ("io/jsonread.py json.loads",)
 #: which is what ``.without_line_numbers()`` does to the found side too.
 EXPECTED_UNDECIDED_CALLS: tuple[str, ...] = (
     "config/config.py cls.load",
-    "intake_github.py ProcessedLedger(root_dir).load",
-    "intake_steering.py ProcessedLedger(root_dir).load",
     "learning/evolution_config.py cls.load",
-    "serve_github.py OpenPrCountStreak.load",
+    "serve/intake_github.py ProcessedLedger(root_dir).load",
+    "serve/intake_steering.py ProcessedLedger(root_dir).load",
+    "serve/serve_github.py OpenPrCountStreak.load",
 )
 
 

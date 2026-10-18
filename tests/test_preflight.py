@@ -17,13 +17,13 @@ from typing import Any
 import pytest
 from click.testing import CliRunner
 
-import kstrl.cli_factory as cli_factory_mod
-import kstrl.cli_loop as cli_loop_mod
-import kstrl.cli_preflight as cli_preflight_mod
+import kstrl.cli.cli_factory as cli_factory_mod
+import kstrl.cli.cli_loop as cli_loop_mod
+import kstrl.cli.cli_preflight as cli_preflight_mod
 from kstrl.agents import ClaudeSdkAgent
 from kstrl.agents.liveness import ProbeResult
-from kstrl.cli import cli
-from kstrl.cli_preflight import _agent_preflight
+from kstrl.cli.cli import cli
+from kstrl.cli.cli_preflight import _agent_preflight
 from kstrl.config.config import KstrlConfig
 from kstrl.pipeline.factory_result import FactoryResult
 from kstrl.ui.plain import PlainUI
