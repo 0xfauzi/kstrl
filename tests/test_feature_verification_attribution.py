@@ -23,8 +23,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from kstrl.cli.feature_verify import baseline_skip_reason
 from kstrl.events import event_catalog
-from kstrl.feature_verify import baseline_skip_reason
 from kstrl.loop.loop import LoopResult
 from kstrl.verify.verify_model import VerifyConfig
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
@@ -269,7 +269,7 @@ class TestTheOperatorCanDecline:
     def test_the_flag_reaches_the_flow_from_the_command_line(self) -> None:
         """The wiring, not just the parameter: a flag the CLI does not
         expose is not an escape hatch."""
-        from kstrl.cli_feature import feature
+        from kstrl.cli.cli_feature import feature
 
         names = {p.name for p in feature.params}
         assert "no_verify" in names

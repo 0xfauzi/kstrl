@@ -33,12 +33,12 @@ from unittest.mock import patch
 import pytest
 from click.testing import CliRunner, Result
 
-from kstrl.cli import cli
+from kstrl.cli.cli import cli
 from kstrl.owner.inbox import Inbox, InboxConfig
 from kstrl.queue.workqueue import Queue
 from kstrl.queue.workqueue_items import ItemState, QueueConfig, short_item_id
-from kstrl.serve_outcome import RunOutcome
-from kstrl.serve_spend import RunSpend
+from kstrl.serve.serve_outcome import RunOutcome
+from kstrl.serve.serve_spend import RunSpend
 from tests.helpers.astwalk import (
     all_nodes,
     assert_census,
@@ -82,7 +82,7 @@ def _row(source_file: Path, node: ast.AST) -> str:
 EXPECTED_ITEM_ID_CUTS: dict[str, int] = {
     # The project name serve derives for an item that named none: a
     # branch-safe word, not an id an operator types back.
-    "serve.py: item.item_id.split('-')": 1,
+    "serve/serve.py: item.item_id.split('-')": 1,
     # #639 slice 4: the inbox ids (uuid4 hex) of the owner answers decompose
     # read, which `ks inbox` resolves by prefix. Not a queue id.
     "architect/decompose.py: item_id[:8]": 1,
@@ -134,7 +134,7 @@ def test_a_poisoned_item_is_named_by_ids_queue_show_accepts(
     """`ks serve`'s line and the inbox title it files both name the poisoned item
     in a form `ks queue show` resolves to it, with a second item minted in the same
     microsecond beside it."""
-    monkeypatch.setattr("kstrl.serve_spend.read_run_spend", lambda root, run_id: RunSpend())
+    monkeypatch.setattr("kstrl.serve.serve_spend.read_run_spend", lambda root, run_id: RunSpend())
     write_stack(tmp_path)
     confirm_stack(tmp_path)
     spec = tmp_path / "feature.md"
@@ -147,7 +147,7 @@ def test_a_poisoned_item_is_named_by_ids_queue_show_accepts(
         for _ in range(2):
             assert _invoke(["queue", "add", str(spec)], tmp_path).exit_code == 0
     with patch(
-        "kstrl.serve.subprocess_factory_runner",
+        "kstrl.serve.serve.subprocess_factory_runner",
         return_value=RunOutcome(returncode=1),
     ):
         result = _invoke(["serve", "--once"], tmp_path)

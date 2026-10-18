@@ -1656,12 +1656,12 @@ class TestCliTimeoutFlags:
 
         from click.testing import CliRunner
 
-        from kstrl.cli import cli
+        from kstrl.cli.cli import cli
         from kstrl.pipeline.factory_result import FactoryResult
 
         manifest_path = self._write_manifest(tmp_path)
         runner = CliRunner()
-        with patch("kstrl.cli_factory.run_factory") as mock_run:
+        with patch("kstrl.cli.cli_factory.run_factory") as mock_run:
             mock_run.return_value = FactoryResult()
             result = runner.invoke(
                 cli,
@@ -1882,7 +1882,7 @@ class TestSubprocessTimeoutAudit:
     - kstrl/proc/proc.py: reader-thread deadline + group kill (R0.1)
     - kstrl/proc/scrubbed_run.py: run_scrubbed communicate(timeout) + group kill
       (R2.6)
-    - kstrl/serve_process.py: subprocess_factory_runner communicate(timeout) +
+    - kstrl/serve/serve_process.py: subprocess_factory_runner communicate(timeout) +
       group kill (R8.6). Popen is REQUIRED here rather than incidental:
       review #186 F1 showed subprocess.run's timeout signals only the
       direct child, and a factory's own descendants (agent subprocesses,
@@ -1954,7 +1954,7 @@ class TestSubprocessTimeoutAudit:
             "kstrl/proc/proc.py",
             "kstrl/proc/procgroup_listing.py",
             "kstrl/proc/scrubbed_run.py",
-            "kstrl/serve_process.py",
+            "kstrl/serve/serve_process.py",
         }
     )
 

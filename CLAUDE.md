@@ -4,7 +4,7 @@
 
 - **Language**: Python (FastAPI / pytest / uv toolchain)
 - **Project**: kstrl - a software factory for AI coding agents, built as a loop that closes on independent measurement rather than on the agent's own report
-- **Layout**: `kstrl/` is the canonical factory implementation and the only Python package.
+- **Layout**: `kstrl/` is the canonical factory implementation and the only top-level Python package. Its modules are in 23 packages, from `kstrl/io/` to `kstrl/cli/`. Only `__init__.py`, `__main__.py` and `write_guard.py` stay at the top of `kstrl/`. `ARCHITECTURE.md`, "Package layout", gives the sequence of the packages and the import rules.
 - **Design**: `design/` is the design system for the proposed graphical app (tokens, components, the frames of every screen) and the tools that build and check it. Start at `design/README.md`.
 
 ## Charter

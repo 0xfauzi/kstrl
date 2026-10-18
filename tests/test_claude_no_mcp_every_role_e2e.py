@@ -189,7 +189,7 @@ EXPECTED_CLAUDE_SITES = {
     ("agents/liveness.py", "spawn"): 1,
     ("agents/sdk_runner.py", "sdk"): 1,
     ("agents/sdk_runner.py", "sdk_call"): 1,
-    ("cli_preflight.py", "other"): 1,
+    ("cli/cli_preflight.py", "other"): 1,
     ("config/config.py", "other"): 1,
 }
 

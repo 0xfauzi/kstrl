@@ -446,7 +446,7 @@ changes (#654):
 - `ks serve` launches its run with `--design-acceptance --bug-report`, so
   the verification designer writes the acceptance checks of each component.
 - The spec gets one more line, `BUG_REPORT_PROMPT` in
-  `kstrl/intake_github.py`: at least one acceptance check must reproduce
+  `kstrl/serve/intake_github.py`: at least one acceptance check must reproduce
   the reported failure, so that check has `"onBase": "fails"`.
 
 `--design-acceptance` needs a confirmed `[stack]`, the same as `ks serve`.
@@ -622,7 +622,7 @@ ks serve --print-plist --plist-mode interval --plist-interval 10
 
 - **`keepalive`** (default) - one long-lived `ks serve` pacing itself
   with one call, `sleep(cfg.poll_interval_seconds)` in
-  `kstrl/serve.py::serve`, after every cycle; launchd relaunches it when
+  `kstrl/serve/serve.py::serve`, after every cycle; launchd relaunches it when
   it **exits**. The poll is a delay between cycles, not a period: a
   cycle that takes T pushes the next poll to T plus the interval, and a
   bounded `--max-cycles N` run costs N-1 polls
@@ -874,7 +874,7 @@ window. A factory run at 10-20 minutes does not.
   not require AC power.
 - *A suspend does not count against the run timeout.* `[serve]
   factory_timeout_seconds` is the `timeout=` of `Popen.communicate` in
-  `kstrl/serve_process.py::run_supervised`. CPython's `subprocess` compares that
+  `kstrl/serve/serve_process.py::run_supervised`. CPython's `subprocess` compares that
   deadline with `time.monotonic()`, and `time.get_clock_info('monotonic')`
   on this laptop gives `mach_absolute_time()`. `man clock_gettime` says
   that this clock "does not increment while the system is asleep".
@@ -887,7 +887,7 @@ window. A factory run at 10-20 minutes does not.
   This closes the #204 dependency that branch B had.
 - *The other deadlines of a run use the same clock.* The agent stream
   deadline (`kstrl/proc/proc.py::DeadlineStreamer`), the group
-  termination grace (`kstrl/serve.py`, `kstrl/proc/leash.py`), the
+  termination grace (`kstrl/serve/serve.py`, `kstrl/proc/leash.py`), the
   liveness probe (`kstrl/agents/liveness.py`) and the `subprocess`
   timeouts read `time.monotonic()`. In `kstrl/`, `grep` finds
   `time.time()` only in event time stamps and age labels, not in a
@@ -924,7 +924,7 @@ The limits of this decision:
 - **Whether a suspend is charged against an in-flight poll sleep.** This
   is all that is left of "sleep and wake end to end" after the run above,
   and it is a real gap rather than a formality. The loop's only pacing is
-  `sleep(cfg.poll_interval_seconds)` in `kstrl/serve.py::serve`, so the
+  `sleep(cfg.poll_interval_seconds)` in `kstrl/serve/serve.py::serve`, so the
   answer belongs to the OS and not to kstrl. The one measurement is 29
   seconds short of settling it: `--max-cycles 8` at a 60s poll needs 7
   polls, so 420s of whatever the sleep counts, and the `pmset -g log`

@@ -19,11 +19,11 @@ from typing import Any
 import pytest
 from click.testing import CliRunner, Result
 
-from kstrl import ci_state
-from kstrl.ci_state import CiReading, CiState, read_ci_ledger
-from kstrl.cli import cli
+from kstrl.cli.cli import cli
 from kstrl.events.event_catalog import PrMerged
 from kstrl.io.statedir import CONTROL_CI_CHECKS, control_file, ensure_control_state
+from kstrl.serve import ci_state
+from kstrl.serve.ci_state import CiReading, CiState, read_ci_ledger
 from tests.helpers.fakegh import put_gh_on_path
 from tests.helpers.procs import run_serve_subprocess
 from tests.test_ci_state import (

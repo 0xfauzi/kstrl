@@ -15,7 +15,7 @@ deadlines the section names, keyed by enclosing scope, and no undecided
 call. A new wall-clock read in one of them is a new row and goes red.
 
 WHAT IT DOES NOT SEE. A deadline built on a wall-clock HELPER, such as
-``kstrl/serve.py::_utc_now``, is a call to that helper and not to a clock,
+``kstrl/serve/serve.py::_utc_now``, is a call to that helper and not to a clock,
 so it is not a row. ``_utc_now`` itself is pinned, and the lease and the
 schedule gates read it on purpose.
 """
@@ -39,9 +39,9 @@ RUN_DEADLINE_MODULES = (
     "factory/factory.py",
     "factory/factory_worker.py",
     "loop/loop.py",
-    "serve.py",
-    "serve_process.py",
-    "serve_spend.py",
+    "serve/serve.py",
+    "serve/serve_process.py",
+    "serve/serve_spend.py",
 )
 
 #: The wall clocks a deadline must not read.
@@ -57,8 +57,8 @@ WALL_CLOCKS = frozenset(
 #: Re-derived by running the walk on 2026-10-09. Both are date stamps, not
 #: deadlines: the lease and schedule wall time, and the local day name.
 EXPECTED_WALL_CLOCK_SITES = (
-    "serve_spend.py::_local_today datetime.datetime.now",
-    "serve_spend.py::_utc_now datetime.datetime.now",
+    "serve/serve_spend.py::_local_today datetime.datetime.now",
+    "serve/serve_spend.py::_utc_now datetime.datetime.now",
 )
 
 

@@ -80,9 +80,9 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from kstrl.cli import cli
+from kstrl.cli.cli import cli
+from kstrl.cli.config_preflight import config_problem_lines, preflight_config
 from kstrl.config.config import ConfigError
-from kstrl.config_preflight import config_problem_lines, preflight_config
 from kstrl.learning.evolution_config import EvolutionConfig
 from tests.helpers.bad_toml import BROAD_FRAGMENT, DEEP_NEST_TOML
 

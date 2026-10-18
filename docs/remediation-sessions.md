@@ -112,7 +112,7 @@ Defects (verify line numbers against current code):
 - loop.py:154 calls agent.run(prompt, cwd) with no timeout; config.py:62-63 (agent_iteration_timeout, component_timeout) and the entire timeout.py module are parsed but never consumed; cli.py binds --agent-timeout/--component-timeout for `ks factory` and never uses them.
 - agents/codex.py:44-98 ignores its timeout parameter entirely and proc.wait() is unbounded; agents/claude_code.py:90-98 only checks the clock when a stdout line arrives, so a silently hung CLI blocks forever; agents/custom.py has the same class of problem.
 
-Scope: kstrl/agents/*.py, kstrl/loop/loop.py, kstrl/proc/timeout.py, kstrl/config/config.py, kstrl/factory/factory.py (scheduler backstop only), kstrl/cli.py (wire the two dead flags), tests.
+Scope: kstrl/agents/*.py, kstrl/loop/loop.py, kstrl/proc/timeout.py, kstrl/config/config.py, kstrl/factory/factory.py (scheduler backstop only), kstrl/cli/cli.py (wire the two dead flags), tests.
 
 Requirements:
 1. All agent subprocesses launch with start_new_session=True. Read stdout on a reader thread with a deadline so a hang with NO output is detected. On breach: killpg(SIGTERM), grace period, then SIGKILL. All three adapters honor the timeout parameter. Bound codex proc.wait().
@@ -288,7 +288,7 @@ Defects:
 - factory.py:424 hardcodes the manifest save path: `ks run` clobbers an in-progress factory's resumable manifest, and `--manifest /custom.json` state saves to the wrong file (H-15).
 - single_pr mode with parallel worktrees hard-fails every same-tier component after the first (branch already checked out elsewhere); nothing forces max_parallel=1 (H-8).
 
-Scope: kstrl/factory/factory.py, kstrl/cli.py (manifest path + single_pr guard), kstrl/plan/manifest.py (if path handling lives there), tests.
+Scope: kstrl/factory/factory.py, kstrl/cli/cli.py (manifest path + single_pr guard), kstrl/plan/manifest.py (if path handling lives there), tests.
 
 Requirements:
 1. Run-level exclusion: flock on .kstrl/factory.lock held for the whole run; a second invocation on the same root refuses to start with a clear message (add a --force-lock override flag). POSIX-only like the existing A4 lock; degrade with a warning on Windows.
@@ -369,7 +369,7 @@ Defects:
 - decompose.py:539-577: PRD schema validation happens AFTER the retry loop and AFTER files are written; a malformed story crashes decompose outside the retry loop, the LLM never gets to fix it, and partial prd.json files remain on disk.
 - Empty userStories, empty acceptanceCriteria, and passes:true all pass validation (vacuous components auto-pass review downstream).
 
-Scope: kstrl/architect/decompose.py, kstrl/cli.py (print the artifact path on halt), tests.
+Scope: kstrl/architect/decompose.py, kstrl/cli/cli.py (print the artifact path on halt), tests.
 
 Requirements:
 1. Persist ALL spec_issues to scripts/kstrl/spec-issues.json (structured: severity, kind, summary, location) plus a journal event; on SpecBlockerError the CLI prints the file path so the user iterates against a durable artifact.
@@ -420,7 +420,7 @@ Defects:
 - CodebaseScanConfig/EvolutionConfig/KnowledgeConfig lack from_env.
 - ks init does not scaffold kstrl.toml, so a fresh project has no discoverable config surface.
 
-Scope: kstrl/cli.py, kstrl/config/config.py, kstrl/factory/factory.py (FactoryConfig.load keys), kstrl/verify/verify.py, kstrl/review/security.py, kstrl/acceptance/contract.py, kstrl/project/feedforward.py, kstrl/learning/evolution.py, kstrl/knowledge/knowledge.py (loaders/from_env only), kstrl/project/init_cmd.py (scaffold), tests.
+Scope: kstrl/cli/cli.py, kstrl/config/config.py, kstrl/factory/factory.py (FactoryConfig.load keys), kstrl/verify/verify.py, kstrl/review/security.py, kstrl/acceptance/contract.py, kstrl/project/feedforward.py, kstrl/learning/evolution.py, kstrl/knowledge/knowledge.py (loaders/from_env only), kstrl/project/init_cmd.py (scaffold), tests.
 
 Requirements:
 1. Resolution order everywhere: explicit CLI flag > env > kstrl.toml > dataclass default. Give click options default=None sentinels so "not passed" is distinguishable from "passed the default value"; apply flag overrides onto the loaded config.
@@ -471,7 +471,7 @@ Defects:
 - Codebase scan never runs under `ks factory`: cli builds FactoryConfig without codebase_scan_config, so ff_config_dict stays None (H-10).
 - The prd-path contract is broken: a comment (factory.py:259-261) claims the prompt template uses $prd_path substituted by loop.py, but NO shipped template contains $prd_path; decomposed component PRDs live at scripts/kstrl/feature/<id>/prd.json while the default prompt points at scripts/kstrl/prd.json, so the agent reads the wrong file while check_prd_stories reads the right one (H-11).
 
-Scope: kstrl/factory/factory.py, kstrl/cli.py, kstrl/loop/loop.py, kstrl/project/init_cmd.py (DEFAULT_PROMPT + scaffold), tests/test_prompt_versions.py (snapshot only, per the exception), tests.
+Scope: kstrl/factory/factory.py, kstrl/cli/cli.py, kstrl/loop/loop.py, kstrl/project/init_cmd.py (DEFAULT_PROMPT + scaffold), tests/test_prompt_versions.py (snapshot only, per the exception), tests.
 
 Requirements:
 1. Forward max_iterations, interactive, allowed_paths through _submit_args into _run_component; delete the hardcoded 30.
@@ -549,7 +549,7 @@ Defects:
 - `ks run` does not preflight prd.json: the agent burns full iterations against a prompt referencing a nonexistent PRD before Phase 1 reports "Failed to load PRD".
 - README promises `ks config show` and `ks status`; neither exists.
 
-Scope: kstrl/cli.py, tests.
+Scope: kstrl/cli/cli.py, tests.
 
 Requirements:
 1. Preflight accepts whichever agent the resolved config selects (claude/codex/custom) and errors naming the agent it actually looked for, mirroring the factory implementation.
@@ -641,7 +641,7 @@ Read CLAUDE.md, then the "Shared rules" section of docs/remediation-sessions.md,
 
 Context: the ProgressLog (observability.py) is a JSONL event bus (component_started/completed/failed/retrying, verification_result, review_result, contract_result) but is opt-in and unconsumed. There is no way to know a walk-away run's state without reading raw JSON, and no notification when it finishes or breaks.
 
-Scope: kstrl/events/observability.py, kstrl/cli.py (status command extension), kstrl/factory/factory.py (default-on wiring + hook firing), kstrl/config/config.py or factory config ([notify] section), tests.
+Scope: kstrl/events/observability.py, kstrl/cli/cli.py (status command extension), kstrl/factory/factory.py (default-on wiring + hook firing), kstrl/config/config.py or factory config ([notify] section), tests.
 
 Requirements:
 1. ProgressLog defaults ON (path under .kstrl/), configurable off.
@@ -665,7 +665,7 @@ Defects/gaps:
 - A FAILED component can only be reset by hand-editing manifest.json; failed components' worktrees are deleted at cleanup so post-mortem evidence is gone.
 - comp.findings accumulates across retry attempts uncleared (factory.py:628, 731), inflating journal counts and attributing superseded findings to shipped code.
 
-Scope: kstrl/plan/manifest.py, kstrl/factory/factory.py, kstrl/cli.py, kstrl/plan/findings.py (attempt tag), tests.
+Scope: kstrl/plan/manifest.py, kstrl/factory/factory.py, kstrl/cli/cli.py, kstrl/plan/findings.py (attempt tag), tests.
 
 Requirements:
 1. Persist run_id in the manifest; set completed_at on terminal states; store per-component last-attempt evidence pointers (worktree path if kept, journal offsets).
@@ -787,7 +787,7 @@ Defects:
 - Proposal IDs restart at PROP-001 every call and save_proposals clobbers prior files (evolution.py:475-480, 599-645).
 - `ks evolve --apply` prints "not yet automated" while README and the command's own output promise application; auto_propose is never consulted; recorded durations are 0.0 and retry_rate semantics are undocumented.
 
-Scope: kstrl/learning/evolution.py, kstrl/factory/factory.py (failure recording + config load), kstrl/cli.py (evolve), docs (metric definitions), tests.
+Scope: kstrl/learning/evolution.py, kstrl/factory/factory.py (failure recording + config load), kstrl/cli/cli.py (evolve), docs (metric definitions), tests.
 
 Requirements:
 1. Failure recording carries check_name plus the parser's structured signature (e.g. linter:E501, typecheck:arg-type, diff_scope:rename, review:<category>); pattern extraction consumes these.

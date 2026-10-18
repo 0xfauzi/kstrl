@@ -50,9 +50,9 @@ from kstrl.factory.factory import run_factory
 from kstrl.learning.autonomy import AutonomyLevel, AutonomyState
 from kstrl.owner.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.pipeline.factory_result import ComponentResult
-from kstrl.serve import serve_cycle
-from kstrl.serve_config import ServeConfig
-from kstrl.serve_spend import SpendLedger
+from kstrl.serve.serve import serve_cycle
+from kstrl.serve.serve_config import ServeConfig
+from kstrl.serve.serve_spend import SpendLedger
 from kstrl.ui.plain import PlainUI
 from tests.helpers import astwalk
 from tests.helpers.demotion import (
@@ -448,7 +448,7 @@ FILING_PATHS = {
     "pipeline/pipeline_inbox.py::InboxDesk._inbox_add::add": (
         "test_pipeline_fires_once_per_kind_and_not_on_a_repeat"
     ),
-    "serve_settle.py::_file_inbox_item::add": (
+    "serve/serve_settle.py::_file_inbox_item::add": (
         "test_serve_filing_fires_the_inbox_hook_once_per_opened_item"
     ),
     "project/stack.py::file_stack_item::add": (

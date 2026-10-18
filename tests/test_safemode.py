@@ -15,12 +15,12 @@ from pathlib import Path
 
 import pytest
 
+from kstrl.cli.safemode import RECOVERY, safe_mode_reasons
 from kstrl.events import event_catalog
 from kstrl.events import events as ev
 from kstrl.learning.autonomy import AutonomyLevel, AutonomyState
 from kstrl.queue.workqueue import Queue
 from kstrl.queue.workqueue_items import QueueConfig
-from kstrl.safemode import RECOVERY, safe_mode_reasons
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 RUN_ID = "factory-20260827-120000-abcd"

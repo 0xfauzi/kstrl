@@ -14,7 +14,7 @@ from pathlib import Path
 
 from click.testing import CliRunner
 
-import kstrl.cli as cli_mod
+import kstrl.cli.cli as cli_mod
 from kstrl.learning.experiments_tsv import EXPERIMENTS_HEADER
 from kstrl.learning.journal_rows import FINDINGS_SUPERSEDED_EVENT
 

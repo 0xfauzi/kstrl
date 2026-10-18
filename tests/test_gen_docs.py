@@ -72,7 +72,7 @@ class TestReadmeCurrent:
 
 class TestCliReference:
     def test_every_click_command_is_documented(self, gen_docs: ModuleType) -> None:
-        from kstrl.cli import cli
+        from kstrl.cli.cli import cli
 
         reference = gen_docs.build_cli_reference()
         for name in cli.commands:

@@ -327,7 +327,7 @@ EXPECTED_JOURNAL_PATH_SITES: dict[str, int] = {
     "learning/evolution.py: self.config.journal_path": 2,
     # +1 #863: the v1-row refusal names the file
     "learning/journal_reads.py: self.config.journal_path": 4,
-    "cli_learning.py: config.journal_path": 2,
+    "cli/cli_learning.py: config.journal_path": 2,
     "learning/health.py: config.journal_path": 1,
     "pipeline/pipeline_attempt.py: self.journal_path": 3,
     "pipeline/pipeline_state.py: self.journal_path": 1,

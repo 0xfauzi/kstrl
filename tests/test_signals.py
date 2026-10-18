@@ -18,7 +18,7 @@ from typing import Any
 import pytest
 
 from kstrl.io.jsonread import read_json
-from kstrl.signals import normalise_bugsink, read_ledger
+from kstrl.serve.signals import normalise_bugsink, read_ledger
 
 FIXTURE = Path(__file__).parent / "fixtures" / "signals" / "bugsink-issues-canonical.json"
 

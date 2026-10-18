@@ -9,7 +9,7 @@ The README's two generated sections sit between marker comments:
 Everything outside the markers is hand-written and untouched.
 
 The CLI reference is introspected from the click command tree
-(``kstrl.cli:cli``), so a command that does not exist cannot be
+(``kstrl.cli.cli:cli``), so a command that does not exist cannot be
 documented and a new command cannot be silently omitted.
 
 The config reference is verified behaviorally, not transcribed: for
@@ -78,7 +78,7 @@ def _usage_suffix(cmd: click.Command, path: str) -> str:
 
 
 def build_cli_reference() -> str:
-    from kstrl.cli import cli
+    from kstrl.cli.cli import cli
 
     entries: list[tuple[str, str]] = []
     for path, cmd in _iter_commands(cli, "ks"):
@@ -137,7 +137,6 @@ def _section_specs() -> list[SectionSpec]:
     from kstrl.config.config import KstrlConfig
     from kstrl.config.config_keys import STRING_KEYS
     from kstrl.events.observability import NotifyConfig
-    from kstrl.intake_gh import GitHubIntakeConfig
     from kstrl.knowledge.knowledge_facts import KnowledgeConfig
     from kstrl.learning.autonomy_config import AutonomyConfig
     from kstrl.learning.evolution_config import EvolutionConfig
@@ -150,8 +149,9 @@ def _section_specs() -> list[SectionSpec]:
     from kstrl.project.feedforward import CodebaseScanConfig
     from kstrl.queue.workqueue_items import QueueConfig
     from kstrl.review.security import SecurityConfig
-    from kstrl.serve_config import ServeConfig
-    from kstrl.signals import SignalsConfig
+    from kstrl.serve.intake_gh import GitHubIntakeConfig
+    from kstrl.serve.serve_config import ServeConfig
+    from kstrl.serve.signals import SignalsConfig
     from kstrl.verify.policy import PolicyConfig
     from kstrl.verify.verify_model import VerifyConfig
 

@@ -84,9 +84,9 @@ UNGUARDED = "unguarded"  # a disclosed hole; pinned by the last test
 #: ``"<path>::<qualified function> <name>"`` -> (references, discipline).
 EXPECTED_MANIFEST_WRITE_SITES: dict[str, tuple[int, str]] = {
     # --- outside a factory run: each takes the run lock (#597) ---
-    "kstrl/cli_architect.py::retry prepare_retry": (1, TAKES_LOCK),
-    "kstrl/cli_inbox.py::inbox_retry reset_for_retry": (1, TAKES_LOCK),
-    "kstrl/cli_inbox.py::inbox_retry save": (1, TAKES_LOCK),
+    "kstrl/cli/cli_architect.py::retry prepare_retry": (1, TAKES_LOCK),
+    "kstrl/cli/cli_inbox.py::inbox_retry reset_for_retry": (1, TAKES_LOCK),
+    "kstrl/cli/cli_inbox.py::inbox_retry save": (1, TAKES_LOCK),
     "kstrl/architect/decompose_plan.py::_write_plan save": (1, TAKES_LOCK),
     "kstrl/factory/retry_plan.py::prepare_retry reset_for_retry": (1, CALLER_HOLDS),
     "kstrl/factory/retry_plan.py::prepare_retry save": (1, CALLER_HOLDS),
@@ -126,7 +126,7 @@ EXPECTED_MANIFEST_WRITE_SITES: dict[str, tuple[int, str]] = {
     ),  # ladder state
     "kstrl/review/integration.py::write_integration_prd save": (1, NOT_A_MANIFEST),  # PRD
     "kstrl/pipeline/pipeline_review.py::ReviewPhase._phase_review save": (1, NOT_A_MANIFEST),  # PRD
-    "kstrl/serve_github.py::_save_pr_count_streak save": (1, NOT_A_MANIFEST),  # serve streak
+    "kstrl/serve/serve_github.py::_save_pr_count_streak save": (1, NOT_A_MANIFEST),  # serve streak
 }
 
 

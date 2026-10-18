@@ -63,7 +63,7 @@ def test_the_journal_reader_is_shared_with_ks_status() -> None:
     agent flagged the same gap from ``ks status``; it is the same line.
     """
     src = Path(__file__).resolve().parent.parent / "kstrl"
-    cli = (src / "cli_report.py").read_text(encoding="utf-8")
+    cli = (src / "cli/cli_report.py").read_text(encoding="utf-8")
     reducer = (src / "events/reducer.py").read_text(encoding="utf-8")
     journal_reads = (src / "learning/journal_reads.py").read_text(encoding="utf-8")
     assert "read_progress_events(progress_log_path)" in cli

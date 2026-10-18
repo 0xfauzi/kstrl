@@ -19,11 +19,11 @@ from unittest.mock import patch
 import pytest
 from click.testing import CliRunner, Result
 
-from kstrl.cli import cli
+from kstrl.cli.cli import cli
 from kstrl.queue.workqueue import Queue
 from kstrl.queue.workqueue_items import ItemState, MergeDisposition, QueueConfig
-from kstrl.serve_outcome import RunOutcome
-from kstrl.serve_spend import RunSpend, SpendLedger
+from kstrl.serve.serve_outcome import RunOutcome
+from kstrl.serve.serve_spend import RunSpend, SpendLedger
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
 
 
@@ -527,7 +527,7 @@ def _serve_once(root: Path, returncode: int) -> tuple[Result, int]:
         calls.append(kwargs)
         return RunOutcome(returncode=returncode)
 
-    with patch("kstrl.serve.subprocess_factory_runner", runner):
+    with patch("kstrl.serve.serve.subprocess_factory_runner", runner):
         result = _invoke(["serve", "--once"], root)
     return result, len(calls)
 
@@ -542,7 +542,9 @@ class TestResumeClearsThePoisonStreak:
 
     @pytest.fixture(autouse=True)
     def _no_spend(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr("kstrl.serve_spend.read_run_spend", lambda root, run_id: RunSpend())
+        monkeypatch.setattr(
+            "kstrl.serve.serve_spend.read_run_spend", lambda root, run_id: RunSpend()
+        )
         monkeypatch.setenv("USER", "op-alice")
 
     def _trip_the_breaker(self, root: Path) -> None:
@@ -633,7 +635,7 @@ class TestQueueSync:
     def _stub(issues: str, checkout: str = "o/r"):  # type: ignore[no-untyped-def]
         import json as _json
 
-        from kstrl.intake_gh import GhResult
+        from kstrl.serve.intake_gh import GhResult
 
         def fake(args, *, timeout, cwd=None):  # type: ignore[no-untyped-def]
             head = args[:2]
@@ -702,7 +704,7 @@ class TestQueueSync:
     def test_dry_run_applies_the_admission_cap(self, tmp_path: Path) -> None:
         """#187 F11: it printed ENQUEUE for all ten with a cap of three."""
         self._toml(tmp_path)
-        with patch("kstrl.intake_gh.run_gh", self._stub(self._issues(10))):
+        with patch("kstrl.serve.intake_gh.run_gh", self._stub(self._issues(10))):
             result = _invoke(["queue", "sync", "--dry-run"], tmp_path)
         assert result.exit_code == 0
         assert result.output.count("ENQUEUE") == 3, (
@@ -713,13 +715,13 @@ class TestQueueSync:
 
     def test_dry_run_reports_would_enqueue(self, tmp_path: Path) -> None:
         self._toml(tmp_path)
-        with patch("kstrl.intake_gh.run_gh", self._stub(self._issues(1))):
+        with patch("kstrl.serve.intake_gh.run_gh", self._stub(self._issues(1))):
             result = _invoke(["queue", "sync", "--dry-run"], tmp_path)
         assert "would enqueue" in result.output
 
     def test_a_real_sync_enqueues_up_to_the_cap(self, tmp_path: Path) -> None:
         self._toml(tmp_path)
-        with patch("kstrl.intake_gh.run_gh", self._stub(self._issues(10))):
+        with patch("kstrl.serve.intake_gh.run_gh", self._stub(self._issues(10))):
             result = _invoke(["queue", "sync"], tmp_path)
         assert result.exit_code == 0
         assert len(_queue(tmp_path).items()) == 3, (
@@ -729,7 +731,7 @@ class TestQueueSync:
     def test_a_cross_repo_inbox_is_refused(self, tmp_path: Path) -> None:
         self._toml(tmp_path)
         with patch(
-            "kstrl.intake_gh.run_gh",
+            "kstrl.serve.intake_gh.run_gh",
             self._stub(self._issues(1), checkout="someone/else"),
         ):
             result = _invoke(["queue", "sync"], tmp_path)
@@ -748,7 +750,7 @@ class TestQueueSync:
         self._toml(tmp_path)
         with queue_lock(tmp_path):
             with patch(
-                "kstrl.intake_gh.run_gh",
+                "kstrl.serve.intake_gh.run_gh",
                 self._stub(self._issues(1)),
             ):
                 result = _invoke(["queue", "sync"], tmp_path)

@@ -22,7 +22,7 @@ by a list someone remembers to extend:
 The static census at the end holds the exit contract where no process
 test reaches, in every module of ``kstrl/`` (#531): every literal 1 in an
 ``exit``/``_exit`` call or its ``code=`` keyword, a ``SystemExit``, an
-``exit_code`` assignment or keyword, a ``return`` in ``kstrl/cli.py``, or a
+``exit_code`` assignment or keyword, a ``return`` in ``kstrl/cli/cli.py``, or a
 return of a function an exit code is followed into, sits in a site listed
 in ``FINDING_EXIT_SITES``. Its blind spots, stated and pinned by strict
 xfails: a function named in ``NOT_FOLLOWED``, an exit code carried in a
@@ -50,7 +50,7 @@ import click
 import pytest
 from click.testing import CliRunner
 
-from kstrl.cli import cli
+from kstrl.cli.cli import cli
 from tests.helpers.astwalk import (
     blind_spot,
     label,
@@ -63,7 +63,7 @@ from tests.helpers.astwalk import (
 from tests.helpers.fakegh import put_gh_on_path
 from tests.helpers.gitrepo import git_in
 
-CLI_MODULE = "cli.py"
+CLI_MODULE = "cli/cli.py"
 #: The modules cut out of cli.py are siblings named `cli_<topic>.py` (#776). Their
 #: returns are exit codes too, so a function that moves keeps its census.
 CLI_SIBLING_PREFIX = "cli_"
@@ -354,17 +354,17 @@ def test_plain_output_is_coloured_only_on_a_terminal_without_no_color(
 FINDING_EXIT_SITES: dict[tuple[str, str], int] = {
     ("verify/baseline.py", "exit_code_for"): 1,  # `--fail-on-regression`: a regression
     ("calibration/calibration.py", "main"): 1,  # `python -m kstrl.calibration`: a detection drop
-    ("cli_check.py", "_check_baseline_report"): 1,  # `--fail-on-regression`: a regression
-    ("cli_check.py", "_check_report"): 2,  # `ks check`: a check failed
-    ("cli_serve.py", "ci_poll"): 1,  # a merge commit's CI failed or could not be read
-    ("cli_report.py", "config_show"): 2,  # a rejected section, reported
-    ("cli_architect.py", "decompose"): 1,  # the architect's output could not be used
-    ("cli_factory.py", "factory"): 1,  # the architect's output could not be used
-    ("cli_learning.py", "health_cmd"): 1,  # a metric breached its control limits
-    ("cli_queue.py", "queue_sync"): 1,  # an issue could not be synced
-    ("cli_learning.py", "recheck_cmd"): 1,  # a verdict the recheck disagrees with
-    ("cli_serve.py", "serve"): 1,  # work is waiting on a human
-    ("doctor.py", "exit_code_for"): 1,  # `ks doctor`: not ready is a finding
+    ("cli/cli_check.py", "_check_baseline_report"): 1,  # `--fail-on-regression`: a regression
+    ("cli/cli_check.py", "_check_report"): 2,  # `ks check`: a check failed
+    ("cli/cli_serve.py", "ci_poll"): 1,  # a merge commit's CI failed or could not be read
+    ("cli/cli_report.py", "config_show"): 2,  # a rejected section, reported
+    ("cli/cli_architect.py", "decompose"): 1,  # the architect's output could not be used
+    ("cli/cli_factory.py", "factory"): 1,  # the architect's output could not be used
+    ("cli/cli_learning.py", "health_cmd"): 1,  # a metric breached its control limits
+    ("cli/cli_queue.py", "queue_sync"): 1,  # an issue could not be synced
+    ("cli/cli_learning.py", "recheck_cmd"): 1,  # a verdict the recheck disagrees with
+    ("cli/cli_serve.py", "serve"): 1,  # work is waiting on a human
+    ("cli/doctor.py", "exit_code_for"): 1,  # `ks doctor`: not ready is a finding
     (
         "pipeline/factory_result.py",
         "resolve_exit_code",
@@ -594,7 +594,7 @@ def _count_site(
 def _exit_census(modules: dict[str, ast.Module]) -> _ExitCensus:
     """Every literal 1 that reaches an exit code, following each value into
     the functions it comes from until no new one turns up. Every return in
-    kstrl/cli.py and kstrl/cli_*.py is counted as an exit code, as before #531."""
+    kstrl/cli/cli.py and kstrl/cli_*.py is counted as an exit code, as before #531."""
     census = _ExitCensus()
     counted: set[int] = set()
     for key, top, tree in _sites(modules):

@@ -23,7 +23,7 @@ writer).
    the trigger position of an ``apply_demotion`` call (argument 1 or
    ``trigger=``) or a ``.demote`` call (argument 0 or ``trigger=``).
    ``MANUAL`` is the operator's own act: its writer is ``autonomy_demote``
-   in ``kstrl/cli.py``, which must call ``.demote``.
+   in ``kstrl/cli/cli.py``, which must call ``.demote``.
 
 Rules 2 and 3 CLEAR an input when they find a site, so they are narrow: a
 name in the trigger position (``demote(chosen, ...)``) clears nothing, and
@@ -238,7 +238,7 @@ class TestEveryLadderInputHasAWriter:
         )
 
     def test_manual_is_written_by_the_operator_command(self) -> None:
-        cli = next(p for p in package_sources() if label(p) == "cli_learning.py")
+        cli = next(p for p in package_sources() if label(p) == "cli/cli_learning.py")
         (function,) = [
             node
             for node in all_nodes(parsed(cli))

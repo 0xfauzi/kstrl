@@ -1,6 +1,6 @@
 """Widget 4 of docs/lessons/pr-221.html: why the daemon can refuse to start work.
 
-The rule is ``serve_cycle`` (kstrl/serve.py:1866 onward) as it reads on the
+The rule is ``serve_cycle`` (kstrl/serve/serve.py:1866 onward) as it reads on the
 merge commit, plus the open-PR bound issue #228 (R10.7) inserts. The order
 the code evaluates, each with what a refusal means:
 

@@ -9,7 +9,7 @@ Precedence: **CLI flag > env var > `kstrl.toml` > dataclass default**.
 
 When is a bad value caught? At command entry, before the command builds
 or spends anything. Every section below is resolved once by
-`kstrl/config_preflight.py`, and a value that will not parse stops the
+`kstrl/cli/config_preflight.py`, and a value that will not parse stops the
 command with an `error:` line naming the section, the key or environment
 variable, and the value (exit 2). `[evolution]` is the one section that
 warns and continues, because the journal is an optional audit trail;

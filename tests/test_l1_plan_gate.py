@@ -44,8 +44,8 @@ from kstrl.pipeline.factory_config import FactoryConfig
 from kstrl.plan.manifest import Manifest
 from kstrl.review.review import ReviewResult
 from kstrl.review.security import SecurityConfig
-from kstrl.serve_gates import check_parked_merges
-from kstrl.serve_outcome import RunOutcome, classify_run
+from kstrl.serve.serve_gates import check_parked_merges
+from kstrl.serve.serve_outcome import RunOutcome, classify_run
 from kstrl.ui.plain import PlainUI
 from kstrl.verify.verify_model import VerifyConfig
 from tests.helpers.stack_confirmation import in_process_stack

@@ -28,10 +28,10 @@ import click
 import pytest
 from click.testing import CliRunner
 
-import kstrl.cli as cli_mod
-import kstrl.cli_architect as cli_architect_mod
-import kstrl.cli_factory as cli_factory_mod
-import kstrl.cli_preflight as cli_preflight_mod
+import kstrl.cli.cli as cli_mod
+import kstrl.cli.cli_architect as cli_architect_mod
+import kstrl.cli.cli_factory as cli_factory_mod
+import kstrl.cli.cli_preflight as cli_preflight_mod
 from kstrl.config.config import KstrlConfig
 from kstrl.factory.factory import run_factory
 from kstrl.owner.interaction import PromptRequest, PromptResponse

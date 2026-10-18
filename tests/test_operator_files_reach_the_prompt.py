@@ -110,7 +110,7 @@ ORDER_LOCAL = "parts"
 #: Each row is ``(anchor, what to do)``. The anchor is the identifier a
 #: reader can grep for, which is also what the docstring test looks up.
 #: Eight are in ``kstrl/factory/factory_worker.py``; the last is in
-#: ``kstrl/feature_cmd.py`` (#599).
+#: ``kstrl/cli/feature_cmd.py`` (#599).
 WORKER_EDITS: tuple[tuple[str, str], ...] = (
     ("import", "the import of the kind constant"),
     (WORKER_SCOPE, f"the {WORKER_SCOPE} parameter carrying the configured path"),
@@ -171,7 +171,7 @@ EXPECTED_LOADER_SPELLINGS: dict[str, int] = {
 #: test_every_module_that_names_context_prefix_is_known`.
 EXPECTED_PREFIX_SPELLINGS: dict[str, int] = {
     "factory/factory_worker.py": 3,
-    "feature_cmd.py": 3,
+    "cli/feature_cmd.py": 3,
     "loop/loop.py": 8,
 }
 

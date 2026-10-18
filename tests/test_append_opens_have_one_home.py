@@ -263,8 +263,11 @@ class Reason(StrEnum):
 #: ``atomicio``'s ``os.open`` with ``O_EXCL`` flags, which creates.
 ALLOWED_APPEND_OPENS: dict[str, tuple[Reason, str]] = {
     "proc/factory_lock.py:acquire_run_lock": (Reason.LOCK_FILE, "the run lock"),
-    "serve_gates.py:factory_lock_held": (Reason.LOCK_FILE, "reads whether the run lock is held"),
-    "serve.py:serve_lock": (Reason.LOCK_FILE, "the daemon's own lock"),
+    "serve/serve_gates.py:factory_lock_held": (
+        Reason.LOCK_FILE,
+        "reads whether the run lock is held",
+    ),
+    "serve/serve.py:serve_lock": (Reason.LOCK_FILE, "the daemon's own lock"),
     "io/statedir.py:control_lock": (Reason.LOCK_FILE, "the control-directory lock"),
     "acceptance/replay.py:replay_lock": (
         Reason.LOCK_FILE,
@@ -327,8 +330,8 @@ EXPECTED_APPEND_OPENS: dict[str, int] = {
     "pipeline/pipeline_attempt.py: open('a')": 1,
     "pipeline/pipeline_ledger.py: EvolutionJournal.open(self.root_dir)": 1,
     "acceptance/replay.py: path.open('a+')": 1,
-    "serve.py: open('a+')": 1,
-    "serve_gates.py: open('a+')": 1,
+    "serve/serve.py: open('a+')": 1,
+    "serve/serve_gates.py: open('a+')": 1,
     "io/statedir.py: open('a+')": 1,
     "queue/workqueue_store.py: open('a+')": 1,
 }
@@ -488,10 +491,10 @@ EXPECTED_ROUTED_APPENDS: dict[str, int] = {
     "events/events.py: open_for_append(lock=default (False))": 1,
     "learning/evolution.py: append_records(lock=True)": 1,
     "learning/evolution.py: append_records(lock=default (False))": 1,
-    "signals.py: append_records(lock=True)": 1,
+    "serve/signals.py: append_records(lock=True)": 1,
     # #553: the CI ledger, for the signal ledger's reason: a scheduled
     # `ks ci poll` and an operator's can interleave.
-    "ci_state.py: append_records(lock=True)": 1,
+    "serve/ci_state.py: append_records(lock=True)": 1,
     "owner/inbox.py: append_records(lock=default (False))": 1,
     "project/init_cmd.py: append_records(lock=default (False))": 1,
     "knowledge/knowledge.py: append_records(lock=default (False))": 1,

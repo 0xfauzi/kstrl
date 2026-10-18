@@ -10,10 +10,10 @@ from unittest.mock import patch
 
 import pytest
 
+from kstrl.cli.feature_cmd import run_feature
 from kstrl.config.config import KstrlConfig
 from kstrl.events.reducer import load_run_state
 from kstrl.factory.commandrun import open_command_run
-from kstrl.feature_cmd import run_feature
 from kstrl.loop.loop import LoopResult
 from kstrl.ui.plain import PlainUI
 from tests.test_feature_cmd import ScriptedChannel, StubAgent, _params
@@ -51,8 +51,8 @@ def _run_recorded(
     )
     try:
         with (
-            patch("kstrl.feature_cmd.run_loop", _loop_results_with_agent(*codes)),
-            patch("kstrl.feature_cmd.get_agent", return_value=StubAgent()),
+            patch("kstrl.cli.feature_cmd.run_loop", _loop_results_with_agent(*codes)),
+            patch("kstrl.cli.feature_cmd.get_agent", return_value=StubAgent()),
         ):
             return run_feature(
                 params,
@@ -119,7 +119,7 @@ class TestFeatureRunRecording:
             return LoopResult(completed=False, iterations=1, exit_code=0)
 
         try:
-            with patch("kstrl.feature_cmd.run_loop", incomplete):
+            with patch("kstrl.cli.feature_cmd.run_loop", incomplete):
                 code = run_feature(
                     params,
                     KstrlConfig(),
@@ -176,8 +176,8 @@ class TestFeatureRunRecording:
 
         try:
             with (
-                patch("kstrl.feature_cmd.run_loop", scripted),
-                patch("kstrl.feature_cmd.get_agent", return_value=StubAgent()),
+                patch("kstrl.cli.feature_cmd.run_loop", scripted),
+                patch("kstrl.cli.feature_cmd.get_agent", return_value=StubAgent()),
             ):
                 code = run_feature(
                     params,
@@ -215,7 +215,7 @@ class TestFeatureRunRecording:
 
         try:
             with (
-                patch("kstrl.feature_cmd.run_loop", explode),
+                patch("kstrl.cli.feature_cmd.run_loop", explode),
                 pytest.raises(RuntimeError, match="agent exploded"),
             ):
                 run_feature(
@@ -265,7 +265,7 @@ class TestFeatureRunRecording:
             )
             try:
                 with patch(
-                    "kstrl.feature_cmd.run_loop",
+                    "kstrl.cli.feature_cmd.run_loop",
                     _loop_results_with_agent(0, 0),
                 ):
                     run_feature(

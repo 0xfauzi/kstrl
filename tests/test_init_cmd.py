@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.cli import cli
+from kstrl.cli.cli import cli
 from kstrl.io.appendio import append_records
 from kstrl.project import init_cmd
 from kstrl.project.init_cmd import GITIGNORE_BLOCK_MARKER, NEXT_STEPS, run_init

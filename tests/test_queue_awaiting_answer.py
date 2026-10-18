@@ -26,18 +26,18 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner, Result
 
-from kstrl.cli import cli
+from kstrl.cli.cli import cli
 from kstrl.events import event_catalog
 from kstrl.events import events as ev
-from kstrl.intake_gh import GitHubIntakeConfig
 from kstrl.io.runid import mint_run_id, run_kind
 from kstrl.owner.inbox import Inbox, InboxItem, ItemKind, ItemStatus
 from kstrl.queue.workqueue import Queue
 from kstrl.queue.workqueue_items import ItemSource, ItemState, QueueConfig, QueueItem
-from kstrl.serve import serve_cycle
-from kstrl.serve_config import ServeConfig
-from kstrl.serve_outcome import RunOutcome, Verdict
-from kstrl.serve_spend import SPAWNED_RUN_KIND, SpendLedger
+from kstrl.serve.intake_gh import GitHubIntakeConfig
+from kstrl.serve.serve import serve_cycle
+from kstrl.serve.serve_config import ServeConfig
+from kstrl.serve.serve_outcome import RunOutcome, Verdict
+from kstrl.serve.serve_spend import SPAWNED_RUN_KIND, SpendLedger
 from tests.helpers.executables import write_executable
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
 from tests.test_isolation_rung import needs_nono

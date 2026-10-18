@@ -9,9 +9,9 @@ from unittest.mock import patch
 import pytest
 from click.testing import CliRunner, Result
 
-from kstrl.cli import cli
-from kstrl.cli_loop import _run_structural_override_notices
-from kstrl.cli_report import _format_component_status
+from kstrl.cli.cli import cli
+from kstrl.cli.cli_loop import _run_structural_override_notices
+from kstrl.cli.cli_report import _format_component_status
 from kstrl.git.git_base import BASE_BRANCH_CANDIDATES, detect_base_branch, resolve_base_branch
 from kstrl.pipeline.factory_config import FactoryConfig
 from kstrl.plan.manifest import Component, ComponentStatus, Manifest
@@ -325,8 +325,8 @@ class TestDecomposeBlockerOutput:
     """R1.7: the CLI points the user at the persisted spec-issues file."""
 
     def test_prints_artifact_path_on_halt(self, tmp_path: Path, monkeypatch) -> None:
-        import kstrl.cli_architect as cli_architect_mod
-        import kstrl.cli_factory as cli_factory_mod
+        import kstrl.cli.cli_architect as cli_architect_mod
+        import kstrl.cli.cli_factory as cli_factory_mod
         from kstrl.architect.decisions import SpecDecision
         from kstrl.architect.decompose_audit import SpecBlockerError
 
@@ -617,8 +617,8 @@ def _halting_decompose(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
     through. A second copy would let them disagree about what "reached
     decompose" means.
     """
-    import kstrl.cli_architect as cli_architect_mod
-    import kstrl.cli_factory as cli_factory_mod
+    import kstrl.cli.cli_architect as cli_architect_mod
+    import kstrl.cli.cli_factory as cli_factory_mod
     from kstrl.architect.decisions import SpecDecision
     from kstrl.architect.decompose_audit import SpecBlockerError
 

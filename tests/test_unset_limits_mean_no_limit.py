@@ -49,9 +49,9 @@ from kstrl.plan.manifest import Component, Manifest
 from kstrl.proc.timeout import TimeoutConfig
 from kstrl.review.review import ReviewMode, run_review
 from kstrl.review.security import SecurityConfig, SecurityMode, run_security_review
-from kstrl.serve_config import ServeConfig
-from kstrl.serve_gates import check_budget
-from kstrl.serve_spend import SpendLedger
+from kstrl.serve.serve_config import ServeConfig
+from kstrl.serve.serve_gates import check_budget
+from kstrl.serve.serve_spend import SpendLedger
 from kstrl.ui.plain import PlainUI
 from kstrl.verify.verify import run_mechanical_verification
 from kstrl.verify.verify_model import CheckResult, VerificationResult, VerifyConfig

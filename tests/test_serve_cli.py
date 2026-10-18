@@ -14,11 +14,11 @@ from unittest.mock import patch
 import pytest
 from click.testing import CliRunner, Result
 
-from kstrl.cli import cli
+from kstrl.cli.cli import cli
 from kstrl.queue.workqueue import Queue
 from kstrl.queue.workqueue_items import ItemState, QueueConfig
-from kstrl.serve_outcome import RunOutcome
-from kstrl.serve_spend import RunSpend, SpendLedger
+from kstrl.serve.serve_outcome import RunOutcome
+from kstrl.serve.serve_spend import RunSpend, SpendLedger
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
 
 
@@ -40,7 +40,7 @@ def spec_file(tmp_path: Path) -> Path:
 @pytest.fixture(autouse=True)
 def _no_spend(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "kstrl.serve_spend.read_run_spend",
+        "kstrl.serve.serve_spend.read_run_spend",
         lambda root, run_id: RunSpend(),
     )
 
@@ -76,7 +76,7 @@ class TestDryRun:
         spec_file: Path,
     ) -> None:
         _invoke(["queue", "add", str(spec_file)], tmp_path)
-        with patch("kstrl.serve.subprocess_factory_runner") as runner:
+        with patch("kstrl.serve.serve.subprocess_factory_runner") as runner:
             result = _invoke(["serve", "--dry-run"], tmp_path)
         assert result.exit_code == 0
         assert runner.call_count == 0
@@ -186,7 +186,7 @@ class TestServeOnce:
     ) -> None:
         _invoke(["queue", "add", str(spec_file)], tmp_path)
         with patch(
-            "kstrl.serve.subprocess_factory_runner",
+            "kstrl.serve.serve.subprocess_factory_runner",
             return_value=RunOutcome(returncode=0),
         ):
             result = _invoke(["serve", "--once"], tmp_path)
@@ -201,7 +201,7 @@ class TestServeOnce:
         """launchd reads the exit status; a poisoned item is not success."""
         _invoke(["queue", "add", str(spec_file)], tmp_path)
         with patch(
-            "kstrl.serve.subprocess_factory_runner",
+            "kstrl.serve.serve.subprocess_factory_runner",
             return_value=RunOutcome(returncode=1),
         ):
             result = _invoke(["serve", "--once"], tmp_path)
@@ -249,7 +249,7 @@ class TestServeOnce:
             (run_dir / "events.jsonl").touch()
             return RunOutcome(returncode=1)
 
-        with patch("kstrl.serve.subprocess_factory_runner", fake_runner):
+        with patch("kstrl.serve.serve.subprocess_factory_runner", fake_runner):
             result = _invoke(["serve", "--once"], tmp_path)
         assert _queue(tmp_path).items()[0].state is ItemState.POISON
         assert result.exit_code == 1, "poisoned work must not report success"
@@ -269,7 +269,7 @@ class TestServeOnce:
         queue = Queue(tmp_path, _QC(max_attempts=1))
         queue.start(queue.lease(queue.items()[0], pid=999999))
         with patch(
-            "kstrl.serve.subprocess_factory_runner",
+            "kstrl.serve.serve.subprocess_factory_runner",
             return_value=RunOutcome(returncode=0),
         ):
             result = _invoke(["serve", "--once"], tmp_path)
@@ -282,7 +282,7 @@ class TestServeOnce:
 
     def test_a_held_singleton_lock_exits_two(self, tmp_path: Path) -> None:
         pytest.importorskip("fcntl")
-        from kstrl.serve import serve_lock
+        from kstrl.serve.serve import serve_lock
 
         with serve_lock(tmp_path):
             result = _invoke(["serve", "--once"], tmp_path)
@@ -447,7 +447,7 @@ class TestLaunchdPlist:
         """launchd's 10s default would restart a crash-loop 6x a minute."""
         import plistlib
 
-        from kstrl.serve_launchd import LAUNCHD_THROTTLE_SECONDS
+        from kstrl.serve.serve_launchd import LAUNCHD_THROTTLE_SECONDS
 
         parsed = plistlib.loads(self._plist(tmp_path).encode())
         assert parsed["ThrottleInterval"] == LAUNCHD_THROTTLE_SECONDS
@@ -477,7 +477,7 @@ class TestLaunchdPlist:
 
     def test_the_label_is_unique_per_checkout(self, tmp_path: Path) -> None:
         """launchd keeps only the last job per Label, silently."""
-        from kstrl.serve_launchd import launchd_label
+        from kstrl.serve.serve_launchd import launchd_label
 
         a = tmp_path / "checkout-a"
         b = tmp_path / "checkout-b"
@@ -488,7 +488,7 @@ class TestLaunchdPlist:
 
     def test_the_log_directory_is_created(self, tmp_path: Path) -> None:
         """launchd creates the log file but not its parent."""
-        from kstrl.serve_launchd import launchd_log_dir
+        from kstrl.serve.serve_launchd import launchd_log_dir
 
         assert not launchd_log_dir(tmp_path).exists()
         self._plist(tmp_path)
@@ -498,8 +498,8 @@ class TestLaunchdPlist:
         self,
         tmp_path: Path,
     ) -> None:
-        with patch("kstrl.serve.serve") as loop:
-            with patch("kstrl.serve.subprocess_factory_runner") as runner:
+        with patch("kstrl.serve.run_serve") as loop:
+            with patch("kstrl.serve.serve.subprocess_factory_runner") as runner:
                 self._plist(tmp_path)
         assert loop.call_count == 0
         assert runner.call_count == 0
@@ -551,7 +551,7 @@ class TestServeDryRunIncludesIntake:
     def _stub(issues: str, checkout: str = "o/r"):  # type: ignore[no-untyped-def]
         import json as _json
 
-        from kstrl.intake_gh import GhResult
+        from kstrl.serve.intake_gh import GhResult
 
         def fake(args, *, timeout, cwd=None):  # type: ignore[no-untyped-def]
             head = args[:2]
@@ -612,7 +612,7 @@ class TestServeDryRunIncludesIntake:
     ) -> None:
         """An empty queue plus enabled intake is NOT 'nothing ready'."""
         (tmp_path / "kstrl.toml").write_text('[intake_github]\nenabled = true\nrepo = "o/r"\n')
-        with patch("kstrl.intake_gh.run_gh", self._stub(self._issues())):
+        with patch("kstrl.serve.intake_gh.run_gh", self._stub(self._issues())):
             result = _invoke(["serve", "--dry-run"], tmp_path)
         assert result.exit_code == 0
         assert "would admit o/r#4" in result.output
@@ -623,7 +623,7 @@ class TestServeDryRunIncludesIntake:
 
     def test_dry_run_still_writes_nothing(self, tmp_path: Path) -> None:
         (tmp_path / "kstrl.toml").write_text('[intake_github]\nenabled = true\nrepo = "o/r"\n')
-        with patch("kstrl.intake_gh.run_gh", self._stub(self._issues())):
+        with patch("kstrl.serve.intake_gh.run_gh", self._stub(self._issues())):
             _invoke(["serve", "--dry-run"], tmp_path)
         assert _queue(tmp_path).items() == [], "a dry run admits nothing"
 
@@ -645,7 +645,7 @@ class TestScheduledJobRequiresATimeout:
     ) -> None:
         import plistlib
 
-        from kstrl.serve_launchd import REQUIRE_TIMEOUT_ENV
+        from kstrl.serve.serve_launchd import REQUIRE_TIMEOUT_ENV
 
         (tmp_path / "kstrl.toml").write_text("[serve]\nfactory_timeout_seconds = 1800.0\n")
         result = CliRunner().invoke(
@@ -668,7 +668,7 @@ class TestScheduledJobRequiresATimeout:
         """It paces itself; there is no schedule to fall behind."""
         import plistlib
 
-        from kstrl.serve_launchd import REQUIRE_TIMEOUT_ENV
+        from kstrl.serve.serve_launchd import REQUIRE_TIMEOUT_ENV
 
         result = CliRunner().invoke(
             cli,
@@ -683,7 +683,7 @@ class TestScheduledJobRequiresATimeout:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """The operator cleared the timeout after installing the job."""
-        from kstrl.serve_launchd import REQUIRE_TIMEOUT_ENV
+        from kstrl.serve.serve_launchd import REQUIRE_TIMEOUT_ENV
 
         monkeypatch.setenv(REQUIRE_TIMEOUT_ENV, "1")
         (tmp_path / "kstrl.toml").write_text("[serve]\n")
@@ -696,7 +696,7 @@ class TestScheduledJobRequiresATimeout:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from kstrl.serve_launchd import REQUIRE_TIMEOUT_ENV
+        from kstrl.serve.serve_launchd import REQUIRE_TIMEOUT_ENV
 
         monkeypatch.setenv(REQUIRE_TIMEOUT_ENV, "1")
         (tmp_path / "kstrl.toml").write_text("[serve]\nfactory_timeout_seconds = 600.0\n")
@@ -741,7 +741,7 @@ class TestUniformCadence:
         self,
         hours: int,
     ) -> None:
-        from kstrl.serve_launchd import calendar_schedule
+        from kstrl.serve.serve_launchd import calendar_schedule
 
         entries = calendar_schedule(hours * 60)
         marks = [e["Hour"] for e in entries]
@@ -756,7 +756,7 @@ class TestUniformCadence:
         A StartCalendarInterval entry treats unspecified fields as
         wildcards, so {"Minute": 0} means "every hour at :00".
         """
-        from kstrl.serve_launchd import calendar_schedule
+        from kstrl.serve.serve_launchd import calendar_schedule
 
         assert calendar_schedule(60) == [{"Minute": 0}]
 
@@ -765,7 +765,7 @@ class TestUniformCadence:
         self,
         minutes: int,
     ) -> None:
-        from kstrl.serve_launchd import calendar_schedule
+        from kstrl.serve.serve_launchd import calendar_schedule
 
         entries = calendar_schedule(minutes)
         marks = [e["Minute"] for e in entries]

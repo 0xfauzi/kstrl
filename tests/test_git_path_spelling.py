@@ -201,7 +201,7 @@ EXPECTED_WITHOUT_Z: tuple[str, ...] = (
     # -q means git prints nothing at all, so there is no path in the
     # output to spell. Measured: `git check-ignore -q -- foo.py` exits
     # with nothing on stdout.
-    "doctor.py git check-ignore -q -- ?",
+    "cli/doctor.py git check-ignore -q -- ?",
     # get_diff_content(as_stored=True) (#695): a unified diff, like the row
     # below, with every changed byte in it; the same reason holds.
     "git/git_diff.py git diff --text --no-textconv --no-ext-diff --no-color --dst-prefix=b/ ? --",
@@ -234,9 +234,9 @@ EXPECTED_GIT_ARGVS: dict[str, int] = {
     "loop/breaker.py git diff HEAD": 1,
     "loop/breaker.py git rev-parse HEAD": 1,
     "loop/breaker.py git status --porcelain -uall -z": 1,
-    "config_report.py git ?": 1,
+    "cli/config_report.py git ?": 1,
     "acceptance/contract.py git merge --abort": 1,
-    "doctor.py git check-ignore -q -- ?": 1,
+    "cli/doctor.py git check-ignore -q -- ?": 1,
     "factory/factory_worktrees.py git branch -D ?": 1,
     "factory/factory_worktrees.py git merge-base --is-ancestor ? ?": 1,
     "factory/factory_worktrees.py git rev-parse --verify --quiet ?": 1,

@@ -41,9 +41,9 @@ from kstrl.plan.manifest import Component, ComponentStatus, Manifest
 from kstrl.proc.shutdown import StopController
 from kstrl.queue.workqueue import Queue
 from kstrl.queue.workqueue_items import ItemSource, QueueConfig
-from kstrl.serve import serve_cycle
-from kstrl.serve_config import ServeConfig
-from kstrl.serve_spend import SpendLedger, read_run_spend
+from kstrl.serve.serve import serve_cycle
+from kstrl.serve.serve_config import ServeConfig
+from kstrl.serve.serve_spend import SpendLedger, read_run_spend
 from kstrl.ui.plain import PlainUI
 from kstrl.verify.verify_model import VerifyConfig
 from tests.helpers import procs

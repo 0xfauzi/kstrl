@@ -11,7 +11,7 @@ Two layers, because a single one of these has gone blind eleven times in
 this repo.
 
 LAYER 1 is a census that enumerates no node types: every spelling of
-``load`` in ``kstrl/serve.py``, counted. A new way to obtain a config -
+``load`` in ``kstrl/serve/serve.py``, counted. A new way to obtain a config -
 through a class held in a dict, through an alias, through a shape
 nobody modelled - moves that number even when layer 2's pattern cannot
 see it.
@@ -42,10 +42,10 @@ import pytest
 from kstrl.project.stack import stack_toml
 from kstrl.queue.workqueue import Queue
 from kstrl.queue.workqueue_items import ItemState, MergeDisposition, QueueConfig
-from kstrl.serve import _NullObserver, serve, serve_cycle
-from kstrl.serve_config import ServeConfig
-from kstrl.serve_github import OpenPrCount
-from kstrl.serve_outcome import RunOutcome
+from kstrl.serve.serve import _NullObserver, serve, serve_cycle
+from kstrl.serve.serve_config import ServeConfig
+from kstrl.serve.serve_github import OpenPrCount
+from kstrl.serve.serve_outcome import RunOutcome
 from tests.helpers.astwalk import (
     KSTRL_PACKAGE,
     all_nodes,
@@ -64,24 +64,24 @@ from tests.helpers.stack_confirmation import confirm_stack, in_process_stack
 
 #: ``serve.py`` and every ``serve_*.py`` split out of it (#776). A glob and not a
 #: list, so a module a later slice adds is read without anyone remembering to.
-SERVE_SOURCES = sorted(KSTRL_PACKAGE.glob("serve*.py"))
+SERVE_SOURCES = sorted((KSTRL_PACKAGE / "serve").glob("serve*.py"))
 
 # --------------------------------------------------------------------------
 # Layer 1: every spelling of `load`, enumerating no node types
 # --------------------------------------------------------------------------
 
-#: How many nodes in ``kstrl/serve.py`` write the identifier ``load``
+#: How many nodes in ``kstrl/serve/serve.py`` write the identifier ``load``
 #: anywhere the AST can hold a string. Not individually meaningful; the
 #: DELTA is the signal, and it moves for a shape layer 2 does not model
 #: as readily as for one it does.
 EXPECTED_LOAD_SPELLINGS = {
-    "serve.py": 3,
-    "serve_config.py": 1,
-    "serve_gates.py": 2,
-    "serve_github.py": 4,
-    "serve_merge_gate.py": 4,
-    "serve_outcome.py": 2,
-    "serve_settle.py": 2,
+    "serve/serve.py": 3,
+    "serve/serve_config.py": 1,
+    "serve/serve_gates.py": 2,
+    "serve/serve_github.py": 4,
+    "serve/serve_merge_gate.py": 4,
+    "serve/serve_outcome.py": 2,
+    "serve/serve_settle.py": 2,
 }
 
 
@@ -92,7 +92,7 @@ def test_every_spelling_of_load_in_serve_is_counted() -> None:
         expected=EXPECTED_LOAD_SPELLINGS,
         control="Cfg.load(root)\n",
         message=(
-            "kstrl/serve.py gained or lost a spelling of `load`. If it is a "
+            "kstrl/serve/serve.py gained or lost a spelling of `load`. If it is a "
             "new config read on the poll path it needs a guard and a row in "
             "this module's census; if layer 2 cannot see it, that is the "
             "case this layer exists for."
@@ -157,7 +157,7 @@ def scan_loads(tree: ast.Module, *, module: str = "") -> LoadScan:
     greps for. The receiver decides the bucket: a bare ``Name`` ending in
     ``Config`` is a config read, any other bare ``Name`` is somebody
     else's ``load``, and a receiver that is not a bare ``Name`` at all is
-    UNDECIDED. There are none of the third kind in ``kstrl/serve.py``
+    UNDECIDED. There are none of the third kind in ``kstrl/serve/serve.py``
     today, which is exactly why the bucket has to exist and be asserted
     rather than assumed away.
     """
@@ -194,7 +194,7 @@ def _serve_scan() -> LoadScan:
     )
 
 
-#: Every ``<Name>Config.load(...)`` in ``kstrl/serve.py``, by the function
+#: Every ``<Name>Config.load(...)`` in ``kstrl/serve/serve.py``, by the function
 #: that holds it. Two in ``resolve_merge_gate`` because it consults the
 #: ladder and the policy; two ``ServeConfig`` sites because ``serve``
 #: loads once at start and ``serve_cycle`` loads when called on its own.
@@ -242,7 +242,7 @@ class TestTheConfigReadsAreInventoried:
         for site in scan.config:
             counted[site.scope] = counted.get(site.scope, 0) + 1
         assert counted == EXPECTED_CONFIG_LOADS, (
-            "kstrl/serve.py's config reads moved. A read on the poll path "
+            "kstrl/serve/serve.py's config reads moved. A read on the poll path "
             "must be inside `except Exception` and must refuse rather than "
             "clear or escape. Sites: "
             f"{[site.label for site in scan.config]}"
@@ -254,7 +254,7 @@ class TestTheConfigReadsAreInventoried:
         for receiver in scan.other:
             counted[receiver] = counted.get(receiver, 0) + 1
         assert counted == EXPECTED_OTHER_LOADS, (
-            "a `.load` receiver in kstrl/serve.py that is not a config "
+            "a `.load` receiver in kstrl/serve/serve.py that is not a config "
             "appeared or went away. If it is a config under another name, "
             "the config census above does not cover it."
         )
@@ -262,7 +262,7 @@ class TestTheConfigReadsAreInventoried:
     def test_no_load_receiver_is_left_unnamed(self) -> None:
         scan = _serve_scan()
         assert scan.undecided == (), (
-            "a `.load` call in kstrl/serve.py has a receiver this walk "
+            "a `.load` call in kstrl/serve/serve.py has a receiver this walk "
             "cannot name, so it is in neither census. Decide it here rather "
             "than leaving it out: "
             f"{scan.undecided}"
@@ -273,7 +273,7 @@ class TestTheConfigReadsAreInventoried:
         unguarded = sorted({site.scope for site in scan.config if not site.guarded})
         missing = [scope for scope in unguarded if scope not in UNGUARDED_LEDGER]
         assert missing == [], (
-            "a config read in kstrl/serve.py is not inside an "
+            "a config read in kstrl/serve/serve.py is not inside an "
             "`except Exception` that refuses. The daemon has no per-cycle "
             "handler, so this stops the loop on an operator's typo in an "
             "unrelated key. Guard it and make the failure a refusal, or add "
@@ -472,7 +472,7 @@ def _serve_with_edit(
     queue = Queue(tmp_path, QueueConfig())
     queue.add("# Spec\n\nDo the thing.\n", merge_disposition=MergeDisposition.STOP_AT_PR)
 
-    from kstrl import serve as serve_module
+    from kstrl.serve import serve as serve_module
 
     real = serve_module._load_pr_count_streak
 
@@ -480,9 +480,9 @@ def _serve_with_edit(
         toml.write_text(document, encoding="utf-8")
         return real(root_dir, observer)
 
-    with patch("kstrl.serve._load_pr_count_streak", edit_then_load):
+    with patch("kstrl.serve.serve._load_pr_count_streak", edit_then_load):
         with patch(
-            "kstrl.serve_github.count_open_kstrl_prs",
+            "kstrl.serve.serve_github.count_open_kstrl_prs",
             lambda cwd, limit=100: OpenPrCount(saturated=False),
         ):
             if cycles is None:
@@ -657,7 +657,7 @@ class TestTheRefusingGateIsFailClosed:
 
     @staticmethod
     def _gate(tmp_path: Path, document: str) -> Any:
-        from kstrl.serve_merge_gate import resolve_merge_gate
+        from kstrl.serve.serve_merge_gate import resolve_merge_gate
 
         (tmp_path / "kstrl.toml").write_text(document, encoding="utf-8")
         queue = Queue(tmp_path, QueueConfig())

@@ -45,10 +45,10 @@ from typing import Any
 
 import pytest
 
+from kstrl.cli.feature_cmd import run_feature
 from kstrl.config.config import KstrlConfig
 from kstrl.events.event_catalog import CheckpointResolved, Event
 from kstrl.events.events import CallbackSink
-from kstrl.feature_cmd import run_feature
 from kstrl.loop.loop import LoopResult, run_loop
 from kstrl.owner.inbox import Inbox, InboxConfig
 from kstrl.owner.interaction import (
@@ -406,10 +406,12 @@ class TestTheGateCensus:
 #: says what its unanswered path does: the class #594 fixed is a prompt whose
 #: unanswered path nobody decided.
 EXPECTED_PROMPT_SITES = {
-    "cli_factory.py::factory": "exits without starting the run (#594)",
-    "cli_architect.py::retry": "exits without starting the retry, same as Quit (#597)",
-    "cli_preflight.py::_stack_checkpoint": "refuses with exit 2 and files the stack item (#696)",
-    "feature_cmd.py::run_feature": "refuses: quit to amend",
+    "cli/cli_factory.py::factory": "exits without starting the run (#594)",
+    "cli/cli_architect.py::retry": "exits without starting the retry, same as Quit (#597)",
+    "cli/cli_preflight.py::_stack_checkpoint": (
+        "refuses with exit 2 and files the stack item (#696)"
+    ),
+    "cli/feature_cmd.py::run_feature": "refuses: quit to amend",
     "verify/guards.py::enforce_allowed_paths": "quits",
     "loop/loop.py::_resolve_iteration_pause": "stops the run, same as Quit, when nobody answers",
     "pipeline/pipeline_delivery.py::Delivery._phase_checkpoint": "parks for the inbox (#594)",
@@ -430,11 +432,11 @@ EXPECTED_UNDECIDED_PROMPT_SITES: tuple[str, ...] = ()
 #: rather than by line (#645) and re-derived by RUNNING it rather than
 #: typed from a design document (reading a pin is not running a guard).
 EXPECTED_SEEN_PROMPT_SITES: tuple[str, ...] = (
-    "cli_architect.py::retry kstrl.owner.interaction.PromptRequest",
-    "cli_factory.py::factory kstrl.owner.interaction.PromptRequest",
-    "cli_preflight.py::_stack_checkpoint kstrl.owner.interaction.PromptRequest",
+    "cli/cli_architect.py::retry kstrl.owner.interaction.PromptRequest",
+    "cli/cli_factory.py::factory kstrl.owner.interaction.PromptRequest",
+    "cli/cli_preflight.py::_stack_checkpoint kstrl.owner.interaction.PromptRequest",
+    "cli/feature_cmd.py::run_feature kstrl.owner.interaction.PromptRequest",
     "factory/plan_gate.py::run_plan_gate kstrl.owner.interaction.PromptRequest",
-    "feature_cmd.py::run_feature kstrl.owner.interaction.PromptRequest",
     "loop/loop.py::_resolve_iteration_pause kstrl.owner.interaction.PromptRequest",
     "pipeline/pipeline_delivery.py::Delivery._phase_checkpoint kstrl.owner.interaction.PromptRequest",  # noqa: E501
     "verify/guards.py::enforce_allowed_paths kstrl.owner.interaction.PromptRequest",
@@ -655,7 +657,7 @@ class TestAnInterruptedFeatureGateStartsNothing:
             return LoopResult(completed=True, iterations=1, exit_code=0)
 
         monkeypatch.setattr(builtins, "input", _raise)
-        monkeypatch.setattr("kstrl.feature_cmd.run_loop", _loop)
+        monkeypatch.setattr("kstrl.cli.feature_cmd.run_loop", _loop)
         stream = io.StringIO()
         code = run_feature(
             _params(tmp_path),

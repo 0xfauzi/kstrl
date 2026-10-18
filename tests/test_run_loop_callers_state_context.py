@@ -77,9 +77,9 @@ FEATURE_SOURCE = "_feature_context_prefix(params, base_config, root_dir, ui)"
 #: the import plus three calls in ``feature_cmd.py``, and the re-export and
 #: its ``__all__`` row in ``loop/__init__.py``.
 EXPECTED_RUN_LOOP_SPELLINGS: dict[str, int] = {
-    "cli_loop.py": 2,
+    "cli/cli_loop.py": 2,
     "factory/factory_worker.py": 2,
-    "feature_cmd.py": 4,
+    "cli/feature_cmd.py": 4,
     "loop/__init__.py": 2,
     "loop/loop.py": 1,
 }
@@ -88,9 +88,9 @@ EXPECTED_RUN_LOOP_SPELLINGS: dict[str, int] = {
 #: source text of its ``context_prefix`` keyword in line order. ``None``
 #: is a call that passes no prefix.
 EXPECTED_CONTEXT_SOURCES: dict[str, tuple[str | None, ...]] = {
-    "cli_loop.py::_understand_core": (None,),
+    "cli/cli_loop.py::_understand_core": (None,),
     "factory/factory_worker.py::_run_component": ("context_prefix",),
-    "feature_cmd.py::run_feature": (FEATURE_SOURCE,) * 3,
+    "cli/feature_cmd.py::run_feature": (FEATURE_SOURCE,) * 3,
 }
 
 #: Calls the walk could not decide, per file. All seven have a callee with
@@ -101,7 +101,7 @@ EXPECTED_UNDECIDED: dict[str, int] = {}
 
 #: The call sites that pass no prefix, and why. Exactly the ``None`` rows.
 NO_CONTEXT_REASONS: dict[str, str] = {
-    "cli_loop.py::_understand_core": (
+    "cli/cli_loop.py::_understand_core": (
         "ks understand writes the codebase map; it is not an engineer loop and "
         "reads no operator context by decision (item 6 of #596)"
     ),
@@ -117,8 +117,8 @@ EXPECTED_ASSEMBLER_SPELLINGS: dict[str, int] = {
     "factory/__init__.py::<module>": 2,
     "factory/factory_worker.py::<module>": 1,
     "factory/factory_worker.py::_run_component": 1,
-    "feature_cmd.py::<module>": 1,
-    "feature_cmd.py::_feature_context_prefix": 1,
+    "cli/feature_cmd.py::<module>": 1,
+    "cli/feature_cmd.py::_feature_context_prefix": 1,
 }
 
 

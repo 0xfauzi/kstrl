@@ -481,7 +481,7 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   measurement rather than changed, as is `_file_inbox_item`'s narrower
   handler, which another guard pins by name and by origin. That module
   is also the guard: it
-  inventories every config read in `kstrl/serve.py` by enclosing
+  inventories every config read in `kstrl/serve/serve.py` by enclosing
   function, decides each GUARDED or UNGUARDED, and fails on an unguarded
   one that is not in the ledger (#195, #318).
 - A factory run now resolves every configuration section it enforces
@@ -538,7 +538,7 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   DIRECT child, not a grandchild, and what makes the group necessary is
   the factory's own descendants - agent subprocesses, git, the verify
   commands - which were measured surviving a signal to the direct child
-  with caffeinate on and off alike. The `kstrl/serve.py` docstrings,
+  with caffeinate on and off alike. The `kstrl/serve/serve.py` docstrings,
   `docs/continuous-intake.md` and the PR #186 review record now state
   the measured reason, and a new test pins the run group's membership as
   the difference `caffeinate` makes - the factory, whatever the factory

@@ -21,8 +21,8 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.config_preflight import collect_config_problems, config_problem_lines
-from kstrl.config_report import build_config_report
+from kstrl.cli.config_preflight import collect_config_problems, config_problem_lines
+from kstrl.cli.config_report import build_config_report
 from kstrl.proc.timeout import TimeoutConfig
 from tests.helpers import astwalk
 
@@ -64,7 +64,7 @@ def test_ks_config_show_names_the_section_instead_of_a_traceback(tmp_path: Path)
     own guard has to be the shared tuple: nothing catches it first."""
     from click.testing import CliRunner
 
-    from kstrl.cli import cli
+    from kstrl.cli.cli import cli
 
     (tmp_path / "kstrl.toml").write_text(ARRAY_FOR_A_RUN_NUMBER, encoding="utf-8")
     result = CliRunner().invoke(cli, ["config", "show", "--root", str(tmp_path)])
@@ -84,7 +84,7 @@ def test_the_safe_mode_worker_takes_the_lock_the_scrub_holds() -> None:
     screen refusing to work for the duration of the flag.
     """
     src = astwalk.KSTRL_PACKAGE
-    safemode = (src / "safemode.py").read_text(encoding="utf-8")
+    safemode = (src / "cli/safemode.py").read_text(encoding="utf-8")
     assert "AutonomyConfig.load" in safemode
     assert "PolicyConfig.load" in safemode
     assert "QueueConfig.load" in safemode
@@ -101,7 +101,7 @@ def test_ks_config_show_has_one_problem_reporter() -> None:
     copies, and they had already drifted on the empty case. One function
     now, and the only thing a caller supplies is where warnings go.
     """
-    cli = (astwalk.KSTRL_PACKAGE / "cli_report.py").read_text(encoding="utf-8")
+    cli = (astwalk.KSTRL_PACKAGE / "cli/cli_report.py").read_text(encoding="utf-8")
     assert "def _problems()" not in cli
     assert "config_problem_lines(root_dir, warn=" in cli
 
@@ -153,9 +153,9 @@ def test_a_report_survives_a_section_whose_loader_hits_the_filesystem(
     errors. A rejected section costs its rows and is named in
     ``unresolved``; it does not cost the report.
     """
-    import kstrl.config_report
+    import kstrl.cli.config_report
 
-    real = kstrl.config_report._phase_sections
+    real = kstrl.cli.config_report._phase_sections
 
     def _one_unreadable_section() -> list[tuple[str, object]]:
         sections = real()
@@ -166,7 +166,7 @@ def test_a_report_survives_a_section_whose_loader_hits_the_filesystem(
 
         return [(name, _unreadable), *sections[1:]]
 
-    monkeypatch.setattr(kstrl.config_report, "_phase_sections", _one_unreadable_section)
+    monkeypatch.setattr(kstrl.cli.config_report, "_phase_sections", _one_unreadable_section)
     report = build_config_report(tmp_path)
     assert report.unresolved == (real()[0][0],)
     assert report.rows, "the rest of the report was lost with the section"

@@ -227,6 +227,26 @@ Token and cost figures are CLI self-reports: when any call goes
 unreported the meter renders a `+` marker and treats the total as a
 lower bound - an honest number is never turned into a false one.
 
+## Package layout
+
+The code of `kstrl/` is in 23 packages (#863). Each package has an
+`__init__.py` that gives its interface in `__all__`. Code in a different
+package imports only these names, and code in the same package imports its
+sibling module with the full path. A package imports only packages that are
+lower in this sequence:
+
+`io`, `ui`, `config`, `git`, `plan`, `events`, `proc`, `queue`, `owner`,
+`project`, `agents`, `verify`, `knowledge`, `learning`, `architect`,
+`acceptance`, `review`, `calibration`, `loop`, `pipeline`, `factory`,
+`serve`, `cli`.
+
+Three modules stay at the top of `kstrl/`. `__init__.py` holds the version.
+`__main__.py` gives `python -m kstrl`, which the launchd plist of `ks serve`
+and the child runs of `ks serve` start. `write_guard.py` is the hook that the
+engineer agent starts on each file tool call (`-m kstrl.write_guard`), and it
+imports only `kstrl.io.jsonread` to keep that start fast. The `ks` console
+script names `kstrl.cli.cli:main`.
+
 ## Runtime state layout
 
 Everything lives under `.kstrl/` at the project root (gitignored):
@@ -247,7 +267,7 @@ stops the daemon spending, a damaged `autonomy.json` falls back to L1,
 the queue pauses, and an adversarial phase can be skipped. Each acts on
 its own, and each did so without a shared name.
 
-`kstrl/safemode.py` gives them one. `safe_mode_reasons(root_dir)` reads
+`kstrl/cli/safemode.py` gives them one. `safe_mode_reasons(root_dir)` reads
 all four and returns a list of `SafeModeReason` (source, detail,
 recovery anchor); empty means nominal. Two surfaces read it: the plain
 `ks status` report and `ks serve --dry-run`.

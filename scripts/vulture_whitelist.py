@@ -94,7 +94,7 @@ _.total_components
 _.affected_components
 
 # PlannedIssue field: passed positionally at the two plan_sync sites: writer at
-# kstrl/intake_github.py:445 and 453
+# kstrl/serve/intake_github.py:445 and 453
 _.authorization
 
 # record field: set at construction and written to the intake ledger
@@ -132,16 +132,16 @@ _.backend_version
 # no reader in kstrl
 _.policy_sha256
 
-# SettleResult counter: set and summed; writer at kstrl/serve.py:280, no reader in kstrl
+# SettleResult counter: set and summed; writer at kstrl/serve/serve.py:280, no reader in kstrl
 _.inbox_items
 
-# SettleResult counter: set and summed; writer at kstrl/serve.py:303, no reader in kstrl
+# SettleResult counter: set and summed; writer at kstrl/serve/serve.py:303, no reader in kstrl
 _.sync_errors
 
-# SettleResult counter: set and summed; writer at kstrl/serve.py:303, no reader in kstrl
+# SettleResult counter: set and summed; writer at kstrl/serve/serve.py:303, no reader in kstrl
 _.synced
 
-# SettleResult counter: set and summed; writer at kstrl/serve.py:519, no reader in kstrl
+# SettleResult counter: set and summed; writer at kstrl/serve/serve.py:519, no reader in kstrl
 _.charged_usd
 
 

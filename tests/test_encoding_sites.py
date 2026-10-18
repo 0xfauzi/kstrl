@@ -29,11 +29,11 @@ from pathlib import Path
 import pytest
 
 from kstrl.calibration.calibration_baseline import load_baseline
-from kstrl.intake_issue import ProcessedLedger
 from kstrl.knowledge import knowledge_distill, knowledge_facts
 from kstrl.learning.autonomy import AutonomyState
 from kstrl.queue.workqueue import Queue
-from kstrl.serve_spend import ServeStateError, SpendLedger
+from kstrl.serve.intake_issue import ProcessedLedger
+from kstrl.serve.serve_spend import ServeStateError, SpendLedger
 from kstrl.verify import verify, verify_diff
 from tests.helpers import gitrepo
 from tests.helpers.localeenv import NO_UTF8_DEFAULT

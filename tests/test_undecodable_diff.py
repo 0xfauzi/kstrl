@@ -26,7 +26,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import doctor
+from kstrl.cli import doctor
 from kstrl.config.config import KstrlConfig
 from kstrl.git import git, git_diff, git_tree
 from kstrl.loop import loop

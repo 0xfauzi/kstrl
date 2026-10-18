@@ -101,7 +101,7 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     # 1 since #406's ``_read_document`` dedup, which the baseline reader
     # module (split out of calibration.py) now shares between callers.
     "calibration/calibration_baseline.py": 1,
-    "cli_preflight.py": 1,
+    "cli/cli_preflight.py": 1,
     "factory/commandrun.py": 1,
     "architect/decisions.py": 1,
     "architect/decompose_prompt.py": 2,
@@ -112,7 +112,7 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     "pipeline/factory_result.py": 1,
     "factory/factory_worker.py": 2,
     "factory/factory_worktrees.py": 1,
-    "feature_cmd.py": 2,
+    "cli/feature_cmd.py": 2,
     # 1 since #696 slice 6: the module map's line count is the one read
     # left; the interface, graph and conventions readers are gone.
     "project/feedforward.py": 1,
@@ -126,7 +126,7 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     # the memory-file read `_append_guidance` added moved to
     # `operator_context.append_guidance_record`, which is the module
     # that already owns the reader.
-    "intake_issue.py": 1,
+    "serve/intake_issue.py": 1,
     # #482: the finding status word "open", not a read.
     "review/integration.py": 1,
     # #700, the security review of #770: the root's `.git` file and the
@@ -185,11 +185,11 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     # #776 S4 moved SpendLedger.load, with one read, to serve_spend.py.
     # #776 S5 moved factory_lock_held (the lock open) to serve_gates.py and
     # the streak read to serve_github.py.
-    "serve.py": 1,
-    "serve_gates.py": 1,
-    "serve_github.py": 1,
-    "serve_outcome.py": 1,
-    "serve_spend.py": 1,
+    "serve/serve.py": 1,
+    "serve/serve_gates.py": 1,
+    "serve/serve_github.py": 1,
+    "serve/serve_outcome.py": 1,
+    "serve/serve_spend.py": 1,
     "io/statedir.py": 1,
     # 4 since #414: the bad-patterns scan's read_text is gone (it reads
     # bytes now, so py_compile does its own PEP 263 decoding). 3 since
@@ -254,7 +254,9 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "architect/decompose_prompt.py (spec_path / name).read_text(encoding='utf-8')",
     "architect/decompose_prompt.py spec_path.read_text(encoding='utf-8')",
     "calibration/calibration_baseline.py path.read_text(encoding='utf-8')",
-    "cli_preflight.py open(prd_file, encoding='utf-8')",
+    "cli/cli_preflight.py open(prd_file, encoding='utf-8')",
+    "cli/feature_cmd.py open(latest_path, 'w', encoding='utf-8')",
+    "cli/feature_cmd.py open(repair_path, 'w', encoding='utf-8')",
     "events/events.py open(path, encoding='utf-8', errors='replace')",
     "events/observability.py for line in f on an open() handle",
     "events/observability.py open(path, encoding='utf-8')",
@@ -262,14 +264,6 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "factory/factory_worker.py open(log_path, 'a', buffering=1, encoding='utf-8', errors='replace')",  # noqa: E501
     "factory/factory_worker.py open(run_paths.engineer_log(component_id), 'a', buffering=1, encoding=",  # noqa: E501
     "factory/factory_worktrees.py open(lock_path, 'w', encoding='utf-8')",
-    "feature_cmd.py open(latest_path, 'w', encoding='utf-8')",
-    "feature_cmd.py open(repair_path, 'w', encoding='utf-8')",
-    # ``init_cmd.py path.open('a', encoding='utf-8')`` was here until
-    # #352. The read is DELETED, not unseen: ``_ensure_gitignore``'s
-    # append goes through ``appendio.append_records`` now, so the utf-8
-    # it used to name is the one ``append_terminated`` encodes with, and
-    # the ``appendio.py`` row below is where that contract is counted.
-    "intake_issue.py self.path.read_text(encoding='utf-8')",
     "io/statedir.py open(lock_path, 'a+', encoding='utf-8')",
     "knowledge/knowledge_distill.py prd_path.read_text(encoding='utf-8')",
     "knowledge/knowledge_facts.py path.read_text(encoding='utf-8')",
@@ -309,11 +303,17 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "queue/workqueue_store.py self.pause_path.read_text(encoding='utf-8')",
     "queue/workqueue_store.py self.spec_path(item).read_text(encoding='utf-8')",
     "review/security.py prd_path.read_text(encoding='utf-8')",
-    "serve.py open(lock_path, 'a+', encoding='utf-8')",
-    "serve_gates.py open(lock_path, 'a+', encoding='utf-8')",
-    "serve_github.py path.read_text(encoding='utf-8')",
-    "serve_outcome.py path.read_text(encoding='utf-8')",
-    "serve_spend.py self.path.read_text(encoding='utf-8')",
+    # ``init_cmd.py path.open('a', encoding='utf-8')`` was here until
+    # #352. The read is DELETED, not unseen: ``_ensure_gitignore``'s
+    # append goes through ``appendio.append_records`` now, so the utf-8
+    # it used to name is the one ``append_terminated`` encodes with, and
+    # the ``appendio.py`` row below is where that contract is counted.
+    "serve/intake_issue.py self.path.read_text(encoding='utf-8')",
+    "serve/serve.py open(lock_path, 'a+', encoding='utf-8')",
+    "serve/serve_gates.py open(lock_path, 'a+', encoding='utf-8')",
+    "serve/serve_github.py path.read_text(encoding='utf-8')",
+    "serve/serve_outcome.py path.read_text(encoding='utf-8')",
+    "serve/serve_spend.py self.path.read_text(encoding='utf-8')",
     "verify/verify.py progress_path.read_text(encoding='utf-8')",
 )
 
@@ -354,7 +354,7 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
 #: rather than pinning it, because the scan reads bytes now, so there is
 #: no `read_text` left to be undecided about (#425 simplify pass F6).
 EXPECTED_UNDECIDED: tuple[str, ...] = (
-    "cli_preflight.py f (the read is deferred to wherever this value is drained, "
+    "cli/cli_preflight.py f (the read is deferred to wherever this value is drained, "
     "which this walk cannot locate, so no handler can be credited with "
     "covering it)",
     "plan/manifest.py f (the read is deferred to wherever this value is drained, "

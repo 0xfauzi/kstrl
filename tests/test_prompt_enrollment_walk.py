@@ -38,7 +38,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import cli_seam
+from kstrl.cli import cli_seam
 from tests.helpers import astwalk
 from tests.test_prompt_versions import _PROMPTS
 
@@ -71,7 +71,7 @@ _ENROLLMENT_EXEMPT_NAMES: frozenset[str] = frozenset()
 
 
 #: Builtins whose call result cannot be a string. A ``*_PROMPT``-suffixed
-#: name bound to one of these is not a prompt: ``kstrl/cli.py`` really
+#: name bound to one of these is not a prompt: ``kstrl/cli/cli.py`` really
 #: holds ``_ROOT_FROM_PROMPT = frozenset({"run", "understand", "feature"})``,
 #: a set of command names. Kept small on purpose. Anything not named here
 #: is treated as a possible prompt body, so the cost of an omission is a
@@ -267,7 +267,7 @@ def _spells_a_prompt_name(node: ast.AST) -> bool:
 #: uses.
 EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
     "factory/acceptance_design.py": 2,
-    "cli_seam.py": 2,  # _ROOT_FROM_PROMPT, which is a set of command names
+    "cli/cli_seam.py": 2,  # _ROOT_FROM_PROMPT, which is a set of command names
     # #332 landed while this migration was in flight: the version
     # constant and the body of DECISIONS_CONTEXT_PROMPT, both enrolled.
     "architect/decisions.py": 2,
@@ -291,7 +291,7 @@ EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
     "git/git_diff.py": 4,
     # #654 slice 7: BUG_REPORT_PROMPT's declaration and its one use in
     # spec_from_issue.
-    "intake_issue.py": 2,
+    "serve/intake_issue.py": 2,
     # #303: 12 pre-existing + 16 new fragments x 2 spellings each (the
     # declaration and its one use site) = 44. The version constant adds
     # nothing: the walk keys on names ending in _PROMPT, not _VERSION.
@@ -499,7 +499,7 @@ _ASSEMBLED_BODIES: dict[str, str] = {
 
 #: Values that are PROVABLY not strings. These must stay invisible, or
 #: the walk starts demanding enrollment for things that are not prompts.
-#: The first is real: ``kstrl/cli_seam.py`` holds ``_ROOT_FROM_PROMPT =
+#: The first is real: ``kstrl/cli/cli_seam.py`` holds ``_ROOT_FROM_PROMPT =
 #: frozenset({...})``, a set of command names.
 _NOT_BODIES: dict[str, str] = {
     "frozenset_call": 'X_PROMPT = frozenset({"run", "understand"})\n',
@@ -548,7 +548,7 @@ def test_real_walk_does_not_flag_the_cli_command_set() -> None:
     vacuously the moment ``_ROOT_FROM_PROMPT`` is renamed or deleted,
     asserting nothing while still paying for a tree walk (#299 round 2)."""
     assert hasattr(cli_seam, "_ROOT_FROM_PROMPT"), (
-        "kstrl.cli_seam._ROOT_FROM_PROMPT is gone, so this negative case no "
+        "kstrl.cli.cli_seam._ROOT_FROM_PROMPT is gone, so this negative case no "
         "longer proves anything. Point it at whatever non-prompt "
         "*_PROMPT-suffixed name exists now, or delete it."
     )

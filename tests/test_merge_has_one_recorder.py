@@ -344,8 +344,8 @@ NOT_A_MERGE_RECORD: dict[str, str] = {
 
 #: Every scope in ``kstrl/`` that spells ``PrMerged``, and how many times.
 EXPECTED_PR_MERGED_SPELLINGS: dict[str, int] = {
-    "ci_state.py::<module>": 1,
-    "ci_state.py::_merges_in_run": 1,
+    "serve/ci_state.py::<module>": 1,
+    "serve/ci_state.py::_merges_in_run": 1,
     # #863 M2: the package interface re-exports the class (the import and
     # the __all__ entry).
     "events/__init__.py::<module>": 2,
@@ -356,8 +356,8 @@ EXPECTED_PR_MERGED_SPELLINGS: dict[str, int] = {
 
 #: Every row above except the recorder, and why it builds no event.
 NOT_A_PR_MERGED_BUILD: dict[str, str] = {
-    "ci_state.py::<module>": "imports the class to select on it",
-    "ci_state.py::_merges_in_run": "selects pr_merged rows with isinstance",
+    "serve/ci_state.py::<module>": "imports the class to select on it",
+    "serve/ci_state.py::_merges_in_run": "selects pr_merged rows with isinstance",
     "events/__init__.py::<module>": "the package interface re-exports the class",
     "events/event_catalog.py::<module>": "the class declaration",
     "events/reducer.py::apply": "folds the event with isinstance",

@@ -33,7 +33,7 @@ from typing import Any
 import pytest
 from click.testing import CliRunner
 
-from kstrl.cli import cli
+from kstrl.cli.cli import cli
 from tests.helpers import gitrepo
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
 from tests.spine_utils import git

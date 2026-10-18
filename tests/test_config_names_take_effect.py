@@ -17,8 +17,8 @@ from pathlib import Path
 
 import pytest
 
+from kstrl.cli.config_preflight import collect_config_problems
 from kstrl.config.config import ConfigError, KstrlConfig, load_toml_section
-from kstrl.config_preflight import collect_config_problems
 from tests.test_gen_docs import _load_gen_docs
 
 REFUSED = "configuration rejected before anything was started"

@@ -20,14 +20,14 @@ from unittest.mock import patch
 import pytest
 from click.testing import CliRunner, Result
 
-import kstrl.cli_queue as cli_queue_mod
+import kstrl.cli.cli_queue as cli_queue_mod
 import kstrl.queue.workqueue as workqueue_mod
-from kstrl.cli import cli
+from kstrl.cli.cli import cli
 from kstrl.queue.workqueue import Queue
 from kstrl.queue.workqueue_items import ItemState, QueueConfig, QueueItem
 from kstrl.queue.workqueue_store import queue_root
-from kstrl.serve_outcome import RunOutcome
-from kstrl.serve_spend import RunSpend
+from kstrl.serve.serve_outcome import RunOutcome
+from kstrl.serve.serve_spend import RunSpend
 from tests.helpers.procs import kill_group, wait_for_line
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
 
@@ -56,7 +56,7 @@ time.sleep(120)
 
 @pytest.fixture(autouse=True)
 def _no_spend_and_a_named_operator(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("kstrl.serve_spend.read_run_spend", lambda root, run_id: RunSpend())
+    monkeypatch.setattr("kstrl.serve.serve_spend.read_run_spend", lambda root, run_id: RunSpend())
     monkeypatch.setenv("USER", ACTOR)
 
 
@@ -105,7 +105,7 @@ def _serve_once(root: Path) -> list[str]:
         claimed.append(kwargs["spec_path"].parent.name)
         return RunOutcome(returncode=0)
 
-    with patch("kstrl.serve.subprocess_factory_runner", runner):
+    with patch("kstrl.serve.serve.subprocess_factory_runner", runner):
         result = _invoke(["serve", "--once"], root)
     assert result.exit_code == 0, result.output
     return claimed

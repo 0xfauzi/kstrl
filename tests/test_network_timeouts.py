@@ -46,7 +46,7 @@ from tests.helpers.astwalk import (
 #: other guard built on ``tests.helpers.astwalk`` already pins.
 EXPECTED_SEEN: tuple[str, ...] = (
     "architect/linear.py::LinearClient._post urllib.request.urlopen",
-    "signals.py::_fetch_bugsink_text urllib.request.urlopen",
+    "serve/signals.py::_fetch_bugsink_text urllib.request.urlopen",
 )
 
 EXPECTED_UNDECIDED: tuple[str, ...] = ()

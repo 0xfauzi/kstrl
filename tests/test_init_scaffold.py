@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-import kstrl.cli as cli_mod
+import kstrl.cli.cli as cli_mod
 from kstrl.agents.sandbox import SandboxConfig
 from kstrl.knowledge.knowledge_facts import KnowledgeConfig
 from kstrl.learning.evolution_config import EvolutionConfig
@@ -206,9 +206,9 @@ class TestInitScaffold:
         """#452: the scaffold had no [queue], [serve] or [intake_github]
         section. Each line shows the built-in default, so uncommenting
         every one of them changes no value."""
-        from kstrl.intake_gh import GitHubIntakeConfig
         from kstrl.queue.workqueue_items import QueueConfig
-        from kstrl.serve_config import ServeConfig
+        from kstrl.serve.intake_gh import GitHubIntakeConfig
+        from kstrl.serve.serve_config import ServeConfig
 
         (tmp_path / "kstrl.toml").write_text(
             _uncomment_scaffold(DEFAULT_KSTRL_TOML), encoding="utf-8"
@@ -248,7 +248,7 @@ class TestInitScaffold:
     ) -> None:
         """#525: every scaffold key is one a loader reads, so uncommenting
         any of them never meets the entry check's refusal."""
-        from kstrl.config_preflight import collect_config_problems
+        from kstrl.cli.config_preflight import collect_config_problems
 
         for name in [k for k in os.environ if k.startswith("KSTRL_")]:
             monkeypatch.delenv(name)

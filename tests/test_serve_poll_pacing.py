@@ -23,7 +23,7 @@ is the one line in the loop nothing executes. That gap is why this file
 runs a real process.
 
 The second test is the regression test for the documentation defect: the
-doc quotes a spelling out of `kstrl/serve.py`, and a quote nobody checks
+doc quotes a spelling out of `kstrl/serve/serve.py`, and a quote nobody checks
 rots. It is a rename tripwire, nothing more: it cannot tell which of the
 two loop branches the spelling survives in.
 """
@@ -46,7 +46,7 @@ from tests.helpers.procs import run_serve_subprocess
 POLL_SECONDS = 5.0
 
 #: The spelling section 4 of `docs/continuous-intake.md` quotes out of
-#: `kstrl/serve.py`. Both halves are asserted: the source must still
+#: `kstrl/serve/serve.py`. Both halves are asserted: the source must still
 #: spell it, and the doc must still quote it.
 QUOTED_CALL = "sleep(cfg.poll_interval_seconds)"
 
@@ -136,7 +136,7 @@ def test_n_cycles_cost_n_minus_one_polls(
 
 def test_the_doc_quotes_the_poll_sleep_that_is_actually_there() -> None:
     """Section 4 quotes serve.py, so a rename would make the doc false."""
-    source = (REPO_ROOT / "kstrl" / "serve.py").read_text(encoding="utf-8")
+    source = (REPO_ROOT / "kstrl" / "serve/serve.py").read_text(encoding="utf-8")
     doc = (REPO_ROOT / "docs" / "continuous-intake.md").read_text(encoding="utf-8")
-    assert QUOTED_CALL in source, f"kstrl/serve.py no longer spells {QUOTED_CALL!r}"
+    assert QUOTED_CALL in source, f"kstrl/serve/serve.py no longer spells {QUOTED_CALL!r}"
     assert QUOTED_CALL in doc, f"docs/continuous-intake.md no longer quotes {QUOTED_CALL!r}"

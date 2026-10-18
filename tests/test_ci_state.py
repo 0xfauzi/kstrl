@@ -24,10 +24,10 @@ from typing import Any
 import pytest
 from click.testing import CliRunner, Result
 
-from kstrl.ci_state import CI_QUERY, CiState, read_ci_ledger
-from kstrl.cli import cli
+from kstrl.cli.cli import cli
 from kstrl.io.statedir import CONTROL_CI_CHECKS, control_file
 from kstrl.plan.manifest import Component, Manifest
+from kstrl.serve.ci_state import CI_QUERY, CiState, read_ci_ledger
 from tests.helpers.fakegh import put_gh_on_path
 
 FIXTURES = Path(__file__).parent / "fixtures" / "ci"

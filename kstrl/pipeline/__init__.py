@@ -50,7 +50,12 @@ from kstrl.pipeline.launch_record import (
 from kstrl.pipeline.pipeline import ComponentPipeline
 from kstrl.pipeline.pipeline_merge import HITL_REJECT_CHECK, PR_CLOSED_CHECK
 from kstrl.pipeline.pipeline_state import PipelineHooks, iso_now
-from kstrl.pipeline.pr import GH_TIMEOUT, create_prs_in_order, create_single_pr
+from kstrl.pipeline.pr import (
+    GH_TIMEOUT,
+    create_prs_in_order,
+    create_single_pr,
+    is_gh_available,
+)
 from kstrl.pipeline.pr_body import PR_FOOTER_MARKER
 from kstrl.pipeline.release import (
     RELEASE_CONFIG_SECTION,
@@ -92,6 +97,7 @@ __all__ = [
     "create_single_pr",
     "flags_argv",
     "ids_in_status",
+    "is_gh_available",
     "iso_now",
     "launch_record_path",
     "merge_gate_unreachable_warning",
