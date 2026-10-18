@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from kstrl.factory_config import FactoryConfig
+from kstrl.pipeline.factory_config import FactoryConfig
 from kstrl.review.integration_state import state_payload_errors
 from tests.helpers import integration_loop as lp
 

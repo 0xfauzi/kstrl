@@ -74,34 +74,34 @@ BLIND_SITES: tuple[tuple[str, str, str, str], ...] = (
         "censused at their CheckResult call sites",
     ),
     (
-        "kstrl/pipeline_checks.py",
+        "kstrl/pipeline/pipeline_checks.py",
         "MechanicalChecks._phase_verify",
         "signatures_from_verification(verification.checks)",
         "composed at run time from the CheckResult names the gates built; "
         "those names are censused at their CheckResult call sites",
     ),
     (
-        "kstrl/pipeline_attempt.py",
+        "kstrl/pipeline/pipeline_attempt.py",
         "AttemptRecorder._record_failure_signatures",
         "list(signatures)",
         "pass-through: re-emits what fail/retry_or_fail was handed, censused at those call sites",
     ),
     (
-        "kstrl/pipeline_attempt.py",
+        "kstrl/pipeline/pipeline_attempt.py",
         "AttemptRecorder._record_failure_signatures",
         "signature_for_error(phase or 'unknown', error)",
         "the phase= fallback itself; the phase is censused at the "
         "fail/retry_or_fail call sites and 'unknown' is enrolled outright",
     ),
     (
-        "kstrl/pipeline_verdicts.py",
+        "kstrl/pipeline/pipeline_verdicts.py",
         "ReviewVerdicts._review_failure",
         "signatures_from_findings('review', review_result.as_findings())",
         "composed at run time as '<phase>:<Finding.category>'; the phase is "
         "the literal in this call and the category comes from findings.py",
     ),
     (
-        "kstrl/pipeline_transitions.py",
+        "kstrl/pipeline/pipeline_transitions.py",
         "Transitions._route_failure",
         "failure.signatures",
         "pass-through: a PhaseFailure built at one of the sites above. "
@@ -110,13 +110,13 @@ BLIND_SITES: tuple[tuple[str, str, str, str], ...] = (
         "than a set, and collapsing them would hide one of the two",
     ),
     (
-        "kstrl/pipeline_transitions.py",
+        "kstrl/pipeline/pipeline_transitions.py",
         "Transitions._route_failure",
         "failure.signatures",
         "pass-through, the second of the two branches named above",
     ),
     (
-        "kstrl/pipeline_transitions.py",
+        "kstrl/pipeline/pipeline_transitions.py",
         "Transitions._route_failure",
         "failure.phase",
         "pass-through: the phase of a PhaseFailure built elsewhere in this "
@@ -124,20 +124,20 @@ BLIND_SITES: tuple[tuple[str, str, str, str], ...] = (
         "each of those phases is censused where it is written",
     ),
     (
-        "kstrl/pipeline_transitions.py",
+        "kstrl/pipeline/pipeline_transitions.py",
         "Transitions._route_failure",
         "failure.phase",
         "pass-through, the second of the same two branches",
     ),
     (
-        "kstrl/pipeline_security.py",
+        "kstrl/pipeline/pipeline_security.py",
         "SecurityGate._security_failure",
         "signatures_from_findings('security', sec_result.as_findings(), "
         "sec_result.failing_severities)",
         "composed at run time, as _review_failure above",
     ),
     (
-        "kstrl/pipeline_transitions.py",
+        "kstrl/pipeline/pipeline_transitions.py",
         "Transitions.fail",
         "phase",
         "pass-through of its own parameter into _record_failure_signatures; "
@@ -145,21 +145,21 @@ BLIND_SITES: tuple[tuple[str, str, str, str], ...] = (
         "PHASE_FALLBACK_CALL",
     ),
     (
-        "kstrl/pipeline_transitions.py",
+        "kstrl/pipeline/pipeline_transitions.py",
         "Transitions.retry_or_fail",
         "phase",
         "pass-through of its own parameter into _record_failure_signatures; "
         "censused at the retry_or_fail() call sites",
     ),
     (
-        "kstrl/pipeline_transitions.py",
+        "kstrl/pipeline/pipeline_transitions.py",
         "Transitions.retry_or_fail",
         "phase",
         "the second of two, and a different call: the retries-exhausted route "
         "hands the same parameter on to fail(), censused at the same sites",
     ),
     (
-        "kstrl/pipeline_transitions.py",
+        "kstrl/pipeline/pipeline_transitions.py",
         "Transitions.retry_or_fail",
         "signatures",
         "pass-through of its own parameter, censused at its call sites",

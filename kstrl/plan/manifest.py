@@ -25,14 +25,14 @@ from kstrl.plan.names import validate_branch_name, validate_component_id
 #: ``Component.failed_check`` for a component a hard-mode adversarial
 #: phase refused because ``max_adversarial_calls`` was already spent
 #: (R10.5, #226). One constant rather than a literal at each end,
-#: because two modules have to agree on it: ``kstrl/pipeline.py`` writes
+#: because two modules have to agree on it: ``kstrl/pipeline/pipeline.py`` writes
 #: it and ``kstrl/serve.py`` reads it to decide the run is terminal
 #: rather than retryable infrastructure. It lives here, beside the field
 #: that carries it, so neither module has to import the other.
 ADVERSARIAL_BUDGET_CHECK = "adversarial_budget"
 
 #: The inbox dedupe-key prefix of the merge_gate item a merge-gate park
-#: files (#465). Three modules have to agree on it: ``kstrl/pipeline.py``
+#: files (#465). Three modules have to agree on it: ``kstrl/pipeline/pipeline.py``
 #: files the item and later reads its decision, and ``kstrl/cli.py``
 #: recognises a park by it when `ks inbox approve` or `ks inbox reject`
 #: is given one. The other merge_gate item, "merge unconfirmed", is keyed

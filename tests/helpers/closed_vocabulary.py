@@ -34,9 +34,9 @@ from kstrl.acceptance.contract import ContractMode
 from kstrl.architect.linear import _VALID_AUTH_MODES
 from kstrl.config.config import VALID_AGENT_TYPES
 from kstrl.config_preflight import config_sections
-from kstrl.divergence import DivergenceMode
-from kstrl.factory_config import VALID_CLAIM_AGREEMENT
 from kstrl.knowledge.knowledge_facts import _VALID_DEPENDENCY_SCOPES
+from kstrl.pipeline.divergence import DivergenceMode
+from kstrl.pipeline.factory_config import VALID_CLAIM_AGREEMENT
 from kstrl.review.review import ReviewMode
 from kstrl.review.security import VALID_SEVERITIES, SecurityMode
 

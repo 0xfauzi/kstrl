@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from collections.abc import Collection
 
-from kstrl.factory_config import FactoryConfig
-from kstrl.launch_record import run_limits
+from kstrl.pipeline.factory_config import FactoryConfig
+from kstrl.pipeline.launch_record import run_limits
 from kstrl.proc.timeout import TimeoutConfig
 
 

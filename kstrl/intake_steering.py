@@ -127,7 +127,7 @@ def _pr_url(repo: str, number: int) -> str:
     """The PR's URL, constructed rather than fetched.
 
     Byte-identical to what `gh pr create` prints on stdout (which is what
-    `kstrl/pr.py` records as `Component.pr_url`) and to
+    `kstrl/pipeline/pr.py` records as `Component.pr_url`) and to
     `gh pr list --json url`; both measured. Requesting a third `--json`
     field would make `url` a required field of every PR row and would
     break ten fixtures in `tests/test_open_pr_counter.py` to obtain a

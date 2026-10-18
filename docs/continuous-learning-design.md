@@ -94,7 +94,7 @@ proposal. There is no acceptance number and no attribution.
 The per-component knowledge layer is a real closed loop inside one project.
 `distill_facts` writes facts, `build_knowledge_context` injects them into the
 next component's prompt, and `measure_fact_utilization` reports an honest lower
-bound on uptake. It is wired into `kstrl/pipeline.py` and `kstrl/factory.py`.
+bound on uptake. It is wired into `kstrl/pipeline/pipeline.py` and `kstrl/factory/factory.py`.
 This design keeps it and extends it.
 
 ## 2. Decision
@@ -199,7 +199,7 @@ radii. This design commits to rungs 1 through 4 and excludes rung 5.
 | Rung | What changes | Reversal | Human gate |
 |---|---|---|---|
 | 1. Memory | Facts, playbook bullets, journal rows accumulate | Delete the row | No |
-| 2. Context | The assembled prompt, at `kstrl/factory.py:4029` | Delete the store | No |
+| 2. Context | The assembled prompt, at `kstrl/factory/factory.py:4029` | Delete the store | No |
 | 3. Project instructions | `CLAUDE.md`, `kstrl.toml` | `git revert` | Yes |
 | 4. Role instructions | `*_PROMPT` constants in kstrl's source | `git revert` plus version bump | Yes, plus calibration |
 | 5. Harness logic | `kstrl/*.py` | n/a | Out of scope |
@@ -414,7 +414,7 @@ Each row is a measured fact, not work still to do. Since it was measured, #509 b
 | | | | The store is an argument, not a subsystem: `read_facts(knowledge_root, ...)` and `write_facts(..., knowledge_root, ...)` already take the root as a parameter (`kstrl/knowledge/knowledge.py:390`, `:457`); the silo is only the default on `KnowledgeConfig.knowledge_root` (`:72`). |
 | | | | Before anything writes to a store shared across repositories, invert `category_for_check`'s default: an unenrolled check name must be "not a lesson", not `"iteration"`. Measured on 2026-09-22: `category_for_check("zzz-never-enrolled") == "iteration"`. Done in #496: it returns `"unenrolled"`, which `route_patterns` sends to `unrouted`. |
 | Injection and attribution | `get_fact_utilization()["runs_with_referenced"] >= 2` on real runs | 0, with 8 of 8 components unmeasured | Each run pins the revision it read: the byte offset and SHA-256 of the store prefix, plus the ids it injected, into that run's own record, so attribution joins on an id in the record rather than on the store as it now stands. This is the #260 join-by-id rule applied across repositories instead of across phases. |
-| | | | Open question the owner must answer, which no later measurement can settle: `knowledge_prefix` is FIRST in the `parts` literal at `kstrl/factory.py:2323-2334`, so a cross-project bullet would land before the operator's own standing corrections. That order was chosen for component facts ("memory is last on purpose", #230), not for cross-project rules. |
+| | | | Open question the owner must answer, which no later measurement can settle: `knowledge_prefix` is FIRST in the `parts` literal at `kstrl/factory/factory.py:2323-2334`, so a cross-project bullet would land before the operator's own standing corrections. That order was chosen for component facts ("memory is last on purpose", #230), not for cross-project rules. |
 | | | | A recurrence count alone is still not a measurement. `recurrence_after_injection` is computed only over runs where the bullet WAS injected and has no counterfactual, so a bullet whose target signature is rare reads as healthy forever. A withheld-control design would fix that; no power calculation exists for it and the corpus (5 runs, 0 recurrences) cannot supply one. |
 | Demotion and retirement | a measured pre-injection base rate exists for at least one signature | undefined; no signature recurs | |
 | GEPA over the prompts | owner authorises a calibration capture (H2), and section 7's two open numbers are measured | not authorised | |

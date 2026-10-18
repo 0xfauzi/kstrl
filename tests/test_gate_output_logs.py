@@ -24,9 +24,9 @@ from typing import Any
 import pytest
 
 from kstrl.events.events import JsonlSink
-from kstrl.factory_result import ComponentResult
-from kstrl.pipeline import ComponentPipeline
-from kstrl.pipeline_checks import VerifyPhaseResult
+from kstrl.pipeline.factory_result import ComponentResult
+from kstrl.pipeline.pipeline import ComponentPipeline
+from kstrl.pipeline.pipeline_checks import VerifyPhaseResult
 from kstrl.plan.manifest import Component
 from kstrl.ui.plain import PlainUI
 from kstrl.verify.verify import run_mechanical_verification
@@ -311,7 +311,7 @@ def test_an_error_that_is_not_an_os_error_is_not_swallowed(
     def broken_write(target: Path, content: str) -> None:
         raise RuntimeError("kstrl462 not an OSError")
 
-    monkeypatch.setattr("kstrl.pipeline_checks.atomic_write_text", broken_write)
+    monkeypatch.setattr("kstrl.pipeline.pipeline_checks.atomic_write_text", broken_write)
     with pytest.raises(RuntimeError, match="kstrl462 not an OSError"):
         run.phase_1()
 

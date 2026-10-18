@@ -44,9 +44,10 @@ from __future__ import annotations
 
 from types import ModuleType
 
-from kstrl import context, factory_worker
+from kstrl.factory import factory_worker
 from kstrl.knowledge import knowledge
 from kstrl.loop import iteration_prompt
+from kstrl.pipeline import context
 from kstrl.project import init_cmd
 from kstrl.review import review_claims
 from kstrl.verify import verify, verify_diff

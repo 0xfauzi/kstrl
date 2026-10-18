@@ -76,7 +76,7 @@ if TYPE_CHECKING:
     from kstrl.plan import Component
 
 #: The phase name of the operator's acceptance checks (#700 slice 6). It lives
-#: here because ``kstrl.context`` ranks it and imports it from this module.
+#: here because ``kstrl.pipeline.context`` ranks it and imports it from this module.
 ACCEPTANCE_PHASE = "acceptance"
 
 #: Bumped when the key's fields change. A stored key made under another

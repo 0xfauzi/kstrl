@@ -35,13 +35,13 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
-from kstrl import factory
 from kstrl.config.config import KstrlConfig
 from kstrl.events import event_catalog
 from kstrl.events import events as ev
-from kstrl.factory import run_factory
-from kstrl.factory_config import FactoryConfig
-from kstrl.factory_result import ComponentResult, FactoryResult
+from kstrl.factory import factory
+from kstrl.factory.factory import run_factory
+from kstrl.pipeline.factory_config import FactoryConfig
+from kstrl.pipeline.factory_result import ComponentResult, FactoryResult
 from kstrl.plan.manifest import Component, ComponentStatus, Manifest
 from kstrl.ui.plain import PlainUI
 from kstrl.verify.verify_diff import SCOPE_UNREADABLE_CHECK
@@ -169,9 +169,9 @@ def _run_with_comp_a_reset_after_preflight(
         return ComponentResult(component_id, success=True, iterations=1)
 
     with (
-        patch("kstrl.factory._run_preflights", side_effect=_preflights),
-        patch("kstrl.factory._setup_worktree", side_effect=_setup),
-        patch("kstrl.factory._run_component", side_effect=_worker),
+        patch("kstrl.factory.factory._run_preflights", side_effect=_preflights),
+        patch("kstrl.factory.factory._setup_worktree", side_effect=_setup),
+        patch("kstrl.factory.factory._run_component", side_effect=_worker),
         patch("kstrl.git.git_diff.get_diff_content", return_value=""),
     ):
         return run_factory(

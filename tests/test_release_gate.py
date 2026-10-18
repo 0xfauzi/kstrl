@@ -1,8 +1,8 @@
 """The [release] gate's containment guards (R8.7 slice 1, #154).
 
-Slice 1 has no driver: nothing reachable from ``kstrl/release.py`` starts a
+Slice 1 has no driver: nothing reachable from ``kstrl/pipeline/release.py`` starts a
 process or reads an environment variable, which is the whole containment
-claim of ``kstrl/release.py``'s module docstring. T11 runs the module's
+claim of ``kstrl/pipeline/release.py``'s module docstring. T11 runs the module's
 import CLOSURE against the ``EXPECTED_PROCESS_MODULES`` census
 ``tests/test_process_lifecycle.py`` owns, T12 runs ``ReleaseConfig.load``
 under an environment that raises on every read, and a third test proves the
@@ -25,7 +25,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import patch
 
-from kstrl import release
+from kstrl.pipeline import release
 from tests.helpers.astwalk import KSTRL_PACKAGE, defining_origin
 from tests.test_process_lifecycle import EXPECTED_PROCESS_MODULES
 
@@ -85,7 +85,7 @@ def _reachable_process_modules(root_module: str) -> set[str]:
     """Every ``kstrl.*`` module reachable from ``root_module`` that is a
     key of ``EXPECTED_PROCESS_MODULES`` (#154 fix round, A2, T11).
 
-    The root module (``kstrl.release`` itself) is walked WHOLE, deferred
+    The root module (``kstrl.pipeline.release`` itself) is walked WHOLE, deferred
     imports included: an import anywhere in this file, even inside a
     method, is this file reaching for it, and the plant that defeated
     the old per-file spelling check (``from kstrl.verify.verify import
@@ -168,7 +168,7 @@ class TestReleaseModuleContainment:
     def test_the_release_module_reaches_no_spawning_module(self) -> None:
         """T11 (#154 fix round, A2). Replaces a per-file spelling walk,
         which a plant defeated: ``from kstrl.verify.verify import
-        run_scrubbed`` inside ``kstrl/release.py`` spells no process
+        run_scrubbed`` inside ``kstrl/pipeline/release.py`` spells no process
         primitive ITSELF, so the old check
         (``process_primitive_spellings``) cleared it. This runs the
         import CLOSURE instead (see :func:`_reachable_process_modules`)
@@ -176,7 +176,7 @@ class TestReleaseModuleContainment:
         so a spawn reached through any kstrl module - not only one
         spelled directly in this file - is caught.
         """
-        spawning = _reachable_process_modules("kstrl.release")
+        spawning = _reachable_process_modules("kstrl.pipeline.release")
         assert spawning == set(), (
             f"kstrl.release reaches {sorted(spawning)}, which spell a process "
             "primitive (EXPECTED_PROCESS_MODULES). Slice 1 has no driver; the "
@@ -188,13 +188,13 @@ class TestReleaseModuleContainment:
         """Without this the test above could be passing because the walk
         is vacuously empty (#324's own recorded failure mode), not
         because release.py is actually clean."""
-        source = KSTRL_PACKAGE / "release.py"
+        source = KSTRL_PACKAGE / "pipeline/release.py"
         assert "kstrl.plan.manifest" in _kstrl_imports(source, top_level_only=False)
         # release.py imports the config package interface (#863 M1). The
         # walk goes to the modules that hold the names. If it stops at the
         # package, it is blind.
         assert "kstrl.config.config" in _kstrl_imports(source, top_level_only=False)
-        assert "kstrl.config.config_toml" in _import_closure("kstrl.release")
+        assert "kstrl.config.config_toml" in _import_closure("kstrl.pipeline.release")
 
     def test_the_release_module_reads_no_environment_variable(self, tmp_path: Path) -> None:
         """T12 (#154 fix round, A2). Behavioural rather than textual: the

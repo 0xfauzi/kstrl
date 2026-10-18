@@ -12,8 +12,8 @@ pins the number of call sites it found beside it: ``assert offenders ==
 []`` alone passes both when the module is clean and when the walk has
 been switched off, which is the same shape as the defect.
 
-``kstrl/pipeline.py`` is the module whose count is zero, so it cannot be
-its own control; ``kstrl/factory.py`` and ``kstrl/serve.py`` are walked
+``kstrl/pipeline/pipeline.py`` is the module whose count is zero, so it cannot be
+its own control; ``kstrl/factory/factory.py`` and ``kstrl/serve.py`` are walked
 in the same call and their counts are not zero.
 
 Out of scope by construction, and stated rather than left implicit:
@@ -32,8 +32,8 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import runenvelope
 from kstrl.config_preflight import config_sections
+from kstrl.pipeline import runenvelope
 from tests.helpers import astwalk, configwalk
 from tests.helpers.astwalk import KSTRL_PACKAGE, package_sources
 
@@ -203,7 +203,7 @@ EXPECTED_FREE_READERS = frozenset(
     }
 )
 
-#: ``kstrl/factory*.py`` resolves run-level config in exactly six scopes (#776 B3F4).
+#: ``kstrl/factory/factory*.py`` resolves run-level config in exactly six scopes (#776 B3F4).
 #: ``_submit_args`` and every other per-component scope must not appear:
 #: the scheduler calls them once per component attempt, which is the
 #: same divergence the pipeline half is about. Nested scopes qualify
@@ -217,25 +217,25 @@ EXPECTED_FACTORY_SCOPES = frozenset(
 #: ``RunEnvelope.resolve`` in ``_resolve_envelope``, the run's one envelope resolution.
 EXPECTED_FACTORY_SITES = 8
 #: Where those sites sit. ``_open_health_breach_items`` moved to
-#: ``kstrl/factory_autonomy.py`` (#776), so layer B walks every
+#: ``kstrl/factory/factory_autonomy.py`` (#776), so layer B walks every
 #: ``factory*.py`` under the one factory case. A glob and not a list, so a
 #: config read planted in a module divided out of ``factory.py`` is seen.
 #: The glob is recursive and the key is the path relative to ``kstrl/``,
 #: because #863 M2 moved ``factory_lock.py`` into ``kstrl/proc/``.
 EXPECTED_FACTORY_SITES_BY_FILE = {
-    "factory.py": 0,
-    "factory_acceptance.py": 0,
-    "factory_agents.py": 0,
-    "factory_autonomy.py": 1,
-    "factory_config.py": 0,
-    "factory_launch.py": 0,
+    "factory/factory.py": 0,
+    "factory/factory_acceptance.py": 0,
+    "pipeline/factory_agents.py": 0,
+    "factory/factory_autonomy.py": 1,
+    "pipeline/factory_config.py": 0,
+    "factory/factory_launch.py": 0,
     "proc/factory_lock.py": 0,
-    "factory_preflight.py": 0,
-    "factory_result.py": 0,
-    "factory_run.py": 6,
-    "factory_summary.py": 1,
-    "factory_worker.py": 0,
-    "factory_worktrees.py": 0,
+    "factory/factory_preflight.py": 0,
+    "pipeline/factory_result.py": 0,
+    "factory/factory_run.py": 6,
+    "factory/factory_summary.py": 1,
+    "factory/factory_worker.py": 0,
+    "factory/factory_worktrees.py": 0,
 }
 FACTORY_MODULES = tuple(
     path.relative_to(KSTRL_PACKAGE).as_posix()
@@ -308,7 +308,7 @@ class ComponentPipeline:
         return PolicyConfig.load(self.root_dir)
 """
 
-#: The one fallback ``kstrl/pipeline_state.py``'s constructor forbids in its
+#: The one fallback ``kstrl/pipeline/pipeline_state.py``'s constructor forbids in its
 #: own words, spelled exactly as the comment there spells it. Round 2 of
 #: #192 shipped a walk that could not see it: layer A enrolled a class
 #: only when one of its own methods called a parse primitive by bare
@@ -322,7 +322,7 @@ _FALLBACK = "        run_envelope = run_envelope or RunEnvelope.load(root_dir)\n
 
 
 def _pipeline_with_the_forbidden_fallback(tmp_path: Path) -> Path:
-    """A copy of the real ``kstrl/pipeline_state.py`` with the fallback back in.
+    """A copy of the real ``kstrl/pipeline/pipeline_state.py`` with the fallback back in.
 
     The positive control for ``sites == []``. An empty offender list is
     what a clean module returns AND what a walk that stopped looking
@@ -335,11 +335,11 @@ def _pipeline_with_the_forbidden_fallback(tmp_path: Path) -> Path:
     a rename that makes the plant apply to nothing is a failure rather
     than a control that silently stops planting (#344).
     """
-    source = (KSTRL_PACKAGE / "pipeline_state.py").read_text(encoding="utf-8")
+    source = (KSTRL_PACKAGE / "pipeline/pipeline_state.py").read_text(encoding="utf-8")
     for anchor in (_REQUIRED_ENVELOPE, _FALLBACK_ANCHOR):
         assert source.count(anchor) == 1, (
             f"the plant's anchor {anchor!r} occurs {source.count(anchor)} times "
-            "in kstrl/pipeline_state.py, so this control is not planting what it "
+            "in kstrl/pipeline/pipeline_state.py, so this control is not planting what it "
             "says it plants. Retarget it; do not delete it."
         )
     planted = tmp_path / "pipeline_state.py"
@@ -572,22 +572,22 @@ class TestTheRunReadsConfigOnlyBeforeItStarts:
         found = package_surface
         control = configwalk.read_sites(_pipeline_with_the_forbidden_fallback(tmp_path), found)
         assert control != [], (
-            "the walk reports nothing on a copy of kstrl/pipeline_state.py with "
+            "the walk reports nothing on a copy of kstrl/pipeline/pipeline_state.py with "
             "`run_envelope = run_envelope or RunEnvelope.load(root_dir)` "
             "planted in the constructor, which is the one fallback that "
             "file forbids by name. The assertion below therefore proves "
             "nothing: a walk that cannot see the offender returns the "
             "same empty list a clean module returns."
         )
-        modules = sorted(KSTRL_PACKAGE.glob("pipeline*.py"))
+        modules = sorted((KSTRL_PACKAGE / "pipeline").glob("pipeline*.py"))
         assert {"pipeline.py", "pipeline_state.py"} <= {module.name for module in modules}, (
-            "the glob kstrl/pipeline*.py does not find the pipeline files, so "
+            "the glob kstrl/pipeline/pipeline*.py does not find the pipeline files, so "
             "the empty offender list below is the result of a walk that read "
             f"nothing. Found: {[module.name for module in modules]}"
         )
         sites = [site for module in modules for site in configwalk.read_sites(module, found)]
         assert sites == [], (
-            "a kstrl/pipeline*.py file resolves config. Its phases run per "
+            "a kstrl/pipeline/pipeline*.py file resolves config. Its phases run per "
             "component attempt, so a read there is a second answer the "
             "run's recorded policy hash does not cover, and a read in "
             "__init__ raises where nothing can report it (#192). The "
@@ -604,7 +604,7 @@ class TestTheRunReadsConfigOnlyBeforeItStarts:
         ``TestRunEnvelope`` drives it instead.
         """
         found = package_surface
-        sites = configwalk.read_sites(KSTRL_PACKAGE / "runenvelope.py", found)
+        sites = configwalk.read_sites(KSTRL_PACKAGE / "pipeline/runenvelope.py", found)
         named = {site.target for site in sites if site.scope == "RunEnvelope.resolve"}
         assert named == EXPECTED_ENVELOPE_SECTIONS, (
             "the run envelope's sections moved. A section that leaves it "
@@ -632,7 +632,7 @@ class TestTheRunReadsConfigOnlyBeforeItStarts:
         """The half the pipeline scoping cannot see.
 
         ``_submit_args`` and ``_run_component`` run once per component
-        attempt inside ``kstrl/factory.py``, and a ``PolicyConfig.load``
+        attempt inside ``kstrl/factory/factory.py``, and a ``PolicyConfig.load``
         planted at the top of ``_submit_args`` passed this whole file
         before layer B walked factory.py.
         """
@@ -644,14 +644,14 @@ class TestTheRunReadsConfigOnlyBeforeItStarts:
         ]
         offenders = [site for site in sites if site.scope not in EXPECTED_FACTORY_SCOPES]
         assert offenders == [], (
-            "the kstrl/factory*.py modules resolve config outside their run-level "
+            "the kstrl/factory/factory*.py modules resolve config outside their run-level "
             f"scopes {sorted(EXPECTED_FACTORY_SCOPES)}. Offenders: {offenders}"
         )
 
     @pytest.mark.parametrize(
         ("module", "expected"),
         [
-            ("factory.py", EXPECTED_FACTORY_SITES),
+            ("factory/factory.py", EXPECTED_FACTORY_SITES),
             ("serve.py", EXPECTED_SERVE_SITES),
         ],
     )
@@ -671,7 +671,7 @@ class TestTheRunReadsConfigOnlyBeforeItStarts:
             sorted(KSTRL_PACKAGE.glob("serve*.py"))
             if module == "serve.py"
             else [KSTRL_PACKAGE / name for name in FACTORY_MODULES]
-            if module == "factory.py"
+            if module == "factory/factory.py"
             else [KSTRL_PACKAGE / module]
         )
         sites = [site for path in paths for site in configwalk.read_sites(path, found)]
@@ -680,7 +680,7 @@ class TestTheRunReadsConfigOnlyBeforeItStarts:
             assert by_file == EXPECTED_SERVE_SITES_BY_FILE, (
                 f"the config reads of the serve modules moved between files. Found {by_file}"
             )
-        if module == "factory.py":
+        if module == "factory/factory.py":
             by_file = {
                 path.relative_to(KSTRL_PACKAGE).as_posix(): len(configwalk.read_sites(path, found))
                 for path in paths

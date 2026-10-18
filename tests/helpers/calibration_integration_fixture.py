@@ -4,7 +4,7 @@ A fixture is a ``<stem>.meta.json`` plus a ``<stem>_repo/`` directory holding
 two trees: ``base/`` is the repository at the feature base, and ``feature/``
 is laid over it as the feature's one commit. A run materialises that as a
 real git repository, reviews it through
-:func:`kstrl.integration_phase.review_commit` (the call the factory makes)
+:func:`kstrl.factory.integration_phase.review_commit` (the call the factory makes)
 and reads the result with :func:`kstrl.review.integration.integration_outcome` (the
 only place the design 3.3 rules are written). So the number a calibration
 run records is the factory's reading of the reviewer, not a second reading
@@ -32,8 +32,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from kstrl.factory.integration_phase import review_commit
 from kstrl.git import git_tree
-from kstrl.integration_phase import review_commit
 from kstrl.proc.proc import TIMEOUT_MESSAGE_PREFIX
 from kstrl.review.integration import (
     ExpectedStory,

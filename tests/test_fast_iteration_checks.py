@@ -23,8 +23,8 @@ from kstrl.cli import cli
 from kstrl.config.config import KstrlConfig
 from kstrl.events.event_catalog import IterationCompleted
 from kstrl.events.events import EventBus, JsonlSink, read_events
-from kstrl.factory_worker import _run_component
-from kstrl.factory_worktrees import _setup_worktree
+from kstrl.factory.factory_worker import _run_component
+from kstrl.factory.factory_worktrees import _setup_worktree
 from kstrl.loop.breaker import BreakerConfig
 from kstrl.loop.loop import COMPLETION_MARKER, run_loop
 from kstrl.proc.proc import TIMEOUT_MESSAGE_PREFIX

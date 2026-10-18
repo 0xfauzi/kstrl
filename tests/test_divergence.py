@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.divergence import DivergenceConfig
+from kstrl.pipeline.divergence import DivergenceConfig
 
 
 class TestConfig:

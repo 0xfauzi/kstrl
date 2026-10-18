@@ -266,7 +266,7 @@ def _spells_a_prompt_name(node: ast.AST) -> bool:
 #: not a prompt body. ``git.py`` at four is two declarations and two
 #: uses.
 EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
-    "acceptance_design.py": 2,
+    "factory/acceptance_design.py": 2,
     "cli_seam.py": 2,  # _ROOT_FROM_PROMPT, which is a set of command names
     # #332 landed while this migration was in flight: the version
     # constant and the body of DECISIONS_CONTEXT_PROMPT, both enrolled.
@@ -277,11 +277,11 @@ EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
     # #303: 0 pre-existing + 7 new fragments x 2 spellings each (the
     # declaration and its one use site) = 14. The version constant adds
     # nothing: the walk keys on names ending in _PROMPT, not _VERSION.
-    "context.py": 16,
+    "pipeline/context.py": 16,
     # #303: 0 pre-existing + 1 new fragment x 2 spellings each (the
     # declaration and its one use site) = 2. The version constant adds
     # nothing: the walk keys on names ending in _PROMPT, not _VERSION.
-    "factory_worker.py": 2,
+    "factory/factory_worker.py": 2,
     # #428: 0 pre-existing + 6 notice constants x 2 spellings each (the
     # declaration and its one use site) = 12. The version constant adds
     # nothing: the walk keys on names ending in _PROMPT, not _VERSION.

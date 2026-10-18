@@ -1,6 +1,6 @@
 """Widget 6 of docs/lessons/pr-221.html: what happens when the review budget runs out.
 
-Old rule: kstrl/pipeline.py:2465-2478. In hard mode with an unchunked review and
+Old rule: kstrl/pipeline/pipeline.py:2465-2478. In hard mode with an unchunked review and
 an exhausted ``max_adversarial_calls``, review_mode is downgraded to SKIP and the
 component proceeds on mechanical checks alone. New rule: issue #226 (R10.5),
 section 5.9 of the design. Hard mode fails closed with an infrastructure_error

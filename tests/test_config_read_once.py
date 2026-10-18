@@ -28,7 +28,7 @@ from pathlib import Path
 import pytest
 
 from kstrl.learning.autonomy import AutonomyState
-from kstrl.runenvelope import RunEnvelope
+from kstrl.pipeline.runenvelope import RunEnvelope
 from kstrl.verify.policy import PolicyConfig
 from tests.helpers.run_config import AFTER, BEFORE, MALFORMED, count_toml_parses, edit
 from tests.helpers.verify_phase import component, phase_verify_envelopes

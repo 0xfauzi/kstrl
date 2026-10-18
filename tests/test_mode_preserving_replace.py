@@ -101,6 +101,8 @@ EXPECTED_UNDECIDED_REPLACE_CALLS: tuple[str, ...] = (
     "architect/spec_issues.py comp_id.replace('-', ' ').replace",
     "doctor.py now.isoformat().replace",
     "events/observability.py datetime.strptime(ts, '%Y-%m-%dT%H:%M:%SZ').replace",
+    # #526: `retry_plan._opt` spells a run limit as an option name, a str.replace.
+    "factory/retry_plan.py name.replace",
     "io/statedir.py datetime.now(UTC).replace",
     "io/statedir.py datetime.now(UTC).replace(microsecond=0).isoformat().replace",
     # #696: init_cmd.kstrl_toml_for, which seeded a detected toolchain's
@@ -113,8 +115,6 @@ EXPECTED_UNDECIDED_REPLACE_CALLS: tuple[str, ...] = (
     "proc/scrubbed_run.py text.replace",
     "proc/scrubbed_run.py text.replace('\\r\\n', '\\n').replace",
     "queue/workqueue_items.py parsed.replace",
-    # #526: `retry_plan._opt` spells a run limit as an option name, a str.replace.
-    "retry_plan.py name.replace",
     "serve_spend.py (local + timedelta(days=1)).replace",
     "verify/baseline_report.py ' '.join(text.split()).replace",
 )

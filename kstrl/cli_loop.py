@@ -26,7 +26,6 @@ from kstrl.cli_preflight import (
     _check_prompt_preflight,
 )
 from kstrl.cli_seam import _console_ui, _resolve_path, _resolve_root, _use_cli_value, cli
-from kstrl.commandrun import CommandRun, open_command_run
 from kstrl.config import LIMIT_FLOAT, LIMIT_INT, KstrlConfig, parse_paths, resolve_config_file
 from kstrl.config_report import UI_MODES
 from kstrl.config_report import normalize_ui_mode as _normalize_ui_mode
@@ -41,10 +40,10 @@ from kstrl.events import (
     RunPlan,
     RunStarted,
 )
-from kstrl.factory import run_factory
-from kstrl.factory_config import FactoryConfig
+from kstrl.factory import CommandRun, open_command_run, run_factory
 from kstrl.git import detect_base_branch
 from kstrl.loop import BreakerConfig, run_loop
+from kstrl.pipeline import FactoryConfig
 from kstrl.plan import PRD
 from kstrl.proc import StopController, TimeoutConfig, install_signal_handlers
 from kstrl.project import run_init

@@ -365,7 +365,10 @@ FINDING_EXIT_SITES: dict[tuple[str, str], int] = {
     ("cli_learning.py", "recheck_cmd"): 1,  # a verdict the recheck disagrees with
     ("cli_serve.py", "serve"): 1,  # work is waiting on a human
     ("doctor.py", "exit_code_for"): 1,  # `ks doctor`: not ready is a finding
-    ("factory_result.py", "resolve_exit_code"): 5,  # a failed, unmerged, parked or unscheduled run
+    (
+        "pipeline/factory_result.py",
+        "resolve_exit_code",
+    ): 5,  # a failed, unmerged, parked or unscheduled run
     ("project/init_cmd.py", "run_init"): 2,  # `ks init`: the PRD it validated is invalid
     ("loop/loop.py", "_breaker_verdict"): 1,  # an iteration ran and the breaker ended the loop
     ("loop/loop.py", "_budget_verdict"): 1,  # an iteration ran and the budget ended the loop
@@ -375,7 +378,7 @@ FINDING_EXIT_SITES: dict[tuple[str, str], int] = {
         "loop/loop.py",
         "_wall_clock_verdict",
     ): 1,  # an iteration ran and the wall clock ended the loop
-    ("plan_gate.py", "_park_plan"): 1,  # an L1 plan parked for approval, nothing run (#602)
+    ("factory/plan_gate.py", "_park_plan"): 1,  # an L1 plan parked for approval, nothing run (#602)
 }
 
 #: Callee names the census does not follow, and why. Following one would
@@ -416,7 +419,7 @@ EXIT_CODE_FUNCTIONS: frozenset[str] = frozenset(
 UNRESOLVED_EXIT_VALUES: dict[tuple[str, str], int] = {
     # #602: the preflights' bound decision register, returned when the run goes on.
     # It never becomes an exit code: the caller exits only on an int.
-    ("factory_acceptance.py", "_plan_gated"): 1,
+    ("factory/factory_acceptance.py", "_plan_gated"): 1,
     # #642 slice 5: the leash's own status, read from `agent.wait()`, a
     # real subprocess exit status the walk cannot resolve to a literal.
     ("proc/leash.py", "_follow"): 1,

@@ -519,7 +519,7 @@ def test_the_protocol_says_exactly_what_the_function_says() -> None:
     field-by-field checks it replaces, which let a Protocol saying
     ``autonomy_level: int = 1`` through against a function saying 0.
 
-    Most drift is caught before this runs: ``kstrl/factory.py`` binds
+    Most drift is caught before this runs: ``kstrl/factory/factory.py`` binds
     the real function to the Protocol-typed field, so a Protocol with a
     wrong annotation, a missing default or a wrong return type is a
     ``mypy --strict`` error in CI. Measured on this branch, widening

@@ -79,9 +79,9 @@ EXPECTED_FLAG_SPELLINGS = {
     "learning/autonomy_config.py": 5,
     "cli_factory.py": 7,
     "config_report.py": 1,
-    "factory_autonomy.py": 5,
-    "factory_config.py": 11,
-    "pipeline_delivery.py": 1,
+    "factory/factory_autonomy.py": 5,
+    "pipeline/factory_config.py": 11,
+    "pipeline/pipeline_delivery.py": 1,
     "serve.py": 6,
     "serve_merge_gate.py": 14,
     "serve_outcome.py": 1,
@@ -100,8 +100,8 @@ EXPECTED_FLAG_SPELLINGS = {
 #:   which reads provenance and must never add it.
 EXPECTED_FLAG_WRITES = {
     "cli_factory.py::factory": 1,
-    "factory_autonomy.py::_report_ladder": 1,
-    "factory_config.py::FactoryConfig.load": 2,
+    "factory/factory_autonomy.py::_report_ladder": 1,
+    "pipeline/factory_config.py::FactoryConfig.load": 2,
 }
 
 

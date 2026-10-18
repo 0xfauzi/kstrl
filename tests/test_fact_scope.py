@@ -19,11 +19,9 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
-from kstrl import factory_worker
 from kstrl.config.config import KstrlConfig
-from kstrl.factory import run_factory
-from kstrl.factory_config import FactoryConfig
-from kstrl.factory_result import ComponentResult
+from kstrl.factory import factory_worker
+from kstrl.factory.factory import run_factory
 from kstrl.knowledge.knowledge import (
     TIER_CORE,
     TIER_DEPENDENCY,
@@ -32,6 +30,8 @@ from kstrl.knowledge.knowledge import (
     build_knowledge_context,
 )
 from kstrl.knowledge.knowledge_facts import Fact, KnowledgeConfig, write_facts
+from kstrl.pipeline.factory_config import FactoryConfig
+from kstrl.pipeline.factory_result import ComponentResult
 from kstrl.plan.manifest import Component, Manifest
 from kstrl.ui.plain import PlainUI
 from kstrl.verify.verify_model import VerifyConfig
@@ -342,9 +342,9 @@ def _run_factory_capturing(
         ),
     )
     with (
-        patch("kstrl.factory._run_component", side_effect=capture),
+        patch("kstrl.factory.factory._run_component", side_effect=capture),
         patch("kstrl.git.git_diff.get_diff_content", return_value=""),
-        patch("kstrl.factory.distill_facts", return_value=(0, "none", False)),
+        patch("kstrl.factory.factory.distill_facts", return_value=(0, "none", False)),
     ):
         run_factory(_manifest(*components), factory_config, base, PlainUI(no_color=True), root)
     missing = [comp.id for comp in components if comp.id not in seen]

@@ -33,9 +33,9 @@ from kstrl.acceptance.contract import (
     run_tier_check,
 )
 from kstrl.config.config import KstrlConfig
-from kstrl.factory import run_factory
-from kstrl.factory_config import FactoryConfig
+from kstrl.factory.factory import run_factory
 from kstrl.git import git_base
+from kstrl.pipeline.factory_config import FactoryConfig
 from kstrl.plan.manifest import Component, ComponentStatus, Manifest
 from kstrl.proc import temp_worktree
 from kstrl.proc.temp_worktree import ContractCleanupError
@@ -658,7 +658,7 @@ class TestCleanupFailsLoudly:
         )
 
         with patch(
-            "kstrl.factory_acceptance.run_contract_testing",
+            "kstrl.factory.factory_acceptance.run_contract_testing",
             side_effect=ContractCleanupError("worktree survived removal"),
         ):
             result = run_factory(

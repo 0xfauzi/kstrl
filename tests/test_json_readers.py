@@ -83,7 +83,7 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     "acceptance/acceptance.py": 3,
     # #700 slice 7: the import and one json.dumps (the designed plan and its
     # designer.json). It reads no JSON: the reply goes through extract_json.
-    "acceptance_design.py": 2,
+    "factory/acceptance_design.py": 2,
     "agents/agent_output.py": 4,
     # #598: was 4 (import, one json.dumps in _format_tool_use, two
     # json.JSONDecodeError catches - _extract_result_text and
@@ -114,7 +114,7 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     "cli_check.py": 5,
     "cli_inbox.py": 1,
     "cli_preflight.py": 2,
-    "context.py": 2,
+    "pipeline/context.py": 2,
     "verify/baseline.py": 2,
     "events/event_catalog.py": 2,
     "learning/evolution.py": 2,
@@ -136,7 +136,7 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     "events/observability.py": 4,
     # #602: the import and one json.dumps, the plan digest's canonical
     # form. No parse: the PRDs are read through PRD.load.
-    "plan_gate.py": 2,
+    "factory/plan_gate.py": 2,
     "verify/policy.py": 2,
     "plan/prd.py": 2,
     # #700: one more json.dumps, the codex writable_roots override. No parse.

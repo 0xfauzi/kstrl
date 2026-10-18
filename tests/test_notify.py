@@ -29,9 +29,9 @@ from kstrl.events.observability import (
     latest_run_id,
     read_progress_events,
 )
-from kstrl.factory import run_factory
-from kstrl.factory_config import FactoryConfig
-from kstrl.factory_result import ComponentResult
+from kstrl.factory.factory import run_factory
+from kstrl.pipeline.factory_config import FactoryConfig
+from kstrl.pipeline.factory_result import ComponentResult
 from kstrl.plan.manifest import Component, ComponentStatus, Manifest
 from kstrl.review.security import SecurityConfig
 from kstrl.ui.plain import PlainUI
@@ -357,7 +357,7 @@ class TestFactoryFiresHooks:
         ) -> ComponentResult:
             return ComponentResult(component_id, success=False, error="boom")
 
-        with patch("kstrl.factory._run_component", side_effect=fake_run):
+        with patch("kstrl.factory.factory._run_component", side_effect=fake_run):
             result = run_factory(
                 _two_component_manifest(),
                 config,
@@ -396,7 +396,7 @@ class TestFactoryFiresHooks:
         ) -> ComponentResult:
             return ComponentResult(component_id, success=False, error="boom")
 
-        with patch("kstrl.factory._run_component", side_effect=fake_run):
+        with patch("kstrl.factory.factory._run_component", side_effect=fake_run):
             run_factory(
                 _two_component_manifest(),
                 config,
@@ -433,7 +433,7 @@ class TestFactoryFiresHooks:
         ) -> ComponentResult:
             return ComponentResult(component_id, success=False, error="boom")
 
-        with patch("kstrl.factory._run_component", side_effect=fake_run):
+        with patch("kstrl.factory.factory._run_component", side_effect=fake_run):
             run_factory(
                 _two_component_manifest(),
                 config,
@@ -485,7 +485,7 @@ class TestFactoryFiresHooks:
         ) -> ComponentResult:
             return ComponentResult(component_id, success=False, error="boom")
 
-        with patch("kstrl.factory._run_component", side_effect=fake_run):
+        with patch("kstrl.factory.factory._run_component", side_effect=fake_run):
             result = run_factory(
                 _two_component_manifest(),
                 config,
@@ -575,7 +575,7 @@ class TestMergePendingFiresHook:
         ) -> ComponentResult:
             return ComponentResult(component_id, success=True, iterations=1)
 
-        with patch("kstrl.factory._run_component", side_effect=fake_run):
+        with patch("kstrl.factory.factory._run_component", side_effect=fake_run):
             result = run_factory(
                 manifest,
                 config,

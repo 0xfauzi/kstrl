@@ -26,11 +26,11 @@ from typing import Any
 
 import pytest
 
-from kstrl.factory import run_factory
-from kstrl.factory_config import FactoryConfig
+from kstrl.factory.factory import run_factory
 from kstrl.learning.autonomy_replay import load_runs
 from kstrl.learning.evolution_config import EvolutionConfig
 from kstrl.learning.health import readings_from
+from kstrl.pipeline.factory_config import FactoryConfig
 from kstrl.plan.manifest import ComponentStatus, Manifest
 from kstrl.ui.plain import PlainUI
 from kstrl.verify.verify_model import VerifyConfig
@@ -534,7 +534,7 @@ def test_a_repoll_that_finds_the_pr_closed_journals_no_carried_numbers(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """B1: a merge re-poll that finds the parked PR closed moves alpha
-    straight to FAILED without launching it (kstrl/pipeline.py
+    straight to FAILED without launching it (kstrl/pipeline/pipeline.py
     ``repoll_merge_pending``): it lands in ``factory_result.failed``, so
     ``_components_this_run`` admits it, but alpha did no work in this run.
     Its row must not carry run 1's iteration_count, duration_seconds or

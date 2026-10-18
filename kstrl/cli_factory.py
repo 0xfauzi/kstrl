@@ -28,7 +28,6 @@ from kstrl.cli_preflight import (
 )
 from kstrl.cli_report import _print_execution_order
 from kstrl.cli_seam import _console_ui, _use_cli_value, cli
-from kstrl.commandrun import open_command_run
 from kstrl.config import KstrlConfig, reconcile_progress_config
 from kstrl.config_report import normalize_ui_mode as _normalize_ui_mode
 from kstrl.events import (
@@ -38,11 +37,10 @@ from kstrl.events import (
     collect_usage,
     usage_cursor,
 )
-from kstrl.factory import run_factory
-from kstrl.factory_config import FactoryConfig
+from kstrl.factory import open_command_run, run_factory
 from kstrl.git import resolve_base_branch
-from kstrl.launch_record import replayable_flags
 from kstrl.owner import PromptKind, PromptRequest, UiInteractionChannel
+from kstrl.pipeline import FactoryConfig, replayable_flags
 from kstrl.plan import Manifest
 from kstrl.proc import (
     RunLock,
@@ -336,7 +334,7 @@ def factory(
         factory_config.acceptance_dir = acceptance
         factory_config.design_acceptance = design_acceptance
         factory_config.bug_report = bug_report
-        # #436: what `ks retry` replays; see kstrl/launch_record.py.
+        # #436: what `ks retry` replays; see kstrl/pipeline/launch_record.py.
         factory_config.launch_flags = replayable_flags(ctx)
         # R2.3: --no-verify is an explicit skip sentinel that run_factory
         # honors; verify_config=None alone would substitute default checks.

@@ -217,7 +217,7 @@ EXPECTED_PLAN_PRD_PATH_SPELLINGS = {
 #: and the plan gate's event kind, which is not a path.
 EXPECTED_PLAN_LITERALS = {
     # #602: PLAN_KIND, the plan gate's checkpoint event kind. Not a path.
-    "plan_gate.py::<module>": 1,
+    "factory/plan_gate.py::<module>": 1,
     "io/statedir.py::<module>": 2,
     "io/statedir.py::plan_prd_path": 1,
 }

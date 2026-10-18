@@ -57,15 +57,15 @@ EXPECTED_CONSTRUCTIONS = (
     "architect/owner_answers.py kstrl.owner.inbox.Inbox",
     "calibration/calibration_ladder.py kstrl.owner.inbox.Inbox",
     "cli_inbox.py kstrl.owner.inbox.Inbox",
-    "factory_autonomy.py kstrl.owner.inbox.Inbox",
+    "factory/factory_autonomy.py kstrl.owner.inbox.Inbox",
+    # #602: the L1 plan gate reads its item (_find) and records a decision
+    # given at the prompt (_record).
+    "factory/plan_gate.py kstrl.owner.inbox.Inbox",
     "learning/autonomy_transitions.py kstrl.owner.inbox.Inbox",
     # #646: ks retry reads the approvals (approvals_at) to decide whether
     # it keeps the failed head. It scans and reads; it mutates nothing.
     "owner/waivers.py kstrl.owner.inbox.Inbox",
-    "pipeline_inbox.py kstrl.owner.inbox.Inbox",
-    # #602: the L1 plan gate reads its item (_find) and records a decision
-    # given at the prompt (_record).
-    "plan_gate.py kstrl.owner.inbox.Inbox",
+    "pipeline/pipeline_inbox.py kstrl.owner.inbox.Inbox",
     # #696 slice 3: a [stack]'s confirmation is read (_latest_approval),
     # filed (file_stack_item) and decided at the ks factory prompt
     # (decide_at_prompt).
@@ -86,14 +86,14 @@ EXPECTED_CONSTRUCTION_COUNTS = {
     # #644 slice 2: was 2. +1: escalation_naming scans the inbox for the undecided
     # spec_escalation row that names a poisoned item. It reads; it mutates nothing.
     "architect/decisions.py": 3,
-    "factory_autonomy.py": 1,
+    "factory/factory_autonomy.py": 1,
     "architect/owner_answers.py": 1,
     # #595 (addendum): was 5, one construction per lazy-open site
     # (ComponentPipeline.snapshot_waivers's own +1 among them). All five
     # sites now build through ComponentPipeline._open_inbox, so there is
     # exactly one Inbox(...) call left in the file.
-    "pipeline_inbox.py": 1,
-    "plan_gate.py": 2,
+    "pipeline/pipeline_inbox.py": 1,
+    "factory/plan_gate.py": 2,
     "serve_gates.py": 1,
     "serve_settle.py": 1,
     "project/stack.py": 3,
@@ -132,13 +132,13 @@ EXPECTED_MUTATIONS: dict[str, Disposition] = {
     "calibration/calibration_ladder.py::_open_drift_item::add": _GUARDED,
     "architect/decisions.py::open_escalation_item::add": _GUARDED,
     "architect/decisions.py::resolve_escalation_items::resolve": _GUARDED,
-    "factory_autonomy.py::_open_health_breach_items::add": _GUARDED,
-    "pipeline_inbox.py::InboxDesk._inbox_add::add": _GUARDED,
-    "pipeline_inbox.py::InboxDesk._inbox_resolve::resolve": _GUARDED,
-    "pipeline_inbox.py::InboxDesk._inbox_resolve_component::resolve": _GUARDED,
-    "plan_gate.py::_record::add": _GUARDED,
-    "plan_gate.py::_record::approve": _GUARDED,
-    "plan_gate.py::_record::reject": _GUARDED,
+    "factory/factory_autonomy.py::_open_health_breach_items::add": _GUARDED,
+    "pipeline/pipeline_inbox.py::InboxDesk._inbox_add::add": _GUARDED,
+    "pipeline/pipeline_inbox.py::InboxDesk._inbox_resolve::resolve": _GUARDED,
+    "pipeline/pipeline_inbox.py::InboxDesk._inbox_resolve_component::resolve": _GUARDED,
+    "factory/plan_gate.py::_record::add": _GUARDED,
+    "factory/plan_gate.py::_record::approve": _GUARDED,
+    "factory/plan_gate.py::_record::reject": _GUARDED,
     "serve_settle.py::_file_inbox_item::add": _GUARDED,
     # #696: each propagates to a caller that refuses on it. unconfirmed_lines
     # catches everything file_stack_item raises; cli._stack_checkpoint
@@ -205,7 +205,7 @@ EXPECTED_CONFIG_LOADS: dict[str, Disposition] = {
     "calibration/calibration_ladder.py::_open_drift_item": _GUARDED,
     "architect/decisions.py::open_escalation_item": _GUARDED,
     "architect/decisions.py::resolve_escalation_items": _GUARDED,
-    "factory_autonomy.py::_open_health_breach_items": _GUARDED,
+    "factory/factory_autonomy.py::_open_health_breach_items": _GUARDED,
     "serve_settle.py::_file_inbox_item": _GUARDED,
     # #696 slice 3: a load the stack check cannot make is a refusal.
     "project/stack.py::_refusal": _GUARDED,
@@ -615,8 +615,8 @@ UNCONDITIONAL_DECISIONS: dict[str, str] = {
     "cli_inbox.py::_decide_parked_merge_if_parked::approve": "the operator typed ks inbox approve",
     "cli_inbox.py::_decide_parked_merge_if_parked::reject": "the operator typed ks inbox reject",
     "cli_inbox.py::inbox_retry::resolve": "the operator typed ks inbox retry",
-    "plan_gate.py::_record::approve": "the operator answered the plan checkpoint prompt",
-    "plan_gate.py::_record::reject": "the operator answered the plan checkpoint prompt",
+    "factory/plan_gate.py::_record::approve": "the operator answered the plan checkpoint prompt",
+    "factory/plan_gate.py::_record::reject": "the operator answered the plan checkpoint prompt",
     "project/stack.py::decide_at_prompt::approve": (
         "the operator answered the stack checkpoint prompt"
     ),

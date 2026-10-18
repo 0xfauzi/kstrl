@@ -302,7 +302,7 @@ def _through_handles(
 
     The encoding is the OPEN's business and is already a row from
     :func:`_classify`, so these rows carry the handler rule only. What
-    they add is the site #320 found live in ``kstrl/factory.py``: an
+    they add is the site #320 found live in ``kstrl/factory/factory.py``: an
     ``"a+"`` run-lock handle whose ``fp.read(64)`` sits under ``except
     OSError`` with nothing for the decode.
     """

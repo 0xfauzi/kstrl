@@ -10,9 +10,9 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl.commandrun import open_command_run
 from kstrl.config.config import KstrlConfig
 from kstrl.events.reducer import load_run_state
+from kstrl.factory.commandrun import open_command_run
 from kstrl.feature_cmd import run_feature
 from kstrl.loop.loop import LoopResult
 from kstrl.ui.plain import PlainUI

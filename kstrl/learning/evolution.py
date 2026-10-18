@@ -187,7 +187,7 @@ def _components_this_run(manifest: Manifest, factory_result: RunOutcome) -> list
 
     A component can also be in ``failed`` or ``skipped`` without ever
     being in ``scheduled``: a merge re-poll that finds the parked PR
-    closed moves it straight to FAILED (kstrl/pipeline.py
+    closed moves it straight to FAILED (kstrl/pipeline/pipeline.py
     ``repoll_merge_pending``), and its cascade skips follow the same way.
     That component is admitted here (its FAILED transition is real and
     must be recorded), but it never ran in THIS run, so its row's

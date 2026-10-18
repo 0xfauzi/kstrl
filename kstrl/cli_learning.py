@@ -14,7 +14,7 @@ import click
 from kstrl.cli_seam import _autonomy_ui, _console_ui, cli
 from kstrl.config_report import UI_MODES
 from kstrl.config_report import normalize_ui_mode as _normalize_ui_mode
-from kstrl.factory_preflight import report_preflight
+from kstrl.factory import report_preflight
 from kstrl.learning import DEMOTION_TRIGGER_LABELS, LegacyJournalRowError
 from kstrl.ui import UI
 
@@ -698,7 +698,7 @@ def recheck_cmd(record: Path, root: Path | None, ui: str, no_color: bool) -> Non
     could not be rechecked, with the reason above it.
     """
     from kstrl.acceptance import recheck
-    from kstrl.factory_config import FactoryConfig
+    from kstrl.pipeline import FactoryConfig
     from kstrl.verify import VerifyConfig
 
     root_dir = (root or Path.cwd()).resolve()

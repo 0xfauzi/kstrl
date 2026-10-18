@@ -157,7 +157,7 @@ class TestTheRegisterReachesTheEngineer:
         from types import SimpleNamespace
 
         import kstrl.agents as agents_mod
-        import kstrl.factory_worker as factory_worker_mod
+        import kstrl.factory.factory_worker as factory_worker_mod
         import kstrl.loop as loop_mod
         from kstrl.loop.loop import LoopResult
 
@@ -252,7 +252,7 @@ def _one_component_manifest(project: str, spec_file: str) -> Any:
 
 def _factory_inputs(root: Path) -> tuple[Any, Any, Any]:
     from kstrl.config.config import KstrlConfig
-    from kstrl.factory_config import FactoryConfig
+    from kstrl.pipeline.factory_config import FactoryConfig
     from kstrl.ui.plain import PlainUI
     from kstrl.verify.verify_model import VerifyConfig
 
@@ -328,10 +328,10 @@ class TestTheSchedulerActuallyInjectsIt:
     """
 
     def test_the_block_reaches_the_worker_at_the_right_position(self, tmp_path: Path) -> None:
-        import kstrl.factory_worker as factory_worker_mod
+        import kstrl.factory.factory_worker as factory_worker_mod
         from kstrl.architect.decompose_prompt import spec_digest
-        from kstrl.factory import run_factory
-        from kstrl.factory_result import ComponentResult
+        from kstrl.factory.factory import run_factory
+        from kstrl.pipeline.factory_result import ComponentResult
 
         root = _factory_project(tmp_path, "comp-a")
         # A decompose pins the spec on the manifest and the register (#639),
@@ -364,7 +364,7 @@ class TestTheSchedulerActuallyInjectsIt:
         manifest.spec_path, manifest.spec_digest = "spec.md", pin
         config, base, ui = _factory_inputs(root)
         with (
-            patch("kstrl.factory._run_component", side_effect=capture),
+            patch("kstrl.factory.factory._run_component", side_effect=capture),
             patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             run_factory(manifest, config, base, ui, root)
@@ -385,8 +385,8 @@ class TestTheSchedulerActuallyInjectsIt:
         traceback and exit 1, so anything keying on 2 for "refused
         before spend" saw a crash instead.
         """
-        from kstrl.factory import run_factory
-        from kstrl.factory_result import ComponentResult
+        from kstrl.factory.factory import run_factory
+        from kstrl.pipeline.factory_result import ComponentResult
 
         root = _factory_project(tmp_path, "comp-a")
         write_decisions(
@@ -416,7 +416,7 @@ class TestTheSchedulerActuallyInjectsIt:
             return ComponentResult("comp-a", success=True, iterations=1)
 
         with (
-            patch("kstrl.factory._run_component", side_effect=capture),
+            patch("kstrl.factory.factory._run_component", side_effect=capture),
             patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             result = run_factory(manifest, config, base, ui, root)

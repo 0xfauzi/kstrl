@@ -36,11 +36,11 @@ import pytest
 
 from kstrl.acceptance.contract import ContractConfig, ContractMode
 from kstrl.config.config import KstrlConfig
-from kstrl.factory import run_factory
-from kstrl.factory_config import FactoryConfig
-from kstrl.factory_result import ComponentResult, FactoryResult
+from kstrl.factory.factory import run_factory
 from kstrl.knowledge.knowledge_facts import KnowledgeConfig
 from kstrl.learning.evolution_config import EvolutionConfig
+from kstrl.pipeline.factory_config import FactoryConfig
+from kstrl.pipeline.factory_result import ComponentResult, FactoryResult
 from kstrl.plan.manifest import Component, Manifest
 from kstrl.project.feedforward import CodebaseScanConfig
 from kstrl.review.review import ReviewResult
@@ -234,11 +234,11 @@ class TestC2ReviewRetry:
 
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 return_value=success,
             ),
             patch(
-                "kstrl.factory.run_review",
+                "kstrl.factory.factory.run_review",
                 side_effect=fake_run_review,
             ),
             patch("kstrl.git.git_diff.get_diff_content", return_value=""),
@@ -290,11 +290,11 @@ class TestC3SecurityRetry:
 
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 return_value=success,
             ),
             patch(
-                "kstrl.factory.run_security_review",
+                "kstrl.factory.factory.run_security_review",
                 side_effect=fake_run_security,
             ),
             patch("kstrl.git.git_diff.get_diff_content", return_value=""),
@@ -378,11 +378,11 @@ class TestC4ContractBreaker:
 
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 side_effect=[success_a, success_b, success_a],
             ) as mock_run,
             patch(
-                "kstrl.factory_acceptance.run_contract_testing",
+                "kstrl.factory.factory_acceptance.run_contract_testing",
                 side_effect=fake_contract,
             ),
             patch("kstrl.git.git_diff.get_diff_content", return_value=""),
@@ -428,11 +428,11 @@ class TestC5SinglePrMode:
         success = ComponentResult("comp-a", success=True, iterations=1)
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 return_value=success,
             ),
             patch(
-                "kstrl.factory.distill_facts",
+                "kstrl.factory.factory.distill_facts",
                 return_value=(0, "skipped", False),
             ) as mock_distill,
             patch(

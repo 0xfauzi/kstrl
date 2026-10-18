@@ -219,7 +219,7 @@ class TestStateDirCarveOut:
         entries = state_dir_carve_out(PROJECT, PROJECT)
         assert not path_is_allowed(".kstrl-backup/runs/x", entries)
         assert not path_is_allowed("sub/.kstrl/runs/x", entries)
-        assert not path_is_allowed("kstrl/factory.py", entries)
+        assert not path_is_allowed("kstrl/factory/factory.py", entries)
 
     def test_no_legacy_control_file_is_carved_out(self) -> None:
         """R8.9 moved live control state to the XDG directory, but a
@@ -410,12 +410,12 @@ _EXPECTED_STATE_DIR_SPELLINGS: dict[str, int] = {
     # 1 until #776 B3F4 moved the progress log spelling, with the start
     # steps, to factory_run.py.
     "proc/factory_lock.py": 2,
-    "factory_preflight.py": 2,
-    "factory_run.py": 1,
-    "factory_worktrees.py": 6,
+    "factory/factory_preflight.py": 2,
+    "factory/factory_run.py": 1,
+    "factory/factory_worktrees.py": 6,
     "review/integration_state.py": 1,
     "knowledge/knowledge_facts.py": 2,
-    "pipeline_attempt.py": 1,
+    "pipeline/pipeline_attempt.py": 1,
     # +1 #863 A4: the refusal of a progress.jsonl-only run names the state dir.
     "events/reducer.py": 4,
     # serve.py had 6, +1 for #464 (the progress log for cost evidence). #776 S2

@@ -35,10 +35,10 @@ import pytest
 from kstrl.config.config import KstrlConfig
 from kstrl.events import event_catalog
 from kstrl.events import events as ev
-from kstrl.factory import run_factory
-from kstrl.factory_config import FactoryConfig
-from kstrl.factory_result import ComponentResult
+from kstrl.factory.factory import run_factory
 from kstrl.owner.inbox import Inbox, InboxConfig, ItemKind
+from kstrl.pipeline.factory_config import FactoryConfig
+from kstrl.pipeline.factory_result import ComponentResult
 from kstrl.plan.findings import CLAIM_DISAGREEMENT_CATEGORY
 from kstrl.plan.manifest import Component, Manifest
 from kstrl.review.review import CriterionReview, ReviewConcern, ReviewResult
@@ -131,12 +131,12 @@ def _run(
     )
     passing = VerificationResult(passed=True, checks=[CheckResult("test_suite", True, "ok")])
     with (
-        patch("kstrl.factory._run_component", return_value=worker),
-        patch("kstrl.factory.run_mechanical_verification", return_value=passing),
-        patch("kstrl.factory.run_review", return_value=review),
-        patch("kstrl.factory.run_security_review", return_value=security),
+        patch("kstrl.factory.factory._run_component", return_value=worker),
+        patch("kstrl.factory.factory.run_mechanical_verification", return_value=passing),
+        patch("kstrl.factory.factory.run_review", return_value=review),
+        patch("kstrl.factory.factory.run_security_review", return_value=security),
         patch("kstrl.git.git_diff.get_diff_content", return_value="diff --git a b\n"),
-        patch("kstrl.pr.is_gh_available", return_value=False),
+        patch("kstrl.pipeline.pr.is_gh_available", return_value=False),
     ):
         run_factory(
             manifest,
@@ -368,8 +368,8 @@ def _builds(name: str) -> Sees:
 EXPECTED_COMPLETED_SITES: dict[str, int] = {
     # The two factory sites. Both must read the manifest's fields; see
     # test_factory_completion_events_read_the_manifest_fields.
-    "pipeline_transitions.py:complete": 1,
-    "pipeline_merge.py:repoll_merge_pending": 1,
+    "pipeline/pipeline_transitions.py:complete": 1,
+    "pipeline/pipeline_merge.py:repoll_merge_pending": 1,
     # Runs with no manifest Component and no journal row, so the event is
     # the only record of the duration it carries.
     "cli_loop.py:_understand_core": 1,
@@ -379,8 +379,8 @@ EXPECTED_COMPLETED_SITES: dict[str, int] = {
 
 #: Every ``ReviewResultEvent(...)`` in ``kstrl/``, by owning function.
 EXPECTED_REVIEW_RESULT_SITES: dict[str, int] = {
-    "pipeline_review.py:_phase_review": 1,
-    "pipeline_security.py:_phase_security": 1,
+    "pipeline/pipeline_review.py:_phase_review": 1,
+    "pipeline/pipeline_security.py:_phase_security": 1,
 }
 
 #: Every assignment to an attribute spelled ``duration_seconds`` in
@@ -391,7 +391,7 @@ EXPECTED_REVIEW_RESULT_SITES: dict[str, int] = {
 #: argument (``Component(duration_seconds=...)``) is not an assignment and
 #: is not seen; ``Manifest.load`` builds the field that way from disk.
 EXPECTED_DURATION_WRITE_SITES: dict[str, int] = {
-    "pipeline_attempt.py:_end_attempt": 1,  # the fact: the attempt's wall-clock time
+    "pipeline/pipeline_attempt.py:_end_attempt": 1,  # the fact: the attempt's wall-clock time
     "plan/manifest.py:reset_for_retry": 1,  # the --reset path zeroes it
     "review/review.py:run_review": 3,  # ReviewResult's own timing
     "review/security.py:run_security_review": 1,  # SecurityResult's own timing
@@ -485,8 +485,8 @@ class TestOneWriterPerField:
         checked = 0
         for source_file, node in _sites("ComponentCompleted"):
             if label(source_file) not in (
-                "pipeline_merge.py",
-                "pipeline_transitions.py",
+                "pipeline/pipeline_merge.py",
+                "pipeline/pipeline_transitions.py",
             ):
                 continue
             kwargs = _keywords(node)

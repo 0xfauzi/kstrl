@@ -78,7 +78,7 @@ FEATURE_SOURCE = "_feature_context_prefix(params, base_config, root_dir, ui)"
 #: its ``__all__`` row in ``loop/__init__.py``.
 EXPECTED_RUN_LOOP_SPELLINGS: dict[str, int] = {
     "cli_loop.py": 2,
-    "factory_worker.py": 2,
+    "factory/factory_worker.py": 2,
     "feature_cmd.py": 4,
     "loop/__init__.py": 2,
     "loop/loop.py": 1,
@@ -89,7 +89,7 @@ EXPECTED_RUN_LOOP_SPELLINGS: dict[str, int] = {
 #: is a call that passes no prefix.
 EXPECTED_CONTEXT_SOURCES: dict[str, tuple[str | None, ...]] = {
     "cli_loop.py::_understand_core": (None,),
-    "factory_worker.py::_run_component": ("context_prefix",),
+    "factory/factory_worker.py::_run_component": ("context_prefix",),
     "feature_cmd.py::run_feature": (FEATURE_SOURCE,) * 3,
 }
 
@@ -109,12 +109,14 @@ NO_CONTEXT_REASONS: dict[str, str] = {
 
 #: Every node that spells the assembler's name, by ``<file>::<scope>``:
 #: its definition and its call in ``factory_worker.py``, and the import and the
-#: call in ``feature_cmd.py``. Counted by NAME rather than resolved,
+#: call in ``feature_cmd.py``, and the re-export and its ``__all__`` row in
+#: ``factory/__init__.py``. Counted by NAME rather than resolved,
 #: because ``astwalk.bindings`` deliberately does not bind a local
 #: ``def``, so the call inside ``factory_worker.py`` resolves to nothing.
 EXPECTED_ASSEMBLER_SPELLINGS: dict[str, int] = {
-    "factory_worker.py::<module>": 1,
-    "factory_worker.py::_run_component": 1,
+    "factory/__init__.py::<module>": 2,
+    "factory/factory_worker.py::<module>": 1,
+    "factory/factory_worker.py::_run_component": 1,
     "feature_cmd.py::<module>": 1,
     "feature_cmd.py::_feature_context_prefix": 1,
 }
@@ -239,7 +241,7 @@ class TestOneAssemblerBuildsTheContext:
         """``_run_component`` passes ``context_prefix=context_prefix``, so the
         local has to be the assembler's answer and nothing else. Counted as
         every stored ``Name`` in the scope, which covers every binding form."""
-        source = KSTRL_PACKAGE / "factory_worker.py"
+        source = KSTRL_PACKAGE / "factory/factory_worker.py"
         tree = parsed(source)
         owner = scope_of(tree)
         in_scope = [node for node in all_nodes(tree) if owner.get(id(node)) == "_run_component"]
@@ -264,12 +266,12 @@ class TestOneAssemblerBuildsTheContext:
         assert any(
             isinstance(node, ast.FunctionDef) and node.name == "engineer_context_prefix"
             for node in tree.body
-        ), "factory_worker.py no longer defines engineer_context_prefix at module level"
+        ), "factory/factory_worker.py no longer defines engineer_context_prefix at module level"
 
 
 #: Control sources, each small enough to read.
 FROM_ASSEMBLER = (
-    "from kstrl.factory_worker import engineer_context_prefix\n"
+    "from kstrl.factory.factory_worker import engineer_context_prefix\n"
     "from kstrl.loop.loop import run_loop\n"
     "def go(config, ui, agent, root):\n"
     "    return run_loop(config, ui, agent, root, "

@@ -31,11 +31,10 @@ from kstrl.config import (
     parse_paths,
 )
 from kstrl.config_report import normalize_ui_mode as _normalize_ui_mode
-from kstrl.factory_agents import cli_family
-from kstrl.factory_config import FactoryConfig
-from kstrl.factory_preflight import base_refused_before_architect, report_preflight
+from kstrl.factory import base_refused_before_architect, report_preflight
 from kstrl.io import read_json_file
 from kstrl.owner import PromptKind, PromptRequest, UiInteractionChannel
+from kstrl.pipeline import FactoryConfig, cli_family
 from kstrl.plan import PRD
 from kstrl.proc import RunLock, acquire_run_lock
 from kstrl.project import (

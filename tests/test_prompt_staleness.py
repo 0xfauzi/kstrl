@@ -342,7 +342,7 @@ EXPECTED_TEMPLATE_FILENAMES: dict[str, int] = {
     "cli_loop.py": 5,
     "cli_report.py": 1,
     "config/config.py": 4,
-    "factory_worker.py": 3,
+    "factory/factory_worker.py": 3,
     "project/init_cmd.py": 6,
     "project/operator_context.py": 2,
     # N2 (#776): the six ledger rows left init_cmd.py for this module.

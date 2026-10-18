@@ -20,9 +20,9 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl.factory_config import FactoryConfig
-from kstrl.factory_result import ComponentResult
 from kstrl.learning.autonomy import AutonomyState
+from kstrl.pipeline.factory_config import FactoryConfig
+from kstrl.pipeline.factory_result import ComponentResult
 from kstrl.plan.manifest import Component
 from kstrl.verify.policy import PolicyConfig
 from kstrl.verify.verify_model import VerificationResult
@@ -65,9 +65,9 @@ class TestAMalformedMidRunEditDoesNotAbortTheRun:
             return VerificationResult(passed=True, checks=[])
 
         with (
-            patch("kstrl.factory.run_mechanical_verification", side_effect=verify),
+            patch("kstrl.factory.factory.run_mechanical_verification", side_effect=verify),
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 # First positional is the component id: the worker takes
                 # primitives, not the Component, because it runs in
                 # another process.
@@ -544,7 +544,7 @@ class TestTheFactoryHandsThePipelineWhatItRecords:
                 project_stack=in_process_stack(),
             ),
         )
-        import kstrl.pipeline_verdicts as pipeline_module
+        import kstrl.pipeline.pipeline_verdicts as pipeline_module
 
         seen: list[int] = []
 
@@ -581,8 +581,8 @@ class TestTheLadderOutcomeIsReallyFrozen:
     """
 
     def test_the_ladder_builds_one_that_hashes_and_cannot_grow(self, tmp_path: Path) -> None:
-        from kstrl.factory_autonomy import _resolve_ladder
-        from kstrl.runenvelope import RunEnvelope
+        from kstrl.factory.factory_autonomy import _resolve_ladder
+        from kstrl.pipeline.runenvelope import RunEnvelope
 
         # A stored L4 over max_level = 1 is the clamp; review_mode "skip"
         # against the bundle's "hard" is the override. Both lists have to

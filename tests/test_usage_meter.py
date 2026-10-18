@@ -47,9 +47,13 @@ from kstrl.events.usage import (
     format_usage_rollup,
     usage_cursor,
 )
-from kstrl.factory import run_factory
-from kstrl.factory_config import FactoryConfig
-from kstrl.factory_result import (
+from kstrl.factory.factory import run_factory
+from kstrl.factory.factory_worker import _run_component
+from kstrl.loop.loop import COMPLETION_MARKER, run_loop
+from kstrl.loop.loop_budget import LoopBudget
+from kstrl.owner.inbox import Inbox, InboxConfig
+from kstrl.pipeline.factory_config import FactoryConfig
+from kstrl.pipeline.factory_result import (
     ComponentResult,
     FactoryResult,
     _read_partial_usage,
@@ -57,10 +61,6 @@ from kstrl.factory_result import (
     salvage_aborted_usage,
     write_partial_usage,
 )
-from kstrl.factory_worker import _run_component
-from kstrl.loop.loop import COMPLETION_MARKER, run_loop
-from kstrl.loop.loop_budget import LoopBudget
-from kstrl.owner.inbox import Inbox, InboxConfig
 from kstrl.plan.manifest import Component, ComponentStatus, Manifest
 from kstrl.proc.factory_lock import FactoryLockHeldError
 from kstrl.proc.shutdown import StopController
@@ -878,7 +878,7 @@ class TestFactoryUsageAggregation:
 
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 return_value=success,
             ),
             patch("kstrl.git.git_diff.get_diff_content", return_value=""),
@@ -947,7 +947,7 @@ class TestFactoryUsageAggregation:
 
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 return_value=success,
             ),
             patch(
@@ -959,7 +959,7 @@ class TestFactoryUsageAggregation:
                 return_value=review_agent,
             ),
             patch(
-                "kstrl.factory.run_review",
+                "kstrl.factory.factory.run_review",
                 return_value=ReviewResult(passed=True, mode="advisory"),
             ),
         ):
@@ -1016,7 +1016,7 @@ class TestFactoryUsageAggregation:
 
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 return_value=success,
             ),
             patch(
@@ -1028,15 +1028,15 @@ class TestFactoryUsageAggregation:
                 side_effect=make_agent,
             ),
             patch(
-                "kstrl.factory.run_review",
+                "kstrl.factory.factory.run_review",
                 return_value=ReviewResult(passed=True, mode="advisory"),
             ),
             patch(
-                "kstrl.factory.run_security_review",
+                "kstrl.factory.factory.run_security_review",
                 return_value=SecurityResult(passed=True, mode="advisory"),
             ),
             patch(
-                "kstrl.factory.distill_facts",
+                "kstrl.factory.factory.distill_facts",
                 return_value=(1, "ok", False),
             ),
         ):
@@ -1068,7 +1068,7 @@ class TestFactoryUsageAggregation:
 
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 return_value=success,
             ),
             patch("kstrl.git.git_diff.get_diff_content", return_value=""),
@@ -1109,7 +1109,7 @@ class TestFactoryUsageAggregation:
 
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 return_value=success,
             ),
             patch("kstrl.git.git_diff.get_diff_content", return_value=""),
@@ -1152,7 +1152,7 @@ class TestTokenBudgetHalt:
 
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 side_effect=fake_run_component,
             ),
             patch("kstrl.git.git_diff.get_diff_content", return_value=""),
@@ -1212,7 +1212,7 @@ class TestTokenBudgetHalt:
 
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 return_value=success,
             ),
             patch("kstrl.git.git_diff.get_diff_content", return_value=""),
@@ -1245,7 +1245,7 @@ class TestTokenBudgetHalt:
 
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 return_value=success,
             ),
             patch("kstrl.git.git_diff.get_diff_content", return_value=""),
@@ -1914,7 +1914,7 @@ class TestSchedulerHandsDownTheBudget:
 
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 side_effect=fake_run_component,
             ),
             patch("kstrl.git.git_diff.get_diff_content", return_value=""),
@@ -1976,7 +1976,7 @@ class TestSchedulerHandsDownTheBudget:
 
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 side_effect=fake_run_component,
             ),
             patch("kstrl.git.git_diff.get_diff_content", return_value=""),
@@ -2006,7 +2006,7 @@ class TestSchedulerHandsDownTheBudget:
 
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 side_effect=fake_run_component,
             ),
             patch("kstrl.git.git_diff.get_diff_content", return_value=""),
@@ -2056,7 +2056,7 @@ class TestInLoopHaltAuditState:
 
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 return_value=halted,
             ),
             patch("kstrl.git.git_diff.get_diff_content", return_value=""),
@@ -2123,7 +2123,7 @@ class TestInLoopHaltAuditState:
 
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 side_effect=fake_run_component,
             ),
             patch("kstrl.git.git_diff.get_diff_content", return_value=""),
@@ -2343,7 +2343,7 @@ class TestAbortedWorkerUsage:
 
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 side_effect=slow_component,
             ),
             patch("kstrl.git.git_diff.get_diff_content", return_value=""),
@@ -2388,11 +2388,11 @@ class TestAbortedWorkerUsage:
 
         with (
             patch(
-                "kstrl.factory._InlineExecutor",
+                "kstrl.factory.factory._InlineExecutor",
                 _pending_executor(0, worker_published_then_died),
             ),
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 side_effect=AssertionError("the worker never returned"),
             ),
             patch("kstrl.git.git_diff.get_diff_content", return_value=""),
@@ -2451,12 +2451,12 @@ class TestAbortedWorkerUsage:
 
         with (
             patch(
-                "kstrl.factory._InlineExecutor",
+                "kstrl.factory.factory._InlineExecutor",
                 # Attempt 1 runs; attempt 2's future hangs and is aborted.
                 _pending_executor(1, lambda args: stop.request("mid-run stop")),
             ),
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 side_effect=fake_run_component,
             ),
             patch("kstrl.git.git_diff.get_diff_content", return_value=""),
@@ -2504,11 +2504,11 @@ class TestAbortedWorkerUsage:
 
         with (
             patch(
-                "kstrl.factory._InlineExecutor",
+                "kstrl.factory.factory._InlineExecutor",
                 _pending_executor(0, worker_published_then_died),
             ),
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 side_effect=AssertionError("the worker never returned"),
             ),
             patch("kstrl.git.git_diff.get_diff_content", return_value=""),
@@ -2714,7 +2714,7 @@ class TestUnenforceableHaltIsEngineerScoped:
         usage_meter shape ``{comp_id: {phase: UsageTotals}}`` without
         standing up a whole pipeline.
         """
-        from kstrl.pipeline import ComponentPipeline
+        from kstrl.pipeline.pipeline import ComponentPipeline
 
         pipeline = cast(Any, ComponentPipeline.__new__(ComponentPipeline))
         pipeline.usage_meter = {
@@ -2768,7 +2768,7 @@ class TestCompletionBoundaryBypass:
         token_calls: int,
         cap: int,
     ) -> Any:
-        from kstrl.pipeline import ComponentPipeline
+        from kstrl.pipeline.pipeline import ComponentPipeline
 
         pipeline = cast(Any, ComponentPipeline.__new__(ComponentPipeline))
         pipeline.usage_meter = {
@@ -2788,7 +2788,7 @@ class TestCompletionBoundaryBypass:
         return pipeline
 
     def test_completed_tokenless_components_trip_the_parent_gate(self, tmp_path: Path) -> None:
-        from kstrl.pipeline import ComponentPipeline
+        from kstrl.pipeline.pipeline import ComponentPipeline
 
         pipeline = self._pipeline_with_engineer_usage(
             tmp_path,
@@ -2802,7 +2802,7 @@ class TestCompletionBoundaryBypass:
         assert "refusing to schedule further components" in reason
 
     def test_one_completed_tokenless_component_is_not_enough(self, tmp_path: Path) -> None:
-        from kstrl.pipeline import ComponentPipeline
+        from kstrl.pipeline.pipeline import ComponentPipeline
 
         pipeline = self._pipeline_with_engineer_usage(
             tmp_path,
@@ -2813,7 +2813,7 @@ class TestCompletionBoundaryBypass:
         assert ComponentPipeline.token_budget_unenforceable(pipeline) is None
 
     def test_a_reporting_engineer_never_trips_the_gate(self, tmp_path: Path) -> None:
-        from kstrl.pipeline import ComponentPipeline
+        from kstrl.pipeline.pipeline import ComponentPipeline
 
         pipeline = self._pipeline_with_engineer_usage(
             tmp_path,
@@ -2824,7 +2824,7 @@ class TestCompletionBoundaryBypass:
         assert ComponentPipeline.token_budget_unenforceable(pipeline) is None
 
     def test_gate_is_inert_without_a_cap(self, tmp_path: Path) -> None:
-        from kstrl.pipeline import ComponentPipeline
+        from kstrl.pipeline.pipeline import ComponentPipeline
 
         pipeline = self._pipeline_with_engineer_usage(
             tmp_path,
@@ -3128,7 +3128,7 @@ class TestCostCeilingParentGates:
         max_total_tokens: int = 0,
         max_cost_usd: float = 0.0,
     ) -> Any:
-        from kstrl.pipeline import ComponentPipeline
+        from kstrl.pipeline.pipeline import ComponentPipeline
 
         pipeline = cast(Any, ComponentPipeline.__new__(ComponentPipeline))
         engineer = UsageTotals(
@@ -3150,7 +3150,7 @@ class TestCostCeilingParentGates:
         return pipeline
 
     def test_cost_overrun_is_detected_and_named(self, tmp_path: Path) -> None:
-        from kstrl.pipeline import ComponentPipeline
+        from kstrl.pipeline.pipeline import ComponentPipeline
 
         p = self._pipeline(
             tmp_path,
@@ -3168,7 +3168,7 @@ class TestCostCeilingParentGates:
         self,
         tmp_path: Path,
     ) -> None:
-        from kstrl.pipeline import ComponentPipeline
+        from kstrl.pipeline.pipeline import ComponentPipeline
 
         p = self._pipeline(
             tmp_path,
@@ -3180,7 +3180,7 @@ class TestCostCeilingParentGates:
         assert ComponentPipeline.breached_ceiling(p) == "max_total_tokens"
 
     def test_zero_cost_ceiling_never_trips(self, tmp_path: Path) -> None:
-        from kstrl.pipeline import ComponentPipeline
+        from kstrl.pipeline.pipeline import ComponentPipeline
 
         p = self._pipeline(
             tmp_path,
@@ -3198,7 +3198,7 @@ class TestCostCeilingParentGates:
     ) -> None:
         """The scheduling gate must not stop a run whose cost ceiling can
         still fire, even though its token ceiling provably cannot."""
-        from kstrl.pipeline import ComponentPipeline
+        from kstrl.pipeline.pipeline import ComponentPipeline
 
         p = self._pipeline(
             tmp_path,
@@ -3217,7 +3217,7 @@ class TestCostCeilingParentGates:
         self,
         tmp_path: Path,
     ) -> None:
-        from kstrl.pipeline import ComponentPipeline
+        from kstrl.pipeline.pipeline import ComponentPipeline
 
         p = self._pipeline(
             tmp_path,
@@ -3233,7 +3233,7 @@ class TestCostCeilingParentGates:
         assert ComponentPipeline.budget_unenforceable(p) is None
 
     def test_both_dead_halts_and_names_both(self, tmp_path: Path) -> None:
-        from kstrl.pipeline import ComponentPipeline
+        from kstrl.pipeline.pipeline import ComponentPipeline
 
         p = self._pipeline(
             tmp_path,
@@ -3255,7 +3255,7 @@ class TestCostCeilingParentGates:
     ) -> None:
         """Only max_cost_usd configured: it is the only ceiling that has
         to be alive, so its death halts the gate on its own."""
-        from kstrl.pipeline import ComponentPipeline
+        from kstrl.pipeline.pipeline import ComponentPipeline
 
         p = self._pipeline(
             tmp_path,
@@ -3273,7 +3273,7 @@ class TestCostCeilingParentGates:
         self,
         tmp_path: Path,
     ) -> None:
-        from kstrl.pipeline import ComponentPipeline
+        from kstrl.pipeline.pipeline import ComponentPipeline
 
         p = self._pipeline(tmp_path, calls=9, token_calls=0, cost_calls=0)
         assert ComponentPipeline.budget_unenforceable(p) is None
@@ -3301,7 +3301,7 @@ class TestCostCeilingEndToEnd:
 
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 side_effect=fake_run_component,
             ),
             patch("kstrl.git.git_diff.get_diff_content", return_value=""),
@@ -3354,7 +3354,7 @@ class TestCostCeilingEndToEnd:
 
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 return_value=success,
             ),
             patch("kstrl.git.git_diff.get_diff_content", return_value=""),
@@ -3400,7 +3400,7 @@ class TestCostCeilingEndToEnd:
 
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 side_effect=fake_run_component,
             ),
             patch("kstrl.git.git_diff.get_diff_content", return_value=""),
@@ -3455,7 +3455,7 @@ class TestFailedSnapshotDeletionInvalidates:
         """The point of the flag: a stale 700 must not be recounted."""
         from concurrent.futures import Future
 
-        from kstrl.pipeline import ComponentPipeline
+        from kstrl.pipeline.pipeline import ComponentPipeline
 
         pipeline = cast(Any, ComponentPipeline.__new__(ComponentPipeline))
         pipeline.usage_meter = {}
@@ -3505,7 +3505,7 @@ class TestCostCeilingConfigValidation:
         bad: str,
     ) -> None:
         from kstrl.config.config_numbers import BudgetConfigError
-        from kstrl.factory_config import FactoryConfig
+        from kstrl.pipeline.factory_config import FactoryConfig
 
         (tmp_path / "kstrl.toml").write_text(f"[factory]\nmax_cost_usd = {bad}\n")
         with pytest.raises(BudgetConfigError):
@@ -3518,20 +3518,20 @@ class TestCostCeilingConfigValidation:
         bad: str,
     ) -> None:
         from kstrl.config.config_numbers import BudgetConfigError
-        from kstrl.factory_config import FactoryConfig
+        from kstrl.pipeline.factory_config import FactoryConfig
 
         monkeypatch.setenv("KSTRL_FACTORY_MAX_COST_USD", bad)
         with pytest.raises(BudgetConfigError):
             FactoryConfig.from_env()
 
     def test_zero_is_unbounded_not_invalid(self, tmp_path: Path) -> None:
-        from kstrl.factory_config import FactoryConfig
+        from kstrl.pipeline.factory_config import FactoryConfig
 
         (tmp_path / "kstrl.toml").write_text("[factory]\nmax_cost_usd = 0\n")
         assert FactoryConfig.load(tmp_path).max_cost_usd == 0.0
 
     def test_ordinary_value_survives(self, tmp_path: Path) -> None:
-        from kstrl.factory_config import FactoryConfig
+        from kstrl.pipeline.factory_config import FactoryConfig
 
         (tmp_path / "kstrl.toml").write_text("[factory]\nmax_cost_usd = 5.0\n")
         assert FactoryConfig.load(tmp_path).max_cost_usd == 5.0
@@ -3547,8 +3547,8 @@ class TestCostCeilingConfigValidation:
         """
         from kstrl.config.config import KstrlConfig
         from kstrl.config.config_numbers import BudgetConfigError
-        from kstrl.factory import run_factory
-        from kstrl.factory_config import FactoryConfig
+        from kstrl.factory.factory import run_factory
+        from kstrl.pipeline.factory_config import FactoryConfig
         from kstrl.plan.manifest import Component, Manifest
         from kstrl.ui.plain import PlainUI
 
@@ -3588,7 +3588,7 @@ class TestUnenforceableHaltNamesItsCeiling:
 
     @staticmethod
     def _pipeline(max_tokens: int, max_cost: float, usage: UsageTotals) -> Any:
-        from kstrl.pipeline import ComponentPipeline
+        from kstrl.pipeline.pipeline import ComponentPipeline
 
         pipeline = cast(Any, ComponentPipeline.__new__(ComponentPipeline))
 
@@ -3602,7 +3602,7 @@ class TestUnenforceableHaltNamesItsCeiling:
         return pipeline
 
     def test_cost_only_run_names_the_cost_ceiling(self) -> None:
-        from kstrl.pipeline import ComponentPipeline
+        from kstrl.pipeline.pipeline import ComponentPipeline
 
         pipeline = self._pipeline(
             0,
@@ -3617,7 +3617,7 @@ class TestUnenforceableHaltNamesItsCeiling:
         ]
 
     def test_token_only_run_names_the_token_ceiling(self) -> None:
-        from kstrl.pipeline import ComponentPipeline
+        from kstrl.pipeline.pipeline import ComponentPipeline
 
         pipeline = self._pipeline(
             1000,
@@ -3631,7 +3631,7 @@ class TestUnenforceableHaltNamesItsCeiling:
         ]
 
     def test_both_dead_names_both(self) -> None:
-        from kstrl.pipeline import ComponentPipeline
+        from kstrl.pipeline.pipeline import ComponentPipeline
 
         pipeline = self._pipeline(
             1000,
@@ -3644,7 +3644,7 @@ class TestUnenforceableHaltNamesItsCeiling:
         ]
 
     def test_a_live_ceiling_is_never_named(self) -> None:
-        from kstrl.pipeline import ComponentPipeline
+        from kstrl.pipeline.pipeline import ComponentPipeline
 
         pipeline = self._pipeline(
             1000,
@@ -3657,7 +3657,7 @@ class TestUnenforceableHaltNamesItsCeiling:
 
     def test_an_unconfigured_ceiling_is_never_named(self) -> None:
         """The exact defect: a disabled token ceiling must not be blamed."""
-        from kstrl.pipeline import ComponentPipeline
+        from kstrl.pipeline.pipeline import ComponentPipeline
 
         pipeline = self._pipeline(
             0,
@@ -3683,7 +3683,7 @@ class TestBudgetHaltIdentityPrecedence:
 
     @staticmethod
     def _pipeline(max_tokens: int, max_cost: float, usage: UsageTotals) -> Any:
-        from kstrl.pipeline import ComponentPipeline
+        from kstrl.pipeline.pipeline import ComponentPipeline
 
         pipeline = cast(Any, ComponentPipeline.__new__(ComponentPipeline))
 
@@ -3697,7 +3697,7 @@ class TestBudgetHaltIdentityPrecedence:
         return pipeline
 
     def test_breach_wins_over_a_coexisting_dead_ceiling(self) -> None:
-        from kstrl.pipeline import ComponentPipeline
+        from kstrl.pipeline.pipeline import ComponentPipeline
 
         pipeline = self._pipeline(
             500,
@@ -3716,7 +3716,7 @@ class TestBudgetHaltIdentityPrecedence:
         )
 
     def test_dead_ceilings_only_when_nothing_breached(self) -> None:
-        from kstrl.pipeline import ComponentPipeline
+        from kstrl.pipeline.pipeline import ComponentPipeline
 
         pipeline = self._pipeline(
             500,
@@ -3729,7 +3729,7 @@ class TestBudgetHaltIdentityPrecedence:
         )
 
     def test_no_halt_yields_no_identity(self) -> None:
-        from kstrl.pipeline import ComponentPipeline
+        from kstrl.pipeline.pipeline import ComponentPipeline
 
         pipeline = self._pipeline(
             1000,
@@ -4173,7 +4173,7 @@ class TestTokenCeilingRejectsUnboundingValues:
 
     def test_negative_toml_value_is_rejected(self, tmp_path: Path) -> None:
         from kstrl.config.config_numbers import BudgetConfigError
-        from kstrl.factory_config import FactoryConfig
+        from kstrl.pipeline.factory_config import FactoryConfig
 
         (tmp_path / "kstrl.toml").write_text("[factory]\nmax_total_tokens = -5\n")
         with pytest.raises(BudgetConfigError):
@@ -4184,20 +4184,20 @@ class TestTokenCeilingRejectsUnboundingValues:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         from kstrl.config.config_numbers import BudgetConfigError
-        from kstrl.factory_config import FactoryConfig
+        from kstrl.pipeline.factory_config import FactoryConfig
 
         monkeypatch.setenv("KSTRL_FACTORY_MAX_TOTAL_TOKENS", "-5")
         with pytest.raises(BudgetConfigError):
             FactoryConfig.from_env()
 
     def test_zero_is_unbounded_not_invalid(self, tmp_path: Path) -> None:
-        from kstrl.factory_config import FactoryConfig
+        from kstrl.pipeline.factory_config import FactoryConfig
 
         (tmp_path / "kstrl.toml").write_text("[factory]\nmax_total_tokens = 0\n")
         assert FactoryConfig.load(tmp_path).max_total_tokens == 0
 
     def test_ordinary_value_survives(self, tmp_path: Path) -> None:
-        from kstrl.factory_config import FactoryConfig
+        from kstrl.pipeline.factory_config import FactoryConfig
 
         (tmp_path / "kstrl.toml").write_text("[factory]\nmax_total_tokens = 500\n")
         assert FactoryConfig.load(tmp_path).max_total_tokens == 500
@@ -4208,8 +4208,8 @@ class TestTokenCeilingRejectsUnboundingValues:
     ) -> None:
         from kstrl.config.config import KstrlConfig
         from kstrl.config.config_numbers import BudgetConfigError
-        from kstrl.factory import run_factory
-        from kstrl.factory_config import FactoryConfig
+        from kstrl.factory.factory import run_factory
+        from kstrl.pipeline.factory_config import FactoryConfig
         from kstrl.plan.manifest import Component, Manifest
         from kstrl.ui.plain import PlainUI
 
@@ -4317,7 +4317,7 @@ class TestMeasuredCoverageGap:
 
     def test_no_existing_signal_could_see_it(self, tmp_path: Path) -> None:
         """Every pre-existing surface reported this run as healthy."""
-        from kstrl.pipeline import ComponentPipeline
+        from kstrl.pipeline.pipeline import ComponentPipeline
 
         meter, run_usage = _measured_meter()
         pipeline = cast(Any, ComponentPipeline.__new__(ComponentPipeline))
@@ -4480,7 +4480,7 @@ class TestPipelineCeilingCoverage:
 
     @staticmethod
     def _pipeline(tmp_path: Path, **config: Any) -> Any:
-        from kstrl.pipeline import ComponentPipeline
+        from kstrl.pipeline.pipeline import ComponentPipeline
 
         meter, run_usage = _measured_meter()
         pipeline = cast(Any, ComponentPipeline.__new__(ComponentPipeline))
@@ -4493,7 +4493,7 @@ class TestPipelineCeilingCoverage:
         self,
         tmp_path: Path,
     ) -> None:
-        from kstrl.pipeline import ComponentPipeline
+        from kstrl.pipeline.pipeline import ComponentPipeline
 
         pipeline = self._pipeline(tmp_path, max_cost_usd=25.0)
         coverage = ComponentPipeline.ceiling_coverage(pipeline, "max_cost_usd")
@@ -4505,7 +4505,7 @@ class TestPipelineCeilingCoverage:
         self,
         tmp_path: Path,
     ) -> None:
-        from kstrl.pipeline import ComponentPipeline
+        from kstrl.pipeline.pipeline import ComponentPipeline
 
         pipeline = self._pipeline(tmp_path)
         assert (
@@ -4524,7 +4524,7 @@ class TestPipelineCeilingCoverage:
         )
 
     def test_an_unknown_key_is_not_a_ceiling(self, tmp_path: Path) -> None:
-        from kstrl.pipeline import ComponentPipeline
+        from kstrl.pipeline.pipeline import ComponentPipeline
 
         pipeline = self._pipeline(tmp_path, max_cost_usd=25.0)
         assert (
@@ -4808,7 +4808,7 @@ class TestCoverageReachesTheAuditTrail:
 
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 side_effect=fake_run_component,
             ),
             patch(
@@ -4820,7 +4820,7 @@ class TestCoverageReachesTheAuditTrail:
                 side_effect=fresh_review_agent,
             ),
             patch(
-                "kstrl.factory.run_review",
+                "kstrl.factory.factory.run_review",
                 return_value=ReviewResult(passed=True, mode="advisory"),
             ),
         ):
@@ -4960,7 +4960,7 @@ class TestCoverageReachesTheAuditTrail:
         )
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 return_value=success,
             ),
             patch("kstrl.git.git_diff.get_diff_content", return_value=""),
@@ -5009,7 +5009,7 @@ class TestCeilingScopeIsStatedUpFront:
         )
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 return_value=success,
             ),
             patch("kstrl.git.git_diff.get_diff_content", return_value=""),
@@ -5107,7 +5107,7 @@ class TestEveryConfiguredCeilingRecordsItsCoverage:
 
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 side_effect=fake_run_component,
             ),
             patch(
@@ -5119,7 +5119,7 @@ class TestEveryConfiguredCeilingRecordsItsCoverage:
                 side_effect=fresh_review_agent,
             ),
             patch(
-                "kstrl.factory.run_review",
+                "kstrl.factory.factory.run_review",
                 return_value=ReviewResult(passed=True, mode="advisory"),
             ),
         ):
@@ -5202,7 +5202,7 @@ class TestEveryConfiguredCeilingRecordsItsCoverage:
         )
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 return_value=success,
             ),
             patch("kstrl.git.git_diff.get_diff_content", return_value=""),
@@ -5271,7 +5271,7 @@ def _run_with_architect_spend(
         )
 
     with (
-        patch("kstrl.factory._run_component", side_effect=fake_run_component),
+        patch("kstrl.factory.factory._run_component", side_effect=fake_run_component),
         patch("kstrl.git.git_diff.get_diff_content", return_value=""),
     ):
         result = run_factory(
@@ -5730,7 +5730,7 @@ class TestNothingBetweenTheRunDirAndTheMeterCanLoseTheSpend:
         manifest = _make_manifest([_component("comp-a")])
 
         with patch(
-            "kstrl.factory.acquire_run_lock",
+            "kstrl.factory.factory.acquire_run_lock",
             side_effect=FactoryLockHeldError("held by another run"),
         ):
             result = self._run(root, manifest)

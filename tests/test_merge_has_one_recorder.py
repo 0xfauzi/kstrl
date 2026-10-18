@@ -302,7 +302,7 @@ SHA_CONTROLS = (
 SHA_READ = "x = comp.merge_sha\ny = merge_sha\n"
 
 #: The scope that writes ``Component.merge_sha`` and builds ``PrMerged``.
-RECORDER = "pipeline_merge.py::MergeGate._record_merge"
+RECORDER = "pipeline/pipeline_merge.py::MergeGate._record_merge"
 
 #: Every scope in ``kstrl/`` that spells ``merge_sha`` or ``mergeSha``
 #: other than by reading it, and how many times. A new row, or a count
@@ -315,10 +315,10 @@ EXPECTED_SHA_SPELLINGS: dict[str, int] = {
     "plan/manifest.py::Manifest.save": 1,
     "plan/manifest_keys.py::<module>": 1,
     RECORDER: 3,
-    "pr.py::<module>": 2,
-    "pr.py::_merge_and_wait": 1,
-    "pr.py::push_create_and_merge_pr": 1,
-    "pr.py::wait_for_merge": 1,
+    "pipeline/pr.py::<module>": 2,
+    "pipeline/pr.py::_merge_and_wait": 1,
+    "pipeline/pr.py::push_create_and_merge_pr": 1,
+    "pipeline/pr.py::wait_for_merge": 1,
     "git/pr_state.py::<module>": 1,
     "git/pr_state.py::fetch_pr_state": 1,
     "events/reducer.py::<module>": 1,
@@ -332,10 +332,10 @@ NOT_A_MERGE_RECORD: dict[str, str] = {
     "plan/manifest.py::Manifest.load": "reads back the mergeSha the recorder saved",
     "plan/manifest.py::Manifest.save": "serialises Component.merge_sha as mergeSha",
     "plan/manifest_keys.py::<module>": "the list of keys a manifest component may hold",
-    "pr.py::<module>": "the MergeConfirmation and PrOutcome field declarations",
-    "pr.py::_merge_and_wait": "hands GitHub's commit to the caller on PrOutcome",
-    "pr.py::push_create_and_merge_pr": "hands GitHub's commit for an existing PR to the caller",
-    "pr.py::wait_for_merge": "hands GitHub's commit to the caller on MergeConfirmation",
+    "pipeline/pr.py::<module>": "the MergeConfirmation and PrOutcome field declarations",
+    "pipeline/pr.py::_merge_and_wait": "hands GitHub's commit to the caller on PrOutcome",
+    "pipeline/pr.py::push_create_and_merge_pr": "hands GitHub's commit for an existing PR to the caller",  # noqa: E501
+    "pipeline/pr.py::wait_for_merge": "hands GitHub's commit to the caller on MergeConfirmation",
     "git/pr_state.py::<module>": "the PrView field declaration",
     "git/pr_state.py::fetch_pr_state": "the commit gh reported",
     "events/reducer.py::<module>": "the reducer's ComponentState.merge_sha field declaration",
@@ -366,9 +366,9 @@ NOT_A_PR_MERGED_BUILD: dict[str, str] = {
 #: Every scope that spells ``_record_merge``: the definition, and the two
 #: paths that confirm a merge.
 EXPECTED_RECORDER_SPELLINGS: dict[str, int] = {
-    "pipeline_merge.py::<module>": 1,
-    "pipeline_merge.py::MergeGate._phase_pr": 1,
-    "pipeline_merge.py::MergeGate.repoll_merge_pending": 1,
+    "pipeline/pipeline_merge.py::<module>": 1,
+    "pipeline/pipeline_merge.py::MergeGate._phase_pr": 1,
+    "pipeline/pipeline_merge.py::MergeGate.repoll_merge_pending": 1,
 }
 
 

@@ -13,7 +13,7 @@ from kstrl.acceptance.contract import ContractConfig, ContractMode
 from kstrl.architect.decisions import write_decisions
 from kstrl.architect.decompose_prompt import spec_digest
 from kstrl.learning.journal_rows import INTEGRATION_RESULT_EVENT
-from kstrl.pipeline import ComponentPipeline
+from kstrl.pipeline.pipeline import ComponentPipeline
 from kstrl.plan.manifest import Manifest
 from kstrl.plan.requirements import SpecRequirement
 from kstrl.review.integration import (

@@ -28,7 +28,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.context import SKIPPABLE_PHASES
+from kstrl.pipeline.context import SKIPPABLE_PHASES
 from tests.helpers.astwalk import (
     all_nodes,
     assert_census,
@@ -102,9 +102,9 @@ ctx.readings.add(PhaseReading(attempt=1, phase="review"))
 #: NEW ROW here, not a bigger anonymous bucket, so the failure names
 #: the function.
 _UNKEYABLE_SITES: dict[str, int] = {
-    "context.py::IterationContext.add_phase_reading": 1,
-    "context.py::IterationContext.from_json": 1,
-    "pipeline_attempt.py::AttemptRecorder._merge_phase_readings": 1,
+    "pipeline/context.py::IterationContext.add_phase_reading": 1,
+    "pipeline/context.py::IterationContext.from_json": 1,
+    "pipeline/pipeline_attempt.py::AttemptRecorder._merge_phase_readings": 1,
 }
 
 #: A write to the retry context, in the shape both writers use.
@@ -282,7 +282,7 @@ def test_every_skippable_phase_has_exactly_one_recording_site() -> None:
     measured nothing, and both the public ``IterationContext.add_phase_
     reading`` and a bare ``ctx.readings.add(...)`` write one without
     going anywhere near ``_note_phase_reading``. Round 1 of review
-    planted the first in ``kstrl/pipeline.py`` and this file stayed 2
+    planted the first in ``kstrl/pipeline/pipeline.py`` and this file stayed 2
     passed; round 2 planted the second and it stayed 3 passed, 1
     xfailed. Each now lands as a second row, for the phase and for the
     function respectively.
@@ -332,7 +332,7 @@ def test_the_retry_context_has_exactly_two_writers_and_both_are_in_the_pipeline(
         sources=package_sources(),
         sees=_writes_the_retry_context,
         key=lambda source_file, _node: label(source_file),
-        expected={"pipeline_transitions.py": 2},
+        expected={"pipeline/pipeline_transitions.py": 2},
         control=[_CONTEXT_WRITE, _CONTEXT_UPDATE, _CONTEXT_SETDEFAULT],
         message=(
             "the retry context gained or lost a writer. Every writer "

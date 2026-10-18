@@ -216,17 +216,17 @@ EXPECTED_PROCESS_MODULES: dict[str, tuple[str, ...]] = {
     # ProcessPoolExecutor workers. `terminate` and `kill` here are
     # `multiprocessing.Process` methods on pool workers the executor
     # owns, not a Popen this module spawned. Left alone by this PR
-    # because `kstrl/factory.py` is held by another open PR; the site
+    # because `kstrl/factory/factory.py` is held by another open PR; the site
     # inventory in that PR body records the verdict.
     # `multiprocessing` (#642) is `multiprocessing.parent_process()`, the
     # sentinel a pool worker waits on so it ends with its parent.
-    "factory.py": ("ProcessPoolExecutor", "kill", "terminate"),
+    "factory/factory.py": ("ProcessPoolExecutor", "kill", "terminate"),
     # #776 F4: the component worker, with the `multiprocessing` row of the old
     # factory.py row, and nothing else.
-    "factory_worker.py": ("multiprocessing",),
+    "factory/factory_worker.py": ("multiprocessing",),
     # #776 F2: the worktree code, with every `subprocess.run` of the old
     # factory.py row, and nothing else.
-    "factory_worktrees.py": ("subprocess",),
+    "factory/factory_worktrees.py": ("subprocess",),
     # `subprocess.run` behind a timeout, and nothing else.
     "agents/codex.py": ("DeadlineStreamer", "subprocess"),
     "loop/breaker.py": ("subprocess",),
@@ -244,11 +244,11 @@ EXPECTED_PROCESS_MODULES: dict[str, tuple[str, ...]] = {
     # #700: `TimeoutExpired` from `run_scrubbed`, which owns the process group.
     "acceptance/isolation.py": ("subprocess",),
     "events/observability.py": ("subprocess",),
-    "pr.py": ("subprocess",),
+    "pipeline/pr.py": ("subprocess",),
     # The `gh pr view` reads moved here from `pr.py` for the 800-line
     # ratchet (#154); `pr.py` still pushes, creates and merges.
     "git/pr_state.py": ("subprocess",),
-    "retry_plan.py": ("subprocess",),
+    "factory/retry_plan.py": ("subprocess",),
     "io/statedir.py": ("subprocess",),
     "proc/temp_worktree.py": ("subprocess",),
     # #433: `SubprocessError`, caught from `retry_plan._failed_branch_probe`

@@ -1,6 +1,6 @@
 """Branches of ``run_factory`` that no other end-to-end test operates (#776 G1).
 
-``kstrl/factory.py::_run_factory_locked`` is divided in #776 B3. Each test
+``kstrl/factory/factory.py::_run_factory_locked`` is divided in #776 B3. Each test
 here drives the real ``run_factory`` through one branch that a coverage
 measurement on main showed no test enters, so a change on that branch
 shows as a red test. The worker is a stub, as in
@@ -24,10 +24,10 @@ import pytest
 
 from kstrl.acceptance.contract import ContractConfig, ContractMode, ContractResult
 from kstrl.architect.linear import LinearConfig
-from kstrl.factory import run_factory
-from kstrl.factory_config import FactoryConfig
-from kstrl.factory_result import ComponentResult, FactoryResult
+from kstrl.factory.factory import run_factory
 from kstrl.learning.autonomy import AutonomyState
+from kstrl.pipeline.factory_config import FactoryConfig
+from kstrl.pipeline.factory_result import ComponentResult, FactoryResult
 from kstrl.plan.manifest import ComponentStatus, Manifest
 from kstrl.ui.plain import PlainUI
 from tests.helpers.plan_approval import approve_plan
@@ -79,11 +79,13 @@ def _drive(
     if worker is None:
         worker = lambda comp_id, *a, **k: _ok(comp_id)  # noqa: E731
     stubs = [
-        patch("kstrl.factory._run_component", side_effect=worker),
+        patch("kstrl.factory.factory._run_component", side_effect=worker),
         patch("kstrl.git.git_diff.get_diff_content", return_value=""),
     ]
     if contract is not None:
-        stubs.append(patch("kstrl.factory_acceptance.run_contract_testing", side_effect=contract))
+        stubs.append(
+            patch("kstrl.factory.factory_acceptance.run_contract_testing", side_effect=contract)
+        )
     with contextlib.ExitStack() as stack:
         for stub in stubs:
             stack.enter_context(stub)
@@ -309,7 +311,7 @@ class TestRunEnd:
         manifest = _make_manifest([_component("comp-a")])
         manifest.single_pr = True
         with patch(
-            "kstrl.factory_summary.create_single_pr",
+            "kstrl.factory.factory_summary.create_single_pr",
             return_value=("kstrl/factory/test", "https://example.invalid/pr/1"),
         ):
             result, _ = _drive(tmp_path, manifest, _config(create_prs=True, single_pr=True))
@@ -323,7 +325,7 @@ class TestRunEnd:
         straggler = _component("comp-b")
         straggler.status = ComponentStatus.COMPLETED.value
         with patch(
-            "kstrl.factory_summary.create_prs_in_order",
+            "kstrl.factory.factory_summary.create_prs_in_order",
             return_value=[(0, "https://example.invalid/pr/2")],
         ) as create:
             result, _ = _drive(

@@ -9,9 +9,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from kstrl.factory.plan_gate import plan_dedupe_key, plan_digest
 from kstrl.owner.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.plan.manifest import Manifest
-from kstrl.plan_gate import plan_dedupe_key, plan_digest
 
 
 def approve_plan(root: Path, manifest: Manifest) -> None:

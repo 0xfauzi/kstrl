@@ -162,7 +162,7 @@ def test_up_is_named_only_where_it_is_read_validated_or_started() -> None:
             "acceptance/replay.py:_run_stages": 3,
             "acceptance/replay.py:_ready": 1,
             # #700 slice 7: the designer's prompt names the command; it never runs it.
-            "acceptance_design.py:build_design_prompt": 2,
+            "factory/acceptance_design.py:build_design_prompt": 2,
         },
         control=["start_scrubbed(stack.up, cwd=w, rung=r, log=f)\n", 'raw.get("up", "")\n'],
         message="`up` is spelled somewhere new, or a count moved: read the new site.",

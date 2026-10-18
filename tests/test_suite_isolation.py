@@ -21,10 +21,10 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.factory_result import FactoryResult
 from kstrl.knowledge.knowledge_facts import Fact, KnowledgeConfig, write_facts
 from kstrl.learning.evolution import EvolutionJournal
 from kstrl.learning.evolution_config import EvolutionConfig
+from kstrl.pipeline.factory_result import FactoryResult
 from kstrl.plan.manifest import Component, ComponentStatus, Manifest
 from tests.conftest import (
     KSTRL_ENV_PREFIXES,

@@ -25,8 +25,8 @@ from typing import Any
 
 import pytest
 
-from kstrl.factory_config import FactoryConfig, claim_gate_unreachable_warning
-from kstrl.pipeline_transitions import Transition
+from kstrl.pipeline.factory_config import FactoryConfig, claim_gate_unreachable_warning
+from kstrl.pipeline.pipeline_transitions import Transition
 from kstrl.plan.findings import CLAIM_DISAGREEMENT_CATEGORY, Finding
 from kstrl.plan.manifest import Component
 from kstrl.plan.prd import PRD
@@ -198,7 +198,7 @@ class TestPipelineWiring:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """factory.py calls process_result without a try, so an
+        """factory/factory.py calls process_result without a try, so an
         exception escaping the phase chain would take the whole run
         down, not just this component. A save that cannot be written
         degrades to an infrastructure finding, the component still

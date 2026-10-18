@@ -49,7 +49,7 @@ class TestExperimentsTsvSurvivesATornTail:
         return journal_at(tmp_path)
 
     def record(self, journal: Any, run_id: str) -> None:
-        from kstrl.factory_result import FactoryResult
+        from kstrl.pipeline.factory_result import FactoryResult
         from kstrl.plan.manifest import Manifest
 
         journal.record_run(

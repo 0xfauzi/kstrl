@@ -11,7 +11,7 @@ stopping while schedulable components remain, driven through
 The budget-gate fail-all behavior is already pinned by
 tests/test_usage_meter.py (comp-b never launches: the scheduling gate
 fails it loudly too); the in-process execution of the sequential mode
-is pinned by every test that patches kstrl.factory._run_component
+is pinned by every test that patches kstrl.factory.factory._run_component
 with an unpicklable MagicMock.
 """
 
@@ -26,9 +26,9 @@ from unittest.mock import patch
 from kstrl.config.config import KstrlConfig
 from kstrl.events import event_catalog
 from kstrl.events import events as ev
-from kstrl.factory import run_factory
-from kstrl.factory_config import FactoryConfig
-from kstrl.factory_result import ComponentResult
+from kstrl.factory.factory import run_factory
+from kstrl.pipeline.factory_config import FactoryConfig
+from kstrl.pipeline.factory_result import ComponentResult
 from kstrl.plan.manifest import Component, ComponentStatus, Manifest
 from kstrl.ui.plain import PlainUI
 from kstrl.verify.verify_model import VerifyConfig
@@ -152,11 +152,11 @@ class TestUnifiedSchedulingLoop:
 
         with (
             patch(
-                "kstrl.factory._setup_worktree",
+                "kstrl.factory.factory._setup_worktree",
                 side_effect=_setup,
             ),
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 return_value=success_b,
             ),
             patch(

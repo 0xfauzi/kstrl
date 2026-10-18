@@ -136,19 +136,19 @@ def _section_specs() -> list[SectionSpec]:
     from kstrl.architect.linear import LinearConfig
     from kstrl.config.config import KstrlConfig
     from kstrl.config.config_keys import STRING_KEYS
-    from kstrl.divergence import DivergenceConfig
     from kstrl.events.observability import NotifyConfig
-    from kstrl.factory_config import FactoryConfig
     from kstrl.intake_gh import GitHubIntakeConfig
     from kstrl.knowledge.knowledge_facts import KnowledgeConfig
     from kstrl.learning.autonomy_config import AutonomyConfig
     from kstrl.learning.evolution_config import EvolutionConfig
     from kstrl.loop.breaker import BreakerConfig
     from kstrl.owner.inbox import InboxConfig
+    from kstrl.pipeline.divergence import DivergenceConfig
+    from kstrl.pipeline.factory_config import FactoryConfig
+    from kstrl.pipeline.release import ReleaseConfig
     from kstrl.proc.timeout import TimeoutConfig
     from kstrl.project.feedforward import CodebaseScanConfig
     from kstrl.queue.workqueue_items import QueueConfig
-    from kstrl.release import ReleaseConfig
     from kstrl.review.security import SecurityConfig
     from kstrl.serve_config import ServeConfig
     from kstrl.signals import SignalsConfig

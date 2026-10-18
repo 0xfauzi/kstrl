@@ -33,7 +33,7 @@ import pytest
 
 from kstrl.agents import custom
 from kstrl.events.usage import UsageRecord
-from kstrl.factory import run_factory
+from kstrl.factory.factory import run_factory
 from kstrl.learning.evolution import EvolutionJournal
 from kstrl.learning.evolution_config import EvolutionConfig
 from kstrl.learning.journal_rows import FINDINGS_SUPERSEDED_EVENT
@@ -81,8 +81,8 @@ from pathlib import Path
 from kstrl.agents import custom
 from kstrl.events.usage import UsageRecord
 from kstrl.config.config import KstrlConfig
-from kstrl.factory import run_factory
-from kstrl.factory_config import FactoryConfig
+from kstrl.factory.factory import run_factory
+from kstrl.pipeline.factory_config import FactoryConfig
 from kstrl.plan.manifest import Manifest
 from kstrl.review.security import SecurityConfig
 from kstrl.ui.plain import PlainUI

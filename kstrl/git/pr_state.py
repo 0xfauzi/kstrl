@@ -1,14 +1,14 @@
 """GitHub's view of a pull request: its state, its mergeability, and
 the commit a merge produced.
 
-Split out of :mod:`kstrl.pr` when that module approached the 800-line
+Split out of :mod:`kstrl.pipeline.pr` when that module approached the 800-line
 pre-commit ratchet carrying the merge ref. Reading what GitHub thinks of
 a PR is a different job from creating one and writing its body, and it
 is the only job that produces the release ref.
 
-``wait_for_merge`` deliberately stayed in :mod:`kstrl.pr`. Moving it
-would leave ``kstrl.pr.wait_for_merge`` existing but unread by
-``kstrl.pipeline``, and three tests patch that exact attribute with no
+``wait_for_merge`` deliberately stayed in :mod:`kstrl.pipeline.pr`. Moving it
+would leave ``kstrl.pipeline.pr.wait_for_merge`` existing but unread by
+``kstrl.pipeline.pipeline``, and three tests patch that exact attribute with no
 ``raising=False``: the patch would succeed, the tests would poll a real
 ``gh``, and they would HANG rather than fail.
 """

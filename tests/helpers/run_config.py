@@ -23,10 +23,10 @@ import pytest
 from kstrl.config import config as _config_module
 from kstrl.config import config_toml as _toml_module
 from kstrl.config.config import KstrlConfig
-from kstrl.factory import run_factory
-from kstrl.factory_config import FactoryConfig
-from kstrl.factory_result import FactoryResult
-from kstrl.pipeline import ComponentPipeline
+from kstrl.factory.factory import run_factory
+from kstrl.pipeline.factory_config import FactoryConfig
+from kstrl.pipeline.factory_result import FactoryResult
+from kstrl.pipeline.pipeline import ComponentPipeline
 from kstrl.plan.manifest import Component, Manifest
 from kstrl.ui.plain import PlainUI
 from tests.helpers import gitrepo
@@ -149,7 +149,7 @@ def drive_run(
     With components the scheduler, ``process_result`` and the ``try``
     around ``future.result()`` are all entered, which is what makes a
     mid-run failure a failure of the RUN rather than of one call. The
-    engineer is stubbed at ``kstrl.factory._run_component`` because the
+    engineer is stubbed at ``kstrl.factory.factory._run_component`` because the
     subject is the phase chain around it, not the loop.
     """
     scripts = tmp_path / "scripts" / "kstrl"
@@ -187,7 +187,7 @@ def drive_run(
         return pipeline
 
     narration = io.StringIO()
-    with patch("kstrl.factory.ComponentPipeline", side_effect=capture):
+    with patch("kstrl.factory.factory.ComponentPipeline", side_effect=capture):
         result = run_factory(
             manifest,
             config,

@@ -50,7 +50,7 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     # #700 slice 7: two `except (OSError, RuntimeError, ValueError)` clauses,
     # one around the designer's reply (a timeout or output cap is a
     # RuntimeError) and one around starting it. Caught, never subclassed.
-    "acceptance_design.py": 2,
+    "factory/acceptance_design.py": 2,
     # AgentOutputTooLarge, and AgentTimedOut since #603.
     "agents/agent_output.py": 2,
     "learning/autonomy.py": 1,
@@ -69,9 +69,9 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     # _human_rejections unreachable (the ladder is None only when
     # autonomy is disabled) and deleted it, so the census stays at 6.
     # #776 F2 moved four of the five to factory_worktrees.py.
-    "factory.py": 1,
+    "factory/factory.py": 1,
     "proc/factory_lock.py": 1,
-    "factory_worktrees.py": 4,
+    "factory/factory_worktrees.py": 4,
     "git/git.py": 1,
     "owner/inbox.py": 1,
     # IntakeError (the subclass). #776 I1 moved it out of intake_github.py.
@@ -83,7 +83,7 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     "intake_steering.py": 1,
     # OwnerAnswerError (#639 slice 4).
     "architect/owner_answers.py": 1,
-    "pr.py": 4,  # no subclass: four bare raises
+    "pipeline/pr.py": 4,  # no subclass: four bare raises
     # One bare raise, plus four from the R10.7 open-PR bound (#228), all
     # in count_open_kstrl_prs: a failed gh result, the two bad-payload
     # shapes, and a row that is not a PR record. check_open_pr_bound

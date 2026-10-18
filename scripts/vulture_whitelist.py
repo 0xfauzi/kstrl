@@ -103,13 +103,14 @@ _.labeled_at
 # record field: set at construction and written to the intake ledger
 _.last_edited_at
 
-# provenance field of LoopBudget: set by factory_launch: writer at kstrl/factory_launch.py:279
+# provenance field of LoopBudget: set by factory_launch: writer at
+# kstrl/factory/factory_launch.py:274
 _.prior_known_calls
 
-# record field: set at construction: writer at kstrl/pipeline_knowledge.py:303, 327 and 393
+# record field: set at construction: writer at kstrl/pipeline/pipeline_knowledge.py:303, 327 and 393
 _.utilization
 
-# record field: set at construction; writer at kstrl/pr.py:315 to 375, no reader in kstrl
+# record field: set at construction; writer at kstrl/pipeline/pr.py:315 to 375, no reader in kstrl
 _.pushed
 
 # RunState counter: written by the reducer at kstrl/events/reducer.py:383, no reader in kstrl

@@ -34,10 +34,10 @@ import kstrl.cli_factory as cli_factory_mod
 import kstrl.cli_loop as cli_loop_mod
 import kstrl.loop as loop_mod
 from kstrl.config.config import KstrlConfig
-from kstrl.factory import run_factory
-from kstrl.factory_config import FactoryConfig
-from kstrl.factory_result import FactoryResult
+from kstrl.factory.factory import run_factory
 from kstrl.loop.loop import LoopResult
+from kstrl.pipeline.factory_config import FactoryConfig
+from kstrl.pipeline.factory_result import FactoryResult
 from kstrl.plan.manifest import Component, Manifest
 from kstrl.project.scaffold_templates import DEFAULT_PROMPT
 from kstrl.review.security import SecurityConfig

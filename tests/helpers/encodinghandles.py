@@ -101,7 +101,7 @@ def text_handles(scope: ast.AST, table: Bindings) -> dict[str, ast.Call]:
     """Local name -> the text-mode ``open`` that bound it, in ONE scope.
 
     Per scope and not per module, because a handle name is short and
-    reused: ``kstrl/factory.py`` binds ``fp`` in one function and uses
+    reused: ``kstrl/factory/factory.py`` binds ``fp`` in one function and uses
     the same spelling elsewhere, and a module-wide table would credit one
     function's ``fp.read()`` to another function's ``open``.
 

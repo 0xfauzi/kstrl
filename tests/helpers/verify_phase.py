@@ -21,19 +21,19 @@ from typing import Any
 from kstrl.config.config import KstrlConfig
 from kstrl.events.events import EventBus, V1CompatSink
 from kstrl.events.observability import NotifyConfig, NotifyHooks, ProgressLog
-from kstrl.factory_agents import AdversarialAgentSelection
-from kstrl.factory_config import FactoryConfig
-from kstrl.factory_result import ComponentResult, FactoryResult
 from kstrl.knowledge.knowledge_facts import KnowledgeConfig
-from kstrl.pipeline import ComponentPipeline
-from kstrl.pipeline_state import PipelineHooks
+from kstrl.pipeline.factory_agents import AdversarialAgentSelection
+from kstrl.pipeline.factory_config import FactoryConfig
+from kstrl.pipeline.factory_result import ComponentResult, FactoryResult
+from kstrl.pipeline.pipeline import ComponentPipeline
+from kstrl.pipeline.pipeline_state import PipelineHooks
+from kstrl.pipeline.runenvelope import RunEnvelope
+from kstrl.pipeline.runstate import RunState
 from kstrl.plan.manifest import Component, Manifest
 from kstrl.plan.scope import RunScope
 from kstrl.proc.worktree_sweep import WorktreeSweep
 from kstrl.review.review import ReviewResult
 from kstrl.review.security import SecurityResult
-from kstrl.runenvelope import RunEnvelope
-from kstrl.runstate import RunState
 from kstrl.ui.plain import PlainUI
 from kstrl.verify.policy import PolicyConfig
 from kstrl.verify.verify import run_mechanical_verification

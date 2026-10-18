@@ -37,15 +37,15 @@ import pytest
 from kstrl.agents.sandbox import SandboxConfig
 from kstrl.architect.decompose_reply import _SCOPE_HAZARD_ADVICE
 from kstrl.cli_loop import _understand_core
-from kstrl.commandrun import CommandRun
 from kstrl.config.config import KstrlConfig, component_harness_paths
 from kstrl.events.events import EventBus
-from kstrl.factory import run_factory
-from kstrl.factory_config import FactoryConfig
-from kstrl.factory_preflight import _SCOPE_HAZARD_REASONS, _preflight_component_scope
-from kstrl.factory_result import ComponentResult
-from kstrl.factory_worker import _run_component
+from kstrl.factory.commandrun import CommandRun
+from kstrl.factory.factory import run_factory
+from kstrl.factory.factory_preflight import _SCOPE_HAZARD_REASONS, _preflight_component_scope
+from kstrl.factory.factory_worker import _run_component
 from kstrl.loop.loop import LoopResult
+from kstrl.pipeline.factory_config import FactoryConfig
+from kstrl.pipeline.factory_result import ComponentResult
 from kstrl.plan.manifest import Component, Manifest
 from kstrl.plan.scope import ComponentScope, RunScope
 from kstrl.ui.plain import PlainUI
@@ -562,7 +562,7 @@ class TestPreflightComponentScope:
 
         out = io.StringIO()
         ui = PlainUI(no_color=True, file=out)
-        with patch("kstrl.factory._run_component", side_effect=fake_component):
+        with patch("kstrl.factory.factory._run_component", side_effect=fake_component):
             result = run_factory(
                 _manifest([_component()]),
                 FactoryConfig(
@@ -596,7 +596,7 @@ class TestPreflightComponentScope:
             return ComponentResult(COMPONENT_ID, success=True, iterations=1)
 
         with (
-            patch("kstrl.factory._run_component", side_effect=fake_component),
+            patch("kstrl.factory.factory._run_component", side_effect=fake_component),
             patch("kstrl.git.git_diff.get_diff_content", return_value=""),
         ):
             result = run_factory(

@@ -30,12 +30,12 @@ from unittest.mock import patch
 import pytest
 
 from kstrl.config.config import KstrlConfig
-from kstrl.factory import run_factory
-from kstrl.factory_config import FactoryConfig
-from kstrl.factory_result import ComponentResult, FactoryResult
+from kstrl.factory.factory import run_factory
 from kstrl.git.git import GitDiffError
 from kstrl.git.git_diff import get_diff_content
-from kstrl.pipeline import ComponentPipeline
+from kstrl.pipeline.factory_config import FactoryConfig
+from kstrl.pipeline.factory_result import ComponentResult, FactoryResult
+from kstrl.pipeline.pipeline import ComponentPipeline
 from kstrl.plan.manifest import Component, Manifest
 from kstrl.review.review import (
     ReviewMode,
@@ -419,17 +419,17 @@ def _run_with_budget(
     stream = io.StringIO()
     with (
         patch(
-            "kstrl.factory._run_component",
+            "kstrl.factory.factory._run_component",
             side_effect=lambda comp_id, *a, **k: ComponentResult(
                 comp_id, success=True, iterations=1
             ),
         ),
         patch(
-            "kstrl.factory.run_review",
+            "kstrl.factory.factory.run_review",
             return_value=ReviewResult(passed=True, mode="hard"),
         ) as mock_review,
         patch(
-            "kstrl.factory.run_security_review",
+            "kstrl.factory.factory.run_security_review",
             return_value=SecurityResult(passed=True, mode="hard"),
         ) as mock_security,
         patch("kstrl.git.git_diff.get_diff_content", return_value=""),
@@ -467,7 +467,7 @@ class TestFactorySkipTraces:
         success = ComponentResult("comp-a", success=True, iterations=1)
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 return_value=success,
             ),
             patch("kstrl.git.git_diff.get_diff_content", return_value=""),
@@ -519,11 +519,11 @@ class TestFactorySkipTraces:
         passing = ReviewResult(passed=True, mode="hard")
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 return_value=success,
             ),
             patch(
-                "kstrl.factory.run_review",
+                "kstrl.factory.factory.run_review",
                 return_value=passing,
             ),
             patch("kstrl.git.git_diff.get_diff_content", return_value=""),
@@ -833,7 +833,7 @@ class TestFactorySkipTraces:
         success = ComponentResult("comp-a", success=True, iterations=1)
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 return_value=success,
             ),
             patch("kstrl.git.git_diff.get_diff_content", return_value=""),
@@ -871,11 +871,11 @@ class TestFactoryReviewerCrash:
 
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 side_effect=fake_run_component,
             ),
             patch(
-                "kstrl.factory.run_review",
+                "kstrl.factory.factory.run_review",
                 side_effect=fake_run_review,
             ),
             patch("kstrl.git.git_diff.get_diff_content", return_value=""),
@@ -904,11 +904,11 @@ class TestFactoryReviewerCrash:
         success = ComponentResult("comp-a", success=True, iterations=1)
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 return_value=success,
             ),
             patch(
-                "kstrl.factory.run_review",
+                "kstrl.factory.factory.run_review",
                 side_effect=RuntimeError("reviewer exploded"),
             ),
             patch("kstrl.git.git_diff.get_diff_content", return_value=""),
@@ -942,11 +942,11 @@ class TestFactoryReviewerCrash:
         success = ComponentResult("comp-a", success=True, iterations=1)
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 return_value=success,
             ),
             patch(
-                "kstrl.factory.run_security_review",
+                "kstrl.factory.factory.run_security_review",
                 side_effect=RuntimeError("security agent exploded"),
             ),
             patch("kstrl.git.git_diff.get_diff_content", return_value=""),
@@ -964,7 +964,7 @@ class TestFactoryReviewerCrash:
         infra = [f for f in comp.findings if f.is_infrastructure_error and f.phase == "security"]
         assert len(infra) == 1
         # and the PR body renders the did-not-run callout from it
-        from kstrl.pr_body import component_pr_body
+        from kstrl.pipeline.pr_body import component_pr_body
 
         body = component_pr_body(
             comp, manifest, root, isolation="none: ran on the host", requirements=()
@@ -1013,14 +1013,14 @@ class TestR13DiffErrors:
         success = ComponentResult("comp-a", success=True, iterations=1)
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 return_value=success,
             ),
             patch(
                 "kstrl.git.git_diff.get_diff_content",
                 side_effect=GitDiffError("git diff exited 129"),
             ),
-            patch("kstrl.factory.run_review") as mock_review,
+            patch("kstrl.factory.factory.run_review") as mock_review,
         ):
             result = run_factory(
                 manifest,

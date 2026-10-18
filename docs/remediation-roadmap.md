@@ -778,7 +778,7 @@ by an integration test with a synthetic-but-realistic journal).
     strangler (pipeline object first, scheduler swap second) with the R4 spine
     tests as the net.
   - DONE (two PRs, strangler as planned): PR 1 extracts
-    `kstrl/pipeline.py::ComponentPipeline` (typed phase results, single
+    `kstrl/pipeline/pipeline.py::ComponentPipeline` (typed phase results, single
     transition dispatch, hooks-injected phase functions, late-binding fix,
     distiller pinned PRE-PR as a named step) with
     `tests/test_pipeline.py` covering every transition in isolation; PR 2

@@ -1,6 +1,6 @@
 """Widget 2 of docs/lessons/pr-221.html: the level-triggered retry context.
 
-Old rule: ``IterationContext.format_for_prompt`` (kstrl/context.py:48-88)
+Old rule: ``IterationContext.format_for_prompt`` (kstrl/pipeline/context.py:48-88)
 renders every accumulated entry and ends with "Fix ALL issues listed above
 before completing." The old renderer here is a port of that function; the
 list each phase lands in today follows the call sites issue #223 tabulates
@@ -130,7 +130,7 @@ def render_new(entries: list[Entry]) -> str:
 
 
 def render_old(entries: list[Entry]) -> str:
-    """Today's format_for_prompt (kstrl/context.py:48-88), ported."""
+    """Today's format_for_prompt (kstrl/pipeline/context.py:48-88), ported."""
     live = [e for e in entries if e.attempt > 0]
     n = max((e.attempt for e in live), default=0)
     verification = [e.text for e in entries if e.phase == "verification"]

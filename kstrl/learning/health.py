@@ -1,6 +1,6 @@
 """R8.4 (#151): factory health trending, advisory only.
 
-``health_breaches`` is the contract ``kstrl/factory.py:2888`` reads
+``health_breaches`` is the contract ``kstrl/factory/factory.py:2888`` reads
 through ``importlib`` (#232). Advisory only, per the owner's 2026-08-25
 comment on #151 and ``docs/loop-design.md`` 5.11: this module
 never mutates or demotes anything, and the seam demotes only when
@@ -43,7 +43,7 @@ RULE_EWMA = "EWMA(0.2) beyond 3 sigma"
 
 @dataclass(frozen=True)
 class HealthBreach:
-    """The contract #232 is written against (``kstrl/factory.py:2926``).
+    """The contract #232 is written against (``kstrl/factory/factory.py:2926``).
 
     Five fields, frozen, no more: this is read structurally through a
     ``Protocol`` on the other side, so a sixth field here changes
@@ -237,7 +237,7 @@ def health_readings(root_dir: Path, experiments: Path | None = None) -> list[Met
 
 
 def health_breaches(root_dir: Path, experiments: Path | None = None) -> list[HealthBreach]:
-    """The contract #232 reads (``kstrl/factory.py:2888``).
+    """The contract #232 reads (``kstrl/factory/factory.py:2888``).
 
     The seam calls this POSITIONALLY with one argument; ``experiments``
     exists only for ``ks autonomy replay --experiments``.

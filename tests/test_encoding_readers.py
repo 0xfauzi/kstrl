@@ -102,16 +102,16 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     # module (split out of calibration.py) now shares between callers.
     "calibration/calibration_baseline.py": 1,
     "cli_preflight.py": 1,
-    "commandrun.py": 1,
+    "factory/commandrun.py": 1,
     "architect/decisions.py": 1,
     "architect/decompose_prompt.py": 2,
     "events/events.py": 1,
     "learning/evolution.py": 1,
-    "factory_acceptance.py": 1,
+    "factory/factory_acceptance.py": 1,
     "proc/factory_lock.py": 1,
-    "factory_result.py": 1,
-    "factory_worker.py": 2,
-    "factory_worktrees.py": 1,
+    "pipeline/factory_result.py": 1,
+    "factory/factory_worker.py": 2,
+    "factory/factory_worktrees.py": 1,
     "feature_cmd.py": 2,
     # 1 since #696 slice 6: the module map's line count is the one read
     # left; the interface, graph and conventions readers are gone.
@@ -153,9 +153,9 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     # added journal_integration_result's journal open. #776 divided the 5
     # between the layer modules: the attempt record has 3 (the phase
     # transcript open and two journal opens) and the ledger has 1.
-    "pipeline_attempt.py": 3,
-    "pipeline_knowledge.py": 1,
-    "pipeline_ledger.py": 1,
+    "pipeline/pipeline_attempt.py": 3,
+    "pipeline/pipeline_knowledge.py": 1,
+    "pipeline/pipeline_ledger.py": 1,
     "plan/prd.py": 1,
     # #700 slice 5: `ks recheck` reads a record and its index.json back.
     "acceptance/recheck.py": 1,
@@ -255,14 +255,13 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "architect/decompose_prompt.py spec_path.read_text(encoding='utf-8')",
     "calibration/calibration_baseline.py path.read_text(encoding='utf-8')",
     "cli_preflight.py open(prd_file, encoding='utf-8')",
-    "commandrun.py open(path, 'a', buffering=1, encoding='utf-8')",
     "events/events.py open(path, encoding='utf-8', errors='replace')",
     "events/observability.py for line in f on an open() handle",
     "events/observability.py open(path, encoding='utf-8')",
-    "factory_result.py path.read_text(encoding='utf-8')",
-    "factory_worker.py open(log_path, 'a', buffering=1, encoding='utf-8', errors='replace')",
-    "factory_worker.py open(run_paths.engineer_log(component_id), 'a', buffering=1, encoding=",
-    "factory_worktrees.py open(lock_path, 'w', encoding='utf-8')",
+    "factory/commandrun.py open(path, 'a', buffering=1, encoding='utf-8')",
+    "factory/factory_worker.py open(log_path, 'a', buffering=1, encoding='utf-8', errors='replace')",  # noqa: E501
+    "factory/factory_worker.py open(run_paths.engineer_log(component_id), 'a', buffering=1, encoding=",  # noqa: E501
+    "factory/factory_worktrees.py open(lock_path, 'w', encoding='utf-8')",
     "feature_cmd.py open(latest_path, 'w', encoding='utf-8')",
     "feature_cmd.py open(repair_path, 'w', encoding='utf-8')",
     # ``init_cmd.py path.open('a', encoding='utf-8')`` was here until
@@ -287,8 +286,9 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "learning/journal_reads.py self.config.experiments_path.read_text(encoding='utf-8')",
     "loop/iteration_prompt.py claude_md_path.read_text(encoding='utf-8')",
     "loop/loop.py config.prompt_file.read_text(encoding='utf-8')",
-    "pipeline_attempt.py open(path, 'a', buffering=1, encoding='utf-8')",
-    "pipeline_knowledge.py progress_path.read_text(encoding='utf-8')",
+    "pipeline/factory_result.py path.read_text(encoding='utf-8')",
+    "pipeline/pipeline_attempt.py open(path, 'a', buffering=1, encoding='utf-8')",
+    "pipeline/pipeline_knowledge.py progress_path.read_text(encoding='utf-8')",
     "plan/manifest.py open(path, encoding='utf-8')",
     "plan/prd.py open(path, encoding='utf-8')",
     "proc/factory_lock.py fp.read(64) on an open() handle",
@@ -379,14 +379,14 @@ EXPECTED_DECIDED_OUT: tuple[str, ...] = (
     # `readable_text`, which decodes with errors="replace". Binary, so no
     # codec applies at the open.
     "acceptance/replay.py log.open",
-    "factory_acceptance.py EvolutionJournal.open",
+    "factory/factory_acceptance.py EvolutionJournal.open",
     # The journal's "a+b" probe-and-append. Binary, so no codec applies;
     # #331 moved it from evolution.py to appendio.open_for_append, where
     # six appenders now share it.
     "io/appendio.py open",
     "io/atomicio.py os.open",
-    "pipeline_attempt.py EvolutionJournal.open",
-    "pipeline_ledger.py EvolutionJournal.open",
+    "pipeline/pipeline_attempt.py EvolutionJournal.open",
+    "pipeline/pipeline_ledger.py EvolutionJournal.open",
 )
 
 

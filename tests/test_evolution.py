@@ -8,10 +8,10 @@ from typing import Any
 
 import pytest
 
-from kstrl.factory_result import FactoryResult
 from kstrl.learning.evolution import EvolutionJournal
 from kstrl.learning.evolution_config import EvolutionConfig
 from kstrl.learning.journal_rows import JOURNAL_SCHEMA_VERSION, SPEC_ISSUES_EVENT
+from kstrl.pipeline.factory_result import FactoryResult
 from kstrl.plan.manifest import Component, ComponentStatus, Manifest
 from kstrl.verify.failure_signatures import (
     signature_for_error,

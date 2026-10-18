@@ -46,13 +46,13 @@ from click.testing import CliRunner
 
 from kstrl.cli import cli
 from kstrl.config.config import KstrlConfig
-from kstrl.factory import run_factory
-from kstrl.factory_config import FactoryConfig
-from kstrl.factory_result import ComponentResult, FactoryResult
+from kstrl.factory.factory import run_factory
+from kstrl.factory.retry_plan import prepare_retry
 from kstrl.owner.inbox import Inbox, InboxConfig, InboxItem, ItemKind, ItemStatus
+from kstrl.pipeline.factory_config import FactoryConfig
+from kstrl.pipeline.factory_result import ComponentResult, FactoryResult
+from kstrl.pipeline.pr import MergeConfirmation
 from kstrl.plan.manifest import Component, ComponentStatus, Manifest
-from kstrl.pr import MergeConfirmation
-from kstrl.retry_plan import prepare_retry
 from kstrl.review.review import ReviewResult
 from kstrl.ui.plain import PlainUI
 from kstrl.verify.verify_model import CheckResult, VerificationResult, VerifyConfig
@@ -141,12 +141,14 @@ def _run(
     )
     with (
         patch(
-            "kstrl.factory._run_component",
+            "kstrl.factory.factory._run_component",
             return_value=ComponentResult(COMP, success=True, iterations=1),
         ),
-        patch("kstrl.factory.run_mechanical_verification", return_value=verification),
-        patch("kstrl.factory.run_review", return_value=ReviewResult(passed=True, mode="hard")),
-        patch("kstrl.pr.is_gh_available", return_value=False),
+        patch("kstrl.factory.factory.run_mechanical_verification", return_value=verification),
+        patch(
+            "kstrl.factory.factory.run_review", return_value=ReviewResult(passed=True, mode="hard")
+        ),
+        patch("kstrl.pipeline.pr.is_gh_available", return_value=False),
     ):
         return run_factory(
             Manifest.load(manifest_path),
@@ -347,9 +349,9 @@ class TestAConfirmedMergeClosesEveryItemForTheComponent:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """The second completion site: a parked merge confirmed on re-poll."""
-        monkeypatch.setattr("kstrl.pr.is_gh_available", lambda: True)
+        monkeypatch.setattr("kstrl.pipeline.pr.is_gh_available", lambda: True)
         monkeypatch.setattr(
-            "kstrl.pr.wait_for_merge", lambda *a, **k: MergeConfirmation(state="merged")
+            "kstrl.pipeline.pr.wait_for_merge", lambda *a, **k: MergeConfirmation(state="merged")
         )
         monkeypatch.setattr("kstrl.git.git_base.fetch_base_branch", lambda *a, **k: None)
         out = io.StringIO()
@@ -411,9 +413,9 @@ class TestAnOperatorDecisionSurvivesTheCompletionRace:
     def test_an_approve_landing_during_the_repoll_resolve_survives(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr("kstrl.pr.is_gh_available", lambda: True)
+        monkeypatch.setattr("kstrl.pipeline.pr.is_gh_available", lambda: True)
         monkeypatch.setattr(
-            "kstrl.pr.wait_for_merge", lambda *a, **k: MergeConfirmation(state="merged")
+            "kstrl.pipeline.pr.wait_for_merge", lambda *a, **k: MergeConfirmation(state="merged")
         )
         monkeypatch.setattr("kstrl.git.git_base.fetch_base_branch", lambda *a, **k: None)
         pipeline, manifest, _result, _calls = _make_pipeline(
@@ -480,9 +482,9 @@ class TestAnOperatorDecisionSurvivesTheCompletionRace:
         APPROVED, so the write is skipped and the operator's decision
         survives.
         """
-        monkeypatch.setattr("kstrl.pr.is_gh_available", lambda: True)
+        monkeypatch.setattr("kstrl.pipeline.pr.is_gh_available", lambda: True)
         monkeypatch.setattr(
-            "kstrl.pr.wait_for_merge", lambda *a, **k: MergeConfirmation(state="merged")
+            "kstrl.pipeline.pr.wait_for_merge", lambda *a, **k: MergeConfirmation(state="merged")
         )
         monkeypatch.setattr("kstrl.git.git_base.fetch_base_branch", lambda *a, **k: None)
         out = io.StringIO()
@@ -600,15 +602,15 @@ def completion_census() -> dict[str, int]:
 EXPECTED_STATUS_SPELLINGS: dict[str, int] = {
     "learning/autonomy_replay.py::load_runs": 1,
     "cli_learning.py::evolve": 1,
-    "context.py::IterationContext.format_for_prompt": 1,
+    "pipeline/context.py::IterationContext.format_for_prompt": 1,
     "learning/experiments_tsv.py::<module>": 1,
     "plan/manifest.py::<module>": 2,
     "plan/manifest.py::Manifest.reset_for_retry": 1,
     "events/observability.py::ProgressLog.factory_completed": 1,
-    "pipeline_transitions.py::<module>": 2,
-    "pipeline_transitions.py::Transitions.complete": 2,
-    "pipeline_merge.py::MergeGate.repoll_merge_pending": 1,
-    "pr_body.py::single_pr_body": 1,
+    "pipeline/pipeline_transitions.py::<module>": 2,
+    "pipeline/pipeline_transitions.py::Transitions.complete": 2,
+    "pipeline/pipeline_merge.py::MergeGate.repoll_merge_pending": 1,
+    "pipeline/pr_body.py::single_pr_body": 1,
     "events/reducer.py::apply": 1,
     "queue/workqueue.py::Queue.finish_ok": 1,
 }
@@ -618,9 +620,9 @@ EXPECTED_STATUS_SPELLINGS: dict[str, int] = {
 COMPLETION_SITES = frozenset(
     {
         # comp.status = COMPLETED, and the Transition.COMPLETED it returns.
-        "pipeline_transitions.py::Transitions.complete",
+        "pipeline/pipeline_transitions.py::Transitions.complete",
         # A parked merge confirmed on re-poll.
-        "pipeline_merge.py::MergeGate.repoll_merge_pending",
+        "pipeline/pipeline_merge.py::MergeGate.repoll_merge_pending",
     }
 )
 
@@ -628,15 +630,15 @@ COMPLETION_SITES = frozenset(
 NOT_A_COMPLETION: dict[str, str] = {
     "learning/autonomy_replay.py::load_runs": "reads the 'completed' count column of a trend row",
     "cli_learning.py::evolve": "prints the 'completed' count column of a trend row",
-    "context.py::IterationContext.format_for_prompt": "a label in the engineer's retry context",
+    "pipeline/context.py::IterationContext.format_for_prompt": "a label in the engineer's retry context",  # noqa: E501
     "learning/experiments_tsv.py::<module>": "the name of the 'completed' trend column",
     "plan/manifest.py::<module>": "the ComponentStatus.COMPLETED declaration, name and value",
     "plan/manifest.py::Manifest.reset_for_retry": (
         "builds the set a dependency's status is compared to"
     ),
     "events/observability.py::ProgressLog.factory_completed": "the count key of a progress event",
-    "pipeline_transitions.py::<module>": "the Transition.COMPLETED declaration, name and value",
-    "pr_body.py::single_pr_body": "a status label in the single-PR body",
+    "pipeline/pipeline_transitions.py::<module>": "the Transition.COMPLETED declaration, name and value",  # noqa: E501
+    "pipeline/pr_body.py::single_pr_body": "a status label in the single-PR body",
     "events/reducer.py::apply": (
         "the reducer's view of a ComponentCompleted event, not the manifest"
     ),

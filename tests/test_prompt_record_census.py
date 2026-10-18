@@ -325,22 +325,22 @@ def test_every_streamer_that_pipes_a_prompt_records_it_first() -> None:
 # --- layer 2: the identity --------------------------------------------------
 
 EXPECTED_AGENT_CALLS: dict[str, int] = {
-    "acceptance_design.py:_design_one": 1,
-    "acceptance_design.py:design_component": 1,
+    "factory/acceptance_design.py:_design_one": 1,
+    "factory/acceptance_design.py:design_component": 1,
     "agents/agent_output.py:collect_agent_output": 1,
     "agents/logging.py:LoggingAgent.run": 1,
     "cli_loop.py:_understand_core": 1,
     "architect/decompose.py:_stream_reply": 1,
-    "factory_worker.py:_run_component": 1,
+    "factory/factory_worker.py:_run_component": 1,
     "feature_cmd.py:run_feature": 3,
-    "integration_phase.py:_review_round": 1,
-    "integration_phase.py:_run_reviewer": 1,
-    "integration_phase.py:review_commit": 1,
+    "factory/integration_phase.py:_review_round": 1,
+    "factory/integration_phase.py:_run_reviewer": 1,
+    "factory/integration_phase.py:review_commit": 1,
     "knowledge/knowledge_distill.py:distill_facts": 1,
     "loop/loop.py:_run_one_iteration": 1,
-    "pipeline_review.py:ReviewPhase._phase_review": 1,
-    "pipeline_security.py:SecurityGate._phase_security": 1,
-    "pipeline_knowledge.py:KnowledgePhase._phase_distill": 1,
+    "pipeline/pipeline_review.py:ReviewPhase._phase_review": 1,
+    "pipeline/pipeline_security.py:SecurityGate._phase_security": 1,
+    "pipeline/pipeline_knowledge.py:KnowledgePhase._phase_distill": 1,
     "review/review.py:run_review": 1,
     "review/security.py:run_security_review": 1,
 }
@@ -349,13 +349,13 @@ EXPECTED_AGENT_CALLS: dict[str, int] = {
 #: e2e test that proves it can be found. Everything else must be scoped
 #: lexically.
 CALLER_SCOPED: dict[str, str] = {
-    "acceptance_design.py:design_component": "acceptance_design._design_one",
+    "factory/acceptance_design.py:design_component": "acceptance_design._design_one",
     "agents/agent_output.py:collect_agent_output": (
         "the drain helper; review, security and distill call it"
     ),
     "agents/logging.py:LoggingAgent.run": "a tee around the adapter it wraps; its caller's scope",
-    "integration_phase.py:_run_reviewer": "integration_phase._review_round",
-    "integration_phase.py:review_commit": "integration_phase._review_round, via _run_reviewer",
+    "factory/integration_phase.py:_run_reviewer": "integration_phase._review_round",
+    "factory/integration_phase.py:review_commit": "integration_phase._review_round, via _run_reviewer",  # noqa: E501
     "knowledge/knowledge_distill.py:distill_facts": "pipeline.ComponentPipeline._phase_distill",
     "loop/loop.py:_run_one_iteration": "every run_loop caller, each scoped lexically",
     "review/review.py:run_review": (
@@ -366,15 +366,15 @@ CALLER_SCOPED: dict[str, str] = {
 
 
 EXPECTED_SCOPES: dict[str, int] = {
-    "acceptance_design.py:_design_one": 1,
+    "factory/acceptance_design.py:_design_one": 1,
     "cli_loop.py:_understand_core": 1,
     "architect/decompose.py:_stream_reply": 1,
-    "factory_worker.py:_run_component": 1,
+    "factory/factory_worker.py:_run_component": 1,
     "feature_cmd.py:run_feature": 3,
-    "integration_phase.py:_review_round": 1,
-    "pipeline_review.py:ReviewPhase._phase_review": 1,
-    "pipeline_security.py:SecurityGate._phase_security": 1,
-    "pipeline_knowledge.py:KnowledgePhase._phase_distill": 1,
+    "factory/integration_phase.py:_review_round": 1,
+    "pipeline/pipeline_review.py:ReviewPhase._phase_review": 1,
+    "pipeline/pipeline_security.py:SecurityGate._phase_security": 1,
+    "pipeline/pipeline_knowledge.py:KnowledgePhase._phase_distill": 1,
 }
 
 
@@ -482,20 +482,20 @@ def test_a_site_cleared_by_its_caller_has_its_callers_counted() -> None:
 #: Every agent-call site: the keyword that carries its time bound, and where
 #: the bound comes from. Derived by running, like every other pin here.
 EXPECTED_BOUNDS: dict[str, tuple[str, str]] = {
-    "acceptance_design.py:_design_one": ("timeout", "[factory] review_timeout_seconds"),
-    "acceptance_design.py:design_component": ("timeout", "its caller's timeout"),
+    "factory/acceptance_design.py:_design_one": ("timeout", "[factory] review_timeout_seconds"),
+    "factory/acceptance_design.py:design_component": ("timeout", "its caller's timeout"),
     "agents/agent_output.py:collect_agent_output": ("timeout", "its caller's timeout"),
     "agents/logging.py:LoggingAgent.run": ("timeout", "its caller's timeout"),
     "cli_loop.py:_understand_core": ("timeouts", "[timeout] agent_iteration and component_total"),
     "architect/decompose.py:_stream_reply": ("timeout", "[factory] architect_timeout_seconds"),
-    "factory_worker.py:_run_component": (
+    "factory/factory_worker.py:_run_component": (
         "timeouts",
         "[timeout] agent_iteration and component_total",
     ),
     "feature_cmd.py:run_feature": ("timeouts", "[timeout] agent_iteration and component_total"),
-    "integration_phase.py:_review_round": ("timeout", "[factory] review_timeout_seconds"),
-    "integration_phase.py:_run_reviewer": ("timeout", "its caller's timeout"),
-    "integration_phase.py:review_commit": ("timeout", "its caller's timeout"),
+    "factory/integration_phase.py:_review_round": ("timeout", "[factory] review_timeout_seconds"),
+    "factory/integration_phase.py:_run_reviewer": ("timeout", "its caller's timeout"),
+    "factory/integration_phase.py:review_commit": ("timeout", "its caller's timeout"),
     "knowledge/knowledge_distill.py:distill_facts": (
         "timeout",
         "[knowledge] distill_timeout_seconds",
@@ -504,12 +504,15 @@ EXPECTED_BOUNDS: dict[str, tuple[str, str]] = {
         "timeout",
         "[timeout] agent_iteration, capped by component_total",
     ),
-    "pipeline_review.py:ReviewPhase._phase_review": ("timeout", "[factory] review_timeout_seconds"),
-    "pipeline_security.py:SecurityGate._phase_security": (
+    "pipeline/pipeline_review.py:ReviewPhase._phase_review": (
+        "timeout",
+        "[factory] review_timeout_seconds",
+    ),
+    "pipeline/pipeline_security.py:SecurityGate._phase_security": (
         "config",
         "[security] timeout_seconds, read inside run_security_review",
     ),
-    "pipeline_knowledge.py:KnowledgePhase._phase_distill": (
+    "pipeline/pipeline_knowledge.py:KnowledgePhase._phase_distill": (
         "config",
         "[knowledge] distill_timeout_seconds, read inside distill_facts",
     ),

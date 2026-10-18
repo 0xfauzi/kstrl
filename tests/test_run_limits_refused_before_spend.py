@@ -26,8 +26,8 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.factory_config import FactoryConfig
-from kstrl.launch_record import run_limits
+from kstrl.pipeline.factory_config import FactoryConfig
+from kstrl.pipeline.launch_record import run_limits
 from kstrl.plan.manifest import ComponentStatus, Manifest
 from kstrl.proc.timeout import TimeoutConfig
 from tests.helpers import gitrepo

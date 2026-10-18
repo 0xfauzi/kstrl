@@ -50,18 +50,19 @@ def _spells_a_removal(node: ast.AST) -> bool:
 #: has one more prose piece.
 EXPECTED_REMOVAL_SPELLINGS = {
     "acceptance/contract.py": 1,
-    "factory_worktrees.py": 5,  # #863 A4: the flat-worktree refusal message names the command
-    "retry_plan.py": 1,
+    # #863 A4: the flat-worktree refusal message names the command
+    "factory/factory_worktrees.py": 5,
+    "factory/retry_plan.py": 1,
     "proc/temp_worktree.py": 6,
 }
 
 #: Every removal argv in kstrl/, by scope, and whether it is swept.
 EXPECTED_REMOVAL_SITES = (
-    "factory_worktrees.py::_cleanup_worktree swept",
-    "factory_worktrees.py::_prune_stale_worktrees swept",
-    "factory_worktrees.py::_setup_worktree swept",
+    "factory/factory_worktrees.py::_cleanup_worktree swept",
+    "factory/factory_worktrees.py::_prune_stale_worktrees swept",
+    "factory/factory_worktrees.py::_setup_worktree swept",
+    "factory/retry_plan.py::prepare_retry swept",
     "proc/temp_worktree.py::remove_temp_worktree swept",
-    "retry_plan.py::prepare_retry swept",
 )
 
 SWEPT = """\

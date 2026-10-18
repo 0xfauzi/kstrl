@@ -272,27 +272,30 @@ ALLOWED_APPEND_OPENS: dict[str, tuple[Reason, str]] = {
     ),
     "queue/workqueue_store.py:queue_lock": (Reason.LOCK_FILE, "the queue lock"),
     "agents/logging.py:LoggingAgent.run": (Reason.TEXT_LOG, "the agent transcript"),
-    "commandrun.py:CommandRun.transcript_writer": (Reason.TEXT_LOG, "a command transcript"),
-    "factory_worker.py:_redirect_worker_output": (Reason.TEXT_LOG, "a worker's stdout and stderr"),
-    "factory_worker.py:_run_component": (Reason.TEXT_LOG, "the component's own log"),
-    "pipeline_attempt.py:AttemptRecorder._phase_transcript": (
+    "factory/commandrun.py:CommandRun.transcript_writer": (Reason.TEXT_LOG, "a command transcript"),
+    "factory/factory_worker.py:_redirect_worker_output": (
+        Reason.TEXT_LOG,
+        "a worker's stdout and stderr",
+    ),
+    "factory/factory_worker.py:_run_component": (Reason.TEXT_LOG, "the component's own log"),
+    "pipeline/pipeline_attempt.py:AttemptRecorder._phase_transcript": (
         Reason.TEXT_LOG,
         "a phase transcript",
     ),
     "io/atomicio.py:_create_temp": (Reason.NOT_AN_APPEND, "os.open with O_WRONLY|O_CREAT|O_EXCL"),
-    "factory_acceptance.py:_record_contract_event": (
+    "factory/factory_acceptance.py:_record_contract_event": (
         Reason.NOT_AN_APPEND,
         "EvolutionJournal.open(root_dir), a classmethod called open",
     ),
-    "pipeline_attempt.py:AttemptRecorder.journal_superseded_findings": (
+    "pipeline/pipeline_attempt.py:AttemptRecorder.journal_superseded_findings": (
         Reason.NOT_AN_APPEND,
         "EvolutionJournal.open(self.root_dir), the same classmethod",
     ),
-    "pipeline_ledger.py:UsageLedger.carry_interrupted_run": (
+    "pipeline/pipeline_ledger.py:UsageLedger.carry_interrupted_run": (
         Reason.NOT_AN_APPEND,
         "EvolutionJournal.open(self.root_dir), the same classmethod",
     ),
-    "pipeline_attempt.py:AttemptRecorder.journal_integration_result": (
+    "pipeline/pipeline_attempt.py:AttemptRecorder.journal_integration_result": (
         Reason.NOT_AN_APPEND,
         "EvolutionJournal.open(self.root_dir), the same classmethod",
     ),
@@ -314,15 +317,15 @@ EXPECTED_APPEND_OPENS: dict[str, int] = {
     "agents/logging.py: self._log_path.open('a')": 1,
     "io/appendio.py: open('a+b')": 1,
     "io/atomicio.py: os.open(os.O_WRONLY | os.O_CREAT | os.O_EXCL)": 1,
-    "commandrun.py: open('a')": 1,
-    "factory_acceptance.py: EvolutionJournal.open(root_dir)": 1,
-    "factory_worker.py: open('a')": 2,
+    "factory/commandrun.py: open('a')": 1,
+    "factory/factory_acceptance.py: EvolutionJournal.open(root_dir)": 1,
+    "factory/factory_worker.py: open('a')": 2,
     "proc/factory_lock.py: open('a+')": 1,
     # Two since #463: carry_interrupted_run is the second caller. Three
     # since #482: journal_integration_result is the third.
-    "pipeline_attempt.py: EvolutionJournal.open(self.root_dir)": 2,
-    "pipeline_attempt.py: open('a')": 1,
-    "pipeline_ledger.py: EvolutionJournal.open(self.root_dir)": 1,
+    "pipeline/pipeline_attempt.py: EvolutionJournal.open(self.root_dir)": 2,
+    "pipeline/pipeline_attempt.py: open('a')": 1,
+    "pipeline/pipeline_ledger.py: EvolutionJournal.open(self.root_dir)": 1,
     "acceptance/replay.py: path.open('a+')": 1,
     "serve.py: open('a+')": 1,
     "serve_gates.py: open('a+')": 1,

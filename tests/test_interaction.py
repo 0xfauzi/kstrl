@@ -45,8 +45,8 @@ class TestCheckpointContext:
         review summary string (verified through a recording channel)."""
         from unittest.mock import patch
 
-        from kstrl.factory import run_factory
-        from kstrl.factory_result import ComponentResult
+        from kstrl.factory.factory import run_factory
+        from kstrl.pipeline.factory_result import ComponentResult
         from tests.test_event_stream import (
             _component,
             _factory_config,
@@ -82,14 +82,14 @@ class TestCheckpointContext:
 
         with (
             patch(
-                "kstrl.factory._run_component",
+                "kstrl.factory.factory._run_component",
                 return_value=result,
             ),
             patch(
                 "kstrl.git.git_diff.get_diff_content",
                 return_value="+real diff\n",
             ),
-            patch("kstrl.pr.is_gh_available", return_value=False),
+            patch("kstrl.pipeline.pr.is_gh_available", return_value=False),
         ):
             run_factory(
                 manifest,

@@ -13,7 +13,7 @@ candidate in a run operating at L3 or above demotes.
 Every test is a real ``run_factory`` over a real git repository with a real
 bare origin and a real engineer subprocess that commits one file. Two things
 are stubbed: ``gh``, an executable on PATH, and the code reviewer
-(``kstrl.factory.run_review``), because the ladder forces hard review and no
+(``kstrl.factory.factory.run_review``), because the ladder forces hard review and no
 LLM may run. A human at the merge gate is a scripted interaction channel or
 the real ``Inbox`` API. The replay test drives the real ``ks autonomy
 replay`` CLI in a subprocess.
@@ -30,7 +30,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.factory import run_factory
+from kstrl.factory.factory import run_factory
 from kstrl.learning.autonomy import AutonomyLevel, AutonomyState
 from kstrl.learning.autonomy_replay import load_runs
 from kstrl.learning.evolution_config import EvolutionConfig
@@ -131,7 +131,7 @@ def _stubs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     for var in ("GH_HUMAN_EDIT", "GH_OMIT_HEAD", "GH_VIEW_STATE", "GH_MERGE_FAIL"):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
-    monkeypatch.setattr("kstrl.factory.run_review", lambda *a, **k: PASS)
+    monkeypatch.setattr("kstrl.factory.factory.run_review", lambda *a, **k: PASS)
 
 
 def _project(

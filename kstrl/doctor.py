@@ -30,11 +30,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl import pr
 from kstrl.config import SURFACE_REJECTIONS, raise_if_defect, resolve_config_file
 from kstrl.config_preflight import config_problem_lines
 from kstrl.git import git, git_base, git_diff, git_tree
 from kstrl.io import STATE_DIR_NAME, atomic_write_json, state_dir
+from kstrl.pipeline import pr
 from kstrl.project import NO_STACK, file_stack_item, legacy_proposal, stack_in_force
 from kstrl.verify import ENFORCEMENT_MACHINERY_PATHS, PolicyConfig, match_glob
 
