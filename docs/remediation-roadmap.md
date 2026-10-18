@@ -578,9 +578,9 @@ third, all in one measured cycle.
 - [x] R5.1 (M) **Calibration tooling** [T-cal findings]
   (tooling + threshold gates + synonym matcher landed; v2 baseline CAPTURED
   2026-07-20 - `baseline-20260720-113835.json`, haiku, 3 runs. Green-at-
-  baseline confirmed by `python -m kstrl.calibration.calibration compare` against the
+  baseline confirmed by `python -m kstrl.calibration compare` against the
   2026-05-27 reference: `PASS`, no role below floor. Closed by the capture.)
-  - Baseline diff tool: `python -m kstrl.calibration.calibration compare <old> <new>`
+  - Baseline diff tool: `python -m kstrl.calibration compare <old> <new>`
     with codified per-role thresholds; N-run mode (default 3) reporting
     per-fixture consistency; per-category (per-CWE for security) rates in the
     report JSON.

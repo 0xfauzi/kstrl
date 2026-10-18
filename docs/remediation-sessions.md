@@ -693,7 +693,7 @@ Defects: calibration has no comparison tooling (H2 says "compare against baselin
 Scope: kstrl/ (new calibration module), tests/test_calibration.py, tests/test_calibration_matchers.py, tests/adversarial_fixtures/_results/ format, docs (usage section), tests.
 
 Requirements:
-1. `python -m kstrl.calibration.calibration compare <old.json> <new.json>`: per-role, per-category deltas with codified pass/fail thresholds (thresholds in one constants block, documented).
+1. `python -m kstrl.calibration compare <old.json> <new.json>`: per-role, per-category deltas with codified pass/fail thresholds (thresholds in one constants block, documented).
 2. N-run mode: the runner supports KSTRL_CALIBRATION_RUNS=N (default 3 for baselines), reporting per-fixture consistency (fraction of runs detected) alongside detection.
 3. Convert per-fixture hard asserts into threshold gates over the run set, so the suite is green at the current baseline and red on REGRESSION. The report JSON keeps per-fixture detail.
 4. Fix matcher brittleness: kind-matching accepts a documented synonym map (e.g. unstated_assumption ~ missing_detail) OR grades kind separately from detection so a paraphrased kind is a partial hit, not a miss. Update matcher unit tests.

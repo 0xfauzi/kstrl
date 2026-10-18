@@ -95,7 +95,7 @@ def test_calibration_compare_refuses_an_unreadable_baseline_with_exit_2(tmp_path
     new.write_text("{}", encoding="utf-8")
 
     result = subprocess.run(
-        [sys.executable, "-m", "kstrl.calibration.calibration", "compare", str(old), str(new)],
+        [sys.executable, "-m", "kstrl.calibration", "compare", str(old), str(new)],
         capture_output=True,
         text=True,
         timeout=120,

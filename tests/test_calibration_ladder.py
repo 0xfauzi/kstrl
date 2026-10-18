@@ -1,6 +1,6 @@
 """R10.11 (#232): the calibration-regression emitter on ``compare``.
 
-``python -m kstrl.calibration.calibration compare`` gains ``--root`` and folds a
+``python -m kstrl.calibration compare`` gains ``--root`` and folds a
 regression into the autonomy ladder: advisory always (a
 ``calibration_drift`` inbox item), demoting only behind
 ``[autonomy] demote_on_calibration_regression``. The applier it calls is

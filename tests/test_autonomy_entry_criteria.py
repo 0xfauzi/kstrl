@@ -8,7 +8,7 @@ health breach open.
 
 Every test drives the real commands. ``status`` and ``inbox approve`` run
 through click's runner, the calibration regression through
-``python -m kstrl.calibration.calibration compare``'s own ``main``, and ``promote`` in
+``python -m kstrl.calibration compare``'s own ``main``, and ``promote`` in
 a subprocess on a real pseudo-terminal, because it refuses any caller
 without one.
 """

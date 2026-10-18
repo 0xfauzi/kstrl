@@ -108,7 +108,7 @@ A truth signal that is expected to be red is not a signal, so the suite no longe
 ### Comparing baselines (H2's "compare" step, concretely)
 
 ```bash
-uv run python -m kstrl.calibration.calibration compare \
+uv run python -m kstrl.calibration compare \
   tests/adversarial_fixtures/_results/baseline-<old>.json \
   tests/adversarial_fixtures/_results/baseline-<new>.json
 ```
@@ -151,7 +151,7 @@ KSTRL_RUN_CALIBRATION=1 KSTRL_CALIBRATION_MODEL=haiku \
   uv run pytest tests/test_calibration.py -v --basetemp="$CODEX_REPO/pt"
 
 # Compare (the cross-model warning is expected: the delta measures the family change)
-uv run python -m kstrl.calibration.calibration compare \
+uv run python -m kstrl.calibration compare \
   tests/adversarial_fixtures/_results/baseline-<same-family>.json \
   tests/adversarial_fixtures/_results/baseline-<cross-family>.json
 ```

@@ -141,7 +141,7 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   `HEALTH_BREACH` since R8.2 and neither had an emitter, so a factory
   getting quietly worse without breaching the policy envelope kept its
   level, and a calibration regression a human had already measured
-  changed nothing. `python -m kstrl.calibration.calibration compare` takes a
+  changed nothing. `python -m kstrl.calibration compare` takes a
   `--root` and, when the ladder is enabled, opens a `calibration_drift`
   inbox item on a regression; `[autonomy] demote_on_calibration_regression`
   (env `KSTRL_AUTONOMY_DEMOTE_ON_CALIBRATION`) additionally revokes one

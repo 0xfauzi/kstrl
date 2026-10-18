@@ -5,7 +5,7 @@ One `baseline-<UTC-timestamp>.json` per calibration run of
 Compare two files with:
 
 ```bash
-uv run python -m kstrl.calibration.calibration compare <old.json> <new.json>
+uv run python -m kstrl.calibration compare <old.json> <new.json>
 ```
 
 ## Format v2 (R5.1, `"format_version": 2`)

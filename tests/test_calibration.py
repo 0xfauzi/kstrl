@@ -22,7 +22,7 @@ per-category detection rates, the model id) are written to
 ``tests/adversarial_fixtures/_results/baseline-<UTC-date>.json`` in
 the v2 format defined by :mod:`kstrl.calibration.calibration`; compare against
 a previous baseline with
-``python -m kstrl.calibration.calibration compare <old.json> <new.json>``.
+``python -m kstrl.calibration compare <old.json> <new.json>``.
 
 R5.2 adds two axes on top of the R5.1 detection gate:
 - HARD positives (``security/`` ``difficulty: hard``: multi-hop authz,

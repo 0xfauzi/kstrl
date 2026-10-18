@@ -244,27 +244,19 @@ ALLOWLIST: tuple[AllowedSite, ...] = (
         "#700: kstrl's own runtime is the PreToolUse hook and the SessionStart hook",
     ),
     AllowedSite("proc/leash.py", "python -I -S leash.py", 1, "E30: kstrl's own leash"),
+    AllowedSite("learning/autonomy_config.py", "python -m", 2, "E31: python -m kstrl.calibration"),
     AllowedSite(
-        "learning/autonomy_config.py",
-        "python -m",
-        2,
-        "E31: python -m kstrl.calibration.calibration",
-    ),
-    AllowedSite(
-        "learning/autonomy_transitions.py",
-        "python -m",
-        1,
-        "E31: python -m kstrl.calibration.calibration",
+        "learning/autonomy_transitions.py", "python -m", 1, "E31: python -m kstrl.calibration"
     ),
     AllowedSite(
         "calibration/calibration.py",
-        "python -m kstrl.calibration.calibration",
+        "python -m kstrl.calibration",
         3,
         "E31: kstrl measuring itself, the compare CLI's own usage line",
     ),
     AllowedSite(
         "calibration/calibration_ladder.py",
-        "python -m kstrl.calibration.calibration",
+        "python -m kstrl.calibration",
         1,
         "E31: kstrl measuring itself",
     ),

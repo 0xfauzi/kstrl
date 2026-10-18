@@ -8,7 +8,7 @@ two writer functions - it never spells a document key itself. This file
 pins what keeps that design from drifting apart in silence, at the level
 of the real CLI and the real checked-in baselines:
 
-- `python -m kstrl.calibration.calibration compare` REFUSES (exit 2, no traceback,
+- `python -m kstrl.calibration compare` REFUSES (exit 2, no traceback,
   no PASS) an OLD baseline whose run counts are absent or null, whose
   `format_version`, `runs_per_fixture` or `role` is null, whose v1
   `caught` is absent, or that detected nothing and so bounds nothing
@@ -314,14 +314,7 @@ class TestCompareRefusesAHoledBaseline:
         new_path = _write(tmp_path / "baseline-new.json", new)
 
         finished = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "kstrl.calibration.calibration",
-                "compare",
-                str(old_path),
-                str(new_path),
-            ],
+            [sys.executable, "-m", "kstrl.calibration", "compare", str(old_path), str(new_path)],
             cwd=REPO_ROOT,
             capture_output=True,
             text=True,
@@ -356,14 +349,7 @@ class TestCompareRefusesAHoledBaseline:
         new_path = _write(tmp_path / "baseline-new.json", new)
 
         finished = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "kstrl.calibration.calibration",
-                "compare",
-                str(old_path),
-                str(new_path),
-            ],
+            [sys.executable, "-m", "kstrl.calibration", "compare", str(old_path), str(new_path)],
             cwd=REPO_ROOT,
             capture_output=True,
             text=True,

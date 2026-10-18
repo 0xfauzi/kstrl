@@ -1,6 +1,6 @@
 """#633 slice 1: compare judges a role only against a floor somebody chose.
 
-``python -m kstrl.calibration.calibration compare`` read every role id missing from
+``python -m kstrl.calibration compare`` read every role id missing from
 ``MIN_ROLE_DETECTION_RATE`` against a 0.50 default. A first capture of a
 new id was therefore failed against a number nobody chose, and on a project
 with the autonomy ladder on that opened a "Calibration regression" inbox
@@ -121,7 +121,7 @@ def _flagged(role: str, count: int) -> list[tuple[str, str, int]]:
 
 def _cli(old: Path | str, new: Path | str, root: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [sys.executable, "-m", "kstrl.calibration.calibration", "compare", str(old), str(new)]
+        [sys.executable, "-m", "kstrl.calibration", "compare", str(old), str(new)]
         + ["--root", str(root)],
         cwd=REPO_ROOT,
         capture_output=True,

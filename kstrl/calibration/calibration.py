@@ -10,7 +10,7 @@ that loop:
   ``save_report`` are the single source of the on-disk shape under
   ``tests/adversarial_fixtures/_results/``; the reader is
   ``kstrl.calibration.calibration_baseline.load_baseline``.
-- **Comparison**: ``python -m kstrl.calibration.calibration compare <old.json> <new.json>``
+- **Comparison**: ``python -m kstrl.calibration compare <old.json> <new.json>``
   diffs two baseline files (v1 or v2) and applies the codified thresholds
   below. Exit code 0 = no regression, 1 = regression, 2 = usage/load error
   or a role id ``MIN_ROLE_DETECTION_RATE`` does not list.
@@ -650,13 +650,13 @@ def reviewer_override_label(
 
 
 # ---------------------------------------------------------------------------
-# CLI: python -m kstrl.calibration.calibration compare <old.json> <new.json>
+# CLI: python -m kstrl.calibration compare <old.json> <new.json>
 # ---------------------------------------------------------------------------
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="python -m kstrl.calibration.calibration",
+        prog="python -m kstrl.calibration",
         description="Calibration baseline tooling (R5.1).",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -706,7 +706,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 # id nobody has decided a floor for, a misspelt one included,
                 # reaches neither a verdict nor the inbox.
                 raise ValueError(
-                    f"role ids {unlisted} are not in kstrl.calibration.MIN_ROLE_DETECTION_RATE; "
+                    f"role ids {unlisted} are not in "
+                    "kstrl.calibration.calibration.MIN_ROLE_DETECTION_RATE; "
                     "add each with its floor, or with None to record it without gating it (#633)"
                 )
         except ValueError as exc:

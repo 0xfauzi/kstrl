@@ -51,7 +51,7 @@ fixture fails. No new matcher was needed.
 
 ## Commands
 
-Note on tooling: R5.1 (8A) - the `python -m kstrl.calibration.calibration compare`
+Note on tooling: R5.1 (8A) - the `python -m kstrl.calibration compare`
 baseline-diff tool with N-run mode - has NOT merged yet, so the commands
 below use the existing single-run suite. Per the known-limitations note in
 `docs/adversarial-design.md` (single run = one data point), run each
@@ -104,7 +104,7 @@ Capture command (on main @ `ba46cee`, R5.1/R5.2/R5.3 merged):
 ```bash
 KSTRL_RUN_CALIBRATION=1 KSTRL_CALIBRATION_MODEL=haiku \
   uv run pytest tests/test_calibration.py -v
-python -m kstrl.calibration.calibration compare \
+python -m kstrl.calibration compare \
   tests/adversarial_fixtures/_results/baseline-20260527-161822.json \
   tests/adversarial_fixtures/_results/baseline-20260720-113835.json
 # => PASS: no calibration regression under the codified thresholds

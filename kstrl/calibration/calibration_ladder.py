@@ -1,6 +1,6 @@
 """What the autonomy ladder does about a calibration regression (R10.11).
 
-``python -m kstrl.calibration.calibration compare`` measures the regression; this
+``python -m kstrl.calibration compare`` measures the regression; this
 module is the consequence. It sits beside ``kstrl.calibration.calibration`` rather
 than inside it so the measurement half stays free of control-plane
 imports: ``kstrl.calibration.calibration`` and ``kstrl.calibration.calibration_baseline`` know
