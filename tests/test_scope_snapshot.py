@@ -45,7 +45,7 @@ from kstrl.events.events import CallbackSink, EventBus
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_preflight import _record_run_scope
-from kstrl.loop import LoopResult
+from kstrl.loop.loop import LoopResult
 from kstrl.plan.manifest import Component, Manifest
 from kstrl.plan.scope import ComponentScope, RunScope
 from kstrl.ui.plain import PlainUI
@@ -86,7 +86,7 @@ def _run(
 ) -> Any:
     """One ``run_factory`` pass with both guard seams instrumented.
 
-    ``kstrl.loop.run_loop`` is patched rather than ``_run_component``:
+    ``kstrl.loop.loop.run_loop`` is patched rather than ``_run_component``:
     the worker itself is what assembles the in-loop guard's arguments,
     so stubbing it out would test the test. ``on_loop`` runs inside the
     fake loop, which is where an agent's writes would land.

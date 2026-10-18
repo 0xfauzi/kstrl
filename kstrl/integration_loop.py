@@ -16,21 +16,23 @@ import dataclasses
 from collections.abc import Iterator, Sequence
 from typing import TYPE_CHECKING, Any
 
-from kstrl.integration import STATUS_CLOSED, STATUS_HANDOFF, STATUS_OPEN
-from kstrl.integration_fix import handoff_reason
 from kstrl.integration_phase import (
     IntegrationRecord,
     IntegrationRun,
     Phase3Round,
     run_integration_review,
 )
-from kstrl.integration_state import (
+from kstrl.review import (
     OUTCOME_CLEAN,
     OUTCOME_NOT_RUN,
     OUTCOME_OPEN_FINDINGS,
     OUTCOME_RED,
+    STATUS_CLOSED,
+    STATUS_HANDOFF,
+    STATUS_OPEN,
     add_stop,
     hand_off,
+    handoff_reason,
     write_state,
 )
 

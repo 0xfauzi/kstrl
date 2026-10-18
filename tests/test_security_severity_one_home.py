@@ -1,6 +1,6 @@
 """The security severity ranking has one definition (#550).
 
-``kstrl.security.SEVERITY_ORDER`` ranks critical, high, medium and low.
+``kstrl.review.security.SEVERITY_ORDER`` ranks critical, high, medium and low.
 Phase 2.5's verdict, its fail count and the journal read it (#524). The
 calibration scorer kept its own copy, so an edit to one ranking would
 leave the scorer grading against the other with no message, and the
@@ -34,10 +34,10 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from kstrl import security
-from kstrl.calibration_score import security_caught, security_false_positive
+from kstrl.calibration.calibration_score import security_caught, security_false_positive
 from kstrl.cli import cli
-from kstrl.security import SecurityMode, SecurityResult, parse_security_output
+from kstrl.review import security
+from kstrl.review.security import SecurityMode, SecurityResult, parse_security_output
 from tests.helpers.astwalk import all_nodes, assert_census, blind_spot, package_sources, parse
 
 FIXTURES = Path(__file__).resolve().parent / "adversarial_fixtures"
@@ -49,7 +49,7 @@ SEVERITIES = frozenset({"critical", "high", "medium", "low"})
 # literal.
 EXPECTED_SITES = {
     # The one ranking.
-    "security.py": 1,
+    "review/security.py": 1,
     # A display style per severity for BOTH vocabularies (security's four
     # and review's fail/advisory). It ranks nothing.
 }
@@ -122,7 +122,7 @@ def test_the_security_severity_ranking_has_one_home() -> None:
         control=SHAPES,
         message=(
             "A collection literal in kstrl/ names at least three of the four security severities. "
-            "Read kstrl.security.SEVERITY_ORDER instead of copying it (#550)."
+            "Read kstrl.review.security.SEVERITY_ORDER instead of copying it (#550)."
         ),
     )
 

@@ -112,7 +112,7 @@ Defects (verify line numbers against current code):
 - loop.py:154 calls agent.run(prompt, cwd) with no timeout; config.py:62-63 (agent_iteration_timeout, component_timeout) and the entire timeout.py module are parsed but never consumed; cli.py binds --agent-timeout/--component-timeout for `ks factory` and never uses them.
 - agents/codex.py:44-98 ignores its timeout parameter entirely and proc.wait() is unbounded; agents/claude_code.py:90-98 only checks the clock when a stdout line arrives, so a silently hung CLI blocks forever; agents/custom.py has the same class of problem.
 
-Scope: kstrl/agents/*.py, kstrl/loop.py, kstrl/proc/timeout.py, kstrl/config/config.py, kstrl/factory.py (scheduler backstop only), kstrl/cli.py (wire the two dead flags), tests.
+Scope: kstrl/agents/*.py, kstrl/loop/loop.py, kstrl/proc/timeout.py, kstrl/config/config.py, kstrl/factory.py (scheduler backstop only), kstrl/cli.py (wire the two dead flags), tests.
 
 Requirements:
 1. All agent subprocesses launch with start_new_session=True. Read stdout on a reader thread with a deadline so a hang with NO output is detected. On breach: killpg(SIGTERM), grace period, then SIGKILL. All three adapters honor the timeout parameter. Bound codex proc.wait().
@@ -236,7 +236,7 @@ Defects:
 - factory.py:1055-1082: when contract fails, the breaker is reset to PENDING AFTER the scheduling loop has exited, so the promised retry never runs; the failure is not recorded in factory_result.failed, so the run exits 0 with broken integrated code.
 - Bisection blames the first component unconditionally when PRs were already squash-merged (merges no-op), and is order-dependent for interaction failures.
 
-Scope: kstrl/contract.py, kstrl/factory.py (contract block + scheduling loop re-entry), tests.
+Scope: kstrl/acceptance/contract.py, kstrl/factory.py (contract block + scheduling loop re-entry), tests.
 
 Requirements:
 1. All tier merging happens in a detached temp WORKTREE (git worktree add --detach), never the user's checkout. Recovery path: git merge --abort, then remove the temp worktree; assert cleanup succeeded and fail loudly if not.
@@ -262,7 +262,7 @@ Defects:
 - verify.check_diff_scope failure messages name neither the base branch nor the allowed paths; in the logged run the agent guessed `main` as base, ran `git checkout main -- kstrl/architect/decompose.py ...` reverting base-branch content, and failed again.
 - loop.py:168-186: the completion-marker early return happens BEFORE guards.enforce_allowed_paths, so an agent that edits out-of-scope files and emits COMPLETE in the same iteration bypasses enforcement.
 
-Scope: kstrl/factory.py (_run_component and _submit_args plumbing), kstrl/verify/verify.py (check_diff_scope message), kstrl/context.py (pass-through only if needed), kstrl/loop.py (guard ordering), tests.
+Scope: kstrl/factory.py (_run_component and _submit_args plumbing), kstrl/verify/verify.py (check_diff_scope message), kstrl/context.py (pass-through only if needed), kstrl/loop/loop.py (guard ordering), tests.
 
 Requirements:
 1. _run_component receives root_dir explicitly and resolves prd/prompt/CLAUDE.md/AGENTS.md sources against it; copies prompt.md and CLAUDE.md/AGENTS.md into the worktree alongside the PRD; delete the broken heuristic.
@@ -317,7 +317,7 @@ Defects:
 - factory.py:732-739: a security infrastructure error in advisory mode produces a PR body with NO security section: "did not run" is invisible.
 - review.py:484 / security.py:436: raw_output truncated to 2000 chars, losing the forensic tail of malformed outputs.
 
-Scope: kstrl/review.py, kstrl/security.py (parity bits only), kstrl/plan/findings.py, kstrl/factory.py (phase call sites + PR body), kstrl/pr.py (security-did-not-run section), tests.
+Scope: kstrl/review/review.py, kstrl/review/security.py (parity bits only), kstrl/plan/findings.py, kstrl/factory.py (phase call sites + PR body), kstrl/pr.py (security-did-not-run section), tests.
 
 Requirements:
 1. Criterion coverage: every PRD story id must receive a verdict or the result is infrastructure_error=True. Match by story id, not criterion text.
@@ -395,7 +395,7 @@ Defects:
 - git.py:261-271 head-truncates review diffs at 50KB. A rogue engineer can pad the first 50KB with benign churn and land the malicious hunk after the cut; both reviewers see a truncation notice but hard mode has no policy: the unreviewed tail merges (H-16).
 - The security reviewer still sees the engineer's Self-Critique block: only Phase 2 strips it (review.py:391 vs security.py:377), so the E2 anti-anchoring rationale is unapplied where it matters most.
 
-Scope: kstrl/git/git.py, kstrl/review.py, kstrl/security.py, kstrl/factory.py (chunk orchestration + budget), tests.
+Scope: kstrl/git/git.py, kstrl/review/review.py, kstrl/review/security.py, kstrl/factory.py (chunk orchestration + budget), tests.
 
 Requirements:
 1. Hard mode: a diff exceeding the cap is never partially reviewed silently. Chunk the diff on file boundaries into <=cap segments and run one review pass per chunk (each pass counts against max_adversarial_calls); merge results (any chunk failure fails; findings concatenate). If the budget cannot cover the chunks, the phase fails as infrastructure rather than passing partially.
@@ -420,7 +420,7 @@ Defects:
 - CodebaseScanConfig/EvolutionConfig/KnowledgeConfig lack from_env.
 - ks init does not scaffold kstrl.toml, so a fresh project has no discoverable config surface.
 
-Scope: kstrl/cli.py, kstrl/config/config.py, kstrl/factory.py (FactoryConfig.load keys), kstrl/verify/verify.py, kstrl/security.py, kstrl/contract.py, kstrl/project/feedforward.py, kstrl/learning/evolution.py, kstrl/knowledge/knowledge.py (loaders/from_env only), kstrl/project/init_cmd.py (scaffold), tests.
+Scope: kstrl/cli.py, kstrl/config/config.py, kstrl/factory.py (FactoryConfig.load keys), kstrl/verify/verify.py, kstrl/review/security.py, kstrl/acceptance/contract.py, kstrl/project/feedforward.py, kstrl/learning/evolution.py, kstrl/knowledge/knowledge.py (loaders/from_env only), kstrl/project/init_cmd.py (scaffold), tests.
 
 Requirements:
 1. Resolution order everywhere: explicit CLI flag > env > kstrl.toml > dataclass default. Give click options default=None sentinels so "not passed" is distinguishable from "passed the default value"; apply flag overrides onto the loaded config.
@@ -471,7 +471,7 @@ Defects:
 - Codebase scan never runs under `ks factory`: cli builds FactoryConfig without codebase_scan_config, so ff_config_dict stays None (H-10).
 - The prd-path contract is broken: a comment (factory.py:259-261) claims the prompt template uses $prd_path substituted by loop.py, but NO shipped template contains $prd_path; decomposed component PRDs live at scripts/kstrl/feature/<id>/prd.json while the default prompt points at scripts/kstrl/prd.json, so the agent reads the wrong file while check_prd_stories reads the right one (H-11).
 
-Scope: kstrl/factory.py, kstrl/cli.py, kstrl/loop.py, kstrl/project/init_cmd.py (DEFAULT_PROMPT + scaffold), tests/test_prompt_versions.py (snapshot only, per the exception), tests.
+Scope: kstrl/factory.py, kstrl/cli.py, kstrl/loop/loop.py, kstrl/project/init_cmd.py (DEFAULT_PROMPT + scaffold), tests/test_prompt_versions.py (snapshot only, per the exception), tests.
 
 Requirements:
 1. Forward max_iterations, interactive, allowed_paths through _submit_args into _run_component; delete the hardcoded 30.
@@ -496,7 +496,7 @@ Defects:
 - Every verification/contract/fixtures subprocess inherits the harness's full environment, including ANTHROPIC_API_KEY etc.: agent-authored tests can read the harness's secrets.
 - Verification subprocess timeouts kill only the direct child: a test that backgrounds a server leaks it across iterations (no start_new_session/killpg in verify.py subprocess calls).
 
-Scope: kstrl/factory.py (checkpoint block), kstrl/verify/verify.py, kstrl/contract.py, kstrl/fixtures.py (env plumbing only), tests.
+Scope: kstrl/factory.py (checkpoint block), kstrl/verify/verify.py, kstrl/acceptance/contract.py, kstrl/fixtures.py (env plumbing only), tests.
 
 Requirements:
 1. Checkpoint choices become: Approve / Reject (component -> FAILED immediately, no retry, dependents cascade-skip) / Retry (explicit, uses a retry). Non-interactive behavior unchanged (warn + proceed).
@@ -572,7 +572,7 @@ Context: no token or dollar visibility exists anywhere; the call-count budget co
 
 MEASURE FIRST (the project rule is measure, do not assume): before writing the meter, empirically determine what usage data each agent CLI emits. Run the claude CLI in the stream-json mode the ClaudeCodeAgent uses and inspect the result event for usage fields; check what codex emits with the flags CodexAgent uses. Write your findings (actual field names, sample values) into the PR body. If codex exposes nothing, fall back to call counts + wall time for codex and say so.
 
-Scope: kstrl/agents/*.py (usage extraction), kstrl/loop.py, kstrl/factory.py (aggregation), kstrl/events/observability.py, kstrl/learning/evolution.py (experiments columns), tests.
+Scope: kstrl/agents/*.py (usage extraction), kstrl/loop/loop.py, kstrl/factory.py (aggregation), kstrl/events/observability.py, kstrl/learning/evolution.py (experiments columns), tests.
 
 Requirements:
 1. Agents surface a usage record per invocation (tokens in/out where available; else calls + duration). The Agent protocol change must stay backward-compatible for CustomAgent.
@@ -693,7 +693,7 @@ Defects: calibration has no comparison tooling (H2 says "compare against baselin
 Scope: kstrl/ (new calibration module), tests/test_calibration.py, tests/test_calibration_matchers.py, tests/adversarial_fixtures/_results/ format, docs (usage section), tests.
 
 Requirements:
-1. `python -m kstrl.calibration compare <old.json> <new.json>`: per-role, per-category deltas with codified pass/fail thresholds (thresholds in one constants block, documented).
+1. `python -m kstrl.calibration.calibration compare <old.json> <new.json>`: per-role, per-category deltas with codified pass/fail thresholds (thresholds in one constants block, documented).
 2. N-run mode: the runner supports KSTRL_CALIBRATION_RUNS=N (default 3 for baselines), reporting per-fixture consistency (fraction of runs detected) alongside detection.
 3. Convert per-fixture hard asserts into threshold gates over the run set, so the suite is green at the current baseline and red on REGRESSION. The report JSON keeps per-fixture detail.
 4. Fix matcher brittleness: kind-matching accepts a documented synonym map (e.g. unstated_assumption ~ missing_detail) OR grades kind separately from detection so a paraphrased kind is a partial hit, not a miss. Update matcher unit tests.
@@ -814,7 +814,7 @@ Read CLAUDE.md, then the "Shared rules" section of docs/remediation-sessions.md,
 
 Context: 2025-2026 research established self-preference bias and verifier homogenisation mechanistically: a same-family reviewer systematically misses the bug classes its family produces. The config already supports review_agent_cmd/review_model; nothing defaults to heterogeneity, warns about homogeneity, or records who reviewed whom.
 
-Scope: kstrl/factory.py, kstrl/config/config.py / factory config, kstrl/plan/findings.py, kstrl/review.py, kstrl/security.py, kstrl/pr.py, docs/adversarial-design.md (limitation #1 update), tests.
+Scope: kstrl/factory.py, kstrl/config/config.py / factory config, kstrl/plan/findings.py, kstrl/review/review.py, kstrl/review/security.py, kstrl/pr.py, docs/adversarial-design.md (limitation #1 update), tests.
 
 Requirements:
 1. When the decided second family's CLI is available, review and security default to it (engineer keeps the primary); explicit config always wins. When unavailable, print a homogeneity warning naming the risk.

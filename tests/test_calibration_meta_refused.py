@@ -22,7 +22,7 @@ Two layers guard the next matcher field read with a default:
 - STATIC, a census of every read with a fallback (``.get``,
   ``.setdefault``, ``.pop``, three-argument ``getattr``, a key-membership
   test, an ``except`` that catches a missing key) in every scope of
-  ``kstrl/calibration_score.py`` and in every function annotated
+  ``kstrl/calibration/calibration_score.py`` and in every function annotated
   ``-> tuple[bool, str]`` (a matcher's verdict) in the test-side modules
   that hold matchers. This sees a new field no saved meta carries yet.
   Its blind spots are recorded below as strict xfails.
@@ -39,7 +39,7 @@ from typing import Any
 
 import pytest
 
-from kstrl.calibration_score import (
+from kstrl.calibration.calibration_score import (
     FixtureMetaError,
     fixture_meta_errors,
     reviewer_caught,
@@ -47,8 +47,8 @@ from kstrl.calibration_score import (
     security_caught,
     security_false_positive,
 )
-from kstrl.review import ReviewResult
-from kstrl.security import SecurityMode, SecurityResult, parse_security_output
+from kstrl.review.review import ReviewResult
+from kstrl.review.security import SecurityMode, SecurityResult, parse_security_output
 from tests.helpers import calibration_repo_fixture
 from tests.helpers.astwalk import (
     KSTRL_PACKAGE,
@@ -73,7 +73,7 @@ from tests.test_calibration import architect_allowed_paths_caught, architect_cau
 # The saved metas
 # ---------------------------------------------------------------------------
 
-#: Graded by kstrl.integration's own reader through
+#: Graded by kstrl.review.integration's own reader through
 #: tests/helpers/calibration_integration_fixture.py, not by these matchers,
 #: and checked by tests/test_calibration_integration_fixture.py.
 NOT_READ_HERE = frozenset({"integration", "integration_clean"})
@@ -416,7 +416,7 @@ def test_every_field_a_matcher_reads_is_refused_when_unreadable(
 # Static layer: every read with a fallback where a matcher could hide one
 # ---------------------------------------------------------------------------
 
-SCORER = KSTRL_PACKAGE / "calibration_score.py"
+SCORER = KSTRL_PACKAGE / "calibration/calibration_score.py"
 
 #: Modules that hold a matcher outside kstrl/. Only their functions
 #: annotated with the verdict type are walked: the rest of
@@ -505,11 +505,11 @@ def _row(path: Path, node: ast.AST) -> str:
 #: - each paid architect ``run_once`` turns an agent crash into
 #:   ``_AgentUnavailable`` with ``except Exception``.
 EXPECTED_FALLBACKS = {
-    "calibration_score.py::_acceptable_categories": 1,
-    "calibration_score.py::_detect_errors": 3,
-    "calibration_score.py::_meets_severity": 1,
-    "calibration_score.py::fixture_meta_errors": 1,
-    "calibration_score.py::render_verification": 4,
+    "calibration/calibration_score.py::_acceptable_categories": 1,
+    "calibration/calibration_score.py::_detect_errors": 3,
+    "calibration/calibration_score.py::_meets_severity": 1,
+    "calibration/calibration_score.py::fixture_meta_errors": 1,
+    "calibration/calibration_score.py::render_verification": 4,
     "tests/test_calibration.py::architect_allowed_paths_caught": 11,
     "tests/test_calibration.py::test_architect_emits_sensible_allowed_paths.run_once": 1,
     "tests/test_calibration.py::test_architect_reuses_what_the_repository_already_has.run_once": 1,
@@ -538,7 +538,7 @@ def test_every_fallback_read_in_a_matcher_is_accounted_for() -> None:
         message=(
             "A read with a fallback appeared in, or left, the calibration scorer or a "
             "matcher. A field a matcher reads from a fixture meta is required and read "
-            "through a reader in kstrl/calibration_score.py that refuses it; it is "
+            "through a reader in kstrl/calibration/calibration_score.py that refuses it; it is "
             "never defaulted (#564)."
         ),
     )

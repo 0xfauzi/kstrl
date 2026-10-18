@@ -438,7 +438,7 @@ def _atomic_replace(target: Path, content: str) -> None:
     The write is ``atomicio.atomic_write_text``, which since #291 is the
     one owner of the mode and encoding rules this used to spell out for
     itself. ``atomicio`` is a stdlib-only leaf, so importing it here does
-    NOT put ``kstrl.queue.workqueue`` in ``kstrl.loop``'s static import
+    NOT put ``kstrl.queue.workqueue`` in ``kstrl.loop.loop``'s static import
     closure via loop's deferred ``init_cmd`` import, which is what #274's
     ``tests/test_state_dir_scope.py`` refuses and what kept this copy
     hand-rolled until now.

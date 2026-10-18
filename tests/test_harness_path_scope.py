@@ -45,7 +45,7 @@ from kstrl.factory_config import FactoryConfig
 from kstrl.factory_preflight import _SCOPE_HAZARD_REASONS, _preflight_component_scope
 from kstrl.factory_result import ComponentResult
 from kstrl.factory_worker import _run_component
-from kstrl.loop import LoopResult
+from kstrl.loop.loop import LoopResult
 from kstrl.plan.manifest import Component, Manifest
 from kstrl.plan.scope import ComponentScope, RunScope
 from kstrl.ui.plain import PlainUI

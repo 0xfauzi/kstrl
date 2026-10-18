@@ -25,7 +25,7 @@ from kstrl.events import event_catalog
 from kstrl.events import events as ev
 from kstrl.feature_cmd import FeatureParams, run_feature
 from kstrl.feature_verify import resolve_feature_verify_config
-from kstrl.loop import STOP_EXIT_CODE
+from kstrl.loop.loop import STOP_EXIT_CODE
 from kstrl.verify.verify import (
     DIFF_DEPENDENT_CHECKS,
     run_mechanical_verification,

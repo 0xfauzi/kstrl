@@ -27,8 +27,8 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import calibration, calibration_baseline
 from kstrl.architect.decompose_prompt import ARCHITECT_REPO_SOURCE_PROMPT
+from kstrl.calibration import calibration, calibration_baseline
 from tests.helpers.astwalk import REPO_ROOT, TESTS_DIR, parsed
 from tests.helpers.calibration_repo_fixture import (
     REPO_DIR_SUFFIX,

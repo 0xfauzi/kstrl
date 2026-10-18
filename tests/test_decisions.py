@@ -159,7 +159,7 @@ class TestTheRegisterReachesTheEngineer:
         import kstrl.agents as agents_mod
         import kstrl.factory_worker as factory_worker_mod
         import kstrl.loop as loop_mod
-        from kstrl.loop import LoopResult
+        from kstrl.loop.loop import LoopResult
 
         seen: dict[str, object] = {}
 

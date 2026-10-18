@@ -19,7 +19,6 @@ from kstrl.agents import (
     recording_prompts,
     warn_unconfined,
 )
-from kstrl.breaker import BreakerConfig
 from kstrl.cli_preflight import (
     _apply_cli_overrides,
     _check_agent_preflight,
@@ -45,7 +44,7 @@ from kstrl.events import (
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.git import detect_base_branch
-from kstrl.loop import run_loop
+from kstrl.loop import BreakerConfig, run_loop
 from kstrl.plan import PRD
 from kstrl.proc import StopController, TimeoutConfig, install_signal_handlers
 from kstrl.project import run_init
@@ -259,7 +258,7 @@ def run(
     from kstrl.config import load_toml_section
     from kstrl.plan import Manifest
     from kstrl.project import CodebaseScanConfig
-    from kstrl.security import SecurityConfig
+    from kstrl.review import SecurityConfig
     from kstrl.verify import VerifyConfig
 
     # Determine branch from config or PRD. The preflight above already

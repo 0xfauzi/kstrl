@@ -27,8 +27,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from kstrl.acceptance import DESIGNER_FILE, HEAD_RUNS, PLAN_FILE
-from kstrl.acceptance_base import NO_DESIGNED_CHECK
+from kstrl.acceptance.acceptance import DESIGNER_FILE, HEAD_RUNS, PLAN_FILE
+from kstrl.acceptance.acceptance_base import NO_DESIGNED_CHECK
 from kstrl.acceptance_design import ACCEPTANCE_PROMPT_VERSION
 from kstrl.architect.decisions import write_decisions
 from kstrl.architect.decompose_prompt import spec_digest

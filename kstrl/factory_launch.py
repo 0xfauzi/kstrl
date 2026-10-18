@@ -16,17 +16,17 @@ from kstrl.agents import with_stack_writable
 from kstrl.architect import build_decisions_context
 from kstrl.config import relative_to_root
 from kstrl.knowledge import authored_paths, paths_by_component, retrieve_knowledge_context
-from kstrl.loop_budget import LoopBudget
+from kstrl.loop import LoopBudget
 from kstrl.proc import NO_LIMIT, describe_limit_seconds
 from kstrl.verify import SCOPE_UNREADABLE_CHECK, scope_unreadable_error
 
 if TYPE_CHECKING:
     from kstrl.architect import DecisionRegister
-    from kstrl.breaker import BreakerConfig
     from kstrl.config import KstrlConfig
     from kstrl.events import RunPaths
     from kstrl.factory_config import FactoryConfig
     from kstrl.knowledge import KnowledgeConfig
+    from kstrl.loop import BreakerConfig
     from kstrl.pipeline import ComponentPipeline
     from kstrl.plan import Component, Manifest, RunScope
     from kstrl.proc import TimeoutConfig

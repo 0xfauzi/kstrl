@@ -58,13 +58,13 @@ from kstrl.factory_result import (
     write_partial_usage,
 )
 from kstrl.factory_worker import _run_component
-from kstrl.loop import COMPLETION_MARKER, run_loop
-from kstrl.loop_budget import LoopBudget
+from kstrl.loop.loop import COMPLETION_MARKER, run_loop
+from kstrl.loop.loop_budget import LoopBudget
 from kstrl.owner.inbox import Inbox, InboxConfig
 from kstrl.plan.manifest import Component, ComponentStatus, Manifest
 from kstrl.proc.factory_lock import FactoryLockHeldError
 from kstrl.proc.shutdown import StopController
-from kstrl.security import SecurityConfig
+from kstrl.review.security import SecurityConfig
 from kstrl.ui.plain import PlainUI
 from kstrl.verify.verify_model import VerifyConfig
 from tests.helpers.stack_confirmation import confirm_stack, in_process_stack, write_stack
@@ -923,7 +923,7 @@ class TestFactoryUsageAggregation:
         assert "1,200" in out
 
     def test_review_phase_usage_attributed(self, tmp_path: Path) -> None:
-        from kstrl.review import ReviewResult
+        from kstrl.review.review import ReviewResult
 
         root = _setup_project(tmp_path, ["comp-a"])
         manifest = _make_manifest([_component("comp-a")])
@@ -980,8 +980,8 @@ class TestFactoryUsageAggregation:
     def test_all_four_phases_attributed(self, tmp_path: Path) -> None:
         """Engineer, review, security, and distill spend each land under
         their own phase key with the correct totals."""
-        from kstrl.review import ReviewResult
-        from kstrl.security import SecurityConfig, SecurityResult
+        from kstrl.review.review import ReviewResult
+        from kstrl.review.security import SecurityConfig, SecurityResult
 
         root = _setup_project(tmp_path, ["comp-a"])
         # Re-enable knowledge: distillation is one of the four phases.
@@ -3746,7 +3746,7 @@ class TestLoopHaltCarriesItsOwnIdentity:
     WHICH ceiling structurally instead of leaving the parent to guess."""
 
     def test_token_overrun(self) -> None:
-        from kstrl.loop_budget import LoopBudget
+        from kstrl.loop.loop_budget import LoopBudget
 
         verdict = LoopBudget(
             max_total_tokens=500,
@@ -3764,7 +3764,7 @@ class TestLoopHaltCarriesItsOwnIdentity:
         assert verdict.ceilings == ("max_total_tokens",)
 
     def test_cost_overrun(self) -> None:
-        from kstrl.loop_budget import LoopBudget
+        from kstrl.loop.loop_budget import LoopBudget
 
         verdict = LoopBudget(max_cost_usd=1.0).halt_verdict(
             UsageTotals(
@@ -3779,7 +3779,7 @@ class TestLoopHaltCarriesItsOwnIdentity:
         assert verdict.ceilings == ("max_cost_usd",)
 
     def test_unenforceable_names_every_dead_ceiling(self) -> None:
-        from kstrl.loop_budget import LoopBudget
+        from kstrl.loop.loop_budget import LoopBudget
 
         verdict = LoopBudget(
             max_total_tokens=500,
@@ -3792,7 +3792,7 @@ class TestLoopHaltCarriesItsOwnIdentity:
 
     def test_halt_reason_still_returns_the_prose(self) -> None:
         """Existing callers read the sentence; it must not change shape."""
-        from kstrl.loop_budget import LoopBudget
+        from kstrl.loop.loop_budget import LoopBudget
 
         budget = LoopBudget(max_total_tokens=500)
         usage = UsageTotals(
@@ -3808,7 +3808,7 @@ class TestLoopHaltCarriesItsOwnIdentity:
         assert reason is not None and reason.startswith("token budget exceeded")
 
     def test_no_halt_returns_none_from_both(self) -> None:
-        from kstrl.loop_budget import LoopBudget
+        from kstrl.loop.loop_budget import LoopBudget
 
         budget = LoopBudget(max_total_tokens=500)
         usage = UsageTotals(
@@ -4768,7 +4768,7 @@ class TestCoverageReachesTheAuditTrail:
         coverage. The measured run breached later, after several
         reviewer calls had gone unpriced.
         """
-        from kstrl.review import ReviewResult
+        from kstrl.review.review import ReviewResult
 
         root = _setup_project(tmp_path, ["comp-a", "comp-b"])
         manifest = _make_manifest([_component("comp-a"), _component("comp-b")])
@@ -5070,7 +5070,7 @@ class TestEveryConfiguredCeilingRecordsItsCoverage:
         The reviewer's shape: two metered calls, both caps configured,
         the token axis fully covered and the cost axis PARTIAL.
         """
-        from kstrl.review import ReviewResult
+        from kstrl.review.review import ReviewResult
 
         root = _setup_project(tmp_path, ["comp-a", "comp-b"])
         manifest = _make_manifest([_component("comp-a"), _component("comp-b")])

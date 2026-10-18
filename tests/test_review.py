@@ -14,7 +14,7 @@ import json
 from collections.abc import Iterator
 from pathlib import Path
 
-from kstrl.review import (
+from kstrl.review.review import (
     ReviewMode,
     ReviewVerdict,
     run_review,

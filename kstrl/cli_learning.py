@@ -697,8 +697,8 @@ def recheck_cmd(record: Path, root: Path | None, ui: str, no_color: bool) -> Non
     agrees with the record, 1 that one does not, and 2 that the record
     could not be rechecked, with the reason above it.
     """
+    from kstrl.acceptance import recheck
     from kstrl.factory_config import FactoryConfig
-    from kstrl.recheck import recheck
     from kstrl.verify import VerifyConfig
 
     root_dir = (root or Path.cwd()).resolve()

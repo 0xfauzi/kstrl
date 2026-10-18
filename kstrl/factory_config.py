@@ -7,13 +7,14 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl.acceptance import BaseReading, PinnedPlan
-from kstrl.acceptance_carried import Carried
+from kstrl.acceptance import (
+    BaseReading,
+    Carried,
+    ContractConfig,
+    PinnedPlan,
+)
 from kstrl.architect import LinearConfig
 from kstrl.config import ConfigSection, check_number, check_numbers
-from kstrl.contract import (
-    ContractConfig,
-)
 from kstrl.events import (
     NotifyConfig,
 )
@@ -33,8 +34,6 @@ from kstrl.project import (
 )
 from kstrl.review import (
     ReviewMode,
-)
-from kstrl.security import (
     SecurityConfig,
     SecurityMode,
 )

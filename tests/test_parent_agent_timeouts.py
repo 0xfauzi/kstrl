@@ -122,7 +122,7 @@ def _path_without_agent_clis() -> str:
 def _env(knowledge: bool = False) -> dict[str, str]:
     # #696: a confirmed [stack] means these runs now prove the isolation
     # rung, which shells out to nono. Resolved from the UNSTRIPPED PATH,
-    # same lookup kstrl.isolation.py uses, because on this machine nono
+    # same lookup kstrl.acceptance.isolation.py uses, because on this machine nono
     # and codex are symlinked from the same bin directory, so stripping
     # every directory that holds an agent CLI (below) would take nono
     # out too. Pinning it through KSTRL_NONO survives that strip.

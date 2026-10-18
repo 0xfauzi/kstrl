@@ -10,7 +10,7 @@ from unittest.mock import patch
 from kstrl.agents.sandbox import SandboxConfig
 from kstrl.config.config import KstrlConfig
 from kstrl.feature_cmd import FeatureParams, run_feature
-from kstrl.loop import LoopResult
+from kstrl.loop.loop import LoopResult
 from kstrl.owner.interaction import (
     PromptRequest,
     PromptResponse,

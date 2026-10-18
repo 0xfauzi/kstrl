@@ -30,7 +30,7 @@ from typing import Any
 import pytest
 
 import kstrl.agents
-from kstrl import calibration
+from kstrl.calibration import calibration
 from tests import test_calibration as tc
 from tests.helpers import calibration_integration_fixture as cif
 from tests.helpers import calibration_repo_fixture as crf
@@ -649,7 +649,7 @@ def test_the_typescript_twins_record_under_their_own_roles_gated_by_their_floors
 
     env = {**os.environ, "XDG_STATE_HOME": str(tmp_path / "state")}
     compared = subprocess.run(
-        [sys.executable, "-m", "kstrl.calibration", "compare", str(PYTHON_BASELINE)]
+        [sys.executable, "-m", "kstrl.calibration.calibration", "compare", str(PYTHON_BASELINE)]
         + [str(saved_path), "--root", str(tmp_path)],
         cwd=REPO_ROOT,
         env=env,

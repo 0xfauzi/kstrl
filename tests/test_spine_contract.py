@@ -29,7 +29,7 @@ from typing import Any
 
 import pytest
 
-from kstrl.contract import ContractConfig
+from kstrl.acceptance.contract import ContractConfig
 from kstrl.factory import run_factory
 from kstrl.factory_result import FactoryResult
 from kstrl.plan.manifest import ComponentStatus, Manifest

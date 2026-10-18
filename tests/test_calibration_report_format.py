@@ -1,14 +1,14 @@
 """The v2 baseline format as a contract between its two halves (#421).
 
-`kstrl/calibration_baseline.py` is BOTH halves of the document: its
+`kstrl/calibration/calibration_baseline.py` is BOTH halves of the document: its
 `fixture_entry` and `baseline_document` are the only places a v2 document
 key is written, and its `load_baseline` is the only place one is read back.
-`kstrl/calibration.py` computes values from per-run RECORDS and calls the
+`kstrl/calibration/calibration.py` computes values from per-run RECORDS and calls the
 two writer functions - it never spells a document key itself. This file
 pins what keeps that design from drifting apart in silence, at the level
 of the real CLI and the real checked-in baselines:
 
-- `python -m kstrl.calibration compare` REFUSES (exit 2, no traceback,
+- `python -m kstrl.calibration.calibration compare` REFUSES (exit 2, no traceback,
   no PASS) an OLD baseline whose run counts are absent or null, whose
   `format_version`, `runs_per_fixture` or `role` is null, whose v1
   `caught` is absent, or that detected nothing and so bounds nothing
@@ -41,8 +41,8 @@ from typing import Any
 
 import pytest
 
-from kstrl import calibration
-from kstrl.calibration_baseline import load_baseline
+from kstrl.calibration import calibration
+from kstrl.calibration.calibration_baseline import load_baseline
 from tests.helpers.astwalk import (
     KSTRL_PACKAGE,
     REPO_ROOT,
@@ -53,8 +53,8 @@ from tests.helpers.astwalk import (
     parsed,
 )
 
-WRITER = KSTRL_PACKAGE / "calibration.py"
-READER = KSTRL_PACKAGE / "calibration_baseline.py"
+WRITER = KSTRL_PACKAGE / "calibration/calibration.py"
+READER = KSTRL_PACKAGE / "calibration/calibration_baseline.py"
 RESULTS_DIR = REPO_ROOT / "tests" / "adversarial_fixtures" / "_results"
 
 PINNED_RECORDS: list[dict[str, Any]] = [
@@ -314,7 +314,14 @@ class TestCompareRefusesAHoledBaseline:
         new_path = _write(tmp_path / "baseline-new.json", new)
 
         finished = subprocess.run(
-            [sys.executable, "-m", "kstrl.calibration", "compare", str(old_path), str(new_path)],
+            [
+                sys.executable,
+                "-m",
+                "kstrl.calibration.calibration",
+                "compare",
+                str(old_path),
+                str(new_path),
+            ],
             cwd=REPO_ROOT,
             capture_output=True,
             text=True,
@@ -349,7 +356,14 @@ class TestCompareRefusesAHoledBaseline:
         new_path = _write(tmp_path / "baseline-new.json", new)
 
         finished = subprocess.run(
-            [sys.executable, "-m", "kstrl.calibration", "compare", str(old_path), str(new_path)],
+            [
+                sys.executable,
+                "-m",
+                "kstrl.calibration.calibration",
+                "compare",
+                str(old_path),
+                str(new_path),
+            ],
             cwd=REPO_ROOT,
             capture_output=True,
             text=True,
@@ -389,7 +403,7 @@ def _reader_literals() -> frozenset[str]:
 #: of the v2 per-fixture write (#421 Group B1), so it does not appear as a
 #: writer literal any more. These six happen to share a spelling with the
 #: reader's own document keys without being document keys themselves -
-#: `kstrl/calibration_baseline.py:49-69`'s comment discloses the
+#: `kstrl/calibration/calibration_baseline.py:49-69`'s comment discloses the
 #: coincidence. Spelled here as literals on purpose, same reasoning as
 #: `RUN_COUNT_KEYS`: a guard that read these off the module it is
 #: checking would go quiet with them.
@@ -400,10 +414,10 @@ class TestTheKeysHaveOneOwner:
     def test_the_writer_spells_no_string_the_reader_also_spells(self) -> None:
         """After #421 Group B, the v2 document has one owner BY
         CONSTRUCTION: `fixture_entry` and `baseline_document` in
-        `kstrl/calibration_baseline.py` are the only places a document key
+        `kstrl/calibration/calibration_baseline.py` are the only places a document key
         is spelled, so there is no second module to police it against.
         What is still worth a net is the opposite direction: does the
-        WRITER (`kstrl/calibration.py`) independently respell a string the
+        WRITER (`kstrl/calibration/calibration.py`) independently respell a string the
         reader owns? A rename of a document key that also touched the
         writer would be exactly that.
 
@@ -442,19 +456,20 @@ class TestTheKeysHaveOneOwner:
             # never computed here, which would make this an assertion
             # that the file agrees with itself.
             expected={
-                "calibration.py:'role'": 1,
-                "calibration.py:'fixture_id'": 1,
-                "calibration.py:'category'": 2,
-                "calibration.py:'cwe'": 2,
-                "calibration.py:'caught'": 1,
-                "calibration.py:'error'": 2,
+                "calibration/calibration.py:'role'": 1,
+                "calibration/calibration.py:'fixture_id'": 1,
+                "calibration/calibration.py:'category'": 2,
+                "calibration/calibration.py:'cwe'": 2,
+                "calibration/calibration.py:'caught'": 1,
+                "calibration/calibration.py:'error'": 2,
             },
             control=control,
             message=(
-                "kstrl/calibration.py spells a string kstrl/calibration_baseline.py "
+                "kstrl/calibration/calibration.py spells a string "
+                "kstrl/calibration/calibration_baseline.py "
                 "also spells, and it is not one of the record fields build_report's "
                 "own docstring names. A report key with two independent spellings "
-                "is #421: route it through kstrl.calibration_baseline's fixture_entry "
+                "is #421: route it through kstrl.calibration.calibration_baseline's fixture_entry "
                 "or baseline_document instead."
             ),
             key=lambda source, node: f"{label(source)}:{folded_str(node)!r}",

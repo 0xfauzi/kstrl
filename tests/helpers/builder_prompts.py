@@ -44,9 +44,11 @@ from __future__ import annotations
 
 from types import ModuleType
 
-from kstrl import context, factory_worker, iteration_prompt, review_claims
+from kstrl import context, factory_worker
 from kstrl.knowledge import knowledge
+from kstrl.loop import iteration_prompt
 from kstrl.project import init_cmd
+from kstrl.review import review_claims
 from kstrl.verify import verify, verify_diff
 
 #: Eleven rows: (module, the name of that module's shared version constant,

@@ -8,7 +8,7 @@ demotion and everything ``ks serve`` files opened items that
 ``kstrl.owner.inbox_notify.push_opened_item``.
 
 Each behavioural test drives a real entry point (``ks decompose`` as a
-subprocess, ``python -m kstrl.calibration compare`` in process, the
+subprocess, ``python -m kstrl.calibration.calibration compare`` in process, the
 factory's outcome fold, one ``ks serve`` poll, ``run_factory``) and
 asserts on the lines a command appended, one per firing. Most set the
 hook through ``KSTRL_NOTIFY_ON_INBOX_ITEM``; the pipeline test passes it
@@ -433,7 +433,9 @@ def test_an_unconfirmed_stack_pages_once_however_often_it_is_refused(tmp_path: P
 #: this module that drives it through a real entry point.
 FILING_PATHS = {
     "learning/autonomy_transitions.py::apply_demotion::add": "test_demotion_fires_the_inbox_hook",
-    "calibration_ladder.py::_open_drift_item::add": "test_demotion_fires_the_inbox_hook",
+    "calibration/calibration_ladder.py::_open_drift_item::add": (
+        "test_demotion_fires_the_inbox_hook"
+    ),
     "architect/decisions.py::open_escalation_item::add": (
         "test_architect_escalation_fires_the_inbox_hook"
     ),

@@ -55,7 +55,7 @@ EXPECTED_CONSTRUCTIONS = (
     "architect/decisions.py kstrl.owner.inbox.Inbox",
     # #639 slice 4: read_owner_answers scans for the owner's answers; reads only.
     "architect/owner_answers.py kstrl.owner.inbox.Inbox",
-    "calibration_ladder.py kstrl.owner.inbox.Inbox",
+    "calibration/calibration_ladder.py kstrl.owner.inbox.Inbox",
     "cli_inbox.py kstrl.owner.inbox.Inbox",
     "factory_autonomy.py kstrl.owner.inbox.Inbox",
     "learning/autonomy_transitions.py kstrl.owner.inbox.Inbox",
@@ -81,7 +81,7 @@ EXPECTED_CONSTRUCTION_COUNTS = {
     # #643: was 1 (apply_demotion). +1: _calibration_blockers scans the
     # inbox for an undecided calibration_drift item. It reads; it mutates nothing.
     "learning/autonomy_transitions.py": 2,
-    "calibration_ladder.py": 1,
+    "calibration/calibration_ladder.py": 1,
     "cli_inbox.py": 1,
     # #644 slice 2: was 2. +1: escalation_naming scans the inbox for the undecided
     # spec_escalation row that names a poisoned item. It reads; it mutates nothing.
@@ -129,7 +129,7 @@ _GUARDED = Disposition(guarded=True)
 #: the pin.
 EXPECTED_MUTATIONS: dict[str, Disposition] = {
     "learning/autonomy_transitions.py::apply_demotion::add": _GUARDED,
-    "calibration_ladder.py::_open_drift_item::add": _GUARDED,
+    "calibration/calibration_ladder.py::_open_drift_item::add": _GUARDED,
     "architect/decisions.py::open_escalation_item::add": _GUARDED,
     "architect/decisions.py::resolve_escalation_items::resolve": _GUARDED,
     "factory_autonomy.py::_open_health_breach_items::add": _GUARDED,
@@ -202,7 +202,7 @@ EXPECTED_CONFIG_LOADS: dict[str, Disposition] = {
     # #643: the L2 entry criterion; a load it cannot make is a blocker.
     "learning/autonomy_transitions.py::_calibration_blockers": _GUARDED,
     "learning/autonomy_transitions.py::apply_demotion": _GUARDED,
-    "calibration_ladder.py::_open_drift_item": _GUARDED,
+    "calibration/calibration_ladder.py::_open_drift_item": _GUARDED,
     "architect/decisions.py::open_escalation_item": _GUARDED,
     "architect/decisions.py::resolve_escalation_items": _GUARDED,
     "factory_autonomy.py::_open_health_breach_items": _GUARDED,

@@ -28,7 +28,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.calibration_baseline import load_baseline
+from kstrl.calibration.calibration_baseline import load_baseline
 from kstrl.intake_issue import ProcessedLedger
 from kstrl.knowledge import knowledge_distill, knowledge_facts
 from kstrl.learning.autonomy import AutonomyState

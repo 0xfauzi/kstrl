@@ -1,4 +1,4 @@
-"""Tables for the integration review's prompts in ``kstrl/integration.py``:
+"""Tables for the integration review's prompts in ``kstrl/review/integration.py``:
 ``INTEGRATION_CRITERIA_PROMPT`` (#482), ``INTEGRATION_CARRIED_PROMPT`` (#483),
 ``INTEGRATION_REQUIREMENT_PROMPT`` and ``INTEGRATION_NON_GOAL_PROMPT`` (#639
 slice 3).
@@ -18,8 +18,8 @@ from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
 
-from kstrl import integration
 from kstrl.plan.requirements import SpecRequirement
+from kstrl.review import integration
 
 INTEGRATION_PROMPTS: dict[str, str] = {
     "INTEGRATION_CRITERIA_PROMPT": integration.INTEGRATION_CRITERIA_PROMPT,

@@ -2,7 +2,7 @@
 
 The #452 contract is 0 ok, 1 a finding, 2 could not do what was asked.
 These refusals are decided outside ``kstrl/cli.py`` (in ``kstrl/factory.py``
-and ``kstrl/loop.py``), so each is driven through the real ``ks`` entry
+and ``kstrl/loop/loop.py``), so each is driven through the real ``ks`` entry
 point in a child process, run by ``ks serve``'s own supervised runner, and
 judged by the exit code and output that child produced. The static census
 in ``tests/test_cli_conventions.py`` holds the same contract for the next

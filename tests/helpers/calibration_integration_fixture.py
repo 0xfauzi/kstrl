@@ -5,7 +5,7 @@ two trees: ``base/`` is the repository at the feature base, and ``feature/``
 is laid over it as the feature's one commit. A run materialises that as a
 real git repository, reviews it through
 :func:`kstrl.integration_phase.review_commit` (the call the factory makes)
-and reads the result with :func:`kstrl.integration.integration_outcome` (the
+and reads the result with :func:`kstrl.review.integration.integration_outcome` (the
 only place the design 3.3 rules are written). So the number a calibration
 run records is the factory's reading of the reviewer, not a second reading
 written for the harness.
@@ -33,7 +33,9 @@ from pathlib import Path
 from typing import Any
 
 from kstrl.git import git_tree
-from kstrl.integration import (
+from kstrl.integration_phase import review_commit
+from kstrl.proc.proc import TIMEOUT_MESSAGE_PREFIX
+from kstrl.review.integration import (
     ExpectedStory,
     IntegrationOutcome,
     OpenedFinding,
@@ -41,9 +43,7 @@ from kstrl.integration import (
     integration_stories,
     scope_locations,
 )
-from kstrl.integration_phase import review_commit
-from kstrl.proc.proc import TIMEOUT_MESSAGE_PREFIX
-from kstrl.review import ReviewResult, normalize_story_id, run_review
+from kstrl.review.review import ReviewResult, normalize_story_id, run_review
 from kstrl.ui.plain import PlainUI
 from tests.helpers.calibration_replies import keep_call
 from tests.helpers.calibration_repo_fixture import FIXTURES_DIR, fixture_language
@@ -52,7 +52,7 @@ from tests.helpers.gitrepo import GIT_TIMEOUT_SECONDS, git_in, set_identity
 INTEGRATION_DIR = FIXTURES_DIR / "integration"
 
 #: The role a positive records under. Its floor in
-#: ``kstrl.calibration.MIN_ROLE_DETECTION_RATE`` is design section 8's
+#: ``kstrl.calibration.calibration.MIN_ROLE_DETECTION_RATE`` is design section 8's
 #: "each positive at or above 0.65".
 INTEGRATION_ROLE = "integration"
 

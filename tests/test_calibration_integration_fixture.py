@@ -15,7 +15,7 @@ score what section 8 says they score:
   right story to fail AND a cited file in every named component, and a
   clean twin passes only when the round opens nothing and is not red;
 - the paid tests themselves, called with a scripted reviewer in place of
-  the real one, gate on the floors in ``kstrl.calibration`` and record
+  the real one, gate on the floors in ``kstrl.calibration.calibration`` and record
   under the fixture ids.
 """
 
@@ -32,11 +32,11 @@ from typing import Any
 
 import pytest
 
-from kstrl import calibration, calibration_baseline
+from kstrl.calibration import calibration, calibration_baseline
 from kstrl.git import git_base, git_diff, git_tree
-from kstrl.integration import integration_stories
 from kstrl.proc.proc import TIMEOUT_MESSAGE_PREFIX
-from kstrl.review import ReviewResult
+from kstrl.review.integration import integration_stories
+from kstrl.review.review import ReviewResult
 from tests import test_calibration
 from tests.helpers.calibration_integration_fixture import (
     INTEGRATION_CLEAN_ROLE,

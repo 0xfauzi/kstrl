@@ -56,7 +56,7 @@ def strict_bool(section: Mapping[str, Any], key: str, default: bool) -> bool:
     section label in front of whatever the loader raises, and each of
     these keys is unique to its own section, so each identifies itself on
     the one surface that prints the exception bare (``python -m
-    kstrl.calibration compare``).
+    kstrl.calibration.calibration compare``).
 
     It also names the type it actually READ rather than a cause the
     operator may not have hit. The first draft explained that a quoted
@@ -96,7 +96,7 @@ class AutonomyConfig:
     #: local ceiling for operators who want the ladder's bookkeeping
     #: without its upper levels.
     max_level: int = int(AutonomyLevel.L4_DEPLOY)
-    #: Demote one level when ``python -m kstrl.calibration compare`` finds
+    #: Demote one level when ``python -m kstrl.calibration.calibration compare`` finds
     #: a regression. Advisory first (#232): a regression always opens a
     #: ``calibration_drift`` inbox item while the ladder is enabled, and
     #: revokes a level only when this is true. Off by default because

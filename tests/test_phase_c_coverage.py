@@ -34,8 +34,8 @@ from unittest.mock import patch
 
 import pytest
 
+from kstrl.acceptance.contract import ContractConfig, ContractMode
 from kstrl.config.config import KstrlConfig
-from kstrl.contract import ContractConfig, ContractMode
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult, FactoryResult
@@ -43,8 +43,8 @@ from kstrl.knowledge.knowledge_facts import KnowledgeConfig
 from kstrl.learning.evolution_config import EvolutionConfig
 from kstrl.plan.manifest import Component, Manifest
 from kstrl.project.feedforward import CodebaseScanConfig
-from kstrl.review import ReviewResult
-from kstrl.security import SecurityConfig, SecurityMode
+from kstrl.review.review import ReviewResult
+from kstrl.review.security import SecurityConfig, SecurityMode
 from kstrl.ui.plain import PlainUI
 from kstrl.verify.verify_model import VerifyConfig
 from tests import spine_utils
@@ -261,7 +261,7 @@ class TestC2ReviewRetry:
 
 class TestC3SecurityRetry:
     def test_security_failure_triggers_retry(self, tmp_path: Path) -> None:
-        from kstrl.security import SecurityResult
+        from kstrl.review.security import SecurityResult
 
         root = _setup_project(tmp_path, ["comp-a"])
         manifest = _make_manifest([_component("comp-a")])
@@ -320,7 +320,7 @@ class TestC4ContractBreaker:
         self,
         tmp_path: Path,
     ) -> None:
-        from kstrl.contract import ContractResult
+        from kstrl.acceptance.contract import ContractResult
 
         root = _setup_project(tmp_path, ["comp-a", "comp-b"])
         comp_a = _component("comp-a")

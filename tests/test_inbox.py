@@ -421,7 +421,7 @@ def _run_factory(
     from kstrl.factory_config import FactoryConfig
     from kstrl.factory_result import ComponentResult
     from kstrl.plan.manifest import Component, Manifest
-    from kstrl.review import ReviewResult
+    from kstrl.review.review import ReviewResult
     from kstrl.ui.plain import PlainUI
     from kstrl.verify.verify_model import CheckResult, VerificationResult, VerifyConfig
 

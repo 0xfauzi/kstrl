@@ -9,44 +9,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl.agents import AgentCall, recording_prompts
-from kstrl.contract import (
+from kstrl.acceptance import (
     ContractMode,
     ContractResult,
 )
+from kstrl.agents import AgentCall, recording_prompts
 from kstrl.events import INTEGRATION_COMPONENT, INTEGRATION_ROLE, collect_usage
 from kstrl.git import git, git_base, git_tree, kstrl_version
-from kstrl.integration import (
-    STATUS_HANDOFF,
-    ExpectedStory,
-    IntegrationOutcome,
-    carried_story,
-    integration_outcome,
-    integration_stories,
-    requirement_stories,
-    write_integration_prd,
-)
-from kstrl.integration_fix import reconcile_fixes
-from kstrl.integration_state import (
-    OUTCOME_CLEAN,
-    OUTCOME_NOT_RUN,
-    OUTCOME_OPEN_FINDINGS,
-    OUTCOME_RED,
-    add_findings,
-    add_stop,
-    bind_state,
-    carried_findings,
-    close_findings,
-    evidence_dir,
-    fix_components,
-    has_fix_component,
-    next_finding_ids,
-    next_review_number,
-    read_state,
-    state_binding,
-    write_evidence,
-    write_state,
-)
 from kstrl.plan import ComponentStatus, SpecRequirement
 from kstrl.proc import (
     ContractCleanupError,
@@ -54,7 +23,37 @@ from kstrl.proc import (
     limit_seconds,
     remove_temp_worktree,
 )
-from kstrl.review import ReviewMode, ReviewResult
+from kstrl.review import (
+    OUTCOME_CLEAN,
+    OUTCOME_NOT_RUN,
+    OUTCOME_OPEN_FINDINGS,
+    OUTCOME_RED,
+    STATUS_HANDOFF,
+    ExpectedStory,
+    IntegrationOutcome,
+    ReviewMode,
+    ReviewResult,
+    add_findings,
+    add_stop,
+    bind_state,
+    carried_findings,
+    carried_story,
+    close_findings,
+    evidence_dir,
+    fix_components,
+    has_fix_component,
+    integration_outcome,
+    integration_stories,
+    next_finding_ids,
+    next_review_number,
+    read_state,
+    reconcile_fixes,
+    requirement_stories,
+    state_binding,
+    write_evidence,
+    write_integration_prd,
+    write_state,
+)
 from kstrl.verify import VerificationResult
 
 if TYPE_CHECKING:

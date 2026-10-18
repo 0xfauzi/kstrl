@@ -1,7 +1,7 @@
 """``ks recheck <record>``: run an acceptance record's saved checks again
 and say whether they agree with it (#700 slice 5).
 
-A head record (:func:`kstrl.acceptance.judge_head`) sits in its attempt
+A head record (:func:`kstrl.acceptance.acceptance.judge_head`) sits in its attempt
 directory beside ``index.json``, the sha256 of every file written with
 it, and ``checks/``, the byte copy of the plan its checks ran from. The
 recheck takes none of it on trust:
@@ -35,7 +35,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
-from kstrl.acceptance import (
+from kstrl.acceptance.acceptance import (
     DESIGNER_FILE,
     INDEX_FILE,
     PLAN_FILE,
@@ -51,10 +51,10 @@ from kstrl.acceptance import (
     limits,
     plan_errors,
 )
+from kstrl.acceptance.replay import Replay, Stage, replay_stack
 from kstrl.io import read_json
 from kstrl.proc import HOST_LABEL
 from kstrl.project import REPLAY_BOUNDARY_REFUSED
-from kstrl.replay import Replay, Stage, replay_stack
 
 if TYPE_CHECKING:
     from kstrl.project import Stack
@@ -176,7 +176,7 @@ def _saved_plan(
 def _names_its_checks(plan: PinnedPlan, comp: str, ran: list[str], removed: list[str]) -> bool:
     """Whether the record names each check of its plan's ``comp`` once: as
     run on the head, or as removed on the base, which only a plan the
-    verification designer wrote does (:func:`kstrl.acceptance_base.kept_on_base`)."""
+    verification designer wrote does (:func:`kstrl.acceptance.acceptance_base.kept_on_base`)."""
     planned = sorted(check.id for check in plan.components[comp].checks)
     return sorted(ran + removed) == planned and (plan.designed or not removed)
 

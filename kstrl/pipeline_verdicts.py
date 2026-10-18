@@ -27,11 +27,9 @@ from kstrl.plan import (
 )
 from kstrl.review import (
     ReviewResult,
-)
-from kstrl.review_claims import (
+    SecurityResult,
     claim_blocks,
 )
-from kstrl.security import SecurityResult
 from kstrl.verify import count_diff_size
 
 if TYPE_CHECKING:

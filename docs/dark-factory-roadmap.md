@@ -416,7 +416,7 @@ emits an inbox item carrying the triggering evidence.
 `kstrl/learning/autonomy.py::entry_signal_blockers` reads each one for `ks autonomy status` and
 `ks autonomy promote`. L2 "calibration compare green" means no undecided (open or snoozed)
 `calibration_drift` inbox item. That item is the only record a
-`python -m kstrl.calibration compare --root` regression leaves in a project, so the criterion is
+`python -m kstrl.calibration.calibration compare --root` regression leaves in a project, so the criterion is
 refused while `[autonomy]` or `[inbox]` is disabled or the inbox cannot be read or parsed. L3 "health
 metrics inside limits" is computed from the recorded run history the way `ks health` computes it: a
 breach blocks, and so does a metric that fewer than 8 decisive runs record. L4 "deploy target exists"
@@ -603,7 +603,7 @@ cost per merged component, `infrastructure_error` rate. Two are not.
 Calibration detection delta is captured by the opt-in calibration suite into
 a results directory rather than once per factory run, so there is no per-run
 series; a regression there already demotes through
-`DemotionTrigger.CALIBRATION_REGRESSION` in `kstrl/calibration_ladder.py`.
+`DemotionTrigger.CALIBRATION_REGRESSION` in `kstrl/calibration/calibration_ladder.py`.
 Human-edit rate has no per-run series. Since #601 each merge the factory
 confirms is recorded on the ladder as clean or edited: clean only when the PR
 head GitHub merged (`headRefOid`) is the commit the diff phase judged, and

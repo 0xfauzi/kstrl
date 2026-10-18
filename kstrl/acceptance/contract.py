@@ -52,8 +52,8 @@ from kstrl.project import NO_STACK, Stack, stack_in_force
 from kstrl.verify import check_stack_command
 
 if TYPE_CHECKING:
-    from kstrl.acceptance import PinnedPlan
-    from kstrl.acceptance_carried import Carried
+    from kstrl.acceptance.acceptance import PinnedPlan
+    from kstrl.acceptance.acceptance_carried import Carried
     from kstrl.ui import UI
 
 
@@ -203,7 +203,7 @@ def _run_checks(
     ]
     failed = [row for row in rows if not row.passed]
     evidence = [f"{row.name}: {row.message}\n{row.output or ''}".strip() for row in failed]
-    from kstrl.acceptance_carried import replay_merged
+    from kstrl.acceptance.acceptance_carried import replay_merged
 
     accepted, lines, held_out, broken = replay_merged(
         cwd, config, root_dir, ui, plan, merged, carried

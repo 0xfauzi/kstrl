@@ -15,7 +15,7 @@ from kstrl.pipeline_verdicts import ReviewVerdicts, _gate_failure_count, _produc
 from kstrl.plan import (
     Component,
 )
-from kstrl.security import SecurityConfig, SecurityMode, SecurityResult
+from kstrl.review import SecurityConfig, SecurityMode, SecurityResult
 
 if TYPE_CHECKING:
     from kstrl.factory_result import ComponentResult

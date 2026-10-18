@@ -84,7 +84,7 @@ from kstrl.config.config import KstrlConfig
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.plan.manifest import Manifest
-from kstrl.security import SecurityConfig
+from kstrl.review.security import SecurityConfig
 from kstrl.ui.plain import PlainUI
 from kstrl.project.stack import CONFIRMED_IN_INBOX, Stack
 from kstrl.verify.verify_model import VerifyConfig

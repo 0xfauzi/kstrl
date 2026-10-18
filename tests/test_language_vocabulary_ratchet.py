@@ -234,7 +234,9 @@ ALLOWLIST: tuple[AllowedSite, ...] = (
         "E30: starts kstrl's own agent runner",
     ),
     AllowedSite("proc/proc.py", "sys.executable", 1, "E30: starts kstrl's own leash"),
-    AllowedSite("isolation.py", "sys.executable", 1, "#700: kstrl's own runtime runs the canary"),
+    AllowedSite(
+        "acceptance/isolation.py", "sys.executable", 1, "#700: kstrl's own runtime runs the canary"
+    ),
     AllowedSite(
         "write_guard.py",
         "sys.executable",
@@ -242,19 +244,27 @@ ALLOWLIST: tuple[AllowedSite, ...] = (
         "#700: kstrl's own runtime is the PreToolUse hook and the SessionStart hook",
     ),
     AllowedSite("proc/leash.py", "python -I -S leash.py", 1, "E30: kstrl's own leash"),
-    AllowedSite("learning/autonomy_config.py", "python -m", 2, "E31: python -m kstrl.calibration"),
     AllowedSite(
-        "learning/autonomy_transitions.py", "python -m", 1, "E31: python -m kstrl.calibration"
+        "learning/autonomy_config.py",
+        "python -m",
+        2,
+        "E31: python -m kstrl.calibration.calibration",
     ),
     AllowedSite(
-        "calibration.py",
-        "python -m kstrl.calibration",
+        "learning/autonomy_transitions.py",
+        "python -m",
+        1,
+        "E31: python -m kstrl.calibration.calibration",
+    ),
+    AllowedSite(
+        "calibration/calibration.py",
+        "python -m kstrl.calibration.calibration",
         3,
         "E31: kstrl measuring itself, the compare CLI's own usage line",
     ),
     AllowedSite(
-        "calibration_ladder.py",
-        "python -m kstrl.calibration",
+        "calibration/calibration_ladder.py",
+        "python -m kstrl.calibration.calibration",
         1,
         "E31: kstrl measuring itself",
     ),
@@ -338,7 +348,7 @@ PINNED_HITS: dict[str, dict[str, int]] = {
     "io/appendio.py": {"python": 1},
     "learning/autonomy.py": {"python": 1},
     "verify/baseline.py": {"mypy": 1, "python": 1},
-    "calibration_score.py": {"mypy": 1},
+    "calibration/calibration_score.py": {"mypy": 1},
     "cli_check.py": {"ruff": 4, "vulture": 1},
     "cli_loop.py": {"python": 1},
     "config/config.py": {"mypy": 1},

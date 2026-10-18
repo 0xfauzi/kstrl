@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 
-from kstrl.acceptance_lines import pr_isolation
+from kstrl.acceptance import pr_isolation
 from kstrl.events import RunCompleted, print_usage_rollup
 from kstrl.factory_autonomy import _record_autonomy
 from kstrl.factory_result import (

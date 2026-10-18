@@ -578,9 +578,9 @@ third, all in one measured cycle.
 - [x] R5.1 (M) **Calibration tooling** [T-cal findings]
   (tooling + threshold gates + synonym matcher landed; v2 baseline CAPTURED
   2026-07-20 - `baseline-20260720-113835.json`, haiku, 3 runs. Green-at-
-  baseline confirmed by `python -m kstrl.calibration compare` against the
+  baseline confirmed by `python -m kstrl.calibration.calibration compare` against the
   2026-05-27 reference: `PASS`, no role below floor. Closed by the capture.)
-  - Baseline diff tool: `python -m kstrl.calibration compare <old> <new>`
+  - Baseline diff tool: `python -m kstrl.calibration.calibration compare <old> <new>`
     with codified per-role thresholds; N-run mode (default 3) reporting
     per-fixture consistency; per-category (per-CWE for security) rates in the
     report JSON.
@@ -607,7 +607,7 @@ third, all in one measured cycle.
     variants. Hard positives are recorded under role `security_hard` and
     MEASURED, not gated (a miss is the hardness signal); negatives feed a
     `false_positive_analysis` block (per-role `fp_rate` vs `FP_RATE_MAX`)
-    injected into the R5.1 v2 report test-side (kstrl/calibration untouched,
+    injected into the R5.1 v2 report test-side (kstrl/calibration/calibration untouched,
     out of scope). Structural + FP-math tests are green with zero LLM calls.
     ACCEPTANCE (reframed 2026-07-20, see below): hard positives are genuinely
     subtle (each documents `why_hard`), MEASURED not gated, and protected from
@@ -825,7 +825,7 @@ by an integration test with a synthetic-but-realistic journal).
     work tracked as R7.6, not part of this item.)
   - No-progress circuit breaker: halt a component when N consecutive iterations
     produce an unchanged diff hash + test signature (the community's
-    single most-repeated kstrl-loop fix). DONE: `kstrl/breaker.py`,
+    single most-repeated kstrl-loop fix). DONE: `kstrl/loop/breaker.py`,
     `[breaker]` config, direct-FAIL routing + `circuit_breaker_tripped`
     event, `tests/test_breaker.py`.
   - OS-level sandboxing for agent subprocesses: pass Claude Code sandbox

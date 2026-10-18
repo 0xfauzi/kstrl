@@ -1,7 +1,7 @@
 """The head record of a component's acceptance checks, and the engineer's
 dispute of a check it can see (#700 slices 4, 6 and 10a).
 
-:func:`head_record` is the document :func:`kstrl.acceptance.judge_head`
+:func:`head_record` is the document :func:`kstrl.acceptance.acceptance.judge_head`
 writes as ``record.json`` for each head. Two of its keys come from here:
 
 - ``visibleFailures`` (:func:`visible_failures`): each visible check that
@@ -30,7 +30,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from kstrl.acceptance import (
+from kstrl.acceptance.acceptance import (
     HEAD_RUNS,
     HELD_OUT_READ_DENIED,
     BaseReading,
@@ -39,7 +39,7 @@ from kstrl.acceptance import (
     _entry_sha,
     head_verdict,
 )
-from kstrl.replay import Replay, Stage
+from kstrl.acceptance.replay import Replay, Stage
 from kstrl.verify import latest_entry
 
 #: The one form of a dispute line, which DEFAULT_PROMPT gives the engineer.

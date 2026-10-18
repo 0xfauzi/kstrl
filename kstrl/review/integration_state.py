@@ -10,7 +10,9 @@ from typing import Any
 
 from kstrl.events import events as ev
 from kstrl.git import kstrl_version
-from kstrl.integration import (
+from kstrl.io import atomic_write_json, read_json
+from kstrl.plan import Component, Manifest, enum_field_error, required_field_error
+from kstrl.review.integration import (
     FINDING_ID_PREFIX,
     FINDING_KINDS,
     FINDING_STATUSES,
@@ -19,8 +21,6 @@ from kstrl.integration import (
     STATUS_OPEN,
     OpenedFinding,
 )
-from kstrl.io import atomic_write_json, read_json
-from kstrl.plan import Component, Manifest, enum_field_error, required_field_error
 
 STATE_SCHEMA_VERSION = 1
 FIX_COMPONENT_PREFIX = "integration-fix-"

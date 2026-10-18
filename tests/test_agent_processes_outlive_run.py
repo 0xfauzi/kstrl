@@ -34,7 +34,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.loop import STOP_EXIT_CODE
+from kstrl.loop.loop import STOP_EXIT_CODE
 from kstrl.plan.findings import Finding
 from kstrl.plan.manifest import Manifest
 from kstrl.proc.worktree_sweep import ORPHAN_CATEGORY, sweep_worktree

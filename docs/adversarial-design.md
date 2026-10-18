@@ -15,9 +15,9 @@ Calibration is the truth signal. The `tests/test_calibration.py` suite (Phase D 
 | **Architect / PRD red-team** | `kstrl/architect/decompose_prompt.py` | `DECOMPOSE_PROMPT` | Spec | Ambiguities, missing failure modes, unstated assumptions, undefined auth, ambiguous quantifiers. Closes every finding it raises as `decided`, `assumed`, `spiked` or `escalated` in a `decisions` register joined to `spec_issues` by id, and halts the pipeline via `SpecBlockerError` only on an escalation (#260). |
 | **Engineer** | `kstrl/project/init_cmd.py` (`DEFAULT_PROMPT`) + per-project `scripts/kstrl/prompt.md` | (project-specific) | Iteration | Implements one story per iteration. Required to emit a `## Self-Critique` block with >=3 substantive failure-mode bullets before declaring done (mechanically enforced by `verify.check_self_critique` when `VerifyConfig.require_self_critique` is True). |
 | **Mechanical verifier** | `kstrl/verify/verify.py` | (no LLM) | Phase 1 | PRD stories pass-marked, tests/typecheck/lint green, diff-scope and secret-pattern checks, optional self-critique. Reads no test file itself (#696 slice 8). |
-| **Code reviewer** | `kstrl/review.py` | `REVIEWER_PROMPT` | Phase 2 | PRD criterion verdicts plus a separate `concerns` array (scope_creep, security_concern, test_quality, test_weakening, unrelated_change, dead_code, error_handling, copy_paste). Self-Critique block is stripped from the diff before review so the reviewer is not biased by the engineer's own failure-mode list. |
-| **Security reviewer** | `kstrl/security.py` | `SECURITY_PROMPT` | Phase 2.5 | Threat-model framing: injection, auth_bypass, hardcoded_secret, unsafe_deserialization, broken_crypto, predictable_randomness, missing_input_validation, race_condition, SSRF, XSS, open_redirect, information_disclosure, denial_of_service. Each category mapped to OWASP Top 10 + CWE via `SECURITY_CATEGORY_MAP`. |
-| **Contract tester** | `kstrl/contract.py` | (no LLM) | Phase 3 | Cross-component integration tests on merged tier branches. Failing tier identifies a breaker component, sent back through Phase 1+ for retry. |
+| **Code reviewer** | `kstrl/review/review.py` | `REVIEWER_PROMPT` | Phase 2 | PRD criterion verdicts plus a separate `concerns` array (scope_creep, security_concern, test_quality, test_weakening, unrelated_change, dead_code, error_handling, copy_paste). Self-Critique block is stripped from the diff before review so the reviewer is not biased by the engineer's own failure-mode list. |
+| **Security reviewer** | `kstrl/review/security.py` | `SECURITY_PROMPT` | Phase 2.5 | Threat-model framing: injection, auth_bypass, hardcoded_secret, unsafe_deserialization, broken_crypto, predictable_randomness, missing_input_validation, race_condition, SSRF, XSS, open_redirect, information_disclosure, denial_of_service. Each category mapped to OWASP Top 10 + CWE via `SECURITY_CATEGORY_MAP`. |
+| **Contract tester** | `kstrl/acceptance/contract.py` | (no LLM) | Phase 3 | Cross-component integration tests on merged tier branches. Failing tier identifies a breaker component, sent back through Phase 1+ for retry. |
 | **Knowledge distiller** | `kstrl/knowledge/knowledge.py` | `DISTILL_PROMPT` | Pre-PR | Captures durable facts about the artifact for downstream components. Runs after the Phase 2/2.5 gates pass and BEFORE the PR is created, so the distilled diff is the component's true delta (not polluted by the merge pulling main in). Voyager-style write gate: only fires when Phase 2 review passed. The placement is a named pipeline step (`ComponentPipeline._phase_distill` in `kstrl/pipeline.py`, decided in R7.3): moving it post-merge would break the true-delta invariant. `tests/test_pipeline.py::TestDistillPlacement` pins the pre-PR ordering. |
 | **Human checkpoint (E6)** | `kstrl/factory.py` | (interactive) | Pre-merge | Optional. When `FactoryConfig.pause_before_pr_merge=True` and UI is interactive, prompts a human to approve or reject before PR creation. Off by default. Honoured only by per-component PR creation under `ks factory` (and `ks serve` via its factory invocations): `ks run` creates no PRs, and `single_pr` mode creates one aggregate PR without a checkpoint, so the gate does not apply in either case. Whenever the resolved config has the gate on while the checkpoint is unreachable - including when the L1/L2 autonomy bundle forces it on - `run_factory` emits a startup warning (#207). An explicit request for the gate (kstrl.toml key, env var, or CLI flag) outranks the autonomy ladder and survives L3 and L4, which drop a gate nobody asked for (#195). |
 
@@ -97,7 +97,7 @@ To run:
 KSTRL_RUN_CALIBRATION=1 KSTRL_CALIBRATION_MODEL=haiku uv run pytest tests/test_calibration.py -v
 ```
 
-Each run executes every fixture `KSTRL_CALIBRATION_RUNS` times (default 3, R5.1) and writes `tests/adversarial_fixtures/_results/baseline-<UTC>.json` in the v2 format defined by `kstrl/calibration.py`: per-fixture *consistency* (fraction of completed runs that caught the planted issue; agent-infrastructure errors are excluded from the denominator, unparseable model output counts as a miss), per-role and per-category (per-CWE for security) detection rates, the run count, and the model id. Fixtures cover security (5), reviewer concerns (3), and vague specs (3), plus one non-halting allowedPaths fixture and one reuse fixture (#401), run twice: once standing in a repository and once with no repository at all.
+Each run executes every fixture `KSTRL_CALIBRATION_RUNS` times (default 3, R5.1) and writes `tests/adversarial_fixtures/_results/baseline-<UTC>.json` in the v2 format defined by `kstrl/calibration/calibration.py`: per-fixture *consistency* (fraction of completed runs that caught the planted issue; agent-infrastructure errors are excluded from the denominator, unparseable model output counts as a miss), per-role and per-category (per-CWE for security) detection rates, the run count, and the model id. Fixtures cover security (5), reviewer concerns (3), and vague specs (3), plus one non-halting allowedPaths fixture and one reuse fixture (#401), run twice: once standing in a repository and once with no repository at all.
 
 The fixtures themselves live in `tests/adversarial_fixtures/{security,concerns,specs}/` with paired `.meta.json` files describing the planted bug and the must-detect category. A reuse fixture adds a `<name>_repo/` directory beside its spec: a real miniature repository with a hand-written `scripts/kstrl/codebase_map.md`, kept out of our own collection by `tests/adversarial_fixtures/specs/conftest.py`.
 
@@ -108,12 +108,12 @@ A truth signal that is expected to be red is not a signal, so the suite no longe
 ### Comparing baselines (H2's "compare" step, concretely)
 
 ```bash
-uv run python -m kstrl.calibration compare \
+uv run python -m kstrl.calibration.calibration compare \
   tests/adversarial_fixtures/_results/baseline-<old>.json \
   tests/adversarial_fixtures/_results/baseline-<new>.json
 ```
 
-Exit code 0 = no regression, 1 = regression, 2 = usage/load error (a malformed `false_positive_analysis` block included), or a role id `MIN_ROLE_DETECTION_RATE` does not list (#633). Both v1 (pre-R5.1 single-run) and v2 files load. The codified thresholds live in one constants block at the top of `kstrl/calibration.py` with sizing rationale inline, except `FIXTURE_DETECTION_THRESHOLD`, which moved to `kstrl/calibration_baseline.py` (#406) beside the `FixtureStats.detected` property that reads it:
+Exit code 0 = no regression, 1 = regression, 2 = usage/load error (a malformed `false_positive_analysis` block included), or a role id `MIN_ROLE_DETECTION_RATE` does not list (#633). Both v1 (pre-R5.1 single-run) and v2 files load. The codified thresholds live in one constants block at the top of `kstrl/calibration/calibration.py` with sizing rationale inline, except `FIXTURE_DETECTION_THRESHOLD`, which moved to `kstrl/calibration/calibration_baseline.py` (#406) beside the `FixtureStats.detected` property that reads it:
 
 | Constant | Value | Meaning |
 |---|---|---|
@@ -151,7 +151,7 @@ KSTRL_RUN_CALIBRATION=1 KSTRL_CALIBRATION_MODEL=haiku \
   uv run pytest tests/test_calibration.py -v --basetemp="$CODEX_REPO/pt"
 
 # Compare (the cross-model warning is expected: the delta measures the family change)
-uv run python -m kstrl.calibration compare \
+uv run python -m kstrl.calibration.calibration compare \
   tests/adversarial_fixtures/_results/baseline-<same-family>.json \
   tests/adversarial_fixtures/_results/baseline-<cross-family>.json
 ```

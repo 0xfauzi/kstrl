@@ -8,7 +8,7 @@ health breach open.
 
 Every test drives the real commands. ``status`` and ``inbox approve`` run
 through click's runner, the calibration regression through
-``python -m kstrl.calibration compare``'s own ``main``, and ``promote`` in
+``python -m kstrl.calibration.calibration compare``'s own ``main``, and ``promote`` in
 a subprocess on a real pseudo-terminal, because it refuses any caller
 without one.
 """
@@ -27,7 +27,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from kstrl import calibration
+from kstrl.calibration import calibration
 from kstrl.cli import cli
 from kstrl.learning.autonomy import AutonomyLevel, AutonomyState
 from kstrl.owner.inbox import Inbox, InboxConfig, ItemKind

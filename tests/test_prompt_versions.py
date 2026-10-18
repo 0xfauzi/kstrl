@@ -93,7 +93,7 @@ from types import ModuleType
 
 import pytest
 
-from kstrl import acceptance_design, intake_issue, review, review_prompt, security
+from kstrl import acceptance_design, intake_issue
 from kstrl.acceptance_design import ACCEPTANCE_PROMPT, ACCEPTANCE_PROMPT_VERSION
 from kstrl.architect import decisions, decompose_prompt, owner_answers
 from kstrl.architect.decisions import (
@@ -132,9 +132,15 @@ from kstrl.plan.manifest import Component
 from kstrl.project import stack
 from kstrl.project.scaffold_templates import DEFAULT_PROMPT, DEFAULT_PROMPT_VERSION
 from kstrl.project.stack import STACK_PROMPT, STACK_PROMPT_VERSION, Stack
-from kstrl.review import ReviewMode
-from kstrl.review_prompt import REVIEWER_PROMPT, REVIEWER_PROMPT_VERSION
-from kstrl.security import SECURITY_PROMPT, SECURITY_PROMPT_VERSION, SecurityConfig, SecurityMode
+from kstrl.review import review, review_prompt, security
+from kstrl.review.review import ReviewMode
+from kstrl.review.review_prompt import REVIEWER_PROMPT, REVIEWER_PROMPT_VERSION
+from kstrl.review.security import (
+    SECURITY_PROMPT,
+    SECURITY_PROMPT_VERSION,
+    SecurityConfig,
+    SecurityMode,
+)
 from kstrl.ui import PlainUI
 from kstrl.verify.verify_model import VerificationResult
 from tests.conftest import make_review_repo

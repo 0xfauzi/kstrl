@@ -9,14 +9,14 @@ that loop:
   per-category detection rates, and the model id. ``build_report`` /
   ``save_report`` are the single source of the on-disk shape under
   ``tests/adversarial_fixtures/_results/``; the reader is
-  ``kstrl.calibration_baseline.load_baseline``.
-- **Comparison**: ``python -m kstrl.calibration compare <old.json> <new.json>``
+  ``kstrl.calibration.calibration_baseline.load_baseline``.
+- **Comparison**: ``python -m kstrl.calibration.calibration compare <old.json> <new.json>``
   diffs two baseline files (v1 or v2) and applies the codified thresholds
   below. Exit code 0 = no regression, 1 = regression, 2 = usage/load error
   or a role id ``MIN_ROLE_DETECTION_RATE`` does not list.
   This is what H2's "compare against the baseline" concretely means.
   ``--root`` points it at a project so a regression also reaches the
-  autonomy ladder; the consequences live in ``kstrl.calibration_ladder``
+  autonomy ladder; the consequences live in ``kstrl.calibration.calibration_ladder``
   and change no exit code except by adding 2 for an unloadable config.
 - **Kind synonyms**: the architect matcher accepts documented paraphrases of
   the spec-issue taxonomy (see ``KIND_SYNONYM_GROUPS``) so a planted issue
@@ -24,7 +24,7 @@ that loop:
 
 Detection-rate semantics (what *consistency*, *detected* and
 *detection_rate* mean, and ``FIXTURE_DETECTION_THRESHOLD``) live in
-``kstrl.calibration_baseline``'s docstring, beside the arithmetic that
+``kstrl.calibration.calibration_baseline``'s docstring, beside the arithmetic that
 defines them.
 """
 
@@ -37,10 +37,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from kstrl.calibration_baseline import (
+from kstrl.calibration.calibration_baseline import (
     REPORT_FORMAT_VERSION as REPORT_FORMAT_VERSION,
 )
-from kstrl.calibration_baseline import (
+from kstrl.calibration.calibration_baseline import (
     Baseline,
     FixtureStats,
     baseline_document,
@@ -141,9 +141,9 @@ MIN_ROLE_DETECTION_RATE: dict[str, float | None] = {
     "acceptance_clean": None,
 }
 
-# REPORT_FORMAT_VERSION lives in kstrl.calibration_baseline (#421 Group B3):
+# REPORT_FORMAT_VERSION lives in kstrl.calibration.calibration_baseline (#421 Group B3):
 # it is both what this module writes and the threshold
-# kstrl.calibration_baseline.load_baseline compares a document's
+# kstrl.calibration.calibration_baseline.load_baseline compares a document's
 # format_version against, so it has one owner rather than two numbers that
 # happen to agree. Imported above and re-exported here because
 # tests/test_calibration_compare.py reads it as ``calibration.REPORT_FORMAT_VERSION``.
@@ -222,7 +222,7 @@ def build_report(
     NOT an error - it is a completed miss). This is the RECORD contract,
     a separate thing from the on-disk document: this function computes
     every value from the records and hands them to
-    ``kstrl.calibration_baseline.fixture_entry`` and ``baseline_document``,
+    ``kstrl.calibration.calibration_baseline.fixture_entry`` and ``baseline_document``,
     which are the only places a document KEY is spelled (#421 Group B).
 
     ``run_complete``, ``fixtures_attempted`` and ``fixtures_completed``
@@ -232,7 +232,7 @@ def build_report(
     (whether teardown was reached, which fixture names it began and
     finished); ``baseline_document`` owns the KEYS, so the v2 format has
     one writer. The defaults describe a single-shot build that finished.
-    ``kstrl.calibration_baseline.partial_capture_reason`` is the reader on
+    ``kstrl.calibration.calibration_baseline.partial_capture_reason`` is the reader on
     the other side of this seam.
     """
     grouped: dict[tuple[str, str], list[Mapping[str, Any]]] = {}
@@ -650,13 +650,13 @@ def reviewer_override_label(
 
 
 # ---------------------------------------------------------------------------
-# CLI: python -m kstrl.calibration compare <old.json> <new.json>
+# CLI: python -m kstrl.calibration.calibration compare <old.json> <new.json>
 # ---------------------------------------------------------------------------
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="python -m kstrl.calibration",
+        prog="python -m kstrl.calibration.calibration",
         description="Calibration baseline tooling (R5.1).",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -717,7 +717,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         # Imported here rather than at module scope so this module, the
         # non-LLM measurement half, does not drag the control plane
         # (autonomy, inbox, UI) into every importer of a comparison.
-        from kstrl.calibration_ladder import report_to_ladder
+        from kstrl.calibration.calibration_ladder import report_to_ladder
 
         override = report_to_ladder(comparison, (args.root or Path.cwd()).resolve())
         if override is not None:

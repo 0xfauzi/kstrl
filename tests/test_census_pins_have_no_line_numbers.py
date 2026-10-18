@@ -136,10 +136,10 @@ class TestNoCensusPinsALineNumber:
             'WRAPPED = ["at [kstrl/signals.py:556]"]\n'
             '_PRIVATE = ("pipeline.py:1 x",)\n'
             "def setup(cls):\n"
-            '    cls.ATTR = ("loop.py:2 x",)\n'
+            '    cls.ATTR = ("loop/loop.py:2 x",)\n'
         )
         assert sorted(line_number_pins(parse(source))) == [
-            "ATTR loop.py:2",
+            "ATTR loop/loop.py:2",
             "EXPECTED cli.py:3164",
             "PINS kstrl/architect/linear.py:320",
             "ROWS cli_report.py:390",

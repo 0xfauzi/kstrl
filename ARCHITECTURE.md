@@ -117,7 +117,7 @@ raw stderr.
 ## The iteration loop
 
 Inside one component's execution. Note what this loop does not have: the
-prompt is assembled once, before the `for` loop (`kstrl/loop.py`), and the
+prompt is assembled once, before the `for` loop (`kstrl/loop/loop.py`), and the
 same string is sent on every iteration. Information crosses an iteration
 boundary only through the files the agent itself writes (the PRD, the
 progress log, the codebase map). Nothing measures the tree between
@@ -261,7 +261,7 @@ answer, not a new control. Details and recovery steps are in
 ## Acceptance checks
 
 An acceptance plan is a directory outside the repository that the
-operator passes with `ks factory --acceptance <dir>` (`kstrl/acceptance.py`).
+operator passes with `ks factory --acceptance <dir>` (`kstrl/acceptance/acceptance.py`).
 kstrl never interprets a check: it runs its `argv` in a fresh copy of the
 plan, with `KSTRL_TREE` naming the checkout under test, and reads the exit
 status. The checks run on the base before the first engineer, on each

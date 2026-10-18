@@ -53,9 +53,9 @@ def entry_signal_blockers(root_dir: Path, current: AutonomyLevel) -> list[str]:
 def _calibration_blockers(root_dir: Path) -> list[str]:
     """L2's "calibration compare green": no undecided ``calibration_drift`` item.
 
-    The measurement is ``python -m kstrl.calibration compare --root``, run
+    The measurement is ``python -m kstrl.calibration.calibration compare --root``, run
     by hand against kstrl's own baselines, and its one record in a project
-    is the ``calibration_drift`` item ``kstrl.calibration_ladder`` opens on
+    is the ``calibration_drift`` item ``kstrl.calibration.calibration_ladder`` opens on
     a regression. The absence of that item means something only while its
     writer is armed, which needs ``[autonomy]`` and ``[inbox]`` both
     enabled. A snoozed item is deferred, not decided, so it still blocks,

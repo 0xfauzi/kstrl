@@ -53,7 +53,7 @@ from kstrl.owner.inbox import Inbox, InboxConfig, InboxItem, ItemKind, ItemStatu
 from kstrl.plan.manifest import Component, ComponentStatus, Manifest
 from kstrl.pr import MergeConfirmation
 from kstrl.retry_plan import prepare_retry
-from kstrl.review import ReviewResult
+from kstrl.review.review import ReviewResult
 from kstrl.ui.plain import PlainUI
 from kstrl.verify.verify_model import CheckResult, VerificationResult, VerifyConfig
 from tests.helpers import astwalk, gitrepo

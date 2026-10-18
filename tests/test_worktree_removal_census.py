@@ -49,7 +49,7 @@ def _spells_a_removal(node: ast.AST) -> bool:
 #: argv and five prose pieces of its manual-removal messages; contract.py
 #: has one more prose piece.
 EXPECTED_REMOVAL_SPELLINGS = {
-    "contract.py": 1,
+    "acceptance/contract.py": 1,
     "factory_worktrees.py": 5,  # #863 A4: the flat-worktree refusal message names the command
     "retry_plan.py": 1,
     "proc/temp_worktree.py": 6,

@@ -29,11 +29,11 @@ from kstrl.factory_result import FactoryResult
 from kstrl.plan.findings import finding_model
 from kstrl.plan.manifest import Component, Manifest
 from kstrl.pr_body import component_pr_body
-from kstrl.review import (
+from kstrl.review.review import (
     ReviewMode,
     run_review,
 )
-from kstrl.security import (
+from kstrl.review.security import (
     SecurityConfig,
     run_security_review,
 )

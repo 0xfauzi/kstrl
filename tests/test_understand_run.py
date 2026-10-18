@@ -14,7 +14,7 @@ from kstrl.cli import cli
 from kstrl.events import event_catalog
 from kstrl.events.reducer import load_run_state
 from kstrl.io.runid import run_kind
-from kstrl.loop import LoopResult
+from kstrl.loop.loop import LoopResult
 
 
 class StubAgent:

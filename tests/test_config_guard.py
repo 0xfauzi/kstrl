@@ -737,7 +737,7 @@ class TestTheRunReadsConfigOnlyBeforeItStarts:
             ),
             (
                 "inside a lambda",
-                "from kstrl.security import SecurityConfig\n\n\nclass ComponentPipeline:\n"
+                "from kstrl.review.security import SecurityConfig\n\n\nclass ComponentPipeline:\n"
                 "    def _phase_verify(self, comp):\n"
                 "        return (lambda: SecurityConfig.load(self.root_dir))()\n",
             ),

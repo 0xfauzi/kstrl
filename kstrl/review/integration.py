@@ -12,9 +12,9 @@ from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from kstrl.contract import ContractResult
+from kstrl.acceptance import ContractResult
 from kstrl.plan import KIND_NON_GOAL, KIND_REQUIREMENT, PRD, SpecRequirement, UserStory
-from kstrl.review import (
+from kstrl.review.review import (
     CriterionReview,
     ReviewConcern,
     ReviewMode,
@@ -202,7 +202,7 @@ def requirement_stories(requirements: Sequence[SpecRequirement]) -> tuple[Expect
 def write_integration_prd(path: Path, stories: Sequence[ExpectedStory]) -> None:
     """The PRD the reviewer is handed: one criterion per story. The parent must exist."""
     PRD(
-        branch_name="kstrl/integration-review",
+        branch_name="kstrl/review/integration-review",
         user_stories=[
             UserStory(
                 id=story.story_id,

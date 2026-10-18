@@ -38,7 +38,7 @@ RUN_DEADLINE_MODULES = (
     "agents/liveness.py",
     "factory.py",
     "factory_worker.py",
-    "loop.py",
+    "loop/loop.py",
     "serve.py",
     "serve_process.py",
     "serve_spend.py",

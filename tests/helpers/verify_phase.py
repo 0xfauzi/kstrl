@@ -30,10 +30,10 @@ from kstrl.pipeline_state import PipelineHooks
 from kstrl.plan.manifest import Component, Manifest
 from kstrl.plan.scope import RunScope
 from kstrl.proc.worktree_sweep import WorktreeSweep
-from kstrl.review import ReviewResult
+from kstrl.review.review import ReviewResult
+from kstrl.review.security import SecurityResult
 from kstrl.runenvelope import RunEnvelope
 from kstrl.runstate import RunState
-from kstrl.security import SecurityResult
 from kstrl.ui.plain import PlainUI
 from kstrl.verify.policy import PolicyConfig
 from kstrl.verify.verify import run_mechanical_verification

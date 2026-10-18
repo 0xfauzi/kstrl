@@ -893,7 +893,7 @@ window. A factory run at 10-20 minutes does not.
   `time.time()` only in event time stamps and age labels, not in a
   deadline. `tests/test_run_deadlines_use_monotonic.py` pins the
   wall-clock reads in those modules and in `kstrl/factory.py` and
-  `kstrl/loop.py`.
+  `kstrl/loop/loop.py`.
 - *The lease is wall clock, and the lock makes that safe.* The lease TTL
   is the one deadline of a running item that counts suspended seconds,
   and only `reap_leases` reads it. While the run is suspended, a second

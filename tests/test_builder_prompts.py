@@ -25,16 +25,18 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl import context, factory_worker, iteration_prompt, review_claims
+from kstrl import context, factory_worker
 from kstrl.context import LEGACY_ATTEMPT, IterationContext, IterationRecord
 from kstrl.knowledge import knowledge
 from kstrl.knowledge.knowledge_facts import KnowledgeConfig, write_facts
-from kstrl.loop import LoopResult
+from kstrl.loop import iteration_prompt
+from kstrl.loop.loop import LoopResult
 from kstrl.plan.findings import Finding
 from kstrl.plan.manifest import Component, Manifest
 from kstrl.plan.scope import ComponentScope
 from kstrl.project import init_cmd
-from kstrl.review import CriterionReview, ReviewResult, ReviewVerdict
+from kstrl.review import review_claims
+from kstrl.review.review import CriterionReview, ReviewResult, ReviewVerdict
 from kstrl.verify import verify, verify_diff, verify_model
 from kstrl.verify.policy import PolicyConfig
 from tests.helpers.builder_prompts import BUILDER_PROMPTS

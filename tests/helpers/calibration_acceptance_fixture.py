@@ -13,8 +13,8 @@ makes) in a repository that holds the base commit and nothing else
 (:func:`base_checkout`), so no branch or commit of a head is in the
 repository it reads. It then materialises the fixture with every head as a second
 repository and scores the entry by running it:
-:func:`kstrl.acceptance.replay_base` on the base, then
-:func:`kstrl.acceptance.judge_head` on each head, which is the factory's
+:func:`kstrl.acceptance.acceptance.replay_base` on the base, then
+:func:`kstrl.acceptance.acceptance.judge_head` on each head, which is the factory's
 own reading. No model judges a check.
 
 Planted heads record under :data:`ACCEPTANCE_ROLE`: a run catches the head
@@ -36,7 +36,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from kstrl.acceptance import (
+from kstrl.acceptance.acceptance import (
     DESIGNER_FILE,
     FAIL,
     PASS,

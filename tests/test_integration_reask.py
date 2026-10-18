@@ -31,7 +31,7 @@ from unittest.mock import patch
 import pytest
 
 from kstrl.pipeline import ComponentPipeline
-from kstrl.review import parse_review_output
+from kstrl.review.review import parse_review_output
 from tests.helpers import integration_harness as h
 from tests.helpers.astwalk.corpus import package_sources
 from tests.helpers.astwalk.net import assert_census, spells
@@ -414,7 +414,7 @@ def test_a_readable_review_is_not_flagged() -> None:
 #: the field and the one write in parse_review_output. integration_phase.py:
 #: the one read, in review_commit. A new row is a second reader, which is a
 #: re-ask added somewhere this file does not test. Re-derive by running.
-EXPECTED_REPLY_UNREAD_SITES = {"integration_phase.py": 1, "review.py": 2}
+EXPECTED_REPLY_UNREAD_SITES = {"integration_phase.py": 1, "review/review.py": 2}
 
 
 def test_a_fail_written_after_the_first_2000_characters_blocks_the_reask() -> None:

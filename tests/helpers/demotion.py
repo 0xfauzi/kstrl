@@ -25,7 +25,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
-from kstrl import calibration
+from kstrl.calibration import calibration
 from kstrl.events.events import EventBus
 from kstrl.factory_autonomy import _record_autonomy_outcome
 from kstrl.factory_result import FactoryResult
@@ -217,7 +217,7 @@ class BrokenHealthFinder(MetaPathFinder):
 
 
 def run_compare(tmp_path: Path, old: Path, new: Path) -> int:
-    """``python -m kstrl.calibration compare`` against a project root."""
+    """``python -m kstrl.calibration.calibration compare`` against a project root."""
     return calibration.main(["compare", str(old), str(new), "--root", str(tmp_path)])
 
 

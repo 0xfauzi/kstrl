@@ -438,7 +438,7 @@ class TestPhaseTranscripts:
     def test_review_transcript_written(self, tmp_path: Path) -> None:
         """The pipeline threads a transcript writer into the review
         hook; lines the reviewer streams land in review.log."""
-        from kstrl.review import ReviewResult
+        from kstrl.review.review import ReviewResult
 
         root = _setup_project(tmp_path, ["comp-a"])
         manifest = _make_manifest([_component("comp-a")])
@@ -483,7 +483,7 @@ class TestPhaseTranscripts:
 
     def test_run_review_streams_lines(self, tmp_path: Path) -> None:
         """review.run_review forwards each streamed agent line to on_line."""
-        from kstrl.review import ReviewMode, run_review
+        from kstrl.review.review import ReviewMode, run_review
         from kstrl.ui.plain import PlainUI as _PlainUI
         from kstrl.verify.verify_model import VerificationResult
         from tests.conftest import make_review_repo

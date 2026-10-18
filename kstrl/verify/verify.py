@@ -84,7 +84,7 @@ def latest_entry(lines: Sequence[str]) -> int | None:
     Entries are appended, so the LAST iteration heading starts the
     current iteration's entry. The one definition of "this iteration's
     entry": the self-critique check reads it, and so does the acceptance
-    dispute (``kstrl.acceptance_record.read_dispute``, #700 slice 10a).
+    dispute (``kstrl.acceptance.acceptance_record.read_dispute``, #700 slice 10a).
     """
     for index in range(len(lines) - 1, -1, -1):
         if _ITERATION_HEADING_RE.match(lines[index]):

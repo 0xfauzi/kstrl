@@ -466,7 +466,7 @@ class TestFeatureChecksThePromptItActuallyRuns:
         seen: list[Path] = []
 
         def record(config, ui, agent, *args, **kwargs):  # type: ignore[no-untyped-def]
-            from kstrl.loop import LoopResult
+            from kstrl.loop.loop import LoopResult
 
             seen.append(config.prompt_file)
             return LoopResult(completed=True, iterations=1, exit_code=0)

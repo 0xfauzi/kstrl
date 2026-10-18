@@ -2,7 +2,7 @@
 
 Today (kstrl/factory.py:1439-1450) the worker joins ``parts`` in this order:
 knowledge prefix, feedforward prefix, retry context. ``run_loop``
-(kstrl/loop.py:529-541) then prepends CLAUDE.md, headed "# Project Context
+(kstrl/loop/loop.py:529-541) then prepends CLAUDE.md, headed "# Project Context
 (from CLAUDE.md)", to the templated prompt, and prepends the whole context
 prefix in front of that. So the agent reads, in order: knowledge,
 feedforward, retry context, CLAUDE.md, the instructions.

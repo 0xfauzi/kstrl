@@ -38,7 +38,7 @@ from kstrl.agents.logging import LoggingAgent
 from kstrl.agents.sandbox import SandboxConfig
 from kstrl.config.config import KstrlConfig
 from kstrl.events.usage import UsageRecord
-from kstrl.loop import COMPLETION_MARKER, run_loop
+from kstrl.loop.loop import COMPLETION_MARKER, run_loop
 from kstrl.proc.timeout import TimeoutConfig
 from kstrl.ui.plain import PlainUI
 from tests.helpers.executables import put_on_path, write_executable

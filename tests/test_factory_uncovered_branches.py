@@ -22,8 +22,8 @@ from unittest.mock import patch
 
 import pytest
 
+from kstrl.acceptance.contract import ContractConfig, ContractMode, ContractResult
 from kstrl.architect.linear import LinearConfig
-from kstrl.contract import ContractConfig, ContractMode, ContractResult
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult, FactoryResult

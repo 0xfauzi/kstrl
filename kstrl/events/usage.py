@@ -74,7 +74,7 @@ class UsageTotals:
     claude adapter emits ``total_cost_usd`` even when the ``usage`` dict
     is missing or drifted) is "known" for cost purposes yet contributes
     nothing to ``total_tokens``. Anything reasoning about a TOKEN
-    ceiling - see ``kstrl.loop_budget.LoopBudget`` - must read ``token_calls``,
+    ceiling - see ``kstrl.loop.loop_budget.LoopBudget`` - must read ``token_calls``,
     not ``known_calls``; a review of R8 found the cost-only case makes a
     token cap silently unenforceable while ``known_calls`` says coverage
     is perfect.

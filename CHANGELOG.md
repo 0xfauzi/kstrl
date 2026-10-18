@@ -141,7 +141,7 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   `HEALTH_BREACH` since R8.2 and neither had an emitter, so a factory
   getting quietly worse without breaching the policy envelope kept its
   level, and a calibration regression a human had already measured
-  changed nothing. `python -m kstrl.calibration compare` takes a
+  changed nothing. `python -m kstrl.calibration.calibration compare` takes a
   `--root` and, when the ladder is enabled, opens a `calibration_drift`
   inbox item on a regression; `[autonomy] demote_on_calibration_regression`
   (env `KSTRL_AUTONOMY_DEMOTE_ON_CALIBRATION`) additionally revokes one
@@ -588,7 +588,7 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 - `dead_code` no longer reports a pass when nothing was measured. One row
   covered two phases - a ruff F401/F811/F841 auto-fix that ran and a vulture
   scan that did not - so nine states in which one of them measured nothing
-  still produced `dead_code  pass`, and `kstrl/review.py` copied that row into
+  still produced `dead_code  pass`, and `kstrl/review/review.py` copied that row into
   the LLM code reviewer's verification summary as `dead_code: PASS`. The row is
   now two: `dead_code_ruff` for the ruff phase and `dead_code` for the vulture
   or `[verify] dead_code_command` scan. A phase that could not run appends no

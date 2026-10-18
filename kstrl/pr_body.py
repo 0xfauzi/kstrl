@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl.acceptance_lines import pr_section
+from kstrl.acceptance import pr_section
 from kstrl.io import pre_run_prd_path
 from kstrl.plan import (
     CLAIM_DISAGREEMENT_CATEGORY,

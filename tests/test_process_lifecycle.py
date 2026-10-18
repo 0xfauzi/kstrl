@@ -203,7 +203,7 @@ EXPECTED_PROCESS_MODULES: dict[str, tuple[str, ...]] = {
     # #700 slice 3: waits on the `up` that `scrubbed_run.start_scrubbed` started,
     # stops its group through `procgroup.signal_group` and lets it go through
     # `procdispose.reap_or_abandon`; `Popen` is the type of what it holds.
-    "replay.py": ("Popen", "subprocess"),
+    "acceptance/replay.py": ("Popen", "subprocess"),
     # The five that own a child through `DeadlineStreamer` rather than a
     # raw `Popen`. Four of them are GENERATORS, which is the shape #326's
     # sweep found still open: a consumer walks away mid-yield and nothing
@@ -229,8 +229,8 @@ EXPECTED_PROCESS_MODULES: dict[str, tuple[str, ...]] = {
     "factory_worktrees.py": ("subprocess",),
     # `subprocess.run` behind a timeout, and nothing else.
     "agents/codex.py": ("DeadlineStreamer", "subprocess"),
-    "breaker.py": ("subprocess",),
-    "contract.py": ("subprocess",),
+    "loop/breaker.py": ("subprocess",),
+    "acceptance/contract.py": ("subprocess",),
     # doctor.py (#198) runs two short git commands and waits for each
     # with a timeout; it creates, signals, waits on or abandons no
     # process group, so there is nothing here for `kstrl.proc.procgroup` to
@@ -242,7 +242,7 @@ EXPECTED_PROCESS_MODULES: dict[str, tuple[str, ...]] = {
     "git/git_tree.py": ("subprocess",),
     "intake_gh.py": ("subprocess",),
     # #700: `TimeoutExpired` from `run_scrubbed`, which owns the process group.
-    "isolation.py": ("subprocess",),
+    "acceptance/isolation.py": ("subprocess",),
     "events/observability.py": ("subprocess",),
     "pr.py": ("subprocess",),
     # The `gh pr view` reads moved here from `pr.py` for the 800-line
@@ -366,7 +366,7 @@ EXPECTED_SPAWNERS: dict[str, SpawnerRules] = {
     # running child; `replay.py` is the one that lets it go. #642 slice 6:
     # the third disposal lets go of a leash that could not start `up`.
     "proc/scrubbed_run.py": SpawnerRules(2, 1, 1, 3),
-    "replay.py": SpawnerRules(0, 0, 0, 1),
+    "acceptance/replay.py": SpawnerRules(0, 0, 0, 1),
 }
 
 

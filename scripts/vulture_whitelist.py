@@ -115,16 +115,20 @@ _.pushed
 # RunState counter: written by the reducer at kstrl/events/reducer.py:383, no reader in kstrl
 _.unknown_events
 
-# Replay record field: written during the replay; writer at kstrl/replay.py:180, no reader in kstrl
+# Replay record field: written during the replay; writer at kstrl/acceptance/replay.py:180,
+# no reader in kstrl
 _.lock_wait_seconds
 
-# Replay record field: written during the replay; writer at kstrl/replay.py:304, no reader in kstrl
+# Replay record field: written during the replay; writer at kstrl/acceptance/replay.py:304,
+# no reader in kstrl
 _.group_gone
 
-# ProvenRung field: set by isolation; writer at kstrl/isolation.py:586, no reader in kstrl
+# ProvenRung field: set by isolation; writer at kstrl/acceptance/isolation.py:586,
+# no reader in kstrl
 _.backend_version
 
-# ProvenRung field: set by isolation; writer at kstrl/isolation.py:588, no reader in kstrl
+# ProvenRung field: set by isolation; writer at kstrl/acceptance/isolation.py:588,
+# no reader in kstrl
 _.policy_sha256
 
 # SettleResult counter: set and summed; writer at kstrl/serve.py:280, no reader in kstrl

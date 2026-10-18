@@ -1,12 +1,12 @@
-"""The startup report and the guard baseline of ``kstrl.loop.run_loop``."""
+"""The startup report and the guard baseline of ``kstrl.loop.loop.run_loop``."""
 
 from __future__ import annotations
 
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl.breaker import BreakerConfig
 from kstrl.git import git, git_tree
+from kstrl.loop.breaker import BreakerConfig
 from kstrl.proc import TimeoutConfig, describe_limit_seconds
 
 if TYPE_CHECKING:

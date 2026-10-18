@@ -51,7 +51,7 @@ from kstrl.factory import (
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult
 from kstrl.factory_worktrees import _remove_stale_index_lock, _setup_worktree
-from kstrl.loop import run_loop
+from kstrl.loop.loop import run_loop
 from kstrl.plan.manifest import Component, Manifest
 from kstrl.proc.proc import TIMEOUT_MESSAGE_PREFIX, kill_active_process_groups
 from kstrl.proc.timeout import TimeoutConfig
@@ -1974,9 +1974,9 @@ class TestSubprocessTimeoutAudit:
     #: ``process.wait(timeout=grace)`` with the deadline deleted, which
     #: passed the entire suite - 4977 passed, zero failures - on the line
     #: whose own docstring says it is why the function exists.
-    #: ``kstrl/replay.py`` (#700 slice 3) waits on the ``up`` that
+    #: ``kstrl/acceptance/replay.py`` (#700 slice 3) waits on the ``up`` that
     #: ``scrubbed_run.start_scrubbed`` started and lets it go.
-    CHILD_WAIT_SCOPE = POPEN_ALLOWLIST | {"kstrl/proc/procdispose.py", "kstrl/replay.py"}
+    CHILD_WAIT_SCOPE = POPEN_ALLOWLIST | {"kstrl/proc/procdispose.py", "kstrl/acceptance/replay.py"}
 
     #: Waits in :data:`CHILD_WAIT_SCOPE` that have no deadline and are argued
     #: rather than bounded, as ``module finding`` with the line number taken
@@ -2182,7 +2182,7 @@ class TestSubprocessTimeoutAudit:
             "agents/agent_output.py agent.run",
             "agents/logging.py self._agent.run",
             "architect/decompose.py agent.run",
-            "loop.py run.agent.run",
+            "loop/loop.py run.agent.run",
         ], (
             "the set of spawn-shaped calls this walk cannot decide changed. A new "
             "row is a call the audit above is silent about, so say why it cannot be "

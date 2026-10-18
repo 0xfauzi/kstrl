@@ -49,7 +49,7 @@ from kstrl.config.config import KstrlConfig
 from kstrl.events.event_catalog import CheckpointResolved, Event
 from kstrl.events.events import CallbackSink
 from kstrl.feature_cmd import run_feature
-from kstrl.loop import LoopResult, run_loop
+from kstrl.loop.loop import LoopResult, run_loop
 from kstrl.owner.inbox import Inbox, InboxConfig
 from kstrl.owner.interaction import (
     PromptKind,
@@ -411,7 +411,7 @@ EXPECTED_PROMPT_SITES = {
     "cli_preflight.py::_stack_checkpoint": "refuses with exit 2 and files the stack item (#696)",
     "feature_cmd.py::run_feature": "refuses: quit to amend",
     "verify/guards.py::enforce_allowed_paths": "quits",
-    "loop.py::_resolve_iteration_pause": "stops the run, same as Quit, when nobody answers",
+    "loop/loop.py::_resolve_iteration_pause": "stops the run, same as Quit, when nobody answers",
     "pipeline_delivery.py::Delivery._phase_checkpoint": "parks for the inbox (#594)",
     "plan_gate.py::run_plan_gate": "parks the plan for the inbox (#602)",
 }
@@ -434,7 +434,7 @@ EXPECTED_SEEN_PROMPT_SITES: tuple[str, ...] = (
     "cli_factory.py::factory kstrl.owner.interaction.PromptRequest",
     "cli_preflight.py::_stack_checkpoint kstrl.owner.interaction.PromptRequest",
     "feature_cmd.py::run_feature kstrl.owner.interaction.PromptRequest",
-    "loop.py::_resolve_iteration_pause kstrl.owner.interaction.PromptRequest",
+    "loop/loop.py::_resolve_iteration_pause kstrl.owner.interaction.PromptRequest",
     "pipeline_delivery.py::Delivery._phase_checkpoint kstrl.owner.interaction.PromptRequest",
     "plan_gate.py::run_plan_gate kstrl.owner.interaction.PromptRequest",
     "verify/guards.py::enforce_allowed_paths kstrl.owner.interaction.PromptRequest",

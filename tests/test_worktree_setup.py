@@ -25,8 +25,8 @@ from pathlib import Path
 
 import pytest
 
+from kstrl.acceptance.contract import ContractConfig, ContractMode
 from kstrl.config.config import KstrlConfig
-from kstrl.contract import ContractConfig, ContractMode
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import FactoryResult

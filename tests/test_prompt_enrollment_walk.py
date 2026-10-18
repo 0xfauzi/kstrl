@@ -306,7 +306,7 @@ EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
     # #639 slice 3: INTEGRATION_REQUIREMENT_PROMPT and INTEGRATION_NON_GOAL_PROMPT,
     # 2 prompts x 2 spellings (each declaration and its one use in
     # requirement_stories) = 8.
-    "integration.py": 8,
+    "review/integration.py": 8,
     # #303: 2 pre-existing + 2 new fragments x 2 spellings each (the
     # declaration and its one use site) = 6. The version constant adds
     # nothing: the walk keys on names ending in _PROMPT, not _VERSION.
@@ -316,26 +316,26 @@ EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
     "knowledge/knowledge_distill.py": 2,
     # #233: LAST_ITERATION_MEASUREMENT_PROMPT x 2 spellings (the
     # declaration and its one use in measurement_block) = 2.
-    "iteration_prompt.py": 2,
+    "loop/iteration_prompt.py": 2,
     # 2 spellings of DEFAULT_PROMPT (the import and its use in run_loop).
-    "loop.py": 2,
+    "loop/loop.py": 2,
     # #863 M3: the import and the ``__all__`` row of DEFAULT_PROMPT in the
     # package interface, which ``loop.py`` imports it through.
     "project/__init__.py": 2,
     # #639 slice 4: OWNER_ANSWER_PROMPT's declaration and its one use in
     # render_owner_answer.
     "architect/owner_answers.py": 2,
-    "review_prompt.py": 2,
+    "review/review_prompt.py": 2,
     # #303: 5 new fragments x 2 spellings each (the declaration and its
     # one use site) = 10. The version constant adds nothing: the walk keys
     # on names ending in _PROMPT, not _VERSION.
-    "review_claims.py": 10,
+    "review/review_claims.py": 10,
     # N2 (#776): the six ledger rows that left init_cmd.py name their six
     # constants here; init_cmd.py keeps its own uses and the imports.
     "project/scaffold_ledger.py": 9,
     # N1 (#776): the three declarations that left init_cmd.py with their bodies.
     "project/scaffold_templates.py": 3,
-    "security.py": 2,
+    "review/security.py": 2,
     # #696: STACK_PROMPT's declaration and its one use in
     # Stack.format_for_prompt. Enrolled in tests/test_prompt_versions.py.
     "project/stack.py": 2,

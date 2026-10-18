@@ -337,12 +337,12 @@ EXPECTED_AGENT_CALLS: dict[str, int] = {
     "integration_phase.py:_run_reviewer": 1,
     "integration_phase.py:review_commit": 1,
     "knowledge/knowledge_distill.py:distill_facts": 1,
-    "loop.py:_run_one_iteration": 1,
+    "loop/loop.py:_run_one_iteration": 1,
     "pipeline_review.py:ReviewPhase._phase_review": 1,
     "pipeline_security.py:SecurityGate._phase_security": 1,
     "pipeline_knowledge.py:KnowledgePhase._phase_distill": 1,
-    "review.py:run_review": 1,
-    "security.py:run_security_review": 1,
+    "review/review.py:run_review": 1,
+    "review/security.py:run_security_review": 1,
 }
 
 #: Agent-call sites whose scope is opened by a CALLER, named here so the
@@ -357,9 +357,11 @@ CALLER_SCOPED: dict[str, str] = {
     "integration_phase.py:_run_reviewer": "integration_phase._review_round",
     "integration_phase.py:review_commit": "integration_phase._review_round, via _run_reviewer",
     "knowledge/knowledge_distill.py:distill_facts": "pipeline.ComponentPipeline._phase_distill",
-    "loop.py:_run_one_iteration": "every run_loop caller, each scoped lexically",
-    "review.py:run_review": "pipeline_review._phase_review and integration_phase._review_round",
-    "security.py:run_security_review": "pipeline_security.SecurityGate._phase_security",
+    "loop/loop.py:_run_one_iteration": "every run_loop caller, each scoped lexically",
+    "review/review.py:run_review": (
+        "pipeline_review._phase_review and integration_phase._review_round"
+    ),
+    "review/security.py:run_security_review": "pipeline_security.SecurityGate._phase_security",
 }
 
 
@@ -498,7 +500,7 @@ EXPECTED_BOUNDS: dict[str, tuple[str, str]] = {
         "timeout",
         "[knowledge] distill_timeout_seconds",
     ),
-    "loop.py:_run_one_iteration": (
+    "loop/loop.py:_run_one_iteration": (
         "timeout",
         "[timeout] agent_iteration, capped by component_total",
     ),
@@ -511,8 +513,8 @@ EXPECTED_BOUNDS: dict[str, tuple[str, str]] = {
         "config",
         "[knowledge] distill_timeout_seconds, read inside distill_facts",
     ),
-    "review.py:run_review": ("timeout", "its caller's timeout"),
-    "security.py:run_security_review": ("timeout", "[security] timeout_seconds"),
+    "review/review.py:run_review": ("timeout", "its caller's timeout"),
+    "review/security.py:run_security_review": ("timeout", "[security] timeout_seconds"),
 }
 
 

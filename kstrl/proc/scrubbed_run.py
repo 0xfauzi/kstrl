@@ -349,7 +349,7 @@ def start_scrubbed(
     on the host only under the explicit host fallback of a platform with
     no prover. The child leads a new session, so its pid is the
     group id; the caller waits on it, records that id, and stops the group
-    through :mod:`kstrl.proc.procgroup` (``kstrl.replay``).
+    through :mod:`kstrl.proc.procgroup` (``kstrl.acceptance.replay``).
 
     The child is the leash in its ``--hold`` mode (#642 slice 6): it exits
     with ``cmd``'s status when ``cmd`` exits, as ``cmd`` would have, and a

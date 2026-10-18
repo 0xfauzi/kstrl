@@ -78,7 +78,7 @@ caller decides deliberately.
 
 Stdlib only and importing nothing: this module is a leaf so that
 ``init_cmd`` can use it without pulling ``kstrl.queue.workqueue`` into
-``kstrl.loop``'s static import closure, which #274's
+``kstrl.loop.loop``'s static import closure, which #274's
 ``tests/test_state_dir_scope.py`` refuses.
 """
 

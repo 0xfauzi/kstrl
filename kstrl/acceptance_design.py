@@ -6,7 +6,7 @@ designer in a fresh call (owner decision 1(c)), given the specification,
 the component's criteria, the confirmed ``[stack]`` and a checkout of the
 base commit: never a branch, a diff or a transcript. The designer writes
 nothing. It answers one ``plan.json`` entry, which is checked with
-:func:`kstrl.acceptance.plan_errors`, the vocabulary the runner reads, and
+:func:`kstrl.acceptance.acceptance.plan_errors`, the vocabulary the runner reads, and
 kstrl writes the plan.
 
 The designer is the ``[review]`` selection, read only (decision 12). Every
@@ -20,7 +20,7 @@ and before the first engineer (decision 2(a)). The plan is written under
 the control directory, keyed by the plan and the stack it was designed
 for (:func:`designed_dir`), so a parked plan approved later, or a resumed
 run, pins the same checks and asks nothing again. Its
-:data:`kstrl.acceptance.DESIGNER_FILE` marks it as model-written. Its
+:data:`kstrl.acceptance.acceptance.DESIGNER_FILE` marks it as model-written. Its
 checks gate a head as an operator's do (owner decision of 2026-10-07).
 """
 
@@ -239,7 +239,7 @@ def design_component(
     valid entry, one line each that names its ask. With an entry, those
     lines are the cause of each ask after the first. ``spend()`` runs before
     every ask and returns why none may be made, or "" once one is charged.
-    An entry is valid when :func:`kstrl.acceptance.plan_errors` passes it
+    An entry is valid when :func:`kstrl.acceptance.acceptance.plan_errors` passes it
     and each criterion cites one of ``requirement_ids`` (#639 slice 5).
     The factory and the ``acceptance`` calibration roles both call this."""
     errors: list[str] = []
@@ -263,7 +263,7 @@ def design_component(
 
 
 def citation_errors(entry: Any, requirement_ids: Collection[str]) -> list[str]:
-    """Each check of an entry :func:`kstrl.acceptance.plan_errors` passed
+    """Each check of an entry :func:`kstrl.acceptance.acceptance.plan_errors` passed
     whose criterion names none of ``requirement_ids``, the requirements the
     component builds (#639 slice 5). None to cite means nothing to check."""
     if not requirement_ids:

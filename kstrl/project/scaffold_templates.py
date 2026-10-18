@@ -10,7 +10,7 @@ DEFAULT_PROMPT_VERSION = "1.6.0"
 # check you think is incorrect" gives the engineer one line in its progress
 # entry, `Dispute: <check-id>: <cause>`, to dispute a visible acceptance
 # check instead of changing code only to make it pass.
-# `kstrl.acceptance_record.read_dispute` reads that line on each head; a
+# `kstrl.acceptance.acceptance_record.read_dispute` reads that line on each head; a
 # dispute it accepts halts the component for a person, and it never
 # passes a check. No calibration fixture scores the engineer (H2 does not
 # apply); H3 is this bump, the snapshot and the SCAFFOLDED_TEMPLATES row.

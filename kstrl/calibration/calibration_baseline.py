@@ -1,11 +1,11 @@
 """Reading a calibration baseline back off disk (R5.1/R5.5).
 
-Split out of ``kstrl/calibration.py`` when that file would have crossed
+Split out of ``kstrl/calibration/calibration.py`` when that file would have crossed
 the 800-line growth ratchet (#406): the split itself is the ratchet, the
 way ``tests/helpers/demotion.py`` and ``kstrl/project/operator_guidance.py``
-each say of themselves. ``kstrl.calibration``
+each say of themselves. ``kstrl.calibration.calibration``
 imports this module; the dependency runs one way and must stay that way -
-nothing here imports ``kstrl.calibration``, so there is no cycle.
+nothing here imports ``kstrl.calibration.calibration``, so there is no cycle.
 
 This module holds:
 
@@ -14,7 +14,7 @@ This module holds:
   arithmetic that both the report builder and the baseline reader need.
 - **Baseline report: write**: ``fixture_entry`` and ``baseline_document``
   are the ONLY places the v2 document's keys are written (#421 Group B).
-  ``kstrl.calibration.build_report`` computes every value and calls these
+  ``kstrl.calibration.calibration.build_report`` computes every value and calls these
   two to spell them, so a document key has one owner in both directions
   instead of being spelled independently in the module that writes and
   the module that reads.
@@ -56,14 +56,14 @@ from kstrl.io import read_json
 UNKNOWN_TIMESTAMP = "unknown"
 
 # #421 Group B: sixteen report-key constants used to live here, spelled
-# independently again in kstrl/calibration.py, so a rename in one half
+# independently again in kstrl/calibration/calibration.py, so a rename in one half
 # left the other reading a key that is no longer written - #421 showed
 # that reads as zero rather than failing. Rather than police the two
 # spellings with a census, the document now has one owner BY
 # CONSTRUCTION: every key below is a bare literal, and it is spelled in
 # exactly one place - inside ``fixture_entry``, ``baseline_document`` or
 # ``load_baseline`` - so there is nowhere left for a second spelling to
-# live. ``kstrl.calibration.build_report`` never spells a document key;
+# live. ``kstrl.calibration.calibration.build_report`` never spells a document key;
 # it only reads the per-run RECORD fields (``role``, ``fixture_id``,
 # ``category``, ``cwe``, ``caught``, ``error``) documented at its own
 # docstring, five of which happen to share a spelling with a document key
@@ -245,7 +245,7 @@ def _required_int(path: Path, where: str, data: Mapping[str, Any], key: str, def
     ``bool`` is refused although it is an ``int`` subclass: JSON ``true``
     in a count is a writer that lost the count, not a count of one. A
     bare ``int(...)`` on a JSON ``null`` used to raise ``TypeError``,
-    which ``kstrl.calibration.main``'s ``except ValueError`` does not
+    which ``kstrl.calibration.calibration.main``'s ``except ValueError`` does not
     catch, so a malformed ``format_version`` or ``runs_per_fixture``
     reached the terminal as a traceback (exit 1, the CLI's REGRESSION
     code) instead of exit 2. A negative value is the same "writer that
@@ -355,7 +355,7 @@ def _fp_rates(path: Path, data: Mapping[str, Any]) -> dict[str, NegativeRole] | 
 def fixture_entry(fixture: FixtureStats, runs: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     """The on-disk v2 form of one fixture, including its ``runs[]``
     sub-entries. One of the two places document keys are written (#421
-    Group B1): ``kstrl.calibration.build_report`` computes ``fixture``
+    Group B1): ``kstrl.calibration.calibration.build_report`` computes ``fixture``
     and calls this with the per-run RECORDS it grouped to build it.
 
     ``runs`` is that record sequence, not the document's own ``runs[]``
@@ -412,7 +412,7 @@ def baseline_document(
 
 
 def document_timestamp(document: Mapping[str, Any]) -> str:
-    """The one document key ``kstrl.calibration.save_report`` needs back
+    """The one document key ``kstrl.calibration.calibration.save_report`` needs back
     immediately after building it, to name the output file. Owned here,
     not spelled again as a literal in the writer, which would otherwise
     reintroduce exactly the two-spelling shape #421 Group B removes."""
