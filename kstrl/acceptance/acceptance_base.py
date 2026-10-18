@@ -11,7 +11,7 @@ from collections.abc import Mapping
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
-from kstrl.acceptance import FAIL, PASS, Check, ComponentPlan, PinnedPlan, verdict_of
+from kstrl.acceptance.acceptance import FAIL, PASS, Check, ComponentPlan, PinnedPlan, verdict_of
 
 if TYPE_CHECKING:
     from kstrl.ui import UI

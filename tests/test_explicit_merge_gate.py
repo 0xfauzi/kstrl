@@ -48,7 +48,7 @@ from kstrl.factory_result import ComponentResult
 from kstrl.learning.autonomy import AutonomyLevel, AutonomyState, FlagBundle, flag_bundle_for
 from kstrl.learning.autonomy_config import pause_gate_for, resolved_flag_bundle
 from kstrl.plan.manifest import Manifest
-from kstrl.review import ReviewResult
+from kstrl.review.review import ReviewResult
 from kstrl.verify.verify_model import CheckResult, VerificationResult, VerifyConfig
 from tests.conftest import git_in
 from tests.helpers import gitrepo

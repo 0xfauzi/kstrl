@@ -52,12 +52,12 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     # #696: 3, the import, one subprocess.run and one TimeoutExpired clause;
     # down from 4 when the retired [factory] worktree_setup_command path
     # held a second TimeoutExpired clause of its own.
-    "breaker.py": 3,
+    "loop/breaker.py": 3,
     # #696: 4, the import and three TimeoutExpired clauses; down from 5
     # when a fourth clause served the retired [contract] test_command.
     # #863 B1: the temp worktree functions moved to temp_worktree.py; each
     # module now holds its own `import subprocess`, so the total is +1.
-    "contract.py": 2,
+    "acceptance/contract.py": 2,
     # 3: #696 slice 8 deleted check_test_root's `git ls-files -z` spawn.
     "doctor.py": 3,
     # 14: #624 moved the scaffold's `subprocess.run` out to `worktree_setup.py`.
@@ -81,7 +81,7 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     "git/git_tree.py": 22,
     "intake_gh.py": 3,
     # #700: the import, and `TimeoutExpired` from `run_scrubbed`.
-    "isolation.py": 2,
+    "acceptance/isolation.py": 2,
     "events/observability.py": 5,
     "pr.py": 18,
     "git/pr_state.py": 5,
@@ -100,7 +100,7 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     # 27: #696, `check_stack_command`'s `subprocess.TimeoutExpired`.
     # #700 slice 3: +6, the import, `subprocess.Popen[bytes]` twice and
     # `TimeoutExpired` twice around `run_scrubbed` and `start_scrubbed`.
-    "replay.py": 6,
+    "acceptance/replay.py": 6,
     # #696 flag day, measured: check_stack_command adds one TimeoutExpired
     # clause, retiring check_linter/check_test_suite/check_typecheck removes
     # their three. #700 slice 3 added 4 in `start_scrubbed`: its Popen, its
@@ -122,7 +122,7 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
 EXPECTED_TEXT_MODE_SPAWNS: dict[str, int] = {
     "agents/codex.py": 1,
     "proc/proc.py": 1,
-    "breaker.py": 1,
+    "loop/breaker.py": 1,
     # 5: #566 moved the fresh-retry reset from a bytes-mode `git branch -D`
     # to a text-mode `git worktree add -B`. #776 F2 moves them to
     # `factory_worktrees.py`.
@@ -156,7 +156,6 @@ EXPECTED_TEXT_MODE_SPAWNS: dict[str, int] = {
 #: spawn being deleted.
 EXPECTED_CLEARED_SPAWNS: tuple[str, ...] = (
     "agents/codex.py subprocess.run(['codex', 'exec', '--help'], check=False, stdout=subpro",
-    "breaker.py subprocess.run(['git', *args], cwd=cwd, capture_output=True, encoding=",
     # codespell:ignore-next-line
     "factory_worktrees.py subprocess.run(['git', 'branch', '-D', branch], cwd=root_dir, capture_",
     "factory_worktrees.py subprocess.run(['git', 'worktree', 'add', '-B', branch_name, str(workt",
@@ -192,6 +191,7 @@ EXPECTED_CLEARED_SPAWNS: tuple[str, ...] = (
     "git/pr_state.py subprocess.run(['gh', 'pr', 'view', str(pr_number), '--json', 'state,m",
     "intake_gh.py subprocess.run(['gh', *args], cwd=str(cwd) if cwd else None, capture_o",
     "io/statedir.py subprocess.run(['git', '-C', str(root_dir), 'remote', 'get-url', 'orig",
+    "loop/breaker.py subprocess.run(['git', *args], cwd=cwd, capture_output=True, encoding=",
     "pr.py subprocess.run(['gh', 'auth', 'status'], capture_output=True, encoding",
     "pr.py subprocess.run(['gh', 'pr', 'close', str(pr_number), '--comment', 'Sup",
     "pr.py subprocess.run(['gh', 'pr', 'create', '--title', title, '--body', body",

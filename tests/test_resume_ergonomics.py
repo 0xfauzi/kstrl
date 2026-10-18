@@ -28,7 +28,7 @@ from kstrl.plan.findings import (
     tag_finding_with_attempt,
 )
 from kstrl.plan.manifest import Component, ComponentStatus, Manifest
-from kstrl.review import ReviewConcern, ReviewResult
+from kstrl.review.review import ReviewConcern, ReviewResult
 from kstrl.ui.plain import PlainUI
 from kstrl.verify.verify_model import VerifyConfig
 from tests.helpers import gitrepo

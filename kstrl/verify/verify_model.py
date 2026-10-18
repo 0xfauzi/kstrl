@@ -70,7 +70,7 @@ class NotMeasured:
     The SIDECAR. Deliberately not a :class:`CheckResult`: it never
     reaches ``checks``, so ``all(c.passed ...)``, ``report_lines``'
     verdict column, ``ks check --json``'s ``checks`` array and
-    :func:`kstrl.review.build_review_prompt` cannot read it as a pass -
+    :func:`kstrl.review.review.build_review_prompt` cannot read it as a pass -
     which is the whole of #306. Equally it never reaches
     :meth:`VerificationResult.as_context`, so it is not retry context:
     no engineer iteration is spent on a gap it cannot close.

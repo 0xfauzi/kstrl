@@ -25,7 +25,7 @@ from typing import Any
 
 from kstrl.events import event_catalog
 from kstrl.feature_verify import baseline_skip_reason
-from kstrl.loop import LoopResult
+from kstrl.loop.loop import LoopResult
 from kstrl.verify.verify_model import VerifyConfig
 from tests.helpers.stack_confirmation import confirm_stack, write_stack
 from tests.test_feature_cmd import NOOP_VERIFY_COMMAND

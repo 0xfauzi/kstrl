@@ -17,7 +17,7 @@ LAYER 1 is a census of the NAME ``run_loop`` that enumerates no node
 types. A new call site, an import, an alias or a re-export moves it
 whatever shape it takes.
 
-LAYER 2 resolves each call to ``kstrl.loop.run_loop`` and reads its
+LAYER 2 resolves each call to ``kstrl.loop.loop.run_loop`` and reads its
 ``context_prefix`` keyword back as source text, keyed by
 ``<file>::<scope>``. It FLAGS rather than clears: a prefix passed
 positionally or through a ``**`` splat is a row that cannot match the
@@ -59,7 +59,7 @@ from tests.helpers.astwalk import (
     spells,
 )
 
-RUN_LOOP = "kstrl.loop.run_loop"
+RUN_LOOP = "kstrl.loop.loop.run_loop"
 
 #: ``run_loop(config, ui, agent, cwd, context_prefix, ...)``: a fifth
 #: positional argument IS the prefix.
@@ -74,12 +74,14 @@ FEATURE_SOURCE = "_feature_context_prefix(params, base_config, root_dir, ui)"
 
 #: Every place in ``kstrl/`` that spells ``run_loop``: its definition in
 #: ``loop.py``, the import plus one call in ``cli_loop.py`` and ``factory_worker.py``,
-#: and the import plus three calls in ``feature_cmd.py``.
+#: the import plus three calls in ``feature_cmd.py``, and the re-export and
+#: its ``__all__`` row in ``loop/__init__.py``.
 EXPECTED_RUN_LOOP_SPELLINGS: dict[str, int] = {
     "cli_loop.py": 2,
     "factory_worker.py": 2,
     "feature_cmd.py": 4,
-    "loop.py": 1,
+    "loop/__init__.py": 2,
+    "loop/loop.py": 1,
 }
 
 #: Every resolved ``run_loop`` call, by ``<file>::<scope>``, and the
@@ -268,28 +270,28 @@ class TestOneAssemblerBuildsTheContext:
 #: Control sources, each small enough to read.
 FROM_ASSEMBLER = (
     "from kstrl.factory_worker import engineer_context_prefix\n"
-    "from kstrl.loop import run_loop\n"
+    "from kstrl.loop.loop import run_loop\n"
     "def go(config, ui, agent, root):\n"
     "    return run_loop(config, ui, agent, root, "
     "context_prefix=engineer_context_prefix(root, retry_block=''))\n"
 )
 NO_PREFIX = (
-    "from kstrl.loop import run_loop\n"
+    "from kstrl.loop.loop import run_loop\n"
     "def go(config, ui, agent):\n"
     "    return run_loop(config, ui, agent)\n"
 )
 POSITIONAL_PREFIX = (
-    "from kstrl.loop import run_loop\n"
+    "from kstrl.loop.loop import run_loop\n"
     "def go(config, ui, agent, root, block):\n"
     "    return run_loop(config, ui, agent, root, block)\n"
 )
 SPLAT_PREFIX = (
-    "from kstrl.loop import run_loop\n"
+    "from kstrl.loop.loop import run_loop\n"
     "def go(config, ui, agent, options):\n"
     "    return run_loop(config, ui, agent, **options)\n"
 )
 ALIASED = (
-    "from kstrl.loop import run_loop as loop_once\n"
+    "from kstrl.loop.loop import run_loop as loop_once\n"
     "def go(config, ui, agent):\n"
     "    return loop_once(config, ui, agent)\n"
 )

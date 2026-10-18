@@ -15,7 +15,6 @@ from typing import TYPE_CHECKING
 
 from kstrl.agents import warn_unconfined
 from kstrl.architect import LinearConfig, build_linear_sink
-from kstrl.breaker import BreakerConfig
 from kstrl.events import (
     EventBus,
     EventSink,
@@ -52,6 +51,7 @@ from kstrl.factory_worker import report_operator_files
 from kstrl.factory_worktrees import _interrupted_run_branches
 from kstrl.git import kstrl_version
 from kstrl.knowledge import KnowledgeConfig
+from kstrl.loop import BreakerConfig
 from kstrl.plan import ComponentStatus, RunScope
 from kstrl.proc import TimeoutConfig
 from kstrl.runenvelope import RunEnvelope

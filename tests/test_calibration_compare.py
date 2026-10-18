@@ -1,4 +1,4 @@
-"""R5.1/R5.5: the calibration tooling in kstrl.calibration, on real files.
+"""R5.1/R5.5: the calibration tooling in kstrl.calibration.calibration, on real files.
 
 No LLM calls anywhere in this file. These tests prove:
 
@@ -20,7 +20,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from kstrl import calibration, calibration_baseline
+from kstrl.calibration import calibration, calibration_baseline
 
 REPO_RESULTS_DIR = Path(__file__).parent / "adversarial_fixtures" / "_results"
 

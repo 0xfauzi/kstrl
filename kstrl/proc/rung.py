@@ -1,12 +1,12 @@
 """A proven isolation rung, and the one nono command line (#700).
 
 The record of a rung lives here, apart from the prover in
-:mod:`kstrl.isolation`, because the prover runs its canaries through
+:mod:`kstrl.acceptance.isolation`, because the prover runs its canaries through
 :func:`kstrl.proc.scrubbed_run.run_scrubbed` while :mod:`kstrl.verify.verify` must hold a
 rung to run a command inside it: one module each way would be an import
 cycle. Nothing here imports from kstrl.
 
-Only :func:`kstrl.isolation.prove_rung` constructs a :class:`ProvenRung`
+Only :func:`kstrl.acceptance.isolation.prove_rung` constructs a :class:`ProvenRung`
 (``tests/test_isolation_census.py``), and :func:`nono_argv` is the only
 place a nono command line is built, so a command runs in exactly the
 policy and the nono invocation the canaries ran in.
@@ -47,7 +47,7 @@ HOST_FALLBACK_LABEL = (
 #: Test seam, read only by :func:`host_fallback`: the platform the prover
 #: decision is made for, in place of ``sys.platform``. It only decides
 #: whether a run falls back; whether nono may run at all is still read
-#: off the real ``sys.platform`` (:func:`kstrl.isolation.prove_rung`).
+#: off the real ``sys.platform`` (:func:`kstrl.acceptance.isolation.prove_rung`).
 PLATFORM_ENV = "KSTRL_ISOLATION_PLATFORM"
 
 #: The program in front of every command inside the rung. nono turns a

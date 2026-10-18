@@ -88,9 +88,9 @@ from tests.helpers.encodingwalk import package_scan, reported_sites, spells_a_to
 EXPECTED_READ_SPELLINGS: dict[str, int] = {
     # #700 slice 4: `pr_section` reads the latest acceptance record back
     # (moved to acceptance_lines.py in slice 6).
-    "acceptance_lines.py": 1,
+    "acceptance/acceptance_lines.py": 1,
     # #700 slice 10a: `read_dispute` reads the engineer's progress log.
-    "acceptance_record.py": 1,
+    "acceptance/acceptance_record.py": 1,
     "agents/codex.py": 1,
     "agents/logging.py": 1,
     # The "a+b" append open, moved here from evolution.py by #331.
@@ -100,7 +100,7 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     "learning/autonomy_replay.py": 1,
     # 1 since #406's ``_read_document`` dedup, which the baseline reader
     # module (split out of calibration.py) now shares between callers.
-    "calibration_baseline.py": 1,
+    "calibration/calibration_baseline.py": 1,
     "cli_preflight.py": 1,
     "commandrun.py": 1,
     "architect/decisions.py": 1,
@@ -128,16 +128,16 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     # that already owns the reader.
     "intake_issue.py": 1,
     # #482: the finding status word "open", not a read.
-    "integration.py": 1,
+    "review/integration.py": 1,
     # #700, the security review of #770: the root's `.git` file and the
     # back link `worktrees/<name>/gitdir`, read to prove that the git
     # directory both zones read is the root's own.
-    "isolation.py": 2,
-    "iteration_prompt.py": 1,
+    "acceptance/isolation.py": 2,
+    "loop/iteration_prompt.py": 1,
     "learning/journal_reads.py": 1,
     "knowledge/knowledge_distill.py": 1,
     "knowledge/knowledge_facts.py": 1,
-    "loop.py": 1,
+    "loop/loop.py": 1,
     "plan/manifest.py": 1,
     "events/observability.py": 1,
     # Back to 1 (the existing `read_operator_file` read): the
@@ -158,16 +158,16 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     "pipeline_ledger.py": 1,
     "plan/prd.py": 1,
     # #700 slice 5: `ks recheck` reads a record and its index.json back.
-    "recheck.py": 1,
+    "acceptance/recheck.py": 1,
     # #700 slice 3: layer 1 counts every `open(...)`/`read_text(...)` call
     # shape, mode or not: `replay_lock`'s `path.open('a+', encoding='utf-8')`
     # and the `up` log's `log.open('wb')` (bytes mode, so it is not itself
     # a text read; layer 2 below excludes it for exactly that reason).
-    "replay.py": 2,
+    "acceptance/replay.py": 2,
     # #803: the login of the claude user settings.
     "agents/sandbox.py": 1,
     "project/scaffold_ledger.py": 1,
-    "security.py": 1,
+    "review/security.py": 1,
     # Five reads, and five reads only. Round 1 of #228 spelled the gh
     # flag as two argv tokens, so the bare literal "open" landed here and
     # the row meant "four reads plus one argv word". That is the
@@ -233,10 +233,19 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     # #700 slice 4: the acceptance record a PR body repeats, utf-8, with
     # ValueError caught beside OSError (a UnicodeDecodeError is a ValueError).
     # Moved to acceptance_lines.py in slice 6.
-    "acceptance_lines.py path.read_text(encoding='utf-8')",
+    "acceptance/acceptance_lines.py path.read_text(encoding='utf-8')",
     # #700 slice 10a: the engineer's progress log, where it disputes a
     # check, utf-8, with ValueError caught beside OSError.
-    "acceptance_record.py progress.read_text(encoding='utf-8')",
+    "acceptance/acceptance_record.py progress.read_text(encoding='utf-8')",
+    # #700, the security review of #770: the `.git` file of the root and the
+    # back link it names, utf-8, with ValueError caught beside OSError.
+    "acceptance/isolation.py (entry / 'gitdir').read_text(encoding='utf-8')",
+    "acceptance/isolation.py dot_git.read_text(encoding='utf-8')",
+    # #700 slice 5: an acceptance record and its index.json, utf-8, with
+    # ValueError caught beside OSError.
+    "acceptance/recheck.py path.read_text(encoding='utf-8')",
+    # #700 slice 3: the per-machine replay lock.
+    "acceptance/replay.py path.open('a+', encoding='utf-8')",
     "agents/codex.py last_msg_file.read_text(encoding='utf-8')",
     "agents/logging.py self._log_path.open('a', encoding='utf-8')",
     # #803: the claude user settings, utf-8, with ValueError caught beside OSError.
@@ -244,7 +253,7 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "architect/decisions.py path.read_text(encoding='utf-8')",
     "architect/decompose_prompt.py (spec_path / name).read_text(encoding='utf-8')",
     "architect/decompose_prompt.py spec_path.read_text(encoding='utf-8')",
-    "calibration_baseline.py path.read_text(encoding='utf-8')",
+    "calibration/calibration_baseline.py path.read_text(encoding='utf-8')",
     "cli_preflight.py open(prd_file, encoding='utf-8')",
     "commandrun.py open(path, 'a', buffering=1, encoding='utf-8')",
     "events/events.py open(path, encoding='utf-8', errors='replace')",
@@ -263,11 +272,6 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     # the ``appendio.py`` row below is where that contract is counted.
     "intake_issue.py self.path.read_text(encoding='utf-8')",
     "io/statedir.py open(lock_path, 'a+', encoding='utf-8')",
-    # #700, the security review of #770: the `.git` file of the root and the
-    # back link it names, utf-8, with ValueError caught beside OSError.
-    "isolation.py (entry / 'gitdir').read_text(encoding='utf-8')",
-    "isolation.py dot_git.read_text(encoding='utf-8')",
-    "iteration_prompt.py claude_md_path.read_text(encoding='utf-8')",
     "knowledge/knowledge_distill.py prd_path.read_text(encoding='utf-8')",
     "knowledge/knowledge_facts.py path.read_text(encoding='utf-8')",
     "learning/autonomy.py path.read_text(encoding='utf-8')",
@@ -281,7 +285,8 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     # ``OSError``, which is the half a ``UnicodeDecodeError`` escapes.
     "learning/autonomy_replay.py path.read_text(encoding='utf-8')",
     "learning/journal_reads.py self.config.experiments_path.read_text(encoding='utf-8')",
-    "loop.py config.prompt_file.read_text(encoding='utf-8')",
+    "loop/iteration_prompt.py claude_md_path.read_text(encoding='utf-8')",
+    "loop/loop.py config.prompt_file.read_text(encoding='utf-8')",
     "pipeline_attempt.py open(path, 'a', buffering=1, encoding='utf-8')",
     "pipeline_knowledge.py progress_path.read_text(encoding='utf-8')",
     "plan/manifest.py open(path, encoding='utf-8')",
@@ -303,12 +308,7 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "queue/workqueue_store.py self.journal_path.read_text(encoding='utf-8')",
     "queue/workqueue_store.py self.pause_path.read_text(encoding='utf-8')",
     "queue/workqueue_store.py self.spec_path(item).read_text(encoding='utf-8')",
-    # #700 slice 5: an acceptance record and its index.json, utf-8, with
-    # ValueError caught beside OSError.
-    "recheck.py path.read_text(encoding='utf-8')",
-    # #700 slice 3: the per-machine replay lock.
-    "replay.py path.open('a+', encoding='utf-8')",
-    "security.py prd_path.read_text(encoding='utf-8')",
+    "review/security.py prd_path.read_text(encoding='utf-8')",
     "serve.py open(lock_path, 'a+', encoding='utf-8')",
     "serve_gates.py open(lock_path, 'a+', encoding='utf-8')",
     "serve_github.py path.read_text(encoding='utf-8')",
@@ -375,6 +375,10 @@ EXPECTED_UNDECIDED: tuple[str, ...] = (
 
 
 EXPECTED_DECIDED_OUT: tuple[str, ...] = (
+    # #700 slice 3: the `up` log is opened "wb" and read back through
+    # `readable_text`, which decodes with errors="replace". Binary, so no
+    # codec applies at the open.
+    "acceptance/replay.py log.open",
     "factory_acceptance.py EvolutionJournal.open",
     # The journal's "a+b" probe-and-append. Binary, so no codec applies;
     # #331 moved it from evolution.py to appendio.open_for_append, where
@@ -383,10 +387,6 @@ EXPECTED_DECIDED_OUT: tuple[str, ...] = (
     "io/atomicio.py os.open",
     "pipeline_attempt.py EvolutionJournal.open",
     "pipeline_ledger.py EvolutionJournal.open",
-    # #700 slice 3: the `up` log is opened "wb" and read back through
-    # `readable_text`, which decodes with errors="replace". Binary, so no
-    # codec applies at the open.
-    "replay.py log.open",
 )
 
 

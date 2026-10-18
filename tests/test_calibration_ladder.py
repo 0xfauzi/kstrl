@@ -19,9 +19,9 @@ from typing import Any
 
 import pytest
 
-from kstrl.calibration import compare_baselines
-from kstrl.calibration_baseline import load_baseline
-from kstrl.calibration_ladder import LADDER_DISABLED_LINE
+from kstrl.calibration.calibration import compare_baselines
+from kstrl.calibration.calibration_baseline import load_baseline
+from kstrl.calibration.calibration_ladder import LADDER_DISABLED_LINE
 from kstrl.io.statedir import ControlUnavailableError
 from kstrl.learning.autonomy import AutonomyLevel, AutonomyState
 from kstrl.owner.inbox import Inbox, ItemKind

@@ -37,13 +37,13 @@ from kstrl.git.git import GitDiffError
 from kstrl.git.git_diff import get_diff_content
 from kstrl.pipeline import ComponentPipeline
 from kstrl.plan.manifest import Component, Manifest
-from kstrl.review import (
+from kstrl.review.review import (
     ReviewMode,
     ReviewResult,
     parse_review_output,
     run_review,
 )
-from kstrl.security import (
+from kstrl.review.security import (
     SecurityConfig,
     SecurityMode,
     SecurityResult,
@@ -184,7 +184,7 @@ class TestR12InfrastructurePaths:
         _write_prd(prd_path, ["US-001"])
         agent = MockReviewAgent("irrelevant")
         with patch(
-            "kstrl.review.collect_agent_output",
+            "kstrl.review.review.collect_agent_output",
             side_effect=AgentOutputTooLarge("output exceeded cap"),
         ):
             return run_review(

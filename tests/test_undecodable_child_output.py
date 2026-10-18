@@ -18,8 +18,8 @@ from typing import TypeGuard
 
 import pytest
 
-from kstrl import contract
-from kstrl.contract import ContractConfig
+from kstrl.acceptance import contract
+from kstrl.acceptance.contract import ContractConfig
 from kstrl.proc.scrubbed_run import ChildOutputDecodeError, run_scrubbed
 from kstrl.ui.plain import PlainUI
 from kstrl.verify.verify_commands import check_stack_command
@@ -330,11 +330,11 @@ def test_the_call_site_census_is_pinned() -> None:
     # #696 slice 4: breaker.py's stall probe and contract.py's _run_tests
     # are gone, and so are verify.py's three per-gate runners.
     assert census == {
-        "contract.py": 1,
+        "acceptance/contract.py": 1,
         # #700: the canary and --version runs, through one helper.
-        "isolation.py": 1,
+        "acceptance/isolation.py": 1,
         # #700 slice 3: each setup and check of the replay, through one helper.
-        "replay.py": 1,
+        "acceptance/replay.py": 1,
         # #619: +1, the ruff --show-files listing in check_dead_code_ruff.
         # #696: +1, check_stack_command.
         # #696 slice 4: -3, the per-gate runners.
@@ -418,10 +418,10 @@ def test_the_disposition_census_is_pinned() -> None:
         # #696 slice 4: breaker.py's stall probe and one contract.py
         # return (_run_tests) removed; three verify.py returns (the
         # per-gate runners) removed.
-        "contract.py:swallows": 1,
-        "isolation.py:returns": 1,
+        "acceptance/contract.py:swallows": 1,
+        "acceptance/isolation.py:returns": 1,
         # #700 slice 3: the replay names the stage `undecodable` and reads on.
-        "replay.py:converts": 1,
+        "acceptance/replay.py:converts": 1,
         "proc/temp_worktree.py:raises": 1,
         "proc/temp_worktree.py:returns": 1,
         "proc/temp_worktree.py:swallows": 1,

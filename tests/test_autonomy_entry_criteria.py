@@ -27,7 +27,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from kstrl import calibration
+from kstrl.calibration import calibration
 from kstrl.cli import cli
 from kstrl.learning.autonomy import AutonomyLevel, AutonomyState
 from kstrl.owner.inbox import Inbox, InboxConfig, ItemKind

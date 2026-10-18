@@ -469,14 +469,14 @@ class TestTheReadBytesExclusion:
     EXPECTED_READ_BYTES: dict[str, int] = {
         # #700 slice 4: the plan's files and each evidence file are read as
         # bytes to be hashed or copied, never decoded.
-        "acceptance.py": 2,
+        "acceptance/acceptance.py": 2,
         # #700 slice 10a: an acceptance log, hashed for the head record,
         # moved here from acceptance.py with the record.
-        "acceptance_record.py": 1,
+        "acceptance/acceptance_record.py": 1,
         # #466: the carried file, read as bytes and decoded by read_json.
-        "acceptance_carried.py": 1,
+        "acceptance/acceptance_carried.py": 1,
         "proc/spawn_record.py": 1,  # #642: the baseline.py shape, I/O outside the guard
-        "breaker.py": 1,
+        "loop/breaker.py": 1,
         # #553 the ledger, #570 each run's events.jsonl: the signals.py
         # shape, read and decode outside any try.
         "ci_state.py": 2,
@@ -484,11 +484,11 @@ class TestTheReadBytesExclusion:
         "config/config_toml.py": 1,
         "verify/baseline.py": 1,
         "owner/inbox.py": 1,
-        "integration_state.py": 1,  # #482: the launch_record.py shape
+        "review/integration_state.py": 1,  # #482: the launch_record.py shape
         "launch_record.py": 1,  # #436: the baseline.py shape, I/O outside the guard
         # #700 slice 3: `_ready` reads the `up` log's bytes back as the
         # stage's tail, outside any try (the signals.py shape).
-        "replay.py": 1,
+        "acceptance/replay.py": 1,
         "safemode.py": 1,
         "signals.py": 2,
         # toolchains.py's pyproject.read_bytes() (#635) is gone: #696

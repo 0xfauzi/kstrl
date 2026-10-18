@@ -14,8 +14,9 @@ from kstrl.pipeline_transitions import FailureAction, PhaseFailure
 from kstrl.pipeline_verdicts import ReviewPhaseResult, ReviewVerdicts
 from kstrl.plan import PRD, Component, Finding
 from kstrl.proc import limit_seconds
-from kstrl.review import ReviewMode, ReviewResult
-from kstrl.review_claims import (
+from kstrl.review import (
+    ReviewMode,
+    ReviewResult,
     claim_disagreements,
     claim_retry_context,
     revert_unconfirmed_stories,

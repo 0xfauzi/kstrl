@@ -28,7 +28,7 @@ from typing import Any
 from unittest.mock import patch
 
 from kstrl.feature_verify import resolve_feature_verify_config
-from kstrl.loop import LoopResult
+from kstrl.loop.loop import LoopResult
 from kstrl.project.scaffold_templates import DEFAULT_PROMPT
 from kstrl.verify.verify_model import VerifyConfig
 from tests.helpers.stack_confirmation import in_process_stack
@@ -102,8 +102,8 @@ class TestTheEngineerPromptOnEachPath:
             seen.append(kwargs.get("verify_config"))
             return LoopResult(completed=True, iterations=1, exit_code=0)
 
-        # feature_cmd binds the name at import (from kstrl.loop import
-        # run_loop), so patching kstrl.loop.run_loop would miss it.
+        # feature_cmd binds the name at import (from kstrl.loop.loop import
+        # run_loop), so patching kstrl.loop.loop.run_loop would miss it.
         with patch("kstrl.feature_cmd.run_loop", side_effect=fake_run_loop):
             _run_cli(_feature_cli_args(tmp_path, auto_run=True))
         assert len(seen) == 2, f"expected understand + implement, got {len(seen)}"

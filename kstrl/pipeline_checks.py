@@ -209,8 +209,7 @@ class MechanicalChecks(InboxDesk, AttemptRecorder):
         designed plan go into the text of the halt and of the last
         attempt's failure only: a retry's reason stays one short line.
         """
-        from kstrl.acceptance import judge_head
-        from kstrl.acceptance_lines import halt_text
+        from kstrl.acceptance import halt_text, judge_head
 
         head = git.get_head_sha(wt_path) or ""
         approvals = self._approvals or ApprovalSnapshot()

@@ -258,10 +258,10 @@ class TestInitScaffold:
         assert collect_config_problems(tmp_path, lambda _message: None) == []
 
     def test_uncommented_scaffold_loads_through_every_loader(self, tmp_path: Path) -> None:
+        from kstrl.acceptance.contract import ContractConfig
         from kstrl.config.config import KstrlConfig
-        from kstrl.contract import ContractConfig
         from kstrl.proc.timeout import TimeoutConfig
-        from kstrl.security import SecurityConfig
+        from kstrl.review.security import SecurityConfig
 
         (tmp_path / "kstrl.toml").write_text(_uncomment_scaffold(DEFAULT_KSTRL_TOML))
         KstrlConfig.load(tmp_path)

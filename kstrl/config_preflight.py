@@ -67,9 +67,9 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
+from kstrl.acceptance import CONTRACT_SECTION
 from kstrl.agents import SANDBOX_SECTION
 from kstrl.architect import LINEAR_SECTION
-from kstrl.breaker import BREAKER_SECTION
 from kstrl.config import (
     KSTRL_SECTION,
     REJECTIONS,
@@ -88,19 +88,19 @@ from kstrl.config import (
     section_detail,
     toml_parse_scope,
 )
-from kstrl.contract import CONTRACT_SECTION
 from kstrl.divergence import DIVERGENCE_SECTION
 from kstrl.events import NOTIFY_SECTION
 from kstrl.factory_config import FACTORY_SECTION
 from kstrl.intake_gh import INTAKE_GITHUB_SECTION
 from kstrl.knowledge import KNOWLEDGE_SECTION
 from kstrl.learning import AUTONOMY_SECTION, EVOLUTION_SECTION
+from kstrl.loop import BREAKER_SECTION
 from kstrl.owner import INBOX_SECTION
 from kstrl.proc import TIMEOUT_SECTION
 from kstrl.project import CODEBASE_SCAN_SECTION, STACK_SECTION, StackError
 from kstrl.queue import QUEUE_SECTION
 from kstrl.release import RELEASE_CONFIG_SECTION
-from kstrl.security import SECURITY_SECTION
+from kstrl.review import SECURITY_SECTION
 from kstrl.serve_config import SERVE_SECTION
 from kstrl.signals import SIGNALS_SECTION
 from kstrl.verify import POLICY_SECTION, VERIFY_SECTION

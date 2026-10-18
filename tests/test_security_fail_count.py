@@ -28,7 +28,7 @@ from kstrl.events.observability import read_progress_events
 from kstrl.factory_result import ComponentResult
 from kstrl.learning.journal_rows import FINDINGS_SUPERSEDED_EVENT
 from kstrl.pipeline_transitions import Transition
-from kstrl.security import SecurityConfig, SecurityResult, run_security_review
+from kstrl.review.security import SecurityConfig, SecurityResult, run_security_review
 from kstrl.ui.base import UI
 from kstrl.ui.plain import PlainUI
 from tests.conftest import ReviewRepo, make_review_repo, with_observed_diffstat

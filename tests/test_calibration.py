@@ -20,7 +20,7 @@ time (#750), each in its own thread, and are recorded in run order.
 Results (per-fixture consistency, per-role and
 per-category detection rates, the model id) are written to
 ``tests/adversarial_fixtures/_results/baseline-<UTC-date>.json`` in
-the v2 format defined by :mod:`kstrl.calibration`; compare against
+the v2 format defined by :mod:`kstrl.calibration.calibration`; compare against
 a previous baseline with
 ``python -m kstrl.calibration compare <old.json> <new.json>``.
 
@@ -59,11 +59,11 @@ from typing import Any
 
 import pytest
 
-from kstrl import calibration, calibration_baseline
 from kstrl.agents.agent_output import extract_agent_json, select_agent_output
 from kstrl.architect.decompose_prompt import build_decompose_prompt
 from kstrl.architect.spec_issues import SpecIssue, _parse_spec_issues
-from kstrl.calibration_score import (
+from kstrl.calibration import calibration, calibration_baseline
+from kstrl.calibration.calibration_score import (
     _acceptable_categories,
     allowed_paths_errors,
     architect_detect_errors,
@@ -77,7 +77,7 @@ from kstrl.calibration_score import (
 from kstrl.git.git_diff import get_diff_stat, pasted_change_source, repo_change_source
 from kstrl.io.delimiters import generate_data_delimiter
 from kstrl.proc.proc import TIMEOUT_MESSAGE_PREFIX
-from kstrl.review import (
+from kstrl.review.review import (
     VALID_CONCERN_CATEGORIES,
     CriterionReview,
     ReviewConcern,
@@ -85,8 +85,8 @@ from kstrl.review import (
     ReviewVerdict,
     parse_review_output,
 )
-from kstrl.review_prompt import render_review_prompt
-from kstrl.security import (
+from kstrl.review.review_prompt import render_review_prompt
+from kstrl.review.security import (
     VALID_CATEGORIES,
     SecurityFinding,
     SecurityMode,
@@ -339,7 +339,7 @@ def _refuse_unlisted(role: str, fixture: str) -> None:
     if role not in calibration.MIN_ROLE_DETECTION_RATE:
         raise ValueError(
             f"{fixture} records under {role!r}, which "
-            "kstrl.calibration.MIN_ROLE_DETECTION_RATE does not list; add it there, "
+            "kstrl.calibration.calibration.MIN_ROLE_DETECTION_RATE does not list; add it there, "
             "with None to record it without gating it, before the fixture (#633)"
         )
 
@@ -491,7 +491,7 @@ def _collect(agent, prompt: str, cwd: Path) -> list[str]:
     """Drain one agent run, raising if the deadline killed it.
 
     Every adapter yields `timeout_message` as its last line when the
-    deadline fires (`kstrl.loop` keys on the same prefix). Without this
+    deadline fires (`kstrl.loop.loop` keys on the same prefix). Without this
     check the caller sees a short, JSON-free output and scores it as a
     behavioral miss with `error=False`, so a killed process is recorded
     as "the model failed to find the planted issue". That is the wrong
@@ -662,7 +662,7 @@ def architect_allowed_paths_caught(
 
 
 # ---------------------------------------------------------------------------
-# Detection report (v2 format, built by kstrl.calibration) + R5.2 FP block
+# Detection report (v2 format, built by kstrl.calibration.calibration) + R5.2 FP block
 # ---------------------------------------------------------------------------
 
 
@@ -738,7 +738,7 @@ def build_fp_summary(
 class _DetectionReport:
     """Accumulates one record per RUN (not per fixture) and delegates
     detection aggregation + the on-disk format to
-    :mod:`kstrl.calibration`. Negative-fixture (false-positive) runs
+    :mod:`kstrl.calibration.calibration`. Negative-fixture (false-positive) runs
     are kept separately (R5.2) and injected as a ``false_positive_analysis``
     block at save time."""
 
@@ -891,7 +891,7 @@ class _DetectionReport:
             fixtures_completed=list(self.completed),
         )
         # R5.2: inject the false-positive analysis test-side. Negative
-        # fixtures are an R5.2 addition and kstrl.calibration owns only
+        # fixtures are an R5.2 addition and kstrl.calibration.calibration owns only
         # the detection format, so the FP block is layered on the returned
         # dict, not baked into build_report.
         if self.fp_records:

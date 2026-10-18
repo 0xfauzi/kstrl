@@ -1,9 +1,9 @@
 """What the autonomy ladder does about a calibration regression (R10.11).
 
 ``python -m kstrl.calibration compare`` measures the regression; this
-module is the consequence. It sits beside ``kstrl.calibration`` rather
+module is the consequence. It sits beside ``kstrl.calibration.calibration`` rather
 than inside it so the measurement half stays free of control-plane
-imports: ``kstrl.calibration`` and ``kstrl.calibration_baseline`` know
+imports: ``kstrl.calibration.calibration`` and ``kstrl.calibration.calibration_baseline`` know
 nothing of autonomy, the inbox or the UI, and folding this module's
 ``Inbox``/``AutonomyState``/``PlainUI`` imports back in would drag all
 three into every importer of a comparison.
@@ -33,7 +33,7 @@ import sys
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from kstrl.calibration_baseline import UNKNOWN_TIMESTAMP
+from kstrl.calibration.calibration_baseline import UNKNOWN_TIMESTAMP
 from kstrl.io import ControlStateError
 from kstrl.learning import (
     AutonomyConfig,
@@ -48,7 +48,7 @@ from kstrl.ui import PlainUI
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from kstrl.calibration import Comparison
+    from kstrl.calibration.calibration import Comparison
 
 #: Printed when a regression was found and the ladder is switched off, so
 #: the absence of an inbox item is a stated outcome rather than silence.

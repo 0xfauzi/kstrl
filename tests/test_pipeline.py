@@ -44,10 +44,10 @@ from kstrl.plan.manifest import Component, ComponentStatus, Manifest
 from kstrl.plan.scope import RunScope
 from kstrl.pr import MergeConfirmation, PrOutcome
 from kstrl.proc.worktree_sweep import WorktreeSweep
-from kstrl.review import ReviewConcern, ReviewResult
+from kstrl.review.review import ReviewConcern, ReviewResult
+from kstrl.review.security import SecurityConfig, SecurityResult
 from kstrl.runenvelope import RunEnvelope
 from kstrl.runstate import RunState
-from kstrl.security import SecurityConfig, SecurityResult
 from kstrl.ui.plain import PlainUI
 from kstrl.verify.failure_signatures import category_for_check
 from kstrl.verify.verify_model import CheckResult, VerificationResult, VerifyConfig

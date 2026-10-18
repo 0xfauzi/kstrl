@@ -42,7 +42,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from kstrl.agents import LoggingAgent, get_agent, recording_prompts, warn_unconfined
-from kstrl.breaker import BreakerConfig
 from kstrl.events import (
     ArtifactWritten,
     CheckpointRequested,
@@ -65,7 +64,7 @@ from kstrl.feature_verify import (
     resolve_feature_verify_config,
 )
 from kstrl.knowledge import KnowledgeConfig, retrieve_knowledge_context
-from kstrl.loop import run_loop
+from kstrl.loop import BreakerConfig, run_loop
 from kstrl.owner import (
     InteractionChannel,
     PromptKind,

@@ -14,16 +14,16 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.breaker import (
+from kstrl.config.config import KstrlConfig
+from kstrl.events.observability import read_progress_events
+from kstrl.factory_result import ComponentResult
+from kstrl.loop.breaker import (
     NO_PROGRESS_MESSAGE_PREFIX,
     BreakerConfig,
     NoProgressBreaker,
     compute_diff_hash,
 )
-from kstrl.config.config import KstrlConfig
-from kstrl.events.observability import read_progress_events
-from kstrl.factory_result import ComponentResult
-from kstrl.loop import run_loop
+from kstrl.loop.loop import run_loop
 from kstrl.plan.manifest import ComponentStatus
 from kstrl.ui.plain import PlainUI
 from tests.helpers import gitrepo

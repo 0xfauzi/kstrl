@@ -339,7 +339,7 @@ def _run_factory_with_autonomy(
     # The ladder forces review_mode="hard" at every level, so the review
     # phase always runs; stub it green so these tests measure the LADDER,
     # not the reviewer.
-    from kstrl.review import ReviewResult
+    from kstrl.review.review import ReviewResult
 
     with (
         patch("kstrl.factory._run_component", return_value=result),

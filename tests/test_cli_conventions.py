@@ -353,7 +353,7 @@ def test_plain_output_is_coloured_only_on_a_terminal_without_no_color(
 #: this census, in whichever module it lands (#531).
 FINDING_EXIT_SITES: dict[tuple[str, str], int] = {
     ("verify/baseline.py", "exit_code_for"): 1,  # `--fail-on-regression`: a regression
-    ("calibration.py", "main"): 1,  # `python -m kstrl.calibration`: a detection drop
+    ("calibration/calibration.py", "main"): 1,  # `python -m kstrl.calibration`: a detection drop
     ("cli_check.py", "_check_baseline_report"): 1,  # `--fail-on-regression`: a regression
     ("cli_check.py", "_check_report"): 2,  # `ks check`: a check failed
     ("cli_serve.py", "ci_poll"): 1,  # a merge commit's CI failed or could not be read
@@ -367,11 +367,14 @@ FINDING_EXIT_SITES: dict[tuple[str, str], int] = {
     ("doctor.py", "exit_code_for"): 1,  # `ks doctor`: not ready is a finding
     ("factory_result.py", "resolve_exit_code"): 5,  # a failed, unmerged, parked or unscheduled run
     ("project/init_cmd.py", "run_init"): 2,  # `ks init`: the PRD it validated is invalid
-    ("loop.py", "_breaker_verdict"): 1,  # an iteration ran and the breaker ended the loop
-    ("loop.py", "_budget_verdict"): 1,  # an iteration ran and the budget ended the loop
-    ("loop.py", "_guard_verdict"): 1,  # an iteration ran and the guard ended the loop
-    ("loop.py", "_max_iterations_result"): 1,  # all iterations ran and none completed
-    ("loop.py", "_wall_clock_verdict"): 1,  # an iteration ran and the wall clock ended the loop
+    ("loop/loop.py", "_breaker_verdict"): 1,  # an iteration ran and the breaker ended the loop
+    ("loop/loop.py", "_budget_verdict"): 1,  # an iteration ran and the budget ended the loop
+    ("loop/loop.py", "_guard_verdict"): 1,  # an iteration ran and the guard ended the loop
+    ("loop/loop.py", "_max_iterations_result"): 1,  # all iterations ran and none completed
+    (
+        "loop/loop.py",
+        "_wall_clock_verdict",
+    ): 1,  # an iteration ran and the wall clock ended the loop
     ("plan_gate.py", "_park_plan"): 1,  # an L1 plan parked for approval, nothing run (#602)
 }
 

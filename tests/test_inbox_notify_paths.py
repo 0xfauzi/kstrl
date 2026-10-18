@@ -433,7 +433,9 @@ def test_an_unconfirmed_stack_pages_once_however_often_it_is_refused(tmp_path: P
 #: this module that drives it through a real entry point.
 FILING_PATHS = {
     "learning/autonomy_transitions.py::apply_demotion::add": "test_demotion_fires_the_inbox_hook",
-    "calibration_ladder.py::_open_drift_item::add": "test_demotion_fires_the_inbox_hook",
+    "calibration/calibration_ladder.py::_open_drift_item::add": (
+        "test_demotion_fires_the_inbox_hook"
+    ),
     "architect/decisions.py::open_escalation_item::add": (
         "test_architect_escalation_fires_the_inbox_hook"
     ),

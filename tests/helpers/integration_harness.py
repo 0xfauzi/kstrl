@@ -18,18 +18,18 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
+from kstrl.acceptance.contract import ContractConfig, ContractMode
 from kstrl.architect.decompose_prompt import spec_digest
 from kstrl.config.config import KstrlConfig
-from kstrl.contract import ContractConfig, ContractMode
 from kstrl.events.usage import UsageRecord
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import FactoryResult
 from kstrl.git import git_diff
-from kstrl.integration import integration_stories
 from kstrl.pipeline import ComponentPipeline
 from kstrl.plan.manifest import Component, ComponentStatus, Manifest
-from kstrl.security import SecurityConfig
+from kstrl.review.integration import integration_stories
+from kstrl.review.security import SecurityConfig
 from kstrl.ui.plain import PlainUI
 from kstrl.verify.verify_model import VerifyConfig
 from tests.helpers.component_prd import PASSING_STORY, write_component_prd

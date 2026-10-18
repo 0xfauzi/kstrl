@@ -26,10 +26,11 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import doctor, loop
-from kstrl.breaker import compute_diff_hash
+from kstrl import doctor
 from kstrl.config.config import KstrlConfig
 from kstrl.git import git, git_diff, git_tree
+from kstrl.loop import loop
+from kstrl.loop.breaker import compute_diff_hash
 from kstrl.ui import PlainUI
 from kstrl.verify import guards, verify, verify_diff, verify_model
 from kstrl.verify.policy import PolicyConfig

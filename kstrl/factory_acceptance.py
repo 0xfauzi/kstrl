@@ -11,8 +11,15 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl.acceptance import PinnedPlan, replay_base
-from kstrl.acceptance_carried import carried_on_base, carry_passed
+from kstrl.acceptance import (
+    ContractMode,
+    ContractResult,
+    PinnedPlan,
+    carried_on_base,
+    carry_passed,
+    replay_base,
+    run_contract_testing,
+)
 from kstrl.acceptance_design import (
     NOT_REPRODUCED,
     design_plan,
@@ -20,11 +27,6 @@ from kstrl.acceptance_design import (
 )
 from kstrl.architect import (
     DecisionRegister,
-)
-from kstrl.contract import (
-    ContractMode,
-    ContractResult,
-    run_contract_testing,
 )
 from kstrl.events import ComponentFailed
 from kstrl.events import ContractResult as ContractResultEvent

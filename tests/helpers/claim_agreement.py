@@ -13,7 +13,7 @@ from pathlib import Path
 
 from kstrl.plan.manifest import Component
 from kstrl.plan.prd import PRD, UserStory
-from kstrl.review import CriterionReview, ReviewResult
+from kstrl.review.review import CriterionReview, ReviewResult
 
 
 def _story(

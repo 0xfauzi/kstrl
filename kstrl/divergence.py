@@ -1,6 +1,6 @@
 """Across-attempt divergence detector for the factory retry loop (#265).
 
-:class:`~kstrl.breaker.NoProgressBreaker` watches ONE engineer loop and
+:class:`~kstrl.loop.breaker.NoProgressBreaker` watches ONE engineer loop and
 halts when consecutive iterations change nothing. This module is its
 across-attempt analogue, and the failure it watches for is the mirror
 image: every attempt changes a great deal. The reviewer fails a

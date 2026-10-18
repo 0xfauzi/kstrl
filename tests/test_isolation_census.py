@@ -74,7 +74,7 @@ def test_only_prove_rung_constructs_a_rung() -> None:
     assert_census(
         sources=package_sources(),
         sees=_constructs_a_rung,
-        expected={"isolation.py:prove_rung": 1},
+        expected={"acceptance/isolation.py:prove_rung": 1},
         control="rung = isolation.ProvenRung(zone='test')\n",
         message=(
             "A ProvenRung is built outside isolation.prove_rung. A rung no canary "
@@ -131,7 +131,7 @@ def test_only_the_replay_starts_a_command_that_keeps_running() -> None:
     assert_census(
         sources=package_sources(),
         sees=_starts_a_lasting_command,
-        expected={"replay.py:_run_stages": 1},
+        expected={"acceptance/replay.py:_run_stages": 1},
         control="proc = verify.start_scrubbed(up, cwd=w, rung=r, log=f)\n",
         message=(
             "start_scrubbed is called somewhere new. It starts a command that "
@@ -159,8 +159,8 @@ def test_up_is_named_only_where_it_is_read_validated_or_started() -> None:
             "project/stack.py:file_stack_item": 2,
             "project/stack.py:stack_toml": 1,
             # The one place it runs: started inside the test zone, then waited on.
-            "replay.py:_run_stages": 3,
-            "replay.py:_ready": 1,
+            "acceptance/replay.py:_run_stages": 3,
+            "acceptance/replay.py:_ready": 1,
             # #700 slice 7: the designer's prompt names the command; it never runs it.
             "acceptance_design.py:build_design_prompt": 2,
         },
@@ -246,19 +246,19 @@ def _runs_a_command(node: ast.AST) -> bool:
 
 
 def test_an_acceptance_check_runs_only_through_the_replay_inside_its_rung() -> None:
-    """``kstrl/acceptance.py`` starts no process of its own. Its one call
+    """``kstrl/acceptance/acceptance.py`` starts no process of its own. Its one call
     that runs a command is the replay's ``_ran``, made inside the probe the
     replay hands its test-zone rung, and it passes that rung on, so a check
     runs on the host only under the host fallback of a platform with no
     prover (#700, owner decision 2026-10-05)."""
-    (source,) = [path for path in package_sources() if label(path) == "acceptance.py"]
+    (source,) = [path for path in package_sources() if label(path) == "acceptance/acceptance.py"]
     assert_census(
         sources=[source],
         sees=_runs_a_command,
-        expected={"acceptance.py:_run_check": 1},
+        expected={"acceptance/acceptance.py:_run_check": 1},
         control="done = subprocess.run(argv, cwd=here)\n",
         message=(
-            "kstrl/acceptance.py runs a command somewhere new. A check runs only "
+            "kstrl/acceptance/acceptance.py runs a command somewhere new. A check runs only "
             "through replay._ran inside the rung the replay proved."
         ),
         key=_where,
@@ -327,7 +327,7 @@ def test_the_fallback_and_the_prover_are_reached_only_through_prove_zones() -> N
         assert_census(
             sources=package_sources(),
             sees=_calls(name),
-            expected={"isolation.py:prove_zones": 1},
+            expected={"acceptance/isolation.py:prove_zones": 1},
             control=f"rung = isolation.{name}()\n",
             message=f"{name} is called outside isolation.prove_zones: go through prove_zones.",
             key=_where,

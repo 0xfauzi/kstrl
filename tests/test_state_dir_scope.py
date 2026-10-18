@@ -56,7 +56,7 @@ from kstrl.io.statedir import (
     STATE_SUBDIRS,
     state_dir_carve_out,
 )
-from kstrl.loop import COMPLETION_MARKER, run_loop
+from kstrl.loop.loop import COMPLETION_MARKER, run_loop
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import guards
 from kstrl.verify.guards import check_violations, path_is_allowed
@@ -413,7 +413,7 @@ _EXPECTED_STATE_DIR_SPELLINGS: dict[str, int] = {
     "factory_preflight.py": 2,
     "factory_run.py": 1,
     "factory_worktrees.py": 6,
-    "integration_state.py": 1,
+    "review/integration_state.py": 1,
     "knowledge/knowledge_facts.py": 2,
     "pipeline_attempt.py": 1,
     # +1 #863 A4: the refusal of a progress.jsonl-only run names the state dir.
@@ -644,12 +644,12 @@ class TestNothingTheLoopRunsWritesTheUncarvedEntries:
             "kstrl.architect.decompose",
             "kstrl.architect.decompose_plan",
             "kstrl.architect.decompose_reply",
-            "kstrl.integration_fix",
+            "kstrl.review.integration_fix",
         }
     )
 
     def test_the_loop_cannot_reach_a_writer_of_an_uncarved_entry(self) -> None:
-        reachable = _import_closure("kstrl.loop") & self.WRITERS
+        reachable = _import_closure("kstrl.loop.loop") & self.WRITERS
         assert reachable == set(), (
             f"kstrl.loop can now reach {sorted(reachable)}, which write the "
             f"entries STATE_NOT_CARVED keeps countable. Either the loop no "
@@ -660,7 +660,7 @@ class TestNothingTheLoopRunsWritesTheUncarvedEntries:
     def test_the_closure_is_actually_walking_something(self) -> None:
         """Without this the assertion above could be passing because the
         closure is empty, which would make it a test of nothing."""
-        closure = _import_closure("kstrl.loop")
+        closure = _import_closure("kstrl.loop.loop")
         assert "kstrl.verify.guards" in closure
         assert "kstrl.io.statedir" in closure
         assert _import_closure("kstrl.serve") & self.WRITERS
@@ -972,7 +972,7 @@ class TestTheLoopAppliesIt:
 
 
 #: The one function every state-root declaration hangs off.
-_RUN_LOOP = "kstrl.loop.run_loop"
+_RUN_LOOP = "kstrl.loop.loop.run_loop"
 
 
 def _run_loop_calls(tree: ast.Module, module: str) -> list[ast.Call]:
@@ -1035,7 +1035,7 @@ class TestEveryCallerDeclaresTheStateRoot:
         identifier, so an alias was a miss and a stranger of that name a
         hit, and an empty result reads exactly like a matcher that has
         stopped matching."""
-        alias = astwalk.parse("from kstrl.loop import run_loop as _s\ndef go(c):\n    _s(c)\n")
+        alias = astwalk.parse("from kstrl.loop.loop import run_loop as _s\ndef go(c):\n    _s(c)\n")
         found = astwalk.calls_to(alias, [_RUN_LOOP], where="a.py", module="kstrl.x")
         assert found == astwalk.Sites((f"a.py:3 {_RUN_LOOP}",))
         other = astwalk.parse("from other import run_loop\ndef go():\n    run_loop()\n")

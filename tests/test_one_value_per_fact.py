@@ -41,8 +41,8 @@ from kstrl.factory_result import ComponentResult
 from kstrl.owner.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.plan.findings import CLAIM_DISAGREEMENT_CATEGORY
 from kstrl.plan.manifest import Component, Manifest
-from kstrl.review import CriterionReview, ReviewConcern, ReviewResult
-from kstrl.security import SecurityConfig, SecurityFinding, SecurityResult
+from kstrl.review.review import CriterionReview, ReviewConcern, ReviewResult
+from kstrl.review.security import SecurityConfig, SecurityFinding, SecurityResult
 from kstrl.ui.plain import PlainUI
 from kstrl.verify.verify_model import CheckResult, VerificationResult, VerifyConfig
 from tests.helpers.astwalk import Sees, assert_census, label, package_sources, parsed
@@ -393,8 +393,8 @@ EXPECTED_REVIEW_RESULT_SITES: dict[str, int] = {
 EXPECTED_DURATION_WRITE_SITES: dict[str, int] = {
     "pipeline_attempt.py:_end_attempt": 1,  # the fact: the attempt's wall-clock time
     "plan/manifest.py:reset_for_retry": 1,  # the --reset path zeroes it
-    "review.py:run_review": 3,  # ReviewResult's own timing
-    "security.py:run_security_review": 1,  # SecurityResult's own timing
+    "review/review.py:run_review": 3,  # ReviewResult's own timing
+    "review/security.py:run_security_review": 1,  # SecurityResult's own timing
     "events/usage.py:add_record": 1,  # usage totals, not a component
     "events/usage.py:merge": 1,  # usage totals, not a component
 }

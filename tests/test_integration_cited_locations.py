@@ -22,8 +22,8 @@ from unittest.mock import patch
 import pytest
 
 from kstrl.git import git, git_tree
-from kstrl.integration import integration_stories
 from kstrl.pipeline import ComponentPipeline
+from kstrl.review.integration import integration_stories
 from tests.helpers import integration_harness as h
 from tests.helpers.gitrepo import git_in
 

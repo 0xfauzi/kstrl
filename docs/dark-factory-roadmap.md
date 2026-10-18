@@ -603,7 +603,7 @@ cost per merged component, `infrastructure_error` rate. Two are not.
 Calibration detection delta is captured by the opt-in calibration suite into
 a results directory rather than once per factory run, so there is no per-run
 series; a regression there already demotes through
-`DemotionTrigger.CALIBRATION_REGRESSION` in `kstrl/calibration_ladder.py`.
+`DemotionTrigger.CALIBRATION_REGRESSION` in `kstrl/calibration/calibration_ladder.py`.
 Human-edit rate has no per-run series. Since #601 each merge the factory
 confirms is recorded on the ladder as clean or edited: clean only when the PR
 head GitHub merged (`headRefOid`) is the commit the diff phase judged, and

@@ -41,9 +41,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from kstrl.acceptance.isolation import SETUP_ZONE, TEST_ZONE, prove_zones
 from kstrl.git import git, git_base
 from kstrl.io import CONTROL_APP_NAME, atomic_write_text, xdg_state_home
-from kstrl.isolation import SETUP_ZONE, TEST_ZONE, prove_zones
 from kstrl.proc import (
     ChildOutputDecodeError,
     ContractCleanupError,

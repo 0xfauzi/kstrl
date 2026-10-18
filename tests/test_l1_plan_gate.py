@@ -42,8 +42,8 @@ from kstrl.learning.autonomy import AutonomyState
 from kstrl.owner.inbox import Inbox, InboxConfig, InboxItem
 from kstrl.owner.interaction import PromptKind, PromptRequest, PromptResponse
 from kstrl.plan.manifest import Manifest
-from kstrl.review import ReviewResult
-from kstrl.security import SecurityConfig
+from kstrl.review.review import ReviewResult
+from kstrl.review.security import SecurityConfig
 from kstrl.serve_gates import check_parked_merges
 from kstrl.serve_outcome import RunOutcome, classify_run
 from kstrl.ui.plain import PlainUI

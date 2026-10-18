@@ -21,7 +21,7 @@ paths the isolation rung lets the commands write and read beyond their
 worktree, and whether the stack drives a browser. One more is optional
 (#700 slice 3): ``up``, the command that starts the application and exits 0
 once it is ready. kstrl never reads what it does; ``ks doctor --measure``
-replays the recipe (``kstrl.replay``) and a stack whose replay failed is not
+replays the recipe (``kstrl.acceptance.replay``) and a stack whose replay failed is not
 confirmed (:data:`REPLAY_STAGES`).
 
 A stack is the only source of verification commands (#696 slice 4, the flag
@@ -73,7 +73,7 @@ STACK_KEYS: tuple[str, ...] = ("instructions", "setup", "checks", "env")
 #: the raw Seatbelt rules headless Chromium needs to the test zone.
 STACK_RUNG_KEYS: tuple[str, ...] = ("writable", "readable", "browser")
 
-#: #700 slice 3: the stage a clean replay of the recipe (``kstrl.replay``)
+#: #700 slice 3: the stage a clean replay of the recipe (``kstrl.acceptance.replay``)
 #: failed at, as the replay record's ``failed`` names it; "" is a replay
 #: that passed. The two in :data:`REPLAY_STAGES_WITH_EXIT` carry what the
 #: command gave after a colon: its exit status, ``timeout`` or

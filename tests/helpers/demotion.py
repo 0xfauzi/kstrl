@@ -25,7 +25,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
-from kstrl import calibration
+from kstrl.calibration import calibration
 from kstrl.events.events import EventBus
 from kstrl.factory_autonomy import _record_autonomy_outcome
 from kstrl.factory_result import FactoryResult

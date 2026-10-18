@@ -14,7 +14,7 @@ from kstrl.commandrun import open_command_run
 from kstrl.config.config import KstrlConfig
 from kstrl.events.reducer import load_run_state
 from kstrl.feature_cmd import run_feature
-from kstrl.loop import LoopResult
+from kstrl.loop.loop import LoopResult
 from kstrl.ui.plain import PlainUI
 from tests.test_feature_cmd import ScriptedChannel, StubAgent, _params
 

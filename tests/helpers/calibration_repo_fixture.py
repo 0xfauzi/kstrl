@@ -30,7 +30,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from kstrl.architect.decompose_prompt import build_decompose_prompt
-from kstrl.calibration_score import (
+from kstrl.calibration.calibration_score import (
     FixtureMetaError,
     check_fixture_meta,
     refuse_unreadable,
@@ -230,7 +230,7 @@ def load_fixtures(subdir: str, suffix: str) -> list[tuple[Path, dict[str, Any]]]
     from tests/test_calibration.py, which now imports it, rather than
     kept as two implementations of the same glob-plus-meta-lookup.
 
-    Every meta is read by :func:`kstrl.calibration_score.check_fixture_meta`
+    Every meta is read by :func:`kstrl.calibration.calibration_score.check_fixture_meta`
     as it loads, so one no matcher can read is refused here, naming its
     file and field, before any test is collected or any agent is called
     (#564). A diff is read by :func:`diff_language` the same way (#633), so a

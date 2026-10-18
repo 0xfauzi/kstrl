@@ -320,7 +320,7 @@ class TestAssertCensusWillNotPinAnEmptyNet:
             # just-written evidence directory with rglob, to index every
             # file's sha256; it is kstrl's own output, not operator input,
             # so the plan-directory refusal rule does not apply here.
-            expected={"acceptance.py": 1},
+            expected={"acceptance/acceptance.py": 1},
             control=both,
             message="unused",
         )
@@ -351,7 +351,7 @@ class TestAssertCensusWillNotPinAnEmptyNet:
             sees=lambda node: astwalk.spells("getpgid")(node) or astwalk.spells("rglob")(node),
             # #700 slice 4: acceptance.py's evidence-index rglob, same site
             # as the control above.
-            expected={"proc/procgroup.py": 2, "acceptance.py": 1},
+            expected={"proc/procgroup.py": 2, "acceptance/acceptance.py": 1},
             control=(
                 "import os\nos.getpgid(1)\n",
                 'import kstrl.project.feedforward\nroot.rglob("*.py")\n',

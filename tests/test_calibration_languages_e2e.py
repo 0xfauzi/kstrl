@@ -30,7 +30,7 @@ from typing import Any
 import pytest
 
 import kstrl.agents
-from kstrl import calibration
+from kstrl.calibration import calibration
 from tests import test_calibration as tc
 from tests.helpers import calibration_integration_fixture as cif
 from tests.helpers import calibration_repo_fixture as crf

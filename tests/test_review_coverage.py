@@ -40,14 +40,14 @@ from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult
 from kstrl.git import git_base, git_diff
 from kstrl.plan.manifest import Component, Manifest
-from kstrl.review import (
+from kstrl.review.review import (
     ReviewMode,
     ReviewResult,
     parse_review_output,
     run_review,
 )
-from kstrl.review_prompt import REVIEWER_PROMPT, build_review_prompt
-from kstrl.security import (
+from kstrl.review.review_prompt import REVIEWER_PROMPT, build_review_prompt
+from kstrl.review.security import (
     SECURITY_PROMPT,
     SecurityConfig,
     SecurityMode,

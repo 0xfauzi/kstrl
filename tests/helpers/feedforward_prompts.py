@@ -19,7 +19,7 @@ notice vocabulary one module delivers to one role, so a reword bumps
 
 H2/H3 SCOPE. This is engineer-facing CONTEXT, like ``DECISIONS_CONTEXT_PROMPT``
 and the #303 builder fragments: the calibration suite scores only the role
-ids in ``kstrl.calibration.MIN_ROLE_DETECTION_RATE`` against planted-bug
+ids in ``kstrl.calibration.calibration.MIN_ROLE_DETECTION_RATE`` against planted-bug
 fixtures, and has no fixture that scores a codebase scan notice. It carries
 the H3 obligation (body, version and snapshot move together) and no H2
 obligation the suite can discharge.

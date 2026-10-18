@@ -9,19 +9,19 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl.breaker import BreakerConfig, NoProgressBreaker
 from kstrl.events import EventBus, IterationCompleted, IterationStarted, UsageTotals, collect_usage
 from kstrl.git import git, git_tree
 from kstrl.io import statedir
-from kstrl.iteration_prompt import (
+from kstrl.loop.breaker import BreakerConfig, NoProgressBreaker
+from kstrl.loop.iteration_prompt import (
     assemble_prompt,
     build_project_context,
     failed_fast_checks,
     fast_iteration_reading,
     measurement_block,
 )
-from kstrl.loop_budget import LoopBudget
-from kstrl.loop_setup import capture_guard_baseline, print_startup
+from kstrl.loop.loop_budget import LoopBudget
+from kstrl.loop.loop_setup import capture_guard_baseline, print_startup
 from kstrl.owner import (
     InteractionChannel,
     PromptKind,

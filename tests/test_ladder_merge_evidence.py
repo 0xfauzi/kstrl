@@ -37,7 +37,7 @@ from kstrl.learning.evolution_config import EvolutionConfig
 from kstrl.owner.inbox import Inbox, InboxConfig
 from kstrl.owner.interaction import PromptKind, PromptRequest, PromptResponse
 from kstrl.plan.manifest import Manifest
-from kstrl.review import CriterionReview, ReviewResult
+from kstrl.review.review import CriterionReview, ReviewResult
 from kstrl.ui.plain import PlainUI
 from tests.helpers.executables import write_executable
 from tests.helpers.plan_approval import approve_plan

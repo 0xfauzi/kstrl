@@ -106,7 +106,7 @@ EXPECTED_SPELLINGS: frozenset[tuple[str, str]] = frozenset(
         # comparison is not a factory run and has none of its own. The
         # comparison id is both baselines' timestamps, or a digest of the
         # failure lines when either file carries no timestamp.
-        ("kstrl/calibration_ladder.py", "calibration"),
+        ("kstrl/calibration/calibration_ladder.py", "calibration"),
         ("kstrl/factory_autonomy.py", "health"),
         # #449: the inbox dedupe key for one spec's architect escalation,
         # "escalation:<project>:<spec file>". Same family as the two above.
@@ -148,13 +148,13 @@ EXPECTED_SPELLINGS: frozenset[tuple[str, str]] = frozenset(
         # f"check:{name}") and the two cannot-run stages that carry an exit
         # ("setup_failed:<exit>", "up_failed:<exit>"). These are the doctor
         # replay's own record, never a component failure signature.
-        ("kstrl/replay.py", "check"),
-        ("kstrl/replay.py", "setup_failed"),
-        ("kstrl/replay.py", "up_failed"),
+        ("kstrl/acceptance/replay.py", "check"),
+        ("kstrl/acceptance/replay.py", "setup_failed"),
+        ("kstrl/acceptance/replay.py", "up_failed"),
         # #700 slice 4: an acceptance check's replay stage name
         # (f"acceptance:{check.id}"), the replay's own record and never a
         # component failure signature.
-        ("kstrl/acceptance.py", "acceptance"),
+        ("kstrl/acceptance/acceptance.py", "acceptance"),
     }
 )
 

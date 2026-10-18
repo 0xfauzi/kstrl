@@ -10,7 +10,7 @@ from kstrl.plan import (
     Finding,
     tag_finding_with_model,
 )
-from kstrl.review import ReviewResult, ReviewVerdict, normalize_story_id
+from kstrl.review.review import ReviewResult, ReviewVerdict, normalize_story_id
 
 
 class ClaimFields(Protocol):

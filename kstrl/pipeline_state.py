@@ -19,10 +19,9 @@ from kstrl.events import events as ev
 from kstrl.owner import ApprovalSnapshot, Inbox, InteractionChannel, UiInteractionChannel
 from kstrl.plan import Manifest, RunScope
 from kstrl.proc import WorktreeSweep
-from kstrl.review import ReviewResult
+from kstrl.review import ReviewResult, SecurityResult
 from kstrl.runenvelope import RunEnvelope
 from kstrl.runstate import RunState
-from kstrl.security import SecurityResult
 from kstrl.verify import MechanicalVerification
 
 if TYPE_CHECKING:

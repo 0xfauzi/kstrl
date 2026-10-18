@@ -29,7 +29,7 @@ from kstrl.learning.autonomy import AutonomyLevel, AutonomyState
 from kstrl.owner.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.owner.interaction import PromptRequest, PromptResponse
 from kstrl.plan.manifest import Manifest
-from kstrl.review import CriterionReview, ReviewResult
+from kstrl.review.review import CriterionReview, ReviewResult
 from kstrl.ui.plain import PlainUI
 from kstrl.verify.verify_model import VerifyConfig
 from tests.helpers.executables import write_executable

@@ -112,13 +112,13 @@ def _origin_row(source_file: Path, node: ast.AST) -> str:
 #: ``git.py``, count unchanged. #696 slice 6 deleted ``git.stage_file``,
 #: ``git.ignore_source`` and ``git.ignored_paths``, and their three rows.
 EXPECTED_REF_OPERAND_ARGVS: dict[str, int] = {
-    "breaker.py git status --porcelain -uall -z": 1,
-    "breaker.py git rev-parse HEAD": 1,
-    "breaker.py git diff HEAD": 1,
-    "breaker.py git *args": 1,
+    "loop/breaker.py git status --porcelain -uall -z": 1,
+    "loop/breaker.py git rev-parse HEAD": 1,
+    "loop/breaker.py git diff HEAD": 1,
+    "loop/breaker.py git *args": 1,
     "config_report.py git [('branch', 'kstrl_branch'), ('auto_checkout', 'auto_checkout')]": 1,
     "proc/temp_worktree.py git worktree add --detach str(worktree_path) base_ref": 1,
-    "contract.py git merge --abort": 1,
+    "acceptance/contract.py git merge --abort": 1,
     "proc/temp_worktree.py git worktree remove --force str(worktree_path)": 1,
     "proc/temp_worktree.py git worktree prune": 1,
     "doctor.py git check-ignore -q -- probe": 1,

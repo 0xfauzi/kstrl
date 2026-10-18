@@ -21,9 +21,9 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import review
-from kstrl.integration import integration_stories
-from kstrl.review import ReviewMode
+from kstrl.review import review
+from kstrl.review.integration import integration_stories
+from kstrl.review.review import ReviewMode
 from kstrl.ui.plain import PlainUI
 from kstrl.verify.verify_model import VerificationResult
 from tests.conftest import make_review_repo

@@ -9,7 +9,8 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl.acceptance import pin_plan
+from kstrl.acceptance import SETUP_ZONE, TEST_ZONE, pin_plan, prove_zones
+from kstrl.acceptance import write_record as write_isolation_record
 from kstrl.acceptance_design import (
     acceptance_source,
 )
@@ -32,8 +33,6 @@ from kstrl.factory_worktrees import (
     _preflight_component_branches,
     _prune_stale_worktrees,
 )
-from kstrl.isolation import SETUP_ZONE, TEST_ZONE, prove_zones
-from kstrl.isolation import write_record as write_isolation_record
 from kstrl.launch_record import run_limits, write_launch_record
 from kstrl.plan import (
     ComponentStatus,

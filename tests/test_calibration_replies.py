@@ -28,8 +28,8 @@ from typing import Any
 import pytest
 
 import kstrl.agents
-from kstrl import calibration_baseline
 from kstrl.acceptance_design import DESIGN_ASKS
+from kstrl.calibration import calibration_baseline
 from tests import test_calibration as tc
 from tests.helpers import calibration_capture as harness
 from tests.helpers.calibration_capture import FX_D

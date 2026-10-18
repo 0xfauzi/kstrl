@@ -97,12 +97,10 @@ from kstrl.proc import (
 )
 from kstrl.review import (
     run_review,
+    run_security_review,
 )
 from kstrl.runenvelope import RunEnvelope
 from kstrl.runstate import RunState
-from kstrl.security import (
-    run_security_review,
-)
 from kstrl.verify import VerifyConfig, run_mechanical_verification
 
 if TYPE_CHECKING:

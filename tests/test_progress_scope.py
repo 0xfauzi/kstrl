@@ -45,7 +45,7 @@ from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult, FactoryResult
 from kstrl.git import git_tree
 from kstrl.knowledge.knowledge_facts import KnowledgeConfig
-from kstrl.loop import run_loop
+from kstrl.loop.loop import run_loop
 from kstrl.owner.interaction import PromptRequest, PromptResponse
 from kstrl.pipeline import ComponentPipeline
 from kstrl.pipeline_state import PipelineHooks
@@ -53,10 +53,10 @@ from kstrl.plan.manifest import Component, Manifest
 from kstrl.plan.prd import PRD
 from kstrl.plan.scope import ComponentScope, RunScope
 from kstrl.proc.worktree_sweep import WorktreeSweep
-from kstrl.review import ReviewResult
+from kstrl.review.review import ReviewResult
+from kstrl.review.security import SecurityResult
 from kstrl.runenvelope import RunEnvelope
 from kstrl.runstate import RunState
-from kstrl.security import SecurityResult
 from kstrl.ui.plain import PlainUI
 from kstrl.verify.guards import enforce_allowed_paths, path_is_allowed
 from kstrl.verify.verify import run_mechanical_verification
@@ -623,7 +623,7 @@ class TestFactoryWiring:
         in-scope path too: the safe path is the default, not an opt-in.
         """
         from kstrl.factory_worker import _run_component
-        from kstrl.loop import LoopResult
+        from kstrl.loop.loop import LoopResult
 
         _setup_project(tmp_path, [COMPONENT_ID])
         seen: list[KstrlConfig] = []
@@ -942,7 +942,7 @@ class TestInLoopGuardSeesTheComponentScope:
         The guard discarded its violations (`ok, _ =`) and the factory
         rendered the halt as "Did not complete".
         """
-        from kstrl.loop import LoopResult
+        from kstrl.loop.loop import LoopResult
 
         result = LoopResult(
             completed=False,
@@ -1013,7 +1013,7 @@ def _worker_write_path(
     the agent as ``$progress_path``.
     """
     from kstrl.factory_worker import _run_component
-    from kstrl.loop import LoopResult
+    from kstrl.loop.loop import LoopResult
 
     seen: list[KstrlConfig] = []
 

@@ -35,7 +35,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
-from kstrl.acceptance import (
+from kstrl.acceptance.acceptance import (
     ACCEPTANCE_DIR,
     FAIL,
     HEAD_RUNS,
@@ -55,14 +55,14 @@ from kstrl.acceptance import (
     limits,
     verdict_of,
 )
+from kstrl.acceptance.replay import Replay, Stage, replay_stack
 from kstrl.git import git, git_base
 from kstrl.io import atomic_write_json, control_dir, read_json
 from kstrl.proc import Rung, limit_seconds
 from kstrl.project import REPLAY_BOUNDARY_REFUSED
-from kstrl.replay import Replay, Stage, replay_stack
 
 if TYPE_CHECKING:
-    from kstrl.contract import ContractConfig
+    from kstrl.acceptance.contract import ContractConfig
     from kstrl.owner import InboxConfig, InboxItem
     from kstrl.plan import Manifest
     from kstrl.project import Stack

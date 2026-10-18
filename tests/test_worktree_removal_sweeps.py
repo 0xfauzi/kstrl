@@ -36,8 +36,8 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner, Result
 
+from kstrl.acceptance.contract import ContractConfig, ContractMode
 from kstrl.cli import cli
-from kstrl.contract import ContractConfig, ContractMode
 from kstrl.events.event_catalog import Log
 from kstrl.events.events import read_events
 from kstrl.factory_result import FactoryResult

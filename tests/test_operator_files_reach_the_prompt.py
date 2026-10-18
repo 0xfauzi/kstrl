@@ -170,7 +170,7 @@ EXPECTED_LOADER_SPELLINGS: dict[str, int] = {
 EXPECTED_PREFIX_SPELLINGS: dict[str, int] = {
     "factory_worker.py": 3,
     "feature_cmd.py": 3,
-    "loop.py": 8,
+    "loop/loop.py": 8,
 }
 
 

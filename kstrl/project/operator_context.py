@@ -10,7 +10,7 @@ this attempt's failures are acted on rather than being framed by them.
 The two differ only by their :class:`OperatorFileKind` row.
 
 TRUST. These files are trusted the way ``CLAUDE.md`` is trusted, which
-``run_loop`` prepends verbatim (``kstrl/loop.py``). They are NOT passed
+``run_loop`` prepends verbatim (``kstrl/loop/loop.py``). They are NOT passed
 through the knowledge layer's injection filter
 (``knowledge._is_injection_attempt``), and that is deliberate: the filter
 exists because distilled facts are LLM output that a prior component's

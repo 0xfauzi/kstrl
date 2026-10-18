@@ -139,8 +139,8 @@ audit trail that H3 requires. `frontier_type="objective"` stops a reviewer gain
 from silently regressing the security reviewer.
 
 kstrl already owns the part most adopters lack: an objective metric.
-`kstrl/calibration_baseline.py` provides `role_detection_rate` and
-`Baseline`; `kstrl/calibration.py` provides `compare_baselines` and
+`kstrl/calibration/calibration_baseline.py` provides `role_detection_rate` and
+`Baseline`; `kstrl/calibration/calibration.py` provides `compare_baselines` and
 `min_role_rate`. That is a scored metric with a pass/fail gate already
 written.
 
@@ -168,7 +168,7 @@ one gate.
 |---|---|---|---|---|---|
 | 1. Facts | What this code is | `.kstrl/knowledge/<component>/*.md` | Distiller LLM | none | One project |
 | 2. Rules | What to do when building | `$XDG_STATE_HOME/kstrl/global/playbook/` | Reflector + Curator | automatic retirement | All projects |
-| 3. Role defects | How well kstrl judges | `*_PROMPT` constants in `kstrl/review.py`, `kstrl/security.py`, `kstrl/architect/decompose.py` | GEPA proposes | calibration, human, H3 | The harness |
+| 3. Role defects | How well kstrl judges | `*_PROMPT` constants in `kstrl/review/review.py`, `kstrl/review/security.py`, `kstrl/architect/decompose.py` | GEPA proposes | calibration, human, H3 | The harness |
 | 4. Mechanical defects | Something is broken | A GitHub issue | Router, no LLM | none | n/a |
 
 Kind 1 exists and works (section 1.4). Kind 2 and kind 3 are sections 5.1 and

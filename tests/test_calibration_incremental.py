@@ -4,7 +4,7 @@ End to end on purpose. A child interpreter drives the REAL capture harness
 (``tests.test_calibration``'s ``_gate_on_consistency``, ``_measure_detection``,
 ``_measure_false_positives`` and ``_DetectionReport``) with a fake agent, so no
 paid call is made and no network is touched. What the tests assert on is the
-file that child left behind and what the real ``kstrl.calibration.main``
+file that child left behind and what the real ``kstrl.calibration.calibration.main``
 compare entry point does with it. The driver itself lives in
 ``tests/helpers/calibration_capture.py`` (#398 simplify pass, group B2); see
 its module docstring for why a shared driver belongs there rather than here.
@@ -33,7 +33,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import calibration, calibration_baseline
+from kstrl.calibration import calibration, calibration_baseline
 from tests.helpers import calibration_capture as harness
 from tests.helpers.astwalk import REPO_ROOT, assert_census, spells
 from tests.helpers.calibration_capture import FX_A, FX_B, FX_C, FX_D
@@ -250,7 +250,7 @@ def test_save_report_writes_through_atomicio(
 # `tests.test_calibration_report_format.TestV2RunCountsAreRequired
 # .test_every_checked_in_baseline_still_loads` (#421 Group C1):
 # `load_baseline` calls `partial_capture_reason` and raises on it
-# (`kstrl/calibration_baseline.py`), so the newer sweep fails on every
+# (`kstrl/calibration/calibration_baseline.py`), so the newer sweep fails on every
 # document this one failed on, plus more. Confirmed by planting a partial
 # capture into a real checked-in baseline, restoring it from a saved copy
 # afterwards: the newer test went red on its own, naming the same file and
@@ -261,8 +261,8 @@ def test_save_report_writes_through_atomicio(
 # #406: the three progress keys are the report builder's, not the harness's.
 # --------------------------------------------------------------------------
 
-#: The keys #398 added to the v2 report. ``kstrl.calibration.build_report``
-#: writes them; ``kstrl.calibration_baseline.partial_capture_reason`` reads
+#: The keys #398 added to the v2 report. ``kstrl.calibration.calibration.build_report``
+#: writes them; ``kstrl.calibration.calibration_baseline.partial_capture_reason`` reads
 #: them back.
 PROGRESS_KEYS = ("run_complete", "fixtures_attempted", "fixtures_completed")
 

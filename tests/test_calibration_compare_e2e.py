@@ -34,7 +34,7 @@ from typing import Any
 
 import pytest
 
-from kstrl import calibration
+from kstrl.calibration import calibration
 from kstrl.owner.inbox import ItemKind
 from tests import test_calibration as tc
 from tests.helpers.demotion import NEW_TS, OLD_TS, inbox_items, write_config

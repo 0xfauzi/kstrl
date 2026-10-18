@@ -19,7 +19,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
-from kstrl.acceptance import FAIL, PASS, RECORD_FILE, Check, HeadOutcome, evidence_dir
+from kstrl.acceptance.acceptance import FAIL, PASS, RECORD_FILE, Check, HeadOutcome, evidence_dir
 from kstrl.io import read_json
 from kstrl.proc import HOST_LABEL, label_of
 

@@ -31,7 +31,7 @@ from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.plan.manifest import Component, Manifest
 from kstrl.project.scaffold_templates import DEFAULT_PROMPT
-from kstrl.security import SecurityConfig
+from kstrl.review.security import SecurityConfig
 from kstrl.ui.plain import PlainUI
 from kstrl.verify.verify_model import VerifyConfig
 from tests.helpers import gitrepo

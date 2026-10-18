@@ -80,7 +80,7 @@ OWNER = "io/jsonread.py"
 EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     # #700 slice 4: the import and two json.dumps (the plan digest rows and a
     # check entry's digest). Its reads go through read_json.
-    "acceptance.py": 3,
+    "acceptance/acceptance.py": 3,
     # #700 slice 7: the import and one json.dumps (the designed plan and its
     # designer.json). It reads no JSON: the reply goes through extract_json.
     "acceptance_design.py": 2,
@@ -107,7 +107,7 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     "agents/sdk_runner.py": 5,
     "io/atomicio.py": 2,
     "learning/autonomy.py": 2,
-    "calibration_baseline.py": 2,
+    "calibration/calibration_baseline.py": 2,
     # #553: the import, one json.dumps for the ledger line, and the
     # json.JSONDecodeError it catches from read_json twice. No parse.
     "ci_state.py": 4,
@@ -128,7 +128,7 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     "intake_issue.py": 3,
     # #700: the import and one json.dumps of the nono policy; the canary's
     # report is read through read_json. No parse.
-    "isolation.py": 2,
+    "acceptance/isolation.py": 2,
     "io/jsonread.py": 4,
     "knowledge/knowledge.py": 3,
     "knowledge/knowledge_facts.py": 3,

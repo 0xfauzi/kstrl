@@ -15,7 +15,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, TextIO
 
 from kstrl.agents import AgentCall, SandboxConfig, recording_prompts
-from kstrl.breaker import BreakerConfig
 from kstrl.commandrun import start_heartbeat as _start_heartbeat
 from kstrl.config import (
     KstrlConfig,
@@ -29,7 +28,7 @@ from kstrl.factory_result import (
 )
 from kstrl.git import resolve_base_ref
 from kstrl.io import pre_run_prd_path
-from kstrl.loop_budget import LoopBudget
+from kstrl.loop import BreakerConfig, LoopBudget
 from kstrl.plan import ComponentScope
 from kstrl.proc import (
     TimeoutConfig,

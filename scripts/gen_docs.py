@@ -131,12 +131,11 @@ def _all_field_names(cfg_cls: Any) -> list[str]:
 
 
 def _section_specs() -> list[SectionSpec]:
+    from kstrl.acceptance.contract import ContractConfig
     from kstrl.agents.sandbox import SandboxConfig
     from kstrl.architect.linear import LinearConfig
-    from kstrl.breaker import BreakerConfig
     from kstrl.config.config import KstrlConfig
     from kstrl.config.config_keys import STRING_KEYS
-    from kstrl.contract import ContractConfig
     from kstrl.divergence import DivergenceConfig
     from kstrl.events.observability import NotifyConfig
     from kstrl.factory_config import FactoryConfig
@@ -144,12 +143,13 @@ def _section_specs() -> list[SectionSpec]:
     from kstrl.knowledge.knowledge_facts import KnowledgeConfig
     from kstrl.learning.autonomy_config import AutonomyConfig
     from kstrl.learning.evolution_config import EvolutionConfig
+    from kstrl.loop.breaker import BreakerConfig
     from kstrl.owner.inbox import InboxConfig
     from kstrl.proc.timeout import TimeoutConfig
     from kstrl.project.feedforward import CodebaseScanConfig
     from kstrl.queue.workqueue_items import QueueConfig
     from kstrl.release import ReleaseConfig
-    from kstrl.security import SecurityConfig
+    from kstrl.review.security import SecurityConfig
     from kstrl.serve_config import ServeConfig
     from kstrl.signals import SignalsConfig
     from kstrl.verify.policy import PolicyConfig

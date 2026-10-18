@@ -33,7 +33,7 @@ from kstrl.io.statedir import plan_prd_path
 from kstrl.knowledge.knowledge_distill import _read_prd_text
 from kstrl.plan.manifest import Manifest
 from kstrl.plan.prd import _OPTIONAL_KEYS, PRD, PROMPT_EXCLUDED_KEYS, prd_text_for_prompt
-from kstrl.security import SecurityConfig, SecurityMode, run_security_review
+from kstrl.review.security import SecurityConfig, SecurityMode, run_security_review
 from kstrl.ui.plain import PlainUI
 from tests.conftest import make_review_repo
 from tests.helpers.architect_payload import traced

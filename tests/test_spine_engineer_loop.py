@@ -529,7 +529,7 @@ class TestThePromptIsBuiltOncePerAttempt:
     """R10.9 round 1, nit 11. The unit of latency is the ATTEMPT.
 
     ``loop.run_loop`` substitutes the template, prepends the project
-    context and prepends ``context_prefix`` at ``kstrl/loop.py:617-629``,
+    context and prepends ``context_prefix`` at ``kstrl/loop/loop.py:617-629``,
     and the iteration loop starts at ``:711``. So one prompt object is
     handed to every iteration of an attempt, and an edit to memory.md
     made while a component is running reaches no iteration of the attempt

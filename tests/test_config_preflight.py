@@ -39,6 +39,7 @@ import kstrl.cli_architect as cli_architect_mod
 import kstrl.cli_factory as cli_factory_mod
 import kstrl.cli_feature as cli_feature_mod
 import kstrl.cli_seam as cli_seam_mod
+from kstrl.acceptance.contract import ContractConfig
 from kstrl.cli import cli
 from kstrl.config.config import (
     STRING_KEYS,
@@ -48,13 +49,12 @@ from kstrl.config.config import (
     toml_parse_scope,
 )
 from kstrl.config_preflight import collect_config_problems, config_sections, preflight_config
-from kstrl.contract import ContractConfig
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import FactoryResult
 from kstrl.learning.evolution_config import EvolutionConfig
 from kstrl.project.feedforward import CodebaseScanConfig
 from kstrl.project.stack import stack_toml
-from kstrl.security import SecurityConfig, SecurityMode
+from kstrl.review.security import SecurityConfig, SecurityMode
 from kstrl.verify.verify_model import VerifyConfig
 from tests.conftest import REPO_ROOT
 from tests.helpers import astwalk

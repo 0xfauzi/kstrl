@@ -20,14 +20,14 @@ Every check runs inside the test zone of the proven rung (on a platform
 with no prover, on the host under the fallback label, #700 owner decision
 2026-10-05), in a fresh copy of the plan as its working directory, with
 :data:`TREE_ENV` naming the checkout under test. The checkout is a throwaway worktree of one commit,
-made by the slice 3 replay (:func:`kstrl.replay.replay_stack`): setup,
+made by the slice 3 replay (:func:`kstrl.acceptance.replay.replay_stack`): setup,
 ``up``, then the checks in place of the stack's own.
 
 - On the base, after the plan gate and before the first engineer
   (:func:`replay_base`). A check the plan says fails on the base must fail
   there, and one it says passes must pass: either contradiction refuses
   the run, unless the designer wrote the check, which is then removed as
-  :func:`kstrl.acceptance_base.kept_on_base` says. A check that did not run
+  :func:`kstrl.acceptance.acceptance_base.kept_on_base` says. A check that did not run
   refuses, except in a component the plan marks ``createsApp``, recorded as
   :data:`BASE_NOT_RUNNABLE` (decision 11).
 - On each component's head, after Phase 1 passed (:func:`judge_head`).
@@ -48,8 +48,8 @@ whether it could read them is unknown (decision 9).
 The evidence of each head run is written under the run directory before
 anything is printed: ``record.json``, ``logs/``, a byte copy of the plan
 the checks ran from and ``index.json`` (each file's sha256).
-:mod:`kstrl.acceptance_record` builds the record, with what the engineer
-disputes (slice 10a), and :mod:`kstrl.acceptance_lines` renders it for the
+:mod:`kstrl.acceptance.acceptance_record` builds the record, with what the engineer
+disputes (slice 10a), and :mod:`kstrl.acceptance.acceptance_lines` renders it for the
 terminal, the pull request, a halt and the engineer's retry.
 """
 
@@ -65,13 +65,13 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
+from kstrl.acceptance.replay import Replay, Stage, _ran, replay_stack
 from kstrl.git import git, git_base
 from kstrl.io import atomic_write_json, control_dir, read_json
 from kstrl.owner import covering_override
 from kstrl.plan import validate_component_id
 from kstrl.proc import HOST_LABEL, ProvenRung, Rung, limit_seconds, zone_dir
 from kstrl.project import REPLAY_BOUNDARY_REFUSED
-from kstrl.replay import Replay, Stage, _ran, replay_stack
 from kstrl.verify import SHELL_COULD_NOT_RUN
 
 if TYPE_CHECKING:
@@ -174,7 +174,7 @@ class HeadOutcome:
     tells the engineer; it is empty when nothing a retry could fix was
     measured. ``disputed`` names the visible checks the engineer disputes
     and kstrl accepted, and ``stopped`` is what a halt adds after its cause
-    (:func:`kstrl.acceptance_lines.stop_lines`)."""
+    (:func:`kstrl.acceptance.acceptance_lines.stop_lines`)."""
 
     passed: bool
     lines: list[str]
@@ -552,7 +552,7 @@ def replay_base(
 ) -> tuple[BaseReading | None, list[str]]:
     """Replay every check of the plan once on the base; or why the run must
     not start. The reading is written to the run directory either way."""
-    from kstrl.acceptance_base import kept_on_base
+    from kstrl.acceptance.acceptance_base import kept_on_base
 
     try:
         sha = git_base.resolve_base_sha(base_branch, root)
@@ -689,9 +689,9 @@ def judge_head(
     for it. ``overrides`` are the approved acceptance halts of this
     component: one that covers every failing check on this head passes it.
     ``progress`` is the engineer's progress log, where it can dispute a
-    visible check (:func:`kstrl.acceptance_record.read_dispute`)."""
-    from kstrl.acceptance_lines import render_lines, row_line, stop_lines, told_lines
-    from kstrl.acceptance_record import head_record, read_dispute, visible_failures
+    visible check (:func:`kstrl.acceptance.acceptance_record.read_dispute`)."""
+    from kstrl.acceptance.acceptance_lines import render_lines, row_line, stop_lines, told_lines
+    from kstrl.acceptance.acceptance_record import head_record, read_dispute, visible_failures
 
     plan, base, stack = config.acceptance_plan, config.acceptance_base, config.project_stack
     if plan is None or base is None or stack is None or comp_id not in base.kept:

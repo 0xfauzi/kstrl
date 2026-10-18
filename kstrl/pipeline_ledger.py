@@ -22,7 +22,7 @@ from kstrl.events import (
     usage_coverage,
 )
 from kstrl.events import events as ev
-from kstrl.loop_budget import UNENFORCEABLE_CALLS
+from kstrl.loop import UNENFORCEABLE_CALLS
 from kstrl.pipeline_state import PipelineState
 from kstrl.plan import Component, ComponentStatus
 

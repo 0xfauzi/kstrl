@@ -32,7 +32,7 @@ from pathlib import Path
 
 import kstrl.agents
 from kstrl.agents.base import TOOL_RESULT_PREFIX
-from kstrl.loop import COMPLETION_MARKER
+from kstrl.loop.loop import COMPLETION_MARKER
 from tests.helpers import gitrepo
 from tests.spine_utils import git
 

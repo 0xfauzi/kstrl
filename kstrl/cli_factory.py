@@ -264,9 +264,9 @@ def factory(
         # loaders handle env-over-toml-over-default; flags use None
         # sentinels so "not passed" is distinguishable from "passed the
         # default value", and an explicitly-passed flag is applied on top.
-        from kstrl.contract import ContractConfig
+        from kstrl.acceptance import ContractConfig
         from kstrl.project import CodebaseScanConfig
-        from kstrl.security import SecurityConfig
+        from kstrl.review import SecurityConfig
         from kstrl.verify import VerifyConfig
 
         toml_notes: list[str] = []

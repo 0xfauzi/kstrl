@@ -215,7 +215,7 @@ class TestFactoryShutdown:
 class TestLoopStopCheck:
     def test_stop_between_iterations(self, tmp_path: Path) -> None:
         from kstrl.config.config import KstrlConfig
-        from kstrl.loop import run_loop
+        from kstrl.loop.loop import run_loop
 
         class CountingAgent:
             def __init__(self) -> None:

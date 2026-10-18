@@ -30,7 +30,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.loop import STOP_EXIT_CODE
+from kstrl.loop.loop import STOP_EXIT_CODE
 from kstrl.plan.manifest import Manifest
 from kstrl.proc.proc import DEFAULT_TERM_GRACE_SECONDS
 from tests.helpers import procs

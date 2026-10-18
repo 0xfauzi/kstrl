@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from kstrl.acceptance_lines import pr_isolation
+from kstrl.acceptance import pr_isolation
 from kstrl.context import IterationContext, IterationRecord
 from kstrl.events import event_catalog
 from kstrl.git import git, git_base

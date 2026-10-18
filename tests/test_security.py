@@ -18,7 +18,7 @@ import os
 from collections.abc import Iterator
 from pathlib import Path
 
-from kstrl.security import (
+from kstrl.review.security import (
     SecurityConfig,
     SecurityMode,
     run_security_review,
