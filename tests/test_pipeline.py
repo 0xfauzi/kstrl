@@ -29,10 +29,9 @@ from kstrl.events.usage import UsageRecord, UsageTotals
 from kstrl.factory_agents import AdversarialAgentSelection
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult, FactoryResult
-from kstrl.failure_signatures import category_for_check
 from kstrl.git import git
-from kstrl.knowledge import measure_fact_utilization
-from kstrl.knowledge_facts import Fact, KnowledgeConfig
+from kstrl.knowledge.knowledge import measure_fact_utilization
+from kstrl.knowledge.knowledge_facts import Fact, KnowledgeConfig
 from kstrl.owner.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.pipeline import ComponentPipeline
 from kstrl.pipeline_delivery import CheckpointDecision
@@ -50,7 +49,8 @@ from kstrl.runenvelope import RunEnvelope
 from kstrl.runstate import RunState
 from kstrl.security import SecurityConfig, SecurityResult
 from kstrl.ui.plain import PlainUI
-from kstrl.verify_model import CheckResult, VerificationResult, VerifyConfig
+from kstrl.verify.failure_signatures import category_for_check
+from kstrl.verify.verify_model import CheckResult, VerificationResult, VerifyConfig
 from tests.helpers.context_sweeps import CURRENT, NOT_REMEASURED, RESOLVED, section
 
 
@@ -1538,7 +1538,7 @@ class TestFactUtilizationUsesTheRealMatcher:
     CLAIM = "The widget parser rejects trailing commas."
 
     def _prefix(self) -> str:
-        from kstrl.knowledge import _format_section
+        from kstrl.knowledge.knowledge import _format_section
 
         return _format_section(
             "Dependencies",

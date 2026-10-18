@@ -35,10 +35,10 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl.autonomy import AutonomyState
 from kstrl.config.config import KstrlConfig
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
+from kstrl.learning.autonomy import AutonomyState
 from kstrl.owner.inbox import Inbox, InboxConfig, InboxItem
 from kstrl.owner.interaction import PromptKind, PromptRequest, PromptResponse
 from kstrl.plan.manifest import Manifest
@@ -47,7 +47,7 @@ from kstrl.security import SecurityConfig
 from kstrl.serve_gates import check_parked_merges
 from kstrl.serve_outcome import RunOutcome, classify_run
 from kstrl.ui.plain import PlainUI
-from kstrl.verify_model import VerifyConfig
+from kstrl.verify.verify_model import VerifyConfig
 from tests.helpers.stack_confirmation import in_process_stack
 from tests.test_merge_gate_park import (
     CMDS,

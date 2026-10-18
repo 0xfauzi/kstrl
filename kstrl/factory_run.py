@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from kstrl.agents import warn_unconfined
+from kstrl.architect import LinearConfig, build_linear_sink
 from kstrl.breaker import BreakerConfig
 from kstrl.events import (
     EventBus,
@@ -50,25 +51,24 @@ from kstrl.factory_preflight import (
 from kstrl.factory_worker import report_operator_files
 from kstrl.factory_worktrees import _interrupted_run_branches
 from kstrl.git import kstrl_version
-from kstrl.knowledge_facts import KnowledgeConfig
-from kstrl.linear import LinearConfig, build_linear_sink
+from kstrl.knowledge import KnowledgeConfig
 from kstrl.plan import ComponentStatus, RunScope
 from kstrl.proc import TimeoutConfig
 from kstrl.runenvelope import RunEnvelope
 from kstrl.runstate import RunState
 
 if TYPE_CHECKING:
-    from kstrl.autonomy_config import AutonomyConfig
+    from kstrl.architect import DecisionRegister
     from kstrl.config import KstrlConfig
-    from kstrl.decisions import DecisionRegister
     from kstrl.factory_autonomy import _LadderOutcome
     from kstrl.factory_result import FactoryResult
     from kstrl.integration_phase import IntegrationRecord
+    from kstrl.learning import AutonomyConfig
     from kstrl.pipeline import ComponentPipeline
     from kstrl.plan import Manifest
     from kstrl.proc import StopController
     from kstrl.ui import UI
-    from kstrl.verify_model import VerifyConfig
+    from kstrl.verify import VerifyConfig
 
 
 @dataclass(frozen=True)

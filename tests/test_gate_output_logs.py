@@ -29,9 +29,9 @@ from kstrl.pipeline import ComponentPipeline
 from kstrl.pipeline_checks import VerifyPhaseResult
 from kstrl.plan.manifest import Component
 from kstrl.ui.plain import PlainUI
-from kstrl.verify import run_mechanical_verification
-from kstrl.verify_commands import GATE_OUTPUT_MAX_CHARS
-from kstrl.verify_model import VerificationResult, VerifyConfig
+from kstrl.verify.verify import run_mechanical_verification
+from kstrl.verify.verify_commands import GATE_OUTPUT_MAX_CHARS
+from kstrl.verify.verify_model import VerificationResult, VerifyConfig
 from tests.helpers.stack_confirmation import in_process_stack
 from tests.helpers.verify_phase import _pipeline, component
 

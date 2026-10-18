@@ -290,7 +290,7 @@ def queue_answer(
     bytes are accepted and recorded as unchanged. The poison streak is
     not changed, as `ks queue retry` does not change it.
     """
-    from kstrl.decisions import escalation_naming
+    from kstrl.architect import escalation_naming
     from kstrl.queue import ItemState, QueueError, queue_lock
 
     root_dir, queue = _queue_for(root)

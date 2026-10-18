@@ -50,7 +50,7 @@ from kstrl.plan.manifest import Component, Manifest
 from kstrl.proc.rung import HostFallback
 from kstrl.runstate import RunState
 from kstrl.ui.plain import PlainUI
-from kstrl.verify_model import VerifyConfig
+from kstrl.verify.verify_model import VerifyConfig
 from tests.helpers.stack_confirmation import in_process_stack
 
 COMP = "comp-a"

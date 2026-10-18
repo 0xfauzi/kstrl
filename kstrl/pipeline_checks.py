@@ -20,8 +20,13 @@ from kstrl.pipeline_inbox import InboxDesk
 from kstrl.pipeline_transitions import FailureAction, PhaseFailure
 from kstrl.plan import POLICY_CATEGORY_PREFIX, Component, Finding
 from kstrl.proc import label_of
-from kstrl.verify_diff import SCOPE_UNREADABLE_CHECK, scope_unreadable_error
-from kstrl.verify_model import LAYER0_NOT_MEASURED, CheckResult, VerificationResult
+from kstrl.verify import (
+    LAYER0_NOT_MEASURED,
+    SCOPE_UNREADABLE_CHECK,
+    CheckResult,
+    VerificationResult,
+    scope_unreadable_error,
+)
 
 if TYPE_CHECKING:
     from kstrl.factory_result import ComponentResult
@@ -523,7 +528,7 @@ class MechanicalChecks(InboxDesk, AttemptRecorder):
             )
             # R6.1: one signature per failed check (#696 decision 5)
             # into the journal instead of the flattened string.
-            from kstrl.failure_signatures import signatures_from_verification
+            from kstrl.verify import signatures_from_verification
 
             action, error = _verify_routing(failing)
             return VerifyPhaseResult(

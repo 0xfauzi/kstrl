@@ -18,13 +18,13 @@ from kstrl.acceptance_design import (
     design_plan,
     unreproduced,
 )
+from kstrl.architect import (
+    DecisionRegister,
+)
 from kstrl.contract import (
     ContractMode,
     ContractResult,
     run_contract_testing,
-)
-from kstrl.decisions import (
-    DecisionRegister,
 )
 from kstrl.events import ComponentFailed
 from kstrl.events import ContractResult as ContractResultEvent
@@ -234,8 +234,7 @@ def _record_contract_event(
     that a breaker retry later resolves. Non-fatal on I/O errors,
     matching EvolutionJournal.record_run.
     """
-    from kstrl.evolution import EvolutionJournal
-    from kstrl.journal_rows import JOURNAL_SCHEMA_VERSION
+    from kstrl.learning import JOURNAL_SCHEMA_VERSION, EvolutionJournal
 
     # R2.1: honor [evolution] in kstrl.toml + env, resolved against
     # the factory root rather than whatever the process CWD is.

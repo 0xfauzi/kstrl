@@ -565,7 +565,7 @@ class DistillResult(Event):
     duration_seconds: float = 0.0
     #: #495: True when the distiller's reply did not parse. A reply that
     #: parsed to an empty facts list is False: the two used to share one
-    #: status. Read by ``kstrl.distill_readiness`` for ``ks evolve``.
+    #: status. Read by ``kstrl.learning.distill_readiness`` for ``ks evolve``.
     parse_failed: bool = False
 
 

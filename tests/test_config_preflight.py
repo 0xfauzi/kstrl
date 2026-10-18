@@ -49,13 +49,13 @@ from kstrl.config.config import (
 )
 from kstrl.config_preflight import collect_config_problems, config_sections, preflight_config
 from kstrl.contract import ContractConfig
-from kstrl.evolution_config import EvolutionConfig
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import FactoryResult
+from kstrl.learning.evolution_config import EvolutionConfig
 from kstrl.project.feedforward import CodebaseScanConfig
 from kstrl.project.stack import stack_toml
 from kstrl.security import SecurityConfig, SecurityMode
-from kstrl.verify_model import VerifyConfig
+from kstrl.verify.verify_model import VerifyConfig
 from tests.conftest import REPO_ROOT
 from tests.helpers import astwalk
 from tests.helpers.bad_toml import MALFORMED_TOML, TOML_PARSE_FAULTS

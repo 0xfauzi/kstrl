@@ -30,10 +30,10 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.autonomy import AutonomyLevel, AutonomyState
-from kstrl.autonomy_replay import load_runs
-from kstrl.evolution_config import EvolutionConfig
 from kstrl.factory import run_factory
+from kstrl.learning.autonomy import AutonomyLevel, AutonomyState
+from kstrl.learning.autonomy_replay import load_runs
+from kstrl.learning.evolution_config import EvolutionConfig
 from kstrl.owner.inbox import Inbox, InboxConfig
 from kstrl.owner.interaction import PromptKind, PromptRequest, PromptResponse
 from kstrl.plan.manifest import Manifest

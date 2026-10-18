@@ -327,7 +327,7 @@ reviewers' output as much as it distrusts the engineer's.
   - Verify: regression tests for the exact decay scenario (fail distill, then
     read), the evidence-field injection bypass, and supersede-by-fact-id.
   - Note (2026-07-13, session 1C): all sub-items landed in
-    `kstrl/knowledge.py` + tests (PR #58). Closed to `[x]` by the
+    `kstrl/knowledge/knowledge.py` + tests (PR #58). Closed to `[x]` by the
     follow-up PR that switched factory.py's inline second-precision run
     id to `knowledge.current_run_id()`, removing the last nonce-order
     edge; wiring proven by
@@ -797,7 +797,7 @@ by an integration test with a synthetic-but-realistic journal).
     (@-mention delegation) stays behind an adapter until GA.
   - Trigger direction (webhook on issue delegation -> factory run) is a
     follow-up once the sink is stable.
-  - DONE (design + rationale: docs/linear-integration.md). `kstrl/linear.py`
+  - DONE (design + rationale: docs/linear-integration.md). `kstrl/architect/linear.py`
     ships `LinearClient` (one HTTP entry point over stdlib urllib, defensive
     parsing, throttle, RATELIMITED-as-HTTP-400 handling, dry-run recording),
     the decompose sync hook, and `LinearSink` on the new `ProgressSink`
@@ -811,7 +811,7 @@ by an integration test with a synthetic-but-realistic journal).
     API key in `KSTRL_LINEAR_TOKEN` (user decision 2026-07-19); app-actor
     OAuth setup instructions are in the doc, client already speaks both.
   - Re-land history: #91 merged into `refactor/r7-3-scheduler-reland` after
-    that branch had already reached main, so `kstrl/linear.py` never landed.
+    that branch had already reached main, so `kstrl/architect/linear.py` never landed.
     Re-landed onto R7.5-era main by cherry-picking the #91 squash (see PR
     "feat: R7.4 Linear integration re-land (#91 onto main)").
 - [x] R7.5 (M) **Platform hardening** [research topics 1-2]

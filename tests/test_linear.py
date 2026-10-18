@@ -25,8 +25,8 @@ from typing import Any
 
 import pytest
 
+from kstrl.architect.linear import LinearConfig, build_linear_sink
 from kstrl.events.observability import ProgressLog
-from kstrl.linear import LinearConfig, build_linear_sink
 from kstrl.plan.manifest import ComponentStatus, Manifest
 from tests.spine_utils import component, make_manifest
 

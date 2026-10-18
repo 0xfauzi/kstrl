@@ -18,11 +18,11 @@ from click.testing import CliRunner
 
 from kstrl.cli import cli
 from kstrl.config.config import KstrlConfig
-from kstrl.evolution_config import EvolutionConfig
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult, FactoryResult
-from kstrl.journal_rows import FINDINGS_SUPERSEDED_EVENT
+from kstrl.learning.evolution_config import EvolutionConfig
+from kstrl.learning.journal_rows import FINDINGS_SUPERSEDED_EVENT
 from kstrl.plan.findings import (
     Finding,
     tag_finding_with_attempt,
@@ -30,7 +30,7 @@ from kstrl.plan.findings import (
 from kstrl.plan.manifest import Component, ComponentStatus, Manifest
 from kstrl.review import ReviewConcern, ReviewResult
 from kstrl.ui.plain import PlainUI
-from kstrl.verify_model import VerifyConfig
+from kstrl.verify.verify_model import VerifyConfig
 from tests.helpers import gitrepo
 from tests.helpers.run_limits import every_limit_argv
 from tests.helpers.stack_confirmation import confirm_stack, in_process_stack, write_stack

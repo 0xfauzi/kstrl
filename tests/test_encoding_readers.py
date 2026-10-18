@@ -96,17 +96,17 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     # The "a+b" append open, moved here from evolution.py by #331.
     "io/appendio.py": 1,
     "io/atomicio.py": 1,
-    "autonomy.py": 1,
-    "autonomy_replay.py": 1,
+    "learning/autonomy.py": 1,
+    "learning/autonomy_replay.py": 1,
     # 1 since #406's ``_read_document`` dedup, which the baseline reader
     # module (split out of calibration.py) now shares between callers.
     "calibration_baseline.py": 1,
     "cli_preflight.py": 1,
     "commandrun.py": 1,
-    "decisions.py": 1,
-    "decompose_prompt.py": 2,
+    "architect/decisions.py": 1,
+    "architect/decompose_prompt.py": 2,
     "events/events.py": 1,
-    "evolution.py": 1,
+    "learning/evolution.py": 1,
     "factory_acceptance.py": 1,
     "proc/factory_lock.py": 1,
     "factory_result.py": 1,
@@ -134,9 +134,9 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     # directory both zones read is the root's own.
     "isolation.py": 2,
     "iteration_prompt.py": 1,
-    "journal_reads.py": 1,
-    "knowledge_distill.py": 1,
-    "knowledge_facts.py": 1,
+    "learning/journal_reads.py": 1,
+    "knowledge/knowledge_distill.py": 1,
+    "knowledge/knowledge_facts.py": 1,
     "loop.py": 1,
     "plan/manifest.py": 1,
     "events/observability.py": 1,
@@ -199,7 +199,7 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     # slice 8 deleted check_test_adequacy's read of a changed test's
     # source and check_patch_coverage's report: the self-critique
     # progress log is the one left.
-    "verify.py": 1,
+    "verify/verify.py": 1,
     "queue/workqueue.py": 1,
     "queue/workqueue_store.py": 5,
 }
@@ -241,22 +241,12 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "agents/logging.py self._log_path.open('a', encoding='utf-8')",
     # #803: the claude user settings, utf-8, with ValueError caught beside OSError.
     "agents/sandbox.py path.read_text(encoding='utf-8')",
-    "autonomy.py path.read_text(encoding='utf-8')",
-    # Two rows became one in #331. ``load_runs`` held a utf-8 handle open
-    # and ran ``csv.DictReader`` over it, which the walk had to clear as
-    # two separate reads; it reads the text once now and hands it to
-    # ``evolution.experiment_rows``, the parser its sibling reader
-    # ``get_experiment_trends`` already used. The disposition is stronger,
-    # not merely different: the old pair named utf-8 under no handler at
-    # all, and this names utf-8 AND catches ``ValueError`` beside
-    # ``OSError``, which is the half a ``UnicodeDecodeError`` escapes.
-    "autonomy_replay.py path.read_text(encoding='utf-8')",
+    "architect/decisions.py path.read_text(encoding='utf-8')",
+    "architect/decompose_prompt.py (spec_path / name).read_text(encoding='utf-8')",
+    "architect/decompose_prompt.py spec_path.read_text(encoding='utf-8')",
     "calibration_baseline.py path.read_text(encoding='utf-8')",
     "cli_preflight.py open(prd_file, encoding='utf-8')",
     "commandrun.py open(path, 'a', buffering=1, encoding='utf-8')",
-    "decisions.py path.read_text(encoding='utf-8')",
-    "decompose_prompt.py (spec_path / name).read_text(encoding='utf-8')",
-    "decompose_prompt.py spec_path.read_text(encoding='utf-8')",
     "events/events.py open(path, encoding='utf-8', errors='replace')",
     "events/observability.py for line in f on an open() handle",
     "events/observability.py open(path, encoding='utf-8')",
@@ -278,9 +268,19 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "isolation.py (entry / 'gitdir').read_text(encoding='utf-8')",
     "isolation.py dot_git.read_text(encoding='utf-8')",
     "iteration_prompt.py claude_md_path.read_text(encoding='utf-8')",
-    "journal_reads.py self.config.experiments_path.read_text(encoding='utf-8')",
-    "knowledge_distill.py prd_path.read_text(encoding='utf-8')",
-    "knowledge_facts.py path.read_text(encoding='utf-8')",
+    "knowledge/knowledge_distill.py prd_path.read_text(encoding='utf-8')",
+    "knowledge/knowledge_facts.py path.read_text(encoding='utf-8')",
+    "learning/autonomy.py path.read_text(encoding='utf-8')",
+    # Two rows became one in #331. ``load_runs`` held a utf-8 handle open
+    # and ran ``csv.DictReader`` over it, which the walk had to clear as
+    # two separate reads; it reads the text once now and hands it to
+    # ``evolution.experiment_rows``, the parser its sibling reader
+    # ``get_experiment_trends`` already used. The disposition is stronger,
+    # not merely different: the old pair named utf-8 under no handler at
+    # all, and this names utf-8 AND catches ``ValueError`` beside
+    # ``OSError``, which is the half a ``UnicodeDecodeError`` escapes.
+    "learning/autonomy_replay.py path.read_text(encoding='utf-8')",
+    "learning/journal_reads.py self.config.experiments_path.read_text(encoding='utf-8')",
     "loop.py config.prompt_file.read_text(encoding='utf-8')",
     "pipeline_attempt.py open(path, 'a', buffering=1, encoding='utf-8')",
     "pipeline_knowledge.py progress_path.read_text(encoding='utf-8')",
@@ -314,7 +314,7 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "serve_github.py path.read_text(encoding='utf-8')",
     "serve_outcome.py path.read_text(encoding='utf-8')",
     "serve_spend.py self.path.read_text(encoding='utf-8')",
-    "verify.py progress_path.read_text(encoding='utf-8')",
+    "verify/verify.py progress_path.read_text(encoding='utf-8')",
 )
 
 

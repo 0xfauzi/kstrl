@@ -66,7 +66,7 @@ from kstrl.proc.factory_lock import FactoryLockHeldError
 from kstrl.proc.shutdown import StopController
 from kstrl.security import SecurityConfig
 from kstrl.ui.plain import PlainUI
-from kstrl.verify_model import VerifyConfig
+from kstrl.verify.verify_model import VerifyConfig
 from tests.helpers.stack_confirmation import confirm_stack, in_process_stack, write_stack
 
 # Verbatim (trimmed to relevant fields) from the measurement probe:
@@ -3827,8 +3827,8 @@ class TestBudgetHaltRendersHonestly:
 
     @staticmethod
     def _render(event: Any) -> tuple[str, str]:
+        from kstrl.architect.linear import LinearSink
         from kstrl.events.reducer import ComponentState, RunState, apply
-        from kstrl.linear import LinearSink
 
         state = RunState(run_id="r")
         state.components["comp-a"] = ComponentState(component_id="comp-a")
@@ -5514,8 +5514,8 @@ class TestFactoryHandsTheArchitectSpendToTheRun:
         """
         from kstrl import cli_architect as cli_architect_mod
         from kstrl import cli_factory as cli_factory_mod
-        from kstrl.decisions import SpecDecision
-        from kstrl.decompose_audit import SpecBlockerError
+        from kstrl.architect.decisions import SpecDecision
+        from kstrl.architect.decompose_audit import SpecBlockerError
 
         captured: dict[str, Any] = {}
         agent = SimpleNamespace(name="fake", usage_records=[])

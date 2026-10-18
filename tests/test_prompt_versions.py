@@ -93,31 +93,27 @@ from types import ModuleType
 
 import pytest
 
-from kstrl import (
-    acceptance_design,
-    decisions,
-    decompose_prompt,
-    intake_issue,
-    knowledge_distill,
-    owner_answers,
-    review,
-    review_prompt,
-    security,
-)
+from kstrl import acceptance_design, intake_issue, review, review_prompt, security
 from kstrl.acceptance_design import ACCEPTANCE_PROMPT, ACCEPTANCE_PROMPT_VERSION
-from kstrl.decisions import (
+from kstrl.architect import decisions, decompose_prompt, owner_answers
+from kstrl.architect.decisions import (
     DECISIONS_CONTEXT_PROMPT,
     DECISIONS_CONTEXT_PROMPT_VERSION,
     SpecDecision,
     build_decisions_context,
 )
-from kstrl.decompose_prompt import (
+from kstrl.architect.decompose_prompt import (
     ARCHITECT_NO_REPO_SOURCE_PROMPT,
     ARCHITECT_NO_REPO_SOURCE_PROMPT_VERSION,
     ARCHITECT_REPO_SOURCE_PROMPT,
     ARCHITECT_REPO_SOURCE_PROMPT_VERSION,
     DECOMPOSE_PROMPT,
     DECOMPOSE_PROMPT_VERSION,
+)
+from kstrl.architect.owner_answers import (
+    OWNER_ANSWER_PROMPT,
+    OWNER_ANSWER_PROMPT_VERSION,
+    render_owner_answer,
 )
 from kstrl.git import git_diff
 from kstrl.git.git_diff import (
@@ -129,13 +125,9 @@ from kstrl.git.git_diff import (
     repo_change_source,
 )
 from kstrl.intake_issue import BUG_REPORT_PROMPT, BUG_REPORT_PROMPT_VERSION, RemoteIssue
-from kstrl.knowledge_distill import DISTILL_PROMPT, DISTILL_PROMPT_VERSION
+from kstrl.knowledge import knowledge_distill
+from kstrl.knowledge.knowledge_distill import DISTILL_PROMPT, DISTILL_PROMPT_VERSION
 from kstrl.owner.inbox import InboxItem, ItemKind
-from kstrl.owner_answers import (
-    OWNER_ANSWER_PROMPT,
-    OWNER_ANSWER_PROMPT_VERSION,
-    render_owner_answer,
-)
 from kstrl.plan.manifest import Component
 from kstrl.project import stack
 from kstrl.project.scaffold_templates import DEFAULT_PROMPT, DEFAULT_PROMPT_VERSION
@@ -144,7 +136,7 @@ from kstrl.review import ReviewMode
 from kstrl.review_prompt import REVIEWER_PROMPT, REVIEWER_PROMPT_VERSION
 from kstrl.security import SECURITY_PROMPT, SECURITY_PROMPT_VERSION, SecurityConfig, SecurityMode
 from kstrl.ui import PlainUI
-from kstrl.verify_model import VerificationResult
+from kstrl.verify.verify_model import VerificationResult
 from tests.conftest import make_review_repo
 from tests.helpers.builder_prompts import (
     _BUILDERS,

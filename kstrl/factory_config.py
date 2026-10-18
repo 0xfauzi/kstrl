@@ -9,12 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 from kstrl.acceptance import BaseReading, PinnedPlan
 from kstrl.acceptance_carried import Carried
-from kstrl.autonomy_config import (
-    strict_bool,
-)
-from kstrl.base_gates import (
-    BaseGates,
-)
+from kstrl.architect import LinearConfig
 from kstrl.config import ConfigSection, check_number, check_numbers
 from kstrl.contract import (
     ContractConfig,
@@ -23,12 +18,13 @@ from kstrl.events import (
     NotifyConfig,
 )
 from kstrl.launch_record import FlagValue
-from kstrl.linear import LinearConfig
+from kstrl.learning import (
+    strict_bool,
+)
 from kstrl.plan import (
     Component,
     SpecRequirement,
 )
-from kstrl.policy import PolicyConfig
 from kstrl.proc import Rung, TimeoutConfig, WorktreeSetup
 from kstrl.project import (
     CodebaseScanConfig,
@@ -42,7 +38,11 @@ from kstrl.security import (
     SecurityConfig,
     SecurityMode,
 )
-from kstrl.verify_model import VerifyConfig
+from kstrl.verify import (
+    BaseGates,
+    PolicyConfig,
+    VerifyConfig,
+)
 
 if TYPE_CHECKING:
     from kstrl.ui import UI
@@ -273,7 +273,7 @@ class FactoryConfig:
     )
     # #654 slice 4: `ks factory --accept-red-base <sha12>`. A run on a base
     # whose gates fail proceeds when this is at least 12 characters of the
-    # sha the run measures (kstrl/base_gates.py::apply_acceptance). Per run:
+    # sha the run measures (kstrl/verify/base_gates.py::apply_acceptance). Per run:
     # no toml key and no env var, and `ks retry` replays it from the launch
     # record, so a retry on a base that moved refuses again. "" is none.
     accept_red_base: str = ""

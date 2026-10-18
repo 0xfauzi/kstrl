@@ -699,38 +699,38 @@ class TestTheRunReadsConfigOnlyBeforeItStarts:
         [
             (
                 "spelled",
-                "from kstrl.policy import PolicyConfig\n\n\nclass ComponentPipeline:\n"
+                "from kstrl.verify.policy import PolicyConfig\n\n\nclass ComponentPipeline:\n"
                 "    def _phase_verify(self, comp):\n"
                 "        return PolicyConfig.load(self.root_dir)\n",
             ),
             (
                 "module-qualified",
-                "import kstrl.policy as mod\n\n\nclass ComponentPipeline:\n"
+                "import kstrl.verify.policy as mod\n\n\nclass ComponentPipeline:\n"
                 "    def _phase_verify(self, comp):\n"
                 "        return mod.PolicyConfig.load(self.root_dir)\n",
             ),
             (
                 "aliased import",
-                "from kstrl.policy import PolicyConfig as PC\n\n\nclass ComponentPipeline:\n"
+                "from kstrl.verify.policy import PolicyConfig as PC\n\n\nclass ComponentPipeline:\n"
                 "    def _phase_verify(self, comp):\n"
                 "        return PC.load(self.root_dir)\n",
             ),
             (
                 "getattr",
-                "from kstrl.policy import PolicyConfig\n\n\nclass ComponentPipeline:\n"
+                "from kstrl.verify.policy import PolicyConfig\n\n\nclass ComponentPipeline:\n"
                 "    def _phase_verify(self, comp):\n"
                 '        return getattr(PolicyConfig, "load")(self.root_dir)\n',
             ),
             (
                 "partial",
-                "from functools import partial\nfrom kstrl.policy import PolicyConfig\n\n\n"
+                "from functools import partial\nfrom kstrl.verify.policy import PolicyConfig\n\n\n"
                 "class ComponentPipeline:\n"
                 "    def _phase_verify(self, comp):\n"
                 "        return partial(PolicyConfig.load, self.root_dir)()\n",
             ),
             (
                 "bound name",
-                "from kstrl.policy import PolicyConfig\n\n\nclass ComponentPipeline:\n"
+                "from kstrl.verify.policy import PolicyConfig\n\n\nclass ComponentPipeline:\n"
                 "    def _phase_verify(self, comp):\n"
                 "        reader = PolicyConfig.load\n"
                 "        return reader(self.root_dir)\n",
@@ -743,7 +743,7 @@ class TestTheRunReadsConfigOnlyBeforeItStarts:
             ),
             (
                 "comprehension",
-                "from kstrl.policy import PolicyConfig\n\n\nclass ComponentPipeline:\n"
+                "from kstrl.verify.policy import PolicyConfig\n\n\nclass ComponentPipeline:\n"
                 "    def _phase_verify(self, comp):\n"
                 "        return [PolicyConfig.load(self.root_dir) for _ in range(1)]\n",
             ),
@@ -771,7 +771,7 @@ class TestTheRunReadsConfigOnlyBeforeItStarts:
     ) -> None:
         """The third disclosed shape, and layer B's own.
 
-        ``importlib.import_module("kstrl.policy").PolicyConfig.load(root)``
+        ``importlib.import_module("kstrl.verify.policy").PolicyConfig.load(root)``
         names the module in a STRING and builds the receiver while the
         program runs, so there is no binding for ``astwalk.bindings`` to
         follow and the eight shapes above all resolve where this one
@@ -790,6 +790,6 @@ class TestTheRunReadsConfigOnlyBeforeItStarts:
             probe,
             "import importlib\n\n\nclass ComponentPipeline:\n"
             "    def _phase_verify(self, comp):\n"
-            '        mod = importlib.import_module("kstrl.policy")\n'
+            '        mod = importlib.import_module("kstrl.verify.policy")\n'
             "        return mod.PolicyConfig.load(self.root_dir)\n",
         )

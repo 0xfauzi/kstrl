@@ -24,6 +24,7 @@ from unittest.mock import patch
 
 import pytest
 
+from kstrl.architect.decompose_prompt import spec_digest
 from kstrl.contract import (
     ContractConfig,
     ContractMode,
@@ -31,7 +32,6 @@ from kstrl.contract import (
     run_contract_testing,
     run_integrated_base_check,
 )
-from kstrl.decompose_prompt import spec_digest
 from kstrl.factory import run_factory
 from kstrl.factory_result import ComponentResult, FactoryResult
 from kstrl.git import git, git_base

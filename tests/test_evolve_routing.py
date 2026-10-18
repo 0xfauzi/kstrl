@@ -25,16 +25,16 @@ import pytest
 from click.testing import CliRunner, Result
 
 from kstrl.cli import cli
-from kstrl.evolution import EvolutionJournal
-from kstrl.evolution_config import EvolutionConfig
-from kstrl.failure_signatures import (
+from kstrl.learning.evolution import EvolutionJournal
+from kstrl.learning.evolution_config import EvolutionConfig
+from kstrl.learning.journal_rows import FINDINGS_SUPERSEDED_EVENT
+from kstrl.verify.failure_signatures import (
     _CATEGORY_BY_CHECK,
     INFRASTRUCTURE_CHECKS,
     FailurePattern,
     category_for_check,
     route_patterns,
 )
-from kstrl.journal_rows import FINDINGS_SUPERSEDED_EVENT
 
 
 def _write_journal(root: Path, rows: list[tuple[str, str, str]]) -> None:
@@ -91,7 +91,7 @@ def test_a_v1_journal_row_stops_ks_evolve_by_name(tmp_path: Path) -> None:
 
 
 #: The categories a recurring failure can teach a lesson in, written out
-#: here rather than imported from kstrl.evolution, so a change to the
+#: here rather than imported from kstrl.learning.evolution, so a change to the
 #: router's own set is a red test and not a silent agreement (#507, P1.1).
 _LEARNABLE_CATEGORIES = frozenset({"verification", "review", "security", "contract"})
 

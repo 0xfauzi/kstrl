@@ -35,8 +35,8 @@ from unittest.mock import patch
 
 import pytest
 
+from kstrl.architect.decompose_reply import _generate_component_prd
 from kstrl.config.config import KstrlConfig, component_progress_path, relative_to_root
-from kstrl.decompose_reply import _generate_component_prd
 from kstrl.events.events import EventBus, V1CompatSink
 from kstrl.events.observability import NotifyConfig, NotifyHooks, ProgressLog
 from kstrl.factory import run_factory
@@ -44,8 +44,7 @@ from kstrl.factory_agents import AdversarialAgentSelection
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult, FactoryResult
 from kstrl.git import git_tree
-from kstrl.guards import enforce_allowed_paths, path_is_allowed
-from kstrl.knowledge_facts import KnowledgeConfig
+from kstrl.knowledge.knowledge_facts import KnowledgeConfig
 from kstrl.loop import run_loop
 from kstrl.owner.interaction import PromptRequest, PromptResponse
 from kstrl.pipeline import ComponentPipeline
@@ -59,8 +58,9 @@ from kstrl.runenvelope import RunEnvelope
 from kstrl.runstate import RunState
 from kstrl.security import SecurityResult
 from kstrl.ui.plain import PlainUI
-from kstrl.verify import run_mechanical_verification
-from kstrl.verify_model import VerificationResult, VerifyConfig
+from kstrl.verify.guards import enforce_allowed_paths, path_is_allowed
+from kstrl.verify.verify import run_mechanical_verification
+from kstrl.verify.verify_model import VerificationResult, VerifyConfig
 from tests.helpers import gitrepo
 from tests.helpers.stack_confirmation import in_process_stack
 
@@ -925,7 +925,7 @@ class TestInLoopGuardSeesTheComponentScope:
         does not fire, exactly as before.
         """
         from kstrl.config.config import KstrlConfig
-        from kstrl.verify_diff import check_scope_unreadable
+        from kstrl.verify.verify_diff import check_scope_unreadable
 
         comp = self._component("scripts/kstrl/feature/comp-a/prd.json")
         scope = ComponentScope.resolve(comp, tmp_path, KstrlConfig())

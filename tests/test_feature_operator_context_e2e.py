@@ -31,8 +31,8 @@ import pytest
 from click.testing import CliRunner
 
 from kstrl.cli import cli
-from kstrl.knowledge import retrieve_knowledge_context
-from kstrl.knowledge_facts import Fact, KnowledgeConfig, write_facts
+from kstrl.knowledge.knowledge import retrieve_knowledge_context
+from kstrl.knowledge.knowledge_facts import Fact, KnowledgeConfig, write_facts
 from kstrl.plan.manifest import Component, Manifest
 from kstrl.project.init_cmd import run_init
 from kstrl.ui.plain import PlainUI
@@ -379,7 +379,7 @@ class TestFeatureEngineerReadsOperatorContext:
         def failing_retrieval(*_args: object, **_kwargs: object) -> str:
             raise RuntimeError("PROBE-RETRIEVAL-ERROR")
 
-        monkeypatch.setattr("kstrl.knowledge.build_knowledge_context", failing_retrieval)
+        monkeypatch.setattr("kstrl.knowledge.knowledge.build_knowledge_context", failing_retrieval)
 
         run = _run_feature(tmp_path, monkeypatch, _initialised_project(tmp_path))
 

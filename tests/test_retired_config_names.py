@@ -548,8 +548,8 @@ ALLOWED: dict[tuple[str, str], int] = {
     # open PRs match on it); every other mention of it is a quote of that
     # same literal, in the module that defines it, the workflow example
     # that reproduces it, and the tests that assert against it.
-    ("kstrl/baseline_report.py", "dampener"): 1,
-    ("kstrl/baseline_report.py", "sense"): 1,
+    ("kstrl/verify/baseline_report.py", "dampener"): 1,
+    ("kstrl/verify/baseline_report.py", "sense"): 1,
     ("docs/baseline.md", "dampener"): 1,
     ("docs/baseline.md", "sense"): 1,
     ("docs/examples/check-baseline.yml", "dampener"): 2,
@@ -560,7 +560,7 @@ ALLOWED: dict[tuple[str, str], int] = {
     # A comment recording, for the reader's benefit, which JSON key a v1
     # document used before this PR's schema bump - the old name is the
     # fact being recorded, not a live spelling.
-    ("kstrl/baseline.py", "sense"): 1,
+    ("kstrl/verify/baseline.py", "sense"): 1,
     ("kstrl/cli_check.py", "dampener"): 2,
     # "Set-point disagreement" is a live user-facing string inside
     # REVIEWER_PROMPT-adjacent code (claim_retry_context). The prompt BODY

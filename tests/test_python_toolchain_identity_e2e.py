@@ -1,7 +1,7 @@
 """What every toolchain surface says today, pinned before #635 moves it.
 
 #635 replaces the language tables in ``kstrl/project/init_cmd.py`` and the gate
-defaults in ``kstrl/verify.py`` with one record per ecosystem, and its
+defaults in ``kstrl/verify/verify.py`` with one record per ecosystem, and its
 acceptance is that nothing a Python project sees changes. This file is
 that acceptance, captured at the commit before the move (7404b803): it
 drives the real ``ks`` CLI as subprocesses on one throwaway repository per
@@ -13,7 +13,7 @@ say on purpose, and the golden diff of that PR is then the statement of
 exactly what changed.
 
 A stub ``uv`` first on PATH appends its arguments to a log and exits 0.
-PATH is on the scrubbed environment's allowlist (``kstrl/verify.py``), so
+PATH is on the scrubbed environment's allowlist (``kstrl/verify/verify.py``), so
 the log records the commands the gates really ran. It matters because a
 passing ``ks check`` row carries no command: the JSON document alone stays
 the same when the test command changes. A stub ``gh`` that exits 1 makes

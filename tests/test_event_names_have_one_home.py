@@ -1,6 +1,6 @@
 """An enrolled event name is spelled once, in the module that owns it.
 
-That module is ``kstrl/evolution.py`` for ``spec_issues`` and
+That module is ``kstrl/learning/evolution.py`` for ``spec_issues`` and
 ``kstrl/io/appendio.py`` for ``journal_repair``, which is where the pin
 rows below put them. The scope of the claim is the
 row, not the word: ``tests/`` holds 46 spellings both layers
@@ -75,7 +75,7 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 
 from kstrl.io.appendio import JOURNAL_REPAIR_EVENT
-from kstrl.journal_rows import (
+from kstrl.learning.journal_rows import (
     FINDINGS_SUPERSEDED_EVENT,
     INTEGRATION_RESULT_EVENT,
     SPEC_ISSUES_EVENT,
@@ -190,9 +190,9 @@ EXPECTED_EVENT_NAME_SPELLINGS: dict[str, int] = {
     # is the module all six already import.
     "io/appendio.py": 1,
     # The artifact label emitted with ArtifactWritten.
-    "decompose_audit.py": 1,
+    "architect/decompose_audit.py": 1,
     # The architect's own JSON key (validation).
-    "decompose_reply.py": 1,
+    "architect/decompose_reply.py": 1,
     # The SPEC_ISSUES_EVENT declaration, plus the FINDINGS_SUPERSEDED_EVENT
     # declaration #233 added (kstrl/pipeline.py's own write now imports
     # the constant, so it folds to nothing here). Was 2 until #331 moved
@@ -200,9 +200,9 @@ EXPECTED_EVENT_NAME_SPELLINGS: dict[str, int] = {
     # and an imported Name folds to nothing, which is why the count
     # dropped rather than staying put.
     # 3 since #482 declared INTEGRATION_RESULT_EVENT there.
-    "journal_rows.py": 3,
+    "learning/journal_rows.py": 3,
     # The architect's own JSON key in _parse_spec_issues, moved here with it (#776 D1).
-    "spec_issues.py": 1,
+    "architect/spec_issues.py": 1,
 }
 
 

@@ -149,7 +149,7 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   With the ladder off it says so on stdout, naming the root it consulted,
   rather than doing nothing quietly. The R8.4 half is the seam only: a
   new `health_breach` inbox kind and `[autonomy] demote_on_health_breach`
-  (env `KSTRL_AUTONOMY_DEMOTE_ON_HEALTH`), inert until `kstrl/health.py`
+  (env `KSTRL_AUTONOMY_DEMOTE_ON_HEALTH`), inert until `kstrl/learning/health.py`
   exists and suppressed - out loud - while a cool-down is running. Both
   switches default off, because every threshold in the ladder is still an
   unmeasured placeholder, and they are refused unless written as unquoted

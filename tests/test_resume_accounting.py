@@ -33,10 +33,10 @@ import pytest
 
 from kstrl.agents import custom
 from kstrl.events.usage import UsageRecord
-from kstrl.evolution import EvolutionJournal
-from kstrl.evolution_config import EvolutionConfig
 from kstrl.factory import run_factory
-from kstrl.journal_rows import FINDINGS_SUPERSEDED_EVENT
+from kstrl.learning.evolution import EvolutionJournal
+from kstrl.learning.evolution_config import EvolutionConfig
+from kstrl.learning.journal_rows import FINDINGS_SUPERSEDED_EVENT
 from kstrl.plan.manifest import Component, ComponentStatus, Manifest
 from kstrl.proc.shutdown import StopController
 from kstrl.queue.workqueue import Queue
@@ -45,7 +45,7 @@ from kstrl.serve import serve_cycle
 from kstrl.serve_config import ServeConfig
 from kstrl.serve_spend import SpendLedger, read_run_spend
 from kstrl.ui.plain import PlainUI
-from kstrl.verify_model import VerifyConfig
+from kstrl.verify.verify_model import VerifyConfig
 from tests.helpers import procs
 from tests.helpers.stack_confirmation import in_process_stack
 from tests.spine_utils import (
@@ -87,7 +87,7 @@ from kstrl.plan.manifest import Manifest
 from kstrl.security import SecurityConfig
 from kstrl.ui.plain import PlainUI
 from kstrl.project.stack import CONFIRMED_IN_INBOX, Stack
-from kstrl.verify_model import VerifyConfig
+from kstrl.verify.verify_model import VerifyConfig
 
 _stack = Stack(
     instructions="t", setup="", env=(),

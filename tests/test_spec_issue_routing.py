@@ -20,20 +20,20 @@ from typing import Any
 
 import pytest
 
-from kstrl.decompose import decompose_spec
-from kstrl.decompose_audit import SpecBlockerError
-from kstrl.decompose_reply import _routed_prd_issues
-from kstrl.io.statedir import plan_prd_path
-from kstrl.knowledge_distill import _read_prd_text
-from kstrl.plan.manifest import Manifest
-from kstrl.plan.prd import _OPTIONAL_KEYS, PRD, PROMPT_EXCLUDED_KEYS, prd_text_for_prompt
-from kstrl.security import SecurityConfig, SecurityMode, run_security_review
-from kstrl.spec_issues import (
+from kstrl.architect.decompose import decompose_spec
+from kstrl.architect.decompose_audit import SpecBlockerError
+from kstrl.architect.decompose_reply import _routed_prd_issues
+from kstrl.architect.spec_issues import (
     SPEC_ISSUE_APPLIES_COMPONENT,
     SPEC_ISSUE_APPLIES_SPEC,
     SpecIssue,
     route_spec_issues,
 )
+from kstrl.io.statedir import plan_prd_path
+from kstrl.knowledge.knowledge_distill import _read_prd_text
+from kstrl.plan.manifest import Manifest
+from kstrl.plan.prd import _OPTIONAL_KEYS, PRD, PROMPT_EXCLUDED_KEYS, prd_text_for_prompt
+from kstrl.security import SecurityConfig, SecurityMode, run_security_review
 from kstrl.ui.plain import PlainUI
 from tests.conftest import make_review_repo
 from tests.helpers.architect_payload import traced

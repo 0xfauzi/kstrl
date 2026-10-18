@@ -30,7 +30,7 @@ from unittest.mock import patch
 from kstrl.feature_verify import resolve_feature_verify_config
 from kstrl.loop import LoopResult
 from kstrl.project.scaffold_templates import DEFAULT_PROMPT
-from kstrl.verify_model import VerifyConfig
+from kstrl.verify.verify_model import VerifyConfig
 from tests.helpers.stack_confirmation import in_process_stack
 from tests.test_verify_command_contract import (
     _block_is_injected,

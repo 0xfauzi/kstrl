@@ -27,7 +27,7 @@ _LINT_FAIL_COMMAND = (
     f"{sys.executable} -c 'import sys; print(\"x.py:1:1: E501 line too long\"); sys.exit(1)'"
 )
 
-# CheckResult.name values, read from kstrl/verify.py, not guessed.
+# CheckResult.name values, read from kstrl/verify/verify.py, not guessed.
 _ALWAYS_ON_CHECKS = {"stack:tests", "stack:typecheck", "stack:lint", "diff_scope", "bad_patterns"}
 
 

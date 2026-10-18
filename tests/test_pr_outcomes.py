@@ -33,7 +33,7 @@ from kstrl.plan.manifest import Component, ComponentStatus, Manifest
 from kstrl.pr import PrOutcome, push_create_and_merge_pr, wait_for_merge
 from kstrl.proc.rung import HOST_LABEL
 from kstrl.ui.plain import PlainUI
-from kstrl.verify_model import VerifyConfig
+from kstrl.verify.verify_model import VerifyConfig
 from tests.helpers import gitrepo
 from tests.helpers.stack_confirmation import in_process_stack
 

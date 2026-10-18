@@ -25,10 +25,10 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-import kstrl.autonomy as autonomy_module
-from kstrl.autonomy import AutonomyState
+import kstrl.learning.autonomy as autonomy_module
 from kstrl.cli import cli
 from kstrl.io.statedir import CONTROL_AUTONOMY, legacy_control_paths
+from kstrl.learning.autonomy import AutonomyState
 from tests.helpers.gitrepo import git_in
 
 DISABLED_NOTE = "Evidence is not recorded while [autonomy] enabled = false."
@@ -44,7 +44,7 @@ def repo(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def ticking_clock(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Every ``datetime.now`` in kstrl.autonomy is one second after the last."""
+    """Every ``datetime.now`` in kstrl.learning.autonomy is one second after the last."""
     ticks = itertools.count()
 
     class _Ticking(datetime):

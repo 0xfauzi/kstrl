@@ -45,7 +45,7 @@ from tests.helpers.astwalk import (
 #: running the walk below. The undecided half is the five shared sites every
 #: other guard built on ``tests.helpers.astwalk`` already pins.
 EXPECTED_SEEN: tuple[str, ...] = (
-    "linear.py::LinearClient._post urllib.request.urlopen",
+    "architect/linear.py::LinearClient._post urllib.request.urlopen",
     "signals.py::_fetch_bugsink_text urllib.request.urlopen",
 )
 

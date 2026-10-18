@@ -149,7 +149,7 @@ class TestMigration:
             assert path.parent == control_dir(repo)
 
     def test_ensure_then_consumers_use_xdg(self, repo: Path) -> None:
-        from kstrl.autonomy import AutonomyState
+        from kstrl.learning.autonomy import AutonomyState
         from kstrl.owner.inbox import Inbox
 
         xdg = Path(os.environ["XDG_STATE_HOME"])
@@ -219,8 +219,8 @@ class TestAutonomyL3Gate:
         repo: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from kstrl.autonomy import AutonomyLevel, AutonomyState
-        from kstrl.autonomy_config import AutonomyConfig, resolve_runtime_level
+        from kstrl.learning.autonomy import AutonomyLevel, AutonomyState
+        from kstrl.learning.autonomy_config import AutonomyConfig, resolve_runtime_level
 
         nested = repo / "nested-xdg"
         nested.mkdir()
@@ -241,8 +241,8 @@ class TestAutonomyL3Gate:
         repo: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from kstrl.autonomy import AutonomyLevel
-        from kstrl.autonomy_config import control_relocation_error
+        from kstrl.learning.autonomy import AutonomyLevel
+        from kstrl.learning.autonomy_config import control_relocation_error
 
         nested = repo / "nested-xdg"
         nested.mkdir()
@@ -263,8 +263,8 @@ class TestAutonomyL3Gate:
             )
 
     def test_l3_allowed_when_external(self, repo: Path) -> None:
-        from kstrl.autonomy import AutonomyLevel, AutonomyState
-        from kstrl.autonomy_config import AutonomyConfig, resolve_runtime_level
+        from kstrl.learning.autonomy import AutonomyLevel, AutonomyState
+        from kstrl.learning.autonomy_config import AutonomyConfig, resolve_runtime_level
 
         with patch("kstrl.io.statedir._origin_url", return_value=None):
             ensure_control_state(repo)
@@ -281,7 +281,7 @@ class TestAutonomyL3Gate:
 
 class TestLegacyHaltPaths:
     def test_all_legacy_control_paths_in_machinery(self) -> None:
-        from kstrl.policy import ENFORCEMENT_MACHINERY_PATHS
+        from kstrl.verify.policy import ENFORCEMENT_MACHINERY_PATHS
 
         expected = {
             ".kstrl/autonomy.json",
@@ -293,14 +293,14 @@ class TestLegacyHaltPaths:
             # #776 L10: the verifier and the autonomy ladder were divided
             # into modules. A diff that edits the moved code must halt as it
             # did before the move, so each module is a member.
-            "**/kstrl/verify.py",
+            "**/kstrl/verify/verify.py",
             "**/kstrl/proc/scrubbed_run.py",
-            "**/kstrl/verify_model.py",
-            "**/kstrl/verify_commands.py",
-            "**/kstrl/verify_diff.py",
-            "**/kstrl/autonomy.py",
-            "**/kstrl/autonomy_config.py",
-            "**/kstrl/autonomy_transitions.py",
+            "**/kstrl/verify/verify_model.py",
+            "**/kstrl/verify/verify_commands.py",
+            "**/kstrl/verify/verify_diff.py",
+            "**/kstrl/learning/autonomy.py",
+            "**/kstrl/learning/autonomy_config.py",
+            "**/kstrl/learning/autonomy_transitions.py",
         }
         for path in expected:
             assert path in ENFORCEMENT_MACHINERY_PATHS
@@ -312,7 +312,7 @@ class TestLegacyHaltPaths:
         a codemod that rewrites both sides keeps it green. This test reads
         the tree: each row must name a file that exists, and that file must
         match its own row."""
-        from kstrl.policy import ENFORCEMENT_MACHINERY_PATHS, match_glob
+        from kstrl.verify.policy import ENFORCEMENT_MACHINERY_PATHS, match_glob
 
         root = Path(__file__).resolve().parent.parent
         rows = [row for row in ENFORCEMENT_MACHINERY_PATHS if row.startswith("**/kstrl/")]

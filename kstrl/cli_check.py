@@ -13,16 +13,15 @@ from typing import TYPE_CHECKING, Any, NoReturn
 
 import click
 
-from kstrl import baseline, baseline_report
 from kstrl.cli_seam import _console_ui, _preflight_warn, cli
 from kstrl.config_report import UI_MODES
 from kstrl.config_report import normalize_ui_mode as _normalize_ui_mode
 from kstrl.git import get_head_sha, get_origin_slug, resolve_base_branch
 from kstrl.project import NO_STACK
+from kstrl.verify import baseline, baseline_report
 
 if TYPE_CHECKING:
-    from kstrl.policy import PolicyConfig
-    from kstrl.verify_model import VerificationResult, VerifyConfig
+    from kstrl.verify import PolicyConfig, VerificationResult, VerifyConfig
 
 
 #: 2 (#306): a ``not_measured`` array joined the document, and the
@@ -61,7 +60,7 @@ if TYPE_CHECKING:
 #: keys retire by rename the same way a retired kstrl.toml name does.
 #:
 #: v5 (#696 slice 8): kstrl retired six checks
-#: (``kstrl.baseline.RETIRED_CHECKS``), so their names no longer appear in
+#: (``kstrl.verify.baseline.RETIRED_CHECKS``), so their names no longer appear in
 #: ``checks``. The ``baseline`` block's ``stopped_measuring`` leaves them out
 #: and a new ``retired`` key names them, which changes what an existing key
 #: holds.
@@ -465,9 +464,7 @@ def check(
         _check_error(str(exc), as_json)
 
     from kstrl.config_preflight import preflight_config
-    from kstrl.policy import PolicyConfig
-    from kstrl.verify import run_mechanical_verification
-    from kstrl.verify_model import VerifyConfig
+    from kstrl.verify import PolicyConfig, VerifyConfig, run_mechanical_verification
 
     try:
         # The WHOLE configuration, not only the three sections this

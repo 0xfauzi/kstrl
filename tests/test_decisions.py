@@ -31,7 +31,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl.decisions import (
+from kstrl.architect.decisions import (
     REGISTER_MISSING,
     REGISTER_OK,
     REGISTER_UNREADABLE,
@@ -254,7 +254,7 @@ def _factory_inputs(root: Path) -> tuple[Any, Any, Any]:
     from kstrl.config.config import KstrlConfig
     from kstrl.factory_config import FactoryConfig
     from kstrl.ui.plain import PlainUI
-    from kstrl.verify_model import VerifyConfig
+    from kstrl.verify.verify_model import VerifyConfig
 
     config = FactoryConfig(
         use_worktrees=False,
@@ -329,7 +329,7 @@ class TestTheSchedulerActuallyInjectsIt:
 
     def test_the_block_reaches_the_worker_at_the_right_position(self, tmp_path: Path) -> None:
         import kstrl.factory_worker as factory_worker_mod
-        from kstrl.decompose_prompt import spec_digest
+        from kstrl.architect.decompose_prompt import spec_digest
         from kstrl.factory import run_factory
         from kstrl.factory_result import ComponentResult
 

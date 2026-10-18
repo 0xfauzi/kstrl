@@ -8,17 +8,17 @@ from typing import Any
 
 import pytest
 
-from kstrl.evolution import EvolutionJournal
-from kstrl.evolution_config import EvolutionConfig
 from kstrl.factory_result import FactoryResult
-from kstrl.failure_signatures import (
+from kstrl.learning.evolution import EvolutionJournal
+from kstrl.learning.evolution_config import EvolutionConfig
+from kstrl.learning.journal_rows import JOURNAL_SCHEMA_VERSION, SPEC_ISSUES_EVENT
+from kstrl.plan.manifest import Component, ComponentStatus, Manifest
+from kstrl.verify.failure_signatures import (
     signature_for_error,
     signatures_from_findings,
     signatures_from_verification,
     split_signature,
 )
-from kstrl.journal_rows import JOURNAL_SCHEMA_VERSION, SPEC_ISSUES_EVENT
-from kstrl.plan.manifest import Component, ComponentStatus, Manifest
 from tests.helpers.journal import audit, journal_at
 
 
@@ -321,7 +321,7 @@ class TestConcernHitRate:
 
 class TestSignatureHelpers:
     def test_signatures_from_verification_fallback_slug(self) -> None:
-        from kstrl.verify_model import CheckResult
+        from kstrl.verify.verify_model import CheckResult
 
         checks = [
             CheckResult(

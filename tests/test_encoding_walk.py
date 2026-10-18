@@ -482,7 +482,7 @@ class TestTheReadBytesExclusion:
         "ci_state.py": 2,
         "cli_queue.py": 1,  # #644: queue_answer, read and decode guarded separately
         "config/config_toml.py": 1,
-        "baseline.py": 1,
+        "verify/baseline.py": 1,
         "owner/inbox.py": 1,
         "integration_state.py": 1,  # #482: the launch_record.py shape
         "launch_record.py": 1,  # #436: the baseline.py shape, I/O outside the guard

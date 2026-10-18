@@ -9,7 +9,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl import guards
 from kstrl.breaker import BreakerConfig, NoProgressBreaker
 from kstrl.events import EventBus, IterationCompleted, IterationStarted, UsageTotals, collect_usage
 from kstrl.git import git, git_tree
@@ -31,7 +30,7 @@ from kstrl.owner import (
 )
 from kstrl.plan import PRD
 from kstrl.proc import TIMEOUT_MESSAGE_PREFIX, TimeoutConfig
-from kstrl.verify_model import VerifyConfig
+from kstrl.verify import VerifyConfig, guards
 
 if TYPE_CHECKING:
     from kstrl.agents import Agent

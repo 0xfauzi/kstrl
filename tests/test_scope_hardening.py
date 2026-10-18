@@ -28,8 +28,8 @@ from unittest.mock import patch
 
 import pytest
 
+from kstrl.architect.decompose import decompose_spec
 from kstrl.config.config import KstrlConfig
-from kstrl.decompose import decompose_spec
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_preflight import _preflight_component_scope
@@ -39,9 +39,9 @@ from kstrl.io.statedir import pre_run_prd_path
 from kstrl.plan.manifest import Component, Manifest
 from kstrl.plan.scope import RunScope
 from kstrl.ui.plain import PlainUI
-from kstrl.verify import run_mechanical_verification
-from kstrl.verify_diff import _scope_checks, check_diff_scope
-from kstrl.verify_model import CheckResult, VerificationResult, VerifyConfig
+from kstrl.verify.verify import run_mechanical_verification
+from kstrl.verify.verify_diff import _scope_checks, check_diff_scope
+from kstrl.verify.verify_model import CheckResult, VerificationResult, VerifyConfig
 from tests.helpers import gitrepo
 from tests.helpers.before_spend import no_base_check
 from tests.helpers.component_prd import PASSING_STORY, write_component_prd

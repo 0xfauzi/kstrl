@@ -25,7 +25,6 @@ from kstrl.plan import (
     Component,
     Finding,
 )
-from kstrl.policy import count_diff_size
 from kstrl.review import (
     ReviewResult,
 )
@@ -33,6 +32,7 @@ from kstrl.review_claims import (
     claim_blocks,
 )
 from kstrl.security import SecurityResult
+from kstrl.verify import count_diff_size
 
 if TYPE_CHECKING:
     from kstrl.factory_result import ComponentResult
@@ -472,7 +472,7 @@ class ReviewVerdicts(AttemptRecorder):
         # R6.1: journal the finding categories that failed the gate
         # ("review:scope_creep", "review:prd_criterion",
         # "review:infrastructure"), not the flattened reason.
-        from kstrl.failure_signatures import signatures_from_findings
+        from kstrl.verify import signatures_from_findings
 
         return ReviewPhaseResult(
             ran=True,

@@ -30,13 +30,13 @@ import typing
 from dataclasses import dataclass
 from typing import Literal
 
+from kstrl.architect.linear import _VALID_AUTH_MODES
 from kstrl.config.config import VALID_AGENT_TYPES
 from kstrl.config_preflight import config_sections
 from kstrl.contract import ContractMode
 from kstrl.divergence import DivergenceMode
 from kstrl.factory_config import VALID_CLAIM_AGREEMENT
-from kstrl.knowledge_facts import _VALID_DEPENDENCY_SCOPES
-from kstrl.linear import _VALID_AUTH_MODES
+from kstrl.knowledge.knowledge_facts import _VALID_DEPENDENCY_SCOPES
 from kstrl.review import ReviewMode
 from kstrl.security import VALID_SEVERITIES, SecurityMode
 

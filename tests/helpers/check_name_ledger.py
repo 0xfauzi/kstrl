@@ -57,7 +57,7 @@ from __future__ import annotations
 #: :func:`_from_the_callers`.
 BLIND_SITES: tuple[tuple[str, str, str, str], ...] = (
     (
-        "kstrl/baseline.py",
+        "kstrl/verify/baseline.py",
         "Baseline.from_document",
         "_signatures_field(raw, 'signatures')",
         "pass-through of a validated baseline FILE (#227): the names in it "
@@ -66,7 +66,7 @@ BLIND_SITES: tuple[tuple[str, str, str, str], ...] = (
         "it refuses a document whose keys are not non-empty strings",
     ),
     (
-        "kstrl/baseline.py",
+        "kstrl/verify/baseline.py",
         "baseline_from_result",
         "dict(sorted(counts.items()))",
         "runtime composer over signature_counts_from_verification's output "
@@ -165,7 +165,7 @@ BLIND_SITES: tuple[tuple[str, str, str, str], ...] = (
         "pass-through of its own parameter, censused at its call sites",
     ),
     (
-        "kstrl/verify_commands.py",
+        "kstrl/verify/verify_commands.py",
         "check_stack_command",
         "row",
         "#696: row = f'stack:{name}', one of the function's five CheckResult "
@@ -176,7 +176,7 @@ BLIND_SITES: tuple[tuple[str, str, str, str], ...] = (
         "_CATEGORY_BY_CHECK and pinned in test_signature_spellings.py",
     ),
     (
-        "kstrl/verify_commands.py",
+        "kstrl/verify/verify_commands.py",
         "check_stack_command",
         "row",
         "#696: row = f'stack:{name}', one of the function's five CheckResult "
@@ -187,7 +187,7 @@ BLIND_SITES: tuple[tuple[str, str, str, str], ...] = (
         "_CATEGORY_BY_CHECK and pinned in test_signature_spellings.py",
     ),
     (
-        "kstrl/verify_commands.py",
+        "kstrl/verify/verify_commands.py",
         "check_stack_command",
         "row",
         "#696: row = f'stack:{name}', one of the function's five CheckResult "
@@ -198,7 +198,7 @@ BLIND_SITES: tuple[tuple[str, str, str, str], ...] = (
         "_CATEGORY_BY_CHECK and pinned in test_signature_spellings.py",
     ),
     (
-        "kstrl/verify_commands.py",
+        "kstrl/verify/verify_commands.py",
         "check_stack_command",
         "row",
         "#696: row = f'stack:{name}', one of the function's five CheckResult "
@@ -209,7 +209,7 @@ BLIND_SITES: tuple[tuple[str, str, str, str], ...] = (
         "_CATEGORY_BY_CHECK and pinned in test_signature_spellings.py",
     ),
     (
-        "kstrl/verify_commands.py",
+        "kstrl/verify/verify_commands.py",
         "check_stack_command",
         "row",
         "#696: row = f'stack:{name}', one of the function's five CheckResult "

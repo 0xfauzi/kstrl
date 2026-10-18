@@ -44,9 +44,9 @@ from typing import Any
 
 import pytest
 
-from kstrl.decompose_prompt import load_spec_input
+from kstrl.architect.decompose_prompt import load_spec_input
+from kstrl.architect.owner_answers import render_owner_answer
 from kstrl.owner.inbox import Inbox, InboxItem, ItemKind, ItemStatus
-from kstrl.owner_answers import render_owner_answer
 from kstrl.plan.manifest import Manifest
 from kstrl.project.init_cmd import gitignore_block
 from tests.helpers import gitrepo

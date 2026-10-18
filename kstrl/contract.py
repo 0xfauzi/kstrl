@@ -49,7 +49,7 @@ from kstrl.proc import (
     run_scrubbed,
 )
 from kstrl.project import NO_STACK, Stack, stack_in_force
-from kstrl.verify_commands import check_stack_command
+from kstrl.verify import check_stack_command
 
 if TYPE_CHECKING:
     from kstrl.acceptance import PinnedPlan

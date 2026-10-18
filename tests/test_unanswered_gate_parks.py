@@ -410,7 +410,7 @@ EXPECTED_PROMPT_SITES = {
     "cli_architect.py::retry": "exits without starting the retry, same as Quit (#597)",
     "cli_preflight.py::_stack_checkpoint": "refuses with exit 2 and files the stack item (#696)",
     "feature_cmd.py::run_feature": "refuses: quit to amend",
-    "guards.py::enforce_allowed_paths": "quits",
+    "verify/guards.py::enforce_allowed_paths": "quits",
     "loop.py::_resolve_iteration_pause": "stops the run, same as Quit, when nobody answers",
     "pipeline_delivery.py::Delivery._phase_checkpoint": "parks for the inbox (#594)",
     "plan_gate.py::run_plan_gate": "parks the plan for the inbox (#602)",
@@ -434,10 +434,10 @@ EXPECTED_SEEN_PROMPT_SITES: tuple[str, ...] = (
     "cli_factory.py::factory kstrl.owner.interaction.PromptRequest",
     "cli_preflight.py::_stack_checkpoint kstrl.owner.interaction.PromptRequest",
     "feature_cmd.py::run_feature kstrl.owner.interaction.PromptRequest",
-    "guards.py::enforce_allowed_paths kstrl.owner.interaction.PromptRequest",
     "loop.py::_resolve_iteration_pause kstrl.owner.interaction.PromptRequest",
     "pipeline_delivery.py::Delivery._phase_checkpoint kstrl.owner.interaction.PromptRequest",
     "plan_gate.py::run_plan_gate kstrl.owner.interaction.PromptRequest",
+    "verify/guards.py::enforce_allowed_paths kstrl.owner.interaction.PromptRequest",
 )
 
 

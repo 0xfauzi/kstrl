@@ -39,7 +39,7 @@ import ast
 import dataclasses
 from pathlib import Path
 
-from kstrl.verify_model import CheckResult
+from kstrl.verify.verify_model import CheckResult
 from tests.helpers.astwalk import (
     assert_census,
     label,
@@ -182,7 +182,7 @@ def measurement_row(source_file: Path, node: ast.AST) -> str:
 #: forbidden; it is the point. The diff that adds one is where somebody says
 #: what the new row measured.
 EXPECTED_RESULT_SITES: dict[str, int] = {
-    "verify.py: _self_critique_text: CheckResult": 2,
+    "verify/verify.py: _self_critique_text: CheckResult": 2,
     # #399 simplify pass on #405: the passing row, the issues-found row and
     # the diff-unreadable refusal, all three now built inside
     # check_bad_patterns itself. The refusal used to be split into its own
@@ -193,30 +193,30 @@ EXPECTED_RESULT_SITES: dict[str, int] = {
     # bought nothing and was undone. This row absorbs the one
     # _added_lines_or_refusal used to hold. #696 slice 8: the passing and
     # issues-found rows are one construction, ``passed=not issues``.
-    "verify_diff.py: check_bad_patterns: CheckResult": 2,
+    "verify/verify_diff.py: check_bad_patterns: CheckResult": 2,
     # #416: one new row, the diff-scope try/except around the lenient
     # git.get_diff_names call, failing closed on a diff it cannot decode.
-    "verify_diff.py: check_diff_scope: CheckResult": 5,
+    "verify/verify_diff.py: check_diff_scope: CheckResult": 5,
     # #399 blocker 1b: a fifth site, the fail-closed row for the broad
     # "Exception" clause that now sits after "except PolicyConfigError" -
     # evaluate_policy calls policy.parse_added_lines, which can raise
     # UnicodeDecodeError on a diff header path with bytes that are not
     # valid utf-8, and that is neither a GitDiffError nor a
     # PolicyConfigError.
-    "verify_diff.py: check_policy_envelope: CheckResult": 5,
+    "verify/verify_diff.py: check_policy_envelope: CheckResult": 5,
     # #568: one new row, the pre-run copy that will not load, failing closed
     # where it used to compare against nothing.
-    "verify.py: check_prd_stories: CheckResult": 5,
-    "verify_diff.py: check_scope_unreadable: CheckResult": 1,
-    "verify.py: check_self_critique: CheckResult": 3,
+    "verify/verify.py: check_prd_stories: CheckResult": 5,
+    "verify/verify_diff.py: check_scope_unreadable: CheckResult": 1,
+    "verify/verify.py: check_self_critique: CheckResult": 3,
     # #696: one [stack] check's row: not run because the stack is not
     # confirmed (slice 3), timed out, undecodable, passed, failed.
-    "verify_commands.py: check_stack_command: CheckResult": 5,
+    "verify/verify_commands.py: check_stack_command: CheckResult": 5,
     # #696: the one row _command_gates builds when there is no [stack] at
     # all - the retired check_linter/check_test_suite/check_typecheck's
     # replacement, now a single always-unmeasured row rather than three
     # per-tool gates.
-    "verify_commands.py: _command_gates: CheckResult": 1,
+    "verify/verify_commands.py: _command_gates: CheckResult": 1,
 }
 
 #: Every construction that states its measurement, with the argument verbatim.
@@ -233,42 +233,42 @@ EXPECTED_MEASURED_ARGUMENTS: dict[str, int] = {
     # learned which lines the branch added and scanned nothing. #399 simplify
     # pass on #405: this row moved here from _added_lines_or_refusal, which
     # was inlined into check_bad_patterns (see EXPECTED_RESULT_SITES above).
-    "verify_diff.py: check_bad_patterns: CheckResult: measured=False": 1,
+    "verify/verify_diff.py: check_bad_patterns: CheckResult: measured=False": 1,
     # The progress file could not be read, or is not UTF-8. No bullets were
     # counted either way.
-    "verify.py: _self_critique_text: CheckResult: measured=False": 2,
+    "verify/verify.py: _self_critique_text: CheckResult: measured=False": 2,
     # Nothing was read: no added line for the secret rule, which reads every
     # changed file since #619 and nothing else since #696 slice 8. An empty
     # diff, a diff that only deletes, or a [policy] envelope that owns the
     # secret rule.
-    "verify_diff.py: check_bad_patterns: CheckResult: measured=bool(added)": 1,
+    "verify/verify_diff.py: check_bad_patterns: CheckResult: measured=bool(added)": 1,
     # No allowed paths configured, an empty diff, or (#416) a diff it could
     # not decode: the check applies no rule, applies it to nothing, or could
     # not read what to apply it to.
-    "verify_diff.py: check_diff_scope: CheckResult: measured=False": 3,
+    "verify/verify_diff.py: check_diff_scope: CheckResult: measured=False": 3,
     # #696 decision 4: a timeout and undecodable output measured nothing,
     # and so did an exit the shell returns when it could not run the
     # command (126, 127). Every other non-zero exit is a measured failure.
     # Slice 3: a check of a stack nobody confirmed is not run at all.
-    "verify_commands.py: check_stack_command: CheckResult: measured=False": 3,
-    "verify_commands.py: check_stack_command: CheckResult: measured=result.returncode not in SHELL_COULD_NOT_RUN": 1,  # noqa: E501
+    "verify/verify_commands.py: check_stack_command: CheckResult: measured=False": 3,
+    "verify/verify_commands.py: check_stack_command: CheckResult: measured=result.returncode not in SHELL_COULD_NOT_RUN": 1,  # noqa: E501
     # The diff could not be read, the policy could not be parsed, or
     # evaluate_policy raised something that is neither of those two (#399
     # blocker 1b: a UnicodeDecodeError from a diff header path that is not
     # valid utf-8). All three are the harness failing to establish its own
     # input.
-    "verify_diff.py: check_policy_envelope: CheckResult: measured=False": 3,
+    "verify/verify_diff.py: check_policy_envelope: CheckResult: measured=False": 3,
     # The PRD could not be loaded at all, or (#568) the pre-run copy the
     # run started from could not be: kstrl lost its own input, which lives
     # outside every worktree.
-    "verify.py: check_prd_stories: CheckResult: measured=False": 2,
+    "verify/verify.py: check_prd_stories: CheckResult: measured=False": 2,
     # This check name exists ONLY in the unreadable state, so it never appears
     # on a healthy run. Marked rather than exempted: exempting it would put the
     # name in `measured_checks` on the one run that produces it, and its
     # absence from the next would then read as a check that stopped.
-    "verify_diff.py: check_scope_unreadable: CheckResult: measured=False": 1,
+    "verify/verify_diff.py: check_scope_unreadable: CheckResult: measured=False": 1,
     # #696: there is no [stack] at all, so nothing was run.
-    "verify_commands.py: _command_gates: CheckResult: measured=False": 1,
+    "verify/verify_commands.py: _command_gates: CheckResult: measured=False": 1,
 }
 
 #: Every construction with a literal ``passed=False`` and no ``measured``.
@@ -278,14 +278,14 @@ EXPECTED_MEASURED_ARGUMENTS: dict[str, int] = {
 #: row appearing in this dict is the census delta that asks the question.
 EXPECTED_FAILING_WITH_DEFAULT: dict[str, int] = {
     # Read the diff and applied the configured allowlist to it.
-    "verify_diff.py: check_diff_scope: CheckResult": 1,
+    "verify/verify_diff.py: check_diff_scope: CheckResult": 1,
     # Evaluated the policy envelope against a diff it read successfully.
-    "verify_diff.py: check_policy_envelope: CheckResult": 1,
+    "verify/verify_diff.py: check_policy_envelope: CheckResult": 1,
     # Compared the PRD against the pre-run snapshot, and counted stories that
     # are not marked passing. Both read the document.
-    "verify.py: check_prd_stories: CheckResult": 2,
+    "verify/verify.py: check_prd_stories: CheckResult": 2,
     # Found the progress entry and counted its Self-Critique bullets.
-    "verify.py: check_self_critique: CheckResult": 2,
+    "verify/verify.py: check_self_critique: CheckResult": 2,
 }
 
 
@@ -433,18 +433,18 @@ EXPECTED_MEASUREMENT_READS: dict[str, int] = {
     # the same record. #696 decision 4 also removed warning_lines'
     # read: the warn-not-refuse carve-out for an unmeasured check is
     # gone, so warning_lines now reads only reading.error.
-    "base_gates.py: reading_document: check.measured": 1,
+    "verify/base_gates.py: reading_document: check.measured": 1,
     # #654 slice 4: which refusals `--accept-red-base` may waive. Only a
     # row that measured a failure; an unmeasured row keeps refusing, so this
     # read also only keeps a refusal and never turns measured=False into a pass.
-    "base_gates.py: _acceptable_lines: check.measured": 1,
+    "verify/base_gates.py: _acceptable_lines: check.measured": 1,
     # The baseline: which checks may have a missing signature read as fixed.
-    "baseline.py: _measured_and_unmeasured: check.measured": 2,
+    "verify/baseline.py: _measured_and_unmeasured: check.measured": 2,
     # Not CheckResult.measured. IterationReading's own field, #233: whether
     # a run's per-attempt iteration count could be proven from the journal,
     # never a verdict on whether the run passed.
-    "journal_rows.py: iteration_criterion_verdict: r.measured": 1,
-    "journal_reads.py: JournalReads.iteration_criterion_lines: reading.measured": 1,
+    "learning/journal_rows.py: iteration_criterion_verdict: r.measured": 1,
+    "learning/journal_reads.py: JournalReads.iteration_criterion_lines: reading.measured": 1,
     # Not CheckResult.measured. FactUtilization's own field, R8.
     "pipeline_knowledge.py: FactUtilization.to_dict: self.measured": 1,
     "pipeline_knowledge.py: KnowledgePhase._store_fact_utilization: util.measured": 2,

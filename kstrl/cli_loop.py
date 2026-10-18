@@ -260,7 +260,7 @@ def run(
     from kstrl.plan import Manifest
     from kstrl.project import CodebaseScanConfig
     from kstrl.security import SecurityConfig
-    from kstrl.verify_model import VerifyConfig
+    from kstrl.verify import VerifyConfig
 
     # Determine branch from config or PRD. The preflight above already
     # validated existence + schema, so a load failure here is a real bug

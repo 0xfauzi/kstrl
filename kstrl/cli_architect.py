@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 import click
 
 from kstrl.agents import get_agent
+from kstrl.architect import OwnerAnswerError, SpecBlockerError, decompose_spec
 from kstrl.cli_factory import factory
 from kstrl.cli_preflight import (
     _HANDED_RUN_LOCK,
@@ -25,8 +26,6 @@ from kstrl.commandrun import CommandRun, open_command_run
 from kstrl.config import LIMIT_FLOAT, LIMIT_INT
 from kstrl.config_report import UI_MODES
 from kstrl.config_report import normalize_ui_mode as _normalize_ui_mode
-from kstrl.decompose import decompose_spec
-from kstrl.decompose_audit import SpecBlockerError
 from kstrl.events import ARCHITECT_COMPONENT, ARCHITECT_ROLE
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_preflight import (
@@ -37,7 +36,6 @@ from kstrl.factory_preflight import (
 from kstrl.git import resolve_base_branch
 from kstrl.launch_record import option_argv
 from kstrl.owner import PromptKind, PromptRequest, UiInteractionChannel
-from kstrl.owner_answers import OwnerAnswerError
 from kstrl.proc import acquire_run_lock, limit_seconds
 from kstrl.retry_plan import (
     RESUME_REFUSAL,
@@ -137,7 +135,7 @@ def decompose(
     no_color: bool,
 ) -> None:
     """Decompose a spec into components and generate PRDs."""
-    from kstrl.verify_model import VerifyConfig
+    from kstrl.verify import VerifyConfig
 
     ctx = click.get_current_context()
 

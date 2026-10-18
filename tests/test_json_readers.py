@@ -106,7 +106,7 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     # a multi-line element survives as one physical line). No new parse.
     "agents/sdk_runner.py": 5,
     "io/atomicio.py": 2,
-    "autonomy.py": 2,
+    "learning/autonomy.py": 2,
     "calibration_baseline.py": 2,
     # #553: the import, one json.dumps for the ledger line, and the
     # json.JSONDecodeError it catches from read_json twice. No parse.
@@ -115,9 +115,9 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     "cli_inbox.py": 1,
     "cli_preflight.py": 2,
     "context.py": 2,
-    "baseline.py": 2,
+    "verify/baseline.py": 2,
     "events/event_catalog.py": 2,
-    "evolution.py": 2,
+    "learning/evolution.py": 2,
     "feature_cmd.py": 3,
     # #632: the import, json.dumps for the canonical form, and the
     # json.JSONDecodeError it catches from read_json. No parse.
@@ -130,14 +130,14 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     # report is read through read_json. No parse.
     "isolation.py": 2,
     "io/jsonread.py": 4,
-    "knowledge.py": 3,
-    "knowledge_facts.py": 3,
-    "linear.py": 5,
+    "knowledge/knowledge.py": 3,
+    "knowledge/knowledge_facts.py": 3,
+    "architect/linear.py": 5,
     "events/observability.py": 4,
     # #602: the import and one json.dumps, the plan digest's canonical
     # form. No parse: the PRDs are read through PRD.load.
     "plan_gate.py": 2,
-    "policy.py": 2,
+    "verify/policy.py": 2,
     "plan/prd.py": 2,
     # #700: one more json.dumps, the codex writable_roots override. No parse.
     # 5 since #803: a json.dumps of the settings with the login.
@@ -171,9 +171,9 @@ EXPECTED_JSON_PARSES: tuple[str, ...] = ("io/jsonread.py json.loads",)
 #: which is what ``.without_line_numbers()`` does to the found side too.
 EXPECTED_UNDECIDED_CALLS: tuple[str, ...] = (
     "config/config.py cls.load",
-    "evolution_config.py cls.load",
     "intake_github.py ProcessedLedger(root_dir).load",
     "intake_steering.py ProcessedLedger(root_dir).load",
+    "learning/evolution_config.py cls.load",
     "serve_github.py OpenPrCountStreak.load",
 )
 

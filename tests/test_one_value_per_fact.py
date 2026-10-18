@@ -44,7 +44,7 @@ from kstrl.plan.manifest import Component, Manifest
 from kstrl.review import CriterionReview, ReviewConcern, ReviewResult
 from kstrl.security import SecurityConfig, SecurityFinding, SecurityResult
 from kstrl.ui.plain import PlainUI
-from kstrl.verify_model import CheckResult, VerificationResult, VerifyConfig
+from kstrl.verify.verify_model import CheckResult, VerificationResult, VerifyConfig
 from tests.helpers.astwalk import Sees, assert_census, label, package_sources, parsed
 from tests.helpers.component_prd import PASSING_STORY, write_component_prd
 from tests.helpers.stack_confirmation import in_process_stack
@@ -373,7 +373,7 @@ EXPECTED_COMPLETED_SITES: dict[str, int] = {
     # Runs with no manifest Component and no journal row, so the event is
     # the only record of the duration it carries.
     "cli_loop.py:_understand_core": 1,
-    "decompose.py:_decompose_spec_impl": 1,
+    "architect/decompose.py:_decompose_spec_impl": 1,
     "feature_cmd.py:run_feature": 2,
 }
 

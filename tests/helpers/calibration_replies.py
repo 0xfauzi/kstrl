@@ -15,7 +15,7 @@ from 1 in the order the baseline lists that fixture's runs, so ``run-1.json``
 is ``runs[0]``. The file holds the run's record (the same fields the baseline
 reads) plus ``run`` and ``calls``: one entry per agent call, each with the
 lines the agent streamed and its ``final_message``. The scored text is one
-of those two; which one is ``kstrl.decompose.select_agent_output``'s rule.
+of those two; which one is ``kstrl.architect.decompose.select_agent_output``'s rule.
 
 A run that made no recorded call raises instead of writing an empty file, so
 the fixture never reaches ``complete_fixture`` and the baseline is saved as a

@@ -87,7 +87,7 @@ EXPECTED_SPELLINGS: frozenset[tuple[str, str]] = frozenset(
         ("kstrl/pipeline_verdicts.py", "review"),
         ("kstrl/pipeline_transitions.py", "token_budget"),
         # #696: f"stack:{name}", the row of a [stack] check (verify.check_stack_command).
-        ("kstrl/verify_commands.py", "stack"),
+        ("kstrl/verify/verify_commands.py", "stack"),
         # --- other vocabularies that share the shape. None of these
         # reaches component_failure_signatures, and enrolling any of
         # them would make the category table unreadable as the list of
@@ -99,7 +99,7 @@ EXPECTED_SPELLINGS: frozenset[tuple[str, str]] = frozenset(
         # out of factory.py in #232, when the demotion-apply block became
         # autonomy.apply_demotion; this row moving is the guard doing the
         # job the comment above claims for it.
-        ("kstrl/autonomy_transitions.py", "demotion"),
+        ("kstrl/learning/autonomy_transitions.py", "demotion"),
         # #232's two new demotion triggers, both inbox dedupe keys in the
         # same family as pipeline's below. "calibration:<comparison id>"
         # is also the run id the compare command demotes under, since a
@@ -110,7 +110,7 @@ EXPECTED_SPELLINGS: frozenset[tuple[str, str]] = frozenset(
         ("kstrl/factory_autonomy.py", "health"),
         # #449: the inbox dedupe key for one spec's architect escalation,
         # "escalation:<project>:<spec file>". Same family as the two above.
-        ("kstrl/decisions.py", "escalation"),
+        ("kstrl/architect/decisions.py", "escalation"),
         # #696 slice 3: the stack_confirmation inbox dedupe key,
         # "stack:<digest>" (stack.STACK_KEY). Same family as the three above.
         ("kstrl/project/stack.py", "stack"),

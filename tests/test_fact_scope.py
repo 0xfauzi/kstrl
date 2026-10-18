@@ -24,17 +24,17 @@ from kstrl.config.config import KstrlConfig
 from kstrl.factory import run_factory
 from kstrl.factory_config import FactoryConfig
 from kstrl.factory_result import ComponentResult
-from kstrl.knowledge import (
+from kstrl.knowledge.knowledge import (
     TIER_CORE,
     TIER_DEPENDENCY,
     TIER_SIBLING,
     _extract_prefix_claims,
     build_knowledge_context,
 )
-from kstrl.knowledge_facts import Fact, KnowledgeConfig, write_facts
+from kstrl.knowledge.knowledge_facts import Fact, KnowledgeConfig, write_facts
 from kstrl.plan.manifest import Component, Manifest
 from kstrl.ui.plain import PlainUI
-from kstrl.verify_model import VerifyConfig
+from kstrl.verify.verify_model import VerifyConfig
 from tests.helpers.component_prd import write_component_prd
 from tests.helpers.stack_confirmation import in_process_stack
 

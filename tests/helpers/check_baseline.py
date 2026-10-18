@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from kstrl import baseline
+from kstrl.verify import baseline
 
 #: The digest both sides of a comparison carry unless a test is about the
 #: refusal itself. A literal, because `verify_digest` is what produces a real

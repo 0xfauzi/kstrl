@@ -32,7 +32,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.decompose_prompt import spec_digest
+from kstrl.architect.decompose_prompt import spec_digest
 from kstrl.io.statedir import plan_prd_path
 from kstrl.owner.inbox import Inbox, InboxConfig, InboxItem, ItemKind
 from kstrl.plan.findings import Finding

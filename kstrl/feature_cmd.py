@@ -64,8 +64,7 @@ from kstrl.feature_verify import (
     report_verification,
     resolve_feature_verify_config,
 )
-from kstrl.knowledge import retrieve_knowledge_context
-from kstrl.knowledge_facts import KnowledgeConfig
+from kstrl.knowledge import KnowledgeConfig, retrieve_knowledge_context
 from kstrl.loop import run_loop
 from kstrl.owner import (
     InteractionChannel,

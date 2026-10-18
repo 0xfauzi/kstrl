@@ -72,14 +72,14 @@ from kstrl.plan import validate_component_id
 from kstrl.proc import HOST_LABEL, ProvenRung, Rung, limit_seconds, zone_dir
 from kstrl.project import REPLAY_BOUNDARY_REFUSED
 from kstrl.replay import Replay, Stage, _ran, replay_stack
-from kstrl.verify_commands import SHELL_COULD_NOT_RUN
+from kstrl.verify import SHELL_COULD_NOT_RUN
 
 if TYPE_CHECKING:
     from kstrl.owner import InboxItem
     from kstrl.plan import Manifest
     from kstrl.project import Stack
     from kstrl.ui import UI
-    from kstrl.verify_model import VerifyConfig
+    from kstrl.verify import VerifyConfig
 
 #: The one file a plan directory must hold.
 PLAN_FILE = "plan.json"
