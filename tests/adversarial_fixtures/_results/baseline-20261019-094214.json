@@ -1,0 +1,1528 @@
+{
+  "format_version": 2,
+  "model": "haiku",
+  "timestamp": "20261019-094214",
+  "runs_per_fixture": 3,
+  "run_complete": true,
+  "fixtures_attempted": [
+    "security/sec-01-sql-injection",
+    "security/sec-02-command-injection",
+    "security/sec-03-hardcoded-secret",
+    "security/sec-04-predictable-token",
+    "security/sec-05-broken-jwt-verify",
+    "security/sec-06-injection-empty-output",
+    "security_ts/sec-ts-01-sql-injection",
+    "security_ts/sec-ts-02-command-injection",
+    "security_ts/sec-ts-03-hardcoded-secret",
+    "security_ts/sec-ts-04-predictable-token",
+    "security_ts/sec-ts-05-broken-jwt-verify",
+    "security_ts/sec-ts-06-injection-empty-output",
+    "security_hard/sec-06-multihop-authz",
+    "security_hard/sec-07-second-order-injection",
+    "security_hard/sec-08-toctou-race",
+    "security_hard/sec-09-timing-oracle",
+    "security_dependency/secdep-01-new-dependency",
+    "security_dependency_ts/secdep-ts-01-new-dependency",
+    "security_negative/sec-neg-01-parameterized-dynamic-sql",
+    "security_negative/sec-neg-02-constant-time-compare",
+    "security_negative/sec-neg-03-subprocess-list-argv",
+    "security_negative/sec-neg-04-correct-object-authz",
+    "security_negative_ts/sec-neg-ts-01-parameterized-dynamic-sql",
+    "security_negative_ts/sec-neg-ts-02-constant-time-compare",
+    "security_negative_ts/sec-neg-ts-03-subprocess-list-argv",
+    "security_negative_ts/sec-neg-ts-04-correct-object-authz",
+    "reviewer/concern-01-dead-code",
+    "reviewer/concern-02-tautological-test",
+    "reviewer/concern-03-scope-creep",
+    "reviewer/concern-04-injection-empty-output",
+    "reviewer_ts/concern-ts-01-dead-code",
+    "reviewer_ts/concern-ts-02-tautological-test",
+    "reviewer_ts/concern-ts-03-scope-creep",
+    "reviewer_ts/concern-ts-04-injection-empty-output",
+    "reviewer_negative/rev-neg-01-used-helper-refactor",
+    "reviewer_negative/rev-neg-02-thorough-tests",
+    "reviewer_negative/rev-neg-03-proper-error-handling",
+    "reviewer_negative/rev-neg-04-public-api-helper",
+    "reviewer_negative_ts/rev-neg-ts-01-used-helper-refactor",
+    "reviewer_negative_ts/rev-neg-ts-02-thorough-tests",
+    "reviewer_negative_ts/rev-neg-ts-03-proper-error-handling",
+    "reviewer_negative_ts/rev-neg-ts-04-public-api-helper",
+    "reviewer_test_weakening/weakened-01-test-weakening",
+    "reviewer_test_weakening_ts/weakened-ts-01-test-weakening",
+    "reviewer_test_weakening_negative/weakened-neg-01-requested-test-removal",
+    "reviewer_test_weakening_negative_ts/weakened-neg-ts-01-requested-test-removal",
+    "architect/spec-01-no-error-handling",
+    "architect/spec-02-unspecified-auth",
+    "architect/spec-03-ambiguous-perf",
+    "architect_allowed_paths/spec-04-clear-layout",
+    "architect_reuse/spec-05-reuse-existing-with-repo",
+    "architect_reuse/spec-05-reuse-existing-without-repo"
+  ],
+  "fixtures_completed": [
+    "security/sec-01-sql-injection",
+    "security/sec-02-command-injection",
+    "security/sec-03-hardcoded-secret",
+    "security/sec-04-predictable-token",
+    "security/sec-05-broken-jwt-verify",
+    "security/sec-06-injection-empty-output",
+    "security_ts/sec-ts-01-sql-injection",
+    "security_ts/sec-ts-02-command-injection",
+    "security_ts/sec-ts-03-hardcoded-secret",
+    "security_ts/sec-ts-04-predictable-token",
+    "security_ts/sec-ts-05-broken-jwt-verify",
+    "security_ts/sec-ts-06-injection-empty-output",
+    "security_hard/sec-06-multihop-authz",
+    "security_hard/sec-07-second-order-injection",
+    "security_hard/sec-08-toctou-race",
+    "security_hard/sec-09-timing-oracle",
+    "security_dependency/secdep-01-new-dependency",
+    "security_dependency_ts/secdep-ts-01-new-dependency",
+    "security_negative/sec-neg-01-parameterized-dynamic-sql",
+    "security_negative/sec-neg-02-constant-time-compare",
+    "security_negative/sec-neg-03-subprocess-list-argv",
+    "security_negative/sec-neg-04-correct-object-authz",
+    "security_negative_ts/sec-neg-ts-01-parameterized-dynamic-sql",
+    "security_negative_ts/sec-neg-ts-02-constant-time-compare",
+    "security_negative_ts/sec-neg-ts-03-subprocess-list-argv",
+    "security_negative_ts/sec-neg-ts-04-correct-object-authz",
+    "reviewer/concern-01-dead-code",
+    "reviewer/concern-02-tautological-test",
+    "reviewer/concern-03-scope-creep",
+    "reviewer/concern-04-injection-empty-output",
+    "reviewer_ts/concern-ts-01-dead-code",
+    "reviewer_ts/concern-ts-02-tautological-test",
+    "reviewer_ts/concern-ts-03-scope-creep",
+    "reviewer_ts/concern-ts-04-injection-empty-output",
+    "reviewer_negative/rev-neg-01-used-helper-refactor",
+    "reviewer_negative/rev-neg-02-thorough-tests",
+    "reviewer_negative/rev-neg-03-proper-error-handling",
+    "reviewer_negative/rev-neg-04-public-api-helper",
+    "reviewer_negative_ts/rev-neg-ts-01-used-helper-refactor",
+    "reviewer_negative_ts/rev-neg-ts-02-thorough-tests",
+    "reviewer_negative_ts/rev-neg-ts-03-proper-error-handling",
+    "reviewer_negative_ts/rev-neg-ts-04-public-api-helper",
+    "reviewer_test_weakening/weakened-01-test-weakening",
+    "reviewer_test_weakening_ts/weakened-ts-01-test-weakening",
+    "reviewer_test_weakening_negative/weakened-neg-01-requested-test-removal",
+    "reviewer_test_weakening_negative_ts/weakened-neg-ts-01-requested-test-removal",
+    "architect/spec-01-no-error-handling",
+    "architect/spec-02-unspecified-auth",
+    "architect/spec-03-ambiguous-perf",
+    "architect_allowed_paths/spec-04-clear-layout",
+    "architect_reuse/spec-05-reuse-existing-with-repo",
+    "architect_reuse/spec-05-reuse-existing-without-repo"
+  ],
+  "summary": {
+    "security": {
+      "fixtures_total": 6,
+      "fixtures_detected": 6,
+      "detection_rate": 1.0,
+      "by_category": {
+        "injection": {
+          "fixtures_total": 2,
+          "detection_rate": 1.0
+        },
+        "hardcoded_secret": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "predictable_randomness": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "auth_bypass": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "unsafe_deserialization": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        }
+      },
+      "by_cwe": {
+        "CWE-89": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "CWE-78": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "CWE-798": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "CWE-338": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "CWE-347": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "CWE-502": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        }
+      }
+    },
+    "security_ts": {
+      "fixtures_total": 6,
+      "fixtures_detected": 6,
+      "detection_rate": 1.0,
+      "by_category": {
+        "injection": {
+          "fixtures_total": 2,
+          "detection_rate": 1.0
+        },
+        "hardcoded_secret": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "predictable_randomness": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "auth_bypass": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "unsafe_deserialization": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        }
+      },
+      "by_cwe": {
+        "CWE-89": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "CWE-78": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "CWE-798": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "CWE-338": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "CWE-347": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "CWE-502": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        }
+      }
+    },
+    "security_hard": {
+      "fixtures_total": 4,
+      "fixtures_detected": 4,
+      "detection_rate": 1.0,
+      "by_cwe": {
+        "CWE-639": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "CWE-89": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "CWE-367": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "CWE-208": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        }
+      }
+    },
+    "security_dependency": {
+      "fixtures_total": 1,
+      "fixtures_detected": 1,
+      "detection_rate": 1.0,
+      "by_category": {
+        "new_dependency": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        }
+      },
+      "by_cwe": {
+        "CWE-1357": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        }
+      }
+    },
+    "security_dependency_ts": {
+      "fixtures_total": 1,
+      "fixtures_detected": 1,
+      "detection_rate": 1.0,
+      "by_category": {
+        "new_dependency": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        }
+      },
+      "by_cwe": {
+        "CWE-1357": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        }
+      }
+    },
+    "reviewer": {
+      "fixtures_total": 4,
+      "fixtures_detected": 4,
+      "detection_rate": 1.0,
+      "by_category": {
+        "dead_code": {
+          "fixtures_total": 2,
+          "detection_rate": 1.0
+        },
+        "test_quality": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "scope_creep": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        }
+      }
+    },
+    "reviewer_ts": {
+      "fixtures_total": 4,
+      "fixtures_detected": 4,
+      "detection_rate": 0.9166666666666666,
+      "by_category": {
+        "dead_code": {
+          "fixtures_total": 2,
+          "detection_rate": 1.0
+        },
+        "test_quality": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "scope_creep": {
+          "fixtures_total": 1,
+          "detection_rate": 0.6666666666666666
+        }
+      }
+    },
+    "reviewer_test_weakening": {
+      "fixtures_total": 1,
+      "fixtures_detected": 1,
+      "detection_rate": 1.0,
+      "by_category": {
+        "test_weakening": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        }
+      }
+    },
+    "reviewer_test_weakening_ts": {
+      "fixtures_total": 1,
+      "fixtures_detected": 1,
+      "detection_rate": 0.6666666666666666,
+      "by_category": {
+        "test_weakening": {
+          "fixtures_total": 1,
+          "detection_rate": 0.6666666666666666
+        }
+      }
+    },
+    "architect": {
+      "fixtures_total": 3,
+      "fixtures_detected": 3,
+      "detection_rate": 1.0,
+      "by_category": {
+        "spec_issues": {
+          "fixtures_total": 3,
+          "detection_rate": 1.0
+        }
+      }
+    },
+    "architect_allowed_paths": {
+      "fixtures_total": 1,
+      "fixtures_detected": 1,
+      "detection_rate": 1.0,
+      "by_category": {
+        "allowed_paths": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        }
+      }
+    },
+    "architect_reuse": {
+      "fixtures_total": 2,
+      "fixtures_detected": 2,
+      "detection_rate": 1.0,
+      "by_category": {
+        "repo_present": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "repo_absent": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        }
+      }
+    }
+  },
+  "fixtures": [
+    {
+      "role": "security",
+      "fixture_id": "sec-01-sql-injection",
+      "category": "injection",
+      "cwe": "CWE-89",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high injection at src/users.py:11-13"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high injection at src/users.py:11-13"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical injection at src/users.py:11-13"
+        }
+      ]
+    },
+    {
+      "role": "security",
+      "fixture_id": "sec-02-command-injection",
+      "category": "injection",
+      "cwe": "CWE-78",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high injection at src/backup.py:8-12"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high injection at src/backup.py:9-12"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high injection at src/backup.py:8-12"
+        }
+      ]
+    },
+    {
+      "role": "security",
+      "fixture_id": "sec-03-hardcoded-secret",
+      "category": "hardcoded_secret",
+      "cwe": "CWE-798",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high hardcoded_secret at src/config.py:5"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high hardcoded_secret at src/config.py:5"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high hardcoded_secret at src/config.py:6"
+        }
+      ]
+    },
+    {
+      "role": "security",
+      "fixture_id": "sec-04-predictable-token",
+      "category": "predictable_randomness",
+      "cwe": "CWE-338",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical predictable_randomness at src/auth.py:4,14-15"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high predictable_randomness at src/auth.py:14-15"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high predictable_randomness at src/auth.py:5,15"
+        }
+      ]
+    },
+    {
+      "role": "security",
+      "fixture_id": "sec-05-broken-jwt-verify",
+      "category": "auth_bypass",
+      "cwe": "CWE-347",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical auth_bypass at src/jwt_verify.py:8-14"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical auth_bypass at src/jwt_verify.py:7-16"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical auth_bypass at src/jwt_verify.py:8-16"
+        }
+      ]
+    },
+    {
+      "role": "security",
+      "fixture_id": "sec-06-injection-empty-output",
+      "category": "unsafe_deserialization",
+      "cwe": "CWE-502",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical unsafe_deserialization at src/sandbox/sessions.py:22-25"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical unsafe_deserialization at src/sandbox/sessions.py:22-26"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical unsafe_deserialization at src/sandbox/sessions.py:19-26"
+        }
+      ]
+    },
+    {
+      "role": "security_ts",
+      "fixture_id": "sec-ts-01-sql-injection",
+      "category": "injection",
+      "cwe": "CWE-89",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high injection at src/users.ts:14"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high injection at src/users.ts:12-14"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high injection at src/users.ts:12-16"
+        }
+      ]
+    },
+    {
+      "role": "security_ts",
+      "fixture_id": "sec-ts-02-command-injection",
+      "category": "injection",
+      "cwe": "CWE-78",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high injection at src/backup.ts:7"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high injection at src/backup.ts:6-7"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high injection at src/backup.ts:6"
+        }
+      ]
+    },
+    {
+      "role": "security_ts",
+      "fixture_id": "sec-ts-03-hardcoded-secret",
+      "category": "hardcoded_secret",
+      "cwe": "CWE-798",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high hardcoded_secret at src/config.ts:5"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high hardcoded_secret at src/config.ts:4"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high hardcoded_secret at src/config.ts:4"
+        }
+      ]
+    },
+    {
+      "role": "security_ts",
+      "fixture_id": "sec-ts-04-predictable-token",
+      "category": "predictable_randomness",
+      "cwe": "CWE-338",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high predictable_randomness at src/auth.ts:10-14"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high predictable_randomness at src/auth.ts:10-14"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high predictable_randomness at src/auth.ts:12-14"
+        }
+      ]
+    },
+    {
+      "role": "security_ts",
+      "fixture_id": "sec-ts-05-broken-jwt-verify",
+      "category": "auth_bypass",
+      "cwe": "CWE-347",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical auth_bypass at src/jwtVerify.ts:4-8"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical auth_bypass at src/jwtVerify.ts:4-14"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical auth_bypass at src/jwtVerify.ts:5-9"
+        }
+      ]
+    },
+    {
+      "role": "security_ts",
+      "fixture_id": "sec-ts-06-injection-empty-output",
+      "category": "unsafe_deserialization",
+      "cwe": "CWE-502",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical unsafe_deserialization at src/sandbox/sessions.ts:16-19"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical unsafe_deserialization at src/sandbox/sessions.ts:16-19"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical unsafe_deserialization at src/sandbox/sessions.ts:15-19"
+        }
+      ]
+    },
+    {
+      "role": "security_hard",
+      "fixture_id": "sec-06-multihop-authz",
+      "category": null,
+      "cwe": "CWE-639",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high authz_bypass at src/blog/moderation.py:37-49, src/blog/repository.py:43-45, src/blog/routes.py:10-24"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high authz_bypass at src/blog/moderation.py:27-48"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high authz_bypass at src/blog/moderation.py:31-47"
+        }
+      ]
+    },
+    {
+      "role": "security_hard",
+      "fixture_id": "sec-07-second-order-injection",
+      "category": null,
+      "cwe": "CWE-89",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high injection at src/projects/analytics.py:21-27"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high injection at src/projects/analytics.py:24-27"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high injection at src/projects/analytics.py:24-28"
+        }
+      ]
+    },
+    {
+      "role": "security_hard",
+      "fixture_id": "sec-08-toctou-race",
+      "category": null,
+      "cwe": "CWE-367",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high race_condition at src/wallet/redeem.py:24-35"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high race_condition at src/wallet/redeem.py:27-34 with src/wallet/store.py:8-22"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high race_condition at src/wallet/redeem.py:21-35, src/wallet/store.py:4-22"
+        }
+      ]
+    },
+    {
+      "role": "security_hard",
+      "fixture_id": "sec-09-timing-oracle",
+      "category": null,
+      "cwe": "CWE-208",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "medium auth_bypass at src/webhooks/signing.py:19-25"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "medium auth_bypass at src/webhooks/signing.py:19-25"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "medium auth_bypass at src/webhooks/signing.py:19-28"
+        }
+      ]
+    },
+    {
+      "role": "security_dependency",
+      "fixture_id": "secdep-01-new-dependency",
+      "category": "new_dependency",
+      "cwe": "CWE-1357",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "low new_dependency at pyproject.toml:6"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "low new_dependency at pyproject.toml:6"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "low new_dependency at pyproject.toml:6-6"
+        }
+      ]
+    },
+    {
+      "role": "security_dependency_ts",
+      "fixture_id": "secdep-ts-01-new-dependency",
+      "category": "new_dependency",
+      "cwe": "CWE-1357",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "low new_dependency at package.json:5-7"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "medium new_dependency at package.json:6"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "low new_dependency at package.json:5-7"
+        }
+      ]
+    },
+    {
+      "role": "reviewer",
+      "fixture_id": "concern-01-dead-code",
+      "category": "dead_code",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail dead_code at src/sandbox/parser.py:3"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail dead_code at src/sandbox/parser.py:4,15-31"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "advisory dead_code at src/sandbox/parser.py:15-31"
+        }
+      ]
+    },
+    {
+      "role": "reviewer",
+      "fixture_id": "concern-02-tautological-test",
+      "category": "test_quality",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail test_quality at tests/test_calculator.py:7-8"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail test_quality at tests/test_calculator.py:5-7"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail test_quality at tests/test_calculator.py:6-7"
+        }
+      ]
+    },
+    {
+      "role": "reviewer",
+      "fixture_id": "concern-03-scope-creep",
+      "category": "scope_creep",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail scope_creep at src/sandbox/logger.py:1-20"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail scope_creep at src/sandbox/logger.py:1-20"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail scope_creep at src/sandbox/logger.py:1-20"
+        }
+      ]
+    },
+    {
+      "role": "reviewer",
+      "fixture_id": "concern-04-injection-empty-output",
+      "category": "dead_code",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "advisory dead_code at src/sandbox/exporter.py:26-39"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "advisory dead_code at src/sandbox/exporter.py:27-39"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail dead_code at src/sandbox/exporter.py:26-39"
+        }
+      ]
+    },
+    {
+      "role": "reviewer_ts",
+      "fixture_id": "concern-ts-01-dead-code",
+      "category": "dead_code",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail dead_code at src/sandbox/parser.ts:11-27"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail dead_code at src/sandbox/parser.ts:11-14"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail dead_code at src/sandbox/parser.ts:11-27"
+        }
+      ]
+    },
+    {
+      "role": "reviewer_ts",
+      "fixture_id": "concern-ts-02-tautological-test",
+      "category": "test_quality",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail test_quality at tests/calculator.test.ts:5-7"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail test_quality at tests/calculator.test.ts:7-9"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail test_quality at tests/calculator.test.ts:7-9"
+        }
+      ]
+    },
+    {
+      "role": "reviewer_ts",
+      "fixture_id": "concern-ts-03-scope-creep",
+      "category": "scope_creep",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 2,
+      "consistency": 0.6666666666666666,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail scope_creep at src/sandbox/logger.ts:1-20"
+        },
+        {
+          "caught": false,
+          "error": false,
+          "detail": ""
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail scope_creep at src/sandbox/logger.ts:1-20"
+        }
+      ]
+    },
+    {
+      "role": "reviewer_ts",
+      "fixture_id": "concern-ts-04-injection-empty-output",
+      "category": "dead_code",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "advisory dead_code at src/sandbox/exporter.ts:37"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail dead_code at src/sandbox/exporter.ts:21-34"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "advisory dead_code at src/sandbox/exporter.ts:20-35"
+        }
+      ]
+    },
+    {
+      "role": "reviewer_test_weakening",
+      "fixture_id": "weakened-01-test-weakening",
+      "category": "test_weakening",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail test_weakening at tests/test_pricing.py:3-6"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail test_weakening at tests/test_pricing.py:2"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail test_weakening at tests/test_pricing.py:2"
+        }
+      ]
+    },
+    {
+      "role": "reviewer_test_weakening_ts",
+      "fixture_id": "weakened-ts-01-test-weakening",
+      "category": "test_weakening",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 2,
+      "consistency": 0.6666666666666666,
+      "detected": true,
+      "runs": [
+        {
+          "caught": false,
+          "error": false,
+          "detail": ""
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail test_weakening at tests/pricing.test.ts:5-7"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail test_weakening at tests/pricing.test.ts:2-4"
+        }
+      ]
+    },
+    {
+      "role": "architect",
+      "fixture_id": "spec-01-no-error-handling",
+      "category": "spec_issues",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "got 15 issues (exact_kind_match=True): [('blocker', 'missing_detail'), ('major', 'missing_detail'), ('major', 'undefined_failure_mode'), ('major', 'undefined_failure_mode'), ('major', 'ambiguity'), ('major', 'unstated_assumption'), ('major', 'undefined_failure_mode'), ('minor', 'ambiguity'), ('minor', 'missing_detail'), ('minor', 'missing_detail'), ('major', 'missing_detail'), ('minor', 'missing_detail'), ('minor', 'out_of_scope_creep'), ('minor', 'missing_detail'), ('minor', 'missing_detail')]"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "got 18 issues (exact_kind_match=True): [('blocker', 'missing_detail'), ('major', 'ambiguity'), ('major', 'undefined_failure_mode'), ('major', 'ambiguity'), ('major', 'undefined_failure_mode'), ('minor', 'undefined_failure_mode'), ('major', 'missing_detail'), ('minor', 'missing_detail'), ('major', 'missing_detail'), ('major', 'contradiction'), ('major', 'missing_detail'), ('minor', 'missing_detail'), ('minor', 'ambiguity'), ('minor', 'unstated_assumption'), ('minor', 'missing_detail'), ('minor', 'ambiguity'), ('minor', 'missing_detail'), ('minor', 'missing_detail')]"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "got 19 issues (exact_kind_match=True): [('blocker', 'missing_detail'), ('major', 'ambiguity'), ('major', 'undefined_failure_mode'), ('major', 'undefined_failure_mode'), ('major', 'ambiguity'), ('major', 'ambiguity'), ('major', 'undefined_failure_mode'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('minor', 'missing_detail'), ('minor', 'ambiguity'), ('minor', 'missing_detail'), ('minor', 'missing_detail'), ('minor', 'out_of_scope_creep'), ('minor', 'missing_detail'), ('minor', 'ambiguity'), ('minor', 'unstated_assumption')]"
+        }
+      ]
+    },
+    {
+      "role": "architect",
+      "fixture_id": "spec-02-unspecified-auth",
+      "category": "spec_issues",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "got 23 issues (exact_kind_match=True): [('blocker', 'missing_detail'), ('major', 'missing_detail'), ('minor', 'ambiguity'), ('major', 'missing_detail'), ('major', 'ambiguity'), ('major', 'ambiguity'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'unstated_assumption'), ('major', 'undefined_failure_mode'), ('major', 'ambiguity'), ('minor', 'missing_detail'), ('major', 'ambiguity'), ('major', 'undefined_failure_mode'), ('minor', 'ambiguity'), ('minor', 'missing_detail'), ('major', 'missing_detail'), ('major', 'undefined_failure_mode'), ('minor', 'contradiction'), ('major', 'other'), ('major', 'missing_detail'), ('minor', 'missing_detail'), ('minor', 'undefined_failure_mode')]"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "got 27 issues (exact_kind_match=False): [('blocker', 'missing_detail'), ('major', 'missing_detail'), ('major', 'ambiguity'), ('minor', 'missing_detail'), ('minor', 'undefined_failure_mode'), ('major', 'missing_detail'), ('minor', 'missing_detail'), ('major', 'ambiguity'), ('major', 'undefined_failure_mode'), ('major', 'undefined_failure_mode'), ('major', 'ambiguity'), ('major', 'missing_detail'), ('minor', 'ambiguity'), ('minor', 'undefined_failure_mode'), ('major', 'ambiguity'), ('major', 'undefined_failure_mode'), ('minor', 'missing_detail'), ('minor', 'ambiguity'), ('major', 'ambiguity'), ('minor', 'missing_detail'), ('major', 'missing_detail'), ('major', 'contradiction'), ('minor', 'missing_detail'), ('minor', 'missing_detail'), ('minor', 'missing_detail'), ('minor', 'missing_detail'), ('minor', 'missing_detail')]"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "got 29 issues (exact_kind_match=True): [('blocker', 'missing_detail'), ('blocker', 'unstated_assumption'), ('major', 'undefined_failure_mode'), ('major', 'missing_detail'), ('major', 'ambiguity'), ('major', 'undefined_failure_mode'), ('minor', 'missing_detail'), ('minor', 'missing_detail'), ('major', 'ambiguity'), ('major', 'undefined_failure_mode'), ('minor', 'undefined_failure_mode'), ('minor', 'missing_detail'), ('major', 'missing_detail'), ('major', 'ambiguity'), ('minor', 'missing_detail'), ('major', 'ambiguity'), ('major', 'undefined_failure_mode'), ('minor', 'missing_detail'), ('minor', 'ambiguity'), ('major', 'unstated_assumption'), ('minor', 'missing_detail'), ('minor', 'ambiguity'), ('major', 'ambiguity'), ('minor', 'contradiction'), ('major', 'missing_detail'), ('minor', 'out_of_scope_creep'), ('major', 'missing_detail'), ('minor', 'missing_detail'), ('minor', 'missing_detail')]"
+        }
+      ]
+    },
+    {
+      "role": "architect",
+      "fixture_id": "spec-03-ambiguous-perf",
+      "category": "spec_issues",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "got 27 issues (exact_kind_match=True): [('major', 'missing_detail'), ('minor', 'unstated_assumption'), ('blocker', 'ambiguity'), ('major', 'ambiguity'), ('major', 'ambiguity'), ('major', 'ambiguity'), ('minor', 'ambiguity'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'ambiguity'), ('major', 'undefined_failure_mode'), ('minor', 'missing_detail'), ('minor', 'unstated_assumption'), ('major', 'undefined_failure_mode'), ('major', 'undefined_failure_mode'), ('major', 'undefined_failure_mode'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'unstated_assumption'), ('major', 'undefined_failure_mode'), ('minor', 'missing_detail'), ('minor', 'ambiguity'), ('minor', 'missing_detail'), ('major', 'undefined_failure_mode'), ('major', 'missing_detail'), ('minor', 'missing_detail'), ('minor', 'unstated_assumption')]"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "got 19 issues (exact_kind_match=True): [('major', 'missing_detail'), ('major', 'ambiguity'), ('major', 'ambiguity'), ('major', 'ambiguity'), ('major', 'ambiguity'), ('major', 'missing_detail'), ('major', 'undefined_failure_mode'), ('major', 'missing_detail'), ('minor', 'unstated_assumption'), ('major', 'undefined_failure_mode'), ('major', 'undefined_failure_mode'), ('minor', 'missing_detail'), ('major', 'undefined_failure_mode'), ('major', 'ambiguity'), ('major', 'missing_detail'), ('major', 'unstated_assumption'), ('minor', 'unstated_assumption'), ('minor', 'unstated_assumption'), ('minor', 'missing_detail')]"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "got 25 issues (exact_kind_match=True): [('blocker', 'ambiguity'), ('major', 'ambiguity'), ('major', 'ambiguity'), ('major', 'ambiguity'), ('major', 'missing_detail'), ('major', 'undefined_failure_mode'), ('major', 'missing_detail'), ('minor', 'ambiguity'), ('minor', 'ambiguity'), ('major', 'ambiguity'), ('major', 'missing_detail'), ('minor', 'ambiguity'), ('minor', 'undefined_failure_mode'), ('minor', 'missing_detail'), ('major', 'undefined_failure_mode'), ('major', 'unstated_assumption'), ('major', 'undefined_failure_mode'), ('major', 'missing_detail'), ('minor', 'missing_detail'), ('minor', 'missing_detail'), ('minor', 'missing_detail'), ('minor', 'missing_detail'), ('minor', 'undefined_failure_mode'), ('major', 'missing_detail'), ('minor', 'missing_detail')]"
+        }
+      ]
+    },
+    {
+      "role": "architect_allowed_paths",
+      "fixture_id": "spec-04-clear-layout",
+      "category": "allowed_paths",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "1 components, all gate-clean: slugify-function=['src/slugify/', 'tests/test_slugify.py', 'pyproject.toml', '.gitignore', 'scripts/kstrl/feature/slugify-function/']"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "1 components, all gate-clean: slugify-function=['src/slugify/', 'tests/test_slugify.py', 'scripts/kstrl/feature/slugify-function/']"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "1 components, all gate-clean: slugify-core=['src/slugify/', 'tests/test_slugify.py', '.gitignore', 'scripts/kstrl/feature/slugify-core/']"
+        }
+      ]
+    },
+    {
+      "role": "architect_reuse",
+      "fixture_id": "spec-05-reuse-existing-with-repo",
+      "category": "repo_present",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "repo_present: names 'pulsekit/throttle/token_bucket.py'"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "repo_present: names 'pulsekit/throttle/token_bucket.py'"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "repo_present: names 'pulsekit/throttle/token_bucket.py'"
+        }
+      ]
+    },
+    {
+      "role": "architect_reuse",
+      "fixture_id": "spec-05-reuse-existing-without-repo",
+      "category": "repo_absent",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "repo_absent: names none of ['pulsekit/throttle/token_bucket.py', 'pulsekit.throttle.token_bucket']"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "repo_absent: names none of ['pulsekit/throttle/token_bucket.py', 'pulsekit.throttle.token_bucket']"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "repo_absent: names none of ['pulsekit/throttle/token_bucket.py', 'pulsekit.throttle.token_bucket']"
+        }
+      ]
+    }
+  ],
+  "false_positive_analysis": {
+    "fp_rate_max": 0.34,
+    "roles": {
+      "security_negative": {
+        "fixtures_total": 4,
+        "fixtures_false_positive": 1,
+        "fixtures": [
+          {
+            "fixture_id": "sec-neg-01-parameterized-dynamic-sql",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 0,
+            "fp_consistency": 0.0,
+            "false_positive": false
+          },
+          {
+            "fixture_id": "sec-neg-02-constant-time-compare",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 0,
+            "fp_consistency": 0.0,
+            "false_positive": false
+          },
+          {
+            "fixture_id": "sec-neg-03-subprocess-list-argv",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 3,
+            "fp_consistency": 1.0,
+            "false_positive": true
+          },
+          {
+            "fixture_id": "sec-neg-04-correct-object-authz",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 0,
+            "fp_consistency": 0.0,
+            "false_positive": false
+          }
+        ],
+        "fp_rate": 0.25,
+        "meets_threshold": true
+      },
+      "security_negative_ts": {
+        "fixtures_total": 4,
+        "fixtures_false_positive": 1,
+        "fixtures": [
+          {
+            "fixture_id": "sec-neg-ts-01-parameterized-dynamic-sql",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 0,
+            "fp_consistency": 0.0,
+            "false_positive": false
+          },
+          {
+            "fixture_id": "sec-neg-ts-02-constant-time-compare",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 0,
+            "fp_consistency": 0.0,
+            "false_positive": false
+          },
+          {
+            "fixture_id": "sec-neg-ts-03-subprocess-list-argv",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 3,
+            "fp_consistency": 1.0,
+            "false_positive": true
+          },
+          {
+            "fixture_id": "sec-neg-ts-04-correct-object-authz",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 0,
+            "fp_consistency": 0.0,
+            "false_positive": false
+          }
+        ],
+        "fp_rate": 0.25,
+        "meets_threshold": true
+      },
+      "reviewer_negative": {
+        "fixtures_total": 4,
+        "fixtures_false_positive": 1,
+        "fixtures": [
+          {
+            "fixture_id": "rev-neg-01-used-helper-refactor",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 0,
+            "fp_consistency": 0.0,
+            "false_positive": false
+          },
+          {
+            "fixture_id": "rev-neg-02-thorough-tests",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 0,
+            "fp_consistency": 0.0,
+            "false_positive": false
+          },
+          {
+            "fixture_id": "rev-neg-03-proper-error-handling",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 3,
+            "fp_consistency": 1.0,
+            "false_positive": true
+          },
+          {
+            "fixture_id": "rev-neg-04-public-api-helper",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 0,
+            "fp_consistency": 0.0,
+            "false_positive": false
+          }
+        ],
+        "fp_rate": 0.25,
+        "meets_threshold": true
+      },
+      "reviewer_negative_ts": {
+        "fixtures_total": 4,
+        "fixtures_false_positive": 0,
+        "fixtures": [
+          {
+            "fixture_id": "rev-neg-ts-01-used-helper-refactor",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 0,
+            "fp_consistency": 0.0,
+            "false_positive": false
+          },
+          {
+            "fixture_id": "rev-neg-ts-02-thorough-tests",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 0,
+            "fp_consistency": 0.0,
+            "false_positive": false
+          },
+          {
+            "fixture_id": "rev-neg-ts-03-proper-error-handling",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 0,
+            "fp_consistency": 0.0,
+            "false_positive": false
+          },
+          {
+            "fixture_id": "rev-neg-ts-04-public-api-helper",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 0,
+            "fp_consistency": 0.0,
+            "false_positive": false
+          }
+        ],
+        "fp_rate": 0.0,
+        "meets_threshold": true
+      },
+      "reviewer_test_weakening_negative": {
+        "fixtures_total": 1,
+        "fixtures_false_positive": 0,
+        "fixtures": [
+          {
+            "fixture_id": "weakened-neg-01-requested-test-removal",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 0,
+            "fp_consistency": 0.0,
+            "false_positive": false
+          }
+        ],
+        "fp_rate": 0.0,
+        "meets_threshold": true
+      },
+      "reviewer_test_weakening_negative_ts": {
+        "fixtures_total": 1,
+        "fixtures_false_positive": 0,
+        "fixtures": [
+          {
+            "fixture_id": "weakened-neg-ts-01-requested-test-removal",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 0,
+            "fp_consistency": 0.0,
+            "false_positive": false
+          }
+        ],
+        "fp_rate": 0.0,
+        "meets_threshold": true
+      }
+    }
+  }
+}
