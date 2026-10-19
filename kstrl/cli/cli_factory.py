@@ -210,8 +210,6 @@ def factory(
             )
             architect_run_id = architect_run.run_id
             spec_base = resolve_base_branch(base_branch, root_dir)
-            if transcript_path := architect_run.transcript_path(ARCHITECT_COMPONENT):
-                ui_impl.info(f"  Architect transcript: {transcript_path}")
             try:
                 manifest = decompose_spec(
                     spec_path=spec,
@@ -257,6 +255,8 @@ def factory(
                 sys.exit(1)
             finally:
                 architect_run.close()
+                if transcript := architect_run.written_transcript(ARCHITECT_COMPONENT):
+                    ui_impl.info(f"  Architect transcript: {transcript}")
             architect_usage = collect_usage(agent, since=usage_before)
 
         # Build configs (R2.1). Resolution order for every phase config:

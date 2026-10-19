@@ -148,6 +148,14 @@ class CommandRun:
             return None
         return self.paths.engineer_log(component_id)
 
+    def written_transcript(self, component_id: str) -> Path | None:
+        """The component's transcript path, when anything was written to it."""
+        path = self.transcript_path(component_id)
+        try:
+            return path if path is not None and path.stat().st_size else None
+        except OSError:
+            return None
+
     def transcript_writer(
         self,
         component_id: str,

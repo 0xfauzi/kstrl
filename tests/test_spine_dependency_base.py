@@ -455,8 +455,9 @@ def test_reviewers_are_told_the_commit_the_dependent_started_at(
     assert _statuses(tmp_path) == {"a": "completed", "b": "completed"}
     a_tip = git("rev-parse", "kstrl/factory/a", cwd=root)
     main_tip = git("rev-parse", "main", cwd=root)
+    # Saying nothing does not parse, so the code reviewer is asked once more.
     b_prompts = [p.read_text() for p in prompts.glob("b.*")]
-    assert len(b_prompts) == 2, sorted(p.name for p in prompts.iterdir())
+    assert len(b_prompts) == 3, sorted(p.name for p in prompts.iterdir())
     for text in b_prompts:
         assert a_tip in text
         assert main_tip not in text
