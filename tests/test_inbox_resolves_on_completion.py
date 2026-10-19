@@ -39,6 +39,7 @@ import contextlib
 import io
 import threading
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -353,7 +354,8 @@ class TestAConfirmedMergeClosesEveryItemForTheComponent:
         monkeypatch.setattr(
             "kstrl.pipeline.pr.wait_for_merge", lambda *a, **k: MergeConfirmation(state="merged")
         )
-        monkeypatch.setattr("kstrl.git.fetch_base_branch", lambda *a, **k: None)
+        fetched: list[tuple[Any, ...]] = []
+        monkeypatch.setattr("kstrl.git.fetch_base_branch", lambda *a, **k: fetched.append(a))
         out = io.StringIO()
         pipeline, manifest, _result, _calls = _make_pipeline(
             tmp_path, config=_factory_config(create_prs=True), ui=PlainUI(no_color=True, file=out)
@@ -369,6 +371,7 @@ class TestAConfirmedMergeClosesEveryItemForTheComponent:
         )
         halt = box.add(ItemKind.HALTED_RUN, "halted earlier", component=COMP)
         pipeline.repoll_merge_pending()
+        assert fetched == [(manifest.base_branch, pipeline.root_dir)]
         assert comp.status == ComponentStatus.COMPLETED.value
         for item_id in (gate.id, halt.id):
             decided = box.get(item_id)
@@ -417,7 +420,8 @@ class TestAnOperatorDecisionSurvivesTheCompletionRace:
         monkeypatch.setattr(
             "kstrl.pipeline.pr.wait_for_merge", lambda *a, **k: MergeConfirmation(state="merged")
         )
-        monkeypatch.setattr("kstrl.git.fetch_base_branch", lambda *a, **k: None)
+        fetched: list[tuple[Any, ...]] = []
+        monkeypatch.setattr("kstrl.git.fetch_base_branch", lambda *a, **k: fetched.append(a))
         pipeline, manifest, _result, _calls = _make_pipeline(
             tmp_path, config=_factory_config(create_prs=True)
         )
@@ -453,6 +457,7 @@ class TestAnOperatorDecisionSurvivesTheCompletionRace:
 
         with patch.object(Inbox, "get", get_with_operator_race):
             pipeline.repoll_merge_pending()
+        assert fetched == [(manifest.base_branch, pipeline.root_dir)]
 
         thread = holder["thread"]
         thread.join(timeout=10)
@@ -486,7 +491,8 @@ class TestAnOperatorDecisionSurvivesTheCompletionRace:
         monkeypatch.setattr(
             "kstrl.pipeline.pr.wait_for_merge", lambda *a, **k: MergeConfirmation(state="merged")
         )
-        monkeypatch.setattr("kstrl.git.fetch_base_branch", lambda *a, **k: None)
+        fetched: list[tuple[Any, ...]] = []
+        monkeypatch.setattr("kstrl.git.fetch_base_branch", lambda *a, **k: fetched.append(a))
         out = io.StringIO()
         pipeline, manifest, _result, _calls = _make_pipeline(
             tmp_path, config=_factory_config(create_prs=True), ui=PlainUI(no_color=True, file=out)
@@ -515,6 +521,7 @@ class TestAnOperatorDecisionSurvivesTheCompletionRace:
 
         with patch.object(Inbox, "items", items_with_operator_race):
             pipeline.repoll_merge_pending()
+        assert fetched == [(manifest.base_branch, pipeline.root_dir)]
 
         final = Inbox(tmp_path, InboxConfig()).get(gate.id)
         assert final is not None

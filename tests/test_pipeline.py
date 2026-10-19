@@ -1358,13 +1358,16 @@ class TestMergePendingRepoll:
             "kstrl.pipeline.pr.wait_for_merge",
             lambda *a, **k: MergeConfirmation(state="merged"),
         )
+        fetched: list[tuple[Any, ...]] = []
         monkeypatch.setattr(
             "kstrl.git.fetch_base_branch",
-            lambda *a, **k: None,
+            lambda *a, **k: fetched.append(a),
         )
         pipeline, manifest, result = self._parked(tmp_path)
         box = self._seed_merge_gate(tmp_path)
         pipeline.repoll_merge_pending()
+        # The merge moved the base: it is fetched before a dependent starts from it.
+        assert fetched == [(manifest.base_branch, pipeline.root_dir)]
         comp = manifest.get_component("comp-a")
         assert comp is not None
         assert comp.status == ComponentStatus.COMPLETED.value

@@ -31,9 +31,11 @@ kstrl.cli`` and ``import kstrl.write_guard`` load are pinned. A larger
 value is red. A smaller value is red until the pin is lowered in the same
 change, so the ratchet stays tight.
 
-Disclosed limits, each a strict xfail in ``TestDisclosedLimits``: an alias
-of ``import_module``, ``getattr`` with a string, a ``sys.modules`` lookup,
-and a package object passed on as an argument.
+Disclosed limits, each a strict xfail in ``TestDisclosedLimits``:
+``getattr`` with a string, a ``sys.modules`` lookup, and a package object
+passed on as an argument. Each use of ``import_module`` or ``__import__``
+that is not a direct call (an alias, a ``functools.partial``) is a site
+the guard cannot read, thus it is red.
 """
 
 from __future__ import annotations
@@ -237,12 +239,16 @@ def dynamic_target(node: ast.Call) -> str | None:
     """
     func = node.func
     name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
-    if name not in {"import_module", "__import__"}:
+    if name not in DYNAMIC_IMPORTS:
         return None
     first = node.args[0] if node.args else None
     if isinstance(first, ast.Constant) and isinstance(first.value, str):
         return UNREADABLE if first.value.startswith(".") else first.value
     return UNREADABLE
+
+
+#: The functions that import a module by a string.
+DYNAMIC_IMPORTS = frozenset({"import_module", "__import__"})
 
 
 def _is_kstrl(dotted: str) -> bool:
@@ -287,7 +293,23 @@ class _Walk:
         for alias in node.names:
             if _is_kstrl(module):
                 yield self.site(node, f"{module}.{alias.name}", "from")
+            if alias.name in DYNAMIC_IMPORTS and alias.asname not in (None, alias.name):
+                yield self.site(node, UNREADABLE, "dynamic")
             self.bind(alias.asname or alias.name, f"{module}.{alias.name}")
+
+    def dynamic_references(self, tree: ast.Module) -> Iterator[Site]:
+        """``import_module`` or ``__import__`` used other than as a direct call.
+
+        An alias, a ``functools.partial`` or a function given as an
+        argument hides the name of the module from the walk, so each such
+        reference is a site the guard cannot read.
+        """
+        called = {id(n.func) for n in ast.walk(tree) if isinstance(n, ast.Call)}
+        for node in ast.walk(tree):
+            name = node.attr if isinstance(node, ast.Attribute) else getattr(node, "id", None)
+            if name in DYNAMIC_IMPORTS and isinstance(node, (ast.Name, ast.Attribute)):
+                if id(node) not in called:
+                    yield self.site(node, UNREADABLE, "dynamic")
 
     def dynamic_bindings(self, tree: ast.Module) -> None:
         for node in ast.walk(tree):
@@ -310,11 +332,23 @@ class _Walk:
                 continue
             chain = _chain(node)
             if chain is None:
+                yield from self._call_head(node)
                 continue
             head, attrs = chain
             for base in sorted(self.bound.get(head, ())):
                 if base in modules and base.count(".") <= 1:
                     yield self.site(node, ".".join([base, *attrs]), "attr")
+
+    def _call_head(self, node: ast.Attribute) -> Iterator[Site]:
+        """A read on the module that a call returns: ``import_module("kstrl.q").x``."""
+        attrs: list[str] = []
+        cur: ast.expr = node
+        while isinstance(cur, ast.Attribute):
+            attrs.insert(0, cur.attr)
+            cur = cur.value
+        target = dynamic_target(cur) if isinstance(cur, ast.Call) else None
+        if target is not None and target != UNREADABLE and _is_kstrl(target):
+            yield self.site(node, ".".join([target, *attrs]), "attr")
 
 
 def _chain(node: ast.Attribute) -> tuple[str, list[str]] | None:
@@ -332,6 +366,7 @@ def sites_of(root: Path, path: Path, modules: frozenset[str]) -> list[Site]:
     tree = _parse(path)
     walk = _Walk(root, path)
     found = [s for node in ast.walk(tree) for s in walk.imports(node)]
+    found += walk.dynamic_references(tree)
     walk.dynamic_bindings(tree)
     return found + list(walk.attributes(tree, modules))
 
@@ -468,6 +503,21 @@ def init_problems(root: Path) -> list[str]:
     return found
 
 
+def unit_problems(root: Path) -> list[str]:
+    """Each file whose unit is not a package or a top-level module.
+
+    A directory with no ``__init__.py`` is not a unit, so ``LAYERS`` and
+    ``INTERFACE_SIZES`` would not name it. Its files are red here.
+    """
+    lay = layout(root)
+    known = lay.units | {ROOT_UNIT}
+    return [
+        f"{f.relative_to(root).as_posix()}: unit {unit_of(root, f)!r} has no __init__.py"
+        for f in kstrl_files(root)
+        if unit_of(root, f) not in known
+    ]
+
+
 def loaded_modules(module: str) -> int:
     code = (
         "import importlib, json, sys; "
@@ -505,6 +555,7 @@ class TestTheTree:
     def test_layers_name_each_unit_on_disk(self) -> None:
         lay = layout(ROOT)
         assert sorted(lay.units) == sorted(LAYERS)
+        assert unit_problems(ROOT) == []
 
     def test_no_import_goes_around_an_interface(self) -> None:
         assert problems(ROOT) == []
@@ -605,6 +656,18 @@ CAUGHT: list[tuple[str, str, str]] = [
     ("kstrl/agents/base.py", "from kstrl.write_guard import hidden\n", "not in __all__"),
     ("kstrl/cli/cli.py", "from kstrl import nothing\n", "no unit or name"),
     ("kstrl/__init__.py", '__version__ = "0"\nfrom kstrl.io import read_json\n', "not lower"),
+    (
+        "kstrl/cli/cli.py",
+        'import importlib\nim = importlib.import_module\nim("kstrl.proc.procgroup")\n',
+        "cannot read",
+    ),
+    ("kstrl/cli/cli.py", 'from importlib import import_module as im\nim("kstrl.x")\n', "cannot"),
+    (
+        "kstrl/cli/cli.py",
+        'import importlib\nimportlib.import_module("kstrl.io").hidden\n',
+        "__all__",
+    ),
+    ("kstrl/cli/cli.py", '__import__("kstrl.proc", fromlist=["x"]).procgroup\n', "submodule"),
 ]
 
 
@@ -675,6 +738,12 @@ def test_an_init_that_breaks_a_rule_is_red(tmp_path: Path, source: str, why: str
     assert any(why in p for p in found), found
 
 
+def test_a_directory_with_no_init_is_red(tmp_path: Path) -> None:
+    root = _tree(tmp_path, {"kstrl/orphan/mod.py": "import os\n"})
+    assert unit_problems(root) == ["kstrl/orphan/mod.py: unit 'orphan' has no __init__.py"]
+    assert unit_problems(_tree(tmp_path / "clean", {})) == []
+
+
 def test_an_interface_that_grows_is_red(tmp_path: Path) -> None:
     """The pin compares the sizes; this is the comparison on a planted growth."""
     root = _tree(tmp_path, {})
@@ -698,11 +767,6 @@ def _flags(source: str) -> bool:
 
 
 class TestDisclosedLimits:
-    @pytest.mark.xfail(strict=True, raises=AssertionError)
-    def test_an_alias_of_import_module(self) -> None:
-        source = 'import importlib\nim = importlib.import_module\nim("kstrl.proc.procgroup")\n'
-        blind_spot(_flags, source)
-
     @pytest.mark.xfail(strict=True, raises=AssertionError)
     def test_getattr_with_a_string(self) -> None:
         blind_spot(_flags, 'from kstrl import io\ngetattr(io, "hidden")()\n')
