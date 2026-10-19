@@ -409,6 +409,25 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 - A distiller reply that did not parse is asked for once more, inside the
   adversarial budget (2 of 4 user runs lost a component's facts to it).
 - Stories the reviewer did not confirm are listed with the reason for each.
+- `--max-cost-usd` bounds the verification designer: each ask's spend is
+  metered before the next ask is weighed. It was metered once per
+  component, after every ask, so a $2.50 cap let two asks spend $5.17.
+- A designer reply kstrl does not accept is asked again with the reasons
+  (ACCEPTANCE_REASK_PROMPT 1.0.0); the same prompt twice drew the same
+  uncited criteria twice. Each component's valid entry is kept as it is
+  written, so a run refused at a later component asks the next run only
+  for the rest, and the refusal names what is kept and what the designer
+  spent. Each component's design is announced as it starts.
+- An approved acceptance halt is merged over in Phase 3 as well, when the
+  merged commit contains the approved one; the approval is printed under
+  the tier. Phase 3 failed the approved check again, so `ks retry` after
+  an approval could not complete the component.
+- `ks retry` of a component whose dependency did not complete is refused
+  before anything changes, naming the order that works. It deleted the
+  component's branch and then scheduled nothing.
+- Failure lines print their first line whole instead of cutting at 80 or
+  160 characters; `ks check --help` says a check that could not run is a
+  failed row with the reason.
 - `ks doctor --measure` on a new repository no longer takes back the
   `[stack]` confirmation. A check that ran and failed on the base
   (`base_contradiction`) is a red base, which the `base_gates` row reports

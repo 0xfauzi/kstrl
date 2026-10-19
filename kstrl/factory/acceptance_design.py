@@ -29,6 +29,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import shutil
 from collections.abc import Callable, Collection, Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -55,11 +56,17 @@ from kstrl.agents import (
     recording_prompts,
     select_agent_output,
 )
-from kstrl.events import DESIGNER_ROLE, collect_usage
+from kstrl.events import DESIGNER_ROLE, collect_usage, usage_cursor
 from kstrl.factory.integration_phase import REVIEW_ASKS, _reask_refusal
 from kstrl.factory.plan_gate import PlanUnreadableError, pinned_spec, plan_digest
 from kstrl.git import GitDiffError, resolve_base_sha
-from kstrl.io import control_dir, generate_data_delimiter, pre_run_prd_path
+from kstrl.io import (
+    atomic_write_json,
+    control_dir,
+    generate_data_delimiter,
+    pre_run_prd_path,
+    read_json,
+)
 from kstrl.owner import ItemKind, approvals_at
 from kstrl.plan import PRD, SpecRequirement, built_by
 from kstrl.proc import (
@@ -198,6 +205,20 @@ Reply with one JSON object and nothing else:
 "argv": ["..."], "onBase": "fails", "heldOut": true}}]}}
 """
 
+#: H3: what a re-ask adds to the designer's prompt: why kstrl did not accept
+#: the previous reply. A re-ask of the same prompt drew the same mistake
+#: twice in a user run (criteria citing story ids, not requirement ids).
+ACCEPTANCE_REASK_PROMPT_VERSION = "1.0.0"
+
+ACCEPTANCE_REASK_PROMPT = """
+## Your previous reply
+
+kstrl did not accept your previous reply, for these reasons:
+{reasons}
+
+Reply again with the whole entry, correcting each of them.
+"""
+
 
 def build_design_prompt(
     comp: Component,
@@ -242,23 +263,33 @@ def design_component(
     and each criterion cites one of ``requirement_ids`` (#639 slice 5).
     The factory and the ``acceptance`` calibration roles both call this."""
     errors: list[str] = []
+    asked = prompt
     for ask in range(1, DESIGN_ASKS + 1):
         refusal = spend()
         if refusal:
             return None, ask - 1, [*errors, f"ask {ask} was not made: {refusal}"]
         try:
-            lines = collect_agent_output(agent, prompt, cwd=cwd, timeout=timeout)
+            lines = collect_agent_output(agent, asked, cwd=cwd, timeout=timeout)
             entry: Any = extract_json(select_agent_output(agent, lines))
         except (OSError, RuntimeError, ValueError) as exc:
-            errors.append(f"ask {ask}: {exc}")
-            continue
-        found = plan_errors({"components": {comp_id: entry}}, [comp_id]) or citation_errors(
-            entry, requirement_ids
-        )
-        if not found:
-            return entry, ask, errors
+            found = [str(exc)]
+        else:
+            found = plan_errors({"components": {comp_id: entry}}, [comp_id]) or citation_errors(
+                entry, requirement_ids
+            )
+            if not found:
+                return entry, ask, errors
         errors += [f"ask {ask}: {line}" for line in found]
+        asked = reask_prompt(prompt, found)
     return None, DESIGN_ASKS, errors
+
+
+def reask_prompt(prompt: str, reasons: Sequence[str]) -> str:
+    """The designer's prompt for a re-ask: ``prompt`` and why kstrl did not
+    accept the previous reply."""
+    return prompt + ACCEPTANCE_REASK_PROMPT.format(
+        reasons="\n".join(f"- {line}" for line in reasons)
+    )
 
 
 def citation_errors(entry: Any, requirement_ids: Collection[str]) -> list[str]:
@@ -324,10 +355,30 @@ def design_plan(pipeline: ComponentPipeline) -> tuple[PinnedPlan | None, list[st
     entries: dict[str, Any] = {}
     asks: dict[str, int] = {}
     causes: dict[str, list[str]] = {}
+    # Each component's entry is kept as it validates, so a run refused at a
+    # later component asks a later run only for the rest (a user run threw
+    # away $5 of valid entries on a refusal at its third component).
+    kept = target.with_name(f"{target.name}.partial")
     for comp in manifest.components:
-        entry, asks[comp.id], causes[comp.id] = _design_one(pipeline, comp, spec, stack, base)
+        entry, asks[comp.id], causes[comp.id] = _design_one(pipeline, comp, spec, stack, base, kept)
         if entry is None:
-            return None, [f"{comp.id}: {line}" for line in causes[comp.id]]
+            spent = pipeline.usage_meter.get(comp.id, {}).get(DESIGNER_ROLE)
+            return None, [
+                *(f"{comp.id}: {line}" for line in causes[comp.id]),
+                *(
+                    [
+                        f"The designer's entries for {', '.join(entries)} are kept in {kept}; "
+                        "the next run asks only for the rest."
+                    ]
+                    if entries
+                    else []
+                ),
+                *(
+                    [f"The designer spent ${spent.cost_usd:.4f} on {comp.id} in this run."]
+                    if spent is not None and spent.cost_usd
+                    else []
+                ),
+            ]
         entries[comp.id] = entry
     selection = pipeline.review_selection
     designer = {
@@ -345,6 +396,7 @@ def design_plan(pipeline: ComponentPipeline) -> tuple[PinnedPlan | None, list[st
         )
     except OSError as exc:
         return None, [f"the designed plan cannot be written at {target}: {exc}"]
+    shutil.rmtree(kept, ignore_errors=True)
     pipeline.ui.info(f"  The verification designer wrote the acceptance plan {target}")
     return pin_plan(root, manifest, str(target), stack)
 
@@ -354,9 +406,11 @@ def _json(document: Any) -> tuple[bytes, bool]:
 
 
 def _design_one(
-    pipeline: ComponentPipeline, comp: Component, spec: str, stack: Stack, base: str
+    pipeline: ComponentPipeline, comp: Component, spec: str, stack: Stack, base: str, kept: Path
 ) -> tuple[dict[str, Any] | None, int, list[str]]:
-    """One component's design, in a fresh checkout of the base removed after it."""
+    """One component's design, in a fresh checkout of the base removed after
+    it; or the entry ``kept`` holds for it from an earlier run, when that
+    entry is still valid for this component (no ask is made)."""
     root = pipeline.root_dir
     try:
         prd = PRD.load(pre_run_prd_path(root, comp.id, comp.prd_path, plan_id=comp.plan_id))
@@ -368,11 +422,39 @@ def _design_one(
         for criterion in story.acceptance_criteria
     ]
     built = built_by(pipeline.factory_config.requirements, {story.id for story in prd.user_stories})
+    saved = kept / f"{comp.id}.json"
+    try:
+        entry: Any = read_json(saved.read_bytes()) if saved.is_file() else None
+    except (OSError, ValueError):
+        entry = None
+    if entry is not None and not (
+        plan_errors({"components": {comp.id: entry}}, [comp.id])
+        or citation_errors(entry, [r.id for r in built])
+    ):
+        pipeline.ui.info(f"  {comp.id}: the designer's entry from an earlier run is kept: {saved}")
+        return entry, 0, []
+    pipeline.ui.info(f"  {comp.id}: the verification designer is writing its checks...")
     worktree, error = create_temp_worktree(base, root, DESIGNER_ROLE)
     if worktree is None:
         return None, 0, [f"the base {base[:12]} was not checked out: {error}"]
     selection = pipeline.review_selection
     agent: Any = None
+    metered = 0
+
+    def meter() -> None:
+        # Each ask's spend reaches the ceilings before the next ask is
+        # weighed: metered once at the end, a $2.50 cap let two asks
+        # spend $5.17 (a user run).
+        nonlocal metered
+        if agent is not None:
+            totals = collect_usage(agent, since=metered)
+            metered = usage_cursor(agent)
+            pipeline.record_designer_usage(comp.id, totals)
+
+    def spend() -> str:
+        meter()
+        return _reask_refusal(pipeline)
+
     try:
         agent = get_agent(
             selection.agent_cmd,
@@ -392,20 +474,23 @@ def _design_one(
                 attempt=1,
             )
         ):
-            return design_component(
+            designed = design_component(
                 agent,
                 build_design_prompt(comp, criteria, spec, stack, requirements=built),
                 worktree,
                 comp.id,
                 timeout=limit_seconds(pipeline.factory_config.review_timeout_seconds),
-                spend=lambda: _reask_refusal(pipeline),
+                spend=spend,
                 requirement_ids=[r.id for r in built],
             )
+        if designed[0] is not None:
+            kept.mkdir(parents=True, exist_ok=True)
+            atomic_write_json(saved, designed[0])
+        return designed
     except (OSError, RuntimeError, ValueError) as exc:
         return None, 0, [f"the designer could not be started: {exc}"]
     finally:
-        if agent is not None:
-            pipeline.record_designer_usage(comp.id, collect_usage(agent))
+        meter()
         try:
             remove_temp_worktree(worktree, root, pipeline.ui, DESIGNER_ROLE)
         except ContractCleanupError as exc:

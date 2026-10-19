@@ -443,8 +443,8 @@ def check(
     edits, stages or commits. The exception is the [stack] checks, which
     are your programs and write their own caches.
 
-    A check that could not run gets NO row: it is reported under
-    not_measured with the reason, never as a passing check (#306).
+    A check that could not run is never a passing row: it fails, with the
+    reason it did not run (#306).
 
     Most checks read `git diff <base>...HEAD`, so the tree must be a git
     repository with a reachable base unless every diff-based check is

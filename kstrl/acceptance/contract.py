@@ -382,6 +382,9 @@ def run_tier_check(
 
         if passed:
             ui.ok(f"  Tier {tier_index}: contract tests passed")
+            # On a pass, what is said is a check an approval merged over.
+            for line in output.splitlines():
+                ui.info(f"    {line}")
             return ContractResult(
                 passed=True,
                 tier=tier_index,
@@ -505,6 +508,8 @@ def run_integrated_base_check(
 
     if passed:
         ui.ok("  Integrated check: contract tests passed")
+        for line in output.splitlines():
+            ui.info(f"    {line}")
     else:
         ui.err(
             "  Integrated check: tier failed (components already merged "

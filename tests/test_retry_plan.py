@@ -68,7 +68,12 @@ class TestTheRetryCommandPrintsWhatItLeavesOut:
     """#485 through the real `ks retry`, answered Quit at the confirmation."""
 
     def _retry(
-        self, tmp_path: Path, manifest: Manifest, component_id: str, monkeypatch: pytest.MonkeyPatch
+        self,
+        tmp_path: Path,
+        manifest: Manifest,
+        component_id: str,
+        monkeypatch: pytest.MonkeyPatch,
+        code: int = 0,
     ) -> str:
         manifest_file = tmp_path / "scripts" / "kstrl" / "manifest.json"
         manifest_file.parent.mkdir(parents=True)
@@ -92,7 +97,7 @@ class TestTheRetryCommandPrintsWhatItLeavesOut:
                 "--no-color",
             ],
         )
-        assert result.exit_code == 0, result.output
+        assert result.exit_code == code, result.output
         return result.output
 
     def test_the_plan_names_the_failed_sibling(
@@ -119,6 +124,24 @@ class TestTheRetryCommandPrintsWhatItLeavesOut:
             r"\s*Manifest:",
             out,
         ), out
+
+
+    def test_a_component_whose_dependency_failed_is_refused_before_anything_changes(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A user retried a component whose dependency had failed: its branch
+        was deleted, then nothing was scheduled. It is refused, naming the
+        order that works, and the manifest is left as it was."""
+        manifest = _manifest_of(
+            _component("a", [], ComponentStatus.FAILED),
+            _component("b", ["a"], ComponentStatus.FAILED),
+        )
+
+        out = self._retry(tmp_path, manifest, "b", monkeypatch, code=2)
+
+        assert "run ks retry a first, then ks retry b" in " ".join(out.split()), out
+        saved = Manifest.load(tmp_path / "scripts" / "kstrl" / "manifest.json")
+        assert [(c.id, c.status) for c in saved.components] == [("a", "failed"), ("b", "failed")]
 
 
 def test_the_branch_probe_asks_for_a_branch_not_any_ref(tmp_path: Path) -> None:

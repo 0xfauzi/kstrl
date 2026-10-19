@@ -703,6 +703,20 @@ class Manifest:
                 f"'{ComponentStatus.FAILED.value}'; only failed components "
                 f"can be retried"
             )
+        # A component whose dependency did not complete is never scheduled,
+        # so a retry of it alone ran nothing, after deleting its branch.
+        blocked = [
+            dep
+            for dep in comp.dependencies
+            if (d := self.get_component(dep)) is not None
+            and d.status not in (ComponentStatus.COMPLETED.value, ComponentStatus.PENDING.value)
+        ]
+        if blocked:
+            raise ValueError(
+                f"Component '{component_id}' depends on {', '.join(blocked)}, which did not "
+                f"complete, so a retry of it alone runs nothing: run ks retry {blocked[0]} "
+                f"first, then ks retry {component_id}"
+            )
 
         dependents = self._transitive_dependents(component_id)
         reset_ids = {component_id}

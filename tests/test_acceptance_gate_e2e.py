@@ -514,3 +514,35 @@ def test_a_held_out_check_leaves_nothing_in_the_repository_and_recheck_finds_it(
     code, out = _spawn(argv, record.parent, None)
     assert code == 0, out
     assert "The recheck agrees with the record." in out, out
+
+
+@runs_a_stack
+def test_an_approved_halt_is_merged_over_in_phase_3_as_well(tmp_path: Path) -> None:
+    """With no PRs, Phase 3 replays the plan's checks on the merged tier. It
+    failed the held-out check the approval had merged over on the head, and
+    the component ended failed with no item to approve (a user run)."""
+    root = _repo(tmp_path, _stack({"tests": "true"}))
+    _with_greet(root)
+    hidden = f"Grace{secrets.token_hex(4)}"
+    plan = _plan(
+        tmp_path,
+        [_check("greets-hidden", ["/bin/sh", "check.sh", hidden], held_out=True)],
+        script=GREETS_OR_MARKER,
+    )
+    first = _factory(
+        tmp_path, root, "--acceptance", str(plan), contract="tier", engineer=SPECIAL_CASED
+    )
+    assert first.code == 1, first.out
+    (item,) = _halts(root)
+    code, said = _spawn(
+        ["inbox", "approve", item.id, "--root", str(root), "--ui", "plain"], root, None
+    )
+    assert code == 0, said
+
+    code, out = _spawn(
+        ["retry", COMP, "--yes", "--root", str(root), "--ui", "plain", "--no-color"], root, None
+    )
+
+    assert code == 0, out
+    assert _status(root) == ("completed", ""), out
+    assert f"acceptance:greets-hidden ({COMP}): merged over by inbox approval {item.id[:8]}" in out

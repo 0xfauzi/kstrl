@@ -293,7 +293,7 @@ class Transitions(InboxDesk, AttemptRecorder, UsageLedger):
                 dedupe_key=f"halted:{comp.id}:{phase}:{check}",
                 evidence=evidence,
             )
-        self.ui.err(f"  Failed: {comp.id}: {error[:80]}")
+        self.ui.err(f"  Failed: {comp.id}: {(error.splitlines() or [''])[0]}")
         self.manifest.save(self.manifest_path)
         return Transition.FAILED
 

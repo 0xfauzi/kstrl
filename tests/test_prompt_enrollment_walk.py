@@ -266,7 +266,7 @@ def _spells_a_prompt_name(node: ast.AST) -> bool:
 #: not a prompt body. ``git.py`` at four is two declarations and two
 #: uses.
 EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
-    "factory/acceptance_design.py": 2,
+    "factory/acceptance_design.py": 4,
     "cli/cli_seam.py": 2,  # _ROOT_FROM_PROMPT, which is a set of command names
     # #332 landed while this migration was in flight: the version
     # constant and the body of DECISIONS_CONTEXT_PROMPT, both enrolled.

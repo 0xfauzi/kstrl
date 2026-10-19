@@ -336,6 +336,28 @@ _ROLES: dict[str, _Role] = {
         "372647a6610878408260e97b09a1b362d9c927f24677b1a5c12e0927d58872ac",
         4237,
     ),
+    # The designer's re-ask: the same prompt and why the previous reply was
+    # not accepted.
+    "acceptance-designer-reask": _Role(
+        lambda _p: acceptance_design.reask_prompt(
+            acceptance_design.build_design_prompt(
+                _COMPONENT,
+                ["it parses a valid file", "it errors on a bad one"],
+                _SPEC_TEXT,
+                Stack(
+                    instructions="Build with the project's own tools.",
+                    setup="",
+                    checks=(("tests", "T"), ("lint", "L")),
+                    env=(),
+                ),
+                requirements=_REQUIREMENTS[:1],
+            ),
+            ["checks[0].criterion: 'US-001: parses' names none of the requirements"],
+        ),
+        frozenset({"ACCEPTANCE_PROMPT", "ACCEPTANCE_REASK_PROMPT"}),
+        "c55e3c40cbc247a4654de332491f06dfa5eeab6c92ef43a2a4a6b99d62429a1a",
+        4454,
+    ),
     "architect": _Role(
         lambda _p: decompose_prompt.build_decompose_prompt("PROJECT", _SPEC_TEXT),
         frozenset({"DECOMPOSE_PROMPT", "ARCHITECT_NO_REPO_SOURCE_PROMPT"}),

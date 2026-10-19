@@ -114,7 +114,12 @@ from kstrl.architect.owner_answers import (
     render_owner_answer,
 )
 from kstrl.factory import acceptance_design
-from kstrl.factory.acceptance_design import ACCEPTANCE_PROMPT, ACCEPTANCE_PROMPT_VERSION
+from kstrl.factory.acceptance_design import (
+    ACCEPTANCE_PROMPT,
+    ACCEPTANCE_PROMPT_VERSION,
+    ACCEPTANCE_REASK_PROMPT,
+    ACCEPTANCE_REASK_PROMPT_VERSION,
+)
 from kstrl.git import git_diff
 from kstrl.git.git_diff import (
     PASTED_CHANGE_SOURCE_PROMPT,
@@ -193,6 +198,7 @@ _PROMPTS: dict[str, str] = {
     "OWNER_ANSWER_PROMPT": OWNER_ANSWER_PROMPT,
     "STACK_PROMPT": STACK_PROMPT,
     "ACCEPTANCE_PROMPT": ACCEPTANCE_PROMPT,
+    "ACCEPTANCE_REASK_PROMPT": ACCEPTANCE_REASK_PROMPT,
     "BUG_REPORT_PROMPT": BUG_REPORT_PROMPT,
     **BUILDER_PROMPTS,
     **NOTICE_PROMPTS,
@@ -214,6 +220,7 @@ _VERSIONS: dict[str, str] = {
     "OWNER_ANSWER_PROMPT": OWNER_ANSWER_PROMPT_VERSION,
     "STACK_PROMPT": STACK_PROMPT_VERSION,
     "ACCEPTANCE_PROMPT": ACCEPTANCE_PROMPT_VERSION,
+    "ACCEPTANCE_REASK_PROMPT": ACCEPTANCE_REASK_PROMPT_VERSION,
     "BUG_REPORT_PROMPT": BUG_REPORT_PROMPT_VERSION,
     **BUILDER_VERSIONS,
     **NOTICE_VERSIONS,
@@ -408,6 +415,13 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     "ACCEPTANCE_PROMPT": (
         "b42bec0e7ea02381ee5832da179e8425160155383a162f4a09288ae028bfd6a9",
         "1.2.0",
+    ),
+    # 1.0.0: new. A re-ask says why kstrl did not accept the previous reply; the
+    # same prompt twice drew the same uncited criteria twice in a user run. H2:
+    # the acceptance roles reach it only on a re-ask.
+    "ACCEPTANCE_REASK_PROMPT": (
+        "72ba0419a9e0cac0ed3f02f32cfc052fceb44b1d9a975fc70a03ed01540c1e07",
+        "1.0.0",
     ),
     # 1.1.0: MINOR. Report one row per file; the harness adds them up.
     "PASTED_CHANGE_SOURCE_PROMPT": (
@@ -630,6 +644,10 @@ _RENDERERS: dict[str, tuple[ModuleType, Callable[[Path], str]]] = {
     "DISTILL_PROMPT": (knowledge_distill, _distill_render),
     "STACK_PROMPT": (stack, _stack_render),
     "ACCEPTANCE_PROMPT": (acceptance_design, _acceptance_render),
+    "ACCEPTANCE_REASK_PROMPT": (
+        acceptance_design,
+        lambda _p: acceptance_design.reask_prompt("", ["R"]),
+    ),
     "REPO_CHANGE_SOURCE_PROMPT": (git_diff, lambda _p: repo_change_source("BASE_SHA")),
     "PASTED_CHANGE_SOURCE_PROMPT": (git_diff, lambda _p: pasted_change_source("DIFF")[0]),
     "DECISIONS_CONTEXT_PROMPT": (decisions, _decisions_context_render),

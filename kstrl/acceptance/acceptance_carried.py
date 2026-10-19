@@ -30,6 +30,7 @@ later feature cannot break an earlier one and still pass.
 
 from __future__ import annotations
 
+import subprocess
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -455,14 +456,60 @@ def replay_merged(
         at=sha,
         probe=_all([_probe(p, w, stack, limit, runs, HEAD_RUNS, _no_log) for p, w in groups]),
     )
-    failing, held_out = _failing_lines([item for _, w in groups for item in w], runs)
+    wanted = [item for _, w in groups for item in w]
+    waived = _approved_over(root_dir, sha, wanted, runs)
+    failing, held_out = _failing_lines([i for i in wanted if (i[0], i[1].id) not in waived], runs)
+    approved = [
+        f"acceptance:{check} ({comp}): merged over by inbox approval {item[:8]}"
+        for (comp, check), item in waived.items()
+    ]
     if not failing:
-        return True, [], (), ()
+        return True, approved, (), ()
     stopped = record.error or (f"{record.failed}: {record.detail}" if record.failed else "")
     lines = [f"acceptance replay at {sha[:12]} stopped: {stopped}"] if stopped else []
     lines += failing
     broken = tuple(c.entry for c in carried if _verdict(c, runs) != PASS)
     return False, lines, held_out, broken
+
+
+def _approved_over(
+    root: Path,
+    sha: str,
+    wanted: Sequence[tuple[str, Check]],
+    runs: Mapping[tuple[str, str], Sequence[Stage]],
+) -> dict[tuple[str, str], str]:
+    """The failing checks an approved acceptance halt merges over, to the
+    approval's id: one that names every failing check of its component and
+    was taken on a commit ``sha`` contains. Without this, the check an
+    approval waived on the component's head failed it again here (a user
+    run). Any other failing check, or a commit the approval was not taken
+    on, still fails."""
+    from kstrl.owner import approvals_at, covering_override
+
+    failing: dict[str, list[str]] = {}
+    for comp, check in wanted:
+        if head_verdict([stage.exit for stage in runs.get((comp, check.id), [])]) != PASS:
+            failing.setdefault(comp, []).append(check.id)
+    if not failing:
+        return {}
+    waived: dict[tuple[str, str], str] = {}
+    for item in approvals_at(root).overrides:
+        checks = failing.get(item.component, [])
+        head = str(item.evidence.get("head_sha", ""))
+        if checks and covering_override([item], head, checks) and _contains(root, sha, head):
+            waived.update({(item.component, check): item.id for check in checks})
+    return waived
+
+
+def _contains(root: Path, sha: str, ancestor: str) -> bool:
+    done = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", ancestor, sha],
+        cwd=root,
+        capture_output=True,
+        timeout=30,
+        check=False,
+    )
+    return done.returncode == 0
 
 
 def _verdict(carried: Carried, runs: Mapping[tuple[str, str], Sequence[Stage]]) -> str:

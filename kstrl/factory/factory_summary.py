@@ -253,7 +253,7 @@ def _print_failed_component(ctx: RunContext, failed_id: str) -> None:
         f"(attempt {failed_comp.retries + 1})"
     )
     if failed_comp.error:
-        ctx.ui.info(f"    error: {failed_comp.error[:160]}")
+        ctx.ui.info(f"    error: {failed_comp.error.splitlines()[0]}")
     if failed_comp.evidence_worktree:
         ctx.ui.info(f"    worktree: {failed_comp.evidence_worktree}")
     elif ctx.factory_config.use_worktrees:

@@ -20,6 +20,7 @@ and ``tests/test_stack_e2e.py``).
 from __future__ import annotations
 
 import json
+import os
 import secrets
 import shlex
 import subprocess
@@ -356,6 +357,14 @@ def test_a_reply_that_is_not_a_plan_is_asked_once_more_and_then_refused(tmp_path
     assert "ask 2: components.greeter.checks[0].onBase must be one of fails, passes" in run.out
     # The cause of the second ask is said as well as why it was refused.
     assert "ask 1: components.greeter.checks[0].onBase must be one of fails, passes" in run.out
+    # The second ask is told why the first reply was not accepted: the same
+    # prompt twice drew the same mistake twice in a user run.
+    first, second = run.designer_prompts.split(DESIGNER_MARK)[1:]
+    assert "kstrl did not accept your previous reply" not in first
+    assert (
+        "kstrl did not accept your previous reply, for these reasons:\n"
+        "- components.greeter.checks[0].onBase must be one of fails, passes"
+    ) in second, second
     assert len(run.designer) == 2, run.out
     assert run.engineer_calls == 0, run.out
     assert _designed_plans(root) == []
@@ -406,6 +415,75 @@ def test_each_component_gets_its_own_designer_in_its_own_checkout(tmp_path: Path
     (designed,) = _designed_plans(root)
     designer = json.loads((designed / DESIGNER_FILE).read_text(encoding="utf-8"))
     assert designer["asks"] == {"greeter": 1, "farewell": 1}, designer
+
+
+@runs_a_stack
+def test_a_component_designed_before_a_refusal_is_kept_for_the_next_run(tmp_path: Path) -> None:
+    """A run refused at its second component keeps the first one's entry,
+    and the next run asks only for the second (a user run threw away $5 of
+    valid entries this way)."""
+    root = _repo(tmp_path, _stack({"tests": "true"}), comps=("greeter", "farewell"))
+    _with_greet(root)
+    valid = _entry([_check("missing", ["kstrl-no-such-check-7c1d"])])
+    first, second = tmp_path / "first", tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+
+    refused = _design(first, root, [valid, "no plan here", "no plan here"])
+    again = _design(second, root, [valid])
+
+    assert refused.code == 2 and REFUSED_DESIGN in refused.out, refused.out
+    assert "The designer's entries for greeter are kept in" in refused.out, refused.out
+    assert len(refused.designer) == 3, refused.out
+    assert len(again.designer) == 1, again.out
+    assert "Component: farewell" in again.designer_prompts, again.designer_prompts
+    assert "greeter: the designer's entry from an earlier run is kept" in again.out, again.out
+    (designed,) = _designed_plans(root)
+    designer = json.loads((designed / DESIGNER_FILE).read_text(encoding="utf-8"))
+    assert designer["asks"] == {"greeter": 0, "farewell": 1}, designer
+
+
+@runs_a_stack
+def test_a_designer_ask_past_the_cost_ceiling_is_not_made(tmp_path: Path) -> None:
+    """Each ask's spend reaches the ceiling before the next ask is weighed.
+    Metered once at the end, a $2.50 cap let two asks spend $5.17 (a user
+    run). Here one ask costs $1.50 against a $1 cap: the second is not made."""
+    root = _greeting_repo(tmp_path)
+    bindir, calls = tmp_path / "fakebin", tmp_path / "claude-calls"
+    bindir.mkdir()
+    calls.mkdir()
+    result = json.dumps(
+        {
+            "type": "result",
+            "result": "no plan here",
+            "total_cost_usd": 1.5,
+            "usage": {"input_tokens": 100, "output_tokens": 50},
+        }
+    )
+    write_executable(
+        bindir / "claude",
+        "#!/bin/sh\n"
+        'case "$*" in *--help*|*--version*) exit 0 ;; esac\n'
+        f"cat > '{calls}/'$$.txt\n"
+        f"echo {shlex.quote(result)}\n",
+    )
+    path = f"{bindir}{os.pathsep}{os.environ['PATH']}"
+
+    code, out = _spawn(
+        [
+            "factory",
+            *("--manifest", str(root / "scripts" / "kstrl" / "manifest.json")),
+            *("--root", str(root), "--yes", "--ui", "plain", "--no-color", "--no-prs"),
+            *("--review-mode", "skip", "--security-mode", "skip", "--contract-check", "skip"),
+            *("--design-acceptance", "--max-cost-usd", "1"),
+        ],
+        root,
+        {"PATH": path},
+    )
+
+    assert code == 2 and REFUSED_DESIGN in out, out
+    assert "ask 2 was not made: the run reached max_cost_usd" in out, out
+    assert len(list(calls.iterdir())) == 1, out
 
 
 @runs_a_stack
