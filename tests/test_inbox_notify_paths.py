@@ -60,7 +60,7 @@ from tests.helpers.demotion import (
     NEW_TS,
     OLD_TS,
     baseline_pair,
-    fake_health,
+    fake_health_breaches,
     inbox_items,
     make_breach,
     run_compare,
@@ -136,7 +136,7 @@ def test_health_breach_is_silent_and_its_demotion_is_pushed(
     """The factory's health seam files a breach (silent) and a demotion (pushed)."""
     lines = tmp_path / "hook.txt"
     _hook_into(monkeypatch, lines)
-    monkeypatch.setitem(sys.modules, "kstrl.learning.health", fake_health(make_breach()))
+    fake_health_breaches(monkeypatch, make_breach())
     write_config(tmp_path, demote_on_health=True)
     AutonomyState(level=int(AutonomyLevel.L3_ENVELOPED_AUTO)).save(tmp_path)
 

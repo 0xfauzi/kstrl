@@ -37,8 +37,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl.events import event_catalog
-from kstrl.git import git
+from kstrl.events import CircuitBreakerTripped, PhaseCompleted, VerificationResultEvent
+from kstrl.git import get_head_sha
 from kstrl.owner import (
     ApprovalSnapshot,
     approvals_on,
@@ -114,7 +114,7 @@ class ComponentPipeline(Delivery, KnowledgePhase, SecurityGate, ReviewPhase, Mec
         # Engineer bracket closer: PhaseStarted(engineer) was emitted by
         # the scheduler at submit time; the worker's exit lands here.
         self.bus.emit(
-            event_catalog.PhaseCompleted(
+            PhaseCompleted(
                 component=comp_id,
                 phase="engineer",
                 passed=comp_result.success,
@@ -168,7 +168,7 @@ class ComponentPipeline(Delivery, KnowledgePhase, SecurityGate, ReviewPhase, Mec
             if comp_result.no_progress:
                 error = comp_result.error or "no-progress circuit breaker tripped"
                 self.bus.emit(
-                    event_catalog.CircuitBreakerTripped(
+                    CircuitBreakerTripped(
                         component=comp_id,
                         iterations=comp_result.iterations,
                         error=error,
@@ -205,7 +205,7 @@ class ComponentPipeline(Delivery, KnowledgePhase, SecurityGate, ReviewPhase, Mec
                 # halted before they could.
                 detail = comp_result.error or "files outside allowed scope"
                 self.bus.emit(
-                    event_catalog.VerificationResultEvent(
+                    VerificationResultEvent(
                         component=comp.id,
                         passed=False,
                         checks=("diff_scope",),
@@ -285,7 +285,7 @@ class ComponentPipeline(Delivery, KnowledgePhase, SecurityGate, ReviewPhase, Mec
         from kstrl.pipeline.factory_result import ComponentResult
 
         kept, comp.rejudge_sha = comp.rejudge_sha, ""
-        head = git.get_head_sha(wt_path) or ""
+        head = get_head_sha(wt_path) or ""
         if head != kept:
             return PipelineOutcome(
                 transition=self.fail(

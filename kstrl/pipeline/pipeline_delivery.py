@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
-from kstrl.events import event_catalog
+from kstrl.events import CheckpointRequested, CheckpointResolved
 from kstrl.owner import (
     CheckpointContext,
     ItemKind,
@@ -362,7 +362,7 @@ class Delivery(MergeGate):
             return CheckpointDecision.NOT_PROMPTED
         question = f"Approve PR creation and merge for {comp.id}?"
         self.bus.emit(
-            event_catalog.CheckpointRequested(
+            CheckpointRequested(
                 component=comp.id,
                 kind="pr_merge",
                 question=question,
@@ -405,7 +405,7 @@ class Delivery(MergeGate):
             )
             if decision is not None:
                 self.bus.emit(
-                    event_catalog.CheckpointResolved(
+                    CheckpointResolved(
                         component=comp.id,
                         kind="pr_merge",
                         decision=decision.name.lower(),
@@ -438,7 +438,7 @@ class Delivery(MergeGate):
         # apply_merge_decisions merges exactly that commit once
         # `ks inbox approve` has answered.
         self.bus.emit(
-            event_catalog.CheckpointResolved(
+            CheckpointResolved(
                 component=comp.id,
                 kind="pr_merge",
                 decision="parked",

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from kstrl.agents import recording_prompts
-from kstrl.events import collect_usage, event_catalog
+from kstrl.events import ReviewResultEvent, collect_usage
 from kstrl.pipeline.context import IterationContext
 from kstrl.pipeline.pipeline_ledger import UsageLedger
 from kstrl.pipeline.pipeline_transitions import FailureAction, PhaseFailure
@@ -186,7 +186,7 @@ class SecurityGate(ReviewVerdicts, UsageLedger):
 
         if sec_result is not None:
             self.bus.emit(
-                event_catalog.ReviewResultEvent(
+                ReviewResultEvent(
                     component=comp.id,
                     passed=sec_result.passed,
                     mode=f"security-{sec_config.mode}",

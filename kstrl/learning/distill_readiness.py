@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from kstrl.events import event_catalog, read_run_dir, run_dirs_newest_first
+from kstrl.events import DistillResult, read_run_dir, run_dirs_newest_first
 
 
 def distill_parse_failure_line(root_dir: Path, lookback_runs: int) -> str:
@@ -40,7 +40,7 @@ def distill_parse_failure_line(root_dir: Path, lookback_runs: int) -> str:
         event
         for run_dir in run_dirs
         for event in read_run_dir(run_dir)
-        if isinstance(event, event_catalog.DistillResult)
+        if isinstance(event, DistillResult)
     ]
     failed = sum(1 for event in distills if event.parse_failed)
     return (

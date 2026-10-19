@@ -157,7 +157,7 @@ def _run_stub_factory(root: Path, comp_ids: list[str], success: bool = True) -> 
             "kstrl.factory.factory._run_component",
             side_effect=fake_component,
         ),
-        patch("kstrl.git.git_diff.get_diff_content", return_value=""),
+        patch("kstrl.git.get_diff_content", return_value=""),
     ):
         run_factory(
             manifest,
@@ -272,7 +272,7 @@ class TestDualWrite:
                 "kstrl.factory.factory._run_component",
                 return_value=result,
             ),
-            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.get_diff_content", return_value=""),
         ):
             run_factory(
                 manifest,
@@ -405,7 +405,7 @@ class TestSemanticEvents:
                 "kstrl.factory.factory._run_component",
                 return_value=result,
             ),
-            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.get_diff_content", return_value=""),
             patch(
                 "kstrl.pipeline.pr.is_gh_available",
                 return_value=False,
@@ -462,7 +462,7 @@ class TestPhaseTranscripts:
                 "kstrl.factory.factory._run_component",
                 return_value=result,
             ),
-            patch("kstrl.git.git_diff.get_diff_content", return_value="+x\n"),
+            patch("kstrl.git.get_diff_content", return_value="+x\n"),
             patch(
                 "kstrl.factory.factory.run_review",
                 side_effect=fake_review,
@@ -690,7 +690,7 @@ class TestWorkerChannel:
         marker = "<promise>COMPLETE</promise>"
         base = _make_base_config(root)
         base.agent_cmd = f"echo '{marker}'"
-        with patch("kstrl.git.git_diff.get_diff_content", return_value=""):
+        with patch("kstrl.git.get_diff_content", return_value=""):
             result = run_factory(
                 manifest,
                 config,

@@ -1596,7 +1596,7 @@ class TestFactoryDistillIntegration:
                 return_value=(2, "ok", False),
             ) as mock_distill,
             patch(
-                "kstrl.git.git_diff.get_diff_content",
+                "kstrl.git.get_diff_content",
                 return_value="",
             ),
         ):
@@ -1678,7 +1678,7 @@ class TestFactoryDistillIntegration:
                 return_value=(0, "disabled", False),
             ) as mock_distill,
             patch(
-                "kstrl.git.git_diff.get_diff_content",
+                "kstrl.git.get_diff_content",
                 return_value="",
             ),
         ):
@@ -1726,7 +1726,7 @@ class TestFactoryDistillIntegration:
                 return_value=(0, "ok", False),
             ) as mock_distill,
             patch(
-                "kstrl.git.git_diff.get_diff_content",
+                "kstrl.git.get_diff_content",
                 return_value="",
             ),
         ):
@@ -1776,7 +1776,7 @@ class TestFactoryDistillIntegration:
                 return_value=(1, "ok", False),
             ) as mock_distill,
             patch(
-                "kstrl.git.git_diff.get_diff_content",
+                "kstrl.git.get_diff_content",
                 return_value="",
             ),
         ):

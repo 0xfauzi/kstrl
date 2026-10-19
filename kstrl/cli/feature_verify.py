@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING
 
 from kstrl.config import ConfigError
 from kstrl.events import Event, VerificationResultEvent
-from kstrl.git import git
+from kstrl.git import branch_exists, current_branch, is_git_repo
 from kstrl.loop import STOP_EXIT_CODE, LoopResult, determine_branch
 from kstrl.proc import HOST_LABEL
 from kstrl.project import NO_STACK, StackRefused, confirmed_stack, unconfirmed_lines
@@ -135,16 +135,16 @@ def baseline_skip_reason(run_config: KstrlConfig, root_dir: Path) -> str | None:
     Anything else refuses, including a detached HEAD, where
     ``current_branch`` returns None and no name can match.
     """
-    if not git.is_git_repo(root_dir):
+    if not is_git_repo(root_dir):
         return None
     if not run_config.auto_checkout:
         return None
     branch, _ = determine_branch(run_config)
     if not branch:
         return None
-    if not git.branch_exists(branch, root_dir):
+    if not branch_exists(branch, root_dir):
         return None
-    current = git.current_branch(root_dir)
+    current = current_branch(root_dir)
     if current == branch:
         return None
     return (

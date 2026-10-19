@@ -34,7 +34,7 @@ from kstrl.learning.autonomy_transitions import (
 from kstrl.learning.evolution import EvolutionJournal, classify_merges
 from kstrl.learning.evolution_config import EVOLUTION_SECTION, EvolutionConfig
 from kstrl.learning.evolve_report import readiness_lines
-from kstrl.learning.health import breach_lines, health_report, readings_from
+from kstrl.learning.health import breach_lines, health_breaches, health_report, readings_from
 from kstrl.learning.journal_rows import (
     FINDINGS_SUPERSEDED_EVENT,
     INTEGRATION_RESULT_EVENT,
@@ -70,6 +70,7 @@ __all__ = [
     "entry_signal_blockers",
     "entry_str",
     "flag_bundle_for",
+    "health_breaches",
     "health_report",
     "load_runs",
     "manual_override_notes",

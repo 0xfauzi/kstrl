@@ -18,7 +18,29 @@ from kstrl.cli.config_report import UI_MODES
 from kstrl.cli.config_report import normalize_ui_mode as _normalize_ui_mode
 from kstrl.git import get_head_sha, get_origin_slug, resolve_base_branch
 from kstrl.project import NO_STACK
-from kstrl.verify import baseline, baseline_report
+from kstrl.verify import (
+    FORMAT_MARKDOWN,
+    OPTIONAL_VALUE_SENTINEL,
+    OUTPUT_FORMATS,
+    BaselineError,
+    BaselineUsage,
+    CompareMode,
+    Mode,
+    WriteMode,
+    baseline_from_result,
+    compare,
+    comparison_document,
+    exit_code_for,
+    refuse_foreign_baseline,
+    render_human,
+    render_markdown,
+    resolve_mode,
+    verify_digest,
+    write_summary_line,
+)
+from kstrl.verify import (
+    write_baseline as write_baseline_file,
+)
 
 if TYPE_CHECKING:
     from kstrl.verify import PolicyConfig, VerificationResult, VerifyConfig
@@ -113,7 +135,7 @@ def _check_document(
 def _check_verify_digest(
     verify_cfg: VerifyConfig,
     *,
-    mode: baseline.Mode | None,
+    mode: Mode | None,
     as_json: bool,
 ) -> str:
     """The digest of HOW this run measures, and the refusal of a foreign baseline.
@@ -132,11 +154,11 @@ def _check_verify_digest(
     if stack is None:
         # #696 slice 4: no check to run, so nothing to measure or compare.
         _check_error(NO_STACK, as_json)
-    digest = baseline.verify_digest(stack, verify_cfg.subprocess_timeout)
-    if isinstance(mode, baseline.CompareMode):
+    digest = verify_digest(stack, verify_cfg.subprocess_timeout)
+    if isinstance(mode, CompareMode):
         try:
-            baseline.refuse_foreign_baseline(mode.baseline, digest)
-        except baseline.BaselineError as exc:
+            refuse_foreign_baseline(mode.baseline, digest)
+        except BaselineError as exc:
             _check_error(str(exc), as_json)
     return digest
 
@@ -146,7 +168,7 @@ def _check_baseline_report(
     base: str,
     result: VerificationResult,
     *,
-    mode: baseline.Mode,
+    mode: Mode,
     as_json: bool,
     digest: str,
 ) -> NoReturn:
@@ -162,7 +184,7 @@ def _check_baseline_report(
     checks ran, so there is nothing here to fetch and nothing to assert about
     two functions having agreed offstage.
     """
-    current = baseline.baseline_from_result(
+    current = baseline_from_result(
         result,
         base_ref=get_head_sha(path),
         # `owner/repo` from origin, never the directory name: every kstrl lane
@@ -174,21 +196,21 @@ def _check_baseline_report(
         check_schema_version=CHECK_SCHEMA_VERSION,
         digest=digest,
     )
-    if isinstance(mode, baseline.WriteMode):
+    if isinstance(mode, WriteMode):
         try:
-            baseline.write_baseline(mode.path, current, force=mode.force)
-        except (OSError, baseline.BaselineError) as exc:
+            write_baseline_file(mode.path, current, force=mode.force)
+        except (OSError, BaselineError) as exc:
             _check_error(str(exc), as_json)
-        click.echo(baseline.write_summary_line(mode.path, current))
+        click.echo(write_summary_line(mode.path, current))
         sys.exit(0 if result.passed else 1)
 
-    comparison = baseline.compare(mode.baseline, current)
+    comparison = compare(mode.baseline, current)
     if as_json:
-        block = baseline_report.comparison_document(comparison, mode.baseline, current, mode.path)
+        block = comparison_document(comparison, mode.baseline, current, mode.path)
         click.echo(json.dumps(_check_document(path, base, result, block), indent=2))
-    elif mode.output_format == baseline.FORMAT_MARKDOWN:
+    elif mode.output_format == FORMAT_MARKDOWN:
         click.echo(
-            baseline_report.render_markdown(
+            render_markdown(
                 comparison,
                 mode.baseline,
                 mode.path,
@@ -196,9 +218,9 @@ def _check_baseline_report(
             )
         )
     else:
-        for line in baseline_report.render_human(comparison, mode.baseline, mode.path):
+        for line in render_human(comparison, mode.baseline, mode.path):
             click.echo(line)
-    sys.exit(baseline.exit_code_for(comparison, fail_on_regression=mode.fail_on_regression))
+    sys.exit(exit_code_for(comparison, fail_on_regression=mode.fail_on_regression))
 
 
 def _check_report(
@@ -206,7 +228,7 @@ def _check_report(
     base: str,
     result: VerificationResult,
     *,
-    mode: baseline.Mode | None,
+    mode: Mode | None,
     as_json: bool,
     ui: str,
     no_color: bool,
@@ -337,7 +359,7 @@ def _check_needs_diff(verify_cfg: VerifyConfig, policy_cfg: PolicyConfig) -> boo
     # 8.4.2: `--write-baseline --force` does not swallow `--force` as the
     # value, and the sentinel does not appear in `--help`.
     is_flag=False,
-    flag_value=baseline.OPTIONAL_VALUE_SENTINEL,
+    flag_value=OPTIONAL_VALUE_SENTINEL,
     default=None,
     type=str,
     metavar="[PATH]",
@@ -349,7 +371,7 @@ def _check_needs_diff(verify_cfg: VerifyConfig, policy_cfg: PolicyConfig) -> boo
     "--compare-baseline",
     "compare_baseline",
     is_flag=False,
-    flag_value=baseline.OPTIONAL_VALUE_SENTINEL,
+    flag_value=OPTIONAL_VALUE_SENTINEL,
     default=None,
     type=str,
     metavar="[PATH]",
@@ -371,7 +393,7 @@ def _check_needs_diff(verify_cfg: VerifyConfig, policy_cfg: PolicyConfig) -> boo
 @click.option(
     "--format",
     "output_format",
-    type=click.Choice(baseline.OUTPUT_FORMATS),
+    type=click.Choice(OUTPUT_FORMATS),
     # None, not "human", so an explicit --format human can be told apart from
     # the default and refused alongside the other flags that would do nothing.
     default=None,
@@ -451,7 +473,7 @@ def check(
     # refused flag combination or an unreadable baseline is reported in a
     # tenth of a second rather than after the test suite.
     try:
-        mode = baseline.resolve_mode(
+        mode = resolve_mode(
             write_baseline=write_baseline,
             compare_baseline=compare_baseline,
             force=force,
@@ -460,7 +482,7 @@ def check(
             as_json=as_json,
             root_dir=root_dir,
         )
-    except (baseline.BaselineUsage, baseline.BaselineError) as exc:
+    except (BaselineUsage, BaselineError) as exc:
         _check_error(str(exc), as_json)
 
     from kstrl.cli.config_preflight import preflight_config
@@ -490,12 +512,11 @@ def check(
     if _check_needs_diff(verify_cfg, policy_cfg):
         # Ask git the same question once, strictly, before any check
         # runs. Cannot-measure is exit 2; it is never a pass.
-        from kstrl.git import git as _git
-        from kstrl.git import git_diff as _git_diff
+        from kstrl.git import GitDiffError, get_diff_names
 
         try:
-            _git_diff.get_diff_names(base, path, strict=True)
-        except _git.GitDiffError as exc:
+            get_diff_names(base, path, strict=True)
+        except GitDiffError as exc:
             origin = (
                 "from --base" if base_branch else "auto-detected; name the right one with --base"
             )
@@ -551,7 +572,7 @@ def doctor(root: Path | None, as_json: bool, measure: bool) -> None:
     finding; with --measure, a gate that fails on the base branch is
     one), 2 when it cannot run (an unusable --root).
     """
-    from kstrl.cli import doctor as doctor_mod
+    import kstrl.cli.doctor as doctor_mod
     from kstrl.ui import PlainUI
 
     root_dir = (root or Path.cwd()).resolve()

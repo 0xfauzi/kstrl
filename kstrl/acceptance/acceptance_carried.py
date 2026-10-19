@@ -56,7 +56,7 @@ from kstrl.acceptance.acceptance import (
     verdict_of,
 )
 from kstrl.acceptance.replay import Replay, Stage, replay_stack
-from kstrl.git import git, git_base
+from kstrl.git import GitDiffError, get_head_sha, resolve_base_sha
 from kstrl.io import atomic_write_json, control_dir, read_json
 from kstrl.proc import Rung, limit_seconds
 from kstrl.project import REPLAY_BOUNDARY_REFUSED
@@ -243,8 +243,8 @@ def carried_on_base(
     if not document["checks"]:
         return (), []
     try:
-        sha = git_base.resolve_base_sha(manifest.base_branch, root)
-    except git.GitDiffError as exc:
+        sha = resolve_base_sha(manifest.base_branch, root)
+    except GitDiffError as exc:
         return (), [f"the base branch {manifest.base_branch} did not resolve: {exc}"]
     resolved = [(entry, resolve(root, entry)) for entry in document["checks"]]
     runnable = [c for _, c in resolved if isinstance(c, Carried)]
@@ -441,7 +441,7 @@ def replay_merged(
     groups = [(p, w) for p, w in groups if w]
     if stack is None or not groups:
         return True, [], (), ()
-    sha = git.get_head_sha(cwd) or ""
+    sha = get_head_sha(cwd) or ""
     if not sha:
         return False, [f"acceptance: the commit of {cwd} cannot be read, so no check ran"], (), ()
     limit = limit_seconds(config.timeout)

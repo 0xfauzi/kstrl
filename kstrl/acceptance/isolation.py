@@ -78,7 +78,7 @@ from pathlib import Path
 from typing import Any
 
 from kstrl.events import RunPaths
-from kstrl.git import git, kstrl_version
+from kstrl.git import git_common_dir, kstrl_version
 from kstrl.io import atomic_write_json, atomic_write_text, control_dir, read_json, xdg_state_home
 from kstrl.proc import (
     ENV_PROGRAM,
@@ -611,7 +611,7 @@ def prove_zones(
     fallback = host_fallback()
     if fallback is not None:
         return {SETUP_ZONE: fallback, TEST_ZONE: fallback}
-    common = git.git_common_dir(root)
+    common = git_common_dir(root)
     refused = "" if common is None else _git_dir_refusal(root, common)
     readable = [*readable, *([common] if common is not None else [])]
     return {

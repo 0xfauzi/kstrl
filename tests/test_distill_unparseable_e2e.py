@@ -96,7 +96,7 @@ def _run_factory_with_reply(root: Path, reply: str) -> str:
 
     with (
         patch("kstrl.factory.factory._run_component", side_effect=engineer),
-        patch("kstrl.git.git_diff.get_diff_content", return_value="diff --git a/x b/x\n+x = 1\n"),
+        patch("kstrl.git.get_diff_content", return_value="diff --git a/x b/x\n+x = 1\n"),
     ):
         run_factory(manifest, config, base, PlainUI(no_color=True, file=out), root)
     return out.getvalue()

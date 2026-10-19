@@ -189,8 +189,7 @@ def _report_for_run(run_dir: Path) -> tuple[list[SafeModeReason], bool]:
     right for the caller's look-back, since a run we could not read has
     not answered the question either.
     """
-    from kstrl.events import event_catalog
-    from kstrl.events import events as ev
+    from kstrl.events import PhaseSkipped, RunCompleted, parse_event_line
 
     events_path = run_dir / "events.jsonl"
     try:
@@ -219,7 +218,7 @@ def _report_for_run(run_dir: Path) -> tuple[list[SafeModeReason], bool]:
     torn = 0
     lines = raw.decode("utf-8", errors="replace").splitlines()
     for index, line in enumerate(lines):
-        event = ev.parse_event_line(line)
+        event = parse_event_line(line)
         if event is None:
             # ``read_events`` drops these silently, so a corrupt
             # phase_skipped line followed by a valid factory_completed
@@ -229,9 +228,9 @@ def _report_for_run(run_dir: Path) -> tuple[list[SafeModeReason], bool]:
             if line.strip() and index < len(lines) - 1:
                 torn += 1
             continue
-        if isinstance(event, event_catalog.RunCompleted):
+        if isinstance(event, RunCompleted):
             finished = True
-        elif isinstance(event, event_catalog.PhaseSkipped) and event.phase in skipped:
+        elif isinstance(event, PhaseSkipped) and event.phase in skipped:
             skipped[event.phase].add(event.component)
 
     reasons = [

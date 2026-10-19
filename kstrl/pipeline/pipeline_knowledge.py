@@ -7,9 +7,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from kstrl import git
 from kstrl.agents import recording_prompts
-from kstrl.events import collect_usage, event_catalog
-from kstrl.git import git, git_diff
+from kstrl.events import DistillResult, FactUtilizationMeasured, collect_usage
 from kstrl.pipeline.pipeline_attempt import AttemptRecorder
 from kstrl.pipeline.pipeline_ledger import UsageLedger
 from kstrl.plan import Component
@@ -175,7 +175,7 @@ class KnowledgePhase(AttemptRecorder, UsageLedger):
             return
         if diff_text is None:
             try:
-                diff_text = git_diff.get_diff_content(
+                diff_text = git.get_diff_content(
                     self.component_base(comp.id),
                     wt_path,
                 )
@@ -208,7 +208,7 @@ class KnowledgePhase(AttemptRecorder, UsageLedger):
         """
         self.fact_utilization[comp.id] = util
         self.bus.emit(
-            event_catalog.FactUtilizationMeasured(
+            FactUtilizationMeasured(
                 component=comp.id,
                 measured=util.measured,
                 injected=util.injected,
@@ -362,7 +362,7 @@ class KnowledgePhase(AttemptRecorder, UsageLedger):
                     on_line=on_line,
                 )
             self.bus.emit(
-                event_catalog.DistillResult(
+                DistillResult(
                     component=comp.id,
                     facts_written=written,
                     parse_failed=parse_failed,

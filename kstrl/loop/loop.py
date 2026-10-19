@@ -10,8 +10,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from kstrl.events import EventBus, IterationCompleted, IterationStarted, UsageTotals, collect_usage
-from kstrl.git import git, git_tree
-from kstrl.io import statedir
+from kstrl.git import WorkspaceBaseline, checkout_branch, is_git_repo
+from kstrl.io import state_dir_carve_out
 from kstrl.loop.breaker import BreakerConfig, NoProgressBreaker
 from kstrl.loop.iteration_prompt import (
     assemble_prompt,
@@ -30,7 +30,7 @@ from kstrl.owner import (
 )
 from kstrl.plan import PRD
 from kstrl.proc import TIMEOUT_MESSAGE_PREFIX, TimeoutConfig
-from kstrl.verify import VerifyConfig, guards
+from kstrl.verify import VerifyConfig
 
 if TYPE_CHECKING:
     from kstrl.agents import Agent
@@ -110,7 +110,7 @@ class _LoopRun:
     is_repo: bool
     channel: InteractionChannel
     guard_ignored: list[str]
-    guard_baseline: git_tree.WorkspaceBaseline | None
+    guard_baseline: WorkspaceBaseline | None
     budget: LoopBudget | None
     breaker: NoProgressBreaker
     component_budget: float
@@ -253,7 +253,7 @@ def _checkout_branch(config: KstrlConfig, ui: UI, cwd: Path, is_repo: bool) -> L
     else:
         branch, source = determine_branch(config)
         if branch:
-            if not git.checkout_branch(branch, ui, cwd, source):
+            if not checkout_branch(branch, ui, cwd, source):
                 ui.err(f"Failed to checkout branch: {branch}")
                 # A refusal before iteration 1 exits 2 (#452, #531).
                 return LoopResult(completed=False, iterations=0, exit_code=2)
@@ -272,10 +272,10 @@ def _guard_setup(
     guard_ignored_paths: list[str] | None,
     guard_state_root: Path | None,
     guard_base_ref: str | None,
-) -> tuple[git_tree.WorkspaceBaseline | None, list[str]] | LoopResult:
+) -> tuple[WorkspaceBaseline | None, list[str]] | LoopResult:
     """The guard baseline and the ignored paths of the run, or the refusal
     result when the baseline could not be taken."""
-    guard_baseline: git_tree.WorkspaceBaseline | None = None
+    guard_baseline: WorkspaceBaseline | None = None
     # The complete set the guard must not count: the caller's
     # per-invocation harness files (#264) and kstrl's own state
     # directory (#274). Both are loop-invariant, so this is assembled
@@ -291,7 +291,7 @@ def _guard_setup(
     if config.allowed_paths and is_repo:
         guard_ignored = [
             *(guard_ignored_paths or ()),
-            *statedir.state_dir_carve_out(cwd, guard_state_root),
+            *state_dir_carve_out(cwd, guard_state_root),
         ]
         ui.info(f"Enforcing ALLOWED_PATHS={','.join(config.allowed_paths)}")
         # R8 review finding 4: the guard's question is "what did THIS
@@ -426,8 +426,11 @@ def _guard_verdict(run: _LoopRun, iteration: int, timed_out_iterations: int) -> 
     # COMPLETE in the same iteration must not bypass enforcement.
     # When enforcement fails the iteration is treated as failed even
     # if the marker was seen.
+    # A call-time import reads the package binding, which a test replaces.
+    from kstrl.verify import enforce_allowed_paths
+
     if run.config.allowed_paths and run.is_repo:
-        ok, violations = guards.enforce_allowed_paths(
+        ok, violations = enforce_allowed_paths(
             run.config,
             run.ui,
             run.cwd,
@@ -665,7 +668,7 @@ def run_loop(
 
     # Git/Branch handling
     ui.subsection("Git / Branch")
-    is_repo = git.is_git_repo(cwd)
+    is_repo = is_git_repo(cwd)
 
     if (refusal := _checkout_branch(config, ui, cwd, is_repo)) is not None:
         return refusal

@@ -13,7 +13,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from kstrl.agents import AgentCall
-from kstrl.events import event_catalog
+from kstrl.events import FindingRecorded, PhaseCompleted, PhaseSkipped, PhaseStarted
 from kstrl.pipeline.context import IterationContext
 from kstrl.pipeline.pipeline_state import PipelineState, iso_now
 from kstrl.plan import Component, ComponentStatus, Finding, finding_model, tag_finding_with_attempt
@@ -91,7 +91,7 @@ class AttemptRecorder(PipelineState):
         """Emit the authoritative phase bracket opener; returns the
         monotonic start for the matching _phase_completed."""
         self.bus.emit(
-            event_catalog.PhaseStarted(
+            PhaseStarted(
                 component=comp.id,
                 phase=phase,
                 attempt=comp.retries + 1,
@@ -108,7 +108,7 @@ class AttemptRecorder(PipelineState):
         detail: str = "",
     ) -> None:
         self.bus.emit(
-            event_catalog.PhaseCompleted(
+            PhaseCompleted(
                 component=comp.id,
                 phase=phase,
                 passed=passed,
@@ -135,7 +135,7 @@ class AttemptRecorder(PipelineState):
         # recorded (the manifest only carries them at transition time).
         for finding in new_findings:
             self.bus.emit(
-                event_catalog.FindingRecorded(
+                FindingRecorded(
                     component=comp.id,
                     phase=finding.phase,
                     category=finding.category,
@@ -354,7 +354,7 @@ class AttemptRecorder(PipelineState):
         "never ran" are distinguishable downstream."""
         self._add_findings(comp, [Finding.phase_skipped(phase, reason)])
         self.bus.emit(
-            event_catalog.PhaseSkipped(
+            PhaseSkipped(
                 component=comp.id,
                 phase=phase,
                 reason=reason,

@@ -73,7 +73,7 @@ class RecheckFields(LimitsFields, Protocol):
     def project_stack(self) -> Stack | None: ...
 
 
-def recheck(root: Path, record_path: Path, config: RecheckFields, ui: UI) -> Said:
+def recheck_record(root: Path, record_path: Path, config: RecheckFields, ui: UI) -> Said:
     """Recheck the record at ``record_path``. Nothing under the record's
     directory is written."""
     evidence = record_path.parent

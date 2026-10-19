@@ -357,7 +357,7 @@ class TestRunMetadataPersistence:
                 "kstrl.factory.factory._run_component",
                 return_value=success,
             ),
-            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.get_diff_content", return_value=""),
         ):
             result = run_factory(
                 manifest,
@@ -450,7 +450,7 @@ class TestPerAttemptFindings:
                 "kstrl.factory.factory.run_review",
                 side_effect=[failing_review, passing_review],
             ),
-            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.get_diff_content", return_value=""),
         ):
             result = run_factory(
                 manifest,

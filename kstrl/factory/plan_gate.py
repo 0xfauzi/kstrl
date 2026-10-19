@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING, Any
 
 from kstrl.acceptance import pinned_digest
 from kstrl.architect import load_spec_input, spec_digest
-from kstrl.events import NotifyConfig, NotifyHooks, event_catalog
+from kstrl.events import CheckpointRequested, CheckpointResolved, NotifyConfig, NotifyHooks
 from kstrl.io import ControlStateError, pre_run_prd_path
 from kstrl.owner import (
     UNDECIDED,
@@ -240,7 +240,7 @@ def run_plan_gate(pipeline: ComponentPipeline, bundle: FlagBundle | None) -> int
         _settle(pipeline, "", "rejected", "inbox")
         return 2
     question = _question(pipeline.manifest)
-    pipeline.bus.emit(event_catalog.CheckpointRequested(kind=PLAN_KIND, question=question))
+    pipeline.bus.emit(CheckpointRequested(kind=PLAN_KIND, question=question))
     if pipeline.interaction.can_prompt():
         response = pipeline.interaction.request(
             PromptRequest(
@@ -340,9 +340,7 @@ def _settle(pipeline: ComponentPipeline, awaiting: str, decision: str, decided_b
     if decision != "approved":
         manifest.completed_at = iso_now()
     manifest.save(pipeline.manifest_path)
-    pipeline.bus.emit(
-        event_catalog.CheckpointResolved(kind=PLAN_KIND, decision=decision, decided_by=decided_by)
-    )
+    pipeline.bus.emit(CheckpointResolved(kind=PLAN_KIND, decision=decision, decided_by=decided_by))
     if decision == "approved":
         pipeline.ui.ok(f"  Plan approved ({decided_by})")
     elif decision == "rejected":

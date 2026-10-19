@@ -23,16 +23,17 @@ R10.9 moved the table into ``kstrl/config/config_keys.py`` because
 ``kstrl/config/config.py`` was one line under the 800-line ratchet and could not
 take another ``[paths]`` row. ``kstrl.config.config`` re-exports the name and
 the three loaders read it from there; the two documentation surfaces read
-it from ``config_keys``, which is what the mutation below patches.
+it from the ``kstrl.config`` interface at call time, and that package
+binding is what the mutation below patches (#863 D1).
 
 WHAT THE MUTATION DOES AND DOES NOT REACH, measured rather than assumed.
-``from kstrl.config.config_keys import STRING_KEYS`` binds a SECOND name, so
-``monkeypatch.setattr(config_keys, ...)`` rebinds one and leaves
-``kstrl.config.config``'s binding alone: after the patch ``config_keys`` has
-eleven rows and ``config`` still has ten. The two documentation surfaces
+Each ``from ... import STRING_KEYS`` binds a separate name, so
+``monkeypatch.setattr(kstrl.config, ...)`` rebinds the package binding and
+leaves ``kstrl.config.config``'s binding alone: after the patch the
+package has eleven rows and ``config`` still has ten. The two documentation surfaces
 are what this file is about (S8 is the finding that a tenth row dropped
 out of ``ks config`` and the generated README), and they import at call
-time from ``config_keys``, so they see it. The three loaders do not, and
+time from the package, so they see it. The three loaders do not, and
 do not need to: ``tests/test_config_preflight.py::TestConfigToml`` is
 parametrized over ``STRING_KEYS`` and covers every row through all three
 doors. The two censuses that tie the table to the dataclass (every row
@@ -54,6 +55,7 @@ from types import ModuleType
 
 import pytest
 
+import kstrl.config
 from kstrl.cli import config_report
 from kstrl.config import config as config_mod
 from kstrl.config import config_keys
@@ -81,7 +83,7 @@ def gen_docs() -> ModuleType:
 
 @pytest.fixture
 def tenth_row(monkeypatch: pytest.MonkeyPatch) -> tuple[str, str, str, str, bool]:
-    monkeypatch.setattr(config_keys, "STRING_KEYS", (*STRING_KEYS, TENTH_ROW))
+    monkeypatch.setattr(kstrl.config, "STRING_KEYS", (*STRING_KEYS, TENTH_ROW))
     return TENTH_ROW
 
 

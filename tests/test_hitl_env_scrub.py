@@ -164,7 +164,7 @@ class TestHitlCheckpoint:
                 "kstrl.pipeline.pr.is_gh_available",
                 return_value=False,
             ),
-            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.get_diff_content", return_value=""),
         ):
             result = run_factory(
                 manifest,
@@ -201,7 +201,7 @@ class TestHitlCheckpoint:
                 "kstrl.pipeline.pr.is_gh_available",
                 return_value=False,
             ),
-            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.get_diff_content", return_value=""),
         ):
             result = run_factory(
                 manifest,
@@ -233,7 +233,7 @@ class TestHitlCheckpoint:
                 "kstrl.pipeline.pr.is_gh_available",
                 return_value=False,
             ),
-            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.get_diff_content", return_value=""),
         ):
             result = run_factory(
                 manifest,

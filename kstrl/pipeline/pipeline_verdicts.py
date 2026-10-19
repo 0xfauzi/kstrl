@@ -8,8 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl.events import event_catalog
-from kstrl.git import git, git_diff
+from kstrl import git
+from kstrl.events import ReviewDivergence
 from kstrl.pipeline.context import IterationContext
 from kstrl.pipeline.divergence import (
     AttemptReading,
@@ -151,7 +151,7 @@ class ReviewVerdicts(AttemptRecorder):
             # (an empty-location concern family, a hand-built result).
             return None
         try:
-            numstat = git_diff.get_diff_numstat(
+            numstat = git.get_diff_numstat(
                 self.component_base(comp.id),
                 wt_path,
                 strict=True,
@@ -186,7 +186,7 @@ class ReviewVerdicts(AttemptRecorder):
             [Finding.divergence(message, severity="fail" if config.blocks else "advisory")],
         )
         self.bus.emit(
-            event_catalog.ReviewDivergence(
+            ReviewDivergence(
                 component=comp.id,
                 attempts=tuple(r.attempt for r in verdict.readings),
                 lines_changed=tuple(r.lines_changed for r in verdict.readings),

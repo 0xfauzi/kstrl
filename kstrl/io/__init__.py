@@ -40,6 +40,7 @@ from kstrl.io.statedir import (
     plan_prd_path,
     pre_run_prd_path,
     state_dir,
+    state_dir_carve_out,
     xdg_state_home,
 )
 
@@ -79,5 +80,6 @@ __all__ = [
     "run_kind",
     "run_sort_key",
     "state_dir",
+    "state_dir_carve_out",
     "xdg_state_home",
 ]
