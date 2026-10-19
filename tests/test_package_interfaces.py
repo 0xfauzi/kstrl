@@ -108,7 +108,7 @@ INTERFACE_SIZES: dict[str, int] = {
     "config": 39,
     "events": 80,
     "factory": 19,
-    "git": 47,
+    "git": 48,  # merge_base_ref: Phase 3 asks whether the merged tier holds an approved head
     "io": 37,
     "knowledge": 8,
     "learning": 37,
