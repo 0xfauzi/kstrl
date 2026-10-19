@@ -202,12 +202,13 @@ def _format_section(title: str, facts: list[Fact]) -> str:
 
 #: H3 (#303): fragments build_knowledge_context assembles; versioned as
 #: one body (docs/adversarial-roadmap.md, H3a sweep row).
-KNOWLEDGE_CONTEXT_PROMPT_VERSION = "1.0.0"
+KNOWLEDGE_CONTEXT_PROMPT_VERSION = "1.1.0"
 
 KNOWLEDGE_CONTEXT_PROMPT = (
     "## Component Knowledge\n"
-    "Durable facts captured from prior successful iterations. Treat as"
-    " ground truth unless contradicted by the current diff."
+    "Facts a distiller wrote about earlier work on this codebase, each with"
+    " the evidence it cites. kstrl has not checked them: read the cited code"
+    " before you rely on one, and where they disagree, the code is right."
 )
 KNOWLEDGE_OVERFLOW_PROMPT = (
     "*Note: {tiers} tier{plural} exceeded the token budget; some facts were truncated or dropped.*"

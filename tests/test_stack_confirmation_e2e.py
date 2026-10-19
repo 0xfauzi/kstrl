@@ -209,6 +209,33 @@ def test_an_unconfirmed_stack_refuses_before_the_architect_and_files_one_item(
     assert (bumped.id, bumped.occurrences) == (item.id, 2)
 
 
+def test_the_reports_a_user_pastes_from_are_on_stdout(tmp_path: Path) -> None:
+    """The quick start says to paste the proposed [stack] from `ks inbox
+    show`; a user who piped it into a file got an empty file, because the
+    report went to stderr. The same held for `ks inbox ls` and `ks check`."""
+    root = _repo(tmp_path, GREEN, confirm=False)
+    _factory(tmp_path, root)
+    (item,) = _stack_items(root)
+
+    def stdout(*args: str) -> str:
+        return subprocess.run(
+            [PY, "-m", "kstrl", *args, "--root", str(root)],
+            cwd=root,
+            env=_child_env(None),
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        ).stdout
+
+    assert item.id[:8] in stdout("inbox", "ls")
+    assert "[stack]" in stdout("inbox", "show", item.id[:8])
+    assert "stack:tests" in stdout("check")
+    # Approving says what the confirmation now is, read back from it.
+    code, out = _approve(root, item)
+    assert code == 0 and "the [stack] in kstrl.toml is confirmed: run ks factory next" in out, out
+
+
 @runs_a_stack
 def test_ks_inbox_approve_confirms_the_stack_and_the_run_proceeds(tmp_path: Path) -> None:
     """2. Approving the filed item is the confirmation: the next run pays the
@@ -615,6 +642,9 @@ EXPECTED_UNCONFIRMED_SITES: dict[str, int] = {
     "agents/sandbox.py": 1,
     "project/stack.py": 5,
     "verify/verify_commands.py": 2,
+    # ks inbox approve says what a [stack] approval left the stack, read
+    # back after the approval; read only, never cleared.
+    "cli/cli_inbox.py": 2,
 }
 
 

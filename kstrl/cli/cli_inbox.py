@@ -31,7 +31,7 @@ from kstrl.proc import (
     RunLock,
     acquire_run_lock,
 )
-from kstrl.project import STACK_KEY, load_stack
+from kstrl.project import STACK_KEY, load_stack, stack_in_force
 from kstrl.ui import UI
 
 if TYPE_CHECKING:
@@ -154,7 +154,7 @@ def inbox_ls(
     from kstrl.owner import summarize
 
     _root_dir, box = _inbox_for(root)
-    ui_impl = _autonomy_ui(ui, no_color)
+    ui_impl = _autonomy_ui(ui, no_color, sys.stdout)
     items = box.items() if show_all else box.open_items()
     if not items:
         ui_impl.ok("Inbox clear: nothing is waiting on you.")
@@ -190,7 +190,7 @@ def inbox_show(
     import json as _json
 
     _root_dir, box = _inbox_for(root)
-    ui_impl = _autonomy_ui(ui, no_color)
+    ui_impl = _autonomy_ui(ui, no_color, sys.stdout)
     item = box.get(item_id)
     if item is None:
         ui_impl.err(f"No inbox item matching {item_id!r}")
@@ -231,9 +231,9 @@ def _decide_and_report(
     comment: str = "",
     hours: float | None = None,
 ) -> None:
-    from kstrl.owner import InboxError, approval_effect
+    from kstrl.owner import InboxError, ItemKind, approval_effect
 
-    _root_dir, box = _inbox_for(root)
+    root_dir, box = _inbox_for(root)
     ui_impl = _autonomy_ui(ui, no_color)
     try:
         if action == "approve":
@@ -255,6 +255,14 @@ def _decide_and_report(
     effect = approval_effect(item) if action == "approve" else None
     if effect:
         ui_impl.info(f"  {effect}")
+    # What the confirmation now says, read back rather than assumed: an
+    # approval of a stack whose replay failed confirms nothing.
+    if action == "approve" and item.kind is ItemKind.STACK_CONFIRMATION:
+        stack = stack_in_force(root_dir)
+        if stack is not None and stack.unconfirmed:
+            ui_impl.info(f"  the [stack] in kstrl.toml {stack.unconfirmed}")
+        elif stack is not None:
+            ui_impl.info("  the [stack] in kstrl.toml is confirmed: run ks factory next")
     sys.exit(0)
 
 

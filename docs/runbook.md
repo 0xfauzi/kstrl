@@ -53,7 +53,7 @@ no command runs inside a rung yet, and every verification record says
 macOS, because nono cannot express a localhost-only test zone on Linux.
 There the row is one label, a warning, and no canary runs: `none: kstrl
 cannot isolate the [stack] commands on linux, so they run on the host (the
-engineer's own sandbox is [sandbox])`. A run under a confirmed `[stack]` there runs its
+engineer's own sandbox is configured under [sandbox])`. A run under a confirmed `[stack]` there runs its
 setup, `up` and checks on the host instead of refusing, and every record
 of it (the terminal, `isolation.json`, `base-gates.json`, the
 `verification_result` event and the PR body) carries that label (owner
@@ -86,7 +86,10 @@ printed. The replay runs whether or not the stack is confirmed, because
 it is the evidence a person confirms it on. Its record is filed on the
 stack's confirmation item when the stack is not confirmed or the replay
 failed, and a stack whose newest replay failed is not confirmed until a
-replay of the same text passes. Replays on one machine take turns on a
+replay of the same text passes. Two failures warn instead and leave a
+confirmation standing: `boundary_refused`, which ran nothing, and
+`base_contradiction`, which says the base is red, as a new repository's
+is (the `base_gates` row reports it, and `--accept-red-base` waives it). Replays on one machine take turns on a
 lock under the XDG state home; a second one prints that it is waiting.
 
 ## Acceptance checks (`ks factory --acceptance <dir>`)
@@ -253,7 +256,7 @@ this is a small print an operator should have to find on their own:
 
 ## Warning: a role runs with no sandbox
 
-**Symptom**: a warning line such as `the engineer is a custom agent command, which runs with no sandbox` or `the engineer runs with no sandbox: [sandbox] enabled = false`, and the run continues. The line names one role: `the engineer` (`ks factory`, `ks run`, `ks feature`), `the understand agent` (`ks understand`) or `the repair agent` (`ks feature`). A custom code or security reviewer gets its own line, `the review reviewer is a custom command; it CANNOT be sandboxed or held read-only` (or `the security reviewer ...`). Each line is also in the run's `.kstrl/runs/<run_id>/events.jsonl`.
+**Symptom**: a warning line such as `the engineer is a custom agent command, which runs with no sandbox` or `the engineer runs with no sandbox: [sandbox] enabled = false`, and the run continues. The line names one role: `the engineer` (`ks factory`, `ks run`, `ks feature`), `the understand agent` (`ks understand`) or `the repair agent` (`ks feature`). A custom code or security reviewer gets its own line, `the code reviewer is a custom command; it CANNOT be sandboxed or held read-only` (or `the security reviewer ...`). Each line is also in the run's `.kstrl/runs/<run_id>/events.jsonl`.
 
 **What it is**: `[sandbox]` is on by default (#700, owner decision 2026-10-09). The engineer runs in the sandbox of its own harness: the claude-code, claude-sdk and codex adapters deny a shell command's writes outside the worktree and the confirmed `[stack]`'s `writable` paths. The claude sandbox confines shell commands only, so the claude-code adapter blocks a file tool's write outside the same paths, or to a `.git`, `.claude` or `.mcp.json` path, with a PreToolUse hook. The guard ends itself and blocks the tool when it has not decided in 10 seconds, because claude lets a tool run when its hook times out. Every claude session of kstrl runs with `--strict-mcp-config` (the claude-sdk adapter passes it too), so no role loads an MCP server. Each session also gets `--setting-sources project`, so the operator's user hooks, plugins and skills do not apply (kstrl takes only the `apiKeyHelper` and the `env` of the user settings, for the login), and `--tools` with the tools of its role, so a harness tool that acts outside the worktree or after the run (a schedule, a remote trigger, a worktree, a workflow) is off (#803). The claude-sdk adapter blocks the same writes with the same function. The check runs before the write, so a symlink that a background shell process swaps in between the two steps is a remaining risk that only an OS sandbox around the whole claude process closes. Outbound network is open by default, so the engineer can add a package; `[sandbox] allow_network = false` denies it. A custom agent command (`--agent-cmd`, `[agent] command`, `AGENT_CMD`, `--review-agent-cmd`, `--security-agent-cmd`, `--repair-agent-cmd`) is an arbitrary shell command with no sandbox surface, so it runs unconfined. Before #700 kstrl refused such a run (#701). The acceptance record (`engineerSandbox`) and the PR body's `## Isolation` section say whether the engineer was confined, and by which harness.
 

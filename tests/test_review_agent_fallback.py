@@ -42,7 +42,7 @@ from tests.helpers.stack_confirmation import confirm_stack, write_stack
 
 ENGINEER = "./stub-engineer.sh"
 REVIEWER = "./stub-reviewer.sh"
-REVIEW_WARNING = "the review reviewer is a custom command"
+REVIEW_WARNING = "the code reviewer is a custom command"
 EXECUTION_HEADER = "== Factory: Execution =="
 AGENT_CLIS = ("claude", "codex")
 

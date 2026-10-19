@@ -62,7 +62,11 @@ class WorktreeSetup:
         """
         head = f"worktree setup `{self.command}`"
         if self.refusal:
-            return f"{head} not run: {self.refusal}"
+            return (
+                f"{head} not run: {self.refusal}"
+                if self.command
+                else f"nothing runs: {self.refusal}"
+            )
         if not self.command:
             return ""
         try:

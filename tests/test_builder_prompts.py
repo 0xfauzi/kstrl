@@ -397,7 +397,7 @@ NEEDLES: dict[str, str] = {
     "verify.check_scope_unreadable": "The allowedPaths this component must be judged against",
     "verify.check_policy_envelope": "do not treat this as permission to merge.",
     "factory._run_component guard": "Do not widen allowedPaths.",
-    "knowledge.build_knowledge_context": "Treat as ground truth unless contradicted",
+    "knowledge.build_knowledge_context": "kstrl has not checked them",
     "init_cmd verification section": "kstrl runs the checks of this project's `[stack]`",
 }
 
@@ -436,8 +436,9 @@ DIGESTS: dict[str, str] = {
     "diff_scope_plain": "6ba1a900c7e465f20cf67df9d78e80fee909f8b25007ef100d236e1055cafe44",
     "diff_scope_truncated": "2e6cb243401aea539d232f5f33c3fad4bbac417771fe38a03603afc7a0357ac4",
     "factory_guard": "975a099e1906f2c1585fb97a5c2b06dd3db574ab33b097b4c24b7173e84e39e5",
-    "knowledge_overflow": "d7ef0f68094a4ae521985ae10270f5302813be17a1e36c0348075679f08d732b",
-    "knowledge_plain": "88716e667ff7e50d57775c3900aadf3c668f9929983dd691acb557ffba65738f",
+    # Moved deliberately: KNOWLEDGE_CONTEXT_PROMPT 1.1.0.
+    "knowledge_overflow": "f19dcf3ed14547bec31c5a0616800eb1eb6e4ab99d8b7552f46dda15d50e5fdb",
+    "knowledge_plain": "598fb003a67a0159ab5602afbf09d1762b35ca5094745ea33143f0f4178b9117",
     "loop_measurement": "d52903bd125d4505f5e6026f62ff93a6db7bcca66a6a3212c79acb36a5c80740",
     "policy_diff_unreadable": "f628c8378f20bb097023e0a39dc113f268f8e75d7b06755b58f8d9cc97a82677",
     "prd_tamper": "1a210bdd7077628703f6e5bfa2893be949ebcf0636102cd4d7507a7b7af41a97",

@@ -251,7 +251,7 @@ def _check_report(
         sys.exit(0 if result.passed else 1)
 
     force_rich = os.environ.get("KSTRL_UI_FORCE_RICH") == "1"
-    ui_impl = _console_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich)
+    ui_impl = _console_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich, file=sys.stdout)
     ui_impl.section("ks check")
     ui_impl.kv("Path", str(path))
     ui_impl.kv("Base branch", base)

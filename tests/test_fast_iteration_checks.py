@@ -10,6 +10,9 @@ events as written to and read back from a JSONL file.
 
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 import textwrap
 import time
 from collections.abc import Iterator, Mapping
@@ -420,3 +423,36 @@ def test_ks_check_refuses_a_bad_value_before_measuring(tmp_path: Path) -> None:
     )
     assert overridden.exit_code == 2, overridden.output
     assert "mypy" in overridden.output, overridden.output
+
+
+def test_a_bad_value_writes_no_state_outside_the_state_home(tmp_path: Path) -> None:
+    """Finding which variable set a bad value clears the environment and
+    loads the config again, which reads the stack's confirmation from the
+    inbox; with ``XDG_STATE_HOME`` cleared that created a directory under
+    the default state home (a suite run left 30 to 50 of them there). The
+    scrub clears ``HOME`` too, so the place to look is the real one."""
+    root, state = tmp_path / f"leak-probe-{os.getpid()}", tmp_path / "state"
+    root.mkdir()
+    state.mkdir()
+    write_stack(root, {"tests": "true"})
+    confirm_stack(root)
+    toml_path = root / "kstrl.toml"
+    toml_path.write_text(
+        toml_path.read_text(encoding="utf-8") + '\n[verify]\nfast_iteration_checks = ["mypy"]\n',
+        encoding="utf-8",
+    )
+    default_home = Path.home() / ".local" / "state" / "kstrl"
+
+    done = subprocess.run(
+        [sys.executable, "-m", "kstrl", "check", "--root", str(root)],
+        env={**os.environ, "XDG_STATE_HOME": str(state)},
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+
+    assert done.returncode == 2, done.stdout + done.stderr
+    leaked = sorted(default_home.glob(f"{root.name}-*"))
+    for path in leaked:
+        path.rmdir()
+    assert leaked == []

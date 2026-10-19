@@ -36,7 +36,7 @@ from kstrl.proc.scrubbed_run import _SCRUB_TERM_GRACE_SECONDS
 from kstrl.project.stack import load_stack
 from tests.helpers.procs import kill_group, read_pid, wait_for_pid_to_die
 from tests.test_isolation_rung import needs_nono, on_macos, runs_a_stack
-from tests.test_isolation_stack import _ignoring_nono
+from tests.test_isolation_stack import NO_PROVER, _ignoring_nono
 from tests.test_stack_confirmation_e2e import NOT_CONFIRMED, _restack, _stack_items
 from tests.test_stack_e2e import (
     FUSE_SECONDS,
@@ -152,7 +152,8 @@ def test_a_check_that_cannot_run_and_a_check_that_fails_on_the_base_are_named_ap
     """A check whose command is not found (127) could not run: the replay
     fails at ``check_not_runnable``. A check that ran and exited 3 on the
     base contradicts the stack's claim that its checks pass there:
-    ``base_contradiction``. Both stop at that check and fail the row."""
+    ``base_contradiction``. Both stop at that check; only the first fails
+    the row, because a red base is the base gates' to report."""
     missing = _repo(
         tmp_path / "missing", _stack({"tests": "kstrl-no-such-command-7f3a"}), confirm=False
     )
@@ -169,7 +170,27 @@ def test_a_check_that_cannot_run_and_a_check_that_fails_on_the_base_are_named_ap
     assert reading["failed"] == "base_contradiction", reading
     assert _stage(reading, "check:tests")["exit"] == 3, reading
     assert "red-on-base" in _stage(reading, "check:tests")["tail"], reading
-    assert _replay_row(contradiction)["status"] == "fail", contradiction
+    assert _replay_row(contradiction)["status"] == "warn", contradiction
+
+
+def test_a_red_base_does_not_take_back_a_confirmation(tmp_path: Path) -> None:
+    """A new repository fails its checks on the base, which `ks factory
+    --accept-red-base` waives for a run. `ks doctor --measure` filed that as
+    a failed replay, and no command the user was then pointed at could
+    confirm the stack again (a user run, twice)."""
+    root = _repo(tmp_path, _stack({"tests": "echo red-on-base; exit 3"}))
+    base = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=root, capture_output=True, text=True, check=True
+    ).stdout.strip()
+
+    _code, document = _measure(root, NO_PROVER)
+    run = _factory(tmp_path, root, "--accept-red-base", base[:12], env=NO_PROVER)
+
+    assert _replay(document)["failed"] == "base_contradiction", document
+    assert _replay_row(document)["status"] == "warn", document
+    assert "filed on inbox item" not in _replay_row(document)["detail"], document
+    assert "does not hold" not in run.out, run.out
+    assert run.calls == 1, run.out
 
 
 def test_editing_up_changes_the_digest_and_needs_confirmation_again(tmp_path: Path) -> None:

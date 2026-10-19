@@ -210,6 +210,8 @@ def _stack_refusal_lines(reading: BaseGates) -> list[str]:
     entry ``git status`` showed after the checks ran."""
     at = f"{reading.base_branch} at {reading.base_sha[:12]}"
     if reading.setup_error:
+        if not reading.setup_command:
+            return [f"on {at}, {reading.setup_error}"]
         return [f"the setup fails on {at}: {reading.setup_error}"]
     if reading.result is None:
         return []

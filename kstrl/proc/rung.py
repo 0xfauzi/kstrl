@@ -41,7 +41,7 @@ PROVER_PLATFORMS = ("darwin",)
 #: platform and says that nothing was isolated.
 HOST_FALLBACK_LABEL = (
     "none: kstrl cannot isolate the [stack] commands on {platform}, so they run on "
-    "the host (the engineer's own sandbox is [sandbox])"
+    "the host (the engineer's own sandbox is configured under [sandbox])"
 )
 
 #: Test seam, read only by :func:`host_fallback`: the platform the prover

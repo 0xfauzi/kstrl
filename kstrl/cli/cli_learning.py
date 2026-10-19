@@ -123,7 +123,7 @@ def evolve(
 
     root_dir = root.resolve() if root else Path.cwd()
     force_rich = os.environ.get("KSTRL_UI_FORCE_RICH") == "1"
-    ui_impl = _console_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich)
+    ui_impl = _console_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich, file=sys.stdout)
 
     # R2.1: honor [evolution] in kstrl.toml + env, anchored to --root.
     # Unguarded on purpose: `_PREFLIGHT_REQUIRED` lists this command as
@@ -671,7 +671,7 @@ def health_cmd(root: Path | None, ui: str, no_color: bool) -> None:
     from kstrl.learning import health_report, readings_from
 
     root_dir = (root or Path.cwd()).resolve()
-    ui_impl = _autonomy_ui(ui, no_color)
+    ui_impl = _autonomy_ui(ui, no_color, sys.stdout)
     runs, config = _load_history_or_exit(ui_impl, root_dir)
     readings = readings_from(runs, config.journal_path)
     summary, breaches = health_report(readings)

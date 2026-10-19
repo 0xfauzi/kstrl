@@ -27,7 +27,6 @@ from kstrl.git import detect_base_branch
 from kstrl.pipeline import FactoryConfig
 from kstrl.proc import HostFallback, ProvenRung, Rung, limit_seconds, release
 from kstrl.project import (
-    REPLAY_BOUNDARY_REFUSED,
     Stack,
     file_stack_item,
     replay_refuses,
@@ -133,8 +132,8 @@ def measure_replay(
     evidence a person confirms the stack on. It is filed on the stack's
     confirmation item when the stack is not confirmed, and when it failed
     (:func:`kstrl.project.stack.replay_refuses`), so a stack whose replay failed
-    is never confirmed. A refused boundary warns, as the isolation row
-    does; any other failure fails the row."""
+    is never confirmed. A failure that does not refuse warns, as the
+    isolation row does; any other failure fails the row."""
     if any(check.name == "kstrl_config" and check.status == STATUS_FAIL for check in checks):
         return None, None
     stack = stack_in_force(root)
@@ -150,12 +149,13 @@ def measure_replay(
     )
     document = dataclasses.asdict(record)
     filed = _file_replay(root, stack, record, document)
-    if record.failed == REPLAY_BOUNDARY_REFUSED:
-        row = (STATUS_WARN, f"{record.failed}: {record.detail}{filed}")
-    elif record.failed or record.error:
+    if record.failed or record.error:
         said = f"{record.failed}: {record.detail}" if record.failed else record.error
         said += f"; {record.sandbox}" if record.sandbox else ""
-        row = (STATUS_FAIL, f"{said}{filed}")
+        # A failure that does not refuse the stack (nothing ran, or the base
+        # is red, which base_gates reports) warns, as the isolation row does.
+        refuses = not record.failed or replay_refuses(record.failed)
+        row = (STATUS_FAIL if refuses else STATUS_WARN, f"{said}{filed}")
     else:
         stages = ", ".join(stage.name for stage in record.stages)
         row = (

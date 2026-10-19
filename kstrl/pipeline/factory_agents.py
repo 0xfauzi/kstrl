@@ -226,16 +226,17 @@ def _homogeneity_warning(
         "review": "pass --review-model or --review-agent-cmd",
         "security": "set [security] agent_type or model (or pass --security-model)",
     }.get(phase, f"set an explicit {phase} agent config")
+    reviewer = "code reviewer" if phase == "review" else f"{phase} reviewer"
     if engineer_family is None:
         return (
             "Homogeneity risk (R7.1): the engineer runs a custom agent "
             "command, so its model family is unknown and the "
-            f"cross-family default cannot be applied; the {phase} "
-            f"reviewer falls back to the same configuration. {tail}"
+            f"cross-family default cannot be applied; the {reviewer} "
+            f"falls back to the same configuration. {tail}"
             f"To restore cross-family review, {explicit} on a different model family."
         )
     same_family = (
-        f"so the {phase} reviewer runs on the same model family as the "
+        f"so the {reviewer} runs on the same model family as the "
         f"engineer ({engineer_family}). {tail}"
     )
     if cross is not None:
@@ -375,7 +376,7 @@ def warn_unsandboxable_reviewers(
     when it does not.
     """
     for role, selection in (
-        ("review", review_selection),
+        ("code", review_selection),
         ("security", security_selection),
     ):
         if selection is not None and selection.agent_cmd:

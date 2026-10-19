@@ -334,9 +334,9 @@ def cli(ctx: click.Context) -> None:
     ctx.exit(2)
 
 
-def _autonomy_ui(ui: str, no_color: bool) -> UI:
+def _autonomy_ui(ui: str, no_color: bool, file: TextIO | None = None) -> UI:
     force_rich = os.environ.get("KSTRL_UI_FORCE_RICH") == "1"
-    return _console_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich)
+    return _console_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich, file=file)
 
 
 def _actor() -> str:

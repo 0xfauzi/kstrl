@@ -242,7 +242,7 @@ def _blame_sweep(
             return None
 
     blamed: str | None = None
-    for name in sorted(os.environ):
+    for name in sorted(set(os.environ) - set(STATE_LOCATION_ENV)):
         saved = os.environ.pop(name)
         try:
             loader(root_dir)
@@ -328,6 +328,12 @@ def environ_lock() -> Iterator[None]:
         yield
 
 
+#: Where kstrl keeps its state, which no loader reads as a field. The scrub
+#: keeps it: a loader that reads the stack's confirmation from the inbox
+#: created a directory under the default state home without it.
+STATE_LOCATION_ENV = ("XDG_STATE_HOME",)
+
+
 @contextmanager
 def scrubbed_environ() -> Iterator[None]:
     """Temporarily clear os.environ so a loader sees toml + defaults only.
@@ -339,6 +345,7 @@ def scrubbed_environ() -> Iterator[None]:
     with _ENVIRON_LOCK:
         saved = dict(os.environ)
         os.environ.clear()
+        os.environ.update({name: saved[name] for name in STATE_LOCATION_ENV if name in saved})
         try:
             yield
         finally:

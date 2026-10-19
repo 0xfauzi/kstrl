@@ -295,7 +295,7 @@ _UNCONFINED = [
         SANDBOX_TOML + CODEX_TOML,
         (*_FACTORY, "--review-mode", "hard", "--review-agent-cmd", "{custom}"),
         {},
-        CUSTOM_REVIEWER.format(role="review reviewer"),
+        CUSTOM_REVIEWER.format(role="code reviewer"),
         "bin/codex",
     ),
     (

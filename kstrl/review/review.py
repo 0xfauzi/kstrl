@@ -774,7 +774,7 @@ def run_review(
     if mode == ReviewMode.SKIP:
         return ReviewResult(passed=True, mode=mode.value)
 
-    ui.info("  Running second-opinion review...")
+    ui.info("  Running the code review...")
     start = time.monotonic()
     # R7.1: the agent's name IS the reviewing model identity ("codex
     # (gpt-5)", "claude-code (haiku)", "custom (<cmd>)"). Captured up

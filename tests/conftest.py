@@ -257,6 +257,22 @@ def _guard_root() -> Path:
 
 
 @pytest.fixture(scope="session", autouse=True)
+def session_xdg_state(tmp_path_factory: pytest.TempPathFactory) -> Generator[None, None, None]:
+    """``XDG_STATE_HOME`` for the whole session. A fixture wider than a
+    function is set up before ``isolate_kstrl_state``, so without this
+    the kstrl runs a module-scoped fixture makes wrote to the real
+    ``~/.local/state/kstrl`` (measured: 30 to 50 directories a full run)."""
+    from tests.helpers.xdg import clear_xdg_state_home_cache
+
+    patch = pytest.MonkeyPatch()
+    patch.setenv("XDG_STATE_HOME", str(tmp_path_factory.mktemp("xdg-state")))
+    clear_xdg_state_home_cache()
+    yield
+    patch.undo()
+    clear_xdg_state_home_cache()
+
+
+@pytest.fixture(scope="session", autouse=True)
 def guard_repo_kstrl_state() -> Generator[None, None, None]:
     """FAIL the run loudly if any test mutated the repo's real .kstrl/.
 

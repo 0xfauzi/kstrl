@@ -409,6 +409,31 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 - A distiller reply that did not parse is asked for once more, inside the
   adversarial budget (2 of 4 user runs lost a component's facts to it).
 - Stories the reviewer did not confirm are listed with the reason for each.
+- `ks doctor --measure` on a new repository no longer takes back the
+  `[stack]` confirmation. A check that ran and failed on the base
+  (`base_contradiction`) is a red base, which the `base_gates` row reports
+  and `--accept-red-base` waives; it now warns and leaves the confirmation
+  standing. Before, `ks check` and `ks factory` refused the stack, approving
+  the filed item confirmed nothing, and a second `--measure` was refused
+  for the unconfirmed stack, so only an edit to the `[stack]` text got out
+  (a user run, twice; the extra inbox items it filed came from the same
+  loop). The other replay failures still refuse.
+- `ks inbox ls`, `ks inbox show`, `ks check`, `ks evolve` and `ks health`
+  print their report on stdout, so the quick start's "paste the proposed
+  [stack] from `ks inbox show`" works through a pipe. `ks inbox approve` of
+  a `[stack]` item says what the confirmation now is, read back from it.
+- The engineer is told the knowledge facts are the distiller's claims,
+  which kstrl has not checked (KNOWLEDGE_CONTEXT_PROMPT 1.1.0); it said
+  to treat them as ground truth, and a `test_verified` fact claimed a date
+  check the code does not make.
+- Finding which environment variable set a bad config value keeps
+  `XDG_STATE_HOME`; clearing it made the inbox read create a directory
+  under the default state home. The suite also sets it for the whole
+  session, so module-scoped fixtures no longer write there.
+- Wording: "the code reviewer" (was "the review reviewer"), "Running the
+  code review", "nothing runs" for an unconfirmed stack with no setup
+  (was "the setup fails ... worktree setup `` not run"), and "the
+  engineer's own sandbox is configured under [sandbox]".
 - The architect prompt (5.4.0) puts a lockfile a `stack` command writes
   in the scope of the component that creates the manifest (a `uv run`
   check wrote `uv.lock` outside it, the engineer gitignored it, and the

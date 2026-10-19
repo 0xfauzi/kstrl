@@ -225,13 +225,16 @@ BUILDER_SNAPSHOTS: dict[str, tuple[str, str]] = {
         "4d82e5cb634b4407b12dd1ba3644fe3c99ba6c11e430bcb0d83f4bb766a63734",
         "1.0.0",
     ),
+    # 1.1.0: the facts are the distiller's claims, which kstrl has not
+    # checked; "treat as ground truth" put a false test_verified fact (a
+    # date check the code does not make) in front of later engineers.
     "KNOWLEDGE_CONTEXT_PROMPT": (
-        "f89c1fd62121d7569152e08712b5a0d3511b1d74aa98e0dfb8f13b1c14ca4d61",
-        "1.0.0",
+        "c901539685d4bc640209980dc376524ae9118841acf130fdfd51f1a6590ca6b2",
+        "1.1.0",
     ),
     "KNOWLEDGE_OVERFLOW_PROMPT": (
         "10512d293d1c6e0f46b1922626171970bb35979c3d1e85f2374a82779c7d7380",
-        "1.0.0",
+        "1.1.0",
     ),
     "LAST_ITERATION_MEASUREMENT_PROMPT": (
         "f6f5329dbe821f18fce2ae140c0c798e48fe35f0e34275517e67e995017b337b",

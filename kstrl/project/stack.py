@@ -106,17 +106,22 @@ def replay_failure_known(failed: object) -> bool:
 
 def replay_refuses(failed: str) -> bool:
     """Whether a replay that failed at ``failed`` keeps its stack from being
-    confirmed: every failure but the boundary's, which says nothing about
-    the recipe (the replay ran nothing)."""
-    return failed not in ("", REPLAY_BOUNDARY_REFUSED)
+    confirmed: every failure but two that say nothing against the recipe.
+    The boundary's ran nothing. A check that ran and failed on the base says
+    the base is red, which the base gates report and ``--accept-red-base``
+    waives for a run: a new repository's checks fail there by design."""
+    return failed not in ("", REPLAY_BOUNDARY_REFUSED, REPLAY_BASE_CONTRADICTION)
 
 
 def replay_decides(replay: dict[str, Any]) -> bool:
     """Whether a replay record says anything about the recipe, so that it
     replaces an earlier one: a failure at a stage that ran, or a pass kstrl
-    set up and cleaned up without an error. A refused boundary ran nothing
-    and an errored replay proved nothing, so neither lifts a failure."""
+    set up and cleaned up without an error (a red base ran every stage). A
+    refused boundary ran nothing and an errored replay proved nothing, so
+    neither lifts a failure."""
     failed = str(replay.get("failed", ""))
+    if failed == REPLAY_BASE_CONTRADICTION:
+        return True
     return replay_refuses(failed) or not (failed or replay.get("error"))
 
 
