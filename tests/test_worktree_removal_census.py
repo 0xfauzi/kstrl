@@ -52,7 +52,6 @@ EXPECTED_REMOVAL_SPELLINGS = {
     "acceptance/contract.py": 1,
     # #863 A4: the flat-worktree refusal message names the command
     "factory/factory_worktrees.py": 5,
-    "factory/retry_plan.py": 1,
     "proc/temp_worktree.py": 6,
 }
 
@@ -61,7 +60,6 @@ EXPECTED_REMOVAL_SITES = (
     "factory/factory_worktrees.py::_cleanup_worktree swept",
     "factory/factory_worktrees.py::_prune_stale_worktrees swept",
     "factory/factory_worktrees.py::_setup_worktree swept",
-    "factory/retry_plan.py::prepare_retry swept",
     "proc/temp_worktree.py::remove_temp_worktree swept",
 )
 

@@ -27,6 +27,7 @@ import json
 import os
 import secrets
 import subprocess
+import sys
 from pathlib import Path
 
 from kstrl.acceptance.acceptance import HEAD_RUNS
@@ -557,7 +558,10 @@ def test_a_halt_on_unmerged_dependency_code_says_so_and_a_hand_merge_lets_it_thr
     promised that approving and retrying would merge over it, and merging
     the dependency by hand did not count (a user run, twice). The halt now
     says what must reach the base first, and once the dependency's branch
-    is in main, git says so: approve and retry keep the commit."""
+    is in main, git says so: approve and retry keep the commit. The
+    dependency's own check then passes on the base, as its code is there:
+    the completed component's check is not judged against ``onBase`` (a
+    user run refused, or removed the checks Phase 3 replays)."""
     root = _repo(tmp_path, _stack({"tests": "true"}), comps=("dep", COMP))
     manifest_path = root / "scripts" / "kstrl" / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -571,6 +575,10 @@ def test_a_halt_on_unmerged_dependency_code_says_so_and_a_hand_merge_lets_it_thr
         [_check("greets-hidden", ["/bin/sh", "check.sh", hidden], held_out=True)],
         script=GREETS_OR_MARKER,
     )
+    document = json.loads((plan / "plan.json").read_text(encoding="utf-8"))
+    ada = _check("greets-ada", ["/bin/sh", "check.sh", "Ada"])
+    document["components"]["dep"] = {"createsApp": False, "checks": [ada]}
+    (plan / "plan.json").write_text(json.dumps(document), encoding="utf-8")
 
     first = _factory(
         tmp_path, root, "--acceptance", str(plan), contract="tier", engineer=SPECIAL_CASED
@@ -593,6 +601,7 @@ def test_a_halt_on_unmerged_dependency_code_says_so_and_a_hand_merge_lets_it_thr
     assert f"Kept branch '{BRANCH}'" in out, out
     assert code == 0, out
     assert _status(root) == ("completed", ""), out
+    assert "greets-ada passes on the base" not in out, out
 
 
 @runs_a_stack
@@ -619,3 +628,74 @@ def test_a_dispute_the_breaker_stops_on_is_still_judged(tmp_path: Path) -> None:
     (item,) = _halts(root)
     assert "the engineer disputes the acceptance checks has-marker" in item.detail, item.detail
     assert cause in item.detail, item.detail
+
+
+#: A reviewer that reports the diff it measured and judges US-001 advisory:
+#: the claim gate does not confirm the story.
+UNCONFIRMING_REVIEWER = f"""#!{sys.executable}
+import json, subprocess, sys
+sys.stdin.read()
+out = subprocess.run(["git", "diff", "--numstat", "main...HEAD"], capture_output=True, text=True)
+rows = [[int(a), int(b), p] for a, b, p in (line.split("\\t") for line in out.stdout.splitlines())]
+criterion = {{"criterion": "prints hello", "verdict": "advisory",
+             "explanation": "the test is thin"}}
+print(json.dumps({{
+    "observedDiffstat": {{"rows": rows}},
+    "stories": [{{"storyId": "US-001", "criteria": [criterion]}}],
+    "concerns": [],
+}}))
+"""
+
+
+@runs_a_stack
+def test_a_claim_disagreement_on_an_approved_commit_halts_and_its_approval_merges_over_it(
+    tmp_path: Path,
+) -> None:
+    """The kept commit an acceptance approval was taken on passed the gate,
+    and the reviewer did not confirm a story. An engineer used to replace
+    the commit, which voided the approval, and the new commit halted on the
+    same check (two user runs). Now the claim halts with no engineer, on an
+    item naming the commit, and approving it merges over it there."""
+    root = _repo(tmp_path, _stack({"tests": "true"}))
+    _with_greet(root)
+    hidden = f"Grace{secrets.token_hex(4)}"
+    plan = _plan(
+        tmp_path,
+        [_check("greets-hidden", ["/bin/sh", "check.sh", hidden], held_out=True)],
+        script=GREETS_OR_MARKER,
+    )
+    reviewer = write_executable(tmp_path / "reviewer.sh", UNCONFIRMING_REVIEWER)
+    # A retry to spend, so a halt and a retry tell apart.
+    review = ("--review-mode", "hard", "--review-agent-cmd", str(reviewer), "--max-retries", "1")
+    first = _accept(tmp_path, root, plan, SPECIAL_CASED, *review)
+    assert first.code == 1, first.out
+    (acceptance,) = _halts(root)
+    head = _tip(root)
+    approve = ["inbox", "approve", "--root", str(root), "--ui", "plain"]
+    retry = ["retry", COMP, "--yes", "--root", str(root), "--ui", "plain", "--no-color"]
+    code, said = _spawn([*approve[:2], acceptance.id, *approve[2:]], root, None)
+    assert code == 0, said
+
+    code, out = _spawn(retry, root, None)
+
+    assert code == 1, out
+    assert f"by inbox approval {acceptance.id[:8]}" in out, out
+    assert "no engineer replaces it" in out, out
+    assert _status(root) == ("failed", "review"), out
+    assert _tip(root) == head, out
+    calls = (tmp_path / "engineer.calls").read_text(encoding="utf-8").splitlines()
+    assert len(calls) == 1, out
+    (claim,) = [i for i in _halts(root) if i.evidence.get("phase") == "review"]
+    assert (claim.evidence["check"], claim.evidence["head_sha"]) == ("claim", head), claim
+    code, said = _spawn([*approve[:2], claim.id, *approve[2:]], root, None)
+    assert code == 0, said
+    assert "merges over the claim disagreement" in said, said
+
+    code, out = _spawn(retry, root, None)
+
+    assert code == 0, out
+    assert f"Kept branch '{BRANCH}' at {head[:12]}" in out, out
+    assert f"merged over by inbox approval {claim.id[:8]}" in out, out
+    assert _status(root) == ("completed", ""), out
+    calls = (tmp_path / "engineer.calls").read_text(encoding="utf-8").splitlines()
+    assert len(calls) == 1, out

@@ -4,10 +4,10 @@ Recovery procedures for the failure modes that actually happen during factory ru
 
 ## Before you point kstrl at a repository
 
-`ks doctor [--root <path>] [--json]` runs seven static checks over a
+`ks doctor [--root <path>] [--json]` runs eight static checks over a
 repository and reports whether kstrl can point at it. Every check is
 mechanical: nothing here runs the repository's own test, typecheck or
-lint commands, spawns an agent, or spends anything. The seven checks are
+lint commands, spawns an agent, or spends anything. The eight checks are
 `git_repo` (a repository with commits and a base branch factory can cut
 a worktree from), `git_clean` (uncommitted work does not reach the
 engineer), `github_cli` (`gh` authenticated and an `origin` remote, for
@@ -17,8 +17,10 @@ Phase 1 will run), `gitignore` (whether git ignores
 `.kstrl/`, so the in-loop scope guard does not count kstrl's run
 journals against a component; what a `[stack]` check writes is caught by
 `ks doctor --measure`, which refuses on every file `git status` shows
-after the checks ran on the base), and `protected_paths` (CI,
-migration and deploy paths that `[policy] paths_deny` does not cover).
+after the checks ran on the base), `protected_paths` (CI,
+migration and deploy paths that `[policy] paths_deny` does not cover),
+and `sandbox` (whether the engineer runs in its agent CLI's sandbox, from
+`[sandbox]`; it warns when the sandbox is off).
 
 There are three verdicts. `ready` (exit 0): every check passed.
 `ready-with-warnings` (exit 0): at least one check warned, none failed.
@@ -262,7 +264,7 @@ this is a small print an operator should have to find on their own:
 
 **Resolve**: make the base green in a commit; or pass `--accept-red-base <sha>`, at least 12 characters of the base commit's sha (the refusal prints the first 12), to run on that commit as it is; or pass `--no-verify`, which turns off all of Phase 1 and this check with it. Under `--no-verify` the record says `--no-verify: Phase 1 runs no gate`.
 
-`--accept-red-base` is for one commit and one run (#654). A base that moved since refuses again, and so does a value shorter than 12 characters or one that is not the start of the measured sha; the refusal names the value and the sha. `ks retry` replays it from the launch record. With `--no-verify` it refuses, because no base is measured. It waives only a gate that ran and measurably failed. Under a `[stack]` that is a check that exited with a status other than 0, 126 or 127; it never waives a failed setup (no check ran), a check that timed out or whose command was not found (it measured nothing, and no engineer's commit fixes it), or what a check leaves in `git status` (every engineer's diff would carry it). The run's `base-gates.json` records the value as `acceptRedBase` and the refusals it waived as `accepted`. Phase 1 still runs every gate on every component, so a component passes only once the base's failures are fixed on its branch.
+`--accept-red-base` is for one commit and one run (#654). A base that moved since and still fails a gate refuses again, and so does a value shorter than 12 characters or one that is not the start of the measured sha; the refusal names the value and the sha. A base that moved and passes every gate has nothing to waive, so the value refuses nothing: merging a dependency by hand moves the base, and the retry after it runs. `ks retry` replays the value from the launch record, and `ks retry <component> --accept-red-base <sha>` replaces it. A refused `ks retry` changes nothing in git: the failed attempt's branch is deleted only once nothing refuses, so run `ks retry` again after fixing what refused. With `--no-verify` it refuses, because no base is measured. It waives only a gate that ran and measurably failed. Under a `[stack]` that is a check that exited with a status other than 0, 126 or 127; it never waives a failed setup (no check ran), a check that timed out or whose command was not found (it measured nothing, and no engineer's commit fixes it), or what a check leaves in `git status` (every engineer's diff would carry it). The run's `base-gates.json` records the value as `acceptRedBase` and the refusals it waived as `accepted`. Phase 1 still runs every gate on every component, so a component passes only once the base's failures are fixed on its branch.
 
 **Under `ks serve`**: the daemon reads the refusal from the run's `base-gates.json` (`refused: true`), requeues the item with the attempt it was charged, pauses the queue with no expiry, and files one `halted_run` inbox item titled `Continuous intake paused: the base branch fails its own gates` per base commit. The poison streak does not move. Make the base green in a commit, then `ks queue resume`; the item runs on the next cycle. A run that refused because its reading could not be written leaves no such record, so serve poisons it as unclassifiable, as before.
 
@@ -379,6 +381,8 @@ The adversarial budget covers review, security and knowledge distillation togeth
 
 **Resolve**: the retry resets `passes` to false on each unconfirmed story and puts the disagreement in the agent's context. The engineer's own story selection then picks the story up again, because it takes the highest-priority story where `passes` is false. Nothing needs doing by hand.
 
+On a commit an inbox approval was taken on, such as an approved acceptance halt that `ks retry` kept, the disagreement halts instead: an engineer's new commit would void that approval and halt again on the same check. The halt's item names the commit. Approve it and run `ks retry <component>` to merge over the disagreement on that commit (the terminal names the approval, who gave it and when), or reject it and run `ks retry <component>` to build the component again.
+
 If `claim_agreement = "block"` is set together with `review_mode = "skip"`, the run warns at startup that the gate can never fire: with no reviewer there is no verdict to confirm with.
 
 If the reviewer is the one that is wrong, set `[factory] claim_agreement = "advisory"` (the default is `"block"`). Disagreements are then recorded on the PR and in the journal without failing anything. Note the gate also blocks whenever the autonomy ladder is at L1 or above, regardless of this setting: autonomy tightens a gate and never loosens one, so turning it off there means turning the ladder down.
@@ -423,6 +427,8 @@ To stop it failing components, set `[divergence] mode = "advisory"` (the default
 
 **Resolve**: the system handles this automatically up to `max_retries`. If it keeps breaking, the integration is genuinely broken: inspect the merged tier branch, fix the spec or the components' contracts, re-run.
 
+When nothing is left to retry (the retries are spent, or a held-out check failed), the component fails and a `halted_run` item names it, as for any other halt. The summary line gives the first failing line whole, for example the `[stack]` check that failed, and the path of the tier's whole output, kept outside the repository under the run's evidence directory. Phase 3 runs every check in a fresh merged tree, so a check that passed in Phase 1 only because of something the engineer left uncommitted in its worktree (an installed environment, a downloaded package) fails here: commit what the check needs, or make the `[stack]` setup create it.
+
 ## Knowledge layer reports no valid fact
 
 **Symptom**: `Knowledge: the distiller returned no valid fact (raw: ...)`
@@ -435,11 +441,15 @@ To stop it failing components, set `[divergence] mode = "advisory"` (the default
 - Empty claim text
 - Prompt-injection pattern matched in claim text (Phase A1 rejection)
 
+**Symptom, second form**: `Knowledge: the distiller's reply did not parse: No valid JSON found in output: <cause>; asking the distiller once more`
+
+The reply was not one JSON object. The cause says why: the decoder's error, or that another object (or text with braces) follows the first, as when a fact closes with one brace too many or the model prints a corrected reply after the first. kstrl does not repair a reply, because a repaired reply is a different answer: it asks once more, inside the adversarial budget, and tells the distiller what it could not read. A second reply that does not parse stands, and the component writes no facts for this run. Nothing else fails: every gate has already passed.
+
 **Resolve**:
 
-- Inspect `.kstrl/knowledge/<comp_id>/<run_id>/_distill_raw.txt` (saved automatically on failure paths) to see the agent's actual output.
-- If the agent consistently produces malformed output, the distill prompt may need to be tightened.
-- If the line says `the distiller returned no facts` instead, the JSON didn't parse at all; usually means the agent emitted prose around the JSON.
+- Inspect `.kstrl/knowledge/<comp_id>/_debug/<run_id>/_distill_raw.txt` (saved on every failure path) to see the agent's actual output; `_distill_status.txt` beside it says which failure it was.
+- If the agent consistently produces malformed output, the distill prompt may need to be tightened, which needs a calibration run.
+- `the distiller returned no facts` is a reply that parsed to an empty list: the distiller found nothing it would state, which is not an error.
 
 ## After a factory run, `scripts/kstrl/manifest.json` is modified
 
@@ -534,10 +544,11 @@ pruned or a worktree is recreated for a retry is named in a warning line,
 `orphan_process (stale worktree)` or `(worktree setup)`, which a factory
 run also writes to its events.jsonl (#642).
 The same kill runs before kstrl removes any other worktree it created
-(#528): a Phase 3 contract worktree, the integration review's worktree,
-and the failed attempt's evidence worktree that `ks retry` removes. No
-component owns those, so each process found there is named in a warning
-line, `orphan_process (contract)`, `(integration)` or `(retry)`, which a
+(#528): a Phase 3 contract worktree and the integration review's
+worktree. The failed attempt's evidence worktree that `ks retry` gives up
+is pruned by the next run as a stale worktree. No component owns those,
+so each process found there is named in a warning line,
+`orphan_process (contract)`, `(integration)` or `(stale worktree)`, which a
 factory run also writes to its events.jsonl. A shell you opened inside
 any of these worktrees counts as one of those processes. If the census
 cannot run (`lsof` missing, or listing nothing), the finding or the

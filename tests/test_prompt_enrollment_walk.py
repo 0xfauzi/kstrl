@@ -313,7 +313,8 @@ EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
     # #776 K2: DISTILL_PROMPT and its use moved to knowledge_distill.py,
     # thus 6 - 2 = 4 stay in knowledge.py.
     "knowledge/knowledge.py": 4,
-    "knowledge/knowledge_distill.py": 2,
+    # +2: DISTILL_REASK_PROMPT, declared once and used once by reask_suffix.
+    "knowledge/knowledge_distill.py": 4,
     # #233: LAST_ITERATION_MEASUREMENT_PROMPT x 2 spellings (the
     # declaration and its one use in measurement_block) = 2.
     "loop/iteration_prompt.py": 2,
@@ -325,6 +326,9 @@ EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
     # #639 slice 4: OWNER_ANSWER_PROMPT's declaration and its one use in
     # render_owner_answer.
     "architect/owner_answers.py": 2,
+    # Owner decision of 2026-10-19: SPEC_CONTEXT_PROMPT, declared once and
+    # used once by build_spec_context; enrolled.
+    "architect/spec_context.py": 2,
     "review/review_prompt.py": 2,
     # #303: 5 new fragments x 2 spellings each (the declaration and its
     # one use site) = 10. The version constant adds nothing: the walk keys

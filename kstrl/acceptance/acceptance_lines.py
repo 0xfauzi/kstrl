@@ -32,9 +32,13 @@ DESIGNED_LINE = "- the verification designer wrote these checks"
 #: In a record whose checks a model wrote, when a check did not pass: what
 #: the halt text and the PR body say (#700 owner decision 13, part 3).
 DESIGNED_STOP_LINE = (
-    "- the verification designer wrote these checks, so a check that did not pass "
-    "can be incorrect, or the code can be"
+    "- the verification designer wrote these checks, so the check that did not pass may be "
+    "wrong rather than the code: compare it with the spec before you approve"
 )
+
+
+#: How a head record's path starts in its lines (:func:`kstrl.acceptance.acceptance.judge_head`).
+RECORD_LINE = "- record: "
 
 
 def engineer_line(harness: str) -> str:
@@ -182,7 +186,13 @@ def halt_text(outcome: HeadOutcome, head: str, comp_id: str, mergeable: bool = T
             f"branch first; then approving this halt and `ks retry {comp_id}` merges over it"
         )
     first = f"{said} on {head[:12]}; halted with no retry. {merge_over}"
-    return "\n".join([first, *stopped])
+    # Where to look: the halt is read in the inbox, away from the terminal.
+    record = [
+        f"{line} (each check's output, a held-out one's included, is under logs/ beside it)"
+        for line in outcome.lines
+        if line.startswith(RECORD_LINE)
+    ]
+    return "\n".join([first, *stopped, *record])
 
 
 def pr_section(root: Path | None, run_id: str, comp_id: str) -> list[str]:

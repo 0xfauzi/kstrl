@@ -108,7 +108,7 @@ NOT_REPRODUCED_KEY = "unreproduced:"
 #: H3 and H2: the verification designer's role prompt. Its calibration
 #: roles are ``acceptance`` and ``acceptance_clean``, scored by execution on
 #: ``tests/adversarial_fixtures/acceptance/``.
-ACCEPTANCE_PROMPT_VERSION = "1.2.0"
+ACCEPTANCE_PROMPT_VERSION = "1.3.0"
 
 ACCEPTANCE_PROMPT = """\
 You are the verification designer for one component of a planned change.
@@ -168,6 +168,20 @@ show. A check that any implementation passes measures nothing.
   engineer nothing.
 - "createsApp": true only when the base has no application for the checks
   to run against, so that no check can run on the base.
+
+A check that fails correct code is as wrong as one that passes wrong code:
+
+- Decide only what the specification and the criteria state. Where they
+  leave a behaviour open, a correct implementation may do either, so no
+  check decides it.
+- Compare only the output the specification fixes. A check that compares
+  the whole of stdout or stderr fails correct code whenever a tool between
+  the check and the application prints something of its own, such as a
+  package manager's notice: compare the line, the field or the exit status
+  the specification names.
+- An expected value worked out by hand can be wrong. Work out each one with
+  a command in your working directory, such as counting bytes with a tool,
+  before you write it into a check.
 
 ## Stack (from this project's kstrl.toml [stack])
 
@@ -311,10 +325,28 @@ def citation_errors(entry: Any, requirement_ids: Collection[str]) -> list[str]:
 
 
 def designed_dir(root: Path, manifest: Manifest, stack: Stack) -> Path:
-    """Where the plan designed for this plan and stack is kept. Raises
+    """Where the plan designed for this plan and stack is kept. A manifest
+    that pins a designed plan finds it by that pin, under whichever key it
+    was designed: a ``[stack]`` edited since must not lose the checks the
+    plan was made to pass. Raises
     :class:`kstrl.factory.plan_gate.PlanUnreadableError` when a PRD cannot be read."""
+    designed = control_dir(root) / ACCEPTANCE_DIR / "designed"
     key = hashlib.sha256(f"{plan_digest(manifest, root)}:{stack.digest}".encode()).hexdigest()
-    return control_dir(root) / ACCEPTANCE_DIR / "designed" / key
+    target = designed / key
+    if manifest.acceptance_digest:
+        kept = sorted(designed.iterdir()) if designed.is_dir() else []
+        for candidate in [target, *kept]:
+            if _reads_as(candidate, manifest.acceptance_digest):
+                return candidate
+    return target
+
+
+def _reads_as(where: Path, digest: str) -> bool:
+    """Whether the plan directory ``where`` is the one pinned as ``digest``."""
+    try:
+        return where.is_dir() and read_plan_dir(where)[2] == digest
+    except (OSError, KeyError, ValueError):
+        return False
 
 
 def acceptance_source(

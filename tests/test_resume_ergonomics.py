@@ -717,16 +717,20 @@ class TestRetryCli:
         assert saved_a.status == ComponentStatus.PENDING.value
         assert saved_a.evidence_worktree == ""
 
-        # Failed-attempt branch and evidence worktree are gone, so the
-        # stale-branch preflight cannot refuse the re-run.
+        # The retry changes nothing in git: it records the failed commit it
+        # replaces, and the factory deletes that branch and prunes the
+        # evidence worktree only after its own refusals, so a refused retry
+        # destroys nothing (a user run lost correct code twice).
         branch = subprocess.run(
             ["git", "rev-parse", "--verify", "--quiet", "refs/heads/kstrl/comp-a"],
             cwd=tmp_path,
             capture_output=True,
+            encoding="utf-8",
             timeout=30,
         )
-        assert branch.returncode != 0, "failed-attempt branch must be deleted"
-        assert not (tmp_path / ".kstrl" / "worktrees" / "run-old" / "comp-a").exists()
+        assert branch.returncode == 0, "the run, not the retry, deletes the branch"
+        assert saved_a.discard_sha == branch.stdout.strip()
+        assert (tmp_path / ".kstrl" / "worktrees" / "run-old" / "comp-a").exists()
 
     def test_retry_rejects_non_failed_component(
         self,

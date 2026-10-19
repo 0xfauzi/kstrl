@@ -22,7 +22,7 @@ from kstrl.events import (
     PhaseCompleted,
 )
 from kstrl.git import branch_sha
-from kstrl.owner import ACCEPTANCE_PHASE, ItemKind
+from kstrl.owner import ItemKind, overridable
 from kstrl.pipeline.context import IterationContext
 from kstrl.pipeline.divergence import convergence_message, failure_counts_not_converging
 from kstrl.pipeline.pipeline_attempt import AttemptRecorder
@@ -281,7 +281,7 @@ class Transitions(InboxDesk, AttemptRecorder, UsageLedger):
             self._inbox_typed.discard(comp.id)
         else:
             evidence: dict[str, Any] = {"phase": phase, "check": check, "error": error}
-            if phase == ACCEPTANCE_PHASE:
+            if overridable(phase, check):
                 # #700 decision 14: an approval of this halt covers these
                 # checks on this commit only (waivers.covering_override).
                 evidence["head_sha"] = branch_sha(comp.branch_name, self.root_dir) or ""

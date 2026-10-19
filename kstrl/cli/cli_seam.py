@@ -5,6 +5,7 @@ helpers every command shares (console UI, parameter source, root, actor).
 
 from __future__ import annotations
 
+import getpass
 import os
 import sys
 from datetime import datetime
@@ -340,5 +341,10 @@ def _autonomy_ui(ui: str, no_color: bool, file: TextIO | None = None) -> UI:
 
 
 def _actor() -> str:
-    """Who is deciding. Best-effort identity for the audit trail."""
-    return os.environ.get("USER") or os.environ.get("USERNAME") or "operator"
+    """Who is deciding. Best-effort identity for the audit trail: the login
+    name, from the environment or else the password database, so a shell
+    with no ``$USER`` (a container, a cron job) still names its user."""
+    try:
+        return getpass.getuser() or "operator"
+    except (OSError, KeyError):
+        return "operator"

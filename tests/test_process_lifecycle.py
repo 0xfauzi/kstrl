@@ -248,11 +248,8 @@ EXPECTED_PROCESS_MODULES: dict[str, tuple[str, ...]] = {
     # The `gh pr view` reads moved here from `pr.py` for the 800-line
     # ratchet (#154); `pr.py` still pushes, creates and merges.
     "git/pr_state.py": ("subprocess",),
-    "factory/retry_plan.py": ("subprocess",),
     "io/statedir.py": ("subprocess",),
     "proc/temp_worktree.py": ("subprocess",),
-    # #433: `SubprocessError`, caught from `retry_plan._failed_branch_probe`
-    # (the retry scope preview). It creates no child itself.
     # #461: `subprocess.TimeoutExpired`, caught from `verify.run_scrubbed`,
     # which is what runs the `lsof` census. The module creates no child
     # itself and signals groups only through `procgroup.signal_group`.

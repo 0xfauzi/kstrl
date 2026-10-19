@@ -22,7 +22,9 @@ refusal only when the value is at least :data:`ACCEPT_MIN_DIGITS`
 characters of the measured sha, refuses anything else, and waives only the
 lines :func:`_acceptable_lines` names: a gate that ran and measurably
 failed. A failed setup, a check that measured nothing and what a check
-left behind still refuse.
+left behind still refuse. A measured base with nothing to refuse leaves
+an acceptance of another commit nothing to waive, so it does not refuse:
+merging a dependency moves the base a retry replays the value against.
 
 :func:`write_record` writes ``.kstrl/runs/<run_id>/base-gates.json`` for
 every reading, a skipped one included. The verdict is taken from the reading
@@ -259,13 +261,16 @@ def apply_acceptance(
     The acceptance binds to the measured commit, not to a set of failures:
     ``accept`` must be at least :data:`ACCEPT_MIN_DIGITS` characters and a
     prefix of the sha this run measured, so a base that moved since the
-    operator looked refuses again. Anything else refuses, naming both. A
-    match waives the lines :func:`_acceptable_lines` names and nothing else.
-    With no ``accept`` the reasons stand as they are.
+    operator looked refuses again. Anything else refuses, naming both,
+    unless the base was measured and nothing refuses: then there is nothing
+    to waive and nothing to refuse. A match waives the lines
+    :func:`_acceptable_lines` names and nothing else. With no ``accept``
+    the reasons stand as they are.
     """
     if not accept:
         return reasons, []
-    if len(accept) < ACCEPT_MIN_DIGITS or not reading.base_sha.startswith(accept):
+    moot = bool(reading.base_sha) and not reasons and len(accept) >= ACCEPT_MIN_DIGITS
+    if not moot and (len(accept) < ACCEPT_MIN_DIGITS or not reading.base_sha.startswith(accept)):
         measured = reading.base_sha or "nothing, because no base was measured"
         return [
             *reasons,

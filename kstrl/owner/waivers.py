@@ -79,6 +79,19 @@ if TYPE_CHECKING:
 #: here because ``kstrl.pipeline.context`` ranks it and imports it from this module.
 ACCEPTANCE_PHASE = "acceptance"
 
+#: The phase and check of a claim disagreement that halted a commit an
+#: approval was already taken on, which an approval of the halt merges over
+#: on that commit (owner decision of 2026-10-19).
+CLAIM_HALT = ("review", "claim")
+
+
+def overridable(phase: str, check: str) -> bool:
+    """Whether an approval of a halt in ``phase`` on ``check`` merges over
+    it on the commit the halt was taken on: an acceptance halt (#700
+    decision 14) or a claim halt (:data:`CLAIM_HALT`)."""
+    return phase == ACCEPTANCE_PHASE or (phase, check) == CLAIM_HALT
+
+
 #: Bumped when the key's fields change. A stored key made under another
 #: version never equals a recomputed one, so every older approval is
 #: refused rather than reinterpreted.
@@ -177,7 +190,7 @@ class ApprovalSnapshot:
 
     approved: tuple[InboxItem, ...] = ()
     unconsulted_reason: str = ""
-    #: The approved acceptance halts (:func:`acceptance_overrides`).
+    #: The approved halts an approval merges over (:func:`halt_overrides`).
     overrides: tuple[InboxItem, ...] = ()
     #: The approved items that retire a carried check (#466).
     retirements: tuple[InboxItem, ...] = ()
@@ -232,7 +245,7 @@ def load_approvals(inbox: Inbox) -> ApprovalSnapshot:
     )
     return ApprovalSnapshot(
         approved=approved,
-        overrides=acceptance_overrides(items),
+        overrides=halt_overrides(items),
         retirements=carried_retirements(items),
         unreproduced=unreproduced_approvals(items),
     )
@@ -276,34 +289,43 @@ def unreproduced_halt(item: InboxItem) -> bool:
     )
 
 
-def acceptance_overrides(items: Sequence[InboxItem]) -> tuple[InboxItem, ...]:
-    """The approved halted_run items an acceptance halt filed, each naming
+def halt_overrides(items: Sequence[InboxItem]) -> tuple[InboxItem, ...]:
+    """The approved halted_run items an overridable halt filed, each naming
     the full commit it was taken on (#700 owner decision 14)."""
     return tuple(
-        item for item in items if item.status is ItemStatus.APPROVED and _acceptance_halt(item)
+        item for item in items if item.status is ItemStatus.APPROVED and _overridable_halt(item)
     )
 
 
-def _acceptance_halt(item: InboxItem) -> bool:
-    """Whether ``item`` is a halted_run an acceptance halt filed, naming the
-    full commit it was taken on. It does not read the status, so
+def _overridable_halt(item: InboxItem) -> bool:
+    """Whether ``item`` is a halted_run an :func:`overridable` halt filed,
+    naming the full commit it was taken on. It does not read the status, so
     :func:`approval_effect` can say what approving an open one does."""
     return (
         item.kind is ItemKind.HALTED_RUN
-        and item.evidence.get("phase") == ACCEPTANCE_PHASE
+        and overridable(str(item.evidence.get("phase")), str(item.evidence.get("check")))
         and _COMMIT.fullmatch(str(item.evidence.get("head_sha") or "")) is not None
     )
 
 
 def covering_override(
-    items: Sequence[InboxItem], head_sha: str, failing: Sequence[str]
+    items: Sequence[InboxItem],
+    head_sha: str,
+    failing: Sequence[str],
+    phase: str = ACCEPTANCE_PHASE,
 ) -> dict[str, str] | None:
-    """The approval among ``items`` taken on ``head_sha`` that names every
-    check in ``failing``, as an acceptance record keeps it; None when there
-    is none. An approval never covers a check it does not name."""
+    """The approval of a ``phase`` halt among ``items`` taken on ``head_sha``
+    that names every check in ``failing``, as an acceptance record keeps it;
+    None when there is none. An approval never covers a check it does not
+    name, nor a halt of another phase."""
     for item in items:
         named = {name.strip() for name in str(item.evidence.get("check", "")).split(",")}
-        if failing and item.evidence.get("head_sha") == head_sha and set(failing) <= named:
+        if (
+            failing
+            and item.evidence.get("phase") == phase
+            and item.evidence.get("head_sha") == head_sha
+            and set(failing) <= named
+        ):
             return {"item": item.id, "by": item.decided_by, "at": item.decided_at}
     return None
 
@@ -342,14 +364,19 @@ def approvals_on(snapshot: ApprovalSnapshot, component: str, head_sha: str) -> l
     ]
 
 
-def overrides_on(snapshot: ApprovalSnapshot, component: str, head_sha: str) -> list[str]:
-    """The ids of the approved acceptance halts of ``component`` taken on
-    commit ``head_sha`` (#700 owner decision 14). ``head_sha`` "" matches
-    nothing."""
+def overrides_on(
+    snapshot: ApprovalSnapshot, component: str, head_sha: str, phase: str = ""
+) -> list[str]:
+    """The ids of the approved halts of ``component`` taken on commit
+    ``head_sha`` (#700 owner decision 14), of ``phase`` alone when one is
+    named. ``head_sha`` "" matches nothing."""
     return [
         item.id
         for item in snapshot.overrides
-        if head_sha and item.component == component and item.evidence["head_sha"] == head_sha
+        if head_sha
+        and item.component == component
+        and item.evidence["head_sha"] == head_sha
+        and phase in ("", item.evidence.get("phase"))
     ]
 
 
@@ -363,7 +390,7 @@ def approved_head(snapshot: ApprovalSnapshot, comp: Component, tip: str) -> tupl
     commit. The kept head is judged again with no engineer; whatever it
     raises that no approval covers still fails.
     """
-    if comp.failed_phase == ACCEPTANCE_PHASE:
+    if overridable(comp.failed_phase, comp.failed_check):
         return _overridden_head(snapshot, comp, tip)
     if comp.failed_phase != "verify":
         return "", f"it failed in phase {comp.failed_phase or '(none recorded)'}, not Phase 1"
@@ -384,15 +411,18 @@ def approved_head(snapshot: ApprovalSnapshot, comp: Component, tip: str) -> tupl
 
 
 def _overridden_head(snapshot: ApprovalSnapshot, comp: Component, tip: str) -> tuple[str, str]:
-    """:func:`approved_head` for a component its acceptance checks halted:
-    the tip is kept when an approval of that halt was taken on it."""
+    """:func:`approved_head` for a component an :func:`overridable` halt
+    stopped: the tip is kept when an approval of a halt in that phase was
+    taken on it."""
     if not tip:
         return "", f"branch '{comp.branch_name}' does not exist"
     if snapshot.unconsulted_reason:
         return "", f"approvals were not consulted: {snapshot.unconsulted_reason}"
-    ids = overrides_on(snapshot, comp.id, tip)
+    ids = overrides_on(snapshot, comp.id, tip, comp.failed_phase)
     if not ids:
-        return "", f"no approved acceptance halt was taken on commit {tip[:12]}, the branch tip"
+        return "", (
+            f"no approved {comp.failed_phase} halt was taken on commit {tip[:12]}, the branch tip"
+        )
     named = ", ".join(i[:8] for i in ids)
     return tip, f"approval {named} was taken on commit {tip[:12]}, the branch tip"
 
@@ -542,7 +572,14 @@ def approval_effect(item: InboxItem) -> str | None:
     function adds no checks of its own, so the shell cannot
     say "waives" about evidence the gate itself would refuse.
     """
-    if _acceptance_halt(item):
+    if _overridable_halt(item) and item.evidence.get("phase") != ACCEPTANCE_PHASE:
+        return (
+            f"merges over the claim disagreement of {item.component} on commit "
+            f"{str(item.evidence['head_sha'])[:12]} only: ks retry {item.component} keeps that "
+            "commit and judges it again with no engineer, and a story the reviewer does not "
+            "confirm on it no longer fails it. Any other failing check or commit still fails."
+        )
+    if _overridable_halt(item):
         return (
             f"merges over the failing acceptance checks {item.evidence.get('check')} of "
             f"{item.component} on commit {str(item.evidence['head_sha'])[:12]} only: ks retry "

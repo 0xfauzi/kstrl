@@ -113,7 +113,7 @@ INTERFACE_SIZES: dict[str, int] = {
     "knowledge": 8,
     "learning": 37,
     "loop": 8,
-    "owner": 28,
+    "owner": 30,
     "pipeline": 50,
     "plan": 34,
     "proc": 53,

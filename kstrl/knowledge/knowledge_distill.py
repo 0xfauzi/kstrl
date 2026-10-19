@@ -123,6 +123,24 @@ Dependencies: {dependencies}
 <<<{data_delimiter}:END GIT DIFF>>>
 """
 
+#: H3: what a re-asked distiller is told about the reply kstrl could not
+#: read. Enrolled in tests/test_prompt_versions.py; no calibration fixture
+#: scores the distiller, so no H2 obligation the suite can discharge.
+DISTILL_REASK_PROMPT_VERSION = "1.0.0"
+
+DISTILL_REASK_PROMPT = """
+## Your previous reply
+
+kstrl could not read your previous reply ({reason}). Reply again with
+exactly one JSON object in the shape above, and nothing before or after it.
+"""
+
+
+def reask_suffix(reason: str) -> str:
+    """What a re-asked distiller's prompt ends with: why kstrl could not read
+    its previous reply."""
+    return DISTILL_REASK_PROMPT.format(reason=reason)
+
 
 def build_distill_prompt(
     component: Component,
@@ -251,8 +269,12 @@ def distill_facts(
     review_passed: bool | None,
     *,
     on_line: Callable[[str], None] | None = None,
+    unread: str = "",
 ) -> tuple[int, str, bool]:
     """Run the LLM distillation call and persist any facts returned.
+
+    ``unread`` is why kstrl could not read the previous reply, "" on a
+    first ask; a re-ask is told it (:data:`DISTILL_REASK_PROMPT`).
 
     Returns ``(written_count, status_message, parse_failed)``. Failures
     are reported in the status message rather than raised - distillation
@@ -280,6 +302,8 @@ def distill_facts(
         existing_facts_summary=_summarize_existing_facts(existing),
         diff_content=diff_for_prompt,
     )
+    if unread:
+        prompt += reask_suffix(unread)
 
     try:
         output_lines = collect_agent_output(

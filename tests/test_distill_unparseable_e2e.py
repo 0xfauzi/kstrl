@@ -83,7 +83,8 @@ def _run_factory_with_reply(root: Path, reply: str) -> str:
         prompt_file=kstrl_dir / "prompt.md",
         prd_file=kstrl_dir / "prd.json",
         sleep_seconds=0,
-        agent_cmd=f"cat {reply_file}",
+        # Each prompt the distiller is given is appended to prompts.log.
+        agent_cmd=f"sh -c 'cat >> {root / 'prompts.log'}; cat {reply_file}'",
         kstrl_branch="",
         kstrl_branch_explicit=True,
         ui_mode="plain",
@@ -159,6 +160,11 @@ def test_unparseable_reply_reaches_the_event_and_ks_evolve(tmp_path: Path) -> No
     # replies, both counted.
     rows = _distill_rows(tmp_path)
     assert [(r["facts_written"], r["parse_failed"]) for r in rows] == [(0, True), (0, True)]
+    # The second ask is told why the first reply was not read (a user run
+    # re-asked with the same prompt and got the same reply).
+    prompts = (tmp_path / "prompts.log").read_text(encoding="utf-8")
+    assert prompts.count("kstrl could not read your previous reply") == 1, prompts[-1500:]
+    assert "another JSON object, or text with braces, follows the first" in prompts
     assert "distill replies that did not parse: 2 of 2 distill(s) in the last 1 run(s)" in _evolve(
         tmp_path
     )

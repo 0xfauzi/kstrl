@@ -2,21 +2,18 @@
 
 ``preview_retry`` answers "what WOULD a retry do" without touching
 anything. ``ks retry`` shows it before its confirm.
-``prepare_retry`` is the real mutation: reset statuses, remove the
-failed attempt's worktree and branch, save the manifest; the "Retry
-plan" section it used to print is now :func:`print_retry_plan`'s (#597),
-called by each caller first, so the two calls together narrate what
-``prepare_retry`` alone used to. The only behavior change from the
-original command is RetryError instead of sys.exit, so a caller can
-surface the failure without the process dying.
+``prepare_retry`` is the real mutation, of the manifest only: reset
+statuses and record the commit the retry keeps or replaces. The factory
+removes the failed attempt's worktree and branch after its own refusals,
+so a refused retry destroys nothing. The "Retry plan" section it used to
+print is now :func:`print_retry_plan`'s (#597), called by each caller
+first.
 """
 
 from __future__ import annotations
 
 import copy
 import shlex
-import shutil
-import subprocess
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -37,17 +34,13 @@ from kstrl.pipeline import (
     run_limits,
 )
 from kstrl.plan import ComponentStatus
-from kstrl.proc import NO_LIMIT, TimeoutConfig, sweep_worktree, warn_sweep
+from kstrl.proc import NO_LIMIT, TimeoutConfig
 
 if TYPE_CHECKING:
     import click
 
     from kstrl.plan import Component, Manifest
     from kstrl.ui import UI
-
-
-class RetryError(Exception):
-    """A retry preparation step failed after narrating the details."""
 
 
 @dataclass(frozen=True)
@@ -137,8 +130,13 @@ def preview_retry(manifest: Manifest, component_id: str, *, root_dir: Path | Non
     """
     comp = manifest.get_component(component_id)
     scratch = copy.deepcopy(manifest)
-    reset_dependents = scratch.reset_for_retry(component_id)
-    kept, reason = kept_head(manifest, comp, root_dir) if root_dir is not None else ("", "")
+    if _prepared(comp):
+        assert comp is not None
+        reset_dependents: list[str] = []
+        kept, reason = comp.rejudge_sha, PREPARED_REASON
+    else:
+        reset_dependents = scratch.reset_for_retry(component_id)
+        kept, reason = kept_head(manifest, comp, root_dir) if root_dir is not None else ("", "")
     return RetryPreview(
         component_id=component_id,
         reset_dependents=reset_dependents,
@@ -174,18 +172,18 @@ def print_retry_plan(ui: UI, preview: RetryPreview, manifest_file: Path) -> None
         ui.kv("Branch", f"regenerated: {preview.kept_reason}")
 
 
-def _failed_branch_probe(root_dir: Path, branch: str) -> int:
-    """The exit code of ``git rev-parse --verify --quiet refs/heads/<branch>``.
+def _prepared(comp: Component | None) -> bool:
+    """Whether an earlier ``ks retry`` reset ``comp`` and its run was refused
+    before it ran: PENDING, with the commit it keeps or replaces recorded."""
+    return (
+        comp is not None
+        and comp.status == ComponentStatus.PENDING.value
+        and bool(comp.rejudge_sha or comp.discard_sha)
+    )
 
-    :func:`prepare_retry` deletes the failed branch only when this is 0.
-    OSError and a timeout propagate, as they always did here.
-    """
-    return subprocess.run(
-        ["git", "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}"],
-        cwd=root_dir,
-        capture_output=True,
-        timeout=30,
-    ).returncode
+
+#: Why a retry whose earlier run was refused keeps or replaces the branch.
+PREPARED_REASON = "an earlier ks retry chose this, and its run was refused before it started"
 
 
 def prepare_retry(
@@ -195,15 +193,15 @@ def prepare_retry(
     root_dir: Path,
     ui: UI,
 ) -> RetryPreview:
-    """Mutate the manifest for a retry and clean up the failed attempt.
+    """Mutate the manifest for a retry; change nothing in git.
 
-    Reset statuses, remove the kept evidence worktree, delete the failed
-    branch (never in single_pr mode - the shared branch carries completed
-    components' commits), save. ValueError propagates from
-    reset_for_retry; a branch-delete failure raises RetryError after
-    narrating the manual fix. `ks retry` holds the run lock (#597) before
-    calling this and has already printed :func:`print_retry_plan`, so
-    this narrates only what it removes.
+    Reset statuses, record the commit the retry keeps (``rejudge_sha``) or
+    replaces (``discard_sha``), save. The factory deletes a replaced branch
+    and prunes the failed attempt's worktree only after every refusal it
+    runs, so a refused retry leaves the failed attempt's code where it was,
+    and running ``ks retry`` again picks the same retry up. ValueError
+    propagates from reset_for_retry. `ks retry` holds the run lock (#597)
+    before calling this and has already printed :func:`print_retry_plan`.
 
     The return value matches ``preview_retry``'s on the same manifest and
     is otherwise unused by either caller; it exists so
@@ -211,36 +209,17 @@ def prepare_retry(
     agree.
     """
     comp = manifest.get_component(component_id)
+    if _prepared(comp):
+        return preview_retry(manifest, component_id, root_dir=root_dir)
     evidence_worktree = comp.evidence_worktree if comp else ""
     failed_branch = comp.branch_name if comp else ""
     # #646: before the reset, which clears the failure this decides on.
     kept, kept_reason = kept_head(manifest, comp, root_dir)
+    tip = "" if manifest.single_pr else branch_sha(failed_branch, root_dir) or ""
 
     reset_dependents = manifest.reset_for_retry(component_id)
     not_in_retry = _not_in_retry(manifest)
 
-    # The failed attempt's worktree and branch are superseded by the
-    # fresh attempt; remove them so provisioning and the stale-branch
-    # preflight start clean. In single_pr mode every component shares
-    # one branch carrying completed components' commits - never delete
-    # it here. #528: what still runs in the evidence worktree (a server
-    # started while looking at the failure) is killed and named first.
-    if evidence_worktree and Path(evidence_worktree).exists():
-        warn_sweep(sweep_worktree(Path(evidence_worktree)), ui, "retry")
-        subprocess.run(
-            ["git", "worktree", "remove", "--force", evidence_worktree],
-            cwd=root_dir,
-            capture_output=True,
-            timeout=30,
-        )
-        shutil.rmtree(evidence_worktree, ignore_errors=True)
-        subprocess.run(
-            ["git", "worktree", "prune"],
-            cwd=root_dir,
-            capture_output=True,
-            timeout=30,
-        )
-        ui.info(f"Removed the failed attempt's evidence worktree: {evidence_worktree}")
     if kept and comp is not None:
         # The factory's branch preflight lets this one branch through, and
         # its scheduler judges this commit with no engineer, once.
@@ -249,29 +228,12 @@ def prepare_retry(
             f"Kept branch '{failed_branch}' at {kept[:12]}: {kept_reason}. The retry "
             "judges this commit again with no engineer; any change it makes is asked again."
         )
-    elif failed_branch and not manifest.single_pr:
-        if _failed_branch_probe(root_dir, failed_branch) == 0:
-            deleted = subprocess.run(
-                ["git", "branch", "-D", failed_branch],
-                cwd=root_dir,
-                capture_output=True,
-                encoding="utf-8",
-                timeout=30,
-            )
-            if deleted.returncode == 0:
-                ui.info(
-                    f"Deleted branch '{failed_branch}' from the failed "
-                    f"attempt; the retry recreates it from "
-                    f"'{manifest.base_branch}'"
-                )
-            else:
-                ui.err(f"Could not delete branch '{failed_branch}': {deleted.stderr.strip()}")
-                ui.info(
-                    "Delete it manually (git branch -D "
-                    f"{failed_branch}) and re-run; the factory refuses "
-                    "to silently reuse stale branches (R0.5)."
-                )
-                raise RetryError(f"could not delete branch '{failed_branch}'")
+    elif tip and comp is not None:
+        comp.discard_sha = tip
+        ui.info(
+            f"Branch '{failed_branch}' at {tip[:12]} is replaced: the run deletes it once "
+            f"nothing refuses, and recreates it from '{manifest.base_branch}'"
+        )
     elif manifest.single_pr:
         ui.warn(
             "single_pr mode: the shared branch is left in place; if the "
@@ -402,6 +364,7 @@ def plan_resume(
     max_cost_usd: float | None,
     max_parallel: int | None,
     keep_worktrees_on_failure: bool,
+    accept_red_base: str | None = None,
     limits: Mapping[str, float | None] | None = None,
 ) -> tuple[ResumePlan | None, list[str], tuple[UnkeptLimit, ...]]:
     """The flags a retry replays and the limits it runs under, or why it refuses.
@@ -419,6 +382,7 @@ def plan_resume(
             ("max_cost_usd", max_cost_usd),
             ("max_parallel", max_parallel),
             ("keep_worktrees_on_failure", keep_worktrees_on_failure or None),
+            ("accept_red_base", accept_red_base),
             *(limits or {}).items(),
         )
         if value is not None
@@ -475,4 +439,6 @@ def print_resume_plan(ui: UI, plan: ResumePlan) -> None:
         ui.warn(f"Not replayed from run {plan.run_id}: {line}")
     for name, value in plan.limits:
         ui.kv(_opt(name), str(value) if value > 0 else NO_LIMIT)
+    # A user lowered the cap by hand on each retry, reading it as the feature's.
+    ui.info("  Each limit bounds this retry alone: what earlier runs spent is not counted in it.")
     ui.kv("Max parallel", str(plan.max_parallel))

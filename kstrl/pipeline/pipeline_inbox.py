@@ -63,6 +63,19 @@ class InboxDesk(PipelineState):
             },
         )
 
+    def record_contract_halt(self, comp_id: str, tier: int, error: str, said: str) -> None:
+        """The inbox item of a Phase 3 failure with nothing left to retry:
+        like every other terminal halt, it reaches the inbox. ``said`` is
+        the failure's first line and where its whole output is kept."""
+        self._inbox_add(
+            ItemKind.HALTED_RUN,
+            f"{comp_id or 'the run'} halted in contract tier {tier}",
+            detail=f"{error}: {said}",
+            component=comp_id,
+            dedupe_key=f"halted:{comp_id}:contract:tier_{tier}",
+            evidence={"phase": "contract", "check": f"tier_{tier}", "error": error},
+        )
+
     def _open_inbox(self) -> Inbox:
         """The one ``Inbox`` this pipeline lazily builds and reuses.
 

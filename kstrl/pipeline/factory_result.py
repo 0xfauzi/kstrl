@@ -136,6 +136,13 @@ def run_is_clean(
     # Same reasoning the merge_pending list above is rebuilt from the
     # manifest rather than accumulated during the run.
     unfinished = [c.id for c in manifest.components if c.status != ComponentStatus.COMPLETED.value]
+    # A component an earlier run left FAILED or SKIPPED is still a part of
+    # the feature that did not get built: a retry of another component that
+    # completed does not make the feature whole (a user run exited 0 with
+    # two failed components in the manifest).
+    left = {ComponentStatus.FAILED.value, ComponentStatus.SKIPPED.value}
+    if any(c.status in left for c in manifest.components):
+        return False
     return not (not result.scheduled and unfinished)
 
 
@@ -177,10 +184,19 @@ def resolve_exit_code(
 
     # An off-enum status, a component left FAILED or SKIPPED by an
     # earlier run, or a future scheduling bug: the manifest held work and
-    # the scheduler launched none of it. Reported as a failure so
-    # `ks factory && deploy` cannot deploy a run that built nothing.
+    # the scheduler launched none of it, or this run's work completed and
+    # an earlier run's did not. Reported as a failure so `ks factory &&
+    # deploy` cannot deploy a feature with a part missing.
     unfinished = [c.id for c in manifest.components if c.status != ComponentStatus.COMPLETED.value]
-    _report_nothing_scheduled(manifest, unfinished, ui)
+    if factory_result.scheduled:
+        retryable = manifest.retryable_component_ids()
+        ui.err(
+            "This run's components completed, and the feature is not whole: "
+            + ", ".join(f"{c.id} is {c.status}" for c in manifest.components if c.id in unfinished)
+            + (f". `ks retry {retryable[0]}` runs the first of them again" if retryable else "")
+        )
+    else:
+        _report_nothing_scheduled(manifest, unfinished, ui)
     return 1
 
 

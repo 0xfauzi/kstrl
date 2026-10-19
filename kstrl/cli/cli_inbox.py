@@ -19,6 +19,7 @@ from kstrl.factory import (
     PLAN_GATE_KEY,
     RESUME_REFUSAL,
     plan_resume,
+    prepare_retry,
     print_resume_plan,
     report_preflight,
     spec_pin_errors,
@@ -553,9 +554,10 @@ def inbox_retry(
     """Requeue the item's component and close the item.
 
     A real round-trip, not a status change: the component is reset to
-    PENDING in the manifest (with its dependents un-skipped), so the next
-    `ks factory` run picks it up. Refused with nothing changed while a
-    factory run holds the run lock, whose next save would undo it (#597).
+    PENDING in the manifest (with its dependents un-skipped), exactly as
+    `ks retry` resets it, so the next `ks factory` run picks it up.
+    Refused with nothing changed while a factory run holds the run lock,
+    whose next save would undo it (#597).
     """
     root_dir, box = _inbox_for(root)
     ui_impl = _autonomy_ui(ui, no_color)
@@ -584,7 +586,9 @@ def inbox_retry(
     try:
         manifest = _load_manifest_or_exit(manifest_path, ui_impl)
         try:
-            reset = manifest.reset_for_retry(item.component)
+            reset = prepare_retry(
+                manifest, item.component, manifest_path, root_dir, ui_impl
+            ).reset_dependents
         except (ValueError, KeyError) as exc:
             ui_impl.err(f"Could not requeue {item.component}: {exc}")
             if item.dedupe_key.startswith(MERGE_GATE_PARK_KEY):
@@ -594,7 +598,6 @@ def inbox_retry(
                     "--comment ...` fails it."
                 )
             sys.exit(2)
-        manifest.save(manifest_path)
         box.resolve(item.id, actor=_actor(), comment="requeued via ks inbox retry")
     finally:
         run_lock.release()

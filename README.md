@@ -56,7 +56,11 @@ kstrl runs nothing until kstrl.toml holds a `[stack]` (what the project is
 built with and the commands that check it) and a person has confirmed its
 exact text. On a new repository those checks fail on the base, because no
 code exists yet: the refusal names the `--accept-red-base <sha>` to add to
-the same `ks factory` command, which builds on that base for one run. Once a stack is confirmed, `ks factory
+the same `ks factory` command, which builds on that base for one run. It
+waives a check that failed and never a `setup` that failed: a setup must
+run on the base before any component exists, and the refusal says so. Run
+`ks doctor --measure` after confirming a stack to take the same reading
+before anything is spent. Once a stack is confirmed, `ks factory
 --spec ...` plans and builds a spec in one command, and `ks run 25` drives a
 single component from a hand-written `scripts/kstrl/prd.json` (no PR). The
 confirmations live in kstrl's state directory outside the repository
@@ -156,6 +160,8 @@ Every run appends typed, schema-versioned events to `.kstrl/runs/<run_id>/events
 ## Acceptance checks - behavioral verification you control
 
 Agent-generated tests can be written to pass trivially. An acceptance plan is a directory outside the repository that holds `plan.json` and the files its checks use. `ks factory --acceptance <dir>` copies it under the control directory and runs every check on the base before the first engineer, on each component's head, and in Phase 3 on the merged tree. A check is an `argv` judged by its exit status alone. It runs in its own copy of the plan, with `KSTRL_TREE` naming the checkout under test, so no file the engineer writes is on its path. A held-out check is never shown to an engineer.
+
+`ks factory --design-acceptance` asks a verification designer, a model that reads the spec, each component's criteria and the `[stack]`, to write the plan instead, and keeps it under the control directory. Its checks gate each head as yours do, and a halt says that the check or the code can be wrong. `ks remove-check <component> <check-id> --comment <why>` takes out a designed check that no correct code passes, recording who, when and why. The runbook's "Acceptance checks" section has the recovery from a halt.
 
 The PRD `fixtures` key and the `[fixtures]` section are retired (#700 slice 8). A PRD or kstrl.toml that still carries one is refused, with a line that says to write each fixture as an acceptance check.
 

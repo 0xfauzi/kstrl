@@ -32,6 +32,7 @@ def extract_json(text: str) -> Any:
             continue
 
     # Try finding JSON object boundaries
+    why = ""
     brace_start = stripped.find("{")
     if brace_start >= 0:
         depth = 0
@@ -45,13 +46,16 @@ def extract_json(text: str) -> Any:
                     # drop (a reviewer closing its JSON one level early lost a
                     # critical finding that way): refuse it instead.
                     if "{" in stripped[i + 1 :]:
+                        why = ": another JSON object, or text with braces, follows the first"
                         break
                     try:
                         return read_json(stripped[brace_start : i + 1])
-                    except json.JSONDecodeError:
+                    except json.JSONDecodeError as exc:
+                        why = f": {exc}"
                         break
 
-    raise ValueError("No valid JSON found in output")
+    # The cause is named, so a model asked again can be told what to fix.
+    raise ValueError("No valid JSON found in output" + why)
 
 
 # Hard cap on agent stream output. A pathological or compromised agent

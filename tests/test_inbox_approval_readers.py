@@ -55,7 +55,7 @@ APPROVAL_READERS: dict[ItemKind, tuple[str, ...]] = {
     # bug report the base did not reproduce runs it without a reproduction
     # (#700, owner decision of 2026-10-09).
     ItemKind.HALTED_RUN: (
-        "owner/waivers.py::acceptance_overrides",
+        "owner/waivers.py::halt_overrides",
         "owner/waivers.py::carried_retirements",
         "owner/waivers.py::unreproduced_approvals",
     ),
@@ -83,7 +83,7 @@ EXPECTED_APPROVED_READS: dict[str, int] = {
     "factory/plan_gate.py::_settle": 2,
     "factory/plan_gate.py::run_plan_gate": 5,
     "project/stack.py::_latest_approval": 2,
-    "owner/waivers.py::acceptance_overrides": 1,
+    "owner/waivers.py::halt_overrides": 1,
     "owner/waivers.py::carried_retirements": 1,
     "owner/waivers.py::load_approvals": 1,
     "owner/waivers.py::unreproduced_approvals": 1,

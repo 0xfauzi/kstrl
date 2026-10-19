@@ -521,7 +521,7 @@ def test_an_edited_plan_is_refused_naming_both_digests(tmp_path: Path) -> None:
     dropped = _factory(tmp_path, root, engineer=CORRECT)
     assert dropped.code == 2, dropped.out
     assert REFUSED_PLAN in dropped.out, dropped.out
-    named = f"this plan pinned the acceptance plan {pinned[:12]}, and this run names none"
+    named = f"this plan pinned the acceptance plan {pinned[:12]}, and this run found no plan"
     assert named in dropped.out, dropped.out
     assert dropped.calls == 1, dropped.out
 

@@ -50,6 +50,7 @@ COMPONENT_OPTIONAL_KEYS = frozenset(
         "mergeSha",
         "judgedSha",
         "rejudgeSha",
+        "discardSha",
         "linearIssueId",
         "linearIssueIdentifier",
         "startedAt",
@@ -91,16 +92,20 @@ REJUDGE_SHA_PATTERN = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})?")
 
 
 def rejudge_sha_errors(comp: dict[str, Any], prefix: str) -> list[str]:
-    """``rejudgeSha`` is the commit ``ks retry`` kept for a re-judge (#646).
+    """``rejudgeSha`` is the commit ``ks retry`` kept for a re-judge (#646);
+    ``discardSha`` the failed commit it replaces, whose branch the factory
+    deletes after its refusals.
 
     Anything but "" or a full lowercase commit id is refused: a value the
     factory cannot compare to a branch tip must not reach the preflight
-    that lets a kept branch through.
+    that keeps or deletes a branch on it.
     """
-    value = comp.get("rejudgeSha", "")
-    if not isinstance(value, str) or REJUDGE_SHA_PATTERN.fullmatch(value) is None:
-        return [f'{prefix}.rejudgeSha: must be "" or a full commit id, got {value!r}']
-    return []
+    errors: list[str] = []
+    for key in ("rejudgeSha", "discardSha"):
+        value = comp.get(key, "")
+        if not isinstance(value, str) or REJUDGE_SHA_PATTERN.fullmatch(value) is None:
+            errors.append(f'{prefix}.{key}: must be "" or a full commit id, got {value!r}')
+    return errors
 
 
 def manifest_top_level_errors(data: Any) -> list[str]:

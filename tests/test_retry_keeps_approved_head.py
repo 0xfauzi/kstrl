@@ -224,7 +224,7 @@ def test_an_approval_then_a_rejection_keeps_nothing(tmp_path: Path) -> None:
     code, out = _retry(root, env)
 
     assert code == 1, out
-    assert f"Deleted branch '{BRANCH}'" in out, out
+    assert f"Deleted stale branch '{BRANCH}'" in out and "that ks retry replaces" in out, out
     assert _runs(counter) == 2, out
     assert _size_item(root, 11), out
 
@@ -302,7 +302,7 @@ def test_a_component_judged_with_unmerged_dependency_code_is_not_kept(tmp_path: 
     code, out = _retry(root, env)
 
     assert f"it was judged with unmerged dependency code from {DEP_BRANCH}" in out, out
-    assert f"Deleted branch '{BRANCH}'" in out, out
+    assert f"Deleted stale branch '{BRANCH}'" in out and "that ks retry replaces" in out, out
     assert _runs(counter) == 2, out
 
 

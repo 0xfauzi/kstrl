@@ -60,7 +60,7 @@ import json
 import os
 import shutil
 import tempfile
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
@@ -370,7 +370,9 @@ def _unpinned_errors(manifest: Manifest) -> list[str]:
         return []
     return [
         f"this plan pinned the acceptance plan {manifest.acceptance_digest[:12]}, and this run "
-        "names none. Nothing was run. Pass --acceptance with the directory of that plan."
+        "found no plan with that digest. Nothing was run. Pass --acceptance with the directory "
+        "of that plan; under --design-acceptance a plan the verification designer wrote is "
+        "found by its digest, unless its directory was removed."
     ]
 
 
@@ -560,9 +562,12 @@ def replay_base(
     run_id: str,
     config: LimitsFields,
     ui: UI,
+    done: Collection[str] = (),
 ) -> tuple[BaseReading | None, list[str]]:
     """Replay every check of the plan once on the base; or why the run must
-    not start. The reading is written to the run directory either way."""
+    not start. The reading is written to the run directory either way. The
+    checks of a component in ``done`` are recorded and never judged against
+    ``onBase``: it completed, so its code may be in the base already."""
     from kstrl.acceptance.acceptance_base import kept_on_base
 
     try:
@@ -586,8 +591,9 @@ def replay_base(
         comp: {check.id: _first_exit(runs, comp, check.id) for check in part.checks}
         for comp, part in plan.components.items()
     }
-    kept, said = kept_on_base(plan, exits, ui)
-    not_runnable, errors = _base_errors(replace(plan, components=kept), record, exits)
+    kept, said = kept_on_base(plan, exits, ui, done)
+    judged = {comp: part for comp, part in kept.items() if comp not in done}
+    not_runnable, errors = _base_errors(replace(plan, components=judged), record, exits)
     reading = BaseReading(sha, exits, said | dict.fromkeys(not_runnable, BASE_NOT_RUNNABLE), kept)
     for comp in sorted(not_runnable):
         ui.warn(f"  {comp}: {BASE_NOT_RUNNABLE} (the plan marks it as creating the app)")
@@ -701,7 +707,13 @@ def judge_head(
     component: one that covers every failing check on this head passes it.
     ``progress`` is the engineer's progress log, where it can dispute a
     visible check (:func:`kstrl.acceptance.acceptance_record.read_dispute`)."""
-    from kstrl.acceptance.acceptance_lines import render_lines, row_line, stop_lines, told_lines
+    from kstrl.acceptance.acceptance_lines import (
+        RECORD_LINE,
+        render_lines,
+        row_line,
+        stop_lines,
+        told_lines,
+    )
     from kstrl.acceptance.acceptance_record import head_record, read_dispute, visible_failures
 
     plan, base, stack = config.acceptance_plan, config.acceptance_base, config.project_stack
@@ -748,7 +760,7 @@ def judge_head(
         _write_evidence(evidence, plan, document)
     except OSError as exc:
         return _unwritten(comp_id, evidence, exc)
-    lines.append(f"- record: {(evidence / RECORD_FILE).resolve()}")
+    lines.append(f"{RECORD_LINE}{(evidence / RECORD_FILE).resolve()}")
     unreplayed = bool(record.error) or record.failed == REPLAY_BOUNDARY_REFUSED
     return HeadOutcome(
         passed=not failing or document["override"] is not None,

@@ -7,7 +7,7 @@ head then runs. An operator's plan is kept whole.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
@@ -23,18 +23,26 @@ NO_DESIGNED_CHECK = "no designed acceptance check"
 
 
 def kept_on_base(
-    plan: PinnedPlan, exits: Mapping[str, Mapping[str, int | None]], ui: UI
+    plan: PinnedPlan,
+    exits: Mapping[str, Mapping[str, int | None]],
+    ui: UI,
+    done: Collection[str] = (),
 ) -> tuple[dict[str, ComponentPlan], dict[str, str]]:
     """The checks each head runs, by component, and :data:`NO_DESIGNED_CHECK`
     for each component left with none. An operator's plan is kept whole:
     the base refuses a contradicted check of an operator, who must know
     that it is weak. Of a plan the designer wrote, the checks
-    :func:`_removed_on_base` names are removed."""
+    :func:`_removed_on_base` names are removed, except those of a component
+    in ``done``: it completed, its code may be in the base already, where
+    its checks pass, and Phase 3 replays them whole."""
     if not plan.designed:
         return dict(plan.components), {}
     kept: dict[str, ComponentPlan] = {}
     said: dict[str, str] = {}
     for comp, part in plan.components.items():
+        if comp in done:
+            kept[comp] = part
+            continue
         removed = _removed_on_base(comp, part, exits[comp], ui)
         checks = tuple(check for check in part.checks if check.id not in removed)
         if checks:

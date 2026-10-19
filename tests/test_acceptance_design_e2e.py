@@ -28,6 +28,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from kstrl.acceptance.acceptance import DESIGNER_FILE, HEAD_RUNS, PLAN_FILE
 from kstrl.acceptance.acceptance_base import NO_DESIGNED_CHECK
 from kstrl.architect.decisions import write_decisions
@@ -37,6 +39,7 @@ from kstrl.io.statedir import control_dir
 from kstrl.plan.requirements import SpecRequirement
 from tests.helpers.executables import write_executable
 from tests.helpers.gitrepo import git_in
+from tests.helpers.stack_confirmation import confirm_stack
 from tests.test_acceptance_e2e import (
     COMP,
     SPECIAL_CASED,
@@ -58,7 +61,7 @@ from tests.test_stack_e2e import INSTRUCTIONS, _repo, _spawn, _stack
 DESIGNER_MARK = "You are the verification designer"
 
 #: What a halt by a check a model wrote says (#700 owner decision 13, part 3).
-DESIGNED_STOP = "a check that did not pass can be incorrect, or the code can be"
+DESIGNED_STOP = "the check that did not pass may be wrong rather than the code"
 
 REFUSED_DESIGN = "Refusing to run: the verification designer wrote no usable plan"
 REFUSED_BASE = "Refusing to run: the acceptance checks do not hold on the base"
@@ -89,6 +92,8 @@ class Designed:
     designer: list[str]
     engineer_calls: int
     designer_prompts: str
+    #: Every prompt the engineer was given, in call order.
+    engineer_prompts: str = ""
 
 
 def _greets(name: str) -> list[str]:
@@ -131,6 +136,7 @@ def _design(
     designer_log = tmp_path / "designer.calls"
     designer_prompts = tmp_path / "designer.prompts"
     engineer_log = tmp_path / "engineer.calls"
+    engineer_prompts = tmp_path / "engineer.prompts"
     prompt = tmp_path / "prompt.txt"
     stub = write_executable(
         tmp_path / "agent.sh",
@@ -146,6 +152,7 @@ if grep -q '{DESIGNER_MARK}' '{prompt}'; then
   exit 0
 fi
 echo call >> '{engineer_log}'
+cat '{prompt}' >> '{engineer_prompts}'
 {SPECIAL_CASED}
 echo '<promise>COMPLETE</promise>'
 """,
@@ -169,7 +176,8 @@ echo '<promise>COMPLETE</promise>'
         return path.read_text(encoding="utf-8").splitlines() if path.exists() else []
 
     said = designer_prompts.read_text(encoding="utf-8") if designer_prompts.exists() else ""
-    return Designed(code, out, lines(designer_log), len(lines(engineer_log)), said)
+    told = engineer_prompts.read_text(encoding="utf-8") if engineer_prompts.exists() else ""
+    return Designed(code, out, lines(designer_log), len(lines(engineer_log)), said, told)
 
 
 def _pin_spec(root: Path, text: str) -> None:
@@ -258,6 +266,11 @@ def test_the_designer_writes_checks_and_a_failed_held_out_one_halts_the_componen
     assert spec_line in run.designer_prompts
     assert INSTRUCTIONS in run.designer_prompts
     assert run.engineer_calls == 1, run.out
+    # The engineer is given the spec the designer checks against (owner
+    # decision of 2026-10-19): a user run halted on a held-out check of a
+    # type the spec named and the engineer was never shown.
+    assert "## The Spec" in run.engineer_prompts, run.engineer_prompts[-3000:]
+    assert spec_line in run.engineer_prompts
     record = _head_record(root)
     assert record["writtenBy"] == "designer", record
     assert _row(record, "greets-ada")["verdict"] == "pass", record
@@ -267,6 +280,9 @@ def test_the_designer_writes_checks_and_a_failed_held_out_one_halts_the_componen
     assert "record only" not in run.out, run.out
     assert "the held-out acceptance checks greets-hidden failed" in run.out, run.out
     assert "halted with no retry" in run.out, run.out
+    # The halt is read in the inbox, so it says where the evidence is.
+    (halt,) = _halts(root)
+    assert "- record: " in halt.detail and "under logs/ beside it" in halt.detail, halt.detail
     assert _acceptance_verdicts(root) == [(False, False)], run.out
     (designed,) = _designed_plans(root)
     designer = json.loads((designed / DESIGNER_FILE).read_text(encoding="utf-8"))
@@ -778,13 +794,16 @@ def test_a_designer_that_never_cites_a_requirement_refuses_the_run(tmp_path: Pat
 
 
 @runs_a_stack
+@pytest.mark.parametrize("stack_edited", [False, True], ids=["same-stack", "stack-edited"])
 def test_a_designed_check_a_person_removes_is_recorded_and_the_retry_runs_without_it(
-    tmp_path: Path,
+    tmp_path: Path, stack_edited: bool
 ) -> None:
     """A designed held-out check no correct code passes halted correct code,
     and the pinned plan refused any edit, so only a new plan got past it (a
     user run). `ks remove-check` takes it out with who, when and why kept
-    beside the plan, and the retry runs without it."""
+    beside the plan, and the retry runs without it. A [stack] edited and
+    confirmed again after the plan was pinned lost the plan for both (a
+    user run): the pin finds it, and no designer is asked again."""
     root = _greeting_repo(tmp_path)
     hidden = f"Grace{secrets.token_hex(4)}"
     reply = _entry(
@@ -796,6 +815,15 @@ def test_a_designed_check_a_person_removes_is_recorded_and_the_retry_runs_withou
     first = _design(tmp_path, root, [reply])
     assert first.code == 1 and "halted with no retry" in first.out, first.out
     pinned = _manifest(root)["acceptanceDigest"]
+    if stack_edited:
+        toml = root / "kstrl.toml"
+        text = toml.read_text(encoding="utf-8")
+        head, _, tail = text.rpartition("\nenv = []")
+        edited = head + '\nenv = ["E2E_UNUSED_NAME"]' + tail
+        assert edited != text, text
+        toml.write_text(edited, encoding="utf-8")
+        git_in(root, "commit", "-q", "-am", "edit the stack")
+        confirm_stack(root)
     why = f"no correct code passes it {secrets.token_hex(4)}"
 
     code, out = _spawn(
@@ -818,3 +846,4 @@ def test_a_designed_check_a_person_removes_is_recorded_and_the_retry_runs_withou
     assert _manifest(root)["acceptanceDigest"] not in ("", pinned), _manifest(root)
     assert retry_code == 0, retry_out
     assert "greets-hidden" not in retry_out.split("== Retry plan ==")[-1], retry_out
+    assert len((tmp_path / "designer.calls").read_text(encoding="utf-8").splitlines()) == 1

@@ -173,6 +173,10 @@ class Component:
     judged_sha: str = ""
     # #646: the approved head ``ks retry`` kept, judged once with no engineer.
     rejudge_sha: str = ""
+    # The failed commit ``ks retry`` replaces. The factory deletes the branch
+    # only after its refusals, and only while it is still at this commit, so
+    # a refused retry destroys nothing.
+    discard_sha: str = ""
     # R7.4: Linear issue mapping stamped by the decompose hook. The
     # UUID is the mutation target for the sink; the human identifier
     # (e.g. EXC-42) rides branch names and the PR "Fixes" trailer so
@@ -354,6 +358,7 @@ class Manifest:
                 merge_sha=c.get("mergeSha", ""),
                 judged_sha=c.get("judgedSha", ""),
                 rejudge_sha=c.get("rejudgeSha", ""),
+                discard_sha=c.get("discardSha", ""),
                 linear_issue_id=c.get("linearIssueId", ""),
                 linear_issue_identifier=c.get("linearIssueIdentifier", ""),
                 started_at=c.get("startedAt", ""),
@@ -432,6 +437,7 @@ class Manifest:
                     "mergeSha": c.merge_sha,
                     "judgedSha": c.judged_sha,
                     "rejudgeSha": c.rejudge_sha,
+                    "discardSha": c.discard_sha,
                     "linearIssueId": c.linear_issue_id,
                     "linearIssueIdentifier": c.linear_issue_identifier,
                     "startedAt": c.started_at,
@@ -763,6 +769,7 @@ class Manifest:
             target.failed_phase = ""
             target.failed_check = ""
             target.rejudge_sha = ""
+            target.discard_sha = ""
             target.evidence_worktree = ""
             target.evidence_debug_dir = ""
             target.journal_offset_start = -1

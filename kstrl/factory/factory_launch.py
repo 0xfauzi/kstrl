@@ -13,8 +13,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from kstrl.agents import with_stack_writable
-from kstrl.architect import build_decisions_context
+from kstrl.architect import build_decisions_context, build_spec_context
 from kstrl.config import relative_to_root
+from kstrl.factory.plan_gate import pinned_spec
 from kstrl.knowledge import authored_paths, paths_by_component, retrieve_knowledge_context
 from kstrl.loop import LoopBudget
 from kstrl.proc import NO_LIMIT, describe_limit_seconds
@@ -63,6 +64,8 @@ class LaunchPlan:
     golden_patterns_file_rel: str
     memory_file_rel: str
     ff_config_dict: dict[str, Any] | None
+    #: The pinned spec as every engineer is given it, "" when the plan names none.
+    spec_context: str = ""
 
 
 def build_launch_plan(
@@ -129,6 +132,8 @@ def build_launch_plan(
         golden_patterns_file_rel=golden_patterns_file_rel,
         memory_file_rel=memory_file_rel,
         ff_config_dict=ff_config_dict,
+        # The preflight refused a spec that changed since the plan pinned it.
+        spec_context=build_spec_context(pinned_spec(manifest, root_dir)[0]),
     )
 
 
@@ -195,8 +200,18 @@ def submit_args(plan: LaunchPlan, comp: Component, wt_path: Path) -> tuple[Any, 
         # facts already ride, so the register reaches the engineer
         # without a second delivery mechanism. Per component: its
         # own decisions in full, the rest of the run summarised.
-        build_decisions_context(
-            plan.run_register.decisions, comp.id, requirements=plan.factory_config.requirements
+        # The spec rides the same slot, ahead of the decisions that settle it.
+        "\n\n".join(
+            part
+            for part in (
+                plan.spec_context,
+                build_decisions_context(
+                    plan.run_register.decisions,
+                    comp.id,
+                    requirements=plan.factory_config.requirements,
+                ),
+            )
+            if part
         ),
         # Per-component, not run-wide: KstrlConfig.component_progress_file
         # keeps the engineer's progress log inside allowedPaths.

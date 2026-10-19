@@ -56,11 +56,11 @@ def _records(root: Path) -> list[dict[str, Any]]:
     return [json.loads(path.read_text(encoding="utf-8")) for path in paths]
 
 
-def _retry(root: Path, component: str) -> tuple[int, str]:
+def _retry(root: Path, component: str, *extra: str) -> tuple[int, str]:
     """The real `ks retry <component>` in its own process group, killed on the fuse."""
     child = subprocess.Popen(
         [PY, "-m", "kstrl", "retry", component, "--root", str(root)]
-        + ["--yes", "--ui", "plain", "--no-color"],
+        + ["--yes", "--ui", "plain", "--no-color", *extra],
         cwd=root,
         env=_child_env(None),
         stdin=subprocess.DEVNULL,
@@ -196,6 +196,71 @@ def test_ks_retry_replays_the_acceptance(tmp_path: Path) -> None:
     assert [r["refused"] for r in records] == [False, False], records
 
 
+def test_a_replayed_acceptance_of_a_base_that_moved_and_turned_green_does_not_refuse(
+    tmp_path: Path,
+) -> None:
+    """Merging a dependency by hand moves the base a retry replays the
+    acceptance against. A measured base with nothing red leaves the old
+    value nothing to waive, so the retry runs instead of refusing."""
+    root = _repo(tmp_path, {"tests/test_base.py": RED})
+    sha = _git(root, "rev-parse", "main").strip()
+    first = _factory(tmp_path, root, FLAG, sha[:12])
+    _commit(root, "tests/test_base.py", GREEN)
+
+    code, out = _retry(root, "greeter")
+
+    assert (first.code, first.calls) == (1, 1), first.out
+    assert HEADLINE not in out, out
+    assert "does not name the measured base" not in out, out
+    calls = (tmp_path / "engineer.calls").read_text(encoding="utf-8").splitlines()
+    assert len(calls) == 2, out
+    records = _records(root)
+    assert [(r["acceptRedBase"], r["refused"]) for r in records] == [
+        (sha[:12], False),
+        (sha[:12], False),
+    ], records
+    assert records[1]["accepted"] == [], records
+
+
+def test_a_refused_retry_destroys_nothing_and_the_retry_runs_once_given_the_new_sha(
+    tmp_path: Path,
+) -> None:
+    """The base moved and is still red, so the replayed acceptance refuses.
+    The failed attempt's branch is still at its commit afterwards, and
+    `ks retry` again, with --accept-red-base naming the new base, deletes it
+    only once nothing refuses, and runs the engineer."""
+    root = _repo(tmp_path, {"tests/test_base.py": RED})
+    sha = _git(root, "rev-parse", "main").strip()
+    first = _factory(tmp_path, root, FLAG, sha[:12])
+    branch = "kstrl/factory/greeter"
+    _git(root, "checkout", "-q", "-B", branch, branch)
+    _commit(root, "attempt.txt", "the failed attempt's code\n")
+    _git(root, "checkout", "-q", "main")
+    attempt = _git(root, "rev-parse", branch).strip()
+    _commit(root, "NOTES.md", "moved\n")
+    moved = _git(root, "rev-parse", "main").strip()
+
+    refused_code, refused = _retry(root, "greeter")
+
+    assert first.code == 1, first.out
+    assert refused_code == 2, refused
+    assert f"{FLAG} {sha[:12]} does not name the measured base" in refused, refused
+    assert _git(root, "rev-parse", branch).strip() == attempt, refused
+    manifest = json.loads(
+        (root / "scripts" / "kstrl" / "manifest.json").read_text(encoding="utf-8")
+    )
+    (comp,) = manifest["components"]
+    assert (comp["status"], comp["discardSha"]) == ("pending", attempt), comp
+
+    code, out = _retry(root, "greeter", FLAG, moved[:12])
+
+    assert "does not name the measured base" not in out, out
+    assert f"Deleted stale branch '{branch}'" in out and attempt in out, out
+    calls = (tmp_path / "engineer.calls").read_text(encoding="utf-8").splitlines()
+    assert len(calls) == 2, out
+    assert code == 1, out
+
+
 @runs_a_stack
 def test_under_a_stack_an_acceptance_waives_a_failing_check(tmp_path: Path) -> None:
     """The #696 red base: a check exiting 101 that no kstrl parser reads."""
@@ -221,7 +286,9 @@ def test_a_red_base_refusal_names_the_acceptance_that_would_run_it(tmp_path: Pat
     run = stack_e2e._factory(tmp_path, root)
 
     assert (run.code, run.calls) == (2, 0), run.out
-    assert f"same ks factory command with --accept-red-base {sha[:12]}" in run.out, run.out
+    assert f"same ks factory or ks retry command with --accept-red-base {sha[:12]}" in run.out, (
+        run.out
+    )
     # The refused run started nothing, so the accepted one carries nothing
     # from it and does not call it interrupted.
     accepted = stack_e2e._factory(tmp_path, root, FLAG, sha[:12])

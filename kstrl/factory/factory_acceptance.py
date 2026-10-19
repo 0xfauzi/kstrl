@@ -18,6 +18,7 @@ from kstrl.acceptance import (
     PinnedPlan,
     carried_on_base,
     carry_passed,
+    evidence_dir,
     replay_base,
     run_contract_testing,
 )
@@ -36,6 +37,7 @@ from kstrl.factory.factory_preflight import (
     report_preflight,
 )
 from kstrl.factory.plan_gate import run_plan_gate
+from kstrl.io import atomic_write_text
 from kstrl.pipeline import (
     ComponentPipeline,
     FactoryConfig,
@@ -116,8 +118,16 @@ def _refused_acceptance_base(pipeline: ComponentPipeline) -> bool:
     plan, stack = config.acceptance_plan, config.project_stack
     if plan is None or stack is None:
         return False
+    done = [c.id for c in manifest.components if c.status == ComponentStatus.COMPLETED.value]
     config.acceptance_base, errors = replay_base(
-        pipeline.root_dir, stack, plan, manifest.base_branch, pipeline.run_id, config, pipeline.ui
+        pipeline.root_dir,
+        stack,
+        plan,
+        manifest.base_branch,
+        pipeline.run_id,
+        config,
+        pipeline.ui,
+        done,
     )
     if errors and plan.designed:
         errors.append(
@@ -312,6 +322,22 @@ def _reset_contract_breakers(
             ui.warn(f"  Contract breaker '{cr.breaker}' sent back for retry")
 
 
+def _contract_evidence(pipeline: ComponentPipeline, cr: ContractResult) -> str:
+    """The first line of a failed tier's output, whole, and where all of it
+    is kept: under the run's evidence directory, outside the repository,
+    beside the acceptance records. A user run saw only a line cut at 200
+    characters mid-word, and the rest only in the evolution journal."""
+    detail = (cr.test_output or "").strip()
+    first = next((line.strip() for line in detail.splitlines() if line.strip()), "")
+    path = evidence_dir(pipeline.root_dir, pipeline.run_id).parent / f"contract-tier-{cr.tier}.txt"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_text(path, detail + "\n")
+    except OSError as exc:
+        return f"{first} (its output could not be kept: {exc})"
+    return f"{first} (full output: {path})"
+
+
 def _record_contract_failures(
     failures: list[ContractResult],
     manifest: Manifest,
@@ -329,8 +355,7 @@ def _record_contract_failures(
     # nonzero (previously this fell through silently and the run
     # exited 0 with broken integrated code).
     for cr in failures:
-        detail = (cr.test_output or "").strip()
-        summary_line = detail.splitlines()[-1][:200] if detail else ""
+        summary_line = _contract_evidence(pipeline, cr)
         if cr.breaker:
             breaker = manifest.get_component(cr.breaker)
             if breaker is not None:
@@ -359,11 +384,23 @@ def _record_contract_failures(
             factory_result.contract_failures.append(
                 f"tier {cr.tier}: breaker '{cr.breaker}' ({_stop_reason(cr)}): {summary_line}"
             )
+            pipeline.record_contract_halt(
+                cr.breaker,
+                cr.tier,
+                f"Contract test failed at tier {cr.tier} ({_stop_reason(cr)})",
+                summary_line,
+            )
         else:
             factory_result.contract_failures.append(
                 f"tier {cr.tier}: contract tests failed, no blame "
                 f"attributed (components: "
                 f"{', '.join(cr.components_tested)}): {summary_line}"
+            )
+            pipeline.record_contract_halt(
+                "",
+                cr.tier,
+                f"Contract tests failed at tier {cr.tier}, no blame attributed",
+                summary_line,
             )
         ui.err(f"  Contract failure recorded for tier {cr.tier}; run will exit nonzero")
     _halt_carried(pipeline, failures)

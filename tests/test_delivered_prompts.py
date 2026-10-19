@@ -83,6 +83,7 @@ import kstrl.project
 from kstrl.architect import decompose, decompose_prompt
 from kstrl.architect.decisions import SpecDecision, build_decisions_context
 from kstrl.architect.owner_answers import read_owner_answers
+from kstrl.architect.spec_context import build_spec_context
 from kstrl.factory import acceptance_design
 from kstrl.git import git_diff
 from kstrl.knowledge import knowledge_distill
@@ -333,8 +334,8 @@ _ROLES: dict[str, _Role] = {
             requirements=_REQUIREMENTS[:1],
         ),
         frozenset({"ACCEPTANCE_PROMPT"}),
-        "372647a6610878408260e97b09a1b362d9c927f24677b1a5c12e0927d58872ac",
-        4237,
+        "cdfdabfd85ef6e86f9dfa9b84670889fbe4f265db012009eda0719840aaf3d9b",
+        4986,
     ),
     # The designer's re-ask: the same prompt and why the previous reply was
     # not accepted.
@@ -355,8 +356,8 @@ _ROLES: dict[str, _Role] = {
             ["checks[0].criterion: 'US-001: parses' names none of the requirements"],
         ),
         frozenset({"ACCEPTANCE_PROMPT", "ACCEPTANCE_REASK_PROMPT"}),
-        "c55e3c40cbc247a4654de332491f06dfa5eeab6c92ef43a2a4a6b99d62429a1a",
-        4454,
+        "2750d55c9b45c4b9eb33ccc967bcc704f5f7ac4d4793cee42a1a054ba5546448",
+        5203,
     ),
     "architect": _Role(
         lambda _p: decompose_prompt.build_decompose_prompt("PROJECT", _SPEC_TEXT),
@@ -397,6 +398,21 @@ _ROLES: dict[str, _Role] = {
         frozenset({"DECISIONS_CONTEXT_PROMPT"}),
         "342f719984693840674f818dbdbabb50d3e4c39674ee8459ad5309d4cdfd8afb",
         1033,
+    ),
+    # Owner decision of 2026-10-19: the pinned spec, ahead of the decisions
+    # in the same context slot. Pinned by running this test.
+    "spec-context": _Role(
+        lambda _p: build_spec_context(_SPEC_TEXT),
+        frozenset({"SPEC_CONTEXT_PROMPT"}),
+        "4f1de8a70a9a3bef19e43d932f58cb2fb52c058990927796896ffaf1ad496eec",
+        520,
+    ),
+    # What a re-asked distiller's prompt ends with. Pinned by running this test.
+    "distiller-reask": _Role(
+        lambda _p: knowledge_distill.reask_suffix("the reply held two JSON objects"),
+        frozenset({"DISTILL_REASK_PROMPT"}),
+        "b756a30e7845ba8e11d6e5f5d38cf2ba1cdceecc9a920d0311fa9391e31d5ca8",
+        194,
     ),
     "distiller": _Role(
         lambda _p: knowledge_distill.build_distill_prompt(

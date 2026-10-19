@@ -85,8 +85,7 @@ UNGUARDED = "unguarded"  # a disclosed hole; pinned by the last test
 EXPECTED_MANIFEST_WRITE_SITES: dict[str, tuple[int, str]] = {
     # --- outside a factory run: each takes the run lock (#597) ---
     "kstrl/cli/cli_architect.py::retry prepare_retry": (1, TAKES_LOCK),
-    "kstrl/cli/cli_inbox.py::inbox_retry reset_for_retry": (1, TAKES_LOCK),
-    "kstrl/cli/cli_inbox.py::inbox_retry save": (1, TAKES_LOCK),
+    "kstrl/cli/cli_inbox.py::inbox_retry prepare_retry": (1, TAKES_LOCK),
     # `ks remove-check` re-pins the manifest to the edited designed plan.
     "kstrl/cli/cli_learning.py::remove_check_cmd save": (1, TAKES_LOCK),
     "kstrl/architect/decompose_plan.py::_write_plan save": (1, TAKES_LOCK),

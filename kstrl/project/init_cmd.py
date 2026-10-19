@@ -98,6 +98,7 @@ DEFAULT_KSTRL_TOML = """\
 # single_pr = false                # one PR for the whole factory vs per-component
 # create_prs = true                # call `gh` to push + merge per component
 # review_mode = "hard"             # hard | advisory | skip
+# claim_agreement = "block"        # block | advisory: a story marked done that the review does not confirm fails its component
 # review_timeout_seconds = 0.0     # code and integration reviewer call; 0 = no limit
 # architect_timeout_seconds = 0.0  # architect call (ks decompose, ks factory --spec); 0 = no limit
 # merge_timeout = 300.0            # hang guard: seconds to wait for PR merge confirmation

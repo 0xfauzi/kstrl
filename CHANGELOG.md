@@ -176,6 +176,17 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Changed
 
+- Every engineer is given the pinned spec, ahead of the architect's
+  decisions (`SPEC_CONTEXT_PROMPT` 1.0.0, owner decision of 2026-10-19).
+  The verification designer read the spec and the engineer did not, so a
+  held-out check halted on a type the spec named and the architect's PRD
+  left out.
+- The verification designer is told that a check failing correct code is
+  as wrong as one passing wrong code: decide only what the spec states,
+  compare only the output it fixes, and work expected values out with a
+  command (`ACCEPTANCE_PROMPT` 1.3.0). One user run had three designed
+  checks no correct code passed.
+- `ks retry` says that each limit bounds that retry alone.
 - `ks learn repair` lists every global playbook line the fold refuses
   and writes nothing; `ks learn repair --yes` appends the VOIDs, as it
   did before (#217). A VOID is permanent and the ledger is shared by
@@ -361,6 +372,43 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Fixed
 
+- A refused `ks retry` changes nothing in git. The retry deleted the
+  failed attempt's branch and its evidence worktree before the factory's
+  refusals ran, so a refused retry destroyed the attempt's code (a user
+  run, twice). It now records the commit it replaces in the manifest
+  (`discardSha`), and the factory's last refusal deletes the branch while
+  it is still at that commit, naming the commit. Running `ks retry` again
+  picks the same retry up, and `ks inbox retry` resets a component the
+  same way.
+- `--accept-red-base` of a base that moved and now passes every gate
+  refuses nothing: merging a dependency by hand moved the base, and the
+  retry that replayed the old value refused a green base. `ks retry
+  --accept-red-base <sha>` replaces the replayed value.
+- A claim disagreement on a commit an inbox approval was taken on halts
+  instead of starting an engineer, whose new commit voided the approval
+  and halted again on the same check (a user run, in Go and in Python).
+  Approving that halt and `ks retry` merges over the disagreement on that
+  commit.
+- A designed plan pinned on the manifest is found by its pin after the
+  `[stack]` is edited and confirmed again; the run and `ks remove-check`
+  lost it.
+- The base reading no longer judges the checks of a component that
+  completed: once its code is in the base its checks pass there, and an
+  operator's plan refused the run while a designed plan's checks were
+  removed, so Phase 3 replayed none of them.
+- A Phase 3 failure with nothing left to retry files a `halted_run` item,
+  as every other halt does, and keeps the tier's whole output under the
+  run's evidence directory; the summary names the file and prints the
+  first failing line whole, where it cut the last line at 200 characters.
+- A run that completes its own components exits 1 while the manifest
+  holds a component an earlier run left failed or skipped, and says which.
+- A held-out halt names the path of its head record, where each check's
+  output is kept, so `ks inbox show` leads to the evidence.
+- The distiller asked again is told why its reply was not read, and a
+  JSON reply that did not parse names its cause (a second object after
+  the first, or the decoder's error).
+- Approvals and removals record the login name when `$USER` is unset,
+  where they recorded `operator`.
 - A claude engineer started from inside a claude.ai/code session runs.
   The session's `CLAUDE_CODE_REMOTE` made claude send events before
   `init`, which the write guard's gate refused, and its

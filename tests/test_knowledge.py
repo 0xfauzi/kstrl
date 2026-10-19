@@ -921,13 +921,13 @@ class TestDistillFacts:
             review_passed=True,
         )
 
-        assert result[1] == "the distiller's reply did not parse: No valid JSON found in output"
-        assert self._debug_status(knowledge_root) == "unparseable"
-        assert result == (
-            0,
-            "the distiller's reply did not parse: No valid JSON found in output",
-            True,
+        said = (
+            "the distiller's reply did not parse: No valid JSON found in output: "
+            "another JSON object, or text with braces, follows the first"
         )
+        assert result[1] == said
+        assert self._debug_status(knowledge_root) == "unparseable"
+        assert result == (0, said, True)
         assert read_facts(knowledge_root, "comp-a") == []
 
     def test_clean_empty_reply_is_reported_as_no_facts(self, tmp_path: Path) -> None:

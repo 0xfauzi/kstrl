@@ -171,11 +171,6 @@ EXPECTED_REF_OPERAND_ARGVS: dict[str, int] = {
     "git/git_base.py git rev-parse --verify --quiet f'{candidate}^{{commit}}'": 1,
     "pipeline/pr.py git push -u -- origin branch": 1,
     "pipeline/pr.py git push --delete -- origin branch": 2,
-    "factory/retry_plan.py git worktree remove --force evidence_worktree": 1,
-    "factory/retry_plan.py git worktree prune": 1,
-    # #433: the probe moved into _failed_branch_probe. Its parameter is `branch`.
-    "factory/retry_plan.py git rev-parse --verify --quiet f'refs/heads/{branch}'": 1,
-    "factory/retry_plan.py git branch -D failed_branch": 1,
     "io/statedir.py git -C str(root_dir) remote get-url origin": 1,
 }
 

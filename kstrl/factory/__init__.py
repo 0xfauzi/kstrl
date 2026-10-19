@@ -19,7 +19,6 @@ from kstrl.factory.factory_worker import engineer_context_prefix, report_operato
 from kstrl.factory.plan_gate import PLAN_GATE_KEY, spec_pin_errors
 from kstrl.factory.retry_plan import (
     RESUME_REFUSAL,
-    RetryError,
     plan_resume,
     prepare_retry,
     preview_retry,
@@ -33,7 +32,6 @@ __all__ = [
     "CommandRun",
     "PLAN_GATE_KEY",
     "RESUME_REFUSAL",
-    "RetryError",
     "base_check_before_architect",
     "base_refused_before_architect",
     "engineer_context_prefix",

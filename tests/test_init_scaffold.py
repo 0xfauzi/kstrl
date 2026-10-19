@@ -67,6 +67,7 @@ EXPECTED_SCAFFOLD_KEYS = {
         "single_pr",
         "create_prs",
         "review_mode",
+        "claim_agreement",
         "review_timeout_seconds",
         "architect_timeout_seconds",
         "merge_timeout",

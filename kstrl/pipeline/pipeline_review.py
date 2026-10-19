@@ -329,7 +329,14 @@ class ReviewPhase(ReviewVerdicts, UsageLedger):
                     "on its own evidence."
                 ),
             )
-        if blocking and disagreements and claim_prd is not None:
+        override = self._claim_override(comp) if blocking and disagreements else None
+        if override is not None:
+            self.ui.warn(
+                f"  Claim disagreement on {', '.join(f.location for f in disagreements)} of "
+                f"{comp.id} merged over by inbox approval {override['item'][:8]} "
+                f"({override['by']}, {override['at']})"
+            )
+        if blocking and disagreements and claim_prd is not None and override is None:
             reverted = revert_unconfirmed_stories(
                 claim_prd,
                 review_result,

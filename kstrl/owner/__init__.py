@@ -26,6 +26,7 @@ from kstrl.owner.interaction import (
 )
 from kstrl.owner.waivers import (
     ACCEPTANCE_PHASE,
+    CLAIM_HALT,
     ApprovalSnapshot,
     Waivers,
     WaiverScope,
@@ -36,6 +37,7 @@ from kstrl.owner.waivers import (
     approved_head,
     covering_override,
     load_approvals,
+    overridable,
     overrides_on,
     waiver_note,
 )
@@ -43,6 +45,7 @@ from kstrl.owner.waivers import (
 __all__ = [
     "ACCEPTANCE_PHASE",
     "ApprovalSnapshot",
+    "CLAIM_HALT",
     "CheckpointContext",
     "INBOX_SECTION",
     "Inbox",
@@ -66,6 +69,7 @@ __all__ = [
     "approved_head",
     "covering_override",
     "load_approvals",
+    "overridable",
     "overrides_on",
     "summarize",
     "waiver_note",

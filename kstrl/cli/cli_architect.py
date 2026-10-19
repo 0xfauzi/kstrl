@@ -30,7 +30,6 @@ from kstrl.factory import (
     RESUME_REFUSAL,
     BaseRefusedError,
     CommandRun,
-    RetryError,
     base_check_before_architect,
     open_command_run,
     plan_resume,
@@ -268,6 +267,14 @@ def decompose(
     "being resumed was launched with. 0 = unbounded.",
 )
 @click.option(
+    "--accept-red-base",
+    metavar="SHA",
+    default=None,
+    help="Run on a base branch whose gates fail: at least 12 characters of the base "
+    "commit's sha. Overrides the value the run being resumed was launched with, which "
+    "refuses again once the base it named moved and still fails a gate",
+)
+@click.option(
     "--max-total-tokens",
     type=LIMIT_INT,
     default=None,
@@ -327,6 +334,7 @@ def retry(
     keep_worktrees_on_failure: bool,
     force_lock: bool,
     max_cost_usd: float | None,
+    accept_red_base: str | None,
     max_total_tokens: int | None,
     max_adversarial_calls: int | None,
     agent_timeout: float | None,
@@ -338,10 +346,13 @@ def retry(
 ) -> None:
     """Retry a FAILED component from the factory manifest (R3.3).
 
-    Resets COMPONENT_ID and its cascade-skipped dependents to PENDING,
-    removes the failed attempt's kept worktree and branch (a retry
-    starts fresh from the base branch; the failed attempt's findings
-    stay in the evolution journal), then re-enters `ks factory` with the
+    Resets COMPONENT_ID and its cascade-skipped dependents to PENDING and
+    marks the failed attempt's branch replaced (a retry starts fresh from
+    the base branch; the failed attempt's findings stay in the evolution
+    journal). The factory deletes that branch and the kept worktree only
+    once none of its refusals stops the run, so a refused retry leaves the
+    failed code in place and running ks retry again picks the same retry
+    up. It then re-enters `ks factory` with the
     same manifest and the options the run being resumed was launched
     with, read from its launch record (#436). --max-parallel,
     --keep-worktrees-on-failure and every run limit option given here win
@@ -386,6 +397,7 @@ def retry(
         max_cost_usd=max_cost_usd,
         max_parallel=max_parallel,
         keep_worktrees_on_failure=keep_worktrees_on_failure,
+        accept_red_base=accept_red_base,
         limits={
             "max_total_tokens": max_total_tokens,
             "max_adversarial_calls": max_adversarial_calls,
@@ -428,8 +440,6 @@ def retry(
             prepare_retry(manifest, component_id, manifest_file, root_dir, ui_impl)
         except ValueError as exc:
             ui_impl.err(str(exc))
-            sys.exit(2)
-        except RetryError:
             sys.exit(2)
 
         # Re-enter through `ks factory` itself, so config assembly, preflights

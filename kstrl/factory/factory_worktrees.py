@@ -562,10 +562,13 @@ def _preflight_component_branches(
     branches were silently reused with their old commits via the
     worktree-add fallback (R0.5, H-7).
 
-    #460: the one other branch deleted rather than refused is one the
+    #460: the other branches deleted rather than refused are one the
     interrupted run that last held this manifest provably made
-    (``interrupted``, from ``_interrupted_run_branches``). The deletion
-    line names the commit, so the attempt's work stays recoverable.
+    (``interrupted``, from ``_interrupted_run_branches``), and one still
+    at the failed commit ``ks retry`` replaces (``discard_sha``), which
+    this, the last refusal, deletes so that no refused retry destroys
+    code. The deletion line names the commit, so the attempt's work stays
+    recoverable.
 
     Note: a squash-merged branch is NOT an ancestor of base (the squash
     rewrites history), so leftovers from squash-merge flows are refused
@@ -596,7 +599,9 @@ def _preflight_component_branches(
             capture_output=True,
             timeout=30,
         )
-        if merged.returncode != 0 and branch not in interrupted:
+        replaced = comp.discard_sha if branch_sha(branch, root_dir) == comp.discard_sha else ""
+        comp.discard_sha = ""
+        if merged.returncode != 0 and branch not in interrupted and not replaced:
             errors.append(
                 f"branch '{branch}' (component '{comp.id}') already exists "
                 f"with commits not merged into '{manifest.base_branch}'; "
@@ -607,6 +612,8 @@ def _preflight_component_branches(
         why = (
             f"fully merged into {manifest.base_branch}"
             if merged.returncode == 0
+            else f"the failed attempt at {replaced} that ks retry replaces"
+            if replaced
             else interrupted[branch]
         )
         deleted = subprocess.run(

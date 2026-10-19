@@ -93,7 +93,7 @@ from types import ModuleType
 
 import pytest
 
-from kstrl.architect import decisions, decompose_prompt, owner_answers
+from kstrl.architect import decisions, decompose_prompt, owner_answers, spec_context
 from kstrl.architect.decisions import (
     DECISIONS_CONTEXT_PROMPT,
     DECISIONS_CONTEXT_PROMPT_VERSION,
@@ -113,6 +113,11 @@ from kstrl.architect.owner_answers import (
     OWNER_ANSWER_PROMPT_VERSION,
     render_owner_answer,
 )
+from kstrl.architect.spec_context import (
+    SPEC_CONTEXT_PROMPT,
+    SPEC_CONTEXT_PROMPT_VERSION,
+    build_spec_context,
+)
 from kstrl.factory import acceptance_design
 from kstrl.factory.acceptance_design import (
     ACCEPTANCE_PROMPT,
@@ -130,7 +135,12 @@ from kstrl.git.git_diff import (
     repo_change_source,
 )
 from kstrl.knowledge import knowledge_distill
-from kstrl.knowledge.knowledge_distill import DISTILL_PROMPT, DISTILL_PROMPT_VERSION
+from kstrl.knowledge.knowledge_distill import (
+    DISTILL_PROMPT,
+    DISTILL_PROMPT_VERSION,
+    DISTILL_REASK_PROMPT,
+    DISTILL_REASK_PROMPT_VERSION,
+)
 from kstrl.owner.inbox import InboxItem, ItemKind
 from kstrl.plan.manifest import Component
 from kstrl.project import stack
@@ -200,6 +210,8 @@ _PROMPTS: dict[str, str] = {
     "ACCEPTANCE_PROMPT": ACCEPTANCE_PROMPT,
     "ACCEPTANCE_REASK_PROMPT": ACCEPTANCE_REASK_PROMPT,
     "BUG_REPORT_PROMPT": BUG_REPORT_PROMPT,
+    "SPEC_CONTEXT_PROMPT": SPEC_CONTEXT_PROMPT,
+    "DISTILL_REASK_PROMPT": DISTILL_REASK_PROMPT,
     **BUILDER_PROMPTS,
     **NOTICE_PROMPTS,
     **INTEGRATION_PROMPTS,
@@ -222,6 +234,8 @@ _VERSIONS: dict[str, str] = {
     "ACCEPTANCE_PROMPT": ACCEPTANCE_PROMPT_VERSION,
     "ACCEPTANCE_REASK_PROMPT": ACCEPTANCE_REASK_PROMPT_VERSION,
     "BUG_REPORT_PROMPT": BUG_REPORT_PROMPT_VERSION,
+    "SPEC_CONTEXT_PROMPT": SPEC_CONTEXT_PROMPT_VERSION,
+    "DISTILL_REASK_PROMPT": DISTILL_REASK_PROMPT_VERSION,
     **BUILDER_VERSIONS,
     **NOTICE_VERSIONS,
     **INTEGRATION_VERSIONS,
@@ -412,9 +426,12 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     # 1.1.0 (#639 slice 5): a criterion cites a requirement. No capture ran (owner).
     # 1.2.0 (#700): the base removal, the refusal and a held-out failure, as kstrl
     # does them. No capture ran yet. The coordinator does it.
+    # 1.3.0: a check that fails correct code is as wrong as one that passes wrong
+    # code: decide only what the spec states, compare only the output it fixes,
+    # work expected values out with a command (three wrong checks in one user run).
     "ACCEPTANCE_PROMPT": (
-        "b42bec0e7ea02381ee5832da179e8425160155383a162f4a09288ae028bfd6a9",
-        "1.2.0",
+        "4bbb82cac5ba0aea9de8348c3193f204648d9b8d314415282e5d47d84d82c636",
+        "1.3.0",
     ),
     # 1.0.0: new. A re-ask says why kstrl did not accept the previous reply; the
     # same prompt twice drew the same uncited criteria twice in a user run. H2:
@@ -450,6 +467,20 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     # acceptance check fails on the base. H3 only: no calibration fixture carries a bug report.
     "BUG_REPORT_PROMPT": (
         "52dc51da719b57bf1b13cbd1060ffb6b85c93492d0d66798f07592c5da79ae81",
+        "1.0.0",
+    ),
+    # 1.0.0 (owner decision of 2026-10-19): new. The pinned spec, given to every
+    # engineer ahead of the architect's decisions. H3 only: engineer-facing
+    # context, which no calibration fixture scores.
+    "SPEC_CONTEXT_PROMPT": (
+        "b977d643d6501decd3f2e2db47f4b6e5e65a8d70e65991b7baa6738c65e490bf",
+        "1.0.0",
+    ),
+    # 1.0.0: new. What a re-asked distiller is told about the reply kstrl could
+    # not read (a user run re-asked with the same prompt and got the same
+    # malformed reply). H3 only: no calibration fixture scores the distiller.
+    "DISTILL_REASK_PROMPT": (
+        "0acac1a9fcc7f49465478774da308af92a8a5ceda41ebdba7780e32971ba2c01",
         "1.0.0",
     ),
     **BUILDER_SNAPSHOTS,
@@ -643,6 +674,10 @@ _RENDERERS: dict[str, tuple[ModuleType, Callable[[Path], str]]] = {
         lambda _p: security._build_security_prompt("PRD", "CHANGE SOURCE", "TOKEN"),
     ),
     "DISTILL_PROMPT": (knowledge_distill, _distill_render),
+    "DISTILL_REASK_PROMPT": (
+        knowledge_distill,
+        lambda _p: knowledge_distill.reask_suffix("R"),
+    ),
     "STACK_PROMPT": (stack, _stack_render),
     "ACCEPTANCE_PROMPT": (acceptance_design, _acceptance_render),
     "ACCEPTANCE_REASK_PROMPT": (
@@ -654,6 +689,7 @@ _RENDERERS: dict[str, tuple[ModuleType, Callable[[Path], str]]] = {
     "DECISIONS_CONTEXT_PROMPT": (decisions, _decisions_context_render),
     "OWNER_ANSWER_PROMPT": (owner_answers, lambda _p: render_owner_answer(_OWNER_ANSWER_ITEM)),
     "BUG_REPORT_PROMPT": (intake_issue, _bug_report_render),
+    "SPEC_CONTEXT_PROMPT": (spec_context, lambda _p: build_spec_context("SPEC")),
     **NOTICE_RENDERERS,
     **INTEGRATION_RENDERERS,
 }

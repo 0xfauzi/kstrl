@@ -10,6 +10,13 @@ from typing import TYPE_CHECKING
 
 from kstrl import git
 from kstrl.events import ReviewDivergence
+from kstrl.owner import (
+    CLAIM_HALT,
+    ApprovalSnapshot,
+    approvals_on,
+    covering_override,
+    overrides_on,
+)
 from kstrl.pipeline.context import IterationContext
 from kstrl.pipeline.divergence import (
     AttemptReading,
@@ -522,6 +529,19 @@ class ReviewVerdicts(AttemptRecorder):
         blocking = claim_blocks(self.factory_config, level)
         return blocking, "fail" if blocking else "advisory"
 
+    def _approvals_on_head(self, comp: Component) -> list[str]:
+        """The ids of the approved items of ``comp`` taken on its worktree's head."""
+        head = git.get_head_sha(self.worktree_paths.get(comp.id, self.root_dir)) or ""
+        approvals = self._approvals or ApprovalSnapshot()
+        return approvals_on(approvals, comp.id, head) + overrides_on(approvals, comp.id, head)
+
+    def _claim_override(self, comp: Component) -> dict[str, str] | None:
+        """The approval of a claim halt taken on the worktree's head, or None."""
+        head = git.get_head_sha(self.worktree_paths.get(comp.id, self.root_dir)) or ""
+        approvals = self._approvals or ApprovalSnapshot()
+        items = [item for item in approvals.overrides if item.component == comp.id]
+        return covering_override(items, head, [CLAIM_HALT[1]], phase=CLAIM_HALT[0])
+
     def _claim_failure(
         self,
         comp: Component,
@@ -552,6 +572,17 @@ class ReviewVerdicts(AttemptRecorder):
         data that a reviewer disagreed when none reported.
         """
         infrastructure = review_result.infrastructure_error
+        # A commit an approval was taken on is never replaced by an engineer
+        # over a disagreement alone: the claim halts, and its approval merges
+        # over it on that commit (owner decision of 2026-10-19).
+        approved = [] if infrastructure else self._approvals_on_head(comp)
+        if approved:
+            error += (
+                f"; inbox approval {', '.join(i[:8] for i in approved)} was taken on this "
+                "commit, so no engineer replaces it. Approve this halt and run ks retry "
+                f"{comp.id} to merge over the disagreement on this commit, or reject it and "
+                f"run ks retry {comp.id} to build the component again"
+            )
         ctx = IterationContext.from_json(comp_result.context_json or "{}")
         ctx.add_review_finding(
             retry_text,
@@ -563,10 +594,10 @@ class ReviewVerdicts(AttemptRecorder):
             ran=True,
             result=review_result,
             failure=PhaseFailure(
-                action=FailureAction.RETRY_OR_FAIL,
+                action=FailureAction.FAIL if approved else FailureAction.RETRY_OR_FAIL,
                 error=error,
-                phase="review",
-                check="infrastructure" if infrastructure else "claim",
+                phase=CLAIM_HALT[0],
+                check="infrastructure" if infrastructure else CLAIM_HALT[1],
                 context_json=ctx.to_json(),
                 # R6.1: the journal signature. Not derived via
                 # signatures_from_findings, which only emits for
