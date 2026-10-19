@@ -418,7 +418,8 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     ),
     # 1.0.0: new. A re-ask says why kstrl did not accept the previous reply; the
     # same prompt twice drew the same uncited criteria twice in a user run. H2:
-    # the acceptance roles reach it only on a re-ask.
+    # the acceptance roles reach it only on a re-ask, and none of the 24 runs of
+    # baseline-20261019-173515 needed one, so no fixture discharges it yet.
     "ACCEPTANCE_REASK_PROMPT": (
         "72ba0419a9e0cac0ed3f02f32cfc052fceb44b1d9a975fc70a03ed01540c1e07",
         "1.0.0",
