@@ -270,9 +270,11 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     # on a tree with no code: a new repository fails on its base and runs
     # with --accept-red-base, and the checks' output goes in .gitignore.
     # Rule 7's tooling criteria name a check of the stack.
+    # 5.3.0: MINOR. S4: setup runs on the base before any component exists
+    # and must succeed there (a proposed `uv sync` failed on an empty repo).
     "DECOMPOSE_PROMPT": (
-        "7039726ac598556374ee37f980aa3751f6dc7ad635696ea7f932435cfb53b7e2",
-        "5.2.0",
+        "d205c9ef16d07b6fc2529110db92b8d373038de5942f60361f9d437d80f4e28f",
+        "5.3.0",
     ),
     # 1.0.0 (#199): opens the series. Never shipped before this PR. Same
     # split, and the same reason, as REPO_CHANGE_SOURCE_PROMPT /
@@ -318,18 +320,21 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     # runs fewer tests. test_quality and error_handling are reworded to
     # name no language's syntax, and the citation example names no file
     # suffix (inventory row D25).
+    # 3.1.0: MINOR. observedDiffstat's example is the numstat rows, which the
+    # harness adds up: reviewers that printed the right rows mis-added them.
     "REVIEWER_PROMPT": (
-        "c16b775b42dcab5b132937bf991fae647a9898217b42bae0f4e516e4feed4678",
-        "3.0.0",
+        "a77221d951bf8c1c2f556da52404f74d52c62a427169cd29420b2e8e47a589e6",
+        "3.1.0",
     ),
     # 2.1.0 (#696 slice 9): MINOR. The schema gains one category,
     # "new_dependency": every third-party package a change adds, one finding
     # each at "low" unless a stated risk raises it, and never omitted. It
     # replaces the [policy] dependency and license gates, which read one
     # ecosystem's lockfiles and one license registry.
+    # 2.2.0: MINOR. observedDiffstat's example is the numstat rows (as REVIEWER 3.1.0).
     "SECURITY_PROMPT": (
-        "02511bcc6d3d8542ab2543362836b1decf639295861b84aa4be06d573151fc2b",
-        "2.1.0",
+        "361759e646c703f99fb8a5e74fd840b9f13aeea4f369ebe4cc5cc91945ecf319",
+        "2.2.0",
     ),
     # 1.2.0 (#696 slice 10): MINOR. The evidence example cites
     # "path/to/file:42-58" and "path/to/test:101", which name no language's
@@ -378,9 +383,10 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     # "anything that writes output or a cache" in place of one language's
     # "import that writes bytecode". Interpolated into the reviewer and
     # security prompts, so H2 is their captures.
+    # 1.2.0: MINOR. Copy the --numstat rows; the harness adds them up.
     "REPO_CHANGE_SOURCE_PROMPT": (
-        "eebee56fcb8e0c986e2f38c8c31786412ae772917e18d67fb96e995e626b7b6b",
-        "1.1.0",
+        "2a6e22ce0fe1883670f0615c66cbfa9161751ef4e4afab4ceb4719431951c767",
+        "1.2.0",
     ),
     # 1.0.0 (#696 slice 2): engineer-facing context naming a project's
     # [stack]: its instructions and every check kstrl runs. The TEMPLATE is
@@ -399,9 +405,10 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
         "b42bec0e7ea02381ee5832da179e8425160155383a162f4a09288ae028bfd6a9",
         "1.2.0",
     ),
+    # 1.1.0: MINOR. Report one row per file; the harness adds them up.
     "PASTED_CHANGE_SOURCE_PROMPT": (
-        "a1e6082933043d31c9efc513c0e16466629ccf770f6e6e828ace39565736d0d5",
-        "1.0.0",
+        "86cc90c629891ceee155c49686b4d2b8184d2367c31af276b2be71e2482c2473",
+        "1.1.0",
     ),
     # 1.0.0 (#260 round 2): the engineer-facing block for the architect's
     # disposition register. It shipped unenrolled in round 1, built from

@@ -273,6 +273,8 @@ class ReviewPhase(ReviewVerdicts, UsageLedger):
                     f"{', '.join(f.location for f in disagreements)} "
                     "(recorded in the manifest; [factory] claim_agreement = advisory)"
                 )
+                for finding in disagreements:
+                    self.ui.info(f"    {finding.explanation}")
 
         if not review_result.passed:
             return self._review_failure(comp, comp_result, wt_path, review_result)

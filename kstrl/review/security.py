@@ -377,7 +377,7 @@ class SecurityConfig:
 SECURITY_SECTION = ConfigSection(("security",), SecurityConfig)
 
 
-SECURITY_PROMPT_VERSION = "2.1.0"
+SECURITY_PROMPT_VERSION = "2.2.0"
 
 SECURITY_PROMPT = """\
 You are an adversarial application security reviewer. Your default stance
@@ -421,7 +421,7 @@ explanation).
 
 Output schema:
 {{
-  "observedDiffstat": {{"files": 0, "insertions": 0, "deletions": 0}},
+  "observedDiffstat": {{"rows": [[0, 0, "path/to/file"]]}},
   "findings": [
     {{
       "category": "injection|auth_bypass|authz_bypass|hardcoded_secret|unsafe_deserialization|broken_crypto|predictable_randomness|missing_input_validation|race_condition|ssrf|xss|open_redirect|information_disclosure|denial_of_service|new_dependency|other",

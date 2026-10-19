@@ -226,9 +226,17 @@ class TestAFactoryRunRecordsEveryPrompt:
         records = _all_records(run_root)
         assert not sentinel.exists(), sentinel.read_text(encoding="utf-8")
         assert Counter(r.prompt for r in records) == _delivered(capdir), output
-        assert sorted(r.role for r in records) == ["distill", "engineer", "review", "security"]
-        assert {(r.run_id, r.attempt, r.call, r.agent_cli) for r in records} == {
-            (run_root.name, 1, 1, "custom")
+        # The stub's distill reply does not parse, so the distiller is asked
+        # once more: that reading is the scope's second call.
+        assert sorted((r.role, r.call) for r in records) == [
+            ("distill", 1),
+            ("distill", 2),
+            ("engineer", 1),
+            ("review", 1),
+            ("security", 1),
+        ]
+        assert {(r.run_id, r.attempt, r.agent_cli) for r in records} == {
+            (run_root.name, 1, "custom")
         }
 
     def test_records_survive_the_progress_log_opt_out(
@@ -266,6 +274,7 @@ class TestAFactoryRunRecordsEveryPrompt:
         assert Counter(r.prompt for r in records) == _delivered(capdir), output
         assert sorted((r.role, r.attempt, r.call) for r in records) == [
             ("distill", 2, 1),
+            ("distill", 2, 2),
             ("engineer", 1, 1),
             ("engineer", 2, 1),
             ("review", 2, 1),

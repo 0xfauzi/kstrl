@@ -1677,6 +1677,29 @@ class TestFactUtilizationRecording:
     ) -> list[event_catalog.FactUtilizationMeasured]:
         return [e for e in captured if isinstance(e, event_catalog.FactUtilizationMeasured)]
 
+    @pytest.mark.parametrize(("budget", "calls"), [(0, 2), (1, 1)])
+    def test_a_distill_reply_that_did_not_parse_is_asked_for_once_more(
+        self, tmp_path: Path, budget: int, calls: int
+    ) -> None:
+        """Two of four user runs lost a component's facts to a reply that did
+        not parse (an extra brace after every fact). It is asked for once
+        more, inside the adversarial budget: with one call left, it is not."""
+        replies = iter([(0, "the distiller's reply did not parse", True), (2, "2 facts", False)])
+        asked: list[int] = []
+
+        def distill(*_a: Any, **_k: Any) -> tuple[int, str, bool]:
+            asked.append(1)
+            return next(replies)
+
+        _, _, captured, _ = self._run(
+            tmp_path,
+            distill=distill,
+            config=_factory_config(review_mode="skip", max_adversarial_calls=budget),
+        )
+        assert len(asked) == calls
+        (result,) = [e for e in captured if isinstance(e, event_catalog.DistillResult)]
+        assert result.parse_failed is (calls == 1)
+
     def test_utilization_event_carries_the_measurement(
         self,
         tmp_path: Path,

@@ -396,6 +396,19 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   (review and security) before it fails the component: a reviewer that
   read the change and mis-added its numstat rows (256 for 356) failed a
   correct component with no retry. The second reading must match exactly.
+- Reviewers now copy the `--numstat` rows into `observedDiffstat` and
+  kstrl adds them up (REVIEWER_PROMPT 3.1.0, SECURITY_PROMPT 2.2.0,
+  REPO_CHANGE_SOURCE_PROMPT 1.2.0, PASTED_CHANGE_SOURCE_PROMPT 1.1.0); a
+  reply with totals is still read. Replaying one 11-file component's
+  review: with totals, 3 of 12 readings were usable (2 mis-added the
+  rows, the rest skipped a story or failed); with rows, 12 of 12 matched
+  git and judged every story.
+- The architect prompt (5.3.0) says `setup` runs on the base before any
+  component exists; a refusal for a failed setup says what to change,
+  since no acceptance waives it.
+- A distiller reply that did not parse is asked for once more, inside the
+  adversarial budget (2 of 4 user runs lost a component's facts to it).
+- Stories the reviewer did not confirm are listed with the reason for each.
 - A run refused before it started is no longer reported as an
   interrupted run by the next one; the usage table says what tokens_in
   leaves out; decompose shows the head of the architect's one-line reply

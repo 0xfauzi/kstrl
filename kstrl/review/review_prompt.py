@@ -9,7 +9,7 @@ from kstrl.io import generate_data_delimiter
 from kstrl.plan import PRD
 from kstrl.verify import VerificationResult
 
-REVIEWER_PROMPT_VERSION = "3.0.0"
+REVIEWER_PROMPT_VERSION = "3.1.0"
 
 REVIEWER_PROMPT = """\
 You are a hostile senior reviewer. Your default stance is that the change is
@@ -54,7 +54,7 @@ You must output ONLY valid JSON (no Markdown, no code fences, no explanation).
 
 Output schema:
 {{
-  "observedDiffstat": {{"files": 0, "insertions": 0, "deletions": 0}},
+  "observedDiffstat": {{"rows": [[0, 0, "path/to/file"]]}},
   "stories": [
     {{
       "storyId": "US-001",

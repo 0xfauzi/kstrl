@@ -339,16 +339,16 @@ _ROLES: dict[str, _Role] = {
     "architect": _Role(
         lambda _p: decompose_prompt.build_decompose_prompt("PROJECT", _SPEC_TEXT),
         frozenset({"DECOMPOSE_PROMPT", "ARCHITECT_NO_REPO_SOURCE_PROMPT"}),
-        "a7adbf4caeebab3dbf3f13ca639b4f1a31f64ce1d4c2fceba0f171e480413421",
-        17030,
+        "47f8b25c01565f6f85efac6694e975fcd0955469873aeca31c8341546d9eba62",
+        17232,
     ),
     # #639 slice 4: the architect when the owner answered an escalation in the
     # inbox. Pinned by running this test.
     "architect-owner-answer": _Role(
         _architect_with_owner_answer,
         frozenset({"DECOMPOSE_PROMPT", "ARCHITECT_NO_REPO_SOURCE_PROMPT", "OWNER_ANSWER_PROMPT"}),
-        "31d9080cd92224a33022a6887f423c5e5573d7fcf3b5857840bc38c82ca98f95",
-        17269,
+        "e787e6f2662bdaff592445caec6b4945ddc7d2c9f2ba83558c9825c2ad2ff487",
+        17471,
     ),
     # #654 slice 7: the spec built from a GitHub issue with the `bug` label, which
     # the architect and the verification designer read. Pinned by running this test.
@@ -367,8 +367,8 @@ _ROLES: dict[str, _Role] = {
             codebase_map_path="scripts/kstrl/codebase_map.md",
         ),
         frozenset({"DECOMPOSE_PROMPT", "ARCHITECT_REPO_SOURCE_PROMPT"}),
-        "3b787fafba82f685efdb58baaf178a9c5deab4b976d7b78e004f5215bc3428ba",
-        18471,
+        "310eeaf113e9d4db521f9dc05a18327b73e81ebfe44d5db45ee9115ad7f58e35",
+        18673,
     ),
     "decisions-context": _Role(
         lambda _p: build_decisions_context(_DECISIONS, "comp-a", requirements=_REQUIREMENTS),
@@ -437,20 +437,20 @@ _ROLES: dict[str, _Role] = {
     "integration-reviewer": _Role(
         _integration_reviewer,
         frozenset({"REVIEWER_PROMPT", "REPO_CHANGE_SOURCE_PROMPT"}),
-        "469d41da3da3342e8f41db9eadc9ee12a80ace5ed947a2050fb5a39a0609f1b1",
-        12020,
+        "cb0783bbeef1a9e0d84c284865ba5af742f1eac16f308cc65178b72895115c4e",
+        11976,
     ),
     "pasted-change-source": _Role(
         lambda _p: git_diff.pasted_change_source(_DIFF_TEXT)[0],
         frozenset({"PASTED_CHANGE_SOURCE_PROMPT"}),
-        "e23bd60d3e43f6b8865ef93c73f24021dfd03bd023911a289ef9fdf15ebef9f4",
-        865,
+        "f51a11115fe53b3e2cf9e4e3de0a5d3ea1dc91250e03ac222eb535d09fb92a91",
+        909,
     ),
     "reviewer": _Role(
         _reviewer,
         frozenset({"REVIEWER_PROMPT", "REPO_CHANGE_SOURCE_PROMPT"}),
-        "a7469dc4e952886b44068caae2d79c7c9cc897fc9cc959b52fd52c6e9f84713b",
-        9545,
+        "a5c621e40d99b04f1d86e58d86fa277d4bd3044035ad8278aa8f6bd2face2264",
+        9501,
     ),
     "security": _Role(
         # Two arguments, exactly as ``run_security_review`` calls it
@@ -462,8 +462,8 @@ _ROLES: dict[str, _Role] = {
             _PRD_JSON, git_diff.repo_change_source("BASE_SHA")
         ),
         frozenset({"SECURITY_PROMPT", "REPO_CHANGE_SOURCE_PROMPT"}),
-        "482a5c274011f9025f34d6896fd94de147ae5b02f42d5b6c387e3bbc8c928190",
-        9381,
+        "a86a638571406d5bb1b88e0cb66b24f72d5070a398ca93be1d49b023fcc6dfe0",
+        9337,
     ),
 }
 

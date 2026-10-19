@@ -348,19 +348,27 @@ class KnowledgePhase(AttemptRecorder, UsageLedger):
                 self._phase_transcript(comp.id, "distill") as on_line,
                 recording_prompts(self._agent_call(comp, "distill")),
             ):
-                written, status, parse_failed = self.hooks.distill_facts(
-                    distill_agent,
-                    comp,
-                    diff_content,
-                    wt_path / comp.prd_path,
-                    comp_result.iterations,
-                    self.run_id,
-                    knowledge_config.knowledge_root,
-                    config=knowledge_config,
-                    worktree_path=wt_path,
-                    review_passed=comp.review_passed,
-                    on_line=on_line,
-                )
+                for reading in range(2):
+                    written, status, parse_failed = self.hooks.distill_facts(
+                        distill_agent,
+                        comp,
+                        diff_content,
+                        wt_path / comp.prd_path,
+                        comp_result.iterations,
+                        self.run_id,
+                        knowledge_config.knowledge_root,
+                        config=knowledge_config,
+                        worktree_path=wt_path,
+                        review_passed=comp.review_passed,
+                        on_line=on_line,
+                    )
+                    # A reply that did not parse (2 of 4 user runs: an extra
+                    # brace after every fact) is asked for once more, inside
+                    # the adversarial budget; a second failure stands.
+                    if reading or not parse_failed or not self.adversarial_budget_ok():
+                        break
+                    self.adversarial_budget_consume()
+                    self.ui.warn(f"  Knowledge: {status}; asking the distiller once more")
             self.bus.emit(
                 DistillResult(
                     component=comp.id,

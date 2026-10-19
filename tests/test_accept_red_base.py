@@ -262,3 +262,6 @@ def test_under_a_stack_an_acceptance_never_waives_what_was_not_measured_red(
     assert any(reason in line for line in record["reasons"]), record
     assert not any(reason in line for line in record["accepted"]), record
     assert "to build on it for this run" not in run.out, run.out
+    # A failed setup ran no check, and the refusal says what to change instead.
+    said = "setup runs on the base before any component exists" in run.out
+    assert said == (reason == "the setup fails on main"), run.out

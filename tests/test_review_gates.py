@@ -433,6 +433,12 @@ def _run_with_budget(
             return_value=SecurityResult(passed=True, mode="hard"),
         ) as mock_security,
         patch("kstrl.git.get_diff_content", return_value=""),
+        # A parsed reply, as the reviewers' are: one that did not parse is
+        # asked for once more, which is a fourth call, not the clean count.
+        patch(
+            "kstrl.factory.factory.distill_facts",
+            return_value=(0, "the distiller returned no facts", False),
+        ),
     ):
         result = run_factory(
             manifest,

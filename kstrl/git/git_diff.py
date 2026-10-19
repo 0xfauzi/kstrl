@@ -394,6 +394,8 @@ def parse_observed_diffstat(value: object) -> DiffStat | None:
     """
     if not isinstance(value, dict):
         return None
+    if "rows" in value:
+        return _diffstat_from_rows(value["rows"])
     counts: list[int] = []
     for key in ("files", "insertions", "deletions"):
         raw = value.get(key)
@@ -401,6 +403,29 @@ def parse_observed_diffstat(value: object) -> DiffStat | None:
             return None
         counts.append(raw)
     return DiffStat(files=counts[0], insertions=counts[1], deletions=counts[2])
+
+
+def _diffstat_from_rows(rows: object) -> DiffStat | None:
+    """A reviewer's copied ``--numstat`` rows, added up here, or None when
+    any row is malformed. A reviewer that printed the right rows still
+    mis-added them (measured: 799 for rows summing to 820, 256 for 356),
+    and the sum is not what the check is about."""
+    if not isinstance(rows, list):
+        return None
+    parsed: list[tuple[int | None, int | None, str]] = []
+    for row in rows:
+        if not (isinstance(row, list) and len(row) == 3 and isinstance(row[2], str)):
+            return None
+        counts: list[int | None] = []
+        for raw in row[:2]:
+            if raw == "-":
+                counts.append(None)
+            elif isinstance(raw, bool) or not isinstance(raw, int) or raw < 0:
+                return None
+            else:
+                counts.append(raw)
+        parsed.append((counts[0], counts[1], row[2]))
+    return diffstat_from_numstat(parsed)
 
 
 def diffstat_from_numstat(
@@ -471,7 +496,7 @@ def coverage_notes_prefix(label: str, disagreement: str) -> str:
     return f"Hard-mode {label} coverage unverified: {disagreement} (#266)."
 
 
-REPO_CHANGE_SOURCE_PROMPT_VERSION = "1.1.0"
+REPO_CHANGE_SOURCE_PROMPT_VERSION = "1.2.0"
 
 
 REPO_CHANGE_SOURCE_PROMPT = """\
@@ -498,13 +523,13 @@ Then run, verbatim:
 
     git diff {base_ref}...HEAD --numstat
 
-and report what it printed under "observedDiffstat": "files" is the
-number of rows, "insertions" the sum of the first column, "deletions"
-the sum of the second. A row whose two columns are both "-" is a binary
-file: count the row, add no lines. The harness runs the same command and
-compares. A figure that does not match is read as "this review did not
-cover the change" and the verdict is discarded, so report what you
-actually saw and never what you expect the answer to be."""
+and copy what it printed under "observedDiffstat" as "rows": one
+[added, deleted, "path"] per row, in order, the numbers as printed and a
+binary file's "-" kept as "-". Do not add them up: the harness adds the
+rows itself, runs the same command, and compares. A figure that does
+not match is read as "this review did not cover the change" and the
+verdict is discarded, so report what you actually saw and never what you
+expect the answer to be."""
 
 
 def repo_change_source(base_ref: str) -> str:
@@ -524,7 +549,7 @@ def repo_change_source(base_ref: str) -> str:
     return REPO_CHANGE_SOURCE_PROMPT.format(base_ref=base_ref)
 
 
-PASTED_CHANGE_SOURCE_PROMPT_VERSION = "1.0.0"
+PASTED_CHANGE_SOURCE_PROMPT_VERSION = "1.1.0"
 
 
 PASTED_CHANGE_SOURCE_PROMPT = """\
@@ -539,10 +564,11 @@ file to open and nothing was withheld.
 {diff_content}
 <<<{data_delimiter}:END GIT DIFF>>>
 
-Report "observedDiffstat" from the diff above: "files" is the number of
-"diff --git" lines, "insertions" the number of lines beginning with a
-single "+" (not the "+++" file headers), "deletions" the number
-beginning with a single "-" (not the "---" headers)."""
+Report "observedDiffstat" from the diff above as "rows": one
+[added, deleted, "path"] per "diff --git" section, where added counts its
+lines beginning with a single "+" (not the "+++" header) and deleted its
+lines beginning with a single "-" (not the "---" header). The harness
+adds the rows up itself."""
 
 
 def pasted_change_source(diff_content: str) -> tuple[str, str]:

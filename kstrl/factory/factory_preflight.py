@@ -355,6 +355,13 @@ def _accept_lines(reading: BaseGates, reasons: list[str]) -> list[str]:
     """How to build on a refused base that ``--accept-red-base`` would let run,
     or []. A new repository's checks fail on its base because no code exists
     yet. Printed only, like :func:`_sandbox_lines`."""
+    if reasons and reading.setup_error:
+        return [
+            "The [stack] setup runs on the base before any component exists, and no "
+            "acceptance waives it: change it so it needs no file a component creates "
+            '(or set setup = "" if the checks install what they need), then confirm the '
+            "[stack] again."
+        ]
     if not reasons or apply_acceptance(reading, reasons, reading.base_sha)[0]:
         return []
     return [

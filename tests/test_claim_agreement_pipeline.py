@@ -124,6 +124,7 @@ class TestPipelineWiring:
         # it, the manifest was the one place it could be found.
         said = pipeline.ui._file.getvalue()
         assert "did not confirm these stories the engineer marked done: B" in said
+        assert "Story B is marked passes=true by the engineer but the reviewer" in said
         # The PRD is not touched in advisory mode.
         on_disk = PRD.load(prd_path)
         assert all(s.passes for s in on_disk.user_stories)

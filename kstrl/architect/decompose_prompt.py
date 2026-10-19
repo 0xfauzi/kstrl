@@ -7,7 +7,7 @@ from pathlib import Path
 
 from kstrl.io import generate_data_delimiter
 
-DECOMPOSE_PROMPT_VERSION = "5.2.0"
+DECOMPOSE_PROMPT_VERSION = "5.3.0"
 
 DECOMPOSE_PROMPT = """\
 You are a senior software architect AND a hostile spec auditor. You have
@@ -206,7 +206,10 @@ S4. All four keys are required:
     - "instructions": non-empty text for the engineers, saying what the
       project is built with and how to work in it.
     - "setup": one command that prepares a fresh checkout (installs its
-      dependencies), or "" when it needs none.
+      dependencies), or "" when it needs none. It also runs on the base
+      before any component exists and must succeed there, so it never
+      needs a file a component creates; prefer "" when the checks
+      install what they need themselves.
     - "env": names of environment variables the commands need beyond
       PATH and HOME, often []. Never a secret: a name containing
       API_KEY, SECRET, TOKEN, PASSWORD or CREDENTIAL is rejected, and so

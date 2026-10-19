@@ -250,6 +250,23 @@ class TestDiffstatParsing:
         would otherwise land as a 1-file change."""
         assert git_diff.parse_observed_diffstat(value) is None
 
+    def test_copied_rows_are_added_up_by_the_harness(self) -> None:
+        """Reviewers that printed the right rows mis-added them (799 and 723
+        reported for rows summing to 820), so they copy the rows and the
+        harness does the sum; a row of totals the model also sent is ignored."""
+        rows = [[9, 0, ".gitignore"], [223, 0, "a.json"], ["-", "-", "logo.png"], [3, 7, "b.py"]]
+        assert git_diff.parse_observed_diffstat(
+            {"rows": rows, "files": 1, "insertions": 1, "deletions": 1}
+        ) == git_diff.DiffStat(files=4, insertions=235, deletions=7)
+
+    @pytest.mark.parametrize(
+        "rows",
+        [None, "rows", [[1, 0]], [[1, 0, 3]], [[-1, 0, "a"]], [[True, 0, "a"]], [["1", 0, "a"]]],
+        ids=["null", "string", "short", "path-not-text", "negative", "bool", "numeric-text"],
+    )
+    def test_a_malformed_row_reads_as_no_claim(self, rows: object) -> None:
+        assert git_diff.parse_observed_diffstat({"rows": rows}) is None
+
     def test_review_and_security_parsers_read_the_same_field(self) -> None:
         payload = {"observedDiffstat": {"files": 2, "insertions": 9, "deletions": 1}}
         expected = git_diff.DiffStat(files=2, insertions=9, deletions=1)
@@ -575,8 +592,9 @@ class TestCoverageAttestation:
             ),
             _build_security_prompt("prd", git_diff.repo_change_source("main")),
         ]
-        for prompt in rendered:
-            assert "The harness runs the same command and" in prompt
+        for prompt in (" ".join(text.split()) for text in rendered):
+            assert "the harness adds the rows itself" in prompt
+            assert "runs the same command, and compares" in prompt
             assert "never what you expect the answer to be" in prompt
 
 
