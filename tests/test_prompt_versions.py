@@ -265,9 +265,14 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     # 5.1.0: MINOR. Rule 2 says a component owns its own tests, and S4 that
     # each check must pass on the tree as it is now: a run proposed a lint
     # naming files no commit had yet, which the base gate then refused.
+    # 5.2.0: MINOR. S4 no longer asks a check to pass on the base, which led
+    # the architect to guard every check with `test -f ... ||` so it passed
+    # on a tree with no code: a new repository fails on its base and runs
+    # with --accept-red-base, and the checks' output goes in .gitignore.
+    # Rule 7's tooling criteria name a check of the stack.
     "DECOMPOSE_PROMPT": (
-        "c2800cabf2763f8571925333044202277e37c5d70cf0b8c7a2052b8045901955",
-        "5.1.0",
+        "7039726ac598556374ee37f980aa3751f6dc7ad635696ea7f932435cfb53b7e2",
+        "5.2.0",
     ),
     # 1.0.0 (#199): opens the series. Never shipped before this PR. Same
     # split, and the same reason, as REPO_CHANGE_SOURCE_PROMPT /

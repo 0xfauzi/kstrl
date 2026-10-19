@@ -182,3 +182,12 @@ def test_the_note_is_the_line_after_since_on_the_same_stream(repo: Path) -> None
     lines = [line.strip() for line in streams[0].splitlines()]
     at = next(i for i, line in enumerate(lines) if line.startswith("since:"))
     assert lines[at + 1 : at + 2] == [DISABLED_NOTE], streams[0]
+
+
+def test_a_disabled_ladder_says_its_flag_bundle_is_not_applied(repo: Path) -> None:
+    """With the ladder off, the bundle printed is what the level would set,
+    not what a run gets: "merge gate: ON" read as a gate that was on."""
+    output = _status(repo)
+    assert "Flag bundle (not applied: [autonomy] enabled = false)" in output, output
+    (repo / "kstrl.toml").write_text("[autonomy]\nenabled = true\n", encoding="utf-8")
+    assert "not applied" not in _status(repo)

@@ -407,7 +407,9 @@ def autonomy_status(root: Path | None, ui: str, no_color: bool) -> None:
     if state.last_promoted_by:
         ui_impl.kv("promoted by", state.last_promoted_by)
 
-    ui_impl.subsection("Flag bundle")
+    ui_impl.subsection(
+        "Flag bundle" if config.enabled else "Flag bundle (not applied: [autonomy] enabled = false)"
+    )
     # The bundle for the level that would actually be ENFORCED: showing
     # the stored level's permissions when max_level (or a disabled policy
     # envelope) clamps the run would advertise deploy/auto-merge the run

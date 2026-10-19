@@ -372,14 +372,39 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 - The claude sandbox no longer degrades silently: kstrl sets
   `sandbox.failIfUnavailable`, so on a host without bubblewrap claude
   refuses to start and the run fails on claude's own message.
-- The architect prompt (5.1.0) asks for checks that pass on the tree as it
-  is now and for no tests-only component.
+- The architect prompt (5.2.0) asks for no tests-only component and for
+  checks that never depend on a file existing: 5.1.0 asked them to pass on
+  the base, and the architect guarded each with `test -f ... ||`, so they
+  passed on a tree with no code. A new repository now fails its checks on
+  the base, and the refusal names `ks factory --accept-red-base <sha>`.
+  The architect is told to give `.gitignore` to the component that creates
+  the build file, for the checks' own output.
+- A stop that reaches the pool workers too (`timeout` signals its whole
+  process group) is recorded as the abort it is, not as the component's
+  failure, and spends no retry.
+- A second `ks decompose` for another project keeps the first project's
+  manifest as `scripts/kstrl/manifest-<project>.json` instead of
+  overwriting it.
+- The run says more of what it measured: stories the reviewer did not
+  confirm (advisory `claim_agreement`), the in-loop scope failure with its
+  files, attempt numbers that match `ks status`, and why the loop ran
+  another iteration (in the engineer's event log).
+- `ks status` writes to stdout and shows the newer of the factory and
+  `ks run` manifests; `ks run` names its component `run`, not `main`.
+- `ks doctor` reports the sandbox, and no longer counts kstrl's own plan
+  files as uncommitted work.
+- The getting-started text (README, `ks init`) follows the order that
+  works: decompose proposes a `[stack]`, the person confirms it, then
+  the factory builds.
 - Smaller output fixes: `ks doctor` no longer gives pytest advice for a red
   base or asks for `create_prs = false` when it is set; `ks init` says that
   `ks check` needs a confirmed `[stack]`; `ks inbox approve` on a proposal
   not yet in kstrl.toml says to write the table first; `ks inbox ls` keeps
   a space after `stack_confirmation`; with PRs off the factory summary
-  names the branches to merge by hand.
+  names the branches to merge by hand; the isolation line says it is about
+  the `[stack]` commands; a run with no terminal says it started without
+  asking; `ks autonomy status` marks its flag bundle as not applied while
+  the ladder is off; the R2.1 migration note is gone.
 - `ks feature`'s engineer reads the knowledge facts,
   `scripts/kstrl/golden-patterns.md` and `scripts/kstrl/memory.md`
   (#599). Its understand, implement and repair loops called `run_loop`

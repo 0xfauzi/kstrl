@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import re
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -32,6 +34,25 @@ if TYPE_CHECKING:
     from kstrl.architect.spec_issues import SpecIssue
     from kstrl.proc import RunLock
     from kstrl.ui import UI
+
+
+def _keep_other_project(manifest_path: Path, project_name: str, ui: UI) -> None:
+    """Move another project's manifest aside instead of overwriting it: its
+    record is the only way to its components' status and retries."""
+    try:
+        old = Manifest.load(manifest_path)
+    except (OSError, ValueError):
+        return
+    if old.project_name == project_name:
+        return
+    kept = manifest_path.with_name(
+        f"manifest-{re.sub(r'[^A-Za-z0-9._-]', '-', old.project_name)}.json"
+    )
+    os.replace(manifest_path, kept)
+    ui.warn(
+        f"The manifest of project '{old.project_name}' is kept as {kept}: "
+        "ks status --manifest and ks retry --manifest still reach it."
+    )
 
 
 def _sync_linear(
@@ -273,6 +294,7 @@ def _write_plan(
         from kstrl.proc import held_or_acquired_run_lock
 
         with held_or_acquired_run_lock(run_lock, root_dir, ui, force_lock):
+            _keep_other_project(manifest_path, project_name, ui)
             manifest.save(manifest_path)
             ui.ok(f"Manifest saved: {manifest_path}")
             # AFTER the manifest, never before: the register binds engineers

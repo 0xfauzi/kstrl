@@ -53,6 +53,7 @@ EXPECTED_CHECK_NAMES = (
     "verify_commands",
     "gitignore",
     "protected_paths",
+    "sandbox",
 )
 
 
@@ -224,14 +225,15 @@ def test_a_broken_kstrl_toml_is_a_failed_check_not_a_refusal(tmp_path: Path) -> 
     assert "kstrl.toml" in result.output
     # the exemption is the point: the other checks still ran
     assert "[ok] git_repo" in result.output
-    # `check_verify_commands` and `check_protected_paths` also fail to
-    # load this file, but they point at kstrl_config instead of
-    # repeating its own parse-error text: one row carries it, not
-    # three.
+    # `check_verify_commands`, `check_protected_paths` and `check_sandbox`
+    # also fail to load this file, but they point at kstrl_config instead
+    # of repeating its own parse-error text: one row carries it, not
+    # four.
     assert result.output.count("Invalid TOML") == 1
-    assert result.output.count("not evaluated: kstrl.toml did not load (see kstrl_config)") == 2
+    assert result.output.count("not evaluated: kstrl.toml did not load (see kstrl_config)") == 3
     assert "[fail] verify_commands" in result.output
     assert "[fail] protected_paths" in result.output
+    assert "[fail] sandbox" in result.output
 
 
 def test_the_report_lands_under_the_state_dir_and_matches_the_json(tmp_path: Path) -> None:
@@ -257,6 +259,31 @@ def test_a_dirty_tree_warns(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     assert "[warn] git_clean" in result.output
     assert "scratch.py" in result.output
+
+
+def test_a_disabled_sandbox_is_a_warning_naming_the_setting(tmp_path: Path) -> None:
+    """The run warned that the engineer has no sandbox, and doctor said
+    nothing; the readiness report now says it too."""
+    root = ready_repo(tmp_path)
+    assert "[ok] sandbox" in run_doctor(root).output
+    with (root / "kstrl.toml").open("a", encoding="utf-8") as toml:
+        toml.write("\n[sandbox]\nenabled = false\n")
+    result = run_doctor(root)
+    assert "[warn] sandbox: [sandbox] enabled = false" in result.output, result.output
+
+
+def test_the_files_kstrl_writes_for_its_plan_are_not_dirt(tmp_path: Path) -> None:
+    """`ks decompose` writes the manifest, the decisions register and the
+    spec audit, and every run rewrites the manifest. A run reads them from
+    the checkout, so telling the user to commit them was wrong advice that
+    came back after every run."""
+    root = ready_repo(tmp_path)
+    kdir = root / "scripts" / "kstrl"
+    kdir.mkdir(parents=True, exist_ok=True)
+    for name in ("manifest.json", "manifest-old.json", "decisions.json", "spec-issues.json"):
+        (kdir / name).write_text("{}", encoding="utf-8")
+    result = run_doctor(root)
+    assert "[ok] git_clean" in result.output, result.output
 
 
 # #696 flag day: test_verify_commands_warn_when_there_is_no_project_for_uv_run

@@ -214,6 +214,9 @@ class ComponentPipeline(Delivery, KnowledgePhase, SecurityGate, ReviewPhase, Mec
                 # would claim tests and typecheck ran when the loop
                 # halted before they could.
                 detail = comp_result.error or "files outside allowed scope"
+                self.ui.warn(
+                    f"  Phase 1 FAILED for {comp.id}: diff_scope: {detail.splitlines()[0][:200]}"
+                )
                 self.bus.emit(
                     VerificationResultEvent(
                         component=comp.id,

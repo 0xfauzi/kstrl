@@ -57,8 +57,9 @@ REPLAY_CHECK_NAME = "replay"
 #: `ks factory` refusal leaves (docs/runbook.md).
 BASE_GATES_FIX = (
     "Commit a fix for the failing gate on the base branch, or correct the "
-    "check in the [stack] and confirm it again; `ks factory --no-verify` "
-    "runs anyway with every Phase 1 gate off."
+    "check in the [stack] and confirm it again. A repository whose code does "
+    "not exist yet fails its checks: `ks factory --accept-red-base <sha>` "
+    "builds on that base for one run."
 )
 
 

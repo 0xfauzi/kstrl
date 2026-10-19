@@ -339,16 +339,16 @@ _ROLES: dict[str, _Role] = {
     "architect": _Role(
         lambda _p: decompose_prompt.build_decompose_prompt("PROJECT", _SPEC_TEXT),
         frozenset({"DECOMPOSE_PROMPT", "ARCHITECT_NO_REPO_SOURCE_PROMPT"}),
-        "8e00efb1d640aa636ce9a806bc9eaa9819453be8dd67da6e2b48ca0d75e10e57",
-        16558,
+        "a7adbf4caeebab3dbf3f13ca639b4f1a31f64ce1d4c2fceba0f171e480413421",
+        17030,
     ),
     # #639 slice 4: the architect when the owner answered an escalation in the
     # inbox. Pinned by running this test.
     "architect-owner-answer": _Role(
         _architect_with_owner_answer,
         frozenset({"DECOMPOSE_PROMPT", "ARCHITECT_NO_REPO_SOURCE_PROMPT", "OWNER_ANSWER_PROMPT"}),
-        "7f6dda97a8f8863e87890fa1a56dea5ca8f6f20cb441e9fe30bd789a8d2ec15b",
-        16797,
+        "31d9080cd92224a33022a6887f423c5e5573d7fcf3b5857840bc38c82ca98f95",
+        17269,
     ),
     # #654 slice 7: the spec built from a GitHub issue with the `bug` label, which
     # the architect and the verification designer read. Pinned by running this test.
@@ -367,8 +367,8 @@ _ROLES: dict[str, _Role] = {
             codebase_map_path="scripts/kstrl/codebase_map.md",
         ),
         frozenset({"DECOMPOSE_PROMPT", "ARCHITECT_REPO_SOURCE_PROMPT"}),
-        "c11df1e30d39b8a0366592324621a16854700f731496e0ea4fa644228939d839",
-        17999,
+        "3b787fafba82f685efdb58baaf178a9c5deab4b976d7b78e004f5215bc3428ba",
+        18471,
     ),
     "decisions-context": _Role(
         lambda _p: build_decisions_context(_DECISIONS, "comp-a", requirements=_REQUIREMENTS),

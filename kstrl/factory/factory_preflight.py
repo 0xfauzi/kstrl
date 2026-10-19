@@ -347,7 +347,20 @@ def _preflight_base_gates(
         )
         + reasons
         + _sandbox_lines(reading, factory_config, reasons)
+        + _accept_lines(reading, reasons)
     )
+
+
+def _accept_lines(reading: BaseGates, reasons: list[str]) -> list[str]:
+    """How to build on a refused base that ``--accept-red-base`` would let run,
+    or []. A new repository's checks fail on its base because no code exists
+    yet. Printed only, like :func:`_sandbox_lines`."""
+    if not reasons or apply_acceptance(reading, reasons, reading.base_sha)[0]:
+        return []
+    return [
+        "A repository whose code does not exist yet fails its checks on the base: "
+        f"ks factory --accept-red-base {reading.base_sha[:12]} builds on it for this run."
+    ]
 
 
 def _sandbox_lines(
@@ -525,6 +538,8 @@ def _preflight_pins(
     if spec_errors:
         return "the plan does not match the spec it was made from", spec_errors
     stack_errors = _preflight_stack(manifest, root_dir, factory_config, run_id)
+    if stack_errors == [NO_STACK]:
+        return "kstrl.toml has no [stack]", stack_errors
     if stack_errors:
         return (
             "the [stack] in kstrl.toml is not confirmed, or is not the one this plan was made "

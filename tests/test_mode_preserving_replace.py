@@ -78,6 +78,11 @@ REPLACE_SITES: dict[str, str] = {
         "destination never pre-exists: `if target_dir.exists(): raise "
         "QueueError(...)` guards immediately above"
     ),
+    "architect/decompose_plan.py os.replace(manifest_path, kept)": (
+        "a rename, not a write: another project's manifest moves aside with its "
+        "own inode and mode, and the only file it can replace is an older kept "
+        "copy of a manifest kstrl wrote itself"
+    ),
 }
 
 #: Calls this walk cannot decide are or are not `os.replace`/`shutil.move`

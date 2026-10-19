@@ -62,7 +62,7 @@ def _derive_feature_name(prd_path: Path, root: Path) -> str:
 @click.option(
     "--model",
     "-m",
-    help="Model for codex agent",
+    help="Model for the agent",
 )
 @click.option(
     "--reasoning",

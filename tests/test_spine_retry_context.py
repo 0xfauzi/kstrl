@@ -47,6 +47,7 @@ class TestRetryContextPropagation:
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
     ) -> None:
         monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
         root = tmp_path / "repo"
@@ -124,6 +125,12 @@ class TestRetryContextPropagation:
         assert comp is not None
         assert comp.status == ComponentStatus.COMPLETED.value
         assert comp.retries == 1
+        # The terminal numbers attempts as `ks status` does, from 1, and
+        # the retry line keeps its reason.
+        said = capsys.readouterr().err
+        assert f"Retrying '{COMP}' as attempt 2 (retry 1 of 1): Mechanical verification" in said
+        assert f"COMPLETED: {COMP} (attempt 2," in said
+        assert f"Phase 1 FAILED for {COMP}: " in said
 
         # Attempt 1 ran with no inherited context.
         attempt1 = (cap_dir / "attempt1.prompt").read_text()

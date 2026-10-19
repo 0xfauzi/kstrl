@@ -468,6 +468,8 @@ def factory(
             if response.choice != 0:
                 ui_impl.info("Factory not started.")
                 sys.exit(0)
+        elif not yes:
+            ui_impl.info("  No terminal to confirm at: starting without asking (--yes says so).")
 
         kstrl_dir = root_dir / "scripts" / "kstrl"
         base_config = KstrlConfig.load(root_dir)

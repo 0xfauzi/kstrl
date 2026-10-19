@@ -216,3 +216,25 @@ def test_a_run_started_under_nohup_outlives_a_hangup(tmp_path: Path) -> None:
         assert proc.poll() is None, f"ks exited {proc.returncode} on a hangup it was told to ignore"
     finally:
         _end(proc, *[pid for pair in _pairs(pairs) for pid in pair])
+
+
+def test_a_stop_sent_to_the_whole_process_group_is_an_abort_not_a_failure(
+    tmp_path: Path,
+) -> None:
+    """``timeout`` signals its whole process group, so the pool worker gets
+    the SIGTERM with ``ks`` and its future ends first, broken. That used to
+    be collected as the component's own failure (``failed`` / ``engineer``,
+    and with retries left it spent one) before the stop was handled; it is
+    the same abort as the in-flight one."""
+    root = _repo(tmp_path)
+    pairs = tmp_path / "pairs"
+    proc = _ks(root, _env(_silent_agent(pairs)), *_factory_args(root, "2"))
+    try:
+        _wait_for_agents(proc, pairs, 1)
+        os.killpg(proc.pid, signal.SIGTERM)
+        proc.wait(timeout=EXIT_BOUND_SECONDS)
+        _completed_at, status, phase, error = _component(root)
+        assert (status, phase) == ("failed", "aborted"), (status, phase, error)
+        assert "received SIGTERM" in error
+    finally:
+        _end(proc, *[pid for pair in _pairs(pairs) for pid in pair])

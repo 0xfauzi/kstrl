@@ -8,6 +8,7 @@ paths for the latest run in the log.
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
@@ -91,22 +92,34 @@ class TestStatusCommand:
         assert "run-manifest.json" in output
         assert "comp-a: completed" in output
 
-    def test_prefers_factory_manifest_over_run_manifest(
+    def test_shows_the_newer_of_the_factory_and_run_manifests(
         self,
         tmp_path: Path,
     ) -> None:
-        factory_manifest = _synthetic_manifest()
-        factory_manifest.project_name = "factory-project"
-        factory_manifest.save(tmp_path / "scripts" / "kstrl" / "manifest.json")
-        run_manifest = _synthetic_manifest()
-        run_manifest.project_name = "run-project"
-        run_manifest.save(tmp_path / "scripts" / "kstrl" / "run-manifest.json")
+        """A `ks run` after a factory run is the run asked about, and the
+        other way round: the one written last is shown."""
+        factory_path = tmp_path / "scripts" / "kstrl" / "manifest.json"
+        run_path = tmp_path / "scripts" / "kstrl" / "run-manifest.json"
+        for path, name in ((factory_path, "factory-project"), (run_path, "run-project")):
+            manifest = _synthetic_manifest()
+            manifest.project_name = name
+            manifest.save(path)
+        shown = []
+        for newer, older in ((run_path, factory_path), (factory_path, run_path)):
+            os.utime(older, (1_000_000, 1_000_000))
+            os.utime(newer, (2_000_000, 2_000_000))
+            exit_code, output = _invoke_status("--root", str(tmp_path))
+            assert exit_code == 0
+            shown.append([n for n in ("factory-project", "run-project") if n in output])
+        assert shown == [["run-project"], ["factory-project"]]
 
-        exit_code, output = _invoke_status("--root", str(tmp_path))
-
-        assert exit_code == 0
-        assert "factory-project" in output
-        assert "run-project" not in output
+    def test_the_report_is_on_stdout_for_a_script(self, tmp_path: Path) -> None:
+        _synthetic_manifest().save(tmp_path / "scripts" / "kstrl" / "manifest.json")
+        result = CliRunner().invoke(
+            cli, ["status", "--root", str(tmp_path), "--ui", "plain", "--no-color"]
+        )
+        assert result.exit_code == 0
+        assert "comp-a: completed" in result.stdout
 
     def test_explicit_manifest_flag(self, tmp_path: Path) -> None:
         manifest_path = tmp_path / "custom.json"

@@ -484,8 +484,7 @@ def _collect_toml_notes(
         if loaded_val != baseline_val:
             notes.append(
                 f"NOTE: [{section}] {f.name} = {json.dumps(loaded_val, default=str)} from "
-                f"kstrl.toml (built-in default: {json.dumps(baseline_val, default=str)}; "
-                f"this section was ignored before R2.1)"
+                f"kstrl.toml (built-in default: {json.dumps(baseline_val, default=str)})"
             )
 
 

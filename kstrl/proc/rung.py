@@ -40,8 +40,8 @@ PROVER_PLATFORMS = ("darwin",)
 #: The one label of a run on a platform with no prover: it names the
 #: platform and says that nothing was isolated.
 HOST_FALLBACK_LABEL = (
-    "none: no isolation rung exists on {platform}, so every command runs on the host "
-    "and nothing is isolated"
+    "none: kstrl cannot isolate the [stack] commands on {platform}, so they run on "
+    "the host (the engineer's own sandbox is [sandbox])"
 )
 
 #: Test seam, read only by :func:`host_fallback`: the platform the prover

@@ -9,7 +9,7 @@ import os
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
 import click
 from click.core import ParameterSource
@@ -43,6 +43,7 @@ def _console_ui(
     no_color: bool = False,
     ascii_only: bool = False,
     force_rich: bool = False,
+    file: TextIO | None = None,
 ) -> UI:
     """Event-native drop-in for get_ui() (TUI rewrite chunk 7).
 
@@ -57,6 +58,7 @@ def _console_ui(
         no_color=no_color,
         ascii_only=ascii_only,
         force_rich=force_rich,
+        file=file,
     ).ui
 
 

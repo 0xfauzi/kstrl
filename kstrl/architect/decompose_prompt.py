@@ -7,7 +7,7 @@ from pathlib import Path
 
 from kstrl.io import generate_data_delimiter
 
-DECOMPOSE_PROMPT_VERSION = "5.1.0"
+DECOMPOSE_PROMPT_VERSION = "5.2.0"
 
 DECOMPOSE_PROMPT = """\
 You are a senior software architect AND a hostile spec auditor. You have
@@ -121,7 +121,8 @@ Decomposition rules:
    verifiable response; a criterion you cannot phrase that way is a
    sign the spec is silent on the behavior - record a `spec_issues`
    entry instead of inventing one. Tooling criteria ("Typecheck
-   passes: ...", "Tests pass: ...") are exempt from the EARS form.
+   passes: ...", "Tests pass: ...") are exempt from the EARS form, and
+   each names a check of `stack` by its name and command.
    Each story MUST include at least ONE negative criterion (error
    path, empty input, boundary value, unauthorized access, malformed
    payload - whatever applies to that story), also in EARS form. Do
@@ -213,10 +214,16 @@ S4. All four keys are required:
     - "checks": an object of name to command, at least one, run in the
       order listed. Each must exit 0 on a correct tree and non-zero when
       the work is wrong; a check that exits 0 having run nothing
-      verifies nothing. Each must also exit 0 on the tree as it is now:
-      kstrl runs every check there before any component is built and
-      refuses to start when one fails, so a check must not name a file
-      that a component will create.
+      verifies nothing. Never make a check conditional on a file
+      existing (`test -f x || ...`, `if [ -f x ]`): it would pass on a
+      tree with none of the code. A check must not name a file that one
+      component creates, because every component's tree runs every
+      check. A repository with no code yet fails its checks on the base;
+      that is expected, and its owner starts the run with
+      --accept-red-base. Anything the checks write into the tree (caches,
+      build output) must be ignored by git: the component that creates
+      the project's build file also lists `.gitignore` in
+      `allowedPaths` and adds those rules to it.
 
 Requirement rules (the product spec):
 R1. `requirements` lists, one per entry, each thing the specification

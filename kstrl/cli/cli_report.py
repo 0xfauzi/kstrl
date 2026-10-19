@@ -580,7 +580,8 @@ def status(
 
     root_dir = root.resolve() if root else Path.cwd()
     force_rich = os.environ.get("KSTRL_UI_FORCE_RICH") == "1"
-    ui_impl = _console_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich)
+    # The report is the command's output, so it goes to stdout for a script.
+    ui_impl = _console_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich, file=sys.stdout)
 
     if manifest_path is not None:
         candidates = [manifest_path]
@@ -593,7 +594,9 @@ def status(
         ]
 
     def _load_and_render() -> int:
-        manifest_file = next((p for p in candidates if p.exists()), None)
+        # The newest of the two: a `ks run` after a factory run is the run asked about.
+        existing = [p for p in candidates if p.exists()]
+        manifest_file = max(existing, key=lambda p: p.stat().st_mtime) if existing else None
         if manifest_file is None:
             looked = ", ".join(str(p) for p in candidates)
             ui_impl.err(f"No manifest found (looked for: {looked})")

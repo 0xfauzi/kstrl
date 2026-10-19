@@ -467,6 +467,8 @@ class TestTomlNotes:
         result = _invoke_factory(tmp_path)
         assert result.exit_code == 0, result.output
         assert "NOTE: [factory] max_parallel = 9" in result.output
+        # Migration history a new user cannot act on is not in the note.
+        assert "R2.1" not in result.output
 
     def test_no_note_when_flag_overrides(self, tmp_path: Path, captured: dict[str, Any]) -> None:
         (tmp_path / "kstrl.toml").write_text("[factory]\nmax_parallel = 9\n")

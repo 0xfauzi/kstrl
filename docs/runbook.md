@@ -51,9 +51,9 @@ is a record: a refused zone warns and never fails the verdict, because
 no command runs inside a rung yet, and every verification record says
 `none: ran on the host`. No prover exists today on any system but
 macOS, because nono cannot express a localhost-only test zone on Linux.
-There the row is one label, a warning, and no canary runs: `none: no
-isolation rung exists on linux, so every command runs on the host and
-nothing is isolated`. A run under a confirmed `[stack]` there runs its
+There the row is one label, a warning, and no canary runs: `none: kstrl
+cannot isolate the [stack] commands on linux, so they run on the host (the
+engineer's own sandbox is [sandbox])`. A run under a confirmed `[stack]` there runs its
 setup, `up` and checks on the host instead of refusing, and every record
 of it (the terminal, `isolation.json`, `base-gates.json`, the
 `verification_result` event and the PR body) carries that label (owner

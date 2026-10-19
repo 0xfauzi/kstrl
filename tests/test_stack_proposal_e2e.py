@@ -489,3 +489,29 @@ def test_ks_decompose_measures_the_base_before_the_architect(tmp_path: Path) -> 
     assert proc.returncode == 2, proc.stdout
     assert list(prompts.iterdir()) == [], proc.stdout
     assert "the base branch fails a gate Phase 1 runs" in proc.stdout, proc.stdout
+
+
+def test_a_second_project_keeps_the_first_projects_manifest(tmp_path: Path) -> None:
+    """Decomposing another project used to overwrite the first one's
+    manifest with no word, and with it the only record of its components'
+    status and retries. The first is kept beside the new one, and the run
+    says where; `ks status --manifest` reads it."""
+    root = greenfield(tmp_path)
+    agent, _ = _architect(tmp_path, _output(STACK))
+    first = _decompose(root, agent)
+    assert first.returncode == 0, first.stdout
+
+    second = run_ks(
+        root,
+        "decompose",
+        *("--spec", str(root / "spec.md"), "--project-name", "other", "--root", str(root)),
+        *("--agent-cmd", agent, "--ui", "plain", "--no-color"),
+    )
+
+    assert second.returncode == 0, second.stdout
+    kept = root / "scripts" / "kstrl" / "manifest-demo.json"
+    assert f"kept as {kept}" in second.stdout, second.stdout
+    assert Manifest.load(kept).project_name == "demo"
+    assert Manifest.load(root / "scripts" / "kstrl" / "manifest.json").project_name == "other"
+    status = run_ks(root, "status", "--root", str(root), "--manifest", str(kept), "--ui", "plain")
+    assert "demo" in status.stdout, status.stdout

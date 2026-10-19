@@ -299,8 +299,9 @@ class Manifest:
         if base_error:
             raise ValueError(f"Invalid base branch for run: {base_error}")
 
+        # Not "main", which reads as the base branch in "Starting: main".
         comp = Component(
-            id="main",
+            id="run",
             title=project_name,
             description="Single-component run via ks run",
             dependencies=[],

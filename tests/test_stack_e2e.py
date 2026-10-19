@@ -559,3 +559,23 @@ def test_phase_1_runs_every_check_on_each_component(tmp_path: Path) -> None:
     assert "Phase 1 FAILED" in run.out, run.out
     assert "stack:own" in run.out, run.out
     assert run.code != 0, run.out
+
+
+@runs_a_stack
+def test_a_run_with_no_terminal_says_it_started_without_asking(tmp_path: Path) -> None:
+    """With no terminal there is nobody to answer "Proceed?", so the paid
+    run starts; it says so, and --yes makes the same choice silently."""
+    root = _repo(tmp_path, _stack({"tests": "true"}))
+    stub = write_executable(tmp_path / "engineer.sh", "#!/bin/sh\ncat >/dev/null\n")
+    base = [
+        "factory",
+        *("--manifest", str(root / "scripts" / "kstrl" / "manifest.json")),
+        *("--root", str(root), "--agent-cmd", str(stub), "--ui", "plain", "--no-prs"),
+        *("--max-retries", "0", "--review-mode", "skip", "--security-mode", "skip"),
+        *("--contract-check", "skip"),
+    ]
+    said = "No terminal to confirm at: starting without asking"
+    _, out = _spawn(base, root, None)
+    assert said in out, out
+    _, out = _spawn([*base, "--yes"], root, None)
+    assert said not in out, out

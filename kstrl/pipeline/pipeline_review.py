@@ -257,6 +257,12 @@ class ReviewPhase(ReviewVerdicts, UsageLedger):
                 severity=severity,
             )
             self._add_findings(comp, disagreements)
+            if disagreements and not blocking:
+                self.ui.warn(
+                    "  The reviewer did not confirm these stories the engineer marked done: "
+                    f"{', '.join(f.location for f in disagreements)} "
+                    "(recorded in the manifest; [factory] claim_agreement = advisory)"
+                )
 
         if not review_result.passed:
             return self._review_failure(comp, comp_result, wt_path, review_result)

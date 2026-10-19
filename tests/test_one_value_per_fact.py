@@ -234,7 +234,10 @@ class TestComponentDuration:
         assert journal_rows[0]["duration_seconds"] == attempt
         assert progress_rows[0]["data"]["duration_seconds"] == attempt
         assert completed[0].iterations == comp.iteration_count == ENGINEER_ITERATIONS
-        assert f"COMPLETED: {COMP} ({ENGINEER_ITERATIONS} iterations, {attempt:.0f}s)" in output
+        assert (
+            f"COMPLETED: {COMP} (attempt 1, {ENGINEER_ITERATIONS} iterations in it, "
+            f"{attempt:.0f}s)" in output
+        )
 
         # The engineer loop's own duration is still recorded, once, on
         # the engineer phase's bracket closer.

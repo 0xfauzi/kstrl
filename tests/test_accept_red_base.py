@@ -212,6 +212,19 @@ def test_under_a_stack_an_acceptance_waives_a_failing_check(tmp_path: Path) -> N
 
 
 @runs_a_stack
+def test_a_red_base_refusal_names_the_acceptance_that_would_run_it(tmp_path: Path) -> None:
+    """A new repository's checks fail on its base because no code exists yet;
+    the refusal names the one flag, with this base's sha, that builds on it."""
+    root = stack_e2e._repo(tmp_path, stack_e2e._stack({"tests": stack_e2e.CARGO_RED}))
+    sha = _git(root, "rev-parse", "main").strip()
+
+    run = stack_e2e._factory(tmp_path, root)
+
+    assert (run.code, run.calls) == (2, 0), run.out
+    assert f"ks factory --accept-red-base {sha[:12]} builds on it" in run.out, run.out
+
+
+@runs_a_stack
 @pytest.mark.parametrize(
     ("checks", "setup", "reason"),
     [
@@ -243,3 +256,4 @@ def test_under_a_stack_an_acceptance_never_waives_what_was_not_measured_red(
     assert record["refused"] is True, record
     assert any(reason in line for line in record["reasons"]), record
     assert not any(reason in line for line in record["accepted"]), record
+    assert "builds on it for this run" not in run.out, run.out

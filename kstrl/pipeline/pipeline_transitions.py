@@ -193,9 +193,9 @@ class Transitions(InboxDesk, AttemptRecorder, UsageLedger):
                 )
             )
             self.ui.info(
-                f"  Retrying '{comp.id}' "
-                f"(attempt {comp.retries}/{self.factory_config.max_retries}): "
-                f"{error[:80]}"
+                f"  Retrying '{comp.id}' as attempt {comp.retries + 1} "
+                f"(retry {comp.retries} of {self.factory_config.max_retries}): "
+                f"{error.splitlines()[0][:200] if error else ''}"
             )
             time.sleep(self.factory_config.retry_delay)
             self.manifest.save(self.manifest_path)
@@ -485,8 +485,8 @@ class Transitions(InboxDesk, AttemptRecorder, UsageLedger):
             )
         )
         self.ui.ok(
-            f"  COMPLETED: {comp.id} ({comp.iteration_count} iterations, "
-            f"{comp.duration_seconds:.0f}s)"
+            f"  COMPLETED: {comp.id} (attempt {comp.retries + 1}, "
+            f"{comp.iteration_count} iterations in it, {comp.duration_seconds:.0f}s)"
         )
         self.manifest.save(self.manifest_path)
         # #438: after the save, so an item is never resolved for a

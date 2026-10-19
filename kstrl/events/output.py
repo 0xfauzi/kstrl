@@ -21,6 +21,7 @@ bridge delegates choose/can_prompt to the concrete UI.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TextIO
 
 from kstrl.events.bridge import EventBridgeUI
 from kstrl.events.events import CallbackSink, EventBus
@@ -43,6 +44,7 @@ def build_console(
     no_color: bool = False,
     ascii_only: bool = False,
     force_rich: bool = False,
+    file: TextIO | None = None,
 ) -> Console:
     """Assemble the event-native console for one CLI command."""
     concrete = get_ui(
@@ -50,6 +52,7 @@ def build_console(
         no_color=no_color,
         ascii_only=ascii_only,
         force_rich=force_rich,
+        file=file,
     )
     renderer = UIBackedRenderer(concrete)
     bus = EventBus(CallbackSink(renderer.handle))

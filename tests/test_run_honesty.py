@@ -176,6 +176,10 @@ class TestIterationForwarding:
         assert result.failed == ["comp-a"]
         invocations = len(count_file.read_text().splitlines())
         assert invocations == 3, f"expected exactly 3 agent iterations for N=3, got {invocations}"
+        # The engineer's event log says why each further iteration ran.
+        (log,) = (root / ".kstrl" / "runs").glob("*/components/comp-a/engineer.jsonl")
+        said = log.read_text(encoding="utf-8")
+        assert said.count("ended without <promise>COMPLETE</promise>; running another") == 2, said
 
     def test_loop_settings_forwarded_into_run_loop(
         self,

@@ -127,7 +127,7 @@ def _run_structural_override_notices(loaded: FactoryConfig) -> list[str]:
 @click.option(
     "--model",
     "-m",
-    help="Model for codex agent",
+    help="Model for the agent",
 )
 @click.option(
     "--reasoning",
@@ -390,7 +390,7 @@ def init(directory: Path, ui: str, no_color: bool, upgrade_prompts: bool) -> Non
 @click.option(
     "--model",
     "-m",
-    help="Model for codex agent",
+    help="Model for the agent",
 )
 @click.option(
     "--reasoning",

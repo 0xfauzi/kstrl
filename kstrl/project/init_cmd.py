@@ -112,8 +112,10 @@ DEFAULT_KSTRL_TOML = """\
 
 # The project's stack: what it is built with, and the commands kstrl runs on
 # every change. kstrl runs nothing until this table exists and a person
-# confirms its exact text (`ks factory` asks; `ks inbox approve` records it).
-# A check passes when it exits 0. Every key is required.
+# confirms its exact text: `ks decompose` proposes one for a spec as an inbox
+# item, and `ks inbox approve` confirms it once it is written here (`ks
+# factory` asks at a terminal). A check passes when it exits 0. The four keys
+# below are required; writable, readable, browser and up are optional.
 # [stack]
 # instructions = ""                # what the project is built with, for the models
 # setup = ""                       # installs a worktree's dependencies; "" = none
@@ -295,10 +297,13 @@ _COMMON_IGNORES = (
 # hand" (#256). Not named *_PROMPT: that suffix enrols a constant in the
 # adversarial prompt version snapshot, and this is UI copy.
 NEXT_STEPS = """You have a spec (recommended):
-  ks decompose --spec <spec.md> --project-name <name>  # plan it
-  ks factory --spec <spec.md> --project-name <name>    # plan and build it
+  ks decompose --spec <spec.md> --project-name <name>  # plan; proposes [stack]
+  ks inbox show <id>                                   # copy it to kstrl.toml
+  ks inbox approve <id>                                # confirm the [stack]
+  ks factory --manifest scripts/kstrl/manifest.json    # build the plan
+  ks factory --spec <spec.md> --project-name <name>    # plan and build, later
 
-You want to drive one component by hand:
+You want to drive one component by hand (it also needs a confirmed [stack]):
   1. Edit scripts/kstrl/prompt.md
   2. Add user stories to scripts/kstrl/prd.json
   3. ks run [iterations]                               # one component, no PR

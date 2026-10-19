@@ -506,6 +506,13 @@ def _collect_completion(
     try:
         comp_result = future.result()
     except Exception as exc:
+        if ctx.stop is not None and ctx.stop.is_set():
+            # A stop that also reached the worker (a signal to the process
+            # group, as `timeout` sends) ends its future before the abort
+            # does: it is the same abort, and must not spend a retry.
+            salvage_aborted_usage(future, comp_id, plan.pipeline)
+            plan.pipeline.fail_aborted(comp_id, ctx.stop.reason)
+            return
         comp_result = ComponentResult(
             component_id=comp_id,
             success=False,

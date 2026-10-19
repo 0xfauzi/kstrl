@@ -64,7 +64,7 @@ _FACTORY_OPTIONS: tuple[Callable[[Callable[..., Any]], Callable[..., Any]], ...]
     click.option(
         "--create-prs/--no-prs",
         default=None,
-        help="Create PRs for completed components (default: on)",
+        help="Create PRs for completed components (default: [factory] create_prs, on when unset)",
     ),
     click.option(
         "--no-verify",

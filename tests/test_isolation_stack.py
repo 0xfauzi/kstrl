@@ -95,8 +95,8 @@ REFUSAL = "Refusing to run: the isolation rung is not proven"
 #: of such a run must carry, written out so a change to it is seen here.
 NO_PROVER = {"KSTRL_ISOLATION_PLATFORM": "linux"}
 FALLBACK_LABEL = (
-    "none: no isolation rung exists on linux, so every command runs on the host "
-    "and nothing is isolated"
+    "none: kstrl cannot isolate the [stack] commands on linux, so they run on "
+    "the host (the engineer's own sandbox is [sandbox])"
 )
 #: What the host fallback records for each stage: the platform and the
 #: label, and nothing a rung proves (no zone, canaries, policy or refusal).

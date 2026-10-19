@@ -106,7 +106,7 @@ def _claim_findings(comp: Component) -> list[Finding]:
 
 class TestPipelineWiring:
     def test_advisory_mode_records_and_proceeds(self, tmp_path: Path) -> None:
-        _, comp, transition, prd_path = _drive(
+        pipeline, comp, transition, prd_path = _drive(
             tmp_path,
             review=_review(
                 _criterion("A", "pass"),
@@ -120,6 +120,10 @@ class TestPipelineWiring:
         found = _claim_findings(comp)
         assert [f.location for f in found] == ["B"]
         assert found[0].severity == "advisory"
+        # Recorded only, and said on the terminal: with no PR body to carry
+        # it, the manifest was the one place it could be found.
+        said = pipeline.ui._file.getvalue()
+        assert "did not confirm these stories the engineer marked done: B" in said
         # The PRD is not touched in advisory mode.
         on_disk = PRD.load(prd_path)
         assert all(s.passes for s in on_disk.user_stories)

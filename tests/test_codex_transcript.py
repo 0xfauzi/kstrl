@@ -112,7 +112,7 @@ class _Run:
         return self.calls.count("engineer")
 
     def engineer_log(self) -> list[str]:
-        logs = sorted(self.root.glob(".kstrl/runs/*/components/main/engineer.log"))
+        logs = sorted(self.root.glob(".kstrl/runs/*/components/run/engineer.log"))
         assert len(logs) == 1, logs
         return logs[0].read_text(encoding="utf-8").splitlines()
 
@@ -216,7 +216,7 @@ def test_a_codex_that_changes_nothing_runs_every_iteration(tmp_path: Path) -> No
     run = _run_codex_loop(tmp_path, "nothing")
 
     assert run.engineer_calls == MAX_ITERATIONS, run.stdout
-    assert "COMPLETED: main" not in run.stdout
+    assert "COMPLETED: run" not in run.stdout
 
 
 def test_a_last_message_of_exactly_the_marker_completes_in_one_iteration(
@@ -226,14 +226,14 @@ def test_a_last_message_of_exactly_the_marker_completes_in_one_iteration(
 
     assert run.returncode == 0, run.stdout
     assert run.engineer_calls == 1, run.stdout
-    assert "COMPLETED: main (1 iterations" in run.stdout
+    assert "(attempt 1, 1 iterations in it" in run.stdout
 
 
 def test_a_marker_in_the_transcript_does_not_complete_the_loop(tmp_path: Path) -> None:
     run = _run_codex_loop(tmp_path, "transcript_marker")
 
     assert run.engineer_calls == MAX_ITERATIONS, run.stdout
-    assert "COMPLETED: main" not in run.stdout
+    assert "COMPLETED: run" not in run.stdout
 
 
 def test_an_empty_last_message_leaves_no_transcript_line_as_the_reply(
@@ -242,7 +242,7 @@ def test_an_empty_last_message_leaves_no_transcript_line_as_the_reply(
     run = _run_codex_loop(tmp_path, "empty_last")
 
     assert run.engineer_calls == MAX_ITERATIONS, run.stdout
-    assert "COMPLETED: main" not in run.stdout
+    assert "COMPLETED: run" not in run.stdout
     lines = run.engineer_log()
     # With no reply, nothing the adapter yields is the model's words.
     assert [line for line in lines if not line.startswith(TOOL_RESULT_PREFIX)] == []

@@ -118,6 +118,8 @@ def test_no_stack_refuses_every_paid_command_before_it_spends(tmp_path: Path, co
 
     assert code == 2, out
     assert NO_STACK in out, out
+    # The headline names the reason: there is no [stack] to confirm.
+    assert "is not confirmed, or is not the one" not in out, out
     assert "uv run pytest" not in out, out
     assert not calls.exists(), out
 

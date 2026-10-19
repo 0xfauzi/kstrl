@@ -30,6 +30,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from kstrl.agents import SandboxConfig
 from kstrl.cli.config_preflight import config_problem_lines
 from kstrl.config import SURFACE_REJECTIONS, raise_if_defect, resolve_config_file
 from kstrl.git import (
@@ -176,6 +177,17 @@ def check_git_repo(root: Path) -> _CheckResult:
     )
 
 
+def _kstrl_state(path: str) -> bool:
+    """A file kstrl writes for its own plan and runs, beside the prompt
+    templates: the manifests, the decisions register and the spec audit.
+    A run reads them from the checkout, so they need no commit."""
+    folder, _, name = path.rpartition("/")
+    return folder == "scripts/kstrl" and (
+        (name.endswith(".json") and "manifest" in name)
+        or name in ("decisions.json", "spec-issues.json")
+    )
+
+
 def check_git_clean(root: Path) -> _CheckResult:
     """Uncommitted work does not reach the engineer.
 
@@ -190,7 +202,7 @@ def check_git_clean(root: Path) -> _CheckResult:
             "Fix git_repo first.",
         )
     try:
-        changed = sorted(get_changed_files(root))
+        changed = sorted(p for p in get_changed_files(root) if not _kstrl_state(p))
     except GitDiffError as exc:
         return (STATUS_WARN, f"the working tree could not be read: {exc}", "")
     if changed:
@@ -464,6 +476,30 @@ def check_protected_paths(root: Path) -> _CheckResult:
     )
 
 
+def check_sandbox(root: Path) -> _CheckResult:
+    """Whether the engineer runs in its agent CLI's sandbox ([sandbox]).
+
+    Separate from the isolation row of `--measure`, which is about the
+    [stack] commands kstrl runs itself. A config that does not load is the
+    kstrl_config row's to report.
+    """
+    try:
+        enabled = SandboxConfig.load(root).enabled
+    except (OSError, ValueError):
+        return _not_evaluated("sandbox")
+    if enabled:
+        return (
+            STATUS_OK,
+            "the engineer runs in its agent CLI's sandbox; a run refuses if it cannot start",
+            "",
+        )
+    return (
+        STATUS_WARN,
+        "[sandbox] enabled = false: the engineer's commands run with this user's full access",
+        "Set [sandbox] enabled = true where the agent CLI's sandbox can run.",
+    )
+
+
 #: Every check, in report order, paired with the name it is reported
 #: under. A tuple rather than a list built inside `run_checks`, so the
 #: order is a declaration rather than a side effect of how the loop
@@ -478,6 +514,7 @@ CHECKS: tuple[tuple[str, Callable[[Path], _CheckResult]], ...] = (
     ("verify_commands", check_verify_commands),
     ("gitignore", check_gitignore),
     ("protected_paths", check_protected_paths),
+    ("sandbox", check_sandbox),
 )
 
 # There is deliberately NO `CHECK_NAMES` constant here (decision 12).

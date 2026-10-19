@@ -773,6 +773,7 @@ def run_loop(
 
         # Sleep before next iteration (except on last)
         if iteration < config.max_iterations:
+            ui.info(f"  Iteration {iteration} ended without {COMPLETION_MARKER}; running another")
             time.sleep(config.sleep_seconds)
 
     return _max_iterations_result(run, timed_out_iterations)
