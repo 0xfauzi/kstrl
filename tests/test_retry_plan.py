@@ -125,7 +125,6 @@ class TestTheRetryCommandPrintsWhatItLeavesOut:
             out,
         ), out
 
-
     def test_a_component_whose_dependency_failed_is_refused_before_anything_changes(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

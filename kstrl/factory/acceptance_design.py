@@ -424,7 +424,7 @@ def _design_one(
     built = built_by(pipeline.factory_config.requirements, {story.id for story in prd.user_stories})
     saved = kept / f"{comp.id}.json"
     try:
-        entry: Any = read_json(saved.read_bytes()) if saved.is_file() else None
+        entry: Any = read_json(saved.read_text(encoding="utf-8")) if saved.is_file() else None
     except (OSError, ValueError):
         entry = None
     if entry is not None and not (

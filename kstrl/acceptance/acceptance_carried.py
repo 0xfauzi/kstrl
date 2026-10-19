@@ -30,7 +30,6 @@ later feature cannot break an earlier one and still pass.
 
 from __future__ import annotations
 
-import subprocess
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -57,7 +56,7 @@ from kstrl.acceptance.acceptance import (
     verdict_of,
 )
 from kstrl.acceptance.replay import Replay, Stage, replay_stack
-from kstrl.git import GitDiffError, get_head_sha, resolve_base_sha
+from kstrl.git import GitDiffError, get_head_sha, merge_base_ref, resolve_base_sha
 from kstrl.io import atomic_write_json, control_dir, read_json
 from kstrl.proc import Rung, limit_seconds
 from kstrl.project import REPLAY_BOUNDARY_REFUSED
@@ -457,7 +456,7 @@ def replay_merged(
         probe=_all([_probe(p, w, stack, limit, runs, HEAD_RUNS, _no_log) for p, w in groups]),
     )
     wanted = [item for _, w in groups for item in w]
-    waived = _approved_over(root_dir, sha, wanted, runs)
+    waived = _approved_over(root_dir, cwd, wanted, runs)
     failing, held_out = _failing_lines([i for i in wanted if (i[0], i[1].id) not in waived], runs)
     approved = [
         f"acceptance:{check} ({comp}): merged over by inbox approval {item[:8]}"
@@ -474,13 +473,13 @@ def replay_merged(
 
 def _approved_over(
     root: Path,
-    sha: str,
+    cwd: Path,
     wanted: Sequence[tuple[str, Check]],
     runs: Mapping[tuple[str, str], Sequence[Stage]],
 ) -> dict[tuple[str, str], str]:
     """The failing checks an approved acceptance halt merges over, to the
     approval's id: one that names every failing check of its component and
-    was taken on a commit ``sha`` contains. Without this, the check an
+    was taken on a commit the checkout ``cwd`` contains. Without this, the check an
     approval waived on the component's head failed it again here (a user
     run). Any other failing check, or a commit the approval was not taken
     on, still fails."""
@@ -496,20 +495,12 @@ def _approved_over(
     for item in approvals_at(root).overrides:
         checks = failing.get(item.component, [])
         head = str(item.evidence.get("head_sha", ""))
-        if checks and covering_override([item], head, checks) and _contains(root, sha, head):
+        # The merge base of the approved commit and HEAD is that commit
+        # exactly when HEAD contains it.
+        contained = bool(head) and merge_base_ref(head, cwd) == head
+        if checks and covering_override([item], head, checks) and contained:
             waived.update({(item.component, check): item.id for check in checks})
     return waived
-
-
-def _contains(root: Path, sha: str, ancestor: str) -> bool:
-    done = subprocess.run(
-        ["git", "merge-base", "--is-ancestor", ancestor, sha],
-        cwd=root,
-        capture_output=True,
-        timeout=30,
-        check=False,
-    )
-    return done.returncode == 0
 
 
 def _verdict(carried: Carried, runs: Mapping[tuple[str, str], Sequence[Stage]]) -> str:

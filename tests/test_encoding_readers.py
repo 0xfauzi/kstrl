@@ -92,6 +92,8 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     # #700 slice 10a: `read_dispute` reads the engineer's progress log.
     "acceptance/acceptance_record.py": 1,
     "agents/codex.py": 1,
+    # The verification designer's entries kept across a refusal.
+    "factory/acceptance_design.py": 1,
     "agents/logging.py": 1,
     # The "a+b" append open, moved here from evolution.py by #331.
     "io/appendio.py": 1,
@@ -260,6 +262,7 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "events/events.py open(path, encoding='utf-8', errors='replace')",
     "events/observability.py for line in f on an open() handle",
     "events/observability.py open(path, encoding='utf-8')",
+    "factory/acceptance_design.py saved.read_text(encoding='utf-8')",
     "factory/commandrun.py open(path, 'a', buffering=1, encoding='utf-8')",
     "factory/factory_worker.py open(log_path, 'a', buffering=1, encoding='utf-8', errors='replace')",  # noqa: E501
     "factory/factory_worker.py open(run_paths.engineer_log(component_id), 'a', buffering=1, encoding=",  # noqa: E501
