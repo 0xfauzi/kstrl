@@ -409,6 +409,14 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 - A distiller reply that did not parse is asked for once more, inside the
   adversarial budget (2 of 4 user runs lost a component's facts to it).
 - Stories the reviewer did not confirm are listed with the reason for each.
+- The architect prompt (5.4.0) puts a lockfile a `stack` command writes
+  in the scope of the component that creates the manifest (a `uv run`
+  check wrote `uv.lock` outside it, the engineer gitignored it, and the
+  project shipped with no lockfile; 4 decomposes of that spec put it in
+  scope 4 times, against 1 of 4 before), and says a check that exits 0 on
+  paths that do not exist verifies nothing (a proposed `compileall -q src
+  tests` passed an empty tree; not reproduced in 4 runs either side, so
+  that sentence's effect is unmeasured).
 - A reply that does not parse as a whole is refused when another object
   follows its first one, instead of being read up to there. A reviewer
   that closed its JSON one level early lost every story after the first

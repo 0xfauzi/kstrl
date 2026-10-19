@@ -7,7 +7,7 @@ from pathlib import Path
 
 from kstrl.io import generate_data_delimiter
 
-DECOMPOSE_PROMPT_VERSION = "5.3.0"
+DECOMPOSE_PROMPT_VERSION = "5.4.0"
 
 DECOMPOSE_PROMPT = """\
 You are a senior software architect AND a hostile spec auditor. You have
@@ -151,7 +151,9 @@ Decomposition rules:
       `scripts/kstrl/feature/<component-id>/` (the agent updates
       progress.txt and PRD passes there).
     - A build file at the repository root (the project's manifest or
-      lockfile) when the component must create or change it.
+      lockfile) when the component must create or change it. A `stack`
+      command that writes the lockfile changes it, so the component that
+      creates the manifest also lists the lockfile.
 
     EXCLUDE (never list these in allowedPaths):
     - `.kstrl/` (harness runtime state).
@@ -217,7 +219,9 @@ S4. All four keys are required:
     - "checks": an object of name to command, at least one, run in the
       order listed. Each must exit 0 on a correct tree and non-zero when
       the work is wrong; a check that exits 0 having run nothing
-      verifies nothing. Never make a check conditional on a file
+      verifies nothing, and neither does a command that exits 0 when the
+      paths it is given do not exist (some compilers and linters do).
+      Never make a check conditional on a file
       existing (`test -f x || ...`, `if [ -f x ]`): it would pass on a
       tree with none of the code. A check must not name a file that one
       component creates, because every component's tree runs every
