@@ -486,7 +486,8 @@ class Transitions(InboxDesk, AttemptRecorder, UsageLedger):
         )
         self.ui.ok(
             f"  COMPLETED: {comp.id} (attempt {comp.retries + 1}, "
-            f"{comp.iteration_count} iterations in it, {comp.duration_seconds:.0f}s)"
+            f"{comp.iteration_count} iteration{'' if comp.iteration_count == 1 else 's'} in it, "
+            f"{comp.duration_seconds:.0f}s)"
         )
         self.manifest.save(self.manifest_path)
         # #438: after the save, so an item is never resolved for a

@@ -409,6 +409,24 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 - A distiller reply that did not parse is asked for once more, inside the
   adversarial budget (2 of 4 user runs lost a component's facts to it).
 - Stories the reviewer did not confirm are listed with the reason for each.
+- A reply that does not parse as a whole is refused when another object
+  follows its first one, instead of being read up to there. A reviewer
+  that closed its JSON one level early lost every story after the first
+  (a user run), and a security reply cut the same way kept its first
+  finding, dropped a critical one after it, and passed hard mode. Across
+  285 recorded replies this changes only the first of those.
+- A review reply that does not parse and states no fail is read once more
+  instead of failing the component and re-running its engineer; one that
+  states a fail is not re-asked.
+- The review and security result lines are followed by each finding, and
+  by the reason when the review did not happen ("0 failures" alone named
+  neither); the distiller's replies are counted one each by `ks evolve`, so
+  a reply asked for again still counts as a failure.
+- After a `[stack]` edit, `ks doctor` and `ks check` say to run `ks
+  factory` to confirm it (the inbox item `ks doctor` named exists only once
+  `ks factory` files it); decompose names the architect transcript; the
+  in-loop scope failure line is no longer cut at 200 characters; "1
+  iteration".
 - A run refused before it started is no longer reported as an
   interrupted run by the next one; the usage table says what tokens_in
   leaves out; decompose shows the head of the architect's one-line reply

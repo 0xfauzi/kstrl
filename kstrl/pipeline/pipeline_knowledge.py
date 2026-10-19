@@ -343,12 +343,12 @@ class KnowledgePhase(AttemptRecorder, UsageLedger):
                 self.base_config.agent_type,
                 root_dir=self.root_dir,
             )
-            distill_start = time.monotonic()
             with (
                 self._phase_transcript(comp.id, "distill") as on_line,
                 recording_prompts(self._agent_call(comp, "distill")),
             ):
                 for reading in range(2):
+                    distill_start = time.monotonic()
                     written, status, parse_failed = self.hooks.distill_facts(
                         distill_agent,
                         comp,
@@ -364,22 +364,20 @@ class KnowledgePhase(AttemptRecorder, UsageLedger):
                     )
                     # A reply that did not parse (2 of 4 user runs: an extra
                     # brace after every fact) is asked for once more, inside
-                    # the adversarial budget; a second failure stands.
+                    # the adversarial budget; a second failure stands. One event
+                    # per reply, so ks evolve counts the reply that failed.
+                    self.bus.emit(
+                        DistillResult(
+                            component=comp.id,
+                            facts_written=written,
+                            parse_failed=parse_failed,
+                            duration_seconds=round(time.monotonic() - distill_start, 2),
+                        )
+                    )
                     if reading or not parse_failed or not self.adversarial_budget_ok():
                         break
                     self.adversarial_budget_consume()
                     self.ui.warn(f"  Knowledge: {status}; asking the distiller once more")
-            self.bus.emit(
-                DistillResult(
-                    component=comp.id,
-                    facts_written=written,
-                    parse_failed=parse_failed,
-                    duration_seconds=round(
-                        time.monotonic() - distill_start,
-                        2,
-                    ),
-                )
-            )
             if written > 0:
                 self.ui.ok(f"  Knowledge: {status}")
             else:

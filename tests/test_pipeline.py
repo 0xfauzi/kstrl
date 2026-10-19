@@ -1697,8 +1697,9 @@ class TestFactUtilizationRecording:
             config=_factory_config(review_mode="skip", max_adversarial_calls=budget),
         )
         assert len(asked) == calls
-        (result,) = [e for e in captured if isinstance(e, event_catalog.DistillResult)]
-        assert result.parse_failed is (calls == 1)
+        # One event per reply, so the reply that failed is counted too.
+        results = [e for e in captured if isinstance(e, event_catalog.DistillResult)]
+        assert [e.parse_failed for e in results] == [True, False][:calls]
 
     def test_utilization_event_carries_the_measurement(
         self,
@@ -1748,9 +1749,9 @@ class TestFactUtilizationRecording:
             tmp_path,
             distill=lambda *a, **k: (0, "the distiller returned no facts", True),
         )
+        # Both readings (the reply is asked for once more) carry the flag.
         distills = [e for e in captured if isinstance(e, event_catalog.DistillResult)]
-        assert len(distills) == 1
-        assert distills[0].parse_failed is True
+        assert [e.parse_failed for e in distills] == [True, True]
 
     def test_measured_against_the_injected_prefix(
         self,

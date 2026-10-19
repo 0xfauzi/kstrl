@@ -777,4 +777,10 @@ def run_security_review(
         f"  Security review {status}{coverage_note}: "
         f"{result.fail_count} fail, {result.advisory_count} advisory"
     )
+    if result.infrastructure_error:
+        ui.info(f"    {result.overall_notes}")
+    for finding in result.findings:
+        ui.info(
+            f"    {finding.severity} {finding.category} {finding.location}: {finding.explanation}"
+        )
     return result

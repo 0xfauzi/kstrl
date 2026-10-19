@@ -175,6 +175,8 @@ def decompose(
     verify_config = VerifyConfig.load(root_dir)
 
     def _decompose_core(core_ui: UI, command_run: CommandRun) -> int:
+        if transcript_path := command_run.transcript_path(ARCHITECT_COMPONENT):
+            core_ui.info(f"  Architect transcript: {transcript_path}")
         try:
             manifest = decompose_spec(
                 spec_path=spec,

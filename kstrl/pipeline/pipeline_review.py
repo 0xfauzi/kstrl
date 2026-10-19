@@ -162,13 +162,20 @@ class ReviewPhase(ReviewVerdicts, UsageLedger):
                     )
                     # A reviewer that mis-adds git's own numstat rows (measured:
                     # 256 for rows summing to 356) read the change. It gets one
-                    # more reading, which must match git exactly as well.
-                    if reading or not review_result.diffstat_disagreement:
+                    # more reading, which must match git exactly as well. So
+                    # does a reply that did not parse and states no fail
+                    # (``reply_unread``), rather than a retry of the engineer.
+                    unread = review_result.reply_unread
+                    if reading or not (review_result.diffstat_disagreement or unread):
                         break
                     if not self.adversarial_budget_ok():
                         break
                     self.adversarial_budget_consume()
-                    self.ui.warn("  Review coverage disagreed with git; reading it once more")
+                    self.ui.warn(
+                        "  Review reply did not parse; reading it once more"
+                        if unread
+                        else "  Review coverage disagreed with git; reading it once more"
+                    )
         except Exception as exc:  # noqa: BLE001
             self.ui.warn(f"  Review crashed: {exc}")
             review_result = ReviewResult(

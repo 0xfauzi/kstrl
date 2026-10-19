@@ -864,5 +864,13 @@ def run_review(
         f"  Review {status}{coverage_note}: "
         f"{result.fail_count} fail, {result.advisory_count} advisory"
     )
+    # The findings themselves, so a run with no PR body to carry them shows them.
+    if result.infrastructure_error:
+        ui.info(f"    {result.overall_notes}")
+    for cr in result.criteria:
+        if cr.verdict != ReviewVerdict.PASS.value:
+            ui.info(f"    {cr.verdict} {cr.story_id} {cr.criterion}: {cr.explanation}")
+    for c in result.concerns:
+        ui.info(f"    {c.severity} {c.category} {c.location}: {c.explanation}")
 
     return result

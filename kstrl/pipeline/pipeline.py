@@ -215,7 +215,7 @@ class ComponentPipeline(Delivery, KnowledgePhase, SecurityGate, ReviewPhase, Mec
                 # halted before they could.
                 detail = comp_result.error or "files outside allowed scope"
                 self.ui.warn(
-                    f"  Phase 1 FAILED for {comp.id}: diff_scope: {detail.splitlines()[0][:200]}"
+                    f"  Phase 1 FAILED for {comp.id}: diff_scope: {detail.splitlines()[0]}"
                 )
                 self.bus.emit(
                     VerificationResultEvent(

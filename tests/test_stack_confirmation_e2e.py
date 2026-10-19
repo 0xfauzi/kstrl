@@ -276,6 +276,20 @@ def test_appending_or_true_refuses_naming_both_digests(tmp_path: Path) -> None:
     assert f"it now reads {_digest(root)[:12]}" in run.out, run.out
 
 
+def test_an_edited_stack_names_the_command_that_confirms_it(tmp_path: Path) -> None:
+    """A user added a check, and ``ks doctor`` told them to approve an inbox
+    item that only ``ks factory`` files; ``ks check`` named no next step."""
+    root = _repo(tmp_path, GREEN)
+    _restack(root, _stack({"tests": "true", "lint": "true"}))
+
+    check_code, check_out = _ks(root, "check")
+    doctor_code, doctor_out = _ks(root, "doctor")
+
+    assert check_code != 0 and "; run ks factory to confirm it" in check_out, check_out
+    assert doctor_code != 0, doctor_out
+    assert "Run ks factory: it asks you to confirm the [stack]" in doctor_out, doctor_out
+
+
 def test_reverting_to_an_older_confirmed_stack_refuses(tmp_path: Path) -> None:
     """4. Only the most recent approval counts: A then B were confirmed, so
     going back to A needs a new confirmation."""

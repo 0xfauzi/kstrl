@@ -28,6 +28,7 @@ per-test disposition.
 
 from __future__ import annotations
 
+import io
 import json
 from pathlib import Path
 from unittest.mock import patch
@@ -51,6 +52,7 @@ from kstrl.review.security import (
     SECURITY_PROMPT,
     SecurityConfig,
     SecurityMode,
+    SecurityResult,
     _build_security_prompt,
     parse_security_output,
     run_security_review,
@@ -748,6 +750,91 @@ class TestASecondReadingOnADisagreement:
             )
         assert agent.calls == 2
         assert (result.completed == ["comp-a"]) is completes
+
+    @pytest.mark.parametrize(("first", "calls"), [("not json", 2), ('"verdict": "fail" {', 1)])
+    def test_a_review_reply_that_did_not_parse_gets_one_more_reading(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        first: str,
+        calls: int,
+    ) -> None:
+        """A user run's reviewer closed its JSON one story early; the review
+        failed and the factory re-ran the engineer to get a second reading.
+        The reviewer alone is asked once more, unless the reply that did not
+        parse states a fail, which a second reading must not discard."""
+        monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
+        repo = make_review_repo(tmp_path / "repo")
+        root = _scaffold(repo.path, ["comp-a"])
+        manifest = _make_manifest(["comp-a"])
+        replies = [first, repo.review_json()]
+        printed = io.StringIO()
+        agent = RecordingAgent(first)
+        agent._on_prompt = lambda _p: setattr(agent, "_output", replies[agent.calls - 1])
+
+        with (
+            patch(
+                "kstrl.factory.factory._run_component",
+                side_effect=lambda comp_id, *a, **k: ComponentResult(
+                    comp_id, success=True, iterations=1
+                ),
+            ),
+            patch("kstrl.agents.get_agent", return_value=agent),
+        ):
+            result = run_factory(
+                manifest,
+                _factory_config(
+                    review_mode="hard",
+                    security_config=SecurityConfig(mode=SecurityMode.SKIP.value),
+                ),
+                _base_config(root),
+                PlainUI(no_color=True, file=printed),
+                root,
+            )
+        assert agent.calls == calls
+        assert (result.completed == ["comp-a"]) is (calls == 2)
+        out = printed.getvalue()
+        assert "    Failed to parse reviewer output as JSON" in out
+        assert ("Review reply did not parse; reading it once more" in out) is (calls == 2)
+
+
+class TestAReplyClosedOneLevelEarly:
+    def test_a_finding_after_the_close_fails_the_review_instead_of_vanishing(
+        self, review_repo: ReviewRepo
+    ) -> None:
+        """A reviewer that closes its JSON one level early leaves a complete
+        object followed by the rest of its reply. Reading the first object
+        alone dropped the critical finding after it and passed hard mode."""
+        low = {
+            "category": "new_dependency",
+            "severity": "low",
+            "location": "a.py:1",
+            "explanation": "unpinned",
+            "suggestion": "pin it",
+        }
+        critical = {**low, "category": "injection", "severity": "critical"}
+        whole = review_repo.security_json(findings=[low, critical])
+        stat = json.loads(whole)["observedDiffstat"]
+        slipped = json.dumps({"observedDiffstat": stat, "findings": [low]})
+        slipped += "," + json.dumps(critical) + "]}"
+
+        printed = io.StringIO()
+
+        def review(raw: str) -> SecurityResult:
+            return run_security_review(
+                RecordingAgent(raw),
+                review_repo.prd_path,
+                review_repo.path,
+                review_repo.base_branch,
+                SecurityConfig(mode=SecurityMode.HARD.value),
+                PlainUI(no_color=True, file=printed),
+            )
+
+        assert [f.severity for f in review(whole).findings] == ["low", "critical"]
+        assert "    critical injection a.py:1: unpinned" in printed.getvalue()
+        result = review(slipped)
+        assert result.passed is False
+        assert result.infrastructure_error is True
 
 
 class TestAFactoryConfigThatNamesNoSecurityConfig:

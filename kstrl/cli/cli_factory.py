@@ -210,6 +210,8 @@ def factory(
             )
             architect_run_id = architect_run.run_id
             spec_base = resolve_base_branch(base_branch, root_dir)
+            if transcript_path := architect_run.transcript_path(ARCHITECT_COMPONENT):
+                ui_impl.info(f"  Architect transcript: {transcript_path}")
             try:
                 manifest = decompose_spec(
                     spec_path=spec,

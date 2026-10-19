@@ -155,11 +155,11 @@ def test_unparseable_reply_reaches_the_event_and_ks_evolve(tmp_path: Path) -> No
 
     assert _dump_status(tmp_path) == "unparseable"
     assert "Knowledge: the distiller's reply did not parse: " in printed
+    # The distiller is asked once more and replies the same way: two
+    # replies, both counted.
     rows = _distill_rows(tmp_path)
-    assert len(rows) == 1
-    assert rows[0]["facts_written"] == 0
-    assert rows[0]["parse_failed"] is True
-    assert "distill replies that did not parse: 1 of 1 distill(s) in the last 1 run(s)" in _evolve(
+    assert [(r["facts_written"], r["parse_failed"]) for r in rows] == [(0, True), (0, True)]
+    assert "distill replies that did not parse: 2 of 2 distill(s) in the last 1 run(s)" in _evolve(
         tmp_path
     )
 

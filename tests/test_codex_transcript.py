@@ -226,7 +226,7 @@ def test_a_last_message_of_exactly_the_marker_completes_in_one_iteration(
 
     assert run.returncode == 0, run.stdout
     assert run.engineer_calls == 1, run.stdout
-    assert "(attempt 1, 1 iterations in it" in run.stdout
+    assert "(attempt 1, 1 iteration in it" in run.stdout
 
 
 def test_a_marker_in_the_transcript_does_not_complete_the_loop(tmp_path: Path) -> None:

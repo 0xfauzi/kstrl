@@ -41,6 +41,11 @@ def extract_json(text: str) -> Any:
             elif stripped[i] == "}":
                 depth -= 1
                 if depth == 0:
+                    # Another object after this one is reply this parse would
+                    # drop (a reviewer closing its JSON one level early lost a
+                    # critical finding that way): refuse it instead.
+                    if "{" in stripped[i + 1 :]:
+                        break
                     try:
                         return read_json(stripped[brace_start : i + 1])
                     except json.JSONDecodeError:

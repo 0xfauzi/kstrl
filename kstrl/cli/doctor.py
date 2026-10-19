@@ -62,7 +62,10 @@ STATUS_WARN = "warn"
 STATUS_FAIL = "fail"
 
 #: What to do about a ``[stack]`` nobody confirmed (#696 slice 3).
-STACK_CONFIRM_FIX = "Run ks factory and confirm it, or ks inbox approve its item."
+STACK_CONFIRM_FIX = (
+    "Run ks factory: it asks you to confirm the [stack], or, with no terminal, "
+    "files an inbox item for ks inbox approve."
+)
 
 VERDICT_READY = "ready"
 VERDICT_READY_WITH_WARNINGS = "ready-with-warnings"

@@ -226,13 +226,14 @@ class TestAFactoryRunRecordsEveryPrompt:
         records = _all_records(run_root)
         assert not sentinel.exists(), sentinel.read_text(encoding="utf-8")
         assert Counter(r.prompt for r in records) == _delivered(capdir), output
-        # The stub's distill reply does not parse, so the distiller is asked
-        # once more: that reading is the scope's second call.
+        # The stub's review and distill replies do not parse, so each is
+        # asked once more: that reading is its scope's second call.
         assert sorted((r.role, r.call) for r in records) == [
             ("distill", 1),
             ("distill", 2),
             ("engineer", 1),
             ("review", 1),
+            ("review", 2),
             ("security", 1),
         ]
         assert {(r.run_id, r.attempt, r.agent_cli) for r in records} == {
@@ -278,6 +279,7 @@ class TestAFactoryRunRecordsEveryPrompt:
             ("engineer", 1, 1),
             ("engineer", 2, 1),
             ("review", 2, 1),
+            ("review", 2, 2),
             ("security", 2, 1),
         ], output
 
@@ -378,6 +380,9 @@ class TestCommandRunsRecordTheirPrompts:
         ]
         assert "PREVIOUS ATTEMPT FAILED" not in records[0].prompt
         assert "PREVIOUS ATTEMPT FAILED" in records[2].prompt
+        # The console cuts long architect lines; it names where all of it is.
+        transcript = RunPaths.for_run(root, run_root.name).engineer_log(ARCHITECT_COMPONENT)
+        assert f"Architect transcript: {transcript}" in result.output, result.output
 
     def test_understand_records_its_prompt(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

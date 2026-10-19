@@ -109,7 +109,10 @@ def check_stack_command(
     """
     row = f"stack:{name}"
     if stack.unconfirmed:
-        refused = f"`{command}` not run: the [stack] in kstrl.toml {stack.unconfirmed}"
+        refused = (
+            f"`{command}` not run: the [stack] in kstrl.toml {stack.unconfirmed}"
+            "; run ks factory to confirm it"
+        )
         return CheckResult(name=row, passed=False, message=refused, measured=False, output=refused)
     start = time.monotonic()
     try:
