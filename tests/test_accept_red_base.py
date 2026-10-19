@@ -221,7 +221,12 @@ def test_a_red_base_refusal_names_the_acceptance_that_would_run_it(tmp_path: Pat
     run = stack_e2e._factory(tmp_path, root)
 
     assert (run.code, run.calls) == (2, 0), run.out
-    assert f"ks factory --accept-red-base {sha[:12]} builds on it" in run.out, run.out
+    assert f"same ks factory command with --accept-red-base {sha[:12]}" in run.out, run.out
+    # The refused run started nothing, so the accepted one carries nothing
+    # from it and does not call it interrupted.
+    accepted = stack_e2e._factory(tmp_path, root, FLAG, sha[:12])
+    assert accepted.calls == 1, accepted.out
+    assert "Carried from interrupted run" not in accepted.out, accepted.out
 
 
 @runs_a_stack
@@ -256,4 +261,4 @@ def test_under_a_stack_an_acceptance_never_waives_what_was_not_measured_red(
     assert record["refused"] is True, record
     assert any(reason in line for line in record["reasons"]), record
     assert not any(reason in line for line in record["accepted"]), record
-    assert "builds on it for this run" not in run.out, run.out
+    assert "to build on it for this run" not in run.out, run.out

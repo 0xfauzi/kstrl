@@ -2641,11 +2641,15 @@ class TestPhaseReadingsRetireSkippableFindings:
             ),
             reviews=[
                 ReviewResult(passed=False, mode="hard", overall_notes="CRITERION-X-UNMET"),
-                ReviewResult(
-                    passed=True,
-                    mode="advisory",
-                    diffstat_disagreement=disagreement,
-                ),
+                # A disagreeing reading is read once more; both disagree.
+                *[
+                    ReviewResult(
+                        passed=True,
+                        mode="advisory",
+                        diffstat_disagreement=disagreement,
+                    )
+                    for _ in range(2 if disagreement else 1)
+                ],
             ],
             securities=[
                 SecurityResult(passed=False, mode="hard", overall_notes="SQL-IN-USERS"),

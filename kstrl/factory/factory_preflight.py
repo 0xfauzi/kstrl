@@ -359,7 +359,8 @@ def _accept_lines(reading: BaseGates, reasons: list[str]) -> list[str]:
         return []
     return [
         "A repository whose code does not exist yet fails its checks on the base: "
-        f"ks factory --accept-red-base {reading.base_sha[:12]} builds on it for this run."
+        f"run the same ks factory command with --accept-red-base {reading.base_sha[:12]} "
+        "to build on it for this run."
     ]
 
 

@@ -140,16 +140,24 @@ class SecurityGate(ReviewVerdicts, UsageLedger):
                 self._phase_transcript(comp.id, "security") as on_line,
                 recording_prompts(self._agent_call(comp, "security")),
             ):
-                sec_result = self.hooks.run_security_review(
-                    sec_agent,
-                    wt_path / comp.prd_path,
-                    wt_path,
-                    self.component_base(comp.id),
-                    config=sec_config,
-                    ui=self.ui,
-                    debug_dir=adversarial_debug_dir,
-                    on_line=on_line,
-                )
+                for reading in range(2):
+                    sec_result = self.hooks.run_security_review(
+                        sec_agent,
+                        wt_path / comp.prd_path,
+                        wt_path,
+                        self.component_base(comp.id),
+                        config=sec_config,
+                        ui=self.ui,
+                        debug_dir=adversarial_debug_dir,
+                        on_line=on_line,
+                    )
+                    # One more reading on a coverage disagreement, as Phase 2.
+                    if reading or not sec_result.diffstat_disagreement:
+                        break
+                    if not self.adversarial_budget_ok():
+                        break
+                    self.adversarial_budget_consume()
+                    self.ui.warn("  Security coverage disagreed with git; reading it once more")
         except Exception as exc:  # noqa: BLE001
             # Agent infrastructure failed before run_security_review
             # could classify the outcome. Synthesize an infra result

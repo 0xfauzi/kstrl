@@ -390,7 +390,17 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   files, attempt numbers that match `ks status`, and why the loop ran
   another iteration (in the engineer's event log).
 - `ks status` writes to stdout and shows the newer of the factory and
-  `ks run` manifests; `ks run` names its component `run`, not `main`.
+  `ks run` manifests, or with no manifest the newest run's stream (a
+  `ks decompose` in flight); `ks run` names its component `run`, not `main`.
+- A review whose reported diffstat disagrees with git is read once more
+  (review and security) before it fails the component: a reviewer that
+  read the change and mis-added its numstat rows (256 for 356) failed a
+  correct component with no retry. The second reading must match exactly.
+- A run refused before it started is no longer reported as an
+  interrupted run by the next one; the usage table says what tokens_in
+  leaves out; decompose shows the head of the architect's one-line reply
+  and keeps all of it in the transcript; the homogeneity warning names the
+  flags that set a review agent.
 - `ks doctor` reports the sandbox, and no longer counts kstrl's own plan
   files as uncommitted work.
 - The getting-started text (README, `ks init`) follows the order that

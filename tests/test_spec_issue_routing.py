@@ -288,8 +288,14 @@ class TestFindingsReachThePrd:
         """ "It reached the engineer" has to be visible without opening
         the PRD, or nobody knows whether the audit went anywhere."""
         output = _run_decompose(tmp_path, _payload(SERIALIZE_ISSUE, UNCLOSED_FENCE_ISSUE))
-        assert "document-format: 1 stories, 2 spec findings (1 on its own surface)" in output
-        assert "agent-adapter: 1 stories, 1 spec findings (0 on its own surface)" in output
+        assert (
+            "document-format: 1 stories, 2 spec findings in its PRD (1 about this component)"
+            in output
+        )
+        assert (
+            "agent-adapter: 1 stories, 1 spec findings in its PRD (0 about this component)"
+            in output
+        )
 
     def test_a_clean_audit_says_nothing_extra(self, tmp_path: Path) -> None:
         output = _run_decompose(tmp_path, _payload())

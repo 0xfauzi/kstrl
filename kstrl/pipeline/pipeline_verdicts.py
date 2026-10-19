@@ -210,9 +210,9 @@ class ReviewVerdicts(AttemptRecorder):
     _COVERAGE_UNVERIFIED = (
         "{role} coverage unverified: {disagreement}. The reviewer could not "
         "show it read the whole change, so its {noun} cannot be trusted and "
-        "the engineer cannot fix it. Check that the {agent} can run git in "
-        "the worktree, or select a model that honours the observedDiffstat "
-        "field (#266)."
+        "the engineer cannot fix it. It disagreed on two readings. Check "
+        "that the {agent} can run git in the worktree, or select a model "
+        "that honours the observedDiffstat field and sums its rows (#266)."
     )
 
     def _coverage_failure(
@@ -235,15 +235,18 @@ class ReviewVerdicts(AttemptRecorder):
         ordinary failure path it re-ran the engineer and handed it the
         coverage complaint as retry context.
 
-        That is worse than useless, because unlike a crash or a
-        truncated JSON reply this trigger is DETERMINISTIC: a reviewer
+        That is worse than useless, because this trigger is mostly
+        deterministic: a reviewer
         model that does not emit ``observedDiffstat``, or counts it
         differently, produces the identical failure on every attempt.
         The component would burn its whole retry budget on engineer runs
         that cannot move the outcome and then fail anyway - precisely
         the #265 economics this issue exists to remove, reintroduced by
         its own fix. Same rule as the budget walls: retrying cannot
-        change the input, so do not pay for the attempt.
+        change the input, so do not pay for the attempt. The one
+        non-deterministic cause measured, a reviewer that read the change
+        and mis-added its numstat rows (256 for 356), gets a second reading
+        of the review alone before this fires.
         """
         error = self._COVERAGE_UNVERIFIED.format(
             role=role,

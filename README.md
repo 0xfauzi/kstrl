@@ -25,7 +25,7 @@ Most agent wrappers are retry loops: run the agent, ask it whether it is done, r
 kstrl is designed as a loop that closes on evidence instead. The parts are deliberate, and each exists to answer one question:
 
 - **What should the agent know before it starts?** Computed context: a module map of the tree, built without a model call, beside the project's own CLAUDE.md, golden patterns and memory. The agent reads the code itself with its own tools.
-- **How do we know what it actually did?** Independent measurement: mechanical checks, then a reviewer judging every acceptance criterion (from a different model family when the codex CLI is installed; kstrl warns when the reviewer shares the engineer's family), then a security reviewer. None of these read the agent's description of its work; they read the diff.
+- **How do we know what it actually did?** Independent measurement: mechanical checks, then a reviewer judging every acceptance criterion (from a different model family when the codex CLI is installed; kstrl warns when the reviewer shares the engineer's family), then a security reviewer. None of these is handed the agent's account of its work; they read the diff, which includes the progress log the engineer commits.
 - **What happens when the measurement disagrees?** The gap becomes the next instruction: each failing check's exit status and the lines of its own output around every file location it names in the tree. The agent tries again against a smaller, sharper target.
 - **What stops it running away?** Bounds on everything: iterations, time, tokens, cost, work in flight, and a written envelope of what a merge may touch. When a bound trips, the run stops loudly and tells you why.
 - **Where do you stand?** On the loop, not in it. Boundary conditions route to you: a spec the architect cannot decompose, a merge you asked to approve, a budget that ran out. Everything else flows, and everything is recorded.
@@ -55,8 +55,8 @@ ks factory --manifest scripts/kstrl/manifest.json      # build the plan
 kstrl runs nothing until kstrl.toml holds a `[stack]` (what the project is
 built with and the commands that check it) and a person has confirmed its
 exact text. On a new repository those checks fail on the base, because no
-code exists yet: the refusal names `ks factory --accept-red-base <sha>`,
-which builds on that base for one run. Once a stack is confirmed, `ks factory
+code exists yet: the refusal names the `--accept-red-base <sha>` to add to
+the same `ks factory` command, which builds on that base for one run. Once a stack is confirmed, `ks factory
 --spec ...` plans and builds a spec in one command, and `ks run 25` drives a
 single component from a hand-written `scripts/kstrl/prd.json` (no PR). The
 confirmations live in kstrl's state directory outside the repository
@@ -95,7 +95,7 @@ kstrl builds a module map of the tree (every directory git lists, with its file 
 
 When the agent signals completion, kstrl treats that as a claim and measures the work with checks the agent did not write:
 
-- **Mechanical checks** (fast, computational): tests, typecheck, lint, no changes outside allowed paths, no leaked secrets.
+- **Mechanical checks** (fast, computational): the `[stack]` commands you confirmed (tests, typecheck, lint), no changes outside allowed paths, no leaked secrets. The commands are yours, but the tests they run are mostly the engineer's own: a run whose tests were deleted along with the code can still pass them. Checks the engineer never sees come from `ks factory --acceptance <dir>` or `--design-acceptance` (below).
 - **Adversarial review** (LLM): an independent reviewer checks the diff against the acceptance criteria, then a security reviewer hunts vulnerabilities - in `hard` mode their failures block.
 - **Contract testing** (multi-component runs): component branches merge tier-by-tier with integration tests at each tier.
 
@@ -260,7 +260,7 @@ Run `ks COMMAND --help` for the full option list of any command.
 
 kstrl reads `kstrl.toml` at the project root; copy [kstrl.toml.example](kstrl.toml.example) to start. Precedence: CLI flags > environment variables > kstrl.toml > dataclass defaults. `ks config show` prints the fully resolved config with the source of each value.
 
-`[stack]` is not in the reference below, because it is the project's own text rather than a setting with a default. It needs `instructions` (what the project is built with, for the models), `setup` (one command that installs a worktree's dependencies, or `""`), `env` (names of variables the commands may see) and `[stack.checks]` (name = command, run in order; a check passes when it exits 0). `writable`, `readable`, `browser` and `up` are optional. kstrl runs none of it until a person confirms its exact text with `ks inbox approve`, and an edit needs confirming again.
+`[stack]` is not in the reference below, because it is the project's own text rather than a setting with a default. It needs `instructions` (what the project is built with, for the models), `setup` (one command that installs a worktree's dependencies, or `""`), `env` (names of variables the commands may see) and `[stack.checks]` (name = command, run in order; a check passes when it exits 0). `writable`, `readable`, `browser` and `up` are optional. kstrl runs none of it until a person confirms its exact text with `ks inbox approve`, and an edit needs confirming again. kstrl isolates the `[stack]` commands it runs itself only on macOS (with nono); on Linux they run on the host whatever `[sandbox]` says, because `[sandbox]` confines the agents, not kstrl's own commands.
 
 <!-- BEGIN GENERATED: config-reference -->
 <!-- Generated by scripts/gen_docs.py - do not edit by hand. -->

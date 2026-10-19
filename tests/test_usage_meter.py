@@ -2573,6 +2573,23 @@ class TestRollupRendering:
         assert "350" in rows[3]
         assert any("cost coverage is PARTIAL" in line for line in lines)
 
+    def test_cached_input_is_named_beside_a_small_tokens_in(self) -> None:
+        """A cached claude call shows tokens_in 6 beside tokens_total 91,476
+        (measured); the footer says where the rest went."""
+        totals = UsageTotals()
+        totals.add_record(
+            UsageRecord(
+                input_tokens=6,
+                output_tokens=4162,
+                cache_read_tokens=80000,
+                cache_creation_tokens=7308,
+                total_tokens=91476,
+                source="claude-stream-json",
+            )
+        )
+        lines = format_usage_rollup({"comp-a": {"engineer": totals}}, totals)
+        assert any("tokens_total adds the 87,308 cached" in line for line in lines), lines
+
     def test_unknown_usage_rendered_as_dash_with_note(self) -> None:
         unknown = UsageTotals()
         unknown.add_record(UsageRecord(duration_seconds=3.0))

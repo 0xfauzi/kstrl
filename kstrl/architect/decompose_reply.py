@@ -543,7 +543,7 @@ def _prd_summary_line(
     if not findings:
         return line
     own = sum(1 for e in findings if e["appliesTo"] == SPEC_ISSUE_APPLIES_COMPONENT)
-    return f"{line}, {len(findings)} spec findings ({own} on its own surface)"
+    return f"{line}, {len(findings)} spec findings in its PRD ({own} about this component)"
 
 
 def _build_prd_data(

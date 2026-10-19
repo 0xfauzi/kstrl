@@ -553,6 +553,12 @@ def _usage_rollup_notes(
     scores ``format_usage_rollup`` at 17 against the repo's gate of 15.
     """
     notes: list[str] = []
+    if run_usage.cache_read_tokens or run_usage.cache_creation_tokens:
+        notes.append(
+            "note: tokens_in counts uncached input only; tokens_total adds the "
+            f"{run_usage.cache_read_tokens + run_usage.cache_creation_tokens:,} cached "
+            "input tokens read or written"
+        )
     if run_usage.unreported_calls > 0:
         notes.append(
             f"note: {run_usage.unreported_calls} of {run_usage.calls} "

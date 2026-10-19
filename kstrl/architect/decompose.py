@@ -197,7 +197,14 @@ def _stream_reply(
         with recording_prompts(_for_attempt(prompt_call, attempt)):
             for line in agent.run(retry_prompt, cwd=root_dir, timeout=timeout):
                 output_lines.append(line)
-                ui.stream_line("AI", line)
+                # The terminal gets the head of a long line (the JSON reply
+                # is one line of about 10KB); the transcript gets all of it.
+                ui.stream_line(
+                    "AI",
+                    line
+                    if len(line) <= 300
+                    else f"{line[:300]} ... ({len(line)} characters; all of it is in the run transcript)",
+                )
                 if transcript is not None:
                     transcript(line)
                 total_bytes += len(line) + 1

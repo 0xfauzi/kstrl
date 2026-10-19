@@ -147,18 +147,28 @@ class ReviewPhase(ReviewVerdicts, UsageLedger):
                 self._phase_transcript(comp.id, "review") as on_line,
                 recording_prompts(self._agent_call(comp, "review")),
             ):
-                review_result = self.hooks.run_review(
-                    review_agent,
-                    wt_path / comp.prd_path,
-                    wt_path,
-                    self.component_base(comp.id),
-                    verification,
-                    review_mode,
-                    self.ui,
-                    timeout=limit_seconds(self.factory_config.review_timeout_seconds),
-                    debug_dir=adversarial_debug_dir,
-                    on_line=on_line,
-                )
+                for reading in range(2):
+                    review_result = self.hooks.run_review(
+                        review_agent,
+                        wt_path / comp.prd_path,
+                        wt_path,
+                        self.component_base(comp.id),
+                        verification,
+                        review_mode,
+                        self.ui,
+                        timeout=limit_seconds(self.factory_config.review_timeout_seconds),
+                        debug_dir=adversarial_debug_dir,
+                        on_line=on_line,
+                    )
+                    # A reviewer that mis-adds git's own numstat rows (measured:
+                    # 256 for rows summing to 356) read the change. It gets one
+                    # more reading, which must match git exactly as well.
+                    if reading or not review_result.diffstat_disagreement:
+                        break
+                    if not self.adversarial_budget_ok():
+                        break
+                    self.adversarial_budget_consume()
+                    self.ui.warn("  Review coverage disagreed with git; reading it once more")
         except Exception as exc:  # noqa: BLE001
             self.ui.warn(f"  Review crashed: {exc}")
             review_result = ReviewResult(

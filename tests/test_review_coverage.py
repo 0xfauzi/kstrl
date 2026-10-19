@@ -681,6 +681,57 @@ class TestBudgetAccounting:
             assert not any(f.is_phase_skip and f.phase == "security" for f in comp.findings)
 
 
+class TestASecondReadingOnADisagreement:
+    @pytest.mark.parametrize("phase", ["review", "security"])
+    @pytest.mark.parametrize(("second_matches", "completes"), [(True, True), (False, False)])
+    def test_a_mis_added_diffstat_gets_one_more_reading(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        phase: str,
+        second_matches: bool,
+        completes: bool,
+    ) -> None:
+        """A reviewer that read the change and mis-added git's rows (a run
+        reported 256 for rows summing to 356) failed a correct component
+        with no retry. The review alone is read once more, and the second
+        reading must match git exactly as well."""
+        monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
+        repo = make_review_repo(tmp_path / "repo")
+        root = _scaffold(repo.path, ["comp-a"])
+        manifest = _make_manifest(["comp-a"])
+        wrong = {"files": repo.stat.files, "insertions": repo.stat.insertions + 100, "deletions": 0}
+        reply = repo.review_json if phase == "review" else repo.security_json
+        replies = [reply(observedDiffstat=wrong)]
+        replies.append(reply() if second_matches else replies[0])
+        agent = RecordingAgent(replies[0])
+        agent._on_prompt = lambda _p: setattr(agent, "_output", replies[agent.calls - 1])
+
+        with (
+            patch(
+                "kstrl.factory.factory._run_component",
+                side_effect=lambda comp_id, *a, **k: ComponentResult(
+                    comp_id, success=True, iterations=1
+                ),
+            ),
+            patch("kstrl.agents.get_agent", return_value=agent),
+        ):
+            result = run_factory(
+                manifest,
+                _factory_config(
+                    review_mode="hard" if phase == "review" else "skip",
+                    security_config=SecurityConfig(
+                        mode=(SecurityMode.SKIP if phase == "review" else SecurityMode.HARD).value
+                    ),
+                ),
+                _base_config(root),
+                PlainUI(no_color=True),
+                root,
+            )
+        assert agent.calls == 2
+        assert (result.completed == ["comp-a"]) is completes
+
+
 class TestAFactoryConfigThatNamesNoSecurityConfig:
     def test_it_gets_the_default_security_review_not_a_silent_skip(
         self,

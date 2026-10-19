@@ -597,6 +597,19 @@ def status(
         # The newest of the two: a `ks run` after a factory run is the run asked about.
         existing = [p for p in candidates if p.exists()]
         manifest_file = max(existing, key=lambda p: p.stat().st_mtime) if existing else None
+        if manifest_file is None and progress_log_path is None:
+            # A `ks decompose` has a run stream before it has a manifest.
+            newest, source = load_run_state(root_dir)
+            if source is not None and newest.run_id:
+                ui_impl.section("ks status")
+                ui_impl.kv("Events", str(source))
+                ui_impl.kv("Run id", newest.run_id)
+                age = _age_label_epoch(newest.last_event_ts) if newest.last_event_ts else ""
+                label = _run_state_label(newest)
+                ui_impl.kv("Run state", f"{label} (last event {age})" if age else label)
+                ui_impl.info("  No manifest: this is the newest run's event stream.")
+                _render_safe_mode(ui_impl, root_dir)
+                return 0
         if manifest_file is None:
             looked = ", ".join(str(p) for p in candidates)
             ui_impl.err(f"No manifest found (looked for: {looked})")

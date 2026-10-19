@@ -359,6 +359,9 @@ class TestHomogeneityWarningFires:
         assert result.exit_code == 0
         homogeneity = [w for w in ui.warnings if "Homogeneity risk" in w]
         assert len(homogeneity) == 2  # once per enabled phase, per run
+        # Each names the setting that silences it, not "an explicit config".
+        assert any("--review-model" in w for w in homogeneity), homogeneity
+        assert any("[security] agent_type or model" in w for w in homogeneity), homogeneity
         events = read_progress_events(tmp_path / ".kstrl" / "progress.jsonl")
         selections = [e for e in events if e["event"] == "adversarial_agent_selected"]
         assert {e["data"]["phase"] for e in selections} == {

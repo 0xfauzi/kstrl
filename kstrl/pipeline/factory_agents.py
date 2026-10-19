@@ -222,14 +222,17 @@ def _homogeneity_warning(
         "Self-preference bias means a same-family reviewer systematically "
         "misses the bug classes its own family produces. "
     )
+    explicit = {
+        "review": "pass --review-model or --review-agent-cmd",
+        "security": "set [security] agent_type or model (or pass --security-model)",
+    }.get(phase, f"set an explicit {phase} agent config")
     if engineer_family is None:
         return (
             "Homogeneity risk (R7.1): the engineer runs a custom agent "
             "command, so its model family is unknown and the "
             f"cross-family default cannot be applied; the {phase} "
             f"reviewer falls back to the same configuration. {tail}"
-            f"Set an explicit {phase} agent config on a different model "
-            "family to restore cross-family review."
+            f"To restore cross-family review, {explicit} on a different model family."
         )
     same_family = (
         f"so the {phase} reviewer runs on the same model family as the "
@@ -241,14 +244,13 @@ def _homogeneity_warning(
             f"Homogeneity risk (R7.1): the {cross_type} CLI is installed "
             f"but cannot run a turn{because}, {same_family}"
             f"Fix the {cross_type} CLI (authentication, quota, config) for "
-            f"cross-family review, or set an explicit {phase} agent config "
-            "to accept the risk silently."
+            f"cross-family review, or {explicit} to accept the risk silently."
         )
     return (
         f"Homogeneity risk (R7.1): the {cross_type} CLI is not available, "
         f"{same_family}"
-        f"Install the {cross_type} CLI for cross-family review, or set an "
-        f"explicit {phase} agent config to accept the risk silently."
+        f"Install the {cross_type} CLI for cross-family review, or {explicit} "
+        "to accept the risk silently."
     )
 
 

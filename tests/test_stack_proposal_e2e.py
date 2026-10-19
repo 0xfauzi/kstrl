@@ -190,6 +190,10 @@ def test_a_repository_with_no_build_manifest_gets_the_architects_stack_as_a_prop
 
     assert proc.returncode == 0, proc.stdout
     assert len(list(prompts.iterdir())) == 1, proc.stdout
+    # The one-line JSON reply is cut on the terminal, and whole in the transcript.
+    assert "characters; all of it is in the run transcript" in proc.stdout, proc.stdout
+    (log,) = (root / ".kstrl" / "runs").glob("decompose-*/components/@architect/*.log")
+    assert json.dumps(_output(STACK)) in log.read_text(encoding="utf-8")
     (item,) = _stack_items(root)
     assert item.status is ItemStatus.OPEN, item
     assert item.title.startswith("Proposed [stack]"), item.title
@@ -365,6 +369,10 @@ def test_an_architect_that_halts_still_files_its_proposal(tmp_path: Path) -> Non
         ItemKind.SPEC_ESCALATION
     ], proc.stdout
     assert not (root / "scripts" / "kstrl" / "manifest.json").exists(), proc.stdout
+    # With no manifest, `ks status` still shows the run that wrote events.
+    status = run_ks(root, "status", "--root", str(root), "--ui", "plain")
+    assert status.returncode == 0, status.stdout
+    assert "Run id:       decompose-" in status.stdout, status.stdout
 
 
 def test_ks_factory_spec_no_verify_pays_the_architect_without_measuring_the_base(

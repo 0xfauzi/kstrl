@@ -280,6 +280,9 @@ class UsageLedger(PipelineState):
                 readings = journal.carry_superseded(prior, self.run_id, owed)
             except OSError as exc:
                 self.ui.warn(f"  Evolution journal write failed (non-fatal): {exc}")
+        if not (retried or readings or spent):
+            # A run refused before it started left nothing to carry.
+            return
         self.ui.info(
             f"  Carried from interrupted run {prior}: {len(retried)} retried attempt(s), "
             f"{readings} attempt reading(s), "
