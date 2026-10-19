@@ -24,8 +24,10 @@ nonce in its command line, so a group id the kernel has since given to
 another process is never named (#642).
 ``-I -S`` means nothing outside the standard library is on the path, so
 a broken site or a missing kstrl dependency cannot stop it starting.
-The one kstrl import, the group reading, is taken only once the owner
-has gone, and an import that fails is a reading that cannot be made.
+The one kstrl import, the group reading, is taken at start, before the
+agent. An import that fails prints a message on stderr, writes it on the
+status fd and exits 72 (``IMPORT_FAILED``) with the agent not started. It
+is not left to fail, with no message, after the owner has gone (#708).
 
 ``killpg(0, ...)`` signals the caller's own group, so the leash refuses
 to start (exit 70) unless it leads its own group. That is the one check
@@ -59,13 +61,21 @@ import sys
 import threading
 import time
 import types
+from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from kstrl.proc.procgroup import GroupMembers
 
 #: Exit status when the leash does not lead its own process group.
 NOT_A_GROUP_LEADER = 70
 
 #: Exit status when the agent could not be started.
 SPAWN_FAILED = 71
+
+#: Exit status when the leash cannot import its group reading (#708, D2 of #863).
+IMPORT_FAILED = 72
 
 #: Seconds between two readings of the group while the grace runs (#708).
 POLL_SECONDS = 0.1
@@ -143,18 +153,8 @@ def _wait_for_owner(lifeline: int) -> None:
             return
 
 
-def _others_in_group() -> bool:
-    """Whether a process other than the leash may still be in its group.
-
-    False only when one ``ps`` reading lists no running member but the
-    leash and pids that are gone by the time it is checked. The ``ps``
-    that made the reading is in the group while it runs, so it is listed,
-    and it is gone once the reading returns. The reading is kstrl's own,
-    ``read_group_members``, so the tree keeps one ``ps`` parse. Anything
-    that stops the reading, an import that fails included, is True: the
-    leash then waits the whole grace, as it did before #708. The group is
-    read by ``getpgrp``, not by the leash's pid: under ``--hold`` the leash
-    that fires may be the forked child, which does not lead the group.
+def _load_reader() -> tuple[Callable[[int], bool], Callable[[int], GroupMembers]]:
+    """The two functions of ``kstrl.proc.procgroup`` that the group reading needs.
 
     The leash names the ``kstrl.proc`` package itself, as a module with
     only a path (#863 M2). The interface of the package imports the
@@ -165,13 +165,31 @@ def _others_in_group() -> bool:
     standard library. Thus the leash does not put the repository on the
     path.
     """
-    try:
-        if "kstrl.proc" not in sys.modules:
-            package = types.ModuleType("kstrl.proc")
-            package.__path__ = [str(Path(__file__).resolve().parent)]
-            sys.modules["kstrl.proc"] = package
-        from kstrl.proc.procgroup import pid_is_alive, read_group_members
+    if "kstrl.proc" not in sys.modules:
+        package = types.ModuleType("kstrl.proc")
+        package.__path__ = [str(Path(__file__).resolve().parent)]
+        sys.modules["kstrl.proc"] = package
+    from kstrl.proc.procgroup import pid_is_alive, read_group_members
 
+    return pid_is_alive, read_group_members
+
+
+def _others_in_group() -> bool:
+    """Whether a process other than the leash may still be in its group.
+
+    False only when one ``ps`` reading lists no running member but the
+    leash and pids that are gone by the time it is checked. The ``ps``
+    that made the reading is in the group while it runs, so it is listed,
+    and it is gone once the reading returns. The reading is kstrl's own,
+    ``read_group_members``, so the tree keeps one ``ps`` parse. Anything
+    else that stops the reading is True: the leash then waits the whole
+    grace, as it did before #708. The import is made once at start, where
+    a failure is loud (:func:`main`), so it cannot fail here. The group is
+    read by ``getpgrp``, not by the leash's pid: under ``--hold`` the leash
+    that fires may be the forked child, which does not lead the group.
+    """
+    try:
+        pid_is_alive, read_group_members = _load_reader()
         pids = read_group_members(os.getpgrp()).pids
         return pids is None or any(pid != os.getpid() and pid_is_alive(pid) for pid in pids)
     except Exception:  # noqa: BLE001 - a reading not made may hide a member
@@ -200,6 +218,16 @@ def main(argv: list[str]) -> int:
     if os.getpgrp() != os.getpid():
         os.write(status, b"refused")
         return NOT_A_GROUP_LEADER
+    try:
+        _load_reader()
+    except Exception as exc:  # noqa: BLE001 - any import failure is the same refusal
+        # A leash that cannot read its group would wait the whole grace at
+        # every end, with no message (#708). It stops here instead, before
+        # the agent starts, and the spawner raises this text as its OSError.
+        message = f"import failed: {type(exc).__name__}: {exc}"
+        print(f"leash: {message}", file=sys.stderr)
+        os.write(status, message.encode("ascii", "replace"))
+        return IMPORT_FAILED
     signal.signal(signal.SIGTERM, _ignore)
     signal.signal(signal.SIGINT, _ignore)
     try:

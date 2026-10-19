@@ -179,19 +179,20 @@ def _record_health_breaches(
 ) -> None:
     """Open an inbox item per R8.4 control-limit breach, and maybe demote.
 
-    Inert until ``kstrl/learning/health.py`` exists (#151). The import guard
-    swallows exactly one thing: THAT module not being importable at all,
-    which is what ``exc.name != "kstrl.learning.health"`` decides. A
-    ``kstrl.learning.health`` that exists and fails on a dependency the operator
-    has not installed raises ``ModuleNotFoundError`` naming that
-    dependency, and must reach the caller's "Autonomy state update
-    failed" warning rather than read as "#151 has not landed". A
-    ``kstrl.learning.health`` that exists and has renamed ``health_breaches``
-    raises ``AttributeError`` and must do the same, so the attribute
-    lookup is INSIDE the guarded block where widening the clause can
-    swallow it and a test can see that it did. A seam that disarms itself
-    silently is worse than one that is loudly broken, and a bare
-    ``except ImportError`` cannot tell the two cases apart.
+    There is no "inert if the module is absent" path (#863 D2). The
+    package ``kstrl.learning`` imports ``health`` when the package loads,
+    so a tree without the module ``kstrl.learning.health`` cannot import
+    ``kstrl.learning`` at all, and this module could not be imported
+    to reach a guard that returns. Measured on a copy of the tree without
+    the file: ``import kstrl.factory.factory_autonomy`` raises
+    ``ModuleNotFoundError`` with ``name == "kstrl.learning.health"``. The
+    guard that returned on that name could not run, so it is removed. The
+    import and the attribute lookup are a plain call, and a module that is
+    broken by a dependency the operator has not installed, or has renamed
+    ``health_breaches``, raises ``ModuleNotFoundError`` or
+    ``AttributeError`` to the caller's "Autonomy state update failed"
+    warning. The import stays a call of ``importlib.import_module``, so
+    the health seam test can replace the module in ``sys.modules``.
 
     Advisory first: the item is always written, the demotion happens only
     under ``[autonomy] demote_on_health_breach``. It is additionally
@@ -214,16 +215,7 @@ def _record_health_breaches(
     well: two copies of an arithmetic nothing keeps in step is how one of
     them goes wrong.
     """
-    try:
-        health = importlib.import_module("kstrl.learning.health")
-        breaches_of = health.health_breaches
-    except ModuleNotFoundError as exc:
-        if exc.name != "kstrl.learning.health":
-            raise
-        return
-    # OUTSIDE the guard on purpose: a ModuleNotFoundError raised by
-    # #151's own code, for its own missing dependency, is that module
-    # being broken and not this one being absent.
+    breaches_of = importlib.import_module("kstrl.learning.health").health_breaches
     breaches: list[_HealthBreach] = list(breaches_of(root_dir))
     if not breaches:
         return
@@ -411,8 +403,8 @@ def _record_autonomy_outcome(
       level is not warranted.
     - **Health breaches** (R8.4, seam only until #151): control-limit
       breaches over run metrics, opened as inbox items on every path and
-      demoting only under an explicit switch. Read from ``kstrl.learning.health``
-      if that module exists; see ``_record_health_breaches``.
+      demoting only under an explicit switch. Read from ``kstrl.learning.health``;
+      see ``_record_health_breaches``.
 
     Automatic demotion happens here rather than mid-run: demoting while
     components are still executing would change the flag bundle underneath
