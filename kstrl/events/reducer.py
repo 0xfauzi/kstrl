@@ -26,8 +26,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from kstrl.events import event_catalog
-from kstrl.events import events as ev
+import kstrl.events.event_catalog as event_catalog
+import kstrl.events.events as ev
 from kstrl.events.observability import parse_event_ts, read_progress_events
 from kstrl.events.usage import CEILING_AXES
 from kstrl.plan import COMPONENT_STATUS_VALUES, ComponentStatus

@@ -153,7 +153,7 @@ def budget_halt_reason(root_dir: Path, owned_run_ids: Sequence[str]) -> str:
     Read from the typed ``BudgetExceeded`` event rather than by matching
     the finding's prose, so this cannot drift when the wording changes.
     """
-    from kstrl.events import event_catalog, read_run_dir
+    from kstrl.events import BudgetExceeded, budget_halt_kind, read_run_dir
 
     for run_id in owned_run_ids:
         if not run_id:
@@ -163,7 +163,7 @@ def budget_halt_reason(root_dir: Path, owned_run_ids: Sequence[str]) -> str:
         except OSError:
             continue
         for event in events:
-            if isinstance(event, event_catalog.BudgetExceeded):
+            if isinstance(event, BudgetExceeded):
                 named = ", ".join(event.ceilings)
                 # BudgetExceeded also carries condition="unenforceable",
                 # where NO threshold was crossed - the ceiling simply
@@ -172,7 +172,7 @@ def budget_halt_reason(root_dir: Path, owned_run_ids: Sequence[str]) -> str:
                 # breach that never happened (#197 M2). Routed through the
                 # shared classifier so this cannot drift from the reducer's
                 # and the Linear sink's reading of the same payload.
-                kind = event_catalog.budget_halt_kind(event.condition, event.ceilings)
+                kind = budget_halt_kind(event.condition, event.ceilings)
                 return _budget_halt_sentence(run_id, kind, named)
     return ""
 

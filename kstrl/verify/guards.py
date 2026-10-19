@@ -6,7 +6,18 @@ import re
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Literal
 
-from kstrl.git import git, git_tree
+from kstrl.git import (
+    GitDiffError,
+    WorkspaceBaseline,
+    delete_untracked,
+    get_changed_files,
+    get_changed_files_since,
+    is_file_tracked,
+    is_git_repo,
+    remove_from_index,
+    restore_file,
+    restore_file_from,
+)
 from kstrl.io import STATE_DIR_NAME
 from kstrl.owner import (
     InteractionChannel,
@@ -129,7 +140,7 @@ def _revert_violation(
     file: str,
     ui: UI,
     cwd: Path | None,
-    baseline: git_tree.WorkspaceBaseline | None,
+    baseline: WorkspaceBaseline | None,
 ) -> bool:
     """Undo one out-of-scope change. False when it was REFUSED.
 
@@ -158,18 +169,18 @@ def _revert_violation(
         ui.warn(f"  Refused (kstrl state, reported not reverted): {file}")
         return False
     if baseline is not None and baseline.head is not None:
-        if git_tree.restore_file_from(file, baseline.head, cwd):
+        if restore_file_from(file, baseline.head, cwd):
             ui.info(f"  Restored: {file}")
         else:
-            git_tree.remove_from_index(file, cwd)
-            git_tree.delete_untracked(file, cwd)
+            remove_from_index(file, cwd)
+            delete_untracked(file, cwd)
             ui.info(f"  Deleted: {file}")
         return True
-    if git_tree.is_file_tracked(file, cwd):
-        git_tree.restore_file(file, cwd)
+    if is_file_tracked(file, cwd):
+        restore_file(file, cwd)
         ui.info(f"  Restored: {file}")
     else:
-        git_tree.delete_untracked(file, cwd)
+        delete_untracked(file, cwd)
         ui.info(f"  Deleted: {file}")
     return True
 
@@ -178,7 +189,7 @@ def _revert_violations(
     violations: list[str],
     ui: UI,
     cwd: Path | None,
-    baseline: git_tree.WorkspaceBaseline | None,
+    baseline: WorkspaceBaseline | None,
 ) -> list[str]:
     """Revert what may be reverted; return what was refused.
 
@@ -233,7 +244,7 @@ def enforce_allowed_paths(
     cwd: Path | None = None,
     interaction: InteractionChannel | None = None,
     ignored_paths: list[str] | None = None,
-    baseline: git_tree.WorkspaceBaseline | None = None,
+    baseline: WorkspaceBaseline | None = None,
 ) -> tuple[bool, list[str]]:
     """Enforce ALLOWED_PATHS after an iteration.
 
@@ -262,18 +273,18 @@ def enforce_allowed_paths(
         return True, []
 
     # Skip if not in git repo
-    if not git.is_git_repo(cwd):
+    if not is_git_repo(cwd):
         return True, []
 
     # Get changed files
     try:
         changed = (
-            git_tree.get_changed_files_since(baseline, cwd)
+            get_changed_files_since(baseline, cwd)
             if baseline is not None
-            else git_tree.get_changed_files(cwd)
+            else get_changed_files(cwd)
         )
         violations = check_violations(changed, config.allowed_paths, ignored_paths)
-    except git.GitDiffError as exc:
+    except GitDiffError as exc:
         ui.err(f"Allowed-paths enforcement could not read the changed files: {exc}")
         return False, []
 

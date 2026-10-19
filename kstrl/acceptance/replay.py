@@ -42,7 +42,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from kstrl.acceptance.isolation import SETUP_ZONE, TEST_ZONE, prove_zones
-from kstrl.git import git, git_base
+from kstrl.git import GitDiffError, detect_base_branch, resolve_base_sha
 from kstrl.io import CONTROL_APP_NAME, atomic_write_text, xdg_state_home
 from kstrl.proc import (
     ChildOutputDecodeError,
@@ -180,7 +180,7 @@ def replay_stack(
     runs in place of the stack's checks (#700 slice 4: the acceptance
     checks, on the base and on each head)."""
     started = time.monotonic()
-    record = Replay(stack.digest, git_base.detect_base_branch(root), base_sha=at)
+    record = Replay(stack.digest, detect_base_branch(root), base_sha=at)
     try:
         with replay_lock(ui) as waited:
             record.lock_wait_seconds = waited
@@ -202,8 +202,8 @@ def _replay_in_worktree(
     into a throwaway worktree, replay inside it, and remove it whatever
     happened."""
     try:
-        record.base_sha = record.base_sha or git_base.resolve_base_sha(record.base_branch, root)
-    except git.GitDiffError as exc:
+        record.base_sha = record.base_sha or resolve_base_sha(record.base_branch, root)
+    except GitDiffError as exc:
         record.error = f"the base branch {record.base_branch} did not resolve: {exc}"
         return
     worktree, checkout_error = create_temp_worktree(record.base_sha, root, WORKTREE_LABEL)

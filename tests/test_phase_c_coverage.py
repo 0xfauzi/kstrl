@@ -241,7 +241,7 @@ class TestC2ReviewRetry:
                 "kstrl.factory.factory.run_review",
                 side_effect=fake_run_review,
             ),
-            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.get_diff_content", return_value=""),
         ):
             result = run_factory(
                 manifest,
@@ -297,7 +297,7 @@ class TestC3SecurityRetry:
                 "kstrl.factory.factory.run_security_review",
                 side_effect=fake_run_security,
             ),
-            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.get_diff_content", return_value=""),
         ):
             result = run_factory(
                 manifest,
@@ -385,7 +385,7 @@ class TestC4ContractBreaker:
                 "kstrl.factory.factory_acceptance.run_contract_testing",
                 side_effect=fake_contract,
             ),
-            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.get_diff_content", return_value=""),
         ):
             result = run_factory(
                 manifest,
@@ -436,7 +436,7 @@ class TestC5SinglePrMode:
                 return_value=(0, "skipped", False),
             ) as mock_distill,
             patch(
-                "kstrl.git.git_diff.get_diff_content",
+                "kstrl.git.get_diff_content",
                 return_value="",
             ),
         ):

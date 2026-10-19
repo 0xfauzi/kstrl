@@ -63,9 +63,9 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
+import kstrl.serve.intake_gh as intake_gh
 from kstrl.io import read_json
 from kstrl.queue import ItemSource, MergeDisposition, Queue, QueueError
-from kstrl.serve import intake_gh
 from kstrl.serve.intake_gh import GitHubIntakeConfig, _utc_now_iso
 from kstrl.serve.intake_issue import (
     Authorization,

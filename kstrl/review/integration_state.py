@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from kstrl.events import events as ev
+from kstrl.events import RunPaths
 from kstrl.git import kstrl_version
 from kstrl.io import atomic_write_json, read_json
 from kstrl.plan import Component, Manifest, enum_field_error, required_field_error
@@ -321,7 +321,7 @@ def write_state(root_dir: Path, state: dict[str, Any]) -> str:
 
 
 def evidence_dir(root_dir: Path, run_id: str) -> Path:
-    return ev.RunPaths.for_run(root_dir, run_id).root / "integration"
+    return RunPaths.for_run(root_dir, run_id).root / "integration"
 
 
 def next_review_number(directory: Path) -> int:

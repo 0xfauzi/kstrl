@@ -120,9 +120,7 @@ def test_a_listing_failure_is_not_run_and_calls_no_reviewer(tmp_path: Path) -> N
     reviewer = h.FakeReviewer(json.dumps(h.review_payload(root, base)))
 
     with (
-        patch(
-            "kstrl.git.git_tree.tracked_files_at", side_effect=git.GitDiffError("git ls-tree boom")
-        ),
+        patch("kstrl.git.tracked_files_at", side_effect=git.GitDiffError("git ls-tree boom")),
         patch.object(
             ComponentPipeline,
             "adversarial_budget_consume",

@@ -408,10 +408,13 @@ def _names_git_diff_error(node: ast.Raise) -> bool:
     return isinstance(func, ast.Attribute) and func.attr == "GitDiffError"
 
 
-def _binds_git_diff_error(node: ast.AST) -> TypeGuard[ast.ImportFrom]:
+def _renames_git_diff_error(node: ast.AST) -> TypeGuard[ast.ImportFrom]:
     if not isinstance(node, ast.ImportFrom):
         return False
-    return any((alias.asname or alias.name) == "GitDiffError" for alias in node.names)
+    return any(
+        alias.name == "GitDiffError" and alias.asname not in (None, "GitDiffError")
+        for alias in node.names
+    )
 
 
 class TestGitDiffErrorHasOneHome:
@@ -438,16 +441,22 @@ class TestGitDiffErrorHasOneHome:
         # deletes read_blob, which raised it five times.
         assert census == {"git/git_base.py": 4, "git/git_diff.py": 12, "git/git_tree.py": 9}
 
-    def test_no_importfrom_outside_git_py_binds_the_name(self) -> None:
+    def test_no_import_binds_the_name_under_another_name(self) -> None:
+        """#863 D1: ``from kstrl.git import GitDiffError`` is the interface
+        spelling, and the raise census above sees ``raise GitDiffError(...)``
+        in any module. A rename (``import GitDiffError as E``) is what takes
+        a raise out of that census, so a rename is what this flags."""
         offenders = [
             f"{label(source_file)}:{node.lineno}"
             for source_file in package_sources()
-            if label(source_file) != "git/git.py" and not label(source_file).startswith("git/git_")
             for node in all_nodes(parse(source_file.read_text(encoding="utf-8")))
-            if _binds_git_diff_error(node)
+            if _renames_git_diff_error(node)
         ]
 
         assert offenders == []
+        planted = parse("from kstrl.git import GitDiffError as E\n").body[0]
+        plain = parse("from kstrl.git import GitDiffError\n").body[0]
+        assert _renames_git_diff_error(planted) and not _renames_git_diff_error(plain)
 
     def test_the_class_is_defined_only_in_git_py(self) -> None:
         homes = [

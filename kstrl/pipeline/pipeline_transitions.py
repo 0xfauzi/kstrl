@@ -12,8 +12,16 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-from kstrl.events import CEILING_AXES, event_catalog
-from kstrl.git import git
+from kstrl.events import (
+    CEILING_AXES,
+    BudgetExceeded,
+    ComponentCompleted,
+    ComponentFailed,
+    ComponentRetrying,
+    ComponentSkipped,
+    PhaseCompleted,
+)
+from kstrl.git import branch_sha
 from kstrl.owner import ACCEPTANCE_PHASE, ItemKind
 from kstrl.pipeline.context import IterationContext
 from kstrl.pipeline.divergence import convergence_message, failure_counts_not_converging
@@ -86,9 +94,7 @@ class Transitions(InboxDesk, AttemptRecorder, UsageLedger):
         self.factory_result.skipped.extend(skipped)
         for sid in skipped:
             self.bus.emit(
-                event_catalog.ComponentSkipped(
-                    component=sid, reason=f"dependency '{failed_id}' failed"
-                )
+                ComponentSkipped(component=sid, reason=f"dependency '{failed_id}' failed")
             )
         return skipped
 
@@ -180,7 +186,7 @@ class Transitions(InboxDesk, AttemptRecorder, UsageLedger):
                 self._merge_phase_readings(comp.id, ctx)
                 self.component_contexts[comp.id] = ctx.to_json()
             self.bus.emit(
-                event_catalog.ComponentRetrying(
+                ComponentRetrying(
                     component=comp.id,
                     attempt=comp.retries,
                     reason=error,
@@ -269,7 +275,7 @@ class Transitions(InboxDesk, AttemptRecorder, UsageLedger):
         self._end_attempt(comp)
         self._cascade_skip(comp.id)
         self.factory_result.failed.append(comp.id)
-        self.bus.emit(event_catalog.ComponentFailed(component=comp.id, error=error))
+        self.bus.emit(ComponentFailed(component=comp.id, error=error))
         self.notify.fire_first_failure(comp.id, error)
         if comp.id in self._inbox_typed:
             self._inbox_typed.discard(comp.id)
@@ -278,7 +284,7 @@ class Transitions(InboxDesk, AttemptRecorder, UsageLedger):
             if phase == ACCEPTANCE_PHASE:
                 # #700 decision 14: an approval of this halt covers these
                 # checks on this commit only (waivers.covering_override).
-                evidence["head_sha"] = git.branch_sha(comp.branch_name, self.root_dir) or ""
+                evidence["head_sha"] = branch_sha(comp.branch_name, self.root_dir) or ""
             self._inbox_add(
                 ItemKind.HALTED_RUN,
                 f"{comp.id} halted in {phase}",
@@ -406,7 +412,7 @@ class Transitions(InboxDesk, AttemptRecorder, UsageLedger):
             ],
         )
         self.bus.emit(
-            event_catalog.BudgetExceeded(
+            BudgetExceeded(
                 component=comp.id,
                 total_tokens=self.run_usage.total_tokens,
                 max_total_tokens=self.factory_config.max_total_tokens,
@@ -472,7 +478,7 @@ class Transitions(InboxDesk, AttemptRecorder, UsageLedger):
         self._end_attempt(comp)
         self.factory_result.completed.append(comp.id)
         self.bus.emit(
-            event_catalog.ComponentCompleted(
+            ComponentCompleted(
                 component=comp.id,
                 duration_seconds=comp.duration_seconds,
                 iterations=comp.iteration_count,
@@ -517,7 +523,7 @@ class Transitions(InboxDesk, AttemptRecorder, UsageLedger):
             started = self._attempt_started_monotonic.get(comp_id)
             duration = time.monotonic() - started if started is not None else 0.0
             self.bus.emit(
-                event_catalog.PhaseCompleted(
+                PhaseCompleted(
                     component=comp_id,
                     phase="engineer",
                     passed=False,
@@ -526,7 +532,7 @@ class Transitions(InboxDesk, AttemptRecorder, UsageLedger):
                 )
             )
             self.bus.emit(
-                event_catalog.ComponentFailed(
+                ComponentFailed(
                     component=comp_id,
                     error="component timeout",
                 )

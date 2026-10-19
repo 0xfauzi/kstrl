@@ -30,7 +30,17 @@ from kstrl.agents import (
     select_agent_output,
 )
 from kstrl.config import ConfigSection, check_numbers, validate_agent_type
-from kstrl.git import git_base, git_diff
+from kstrl.git import (
+    COVERAGE_SUGGESTION,
+    DiffStat,
+    coverage_marker_text,
+    coverage_notes_prefix,
+    diffstat_disagreement,
+    get_diff_stat,
+    parse_observed_diffstat,
+    repo_change_source,
+    resolve_base_sha,
+)
 from kstrl.io import generate_data_delimiter
 from kstrl.plan import Finding, dump_raw_debug, prd_text_for_prompt, tag_finding_with_model
 from kstrl.proc import limit_seconds
@@ -131,7 +141,7 @@ class SecurityResult:
     # disagreement with git's own numstat when there is one. Mirrors
     # ReviewResult; see ``git.diffstat_disagreement`` for what the check
     # does and does not prove.
-    observed_diffstat: git_diff.DiffStat | None = None
+    observed_diffstat: DiffStat | None = None
     diffstat_disagreement: str = ""
     # R7.1: identity of the model that produced this security review
     # (the agent's ``name``). Stamped by run_security_review; empty when
@@ -622,7 +632,7 @@ def parse_security_output(
         mode=mode,
         findings=findings,
         exhaustively_searched=exhaustively_searched,
-        observed_diffstat=git_diff.parse_observed_diffstat(data.get("observedDiffstat")),
+        observed_diffstat=parse_observed_diffstat(data.get("observedDiffstat")),
         overall_notes=overall_notes,
         raw_output=raw_output[:2000],
     )
@@ -630,7 +640,7 @@ def parse_security_output(
 
 def apply_coverage_check(
     result: SecurityResult,
-    actual: git_diff.DiffStat,
+    actual: DiffStat,
     mode: str,
 ) -> None:
     """#266: Phase 2's coverage check, in Phase 2.5's types.
@@ -643,7 +653,7 @@ def apply_coverage_check(
     """
     if result.infrastructure_error:
         return
-    disagreement = git_diff.diffstat_disagreement(result.observed_diffstat, actual)
+    disagreement = diffstat_disagreement(result.observed_diffstat, actual)
     if disagreement is None:
         return
     result.diffstat_disagreement = disagreement
@@ -652,8 +662,8 @@ def apply_coverage_check(
             category="other",
             severity="low",
             location="",
-            explanation=git_diff.coverage_marker_text("security review", disagreement),
-            suggestion=git_diff.COVERAGE_SUGGESTION,
+            explanation=coverage_marker_text("security review", disagreement),
+            suggestion=COVERAGE_SUGGESTION,
         )
     )
     if mode != SecurityMode.HARD.value:
@@ -661,7 +671,7 @@ def apply_coverage_check(
     result.passed = False
     result.infrastructure_error = True
     result.overall_notes = (
-        git_diff.coverage_notes_prefix("security review", disagreement) + " " + result.overall_notes
+        coverage_notes_prefix("security review", disagreement) + " " + result.overall_notes
     ).strip()
 
 
@@ -717,9 +727,9 @@ def run_security_review(
         # not read the change - never that the two sides were asked
         # about the same moving name at two different times. Identical
         # to Phase 2; see git.resolve_base_sha for why a name will not do.
-        base_sha = git_base.resolve_base_sha(base_branch, worktree_path)
-        actual_diffstat = git_diff.get_diff_stat(base_sha, worktree_path, resolved=True)
-        prompt = _build_security_prompt(prd_text, git_diff.repo_change_source(base_sha))
+        base_sha = resolve_base_sha(base_branch, worktree_path)
+        actual_diffstat = get_diff_stat(base_sha, worktree_path, resolved=True)
+        prompt = _build_security_prompt(prd_text, repo_change_source(base_sha))
         output_lines = collect_agent_output(
             agent,
             prompt,

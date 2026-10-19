@@ -353,7 +353,7 @@ PINNED_HITS: dict[str, dict[str, int]] = {
     "architect/decisions.py": {"python": 1},
     "cli/doctor_measure.py": {"pytest": 1},
     "factory/factory.py": {"mypy": 1},
-    "factory/factory_autonomy.py": {"mypy": 4, "uv": 2},
+    "factory/factory_autonomy.py": {"mypy": 1},
     "pipeline/factory_config.py": {"pip": 1},
     "verify/failure_excerpt.py": {"cargo": 2, "go": 3, "jest": 2, "rust": 5},
     "verify/failure_signatures.py": {"mypy": 3, "pytest": 2, "ruff": 6, "vulture": 1},

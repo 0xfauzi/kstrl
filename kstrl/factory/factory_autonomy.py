@@ -6,7 +6,6 @@ the rejections, the health breaches and the demotions.
 
 from __future__ import annotations
 
-import importlib
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
@@ -46,24 +45,12 @@ if TYPE_CHECKING:
 
 
 class _HealthBreach(Protocol):
-    """The R8.4 breach record this seam reads and #151 will supply.
+    """The R8.4 breach record this seam reads from ``kstrl.learning``.
 
-    Structural rather than imported: ``kstrl/learning/health.py`` does not exist
-    yet, so the factory must not take a hard dependency on it. These five
-    attributes are the whole contract between #232 and #151; anything
-    else the eventual dataclass carries is invisible here.
-
-    READ-ONLY members, declared as properties rather than as the plain
-    ``metric: str`` a Protocol usually carries. A plain variable member
-    demands a SETTABLE attribute, and the record #151 is contracted to
-    supply is a ``@dataclass(frozen=True)``, whose attributes are
-    read-only: written the obvious way, this Protocol rejects the one
-    implementation it exists to describe, and would have done so at
-    exactly the moment the two changes met.
-    :func:`_health_breach_seam_accepts_the_contract` below is the guard
-    for that: it hands mypy the mandated frozen shape where a
-    ``_HealthBreach`` is expected, so ``uv run mypy kstrl/ --strict``
-    fails here rather than in #151.
+    These five read-only attributes are the whole contract between #232
+    and #151. ``health_breaches`` returns the frozen ``HealthBreach``
+    dataclass, and mypy checks it against this Protocol where the seam
+    reads it.
     """
 
     @property
@@ -80,36 +67,6 @@ class _HealthBreach(Protocol):
 
     @property
     def window_runs(self) -> int: ...
-
-
-if TYPE_CHECKING:
-
-    @dataclass(frozen=True)
-    class _HealthBreachContract:
-        """The record #151 is contracted to supply, spelled as the issue
-        and ``docs/dark-factory-roadmap.md`` spell it."""
-
-        metric: str
-        rule: str
-        value: float
-        limit: float
-        window_runs: int
-
-    def _health_breach_seam_accepts_the_contract(
-        breach: _HealthBreachContract,
-    ) -> _HealthBreach:
-        """A static assertion, and the only guard this seam can have.
-
-        The seam reads a module ``importlib`` returns as ``Any``, so
-        nothing about the two sides is checked where they meet. This
-        function is checked: it hands mypy the FROZEN dataclass the
-        contract mandates where a ``_HealthBreach`` is expected, so a
-        Protocol that dataclass cannot satisfy fails
-        ``uv run mypy kstrl/ --strict`` here rather than in #151.
-        ``TYPE_CHECKING`` only - nothing calls it and nothing is
-        constructed.
-        """
-        return breach
 
 
 def _open_health_breach_items(
@@ -179,20 +136,12 @@ def _record_health_breaches(
 ) -> None:
     """Open an inbox item per R8.4 control-limit breach, and maybe demote.
 
-    There is no "inert if the module is absent" path (#863 D2). The
-    package ``kstrl.learning`` imports ``health`` when the package loads,
-    so a tree without the module ``kstrl.learning.health`` cannot import
-    ``kstrl.learning`` at all, and this module could not be imported
-    to reach a guard that returns. Measured on a copy of the tree without
-    the file: ``import kstrl.factory.factory_autonomy`` raises
-    ``ModuleNotFoundError`` with ``name == "kstrl.learning.health"``. The
-    guard that returned on that name could not run, so it is removed. The
-    import and the attribute lookup are a plain call, and a module that is
-    broken by a dependency the operator has not installed, or has renamed
-    ``health_breaches``, raises ``ModuleNotFoundError`` or
-    ``AttributeError`` to the caller's "Autonomy state update failed"
-    warning. The import stays a call of ``importlib.import_module``, so
-    the health seam test can replace the module in ``sys.modules``.
+    The breaches come from ``health_breaches`` of the ``kstrl.learning``
+    interface. The import is inside the function, so a test that replaces
+    the package binding reaches this read (#863 D1).
+    There is no path for an absent module: the package imports
+    ``health`` when it loads, so without the module this file cannot be
+    imported at all, and the guard that returned on it was removed (#863 D2).
 
     Advisory first: the item is always written, the demotion happens only
     under ``[autonomy] demote_on_health_breach``. It is additionally
@@ -215,8 +164,9 @@ def _record_health_breaches(
     well: two copies of an arithmetic nothing keeps in step is how one of
     them goes wrong.
     """
-    breaches_of = importlib.import_module("kstrl.learning.health").health_breaches
-    breaches: list[_HealthBreach] = list(breaches_of(root_dir))
+    from kstrl.learning import health_breaches
+
+    breaches: list[_HealthBreach] = list(health_breaches(root_dir))
     if not breaches:
         return
     _open_health_breach_items(root_dir, breaches, run_id=run_id, ui=ui)
@@ -403,7 +353,7 @@ def _record_autonomy_outcome(
       level is not warranted.
     - **Health breaches** (R8.4, seam only until #151): control-limit
       breaches over run metrics, opened as inbox items on every path and
-      demoting only under an explicit switch. Read from ``kstrl.learning.health``;
+      demoting only under an explicit switch. Read from ``kstrl.learning``;
       see ``_record_health_breaches``.
 
     Automatic demotion happens here rather than mid-run: demoting while

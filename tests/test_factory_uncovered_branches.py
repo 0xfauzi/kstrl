@@ -80,7 +80,7 @@ def _drive(
         worker = lambda comp_id, *a, **k: _ok(comp_id)  # noqa: E731
     stubs = [
         patch("kstrl.factory.factory._run_component", side_effect=worker),
-        patch("kstrl.git.git_diff.get_diff_content", return_value=""),
+        patch("kstrl.git.get_diff_content", return_value=""),
     ]
     if contract is not None:
         stubs.append(

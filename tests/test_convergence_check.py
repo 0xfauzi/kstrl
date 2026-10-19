@@ -162,7 +162,7 @@ def _no_real_diff(monkeypatch: pytest.MonkeyPatch) -> None:
     they call the stubbed reviewer; tmp_path is not a git repository, so
     both are stubbed at their source modules, as tests/test_pipeline.py
     does for every pipeline test."""
-    monkeypatch.setattr("kstrl.git.git_diff.get_diff_content", lambda *a, **k: "diff --git a b\n")
+    monkeypatch.setattr("kstrl.git.get_diff_content", lambda *a, **k: "diff --git a b\n")
     monkeypatch.setattr("kstrl.agents.get_agent", lambda *a, **k: object())
 
 

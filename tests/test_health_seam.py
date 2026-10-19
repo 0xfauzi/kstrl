@@ -1,19 +1,18 @@
 """R10.11 (#232): the R8.4 health seam, meeting the real module (#151).
 
-``kstrl/learning/health.py`` now exists, so what ships here is the meeting
-point: the import guard, a ``health_breach`` inbox kind and
-``[autonomy] demote_on_health_breach``. The seam is shown to fire
-against a monkeypatched module rather than assumed to, and the guard's
-narrowing - which is what keeps a broken ``kstrl.learning.health`` loud instead
-of reading as "#151 has not landed" - is driven through the real import
-machinery. The applier it calls is pinned in
+``kstrl/learning/health.py`` exists, so what ships here is the meeting
+point: a ``health_breach`` inbox kind and ``[autonomy]
+demote_on_health_breach``. The seam is shown to fire against a replaced
+``kstrl.learning.health_breaches`` binding rather than assumed to. #863 D1
+removed the import guard that read a missing module as "#151 has not
+landed": ``kstrl.learning`` imports ``kstrl.learning.health`` itself, so the
+module cannot be absent. The applier it calls is pinned in
 ``test_demotion_triggers.py``; the shared fixtures are in
 ``tests/helpers/demotion.py``.
 """
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -23,8 +22,7 @@ from kstrl.io.statedir import CONTROL_AUTONOMY, ControlUnavailableError, control
 from kstrl.learning.autonomy import AutonomyLevel, AutonomyState
 from kstrl.owner.inbox import Inbox, ItemKind, Priority
 from tests.helpers.demotion import (
-    BrokenHealthFinder,
-    fake_health,
+    fake_health_breaches,
     inbox_items,
     make_breach,
     run_outcome,
@@ -45,62 +43,10 @@ class TestHealthSeam:
     # tests/test_health_trending.py::test_the_factory_seam_opens_an_inbox_item_from_the_real_module,
     # which drives the seam against the real module end to end.
 
-    def test_health_module_present_but_missing_function_raises(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """A renamed contract must fail loud, not disarm the seam.
-
-        The guard swallows exactly one thing: kstrl.learning.health not existing.
-        A module that exists and does not export ``health_breaches``
-        raises AttributeError, which the factory's caller reports as
-        "Autonomy state update failed". A bare ``except ImportError``
-        would have read the rename as "#151 has not landed yet".
-        """
-        monkeypatch.setitem(sys.modules, "kstrl.learning.health", fake_health(with_function=False))
-        write_config(tmp_path)
-        AutonomyState(level=int(AutonomyLevel.L2_GATED_MERGE)).save(tmp_path)
-        with pytest.raises(AttributeError):
-            run_outcome(tmp_path)
-
-    def test_health_module_broken_by_its_own_dependency_propagates(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """The OTHER ``.name``, which is what the narrowing is for.
-
-        #151 will land a ``kstrl/learning/health.py``; the operator who has not
-        installed what it imports gets a ``ModuleNotFoundError`` naming
-        THAT dependency. The guard swallows only ``kstrl.learning.health`` itself
-        being absent, so this one reaches the caller's "Autonomy state
-        update failed" warning instead of reading as "#151 has not landed
-        yet" and disarming the seam for good.
-
-        This is the case the guard exists for and the one nothing pinned:
-        with the module merely renamed, the guard passes under any except
-        clause on the import, including ``except ImportError`` and a
-        clause with no ``.name`` check at all.
-        """
-        # kstrl.learning.health is a real module (#151): an earlier test in this
-        # session may have imported it already, and import_module then
-        # returns the cache instead of reaching BrokenHealthFinder.
-        # monkeypatch restores whatever was here (or removes the key
-        # again) once the test ends, so this does not leak into other
-        # tests.
-        monkeypatch.delitem(sys.modules, "kstrl.learning.health", raising=False)
-        monkeypatch.setattr(sys, "meta_path", [BrokenHealthFinder(), *sys.meta_path])
-        write_config(tmp_path, demote_on_health=True)
-        AutonomyState(level=int(AutonomyLevel.L3_ENVELOPED_AUTO)).save(tmp_path)
-
-        with pytest.raises(ModuleNotFoundError) as excinfo:
-            run_outcome(tmp_path)
-
-        assert excinfo.value.name == "scipy"
-        assert inbox_items(tmp_path) == []
-        assert AutonomyState.load(tmp_path).level == int(AutonomyLevel.L3_ENVELOPED_AUTO)
-
     def test_health_breach_opens_inbox_item(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setitem(sys.modules, "kstrl.learning.health", fake_health(make_breach()))
+        fake_health_breaches(monkeypatch, make_breach())
         write_config(tmp_path)
         AutonomyState(level=int(AutonomyLevel.L2_GATED_MERGE)).save(tmp_path)
         run_outcome(tmp_path)
@@ -124,7 +70,7 @@ class TestHealthSeam:
         Starting at L2 and asserting L1 passes whether the trigger
         revokes one level or every level it can reach.
         """
-        monkeypatch.setitem(sys.modules, "kstrl.learning.health", fake_health(make_breach()))
+        fake_health_breaches(monkeypatch, make_breach())
         write_config(tmp_path, demote_on_health=True)
         AutonomyState(level=int(AutonomyLevel.L3_ENVELOPED_AUTO)).save(tmp_path)
         run_outcome(tmp_path)
@@ -146,7 +92,7 @@ class TestHealthSeam:
         this gate one breach costs a level per run all the way to L1
         before the operator has read the first notice.
         """
-        monkeypatch.setitem(sys.modules, "kstrl.learning.health", fake_health(make_breach()))
+        fake_health_breaches(monkeypatch, make_breach())
         write_config(tmp_path, demote_on_health=True)
         state = AutonomyState(level=int(AutonomyLevel.L3_ENVELOPED_AUTO))
         state.cooldown_runs_remaining = 3
@@ -178,7 +124,7 @@ class TestHealthSeam:
         Seeded at 3 and at 0, the two existing cases straddle this
         without touching it.
         """
-        monkeypatch.setitem(sys.modules, "kstrl.learning.health", fake_health(make_breach()))
+        fake_health_breaches(monkeypatch, make_breach())
         write_config(tmp_path, demote_on_health=True)
         state = AutonomyState(level=int(AutonomyLevel.L3_ENVELOPED_AUTO))
         state.cooldown_runs_remaining = 1
@@ -198,7 +144,7 @@ class TestHealthSeam:
         in the gate (``> 0`` written ``> 1``) fails: at the seeds the
         other cases use, 3 and 0, both spellings agree.
         """
-        monkeypatch.setitem(sys.modules, "kstrl.learning.health", fake_health(make_breach()))
+        fake_health_breaches(monkeypatch, make_breach())
         write_config(tmp_path, demote_on_health=True)
         state = AutonomyState(level=int(AutonomyLevel.L3_ENVELOPED_AUTO))
         state.cooldown_runs_remaining = 2
@@ -240,7 +186,7 @@ class TestHealthSeam:
         let this one out - as a traceback from the seam, on a path whose
         whole contract is that bookkeeping cannot fail a run.
         """
-        monkeypatch.setitem(sys.modules, "kstrl.learning.health", fake_health(make_breach()))
+        fake_health_breaches(monkeypatch, make_breach())
         (tmp_path / "kstrl.toml").write_text(
             "[autonomy]\nenabled = true\n\n[inbox]\nopen_item_cap = 1979-05-27\n",
             encoding="utf-8",
@@ -256,7 +202,7 @@ class TestHealthSeam:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """The third emitter, and the third one nothing covered."""
-        monkeypatch.setitem(sys.modules, "kstrl.learning.health", fake_health(make_breach()))
+        fake_health_breaches(monkeypatch, make_breach())
         write_config(tmp_path, inbox=False)
         AutonomyState(level=int(AutonomyLevel.L2_GATED_MERGE)).save(tmp_path)
         run_outcome(tmp_path)
@@ -272,16 +218,12 @@ class TestHealthSeam:
         prose reported the latest observation and the structured half -
         the one ``ks inbox`` renders - reported the first.
         """
-        monkeypatch.setitem(sys.modules, "kstrl.learning.health", fake_health(make_breach()))
+        fake_health_breaches(monkeypatch, make_breach())
         write_config(tmp_path)
         AutonomyState(level=int(AutonomyLevel.L2_GATED_MERGE)).save(tmp_path)
         run_outcome(tmp_path)
 
-        monkeypatch.setitem(
-            sys.modules,
-            "kstrl.learning.health",
-            fake_health(make_breach(value=0.9, window_runs=20)),
-        )
+        fake_health_breaches(monkeypatch, make_breach(value=0.9, window_runs=20))
         run_outcome(tmp_path, run_id="run-2")
 
         breaches = inbox_items(tmp_path, ItemKind.HEALTH_BREACH)
@@ -300,7 +242,7 @@ class TestHealthSeam:
         under a single warning that named none of them.
         """
         breaches = [make_breach(metric=f"m{i}") for i in range(3)]
-        monkeypatch.setitem(sys.modules, "kstrl.learning.health", fake_health(*breaches))
+        fake_health_breaches(monkeypatch, *breaches)
         real_add = Inbox.add
 
         def flaky(self: Inbox, kind: ItemKind, title: str, **kwargs: Any) -> Any:

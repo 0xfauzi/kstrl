@@ -557,10 +557,11 @@ the two stages rather than an implied one.
 **The seam landed ahead of the emitter**
 ([#232](https://github.com/0xfauzi/kstrl/issues/232)). `ItemKind.HEALTH_BREACH`,
 the `[autonomy] demote_on_health_breach` key (default false) and the call site
-in `factory._record_health_breaches` are in place. They read
-`kstrl.learning.health.health_breaches(root_dir)` when that module exists and are inert
-while it does not, so stage 2 is this module plus the recorded replay rather
-than a second round of wiring. `ks autonomy replay` stays the advisory mode for
+in `factory._record_health_breaches` are in place. Until the module landed, they
+read `kstrl.learning.health.health_breaches(root_dir)` only when that module
+existed, so stage 2 was this module plus the recorded replay rather than a
+second round of wiring. Since #863 D1 the call site imports `health_breaches`
+from the `kstrl.learning` interface, and no seam for a missing module remains. `ks autonomy replay` stays the advisory mode for
 these rules: it reports what would have fired and never mutates ladder state, so
 a candidate rule set is scored against real history before it is allowed to
 demote anything.

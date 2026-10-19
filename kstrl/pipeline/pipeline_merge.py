@@ -8,9 +8,16 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
 
+from kstrl import git
 from kstrl.acceptance import pr_isolation
-from kstrl.events import event_catalog
-from kstrl.git import git, git_base
+from kstrl.events import (
+    ComponentCompleted,
+    ComponentFailed,
+    MergePendingV1,
+    PrCreated,
+    PrMerged,
+    PrMergePending,
+)
 from kstrl.owner import (
     InboxItem,
     ItemKind,
@@ -83,14 +90,14 @@ class MergeGate(Transitions):
         # Richer v2 event first; the v1-parity twin keeps progress.jsonl
         # unchanged (the reducer prefers the v2 event, chunk 2).
         self.bus.emit(
-            event_catalog.PrMergePending(
+            PrMergePending(
                 component=comp.id,
                 pr_url=comp.pr_url,
                 error=comp.error,
             )
         )
         self.bus.emit(
-            event_catalog.MergePendingV1(
+            MergePendingV1(
                 component=comp.id,
                 pr_url=comp.pr_url,
                 error=comp.error,
@@ -245,7 +252,7 @@ class MergeGate(Transitions):
         self._end_attempt(comp)
         self._cascade_skip(comp.id)
         self.factory_result.failed.append(comp.id)
-        self.bus.emit(event_catalog.ComponentFailed(component=comp.id, error=comp.error))
+        self.bus.emit(ComponentFailed(component=comp.id, error=comp.error))
         self.notify.fire_first_failure(comp.id, comp.error)
         self._inbox_add(
             ItemKind.HALTED_RUN,
@@ -282,7 +289,7 @@ class MergeGate(Transitions):
         self.factory_result.merged[comp.id] = head_sha
         self.manifest.save(self.manifest_path)
         self.bus.emit(
-            event_catalog.PrMerged(
+            PrMerged(
                 component=comp.id,
                 pr_number=comp.pr_number or pr_number_from_url(comp.pr_url),
                 pr_url=comp.pr_url,
@@ -388,7 +395,7 @@ class MergeGate(Transitions):
         if outcome.pr_url:
             self.factory_result.pr_urls.append(outcome.pr_url)
             self.bus.emit(
-                event_catalog.PrCreated(
+                PrCreated(
                     component=comp.id,
                     pr_number=comp.pr_number or 0,
                     pr_url=outcome.pr_url,
@@ -462,7 +469,7 @@ class MergeGate(Transitions):
                     timeout=self.factory_config.merge_timeout,
                 )
                 if merge_state.state == "merged":
-                    git_base.fetch_base_branch(
+                    git.fetch_base_branch(
                         self.manifest.base_branch,
                         self.root_dir,
                     )
@@ -473,7 +480,7 @@ class MergeGate(Transitions):
                     comp.completed_at = iso_now()
                     self.factory_result.completed.append(comp.id)
                     self.bus.emit(
-                        event_catalog.ComponentCompleted(
+                        ComponentCompleted(
                             component=comp.id,
                             duration_seconds=comp.duration_seconds,
                             iterations=comp.iteration_count,
@@ -510,7 +517,7 @@ class MergeGate(Transitions):
                     self._cascade_skip(comp.id)
                     self.factory_result.failed.append(comp.id)
                     self.bus.emit(
-                        event_catalog.ComponentFailed(
+                        ComponentFailed(
                             component=comp.id,
                             error=comp.error,
                         )

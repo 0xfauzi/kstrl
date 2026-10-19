@@ -66,7 +66,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
 from kstrl.acceptance.replay import Replay, Stage, _ran, replay_stack
-from kstrl.git import git, git_base
+from kstrl.git import GitDiffError, resolve_base_sha
 from kstrl.io import atomic_write_json, control_dir, read_json
 from kstrl.owner import covering_override
 from kstrl.plan import validate_component_id
@@ -555,8 +555,8 @@ def replay_base(
     from kstrl.acceptance.acceptance_base import kept_on_base
 
     try:
-        sha = git_base.resolve_base_sha(base_branch, root)
-    except git.GitDiffError as exc:
+        sha = resolve_base_sha(base_branch, root)
+    except GitDiffError as exc:
         return None, [f"the base branch {base_branch} did not resolve: {exc}"]
     ui.info(f"  Replaying the acceptance checks on the base {sha[:12]}...")
     wanted = [(comp, check) for comp, part in plan.components.items() for check in part.checks]

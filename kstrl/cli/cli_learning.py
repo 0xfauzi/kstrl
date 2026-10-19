@@ -697,7 +697,7 @@ def recheck_cmd(record: Path, root: Path | None, ui: str, no_color: bool) -> Non
     agrees with the record, 1 that one does not, and 2 that the record
     could not be rechecked, with the reason above it.
     """
-    from kstrl.acceptance import recheck
+    from kstrl.acceptance import recheck_record
     from kstrl.pipeline import FactoryConfig
     from kstrl.verify import VerifyConfig
 
@@ -705,7 +705,7 @@ def recheck_cmd(record: Path, root: Path | None, ui: str, no_color: bool) -> Non
     ui_impl = _autonomy_ui(ui, no_color)
     config = FactoryConfig.load(root_dir)
     config.verify_config = VerifyConfig.load(root_dir)
-    refused, lines, agrees = recheck(root_dir, record.resolve(), config, ui_impl)
+    refused, lines, agrees = recheck_record(root_dir, record.resolve(), config, ui_impl)
     if report_preflight(ui_impl, "the acceptance record cannot be rechecked", refused):
         sys.exit(2)
     for line in lines:

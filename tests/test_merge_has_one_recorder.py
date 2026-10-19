@@ -350,6 +350,8 @@ EXPECTED_PR_MERGED_SPELLINGS: dict[str, int] = {
     # the __all__ entry).
     "events/__init__.py::<module>": 2,
     "events/event_catalog.py::<module>": 1,
+    # #863 D1: the recorder's module imports the class from the interface.
+    "pipeline/pipeline_merge.py::<module>": 1,
     RECORDER: 1,
     "events/reducer.py::apply": 1,
 }
@@ -360,6 +362,7 @@ NOT_A_PR_MERGED_BUILD: dict[str, str] = {
     "serve/ci_state.py::_merges_in_run": "selects pr_merged rows with isinstance",
     "events/__init__.py::<module>": "the package interface re-exports the class",
     "events/event_catalog.py::<module>": "the class declaration",
+    "pipeline/pipeline_merge.py::<module>": "imports the class for the recorder",
     "events/reducer.py::apply": "folds the event with isinstance",
 }
 

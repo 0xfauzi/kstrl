@@ -16,12 +16,15 @@ from kstrl.events import (
     DESIGNER_ROLE,
     INTEGRATION_COMPONENT,
     INTEGRATION_ROLE,
+    BudgetCoverage,
     CeilingCoverage,
+    ComponentRetrying,
+    ComponentUsage,
+    Event,
+    RunPaths,
     UsageTotals,
-    event_catalog,
     usage_coverage,
 )
-from kstrl.events import events as ev
 from kstrl.loop import UNENFORCEABLE_CALLS
 from kstrl.pipeline.pipeline_state import PipelineState
 from kstrl.plan import Component, ComponentStatus
@@ -38,12 +41,12 @@ def _carried_reason(prior_run_id: str, reason: str) -> str:
 
 
 def _usage_by_component_phase(
-    events: Sequence[event_catalog.Event],
+    events: Sequence[Event],
 ) -> dict[tuple[str, str], UsageTotals]:
     """Every ``component_usage`` in ``events``, summed per (component, phase) (#463)."""
     spent: dict[tuple[str, str], UsageTotals] = {}
     for event in events:
-        if not isinstance(event, event_catalog.ComponentUsage):
+        if not isinstance(event, ComponentUsage):
             continue
         spent.setdefault((event.component, event.phase), UsageTotals()).merge(
             UsageTotals(
@@ -111,7 +114,7 @@ class UsageLedger(PipelineState):
         slot.merge(totals)
         self.run_usage.merge(totals)
         self.bus.emit(
-            event_catalog.ComponentUsage(
+            ComponentUsage(
                 component=comp_id,
                 phase=phase,
                 **totals.to_dict(),
@@ -144,7 +147,7 @@ class UsageLedger(PipelineState):
             detail = coverage.note()
             self.ui.warn(f"  BUDGET COVERAGE: {detail}")
             self.bus.emit(
-                event_catalog.BudgetCoverage(
+                BudgetCoverage(
                     ceiling=coverage.ceiling,
                     axis=coverage.axis,
                     calls=coverage.calls,
@@ -253,19 +256,18 @@ class UsageLedger(PipelineState):
         from kstrl.events import read_run_dir
         from kstrl.learning import EvolutionJournal
 
-        events = read_run_dir(ev.RunPaths.for_run(self.root_dir, prior).root)
+        events = read_run_dir(RunPaths.for_run(self.root_dir, prior).root)
         spent = _usage_by_component_phase(events)
         for (comp_id, phase), totals in spent.items():
             self._record_usage(comp_id, phase, totals)
         retried = [
             e
             for e in events
-            if isinstance(e, event_catalog.ComponentRetrying)
-            and e.attempt in owed.get(e.component, range(0))
+            if isinstance(e, ComponentRetrying) and e.attempt in owed.get(e.component, range(0))
         ]
         for event in retried:
             self.bus.emit(
-                event_catalog.ComponentRetrying(
+                ComponentRetrying(
                     component=event.component,
                     attempt=event.attempt,
                     reason=_carried_reason(prior, event.reason),

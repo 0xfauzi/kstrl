@@ -42,7 +42,7 @@ repos:
         # integrity. The rest are irreplaceable measurement inputs: reference decks,
         # source filings, and round-trip evidence that cost manual work to produce.
         # tests/.test_durations is the recorded per-test seconds pytest-split
-        # shards CI by (8069 rows); regenerated from a junit run, not hand-edited.
+        # shards CI by (8117 rows); regenerated from a junit run, not hand-edited.
         exclude: '^(uv\.lock$|tests/\.test_durations$|experiments/walking-skeleton/out/(screenshots/|inserted-saved\.pptx$)|fixtures/corpus/|fixtures/sources/|experiments/E16/out/(probe\.pdf|probe-bold-powerpoint\.pdf|E17-results\.json)$)'
       - id: check-merge-conflict
       - id: check-case-conflict

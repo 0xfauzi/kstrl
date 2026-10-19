@@ -16,15 +16,13 @@ from __future__ import annotations
 
 import io
 import json
-from collections.abc import Sequence
 from dataclasses import dataclass
-from importlib.abc import Loader, MetaPathFinder
-from importlib.machinery import ModuleSpec
-from importlib.util import spec_from_loader
 from pathlib import Path
-from types import ModuleType
 from typing import Any
 
+import pytest
+
+import kstrl.learning
 from kstrl.calibration import calibration
 from kstrl.events.events import EventBus
 from kstrl.factory.factory_autonomy import _record_autonomy_outcome
@@ -158,9 +156,8 @@ class FrozenBreach:
     what these tests prove is that the mandated shape works. The static
     half of the same claim - that the ``_HealthBreach`` Protocol accepts
     a frozen dataclass, which the obvious spelling of a Protocol does NOT
-    - is ``factory._health_breach_seam_accepts_the_contract``, checked by
-    ``uv run mypy kstrl/ --strict`` because ``pyproject.toml`` scopes
-    mypy to ``kstrl/`` and nothing in CI type-checks this file.
+    - is the seam's own read of ``health_breaches``, checked by
+    ``uv run mypy kstrl/ --strict`` against the real ``HealthBreach``.
     """
 
     metric: str
@@ -180,40 +177,13 @@ def make_breach(
     return FrozenBreach(metric=metric, rule=rule, value=value, limit=0.3, window_runs=window_runs)
 
 
-def fake_health(*breaches: object, with_function: bool = True) -> ModuleType:
-    module = ModuleType("kstrl.learning.health")
-    if with_function:
-        module.health_breaches = lambda root_dir: list(breaches)  # type: ignore[attr-defined]
-    return module
+def fake_health_breaches(monkeypatch: pytest.MonkeyPatch, *breaches: object) -> None:
+    """Replace ``health_breaches`` of the ``kstrl.learning`` interface.
 
-
-class _BrokenHealthLoader(Loader):
-    """A ``kstrl.learning.health`` that exists and dies on its own dependency."""
-
-    def create_module(self, spec: ModuleSpec) -> ModuleType | None:
-        return None
-
-    def exec_module(self, module: ModuleType) -> None:
-        raise ModuleNotFoundError("No module named 'scipy'", name="scipy")
-
-
-class BrokenHealthFinder(MetaPathFinder):
-    """Puts the loader above on the real import machinery.
-
-    Through ``sys.meta_path`` rather than by patching
-    ``importlib.import_module``, so what the guard sees is what a real
-    ``kstrl/learning/health.py`` importing a missing dependency would raise.
+    The factory's health seam imports it from the package inside the
+    function, so it reads this binding at call time (#863 D1).
     """
-
-    def find_spec(
-        self,
-        fullname: str,
-        path: Sequence[str] | None = None,
-        target: ModuleType | None = None,
-    ) -> ModuleSpec | None:
-        if fullname != "kstrl.learning.health":
-            return None
-        return spec_from_loader(fullname, _BrokenHealthLoader())
+    monkeypatch.setattr(kstrl.learning, "health_breaches", lambda root_dir: list(breaches))
 
 
 def run_compare(tmp_path: Path, old: Path, new: Path) -> int:

@@ -11,6 +11,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from kstrl import git
 from kstrl.acceptance import (
     ContractMode,
     ContractResult,
@@ -35,7 +36,6 @@ from kstrl.factory.factory_preflight import (
     report_preflight,
 )
 from kstrl.factory.plan_gate import run_plan_gate
-from kstrl.git import git, git_base
 from kstrl.pipeline import (
     ComponentPipeline,
     FactoryConfig,
@@ -154,7 +154,7 @@ def _stamp_feature_base(manifest: Manifest, manifest_path: Path, root_dir: Path,
         )
         return
     try:
-        manifest.feature_base_sha = git_base.resolve_base_sha(manifest.base_branch, root_dir)
+        manifest.feature_base_sha = git.resolve_base_sha(manifest.base_branch, root_dir)
     except git.GitDiffError as exc:
         ui.warn(f"  Feature base unknown: {exc}")
         return
@@ -213,7 +213,7 @@ def _resolve_round_base(manifest: Manifest, root_dir: Path, ui: UI) -> str:
     then fails having tested nothing.
     """
     try:
-        return git_base.resolve_base_sha(manifest.base_branch, root_dir)
+        return git.resolve_base_sha(manifest.base_branch, root_dir)
     except git.GitDiffError as exc:
         ui.warn(f"  Phase 3 base unresolved: {exc}")
         return ""

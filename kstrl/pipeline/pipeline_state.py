@@ -13,8 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl.events import NotifyHooks, UsageTotals
-from kstrl.events import events as ev
+from kstrl.events import EventBus, NotifyHooks, RunPaths, UsageTotals
 from kstrl.owner import ApprovalSnapshot, Inbox, InteractionChannel, UiInteractionChannel
 from kstrl.pipeline.divergence import AttemptReading
 from kstrl.pipeline.runenvelope import RunEnvelope
@@ -90,9 +89,9 @@ class PipelineState:
         ui: UI,
         root_dir: Path,
         run_id: str,
-        bus: ev.EventBus,
+        bus: EventBus,
         journal_path: Path | None,
-        run_paths: ev.RunPaths | None = None,
+        run_paths: RunPaths | None = None,
         interaction: InteractionChannel | None = None,
         notify: NotifyHooks,
         review_selection: AdversarialAgentSelection,
@@ -307,7 +306,7 @@ class PipelineState:
         return self.run_state.component_bases.get(comp_id, self.manifest.base_branch)
 
     @property
-    def usage_paths(self) -> ev.RunPaths:
+    def usage_paths(self) -> RunPaths:
         """Where engineer-loop usage snapshots live.
 
         R8: deliberately SEPARATE from ``run_paths``, which is None when
@@ -321,4 +320,4 @@ class PipelineState:
         and the None case existed only for callers that did not pass it,
         so it is gone with the parameter.
         """
-        return ev.RunPaths.for_run(self.root_dir, self.run_id)
+        return RunPaths.for_run(self.root_dir, self.run_id)

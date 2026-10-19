@@ -14,6 +14,7 @@ repositories.
 
 from __future__ import annotations
 
+import inspect
 import io
 import json
 import subprocess
@@ -116,7 +117,7 @@ def _run(
 
     with (
         patch("kstrl.factory.factory._run_component", side_effect=fake_component),
-        patch("kstrl.git.git_diff.get_diff_content", return_value=""),
+        patch("kstrl.git.get_diff_content", return_value=""),
         # A MERGE_PENDING component would otherwise be re-polled through gh.
         patch.object(ComponentPipeline, "repoll_merge_pending", return_value=None),
     ):
@@ -273,8 +274,15 @@ class TestTheStamp:
         error is a defect and must surface, not become an empty stamp."""
         _git_project(tmp_path, ["comp-a"])
 
+        def defect_in_the_stamp(*args: Any, **kwargs: Any) -> str:
+            # The preflight base gates resolve the base first, through the
+            # same function: only the stamp's call gets the defect.
+            if any(f.function == "_stamp_feature_base" for f in inspect.stack(0)):
+                raise RuntimeError("stamp defect")
+            return git_base.resolve_base_sha(*args, **kwargs)
+
         with (
-            patch("kstrl.git.git_base.resolve_base_sha", side_effect=RuntimeError("stamp defect")),
+            patch("kstrl.git.resolve_base_sha", side_effect=defect_in_the_stamp),
             pytest.raises(RuntimeError, match="stamp defect"),
         ):
             _run(tmp_path, _make_manifest([_component("comp-a")]))

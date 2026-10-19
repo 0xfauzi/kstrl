@@ -33,7 +33,7 @@ from kstrl.acceptance.contract import (
     run_contract_testing,
 )
 from kstrl.acceptance.isolation import SETUP_ZONE, TEST_ZONE, prove_zones, write_record
-from kstrl.acceptance.recheck import recheck
+from kstrl.acceptance.recheck import recheck_record
 from kstrl.acceptance.replay import Replay, replay_stack
 
 __all__ = [
@@ -63,7 +63,7 @@ __all__ = [
     "pr_isolation",
     "pr_section",
     "prove_zones",
-    "recheck",
+    "recheck_record",
     "replay_base",
     "replay_stack",
     "run_contract_testing",

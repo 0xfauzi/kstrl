@@ -13,7 +13,7 @@ import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl.git import git_base
+from kstrl.git import resolve_base_ref
 from kstrl.proc.scrubbed_run import ChildOutputDecodeError, run_scrubbed
 from kstrl.proc.worktree_sweep import sweep_worktree, warn_sweep
 
@@ -55,7 +55,7 @@ def create_temp_worktree(
     contract_base = root_dir / ".kstrl" / "contract"
     contract_base.mkdir(parents=True, exist_ok=True)
     worktree_path = contract_base / f"{label}-{secrets.token_hex(4)}"
-    base_ref = git_base.resolve_base_ref(base, root_dir, timeout)
+    base_ref = resolve_base_ref(base, root_dir, timeout)
     try:
         result = run_scrubbed(
             ["git", "worktree", "add", "--detach", str(worktree_path), base_ref],

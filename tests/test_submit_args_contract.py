@@ -205,7 +205,7 @@ def _submitted(
         patch("kstrl.factory.factory._run_component", side_effect=capture),
         patch("kstrl.factory.factory.ProcessPoolExecutor", _CapturingPool),
         patch("kstrl.factory.factory._setup_worktree", return_value=root),
-        patch("kstrl.git.git_diff.get_diff_content", return_value=""),
+        patch("kstrl.git.get_diff_content", return_value=""),
     ):
         run_factory(_manifest(plan_id), factory_config, base, PlainUI(no_color=True), root)
     submitted = seen or _CapturingPool.seen

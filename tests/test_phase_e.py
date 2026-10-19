@@ -128,7 +128,7 @@ class TestE4BudgetCap:
                 return_value=passing_review,
             ) as mock_review,
             patch(
-                "kstrl.git.git_diff.get_diff_content",
+                "kstrl.git.get_diff_content",
                 return_value="",
             ),
         ):
@@ -202,7 +202,7 @@ class TestE4BudgetCap:
                 return_value=passing_review,
             ) as mock_review,
             patch(
-                "kstrl.git.git_diff.get_diff_content",
+                "kstrl.git.get_diff_content",
                 return_value="",
             ),
         ):
@@ -310,7 +310,7 @@ class TestE6HitlCheckpoint:
                 "kstrl.pipeline.pr.is_gh_available",
                 return_value=False,
             ),
-            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.get_diff_content", return_value=""),
         ):
             result = run_factory(
                 manifest,

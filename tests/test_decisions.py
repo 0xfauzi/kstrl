@@ -365,7 +365,7 @@ class TestTheSchedulerActuallyInjectsIt:
         config, base, ui = _factory_inputs(root)
         with (
             patch("kstrl.factory.factory._run_component", side_effect=capture),
-            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.get_diff_content", return_value=""),
         ):
             run_factory(manifest, config, base, ui, root)
 
@@ -417,7 +417,7 @@ class TestTheSchedulerActuallyInjectsIt:
 
         with (
             patch("kstrl.factory.factory._run_component", side_effect=capture),
-            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.get_diff_content", return_value=""),
         ):
             result = run_factory(manifest, config, base, ui, root)
         assert result.exit_code == 2

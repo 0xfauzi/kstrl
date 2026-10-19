@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl.git import git, git_tree
+from kstrl.git import GitDiffError, WorkspaceBaseline, capture_workspace_baseline
 from kstrl.loop.breaker import BreakerConfig
 from kstrl.proc import TimeoutConfig, describe_limit_seconds
 
@@ -19,12 +19,12 @@ def capture_guard_baseline(
     cwd: Path | None,
     base_ref: str | None,
     ui: UI,
-) -> git_tree.WorkspaceBaseline | None:
+) -> WorkspaceBaseline | None:
     """The before-picture the allowed-paths guard compares against, or None
     when it could not be read (the caller refuses before any spend)."""
     try:
-        baseline = git_tree.capture_workspace_baseline(cwd, base_ref=base_ref)
-    except git.GitDiffError as exc:
+        baseline = capture_workspace_baseline(cwd, base_ref=base_ref)
+    except GitDiffError as exc:
         ui.err(f"Guard baseline could not be taken: {exc}")
         return None
     if baseline.dirty:

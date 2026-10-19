@@ -160,7 +160,7 @@ class TestUnifiedSchedulingLoop:
                 return_value=success_b,
             ),
             patch(
-                "kstrl.git.git_diff.get_diff_content",
+                "kstrl.git.get_diff_content",
                 return_value="",
             ),
         ):

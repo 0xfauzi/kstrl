@@ -61,6 +61,18 @@ from pathlib import Path
 
 from kstrl.io.jsonread import read_json
 
+#: The names that other kstrl packages import. The interface guard
+#: (tests/test_package_interfaces.py) reads this list.
+__all__ = [
+    "GUARDED_TOOLS",
+    "HOOK_TIMEOUT_SECONDS",
+    "SessionGate",
+    "hook_command",
+    "ready_command",
+    "real_roots",
+    "refusal",
+]
+
 #: The file tools whose target path the guard checks. Bash is absent: the
 #: claude sandbox confines it at the OS level (measured).
 GUARDED_TOOLS = ("Write", "Edit", "MultiEdit", "NotebookEdit")

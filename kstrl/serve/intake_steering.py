@@ -12,9 +12,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import kstrl.serve.intake_gh as intake_gh
 from kstrl.io import read_json
 from kstrl.queue import ItemSource, MergeDisposition, Queue, QueueError, QueueItem
-from kstrl.serve import intake_gh
 from kstrl.serve.intake_gh import GitHubIntakeConfig, _gh_comment, _utc_now_iso
 from kstrl.serve.intake_issue import ProcessedLedger, _actor_allowed
 
