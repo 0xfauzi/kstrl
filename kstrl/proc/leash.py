@@ -224,9 +224,11 @@ def main(argv: list[str]) -> int:
         # A leash that cannot read its group would wait the whole grace at
         # every end, with no message (#708). It stops here instead, before
         # the agent starts, and the spawner raises this text as its OSError.
+        # The status fd is written first: a stderr whose reader has gone
+        # makes the print raise, and an empty status reads as a clean start.
         message = f"import failed: {type(exc).__name__}: {exc}"
-        print(f"leash: {message}", file=sys.stderr)
         os.write(status, message.encode("ascii", "replace"))
+        print(f"leash: {message}", file=sys.stderr)
         return IMPORT_FAILED
     signal.signal(signal.SIGTERM, _ignore)
     signal.signal(signal.SIGINT, _ignore)
