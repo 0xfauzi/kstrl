@@ -134,8 +134,8 @@ def _section_specs() -> list[SectionSpec]:
     from kstrl.acceptance.contract import ContractConfig
     from kstrl.agents.sandbox import SandboxConfig
     from kstrl.architect.linear import LinearConfig
+    from kstrl.config import STRING_KEYS
     from kstrl.config.config import KstrlConfig
-    from kstrl.config.config_keys import STRING_KEYS
     from kstrl.events.observability import NotifyConfig
     from kstrl.knowledge.knowledge_facts import KnowledgeConfig
     from kstrl.learning.autonomy_config import AutonomyConfig
@@ -161,7 +161,7 @@ def _section_specs() -> list[SectionSpec]:
     kstrl_defaults = KstrlConfig()
 
     def string_keys(section: str) -> dict[str, str]:
-        """The ``{toml key: field}`` rows ``config_keys.STRING_KEYS`` owns
+        """The ``{toml key: field}`` rows ``STRING_KEYS`` owns
         for one section.
 
         Derived, not transcribed (review round 1, S8). The same table

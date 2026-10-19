@@ -36,7 +36,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from kstrl.config import ConfigSection, check_numbers
-from kstrl.git import git
+from kstrl.git import merge_branch
 from kstrl.plan import Manifest
 from kstrl.proc import (
     NO_SETUP,
@@ -258,13 +258,13 @@ def bisect_breaker(
     try:
         # Merge prior tier branches (should be clean)
         for branch in prior_branches:
-            if not git.merge_branch(branch, worktree_path):
+            if not merge_branch(branch, worktree_path):
                 return None
 
         # Merge tier branches one at a time, test after each
         merged = list(merged_before)
         for comp_id, branch in tier_branches:
-            if not git.merge_branch(branch, worktree_path):
+            if not merge_branch(branch, worktree_path):
                 return comp_id
             merged.append(comp_id)
 
@@ -343,7 +343,7 @@ def run_tier_check(
     try:
         # Merge prior tiers
         for branch in prior_branches:
-            if not git.merge_branch(branch, worktree_path):
+            if not merge_branch(branch, worktree_path):
                 return ContractResult(
                     passed=False,
                     tier=tier_index,
@@ -354,7 +354,7 @@ def run_tier_check(
 
         # Merge current tier
         for comp_id, branch in tier_branches:
-            if not git.merge_branch(branch, worktree_path):
+            if not merge_branch(branch, worktree_path):
                 return ContractResult(
                     passed=False,
                     tier=tier_index,

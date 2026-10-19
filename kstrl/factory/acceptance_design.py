@@ -58,7 +58,7 @@ from kstrl.agents import (
 from kstrl.events import DESIGNER_ROLE, collect_usage
 from kstrl.factory.integration_phase import REVIEW_ASKS, _reask_refusal
 from kstrl.factory.plan_gate import PlanUnreadableError, pinned_spec, plan_digest
-from kstrl.git import git, git_base
+from kstrl.git import GitDiffError, resolve_base_sha
 from kstrl.io import control_dir, generate_data_delimiter, pre_run_prd_path
 from kstrl.owner import ItemKind, approvals_at
 from kstrl.plan import PRD, SpecRequirement, built_by
@@ -317,9 +317,9 @@ def design_plan(pipeline: ComponentPipeline) -> tuple[PinnedPlan | None, list[st
     if spec_errors:
         return None, spec_errors
     try:
-        base = git_base.resolve_base_sha(manifest.base_branch, root)
+        base = resolve_base_sha(manifest.base_branch, root)
         target = designed_dir(root, manifest, stack)
-    except (OSError, ValueError, git.GitDiffError, PlanUnreadableError) as exc:
+    except (OSError, ValueError, GitDiffError, PlanUnreadableError) as exc:
         return None, [f"the verification designer cannot start: {exc}. Nothing was asked."]
     entries: dict[str, Any] = {}
     asks: dict[str, int] = {}

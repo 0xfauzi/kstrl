@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from kstrl.git import git
+from kstrl.git import is_git_repo
 from kstrl.io import append_records, read_json_file
 from kstrl.plan import PRD
 from kstrl.project.scaffold_ledger import (
@@ -339,7 +339,7 @@ def run_init(directory: Path, ui: UI, *, upgrade_prompts: bool = False) -> int:
     ui.kv("Directory", str(root))
 
     # Check for git repo
-    is_repo = git.is_git_repo(root)
+    is_repo = is_git_repo(root)
     if is_repo:
         ui.ok("Git repository detected")
     else:

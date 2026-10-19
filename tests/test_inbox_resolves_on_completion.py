@@ -353,7 +353,7 @@ class TestAConfirmedMergeClosesEveryItemForTheComponent:
         monkeypatch.setattr(
             "kstrl.pipeline.pr.wait_for_merge", lambda *a, **k: MergeConfirmation(state="merged")
         )
-        monkeypatch.setattr("kstrl.git.git_base.fetch_base_branch", lambda *a, **k: None)
+        monkeypatch.setattr("kstrl.git.fetch_base_branch", lambda *a, **k: None)
         out = io.StringIO()
         pipeline, manifest, _result, _calls = _make_pipeline(
             tmp_path, config=_factory_config(create_prs=True), ui=PlainUI(no_color=True, file=out)
@@ -417,7 +417,7 @@ class TestAnOperatorDecisionSurvivesTheCompletionRace:
         monkeypatch.setattr(
             "kstrl.pipeline.pr.wait_for_merge", lambda *a, **k: MergeConfirmation(state="merged")
         )
-        monkeypatch.setattr("kstrl.git.git_base.fetch_base_branch", lambda *a, **k: None)
+        monkeypatch.setattr("kstrl.git.fetch_base_branch", lambda *a, **k: None)
         pipeline, manifest, _result, _calls = _make_pipeline(
             tmp_path, config=_factory_config(create_prs=True)
         )
@@ -486,7 +486,7 @@ class TestAnOperatorDecisionSurvivesTheCompletionRace:
         monkeypatch.setattr(
             "kstrl.pipeline.pr.wait_for_merge", lambda *a, **k: MergeConfirmation(state="merged")
         )
-        monkeypatch.setattr("kstrl.git.git_base.fetch_base_branch", lambda *a, **k: None)
+        monkeypatch.setattr("kstrl.git.fetch_base_branch", lambda *a, **k: None)
         out = io.StringIO()
         pipeline, manifest, _result, _calls = _make_pipeline(
             tmp_path, config=_factory_config(create_prs=True), ui=PlainUI(no_color=True, file=out)

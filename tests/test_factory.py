@@ -190,7 +190,7 @@ class TestRunFactoryExecution:
                 "kstrl.factory.factory._run_component",
                 return_value=success_result,
             ),
-            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.get_diff_content", return_value=""),
         ):
             result = run_factory(manifest, config, base, ui, root)
 
@@ -288,7 +288,7 @@ class TestRunFactoryExecution:
                 "kstrl.factory.factory._run_component",
                 return_value=success_result,
             ),
-            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.get_diff_content", return_value=""),
         ):
             result = run_factory(manifest, config, base, ui, root)
 
@@ -356,7 +356,7 @@ class TestRunFactoryExecution:
                 "kstrl.factory.factory._run_component",
                 return_value=success_result,
             ),
-            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.get_diff_content", return_value=""),
         ):
             result = run_factory(manifest, config, base, ui, root)
 
@@ -418,7 +418,7 @@ class TestRunFactoryExecution:
                 "kstrl.factory.factory._run_component",
                 return_value=success_result,
             ),
-            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.get_diff_content", return_value=""),
         ):
             run_factory(manifest, config, base, ui, root)
 
@@ -483,7 +483,7 @@ class TestRunFactoryExecution:
                 "kstrl.factory.factory._run_component",
                 return_value=success_result,
             ) as mock_run,
-            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.get_diff_content", return_value=""),
         ):
             result = run_factory(manifest, config, base, ui, root)
 
@@ -559,7 +559,7 @@ class TestEvolutionRecording:
                 "kstrl.factory.factory._run_component",
                 return_value=success_result,
             ),
-            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.get_diff_content", return_value=""),
         ):
             result = run_factory(manifest, config, base, ui, root)
 
@@ -700,7 +700,7 @@ class TestEvolutionRecording:
                 "kstrl.factory.factory._run_component",
                 return_value=ComponentResult("a", success=True, iterations=1),
             ),
-            patch("kstrl.git.git_diff.get_diff_content", return_value="some diff"),
+            patch("kstrl.git.get_diff_content", return_value="some diff"),
             patch(
                 "kstrl.factory.factory.measure_fact_utilization",
                 fake_measure,
@@ -755,7 +755,7 @@ class TestEvolutionRecording:
                 "kstrl.factory.factory._run_component",
                 return_value=ComponentResult("a", success=True, iterations=1),
             ),
-            patch("kstrl.git.git_diff.get_diff_content", return_value="some diff"),
+            patch("kstrl.git.get_diff_content", return_value="some diff"),
             patch("kstrl.knowledge.knowledge.build_knowledge_context", boom),
             patch(
                 "kstrl.factory.factory.distill_facts",
@@ -884,7 +884,7 @@ class TestRunFactorySchedulesNothing:
                 "kstrl.factory.factory._run_component",
                 return_value=ComponentResult("comp-a", success=True, iterations=1),
             ),
-            patch("kstrl.git.git_diff.get_diff_content", return_value=""),
+            patch("kstrl.git.get_diff_content", return_value=""),
         ):
             result = run_factory(manifest, config, _make_base_config(root), ui, root)
 

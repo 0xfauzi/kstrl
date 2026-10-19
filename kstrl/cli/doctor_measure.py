@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Any
 
 from kstrl.acceptance import Replay, prove_zones, replay_stack
 from kstrl.cli.doctor import STATUS_FAIL, STATUS_OK, STATUS_WARN, DoctorCheck, _not_evaluated
-from kstrl.git import git_base
+from kstrl.git import detect_base_branch
 from kstrl.pipeline import FactoryConfig
 from kstrl.proc import HostFallback, ProvenRung, Rung, limit_seconds, release
 from kstrl.project import (
@@ -73,7 +73,7 @@ def measure(
     """
     if any(check.name == "kstrl_config" and check.status == STATUS_FAIL for check in checks):
         return DoctorCheck(CHECK_NAME, *_not_evaluated(CHECK_NAME)), None
-    base = git_base.detect_base_branch(root)
+    base = detect_base_branch(root)
     ui.info(f"Measuring the gates on the base branch {base}...")
     setup = FactoryConfig.load(root).worktree_setup()
     reading = measure_base_gates(root, base, VerifyConfig.load(root), setup, ui)

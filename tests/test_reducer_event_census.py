@@ -70,10 +70,10 @@ DELIBERATELY_IGNORED: dict[str, str] = {
 def _events_alias(tree: ast.Module) -> str:
     """The name ``kstrl.events.event_catalog`` is bound to in the reducer module."""
     for node in tree.body:
-        if isinstance(node, ast.ImportFrom) and node.module == "kstrl.events":
+        if isinstance(node, ast.Import):
             for alias in node.names:
-                if alias.name == "event_catalog":
-                    return alias.asname or alias.name
+                if alias.name == "kstrl.events.event_catalog" and alias.asname:
+                    return alias.asname
     raise AssertionError(
         "kstrl/events/reducer.py no longer imports kstrl.events.event_catalog as a module"
     )

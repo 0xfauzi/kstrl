@@ -135,7 +135,7 @@ def _run(
         patch("kstrl.factory.factory.run_mechanical_verification", return_value=passing),
         patch("kstrl.factory.factory.run_review", return_value=review),
         patch("kstrl.factory.factory.run_security_review", return_value=security),
-        patch("kstrl.git.git_diff.get_diff_content", return_value="diff --git a b\n"),
+        patch("kstrl.git.get_diff_content", return_value="diff --git a b\n"),
         patch("kstrl.pipeline.pr.is_gh_available", return_value=False),
     ):
         run_factory(

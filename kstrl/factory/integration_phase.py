@@ -9,13 +9,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from kstrl import git
 from kstrl.acceptance import (
     ContractMode,
     ContractResult,
 )
 from kstrl.agents import AgentCall, recording_prompts
 from kstrl.events import INTEGRATION_COMPONENT, INTEGRATION_ROLE, collect_usage
-from kstrl.git import git, git_base, git_tree, kstrl_version
+from kstrl.git import kstrl_version
 from kstrl.plan import ComponentStatus, SpecRequirement
 from kstrl.proc import (
     ContractCleanupError,
@@ -219,7 +220,7 @@ def _pin_round(run: IntegrationRun, phase3: Phase3Round) -> _Pin:
 
 def _pin_without_tests(run: IntegrationRun) -> _Pin:
     try:
-        sha = git_base.resolve_base_sha(run.manifest.base_branch, run.root_dir)
+        sha = git.resolve_base_sha(run.manifest.base_branch, run.root_dir)
     except git.GitDiffError as exc:
         return _Pin(refusal=f"the base branch did not resolve: {exc}")
     return _nothing_merged(run, _Pin(sha=sha))
@@ -245,7 +246,7 @@ def _spend_refusal(pipeline: ComponentPipeline) -> str:
 
 def _review_round(run: IntegrationRun, state: dict[str, Any], pin: _Pin) -> IntegrationRecord:
     try:
-        tracked = git_tree.tracked_files_at(pin.sha, run.root_dir)
+        tracked = git.tracked_files_at(pin.sha, run.root_dir)
     except git.GitDiffError as exc:
         return _not_run(
             run, f"the files at {pin.sha[:12]} could not be listed: {exc}", state, pin.sha
@@ -432,7 +433,7 @@ def _round_reason(stop_outcome: str, outcome: IntegrationOutcome, gates: bool) -
 
 def _base_moved_to(run: IntegrationRun, sha: str) -> str:
     try:
-        moved, current = git_base.base_moved(run.manifest.base_branch, sha, run.root_dir)
+        moved, current = git.base_moved(run.manifest.base_branch, sha, run.root_dir)
     except git.GitDiffError as exc:
         return f"unresolved: {exc}"
     return current if moved else ""

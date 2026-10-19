@@ -269,7 +269,7 @@ def _no_real_diff(monkeypatch: pytest.MonkeyPatch) -> None:
     the agent factory are stubbed at their source modules (the same
     seams the factory-level tests use)."""
     monkeypatch.setattr(
-        "kstrl.git.git_diff.get_diff_content",
+        "kstrl.git.get_diff_content",
         lambda *a, **k: "diff --git a b\n",
     )
     monkeypatch.setattr(
@@ -478,7 +478,7 @@ class TestVerifyAndDiffTransitions:
         def _boom(*args: Any, **kwargs: Any) -> str:
             raise GitDiffError("git diff exploded")
 
-        monkeypatch.setattr("kstrl.git.git_diff.get_diff_content", _boom)
+        monkeypatch.setattr("kstrl.git.get_diff_content", _boom)
         pipeline, manifest, _, _ = _make_pipeline(tmp_path)
         comp = manifest.get_component("comp-a")
         assert comp is not None
@@ -829,7 +829,7 @@ class TestDivergenceDetector:
             attempt["n"] += 1
             return reviews[attempt["n"] - 1]
 
-        monkeypatch.setattr("kstrl.git.git_diff.get_diff_numstat", _numstat)
+        monkeypatch.setattr("kstrl.git.get_diff_numstat", _numstat)
         (tmp_path / "kstrl.toml").write_text(f'[divergence]\nmode = "{mode}"\n', encoding="utf-8")
         pipeline, manifest, _, _ = _make_pipeline(
             tmp_path,
@@ -1359,7 +1359,7 @@ class TestMergePendingRepoll:
             lambda *a, **k: MergeConfirmation(state="merged"),
         )
         monkeypatch.setattr(
-            "kstrl.git.git_base.fetch_base_branch",
+            "kstrl.git.fetch_base_branch",
             lambda *a, **k: None,
         )
         pipeline, manifest, result = self._parked(tmp_path)
@@ -1562,7 +1562,7 @@ class TestFactUtilizationUsesTheRealMatcher:
         diff: str,
         monkeypatch: pytest.MonkeyPatch,
     ) -> FactUtilization:
-        monkeypatch.setattr("kstrl.git.git_diff.get_diff_content", lambda *a, **k: diff)
+        monkeypatch.setattr("kstrl.git.get_diff_content", lambda *a, **k: diff)
         pipeline, manifest, _, _ = _make_pipeline(
             tmp_path,
             config=_factory_config(review_mode="skip"),
@@ -2101,7 +2101,7 @@ class TestFactUtilizationRecording:
         def _boom(*args: Any, **kwargs: Any) -> str:
             raise git.GitDiffError("git exploded")
 
-        monkeypatch.setattr("kstrl.git.git_diff.get_diff_content", _boom)
+        monkeypatch.setattr("kstrl.git.get_diff_content", _boom)
         pipeline, manifest, calls = self._verify_failing_pipeline(tmp_path)
         comp = manifest.get_component("comp-a")
         assert comp is not None

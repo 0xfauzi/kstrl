@@ -47,7 +47,7 @@ class ConfigReport:
 
 
 def _string_key_rows(section: str) -> list[tuple[str, str]]:
-    """``(toml key, field)`` for one section, from ``config_keys.STRING_KEYS``.
+    """``(toml key, field)`` for one section, from ``STRING_KEYS``.
 
     Derived rather than hand-copied (review round 1, S8). Every string
     key already declares its section, key and field in one table; a
@@ -56,27 +56,15 @@ def _string_key_rows(section: str) -> list[tuple[str, str]]:
     silently out of ``ks config`` and out of the generated README with
     every gate green.
 
-    The import is inside the function so the table is read at CALL time.
-    A module-level ``from kstrl.config.config_keys import STRING_KEYS`` snapshots
-    the tuple this module was imported with, which is derived enough to be
-    correct and not derived enough to be testable: the mutation in
-    tests/test_string_keys_reach_every_surface.py cannot reach it.
-
-    From ``config_keys``, which owns the table, rather than from
-    ``kstrl.config.config``, which re-exports it (R10.9 moved it out because
-    ``config.py`` was at the 800-line ratchet). The two names are the
-    same object and that file pins the identity, so this is the same
-    table the overlays read.
-
-    The read goes through the module object (#863 M1). ``from kstrl.config
-    import STRING_KEYS`` reads the binding of the package interface, a
-    third name, and a rebind of ``config_keys.STRING_KEYS`` does not
-    reach it: the interface step made that change, and the tenth-row test
-    became red.
+    The import is inside the function so the table is read at CALL time
+    from the binding of the ``kstrl.config`` interface. A module-level
+    import snapshots the tuple this module was imported with, and the
+    mutation in tests/test_string_keys_reach_every_surface.py, which
+    replaces the package binding, cannot reach it (#863 D1).
     """
-    from kstrl.config import config_keys
+    from kstrl.config import STRING_KEYS
 
-    rows = config_keys.STRING_KEYS
+    rows = STRING_KEYS
     return [(key, field_name) for sec, key, _env, field_name, _p in rows if sec == section]
 
 

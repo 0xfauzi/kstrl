@@ -10,7 +10,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl.git import fetch_base_branch, git, resolve_base_ref
+from kstrl.git import branch_sha, fetch_base_branch, get_head_sha, merge_branch, resolve_base_ref
 from kstrl.plan import Component, ComponentStatus, Manifest, has_merged
 from kstrl.proc import WorktreeSweep, sweep_worktree, warn_sweep
 
@@ -223,7 +223,7 @@ def _merge_dependency_branches(worktree_path: Path, branches: list[str]) -> None
     failure's evidence under ``keep_worktrees_on_failure``).
     """
     for branch in branches:
-        if not git.merge_branch(branch, worktree_path):
+        if not merge_branch(branch, worktree_path):
             raise RuntimeError(
                 f"could not merge dependency branch '{branch}' into {worktree_path}: "
                 f"`git merge --no-edit -- {branch}` failed (it conflicts with "
@@ -242,7 +242,7 @@ def _judged_base(worktree_path: Path, base_branch: str, holds_unmerged_work: boo
     """
     if not holds_unmerged_work:
         return base_branch
-    head = git.get_head_sha(worktree_path)
+    head = get_head_sha(worktree_path)
     if head is None:
         raise RuntimeError(f"could not read HEAD in {worktree_path} to record the component's base")
     return head
@@ -523,7 +523,7 @@ def _kept_for_rejudge(manifest: Manifest, root_dir: Path, ui: UI) -> tuple[set[s
         if comp.status != ComponentStatus.PENDING.value or not comp.rejudge_sha:
             continue
         kept.add(comp.branch_name)
-        tip = git.branch_sha(comp.branch_name, root_dir) or ""
+        tip = branch_sha(comp.branch_name, root_dir) or ""
         if tip == comp.rejudge_sha:
             ui.info(f"  Keeping branch '{comp.branch_name}' at {tip[:12]}: ks retry kept it")
             continue

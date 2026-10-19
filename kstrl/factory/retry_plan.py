@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from kstrl.factory.factory_worktrees import _dependency_branches
-from kstrl.git import git
+from kstrl.git import branch_sha
 from kstrl.owner import approvals_at, approved_head
 from kstrl.pipeline import (
     REMOVED_OPTIONS,
@@ -123,7 +123,7 @@ def kept_head(manifest: Manifest, comp: Component | None, root_dir: Path) -> tup
     dependencies = _dependency_branches(manifest, comp)
     if dependencies:
         return "", f"it was judged with unmerged dependency code from {', '.join(dependencies)}"
-    tip = git.branch_sha(comp.branch_name, root_dir) or ""
+    tip = branch_sha(comp.branch_name, root_dir) or ""
     return approved_head(approvals_at(root_dir), comp, tip)
 
 

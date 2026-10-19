@@ -10,8 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl.events import event_catalog
-from kstrl.git import git, git_diff
+from kstrl import git
+from kstrl.events import DiffFetchFailed, VerificationResultEvent
 from kstrl.io import atomic_write_text, pre_run_prd_path
 from kstrl.owner import ACCEPTANCE_PHASE, ApprovalSnapshot, ItemKind
 from kstrl.pipeline.context import IterationContext
@@ -159,7 +159,7 @@ class MechanicalChecks(InboxDesk, AttemptRecorder):
         """
         head = git.branch_sha(comp.branch_name, self.root_dir) or ""
         try:
-            diff = git_diff.get_diff_content(self.component_base(comp.id), wt_path, as_stored=True)
+            diff = git.get_diff_content(self.component_base(comp.id), wt_path, as_stored=True)
         except git.GitDiffError as exc:
             self.ui.warn(
                 f"  {comp.id}: the judged diff could not be read, so no approval applies "
@@ -230,7 +230,7 @@ class MechanicalChecks(InboxDesk, AttemptRecorder):
         for line in outcome.lines:
             self.ui.info(line)
         self.bus.emit(
-            event_catalog.VerificationResultEvent(
+            VerificationResultEvent(
                 component=comp.id,
                 passed=outcome.passed,
                 checks=outcome.checks,
@@ -358,7 +358,7 @@ class MechanicalChecks(InboxDesk, AttemptRecorder):
         """
         base = self.component_base(comp.id)
         try:
-            shared_diff = git_diff.get_diff_content(
+            shared_diff = git.get_diff_content(
                 base,
                 wt_path,
             )
@@ -377,7 +377,7 @@ class MechanicalChecks(InboxDesk, AttemptRecorder):
                     )
                 ],
             )
-            self.bus.emit(event_catalog.DiffFetchFailed(component=comp.id, error=str(exc)))
+            self.bus.emit(DiffFetchFailed(component=comp.id, error=str(exc)))
             ctx = IterationContext.from_json(comp_result.context_json or "{}")
             ctx.add_verification_failure(
                 f"git diff against {base} failed: {exc}",
@@ -501,7 +501,7 @@ class MechanicalChecks(InboxDesk, AttemptRecorder):
         if verification.passed and LAYER0_NOT_MEASURED in verification.not_measured:
             self._record_phase_skip(comp, "adequacy", LAYER0_NOT_MEASURED.detail)
         self.bus.emit(
-            event_catalog.VerificationResultEvent(
+            VerificationResultEvent(
                 component=comp.id,
                 passed=verification.passed,
                 checks=tuple(c.name for c in verification.checks),

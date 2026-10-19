@@ -36,8 +36,9 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from kstrl import git
 from kstrl.events import RunPaths
-from kstrl.git import git, git_base, git_tree, kstrl_version
+from kstrl.git import kstrl_version
 from kstrl.io import atomic_write_json
 from kstrl.proc import (
     HOST_LABEL,
@@ -113,9 +114,9 @@ def measure_base_gates(
     start = time.monotonic()
     # Non-fatal, as before a component is cut (``factory_worktrees._setup_worktree``):
     # offline runs read the current tracking ref, local-only repos the branch.
-    git_base.fetch_base_branch(base_branch, root_dir, timeout=60.0)
+    git.fetch_base_branch(base_branch, root_dir, timeout=60.0)
     try:
-        sha = git_base.resolve_base_sha(base_branch, root_dir)
+        sha = git.resolve_base_sha(base_branch, root_dir)
     except git.GitDiffError as exc:
         return BaseGates(
             base_branch,
@@ -176,7 +177,7 @@ def measure_base_gates(
 def _left_behind(worktree: Path) -> tuple[str, ...]:
     """What ``git status`` shows in ``worktree``, or why it could not say."""
     try:
-        return tuple(git_tree.status_entries(worktree))
+        return tuple(git.status_entries(worktree))
     except git.GitDiffError as exc:
         return (f"(git status could not be read: {exc})",)
 

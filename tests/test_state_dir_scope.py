@@ -910,7 +910,7 @@ def _captured_ignored_paths(cwd: Path, config: KstrlConfig, **kwargs: Any) -> li
         seen.append(list(call_kwargs.get("ignored_paths") or ()))
         return True, []
 
-    with patch.object(guards, "enforce_allowed_paths", side_effect=fake):
+    with patch("kstrl.verify.enforce_allowed_paths", side_effect=fake):
         run_loop(
             config,
             PlainUI(no_color=True),

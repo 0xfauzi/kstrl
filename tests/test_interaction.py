@@ -86,7 +86,7 @@ class TestCheckpointContext:
                 return_value=result,
             ),
             patch(
-                "kstrl.git.git_diff.get_diff_content",
+                "kstrl.git.get_diff_content",
                 return_value="+real diff\n",
             ),
             patch("kstrl.pipeline.pr.is_gh_available", return_value=False),

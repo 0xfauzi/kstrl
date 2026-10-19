@@ -32,7 +32,16 @@ from typing import TYPE_CHECKING, Any
 
 from kstrl.cli.config_preflight import config_problem_lines
 from kstrl.config import SURFACE_REJECTIONS, raise_if_defect, resolve_config_file
-from kstrl.git import git, git_base, git_diff, git_tree
+from kstrl.git import (
+    DEFAULT_TIMEOUT,
+    GitDiffError,
+    detect_base_branch,
+    get_changed_files,
+    get_diff_names,
+    get_head_sha,
+    get_origin_slug,
+    is_git_repo,
+)
 from kstrl.io import STATE_DIR_NAME, atomic_write_json, state_dir
 from kstrl.pipeline import is_gh_available
 from kstrl.project import NO_STACK, file_stack_item, legacy_proposal, stack_in_force
@@ -131,7 +140,7 @@ def check_git_repo(root: Path) -> _CheckResult:
     off the base branch, and by every Phase 1 check that reads
     `git diff <base>...HEAD`.
     """
-    if not git.is_git_repo(root):
+    if not is_git_repo(root):
         return (
             STATUS_FAIL,
             f"{root} is not inside a git repository; factory cuts a "
@@ -139,7 +148,7 @@ def check_git_repo(root: Path) -> _CheckResult:
             f"branch, so neither can run",
             "Run `git init` and make one commit, or point --root at a checkout.",
         )
-    head = git.get_head_sha(root)
+    head = get_head_sha(root)
     if head is None:
         return (
             STATUS_FAIL,
@@ -147,10 +156,10 @@ def check_git_repo(root: Path) -> _CheckResult:
             "factory to cut a component worktree from",
             "Make one commit.",
         )
-    base = git_base.detect_base_branch(root)
+    base = detect_base_branch(root)
     try:
-        git_diff.get_diff_names(base, root, strict=True)
-    except git.GitDiffError as exc:
+        get_diff_names(base, root, strict=True)
+    except GitDiffError as exc:
         return (
             STATUS_WARN,
             f"the detected base branch {base!r} cannot be diffed against "
@@ -174,15 +183,15 @@ def check_git_clean(root: Path) -> _CheckResult:
     base ref) and by `git_tree.capture_workspace_baseline`, which has to
     subtract pre-existing dirt from the in-loop scope guard.
     """
-    if not git.is_git_repo(root):
+    if not is_git_repo(root):
         return (
             STATUS_WARN,
             "not a git repository, so the working tree could not be read",
             "Fix git_repo first.",
         )
     try:
-        changed = sorted(git_tree.get_changed_files(root))
-    except git.GitDiffError as exc:
+        changed = sorted(get_changed_files(root))
+    except GitDiffError as exc:
         return (STATUS_WARN, f"the working tree could not be read: {exc}", "")
     if changed:
         listed = ", ".join(changed[:5])
@@ -209,7 +218,7 @@ def check_github_cli(root: Path) -> _CheckResult:
     `gh`. Degraded mode, never a failure: the factory runs with
     `[factory] create_prs = false` and the operator merges by hand.
     """
-    slug = git.get_origin_slug(root)
+    slug = get_origin_slug(root)
     available = is_gh_available()
     if available and slug:
         return (
@@ -359,7 +368,7 @@ def check_gitignore(root: Path) -> _CheckResult:
             ["git", "check-ignore", "-q", "--", probe],
             cwd=root,
             capture_output=True,
-            timeout=git.DEFAULT_TIMEOUT,
+            timeout=DEFAULT_TIMEOUT,
         )
     except (subprocess.TimeoutExpired, OSError) as exc:
         return (STATUS_WARN, f"git check-ignore failed: {exc}", "")

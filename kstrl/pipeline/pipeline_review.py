@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from kstrl.agents import recording_prompts
-from kstrl.events import collect_usage, event_catalog
+from kstrl.events import ReviewResultEvent, collect_usage
 from kstrl.pipeline.pipeline_ledger import UsageLedger
 from kstrl.pipeline.pipeline_transitions import FailureAction, PhaseFailure
 from kstrl.pipeline.pipeline_verdicts import ReviewPhaseResult, ReviewVerdicts
@@ -196,7 +196,7 @@ class ReviewPhase(ReviewVerdicts, UsageLedger):
         # the divergence reading's blocking_count reads. Criteria and
         # concerns together, one per finding row recorded just above.
         self.bus.emit(
-            event_catalog.ReviewResultEvent(
+            ReviewResultEvent(
                 component=comp.id,
                 passed=review_result.passed,
                 mode=review_mode.value,
