@@ -113,7 +113,7 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     "serve/ci_state.py": 4,
     "cli/cli_check.py": 5,
     "cli/cli_inbox.py": 1,
-    "cli/cli_preflight.py": 2,
+    "cli/cli_preflight.py": 4,  # +2: json.dumps renders a config NOTE's values as TOML does
     "pipeline/context.py": 2,
     "verify/baseline.py": 2,
     "events/event_catalog.py": 2,

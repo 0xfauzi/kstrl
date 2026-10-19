@@ -197,6 +197,11 @@ def test_a_repository_with_no_build_manifest_gets_the_architects_stack_as_a_prop
     assert f"inbox item {item.id[:8]}" in proc.stdout, proc.stdout
     manifest = Manifest.load(root / "scripts" / "kstrl" / "manifest.json")
     assert manifest.stack_digest == "", manifest.stack_digest
+    listed = run_ks(root, "inbox", "ls", "--root", str(root), "--ui", "plain")
+    assert f"{item.id[:8]}  stack_confirmation Proposed [stack]" in listed.stdout, listed.stdout
+    early = run_ks(root, "inbox", "approve", item.id, "--root", str(root), "--ui", "plain")
+    assert early.returncode == 2, early.stdout
+    assert f"Write the table ks inbox show {item.id[:8]} prints" in early.stdout, early.stdout
     (root / "kstrl.toml").write_text(str(item.evidence["toml"]), encoding="utf-8")
     adopted = load_stack(root)
     assert adopted is not None

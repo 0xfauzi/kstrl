@@ -262,9 +262,12 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     # create or change.
     # 5.0.0 (#639 slice 2): MAJOR. The output gains `requirements`, required
     # with components (rules R1-R4): every user story is named by one.
+    # 5.1.0: MINOR. Rule 2 says a component owns its own tests, and S4 that
+    # each check must pass on the tree as it is now: a run proposed a lint
+    # naming files no commit had yet, which the base gate then refused.
     "DECOMPOSE_PROMPT": (
-        "58ae0b8ef1d3663a365aadb9913a9b19a208c664519f586553f714e850c8255e",
-        "5.0.0",
+        "c2800cabf2763f8571925333044202277e37c5d70cf0b8c7a2052b8045901955",
+        "5.1.0",
     ),
     # 1.0.0 (#199): opens the series. Never shipped before this PR. Same
     # split, and the same reason, as REPO_CHANGE_SOURCE_PROMPT /

@@ -56,8 +56,8 @@ REPLAY_CHECK_NAME = "replay"
 #: What to do about a base branch whose gates fail: the escapes the
 #: `ks factory` refusal leaves (docs/runbook.md).
 BASE_GATES_FIX = (
-    "Commit a fix for the failing gate on the base branch, or commit "
-    "xfail(strict=True) marks for its failing tests; `ks factory --no-verify` "
+    "Commit a fix for the failing gate on the base branch, or correct the "
+    "check in the [stack] and confirm it again; `ks factory --no-verify` "
     "runs anyway with every Phase 1 gate off."
 )
 

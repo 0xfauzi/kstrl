@@ -416,7 +416,8 @@
       "  ks understand [iterations]",
       "  ks feature [iterations] --prd scripts/kstrl/feature/<name>/prd.json",
       "",
-      "Measure before you spend (no agent, no cost):",
+      "Measure before you spend (no agent, no cost), once kstrl.toml holds a",
+      "confirmed [stack] (ks decompose proposes one):",
       "  ks check",
       "  ks check --allowed-path '<glob>'                     # preflight the guard"
     ],

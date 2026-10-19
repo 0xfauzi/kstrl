@@ -189,6 +189,8 @@ def _print_summary(ctx: RunContext, factory_duration: float) -> None:
         for line in ctx.factory_result.contract_failures:
             ctx.ui.err(f"  {line}")
     report_integration(ctx.integration_record, ctx.ui)
+    if not ctx.factory_config.create_prs:
+        _print_branches_to_merge(ctx)
     if ctx.factory_result.merge_pending:
         ctx.ui.kv("Merge pending", str(len(ctx.factory_result.merge_pending)))
     report_awaiting_approval(ctx.factory_result, ctx.ui)
@@ -219,6 +221,17 @@ def _print_summary(ctx: RunContext, factory_duration: float) -> None:
             "Some PR merges are unconfirmed; re-run the factory to "
             "re-poll them: " + ", ".join(ctx.factory_result.merge_pending)
         )
+
+
+def _print_branches_to_merge(ctx: RunContext) -> None:
+    """With no PRs, name the branches that hold the completed work: each
+    component's branch merged its dependencies' branches (#543), so those
+    of completed components no other completed component depends on."""
+    done = [c for c in ctx.manifest.components if c.id in ctx.factory_result.completed]
+    needed = {dep for comp in done for dep in comp.dependencies}
+    branches = sorted({c.branch_name for c in done if c.id not in needed})
+    if branches:
+        ctx.ui.kv("Merge by hand", ", ".join(branches))
 
 
 def _print_failure_summary(ctx: RunContext) -> None:

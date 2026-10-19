@@ -24,7 +24,7 @@ from kstrl.agents.sandbox import (
 )
 from kstrl.events import UsageRecord
 from kstrl.io import read_json
-from kstrl.proc import DeadlineStreamer, timeout_message
+from kstrl.proc import SESSION_STOPPED_PREFIX, DeadlineStreamer, timeout_message
 from kstrl.write_guard import SessionGate
 
 logger = logging.getLogger(__name__)
@@ -236,7 +236,7 @@ class ClaudeCodeAgent:
         """Record a session the write guard's gate stopped; its error line."""
         duration = time.monotonic() - started
         self._usage_records.append(UsageRecord(duration_seconds=duration, source="unavailable"))
-        return f"ERROR: {reason}"
+        return f"{SESSION_STOPPED_PREFIX}{reason}"
 
     @property
     def final_message(self) -> str | None:

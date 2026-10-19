@@ -149,6 +149,20 @@ def test_an_unauthenticated_gh_is_a_warning_not_a_failure(
     assert "[fail]" not in result.output
 
 
+def test_no_gh_is_no_warning_when_create_prs_is_off(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The fix the warning names is `create_prs = false`, so a project that
+    set it is not told to set it again."""
+    root = ready_repo(tmp_path)
+    put_gh_on_path(tmp_path, monkeypatch, GH_UNAUTHENTICATED)
+    with (root / "kstrl.toml").open("a", encoding="utf-8") as toml:
+        toml.write("\n[factory]\ncreate_prs = false\n")
+    result = run_doctor(root)
+    assert "[ok] github_cli: [factory] create_prs = false" in result.output, result.output
+    assert "merge by hand" not in result.output, result.output
+
+
 def test_a_repo_that_does_not_ignore_the_state_dir_warns_with_the_line_to_add(
     tmp_path: Path,
 ) -> None:

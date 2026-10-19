@@ -598,6 +598,8 @@ def _run_component(
                 allowed_paths=", ".join(authored_paths),
                 harness_paths=", ".join(harness_paths),
             )
+        elif result.session_stopped:
+            error = f"kstrl stopped the agent session: {result.session_stopped}"
         elif result.no_progress:
             error = (
                 "no-progress circuit breaker tripped: "
@@ -625,6 +627,7 @@ def _run_component(
             context_json=previous_context_json,
             usage=result.usage,
             no_progress=result.no_progress,
+            session_stopped=bool(result.session_stopped),
             budget_exceeded=bool(result.budget_halt_reason),
             budget_halt_condition=result.budget_halt_condition,
             budget_halt_ceilings=result.budget_halt_ceilings,

@@ -159,6 +159,16 @@ class ComponentPipeline(Delivery, KnowledgePhase, SecurityGate, ReviewPhase, Mec
             )
 
         if not comp_result.success:
+            if comp_result.session_stopped:
+                return PipelineOutcome(
+                    transition=self.fail(
+                        comp,
+                        comp_result.error or "kstrl stopped the agent session",
+                        phase="engineer",
+                        check="session_gate",
+                        signatures=["engineer:session-gate"],
+                    ),
+                )
             # R7.5: the no-progress circuit breaker is a direct FAILED
             # transition, never a retry - a fresh attempt would re-run
             # the same prompt against the same base state, which is the

@@ -61,6 +61,11 @@ from kstrl.proc.spawn_record import (
 # command could print the same string).
 TIMEOUT_MESSAGE_PREFIX = "ERROR: agent timed out"
 
+# The claude-code adapter yields this line, then its reason, when the write
+# guard's gate stops the session. loop.py ends the run on it: a retry meets
+# the same gate. An agent that prints it only fails its own component.
+SESSION_STOPPED_PREFIX = "ERROR: kstrl stopped the agent session: "
+
 DEFAULT_TERM_GRACE_SECONDS = 5.0
 DEFAULT_FINISH_WAIT_SECONDS = 10.0
 

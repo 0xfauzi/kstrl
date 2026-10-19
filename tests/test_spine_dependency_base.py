@@ -225,10 +225,12 @@ def _without_gh(monkeypatch: pytest.MonkeyPatch, shims: Path) -> None:
 def test_dependent_worktree_holds_its_dependency_code(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
     create_prs: bool,
 ) -> None:
     """Under --no-prs, and with PRs on but no gh, nothing merges a into the
-    base, so b's branch must take a's branch itself."""
+    base, so b's branch must take a's branch itself. Under --no-prs the
+    summary names b's branch as the one to merge: it carries a."""
     if create_prs:
         _without_gh(monkeypatch, tmp_path / "shims")
     root, manifest, _ = _project(tmp_path, {"a": [], "b": ["a"]})
@@ -239,6 +241,8 @@ def test_dependent_worktree_holds_its_dependency_code(
     b_lines = [line for line in _engineer_log(tmp_path) if line.startswith("b ")]
     assert b_lines and set(b_lines) == {"b sees a.txt"}, _engineer_log(tmp_path)
     assert "a.txt" in git("ls-tree", "--name-only", "kstrl/factory/b", cwd=root).split()
+    merge = [line for line in capsys.readouterr().err.splitlines() if "Merge by hand" in line]
+    assert [line.split()[-1] for line in merge] == ([] if create_prs else ["kstrl/factory/b"])
 
 
 def test_dependent_is_judged_on_its_own_change_only(

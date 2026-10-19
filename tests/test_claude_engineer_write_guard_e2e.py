@@ -22,6 +22,7 @@ from tests.test_sandbox_engineer_e2e import (
     NO_NETWORK_TOML,
     STACK_TOML,
     _ks,
+    _runs,
 )
 
 #: How long the stub claude waits for a stalled hook. The guard's own deadline
@@ -223,7 +224,15 @@ def _session_claude(path: Path, out: Path) -> Path:
     server ``managed-fs`` in both cases. ``STUB_NO_INIT`` leaves the ``init``
     event out, and ``STUB_INIT_NO_SERVERS`` its ``mcp_servers`` list: an
     event that kstrl cannot read must stop the session too. As claude does,
-    the stub sends each tool call's ``tool_use`` event before the tool runs."""
+    the stub sends each tool call's ``tool_use`` event before the tool runs.
+    A non-empty ``CLAUDE_CODE_REMOTE`` or ``CLAUDE_CODE_REMOTE_SESSION_ID``,
+    the variables of a parent claude.ai/code session, makes the stub send an
+    ``active_goal`` event before ``init``, as claude 2.1.303 does for the
+    first (measured); the second puts the parent's session URL in commits.
+    ``STUB_NO_SANDBOX`` stands for a host where claude's sandbox cannot run:
+    as claude 2.1.303 does (measured), the stub refuses to start when the
+    settings set ``sandbox.failIfUnavailable``, and otherwise warns on stderr
+    and runs every command unconfined."""
     argv = path.with_suffix(".argv")
     outside = out.parent / "outside"
     return write_executable(
@@ -239,6 +248,13 @@ settings = json.loads(argv[argv.index("--settings") + 1]) if "--settings" in arg
 hooks = {{}} if os.environ.get("STUB_MANAGED_HOOKS_ONLY") else settings.get("hooks", {{}})
 def emit(event):
     print(json.dumps(event), flush=True)
+if os.environ.get("STUB_NO_SANDBOX"):
+    if settings.get("sandbox", {{}}).get("failIfUnavailable"):
+        emit({{"type": "result", "subtype": "error_during_execution", "is_error": True,
+              "errors": ["Sandbox required but unavailable: bwrap not installed."]}})
+        print("Error: sandbox required but unavailable", file=sys.stderr, flush=True)
+        sys.exit(1)
+    print("Sandbox disabled: commands will run WITHOUT sandboxing", file=sys.stderr, flush=True)
 def run(command, stdin):
     return subprocess.run(["/bin/sh", "-c", command], input=stdin, cwd=cwd, encoding="utf-8",
                           capture_output=True, timeout=60)
@@ -254,6 +270,8 @@ tools = ["Write"] + ["mcp__" + s["name"] + "__write_file" for s in servers]
 init = {{"type": "system", "subtype": "init", "mcp_servers": servers, "tools": tools}}
 if os.environ.get("STUB_INIT_NO_SERVERS"):
     del init["mcp_servers"]
+if os.environ.get("CLAUDE_CODE_REMOTE") or os.environ.get("CLAUDE_CODE_REMOTE_SESSION_ID"):
+    emit({{"type": "active_goal"}})
 if not os.environ.get("STUB_NO_INIT"):
     emit(init)
 time.sleep({MODEL_TURN_SECONDS})
@@ -286,6 +304,14 @@ _SESSIONS = [
     ("managed-hooks-only", "", {"STUB_MANAGED_HOOKS_ONLY": "1"}, "allowManagedHooksOnly"),
     ("managed-mcp", "", {"STUB_MANAGED_MCP": "1"}, "loaded MCP servers (managed-fs)"),
     ("init-without-servers", "", {"STUB_INIT_NO_SERVERS": "1"}, "has no mcp_servers list"),
+    # kstrl started from inside a claude.ai/code session: the engineer must
+    # not get the parent's variables (see the stub).
+    (
+        "parent-cloud-session",
+        "",
+        {"CLAUDE_CODE_REMOTE": "true", "CLAUDE_CODE_REMOTE_SESSION_ID": "session_parent"},
+        None,
+    ),
 ]
 
 
@@ -311,6 +337,35 @@ def test_a_claude_session_with_no_init_event_is_stopped_at_its_first_tool_call(
     )
     assert "the engineer session sent no init event" in ran, ran
     assert "kstrl stopped the engineer before its first tool call" not in ran, ran
+    # Its own failure, with no retry: not the no-progress breaker that three
+    # stopped sessions in a row used to trip.
+    assert "check=session_gate" in ran, ran
+    assert "no-progress" not in ran, ran
+    assert len(_runs(tmp_path, "bin/claude")) == 1, ran
+
+
+def test_a_claude_engineer_does_not_run_when_its_sandbox_cannot(tmp_path: Path) -> None:
+    """RED before this change: on a Linux host with no bubblewrap, claude
+    2.1.303 ran the engineer's commands unconfined and said so only in the
+    engineer's log (measured). Now kstrl asks claude to refuse to start, and
+    the run fails the component on claude's own message, once."""
+    out = tmp_path / "session.out"
+    argv_ = (*_FACTORY, "--review-mode", "skip", "--security-mode", "skip")
+    ran = _ks(
+        tmp_path,
+        CLAUDE_TOML + STACK_TOML,
+        argv_,
+        {**NO_PROVER, "STUB_NO_SANDBOX": "1"},
+        confirm=True,
+        clis=("claude",),
+        claude_out=out,
+        claude_stub=_session_claude,
+    )
+    assert not out.exists(), ran
+    assert "claude ended the engineer session before it started" in ran, ran
+    assert "Sandbox required but unavailable: bwrap not installed." in ran, ran
+    assert "check=session_gate" in ran, ran
+    assert len(_runs(tmp_path, "bin/claude")) == 1, ran
 
 
 @pytest.mark.parametrize(

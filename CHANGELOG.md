@@ -361,6 +361,25 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Fixed
 
+- A claude engineer started from inside a claude.ai/code session runs.
+  The session's `CLAUDE_CODE_REMOTE` made claude send events before
+  `init`, which the write guard's gate refused, and its
+  `CLAUDE_CODE_REMOTE_SESSION_ID` put the parent's session URL in the
+  engineer's commits; kstrl now blanks both for every claude it starts.
+- A session the gate stops fails its component once, as
+  `check=session_gate` with the gate's reason, instead of three stopped
+  sessions tripping the no-progress breaker.
+- The claude sandbox no longer degrades silently: kstrl sets
+  `sandbox.failIfUnavailable`, so on a host without bubblewrap claude
+  refuses to start and the run fails on claude's own message.
+- The architect prompt (5.1.0) asks for checks that pass on the tree as it
+  is now and for no tests-only component.
+- Smaller output fixes: `ks doctor` no longer gives pytest advice for a red
+  base or asks for `create_prs = false` when it is set; `ks init` says that
+  `ks check` needs a confirmed `[stack]`; `ks inbox approve` on a proposal
+  not yet in kstrl.toml says to write the table first; `ks inbox ls` keeps
+  a space after `stack_confirmation`; with PRs off the factory summary
+  names the branches to merge by hand.
 - `ks feature`'s engineer reads the knowledge facts,
   `scripts/kstrl/golden-patterns.md` and `scripts/kstrl/memory.md`
   (#599). Its understand, implement and repair loops called `run_loop`

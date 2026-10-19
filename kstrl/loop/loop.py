@@ -29,7 +29,7 @@ from kstrl.owner import (
     UiInteractionChannel,
 )
 from kstrl.plan import PRD
-from kstrl.proc import TIMEOUT_MESSAGE_PREFIX, TimeoutConfig
+from kstrl.proc import SESSION_STOPPED_PREFIX, TIMEOUT_MESSAGE_PREFIX, TimeoutConfig
 from kstrl.verify import VerifyConfig
 
 if TYPE_CHECKING:
@@ -93,6 +93,14 @@ class LoopResult:
     # agent was told nothing about what it had touched, so its cheapest
     # strategy was to repeat the edit.
     guard_violations: tuple[str, ...] = ()
+    # The reason the write guard's gate stopped the agent session. The
+    # factory fails the component on it with no retry, because a retry
+    # meets the same gate.
+    session_stopped: str = ""
+
+
+class _SessionStopped(Exception):
+    """The agent's session was stopped by the write guard's gate."""
 
 
 @dataclass(frozen=True)
@@ -369,13 +377,18 @@ def _run_one_iteration(
     completion_seen = False
     iteration_timed_out = False
     fast_checks_failed: tuple[str, ...] = ()
+    stopped = ""
     try:
         for line in run.agent.run(prompt, run.cwd, timeout=iteration_timeout):
             if line.strip() == COMPLETION_MARKER:
                 completion_seen = True
             if line.startswith(TIMEOUT_MESSAGE_PREFIX):
                 iteration_timed_out = True
+            if line.startswith(SESSION_STOPPED_PREFIX):
+                stopped = line.removeprefix(SESSION_STOPPED_PREFIX)
             run.ui.stream_line("AI", line)
+        if stopped:
+            raise _SessionStopped(stopped)
 
         final_message = run.agent.final_message
         if not completion_seen and final_message:
@@ -734,9 +747,22 @@ def run_loop(
                 timed_out_iterations=timed_out_iterations,
                 usage=collect_usage(agent),
             )
-        prompt, completion_seen, loop_usage, timed_out_iterations = _run_one_iteration(
-            run, iteration, prompt, timed_out_iterations
-        )
+        try:
+            prompt, completion_seen, loop_usage, timed_out_iterations = _run_one_iteration(
+                run, iteration, prompt, timed_out_iterations
+            )
+        except _SessionStopped as exc:
+            ui.err(f"{SESSION_STOPPED_PREFIX}{exc}")
+            return LoopResult(
+                completed=False,
+                iterations=iteration,
+                exit_code=1,
+                duration_seconds=time.monotonic() - loop_start,
+                iteration_durations=iteration_durations,
+                timed_out_iterations=timed_out_iterations,
+                usage=collect_usage(agent),
+                session_stopped=str(exc),
+            )
 
         if (
             verdict := _iteration_verdict(

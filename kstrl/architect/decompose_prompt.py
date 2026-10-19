@@ -7,7 +7,7 @@ from pathlib import Path
 
 from kstrl.io import generate_data_delimiter
 
-DECOMPOSE_PROMPT_VERSION = "5.0.0"
+DECOMPOSE_PROMPT_VERSION = "5.1.0"
 
 DECOMPOSE_PROMPT = """\
 You are a senior software architect AND a hostile spec auditor. You have
@@ -106,6 +106,8 @@ The output must be a JSON object with this exact structure:
 Decomposition rules:
 1. Component IDs must be kebab-case (lowercase, hyphens only).
 2. Each component should be independently implementable and testable.
+   A component owns the tests of its own code: never make a component
+   whose only work is tests or conventions for other components.
 3. Dependencies reference other component IDs. Foundational components
    (data models, config, shared utilities) should have no dependencies.
 4. Order components so foundational ones come first.
@@ -211,7 +213,10 @@ S4. All four keys are required:
     - "checks": an object of name to command, at least one, run in the
       order listed. Each must exit 0 on a correct tree and non-zero when
       the work is wrong; a check that exits 0 having run nothing
-      verifies nothing.
+      verifies nothing. Each must also exit 0 on the tree as it is now:
+      kstrl runs every check there before any component is built and
+      refuses to start when one fails, so a check must not name a file
+      that a component will create.
 
 Requirement rules (the product spec):
 R1. `requirements` lists, one per entry, each thing the specification

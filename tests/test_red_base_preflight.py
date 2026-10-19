@@ -585,7 +585,8 @@ def test_doctor_measure_reports_a_red_base_not_ready(tmp_path: Path) -> None:
     assert "[fail] base_gates" in text
     assert "stack:tests fails on main" in text
     assert "exited 1" in text
-    assert "xfail(strict=True)" in text
+    assert "correct the check in the [stack]" in text
+    assert "xfail" not in text
     assert code == 1, document
     assert document["verdict"] == "not-ready"
     reading = document["base_gates"]

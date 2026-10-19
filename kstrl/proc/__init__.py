@@ -14,6 +14,7 @@ from kstrl.proc.factory_lock import (
     held_or_acquired_run_lock,
 )
 from kstrl.proc.proc import (
+    SESSION_STOPPED_PREFIX,
     TIMEOUT_MESSAGE_PREFIX,
     DeadlineStreamer,
     kill_active_process_groups,
@@ -88,6 +89,7 @@ __all__ = [
     "RunLock",
     "Rung",
     "SECRET_NAME_FRAGMENTS",
+    "SESSION_STOPPED_PREFIX",
     "StopController",
     "TIMEOUT_MESSAGE_PREFIX",
     "TIMEOUT_SECTION",

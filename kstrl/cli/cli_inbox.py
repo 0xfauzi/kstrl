@@ -81,9 +81,15 @@ def _refuse_stale_stack_approval(action: str, item_id: str, root: Path | None, u
     if now == item.evidence.get("stack_digest"):
         return
     reads = f"it now reads {now[:12]}" if now else "it has no [stack] now"
+    then = (
+        "Run ks factory to file the stack kstrl.toml holds."
+        if now
+        else f"Write the table ks inbox show {item.id[:8]} prints into kstrl.toml, "
+        "then approve it again."
+    )
     ui_impl.err(
         f"{item.id[:8]} confirms the [stack] {str(item.evidence.get('stack_digest'))[:12]}, "
-        f"and {reads}: nothing was approved. Run ks factory to file the stack kstrl.toml holds."
+        f"and {reads}: nothing was approved. {then}"
     )
     sys.exit(2)
 
@@ -158,7 +164,7 @@ def inbox_ls(
         marker = {"high": "!", "normal": " ", "low": "."}.get(str(item.priority), " ")
         repeat = f" x{item.occurrences}" if item.occurrences > 1 else ""
         state = "" if item.is_open else f" [{item.status}]"
-        ui_impl.info(f"  {marker} {item.id[:8]}  {str(item.kind):<18}{item.title}{repeat}{state}")
+        ui_impl.info(f"  {marker} {item.id[:8]}  {str(item.kind):<19}{item.title}{repeat}{state}")
     ui_impl.info("")
     ui_impl.kv("summary", summarize(box.items()))
     if box.over_cap():

@@ -43,7 +43,7 @@ from kstrl.git import (
     is_git_repo,
 )
 from kstrl.io import STATE_DIR_NAME, atomic_write_json, state_dir
-from kstrl.pipeline import is_gh_available
+from kstrl.pipeline import FactoryConfig, is_gh_available
 from kstrl.project import NO_STACK, file_stack_item, legacy_proposal, stack_in_force
 from kstrl.verify import ENFORCEMENT_MACHINERY_PATHS, PolicyConfig, match_glob
 
@@ -217,7 +217,14 @@ def check_github_cli(root: Path) -> _CheckResult:
     Consumed by `pr.push_create_and_merge_pr`, which shells out to
     `gh`. Degraded mode, never a failure: the factory runs with
     `[factory] create_prs = false` and the operator merges by hand.
+    A config that does not load is the kstrl_config row's to report.
     """
+    try:
+        create_prs = FactoryConfig.load(root).create_prs
+    except (OSError, ValueError):
+        create_prs = True
+    if not create_prs:
+        return (STATUS_OK, "[factory] create_prs = false: kstrl opens no PR", "")
     slug = get_origin_slug(root)
     available = is_gh_available()
     if available and slug:

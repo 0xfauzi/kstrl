@@ -235,6 +235,17 @@ class SessionGate:
             ):
                 self._ready = True
             return None
+        if event.get("type") == "result":
+            # claude ended the session itself, as it does when
+            # sandbox.failIfUnavailable finds no sandbox: the event's
+            # ``errors`` say why (measured, claude 2.1.303), not a missing hook.
+            errors = event.get("errors")
+            said = " ".join(map(str, errors)) if isinstance(errors, list) else ""
+            return (
+                f"claude ended the engineer session before it started: "
+                f"{said or event.get('subtype')} Fix that, or set [sandbox] "
+                "enabled = false to run the engineer with no sandbox."
+            )
         if not self._ready:
             return HOOKS_OFF
         if event.get("type") != "system":

@@ -345,7 +345,10 @@ def claude_sandbox_settings(
     same CLI flag, so the two paths cannot drift.
 
     Always sets ``allowUnsandboxedCommands: false`` (the default true
-    would let a failed command re-run OUTSIDE the sandbox). In the
+    would let a failed command re-run OUTSIDE the sandbox) and
+    ``failIfUnavailable: true``: without it, claude 2.1.303 on a Linux host
+    with no bubblewrap ran every command unconfined and said so only on
+    stderr; with it, claude refuses to start (measured). In the
     no-network mode the JSON additionally carries the file-tool
     permission allow rules the headless run needs once
     ``--dangerously-skip-permissions`` is dropped (see
@@ -366,7 +369,11 @@ def claude_sandbox_settings(
     """
     if config is None or not config.enabled:
         return None
-    sandbox: dict[str, object] = {"enabled": True, "allowUnsandboxedCommands": False}
+    sandbox: dict[str, object] = {
+        "enabled": True,
+        "allowUnsandboxedCommands": False,
+        "failIfUnavailable": True,
+    }
     if config.writable:
         sandbox["filesystem"] = {"allowWrite": list(config.writable)}
     settings: dict[str, object] = {"sandbox": sandbox}
@@ -541,6 +548,11 @@ def _spawnable(text: str) -> bool:
     return True
 
 
+#: The variables of a parent claude.ai/code session, blanked in each claude
+#: session kstrl starts (see :func:`claude_session_env`).
+PARENT_SESSION_ENV = {"CLAUDE_CODE_REMOTE": "", "CLAUDE_CODE_REMOTE_SESSION_ID": ""}
+
+
 def claude_session_env() -> dict[str, str]:
     """The environment that kstrl adds to each claude session it starts.
 
@@ -549,8 +561,15 @@ def claude_session_env() -> dict[str, str]:
     the same key in the process environment logged in the same way). It goes
     in the environment and not in ``--settings``, because kstrl records the
     argv of each agent process on disk and ``ps`` shows it to each user.
+
+    It also blanks the variables a parent claude.ai/code session sets, which
+    kstrl started from inside one would otherwise pass on (measured, claude
+    2.1.303): ``CLAUDE_CODE_REMOTE`` makes claude send events before
+    ``init``, which the write guard's gate refuses, and
+    ``CLAUDE_CODE_REMOTE_SESSION_ID`` puts the parent's session URL in the
+    engineer's commits. An empty value acts as unset for both (measured).
     """
-    return dict(claude_login().env)
+    return {**PARENT_SESSION_ENV, **claude_login().env}
 
 
 def claude_tools(role: ClaudeRole, *, network: bool) -> tuple[str, ...]:

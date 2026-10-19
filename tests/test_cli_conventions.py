@@ -375,6 +375,7 @@ FINDING_EXIT_SITES: dict[tuple[str, str], int] = {
     ("loop/loop.py", "_budget_verdict"): 1,  # an iteration ran and the budget ended the loop
     ("loop/loop.py", "_guard_verdict"): 1,  # an iteration ran and the guard ended the loop
     ("loop/loop.py", "_max_iterations_result"): 1,  # all iterations ran and none completed
+    ("loop/loop.py", "run_loop"): 1,  # the write guard's gate stopped the agent session
     (
         "loop/loop.py",
         "_wall_clock_verdict",

@@ -37,6 +37,9 @@ class ComponentResult:
     # prompt against the same state is the exact spend the breaker
     # exists to stop) with a distinct journal event.
     no_progress: bool = False
+    # The write guard's gate stopped the engineer session. Routed to a
+    # direct FAILED transition, like ``no_progress``, under its own check.
+    session_stopped: bool = False
     # R8: the engineer loop halted ITSELF on a run-level ceiling
     # (max_total_tokens or max_cost_usd, between iterations). Routed to
     # pipeline.fail_for_budget so the audit trail is identical to a
