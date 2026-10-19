@@ -76,7 +76,8 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     # moves twenty-one of them to `git_tree.py`, which adds its own
     # `import subprocess` (22).
     "git/git.py": 22,
-    "git/git_base.py": 10,
+    # 11: `is_ancestor`, whether a dependency's branch reached the base.
+    "git/git_base.py": 11,
     "git/git_diff.py": 9,
     "git/git_tree.py": 22,
     "serve/intake_gh.py": 3,
@@ -248,9 +249,10 @@ EXPECTED_BYTES_MODE_SPAWNS: dict[str, int] = {
     # with surrogateescape, so a binary file's bytes reach the secret rules.
     # 8 since #696 slice 9 deleted `read_blob`. 6: #776 G1 moves two of them
     # to `git_base.py`. 5: #776 G2 moves one of them to `git_diff.py`. 1: #776
-    # G3 moves four of them to `git_tree.py`.
+    # G3 moves four of them to `git_tree.py`. 3 in `git_base.py`: `is_ancestor`
+    # reads only the exit status, so nothing is decoded.
     "git/git.py": 1,
-    "git/git_base.py": 2,
+    "git/git_base.py": 3,
     "git/git_diff.py": 1,
     "git/git_tree.py": 4,
     "events/observability.py": 1,

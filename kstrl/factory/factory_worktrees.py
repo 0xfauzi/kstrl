@@ -10,7 +10,14 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl.git import branch_sha, fetch_base_branch, get_head_sha, merge_branch, resolve_base_ref
+from kstrl.git import (
+    branch_sha,
+    fetch_base_branch,
+    get_head_sha,
+    is_ancestor,
+    merge_branch,
+    resolve_base_ref,
+)
 from kstrl.plan import Component, ComponentStatus, Manifest, has_merged
 from kstrl.proc import WorktreeSweep, sweep_worktree, warn_sweep
 
@@ -192,20 +199,23 @@ def _setup_worktree(
             lock_fp.close()
 
 
-def _dependency_branches(manifest: Manifest, comp: Component) -> list[str]:
+def _dependency_branches(manifest: Manifest, comp: Component, cwd: Path) -> list[str]:
     """The branches of ``comp``'s dependencies whose code is not in the base (#543).
 
     A dependency that merged (``has_merged``) is already in the base the
     worktree is cut from, which is how per-component PR mode gives a
     dependent its dependency's code. Under ``create_prs=False``, or with
-    no gh, a COMPLETED dependency's code exists only on its own branch.
-    In single_pr mode a dependency shares ``comp``'s branch and is
-    already in it.
+    no gh, a COMPLETED dependency's code exists only on its own branch,
+    until a person merges that branch into the base branch, which git in
+    ``cwd`` (any checkout of the repository) says. In single_pr mode a
+    dependency shares ``comp``'s branch and is already in it.
     """
     branches: list[str] = []
     for dep_id in comp.dependencies:
         dep = manifest.get_component(dep_id)
         if dep is None or has_merged(dep) or dep.branch_name in (comp.branch_name, *branches):
+            continue
+        if is_ancestor(dep.branch_name, manifest.base_branch, cwd):
             continue
         branches.append(dep.branch_name)
     return branches
@@ -263,7 +273,7 @@ def _start_from_dependencies(
     at, so an earlier attempt's commits are still judged, and a retry
     that recreates the branch (``fresh_from_base``) records it again.
     """
-    branches = _dependency_branches(manifest, comp)
+    branches = _dependency_branches(manifest, comp, worktree_path)
     _merge_dependency_branches(worktree_path, branches)
     if fresh_from_base or comp.id not in bases:
         bases[comp.id] = _judged_base(

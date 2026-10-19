@@ -245,7 +245,12 @@ class MechanicalChecks(InboxDesk, AttemptRecorder):
         if outcome.disputed or outcome.held_out or not outcome.told:
             return PhaseFailure(
                 action=FailureAction.FAIL,
-                error=halt_text(outcome, head, comp.id),
+                error=halt_text(
+                    outcome,
+                    head,
+                    comp.id,
+                    mergeable=self.component_base(comp.id) == self.manifest.base_branch,
+                ),
                 phase=ACCEPTANCE_PHASE,
                 check=failing,
             )

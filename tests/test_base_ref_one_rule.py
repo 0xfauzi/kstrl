@@ -165,6 +165,7 @@ EXPECTED_REF_OPERAND_ARGVS: dict[str, int] = {
     "git/git_diff.py git diff --numstat -z f'{base_ref}...HEAD' --": 1,
     "git/git.py git merge --no-edit -- branch": 1,
     "git/git_base.py git merge-base base_label HEAD": 1,
+    "git/git_base.py git merge-base --is-ancestor ancestor descendant": 1,
     "git/git.py git checkout branch --": 1,
     "git/git.py git checkout -b branch": 1,
     "git/git_base.py git rev-parse --verify --quiet f'{candidate}^{{commit}}'": 1,

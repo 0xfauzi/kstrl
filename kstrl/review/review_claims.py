@@ -253,10 +253,10 @@ def claim_blocks(config: ClaimFields, autonomy_level: int) -> bool:
     upward, but neither can turn it off once the other wants it. Autonomy is allowed to tighten a
     gate and never to loosen one.
 
-    The gate ships advisory so that its first output is a measurement
-    rather than a wall. Graduating the default to "block" is the
-    operator's judgement, made after reading real findings, and is
-    deliberately not encoded as a number here.
+    The gate shipped advisory so that its first output was a measurement
+    rather than a wall. The owner graduated the default to "block" on
+    2026-10-19, after an advisory disagreement let a reviewer-reported
+    crash ship in a user run.
     """
     if config.claim_agreement == "block":
         return True

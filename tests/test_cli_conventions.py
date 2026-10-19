@@ -113,6 +113,7 @@ EMPTY_REPO_EXITS: tuple[tuple[tuple[str, ...], tuple[str, ...], int, str], ...] 
     (("queue", "show"), ("x",), 2, "no such queue item"),
     (("queue", "sync"), (), 2, "GitHub intake is off"),
     (("recheck",), ("record.json",), 2, "no such acceptance record"),
+    (("remove-check",), ("c", "x", "--comment", "why"), 2, "no manifest: nothing was planned"),
     (("retry",), ("x",), 2, "no manifest: nothing has run here"),
     (("signals", "ls"), (), 0, "no signals recorded"),
     (("signals", "poll"), (), 2, "signals polling is off"),

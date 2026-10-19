@@ -6,6 +6,7 @@ integration rounds, the plan gate and the summary.
 
 from __future__ import annotations
 
+from kstrl.factory.acceptance_design import remove_designed_check
 from kstrl.factory.commandrun import CommandRun, open_command_run
 from kstrl.factory.factory import run_factory
 from kstrl.factory.factory_preflight import (
@@ -42,6 +43,7 @@ __all__ = [
     "preview_retry",
     "print_resume_plan",
     "print_retry_plan",
+    "remove_designed_check",
     "report_operator_files",
     "report_preflight",
     "retry_confirm_header",

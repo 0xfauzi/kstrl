@@ -410,6 +410,8 @@ class TestTheWalkAgainstTheRealPackage:
         ``checkout_existing``) and the sweep of a pre-R0.5 flat worktree. So 71.
         #863 A2 removes two: ``timeout.run_with_timeout``, which only a test
         called, and ``git.get_repo_root``, which nothing called. So 69.
+        ``git.is_ancestor`` adds one: whether a dependency's branch reached
+        the base branch. It carries a timeout. So 70.
         """
         spawns = frozenset(
             {
@@ -421,7 +423,7 @@ class TestTheWalkAgainstTheRealPackage:
             }
         )
         found = package_calls(spawns)
-        assert len(found.seen) == 69
+        assert len(found.seen) == 70
         assert found.without_line_numbers().undecided == tuple(
             sorted(
                 [

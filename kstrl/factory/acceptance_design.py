@@ -45,6 +45,7 @@ from kstrl.acceptance import (
     PinnedPlan,
     pin_plan,
     plan_errors,
+    read_plan_dir,
     verdict_of,
     write_dir,
 )
@@ -68,6 +69,7 @@ from kstrl.io import (
     read_json,
 )
 from kstrl.owner import ItemKind, approvals_at
+from kstrl.pipeline import iso_now
 from kstrl.plan import PRD, SpecRequirement, built_by
 from kstrl.proc import (
     ContractCleanupError,
@@ -334,6 +336,43 @@ def acceptance_source(
     except PlanUnreadableError as exc:
         return "", [f"the plan cannot be read, so its designed checks cannot be found: {exc}"]
     return (str(target) if target.is_dir() else ""), []
+
+
+def remove_designed_check(
+    root: Path, manifest: Manifest, stack: Stack, comp_id: str, check_id: str, *, by: str, why: str
+) -> list[str]:
+    """Remove one check from the plan the verification designer wrote for
+    this plan, recording who removed it, when and why in its designer
+    record, and pin the manifest to the result when it was pinned; or why
+    nothing was removed. A designed check can be wrong in a way no correct
+    code passes (owner decision of 2026-10-19), and the pin refuses an
+    edit nobody recorded. A plan a person wrote is theirs to edit."""
+    try:
+        target = designed_dir(root, manifest, stack)
+        plan, designer, _ = read_plan_dir(target)
+    except (OSError, KeyError, ValueError, PlanUnreadableError) as exc:
+        return [f"no plan the verification designer wrote for this plan can be read: {exc}"]
+    checks = plan.get("components", {}).get(comp_id, {}).get("checks", [])
+    kept = [check for check in checks if check.get("id") != check_id]
+    if len(kept) == len(checks):
+        return [f"the designed plan {target} has no check {check_id} for {comp_id}"]
+    plan["components"][comp_id]["checks"] = kept
+    removed = {"component": comp_id, "check": check_id, "by": by, "at": iso_now(), "why": why}
+    designer = {**(designer or {}), "removed": [*(designer or {}).get("removed", []), removed]}
+    aside = target.with_name(f"{target.name}.replaced")
+    try:
+        target.rename(aside)
+        try:
+            write_dir(target, {PLAN_FILE: _json(plan), DESIGNER_FILE: _json(designer)})
+        except BaseException:
+            aside.rename(target)
+            raise
+        shutil.rmtree(aside, ignore_errors=True)
+        if manifest.acceptance_digest:
+            manifest.acceptance_digest = read_plan_dir(target)[2]
+    except OSError as exc:
+        return [f"the designed plan {target} cannot be rewritten: {exc}"]
+    return []
 
 
 def design_plan(pipeline: ComponentPipeline) -> tuple[PinnedPlan | None, list[str]]:

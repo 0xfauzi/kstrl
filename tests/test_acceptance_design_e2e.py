@@ -775,3 +775,46 @@ def test_a_designer_that_never_cites_a_requirement_refuses_the_run(tmp_path: Pat
     ) in run.out, run.out
     assert run.engineer_calls == 0, run.out
     assert _designed_plans(root) == []
+
+
+@runs_a_stack
+def test_a_designed_check_a_person_removes_is_recorded_and_the_retry_runs_without_it(
+    tmp_path: Path,
+) -> None:
+    """A designed held-out check no correct code passes halted correct code,
+    and the pinned plan refused any edit, so only a new plan got past it (a
+    user run). `ks remove-check` takes it out with who, when and why kept
+    beside the plan, and the retry runs without it."""
+    root = _greeting_repo(tmp_path)
+    hidden = f"Grace{secrets.token_hex(4)}"
+    reply = _entry(
+        [
+            _check("greets-ada", _greets("Ada")),
+            _check("greets-hidden", _greets(hidden), held_out=True),
+        ]
+    )
+    first = _design(tmp_path, root, [reply])
+    assert first.code == 1 and "halted with no retry" in first.out, first.out
+    pinned = _manifest(root)["acceptanceDigest"]
+    why = f"no correct code passes it {secrets.token_hex(4)}"
+
+    code, out = _spawn(
+        ["remove-check", COMP, "greets-hidden", "--comment", why, "--root", str(root)],
+        root,
+        None,
+    )
+    retry_code, retry_out = _spawn(
+        ["retry", COMP, "--yes", "--root", str(root), "--ui", "plain", "--no-color"], root, None
+    )
+
+    assert code == 0, out
+    (designed,) = _designed_plans(root)
+    plan = json.loads((designed / PLAN_FILE).read_text(encoding="utf-8"))
+    assert [c["id"] for c in plan["components"][COMP]["checks"]] == ["greets-ada"], plan
+    designer = json.loads((designed / DESIGNER_FILE).read_text(encoding="utf-8"))
+    (removed,) = designer["removed"]
+    assert (removed["component"], removed["check"], removed["why"]) == (COMP, "greets-hidden", why)
+    assert removed["by"] and removed["at"], removed
+    assert _manifest(root)["acceptanceDigest"] not in ("", pinned), _manifest(root)
+    assert retry_code == 0, retry_out
+    assert "greets-hidden" not in retry_out.split("== Retry plan ==")[-1], retry_out

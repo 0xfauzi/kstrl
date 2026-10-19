@@ -707,7 +707,7 @@ ENUM_SENTINELS: dict[tuple[str, str], str | float | list[str]] = {
     ("agent", "budget_usd"): 123.5,
     ("agent", "reasoning_effort"): "high",
     ("factory", "review_mode"): "advisory",
-    ("factory", "claim_agreement"): "block",
+    ("factory", "claim_agreement"): "advisory",
     ("security", "mode"): "hard",
     ("security", "fail_threshold"): "low",
     ("security", "agent_type"): "codex",

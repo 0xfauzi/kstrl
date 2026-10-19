@@ -296,6 +296,8 @@ EXPECTED_GIT_ARGVS: dict[str, int] = {
     # into `kstrl/git/git.py` as the one owner of the merge-base anchor: the
     # row moves module, count unchanged.
     "git/git_base.py git merge-base ? HEAD": 1,
+    # `is_ancestor`: reads only the exit status, prints nothing.
+    "git/git_base.py git merge-base --is-ancestor ? ?": 1,
 }
 
 

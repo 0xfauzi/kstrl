@@ -68,7 +68,7 @@ CHOICE_VOCABULARIES: dict[str, tuple[str, ...]] = {
 #: edited to match.
 #: 51: #700 slice 5 added `ks recheck --ui`. 49: #217 removed
 #: the `--ui` option of each of the two commands in the learn group.
-EXPECTED_CHOICE_OPTIONS = 49
+EXPECTED_CHOICE_OPTIONS = 50
 
 #: Re-derived by running the Layer 2 census on this tree.
 EXPECTED_CHOICE_CALLS: dict[str, int] = {

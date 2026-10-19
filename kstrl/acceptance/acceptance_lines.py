@@ -152,9 +152,13 @@ def rejected_lines(record: Mapping[str, Any]) -> list[str]:
     return [f"- dispute rejected: {reason}" for reason in record["dispute"]["rejected"]]
 
 
-def halt_text(outcome: HeadOutcome, head: str, comp_id: str) -> str:
+def halt_text(outcome: HeadOutcome, head: str, comp_id: str, mergeable: bool = True) -> str:
     """The text of a halt with no retry (owner decisions 3, 13 and 14): its
-    cause, the approval that merges over it, then :func:`stop_lines`. A
+    cause, the approval that merges over it, then :func:`stop_lines`.
+    ``mergeable`` is False when the head holds code the base branch lacks
+    (an unmerged dependency, or single_pr), which ``ks retry`` never keeps
+    (owner decision 4a): the text then says what must reach the base
+    first, rather than promising a merge-over the retry cannot make. A
     failed held-out check is the cause before a dispute, and the stop lines
     name the dispute, so a dispute never hides a held-out failure from the
     person who approves. With no cause to name, the record's own lines are
@@ -166,10 +170,18 @@ def halt_text(outcome: HeadOutcome, head: str, comp_id: str) -> str:
         said = f"the engineer disputes the acceptance checks {', '.join(outcome.disputed)}"
     else:
         said, stopped = "; ".join(outcome.lines), []
-    first = (
-        f"{said} on {head[:12]}; halted with no retry. Approving this halt and then "
-        f"`ks retry {comp_id}` merges over the failing checks on that commit"
+    merge_over = (
+        f"Approving this halt and then `ks retry {comp_id}` merges over the failing checks on "
+        "that commit"
     )
+    if not mergeable:
+        merge_over = (
+            "That commit holds code the base branch lacks (an unmerged dependency, or other "
+            "components on a single_pr branch), so no "
+            "approval can merge over it yet: merge its dependencies' branches into the base "
+            f"branch first; then approving this halt and `ks retry {comp_id}` merges over it"
+        )
+    first = f"{said} on {head[:12]}; halted with no retry. {merge_over}"
     return "\n".join([first, *stopped])
 
 

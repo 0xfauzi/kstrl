@@ -100,15 +100,15 @@ ALLOWED_EXCEPTIONS: frozenset[tuple[str, str]] = frozenset(
 #: ``len(__all__)`` of each unit that other units import. Equality, not a
 #: ceiling: a growth is red, and a shrink is red until this pin is lowered.
 INTERFACE_SIZES: dict[str, int] = {
-    "acceptance": 33,
+    "acceptance": 35,
     "agents": 26,
     "architect": 15,
     "calibration": 0,
     "cli": 1,
     "config": 39,
     "events": 80,
-    "factory": 19,
-    "git": 48,  # merge_base_ref: Phase 3 asks whether the merged tier holds an approved head
+    "factory": 20,
+    "git": 49,  # merge_base_ref and is_ancestor: what a base branch or a merged tier holds
     "io": 37,
     "knowledge": 8,
     "learning": 37,
@@ -129,7 +129,7 @@ INTERFACE_SIZES: dict[str, int] = {
 #: The count of ``kstrl`` modules in ``sys.modules`` after one import in a
 #: new process. Plan section 4.4: a count is deterministic, a time is not.
 LOADED_MODULES: dict[str, int] = {
-    "kstrl.cli": 226,
+    "kstrl.cli": 227,
     "kstrl.write_guard": 9,
 }
 

@@ -233,6 +233,17 @@ def _plan_files(source: Path) -> Files:
     return files
 
 
+def read_plan_dir(where: Path) -> tuple[Any, Any, str]:
+    """The plan directory ``where``: its parsed ``plan.json``, its parsed
+    ``designer.json`` (None when a person wrote the plan), and the digest
+    :func:`pin_plan` records for it. Raises OSError for a directory that
+    cannot be read, KeyError without ``plan.json`` and ValueError for one
+    that is not JSON."""
+    files = _plan_files(where)
+    designer = read_json(files[DESIGNER_FILE][0]) if DESIGNER_FILE in files else None
+    return read_json(files[PLAN_FILE][0]), designer, _digest(files)
+
+
 def _digest(files: Files) -> str:
     rows = [
         [name, hashlib.sha256(data).hexdigest(), executable]

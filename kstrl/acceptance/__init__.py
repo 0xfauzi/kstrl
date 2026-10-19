@@ -19,12 +19,14 @@ from kstrl.acceptance.acceptance import (
     pin_plan,
     pinned_digest,
     plan_errors,
+    read_plan_dir,
     replay_base,
     verdict_of,
     write_dir,
 )
 from kstrl.acceptance.acceptance_carried import Carried, carried_on_base, carry_passed
 from kstrl.acceptance.acceptance_lines import halt_text, pr_isolation, pr_section
+from kstrl.acceptance.acceptance_record import states_a_dispute
 from kstrl.acceptance.contract import (
     CONTRACT_SECTION,
     ContractConfig,
@@ -63,10 +65,12 @@ __all__ = [
     "pr_isolation",
     "pr_section",
     "prove_zones",
+    "read_plan_dir",
     "recheck_record",
     "replay_base",
     "replay_stack",
     "run_contract_testing",
+    "states_a_dispute",
     "verdict_of",
     "write_dir",
     "write_record",

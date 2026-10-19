@@ -220,6 +220,8 @@ class TestC2ReviewRetry:
             max_retries=2,
             retry_delay=0,
             review_mode="hard",
+            # The stub reviewers confirm no story; claim agreement is not under test.
+            claim_agreement="advisory",
             project_stack=_PASSING_STACK,
             verify_config=_verify_passing(),
         )

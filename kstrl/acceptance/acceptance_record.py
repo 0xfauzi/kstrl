@@ -148,19 +148,13 @@ def read_dispute(
     nothing it holds is taken."""
     if progress is None:
         return {"accepted": [], "rejected": []}
-    try:
-        text = progress.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return {"accepted": [], "rejected": []}
-    except (OSError, ValueError) as exc:
-        # A UnicodeDecodeError is a ValueError.
-        return {"accepted": [], "rejected": [f"the progress log {progress} cannot be read: {exc}"]}
-    lines = text.splitlines()
-    start = latest_entry(lines) or 0
+    lines, start, unread = _latest_entry_lines(progress)
+    if unread:
+        return {"accepted": [], "rejected": [unread]}
     by_id = {check.id: check for check in checks}
     accepted: list[dict[str, str]] = []
     rejected: list[str] = []
-    for number, line in enumerate(lines[start:], start + 1):
+    for number, line in enumerate(lines, start + 1):
         if not _DISPUTE_WORD.match(line):
             continue
         found = _DISPUTE.match(line.strip())
@@ -171,6 +165,30 @@ def read_dispute(
         elif found is not None:
             accepted.append({"id": found["id"], "cause": found["cause"].strip()})
     return {"accepted": accepted, "rejected": rejected}
+
+
+def states_a_dispute(progress: Path) -> bool:
+    """Whether the latest entry of the progress log ``progress`` has a line
+    whose first word is "dispute", taken or not: :func:`read_dispute`
+    decides which, when the head is judged."""
+    lines, _start, _unread = _latest_entry_lines(progress)
+    return any(_DISPUTE_WORD.match(line) for line in lines)
+
+
+def _latest_entry_lines(progress: Path) -> tuple[list[str], int, str]:
+    """The lines of the latest entry of ``progress``, the index the entry
+    starts at, and why the log cannot be read ("" when it can). No log is
+    an empty entry."""
+    try:
+        text = progress.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return [], 0, ""
+    except (OSError, ValueError) as exc:
+        # A UnicodeDecodeError is a ValueError.
+        return [], 0, f"the progress log {progress} cannot be read: {exc}"
+    lines = text.splitlines()
+    start = latest_entry(lines) or 0
+    return lines[start:], start, ""
 
 
 def _refusal(

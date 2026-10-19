@@ -120,7 +120,7 @@ def kept_head(manifest: Manifest, comp: Component | None, root_dir: Path) -> tup
         return "", ""
     if manifest.single_pr:
         return "", "single_pr: the shared branch carries other components' commits"
-    dependencies = _dependency_branches(manifest, comp)
+    dependencies = _dependency_branches(manifest, comp, root_dir)
     if dependencies:
         return "", f"it was judged with unmerged dependency code from {', '.join(dependencies)}"
     tip = branch_sha(comp.branch_name, root_dir) or ""

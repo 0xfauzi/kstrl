@@ -448,6 +448,7 @@ def test_reviewers_are_told_the_commit_the_dependent_started_at(
         monkeypatch,
         create_prs=False,
         review_mode="advisory",
+        claim_agreement="advisory",
         review_agent_cmd=save_prompt,
         security_config=SecurityConfig(mode="advisory", agent_cmd=save_prompt),
     )

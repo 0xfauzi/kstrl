@@ -459,8 +459,10 @@ class TestPipelineWiring:
 
 
 class TestConfig:
-    def test_default_is_advisory(self) -> None:
-        assert FactoryConfig().claim_agreement == "advisory"
+    def test_default_is_block(self) -> None:
+        """Owner decision of 2026-10-19: an advisory disagreement let a
+        reviewer-reported crash ship in a user run."""
+        assert FactoryConfig().claim_agreement == "block"
 
     def test_config_loads_claim_agreement(
         self,
@@ -569,7 +571,7 @@ class TestUnreachableGate:
     def test_advisory_mode_never_warns(self) -> None:
         assert (
             claim_gate_unreachable_warning(
-                FactoryConfig(review_mode="skip"),
+                FactoryConfig(claim_agreement="advisory", review_mode="skip"),
             )
             is None
         )

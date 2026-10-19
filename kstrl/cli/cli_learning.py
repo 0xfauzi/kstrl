@@ -713,3 +713,48 @@ def recheck_cmd(record: Path, root: Path | None, ui: str, no_color: bool) -> Non
     for line in lines:
         ui_impl.info(line)
     sys.exit(0 if agrees else 1)
+
+
+@cli.command(name="remove-check")
+@click.argument("component")
+@click.argument("check_id")
+@click.option("--comment", required=True, help="Why the check is wrong (recorded with it)")
+@_autonomy_root_option
+@_autonomy_ui_option
+@_autonomy_no_color_option
+def remove_check_cmd(
+    component: str, check_id: str, comment: str, root: Path | None, ui: str, no_color: bool
+) -> None:
+    """Remove one check the verification designer wrote (#700).
+
+    A designed check can be wrong in a way no correct code passes. This
+    removes CHECK_ID of COMPONENT from the plan `--design-acceptance` wrote
+    for scripts/kstrl/manifest.json, records who removed it, when and why
+    beside the plan, and pins the manifest to the result. The next
+    `ks factory` or `ks retry` runs without it. A plan you wrote yourself
+    with `--acceptance` is yours to edit. Exit 0 means the check was
+    removed, 2 that nothing was, with the reason above it.
+    """
+    from kstrl.cli.cli_seam import _actor, _load_manifest_or_exit
+    from kstrl.factory import remove_designed_check
+    from kstrl.pipeline import FactoryConfig
+
+    root_dir = (root or Path.cwd()).resolve()
+    ui_impl = _autonomy_ui(ui, no_color)
+    manifest_path = root_dir / "scripts" / "kstrl" / "manifest.json"
+    manifest = _load_manifest_or_exit(manifest_path, ui_impl)
+    stack = FactoryConfig.load(root_dir).project_stack
+    errors = (
+        remove_designed_check(
+            root_dir, manifest, stack, component, check_id, by=_actor(), why=comment
+        )
+        if stack is not None
+        else ["kstrl.toml has no [stack], so no designed plan belongs to it"]
+    )
+    if report_preflight(ui_impl, "the check was not removed", errors):
+        sys.exit(2)
+    manifest.save(manifest_path)
+    ui_impl.ok(
+        f"Removed the designed check {check_id} of {component}; the next ks factory or "
+        "ks retry runs without it"
+    )

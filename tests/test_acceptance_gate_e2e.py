@@ -546,3 +546,76 @@ def test_an_approved_halt_is_merged_over_in_phase_3_as_well(tmp_path: Path) -> N
     assert code == 0, out
     assert _status(root) == ("completed", ""), out
     assert f"acceptance:greets-hidden ({COMP}): merged over by inbox approval {item.id[:8]}" in out
+
+
+@runs_a_stack
+def test_a_halt_on_unmerged_dependency_code_says_so_and_a_hand_merge_lets_it_through(
+    tmp_path: Path,
+) -> None:
+    """With no PRs, a dependent component is built on its dependency's
+    unmerged branch, and ``ks retry`` never keeps such a head. The halt
+    promised that approving and retrying would merge over it, and merging
+    the dependency by hand did not count (a user run, twice). The halt now
+    says what must reach the base first, and once the dependency's branch
+    is in main, git says so: approve and retry keep the commit."""
+    root = _repo(tmp_path, _stack({"tests": "true"}), comps=("dep", COMP))
+    manifest_path = root / "scripts" / "kstrl" / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["components"][1]["dependencies"] = ["dep"]
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    git_in(root, "commit", "-q", "-am", "greeter depends on dep")
+    _with_greet(root)
+    hidden = f"Grace{secrets.token_hex(4)}"
+    plan = _plan(
+        tmp_path,
+        [_check("greets-hidden", ["/bin/sh", "check.sh", hidden], held_out=True)],
+        script=GREETS_OR_MARKER,
+    )
+
+    first = _factory(
+        tmp_path, root, "--acceptance", str(plan), contract="tier", engineer=SPECIAL_CASED
+    )
+
+    assert first.code == 1, first.out
+    (item,) = _halts(root)
+    assert "holds code the base branch lacks" in item.detail, item.detail
+    assert "merges over the failing checks on that commit" not in item.detail, item.detail
+    git_in(root, "merge", "-q", "--ff-only", "kstrl/factory/dep")
+    code, said = _spawn(
+        ["inbox", "approve", item.id, "--root", str(root), "--ui", "plain"], root, None
+    )
+    assert code == 0, said
+
+    code, out = _spawn(
+        ["retry", COMP, "--yes", "--root", str(root), "--ui", "plain", "--no-color"], root, None
+    )
+
+    assert f"Kept branch '{BRANCH}'" in out, out
+    assert code == 0, out
+    assert _status(root) == ("completed", ""), out
+
+
+@runs_a_stack
+def test_a_dispute_the_breaker_stops_on_is_still_judged(tmp_path: Path) -> None:
+    """An engineer that disputes a visible check and has nothing more to
+    change makes no progress, and the breaker failed the component before
+    its head was judged, so the dispute was lost (a user run). Its head is
+    judged instead, and the dispute halts it with the check named."""
+    root = _repo(tmp_path, _stack({"tests": "true"}))
+    _with_greet(root)
+    plan = _plan(
+        tmp_path,
+        [_check("has-marker", ["/bin/sh", "check.sh", "--marker"])],
+        script=GREETS_OR_MARKER,
+    )
+    cause = f"the criterion asks for no marker file {secrets.token_hex(4)}"
+    dispute = _progress("## [2026-10-19] - US-001", f"Dispute: has-marker: {cause}")
+    engineer = _counted(tmp_path / "count", f"{SPECIAL_CASED} && {dispute}; exit 0", "exit 0")
+
+    run = _factory(tmp_path, root, "--acceptance", str(plan), engineer=engineer)
+
+    assert run.code == 1, run.out
+    assert "no-progress circuit breaker tripped" not in run.out, run.out
+    (item,) = _halts(root)
+    assert "the engineer disputes the acceptance checks has-marker" in item.detail, item.detail
+    assert cause in item.detail, item.detail

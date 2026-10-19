@@ -34,6 +34,7 @@ for the same reason.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -91,6 +92,16 @@ class ComponentPipeline(Delivery, KnowledgePhase, SecurityGate, ReviewPhase, Mec
     # ------------------------------------------------------------------
     # Phase chain
     # ------------------------------------------------------------------
+
+    def _disputes(self, comp: Component) -> bool:
+        """Whether a run with an acceptance plan holds a dispute in the
+        latest entry of ``comp``'s progress log."""
+        if self.factory_config.acceptance_plan is None:
+            return False
+        from kstrl.acceptance import states_a_dispute
+
+        progress = self.base_config.component_progress_file(comp.prd_path, self.root_dir)
+        return states_a_dispute(self.worktree_paths.get(comp.id, self.root_dir) / progress)
 
     def process_result(
         self,
@@ -157,6 +168,12 @@ class ComponentPipeline(Delivery, KnowledgePhase, SecurityGate, ReviewPhase, Mec
                     ceilings=comp_result.budget_halt_ceilings,
                 ),
             )
+
+        if comp_result.no_progress and self._disputes(comp):
+            # The engineer disputes an acceptance check and has nothing more
+            # to change: its head is judged, which reads the dispute. The
+            # breaker failed it unjudged and the dispute was lost (a user run).
+            comp_result = replace(comp_result, success=True, error=None)
 
         if not comp_result.success:
             if comp_result.session_stopped:

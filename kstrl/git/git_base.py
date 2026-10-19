@@ -271,6 +271,25 @@ def merge_base_ref(
         return ""
 
 
+def is_ancestor(
+    ancestor: str, descendant: str, cwd: Path | None = None, timeout: float = DEFAULT_TIMEOUT
+) -> bool:
+    """Whether ``descendant`` contains ``ancestor``. False whenever git
+    cannot say (an absent ref, a timeout, a spawn that could not run): a
+    caller asking whether a branch's code is in the base treats no answer
+    as not in it."""
+    try:
+        done = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", ancestor, descendant],
+            cwd=cwd,
+            capture_output=True,
+            timeout=timeout,
+        )
+    except Exception:
+        return False
+    return done.returncode == 0
+
+
 def resolve_base_sha(
     base_branch: str,
     cwd: Path | None = None,

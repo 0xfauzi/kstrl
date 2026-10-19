@@ -409,6 +409,24 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 - A distiller reply that did not parse is asked for once more, inside the
   adversarial budget (2 of 4 user runs lost a component's facts to it).
 - Stories the reviewer did not confirm are listed with the reason for each.
+- `[factory] claim_agreement` defaults to `"block"` (owner decision of
+  2026-10-19): a story the reviewer does not confirm fails its component.
+  An advisory disagreement let a reviewer-reported crash ship in a user
+  run.
+- A dependency counts as merged when git shows its branch in the base
+  branch, so with `create_prs = false` merging it by hand lets a
+  dependent's approved halt be merged over; before, only the manifest's
+  status counted and the retry regenerated the dependent every time. A
+  halt on a commit that holds unmerged code says so instead of promising
+  a merge-over the retry cannot make.
+- A dispute in the engineer's latest progress entry is judged when the
+  no-progress breaker trips, so the component halts with the check named;
+  the breaker failed it unjudged and the dispute was lost.
+- `ks remove-check <component> <check-id> --comment <why>` removes one
+  check the verification designer wrote, records who, when and why in its
+  `designer.json`, and pins the manifest to the result. The pinned plan
+  refused every edit, so a wrong designed check could only be escaped by
+  planning again.
 - `--max-cost-usd` bounds the verification designer: each ask's spend is
   metered before the next ask is weighed. It was metered once per
   component, after every ask, so a $2.50 cap let two asks spend $5.17.

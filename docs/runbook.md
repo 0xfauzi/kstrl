@@ -161,7 +161,19 @@ when the approval names every check that fails there, and the terminal
 and the PR body then name the approval, who gave it and when. A
 regenerated commit, or another failing check, halts again. A single-PR
 run, or a component built on unmerged dependency code, keeps no commit,
-so its halt cannot be merged over.
+so its halt cannot be merged over, and the halt says so. With
+`create_prs = false` a dependency's code reaches the base only when you
+merge its branch into the base branch yourself; once git shows it there,
+the dependent's commit counts as built on the base, and approving its
+halt and `ks retry <component>` merge over it.
+
+A check the verification designer wrote can be wrong in a way no correct
+code passes. `ks remove-check <component> <check-id> --comment <why>`
+takes it out of the designed plan, records who removed it, when and why
+in the plan's `designer.json`, and pins the manifest to the result, so
+the next `ks factory` or `ks retry` runs without it. A plan you wrote
+with `--acceptance` is yours to edit; this command touches only a
+designed one.
 
 A later run replays the acceptance checks of the features that merged
 before it (#466). When Phase 3 passes on the base branch after a run's
@@ -369,7 +381,7 @@ The adversarial budget covers review, security and knowledge distillation togeth
 
 If `claim_agreement = "block"` is set together with `review_mode = "skip"`, the run warns at startup that the gate can never fire: with no reviewer there is no verdict to confirm with.
 
-If the reviewer is the one that is wrong, set `[factory] claim_agreement = "advisory"` (the default). Disagreements are then recorded on the PR and in the journal without failing anything. Note the gate also blocks whenever the autonomy ladder is at L1 or above, regardless of this setting: autonomy tightens a gate and never loosens one, so turning it off there means turning the ladder down.
+If the reviewer is the one that is wrong, set `[factory] claim_agreement = "advisory"` (the default is `"block"`). Disagreements are then recorded on the PR and in the journal without failing anything. Note the gate also blocks whenever the autonomy ladder is at L1 or above, regardless of this setting: autonomy tightens a gate and never loosens one, so turning it off there means turning the ladder down.
 
 ## Phase 2: the retry loop is diverging (#265)
 

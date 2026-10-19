@@ -100,7 +100,7 @@ class FactoryConfig:
     # Ships advisory so the gate's first output is a measurement rather
     # than a wall. The autonomy ladder can force blocking on from L1
     # upward (see review.claim_blocks); it can never turn it off.
-    claim_agreement: str = "advisory"
+    claim_agreement: str = "block"
     review_agent_cmd: str | None = None
     review_agent_type: str | None = None
     review_model: str | None = None
