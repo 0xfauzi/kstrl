@@ -506,6 +506,9 @@ def test_retry_flags_are_pinned_against_factory() -> None:
         "keep_worktrees_on_failure",
         "force_lock",
         "max_cost_usd",
+        # The acceptance binds to one base commit; a retry after the base
+        # moved and is still red names the new one.
+        "accept_red_base",
         "max_total_tokens",
         "max_adversarial_calls",
         "agent_timeout",
