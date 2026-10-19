@@ -139,6 +139,9 @@ def _record_health_breaches(
     The breaches come from ``health_breaches`` of the ``kstrl.learning``
     interface. The import is inside the function, so a test that replaces
     the package binding reaches this read (#863 D1).
+    There is no path for an absent module: the package imports
+    ``health`` when it loads, so without the module this file cannot be
+    imported at all, and the guard that returned on it was removed (#863 D2).
 
     Advisory first: the item is always written, the demotion happens only
     under ``[autonomy] demote_on_health_breach``. It is additionally
@@ -350,8 +353,8 @@ def _record_autonomy_outcome(
       level is not warranted.
     - **Health breaches** (R8.4, seam only until #151): control-limit
       breaches over run metrics, opened as inbox items on every path and
-      demoting only under an explicit switch. Read from ``kstrl.learning.health``
-      if that module exists; see ``_record_health_breaches``.
+      demoting only under an explicit switch. Read from ``kstrl.learning``;
+      see ``_record_health_breaches``.
 
     Automatic demotion happens here rather than mid-run: demoting while
     components are still executing would change the flag bundle underneath

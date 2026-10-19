@@ -214,6 +214,14 @@ jobs:
       - name: mypy
         run: uv run mypy kstrl/ --strict
 
+      - name: vulture (dead code, #863 D2)
+        # The pre-commit hook runs vulture only on a developer machine, and
+        # CI does not run pre-commit. The version is the `rev` of the vulture
+        # hook in .pre-commit-config.yaml, and the paths and the confidence
+        # come from [tool.vulture] in pyproject.toml, as for the hook. Dead
+        # code, and a whitelist entry with no reader, fail this step.
+        run: uvx vulture@2.16
+
       - name: doc drift (R2.5)
         # The README CLI/config reference sections are generated from the
         # click command tree and the config dataclasses. Regeneration must

@@ -546,5 +546,14 @@ def _classify_call(
             seen.append(f"{site} {found.dotted}")
         return
     leaf = leaf_name(node.func)
-    if leaf is None or leaf in leaves:
+    # The leaf of the call is its NAME HERE, and an alias hides the name the
+    # import wrote (#863 D2). ``from app.io import write as w`` then ``w(1)``
+    # under a re-export it could only guess resolves to a guess outside
+    # ``wanted``, and the leaf ``w`` is not a target leaf, so the call left
+    # both halves. The leaf of a GUESSED origin is a name the import wrote,
+    # so it counts as well. Only a guess that lands on a target leaf is
+    # flagged: flagging every guess made 15 pinned inventories move on rows
+    # like ``recheck``, a function that is also a module name (measured).
+    guessed_leaf = found.dotted.rsplit(".", 1)[-1] if found is not None and found.guessed else None
+    if leaf is None or leaf in leaves or guessed_leaf in leaves:
         undecided.append(f"{site} {ast.unparse(node.func)}")

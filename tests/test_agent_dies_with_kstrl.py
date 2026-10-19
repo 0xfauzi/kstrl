@@ -31,7 +31,7 @@ from pathlib import Path
 import pytest
 
 from kstrl.factory.factory import run_factory
-from kstrl.proc.leash import NOT_A_GROUP_LEADER
+from kstrl.proc.leash import IMPORT_FAILED, NOT_A_GROUP_LEADER
 from kstrl.proc.proc import DEFAULT_TERM_GRACE_SECONDS, LEASH_PATH
 from kstrl.proc.procgroup import pid_is_alive
 from kstrl.proc.timeout import TimeoutConfig
@@ -602,68 +602,66 @@ def test_a_leash_that_cannot_read_its_group_waits_out_the_grace(tmp_path: Path) 
             pass
 
 
-def test_a_leash_that_cannot_import_its_reading_still_waits_and_kills(tmp_path: Path) -> None:
+def test_a_leash_that_cannot_import_its_reading_fails_loudly_before_its_agent(
+    tmp_path: Path,
+) -> None:
     """The leash run by path, as ``DeadlineStreamer`` runs it, but from a
-    copy with no kstrl module beside it, so its one kstrl import
-    fails. A reading it cannot make must keep it waiting the whole
-    grace, and the failure must not end it before the SIGKILL: the
-    grandchild, which ignores SIGTERM, is alive at every look inside the
-    grace and gone within ``GRANDCHILD_BOUND_SECONDS`` (#708)."""
+    copy with no kstrl module beside it, so its one kstrl import fails.
+    Before D2 of #863 it started the agent, then waited the whole grace at
+    its end with no message (#708). It must now print a message on stderr,
+    write it on the status fd, exit ``IMPORT_FAILED`` and not start the
+    agent, all far inside the grace. The control is the real leash run the
+    same way: it starts the agent and leaves with its status."""
+    marker = tmp_path / "started"
+
+    def run(leash_path: str) -> tuple[int, bytes, str, float]:
+        lifeline_read, lifeline_write = os.pipe()
+        status_read, status_write = os.pipe()
+        began = time.monotonic()
+        child = subprocess.Popen(
+            [
+                sys.executable,
+                "-I",
+                "-S",
+                leash_path,
+                str(lifeline_read),
+                str(status_write),
+                str(DEFAULT_TERM_GRACE_SECONDS),
+                "0" * 32,
+                "--",
+                "/bin/sh",
+                "-c",
+                f"touch '{marker}'",
+            ],
+            pass_fds=(lifeline_read, status_write),
+            cwd=tmp_path,
+            start_new_session=True,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        os.close(lifeline_read)
+        os.close(status_write)
+        try:
+            _, stderr = child.communicate(timeout=30)
+        except subprocess.TimeoutExpired:
+            procs.kill_group(child.pid)
+            child.communicate(timeout=10)
+            pytest.fail("the leash neither failed nor let its agent finish within 30s")
+        finally:
+            os.close(lifeline_write)
+        with os.fdopen(status_read, "rb") as status:
+            return child.returncode, status.read(), stderr, time.monotonic() - began
+
+    rc, status, _, _ = run(LEASH_PATH)
+    assert (rc, status, marker.exists()) == (0, b"", True)
+    marker.unlink()
+
     copy = tmp_path / "elsewhere" / "agents" / "leash.py"
     copy.parent.mkdir(parents=True)
     shutil.copyfile(LEASH_PATH, copy)
-    pairs = tmp_path / "pairs"
-    lifeline_read, lifeline_write = os.pipe()
-    status_read, status_write = os.pipe()
-    child = subprocess.Popen(
-        [
-            sys.executable,
-            "-I",
-            "-S",
-            str(copy),
-            str(lifeline_read),
-            str(status_write),
-            str(DEFAULT_TERM_GRACE_SECONDS),
-            "0" * 32,
-            "--",
-            "/bin/sh",
-            "-c",
-            _silent_agent(pairs),
-        ],
-        pass_fds=(lifeline_read, status_write),
-        cwd=tmp_path,
-        start_new_session=True,
-    )
-    os.close(lifeline_read)
-    os.close(status_write)
-    try:
-        deadline = time.monotonic() + START_FUSE_SECONDS
-        while not _pairs(pairs):
-            assert time.monotonic() < deadline, "the agent never started"
-            assert child.poll() is None, f"the leash exited {child.returncode} before its owner"
-            time.sleep(0.05)
-        [(agent, grandchild)] = _pairs(pairs)
-        killed = time.monotonic()
-        os.close(lifeline_write)
-        lifeline_write = -1
-        assert procs.wait_for_pid_to_die(agent, timeout=AGENT_BOUND_SECONDS), (
-            f"agent pid {agent} alive {AGENT_BOUND_SECONDS}s after its owner went"
-        )
-        _assert_alive_through_the_grace(grandchild, killed, "the grandchild (no kstrl to import)")
-        remaining = killed + GRANDCHILD_BOUND_SECONDS - time.monotonic()
-        assert procs.wait_for_pid_to_die(grandchild, timeout=remaining), (
-            f"grandchild pid {grandchild}, which ignores SIGTERM, alive "
-            f"{GRANDCHILD_BOUND_SECONDS}s after its owner went: the leash sent no SIGKILL"
-        )
-    finally:
-        if lifeline_write != -1:
-            os.close(lifeline_write)
-        for pair in _pairs(pairs):
-            for pid in pair:
-                _kill_pid(pid)
-        procs.kill_group(child.pid)
-        try:
-            child.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            pass
-        os.close(status_read)
+    rc, status, stderr, elapsed = run(str(copy))
+    assert rc == IMPORT_FAILED, (rc, stderr)
+    assert status.startswith(b"import failed: "), status
+    assert "leash: import failed: " in stderr, stderr
+    assert not marker.exists(), "the agent started under a leash that cannot read its group"
+    assert elapsed < DEFAULT_TERM_GRACE_SECONDS, f"{elapsed:.1f}s: the leash waited its grace"

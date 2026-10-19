@@ -238,6 +238,19 @@ class TestAReExportTheWalkCannotProveIsGuessed:
         found = astwalk.calls_to(astwalk.parse(source), {"os.write"}, module="app.user", root=root)
         assert found == astwalk.Sites((), ("2 write",))
 
+    def test_a_guessed_call_under_a_new_name_is_undecided(self, tmp_path: Path) -> None:
+        """The B4 verifier's plants J3 and J6 (#863 D2). The leaf rule alone
+        dropped a call whose name is not a target leaf, though its origin
+        was only a guess: ``write as w`` then ``w(1)``. The control is the
+        proven re-export, which is decided and leaves both halves."""
+        source = "from app.io import write as w\nw(1)\n"
+        root = _io(tmp_path / "guessed", "from app.io.appendio import *\n")
+        found = astwalk.calls_to(astwalk.parse(source), {"os.write"}, module="app.user", root=root)
+        assert found == astwalk.Sites((), ("2 w",))
+        root = _io(tmp_path / "proven", PROVEN)
+        found = astwalk.calls_to(astwalk.parse(source), {"os.write"}, module="app.user", root=root)
+        assert found == astwalk.Sites((), ())
+
     def test_a_name_the_init_does_not_bind_stays_as_written(self, tmp_path: Path) -> None:
         """No dynamic shape in the ``__init__.py``: the answer the resolver
         gave before B4, which a snippet naming a missing module needs."""
