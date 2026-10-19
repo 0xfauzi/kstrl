@@ -738,22 +738,32 @@ def remove_check_cmd(
     from kstrl.cli.cli_seam import _actor, _load_manifest_or_exit
     from kstrl.factory import remove_designed_check
     from kstrl.pipeline import FactoryConfig
+    from kstrl.proc import FactoryLockHeldError, LeftoverAgentsError, acquire_run_lock
 
     root_dir = (root or Path.cwd()).resolve()
     ui_impl = _autonomy_ui(ui, no_color)
     manifest_path = root_dir / "scripts" / "kstrl" / "manifest.json"
-    manifest = _load_manifest_or_exit(manifest_path, ui_impl)
-    stack = FactoryConfig.load(root_dir).project_stack
-    errors = (
-        remove_designed_check(
-            root_dir, manifest, stack, component, check_id, by=_actor(), why=comment
-        )
-        if stack is not None
-        else ["kstrl.toml has no [stack], so no designed plan belongs to it"]
-    )
-    if report_preflight(ui_impl, "the check was not removed", errors):
+    # #597: a live run saves its own manifest and reads the designed plan.
+    try:
+        run_lock = acquire_run_lock(root_dir, ui_impl, force=False)
+    except (FactoryLockHeldError, LeftoverAgentsError) as exc:
+        ui_impl.err(f"the check was not removed: {exc}")
         sys.exit(2)
-    manifest.save(manifest_path)
+    try:
+        manifest = _load_manifest_or_exit(manifest_path, ui_impl)
+        stack = FactoryConfig.load(root_dir).project_stack
+        errors = (
+            remove_designed_check(
+                root_dir, manifest, stack, component, check_id, by=_actor(), why=comment
+            )
+            if stack is not None
+            else ["kstrl.toml has no [stack], so no designed plan belongs to it"]
+        )
+        if report_preflight(ui_impl, "the check was not removed", errors):
+            sys.exit(2)
+        manifest.save(manifest_path)
+    finally:
+        run_lock.release()
     ui_impl.ok(
         f"Removed the designed check {check_id} of {component}; the next ks factory or "
         "ks retry runs without it"

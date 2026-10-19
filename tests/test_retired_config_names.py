@@ -39,7 +39,7 @@ def test_a_retired_toml_section_is_refused_by_name(tmp_path: Path) -> None:
 
 
 def test_a_retired_toml_key_is_refused_by_name(tmp_path: Path) -> None:
-    (tmp_path / "kstrl.toml").write_text('[factory]\nsetpoint_agreement = "block"\n')
+    (tmp_path / "kstrl.toml").write_text('[factory]\nsetpoint_agreement = "advisory"\n')
 
     problems = collect_config_problems(tmp_path, warn=lambda _m: None)
 
@@ -49,7 +49,7 @@ def test_a_retired_toml_key_is_refused_by_name(tmp_path: Path) -> None:
     assert "will not guess" in problems[0]
     # The retired key never reaches the field: it does not silently
     # become the new one either, it just never lands.
-    assert FactoryConfig.load(tmp_path).claim_agreement == "advisory"
+    assert FactoryConfig.load(tmp_path).claim_agreement == "block"
 
 
 def test_a_retired_env_var_is_refused_by_name(

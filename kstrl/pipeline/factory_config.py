@@ -48,6 +48,9 @@ if TYPE_CHECKING:
 
 #: R10.3: the two settings [factory] claim_agreement accepts.
 VALID_CLAIM_AGREEMENT = ("advisory", "block")
+#: Owner decision of 2026-10-19: an unconfirmed story fails its component.
+#: One constant for the field and for ``from_env``, which read it twice.
+DEFAULT_CLAIM_AGREEMENT = "block"
 
 #: #562: the settings [factory] review_mode accepts, taken from the
 #: ReviewMode that Phase 2 parses the field with
@@ -100,7 +103,7 @@ class FactoryConfig:
     # Ships advisory so the gate's first output is a measurement rather
     # than a wall. The autonomy ladder can force blocking on from L1
     # upward (see review.claim_blocks); it can never turn it off.
-    claim_agreement: str = "block"
+    claim_agreement: str = DEFAULT_CLAIM_AGREEMENT
     review_agent_cmd: str | None = None
     review_agent_type: str | None = None
     review_model: str | None = None
@@ -442,7 +445,7 @@ class FactoryConfig:
             # environment - a false provenance claim in the one place
             # they look to find out where a setting came from.
             claim_agreement=_validate_choice(
-                os.environ.get("KSTRL_FACTORY_CLAIM_AGREEMENT", "advisory"),
+                os.environ.get("KSTRL_FACTORY_CLAIM_AGREEMENT", DEFAULT_CLAIM_AGREEMENT),
                 "KSTRL_FACTORY_CLAIM_AGREEMENT",
                 VALID_CLAIM_AGREEMENT,
             ),

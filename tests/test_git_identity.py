@@ -94,7 +94,7 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # repository `tests.test_stack_e2e._repo` put through set_identity.
     # #700 slice 10a: `_progress` commits the dispute line in a worktree of
     # the same repository, so the count is 4.
-    "tests/test_acceptance_gate_e2e.py": 4,
+    "tests/test_acceptance_gate_e2e.py": 5,
     # #700 slice 8: the stub engineer commits its marker in a worktree of a
     # repository `tests.test_stack_e2e._repo` put through set_identity.
     "tests/test_acceptance_merged_e2e.py": 2,

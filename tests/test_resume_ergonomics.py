@@ -116,6 +116,8 @@ def _factory_config(**overrides: object) -> FactoryConfig:
         max_retries=0,
         retry_delay=0,
         review_mode="skip",
+        # The stub reviewers confirm no story; claim agreement is not under test.
+        claim_agreement="advisory",
         project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
         verify_config=VerifyConfig(
             project_stack=in_process_stack({"tests": "true", "typecheck": "true", "lint": "true"}),
