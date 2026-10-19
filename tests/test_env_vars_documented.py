@@ -34,10 +34,9 @@ ENV_DOC = REPO_ROOT / "docs" / "env-vars.md"
 _KSTRL_NAME = re.compile(r"^(?:KSTRL|FACTORY)_[A-Z0-9_]+$")
 
 #: Variables kstrl reads that are not kstrl settings, and why.
-NOT_KSTRL_SETTINGS: dict[str, str] = {
-    "USER": "the operator's login, recorded as the actor on an inbox decision",
-    "USERNAME": "the Windows spelling of USER, read as its fallback",
-}
+#: The inbox actor is ``getpass.getuser()`` now, which reads the login
+#: variables itself, so kstrl reads none through ``os.environ``.
+NOT_KSTRL_SETTINGS: dict[str, str] = {}
 
 
 def _is_environ(node: ast.AST) -> bool:

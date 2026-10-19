@@ -327,14 +327,16 @@ def _evidence_worktrees_to_keep(manifest: Manifest) -> set[str]:
     """Worktree paths the stale-prune pass must preserve (R3.3).
 
     A worktree kept by ``keep_worktrees_on_failure`` stays referenced as
-    the FAILED component's evidence pointer; once the component leaves
-    FAILED (retried, or reset) the reference is cleared and the next
-    prune removes it. Both the recorded and resolved spellings are
-    included so path normalization differences cannot defeat the match.
+    the FAILED component's evidence pointer. ``ks retry`` keeps the pointer
+    on the component it resets, and ``_preflight_component_branches``
+    removes that worktree, after every refusal, whether or not this run
+    holds the lock; once a reset clears the reference, the next prune
+    removes it. Both the recorded and resolved spellings are included so
+    path normalization differences cannot defeat the match.
     """
     keep: set[str] = set()
     for comp in manifest.components:
-        if comp.status == ComponentStatus.FAILED.value and comp.evidence_worktree:
+        if comp.evidence_worktree:
             keep.add(comp.evidence_worktree)
             try:
                 keep.add(str(Path(comp.evidence_worktree).resolve()))
@@ -352,6 +354,19 @@ def _flat_worktree_refusals(worktree_root: Path, run_id: str) -> list[str]:
         for entry in sorted(worktree_root.iterdir())
         if entry.name != run_id and entry.is_dir() and (entry / ".git").exists()
     ]
+
+
+def _remove_worktree(root_dir: Path, wt: Path, ui: UI, label: str) -> None:
+    """Remove the worktree ``wt``, killing and naming what still runs there
+    first (#528, #642); whatever git could not remove goes with the dir."""
+    warn_sweep(sweep_worktree(wt), ui, label)
+    subprocess.run(
+        ["git", "worktree", "remove", "--force", str(wt)],
+        cwd=root_dir,
+        capture_output=True,
+        timeout=30,
+    )
+    shutil.rmtree(wt, ignore_errors=True)
 
 
 def _prune_stale_worktrees(
@@ -412,15 +427,7 @@ def _prune_stale_worktrees(
                 if _kept(wt):
                     entry_kept += 1
                     continue
-                warn_sweep(sweep_worktree(wt), ui, "stale worktree")
-                subprocess.run(
-                    ["git", "worktree", "remove", "--force", str(wt)],
-                    cwd=root_dir,
-                    capture_output=True,
-                    timeout=30,
-                )
-                # Whatever git could not remove goes with the dir.
-                shutil.rmtree(wt, ignore_errors=True)
+                _remove_worktree(root_dir, wt, ui, "stale worktree")
                 removed += 1
         kept += entry_kept
         if entry_kept:
@@ -581,6 +588,14 @@ def _preflight_component_branches(
     for comp in manifest.components:
         if comp.status != ComponentStatus.PENDING.value:
             continue
+        if comp.evidence_worktree:
+            # The failed attempt's worktree that ks retry gave up: its own
+            # branch is checked out there, which no delete or re-judge can
+            # use. Removed here, after every refusal, even when the run lock
+            # is forced and the stale prune above did not run.
+            if Path(comp.evidence_worktree).is_dir():
+                _remove_worktree(root_dir, Path(comp.evidence_worktree), ui, "retry")
+            comp.evidence_worktree = ""
         branch = comp.branch_name
         if branch in seen:
             continue  # single_pr: all components share one branch

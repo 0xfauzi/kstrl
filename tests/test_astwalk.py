@@ -411,7 +411,10 @@ class TestTheWalkAgainstTheRealPackage:
         #863 A2 removes two: ``timeout.run_with_timeout``, which only a test
         called, and ``git.get_repo_root``, which nothing called. So 69.
         ``git.is_ancestor`` adds one: whether a dependency's branch reached
-        the base branch. It carries a timeout. So 70.
+        the base branch. It carries a timeout. So 70. ``ks retry`` stops
+        changing git (the factory deletes a replaced branch after its
+        refusals): ``retry_plan``'s branch probe, branch delete, worktree
+        remove and worktree prune go. So 66.
         """
         spawns = frozenset(
             {
@@ -423,7 +426,7 @@ class TestTheWalkAgainstTheRealPackage:
             }
         )
         found = package_calls(spawns)
-        assert len(found.seen) == 70
+        assert len(found.seen) == 66
         assert found.without_line_numbers().undecided == tuple(
             sorted(
                 [

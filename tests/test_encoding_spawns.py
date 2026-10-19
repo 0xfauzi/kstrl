@@ -89,7 +89,6 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     "proc/procdispose.py": 10,
     "proc/procgroup.py": 4,
     "proc/procgroup_listing.py": 6,
-    "factory/retry_plan.py": 5,
     # 15: #776 V1 moved `run_scrubbed` and `start_scrubbed` here from
     # `verify.py`, with their `subprocess` spellings (see `verify.py` below).
     "proc/scrubbed_run.py": 15,
@@ -145,7 +144,6 @@ EXPECTED_TEXT_MODE_SPAWNS: dict[str, int] = {
     "pipeline/pr.py": 9,
     "git/pr_state.py": 2,
     "proc/procgroup_listing.py": 1,
-    "factory/retry_plan.py": 1,
     "serve/serve_process.py": 1,
     "io/statedir.py": 1,
 }
@@ -163,7 +161,6 @@ EXPECTED_CLEARED_SPAWNS: tuple[str, ...] = (
     "factory/factory_worktrees.py subprocess.run(['git', 'worktree', 'add', str(worktree_path), '-b', br",  # noqa: E501
     "factory/factory_worktrees.py subprocess.run(['git', 'worktree', 'add', str(worktree_path), branch_n",  # noqa: E501
     "factory/factory_worktrees.py subprocess.run(['git', 'worktree', 'list', '--porcelain', '-z'], cwd=r",  # noqa: E501
-    "factory/retry_plan.py subprocess.run(['git', 'branch', '-D', failed_branch], cwd=root_dir, c",
     # codespell:ignore-next-line
     "git/git.py subprocess.run(['git', 'checkout', '-b', branch], cwd=cwd, capture_out",
     "git/git.py subprocess.run(['git', 'checkout', branch, '--'], cwd=cwd, capture_out",
@@ -256,7 +253,6 @@ EXPECTED_BYTES_MODE_SPAWNS: dict[str, int] = {
     "git/git_diff.py": 1,
     "git/git_tree.py": 4,
     "events/observability.py": 1,
-    "factory/retry_plan.py": 3,
     # 2: `_base_finding`'s `git show` (#414/#425), and #527's
     # `run_scrubbed`, which reads bytes and decodes them itself, strictly,
     # so a gate whose output is not utf-8 can still write its log.

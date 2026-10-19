@@ -84,8 +84,9 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # tests.test_red_base_preflight._repo built and put through set_identity.
     "tests/test_accept_red_base.py": 1,
     # #700 slice 7: `_with_greet` commits into the repository
-    # `tests.test_stack_e2e._repo` put through set_identity.
-    "tests/test_acceptance_design_e2e.py": 1,
+    # `tests.test_stack_e2e._repo` put through set_identity. +1: the
+    # stack-edited remove-check test commits its edited kstrl.toml there.
+    "tests/test_acceptance_design_e2e.py": 2,
     # #700 slice 4: `_with_greet` and the three stub engineers commit into
     # the repository `tests.test_stack_e2e._repo` put through set_identity
     # (the engineers commit in its worktrees, which share its config).
@@ -265,10 +266,6 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_merge_has_one_recorder.py": 1,
     "tests/test_resume_reclaims_own_branch.py": 5,
     "tests/test_retry_carries_flags.py": 1,
-    # PR #552 verifier: one base commit, into the repository the branch-probe
-    # test builds with `git_in` and `set_identity` before committing (moved from
-    # test_tui_433_verify552.py with the TUI, #863 A1).
-    "tests/test_retry_plan.py": 1,
     # #498: one base commit, into the repository `_repo` builds through
     # `tests.helpers.gitrepo.git_in` / `set_identity`.
     "tests/test_review_agent_fallback.py": 2,

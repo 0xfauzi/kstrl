@@ -40,7 +40,6 @@ from kstrl.acceptance.contract import ContractConfig, ContractMode
 from kstrl.cli.cli import cli
 from kstrl.events.event_catalog import Log
 from kstrl.events.events import read_events
-from kstrl.pipeline.factory_result import FactoryResult
 from kstrl.plan.manifest import ComponentStatus
 from tests.helpers import gitrepo, procs
 from tests.helpers import integration_harness as harness
@@ -327,11 +326,9 @@ def _failed_attempt_with_evidence(root: Path) -> Path:
 
 
 def _ks_retry(root: Path, monkeypatch: pytest.MonkeyPatch) -> Result:
-    """The real ``ks retry`` with the factory it re-enters replaced: the
-    removal happens before it."""
-    monkeypatch.setattr(
-        "kstrl.cli.cli_factory.run_factory", lambda *a, **k: FactoryResult(exit_code=0)
-    )
+    """The real ``ks retry`` and the real factory it re-enters: the factory
+    removes the worktree the retry gave up, after its refusals and before
+    any engineer, so a refused retry keeps it."""
     monkeypatch.setattr("kstrl.cli.cli_factory._check_agent_preflight", lambda *a, **k: None)
     monkeypatch.setenv("AGENT_CMD", "echo hi")
     # No launch record: state every run limit, or the retry refuses (#526).
@@ -351,7 +348,7 @@ def test_ks_retry_kills_and_names_what_runs_in_the_evidence_worktree(
     subprocess.run(_leaves_a_process(tmp_path, pidfile), cwd=evidence, check=True, timeout=30)
     try:
         result = _ks_retry(root, monkeypatch)
-        assert result.exit_code == 0, result.output
+        assert "Traceback" not in result.output, result.output
         assert not evidence.exists(), "precondition: the retry removed the evidence worktree"
         [(pid, cwd)] = _left(pidfile)
         assert procs.wait_for_pid_to_die(pid, timeout=10), (
@@ -376,7 +373,7 @@ def test_ks_retry_says_when_the_census_could_not_run(
     evidence = _failed_attempt_with_evidence(root)
     monkeypatch.setattr("kstrl.proc.worktree_sweep.LSOF_ARGV", ["kstrl-no-such-command-528"])
     result = _ks_retry(root, monkeypatch)
-    assert result.exit_code == 0, result.output
+    assert "Traceback" not in result.output, result.output
     assert not evidence.exists(), "precondition: the retry removed the evidence worktree"
     assert any(
         line.startswith("WARN: ")

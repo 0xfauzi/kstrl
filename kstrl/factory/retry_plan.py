@@ -219,6 +219,9 @@ def prepare_retry(
 
     reset_dependents = manifest.reset_for_retry(component_id)
     not_in_retry = _not_in_retry(manifest)
+    if comp is not None:
+        # The run removes it after its refusals (factory_worktrees).
+        comp.evidence_worktree = evidence_worktree
 
     if kept and comp is not None:
         # The factory's branch preflight lets this one branch through, and

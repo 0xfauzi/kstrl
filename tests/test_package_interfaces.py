@@ -100,20 +100,20 @@ ALLOWED_EXCEPTIONS: frozenset[tuple[str, str]] = frozenset(
 #: ``len(__all__)`` of each unit that other units import. Equality, not a
 #: ceiling: a growth is red, and a shrink is red until this pin is lowered.
 INTERFACE_SIZES: dict[str, int] = {
-    "acceptance": 35,
+    "acceptance": 36,  # evidence_dir: where Phase 3 keeps a failed tier's output
     "agents": 26,
-    "architect": 15,
+    "architect": 16,  # build_spec_context: the spec every engineer is given
     "calibration": 0,
     "cli": 1,
     "config": 39,
     "events": 80,
-    "factory": 20,
+    "factory": 19,  # RetryError went: ks retry no longer changes git
     "git": 49,  # merge_base_ref and is_ancestor: what a base branch or a merged tier holds
     "io": 37,
     "knowledge": 8,
     "learning": 37,
     "loop": 8,
-    "owner": 30,
+    "owner": 30,  # CLAIM_HALT and overridable: the claim halt an approval merges over
     "pipeline": 50,
     "plan": 34,
     "proc": 53,
@@ -129,7 +129,7 @@ INTERFACE_SIZES: dict[str, int] = {
 #: The count of ``kstrl`` modules in ``sys.modules`` after one import in a
 #: new process. Plan section 4.4: a count is deterministic, a time is not.
 LOADED_MODULES: dict[str, int] = {
-    "kstrl.cli": 227,
+    "kstrl.cli": 228,  # kstrl.architect.spec_context
     "kstrl.write_guard": 9,
 }
 

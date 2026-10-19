@@ -58,7 +58,7 @@ EXPECTED_REMOVAL_SPELLINGS = {
 #: Every removal argv in kstrl/, by scope, and whether it is swept.
 EXPECTED_REMOVAL_SITES = (
     "factory/factory_worktrees.py::_cleanup_worktree swept",
-    "factory/factory_worktrees.py::_prune_stale_worktrees swept",
+    "factory/factory_worktrees.py::_remove_worktree swept",
     "factory/factory_worktrees.py::_setup_worktree swept",
     "proc/temp_worktree.py::remove_temp_worktree swept",
 )

@@ -530,7 +530,7 @@ def test_phase_3_runs_every_check_on_the_merged_tree(tmp_path: Path) -> None:
     items = Inbox(root, InboxConfig.load(root)).scan().folded_items()
     (halt,) = [i for i in items if i.kind is ItemKind.HALTED_RUN and i.component == "comp-b"]
     assert halt.evidence["phase"] == "contract", halt
-    (kept,) = re.findall(r"\(full output: (\S+)\)", run.out)
+    (kept,) = re.findall(r"full output: (\S+)", run.out)
     assert "stack:merged" in Path(kept).read_text(encoding="utf-8")
     assert not Path(kept).is_relative_to(root), kept
 

@@ -1,0 +1,52 @@
+{
+  "role": "acceptance",
+  "fixture_id": "acc-initials-sh-partial",
+  "category": "partial",
+  "cwe": null,
+  "caught": true,
+  "error": false,
+  "detail": "partial: failed ['initials-four-words', 'initials-mixed-case', 'initials-single-letter-words', 'initials-three-words']; verdicts {'initials-example': 'pass', 'initials-single-word': 'pass', 'initials-three-words': 'fail', 'initials-mixed-case': 'fail', 'initials-four-words': 'fail', 'initials-single-letter-words': 'fail', 'initials-all-caps-input': 'pass'}",
+  "run": 3,
+  "calls": [
+    {
+      "streamed": [
+        "  | [unrendered thinking block]",
+        "[Bash] ls -la && git log --oneline | head -3 && (test -f initials && cat initials || echo \"NO initials script\")",
+        "  | This command uses shell operators that require approval for safety",
+        "[Bash] ls -la /tmp/pytest-of-root/pytest-601/test_acceptance_designer_catch3/acc-initials-sh-2qbl80dt/designer",
+        "  | total 16",
+        "  | drwxr-xr-x 3 root root 4096 Oct 19 22:04 .",
+        "  | drwx------ 3 root root 4096 Oct 19 22:04 ..",
+        "  | drwxr-xr-x 8 root root 4096 Oct 19 22:04 .git",
+        "  | -rwxr-xr-x 1 root root  108 Oct 19 06:48 initials",
+        "[Bash] git -C /tmp/pytest-of-root/pytest-601/test_acceptance_designer_catch3/acc-initials-sh-2qbl80dt/designer log --oneline -3",
+        "  | This command requires approval",
+        "[Read] initials",
+        "  | 1\t#!/bin/sh",
+        "  | 2\t# Print the initials of the name in $1: not written yet, so the name as given.",
+        "  | 3\tprintf '%s\\n' \"$1\"",
+        "  | 4\t",
+        "  | [unrendered thinking block]",
+        "The base `initials` is a stub that echoes the name, so the app exists and `createsApp` stays false. I'll check my expected values and the check command against a correct and a wrong implementation before writing the JSON.",
+        "[Bash] D=/tmp/claude-0/-tmp-pytest-of-root-pytest-601-test-acceptance-designer-catch3-acc-initials-sh-2qbl80dt-designer/327dbf8...",
+        "  | Redirect target concatenation contains $/` \u2014 unanalyzable gap or substitution",
+        "  | [unrendered thinking block]",
+        "[Bash] mkdir -p /tmp/claude-0/-tmp-pytest-of-root-pytest-601-test-acceptance-designer-catch3-acc-initials-sh-2qbl80dt-designer/...",
+        "  | This Bash command contains multiple operations. The following part requires approval: mkdir -p /tmp/claude-0/-tmp-pytest-of-root-pytest-601-test-acceptance-designer-catch3-acc-initials-sh-2qbl80dt-des...",
+        "[Write] initials",
+        "  | <tool_use_error>Error: No such tool available: Write. Write is disabled for this session, in subagents as well as here.</tool_use_error>",
+        "[Write] initials",
+        "  | <tool_use_error>Error: No such tool available: Write. Write is disabled for this session, in subagents as well as here.</tool_use_error>",
+        "  | [unrendered thinking block]",
+        "[Bash] KSTRL_TREE=/tmp/pytest-of-root/pytest-601/test_acceptance_designer_catch3/acc-initials-sh-2qbl80dt/designer sh -c 'got=$...",
+        "  | This Bash command contains multiple operations. The following parts require approval: KSTRL_TREE=/tmp/pytest-of-root/pytest-601/test_acceptance_designer_catch3/acc-initials-sh-2qbl80dt/designer sh -c ...",
+        "  | [unrendered thinking block]",
+        "[Bash] echo test",
+        "  | test",
+        "  | [unrendered thinking block]",
+        "{\"createsApp\": false, \"checks\": [{\"id\": \"initials-example\", \"criterion\": \"US-001: sh initials \\\"ada lovelace\\\" prints AL, a newline, and exits 0\", \"argv\": [\"sh\", \"-c\", \"got=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"ada lovelace\\\"; printf \\\"rc=%s\\\" \\\"$?\\\"); [ \\\"$got\\\" = \\\"$(printf \\\"AL\\\\nrc=0\\\")\\\" ]\"], \"onBase\": \"fails\", \"heldOut\": false}, {\"id\": \"initials-single-word\", \"criterion\": \"US-001: sh initials \\\"grace\\\" prints a single uppercase G, a newline, and exits 0\", \"argv\": [\"sh\", \"-c\", \"got=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"grace\\\"; printf \\\"rc=%s\\\" \\\"$?\\\"); [ \\\"$got\\\" = \\\"$(printf \\\"G\\\\nrc=0\\\")\\\" ]\"], \"onBase\": \"fails\", \"heldOut\": false}, {\"id\": \"initials-three-words\", \"criterion\": \"US-001: sh initials \\\"alan mathison turing\\\" prints AMT with nothing between letters, a newline, and exits 0\", \"argv\": [\"sh\", \"-c\", \"got=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"alan mathison turing\\\"; printf \\\"rc=%s\\\" \\\"$?\\\"); [ \\\"$got\\\" = \\\"$(printf \\\"AMT\\\\nrc=0\\\")\\\" ]\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"initials-mixed-case\", \"criterion\": \"US-001: sh initials \\\"mAry ANNE sMith\\\" prints MAS, the first letter of each word uppercased whatever its input case, then a newline, and exits 0\", \"argv\": [\"sh\", \"-c\", \"got=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"mAry ANNE sMith\\\"; printf \\\"rc=%s\\\" \\\"$?\\\"); [ \\\"$got\\\" = \\\"$(printf \\\"MAS\\\\nrc=0\\\")\\\" ]\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"initials-four-words\", \"criterion\": \"US-001: sh initials \\\"john ronald reuel tolkien\\\" prints JRRT, a newline, and exits 0\", \"argv\": [\"sh\", \"-c\", \"got=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"john ronald reuel tolkien\\\"; printf \\\"rc=%s\\\" \\\"$?\\\"); [ \\\"$got\\\" = \\\"$(printf \\\"JRRT\\\\nrc=0\\\")\\\" ]\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"initials-single-letter-words\", \"criterion\": \"US-001: sh initials \\\"x y z\\\" prints XYZ, a newline, and exits 0\", \"argv\": [\"sh\", \"-c\", \"got=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"x y z\\\"; printf \\\"rc=%s\\\" \\\"$?\\\"); [ \\\"$got\\\" = \\\"$(printf \\\"XYZ\\\\nrc=0\\\")\\\" ]\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"initials-all-caps-input\", \"criterion\": \"US-001: sh initials \\\"GRACE HOPPER\\\" prints GH, a newline, and exits 0\", \"argv\": [\"sh\", \"-c\", \"got=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"GRACE HOPPER\\\"; printf \\\"rc=%s\\\" \\\"$?\\\"); [ \\\"$got\\\" = \\\"$(printf \\\"GH\\\\nrc=0\\\")\\\" ]\"], \"onBase\": \"fails\", \"heldOut\": true}]}"
+      ],
+      "final_message": "{\"createsApp\": false, \"checks\": [{\"id\": \"initials-example\", \"criterion\": \"US-001: sh initials \\\"ada lovelace\\\" prints AL, a newline, and exits 0\", \"argv\": [\"sh\", \"-c\", \"got=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"ada lovelace\\\"; printf \\\"rc=%s\\\" \\\"$?\\\"); [ \\\"$got\\\" = \\\"$(printf \\\"AL\\\\nrc=0\\\")\\\" ]\"], \"onBase\": \"fails\", \"heldOut\": false}, {\"id\": \"initials-single-word\", \"criterion\": \"US-001: sh initials \\\"grace\\\" prints a single uppercase G, a newline, and exits 0\", \"argv\": [\"sh\", \"-c\", \"got=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"grace\\\"; printf \\\"rc=%s\\\" \\\"$?\\\"); [ \\\"$got\\\" = \\\"$(printf \\\"G\\\\nrc=0\\\")\\\" ]\"], \"onBase\": \"fails\", \"heldOut\": false}, {\"id\": \"initials-three-words\", \"criterion\": \"US-001: sh initials \\\"alan mathison turing\\\" prints AMT with nothing between letters, a newline, and exits 0\", \"argv\": [\"sh\", \"-c\", \"got=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"alan mathison turing\\\"; printf \\\"rc=%s\\\" \\\"$?\\\"); [ \\\"$got\\\" = \\\"$(printf \\\"AMT\\\\nrc=0\\\")\\\" ]\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"initials-mixed-case\", \"criterion\": \"US-001: sh initials \\\"mAry ANNE sMith\\\" prints MAS, the first letter of each word uppercased whatever its input case, then a newline, and exits 0\", \"argv\": [\"sh\", \"-c\", \"got=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"mAry ANNE sMith\\\"; printf \\\"rc=%s\\\" \\\"$?\\\"); [ \\\"$got\\\" = \\\"$(printf \\\"MAS\\\\nrc=0\\\")\\\" ]\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"initials-four-words\", \"criterion\": \"US-001: sh initials \\\"john ronald reuel tolkien\\\" prints JRRT, a newline, and exits 0\", \"argv\": [\"sh\", \"-c\", \"got=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"john ronald reuel tolkien\\\"; printf \\\"rc=%s\\\" \\\"$?\\\"); [ \\\"$got\\\" = \\\"$(printf \\\"JRRT\\\\nrc=0\\\")\\\" ]\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"initials-single-letter-words\", \"criterion\": \"US-001: sh initials \\\"x y z\\\" prints XYZ, a newline, and exits 0\", \"argv\": [\"sh\", \"-c\", \"got=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"x y z\\\"; printf \\\"rc=%s\\\" \\\"$?\\\"); [ \\\"$got\\\" = \\\"$(printf \\\"XYZ\\\\nrc=0\\\")\\\" ]\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"initials-all-caps-input\", \"criterion\": \"US-001: sh initials \\\"GRACE HOPPER\\\" prints GH, a newline, and exits 0\", \"argv\": [\"sh\", \"-c\", \"got=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"GRACE HOPPER\\\"; printf \\\"rc=%s\\\" \\\"$?\\\"); [ \\\"$got\\\" = \\\"$(printf \\\"GH\\\\nrc=0\\\")\\\" ]\"], \"onBase\": \"fails\", \"heldOut\": true}]}"
+    }
+  ]
+}

@@ -158,8 +158,10 @@ def _run_second(
 
 
 def _halts(root: Path) -> list[InboxItem]:
+    """The halted_run items of carried checks. A Phase 3 failure files an
+    item of its own too, naming the tier, as every terminal halt does."""
     items = Inbox(root, InboxConfig.load(root)).scan().folded_items()
-    return [item for item in items if item.kind is ItemKind.HALTED_RUN]
+    return [i for i in items if i.kind is ItemKind.HALTED_RUN and "carried" in i.evidence]
 
 
 @runs_a_stack

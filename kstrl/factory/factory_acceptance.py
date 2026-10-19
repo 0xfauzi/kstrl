@@ -322,20 +322,20 @@ def _reset_contract_breakers(
             ui.warn(f"  Contract breaker '{cr.breaker}' sent back for retry")
 
 
-def _contract_evidence(pipeline: ComponentPipeline, cr: ContractResult) -> str:
-    """The first line of a failed tier's output, whole, and where all of it
+def _contract_evidence(pipeline: ComponentPipeline, cr: ContractResult) -> tuple[str, str]:
+    """The last line of a failed tier's output, whole, and where all of it
     is kept: under the run's evidence directory, outside the repository,
-    beside the acceptance records. A user run saw only a line cut at 200
+    beside the acceptance records. A user run saw that line cut at 200
     characters mid-word, and the rest only in the evolution journal."""
     detail = (cr.test_output or "").strip()
-    first = next((line.strip() for line in detail.splitlines() if line.strip()), "")
+    last = detail.splitlines()[-1].strip() if detail else ""
     path = evidence_dir(pipeline.root_dir, pipeline.run_id).parent / f"contract-tier-{cr.tier}.txt"
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         atomic_write_text(path, detail + "\n")
     except OSError as exc:
-        return f"{first} (its output could not be kept: {exc})"
-    return f"{first} (full output: {path})"
+        return last, f"its output could not be kept: {exc}"
+    return last, f"full output: {path}"
 
 
 def _record_contract_failures(
@@ -355,7 +355,7 @@ def _record_contract_failures(
     # nonzero (previously this fell through silently and the run
     # exited 0 with broken integrated code).
     for cr in failures:
-        summary_line = _contract_evidence(pipeline, cr)
+        summary_line, kept = _contract_evidence(pipeline, cr)
         if cr.breaker:
             breaker = manifest.get_component(cr.breaker)
             if breaker is not None:
@@ -388,7 +388,7 @@ def _record_contract_failures(
                 cr.breaker,
                 cr.tier,
                 f"Contract test failed at tier {cr.tier} ({_stop_reason(cr)})",
-                summary_line,
+                f"{summary_line} ({kept})",
             )
         else:
             factory_result.contract_failures.append(
@@ -400,9 +400,10 @@ def _record_contract_failures(
                 "",
                 cr.tier,
                 f"Contract tests failed at tier {cr.tier}, no blame attributed",
-                summary_line,
+                f"{summary_line} ({kept})",
             )
         ui.err(f"  Contract failure recorded for tier {cr.tier}; run will exit nonzero")
+        ui.info(f"    {kept}")
     _halt_carried(pipeline, failures)
     manifest.save(manifest_path)
 

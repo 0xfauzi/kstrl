@@ -715,7 +715,8 @@ class TestRetryCli:
         saved_a = saved.get_component("comp-a")
         assert saved_a is not None
         assert saved_a.status == ComponentStatus.PENDING.value
-        assert saved_a.evidence_worktree == ""
+        # Kept, so the run removes it after its refusals (factory_worktrees).
+        assert saved_a.evidence_worktree.endswith("run-old/comp-a")
 
         # The retry changes nothing in git: it records the failed commit it
         # replaces, and the factory deletes that branch and prunes the
