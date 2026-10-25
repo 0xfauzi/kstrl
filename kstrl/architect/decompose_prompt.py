@@ -7,7 +7,7 @@ from pathlib import Path
 
 from kstrl.io import generate_data_delimiter
 
-DECOMPOSE_PROMPT_VERSION = "5.4.0"
+DECOMPOSE_PROMPT_VERSION = "5.5.0"
 
 DECOMPOSE_PROMPT = """\
 You are a senior software architect AND a hostile spec auditor. You have
@@ -129,6 +129,13 @@ Decomposition rules:
    NOT use placeholder text like "First testable requirement" and do
    NOT copy the WHEN/SHALL scaffold verbatim; fill in the actual
    condition and behavior.
+   Every criterion must be one this component's own change can make
+   true, on top of the components it depends on: a criterion only a
+   later component can meet (a command, module or file it adds)
+   belongs to that component. Write an exact value (a count, a
+   length, an output line) into a criterion only when the spec states
+   it: the reviewer and the verification designer take it as given,
+   and a value you work out yourself can be wrong.
 8. Priorities must be unique within each component, starting at 1.
 9. Set "passes" to false and "notes" to "" for every story.
 10. Minimize dependencies between components. Prefer independent

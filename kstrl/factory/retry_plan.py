@@ -173,17 +173,16 @@ def print_retry_plan(ui: UI, preview: RetryPreview, manifest_file: Path) -> None
 
 
 def _prepared(comp: Component | None) -> bool:
-    """Whether an earlier ``ks retry`` reset ``comp`` and its run was refused
-    before it ran: PENDING, with the commit it keeps or replaces recorded."""
-    return (
-        comp is not None
-        and comp.status == ComponentStatus.PENDING.value
-        and bool(comp.rejudge_sha or comp.discard_sha)
-    )
+    """Whether ``comp`` is PENDING already, so a retry has nothing to reset
+    and only runs it: an earlier ``ks retry`` whose run was refused before
+    it started left it so, with the commit it keeps or replaces recorded
+    when the failed attempt had a branch (a user run with no branch was
+    refused a second time when this asked for that record)."""
+    return comp is not None and comp.status == ComponentStatus.PENDING.value
 
 
-#: Why a retry whose earlier run was refused keeps or replaces the branch.
-PREPARED_REASON = "an earlier ks retry chose this, and its run was refused before it started"
+#: Why a retry of a PENDING component keeps or replaces the branch.
+PREPARED_REASON = "it is pending already, so nothing is reset and the run picks it up"
 
 
 def prepare_retry(

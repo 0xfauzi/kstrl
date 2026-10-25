@@ -280,6 +280,11 @@ def test_the_designer_writes_checks_and_a_failed_held_out_one_halts_the_componen
     assert "record only" not in run.out, run.out
     assert "the held-out acceptance checks greets-hidden failed" in run.out, run.out
     assert "halted with no retry" in run.out, run.out
+    # What the designer printed is kept outside the repository, so how it
+    # reached an expected value can be read after the run.
+    (log,) = sorted(_evidence_root(root).glob(f"*/acceptance/designer/{COMP}.log"))
+    assert hidden in log.read_text(encoding="utf-8"), log
+    assert not log.is_relative_to(root), log
     # The halt is read in the inbox, so it says where the evidence is.
     (halt,) = _halts(root)
     assert "- record: " in halt.detail and "under logs/ beside it" in halt.detail, halt.detail
@@ -843,6 +848,9 @@ def test_a_designed_check_a_person_removes_is_recorded_and_the_retry_runs_withou
     (removed,) = designer["removed"]
     assert (removed["component"], removed["check"], removed["why"]) == (COMP, "greets-hidden", why)
     assert removed["by"] and removed["at"], removed
+    assert removed["criterion"] == "greets-hidden holds", removed
+    # Its only held-out check went, and kstrl says so.
+    assert f"{COMP} has no held-out designed check left" in out, out
     assert _manifest(root)["acceptanceDigest"] not in ("", pinned), _manifest(root)
     assert retry_code == 0, retry_out
     assert "greets-hidden" not in retry_out.split("== Retry plan ==")[-1], retry_out

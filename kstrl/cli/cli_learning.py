@@ -736,7 +736,7 @@ def remove_check_cmd(
     removed, 2 that nothing was, with the reason above it.
     """
     from kstrl.cli.cli_seam import _actor, _load_manifest_or_exit
-    from kstrl.factory import remove_designed_check
+    from kstrl.factory import coverage_left, remove_designed_check
     from kstrl.pipeline import FactoryConfig
     from kstrl.proc import FactoryLockHeldError, LeftoverAgentsError, acquire_run_lock
 
@@ -762,9 +762,13 @@ def remove_check_cmd(
         if report_preflight(ui_impl, "the check was not removed", errors):
             sys.exit(2)
         manifest.save(manifest_path)
+        assert stack is not None
+        left = coverage_left(root_dir, manifest, stack, component)
     finally:
         run_lock.release()
     ui_impl.ok(
         f"Removed the designed check {check_id} of {component}; the next ks factory or "
         "ks retry runs without it"
     )
+    for line in left:
+        ui_impl.warn(f"  {line}")

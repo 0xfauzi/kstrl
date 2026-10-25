@@ -30,7 +30,8 @@ import hashlib
 import json
 import re
 import shutil
-from collections.abc import Callable, Collection, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -43,6 +44,7 @@ from kstrl.acceptance import (
     TREE_ENV,
     BaseReading,
     PinnedPlan,
+    evidence_dir,
     pin_plan,
     plan_errors,
     read_plan_dir,
@@ -269,6 +271,7 @@ def design_component(
     timeout: float | None,
     spend: Callable[[], str],
     requirement_ids: Collection[str],
+    on_line: Callable[[str], None] | None = None,
 ) -> tuple[dict[str, Any] | None, int, list[str]]:
     """Ask the designer for ``comp_id``'s plan entry: the entry (None when
     there is none), how many asks were made, and why each reply was not a
@@ -285,7 +288,7 @@ def design_component(
         if refusal:
             return None, ask - 1, [*errors, f"ask {ask} was not made: {refusal}"]
         try:
-            lines = collect_agent_output(agent, asked, cwd=cwd, timeout=timeout)
+            lines = collect_agent_output(agent, asked, cwd=cwd, timeout=timeout, on_line=on_line)
             entry: Any = extract_json(select_agent_output(agent, lines))
         except (OSError, RuntimeError, ValueError) as exc:
             found = [str(exc)]
@@ -389,7 +392,15 @@ def remove_designed_check(
     if len(kept) == len(checks):
         return [f"the designed plan {target} has no check {check_id} for {comp_id}"]
     plan["components"][comp_id]["checks"] = kept
-    removed = {"component": comp_id, "check": check_id, "by": by, "at": iso_now(), "why": why}
+    criterion = next(str(c.get("criterion", "")) for c in checks if c.get("id") == check_id)
+    removed = {
+        "component": comp_id,
+        "check": check_id,
+        "criterion": criterion,
+        "by": by,
+        "at": iso_now(),
+        "why": why,
+    }
     designer = {**(designer or {}), "removed": [*(designer or {}).get("removed", []), removed]}
     aside = target.with_name(f"{target.name}.replaced")
     try:
@@ -405,6 +416,28 @@ def remove_designed_check(
     except OSError as exc:
         return [f"the designed plan {target} cannot be rewritten: {exc}"]
     return []
+
+
+def coverage_left(root: Path, manifest: Manifest, stack: Stack, comp_id: str) -> list[str]:
+    """What the designed plan of ``comp_id`` no longer decides after the
+    latest removal, one line each, or []: the requirement the removed
+    check cited when no check left cites it, and the held-out checks when
+    none is left. A user removed three checks for six wrong numbers and was
+    not told a requirement had lost every check."""
+    try:
+        plan, designer, _ = read_plan_dir(designed_dir(root, manifest, stack))
+    except (OSError, KeyError, ValueError, PlanUnreadableError):
+        return []
+    kept = plan.get("components", {}).get(comp_id, {}).get("checks", [])
+    removed = [r for r in (designer or {}).get("removed", []) if r.get("component") == comp_id]
+    lines: list[str] = []
+    head, colon, _ = str(removed[-1].get("criterion", "") if removed else "").partition(":")
+    cited = head.strip() if colon else ""
+    if cited and not any(str(c.get("criterion", "")).startswith(cited) for c in kept):
+        lines.append(f"no designed check of {comp_id} decides {cited} any more")
+    if not any(c.get("heldOut") for c in kept):
+        lines.append(f"{comp_id} has no held-out designed check left")
+    return lines
 
 
 def design_plan(pipeline: ComponentPipeline) -> tuple[PinnedPlan | None, list[str]]:
@@ -536,14 +569,17 @@ def _design_one(
             read_only=True,
             root_dir=root,
         )
-        with recording_prompts(
-            AgentCall(
-                run_root=pipeline.usage_paths.root,
-                run_id=pipeline.run_id,
-                component=comp.id,
-                role=DESIGNER_ROLE,
-                attempt=1,
-            )
+        with (
+            recording_prompts(
+                AgentCall(
+                    run_root=pipeline.usage_paths.root,
+                    run_id=pipeline.run_id,
+                    component=comp.id,
+                    role=DESIGNER_ROLE,
+                    attempt=1,
+                )
+            ),
+            _designer_transcript(pipeline, root, comp.id) as on_line,
         ):
             designed = design_component(
                 agent,
@@ -553,6 +589,7 @@ def _design_one(
                 timeout=limit_seconds(pipeline.factory_config.review_timeout_seconds),
                 spend=spend,
                 requirement_ids=[r.id for r in built],
+                on_line=on_line,
             )
         if designed[0] is not None:
             kept.mkdir(parents=True, exist_ok=True)
@@ -566,6 +603,32 @@ def _design_one(
             remove_temp_worktree(worktree, root, pipeline.ui, DESIGNER_ROLE)
         except ContractCleanupError as exc:
             pipeline.ui.warn(f"  {exc}")
+
+
+@contextmanager
+def _designer_transcript(
+    pipeline: ComponentPipeline, root: Path, comp_id: str
+) -> Iterator[Callable[[str], None] | None]:
+    """What the designer printed, appended to a log under the run's evidence
+    directory, outside the repository, since it holds the held-out checks.
+    A user run could not tell how the designer reached a wrong expected
+    value: only its prompt was kept. A log that cannot be opened is said
+    and gates nothing."""
+    path = evidence_dir(root, pipeline.run_id) / DESIGNER_ROLE / f"{comp_id}.log"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        handle = open(path, "a", buffering=1, encoding="utf-8")
+    except OSError as exc:
+        pipeline.ui.warn(f"  {comp_id}: the designer's transcript cannot be kept: {exc}")
+        yield None
+        return
+    pipeline.ui.info(f"  {comp_id}: the designer's transcript: {path}")
+
+    def write(line: str) -> None:
+        handle.write(line + "\n")
+
+    with handle:
+        yield write
 
 
 def unreproduced(

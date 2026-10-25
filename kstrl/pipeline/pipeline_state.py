@@ -168,6 +168,8 @@ class PipelineState:
         # #595: the approvals this run's checks may apply, read once by
         # snapshot_waivers. None until then, which applies none.
         self._approvals: ApprovalSnapshot | None = None
+        # The stories each component's last claim disagreement named.
+        self._claim_history: dict[str, frozenset[str]] = {}
         self.review_selection = review_selection
         self.security_selection = security_selection
         self.knowledge_config = knowledge_config

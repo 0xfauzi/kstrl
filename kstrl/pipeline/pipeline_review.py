@@ -166,7 +166,11 @@ class ReviewPhase(ReviewVerdicts, UsageLedger):
                     # does a reply that did not parse and states no fail
                     # (``reply_unread``), rather than a retry of the engineer.
                     unread = review_result.reply_unread
-                    if reading or not (review_result.diffstat_disagreement or unread):
+                    # A story claimed done whose criteria the reviewer left
+                    # unjudged is the reviewer's gap, not the engineer's: a
+                    # user run spent engineer retries that could not fill it.
+                    unjudged = _unjudged_claims(wt_path / comp.prd_path, review_result)
+                    if reading or not (review_result.diffstat_disagreement or unread or unjudged):
                         break
                     if not self.adversarial_budget_ok():
                         break
@@ -175,6 +179,9 @@ class ReviewPhase(ReviewVerdicts, UsageLedger):
                         "  Review reply did not parse; reading it once more"
                         if unread
                         else "  Review coverage disagreed with git; reading it once more"
+                        if review_result.diffstat_disagreement
+                        else "  Review left criteria of "
+                        f"{', '.join(unjudged)} unjudged; reading it once more"
                     )
         except Exception as exc:  # noqa: BLE001
             self.ui.warn(f"  Review crashed: {exc}")
@@ -373,14 +380,20 @@ class ReviewPhase(ReviewVerdicts, UsageLedger):
                 f"on {len(reverted)} story(ies)"
                 + ("; passes reverted in the PRD" if saved else "; PRD could not be rewritten")
             )
+            for finding in disagreements:
+                self.ui.info(f"    {finding.explanation}")
+            stories = frozenset(f.location for f in disagreements)
+            repeated = self._claim_history.get(comp.id) == stories
+            self._claim_history[comp.id] = stories
             return self._claim_failure(
                 comp,
                 comp_result,
                 review_result,
                 error=(
-                    f"Claim disagreement: {len(reverted)} story(ies) "
-                    "claimed done but not confirmed by review"
+                    f"Claim disagreement: {', '.join(sorted(stories))} claimed done "
+                    "but not confirmed by review"
                 ),
+                repeated=repeated,
                 retry_text=claim_retry_context(
                     disagreements,
                     review_result,
@@ -390,3 +403,20 @@ class ReviewPhase(ReviewVerdicts, UsageLedger):
 
         self.ui.ok(f"  Phase 2 passed for {comp.id}")
         return ReviewPhaseResult(ran=True, result=review_result)
+
+
+def _unjudged_claims(prd_path: Path, review: ReviewResult) -> list[str]:
+    """The stories marked done whose criteria a passed review did not all
+    judge, or [] (also when the PRD cannot be read: the claim gate records
+    that itself)."""
+    if not review.passed or review.infrastructure_error:
+        return []
+    try:
+        prd = PRD.load(prd_path)
+    except (OSError, ValueError):
+        return []
+    return [
+        st.id
+        for st in prd.user_stories
+        if st.passes is True and review.judged_criterion_count(st.id) < len(st.acceptance_criteria)
+    ]

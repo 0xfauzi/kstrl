@@ -33,8 +33,12 @@ test, typecheck and lint commands on the base branch, the reading
 `ks factory` takes before any engineer runs (see "`ks factory` refused:
 the base branch fails a gate" below), and prints it under `base_gates` in
 the JSON report. A gate that fails there fails the row, so the verdict is
-`not-ready` exactly where `ks factory` would refuse. A gate that measured
-nothing (pytest collecting no tests, a timeout) warns. A base branch that
+`not-ready` exactly where `ks factory` would refuse. So does a gate that
+measured nothing (a timeout, or a command that is not installed, exit 126
+or 127), which `--accept-red-base` does not waive. kstrl reads the exit
+status alone, so a test runner that exits non-zero because it collected no
+tests is a measured failure on a new repository, which `--accept-red-base`
+waives. A base branch that
 could not be measured at all fails the row, because a ready verdict must
 rest on a reading. The branch is the one `ks factory --spec` uses when
 `--base-branch` is not given. A flakiness smoke and a cost projection are
@@ -173,7 +177,13 @@ A check the verification designer wrote can be wrong in a way no correct
 code passes. `ks remove-check <component> <check-id> --comment <why>`
 takes it out of the designed plan, records who removed it, when and why
 in the plan's `designer.json`, and pins the manifest to the result, so
-the next `ks factory` or `ks retry` runs without it. A plan you wrote
+the next `ks factory` or `ks retry` runs without it. It warns when the
+removal leaves a requirement the removed check cited with no check, or the
+component with no held-out check: a designed check cannot be edited, so ask
+for a new plan (delete the designed plan's directory) when that matters.
+What the designer printed is kept beside the run's acceptance evidence,
+under `<state dir>/runs/<run>/acceptance/designer/<component>.log`, outside
+the repository because it holds the held-out checks. A plan you wrote
 with `--acceptance` is yours to edit; this command touches only a
 designed one.
 
@@ -260,7 +270,7 @@ this is a small print an operator should have to find on their own:
 
 **Symptom**: `Refusing to run: the base branch fails a gate Phase 1 runs, or its reading cannot be recorded`, exit 2, and no engineer was called.
 
-**What it is**: before the first engineer call, `ks factory` runs every check of the confirmed `[stack]`, with Phase 1's timeout, on the commit the base branch names, in a throwaway worktree under `.kstrl/contract/` (#654). `ks run` and `ks retry` reach the same check. It never measures your checkout: components are cut from the commit, so a fix you have not committed does not count. Any check that does not pass refuses the run, as do a failed setup and output the checks leave behind, and the refusal names each check. Without the refusal every component fails Phase 1 on the same failure after its engineer has been paid. On `ks factory --spec` this check runs before the architect is paid, and its reading is written to the architect's run, `.kstrl/runs/<decompose run>/base-gates.json`; the factory run reuses that reading while the base names the same commit, and writes it again to its own run directory (#696 slice 7). A gate that ran and measured nothing (pytest collecting no tests, a timeout, a tool that is not installed) is printed as `measured nothing` and does not refuse, because Phase 1 still fails that row on every component. A base branch that does not resolve, a checkout that fails and a `worktree_setup_command` that fails on the base are printed the same way. Every reading is written to `.kstrl/runs/<run_id>/base-gates.json` beside `launch.json`: the base sha, each gate's row with its failing names, the gates that were turned off, and whether and why the run refused. A run that cannot write the file refuses. `ks doctor --measure` takes the same reading without starting a run.
+**What it is**: before the first engineer call, `ks factory` runs every check of the confirmed `[stack]`, with Phase 1's timeout, on the commit the base branch names, in a throwaway worktree under `.kstrl/contract/` (#654). `ks run` and `ks retry` reach the same check. It never measures your checkout: components are cut from the commit, so a fix you have not committed does not count. Any check that does not pass refuses the run, as do a failed setup and output the checks leave behind, and the refusal names each check. Without the refusal every component fails Phase 1 on the same failure after its engineer has been paid. On `ks factory --spec` this check runs before the architect is paid, and its reading is written to the architect's run, `.kstrl/runs/<decompose run>/base-gates.json`; the factory run reuses that reading while the base names the same commit, and writes it again to its own run directory (#696 slice 7). A gate that ran and measured nothing (a timeout, a tool that is not installed) is printed as `measured nothing` and refuses as well, since no engineer's commit fixes it. kstrl reads the exit status alone, so a test runner that exits non-zero because it collected no tests is a measured failure. A base branch that does not resolve, a checkout that fails and a `worktree_setup_command` that fails on the base are printed the same way. Every reading is written to `.kstrl/runs/<run_id>/base-gates.json` beside `launch.json`: the base sha, each gate's row with its failing names, the gates that were turned off, and whether and why the run refused. A run that cannot write the file refuses. `ks doctor --measure` takes the same reading without starting a run.
 
 **Resolve**: make the base green in a commit; or pass `--accept-red-base <sha>`, at least 12 characters of the base commit's sha (the refusal prints the first 12), to run on that commit as it is; or pass `--no-verify`, which turns off all of Phase 1 and this check with it. Under `--no-verify` the record says `--no-verify: Phase 1 runs no gate`.
 
@@ -380,6 +390,8 @@ In advisory review mode a crashed or unparseable reviewer still passes the revie
 The adversarial budget covers review, security and knowledge distillation together. When it runs out, an **advisory** Phase 2 downgrades to a skip, and in blocking mode a skipped reviewer cannot confirm anything. A **hard-mode** Phase 2 does not reach this form at all since R10.5: it halts the component, which is the symptom below rather than this one. This does not retry, because retrying cannot recover budget: raise `max_adversarial_calls`, or accept the components already done and re-run the rest.
 
 **Resolve**: the retry resets `passes` to false on each unconfirmed story and puts the disagreement in the agent's context. The engineer's own story selection then picks the story up again, because it takes the highest-priority story where `passes` is false. Nothing needs doing by hand.
+
+Two cases spend no engineer retry, because one cannot change the answer. A passed review that left some criteria of a story marked done unjudged is the reviewer's gap: the reviewer reads the change once more ("Review left criteria of US-001 unjudged; reading it once more"), inside the adversarial budget. And when the same stories go unconfirmed again after an engineer retry, the component halts instead of retrying, on an item that names the stories and the commit; approving it and `ks retry <component>` merges over the disagreement on that commit, as below. Each unconfirmed story's reason is printed under the failure line.
 
 On a commit an inbox approval was taken on, such as an approved acceptance halt that `ks retry` kept, the disagreement halts instead: an engineer's new commit would void that approval and halt again on the same check. The halt's item names the commit. Approve it and run `ks retry <component>` to merge over the disagreement on that commit (the terminal names the approval, who gave it and when), or reject it and run `ks retry <component>` to build the component again.
 

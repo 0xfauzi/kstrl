@@ -176,6 +176,9 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Changed
 
+- The architect puts a criterion only a later component can meet into
+  that component, and writes no exact value the spec does not state
+  (`DECOMPOSE_PROMPT` 5.5.0).
 - Every engineer is given the pinned spec, ahead of the architect's
   decisions (`SPEC_CONTEXT_PROMPT` 1.0.0, owner decision of 2026-10-19).
   The verification designer read the spec and the engineer did not, so a
@@ -372,6 +375,23 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Fixed
 
+- `ks retry` runs a PENDING component as it is. A refused retry of a
+  component that failed with no branch left it PENDING with nothing
+  recorded, and the next `ks retry` refused it as not FAILED.
+- The claim gate spends no engineer retry that cannot change its answer:
+  criteria a passed review left unjudged get the reviewer once more, and
+  the same stories unconfirmed after an engineer retry halt on an item
+  naming them, which an approval merges over on that commit. A user run
+  spent four attempts on a component whose acceptance checks all passed.
+- `ks inbox approve` of a proposed `[stack]` that was edited before
+  confirming files the item for the edited text and names it.
+- `ks remove-check` records the removed check's criterion and warns when
+  a requirement or the held-out checks are left uncovered.
+- The verification designer's transcript is kept under the run's
+  evidence directory.
+- The runbook and `ks doctor --measure` no longer say that a gate that
+  measured nothing warns: it refuses, and a test runner that collected
+  no tests is a measured failure.
 - A refused `ks retry` changes nothing in git. The retry deleted the
   failed attempt's branch and its evidence worktree before the factory's
   refusals ran, so a refused retry destroyed the attempt's code (a user

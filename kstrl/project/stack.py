@@ -720,8 +720,9 @@ def file_stack_item(
         detail = (
             f"Proposed from {proposal}: {checks} Nothing runs them until a person adopts them: "
             "write the table below into kstrl.toml as its [stack], in place of any [verify] "
-            "command keys, edit it if it is wrong, then confirm it (ks inbox approve <id> "
-            "confirms this text unchanged).\n\n" + stack_toml(stack)
+            "command keys, and edit it if it is wrong. ks inbox approve <id> confirms this "
+            "text unchanged; after an edit it names the item that confirms the edited "
+            "text.\n\n" + stack_toml(stack)
         )
         evidence["toml"] = stack_toml(stack)
     else:

@@ -6,7 +6,7 @@ integration rounds, the plan gate and the summary.
 
 from __future__ import annotations
 
-from kstrl.factory.acceptance_design import remove_designed_check
+from kstrl.factory.acceptance_design import coverage_left, remove_designed_check
 from kstrl.factory.commandrun import CommandRun, open_command_run
 from kstrl.factory.factory import run_factory
 from kstrl.factory.factory_preflight import (
@@ -34,6 +34,7 @@ __all__ = [
     "RESUME_REFUSAL",
     "base_check_before_architect",
     "base_refused_before_architect",
+    "coverage_left",
     "engineer_context_prefix",
     "open_command_run",
     "plan_resume",

@@ -550,6 +550,7 @@ class ReviewVerdicts(AttemptRecorder):
         *,
         error: str,
         retry_text: str,
+        repeated: bool = False,
     ) -> ReviewPhaseResult:
         """R10.3: the typed failure a blocked claim check returns.
 
@@ -576,6 +577,16 @@ class ReviewVerdicts(AttemptRecorder):
         # over a disagreement alone: the claim halts, and its approval merges
         # over it on that commit (owner decision of 2026-10-19).
         approved = [] if infrastructure else self._approvals_on_head(comp)
+        if repeated and not approved:
+            # The same stories after an engineer retry: another retry is
+            # paid for an answer it has already given (a user run spent
+            # three on it, with every acceptance check passing).
+            error += (
+                ", the same stories as the attempt before, so no engineer retries it. "
+                f"Approve this halt and run ks retry {comp.id} to merge over the "
+                f"disagreement on this commit, or reject it and run ks retry {comp.id} "
+                "to build the component again"
+            )
         if approved:
             error += (
                 f"; inbox approval {', '.join(i[:8] for i in approved)} was taken on this "
@@ -594,7 +605,7 @@ class ReviewVerdicts(AttemptRecorder):
             ran=True,
             result=review_result,
             failure=PhaseFailure(
-                action=FailureAction.FAIL if approved else FailureAction.RETRY_OR_FAIL,
+                action=FailureAction.FAIL if approved or repeated else FailureAction.RETRY_OR_FAIL,
                 error=error,
                 phase=CLAIM_HALT[0],
                 check="infrastructure" if infrastructure else CLAIM_HALT[1],

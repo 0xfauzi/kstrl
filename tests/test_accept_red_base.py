@@ -332,3 +332,28 @@ def test_under_a_stack_an_acceptance_never_waives_what_was_not_measured_red(
     # A failed setup ran no check, and the refusal says what to change instead.
     said = "setup runs on the base before any component exists" in run.out
     assert said == (reason == "the setup fails on main"), run.out
+
+
+def test_a_refused_retry_of_a_component_with_no_branch_can_be_run_again(
+    tmp_path: Path,
+) -> None:
+    """A component that failed with no branch left (one stopped before any
+    engineer ran has none) records no commit to replace; refused, the retry
+    left it PENDING, and the next `ks retry` refused it as not FAILED (a
+    user run). A PENDING component is now run as it is."""
+    root = _repo(tmp_path, {"tests/test_base.py": RED})
+    sha = _git(root, "rev-parse", "main").strip()
+    first = _factory(tmp_path, root, FLAG, sha[:12])
+    _git(root, "branch", "-D", "kstrl/factory/greeter")
+    _commit(root, "NOTES.md", "moved\n")
+    moved = _git(root, "rev-parse", "main").strip()
+
+    refused_code, refused = _retry(root, "greeter")
+    code, out = _retry(root, "greeter", FLAG, moved[:12])
+
+    assert first.code == 1, first.out
+    assert refused_code == 2 and HEADLINE in refused, refused
+    assert "only failed components can be retried" not in out, out
+    calls = (tmp_path / "engineer.calls").read_text(encoding="utf-8").splitlines()
+    assert len(calls) == 2, out
+    assert code == 1, out

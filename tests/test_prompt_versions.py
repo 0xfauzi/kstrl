@@ -297,9 +297,12 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     # nothing (a proposed `compileall -q src tests` passed an empty tree), and
     # a lockfile a stack command writes is in the manifest component's scope
     # (a `uv run` check wrote uv.lock outside it and cost a retry).
+    # 5.5.0: MINOR. Rule 7: a criterion only a later component can meet belongs
+    # to it (one failed the claim gate on four attempts), and no exact value the
+    # spec does not state (miscounted bytes were copied into held-out checks).
     "DECOMPOSE_PROMPT": (
-        "25bb8de2a27350f95a133c4ed7e1ac49f121834c26f6e0e9ce2a710d4e5ded80",
-        "5.4.0",
+        "45f52a0d177f60ed5803d31e2c55d72ed55f2931c0e2d1375cdffaa48b10ad9a",
+        "5.5.0",
     ),
     # 1.0.0 (#199): opens the series. Never shipped before this PR. Same
     # split, and the same reason, as REPO_CHANGE_SOURCE_PROMPT /

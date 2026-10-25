@@ -32,7 +32,7 @@ from kstrl.proc import (
     RunLock,
     acquire_run_lock,
 )
-from kstrl.project import STACK_KEY, load_stack, stack_in_force
+from kstrl.project import STACK_KEY, file_stack_item, load_stack, stack_in_force
 from kstrl.ui import UI
 
 if TYPE_CHECKING:
@@ -83,11 +83,22 @@ def _refuse_stale_stack_approval(action: str, item_id: str, root: Path | None, u
         return
     reads = f"it now reads {now[:12]}" if now else "it has no [stack] now"
     then = (
-        "Run ks factory to file the stack kstrl.toml holds."
-        if now
-        else f"Write the table ks inbox show {item.id[:8]} prints into kstrl.toml, "
+        f"Write the table ks inbox show {item.id[:8]} prints into kstrl.toml, "
         "then approve it again."
     )
+    if stack is not None:
+        # The proposal says to edit the table if it is wrong: the edited
+        # text is what a person confirms, on an item of its own (a user
+        # run was sent to `ks factory` to file it).
+        try:
+            edited = file_stack_item(root_dir, stack)
+        except Exception as exc:  # noqa: BLE001 - a filing that failed is said, never raised
+            then = f"No item for it could be filed ({exc}); run ks factory to file one."
+        else:
+            then = (
+                f"ks inbox approve {edited.id[:8]} confirms the text kstrl.toml holds; "
+                f"ks inbox show {edited.id[:8]} prints it."
+            )
     ui_impl.err(
         f"{item.id[:8]} confirms the [stack] {str(item.evidence.get('stack_digest'))[:12]}, "
         f"and {reads}: nothing was approved. {then}"

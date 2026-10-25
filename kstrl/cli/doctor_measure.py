@@ -4,9 +4,9 @@ Runs the reading `ks factory` takes before any engineer is called
 (:func:`kstrl.verify.base_gates.measure_base_gates`: Phase 1's [stack] checks in a
 throwaway worktree of the base commit) and turns it into
 one more doctor row. A gate that measurably fails there is a failed row, so
-the verdict is not-ready exactly where `ks factory` would refuse. A gate that
-ran and measured nothing (pytest collecting no tests, a timeout) is a
-warning, as it is in `ks factory`. A base that could not be measured at all
+the verdict is not-ready exactly where `ks factory` would refuse, which it
+does on a gate that measured nothing (a timeout, a command that is not
+installed) as well; kstrl reads the exit status alone. A base that could not be measured at all
 is a failed row: `ks factory` goes on in that case and Phase 1 judges each
 component, but an agent-ready verdict must rest on a reading.
 

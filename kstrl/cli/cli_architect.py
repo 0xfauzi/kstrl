@@ -346,6 +346,9 @@ def retry(
 ) -> None:
     """Retry a FAILED component from the factory manifest (R3.3).
 
+    A PENDING one, such as a component an earlier refused retry reset, is
+    run as it is: there is nothing to reset.
+
     Resets COMPONENT_ID and its cascade-skipped dependents to PENDING and
     marks the failed attempt's branch replaced (a retry starts fresh from
     the base branch; the failed attempt's findings stay in the evolution
@@ -359,7 +362,8 @@ def retry(
     over the recorded ones. A retry that would drop a run limit the run
     it resumes ran under (cost, tokens, adversarial calls, agent and
     component timeouts), or cannot tell whether it did, is refused before
-    anything is changed (#526). Nothing is changed until the confirmation
+    anything is changed (#526), unless the retry states that limit itself:
+    `--max-cost-usd 0` on the retry runs it unbounded. Nothing is changed until the confirmation
     is answered Start (asked only at a terminal) and the run lock is taken;
     a live run's lock is a refusal (exit 2), and the lock is held into the
     run (#597).
