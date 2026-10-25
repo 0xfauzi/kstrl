@@ -1,0 +1,42 @@
+{
+  "role": "acceptance",
+  "fixture_id": "acc-initials-sh-partial",
+  "category": "partial",
+  "cwe": null,
+  "caught": true,
+  "error": false,
+  "detail": "partial: failed ['initials-exact-line-and-exit', 'initials-four-words-heldout', 'initials-mixed-case-heldout']; verdicts {'initials-ada-example': 'pass', 'initials-exact-line-and-exit': 'fail', 'initials-mixed-case-heldout': 'fail', 'initials-single-word-heldout': 'pass', 'initials-hyphen-not-separator-heldout': 'pass', 'initials-apostrophe-heldout': 'pass', 'initials-four-words-heldout': 'fail'}",
+  "run": 1,
+  "calls": [
+    {
+      "streamed": [
+        "  | [unrendered thinking block]",
+        "[Bash] ls -la && git log --oneline | head -3 && (test -f initials && cat initials || echo \"no initials script on base\")",
+        "  | This command uses shell operators that require approval for safety",
+        "[Bash] cd /tmp && for n in \"ada lovelace\" \"grace brewster hopper\" \"  x  \" \"jean-luc picard\" \"mary ann o'neil\"; do printf '%s' \"...",
+        "  | A variable in this command can't be checked before it runs",
+        "  | [unrendered thinking block]",
+        "[Bash] ls -la /tmp/pytest-of-root/pytest-732/test_acceptance_designer_catch3/acc-initials-sh-fnl107a7/designer",
+        "  | total 16",
+        "  | drwxr-xr-x 3 root root 4096 Oct 25 13:36 .",
+        "  | drwx------ 3 root root 4096 Oct 25 13:36 ..",
+        "  | drwxr-xr-x 8 root root 4096 Oct 25 13:36 .git",
+        "  | -rwxr-xr-x 1 root root  108 Oct 19 06:48 initials",
+        "[Read] initials",
+        "  | 1\t#!/bin/sh",
+        "  | 2\t# Print the initials of the name in $1: not written yet, so the name as given.",
+        "  | 3\tprintf '%s\\n' \"$1\"",
+        "  | 4\t",
+        "  | [unrendered thinking block]",
+        "[Bash] cd /tmp && for n in \"ada lovelace\" \"grace brewster hopper\" \"ADA lovelace\" \"mARY ann oNEIL\" \"ada\" \"jean-luc picard\" \"alan...",
+        "  | A variable in this command can't be checked before it runs",
+        "  | [unrendered thinking block]",
+        "[Bash] printf '%s\\n' \"grace brewster hopper\" \"ADA lovelace\" \"mARY ann oNEIL\" \"alan mathison turing jr\" \"jean-luc picard\" \"mary ...",
+        "  | gAmajm",
+        "  | [unrendered thinking block]",
+        "{\"createsApp\": false, \"checks\": [{\"id\": \"initials-ada-example\", \"criterion\": \"US-001: sh initials \\\"ada lovelace\\\" prints AL, the uppercase first letters of its two words, and exits 0\", \"argv\": [\"sh\", \"-c\", \"out=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"$1\\\") || exit 1; [ \\\"$out\\\" = \\\"AL\\\" ]\", \"_\", \"ada lovelace\"], \"onBase\": \"fails\", \"heldOut\": false}, {\"id\": \"initials-exact-line-and-exit\", \"criterion\": \"US-001: for \\\"grace brewster hopper\\\", stdout is exactly GBH followed by one newline, and the exit status is 0\", \"argv\": [\"sh\", \"-c\", \"out=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"$1\\\"; r=$?; echo \\\"$r\\\"); [ \\\"$out\\\" = \\\"$(printf 'GBH\\\\n0')\\\" ]\", \"_\", \"grace brewster hopper\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"initials-mixed-case-heldout\", \"criterion\": \"US-001: letters are uppercased whatever their case in NAME, so \\\"mARY ann oNEIL\\\" prints MAO\", \"argv\": [\"sh\", \"-c\", \"out=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"$1\\\") || exit 1; [ \\\"$out\\\" = \\\"MAO\\\" ]\", \"_\", \"mARY ann oNEIL\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"initials-single-word-heldout\", \"criterion\": \"US-001: a one-word NAME prints the uppercase first letter of that word, so \\\"ada\\\" prints A\", \"argv\": [\"sh\", \"-c\", \"out=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"$1\\\") || exit 1; [ \\\"$out\\\" = \\\"A\\\" ]\", \"_\", \"ada\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"initials-hyphen-not-separator-heldout\", \"criterion\": \"US-001: only spaces separate words, so a hyphen inside a word does not start a new one: \\\"jean-luc picard\\\" prints JP\", \"argv\": [\"sh\", \"-c\", \"out=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"$1\\\") || exit 1; [ \\\"$out\\\" = \\\"JP\\\" ]\", \"_\", \"jean-luc picard\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"initials-apostrophe-heldout\", \"criterion\": \"US-001: a punctuation mark inside a word is part of that word, so \\\"mary o'neil\\\" prints MO\", \"argv\": [\"sh\", \"-c\", \"out=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"$1\\\") || exit 1; [ \\\"$out\\\" = \\\"MO\\\" ]\", \"_\", \"mary o'neil\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"initials-four-words-heldout\", \"criterion\": \"US-001: every word contributes one letter, not only the first two, so \\\"alan mathison turing jr\\\" prints AMTJ\", \"argv\": [\"sh\", \"-c\", \"out=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"$1\\\") || exit 1; [ \\\"$out\\\" = \\\"AMTJ\\\" ]\", \"_\", \"alan mathison turing jr\"], \"onBase\": \"fails\", \"heldOut\": true}]}"
+      ],
+      "final_message": "{\"createsApp\": false, \"checks\": [{\"id\": \"initials-ada-example\", \"criterion\": \"US-001: sh initials \\\"ada lovelace\\\" prints AL, the uppercase first letters of its two words, and exits 0\", \"argv\": [\"sh\", \"-c\", \"out=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"$1\\\") || exit 1; [ \\\"$out\\\" = \\\"AL\\\" ]\", \"_\", \"ada lovelace\"], \"onBase\": \"fails\", \"heldOut\": false}, {\"id\": \"initials-exact-line-and-exit\", \"criterion\": \"US-001: for \\\"grace brewster hopper\\\", stdout is exactly GBH followed by one newline, and the exit status is 0\", \"argv\": [\"sh\", \"-c\", \"out=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"$1\\\"; r=$?; echo \\\"$r\\\"); [ \\\"$out\\\" = \\\"$(printf 'GBH\\\\n0')\\\" ]\", \"_\", \"grace brewster hopper\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"initials-mixed-case-heldout\", \"criterion\": \"US-001: letters are uppercased whatever their case in NAME, so \\\"mARY ann oNEIL\\\" prints MAO\", \"argv\": [\"sh\", \"-c\", \"out=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"$1\\\") || exit 1; [ \\\"$out\\\" = \\\"MAO\\\" ]\", \"_\", \"mARY ann oNEIL\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"initials-single-word-heldout\", \"criterion\": \"US-001: a one-word NAME prints the uppercase first letter of that word, so \\\"ada\\\" prints A\", \"argv\": [\"sh\", \"-c\", \"out=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"$1\\\") || exit 1; [ \\\"$out\\\" = \\\"A\\\" ]\", \"_\", \"ada\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"initials-hyphen-not-separator-heldout\", \"criterion\": \"US-001: only spaces separate words, so a hyphen inside a word does not start a new one: \\\"jean-luc picard\\\" prints JP\", \"argv\": [\"sh\", \"-c\", \"out=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"$1\\\") || exit 1; [ \\\"$out\\\" = \\\"JP\\\" ]\", \"_\", \"jean-luc picard\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"initials-apostrophe-heldout\", \"criterion\": \"US-001: a punctuation mark inside a word is part of that word, so \\\"mary o'neil\\\" prints MO\", \"argv\": [\"sh\", \"-c\", \"out=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"$1\\\") || exit 1; [ \\\"$out\\\" = \\\"MO\\\" ]\", \"_\", \"mary o'neil\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"initials-four-words-heldout\", \"criterion\": \"US-001: every word contributes one letter, not only the first two, so \\\"alan mathison turing jr\\\" prints AMTJ\", \"argv\": [\"sh\", \"-c\", \"out=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"$1\\\") || exit 1; [ \\\"$out\\\" = \\\"AMTJ\\\" ]\", \"_\", \"alan mathison turing jr\"], \"onBase\": \"fails\", \"heldOut\": true}]}"
+    }
+  ]
+}

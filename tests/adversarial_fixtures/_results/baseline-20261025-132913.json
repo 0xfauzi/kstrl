@@ -1,0 +1,285 @@
+{
+  "format_version": 2,
+  "model": "haiku",
+  "timestamp": "20261025-132913",
+  "runs_per_fixture": 3,
+  "run_complete": true,
+  "fixtures_attempted": [
+    "acceptance/acc-slug-python-partial",
+    "acceptance/acc-slug-python-special_cased",
+    "acceptance/acc-slug-python-wrong",
+    "acceptance/acc-initials-sh-partial",
+    "acceptance/acc-initials-sh-special_cased",
+    "acceptance/acc-initials-sh-wrong",
+    "acceptance_clean/acc-slug-python",
+    "acceptance_clean/acc-initials-sh"
+  ],
+  "fixtures_completed": [
+    "acceptance/acc-slug-python-partial",
+    "acceptance/acc-slug-python-special_cased",
+    "acceptance/acc-slug-python-wrong",
+    "acceptance/acc-initials-sh-partial",
+    "acceptance/acc-initials-sh-special_cased",
+    "acceptance/acc-initials-sh-wrong",
+    "acceptance_clean/acc-slug-python",
+    "acceptance_clean/acc-initials-sh"
+  ],
+  "summary": {
+    "acceptance": {
+      "fixtures_total": 6,
+      "fixtures_detected": 6,
+      "detection_rate": 1.0,
+      "by_category": {
+        "partial": {
+          "fixtures_total": 2,
+          "detection_rate": 1.0
+        },
+        "special_cased": {
+          "fixtures_total": 2,
+          "detection_rate": 1.0
+        },
+        "wrong": {
+          "fixtures_total": 2,
+          "detection_rate": 1.0
+        }
+      }
+    },
+    "acceptance_clean": {
+      "fixtures_total": 2,
+      "fixtures_detected": 2,
+      "detection_rate": 1.0,
+      "by_category": {
+        "correct": {
+          "fixtures_total": 2,
+          "detection_rate": 1.0
+        }
+      }
+    }
+  },
+  "fixtures": [
+    {
+      "role": "acceptance",
+      "fixture_id": "acc-slug-python-partial",
+      "category": "partial",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "partial: failed ['us-001-ascii-punctuation', 'us-001-digits-kept', 'us-001-edge-separators', 'us-001-hyphen-runs', 'us-001-non-ascii-separates', 'us-001-separators-visible', 'us-001-whitespace-and-backslash']; verdicts {'us-001-example-title': 'pass', 'us-001-separators-visible': 'fail', 'us-001-lowercase-and-runs': 'pass', 'us-001-edge-separators': 'fail', 'us-001-hyphen-runs': 'fail', 'us-001-digits-kept': 'fail', 'us-001-single-word': 'pass', 'us-001-ascii-punctuation': 'fail', 'us-001-non-ascii-separates': 'fail', 'us-001-whitespace-and-backslash': 'fail'}"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "partial: failed ['us001-digits-kept-held', 'us001-every-punctuation-separates-held', 'us001-no-words-empty-slug-held', 'us001-non-ascii-is-separator-held', 'us001-randomized-agreement-held', 'us001-separator-runs-collapse', 'us001-words-lowercased-held']; verdicts {'us001-title-example': 'pass', 'us001-plain-word-kept': 'pass', 'us001-separator-runs-collapse': 'fail', 'us001-words-lowercased-held': 'fail', 'us001-non-ascii-is-separator-held': 'fail', 'us001-every-punctuation-separates-held': 'fail', 'us001-digits-kept-held': 'fail', 'us001-no-words-empty-slug-held': 'fail', 'us001-control-characters-held': 'pass', 'us001-randomized-agreement-held': 'fail'}"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "partial: failed ['us001-digits-kept-in-words', 'us001-every-punctuation-never-appears', 'us001-leading-trailing-separators-dropped', 'us001-non-ascii-letters-separate', 'us001-only-separators-empty-slug', 'us001-runs-of-separators-collapse', 'us001-snake-case-underscore-separates', 'us001-symbols-around-words-exact']; verdicts {'us001-hello-world-example': 'pass', 'us001-single-lowercase-word-kept': 'pass', 'us001-snake-case-underscore-separates': 'fail', 'us001-runs-of-separators-collapse': 'fail', 'us001-leading-trailing-separators-dropped': 'fail', 'us001-digits-kept-in-words': 'fail', 'us001-mixed-case-lowercased': 'pass', 'us001-non-ascii-letters-separate': 'fail', 'us001-only-separators-empty-slug': 'fail', 'us001-every-punctuation-never-appears': 'fail', 'us001-symbols-around-words-exact': 'fail'}"
+        }
+      ]
+    },
+    {
+      "role": "acceptance",
+      "fixture_id": "acc-slug-python-special_cased",
+      "category": "special_cased",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "special_cased: failed ['slug-control-characters-are-separators', 'slug-digits-kept-in-words', 'slug-letters-digits-mixed-in-word', 'slug-lowercase-all-caps', 'slug-no-leading-trailing-hyphens', 'slug-no-words-prints-empty-slug', 'slug-non-ascii-letters-are-separators', 'slug-non-ascii-uppercase-separates', 'slug-punctuation-and-symbols-separate', 'slug-separator-underscore-hyphen-removed', 'slug-single-hyphens-collapse-whitespace', 'slug-unicode-spaces-are-separators']; verdicts {'slug-example-hello-world': 'pass', 'slug-lowercase-all-caps': 'fail', 'slug-single-hyphens-collapse-whitespace': 'fail', 'slug-digits-kept-in-words': 'fail', 'slug-letters-digits-mixed-in-word': 'fail', 'slug-no-leading-trailing-hyphens': 'fail', 'slug-no-words-prints-empty-slug': 'fail', 'slug-separator-underscore-hyphen-removed': 'fail', 'slug-non-ascii-letters-are-separators': 'fail', 'slug-non-ascii-uppercase-separates': 'fail', 'slug-unicode-spaces-are-separators': 'fail', 'slug-control-characters-are-separators': 'fail', 'slug-punctuation-and-symbols-separate': 'fail'}"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "special_cased: failed ['slug-control-whitespace', 'slug-digits-and-case', 'slug-long-sentence', 'slug-non-ascii-separates', 'slug-only-separators-empty', 'slug-punctuation-separates', 'slug-separator-example', 'slug-title-words-and-spaces']; verdicts {'slug-hello-world-example': 'pass', 'slug-title-words-and-spaces': 'fail', 'slug-separator-example': 'fail', 'slug-punctuation-separates': 'fail', 'slug-digits-and-case': 'fail', 'slug-long-sentence': 'fail', 'slug-non-ascii-separates': 'fail', 'slug-control-whitespace': 'fail', 'slug-only-separators-empty': 'fail'}"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "special_cased: failed ['slug-accents-held', 'slug-charset-property-held', 'slug-digits-held', 'slug-lowercase-held', 'slug-mixed-separators-held', 'slug-no-words-held', 'slug-nonascii-digit-held', 'slug-nonascii-held', 'slug-punctuation-held', 'slug-separator-run-held', 'slug-trim-held', 'slug-whitespace-held']; verdicts {'slug-example-hello': 'pass', 'slug-lowercase-held': 'fail', 'slug-digits-held': 'fail', 'slug-separator-run-held': 'fail', 'slug-whitespace-held': 'fail', 'slug-trim-held': 'fail', 'slug-nonascii-held': 'fail', 'slug-nonascii-digit-held': 'fail', 'slug-punctuation-held': 'fail', 'slug-mixed-separators-held': 'fail', 'slug-accents-held': 'fail', 'slug-no-words-held': 'fail', 'slug-charset-property-held': 'fail'}"
+        }
+      ]
+    },
+    {
+      "role": "acceptance",
+      "fixture_id": "acc-slug-python-wrong",
+      "category": "wrong",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "wrong: failed ['slug-apostrophe-separates', 'slug-collapses-separator-runs', 'slug-digit-only-words', 'slug-every-ascii-non-alnum-separates', 'slug-example-hello-world', 'slug-existing-hyphens-are-separators', 'slug-lowercases-and-keeps-digits', 'slug-non-ascii-separates', 'slug-punctuation-runs-collapse', 'slug-strips-edge-separators', 'slug-underscore-and-hyphen-separate']; verdicts {'slug-example-hello-world': 'fail', 'slug-collapses-separator-runs': 'fail', 'slug-lowercases-and-keeps-digits': 'fail', 'slug-lowercases-full-alphabet': 'pass', 'slug-strips-edge-separators': 'fail', 'slug-digit-only-words': 'fail', 'slug-no-words-prints-empty-slug': 'pass', 'slug-plain-word-unchanged': 'pass', 'slug-underscore-and-hyphen-separate': 'fail', 'slug-every-ascii-non-alnum-separates': 'fail', 'slug-non-ascii-separates': 'fail', 'slug-apostrophe-separates': 'fail', 'slug-punctuation-runs-collapse': 'fail', 'slug-existing-hyphens-are-separators': 'fail'}"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "wrong: failed ['slug-acronyms-and-numbers', 'slug-backslash-and-dot-separate', 'slug-digits-kept-visible', 'slug-example-hello-world', 'slug-non-ascii-separates', 'slug-runs-of-separators-collapse', 'slug-sentence-with-mixed-punctuation', 'slug-symbol-soup-between-letters', 'slug-tab-and-newline-separate']; verdicts {'slug-example-hello-world': 'fail', 'slug-digits-kept-visible': 'fail', 'slug-runs-of-separators-collapse': 'fail', 'slug-leading-trailing-punctuation': 'pass', 'slug-non-ascii-separates': 'fail', 'slug-backslash-and-dot-separate': 'fail', 'slug-tab-and-newline-separate': 'fail', 'slug-symbol-soup-between-letters': 'fail', 'slug-mixed-case-and-digit-runs': 'pass', 'slug-acronyms-and-numbers': 'fail', 'slug-sentence-with-mixed-punctuation': 'fail', 'slug-no-words-gives-empty-slug': 'pass'}"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "wrong: failed ['basic-examples', 'held-control-and-whitespace', 'held-long-sentence-digits', 'held-many-words', 'held-non-ascii-apostrophe', 'held-trim-and-runs', 'held-uppercase-mixed', 'punctuation-separates']; verdicts {'basic-examples': 'fail', 'punctuation-separates': 'fail', 'held-long-sentence-digits': 'fail', 'held-trim-and-runs': 'fail', 'held-uppercase-mixed': 'fail', 'held-many-words': 'fail', 'held-non-ascii-apostrophe': 'fail', 'held-control-and-whitespace': 'fail'}"
+        }
+      ]
+    },
+    {
+      "role": "acceptance",
+      "fixture_id": "acc-initials-sh-partial",
+      "category": "partial",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "partial: failed ['initials-exact-line-and-exit', 'initials-four-words-heldout', 'initials-mixed-case-heldout']; verdicts {'initials-ada-example': 'pass', 'initials-exact-line-and-exit': 'fail', 'initials-mixed-case-heldout': 'fail', 'initials-single-word-heldout': 'pass', 'initials-hyphen-not-separator-heldout': 'pass', 'initials-apostrophe-heldout': 'pass', 'initials-four-words-heldout': 'fail'}"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "partial: failed ['us001-mixed-case', 'us001-single-letter-words', 'us001-three-words']; verdicts {'us001-spec-example': 'pass', 'us001-uppercase-input': 'pass', 'us001-three-words': 'fail', 'us001-single-word': 'pass', 'us001-mixed-case': 'fail', 'us001-repeated-spaces': 'pass', 'us001-hyphen-not-separator': 'pass', 'us001-single-letter-words': 'fail'}"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "partial: failed ['us-001-extra-spaces-held-out', 'us-001-three-words-held-out']; verdicts {'us-001-example-ada-lovelace': 'pass', 'us-001-three-words-held-out': 'fail', 'us-001-one-word-held-out': 'pass', 'us-001-uppercase-input-held-out': 'pass', 'us-001-extra-spaces-held-out': 'fail', 'us-001-two-words-other-letters-held-out': 'pass', 'us-001-single-letter-held-out': 'pass'}"
+        }
+      ]
+    },
+    {
+      "role": "acceptance",
+      "fixture_id": "acc-initials-sh-special_cased",
+      "category": "special_cased",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "special_cased: failed ['us-001-five-single-letter-words-held-out', 'us-001-four-words-held-out', 'us-001-mixed-case-input-held-out', 'us-001-single-word-held-out', 'us-001-two-words-other-letters', 'us-001-uppercase-input-held-out']; verdicts {'us-001-two-words': 'pass', 'us-001-two-words-other-letters': 'fail', 'us-001-four-words-held-out': 'fail', 'us-001-five-single-letter-words-held-out': 'fail', 'us-001-single-word-held-out': 'fail', 'us-001-uppercase-input-held-out': 'fail', 'us-001-mixed-case-input-held-out': 'fail'}"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "special_cased: failed ['us-001-mixed-case-held', 'us-001-multi-word-held', 'us-001-repeated-spaces-held', 'us-001-single-letter-held', 'us-001-single-word-held', 'us-001-uppercase-input-held']; verdicts {'us-001-example': 'pass', 'us-001-multi-word-held': 'fail', 'us-001-single-word-held': 'fail', 'us-001-uppercase-input-held': 'fail', 'us-001-mixed-case-held': 'fail', 'us-001-repeated-spaces-held': 'fail', 'us-001-single-letter-held': 'fail'}"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "special_cased: failed ['initials-apostrophe-word', 'initials-four-words', 'initials-mixed-case-input', 'initials-single-letter-words', 'initials-single-word', 'initials-six-words', 'initials-three-words', 'initials-uppercase-input']; verdicts {'initials-example-ada-lovelace': 'pass', 'initials-single-word': 'fail', 'initials-three-words': 'fail', 'initials-four-words': 'fail', 'initials-six-words': 'fail', 'initials-single-letter-words': 'fail', 'initials-uppercase-input': 'fail', 'initials-mixed-case-input': 'fail', 'initials-apostrophe-word': 'fail'}"
+        }
+      ]
+    },
+    {
+      "role": "acceptance",
+      "fixture_id": "acc-initials-sh-wrong",
+      "category": "wrong",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "wrong: failed ['initials-example-ada-lovelace', 'initials-four-words', 'initials-mixed-case-and-hyphen', 'initials-seven-single-letter-words', 'initials-single-word', 'initials-three-words-mixed-case']; verdicts {'initials-example-ada-lovelace': 'fail', 'initials-single-word': 'fail', 'initials-four-words': 'fail', 'initials-seven-single-letter-words': 'fail', 'initials-all-caps-input': 'pass', 'initials-mixed-case-and-hyphen': 'fail', 'initials-three-words-mixed-case': 'fail'}"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "wrong: failed ['us-001-four-words', 'us-001-lowercases-tail-kept-first-upper', 'us-001-nine-words', 'us-001-one-word', 'us-001-only-spaces-separate', 'us-001-six-single-letters', 'us-001-two-words']; verdicts {'us-001-two-words': 'fail', 'us-001-one-word': 'fail', 'us-001-four-words': 'fail', 'us-001-lowercases-tail-kept-first-upper': 'fail', 'us-001-only-spaces-separate': 'fail', 'us-001-six-single-letters': 'fail', 'us-001-nine-words': 'fail'}"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "wrong: failed ['initials-example', 'initials-hyphen-is-not-separator', 'initials-many-words', 'initials-mixed-case-input', 'initials-repeated-spaces', 'initials-seven-single-letters', 'initials-single-word']; verdicts {'initials-example': 'fail', 'initials-single-word': 'fail', 'initials-many-words': 'fail', 'initials-uppercase-input': 'pass', 'initials-mixed-case-input': 'fail', 'initials-repeated-spaces': 'fail', 'initials-hyphen-is-not-separator': 'fail', 'initials-seven-single-letters': 'fail'}"
+        }
+      ]
+    },
+    {
+      "role": "acceptance_clean",
+      "fixture_id": "acc-slug-python",
+      "category": "correct",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "correct: verdicts {'us001-words-lowercase-hyphenated': 'pass', 'us001-digits-kept-as-words': 'pass', 'us001-separator-runs-collapse': 'pass', 'us001-edge-separators-trimmed': 'pass', 'us001-non-ascii-letter-separates': 'pass', 'us001-symbols-separate-words': 'pass', 'us001-ho-non-ascii-uppercase-and-letters': 'pass', 'us001-ho-control-whitespace-and-punctuation': 'pass', 'us001-ho-only-separators-gives-empty-slug': 'pass', 'us001-ho-digits-and-mixed-case': 'pass', 'us001-ho-version-string-punctuation': 'pass', 'us001-ho-emoji-separates': 'pass', 'us001-ho-long-sentence': 'pass'}"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "correct: verdicts {'slug-example-hello-world': 'pass', 'slug-plain-word-kept': 'pass', 'slug-lowercases-all-words': 'pass', 'slug-single-upper-word-lowercased': 'pass', 'slug-digits-are-words': 'pass', 'slug-collapses-runs-and-trims': 'pass', 'slug-leading-trailing-punctuation': 'pass', 'slug-mixed-long-title': 'pass', 'slug-tab-separates-words': 'pass', 'slug-underscore-dot-slash-separate': 'pass', 'slug-symbols-separate': 'pass', 'slug-non-ascii-separates': 'pass', 'slug-no-words-empty': 'pass'}"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "correct: verdicts {'slug-hello-example': 'pass', 'slug-digits-and-dots': 'pass', 'slug-separator-runs': 'pass', 'slug-non-ascii-separates': 'pass', 'slug-generated-property': 'pass'}"
+        }
+      ]
+    },
+    {
+      "role": "acceptance_clean",
+      "fixture_id": "acc-initials-sh",
+      "category": "correct",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "correct: verdicts {'us001-ada-lovelace': 'pass', 'us001-single-word': 'pass', 'us001-three-words-held-out': 'pass', 'us001-uppercase-input-held-out': 'pass', 'us001-mixed-case-held-out': 'pass', 'us001-long-name-held-out': 'pass', 'us001-repeated-spaces-held-out': 'pass'}"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "correct: verdicts {'us-001-ada-lovelace': 'pass', 'us-001-single-word': 'pass', 'us-001-three-words': 'pass', 'us-001-all-uppercase-input': 'pass', 'us-001-mixed-case-input': 'pass', 'us-001-four-words-no-separators': 'pass'}"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "correct: verdicts {'us-001-example-ada-lovelace': 'pass', 'us-001-single-word': 'pass', 'us-001-four-words': 'pass', 'us-001-already-uppercase': 'pass', 'us-001-mixed-case': 'pass', 'us-001-repeated-spaces': 'pass', 'us-001-twelve-single-letter-words': 'pass', 'us-001-second-name-pair': 'pass', 'us-001-one-letter-name': 'pass'}"
+        }
+      ]
+    }
+  ]
+}
