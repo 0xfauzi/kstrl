@@ -107,7 +107,7 @@ INTERFACE_SIZES: dict[str, int] = {
     "cli": 1,
     "config": 39,
     "events": 80,
-    "factory": 19,  # RetryError went: ks retry no longer changes git
+    "factory": 20,  # RetryError went; coverage_left: what a check removal leaves
     "git": 49,  # merge_base_ref and is_ancestor: what a base branch or a merged tier holds
     "io": 37,
     "knowledge": 8,

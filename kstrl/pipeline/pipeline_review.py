@@ -169,7 +169,11 @@ class ReviewPhase(ReviewVerdicts, UsageLedger):
                     # A story claimed done whose criteria the reviewer left
                     # unjudged is the reviewer's gap, not the engineer's: a
                     # user run spent engineer retries that could not fill it.
-                    unjudged = _unjudged_claims(wt_path / comp.prd_path, review_result)
+                    unjudged = (
+                        _unjudged_claims(wt_path / comp.prd_path, review_result)
+                        if self._claim_blocking()[0]
+                        else []
+                    )
                     if reading or not (review_result.diffstat_disagreement or unread or unjudged):
                         break
                     if not self.adversarial_budget_ok():

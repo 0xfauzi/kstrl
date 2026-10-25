@@ -126,6 +126,9 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # directly (not through `_init_repo`, so it is a second call site in
     # this file, each committing once).
     "tests/test_check_result_measurement_behaviour.py": 7,
+    # The stub engineer commits, and `_two_criteria` commits the PRD edit,
+    # into the repository `tests.test_stack_e2e._repo` put through set_identity.
+    "tests/test_claim_gate_e2e.py": 2,
     # tests/test_child_output_encoding.py (#409) has no row here: it builds its
     # repository through tests.conftest.make_review_repo, already declared and
     # counted at conftest.py's row above, the same shape

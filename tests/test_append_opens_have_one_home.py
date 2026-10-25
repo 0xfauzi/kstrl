@@ -285,6 +285,10 @@ ALLOWED_APPEND_OPENS: dict[str, tuple[Reason, str]] = {
         Reason.TEXT_LOG,
         "a phase transcript",
     ),
+    "factory/acceptance_design.py:_designer_transcript": (
+        Reason.TEXT_LOG,
+        "the verification designer's transcript, outside the repository",
+    ),
     "io/atomicio.py:_create_temp": (Reason.NOT_AN_APPEND, "os.open with O_WRONLY|O_CREAT|O_EXCL"),
     "factory/factory_acceptance.py:_record_contract_event": (
         Reason.NOT_AN_APPEND,
@@ -328,6 +332,7 @@ EXPECTED_APPEND_OPENS: dict[str, int] = {
     # since #482: journal_integration_result is the third.
     "pipeline/pipeline_attempt.py: EvolutionJournal.open(self.root_dir)": 2,
     "pipeline/pipeline_attempt.py: open('a')": 1,
+    "factory/acceptance_design.py: open('a')": 1,
     "pipeline/pipeline_ledger.py: EvolutionJournal.open(self.root_dir)": 1,
     "acceptance/replay.py: path.open('a+')": 1,
     "serve/serve.py: open('a+')": 1,

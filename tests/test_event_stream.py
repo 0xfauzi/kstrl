@@ -443,6 +443,9 @@ class TestPhaseTranscripts:
         root = _setup_project(tmp_path, ["comp-a"])
         manifest = _make_manifest([_component("comp-a")])
         config = _factory_config(root, review_mode="advisory")
+        # The fake reviewer judges no criterion: under a blocking claim
+        # gate that buys it a second reading, which appends again.
+        config.claim_agreement = "advisory"
         result = ComponentResult(
             "comp-a",
             success=True,

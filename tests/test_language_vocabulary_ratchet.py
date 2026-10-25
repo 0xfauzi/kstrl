@@ -351,7 +351,6 @@ PINNED_HITS: dict[str, dict[str, int]] = {
     "config/config_toml.py": {"pyproject": 1, "python": 4},
     "pipeline/context.py": {"python": 1},
     "architect/decisions.py": {"python": 1},
-    "cli/doctor_measure.py": {"pytest": 1},
     "factory/factory.py": {"mypy": 1},
     "factory/factory_autonomy.py": {"mypy": 1},
     "pipeline/factory_config.py": {"pip": 1},
