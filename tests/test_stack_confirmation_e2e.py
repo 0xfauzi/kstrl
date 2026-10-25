@@ -263,9 +263,11 @@ def test_approving_an_item_for_a_stack_kstrl_toml_no_longer_holds_is_refused(
     because its approval would become the newest one and un-confirm the
     stack that is there. The refusal files the item for the text kstrl.toml
     holds and names it (a user run was sent to `ks factory` to file it).
-    Once kstrl.toml holds that text again, approving the same item confirms
-    it: the newest APPROVAL counts, not the item filed last (the item for
-    the other text was filed after it)."""
+    Approving that one closes the item for the text kstrl.toml replaced,
+    which no approval could close while kstrl.toml held other text (a user
+    run left it open). Once kstrl.toml holds that text again, approving the
+    same item confirms it: the newest APPROVAL counts, not the item filed
+    last (the item for the other text was filed after it)."""
     root = _repo(tmp_path, GREEN, confirm=False)
     _factory(tmp_path, root)
     (item,) = _stack_items(root)
@@ -275,6 +277,7 @@ def test_approving_an_item_for_a_stack_kstrl_toml_no_longer_holds_is_refused(
     statuses = [i.status for i in _stack_items(root)]
     (other,) = [i for i in _stack_items(root) if i.id != item.id]
     other_code, other_out = _approve(root, other)
+    closed = {i.id: i.status for i in _stack_items(root)}[item.id]
     _restack(root, GREEN)
     again_code, again_out = _approve(root, item)
     run = _factory(tmp_path, root)
@@ -283,6 +286,7 @@ def test_approving_an_item_for_a_stack_kstrl_toml_no_longer_holds_is_refused(
     assert "nothing was approved" in out, out
     assert f"ks inbox approve {other.id[:8]} confirms the text kstrl.toml holds" in out, out
     assert statuses == [ItemStatus.OPEN, ItemStatus.OPEN]
+    assert (closed, f"closed {item.id[:8]}" in other_out) == (ItemStatus.RESOLVED, True), other_out
     assert (other_code, again_code) == (0, 0), other_out + again_out
     assert NOT_CONFIRMED not in run.out, run.out
     assert (run.code, run.calls) == (0, 1), run.out

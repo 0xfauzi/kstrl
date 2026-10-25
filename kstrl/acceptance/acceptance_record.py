@@ -119,11 +119,15 @@ def visible_failures(
     runs: Mapping[tuple[str, str], list[Stage]],
 ) -> list[dict[str, Any]]:
     """Each visible check in ``failing``: its id, its argv and what its last
-    run that did not exit 0 printed. Never a held-out check (decision 3)."""
+    run that did not exit 0 printed. Never a held-out check (decision 3),
+    nor a visible argv that shares a line with one, which is None instead:
+    a user run's visible check embedded three held-out tests' source and
+    ran only its own (owner decision of 2026-10-25)."""
+    held = {line for check in checks if check.held_out for line in _argv_lines(check.argv)}
     return [
         {
             "id": check.id,
-            "argv": list(check.argv),
+            "argv": None if held & _argv_lines(check.argv) else list(check.argv),
             "tail": next(
                 (
                     list(stage.tail)
@@ -136,6 +140,21 @@ def visible_failures(
         for check in checks
         if not check.held_out and check.id in failing
     ]
+
+
+#: A line shorter than this is not compared: one such as ``set -e`` or ``}``
+#: is in most checks and says nothing about any of them.
+_SHARED_LINE_CHARS = 20
+
+
+def _argv_lines(argv: Sequence[str]) -> set[str]:
+    """The lines of an argv that say something about the check."""
+    return {
+        line.strip()
+        for arg in argv
+        for line in arg.splitlines()
+        if len(line.strip()) >= _SHARED_LINE_CHARS
+    }
 
 
 def read_dispute(

@@ -811,10 +811,16 @@ def test_a_designed_check_a_person_removes_is_recorded_and_the_retry_runs_withou
     user run): the pin finds it, and no designer is asked again."""
     root = _greeting_repo(tmp_path)
     hidden = f"Grace{secrets.token_hex(4)}"
+    # A kept check that still cites R-2 keeps it decided; R-3 loses its only
+    # check (a user run was told both had, because the whole cited head was
+    # compared as text).
     reply = _entry(
         [
-            _check("greets-ada", _greets("Ada")),
-            _check("greets-hidden", _greets(hidden), held_out=True),
+            {**_check("greets-ada", _greets("Ada")), "criterion": "R-1 R-2: greets Ada"},
+            {
+                **_check("greets-hidden", _greets(hidden), held_out=True),
+                "criterion": "R-2 R-3: greets anyone",
+            },
         ]
     )
     first = _design(tmp_path, root, [reply])
@@ -848,7 +854,8 @@ def test_a_designed_check_a_person_removes_is_recorded_and_the_retry_runs_withou
     (removed,) = designer["removed"]
     assert (removed["component"], removed["check"], removed["why"]) == (COMP, "greets-hidden", why)
     assert removed["by"] and removed["at"], removed
-    assert removed["criterion"] == "greets-hidden holds", removed
+    assert removed["criterion"] == "R-2 R-3: greets anyone", removed
+    assert f"no designed check of {COMP} decides R-3 any more" in out, out
     # Its only held-out check went, and kstrl says so.
     assert f"{COMP} has no held-out designed check left" in out, out
     assert _manifest(root)["acceptanceDigest"] not in ("", pinned), _manifest(root)

@@ -96,7 +96,11 @@ def claim_disagreements(
             # story" and "the reviewer passed the part of it that it
             # looked at" are different facts, and only the first
             # confirms the engineer's claim.
-            reads = f"pass on only {judged} of {expected} acceptance criteria"
+            # A user read "pass on only 1 of 6" as five criteria failed.
+            reads = (
+                f"pass or advisory on {judged} of {expected} acceptance criteria "
+                f"and none on the other {expected - judged}"
+            )
             gap = (
                 f"The reviewer returned {judged} verdict(s) for "
                 f"{expected} acceptance criteria, so the story is "

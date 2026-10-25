@@ -435,9 +435,12 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     # 1.4.0 (owner decision of 2026-10-25): reach a component only through an
     # interface the spec fixes; guessed function names and types failed a
     # correct library in a user run.
+    # 1.5.0: a check runs on a tree that holds no component built later, so it
+    # never reaches a component through one that uses it; 1.4.0 said it could, and
+    # a library's held-out checks went through the CLI built after it (user run).
     "ACCEPTANCE_PROMPT": (
-        "5a045cb39352a79bf9ae41b6046d6f2e810f3214f4f37ca1635765a2de440eb9",
-        "1.4.0",
+        "a6cb60b9339d7f89a4704e7d415240476b08af5301d864b5a4aadfa0fa9239aa",
+        "1.5.0",
     ),
     # 1.0.0: new. A re-ask says why kstrl did not accept the previous reply; the
     # same prompt twice drew the same uncited criteria twice in a user run. H2:

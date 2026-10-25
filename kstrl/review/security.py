@@ -16,6 +16,7 @@ them; that is a false positive.
 from __future__ import annotations
 
 import os
+import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -93,6 +94,25 @@ SEVERITY_ORDER = {"critical": 3, "high": 2, "medium": 1, "low": 0}
 
 VALID_SEVERITIES = frozenset(SEVERITY_ORDER)
 
+#: A "severity" key with a string value, as JSON writes it, anywhere in a
+#: reply's text, and every spelling of the word. One the field pattern did
+#: not read is a severity the re-ask rule cannot read, so it blocks the re-ask.
+_SEVERITY_FIELD = re.compile(r'"severity"\s*:\s*"([^"]*)"', re.IGNORECASE)
+_SEVERITY_WORD = re.compile(r"severity", re.IGNORECASE)
+
+
+def _states_nothing_blocking(raw_output: str, threshold: str) -> bool:
+    """Whether a reply that did not parse states no finding at or above
+    ``threshold``, so a second reply may replace it. A user run's reply
+    lacked one closing brace and held two low findings; it was reported
+    as passed and the findings were never shown."""
+    values = [v.strip().lower() for v in _SEVERITY_FIELD.findall(raw_output)]
+    if len(values) != len(_SEVERITY_WORD.findall(raw_output)):
+        return False
+    return all(
+        v in SEVERITY_ORDER and SEVERITY_ORDER[v] < SEVERITY_ORDER[threshold] for v in values
+    )
+
 
 def category_owasp(category: str) -> str:
     """Return the OWASP Top 10 bucket for a category, or 'n/a'."""
@@ -137,6 +157,10 @@ class SecurityResult:
     # never actually happened" so hard-mode can fail loudly instead of
     # accidentally passing on infrastructure errors.
     infrastructure_error: bool = False
+    # Set by run_security_review on a reply it could not parse that states
+    # no finding at or above ``fail_threshold``: the phase asks the reviewer
+    # once more, as Phase 2 does, and the re-ask can drop no blocking finding.
+    reply_unread: bool = False
     # #266: the diffstat the reviewer says it saw, and the
     # disagreement with git's own numstat when there is one. Mirrors
     # ReviewResult; see ``git.diffstat_disagreement`` for what the check
@@ -758,6 +782,7 @@ def run_security_review(
     result.reviewer_model = reviewer_model
     result.fail_threshold = config.fail_threshold
     if result.infrastructure_error:
+        result.reply_unread = _states_nothing_blocking(raw_output, config.fail_threshold)
         # Parsing failed - we have no usable findings list, so don't
         # let the fail count overwrite passed=False with True. In
         # hard mode this is a block; in advisory it surfaces as a
@@ -771,7 +796,9 @@ def run_security_review(
     apply_coverage_check(result, actual_diffstat, mode)
     result.duration_seconds = time.monotonic() - start
 
-    status = "passed" if result.passed else "FAILED"
+    status = (
+        "FAILED" if not result.passed else "not read" if result.infrastructure_error else "passed"
+    )
     coverage_note = " (UNVERIFIED COVERAGE)" if result.diffstat_disagreement else ""
     ui.info(
         f"  Security review {status}{coverage_note}: "

@@ -31,6 +31,7 @@ import sys
 from pathlib import Path
 
 from kstrl.acceptance.acceptance import HEAD_RUNS
+from kstrl.acceptance.acceptance_lines import WITHHELD_COMMAND
 from kstrl.owner.inbox import Inbox, InboxConfig, InboxItem, ItemKind
 from kstrl.pipeline.context import ACCEPTANCE_RETRY_PROMPT
 from kstrl.plan.manifest import Manifest
@@ -161,6 +162,43 @@ def test_a_visible_failure_retries_with_the_check_and_never_the_held_out_one(
     for told in (
         "criterion: has-marker holds",
         "check.sh --marker",
+        "| no made.marker in the tree",
+    ):
+        assert told in run.prompts, run.prompts
+    assert hidden not in run.prompts, run.prompts
+
+
+@runs_a_stack
+def test_a_visible_command_that_carries_a_held_out_check_is_withheld(tmp_path: Path) -> None:
+    """A user run's visible check embedded three held-out tests' source and
+    ran only its own, so its command, shown on a retry, would have shown
+    them. A visible command that shares a line with a held-out check is
+    withheld, and its criterion and output are still told."""
+    root = _greeting_repo(tmp_path)
+    hidden = f"Grace{secrets.token_hex(4)}"
+    shared = f"exec /bin/sh check.sh {hidden}"
+    plan = _plan(
+        tmp_path,
+        [
+            _check(
+                "has-marker",
+                ["/bin/sh", "-c", f"if false; then\n{shared}\nfi\nexec /bin/sh check.sh --marker"],
+            ),
+            _check("greets-hidden", ["/bin/sh", "-c", shared], held_out=True),
+        ],
+        script=GREETS_OR_MARKER,
+    )
+    deleted = "git rm -q greet && git commit -q -m rm >/dev/null 2>&1"
+    fixed = CORRECT.replace("git add -A", "touch made.marker && git add -A")
+    engineer = _counted(tmp_path / "count", deleted, fixed)
+
+    run = _accept(tmp_path, root, plan, engineer, "--max-retries", "1")
+
+    assert run.code == 0, run.out
+    assert run.calls == 2, run.out
+    for told in (
+        "criterion: has-marker holds",
+        f"command: {WITHHELD_COMMAND}",
         "| no made.marker in the tree",
     ):
         assert told in run.prompts, run.prompts

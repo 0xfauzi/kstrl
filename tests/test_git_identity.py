@@ -95,7 +95,9 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # repository `tests.test_stack_e2e._repo` put through set_identity.
     # #700 slice 10a: `_progress` commits the dispute line in a worktree of
     # the same repository, so the count is 4.
-    "tests/test_acceptance_gate_e2e.py": 5,
+    # The withheld-command test's engineer commits as the visible-failure
+    # test's does, in the same repository.
+    "tests/test_acceptance_gate_e2e.py": 6,
     # #700 slice 8: the stub engineer commits its marker in a worktree of a
     # repository `tests.test_stack_e2e._repo` put through set_identity.
     "tests/test_acceptance_merged_e2e.py": 2,
@@ -301,6 +303,7 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # #696 slice 9: the stub agent's one commit, into the repository
     # `tests.test_stack_e2e._repo` has put through `set_identity`.
     "tests/test_security.py": 1,
+    "tests/test_security_unread_e2e.py": 1,
     # #654 slice 3b: `_commit`'s one `git commit` spelling, into the
     # repository `tests.test_prompt_record._spec_project` has just put
     # through `tests.helpers.gitrepo.set_identity`.

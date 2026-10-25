@@ -32,7 +32,7 @@ made by the slice 3 replay (:func:`kstrl.acceptance.replay.replay_stack`): setup
   :data:`BASE_NOT_RUNNABLE` (decision 11).
 - On each component's head, after Phase 1 passed (:func:`judge_head`).
   Each check runs :data:`HEAD_RUNS` times and passes only when every run
-  exited 0. Nothing is run again after a failure. The plan gates the
+  exited 0. Every run is kept: a failed run is not repeated. The plan gates the
   component whether an operator or the verification designer wrote it
   (owner decision of 2026-10-07): the pipeline halts the component on a
   failed held-out check and on a dispute of a visible check that kstrl
@@ -499,13 +499,19 @@ def _run_check(
     """One run of ``check`` against ``tree``, in a fresh copy of the plan:
     inside a proven rung's zone, the one directory it grants, and removed
     with the rung; with the host fallback, which has no zone, in a
-    temporary directory removed after the run."""
+    temporary directory removed after the run, which also holds the run's
+    TMPDIR: a user run's checks left 68 copies of the repository in /tmp."""
     name = f"acceptance:{check.id}"
     base = zone_dir(Path(rung.scratch)) if isinstance(rung, ProvenRung) else None
     cwd: Path | None = None
     try:
         cwd = Path(tempfile.mkdtemp(prefix=f"{check.id}-", dir=base))
         _write_files(cwd, _verified(plan.directory, plan.digest))
+        env = {TREE_ENV: str(tree)}
+        if base is None:
+            scratch = cwd / ".tmp"
+            scratch.mkdir()
+            env["TMPDIR"] = str(scratch)
         return _ran(
             name,
             list(check.argv),
@@ -513,7 +519,7 @@ def _run_check(
             rung,
             limit,
             stack,
-            extra_env={TREE_ENV: str(tree)},
+            extra_env=env,
             log=log,
         )
     except OSError as exc:
@@ -533,7 +539,7 @@ def _probe(
     logs: Callable[[str, str, int], Path | None],
 ) -> Callable[[Path, Rung], None]:
     """Run each wanted check ``times`` times against the tree, into ``runs``.
-    Every run is kept: a failed run is never run again."""
+    Every run is kept: a failed run is not repeated to get a pass."""
 
     def probe(tree: Path, rung: Rung) -> None:
         for comp, check in wanted:

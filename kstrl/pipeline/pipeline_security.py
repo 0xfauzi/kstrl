@@ -151,13 +151,19 @@ class SecurityGate(ReviewVerdicts, UsageLedger):
                         debug_dir=adversarial_debug_dir,
                         on_line=on_line,
                     )
-                    # One more reading on a coverage disagreement, as Phase 2.
-                    if reading or not sec_result.diffstat_disagreement:
+                    # One more reading on a coverage disagreement or a reply
+                    # that did not parse and states nothing blocking, as Phase 2.
+                    unread = sec_result.reply_unread
+                    if reading or not (sec_result.diffstat_disagreement or unread):
                         break
                     if not self.adversarial_budget_ok():
                         break
                     self.adversarial_budget_consume()
-                    self.ui.warn("  Security coverage disagreed with git; reading it once more")
+                    self.ui.warn(
+                        "  Security reply did not parse; reading it once more"
+                        if unread
+                        else "  Security coverage disagreed with git; reading it once more"
+                    )
         except Exception as exc:  # noqa: BLE001
             # Agent infrastructure failed before run_security_review
             # could classify the outcome. Synthesize an infra result

@@ -1,0 +1,45 @@
+{
+  "role": "acceptance",
+  "fixture_id": "acc-initials-sh-special_cased",
+  "category": "special_cased",
+  "cwe": null,
+  "caught": true,
+  "error": false,
+  "detail": "special_cased: failed ['us001-double-space', 'us001-four-words', 'us001-mixed-case-input', 'us001-single-word']; verdicts {'us001-example': 'pass', 'us001-single-word': 'fail', 'us001-four-words': 'fail', 'us001-mixed-case-input': 'fail', 'us001-double-space': 'fail', 'us001-exact-output-and-status': 'pass'}",
+  "run": 3,
+  "calls": [
+    {
+      "streamed": [
+        "  | [unrendered thinking block]",
+        "[Bash] ls -la && git log --oneline | head -3 && (cat initials 2>/dev/null || echo \"no initials file\") && (cat kstrl.toml 2>/dev...",
+        "  | This command uses shell operators that require approval for safety",
+        "[Bash] ls -la /tmp/pytest-of-root/pytest-782/test_acceptance_designer_catch4/acc-initials-sh-x_toky8h/designer",
+        "  | total 16",
+        "  | drwxr-xr-x 3 root root 4096 Oct 25 14:24 .",
+        "  | drwx------ 3 root root 4096 Oct 25 14:24 ..",
+        "  | drwxr-xr-x 8 root root 4096 Oct 25 14:24 .git",
+        "  | -rwxr-xr-x 1 root root  108 Oct 19 06:48 initials",
+        "[Read] initials",
+        "  | 1\t#!/bin/sh",
+        "  | 2\t# Print the initials of the name in $1: not written yet, so the name as given.",
+        "  | 3\tprintf '%s\\n' \"$1\"",
+        "  | 4\t",
+        "  | [unrendered thinking block]",
+        "[Write] initials",
+        "  | <tool_use_error>Error: No such tool available: Write. Write is disabled for this session, in subagents as well as here.</tool_use_error>",
+        "[Write] initials",
+        "  | <tool_use_error>Error: No such tool available: Write. Write is disabled for this session, in subagents as well as here.</tool_use_error>",
+        "  | [unrendered thinking block]",
+        "[Bash] S=/tmp/claude-0/-tmp-pytest-of-root-pytest-782-test-acceptance-designer-catch4-acc-initials-sh-x-toky8h-designer/9c17093...",
+        "  | This Bash command contains multiple operations. The following parts require approval: mkdir -p /tmp/claude-0/-tmp-pytest-of-root-pytest-782-test-acceptance-designer-catch4-acc-initials-sh-x-toky8h-des...",
+        "  | [unrendered thinking block]",
+        "[Bash] printf 'AL\\nrc=0\\nx' | od -c",
+        "  | 0000000   A   L  \\n   r   c   =   0  \\n   x",
+        "  | 0000011",
+        "  | [unrendered thinking block]",
+        "{\"createsApp\": false, \"checks\": [{\"id\": \"us001-example\", \"criterion\": \"US-001: sh initials \\\"ada lovelace\\\" prints AL, the first letter of each word in uppercase with nothing between them\", \"argv\": [\"sh\", \"-c\", \"[ \\\"$(sh \\\"$KSTRL_TREE/initials\\\" \\\"ada lovelace\\\")\\\" = \\\"AL\\\" ]\"], \"onBase\": \"fails\", \"heldOut\": false}, {\"id\": \"us001-single-word\", \"criterion\": \"US-001: a single word gives its one uppercase initial, sh initials \\\"grace\\\" prints G\", \"argv\": [\"sh\", \"-c\", \"[ \\\"$(sh \\\"$KSTRL_TREE/initials\\\" \\\"grace\\\")\\\" = \\\"G\\\" ]\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"us001-four-words\", \"criterion\": \"US-001: every word of a name contributes its initial, in order, with nothing between them: \\\"grace brewster murray hopper\\\" prints GBMH\", \"argv\": [\"sh\", \"-c\", \"[ \\\"$(sh \\\"$KSTRL_TREE/initials\\\" \\\"grace brewster murray hopper\\\")\\\" = \\\"GBMH\\\" ]\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"us001-mixed-case-input\", \"criterion\": \"US-001: the output is uppercase whatever the case of the input, so \\\"aDa lOVELACE\\\" prints AL\", \"argv\": [\"sh\", \"-c\", \"[ \\\"$(sh \\\"$KSTRL_TREE/initials\\\" \\\"aDa lOVELACE\\\")\\\" = \\\"AL\\\" ]\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"us001-double-space\", \"criterion\": \"US-001: words are separated by spaces, so a run of two spaces separates two words and gives no extra letter: \\\"ada  lovelace\\\" prints AL\", \"argv\": [\"sh\", \"-c\", \"[ \\\"$(sh \\\"$KSTRL_TREE/initials\\\" \\\"ada  lovelace\\\")\\\" = \\\"AL\\\" ]\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"us001-exact-output-and-status\", \"criterion\": \"US-001: the output is exactly the initials followed by one newline, and the exit status is 0: for \\\"ada lovelace\\\" the bytes are AL, a newline, then the command exits 0\", \"argv\": [\"sh\", \"-c\", \"[ \\\"$(sh \\\"$KSTRL_TREE/initials\\\" \\\"ada lovelace\\\"; echo \\\"rc=$?\\\"; printf x)\\\" = \\\"$(printf 'AL\\\\nrc=0\\\\nx')\\\" ]\"], \"onBase\": \"fails\", \"heldOut\": true}]}\n\nNote: I could not run these checks against a reference implementation. Write was disabled in this session, and the shell commands that would have built and run test scripts in the scratchpad needed approval. The expected values are the uppercased first letters of each word, and I confirmed the byte layout of the exact-output string with `od`."
+      ],
+      "final_message": "{\"createsApp\": false, \"checks\": [{\"id\": \"us001-example\", \"criterion\": \"US-001: sh initials \\\"ada lovelace\\\" prints AL, the first letter of each word in uppercase with nothing between them\", \"argv\": [\"sh\", \"-c\", \"[ \\\"$(sh \\\"$KSTRL_TREE/initials\\\" \\\"ada lovelace\\\")\\\" = \\\"AL\\\" ]\"], \"onBase\": \"fails\", \"heldOut\": false}, {\"id\": \"us001-single-word\", \"criterion\": \"US-001: a single word gives its one uppercase initial, sh initials \\\"grace\\\" prints G\", \"argv\": [\"sh\", \"-c\", \"[ \\\"$(sh \\\"$KSTRL_TREE/initials\\\" \\\"grace\\\")\\\" = \\\"G\\\" ]\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"us001-four-words\", \"criterion\": \"US-001: every word of a name contributes its initial, in order, with nothing between them: \\\"grace brewster murray hopper\\\" prints GBMH\", \"argv\": [\"sh\", \"-c\", \"[ \\\"$(sh \\\"$KSTRL_TREE/initials\\\" \\\"grace brewster murray hopper\\\")\\\" = \\\"GBMH\\\" ]\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"us001-mixed-case-input\", \"criterion\": \"US-001: the output is uppercase whatever the case of the input, so \\\"aDa lOVELACE\\\" prints AL\", \"argv\": [\"sh\", \"-c\", \"[ \\\"$(sh \\\"$KSTRL_TREE/initials\\\" \\\"aDa lOVELACE\\\")\\\" = \\\"AL\\\" ]\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"us001-double-space\", \"criterion\": \"US-001: words are separated by spaces, so a run of two spaces separates two words and gives no extra letter: \\\"ada  lovelace\\\" prints AL\", \"argv\": [\"sh\", \"-c\", \"[ \\\"$(sh \\\"$KSTRL_TREE/initials\\\" \\\"ada  lovelace\\\")\\\" = \\\"AL\\\" ]\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"us001-exact-output-and-status\", \"criterion\": \"US-001: the output is exactly the initials followed by one newline, and the exit status is 0: for \\\"ada lovelace\\\" the bytes are AL, a newline, then the command exits 0\", \"argv\": [\"sh\", \"-c\", \"[ \\\"$(sh \\\"$KSTRL_TREE/initials\\\" \\\"ada lovelace\\\"; echo \\\"rc=$?\\\"; printf x)\\\" = \\\"$(printf 'AL\\\\nrc=0\\\\nx')\\\" ]\"], \"onBase\": \"fails\", \"heldOut\": true}]}\n\nNote: I could not run these checks against a reference implementation. Write was disabled in this session, and the shell commands that would have built and run test scripts in the scratchpad needed approval. The expected values are the uppercased first letters of each word, and I confirmed the byte layout of the exact-output string with `od`."
+    }
+  ]
+}

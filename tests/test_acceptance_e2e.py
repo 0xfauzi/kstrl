@@ -227,7 +227,10 @@ def test_with_no_prover_the_checks_run_on_the_host_and_every_record_says_so(
     checks run on the host, and the base reading, the head record and the
     line the terminal prints each carry the one fallback label."""
     root = _greeting_repo(tmp_path)
-    plan = _plan(tmp_path, [_check("greets-ada", ["/bin/sh", "check.sh", "Ada"])])
+    # A check that makes a temporary directory of its own: a user run's
+    # checks left 68 copies of the repository in /tmp.
+    argv = ["/bin/sh", "-c", "mktemp -d >/dev/null && exec /bin/sh check.sh Ada"]
+    plan = _plan(tmp_path, [_check("greets-ada", argv)])
 
     tmpdir = tmp_path / "tmpdir"
     tmpdir.mkdir()
@@ -238,6 +241,8 @@ def test_with_no_prover_the_checks_run_on_the_host_and_every_record_says_so(
     assert run.code == 0, run.out
     # The fallback has no zone, so each run's copy of the plan is removed after it.
     assert sorted(path.name for path in tmpdir.glob("greets-ada-*")) == [], run.out
+    # And what a check makes under TMPDIR goes with it.
+    assert sorted(path.name for path in tmpdir.glob("tmp.*")) == [], run.out
     (base_path,) = sorted(_evidence_root(root).glob("*/acceptance/base.json"))
     base = json.loads(base_path.read_text(encoding="utf-8"))
     labels = {"setup": FALLBACK_LABEL, "test": FALLBACK_LABEL}

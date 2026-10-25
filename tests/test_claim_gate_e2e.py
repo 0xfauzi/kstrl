@@ -118,7 +118,9 @@ def test_the_same_stories_unconfirmed_after_an_engineer_retry_halt_to_the_inbox(
     assert run.code == 1, run.out
     assert run.calls == 2, run.out
     assert "the same stories as the attempt before, so no engineer retries it" in run.out
-    assert "pass on only 1 of 2 acceptance criteria" in run.out, run.out
+    assert "pass or advisory on 1 of 2 acceptance criteria and none on the other 1" in run.out, (
+        run.out
+    )
 
 
 @runs_a_stack

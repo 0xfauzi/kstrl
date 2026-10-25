@@ -415,11 +415,16 @@ def test_a_readable_review_is_not_flagged() -> None:
 #: the one read, in review_commit. A new row is a second reader, which is a
 #: re-ask added somewhere this file does not test. Re-derive by running.
 #: pipeline/pipeline_review.py: the component review's one more reading,
-#: tested in tests/test_review_coverage.py.
+#: tested in tests/test_review_coverage.py. review/security.py: the
+#: SecurityResult field of the same name and its one write in
+#: run_security_review; pipeline/pipeline_security.py: Phase 2.5's one more
+#: reading, tested in tests/test_security_unread_e2e.py.
 EXPECTED_REPLY_UNREAD_SITES = {
     "factory/integration_phase.py": 1,
     "review/review.py": 2,
     "pipeline/pipeline_review.py": 1,
+    "review/security.py": 2,
+    "pipeline/pipeline_security.py": 1,
 }
 
 

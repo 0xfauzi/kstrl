@@ -36,7 +36,7 @@ from kstrl.project import STACK_KEY, file_stack_item, load_stack, stack_in_force
 from kstrl.ui import UI
 
 if TYPE_CHECKING:
-    from kstrl.owner import InboxItem
+    from kstrl.owner import Inbox, InboxItem
 
 
 def _inbox_run_lock(root_dir: Path, ui_impl: UI, *, not_done: str, then: str) -> RunLock:
@@ -275,7 +275,26 @@ def _decide_and_report(
             ui_impl.info(f"  the [stack] in kstrl.toml {stack.unconfirmed}")
         elif stack is not None:
             ui_impl.info("  the [stack] in kstrl.toml is confirmed: run ks factory next")
+            _close_replaced_stack_items(box, item, ui_impl)
     sys.exit(0)
+
+
+def _close_replaced_stack_items(box: Inbox, confirmed: InboxItem, ui_impl: UI) -> None:
+    """Close the open stack items for text kstrl.toml no longer holds, once
+    ``confirmed`` confirms the text it does: one [stack] is in force, and a
+    user run left the proposal it was edited from open, where no approval
+    could close it. A later edit back to that text files an item again."""
+    from kstrl.owner import UNDECIDED, ItemKind
+
+    for other in box.open_items():
+        if other.kind is ItemKind.STACK_CONFIRMATION and other.id != confirmed.id:
+            box.resolve(
+                other.id,
+                actor=_actor(),
+                comment=f"replaced: {confirmed.id[:8]} confirmed the [stack] kstrl.toml holds",
+                only_from=UNDECIDED,
+            )
+            ui_impl.info(f"  closed {other.id[:8]}, filed for text kstrl.toml no longer holds")
 
 
 @inbox_group.command(name="approve")

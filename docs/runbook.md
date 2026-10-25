@@ -132,8 +132,9 @@ pins its digest. A later run of the same plan refuses when the directory was
 edited, naming both digests, and when it names no `--acceptance`.
 
 After Phase 1 passes, each component's checks run on its head (each
-check runs three times and passes only when every run exits 0; a run
-that failed is never run again) and the verdict is
+check runs three times, every run is kept, and the check passes only
+when all three exit 0, so a failed run is never repeated to get a pass)
+and the verdict is
 printed, written outside the repository under the control directory,
 `runs/<run_id>/acceptance/<component>/`, and repeated in the PR body's
 `## Acceptance` section. The verdict gates the component (#700 slice 6). A held-out check that fails halts it with
@@ -141,7 +142,9 @@ no retry, on a `halted_run` inbox item that names the failing checks and
 the commit. Any other check that did not pass, held-out checks that
 could not run included, goes to the engineer's retry: a visible check
 with its criterion, its command and what it printed, a held-out check by
-its id alone. The records are kept outside the repository, but the
+its id alone. A visible command that shares a line of 20 or more
+characters with a held-out check of its component is withheld, since
+showing it would show the held-out check. The records are kept outside the repository, but the
 engineer is not confined, so each record says
 `"heldOutReadDenied": "unknown"`.
 
@@ -379,7 +382,7 @@ A story is marked done when the engineer agent sets `passes: true` in the PRD. T
 
 - Look for `claim_disagreement` findings in the PR body, under the callouts block. Each names the story in `location`, the reviewer's verdict in the explanation, and the criteria it would not pass in the suggestion.
 - The PRD itself carries the audit trail: each reverted story gains a `reverted by reviewer (attempt N): <criterion>` note.
-- The explanation says how the claim failed to be confirmed, and the three readings mean different things. A verdict of `fail` or `advisory` means the reviewer looked and was not satisfied. "not covered" means it returned no verdict for that story at all, usually a story the diff did not touch. "pass on only N of M acceptance criteria" means it passed everything it judged but did not judge everything: the story is unconfirmed rather than judged unmet, and the reviewer's coverage is what to look at first.
+- The explanation says how the claim failed to be confirmed, and the three readings mean different things. A verdict of `fail` or `advisory` means the reviewer looked and was not satisfied. "not covered" means it returned no verdict for that story at all, usually a story the diff did not touch. "pass or advisory on N of M acceptance criteria and none on the other K" means it confirmed everything it judged but returned no verdict on K criteria: the story is unconfirmed rather than judged unmet, and the reviewer's coverage is what to look at first.
 
 **Symptom, second form**: `Phase 2 FAILED for <comp_id>: claim agreement cannot be confirmed, the reviewer did not report`.
 

@@ -1,0 +1,40 @@
+{
+  "role": "acceptance_clean",
+  "fixture_id": "acc-initials-sh",
+  "category": "correct",
+  "cwe": null,
+  "caught": true,
+  "error": false,
+  "detail": "correct: verdicts {'us-001-example': 'pass', 'us-001-three-words': 'pass', 'us-001-uppercase-input': 'pass', 'us-001-single-word': 'pass', 'us-001-hyphen-not-separator': 'pass', 'us-001-repeated-and-edge-spaces': 'pass', 'us-001-exit-status': 'pass'}",
+  "run": 3,
+  "calls": [
+    {
+      "streamed": [
+        "  | [unrendered thinking block]",
+        "[Bash] ls -la && git log --oneline | head -5 && (test -f initials && cat initials || echo \"no initials file\") && (test -f kstrl...",
+        "  | This command uses shell operators that require approval for safety",
+        "[Bash] ls -la /tmp/pytest-of-root/pytest-782/test_acceptance_designer_passe1/acc-initials-sh-h4s0btk1/designer",
+        "  | total 16",
+        "  | drwxr-xr-x 3 root root 4096 Oct 25 14:28 .",
+        "  | drwx------ 3 root root 4096 Oct 25 14:28 ..",
+        "  | drwxr-xr-x 8 root root 4096 Oct 25 14:28 .git",
+        "  | -rwxr-xr-x 1 root root  108 Oct 19 06:48 initials",
+        "[Bash] git -C /tmp/pytest-of-root/pytest-782/test_acceptance_designer_passe1/acc-initials-sh-h4s0btk1/designer log --oneline",
+        "  | This command requires approval",
+        "[Read] initials",
+        "  | 1\t#!/bin/sh",
+        "  | 2\t# Print the initials of the name in $1: not written yet, so the name as given.",
+        "  | 3\tprintf '%s\\n' \"$1\"",
+        "  | 4\t",
+        "  | [unrendered thinking block]",
+        "[Bash] printf '%s\\n' AL | cmp - /dev/null; printf 'AL\\n' | wc -c",
+        "  | This Bash command contains multiple operations. The following part requires approval: cmp - /dev/null; printf 'AL\\n'",
+        "[Bash] printf 'AL\\n' | wc -c",
+        "  | 3",
+        "  | [unrendered thinking block]",
+        "{\"createsApp\": false, \"checks\": [{\"id\": \"us-001-example\", \"criterion\": \"US-001: sh initials \\\"ada lovelace\\\" prints AL and a newline\", \"argv\": [\"sh\", \"-c\", \"sh \\\"$KSTRL_TREE/initials\\\" \\\"$1\\\" > ./out.txt || exit 1; echo \\\"$2\\\" | cmp -s - ./out.txt\", \"initials-check\", \"ada lovelace\", \"AL\"], \"onBase\": \"fails\", \"heldOut\": false}, {\"id\": \"us-001-three-words\", \"criterion\": \"US-001: a name of three words prints the first letter of each word, in uppercase, with nothing between them\", \"argv\": [\"sh\", \"-c\", \"sh \\\"$KSTRL_TREE/initials\\\" \\\"$1\\\" > ./out.txt || exit 1; echo \\\"$2\\\" | cmp -s - ./out.txt\", \"initials-check\", \"grace brewster murray hopper\", \"GBMH\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"us-001-uppercase-input\", \"criterion\": \"US-001: letters of a name already in capitals are printed as uppercase initials, with only the first letter of each word\", \"argv\": [\"sh\", \"-c\", \"sh \\\"$KSTRL_TREE/initials\\\" \\\"$1\\\" > ./out.txt || exit 1; echo \\\"$2\\\" | cmp -s - ./out.txt\", \"initials-check\", \"ALAN MATHISON TURING\", \"AMT\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"us-001-single-word\", \"criterion\": \"US-001: a name of one word prints its first letter in uppercase, followed by a newline\", \"argv\": [\"sh\", \"-c\", \"sh \\\"$KSTRL_TREE/initials\\\" \\\"$1\\\" > ./out.txt || exit 1; echo \\\"$2\\\" | cmp -s - ./out.txt\", \"initials-check\", \"linus\", \"L\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"us-001-hyphen-not-separator\", \"criterion\": \"US-001: words are separated by spaces only, so a hyphen inside a word does not start a new initial\", \"argv\": [\"sh\", \"-c\", \"sh \\\"$KSTRL_TREE/initials\\\" \\\"$1\\\" > ./out.txt || exit 1; echo \\\"$2\\\" | cmp -s - ./out.txt\", \"initials-check\", \"mary-jane Watson\", \"MW\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"us-001-repeated-and-edge-spaces\", \"criterion\": \"US-001: runs of spaces, and spaces at either end of NAME, separate words without producing extra initials\", \"argv\": [\"sh\", \"-c\", \"sh \\\"$KSTRL_TREE/initials\\\" \\\"$1\\\" > ./out.txt || exit 1; echo \\\"$2\\\" | cmp -s - ./out.txt\", \"initials-check\", \"  ada   lovelace  \", \"AL\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"us-001-exit-status\", \"criterion\": \"US-001: sh initials NAME exits with status 0 for a name of two words\", \"argv\": [\"sh\", \"-c\", \"sh \\\"$KSTRL_TREE/initials\\\" \\\"$1\\\" > /dev/null\", \"initials-check\", \"ada lovelace\"], \"onBase\": \"passes\", \"heldOut\": true}]}"
+      ],
+      "final_message": "{\"createsApp\": false, \"checks\": [{\"id\": \"us-001-example\", \"criterion\": \"US-001: sh initials \\\"ada lovelace\\\" prints AL and a newline\", \"argv\": [\"sh\", \"-c\", \"sh \\\"$KSTRL_TREE/initials\\\" \\\"$1\\\" > ./out.txt || exit 1; echo \\\"$2\\\" | cmp -s - ./out.txt\", \"initials-check\", \"ada lovelace\", \"AL\"], \"onBase\": \"fails\", \"heldOut\": false}, {\"id\": \"us-001-three-words\", \"criterion\": \"US-001: a name of three words prints the first letter of each word, in uppercase, with nothing between them\", \"argv\": [\"sh\", \"-c\", \"sh \\\"$KSTRL_TREE/initials\\\" \\\"$1\\\" > ./out.txt || exit 1; echo \\\"$2\\\" | cmp -s - ./out.txt\", \"initials-check\", \"grace brewster murray hopper\", \"GBMH\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"us-001-uppercase-input\", \"criterion\": \"US-001: letters of a name already in capitals are printed as uppercase initials, with only the first letter of each word\", \"argv\": [\"sh\", \"-c\", \"sh \\\"$KSTRL_TREE/initials\\\" \\\"$1\\\" > ./out.txt || exit 1; echo \\\"$2\\\" | cmp -s - ./out.txt\", \"initials-check\", \"ALAN MATHISON TURING\", \"AMT\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"us-001-single-word\", \"criterion\": \"US-001: a name of one word prints its first letter in uppercase, followed by a newline\", \"argv\": [\"sh\", \"-c\", \"sh \\\"$KSTRL_TREE/initials\\\" \\\"$1\\\" > ./out.txt || exit 1; echo \\\"$2\\\" | cmp -s - ./out.txt\", \"initials-check\", \"linus\", \"L\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"us-001-hyphen-not-separator\", \"criterion\": \"US-001: words are separated by spaces only, so a hyphen inside a word does not start a new initial\", \"argv\": [\"sh\", \"-c\", \"sh \\\"$KSTRL_TREE/initials\\\" \\\"$1\\\" > ./out.txt || exit 1; echo \\\"$2\\\" | cmp -s - ./out.txt\", \"initials-check\", \"mary-jane Watson\", \"MW\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"us-001-repeated-and-edge-spaces\", \"criterion\": \"US-001: runs of spaces, and spaces at either end of NAME, separate words without producing extra initials\", \"argv\": [\"sh\", \"-c\", \"sh \\\"$KSTRL_TREE/initials\\\" \\\"$1\\\" > ./out.txt || exit 1; echo \\\"$2\\\" | cmp -s - ./out.txt\", \"initials-check\", \"  ada   lovelace  \", \"AL\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"us-001-exit-status\", \"criterion\": \"US-001: sh initials NAME exits with status 0 for a name of two words\", \"argv\": [\"sh\", \"-c\", \"sh \\\"$KSTRL_TREE/initials\\\" \\\"$1\\\" > /dev/null\", \"initials-check\", \"ada lovelace\"], \"onBase\": \"passes\", \"heldOut\": true}]}"
+    }
+  ]
+}

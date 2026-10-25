@@ -1,0 +1,41 @@
+{
+  "role": "acceptance_clean",
+  "fixture_id": "acc-initials-sh",
+  "category": "correct",
+  "cwe": null,
+  "caught": true,
+  "error": false,
+  "detail": "correct: verdicts {'us-001-ada-lovelace': 'pass', 'us-001-single-word': 'pass', 'us-001-three-words': 'pass', 'us-001-mixed-case-input': 'pass', 'us-001-hyphen-is-not-a-separator': 'pass', 'us-001-repeated-spaces': 'pass', 'us-001-all-uppercase-input': 'pass'}",
+  "run": 2,
+  "calls": [
+    {
+      "streamed": [
+        "  | [unrendered thinking block]",
+        "[Bash] ls -la && git log --oneline | head -3 && cat kstrl.toml 2>/dev/null; ls initials 2>/dev/null; which sh; sh -c 'echo ok'",
+        "  | This Bash command contains multiple operations. The following part requires approval: head -3 && cat kstrl.toml ; ls initials ; which sh; sh -c 'echo ok'",
+        "[Bash] ls -la",
+        "  | total 16",
+        "  | drwxr-xr-x 3 root root 4096 Oct 25 14:28 .",
+        "  | drwx------ 3 root root 4096 Oct 25 14:28 ..",
+        "  | drwxr-xr-x 8 root root 4096 Oct 25 14:28 .git",
+        "  | -rwxr-xr-x 1 root root  108 Oct 19 06:48 initials",
+        "[Bash] printf 'a\\n' | sh -c 'printf \"%s\" \"$(printf \"%s\" \"x\")\"; echo ok'; command -v sh; command -v wc",
+        "  | This Bash command contains multiple operations. The following part requires approval: sh -c 'printf \"%s\" \"$(printf \"%s\" \"x\")\"; echo ok'; command -v sh; command -v wc",
+        "[Read] initials",
+        "  | 1\t#!/bin/sh",
+        "  | 2\t# Print the initials of the name in $1: not written yet, so the name as given.",
+        "  | 3\tprintf '%s\\n' \"$1\"",
+        "  | 4\t",
+        "  | [unrendered thinking block]",
+        "[Bash] cd /tmp/claude-0/-tmp-pytest-of-root-pytest-782-test-acceptance-designer-passe1-acc-initials-sh-vj-eqsq1-designer/6feed5...",
+        "  | A variable in this command can't be checked before it runs",
+        "  | [unrendered thinking block]",
+        "[Bash] cd /tmp/claude-0/-tmp-pytest-of-root-pytest-782-test-acceptance-designer-passe1-acc-initials-sh-vj-eqsq1-designer/6feed5...",
+        "  | This Bash command contains multiple operations. The following parts require approval: printf '%s\\n' 'set -f' 'for w in $1; do printf \"%s\" \"$w\" | cut -c1 | tr a-z A-Z; done; echo', sh ref.sh \"grace bre...",
+        "  | [unrendered thinking block]",
+        "{\"createsApp\": false, \"checks\": [{\"id\": \"us-001-ada-lovelace\", \"criterion\": \"US-001: sh initials \\\"ada lovelace\\\" prints AL, the uppercase first letters of the two words, then a newline, and exits 0\", \"argv\": [\"sh\", \"-c\", \"sh \\\"$KSTRL_TREE/initials\\\" \\\"ada lovelace\\\" > out.txt && printf \\\"AL\\\\n\\\" > exp.txt && cmp out.txt exp.txt\"], \"onBase\": \"fails\", \"heldOut\": false}, {\"id\": \"us-001-single-word\", \"criterion\": \"US-001: sh initials with a one-word name prints that word's first letter in uppercase, then a newline, and exits 0\", \"argv\": [\"sh\", \"-c\", \"sh \\\"$KSTRL_TREE/initials\\\" \\\"ada\\\" > out.txt && printf \\\"A\\\\n\\\" > exp.txt && cmp out.txt exp.txt\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"us-001-three-words\", \"criterion\": \"US-001: sh initials with four words prints the first letter of each, uppercase, with nothing between them, then a newline, and exits 0\", \"argv\": [\"sh\", \"-c\", \"sh \\\"$KSTRL_TREE/initials\\\" \\\"grace brewster murray hopper\\\" > out.txt && printf \\\"GBMH\\\\n\\\" > exp.txt && cmp out.txt exp.txt\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"us-001-mixed-case-input\", \"criterion\": \"US-001: sh initials with mixed-case words prints the first letter of each word in uppercase, whatever case it was given in, then a newline, and exits 0\", \"argv\": [\"sh\", \"-c\", \"sh \\\"$KSTRL_TREE/initials\\\" \\\"mARY ann\\\" > out.txt && printf \\\"MA\\\\n\\\" > exp.txt && cmp out.txt exp.txt\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"us-001-hyphen-is-not-a-separator\", \"criterion\": \"US-001: sh initials treats only spaces as word separators, so a hyphenated word contributes only its first letter, then a newline, and exits 0\", \"argv\": [\"sh\", \"-c\", \"sh \\\"$KSTRL_TREE/initials\\\" \\\"jean-luc picard\\\" > out.txt && printf \\\"JP\\\\n\\\" > exp.txt && cmp out.txt exp.txt\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"us-001-repeated-spaces\", \"criterion\": \"US-001: sh initials with runs of several spaces between words prints one initial per word and nothing for the spaces, then a newline, and exits 0\", \"argv\": [\"sh\", \"-c\", \"sh \\\"$KSTRL_TREE/initials\\\" \\\"ada   lovelace\\\" > out.txt && printf \\\"AL\\\\n\\\" > exp.txt && cmp out.txt exp.txt\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"us-001-all-uppercase-input\", \"criterion\": \"US-001: sh initials with all-uppercase words prints their first letters unchanged, uppercase, then a newline, and exits 0\", \"argv\": [\"sh\", \"-c\", \"sh \\\"$KSTRL_TREE/initials\\\" \\\"NASA ESA\\\" > out.txt && printf \\\"NE\\\\n\\\" > exp.txt && cmp out.txt exp.txt\"], \"onBase\": \"fails\", \"heldOut\": true}]}"
+      ],
+      "final_message": "{\"createsApp\": false, \"checks\": [{\"id\": \"us-001-ada-lovelace\", \"criterion\": \"US-001: sh initials \\\"ada lovelace\\\" prints AL, the uppercase first letters of the two words, then a newline, and exits 0\", \"argv\": [\"sh\", \"-c\", \"sh \\\"$KSTRL_TREE/initials\\\" \\\"ada lovelace\\\" > out.txt && printf \\\"AL\\\\n\\\" > exp.txt && cmp out.txt exp.txt\"], \"onBase\": \"fails\", \"heldOut\": false}, {\"id\": \"us-001-single-word\", \"criterion\": \"US-001: sh initials with a one-word name prints that word's first letter in uppercase, then a newline, and exits 0\", \"argv\": [\"sh\", \"-c\", \"sh \\\"$KSTRL_TREE/initials\\\" \\\"ada\\\" > out.txt && printf \\\"A\\\\n\\\" > exp.txt && cmp out.txt exp.txt\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"us-001-three-words\", \"criterion\": \"US-001: sh initials with four words prints the first letter of each, uppercase, with nothing between them, then a newline, and exits 0\", \"argv\": [\"sh\", \"-c\", \"sh \\\"$KSTRL_TREE/initials\\\" \\\"grace brewster murray hopper\\\" > out.txt && printf \\\"GBMH\\\\n\\\" > exp.txt && cmp out.txt exp.txt\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"us-001-mixed-case-input\", \"criterion\": \"US-001: sh initials with mixed-case words prints the first letter of each word in uppercase, whatever case it was given in, then a newline, and exits 0\", \"argv\": [\"sh\", \"-c\", \"sh \\\"$KSTRL_TREE/initials\\\" \\\"mARY ann\\\" > out.txt && printf \\\"MA\\\\n\\\" > exp.txt && cmp out.txt exp.txt\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"us-001-hyphen-is-not-a-separator\", \"criterion\": \"US-001: sh initials treats only spaces as word separators, so a hyphenated word contributes only its first letter, then a newline, and exits 0\", \"argv\": [\"sh\", \"-c\", \"sh \\\"$KSTRL_TREE/initials\\\" \\\"jean-luc picard\\\" > out.txt && printf \\\"JP\\\\n\\\" > exp.txt && cmp out.txt exp.txt\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"us-001-repeated-spaces\", \"criterion\": \"US-001: sh initials with runs of several spaces between words prints one initial per word and nothing for the spaces, then a newline, and exits 0\", \"argv\": [\"sh\", \"-c\", \"sh \\\"$KSTRL_TREE/initials\\\" \\\"ada   lovelace\\\" > out.txt && printf \\\"AL\\\\n\\\" > exp.txt && cmp out.txt exp.txt\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"us-001-all-uppercase-input\", \"criterion\": \"US-001: sh initials with all-uppercase words prints their first letters unchanged, uppercase, then a newline, and exits 0\", \"argv\": [\"sh\", \"-c\", \"sh \\\"$KSTRL_TREE/initials\\\" \\\"NASA ESA\\\" > out.txt && printf \\\"NE\\\\n\\\" > exp.txt && cmp out.txt exp.txt\"], \"onBase\": \"fails\", \"heldOut\": true}]}"
+    }
+  ]
+}

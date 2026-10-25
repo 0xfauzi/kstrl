@@ -858,7 +858,9 @@ def run_review(
                 concern.severity = "advisory"
         result.passed = True
 
-    status = "passed" if result.passed else "FAILED"
+    status = (
+        "FAILED" if not result.passed else "not read" if result.infrastructure_error else "passed"
+    )
     coverage_note = " (UNVERIFIED COVERAGE)" if result.diffstat_disagreement else ""
     ui.info(
         f"  Review {status}{coverage_note}: "

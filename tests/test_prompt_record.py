@@ -226,8 +226,8 @@ class TestAFactoryRunRecordsEveryPrompt:
         records = _all_records(run_root)
         assert not sentinel.exists(), sentinel.read_text(encoding="utf-8")
         assert Counter(r.prompt for r in records) == _delivered(capdir), output
-        # The stub's review and distill replies do not parse, so each is
-        # asked once more: that reading is its scope's second call.
+        # The stub's review, security and distill replies do not parse, so
+        # each is asked once more: that reading is its scope's second call.
         assert sorted((r.role, r.call) for r in records) == [
             ("distill", 1),
             ("distill", 2),
@@ -235,6 +235,7 @@ class TestAFactoryRunRecordsEveryPrompt:
             ("review", 1),
             ("review", 2),
             ("security", 1),
+            ("security", 2),
         ]
         assert {(r.run_id, r.attempt, r.agent_cli) for r in records} == {
             (run_root.name, 1, "custom")
@@ -281,6 +282,7 @@ class TestAFactoryRunRecordsEveryPrompt:
             ("review", 2, 1),
             ("review", 2, 2),
             ("security", 2, 1),
+            ("security", 2, 2),
         ], output
 
     def test_an_engineer_whose_record_cannot_be_written_fails_before_the_cli_runs(

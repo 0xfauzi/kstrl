@@ -65,6 +65,11 @@ REQUIREMENT_KINDS = frozenset((KIND_REQUIREMENT, KIND_NON_GOAL))
 _REQUIREMENT_ID = re.compile(r"R-[1-9][0-9]*")
 
 
+def cited_requirements(text: str) -> set[str]:
+    """The requirement ids ``text`` names, such as a check's criterion."""
+    return set(re.findall(rf"\b{_REQUIREMENT_ID.pattern}\b", text))
+
+
 @dataclass(frozen=True)
 class SpecRequirement:
     """One requirement or non-goal, with the ids of the stories that build it."""

@@ -40,6 +40,10 @@ DESIGNED_STOP_LINE = (
 #: How a head record's path starts in its lines (:func:`kstrl.acceptance.acceptance.judge_head`).
 RECORD_LINE = "- record: "
 
+#: What stands for a visible check's command that shares a line with a
+#: held-out check, so that no held-out check is shown (decision 3).
+WITHHELD_COMMAND = "(withheld: it shares lines with a held-out check)"
+
 
 def engineer_line(harness: str) -> str:
     """Whether the engineer ran confined, and by which harness's sandbox
@@ -121,7 +125,7 @@ def told_lines(record: Mapping[str, Any], checks: Sequence[Check]) -> tuple[str,
         told.append(row_line(row, record["headRuns"]))
         check = visible.get(row["id"])
         if check is not None:
-            told += [f"  criterion: {check.criterion}", f"  command: {shlex.join(check.argv)}"]
+            told += [f"  criterion: {check.criterion}", f"  command: {_command(shown[check.id])}"]
             told += [f"  | {line}" for line in shown[check.id]["tail"]]
     return (*told, *rejected_lines(record))
 
@@ -148,7 +152,12 @@ def stop_lines(record: Mapping[str, Any]) -> list[str]:
 
 
 def _shown(entry: Mapping[str, Any]) -> list[str]:
-    return [f"  argv: {shlex.join(entry['argv'])}", *(f"  | {line}" for line in entry["tail"])]
+    return [f"  argv: {_command(entry)}", *(f"  | {line}" for line in entry["tail"])]
+
+
+def _command(entry: Mapping[str, Any]) -> str:
+    argv = entry["argv"]
+    return WITHHELD_COMMAND if argv is None else shlex.join(argv)
 
 
 def rejected_lines(record: Mapping[str, Any]) -> list[str]:

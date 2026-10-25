@@ -115,7 +115,7 @@ INTERFACE_SIZES: dict[str, int] = {
     "loop": 8,
     "owner": 30,  # CLAIM_HALT and overridable: the claim halt an approval merges over
     "pipeline": 50,
-    "plan": 34,
+    "plan": 35,  # cited_requirements: the requirement ids a criterion names
     "proc": 53,
     "project": 43,
     "queue": 17,

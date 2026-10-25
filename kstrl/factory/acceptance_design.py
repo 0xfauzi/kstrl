@@ -72,7 +72,7 @@ from kstrl.io import (
 )
 from kstrl.owner import ItemKind, approvals_at
 from kstrl.pipeline import iso_now
-from kstrl.plan import PRD, SpecRequirement, built_by
+from kstrl.plan import PRD, SpecRequirement, built_by, cited_requirements
 from kstrl.proc import (
     ContractCleanupError,
     create_temp_worktree,
@@ -110,7 +110,7 @@ NOT_REPRODUCED_KEY = "unreproduced:"
 #: H3 and H2: the verification designer's role prompt. Its calibration
 #: roles are ``acceptance`` and ``acceptance_clean``, scored by execution on
 #: ``tests/adversarial_fixtures/acceptance/``.
-ACCEPTANCE_PROMPT_VERSION = "1.4.0"
+ACCEPTANCE_PROMPT_VERSION = "1.5.0"
 
 ACCEPTANCE_PROMPT = """\
 You are the verification designer for one component of a planned change.
@@ -179,10 +179,12 @@ A check that fails correct code is as wrong as one that passes wrong code:
 - Reach the component only through an interface the specification fixes:
   a command line, a file format, a protocol, or a function, type or name
   the specification itself gives. A name, a parameter or a type it leaves
-  open is the engineer's to choose, so no check depends on one. When the
-  specification fixes no interface of this component, check its
-  behaviour through the interface of a component that uses it, or write
-  fewer checks: a check that guesses an interface fails correct code.
+  open is the engineer's to choose, so no check depends on one. The checks
+  run on a tree that holds this component and the components it is built
+  on, never a component built after it, so no check reaches this
+  component through a component that uses it. When the specification
+  fixes no interface of this component, write fewer checks: a check that
+  guesses an interface fails correct code.
 - Compare only the output the specification fixes. A check that compares
   the whole of stdout or stderr fails correct code whenever a tool between
   the check and the application prints something of its own, such as a
@@ -438,10 +440,11 @@ def coverage_left(root: Path, manifest: Manifest, stack: Stack, comp_id: str) ->
     kept = plan.get("components", {}).get(comp_id, {}).get("checks", [])
     removed = [r for r in (designer or {}).get("removed", []) if r.get("component") == comp_id]
     lines: list[str] = []
-    head, colon, _ = str(removed[-1].get("criterion", "") if removed else "").partition(":")
-    cited = head.strip() if colon else ""
-    if cited and not any(str(c.get("criterion", "")).startswith(cited) for c in kept):
-        lines.append(f"no designed check of {comp_id} decides {cited} any more")
+    lost = cited_requirements(str(removed[-1].get("criterion", "")) if removed else "")
+    for check in kept:
+        lost -= cited_requirements(str(check.get("criterion", "")))
+    if lost:
+        lines.append(f"no designed check of {comp_id} decides {' '.join(sorted(lost))} any more")
     if not any(c.get("heldOut") for c in kept):
         lines.append(f"{comp_id} has no held-out designed check left")
     return lines

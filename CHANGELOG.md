@@ -176,6 +176,16 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Changed
 
+- The verification designer checks a component only through that
+  component, never through one built after it, which the tree its checks
+  run on does not hold (`ACCEPTANCE_PROMPT` 1.5.0). 1.4.0 told it to, and
+  a library's held-out checks went through the CLI built later, halting
+  correct code.
+- A failing visible check's command is withheld from the engineer, the
+  halt text and the PR body when it shares a line of 20 or more
+  characters with a held-out check of its component (owner decision of
+  2026-10-25). A user run's visible check embedded three held-out tests
+  and ran only its own.
 - An advisory review verdict confirms the story the engineer marked done
   (owner decision of 2026-10-25): only a fail, no verdict, or criteria
   left unjudged leave it unconfirmed. Advisory concerns are recorded as
@@ -383,6 +393,23 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Fixed
 
+- A security reply kstrl cannot parse is reported as not read, never as
+  passed, and one that states no finding at or above the fail threshold
+  gets the reviewer once more, as Phase 2 does. A user run's reply lacked
+  one closing brace and its two findings were shown nowhere.
+- `ks remove-check` warns about the requirement ids no kept check cites,
+  compared id by id; it compared the removed check's whole cited head as
+  text and warned about requirements still decided.
+- Approving a `[stack]` closes the open stack items for text kstrl.toml
+  no longer holds, such as the proposal it was edited from.
+- A designed check's `TMPDIR` on the host is inside its own scratch
+  directory, removed after the run: a user run's checks left 68 copies of
+  the repository in /tmp.
+- The claim finding for criteria left unjudged says "pass or advisory on
+  N of M acceptance criteria and none on the other K"; "pass on only 1 of
+  6" read as five failures.
+- The README says a `[stack]` behind a proxy or private CA lists
+  `HTTPS_PROXY`, `NO_PROXY` and `SSL_CERT_FILE` in `env`.
 - `ks retry` runs a PENDING component as it is. A refused retry of a
   component that failed with no branch left it PENDING with nothing
   recorded, and the next `ks retry` refused it as not FAILED.

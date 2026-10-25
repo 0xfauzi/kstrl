@@ -1,0 +1,53 @@
+{
+  "role": "acceptance_clean",
+  "fixture_id": "acc-initials-sh",
+  "category": "correct",
+  "cwe": null,
+  "caught": true,
+  "error": false,
+  "detail": "correct: verdicts {'us-001-example': 'pass', 'us-001-single-word': 'pass', 'us-001-mixed-case-three-words': 'pass', 'us-001-four-words': 'pass', 'us-001-other-two-word-name': 'pass', 'us-001-repeated-spaces': 'pass', 'us-001-edge-spaces': 'pass'}",
+  "run": 1,
+  "calls": [
+    {
+      "streamed": [
+        "  | [unrendered thinking block]",
+        "[Bash] ls -la && git log --oneline | head -3\nS=/tmp/claude-0/-tmp-pytest-of-root-pytest-782-test-acceptance-designer-passe1-acc...",
+        "  | Parser skipped input between top-level statements",
+        "  | [unrendered thinking block]",
+        "[Bash] ls -la && git log --oneline | head -3\nS=/tmp/claude-0/-tmp-pytest-of-root-pytest-782-test-acceptance-designer-passe1-acc...",
+        "  | Redirect target contains $(cmd) output \u2014 path is runtime-determined",
+        "[Bash] ls -la && git log --oneline | head -3",
+        "  | total 16",
+        "  | drwxr-xr-x 3 root root 4096 Oct 25 14:28 .",
+        "  | drwx------ 3 root root 4096 Oct 25 14:28 ..",
+        "  | drwxr-xr-x 8 root root 4096 Oct 25 14:28 .git",
+        "  | -rwxr-xr-x 1 root root  108 Oct 19 06:48 initials",
+        "  | 1dcbcc0 ...",
+        "[Bash] mkdir -p /tmp/claude-0/-tmp-pytest-of-root-pytest-782-test-acceptance-designer-passe1-acc-initials-sh-upehsx00-designer/...",
+        "  | A variable in this command can't be checked before it runs",
+        "  | [unrendered thinking block]",
+        "[Read] initials",
+        "  | 1\t#!/bin/sh",
+        "  | 2\t# Print the initials of the name in $1: not written yet, so the name as given.",
+        "  | 3\tprintf '%s\\n' \"$1\"",
+        "  | 4\t",
+        "[Bash] mkdir -p /tmp/claude-0/-tmp-pytest-of-root-pytest-782-test-acceptance-designer-passe1-acc-initials-sh-upehsx00-designer/...",
+        "  | A variable in this command can't be checked before it runs",
+        "  | [unrendered thinking block]",
+        "[Bash] cd /tmp/claude-0/-tmp-pytest-of-root-pytest-782-test-acceptance-designer-passe1-acc-initials-sh-upehsx00-designer/2808e4...",
+        "  | A variable in this command can't be checked before it runs",
+        "  | [unrendered thinking block]",
+        "[Write] ref.sh",
+        "  | <tool_use_error>Error: No such tool available: Write. Write is disabled for this session, in subagents as well as here.</tool_use_error>",
+        "[Bash] cd /tmp/claude-0/-tmp-pytest-of-root-pytest-782-test-acceptance-designer-passe1-acc-initials-sh-upehsx00-designer/2808e4...",
+        "  | This Bash command contains multiple operations. The following parts require approval: cd /tmp/claude-0/-tmp-pytest-of-root-pytest-782-test-acceptance-designer-passe1-acc-initials-sh-upehsx00-designer/...",
+        "  | [unrendered thinking block]",
+        "[Bash] printf '%s\\n' \"ada lovelace\" \"grace\" \"grace BREWSTER murray\" \"ada   lovelace\" \"margaret eliza hamilton kelly\" \"katherine...",
+        "  | This Bash command contains multiple operations. The following part requires approval: awk '{s=\"\"; for(i=1;i<=NF;i++) s=s toupper(substr($i,1,1)); print s}'",
+        "  | [unrendered thinking block]",
+        "{\"createsApp\": false, \"checks\": [{\"id\": \"us-001-example\", \"criterion\": \"US-001: sh initials \\\"ada lovelace\\\" prints exactly AL followed by a newline, and exits 0\", \"argv\": [\"sh\", \"-c\", \"sh \\\"$KSTRL_TREE/initials\\\" \\\"ada lovelace\\\" > out.txt && printf 'AL\\\\n' | cmp -s - out.txt\"], \"onBase\": \"fails\", \"heldOut\": false}, {\"id\": \"us-001-single-word\", \"criterion\": \"US-001: a one-word name prints its single uppercased first letter followed by a newline, and exits 0\", \"argv\": [\"sh\", \"-c\", \"sh \\\"$KSTRL_TREE/initials\\\" \\\"grace\\\" > out.txt && printf 'G\\\\n' | cmp -s - out.txt\"], \"onBase\": \"fails\", \"heldOut\": false}, {\"id\": \"us-001-mixed-case-three-words\", \"criterion\": \"US-001: every word's first letter is uppercased whatever the case of the input, with three words, printed with nothing between them and a newline\", \"argv\": [\"sh\", \"-c\", \"sh \\\"$KSTRL_TREE/initials\\\" \\\"grace BREWSTER murray\\\" > out.txt && printf 'GBM\\\\n' | cmp -s - out.txt\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"us-001-four-words\", \"criterion\": \"US-001: a four-word name prints the first letter of each word, uppercased, in order, with nothing between them and a newline\", \"argv\": [\"sh\", \"-c\", \"sh \\\"$KSTRL_TREE/initials\\\" \\\"margaret eliza hamilton kelly\\\" > out.txt && printf 'MEHK\\\\n' | cmp -s - out.txt\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"us-001-other-two-word-name\", \"criterion\": \"US-001: a different two-word name prints exactly its two uppercased initials followed by a newline, not the whole name or a prefix of it\", \"argv\": [\"sh\", \"-c\", \"sh \\\"$KSTRL_TREE/initials\\\" \\\"katherine johnson\\\" > out.txt && printf 'KJ\\\\n' | cmp -s - out.txt\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"us-001-repeated-spaces\", \"criterion\": \"US-001: a run of several spaces between words does not add letters; the output still holds one initial per word\", \"argv\": [\"sh\", \"-c\", \"sh \\\"$KSTRL_TREE/initials\\\" \\\"ada   lovelace\\\" > out.txt && printf 'AL\\\\n' | cmp -s - out.txt\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"us-001-edge-spaces\", \"criterion\": \"US-001: leading and trailing spaces around the name do not add letters; the output is the initials of the words only\", \"argv\": [\"sh\", \"-c\", \"sh \\\"$KSTRL_TREE/initials\\\" \\\"  ada lovelace  \\\" > out.txt && printf 'AL\\\\n' | cmp -s - out.txt\"], \"onBase\": \"fails\", \"heldOut\": true}]}"
+      ],
+      "final_message": "{\"createsApp\": false, \"checks\": [{\"id\": \"us-001-example\", \"criterion\": \"US-001: sh initials \\\"ada lovelace\\\" prints exactly AL followed by a newline, and exits 0\", \"argv\": [\"sh\", \"-c\", \"sh \\\"$KSTRL_TREE/initials\\\" \\\"ada lovelace\\\" > out.txt && printf 'AL\\\\n' | cmp -s - out.txt\"], \"onBase\": \"fails\", \"heldOut\": false}, {\"id\": \"us-001-single-word\", \"criterion\": \"US-001: a one-word name prints its single uppercased first letter followed by a newline, and exits 0\", \"argv\": [\"sh\", \"-c\", \"sh \\\"$KSTRL_TREE/initials\\\" \\\"grace\\\" > out.txt && printf 'G\\\\n' | cmp -s - out.txt\"], \"onBase\": \"fails\", \"heldOut\": false}, {\"id\": \"us-001-mixed-case-three-words\", \"criterion\": \"US-001: every word's first letter is uppercased whatever the case of the input, with three words, printed with nothing between them and a newline\", \"argv\": [\"sh\", \"-c\", \"sh \\\"$KSTRL_TREE/initials\\\" \\\"grace BREWSTER murray\\\" > out.txt && printf 'GBM\\\\n' | cmp -s - out.txt\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"us-001-four-words\", \"criterion\": \"US-001: a four-word name prints the first letter of each word, uppercased, in order, with nothing between them and a newline\", \"argv\": [\"sh\", \"-c\", \"sh \\\"$KSTRL_TREE/initials\\\" \\\"margaret eliza hamilton kelly\\\" > out.txt && printf 'MEHK\\\\n' | cmp -s - out.txt\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"us-001-other-two-word-name\", \"criterion\": \"US-001: a different two-word name prints exactly its two uppercased initials followed by a newline, not the whole name or a prefix of it\", \"argv\": [\"sh\", \"-c\", \"sh \\\"$KSTRL_TREE/initials\\\" \\\"katherine johnson\\\" > out.txt && printf 'KJ\\\\n' | cmp -s - out.txt\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"us-001-repeated-spaces\", \"criterion\": \"US-001: a run of several spaces between words does not add letters; the output still holds one initial per word\", \"argv\": [\"sh\", \"-c\", \"sh \\\"$KSTRL_TREE/initials\\\" \\\"ada   lovelace\\\" > out.txt && printf 'AL\\\\n' | cmp -s - out.txt\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"us-001-edge-spaces\", \"criterion\": \"US-001: leading and trailing spaces around the name do not add letters; the output is the initials of the words only\", \"argv\": [\"sh\", \"-c\", \"sh \\\"$KSTRL_TREE/initials\\\" \\\"  ada lovelace  \\\" > out.txt && printf 'AL\\\\n' | cmp -s - out.txt\"], \"onBase\": \"fails\", \"heldOut\": true}]}"
+    }
+  ]
+}

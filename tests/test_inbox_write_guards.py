@@ -172,6 +172,9 @@ EXPECTED_MUTATIONS: dict[str, Disposition] = {
     "cli/cli_inbox.py::_decide_parked_merge_if_parked::reject": Disposition(
         guarded=False, reason="as _decide_and_report::approve"
     ),
+    "cli/cli_inbox.py::_close_replaced_stack_items::resolve": Disposition(
+        guarded=False, reason="as _decide_and_report::approve, which it follows"
+    ),
     "cli/cli_inbox.py::inbox_retry::resolve": Disposition(
         guarded=False,
         reason=(
