@@ -306,13 +306,14 @@ class TestReviewCounts:
 class TestMergeGateEvidence:
     def test_the_item_carries_the_review_event_counts(self, tmp_path: Path) -> None:
         root = _project(tmp_path)
-        # An advisory criterion on a story the engineer marked done also
-        # records a claim disagreement under phase review. The old count
+        # A story the engineer marked done that the review never covers
+        # also records a claim disagreement under phase review (an advisory
+        # verdict on it confirms it since 2026-10-25). The old count
         # included it; the review event does not.
         review = ReviewResult(
             passed=True,
             mode="hard",
-            criteria=[CriterionReview("AC1", "advisory", "thin", story_id="US-001")],
+            criteria=[CriterionReview("AC1", "advisory", "thin", story_id="US-OTHER")],
             concerns=[
                 ReviewConcern("test_quality", "advisory", "a.py:1", "weak"),
                 ReviewConcern("error_handling", "advisory", "a.py:2", "swallowed"),
