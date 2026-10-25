@@ -6,6 +6,8 @@ import os
 import sys
 from typing import TYPE_CHECKING
 
+from kstrl.ui.base import terminal_line
+
 if TYPE_CHECKING:
     from typing import TextIO
 
@@ -159,6 +161,7 @@ class PlainUI:
         color = CHANNEL_COLORS.get(tag, "white")
         tag_label = self._format_tag(tag)
         prefix = self._color(f"{tag_label} {self._sep_char} ", color)
+        line = terminal_line(line)
         line_style = "dim" if tag in {"SYS", "PROMPT"} else ""
         if line_style:
             self._print(f"{prefix}{self._color(line, line_style)}")

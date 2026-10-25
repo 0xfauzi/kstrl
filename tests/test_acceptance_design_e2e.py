@@ -143,7 +143,8 @@ def _design(
         f"""#!/bin/sh
 cat > '{prompt}'
 if grep -q '{DESIGNER_MARK}' '{prompt}'; then
-  echo "$(pwd -P) $(git rev-parse HEAD)" >> '{designer_log}'
+  echo "$(pwd -P) $(git rev-parse HEAD) ${{TMPDIR:-unset}}" >> '{designer_log}'
+  [ -n "$TMPDIR" ] && echo "a held-out check" > "$TMPDIR/designer-scratch"
   cat '{prompt}' >> '{designer_prompts}'
   sleep {pause}
   n=$(wc -l < '{designer_log}' | tr -d ' ')
@@ -258,10 +259,14 @@ def test_the_designer_writes_checks_and_a_failed_held_out_one_halts_the_componen
 
     assert run.code == 1, run.out
     assert len(run.designer) == 1, run.out
-    where, commit = run.designer[0].split()
+    where, commit, tmpdir = run.designer[0].split()
     assert commit == base, run.designer
     # A throwaway checkout of the base, removed once the designer answered.
     assert Path(where) != root.resolve() and not Path(where).exists(), run.designer
+    # Its TMPDIR, where the claude CLI keeps its scratchpad, is inside that
+    # checkout and went with it: a user run's designer left held-out checks
+    # in /tmp, where the engineer's user could read them.
+    assert Path(tmpdir).is_relative_to(where) and not Path(tmpdir).exists(), run.designer
     assert "prints hello" in run.designer_prompts
     assert spec_line in run.designer_prompts
     assert INSTRUCTIONS in run.designer_prompts

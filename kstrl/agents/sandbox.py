@@ -176,6 +176,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
+from kstrl.agents.tmpdir import agent_env
 from kstrl.config import ConfigSection, check_numbers
 from kstrl.git import git_write_paths
 from kstrl.io import read_json
@@ -568,8 +569,10 @@ def claude_session_env() -> dict[str, str]:
     ``init``, which the write guard's gate refuses, and
     ``CLAUDE_CODE_REMOTE_SESSION_ID`` puts the parent's session URL in the
     engineer's commits. An empty value acts as unset for both (measured).
+    Inside :func:`kstrl.agents.tmpdir.agent_tmpdir` it carries that block's
+    ``TMPDIR``, where claude keeps its session scratchpad.
     """
-    return {**PARENT_SESSION_ENV, **claude_login().env}
+    return agent_env({**PARENT_SESSION_ENV, **claude_login().env})
 
 
 def claude_tools(role: ClaudeRole, *, network: bool) -> tuple[str, ...]:

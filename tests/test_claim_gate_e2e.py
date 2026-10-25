@@ -19,6 +19,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 from tests.helpers.executables import write_executable
 from tests.helpers.gitrepo import git_in
 from tests.test_isolation_rung import runs_a_stack
@@ -142,3 +144,55 @@ def test_an_advisory_verdict_confirms_the_story(tmp_path: Path) -> None:
 
     assert "claim disagreement" not in run.out, run.out
     assert (run.code, run.calls) == (0, 1), run.out
+
+
+@runs_a_stack
+@pytest.mark.parametrize("role", ["review", "security"])
+def test_a_reviewer_that_cannot_finish_is_read_again_on_the_same_commit_not_the_engineer(
+    tmp_path: Path, role: str
+) -> None:
+    """A user run's reviewer left criteria unjudged on its reading and its
+    re-read, the review failed as an infrastructure error, and the retry ran
+    the engineer, who could change nothing about it. The retry now judges
+    the same commit again with no engineer. The stub's first two replies do
+    not parse (the reading and the one more reading); its third passes."""
+    root = _repo(tmp_path, _stack({"tests": "true"}))
+    calls = tmp_path / "reviewer.calls"
+    passing = (
+        {
+            "stories": [{"storyId": "US-001", "criteria": [_verdict("prints hello", "pass")]}],
+            "concerns": [],
+        }
+        if role == "review"
+        else {"findings": [], "exhaustively_searched": True, "overallNotes": ""}
+    )
+    stub = write_executable(
+        tmp_path / "reviewer.py",
+        f"""#!{sys.executable}
+import json, subprocess, sys
+sys.stdin.read()
+with open({str(calls)!r}, "a") as log:
+    log.write("call\\n")
+n = len(open({str(calls)!r}).read().splitlines())
+if n <= 2:
+    print("I could not finish the review.")
+    sys.exit(0)
+out = subprocess.run(["git", "diff", "--numstat", "main...HEAD"], capture_output=True, text=True)
+rows = [[int(a), int(b), p] for a, b, p in (line.split("\\t") for line in out.stdout.splitlines())]
+print(json.dumps({{"observedDiffstat": {{"rows": rows}}, **{passing!r}}}))
+""",
+    )
+    flags = (
+        ("--review-mode", "hard", "--review-agent-cmd", str(stub))
+        if role == "review"
+        else ("--security-mode", "hard", "--security-agent-cmd", str(stub))
+    )
+
+    run = _factory(tmp_path, root, *flags, *("--max-retries", "1"), engineer=ENGINEER)
+
+    assert "again with no engineer" in run.out, run.out
+    assert "could not finish" in run.out, run.out
+    assert "0 failures" not in run.out, run.out
+    assert run.calls == 1, run.out
+    assert _calls(calls) == 3, run.out
+    assert run.code == 0, run.out

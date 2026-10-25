@@ -53,6 +53,7 @@ from kstrl.acceptance import (
 )
 from kstrl.agents import (
     AgentCall,
+    agent_tmpdir,
     collect_agent_output,
     extract_json,
     get_agent,
@@ -277,6 +278,12 @@ def build_design_prompt(
     )
 
 
+#: The designer's TMPDIR, inside the scratch checkout that is deleted with it:
+#: the claude CLI keeps its session scratchpad there, and a user run's
+#: designer left held-out checks and a reference implementation in /tmp.
+DESIGNER_TMPDIR = ".kstrl-tmp"
+
+
 def design_component(
     agent: Any,
     prompt: str,
@@ -296,26 +303,29 @@ def design_component(
     An entry is valid when :func:`kstrl.acceptance.acceptance.plan_errors` passes it
     and each criterion cites one of ``requirement_ids`` (#639 slice 5).
     The factory and the ``acceptance`` calibration roles both call this."""
-    errors: list[str] = []
-    asked = prompt
-    for ask in range(1, DESIGN_ASKS + 1):
-        refusal = spend()
-        if refusal:
-            return None, ask - 1, [*errors, f"ask {ask} was not made: {refusal}"]
-        try:
-            lines = collect_agent_output(agent, asked, cwd=cwd, timeout=timeout, on_line=on_line)
-            entry: Any = extract_json(select_agent_output(agent, lines))
-        except (OSError, RuntimeError, ValueError) as exc:
-            found = [str(exc)]
-        else:
-            found = plan_errors({"components": {comp_id: entry}}, [comp_id]) or citation_errors(
-                entry, requirement_ids
-            )
-            if not found:
-                return entry, ask, errors
-        errors += [f"ask {ask}: {line}" for line in found]
-        asked = reask_prompt(prompt, found)
-    return None, DESIGN_ASKS, errors
+    with agent_tmpdir(cwd / DESIGNER_TMPDIR):
+        errors: list[str] = []
+        asked = prompt
+        for ask in range(1, DESIGN_ASKS + 1):
+            refusal = spend()
+            if refusal:
+                return None, ask - 1, [*errors, f"ask {ask} was not made: {refusal}"]
+            try:
+                lines = collect_agent_output(
+                    agent, asked, cwd=cwd, timeout=timeout, on_line=on_line
+                )
+                entry: Any = extract_json(select_agent_output(agent, lines))
+            except (OSError, RuntimeError, ValueError) as exc:
+                found = [str(exc)]
+            else:
+                found = plan_errors({"components": {comp_id: entry}}, [comp_id]) or citation_errors(
+                    entry, requirement_ids
+                )
+                if not found:
+                    return entry, ask, errors
+            errors += [f"ask {ask}: {line}" for line in found]
+            asked = reask_prompt(prompt, found)
+        return None, DESIGN_ASKS, errors
 
 
 def reask_prompt(prompt: str, reasons: Sequence[str]) -> str:

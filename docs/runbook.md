@@ -815,7 +815,7 @@ not carry an order.
 - Per-run captures: `.kstrl/evolution.jsonl`, `.kstrl/experiments.tsv`
 - Run event stream + transcripts: `.kstrl/runs/<run_id>/`
 - The PRD a decomposed component starts from: `.kstrl/plan/<planId>/<component-id>/prd.json` (#545, #568), where `planId` is the component's field in the manifest; one directory per decompose, and per run that built an integration fix. The component branch commits the engineer's copy at `scripts/kstrl/feature/<component-id>/prd.json`.
-- Distillation debug dumps: `.kstrl/knowledge/<comp>/<run>/_distill_raw.txt` (on failure)
+- Distillation debug dumps: `.kstrl/knowledge/<comp>/_debug/<run>/_distill_raw.txt` (on failure), with `_distill_status.txt` beside it
 - Control plane (R8.9): `${XDG_STATE_HOME:-~/.local/state}/kstrl/<repo-id>/`
   (`autonomy.json`, `inbox.jsonl`, `spend.json`, `pause.json`,
   `github_processed.json`). kstrl does not move legacy in-tree files: it

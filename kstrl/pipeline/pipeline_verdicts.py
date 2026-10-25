@@ -436,7 +436,11 @@ class ReviewVerdicts(AttemptRecorder):
                     reported_a_stat=review_result.observed_diffstat is not None,
                 ),
             )
-        self.ui.warn(f"  Phase 2 FAILED for {comp.id}: {review_result.fail_count} failures")
+        self.ui.warn(
+            f"  Phase 2 FAILED for {comp.id}: the reviewer could not finish"
+            if review_result.infrastructure_error
+            else f"  Phase 2 FAILED for {comp.id}: {review_result.fail_count} failures"
+        )
         # #265: before spending another engineer run, ask whether the
         # last few have been spent moving away from a pass. Advisory by
         # default: this records the trip and keeps retrying, and returns
@@ -497,8 +501,25 @@ class ReviewVerdicts(AttemptRecorder):
                 context_json=ctx.to_json(),
                 signatures=signatures_from_findings("review", review_result.as_findings()),
                 failure_count=_gate_failure_count(review_result),
+                rejudge_sha=self._reviewer_fault_head(review_result, wt_path),
             ),
         )
+
+    def _reviewer_fault_head(self, result: ReviewResult | SecurityResult, wt_path: Path) -> str:
+        """The commit a retry judges again with no engineer when the
+        reviewer could not finish, or "". Its own reading again is what
+        such a failure needs: a user run's reviewer left criteria unjudged
+        twice and the retry ran the engineer, who could change nothing
+        about it. A retry on a new worktree keeps no commit."""
+        if not result.infrastructure_error or not self.factory_config.use_worktrees:
+            return ""
+        head = git.get_head_sha(wt_path) or ""
+        if head:
+            self.ui.info(
+                f"  The next attempt judges {head[:12]} again with no engineer: "
+                "the reviewer, not the code, did not finish"
+            )
+        return head
 
     def _has_unconfirmed_claim(self, comp: Component, wt_path: Path) -> bool:
         """R10.3: whether the PRD still claims a story is done.

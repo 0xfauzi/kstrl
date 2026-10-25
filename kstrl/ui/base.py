@@ -4,6 +4,23 @@ from __future__ import annotations
 
 from typing import Protocol
 
+#: How much of one streamed line a terminal shows. A transcript file gets
+#: the whole line: an agent's Bash command was cut at 120 characters where
+#: the adapter formatted it, so a designer's transcript could not say what
+#: it ran (a user run).
+TERMINAL_LINE_CHARS = 300
+
+
+def terminal_line(line: str, said: str = " in all") -> str:
+    """``line`` as a terminal shows it: the head of its first line and how
+    long it is, followed by ``said``, in at most :data:`TERMINAL_LINE_CHARS`
+    characters, so a line already shortened passes unchanged."""
+    first, _, rest = line.partition("\n")
+    if not rest and len(first) <= TERMINAL_LINE_CHARS:
+        return line
+    suffix = f" ... ({len(line)} characters{said})"
+    return first[: max(0, TERMINAL_LINE_CHARS - len(suffix))] + suffix
+
 
 class UI(Protocol):
     """Protocol for kstrl UI implementations."""

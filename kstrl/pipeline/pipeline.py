@@ -329,10 +329,14 @@ class ComponentPipeline(Delivery, KnowledgePhase, SecurityGate, ReviewPhase, Mec
             )
         approvals = self._approvals or ApprovalSnapshot()
         ids = approvals_on(approvals, comp.id, kept) + overrides_on(approvals, comp.id, kept)
-        named = ", ".join(i[:8] for i in ids) or "none"
+        named = ", ".join(i[:8] for i in ids)
+        # With no approval on it, the commit was kept by the run itself,
+        # after a reviewer that could not finish (PhaseFailure.rejudge_sha).
         reason = (
             f"ks retry kept commit {kept[:12]}, which inbox approval {named} was taken on; "
             "Phase 1 judges it again"
+            if ids
+            else f"the reviewer did not finish on commit {kept[:12]}; Phase 1 judges it again"
         )
         self.ui.info(f"  Engineer SKIPPED for {comp.id}: {reason}")
         self._record_phase_skip(comp, "engineer", reason)

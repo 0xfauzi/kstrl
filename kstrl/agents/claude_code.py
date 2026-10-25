@@ -470,28 +470,15 @@ def _format_tool_result(content: object) -> Iterator[str]:
 
 def _format_tool_use(tool_name: str, tool_input: dict[str, Any]) -> Iterator[str]:
     """Format a tool_use block into a concise human-readable line."""
-    if tool_name == "Read":
-        path = tool_input.get("file_path", "")
-        # Show just the filename, not the full path
-        short = path.split("/")[-1] if "/" in path else path
-        yield f"[Read] {short}"
-
-    elif tool_name == "Edit":
-        path = tool_input.get("file_path", "")
-        short = path.split("/")[-1] if "/" in path else path
-        yield f"[Edit] {short}"
-
-    elif tool_name == "Write":
-        path = tool_input.get("file_path", "")
-        short = path.split("/")[-1] if "/" in path else path
-        yield f"[Write] {short}"
+    # The whole path and the whole command: a transcript is where a person
+    # reads what an agent did, and a terminal shortens the line itself
+    # (kstrl.ui.base.terminal_line). A designer's transcript showed neither
+    # where it wrote nor what it ran (a user run).
+    if tool_name in ("Read", "Edit", "Write"):
+        yield f"[{tool_name}] {tool_input.get('file_path', '')}"
 
     elif tool_name == "Bash":
-        command = tool_input.get("command", "")
-        # Truncate long commands
-        if len(command) > 120:
-            command = command[:120] + "..."
-        yield f"[Bash] {command}"
+        yield f"[Bash] {tool_input.get('command', '')}"
 
     elif tool_name == "Glob":
         pattern = tool_input.get("pattern", "")

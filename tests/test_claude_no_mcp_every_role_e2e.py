@@ -19,6 +19,7 @@ from pathlib import Path
 import pytest
 
 import kstrl
+from kstrl.factory.acceptance_design import DESIGNER_TMPDIR
 from tests.helpers.executables import write_executable
 from tests.test_isolation_stack import NO_PROVER
 from tests.test_sandbox_engineer_e2e import (
@@ -159,6 +160,7 @@ def test_the_verification_designer_is_a_writer(tmp_path: Path, sandbox: str) -> 
     refused, and two values it worked out by hand halted correct code
     (owner decision of 2026-10-25). The stub's reply is no plan, so the run
     stops at the designer and every claude call is the designer's."""
+    tmpdirs = tmp_path / "tmpdirs.out"
     ran = _ks(
         tmp_path,
         CLAUDE_TOML + sandbox + STACK_TOML,
@@ -166,11 +168,31 @@ def test_the_verification_designer_is_a_writer(tmp_path: Path, sandbox: str) -> 
         NO_PROVER,
         confirm=True,
         clis=("claude",),
+        claude_out=tmpdirs,
+        claude_stub=_tmpdir_claude,
     )
     runs = _runs(tmp_path, "bin/claude")
     assert runs, ran
     assert "verification designer" in ran, ran
     assert {_value(call, "--tools") for call in runs} == {_WRITER_TOOLS}, (runs, ran)
+    # Each session's TMPDIR, where claude keeps its scratchpad, is inside the
+    # scratch checkout kstrl deletes: a user run's designer left held-out
+    # checks in claude's scratchpad under /tmp.
+    seen = tmpdirs.read_text(encoding="utf-8").splitlines()
+    assert len(seen) == len(runs), (seen, ran)
+    assert all(line.endswith(f"/{DESIGNER_TMPDIR}") for line in seen), seen
+
+
+def _tmpdir_claude(path: Path, out: Path) -> Path:
+    """A ``claude`` that records its argv like the stub of
+    tests/test_sandbox_engineer_e2e.py, and its ``TMPDIR`` in ``out``."""
+    argv = path.with_suffix(".argv")
+    return write_executable(
+        path,
+        f"#!/bin/sh\nprintf '%s\\n' \"$@\" -- >> '{argv}'\n"
+        f"printf '%s\\n' \"${{TMPDIR:-unset}}\" >> '{out}'\n"
+        "cat >/dev/null\necho '<promise>COMPLETE</promise>'\n",
+    )
 
 
 def _assert_login_only(runs: list[list[str]], login: Path, ran: str) -> None:

@@ -8,6 +8,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 from kstrl.agents.prompt_record import record_prompt
+from kstrl.agents.tmpdir import agent_env
 from kstrl.events import UsageRecord
 from kstrl.proc import DeadlineStreamer, timeout_message
 
@@ -62,6 +63,7 @@ class CustomAgent:
             stdin_text=prompt,
             timeout=timeout,
             root_dir=self._root_dir,
+            env=agent_env(),
         )
 
         output_lines: list[str] = []

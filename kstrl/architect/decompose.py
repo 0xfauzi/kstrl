@@ -71,6 +71,7 @@ from kstrl.plan import (
 from kstrl.project import (
     stack_text_digest,
 )
+from kstrl.ui import terminal_line
 
 logger = logging.getLogger(__name__)
 
@@ -199,12 +200,7 @@ def _stream_reply(
                 output_lines.append(line)
                 # The terminal gets the head of a long line (the JSON reply
                 # is one line of about 10KB); the transcript gets all of it.
-                ui.stream_line(
-                    "AI",
-                    line
-                    if len(line) <= 300
-                    else f"{line[:300]} ... ({len(line)} characters; all of it is in the run transcript)",
-                )
+                ui.stream_line("AI", terminal_line(line, "; all of it is in the run transcript"))
                 if transcript is not None:
                     transcript(line)
                 total_bytes += len(line) + 1

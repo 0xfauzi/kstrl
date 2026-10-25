@@ -259,7 +259,11 @@ class SecurityGate(ReviewVerdicts, UsageLedger):
             if sec_result.infrastructure_error
             else "Security review failed"
         )
-        self.ui.warn(f"  Phase 2.5 FAILED for {comp.id}: {sec_result.fail_count} failures")
+        self.ui.warn(
+            f"  Phase 2.5 FAILED for {comp.id}: the security reviewer could not finish"
+            if sec_result.infrastructure_error
+            else f"  Phase 2.5 FAILED for {comp.id}: {sec_result.fail_count} failures"
+        )
         ctx = IterationContext.from_json(comp_result.context_json or "{}")
         # as_retry_context is empty for infra results (no findings list);
         # fall back to the notes so the retry prompt still says what
@@ -288,5 +292,8 @@ class SecurityGate(ReviewVerdicts, UsageLedger):
                     "security", sec_result.as_findings(), sec_result.failing_severities
                 ),
                 failure_count=_gate_failure_count(sec_result),
+                rejudge_sha=self._reviewer_fault_head(
+                    sec_result, self.worktree_paths.get(comp.id, self.root_dir)
+                ),
             ),
         )

@@ -73,7 +73,7 @@ EXPECTED = [
     "  | FAILED tests/test_api.py::test_create_rejects_empty_key - assert 500 == 400",
     "  | FAILED tests/test_api.py::test_update_rejects_empty_key - assert 500 == 400",
     "  | FAILED tests/test_server.py::test_post_empty_key...",
-    "[Read] missing.py",
+    "[Read] /repo/missing.py",
     "  | File does not exist.",
     "done",
 ]
@@ -386,6 +386,28 @@ def test_model_text_that_starts_with_a_pipe_is_kept(
 
     assert lines == ["[Bash] ls", "  | a.py", table]
     assert agent.final_message == table
+
+
+def test_a_long_command_and_a_written_path_reach_the_transcript_whole(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A designer's transcript cut its commands at 120 characters and named
+    a written file by its last component, so it said neither what the
+    designer ran nor where it wrote (a user run). The adapter's line is
+    whole; a terminal shortens it (kstrl.ui.terminal_line)."""
+    command = "printf '%s\\n' " + " ".join(f"case-{n}" for n in range(60))
+    path = "/elsewhere/scratch/held-out.sh"
+    _agent, lines = _run_cli(
+        tmp_path,
+        monkeypatch,
+        [
+            _tool_use("toolu_1", "Bash", {"command": command}),
+            _tool_use("toolu_2", "Write", {"file_path": path, "content": "x"}),
+        ],
+    )
+
+    assert len(command) > 300
+    assert lines == [f"[Bash] {command}", f"[Write] {path}"]
 
 
 def test_every_tool_result_in_one_user_event_is_rendered(

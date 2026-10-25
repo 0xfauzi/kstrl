@@ -30,6 +30,7 @@ from kstrl.agents.sandbox import (
     with_stack_writable,
 )
 from kstrl.agents.select import UnknownAgentTypeError, get_agent
+from kstrl.agents.tmpdir import agent_tmpdir
 
 __all__ = [
     "Agent",
@@ -48,6 +49,7 @@ __all__ = [
     "SandboxConfig",
     "UNPROBED",
     "UnknownAgentTypeError",
+    "agent_tmpdir",
     "collect_agent_output",
     "extract_agent_json",
     "extract_json",

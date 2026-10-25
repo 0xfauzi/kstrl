@@ -400,6 +400,20 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Fixed
 
+- The verification designer's agent process gets a `TMPDIR` inside its
+  scratch checkout, so what it writes there, and the claude CLI's session
+  scratchpad, go when the checkout is deleted. A user run's designer left
+  its held-out checks and reference implementation in claude's scratchpad
+  under /tmp, where the engineer's user could read them (measured: claude
+  2.1.310 puts the scratchpad under `TMPDIR`).
+- A reviewer or security reviewer that cannot finish (a reply still unread
+  after its one more reading, a crash) no longer spends an engineer retry:
+  the retry judges the same commit again with no engineer, and the phase
+  says the reviewer could not finish instead of "0 failures".
+- A claude agent's transcript holds each Bash command whole and each Read,
+  Edit and Write path whole; the terminal shortens a long line to its head
+  instead. A designer's transcript cut commands at 120 characters.
+- The runbook's path of the distiller's debug dumps.
 - A security reply kstrl cannot parse is reported as not read, never as
   passed, and one that states no finding at or above the fail threshold
   gets the reviewer once more, as Phase 2 does. A user run's reply lacked

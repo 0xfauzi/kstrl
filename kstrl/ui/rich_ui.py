@@ -10,6 +10,7 @@ from rich.prompt import Prompt
 from rich.text import Text
 
 from kstrl.ui.animated_art import brand_mark
+from kstrl.ui.base import terminal_line
 
 if TYPE_CHECKING:
     from typing import TextIO
@@ -189,6 +190,7 @@ class RichUI:
         prefix.append(f"{tag_label} ", style=self._badge_style(tag))
         prefix.append(f"{sep} ", style="dim")
         self.console.print(prefix, end="")
+        line = terminal_line(line)
         line_style = LINE_STYLES.get(tag)
         if line_style:
             self.console.print(Text(line, style=line_style))

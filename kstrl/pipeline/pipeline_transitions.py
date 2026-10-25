@@ -72,6 +72,10 @@ class PhaseFailure:
     #: count (an engineer-loop failure, a crashed reviewer), which breaks
     #: the run of readings rather than counting as a reading.
     failure_count: int | None = None
+    #: The commit a retry judges again with no engineer, or "": set when the
+    #: reviewer could not finish, which nothing the engineer does can change
+    #: (a user run spent an engineer retry on one).
+    rejudge_sha: str = ""
 
 
 class Transitions(InboxDesk, AttemptRecorder, UsageLedger):
@@ -135,6 +139,7 @@ class Transitions(InboxDesk, AttemptRecorder, UsageLedger):
         signatures: list[str] | None = None,
         fresh_base: bool = False,
         failure_count: int | None = None,
+        rejudge_sha: str = "",
     ) -> Transition:
         """Retry a component or mark it as failed. ``phase``/``check``
         name the gate that fired (R3.3); on a retry they describe the
@@ -145,7 +150,10 @@ class Transitions(InboxDesk, AttemptRecorder, UsageLedger):
         merged base instead of resuming the attempt's commits.
         ``failure_count`` is the gate's count for #233's convergence
         check; a retry it would buy is refused when the count has not
-        fallen for ``[factory] convergence_attempts`` attempts."""
+        fallen for ``[factory] convergence_attempts`` attempts.
+        ``rejudge_sha`` is a commit the retry judges again with no engineer
+        (``rejudge_kept_head``); it is kept only when the retry happens on
+        the same worktree, so a failed component never carries one."""
         self._record_failure_signatures(comp, phase, error, signatures)
         counts = self._record_failure_count(comp.id, phase, failure_count)
         if comp.retries < self.factory_config.max_retries:
@@ -178,6 +186,8 @@ class Transitions(InboxDesk, AttemptRecorder, UsageLedger):
             comp.retries += 1
             comp.status = ComponentStatus.PENDING.value
             comp.error = error
+            if rejudge_sha and comp.id not in self.fresh_base_retry_ids:
+                comp.rejudge_sha = rejudge_sha
             if context_json:
                 # The chokepoint: every failing gate that carries a
                 # context routes here, so this is the one place the
@@ -584,4 +594,5 @@ class Transitions(InboxDesk, AttemptRecorder, UsageLedger):
             check=failure.check,
             signatures=failure.signatures,
             failure_count=failure.failure_count,
+            rejudge_sha=failure.rejudge_sha,
         )

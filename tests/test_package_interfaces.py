@@ -101,7 +101,7 @@ ALLOWED_EXCEPTIONS: frozenset[tuple[str, str]] = frozenset(
 #: ceiling: a growth is red, and a shrink is red until this pin is lowered.
 INTERFACE_SIZES: dict[str, int] = {
     "acceptance": 36,  # evidence_dir: where Phase 3 keeps a failed tier's output
-    "agents": 26,
+    "agents": 27,  # agent_tmpdir: the designer's TMPDIR inside its scratch checkout
     "architect": 16,  # build_spec_context: the spec every engineer is given
     "calibration": 0,
     "cli": 1,
@@ -121,7 +121,7 @@ INTERFACE_SIZES: dict[str, int] = {
     "queue": 17,
     "review": 49,
     "serve": 36,
-    "ui": 3,
+    "ui": 4,  # terminal_line: a terminal shortens a streamed line, a transcript keeps it
     "verify": 64,
     "write_guard": 7,
 }
@@ -129,7 +129,7 @@ INTERFACE_SIZES: dict[str, int] = {
 #: The count of ``kstrl`` modules in ``sys.modules`` after one import in a
 #: new process. Plan section 4.4: a count is deterministic, a time is not.
 LOADED_MODULES: dict[str, int] = {
-    "kstrl.cli": 228,  # kstrl.architect.spec_context
+    "kstrl.cli": 229,  # kstrl.agents.tmpdir
     "kstrl.write_guard": 9,
 }
 

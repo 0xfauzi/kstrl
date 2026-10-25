@@ -45,6 +45,7 @@ from kstrl.agents.sandbox import (
     claude_sandbox_drops_skip_permissions,
     claude_sandbox_settings,
 )
+from kstrl.agents.tmpdir import agent_env
 from kstrl.events import UsageRecord
 from kstrl.io import read_json
 from kstrl.proc import DeadlineStreamer, timeout_message
@@ -191,6 +192,7 @@ class ClaudeSdkAgent:
                 stdin_text=json.dumps(config),
                 timeout=timeout,
                 root_dir=self._root_dir,
+                env=agent_env(),
                 stderr=diagnostics,
             )
 
