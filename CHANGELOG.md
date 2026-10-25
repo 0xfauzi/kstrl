@@ -176,6 +176,14 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Changed
 
+- An advisory review verdict confirms the story the engineer marked done
+  (owner decision of 2026-10-25): only a fail, no verdict, or criteria
+  left unjudged leave it unconfirmed. Advisory concerns are recorded as
+  before.
+- The verification designer reaches a component only through an
+  interface the spec fixes, and checks nothing through a name, parameter
+  or type the spec leaves open (`ACCEPTANCE_PROMPT` 1.4.0, owner
+  decision of 2026-10-25).
 - The architect puts a criterion only a later component can meet into
   that component, and writes no exact value the spec does not state
   (`DECOMPOSE_PROMPT` 5.5.0).

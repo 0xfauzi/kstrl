@@ -101,8 +101,11 @@ def test_a_criterion_the_reviewer_left_unjudged_gets_the_reviewer_again_not_the_
 def test_the_same_stories_unconfirmed_after_an_engineer_retry_halt_to_the_inbox(
     tmp_path: Path,
 ) -> None:
+    """The reviewer leaves the second criterion unjudged on every reading,
+    so a passed review leaves the story unconfirmed each attempt."""
     root = _repo(tmp_path, _stack({"tests": "true"}))
-    reviewer = _reviewer(tmp_path, [[_verdict("prints hello", "advisory")]])
+    _two_criteria(root)
+    reviewer = _reviewer(tmp_path, [[_verdict("prints hello", "pass")]])
 
     run = _factory(
         tmp_path,
@@ -115,4 +118,25 @@ def test_the_same_stories_unconfirmed_after_an_engineer_retry_halt_to_the_inbox(
     assert run.code == 1, run.out
     assert run.calls == 2, run.out
     assert "the same stories as the attempt before, so no engineer retries it" in run.out
-    assert "advisory by the stub" in run.out, run.out
+    assert "pass on only 1 of 2 acceptance criteria" in run.out, run.out
+
+
+@runs_a_stack
+def test_an_advisory_verdict_confirms_the_story(tmp_path: Path) -> None:
+    """Owner decision of 2026-10-25: an advisory verdict says the criterion
+    appears implemented, with concerns the review records as non-blocking,
+    so it confirms the claim. Under the old rule a user run spent three
+    engineer retries on advisories with every acceptance check passing."""
+    root = _repo(tmp_path, _stack({"tests": "true"}))
+    reviewer = _reviewer(tmp_path, [[_verdict("prints hello", "advisory")]])
+
+    run = _factory(
+        tmp_path,
+        root,
+        *("--review-mode", "hard", "--review-agent-cmd", str(reviewer)),
+        *("--max-retries", "3"),
+        engineer=ENGINEER,
+    )
+
+    assert "claim disagreement" not in run.out, run.out
+    assert (run.code, run.calls) == (0, 1), run.out

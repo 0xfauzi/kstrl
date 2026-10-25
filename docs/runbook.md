@@ -373,7 +373,7 @@ If `ReviewResult.infrastructure_error=True`, the reviewer agent itself failed (t
 
 **Symptom**: `Phase 2 FAILED for <comp_id>: claim disagreement on N story(ies); passes reverted in the PRD`, with `failed_check = claim`.
 
-A story is marked done when the engineer agent sets `passes: true` in the PRD. That is the agent that did the work reporting on the work, so it is a claim rather than a measurement. R10.3 checks the claim against the reviewer's per-story verdicts, which are an independent reading. This fires when the engineer said done and the reviewer did not confirm it - because it judged a criterion unmet, raised an advisory on one, or never covered the story at all.
+A story is marked done when the engineer agent sets `passes: true` in the PRD. That is the agent that did the work reporting on the work, so it is a claim rather than a measurement. R10.3 checks the claim against the reviewer's per-story verdicts, which are an independent reading. This fires when the engineer said done and the reviewer did not confirm it - because it judged a criterion unmet, never covered the story at all, or left some of its criteria unjudged. An advisory verdict confirms the story: it says the criterion appears implemented, with concerns the review records as non-blocking (owner decision of 2026-10-25).
 
 **Diagnose**:
 

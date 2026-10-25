@@ -20,6 +20,14 @@ class ClaimFields(Protocol):
     def claim_agreement(self) -> str: ...
 
 
+#: The story verdicts that confirm a claim. An advisory verdict says the
+#: criterion appears implemented, with concerns the review records as
+#: non-blocking; owner decision of 2026-10-25: it confirms the claim, so
+#: only a fail, no verdict, or criteria left unjudged leave a story
+#: unconfirmed (a user run spent three engineer retries on advisories).
+_CONFIRMING = frozenset({ReviewVerdict.PASS.value, ReviewVerdict.ADVISORY.value})
+
+
 def claim_disagreements(
     prd: PRD,
     review: ReviewResult,
@@ -32,16 +40,16 @@ def claim_disagreements(
     does the work and then files the report on the work. The reviewer is
     a second, independent reading of the same question. This returns one
     finding for every story the engineer marked done that the reviewer
-    did not independently mark pass, whether the reviewer marked it fail,
-    marked it advisory, never covered it at all, or passed only some of
-    its acceptance criteria.
+    did not independently confirm, whether the reviewer marked it fail,
+    never covered it at all, or judged only some of its acceptance
+    criteria. A pass or an advisory verdict confirms it (:data:`_CONFIRMING`).
 
     That last case is the one the coverage gate in ``parse_review_output``
     does not catch: it checks that every STORY got a verdict, not that
     every CRITERION did. A reviewer that returns one passing criterion
     for a two-criterion story reads as a clean pass there, so the claim
     would be confirmed on half the evidence. Confirmation here needs both
-    a pass and a verdict per acceptance criterion.
+    a confirming verdict and a verdict per acceptance criterion.
 
     Returns ``[]`` when ``review.infrastructure_error`` is set. The
     reviewer crashed or returned unparseable output, so there is no
@@ -68,7 +76,7 @@ def claim_disagreements(
         verdict = verdicts.get(normalize_story_id(story.id))
         judged = review.judged_criterion_count(story.id)
         expected = len(story.acceptance_criteria)
-        if verdict == ReviewVerdict.PASS.value and judged >= expected:
+        if verdict in _CONFIRMING and judged >= expected:
             continue
         unmet = review.non_pass_criteria(story.id)
         # The suggestion carries the reviewer's own criterion texts when
@@ -80,7 +88,7 @@ def claim_disagreements(
         gap = ""
         if verdict is None:
             reads = "not covered"
-        elif verdict != ReviewVerdict.PASS.value:
+        elif verdict not in _CONFIRMING:
             reads = verdict
         else:
             # Every verdict returned was a pass, but not every

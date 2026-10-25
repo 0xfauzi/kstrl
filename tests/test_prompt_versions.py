@@ -432,9 +432,12 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     # 1.3.0: a check that fails correct code is as wrong as one that passes wrong
     # code: decide only what the spec states, compare only the output it fixes,
     # work expected values out with a command (three wrong checks in one user run).
+    # 1.4.0 (owner decision of 2026-10-25): reach a component only through an
+    # interface the spec fixes; guessed function names and types failed a
+    # correct library in a user run.
     "ACCEPTANCE_PROMPT": (
-        "4bbb82cac5ba0aea9de8348c3193f204648d9b8d314415282e5d47d84d82c636",
-        "1.3.0",
+        "5a045cb39352a79bf9ae41b6046d6f2e810f3214f4f37ca1635765a2de440eb9",
+        "1.4.0",
     ),
     # 1.0.0: new. A re-ask says why kstrl did not accept the previous reply; the
     # same prompt twice drew the same uncited criteria twice in a user run. H2:

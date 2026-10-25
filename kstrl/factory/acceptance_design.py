@@ -110,7 +110,7 @@ NOT_REPRODUCED_KEY = "unreproduced:"
 #: H3 and H2: the verification designer's role prompt. Its calibration
 #: roles are ``acceptance`` and ``acceptance_clean``, scored by execution on
 #: ``tests/adversarial_fixtures/acceptance/``.
-ACCEPTANCE_PROMPT_VERSION = "1.3.0"
+ACCEPTANCE_PROMPT_VERSION = "1.4.0"
 
 ACCEPTANCE_PROMPT = """\
 You are the verification designer for one component of a planned change.
@@ -176,6 +176,13 @@ A check that fails correct code is as wrong as one that passes wrong code:
 - Decide only what the specification and the criteria state. Where they
   leave a behaviour open, a correct implementation may do either, so no
   check decides it.
+- Reach the component only through an interface the specification fixes:
+  a command line, a file format, a protocol, or a function, type or name
+  the specification itself gives. A name, a parameter or a type it leaves
+  open is the engineer's to choose, so no check depends on one. When the
+  specification fixes no interface of this component, check its
+  behaviour through the interface of a component that uses it, or write
+  fewer checks: a check that guesses an interface fails correct code.
 - Compare only the output the specification fixes. A check that compares
   the whole of stdout or stderr fails correct code whenever a tool between
   the check and the application prints something of its own, such as a

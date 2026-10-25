@@ -110,7 +110,7 @@ class TestPipelineWiring:
             tmp_path,
             review=_review(
                 _criterion("A", "pass"),
-                _criterion("B", "advisory", "b-crit"),
+                _criterion("B", "fail", "b-crit"),
             ),
             prd=_prd(_story("A", passes=True), _story("B", passes=True)),
             review_mode="advisory",
@@ -134,7 +134,7 @@ class TestPipelineWiring:
             tmp_path,
             review=_review(
                 _criterion("A", "pass"),
-                _criterion("B", "advisory", "b-crit"),
+                _criterion("B", "fail", "b-crit"),
             ),
             prd=_prd(_story("A", passes=True), _story("B", passes=True)),
             review_mode="advisory",
@@ -155,7 +155,7 @@ class TestPipelineWiring:
         assert "b-crit" in ctx
         # The reviewer's reasoning reaches the agent by no other route
         # on this path, so it must be in the context.
-        assert "advisory because" in ctx
+        assert "fail because" in ctx
 
     def test_block_mode_leaves_an_agreeing_run_alone(
         self,

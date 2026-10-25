@@ -50,6 +50,7 @@ from tests.test_acceptance_e2e import (
     _recheck,
     _with_greet,
 )
+from tests.test_claim_gate_e2e import _two_criteria
 from tests.test_isolation_rung import runs_a_stack
 from tests.test_stack_e2e import _factory, _repo, _spawn, _stack
 
@@ -630,14 +631,14 @@ def test_a_dispute_the_breaker_stops_on_is_still_judged(tmp_path: Path) -> None:
     assert cause in item.detail, item.detail
 
 
-#: A reviewer that reports the diff it measured and judges US-001 advisory:
-#: the claim gate does not confirm the story.
+#: A reviewer that reports the diff it measured and judges only the first of
+#: US-001's two criteria: a passed review that confirms no claim.
 UNCONFIRMING_REVIEWER = f"""#!{sys.executable}
 import json, subprocess, sys
 sys.stdin.read()
 out = subprocess.run(["git", "diff", "--numstat", "main...HEAD"], capture_output=True, text=True)
 rows = [[int(a), int(b), p] for a, b, p in (line.split("\\t") for line in out.stdout.splitlines())]
-criterion = {{"criterion": "prints hello", "verdict": "advisory",
+criterion = {{"criterion": "prints hello", "verdict": "pass",
              "explanation": "the test is thin"}}
 print(json.dumps({{
     "observedDiffstat": {{"rows": rows}},
@@ -657,6 +658,7 @@ def test_a_claim_disagreement_on_an_approved_commit_halts_and_its_approval_merge
     same check (two user runs). Now the claim halts with no engineer, on an
     item naming the commit, and approving it merges over it there."""
     root = _repo(tmp_path, _stack({"tests": "true"}))
+    _two_criteria(root)
     _with_greet(root)
     hidden = f"Grace{secrets.token_hex(4)}"
     plan = _plan(
@@ -666,7 +668,10 @@ def test_a_claim_disagreement_on_an_approved_commit_halts_and_its_approval_merge
     )
     reviewer = write_executable(tmp_path / "reviewer.sh", UNCONFIRMING_REVIEWER)
     # A retry to spend, so a halt and a retry tell apart.
-    review = ("--review-mode", "hard", "--review-agent-cmd", str(reviewer), "--max-retries", "1")
+    review = (
+        *("--review-mode", "hard", "--review-agent-cmd", str(reviewer)),
+        *("--max-retries", "1"),
+    )
     first = _accept(tmp_path, root, plan, SPECIAL_CASED, *review)
     assert first.code == 1, first.out
     (acceptance,) = _halts(root)
