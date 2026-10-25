@@ -442,7 +442,7 @@ def _get_calibration_agent():
     )
 
 
-def _get_reviewer_calibration_agent():
+def _get_reviewer_calibration_agent(*, read_only: bool = True):
     """Agent for the reviewer and security roles: the base calibration
     agent unless the R7.1 reviewer-family override
     (KSTRL_CALIBRATION_REVIEWER_AGENT_TYPE / _MODEL) selects another
@@ -452,7 +452,9 @@ def _get_reviewer_calibration_agent():
     reason it matters there - the reviewer runs inside the fixture repo
     and a reviewer that writes what it reads has changed the evidence -
     and it also keeps the measured number attributable to the
-    invocation the factory actually makes."""
+    invocation the factory actually makes. The verification designer
+    is the [review] selection as a writer (``read_only=False``), as the
+    factory makes it."""
     from kstrl.agents import get_agent
 
     return get_agent(
@@ -460,7 +462,7 @@ def _get_reviewer_calibration_agent():
         model=REVIEWER_MODEL or CALIBRATION_MODEL,
         model_reasoning_effort=None,
         agent_type=REVIEWER_AGENT_TYPE or "claude-code",
-        read_only=True,
+        read_only=read_only,
         root_dir=None,
     )
 
@@ -1668,7 +1670,7 @@ def _acceptance_run_once(fixture: AcceptanceFixture, tmp_path: Path) -> Scored |
     decision 12: the designer is the [review] selection), through the call
     the factory makes, scored by running it. A str says why no plan came
     back, which is a completed miss."""
-    agent = BoundedAgent(_get_reviewer_calibration_agent(), AGENT_RUN_TIMEOUT_S)
+    agent = BoundedAgent(_get_reviewer_calibration_agent(read_only=False), AGENT_RUN_TIMEOUT_S)
     slot = acceptance_slot(fixture, tmp_path)
     where = base_checkout(fixture, slot / "designer")
     entry, _asks, errors = design(fixture, agent, where, timeout=AGENT_RUN_TIMEOUT_S)

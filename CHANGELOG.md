@@ -176,6 +176,13 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Changed
 
+- The verification designer runs as a writer in its scratch checkout of
+  the base, confined as the engineer is, so it can build a reference
+  implementation and run its checks before it replies (owner decision of
+  2026-10-25, `ACCEPTANCE_PROMPT` 1.6.0). Read-only, it could not follow
+  its own instruction to work out expected values with a command, and two
+  wrong held-out checks it wrote by hand halted correct code. The
+  `acceptance` calibration roles now run it the same way.
 - The verification designer checks a component only through that
   component, never through one built after it, which the tree its checks
   run on does not hold (`ACCEPTANCE_PROMPT` 1.5.0). 1.4.0 told it to, and

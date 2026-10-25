@@ -334,8 +334,8 @@ _ROLES: dict[str, _Role] = {
             requirements=_REQUIREMENTS[:1],
         ),
         frozenset({"ACCEPTANCE_PROMPT"}),
-        "d4a31637c163c378af70c043e6e83139f5a7696286d4afc418bb2f42e18a8307",
-        5604,
+        "77433d1cab1135e8b89c53fd70f61d91849be3686f1cf0afa78aa29c1a805eef",
+        6096,
     ),
     # The designer's re-ask: the same prompt and why the previous reply was
     # not accepted.
@@ -356,8 +356,8 @@ _ROLES: dict[str, _Role] = {
             ["checks[0].criterion: 'US-001: parses' names none of the requirements"],
         ),
         frozenset({"ACCEPTANCE_PROMPT", "ACCEPTANCE_REASK_PROMPT"}),
-        "088d7ef268cc16269879a1d3f23d10a94a8580a6a12132a840070175f053215d",
-        5821,
+        "8d31c046c45b9af236aa441b628444fe966a102f5a427e314569be651afbabcd",
+        6313,
     ),
     "architect": _Role(
         lambda _p: decompose_prompt.build_decompose_prompt("PROJECT", _SPEC_TEXT),

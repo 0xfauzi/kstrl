@@ -197,7 +197,9 @@ def test_the_paid_designer_arm_scores_its_plan_as_designed(
     fixture = FIXTURES[0]
     entry = {**fixture.reference, "checks": [*fixture.reference["checks"], _VACUOUS_CHECK]}
     monkeypatch.setattr(
-        tc, "_get_reviewer_calibration_agent", lambda: RecordingAgent(json.dumps(entry))
+        tc,
+        "_get_reviewer_calibration_agent",
+        lambda read_only=True: RecordingAgent(json.dumps(entry)),
     )
 
     scored = tc._acceptance_run_once(fixture, tmp_path)

@@ -20,12 +20,14 @@ import pytest
 
 import kstrl
 from tests.helpers.executables import write_executable
+from tests.test_isolation_stack import NO_PROVER
 from tests.test_sandbox_engineer_e2e import (
     _FACTORY,
     _UNDERSTAND,
     CLAUDE_TOML,
     SANDBOX_OFF_TOML,
     SANDBOX_TOML,
+    STACK_TOML,
     _ks,
     _runs,
 )
@@ -145,6 +147,30 @@ def test_every_claude_session_kstrl_starts_gets_strict_mcp_config(
         # The engineer, and at least one reviewer, which has no write guard.
         assert len(runs) >= 2, (runs, ran)
         assert _READER_TOOLS in tools, (tools, ran)
+
+
+@pytest.mark.parametrize(
+    "sandbox", [SANDBOX_TOML, SANDBOX_OFF_TOML], ids=["sandbox-on", "sandbox-off"]
+)
+def test_the_verification_designer_is_a_writer(tmp_path: Path, sandbox: str) -> None:
+    """The designer gets the writer's tools in its scratch checkout, so it
+    can run a command and write a reference implementation. A user run's
+    designer was a reader: every attempt to work out an expected value was
+    refused, and two values it worked out by hand halted correct code
+    (owner decision of 2026-10-25). The stub's reply is no plan, so the run
+    stops at the designer and every claude call is the designer's."""
+    ran = _ks(
+        tmp_path,
+        CLAUDE_TOML + sandbox + STACK_TOML,
+        (*_FACTORY, "--design-acceptance"),
+        NO_PROVER,
+        confirm=True,
+        clis=("claude",),
+    )
+    runs = _runs(tmp_path, "bin/claude")
+    assert runs, ran
+    assert "verification designer" in ran, ran
+    assert {_value(call, "--tools") for call in runs} == {_WRITER_TOOLS}, (runs, ran)
 
 
 def _assert_login_only(runs: list[list[str]], login: Path, ran: str) -> None:

@@ -110,7 +110,7 @@ NOT_REPRODUCED_KEY = "unreproduced:"
 #: H3 and H2: the verification designer's role prompt. Its calibration
 #: roles are ``acceptance`` and ``acceptance_clean``, scored by execution on
 #: ``tests/adversarial_fixtures/acceptance/``.
-ACCEPTANCE_PROMPT_VERSION = "1.5.0"
+ACCEPTANCE_PROMPT_VERSION = "1.6.0"
 
 ACCEPTANCE_PROMPT = """\
 You are the verification designer for one component of a planned change.
@@ -121,9 +121,12 @@ checks you hold out. Assume the engineer will make your visible checks pass
 by any means, so write checks that a wrong, partial or special-cased
 implementation cannot pass.
 
-Your working directory is a checkout of the base commit, before the change.
-Read it to learn how the application is built, started and reached. Do not
-change any file in it.
+Your working directory is a scratch checkout of the base commit, before the
+change, and kstrl deletes it before any check runs. Read it to learn how the
+application is built, started and reached. You may write and run anything in
+it: build a small implementation of what the criteria ask, and run each
+check against it and against the base before you reply, with {tree_env} set
+to the directory you run it on. No check may read a file you write there.
 
 ## How kstrl runs a check
 
@@ -167,7 +170,10 @@ show. A check that any implementation passes measures nothing.
 - "heldOut": true for a check the engineer must not see. Hold out at least
   one check per criterion, with inputs no example shows. When a held-out
   check fails, kstrl halts the component with no retry and tells the
-  engineer nothing.
+  engineer nothing. When a visible check fails, the engineer is shown its
+  command, unless the command shares a line with a held-out check, when it
+  is withheld: keep a visible check's command free of what a held-out
+  check holds.
 - "createsApp": true only when the base has no application for the checks
   to run against, so that no check can run on the base.
 
@@ -576,7 +582,11 @@ def _design_one(
             selection.reasoning,
             selection.agent_type,
             sandbox=pipeline.sandbox_config,
-            read_only=True,
+            # A writer in its scratch checkout, confined as the engineer is:
+            # read-only, it could not work out an expected value with a
+            # command, and two values it worked out by hand halted correct
+            # code (owner decision of 2026-10-25).
+            read_only=False,
             root_dir=root,
         )
         with (

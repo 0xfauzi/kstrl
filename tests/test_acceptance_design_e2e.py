@@ -468,7 +468,9 @@ def test_a_component_designed_before_a_refusal_is_kept_for_the_next_run(tmp_path
 def test_a_designer_ask_past_the_cost_ceiling_is_not_made(tmp_path: Path) -> None:
     """Each ask's spend reaches the ceiling before the next ask is weighed.
     Metered once at the end, a $2.50 cap let two asks spend $5.17 (a user
-    run). Here one ask costs $1.50 against a $1 cap: the second is not made."""
+    run). Here one ask costs $1.50 against a $1 cap: the second is not made.
+    The designer is a writer, and a sandboxed writer's session gate stops a
+    stub that sends no SessionStart hook, so the stub runs unsandboxed."""
     root = _greeting_repo(tmp_path)
     bindir, calls = tmp_path / "fakebin", tmp_path / "claude-calls"
     bindir.mkdir()
@@ -499,7 +501,7 @@ def test_a_designer_ask_past_the_cost_ceiling_is_not_made(tmp_path: Path) -> Non
             *("--design-acceptance", "--max-cost-usd", "1"),
         ],
         root,
-        {"PATH": path},
+        {"PATH": path, "KSTRL_SANDBOX_ENABLED": "0"},
     )
 
     assert code == 2 and REFUSED_DESIGN in out, out

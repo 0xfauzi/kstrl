@@ -438,9 +438,13 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     # 1.5.0: a check runs on a tree that holds no component built later, so it
     # never reaches a component through one that uses it; 1.4.0 said it could, and
     # a library's held-out checks went through the CLI built after it (user run).
+    # 1.6.0 (owner decision of 2026-10-25): the designer is a writer in its
+    # scratch checkout and runs its checks against an implementation of its
+    # own; a visible command that shares a line with a held-out check is
+    # withheld, so it keeps held-out content out of one.
     "ACCEPTANCE_PROMPT": (
-        "a6cb60b9339d7f89a4704e7d415240476b08af5301d864b5a4aadfa0fa9239aa",
-        "1.5.0",
+        "8e9b034f1a76a1c75de2a7b62491317d6f2d8cccd74b37aaeb606fbcdae1982f",
+        "1.6.0",
     ),
     # 1.0.0: new. A re-ask says why kstrl did not accept the previous reply; the
     # same prompt twice drew the same uncited criteria twice in a user run. H2:

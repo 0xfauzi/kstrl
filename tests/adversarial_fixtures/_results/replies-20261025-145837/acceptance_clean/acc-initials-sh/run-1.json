@@ -1,0 +1,46 @@
+{
+  "role": "acceptance_clean",
+  "fixture_id": "acc-initials-sh",
+  "category": "correct",
+  "cwe": null,
+  "caught": true,
+  "error": false,
+  "detail": "correct: verdicts {'initials-spec-example': 'pass', 'initials-three-words': 'pass', 'initials-single-word': 'pass', 'initials-uppercase-input': 'pass', 'initials-mixed-case-input': 'pass', 'initials-hyphenated-word': 'pass', 'initials-long-name': 'pass', 'initials-single-letter-words': 'pass'}",
+  "run": 1,
+  "calls": [
+    {
+      "streamed": [
+        "  | [unrendered thinking block]",
+        "[Bash] ls -la && git log --oneline | head -3 && (cat kstrl.toml 2>/dev/null | head -30)",
+        "  | total 16",
+        "  | drwxr-xr-x 3 root root 4096 Oct 25 15:10 .",
+        "  | drwx------ 3 root root 4096 Oct 25 15:10 ..",
+        "  | drwxr-xr-x 8 root root 4096 Oct 25 15:10 .git",
+        "  | -rwxr-xr-x 1 root root  108 Oct 19 06:48 initials",
+        "  | 82767fa ...",
+        "[Bash] cat initials; echo \"---\"; sh initials \"ada lovelace\"; echo \"exit=$?\"",
+        "  | #!/bin/sh",
+        "  | # Print the initials of the name in $1: not written yet, so the name as given.",
+        "  | printf '%s\\n' \"$1\"",
+        "  | ---",
+        "  | ada lovelace",
+        "  | exit=0",
+        "  | [unrendered thinking block]",
+        "[Bash] S=/tmp/claude-0/-tmp-pytest-of-root-pytest-831-test-acceptance-designer-passe1-acc-initials-sh-yit79g3i-designer/3f3b015...",
+        "  | ok",
+        "  | [unrendered thinking block]",
+        "[Bash] S=/tmp/claude-0/-tmp-pytest-of-root-pytest-831-test-acceptance-designer-passe1-acc-initials-sh-yit79g3i-designer/3f3b015...",
+        "  | TREE /tmp/claude-0/-tmp-pytest-of-root-pytest-831-test-acceptance-designer-passe1-acc-initials-sh-yit79g3i-designer/3f3b015f-115f-4b47-b9e6-b39a9099e433/scratchpad/impl",
+        "  |   [ada lovelace] -> AL : exit 0...",
+        "  | [unrendered thinking block]",
+        "[Bash] cd /tmp && cat > /tmp/claude-0/-tmp-pytest-of-root-pytest-831-test-acceptance-designer-passe1-acc-initials-sh-yit79g3i-d...",
+        "  | 8 checks parse",
+        "  | out=$(sh \"$KSTRL_TREE/initials\" \"ada lovelace\"; echo \"rc=$?\"); [ \"$out\" = \"$(printf \"AL\\nrc=0\")\" ]",
+        "  | out=$(sh \"$KSTRL_TREE/initials\" \"grace brewster murray\"; echo \"rc=$?\"); [ \"$out\" = \"$(...",
+        "  | [unrendered thinking block]",
+        "{\"createsApp\": false, \"checks\": [{\"id\": \"initials-spec-example\", \"criterion\": \"US-001: sh initials \\\"ada lovelace\\\" prints AL, a newline, and exits 0\", \"argv\": [\"sh\", \"-c\", \"out=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"ada lovelace\\\"; echo \\\"rc=$?\\\"); [ \\\"$out\\\" = \\\"$(printf \\\"AL\\\\nrc=0\\\")\\\" ]\"], \"onBase\": \"fails\", \"heldOut\": false}, {\"id\": \"initials-three-words\", \"criterion\": \"US-001: sh initials prints the first letter of each of three words, uppercase, with nothing between them, then a newline, and exits 0\", \"argv\": [\"sh\", \"-c\", \"out=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"grace brewster murray\\\"; echo \\\"rc=$?\\\"); [ \\\"$out\\\" = \\\"$(printf \\\"GBM\\\\nrc=0\\\")\\\" ]\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"initials-single-word\", \"criterion\": \"US-001: sh initials with a single word prints only that word's first letter, uppercase, then a newline, and exits 0\", \"argv\": [\"sh\", \"-c\", \"out=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"madonna\\\"; echo \\\"rc=$?\\\"); [ \\\"$out\\\" = \\\"$(printf \\\"M\\\\nrc=0\\\")\\\" ]\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"initials-uppercase-input\", \"criterion\": \"US-001: sh initials with an all-uppercase name prints the uppercase first letter of each word, then a newline, and exits 0\", \"argv\": [\"sh\", \"-c\", \"out=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"GRACE HOPPER\\\"; echo \\\"rc=$?\\\"); [ \\\"$out\\\" = \\\"$(printf \\\"GH\\\\nrc=0\\\")\\\" ]\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"initials-mixed-case-input\", \"criterion\": \"US-001: sh initials with mixed-case words prints the uppercase first letter of each word, then a newline, and exits 0\", \"argv\": [\"sh\", \"-c\", \"out=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"gRACE hOPPER cRAY\\\"; echo \\\"rc=$?\\\"); [ \\\"$out\\\" = \\\"$(printf \\\"GHC\\\\nrc=0\\\")\\\" ]\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"initials-hyphenated-word\", \"criterion\": \"US-001: sh initials treats a hyphenated word as one word, since words are separated by spaces, printing its first letter uppercase\", \"argv\": [\"sh\", \"-c\", \"out=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"jean-luc picard\\\"; echo \\\"rc=$?\\\"); [ \\\"$out\\\" = \\\"$(printf \\\"JP\\\\nrc=0\\\")\\\" ]\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"initials-long-name\", \"criterion\": \"US-001: sh initials prints one initial per word for a three-word name with lowercase words, with nothing between initials, then a newline, and exits 0\", \"argv\": [\"sh\", \"-c\", \"out=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"ludwig van beethoven\\\"; echo \\\"rc=$?\\\"); [ \\\"$out\\\" = \\\"$(printf \\\"LVB\\\\nrc=0\\\")\\\" ]\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"initials-single-letter-words\", \"criterion\": \"US-001: sh initials prints the initial of every word, including one-letter words, uppercase, with nothing between them, then a newline, and exits 0\", \"argv\": [\"sh\", \"-c\", \"out=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"a b c d\\\"; echo \\\"rc=$?\\\"); [ \\\"$out\\\" = \\\"$(printf \\\"ABCD\\\\nrc=0\\\")\\\" ]\"], \"onBase\": \"fails\", \"heldOut\": true}]}"
+      ],
+      "final_message": "{\"createsApp\": false, \"checks\": [{\"id\": \"initials-spec-example\", \"criterion\": \"US-001: sh initials \\\"ada lovelace\\\" prints AL, a newline, and exits 0\", \"argv\": [\"sh\", \"-c\", \"out=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"ada lovelace\\\"; echo \\\"rc=$?\\\"); [ \\\"$out\\\" = \\\"$(printf \\\"AL\\\\nrc=0\\\")\\\" ]\"], \"onBase\": \"fails\", \"heldOut\": false}, {\"id\": \"initials-three-words\", \"criterion\": \"US-001: sh initials prints the first letter of each of three words, uppercase, with nothing between them, then a newline, and exits 0\", \"argv\": [\"sh\", \"-c\", \"out=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"grace brewster murray\\\"; echo \\\"rc=$?\\\"); [ \\\"$out\\\" = \\\"$(printf \\\"GBM\\\\nrc=0\\\")\\\" ]\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"initials-single-word\", \"criterion\": \"US-001: sh initials with a single word prints only that word's first letter, uppercase, then a newline, and exits 0\", \"argv\": [\"sh\", \"-c\", \"out=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"madonna\\\"; echo \\\"rc=$?\\\"); [ \\\"$out\\\" = \\\"$(printf \\\"M\\\\nrc=0\\\")\\\" ]\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"initials-uppercase-input\", \"criterion\": \"US-001: sh initials with an all-uppercase name prints the uppercase first letter of each word, then a newline, and exits 0\", \"argv\": [\"sh\", \"-c\", \"out=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"GRACE HOPPER\\\"; echo \\\"rc=$?\\\"); [ \\\"$out\\\" = \\\"$(printf \\\"GH\\\\nrc=0\\\")\\\" ]\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"initials-mixed-case-input\", \"criterion\": \"US-001: sh initials with mixed-case words prints the uppercase first letter of each word, then a newline, and exits 0\", \"argv\": [\"sh\", \"-c\", \"out=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"gRACE hOPPER cRAY\\\"; echo \\\"rc=$?\\\"); [ \\\"$out\\\" = \\\"$(printf \\\"GHC\\\\nrc=0\\\")\\\" ]\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"initials-hyphenated-word\", \"criterion\": \"US-001: sh initials treats a hyphenated word as one word, since words are separated by spaces, printing its first letter uppercase\", \"argv\": [\"sh\", \"-c\", \"out=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"jean-luc picard\\\"; echo \\\"rc=$?\\\"); [ \\\"$out\\\" = \\\"$(printf \\\"JP\\\\nrc=0\\\")\\\" ]\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"initials-long-name\", \"criterion\": \"US-001: sh initials prints one initial per word for a three-word name with lowercase words, with nothing between initials, then a newline, and exits 0\", \"argv\": [\"sh\", \"-c\", \"out=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"ludwig van beethoven\\\"; echo \\\"rc=$?\\\"); [ \\\"$out\\\" = \\\"$(printf \\\"LVB\\\\nrc=0\\\")\\\" ]\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"initials-single-letter-words\", \"criterion\": \"US-001: sh initials prints the initial of every word, including one-letter words, uppercase, with nothing between them, then a newline, and exits 0\", \"argv\": [\"sh\", \"-c\", \"out=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"a b c d\\\"; echo \\\"rc=$?\\\"); [ \\\"$out\\\" = \\\"$(printf \\\"ABCD\\\\nrc=0\\\")\\\" ]\"], \"onBase\": \"fails\", \"heldOut\": true}]}"
+    }
+  ]
+}

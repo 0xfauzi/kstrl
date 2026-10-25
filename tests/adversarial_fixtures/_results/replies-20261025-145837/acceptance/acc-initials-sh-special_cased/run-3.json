@@ -1,0 +1,53 @@
+{
+  "role": "acceptance",
+  "fixture_id": "acc-initials-sh-special_cased",
+  "category": "special_cased",
+  "cwe": null,
+  "caught": true,
+  "error": false,
+  "detail": "special_cased: failed ['us001-four-words-held', 'us001-mixed-case-held', 'us001-single-letter-words-held', 'us001-single-word-held', 'us001-three-words-held', 'us001-uppercase-input-held']; verdicts {'us001-example-ada-lovelace': 'pass', 'us001-three-words-held': 'fail', 'us001-single-word-held': 'fail', 'us001-uppercase-input-held': 'fail', 'us001-mixed-case-held': 'fail', 'us001-four-words-held': 'fail', 'us001-single-letter-words-held': 'fail'}",
+  "run": 3,
+  "calls": [
+    {
+      "streamed": [
+        "  | [unrendered thinking block]",
+        "[Bash] ls -la && git log --oneline | head -3 && (ls initials 2>&1; echo \"---\"; command -v sh dash bash; ls -l /bin/sh)",
+        "  | total 16",
+        "  | drwxr-xr-x 3 root root 4096 Oct 25 15:06 .",
+        "  | drwx------ 3 root root 4096 Oct 25 15:06 ..",
+        "  | drwxr-xr-x 8 root root 4096 Oct 25 15:06 .git",
+        "  | -rwxr-xr-x 1 root root  108 Oct 19 06:48 initials",
+        "  | e03284a ...",
+        "[Bash] cat initials; echo \"---\"; sh initials \"ada lovelace\"; echo \"exit=$?\"",
+        "  | #!/bin/sh",
+        "  | # Print the initials of the name in $1: not written yet, so the name as given.",
+        "  | printf '%s\\n' \"$1\"",
+        "  | ---",
+        "  | ada lovelace",
+        "  | exit=0",
+        "  | [unrendered thinking block]",
+        "[Bash] mkdir -p /tmp/claude-0/-tmp-pytest-of-root-pytest-831-test-acceptance-designer-catch4-acc-initials-sh-5c30d-2y-designer/...",
+        "  | 0000000   A   L  \\n",
+        "  | 0000003",
+        "  | ABC",
+        "  | KCGJ",
+        "  | ok",
+        "  | Shell cwd was reset to /tmp/pytest-of-root/pytest-831/test_acceptance_designer_catch4/acc-initials-sh-5c30d_2y/designer",
+        "  | [unrendered thinking block]",
+        "[Bash] S=/tmp/claude-0/-tmp-pytest-of-root-pytest-831-test-acceptance-designer-catch4-acc-initials-sh-5c30d-2y-designer/4c59a5e...",
+        "  | == tree /tmp/claude-0/-tmp-pytest-of-root-pytest-831-test-acceptance-designer-catch4-acc-initials-sh-5c30d-2y-designer/4c59a5eb-c9b8-4116-a450-ec08179d3d4b/scratchpad/impl",
+        "  | PASS rc=0 us001-example-ada-...",
+        "  | [unrendered thinking block]",
+        "[Bash] S=/tmp/claude-0/-tmp-pytest-of-root-pytest-831-test-acceptance-designer-catch4-acc-initials-sh-5c30d-2y-designer/4c59a5e...",
+        "  | == tree /tmp/claude-0/-tmp-pytest-of-root-pytest-831-test-acceptance-designer-catch4-acc-initials-sh-5c30d-2y-designer/4c59a5eb-c9b8-4116-a450-ec08179d3d4b/scratchpad/hard",
+        "  | FAIL rc=1 us001-three-words-...",
+        "  | [unrendered thinking block]",
+        "[Bash] S=/tmp/claude-0/-tmp-pytest-of-root-pytest-831-test-acceptance-designer-catch4-acc-initials-sh-5c30d-2y-designer/4c59a5e...",
+        "  | {\"createsApp\":false,\"checks\":[{\"id\":\"us001-example-ada-lovelace\",\"criterion\":\"US-001: the specification example: sh initials \\\"ada lovelace\\\" prints AL and exits 0\",\"argv\":[\"sh\",\"-c\",\"o=$(sh \\\"$KSTRL_...",
+        "  | [unrendered thinking block]",
+        "{\"createsApp\": false, \"checks\": [{\"id\": \"us001-example-ada-lovelace\", \"criterion\": \"US-001: the specification example: sh initials \\\"ada lovelace\\\" prints AL and exits 0\", \"argv\": [\"sh\", \"-c\", \"o=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"$1\\\"; printf '@%d' $?); rc=${o##*@}; out=${o%@*}; exp=$(printf '%s\\\\n' \\\"$2\\\"; printf x); exp=${exp%x}; [ \\\"$rc\\\" = 0 ] && [ \\\"$out\\\" = \\\"$exp\\\" ]\", \"initials-check\", \"ada lovelace\", \"AL\"], \"onBase\": \"fails\", \"heldOut\": false}, {\"id\": \"us001-three-words-held\", \"criterion\": \"US-001: sh initials NAME prints the first letter of every word of NAME, uppercase, nothing between, newline, exit 0 (three words, lowercase)\", \"argv\": [\"sh\", \"-c\", \"o=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"$1\\\"; printf '@%d' $?); rc=${o##*@}; out=${o%@*}; exp=$(printf '%s\\\\n' \\\"$2\\\"; printf x); exp=${exp%x}; [ \\\"$rc\\\" = 0 ] && [ \\\"$out\\\" = \\\"$exp\\\" ]\", \"initials-check\", \"grace brewster murray\", \"GBM\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"us001-single-word-held\", \"criterion\": \"US-001: sh initials NAME prints the first letter of every word of NAME, uppercase, nothing between, newline, exit 0 (single word)\", \"argv\": [\"sh\", \"-c\", \"o=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"$1\\\"; printf '@%d' $?); rc=${o##*@}; out=${o%@*}; exp=$(printf '%s\\\\n' \\\"$2\\\"; printf x); exp=${exp%x}; [ \\\"$rc\\\" = 0 ] && [ \\\"$out\\\" = \\\"$exp\\\" ]\", \"initials-check\", \"ada\", \"A\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"us001-uppercase-input-held\", \"criterion\": \"US-001: sh initials NAME prints the first letter of every word of NAME, uppercase, nothing between, newline, exit 0 (input already uppercase)\", \"argv\": [\"sh\", \"-c\", \"o=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"$1\\\"; printf '@%d' $?); rc=${o##*@}; out=${o%@*}; exp=$(printf '%s\\\\n' \\\"$2\\\"; printf x); exp=${exp%x}; [ \\\"$rc\\\" = 0 ] && [ \\\"$out\\\" = \\\"$exp\\\" ]\", \"initials-check\", \"GRACE HOPPER\", \"GH\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"us001-mixed-case-held\", \"criterion\": \"US-001: sh initials NAME prints the first letter of every word of NAME, uppercase, nothing between, newline, exit 0 (mixed case input)\", \"argv\": [\"sh\", \"-c\", \"o=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"$1\\\"; printf '@%d' $?); rc=${o##*@}; out=${o%@*}; exp=$(printf '%s\\\\n' \\\"$2\\\"; printf x); exp=${exp%x}; [ \\\"$rc\\\" = 0 ] && [ \\\"$out\\\" = \\\"$exp\\\" ]\", \"initials-check\", \"mArIe curie\", \"MC\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"us001-four-words-held\", \"criterion\": \"US-001: sh initials NAME prints the first letter of every word of NAME, uppercase, nothing between, newline, exit 0 (four words)\", \"argv\": [\"sh\", \"-c\", \"o=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"$1\\\"; printf '@%d' $?); rc=${o##*@}; out=${o%@*}; exp=$(printf '%s\\\\n' \\\"$2\\\"; printf x); exp=${exp%x}; [ \\\"$rc\\\" = 0 ] && [ \\\"$out\\\" = \\\"$exp\\\" ]\", \"initials-check\", \"katherine coleman goble johnson\", \"KCGJ\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"us001-single-letter-words-held\", \"criterion\": \"US-001: sh initials NAME prints the first letter of every word of NAME, uppercase, nothing between, newline, exit 0 (single-letter words, no separators in output)\", \"argv\": [\"sh\", \"-c\", \"o=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"$1\\\"; printf '@%d' $?); rc=${o##*@}; out=${o%@*}; exp=$(printf '%s\\\\n' \\\"$2\\\"; printf x); exp=${exp%x}; [ \\\"$rc\\\" = 0 ] && [ \\\"$out\\\" = \\\"$exp\\\" ]\", \"initials-check\", \"a b c\", \"ABC\"], \"onBase\": \"fails\", \"heldOut\": true}]}"
+      ],
+      "final_message": "{\"createsApp\": false, \"checks\": [{\"id\": \"us001-example-ada-lovelace\", \"criterion\": \"US-001: the specification example: sh initials \\\"ada lovelace\\\" prints AL and exits 0\", \"argv\": [\"sh\", \"-c\", \"o=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"$1\\\"; printf '@%d' $?); rc=${o##*@}; out=${o%@*}; exp=$(printf '%s\\\\n' \\\"$2\\\"; printf x); exp=${exp%x}; [ \\\"$rc\\\" = 0 ] && [ \\\"$out\\\" = \\\"$exp\\\" ]\", \"initials-check\", \"ada lovelace\", \"AL\"], \"onBase\": \"fails\", \"heldOut\": false}, {\"id\": \"us001-three-words-held\", \"criterion\": \"US-001: sh initials NAME prints the first letter of every word of NAME, uppercase, nothing between, newline, exit 0 (three words, lowercase)\", \"argv\": [\"sh\", \"-c\", \"o=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"$1\\\"; printf '@%d' $?); rc=${o##*@}; out=${o%@*}; exp=$(printf '%s\\\\n' \\\"$2\\\"; printf x); exp=${exp%x}; [ \\\"$rc\\\" = 0 ] && [ \\\"$out\\\" = \\\"$exp\\\" ]\", \"initials-check\", \"grace brewster murray\", \"GBM\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"us001-single-word-held\", \"criterion\": \"US-001: sh initials NAME prints the first letter of every word of NAME, uppercase, nothing between, newline, exit 0 (single word)\", \"argv\": [\"sh\", \"-c\", \"o=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"$1\\\"; printf '@%d' $?); rc=${o##*@}; out=${o%@*}; exp=$(printf '%s\\\\n' \\\"$2\\\"; printf x); exp=${exp%x}; [ \\\"$rc\\\" = 0 ] && [ \\\"$out\\\" = \\\"$exp\\\" ]\", \"initials-check\", \"ada\", \"A\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"us001-uppercase-input-held\", \"criterion\": \"US-001: sh initials NAME prints the first letter of every word of NAME, uppercase, nothing between, newline, exit 0 (input already uppercase)\", \"argv\": [\"sh\", \"-c\", \"o=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"$1\\\"; printf '@%d' $?); rc=${o##*@}; out=${o%@*}; exp=$(printf '%s\\\\n' \\\"$2\\\"; printf x); exp=${exp%x}; [ \\\"$rc\\\" = 0 ] && [ \\\"$out\\\" = \\\"$exp\\\" ]\", \"initials-check\", \"GRACE HOPPER\", \"GH\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"us001-mixed-case-held\", \"criterion\": \"US-001: sh initials NAME prints the first letter of every word of NAME, uppercase, nothing between, newline, exit 0 (mixed case input)\", \"argv\": [\"sh\", \"-c\", \"o=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"$1\\\"; printf '@%d' $?); rc=${o##*@}; out=${o%@*}; exp=$(printf '%s\\\\n' \\\"$2\\\"; printf x); exp=${exp%x}; [ \\\"$rc\\\" = 0 ] && [ \\\"$out\\\" = \\\"$exp\\\" ]\", \"initials-check\", \"mArIe curie\", \"MC\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"us001-four-words-held\", \"criterion\": \"US-001: sh initials NAME prints the first letter of every word of NAME, uppercase, nothing between, newline, exit 0 (four words)\", \"argv\": [\"sh\", \"-c\", \"o=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"$1\\\"; printf '@%d' $?); rc=${o##*@}; out=${o%@*}; exp=$(printf '%s\\\\n' \\\"$2\\\"; printf x); exp=${exp%x}; [ \\\"$rc\\\" = 0 ] && [ \\\"$out\\\" = \\\"$exp\\\" ]\", \"initials-check\", \"katherine coleman goble johnson\", \"KCGJ\"], \"onBase\": \"fails\", \"heldOut\": true}, {\"id\": \"us001-single-letter-words-held\", \"criterion\": \"US-001: sh initials NAME prints the first letter of every word of NAME, uppercase, nothing between, newline, exit 0 (single-letter words, no separators in output)\", \"argv\": [\"sh\", \"-c\", \"o=$(sh \\\"$KSTRL_TREE/initials\\\" \\\"$1\\\"; printf '@%d' $?); rc=${o##*@}; out=${o%@*}; exp=$(printf '%s\\\\n' \\\"$2\\\"; printf x); exp=${exp%x}; [ \\\"$rc\\\" = 0 ] && [ \\\"$out\\\" = \\\"$exp\\\" ]\", \"initials-check\", \"a b c\", \"ABC\"], \"onBase\": \"fails\", \"heldOut\": true}]}"
+    }
+  ]
+}
